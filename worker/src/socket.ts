@@ -1,3 +1,8 @@
+// socket.ts
+// The worker's Socket.IO *client* to the socket server. Connects as actorType
+// "worker" with a short-lived JWT (regenerated before every (re)connect), and
+// exposes `emitWorkerEvent` — the one way job handlers push events (e.g.
+// "weather:run", "ping:done") up to the relay, which fans them out to browsers.
 import { io } from "socket.io-client";
 import { generateShortLivedJwt } from "@photonsurge/shared/utill/jwt";
 import { log } from "@photonsurge/shared/utill/logger";

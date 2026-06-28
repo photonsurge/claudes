@@ -1,5 +1,12 @@
 "use client";
 
+/**
+ * React context that owns the browser's Socket.IO connection. Mints a short-lived
+ * JWT from /api/auth/socket-token, connects to the socket server as actor "user"
+ * (joining the "public" room), and exposes `{ socket, connected }` via useSocket().
+ * Mounted once in app/layout.tsx so /watch and /control share one connection for
+ * `control:state` / `weather:run` events.
+ */
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { io, type Socket } from "socket.io-client";
 

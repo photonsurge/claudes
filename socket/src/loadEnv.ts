@@ -1,3 +1,9 @@
+/**
+ * .env loader for the socket service, called first in index.ts. Loads the repo
+ * root .env then service-local .env without overriding variables already present
+ * in the real environment (real env always wins). Exports `loadEnv` and the
+ * candidate-path resolver used in tests.
+ */
 import dotenv from "dotenv";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";

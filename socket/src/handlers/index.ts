@@ -1,3 +1,9 @@
+/**
+ * Per-socket event handler registration — the heart of the relay. Wires the two
+ * fan-out relays into the PUBLIC_ROOM (worker `worker:event` and operator
+ * `control:state`) plus a `client:hello` liveness ack. Relay authorization is
+ * delegated to the pure policy helpers in ./relay.
+ */
 import type { Server } from "socket.io";
 import type { SocketWithContext } from "../types";
 import { PUBLIC_ROOM } from "../rooms";

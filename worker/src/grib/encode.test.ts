@@ -22,8 +22,25 @@ describe("scaleToByte", () => {
     expect(scaleToByte(200, [-128, 128])).toBe(255);
   });
 
+  it("clamps exactly at min and max", () => {
+    expect(scaleToByte(0, [0, 100])).toBe(0); // at min
+    expect(scaleToByte(100, [0, 100])).toBe(255); // at max
+  });
+
+  it("clamps just below min and just above max to the endpoints", () => {
+    expect(scaleToByte(-0.0001, [0, 100])).toBe(0); // just below min
+    expect(scaleToByte(100.0001, [0, 100])).toBe(255); // just above max
+  });
+
+  it("maps the midpoint to round(0.5*255)=128", () => {
+    expect(scaleToByte(50, [0, 100])).toBe(128);
+    expect(scaleToByte(0, [-90, 60])).not.toBeNaN();
+  });
+
   it("handles non-finite and degenerate range", () => {
     expect(scaleToByte(NaN, [0, 1])).toBe(0);
+    expect(scaleToByte(Infinity, [0, 1])).toBe(0);
+    expect(scaleToByte(-Infinity, [0, 1])).toBe(0);
     expect(scaleToByte(5, [3, 3])).toBe(0);
   });
 
@@ -52,6 +69,34 @@ describe("rollLongitude", () => {
     const out = rollLongitude(v, 3, 1);
     expect(Array.from(out)).toEqual([200, 300, 100]);
   });
+
+  it("rolls an exact 4×2 grid mapping 0..360 -> -180..180 per row", () => {
+    // Columns represent 0,90,180,270 degE. After roll (shift=2) the column
+    // order becomes 180,270,0,90 which corresponds to -180,-90,0,90 degE.
+    // Each row is rotated independently.
+    const v = Float32Array.from([
+      0, 90, 180, 270, // row 0
+      1, 91, 181, 271, // row 1
+    ]);
+    const out = rollLongitude(v, 4, 2);
+    expect(Array.from(out)).toEqual([
+      180, 270, 0, 90,
+      181, 271, 1, 91,
+    ]);
+  });
+
+  it("width=1 is a no-op (shift=0)", () => {
+    const v = Float32Array.from([7, 8, 9]);
+    const out = rollLongitude(v, 1, 3);
+    expect(Array.from(out)).toEqual([7, 8, 9]);
+  });
+
+  it("preserves array length and type", () => {
+    const v = new Float32Array(12).fill(3);
+    const out = rollLongitude(v, 6, 2);
+    expect(out).toBeInstanceOf(Float32Array);
+    expect(out.length).toBe(12);
+  });
 });
 
 describe("deaccumulate", () => {
@@ -74,6 +119,35 @@ describe("deaccumulate", () => {
     const curr = Float32Array.from([4]);
     const out = deaccumulate(curr, prev, 3);
     expect(out[0]).toBe(0);
+  });
+
+  it("zero delta between steps yields zero rate", () => {
+    const prev = Float32Array.from([5, 5, 5]);
+    const curr = Float32Array.from([5, 5, 5]);
+    const out = deaccumulate(curr, prev, 3);
+    expect(Array.from(out)).toEqual([0, 0, 0]);
+  });
+
+  it("clamps a mix of positive and negative diffs (negatives -> 0)", () => {
+    const prev = Float32Array.from([0, 10, 4]);
+    const curr = Float32Array.from([6, 4, 10]);
+    const out = deaccumulate(curr, prev, 2);
+    // (6-0)/2=3, (4-10)<0 -> 0, (10-4)/2=3
+    expect(Array.from(out)).toEqual([3, 0, 3]);
+  });
+
+  it("treats deltaHours <= 0 as no-previous (all zeros)", () => {
+    const prev = Float32Array.from([0, 0]);
+    const curr = Float32Array.from([3, 9]);
+    expect(Array.from(deaccumulate(curr, prev, 0))).toEqual([0, 0]);
+    expect(Array.from(deaccumulate(curr, prev, -3))).toEqual([0, 0]);
+  });
+
+  it("returns a zero array of curr's length at f000", () => {
+    const curr = new Float32Array(5).fill(99);
+    const out = deaccumulate(curr, undefined, 3);
+    expect(out.length).toBe(5);
+    expect(Array.from(out)).toEqual([0, 0, 0, 0, 0]);
   });
 });
 

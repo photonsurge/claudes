@@ -1,0 +1,72 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.aaa.001.1",
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-88.1, 41.6], [-87.5, 41.6], [-87.5, 42.1], [-88.1, 42.1], [-88.1, 41.6]]]
+      },
+      "properties": {
+        "id": "urn:oid:2.49.0.1.840.0.aaa.001.1",
+        "areaDesc": "Cook County, IL",
+        "sent": "2026-06-28T11:30:00-05:00",
+        "effective": "2026-06-28T11:30:00-05:00",
+        "onset": "2026-06-28T11:30:00-05:00",
+        "expires": "2026-06-28T12:30:00-05:00",
+        "status": "Actual",
+        "messageType": "Alert",
+        "category": "Met",
+        "severity": "Severe",
+        "certainty": "Likely",
+        "urgency": "Expected",
+        "event": "Severe Thunderstorm Warning",
+        "sender": "w-nws.webmaster@noaa.gov",
+        "senderName": "NWS Chicago IL",
+        "headline": "Severe Thunderstorm Warning issued June 28 at 11:30AM CDT",
+        "description": "At 1130 AM CDT, a severe thunderstorm was located over Cook County.",
+        "instruction": "Move to an interior room on the lowest floor of a building.",
+        "language": "en-US",
+        "geocode": { "SAME": ["017031"], "UGC": ["ILC031"] },
+        "parameters": { "NWSheadline": ["SEVERE THUNDERSTORM WARNING"], "VTEC": ["/O.NEW.KLOT.SV.W.0123.260628T1630Z-260628T1730Z/"] },
+        "references": []
+      }
+    },
+    {
+      "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.bbb.002.1",
+      "type": "Feature",
+      "geometry": null,
+      "properties": {
+        "id": "urn:oid:2.49.0.1.840.0.bbb.002.1",
+        "areaDesc": "Lake County, IL",
+        "sent": "2026-06-28T11:45:00-05:00",
+        "effective": "2026-06-28T11:45:00-05:00",
+        "expires": "2026-06-28T13:00:00-05:00",
+        "status": "Actual",
+        "messageType": "Update",
+        "category": "Met",
+        "severity": "Extreme",
+        "certainty": "Observed",
+        "urgency": "Immediate",
+        "event": "Tornado Warning",
+        "sender": "w-nws.webmaster@noaa.gov",
+        "senderName": "NWS Chicago IL",
+        "headline": "Tornado Warning issued June 28 at 11:45AM CDT",
+        "description": "A confirmed tornado was located near Waukegan.",
+        "instruction": "TAKE COVER NOW!",
+        "language": "en-US",
+        "geocode": { "SAME": ["017097"], "UGC": ["ILC097"] },
+        "parameters": { "VTEC": ["/O.UPG.KLOT.TO.W.0045.000000T0000Z-260628T1800Z/"] },
+        "references": [
+          {
+            "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.bbb.001.1",
+            "identifier": "urn:oid:2.49.0.1.840.0.bbb.001.1",
+            "sender": "w-nws.webmaster@noaa.gov",
+            "sent": "2026-06-28T11:15:00-05:00"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,3 +1,7 @@
+// jobs/ping.ts
+// Reference job handler for the "ping" type. The worker's auto-loader registers
+// each exported function here as a handler (type "ping", event = export name),
+// so this file is also the template for how a job handler is structured.
 import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { log } from "@photonsurge/shared/utill/logger";

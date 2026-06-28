@@ -23,6 +23,7 @@ import { useSocket } from "../../lib/socket-provider";
 import { fetchBroadcastState } from "../../lib/control";
 import { fetchManifest } from "../../lib/manifest";
 import { listCities, type City } from "../../lib/cities";
+import { useTracks } from "../../lib/tracks/useTracks";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 
 export default function WatchPage() {
@@ -32,6 +33,15 @@ export default function WatchPage() {
   const [cities, setCities] = useState<City[]>([]);
   const [ready, setReady] = useState(false);
   const globe = useRef<GlobeHandle | null>(null);
+
+  const tracks = useTracks({
+    showSatellites: state.showSatellites,
+    showAircraft: state.showAircraft,
+    showShips: state.showShips,
+    satelliteGroup: state.satelliteGroup,
+    center: state.camera.center,
+    zoom: state.camera.zoom,
+  });
 
   // Cold start.
   useEffect(() => {
@@ -78,7 +88,7 @@ export default function WatchPage() {
 
   return (
     <main style={{ position: "fixed", inset: 0, background: "#0a0e16", overflow: "hidden" }}>
-      <GlobeView ref={globe} state={state} manifest={manifest} cities={cities} interactive={false} />
+      <GlobeView ref={globe} state={state} manifest={manifest} cities={cities} tracks={tracks} interactive={false} />
       <div
         style={{
           position: "absolute",

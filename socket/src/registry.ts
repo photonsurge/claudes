@@ -1,3 +1,9 @@
+/**
+ * In-memory registry of currently connected sockets, keyed by socket id and by
+ * user id. Populated/cleared by bootstrap.ts on connect/disconnect. Powers the
+ * /status connected count and per-user socket lookup. State is process-local
+ * (single-instance relay), not shared across replicas.
+ */
 import type { ActorContext } from "./types";
 
 type RegisteredSocket = {

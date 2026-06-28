@@ -5,6 +5,8 @@ import { mongoCrud } from "./mongoose-generic";
 import { getWeatherRunModel, iWeatherRunModel } from "./weather-run-model";
 import { getWeatherTextureModel } from "./weather-texture-model";
 import { getCityModel } from "./city-model";
+import { getAlertModel } from "./alert-model";
+import { makeAlertsRepo } from "./alerts-repo";
 import { getBroadcastStateModel, BROADCAST_STATE_ID } from "./broadcast-state-model";
 import { DEFAULT_CONTROL_STATE } from "../control";
 
@@ -31,6 +33,7 @@ export function createDb(conn: Connection) {
     weatherRuns,
     weatherTextures: mongoCrud(getWeatherTextureModel(conn)),
     cities: mongoCrud(getCityModel(conn)),
+    alerts: makeAlertsRepo(getAlertModel(conn)),
     broadcastState,
 
     /** Latest published run (the one the browser should render), or null. */

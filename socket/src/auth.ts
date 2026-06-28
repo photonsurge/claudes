@@ -1,3 +1,10 @@
+/**
+ * Socket handshake authentication. `authenticateSocket` is called from the
+ * Socket.IO `io.use` middleware (index.ts): it reads `{ token, actorType }` off
+ * the handshake, verifies the JWT against the right secret per actor type, and
+ * returns an AuthResult carrying the ActorContext (roles/scopes) used downstream
+ * for relay authorization and room membership.
+ */
 import type { Socket } from "socket.io";
 import type { ActorType, AuthResult } from "./types";
 import { getSocketIp, log, warn } from "./utils";

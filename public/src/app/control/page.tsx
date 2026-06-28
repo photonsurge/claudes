@@ -11,6 +11,7 @@ import { DEFAULT_CONTROL_STATE, type ControlState } from "@photonsurge/shared/co
 import { fetchBroadcastState, useControlEmitter } from "../../lib/control";
 import { fetchManifest } from "../../lib/manifest";
 import { listCities, type City } from "../../lib/cities";
+import { useTracks } from "../../lib/tracks/useTracks";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
 
@@ -20,6 +21,15 @@ export default function ControlPage() {
   const [cities, setCities] = useState<City[]>([]);
   const globe = useRef<GlobeHandle | null>(null);
   const emit = useControlEmitter();
+
+  const tracks = useTracks({
+    showSatellites: state.showSatellites,
+    showAircraft: state.showAircraft,
+    showShips: state.showShips,
+    satelliteGroup: state.satelliteGroup,
+    center: state.camera.center,
+    zoom: state.camera.zoom,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +63,7 @@ export default function ControlPage() {
           state={state}
           manifest={manifest}
           cities={cities}
+          tracks={tracks}
           interactive
           onCameraChange={(center, zoom) => apply({ ...state, camera: { center, zoom } })}
         />

@@ -1,3 +1,10 @@
+/**
+ * Socket server entrypoint. Boots the HTTP server + Socket.IO, authenticates
+ * every handshake via `io.use` (auth.ts), wires per-connection handlers
+ * (bootstrap.ts → handlers/), and listens on PORT. This is the realtime relay:
+ * it fans worker events and operator control:state out to browsers. Loads env
+ * first (must run before any config import that reads process.env).
+ */
 import { loadEnv } from "./loadEnv";
 loadEnv();
 

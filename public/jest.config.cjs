@@ -31,6 +31,7 @@ module.exports = {
     "^@deck.gl/core$": "<rootDir>/src/test/mocks/deckgl.ts",
     "^@deck.gl/layers$": "<rootDir>/src/test/mocks/deckgl.ts",
     "^@deck.gl/mapbox$": "<rootDir>/src/test/mocks/deckgl.ts",
+    "^@deck.gl/geo-layers$": "<rootDir>/src/test/mocks/geolayers.ts",
     "^weatherlayers-gl$": "<rootDir>/src/test/mocks/weatherlayers.ts",
     "^@loaders.gl/core$": "<rootDir>/src/test/mocks/loaders.ts",
   },

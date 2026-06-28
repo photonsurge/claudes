@@ -6,8 +6,11 @@
  */
 import type { ControlState } from "@photonsurge/shared/control";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
+import { SATELLITE_GROUPS } from "../lib/tracks/celestrak";
 import VariablePicker from "./VariablePicker";
 import BasemapPicker from "./BasemapPicker";
+import BasemapColorPicker from "./BasemapColorPicker";
+import WindControls from "./WindControls";
 import Timeline from "./Timeline";
 import Legend from "./Legend";
 import SearchFlyTo from "./SearchFlyTo";
@@ -46,7 +49,61 @@ export default function ControlPanel({
             checked={state.showPressure}
             onChange={(showPressure) => patch({ showPressure })}
           />
+          <Toggle
+            label="Contours"
+            checked={state.showContours}
+            onChange={(showContours) => patch({ showContours })}
+          />
+          <Toggle label="Radar" checked={state.showRadar} onChange={(showRadar) => patch({ showRadar })} />
           <Toggle label="Cities" checked={state.showCities} onChange={(showCities) => patch({ showCities })} />
+        </div>
+      </Section>
+
+      {state.showWind && (
+        <Section title="Wind">
+          <WindControls
+            wind={state.wind}
+            mode={state.windMode}
+            onWind={(wind) => patch({ wind })}
+            onMode={(windMode) => patch({ windMode })}
+          />
+        </Section>
+      )}
+
+      <Section title="Live tracks">
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <Toggle
+            label="Satellites"
+            checked={state.showSatellites}
+            onChange={(showSatellites) => patch({ showSatellites })}
+          />
+          <Toggle
+            label="Aircraft"
+            checked={state.showAircraft}
+            onChange={(showAircraft) => patch({ showAircraft })}
+          />
+          <Toggle label="Ships" checked={state.showShips} onChange={(showShips) => patch({ showShips })} />
+          {state.showSatellites && (
+            <select
+              value={state.satelliteGroup}
+              onChange={(e) => patch({ satelliteGroup: e.target.value })}
+              aria-label="Satellite group"
+              style={{
+                background: "#1a1f2b",
+                color: "#fff",
+                border: "1px solid #333",
+                borderRadius: 5,
+                padding: "4px 6px",
+                fontSize: 12,
+              }}
+            >
+              {SATELLITE_GROUPS.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.label}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </Section>
 
@@ -64,8 +121,39 @@ export default function ControlPanel({
         <BasemapPicker value={state.basemap} onChange={(basemap) => patch({ basemap })} />
       </Section>
 
+      {state.basemap === "dark" && (
+        <Section title="Basemap colours">
+          <BasemapColorPicker
+            value={state.basemapColors}
+            onChange={(basemapColors) => patch({ basemapColors })}
+          />
+        </Section>
+      )}
+
       <Section title="Camera">
         <SearchFlyTo onFitBounds={onFitBounds} onFlyTo={onFlyTo} />
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+          <Toggle
+            label="Auto-spin"
+            checked={state.autoSpin}
+            onChange={(autoSpin) => patch({ autoSpin })}
+          />
+          {state.autoSpin && (
+            <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#8b95a7", fontSize: 12 }}>
+              Speed
+              <input
+                type="range"
+                min={1}
+                max={30}
+                step={1}
+                value={state.spinSpeed}
+                onChange={(e) => patch({ spinSpeed: Number(e.target.value) })}
+                aria-label="Spin speed"
+              />
+              <span style={{ color: "#fff", width: 36, textAlign: "right" }}>{state.spinSpeed}°/s</span>
+            </label>
+          )}
+        </div>
       </Section>
 
       {state.activeVariable && (

@@ -1,5 +1,6 @@
 import {
   DEFAULT_CONTROL_STATE,
+  DEFAULT_BASEMAP_COLORS,
   mergeControlState,
   CONTROL_STATE,
   WEATHER_RUN,
@@ -54,5 +55,19 @@ describe("mergeControlState", () => {
     const next = mergeControlState(base, { camera: { center: [1] as any, zoom: 2 } });
     expect(next.camera.center).toEqual(base.camera.center);
     expect(next.camera.zoom).toBe(2);
+  });
+
+  it("defaults basemapColors and merges them partially", () => {
+    expect(base.basemapColors).toEqual(DEFAULT_BASEMAP_COLORS);
+    const next = mergeControlState(base, { basemapColors: { land: "#123456" } as any });
+    expect(next.basemapColors.land).toBe("#123456");
+    expect(next.basemapColors.ocean).toBe(base.basemapColors.ocean);
+    expect(next.basemapColors.border).toBe(base.basemapColors.border);
+  });
+
+  it("backfills basemapColors when the base state predates the field", () => {
+    const legacy = { ...DEFAULT_CONTROL_STATE, basemapColors: undefined as any };
+    const next = mergeControlState(legacy, {});
+    expect(next.basemapColors).toEqual(DEFAULT_BASEMAP_COLORS);
   });
 });

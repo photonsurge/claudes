@@ -1,3 +1,9 @@
+/**
+ * Server bootstrap helpers used by index.ts. `handleConnection` does per-socket
+ * wiring (register, join rooms, emit session:ready, attach handlers, cleanup);
+ * `createHttpRequestHandler` serves the plain-HTTP probes (/healthz /status
+ * /version); `summarizeError`/`logSocketError` normalise error logging.
+ */
 import http from "http";
 import type { Server } from "socket.io";
 import packageJson from "../package.json";

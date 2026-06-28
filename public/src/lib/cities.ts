@@ -73,8 +73,22 @@ export type City = iCity & { id: string };
 
 // ── Client CRUD ──────────────────────────────────────────────────────────────
 
-export async function listCities(): Promise<City[]> {
-  const res = await fetch("/api/cities", { cache: "no-store" });
+export interface ListCitiesOptions {
+  /** Max rows (default: server default 300). */
+  limit?: number;
+  /** Only cities with population ≥ this. */
+  minPop?: number;
+  /** Only capitals. */
+  capital?: boolean;
+}
+
+export async function listCities(opts: ListCitiesOptions = {}): Promise<City[]> {
+  const q = new URLSearchParams();
+  if (opts.limit) q.set("limit", String(opts.limit));
+  if (opts.minPop) q.set("minPop", String(opts.minPop));
+  if (opts.capital) q.set("capital", "1");
+  const qs = q.toString();
+  const res = await fetch(`/api/cities${qs ? `?${qs}` : ""}`, { cache: "no-store" });
   if (!res.ok) return [];
   const json = await res.json();
   return (json?.cities ?? []) as City[];

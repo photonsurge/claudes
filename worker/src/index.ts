@@ -1,4 +1,9 @@
 // index.ts
+// Worker entrypoint and BullMQ consumer. Boots the process: loads env, connects
+// the socket client + Mongo, auto-discovers job handlers from src/jobs/*.ts
+// (handlers[type][event]), starts the BullMQ Worker that routes each job to its
+// handler, registers the repeatable weather.check + alerts.ingest schedulers, and
+// serves health/status HTTP probes. This is the long-running background service.
 import { loadWorkerEnv } from "./loadEnv";
 loadWorkerEnv();
 
@@ -14,6 +19,7 @@ import { getDb } from "@photonsurge/shared/utill/mongoose";
 import { log } from "@photonsurge/shared/utill/logger";
 
 import { initSocket, closeSocket } from "./socket";
+import { getEnabledSources } from "./alerts/registry";
 import { summarizeForLog } from "./utils";
 import packageJson from "../package.json";
 
@@ -116,6 +122,22 @@ process.on("uncaughtException", (err) => {
     log(TAG, `registered repeatable weather.check`, RUN_CHECK_CRON);
   } catch (err) {
     log(TAG, `failed to register weather.check`, summarizeForLog(err));
+  }
+
+  // ---- Repeatable alerts.ingest jobs (one per enabled source) ----
+  // Each source polls on its own pollIntervalSec; a fixed jobId per source
+  // de-duplicates the repeat scheduler across restarts (spec §6).
+  for (const source of getEnabledSources()) {
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "alerts", type: "alerts", event: "ingest", data: { source: source.id } },
+        { repeat: { every: source.pollIntervalSec * 1000 }, jobId: `alerts-${source.id}` },
+      );
+      log(TAG, `registered repeatable alerts.ingest`, { source: source.id, every: source.pollIntervalSec });
+    } catch (err) {
+      log(TAG, `failed to register alerts.ingest`, { source: source.id, err: summarizeForLog(err) });
+    }
   }
 
   // ---- Express HTTP server (health/status probes) ----

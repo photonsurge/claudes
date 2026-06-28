@@ -1,3 +1,8 @@
+/**
+ * Shared structured logger. Emits JSON lines in production and human-readable
+ * tagged lines in dev. Exports the `logger` object (info/warn/error/debug) plus
+ * legacy `log`/`logWarn`/`logError` aliases used throughout shared and worker.
+ */
 const isProd = () => process.env.NODE_ENV === "production";
 
 type LogLevel = "info" | "warn" | "error" | "debug";

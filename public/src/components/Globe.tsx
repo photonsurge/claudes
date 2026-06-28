@@ -17,11 +17,11 @@ import {
   useState,
 } from "react";
 import { Deck, _GlobeView as GlobeView, LinearInterpolator } from "@deck.gl/core";
-import { BitmapLayer, GeoJsonLayer, SolidPolygonLayer } from "@deck.gl/layers";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { loadTexture, type LoadedTexture } from "../lib/textures";
 import { textureUrlFor } from "./layers/props";
+import { basemapLayers, countriesLayer, TILE_MIN_ZOOM } from "./layers/basemap";
 import {
   windParticleLayer,
   scalarRasterLayer,
@@ -30,6 +30,8 @@ import {
   type TextureResolver,
 } from "./layers";
 import type { City } from "../lib/cities";
+import { tracksLayer } from "./layers/tracks";
+import type { Track } from "../lib/tracks/types";
 
 export interface GlobeHandle {
   flyTo: (center: [number, number], zoom?: number) => void;
@@ -40,88 +42,25 @@ export interface GlobeProps {
   state: ControlState;
   manifest: WeatherManifest | null;
   cities: City[];
+  /** Live overlay tracks (satellites/aircraft/ships). */
+  tracks?: Track[];
   interactive?: boolean;
   onCameraChange?: (center: [number, number], zoom: number) => void;
 }
-
-// Natural Earth / Blue Marble assets (all CORS-enabled).
-const LAND_URL =
-  "https://d2ad6b4ur7yvpq.cloudfront.net/naturalearth-3.3.0/ne_110m_land.geojson";
-const COUNTRIES_URL =
-  "https://d2ad6b4ur7yvpq.cloudfront.net/naturalearth-3.3.0/ne_50m_admin_0_countries.geojson";
-const SATELLITE_IMG =
-  "https://upload.wikimedia.org/wikipedia/commons/8/83/Equirectangular_projection_SW.jpg";
-
-// Full-globe background ring (extra vertices so it tessellates around the sphere).
-const GLOBE_RING = [
-  [-180, 90],
-  [0, 90],
-  [180, 90],
-  [180, -90],
-  [0, -90],
-  [-180, -90],
-];
 
 const interpolator = new LinearInterpolator(["longitude", "latitude", "zoom"]);
 
 type ViewState = { longitude: number; latitude: number; zoom: number } & Record<string, unknown>;
 
-/** Bottom basemap layers for the active basemap id. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function basemapLayers(basemapId: string): any[] {
-  if (basemapId === "satellite" || basemapId === "terrain") {
-    return [
-      new BitmapLayer({
-        id: "basemap-image",
-        image: SATELLITE_IMG,
-        bounds: [-180, -90, 180, 90],
-      }),
-    ];
-  }
-  // dark: dark ocean sphere + subtle land fill
-  return [
-    new SolidPolygonLayer({
-      id: "basemap-ocean",
-      data: [GLOBE_RING],
-      getPolygon: (d) => d as number[][],
-      stroked: false,
-      filled: true,
-      getFillColor: [8, 14, 24],
-    }),
-    new GeoJsonLayer({
-      id: "basemap-land",
-      data: LAND_URL,
-      stroked: false,
-      filled: true,
-      getFillColor: [28, 34, 46],
-    }),
-  ];
-}
-
-/** Country borders — stroke only, drawn above the weather. */
-function countriesLayer() {
-  return new GeoJsonLayer({
-    id: "country-borders",
-    data: COUNTRIES_URL,
-    stroked: true,
-    filled: false,
-    getLineColor: [220, 228, 240, 170],
-    lineWidthUnits: "pixels",
-    getLineWidth: 1,
-    lineWidthMinPixels: 0.6,
-    parameters: { depthTest: false },
-  });
-}
-
 /** Rough GlobeView zoom that frames a bbox. */
 function zoomForBbox(bbox: [number, number, number, number]): number {
   const [w, s, e, n] = bbox;
   const span = Math.max(Math.abs(e - w), Math.abs(n - s)) || 1;
-  return Math.max(0, Math.min(5, Math.log2(360 / span) - 0.6));
+  return Math.max(2.5, Math.min(6, Math.log2(360 / span) + 1.9));
 }
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, interactive = true, onCameraChange },
+  { state, manifest, cities, tracks = [], interactive = true, onCameraChange },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -132,6 +71,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     zoom: state.camera.zoom,
   });
   const [loadedTextures, setLoadedTextures] = useState<Map<string, LoadedTexture>>(new Map());
+  // Whether sharp XYZ tiles overlay the raster base (true once zoomed in).
+  const [tilesActive, setTilesActive] = useState(state.camera.zoom >= TILE_MIN_ZOOM);
 
   const onCameraChangeRef = useRef(onCameraChange);
   useEffect(() => {
@@ -140,7 +81,12 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
 
   const applyViewState = (vs: ViewState) => {
     viewStateRef.current = vs;
-    deckRef.current?.setProps({ viewState: vs });
+    if (typeof vs.zoom === "number") {
+      const want = vs.zoom >= TILE_MIN_ZOOM;
+      setTilesActive((prev) => (prev === want ? prev : want));
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    deckRef.current?.setProps({ viewState: vs } as any);
   };
 
   useImperativeHandle(ref, () => ({
@@ -171,13 +117,15 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       canvas: canvasRef.current,
       views: [new GlobeView({ id: "globe" })],
       controller: interactive,
-      viewState: viewStateRef.current,
-      parameters: { clearColor: [0, 0, 0, 1] },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      viewState: viewStateRef.current as any,
       layers: [],
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onViewStateChange: ({ viewState }: any) => {
         viewStateRef.current = viewState;
-        deck.setProps({ viewState });
+        deck.setProps({ viewState } as Parameters<typeof deck.setProps>[0]);
+        const want = viewState.zoom >= TILE_MIN_ZOOM;
+        setTilesActive((prev) => (prev === want ? prev : want));
         onCameraChangeRef.current?.([viewState.longitude, viewState.latitude], viewState.zoom);
       },
     });
@@ -208,6 +156,27 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.camera]);
+
+  // ── Auto-spin (broadcast idle rotation) ───────────────────────────────────
+  // Rotates the camera longitude at spinSpeed °/s via rAF. Uses setProps
+  // directly (no onViewStateChange), so it never spams the operator socket.
+  useEffect(() => {
+    if (!state.autoSpin) return;
+    let raf = 0;
+    let last = performance.now();
+    const loop = (now: number) => {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      const vs = viewStateRef.current;
+      let longitude = vs.longitude + state.spinSpeed * dt;
+      longitude = ((((longitude + 180) % 360) + 360) % 360) - 180; // wrap to −180..180
+      applyViewState({ longitude, latitude: vs.latitude, zoom: vs.zoom });
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.autoSpin, state.spinSpeed]);
 
   // ── Texture loading for the active fhr ────────────────────────────────────
   useEffect(() => {
@@ -243,7 +212,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     const resolve: TextureResolver = (url) => loadedTextures.get(url);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const layers: any[] = [...basemapLayers(state.basemap)];
+    const layers: any[] = [...basemapLayers(state, tilesActive)];
 
     if (manifest) {
       if (state.activeVariable) {
@@ -252,27 +221,37 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       }
       if (state.showPressure) layers.push(...pressureLayers(manifest, state.fhr, resolve));
       if (state.showWind) {
-        const l = windParticleLayer(manifest, state.fhr, resolve);
+        const l = windParticleLayer(manifest, state.fhr, resolve, state.wind);
         if (l) layers.push(l);
       }
     }
 
     // Country borders sit ABOVE the weather fill.
-    layers.push(countriesLayer());
+    layers.push(countriesLayer(state));
 
     if (state.showCities && cities.length) layers.push(...cityLayer(cities));
+
+    // Live tracks overlay sits on top of everything.
+    if (tracks.length) layers.push(tracksLayer(tracks));
 
     deck.setProps({ layers });
   }, [
     manifest,
     cities,
     loadedTextures,
+    tilesActive,
     state.basemap,
     state.activeVariable,
     state.showPressure,
     state.showWind,
     state.showCities,
     state.fhr,
+    state.basemapColors,
+    state.wind,
+    state.windMode,
+    state.showContours,
+    state.showRadar,
+    tracks,
   ]);
 
   return (

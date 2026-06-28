@@ -1,6 +1,6 @@
 {
   "name": "worker",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
@@ -18,6 +18,9 @@
     "build": "rm -rf dist/; tsc",
     "start": "PORT=10102 node dist/index.js",
     "seed": "ts-node src/scripts/seed.ts",
+    "seed:capitals": "ts-node src/scripts/seedCapitals.ts",
+    "seed:cities": "ts-node src/scripts/seedCities.ts",
+    "ingest:alerts": "ts-node src/scripts/ingestAlerts.ts",
     "pull": "ts-node src/scripts/check.ts",
     "test": "jest",
     "test:watch": "jest --watch"

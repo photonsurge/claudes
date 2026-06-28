@@ -8,6 +8,16 @@ export class BaseLayer {
 }
 export class ScatterplotLayer extends BaseLayer {}
 export class TextLayer extends BaseLayer {}
+export class BitmapLayer extends BaseLayer {}
+export class GeoJsonLayer extends BaseLayer {}
+export class SolidPolygonLayer extends BaseLayer {}
+export class IconLayer extends BaseLayer {}
+export class _GlobeView extends BaseLayer {}
+export class LinearInterpolator extends BaseLayer {}
+export class Deck extends BaseLayer {
+  setProps() {}
+  finalize() {}
+}
 export class MapboxOverlay {
   props: Record<string, unknown>;
   constructor(props: Record<string, unknown> = {}) {

@@ -1,3 +1,9 @@
+/**
+ * BullMQ/Redis connection plumbing shared by producers (sendToQueue) and the
+ * worker. Exposes `getRedisOptions` (the one place Redis connection opts live)
+ * and lazily-built, globally-cached `getQueue` / `getQueueEvents` singletons so a
+ * single Queue/QueueEvents pair is reused across hot reloads and modules.
+ */
 import { Queue, QueueEvents } from "bullmq";
 import { getEnvVar } from "../utill/env";
 import { QUEUE_NAME } from "../utill/bull-utils";

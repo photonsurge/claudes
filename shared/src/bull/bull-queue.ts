@@ -1,3 +1,9 @@
+/**
+ * Producer-side BullMQ helpers: the single way the rest of the stack enqueues
+ * background work. Exports `sendToQueue` / `sendToQueueAndWait` plus the
+ * `QUEUE_PRIORITY` levels. Jobs are pushed as `{ domain, type, event, data }`;
+ * the worker (worker/src/index.ts) routes them to `src/jobs/<type>.ts#<event>`.
+ */
 import { getQueue, getQueueEvents } from "./bull";
 
 // Lower number = higher priority. Use QUEUE_PRIORITY constants.

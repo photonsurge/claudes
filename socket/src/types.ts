@@ -1,3 +1,9 @@
+/**
+ * Shared types for the socket server. `ActorType` and `ActorContext` describe a
+ * connection's identity/roles/scopes (produced by auth.ts, attached to
+ * `socket.data.context`); `AuthResult` is the handshake outcome; and
+ * `SocketWithContext` is the Socket variant carrying that context.
+ */
 import type { Socket } from "socket.io";
 
 export type ActorType = "user" | "worker" | "service";

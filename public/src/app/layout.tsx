@@ -1,3 +1,7 @@
+/**
+ * Root layout. Wraps every page in SocketProvider so /watch, /control and
+ * /cities share one authenticated socket connection.
+ */
 import type { Metadata } from "next";
 import { SocketProvider } from "../lib/socket-provider";
 

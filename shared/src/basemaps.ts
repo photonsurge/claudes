@@ -13,6 +13,19 @@ export interface iBasemap {
   style: Record<string, unknown>;
 }
 
+/**
+ * Raw XYZ tile templates, shared between the MapLibre BASEMAPS styles (below)
+ * and the deck.gl GlobeView (which renders them via a TileLayer onto the
+ * sphere). Single source of truth so the flat map and the globe show the same
+ * imagery. `{z}/{y}/{x}` for Esri (ArcGIS order), `{z}/{x}/{y}` for the rest.
+ */
+export const TILE_TEMPLATES = {
+  cartoDark: "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+  esriImagery:
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  openTopo: "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+} as const;
+
 const rasterStyle = (
   id: string,
   tiles: string[],

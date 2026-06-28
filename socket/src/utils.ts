@@ -1,3 +1,8 @@
+/**
+ * Small socket-server utilities: JSON-line structured loggers
+ * (log/logInfo/warn/logError), an ISO timestamp helper, and `getSocketIp` which
+ * resolves a client's IP (honouring x-forwarded-for) for auth/audit logging.
+ */
 import type { Socket } from "socket.io";
 
 export function nowIso(): string {

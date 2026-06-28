@@ -1,3 +1,9 @@
+/**
+ * JWT helpers shared by the socket handshake and the worker's socket client.
+ * `generateShortLivedJwt` mints the tokens the worker uses to authenticate to
+ * the socket server; `validateJwt` verifies them (issuer-pinned to "thronix").
+ * The signing secret comes from the caller or JWT_SECRET.
+ */
 import jwt, { JwtPayload, SignOptions } from "jsonwebtoken";
 
 const ISSUER = "thronix";
