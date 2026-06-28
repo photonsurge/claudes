@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { SocketProvider } from "../lib/socket-provider";
 
 export const metadata: Metadata = {
-  title: "Blank App",
-  description: "public ↔ socket ↔ worker scaffold",
+  title: "Live Weather Globe",
+  description: "Live weather globe — broadcast (/watch), operator (/control), cities (/cities)",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

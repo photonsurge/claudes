@@ -1,0 +1,101 @@
+/**
+ * Layer construction: turn the PURE props (props.ts) into deck.gl /
+ * WeatherLayers layer instances. Kept thin so all logic stays testable in
+ * props.ts and the GL-bound construction here is mocked in tests.
+ */
+"use client";
+
+import { ScatterplotLayer, TextLayer } from "@deck.gl/layers";
+import {
+  RasterLayer,
+  ParticleLayer,
+  ContourLayer,
+  HighLowLayer,
+} from "weatherlayers-gl";
+import type { WeatherManifest } from "@photonsurge/shared/manifest";
+import type { LoadedTexture } from "../../lib/textures";
+import type { City } from "../../lib/cities";
+import {
+  windParticleProps,
+  scalarRasterProps,
+  pressureProps,
+  cityProps,
+} from "./props";
+
+/** A resolver mapping a texture URL to an already-loaded image (or undefined). */
+export type TextureResolver = (url: string) => LoadedTexture | undefined;
+
+export function windParticleLayer(
+  manifest: WeatherManifest,
+  fhr: number,
+  resolve: TextureResolver,
+  opts?: Parameters<typeof windParticleProps>[2],
+): ParticleLayer | null {
+  const props = windParticleProps(manifest, fhr, opts);
+  if (!props) return null;
+  const image = resolve(props.image);
+  if (!image) return null;
+  // WeatherLayers accepts an ImageBitmap/HTMLImageElement at runtime; its prop
+  // type is narrower than that, so cast at the boundary.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new ParticleLayer({ ...props, image: image as any });
+}
+
+export function scalarRasterLayer(
+  manifest: WeatherManifest,
+  variableId: string,
+  fhr: number,
+  resolve: TextureResolver,
+  opts?: Parameters<typeof scalarRasterProps>[3],
+): RasterLayer | null {
+  const props = scalarRasterProps(manifest, variableId, fhr, opts);
+  if (!props) return null;
+  const image = resolve(props.image);
+  if (!image) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new RasterLayer({ ...props, image: image as any });
+}
+
+export function pressureLayers(
+  manifest: WeatherManifest,
+  fhr: number,
+  resolve: TextureResolver,
+  opts?: Parameters<typeof pressureProps>[2],
+): Array<ContourLayer | HighLowLayer> {
+  const props = pressureProps(manifest, fhr, opts);
+  if (!props) return [];
+  const image = resolve(props.contour.image);
+  if (!image) return [];
+  return [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    new ContourLayer({ ...props.contour, image: image as any }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    new HighLowLayer({ ...props.highLow, image: image as any }),
+  ];
+}
+
+export function cityLayer(cities: City[]): Array<ScatterplotLayer | TextLayer> {
+  const props = cityProps(cities);
+  return [
+    new ScatterplotLayer({
+      ...props.scatter,
+      radiusUnits: "pixels",
+      radiusMinPixels: 2,
+      stroked: true,
+      lineWidthMinPixels: 1,
+      getLineColor: [0, 0, 0, 180],
+      pickable: false,
+    }),
+    new TextLayer({
+      ...props.text,
+      getColor: [255, 255, 255, 230],
+      getTextAnchor: "start",
+      getAlignmentBaseline: "center",
+      getPixelOffset: [8, 0],
+      outlineWidth: 2,
+      outlineColor: [0, 0, 0, 255],
+      fontFamily: "system-ui, sans-serif",
+      pickable: false,
+    }),
+  ];
+}

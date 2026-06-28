@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Run `yarn test` in every package. Continues on failure and prints a summary.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+packages=(shared socket worker public)
+declare -a failed=()
+
+for pkg in "${packages[@]}"; do
+  echo "==> Testing $pkg"
+  if ( cd "$pkg" && yarn test ); then
+    echo "==> $pkg: PASS"
+  else
+    echo "==> $pkg: FAIL"
+    failed+=("$pkg")
+  fi
+done
+
+echo
+echo "==> Summary"
+if [ "${#failed[@]}" -eq 0 ]; then
+  echo "All packages passed."
+else
+  echo "Failed: ${failed[*]}"
+  exit 1
+fi

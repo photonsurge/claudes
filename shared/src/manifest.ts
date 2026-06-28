@@ -1,0 +1,32 @@
+/**
+ * The client-facing manifest: the exact JSON shape returned by
+ * `GET /api/weather/manifest`. It is derived from a published WeatherRun, with
+ * each variable's `files` map rewritten from texture ids to fetchable URLs
+ * (`/api/weather/tex/<id>`). The browser never reads Mongo or GRIB directly.
+ */
+import type { WeatherEncoding, iWeatherStep } from "./db/weather-run-model";
+
+export interface WeatherVariableManifest {
+  encoding: WeatherEncoding;
+  units: string;
+  domain?: [number, number];
+  palette?: string;
+  imageUnscale?: [number, number];
+  /** forecast-hour (string) → texture URL */
+  files: Record<string, string>;
+}
+
+export interface WeatherManifest {
+  model: string;
+  /** ISO run/cycle time. */
+  run: string;
+  generatedAt?: string;
+  /** [west, south, east, north]. */
+  bounds: number[];
+  grid: { width: number; height: number; res: number };
+  steps: iWeatherStep[];
+  variables: Record<string, WeatherVariableManifest>;
+}
+
+/** Build the texture URL the browser should fetch for a stored texture id. */
+export const textureUrl = (id: string): string => `/api/weather/tex/${id}`;

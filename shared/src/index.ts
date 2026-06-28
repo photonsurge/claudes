@@ -18,5 +18,5 @@ export const NOTIFICATION_SEVERITY = ["success", "info", "warning", "error"] as 
 export type NOTIFICATION_SEVERITY = (typeof NOTIFICATION_SEVERITY)[number];
 
 /** A coarse-grained type for log/target attribution. */
-export const TARGET_TYPE = ["system", "ping", "user", "other"] as const;
+export const TARGET_TYPE = ["system", "ping", "user", "weather", "other"] as const;
 export type TARGET_TYPE = (typeof TARGET_TYPE)[number];

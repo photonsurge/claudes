@@ -103,6 +103,21 @@ process.on("uncaughtException", (err) => {
     { connection: { ...getRedisOptions(), maxRetriesPerRequest: null }, concurrency: 5, stalledInterval: 30_000, maxStalledCount: 2 },
   );
 
+  // ---- Repeatable weather.check job (BullMQ, not node-cron) ----
+  // Enqueues `{ type:"weather", event:"check" }` on RUN_CHECK_CRON. A fixed
+  // jobId de-duplicates the repeat scheduler across restarts.
+  const RUN_CHECK_CRON = process.env.RUN_CHECK_CRON || "*/30 * * * *";
+  try {
+    await myQueue.add(
+      "do",
+      { domain: "weather", type: "weather", event: "check", data: {} },
+      { repeat: { pattern: RUN_CHECK_CRON }, jobId: "weather-check" },
+    );
+    log(TAG, `registered repeatable weather.check`, RUN_CHECK_CRON);
+  } catch (err) {
+    log(TAG, `failed to register weather.check`, summarizeForLog(err));
+  }
+
   // ---- Express HTTP server (health/status probes) ----
   const app = express();
   app.use(express.json());

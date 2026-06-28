@@ -1,0 +1,51 @@
+import { NextResponse } from "next/server";
+import { getAppDb } from "@photonsurge/shared/db/index";
+import { validateCity } from "../../../../lib/cities";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const NO_CACHE = { "Cache-Control": "no-store" };
+
+/** PATCH /api/cities/[id] — update a city (validated). */
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  let body: unknown = {};
+  try {
+    body = await req.json();
+  } catch {
+    /* empty */
+  }
+
+  const result = validateCity(body as Record<string, unknown>);
+  if (!result.ok || !result.value) {
+    return NextResponse.json({ errors: result.errors }, { status: 400 });
+  }
+
+  const db = await getAppDb();
+  const updated = await db.cities.updateByID(id, result.value);
+  if (!updated?.success || !updated.data) {
+    return NextResponse.json(
+      { error: "update failed", errors: updated?.errors },
+      { status: updated?.data === undefined ? 404 : 500 },
+    );
+  }
+  return NextResponse.json({ city: updated.data }, { status: 200, headers: NO_CACHE });
+}
+
+/** DELETE /api/cities/[id]. */
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const db = await getAppDb();
+  const res = await db.cities.deleteByID(id);
+  if (!res?.success) {
+    return NextResponse.json({ error: "delete failed" }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true, id }, { status: 200, headers: NO_CACHE });
+}

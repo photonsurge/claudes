@@ -24,9 +24,9 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      PORT: 4000
+      PORT: 10101
     ports:
-      - "4000:4000"
+      - "10101:10101"
     depends_on: [redis]
     networks: [internal]
 
@@ -35,9 +35,12 @@ services:
       context: .
       dockerfile: worker/Dockerfile
     restart: unless-stopped
+    # Weather pipeline vars (MODEL, FORECAST_HOURS, STEP_HOURS, RUN_CHECK_CRON,
+    # RETAIN_RUNS) flow in via env_file — no structural change needed here.
+    # The Dockerfile provides wgrib2 at runtime.
     env_file: .env
     environment:
-      PORT: 8080
+      PORT: 10102
     depends_on: [mongodb, redis, socket]
     networks: [internal]
 
@@ -48,11 +51,12 @@ services:
       args:
         NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL}
     restart: unless-stopped
+    # Geocoding var (GEOCODER_URL) flows in via env_file — no change needed.
     env_file: .env
     environment:
-      PORT: 3000
+      PORT: 10100
     ports:
-      - "3000:3000"
+      - "10100:10100"
     depends_on: [mongodb, redis, socket]
     networks: [internal]
 
