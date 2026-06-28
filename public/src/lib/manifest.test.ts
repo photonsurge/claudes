@@ -31,7 +31,7 @@ const run: RunLike = {
 
 describe("textureUrl", () => {
   it("maps an id to the tex route", () => {
-    expect(textureUrl("abc123")).toBe("/api/weather/tex/abc123");
+    expect(textureUrl("abc123")).toBe("/api/weather/tex/abc123.png");
   });
 });
 

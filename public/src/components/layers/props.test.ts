@@ -82,6 +82,11 @@ describe("scalarRasterProps", () => {
     expect(p.domain).toEqual([-40, 50]);
     expect(Array.isArray(p.palette)).toBe(true);
     expect(p.palette.length).toBeGreaterThan(0);
+    // Palette stops must be in PHYSICAL units (scaled to domain), not 0..1,
+    // or WeatherLayers clamps every real value to the hottest colour.
+    const stops = p.palette.map(([s]) => s);
+    expect(Math.min(...stops)).toBeCloseTo(-40, 5);
+    expect(Math.max(...stops)).toBeCloseTo(50, 5);
   });
   it("returns null when the variable has no texture for the fhr", () => {
     expect(scalarRasterProps(manifest, "temp", 3)).toBeNull();

@@ -70,9 +70,19 @@ export async function extractField({
 }: ExtractFieldArgs): Promise<Wgrib2Grid> {
   const args: string[] = [gribPath];
   if (match) args.push("-match", match);
-  args.push("-order", "we:ns", "-no_header", "-bin", "-");
+  // `-inv /dev/null` is REQUIRED: without it wgrib2 writes the inventory text to
+  // stdout, mixed into the -bin output, shifting/corrupting every value.
+  args.push("-order", "we:ns", "-no_header", "-inv", "/dev/null", "-bin", "-");
 
   const stdout = await runner(args);
+  // Guard empty/short output (e.g. APCP has no record at f000) so the caller can
+  // skip this field instead of decoding garbage.
+  const expectedBytes = width * height * 4;
+  if (stdout.length < expectedBytes) {
+    throw new Error(
+      `wgrib2: short output (${stdout.length} < ${expectedBytes} bytes) for match=${match ?? "*"}`,
+    );
+  }
   const values = parseRawFloat32(stdout, width, height);
   return { width, height, values };
 }

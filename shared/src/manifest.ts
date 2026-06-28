@@ -28,5 +28,9 @@ export interface WeatherManifest {
   variables: Record<string, WeatherVariableManifest>;
 }
 
-/** Build the texture URL the browser should fetch for a stored texture id. */
-export const textureUrl = (id: string): string => `/api/weather/tex/${id}`;
+/**
+ * Build the texture URL the browser should fetch for a stored texture id.
+ * The `.png` suffix is required so the client's image loader (loaders.gl, via
+ * WeatherLayers) can select the PNG decoder by extension; the route strips it.
+ */
+export const textureUrl = (id: string): string => `/api/weather/tex/${id}.png`;

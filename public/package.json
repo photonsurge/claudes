@@ -1,6 +1,6 @@
 {
   "name": "public",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "scripts": {
     "update-shared": "rm -rf .next/; yarn upgrade @photonsurge/shared",
@@ -13,21 +13,35 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
-    "@deck.gl/core": "^9.1.0",
-    "@deck.gl/extensions": "^9.1.0",
-    "@deck.gl/layers": "^9.1.0",
-    "@deck.gl/mapbox": "^9.1.0",
+    "@deck.gl/core": "9.3.x",
+    "@deck.gl/extensions": "9.3.x",
+    "@deck.gl/layers": "9.3.x",
+    "@deck.gl/mapbox": "9.3.x",
     "@loaders.gl/core": "^4.3.0",
-    "@luma.gl/core": "^9.1.0",
-    "@luma.gl/engine": "^9.1.0",
+    "@luma.gl/core": "9.3.x",
+    "@luma.gl/engine": "9.3.x",
     "@photonsurge/shared": "file:../shared",
-    "geotiff": "^2.1.3",
+    "geotiff": "^3.0.0",
     "maplibre-gl": "^5.0.0",
     "next": "16.2.6",
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "socket.io-client": "^4.8.1",
-    "weatherlayers-gl": "^2024.7.0"
+    "weatherlayers-gl": "^2026.5.2"
+  },
+  "comment": "deck.gl + luma.gl aligned at 9.3.x to match weatherlayers-gl 2026.x (peers ^9.3). deck 9.1+ adds MapLibre globe overlay support so the weather reprojects onto the sphere. resolutions forces every transitive @luma.gl/@deck.gl copy to 9.3.x to avoid shader uniform-block mismatches.",
+  "resolutions": {
+    "@deck.gl/core": "9.3.x",
+    "@deck.gl/layers": "9.3.x",
+    "@deck.gl/mapbox": "9.3.x",
+    "@deck.gl/extensions": "9.3.x",
+    "@deck.gl/aggregation-layers": "9.3.x",
+    "@deck.gl/geo-layers": "9.3.x",
+    "@luma.gl/core": "9.3.x",
+    "@luma.gl/engine": "9.3.x",
+    "@luma.gl/shadertools": "9.3.x",
+    "@luma.gl/constants": "9.3.x",
+    "@luma.gl/webgl": "9.3.x"
   },
   "devDependencies": {
     "@testing-library/dom": "^10",

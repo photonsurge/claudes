@@ -58,7 +58,7 @@ describe("PALETTES", () => {
 });
 
 describe("textureUrl", () => {
-  it("builds the route URL from a texture id", () => {
-    expect(textureUrl("abc")).toBe("/api/weather/tex/abc");
+  it("builds the route URL (with .png so the image loader can select) from a texture id", () => {
+    expect(textureUrl("abc")).toBe("/api/weather/tex/abc.png");
   });
 });

@@ -38,8 +38,14 @@ export interface WindParticleProps {
   imageUnscale: [number, number];
   bounds: Bounds;
   numParticles: number;
+  /** Trail length in frames — the key to streaks instead of static dots. */
+  maxAge: number;
   speedFactor: number;
   width: number;
+  /** Particle colour (RGBA); white reads cleanly on dark/satellite globes. */
+  color: [number, number, number, number];
+  /** Must be true to advect the particles along the wind field. */
+  animate: boolean;
   opacity: number;
   visible: boolean;
 }
@@ -48,7 +54,13 @@ export interface WindParticleProps {
 export function windParticleProps(
   manifest: WeatherManifest,
   fhr: number,
-  opts: { numParticles?: number; speedFactor?: number; width?: number; opacity?: number } = {},
+  opts: {
+    numParticles?: number;
+    maxAge?: number;
+    speedFactor?: number;
+    width?: number;
+    opacity?: number;
+  } = {},
 ): WindParticleProps | null {
   const image = textureUrlFor(manifest, "wind", fhr);
   const entry = manifest.variables.wind;
@@ -58,10 +70,14 @@ export function windParticleProps(
     image,
     imageUnscale: entry.imageUnscale,
     bounds: manifestBounds(manifest),
-    numParticles: opts.numParticles ?? 5000,
-    speedFactor: opts.speedFactor ?? 2,
+    numParticles: opts.numParticles ?? 6000,
+    // nullschool/Windy look: enough trail + speed to read as flow, animated.
+    maxAge: opts.maxAge ?? 30,
+    speedFactor: opts.speedFactor ?? 8,
     width: opts.width ?? 2,
-    opacity: opts.opacity ?? 0.6,
+    color: [255, 255, 255, 255],
+    animate: true,
+    opacity: opts.opacity ?? 0.9,
     visible: true,
   };
 }
@@ -95,11 +111,21 @@ export function scalarRasterProps(
     image,
     imageUnscale: entry.imageUnscale,
     bounds: manifestBounds(manifest),
-    palette: getPalette(paletteId),
+    // WeatherLayers maps the palette against the DECODED physical value, so the
+    // palette stops must be in physical units, not normalised 0..1. Scale the
+    // 0..1 ramp onto the variable's domain (e.g. temp -40..50 °C).
+    palette: scalePaletteToDomain(getPalette(paletteId), domain),
     domain,
     opacity: opts.opacity ?? 0.7,
     visible: true,
   };
+}
+
+/** Map a normalised 0..1 palette onto a physical [min,max] domain. */
+export function scalePaletteToDomain(palette: Palette, domain?: [number, number]): Palette {
+  if (!domain) return palette;
+  const [min, max] = domain;
+  return palette.map(([stop, hex]) => [min + stop * (max - min), hex] as [number, string]);
 }
 
 export interface PressureProps {

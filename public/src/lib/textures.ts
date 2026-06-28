@@ -1,42 +1,45 @@
 /**
  * Texture loading + caching for WeatherLayers.
  *
- * Textures are immutable per run (the URL embeds the texture id), so we cache by
- * URL forever within a page session. WeatherLayers accepts an HTMLImageElement /
- * ImageBitmap as its `image` prop; we load PNGs into ImageBitmap when available,
- * falling back to HTMLImageElement.
+ * WeatherLayers' `image` prop is a `TextureData` ({ data: Uint8Array, width,
+ * height }) — NOT an ImageBitmap. `imageUnscale` (how we decode wind u/v and
+ * scalar values from the PNG bytes) only works on Uint8 TextureData, so we load
+ * via WeatherLayers' own `loadTextureData`, which decodes a PNG URL into that
+ * shape. Textures are immutable per run (the URL embeds the texture id), so we
+ * cache the promise by URL for the page session.
  */
 "use client";
 
-export type LoadedTexture = ImageBitmap | HTMLImageElement;
+// Type-only import is erased at compile time, so this file is safe to evaluate
+// on the server (it's pulled in by server-rendered Timeline/ControlPanel). The
+// actual weatherlayers-gl module references `Worker` at import time and must
+// never load during SSR — so we import it lazily, only in the browser.
+import type { TextureData } from "weatherlayers-gl";
+
+export type LoadedTexture = TextureData;
 
 const cache = new Map<string, Promise<LoadedTexture>>();
 
-async function loadImage(url: string): Promise<LoadedTexture> {
-  const res = await fetch(url, { cache: "force-cache" });
-  if (!res.ok) throw new Error(`texture fetch failed: ${url} (${res.status})`);
-  const blob = await res.blob();
-  if (typeof createImageBitmap === "function") {
-    return createImageBitmap(blob);
+let loaderPromise: Promise<(url: string) => Promise<TextureData>> | null = null;
+function getLoader(): Promise<(url: string) => Promise<TextureData>> {
+  if (!loaderPromise) {
+    loaderPromise = import("weatherlayers-gl").then(
+      (m) => m.loadTextureData as unknown as (url: string) => Promise<TextureData>,
+    );
   }
-  // Fallback for environments without createImageBitmap.
-  return await new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`image decode failed: ${url}`));
-    img.src = URL.createObjectURL(blob);
-  });
+  return loaderPromise;
 }
 
-/** Load (or return cached) texture for a URL. */
+/** Load (or return cached) texture for a URL as WeatherLayers TextureData. */
 export function loadTexture(url: string): Promise<LoadedTexture> {
   let p = cache.get(url);
   if (!p) {
-    p = loadImage(url).catch((err) => {
-      cache.delete(url); // allow retry on failure
-      throw err;
-    });
+    p = getLoader()
+      .then((load) => load(url))
+      .catch((err) => {
+        cache.delete(url); // allow a future retry
+        throw err;
+      });
     cache.set(url, p);
   }
   return p;

@@ -188,39 +188,50 @@ export async function ingest(job: Job) {
     const variables: Record<string, iWeatherVariableEntry> = {};
 
     for (const variable of Object.values(VARIABLE_REGISTRY)) {
-      const entry: iWeatherVariableEntry = {
-        encoding: variable.encoding,
-        units: variable.units,
-        domain: [variable.domain[0], variable.domain[1]],
-        palette: variable.palette,
-        files: {},
-      };
+      // Each variable is independent: a missing field (e.g. APCP/rain has no
+      // record at f000) skips just that variable, it doesn't fail the whole run.
+      try {
+        const entry: iWeatherVariableEntry = {
+          encoding: variable.encoding,
+          units: variable.units,
+          domain: [variable.domain[0], variable.domain[1]],
+          palette: variable.palette,
+          files: {},
+        };
 
-      let prevAccumPath: string | undefined;
-      for (const fhr of forecastSteps(forecastHours, stepHours)) {
-        const baked = await bakeVariableStep(variable, date, cycle, fhr, prevAccumPath, stepHours);
-        tempPaths.push(baked.gribPath);
-        if (variable.gfs.accumulated) prevAccumPath = baked.gribPath;
+        let prevAccumPath: string | undefined;
+        for (const fhr of forecastSteps(forecastHours, stepHours)) {
+          const baked = await bakeVariableStep(variable, date, cycle, fhr, prevAccumPath, stepHours);
+          tempPaths.push(baked.gribPath);
+          if (variable.gfs.accumulated) prevAccumPath = baked.gribPath;
 
-        entry.imageUnscale = baked.imageUnscale;
-        if (baked.encoding === "scalar") entry.domain = baked.domain;
+          entry.imageUnscale = baked.imageUnscale;
+          if (baked.encoding === "scalar") entry.domain = baked.domain;
 
-        const tex = await db.weatherTextures.create({
-          runId,
-          variable: variable.id,
-          fhr,
-          contentType: "image/png",
-          encoding: baked.encoding,
-          data: baked.buffer,
-          byteSize: baked.buffer.byteLength,
-        });
-        if (!tex.success || !tex.data) {
-          throw new Error(`ingest: texture create failed for ${variable.id} f${fhr}`);
+          const tex = await db.weatherTextures.create({
+            runId,
+            variable: variable.id,
+            fhr,
+            contentType: "image/png",
+            encoding: baked.encoding,
+            data: baked.buffer,
+            byteSize: baked.buffer.byteLength,
+          });
+          if (!tex.success || !tex.data) {
+            throw new Error(`ingest: texture create failed for ${variable.id} f${fhr}`);
+          }
+          entry.files[String(fhr)] = tex.data.id;
         }
-        entry.files[String(fhr)] = tex.data.id;
-      }
 
-      variables[variable.id] = entry;
+        if (Object.keys(entry.files).length > 0) variables[variable.id] = entry;
+      } catch (varErr) {
+        log(TAG, "ingest: variable skipped", { variable: variable.id, err: String(varErr) });
+        await db.weatherTextures.deleteMany({ runId, variable: variable.id }).catch(() => {});
+      }
+    }
+
+    if (Object.keys(variables).length === 0) {
+      throw new Error("ingest: no variables baked (all fields failed)");
     }
 
     // Atomic publish: published flips LAST, only after every texture exists.

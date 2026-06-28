@@ -32,5 +32,16 @@ describe("extractField", () => {
     expect(args).toContain("-bin");
     expect(args).toContain("-match");
     expect(args).toContain(":TMP:");
+    // Inventory MUST be suppressed or it corrupts the binary stream.
+    const inv = args.indexOf("-inv");
+    expect(inv).toBeGreaterThanOrEqual(0);
+    expect(args[inv + 1]).toBe("/dev/null");
+  });
+
+  it("throws on short/empty output (e.g. APCP missing at f000)", async () => {
+    const runner = jest.fn().mockResolvedValue(Buffer.alloc(0));
+    await expect(
+      extractField({ gribPath: "/x.grib2", match: ":APCP:", width: 4, height: 4, runner }),
+    ).rejects.toThrow(/short output/);
   });
 });
