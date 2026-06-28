@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Build everything: the shared lib first, then all Docker images.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+echo "==> Building @photonsurge/shared"
+( cd shared && yarn install && yarn build )
+
+echo "==> Building Docker images"
+docker compose build
+
+echo "==> Done."

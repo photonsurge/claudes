@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Rebuild @photonsurge/shared and refresh it inside every dependent package.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+echo "==> Building shared"
+( cd shared && yarn build )
+
+for pkg in worker socket public; do
+  echo "==> Refreshing shared in $pkg"
+  ( cd "$pkg" && yarn upgrade @photonsurge/shared )
+done
+
+echo "==> Done."

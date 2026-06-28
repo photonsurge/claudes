@@ -1,0 +1,25 @@
+import { NextResponse } from "next/server";
+import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue";
+
+export const dynamic = "force-dynamic";
+
+const DOMAIN = process.env.APP_DOMAIN || "default";
+
+/**
+ * Sample feature entrypoint. Enqueues a "ping" job; the worker processes it,
+ * persists a record, and emits "ping:done" via the socket server, which the
+ * browser receives over its live socket connection.
+ */
+export async function POST(req: Request) {
+  let message = "ping";
+  try {
+    const body = await req.json();
+    if (typeof body?.message === "string" && body.message.trim()) message = body.message.trim();
+  } catch {
+    // empty body is fine
+  }
+
+  const job = await sendToQueue(DOMAIN, "ping", "create", { message }, undefined, QUEUE_PRIORITY.HIGH);
+
+  return NextResponse.json({ ok: true, jobId: job.id, message });
+}

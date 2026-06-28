@@ -1,0 +1,65 @@
+services:
+  mongodb:
+    image: mongo:8
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    volumes:
+      - mongo-data:/data/db
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis-data:/data
+    networks: [internal]
+
+  socket:
+    build:
+      context: .
+      dockerfile: socket/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: 4000
+    ports:
+      - "4000:4000"
+    depends_on: [redis]
+    networks: [internal]
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: 8080
+    depends_on: [mongodb, redis, socket]
+    networks: [internal]
+
+  public:
+    build:
+      context: .
+      dockerfile: public/Dockerfile
+      args:
+        NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on: [mongodb, redis, socket]
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  mongo-data:
+  redis-data:

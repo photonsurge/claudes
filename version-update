@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUMP="patch"
+ALL_PACKAGES=(shared public worker socket)
+FILTER=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -m|--minor) BUMP="minor" ;;
+    --help|-h)
+      echo "Usage: ./version-update [-m] [package] [--help]"
+      echo ""
+      echo "Bumps the version in package.json for one or all packages."
+      echo ""
+      echo "Options:"
+      echo "  -m, --minor   Bump minor version (default: patch)"
+      echo "  package       One of: shared public worker socket"
+      echo "  --help        Show this help"
+      exit 0
+      ;;
+    *)
+      FILTER="$1"
+      ;;
+  esac
+  shift
+done
+
+# Build the list of packages to bump
+PACKAGES=()
+if [[ -n "$FILTER" ]]; then
+  for pkg in "${ALL_PACKAGES[@]}"; do
+    if [[ "$pkg" == "$FILTER" ]]; then
+      PACKAGES+=("$pkg")
+    fi
+  done
+  if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+    echo "ERROR: Unknown package '${FILTER}'. Valid: ${ALL_PACKAGES[*]}"
+    exit 1
+  fi
+else
+  PACKAGES=("${ALL_PACKAGES[@]}")
+fi
+
+bump_version() {
+  local version="$1"
+  IFS='.' read -r major minor patch <<< "$version"
+  case "$BUMP" in
+    patch) echo "${major}.${minor}.$((patch + 1))" ;;
+    minor) echo "${major}.$((minor + 1)).0" ;;
+  esac
+}
+
+target="${FILTER:-all packages}"
+echo "==> Bumping ${BUMP} version for ${target}..."
+echo ""
+
+for pkg in "${PACKAGES[@]}"; do
+  pkg_json="$REPO_ROOT/$pkg/package.json"
+  if [[ ! -f "$pkg_json" ]]; then
+    echo "  [${pkg}] No package.json — skipping."
+    continue
+  fi
+
+  current="$(node -p "require('${pkg_json}').version" 2>/dev/null || true)"
+  if [[ -z "$current" ]]; then
+    echo "  [${pkg}] No version field — skipping."
+    continue
+  fi
+
+  next="$(bump_version "$current")"
+
+  node -e "
+    const fs = require('fs');
+    const pkg = JSON.parse(fs.readFileSync('${pkg_json}', 'utf8'));
+    pkg.version = '${next}';
+    fs.writeFileSync('${pkg_json}', JSON.stringify(pkg, null, 2) + '\n');
+  "
+
+  echo "  [${pkg}] ${current} → ${next}"
+done
+
+echo ""
+echo "Done. ${BUMP} bump complete."

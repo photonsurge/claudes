@@ -1,0 +1,10 @@
+# Keep build contexts lean and deterministic
+**/node_modules
+**/dist
+**/.next
+**/.git
+**/*.md
+**/.env*
+!**/.env.sample
+**/*.log
+**/.DS_Store
