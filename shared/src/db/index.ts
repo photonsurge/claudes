@@ -16,7 +16,9 @@ import { makeQuakeRepo } from "./quake-repo";
 import { getAircraftMetaModel, iAircraftMetaModel } from "./aircraft-meta-model";
 import { getLogModel } from "./log-model";
 import { getBroadcastStateModel, BROADCAST_STATE_ID } from "./broadcast-state-model";
+import { getDirectorConfigModel } from "./director-config-model";
 import { DEFAULT_CONTROL_STATE, MAIN_SCENE_ID } from "../control";
+import { DEFAULT_DIRECTOR_CONFIG, mergeDirectorConfig } from "../director";
 
 /** Sample entity for the ping demo feature. Replace/extend with real models. */
 export interface iPing extends iEntity {
@@ -34,6 +36,7 @@ export interface iPing extends iEntity {
 export function createDb(conn: Connection) {
   const weatherRuns = mongoCrud<iWeatherRunModel>(getWeatherRunModel(conn));
   const broadcastState = mongoCrud(getBroadcastStateModel(conn));
+  const directorConfig = mongoCrud(getDirectorConfigModel(conn));
 
   return {
     conn,
@@ -48,6 +51,7 @@ export function createDb(conn: Connection) {
     aircraftMeta: mongoCrud<iAircraftMetaModel>(getAircraftMetaModel(conn)),
     logs: mongoCrud(getLogModel(conn)),
     broadcastState,
+    directorConfig,
 
     /** Latest published run (the one the browser should render), or null. */
     async latestPublishedRun() {
@@ -67,6 +71,34 @@ export function createDb(conn: Connection) {
         name: "Main",
       } as any);
       return created.data ?? null;
+    },
+
+    /**
+     * Director config for one scene (one doc per scene id), seeded if absent.
+     * Per-scene so any scene can be auto-piloted while others stay manual.
+     */
+    async getOrInitDirectorConfig(sceneId: string) {
+      const existing = await directorConfig.getByID(sceneId);
+      if (existing.success && existing.data) {
+        return mergeDirectorConfig(DEFAULT_DIRECTOR_CONFIG, existing.data as any);
+      }
+      await directorConfig.upsertByID(sceneId, { ...DEFAULT_DIRECTOR_CONFIG } as any);
+      return { ...DEFAULT_DIRECTOR_CONFIG };
+    },
+
+    /** Persist a merged director-config patch for a scene; returns the merged config. */
+    async saveDirectorConfig(sceneId: string, patch: Record<string, unknown>) {
+      const current = await this.getOrInitDirectorConfig(sceneId);
+      const merged = mergeDirectorConfig(current, patch as any);
+      await directorConfig.upsertByID(sceneId, merged as any);
+      return merged;
+    },
+
+    /** Scene ids that currently have the director set to "auto". */
+    async autoDirectorScenes(): Promise<string[]> {
+      const res = await directorConfig.getAll({ mode: "auto" }, { limit: 0 });
+      const rows = (res.success && res.data ? res.data : []) as { id: string }[];
+      return rows.map((r) => r.id);
     },
 
     /**
