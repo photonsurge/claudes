@@ -60,6 +60,8 @@ export function windParticleProps(
     speedFactor?: number;
     width?: number;
     opacity?: number;
+    /** Particle colour as a hex string (`#rrggbb`); defaults to white. */
+    color?: string;
   } = {},
 ): WindParticleProps | null {
   const image = textureUrlFor(manifest, "wind", fhr);
@@ -75,11 +77,25 @@ export function windParticleProps(
     maxAge: opts.maxAge ?? 30,
     speedFactor: opts.speedFactor ?? 8,
     width: opts.width ?? 2,
-    color: [255, 255, 255, 255],
+    color: hexToRgba(opts.color),
     animate: true,
     opacity: opts.opacity ?? 0.9,
     visible: true,
   };
+}
+
+/**
+ * Parse a `#rrggbb` (or `#rgb`) hex string into an opaque RGBA tuple. Falls back
+ * to white on anything unparseable so the particle layer always renders. Pure.
+ */
+export function hexToRgba(hex?: string): [number, number, number, number] {
+  const white: [number, number, number, number] = [255, 255, 255, 255];
+  if (!hex) return white;
+  let h = hex.trim().replace(/^#/, "");
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return white;
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 255];
 }
 
 export interface ScalarRasterProps {
@@ -135,6 +151,11 @@ export interface PressureProps {
     imageUnscale: [number, number] | undefined;
     bounds: Bounds;
     interval: number;
+    /** Thicker, emphasised isobars every N hPa. */
+    majorInterval: number;
+    width: number;
+    /** Colour isobars by pressure value (lows cool, highs warm). */
+    palette: Palette;
   };
   highLow: {
     id: string;
@@ -142,6 +163,9 @@ export interface PressureProps {
     imageUnscale: [number, number] | undefined;
     bounds: Bounds;
     radius: number;
+    palette: Palette;
+    textColor: [number, number, number, number];
+    textOutlineColor: [number, number, number, number];
   };
 }
 
@@ -149,11 +173,16 @@ export interface PressureProps {
 export function pressureProps(
   manifest: WeatherManifest,
   fhr: number,
-  opts: { interval?: number; radius?: number } = {},
+  opts: { interval?: number; majorInterval?: number; radius?: number } = {},
 ): PressureProps | null {
   const image = textureUrlFor(manifest, "pressure", fhr);
   const entry = manifest.variables.pressure;
   if (!image || !entry) return null;
+  const meta = getVariable("pressure");
+  const domain = entry.domain ?? meta?.domain;
+  // WeatherLayers maps the palette against the DECODED hPa value, so scale the
+  // 0..1 ramp onto the pressure domain (e.g. 950..1050 hPa).
+  const palette = scalePaletteToDomain(getPalette("pressure"), domain);
   const bounds = manifestBounds(manifest);
   return {
     contour: {
@@ -162,6 +191,9 @@ export function pressureProps(
       imageUnscale: entry.imageUnscale,
       bounds,
       interval: opts.interval ?? 4,
+      majorInterval: opts.majorInterval ?? 20,
+      width: 1,
+      palette,
     },
     highLow: {
       id: `pressure-highlow-${fhr}`,
@@ -169,6 +201,9 @@ export function pressureProps(
       imageUnscale: entry.imageUnscale,
       bounds,
       radius: opts.radius ?? 2_000_000,
+      palette,
+      textColor: [255, 255, 255, 255],
+      textOutlineColor: [0, 0, 0, 255],
     },
   };
 }

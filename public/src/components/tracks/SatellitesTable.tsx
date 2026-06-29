@@ -15,7 +15,7 @@ export default function SatellitesTable() {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listSatellites(group, 3000);
+      const res = await listSatellites(group, 100000);
       setSats(res.satellites);
       setAt(res.at);
     } finally {

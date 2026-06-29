@@ -9,7 +9,7 @@
  * (refetch manifest / cities). Old textures are kept until new ones load by the
  * Globe's texture cache (no flash).
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import {
   CONTROL_STATE,
@@ -24,24 +24,29 @@ import { fetchBroadcastState } from "../../lib/control";
 import { fetchManifest } from "../../lib/manifest";
 import { listCities, type City } from "../../lib/cities";
 import { useTracks } from "../../lib/tracks/useTracks";
-import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
+import { useAlertFeatures } from "../../lib/alerts-overlay";
+import { useQuakes } from "../../lib/seismic-overlay";
+import GlobeView from "../../components/GlobeView";
 
 export default function WatchPage() {
   const { socket } = useSocket();
   const [state, setState] = useState<ControlState>(DEFAULT_CONTROL_STATE);
   const [manifest, setManifest] = useState<WeatherManifest | null>(null);
   const [cities, setCities] = useState<City[]>([]);
-  const [ready, setReady] = useState(false);
-  const globe = useRef<GlobeHandle | null>(null);
 
-  const tracks = useTracks({
+  const { tracks, orbits, trails } = useTracks({
     showSatellites: state.showSatellites,
     showAircraft: state.showAircraft,
     showShips: state.showShips,
+    showOrbits: state.showOrbits,
+    showTrails: state.showTrails,
+    trailMinutes: state.trailMinutes,
     satelliteGroup: state.satelliteGroup,
     center: state.camera.center,
     zoom: state.camera.zoom,
   });
+  const alerts = useAlertFeatures(state.showAlerts, state.alertSeverityMin);
+  const quakes = useQuakes(state.showSeismic, state.seismicMinMag);
 
   // Cold start.
   useEffect(() => {
@@ -56,7 +61,6 @@ export default function WatchPage() {
       setState(s);
       setManifest(m);
       setCities(c);
-      setReady(true);
     })();
     return () => {
       cancelled = true;
@@ -81,14 +85,12 @@ export default function WatchPage() {
     };
   }, [socket]);
 
-  // Apply operator camera changes to the map.
-  useEffect(() => {
-    if (ready) globe.current?.flyTo(state.camera.center, state.camera.zoom);
-  }, [ready, state.camera.center, state.camera.zoom]);
+  // Camera follows the operator via the Globe's internal "Follow external
+  // camera" effect (driven by state.camera) — no manual flyTo needed here.
 
   return (
     <main style={{ position: "fixed", inset: 0, background: "#0a0e16", overflow: "hidden" }}>
-      <GlobeView ref={globe} state={state} manifest={manifest} cities={cities} tracks={tracks} interactive={false} />
+      <GlobeView state={state} manifest={manifest} cities={cities} tracks={tracks} orbits={orbits} trails={trails} alerts={alerts} quakes={quakes} interactive={false} />
       <div
         style={{
           position: "absolute",

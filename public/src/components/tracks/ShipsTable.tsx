@@ -5,8 +5,10 @@ import { listShips } from "../../lib/tracks/client";
 import type { Ship } from "../../lib/tracks/types";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "./styles";
 
-// [w, s, e, n] regions for the AIS bounding-box subscription.
-const REGIONS: { id: string; label: string; bbox: [number, number, number, number] }[] = [
+// [w, s, e, n] regions for the AIS bounding-box subscription. "World" (no bbox)
+// returns every vessel the worker cached.
+const REGIONS: { id: string; label: string; bbox?: [number, number, number, number] }[] = [
+  { id: "world", label: "World", },
   { id: "channel", label: "Channel & N. Sea", bbox: [-6, 49, 6, 54] },
   { id: "med", label: "W. Mediterranean", bbox: [-6, 35, 16, 44] },
   { id: "singapore", label: "Singapore Strait", bbox: [103, 1, 105, 2] },
@@ -14,7 +16,7 @@ const REGIONS: { id: string; label: string; bbox: [number, number, number, numbe
 ];
 
 export default function ShipsTable() {
-  const [region, setRegion] = useState("channel");
+  const [region, setRegion] = useState("world");
   const [rows, setRows] = useState<Ship[]>([]);
   const [at, setAt] = useState<string | null>(null);
   const [configured, setConfigured] = useState(true);
@@ -25,7 +27,7 @@ export default function ShipsTable() {
     setLoading(true);
     setNote(null);
     try {
-      const bbox = REGIONS.find((r) => r.id === region)!.bbox;
+      const bbox = REGIONS.find((r) => r.id === region)?.bbox;
       const res = await listShips(bbox);
       setRows(res.ships);
       setAt(res.at ?? null);

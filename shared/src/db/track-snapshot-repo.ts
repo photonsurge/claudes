@@ -1,0 +1,140 @@
+import type { Model } from "mongoose";
+import type { iTrackSnapshot, iTrackSnapshotModel, TrackSnapshotKind } from "./track-snapshot-model";
+
+const strip = (doc: any): iTrackSnapshotModel => {
+  const { __v, _id, ...rest } = doc;
+  return rest as iTrackSnapshotModel;
+};
+
+/**
+ * Snapshot history persistence + replay reads. `record` writes one frame's worth
+ * of positions; `batches` lists frame timestamps in a window (the scrubber);
+ * `atBatch` returns the positions of a single frame.
+ */
+export function makeTrackSnapshotRepo(model: Model<iTrackSnapshotModel>) {
+  return {
+    model,
+
+    /** Insert one batch (frame) of snapshots. Fills the GeoJSON `loc` from lng/lat. */
+    async record(snaps: iTrackSnapshot[]): Promise<number> {
+      if (!snaps.length) return 0;
+      const docs = snaps.map((s) => ({
+        ...s,
+        loc: { type: "Point" as const, coordinates: [s.lng, s.lat] as [number, number] },
+      }));
+      const res = await model.insertMany(docs, { ordered: false });
+      return res.length;
+    },
+
+    /** Distinct frame timestamps (newest first) within [from, to]. */
+    async batches(opts: { from?: Date; to?: Date; kind?: TrackSnapshotKind; limit?: number } = {}): Promise<string[]> {
+      const q: Record<string, unknown> = {};
+      if (opts.kind) q.kind = opts.kind;
+      if (opts.from || opts.to) {
+        q.batchAt = {
+          ...(opts.from ? { $gte: opts.from } : {}),
+          ...(opts.to ? { $lte: opts.to } : {}),
+        };
+      }
+      const times: Date[] = await model.distinct("batchAt", q);
+      return times
+        .map((d) => new Date(d).toISOString())
+        .sort()
+        .reverse()
+        .slice(0, opts.limit ?? 500);
+    },
+
+    /** All snapshots in one frame, optionally filtered by kind/bbox. */
+    async atBatch(
+      batchAt: Date,
+      opts: { kind?: TrackSnapshotKind; bbox?: [number, number, number, number]; limit?: number } = {},
+    ): Promise<iTrackSnapshotModel[]> {
+      const q: Record<string, unknown> = { batchAt };
+      if (opts.kind) q.kind = opts.kind;
+      if (opts.bbox) {
+        const [w, s, e, n] = opts.bbox;
+        q.loc = {
+          $geoWithin: { $geometry: { type: "Polygon", coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] } },
+        };
+      }
+      const docs = await model.find(q).limit(opts.limit ?? 5000).lean().exec();
+      return docs.map(strip);
+    },
+
+    /**
+     * The most-recent frame for a kind (the live cache the public routes read),
+     * with its `batchAt` so the client can dead-reckon positions forward from it.
+     * Optionally clipped to a bbox.
+     */
+    async latest(opts: {
+      kind: TrackSnapshotKind;
+      bbox?: [number, number, number, number];
+      limit?: number;
+    }): Promise<{ at: Date | null; rows: iTrackSnapshotModel[] }> {
+      const newest = await model
+        .findOne({ kind: opts.kind })
+        .sort({ batchAt: -1 })
+        .select("batchAt")
+        .lean()
+        .exec();
+      if (!newest) return { at: null, rows: [] };
+      const at = new Date((newest as { batchAt: Date }).batchAt);
+
+      const q: Record<string, unknown> = { kind: opts.kind, batchAt: at };
+      if (opts.bbox) {
+        const [w, s, e, n] = opts.bbox;
+        q.loc = {
+          $geoWithin: { $geometry: { type: "Polygon", coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] } },
+        };
+      }
+      // limit 0 = no cap (Mongo) — return the whole frame for the live overlay.
+      const docs = await model.find(q).limit(opts.limit ?? 0).lean().exec();
+      return { at, rows: docs.map(strip) };
+    },
+
+    /**
+     * Per-track trailing paths within [from, now]: one polyline per externalId,
+     * positions ordered oldest→newest. Aggregated in Mongo so we ship one line
+     * per track (not every raw frame) — the source for the live trails overlay.
+     * Only tracks with ≥2 points are returned (a single point can't draw a line).
+     */
+    async paths(opts: {
+      from: Date;
+      kind?: TrackSnapshotKind;
+      maxTracks?: number;
+    }): Promise<Array<{ externalId: string; kind: TrackSnapshotKind; name?: string; path: [number, number][] }>> {
+      const match: Record<string, unknown> = { batchAt: { $gte: opts.from } };
+      if (opts.kind) match.kind = opts.kind;
+      const rows = await model
+        .aggregate([
+          { $match: match },
+          { $sort: { batchAt: 1 } },
+          {
+            $group: {
+              _id: "$externalId",
+              kind: { $first: "$kind" },
+              name: { $last: "$name" },
+              // Push an object per point; $push won't take a 2-element array
+              // literal (Mongo reads it as multiple operator args).
+              pts: { $push: { lng: "$lng", lat: "$lat" } },
+            },
+          },
+          { $match: { "pts.1": { $exists: true } } },
+          { $limit: opts.maxTracks ?? 5000 },
+        ])
+        .exec();
+      return rows.map((r: any) => ({
+        externalId: r._id as string,
+        kind: r.kind as TrackSnapshotKind,
+        name: (r.name as string) ?? undefined,
+        path: (r.pts as { lng: number; lat: number }[]).map((p) => [p.lng, p.lat] as [number, number]),
+      }));
+    },
+
+    async count(): Promise<number> {
+      return model.estimatedDocumentCount();
+    },
+  };
+}
+
+export type TrackSnapshotRepo = ReturnType<typeof makeTrackSnapshotRepo>;

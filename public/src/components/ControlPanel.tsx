@@ -7,6 +7,7 @@
 import type { ControlState } from "@photonsurge/shared/control";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { SATELLITE_GROUPS } from "../lib/tracks/celestrak";
+import { severityLabel } from "../lib/alerts";
 import VariablePicker from "./VariablePicker";
 import BasemapPicker from "./BasemapPicker";
 import BasemapColorPicker from "./BasemapColorPicker";
@@ -105,6 +106,138 @@ export default function ControlPanel({
             </select>
           )}
         </div>
+        {(state.showSatellites || state.showAircraft || state.showShips) && (
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+            <Toggle
+              label="Labels"
+              checked={state.showTrackLabels}
+              onChange={(showTrackLabels) => patch({ showTrackLabels })}
+            />
+            {state.showSatellites && (
+              <Toggle
+                label="Orbit rings"
+                checked={state.showOrbits}
+                onChange={(showOrbits) => patch({ showOrbits })}
+              />
+            )}
+            {(state.showAircraft || state.showShips) && (
+              <Toggle
+                label="Trails"
+                checked={state.showTrails}
+                onChange={(showTrails) => patch({ showTrails })}
+              />
+            )}
+            {(state.showAircraft || state.showShips) && state.showTrails && (
+              <label
+                style={{ display: "flex", gap: 6, alignItems: "center", color: "#8b95a7", fontSize: 12 }}
+              >
+                Length
+                <select
+                  value={state.trailMinutes}
+                  onChange={(e) => patch({ trailMinutes: Number(e.target.value) })}
+                  aria-label="Trail length"
+                  style={{
+                    background: "#1a1f2b",
+                    color: "#fff",
+                    border: "1px solid #333",
+                    borderRadius: 5,
+                    padding: "4px 6px",
+                    fontSize: 12,
+                  }}
+                >
+                  {[15, 30, 60, 120, 180].map((m) => (
+                    <option key={m} value={m}>
+                      {m < 60 ? `${m}m` : `${m / 60}h`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {(state.showAircraft || state.showShips) && state.showTrails && (
+              <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#8b95a7", fontSize: 12 }}>
+                Opacity
+                <input
+                  type="range"
+                  min={0.05}
+                  max={1}
+                  step={0.05}
+                  value={state.trailOpacity}
+                  onChange={(e) => patch({ trailOpacity: Number(e.target.value) })}
+                  aria-label="Trail opacity"
+                />
+                <span style={{ color: "#fff", width: 30, textAlign: "right" }}>
+                  {Math.round(state.trailOpacity * 100)}%
+                </span>
+              </label>
+            )}
+          </div>
+        )}
+      </Section>
+
+      <Section title="Alerts">
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <Toggle
+            label="Show alerts"
+            checked={state.showAlerts}
+            onChange={(showAlerts) => patch({ showAlerts })}
+          />
+          {state.showAlerts && (
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#8b95a7", fontSize: 12 }}>
+              Min severity
+              <select
+                value={state.alertSeverityMin}
+                onChange={(e) => patch({ alertSeverityMin: Number(e.target.value) })}
+                aria-label="Alert min severity"
+                style={{
+                  background: "#1a1f2b",
+                  color: "#fff",
+                  border: "1px solid #333",
+                  borderRadius: 5,
+                  padding: "4px 6px",
+                }}
+              >
+                {[0, 1, 2, 3, 4].map((r) => (
+                  <option key={r} value={r}>
+                    {r} — {severityLabel(r as 0)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+      </Section>
+
+      <Section title="Seismic">
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <Toggle
+            label="Earthquakes"
+            checked={state.showSeismic}
+            onChange={(showSeismic) => patch({ showSeismic })}
+          />
+          {state.showSeismic && (
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#8b95a7", fontSize: 12 }}>
+              Min magnitude
+              <select
+                value={state.seismicMinMag}
+                onChange={(e) => patch({ seismicMinMag: Number(e.target.value) })}
+                aria-label="Seismic min magnitude"
+                style={{
+                  background: "#1a1f2b",
+                  color: "#fff",
+                  border: "1px solid #333",
+                  borderRadius: 5,
+                  padding: "4px 6px",
+                }}
+              >
+                {[0, 1, 2.5, 4, 4.5, 5, 6].map((m) => (
+                  <option key={m} value={m}>
+                    M{m.toFixed(1)}+
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
       </Section>
 
       <Section title="Timeline">
@@ -136,7 +269,8 @@ export default function ControlPanel({
           <Toggle
             label="Auto-spin"
             checked={state.autoSpin}
-            onChange={(autoSpin) => patch({ autoSpin })}
+            // Stamp the spin epoch on enable so /control + /watch share the phase.
+            onChange={(autoSpin) => patch(autoSpin ? { autoSpin, spinEpoch: Date.now() } : { autoSpin })}
           />
           {state.autoSpin && (
             <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#8b95a7", fontSize: 12 }}>
@@ -193,7 +327,7 @@ function Toggle({
     <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#fff", fontSize: 13 }}>
       <input
         type="checkbox"
-        checked={checked}
+        checked={!!checked}
         onChange={(e) => onChange(e.target.checked)}
         aria-label={label}
       />

@@ -58,6 +58,29 @@ export interface Ship {
   headingDeg?: number;
 }
 
+/**
+ * A seismic event (earthquake). Point-in-time, not a moving track — sized by
+ * magnitude and coloured by depth on the overlay rather than dead-reckoned.
+ */
+export interface Quake {
+  /** USGS event id (e.g. "us7000abcd"). */
+  id: string;
+  /** Richter/moment magnitude. */
+  mag: number;
+  /** Human-readable location, e.g. "12km SSW of …". */
+  place?: string;
+  /** Event time, epoch ms (USGS reports ms). */
+  time: number;
+  lng: number;
+  lat: number;
+  /** Hypocentre depth, km. */
+  depthKm: number;
+  /** USGS event page. */
+  url?: string;
+  /** Whether USGS flagged tsunami potential. */
+  tsunami?: boolean;
+}
+
 /** A generic moving entity for the overlay layer. */
 export interface Track {
   id: string;

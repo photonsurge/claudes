@@ -12,6 +12,8 @@
 export const CONTROL_STATE = "control:state" as const;
 export const WEATHER_RUN = "weather:run" as const;
 export const CITIES_UPDATED = "cities:updated" as const;
+/** Worker → browser: a new aircraft/ship snapshot frame was recorded. */
+export const TRACKS_UPDATED = "tracks:updated" as const;
 
 export type WindUnit = "kt" | "m/s";
 export type TempUnit = "C" | "F";
@@ -45,6 +47,10 @@ export interface WindSettings {
   /** Trail length in frames (higher = longer streaks). */
   maxAge: number;
   width: number;
+  /** Layer opacity 0..1. Live-adjustable without restarting the particles. */
+  opacity: number;
+  /** Particle colour as a hex string (`#rrggbb`). Live-adjustable. */
+  color: string;
 }
 
 export const DEFAULT_WIND_SETTINGS: WindSettings = {
@@ -52,14 +58,16 @@ export const DEFAULT_WIND_SETTINGS: WindSettings = {
   speedFactor: 8,
   maxAge: 30,
   width: 2,
+  opacity: 0.9,
+  color: "#ffffff",
 };
 
 /** Named looks for quick on-air changes. */
 export const WIND_PRESETS: Record<string, WindSettings> = {
-  calm: { numParticles: 3000, speedFactor: 4, maxAge: 45, width: 1.5 },
+  calm: { numParticles: 3000, speedFactor: 4, maxAge: 45, width: 1.5, opacity: 0.9, color: "#ffffff" },
   default: { ...DEFAULT_WIND_SETTINGS },
-  dense: { numParticles: 12000, speedFactor: 8, maxAge: 25, width: 1.4 },
-  storm: { numParticles: 9000, speedFactor: 16, maxAge: 16, width: 2.5 },
+  dense: { numParticles: 12000, speedFactor: 8, maxAge: 25, width: 1.4, opacity: 0.9, color: "#ffffff" },
+  storm: { numParticles: 9000, speedFactor: 16, maxAge: 16, width: 2.5, opacity: 1, color: "#cfe8ff" },
 };
 
 /** How the wind field is drawn. */
@@ -106,6 +114,30 @@ export interface ControlState {
   autoSpin: boolean;
   /** Spin speed in degrees per second. */
   spinSpeed: number;
+  /**
+   * Wall-clock ms when the current spin anchor was set. Both /control and /watch
+   * compute longitude = camera.center[0] + spinSpeed*(now-spinEpoch)/1000, so
+   * they rotate in phase from the same anchor with no per-frame socket traffic.
+   */
+  spinEpoch: number;
+  /** Show name labels on the live-track overlay (decluttered). */
+  showTrackLabels: boolean;
+  /** Draw satellite orbit rings (one period each). */
+  showOrbits: boolean;
+  /** Draw recent trailing routes behind aircraft/ships (from recorded history). */
+  showTrails: boolean;
+  /** Trail length in minutes of recorded history. */
+  trailMinutes: number;
+  /** Trail line opacity (0–1). Low by default so dense traffic stays readable. */
+  trailOpacity: number;
+  /** Overlay active weather-alert areas (polygons) on the globe. */
+  showAlerts: boolean;
+  /** Only show alerts at/above this severityRank (0–4). */
+  alertSeverityMin: number;
+  /** Overlay recent earthquakes (USGS) on the globe. */
+  showSeismic: boolean;
+  /** Only show quakes at/above this magnitude. */
+  seismicMinMag: number;
 }
 
 export const DEFAULT_CONTROL_STATE: ControlState = {
@@ -128,6 +160,16 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   satelliteGroup: "visual",
   autoSpin: false,
   spinSpeed: 8,
+  spinEpoch: 0,
+  showTrackLabels: false,
+  showOrbits: false,
+  showTrails: false,
+  trailMinutes: 30,
+  trailOpacity: 0.35,
+  showAlerts: false,
+  alertSeverityMin: 0,
+  showSeismic: false,
+  seismicMinMag: 2.5,
 };
 
 /**
@@ -171,6 +213,8 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
         patch.wind?.speedFactor ?? base.wind?.speedFactor ?? DEFAULT_WIND_SETTINGS.speedFactor,
       maxAge: patch.wind?.maxAge ?? base.wind?.maxAge ?? DEFAULT_WIND_SETTINGS.maxAge,
       width: patch.wind?.width ?? base.wind?.width ?? DEFAULT_WIND_SETTINGS.width,
+      opacity: patch.wind?.opacity ?? base.wind?.opacity ?? DEFAULT_WIND_SETTINGS.opacity,
+      color: patch.wind?.color ?? base.wind?.color ?? DEFAULT_WIND_SETTINGS.color,
     },
     windMode: patch.windMode ?? base.windMode ?? "particles",
     showContours:
@@ -184,5 +228,24 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     satelliteGroup: patch.satelliteGroup ?? base.satelliteGroup ?? "visual",
     autoSpin: typeof patch.autoSpin === "boolean" ? patch.autoSpin : base.autoSpin ?? false,
     spinSpeed: typeof patch.spinSpeed === "number" ? patch.spinSpeed : base.spinSpeed ?? 8,
+    spinEpoch: typeof patch.spinEpoch === "number" ? patch.spinEpoch : base.spinEpoch ?? 0,
+    showTrackLabels:
+      typeof patch.showTrackLabels === "boolean"
+        ? patch.showTrackLabels
+        : base.showTrackLabels ?? false,
+    showOrbits: typeof patch.showOrbits === "boolean" ? patch.showOrbits : base.showOrbits ?? false,
+    showTrails: typeof patch.showTrails === "boolean" ? patch.showTrails : base.showTrails ?? false,
+    trailMinutes:
+      typeof patch.trailMinutes === "number" ? patch.trailMinutes : base.trailMinutes ?? 30,
+    trailOpacity:
+      typeof patch.trailOpacity === "number" ? patch.trailOpacity : base.trailOpacity ?? 0.35,
+    showAlerts: typeof patch.showAlerts === "boolean" ? patch.showAlerts : base.showAlerts ?? false,
+    alertSeverityMin:
+      typeof patch.alertSeverityMin === "number"
+        ? patch.alertSeverityMin
+        : base.alertSeverityMin ?? 0,
+    showSeismic: typeof patch.showSeismic === "boolean" ? patch.showSeismic : base.showSeismic ?? false,
+    seismicMinMag:
+      typeof patch.seismicMinMag === "number" ? patch.seismicMinMag : base.seismicMinMag ?? 2.5,
   };
 }

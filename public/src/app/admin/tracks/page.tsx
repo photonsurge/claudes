@@ -9,12 +9,14 @@ import { useState } from "react";
 import SatellitesTable from "../../../components/tracks/SatellitesTable";
 import AircraftTable from "../../../components/tracks/AircraftTable";
 import ShipsTable from "../../../components/tracks/ShipsTable";
+import ReplayPanel from "../../../components/tracks/ReplayPanel";
 
-type Tab = "satellites" | "aircraft" | "ships";
+type Tab = "satellites" | "aircraft" | "ships" | "replay";
 const TABS: { id: Tab; label: string }[] = [
   { id: "satellites", label: "Satellites" },
   { id: "aircraft", label: "Aircraft" },
   { id: "ships", label: "Ships" },
+  { id: "replay", label: "Replay" },
 ];
 
 export default function TracksPage() {
@@ -51,6 +53,7 @@ export default function TracksPage() {
         {tab === "satellites" && <SatellitesTable />}
         {tab === "aircraft" && <AircraftTable />}
         {tab === "ships" && <ShipsTable />}
+        {tab === "replay" && <ReplayPanel />}
       </section>
     </main>
   );

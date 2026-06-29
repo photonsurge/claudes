@@ -4,6 +4,7 @@ import { log } from "@photonsurge/shared/utill/logger";
 import { getEnabledSources, getSource } from "../alerts/registry";
 import { ingestSource, type IngestResult } from "../alerts/ingest";
 import { summarizeForLog } from "../utils";
+import { blogInfo, blogErr } from "../blog";
 
 const TAG = "job:alerts";
 
@@ -23,9 +24,12 @@ export async function ingest(job: Job) {
   for (const source of sources) {
     if (!source) continue;
     try {
-      results.push(await ingestSource(source, db));
+      const r = await ingestSource(source, db);
+      results.push(r);
+      blogInfo(TAG, `${source.id}: ${r.count} alerts (+${r.inserted} new)`, r, "alerts", source.id);
     } catch (err) {
       log(TAG, `source failed`, { source: source.id, err: summarizeForLog(err) });
+      blogErr(TAG, `${source.id} ingest failed`, err, "alerts", source.id);
       results.push({ source: source.id, error: String(err) });
     }
   }

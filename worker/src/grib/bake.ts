@@ -20,7 +20,7 @@ export const WIND_IMAGE_UNSCALE: [number, number] = [-128, 128];
 export const SCALAR_IMAGE_UNSCALE: Record<string, [number, number]> = {
   temp: [-90, 60], // °C
   humidity: [0, 100], // %
-  rain: [0, 100], // mm/h
+  rain: [0, 50], // mm/h (PRATE; heavy rain ~10-50)
   storm: [0, 8000], // J/kg CAPE
   gust: [0, 120], // m/s
   pressure: [870, 1085], // hPa MSLP

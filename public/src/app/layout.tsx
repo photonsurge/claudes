@@ -4,6 +4,7 @@
  */
 import type { Metadata } from "next";
 import { SocketProvider } from "../lib/socket-provider";
+import { DebugUIProvider } from "../lib/client/debug-ui";
 
 export const metadata: Metadata = {
   title: "Live Weather Globe",
@@ -14,7 +15,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body style={{ fontFamily: "system-ui, sans-serif", margin: 0 }}>
-        <SocketProvider>{children}</SocketProvider>
+        <DebugUIProvider>
+          <SocketProvider>{children}</SocketProvider>
+        </DebugUIProvider>
       </body>
     </html>
   );

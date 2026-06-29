@@ -3,6 +3,7 @@
 /** Operator controls for the wind particle look: quick presets + fine sliders. */
 import {
   WIND_PRESETS,
+  DEFAULT_WIND_SETTINGS,
   type WindSettings,
   type WindMode,
 } from "@photonsurge/shared/control";
@@ -14,11 +15,14 @@ export interface WindControlsProps {
   onMode: (mode: WindMode) => void;
 }
 
-const SLIDERS: Array<{ key: keyof WindSettings; label: string; min: number; max: number; step: number }> = [
+type NumKey = Exclude<keyof WindSettings, "color">;
+
+const SLIDERS: Array<{ key: NumKey; label: string; min: number; max: number; step: number }> = [
   { key: "numParticles", label: "Count", min: 1000, max: 20000, step: 500 },
   { key: "speedFactor", label: "Speed", min: 1, max: 30, step: 1 },
   { key: "maxAge", label: "Trail", min: 5, max: 60, step: 1 },
   { key: "width", label: "Width", min: 0.5, max: 5, step: 0.5 },
+  { key: "opacity", label: "Opacity", min: 0, max: 1, step: 0.05 },
 ];
 
 export default function WindControls({ wind, mode, onWind, onMode }: WindControlsProps) {
@@ -50,18 +54,38 @@ export default function WindControls({ wind, mode, onWind, onMode }: WindControl
           <label key={key} style={{ display: "grid", gap: 2, fontSize: 12, color: "#cfd6e4" }}>
             <span style={{ display: "flex", justifyContent: "space-between" }}>
               <span>{label}</span>
-              <span style={{ opacity: 0.7 }}>{wind[key]}</span>
+              <span style={{ opacity: 0.7 }}>{wind[key] ?? DEFAULT_WIND_SETTINGS[key]}</span>
             </span>
             <input
               type="range"
               min={min}
               max={max}
               step={step}
-              value={wind[key]}
+              value={wind[key] ?? DEFAULT_WIND_SETTINGS[key]}
               onChange={(e) => onWind({ ...wind, [key]: Number(e.target.value) })}
             />
           </label>
         ))}
+
+      {mode === "particles" && (
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            fontSize: 12,
+            color: "#cfd6e4",
+          }}
+        >
+          <span>Color</span>
+          <input
+            type="color"
+            value={wind.color ?? DEFAULT_WIND_SETTINGS.color}
+            onChange={(e) => onWind({ ...wind, color: e.target.value })}
+            style={{ width: 36, height: 22, padding: 0, border: "1px solid #333", background: "none" }}
+          />
+        </label>
+      )}
     </div>
   );
 }

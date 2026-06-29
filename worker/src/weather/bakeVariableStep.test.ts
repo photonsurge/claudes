@@ -23,6 +23,13 @@ const grid = (fill: number) => ({
   values: new Float32Array(8).fill(fill),
 });
 
+// Rain itself is now instantaneous PRATE, so synthesise an accumulated variable
+// (APCP-style) to exercise bakeVariableStep's previous-grid de-accumulation path.
+const accumulatedVar = {
+  ...VARIABLE_REGISTRY.rain,
+  gfs: { vars: ["APCP"], levels: ["surface"], accumulated: true },
+};
+
 describe("bakeVariableStep", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -63,7 +70,7 @@ describe("bakeVariableStep", () => {
 
   it("does NOT read a previous grid for an accumulated var at f000 (no prevAccumPath)", async () => {
     mockExtract.mockResolvedValue(grid(0));
-    await bakeVariableStep(VARIABLE_REGISTRY.rain, "20260628", "00", 0, undefined, 3);
+    await bakeVariableStep(accumulatedVar, "20260628", "00", 0, undefined, 3);
     // only the current field is extracted (no prev)
     expect(mockExtract).toHaveBeenCalledTimes(1);
     expect(mockExtract.mock.calls[0][0]).toMatchObject({ match: ":APCP:" });
@@ -72,7 +79,7 @@ describe("bakeVariableStep", () => {
   it("reads the previous accumulation grid when prevAccumPath is supplied", async () => {
     mockExtract.mockResolvedValueOnce(grid(9)).mockResolvedValueOnce(grid(3)); // curr, prev
     const res = await bakeVariableStep(
-      VARIABLE_REGISTRY.rain,
+      accumulatedVar,
       "20260628",
       "00",
       3,

@@ -3,6 +3,7 @@ import {
   textureUrlFor,
   manifestBounds,
   windParticleProps,
+  hexToRgba,
   scalarRasterProps,
   pressureProps,
   cityProps,
@@ -72,6 +73,23 @@ describe("windParticleProps", () => {
     expect(p.numParticles).toBe(100);
     expect(p.speedFactor).toBe(9);
   });
+  it("defaults to white at 0.9 opacity, and honours opacity/color opts", () => {
+    const d = windParticleProps(manifest, 0)!;
+    expect(d.color).toEqual([255, 255, 255, 255]);
+    expect(d.opacity).toBe(0.9);
+    const p = windParticleProps(manifest, 0, { opacity: 0.3, color: "#ff8800" })!;
+    expect(p.opacity).toBe(0.3);
+    expect(p.color).toEqual([255, 136, 0, 255]);
+  });
+});
+
+describe("hexToRgba", () => {
+  it("parses #rrggbb and #rgb, falling back to white", () => {
+    expect(hexToRgba("#ff8800")).toEqual([255, 136, 0, 255]);
+    expect(hexToRgba("#f80")).toEqual([255, 136, 0, 255]);
+    expect(hexToRgba(undefined)).toEqual([255, 255, 255, 255]);
+    expect(hexToRgba("nope")).toEqual([255, 255, 255, 255]);
+  });
 });
 
 describe("scalarRasterProps", () => {
@@ -99,6 +117,14 @@ describe("pressureProps", () => {
     expect(p.contour.image).toBe("/api/weather/tex/p0");
     expect(p.highLow.image).toBe("/api/weather/tex/p0");
     expect(p.contour.bounds).toEqual([-180, -90, 180, 90]);
+  });
+  it("colours isobars by value over the hPa domain, with major lines", () => {
+    const p = pressureProps(manifest, 0)!;
+    // Palette stops are scaled to physical hPa (domain 950..1050), not 0..1.
+    expect(p.contour.palette[0][0]).toBe(950);
+    expect(p.contour.palette[p.contour.palette.length - 1][0]).toBe(1050);
+    expect(p.contour.majorInterval).toBeGreaterThan(p.contour.interval);
+    expect(p.highLow.palette).toEqual(p.contour.palette);
   });
   it("returns null without a pressure texture", () => {
     expect(pressureProps(manifest, 3)).toBeNull();

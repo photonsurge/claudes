@@ -15,7 +15,8 @@ import { imageUnscaleFor, type BakeResult } from "./bake";
  * on a new Float32Array. Mirrors the unit discipline in VARIABLE_REGISTRY:
  *  - temp:  K -> °C
  *  - pressure: Pa -> hPa
- *  - others: identity (RH already %, CAPE J/kg, GUST m/s, APCP mm accum).
+ *  - rain:  PRATE kg m⁻² s⁻¹ (= mm/s) -> mm/h
+ *  - others: identity (RH already %, CAPE J/kg, GUST m/s).
  */
 export function convertScalarUnits(variableId: string, values: Float32Array): Float32Array {
   const out = new Float32Array(values.length);
@@ -25,6 +26,9 @@ export function convertScalarUnits(variableId: string, values: Float32Array): Fl
       return out;
     case "pressure":
       for (let i = 0; i < values.length; i++) out[i] = paToHpa(values[i]);
+      return out;
+    case "rain":
+      for (let i = 0; i < values.length; i++) out[i] = values[i] * 3600;
       return out;
     default:
       out.set(values);

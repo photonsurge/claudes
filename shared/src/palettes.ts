@@ -56,6 +56,18 @@ export const PALETTES: Record<string, Palette> = {
     [0.9, "#f2802e"],
     [1.0, "#df2727"],
   ],
+  // MSLP: diverging over domain 950..1050 hPa. Deep lows purple/blue, standard
+  // pressure (~1013, ≈0.63) near-neutral, highs warm yellow→red. Reads as
+  // "storms vs. ridges" at a glance on a broadcast globe.
+  pressure: [
+    [0.0, "#6a3d9a"],
+    [0.3, "#3257b0"],
+    [0.5, "#52b0d6"],
+    [0.63, "#e8eef2"],
+    [0.75, "#f2c14e"],
+    [0.9, "#e8772e"],
+    [1.0, "#b81d1d"],
+  ],
   // Wind particle speed colouring.
   wind: [
     [0.0, "#e8f0ff"],

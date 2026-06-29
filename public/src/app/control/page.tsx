@@ -12,8 +12,11 @@ import { fetchBroadcastState, useControlEmitter } from "../../lib/control";
 import { fetchManifest } from "../../lib/manifest";
 import { listCities, type City } from "../../lib/cities";
 import { useTracks } from "../../lib/tracks/useTracks";
+import { useAlertFeatures } from "../../lib/alerts-overlay";
+import { useQuakes } from "../../lib/seismic-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
+import { DebugButton } from "../../lib/client/debug";
 
 export default function ControlPage() {
   const [state, setState] = useState<ControlState>(DEFAULT_CONTROL_STATE);
@@ -22,14 +25,19 @@ export default function ControlPage() {
   const globe = useRef<GlobeHandle | null>(null);
   const emit = useControlEmitter();
 
-  const tracks = useTracks({
+  const { tracks, orbits, trails } = useTracks({
     showSatellites: state.showSatellites,
     showAircraft: state.showAircraft,
     showShips: state.showShips,
+    showOrbits: state.showOrbits,
+    showTrails: state.showTrails,
+    trailMinutes: state.trailMinutes,
     satelliteGroup: state.satelliteGroup,
     center: state.camera.center,
     zoom: state.camera.zoom,
   });
+  const alerts = useAlertFeatures(state.showAlerts, state.alertSeverityMin);
+  const quakes = useQuakes(state.showSeismic, state.seismicMinMag);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +72,10 @@ export default function ControlPage() {
           manifest={manifest}
           cities={cities}
           tracks={tracks}
+          orbits={orbits}
+          trails={trails}
+          alerts={alerts}
+          quakes={quakes}
           interactive
           onCameraChange={(center, zoom) => apply({ ...state, camera: { center, zoom } })}
         />
@@ -78,13 +90,45 @@ export default function ControlPage() {
           fontFamily: "system-ui, sans-serif",
         }}
       >
-        <h2 style={{ marginTop: 0, fontSize: 18 }}>Operator</h2>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+          }}
+        >
+          <h2 style={{ marginTop: 0, fontSize: 18 }}>Operator</h2>
+          <DebugButton
+            title="State"
+            tooltip="Inspect live control state, tracks & overlays"
+            data={{
+              state,
+              counts: {
+                tracks: tracks.length,
+                orbits: orbits.length,
+                alerts: alerts.length,
+                quakes: quakes.length,
+                cities: cities.length,
+              },
+              manifestLoaded: manifest !== null,
+            }}
+          />
+        </div>
         <ControlPanel
           state={state}
           manifest={manifest}
           onChange={apply}
-          onFitBounds={(bbox) => globe.current?.fitBounds(bbox)}
-          onFlyTo={(center, zoom) => globe.current?.flyTo(center, zoom)}
+          // Flying to a place means "look here" — stop the idle spin first so it
+          // doesn't drag the globe back to the old anchor when the flight lands.
+          onFitBounds={(bbox) => {
+            if (state.autoSpin) apply({ ...state, autoSpin: false });
+            globe.current?.fitBounds(bbox);
+          }}
+          onFlyTo={(center, zoom) => {
+            if (state.autoSpin) apply({ ...state, autoSpin: false });
+            globe.current?.flyTo(center, zoom);
+          }}
         />
       </aside>
     </main>

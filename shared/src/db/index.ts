@@ -7,6 +7,13 @@ import { getWeatherTextureModel } from "./weather-texture-model";
 import { getCityModel } from "./city-model";
 import { getAlertModel } from "./alert-model";
 import { makeAlertsRepo } from "./alerts-repo";
+import { getSatelliteTleModel } from "./satellite-tle-model";
+import { makeSatelliteTleRepo } from "./satellite-tle-repo";
+import { getTrackSnapshotModel } from "./track-snapshot-model";
+import { makeTrackSnapshotRepo } from "./track-snapshot-repo";
+import { getQuakeModel } from "./quake-model";
+import { makeQuakeRepo } from "./quake-repo";
+import { getLogModel } from "./log-model";
 import { getBroadcastStateModel, BROADCAST_STATE_ID } from "./broadcast-state-model";
 import { DEFAULT_CONTROL_STATE } from "../control";
 
@@ -34,6 +41,10 @@ export function createDb(conn: Connection) {
     weatherTextures: mongoCrud(getWeatherTextureModel(conn)),
     cities: mongoCrud(getCityModel(conn)),
     alerts: makeAlertsRepo(getAlertModel(conn)),
+    satelliteTles: makeSatelliteTleRepo(getSatelliteTleModel(conn)),
+    trackSnapshots: makeTrackSnapshotRepo(getTrackSnapshotModel(conn)),
+    quakes: makeQuakeRepo(getQuakeModel(conn)),
+    logs: mongoCrud(getLogModel(conn)),
     broadcastState,
 
     /** Latest published run (the one the browser should render), or null. */

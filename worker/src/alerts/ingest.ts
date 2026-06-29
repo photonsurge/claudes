@@ -11,6 +11,8 @@ export interface IngestResult {
   inserted: number;
   superseded: number;
   expired: number;
+  /** Alerts stored without their geometry because the polygon was invalid. */
+  geoDropped?: number;
 }
 
 /**
@@ -29,16 +31,34 @@ export async function ingestSource(
 
   let inserted = 0;
   let superseded = 0;
+  let geoDropped = 0;
   for (const a of alerts) {
-    const { inserted: isNew } = await db.alerts.upsert(a);
-    if (isNew) inserted++;
+    try {
+      const { inserted: isNew } = await db.alerts.upsert(a);
+      if (isNew) inserted++;
+    } catch (err) {
+      // Almost always an invalid polygon rejected by the 2dsphere index. Keep
+      // the alert — re-upsert it with geometry stripped so it's never lost.
+      const stripped = {
+        ...a,
+        info: a.info.map((i) => ({ ...i, area: i.area.map((ar) => ({ ...ar, geometry: null })) })),
+      };
+      try {
+        const { inserted: isNew } = await db.alerts.upsert(stripped);
+        if (isNew) inserted++;
+        geoDropped++;
+      } catch (err2) {
+        log(TAG, `upsert failed`, { source: source.id, id: a.identifier, err: String(err2) });
+      }
+    }
     if (a.references?.length) {
       superseded += await db.alerts.supersede(source.id, referencedIdentifiers(a.references));
     }
   }
+  if (geoDropped) log(TAG, `dropped invalid geometry`, { source: source.id, geoDropped });
   const expired = await db.alerts.expire(source.id, now.toISOString());
 
-  const result: IngestResult = { source: source.id, count: alerts.length, inserted, superseded, expired };
+  const result: IngestResult = { source: source.id, count: alerts.length, inserted, superseded, expired, geoDropped };
   log(TAG, `ingested`, result);
   return result;
 }

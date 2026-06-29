@@ -80,7 +80,10 @@ export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
     units: "mm/h",
     palette: "rain",
     domain: [0, 20],
-    gfs: { vars: ["APCP"], levels: ["surface"], accumulated: true },
+    // PRATE = instantaneous precip rate (kg m⁻² s⁻¹ = mm/s). Exists at EVERY
+    // forecast hour incl. f000 and is already a rate, so no de-accumulation and
+    // no missing-f000 gap (unlike accumulated APCP, which has no f000 record).
+    gfs: { vars: ["PRATE"], levels: ["surface"] },
   },
   storm: {
     id: "storm",

@@ -17,6 +17,7 @@ import { QUEUE_NAME } from "@photonsurge/shared/utill/bull-utils";
 import { getQueue, getRedisOptions } from "@photonsurge/shared/bull/bull";
 import { getDb } from "@photonsurge/shared/utill/mongoose";
 import { log } from "@photonsurge/shared/utill/logger";
+import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
 import { initSocket, closeSocket } from "./socket";
 import { getEnabledSources } from "./alerts/registry";
@@ -99,9 +100,11 @@ process.on("uncaughtException", (err) => {
       try {
         const result = await fn(job);
         log(TAG, `job:done  [${job.id}] ${type}.${event}`);
+        WorkerBackLogger(TAG, "event", `job:${type}`, `${type}.${event} done`, result, type, String(job.id ?? ""));
         return result;
       } catch (ex) {
         log(TAG, `job:error [${job.id}] ${type}.${event}`, summarizeForLog(ex));
+        WorkerBackLogger(TAG, "error", `job:${type}`, `${type}.${event} failed`, summarizeForLog(ex), type, String(job.id ?? ""));
         throw ex;
       }
     },
@@ -154,20 +157,45 @@ process.on("uncaughtException", (err) => {
     log(TAG, `failed to register tracks.ingestTles`, summarizeForLog(err));
   }
 
-  // ---- Repeatable tracks.snapshot (aircraft/ship position history) ----
-  // OFF by default — opt in with TRACK_SNAPSHOTS_ENABLED=true so we don't poll
-  // external feeds unsolicited. Each run records one replay frame.
-  if (process.env.TRACK_SNAPSHOTS_ENABLED === "true") {
-    const SNAPSHOT_MS = Number(process.env.SNAPSHOT_MS || 5 * 60 * 1000);
+  // ---- Repeatable tracks.snapshot{Aircraft,Ships} (the live cache) ----
+  // The worker owns all upstream calls; the public routes read only the newest
+  // frame from Mongo. Aircraft refresh faster than ships (they move faster); the
+  // client dead-reckons between frames so these cadences still look live. Set
+  // TRACK_SNAPSHOTS_ENABLED=false to disable polling external feeds entirely.
+  if (process.env.TRACK_SNAPSHOTS_ENABLED !== "false") {
+    const AIRCRAFT_SNAPSHOT_MS = Number(process.env.AIRCRAFT_SNAPSHOT_MS || 60 * 1000);
+    const SHIP_SNAPSHOT_MS = Number(process.env.SHIP_SNAPSHOT_MS || 120 * 1000);
     try {
       await myQueue.add(
         "do",
-        { domain: "tracks", type: "tracks", event: "snapshot", data: {} },
-        { repeat: { every: SNAPSHOT_MS }, jobId: "tracks-snapshot" },
+        { domain: "tracks", type: "tracks", event: "snapshotAircraft", data: {} },
+        { repeat: { every: AIRCRAFT_SNAPSHOT_MS }, jobId: "tracks-snapshot-aircraft" },
       );
-      log(TAG, `registered repeatable tracks.snapshot`, { everyMs: SNAPSHOT_MS });
+      await myQueue.add(
+        "do",
+        { domain: "tracks", type: "tracks", event: "snapshotShips", data: {} },
+        { repeat: { every: SHIP_SNAPSHOT_MS }, jobId: "tracks-snapshot-ships" },
+      );
+      log(TAG, `registered repeatable tracks.snapshot`, {
+        aircraftMs: AIRCRAFT_SNAPSHOT_MS,
+        shipMs: SHIP_SNAPSHOT_MS,
+      });
     } catch (err) {
       log(TAG, `failed to register tracks.snapshot`, summarizeForLog(err));
+    }
+
+    // Earthquakes change far slower than vehicles — USGS revises events over
+    // minutes. Poll every 5 min by default (SEISMIC_SNAPSHOT_MS to tune).
+    const SEISMIC_SNAPSHOT_MS = Number(process.env.SEISMIC_SNAPSHOT_MS || 5 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "tracks", type: "tracks", event: "snapshotSeismic", data: {} },
+        { repeat: { every: SEISMIC_SNAPSHOT_MS }, jobId: "tracks-snapshot-seismic" },
+      );
+      log(TAG, `registered repeatable tracks.snapshotSeismic`, { everyMs: SEISMIC_SNAPSHOT_MS });
+    } catch (err) {
+      log(TAG, `failed to register tracks.snapshotSeismic`, summarizeForLog(err));
     }
   }
 

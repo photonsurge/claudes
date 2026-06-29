@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server";
-import { fetchAircraft } from "../../../../lib/tracks/opensky";
-import { fetchAdsb } from "../../../../lib/tracks/adsb";
+import { getAppDb } from "@photonsurge/shared/db/index";
+import type { Aircraft } from "../../../../lib/tracks/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const NO_CACHE = { "Cache-Control": "no-store" };
 
+/** A frame older than this is flagged stale (worker isn't snapshotting). */
+const STALE_MS = 5 * 60 * 1000;
+
 /**
  * GET /api/tracks/aircraft?bbox=w,s,e,n&limit=1500
- * Live ADS-B snapshot. Default provider is keyless adsb.lol (point+radius from
- * the bbox); set AIRCRAFT_PROVIDER=opensky to use OpenSky instead (wider bbox,
- * but needs OPENSKY_CLIENT_ID/SECRET).
+ * Reads the newest aircraft frame the worker cached in Mongo — the public app
+ * NEVER calls upstream feeds directly. The response carries each track's
+ * heading + speed and the frame time (`at`) so the client can dead-reckon
+ * positions forward between frames. Configure regions/cadence on the worker
+ * (SNAPSHOT_REGIONS, AIRCRAFT_SNAPSHOT_MS).
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -25,20 +30,31 @@ export async function GET(req: Request) {
     }
   }
 
+  // Optional cap; default uncapped (local broadcast tool — show everything).
   const limitRaw = Number(url.searchParams.get("limit"));
-  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 10000) : 1500;
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
 
   try {
-    const useOpenSky = process.env.AIRCRAFT_PROVIDER === "opensky";
-    const all = useOpenSky ? await fetchAircraft(bbox) : await fetchAdsb(bbox);
-    const aircraft = all.slice(0, limit);
+    const db = await getAppDb();
+    const { at, rows } = await db.trackSnapshots.latest({ kind: "aircraft", bbox, limit });
+    const aircraft: Aircraft[] = rows.map((r) => ({
+      icao24: r.externalId,
+      callsign: r.name,
+      lng: r.lng,
+      lat: r.lat,
+      altM: r.altM,
+      velocityMS: r.speed,
+      headingDeg: r.headingDeg,
+      onGround: r.altM === 0,
+    }));
+    const stale = !at || Date.now() - at.getTime() > STALE_MS;
     return NextResponse.json(
-      { count: aircraft.length, total: all.length, at: new Date().toISOString(), aircraft },
+      { count: aircraft.length, total: aircraft.length, at: at?.toISOString() ?? null, stale, aircraft },
       { status: 200, headers: NO_CACHE },
     );
   } catch (err) {
     return NextResponse.json(
-      { error: String(err), aircraft: [], count: 0 },
+      { error: String(err), aircraft: [], count: 0, stale: true },
       { status: 502, headers: NO_CACHE },
     );
   }

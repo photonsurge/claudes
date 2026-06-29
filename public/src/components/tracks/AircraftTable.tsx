@@ -14,7 +14,7 @@ const REGIONS: { id: string; label: string; bbox?: [number, number, number, numb
 ];
 
 export default function AircraftTable() {
-  const [region, setRegion] = useState("eu");
+  const [region, setRegion] = useState("world");
   const [rows, setRows] = useState<Aircraft[]>([]);
   const [at, setAt] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
@@ -26,7 +26,9 @@ export default function AircraftTable() {
     setError(null);
     try {
       const bbox = REGIONS.find((r) => r.id === region)?.bbox;
-      const res = await listAircraft(bbox, 1500);
+      // Uncapped — show every aircraft the worker cached (the "of total" count
+      // above makes any truncation visible). World = the whole global feed.
+      const res = await listAircraft(bbox);
       setRows(res.aircraft);
       setTotal(res.total ?? res.count);
       setAt(res.at);

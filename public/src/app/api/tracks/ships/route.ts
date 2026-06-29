@@ -1,32 +1,25 @@
 import { NextResponse } from "next/server";
-import { collectShips } from "../../../../lib/tracks/aisstream";
+import { getAppDb } from "@photonsurge/shared/db/index";
+import type { Ship } from "../../../../lib/tracks/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const NO_CACHE = { "Cache-Control": "no-store" };
 
-// Default to a busy stretch (English Channel / southern North Sea) so the
-// snapshot isn't empty when no bbox is given. [w, s, e, n].
-const DEFAULT_BBOX: [number, number, number, number] = [-6, 49, 6, 54];
+/** A frame older than this is flagged stale (worker isn't snapshotting). */
+const STALE_MS = 10 * 60 * 1000;
 
 /**
  * GET /api/tracks/ships?bbox=w,s,e,n
- * AIS snapshot via aisstream.io (a few seconds of PositionReports, deduped by
- * MMSI). Requires AISSTREAM_API_KEY; without it we return configured:false so
- * the UI can prompt instead of erroring.
+ * Reads the newest AIS frame the worker cached in Mongo — the public app NEVER
+ * opens its own aisstream connection. Each ship carries heading + speed and the
+ * frame time (`at`) so the client can dead-reckon between frames. Configure the
+ * worker (AISSTREAM_API_KEY, SNAPSHOT_REGIONS, SHIP_SNAPSHOT_MS).
  */
 export async function GET(req: Request) {
-  const apiKey = process.env.AISSTREAM_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { configured: false, ships: [], count: 0, note: "Set AISSTREAM_API_KEY to enable AIS." },
-      { status: 200, headers: NO_CACHE },
-    );
-  }
-
   const url = new URL(req.url);
-  let bbox = DEFAULT_BBOX;
+  let bbox: [number, number, number, number] | undefined;
   const bboxRaw = url.searchParams.get("bbox");
   if (bboxRaw) {
     const parts = bboxRaw.split(",").map(Number);
@@ -36,14 +29,24 @@ export async function GET(req: Request) {
   }
 
   try {
-    const ships = await collectShips(apiKey, bbox, 4000);
+    const db = await getAppDb();
+    const { at, rows } = await db.trackSnapshots.latest({ kind: "ship", bbox });
+    const ships: Ship[] = rows.map((r) => ({
+      mmsi: r.externalId,
+      name: r.name,
+      lng: r.lng,
+      lat: r.lat,
+      sogKn: r.speed,
+      headingDeg: r.headingDeg,
+    }));
+    const stale = !at || Date.now() - at.getTime() > STALE_MS;
     return NextResponse.json(
-      { configured: true, count: ships.length, at: new Date().toISOString(), bbox, ships },
+      { configured: true, count: ships.length, at: at?.toISOString() ?? null, stale, ships },
       { status: 200, headers: NO_CACHE },
     );
   } catch (err) {
     return NextResponse.json(
-      { configured: true, error: String(err), ships: [], count: 0 },
+      { configured: true, error: String(err), ships: [], count: 0, stale: true },
       { status: 502, headers: NO_CACHE },
     );
   }

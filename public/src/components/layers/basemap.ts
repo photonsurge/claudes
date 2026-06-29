@@ -20,15 +20,29 @@ export const TERRAIN_IMG = "/data/terrain.jpg";
  *  the tiles would be large flat quads chording the sphere (black artifacts). */
 export const TILE_MIN_ZOOM = 4;
 
-// Full-globe background ring (extra vertices so it tessellates around the sphere).
-const GLOBE_RING = [
-  [-180, 90],
-  [0, 90],
-  [180, 90],
-  [180, -90],
-  [0, -90],
-  [-180, -90],
-];
+// Full-globe background as a GRID of small cells. A single big polygon earcuts
+// into a few huge triangles whose flat faces chord THROUGH the sphere — so the
+// depth it writes is wrong and far-side overlays (tracks/trails) aren't occluded
+// ("see through the globe"). Many small cells drape close to the surface and
+// write a correct depth sphere, so the near hemisphere properly hides the far.
+const GLOBE_CELLS: number[][][] = (() => {
+  const step = 10;
+  const cells: number[][][] = [];
+  for (let lat = -90; lat < 90; lat += step) {
+    for (let lng = -180; lng < 180; lng += step) {
+      const e = lng + step;
+      const n = lat + step;
+      cells.push([
+        [lng, lat],
+        [e, lat],
+        [e, n],
+        [lng, n],
+        [lng, lat],
+      ]);
+    }
+  }
+  return cells;
+})();
 
 /** Parse "#rrggbb" → [r,g,b] (0–255). Falls back to mid-grey on bad input. */
 export function hexToRgb(hex: string | undefined): [number, number, number] {
@@ -71,13 +85,14 @@ export function basemapLayers(state: ControlState, tilesActive: boolean): any[] 
   const isRaster = state.basemap === "satellite" || state.basemap === "terrain";
   const background = new SolidPolygonLayer({
     id: "basemap-bg",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: [GLOBE_RING] as any,
+    data: GLOBE_CELLS,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     getPolygon: (d: any) => d,
     stroked: false,
     filled: true,
     getFillColor: isRaster ? [0, 3, 8] : hexToRgb(colors.ocean),
+    // Write a correct depth sphere so far-side tracks/trails are occluded.
+    parameters: { depthTest: true },
   });
 
   if (state.basemap === "satellite") {

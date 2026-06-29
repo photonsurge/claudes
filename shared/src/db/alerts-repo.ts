@@ -81,7 +81,7 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       const docs = await model
         .find(q)
         .sort({ maxSeverityRank: -1, sent: -1 })
-        .limit(opts.limit ?? 500)
+        .limit(opts.limit ?? 0) // 0 = no cap; return all matching alerts
         .lean()
         .exec();
       return docs.map(strip);

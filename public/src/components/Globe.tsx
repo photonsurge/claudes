@@ -30,8 +30,13 @@ import {
   type TextureResolver,
 } from "./layers";
 import type { City } from "../lib/cities";
-import { tracksLayer } from "./layers/tracks";
-import type { Track } from "../lib/tracks/types";
+import { tracksLayer, orbitLayer, trailsLayer } from "./layers/tracks";
+import { alertsLayer } from "./layers/alerts";
+import { seismicLayer } from "./layers/seismic";
+import type { Track, Quake } from "../lib/tracks/types";
+import type { TrackPath } from "../lib/tracks/client";
+import type { OrbitSegment } from "../lib/tracks/orbit";
+import type { AlertFeature } from "../lib/alerts";
 
 export interface GlobeHandle {
   flyTo: (center: [number, number], zoom?: number) => void;
@@ -44,6 +49,14 @@ export interface GlobeProps {
   cities: City[];
   /** Live overlay tracks (satellites/aircraft/ships). */
   tracks?: Track[];
+  /** Satellite orbit rings. */
+  orbits?: OrbitSegment[];
+  /** Per-track recent routes (aircraft/ships) for the trails overlay. */
+  trails?: TrackPath[];
+  /** Active weather-alert polygons. */
+  alerts?: AlertFeature[];
+  /** Recent earthquakes (USGS). */
+  quakes?: Quake[];
   interactive?: boolean;
   onCameraChange?: (center: [number, number], zoom: number) => void;
 }
@@ -51,6 +64,14 @@ export interface GlobeProps {
 const interpolator = new LinearInterpolator(["longitude", "latitude", "zoom"]);
 
 type ViewState = { longitude: number; latitude: number; zoom: number } & Record<string, unknown>;
+
+/** Flight duration bounds (ms). Actual duration scales with travel distance. */
+const FLY_MIN = 1200;
+const FLY_MAX = 3500;
+
+/** Smooth accel/decel so flights ease in and out instead of jerking. */
+const easeInOutCubic = (t: number) =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
 /** Rough GlobeView zoom that frames a bbox. */
 function zoomForBbox(bbox: [number, number, number, number]): number {
@@ -60,7 +81,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 }
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], interactive = true, onCameraChange },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], interactive = true, onCameraChange },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -79,6 +100,12 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     onCameraChangeRef.current = onCameraChange;
   });
 
+  // Live flag read inside the once-created deck callback below.
+  const autoSpinRef = useRef(state.autoSpin);
+  useEffect(() => {
+    autoSpinRef.current = state.autoSpin;
+  });
+
   const applyViewState = (vs: ViewState) => {
     viewStateRef.current = vs;
     if (typeof vs.zoom === "number") {
@@ -89,25 +116,78 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     deckRef.current?.setProps({ viewState: vs } as any);
   };
 
+  // True while a programmatic flight is animating. The auto-spin rAF loop yields
+  // to it (otherwise the per-frame longitude write would fight the transition
+  // and the camera would never reach the target).
+  const flyingRef = useRef(false);
+  const flyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Raise the flying flag and arm a self-clearing safety net: a superseding
+  // flyTo cancels the prior transition WITHOUT firing its onTransitionEnd, so we
+  // must never rely on that alone to lower the flag (or the spin loop would
+  // yield forever).
+  const beginFlight = () => {
+    flyingRef.current = true;
+    if (flyTimerRef.current) clearTimeout(flyTimerRef.current);
+    flyTimerRef.current = setTimeout(() => {
+      flyingRef.current = false;
+    }, FLY_MAX + 300);
+  };
+
+  // Persist wherever a programmatic transition lands so the operator's camera
+  // state (and thus /watch) ends up at the target, not the pre-flight position.
+  const commitCamera = () => {
+    flyingRef.current = false;
+    if (flyTimerRef.current) {
+      clearTimeout(flyTimerRef.current);
+      flyTimerRef.current = null;
+    }
+    const vs = viewStateRef.current;
+    onCameraChangeRef.current?.([vs.longitude, vs.latitude], vs.zoom);
+  };
+
+  // Unwrap a target longitude to the nearest turn of the current one so a flyTo
+  // across the ±180° seam takes the short way instead of spinning all the way
+  // round.
+  const shortestLng = (target: number) => {
+    let lng = target;
+    while (lng - viewStateRef.current.longitude > 180) lng -= 360;
+    while (lng - viewStateRef.current.longitude < -180) lng += 360;
+    return lng;
+  };
+
+  // Longer trips take (proportionally) longer so the globe glides rather than
+  // snapping. `targetLng` must already be seam-unwrapped (shortestLng).
+  const flyDurationFor = (targetLng: number, targetLat: number, targetZoom: number) => {
+    const vs = viewStateRef.current;
+    const dist = Math.hypot(targetLng - vs.longitude, targetLat - vs.latitude);
+    const dZoom = Math.abs(targetZoom - vs.zoom);
+    return Math.min(FLY_MAX, Math.max(FLY_MIN, 900 + dist * 12 + dZoom * 240));
+  };
+
+  const flyToInternal = (lng: number, lat: number, zoom: number) => {
+    const target = shortestLng(lng);
+    beginFlight();
+    // Broadcast the destination ONCE up front so /watch runs the same eased
+    // flight in parallel (no per-frame socket traffic); commitCamera re-emits on
+    // landing to correct any drift.
+    onCameraChangeRef.current?.([lng, lat], zoom);
+    applyViewState({
+      longitude: target,
+      latitude: lat,
+      zoom,
+      transitionDuration: flyDurationFor(target, lat, zoom),
+      transitionInterpolator: interpolator,
+      transitionEasing: easeInOutCubic,
+      onTransitionEnd: commitCamera,
+    } as ViewState);
+  };
+
   useImperativeHandle(ref, () => ({
-    flyTo: (center, zoom) => {
-      applyViewState({
-        longitude: center[0],
-        latitude: center[1],
-        zoom: zoom ?? viewStateRef.current.zoom,
-        transitionDuration: 1200,
-        transitionInterpolator: interpolator,
-      } as ViewState);
-    },
-    fitBounds: (bbox) => {
-      applyViewState({
-        longitude: (bbox[0] + bbox[2]) / 2,
-        latitude: (bbox[1] + bbox[3]) / 2,
-        zoom: zoomForBbox(bbox),
-        transitionDuration: 1200,
-        transitionInterpolator: interpolator,
-      } as ViewState);
-    },
+    flyTo: (center, zoom) =>
+      flyToInternal(center[0], center[1], zoom ?? viewStateRef.current.zoom),
+    fitBounds: (bbox) =>
+      flyToInternal((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2, zoomForBbox(bbox)),
   }));
 
   // ── Deck init (once) ──────────────────────────────────────────────────────
@@ -121,11 +201,23 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       viewState: viewStateRef.current as any,
       layers: [],
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      onViewStateChange: ({ viewState }: any) => {
+      onViewStateChange: ({ viewState, interactionState }: any) => {
         viewStateRef.current = viewState;
-        deck.setProps({ viewState } as Parameters<typeof deck.setProps>[0]);
+        // While auto-spinning, the rAF loop owns the camera. deck re-emits this
+        // callback for the loop's setProps; feeding that back into React state
+        // would re-render/persist every frame (infinite loop + poll storm), so
+        // bail out — only react to real user interaction.
+        if (autoSpinRef.current) return;
         const want = viewState.zoom >= TILE_MIN_ZOOM;
         setTilesActive((prev) => (prev === want ? prev : want));
+        // During a programmatic transition (flyTo / fitBounds / follow) deck
+        // owns the camera and interpolates internally. Re-setting the bare
+        // interpolated viewState here would reset the transition's target to the
+        // current frame and kill the animation a few pixels in — so only feed
+        // back real user interaction. The final camera is captured by the
+        // transition's onTransitionEnd instead.
+        if (interactionState?.inTransition) return;
+        deck.setProps({ viewState } as Parameters<typeof deck.setProps>[0]);
         onCameraChangeRef.current?.([viewState.longitude, viewState.latitude], viewState.zoom);
       },
     });
@@ -137,38 +229,61 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Follow external camera (e.g. /watch receiving the operator's view) ────
+  // ── Follow external camera (e.g. /watch mirroring the operator's view) ────
   useEffect(() => {
+    // Only /watch follows. The operator (interactive) drives its own camera via
+    // the deck controller + imperative flyTo/fitBounds; making it also chase
+    // state.camera would start a competing transition that cancels the flight.
+    if (interactive) return;
     const vs = viewStateRef.current;
     const c = state.camera;
-    const changed =
-      Math.abs(vs.longitude - c.center[0]) > 1e-4 ||
-      Math.abs(vs.latitude - c.center[1]) > 1e-4 ||
-      Math.abs(vs.zoom - c.zoom) > 1e-4;
+    // Unwrap target longitude to the nearest representation of the current one
+    // so following across the ±180° seam takes the short way (no backspin flash).
+    let lng = c.center[0];
+    while (lng - vs.longitude > 180) lng -= 360;
+    while (lng - vs.longitude < -180) lng += 360;
+
+    const dLng = Math.abs(lng - vs.longitude);
+    const dZoom = Math.abs(vs.zoom - c.zoom);
+    const changed = dLng > 1e-4 || Math.abs(vs.latitude - c.center[1]) > 1e-4 || dZoom > 1e-4;
     if (changed) {
+      // Small steps (a live drag-follow tick) snap quickly so dragging feels
+      // live; large jumps (flyTo / region presets) ease over the same
+      // distance-scaled duration the operator's globe uses, so the two globes
+      // translate together.
+      const small = dLng < 5 && dZoom < 0.5;
       applyViewState({
-        longitude: c.center[0],
+        longitude: lng,
         latitude: c.center[1],
         zoom: c.zoom,
-        transitionDuration: 600,
+        transitionDuration: small ? 150 : flyDurationFor(lng, c.center[1], c.zoom),
         transitionInterpolator: interpolator,
+        transitionEasing: easeInOutCubic,
       } as ViewState);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.camera]);
+  }, [state.camera, interactive]);
 
-  // ── Auto-spin (broadcast idle rotation) ───────────────────────────────────
-  // Rotates the camera longitude at spinSpeed °/s via rAF. Uses setProps
-  // directly (no onViewStateChange), so it never spams the operator socket.
+  // ── Auto-spin (DETERMINISTIC — every page stays in phase) ─────────────────
+  // longitude = anchor + spinSpeed·(now − spinEpoch). The anchor (camera.center
+  // [0]), spinSpeed and spinEpoch all live in control state, so /control and
+  // /watch compute the SAME longitude from the same wall clock — a smooth 60 fps
+  // spin with ZERO per-frame socket traffic, and the two globes stay locked
+  // together (no follow/transition jitter). Runs on every page, not just the
+  // operator. onViewStateChange bails while spinning, so this never hits React.
   useEffect(() => {
     if (!state.autoSpin) return;
+    const anchorLng = state.camera.center[0];
+    const epoch = state.spinEpoch || Date.now();
     let raf = 0;
-    let last = performance.now();
-    const loop = (now: number) => {
-      const dt = Math.min(0.1, (now - last) / 1000);
-      last = now;
+    const loop = () => {
+      // A flyTo/fitBounds is animating — let it own the camera this frame.
+      if (flyingRef.current) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
       const vs = viewStateRef.current;
-      let longitude = vs.longitude + state.spinSpeed * dt;
+      let longitude = anchorLng + state.spinSpeed * ((Date.now() - epoch) / 1000);
       longitude = ((((longitude + 180) % 360) + 360) % 360) - 180; // wrap to −180..180
       applyViewState({ longitude, latitude: vs.latitude, zoom: vs.zoom });
       raf = requestAnimationFrame(loop);
@@ -176,7 +291,18 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.autoSpin, state.spinSpeed]);
+  }, [state.autoSpin, state.spinSpeed, state.spinEpoch, state.camera]);
+
+  // On the operator, freeze the camera to the current longitude when a spin
+  // stops so it doesn't snap back to the anchor and the next spin starts here.
+  const prevAutoSpin = useRef(state.autoSpin);
+  useEffect(() => {
+    if (prevAutoSpin.current && !state.autoSpin) {
+      const vs = viewStateRef.current;
+      onCameraChangeRef.current?.([vs.longitude, vs.latitude], vs.zoom);
+    }
+    prevAutoSpin.current = state.autoSpin;
+  }, [state.autoSpin]);
 
   // ── Texture loading for the active fhr ────────────────────────────────────
   useEffect(() => {
@@ -229,10 +355,19 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // Country borders sit ABOVE the weather fill.
     layers.push(countriesLayer(state));
 
+    // Weather-alert polygons above borders, below cities/tracks.
+    if (state.showAlerts && alerts.length) layers.push(alertsLayer(alerts));
+
+    // Earthquakes above alerts, below cities/tracks.
+    if (state.showSeismic && quakes.length) layers.push(...seismicLayer(quakes));
+
     if (state.showCities && cities.length) layers.push(...cityLayer(cities));
 
-    // Live tracks overlay sits on top of everything.
-    if (tracks.length) layers.push(tracksLayer(tracks));
+    // Live tracks overlay sits on top of everything (trails + orbit rings under
+    // the point markers).
+    if (state.showTrails && trails.length) layers.push(trailsLayer(trails, state.trailOpacity));
+    if (state.showOrbits && orbits.length) layers.push(orbitLayer(orbits));
+    if (tracks.length) layers.push(...tracksLayer(tracks, { labels: state.showTrackLabels }));
 
     deck.setProps({ layers });
   }, [
@@ -251,7 +386,17 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.windMode,
     state.showContours,
     state.showRadar,
+    state.showTrackLabels,
+    state.showOrbits,
+    state.showTrails,
+    state.trailOpacity,
+    state.showAlerts,
+    state.showSeismic,
     tracks,
+    orbits,
+    trails,
+    alerts,
+    quakes,
   ]);
 
   return (

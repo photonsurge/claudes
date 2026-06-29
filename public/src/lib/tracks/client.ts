@@ -1,4 +1,4 @@
-import type { Aircraft, SatellitePosition, Ship, TleRecord } from "./types";
+import type { Aircraft, Quake, SatellitePosition, Ship, TleRecord } from "./types";
 
 export interface SatellitesResponse {
   group: string;
@@ -68,5 +68,76 @@ export async function listShips(bbox?: [number, number, number, number]): Promis
   const body = await res.json().catch(() => null);
   if (!body) return { configured: false, count: 0, ships: [], note: "Request failed." };
   return body as ShipsResponse;
+}
+
+export interface QuakesResponse {
+  count: number;
+  quakes: Quake[];
+  error?: string;
+}
+
+/** Worker-cached USGS earthquakes. `bbox` is [w,s,e,n]; `minMag` floors magnitude. */
+export async function listQuakes(
+  bbox?: [number, number, number, number],
+  minMag?: number,
+): Promise<QuakesResponse> {
+  const q = new URLSearchParams();
+  if (bbox) q.set("bbox", bbox.join(","));
+  if (minMag != null) q.set("minMag", String(minMag));
+  const res = await fetch(`/api/tracks/seismic?${q.toString()}`, { cache: "no-store" });
+  const body = await res.json().catch(() => null);
+  if (!body) return { count: 0, quakes: [] };
+  return body as QuakesResponse;
+}
+
+// ── Position-history replay ────────────────────────────────────────────────
+export type SnapshotKind = "aircraft" | "ship";
+
+export interface SnapshotRow {
+  kind: SnapshotKind;
+  externalId: string;
+  name?: string;
+  lng: number;
+  lat: number;
+  altM?: number;
+  headingDeg?: number;
+  /** m/s for aircraft, knots for ships. */
+  speed?: number;
+  region?: string;
+}
+
+/** Available replay-frame timestamps (newest first) in the last `hours`. */
+export async function listHistoryBatches(hours: number, kind?: SnapshotKind): Promise<string[]> {
+  const q = new URLSearchParams({ hours: String(hours) });
+  if (kind) q.set("kind", kind);
+  const res = await fetch(`/api/tracks/history/batches?${q.toString()}`, { cache: "no-store" });
+  const body = await res.json().catch(() => null);
+  return Array.isArray(body?.batches) ? (body.batches as string[]) : [];
+}
+
+/** The snapshots of one replay frame. */
+export async function listHistoryAt(at: string, kind?: SnapshotKind): Promise<SnapshotRow[]> {
+  const q = new URLSearchParams({ at });
+  if (kind) q.set("kind", kind);
+  const res = await fetch(`/api/tracks/history?${q.toString()}`, { cache: "no-store" });
+  const body = await res.json().catch(() => null);
+  return Array.isArray(body?.snapshots) ? (body.snapshots as SnapshotRow[]) : [];
+}
+
+/** One track's recent route: positions oldest→newest as [lng, lat] pairs. */
+export interface TrackPath {
+  externalId: string;
+  kind: SnapshotKind;
+  name?: string;
+  path: [number, number][];
+}
+
+/** Per-track trailing paths over the last `minutes` (the live trails overlay). */
+export async function listTrackPaths(minutes: number, kind?: SnapshotKind): Promise<TrackPath[]> {
+  const q = new URLSearchParams({ minutes: String(minutes) });
+  if (kind) q.set("kind", kind);
+  const res = await fetch(`/api/tracks/history/paths?${q.toString()}`, { cache: "no-store" });
+  const body = await res.json().catch(() => null);
+  return Array.isArray(body?.paths) ? (body.paths as TrackPath[]) : [];
 }
 

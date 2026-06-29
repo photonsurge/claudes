@@ -1,4 +1,4 @@
-import { parsePositionReport } from "./aisstream";
+import { parsePositionReport, decodeFrame } from "./aisstream";
 
 const MESSAGE = {
   MessageType: "PositionReport",
@@ -29,5 +29,26 @@ describe("parsePositionReport", () => {
   it("returns null for non-position / malformed messages", () => {
     expect(parsePositionReport({ MessageType: "ShipStaticData" })).toBeNull();
     expect(parsePositionReport(null)).toBeNull();
+  });
+});
+
+describe("decodeFrame", () => {
+  const json = JSON.stringify(MESSAGE);
+
+  it("passes through a string frame", () => {
+    expect(decodeFrame(json)).toBe(json);
+  });
+
+  it("decodes an ArrayBuffer frame (Node WebSocket binaryType)", () => {
+    const buf = new TextEncoder().encode(json).buffer;
+    expect(decodeFrame(buf)).toBe(json);
+  });
+
+  it("decodes a Buffer / typed-array frame", () => {
+    expect(decodeFrame(Buffer.from(json))).toBe(json);
+  });
+
+  it("returns '' for anything undecodable (e.g. a stray Blob)", () => {
+    expect(decodeFrame({})).toBe("");
   });
 });

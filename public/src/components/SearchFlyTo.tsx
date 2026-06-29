@@ -28,8 +28,12 @@ export default function SearchFlyTo({ onFitBounds, onFlyTo }: SearchFlyToProps) 
       setError("No result");
       return;
     }
-    onFitBounds(hit.bbox);
-    onFlyTo?.(hit.center);
+    // A real bbox frames the place; fall back to a point flyTo only if the
+    // geocoder gave us a degenerate (zero-area) box. Never fire both — two
+    // competing transitions cancel each other out.
+    const [w, s, e, n] = hit.bbox;
+    if (onFlyTo && (e - w < 1e-6 || n - s < 1e-6)) onFlyTo(hit.center);
+    else onFitBounds(hit.bbox);
   };
 
   return (

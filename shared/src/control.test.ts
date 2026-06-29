@@ -30,6 +30,44 @@ describe("mergeControlState", () => {
     expect(mergeControlState(base, {})).toEqual(base);
   });
 
+  // Guards the control→/watch sync: every ControlState field must round-trip
+  // through the merge, or it would be silently dropped on the player.
+  it("carries EVERY field through (no field silently dropped)", () => {
+    const custom: ControlState = {
+      activeVariable: "rain",
+      fhr: 9,
+      basemap: "satellite",
+      showWind: false,
+      showPressure: true,
+      showCities: false,
+      camera: { center: [10, 20], zoom: 5 },
+      units: { wind: "m/s", temp: "F" },
+      basemapColors: { ocean: "#111111", land: "#222222", border: "#333333" },
+      wind: { numParticles: 1234, speedFactor: 3, maxAge: 7, width: 5, opacity: 0.5, color: "#abcdef" },
+      windMode: "barbs",
+      showContours: true,
+      showRadar: true,
+      showSatellites: true,
+      showAircraft: true,
+      showShips: true,
+      satelliteGroup: "starlink",
+      autoSpin: true,
+      spinSpeed: 17,
+      spinEpoch: 123456789,
+      showTrackLabels: true,
+      showOrbits: true,
+      showAlerts: true,
+      alertSeverityMin: 3,
+      showSeismic: true,
+      seismicMinMag: 4.5,
+    };
+    // Deep-equal proves no key was dropped or altered by the merge.
+    expect(mergeControlState(DEFAULT_CONTROL_STATE, custom)).toEqual(custom);
+    expect(Object.keys(mergeControlState(DEFAULT_CONTROL_STATE, custom)).sort()).toEqual(
+      Object.keys(DEFAULT_CONTROL_STATE).sort(),
+    );
+  });
+
   it("overrides scalar fields", () => {
     const next = mergeControlState(base, { fhr: 12, basemap: "satellite", showWind: false });
     expect(next.fhr).toBe(12);

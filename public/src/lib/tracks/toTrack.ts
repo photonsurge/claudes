@@ -22,7 +22,9 @@ export function aircraftToTrack(a: Aircraft): Track {
   return {
     id: `ac:${a.icao24}`,
     kind: "aircraft",
-    name: a.callsign,
+    // OpenSky pads callsigns to 8 chars and often omits them — fall back to the
+    // ICAO24 hex so every aircraft still carries a label/code.
+    name: a.callsign?.trim() || a.icao24,
     position: [a.lng, a.lat, a.altM ?? 0],
     heading: a.headingDeg,
     color: TRACK_COLORS.aircraft,
@@ -33,7 +35,8 @@ export function shipToTrack(s: Ship): Track {
   return {
     id: `ship:${s.mmsi}`,
     kind: "ship",
-    name: s.name,
+    // AIS frequently lacks a vessel name — fall back to the MMSI code.
+    name: s.name?.trim() || String(s.mmsi),
     position: [s.lng, s.lat, 0],
     heading: s.headingDeg ?? s.cogDeg,
     color: TRACK_COLORS.ship,

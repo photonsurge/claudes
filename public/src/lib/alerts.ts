@@ -1,5 +1,6 @@
 import { SEVERITY_COLORS, SEVERITY_LABELS } from "@photonsurge/shared/alerts/severity";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
+import { classifyHazard, type HazardType } from "./hazard";
 
 /** Trimmed alert shape the admin list / overlay consume (mirrors CanonicalAlert). */
 export interface AlertArea {
@@ -14,7 +15,15 @@ export interface AlertInfo {
   headline?: string;
   expires?: string;
   web?: string;
+  /** Source-specific extras (e.g. MeteoAlarm awareness_type, GDACS eventtype). */
+  parameters?: Record<string, string>;
   area: AlertArea[];
+}
+
+/** The cross-source hazard category for an alert (heat/flood/wind/…). */
+export function alertHazard(a: Alert): HazardType {
+  const info = a.info?.[0];
+  return classifyHazard({ event: info?.event, parameters: info?.parameters });
 }
 export interface Alert {
   id: string;
@@ -51,6 +60,51 @@ export async function listAlerts(opts: ListAlertsOpts = {}): Promise<Alert[]> {
 
 export const severityColor = (rank: SeverityRank): string => SEVERITY_COLORS[rank];
 export const severityLabel = (rank: SeverityRank): string => SEVERITY_LABELS[rank];
+
+/** A GeoJSON polygon feature for the map overlay, carrying display props. */
+export interface AlertFeature {
+  type: "Feature";
+  geometry: { type: string; coordinates: unknown };
+  properties: {
+    id: string;
+    source: string;
+    event: string;
+    severityRank: SeverityRank;
+    headline?: string;
+    expires?: string;
+    web?: string;
+  };
+}
+
+/**
+ * Flatten alerts to GeoJSON polygon features — one per area that actually has a
+ * geometry (geocode-only areas are skipped; they have no polygon to draw).
+ */
+export function alertsToFeatures(alerts: Alert[]): AlertFeature[] {
+  const out: AlertFeature[] = [];
+  for (const a of alerts) {
+    for (const info of a.info ?? []) {
+      for (const area of info.area ?? []) {
+        const g = area.geometry;
+        if (!g || !(g as { coordinates?: unknown }).coordinates) continue;
+        out.push({
+          type: "Feature",
+          geometry: g as { type: string; coordinates: unknown },
+          properties: {
+            id: a.id,
+            source: a.source,
+            event: info.event,
+            severityRank: a.maxSeverityRank,
+            headline: info.headline,
+            expires: a.expiresAt,
+            web: info.web,
+          },
+        });
+      }
+    }
+  }
+  return out;
+}
 
 /** The first info block, or undefined. */
 export const primaryInfo = (a: Alert): AlertInfo | undefined => a.info?.[0];

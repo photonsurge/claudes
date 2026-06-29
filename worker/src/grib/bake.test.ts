@@ -16,7 +16,7 @@ describe("imageUnscaleFor", () => {
   it("returns explicit ranges for every known scalar variable", () => {
     expect(imageUnscaleFor("temp")).toEqual([-90, 60]);
     expect(imageUnscaleFor("humidity")).toEqual([0, 100]);
-    expect(imageUnscaleFor("rain")).toEqual([0, 100]);
+    expect(imageUnscaleFor("rain")).toEqual([0, 50]);
     expect(imageUnscaleFor("storm")).toEqual([0, 8000]);
     expect(imageUnscaleFor("gust")).toEqual([0, 120]);
     expect(imageUnscaleFor("pressure")).toEqual([870, 1085]);
@@ -56,10 +56,14 @@ describe("convertScalarUnits", () => {
     const out = convertScalarUnits("humidity", Float32Array.from([55]));
     expect(out[0]).toBe(55);
   });
-  it("passes CAPE/gust/rain through unchanged (identity)", () => {
+  it("passes CAPE/gust through unchanged (identity)", () => {
     expect(convertScalarUnits("storm", Float32Array.from([2500]))[0]).toBe(2500);
     expect(convertScalarUnits("gust", Float32Array.from([42]))[0]).toBe(42);
-    expect(convertScalarUnits("rain", Float32Array.from([7]))[0]).toBe(7);
+  });
+  it("converts rain PRATE mm/s -> mm/h (×3600)", () => {
+    const out = convertScalarUnits("rain", Float32Array.from([0.001, 0]));
+    expect(out[0]).toBeCloseTo(3.6, 5); // 0.001 mm/s -> 3.6 mm/h
+    expect(out[1]).toBe(0);
   });
   it("returns a new array and does not mutate the input", () => {
     const input = Float32Array.from([300]);
@@ -84,41 +88,21 @@ describe("bakeScalar", () => {
     expect(meta.height).toBe(h);
   });
 
-  it("de-accumulates an accumulated field (rain) and the rate decodes back", async () => {
-    // 2-wide single row. rain decode range is [0,100] mm/h. rollLongitude with
+  it("converts rain PRATE (mm/s) to mm/h and the rate decodes back", async () => {
+    // 2-wide single row. rain decode range is [0,50] mm/h. rollLongitude with
     // width=2 shift=1 swaps the two columns, so assert per-decoded-value set.
     const w = 2;
     const h = 1;
-    const prev = Float32Array.from([0, 3]);
-    const curr = Float32Array.from([3, 9]); // diffs 3 and 6 over 3h -> 1 and 2 mm/h
-    const res = await bakeScalar({
-      variableId: "rain",
-      values: curr,
-      prevValues: prev,
-      deltaHours: 3,
-      width: w,
-      height: h,
-    });
+    const curr = Float32Array.from([0.001, 0.002]); // mm/s -> ×3600 = 3.6, 7.2 mm/h
+    const res = await bakeScalar({ variableId: "rain", values: curr, width: w, height: h });
     expect(res.encoding).toBe("scalar");
-    expect(res.imageUnscale).toEqual([0, 100]);
+    expect(res.imageUnscale).toEqual([0, 50]);
     const { data } = await sharp(res.buffer).raw().toBuffer({ resolveWithObject: true });
     const range = res.imageUnscale;
     const lsb = (range[1] - range[0]) / 255;
     const decoded = [byteToValue(data[0], range), byteToValue(data[4], range)].sort((a, b) => a - b);
-    expect(Math.abs(decoded[0] - 1)).toBeLessThanOrEqual(lsb); // 1 mm/h
-    expect(Math.abs(decoded[1] - 2)).toBeLessThanOrEqual(lsb); // 2 mm/h
-  });
-
-  it("treats an accumulated field with no prevValues (f000) as zero rate", async () => {
-    const w = 2;
-    const h = 1;
-    const curr = Float32Array.from([5, 8]);
-    const res = await bakeScalar({ variableId: "rain", values: curr, width: w, height: h });
-    const { data } = await sharp(res.buffer).raw().toBuffer({ resolveWithObject: true });
-    const range = res.imageUnscale;
-    // zero rate -> byte 0 -> decodes to range min (0)
-    expect(byteToValue(data[0], range)).toBeCloseTo(0, 6);
-    expect(byteToValue(data[4], range)).toBeCloseTo(0, 6);
+    expect(Math.abs(decoded[0] - 3.6)).toBeLessThanOrEqual(lsb); // 3.6 mm/h
+    expect(Math.abs(decoded[1] - 7.2)).toBeLessThanOrEqual(lsb); // 7.2 mm/h
   });
 
   it("throws for an unknown variable id", async () => {

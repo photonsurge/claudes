@@ -17,6 +17,8 @@ const LINKS: AdminLink[] = [
   { href: "/control", title: "Operator console", desc: "Live broadcast control — variables, basemap, camera.", ready: true },
   { href: "/watch", title: "Watch (broadcast)", desc: "The output view that goes to stream.", ready: true },
   { href: "/admin/tracks", title: "Live tracks", desc: "Satellites (SGP4), aircraft (ADS-B), ships (AIS).", ready: true },
+  { href: "/admin/jobs", title: "Worker jobs", desc: "Trigger ingest/snapshot jobs; view the queue.", ready: true },
+  { href: "/admin/logs", title: "Back log", desc: "Saved log of worker/job activity.", ready: true },
 ];
 
 export default function AdminPage() {
