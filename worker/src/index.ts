@@ -140,6 +140,37 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable tracks.ingestTles (satellite TLEs → Mongo) ----
+  // TLEs change slowly; refresh twice a day. A fixed jobId de-dups the scheduler.
+  const TLE_INGEST_MS = Number(process.env.TLE_INGEST_MS || 12 * 60 * 60 * 1000);
+  try {
+    await myQueue.add(
+      "do",
+      { domain: "tracks", type: "tracks", event: "ingestTles", data: {} },
+      { repeat: { every: TLE_INGEST_MS }, jobId: "tracks-tles" },
+    );
+    log(TAG, `registered repeatable tracks.ingestTles`, { everyMs: TLE_INGEST_MS });
+  } catch (err) {
+    log(TAG, `failed to register tracks.ingestTles`, summarizeForLog(err));
+  }
+
+  // ---- Repeatable tracks.snapshot (aircraft/ship position history) ----
+  // OFF by default — opt in with TRACK_SNAPSHOTS_ENABLED=true so we don't poll
+  // external feeds unsolicited. Each run records one replay frame.
+  if (process.env.TRACK_SNAPSHOTS_ENABLED === "true") {
+    const SNAPSHOT_MS = Number(process.env.SNAPSHOT_MS || 5 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "tracks", type: "tracks", event: "snapshot", data: {} },
+        { repeat: { every: SNAPSHOT_MS }, jobId: "tracks-snapshot" },
+      );
+      log(TAG, `registered repeatable tracks.snapshot`, { everyMs: SNAPSHOT_MS });
+    } catch (err) {
+      log(TAG, `failed to register tracks.snapshot`, summarizeForLog(err));
+    }
+  }
+
   // ---- Express HTTP server (health/status probes) ----
   const app = express();
   app.use(express.json());
