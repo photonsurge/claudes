@@ -4,7 +4,12 @@
  * The operator console. Composes all the pickers/toggles and reports a new full
  * ControlState up via onChange (the /control page emits it live + persists).
  */
-import type { ControlState } from "@photonsurge/shared/control";
+import type {
+  ControlState,
+  TrackStyle,
+  TrackColorMode,
+  TrackIconMode,
+} from "@photonsurge/shared/control";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { SATELLITE_GROUPS } from "../lib/tracks/celestrak";
 import { severityLabel } from "../lib/alerts";
@@ -172,6 +177,26 @@ export default function ControlPanel({
             )}
           </div>
         )}
+        {(state.showAircraft || state.showShips) && (
+          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+            {state.showAircraft && (
+              <StyleRow
+                label="✈ Planes"
+                style={state.aircraftStyle}
+                colorModes={["kind", "speed", "altitude", "country"]}
+                onChange={(aircraftStyle) => patch({ aircraftStyle })}
+              />
+            )}
+            {state.showShips && (
+              <StyleRow
+                label="⛴ Boats"
+                style={state.shipStyle}
+                colorModes={["kind", "speed", "country"]}
+                onChange={(shipStyle) => patch({ shipStyle })}
+              />
+            )}
+          </div>
+        )}
       </Section>
 
       <Section title="Alerts">
@@ -310,6 +335,72 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         {title}
       </h3>
       {children}
+    </div>
+  );
+}
+
+const COLOR_LABELS: Record<TrackColorMode, string> = {
+  kind: "Default",
+  speed: "Speed",
+  altitude: "Altitude",
+  country: "Country",
+};
+const ICON_LABELS: Record<TrackIconMode, string> = { dot: "Dots", arrow: "Arrows", glyph: "Glyphs" };
+const miniSelect: React.CSSProperties = {
+  background: "#1a1f2b",
+  color: "#fff",
+  border: "1px solid #333",
+  borderRadius: 5,
+  padding: "3px 5px",
+  fontSize: 12,
+};
+const miniLabel: React.CSSProperties = { display: "flex", gap: 5, alignItems: "center", color: "#8b95a7", fontSize: 12 };
+
+/** Per-kind colour + icon mode picker (planes and boats styled separately). */
+function StyleRow({
+  label,
+  style,
+  colorModes,
+  onChange,
+}: {
+  label: string;
+  style: TrackStyle;
+  colorModes: TrackColorMode[];
+  onChange: (s: TrackStyle) => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      <span style={{ color: "#cbd5e1", fontSize: 12, width: 64 }}>{label}</span>
+      <label style={miniLabel}>
+        Color
+        <select
+          value={style.color}
+          onChange={(e) => onChange({ ...style, color: e.target.value as TrackColorMode })}
+          aria-label={`${label} colour mode`}
+          style={miniSelect}
+        >
+          {colorModes.map((m) => (
+            <option key={m} value={m}>
+              {COLOR_LABELS[m]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label style={miniLabel}>
+        Icon
+        <select
+          value={style.icon}
+          onChange={(e) => onChange({ ...style, icon: e.target.value as TrackIconMode })}
+          aria-label={`${label} icon mode`}
+          style={miniSelect}
+        >
+          {(["dot", "arrow", "glyph"] as TrackIconMode[]).map((m) => (
+            <option key={m} value={m}>
+              {ICON_LABELS[m]}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { Aircraft, SatellitePosition, Ship, Track } from "./types";
+import { mmsiCountry, countryNameFlag } from "@photonsurge/shared/tracks/flags";
 
 /** Per-kind overlay colours (match the admin accents). */
 export const TRACK_COLORS: Record<Track["kind"], [number, number, number]> = {
@@ -15,6 +16,9 @@ export function satelliteToTrack(s: SatellitePosition): Track {
     // altitude km → metres so it floats above the sphere at true scale.
     position: [s.lng, s.lat, s.altKm * 1000],
     color: TRACK_COLORS.satellite,
+    code: s.noradId,
+    altM: s.altKm * 1000,
+    speedMS: s.speedKmS * 1000,
   };
 }
 
@@ -28,10 +32,20 @@ export function aircraftToTrack(a: Aircraft): Track {
     position: [a.lng, a.lat, a.altM ?? 0],
     heading: a.headingDeg,
     color: TRACK_COLORS.aircraft,
+    code: a.icao24,
+    country: a.country,
+    flag: countryNameFlag(a.country),
+    altM: a.altM,
+    speedMS: a.velocityMS,
+    verticalRateMS: a.verticalRateMS,
+    registration: a.registration,
+    acType: a.acType,
+    operator: a.operator,
   };
 }
 
 export function shipToTrack(s: Ship): Track {
+  const country = mmsiCountry(s.mmsi);
   return {
     id: `ship:${s.mmsi}`,
     kind: "ship",
@@ -40,5 +54,9 @@ export function shipToTrack(s: Ship): Track {
     position: [s.lng, s.lat, 0],
     heading: s.headingDeg ?? s.cogDeg,
     color: TRACK_COLORS.ship,
+    code: s.mmsi,
+    country: country?.name,
+    flag: country?.flag,
+    sogKn: s.sogKn,
   };
 }

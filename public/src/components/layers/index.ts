@@ -37,8 +37,10 @@ export function windParticleLayer(
   if (!image) return null;
   // WeatherLayers accepts an ImageBitmap/HTMLImageElement at runtime; its prop
   // type is narrower than that, so cast at the boundary.
+  // depthTest on so the far hemisphere is occluded by the basemap depth sphere
+  // (WeatherLayers defaults it off, which lets back-side particles bleed through).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new ParticleLayer({ ...props, image: image as any });
+  return new ParticleLayer({ ...props, image: image as any, parameters: { depthTest: true } as any });
 }
 
 export function scalarRasterLayer(
@@ -52,8 +54,10 @@ export function scalarRasterLayer(
   if (!props) return null;
   const image = resolve(props.image);
   if (!image) return null;
+  // depthTest on so the far-side weather fill is occluded by the depth sphere
+  // instead of bleeding through the front ("see-through globe").
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new RasterLayer({ ...props, image: image as any });
+  return new RasterLayer({ ...props, image: image as any, parameters: { depthTest: true } as any });
 }
 
 export function pressureLayers(
@@ -66,11 +70,13 @@ export function pressureLayers(
   if (!props) return [];
   const image = resolve(props.contour.image);
   if (!image) return [];
+  // depthTest on so far-side isobars/H-L markers are occluded by the depth
+  // sphere rather than showing through the front of the globe.
   return [
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new ContourLayer({ ...props.contour, image: image as any }),
+    new ContourLayer({ ...props.contour, image: image as any, parameters: { depthTest: true } as any }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new HighLowLayer({ ...props.highLow, image: image as any }),
+    new HighLowLayer({ ...props.highLow, image: image as any, parameters: { depthTest: true } as any }),
   ];
 }
 

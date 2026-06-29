@@ -31,6 +31,12 @@ export interface iTrackSnapshot extends iGeneralModel {
   headingDeg?: number;
   /** m/s for aircraft, knots for ships (kind-relative). */
   speed?: number;
+  /** Aircraft: registration country (OpenSky origin_country). */
+  country?: string;
+  /** Aircraft: climb/descent rate, m/s. */
+  verticalRateMS?: number;
+  /** Ship: course over ground, degrees (heading is true heading). */
+  cogDeg?: number;
   region?: string;
   /** Shared by all snapshots in one job run — the replay frame timestamp. */
   batchAt: Date;
@@ -53,6 +59,9 @@ const TrackSnapshotSchema = new mongoose.Schema<iTrackSnapshotModel>(
     altM: { type: Number, required: false },
     headingDeg: { type: Number, required: false },
     speed: { type: Number, required: false },
+    country: { type: String, required: false },
+    verticalRateMS: { type: Number, required: false },
+    cogDeg: { type: Number, required: false },
     region: { type: String, required: false },
     batchAt: { type: Date, required: true },
     loc: {

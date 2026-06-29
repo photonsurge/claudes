@@ -42,6 +42,13 @@ export interface Aircraft {
   /** Climb/descent rate, m/s. */
   verticalRateMS?: number;
   onGround: boolean;
+  // ── Static metadata (hexdb, joined from cache) ──
+  /** Registration / tail number, e.g. "G-EZBC". */
+  registration?: string;
+  /** Aircraft type, e.g. "Boeing 737-800". */
+  acType?: string;
+  /** Operator / registered owner. */
+  operator?: string;
 }
 
 /** A live vessel position (AIS). */
@@ -90,4 +97,25 @@ export interface Track {
   position: [number, number, number?];
   heading?: number;
   color?: [number, number, number];
+  // ── Optional metadata, carried for the hover tooltip ──
+  /** ICAO24 hex (aircraft) / MMSI (ship) / NORAD id (satellite). */
+  code?: string;
+  /** Registration country name (aircraft origin_country; ship MMSI MID). */
+  country?: string;
+  /** Flag emoji for `country`, or "" if unresolved. */
+  flag?: string;
+  /** Altitude, metres (aircraft geo/baro alt; satellite orbital alt). */
+  altM?: number;
+  /** Speed, m/s (aircraft ground speed; satellite orbital speed). */
+  speedMS?: number;
+  /** Ship speed over ground, knots. */
+  sogKn?: number;
+  /** Aircraft climb/descent rate, m/s. */
+  verticalRateMS?: number;
+  /** Aircraft registration / tail number. */
+  registration?: string;
+  /** Aircraft type, e.g. "Boeing 737-800". */
+  acType?: string;
+  /** Aircraft operator / registered owner. */
+  operator?: string;
 }

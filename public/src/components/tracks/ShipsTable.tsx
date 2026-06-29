@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { listShips } from "../../lib/tracks/client";
 import type { Ship } from "../../lib/tracks/types";
+import { mmsiCountry } from "@photonsurge/shared/tracks/flags";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "./styles";
 
 // [w, s, e, n] regions for the AIS bounding-box subscription. "World" (no bbox)
@@ -82,6 +83,7 @@ export default function ShipsTable() {
           <tr style={{ textAlign: "left", color: "#8b95a7" }}>
             <th style={th}>Name</th>
             <th style={th}>MMSI</th>
+            <th style={th}>Flag</th>
             <th style={thNum}>Lat</th>
             <th style={thNum}>Lon</th>
             <th style={thNum}>SOG (kn)</th>
@@ -89,19 +91,23 @@ export default function ShipsTable() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((s) => (
+          {rows.map((s) => {
+            const c = mmsiCountry(s.mmsi);
+            return (
             <tr key={s.mmsi} style={{ borderTop: "1px solid #1b2030" }}>
               <td style={td}>{s.name ?? "—"}</td>
               <td style={{ ...td, color: "#8b95a7" }}>{s.mmsi}</td>
+              <td style={td}>{c ? `${c.flag} ${c.name}` : "—"}</td>
               <td style={tdNum}>{s.lat.toFixed(3)}</td>
               <td style={tdNum}>{s.lng.toFixed(3)}</td>
               <td style={tdNum}>{s.sogKn != null ? s.sogKn.toFixed(1) : "—"}</td>
               <td style={tdNum}>{s.cogDeg != null ? `${s.cogDeg.toFixed(0)}°` : "—"}</td>
             </tr>
-          ))}
+            );
+          })}
           {rows.length === 0 && (
             <tr>
-              <td style={td} colSpan={6}>
+              <td style={td} colSpan={7}>
                 {loading ? "Sampling…" : "No vessels in this sample — try another region."}
               </td>
             </tr>

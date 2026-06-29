@@ -6,6 +6,7 @@ import { fetchAdsb } from "@photonsurge/shared/tracks/adsb";
 import { fetchAircraft } from "@photonsurge/shared/tracks/opensky";
 import { collectShips } from "@photonsurge/shared/tracks/aisstream";
 import { fetchQuakes, DEFAULT_USGS_FEED } from "@photonsurge/shared/tracks/usgs";
+import { fetchAircraftMeta } from "@photonsurge/shared/tracks/hexdb";
 import type { iTrackSnapshot } from "@photonsurge/shared/db/track-snapshot-model";
 import { log } from "@photonsurge/shared/utill/logger";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
@@ -72,11 +73,53 @@ const shipBoxes = (): [number, number, number, number][] => {
 /**
  * AIS collection window per ship snapshot. Vessels only transmit every few–30s,
  * so the count scales ~linearly with the window — measured global: 10s≈950,
- * 30s≈2.5k, 60s≈5.1k (~85 vessels/s, no throttling). It's off the request path
- * (worker job), so latency is free — keep it under the snapshot interval
- * (SHIP_SNAPSHOT_MS, 120s). Raise SHIP_COLLECT_MS toward ~100s for ~8–9k.
+ * 30s≈2.5k, 60s≈5.1k, then diminishing returns as the same vessels recur
+ * (~15–20k by 5min). It's off the request path (worker job) so latency is free —
+ * just keep it under the snapshot interval (SHIP_SNAPSHOT_MS). Default 300s for
+ * near-full global coverage; raise SHIP_COLLECT_MS further (+ SHIP_SNAPSHOT_MS)
+ * if you want the long tail. Trade-off: a longer window means some positions are
+ * up to that many seconds old at snapshot time (dead-reckoned forward on view).
  */
-const SHIP_COLLECT_MS = Number(process.env.SHIP_COLLECT_MS || 60_000);
+const SHIP_COLLECT_MS = Number(process.env.SHIP_COLLECT_MS || 300_000);
+
+/** Per-run cap + pacing for hexdb enrichment (keyless service — be gentle). */
+const ENRICH_CAP = Number(process.env.AIRCRAFT_ENRICH_CAP || 150);
+const ENRICH_DELAY_MS = Number(process.env.AIRCRAFT_ENRICH_DELAY_MS || 120);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Dispatched as "tracks.enrichAircraft". Fills the AircraftMeta cache from
+ * hexdb.io (keyless) for ICAO24s in the latest aircraft frame we haven't looked
+ * up yet — registration / type / operator. Rate-limited + capped per run; cached
+ * forever (incl. misses, so we don't re-hammer), so it fills progressively each
+ * cycle. The aircraft route joins this onto the live snapshot.
+ */
+export async function enrichAircraft(_job: Job) {
+  const db = await getAppDb();
+  const { rows } = await db.trackSnapshots.latest({ kind: "aircraft" });
+  if (!rows.length) return { enriched: 0, todo: 0 };
+
+  const icaos = [...new Set(rows.map((r) => r.externalId.toLowerCase()))];
+  const existing = await db.aircraftMeta.getAll({ id: { $in: icaos } }, { limit: icaos.length });
+  const known = new Set((existing.data ?? []).map((m) => m.id));
+  const todo = icaos.filter((i) => !known.has(i)).slice(0, ENRICH_CAP);
+
+  let enriched = 0;
+  for (const hex of todo) {
+    const meta = await fetchAircraftMeta(hex);
+    await db.aircraftMeta.upsertByID(
+      hex,
+      meta
+        ? { icao24: hex, ...meta, fetchedAt: Date.now(), notFound: false }
+        : { icao24: hex, fetchedAt: Date.now(), notFound: true },
+    );
+    if (meta) enriched++;
+    await sleep(ENRICH_DELAY_MS);
+  }
+  const result = { seen: icaos.length, cached: known.size, lookedUp: todo.length, enriched };
+  log(TAG, `enrichAircraft done`, result);
+  return result;
+}
 
 /** Groups to keep fresh in Mongo (env override, comma-separated). */
 export const tleGroups = (): string[] =>
@@ -124,7 +167,7 @@ export async function snapshotAircraft(_job: Job) {
   const batchAt = new Date();
   const aircraft = new Map<string, iTrackSnapshot>();
 
-  const put = (a: { icao24: string; callsign?: string; lng: number; lat: number; altM?: number; headingDeg?: number; velocityMS?: number }, region?: string) => {
+  const put = (a: { icao24: string; callsign?: string; country?: string; lng: number; lat: number; altM?: number; headingDeg?: number; velocityMS?: number; verticalRateMS?: number }, region?: string) => {
     if (!validTrackId(a.icao24)) return;
     aircraft.set(a.icao24, {
       kind: "aircraft",
@@ -135,22 +178,15 @@ export async function snapshotAircraft(_job: Job) {
       altM: a.altM,
       headingDeg: a.headingDeg,
       speed: a.velocityMS,
+      country: a.country,
+      verticalRateMS: a.verticalRateMS,
       region,
       batchAt,
     });
   };
 
-  // Global: OpenSky /states/all in one call (worldwide). adsb.lol is point+radius
-  // so it can't go global — it stays per-region. Set AIRCRAFT_PROVIDER=opensky
-  // (+ OPENSKY_CLIENT_ID/SECRET for the poll rate) for global coverage.
-  if (process.env.AIRCRAFT_PROVIDER === "opensky") {
-    try {
-      for (const a of await fetchAircraft()) put(a, "global");
-    } catch (err) {
-      log(TAG, `snapshotAircraft global (opensky) failed`, { err: summarizeForLog(err) });
-      blogErr(TAG, `aircraft snapshot (opensky global) failed`, err, "tracks", "aircraft");
-    }
-  } else {
+  // Keyless adsb.lol fallback — point+radius, so per-region (a few busy areas).
+  const collectRegions = async () => {
     for (const region of snapshotRegions()) {
       try {
         for (const a of await fetchAdsb(region.bbox)) put(a, region.id);
@@ -159,6 +195,21 @@ export async function snapshotAircraft(_job: Job) {
         blogErr(TAG, `aircraft snapshot region failed: ${region.id}`, err, "tracks", region.id);
       }
     }
+  };
+
+  // Global: OpenSky /states/all in one call (worldwide). Needs OPENSKY_CLIENT_ID/
+  // SECRET — anonymous is ~100 calls/day and 429s constantly. On any failure we
+  // fall back to the keyless adsb.lol regions so we're never left with zero.
+  if (process.env.AIRCRAFT_PROVIDER === "opensky") {
+    try {
+      for (const a of await fetchAircraft()) put(a, "global");
+    } catch (err) {
+      log(TAG, `snapshotAircraft global (opensky) failed — falling back to adsb.lol regions`, { err: summarizeForLog(err) });
+      blogErr(TAG, `aircraft snapshot (opensky global) failed; using adsb.lol regions`, err, "tracks", "aircraft");
+      await collectRegions();
+    }
+  } else {
+    await collectRegions();
   }
 
   const recorded = await db.trackSnapshots.record([...aircraft.values()]);
@@ -201,6 +252,7 @@ export async function snapshotShips(_job: Job) {
         lat: s.lat,
         headingDeg: s.headingDeg ?? s.cogDeg,
         speed: s.sogKn,
+        cogDeg: s.cogDeg,
         batchAt,
       });
     }

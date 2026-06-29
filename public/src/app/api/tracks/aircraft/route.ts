@@ -37,16 +37,32 @@ export async function GET(req: Request) {
   try {
     const db = await getAppDb();
     const { at, rows } = await db.trackSnapshots.latest({ kind: "aircraft", bbox, limit });
-    const aircraft: Aircraft[] = rows.map((r) => ({
-      icao24: r.externalId,
-      callsign: r.name,
-      lng: r.lng,
-      lat: r.lat,
-      altM: r.altM,
-      velocityMS: r.speed,
-      headingDeg: r.headingDeg,
-      onGround: r.altM === 0,
-    }));
+
+    // Join the cached hexdb metadata (registration/type/operator) by ICAO24.
+    const icaos = [...new Set(rows.map((r) => r.externalId.toLowerCase()))];
+    const metaRes = icaos.length
+      ? await db.aircraftMeta.getAll({ id: { $in: icaos } }, { limit: icaos.length })
+      : { data: [] };
+    const metaById = new Map((metaRes.data ?? []).map((m) => [m.id, m]));
+
+    const aircraft: Aircraft[] = rows.map((r) => {
+      const m = metaById.get(r.externalId.toLowerCase());
+      return {
+        icao24: r.externalId,
+        callsign: r.name,
+        country: r.country,
+        lng: r.lng,
+        lat: r.lat,
+        altM: r.altM,
+        velocityMS: r.speed,
+        headingDeg: r.headingDeg,
+        verticalRateMS: r.verticalRateMS,
+        onGround: r.altM === 0,
+        registration: m?.registration,
+        acType: m?.type,
+        operator: m?.operator,
+      };
+    });
     const stale = !at || Date.now() - at.getTime() > STALE_MS;
     return NextResponse.json(
       { count: aircraft.length, total: aircraft.length, at: at?.toISOString() ?? null, stale, aircraft },

@@ -53,8 +53,10 @@ export function alertsLayer(features: AlertFeature[]) {
     pointRadiusMinPixels: 4,
     pointRadiusMaxPixels: 11,
     pickable: true,
+    // depthTest on so far-side alert areas are occluded by the basemap depth
+    // sphere instead of bleeding through the front of the globe.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    parameters: { depthTest: false } as any,
+    parameters: { depthTest: true } as any,
     updateTriggers: {
       getFillColor: features.length,
       getLineColor: features.length,

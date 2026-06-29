@@ -37,6 +37,7 @@ export async function GET(req: Request) {
       lng: r.lng,
       lat: r.lat,
       sogKn: r.speed,
+      cogDeg: r.cogDeg,
       headingDeg: r.headingDeg,
     }));
     const stale = !at || Date.now() - at.getTime() > STALE_MS;

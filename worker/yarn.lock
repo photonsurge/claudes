@@ -792,7 +792,7 @@
     "@tybys/wasm-util" "^0.10.3"
 
 "@photonsurge/shared@file:../shared":
-  version "0.1.4"
+  version "0.1.5"
   dependencies:
     bullmq "5.73.4"
     jsonwebtoken "^9.0.3"

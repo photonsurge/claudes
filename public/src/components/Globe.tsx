@@ -73,6 +73,46 @@ const FLY_MAX = 3500;
 const easeInOutCubic = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
+/** Hover tooltip for a picked live track (aircraft/ship/satellite). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function trackTooltip(o: any) {
+  if (!o || (o.kind !== "aircraft" && o.kind !== "ship" && o.kind !== "satellite")) return null;
+  const rows: string[] = [];
+  rows.push(`<b>${o.flag ? `${o.flag} ` : ""}${o.name ?? o.code ?? ""}</b>`);
+  const kindLabel = o.kind === "aircraft" ? "Aircraft" : o.kind === "ship" ? "Ship" : "Satellite";
+  rows.push(o.code && o.code !== o.name ? `${kindLabel} · ${o.code}` : kindLabel);
+  if (o.kind === "aircraft" && (o.acType || o.registration)) {
+    rows.push([o.acType, o.registration].filter(Boolean).join(" · "));
+  }
+  if (o.kind === "aircraft" && o.operator) rows.push(o.operator);
+  if (o.country) rows.push(o.country);
+  if (o.kind === "aircraft") {
+    if (o.altM != null) rows.push(`Alt ${Math.round(o.altM).toLocaleString()} m`);
+    if (o.speedMS != null) rows.push(`Speed ${Math.round(o.speedMS * 1.94384)} kt`);
+    if (o.verticalRateMS != null && Math.abs(o.verticalRateMS) > 0.5)
+      rows.push(`${o.verticalRateMS > 0 ? "↑" : "↓"} ${Math.abs(Math.round(o.verticalRateMS * 196.85))} ft/min`);
+    if (o.heading != null) rows.push(`Hdg ${Math.round(o.heading)}°`);
+  } else if (o.kind === "ship") {
+    if (o.sogKn != null) rows.push(`Speed ${o.sogKn.toFixed(1)} kn`);
+    if (o.heading != null) rows.push(`Course ${Math.round(o.heading)}°`);
+  } else {
+    if (o.altM != null) rows.push(`Alt ${Math.round(o.altM / 1000).toLocaleString()} km`);
+    if (o.speedMS != null) rows.push(`Speed ${(o.speedMS / 1000).toFixed(1)} km/s`);
+  }
+  return {
+    html: rows.join("<br/>"),
+    style: {
+      background: "#0c111cE6",
+      color: "#fff",
+      fontSize: "12px",
+      lineHeight: "1.45",
+      padding: "6px 8px",
+      borderRadius: "6px",
+      border: "1px solid #1b2030",
+    },
+  };
+}
+
 /** Rough GlobeView zoom that frames a bbox. */
 function zoomForBbox(bbox: [number, number, number, number]): number {
   const [w, s, e, n] = bbox;
@@ -200,6 +240,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       viewState: viewStateRef.current as any,
       layers: [],
+      // Hover a plane/ship/satellite → metadata card (flag, code, alt, speed…).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      getTooltip: ({ object }: any) => trackTooltip(object),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onViewStateChange: ({ viewState, interactionState }: any) => {
         viewStateRef.current = viewState;
@@ -367,7 +410,14 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // the point markers).
     if (state.showTrails && trails.length) layers.push(trailsLayer(trails, state.trailOpacity));
     if (state.showOrbits && orbits.length) layers.push(orbitLayer(orbits));
-    if (tracks.length) layers.push(...tracksLayer(tracks, { labels: state.showTrackLabels }));
+    if (tracks.length)
+      layers.push(
+        ...tracksLayer(tracks, {
+          labels: state.showTrackLabels,
+          aircraftStyle: state.aircraftStyle,
+          shipStyle: state.shipStyle,
+        }),
+      );
 
     deck.setProps({ layers });
   }, [
@@ -387,6 +437,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showContours,
     state.showRadar,
     state.showTrackLabels,
+    state.aircraftStyle,
+    state.shipStyle,
     state.showOrbits,
     state.showTrails,
     state.trailOpacity,

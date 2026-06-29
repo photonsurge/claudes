@@ -73,6 +73,18 @@ export const WIND_PRESETS: Record<string, WindSettings> = {
 /** How the wind field is drawn. */
 export type WindMode = "particles" | "barbs";
 
+/** How aircraft/ship markers are coloured on the live-track overlay. */
+export type TrackColorMode = "kind" | "speed" | "altitude" | "country";
+/** Marker shape for aircraft/ships (satellites always render as dots). */
+export type TrackIconMode = "dot" | "arrow" | "glyph";
+
+/** Per-kind marker styling — aircraft and ships are configured independently. */
+export interface TrackStyle {
+  color: TrackColorMode;
+  icon: TrackIconMode;
+}
+export const DEFAULT_TRACK_STYLE: TrackStyle = { color: "kind", icon: "arrow" };
+
 /**
  * The full operator state rendered by /watch. Kept intentionally flat and
  * JSON-serialisable so it round-trips cleanly over the socket and through Mongo.
@@ -122,6 +134,10 @@ export interface ControlState {
   spinEpoch: number;
   /** Show name labels on the live-track overlay (decluttered). */
   showTrackLabels: boolean;
+  /** Marker styling for aircraft (colour mode + icon), independent of ships. */
+  aircraftStyle: TrackStyle;
+  /** Marker styling for ships (colour mode + icon), independent of aircraft. */
+  shipStyle: TrackStyle;
   /** Draw satellite orbit rings (one period each). */
   showOrbits: boolean;
   /** Draw recent trailing routes behind aircraft/ships (from recorded history). */
@@ -162,6 +178,8 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   spinSpeed: 8,
   spinEpoch: 0,
   showTrackLabels: false,
+  aircraftStyle: { ...DEFAULT_TRACK_STYLE },
+  shipStyle: { ...DEFAULT_TRACK_STYLE },
   showOrbits: false,
   showTrails: false,
   trailMinutes: 30,
@@ -233,6 +251,14 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
       typeof patch.showTrackLabels === "boolean"
         ? patch.showTrackLabels
         : base.showTrackLabels ?? false,
+    aircraftStyle: {
+      color: patch.aircraftStyle?.color ?? base.aircraftStyle?.color ?? DEFAULT_TRACK_STYLE.color,
+      icon: patch.aircraftStyle?.icon ?? base.aircraftStyle?.icon ?? DEFAULT_TRACK_STYLE.icon,
+    },
+    shipStyle: {
+      color: patch.shipStyle?.color ?? base.shipStyle?.color ?? DEFAULT_TRACK_STYLE.color,
+      icon: patch.shipStyle?.icon ?? base.shipStyle?.icon ?? DEFAULT_TRACK_STYLE.icon,
+    },
     showOrbits: typeof patch.showOrbits === "boolean" ? patch.showOrbits : base.showOrbits ?? false,
     showTrails: typeof patch.showTrails === "boolean" ? patch.showTrails : base.showTrails ?? false,
     trailMinutes:

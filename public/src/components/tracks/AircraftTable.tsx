@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { listAircraft } from "../../lib/tracks/client";
 import type { Aircraft } from "../../lib/tracks/types";
+import { countryNameFlag } from "@photonsurge/shared/tracks/flags";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "./styles";
 
 // A few handy regions to scope the (heavy) global feed. [w, s, e, n].
@@ -71,6 +72,8 @@ export default function AircraftTable() {
           <tr style={{ textAlign: "left", color: "#8b95a7" }}>
             <th style={th}>Callsign</th>
             <th style={th}>ICAO24</th>
+            <th style={th}>Reg</th>
+            <th style={th}>Type</th>
             <th style={th}>Country</th>
             <th style={thNum}>Lat</th>
             <th style={thNum}>Lon</th>
@@ -84,7 +87,9 @@ export default function AircraftTable() {
             <tr key={a.icao24} style={{ borderTop: "1px solid #1b2030" }}>
               <td style={td}>{a.callsign ?? "—"}</td>
               <td style={{ ...td, color: "#8b95a7" }}>{a.icao24}</td>
-              <td style={td}>{a.country ?? ""}</td>
+              <td style={td}>{a.registration ?? "—"}</td>
+              <td style={{ ...td, color: "#8b95a7" }}>{a.acType ?? "—"}</td>
+              <td style={td}>{a.country ? `${countryNameFlag(a.country)} ${a.country}`.trim() : ""}</td>
               <td style={tdNum}>{a.lat.toFixed(2)}</td>
               <td style={tdNum}>{a.lng.toFixed(2)}</td>
               <td style={tdNum}>{a.altM != null ? a.altM.toFixed(0) : "—"}</td>
@@ -94,7 +99,7 @@ export default function AircraftTable() {
           ))}
           {rows.length === 0 && (
             <tr>
-              <td style={td} colSpan={8}>
+              <td style={td} colSpan={10}>
                 {loading ? "Loading…" : "No aircraft — try another region or refresh."}
               </td>
             </tr>

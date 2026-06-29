@@ -112,6 +112,18 @@ process.on("uncaughtException", (err) => {
     { connection: { ...getRedisOptions(), maxRetriesPerRequest: null }, concurrency: 5, stalledInterval: 30_000, maxStalledCount: 2 },
   );
 
+  // Clear stale repeatable schedules before re-registering. BullMQ keys a
+  // repeatable by its options, so changing an interval (e.g. SHIP_SNAPSHOT_MS)
+  // with the same jobId leaves the OLD schedule firing alongside the new one.
+  // Wiping them here means the registrations below are always authoritative.
+  try {
+    const repeatables = await myQueue.getRepeatableJobs();
+    for (const r of repeatables) await myQueue.removeRepeatableByKey(r.key);
+    if (repeatables.length) log(TAG, `cleared ${repeatables.length} stale repeatable(s)`);
+  } catch (err) {
+    log(TAG, `failed to clear stale repeatables`, summarizeForLog(err));
+  }
+
   // ---- Repeatable weather.check job (BullMQ, not node-cron) ----
   // Enqueues `{ type:"weather", event:"check" }` on RUN_CHECK_CRON. A fixed
   // jobId de-duplicates the repeat scheduler across restarts.
@@ -164,17 +176,30 @@ process.on("uncaughtException", (err) => {
   // TRACK_SNAPSHOTS_ENABLED=false to disable polling external feeds entirely.
   if (process.env.TRACK_SNAPSHOTS_ENABLED !== "false") {
     const AIRCRAFT_SNAPSHOT_MS = Number(process.env.AIRCRAFT_SNAPSHOT_MS || 60 * 1000);
-    const SHIP_SNAPSHOT_MS = Number(process.env.SHIP_SNAPSHOT_MS || 120 * 1000);
+    // 6min interval gives the 5min AIS collection window (SHIP_COLLECT_MS) room
+    // to finish before the next run. Both env-tunable for wider coverage.
+    const SHIP_SNAPSHOT_MS = Number(process.env.SHIP_SNAPSHOT_MS || 360 * 1000);
     try {
+      // immediately: run one snapshot at boot so a restart shows fresh data
+      // without waiting out a full interval (esp. the 6min ship cadence).
       await myQueue.add(
         "do",
         { domain: "tracks", type: "tracks", event: "snapshotAircraft", data: {} },
-        { repeat: { every: AIRCRAFT_SNAPSHOT_MS }, jobId: "tracks-snapshot-aircraft" },
+        { repeat: { every: AIRCRAFT_SNAPSHOT_MS, immediately: true }, jobId: "tracks-snapshot-aircraft" },
       );
       await myQueue.add(
         "do",
         { domain: "tracks", type: "tracks", event: "snapshotShips", data: {} },
-        { repeat: { every: SHIP_SNAPSHOT_MS }, jobId: "tracks-snapshot-ships" },
+        { repeat: { every: SHIP_SNAPSHOT_MS, immediately: true }, jobId: "tracks-snapshot-ships" },
+      );
+      // Progressively fill the keyless hexdb aircraft-metadata cache.
+      await myQueue.add(
+        "do",
+        { domain: "tracks", type: "tracks", event: "enrichAircraft", data: {} },
+        {
+          repeat: { every: Number(process.env.AIRCRAFT_ENRICH_MS || 60_000), immediately: true },
+          jobId: "tracks-enrich-aircraft",
+        },
       );
       log(TAG, `registered repeatable tracks.snapshot`, {
         aircraftMs: AIRCRAFT_SNAPSHOT_MS,
