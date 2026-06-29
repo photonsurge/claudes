@@ -8,7 +8,7 @@ import type { Server } from "socket.io";
 import type { SocketWithContext } from "../types";
 import { PUBLIC_ROOM } from "../rooms";
 import { log, warn } from "../utils";
-import { CONTROL_STATE } from "@photonsurge/shared/control";
+import { CONTROL_STATE, SCENE_STATE } from "@photonsurge/shared/control";
 import { canRelayControlState, canRelayWorkerEvent, resolveWorkerEventName } from "./relay";
 
 /**
@@ -43,6 +43,18 @@ export function registerHandlers(io: Server, socket: SocketWithContext) {
     }
     log("relay.control:state", { from: ctx.actorId });
     io.to(PUBLIC_ROOM).emit(CONTROL_STATE, payload);
+  });
+
+  // Operator → watchers relay for a named scene (`/watch/:id`). Same auth as
+  // control:state; the `{ id, state }` envelope lets each watcher filter to its
+  // own scene.
+  socket.on(SCENE_STATE, (payload: { id?: string } & Record<string, unknown>) => {
+    if (!canRelayControlState(ctx.actorType)) {
+      warn("relay.denied", { socketId: socket.id, actorType: ctx.actorType, event: SCENE_STATE });
+      return;
+    }
+    log("relay.scene:state", { from: ctx.actorId, scene: payload?.id });
+    io.to(PUBLIC_ROOM).emit(SCENE_STATE, payload);
   });
 
   // Simple round-trip used by clients to confirm the socket is alive.

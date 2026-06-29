@@ -21,6 +21,25 @@ import Timeline from "./Timeline";
 import Legend from "./Legend";
 import SearchFlyTo from "./SearchFlyTo";
 
+/**
+ * Spin speed uses a LOG scale so the slow, cinematic 0.1–1°/s range — where a
+ * linear 0.1–30 slider gives almost no travel — gets ~40% of the track and is
+ * easy to dial in. Position 0..1 ↔ speed via 10^lerp(log10(min),log10(max),t).
+ */
+const SPIN_MIN = 0.1;
+const SPIN_MAX = 30;
+const spinPosToSpeed = (pos: number): number => {
+  const lo = Math.log10(SPIN_MIN);
+  const raw = Math.pow(10, lo + pos * (Math.log10(SPIN_MAX) - lo));
+  // Round finely below 1°/s (0.05 steps), coarser above (0.5 steps).
+  return raw < 1 ? Math.round(raw * 20) / 20 : Math.round(raw * 2) / 2;
+};
+const spinSpeedToPos = (speed: number): number => {
+  const lo = Math.log10(SPIN_MIN);
+  const clamped = Math.min(SPIN_MAX, Math.max(SPIN_MIN, speed));
+  return (Math.log10(clamped) - lo) / (Math.log10(SPIN_MAX) - lo);
+};
+
 export interface ControlPanelProps {
   state: ControlState;
   manifest: WeatherManifest | null;
@@ -302,14 +321,14 @@ export default function ControlPanel({
               Speed
               <input
                 type="range"
-                min={1}
-                max={30}
-                step={1}
-                value={state.spinSpeed}
-                onChange={(e) => patch({ spinSpeed: Number(e.target.value) })}
+                min={0}
+                max={1}
+                step={0.001}
+                value={spinSpeedToPos(state.spinSpeed)}
+                onChange={(e) => patch({ spinSpeed: spinPosToSpeed(Number(e.target.value)) })}
                 aria-label="Spin speed"
               />
-              <span style={{ color: "#fff", width: 36, textAlign: "right" }}>{state.spinSpeed}°/s</span>
+              <span style={{ color: "#fff", width: 44, textAlign: "right" }}>{state.spinSpeed}°/s</span>
             </label>
           )}
         </div>

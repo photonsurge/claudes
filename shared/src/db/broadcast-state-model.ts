@@ -12,11 +12,15 @@ export interface iBroadcastState extends iGeneralModel, ControlState {}
 export interface iBroadcastStateModel extends iBroadcastState {
   id: string;
   _id: string;
+  /** Operator-facing scene name. The singleton "default" doc is "Main". */
+  name?: string;
 }
 
 const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
   {
     id: { type: String, required: true, unique: true, default: BROADCAST_STATE_ID },
+    /** Operator-facing scene name. The singleton "default" doc is "Main". */
+    name: { type: String, required: false, default: "Main" },
     activeVariable: { type: String, required: false, default: "temp" },
     fhr: { type: Number, required: true, default: 0 },
     basemap: { type: String, required: true, default: "dark" },

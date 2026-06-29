@@ -16,7 +16,7 @@ import { makeQuakeRepo } from "./quake-repo";
 import { getAircraftMetaModel, iAircraftMetaModel } from "./aircraft-meta-model";
 import { getLogModel } from "./log-model";
 import { getBroadcastStateModel, BROADCAST_STATE_ID } from "./broadcast-state-model";
-import { DEFAULT_CONTROL_STATE } from "../control";
+import { DEFAULT_CONTROL_STATE, MAIN_SCENE_ID } from "../control";
 
 /** Sample entity for the ping demo feature. Replace/extend with real models. */
 export interface iPing extends iEntity {
@@ -64,8 +64,55 @@ export function createDb(conn: Connection) {
       if (existing.success && existing.data) return existing.data;
       const created = await broadcastState.upsertByID(BROADCAST_STATE_ID, {
         ...DEFAULT_CONTROL_STATE,
-      });
+        name: "Main",
+      } as any);
       return created.data ?? null;
+    },
+
+    /**
+     * All broadcast scenes (the "default" main scene + named ones), as `{ id,
+     * name, updatedAt }` metadata sorted with main first then by name.
+     */
+    async listScenes() {
+      const res = await broadcastState.getAll({}, { sort: { name: 1 } });
+      const docs = (res.success && res.data) || [];
+      return docs
+        .map((d: any) => ({
+          id: d.id as string,
+          name: (d.name as string) || (d.id === MAIN_SCENE_ID ? "Main" : d.id),
+          updatedAt: d.updated ?? d.updatedAt,
+        }))
+        .sort((a: { id: string; name: string }, b: { id: string; name: string }) =>
+          a.id === MAIN_SCENE_ID ? -1 : b.id === MAIN_SCENE_ID ? 1 : a.name.localeCompare(b.name),
+        );
+    },
+
+    /** A single scene doc by id, or null if it doesn't exist. */
+    async getScene(id: string) {
+      const res = await broadcastState.getByID(id);
+      return res.success && res.data ? res.data : null;
+    },
+
+    /**
+     * Create a named scene seeded from `seed` (defaults to the main scene's
+     * current state, falling back to DEFAULT_CONTROL_STATE). No-op overwrite if
+     * the id already exists is prevented by the caller checking getScene first.
+     */
+    async createScene(id: string, name: string, seed?: Partial<typeof DEFAULT_CONTROL_STATE>) {
+      const base = seed ?? DEFAULT_CONTROL_STATE;
+      const created = await broadcastState.upsertByID(id, {
+        ...DEFAULT_CONTROL_STATE,
+        ...base,
+        name,
+      } as any);
+      return created.data ?? null;
+    },
+
+    /** Delete a named scene. The "default" main scene is protected (returns false). */
+    async deleteScene(id: string) {
+      if (id === MAIN_SCENE_ID) return false;
+      const res = await broadcastState.deleteByID(id);
+      return !!res.success;
     },
   };
 }

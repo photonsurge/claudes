@@ -5,6 +5,7 @@ import {
   CONTROL_STATE,
   WEATHER_RUN,
   ControlState,
+  slugifySceneId,
 } from "./control";
 
 describe("DEFAULT_CONTROL_STATE", () => {
@@ -112,5 +113,21 @@ describe("mergeControlState", () => {
     const legacy = { ...DEFAULT_CONTROL_STATE, basemapColors: undefined as any };
     const next = mergeControlState(legacy, {});
     expect(next.basemapColors).toEqual(DEFAULT_BASEMAP_COLORS);
+  });
+});
+
+describe("slugifySceneId", () => {
+  it("lowercases and dashes free text into a url-safe id", () => {
+    expect(slugifySceneId("Atlantic Wind")).toBe("atlantic-wind");
+    expect(slugifySceneId("  North_Pole / Temp!! ")).toBe("north-pole-temp");
+  });
+
+  it("collapses runs of separators and trims edge dashes", () => {
+    expect(slugifySceneId("--a   b---c--")).toBe("a-b-c");
+  });
+
+  it("returns empty string when there is nothing usable", () => {
+    expect(slugifySceneId("***")).toBe("");
+    expect(slugifySceneId("")).toBe("");
   });
 });

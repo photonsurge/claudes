@@ -2,14 +2,21 @@
 
 /**
  * /control — operator console: a live globe preview + the full ControlPanel.
- * Every change updates local state, emits CONTROL_STATE over the socket, and
- * debounce-persists to /api/broadcast/state. Initial state loads from the API.
+ * The operator drives one *scene* at a time (a scene selector at the top of the
+ * panel switches target). Every change updates local state, emits SCENE_STATE
+ * over the socket, and debounce-persists to /api/scenes/:id. The main scene also
+ * fans the legacy CONTROL_STATE so the bare /watch keeps following.
  */
 import { useEffect, useRef, useState } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
-import { DEFAULT_CONTROL_STATE, type ControlState } from "@photonsurge/shared/control";
-import { fetchBroadcastState, useControlEmitter } from "../../lib/control";
+import {
+  DEFAULT_CONTROL_STATE,
+  MAIN_SCENE_ID,
+  type ControlState,
+  type SceneMeta,
+} from "@photonsurge/shared/control";
 import { fetchManifest } from "../../lib/manifest";
+import { listScenes, fetchSceneState, useSceneEmitter } from "../../lib/scenes";
 import { listCities, type City } from "../../lib/cities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
@@ -22,8 +29,10 @@ export default function ControlPage() {
   const [state, setState] = useState<ControlState>(DEFAULT_CONTROL_STATE);
   const [manifest, setManifest] = useState<WeatherManifest | null>(null);
   const [cities, setCities] = useState<City[]>([]);
+  const [scenes, setScenes] = useState<SceneMeta[]>([]);
+  const [sceneId, setSceneId] = useState<string>(MAIN_SCENE_ID);
   const globe = useRef<GlobeHandle | null>(null);
-  const emit = useControlEmitter();
+  const emit = useSceneEmitter();
 
   const { tracks, orbits, trails } = useTracks({
     showSatellites: state.showSatellites,
@@ -42,25 +51,34 @@ export default function ControlPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [s, m, c] = await Promise.all([
-        fetchBroadcastState(),
+      const [s, m, c, sc] = await Promise.all([
+        fetchSceneState(MAIN_SCENE_ID),
         fetchManifest(),
         listCities(),
+        listScenes(),
       ]);
       if (cancelled) return;
       setState(s);
       setManifest(m);
       setCities(c);
+      setScenes(sc);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Apply a state change: local + live emit + persist.
+  // Apply a state change to the active scene: local + live emit + persist.
   const apply = (next: ControlState) => {
     setState(next);
-    emit(next);
+    emit(sceneId, next);
+  };
+
+  // Switch the scene the operator is driving; load that scene's persisted state.
+  const switchScene = async (id: string) => {
+    setSceneId(id);
+    const next = await fetchSceneState(id);
+    setState(next);
   };
 
   return (
@@ -98,7 +116,29 @@ export default function ControlPage() {
             gap: 8,
           }}
         >
-          <h2 style={{ marginTop: 0, fontSize: 18 }}>Operator</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h2 style={{ margin: 0, fontSize: 18 }}>Operator</h2>
+            <select
+              aria-label="Scene"
+              value={sceneId}
+              onChange={(e) => switchScene(e.target.value)}
+              style={{
+                background: "#0a0e16",
+                color: "#fff",
+                border: "1px solid #2a3344",
+                borderRadius: 6,
+                padding: "4px 8px",
+                fontSize: 13,
+              }}
+            >
+              {scenes.length === 0 && <option value={MAIN_SCENE_ID}>Main</option>}
+              {scenes.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <DebugButton
             title="State"
             tooltip="Inspect live control state, tracks & overlays"

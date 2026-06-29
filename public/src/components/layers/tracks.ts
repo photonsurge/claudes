@@ -166,7 +166,8 @@ export function tracksLayer(
       id,
       data,
       getPosition: trackPosition,
-      getIcon: (d) => iconFor(d, style.icon),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      getIcon: ((d: Track) => iconFor(d, style.icon)) as any,
       getColor: (d) => colorFor(d, style.color),
       getAngle: (d) => -(d.heading ?? 0), // deck rotates CCW; heading is CW from N
       getSize: style.icon === "glyph" ? 15 : 13,

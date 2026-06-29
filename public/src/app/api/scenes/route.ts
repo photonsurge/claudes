@@ -1,0 +1,68 @@
+import { NextResponse } from "next/server";
+import { getAppDb } from "@photonsurge/shared/db/index";
+import {
+  DEFAULT_CONTROL_STATE,
+  mergeControlState,
+  slugifySceneId,
+  MAIN_SCENE_ID,
+  type ControlState,
+} from "@photonsurge/shared/control";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const NO_CACHE = { "Cache-Control": "no-store" };
+
+/** GET /api/scenes — every broadcast scene as `{ id, name, updatedAt }`. */
+export async function GET() {
+  const db = await getAppDb();
+  // Ensure the main scene exists so the list is never empty on a fresh db.
+  await db.getOrInitBroadcastState();
+  const scenes = await db.listScenes();
+  return NextResponse.json({ scenes }, { status: 200, headers: NO_CACHE });
+}
+
+/**
+ * POST /api/scenes { name, copyFrom? } — create a named scene. The id is slugged
+ * from the name; new scenes seed from `copyFrom` (another scene's state) or the
+ * current main scene. 409 if the slug already exists, 400 on bad/empty name.
+ */
+export async function POST(req: Request) {
+  let body: { name?: string; copyFrom?: string } = {};
+  try {
+    body = (await req.json()) ?? {};
+  } catch {
+    /* empty body → 400 below */
+  }
+
+  const name = String(body.name ?? "").trim();
+  const id = slugifySceneId(name);
+  if (!name || !id) {
+    return NextResponse.json({ error: "a non-empty name is required" }, { status: 400, headers: NO_CACHE });
+  }
+  if (id === MAIN_SCENE_ID) {
+    return NextResponse.json({ error: "that name is reserved" }, { status: 400, headers: NO_CACHE });
+  }
+
+  const db = await getAppDb();
+  if (await db.getScene(id)) {
+    return NextResponse.json({ error: "a scene with that id already exists" }, { status: 409, headers: NO_CACHE });
+  }
+
+  // Seed from the requested source scene (default: main), stripped to ControlState.
+  const sourceId = body.copyFrom || MAIN_SCENE_ID;
+  const source =
+    sourceId === MAIN_SCENE_ID
+      ? await db.getOrInitBroadcastState()
+      : await db.getScene(sourceId);
+  const seed: ControlState = mergeControlState(
+    DEFAULT_CONTROL_STATE,
+    (source ?? {}) as Partial<ControlState>,
+  );
+
+  const created = await db.createScene(id, name, seed);
+  return NextResponse.json(
+    { id, name, scene: mergeControlState(DEFAULT_CONTROL_STATE, (created ?? {}) as Partial<ControlState>) },
+    { status: 201, headers: NO_CACHE },
+  );
+}

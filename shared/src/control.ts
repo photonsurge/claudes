@@ -15,6 +15,46 @@ export const CITIES_UPDATED = "cities:updated" as const;
 /** Worker → browser: a new aircraft/ship snapshot frame was recorded. */
 export const TRACKS_UPDATED = "tracks:updated" as const;
 
+/**
+ * Operator → watchers relay for a *named scene*. `CONTROL_STATE` drives the one
+ * legacy `/watch`; `SCENE_STATE` carries an `{ id, state }` envelope so multiple
+ * `/watch/:id` pages (OBS sources / overlay windows) each follow their own scene.
+ */
+export const SCENE_STATE = "scene:state" as const;
+
+/** Id of the singleton "main" broadcast — the scene `/watch` (no id) renders. */
+export const MAIN_SCENE_ID = "default" as const;
+
+/** Socket envelope for a scene-scoped control update. */
+export interface SceneStatePayload {
+  /** Scene id this update targets (matches a scene doc id). */
+  id: string;
+  /** The full control state for that scene. */
+  state: ControlState;
+}
+
+/** Scene list-item metadata (no full ControlState) for admin/selector lists. */
+export interface SceneMeta {
+  id: string;
+  /** Operator-facing display name. */
+  name: string;
+  /** ISO update time, if known. */
+  updatedAt?: string;
+}
+
+/**
+ * Normalise a free-text scene name into a url/id-safe slug: lowercase, ascii
+ * alphanumerics + single dashes, no leading/trailing dash. Returns "" if the
+ * input has no usable characters (caller should reject empty).
+ */
+export function slugifySceneId(name: string): string {
+  return String(name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
 export type WindUnit = "kt" | "m/s";
 export type TempUnit = "C" | "F";
 
