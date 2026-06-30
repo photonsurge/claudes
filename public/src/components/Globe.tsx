@@ -416,6 +416,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
           labels: state.showTrackLabels,
           aircraftStyle: state.aircraftStyle,
           shipStyle: state.shipStyle,
+          zoom: state.camera.zoom,
         }),
       );
 

@@ -1,4 +1,4 @@
-import { ScatterplotLayer, PathLayer, TextLayer, IconLayer } from "@deck.gl/layers";
+import { ScatterplotLayer, PathLayer, TextLayer, SolidPolygonLayer } from "@deck.gl/layers";
 import type { Track } from "../../lib/tracks/types";
 import type { TrackColorMode, TrackIconMode, TrackStyle } from "@photonsurge/shared/control";
 import type { OrbitSegment } from "../../lib/tracks/orbit";
@@ -64,57 +64,6 @@ function colorFor(d: Track, mode: TrackColorMode): RGB {
   }
 }
 
-/**
- * Marker icons are baked ONCE into a single atlas canvas (arrow/plane/ship laid
- * out in a row) and handed to IconLayer as a prepacked `iconAtlas` + static
- * `iconMapping`. This deliberately avoids IconLayer's per-item auto-packing
- * (getIcon → {url} → async `load()` of a data: URL), which silently renders
- * NOTHING under _GlobeView — the atlas never fills, so every marker maps to the
- * MISSING_ICON and draws blank. A prepacked canvas atlas takes the synchronous
- * texture path instead. White shapes authored pointing north (up) with
- * mask:true so getColor tints them. Built lazily (needs `document`) + cached.
- */
-const ICON_PX = 32; // per-cell size in the atlas
-const ICON_SHAPES: Record<string, [number, number][]> = {
-  // Each shape is authored in a 32×32 cell, pointing north (up).
-  arrow: [[16, 2], [28, 29], [16, 22], [4, 29]],
-  plane: [[16, 1], [19, 13], [31, 20], [31, 23], [18, 18], [17, 27], [21, 30], [21, 31], [16, 29], [11, 31], [11, 30], [15, 27], [14, 18], [1, 23], [1, 20], [13, 13]],
-  ship: [[16, 2], [23, 13], [23, 24], [20, 30], [12, 30], [9, 24], [9, 13]],
-};
-const ICON_ORDER = ["arrow", "plane", "ship"] as const;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type IconAtlas = { atlas: string; mapping: Record<string, any> };
-let ATLAS: IconAtlas | null = null;
-function iconAtlas(): IconAtlas | null {
-  if (ATLAS) return ATLAS;
-  if (typeof document === "undefined") return null; // SSR guard
-  const atlas = document.createElement("canvas");
-  atlas.width = ICON_PX * ICON_ORDER.length;
-  atlas.height = ICON_PX;
-  const ctx = atlas.getContext("2d")!;
-  ctx.fillStyle = "#ffffff";
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mapping: Record<string, any> = {};
-  ICON_ORDER.forEach((name, i) => {
-    const ox = i * ICON_PX;
-    ctx.beginPath();
-    ICON_SHAPES[name].forEach(([x, y], j) => (j ? ctx.lineTo(ox + x, y) : ctx.moveTo(ox + x, y)));
-    ctx.closePath();
-    ctx.fill();
-    mapping[name] = { x: ox, y: 0, width: ICON_PX, height: ICON_PX, anchorX: ICON_PX / 2, anchorY: ICON_PX / 2, mask: true };
-  });
-  // Hand IconLayer a PNG data URL (loads reliably) rather than the raw canvas,
-  // which renders blank under _GlobeView.
-  ATLAS = { atlas: atlas.toDataURL("image/png"), mapping };
-  return ATLAS;
-}
-
-/** Atlas key for a track's icon mode. */
-function iconName(d: Track, mode: TrackIconMode): string {
-  if (mode === "glyph") return d.kind === "aircraft" ? "plane" : "ship";
-  return "arrow";
-}
 
 /**
  * Metres above the globe surface to float aircraft/ships. Sitting them exactly
@@ -160,12 +109,41 @@ function labelSubset(tracks: Track[]): Track[] {
   return [...best.values()];
 }
 
+/**
+ * A small heading-oriented arrowhead triangle (3 pts, floated above the surface)
+ * for one track. Polygons render reliably under the MapLibre globe where Icon /
+ * Text layers (texture + font atlases) come back blank, so this is how we draw
+ * directional markers. `sizeDeg` is scaled by zoom so the arrow stays roughly a
+ * constant size on screen. Authored around the track position, tip toward heading.
+ */
+function arrowPolygon(d: Track, sizeDeg: number): [number, number, number][] {
+  const lng = d.position[0];
+  const lat = d.position[1];
+  const h = ((d.heading ?? 0) * Math.PI) / 180;
+  const cosL = Math.max(0.15, Math.cos((lat * Math.PI) / 180));
+  const fLng = Math.sin(h) / cosL;
+  const fLat = Math.cos(h); // forward (heading) unit
+  const rLng = Math.cos(h) / cosL;
+  const rLat = -Math.sin(h); // right unit
+  const s = sizeDeg;
+  const hw = s * 0.55; // half-width at the base
+  const baseLng = lng - fLng * s * 0.5;
+  const baseLat = lat - fLat * s * 0.5;
+  return [
+    [lng + fLng * s, lat + fLat * s, SURFACE_ALT_M], // tip (heading)
+    [baseLng + rLng * hw, baseLat + rLat * hw, SURFACE_ALT_M], // right
+    [baseLng - rLng * hw, baseLat - rLat * hw, SURFACE_ALT_M], // left
+  ];
+}
+
 export function tracksLayer(
   tracks: Track[],
-  opts: { labels?: boolean; aircraftStyle?: TrackStyle; shipStyle?: TrackStyle } = {},
+  opts: { labels?: boolean; aircraftStyle?: TrackStyle; shipStyle?: TrackStyle; zoom?: number } = {},
 ) {
   const aircraftStyle = opts.aircraftStyle ?? DEFAULT_STYLE;
   const shipStyle = opts.shipStyle ?? DEFAULT_STYLE;
+  // Arrow size in degrees, scaled so it's ~constant on screen across zooms.
+  const markerSizeDeg = Math.min(8, Math.max(0.05, 0.25 * Math.pow(2, 5 - (opts.zoom ?? 4))));
 
   const sats = tracks.filter((t) => t.kind === "satellite");
   const aircraft = tracks.filter((t) => t.kind === "aircraft");
@@ -189,48 +167,37 @@ export function tracksLayer(
       updateTriggers: { getFillColor: [mode, data.length] },
     });
 
-  // Heading-rotated, colour-tinted arrow/glyph markers for aircraft/ships.
-  // Uses a prepacked atlas (see iconAtlas) so deck takes the synchronous texture
-  // path rather than the auto-pack data:URL load that renders blank on a globe.
-  const markerLayer = (id: string, data: Track[], style: TrackStyle) => {
-    const icons = iconAtlas();
-    if (!icons) return dotLayer(`${id}-dot`, data, style.color); // SSR / no-canvas fallback
-    return new IconLayer<Track>({
+  // Directional arrowhead markers as filled triangles (SolidPolygonLayer).
+  // Icon/Text layers come back blank under the MapLibre globe, but polygons draw
+  // fine (same as alert areas), so this is the reliable way to show heading.
+  const markerLayer = (id: string, data: Track[], style: TrackStyle) =>
+    new SolidPolygonLayer<Track>({
       id,
       data,
-      iconAtlas: icons.atlas,
-      iconMapping: icons.mapping,
-      getPosition: trackPosition,
-      getIcon: (d) => iconName(d, style.icon),
-      getColor: (d) => colorFor(d, style.color),
-      getAngle: (d) => -(d.heading ?? 0), // deck rotates CCW; heading is CW from N
-      getSize: style.icon === "glyph" ? 15 : 13,
-      sizeUnits: "pixels",
-      sizeMinPixels: 8,
-      sizeMaxPixels: 26,
+      getPolygon: (d) => arrowPolygon(d, markerSizeDeg),
+      getFillColor: (d) => colorFor(d, style.color),
       pickable: true,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       parameters: { depthTest: true } as any,
-      updateTriggers: { getColor: [style.color, data.length], getIcon: style.icon, getAngle: data.length },
+      updateTriggers: {
+        getPolygon: [data.length, markerSizeDeg],
+        getFillColor: [style.color, data.length],
+      },
     });
-  };
 
   // Distinct ids per layer type: deck.gl errors if one id changes layer class
   // between renders (Scatterplot ↔ Icon), so dot/marker never share an id.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const layers: any[] = [];
+  // dot mode → scatter dot; arrow/glyph → heading-rotated TextLayer glyph.
+  const trackLayer = (id: string, data: Track[], style: TrackStyle) =>
+    style.icon === "dot"
+      ? dotLayer(`${id}-dot`, data, style.color)
+      : markerLayer(`${id}-icon`, data, style);
+
   if (sats.length) layers.push(dotLayer("live-tracks-sat", sats, "kind"));
-  // Always draw a scatter dot (the proven path — same layer as cities/quakes) so
-  // aircraft/ships are visible even if the IconLayer atlas fails to texture under
-  // _GlobeView; overlay the heading-rotated icon on top when not in dot mode.
-  if (aircraft.length) {
-    layers.push(dotLayer("live-tracks-aircraft-dot", aircraft, aircraftStyle.color));
-    if (aircraftStyle.icon !== "dot") layers.push(markerLayer("live-tracks-aircraft-icon", aircraft, aircraftStyle));
-  }
-  if (ships.length) {
-    layers.push(dotLayer("live-tracks-ship-dot", ships, shipStyle.color));
-    if (shipStyle.icon !== "dot") layers.push(markerLayer("live-tracks-ship-icon", ships, shipStyle));
-  }
+  if (aircraft.length) layers.push(trackLayer("live-tracks-aircraft", aircraft, aircraftStyle));
+  if (ships.length) layers.push(trackLayer("live-tracks-ship", ships, shipStyle));
 
   if (opts.labels) {
     const labelColor = (d: Track): RGB =>

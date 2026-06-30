@@ -62,24 +62,59 @@ function signedArea(ring: number[][]): number {
   return a / 2;
 }
 
+const eq = (a: number[], b: number[]): boolean => a[0] === b[0] && a[1] === b[1];
+
+/** Drop cyclically-adjacent duplicate points from an open (unclosed) ring. */
+function dedupeCyclic(pts: number[][]): number[][] {
+  const out: number[][] = [];
+  for (const p of pts) {
+    if (!out.length || !eq(out[out.length - 1], p)) out.push(p);
+  }
+  while (out.length > 1 && eq(out[0], out[out.length - 1])) out.pop();
+  return out;
+}
+
 /**
- * Clean a ring for Mongo's 2dsphere: drop non-finite/adjacent-duplicate points
- * and ensure it's closed. Returns null if too few distinct points to be a ring.
+ * Remove degenerate spikes: a vertex whose two neighbours coincide (an
+ * out-and-back A→B→A, or a P,Q,P,Q zigzag sliver) is a zero-area protrusion
+ * that S2 rejects as a duplicate/degenerate edge. Strip the tip and re-dedupe
+ * until the ring is stable. Operates on an open ring; mutates a copy.
+ */
+function dropSpikes(input: number[][]): number[][] {
+  let pts = input;
+  for (;;) {
+    if (pts.length < 3) return pts;
+    const n = pts.length;
+    let spike = -1;
+    for (let i = 0; i < n; i++) {
+      if (eq(pts[(i - 1 + n) % n], pts[(i + 1) % n])) {
+        spike = i;
+        break;
+      }
+    }
+    if (spike < 0) return pts;
+    pts = dedupeCyclic([...pts.slice(0, spike), ...pts.slice(spike + 1)]);
+  }
+}
+
+/**
+ * Clean a ring for Mongo's 2dsphere: drop non-finite / out-of-range /
+ * adjacent-duplicate points, strip degenerate spikes, then close it. Returns
+ * null if too few distinct points remain to form a ring.
  */
 function cleanRing(ring: number[][]): number[][] | null {
-  const out: number[][] = [];
+  const pts: number[][] = [];
   for (const pt of ring) {
     if (!Array.isArray(pt) || pt.length < 2) continue;
     const [x, y] = pt;
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    const prev = out[out.length - 1];
-    if (!prev || prev[0] !== x || prev[1] !== y) out.push([x, y]);
+    if (x < -180 || x > 180 || y < -90 || y > 90) continue; // outside lon/lat range
+    const prev = pts[pts.length - 1];
+    if (!prev || prev[0] !== x || prev[1] !== y) pts.push([x, y]);
   }
-  if (out.length < 3) return null;
-  const f = out[0];
-  const l = out[out.length - 1];
-  if (f[0] !== l[0] || f[1] !== l[1]) out.push([f[0], f[1]]);
-  return out.length < 4 ? null : out;
+  const cleaned = dropSpikes(dedupeCyclic(pts));
+  if (cleaned.length < 3) return null;
+  return [...cleaned, [cleaned[0][0], cleaned[0][1]]]; // close the ring
 }
 
 /**

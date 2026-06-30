@@ -1,7 +1,7 @@
 import type { AppDb } from "@photonsurge/shared/db/index";
 import type { AlertSource } from "@photonsurge/shared/alerts/types";
 import { referencedIdentifiers } from "@photonsurge/shared/alerts/normalise";
-import { log, logWarn } from "@photonsurge/shared/utill/logger";
+import { log } from "@photonsurge/shared/utill/logger";
 
 const TAG = "alerts:ingest";
 
@@ -58,16 +58,12 @@ export async function ingestSource(
       if (isNew) inserted++;
     } catch (err) {
       // Almost always an invalid polygon rejected by the 2dsphere index. Keep
-      // the alert — re-upsert it with geometry stripped so it's never lost, but
-      // surface *why* the geometry was rejected so dirty feeds are diagnosable.
+      // the alert — re-upsert it with geometry stripped so it's never lost.
+      // Bucket the rejection reason (counted in the summary line below) instead
+      // of logging per-alert: the error message embeds the whole document and
+      // would flood the console at hundreds of drops a tick.
       const reason = geoFailReason(err);
       geoReasons[reason] = (geoReasons[reason] ?? 0) + 1;
-      logWarn(TAG, `geometry rejected`, {
-        source: source.id,
-        id: a.identifier,
-        reason,
-        err: String((err as { message?: unknown })?.message ?? err),
-      });
       const stripped = {
         ...a,
         info: a.info.map((i) => ({ ...i, area: i.area.map((ar) => ({ ...ar, geometry: null })) })),

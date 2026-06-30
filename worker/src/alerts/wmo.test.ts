@@ -41,6 +41,29 @@ describe("featuresToCapMessages", () => {
     expect(msgs[0].identifier.startsWith("cn")).toBe(true);
   });
 
+  it("strips degenerate spikes / zigzag slivers from rings", () => {
+    // A clean square with an A→B→A spike and a P,Q,P,Q zigzag spliced in.
+    const dirty = [{
+      geometry: { type: "Polygon", coordinates: [[
+        [0, 0], [2, 0], [2, 0.5], [2, 0.5], // adjacent dup
+        [3, 0.5], [2, 0.5],                 // A→B→A spike (tip at [3,0.5])
+        [2, 1], [1, 1], [1, 1.5], [1, 1],   // zigzag sliver around [1,1]
+        [0, 1], [0, 0],
+      ]] },
+      properties: { capurl: "cn-cma-xx/2026/d.xml", event: "Fog", s: 2, sent: "x", expires: "2026-06-29T20:00:00Z" },
+    }];
+    const ring = (featuresToCapMessages(dirty as any, new Set())[0].info[0].area[0].geometry!.coordinates as number[][][])[0];
+    // No vertex's two neighbours may coincide (no spikes), and it must be closed.
+    const open = ring.slice(0, -1);
+    for (let i = 0; i < open.length; i++) {
+      const a = open[(i - 1 + open.length) % open.length];
+      const c = open[(i + 1) % open.length];
+      expect(a[0] === c[0] && a[1] === c[1]).toBe(false);
+    }
+    expect(ring[0]).toEqual(ring[ring.length - 1]); // closed
+    expect(open.length).toBeGreaterThanOrEqual(3);
+  });
+
   it("winds the outer ring CCW for the 2dsphere index", () => {
     // A clockwise square should come back counter-clockwise (signed area > 0).
     const cw = [{ geometry: { type: "Polygon", coordinates: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]] }, properties: { capurl: "cn-cma-xx/2026/c.xml", event: "Wind", s: 2, sent: "x", expires: "2026-06-29T20:00:00Z" } }];
