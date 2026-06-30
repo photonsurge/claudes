@@ -46,14 +46,17 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       build-essential gfortran wget cmake unzip file ca-certificates && \
     cd /tmp && \
-    wget -q https://www.ftp.cpc.ncep.noaa.gov/wd51we/wgrib2/wgrib2.tgz && \
+    wget -q --tries=3 --timeout=60 --retry-connrefused \
+      https://www.ftp.cpc.ncep.noaa.gov/wd51we/wgrib2/wgrib2.tgz && \
     tar xf wgrib2.tgz && \
     cd grib2 && \
     CC=gcc FC=gfortran make && \
     cp wgrib2/wgrib2 /usr/local/bin/wgrib2 && \
     cd / && rm -rf /tmp/wgrib2.tgz /tmp/grib2 && \
     rm -rf /var/lib/apt/lists/* && \
-    wgrib2 -version
+    # wgrib2 prints its version banner but exits 8 when given no GRIB file, so
+    # verify it runs by checking the banner output, not its exit code.
+    wgrib2 -version 2>&1 | grep -qiE 'v[0-9]'
 
 RUN groupadd --system --gid 1001 nodejs && \
     useradd  --system --uid 1001 --gid nodejs --no-create-home worker

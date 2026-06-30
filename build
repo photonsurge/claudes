@@ -1,12 +1,56 @@
 #!/usr/bin/env bash
-# Build everything: the shared lib first, then all Docker images.
+# Build everything: the shared lib first, then the Docker images — tagged with
+# the titan registry image names that docker-compose pulls.
+#
+# Each service is tagged with ITS OWN package.json version, plus a :latest alias
+# (the default compose pull/up uses :latest).
+#
+#   ./build                 # build shared + all services @ pkg version + :latest, then PUSH
+#   ./build worker socket   # build only the named services (still pushes)
+#   TAG=v9 ./build          # force one explicit tag for every service (overrides version)
+#   PUSH=0 ./build          # build only, skip the push
+#
+# Pushing requires a prior:  docker login titan.photonsurge.uk:5050
+# Images:  ${REGISTRY:-titan.photonsurge.uk:5050/thronix/weather-channel}/<service>:<tag>
 set -euo pipefail
 cd "$(dirname "$0")"
+
+PUSH="${PUSH:-1}"
+export REGISTRY="${REGISTRY:-titan.photonsurge.uk:5050/thronix/weather-channel}"
+TAG_OVERRIDE="${TAG:-}"
+
+SERVICES=("$@")
+[[ ${#SERVICES[@]} -eq 0 ]] && SERVICES=(public socket worker)
+
+svc_version() { grep '"version"' "$1/package.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/'; }
 
 echo "==> Building @photonsurge/shared"
 ( cd shared && yarn install && yarn build )
 
-echo "==> Building Docker images"
-docker compose build
+# Build at :latest (compose uses one TAG for all services), then re-tag each
+# service with its own package.json version below.
+echo "==> Building Docker images ($REGISTRY/<service>:latest)"
+TAG=latest docker compose build "${SERVICES[@]}"
 
-echo "==> Done."
+declare -a TAGGED
+for svc in "${SERVICES[@]}"; do
+  ver="${TAG_OVERRIDE:-$(svc_version "$svc")}"
+  if [[ "$ver" != "latest" ]]; then
+    docker tag "$REGISTRY/$svc:latest" "$REGISTRY/$svc:$ver"
+  fi
+  TAGGED+=("$svc:$ver")
+  echo "    tagged $REGISTRY/$svc -> $ver (+ latest)"
+done
+
+if [[ "$PUSH" == "1" ]]; then
+  echo "==> Pushing images to $REGISTRY"
+  for svc in "${SERVICES[@]}"; do
+    ver="${TAG_OVERRIDE:-$(svc_version "$svc")}"
+    docker push "$REGISTRY/$svc:latest"
+    [[ "$ver" != "latest" ]] && docker push "$REGISTRY/$svc:$ver"
+  done
+else
+  echo "    (push skipped: PUSH=0 — run PUSH=1 ./build after: docker login titan.photonsurge.uk:5050)"
+fi
+
+echo "==> Done.  ${TAGGED[*]}"

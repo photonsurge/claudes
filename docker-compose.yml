@@ -1,3 +1,9 @@
+# Image names resolve under the project's titan GitLab registry by default:
+#   titan.photonsurge.uk:5050/thronix/weather-channel/<service>:<tag>
+# Override REGISTRY / TAG via the environment (CI sets REGISTRY=$CI_REGISTRY_IMAGE).
+#   build:  docker compose build
+#   push:   docker compose push          (after: docker login titan.photonsurge.uk:5050)
+#   deploy: docker compose pull && docker compose up -d
 services:
   mongodb:
     image: mongo:8
@@ -18,6 +24,7 @@ services:
     networks: [internal]
 
   socket:
+    image: ${REGISTRY:-titan.photonsurge.uk:5050/thronix/weather-channel}/socket:${TAG:-latest}
     build:
       context: .
       dockerfile: socket/Dockerfile
@@ -31,6 +38,7 @@ services:
     networks: [internal]
 
   worker:
+    image: ${REGISTRY:-titan.photonsurge.uk:5050/thronix/weather-channel}/worker:${TAG:-latest}
     build:
       context: .
       dockerfile: worker/Dockerfile
@@ -45,6 +53,7 @@ services:
     networks: [internal]
 
   public:
+    image: ${REGISTRY:-titan.photonsurge.uk:5050/thronix/weather-channel}/public:${TAG:-latest}
     build:
       context: .
       dockerfile: public/Dockerfile

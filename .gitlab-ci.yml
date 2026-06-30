@@ -1,0 +1,156 @@
+# Weather-Channel CI/CD — modelled on hydra's pipeline.
+#
+# Flow:  shared (build+test, dist artifact) → test (per service) →
+#        build (docker build + push to titan) → deploy (ssh compose pull/up).
+#
+# Images are pushed to the project's titan GitLab registry:
+#   $CI_REGISTRY_IMAGE/<service>:test   and   :v<version>
+#   = titan.photonsurge.uk:5050/thronix/weather-channel/<service>:…
+#
+# Runner: jobs are tagged [docker]. Change `RUNNER_TAG` usages below if your
+# titan runners use a different tag (hydra uses `hydra_ci`).
+#
+# Required CI/CD variables (Settings → CI/CD → Variables):
+#   CI_REGISTRY_USER / CI_REGISTRY_PASSWORD  — auto-provided by GitLab
+#   NEXT_PUBLIC_SOCKET_URL                   — baked into the public bundle
+#   DEPLOY_HOST, DEPLOY_USER, SSH_DEPLOY_KEY — for the deploy stage (optional)
+
+stages:
+  - shared
+  - test
+  - build
+  - deploy
+
+variables:
+  GIT_STRATEGY: fetch
+  REGISTRY: $CI_REGISTRY_IMAGE
+  DOCKER_BUILDKIT: "1"
+
+# ── Shared: build + test once, hand dist/ to the service jobs as an artifact ──
+test:shared:
+  stage: shared
+  tags: [docker]
+  image: node:24-alpine
+  script:
+    - cd shared
+    - yarn install --frozen-lockfile
+    - yarn build
+    - yarn test --maxWorkers=2
+  artifacts:
+    paths:
+      - shared/dist/
+    expire_in: 1 hour
+
+# ── Per-service test template ────────────────────────────────────────────────
+.test_service:
+  stage: test
+  tags: [docker]
+  # Pulls the shared/dist artifact from test:shared; file:../shared resolves
+  # against the repo checkout, so the service just installs + tests.
+  needs: [{ job: test:shared }]
+  script:
+    - cd "$SERVICE"
+    - yarn install --frozen-lockfile
+    - yarn test
+
+# ── Per-service build template: docker build + push to titan ─────────────────
+.build_service:
+  stage: build
+  tags: [docker]
+  needs: [{ job: test:shared }]
+  variables:
+    BUILD_ARGS: ""
+    # Isolated docker auth per job so concurrent build:* jobs don't clobber
+    # each other's ~/.docker/config.json (hydra hit this).
+    DOCKER_CONFIG: "$CI_PROJECT_DIR/.docker-auth-$CI_JOB_ID"
+  before_script:
+    - mkdir -p "$DOCKER_CONFIG"
+    - docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+  script:
+    - set -e
+    - IMAGE="$REGISTRY/$SERVICE"
+    # Each service is versioned by its own package.json.
+    - VERSION=$(grep '"version"' "$SERVICE/package.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+    - echo "── Building $IMAGE v$VERSION ──"
+    - docker build --file "$SERVICE/Dockerfile" --tag "$IMAGE:test" --tag "$IMAGE:v$VERSION" --tag "$IMAGE:latest" $BUILD_ARGS .
+    - docker push "$IMAGE:test"
+    - docker push "$IMAGE:v$VERSION"
+    - docker push "$IMAGE:latest"
+    - echo "✓ $IMAGE :test :v$VERSION :latest"
+  after_script:
+    - VERSION=$(grep '"version"' "$SERVICE/package.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+    - docker rmi "$REGISTRY/$SERVICE:test" "$REGISTRY/$SERVICE:v$VERSION" "$REGISTRY/$SERVICE:latest" || true
+    - docker image prune -f || true
+    - rm -rf "$DOCKER_CONFIG"
+
+# ── Public ───────────────────────────────────────────────────────────────────
+test:public:
+  extends: .test_service
+  image: node:24-alpine
+  variables: { SERVICE: public }
+  rules:
+    - changes: [public/**/*, shared/**/*]
+
+build:public:
+  extends: .build_service
+  needs: [{ job: test:shared }, { job: test:public }]
+  variables:
+    SERVICE: public
+    BUILD_ARGS: --build-arg NEXT_PUBLIC_SOCKET_URL=$NEXT_PUBLIC_SOCKET_URL
+  rules:
+    - changes: [public/**/*, shared/**/*]
+
+# ── Socket ───────────────────────────────────────────────────────────────────
+test:socket:
+  extends: .test_service
+  image: node:24-alpine
+  variables: { SERVICE: socket }
+  rules:
+    - changes: [socket/**/*, shared/**/*]
+
+build:socket:
+  extends: .build_service
+  needs: [{ job: test:shared }, { job: test:socket }]
+  variables: { SERVICE: socket }
+  rules:
+    - changes: [socket/**/*, shared/**/*]
+
+# ── Worker (trixie-slim: the weather pipeline needs glibc + wgrib2 at runtime) ─
+test:worker:
+  extends: .test_service
+  image: node:24-trixie-slim
+  variables: { SERVICE: worker }
+  rules:
+    - changes: [worker/**/*, shared/**/*]
+
+build:worker:
+  extends: .build_service
+  needs: [{ job: test:shared }, { job: test:worker }]
+  variables: { SERVICE: worker }
+  rules:
+    - changes: [worker/**/*, shared/**/*]
+
+# ── Deploy: pull the new images on the host and restart ──────────────────────
+# Requires DEPLOY_HOST / DEPLOY_USER / SSH_DEPLOY_KEY CI variables and a
+# docker-compose.yml on the host. Mirrors hydra's deploy job.
+deploy:
+  stage: deploy
+  tags: [docker]
+  image: alpine:latest
+  needs:
+    - { job: build:public, optional: true }
+    - { job: build:socket, optional: true }
+    - { job: build:worker, optional: true }
+  before_script:
+    - command -v ssh >/dev/null || (apk add --no-cache openssh-client)
+    - eval $(ssh-agent -s)
+    - echo "$SSH_DEPLOY_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - ssh-keyscan "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+  script:
+    - ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" "cd weather-channel && docker compose pull && docker compose up -d"
+  rules:
+    - if: $DEPLOY_HOST == null
+      when: never
+    - changes: [public/**/*, socket/**/*, worker/**/*, shared/**/*]
+      when: on_success

@@ -20,6 +20,7 @@ import { log } from "@photonsurge/shared/utill/logger";
 import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
 import { initSocket, closeSocket } from "./socket";
+import { startDirector } from "./director/loop";
 import { getEnabledSources } from "./alerts/registry";
 import { summarizeForLog } from "./utils";
 import packageJson from "../package.json";
@@ -86,6 +87,10 @@ process.on("uncaughtException", (err) => {
   await waitForMongo();
   const registered = await loadHandlers();
   log(TAG, `registered handlers`, registered);
+
+  // Auto-director: a self-running camera/sequencer per scene that's in "auto"
+  // mode. Runs in-process (not a BullMQ job) — reads Mongo + emits director:state.
+  startDirector();
 
   const bullWorker = new Worker(
     QUEUE_NAME,

@@ -23,6 +23,7 @@ import { useAlertFeatures } from "../../lib/alerts-overlay";
 import { useQuakes } from "../../lib/seismic-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
+import DirectorPanel from "../../components/DirectorPanel";
 import { DebugButton } from "../../lib/client/debug";
 
 export default function ControlPage() {
@@ -155,6 +156,7 @@ export default function ControlPage() {
             }}
           />
         </div>
+        <DirectorPanel sceneId={sceneId} />
         <ControlPanel
           state={state}
           manifest={manifest}

@@ -1,5 +1,4 @@
 import { ScatterplotLayer, PathLayer, TextLayer, IconLayer } from "@deck.gl/layers";
-import { CollisionFilterExtension } from "@deck.gl/extensions";
 import type { Track } from "../../lib/tracks/types";
 import type { TrackColorMode, TrackIconMode, TrackStyle } from "@photonsurge/shared/control";
 import type { OrbitSegment } from "../../lib/tracks/orbit";
@@ -131,6 +130,24 @@ function trackPosition(d: Track): [number, number, number] {
  */
 const DEFAULT_STYLE: TrackStyle = { color: "kind", icon: "arrow" };
 
+/**
+ * Thin labels to ~one per grid cell so dense traffic doesn't stack into an
+ * unreadable blob, preferring aircraft > ship > satellite within a cell. Done in
+ * JS (not CollisionFilterExtension) because that extension mis-culls on a globe.
+ */
+const LABEL_CELL_DEG = 5;
+function labelSubset(tracks: Track[]): Track[] {
+  const prio = (k: string) => (k === "aircraft" ? 2 : k === "ship" ? 1 : 0);
+  const best = new Map<string, Track>();
+  for (const t of tracks) {
+    if (!t.name) continue;
+    const key = `${Math.round(t.position[0] / LABEL_CELL_DEG)}:${Math.round(t.position[1] / LABEL_CELL_DEG)}`;
+    const cur = best.get(key);
+    if (!cur || prio(t.kind) > prio(cur.kind)) best.set(key, t);
+  }
+  return [...best.values()];
+}
+
 export function tracksLayer(
   tracks: Track[],
   opts: { labels?: boolean; aircraftStyle?: TrackStyle; shipStyle?: TrackStyle } = {},
@@ -198,11 +215,13 @@ export function tracksLayer(
         : d.kind === "ship"
           ? colorFor(d, shipStyle.color)
           : d.color ?? [255, 255, 255];
-    // Extension props (collision*) aren't on TextLayer's typed props, so build
-    // the config loosely and cast.
     const labelProps = {
       id: "live-track-labels",
-      data: tracks.filter((t) => t.name),
+      // Spatially thinned (one label per grid cell) so dense traffic stays
+      // readable. We do this in JS rather than CollisionFilterExtension because
+      // that extension's collision pass mis-culls under _GlobeView (labels
+      // vanish entirely). SDF text + outline so it reads over any basemap.
+      data: labelSubset(tracks),
       getPosition: trackPosition,
       // Name/code only — deck's SDF TextLayer can't render colour flag emoji
       // (those show in the hover tooltip + admin tables, which are HTML).
@@ -215,15 +234,9 @@ export function tracksLayer(
       getAlignmentBaseline: "center",
       fontFamily: "system-ui, sans-serif",
       fontWeight: 600,
-      // Crisp halo so labels read over any basemap/weather.
       outlineWidth: 3,
       outlineColor: [0, 0, 0, 230],
       fontSettings: { sdf: true, radius: 12 },
-      // Hide overlapping labels (more spacing → readable on dense traffic); more
-      // appear as you zoom in. Higher sizeScale = more breathing room per label.
-      extensions: [new CollisionFilterExtension()],
-      collisionTestProps: { sizeScale: 3.5 },
-      getCollisionPriority: (d: Track) => (d.kind === "satellite" ? 0 : 1),
       parameters: { depthTest: true },
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
