@@ -142,6 +142,7 @@ export const gdacsSource: AlertSource = {
   region: "Global (GDACS)",
   pollIntervalSec: Number(process.env.GDACS_POLL_SEC || 900),
   enabled: process.env.ALERTS_GDACS_ENABLED !== "false",
+  reconcile: true, // single fetch = reliable full snapshot
 
   async fetch(): Promise<RawPayload[]> {
     const res = await fetch(FEED, {

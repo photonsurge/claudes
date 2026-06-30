@@ -79,6 +79,9 @@ describe("ingestSource", () => {
           expiredCalls++;
           return 0;
         },
+        async deactivateMissing() {
+          return 0;
+        },
       },
     } as any;
 

@@ -235,6 +235,7 @@ export const wmoSource: AlertSource = {
   region: "Global (WMO SWIC)",
   pollIntervalSec: Number(process.env.WMO_POLL_SEC || 600),
   enabled: process.env.ALERTS_WMO_ENABLED !== "false",
+  reconcile: true, // single WFS fetch = reliable full snapshot
 
   async fetch(): Promise<RawPayload[]> {
     const now = new Date().toISOString();

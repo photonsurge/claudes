@@ -11,14 +11,67 @@
  */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ControlState } from "@photonsurge/shared/control";
 import {
   DIRECTOR_STATE,
   DEFAULT_DIRECTOR_CONFIG,
   type DirectorConfig,
   type DirectorState,
+  type Segment,
+  type SegmentKind,
 } from "@photonsurge/shared/director";
 import { useSocket } from "./socket-provider";
+
+/**
+ * While a detail shot holds on its subject, rotate the weather layer over time
+ * so the same event is read through several fields (gust → rain → CAPE → …).
+ * The index is derived from the cut's spinEpoch + a fixed period, so /control
+ * and /watch switch in lockstep — the same deterministic trick as the spin /
+ * push-in, with no extra socket traffic.
+ */
+const DETAIL_VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
+  storm: ["gust", "rain", "storm", "humidity"],
+  quake: ["temp", "humidity", "rain", "gust"],
+};
+const VAR_CYCLE_MS = 5500;
+
+/**
+ * The weather variable to show for the current moment of a cut, or null to leave
+ * the cut's own variable untouched. Updates on a slow timer (not per frame).
+ */
+export function useCutVariable(cut: Segment | null): string | null {
+  const [variable, setVariable] = useState<string | null>(null);
+  useEffect(() => {
+    const cycle = cut ? DETAIL_VAR_CYCLE[cut.kind] : undefined;
+    if (!cut || !cycle?.length) {
+      setVariable(null);
+      return;
+    }
+    const epoch = cut.patch.spinEpoch ?? 0;
+    const pick = () => {
+      const elapsed = Math.max(0, Date.now() - epoch);
+      setVariable(cycle[Math.floor(elapsed / VAR_CYCLE_MS) % cycle.length]);
+    };
+    pick();
+    const t = setInterval(pick, 500);
+    return () => clearInterval(t);
+  }, [cut]);
+  return variable;
+}
+
+/**
+ * The effective ControlState patch for the current cut: its baseline patch with
+ * the time-cycled weather variable folded in (detail shots only). Pages merge
+ * this over their own state to get what to render. Null when no cut is on air.
+ */
+export function useDirectorPatch(cut: Segment | null): Partial<ControlState> | null {
+  const cutVariable = useCutVariable(cut);
+  return useMemo(() => {
+    if (!cut) return null;
+    return cutVariable ? { ...cut.patch, activeVariable: cutVariable } : cut.patch;
+  }, [cut, cutVariable]);
+}
 
 /** Cold-start a scene's director config from the API. */
 export async function fetchDirectorConfig(sceneId: string): Promise<DirectorConfig> {

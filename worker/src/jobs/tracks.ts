@@ -287,6 +287,8 @@ export async function snapshotSeismic(job: Job) {
     const result = { feed, fetched: quakes.length, ...r };
     log(TAG, `snapshotSeismic done`, result);
     blogInfo(TAG, `seismic snapshot: ${quakes.length} quakes (+${r.upserted} new)`, result, "tracks", "seismic");
+    // Live push so the quake overlay refetches the instant a feed lands.
+    emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "seismic", count: quakes.length } });
     return result;
   } catch (err) {
     log(TAG, `snapshotSeismic failed`, { feed, err: summarizeForLog(err) });

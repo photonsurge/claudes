@@ -62,6 +62,23 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       return res.modifiedCount ?? 0;
     },
 
+    /**
+     * Reconcile: deactivate this source's active alerts whose identifier is NOT
+     * in `seenIdentifiers` (the latest full-snapshot batch) — i.e. withdrawn from
+     * the feed before expiry. No-op on an empty batch (a dead fetch must not wipe
+     * everything). Only call for sources flagged `reconcile`.
+     */
+    async deactivateMissing(source: string, seenIdentifiers: string[]): Promise<number> {
+      if (!seenIdentifiers.length) return 0;
+      const res = await model
+        .updateMany(
+          { source, active: true, identifier: { $nin: seenIdentifiers } },
+          { $set: { active: false } },
+        )
+        .exec();
+      return res.modifiedCount ?? 0;
+    },
+
     async list(opts: AlertListOpts = {}): Promise<iAlertModel[]> {
       const q: Record<string, unknown> = {};
       if (opts.activeOnly) q.active = true;

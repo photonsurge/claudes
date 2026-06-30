@@ -5,6 +5,8 @@ import { getEnabledSources, getSource } from "../alerts/registry";
 import { ingestSource, type IngestResult } from "../alerts/ingest";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
+import { ALERTS_UPDATED } from "@photonsurge/shared/control";
+import { emitWorkerEvent } from "../socket";
 
 const TAG = "job:alerts";
 
@@ -33,6 +35,11 @@ export async function ingest(job: Job) {
       results.push({ source: source.id, error: String(err) });
     }
   }
+
+  // Live push: tell browsers to refetch the overlay/list the instant ingest
+  // finishes, instead of waiting out their 60s poll (mirrors TRACKS_UPDATED).
+  const changed = results.reduce((n, r) => n + ("inserted" in r ? r.inserted + (r.expired ?? 0) : 0), 0);
+  emitWorkerEvent({ type: ALERTS_UPDATED, data: { sources: results.length, changed } });
 
   log(TAG, `done`, { jobId: job.id, sources: results.length });
   return { results };

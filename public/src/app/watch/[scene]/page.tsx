@@ -16,9 +16,9 @@ import { useSocket } from "../../../lib/socket-provider";
 import { fetchManifest } from "../../../lib/manifest";
 import { listCities, type City } from "../../../lib/cities";
 import { useSceneState, listScenes } from "../../../lib/scenes";
-import { useDirector } from "../../../lib/director";
+import { useDirector, useDirectorPatch } from "../../../lib/director";
 import WatchSurface from "../../../components/WatchSurface";
-import DirectorCaption from "../../../components/DirectorCaption";
+import ViewingOverlay from "../../../components/ViewingOverlay";
 
 export default function SceneWatchPage() {
   const params = useParams<{ scene: string }>();
@@ -49,9 +49,10 @@ export default function SceneWatchPage() {
     }
   }, [director?.seq, director?.active, director?.segment]);
 
+  const cutPatch = useDirectorPatch(cut);
   const shown = useMemo(
-    () => (cut ? mergeControlState(state, cut.patch) : state),
-    [state, cut],
+    () => (cutPatch ? mergeControlState(state, cutPatch) : state),
+    [state, cutPatch],
   );
 
   // Cold start the globally-shared data + resolve this scene's display name.
@@ -86,7 +87,12 @@ export default function SceneWatchPage() {
     <>
       <WatchSurface state={shown} manifest={manifest} cities={cities} sceneName={sceneName} />
       {director?.active && director.segment ? (
-        <DirectorCaption segment={director.segment} upNext={director.upNext} />
+        <ViewingOverlay
+          segment={director.segment}
+          variable={shown.activeVariable}
+          state={shown}
+          upNext={director.upNext}
+        />
       ) : null}
     </>
   );

@@ -12,8 +12,10 @@
 export const CONTROL_STATE = "control:state" as const;
 export const WEATHER_RUN = "weather:run" as const;
 export const CITIES_UPDATED = "cities:updated" as const;
-/** Worker → browser: a new aircraft/ship snapshot frame was recorded. */
+/** Worker → browser: a new aircraft/ship/seismic snapshot frame was recorded. */
 export const TRACKS_UPDATED = "tracks:updated" as const;
+/** Worker → browser: an alerts ingest tick finished (overlay should refetch). */
+export const ALERTS_UPDATED = "alerts:updated" as const;
 
 /**
  * Operator → watchers relay for a *named scene*. `CONTROL_STATE` drives the one
@@ -230,9 +232,16 @@ export interface ControlState {
   /** Spin speed in degrees per second. */
   spinSpeed: number;
   /**
-   * Wall-clock ms when the current spin anchor was set. Both /control and /watch
-   * compute longitude = camera.center[0] + spinSpeed*(now-spinEpoch)/1000, so
-   * they rotate in phase from the same anchor with no per-frame socket traffic.
+   * Slow zoom-in per second ("push-in"/Ken Burns) for detail shots that must
+   * stay centred on their subject instead of orbiting away from it. Deterministic
+   * off spinEpoch like the spin, so /control and /watch push in together. 0 = off.
+   */
+  zoomDrift: number;
+  /**
+   * Wall-clock ms when the current spin/push anchor was set. Both /control and
+   * /watch compute longitude = camera.center[0] + spinSpeed*(now-spinEpoch)/1000
+   * and zoom = camera.zoom + zoomDrift*(now-spinEpoch)/1000, so they move in phase
+   * from the same anchor with no per-frame socket traffic.
    */
   spinEpoch: number;
   /** Show name labels on the live-track overlay (decluttered). */
@@ -281,6 +290,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   satelliteGroup: "visual",
   autoSpin: false,
   spinSpeed: 8,
+  zoomDrift: 0,
   spinEpoch: 0,
   showTrackLabels: false,
   satelliteStyle: { ...DEFAULT_SATELLITE_STYLE },
@@ -352,6 +362,7 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     satelliteGroup: patch.satelliteGroup ?? base.satelliteGroup ?? "visual",
     autoSpin: typeof patch.autoSpin === "boolean" ? patch.autoSpin : base.autoSpin ?? false,
     spinSpeed: typeof patch.spinSpeed === "number" ? patch.spinSpeed : base.spinSpeed ?? 8,
+    zoomDrift: typeof patch.zoomDrift === "number" ? patch.zoomDrift : base.zoomDrift ?? 0,
     spinEpoch: typeof patch.spinEpoch === "number" ? patch.spinEpoch : base.spinEpoch ?? 0,
     showTrackLabels:
       typeof patch.showTrackLabels === "boolean"

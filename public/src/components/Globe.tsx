@@ -16,7 +16,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Deck, _GlobeView as GlobeView, LinearInterpolator } from "@deck.gl/core";
+import { Deck, _GlobeView as GlobeView, LinearInterpolator, FlyToInterpolator } from "@deck.gl/core";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { loadTexture, type LoadedTexture } from "../lib/textures";
@@ -62,12 +62,20 @@ export interface GlobeProps {
 }
 
 const interpolator = new LinearInterpolator(["longitude", "latitude", "zoom"]);
+// Cinematic "camera flight": zooms out over the journey and back in at the
+// destination (van Wijk arc) instead of sliding flat across the surface. Used
+// for director cuts and operator region presets so big hops feel like a real
+// fly-over. Tiny live-drag follow steps stay on the linear interpolator.
+const flyInterpolator = new FlyToInterpolator({ curve: 1.25, speed: 1.6 });
 
 type ViewState = { longitude: number; latitude: number; zoom: number } & Record<string, unknown>;
 
 /** Flight duration bounds (ms). Actual duration scales with travel distance. */
 const FLY_MIN = 1200;
 const FLY_MAX = 3500;
+
+/** Max extra zoom a detail-shot push-in may add over its hold (zoom levels). */
+const MAX_PUSH_IN = 1.2;
 
 /** Smooth accel/decel so flights ease in and out instead of jerking. */
 const easeInOutCubic = (t: number) =>
@@ -140,10 +148,12 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     onCameraChangeRef.current = onCameraChange;
   });
 
-  // Live flag read inside the once-created deck callback below.
-  const autoSpinRef = useRef(state.autoSpin);
+  // Live flag read inside the once-created deck callback below: true whenever a
+  // deterministic camera motion (orbit spin or push-in zoom drift) owns the
+  // camera, so onViewStateChange doesn't feed those frames back into React.
+  const motionRef = useRef(state.autoSpin || !!state.zoomDrift);
   useEffect(() => {
-    autoSpinRef.current = state.autoSpin;
+    motionRef.current = state.autoSpin || !!state.zoomDrift;
   });
 
   const applyViewState = (vs: ViewState) => {
@@ -217,7 +227,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       latitude: lat,
       zoom,
       transitionDuration: flyDurationFor(target, lat, zoom),
-      transitionInterpolator: interpolator,
+      transitionInterpolator: flyInterpolator,
       transitionEasing: easeInOutCubic,
       onTransitionEnd: commitCamera,
     } as ViewState);
@@ -246,11 +256,11 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onViewStateChange: ({ viewState, interactionState }: any) => {
         viewStateRef.current = viewState;
-        // While auto-spinning, the rAF loop owns the camera. deck re-emits this
-        // callback for the loop's setProps; feeding that back into React state
-        // would re-render/persist every frame (infinite loop + poll storm), so
-        // bail out — only react to real user interaction.
-        if (autoSpinRef.current) return;
+        // While a deterministic motion (spin/push-in) runs, the rAF loop owns the
+        // camera. deck re-emits this callback for the loop's setProps; feeding
+        // that back into React state would re-render/persist every frame
+        // (infinite loop + poll storm), so bail — only react to user interaction.
+        if (motionRef.current) return;
         const want = viewState.zoom >= TILE_MIN_ZOOM;
         setTilesActive((prev) => (prev === want ? prev : want));
         // During a programmatic transition (flyTo / fitBounds / follow) deck
@@ -291,17 +301,21 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     const changed = dLng > 1e-4 || Math.abs(vs.latitude - c.center[1]) > 1e-4 || dZoom > 1e-4;
     if (changed) {
       // Small steps (a live drag-follow tick) snap quickly so dragging feels
-      // live; large jumps (flyTo / region presets) ease over the same
-      // distance-scaled duration the operator's globe uses, so the two globes
-      // translate together.
+      // live; large jumps (director cuts / region presets) take the cinematic
+      // fly arc over the same distance-scaled duration the operator's globe
+      // uses, so the two globes translate together. During the arc we raise the
+      // flying flag so the auto-spin loop yields, then drop it on landing so the
+      // per-shot orbit resumes from the new anchor.
       const small = dLng < 5 && dZoom < 0.5;
+      if (!small) beginFlight();
       applyViewState({
         longitude: lng,
         latitude: c.center[1],
         zoom: c.zoom,
         transitionDuration: small ? 150 : flyDurationFor(lng, c.center[1], c.zoom),
-        transitionInterpolator: interpolator,
+        transitionInterpolator: small ? interpolator : flyInterpolator,
         transitionEasing: easeInOutCubic,
+        ...(small ? {} : { onTransitionEnd: commitCamera }),
       } as ViewState);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -315,8 +329,15 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // together (no follow/transition jitter). Runs on every page, not just the
   // operator. onViewStateChange bails while spinning, so this never hits React.
   useEffect(() => {
-    if (!state.autoSpin) return;
+    const spinSpeed = state.autoSpin ? state.spinSpeed : 0;
+    const zoomDrift = state.zoomDrift || 0;
+    if (spinSpeed === 0 && zoomDrift === 0) return;
+    // Anchor to the cut so motion is deterministic (same on /control and /watch).
+    // WIDE shots orbit (spinSpeed>0) around the anchor longitude; DETAIL shots
+    // push in (zoomDrift>0) while staying dead-centred on anchorLng/anchorLat.
     const anchorLng = state.camera.center[0];
+    const anchorLat = state.camera.center[1];
+    const anchorZoom = state.camera.zoom;
     const epoch = state.spinEpoch || Date.now();
     let raf = 0;
     const loop = () => {
@@ -325,16 +346,18 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         raf = requestAnimationFrame(loop);
         return;
       }
-      const vs = viewStateRef.current;
-      let longitude = anchorLng + state.spinSpeed * ((Date.now() - epoch) / 1000);
+      const dt = (Date.now() - epoch) / 1000;
+      let longitude = anchorLng + spinSpeed * dt;
       longitude = ((((longitude + 180) % 360) + 360) % 360) - 180; // wrap to −180..180
-      applyViewState({ longitude, latitude: vs.latitude, zoom: vs.zoom });
+      // Creep closer, capped so a long hold doesn't bore through the surface.
+      const zoom = anchorZoom + Math.min(zoomDrift * dt, MAX_PUSH_IN);
+      applyViewState({ longitude, latitude: anchorLat, zoom });
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.autoSpin, state.spinSpeed, state.spinEpoch, state.camera]);
+  }, [state.autoSpin, state.spinSpeed, state.zoomDrift, state.spinEpoch, state.camera]);
 
   // On the operator, freeze the camera to the current longitude when a spin
   // stops so it doesn't snap back to the anchor and the next spin starts here.

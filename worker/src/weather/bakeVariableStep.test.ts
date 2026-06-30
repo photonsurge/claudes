@@ -69,16 +69,16 @@ describe("bakeVariableStep", () => {
   });
 
   it("pulls LAND alongside a masked scalar (SST) and extracts both fields", async () => {
-    // First extract = WTMP, second = LAND mask.
+    // First extract = TMP:surface (SST proxy), second = LAND mask.
     mockExtract.mockResolvedValueOnce(grid(290)).mockResolvedValueOnce(grid(0));
     const res = await bakeVariableStep(VARIABLE_REGISTRY.sst, "20260628", "00", 6, undefined, 3);
     expect(res.encoding).toBe("scalar");
     const [url] = mockDownload.mock.calls[0];
-    expect(url).toContain("var_WTMP=on");
+    expect(url).toContain("var_TMP=on");
     expect(url).toContain("var_LAND=on");
     expect(url).toContain("lev_surface=on");
     expect(mockExtract).toHaveBeenCalledTimes(2);
-    expect(mockExtract.mock.calls[0][0]).toMatchObject({ match: ":WTMP:" });
+    expect(mockExtract.mock.calls[0][0]).toMatchObject({ match: ":TMP:" });
     expect(mockExtract.mock.calls[1][0]).toMatchObject({ match: ":LAND:" });
   });
 

@@ -48,12 +48,21 @@ export const GLOBAL_VIEW: { center: [number, number]; zoom: number } = {
  * /watch via mergeControlState — we only assert what the shot needs.
  */
 export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
+  // Per-shot camera "mode" so the globe is always alive but never wanders off a
+  // subject. Two deterministic motions (in phase across /control and /watch via
+  // spinEpoch):
+  //   • WIDE shots (intro/tour/weather) ORBIT — autoSpin sweeps the region so you
+  //     read the heat/humidity/storm field across an area.
+  //   • DETAIL shots (storm/quake/flight/ship) PUSH IN — no spin (stays dead-
+  //     centred on the event), with a slow zoomDrift creeping closer.
   intro: {
     activeVariable: "temp",
     showWind: true,
     showCities: false,
     showContours: false,
     autoSpin: true,
+    spinSpeed: 6,
+    zoomDrift: 0,
     showAlerts: false,
     showSeismic: false,
     showAircraft: false,
@@ -64,7 +73,9 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     activeVariable: "temp",
     showWind: true,
     showCities: true,
-    autoSpin: false,
+    autoSpin: true,
+    spinSpeed: 2.2,
+    zoomDrift: 0,
     showAircraft: false,
     showShips: false,
     showSeismic: false,
@@ -74,7 +85,9 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     showWind: true,
     showContours: true,
     showCities: true,
-    autoSpin: false,
+    autoSpin: true,
+    spinSpeed: 1.6,
+    zoomDrift: 0,
   },
   storm: {
     activeVariable: "gust",
@@ -82,6 +95,8 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     showAlerts: true,
     showContours: false,
     autoSpin: false,
+    spinSpeed: 0,
+    zoomDrift: 0.045,
     showCities: true,
   },
   quake: {
@@ -89,6 +104,8 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     showCities: true,
     showWind: false,
     autoSpin: false,
+    spinSpeed: 0,
+    zoomDrift: 0.045,
   },
   flight: {
     showAircraft: true,
@@ -96,6 +113,8 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     showTrackLabels: true,
     showWind: false,
     autoSpin: false,
+    spinSpeed: 0,
+    zoomDrift: 0.035,
     showCities: true,
   },
   ship: {
@@ -104,6 +123,8 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     showTrackLabels: true,
     showWind: false,
     autoSpin: false,
+    spinSpeed: 0,
+    zoomDrift: 0.035,
     showCities: true,
   },
 };

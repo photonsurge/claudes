@@ -145,9 +145,10 @@ export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
     altConvert: (v) => (v * 9) / 5 + 32,
     palette: "sst",
     domain: [-2, 32],
-    // WTMP (water temp) is defined over ocean; over land GFS fills it, so mask
-    // to sea so continents render transparent on the globe.
-    gfs: { vars: ["WTMP"], levels: ["surface"], mask: "sea" },
+    // GFS 0.25° pgrb2 carries no WTMP (water temp) field, so use TMP:surface —
+    // the surface skin temperature, which over ocean is the model's SST — and
+    // mask to sea (via the LAND field) so land skin temp is dropped.
+    gfs: { vars: ["TMP"], levels: ["surface"], mask: "sea" },
   },
   cloud: {
     id: "cloud",

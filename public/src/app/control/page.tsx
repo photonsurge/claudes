@@ -7,16 +7,21 @@
  * over the socket, and debounce-persists to /api/scenes/:id. The main scene also
  * fans the legacy CONTROL_STATE so the bare /watch keeps following.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import {
   DEFAULT_CONTROL_STATE,
   MAIN_SCENE_ID,
+  WEATHER_RUN,
+  mergeControlState,
   type ControlState,
   type SceneMeta,
 } from "@photonsurge/shared/control";
+import type { Segment } from "@photonsurge/shared/director";
+import { useSocket } from "../../lib/socket-provider";
 import { fetchManifest } from "../../lib/manifest";
 import { listScenes, fetchSceneState, useSceneEmitter } from "../../lib/scenes";
+import { useDirector, useDirectorPatch } from "../../lib/director";
 import { listCities, type City } from "../../lib/cities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
@@ -24,6 +29,7 @@ import { useQuakes } from "../../lib/seismic-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
 import DirectorPanel from "../../components/DirectorPanel";
+import ViewingOverlay from "../../components/ViewingOverlay";
 import { DebugButton } from "../../lib/client/debug";
 
 export default function ControlPage() {
@@ -34,20 +40,48 @@ export default function ControlPage() {
   const [sceneId, setSceneId] = useState<string>(MAIN_SCENE_ID);
   const globe = useRef<GlobeHandle | null>(null);
   const emit = useSceneEmitter();
+  const { socket } = useSocket();
+
+  // Auto-director: when the selected scene is in auto mode, preview what's going
+  // out — fold the current shot's layer/variable patch over the operator's
+  // manual baseline (`shown`) and fly the interactive operator camera to each
+  // new cut. The interactive globe ignores `state.camera`, so the camera must be
+  // driven imperatively via the ref. We re-apply only on a new cut (seq change)
+  // so heartbeats don't re-trigger the fly, and the baseline `state` is left
+  // untouched so turning Auto off restores the operator's own framing.
+  const director = useDirector(sceneId);
+  const [cut, setCut] = useState<Segment | null>(null);
+  const lastSeq = useRef<number>(-1);
+  useEffect(() => {
+    if (director?.active && director.segment && director.seq !== lastSeq.current) {
+      lastSeq.current = director.seq;
+      setCut(director.segment);
+      globe.current?.flyTo(director.segment.camera.center, director.segment.camera.zoom);
+    } else if (!director?.active && lastSeq.current !== -1) {
+      lastSeq.current = -1;
+      setCut(null);
+    }
+  }, [director?.seq, director?.active, director?.segment]);
+
+  const cutPatch = useDirectorPatch(cut);
+  const shown = useMemo(
+    () => (cutPatch ? mergeControlState(state, cutPatch) : state),
+    [state, cutPatch],
+  );
 
   const { tracks, orbits, trails } = useTracks({
-    showSatellites: state.showSatellites,
-    showAircraft: state.showAircraft,
-    showShips: state.showShips,
-    showOrbits: state.showOrbits,
-    showTrails: state.showTrails,
-    trailMinutes: state.trailMinutes,
-    satelliteGroup: state.satelliteGroup,
-    center: state.camera.center,
-    zoom: state.camera.zoom,
+    showSatellites: shown.showSatellites,
+    showAircraft: shown.showAircraft,
+    showShips: shown.showShips,
+    showOrbits: shown.showOrbits,
+    showTrails: shown.showTrails,
+    trailMinutes: shown.trailMinutes,
+    satelliteGroup: shown.satelliteGroup,
+    center: shown.camera.center,
+    zoom: shown.camera.zoom,
   });
-  const alerts = useAlertFeatures(state.showAlerts, state.alertSeverityMin);
-  const quakes = useQuakes(state.showSeismic, state.seismicMinMag);
+  const alerts = useAlertFeatures(shown.showAlerts, shown.alertSeverityMin);
+  const quakes = useQuakes(shown.showSeismic, shown.seismicMinMag);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +103,17 @@ export default function ControlPage() {
     };
   }, []);
 
+  // Refetch the manifest when the worker publishes a new run (e.g. after an
+  // ingest/reingest) so the operator console doesn't sit on stale/blank data.
+  useEffect(() => {
+    if (!socket) return;
+    const onRun = () => fetchManifest().then(setManifest);
+    socket.on(WEATHER_RUN, onRun);
+    return () => {
+      socket.off(WEATHER_RUN, onRun);
+    };
+  }, [socket]);
+
   // Apply a state change to the active scene: local + live emit + persist.
   const apply = (next: ControlState) => {
     setState(next);
@@ -87,7 +132,7 @@ export default function ControlPage() {
       <div style={{ position: "relative", flex: 1 }}>
         <GlobeView
           ref={globe}
-          state={state}
+          state={shown}
           manifest={manifest}
           cities={cities}
           tracks={tracks}
@@ -96,8 +141,22 @@ export default function ControlPage() {
           alerts={alerts}
           quakes={quakes}
           interactive
-          onCameraChange={(center, zoom) => apply({ ...state, camera: { center, zoom } })}
+          // While a director cut is on air it owns the camera (imperative flyTo);
+          // don't persist those frames or the operator's manual baseline drifts.
+          onCameraChange={(center, zoom) => {
+            if (cut) return;
+            apply({ ...state, camera: { center, zoom } });
+          }}
         />
+        {director?.active && director.segment ? (
+          <ViewingOverlay
+            segment={director.segment}
+            variable={shown.activeVariable}
+            state={shown}
+            upNext={director.upNext}
+            draggable
+          />
+        ) : null}
       </div>
       <aside
         style={{

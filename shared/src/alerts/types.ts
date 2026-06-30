@@ -68,6 +68,14 @@ export interface AlertSource {
   region: string;
   pollIntervalSec: number;
   enabled: boolean;
+  /**
+   * When true, the feed is a reliable full snapshot of "all currently active"
+   * for this source, so alerts NOT in a tick's batch are treated as withdrawn
+   * and deactivated (not just time-expired). Leave false for fan-out feeds that
+   * can partially fail (e.g. MeteoAlarm's per-country fetches), where a missing
+   * alert may just be a transient gap.
+   */
+  reconcile?: boolean;
 
   /** HTTP(s) fetch; sets required headers (e.g. NWS User-Agent). */
   fetch(): Promise<RawPayload[]>;

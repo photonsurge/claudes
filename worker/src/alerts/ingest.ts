@@ -81,7 +81,17 @@ export async function ingestSource(
     }
   }
   if (geoDropped) log(TAG, `dropped invalid geometry`, { source: source.id, geoDropped, geoReasons });
-  const expired = await db.alerts.expire(source.id, now.toISOString());
+  let expired = await db.alerts.expire(source.id, now.toISOString());
+
+  // Reconcile (full-snapshot sources only): anything active we DIDN'T see this
+  // tick has been withdrawn from the feed → deactivate it so it disappears from
+  // the map even though its expiry is still in the future.
+  if (source.reconcile) {
+    expired += await db.alerts.deactivateMissing(
+      source.id,
+      alerts.map((a) => a.identifier),
+    );
+  }
 
   const result: IngestResult = {
     source: source.id,

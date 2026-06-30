@@ -2,16 +2,30 @@
 
 import { useEffect, useState } from "react";
 import { listAlerts, alertsToFeatures, type AlertFeature } from "./alerts";
+import { useSocket } from "./socket-provider";
+import { ALERTS_UPDATED } from "@photonsurge/shared/control";
 
 /**
  * Poll active alerts and expose them as GeoJSON polygon features for the globe
- * overlay. Refreshes on a slow interval (alerts change on the minute scale).
- * Same-event-across-sources are clustered server-side (the API tags each alert
- * with a groupId; the representative has id === groupId), so we draw each event
- * ONCE — a warning carried by both WMO and MeteoAlarm doesn't double-draw.
+ * overlay. The worker emits ALERTS_UPDATED after each ingest, so we refetch the
+ * instant new/expired alerts land (the interval is a fallback). Same-event-
+ * across-sources are clustered server-side (the API tags each alert with a
+ * groupId; the representative has id === groupId), so we draw each event ONCE —
+ * a warning carried by both WMO and MeteoAlarm doesn't double-draw.
  */
 export function useAlertFeatures(enabled: boolean, severityMin: number): AlertFeature[] {
   const [features, setFeatures] = useState<AlertFeature[]>([]);
+  const { socket } = useSocket();
+  const [liveTick, setLiveTick] = useState(0);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onUpdated = () => setLiveTick((n) => n + 1);
+    socket.on(ALERTS_UPDATED, onUpdated);
+    return () => {
+      socket.off(ALERTS_UPDATED, onUpdated);
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (!enabled) {
@@ -32,7 +46,7 @@ export function useAlertFeatures(enabled: boolean, severityMin: number): AlertFe
       cancelled = true;
       clearInterval(iv);
     };
-  }, [enabled, severityMin]);
+  }, [enabled, severityMin, liveTick]);
 
   return features;
 }

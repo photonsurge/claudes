@@ -96,6 +96,7 @@ export const nwsSource: AlertSource = {
   region: "United States + US Pacific",
   pollIntervalSec: 60,
   enabled: true,
+  reconcile: true, // single API fetch = reliable full snapshot of active US alerts
 
   async fetch(): Promise<RawPayload[]> {
     const res = await fetch(NWS_ACTIVE_URL, {

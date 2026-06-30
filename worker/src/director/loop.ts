@@ -128,8 +128,9 @@ async function tick(): Promise<void> {
         const pool = await buildCandidates(db, cfg);
         const next = selectNext(pool, { history: r.history });
         if (next) {
-          // Anchor any idle-spin to the cut instant so the spin phase is clean.
-          if (next.patch.autoSpin) next.patch.spinEpoch = now;
+          // Anchor any camera motion (orbit spin OR push-in zoom drift) to the
+          // cut instant so /control and /watch compute it in phase from here.
+          if (next.patch.autoSpin || next.patch.zoomDrift) next.patch.spinEpoch = now;
           r.seq += 1;
           r.current = next;
           r.startedAt = now;

@@ -54,6 +54,7 @@ describe("mergeControlState", () => {
       satelliteGroup: "starlink",
       autoSpin: true,
       spinSpeed: 17,
+      zoomDrift: 0,
       spinEpoch: 123456789,
       showTrackLabels: true,
       satelliteStyle: { color: "custom", icon: "dot", customColor: "#00ffaa", opacity: 0.8, minAltM: 0, maxAltM: 2000000, minSpeed: 0, country: "", hideGround: false },
