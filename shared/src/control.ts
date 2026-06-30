@@ -268,6 +268,14 @@ export interface ControlState {
   showSeismic: boolean;
   /** Only show quakes at/above this magnitude. */
   seismicMinMag: number;
+  /** Overlay submarine fiber-optic cables + landing stations on the globe. */
+  showCables: boolean;
+  /** Overlay the reference graticule (equator, tropics, polar circles, meridians). */
+  showGraticule: boolean;
+  /** Graticule line + label colour (hex `#rrggbb`). */
+  graticuleColor: string;
+  /** Draw the named labels (Equator, Tropic of Cancer …) on the graticule. */
+  graticuleLabels: boolean;
 }
 
 export const DEFAULT_CONTROL_STATE: ControlState = {
@@ -304,6 +312,10 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   alertSeverityMin: 0,
   showSeismic: false,
   seismicMinMag: 2.5,
+  showCables: false,
+  showGraticule: false,
+  graticuleColor: "#7dd3fc",
+  graticuleLabels: true,
 };
 
 /**
@@ -385,5 +397,12 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     showSeismic: typeof patch.showSeismic === "boolean" ? patch.showSeismic : base.showSeismic ?? false,
     seismicMinMag:
       typeof patch.seismicMinMag === "number" ? patch.seismicMinMag : base.seismicMinMag ?? 2.5,
+    showCables: typeof patch.showCables === "boolean" ? patch.showCables : base.showCables ?? false,
+    showGraticule:
+      typeof patch.showGraticule === "boolean" ? patch.showGraticule : base.showGraticule ?? false,
+    graticuleColor:
+      typeof patch.graticuleColor === "string" ? patch.graticuleColor : base.graticuleColor ?? "#7dd3fc",
+    graticuleLabels:
+      typeof patch.graticuleLabels === "boolean" ? patch.graticuleLabels : base.graticuleLabels ?? true,
   };
 }

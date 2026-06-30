@@ -20,7 +20,7 @@ import { log } from "@photonsurge/shared/utill/logger";
 import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
 import { initSocket, closeSocket } from "./socket";
-import { startDirector } from "./director/loop";
+import { startDirector, stopDirector } from "./director/loop";
 import { getEnabledSources } from "./alerts/registry";
 import { summarizeForLog } from "./utils";
 import packageJson from "../package.json";
@@ -229,6 +229,24 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable cables.refresh (submarine fiber map → Mongo) ----
+  // TeleGeography's cable dataset is near-static; refresh weekly by default. Runs
+  // independently of live-track polling. A fixed jobId de-dups across restarts;
+  // `immediately` seeds the cache at boot so a fresh DB shows cables right away.
+  if (process.env.CABLE_REFRESH_ENABLED !== "false") {
+    const CABLE_REFRESH_MS = Number(process.env.CABLE_REFRESH_MS || 7 * 24 * 60 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "cables", type: "cables", event: "refresh", data: {} },
+        { repeat: { every: CABLE_REFRESH_MS, immediately: true }, jobId: "cables-refresh" },
+      );
+      log(TAG, `registered repeatable cables.refresh`, { everyMs: CABLE_REFRESH_MS });
+    } catch (err) {
+      log(TAG, `failed to register cables.refresh`, summarizeForLog(err));
+    }
+  }
+
   // ---- Express HTTP server (health/status probes) ----
   const app = express();
   app.use(express.json());
@@ -261,8 +279,29 @@ process.on("uncaughtException", (err) => {
   const server = http.createServer(app);
   server.listen(PORT, () => console.log(`\n🟢 WORKER HTTP SERVER LISTENING ON PORT ${PORT}\n`));
 
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
+    if (shuttingDown) {
+      // Second Ctrl-C / signal: stop waiting on the graceful drain and bail now.
+      log(TAG, `shutdown forced`, signal);
+      process.exit(1);
+    }
+    shuttingDown = true;
     log(TAG, `shutdown requested`, signal);
+
+    // Stop the director loop FIRST: it's a 1s setInterval that keeps building
+    // candidates and emitting director:state cuts. If we don't kill it here it
+    // carries on cutting shots the whole time bullWorker.close() drains jobs.
+    stopDirector();
+
+    // Backstop: if the graceful drain wedges (e.g. a stuck job holding its
+    // lock), force-exit so quit always actually quits.
+    const forceTimer = setTimeout(() => {
+      log(TAG, `shutdown timed out — forcing exit`);
+      process.exit(1);
+    }, 10_000);
+    forceTimer.unref();
+
     try {
       server.close();
       closeSocket();
@@ -271,6 +310,7 @@ process.on("uncaughtException", (err) => {
     } catch (err) {
       log(TAG, `shutdown failed`, summarizeForLog(err));
     } finally {
+      clearTimeout(forceTimer);
       process.exit(0);
     }
   };

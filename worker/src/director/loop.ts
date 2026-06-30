@@ -31,13 +31,27 @@ interface SceneRunner {
   sceneId: string;
   seq: number;
   history: string[];
+  /** Per-segment airing tally: how many times + when it last aired this session. */
+  seen: Map<string, { count: number; last: number }>;
+  /** [lng,lat] of recently-aired located shots, for the geographic cooldown. */
+  recentCenters: [number, number][];
   current: Segment | null;
   startedAt: number;
   endsAt: number;
   upNext: { kind: SegmentKind; title: string }[];
+  /** The current segment's prior-airing time + running count (operator readout). */
+  lastShownAt?: number;
+  timesShown?: number;
   lastSkipNonce: number;
   lastEmit: number;
 }
+
+/** Kinds that share the world-view center — excluded from the geo cooldown. */
+const GLOBAL_KINDS = new Set<SegmentKind>(["intro", "ocean", "orbital"]);
+/** How many recent located centers to remember for the geo cooldown. */
+const GEO_RECENT_CAP = 8;
+/** Cap the per-segment tally map so a 24/7 run can't grow it unbounded. */
+const SEEN_CAP = 1000;
 
 const runners = new Map<string, SceneRunner>();
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -47,6 +61,8 @@ const newRunner = (sceneId: string): SceneRunner => ({
   sceneId,
   seq: 0,
   history: [],
+  seen: new Map(),
+  recentCenters: [],
   current: null,
   startedAt: 0,
   endsAt: 0,
@@ -77,6 +93,8 @@ function emit(r: SceneRunner, now: number): void {
     startedAt: r.startedAt,
     endsAt: r.endsAt,
     upNext: r.upNext,
+    lastShownAt: r.lastShownAt,
+    timesShown: r.timesShown,
   };
   emitWorkerEvent({ type: DIRECTOR_STATE, data: state });
   r.lastEmit = now;
@@ -126,11 +144,32 @@ async function tick(): Promise<void> {
 
       if (expired || skipRequested) {
         const pool = await buildCandidates(db, cfg);
-        const next = selectNext(pool, { history: r.history });
+        const counts = new Map<string, number>();
+        for (const [id, v] of r.seen) counts.set(id, v.count);
+        const next = selectNext(pool, {
+          history: r.history,
+          recentCenters: r.recentCenters,
+          counts,
+          isFirst: r.seq === 0,
+        });
         if (next) {
           // Anchor any camera motion (orbit spin OR push-in zoom drift) to the
           // cut instant so /control and /watch compute it in phase from here.
           if (next.patch.autoSpin || next.patch.zoomDrift) next.patch.spinEpoch = now;
+
+          // Tally this airing for the operator readout (last shown + count).
+          const prior = r.seen.get(next.id);
+          r.lastShownAt = prior?.last;
+          r.timesShown = (prior?.count ?? 0) + 1;
+          r.seen.set(next.id, { count: r.timesShown, last: now });
+          if (r.seen.size > SEEN_CAP) r.seen.delete(r.seen.keys().next().value as string);
+
+          // Remember located centers so the geo cooldown spreads regions out.
+          if (!GLOBAL_KINDS.has(next.kind)) {
+            r.recentCenters.push(next.camera.center);
+            if (r.recentCenters.length > GEO_RECENT_CAP) r.recentCenters.shift();
+          }
+
           r.seq += 1;
           r.current = next;
           r.startedAt = now;
@@ -140,7 +179,7 @@ async function tick(): Promise<void> {
           if (r.history.length > HISTORY_CAP) r.history.shift();
           r.lastSkipNonce = cfg.skipNonce;
           emit(r, now);
-          log(TAG, `cut`, { sceneId, seq: r.seq, kind: next.kind, id: next.id });
+          log(TAG, `cut`, { sceneId, seq: r.seq, kind: next.kind, id: next.id, times: r.timesShown });
         }
       } else if (now - r.lastEmit >= HEARTBEAT_MS) {
         emit(r, now);

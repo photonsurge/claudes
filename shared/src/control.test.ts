@@ -68,6 +68,10 @@ describe("mergeControlState", () => {
       alertSeverityMin: 3,
       showSeismic: true,
       seismicMinMag: 4.5,
+      showCables: true,
+      showGraticule: true,
+      graticuleColor: "#abcdef",
+      graticuleLabels: false,
     };
     // Deep-equal proves no key was dropped or altered by the merge.
     expect(mergeControlState(DEFAULT_CONTROL_STATE, custom)).toEqual(custom);

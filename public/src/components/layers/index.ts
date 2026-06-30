@@ -25,6 +25,19 @@ import {
 /** A resolver mapping a texture URL to an already-loaded image (or undefined). */
 export type TextureResolver = (url: string) => LoadedTexture | undefined;
 
+/**
+ * Glyph atlas coverage for city labels: printable ASCII (0x20–0x7E) plus the
+ * Latin-1 Supplement (0xA0–0xFF: é, ã, ü, ó …) and Latin Extended-A
+ * (0x100–0x17F: Ō, ō, İ, ā …). A fixed superset keeps the SDF atlas stable for
+ * broadcast instead of rebuilding/flashing as new accented names appear.
+ */
+const CITY_CHARACTER_SET: string[] = (() => {
+  const chars: string[] = [];
+  for (let c = 0x20; c <= 0x7e; c++) chars.push(String.fromCodePoint(c));
+  for (let c = 0xa0; c <= 0x17f; c++) chars.push(String.fromCodePoint(c));
+  return chars;
+})();
+
 export function windParticleLayer(
   manifest: WeatherManifest,
   fhr: number,
@@ -98,9 +111,15 @@ export function cityLayer(cities: City[]): Array<ScatterplotLayer | TextLayer> {
       getTextAnchor: "start",
       getAlignmentBaseline: "center",
       getPixelOffset: [8, 0],
+      // SDF font rendering is required for outlines; without it deck warns
+      // "fontSettings.sdf is required to render outline".
+      fontSettings: { sdf: true, buffer: 8, radius: 12 },
       outlineWidth: 2,
       outlineColor: [0, 0, 0, 255],
       fontFamily: "system-ui, sans-serif",
+      // City names include accented/non-ASCII glyphs (é, ã, Ō, İ …). Build the
+      // glyph atlas from the actual labels so nothing renders blank.
+      characterSet: CITY_CHARACTER_SET,
       pickable: false,
     }),
   ];

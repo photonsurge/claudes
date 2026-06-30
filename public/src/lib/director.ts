@@ -16,6 +16,7 @@ import type { ControlState } from "@photonsurge/shared/control";
 import {
   DIRECTOR_STATE,
   DEFAULT_DIRECTOR_CONFIG,
+  mergeDirectorConfig,
   type DirectorConfig,
   type DirectorState,
   type Segment,
@@ -24,15 +25,18 @@ import {
 import { useSocket } from "./socket-provider";
 
 /**
- * While a detail shot holds on its subject, rotate the weather layer over time
- * so the same event is read through several fields (gust → rain → CAPE → …).
- * The index is derived from the cut's spinEpoch + a fixed period, so /control
- * and /watch switch in lockstep — the same deterministic trick as the spin /
- * push-in, with no extra socket traffic.
+ * While a shot holds, rotate the weather map over time so the same view is read
+ * through several fields. Region shots (tour/weather) sweep the valid land maps;
+ * event shots (storm/quake) bias toward the most relevant fields. The index is
+ * derived from the cut's spinEpoch + a fixed period, so /control and /watch
+ * switch in lockstep — the same deterministic trick as the spin/push-in, with no
+ * extra socket traffic.
  */
-const DETAIL_VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
+const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
+  tour: ["temp", "humidity", "rain", "gust", "cloud"],
+  weather: ["temp", "humidity", "rain", "gust", "cloud"],
   storm: ["gust", "rain", "storm", "humidity"],
-  quake: ["temp", "humidity", "rain", "gust"],
+  quake: ["temp", "humidity", "rain", "gust", "sst"],
 };
 const VAR_CYCLE_MS = 5500;
 
@@ -43,15 +47,19 @@ const VAR_CYCLE_MS = 5500;
 export function useCutVariable(cut: Segment | null): string | null {
   const [variable, setVariable] = useState<string | null>(null);
   useEffect(() => {
-    const cycle = cut ? DETAIL_VAR_CYCLE[cut.kind] : undefined;
+    const cycle = cut ? VAR_CYCLE[cut.kind] : undefined;
     if (!cut || !cycle?.length) {
       setVariable(null);
       return;
     }
     const epoch = cut.patch.spinEpoch ?? 0;
+    // Start each airing on a different field (derived from the cut's epoch, so
+    // /control and /watch still agree) — the map sequence isn't identical every
+    // time this kind airs.
+    const offset = Math.floor(epoch / 1000);
     const pick = () => {
       const elapsed = Math.max(0, Date.now() - epoch);
-      setVariable(cycle[Math.floor(elapsed / VAR_CYCLE_MS) % cycle.length]);
+      setVariable(cycle[(Math.floor(elapsed / VAR_CYCLE_MS) + offset) % cycle.length]);
     };
     pick();
     const t = setInterval(pick, 500);
@@ -65,6 +73,15 @@ export function useCutVariable(cut: Segment | null): string | null {
  * the time-cycled weather variable folded in (detail shots only). Pages merge
  * this over their own state to get what to render. Null when no cut is on air.
  */
+/** Event kinds worth pulse-highlighting on the globe (a fixed point of interest). */
+const PULSE_KINDS = new Set<SegmentKind>(["storm", "quake"]);
+
+/** The [lng,lat] to pulse-highlight for the current shot, or null. */
+export function eventPulse(director: DirectorState | null): [number, number] | null {
+  if (!director?.active || !director.segment) return null;
+  return PULSE_KINDS.has(director.segment.kind) ? director.segment.camera.center : null;
+}
+
 export function useDirectorPatch(cut: Segment | null): Partial<ControlState> | null {
   const cutVariable = useCutVariable(cut);
   return useMemo(() => {
@@ -78,7 +95,9 @@ export async function fetchDirectorConfig(sceneId: string): Promise<DirectorConf
   try {
     const res = await fetch(`/api/director/${encodeURIComponent(sceneId)}/config`, { cache: "no-store" });
     if (!res.ok) return DEFAULT_DIRECTOR_CONFIG;
-    return (await res.json()) as DirectorConfig;
+    // Normalise against defaults so a config persisted before a kind existed
+    // (e.g. "ocean") still has every kind — avoids undefined checkbox values.
+    return mergeDirectorConfig(DEFAULT_DIRECTOR_CONFIG, (await res.json()) as Partial<DirectorConfig>);
   } catch {
     return DEFAULT_DIRECTOR_CONFIG;
   }

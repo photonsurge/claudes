@@ -52,10 +52,25 @@ const cfg = (over: Partial<DirectorConfig> = {}): DirectorConfig => ({
 });
 
 describe("buildCandidates", () => {
-  it("always includes curated filler (intro + tours)", async () => {
+  it("always includes curated filler (intro + ocean + tours)", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     expect(pool.some((c) => c.segment.id === "intro:global")).toBe(true);
     expect(pool.filter((c) => c.segment.kind === "tour").length).toBeGreaterThan(5);
+  });
+
+  it("adds global ocean spins that assert their own ocean variable", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg());
+    const sst = pool.find((c) => c.segment.id === "ocean:sst");
+    const waves = pool.find((c) => c.segment.id === "ocean:waves");
+    expect(sst?.segment.patch.activeVariable).toBe("sst");
+    expect(sst?.segment.patch.autoSpin).toBe(true); // world map spins
+    expect(waves?.segment.patch.activeVariable).toBe("wave");
+  });
+
+  it("holds regional tours on their subject (no global spin)", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg());
+    const tour = pool.find((c) => c.segment.kind === "tour")!;
+    expect(tour.segment.patch.autoSpin).toBe(false);
   });
 
   it("scores a big quake above filler and frames its epicentre", async () => {
@@ -97,6 +112,7 @@ describe("buildCandidates", () => {
     const empty = fakeDb({ quakes: [], alerts: [], aircraft: [], ships: [] });
     const pool = await buildCandidates(empty, cfg());
     expect(pool.length).toBeGreaterThan(0);
-    expect(pool.every((c) => c.segment.kind === "intro" || c.segment.kind === "tour")).toBe(true);
+    const fillerKinds = new Set(["intro", "ocean", "tour"]);
+    expect(pool.every((c) => fillerKinds.has(c.segment.kind))).toBe(true);
   });
 });

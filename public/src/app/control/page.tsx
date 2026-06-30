@@ -21,7 +21,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../lib/socket-provider";
 import { fetchManifest } from "../../lib/manifest";
 import { listScenes, fetchSceneState, useSceneEmitter } from "../../lib/scenes";
-import { useDirector, useDirectorPatch } from "../../lib/director";
+import { useDirector, useDirectorPatch, eventPulse } from "../../lib/director";
 import { listCities, type City } from "../../lib/cities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
@@ -30,6 +30,7 @@ import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
 import DirectorPanel from "../../components/DirectorPanel";
 import ViewingOverlay from "../../components/ViewingOverlay";
+import AlertLegend from "../../components/AlertLegend";
 import { DebugButton } from "../../lib/client/debug";
 
 export default function ControlPage() {
@@ -141,6 +142,7 @@ export default function ControlPage() {
           alerts={alerts}
           quakes={quakes}
           interactive
+          pulseAt={eventPulse(director)}
           // While a director cut is on air it owns the camera (imperative flyTo);
           // don't persist those frames or the operator's manual baseline drifts.
           onCameraChange={(center, zoom) => {
@@ -148,12 +150,17 @@ export default function ControlPage() {
             apply({ ...state, camera: { center, zoom } });
           }}
         />
+        {shown.showAlerts || shown.showSeismic ? (
+          <AlertLegend alerts={alerts} quakes={quakes} />
+        ) : null}
         {director?.active && director.segment ? (
           <ViewingOverlay
             segment={director.segment}
             variable={shown.activeVariable}
             state={shown}
             upNext={director.upNext}
+            lastShownAt={director.lastShownAt}
+            timesShown={director.timesShown}
             draggable
           />
         ) : null}

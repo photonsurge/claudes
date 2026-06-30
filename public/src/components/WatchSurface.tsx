@@ -12,8 +12,10 @@ import type { ControlState } from "@photonsurge/shared/control";
 import { useTracks } from "../lib/tracks/useTracks";
 import { useAlertFeatures } from "../lib/alerts-overlay";
 import { useQuakes } from "../lib/seismic-overlay";
+import { useCables } from "../lib/cables-overlay";
 import type { City } from "../lib/cities";
 import GlobeView from "./GlobeView";
+import AlertLegend from "./AlertLegend";
 
 interface WatchSurfaceProps {
   state: ControlState;
@@ -21,9 +23,11 @@ interface WatchSurfaceProps {
   cities: City[];
   /** Optional scene name shown in the corner label. */
   sceneName?: string;
+  /** [lng,lat] of the active event to pulse-highlight, or null. */
+  pulseAt?: [number, number] | null;
 }
 
-export default function WatchSurface({ state, manifest, cities, sceneName }: WatchSurfaceProps) {
+export default function WatchSurface({ state, manifest, cities, sceneName, pulseAt }: WatchSurfaceProps) {
   const { tracks, orbits, trails } = useTracks({
     showSatellites: state.showSatellites,
     showAircraft: state.showAircraft,
@@ -37,6 +41,7 @@ export default function WatchSurface({ state, manifest, cities, sceneName }: Wat
   });
   const alerts = useAlertFeatures(state.showAlerts, state.alertSeverityMin);
   const quakes = useQuakes(state.showSeismic, state.seismicMinMag);
+  const cables = useCables(state.showCables);
 
   return (
     <main style={{ position: "fixed", inset: 0, background: "#0a0e16", overflow: "hidden" }}>
@@ -49,7 +54,13 @@ export default function WatchSurface({ state, manifest, cities, sceneName }: Wat
         trails={trails}
         alerts={alerts}
         quakes={quakes}
+        cables={cables}
         interactive={false}
+        pulseAt={pulseAt}
+      />
+      <AlertLegend
+        alerts={state.showAlerts ? alerts : []}
+        quakes={state.showSeismic ? quakes : []}
       />
       <div
         style={{

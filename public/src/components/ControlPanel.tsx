@@ -276,6 +276,43 @@ export default function ControlPanel({
         </div>
       </Section>
 
+      <Section title="Connectivity">
+        <Toggle
+          label="Submarine cables"
+          checked={state.showCables}
+          onChange={(showCables) => patch({ showCables })}
+        />
+      </Section>
+
+      <Section title="Graticule">
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <Toggle
+            label="Grid lines"
+            checked={state.showGraticule}
+            onChange={(showGraticule) => patch({ showGraticule })}
+          />
+          {state.showGraticule && (
+            <>
+              <label style={miniLabel}>
+                Colour
+                <input
+                  type="color"
+                  value={state.graticuleColor}
+                  onChange={(e) => patch({ graticuleColor: e.target.value })}
+                  aria-label="Graticule colour"
+                  style={{ width: 28, height: 22, padding: 0, border: "1px solid #333", borderRadius: 4, background: "none" }}
+                />
+              </label>
+              <Toggle
+                label="Labels"
+                checked={state.graticuleLabels}
+                onChange={(graticuleLabels) => patch({ graticuleLabels })}
+              />
+            </>
+          )}
+        </div>
+      </Section>
+
       <Section title="Timeline">
         <Timeline
           manifest={manifest}

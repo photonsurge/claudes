@@ -12,6 +12,8 @@ import { useDirectorConfig, useDirector } from "../lib/director";
 
 const KIND_LABEL: Record<SegmentKind, string> = {
   intro: "Intro spin",
+  ocean: "Ocean (world)",
+  orbital: "Orbital (satellites)",
   tour: "Region tour",
   weather: "Weather",
   storm: "Severe storms",
@@ -115,7 +117,7 @@ export default function DirectorPanel({ sceneId }: { sceneId: string }) {
           <label key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
             <input
               type="checkbox"
-              checked={config.kinds[k]}
+              checked={!!config.kinds[k]}
               onChange={(e) => update({ kinds: { [k]: e.target.checked } as Record<SegmentKind, boolean> })}
             />
             {KIND_LABEL[k]}

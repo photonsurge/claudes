@@ -7,16 +7,20 @@
  * `draggable` is set (operator console); its position persists to localStorage.
  * On the captured /watch surface it's rendered non-draggable + pointer-inert.
  */
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ControlState } from "@photonsurge/shared/control";
 import type { Segment, SegmentKind } from "@photonsurge/shared/director";
 import { getVariable } from "@photonsurge/shared/variables";
+import { getPalette } from "@photonsurge/shared/palettes";
+import { buildLegend } from "../lib/legend";
 
 /** Max zoom a push-in adds over a hold — keep in sync with Globe's MAX_PUSH_IN. */
 const MAX_PUSH_IN = 1.2;
 
 const KIND: Record<SegmentKind, { label: string; color: string }> = {
   intro: { label: "Live", color: "#1f9d72" },
+  ocean: { label: "Ocean", color: "#1c7fb8" },
+  orbital: { label: "Orbital", color: "#6a59c0" },
   tour: { label: "Region", color: "#3b6ea5" },
   weather: { label: "Weather", color: "#2f8f4e" },
   storm: { label: "Severe", color: "#d23a3a" },
@@ -39,12 +43,66 @@ function Meta({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * Compact colour-ramp legend for the on-air variable: a palette gradient bar
+ * with evenly-spaced value labels. Returns null when no scalar map is shown
+ * (e.g. wind-only shots) so the card stays tight. Reuses the pure legend math.
+ */
+function MapLegend({ variable, units }: { variable: string | null; units: ControlState["units"] }) {
+  if (!variable) return null;
+  const meta = getVariable(variable);
+  const legend = buildLegend(variable, units);
+  if (!meta || !legend) return null;
+
+  const palette = getPalette(meta.palette);
+  const gradient = `linear-gradient(to right, ${palette
+    .map(([stop, hex]) => `${hex} ${Math.round(stop * 100)}%`)
+    .join(", ")})`;
+
+  return (
+    <div style={{ marginTop: 11, paddingTop: 11, borderTop: "1px solid rgba(120,140,170,0.15)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <span style={{ fontSize: 9, letterSpacing: 1, opacity: 0.55, fontWeight: 700 }}>LEGEND</span>
+        <span style={{ fontSize: 10, opacity: 0.7 }}>{legend.unit}</span>
+      </div>
+      <div
+        style={{
+          height: 9,
+          marginTop: 5,
+          borderRadius: 4,
+          background: gradient,
+          border: "1px solid rgba(0,0,0,0.4)",
+        }}
+      />
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
+        {legend.stops.map((s, i) => (
+          <span key={i} style={{ fontSize: 9, opacity: 0.8, fontVariantNumeric: "tabular-nums" }}>
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** "4m ago", "1h 12m ago", "just now" — compact relative time. */
+function ago(ms: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 45) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m ago`;
+}
+
 export default function ViewingOverlay({
   segment,
   variable,
   state,
   upNext,
   draggable = false,
+  lastShownAt,
+  timesShown,
 }: {
   segment: Segment;
   variable: string | null;
@@ -52,6 +110,9 @@ export default function ViewingOverlay({
   state: ControlState;
   upNext: { kind: SegmentKind; title: string }[];
   draggable?: boolean;
+  /** Operator-only: when this exact shot last aired + how many times this session. */
+  lastShownAt?: number;
+  timesShown?: number;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
@@ -182,7 +243,10 @@ export default function ViewingOverlay({
 
       {/* Body */}
       <div style={{ padding: "11px 13px 13px" }}>
-        <div style={{ fontSize: 21, fontWeight: 700, lineHeight: 1.12 }}>{segment.title}</div>
+        <div style={{ fontSize: 21, fontWeight: 700, lineHeight: 1.12 }}>
+          {segment.icon ? <span style={{ marginRight: 8 }}>{segment.icon}</span> : null}
+          {segment.title}
+        </div>
         {segment.subtitle ? (
           <div style={{ fontSize: 13, opacity: 0.82, marginTop: 3 }}>{segment.subtitle}</div>
         ) : null}
@@ -202,8 +266,40 @@ export default function ViewingOverlay({
           <Meta label="MAP" value={mapLabel} />
         </div>
 
+        {segment.details?.length ? (
+          <div
+            style={{
+              marginTop: 11,
+              paddingTop: 11,
+              borderTop: "1px solid rgba(120,140,170,0.15)",
+              display: "grid",
+              gridTemplateColumns: "auto 1fr",
+              rowGap: 4,
+              columnGap: 12,
+              fontSize: 12.5,
+            }}
+          >
+            {segment.details.map((d) => (
+              <Fragment key={d.label}>
+                <span style={{ opacity: 0.55, fontWeight: 700, letterSpacing: 0.3 }}>{d.label}</span>
+                <span style={{ fontWeight: 600, textAlign: "right" }}>{d.value}</span>
+              </Fragment>
+            ))}
+          </div>
+        ) : null}
+
+        <MapLegend variable={variable} units={state.units} />
+
+        {/* Operator-only recurrence readout — not on the /watch broadcast. */}
+        {draggable && timesShown ? (
+          <div style={{ fontSize: 11, opacity: 0.7, marginTop: 11, letterSpacing: 0.4 }}>
+            SHOWN · {timesShown}× this session
+            {lastShownAt ? ` · last ${ago(lastShownAt)}` : " · first time"}
+          </div>
+        ) : null}
+
         {upNext.length ? (
-          <div style={{ fontSize: 11, opacity: 0.6, marginTop: 11, letterSpacing: 0.4 }}>
+          <div style={{ fontSize: 11, opacity: 0.6, marginTop: 8, letterSpacing: 0.4 }}>
             UP NEXT · {upNext.map((u) => u.title).join("  ·  ")}
           </div>
         ) : null}

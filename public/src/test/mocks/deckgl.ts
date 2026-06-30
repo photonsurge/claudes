@@ -8,11 +8,19 @@ export class BaseLayer {
 }
 export class ScatterplotLayer extends BaseLayer {}
 export class TextLayer extends BaseLayer {}
+export class PathLayer extends BaseLayer {}
 export class BitmapLayer extends BaseLayer {}
 export class GeoJsonLayer extends BaseLayer {}
 export class SolidPolygonLayer extends BaseLayer {}
 export class IconLayer extends BaseLayer {}
 export class _GlobeView extends BaseLayer {}
+/** @deck.gl/extensions stub — captures opts so layers can still be constructed. */
+export class PathStyleExtension {
+  opts: Record<string, unknown>;
+  constructor(opts: Record<string, unknown> = {}) {
+    this.opts = opts;
+  }
+}
 export class LinearInterpolator extends BaseLayer {}
 export class Deck extends BaseLayer {
   setProps() {}

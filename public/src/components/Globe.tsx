@@ -16,7 +16,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Deck, _GlobeView as GlobeView, LinearInterpolator, FlyToInterpolator } from "@deck.gl/core";
+import { Deck, _GlobeView as GlobeView } from "@deck.gl/core";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { loadTexture, type LoadedTexture } from "../lib/textures";
@@ -31,12 +31,15 @@ import {
 } from "./layers";
 import type { City } from "../lib/cities";
 import { tracksLayer, orbitLayer, trailsLayer, filterTrails } from "./layers/tracks";
-import { alertsLayer } from "./layers/alerts";
+import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
 import { seismicLayer } from "./layers/seismic";
+import { graticuleLayer } from "./layers/graticule";
+import { cableLayers } from "./layers/cables";
 import type { Track, Quake } from "../lib/tracks/types";
 import type { TrackPath } from "../lib/tracks/client";
 import type { OrbitSegment } from "../lib/tracks/orbit";
 import type { AlertFeature } from "../lib/alerts";
+import type { CableOverlay } from "../lib/cables-overlay";
 
 export interface GlobeHandle {
   flyTo: (center: [number, number], zoom?: number) => void;
@@ -57,22 +60,20 @@ export interface GlobeProps {
   alerts?: AlertFeature[];
   /** Recent earthquakes (USGS). */
   quakes?: Quake[];
+  /** Submarine cables + landing stations. */
+  cables?: CableOverlay;
   interactive?: boolean;
   onCameraChange?: (center: [number, number], zoom: number) => void;
+  /** [lng,lat] of the active event to pulse-highlight, or null/undefined for none. */
+  pulseAt?: [number, number] | null;
 }
 
-const interpolator = new LinearInterpolator(["longitude", "latitude", "zoom"]);
-// Cinematic "camera flight": zooms out over the journey and back in at the
-// destination (van Wijk arc) instead of sliding flat across the surface. Used
-// for director cuts and operator region presets so big hops feel like a real
-// fly-over. Tiny live-drag follow steps stay on the linear interpolator.
-const flyInterpolator = new FlyToInterpolator({ curve: 1.25, speed: 1.6 });
 
 type ViewState = { longitude: number; latitude: number; zoom: number } & Record<string, unknown>;
 
 /** Flight duration bounds (ms). Actual duration scales with travel distance. */
-const FLY_MIN = 1200;
-const FLY_MAX = 3500;
+const FLY_MIN = 1600;
+const FLY_MAX = 4500;
 
 /** Max extra zoom a detail-shot push-in may add over its hold (zoom levels). */
 const MAX_PUSH_IN = 1.2;
@@ -80,6 +81,7 @@ const MAX_PUSH_IN = 1.2;
 /** Smooth accel/decel so flights ease in and out instead of jerking. */
 const easeInOutCubic = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
 
 /** Hover tooltip for a picked live track (aircraft/ship/satellite). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -129,11 +131,24 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 }
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], interactive = true, onCameraChange },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, interactive = true, onCameraChange, pulseAt },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const deckRef = useRef<Deck<GlobeView[]> | null>(null);
+  // The non-pulse layers, kept so the pulse rAF can re-commit them each frame.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const baseLayersRef = useRef<any[]>([]);
+  const pulseAtRef = useRef<[number, number] | null>(pulseAt ?? null);
+  useEffect(() => {
+    pulseAtRef.current = pulseAt ?? null;
+  });
+  // Read by the per-frame pulse loop to find the on-air alert's own polygon, so
+  // the highlight breathes the actual area rather than a free-floating reticle.
+  const alertsRef = useRef(alerts);
+  useEffect(() => {
+    alertsRef.current = alerts;
+  });
   const viewStateRef = useRef<ViewState>({
     longitude: state.camera.center[0],
     latitude: state.camera.center[1],
@@ -166,6 +181,17 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     deckRef.current?.setProps({ viewState: vs } as any);
   };
 
+  // Single place that pushes layers to deck: the base layers plus, when an event
+  // is on air, the animated highlight breathing over its own alert area.
+  const commitLayers = () => {
+    const at = pulseAtRef.current;
+    const layers = at
+      ? [...baseLayersRef.current, ...onAirPulseLayers(alertsRef.current, at, Date.now())]
+      : baseLayersRef.current;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    deckRef.current?.setProps({ layers } as any);
+  };
+
   // True while a programmatic flight is animating. The auto-spin rAF loop yields
   // to it (otherwise the per-frame longitude write would fight the transition
   // and the camera would never reach the target).
@@ -196,41 +222,55 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     onCameraChangeRef.current?.([vs.longitude, vs.latitude], vs.zoom);
   };
 
-  // Unwrap a target longitude to the nearest turn of the current one so a flyTo
-  // across the ±180° seam takes the short way instead of spinning all the way
-  // round.
-  const shortestLng = (target: number) => {
-    let lng = target;
-    while (lng - viewStateRef.current.longitude > 180) lng -= 360;
-    while (lng - viewStateRef.current.longitude < -180) lng += 360;
-    return lng;
-  };
-
-  // Longer trips take (proportionally) longer so the globe glides rather than
-  // snapping. `targetLng` must already be seam-unwrapped (shortestLng).
-  const flyDurationFor = (targetLng: number, targetLat: number, targetZoom: number) => {
-    const vs = viewStateRef.current;
-    const dist = Math.hypot(targetLng - vs.longitude, targetLat - vs.latitude);
-    const dZoom = Math.abs(targetZoom - vs.zoom);
-    return Math.min(FLY_MAX, Math.max(FLY_MIN, 900 + dist * 12 + dZoom * 240));
+  // Animate a camera flight ourselves with an rAF loop instead of deck's
+  // viewState transitions — those only run when a controller is enabled, so on
+  // the /watch globe (controller off) they were silently dropped and the camera
+  // jumped. This drives both globes the same way: it rotates the world toward the
+  // target (longitude/latitude move, which on a GlobeView turns the sphere) and
+  // dips the zoom OUT mid-flight and back IN, so a far cut sweeps up over the
+  // planet and settles. Endpoints are exact (sin(πt) = 0 at t=0 and t=1).
+  const flightRafRef = useRef<number | null>(null);
+  const runFlight = (lng: number, lat: number, zoom: number, onDone?: () => void) => {
+    if (flightRafRef.current !== null) cancelAnimationFrame(flightRafRef.current);
+    const s = viewStateRef.current;
+    const startLng = s.longitude;
+    const startLat = s.latitude;
+    const startZoom = s.zoom;
+    // Seam-unwrap the target to the nearest turn so we cross ±180° the short way.
+    let endLng = lng;
+    while (endLng - startLng > 180) endLng -= 360;
+    while (endLng - startLng < -180) endLng += 360;
+    const dist = Math.hypot(endLng - startLng, lat - startLat);
+    const dZoom = Math.abs(zoom - startZoom);
+    const duration = Math.min(FLY_MAX, Math.max(FLY_MIN, 800 + dist * 18 + dZoom * 220));
+    const dip = Math.min(2.6, dist * 0.03); // zoom levels to pull back mid-flight
+    beginFlight();
+    let t0 = 0;
+    const step = (now: number) => {
+      if (!t0) t0 = now;
+      const t = Math.min(1, (now - t0) / duration);
+      const e = easeInOutCubic(t);
+      let longitude = startLng + (endLng - startLng) * e;
+      longitude = ((((longitude + 180) % 360) + 360) % 360) - 180;
+      const latitude = startLat + (lat - startLat) * e;
+      const z = Math.max(0, startZoom + (zoom - startZoom) * e - dip * Math.sin(Math.PI * t));
+      applyViewState({ longitude, latitude, zoom: z });
+      if (t < 1) {
+        flightRafRef.current = requestAnimationFrame(step);
+      } else {
+        flightRafRef.current = null;
+        onDone?.();
+      }
+    };
+    flightRafRef.current = requestAnimationFrame(step);
   };
 
   const flyToInternal = (lng: number, lat: number, zoom: number) => {
-    const target = shortestLng(lng);
-    beginFlight();
-    // Broadcast the destination ONCE up front so /watch runs the same eased
-    // flight in parallel (no per-frame socket traffic); commitCamera re-emits on
-    // landing to correct any drift.
+    // Tell /watch the destination once so a manual operator fly also moves it (it
+    // runs its own flight to the same target). During director cuts /control's
+    // onCameraChange is guarded, so this is a no-op there.
     onCameraChangeRef.current?.([lng, lat], zoom);
-    applyViewState({
-      longitude: target,
-      latitude: lat,
-      zoom,
-      transitionDuration: flyDurationFor(target, lat, zoom),
-      transitionInterpolator: flyInterpolator,
-      transitionEasing: easeInOutCubic,
-      onTransitionEnd: commitCamera,
-    } as ViewState);
+    runFlight(lng, lat, zoom, commitCamera);
   };
 
   useImperativeHandle(ref, () => ({
@@ -260,7 +300,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         // camera. deck re-emits this callback for the loop's setProps; feeding
         // that back into React state would re-render/persist every frame
         // (infinite loop + poll storm), so bail — only react to user interaction.
-        if (motionRef.current) return;
+        if (motionRef.current || flyingRef.current) return;
         const want = viewState.zoom >= TILE_MIN_ZOOM;
         setTilesActive((prev) => (prev === want ? prev : want));
         // During a programmatic transition (flyTo / fitBounds / follow) deck
@@ -282,41 +322,42 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Follow external camera (e.g. /watch mirroring the operator's view) ────
+  // ── Follow external camera (/watch mirroring the director / operator) ──────
+  const lastAnchorRef = useRef<{ lng: number; lat: number; zoom: number } | null>(null);
   useEffect(() => {
     // Only /watch follows. The operator (interactive) drives its own camera via
-    // the deck controller + imperative flyTo/fitBounds; making it also chase
-    // state.camera would start a competing transition that cancels the flight.
+    // imperative flyTo/fitBounds, so it never chases state.camera here.
     if (interactive) return;
-    const vs = viewStateRef.current;
     const c = state.camera;
-    // Unwrap target longitude to the nearest representation of the current one
-    // so following across the ±180° seam takes the short way (no backspin flash).
+    // Act only when the TARGET anchor changes (a new cut / operator move) — NOT
+    // when the live camera has merely drifted under the spin/push-in, or we'd
+    // fly back to the anchor every time the variable cycle re-renders.
+    const prev = lastAnchorRef.current;
+    const sameAnchor =
+      prev &&
+      Math.abs(prev.lng - c.center[0]) < 1e-4 &&
+      Math.abs(prev.lat - c.center[1]) < 1e-4 &&
+      Math.abs(prev.zoom - c.zoom) < 1e-4;
+    if (sameAnchor) return;
+    lastAnchorRef.current = { lng: c.center[0], lat: c.center[1], zoom: c.zoom };
+
+    // First mount: snap to the initial view rather than flying from [0,20].
+    if (!prev) {
+      applyViewState({ longitude: c.center[0], latitude: c.center[1], zoom: c.zoom });
+      return;
+    }
+
+    const vs = viewStateRef.current;
     let lng = c.center[0];
     while (lng - vs.longitude > 180) lng -= 360;
     while (lng - vs.longitude < -180) lng += 360;
-
-    const dLng = Math.abs(lng - vs.longitude);
-    const dZoom = Math.abs(vs.zoom - c.zoom);
-    const changed = dLng > 1e-4 || Math.abs(vs.latitude - c.center[1]) > 1e-4 || dZoom > 1e-4;
-    if (changed) {
-      // Small steps (a live drag-follow tick) snap quickly so dragging feels
-      // live; large jumps (director cuts / region presets) take the cinematic
-      // fly arc over the same distance-scaled duration the operator's globe
-      // uses, so the two globes translate together. During the arc we raise the
-      // flying flag so the auto-spin loop yields, then drop it on landing so the
-      // per-shot orbit resumes from the new anchor.
-      const small = dLng < 5 && dZoom < 0.5;
-      if (!small) beginFlight();
-      applyViewState({
-        longitude: lng,
-        latitude: c.center[1],
-        zoom: c.zoom,
-        transitionDuration: small ? 150 : flyDurationFor(lng, c.center[1], c.zoom),
-        transitionInterpolator: small ? interpolator : flyInterpolator,
-        transitionEasing: easeInOutCubic,
-        ...(small ? {} : { onTransitionEnd: commitCamera }),
-      } as ViewState);
+    const small = Math.abs(lng - vs.longitude) < 5 && Math.abs(vs.zoom - c.zoom) < 0.5;
+    if (small) {
+      // A live drag-follow tick — snap so dragging the operator feels live.
+      applyViewState({ longitude: lng, latitude: c.center[1], zoom: c.zoom });
+    } else {
+      // A director cut / region preset — fly the same arc the operator sees.
+      runFlight(c.center[0], c.center[1], c.zoom, commitCamera);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.camera, interactive]);
@@ -421,8 +462,22 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // Country borders sit ABOVE the weather fill.
     layers.push(countriesLayer(state));
 
-    // Weather-alert polygons above borders, below cities/tracks.
-    if (state.showAlerts && alerts.length) layers.push(...alertsLayer(alerts));
+    // Reference graticule (equator/tropics/polar circles + meridians) — drawn
+    // above the borders as a geographic reference, below the live overlays.
+    if (state.showGraticule) {
+      layers.push(...graticuleLayer(state.graticuleColor, state.graticuleLabels));
+    }
+
+    // Submarine cables read as reference geography — above borders/weather,
+    // below the live event overlays (alerts/quakes/cities/tracks).
+    if (state.showCables && cables && cables.cables.length) {
+      layers.push(...cableLayers(cables.cables, cables.landings));
+    }
+
+    // Weather-alert polygons above borders, below cities/tracks. Kept mounted
+    // (visibility toggled, not added/removed) so a director cut flipping
+    // showAlerts doesn't force a cold re-tessellation of every polygon.
+    if (alerts.length) layers.push(...alertsLayer(alerts, state.showAlerts));
 
     // Earthquakes above alerts, below cities/tracks.
     if (state.showSeismic && quakes.length) layers.push(...seismicLayer(quakes));
@@ -449,7 +504,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         }),
       );
 
-    deck.setProps({ layers });
+    baseLayersRef.current = layers;
+    commitLayers();
   }, [
     manifest,
     cities,
@@ -475,12 +531,34 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.trailOpacity,
     state.showAlerts,
     state.showSeismic,
+    state.showCables,
+    state.showGraticule,
+    state.graticuleColor,
+    state.graticuleLabels,
     tracks,
     orbits,
     trails,
     alerts,
     quakes,
+    cables,
   ]);
+
+  // Animate the event pulse: while an event is on air, re-commit the layers each
+  // frame so the rings expand/fade. When it clears, commit once without them.
+  useEffect(() => {
+    if (!pulseAt) {
+      commitLayers();
+      return;
+    }
+    let raf = 0;
+    const loop = () => {
+      commitLayers();
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pulseAt?.[0], pulseAt?.[1]]);
 
   return (
     <canvas

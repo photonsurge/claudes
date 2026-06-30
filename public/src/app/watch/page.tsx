@@ -26,7 +26,7 @@ import { useSocket } from "../../lib/socket-provider";
 import { fetchBroadcastState } from "../../lib/control";
 import { fetchManifest } from "../../lib/manifest";
 import { listCities, type City } from "../../lib/cities";
-import { useDirector, useDirectorPatch } from "../../lib/director";
+import { useDirector, useDirectorPatch, eventPulse } from "../../lib/director";
 import WatchSurface from "../../components/WatchSurface";
 import ViewingOverlay from "../../components/ViewingOverlay";
 
@@ -97,7 +97,7 @@ export default function WatchPage() {
 
   return (
     <>
-      <WatchSurface state={shown} manifest={manifest} cities={cities} />
+      <WatchSurface state={shown} manifest={manifest} cities={cities} pulseAt={eventPulse(director)} />
       {director?.active && director.segment ? (
         <ViewingOverlay
           segment={director.segment}

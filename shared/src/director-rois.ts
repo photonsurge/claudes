@@ -39,8 +39,63 @@ export const REGIONS_OF_INTEREST: RegionOfInterest[] = [
 /** Global establishing shot — the intro/idle spin. */
 export const GLOBAL_VIEW: { center: [number, number]; zoom: number } = {
   center: [0, 20],
-  zoom: 2.4,
+  // Fills the frame height — the globe disk stays centred so nothing clips.
+  zoom: 3.0,
 };
+
+/** Ocean world spins — same full-frame world view as the intro. */
+export const OCEAN_VIEW_ZOOM = 3.0;
+
+/**
+ * Ocean "world map" modes — full-globe spins coloured by an ocean variable
+ * (already ingested: sst/wave). The director rotates through these as ambient
+ * filler alongside the temperature intro when the `ocean` kind is enabled.
+ */
+export interface OceanView {
+  /** Segment subject id (→ "ocean:<id>"). */
+  id: string;
+  /** Variable registry id to make the active colour field. */
+  variable: string;
+  title: string;
+  subtitle: string;
+}
+
+export const OCEAN_VIEWS: OceanView[] = [
+  { id: "sst", variable: "sst", title: "Ocean Temperature", subtitle: "Sea surface temperature" },
+  { id: "waves", variable: "wave", title: "Ocean Swell", subtitle: "Significant wave height" },
+];
+
+/**
+ * Orbital "world" modes — a satellite constellation's orbits spun on a pulled-
+ * back globe so the planes read clearly. `group` is a Celestrak group id (see
+ * SATELLITE_GROUPS); the candidate builder only airs the ones actually ingested.
+ */
+export interface OrbitalView {
+  /** Segment subject id (→ "orbital:<group>") and the satellite group to show. */
+  group: string;
+  title: string;
+  subtitle: string;
+  /**
+   * Camera zoom for this constellation (higher = closer). Altitudes are true
+   * scale, so the orbit shell's apparent height is set by the framing: LEO
+   * (Starlink/stations, ~400–550 km) zooms IN so it fills the frame hugging the
+   * globe, while MEO/GEO (GPS/Galileo, ~20–36k km) zooms OUT so the whole, much
+   * larger ring fits. Falls back to ORBITAL_VIEW_ZOOM when unset.
+   */
+  zoom?: number;
+}
+
+export const ORBITAL_VIEWS: OrbitalView[] = [
+  { group: "starlink", title: "Starlink", subtitle: "Low-Earth-orbit internet constellation", zoom: 3.0 },
+  { group: "gps-ops", title: "GPS Constellation", subtitle: "Navigation · medium Earth orbit", zoom: 1.5 },
+  { group: "galileo", title: "Galileo", subtitle: "European navigation constellation", zoom: 1.4 },
+  { group: "stations", title: "Space Stations", subtitle: "ISS & crewed platforms", zoom: 3.2 },
+  { group: "weather", title: "Weather Satellites", subtitle: "Polar & geostationary", zoom: 1.3 },
+  { group: "visual", title: "Brightest Satellites", subtitle: "Visible to the naked eye", zoom: 2.6 },
+];
+
+/** Default orbital framing when a view doesn't set its own zoom. */
+export const ORBITAL_VIEW_ZOOM = 2.4;
 
 /**
  * Layer preset per kind (everything except the camera, which the worker fills
@@ -51,10 +106,12 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
   // Per-shot camera "mode" so the globe is always alive but never wanders off a
   // subject. Two deterministic motions (in phase across /control and /watch via
   // spinEpoch):
-  //   • WIDE shots (intro/tour/weather) ORBIT — autoSpin sweeps the region so you
-  //     read the heat/humidity/storm field across an area.
-  //   • DETAIL shots (storm/quake/flight/ship) PUSH IN — no spin (stays dead-
-  //     centred on the event), with a slow zoomDrift creeping closer.
+  //   • GLOBAL shots (intro/ocean) SPIN — autoSpin rotates the whole world, which
+  //     only reads right on a full-globe view.
+  //   • EVERYTHING ELSE HOLDS on its subject (no spin — autoSpin advances the
+  //     camera longitude, which would drift a framed region off-screen) and
+  //     instead breathes with a slow zoomDrift push-in. Regional tours/weather
+  //     get a gentle drift; detail events (storm/quake/flight/ship) a stronger one.
   intro: {
     activeVariable: "temp",
     showWind: true,
@@ -69,13 +126,48 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     showShips: false,
     showTrails: false,
   },
+  // Global ocean spin — the active ocean variable (sst / wave) is filled in per
+  // segment by the candidate builder. Land carries no data for these fields so
+  // it stays neutral and the ocean reads as the coloured field.
+  ocean: {
+    showWind: true,
+    showCities: false,
+    showContours: false,
+    autoSpin: true,
+    spinSpeed: 6,
+    zoomDrift: 0,
+    showAlerts: false,
+    showSeismic: false,
+    showAircraft: false,
+    showShips: false,
+    showTrails: false,
+  },
+  // Orbital constellation showcase — no weather map, just the dark globe with
+  // the orbit rings, spun so the planes sweep round. Satellite group is set per
+  // segment by the candidate builder.
+  orbital: {
+    activeVariable: null,
+    showWind: false,
+    showContours: false,
+    showCities: false,
+    showAlerts: false,
+    showSeismic: false,
+    showAircraft: false,
+    showShips: false,
+    showSatellites: true,
+    showOrbits: true,
+    showTrackLabels: true,
+    autoSpin: true,
+    spinSpeed: 5,
+    zoomDrift: 0,
+  },
   tour: {
     activeVariable: "temp",
     showWind: true,
     showCities: true,
-    autoSpin: true,
-    spinSpeed: 2.2,
-    zoomDrift: 0,
+    autoSpin: false,
+    spinSpeed: 0,
+    zoomDrift: 0.02,
     showAircraft: false,
     showShips: false,
     showSeismic: false,
@@ -85,14 +177,17 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     showWind: true,
     showContours: true,
     showCities: true,
-    autoSpin: true,
-    spinSpeed: 1.6,
-    zoomDrift: 0,
+    autoSpin: false,
+    spinSpeed: 0,
+    zoomDrift: 0.02,
   },
   storm: {
     activeVariable: "gust",
     showWind: true,
     showAlerts: true,
+    // Drop the severity filter while framing a storm so the very alert the
+    // director picked is guaranteed visible (the scene baseline may filter higher).
+    alertSeverityMin: 0,
     showContours: false,
     autoSpin: false,
     spinSpeed: 0,
@@ -101,6 +196,9 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
   },
   quake: {
     showSeismic: true,
+    // Likewise show all quakes so the framed one isn't filtered out by the
+    // baseline minimum magnitude.
+    seismicMinMag: 0,
     showCities: true,
     showWind: false,
     autoSpin: false,

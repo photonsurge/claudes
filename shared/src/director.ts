@@ -22,15 +22,19 @@ export const DIRECTOR_STATE = "director:state" as const;
 /** What kind of thing a segment is showing — also the OBS-scene key (phase 2). */
 export type SegmentKind =
   | "intro" // global establishing spin
+  | "ocean" // global spin coloured by an ocean field (SST / waves)
   | "tour" // curated region flyover (ambient filler when nothing notable)
   | "weather" // scalar field over a region of interest
   | "storm" // a severe-weather alert area
   | "quake" // a recent significant earthquake
   | "flight" // a notable aircraft
-  | "ship"; // a notable vessel
+  | "ship" // a notable vessel
+  | "orbital"; // a satellite constellation's orbits, spun on a world view
 
 export const SEGMENT_KINDS: SegmentKind[] = [
   "intro",
+  "ocean",
+  "orbital",
   "tour",
   "weather",
   "storm",
@@ -56,6 +60,8 @@ export interface Segment {
   kind: SegmentKind;
   /** Big on-air label, e.g. "Severe Storm". */
   title: string;
+  /** Optional emoji shown before the title (e.g. the hazard glyph 🔥 for a storm). */
+  icon?: string;
   /** Smaller context line, e.g. "Gulf of Mexico · Hurricane Warning". */
   subtitle?: string;
   camera: DirectorCamera;
@@ -63,6 +69,8 @@ export interface Segment {
   patch: Partial<ControlState>;
   /** How long to hold this shot, in ms. */
   holdMs: number;
+  /** Kind-specific detail rows for the operator info box (severity, depth, …). */
+  details?: { label: string; value: string }[];
 }
 
 /**
@@ -83,6 +91,14 @@ export interface DirectorState {
   endsAt: number;
   /** Titles of the next few queued segments — for a "coming up" rail. */
   upNext: { kind: SegmentKind; title: string }[];
+  /**
+   * Wall-clock ms this exact segment last aired earlier in the session, or
+   * undefined if it's the first time. Operator-only readout ("last shown 4m
+   * ago") to spot a location/mode recurring too often — not shown on /watch.
+   */
+  lastShownAt?: number;
+  /** How many times this exact segment has aired this session (incl. now). */
+  timesShown?: number;
 }
 
 export type DirectorMode = "off" | "auto";
@@ -114,6 +130,8 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   holdSeconds: 12,
   kinds: {
     intro: true,
+    ocean: true,
+    orbital: true,
     tour: true,
     weather: true,
     storm: true,

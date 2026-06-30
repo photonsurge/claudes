@@ -1,5 +1,5 @@
 import { GeoJsonLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
-import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
+import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
 import type { AlertFeature } from "../../lib/alerts";
 import { hazardMeta } from "../../lib/hazard";
@@ -19,12 +19,18 @@ function lighten(c: [number, number, number], t: number): [number, number, numbe
   ];
 }
 
-const FILL = Object.fromEntries(
-  ([0, 1, 2, 3, 4] as SeverityRank[]).map((r) => [r, rgb(SEVERITY_COLORS[r])]),
-) as Record<SeverityRank, [number, number, number]>;
-
-const base = (rank: SeverityRank): [number, number, number] => FILL[rank] ?? [156, 163, 175];
 const rank = (f: AlertFeature): SeverityRank => f.properties.severityRank;
+
+/** One full breath of the on-air pulse, in ms. */
+const PULSE_PERIOD_MS = 1500;
+
+/**
+ * Area hue comes from the hazard *type* (flood = blue, fire = red…), matching
+ * the badge dot and the on-screen legend, so a viewer reads *what* a warning is
+ * from its colour. Severity is kept for intensity (glow width + fill opacity),
+ * not hue.
+ */
+const base = (f: AlertFeature): [number, number, number] => rgb(hazardMeta(f.properties.hazard).color);
 
 const withA = (c: [number, number, number], a: number): [number, number, number, number] => [
   c[0],
@@ -34,31 +40,19 @@ const withA = (c: [number, number, number], a: number): [number, number, number,
 ];
 
 /**
- * A representative lng/lat for an alert feature — where the hazard badge sits.
- * Point geometries use their coordinate; polygons use the centroid of the first
- * ring of the largest part (cheap, good enough for an on-screen marker).
+ * Where the hazard badge sits — shared with the director's camera framing so the
+ * on-air pulse reticle lands on the same point as the badge (see alertRepPoint).
  */
-function repPoint(f: AlertFeature): [number, number] | null {
-  const g = f.geometry;
-  const co = g?.coordinates as unknown;
-  if (!co) return null;
-  if (g.type === "Point") return co as [number, number];
-  // Polygon → coords[0] is the outer ring; MultiPolygon → coords[0][0].
-  const ring: unknown =
-    g.type === "MultiPolygon" ? (co as unknown[][][])[0]?.[0] : (co as unknown[][])[0];
-  if (!Array.isArray(ring) || ring.length === 0) return null;
-  let sx = 0;
-  let sy = 0;
-  let k = 0;
-  for (const pt of ring as [number, number][]) {
-    if (Array.isArray(pt) && pt.length >= 2) {
-      sx += pt[0];
-      sy += pt[1];
-      k++;
-    }
-  }
-  return k ? [sx / k, sy / k] : null;
-}
+const repPoint = (f: AlertFeature): [number, number] | null => alertRepPoint(f.geometry);
+
+/**
+ * True when the feature draws a real polygon (Polygon/MultiPolygon). Polygon
+ * alerts already read their location + hazard colour from the glowing area, so
+ * the hazard badge is only added for point-only alerts (Point geometry / no
+ * drawable area), where there's otherwise nothing on the globe to see.
+ */
+const hasArea = (f: AlertFeature): boolean =>
+  f.geometry?.type === "Polygon" || f.geometry?.type === "MultiPolygon";
 
 interface Badge {
   pos: [number, number];
@@ -76,12 +70,16 @@ interface Badge {
  * with the hazard glyph, so an operator reads *what* the warning is at a glance.
  * Severity (0 info … 4 extreme) scales the glow, the fill opacity and the badge.
  */
-export function alertsLayer(features: AlertFeature[]) {
+export function alertsLayer(features: AlertFeature[], visible = true) {
   const n = features.length;
 
   // Badge anchor + hazard styling, computed once per feature.
   const badges: Badge[] = [];
   for (const f of features) {
+    // Polygon alerts read as their glowing area; only point-only alerts get a
+    // badge, so the badge is a marker for "nothing else to see here", not extra
+    // clutter sitting on top of every drawn shape.
+    if (hasArea(f)) continue;
     const pos = repPoint(f);
     if (!pos) continue;
     const meta = hazardMeta(f.properties.hazard);
@@ -108,7 +106,7 @@ export function alertsLayer(features: AlertFeature[]) {
       pointType: "circle",
       getPointRadius: 0,
       pointRadiusMaxPixels: 0,
-      getLineColor: (f: any) => withA(lighten(base(rank(f)), 0.35), 26),
+      getLineColor: (f: any) => withA(lighten(base(f), 0.35), 26),
       getLineWidth: (f: any) => 6 + rank(f) * 3,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 5,
@@ -125,7 +123,7 @@ export function alertsLayer(features: AlertFeature[]) {
       pointType: "circle",
       getPointRadius: 0,
       pointRadiusMaxPixels: 0,
-      getLineColor: (f: any) => withA(lighten(base(rank(f)), 0.2), 70),
+      getLineColor: (f: any) => withA(lighten(base(f), 0.2), 70),
       getLineWidth: (f: any) => 3 + rank(f) * 1.4,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 2.5,
@@ -142,7 +140,7 @@ export function alertsLayer(features: AlertFeature[]) {
       pointType: "circle",
       getPointRadius: 0,
       pointRadiusMaxPixels: 0,
-      getFillColor: (f: any) => withA(base(rank(f)), 45 + rank(f) * 16),
+      getFillColor: (f: any) => withA(base(f), 45 + rank(f) * 16),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       parameters: params,
       updateTriggers: { getFillColor: n },
@@ -156,7 +154,7 @@ export function alertsLayer(features: AlertFeature[]) {
       pointType: "circle",
       getPointRadius: 0,
       pointRadiusMaxPixels: 0,
-      getLineColor: (f: any) => withA(lighten(base(rank(f)), 0.55), 240),
+      getLineColor: (f: any) => withA(lighten(base(f), 0.55), 240),
       getLineWidth: (f: any) => 1.3 + rank(f) * 0.25,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 1,
@@ -237,6 +235,124 @@ export function alertsLayer(features: AlertFeature[]) {
       }),
     );
   }
+
+  // Toggle visibility rather than add/remove the layers: a hidden deck layer
+  // keeps its tessellated geometry, so flipping `state.showAlerts` (e.g. on every
+  // director cut) is instant instead of re-tessellating thousands of polygons.
+  return layers.map((l) => l.clone({ visible }));
+}
+
+/** ~0.5° tolerance² for matching the on-air centroid to a drawn alert area. */
+const ON_AIR_EPS2 = 0.25;
+
+/** The drawn alert area nearest the director's on-air centroid, or null. */
+function onAirFeature(features: AlertFeature[], at: [number, number]): AlertFeature | null {
+  let best: AlertFeature | null = null;
+  let bestD = Infinity;
+  for (const f of features) {
+    const p = repPoint(f);
+    if (!p) continue;
+    const d = (p[0] - at[0]) ** 2 + (p[1] - at[1]) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = f;
+    }
+  }
+  return bestD <= ON_AIR_EPS2 ? best : null;
+}
+
+/**
+ * On-air highlight: while the director holds an alert, breathe *its own area*
+ * (fill opacity + a widening lit edge) so the eye locks onto the shape being
+ * talked about, not a free-floating reticle. Re-built every frame by the globe's
+ * pulse loop, so `now` drives the phase. When the on-air event has no drawn
+ * polygon (point-only / geometry stripped) we fall back to a pulsing
+ * hazard-coloured dot at the framing point.
+ */
+export function onAirPulseLayers(
+  features: AlertFeature[],
+  at: [number, number],
+  now: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any[] {
+  // `breathe` 0→1→0 (a soft heartbeat); `ping` 0→1 ramps then snaps back (an
+  // expanding sonar ring). Both are derived from `now`, but EVERY animated prop
+  // below is a *function* accessor keyed by `updateTriggers: { …: now }` — deck
+  // only re-uploads accessor values when their trigger changes, and silently
+  // ignores triggers on constant (non-function) accessors. Passing constants
+  // here is exactly why the highlight rendered once and never moved.
+  const phase = (now % PULSE_PERIOD_MS) / PULSE_PERIOD_MS;
+  const breathe = 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI);
+  const ping = phase; // 0..1 sawtooth
+  const onAir = onAirFeature(features, at);
+  const c: [number, number, number] = onAir ? base(onAir) : [255, 95, 95];
+  const lit: [number, number, number] = lighten(c, 0.6);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const layers: any[] = [];
+
+  // 1 ─ Breathe the on-air area itself, so the eye locks onto the exact shape.
+  if (onAir && (onAir.geometry as { coordinates?: unknown })?.coordinates) {
+    layers.push(
+      new GeoJsonLayer({
+        id: "alerts-onair-fill",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: [onAir] as any,
+        filled: true,
+        stroked: true,
+        getFillColor: () => withA(c, 40 + 110 * breathe),
+        getLineColor: () => withA(lit, 220),
+        getLineWidth: () => 1.5 + 4 * breathe,
+        lineWidthUnits: "pixels",
+        lineWidthMinPixels: 1.5,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        parameters: { depthTest: true } as any,
+        updateTriggers: { getFillColor: now, getLineColor: now, getLineWidth: now },
+      }),
+    );
+  }
+
+  // 2 ─ An expanding "sonar" ring at the framing point — bold, on top of
+  //     everything, always shown while on air so the pulse is unmistakable even
+  //     when the area is tiny or off the matched-polygon path.
+  layers.push(
+    new ScatterplotLayer<{ position: [number, number] }>({
+      id: "alerts-onair-ping",
+      data: [{ position: at }],
+      getPosition: (d) => d.position,
+      stroked: true,
+      filled: false,
+      radiusUnits: "pixels",
+      getRadius: () => 8 + 34 * ping,
+      radiusMinPixels: 4,
+      getLineColor: () => [lit[0], lit[1], lit[2], Math.round(230 * (1 - ping))],
+      getLineWidth: () => 2 + 2 * (1 - ping),
+      lineWidthUnits: "pixels",
+      lineWidthMinPixels: 1.5,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      parameters: { depthTest: false } as any,
+      updateTriggers: { getRadius: now, getLineColor: now, getLineWidth: now },
+    }),
+    // 3 ─ A solid breathing core dot under the ring (anchors the ping; also the
+    //     sole highlight when the on-air event has no drawn polygon).
+    new ScatterplotLayer<{ position: [number, number] }>({
+      id: "alerts-onair-dot",
+      data: [{ position: at }],
+      getPosition: (d) => d.position,
+      stroked: true,
+      filled: true,
+      radiusUnits: "pixels",
+      getRadius: () => 6 + 4 * breathe,
+      radiusMinPixels: 3,
+      getFillColor: () => withA(c, 150 + 80 * breathe),
+      getLineColor: [lit[0], lit[1], lit[2], 255],
+      getLineWidth: 1.5,
+      lineWidthUnits: "pixels",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      parameters: { depthTest: false } as any,
+      updateTriggers: { getRadius: now, getFillColor: now },
+    }),
+  );
 
   return layers;
 }

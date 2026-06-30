@@ -10,6 +10,8 @@ import type { Segment, SegmentKind } from "@photonsurge/shared/director";
 
 const KIND_LABEL: Record<SegmentKind, string> = {
   intro: "Live",
+  ocean: "Ocean",
+  orbital: "Orbital",
   tour: "Region",
   weather: "Weather",
   storm: "Severe",
