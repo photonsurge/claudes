@@ -87,12 +87,17 @@ export function windRgba(
   return buf;
 }
 
-/** Build raw RGBA bytes for a scalar (grayscale) texture. */
+/**
+ * Build raw RGBA bytes for a scalar (grayscale) texture. When `keep` is given,
+ * pixels where `keep[i]` is falsy are baked as nodata (alpha 0) — WeatherLayers
+ * skips alpha-0 texels, which is how we mask SST to ocean, snow to land, etc.
+ */
 export function scalarRgba(
   values: Float32Array,
   width: number,
   height: number,
   imageUnscale: [number, number],
+  keep?: ArrayLike<number>,
 ): Buffer {
   const n = width * height;
   const buf = Buffer.allocUnsafe(n * 4);
@@ -102,7 +107,7 @@ export function scalarRgba(
     buf[o] = b;
     buf[o + 1] = b;
     buf[o + 2] = b;
-    buf[o + 3] = 255;
+    buf[o + 3] = keep && !keep[i] ? 0 : 255;
   }
   return buf;
 }
@@ -119,13 +124,14 @@ export async function encodeWindPng(
   return sharp(raw, { raw: { width, height, channels: 4 } }).png().toBuffer();
 }
 
-/** Encode a scalar grayscale RGBA PNG buffer via sharp. */
+/** Encode a scalar grayscale RGBA PNG buffer via sharp. `keep` masks nodata. */
 export async function encodeScalarPng(
   values: Float32Array,
   width: number,
   height: number,
   imageUnscale: [number, number],
+  keep?: ArrayLike<number>,
 ): Promise<Buffer> {
-  const raw = scalarRgba(values, width, height, imageUnscale);
+  const raw = scalarRgba(values, width, height, imageUnscale, keep);
   return sharp(raw, { raw: { width, height, channels: 4 } }).png().toBuffer();
 }

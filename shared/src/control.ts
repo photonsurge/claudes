@@ -113,17 +113,80 @@ export const WIND_PRESETS: Record<string, WindSettings> = {
 /** How the wind field is drawn. */
 export type WindMode = "particles" | "barbs";
 
-/** How aircraft/ship markers are coloured on the live-track overlay. */
-export type TrackColorMode = "kind" | "speed" | "altitude" | "country";
+/**
+ * How a track type's markers are coloured. "custom" uses `TrackStyle.customColor`
+ * (a flat operator-chosen hex); the others are data-driven gradients.
+ */
+export type TrackColorMode = "kind" | "speed" | "altitude" | "country" | "custom";
 /** Marker shape for aircraft/ships (satellites always render as dots). */
 export type TrackIconMode = "dot" | "arrow" | "glyph";
 
-/** Per-kind marker styling — aircraft and ships are configured independently. */
+/**
+ * Per-type marker styling + display filters — satellites, aircraft and ships are
+ * each configured independently. All filter fields default to "off" (0 / unset /
+ * false) so the overlay shows everything until the operator dials something in.
+ */
 export interface TrackStyle {
   color: TrackColorMode;
   icon: TrackIconMode;
+  /** Flat marker colour (hex `#rrggbb`) used when `color` === "custom". */
+  customColor?: string;
+  /** Marker opacity 0–1 (fill alpha). Undefined = fully opaque. */
+  opacity?: number;
+  // ── Display filters (0 / unset = no filter) ──
+  /** Hide tracks below this altitude, metres (aircraft AGL / satellite orbit). */
+  minAltM?: number;
+  /** Hide tracks above this altitude, metres (satellite band ceiling). */
+  maxAltM?: number;
+  /** Hide tracks slower than this: m/s for aircraft/satellite, knots for ships. */
+  minSpeed?: number;
+  /** Keep only tracks whose country matches one of these (comma-list, substring, case-insensitive). */
+  country?: string;
+  /** Aircraft only: hide on-ground traffic (altitude ≈ 0). */
+  hideGround?: boolean;
 }
-export const DEFAULT_TRACK_STYLE: TrackStyle = { color: "kind", icon: "arrow" };
+export const DEFAULT_TRACK_STYLE: TrackStyle = {
+  color: "kind",
+  icon: "arrow",
+  customColor: "#facc15",
+  opacity: 1,
+  minAltM: 0,
+  maxAltM: 0,
+  minSpeed: 0,
+  country: "",
+  hideGround: false,
+};
+export const DEFAULT_SATELLITE_STYLE: TrackStyle = {
+  ...DEFAULT_TRACK_STYLE,
+  icon: "dot",
+  customColor: "#38bdf8",
+};
+
+/** Clamp a number into [lo, hi], falling back to `dflt` if not finite. */
+const clampNum = (v: unknown, lo: number, hi: number, dflt: number): number =>
+  typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : dflt;
+
+/**
+ * Merge a (possibly untrusted) partial TrackStyle onto a base, validating each
+ * field. Shared by all three per-type styles in mergeControlState.
+ */
+export function mergeTrackStyle(base: TrackStyle, patch: Partial<TrackStyle> | undefined, dflt: TrackStyle): TrackStyle {
+  const b = base ?? dflt;
+  const p = patch ?? {};
+  const out: TrackStyle = {
+    color: (p.color ?? b.color ?? dflt.color) as TrackColorMode,
+    icon: (p.icon ?? b.icon ?? dflt.icon) as TrackIconMode,
+    customColor:
+      typeof p.customColor === "string" ? p.customColor : b.customColor ?? dflt.customColor,
+    opacity: clampNum(p.opacity ?? b.opacity, 0, 1, dflt.opacity ?? 1),
+    minAltM: clampNum(p.minAltM ?? b.minAltM, 0, 6e7, 0),
+    maxAltM: clampNum(p.maxAltM ?? b.maxAltM, 0, 6e7, 0),
+    minSpeed: clampNum(p.minSpeed ?? b.minSpeed, 0, 1e5, 0),
+    country: typeof p.country === "string" ? p.country : b.country ?? "",
+    hideGround: typeof p.hideGround === "boolean" ? p.hideGround : b.hideGround ?? false,
+  };
+  return out;
+}
 
 /**
  * The full operator state rendered by /watch. Kept intentionally flat and
@@ -174,9 +237,11 @@ export interface ControlState {
   spinEpoch: number;
   /** Show name labels on the live-track overlay (decluttered). */
   showTrackLabels: boolean;
-  /** Marker styling for aircraft (colour mode + icon), independent of ships. */
+  /** Marker styling + filters for satellites (icon is always a dot). */
+  satelliteStyle: TrackStyle;
+  /** Marker styling + filters for aircraft, independent of ships. */
   aircraftStyle: TrackStyle;
-  /** Marker styling for ships (colour mode + icon), independent of aircraft. */
+  /** Marker styling + filters for ships, independent of aircraft. */
   shipStyle: TrackStyle;
   /** Draw satellite orbit rings (one period each). */
   showOrbits: boolean;
@@ -218,6 +283,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   spinSpeed: 8,
   spinEpoch: 0,
   showTrackLabels: false,
+  satelliteStyle: { ...DEFAULT_SATELLITE_STYLE },
   aircraftStyle: { ...DEFAULT_TRACK_STYLE },
   shipStyle: { ...DEFAULT_TRACK_STYLE },
   showOrbits: false,
@@ -291,14 +357,9 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
       typeof patch.showTrackLabels === "boolean"
         ? patch.showTrackLabels
         : base.showTrackLabels ?? false,
-    aircraftStyle: {
-      color: patch.aircraftStyle?.color ?? base.aircraftStyle?.color ?? DEFAULT_TRACK_STYLE.color,
-      icon: patch.aircraftStyle?.icon ?? base.aircraftStyle?.icon ?? DEFAULT_TRACK_STYLE.icon,
-    },
-    shipStyle: {
-      color: patch.shipStyle?.color ?? base.shipStyle?.color ?? DEFAULT_TRACK_STYLE.color,
-      icon: patch.shipStyle?.icon ?? base.shipStyle?.icon ?? DEFAULT_TRACK_STYLE.icon,
-    },
+    satelliteStyle: mergeTrackStyle(base.satelliteStyle, patch.satelliteStyle, DEFAULT_SATELLITE_STYLE),
+    aircraftStyle: mergeTrackStyle(base.aircraftStyle, patch.aircraftStyle, DEFAULT_TRACK_STYLE),
+    shipStyle: mergeTrackStyle(base.shipStyle, patch.shipStyle, DEFAULT_TRACK_STYLE),
     showOrbits: typeof patch.showOrbits === "boolean" ? patch.showOrbits : base.showOrbits ?? false,
     showTrails: typeof patch.showTrails === "boolean" ? patch.showTrails : base.showTrails ?? false,
     trailMinutes:

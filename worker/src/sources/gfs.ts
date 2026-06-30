@@ -13,9 +13,12 @@ export interface BuildNomadsUrlArgs {
   vars: string[];
   /** GRIB-filter level token(s), e.g. ["10_m_above_ground"]. */
   levels: string[];
+  /** NOMADS product: atmos (default GFS 0.25°) or the GFS-Wave global product. */
+  product?: "atmos" | "wave";
 }
 
 const NOMADS_BASE = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl";
+const NOMADS_WAVE_BASE = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfswave.pl";
 
 /** Zero-pad a forecast hour to 3 digits ("0" -> "000", "12" -> "012"). */
 export function padFhr(fhr: number): string {
@@ -31,18 +34,25 @@ export function padFhr(fhr: number): string {
  *     &file=gfs.t00z.pgrb2.0p25.f012
  *     &var_UGRD=on&var_VGRD=on&lev_10_m_above_ground=on
  */
-export function buildNomadsUrl({ date, cycle, fhr, vars, levels }: BuildNomadsUrlArgs): string {
+export function buildNomadsUrl({ date, cycle, fhr, vars, levels, product = "atmos" }: BuildNomadsUrlArgs): string {
   const cyc = String(cycle).padStart(2, "0");
   const fff = padFhr(fhr);
 
+  const wave = product === "wave";
+  const base = wave ? NOMADS_WAVE_BASE : NOMADS_BASE;
+  // GFS-Wave lives under .../wave/gridded with a different file naming + a
+  // .grib2 extension; atmos uses .../atmos and an extension-less pgrb2 file.
+  const dir = wave ? `/gfs.${date}/${cyc}/wave/gridded` : `/gfs.${date}/${cyc}/atmos`;
+  const file = wave ? `gfswave.t${cyc}z.global.0p25.f${fff}.grib2` : `gfs.t${cyc}z.pgrb2.0p25.f${fff}`;
+
   // Use a deterministic param order: dir, file, then vars, then levels.
   const params: string[] = [];
-  params.push(`dir=${encodeURIComponent(`/gfs.${date}/${cyc}/atmos`)}`);
-  params.push(`file=gfs.t${cyc}z.pgrb2.0p25.f${fff}`);
+  params.push(`dir=${encodeURIComponent(dir)}`);
+  params.push(`file=${file}`);
   for (const v of vars) params.push(`var_${v}=on`);
   for (const l of levels) params.push(`lev_${l}=on`);
 
-  return `${NOMADS_BASE}?${params.join("&")}`;
+  return `${base}?${params.join("&")}`;
 }
 
 export interface LatestRun {

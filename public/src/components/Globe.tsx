@@ -30,7 +30,7 @@ import {
   type TextureResolver,
 } from "./layers";
 import type { City } from "../lib/cities";
-import { tracksLayer, orbitLayer, trailsLayer } from "./layers/tracks";
+import { tracksLayer, orbitLayer, trailsLayer, filterTrails } from "./layers/tracks";
 import { alertsLayer } from "./layers/alerts";
 import { seismicLayer } from "./layers/seismic";
 import type { Track, Quake } from "../lib/tracks/types";
@@ -399,7 +399,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     layers.push(countriesLayer(state));
 
     // Weather-alert polygons above borders, below cities/tracks.
-    if (state.showAlerts && alerts.length) layers.push(alertsLayer(alerts));
+    if (state.showAlerts && alerts.length) layers.push(...alertsLayer(alerts));
 
     // Earthquakes above alerts, below cities/tracks.
     if (state.showSeismic && quakes.length) layers.push(...seismicLayer(quakes));
@@ -408,12 +408,18 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
 
     // Live tracks overlay sits on top of everything (trails + orbit rings under
     // the point markers).
-    if (state.showTrails && trails.length) layers.push(trailsLayer(trails, state.trailOpacity));
+    if (state.showTrails && trails.length) {
+      // Trails follow the same per-type filters as the markers, so filtered-out
+      // planes/ships don't keep a dangling trail.
+      const shown = filterTrails(trails, tracks, state.aircraftStyle, state.shipStyle);
+      if (shown.length) layers.push(trailsLayer(shown, state.trailOpacity));
+    }
     if (state.showOrbits && orbits.length) layers.push(orbitLayer(orbits));
     if (tracks.length)
       layers.push(
         ...tracksLayer(tracks, {
           labels: state.showTrackLabels,
+          satelliteStyle: state.satelliteStyle,
           aircraftStyle: state.aircraftStyle,
           shipStyle: state.shipStyle,
           zoom: state.camera.zoom,
@@ -438,6 +444,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showContours,
     state.showRadar,
     state.showTrackLabels,
+    state.satelliteStyle,
     state.aircraftStyle,
     state.shipStyle,
     state.showOrbits,

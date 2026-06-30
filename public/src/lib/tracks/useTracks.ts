@@ -256,5 +256,36 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
     () => [...satTracks, ...acTracks, ...shipTracks],
     [satTracks, acTracks, shipTracks],
   );
-  return useMemo(() => ({ tracks, orbits, trails }), [tracks, orbits, trails]);
+
+  // Reconcile recorded trails with the live markers (joined by kind+externalId
+  // == Track.code), doing two things so every trail visibly belongs to a plane:
+  //   1. DROP orphans — history for tracks not in the current snapshot (planes
+  //      that aged out / left coverage). Drawn, they're tails dangling in empty
+  //      space with no marker at the head ("trails don't match planes").
+  //   2. EXTEND the head of each kept trail to its live (dead-reckoned) marker
+  //      position, so the route connects to the marker instead of lagging behind
+  //      at the last cached frame.
+  // Recomputes on the 1s projection tick via the `tracks` dep, so heads follow.
+  const connectedTrails = useMemo(() => {
+    if (!trails.length) return trails;
+    const livePos = new Map<string, [number, number]>();
+    for (const t of tracks) {
+      if (t.kind === "aircraft" || t.kind === "ship") {
+        livePos.set(`${t.kind}:${t.code}`, [t.position[0], t.position[1]]);
+      }
+    }
+    const out: TrackPath[] = [];
+    for (const tr of trails) {
+      const p = livePos.get(`${tr.kind}:${tr.externalId}`);
+      if (!p) continue; // orphan: no live marker → don't draw a dangling trail
+      const last = tr.path[tr.path.length - 1];
+      out.push(last && last[0] === p[0] && last[1] === p[1] ? tr : { ...tr, path: [...tr.path, p] });
+    }
+    return out;
+  }, [trails, tracks]);
+
+  return useMemo(
+    () => ({ tracks, orbits, trails: connectedTrails }),
+    [tracks, orbits, connectedTrails],
+  );
 }

@@ -5,6 +5,7 @@
 import {
   VARIABLE_REGISTRY,
   kelvinToCelsius,
+  metersToCm,
   paToHpa,
 } from "@photonsurge/shared/variables";
 import { deaccumulate, encodeScalarPng, rollLongitude } from "./encode";
@@ -16,12 +17,15 @@ import { imageUnscaleFor, type BakeResult } from "./bake";
  *  - temp:  K -> °C
  *  - pressure: Pa -> hPa
  *  - rain:  PRATE kg m⁻² s⁻¹ (= mm/s) -> mm/h
- *  - others: identity (RH already %, CAPE J/kg, GUST m/s).
+ *  - sst:   WTMP K -> °C
+ *  - snow:  SNOD m -> cm
+ *  - others: identity (RH already %, CAPE J/kg, GUST m/s, TCDC %).
  */
 export function convertScalarUnits(variableId: string, values: Float32Array): Float32Array {
   const out = new Float32Array(values.length);
   switch (variableId) {
     case "temp":
+    case "sst":
       for (let i = 0; i < values.length; i++) out[i] = kelvinToCelsius(values[i]);
       return out;
     case "pressure":
@@ -30,10 +34,52 @@ export function convertScalarUnits(variableId: string, values: Float32Array): Fl
     case "rain":
       for (let i = 0; i < values.length; i++) out[i] = values[i] * 3600;
       return out;
+    case "snow":
+      for (let i = 0; i < values.length; i++) out[i] = metersToCm(values[i]);
+      return out;
     default:
       out.set(values);
       return out;
   }
+}
+
+/** wgrib2 -bin writes UNDEFINED (bitmap-masked) points as ~9.999e20. */
+const GRIB_UNDEFINED = 1e20;
+
+/**
+ * Build the per-pixel keep mask (1 = data, 0 = nodata→transparent) for a scalar
+ * from the variable's `mask`/`minVisible` config, plus always dropping
+ * GRIB-undefined / non-finite points (how bitmap-masked fields like wave height
+ * get their land transparent). `land` is the GFS land-sea mask grid (1 = land,
+ * 0 = sea), already in the SAME row/col order as `physical` (i.e. roll both
+ * before calling, or neither). Returns undefined when nothing needs masking, so
+ * clean global fields bake fully opaque as before.
+ */
+export function scalarKeepMask(
+  variableId: string,
+  physical: Float32Array,
+  land?: Float32Array,
+): Uint8Array | undefined {
+  const reg = VARIABLE_REGISTRY[variableId];
+  const maskSide = reg?.gfs.mask;
+  const minVisible = reg?.gfs.minVisible;
+
+  const keep = new Uint8Array(physical.length);
+  let dropped = false;
+  for (let i = 0; i < physical.length; i++) {
+    const v = physical[i];
+    let ok = Number.isFinite(v) && Math.abs(v) < GRIB_UNDEFINED;
+    if (ok && maskSide && land) {
+      const isLand = land[i] >= 0.5;
+      ok = maskSide === "land" ? isLand : !isLand;
+    }
+    if (ok && minVisible !== undefined && !(v >= minVisible)) ok = false;
+    keep[i] = ok ? 1 : 0;
+    if (!ok) dropped = true;
+  }
+  // No config and nothing dropped → no mask needed (opaque, as before).
+  if (!dropped && !maskSide && minVisible === undefined) return undefined;
+  return keep;
 }
 
 export interface BakeScalarArgs {
@@ -46,6 +92,8 @@ export interface BakeScalarArgs {
   prevValues?: Float32Array;
   /** Hours between this step and the previous (accumulated vars only). */
   deltaHours?: number;
+  /** GFS land-sea mask grid (1 = land, 0 = sea), masked vars only. */
+  landValues?: Float32Array;
 }
 
 export async function bakeScalar({
@@ -55,6 +103,7 @@ export async function bakeScalar({
   height,
   prevValues,
   deltaHours,
+  landValues,
 }: BakeScalarArgs): Promise<BakeResult> {
   const reg = VARIABLE_REGISTRY[variableId];
   if (!reg) throw new Error(`Unknown variable: ${variableId}`);
@@ -68,8 +117,11 @@ export async function bakeScalar({
   }
 
   const rolled = rollLongitude(physical, width, height);
+  // Roll the land mask the same way so it lines up with the rolled values.
+  const rolledLand = landValues ? rollLongitude(landValues, width, height) : undefined;
+  const keep = scalarKeepMask(variableId, rolled, rolledLand);
   const imageUnscale = imageUnscaleFor(variableId);
-  const buffer = await encodeScalarPng(rolled, width, height, imageUnscale);
+  const buffer = await encodeScalarPng(rolled, width, height, imageUnscale, keep);
 
   return {
     buffer,

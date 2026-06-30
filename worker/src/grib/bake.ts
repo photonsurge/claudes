@@ -24,6 +24,10 @@ export const SCALAR_IMAGE_UNSCALE: Record<string, [number, number]> = {
   storm: [0, 8000], // J/kg CAPE
   gust: [0, 120], // m/s
   pressure: [870, 1085], // hPa MSLP
+  sst: [-5, 40], // °C (water temp; wider than the -2..32 colour domain)
+  cloud: [0, 100], // %
+  snow: [0, 500], // cm (deep snowpack; SNOD baked metres → cm)
+  wave: [0, 30], // m significant wave height (record seas ~20m)
 };
 
 /** Resolve the decode range for a variable, defaulting to its colour domain. */

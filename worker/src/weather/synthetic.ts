@@ -61,3 +61,81 @@ export function syntheticTemp(width: number, height: number): Float32Array {
   }
   return out;
 }
+
+/**
+ * A synthetic land-sea mask (1 = land, 0 = sea): a few smooth "continent" blobs
+ * so the masking path is demoable offline. Same row/col conventions as the other
+ * synthetic fields (already in −180..180, no longitude roll needed).
+ */
+export function syntheticLandMask(width: number, height: number): Float32Array {
+  const out = new Float32Array(width * height);
+  for (let row = 0; row < height; row++) {
+    const lat = latForRow(row, height);
+    for (let col = 0; col < width; col++) {
+      const lng = lngForCol(col, width);
+      // Sum of broad lobes → land where the field rises above a threshold.
+      const f =
+        Math.cos(lng * DEG * 2) * Math.cos(lat * DEG * 2) +
+        0.6 * Math.cos((lng + 90) * DEG) * Math.sin((lat + 20) * DEG);
+      out[row * width + col] = f > 0.15 ? 1 : 0;
+    }
+  }
+  return out;
+}
+
+/** Synthetic SST in °C: warm equatorial ocean (~28) → cold polar (~ −1). */
+export function syntheticSst(width: number, height: number): Float32Array {
+  const out = new Float32Array(width * height);
+  for (let row = 0; row < height; row++) {
+    const lat = latForRow(row, height);
+    const base = 28 - 30 * (Math.abs(lat) / 90);
+    for (let col = 0; col < width; col++) {
+      const lng = lngForCol(col, width);
+      out[row * width + col] = Math.max(-1.8, base + 2 * Math.cos(lng * DEG * 2));
+    }
+  }
+  return out;
+}
+
+/** Synthetic cloud cover %: swirling bands 0..100. */
+export function syntheticCloud(width: number, height: number): Float32Array {
+  const out = new Float32Array(width * height);
+  for (let row = 0; row < height; row++) {
+    const lat = latForRow(row, height);
+    for (let col = 0; col < width; col++) {
+      const lng = lngForCol(col, width);
+      const s = Math.sin(lng * DEG * 3 + lat * DEG * 2) * Math.cos(lat * DEG * 3);
+      out[row * width + col] = Math.max(0, Math.min(100, 50 + 50 * s));
+    }
+  }
+  return out;
+}
+
+/** Synthetic significant wave height in m: calm tropics, big Southern Ocean swell. */
+export function syntheticWave(width: number, height: number): Float32Array {
+  const out = new Float32Array(width * height);
+  for (let row = 0; row < height; row++) {
+    const lat = latForRow(row, height);
+    // Roaring-forties style: swell builds with |lat|, peaks in the 40–60° belt.
+    const belt = Math.max(0, 1 - Math.abs(Math.abs(lat) - 50) / 40);
+    for (let col = 0; col < width; col++) {
+      const lng = lngForCol(col, width);
+      out[row * width + col] = Math.max(0, 1.5 + 7 * belt + 1.5 * Math.cos(lng * DEG * 3));
+    }
+  }
+  return out;
+}
+
+/** Synthetic snow depth in cm: deep toward the poles, none near the equator. */
+export function syntheticSnow(width: number, height: number): Float32Array {
+  const out = new Float32Array(width * height);
+  for (let row = 0; row < height; row++) {
+    const lat = latForRow(row, height);
+    const polar = Math.max(0, (Math.abs(lat) - 40) / 50); // 0 below 40°, →1 at poles
+    for (let col = 0; col < width; col++) {
+      const lng = lngForCol(col, width);
+      out[row * width + col] = polar * (60 + 40 * Math.cos(lng * DEG * 4));
+    }
+  }
+  return out;
+}

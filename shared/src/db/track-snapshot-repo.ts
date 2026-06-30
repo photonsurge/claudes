@@ -1,4 +1,4 @@
-import type { Model } from "mongoose";
+import type { Model, PipelineStage } from "mongoose";
 import type { iTrackSnapshot, iTrackSnapshotModel, TrackSnapshotKind } from "./track-snapshot-model";
 
 const strip = (doc: any): iTrackSnapshotModel => {
@@ -105,24 +105,25 @@ export function makeTrackSnapshotRepo(model: Model<iTrackSnapshotModel>) {
     }): Promise<Array<{ externalId: string; kind: TrackSnapshotKind; name?: string; path: [number, number][] }>> {
       const match: Record<string, unknown> = { batchAt: { $gte: opts.from } };
       if (opts.kind) match.kind = opts.kind;
-      const rows = await model
-        .aggregate([
-          { $match: match },
-          { $sort: { batchAt: 1 } },
-          {
-            $group: {
-              _id: "$externalId",
-              kind: { $first: "$kind" },
-              name: { $last: "$name" },
-              // Push an object per point; $push won't take a 2-element array
-              // literal (Mongo reads it as multiple operator args).
-              pts: { $push: { lng: "$lng", lat: "$lat" } },
-            },
+      const pipeline: PipelineStage[] = [
+        { $match: match },
+        { $sort: { batchAt: 1 } },
+        {
+          $group: {
+            _id: "$externalId",
+            kind: { $first: "$kind" },
+            name: { $last: "$name" },
+            // Push an object per point; $push won't take a 2-element array
+            // literal (Mongo reads it as multiple operator args).
+            pts: { $push: { lng: "$lng", lat: "$lat" } },
           },
-          { $match: { "pts.1": { $exists: true } } },
-          { $limit: opts.maxTracks ?? 5000 },
-        ])
-        .exec();
+        },
+        { $match: { "pts.1": { $exists: true } } },
+      ];
+      // No cap by default — every shown track gets a trail. Only limit when the
+      // caller explicitly asks (maxTracks > 0); 0/undefined = whole feed.
+      if (opts.maxTracks && opts.maxTracks > 0) pipeline.push({ $limit: opts.maxTracks } as PipelineStage);
+      const rows = await model.aggregate(pipeline).exec();
       return rows.map((r: any) => ({
         externalId: r._id as string,
         kind: r.kind as TrackSnapshotKind,

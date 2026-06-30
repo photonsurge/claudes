@@ -68,6 +68,29 @@ describe("bakeVariableStep", () => {
     expect(mockExtract.mock.calls[0][0]).toMatchObject({ match: ":TMP:" });
   });
 
+  it("pulls LAND alongside a masked scalar (SST) and extracts both fields", async () => {
+    // First extract = WTMP, second = LAND mask.
+    mockExtract.mockResolvedValueOnce(grid(290)).mockResolvedValueOnce(grid(0));
+    const res = await bakeVariableStep(VARIABLE_REGISTRY.sst, "20260628", "00", 6, undefined, 3);
+    expect(res.encoding).toBe("scalar");
+    const [url] = mockDownload.mock.calls[0];
+    expect(url).toContain("var_WTMP=on");
+    expect(url).toContain("var_LAND=on");
+    expect(url).toContain("lev_surface=on");
+    expect(mockExtract).toHaveBeenCalledTimes(2);
+    expect(mockExtract.mock.calls[0][0]).toMatchObject({ match: ":WTMP:" });
+    expect(mockExtract.mock.calls[1][0]).toMatchObject({ match: ":LAND:" });
+  });
+
+  it("does NOT pull LAND for an unmasked scalar (cloud)", async () => {
+    mockExtract.mockResolvedValue(grid(60));
+    await bakeVariableStep(VARIABLE_REGISTRY.cloud, "20260628", "00", 6, undefined, 3);
+    const [url] = mockDownload.mock.calls[0];
+    expect(url).toContain("var_TCDC=on");
+    expect(url).not.toContain("var_LAND=on");
+    expect(mockExtract).toHaveBeenCalledTimes(1);
+  });
+
   it("does NOT read a previous grid for an accumulated var at f000 (no prevAccumPath)", async () => {
     mockExtract.mockResolvedValue(grid(0));
     await bakeVariableStep(accumulatedVar, "20260628", "00", 0, undefined, 3);

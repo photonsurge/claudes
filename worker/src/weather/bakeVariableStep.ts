@@ -30,12 +30,16 @@ export async function bakeVariableStep(
   prevAccumPath: string | undefined,
   stepHours: number,
 ): Promise<BakeVariableStepResult> {
+  // Masked scalars (SST/snow) also pull the GFS land-sea mask (LAND:surface) in
+  // the same subset so we can bake the off-side as transparent.
+  const masked = variable.encoding === "scalar" && !!variable.gfs.mask;
   const url = buildNomadsUrl({
     date,
     cycle,
     fhr,
-    vars: variable.gfs.vars,
-    levels: variable.gfs.levels,
+    vars: masked ? [...variable.gfs.vars, "LAND"] : variable.gfs.vars,
+    levels: masked ? [...variable.gfs.levels, "surface"] : variable.gfs.levels,
+    product: variable.gfs.product,
   });
   const gribPath = await downloadToTemp(url, `${variable.id}.f${padFhr(fhr)}.grib2`);
 
@@ -54,6 +58,11 @@ export async function bakeVariableStep(
     prevValues = prev.values;
     deltaHours = stepHours;
   }
+  let landValues: Float32Array | undefined;
+  if (masked) {
+    const land = await extractField({ gribPath, match: ":LAND:", ...GFS_GRID });
+    landValues = land.values;
+  }
   const res = await bakeScalar({
     variableId: variable.id,
     values: field.values,
@@ -61,6 +70,7 @@ export async function bakeVariableStep(
     height: field.height,
     prevValues,
     deltaHours,
+    landValues,
   });
   return { ...res, gribPath };
 }

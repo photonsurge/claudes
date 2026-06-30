@@ -68,6 +68,40 @@ export const PALETTES: Record<string, Palette> = {
     [0.9, "#e8772e"],
     [1.0, "#b81d1d"],
   ],
+  // Sea surface temp: deep cold near-black-blue → cyan → warm tropical red.
+  // Tuned for the SST domain (−2..32 °C), oceanographic look.
+  sst: [
+    [0.0, "#08123b"],
+    [0.18, "#1f4fa0"],
+    [0.38, "#2f9bd6"],
+    [0.55, "#48c9a9"],
+    [0.7, "#cfe05a"],
+    [0.85, "#f29b2e"],
+    [1.0, "#c0181f"],
+  ],
+  // Cloud cover: thin grey wisp → opaque white overcast (clouds read as cloud).
+  cloud: [
+    [0.0, "#9aa6b2"],
+    [0.4, "#c8d2db"],
+    [0.7, "#e8eef2"],
+    [1.0, "#ffffff"],
+  ],
+  // Snow depth: pale blue dusting → deep snowpack white/cyan.
+  snow: [
+    [0.0, "#bfe3ff"],
+    [0.35, "#8fc7f0"],
+    [0.7, "#dfeefc"],
+    [1.0, "#ffffff"],
+  ],
+  // Significant wave height: calm teal → building blue → dangerous magenta/red.
+  wave_height: [
+    [0.0, "#0a3340"],
+    [0.25, "#0f7a8a"],
+    [0.5, "#2f9bd6"],
+    [0.7, "#7a6fe0"],
+    [0.85, "#c84fb0"],
+    [1.0, "#e02747"],
+  ],
   // Wind particle speed colouring.
   wind: [
     [0.0, "#e8f0ff"],

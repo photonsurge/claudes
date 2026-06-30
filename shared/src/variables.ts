@@ -18,6 +18,24 @@ export interface iGfsField {
   levels: string[];
   /** Accumulated field that must be de-accumulated into a rate (e.g. APCP). */
   accumulated?: boolean;
+  /**
+   * Which NOMADS GFS product the field comes from. "atmos" (default) is the
+   * standard GFS 0.25° atmospheric filter; "wave" is the GFS-Wave global 0.25°
+   * filter (different endpoint, dir and file naming).
+   */
+  product?: "atmos" | "wave";
+  /**
+   * Restrict the field to ocean or land using the GFS land-sea mask, baking the
+   * other side as transparent (alpha 0 = WeatherLayers "nodata"). `sea` for SST
+   * (WTMP carries fill values over land), `land` for snow depth.
+   */
+  mask?: "sea" | "land";
+  /**
+   * Floor (in the baked/display unit) below which pixels are baked transparent.
+   * Lets "show clouds only where there are clouds" / "snow only where there's
+   * snow" instead of painting clear/bare areas with the 0-value colour.
+   */
+  minVisible?: number;
 }
 
 export interface iVariableMeta {
@@ -117,6 +135,58 @@ export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
     domain: [950, 1050],
     gfs: { vars: ["PRMSL"], levels: ["mean_sea_level"] },
   },
+  sst: {
+    id: "sst",
+    label: "Sea surface temp",
+    encoding: "scalar",
+    kind: "raster",
+    units: "°C",
+    altUnit: "°F",
+    altConvert: (v) => (v * 9) / 5 + 32,
+    palette: "sst",
+    domain: [-2, 32],
+    // WTMP (water temp) is defined over ocean; over land GFS fills it, so mask
+    // to sea so continents render transparent on the globe.
+    gfs: { vars: ["WTMP"], levels: ["surface"], mask: "sea" },
+  },
+  cloud: {
+    id: "cloud",
+    label: "Cloud cover",
+    encoding: "scalar",
+    kind: "raster",
+    units: "%",
+    palette: "cloud",
+    domain: [0, 100],
+    // TCDC (total cloud cover) at entire-atmosphere is a forecast-hour average,
+    // so like APCP it has no f000 record and is skipped at f000 by ingest.
+    // minVisible: clear sky (<10%) bakes transparent so only cloud shows.
+    gfs: { vars: ["TCDC"], levels: ["entire_atmosphere"], minVisible: 10 },
+  },
+  snow: {
+    id: "snow",
+    label: "Snow depth",
+    encoding: "scalar",
+    kind: "raster",
+    units: "cm",
+    palette: "snow",
+    domain: [0, 100],
+    // SNOD (snow depth, metres → cm at bake). Mask to land and hide a bare
+    // dusting (<0.5 cm) so only real snowpack paints.
+    gfs: { vars: ["SNOD"], levels: ["surface"], mask: "land", minVisible: 0.5 },
+  },
+  wave: {
+    id: "wave",
+    label: "Wave height",
+    encoding: "scalar",
+    kind: "raster",
+    units: "m",
+    palette: "wave_height",
+    domain: [0, 12],
+    // HTSGW (significant wave height) from the GFS-Wave global 0.25° product.
+    // The grid is bitmap-masked over land (GRIB UNDEFINED), which bakeScalar
+    // bakes transparent — no separate land mask needed.
+    gfs: { vars: ["HTSGW"], levels: ["surface"], product: "wave" },
+  },
 };
 
 /** Scalar variables that can be the single active colour field. */
@@ -135,3 +205,5 @@ export const msToKnots = (v: number): number => v * 1.943844;
 export const celsiusToFahrenheit = (c: number): number => (c * 9) / 5 + 32;
 /** Pascals → hectopascals. */
 export const paToHpa = (p: number): number => p / 100;
+/** Metres → centimetres (snow depth). */
+export const metersToCm = (m: number): number => m * 100;

@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import { imageUnscaleFor, SCALAR_IMAGE_UNSCALE, WIND_IMAGE_UNSCALE } from "./bake";
 import { byteToValue } from "./encode";
-import { convertScalarUnits, bakeScalar } from "./bakeScalar";
+import { convertScalarUnits, bakeScalar, scalarKeepMask } from "./bakeScalar";
 import { bakeWind } from "./bakeWind";
 
 describe("imageUnscaleFor", () => {
@@ -20,6 +20,9 @@ describe("imageUnscaleFor", () => {
     expect(imageUnscaleFor("storm")).toEqual([0, 8000]);
     expect(imageUnscaleFor("gust")).toEqual([0, 120]);
     expect(imageUnscaleFor("pressure")).toEqual([870, 1085]);
+    expect(imageUnscaleFor("sst")).toEqual([-5, 40]);
+    expect(imageUnscaleFor("cloud")).toEqual([0, 100]);
+    expect(imageUnscaleFor("snow")).toEqual([0, 500]);
   });
 
   it("falls back to the registry colour domain for vars without an explicit range", () => {
@@ -65,11 +68,57 @@ describe("convertScalarUnits", () => {
     expect(out[0]).toBeCloseTo(3.6, 5); // 0.001 mm/s -> 3.6 mm/h
     expect(out[1]).toBe(0);
   });
+  it("converts sst WTMP K -> °C", () => {
+    const out = convertScalarUnits("sst", Float32Array.from([273.15, 300]));
+    expect(out[0]).toBeCloseTo(0, 3);
+    expect(out[1]).toBeCloseTo(26.85, 2);
+  });
+  it("converts snow SNOD m -> cm (×100)", () => {
+    const out = convertScalarUnits("snow", Float32Array.from([0.5, 1.2]));
+    expect(out[0]).toBeCloseTo(50, 4);
+    expect(out[1]).toBeCloseTo(120, 3);
+  });
+  it("passes cloud TCDC % through unchanged", () => {
+    expect(convertScalarUnits("cloud", Float32Array.from([73]))[0]).toBe(73);
+  });
   it("returns a new array and does not mutate the input", () => {
     const input = Float32Array.from([300]);
     const out = convertScalarUnits("temp", input);
     expect(out).not.toBe(input);
     expect(input[0]).toBe(300); // untouched
+  });
+});
+
+describe("scalarKeepMask", () => {
+  it("is undefined for vars with no mask/minVisible (fully opaque)", () => {
+    expect(scalarKeepMask("temp", Float32Array.from([1, 2, 3]))).toBeUndefined();
+  });
+
+  it("masks SST to sea (keeps where land < 0.5)", () => {
+    const vals = Float32Array.from([10, 12, 14, 16]);
+    const land = Float32Array.from([1, 0, 1, 0]); // land, sea, land, sea
+    const keep = scalarKeepMask("sst", vals, land);
+    expect(Array.from(keep!)).toEqual([0, 1, 0, 1]);
+  });
+
+  it("masks snow to land AND hides below minVisible (0.5 cm)", () => {
+    const vals = Float32Array.from([0.2, 5, 30, 0.4]); // cm
+    const land = Float32Array.from([1, 1, 0, 1]); // land, land, sea, land
+    const keep = scalarKeepMask("snow", vals, land);
+    // idx0: land but <0.5cm → hide; idx1: land + 5cm → keep; idx2: sea → hide;
+    // idx3: land but 0.4cm → hide.
+    expect(Array.from(keep!)).toEqual([0, 1, 0, 0]);
+  });
+
+  it("hides cloud below minVisible (10%) with no land mask", () => {
+    const keep = scalarKeepMask("cloud", Float32Array.from([5, 10, 80]));
+    expect(Array.from(keep!)).toEqual([0, 1, 1]);
+  });
+
+  it("drops GRIB-undefined / non-finite points (wave land bitmap)", () => {
+    // wave has no mask/minVisible, but bitmap-masked land is ~9.999e20 → nodata.
+    const keep = scalarKeepMask("wave", Float32Array.from([2.5, 9.999e20, NaN, 4]));
+    expect(Array.from(keep!)).toEqual([1, 0, 0, 1]);
   });
 });
 
@@ -103,6 +152,22 @@ describe("bakeScalar", () => {
     const decoded = [byteToValue(data[0], range), byteToValue(data[4], range)].sort((a, b) => a - b);
     expect(Math.abs(decoded[0] - 3.6)).toBeLessThanOrEqual(lsb); // 3.6 mm/h
     expect(Math.abs(decoded[1] - 7.2)).toBeLessThanOrEqual(lsb); // 7.2 mm/h
+  });
+
+  it("bakes SST transparent (alpha 0) over land using the land mask", async () => {
+    // 2-wide single row; rollLongitude (shift=1) swaps the columns, so land
+    // [land, sea] rolls to [sea, land] → keep [1, 0] → alpha [255, 0].
+    const res = await bakeScalar({
+      variableId: "sst",
+      values: Float32Array.from([288, 290]), // K
+      width: 2,
+      height: 1,
+      landValues: Float32Array.from([1, 0]),
+    });
+    const { data } = await sharp(res.buffer).raw().toBuffer({ resolveWithObject: true });
+    const alphas = [data[3], data[7]];
+    expect(alphas).toContain(0); // the land pixel is masked out
+    expect(alphas).toContain(255); // the sea pixel is kept
   });
 
   it("throws for an unknown variable id", async () => {

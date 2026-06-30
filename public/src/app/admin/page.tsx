@@ -18,6 +18,7 @@ const LINKS: AdminLink[] = [
   { href: "/watch", title: "Watch (broadcast)", desc: "The output view that goes to stream.", ready: true },
   { href: "/admin/scenes", title: "Scenes", desc: "Named /watch/:id globes for OBS sources / overlay windows.", ready: true },
   { href: "/admin/tracks", title: "Live tracks", desc: "Satellites (SGP4), aircraft (ADS-B), ships (AIS).", ready: true },
+  { href: "/admin/cams", title: "Webcams", desc: "Catalogued live cams — status, location, preview.", ready: true },
   { href: "/admin/jobs", title: "Worker jobs", desc: "Trigger ingest/snapshot jobs; view the queue.", ready: true },
   { href: "/admin/logs", title: "Back log", desc: "Saved log of worker/job activity.", ready: true },
 ];

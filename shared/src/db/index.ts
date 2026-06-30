@@ -13,6 +13,8 @@ import { getTrackSnapshotModel } from "./track-snapshot-model";
 import { makeTrackSnapshotRepo } from "./track-snapshot-repo";
 import { getQuakeModel } from "./quake-model";
 import { makeQuakeRepo } from "./quake-repo";
+import { getCamModel } from "./cam-model";
+import { makeCamRepo } from "./cam-repo";
 import { getAircraftMetaModel, iAircraftMetaModel } from "./aircraft-meta-model";
 import { getLogModel } from "./log-model";
 import { getBroadcastStateModel, BROADCAST_STATE_ID } from "./broadcast-state-model";
@@ -48,6 +50,7 @@ export function createDb(conn: Connection) {
     satelliteTles: makeSatelliteTleRepo(getSatelliteTleModel(conn)),
     trackSnapshots: makeTrackSnapshotRepo(getTrackSnapshotModel(conn)),
     quakes: makeQuakeRepo(getQuakeModel(conn)),
+    cams: makeCamRepo(getCamModel(conn)),
     aircraftMeta: mongoCrud<iAircraftMetaModel>(getAircraftMetaModel(conn)),
     logs: mongoCrud(getLogModel(conn)),
     broadcastState,

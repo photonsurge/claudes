@@ -1,6 +1,7 @@
 import { SEVERITY_COLORS, SEVERITY_LABELS } from "@photonsurge/shared/alerts/severity";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
 import { classifyHazard, type HazardType } from "./hazard";
+export type { HazardType };
 
 /** Trimmed alert shape the admin list / overlay consume (mirrors CanonicalAlert). */
 export interface AlertArea {
@@ -78,6 +79,8 @@ export interface AlertFeature {
     source: string;
     event: string;
     severityRank: SeverityRank;
+    /** Cross-source hazard category — drives the map badge icon/colour. */
+    hazard: HazardType;
     headline?: string;
     expires?: string;
     web?: string;
@@ -103,6 +106,7 @@ export function alertsToFeatures(alerts: Alert[]): AlertFeature[] {
             source: a.source,
             event: info.event,
             severityRank: a.maxSeverityRank,
+            hazard: classifyHazard({ event: info.event, parameters: info.parameters }),
             headline: info.headline,
             expires: a.expiresAt,
             web: info.web,

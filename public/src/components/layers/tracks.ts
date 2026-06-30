@@ -1,10 +1,18 @@
 import { ScatterplotLayer, PathLayer, TextLayer, SolidPolygonLayer } from "@deck.gl/layers";
 import type { Track } from "../../lib/tracks/types";
-import type { TrackColorMode, TrackIconMode, TrackStyle } from "@photonsurge/shared/control";
+import type { TrackStyle } from "@photonsurge/shared/control";
 import type { OrbitSegment } from "../../lib/tracks/orbit";
 import type { TrackPath } from "../../lib/tracks/client";
 
 type RGB = [number, number, number];
+
+/** Parse a `#rgb`/`#rrggbb` hex string to RGB, defaulting to white on garbage. */
+function hexToRgb(hex?: string): RGB {
+  const h = (hex ?? "").trim().replace(/^#/, "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return [255, 255, 255];
+  return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)];
+}
 
 /** Default per-kind marker colours (the "kind" colour mode). */
 const KIND_COLOR: Record<string, RGB> = {
@@ -48,20 +56,50 @@ function countryColor(country?: string): RGB {
   return hslToRgb((h % 360) / 360, 0.6, 0.62);
 }
 
-/** Resolve a track's colour for the active per-kind colour mode. */
-function colorFor(d: Track, mode: TrackColorMode): RGB {
-  if (d.kind === "satellite") return d.color ?? KIND_COLOR.satellite;
-  switch (mode) {
+/** Satellite altitude tint: LEO cyan → MEO violet → GEO warm. */
+function satAltColor(altM?: number): RGB {
+  const t = clamp01((altM ?? 0) / 35_786_000); // GEO ≈ 35,786 km
+  return t < 0.5 ? lerp([56, 189, 248], [167, 139, 250], t * 2) : lerp([167, 139, 250], [251, 191, 36], (t - 0.5) * 2);
+}
+
+/** Resolve a track's colour for its type's colour mode (custom wins everywhere). */
+function colorFor(d: Track, style: TrackStyle): RGB {
+  if (style.color === "custom") return hexToRgb(style.customColor);
+  if (d.kind === "satellite") {
+    return style.color === "altitude" ? satAltColor(d.altM) : d.color ?? KIND_COLOR.satellite;
+  }
+  switch (style.color) {
     case "speed":
       return speedColor(d);
     case "altitude":
       return d.kind === "aircraft" ? altColor(d.altM) : KIND_COLOR.ship;
     case "country":
-      return d.kind === "aircraft" ? countryColor(d.country) : countryColor(d.country);
+      return countryColor(d.country);
     case "kind":
     default:
       return d.color ?? KIND_COLOR[d.kind] ?? [255, 255, 255];
   }
+}
+
+/**
+ * True if a track passes its type's display filters. All thresholds default to
+ * off (0 / empty / false) so nothing is hidden until the operator sets one.
+ * Speed compares knots for ships, m/s for aircraft/satellites.
+ */
+function passesFilter(d: Track, style: TrackStyle): boolean {
+  const alt = d.altM ?? 0;
+  if (style.hideGround && d.kind === "aircraft" && alt < 50) return false;
+  if (style.minAltM && alt < style.minAltM) return false;
+  if (style.maxAltM && alt > style.maxAltM) return false;
+  const speed = d.kind === "ship" ? d.sogKn ?? 0 : d.speedMS ?? 0;
+  if (style.minSpeed && speed < style.minSpeed) return false;
+  const q = (style.country ?? "").trim().toLowerCase();
+  if (q) {
+    const tokens = q.split(",").map((s) => s.trim()).filter(Boolean);
+    const c = (d.country ?? "").toLowerCase();
+    if (!tokens.some((t) => c.includes(t))) return false;
+  }
+  return true;
 }
 
 
@@ -110,13 +148,14 @@ function labelSubset(tracks: Track[]): Track[] {
 }
 
 /**
- * A small heading-oriented arrowhead triangle (3 pts, floated above the surface)
- * for one track. Polygons render reliably under the MapLibre globe where Icon /
- * Text layers (texture + font atlases) come back blank, so this is how we draw
- * directional markers. `sizeDeg` is scaled by zoom so the arrow stays roughly a
- * constant size on screen. Authored around the track position, tip toward heading.
+ * Map a marker shape — authored in heading-relative (forward, right) unit space,
+ * where +forward points toward the track's heading and +right is 90° clockwise —
+ * onto [lng, lat, alt] coords around the track position, scaled by `sizeDeg`.
+ * The cosL term keeps the shape from squashing at high latitudes. Polygons
+ * render reliably under the MapLibre globe where Icon / Text layers (texture +
+ * font atlases) come back blank, so every directional marker is a polygon.
  */
-function arrowPolygon(d: Track, sizeDeg: number): [number, number, number][] {
+function shapeToCoords(d: Track, sizeDeg: number, shape: [number, number][]): [number, number, number][] {
   const lng = d.position[0];
   const lat = d.position[1];
   const h = ((d.heading ?? 0) * Math.PI) / 180;
@@ -124,47 +163,90 @@ function arrowPolygon(d: Track, sizeDeg: number): [number, number, number][] {
   const fLng = Math.sin(h) / cosL;
   const fLat = Math.cos(h); // forward (heading) unit
   const rLng = Math.cos(h) / cosL;
-  const rLat = -Math.sin(h); // right unit
-  const s = sizeDeg;
-  const hw = s * 0.55; // half-width at the base
-  const baseLng = lng - fLng * s * 0.5;
-  const baseLat = lat - fLat * s * 0.5;
-  return [
-    [lng + fLng * s, lat + fLat * s, SURFACE_ALT_M], // tip (heading)
-    [baseLng + rLng * hw, baseLat + rLat * hw, SURFACE_ALT_M], // right
-    [baseLng - rLng * hw, baseLat - rLat * hw, SURFACE_ALT_M], // left
-  ];
+  const rLat = -Math.sin(h); // right unit (90° CW of forward)
+  return shape.map(([f, r]) => [
+    lng + (fLng * f + rLng * r) * sizeDeg,
+    lat + (fLat * f + rLat * r) * sizeDeg,
+    SURFACE_ALT_M,
+  ]);
+}
+
+/** Generic heading arrowhead triangle (tip forward). Used by "arrow" icon mode. */
+const ARROW_SHAPE: [number, number][] = [
+  [1, 0], // tip (heading)
+  [-0.5, 0.55], // right base
+  [-0.5, -0.55], // left base
+];
+
+/** Plane silhouette (nose forward, swept wings + tailplane), as one simple ring. */
+const PLANE_SHAPE: [number, number][] = [
+  [1.0, 0.0], // nose
+  [0.0, 0.1], [-0.1, 0.7], [-0.35, 0.7], [-0.25, 0.1], // right wing
+  [-0.65, 0.1], [-0.8, 0.42], [-1.0, 0.42], [-0.9, 0.0], // right tailplane → tail
+  [-1.0, -0.42], [-0.8, -0.42], [-0.65, -0.1], // left tailplane
+  [-0.25, -0.1], [-0.35, -0.7], [-0.1, -0.7], [0.0, -0.1], // left wing
+];
+
+/** Ship hull silhouette (pointed bow forward, flat stern), as one simple ring. */
+const SHIP_SHAPE: [number, number][] = [
+  [1.0, 0.0], // bow
+  [0.25, 0.32], [-0.85, 0.28], // right gunwale → stern quarter
+  [-0.85, -0.28], [0.25, -0.32], // left stern quarter → gunwale
+];
+
+/** Diamond fallback for any other kind. */
+const DIAMOND_SHAPE: [number, number][] = [[0.9, 0], [0, 0.8], [-0.9, 0], [0, -0.8]];
+
+function arrowPolygon(d: Track, sizeDeg: number): [number, number, number][] {
+  return shapeToCoords(d, sizeDeg, ARROW_SHAPE);
+}
+
+/** Per-kind silhouette for the "glyph" icon mode (plane / ship / diamond). */
+function glyphPolygon(d: Track, sizeDeg: number): [number, number, number][] {
+  const shape = d.kind === "aircraft" ? PLANE_SHAPE : d.kind === "ship" ? SHIP_SHAPE : DIAMOND_SHAPE;
+  return shapeToCoords(d, sizeDeg, shape);
 }
 
 export function tracksLayer(
   tracks: Track[],
-  opts: { labels?: boolean; aircraftStyle?: TrackStyle; shipStyle?: TrackStyle; zoom?: number } = {},
+  opts: {
+    labels?: boolean;
+    satelliteStyle?: TrackStyle;
+    aircraftStyle?: TrackStyle;
+    shipStyle?: TrackStyle;
+    zoom?: number;
+  } = {},
 ) {
+  const satelliteStyle = opts.satelliteStyle ?? { ...DEFAULT_STYLE, icon: "dot" };
   const aircraftStyle = opts.aircraftStyle ?? DEFAULT_STYLE;
   const shipStyle = opts.shipStyle ?? DEFAULT_STYLE;
+  const styleFor = (d: Track): TrackStyle =>
+    d.kind === "aircraft" ? aircraftStyle : d.kind === "ship" ? shipStyle : satelliteStyle;
   // Arrow size in degrees, scaled so it's ~constant on screen across zooms.
   const markerSizeDeg = Math.min(8, Math.max(0.05, 0.25 * Math.pow(2, 5 - (opts.zoom ?? 4))));
 
-  const sats = tracks.filter((t) => t.kind === "satellite");
-  const aircraft = tracks.filter((t) => t.kind === "aircraft");
-  const ships = tracks.filter((t) => t.kind === "ship");
+  // Apply each type's display filters up front (markers + labels both honour it).
+  const sats = tracks.filter((t) => t.kind === "satellite" && passesFilter(t, satelliteStyle));
+  const aircraft = tracks.filter((t) => t.kind === "aircraft" && passesFilter(t, aircraftStyle));
+  const ships = tracks.filter((t) => t.kind === "ship" && passesFilter(t, shipStyle));
 
   // Dots: satellites always; aircraft/ships when their icon mode is "dot".
-  const dotLayer = (id: string, data: Track[], mode: TrackColorMode) =>
+  const dotLayer = (id: string, data: Track[], style: TrackStyle) =>
     new ScatterplotLayer<Track>({
       id,
       data,
       getPosition: trackPosition,
-      getFillColor: (d) => colorFor(d, mode),
+      getFillColor: (d) => colorFor(d, style),
       getRadius: (d) => (d.kind === "satellite" ? 3 : 2),
       radiusUnits: "pixels",
       radiusMinPixels: 1.5,
       radiusMaxPixels: 6,
       stroked: false,
+      opacity: style.opacity ?? 1,
       pickable: true,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       parameters: { depthTest: true } as any,
-      updateTriggers: { getFillColor: [mode, data.length] },
+      updateTriggers: { getFillColor: [style.color, style.customColor, data.length] },
     });
 
   // Directional arrowhead markers as filled triangles (SolidPolygonLayer).
@@ -174,14 +256,16 @@ export function tracksLayer(
     new SolidPolygonLayer<Track>({
       id,
       data,
-      getPolygon: (d) => arrowPolygon(d, markerSizeDeg),
-      getFillColor: (d) => colorFor(d, style.color),
+      getPolygon: (d) =>
+        style.icon === "glyph" ? glyphPolygon(d, markerSizeDeg) : arrowPolygon(d, markerSizeDeg),
+      getFillColor: (d) => colorFor(d, style),
+      opacity: style.opacity ?? 1,
       pickable: true,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       parameters: { depthTest: true } as any,
       updateTriggers: {
-        getPolygon: [data.length, markerSizeDeg],
-        getFillColor: [style.color, data.length],
+        getPolygon: [data.length, markerSizeDeg, style.icon],
+        getFillColor: [style.color, style.customColor, data.length],
       },
     });
 
@@ -189,30 +273,25 @@ export function tracksLayer(
   // between renders (Scatterplot ↔ Icon), so dot/marker never share an id.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const layers: any[] = [];
-  // dot mode → scatter dot; arrow/glyph → heading-rotated TextLayer glyph.
+  // dot mode → scatter dot; arrow/glyph → heading-oriented filled polygon.
   const trackLayer = (id: string, data: Track[], style: TrackStyle) =>
     style.icon === "dot"
-      ? dotLayer(`${id}-dot`, data, style.color)
+      ? dotLayer(`${id}-dot`, data, style)
       : markerLayer(`${id}-icon`, data, style);
 
-  if (sats.length) layers.push(dotLayer("live-tracks-sat", sats, "kind"));
+  if (sats.length) layers.push(dotLayer("live-tracks-sat", sats, satelliteStyle));
   if (aircraft.length) layers.push(trackLayer("live-tracks-aircraft", aircraft, aircraftStyle));
   if (ships.length) layers.push(trackLayer("live-tracks-ship", ships, shipStyle));
 
   if (opts.labels) {
-    const labelColor = (d: Track): RGB =>
-      d.kind === "aircraft"
-        ? colorFor(d, aircraftStyle.color)
-        : d.kind === "ship"
-          ? colorFor(d, shipStyle.color)
-          : d.color ?? [255, 255, 255];
+    const labelColor = (d: Track): RGB => colorFor(d, styleFor(d));
     const labelProps = {
       id: "live-track-labels",
       // Spatially thinned (one label per grid cell) so dense traffic stays
       // readable. We do this in JS rather than CollisionFilterExtension because
       // that extension's collision pass mis-culls under _GlobeView (labels
       // vanish entirely). SDF text + outline so it reads over any basemap.
-      data: labelSubset(tracks),
+      data: labelSubset([...sats, ...aircraft, ...ships]),
       getPosition: trackPosition,
       // Name/code only — deck's SDF TextLayer can't render colour flag emoji
       // (those show in the hover tooltip + admin tables, which are HTML).
@@ -235,6 +314,30 @@ export function tracksLayer(
   }
 
   return layers;
+}
+
+/**
+ * Keep only the trails whose live track is currently visible — i.e. present in
+ * the snapshot AND passing its type's display filters (speed/altitude/country/
+ * on-ground). So when the operator filters markers (e.g. a min-speed), the
+ * matching trails drop out too instead of dangling without a plane. Joined by
+ * kind+externalId == Track.code, the same key the marker filter uses.
+ */
+export function filterTrails(
+  trails: TrackPath[],
+  tracks: Track[],
+  aircraftStyle: TrackStyle,
+  shipStyle: TrackStyle,
+): TrackPath[] {
+  const byKey = new Map<string, Track>();
+  for (const t of tracks) {
+    if (t.kind === "aircraft" || t.kind === "ship") byKey.set(`${t.kind}:${t.code}`, t);
+  }
+  return trails.filter((tr) => {
+    const t = byKey.get(`${tr.kind}:${tr.externalId}`);
+    if (!t) return false;
+    return passesFilter(t, t.kind === "aircraft" ? aircraftStyle : shipStyle);
+  });
 }
 
 /** Aircraft (amber) and ship (green) trail colours, matching the markers. */

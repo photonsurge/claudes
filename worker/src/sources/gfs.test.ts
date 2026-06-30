@@ -109,6 +109,28 @@ describe("buildNomadsUrl", () => {
     expect(url).not.toContain("lev_");
     expect(url).toContain("file=gfs.t00z.pgrb2.0p25.f000");
   });
+
+  it("builds a GFS-Wave URL with the wave endpoint, dir, file and .grib2 ext", () => {
+    const url = buildNomadsUrl({
+      date: "20260628",
+      cycle: "00",
+      fhr: 12,
+      vars: ["HTSGW"],
+      levels: ["surface"],
+      product: "wave",
+    });
+    expect(url).toContain("filter_gfswave.pl");
+    expect(url).toContain(encodeURIComponent("/gfs.20260628/00/wave/gridded"));
+    expect(url).toContain("file=gfswave.t00z.global.0p25.f012.grib2");
+    expect(url).toContain("var_HTSGW=on");
+    expect(url).toContain("lev_surface=on");
+  });
+
+  it("defaults to the atmos product when product is omitted", () => {
+    const url = buildNomadsUrl({ date: "20260628", cycle: "00", fhr: 0, vars: ["TMP"], levels: ["surface"] });
+    expect(url).toContain("filter_gfs_0p25.pl");
+    expect(url).not.toContain("filter_gfswave.pl");
+  });
 });
 
 describe("candidateCycles", () => {

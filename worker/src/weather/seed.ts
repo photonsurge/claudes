@@ -16,8 +16,37 @@ import type {
 import { emitWorkerEvent } from "../socket";
 import { GFS_BOUNDS, imageUnscaleFor, WIND_IMAGE_UNSCALE } from "../grib/bake";
 import { encodeWindPng, encodeScalarPng } from "../grib/encode";
-import { syntheticWind, syntheticTemp } from "./synthetic";
+import { scalarKeepMask } from "../grib/bakeScalar";
+import {
+  syntheticWind,
+  syntheticTemp,
+  syntheticSst,
+  syntheticCloud,
+  syntheticSnow,
+  syntheticWave,
+  syntheticLandMask,
+} from "./synthetic";
 import { cfg } from "./config";
+
+/** GRIB UNDEFINED sentinel — bake-time nodata marker for ocean-only fields. */
+const SENTINEL = 1e21;
+
+/**
+ * Synthetic scalar fields seeded alongside wind, in display units. `oceanOnly`
+ * fields (wave) get land pixels stamped with the GRIB UNDEFINED sentinel so the
+ * existing nodata path bakes them transparent — exactly like real HTSGW.
+ */
+const SYNTHETIC_SCALARS: {
+  id: string;
+  gen: (w: number, h: number) => Float32Array;
+  oceanOnly?: boolean;
+}[] = [
+  { id: "temp", gen: syntheticTemp },
+  { id: "sst", gen: syntheticSst },
+  { id: "cloud", gen: syntheticCloud },
+  { id: "snow", gen: syntheticSnow },
+  { id: "wave", gen: syntheticWave, oceanOnly: true },
+];
 
 const TAG = "job:weather";
 
@@ -67,16 +96,19 @@ export async function runSeedSample(job: Job) {
     imageUnscale: WIND_IMAGE_UNSCALE,
     files: {},
   };
-  // Temp (scalar)
-  const tempUnscale = imageUnscaleFor("temp");
-  const tempEntry: iWeatherVariableEntry = {
-    encoding: "scalar",
-    units: VARIABLE_REGISTRY.temp.units,
-    domain: [VARIABLE_REGISTRY.temp.domain[0], VARIABLE_REGISTRY.temp.domain[1]],
-    palette: VARIABLE_REGISTRY.temp.palette,
-    imageUnscale: tempUnscale,
-    files: {},
-  };
+  // Scalars (temp/sst/cloud/snow), each reusing the registry meta + decode range.
+  const scalarEntries: Record<string, iWeatherVariableEntry> = {};
+  for (const { id } of SYNTHETIC_SCALARS) {
+    const meta = VARIABLE_REGISTRY[id];
+    scalarEntries[id] = {
+      encoding: "scalar",
+      units: meta.units,
+      domain: [meta.domain[0], meta.domain[1]],
+      palette: meta.palette,
+      imageUnscale: imageUnscaleFor(id),
+      files: {},
+    };
+  }
 
   for (const fhr of fhrs) {
     const { u, v } = syntheticWind(width, height);
@@ -93,23 +125,32 @@ export async function runSeedSample(job: Job) {
     if (!windTex.success || !windTex.data) throw new Error("seedSample: wind texture failed");
     windEntry.files[String(fhr)] = windTex.data.id;
 
-    const temp = syntheticTemp(width, height);
-    const tempPng = await encodeScalarPng(temp, width, height, tempUnscale);
-    const tempTex = await db.weatherTextures.create({
-      runId,
-      variable: "temp",
-      fhr,
-      contentType: "image/png",
-      encoding: "scalar",
-      data: tempPng,
-      byteSize: tempPng.byteLength,
-    });
-    if (!tempTex.success || !tempTex.data) throw new Error("seedSample: temp texture failed");
-    tempEntry.files[String(fhr)] = tempTex.data.id;
+    // Synthetic land mask shared by any masked scalar (sst→sea, snow→land).
+    const land = syntheticLandMask(width, height);
+    for (const { id, gen, oceanOnly } of SYNTHETIC_SCALARS) {
+      const values = gen(width, height);
+      // Ocean-only fields (wave) carry no registry land mask — stamp land with
+      // the GRIB sentinel so scalarKeepMask drops it, mirroring real HTSGW.
+      if (oceanOnly) for (let i = 0; i < values.length; i++) if (land[i] >= 0.5) values[i] = SENTINEL;
+      // Synthetic fields are already −180..180, so no longitude roll: mask in place.
+      const keep = scalarKeepMask(id, values, land);
+      const png = await encodeScalarPng(values, width, height, imageUnscaleFor(id), keep);
+      const tex = await db.weatherTextures.create({
+        runId,
+        variable: id,
+        fhr,
+        contentType: "image/png",
+        encoding: "scalar",
+        data: png,
+        byteSize: png.byteLength,
+      });
+      if (!tex.success || !tex.data) throw new Error(`seedSample: ${id} texture failed`);
+      scalarEntries[id].files[String(fhr)] = tex.data.id;
+    }
   }
 
   variables.wind = windEntry;
-  variables.temp = tempEntry;
+  for (const { id } of SYNTHETIC_SCALARS) variables[id] = scalarEntries[id];
 
   await db.weatherRuns.updateByID(runId, {
     variables,

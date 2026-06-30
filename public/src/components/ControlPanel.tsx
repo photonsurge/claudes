@@ -98,54 +98,75 @@ export default function ControlPanel({
       )}
 
       <Section title="Live tracks">
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
-          <Toggle
-            label="Satellites"
-            checked={state.showSatellites}
-            onChange={(showSatellites) => patch({ showSatellites })}
+        <div style={{ display: "grid", gap: 8 }}>
+          <TrackTypeCard
+            kind="satellite"
+            label="🛰 Satellites"
+            enabled={state.showSatellites}
+            onToggle={(showSatellites) => patch({ showSatellites })}
+            style={state.satelliteStyle}
+            onStyle={(satelliteStyle) => patch({ satelliteStyle })}
+            colorModes={["kind", "altitude", "custom"]}
+          >
+            <Field label="Group">
+              <select
+                value={state.satelliteGroup}
+                onChange={(e) => patch({ satelliteGroup: e.target.value })}
+                aria-label="Satellite group"
+                style={miniSelect}
+              >
+                {SATELLITE_GROUPS.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Toggle
+              label="Orbit rings"
+              checked={state.showOrbits}
+              onChange={(showOrbits) => patch({ showOrbits })}
+            />
+          </TrackTypeCard>
+
+          <TrackTypeCard
+            kind="aircraft"
+            label="✈ Aircraft"
+            enabled={state.showAircraft}
+            onToggle={(showAircraft) => patch({ showAircraft })}
+            style={state.aircraftStyle}
+            onStyle={(aircraftStyle) => patch({ aircraftStyle })}
+            colorModes={["kind", "speed", "altitude", "country", "custom"]}
           />
-          <Toggle
-            label="Aircraft"
-            checked={state.showAircraft}
-            onChange={(showAircraft) => patch({ showAircraft })}
+
+          <TrackTypeCard
+            kind="ship"
+            label="⛴ Ships"
+            enabled={state.showShips}
+            onToggle={(showShips) => patch({ showShips })}
+            style={state.shipStyle}
+            onStyle={(shipStyle) => patch({ shipStyle })}
+            colorModes={["kind", "speed", "country", "custom"]}
           />
-          <Toggle label="Ships" checked={state.showShips} onChange={(showShips) => patch({ showShips })} />
-          {state.showSatellites && (
-            <select
-              value={state.satelliteGroup}
-              onChange={(e) => patch({ satelliteGroup: e.target.value })}
-              aria-label="Satellite group"
-              style={{
-                background: "#1a1f2b",
-                color: "#fff",
-                border: "1px solid #333",
-                borderRadius: 5,
-                padding: "4px 6px",
-                fontSize: 12,
-              }}
-            >
-              {SATELLITE_GROUPS.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.label}
-                </option>
-              ))}
-            </select>
-          )}
         </div>
+
         {(state.showSatellites || state.showAircraft || state.showShips) && (
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 14,
+              flexWrap: "wrap",
+              alignItems: "center",
+              marginTop: 10,
+              paddingTop: 10,
+              borderTop: "1px solid #232a38",
+            }}
+          >
             <Toggle
               label="Labels"
               checked={state.showTrackLabels}
               onChange={(showTrackLabels) => patch({ showTrackLabels })}
             />
-            {state.showSatellites && (
-              <Toggle
-                label="Orbit rings"
-                checked={state.showOrbits}
-                onChange={(showOrbits) => patch({ showOrbits })}
-              />
-            )}
             {(state.showAircraft || state.showShips) && (
               <Toggle
                 label="Trails"
@@ -154,22 +175,12 @@ export default function ControlPanel({
               />
             )}
             {(state.showAircraft || state.showShips) && state.showTrails && (
-              <label
-                style={{ display: "flex", gap: 6, alignItems: "center", color: "#8b95a7", fontSize: 12 }}
-              >
-                Length
+              <Field label="Length">
                 <select
                   value={state.trailMinutes}
                   onChange={(e) => patch({ trailMinutes: Number(e.target.value) })}
                   aria-label="Trail length"
-                  style={{
-                    background: "#1a1f2b",
-                    color: "#fff",
-                    border: "1px solid #333",
-                    borderRadius: 5,
-                    padding: "4px 6px",
-                    fontSize: 12,
-                  }}
+                  style={miniSelect}
                 >
                   {[15, 30, 60, 120, 180].map((m) => (
                     <option key={m} value={m}>
@@ -177,11 +188,10 @@ export default function ControlPanel({
                     </option>
                   ))}
                 </select>
-              </label>
+              </Field>
             )}
             {(state.showAircraft || state.showShips) && state.showTrails && (
-              <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#8b95a7", fontSize: 12 }}>
-                Opacity
+              <Field label="Trail opacity">
                 <input
                   type="range"
                   min={0.05}
@@ -191,30 +201,10 @@ export default function ControlPanel({
                   onChange={(e) => patch({ trailOpacity: Number(e.target.value) })}
                   aria-label="Trail opacity"
                 />
-                <span style={{ color: "#fff", width: 30, textAlign: "right" }}>
+                <span style={{ color: "#fff", width: 32, textAlign: "right" }}>
                   {Math.round(state.trailOpacity * 100)}%
                 </span>
-              </label>
-            )}
-          </div>
-        )}
-        {(state.showAircraft || state.showShips) && (
-          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-            {state.showAircraft && (
-              <StyleRow
-                label="✈ Planes"
-                style={state.aircraftStyle}
-                colorModes={["kind", "speed", "altitude", "country"]}
-                onChange={(aircraftStyle) => patch({ aircraftStyle })}
-              />
-            )}
-            {state.showShips && (
-              <StyleRow
-                label="⛴ Boats"
-                style={state.shipStyle}
-                colorModes={["kind", "speed", "country"]}
-                onChange={(shipStyle) => patch({ shipStyle })}
-              />
+              </Field>
             )}
           </div>
         )}
@@ -407,6 +397,7 @@ const COLOR_LABELS: Record<TrackColorMode, string> = {
   speed: "Speed",
   altitude: "Altitude",
   country: "Country",
+  custom: "Custom",
 };
 const ICON_LABELS: Record<TrackIconMode, string> = { dot: "Dots", arrow: "Arrows", glyph: "Glyphs" };
 const miniSelect: React.CSSProperties = {
@@ -418,52 +409,211 @@ const miniSelect: React.CSSProperties = {
   fontSize: 12,
 };
 const miniLabel: React.CSSProperties = { display: "flex", gap: 5, alignItems: "center", color: "#8b95a7", fontSize: 12 };
+const textInput: React.CSSProperties = { ...miniSelect, width: 120 };
 
-/** Per-kind colour + icon mode picker (planes and boats styled separately). */
-function StyleRow({
-  label,
-  style,
-  colorModes,
-  onChange,
-}: {
-  label: string;
-  style: TrackStyle;
-  colorModes: TrackColorMode[];
-  onChange: (s: TrackStyle) => void;
-}) {
+/** Labelled control row used throughout the track cards. */
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-      <span style={{ color: "#cbd5e1", fontSize: 12, width: 64 }}>{label}</span>
-      <label style={miniLabel}>
-        Color
-        <select
-          value={style.color}
-          onChange={(e) => onChange({ ...style, color: e.target.value as TrackColorMode })}
-          aria-label={`${label} colour mode`}
-          style={miniSelect}
-        >
-          {colorModes.map((m) => (
-            <option key={m} value={m}>
-              {COLOR_LABELS[m]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label style={miniLabel}>
-        Icon
-        <select
-          value={style.icon}
-          onChange={(e) => onChange({ ...style, icon: e.target.value as TrackIconMode })}
-          aria-label={`${label} icon mode`}
-          style={miniSelect}
-        >
-          {(["dot", "arrow", "glyph"] as TrackIconMode[]).map((m) => (
-            <option key={m} value={m}>
-              {ICON_LABELS[m]}
-            </option>
-          ))}
-        </select>
-      </label>
+    <label style={miniLabel}>
+      {label}
+      {children}
+    </label>
+  );
+}
+
+/** Satellite altitude bands → [minAltM, maxAltM]. GEO ≈ 35,786 km. */
+const SAT_BANDS: Record<string, [number, number]> = {
+  all: [0, 0],
+  leo: [0, 2_000_000],
+  meo: [2_000_000, 35_000_000],
+  geo: [35_000_000, 0],
+};
+const satBandOf = (s: TrackStyle): string => {
+  const min = s.minAltM ?? 0;
+  const max = s.maxAltM ?? 0;
+  if (!min && !max) return "all";
+  if (!min && max <= 2_000_000) return "leo";
+  if (min >= 35_000_000) return "geo";
+  return "meo";
+};
+
+/**
+ * Per-type live-track card: an enable toggle in line with its style + filter
+ * controls (colour mode + custom swatch, icon, opacity, and display filters).
+ * `children` carries type-specific extras (satellite group/orbit rings).
+ */
+function TrackTypeCard({
+  kind,
+  label,
+  enabled,
+  onToggle,
+  style,
+  onStyle,
+  colorModes,
+  children,
+}: {
+  kind: "satellite" | "aircraft" | "ship";
+  label: string;
+  enabled: boolean;
+  onToggle: (v: boolean) => void;
+  style: TrackStyle;
+  onStyle: (s: TrackStyle) => void;
+  colorModes: TrackColorMode[];
+  children?: React.ReactNode;
+}) {
+  const set = (p: Partial<TrackStyle>) => onStyle({ ...style, ...p });
+  const swatch = style.color === "custom" ? style.customColor ?? "#ffffff" : undefined;
+  return (
+    <div
+      style={{
+        border: "1px solid #232a38",
+        borderRadius: 8,
+        padding: enabled ? "8px 10px 10px" : "8px 10px",
+        background: enabled ? "#141a25" : "transparent",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Toggle label={label} checked={enabled} onChange={onToggle} />
+        {swatch && (
+          <span
+            aria-hidden
+            style={{ width: 12, height: 12, borderRadius: 3, background: swatch, border: "1px solid #0006" }}
+          />
+        )}
+      </div>
+
+      {enabled && (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+          <Field label="Color">
+            <select
+              value={style.color}
+              onChange={(e) => set({ color: e.target.value as TrackColorMode })}
+              aria-label={`${label} colour mode`}
+              style={miniSelect}
+            >
+              {colorModes.map((m) => (
+                <option key={m} value={m}>
+                  {COLOR_LABELS[m]}
+                </option>
+              ))}
+            </select>
+            {style.color === "custom" && (
+              <input
+                type="color"
+                value={style.customColor ?? "#ffffff"}
+                onChange={(e) => set({ customColor: e.target.value })}
+                aria-label={`${label} custom colour`}
+                style={{ width: 28, height: 22, padding: 0, border: "1px solid #333", borderRadius: 4, background: "none" }}
+              />
+            )}
+          </Field>
+
+          {kind !== "satellite" && (
+            <Field label="Icon">
+              <select
+                value={style.icon}
+                onChange={(e) => set({ icon: e.target.value as TrackIconMode })}
+                aria-label={`${label} icon mode`}
+                style={miniSelect}
+              >
+                {(["dot", "arrow", "glyph"] as TrackIconMode[]).map((m) => (
+                  <option key={m} value={m}>
+                    {ICON_LABELS[m]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          <Field label="Opacity">
+            <input
+              type="range"
+              min={0.1}
+              max={1}
+              step={0.05}
+              value={style.opacity ?? 1}
+              onChange={(e) => set({ opacity: Number(e.target.value) })}
+              aria-label={`${label} opacity`}
+            />
+            <span style={{ color: "#fff", width: 32, textAlign: "right" }}>
+              {Math.round((style.opacity ?? 1) * 100)}%
+            </span>
+          </Field>
+
+          {children}
+
+          {/* ── Filters ── */}
+          {kind === "satellite" ? (
+            <Field label="Altitude">
+              <select
+                value={satBandOf(style)}
+                onChange={(e) => {
+                  const [minAltM, maxAltM] = SAT_BANDS[e.target.value] ?? [0, 0];
+                  set({ minAltM, maxAltM });
+                }}
+                aria-label="Satellite altitude band"
+                style={miniSelect}
+              >
+                <option value="all">All orbits</option>
+                <option value="leo">LEO (&lt;2,000 km)</option>
+                <option value="meo">MEO (2k–35k km)</option>
+                <option value="geo">GEO (&gt;35,000 km)</option>
+              </select>
+            </Field>
+          ) : (
+            <>
+              {kind === "aircraft" && (
+                <Field label="Min alt">
+                  <input
+                    type="range"
+                    min={0}
+                    max={13000}
+                    step={250}
+                    value={style.minAltM ?? 0}
+                    onChange={(e) => set({ minAltM: Number(e.target.value) })}
+                    aria-label="Aircraft minimum altitude"
+                  />
+                  <span style={{ color: "#fff", width: 52, textAlign: "right" }}>
+                    {(style.minAltM ?? 0) === 0 ? "off" : `${Math.round((style.minAltM ?? 0) / 100) / 10}km`}
+                  </span>
+                </Field>
+              )}
+              <Field label={kind === "ship" ? "Min kn" : "Min m/s"}>
+                <input
+                  type="range"
+                  min={0}
+                  max={kind === "ship" ? 30 : 300}
+                  step={kind === "ship" ? 1 : 5}
+                  value={style.minSpeed ?? 0}
+                  onChange={(e) => set({ minSpeed: Number(e.target.value) })}
+                  aria-label={`${label} minimum speed`}
+                />
+                <span style={{ color: "#fff", width: 40, textAlign: "right" }}>
+                  {(style.minSpeed ?? 0) === 0 ? "off" : style.minSpeed}
+                </span>
+              </Field>
+              {kind === "aircraft" && (
+                <Toggle
+                  label="Hide on-ground"
+                  checked={!!style.hideGround}
+                  onChange={(hideGround) => set({ hideGround })}
+                />
+              )}
+            </>
+          )}
+
+          <Field label="Country">
+            <input
+              type="text"
+              value={style.country ?? ""}
+              placeholder="any (e.g. United States, China)"
+              onChange={(e) => set({ country: e.target.value })}
+              aria-label={`${label} country filter`}
+              style={textInput}
+            />
+          </Field>
+        </div>
+      )}
     </div>
   );
 }

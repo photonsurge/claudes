@@ -6,6 +6,23 @@ import type { ControlState } from "../control";
 /** The id of the single broadcast-state document (single-domain → one row). */
 export const BROADCAST_STATE_ID = "default" as const;
 
+/** Enum sources mirrored from control.ts TrackColorMode / TrackIconMode. */
+const COLOR_MODES = ["kind", "speed", "altitude", "country", "custom"] as const;
+const ICON_MODES = ["dot", "arrow", "glyph"] as const;
+
+/** Shared TrackStyle sub-schema (per-type marker styling + display filters). */
+const trackStyleSchema = {
+  color: { type: String, required: true, enum: COLOR_MODES, default: "kind" },
+  icon: { type: String, required: true, enum: ICON_MODES, default: "arrow" },
+  customColor: { type: String, required: false, default: "#facc15" },
+  opacity: { type: Number, required: false, default: 1 },
+  minAltM: { type: Number, required: false, default: 0 },
+  maxAltM: { type: Number, required: false, default: 0 },
+  minSpeed: { type: Number, required: false, default: 0 },
+  country: { type: String, required: false, default: "" },
+  hideGround: { type: Boolean, required: false, default: false },
+};
+
 /** Persisted operator state. Mirrors ControlState plus the base entity fields. */
 export interface iBroadcastState extends iGeneralModel, ControlState {}
 
@@ -59,14 +76,19 @@ const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     spinSpeed: { type: Number, required: true, default: 8 },
     spinEpoch: { type: Number, required: true, default: 0 },
     showTrackLabels: { type: Boolean, required: true, default: false },
-    aircraftStyle: {
-      color: { type: String, required: true, enum: ["kind", "speed", "altitude", "country"], default: "kind" },
-      icon: { type: String, required: true, enum: ["dot", "arrow", "glyph"], default: "arrow" },
+    satelliteStyle: {
+      color: { type: String, required: true, enum: COLOR_MODES, default: "kind" },
+      icon: { type: String, required: true, enum: ICON_MODES, default: "dot" },
+      customColor: { type: String, required: false, default: "#38bdf8" },
+      opacity: { type: Number, required: false, default: 1 },
+      minAltM: { type: Number, required: false, default: 0 },
+      maxAltM: { type: Number, required: false, default: 0 },
+      minSpeed: { type: Number, required: false, default: 0 },
+      country: { type: String, required: false, default: "" },
+      hideGround: { type: Boolean, required: false, default: false },
     },
-    shipStyle: {
-      color: { type: String, required: true, enum: ["kind", "speed", "altitude", "country"], default: "kind" },
-      icon: { type: String, required: true, enum: ["dot", "arrow", "glyph"], default: "arrow" },
-    },
+    aircraftStyle: { ...trackStyleSchema, customColor: { type: String, required: false, default: "#facc15" } },
+    shipStyle: { ...trackStyleSchema, customColor: { type: String, required: false, default: "#22c55e" } },
     showOrbits: { type: Boolean, required: true, default: false },
     showTrails: { type: Boolean, required: true, default: false },
     trailMinutes: { type: Number, required: true, default: 30 },
