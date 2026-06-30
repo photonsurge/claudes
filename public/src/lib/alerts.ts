@@ -37,6 +37,14 @@ export interface Alert {
   maxSeverityRank: SeverityRank;
   expiresAt?: string;
   info: AlertInfo[];
+  /**
+   * Cross-source cluster id (server-assigned: same hazard + overlapping
+   * footprint). The cluster's representative has `id === groupId`. Absent when
+   * the API didn't group.
+   */
+  groupId?: string;
+  /** All sources that reported this clustered event (server-assigned). */
+  groupSources?: string[];
 }
 
 export interface ListAlertsOpts {

@@ -18,6 +18,7 @@ import {
   type Alert,
 } from "../../../lib/alerts";
 import { HAZARDS, hazardMeta } from "../../../lib/hazard";
+import { bucketByGroupId } from "../../../lib/alertGroups";
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -92,6 +93,10 @@ export default function AlertsPage() {
     return true;
   });
 
+  // Cluster same-event rows by the server-assigned groupId (cheap O(n); the
+  // heavy geometry clustering runs in /api/alerts, not the browser).
+  const groups = bucketByGroupId(shown);
+
   return (
     <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
       <section style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
@@ -99,7 +104,8 @@ export default function AlertsPage() {
           <h2 style={{ margin: 0 }}>
             Weather alerts{" "}
             <span style={{ color: "#8b95a7", fontSize: 14, fontWeight: 400 }}>
-              ({shown.length}
+              ({groups.length} event{groups.length === 1 ? "" : "s"}
+              {shown.length !== groups.length ? ` · ${shown.length} alerts` : ""}
               {shown.length !== alerts.length ? ` of ${alerts.length}` : ""})
             </span>
           </h2>
@@ -179,21 +185,26 @@ export default function AlertsPage() {
               <th style={th}>Hazard</th>
               <th style={th}>Event</th>
               <th style={th}>Area</th>
-              <th style={th}>Source</th>
+              <th style={th}>Sources</th>
               <th style={th}>Msg</th>
               <th style={th}>Expires</th>
               <th style={th}></th>
             </tr>
           </thead>
           <tbody>
-            {shown.map((a) => {
-              const info = primaryInfo(a);
+            {groups.map((g) => {
+              const rep = g.representative;
+              const info = primaryInfo(rep);
+              const multi = g.members.length > 1;
+              const h = hazardMeta(g.hazard);
+              const rank = g.maxSeverityRank;
+              const hx = (n: number) => Math.min(255, Math.max(0, n)).toString(16).padStart(2, "0");
               return (
-                <Fragment key={a.id}>
-                <tr style={{ borderTop: "1px solid #1b2030", opacity: a.active ? 1 : 0.5 }}>
+                <Fragment key={g.id}>
+                <tr style={{ borderTop: "1px solid #1b2030", opacity: rep.active ? 1 : 0.5 }}>
                   <td style={td}>
                     <span
-                      title={severityLabel(a.maxSeverityRank)}
+                      title={severityLabel(rank)}
                       style={{
                         display: "inline-block",
                         width: 26,
@@ -202,39 +213,31 @@ export default function AlertsPage() {
                         padding: "2px 0",
                         fontWeight: 700,
                         color: "#0a0e16",
-                        background: severityColor(a.maxSeverityRank),
+                        background: severityColor(rank),
                       }}
                     >
-                      {a.maxSeverityRank}
+                      {rank}
                     </span>
                   </td>
                   <td style={{ ...td, whiteSpace: "nowrap" }}>
-                    {(() => {
-                      const h = hazardMeta(alertHazard(a));
-                      // Chip intensity scales with severityRank (0–4): a minor
-                      // alert is a faint tint, an extreme one is a bold fill.
-                      const rank = a.maxSeverityRank;
-                      const hx = (n: number) => Math.min(255, Math.max(0, n)).toString(16).padStart(2, "0");
-                      return (
-                        <span
-                          title={`${h.label} · ${severityLabel(rank)}`}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
-                            padding: "2px 8px",
-                            borderRadius: 11,
-                            fontSize: 12,
-                            fontWeight: rank >= 3 ? 700 : 500,
-                            background: `${h.color}${hx(0x12 + rank * 0x18)}`,
-                            color: h.color,
-                            border: `1px solid ${h.color}${hx(0x3a + rank * 0x32)}`,
-                          }}
-                        >
-                          {h.icon} {h.label}
-                        </span>
-                      );
-                    })()}
+                    {/* Chip intensity scales with severityRank (0–4). */}
+                    <span
+                      title={`${h.label} · ${severityLabel(rank)}`}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "2px 8px",
+                        borderRadius: 11,
+                        fontSize: 12,
+                        fontWeight: rank >= 3 ? 700 : 500,
+                        background: `${h.color}${hx(0x12 + rank * 0x18)}`,
+                        color: h.color,
+                        border: `1px solid ${h.color}${hx(0x3a + rank * 0x32)}`,
+                      }}
+                    >
+                      {h.icon} {h.label}
+                    </span>
                   </td>
                   <td style={td}>
                     <div style={{ fontWeight: 600 }}>{info?.event ?? "—"}</div>
@@ -242,42 +245,64 @@ export default function AlertsPage() {
                       <div style={{ color: "#8b95a7", fontSize: 12 }}>{info.headline}</div>
                     )}
                   </td>
-                  <td style={td}>{areaSummary(a)}</td>
-                  <td style={td}>{a.source}</td>
-                  <td style={td}>{a.msgType}</td>
-                  <td style={td}>{expiresLabel(a)}</td>
+                  <td style={td}>{areaSummary(rep)}</td>
+                  <td style={{ ...td, whiteSpace: "nowrap" }}>
+                    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+                      {g.sources.map((s) => (
+                        <span
+                          key={s}
+                          style={{
+                            ...sourceChip,
+                            ...(g.sources.length > 1
+                              ? { background: "#1e3a5f", color: "#93c5fd", borderColor: "#2c5a8f" }
+                              : null),
+                          }}
+                        >
+                          {s}
+                        </span>
+                      ))}
+                    </span>
+                  </td>
+                  <td style={td}>{rep.msgType}</td>
+                  <td style={td}>{expiresLabel(rep)}</td>
                   <td style={{ ...td, whiteSpace: "nowrap" }}>
                     <button
                       type="button"
-                      onClick={() => setDebugId(debugId === a.id ? null : a.id)}
+                      onClick={() => setDebugId(debugId === g.id ? null : g.id)}
                       style={debugBtn}
-                      aria-expanded={debugId === a.id}
+                      aria-expanded={debugId === g.id}
                     >
-                      {debugId === a.id ? "Hide" : "Debug"}
+                      {debugId === g.id ? "Hide" : multi ? `Debug (${g.members.length})` : "Debug"}
                     </button>
                     {info?.web && (
-                      <a
-                        href={info.web}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ color: "#60a5fa", marginLeft: 8 }}
-                      >
+                      <a href={info.web} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", marginLeft: 8 }}>
                         link
                       </a>
                     )}
                   </td>
                 </tr>
-                {debugId === a.id && (
+                {debugId === g.id && (
                   <tr>
                     <td colSpan={8} style={{ padding: 0, borderTop: "1px solid #1b2030" }}>
-                      <pre style={debugPre}>{JSON.stringify(a, null, 2)}</pre>
+                      {multi && (
+                        <div style={{ padding: "8px 14px", color: "#8b95a7", fontSize: 12, borderBottom: "1px solid #1b2030" }}>
+                          {g.members.length} alerts from {g.sources.length} source{g.sources.length === 1 ? "" : "s"} matched by overlapping area + hazard:
+                          {g.members.map((m) => (
+                            <div key={m.id} style={{ color: "#cbd5e1", marginTop: 4 }}>
+                              <span style={{ ...sourceChip, marginRight: 6 }}>{m.source}</span>
+                              {primaryInfo(m)?.event} — {areaSummary(m)}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <pre style={debugPre}>{JSON.stringify(multi ? g.members : rep, null, 2)}</pre>
                     </td>
                   </tr>
                 )}
                 </Fragment>
               );
             })}
-            {shown.length === 0 && (
+            {groups.length === 0 && (
               <tr>
                 <td style={td} colSpan={8}>
                   {loading
@@ -326,6 +351,15 @@ const ingestBtn: React.CSSProperties = {
   background: "#14532d",
   color: "#bbf7d0",
   cursor: "pointer",
+};
+const sourceChip: React.CSSProperties = {
+  display: "inline-block",
+  padding: "1px 7px",
+  borderRadius: 9,
+  fontSize: 11,
+  background: "#1a1f2b",
+  color: "#8b95a7",
+  border: "1px solid #2a3344",
 };
 const debugBtn: React.CSSProperties = {
   padding: "3px 9px",

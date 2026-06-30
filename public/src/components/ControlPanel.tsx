@@ -39,6 +39,8 @@ const spinSpeedToPos = (speed: number): number => {
   const clamped = Math.min(SPIN_MAX, Math.max(SPIN_MIN, speed));
   return (Math.log10(clamped) - lo) / (Math.log10(SPIN_MAX) - lo);
 };
+/** Wrap any longitude into the -180..180 range for the position slider. */
+const normaliseLng = (lng: number): number => (((lng + 180) % 360) + 360) % 360 - 180;
 
 export interface ControlPanelProps {
   state: ControlState;
@@ -316,7 +318,7 @@ export default function ControlPanel({
             // Stamp the spin epoch on enable so /control + /watch share the phase.
             onChange={(autoSpin) => patch(autoSpin ? { autoSpin, spinEpoch: Date.now() } : { autoSpin })}
           />
-          {state.autoSpin && (
+          {state.autoSpin ? (
             <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#8b95a7", fontSize: 12 }}>
               Speed
               <input
@@ -325,10 +327,52 @@ export default function ControlPanel({
                 max={1}
                 step={0.001}
                 value={spinSpeedToPos(state.spinSpeed)}
-                onChange={(e) => patch({ spinSpeed: spinPosToSpeed(Number(e.target.value)) })}
+                // Re-anchor on speed change: the live longitude is
+                // anchor + spinSpeed·(now − epoch), so changing spinSpeed alone
+                // would jump the globe by the whole accumulated offset. Bake the
+                // current longitude into the anchor and restart the epoch so only
+                // the rate changes — position stays continuous.
+                onChange={(e) => {
+                  const now = Date.now();
+                  const lng =
+                    state.camera.center[0] +
+                    state.spinSpeed * ((now - (state.spinEpoch || now)) / 1000);
+                  patch({
+                    spinSpeed: spinPosToSpeed(Number(e.target.value)),
+                    spinEpoch: now,
+                    camera: {
+                      center: [normaliseLng(lng), state.camera.center[1]],
+                      zoom: state.camera.zoom,
+                    },
+                  });
+                }}
                 aria-label="Spin speed"
               />
               <span style={{ color: "#fff", width: 44, textAlign: "right" }}>{state.spinSpeed}°/s</span>
+            </label>
+          ) : (
+            // Auto-spin off: hold the globe at a chosen longitude (rotate by hand).
+            <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#8b95a7", fontSize: 12 }}>
+              Position
+              <input
+                type="range"
+                min={-180}
+                max={180}
+                step={1}
+                value={normaliseLng(state.camera.center[0])}
+                onChange={(e) =>
+                  patch({
+                    camera: {
+                      center: [Number(e.target.value), state.camera.center[1]],
+                      zoom: state.camera.zoom,
+                    },
+                  })
+                }
+                aria-label="Globe longitude"
+              />
+              <span style={{ color: "#fff", width: 44, textAlign: "right" }}>
+                {Math.round(normaliseLng(state.camera.center[0]))}°
+              </span>
             </label>
           )}
         </div>

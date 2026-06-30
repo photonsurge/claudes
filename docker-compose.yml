@@ -32,8 +32,10 @@ services:
     env_file: .env
     environment:
       PORT: 10101
+    # Published on loopback so a host nginx reverse-proxies it (Socket.IO).
+    # Set BIND_HOST=0.0.0.0 if nginx runs off-box / in another container.
     ports:
-      - "10101:10101"
+      - "${BIND_HOST:-127.0.0.1}:10101:10101"
     depends_on: [redis]
     networks: [internal]
 
@@ -49,6 +51,9 @@ services:
     env_file: .env
     environment:
       PORT: 10102
+    # Worker HTTP (health/status) — proxied/health-checked via nginx.
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:10102:10102"
     depends_on: [mongodb, redis, socket]
     networks: [internal]
 
@@ -64,8 +69,9 @@ services:
     env_file: .env
     environment:
       PORT: 10100
+    # Next.js app — nginx proxies the public domain here.
     ports:
-      - "10100:10100"
+      - "${BIND_HOST:-127.0.0.1}:10100:10100"
     depends_on: [mongodb, redis, socket]
     networks: [internal]
 

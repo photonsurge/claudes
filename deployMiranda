@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Deploy to miranda (no building — run ./build first to build+push the images).
+# Syncs the compose file and .env.deploy (-> ~/weather/.env) to the host, then
+# pulls the images and (re)starts the stack.
+#
+#   ./build && ./deployMiranda     # typical: build+push, then deploy
+#   ./deployMiranda                # deploy already-pushed images
+#   NO_UP=1 ./deployMiranda        # sync compose + env only, don't pull/restart
+#   ENV_DEPLOY=.env.staging ./deployMiranda
+#
+# The host already holds titan registry auth, so we don't docker-login here.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+HOST="${HOST:-miranda}"
+DIR="${DIR:-weather}"
+ENV_DEPLOY="${ENV_DEPLOY:-.env.deploy}"
+
+if [[ ! -f "$ENV_DEPLOY" ]]; then
+  echo "!! $ENV_DEPLOY not found — create it (the synced prod env)" >&2
+  exit 1
+fi
+
+echo "==> [$HOST] syncing compose + env -> ~/$DIR/"
+ssh "$HOST" "mkdir -p ~/$DIR"
+scp docker-compose.yml "$HOST:$DIR/docker-compose.yml"
+scp "$ENV_DEPLOY" "$HOST:$DIR/.env"
+
+if [[ "${NO_UP:-0}" == "1" ]]; then
+  echo "==> Done (synced only). On host: cd ~/$DIR && docker compose pull && docker compose up -d"
+  exit 0
+fi
+
+echo "==> [$HOST] docker compose pull && up -d"
+ssh "$HOST" "cd ~/$DIR && docker compose pull && docker compose up -d"
+
+echo "==> Done. https://io.photonsurge.uk  ($HOST:~/$DIR, env synced from $ENV_DEPLOY)"

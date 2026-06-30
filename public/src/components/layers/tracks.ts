@@ -65,43 +65,53 @@ function colorFor(d: Track, mode: TrackColorMode): RGB {
 }
 
 /**
- * Icons are rendered to a canvas → PNG data URL (deck loads PNG reliably; SVG
- * data URIs are flaky in its texture pipeline). White shapes authored pointing
- * north (up) with mask:true so getColor tints them. Built lazily on first use
- * (needs `document`, so never at SSR import time) and cached.
+ * Marker icons are baked ONCE into a single atlas canvas (arrow/plane/ship laid
+ * out in a row) and handed to IconLayer as a prepacked `iconAtlas` + static
+ * `iconMapping`. This deliberately avoids IconLayer's per-item auto-packing
+ * (getIcon → {url} → async `load()` of a data: URL), which silently renders
+ * NOTHING under _GlobeView — the atlas never fills, so every marker maps to the
+ * MISSING_ICON and draws blank. A prepacked canvas atlas takes the synchronous
+ * texture path instead. White shapes authored pointing north (up) with
+ * mask:true so getColor tints them. Built lazily (needs `document`) + cached.
  */
-type DeckIcon = { url: string; width: number; height: number; anchorX: number; anchorY: number; mask: boolean };
+const ICON_PX = 32; // per-cell size in the atlas
+const ICON_SHAPES: Record<string, [number, number][]> = {
+  // Each shape is authored in a 32×32 cell, pointing north (up).
+  arrow: [[16, 2], [28, 29], [16, 22], [4, 29]],
+  plane: [[16, 1], [19, 13], [31, 20], [31, 23], [18, 18], [17, 27], [21, 30], [21, 31], [16, 29], [11, 31], [11, 30], [15, 27], [14, 18], [1, 23], [1, 20], [13, 13]],
+  ship: [[16, 2], [23, 13], [23, 24], [20, 30], [12, 30], [9, 24], [9, 13]],
+};
+const ICON_ORDER = ["arrow", "plane", "ship"] as const;
 
-function drawIcon(size: number, pts: [number, number][]): DeckIcon {
-  const c = document.createElement("canvas");
-  c.width = size;
-  c.height = size;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#ffffff";
-  ctx.beginPath();
-  pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-  ctx.closePath();
-  ctx.fill();
-  return { url: c.toDataURL("image/png"), width: size, height: size, anchorX: size / 2, anchorY: size / 2, mask: true };
-}
-
-let ICONS: { arrow: DeckIcon; plane: DeckIcon; ship: DeckIcon } | null = null;
-function iconSet() {
-  if (ICONS) return ICONS;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type IconAtlas = { atlas: HTMLCanvasElement; mapping: Record<string, any> };
+let ATLAS: IconAtlas | null = null;
+function iconAtlas(): IconAtlas | null {
+  if (ATLAS) return ATLAS;
   if (typeof document === "undefined") return null; // SSR guard
-  ICONS = {
-    arrow: drawIcon(24, [[12, 1], [21, 22], [12, 17], [3, 22]]),
-    plane: drawIcon(32, [[16, 1], [19, 13], [31, 20], [31, 23], [18, 18], [17, 27], [21, 30], [21, 31], [16, 29], [11, 31], [11, 30], [15, 27], [14, 18], [1, 23], [1, 20], [13, 13]]),
-    ship: drawIcon(32, [[16, 2], [23, 13], [23, 24], [20, 30], [12, 30], [9, 24], [9, 13]]),
-  };
-  return ICONS;
+  const atlas = document.createElement("canvas");
+  atlas.width = ICON_PX * ICON_ORDER.length;
+  atlas.height = ICON_PX;
+  const ctx = atlas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapping: Record<string, any> = {};
+  ICON_ORDER.forEach((name, i) => {
+    const ox = i * ICON_PX;
+    ctx.beginPath();
+    ICON_SHAPES[name].forEach(([x, y], j) => (j ? ctx.lineTo(ox + x, y) : ctx.moveTo(ox + x, y)));
+    ctx.closePath();
+    ctx.fill();
+    mapping[name] = { x: ox, y: 0, width: ICON_PX, height: ICON_PX, anchorX: ICON_PX / 2, anchorY: ICON_PX / 2, mask: true };
+  });
+  ATLAS = { atlas, mapping };
+  return ATLAS;
 }
 
-function iconFor(d: Track, mode: TrackIconMode): DeckIcon | undefined {
-  const set = iconSet();
-  if (!set) return undefined;
-  if (mode === "glyph") return d.kind === "aircraft" ? set.plane : set.ship;
-  return set.arrow;
+/** Atlas key for a track's icon mode. */
+function iconName(d: Track, mode: TrackIconMode): string {
+  if (mode === "glyph") return d.kind === "aircraft" ? "plane" : "ship";
+  return "arrow";
 }
 
 /**
@@ -178,13 +188,21 @@ export function tracksLayer(
     });
 
   // Heading-rotated, colour-tinted arrow/glyph markers for aircraft/ships.
-  const markerLayer = (id: string, data: Track[], style: TrackStyle) =>
-    new IconLayer<Track>({
+  // Uses a prepacked atlas (see iconAtlas) so deck takes the synchronous texture
+  // path rather than the auto-pack data:URL load that renders blank on a globe.
+  const markerLayer = (id: string, data: Track[], style: TrackStyle) => {
+    const icons = iconAtlas();
+    if (!icons) return dotLayer(`${id}-dot`, data, style.color); // SSR / no-canvas fallback
+    return new IconLayer<Track>({
       id,
       data,
-      getPosition: trackPosition,
+      // deck's async `image` prop accepts a canvas at runtime (converts it to a
+      // texture); the typings only allow string | Texture, so cast.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      getIcon: ((d: Track) => iconFor(d, style.icon)) as any,
+      iconAtlas: icons.atlas as any,
+      iconMapping: icons.mapping,
+      getPosition: trackPosition,
+      getIcon: (d) => iconName(d, style.icon),
       getColor: (d) => colorFor(d, style.color),
       getAngle: (d) => -(d.heading ?? 0), // deck rotates CCW; heading is CW from N
       getSize: style.icon === "glyph" ? 15 : 13,
@@ -196,6 +214,7 @@ export function tracksLayer(
       parameters: { depthTest: true } as any,
       updateTriggers: { getColor: [style.color, data.length], getIcon: style.icon, getAngle: data.length },
     });
+  };
 
   // Distinct ids per layer type: deck.gl errors if one id changes layer class
   // between renders (Scatterplot ↔ Icon), so dot/marker never share an id.

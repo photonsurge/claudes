@@ -49,6 +49,9 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Next.js standalone output bundles a minimal server + node_modules.
 COPY --from=builder --chown=nextjs:nodejs /app/public/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/public/.next/static      ./public/.next/static
+# Standalone does NOT include the app's public/ static dir — copy it so
+# /data/*.geojson and the basemap textures (satellite/terrain.jpg) are served.
+COPY --from=builder --chown=nextjs:nodejs /app/public/public            ./public/public
 
 USER nextjs
 EXPOSE 3000

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { groupAlerts } from "../../../lib/alertGroups";
+import type { Alert } from "../../../lib/alerts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,5 +42,17 @@ export async function GET(req: Request) {
     bbox,
   });
 
-  return NextResponse.json({ alerts, count: alerts.length }, { status: 200, headers: NO_CACHE });
+  // Cross-source clustering (same hazard + overlapping footprint) runs HERE on
+  // the server, not in the browser — it's O(n²) over geometry and would stutter
+  // the UI. Tag every alert with its cluster id + the full set of reporting
+  // sources; the client just buckets by groupId (O(n)).
+  const list = alerts as unknown as Alert[];
+  for (const g of groupAlerts(list)) {
+    for (const m of g.members) {
+      m.groupId = g.id;
+      m.groupSources = g.sources;
+    }
+  }
+
+  return NextResponse.json({ alerts: list, count: list.length }, { status: 200, headers: NO_CACHE });
 }

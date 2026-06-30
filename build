@@ -24,6 +24,19 @@ SERVICES=("$@")
 
 svc_version() { grep '"version"' "$1/package.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/'; }
 
+# NEXT_PUBLIC_SOCKET_URL is COMPILED INTO the public client bundle at build time.
+# The docker images are deploy artifacts, so prefer the deploy env's value:
+#   explicit env override  >  .env.deploy  >  .env (local dev fallback)
+if [[ -z "${NEXT_PUBLIC_SOCKET_URL:-}" ]]; then
+  for f in .env.deploy .env; do
+    [[ -f "$f" ]] || continue
+    v=$(sed -n 's/^NEXT_PUBLIC_SOCKET_URL=//p' "$f" | head -1)
+    [[ -n "$v" ]] && { NEXT_PUBLIC_SOCKET_URL="$v"; break; }
+  done
+fi
+[[ -n "${NEXT_PUBLIC_SOCKET_URL:-}" ]] && export NEXT_PUBLIC_SOCKET_URL
+echo "==> public NEXT_PUBLIC_SOCKET_URL baked = ${NEXT_PUBLIC_SOCKET_URL:-(unset!)}"
+
 echo "==> Building @photonsurge/shared"
 ( cd shared && yarn install && yarn build )
 
