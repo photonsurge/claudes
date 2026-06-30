@@ -67,21 +67,23 @@ test:shared:
     - mkdir -p "$DOCKER_CONFIG"
     - docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
   script:
-    - set -e
-    - IMAGE="$REGISTRY/$SERVICE"
-    # Each service is versioned by its own package.json.
-    - VERSION=$(grep '"version"' "$SERVICE/package.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
-    - echo "── Building $IMAGE v$VERSION ──"
-    - docker build --file "$SERVICE/Dockerfile" --tag "$IMAGE:test" --tag "$IMAGE:v$VERSION" --tag "$IMAGE:latest" $BUILD_ARGS .
-    - docker push "$IMAGE:test"
-    - docker push "$IMAGE:v$VERSION"
-    - docker push "$IMAGE:latest"
-    - echo "✓ $IMAGE :test :v$VERSION :latest"
+    - |
+      set -e
+      IMAGE="$REGISTRY/$SERVICE"
+      # Each service is versioned by its own package.json.
+      VERSION=$(grep '"version"' "$SERVICE/package.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+      echo "── Building $IMAGE v$VERSION ──"
+      docker build --file "$SERVICE/Dockerfile" --tag "$IMAGE:test" --tag "$IMAGE:v$VERSION" --tag "$IMAGE:latest" $BUILD_ARGS .
+      docker push "$IMAGE:test"
+      docker push "$IMAGE:v$VERSION"
+      docker push "$IMAGE:latest"
+      echo "✓ $IMAGE :test :v$VERSION :latest"
   after_script:
-    - VERSION=$(grep '"version"' "$SERVICE/package.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
-    - docker rmi "$REGISTRY/$SERVICE:test" "$REGISTRY/$SERVICE:v$VERSION" "$REGISTRY/$SERVICE:latest" || true
-    - docker image prune -f || true
-    - rm -rf "$DOCKER_CONFIG"
+    - |
+      VERSION=$(grep '"version"' "$SERVICE/package.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+      docker rmi "$REGISTRY/$SERVICE:test" "$REGISTRY/$SERVICE:v$VERSION" "$REGISTRY/$SERVICE:latest" || true
+      docker image prune -f || true
+      rm -rf "$DOCKER_CONFIG"
 
 # ── Public ───────────────────────────────────────────────────────────────────
 test:public:
