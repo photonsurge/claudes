@@ -84,7 +84,7 @@ const ICON_SHAPES: Record<string, [number, number][]> = {
 const ICON_ORDER = ["arrow", "plane", "ship"] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type IconAtlas = { atlas: HTMLCanvasElement; mapping: Record<string, any> };
+type IconAtlas = { atlas: string; mapping: Record<string, any> };
 let ATLAS: IconAtlas | null = null;
 function iconAtlas(): IconAtlas | null {
   if (ATLAS) return ATLAS;
@@ -104,7 +104,9 @@ function iconAtlas(): IconAtlas | null {
     ctx.fill();
     mapping[name] = { x: ox, y: 0, width: ICON_PX, height: ICON_PX, anchorX: ICON_PX / 2, anchorY: ICON_PX / 2, mask: true };
   });
-  ATLAS = { atlas, mapping };
+  // Hand IconLayer a PNG data URL (loads reliably) rather than the raw canvas,
+  // which renders blank under _GlobeView.
+  ATLAS = { atlas: atlas.toDataURL("image/png"), mapping };
   return ATLAS;
 }
 
@@ -196,10 +198,7 @@ export function tracksLayer(
     return new IconLayer<Track>({
       id,
       data,
-      // deck's async `image` prop accepts a canvas at runtime (converts it to a
-      // texture); the typings only allow string | Texture, so cast.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      iconAtlas: icons.atlas as any,
+      iconAtlas: icons.atlas,
       iconMapping: icons.mapping,
       getPosition: trackPosition,
       getIcon: (d) => iconName(d, style.icon),
@@ -218,14 +217,20 @@ export function tracksLayer(
 
   // Distinct ids per layer type: deck.gl errors if one id changes layer class
   // between renders (Scatterplot ↔ Icon), so dot/marker never share an id.
-  const kindLayer = (id: string, data: Track[], style: TrackStyle) =>
-    style.icon === "dot" ? dotLayer(`${id}-dot`, data, style.color) : markerLayer(`${id}-icon`, data, style);
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const layers: any[] = [];
   if (sats.length) layers.push(dotLayer("live-tracks-sat", sats, "kind"));
-  if (aircraft.length) layers.push(kindLayer("live-tracks-aircraft", aircraft, aircraftStyle));
-  if (ships.length) layers.push(kindLayer("live-tracks-ship", ships, shipStyle));
+  // Always draw a scatter dot (the proven path — same layer as cities/quakes) so
+  // aircraft/ships are visible even if the IconLayer atlas fails to texture under
+  // _GlobeView; overlay the heading-rotated icon on top when not in dot mode.
+  if (aircraft.length) {
+    layers.push(dotLayer("live-tracks-aircraft-dot", aircraft, aircraftStyle.color));
+    if (aircraftStyle.icon !== "dot") layers.push(markerLayer("live-tracks-aircraft-icon", aircraft, aircraftStyle));
+  }
+  if (ships.length) {
+    layers.push(dotLayer("live-tracks-ship-dot", ships, shipStyle.color));
+    if (shipStyle.icon !== "dot") layers.push(markerLayer("live-tracks-ship-icon", ships, shipStyle));
+  }
 
   if (opts.labels) {
     const labelColor = (d: Track): RGB =>
