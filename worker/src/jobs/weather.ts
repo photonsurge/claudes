@@ -19,6 +19,7 @@ import { ingestRtofsRegional } from "../weather/rtofsRegional";
 import { ingestIconGlobal } from "../weather/iconGlobal";
 import { ingestHrdps } from "../weather/hrdps";
 import { ingestUkv } from "../weather/ukv";
+import { ingestOpenMeteo } from "../weather/openMeteo";
 
 /** See ../weather/check.ts */
 export async function check(job: Job) {
@@ -96,4 +97,10 @@ export async function refreshHrdps(_job: Job) {
 /** Met Office UKV 2 km UK (temp/humidity, free AWS open data) — see ../weather/ukv.ts */
 export async function refreshUkv(_job: Job) {
   return ingestUkv();
+}
+
+// ── Phase 2 "gated country" nests via Open-Meteo `.om` spatial files ──────────
+/** Open-Meteo spatial nests (JMA Japan now; AU/CN/KR one-line adds) — see ../weather/openMeteo.ts */
+export async function refreshOpenMeteo(_job: Job) {
+  return ingestOpenMeteo();
 }

@@ -88,17 +88,23 @@ function tileBasemapLayer(id: string, template: string) {
 }
 
 /** Bottom basemap layers for the active basemap id. `tilesActive` overlays sharp
- *  XYZ tiles on the raster basemaps once zoomed in. */
+ *  XYZ tiles on the raster basemaps once zoomed in. `hasGlobalRaster` is true only
+ *  when a full-globe weather raster is actually drawn on top (NOT for a nest-only
+ *  variable like radar, which paints clipped patches and seals no depth). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function basemapLayers(state: ControlState, tilesActive: boolean): any[] {
+export function basemapLayers(
+  state: ControlState,
+  tilesActive: boolean,
+  hasGlobalRaster: boolean,
+): any[] {
   const colors = state.basemapColors ?? DEFAULT_BASEMAP_COLORS;
   const isRaster = state.basemap === "satellite" || state.basemap === "terrain";
   // Something else already seals the surface as the depth occluder: the base
-  // image (satellite/terrain) or the full-globe weather raster (any active
-  // variable). Only when neither is present must the flat background write the
-  // depth sphere itself — otherwise it would sit in front of the raster's own
-  // sphere and hide the whole weather fill.
-  const hasOccluder = isRaster || !!state.activeVariable;
+  // image (satellite/terrain) or a full-globe weather raster. A nest-only
+  // variable (radar) has NO full-globe raster, so `hasGlobalRaster` is false and
+  // the background must seal the depth sphere itself — otherwise nothing writes
+  // depth and the far hemisphere bleeds through the front ("see-through planet").
+  const hasOccluder = isRaster || hasGlobalRaster;
   const background = new SolidPolygonLayer({
     id: "basemap-bg",
     data: GLOBE_CELLS,

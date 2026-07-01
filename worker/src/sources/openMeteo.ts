@@ -74,12 +74,98 @@ export const OM_MODELS: Record<string, OmModel> = {
     },
   },
 
-  // To add AU/CN/KR: add ONE entry each here + ONE OPENMETEO_SOURCES entry in
-  // shared/src/sources.openMeteo.ts. VERIFY the model id + grid from that model's
-  // data_spatial/<id>/latest.json (crs_wkt BBOX + decoded var dims) first:
-  //   "bom-access":  omModel "bom_access_global_au" (VERIFY id), Australia bbox/dims.
-  //   "cma-grapes":  omModel "cma_grapes_global"    (VERIFY id), China bbox/dims.
-  //   "kma-...":     omModel "kma_..."              (VERIFY id), Korea bbox/dims.
+  // ── EU national high-res nests (keyless via Open-Meteo `.om`) ────────────────
+  // All grids DECODED from a live f0 (2026-07-01): bbox from latest.json crs_wkt,
+  // dims [ny,nx] from the reader, per-axis res = (max-min)/(n-1). All are lat
+  // SOUTH-first → the ingest's flipRows applies (same as JMA). Only France HD &
+  // MeteoSwiss carry wind_u/v; the rest expose wind_gusts_10m (→ gust) not u/v —
+  // the ingest skips whatever child is absent, so listing an unavailable var is safe.
+
+  // Météo-France AROME France HD — ~1 km, the finest EU nest. temp/humidity/wind (no gust child).
+  "arome-france-hd": {
+    sourceId: "arome-france-hd",
+    omModel: "meteofrance_arome_france_hd",
+    bbox: [-12.0, 37.5, 16.0, 55.4],
+    dims: { width: 2801, height: 1791 },
+    // res = EXACT span/(n-1) so alignment holds to float precision (res is metadata
+    // only — the bake stretches bbox over width×height). Same pattern for all below.
+    res: { lon: (16.0 - -12.0) / (2801 - 1), lat: (55.4 - 37.5) / (1791 - 1) },
+    varMap: {
+      scalars: { temp: "temperature_2m", humidity: "relative_humidity_2m" },
+      windUV: { u: "wind_u_component_10m", v: "wind_v_component_10m" },
+    },
+  },
+  // MeteoSwiss ICON-CH2 — 2 km Alps. temp/humidity/wind/gust (all present).
+  "meteoswiss-ch2": {
+    sourceId: "meteoswiss-ch2",
+    omModel: "meteoswiss_icon_ch2",
+    bbox: [1.2333984, 42.57854, 16.846222, 49.786846],
+    dims: { width: 545, height: 353 },
+    res: { lon: (16.846222 - 1.2333984) / (545 - 1), lat: (49.786846 - 42.57854) / (353 - 1) },
+    varMap: {
+      scalars: { temp: "temperature_2m", humidity: "relative_humidity_2m", gust: "wind_gusts_10m" },
+      windUV: { u: "wind_u_component_10m", v: "wind_v_component_10m" },
+    },
+  },
+  // KNMI HARMONIE-AROME Netherlands — ~2 km. temp/humidity/gust (no u/v wind child).
+  "knmi-nl": {
+    sourceId: "knmi-nl",
+    omModel: "knmi_harmonie_arome_netherlands",
+    bbox: [0.0, 49.0, 11.281, 56.002],
+    dims: { width: 390, height: 390 },
+    res: { lon: (11.281 - 0.0) / (390 - 1), lat: (56.002 - 49.0) / (390 - 1) },
+    varMap: { scalars: { temp: "temperature_2m", humidity: "relative_humidity_2m", gust: "wind_gusts_10m" } },
+  },
+  // DMI HARMONIE-AROME Europe — wide ~2–3 km net (Nordic/Baltic/W-Europe). temp/humidity/gust.
+  "dmi-europe": {
+    sourceId: "dmi-europe",
+    omModel: "dmi_harmonie_arome_europe",
+    bbox: [-25.421997, 39.670998, 40.069855, 62.667618],
+    dims: { width: 1906, height: 1606 },
+    res: { lon: (40.069855 - -25.421997) / (1906 - 1), lat: (62.667618 - 39.670998) / (1606 - 1) },
+    varMap: { scalars: { temp: "temperature_2m", humidity: "relative_humidity_2m", gust: "wind_gusts_10m" } },
+  },
+  // GeoSphere AROME Austria — 2 km Alps/Danube. temp/humidity/gust.
+  "arome-austria": {
+    sourceId: "arome-austria",
+    omModel: "geosphere_arome_austria",
+    bbox: [5.498, 42.981, 22.102001, 51.819],
+    dims: { width: 594, height: 492 },
+    res: { lon: (22.102001 - 5.498) / (594 - 1), lat: (51.819 - 42.981) / (492 - 1) },
+    varMap: { scalars: { temp: "temperature_2m", humidity: "relative_humidity_2m", gust: "wind_gusts_10m" } },
+  },
+  // ItaliaMeteo ARPAE ICON-2I — 2 km Italy/central-Med. temp/humidity/gust.
+  "icon-2i-italy": {
+    sourceId: "icon-2i-italy",
+    omModel: "italia_meteo_arpae_icon_2i",
+    bbox: [3.0, 33.7, 22.0, 48.9],
+    dims: { width: 761, height: 761 },
+    res: { lon: (22.0 - 3.0) / (761 - 1), lat: (48.9 - 33.7) / (761 - 1) },
+    varMap: { scalars: { temp: "temperature_2m", humidity: "relative_humidity_2m", gust: "wind_gusts_10m" } },
+  },
+  // MET Norway Nordic-PP — ~1 km Scandinavia. temp/humidity/gust.
+  "metno-nordic": {
+    sourceId: "metno-nordic",
+    omModel: "metno_nordic_pp",
+    bbox: [1.918457, 52.302723, 41.764282, 72.18527],
+    dims: { width: 1796, height: 2321 },
+    res: { lon: (41.764282 - 1.918457) / (1796 - 1), lat: (72.18527 - 52.302723) / (2321 - 1) },
+    varMap: { scalars: { temp: "temperature_2m", humidity: "relative_humidity_2m", gust: "wind_gusts_10m" } },
+  },
+  // UK Met Office UKV 2 km (via Open-Meteo) — temp/humidity/gust. Beats our direct
+  // UKV nest (temp/humidity only) inside the UK; adds the gust the free AWS mirror lacked.
+  "ukmo-uk": {
+    sourceId: "ukmo-uk",
+    omModel: "ukmo_uk_deterministic_2km",
+    bbox: [-17.152863, 44.508755, 15.352753, 61.92511],
+    dims: { width: 1042, height: 970 },
+    res: { lon: (15.352753 - -17.152863) / (1042 - 1), lat: (61.92511 - 44.508755) / (970 - 1) },
+    varMap: { scalars: { temp: "temperature_2m", humidity: "relative_humidity_2m", gust: "wind_gusts_10m" } },
+  },
+
+  // NOT AVAILABLE on the Open-Meteo spatial bucket (checked 2026-07-01): Australia
+  // (no bom_*), Korea (no kma_*), Russia (none). China is only cma_grapes_global
+  // (a GLOBAL 0.125° grid — no finer than our ICON-global nest, so not added).
 };
 
 /** Enabled-agnostic list (the ingest additionally gates on descriptor.enabled). */

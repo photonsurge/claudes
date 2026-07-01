@@ -53,9 +53,152 @@ export const OPENMETEO_SOURCES: Record<string, SourceDescriptor> = {
     attribution: "JMA via Open-Meteo (CC BY 4.0)",
   },
 
-  // To add AU / CN / KR later: add ONE OPENMETEO_SOURCES entry each here (mirroring
-  // jma-msm with that model's bbox/dims/res/cadence) AND one OM_MODELS entry in
-  // worker/src/sources/openMeteo.ts. Candidates on the bucket:
-  //   bom_access_global_au (Australia), cma_grapes_global (China), kma (Korea).
-  //   VERIFY each model id + grid from `data_spatial/<id>/latest.json` before enabling.
+  // ── EU national high-res nests (keyless via Open-Meteo `.om`) ─────────────────
+  // Grids DECODED from a live f0 (2026-07-01): bbox from latest.json crs_wkt, dims
+  // [width=nx, height=ny] from the reader, res = finer axis (see OM_MODELS for
+  // per-axis). All lat SOUTH-first → ingest flips. priority sits ABOVE ICON-D2 (30)
+  // / ICON-EU (28) so the national model wins in its country, below MRMS (40).
+  // minZoom gates each to roughly its footprint (small countries → zoom in more).
+
+  // Météo-France AROME France HD — ~1 km (finest EU nest). temp/humidity/wind.
+  "arome-france-hd": {
+    id: "arome-france-hd",
+    label: "AROME France HD 1 km",
+    format: "netcdf", // Open-Meteo `.om`; see jma-msm note.
+    grid: "regular",
+    dims: { width: 2801, height: 1791 },
+    resolutionDeg: (55.4 - 37.5) / (1791 - 1), // exact finer(lat) axis; matches OM_MODELS.res.
+    bbox: [-12.0, 37.5, 16.0, 55.4],
+    cadence: { kind: "cron", runsUtc: [0, 3, 6, 9, 12, 15, 18, 21] },
+    latencyMinutes: 180,
+    variables: ["temp", "wind", "humidity"],
+    priority: 34,
+    minZoom: 4.5,
+    enabled: true,
+    attribution: "Météo-France AROME via Open-Meteo (CC BY 4.0)",
+  },
+  // MeteoSwiss ICON-CH2 — 2 km Alps. temp/humidity/wind/gust.
+  "meteoswiss-ch2": {
+    id: "meteoswiss-ch2",
+    label: "MeteoSwiss ICON-CH2 2 km",
+    format: "netcdf",
+    grid: "regular",
+    dims: { width: 545, height: 353 },
+    resolutionDeg: (49.786846 - 42.57854) / (353 - 1),
+    bbox: [1.2333984, 42.57854, 16.846222, 49.786846],
+    cadence: { kind: "cron", runsUtc: [0, 3, 6, 9, 12, 15, 18, 21] },
+    latencyMinutes: 180,
+    variables: ["temp", "wind", "gust", "humidity"],
+    priority: 33,
+    minZoom: 4.5,
+    enabled: true,
+    attribution: "MeteoSwiss via Open-Meteo (CC BY 4.0)",
+  },
+  // KNMI HARMONIE-AROME Netherlands — ~2 km. temp/humidity/gust.
+  "knmi-nl": {
+    id: "knmi-nl",
+    label: "KNMI HARMONIE Netherlands 2 km",
+    format: "netcdf",
+    grid: "regular",
+    dims: { width: 390, height: 390 },
+    resolutionDeg: (56.002 - 49.0) / (390 - 1),
+    bbox: [0.0, 49.0, 11.281, 56.002],
+    cadence: { kind: "cron", runsUtc: [0, 3, 6, 9, 12, 15, 18, 21] },
+    latencyMinutes: 120,
+    variables: ["temp", "gust", "humidity"],
+    priority: 33,
+    minZoom: 4.5,
+    enabled: true,
+    attribution: "KNMI via Open-Meteo (CC BY 4.0)",
+  },
+  // DMI HARMONIE-AROME Europe — wide ~2–3 km net (Nordic/Baltic/W-Europe).
+  "dmi-europe": {
+    id: "dmi-europe",
+    label: "DMI HARMONIE Europe 2 km",
+    format: "netcdf",
+    grid: "regular",
+    dims: { width: 1906, height: 1606 },
+    resolutionDeg: (62.667618 - 39.670998) / (1606 - 1),
+    bbox: [-25.421997, 39.670998, 40.069855, 62.667618],
+    cadence: { kind: "cron", runsUtc: [0, 3, 6, 9, 12, 15, 18, 21] },
+    latencyMinutes: 180,
+    variables: ["temp", "gust", "humidity"],
+    priority: 31,
+    minZoom: 3.5,
+    enabled: true,
+    attribution: "DMI via Open-Meteo (CC BY 4.0)",
+  },
+  // GeoSphere AROME Austria — 2 km Alps/Danube. temp/humidity/gust.
+  "arome-austria": {
+    id: "arome-austria",
+    label: "GeoSphere AROME Austria 2 km",
+    format: "netcdf",
+    grid: "regular",
+    dims: { width: 594, height: 492 },
+    resolutionDeg: (51.819 - 42.981) / (492 - 1),
+    bbox: [5.498, 42.981, 22.102001, 51.819],
+    cadence: { kind: "cron", runsUtc: [0, 3, 6, 9, 12, 15, 18, 21] },
+    latencyMinutes: 180,
+    variables: ["temp", "gust", "humidity"],
+    priority: 33,
+    minZoom: 4.5,
+    enabled: true,
+    attribution: "GeoSphere Austria via Open-Meteo (CC BY 4.0)",
+  },
+  // ItaliaMeteo ARPAE ICON-2I — 2 km Italy/central-Med. temp/humidity/gust.
+  "icon-2i-italy": {
+    id: "icon-2i-italy",
+    label: "ItaliaMeteo ICON-2I 2 km",
+    format: "netcdf",
+    grid: "regular",
+    dims: { width: 761, height: 761 },
+    resolutionDeg: (48.9 - 33.7) / (761 - 1),
+    bbox: [3.0, 33.7, 22.0, 48.9],
+    cadence: { kind: "cron", runsUtc: [0, 12] },
+    latencyMinutes: 240,
+    variables: ["temp", "gust", "humidity"],
+    priority: 33,
+    minZoom: 4.5,
+    enabled: true,
+    attribution: "ItaliaMeteo ARPAE via Open-Meteo (CC BY 4.0)",
+  },
+  // MET Norway Nordic-PP — ~1 km Scandinavia. temp/humidity/gust.
+  "metno-nordic": {
+    id: "metno-nordic",
+    label: "MET Norway Nordic 1 km",
+    format: "netcdf",
+    grid: "regular",
+    dims: { width: 1796, height: 2321 },
+    resolutionDeg: (72.18527 - 52.302723) / (2321 - 1),
+    bbox: [1.918457, 52.302723, 41.764282, 72.18527],
+    cadence: { kind: "cron", runsUtc: [0, 3, 6, 9, 12, 15, 18, 21] },
+    latencyMinutes: 90,
+    variables: ["temp", "gust", "humidity"],
+    priority: 33,
+    minZoom: 4,
+    enabled: true,
+    attribution: "MET Norway via Open-Meteo (CC BY 4.0)",
+  },
+  // UK Met Office UKV 2 km (via Open-Meteo) — temp/humidity/gust. Wins over our
+  // direct UKV nest (temp/humidity only) inside the UK and adds gust.
+  "ukmo-uk": {
+    id: "ukmo-uk",
+    label: "UKMO UKV 2 km",
+    format: "netcdf",
+    grid: "regular",
+    dims: { width: 1042, height: 970 },
+    resolutionDeg: (61.92511 - 44.508755) / (970 - 1),
+    bbox: [-17.152863, 44.508755, 15.352753, 61.92511],
+    cadence: { kind: "cron", runsUtc: [0, 3, 6, 9, 12, 15, 18, 21] },
+    latencyMinutes: 150,
+    variables: ["temp", "gust", "humidity"],
+    priority: 32,
+    minZoom: 4,
+    enabled: true,
+    attribution: "UK Met Office via Open-Meteo (CC BY 4.0)",
+  },
+
+  // NOT on the Open-Meteo spatial bucket (checked 2026-07-01): Australia (no bom_*),
+  // Korea (no kma_*), Russia (none). China is only cma_grapes_global — a GLOBAL
+  // 0.125° grid, no finer than our ICON-global nest, so not added as a nest.
 };

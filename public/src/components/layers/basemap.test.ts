@@ -25,16 +25,16 @@ describe("hexToRgb", () => {
 
 describe("basemapLayers", () => {
   it("dark = ocean background + land fill, never tiles", () => {
-    expect(ids(basemapLayers(state("dark"), false))).toEqual(["basemap-bg", "basemap-land"]);
-    expect(ids(basemapLayers(state("dark"), true))).toEqual(["basemap-bg", "basemap-land"]);
+    expect(ids(basemapLayers(state("dark"), false, false))).toEqual(["basemap-bg", "basemap-land"]);
+    expect(ids(basemapLayers(state("dark"), true, false))).toEqual(["basemap-bg", "basemap-land"]);
   });
 
   it("satellite = base image; tiles only when zoomed in (tilesActive)", () => {
-    expect(ids(basemapLayers(state("satellite"), false))).toEqual([
+    expect(ids(basemapLayers(state("satellite"), false, false))).toEqual([
       "basemap-bg",
       "basemap-image-satellite",
     ]);
-    expect(ids(basemapLayers(state("satellite"), true))).toEqual([
+    expect(ids(basemapLayers(state("satellite"), true, false))).toEqual([
       "basemap-bg",
       "basemap-image-satellite",
       "basemap-tiles-satellite",
@@ -42,20 +42,52 @@ describe("basemapLayers", () => {
   });
 
   it("terrain = base image + tiles when active", () => {
-    expect(ids(basemapLayers(state("terrain"), true))).toContain("basemap-tiles-terrain");
-    expect(ids(basemapLayers(state("terrain"), false))).not.toContain("basemap-tiles-terrain");
+    expect(ids(basemapLayers(state("terrain"), true, false))).toContain("basemap-tiles-terrain");
+    expect(ids(basemapLayers(state("terrain"), false, false))).not.toContain("basemap-tiles-terrain");
   });
 
   it("dark ocean background uses the operator's ocean colour", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const bg = basemapLayers(state("dark", { ocean: "#010203" }), false)[0] as any;
+    const bg = basemapLayers(state("dark", { ocean: "#010203" }), false, false)[0] as any;
     expect(bg.props.getFillColor).toEqual([1, 2, 3]);
   });
 
   it("raster basemaps use a near-black background (not the ocean colour)", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const bg = basemapLayers(state("satellite", { ocean: "#ffffff" }), false)[0] as any;
+    const bg = basemapLayers(state("satellite"), false, false)[0] as any;
     expect(bg.props.getFillColor).toEqual([0, 3, 8]);
+  });
+
+  // Regression: the background grid must SEAL the depth sphere (write depth) unless
+  // something full-globe already does. Otherwise the far hemisphere bleeds through
+  // the front ("see-through planet") — the radar reflectivity bug.
+  const bgParams = (s: ControlState, hasGlobalRaster: boolean) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (basemapLayers(s, false, hasGlobalRaster)[0] as any).props.parameters;
+
+  it("dark background writes depth when no full-globe raster is drawn", () => {
+    // No active variable → background is the sole occluder.
+    expect(bgParams(state("dark"), false).depthWriteEnabled).toBe(true);
+  });
+
+  it("nest-only variable (radar) keeps the background as the depth occluder", () => {
+    // Radar is nest-only: no full-globe raster, so hasGlobalRaster is false and the
+    // background must still write depth.
+    expect(bgParams({ ...state("dark"), activeVariable: "radar" }, false).depthWriteEnabled).toBe(
+      true,
+    );
+  });
+
+  it("a full-globe raster takes over as occluder (background stops writing depth)", () => {
+    // A non-nest-only variable draws a full-globe raster that seals depth itself, so
+    // the background steps down to depth-test-only to avoid hiding that raster.
+    expect(bgParams({ ...state("dark"), activeVariable: "temp" }, true).depthWriteEnabled).toBe(
+      false,
+    );
+  });
+
+  it("raster basemap (satellite) seals depth via its base image, not the background", () => {
+    expect(bgParams(state("satellite"), false).depthWriteEnabled).toBe(false);
   });
 });
 

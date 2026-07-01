@@ -1,6 +1,6 @@
 import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
-import { fetchGroupTle } from "@photonsurge/shared/tracks/celestrak";
+import { fetchGroupTle, fetchGroupSatcat, satcatToMeta } from "@photonsurge/shared/tracks/celestrak";
 import { parseTle } from "@photonsurge/shared/tracks/tle";
 import { fetchAdsb } from "@photonsurge/shared/tracks/adsb";
 import { fetchAircraft } from "@photonsurge/shared/tracks/opensky";
@@ -121,17 +121,28 @@ export async function enrichAircraft(_job: Job) {
   return result;
 }
 
-/** Groups to keep fresh in Mongo (env override, comma-separated). */
+/**
+ * Groups to keep fresh in Mongo (env override, comma-separated). Default is a
+ * curated set of notable, individually-named craft — space stations, the
+ * brightest objects, and the weather/environment/science fleets that fit the
+ * globe. Deliberately excludes the broadband megaconstellations (starlink,
+ * oneweb, kuiper, qianfan): they're thousands of near-identical satellites that
+ * bury everything interesting. Add them to SATELLITE_GROUPS if you want them.
+ */
 export const tleGroups = (): string[] =>
-  (process.env.SATELLITE_GROUPS || "visual,stations,starlink,oneweb,kuiper,qianfan")
+  (process.env.SATELLITE_GROUPS ||
+    "stations,visual,weather,noaa,goes,resource,science,geo,tdrss,sarsat,dmc,engineering,gps-ops,galileo")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 
 /**
  * Dispatched as type "tracks", event "ingestTles". Fetches each Celestrak group
- * and upserts its TLEs into Mongo (dedup on noradId, union of groups). The app
- * then propagates positions off the DB copy instead of hitting Celestrak live.
+ * and upserts its TLEs into Mongo (dedup on noradId, union of groups), then joins
+ * SATCAT descriptive metadata (owner, launch, orbit) onto the stored objects. The
+ * app propagates positions and reads the metadata off the DB copy instead of
+ * hitting Celestrak live. SATCAT enrichment is best-effort — a failed catalog
+ * pull never fails the TLE ingest.
  */
 export async function ingestTles(job: Job) {
   const groups: string[] = job.data?.data?.groups ?? tleGroups();
@@ -142,8 +153,18 @@ export async function ingestTles(job: Job) {
     try {
       const tles = parseTle(await fetchGroupTle(group));
       const r = await db.satelliteTles.upsertMany(tles, group);
-      results.push({ group, parsed: tles.length, ...r });
-      blogInfo(TAG, `TLEs ${group}: ${tles.length} parsed (+${r.upserted} new)`, { group, parsed: tles.length, ...r }, "tracks", group);
+
+      // Best-effort SATCAT join — own try/catch so it never sinks the TLE ingest.
+      let enriched = 0;
+      try {
+        const meta = (await fetchGroupSatcat(group)).map(satcatToMeta);
+        ({ matched: enriched } = await db.satelliteTles.upsertSatcatMany(meta));
+      } catch (metaErr) {
+        log(TAG, `satcat enrich failed`, { group, err: summarizeForLog(metaErr) });
+      }
+
+      results.push({ group, parsed: tles.length, ...r, enriched });
+      blogInfo(TAG, `TLEs ${group}: ${tles.length} parsed (+${r.upserted} new, ${enriched} enriched)`, { group, parsed: tles.length, ...r, enriched }, "tracks", group);
     } catch (err) {
       log(TAG, `group failed`, { group, err: summarizeForLog(err) });
       blogErr(TAG, `TLE ingest failed: ${group}`, err, "tracks", group);

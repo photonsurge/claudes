@@ -56,3 +56,16 @@ export async function getDb(): Promise<Connection> {
   cached.conn = await cached.connPromise;
   return cached.conn;
 }
+
+/**
+ * Close the shared connection and clear the cache so a subsequent getDb()
+ * reconnects. Used by long-running services (the worker) to release the pool
+ * tidily on shutdown instead of relying on process.exit to reap the sockets.
+ * No-op if nothing is connected.
+ */
+export async function closeDb(): Promise<void> {
+  const conn = cached.conn;
+  cached.conn = null;
+  cached.connPromise = null;
+  if (conn) await conn.close();
+}

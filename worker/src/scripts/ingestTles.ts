@@ -1,26 +1,20 @@
 /**
- * Manual one-shot TLE ingest — `yarn ingest:tles`. Fetches the configured
- * Celestrak groups and upserts them into Mongo, then prints the stored count.
+ * Manual one-shot TLE ingest — `yarn ingest:tles`. Delegates to the worker job
+ * (tracks.ingestTles), which fetches the configured Celestrak groups, upserts
+ * their TLEs into Mongo, and joins SATCAT metadata, then prints the stored count.
+ * Use this to warm the cache without waiting out the worker cron.
  */
 import { loadWorkerEnv } from "../loadEnv";
 loadWorkerEnv();
 
+import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
-import { fetchGroupTle } from "@photonsurge/shared/tracks/celestrak";
-import { parseTle } from "@photonsurge/shared/tracks/tle";
-import { tleGroups } from "../jobs/tracks";
+import { ingestTles } from "../jobs/tracks";
 
 (async () => {
+  const res = await ingestTles({ id: "manual", data: { data: {} } } as unknown as Job);
+  console.log("ingestTles:", JSON.stringify(res.results, null, 2));
   const db = await getAppDb();
-  for (const group of tleGroups()) {
-    try {
-      const tles = parseTle(await fetchGroupTle(group));
-      const r = await db.satelliteTles.upsertMany(tles, group);
-      console.log(`[${group}]`, { parsed: tles.length, ...r });
-    } catch (err) {
-      console.error(`[${group}] failed:`, err);
-    }
-  }
   console.log(`\nstored TLEs in Mongo: ${await db.satelliteTles.count()}`);
   await db.conn.close();
   process.exit(0);

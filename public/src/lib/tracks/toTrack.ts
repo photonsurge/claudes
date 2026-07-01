@@ -19,6 +19,9 @@ export function satelliteToTrack(s: SatellitePosition): Track {
     code: s.noradId,
     altM: s.altKm * 1000,
     speedMS: s.speedKmS * 1000,
+    // Reuse the aircraft tooltip fields to surface SATCAT enrichment.
+    operator: s.meta?.ownerName,
+    country: s.meta?.ownerName,
   };
 }
 

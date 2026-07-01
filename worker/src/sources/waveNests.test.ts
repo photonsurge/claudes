@@ -59,8 +59,16 @@ describe("WAVE_NEST_TOKENS", () => {
       expect(s).toBeDefined();
       expect(s!.minZoom).toBeDefined(); // treated as a NEST (isNestSource)
       expect(s!.variables).toContain("wave");
-      expect(s!.enabled).toBe(true);
+      expect(typeof s!.enabled).toBe("boolean");
     }
+  });
+
+  it("enables the three published basins; gfswave-ecg is intentionally disabled (no NOAA ecg 0p16 grid)", () => {
+    expect(getSource("gfswave-atlocn")!.enabled).toBe(true);
+    expect(getSource("gfswave-epacif")!.enabled).toBe(true);
+    expect(getSource("gfswave-wcoast")!.enabled).toBe(true);
+    // ecg 0p16 does not exist upstream (404s) — atlocn already covers it. See sources.waveNests.ts.
+    expect(getSource("gfswave-ecg")!.enabled).toBe(false);
   });
 });
 

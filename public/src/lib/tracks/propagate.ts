@@ -40,6 +40,7 @@ export function propagateOne(tle: TleRecord, date: Date): SatellitePosition | nu
     lat,
     altKm: geo.height,
     speedKmS,
+    ...(tle.meta ? { meta: tle.meta } : {}),
   };
 }
 

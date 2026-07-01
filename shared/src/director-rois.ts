@@ -48,8 +48,8 @@ export const OCEAN_VIEW_ZOOM = 3.0;
 
 /**
  * Ocean "world map" modes — full-globe spins coloured by an ocean variable
- * (already ingested: sst/wave). The director rotates through these as ambient
- * filler alongside the temperature intro when the `ocean` kind is enabled.
+ * (already ingested: sst/wave/salinity). The director rotates through these as
+ * ambient filler alongside the temperature intro when the `ocean` kind is enabled.
  */
 export interface OceanView {
   /** Segment subject id (→ "ocean:<id>"). */
@@ -63,6 +63,7 @@ export interface OceanView {
 export const OCEAN_VIEWS: OceanView[] = [
   { id: "sst", variable: "sst", title: "Ocean Temperature", subtitle: "Sea surface temperature" },
   { id: "waves", variable: "wave", title: "Ocean Swell", subtitle: "Significant wave height" },
+  { id: "salinity", variable: "salinity", title: "Ocean Salinity", subtitle: "Sea surface salinity" },
 ];
 
 /**

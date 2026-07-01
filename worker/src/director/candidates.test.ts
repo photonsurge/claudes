@@ -69,9 +69,11 @@ describe("buildCandidates", () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     const sst = pool.find((c) => c.segment.id === "ocean:sst");
     const waves = pool.find((c) => c.segment.id === "ocean:waves");
+    const salinity = pool.find((c) => c.segment.id === "ocean:salinity");
     expect(sst?.segment.patch.activeVariable).toBe("sst");
     expect(sst?.segment.patch.autoSpin).toBe(true); // world map spins
     expect(waves?.segment.patch.activeVariable).toBe("wave");
+    expect(salinity?.segment.patch.activeVariable).toBe("salinity");
   });
 
   it("holds regional tours on their subject (no global spin)", async () => {

@@ -573,7 +573,14 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     const resolve: TextureResolver = (url) => loadedTextures.get(url);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const layers: any[] = [...basemapLayers(state, tilesActive)];
+    // A full-globe weather raster (non-nest-only variable) seals the depth sphere
+    // itself; a nest-only variable (radar) does not, so the basemap background must
+    // stay the occluder. Detected by whether the active variable has a base texture
+    // at this fhr.
+    const hasGlobalRaster = !!(
+      manifest && state.activeVariable && textureUrlFor(manifest, state.activeVariable, state.fhr)
+    );
+    const layers: any[] = [...basemapLayers(state, tilesActive, hasGlobalRaster)];
 
     // Day/night terminator: shade the earth's night hemisphere from the real sun
     // position. Sits directly on the basemap, below the weather + overlays so

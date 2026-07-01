@@ -2,6 +2,7 @@ import mongoose, { Connection } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 import { iGeneralModel, mongoTimestamps } from "../interfaces/iGeneralModel";
 import { getModel } from "../utill/getModel";
+import type { SatelliteMeta } from "../tracks/types";
 
 /**
  * Stored NORAD TLEs (orbital elements). Slowly changing, so the worker ingests
@@ -17,6 +18,8 @@ export interface iSatelliteTle extends iGeneralModel {
   groups: string[];
   /** ISO of the last fetch that refreshed this element set. */
   fetchedAt: string;
+  /** SATCAT descriptive metadata, joined by noradId (absent until enriched). */
+  meta?: SatelliteMeta;
 }
 
 export interface iSatelliteTleModel extends iSatelliteTle {
@@ -33,6 +36,9 @@ const SatelliteTleSchema = new mongoose.Schema<iSatelliteTleModel>(
     line2: { type: String, required: true },
     groups: { type: [String], default: [] },
     fetchedAt: { type: String, required: true, default: () => new Date().toISOString() },
+    // Loosely typed: enrichment is best-effort and the shape is owned by
+    // SatelliteMeta / satcatToMeta, not re-declared field-by-field here.
+    meta: { type: mongoose.Schema.Types.Mixed, default: undefined },
   },
   mongoTimestamps,
 );

@@ -52,6 +52,9 @@ export default function SatellitesTable() {
           <tr style={{ textAlign: "left", color: "#8b95a7" }}>
             <th style={th}>Name</th>
             <th style={th}>NORAD</th>
+            <th style={th}>Owner</th>
+            <th style={th}>Type</th>
+            <th style={th}>Launched</th>
             <th style={thNum}>Lat</th>
             <th style={thNum}>Lon</th>
             <th style={thNum}>Alt (km)</th>
@@ -63,6 +66,9 @@ export default function SatellitesTable() {
             <tr key={s.noradId} style={{ borderTop: "1px solid #1b2030" }}>
               <td style={td}>{s.name}</td>
               <td style={{ ...td, color: "#8b95a7" }}>{s.noradId}</td>
+              <td style={td} title={s.meta?.owner}>{s.meta?.ownerName ?? "—"}</td>
+              <td style={{ ...td, color: "#8b95a7" }}>{s.meta?.objectType ?? "—"}</td>
+              <td style={{ ...td, color: "#8b95a7" }}>{s.meta?.launchDate ?? "—"}</td>
               <td style={tdNum}>{s.lat.toFixed(2)}</td>
               <td style={tdNum}>{s.lng.toFixed(2)}</td>
               <td style={tdNum}>{s.altKm.toFixed(0)}</td>
@@ -71,7 +77,7 @@ export default function SatellitesTable() {
           ))}
           {sats.length === 0 && (
             <tr>
-              <td style={td} colSpan={6}>
+              <td style={td} colSpan={9}>
                 {loading ? "Loading…" : "No satellites — try another group or refresh."}
               </td>
             </tr>

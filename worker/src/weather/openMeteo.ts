@@ -159,7 +159,9 @@ async function ingestOneModel(model: OmModel): Promise<IngestResult> {
           variables[variableId] = {
             meta: {
               encoding: "scalar",
-              units: variableId === "temp" ? "°C" : "%",
+              // Open-Meteo decodes each scalar to DISPLAY units already:
+              // temp °C, humidity %, gust m/s (wind_gusts_10m).
+              units: variableId === "temp" ? "°C" : variableId === "gust" ? "m/s" : "%",
               domain: res.domain,
               palette: variableId,
               imageUnscale: res.imageUnscale,

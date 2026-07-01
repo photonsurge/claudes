@@ -4,12 +4,41 @@
  */
 export type TrackKind = "satellite" | "aircraft" | "ship";
 
+/**
+ * Descriptive satellite metadata, joined from Celestrak's SATCAT by NORAD id.
+ * All optional — TLEs exist for objects the catalog may not describe, and the
+ * catalog is a slow, best-effort enrichment on top of the orbital elements.
+ */
+export interface SatelliteMeta {
+  /** International designator, e.g. "1990-037B" (Hubble). */
+  objectId?: string;
+  /** SATCAT owner code, e.g. "US", "ESA", "PRC", "EUME". */
+  owner?: string;
+  /** Resolved owner/operator name for the code, e.g. "United States". */
+  ownerName?: string;
+  /** Payload / rocket body / debris — "PAY" | "R/B" | "DEB" | "UNK". */
+  objectType?: string;
+  /** Launch date, ISO "YYYY-MM-DD". */
+  launchDate?: string;
+  /** Launch site code, e.g. "AFETR", "TAISC". */
+  launchSite?: string;
+  /** Orbital period, minutes. */
+  periodMin?: number;
+  /** Inclination, degrees. */
+  inclinationDeg?: number;
+  /** Apogee / perigee altitude, km. */
+  apogeeKm?: number;
+  perigeeKm?: number;
+}
+
 /** A parsed TLE record (one orbiting object). */
 export interface TleRecord {
   name: string;
   noradId: string;
   line1: string;
   line2: string;
+  /** SATCAT enrichment, present once the catalog has been joined in. */
+  meta?: SatelliteMeta;
 }
 
 /** A propagated satellite position at a moment in time. */
@@ -24,6 +53,8 @@ export interface SatellitePosition {
   altKm: number;
   /** Orbital speed, km/s. */
   speedKmS: number;
+  /** SATCAT enrichment, carried through for the tooltip / table. */
+  meta?: SatelliteMeta;
 }
 
 /** A live aircraft state (ADS-B). */

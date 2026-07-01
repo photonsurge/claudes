@@ -15,7 +15,7 @@ import { join, extname, basename } from "path";
 
 import { QUEUE_NAME } from "@photonsurge/shared/utill/bull-utils";
 import { getQueue, getRedisOptions } from "@photonsurge/shared/bull/bull";
-import { getDb } from "@photonsurge/shared/utill/mongoose";
+import { getDb, closeDb } from "@photonsurge/shared/utill/mongoose";
 import { getSource } from "@photonsurge/shared/sources";
 import { log } from "@photonsurge/shared/utill/logger";
 import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
@@ -172,6 +172,10 @@ process.on("uncaughtException", (err) => {
       { event: "refreshIconGlobal", sourceId: "icon-global", every: Number(process.env.ICON_GLOBAL_INGEST_MS || 60 * 60 * 1000) },
       { event: "refreshHrdps", sourceId: "hrdps", every: Number(process.env.HRDPS_INGEST_MS || 30 * 60 * 1000) },
       { event: "refreshUkv", sourceId: "ukv", every: Number(process.env.UKV_INGEST_MS || 30 * 60 * 1000) },
+      // Open-Meteo `.om` spatial nests for gated countries (JMA Japan now; AU/CN/KR
+      // one-line adds). One job loops the whole OM_MODELS family, so the JMA source
+      // id gates the group's schedule (mirrors the wave/RTOFS-regional sentinels).
+      { event: "refreshOpenMeteo", sourceId: "jma-msm", every: Number(process.env.OPENMETEO_INGEST_MS || 30 * 60 * 1000) },
     ];
     // Only schedule ENABLED sources (IFS is off by default until CCSDS-validated).
     for (const { event, sourceId, every } of sourceJobs.filter((j) => getSource(j.sourceId)?.enabled)) {
@@ -424,10 +428,14 @@ process.on("uncaughtException", (err) => {
     forceTimer.unref();
 
     try {
-      server.close();
+      // Stop accepting HTTP first, then drain the queue, then release the
+      // shared handles (socket, Redis, Mongo pool) so nothing is left dangling
+      // for process.exit to reap.
+      await new Promise<void>((resolve) => server.close(() => resolve()));
       closeSocket();
       await bullWorker.close();
       await myQueue.close();
+      await closeDb();
     } catch (err) {
       log(TAG, `shutdown failed`, summarizeForLog(err));
     } finally {
