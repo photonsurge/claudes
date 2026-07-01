@@ -2,6 +2,7 @@ import {
   buildIfsUrl,
   ifsCandidateCycles,
   ifsLatestAvailableRun,
+  ifsForecastSteps,
   IFS_LATENCY_HOURS,
   IFS_VAR_MATCH,
 } from "./ifs";
@@ -20,10 +21,24 @@ describe("buildIfsUrl", () => {
     expect(url).toContain("20260628060000-0h-oper-fc.grib2");
   });
 
-  it("has field matches for its declared parity variables", () => {
-    expect(IFS_VAR_MATCH.temp).toBeDefined();
-    expect(IFS_VAR_MATCH.wind).toHaveLength(2); // u + v
-    expect(IFS_VAR_MATCH.pressure).toBeDefined();
+  it("uses confirmed wgrib2 tokens (IFS MSLP is PRES, not PRMSL)", () => {
+    expect(IFS_VAR_MATCH.temp).toEqual([":TMP:2 m above ground:"]);
+    expect(IFS_VAR_MATCH.wind).toEqual([":UGRD:10 m above ground:", ":VGRD:10 m above ground:"]);
+    expect(IFS_VAR_MATCH.pressure).toEqual([":PRES:mean sea level:"]);
+    expect(IFS_VAR_MATCH.pressure[0]).not.toContain("PRMSL");
+  });
+});
+
+describe("ifsForecastSteps", () => {
+  it("00z/12z run to 360h (3h then 6h); 06z/18z stop at 144h", () => {
+    const s00 = ifsForecastSteps("00");
+    expect(s00[0]).toBe(0);
+    expect(s00).toContain(144);
+    expect(s00).toContain(150);
+    expect(s00[s00.length - 1]).toBe(360);
+    const s06 = ifsForecastSteps("06");
+    expect(s06[s06.length - 1]).toBe(144);
+    expect(s06).not.toContain(150);
   });
 });
 

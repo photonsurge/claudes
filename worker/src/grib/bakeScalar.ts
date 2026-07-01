@@ -94,6 +94,18 @@ export interface BakeScalarArgs {
   deltaHours?: number;
   /** GFS land-sea mask grid (1 = land, 0 = sea), masked vars only. */
   landValues?: Float32Array;
+  /**
+   * GFS data is 0..360 and gets rolled to −180..180 at bake. Regridded/mosaicked
+   * sources (RTOFS curvilinear regrid, wave tile mosaic) already sit at −180..180,
+   * so pass `preRolled: true` to skip the roll.
+   */
+  preRolled?: boolean;
+  /**
+   * Skip the GFS-unit conversion (K→°C etc). RTOFS netCDF already delivers
+   * display units (SST in °C, salinity in PSU), so it bakes with this set — the
+   * K→°C in `convertScalarUnits` would otherwise double-convert SST.
+   */
+  skipUnitConvert?: boolean;
 }
 
 export async function bakeScalar({
@@ -104,21 +116,25 @@ export async function bakeScalar({
   prevValues,
   deltaHours,
   landValues,
+  preRolled,
+  skipUnitConvert,
 }: BakeScalarArgs): Promise<BakeResult> {
   const reg = VARIABLE_REGISTRY[variableId];
   if (!reg) throw new Error(`Unknown variable: ${variableId}`);
 
   let physical: Float32Array;
-  if (reg.gfs.accumulated) {
+  if (reg.gfs?.accumulated) {
     // APCP-style: de-accumulate raw accumulation totals into a per-hour rate.
     physical = deaccumulate(values, prevValues, deltaHours ?? 0);
+  } else if (skipUnitConvert) {
+    physical = Float32Array.from(values);
   } else {
     physical = convertScalarUnits(variableId, values);
   }
 
-  const rolled = rollLongitude(physical, width, height);
+  const rolled = preRolled ? physical : rollLongitude(physical, width, height);
   // Roll the land mask the same way so it lines up with the rolled values.
-  const rolledLand = landValues ? rollLongitude(landValues, width, height) : undefined;
+  const rolledLand = landValues && !preRolled ? rollLongitude(landValues, width, height) : landValues;
   const keep = scalarKeepMask(variableId, rolled, rolledLand);
   const imageUnscale = imageUnscaleFor(variableId);
   const buffer = await encodeScalarPng(rolled, width, height, imageUnscale, keep);

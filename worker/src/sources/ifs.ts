@@ -47,21 +47,37 @@ export function buildIfsUrl({
 }
 
 /**
- * wgrib2 -match token per variable for the IFS GRIB2 file.
+ * wgrib2 `-match` strings per variable for the IFS GRIB2 file.
  *
- * ⚠️ VERIFY against `wgrib2 -inv` on a real IFS open-data file before enabling in
- * production — wgrib2 may render IFS ecCodes shortNames differently from the
- * NOMADS GFS abbreviations (UGRD/VGRD/TMP). These map to the GFS-style tokens
- * wgrib2 commonly emits for the WMO params; adjust if the inventory differs.
+ * Confirmed against a real ECMWF 0p25 `oper fc` inventory: wgrib2 prints
+ * GFS-style WMO abbreviations (NOT the ecCodes shortNames `2t`/`10u`/`msl` from
+ * the sidecar `.index`). Note the one gotcha — IFS MSLP is `PRES:mean sea
+ * level`, NOT `PRMSL`/`MSLET`. Each string includes the level so the multi-level
+ * IFS file yields exactly one record per field.
+ *
+ * ⚠️ Packing caveat: ECMWF IFS open data is CCSDS-packed. A wgrib2 build without
+ * JPEG/CCSDS support decodes the inventory fine but throws on VALUE extraction
+ * ("DRS Template 42 not defined"). If the worker's wgrib2 lacks CCSDS, repack
+ * first: `grib_set -r -s packingType=grid_simple in.grib2 out.grib2`.
  */
-export const IFS_VAR_MATCH: Record<string, { match: string; level: string }[]> = {
-  temp: [{ match: ":TMP:", level: "2 m above ground" }],
-  wind: [
-    { match: ":UGRD:", level: "10 m above ground" },
-    { match: ":VGRD:", level: "10 m above ground" },
-  ],
-  pressure: [{ match: ":PRMSL:", level: "mean sea level" }],
+export const IFS_VAR_MATCH: Record<string, string[]> = {
+  temp: [":TMP:2 m above ground:"],
+  wind: [":UGRD:10 m above ground:", ":VGRD:10 m above ground:"],
+  pressure: [":PRES:mean sea level:"],
 };
+
+/**
+ * IFS open-data `oper fc` forecast steps (hours). 00z/12z run to 360h; 06z/18z
+ * stop at 144h. Returns the step list for a given cycle.
+ */
+export function ifsForecastSteps(cycle: string, maxHours = 360): number[] {
+  const cyc = String(cycle).padStart(2, "0");
+  const full = cyc === "00" || cyc === "12";
+  const out: number[] = [];
+  for (let h = 0; h <= 144 && h <= maxHours; h += 3) out.push(h);
+  if (full) for (let h = 150; h <= 360 && h <= maxHours; h += 6) out.push(h);
+  return out;
+}
 
 /** The four IFS cycles per day (UTC). 00/12 run to 360h; 06/18 are shorter. */
 const CYCLE_HOURS = [0, 6, 12, 18];

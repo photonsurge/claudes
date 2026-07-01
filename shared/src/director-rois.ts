@@ -98,9 +98,41 @@ export const ORBITAL_VIEWS: OrbitalView[] = [
 export const ORBITAL_VIEW_ZOOM = 2.4;
 
 /**
+ * Every display layer the director manages, all OFF. Each preset spreads this
+ * and then turns on only what its shot needs.
+ *
+ * Why a shared off-base: Segment.patch is merged over /watch's *live*
+ * ControlState (mergeControlState), so any layer a preset leaves unset keeps
+ * whatever the previous cut left on. Without asserting the full set every cut,
+ * "relevant per-kind toggles" silently become "sticky" — e.g. a storm's pressure
+ * contours would bleed into the next quake shot. Spreading LAYERS_OFF guarantees
+ * a clean slate; the preset's own keys below are the only layers that light up.
+ *
+ * Not included here (set explicitly per preset when relevant): activeVariable,
+ * the camera-motion trio (autoSpin/spinSpeed/zoomDrift) and event filter
+ * overrides (alertSeverityMin/seismicMinMag) — those aren't on/off layers.
+ */
+const LAYERS_OFF: Partial<ControlState> = {
+  showWind: false,
+  showPressure: false,
+  showContours: false,
+  showCities: false,
+  showRadar: false,
+  showCables: false,
+  showAlerts: false,
+  showSeismic: false,
+  showAircraft: false,
+  showShips: false,
+  showSatellites: false,
+  showOrbits: false,
+  showTrails: false,
+  showTrackLabels: false,
+};
+
+/**
  * Layer preset per kind (everything except the camera, which the worker fills
- * in per subject). Kept partial so unspecified fields keep their prior value on
- * /watch via mergeControlState — we only assert what the shot needs.
+ * in per subject). Each preset starts from LAYERS_OFF (see above) so it fully
+ * owns the layer stack — no layer leaks in from the previous cut.
  */
 export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
   // Per-shot camera "mode" so the globe is always alive but never wanders off a
@@ -113,47 +145,31 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
   //     instead breathes with a slow zoomDrift push-in. Regional tours/weather
   //     get a gentle drift; detail events (storm/quake/flight/ship) a stronger one.
   intro: {
+    ...LAYERS_OFF,
     activeVariable: "temp",
     showWind: true,
-    showCities: false,
-    showContours: false,
+    // Synoptic H/L systems on the global spin read as "weather channel".
+    showPressure: true,
     autoSpin: true,
     spinSpeed: 6,
     zoomDrift: 0,
-    showAlerts: false,
-    showSeismic: false,
-    showAircraft: false,
-    showShips: false,
-    showTrails: false,
   },
   // Global ocean spin — the active ocean variable (sst / wave) is filled in per
   // segment by the candidate builder. Land carries no data for these fields so
   // it stays neutral and the ocean reads as the coloured field.
   ocean: {
+    ...LAYERS_OFF,
     showWind: true,
-    showCities: false,
-    showContours: false,
     autoSpin: true,
     spinSpeed: 6,
     zoomDrift: 0,
-    showAlerts: false,
-    showSeismic: false,
-    showAircraft: false,
-    showShips: false,
-    showTrails: false,
   },
   // Orbital constellation showcase — no weather map, just the dark globe with
   // the orbit rings, spun so the planes sweep round. Satellite group is set per
   // segment by the candidate builder.
   orbital: {
+    ...LAYERS_OFF,
     activeVariable: null,
-    showWind: false,
-    showContours: false,
-    showCities: false,
-    showAlerts: false,
-    showSeismic: false,
-    showAircraft: false,
-    showShips: false,
     showSatellites: true,
     showOrbits: true,
     showTrackLabels: true,
@@ -162,67 +178,84 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     zoomDrift: 0,
   },
   tour: {
+    ...LAYERS_OFF,
     activeVariable: "temp",
     showWind: true,
     showCities: true,
     autoSpin: false,
     spinSpeed: 0,
     zoomDrift: 0.02,
-    showAircraft: false,
-    showShips: false,
-    showSeismic: false,
   },
   weather: {
+    ...LAYERS_OFF,
     activeVariable: "temp",
     showWind: true,
+    showPressure: true,
     showContours: true,
+    // RainViewer radar shows the actual precip inside the framed region.
+    showRadar: true,
     showCities: true,
     autoSpin: false,
     spinSpeed: 0,
     zoomDrift: 0.02,
   },
   storm: {
+    ...LAYERS_OFF,
     activeVariable: "gust",
     showWind: true,
+    // Pressure = the storm's structure; radar = the precip core.
+    showPressure: true,
+    showRadar: true,
     showAlerts: true,
     // Drop the severity filter while framing a storm so the very alert the
     // director picked is guaranteed visible (the scene baseline may filter higher).
     alertSeverityMin: 0,
-    showContours: false,
+    showCities: true,
     autoSpin: false,
     spinSpeed: 0,
     zoomDrift: 0.045,
-    showCities: true,
   },
   quake: {
+    ...LAYERS_OFF,
     showSeismic: true,
     // Likewise show all quakes so the framed one isn't filtered out by the
     // baseline minimum magnitude.
     seismicMinMag: 0,
+    // Submarine cables + seismic tell a story: quakes are what sever them, so
+    // lighting up the cable network under a quake shot frames the risk.
+    showCables: true,
     showCities: true,
-    showWind: false,
     autoSpin: false,
     spinSpeed: 0,
     zoomDrift: 0.045,
+    // activeVariable left unset on purpose — useCutVariable cycles a weather
+    // field (temp/humidity/rain/…) under the quake so the map isn't static.
   },
   flight: {
+    ...LAYERS_OFF,
+    activeVariable: "temp",
     showAircraft: true,
     showTrails: true,
     showTrackLabels: true,
-    showWind: false,
+    // Wind on: high-altitude flights ride the jet stream — that's the story.
+    showWind: true,
+    showCities: true,
     autoSpin: false,
     spinSpeed: 0,
     zoomDrift: 0.035,
-    showCities: true,
   },
   ship: {
+    ...LAYERS_OFF,
+    // Sea state is the relevant field for vessels: swell height + surface wind.
+    // Depends on wave ingest being live; falls back to a blank ocean if not.
+    activeVariable: "wave",
     showShips: true,
     showTrails: true,
     showTrackLabels: true,
-    showWind: false,
+    showWind: true,
+    showCities: true,
     autoSpin: false,
     spinSpeed: 0,
     zoomDrift: 0.035,
-    showCities: true,
   },
 };

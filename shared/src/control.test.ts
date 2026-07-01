@@ -75,6 +75,7 @@ describe("mergeControlState", () => {
       showAtmosphere: false,
       showDayNight: true,
       showBroadcastChrome: true,
+      broadcastTheme: "command",
     };
     // Deep-equal proves no key was dropped or altered by the merge.
     expect(mergeControlState(DEFAULT_CONTROL_STATE, custom)).toEqual(custom);

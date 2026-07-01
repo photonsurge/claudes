@@ -35,6 +35,19 @@ export default function IntensityMeter({
   const barH = compact ? 150 : 210;
   // Top → bottom labels (reverse of the low→high stops).
   const labels = [...legend.stops].reverse();
+  // Nearest palette colour at a normalised position, for the per-band chevrons.
+  const hexAt = (t: number) => {
+    let best = palette[0][1];
+    let bd = Infinity;
+    for (const [stop, hex] of palette) {
+      const d = Math.abs(stop - t);
+      if (d < bd) {
+        bd = d;
+        best = hex;
+      }
+    }
+    return best;
+  };
 
   return (
     <div
@@ -80,7 +93,13 @@ export default function IntensityMeter({
           }}
         >
           {labels.map((s, i) => (
-            <span key={i} style={{ opacity: 0.85, whiteSpace: "nowrap" }}>
+            <span
+              key={i}
+              style={{ opacity: 0.9, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}
+            >
+              <span style={{ color: hexAt(s.t), fontWeight: 900, textShadow: "0 0 4px rgba(0,0,0,0.6)" }}>
+                ❯
+              </span>
               {s.label}
             </span>
           ))}

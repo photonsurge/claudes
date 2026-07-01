@@ -1,14 +1,16 @@
 "use client";
 
 /**
- * The on-air chrome that overlays the globe/map: top + bottom crawls, the brand
+ * The on-air chrome overlaying the globe/map: top + bottom crawls, the brand
  * block + LIVE badge, the left intensity meter, a top-right live-alert panel and
- * a bottom-right global monitor. Fully pointer-inert so it never intercepts the
- * capture surface, and responsive — on phones it drops the heaviest panels and
- * shrinks type so the globe stays the hero.
+ * a bottom-right global monitor.
  *
- * All furniture derives from data the watch surface already has (alerts, quakes,
- * tracks, the active variable's legend), so it adds no new fetches.
+ * Built for VIDEO, not the responsive web: the furniture is authored once at a
+ * 1920×1080 design stage and scaled as a whole to the output resolution (see
+ * useStageScale), so it stays pixel-proportional and crisp from 720p to 4K on
+ * YouTube/OBS rather than reflowing at breakpoints. Fully pointer-inert so it
+ * never intercepts the capture surface, and derives entirely from data the watch
+ * surface already has (alerts, quakes, tracks, the active variable's legend).
  */
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
@@ -16,12 +18,16 @@ import type { AlertFeature } from "../../lib/alerts";
 import type { Quake, Track } from "../../lib/tracks/types";
 import { buildTicker } from "../../lib/broadcast";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
-import { useIsNarrow } from "./useIsNarrow";
+import { useStageScale, STAGE_W, STAGE_H } from "./useStageScale";
 import Ticker from "./Ticker";
 import BrandPanel from "./BrandPanel";
 import IntensityMeter from "./IntensityMeter";
 import LiveAlertPanel from "./LiveAlertPanel";
 import MonitorCluster from "./MonitorCluster";
+
+/** Design-stage layout constants (in 1080p reference pixels). */
+const TICKER_H = 34;
+const INSET = 30;
 
 export default function BroadcastFrame({
   state,
@@ -38,46 +44,43 @@ export default function BroadcastFrame({
   tracks?: Track[];
   theme?: BroadcastTheme;
 }) {
-  const narrow = useIsNarrow();
+  const scale = useStageScale();
   const ticker = buildTicker({ alerts, quakes, tracks });
-  const topH = narrow ? 24 : 30;
-  const botH = narrow ? 24 : 30;
-  const inset = narrow ? 10 : 18;
 
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 5 }}>
-      <Ticker title={theme.tickerTitle} items={ticker} edge="top" height={topH} compact={narrow} theme={theme} />
+      {/* 1080p design stage, uniformly scaled + centred to the output resolution. */}
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          width: STAGE_W,
+          height: STAGE_H,
+          transform: `translate(-50%, -50%) scale(${scale})`,
+          transformOrigin: "center center",
+        }}
+      >
+        <Ticker title={theme.tickerTitle} items={ticker} edge="top" height={TICKER_H} theme={theme} />
 
-      {/* Top-left brand + LIVE */}
-      <div style={{ position: "absolute", top: topH + inset, left: inset }}>
-        <BrandPanel theme={theme} compact={narrow} />
-      </div>
+        <div style={{ position: "absolute", top: TICKER_H + INSET, left: INSET }}>
+          <BrandPanel theme={theme} />
+        </div>
 
-      {/* Left intensity meter (under the brand block). */}
-      <div style={{ position: "absolute", top: topH + inset + (narrow ? 92 : 116), left: inset }}>
-        <IntensityMeter variable={state.activeVariable} units={state.units} theme={theme} compact={narrow} />
-      </div>
+        <div style={{ position: "absolute", top: TICKER_H + INSET + 128, left: INSET }}>
+          <IntensityMeter variable={state.activeVariable} units={state.units} theme={theme} />
+        </div>
 
-      {/* Top-right live alert panel */}
-      <div style={{ position: "absolute", top: topH + inset, right: inset }}>
-        <LiveAlertPanel alerts={alerts} theme={theme} compact={narrow} />
-      </div>
+        <div style={{ position: "absolute", top: TICKER_H + INSET, right: INSET }}>
+          <LiveAlertPanel alerts={alerts} theme={theme} />
+        </div>
 
-      {/* Bottom-right monitor — dropped on phones to keep the globe clear. */}
-      {!narrow ? (
-        <div style={{ position: "absolute", bottom: botH + inset, right: inset }}>
+        <div style={{ position: "absolute", bottom: TICKER_H + INSET, right: INSET }}>
           <MonitorCluster quakes={quakes} theme={theme} />
         </div>
-      ) : null}
 
-      <Ticker
-        title={narrow ? "ALERTS" : "GLOBAL ALERT TICKER"}
-        items={ticker}
-        edge="bottom"
-        height={botH}
-        compact={narrow}
-        theme={theme}
-      />
+        <Ticker title="GLOBAL ALERT TICKER" items={ticker} edge="bottom" height={TICKER_H} theme={theme} />
+      </div>
     </div>
   );
 }

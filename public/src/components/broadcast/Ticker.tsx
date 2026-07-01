@@ -24,7 +24,9 @@ export default function Ticker({
   compact?: boolean;
   theme?: BroadcastTheme;
 }) {
-  const line = items.length ? items.join("      ✦      ") : "STANDING BY · AWAITING LIVE FEED";
+  const line = items.length
+    ? items.join("     ❯     ")
+    : "STANDING BY · AWAITING LIVE FEED";
   // Seconds for one full cycle — ~7 chars/sec, floored so short feeds still move.
   const dur = Math.max(24, line.length * 0.16);
   const fontSize = compact ? 10 : 12;

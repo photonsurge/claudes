@@ -20,6 +20,7 @@ import WindControls from "./WindControls";
 import Timeline from "./Timeline";
 import Legend from "./Legend";
 import SearchFlyTo from "./SearchFlyTo";
+import { THEME_OPTIONS } from "./broadcast/config";
 
 /**
  * Spin speed uses a LOG scale so the slow, cinematic 0.1–1°/s range — where a
@@ -99,6 +100,24 @@ export default function ControlPanel({
             onChange={(showBroadcastChrome) => patch({ showBroadcastChrome })}
           />
         </div>
+        {state.showBroadcastChrome && (
+          <div style={{ marginTop: 8 }}>
+            <Field label="Theme">
+              <select
+                value={state.broadcastTheme}
+                onChange={(e) => patch({ broadcastTheme: e.target.value })}
+                aria-label="Broadcast theme"
+                style={miniSelect}
+              >
+                {THEME_OPTIONS.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        )}
       </Section>
 
       {state.showWind && (

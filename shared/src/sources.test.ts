@@ -48,8 +48,8 @@ describe("supplier resolution", () => {
 
   it("preferredSource returns the highest-priority ENABLED source", () => {
     expect(preferredSource("sst")?.id).toBe("rtofs");
-    // wave: 0p16 enabled + higher priority than the disabled 0p25 fallback.
-    expect(preferredSource("wave")?.id).toBe("gfswave-0p16");
+    // wave: the regional mosaic outranks the 0p25 global base.
+    expect(preferredSource("wave")?.id).toBe("gfswave-mosaic");
     // current is RTOFS-only.
     expect(preferredSource("current")?.id).toBe("rtofs");
   });
@@ -61,9 +61,9 @@ describe("supplier resolution", () => {
 
   it("finer sources outrank coarser for the same variable", () => {
     const wave = sourcesForVariable("wave");
-    const p16 = wave.find((s) => s.id === "gfswave-0p16")!;
+    const mosaic = wave.find((s) => s.id === "gfswave-mosaic")!;
     const p25 = wave.find((s) => s.id === "gfswave-0p25")!;
-    expect(p16.priority).toBeGreaterThan(p25.priority);
-    expect(p16.resolutionDeg).toBeLessThan(p25.resolutionDeg);
+    expect(mosaic.priority).toBeGreaterThan(p25.priority);
+    expect(mosaic.resolutionDeg).toBeLessThan(p25.resolutionDeg);
   });
 });

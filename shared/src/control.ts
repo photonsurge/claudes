@@ -282,6 +282,8 @@ export interface ControlState {
   showDayNight: boolean;
   /** Overlay the broadcast chrome (tickers, brand, LIVE, alert panel, monitor). */
   showBroadcastChrome: boolean;
+  /** Broadcast chrome theme/brand preset id (see broadcast/config). */
+  broadcastTheme: string;
 }
 
 export const DEFAULT_CONTROL_STATE: ControlState = {
@@ -324,7 +326,8 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   graticuleLabels: true,
   showAtmosphere: true,
   showDayNight: false,
-  showBroadcastChrome: false,
+  showBroadcastChrome: true,
+  broadcastTheme: "aurora",
 };
 
 /**
@@ -420,6 +423,8 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     showBroadcastChrome:
       typeof patch.showBroadcastChrome === "boolean"
         ? patch.showBroadcastChrome
-        : base.showBroadcastChrome ?? false,
+        : base.showBroadcastChrome ?? true,
+    broadcastTheme:
+      typeof patch.broadcastTheme === "string" ? patch.broadcastTheme : base.broadcastTheme ?? "aurora",
   };
 }

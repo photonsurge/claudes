@@ -25,8 +25,9 @@ export default function LiveAlertPanel({
   return (
     <div
       style={{
+        position: "relative",
         maxWidth: compact ? 240 : 340,
-        padding: compact ? "8px 11px" : "10px 14px",
+        padding: compact ? "8px 26px 8px 11px" : "10px 30px 10px 14px",
         background: theme.panelBg,
         border: `1px solid ${color}66`,
         borderLeft: `3px solid ${color}`,
@@ -40,6 +41,29 @@ export default function LiveAlertPanel({
       }}
     >
       <style>{"@keyframes bcast-alertpulse{0%,100%{opacity:1}50%{opacity:0.5}}"}</style>
+      {/* Right-edge vertical status tab (reference "[ISSUED]" flag). */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: 18,
+          background: color,
+          borderRadius: "0 9px 9px 0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#fff",
+          fontSize: 8,
+          fontWeight: 800,
+          letterSpacing: 2,
+          writingMode: "vertical-rl",
+          textShadow: "0 1px 1px rgba(0,0,0,0.5)",
+        }}
+      >
+        ISSUED
+      </div>
       <div
         style={{
           fontSize: 9,

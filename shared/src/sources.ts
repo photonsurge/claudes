@@ -19,7 +19,12 @@ export type Cadence =
   | { kind: "interval"; minutes: number }; // e.g. satellite every 10
 
 export type SourceFormat = "grib2" | "netcdf" | "image";
-export type SourceGrid = "regular" | "icosahedral" | "gaussian-reduced" | "geostationary";
+export type SourceGrid =
+  | "regular"
+  | "curvilinear" // 2-D lon/lat coord arrays, e.g. RTOFS tripolar HYCOM
+  | "icosahedral"
+  | "gaussian-reduced"
+  | "geostationary";
 
 export interface SourceDescriptor {
   /** Stable id, e.g. "gfs", "ifs", "rtofs", "gfswave-0p16". */
@@ -90,17 +95,22 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
   },
 
   // ── Ocean ──────────────────────────────────────────────────────────────────
+  // NOTE (verified against live NOMADS 2026): there is NO global RTOFS GRIB2.
+  // GRIB2 exists only as 11 regional windows that don't tile the globe. The
+  // GLOBAL surface product (SST/salinity/currents in the `_prog` bundle) is
+  // netCDF on the native tripolar 1/12° HYCOM grid → needs curvilinear regrid
+  // (worker/src/regrid/curvilinear.ts). 00z run only, ~8h latency.
   rtofs: {
     id: "rtofs",
-    label: "NOAA Global RTOFS 1/12°",
-    format: "grib2",
-    grid: "regular",
-    // 0.08° lat-lon surface product; ~84N/72S coverage (poles are nodata).
-    dims: { width: 4500, height: 1951 },
-    resolutionDeg: 0.08,
-    bbox: [-180, -72, 180, 84],
-    cadence: { kind: "cron", runsUtc: [0] }, // one run/day (~16z publish)
-    latencyMinutes: 16 * 60,
+    label: "NOAA Global RTOFS 1/12° (netCDF)",
+    format: "netcdf",
+    grid: "curvilinear",
+    // Regridded target (global regular lat-lon); ~72°S–90°N useful coverage.
+    dims: { width: 4320, height: 2160 }, // 1/12° global target for the regrid
+    resolutionDeg: 0.083,
+    bbox: [-180, -80, 180, 90],
+    cadence: { kind: "cron", runsUtc: [0] }, // one 00z run/day
+    latencyMinutes: 8 * 60, // ~8h; poll rather than trust a fixed time
     variables: ["sst", "current", "salinity"],
     priority: 20, // real ocean model beats GFS-masked SST
     enabled: true,
@@ -108,9 +118,14 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
   },
 
   // ── Waves ────────────────────────────────────────────────────────────────
+  // NOTE: NOAA does NOT publish a genuine global 0.16° wave grid — `global.0p16`
+  // is only a 52.5°N–15°S band (2160×406). The whole-planet grid is `global.0p25`
+  // (1440×721, ±90°). A finer-than-0.25° global field must be MOSAICKED from the
+  // regional tiles (see WAVE_TILES in worker/src/sources/gfswave.ts) — that's the
+  // `gfswave-mosaic` product below, composited server-side (worker/src/merge).
   "gfswave-0p25": {
     id: "gfswave-0p25",
-    label: "NOAA GFS-Wave 0.25°",
+    label: "NOAA GFS-Wave 0.25° (global)",
     format: "grib2",
     grid: "regular",
     dims: { width: 1440, height: 721 },
@@ -119,22 +134,22 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
     cadence: { kind: "cron", runsUtc: [0, 6, 12, 18] },
     latencyMinutes: 240,
     variables: ["wave"],
-    priority: 10,
-    enabled: false, // superseded by the 0.16° source below; kept as fallback
+    priority: 10, // whole-planet base / mosaic fallback
+    enabled: true,
     attribution: "NOAA/NCEP GFS-Wave",
   },
-  "gfswave-0p16": {
-    id: "gfswave-0p16",
-    label: "NOAA GFS-Wave 0.16°",
+  "gfswave-mosaic": {
+    id: "gfswave-mosaic",
+    label: "NOAA GFS-Wave (regional mosaic, ~0.16°)",
     format: "grib2",
     grid: "regular",
-    dims: { width: 2160, height: 1141 }, // 0.16667° global lat-lon
+    dims: { width: 2160, height: 1081 }, // global 1/6° lat-lon target
     resolutionDeg: 0.16,
     bbox: GLOBAL_BBOX,
     cadence: { kind: "cron", runsUtc: [0, 6, 12, 18] },
     latencyMinutes: 240,
     variables: ["wave"],
-    priority: 20, // finer than 0p25
+    priority: 20, // finer than the 0p25 global base
     enabled: true,
     attribution: "NOAA/NCEP GFS-Wave",
   },

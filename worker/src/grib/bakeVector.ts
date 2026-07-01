@@ -55,6 +55,8 @@ export interface BakeVectorArgs {
   maskSide?: "sea" | "land";
   /** Land-sea mask grid (1 = land), pre-roll aligned with u/v. */
   landValues?: Float32Array;
+  /** Skip the 0..360 → −180..180 roll for already-rolled sources (regrid/mosaic). */
+  preRolled?: boolean;
 }
 
 export async function bakeVector({
@@ -65,13 +67,14 @@ export async function bakeVector({
   height,
   maskSide,
   landValues,
+  preRolled,
 }: BakeVectorArgs): Promise<BakeResult> {
   const reg = VARIABLE_REGISTRY[variableId];
   if (!reg) throw new Error(`Unknown variable: ${variableId}`);
 
-  const ru = rollLongitude(u, width, height);
-  const rv = rollLongitude(v, width, height);
-  const rolledLand = landValues ? rollLongitude(landValues, width, height) : undefined;
+  const ru = preRolled ? u : rollLongitude(u, width, height);
+  const rv = preRolled ? v : rollLongitude(v, width, height);
+  const rolledLand = landValues && !preRolled ? rollLongitude(landValues, width, height) : landValues;
   const keep = vectorKeepMask(ru, rv, { maskSide, land: rolledLand });
 
   const imageUnscale = vectorImageUnscaleFor(variableId);

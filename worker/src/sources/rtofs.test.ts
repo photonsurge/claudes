@@ -3,44 +3,45 @@ import {
   padRtofsHour,
   rtofsCandidateRuns,
   rtofsLatestAvailableRun,
-  RTOFS_VAR_MATCH,
-  RTOFS_GRID,
-  RTOFS_BOUNDS,
+  RTOFS_NETCDF_VARS,
+  RTOFS_TARGET_GRID,
+  RTOFS_GRIB2_REGIONS,
   RTOFS_LATENCY_HOURS,
 } from "./rtofs";
 
-describe("buildRtofsUrl", () => {
-  it("builds the NOMADS 2-D prog surface URL (forecast)", () => {
+describe("buildRtofsUrl (global netCDF)", () => {
+  it("builds the NOMADS 2ds prog netCDF URL (forecast)", () => {
     const url = buildRtofsUrl({ date: "20260628", hour: 24 });
     expect(url).toBe(
-      "https://nomads.ncep.noaa.gov/pub/data/nccf/com/rtofs/prod/rtofs.20260628/rtofs_glo_2ds_f024_prog.grib2",
+      "https://nomads.ncep.noaa.gov/pub/data/nccf/com/rtofs/prod/rtofs.20260628/rtofs_glo_2ds_f024_prog.nc",
     );
   });
 
-  it("supports nowcast files and pads the hour", () => {
-    expect(buildRtofsUrl({ date: "20260628", hour: 3, kind: "n" })).toContain("_n003_prog.grib2");
-    expect(padRtofsHour(0)).toBe("000");
+  it("supports nowcast + diag/ice bundles and pads the hour", () => {
+    expect(buildRtofsUrl({ date: "20260628", hour: 0, kind: "n" })).toContain("_n000_prog.nc");
+    expect(buildRtofsUrl({ date: "20260628", hour: 24, bundle: "diag" })).toContain("_f024_diag.nc");
+    expect(padRtofsHour(6)).toBe("006");
   });
 
-  it("declares field matches for sst, current (u+v) and salinity", () => {
-    expect(RTOFS_VAR_MATCH.sst).toHaveLength(1);
-    expect(RTOFS_VAR_MATCH.current).toHaveLength(2);
-    expect(RTOFS_VAR_MATCH.salinity).toHaveLength(1);
+  it("maps sst/salinity/current to their netCDF vars in the prog bundle", () => {
+    expect(RTOFS_NETCDF_VARS.sst).toMatchObject({ bundle: "prog", encoding: "scalar" });
+    expect(RTOFS_NETCDF_VARS.current).toMatchObject({ bundle: "prog", encoding: "uv" });
+    expect(RTOFS_NETCDF_VARS.current.vars).toHaveLength(2); // u + v
+    expect(RTOFS_NETCDF_VARS.salinity.vars).toEqual(["sss"]);
   });
 
-  it("uses a regular 0.08° grid with the ~84N/72S polar gap", () => {
-    expect(RTOFS_GRID.res).toBeCloseTo(0.08, 3);
-    expect(RTOFS_BOUNDS).toEqual([-180, -72, 180, 84]);
-    // width ≈ 360/0.08, height ≈ (84+72)/0.08 + 1
-    expect(RTOFS_GRID.width).toBe(4500);
-    expect(RTOFS_GRID.height).toBe(1951);
+  it("targets a global 1/12° regular grid and knows the 11 GRIB2 regions", () => {
+    expect(RTOFS_TARGET_GRID.width).toBe(4320);
+    expect(RTOFS_TARGET_GRID.height).toBe(2160);
+    expect(RTOFS_GRIB2_REGIONS).toContain("west_atl");
+    expect(RTOFS_GRIB2_REGIONS.length).toBe(11);
   });
 });
 
 describe("rtofsCandidateRuns", () => {
-  it("offers one run/day past the ~16h latency, newest-first", () => {
-    // 2026-06-29T18:00Z: the 29th's 00z run is 18h old (>16h) → eligible.
-    const now = new Date("2026-06-29T18:00:00Z");
+  it("offers one 00z run/day past the ~8h latency, newest-first", () => {
+    // 2026-06-29T12:00Z: the 29th's 00z run is 12h old (>8h) → eligible.
+    const now = new Date("2026-06-29T12:00:00Z");
     const runs = rtofsCandidateRuns(now, 2);
     expect(runs[0].date).toBe("20260629");
     for (const r of runs) {
@@ -50,17 +51,15 @@ describe("rtofsCandidateRuns", () => {
     }
   });
 
-  it("skips today's run before it has published", () => {
-    // 2026-06-29T10:00Z: only 10h since 00z (<16h) → today not eligible yet.
-    const now = new Date("2026-06-29T10:00:00Z");
-    const runs = rtofsCandidateRuns(now, 1);
-    expect(runs[0].date).toBe("20260628");
+  it("skips today's run before it has published (<8h)", () => {
+    const now = new Date("2026-06-29T05:00:00Z");
+    expect(rtofsCandidateRuns(now, 1)[0].date).toBe("20260628");
   });
 });
 
 describe("rtofsLatestAvailableRun", () => {
-  it("returns the newest run whose file probes true", async () => {
-    const now = new Date("2026-06-29T18:00:00Z");
+  it("returns the newest run whose prog file probes true", async () => {
+    const now = new Date("2026-06-29T12:00:00Z");
     const run = await rtofsLatestAvailableRun(now, async () => true);
     expect(run.date).toBe("20260629");
   });

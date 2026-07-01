@@ -5,7 +5,7 @@
  * pulsing LIVE badge and a live clock. Purely decorative (pointer-inert).
  */
 import { useEffect, useState } from "react";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, LIVE_RED, type BroadcastTheme } from "./config";
 
 /** "5:06:12 PM" — locale time, ticking each second. Starts empty so server and
  *  client first-render match (no hydration mismatch); fills in on mount. */
@@ -87,13 +87,13 @@ export default function BrandPanel({
             gap: 6,
             padding: "3px 9px",
             borderRadius: 6,
-            background: theme.accent,
+            background: LIVE_RED,
             fontFamily: "system-ui, sans-serif",
             fontSize: 11,
             fontWeight: 800,
             letterSpacing: 1.5,
             color: "#fff",
-            boxShadow: `0 0 12px ${theme.accent}88`,
+            boxShadow: `0 0 12px ${LIVE_RED}88`,
           }}
         >
           <span

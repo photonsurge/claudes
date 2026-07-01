@@ -17,6 +17,7 @@ import type { City } from "../lib/cities";
 import GlobeView from "./GlobeView";
 import AlertLegend from "./AlertLegend";
 import BroadcastFrame from "./broadcast/BroadcastFrame";
+import { getBroadcastTheme } from "./broadcast/config";
 
 interface WatchSurfaceProps {
   state: ControlState;
@@ -74,29 +75,34 @@ export default function WatchSurface({ state, manifest, cities, sceneName, pulse
           alerts={state.showAlerts ? alerts : []}
           quakes={state.showSeismic ? quakes : []}
           tracks={tracks}
+          theme={getBroadcastTheme(state.broadcastTheme)}
         />
       ) : null}
-      <div
-        style={{
-          position: "absolute",
-          left: 16,
-          bottom: 16,
-          color: "rgba(255,255,255,0.85)",
-          fontFamily: "system-ui, sans-serif",
-          fontSize: 13,
-          textShadow: "0 1px 2px rgba(0,0,0,0.8)",
-          pointerEvents: "none",
-        }}
-      >
-        {sceneName ? <span style={{ opacity: 0.7 }}>{sceneName} · </span> : null}
-        {manifest ? (
-          <>
-            {manifest.model.toUpperCase()} · run {new Date(manifest.run).toUTCString()}
-          </>
-        ) : (
-          "Awaiting weather data…"
-        )}
-      </div>
+      {/* Plain run/attribution label — only on the clean surface; the broadcast
+          chrome owns the bottom edge (its crawl would collide with this). */}
+      {!state.showBroadcastChrome ? (
+        <div
+          style={{
+            position: "absolute",
+            left: 16,
+            bottom: 16,
+            color: "rgba(255,255,255,0.85)",
+            fontFamily: "system-ui, sans-serif",
+            fontSize: 13,
+            textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+            pointerEvents: "none",
+          }}
+        >
+          {sceneName ? <span style={{ opacity: 0.7 }}>{sceneName} · </span> : null}
+          {manifest ? (
+            <>
+              {manifest.model.toUpperCase()} · run {new Date(manifest.run).toUTCString()}
+            </>
+          ) : (
+            "Awaiting weather data…"
+          )}
+        </div>
+      ) : null}
     </main>
   );
 }

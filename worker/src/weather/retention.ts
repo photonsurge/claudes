@@ -58,14 +58,24 @@ export interface RetentionResult {
 /**
  * Execute retention: load all runs, compute which to prune, delete their
  * textures then the run docs. `keep` is the number of newest published runs to
- * retain.
+ * retain PER MODEL — so IFS/RTOFS/wave-mosaic runs don't evict each other or the
+ * GFS base (each supplier keeps its own newest `keep`). Single-model behaviour is
+ * unchanged.
  */
 export async function runRetention(db: RetentionDb, keep: number): Promise<RetentionResult> {
   const all = await db.weatherRuns.getAll({}, { sort: { run: -1 } });
   const runs = (all.data ?? []) as iWeatherRunModel[];
-  const toPrune = runsToPrune(
-    runs.map((r) => ({ id: r.id, run: r.run, published: r.published, _doc: r })),
-    keep,
+  // Prune within each model independently, then flatten the per-model lists.
+  const byModel = new Map<string, iWeatherRunModel[]>();
+  for (const r of runs) {
+    const m = r.model ?? "gfs";
+    (byModel.get(m) ?? byModel.set(m, []).get(m)!).push(r);
+  }
+  const toPrune = [...byModel.values()].flatMap((group) =>
+    runsToPrune(
+      group.map((r) => ({ id: r.id, run: r.run, published: r.published, _doc: r })),
+      keep,
+    ),
   );
 
   let deletedTextureCount = 0;

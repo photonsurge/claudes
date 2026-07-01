@@ -1,81 +1,95 @@
 // sources/rtofs.ts
-// Pure helpers for the NOAA Global RTOFS ocean source (HYCOM 1/12°). The 2-D
-// surface fields are published as GRIB2 on NOMADS on a REGULAR 0.08° lat-lon
-// grid (≈72°S–84°N — poles are nodata), so they are drop-in: no regrid, same
-// wgrib2 → bake path as GFS, just a different grid size.
+// NOAA Global RTOFS ocean source (HYCOM 1/12°).
 //
-// This replaces the "fake" SST (GFS surface air temp masked to sea) with a real
-// ocean model and adds the headline currents (vector) + salinity layers.
+// ⚠️ Verified against live NOMADS (2026): there is NO global RTOFS GRIB2 file.
+//   - GRIB2 exists only as 11 REGIONAL windows (rtofs_glo.t00z.fNNN_<region>_std.grb2,
+//     regular 0.08° lat-lon) that DON'T tile the globe — unusable for a global globe.
+//   - The GLOBAL 2-D surface data is netCDF only (rtofs_glo_2ds_fNNN_prog.nc), on the
+//     native TRIPOLAR 1/12° curvilinear grid (2-D lon/lat coord arrays). It must be
+//     regridded to a regular lat-lon grid (see worker/src/regrid/curvilinear.ts).
 //
-// ⚠️ VERIFY the exact NOMADS filenames/dir and that you pull the LAT-LON GRIB2
-// surface file (not the native curvilinear grid) against:
-//   https://www.nco.ncep.noaa.gov/pmb/products/rtofs/
-//   https://polar.ncep.noaa.gov/global/about/grib_description.shtml
-// Enumerate the run directory rather than trusting these strings long-term.
+// One 00z run/day; ~8h latency (poll, don't trust a fixed time). `.nc` files carry
+// multiple forecast hours per file (fNNN = daily rollup).
 
-/** RTOFS 0.08° lat-lon surface grid (84°N..72°S). */
-export const RTOFS_GRID = { width: 4500, height: 1951, res: 0.08 } as const;
-/** [west, south, east, north] — note the polar gap; bake nodata beyond. */
-export const RTOFS_BOUNDS: [number, number, number, number] = [-180, -72, 180, 84];
+/** RTOFS regrid target: global 1/12° regular lat-lon (−180..180, −90..90). */
+export const RTOFS_TARGET_GRID = { width: 4320, height: 2160, res: 1 / 12 } as const;
+export const RTOFS_TARGET_BOUNDS: [number, number, number, number] = [-180, -90, 180, 90];
 
-export interface BuildRtofsUrlArgs {
-  /** Run date as YYYYMMDD (UTC). */
-  date: string;
-  /**
-   * Forecast/nowcast hour. RTOFS names nowcast files n003..n024 and forecast
-   * files f003..f192; `kind` selects the prefix.
-   */
-  hour: number;
-  kind?: "n" | "f";
-}
+/** The three global 2-D surface netCDF bundles and the fields each carries. */
+export type RtofsBundle = "prog" | "diag" | "ice";
 
-const RTOFS_ROOT = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/rtofs/prod";
+const NOMADS_PROD = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/rtofs/prod";
 
 /** Zero-pad an RTOFS hour to 3 digits. */
 export function padRtofsHour(hour: number): string {
   return String(hour).padStart(3, "0");
 }
 
-/**
- * Build the direct NOMADS URL for an RTOFS 2-D surface "prog" GRIB2 file — the
- * prognostic surface bundle carrying SST, salinity and surface currents.
- *
- * Example:
- *   https://nomads.ncep.noaa.gov/pub/data/nccf/com/rtofs/prod/rtofs.20260628/
- *     rtofs_glo_2ds_f024_prog.grib2
- */
-export function buildRtofsUrl({ date, hour, kind = "f" }: BuildRtofsUrlArgs): string {
-  const hhh = padRtofsHour(hour);
-  return `${RTOFS_ROOT}/rtofs.${date}/rtofs_glo_2ds_${kind}${hhh}_prog.grib2`;
+export interface BuildRtofsUrlArgs {
+  /** Run date as YYYYMMDD (UTC). */
+  date: string;
+  /** Forecast (f) / nowcast (n) hour; files are daily rollups (f024, f048…). */
+  hour: number;
+  kind?: "n" | "f";
+  /** Which surface bundle. `prog` has SST/salinity/currents. */
+  bundle?: RtofsBundle;
 }
 
 /**
- * wgrib2 -match tokens per variable in the RTOFS 2-D prog GRIB2.
+ * Build the NOMADS URL for a GLOBAL RTOFS 2-D surface netCDF file.
  *
- * ⚠️ VERIFY against `wgrib2 -inv` on a real file. RTOFS GRIB2 commonly uses
- * WTMP (water temp), UOGRD/VOGRD (ocean current u/v) and a salinity param that
- * may show as SALIN/SALTY/"Salinity" depending on the wgrib2 table — confirm.
+ * Example (prog, forecast +24h):
+ *   https://nomads.ncep.noaa.gov/pub/data/nccf/com/rtofs/prod/rtofs.20260628/
+ *     rtofs_glo_2ds_f024_prog.nc
  */
-export const RTOFS_VAR_MATCH: Record<string, { match: string; level: string }[]> = {
-  sst: [{ match: ":WTMP:", level: "surface" }],
-  current: [
-    { match: ":UOGRD:", level: "surface" },
-    { match: ":VOGRD:", level: "surface" },
-  ],
-  salinity: [{ match: ":SALIN:", level: "surface" }],
+export function buildRtofsUrl({ date, hour, kind = "f", bundle = "prog" }: BuildRtofsUrlArgs): string {
+  const hhh = padRtofsHour(hour);
+  return `${NOMADS_PROD}/rtofs.${date}/rtofs_glo_2ds_${kind}${hhh}_${bundle}.nc`;
+}
+
+/**
+ * netCDF variable names per app variable, and which bundle holds them. SST,
+ * salinity and surface currents are all in `prog`.
+ *
+ * ⚠️ VERIFY the exact netCDF variable + coordinate names against an `ncdump -h`
+ * of a real file — the tripolar prog file commonly uses `sst`, `sss`,
+ * `u_velocity`, `v_velocity` with 2-D `Latitude`/`Longitude` coord arrays, but
+ * confirm at ingest (the research could not dump the header remotely).
+ */
+export const RTOFS_NETCDF_VARS: Record<
+  string,
+  { bundle: RtofsBundle; vars: string[]; encoding: "scalar" | "uv" }
+> = {
+  sst: { bundle: "prog", vars: ["sst"], encoding: "scalar" },
+  salinity: { bundle: "prog", vars: ["sss"], encoding: "scalar" },
+  current: { bundle: "prog", vars: ["u_velocity", "v_velocity"], encoding: "uv" },
 };
 
-/** RTOFS bake-unit conversions (worker, once, before baking). */
-// SST arrives in K → °C (reuse shared kelvinToCelsius in the bake path).
-// Currents arrive in m/s (identity). Salinity arrives in PSU (identity).
+/** 2-D coordinate array names in the tripolar netCDF (VERIFY per §above). */
+export const RTOFS_COORD_VARS = { lat: "Latitude", lon: "Longitude" } as const;
+
+/**
+ * Regional GRIB2 windows — the ONLY GRIB2 RTOFS output. Kept documented for a
+ * possible future high-res regional overlay; NOT used for the global product
+ * (they leave large open-ocean gaps). Files: rtofs_glo.t00z.fNNN_<region>_std.grb2,
+ * regular 0.08° lat-lon, tokens WTMP/SALTY/UOGRD/VOGRD at "0 m below sea level".
+ */
+export const RTOFS_GRIB2_REGIONS = [
+  "alaska", "arctic", "bering", "guam", "gulf_alaska", "honolulu",
+  "hudson_baffin", "samoa", "trop_paci_lowres", "west_atl", "west_conus",
+] as const;
+export const RTOFS_GRIB2_MATCH: Record<string, string> = {
+  sst: ":WTMP:0 m below sea level:",
+  salinity: ":SALTY:0 m below sea level:",
+};
 
 export interface RtofsRun {
   date: string;
   runDate: Date;
 }
 
-/** RTOFS latency (~16h to the ~16z publish of the 00z run). */
-export const RTOFS_LATENCY_HOURS = 16;
+/** RTOFS latency (~8h to publish the 00z run; poll rather than hard-code). */
+export const RTOFS_LATENCY_HOURS = 8;
 
 function ymd(d: Date): string {
   const y = d.getUTCFullYear();
@@ -85,10 +99,10 @@ function ymd(d: Date): string {
 }
 
 /**
- * Candidate RTOFS runs (one 00z run/day) newest-first, respecting latency. Each
- * day has a single nominal 00z run that publishes ~16z.
+ * Candidate RTOFS runs (one 00z run/day) newest-first, respecting latency.
+ * NOMADS keeps only ~today+yesterday, so 2 candidates is plenty.
  */
-export function rtofsCandidateRuns(now: Date, count = 4): RtofsRun[] {
+export function rtofsCandidateRuns(now: Date, count = 2): RtofsRun[] {
   const out: RtofsRun[] = [];
   const latencyMs = RTOFS_LATENCY_HOURS * 3600 * 1000;
   const base = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
@@ -104,13 +118,11 @@ export function rtofsCandidateRuns(now: Date, count = 4): RtofsRun[] {
 /** Signature for an injected availability probe (HEAD/GET). */
 export type FetchHead = (url: string) => Promise<boolean>;
 
-/**
- * Latest available RTOFS run: probe each candidate's f000 prog file newest-first.
- */
+/** Latest available RTOFS run: probe each candidate's prog file newest-first. */
 export async function rtofsLatestAvailableRun(now: Date, fetchHead: FetchHead): Promise<RtofsRun> {
   const candidates = rtofsCandidateRuns(now);
   for (const cand of candidates) {
-    const url = buildRtofsUrl({ date: cand.date, hour: 0, kind: "n" });
+    const url = buildRtofsUrl({ date: cand.date, hour: 24, kind: "f", bundle: "prog" });
     try {
       if (await fetchHead(url)) return cand;
     } catch {
