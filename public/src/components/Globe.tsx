@@ -25,21 +25,16 @@ import { loadTexture, type LoadedTexture } from "../lib/textures";
 import { textureUrlFor } from "./layers/props";
 import { basemapLayers, countriesLayer, TILE_MIN_ZOOM } from "./layers/basemap";
 import {
-  windParticleLayer,
-  scalarRasterLayer,
+  scalarRasterLayers,
+  vectorParticleLayers,
   pressureLayers,
   cityLayer,
   type TextureResolver,
 } from "./layers";
+import { resolveEntries, activeNestSignature, type ResolverCamera } from "./layers/resolve";
 import type { City } from "../lib/cities";
-import {
-  tracksLayer,
-  orbitLayer,
-  trailsLayer,
-  filterTrails,
-  trackLabelData,
-  type TrackLabel,
-} from "./layers/tracks";
+import { tracksLayer, orbitLayer, trailsLayer, filterTrails, trackLabelData } from "./layers/tracks";
+import { cityLabelMinZoom, cityDetail } from "../lib/cities";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
 import { seismicLayer } from "./layers/seismic";
@@ -49,7 +44,7 @@ import { nightLayer } from "./layers/nightside";
 import { subsolarPoint } from "../lib/sun";
 import { discFromProject, type Disc } from "../lib/globe-geom";
 import GlobeAtmosphere from "./GlobeAtmosphere";
-import GlobeLabels from "./GlobeLabels";
+import GlobeLabels, { type OverlayLabel } from "./GlobeLabels";
 import type { Track, Quake } from "../lib/tracks/types";
 import type { TrackPath } from "../lib/tracks/client";
 import type { OrbitSegment } from "../lib/tracks/orbit";
@@ -522,6 +517,17 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     prevAutoSpin.current = state.autoSpin;
   }, [state.autoSpin]);
 
+  // Signature of the ACTIVE regional-nest set for the visible variables. Changes
+  // only when a zoom threshold is crossed or the view centre enters/leaves a nest
+  // bbox — so the preload + layer-rebuild effects below re-run when nests flip on
+  // or off, but NOT on every camera tick (panning/zooming within the same set).
+  const nestKey = manifest
+    ? [
+        state.activeVariable ? activeNestSignature(manifest.variables[state.activeVariable], state.camera) : "",
+        state.showWind ? activeNestSignature(manifest.variables.wind, state.camera) : "",
+      ].join(";")
+    : "";
+
   // ── Texture loading for the active fhr ────────────────────────────────────
   useEffect(() => {
     if (!manifest) return;
@@ -529,8 +535,14 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     const add = (u?: string) => {
       if (u) urls.add(u);
     };
-    if (state.showWind) add(textureUrlFor(manifest, "wind", state.fhr));
-    if (state.activeVariable) add(textureUrlFor(manifest, state.activeVariable, state.fhr));
+    // Base + active-nest textures for the active variable and wind. resolveEntries
+    // yields [base, ...activeNests]; each entry's `files` are already URLs.
+    const camera: ResolverCamera = { center: state.camera.center, zoom: state.camera.zoom };
+    const addEntries = (variableId: string) => {
+      for (const e of resolveEntries(manifest.variables[variableId], camera)) add(e.files[String(state.fhr)]);
+    };
+    if (state.showWind) addEntries("wind");
+    if (state.activeVariable) addEntries(state.activeVariable);
     if (state.showPressure) add(textureUrlFor(manifest, "pressure", state.fhr));
 
     let cancelled = false;
@@ -547,7 +559,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     return () => {
       cancelled = true;
     };
-  }, [manifest, state.fhr, state.activeVariable, state.showWind, state.showPressure]);
+  }, [manifest, state.fhr, state.activeVariable, state.showWind, state.showPressure, nestKey]);
 
   // ── Rebuild all layers (basemap → weather → borders → cities) ─────────────
   useEffect(() => {
@@ -565,14 +577,16 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     if (subsolar) layers.push(nightLayer(subsolar));
 
     if (manifest) {
+      // Nest-aware: the global base plus any regional high-res overlays active at
+      // the current camera (finest on top). `nestKey` in the deps re-runs this
+      // only when the active-nest set flips, not on every camera tick.
+      const camera: ResolverCamera = { center: state.camera.center, zoom: state.camera.zoom };
       if (state.activeVariable) {
-        const l = scalarRasterLayer(manifest, state.activeVariable, state.fhr, resolve);
-        if (l) layers.push(l);
+        layers.push(...scalarRasterLayers(manifest, state.activeVariable, state.fhr, resolve, camera));
       }
       if (state.showPressure) layers.push(...pressureLayers(manifest, state.fhr, resolve));
       if (state.showWind) {
-        const l = windParticleLayer(manifest, state.fhr, resolve, state.wind);
-        if (l) layers.push(l);
+        layers.push(...vectorParticleLayers(manifest, "wind", state.fhr, resolve, camera, state.wind));
       }
     }
 
@@ -660,6 +674,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     alerts,
     quakes,
     cables,
+    nestKey,
   ]);
 
   // Animate the event pulse: while an event is on air, re-commit the layers each
@@ -680,26 +695,34 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   }, [pulseAt?.[0], pulseAt?.[1], hoverPulse?.[0], hoverPulse?.[1]]);
 
   // Name labels for the HTML overlay (deck's TextLayer draws blank under the
-  // globe). Track names honour the "Names" toggle; city names follow the Cities
-  // layer. Capitals gold, other cities white — matching the city dots.
-  const overlayLabels = useMemo<TrackLabel[]>(() => {
-    const out: TrackLabel[] = [];
+  // globe). Track names honour the "Names" toggle and always show (minZoom 0);
+  // city names follow the Cities layer and reveal progressively by population as
+  // you zoom in, with a dim country·population detail line once zoomed close.
+  // Capitals gold, other cities white — matching the city dots.
+  const overlayLabels = useMemo<OverlayLabel[]>(() => {
+    const out: OverlayLabel[] = [];
     if (state.showTrackLabels) {
-      out.push(
-        ...trackLabelData(tracks, {
-          satelliteStyle: state.satelliteStyle,
-          aircraftStyle: state.aircraftStyle,
-          shipStyle: state.shipStyle,
-        }),
-      );
+      for (const l of trackLabelData(tracks, {
+        satelliteStyle: state.satelliteStyle,
+        aircraftStyle: state.aircraftStyle,
+        shipStyle: state.shipStyle,
+      })) {
+        out.push({ ...l, minZoom: 0 });
+      }
     }
     if (state.showCities) {
       for (const c of cities) {
+        const minZoom = cityLabelMinZoom(c);
         out.push({
           id: `city:${c.lng.toFixed(3)},${c.lat.toFixed(3)}`,
           text: c.name,
+          detail: cityDetail(c),
           position: [c.lng, c.lat, 0],
           color: c.isCapital ? [255, 215, 0] : [255, 255, 255],
+          minZoom,
+          // Detail only once zoomed a step past the name's reveal (and never on
+          // the whole-globe view), so low zooms stay clean.
+          detailMinZoom: Math.max(minZoom + 1, 4.5),
         });
       }
     }

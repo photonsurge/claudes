@@ -219,6 +219,21 @@ export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
     // Open-ocean sea-surface salinity sits ~32–37 PSU; domain kept a touch wider.
     domain: [30, 40],
   },
+  // ── Regional-nest-only variables (no global GFS base) ───────────────────────
+  radar: {
+    id: "radar",
+    label: "Radar (reflectivity)",
+    encoding: "scalar",
+    kind: "raster",
+    units: "dBZ",
+    palette: "radar",
+    // Reflectivity 5..75 dBZ. NEST-ONLY: supplied by regional radar mosaics
+    // (MRMS over CONUS; OPERA/DWD over Europe next) — there is no global radar
+    // base, so this variable renders only inside an active nest's bbox. The <5 dBZ
+    // clear-air floor bakes transparent in the worker (minVisible) so the map
+    // shows through where it isn't raining.
+    domain: [5, 75],
+  },
 };
 
 /** Scalar variables that can be the single active colour field. */

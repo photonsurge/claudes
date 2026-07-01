@@ -19,12 +19,26 @@ export interface WeatherVariableManifest {
   resolutionDeg?: number;
   bbox?: [number, number, number, number];
   priority?: number;
+  /**
+   * Regional-nest zoom floor (only on entries inside `nests`). The client shows
+   * this nest when camera zoom ≥ `minZoom` and the view centre is inside `bbox`.
+   * Absent → the client derives a default from `resolutionDeg`.
+   */
+  minZoom?: number;
   /** ISO run/init time of the source run this variable came from. */
   runTimeUtc?: string;
   /** ISO time the worker finished baking this variable's source run. */
   generatedAt?: string;
   /** forecast-hour (string) → texture URL */
   files: Record<string, string>;
+  /**
+   * Regional high-res overlays for this variable, each with its own `bbox` /
+   * `minZoom` / `files`, sorted coarsest→finest (finest renders last, on top of
+   * the global base above). Present only when a regional source supplies this
+   * variable. A base with empty `files` but a populated `nests` array is a
+   * NEST-ONLY variable (e.g. radar): nothing renders globally, only in-region.
+   */
+  nests?: WeatherVariableManifest[];
 }
 
 export interface WeatherManifest {

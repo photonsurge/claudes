@@ -18,21 +18,20 @@ import type { City } from "../../lib/cities";
 import {
   windParticleProps,
   vectorParticleProps,
+  vectorParticlePropsFromEntry,
   scalarRasterProps,
+  scalarRasterPropsFromEntry,
   pressureProps,
   cityProps,
+  manifestBounds,
+  type Bounds,
 } from "./props";
+import { resolveEntries, type ResolverCamera } from "./resolve";
 import { DEPTH_OCCLUDE, DEPTH_TEST } from "./depth";
 
 /** A resolver mapping a texture URL to an already-loaded image (or undefined). */
 export type TextureResolver = (url: string) => LoadedTexture | undefined;
 
-/**
- * Glyph atlas coverage for city labels: printable ASCII (0x20–0x7E) plus the
- * Latin-1 Supplement (0xA0–0xFF: é, ã, ü, ó …) and Latin Extended-A
- * (0x100–0x17F: Ō, ō, İ, ā …). A fixed superset keeps the SDF atlas stable for
- * broadcast instead of rebuilding/flashing as new accented names appear.
- */
 /**
  * Vector ParticleLayer for any uv field (wind, ocean current). Decodes u/v via
  * the manifest's `vectorUnscale`; `opts.colorByMagnitude` colours by speed
@@ -84,6 +83,71 @@ export function scalarRasterLayer(
   // far side bleeds through the front ("see-through globe").
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return new RasterLayer({ ...props, image: image as any, parameters: DEPTH_OCCLUDE });
+}
+
+/**
+ * Regional-nest aware scalar rasters: the global base plus every ACTIVE nest for
+ * this variable at the current camera, finest last (drawn on top). Each nest is
+ * the same RasterLayer clipped to its own `bbox`. A nest-only variable (radar,
+ * empty base `files`) yields just its nests; a source with no nests yields the
+ * single base layer — identical to `scalarRasterLayer`.
+ */
+export function scalarRasterLayers(
+  manifest: WeatherManifest,
+  variableId: string,
+  fhr: number,
+  resolve: TextureResolver,
+  camera: ResolverCamera,
+  opts?: { opacity?: number },
+): RasterLayer[] {
+  const entries = resolveEntries(manifest.variables[variableId], camera);
+  const out: RasterLayer[] = [];
+  entries.forEach((entry, i) => {
+    // Base (i === 0) fills the globe; nests clip to their own bbox.
+    const bounds: Bounds | undefined = i === 0 ? manifestBounds(manifest) : entry.bbox;
+    if (!bounds) return;
+    const props = scalarRasterPropsFromEntry(entry, variableId, fhr, bounds, {
+      ...opts,
+      idSuffix: i === 0 ? "" : `-${entry.sourceId ?? `n${i}`}`,
+    });
+    if (!props) return;
+    const image = resolve(props.image);
+    if (!image) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    out.push(new RasterLayer({ ...props, image: image as any, parameters: DEPTH_OCCLUDE }));
+  });
+  return out;
+}
+
+/**
+ * Regional-nest aware vector particles (wind, ocean current): the global base
+ * plus every ACTIVE nest at the current camera, finest last. Each nest is the
+ * same ParticleLayer clipped to its `bbox`.
+ */
+export function vectorParticleLayers(
+  manifest: WeatherManifest,
+  variableId: string,
+  fhr: number,
+  resolve: TextureResolver,
+  camera: ResolverCamera,
+  opts?: Parameters<typeof vectorParticleProps>[3],
+): ParticleLayer[] {
+  const entries = resolveEntries(manifest.variables[variableId], camera);
+  const out: ParticleLayer[] = [];
+  entries.forEach((entry, i) => {
+    const bounds: Bounds | undefined = i === 0 ? manifestBounds(manifest) : entry.bbox;
+    if (!bounds) return;
+    const props = vectorParticlePropsFromEntry(entry, variableId, fhr, bounds, {
+      ...opts,
+      idSuffix: i === 0 ? "" : `-${entry.sourceId ?? `n${i}`}`,
+    });
+    if (!props) return;
+    const image = resolve(props.image);
+    if (!image) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    out.push(new ParticleLayer({ ...props, image: image as any, parameters: DEPTH_TEST }));
+  });
+  return out;
 }
 
 export function pressureLayers(

@@ -15,6 +15,7 @@
  * cold-start-from-Mongo pattern as the broadcast ControlState.
  */
 import type { ControlState } from "./control";
+import type { HazardType } from "./alerts/hazard";
 
 /** Socket event: worker → every browser. The current on-air segment + queue. */
 export const DIRECTOR_STATE = "director:state" as const;
@@ -69,6 +70,12 @@ export interface Segment {
   patch: Partial<ControlState>;
   /** How long to hold this shot, in ms. */
   holdMs: number;
+  /**
+   * For `storm` segments: the classified hazard behind the alert. Drives the
+   * per-hazard map plan (which fields cycle + how long) via hazardMapPlan — a
+   * heat warning reads through humidity/temp, a tornado through CAPE/radar/gust.
+   */
+  hazard?: HazardType;
   /** Kind-specific detail rows for the operator info box (severity, depth, …). */
   details?: { label: string; value: string }[];
 }

@@ -9,7 +9,7 @@
  */
 import { textureUrl, type WeatherManifest, type WeatherVariableManifest } from "@photonsurge/shared/manifest";
 import type { iWeatherRun, iWeatherVariableEntry } from "@photonsurge/shared/db/weather-run-model";
-import { getSource } from "@photonsurge/shared/sources";
+import { getSource, isNestSource } from "@photonsurge/shared/sources";
 
 /** The subset of a run we read when building the client manifest. */
 export type RunLike = Pick<
@@ -75,11 +75,18 @@ const modelPriority = (model: string): number => getSource(model)?.priority ?? 0
 
 /**
  * PURE: compose ONE client manifest from the latest run of each model, picking
- * per variable the entry from the highest-`priority` source that supplies it
- * (rtofs SST/currents/salinity > gfs-masked; gfswave-mosaic > gfs wave; ifs
- * temp/wind/pressure > gfs). Ties break to the newer run. bounds/grid/steps come
- * from the base run (the one with the most forecast steps — the global atmos
- * base), since every source bakes to global bounds. Returns null if no runs.
+ * per variable the entry from the highest-`priority` GLOBAL BASE source that
+ * supplies it (rtofs SST/currents/salinity > gfs-masked; gfswave-mosaic > gfs
+ * wave; ifs temp/wind/pressure > gfs). Ties break to the newer run. bounds/grid/
+ * steps come from the base run (the one with the most forecast steps — the global
+ * atmos base), since every base bakes to global bounds. Returns null if no runs.
+ *
+ * Regional NEST sources (those declaring `minZoom` — HRRR, ICON-D2, MRMS radar,
+ * RTOFS regional windows) do NOT compete to be the base. Instead every nest that
+ * supplies a variable is attached to that variable's `nests[]`, sorted
+ * coarsest→finest, and the client zoom-gates them by `bbox`/`minZoom`. A variable
+ * supplied ONLY by nests (e.g. radar) still appears, with an empty-`files` base so
+ * nothing renders globally — only in-region.
  *
  * Each variable keeps its own `files`/`bbox`/`validTime` semantics; the client
  * renders whatever forecast hours a variable actually has (e.g. RTOFS = f0 only),
@@ -94,15 +101,24 @@ export function composeManifest(allRuns: RunLike[]): WeatherManifest | null {
   if (!runs.length) return null;
   const runTime = (r: RunLike) => new Date(r.run as any).getTime();
 
-  // Base = most forecast steps, tie-break highest model priority (→ gfs/ifs base).
-  const base = [...runs].sort(
+  // Base run (bounds/grid/steps) is a GLOBAL base — never a regional nest, whose
+  // tight bbox would otherwise shrink the whole manifest. Most steps, tie-break
+  // highest priority. Fall back to any run only if every run is a nest.
+  const baseRuns = runs.filter((r) => !isNestSource(r.model));
+  const base = [...(baseRuns.length ? baseRuns : runs)].sort(
     (a, b) => (b.steps?.length ?? 0) - (a.steps?.length ?? 0) || modelPriority(b.model) - modelPriority(a.model),
   )[0];
 
-  // Per variable, keep the entry from the winning run.
+  // Per variable: pick the winning BASE entry (today's logic, nests excluded) and
+  // collect every NEST entry that supplies it for the overlay stack.
   const chosen: Record<string, { run: RunLike; entry: iWeatherVariableEntry }> = {};
+  const nestRuns: Record<string, Array<{ run: RunLike; entry: iWeatherVariableEntry }>> = {};
   for (const run of runs) {
     for (const [varId, entry] of Object.entries(run.variables ?? {})) {
+      if (isNestSource(run.model)) {
+        (nestRuns[varId] ??= []).push({ run, entry });
+        continue;
+      }
       const cur = chosen[varId];
       const win =
         !cur ||
@@ -112,15 +128,52 @@ export function composeManifest(allRuns: RunLike[]): WeatherManifest | null {
     }
   }
 
-  const variables: WeatherManifest["variables"] = {};
-  for (const [varId, { run, entry }] of Object.entries(chosen)) {
-    const vm = variableManifest(entry);
-    // Tag with the WINNING run's timing/source so the UI can show "last updated"
-    // per active map (sources refresh at different cadences).
+  /** Stamp a manifest entry with a run's supplier/timing (UI "last updated"). */
+  const stamp = (vm: WeatherVariableManifest, run: RunLike, entry: iWeatherVariableEntry) => {
     vm.sourceId = entry.sourceId ?? run.model;
     vm.runTimeUtc = toIso(run.run) ?? String(run.run);
     const g = toIso(run.generatedAt);
     if (g) vm.generatedAt = g;
+  };
+
+  const variables: WeatherManifest["variables"] = {};
+  // Union of variables supplied by a base and/or by nests (radar is nest-only).
+  const varIds = new Set([...Object.keys(chosen), ...Object.keys(nestRuns)]);
+  for (const varId of varIds) {
+    const baseSel = chosen[varId];
+    let vm: WeatherVariableManifest;
+    if (baseSel) {
+      vm = variableManifest(baseSel.entry);
+      stamp(vm, baseSel.run, baseSel.entry);
+    } else {
+      // NEST-ONLY variable: synthesise a base carrying the top nest's metadata but
+      // NO files, so the global base layer is skipped and only nests render.
+      const top = [...nestRuns[varId]].sort(
+        (a, b) => (getSource(a.run.model)?.priority ?? 0) - (getSource(b.run.model)?.priority ?? 0),
+      ).at(-1)!;
+      vm = variableManifest({ ...top.entry, files: {} });
+      stamp(vm, top.run, top.entry);
+    }
+
+    const nests = nestRuns[varId];
+    if (nests?.length) {
+      vm.nests = nests
+        .map(({ run, entry }) => {
+          const nvm = variableManifest(entry);
+          const src = getSource(run.model);
+          // Nests bake with their source's bbox/resolution/priority/minZoom; fall
+          // back to the descriptor so the client always has what it needs to gate.
+          if (src?.minZoom !== undefined) nvm.minZoom = src.minZoom;
+          if (!nvm.bbox && src?.bbox) nvm.bbox = [...src.bbox];
+          if (nvm.resolutionDeg === undefined && src) nvm.resolutionDeg = src.resolutionDeg;
+          if (nvm.priority === undefined && src) nvm.priority = src.priority;
+          stamp(nvm, run, entry);
+          return nvm;
+        })
+        // Coarsest→finest so the finest (highest priority) draws last, on top.
+        .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+    }
+
     variables[varId] = vm;
   }
 

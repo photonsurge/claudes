@@ -134,6 +134,81 @@ describe("composeManifest (multi-supplier portfolio)", () => {
   });
 });
 
+describe("composeManifest — regional nests", () => {
+  const sv = (id: string, extra: any = {}) => ({ encoding: "scalar" as const, units: "x", files: { "0": id }, ...extra });
+
+  const gfs: RunLike = {
+    model: "gfs", run: new Date("2026-06-30T00:00:00Z"), generatedAt: new Date("2026-06-30T04:00:00Z"),
+    bounds: [-180, -90, 180, 90], grid: { width: 1440, height: 721, res: 0.25 },
+    steps: [{ validTime: "a", fhr: 0 }, { validTime: "b", fhr: 3 }],
+    variables: { temp: sv("gfs-temp") },
+  };
+  // hrrr is a nest source in the registry (declares minZoom) — CONUS bbox.
+  const hrrr: RunLike = {
+    model: "hrrr", run: new Date("2026-06-30T01:00:00Z"), generatedAt: new Date("2026-06-30T02:30:00Z"),
+    bounds: [-134, 21, -60, 53], grid: { width: 2600, height: 1100, res: 0.028 },
+    steps: [{ validTime: "a", fhr: 0 }],
+    variables: { temp: sv("hrrr-temp") },
+  };
+  // icon-d2 is a nest source too — Europe bbox, also supplies temp.
+  const iconD2: RunLike = {
+    model: "icon-d2", run: new Date("2026-06-30T00:00:00Z"),
+    bounds: [-4, 43, 20, 58], grid: { width: 1215, height: 746, res: 0.02 },
+    steps: [{ validTime: "a", fhr: 0 }],
+    variables: { temp: sv("icon-temp") },
+  };
+  // mrms supplies the NEST-ONLY variable radar (no global base supplies it).
+  const mrms: RunLike = {
+    model: "mrms", run: new Date("2026-06-30T01:30:00Z"),
+    bounds: [-130, 20, -60, 55], grid: { width: 3500, height: 1750, res: 0.02 },
+    steps: [{ validTime: "a", fhr: 0 }],
+    variables: { radar: sv("mrms-radar") },
+  };
+
+  it("keeps the GLOBAL base as the winner and attaches the nest (nest never wins base)", () => {
+    const m = composeManifest([gfs, hrrr])!;
+    // hrrr priority (30) > gfs (10), but nests are excluded from base selection.
+    expect(m.variables.temp.files["0"]).toBe(textureUrl("gfs-temp"));
+    expect(m.variables.temp.sourceId).toBe("gfs");
+    expect(m.variables.temp.nests).toHaveLength(1);
+    const nest = m.variables.temp.nests![0];
+    expect(nest.sourceId).toBe("hrrr");
+    expect(nest.files["0"]).toBe(textureUrl("hrrr-temp"));
+    expect(nest.bbox).toEqual([-134, 21, -60, 53]);
+    expect(nest.minZoom).toBe(3.5); // carried from the descriptor
+    expect(nest.priority).toBe(30);
+  });
+
+  it("takes bounds/grid/steps from the GLOBAL base, never a regional nest", () => {
+    const m = composeManifest([gfs, hrrr])!;
+    expect(m.bounds).toEqual([-180, -90, 180, 90]); // not the CONUS bbox
+    expect(m.grid.width).toBe(1440);
+    expect(m.steps).toHaveLength(2); // gfs, not hrrr's single step
+  });
+
+  it("attaches every nest that supplies the variable", () => {
+    const m = composeManifest([gfs, hrrr, iconD2])!;
+    const ids = m.variables.temp.nests!.map((n) => n.sourceId).sort();
+    expect(ids).toEqual(["hrrr", "icon-d2"]);
+  });
+
+  it("exposes a NEST-ONLY variable (radar) with an empty base so only nests render", () => {
+    const m = composeManifest([gfs, mrms])!;
+    expect(m.variables.radar).toBeDefined();
+    expect(Object.keys(m.variables.radar.files)).toHaveLength(0); // nothing renders globally
+    expect(m.variables.radar.sourceId).toBe("mrms");
+    expect(m.variables.radar.nests).toHaveLength(1);
+    expect(m.variables.radar.nests![0].files["0"]).toBe(textureUrl("mrms-radar"));
+    expect(m.variables.radar.nests![0].bbox).toEqual([-130, 20, -60, 55]);
+  });
+
+  it("leaves single-source variables untouched (no nests key)", () => {
+    const m = composeManifest([gfs])!;
+    expect(m.variables.temp.files["0"]).toBe(textureUrl("gfs-temp"));
+    expect(m.variables.temp.nests).toBeUndefined();
+  });
+});
+
 describe("mapFreshness / ageLabel", () => {
   const now = Date.parse("2026-06-30T06:00:00Z");
 

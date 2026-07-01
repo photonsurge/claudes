@@ -1,4 +1,49 @@
-import { validateCity } from "./cities";
+import { validateCity, cityLabelMinZoom, formatPopulation, cityDetail } from "./cities";
+
+describe("cityLabelMinZoom", () => {
+  it("shows capitals and mega-cities on the whole-globe view", () => {
+    expect(cityLabelMinZoom({ isCapital: true })).toBe(0);
+    expect(cityLabelMinZoom({ population: 8_000_000, isCapital: false })).toBe(0);
+  });
+
+  it("reveals smaller cities only at higher zoom", () => {
+    const big = cityLabelMinZoom({ population: 1_500_000 });
+    const small = cityLabelMinZoom({ population: 60_000 });
+    expect(small).toBeGreaterThan(big);
+  });
+
+  it("gives unknown-population cities a mid threshold", () => {
+    const z = cityLabelMinZoom({});
+    expect(z).toBeGreaterThan(0);
+    expect(z).toBeLessThan(cityLabelMinZoom({ population: 10_000 }));
+  });
+});
+
+describe("formatPopulation", () => {
+  it("formats millions and thousands compactly", () => {
+    expect(formatPopulation(9_000_000)).toBe("9.0M");
+    expect(formatPopulation(12_000_000)).toBe("12M");
+    expect(formatPopulation(540_000)).toBe("540k");
+    expect(formatPopulation(800)).toBe("800");
+  });
+
+  it("returns undefined for missing/zero population", () => {
+    expect(formatPopulation(undefined)).toBeUndefined();
+    expect(formatPopulation(0)).toBeUndefined();
+  });
+});
+
+describe("cityDetail", () => {
+  it("joins country, population and capital flag", () => {
+    expect(cityDetail({ country: "France", population: 2_100_000, isCapital: true })).toBe(
+      "France · 2.1M · capital",
+    );
+  });
+
+  it("is undefined when there is nothing to show", () => {
+    expect(cityDetail({})).toBeUndefined();
+  });
+});
 
 describe("validateCity", () => {
   it("accepts a valid city and coerces numeric fields", () => {

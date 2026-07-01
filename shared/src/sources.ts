@@ -22,6 +22,7 @@ export type SourceFormat = "grib2" | "netcdf" | "image";
 export type SourceGrid =
   | "regular"
   | "curvilinear" // 2-D lon/lat coord arrays, e.g. RTOFS tripolar HYCOM
+  | "lambert" // Lambert conformal conic, e.g. HRRR CONUS — regrid to regular via wgrib2
   | "icosahedral"
   | "gaussian-reduced"
   | "geostationary";
@@ -46,6 +47,14 @@ export interface SourceDescriptor {
   variables: string[];
   /** Higher wins in overlap; regional nests > global bases. */
   priority: number;
+  /**
+   * Regional NEST activation floor: the source is treated as a zoom-gated
+   * regional overlay (not a global base) when this is set. The client renders it
+   * only when the camera zoom ≥ `minZoom` AND the view centre is inside `bbox`.
+   * Omit for global bases (gfs, ifs, rtofs, gfswave-*): they always render.
+   * Absent → the merge resolver derives a default from `resolutionDeg`.
+   */
+  minZoom?: number;
   /** Static default; runtime activation is additionally env-gated. */
   enabled: boolean;
   /** Licence/credit line that MUST be shown wherever this data renders. */
@@ -154,11 +163,85 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
     attribution: "NOAA/NCEP GFS-Wave",
   },
 
-  // Phase 2 regional nests (HRRR, ICON-D2) and Phase 3 satellite live here once
-  // their regrid/reproject paths exist — see the data-expansion spec §6/§7.
+  // ── Phase 2 regional NESTS (zoom-gated high-res overlays) ───────────────────
+  // Each declares `minZoom`, so the merge resolver treats it as an overlay on top
+  // of the global base rather than a competing base (see `isNestSource`). They
+  // render only when the camera zooms into their `bbox`. `enabled: true` just
+  // means "include if a run exists" — no data (and no cost) until the matching
+  // worker ingest is wired + scheduled and actually publishes a run.
+
+  // EU — DWD ICON-D2, 2.2 km central Europe, regular-lat-lon variant (drop-in).
+  "icon-d2": {
+    id: "icon-d2",
+    label: "DWD ICON-D2 2.2 km (Europe)",
+    format: "grib2",
+    grid: "regular",
+    dims: { width: 1215, height: 746 },
+    resolutionDeg: 0.02,
+    bbox: [-4, 43, 20, 58], // ICON-D2 covers Germany + surrounds
+    cadence: { kind: "cron", runsUtc: [0, 3, 6, 9, 12, 15, 18, 21] },
+    latencyMinutes: 120,
+    variables: ["temp", "wind", "gust"],
+    priority: 30, // nest: beats the GFS/IFS global base inside its bbox
+    minZoom: 3.5,
+    enabled: true,
+    attribution: "© Deutscher Wetterdienst (DWD)",
+  },
+
+  // US — NOAA HRRR 3 km CONUS. Native Lambert conformal → wgrib2-regridded to a
+  // regular lat-lon subset before bake (reuses the wave-mosaic regrid path).
+  hrrr: {
+    id: "hrrr",
+    label: "NOAA HRRR 3 km (CONUS)",
+    format: "grib2",
+    grid: "lambert",
+    dims: { width: 2600, height: 1100 }, // regular-latlon regrid target (~0.028°)
+    resolutionDeg: 0.028,
+    bbox: [-134, 21, -60, 53], // HRRR CONUS extent
+    cadence: { kind: "interval", minutes: 60 }, // hourly runs
+    latencyMinutes: 90,
+    variables: ["temp", "wind", "gust"],
+    priority: 30,
+    minZoom: 3.5,
+    enabled: true,
+    attribution: "NOAA/NCEP HRRR",
+  },
+
+  // US — MRMS reflectivity mosaic, ~1 km CONUS. NEST-ONLY variable `radar`
+  // (no global base): renders only inside this bbox. The headline live layer
+  // (~2-min cadence). Baked at ~0.02° to keep the texture broadcast-sized.
+  mrms: {
+    id: "mrms",
+    label: "NOAA MRMS radar (CONUS)",
+    format: "grib2",
+    grid: "regular",
+    dims: { width: 3500, height: 1750 }, // ~0.02° bake of the 0.01° native mosaic
+    resolutionDeg: 0.02,
+    bbox: [-130, 20, -60, 55], // MRMS CONUS domain
+    cadence: { kind: "interval", minutes: 2 },
+    latencyMinutes: 5,
+    variables: ["radar"],
+    priority: 40, // finest live layer; above the forecast nests where they overlap
+    minZoom: 3,
+    enabled: true,
+    attribution: "NOAA/NCEP MRMS",
+  },
+
+  // Phase 2 remainder — RTOFS regional ocean windows (2e) and the wave basin
+  // nests (2a) add their own descriptors alongside their adapters. Phase 3
+  // satellite lives here once its reproject path exists (data-expansion §6/§7).
 };
 
 export const getSource = (id: string): SourceDescriptor | undefined => SOURCE_REGISTRY[id];
+
+/**
+ * A source is a regional NEST (zoom-gated overlay) rather than a global base
+ * exactly when it declares `minZoom`. Classifying by `minZoom` (not by bbox)
+ * keeps sub-global bases like RTOFS (−80..90°) and the wave mosaic as always-on
+ * bases; only sources that opt in with `minZoom` become nests. Unknown ids are
+ * treated as non-nest bases.
+ */
+export const isNestSource = (id: string): boolean => SOURCE_REGISTRY[id]?.minZoom !== undefined;
 
 /** All statically-enabled sources. */
 export const enabledSources = (): SourceDescriptor[] =>

@@ -129,6 +129,19 @@ export const PALETTES: Record<string, Palette> = {
     [0.9, "#f2802e"],
     [1.0, "#df2727"],
   ],
+  // Radar reflectivity (dBZ), NWS-style over the 5..75 dBZ domain: light drizzle
+  // teal/green → moderate rain yellow → heavy orange/red → hail magenta/white.
+  // The <5 dBZ floor bakes transparent (minVisible) so clear air shows the map.
+  radar: [
+    [0.0, "#04e9e7"],
+    [0.2, "#019ff4"],
+    [0.3, "#02fd02"],
+    [0.45, "#fdf802"],
+    [0.6, "#fd9500"],
+    [0.72, "#fd0000"],
+    [0.85, "#f800fd"],
+    [1.0, "#ffffff"],
+  ],
 };
 
 export const getPalette = (id: string): Palette => PALETTES[id] ?? PALETTES.temp;

@@ -21,6 +21,18 @@ export interface iCity extends iGeneralModel {
    * at lower zooms — drives level-of-detail filtering for overlays.
    */
   rank?: number;
+  /**
+   * Cached Wikipedia enrichment (worker-populated via `yarn enrich:wiki`) so the
+   * public broadcast overlay can show a photo + blurb for cities near an on-air
+   * event without ever calling Wikipedia at request time.
+   */
+  wikiTitle?: string;
+  /** Thumbnail image URL from the Wikipedia REST summary. */
+  wikiThumb?: string;
+  /** Short plain-text extract (first paragraph) from the Wikipedia summary. */
+  wikiExtract?: string;
+  /** When the worker last fetched Wikipedia for this city. */
+  wikiFetchedAt?: Date;
 }
 
 export interface iCityModel extends iCity {
@@ -40,6 +52,10 @@ const CitySchema = new mongoose.Schema<iCityModel>(
     population: { type: Number, required: false, min: 0, default: 0 },
     isCapital: { type: Boolean, required: false, default: false },
     rank: { type: Number, required: false, default: 10 },
+    wikiTitle: { type: String, required: false, trim: true, maxlength: 200 },
+    wikiThumb: { type: String, required: false, trim: true, maxlength: 600 },
+    wikiExtract: { type: String, required: false, trim: true, maxlength: 2000 },
+    wikiFetchedAt: { type: Date, required: false },
   },
   mongoTimestamps,
 );

@@ -21,6 +21,7 @@ import {
 } from "@photonsurge/shared/director-rois";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
+import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
 import { quakeSegmentContent, alertSegmentContent } from "@photonsurge/shared/segments";
 import { tleGroups } from "../jobs/tracks";
 
@@ -140,6 +141,10 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
         const sev = typeof a.maxSeverityRank === "number" ? a.maxSeverityRank : info?.severityRank ?? 0;
         const sinceIso = info?.onset ?? info?.effective ?? a.sent;
         const sinceMs = sinceIso ? Date.parse(sinceIso) : NaN;
+        const hazard = classifyHazard({ event: info?.event, parameters: info?.parameters });
+        // The hazard drives which maps the shot cycles and how long it holds:
+        // open on the plan's first field and stretch the hold for slow hazards.
+        const plan = hazardMapPlan(hazard);
         // Same classification/labels the map badge/legend + click-to-select card
         // use — subtitle leads with place then country ("Brest Region · 🇧🇾 Belarus").
         const c = alertSegmentContent({
@@ -149,11 +154,14 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
           severityRank: sev,
           level: info?.sourceSeverity,
           areaDesc: area?.areaDesc,
-          hazard: classifyHazard({ event: info?.event, parameters: info?.parameters }),
+          hazard,
           center,
           sinceMs: Number.isNaN(sinceMs) ? undefined : sinceMs,
         });
-        const seg = make("storm", `${a.source}:${a.identifier}`, c.title, c.subtitle, center, 4.5, holdMs);
+        const seg = make("storm", `${a.source}:${a.identifier}`, c.title, c.subtitle, center, 4.5, Math.round(holdMs * plan.holdScale), {
+          activeVariable: plan.cycle[0],
+        });
+        seg.hazard = hazard;
         seg.icon = c.icon;
         seg.details = c.details;
         pool.push({ score: 50 + sev * 12, segment: seg });

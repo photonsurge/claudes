@@ -15,6 +15,7 @@ import { useTracks } from "../lib/tracks/useTracks";
 import { useAlertFeatures } from "../lib/alerts-overlay";
 import { useQuakes } from "../lib/seismic-overlay";
 import { useCables } from "../lib/cables-overlay";
+import { useCams } from "../lib/cams/useCams";
 import type { City } from "../lib/cities";
 import GlobeView from "./GlobeView";
 import AlertLegend from "./AlertLegend";
@@ -55,6 +56,9 @@ export default function WatchSurface({
   const alerts = useAlertFeatures(state.showAlerts, state.alertSeverityMin);
   const quakes = useQuakes(state.showSeismic, state.seismicMinMag);
   const cables = useCables(state.showCables);
+  // Webcams feed the "near this event" broadcast panel; only load them when the
+  // chrome is on (the plain surface doesn't show the panel).
+  const cams = useCams(state.showBroadcastChrome);
 
   return (
     <main style={{ position: "fixed", inset: 0, background: "#0a0e16", overflow: "hidden" }}>
@@ -86,6 +90,8 @@ export default function WatchSurface({
           alerts={state.showAlerts ? alerts : []}
           quakes={state.showSeismic ? quakes : []}
           tracks={tracks}
+          cities={cities}
+          cams={cams}
           theme={getBroadcastTheme(state.broadcastTheme)}
           onAirSegment={onAirSegment ?? null}
         />

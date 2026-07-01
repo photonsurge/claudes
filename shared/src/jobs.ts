@@ -62,6 +62,30 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     type: "weather",
     event: "check",
   },
+  {
+    id: "summaries-hourly",
+    label: "Round-up (hourly)",
+    description: "Generate the hourly global weather-event round-up.",
+    domain: "summaries",
+    type: "summaries",
+    event: "generateHourly",
+  },
+  {
+    id: "summaries-12h",
+    label: "Round-up (12-hour)",
+    description: "Generate the 12-hour global weather-event round-up.",
+    domain: "summaries",
+    type: "summaries",
+    event: "generate12h",
+  },
+  {
+    id: "summaries-daily",
+    label: "Round-up (daily)",
+    description: "Generate the daily global weather-event round-up.",
+    domain: "summaries",
+    type: "summaries",
+    event: "generateDaily",
+  },
 ];
 
 export const getTriggerableJob = (id: string): TriggerableJob | undefined =>

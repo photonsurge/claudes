@@ -8,7 +8,7 @@
  *  - Scalar: RGBA grayscale PNG, value in R, decoded with `imageUnscale`,
  *    coloured with `palette` + `domain`. → RasterLayer.
  */
-import type { WeatherManifest } from "@photonsurge/shared/manifest";
+import type { WeatherManifest, WeatherVariableManifest } from "@photonsurge/shared/manifest";
 import { getPalette, type Palette } from "@photonsurge/shared/palettes";
 import { getVariable } from "@photonsurge/shared/variables";
 import type { City } from "../../lib/cities";
@@ -70,6 +70,8 @@ export interface VectorParticleOpts {
   color?: string;
   /** Colour particles by magnitude using the variable's palette. */
   colorByMagnitude?: boolean;
+  /** Appended to the layer id so a base + its nests get unique ids (deck.gl). */
+  idSuffix?: string;
 }
 
 /**
@@ -83,17 +85,34 @@ export function vectorParticleProps(
   fhr: number,
   opts: VectorParticleOpts = {},
 ): VectorParticleProps | null {
-  const image = textureUrlFor(manifest, variableId, fhr);
   const entry = manifest.variables[variableId];
-  const unscale = entry?.vectorUnscale ?? entry?.imageUnscale;
-  if (!image || !entry || !unscale) return null;
+  if (!entry) return null;
+  return vectorParticlePropsFromEntry(entry, variableId, fhr, manifestBounds(manifest), opts);
+}
+
+/**
+ * PURE props for a vector ParticleLayer from an explicit entry + bounds. This is
+ * the resolver seam: the global base passes the full-globe bounds; a regional
+ * nest passes its own `bbox` (WeatherLayers clips the field to it). Returns null
+ * when the entry has no texture/unscale at this step.
+ */
+export function vectorParticlePropsFromEntry(
+  entry: WeatherVariableManifest,
+  variableId: string,
+  fhr: number,
+  bounds: Bounds,
+  opts: VectorParticleOpts = {},
+): VectorParticleProps | null {
+  const image = entry.files[String(fhr)];
+  const unscale = entry.vectorUnscale ?? entry.imageUnscale;
+  if (!image || !unscale) return null;
   const meta = getVariable(variableId);
   const domain = entry.domain ?? meta?.domain;
   const props: VectorParticleProps = {
-    id: `${variableId}-${fhr}`,
+    id: `${variableId}-${fhr}${opts.idSuffix ?? ""}`,
     image,
     imageUnscale: unscale,
-    bounds: manifestBounds(manifest),
+    bounds,
     numParticles: opts.numParticles ?? 6000,
     // nullschool/Windy look: enough trail + speed to read as flow, animated.
     maxAge: opts.maxAge ?? 30,
@@ -147,24 +166,47 @@ export interface ScalarRasterProps {
   visible: boolean;
 }
 
+export interface ScalarRasterOpts {
+  opacity?: number;
+  /** Appended to the layer id so a base + its nests get unique ids (deck.gl). */
+  idSuffix?: string;
+}
+
 /** PURE props for a scalar RasterLayer (temp/humidity/rain/storm/gust). */
 export function scalarRasterProps(
   manifest: WeatherManifest,
   variableId: string,
   fhr: number,
-  opts: { opacity?: number } = {},
+  opts: ScalarRasterOpts = {},
 ): ScalarRasterProps | null {
-  const image = textureUrlFor(manifest, variableId, fhr);
   const entry = manifest.variables[variableId];
-  if (!image || !entry) return null;
+  if (!entry) return null;
+  return scalarRasterPropsFromEntry(entry, variableId, fhr, manifestBounds(manifest), opts);
+}
+
+/**
+ * PURE props for a scalar RasterLayer from an explicit entry + bounds. Resolver
+ * seam: base passes the full-globe bounds; a nest passes its own `bbox` so
+ * WeatherLayers clips the raster to the region. Returns null when the entry has
+ * no texture at this step (e.g. a nest-only base with empty `files`).
+ */
+export function scalarRasterPropsFromEntry(
+  entry: WeatherVariableManifest,
+  variableId: string,
+  fhr: number,
+  bounds: Bounds,
+  opts: ScalarRasterOpts = {},
+): ScalarRasterProps | null {
+  const image = entry.files[String(fhr)];
+  if (!image) return null;
   const meta = getVariable(variableId);
   const paletteId = entry.palette ?? meta?.palette ?? variableId;
   const domain = entry.domain ?? meta?.domain;
   return {
-    id: `scalar-${variableId}-${fhr}`,
+    id: `scalar-${variableId}-${fhr}${opts.idSuffix ?? ""}`,
     image,
     imageUnscale: entry.imageUnscale,
-    bounds: manifestBounds(manifest),
+    bounds,
     // WeatherLayers maps the palette against the DECODED physical value, so the
     // palette stops must be in physical units, not normalised 0..1. Scale the
     // 0..1 ramp onto the variable's domain (e.g. temp -40..50 °C).

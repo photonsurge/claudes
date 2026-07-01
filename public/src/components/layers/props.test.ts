@@ -5,6 +5,8 @@ import {
   windParticleProps,
   hexToRgba,
   scalarRasterProps,
+  scalarRasterPropsFromEntry,
+  vectorParticlePropsFromEntry,
   pressureProps,
   cityProps,
 } from "./props";
@@ -108,6 +110,53 @@ describe("scalarRasterProps", () => {
   });
   it("returns null when the variable has no texture for the fhr", () => {
     expect(scalarRasterProps(manifest, "temp", 3)).toBeNull();
+  });
+});
+
+describe("scalarRasterPropsFromEntry (nest seam)", () => {
+  const nest = {
+    encoding: "scalar" as const,
+    units: "°C",
+    domain: [-40, 50] as [number, number],
+    palette: "temp",
+    imageUnscale: [-80, 60] as [number, number],
+    files: { "0": "/api/weather/tex/hrrr0" },
+  };
+  const conus: [number, number, number, number] = [-134, 21, -60, 53];
+
+  it("uses the passed bbox bounds (not the global manifest) and a unique id", () => {
+    const p = scalarRasterPropsFromEntry(nest, "temp", 0, conus, { idSuffix: "-hrrr" })!;
+    expect(p.image).toBe("/api/weather/tex/hrrr0");
+    expect(p.bounds).toEqual(conus); // clipped to the nest region
+    expect(p.id).toBe("scalar-temp-0-hrrr"); // distinct from the base layer id
+    const stops = p.palette.map(([s]) => s);
+    expect(Math.min(...stops)).toBeCloseTo(-40, 5);
+  });
+
+  it("returns null for a nest-only base with empty files", () => {
+    expect(scalarRasterPropsFromEntry({ ...nest, files: {} }, "temp", 0, conus)).toBeNull();
+  });
+});
+
+describe("vectorParticlePropsFromEntry (nest seam)", () => {
+  const nest = {
+    encoding: "uv" as const,
+    units: "m/s",
+    imageUnscale: [-30, 30] as [number, number],
+    files: { "0": "/api/weather/tex/windnest0" },
+  };
+  const conus: [number, number, number, number] = [-134, 21, -60, 53];
+
+  it("clips to the nest bbox and takes a unique id", () => {
+    const p = vectorParticlePropsFromEntry(nest, "wind", 0, conus, { idSuffix: "-hrrr" })!;
+    expect(p.image).toBe("/api/weather/tex/windnest0");
+    expect(p.bounds).toEqual(conus);
+    expect(p.id).toBe("wind-0-hrrr");
+    expect(p.imageUnscale).toEqual([-30, 30]);
+  });
+
+  it("returns null without a texture at the fhr", () => {
+    expect(vectorParticlePropsFromEntry(nest, "wind", 5, conus)).toBeNull();
   });
 });
 

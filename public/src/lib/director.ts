@@ -22,6 +22,7 @@ import {
   type Segment,
   type SegmentKind,
 } from "@photonsurge/shared/director";
+import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
 import { useSocket } from "./socket-provider";
 
 /**
@@ -31,14 +32,26 @@ import { useSocket } from "./socket-provider";
  * derived from the cut's spinEpoch + a fixed period, so /control and /watch
  * switch in lockstep — the same deterministic trick as the spin/push-in, with no
  * extra socket traffic.
+ *
+ * `storm` cuts don't appear here: their map sequence + cadence come from the
+ * per-hazard plan (hazardMapPlan) keyed by the segment's classified hazard, so a
+ * heat warning reads humidity→temp while a tornado reads CAPE→radar→gust.
  */
 const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
   tour: ["temp", "humidity", "rain", "gust", "cloud"],
   weather: ["temp", "humidity", "rain", "gust", "cloud"],
-  storm: ["gust", "rain", "storm", "humidity"],
   quake: ["temp", "humidity", "rain", "gust", "sst"],
 };
 const VAR_CYCLE_MS = 5500;
+
+/** The field sequence + per-map cadence for a cut (hazard plan for storms). */
+function cutCycle(cut: Segment): { cycle: string[]; periodMs: number } {
+  if (cut.kind === "storm") {
+    const plan = hazardMapPlan(cut.hazard);
+    return { cycle: plan.cycle, periodMs: plan.cycleMs };
+  }
+  return { cycle: VAR_CYCLE[cut.kind] ?? [], periodMs: VAR_CYCLE_MS };
+}
 
 /**
  * The weather variable to show for the current moment of a cut, or null to leave
@@ -47,19 +60,20 @@ const VAR_CYCLE_MS = 5500;
 export function useCutVariable(cut: Segment | null): string | null {
   const [variable, setVariable] = useState<string | null>(null);
   useEffect(() => {
-    const cycle = cut ? VAR_CYCLE[cut.kind] : undefined;
-    if (!cut || !cycle?.length) {
+    const { cycle, periodMs } = cut ? cutCycle(cut) : { cycle: [], periodMs: VAR_CYCLE_MS };
+    if (!cut || !cycle.length) {
       setVariable(null);
       return;
     }
     const epoch = cut.patch.spinEpoch ?? 0;
-    // Start each airing on a different field (derived from the cut's epoch, so
-    // /control and /watch still agree) — the map sequence isn't identical every
-    // time this kind airs.
-    const offset = Math.floor(epoch / 1000);
+    // Ambient filler (tour/weather/quake) starts each airing on a different field
+    // (derived from the cut's epoch, so /control and /watch still agree) — the map
+    // sequence isn't identical every time. A hazard shot instead always OPENS on
+    // its plan's headline field (heat → humidity), so the editorial choice holds.
+    const offset = cut.kind === "storm" ? 0 : Math.floor(epoch / 1000);
     const pick = () => {
       const elapsed = Math.max(0, Date.now() - epoch);
-      setVariable(cycle[(Math.floor(elapsed / VAR_CYCLE_MS) + offset) % cycle.length]);
+      setVariable(cycle[(Math.floor(elapsed / periodMs) + offset) % cycle.length]);
     };
     pick();
     const t = setInterval(pick, 500);

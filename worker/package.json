@@ -23,6 +23,7 @@
     "ingest:alerts": "ts-node src/scripts/ingestAlerts.ts",
     "ingest:tles": "ts-node src/scripts/ingestTles.ts",
     "snapshot:tracks": "ts-node src/scripts/snapshotTracks.ts",
+    "enrich:wiki": "ts-node src/scripts/enrichWikipedia.ts",
     "refresh:cables": "ts-node src/scripts/refreshCables.ts",
     "refresh:cams": "ts-node src/scripts/refreshCams.ts",
     "refresh:ifs": "ts-node src/scripts/refreshIfs.ts",

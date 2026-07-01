@@ -17,6 +17,8 @@ import type { ControlState } from "@photonsurge/shared/control";
 import type { Segment } from "@photonsurge/shared/director";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake, Track } from "../../lib/tracks/types";
+import type { City } from "../../lib/cities";
+import type { Cam } from "../../lib/cams/types";
 import { buildTicker } from "../../lib/broadcast";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { useStageScale, STAGE_W, STAGE_H } from "./useStageScale";
@@ -26,8 +28,9 @@ import IntensityMeter from "./IntensityMeter";
 import LiveAlertPanel from "./LiveAlertPanel";
 import MonitorCluster from "./MonitorCluster";
 import EventOverlay from "./EventOverlay";
+import EventNearbyPanel from "./EventNearbyPanel";
 import OnAirCard from "./OnAirCard";
-import { isTargetedEvent } from "./kinds";
+import { isTargetedEvent, KIND_COLOR } from "./kinds";
 
 /** Design-stage layout constants (in 1080p reference pixels). */
 const TICKER_H = 34;
@@ -39,6 +42,8 @@ export default function BroadcastFrame({
   alerts = [],
   quakes = [],
   tracks = [],
+  cities = [],
+  cams = [],
   theme = DEFAULT_THEME,
   onAirSegment = null,
 }: {
@@ -47,6 +52,10 @@ export default function BroadcastFrame({
   alerts?: AlertFeature[];
   quakes?: Quake[];
   tracks?: Track[];
+  /** Curated cities — for the "near this event" panel. */
+  cities?: City[];
+  /** Worker-cached webcams — for the "near this event" panel. */
+  cams?: Cam[];
   theme?: BroadcastTheme;
   /** The on-air director segment — drives the event reticle so it matches what's
    *  actually selected. Null when nothing is on air (reticle hidden). */
@@ -54,6 +63,7 @@ export default function BroadcastFrame({
 }) {
   const scale = useStageScale();
   const ticker = buildTicker({ alerts, quakes, tracks });
+  const eventTargeted = onAirSegment ? isTargetedEvent(onAirSegment.kind) : false;
 
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 5 }}>
@@ -80,6 +90,19 @@ export default function BroadcastFrame({
               <OnAirCard segment={onAirSegment} alerts={alerts} quakes={quakes} theme={theme} />
             </div>
           )
+        ) : null}
+
+        {/* "Near this event" — cities (with Wikipedia photo/blurb) + webcams
+            around a targeted event. Bottom-left, which the reticle leaves free. */}
+        {eventTargeted && onAirSegment ? (
+          <div style={{ position: "absolute", left: INSET, bottom: TICKER_H + INSET }}>
+            <EventNearbyPanel
+              center={onAirSegment.camera.center}
+              cities={cities}
+              cams={cams}
+              color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
+            />
+          </div>
         ) : null}
 
         <Ticker title={theme.tickerTitle} items={ticker} edge="top" height={TICKER_H} theme={theme} />
