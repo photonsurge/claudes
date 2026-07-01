@@ -3,6 +3,7 @@ import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
 import type { AlertFeature } from "../../lib/alerts";
 import { hazardMeta } from "../../lib/hazard";
+import { DEPTH_TEST } from "./depth";
 
 /** "#rrggbb" → [r,g,b]. */
 function rgb(hex: string): [number, number, number] {
@@ -90,10 +91,9 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
   // deck doesn't re-tessellate on every globe rebuild (dead-reckon ticks).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = features as any;
-  // depthTest on so far-side areas are occluded by the basemap depth sphere
+  // Depth-tested so far-side areas are occluded by the basemap depth sphere
   // instead of bleeding through the front of the globe.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const params = { depthTest: true } as any;
+  const params = DEPTH_TEST;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const layers: any[] = [
@@ -141,6 +141,9 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
       getPointRadius: 0,
       pointRadiusMaxPixels: 0,
       getFillColor: (f: any) => withA(base(f), 45 + rank(f) * 16),
+      // Pickable so click-to-select works anywhere inside the alert area, not
+      // just on the ~1px edge stroke (which is the only other pickable layer).
+      pickable: true,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       parameters: params,
       updateTriggers: { getFillColor: n },
@@ -181,9 +184,7 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
         radiusMaxPixels: 60,
         stroked: false,
         pickable: false,
-        // Badges sit above the globe fill so they never get depth-clipped.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        parameters: { depthTest: false } as any,
+        parameters: DEPTH_TEST,
         updateTriggers: { getFillColor: badges.length, getRadius: badges.length },
       }),
       // 6 ─ Badge core — hazard-tinted dot with a bright rim.
@@ -202,8 +203,7 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
         radiusMaxPixels: 22,
         stroked: true,
         pickable: false,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        parameters: { depthTest: false } as any,
+        parameters: DEPTH_TEST,
         updateTriggers: {
           getFillColor: badges.length,
           getLineColor: badges.length,
@@ -229,8 +229,7 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
         outlineColor: [0, 0, 0, 180],
         characterSet: "auto",
         pickable: false,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        parameters: { depthTest: false } as any,
+        parameters: DEPTH_TEST,
         updateTriggers: { getText: badges.length, getSize: badges.length },
       }),
     );
@@ -305,8 +304,7 @@ export function onAirPulseLayers(
         getLineWidth: () => 1.5 + 4 * breathe,
         lineWidthUnits: "pixels",
         lineWidthMinPixels: 1.5,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        parameters: { depthTest: true } as any,
+        parameters: DEPTH_TEST,
         updateTriggers: { getFillColor: now, getLineColor: now, getLineWidth: now },
       }),
     );
@@ -323,14 +321,15 @@ export function onAirPulseLayers(
       stroked: true,
       filled: false,
       radiusUnits: "pixels",
-      getRadius: () => 8 + 34 * ping,
-      radiusMinPixels: 4,
+      // Bigger radial expansion — the ring sweeps out to ~90px so the "sonar"
+      // read is unmistakable on a wide broadcast shot.
+      getRadius: () => 14 + 76 * ping,
+      radiusMinPixels: 6,
       getLineColor: () => [lit[0], lit[1], lit[2], Math.round(230 * (1 - ping))],
-      getLineWidth: () => 2 + 2 * (1 - ping),
+      getLineWidth: () => 2.5 + 2.5 * (1 - ping),
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 1.5,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      parameters: { depthTest: false } as any,
+      parameters: DEPTH_TEST,
       updateTriggers: { getRadius: now, getLineColor: now, getLineWidth: now },
     }),
     // 3 ─ A solid breathing core dot under the ring (anchors the ping; also the
@@ -348,8 +347,7 @@ export function onAirPulseLayers(
       getLineColor: [lit[0], lit[1], lit[2], 255],
       getLineWidth: 1.5,
       lineWidthUnits: "pixels",
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      parameters: { depthTest: false } as any,
+      parameters: DEPTH_TEST,
       updateTriggers: { getRadius: now, getFillColor: now },
     }),
   );

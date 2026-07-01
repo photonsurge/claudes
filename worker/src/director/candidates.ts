@@ -19,9 +19,9 @@ import {
   ORBITAL_VIEW_ZOOM,
   ORBITAL_VIEWS,
 } from "@photonsurge/shared/director-rois";
-import { alertRepPoint, continentOf } from "@photonsurge/shared/alerts/geo";
-import { classifyHazard, hazardMeta } from "@photonsurge/shared/alerts/hazard";
-import { quakeDepthLabel } from "@photonsurge/shared/seismic";
+import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
+import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
+import { quakeSegmentContent, alertSegmentContent } from "@photonsurge/shared/segments";
 import { tleGroups } from "../jobs/tracks";
 
 const make = (
@@ -45,40 +45,6 @@ const make = (
 });
 
 type Detail = { label: string; value: string };
-
-/** ISO-3166 alpha-2 → flag emoji (a pair of regional-indicator symbols). */
-const flagOf = (iso2: string): string =>
-  iso2.toUpperCase().replace(/[A-Z]/g, (c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65));
-
-let regionNames: Intl.DisplayNames | undefined;
-try {
-  regionNames = new Intl.DisplayNames(["en"], { type: "region" });
-} catch {
-  regionNames = undefined;
-}
-
-/**
- * ISO-3166 alpha-2 for an alert, decoded per source convention:
- *  • meteoalarm — a ".XX." segment in the identifier ("2.49.0…AT…").
- *  • WMO SWIC   — the capurl lead "by-belhydromet-en/…" → "by".
- *  • NWS        — US-only.
- */
-function alertCountryCode(a: { source?: string; identifier?: string }): string | undefined {
-  const id = a.identifier ?? "";
-  const dotted = id.split(".").find((s) => /^[A-Z]{2}$/.test(s));
-  if (dotted) return dotted.toUpperCase();
-  const lead = id.split("/")[0]?.split("-")[0];
-  if (lead && /^[A-Za-z]{2}$/.test(lead)) return lead.toUpperCase();
-  if (a.source === "nws") return "US";
-  return undefined;
-}
-
-/** "🇨🇭 Switzerland" from a CAP alert, or undefined when the country is unknown. */
-function alertCountryLabel(a: { source?: string; identifier?: string }): string | undefined {
-  const iso2 = alertCountryCode(a);
-  if (!iso2) return undefined;
-  return `${flagOf(iso2)} ${regionNames?.of(iso2) ?? iso2}`;
-}
 
 /** Curated filler: one global intro spin + a rotation of regions of interest. */
 function fillerCandidates(cfg: DirectorConfig, holdMs: number): Candidate[] {
@@ -146,15 +112,15 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
     try {
       const quakes = await db.quakes.list({ minMag: cfg.minQuakeMag, limit: 40 });
       for (const q of quakes) {
-        const subtitle = `M${q.mag.toFixed(1)}${q.place ? ` · ${q.place}` : ""}`;
-        const seg = make("quake", q.quakeId, q.tsunami ? "Earthquake · Tsunami" : "Earthquake", subtitle, [q.lng, q.lat], 5, holdMs);
-        const details: Detail[] = [
-          { label: "Magnitude", value: `M${q.mag.toFixed(1)}` },
-          { label: "Depth", value: `${Math.round(q.depthKm)} km · ${quakeDepthLabel(q.depthKm)}` },
-        ];
-        if (q.place) details.push({ label: "Region", value: q.place });
-        if (q.tsunami) details.push({ label: "Alert", value: "Tsunami risk" });
-        seg.details = details;
+        const c = quakeSegmentContent({
+          mag: q.mag,
+          place: q.place,
+          depthKm: q.depthKm,
+          timeMs: q.time ? q.time.getTime() : undefined,
+          tsunami: q.tsunami,
+        });
+        const seg = make("quake", q.quakeId, c.title, c.subtitle, [q.lng, q.lat], 5, holdMs);
+        seg.details = c.details;
         pool.push({ score: 40 + q.mag * 10, segment: seg });
       }
     } catch {
@@ -172,25 +138,24 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
         const center = alertRepPoint(area?.geometry);
         if (!center) continue; // geocode-only alert (no polygon) — can't frame it
         const sev = typeof a.maxSeverityRank === "number" ? a.maxSeverityRank : info?.severityRank ?? 0;
-        // Lead the subtitle with the place, then the country so a viewer reads
-        // *where on Earth* this is ("Brest Region · 🇧🇾 Belarus").
-        const country = alertCountryLabel(a);
-        // "Area" — the continent, derived from the framing point so it's always
-        // present even when no country code can be parsed from the feed.
-        const area2 = continentOf(center[0], center[1]);
-        const subtitle = [area?.areaDesc, country].filter(Boolean).join(" · ") || undefined;
-        // Hazard glyph (🔥/🌧️…) so the on-air card reads *what* the alert is at a
-        // glance — same classification the map badge/legend use.
-        const hazardIcon = hazardMeta(classifyHazard({ event: info?.event, parameters: info?.parameters })).icon;
-        const seg = make("storm", `${a.source}:${a.identifier}`, info?.event || "Weather Warning", subtitle, center, 4.5, holdMs);
-        seg.icon = hazardIcon;
-        const details: Detail[] = [{ label: "Severity", value: `${sev}/4` }];
-        if (info?.event) details.push({ label: "Type", value: info.event });
-        if (info?.sourceSeverity) details.push({ label: "Level", value: String(info.sourceSeverity) });
-        if (country) details.push({ label: "Country", value: country });
-        if (area2) details.push({ label: "Area", value: area2 });
-        details.push({ label: "Source", value: String(a.source).toUpperCase() });
-        seg.details = details;
+        const sinceIso = info?.onset ?? info?.effective ?? a.sent;
+        const sinceMs = sinceIso ? Date.parse(sinceIso) : NaN;
+        // Same classification/labels the map badge/legend + click-to-select card
+        // use — subtitle leads with place then country ("Brest Region · 🇧🇾 Belarus").
+        const c = alertSegmentContent({
+          source: String(a.source),
+          identifier: String(a.identifier),
+          event: info?.event,
+          severityRank: sev,
+          level: info?.sourceSeverity,
+          areaDesc: area?.areaDesc,
+          hazard: classifyHazard({ event: info?.event, parameters: info?.parameters }),
+          center,
+          sinceMs: Number.isNaN(sinceMs) ? undefined : sinceMs,
+        });
+        const seg = make("storm", `${a.source}:${a.identifier}`, c.title, c.subtitle, center, 4.5, holdMs);
+        seg.icon = c.icon;
+        seg.details = c.details;
         pool.push({ score: 50 + sev * 12, segment: seg });
       }
     } catch {

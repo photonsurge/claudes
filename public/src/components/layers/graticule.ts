@@ -14,6 +14,7 @@
 import { PathLayer, TextLayer } from "@deck.gl/layers";
 import { PathStyleExtension } from "@deck.gl/extensions";
 import { hexToRgb } from "./basemap";
+import { DEPTH_TEST } from "./depth";
 
 /** Axial tilt → the Tropics; its complement (90−tilt) → the polar circles. */
 const AXIAL_TILT = 23.43667;
@@ -84,9 +85,8 @@ export function graticuleLayer(color: string, labels: boolean): any[] {
       // dash props come from PathStyleExtension and aren't on the base PathLayer
       // prop type, so cast them in.
       ...({ getDashArray: [6, 5], dashJustified: true } as Record<string, unknown>),
-      // depthTest on so the far hemisphere's lines are hidden by the globe.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      parameters: { depthTest: true } as any,
+      // Depth-tested so the far hemisphere's lines are hidden by the globe.
+      parameters: DEPTH_TEST,
       pickable: false,
       updateTriggers: { getColor: [r, g, b] },
     }),
@@ -109,8 +109,7 @@ export function graticuleLayer(color: string, labels: boolean): any[] {
         fontSettings: { sdf: true },
         outlineWidth: 2,
         outlineColor: [0, 0, 0, 200],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        parameters: { depthTest: true } as any,
+        parameters: DEPTH_TEST,
         pickable: false,
         updateTriggers: { getColor: [r, g, b] },
       }),

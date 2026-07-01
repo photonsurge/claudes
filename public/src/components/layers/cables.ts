@@ -2,6 +2,7 @@ import { PathLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
 import { CollisionFilterExtension } from "@deck.gl/extensions";
 import type { Cable, LandingPoint } from "@photonsurge/shared/cables/types";
 import { hexToRgba } from "./props";
+import { DEPTH_TEST } from "./depth";
 
 /**
  * Submarine fiber-optic cable overlay (TeleGeography). Three sub-layers:
@@ -72,8 +73,7 @@ export function cableLayers(
       capRounded: true,
       jointRounded: true,
       pickable: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      parameters: { depthTest: true } as any,
+      parameters: DEPTH_TEST,
       updateTriggers: { getColor: paths.length, getPath: paths.length },
     }),
     new ScatterplotLayer<LandingPoint>({
@@ -91,8 +91,7 @@ export function cableLayers(
       radiusMinPixels: 1.5,
       radiusMaxPixels: 3,
       pickable: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      parameters: { depthTest: true } as any,
+      parameters: DEPTH_TEST,
       updateTriggers: { getPosition: landings.length },
     }),
   ];
@@ -121,7 +120,7 @@ export function cableLayers(
       collisionGroup: "cable-labels",
       collisionTestProps: { sizeScale: 2 },
       pickable: false,
-      parameters: { depthTest: true },
+      parameters: DEPTH_TEST,
       updateTriggers: { getText: landings.length },
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -14,6 +14,9 @@ export interface AlertInfo {
   severity?: string;
   severityRank: SeverityRank;
   headline?: string;
+  /** When the hazard begins / took effect (CAP onset / effective, ISO). */
+  onset?: string;
+  effective?: string;
   expires?: string;
   web?: string;
   /** Source-specific extras (e.g. MeteoAlarm awareness_type, GDACS eventtype). */
@@ -77,11 +80,19 @@ export interface AlertFeature {
   properties: {
     id: string;
     source: string;
+    /** Source CAP identifier — decodes the country for the select card. */
+    identifier: string;
     event: string;
     severityRank: SeverityRank;
     /** Cross-source hazard category — drives the map badge icon/colour. */
     hazard: HazardType;
+    /** This area's description ("Brest Region") — the select-card subtitle lead. */
+    areaDesc?: string;
+    /** Source-specific severity label ("Orange"/"Extreme"), if the feed gives one. */
+    level?: string;
     headline?: string;
+    /** When the hazard became active (onset ?? effective ?? sent), ISO. */
+    since?: string;
     expires?: string;
     web?: string;
   };
@@ -104,10 +115,14 @@ export function alertsToFeatures(alerts: Alert[]): AlertFeature[] {
           properties: {
             id: a.id,
             source: a.source,
+            identifier: a.identifier,
             event: info.event,
             severityRank: a.maxSeverityRank,
             hazard: classifyHazard({ event: info.event, parameters: info.parameters }),
+            areaDesc: area.areaDesc,
+            level: info.severity,
             headline: info.headline,
+            since: info.onset ?? info.effective ?? a.sent,
             expires: a.expiresAt,
             web: info.web,
           },

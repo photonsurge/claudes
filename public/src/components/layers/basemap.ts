@@ -10,6 +10,7 @@ import { BitmapLayer, GeoJsonLayer, SolidPolygonLayer } from "@deck.gl/layers";
 import { TileLayer } from "@deck.gl/geo-layers";
 import { DEFAULT_BASEMAP_COLORS, type ControlState } from "@photonsurge/shared/control";
 import { TILE_TEMPLATES } from "@photonsurge/shared/basemaps";
+import { DEPTH_OCCLUDE, DEPTH_TEST, DEPTH_PAINT } from "./depth";
 
 export const LAND_URL = "/data/land.geojson";
 export const COUNTRIES_URL = "/data/countries.geojson";
@@ -25,8 +26,10 @@ export const TILE_MIN_ZOOM = 4;
 // depth it writes is wrong and far-side overlays (tracks/trails) aren't occluded
 // ("see through the globe"). Many small cells drape close to the surface and
 // write a correct depth sphere, so the near hemisphere properly hides the far.
+// The finer the grid, the less each flat cell chords inward, so the depth sphere
+// hugs the true limb and nothing peeks past the silhouette over open ocean.
 const GLOBE_CELLS: number[][][] = (() => {
-  const step = 10;
+  const step = 6;
   const cells: number[][][] = [];
   for (let lat = -90; lat < 90; lat += step) {
     for (let lng = -180; lng < 180; lng += step) {
@@ -54,7 +57,13 @@ export function hexToRgb(hex: string | undefined): [number, number, number] {
 
 /** A single global equirectangular image wrapped on the sphere (no tiles). */
 function globalImageLayer(id: string, image: string) {
-  return new BitmapLayer({ id: `basemap-image-${id}`, image, bounds: [-180, -90, 180, 90] });
+  return new BitmapLayer({
+    id: `basemap-image-${id}`,
+    image,
+    bounds: [-180, -90, 180, 90],
+    // Seal the surface so the limb (and any far-side overlays) stay occluded.
+    parameters: DEPTH_OCCLUDE,
+  });
 }
 
 /** Sharp XYZ raster tiles overlaid on the base image (zoomed-in detail). */
@@ -72,6 +81,7 @@ function tileBasemapLayer(id: string, template: string) {
         data: undefined,
         image: props.data,
         bounds: [west, south, east, north],
+        parameters: DEPTH_OCCLUDE,
       });
     },
   });
@@ -83,6 +93,12 @@ function tileBasemapLayer(id: string, template: string) {
 export function basemapLayers(state: ControlState, tilesActive: boolean): any[] {
   const colors = state.basemapColors ?? DEFAULT_BASEMAP_COLORS;
   const isRaster = state.basemap === "satellite" || state.basemap === "terrain";
+  // Something else already seals the surface as the depth occluder: the base
+  // image (satellite/terrain) or the full-globe weather raster (any active
+  // variable). Only when neither is present must the flat background write the
+  // depth sphere itself — otherwise it would sit in front of the raster's own
+  // sphere and hide the whole weather fill.
+  const hasOccluder = isRaster || !!state.activeVariable;
   const background = new SolidPolygonLayer({
     id: "basemap-bg",
     data: GLOBE_CELLS,
@@ -91,8 +107,7 @@ export function basemapLayers(state: ControlState, tilesActive: boolean): any[] 
     stroked: false,
     filled: true,
     getFillColor: isRaster ? [0, 3, 8] : hexToRgb(colors.ocean),
-    // Write a correct depth sphere so far-side tracks/trails are occluded.
-    parameters: { depthTest: true },
+    parameters: hasOccluder ? DEPTH_TEST : DEPTH_OCCLUDE,
   });
 
   if (state.basemap === "satellite") {
@@ -117,6 +132,11 @@ export function basemapLayers(state: ControlState, tilesActive: boolean): any[] 
       stroked: false,
       filled: true,
       getFillColor: hexToRgb(colors.land),
+      // Paint-only, no depth test/write: the draped land fill just paints over
+      // the ocean background. Its far hemisphere is culled by GlobeView's
+      // cullMode:'back', and NOT depth-testing stops it z-fighting the ocean
+      // background grid (the green "spiky fill"). See DEPTH_PAINT.
+      parameters: DEPTH_PAINT,
     }),
   ];
 }
@@ -133,7 +153,9 @@ export function countriesLayer(state: ControlState) {
     lineWidthUnits: "pixels",
     getLineWidth: 1,
     lineWidthMinPixels: 0.6,
-    parameters: { depthTest: false },
+    // Depth-tested (less-equal) so borders draw over the basemap at the surface
+    // but the far hemisphere's borders are hidden instead of bleeding through.
+    parameters: DEPTH_TEST,
     updateTriggers: { getLineColor: [r, g, b] },
   });
 }

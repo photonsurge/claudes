@@ -162,12 +162,14 @@ process.on("uncaughtException", (err) => {
 
   // ---- Repeatable tracks.ingestTles (satellite TLEs → Mongo) ----
   // TLEs change slowly; refresh twice a day. A fixed jobId de-dups the scheduler.
+  // `immediately` seeds the cache on startup — the public app reads Mongo only, so
+  // without this a fresh worker leaves satellite groups empty for up to TLE_INGEST_MS.
   const TLE_INGEST_MS = Number(process.env.TLE_INGEST_MS || 12 * 60 * 60 * 1000);
   try {
     await myQueue.add(
       "do",
       { domain: "tracks", type: "tracks", event: "ingestTles", data: {} },
-      { repeat: { every: TLE_INGEST_MS }, jobId: "tracks-tles" },
+      { repeat: { every: TLE_INGEST_MS, immediately: true }, jobId: "tracks-tles" },
     );
     log(TAG, `registered repeatable tracks.ingestTles`, { everyMs: TLE_INGEST_MS });
   } catch (err) {

@@ -1,0 +1,95 @@
+/**
+ * Pure builders that turn a live event (earthquake / severe-weather alert) into
+ * the *content* of an operator info-box segment — title, subtitle, hazard icon
+ * and the detail rows. Shared so the worker's director candidates and the
+ * public click-to-select card render byte-identical cards for the same event.
+ *
+ * Only the content lives here; the camera/id/hold/patch wrapper stays with each
+ * caller (the worker's `make()`, the client's segment builder) since those come
+ * from source-specific shapes (Mongo docs vs. API JSON).
+ */
+import { quakeDepthLabel } from "./seismic";
+import { continentOf } from "./alerts/geo";
+import { hazardMeta, type HazardType } from "./alerts/hazard";
+import { alertCountryLabel } from "./alerts/country";
+
+export interface SegmentContent {
+  title: string;
+  subtitle?: string;
+  /** Emoji shown before the title (hazard glyph for alerts). */
+  icon?: string;
+  details: { label: string; value: string }[];
+}
+
+export interface QuakeContentInput {
+  mag: number;
+  place?: string;
+  depthKm: number;
+  /** Event time, epoch ms (absolute UTC is shown, never a stale "ago"). */
+  timeMs?: number;
+  tsunami?: boolean;
+}
+
+/** Earthquake card: magnitude headline, depth class, absolute time + region. */
+export function quakeSegmentContent(q: QuakeContentInput): SegmentContent {
+  const subtitle = `M${q.mag.toFixed(1)}${q.place ? ` · ${q.place}` : ""}`;
+  const details: SegmentContent["details"] = [
+    { label: "Magnitude", value: `M${q.mag.toFixed(1)}` },
+    { label: "Depth", value: `${Math.round(q.depthKm)} km · ${quakeDepthLabel(q.depthKm)}` },
+  ];
+  if (q.timeMs != null && Number.isFinite(q.timeMs)) {
+    details.push({ label: "Occurred", value: `${new Date(q.timeMs).toISOString().slice(0, 16).replace("T", " ")} UTC` });
+  }
+  if (q.place) details.push({ label: "Region", value: q.place });
+  if (q.tsunami) details.push({ label: "Alert", value: "Tsunami risk" });
+  return { title: q.tsunami ? "Earthquake · Tsunami" : "Earthquake", subtitle, details };
+}
+
+export interface AlertContentInput {
+  source: string;
+  identifier: string;
+  event?: string;
+  /** Normalised cross-source severity rank (0–4). */
+  severityRank: number;
+  /** Source-specific severity label (e.g. "Orange", "Extreme"), if any. */
+  level?: string;
+  areaDesc?: string;
+  hazard: HazardType;
+  /** Framing point [lng, lat] — supplies the continental "Area" label. */
+  center: [number, number];
+  /**
+   * When the hazard became active (CAP onset ?? effective ?? sent), epoch ms.
+   * Drives the "Active since" (absolute UTC) + "Active for" (duration) rows.
+   */
+  sinceMs?: number;
+  /** "Now" for the active-duration row; defaults to Date.now() (testable). */
+  nowMs?: number;
+}
+
+/** "3h 12m" / "45m" / "2d 4h" — compact elapsed-time for the "Active for" row. */
+function activeForLabel(mins: number): string {
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  if (h < 24) return `${h}h ${mins % 60}m`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
+}
+
+/** Severe-weather card: place + country subtitle, severity/type/source rows. */
+export function alertSegmentContent(a: AlertContentInput): SegmentContent {
+  const country = alertCountryLabel(a);
+  const area = continentOf(a.center[0], a.center[1]);
+  const subtitle = [a.areaDesc, country].filter(Boolean).join(" · ") || undefined;
+  const details: SegmentContent["details"] = [{ label: "Severity", value: `${a.severityRank}/4` }];
+  if (a.event) details.push({ label: "Type", value: a.event });
+  if (a.level) details.push({ label: "Level", value: String(a.level) });
+  if (country) details.push({ label: "Country", value: country });
+  if (area) details.push({ label: "Area", value: area });
+  details.push({ label: "Source", value: a.source.toUpperCase() });
+  if (a.sinceMs != null && Number.isFinite(a.sinceMs)) {
+    details.push({ label: "Active since", value: `${new Date(a.sinceMs).toISOString().slice(0, 16).replace("T", " ")} UTC` });
+    const now = a.nowMs ?? Date.now();
+    details.push({ label: "Active for", value: activeForLabel(Math.max(0, Math.round((now - a.sinceMs) / 60000))) });
+  }
+  return { title: a.event || "Weather Warning", subtitle, icon: hazardMeta(a.hazard).icon, details };
+}

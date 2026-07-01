@@ -67,7 +67,8 @@ describe("countriesLayer", () => {
     expect(l.props.filled).toBe(false);
     expect(l.props.stroked).toBe(true);
     expect(l.props.getLineColor).toEqual([255, 136, 0, 170]);
-    expect(l.props.parameters.depthTest).toBe(false);
+    // Depth-tested (less-equal) so far-side borders are hidden by the globe.
+    expect(l.props.parameters.depthCompare).toBe("less-equal");
   });
 });
 

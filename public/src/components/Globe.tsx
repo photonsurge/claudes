@@ -31,6 +31,7 @@ import {
 } from "./layers";
 import type { City } from "../lib/cities";
 import { tracksLayer, orbitLayer, trailsLayer, filterTrails } from "./layers/tracks";
+import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
 import { seismicLayer } from "./layers/seismic";
 import { graticuleLayer } from "./layers/graticule";
@@ -39,6 +40,8 @@ import type { Track, Quake } from "../lib/tracks/types";
 import type { TrackPath } from "../lib/tracks/client";
 import type { OrbitSegment } from "../lib/tracks/orbit";
 import type { AlertFeature } from "../lib/alerts";
+import type { Segment } from "@photonsurge/shared/director";
+import { quakeToSegment, alertFeatureToSegment } from "../lib/select-segment";
 import type { CableOverlay } from "../lib/cables-overlay";
 
 export interface GlobeHandle {
@@ -66,14 +69,19 @@ export interface GlobeProps {
   onCameraChange?: (center: [number, number], zoom: number) => void;
   /** [lng,lat] of the active event to pulse-highlight, or null/undefined for none. */
   pulseAt?: [number, number] | null;
+  /**
+   * Click-to-select an event/quake → its info-box segment (null when the click
+   * misses every pickable event). Undefined disables selection entirely.
+   */
+  onSelect?: (segment: Segment | null) => void;
 }
 
 
 type ViewState = { longitude: number; latitude: number; zoom: number } & Record<string, unknown>;
 
 /** Flight duration bounds (ms). Actual duration scales with travel distance. */
-const FLY_MIN = 1600;
-const FLY_MAX = 4500;
+const FLY_MIN = 2600;
+const FLY_MAX = 7000;
 
 /** Max extra zoom a detail-shot push-in may add over its hold (zoom levels). */
 const MAX_PUSH_IN = 1.2;
@@ -131,7 +139,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 }
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, interactive = true, onCameraChange, pulseAt },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, interactive = true, onCameraChange, pulseAt, onSelect },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -143,6 +151,14 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   useEffect(() => {
     pulseAtRef.current = pulseAt ?? null;
   });
+  // Hover-pulse (control/interactive only): hovering an alert breathes its own
+  // area, hovering a quake pings its epicentre — the same on-air highlight, so
+  // the operator can "feel out" an event before clicking to pin its card. The
+  // ref carries the anchor + which features to breathe (alerts pass their own
+  // polygons; a quake passes none, so it's just the ring+dot ping). The state
+  // (coords) only starts/stops the per-frame loop. A director cut takes over.
+  const hoverPulseRef = useRef<{ at: [number, number]; features: AlertFeature[] } | null>(null);
+  const [hoverPulse, setHoverPulse] = useState<[number, number] | null>(null);
   // Read by the per-frame pulse loop to find the on-air alert's own polygon, so
   // the highlight breathes the actual area rather than a free-floating reticle.
   const alertsRef = useRef(alerts);
@@ -161,6 +177,11 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   const onCameraChangeRef = useRef(onCameraChange);
   useEffect(() => {
     onCameraChangeRef.current = onCameraChange;
+  });
+
+  const onSelectRef = useRef(onSelect);
+  useEffect(() => {
+    onSelectRef.current = onSelect;
   });
 
   // Live flag read inside the once-created deck callback below: true whenever a
@@ -184,10 +205,16 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // Single place that pushes layers to deck: the base layers plus, when an event
   // is on air, the animated highlight breathing over its own alert area.
   const commitLayers = () => {
-    const at = pulseAtRef.current;
-    const layers = at
-      ? [...baseLayersRef.current, ...onAirPulseLayers(alertsRef.current, at, Date.now())]
-      : baseLayersRef.current;
+    // A director cut owns the pulse (breathes the on-air alert's own polygon);
+    // otherwise a quake hover drives a plain ring+dot ping at the epicentre —
+    // pass no alert features so it never matches/breathes a nearby polygon.
+    const cut = pulseAtRef.current;
+    const hover = hoverPulseRef.current;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let pulse: any[] = [];
+    if (cut) pulse = onAirPulseLayers(alertsRef.current, cut, Date.now());
+    else if (hover) pulse = onAirPulseLayers(hover.features, hover.at, Date.now());
+    const layers = pulse.length ? [...baseLayersRef.current, ...pulse] : baseLayersRef.current;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     deckRef.current?.setProps({ layers } as any);
   };
@@ -242,8 +269,10 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     while (endLng - startLng < -180) endLng += 360;
     const dist = Math.hypot(endLng - startLng, lat - startLat);
     const dZoom = Math.abs(zoom - startZoom);
-    const duration = Math.min(FLY_MAX, Math.max(FLY_MIN, 800 + dist * 18 + dZoom * 220));
-    const dip = Math.min(2.6, dist * 0.03); // zoom levels to pull back mid-flight
+    const duration = Math.min(FLY_MAX, Math.max(FLY_MIN, 1300 + dist * 28 + dZoom * 320));
+    // Keep the mid-flight pull-back shallow so cuts stay near the surface and the
+    // weather/eye-candy never shrinks to a distant dot before settling.
+    const dip = Math.min(1.0, dist * 0.014); // zoom levels to pull back mid-flight
     beginFlight();
     let t0 = 0;
     const step = (now: number) => {
@@ -293,6 +322,41 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       // Hover a plane/ship/satellite → metadata card (flag, code, alt, speed…).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       getTooltip: ({ object }: any) => trackTooltip(object),
+      // Hover an alert / quake (operator/control globe only) → the on-air
+      // highlight: an alert breathes its own area, a quake pings its epicentre.
+      // Only fire a state update when the hovered anchor actually changes, so a
+      // mouse resting over an event doesn't re-render every frame.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onHover: (info: any) => {
+        if (!interactive) return;
+        const layerId: string = info?.layer?.id ?? "";
+        const obj = info?.object;
+        let next: { at: [number, number]; features: AlertFeature[] } | null = null;
+        if (obj && layerId.startsWith("seismic")) {
+          next = { at: [obj.lng, obj.lat], features: [] };
+        } else if (obj && layerId.startsWith("alerts")) {
+          const at = alertRepPoint(obj.geometry);
+          if (at) next = { at, features: alertsRef.current };
+        }
+        const cur = hoverPulseRef.current;
+        const same =
+          cur && next ? cur.at[0] === next.at[0] && cur.at[1] === next.at[1] : cur === next;
+        if (!same) {
+          hoverPulseRef.current = next;
+          setHoverPulse(next ? next.at : null);
+        }
+      },
+      // Click an earthquake / alert polygon → its info-box segment (same card the
+      // director shows on air). Clicking empty globe clears the selection.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onClick: (info: any) => {
+        const cb = onSelectRef.current;
+        if (!cb) return;
+        const layerId: string = info?.layer?.id ?? "";
+        if (info?.object && layerId.startsWith("seismic")) cb(quakeToSegment(info.object));
+        else if (info?.object && layerId.startsWith("alerts")) cb(alertFeatureToSegment(info.object));
+        else cb(null);
+      },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onViewStateChange: ({ viewState, interactionState }: any) => {
         viewStateRef.current = viewState;
@@ -546,7 +610,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // Animate the event pulse: while an event is on air, re-commit the layers each
   // frame so the rings expand/fade. When it clears, commit once without them.
   useEffect(() => {
-    if (!pulseAt) {
+    if (!pulseAt && !hoverPulse) {
       commitLayers();
       return;
     }
@@ -558,7 +622,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pulseAt?.[0], pulseAt?.[1]]);
+  }, [pulseAt?.[0], pulseAt?.[1], hoverPulse?.[0], hoverPulse?.[1]]);
 
   return (
     <canvas

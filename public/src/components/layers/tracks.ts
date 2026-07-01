@@ -3,6 +3,7 @@ import type { Track } from "../../lib/tracks/types";
 import type { TrackStyle } from "@photonsurge/shared/control";
 import type { OrbitSegment } from "../../lib/tracks/orbit";
 import type { TrackPath } from "../../lib/tracks/client";
+import { DEPTH_TEST } from "./depth";
 
 type RGB = [number, number, number];
 
@@ -244,8 +245,7 @@ export function tracksLayer(
       stroked: false,
       opacity: style.opacity ?? 1,
       pickable: true,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      parameters: { depthTest: true } as any,
+      parameters: DEPTH_TEST,
       updateTriggers: { getFillColor: [style.color, style.customColor, data.length] },
     });
 
@@ -261,8 +261,7 @@ export function tracksLayer(
       getFillColor: (d) => colorFor(d, style),
       opacity: style.opacity ?? 1,
       pickable: true,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      parameters: { depthTest: true } as any,
+      parameters: DEPTH_TEST,
       updateTriggers: {
         getPolygon: [data.length, markerSizeDeg, style.icon],
         getFillColor: [style.color, style.customColor, data.length],
@@ -307,7 +306,7 @@ export function tracksLayer(
       outlineWidth: 3,
       outlineColor: [0, 0, 0, 230],
       fontSettings: { sdf: true, radius: 12 },
-      parameters: { depthTest: true },
+      parameters: DEPTH_TEST,
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     layers.push(new TextLayer(labelProps as any));
@@ -366,8 +365,7 @@ export function trailsLayer(trails: TrackPath[], opacity = 0.35) {
     widthMinPixels: 0.5,
     capRounded: true,
     jointRounded: true,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    parameters: { depthTest: true } as any,
+    parameters: DEPTH_TEST,
     updateTriggers: { getColor: [trails.length, alpha] },
   });
 }
@@ -384,7 +382,6 @@ export function orbitLayer(orbits: OrbitSegment[]) {
     widthMinPixels: 1,
     capRounded: true,
     jointRounded: true,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    parameters: { depthTest: true } as any,
+    parameters: DEPTH_TEST,
   });
 }

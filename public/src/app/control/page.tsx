@@ -52,11 +52,15 @@ export default function ControlPage() {
   // untouched so turning Auto off restores the operator's own framing.
   const director = useDirector(sceneId);
   const [cut, setCut] = useState<Segment | null>(null);
+  // Click-to-select: the operator can click an event/quake while the director is
+  // idle to pin its info box (same card the director shows on air).
+  const [selected, setSelected] = useState<Segment | null>(null);
   const lastSeq = useRef<number>(-1);
   useEffect(() => {
     if (director?.active && director.segment && director.seq !== lastSeq.current) {
       lastSeq.current = director.seq;
       setCut(director.segment);
+      setSelected(null); // the director owns the card while it's driving
       globe.current?.flyTo(director.segment.camera.center, director.segment.camera.zoom);
     } else if (!director?.active && lastSeq.current !== -1) {
       lastSeq.current = -1;
@@ -143,6 +147,9 @@ export default function ControlPage() {
           quakes={quakes}
           interactive
           pulseAt={eventPulse(director)}
+          // Click-to-select is only live while the director is idle — a cut owns
+          // the on-air card, so manual selection is suppressed during playback.
+          onSelect={cut ? undefined : setSelected}
           // While a director cut is on air it owns the camera (imperative flyTo);
           // don't persist those frames or the operator's manual baseline drifts.
           onCameraChange={(center, zoom) => {
@@ -162,6 +169,17 @@ export default function ControlPage() {
             lastShownAt={director.lastShownAt}
             timesShown={director.timesShown}
             draggable
+          />
+        ) : selected ? (
+          <ViewingOverlay
+            segment={selected}
+            variable={shown.activeVariable}
+            // Anchor the readout at the picked event (static — no spin/push-in).
+            state={{ ...shown, camera: selected.camera, autoSpin: false, zoomDrift: 0 }}
+            upNext={[]}
+            label="SELECTED"
+            accent="#38bdf8"
+            onClose={() => setSelected(null)}
           />
         ) : null}
       </div>

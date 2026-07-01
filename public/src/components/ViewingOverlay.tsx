@@ -103,6 +103,9 @@ export default function ViewingOverlay({
   draggable = false,
   lastShownAt,
   timesShown,
+  label = "ON AIR",
+  accent = "#ff5252",
+  onClose,
 }: {
   segment: Segment;
   variable: string | null;
@@ -113,6 +116,11 @@ export default function ViewingOverlay({
   /** Operator-only: when this exact shot last aired + how many times this session. */
   lastShownAt?: number;
   timesShown?: number;
+  /** Status pill text + dot colour — "SELECTED" for a manual click-select card. */
+  label?: string;
+  accent?: string;
+  /** When set, a ✕ dismisses the card (manual selection only). */
+  onClose?: () => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
@@ -235,10 +243,32 @@ export default function ViewingOverlay({
           {kind.label}
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 700, letterSpacing: 1, opacity: 0.85 }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#ff5252", boxShadow: "0 0 6px #ff5252" }} />
-          ON AIR
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: accent, boxShadow: `0 0 6px ${accent}` }} />
+          {label}
         </span>
-        {draggable ? <span style={{ marginLeft: "auto", opacity: 0.4, fontSize: 14, letterSpacing: -1 }}>⠿</span> : null}
+        {onClose ? (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onClose}
+            aria-label="Deselect"
+            style={{
+              marginLeft: "auto",
+              background: "transparent",
+              border: "none",
+              color: "#fff",
+              opacity: 0.55,
+              cursor: "pointer",
+              fontSize: 15,
+              lineHeight: 1,
+              padding: "0 2px",
+            }}
+          >
+            ✕
+          </button>
+        ) : draggable ? (
+          <span style={{ marginLeft: "auto", opacity: 0.4, fontSize: 14, letterSpacing: -1 }}>⠿</span>
+        ) : null}
       </div>
 
       {/* Body */}

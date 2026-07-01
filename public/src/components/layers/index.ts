@@ -21,6 +21,7 @@ import {
   pressureProps,
   cityProps,
 } from "./props";
+import { DEPTH_OCCLUDE, DEPTH_TEST } from "./depth";
 
 /** A resolver mapping a texture URL to an already-loaded image (or undefined). */
 export type TextureResolver = (url: string) => LoadedTexture | undefined;
@@ -50,10 +51,11 @@ export function windParticleLayer(
   if (!image) return null;
   // WeatherLayers accepts an ImageBitmap/HTMLImageElement at runtime; its prop
   // type is narrower than that, so cast at the boundary.
-  // depthTest on so the far hemisphere is occluded by the basemap depth sphere
-  // (WeatherLayers defaults it off, which lets back-side particles bleed through).
+  // Depth-tested so the far hemisphere is occluded by the depth sphere; this also
+  // overrides WeatherLayers' own `depthCompare: "always"` (which would otherwise
+  // bleed back-side particles through AND disable depth for later layers).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new ParticleLayer({ ...props, image: image as any, parameters: { depthTest: true } as any });
+  return new ParticleLayer({ ...props, image: image as any, parameters: DEPTH_TEST });
 }
 
 export function scalarRasterLayer(
@@ -67,10 +69,12 @@ export function scalarRasterLayer(
   if (!props) return null;
   const image = resolve(props.image);
   if (!image) return null;
-  // depthTest on so the far-side weather fill is occluded by the depth sphere
-  // instead of bleeding through the front ("see-through globe").
+  // The raster fills the whole globe, so it both tests AND writes depth: its far
+  // hemisphere is occluded by the depth sphere, and its near hemisphere seals the
+  // surface (overriding WeatherLayers' `depthCompare: "always"`) so nothing on the
+  // far side bleeds through the front ("see-through globe").
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new RasterLayer({ ...props, image: image as any, parameters: { depthTest: true } as any });
+  return new RasterLayer({ ...props, image: image as any, parameters: DEPTH_OCCLUDE });
 }
 
 export function pressureLayers(
@@ -83,13 +87,13 @@ export function pressureLayers(
   if (!props) return [];
   const image = resolve(props.contour.image);
   if (!image) return [];
-  // depthTest on so far-side isobars/H-L markers are occluded by the depth
+  // Depth-tested so far-side isobars/H-L markers are occluded by the depth
   // sphere rather than showing through the front of the globe.
   return [
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new ContourLayer({ ...props.contour, image: image as any, parameters: { depthTest: true } as any }),
+    new ContourLayer({ ...props.contour, image: image as any, parameters: DEPTH_TEST }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new HighLowLayer({ ...props.highLow, image: image as any, parameters: { depthTest: true } as any }),
+    new HighLowLayer({ ...props.highLow, image: image as any, parameters: DEPTH_TEST }),
   ];
 }
 
@@ -104,6 +108,7 @@ export function cityLayer(cities: City[]): Array<ScatterplotLayer | TextLayer> {
       lineWidthMinPixels: 1,
       getLineColor: [0, 0, 0, 180],
       pickable: false,
+      parameters: DEPTH_TEST,
     }),
     new TextLayer({
       ...props.text,
@@ -121,6 +126,7 @@ export function cityLayer(cities: City[]): Array<ScatterplotLayer | TextLayer> {
       // glyph atlas from the actual labels so nothing renders blank.
       characterSet: CITY_CHARACTER_SET,
       pickable: false,
+      parameters: DEPTH_TEST,
     }),
   ];
 }
