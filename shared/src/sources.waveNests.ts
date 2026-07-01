@@ -85,10 +85,17 @@ export const WAVE_NEST_SOURCES: Record<string, SourceDescriptor> = {
     "NOAA GFS-Wave 0.16° (US West Coast)",
     [-165, 25, -116, 50], // VERIFY: wcoast grid [W,S,E,N]
   ),
-  // US East Coast + Gulf of Mexico. VERIFY: gfswave.tCCz.ecg.0p16 extent ≈ 100°W–50°W, 0–55°N.
-  "gfswave-ecg": waveNest(
-    "gfswave-ecg",
-    "NOAA GFS-Wave 0.16° (US East Coast/Gulf)",
-    [-100, 0, -50, 55], // VERIFY: ecg grid [W,S,E,N]
-  ),
+  // US East Coast + Gulf of Mexico. DISABLED: NOAA does NOT publish an `ecg` grid
+  // at 0.16° — a live `wave/gridded/` listing (2026-07) carries only atlocn /
+  // epacif / wcoast / global at 0p16, so this 404s every run. The `atlocn` basin
+  // (−98..10°E, 0..65°N) already covers the US East Coast + Gulf, making a separate
+  // ecg nest redundant. Re-enable only if NOAA ships a distinct ecg 0p16 grid.
+  "gfswave-ecg": {
+    ...waveNest(
+      "gfswave-ecg",
+      "NOAA GFS-Wave 0.16° (US East Coast/Gulf)",
+      [-100, 0, -50, 55],
+    ),
+    enabled: false,
+  },
 };

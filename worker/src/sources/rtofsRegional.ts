@@ -29,15 +29,20 @@ const NOMADS_PROD = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/rtofs/prod";
  * regional windows use WTMP (water temperature — note: nominally KELVIN in
  * GRIB2, so bake SST with a K→°C convert, UNLIKE the cdo-converted global product
  * which already sits in °C). UOGRD/VOGRD are the ocean current components;
- * salinity is PRACTSAL. If a window omits a variable, the worker skips it.
+ * salinity is SALTY. If a window omits a variable, the worker skips it.
+ *
+ * VERIFIED (live wgrib2 inventory of rtofs_glo.t00z.n024_west_atl_std.grb2 +
+ * trop_paci_lowres, 2026-07): the regional *_std.grb2 windows carry WTMP / UOGRD /
+ * VOGRD / SALTY (NOT PRACTSAL — that token matched nothing, so salinity baked
+ * empty on every window).
  */
 export const RTOFS_REGIONAL_VAR_MATCH: Record<
   string,
   { encoding: "scalar" | "uv"; match: string[] }
 > = {
-  sst: { encoding: "scalar", match: [":WTMP:"] }, // VERIFY: WTMP in K on native windows
-  current: { encoding: "uv", match: [":UOGRD:", ":VOGRD:"] }, // VERIFY
-  salinity: { encoding: "scalar", match: [":PRACTSAL:"] }, // VERIFY
+  sst: { encoding: "scalar", match: [":WTMP:"] }, // WTMP in K on native windows (bake K→°C)
+  current: { encoding: "uv", match: [":UOGRD:", ":VOGRD:"] },
+  salinity: { encoding: "scalar", match: [":SALTY:"] }, // regional windows code salinity as SALTY
 };
 
 /** One RTOFS regional window: descriptor id → NOMADS filename token → geometry. */

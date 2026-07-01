@@ -19,20 +19,22 @@ export const ICON_GLOBAL_SOURCES: Record<string, SourceDescriptor> = {
   // precomputed weights) before baking.
   //
   // GRID CONSISTENCY (must satisfy e = w+(width-1)·res, n = s+(height-1)·res):
-  //   width  = 2880 → −180 + 2879·0.125 = 359.875 (wraps to 179.875; e = 180 by
-  //            convention — the last cell centre is 179.875, the extent edge 180).
+  //   width  = 2879 → −180 + 2878·0.125 = 179.75 = e (last cell centre = extent).
   //   height = 1441 → −90 + 1440·0.125 = 90 = n ✓
-  // This EXACTLY matches DWD's `target_grid_world_0125.txt` (−180..180, −90..90 at
-  // 0.125°), which the worker remaps onto — so the baked texture's origin/extent
-  // equal this bbox and it renders aligned (no stretch).
+  // These are VERIFIED against DWD's `target_grid_world_0125.txt` (which the worker
+  // remaps onto): gridtype=lonlat, xsize=2879, ysize=1441, xfirst=−180, xinc=0.125,
+  // yfirst=−90, yinc=0.125. NOTE the grid is 2879 (not 2880) wide — it stops at the
+  // 179.75 cell centre, leaving a 0.25° gap at the antimeridian (DWD's grid, not
+  // ours). dims MUST equal the remap output exactly or wgrib2 short-outputs the
+  // extract and every field fails to bake.
   "icon-global": {
     id: "icon-global",
     label: "DWD ICON 13 km (global)",
     format: "grib2",
     grid: "icosahedral",
-    dims: { width: 2880, height: 1441 },
+    dims: { width: 2879, height: 1441 },
     resolutionDeg: 0.125,
-    bbox: [-180, -90, 180, 90],
+    bbox: [-180, -90, 179.75, 90],
     cadence: { kind: "cron", runsUtc: [0, 6, 12, 18] },
     latencyMinutes: 240, // ~4h to publish the run; poll rather than trust
     variables: ["temp", "wind", "gust", "humidity"],

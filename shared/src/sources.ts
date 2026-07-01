@@ -17,6 +17,7 @@ import { RTOFS_REGIONAL_SOURCES } from "./sources.rtofsRegional";
 import { ICON_GLOBAL_SOURCES } from "./sources.iconGlobal";
 import { HRDPS_SOURCES } from "./sources.hrdps";
 import { UKV_SOURCES } from "./sources.ukv";
+import { OPENMETEO_SOURCES } from "./sources.openMeteo";
 
 /** How often a source publishes a new run. */
 export type Cadence =
@@ -266,6 +267,7 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
   ...ICON_GLOBAL_SOURCES,
   ...HRDPS_SOURCES,
   ...UKV_SOURCES,
+  ...OPENMETEO_SOURCES,
 };
 
 export const getSource = (id: string): SourceDescriptor | undefined => SOURCE_REGISTRY[id];

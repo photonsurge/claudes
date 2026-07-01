@@ -791,6 +791,18 @@
   dependencies:
     "@tybys/wasm-util" "^0.10.3"
 
+"@openmeteo/file-format-wasm@^0.0.17":
+  version "0.0.17"
+  resolved "https://registry.yarnpkg.com/@openmeteo/file-format-wasm/-/file-format-wasm-0.0.17.tgz#7b58449716898b6db07c06de6676e4749c7fd87a"
+  integrity sha512-mq9vXCAR3mGkwDh7rQJp8yfabWLmifCjcgSnImhhiHVI5sEykFyy9FaN37PeWNhxXJlk+96Ja59mx8Ekm+6SXg==
+
+"@openmeteo/file-reader@0.0.17":
+  version "0.0.17"
+  resolved "https://registry.yarnpkg.com/@openmeteo/file-reader/-/file-reader-0.0.17.tgz#58c86504b3435deba63608817255a9857b6edfb6"
+  integrity sha512-+98u1beW0bZGmi2ulVfLeyjLM8K8Jfu8mh4OVtehR20ShR4IEvohFBadd5yWG/+XS6LJsi3urGJP2dSRhM4rZA==
+  dependencies:
+    "@openmeteo/file-format-wasm" "^0.0.17"
+
 "@photonsurge/shared@file:../shared":
   version "0.1.8"
   dependencies:

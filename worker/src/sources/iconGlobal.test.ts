@@ -120,30 +120,31 @@ describe("icosahedral → regular cdo remap spec", () => {
 });
 
 describe("icon-global descriptor grid/bbox consistency", () => {
-  it("has extent == dims·res == global bbox (origin −180/−90, 2880×1441 @ 0.125°)", () => {
+  it("has extent == dims·res matching DWD's target grid (origin −180/−90, 2879×1441 @ 0.125°)", () => {
     const src = getSource("icon-global")!;
     const { width, height } = src.dims!;
     const res = src.resolutionDeg;
     const [w, s, e, n] = src.bbox;
 
-    expect(width).toBe(2880);
+    // VERIFIED against DWD target_grid_world_0125.txt: xsize=2879 (NOT 2880), the
+    // grid stops at the 179.75 cell centre. dims MUST equal the cdo-remap output or
+    // wgrib2 short-outputs the extract and every field fails to bake.
+    expect(width).toBe(2879);
     expect(height).toBe(1441);
     expect(res).toBe(0.125);
-    expect([w, s, e, n]).toEqual([-180, -90, 180, 90]);
+    expect([w, s, e, n]).toEqual([-180, -90, 179.75, 90]);
 
     // Hard-won alignment invariants: the descriptor bbox/dims/res MUST satisfy
-    // n = s + (height − 1)·res exactly, and the lon wrap = w + (width − 1)·res.
+    // e = w + (width − 1)·res and n = s + (height − 1)·res exactly.
     expect(s + (height - 1) * res).toBeCloseTo(n, 6); // −90 + 1440·0.125 = 90 ✓
-    expect(w + (width - 1) * res).toBeCloseTo(179.875, 6); // last lon centre wraps
-    // Full 360° / 180° global extent covered by the cell grid.
-    expect((width - 1) * res).toBeCloseTo(359.875, 6);
-    expect((height - 1) * res).toBeCloseTo(180, 6);
+    expect(w + (width - 1) * res).toBeCloseTo(e, 6); // −180 + 2878·0.125 = 179.75 ✓
+    expect((height - 1) * res).toBeCloseTo(180, 6); // full 180° latitude span
   });
 
-  it("is a WORLDWIDE nest: global bbox, minZoom set, low nest priority", () => {
+  it("is a WORLDWIDE nest: near-global bbox, minZoom set, low nest priority", () => {
     const g = getSource("icon-global")!;
     expect(g.grid).toBe("icosahedral");
-    expect(g.bbox).toEqual([-180, -90, 180, 90]); // whole planet
+    expect(g.bbox).toEqual([-180, -90, 179.75, 90]); // whole planet bar DWD's 0.25° antimeridian gap
     expect(g.minZoom).toBe(2); // activates as soon as you zoom in, everywhere
     // Lower than every tighter regional nest so those still win in their bbox.
     for (const id of ["icon-d2", "icon-eu", "hrrr"]) {

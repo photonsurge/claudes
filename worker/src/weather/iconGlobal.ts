@@ -168,6 +168,10 @@ export async function ingestIconGlobal(now = new Date()): Promise<IngestResult> 
   try {
     for (const fhr of iconGlobalForecastSteps()) {
       for (const [variableId, fields] of Object.entries(ICON_GLOBAL_VAR_TOKENS)) {
+        // DWD max-gust (vmax_10m) is a max-over-interval field: it has NO analysis
+        // step, so f000 404s. Skip it at fhr 0 (it bakes from f001 once
+        // ICON_GLOBAL_FORECAST_HOURS ≥ 1) rather than logging a failure each run.
+        if (variableId === "gust" && fhr === 0) continue;
         try {
           if (variableId === "wind") {
             const uPath = await fetchField(fields[0], fhr);
@@ -231,7 +235,7 @@ export async function ingestIconGlobal(now = new Date()): Promise<IngestResult> 
     const { runId } = await publishSourceRun({
       model: source.id,
       runDate: run.runDate,
-      bounds: [...source.bbox], // [-180,-90,180,90] — MUST equal the descriptor bbox
+      bounds: [...source.bbox], // [-180,-90,179.75,90] — MUST equal the descriptor bbox
       grid: { width, height, res },
       steps: stepMeta,
       variables,

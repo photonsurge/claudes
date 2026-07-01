@@ -150,6 +150,11 @@ export async function ingestRtofsRegional(now = new Date()): Promise<IngestResul
   const run = await rtofsLatestAvailableRun(now, headOk);
   const results: IngestResult[] = [];
   for (const win of RTOFS_WINDOWS) {
+    // Honour the descriptor's `enabled` flag: a window can be disabled in the
+    // registry (e.g. rtofs-troppac — a 1° dateline-crossing lowres oddity that
+    // isn't a valid finer nest) without dropping it from RTOFS_WINDOWS (findWindow
+    // still needs the lookup).
+    if (getSource(win.sourceId)?.enabled === false) continue;
     try {
       results.push(await ingestWindow(win, run));
     } catch (err) {

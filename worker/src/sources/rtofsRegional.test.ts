@@ -39,10 +39,10 @@ describe("buildRtofsRegionalUrl (regional GRIB2 window)", () => {
 });
 
 describe("RTOFS regional GRIB2 -match tokens", () => {
-  it("uses WTMP/UOGRD/VOGRD/PRACTSAL for sst/current/salinity", () => {
+  it("uses WTMP/UOGRD/VOGRD/SALTY for sst/current/salinity", () => {
     expect(RTOFS_REGIONAL_VAR_MATCH.sst.match).toEqual([":WTMP:"]);
     expect(RTOFS_REGIONAL_VAR_MATCH.current.match).toEqual([":UOGRD:", ":VOGRD:"]);
-    expect(RTOFS_REGIONAL_VAR_MATCH.salinity.match).toEqual([":PRACTSAL:"]);
+    expect(RTOFS_REGIONAL_VAR_MATCH.salinity.match).toEqual([":SALTY:"]);
     expect(RTOFS_REGIONAL_VAR_MATCH.current.encoding).toBe("uv");
     expect(RTOFS_REGIONAL_VAR_MATCH.sst.encoding).toBe("scalar");
   });

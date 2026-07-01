@@ -139,13 +139,23 @@ export const RTOFS_REGIONAL_SOURCES: Record<string, SourceDescriptor> = {
     "NOAA RTOFS 1/12° (Samoa / S. Pacific)",
     [-180, -20, -160, -5], // VERIFY: samoa window [W,S,E,N]
   ),
-  // Tropical E. Pacific (low-res). NOMADS token `trop_paci_lowres`. VERIFY: the
-  // native window spans the dateline (~120°E–70°W); we express the American-side
-  // extent here so bbox stays W<E (no antimeridian wrap). If the live extent must
-  // cross 180°, split into two descriptors or shift to a 0..360 convention.
-  "rtofs-troppac": rtofsNest(
-    "rtofs-troppac",
-    "NOAA RTOFS 1/12° (Tropical E. Pacific)",
-    [-170, -20, -70, 30], // VERIFY: trop_paci_lowres window [W,S,E,N]
-  ),
+  // Tropical Pacific (LOW-RES). NOMADS token `trop_paci_lowres`. DISABLED: a live
+  // `wgrib2 -grid` (2026-07) shows this window is NOT a 1/12° nest — it is a 120×80
+  // grid at 1.0° spanning lat −40..40, lon 130..250 (i.e. 130°E across the dateline
+  // to 110°W). Two disqualifiers as a "regional nest":
+  //   1. At 1.0° it is COARSER than the global RTOFS base (1/12°), so as a
+  //      higher-priority overlay it would REPLACE finer base data with worse.
+  //   2. It crosses the antimeridian, which the −180..180 / W<E regular-grid
+  //      subset+bake path can't express (dims/bbox derived here never match the
+  //      native grid → "no variables baked" every run).
+  // Re-enable only behind a 0..360 (or split-descriptor) + coarse-res path that
+  // ranks it BELOW the global base, if it's ever worth it.
+  "rtofs-troppac": {
+    ...rtofsNest(
+      "rtofs-troppac",
+      "NOAA RTOFS 1° (Tropical Pacific, low-res)",
+      [-170, -20, -70, 30],
+    ),
+    enabled: false,
+  },
 };
