@@ -1,4 +1,14 @@
-import { quakeTicker, alertTicker, trackTicker, buildTicker, topAlert, alertBannerText } from "./broadcast";
+import {
+  quakeTicker,
+  alertTicker,
+  trackTicker,
+  buildTicker,
+  dedupeAlerts,
+  topAlerts,
+  topAlert,
+  alertBannerText,
+  alertSummary,
+} from "./broadcast";
 import type { AlertFeature } from "./alerts";
 import type { Quake, Track } from "./tracks/types";
 
@@ -64,6 +74,52 @@ describe("buildTicker", () => {
   });
   it("returns [] with no data", () => {
     expect(buildTicker({})).toEqual([]);
+  });
+});
+
+describe("dedupeAlerts / topAlerts", () => {
+  it("collapses the same area (multi-language repeats) keeping the most severe", () => {
+    const de = alert(2, { event: "Heftige Gewitter", areaDesc: "Marthalen" });
+    const fr = alert(4, { event: "Orages violents", areaDesc: "marthalen" }); // same area, higher sev
+    const it = alert(1, { event: "Temporali", areaDesc: "MARTHALEN" });
+    const other = alert(3, { areaDesc: "Fiji Region" });
+    const deduped = dedupeAlerts([de, fr, it, other]);
+    expect(deduped.length).toBe(2);
+    // Marthalen kept at the most-severe (rank 4).
+    const marthalen = deduped.find((a) => a.properties.areaDesc?.toLowerCase() === "marthalen");
+    expect(marthalen?.properties.severityRank).toBe(4);
+  });
+  it("returns top N by severity", () => {
+    const list = topAlerts([alert(1), alert(4, { areaDesc: "A" }), alert(2, { areaDesc: "B" })], 2);
+    expect(list.map((a) => a.properties.severityRank)).toEqual([4, 2]);
+  });
+});
+
+describe("alertSummary", () => {
+  it("counts distinct alerts by severity and hazard, quakes separately", () => {
+    const s = alertSummary(
+      [
+        alert(4, { areaDesc: "A", hazard: "fire" as any }),
+        alert(4, { areaDesc: "a", hazard: "fire" as any, event: "Feu" }), // same area+hazard → 1
+        alert(3, { areaDesc: "B", hazard: "flood" as any }),
+        alert(2, { areaDesc: "C", hazard: "fire" as any }),
+      ],
+      [quake(), quake()],
+    );
+    expect(s.total).toBe(3); // A/fire, B/flood, C/fire (the duplicate A collapsed)
+    expect(s.quakeCount).toBe(2);
+    // Severity buckets, most severe first.
+    expect(s.bySeverity[0].rank).toBe(4);
+    expect(s.bySeverity.find((b) => b.rank === 4)?.count).toBe(1);
+    // Hazard buckets, most common first: fire (2) before flood (1).
+    expect(s.byHazard[0].hazard).toBe("fire");
+    expect(s.byHazard[0].count).toBe(2);
+  });
+  it("is empty with no hazards", () => {
+    const s = alertSummary([], []);
+    expect(s.total).toBe(0);
+    expect(s.bySeverity).toEqual([]);
+    expect(s.byHazard).toEqual([]);
   });
 });
 

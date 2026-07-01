@@ -11,6 +11,7 @@ import type {
   TrackIconMode,
 } from "@photonsurge/shared/control";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
+import { mapFreshness } from "../lib/manifest";
 import { SATELLITE_GROUPS } from "../lib/tracks/celestrak";
 import { severityLabel } from "../lib/alerts";
 import VariablePicker from "./VariablePicker";
@@ -67,6 +68,18 @@ export default function ControlPanel({
           value={state.activeVariable}
           onChange={(activeVariable) => patch({ activeVariable })}
         />
+        {(() => {
+          // Which supplier feeds the active map, and when it last updated.
+          const f = mapFreshness(manifest, state.activeVariable, Date.now());
+          if (!f) return null;
+          return (
+            <div style={{ marginTop: 8, fontSize: 12, color: "rgba(255,255,255,0.6)", display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <span style={{ fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>{f.source}</span>
+              <span>· run {f.runLabel}</span>
+              <span>· updated {f.updatedLabel}</span>
+            </div>
+          );
+        })()}
       </Section>
 
       <Section title="Layers">
@@ -196,8 +209,8 @@ export default function ControlPanel({
               borderTop: "1px solid #232a38",
             }}
           >
-            <Toggle
-              label="Labels"
+            <PillToggle
+              label="🏷 Names"
               checked={state.showTrackLabels}
               onChange={(showTrackLabels) => patch({ showTrackLabels })}
             />
@@ -708,5 +721,47 @@ function Toggle({
       />
       {label}
     </label>
+  );
+}
+
+/**
+ * A high-visibility pill toggle for controls that are easy to overlook as a
+ * bare checkbox (e.g. track name labels). Reads as a filled cyan button when on,
+ * a dim outlined one when off, so its state is obvious at a glance.
+ */
+function PillToggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "5px 12px",
+        borderRadius: 999,
+        fontSize: 13,
+        fontWeight: 600,
+        cursor: "pointer",
+        border: checked ? "1px solid #38bdf8" : "1px solid #38414f",
+        background: checked ? "#38bdf8" : "transparent",
+        color: checked ? "#0a0e16" : "#8b95a5",
+        boxShadow: checked ? "0 0 10px rgba(56,189,248,0.45)" : "none",
+        transition: "all 120ms ease",
+      }}
+    >
+      {label}
+    </button>
   );
 }

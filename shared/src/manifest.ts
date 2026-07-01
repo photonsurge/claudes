@@ -19,6 +19,10 @@ export interface WeatherVariableManifest {
   resolutionDeg?: number;
   bbox?: [number, number, number, number];
   priority?: number;
+  /** ISO run/init time of the source run this variable came from. */
+  runTimeUtc?: string;
+  /** ISO time the worker finished baking this variable's source run. */
+  generatedAt?: string;
   /** forecast-hour (string) → texture URL */
   files: Record<string, string>;
 }

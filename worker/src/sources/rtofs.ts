@@ -11,8 +11,17 @@
 // One 00z run/day; ~8h latency (poll, don't trust a fixed time). `.nc` files carry
 // multiple forecast hours per file (fNNN = daily rollup).
 
-/** RTOFS regrid target: global 1/12° regular lat-lon (−180..180, −90..90). */
-export const RTOFS_TARGET_GRID = { width: 4320, height: 2160, res: 1 / 12 } as const;
+/**
+ * cdo remap target. The global 2ds netCDF is CURVILINEAR (tripolar), which GRIB2
+ * can't encode, so `cdo -remapbil,global_0.08` bilinearly interpolates the 2-D
+ * lat/lon coords onto a regular global grid. `global_<res>` is cdo's predefined
+ * global lon-lat grid (−180..180, −90..90, cell-centred). We then extract that
+ * grid DIRECTLY (no wgrib2 -new_grid — cdo mangles the GRIB2 time, which trips
+ * -new_grid into empty output; and a second regrid would just double-interpolate).
+ */
+export const RTOFS_CDO_REMAP_GRID = "global_0.08";
+/** MUST match global_0.08 dims: 360/0.08 = 4500 lon, 180/0.08 = 2250 lat. */
+export const RTOFS_TARGET_GRID = { width: 4500, height: 2250, res: 0.08 } as const;
 export const RTOFS_TARGET_BOUNDS: [number, number, number, number] = [-180, -90, 180, 90];
 
 /** The three global 2-D surface netCDF bundles and the fields each carries. */
@@ -48,40 +57,39 @@ export function buildRtofsUrl({ date, hour, kind = "f", bundle = "prog" }: Build
 }
 
 /**
- * netCDF variable names per app variable, and which bundle holds them. SST,
- * salinity and surface currents are all in `prog`.
+ * Per app-variable: the netCDF variable name(s) (for `cdo -selname`) AND the
+ * GRIB2 -match token(s) after cdo→grib2 (for `wgrib2 -match`). These are TWO
+ * different namespaces — cdo selects by netCDF name, wgrib2 matches by GRIB2
+ * shortName — so don't conflate them. All three live in the `prog` bundle.
  *
- * ⚠️ VERIFY the exact netCDF variable + coordinate names against an `ncdump -h`
- * of a real file — the tripolar prog file commonly uses `sst`, `sss`,
- * `u_velocity`, `v_velocity` with 2-D `Latitude`/`Longitude` coord arrays, but
- * confirm at ingest (the research could not dump the header remotely).
+ * GRIB2 tokens CONFIRMED from a live `wgrib2` inventory of the cdo output:
+ * cdo maps sst→WTMP, salinity→PRACTSAL, currents→UOGRD/VOGRD. cdo does NOT convert
+ * units, so the values are the netCDF's (RTOFS sst is °C, salinity psu) even though
+ * WTMP is nominally a Kelvin param → bake with `skipUnitConvert` (no K→°C).
  */
-export const RTOFS_NETCDF_VARS: Record<
+export const RTOFS_VARS: Record<
   string,
-  { bundle: RtofsBundle; vars: string[]; encoding: "scalar" | "uv" }
+  { bundle: RtofsBundle; encoding: "scalar" | "uv"; ncVars: string[]; gribMatch: string[]; displayUnits: boolean }
 > = {
-  sst: { bundle: "prog", vars: ["sst"], encoding: "scalar" },
-  salinity: { bundle: "prog", vars: ["sss"], encoding: "scalar" },
-  current: { bundle: "prog", vars: ["u_velocity", "v_velocity"], encoding: "uv" },
+  sst: { bundle: "prog", encoding: "scalar", ncVars: ["sst"], gribMatch: [":WTMP:"], displayUnits: true },
+  salinity: { bundle: "prog", encoding: "scalar", ncVars: ["sss"], gribMatch: [":PRACTSAL:"], displayUnits: true },
+  current: { bundle: "prog", encoding: "uv", ncVars: ["u_velocity", "v_velocity"], gribMatch: [":UOGRD:", ":VOGRD:"], displayUnits: true },
 };
 
-/** 2-D coordinate array names in the tripolar netCDF (VERIFY per §above). */
+/** 2-D coordinate array names (only needed for the pure-JS regrid fallback). */
 export const RTOFS_COORD_VARS = { lat: "Latitude", lon: "Longitude" } as const;
 
 /**
- * Regional GRIB2 windows — the ONLY GRIB2 RTOFS output. Kept documented for a
- * possible future high-res regional overlay; NOT used for the global product
- * (they leave large open-ocean gaps). Files: rtofs_glo.t00z.fNNN_<region>_std.grb2,
- * regular 0.08° lat-lon, tokens WTMP/SALTY/UOGRD/VOGRD at "0 m below sea level".
+ * Regional GRIB2 windows — the ONLY *native* GRIB2 RTOFS output. NOT used for the
+ * global product (they leave large open-ocean gaps: no Indian Ocean, S. Atlantic).
+ * Kept for a possible future high-res regional overlay. Files:
+ * rtofs_glo.t00z.{n|f}NNN_<region>_std.grb2, regular 0.08° lat-lon; note the native
+ * regional tiles use WTMP (K) not WTMPC — different from the cdo-converted global.
  */
 export const RTOFS_GRIB2_REGIONS = [
   "alaska", "arctic", "bering", "guam", "gulf_alaska", "honolulu",
-  "hudson_baffin", "samoa", "trop_paci_lowres", "west_atl", "west_conus",
+  "samoa", "trop_paci_lowres", "west_atl", "west_conus",
 ] as const;
-export const RTOFS_GRIB2_MATCH: Record<string, string> = {
-  sst: ":WTMP:0 m below sea level:",
-  salinity: ":SALTY:0 m below sea level:",
-};
 
 export interface RtofsRun {
   date: string;

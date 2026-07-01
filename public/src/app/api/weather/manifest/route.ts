@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
-import { buildManifestFromRun } from "../../../../lib/manifest";
+import { composeManifest } from "../../../../lib/manifest";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,15 +10,17 @@ const NO_CACHE = {
 };
 
 /**
- * GET /api/weather/manifest — the latest published run as a client manifest
- * (texture ids rewritten to URLs). Returns `{run:null}` when nothing published.
+ * GET /api/weather/manifest — the multi-supplier portfolio composed into ONE
+ * client manifest: the latest published run of each model (gfs/ifs/rtofs/
+ * gfswave-mosaic), with each variable served by its highest-priority source.
+ * Returns `{run:null}` when nothing is published.
  */
 export async function GET() {
   const db = await getAppDb();
-  const run = await db.latestPublishedRun();
-  if (!run) {
+  const runs = await db.latestPublishedRunsByModel();
+  const manifest = composeManifest(runs);
+  if (!manifest) {
     return NextResponse.json({ run: null }, { status: 200, headers: NO_CACHE });
   }
-  const manifest = buildManifestFromRun(run);
   return NextResponse.json(manifest, { status: 200, headers: NO_CACHE });
 }

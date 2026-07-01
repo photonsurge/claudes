@@ -12,7 +12,13 @@ export const SATELLITE_GROUPS: SatelliteGroup[] = [
   { id: "active", label: "All active (~11k)" },
   { id: "visual", label: "Brightest (visual)" },
   { id: "stations", label: "Space stations" },
-  { id: "starlink", label: "Starlink" },
+  // Broadband megaconstellations, by operator/network. Celestrak GROUP ids
+  // verified live (all return data): starlink, oneweb, kuiper, qianfan. China's
+  // other network, Guowang (GW), has no Celestrak group yet — add when published.
+  { id: "starlink", label: "Starlink (SpaceX)" },
+  { id: "oneweb", label: "OneWeb" },
+  { id: "kuiper", label: "Amazon Kuiper" },
+  { id: "qianfan", label: "Qianfan · 千帆 (China)" },
   { id: "gps-ops", label: "GPS" },
   { id: "galileo", label: "Galileo" },
   { id: "weather", label: "Weather" },

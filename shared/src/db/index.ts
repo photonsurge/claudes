@@ -69,6 +69,20 @@ export function createDb(conn: Connection) {
       return res.success && res.data && res.data.length ? res.data[0] : null;
     },
 
+    /**
+     * Latest published run PER model — the multi-supplier portfolio. Walks all
+     * published runs newest-first and keeps the first (newest) seen for each
+     * model, so the manifest route can compose one manifest per variable across
+     * gfs/ifs/rtofs/gfswave-mosaic. Retention keeps only a few runs per model.
+     */
+    async latestPublishedRunsByModel() {
+      const res = await weatherRuns.getAll({ published: true }, { sort: { run: -1 } });
+      const rows = res.success && res.data ? res.data : [];
+      const byModel = new Map<string, (typeof rows)[number]>();
+      for (const r of rows) if (!byModel.has(r.model)) byModel.set(r.model, r);
+      return [...byModel.values()];
+    },
+
     /** The singleton broadcast state, seeded with defaults if absent. */
     async getOrInitBroadcastState() {
       const existing = await broadcastState.getByID(BROADCAST_STATE_ID);

@@ -97,8 +97,16 @@ export default function WatchPage() {
 
   return (
     <>
-      <WatchSurface state={shown} manifest={manifest} cities={cities} pulseAt={eventPulse(director)} />
-      {director?.active && director.segment ? (
+      <WatchSurface
+        state={shown}
+        manifest={manifest}
+        cities={cities}
+        pulseAt={eventPulse(director)}
+        onAirSegment={director?.active ? director.segment : null}
+      />
+      {/* When the broadcast chrome is on, the on-air detail lives inside the event
+          reticle, so the separate lower-left card is suppressed to avoid duplication. */}
+      {director?.active && director.segment && !shown.showBroadcastChrome ? (
         <ViewingOverlay
           segment={director.segment}
           variable={shown.activeVariable}

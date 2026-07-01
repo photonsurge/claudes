@@ -6,7 +6,8 @@
  */
 import type { AlertFeature } from "./alerts";
 import type { Quake, Track } from "./tracks/types";
-import { SEVERITY_LABELS } from "@photonsurge/shared/alerts/severity";
+import { SEVERITY_LABELS, SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
+import { hazardMeta, type HazardType } from "./hazard";
 
 /** "SEISMIC M5.9 · 12km SSW of … · TSUNAMI POTENTIAL" */
 export function quakeTicker(q: Quake): string {
@@ -31,9 +32,26 @@ export function trackTicker(t: Track): string {
 }
 
 /**
- * All ticker lines from the live data, seismic → alerts → tracks. No cap — the
- * crawl shows everything (long feeds just scroll longer); duplicates are dropped
- * so the same event doesn't repeat back-to-back.
+ * Collapse the SAME place reported many times (MeteoAlarm emits one row per
+ * language — "heftige Gewitter" / "orages violents" / "temporali violenti" for
+ * one area — plus cross-source overlaps), keeping the most severe per area. This
+ * is what stops the crawl and alert panel repeating one town four times.
+ */
+export function dedupeAlerts(alerts: AlertFeature[]): AlertFeature[] {
+  const byArea = new Map<string, AlertFeature>();
+  for (const a of alerts) {
+    const p = a.properties;
+    const key = (p.areaDesc || p.headline || p.event || p.id).toLowerCase().trim();
+    const cur = byArea.get(key);
+    if (!cur || p.severityRank > cur.properties.severityRank) byArea.set(key, a);
+  }
+  return [...byArea.values()];
+}
+
+/**
+ * All ticker lines from the live data, seismic → alerts → tracks. Alerts are
+ * de-duped by area first (kills the multi-language repeats); no cap otherwise —
+ * the crawl shows everything (long feeds just scroll longer).
  */
 export function buildTicker(input: {
   alerts?: AlertFeature[];
@@ -42,17 +60,74 @@ export function buildTicker(input: {
 }): string[] {
   const items: string[] = [];
   for (const q of input.quakes ?? []) items.push(quakeTicker(q));
-  for (const a of input.alerts ?? []) items.push(alertTicker(a));
+  for (const a of dedupeAlerts(input.alerts ?? [])) items.push(alertTicker(a));
   for (const t of input.tracks ?? []) items.push(trackTicker(t));
   return [...new Set(items)];
 }
 
-/** The single most severe active alert (drives the top-right alert panel), or null. */
+/** Active alerts, de-duped by area and sorted most-severe first (top N). */
+export function topAlerts(alerts: AlertFeature[], n = 6): AlertFeature[] {
+  return dedupeAlerts(alerts)
+    .sort((a, b) => b.properties.severityRank - a.properties.severityRank)
+    .slice(0, n);
+}
+
+/** The single most severe active alert (drives the event reticle), or null. */
 export function topAlert(alerts: AlertFeature[]): AlertFeature | null {
-  if (!alerts.length) return null;
-  return alerts.reduce((best, a) =>
-    a.properties.severityRank > best.properties.severityRank ? a : best,
-  );
+  return topAlerts(alerts, 1)[0] ?? null;
+}
+
+export interface AreaSummary {
+  /** Distinct active alerts in view (de-duped by area + hazard). */
+  total: number;
+  /** Active earthquakes in view. */
+  quakeCount: number;
+  /** Non-zero severity buckets, most severe first. */
+  bySeverity: { rank: number; label: string; color: string; count: number }[];
+  /** Hazard-type buckets, most common first. */
+  byHazard: { hazard: HazardType; label: string; icon: string; color: string; count: number }[];
+}
+
+/**
+ * Aggregate the on-screen hazards into a situation summary for wide/area shots
+ * (region/global/ocean) — "how many, how severe, what types" — so a busy region
+ * reads at a glance instead of needing one card per event. Alerts are de-duped by
+ * area + hazard so the same town in four languages counts once.
+ */
+export function alertSummary(alerts: AlertFeature[], quakes: Quake[] = []): AreaSummary {
+  const seen = new Map<string, AlertFeature>();
+  for (const a of alerts) {
+    const p = a.properties;
+    const areaKey = (p.areaDesc || p.headline || p.event || p.id).toLowerCase().trim();
+    const key = `${areaKey}|${p.hazard}`;
+    const cur = seen.get(key);
+    if (!cur || p.severityRank > cur.properties.severityRank) seen.set(key, a);
+  }
+  const distinct = [...seen.values()];
+
+  const sev = new Map<number, number>();
+  const haz = new Map<HazardType, number>();
+  for (const a of distinct) {
+    sev.set(a.properties.severityRank, (sev.get(a.properties.severityRank) ?? 0) + 1);
+    haz.set(a.properties.hazard, (haz.get(a.properties.hazard) ?? 0) + 1);
+  }
+
+  const bySeverity = [...sev.entries()]
+    .map(([rank, count]) => ({
+      rank,
+      label: SEVERITY_LABELS[rank as 0 | 1 | 2 | 3 | 4] ?? String(rank),
+      color: SEVERITY_COLORS[rank as 0 | 1 | 2 | 3 | 4] ?? "#9ca3af",
+      count,
+    }))
+    .sort((a, b) => b.rank - a.rank);
+  const byHazard = [...haz.entries()]
+    .map(([hazard, count]) => {
+      const m = hazardMeta(hazard);
+      return { hazard, label: m.label, icon: m.icon, color: m.color, count };
+    })
+    .sort((a, b) => b.count - a.count);
+
+  return { total: distinct.length, quakeCount: quakes.length, bySeverity, byHazard };
 }
 
 /** "Tsunami Watch: Fiji Region — YELLOW" for the live-alert panel body. */

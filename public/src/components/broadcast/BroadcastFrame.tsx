@@ -14,6 +14,7 @@
  */
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
+import type { Segment } from "@photonsurge/shared/director";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake, Track } from "../../lib/tracks/types";
 import { buildTicker } from "../../lib/broadcast";
@@ -24,6 +25,9 @@ import BrandPanel from "./BrandPanel";
 import IntensityMeter from "./IntensityMeter";
 import LiveAlertPanel from "./LiveAlertPanel";
 import MonitorCluster from "./MonitorCluster";
+import EventOverlay from "./EventOverlay";
+import OnAirCard from "./OnAirCard";
+import { isTargetedEvent } from "./kinds";
 
 /** Design-stage layout constants (in 1080p reference pixels). */
 const TICKER_H = 34;
@@ -36,6 +40,7 @@ export default function BroadcastFrame({
   quakes = [],
   tracks = [],
   theme = DEFAULT_THEME,
+  onAirSegment = null,
 }: {
   state: ControlState;
   manifest: WeatherManifest | null;
@@ -43,6 +48,9 @@ export default function BroadcastFrame({
   quakes?: Quake[];
   tracks?: Track[];
   theme?: BroadcastTheme;
+  /** The on-air director segment — drives the event reticle so it matches what's
+   *  actually selected. Null when nothing is on air (reticle hidden). */
+  onAirSegment?: Segment | null;
 }) {
   const scale = useStageScale();
   const ticker = buildTicker({ alerts, quakes, tracks });
@@ -61,6 +69,19 @@ export default function BroadcastFrame({
           transformOrigin: "center center",
         }}
       >
+        {/* Targeted point events (storm/quake/aircraft/ship) get the centred
+            reticle; wide shots (global/ocean/region/…) get a small card tucked
+            lower-left so we don't frame empty screen. */}
+        {onAirSegment ? (
+          isTargetedEvent(onAirSegment.kind) ? (
+            <EventOverlay segment={onAirSegment} />
+          ) : (
+            <div style={{ position: "absolute", left: INSET, bottom: TICKER_H + INSET }}>
+              <OnAirCard segment={onAirSegment} alerts={alerts} quakes={quakes} theme={theme} />
+            </div>
+          )
+        ) : null}
+
         <Ticker title={theme.tickerTitle} items={ticker} edge="top" height={TICKER_H} theme={theme} />
 
         <div style={{ position: "absolute", top: TICKER_H + INSET, left: INSET }}>

@@ -38,13 +38,15 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=10102
 
-# wgrib2 is a RUNTIME dependency (real GFS ingest shells out to it). Debian has
-# no wgrib2 package, so build it from NOAA source. We intentionally keep the
-# build toolchain in the image (bloat accepted) so the binary is guaranteed to
-# find its runtime libs. ca-certificates is needed for HTTPS downloads.
+# Runtime GRIB/netCDF tooling the worker shells out to:
+#   - wgrib2 : GFS/wave bake + -new_grid regrid. Debian has no package, so build
+#              it from NOAA source (build toolchain kept in the image on purpose).
+#   - cdo    : RTOFS netCDF-4 → GRIB2 (`cdo -f grb2 copy`), so RTOFS drops into the
+#              wgrib2 bake path. Debian ships `cdo` (pulls netCDF/HDF5/eccodes libs).
+# ca-certificates is needed for the HTTPS wgrib2 download.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      build-essential gfortran wget cmake unzip file ca-certificates && \
+      build-essential gfortran wget cmake unzip file ca-certificates cdo && \
     cd /tmp && \
     wget -q --tries=3 --timeout=60 --retry-connrefused \
       https://www.ftp.cpc.ncep.noaa.gov/wd51we/wgrib2/wgrib2.tgz && \
@@ -56,7 +58,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     # wgrib2 prints its version banner but exits 8 when given no GRIB file, so
     # verify it runs by checking the banner output, not its exit code.
-    wgrib2 -version 2>&1 | grep -qiE 'v[0-9]'
+    wgrib2 -version 2>&1 | grep -qiE 'v[0-9]' && \
+    # cdo -V prints its banner to stderr and exits 0.
+    cdo -V 2>&1 | grep -qiE 'Climate Data Operators|cdo version'
 
 RUN groupadd --system --gid 1001 nodejs && \
     useradd  --system --uid 1001 --gid nodejs --no-create-home worker

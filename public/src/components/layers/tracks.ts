@@ -132,18 +132,21 @@ const DEFAULT_STYLE: TrackStyle = { color: "kind", icon: "arrow" };
 
 /**
  * Thin labels to ~one per grid cell so dense traffic doesn't stack into an
- * unreadable blob, preferring aircraft > ship > satellite within a cell. Done in
- * JS (not CollisionFilterExtension) because that extension mis-culls on a globe.
+ * unreadable blob. Each KIND is thinned independently (the cell key includes the
+ * kind) so blanket aircraft coverage can't evict the sparser satellite/ship
+ * names — otherwise sat labels (e.g. ISS) never show wherever a plane shares the
+ * cell. Done in JS (not CollisionFilterExtension) because that extension
+ * mis-culls on a globe.
  */
 const LABEL_CELL_DEG = 5;
 function labelSubset(tracks: Track[]): Track[] {
-  const prio = (k: string) => (k === "aircraft" ? 2 : k === "ship" ? 1 : 0);
   const best = new Map<string, Track>();
   for (const t of tracks) {
     if (!t.name) continue;
-    const key = `${Math.round(t.position[0] / LABEL_CELL_DEG)}:${Math.round(t.position[1] / LABEL_CELL_DEG)}`;
-    const cur = best.get(key);
-    if (!cur || prio(t.kind) > prio(cur.kind)) best.set(key, t);
+    const cx = Math.round(t.position[0] / LABEL_CELL_DEG);
+    const cy = Math.round(t.position[1] / LABEL_CELL_DEG);
+    const key = `${t.kind}:${cx}:${cy}`;
+    if (!best.has(key)) best.set(key, t);
   }
   return [...best.values()];
 }
@@ -376,7 +379,9 @@ export function orbitLayer(orbits: OrbitSegment[]) {
     id: "orbit-rings",
     data: orbits,
     getPath: (d) => d.path,
-    getColor: [56, 189, 248, 90],
+    // Low alpha: with a dense constellation (e.g. Starlink) hundreds of rings
+    // overlap, so anything higher stacks into an opaque cyan smear.
+    getColor: [56, 189, 248, 40],
     getWidth: 1,
     widthUnits: "pixels",
     widthMinPixels: 1,

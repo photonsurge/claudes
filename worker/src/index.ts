@@ -145,6 +145,32 @@ process.on("uncaughtException", (err) => {
     log(TAG, `failed to register weather.check`, summarizeForLog(err));
   }
 
+  // ---- Repeatable multi-supplier ingests (IFS / RTOFS / GFS-Wave mosaic) ----
+  // Each handler is idempotent (skips if that model+run is already published), so
+  // polling frequently just re-checks availability without re-baking or hammering
+  // upstream. NOMADS fetches are throttled process-wide by nomadsGate(). Disable
+  // the whole group with MULTISOURCE_INGEST_ENABLED=false. Per-source cadence env-
+  // tunable; defaults suit each product's refresh (IFS/wave 6-hourly, RTOFS daily).
+  if (process.env.MULTISOURCE_INGEST_ENABLED !== "false") {
+    const sourceJobs: Array<{ event: string; every: number }> = [
+      { event: "refreshIfs", every: Number(process.env.IFS_INGEST_MS || 60 * 60 * 1000) },
+      { event: "refreshWaves", every: Number(process.env.WAVE_INGEST_MS || 60 * 60 * 1000) },
+      { event: "refreshRtofs", every: Number(process.env.RTOFS_INGEST_MS || 3 * 60 * 60 * 1000) },
+    ];
+    for (const { event, every } of sourceJobs) {
+      try {
+        await myQueue.add(
+          "do",
+          { domain: "weather", type: "weather", event, data: {} },
+          { repeat: { every }, jobId: `weather-${event}` },
+        );
+        log(TAG, `registered repeatable weather.${event}`, { every });
+      } catch (err) {
+        log(TAG, `failed to register weather.${event}`, { err: summarizeForLog(err) });
+      }
+    }
+  }
+
   // ---- Repeatable alerts.ingest jobs (one per enabled source) ----
   // Each source polls on its own pollIntervalSec; a fixed jobId per source
   // de-duplicates the repeat scheduler across restarts (spec §6).

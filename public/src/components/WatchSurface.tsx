@@ -9,6 +9,8 @@
  */
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
+import { mapFreshness } from "../lib/manifest";
+import type { Segment } from "@photonsurge/shared/director";
 import { useTracks } from "../lib/tracks/useTracks";
 import { useAlertFeatures } from "../lib/alerts-overlay";
 import { useQuakes } from "../lib/seismic-overlay";
@@ -27,9 +29,18 @@ interface WatchSurfaceProps {
   sceneName?: string;
   /** [lng,lat] of the active event to pulse-highlight, or null. */
   pulseAt?: [number, number] | null;
+  /** On-air director segment — drives the broadcast event reticle. */
+  onAirSegment?: Segment | null;
 }
 
-export default function WatchSurface({ state, manifest, cities, sceneName, pulseAt }: WatchSurfaceProps) {
+export default function WatchSurface({
+  state,
+  manifest,
+  cities,
+  sceneName,
+  pulseAt,
+  onAirSegment,
+}: WatchSurfaceProps) {
   const { tracks, orbits, trails } = useTracks({
     showSatellites: state.showSatellites,
     showAircraft: state.showAircraft,
@@ -76,6 +87,7 @@ export default function WatchSurface({ state, manifest, cities, sceneName, pulse
           quakes={state.showSeismic ? quakes : []}
           tracks={tracks}
           theme={getBroadcastTheme(state.broadcastTheme)}
+          onAirSegment={onAirSegment ?? null}
         />
       ) : null}
       {/* Plain run/attribution label — only on the clean surface; the broadcast
@@ -94,13 +106,18 @@ export default function WatchSurface({ state, manifest, cities, sceneName, pulse
           }}
         >
           {sceneName ? <span style={{ opacity: 0.7 }}>{sceneName} · </span> : null}
-          {manifest ? (
-            <>
-              {manifest.model.toUpperCase()} · run {new Date(manifest.run).toUTCString()}
-            </>
-          ) : (
-            "Awaiting weather data…"
-          )}
+          {(() => {
+            // Freshness of the ACTIVE map — its supplier + when it last updated
+            // (sources refresh at different cadences, so this is per-variable).
+            const f = mapFreshness(manifest, state.activeVariable, Date.now());
+            if (!f) return "Awaiting weather data…";
+            return (
+              <>
+                {f.source} · run {f.runLabel}
+                <span style={{ opacity: 0.7 }}> · updated {f.updatedLabel}</span>
+              </>
+            );
+          })()}
         </div>
       ) : null}
     </main>

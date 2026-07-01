@@ -123,7 +123,7 @@ export async function enrichAircraft(_job: Job) {
 
 /** Groups to keep fresh in Mongo (env override, comma-separated). */
 export const tleGroups = (): string[] =>
-  (process.env.SATELLITE_GROUPS || "visual,stations,starlink")
+  (process.env.SATELLITE_GROUPS || "visual,stations,starlink,oneweb,kuiper,qianfan")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);

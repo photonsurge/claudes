@@ -67,8 +67,41 @@ export default function IntensityMeter({
         color: "#dfe7f5",
       }}
     >
-      <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.4, opacity: 0.7 }}>
-        {theme.meterTitle}
+      {/* Hero: the ACTIVE MAP TYPE, big and unmissable — this is what viewers
+          need to read first. The meter title becomes a small eyebrow above it. */}
+      <div>
+        <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: 1.6, opacity: 0.55 }}>
+          {theme.meterTitle}
+        </div>
+        <div
+          style={{
+            fontSize: compact ? 16 : 20,
+            fontWeight: 800,
+            letterSpacing: 0.3,
+            lineHeight: 1.05,
+            color: "#fff",
+            marginTop: 2,
+            textShadow: "0 1px 6px rgba(0,0,0,0.5)",
+          }}
+        >
+          {meta.label}
+          {legend.unit ? (
+            <span style={{ fontSize: compact ? 11 : 13, fontWeight: 700, color: hexAt(1), marginLeft: 6 }}>
+              {legend.unit}
+            </span>
+          ) : null}
+        </div>
+        {/* Accent underline in the scale's hot colour, tying the name to the bar. */}
+        <div
+          style={{
+            marginTop: 6,
+            height: 3,
+            width: 44,
+            borderRadius: 2,
+            background: hexAt(1),
+            boxShadow: `0 0 8px ${hexAt(1)}88`,
+          }}
+        />
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <div
@@ -105,7 +138,6 @@ export default function IntensityMeter({
           ))}
         </div>
       </div>
-      <div style={{ fontSize: 9, opacity: 0.6, letterSpacing: 0.6 }}>{meta.label}</div>
     </div>
   );
 }
