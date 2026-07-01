@@ -24,6 +24,7 @@ import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
 import { quakeSegmentContent, alertSegmentContent } from "@photonsurge/shared/segments";
+import { mmsiCountry, countryNameFlag } from "@photonsurge/shared/tracks/flags";
 import { tleGroups } from "../jobs/tracks";
 
 const make = (
@@ -186,11 +187,27 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
         .filter((r) => typeof r.altM === "number" && (r.altM as number) > 9000)
         .sort((x, y) => (y.altM as number) - (x.altM as number))
         .slice(0, 6);
+      // Join the cached hexdb metadata (registration/type/operator) by ICAO24 —
+      // same lookup the public aircraft route uses, keyed by lowercase hex.
+      const icaos = [...new Set(notable.map((r) => r.externalId.toLowerCase()))];
+      const metaRes = icaos.length
+        ? await db.aircraftMeta.getAll({ id: { $in: icaos } }, { limit: icaos.length })
+        : { data: [] };
+      const metaById = new Map((metaRes.data ?? []).map((m) => [m.id, m]));
       for (const r of notable) {
         const name = r.name?.trim() || r.externalId.toUpperCase();
         const altKft = Math.round(((r.altM as number) * 3.281) / 100) / 10;
-        const seg = make("flight", r.externalId, name, `Aircraft · FL${Math.round(altKft * 10)}`, [r.lng, r.lat], 6, holdMs);
-        const details: Detail[] = [{ label: "Altitude", value: `FL${Math.round(altKft * 10)} · ${Math.round(r.altM as number).toLocaleString()} m` }];
+        const m = metaById.get(r.externalId.toLowerCase());
+        // Flag from OpenSky origin_country; lead the subtitle with it when known.
+        const flag = countryNameFlag(r.country);
+        const subtitle = `${flag ? `${flag} ` : ""}Aircraft · FL${Math.round(altKft * 10)}`;
+        const seg = make("flight", r.externalId, name, subtitle, [r.lng, r.lat], 6, holdMs);
+        const details: Detail[] = [];
+        if (m?.type) details.push({ label: "Type", value: m.type });
+        if (m?.operator) details.push({ label: "Operator", value: m.operator });
+        if (m?.registration) details.push({ label: "Registration", value: m.registration });
+        if (r.country) details.push({ label: "Origin", value: `${flag ? `${flag} ` : ""}${r.country}` });
+        details.push({ label: "Altitude", value: `FL${Math.round(altKft * 10)} · ${Math.round(r.altM as number).toLocaleString()} m` });
         if (typeof r.headingDeg === "number") details.push({ label: "Heading", value: `${Math.round(r.headingDeg)}°` });
         seg.details = details;
         pool.push({ score: 18, segment: seg });
@@ -210,9 +227,14 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
         .slice(0, 4);
       for (const r of notable) {
         const name = r.name?.trim() || `MMSI ${r.externalId}`;
-        const seg = make("ship", r.externalId, name, `Vessel · ${Math.round(r.speed as number)} kn`, [r.lng, r.lat], 6.5, holdMs);
+        // Flag country from the MMSI MID (first 3 digits) — no feed call needed.
+        const country = mmsiCountry(r.externalId);
+        const subtitle = `${country?.flag ? `${country.flag} ` : ""}Vessel · ${Math.round(r.speed as number)} kn`;
+        const seg = make("ship", r.externalId, name, subtitle, [r.lng, r.lat], 6.5, holdMs);
         const details: Detail[] = [{ label: "Speed", value: `${Math.round(r.speed as number)} kn` }];
         if (typeof r.headingDeg === "number") details.push({ label: "Course", value: `${Math.round(r.headingDeg)}°` });
+        if (country) details.push({ label: "Flag", value: `${country.flag ? `${country.flag} ` : ""}${country.name}` });
+        details.push({ label: "MMSI", value: r.externalId });
         seg.details = details;
         pool.push({ score: 14, segment: seg });
       }

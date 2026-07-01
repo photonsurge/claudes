@@ -38,8 +38,15 @@ function fakeDb(over: Partial<Record<string, any>> = {}): AppDb {
         at: new Date(0),
         rows:
           kind === "aircraft"
-            ? over.aircraft ?? [{ externalId: "abc123", name: "BAW123", lng: 0, lat: 51, altM: 11000 }]
-            : over.ships ?? [{ externalId: "111111111", name: "Boaty", lng: 1, lat: 50, speed: 18 }],
+            ? over.aircraft ?? [{ externalId: "abc123", name: "BAW123", country: "United Kingdom", lng: 0, lat: 51, altM: 11000 }]
+            : over.ships ?? [{ externalId: "232000001", name: "Boaty", lng: 1, lat: 50, speed: 18, headingDeg: 90 }],
+      }),
+    },
+    aircraftMeta: {
+      getAll: async () => ({
+        data: over.aircraftMeta ?? [
+          { id: "abc123", type: "Boeing 747-400", operator: "British Airways", registration: "G-CIVA" },
+        ],
       }),
     },
   } as unknown as AppDb;
@@ -98,7 +105,34 @@ describe("buildCandidates", () => {
   it("picks notable aircraft and ships from the latest frame", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     expect(pool.some((c) => c.segment.id === "flight:abc123")).toBe(true);
-    expect(pool.some((c) => c.segment.id === "ship:111111111")).toBe(true);
+    expect(pool.some((c) => c.segment.id === "ship:232000001")).toBe(true);
+  });
+
+  it("enriches aircraft with flag, type and operator from cached meta", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg());
+    const flight = pool.find((c) => c.segment.id === "flight:abc123")!;
+    expect(flight.segment.subtitle).toBe("🇬🇧 Aircraft · FL361");
+    const labels = (flight.segment.details ?? []).map((d) => d.label);
+    expect(labels).toEqual(expect.arrayContaining(["Type", "Operator", "Registration", "Origin"]));
+    expect(flight.segment.details).toEqual(
+      expect.arrayContaining([
+        { label: "Type", value: "Boeing 747-400" },
+        { label: "Operator", value: "British Airways" },
+        { label: "Origin", value: "🇬🇧 United Kingdom" },
+      ]),
+    );
+  });
+
+  it("derives a vessel flag from the MMSI MID", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg());
+    const ship = pool.find((c) => c.segment.id === "ship:232000001")!;
+    expect(ship.segment.subtitle).toBe("🇬🇧 Vessel · 18 kn");
+    expect(ship.segment.details).toEqual(
+      expect.arrayContaining([
+        { label: "Flag", value: "🇬🇧 United Kingdom" },
+        { label: "MMSI", value: "232000001" },
+      ]),
+    );
   });
 
   it("honours disabled kinds", async () => {
