@@ -25,6 +25,7 @@
     "snapshot:tracks": "ts-node src/scripts/snapshotTracks.ts",
     "enrich:wiki": "ts-node src/scripts/enrichWikipedia.ts",
     "refresh:cables": "ts-node src/scripts/refreshCables.ts",
+    "refresh:faults": "ts-node src/scripts/refreshFaults.ts",
     "refresh:cams": "ts-node src/scripts/refreshCams.ts",
     "refresh:ifs": "ts-node src/scripts/refreshIfs.ts",
     "refresh:rtofs": "ts-node src/scripts/refreshRtofs.ts",

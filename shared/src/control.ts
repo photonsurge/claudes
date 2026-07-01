@@ -272,6 +272,8 @@ export interface ControlState {
   seismicMinMag: number;
   /** Overlay submarine fiber-optic cables + landing stations on the globe. */
   showCables: boolean;
+  /** Overlay tectonic plate boundaries (Bird 2003) on the globe. */
+  showFaults: boolean;
   /** Overlay the reference graticule (equator, tropics, polar circles, meridians). */
   showGraticule: boolean;
   /** Graticule line + label colour (hex `#rrggbb`). */
@@ -323,6 +325,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showSeismic: false,
   seismicMinMag: 2.5,
   showCables: false,
+  showFaults: false,
   showGraticule: false,
   graticuleColor: "#7dd3fc",
   graticuleLabels: true,
@@ -412,6 +415,7 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     seismicMinMag:
       typeof patch.seismicMinMag === "number" ? patch.seismicMinMag : base.seismicMinMag ?? 2.5,
     showCables: typeof patch.showCables === "boolean" ? patch.showCables : base.showCables ?? false,
+    showFaults: typeof patch.showFaults === "boolean" ? patch.showFaults : base.showFaults ?? false,
     showGraticule:
       typeof patch.showGraticule === "boolean" ? patch.showGraticule : base.showGraticule ?? false,
     graticuleColor:

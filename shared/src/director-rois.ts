@@ -98,6 +98,26 @@ export const ORBITAL_VIEWS: OrbitalView[] = [
 export const ORBITAL_VIEW_ZOOM = 2.4;
 
 /**
+ * The map a `quake` shot reads through. Earthquakes are geophysical, so no GFS
+ * weather field is truly relevant — the map is a backdrop, not a forecast. Two
+ * modes: a tsunami-flagged quake tells the ocean story (sea-surface temp → swell
+ * height); an ordinary quake gets a neutral read (temperature over land, sst
+ * painting the surrounding ocean). Deliberately excludes humidity/rain/gust/CAPE
+ * — meteorology over a quake reads as nonsense on air.
+ */
+export interface QuakeMapPlan {
+  cycle: string[];
+  cycleMs: number;
+}
+export const QUAKE_TSUNAMI_PLAN: QuakeMapPlan = { cycle: ["sst", "wave"], cycleMs: 5500 };
+export const QUAKE_LAND_PLAN: QuakeMapPlan = { cycle: ["temp", "sst"], cycleMs: 5500 };
+
+/** The map plan for a quake shot — ocean story when tsunami-flagged, else neutral. */
+export function quakeMapPlan(tsunami?: boolean): QuakeMapPlan {
+  return tsunami ? QUAKE_TSUNAMI_PLAN : QUAKE_LAND_PLAN;
+}
+
+/**
  * Every display layer the director manages, all OFF. Each preset spreads this
  * and then turns on only what its shot needs.
  *
@@ -119,6 +139,7 @@ const LAYERS_OFF: Partial<ControlState> = {
   showCities: false,
   showRadar: false,
   showCables: false,
+  showFaults: false,
   showAlerts: false,
   showSeismic: false,
   showAircraft: false,
@@ -224,6 +245,9 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     // Submarine cables + seismic tell a story: quakes are what sever them, so
     // lighting up the cable network under a quake shot frames the risk.
     showCables: true,
+    // Tectonic plate boundaries are where quakes originate — drawing them under
+    // a quake shot shows the fault the event sits on.
+    showFaults: true,
     showCities: true,
     autoSpin: false,
     spinSpeed: 0,

@@ -18,6 +18,8 @@ import { makeEventSummaryRepo } from "./event-summary-repo";
 import { getCableModel } from "./cable-model";
 import { getCableLandingModel } from "./cable-landing-model";
 import { makeCableRepo } from "./cable-repo";
+import { getFaultModel } from "./fault-model";
+import { makeFaultRepo } from "./fault-repo";
 import { getCamModel } from "./cam-model";
 import { makeCamRepo } from "./cam-repo";
 import { getAircraftMetaModel, iAircraftMetaModel } from "./aircraft-meta-model";
@@ -57,6 +59,7 @@ export function createDb(conn: Connection) {
     quakes: makeQuakeRepo(getQuakeModel(conn)),
     eventSummaries: makeEventSummaryRepo(getEventSummaryModel(conn)),
     cables: makeCableRepo(getCableModel(conn), getCableLandingModel(conn)),
+    faults: makeFaultRepo(getFaultModel(conn)),
     cams: makeCamRepo(getCamModel(conn)),
     aircraftMeta: mongoCrud<iAircraftMetaModel>(getAircraftMetaModel(conn)),
     logs: mongoCrud(getLogModel(conn)),

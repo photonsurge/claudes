@@ -12,6 +12,8 @@
  * (attribution, compositing) can read it. Env feature-flags gate *activation*
  * (see `worker/src/weather/config.ts`), not this static shape.
  */
+import { WAVE_NEST_SOURCES } from "./sources.waveNests";
+import { RTOFS_REGIONAL_SOURCES } from "./sources.rtofsRegional";
 
 /** How often a source publishes a new run. */
 export type Cadence =
@@ -227,9 +229,11 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
     attribution: "NOAA/NCEP MRMS",
   },
 
-  // Phase 2 remainder — RTOFS regional ocean windows (2e) and the wave basin
-  // nests (2a) add their own descriptors alongside their adapters. Phase 3
+  // Phase 2a wave-basin nests + Phase 2e RTOFS regional windows are spread in
+  // below (kept in their own files so each adapter owns its descriptors). Phase 3
   // satellite lives here once its reproject path exists (data-expansion §6/§7).
+  ...WAVE_NEST_SOURCES,
+  ...RTOFS_REGIONAL_SOURCES,
 };
 
 export const getSource = (id: string): SourceDescriptor | undefined => SOURCE_REGISTRY[id];

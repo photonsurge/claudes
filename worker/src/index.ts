@@ -157,6 +157,16 @@ process.on("uncaughtException", (err) => {
       { event: "refreshIfs", sourceId: "ifs", every: Number(process.env.IFS_INGEST_MS || 60 * 60 * 1000) },
       { event: "refreshWaves", sourceId: "gfswave-mosaic", every: Number(process.env.WAVE_INGEST_MS || 60 * 60 * 1000) },
       { event: "refreshRtofs", sourceId: "rtofs", every: Number(process.env.RTOFS_INGEST_MS || 3 * 60 * 60 * 1000) },
+      // Phase 2 regional nests (zoom-gated high-res overlays). Idempotent like the
+      // rest — polling just re-checks availability. MRMS radar polls fast (live
+      // layer); HRRR/ICON-D2 are hourly/3-hourly forecast nests.
+      { event: "refreshIconD2", sourceId: "icon-d2", every: Number(process.env.ICON_D2_INGEST_MS || 30 * 60 * 1000) },
+      { event: "refreshHrrr", sourceId: "hrrr", every: Number(process.env.HRRR_INGEST_MS || 30 * 60 * 1000) },
+      { event: "refreshMrms", sourceId: "mrms", every: Number(process.env.MRMS_INGEST_MS || 2 * 60 * 1000) },
+      // 2a/2e cover MANY sources (4 wave basins, 11 RTOFS windows); one job each
+      // loops its whole family, so a single sentinel id gates the group's schedule.
+      { event: "refreshWaveNests", sourceId: "gfswave-atlocn", every: Number(process.env.WAVE_NEST_INGEST_MS || 60 * 60 * 1000) },
+      { event: "refreshRtofsRegional", sourceId: "rtofs-westatl", every: Number(process.env.RTOFS_REGIONAL_INGEST_MS || 3 * 60 * 60 * 1000) },
     ];
     // Only schedule ENABLED sources (IFS is off by default until CCSDS-validated).
     for (const { event, sourceId, every } of sourceJobs.filter((j) => getSource(j.sourceId)?.enabled)) {
@@ -296,6 +306,48 @@ process.on("uncaughtException", (err) => {
       log(TAG, `registered repeatable cables.refresh`, { everyMs: CABLE_REFRESH_MS });
     } catch (err) {
       log(TAG, `failed to register cables.refresh`, summarizeForLog(err));
+    }
+  }
+
+  // ---- Repeatable faults.refresh (tectonic plate boundaries → Mongo) ----
+  // Bird's PB2002 boundaries are effectively fixed; refresh monthly by default.
+  // A fixed jobId de-dups across restarts; `immediately` seeds the cache at boot
+  // so a fresh DB shows plate boundaries right away.
+  if (process.env.FAULT_REFRESH_ENABLED !== "false") {
+    const FAULT_REFRESH_MS = Number(process.env.FAULT_REFRESH_MS || 30 * 24 * 60 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "faults", type: "faults", event: "refresh", data: {} },
+        { repeat: { every: FAULT_REFRESH_MS, immediately: true }, jobId: "faults-refresh" },
+      );
+      log(TAG, `registered repeatable faults.refresh`, { everyMs: FAULT_REFRESH_MS });
+    } catch (err) {
+      log(TAG, `failed to register faults.refresh`, summarizeForLog(err));
+    }
+  }
+
+  // ---- Repeatable summaries.generate* (global weather-event round-ups → Mongo) ----
+  // One repeatable per cadence (hourly / 12-hourly / daily). Each aggregates the
+  // active events into a stored round-up (+ optional LLM narrative) that the admin
+  // screen reads. Fixed jobIds de-dup across restarts; crons are env-overridable.
+  if (process.env.SUMMARIES_ENABLED !== "false") {
+    const summaryCrons = [
+      { event: "generateHourly", cron: process.env.SUMMARY_HOURLY_CRON || "0 * * * *", id: "summaries-hourly" },
+      { event: "generate12h", cron: process.env.SUMMARY_12H_CRON || "0 0,12 * * *", id: "summaries-12h" },
+      { event: "generateDaily", cron: process.env.SUMMARY_DAILY_CRON || "0 0 * * *", id: "summaries-daily" },
+    ];
+    for (const { event, cron, id } of summaryCrons) {
+      try {
+        await myQueue.add(
+          "do",
+          { domain: "summaries", type: "summaries", event, data: {} },
+          { repeat: { pattern: cron }, jobId: id },
+        );
+        log(TAG, `registered repeatable summaries.${event}`, { cron });
+      } catch (err) {
+        log(TAG, `failed to register summaries.${event}`, summarizeForLog(err));
+      }
     }
   }
 

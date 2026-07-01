@@ -13,6 +13,7 @@ interface AdminLink {
 
 const LINKS: AdminLink[] = [
   { href: "/admin/alerts", title: "Weather alerts", desc: "Ingested CAP alerts — filter by severity / active.", ready: true },
+  { href: "/admin/summaries", title: "Round-ups", desc: "Scheduled global weather-event summaries + narrative.", ready: true },
   { href: "/cities", title: "Cities", desc: "Curated city markers shown on the globe.", ready: true },
   { href: "/control", title: "Operator console", desc: "Live broadcast control — variables, basemap, camera.", ready: true },
   { href: "/watch", title: "Watch (broadcast)", desc: "The output view that goes to stream.", ready: true },

@@ -76,6 +76,13 @@ export interface Segment {
    * heat warning reads through humidity/temp, a tornado through CAPE/radar/gust.
    */
   hazard?: HazardType;
+  /**
+   * For `quake` segments: the USGS tsunami flag. When set, the shot reads the
+   * ocean story (sst → wave) instead of the neutral land backdrop (temp → sst) —
+   * see quakeMapPlan. No weather field is meteorologically relevant to a quake,
+   * so the map is a backdrop, never a forecast.
+   */
+  tsunami?: boolean;
   /** Kind-specific detail rows for the operator info box (severity, depth, …). */
   details?: { label: string; value: string }[];
 }

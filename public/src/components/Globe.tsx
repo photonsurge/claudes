@@ -40,6 +40,7 @@ import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
 import { seismicLayer } from "./layers/seismic";
 import { graticuleLayer } from "./layers/graticule";
 import { cableLayers } from "./layers/cables";
+import { faultLayers } from "./layers/faults";
 import { nightLayer } from "./layers/nightside";
 import { subsolarPoint } from "../lib/sun";
 import { discFromProject, type Disc } from "../lib/globe-geom";
@@ -52,6 +53,7 @@ import type { AlertFeature } from "../lib/alerts";
 import type { Segment } from "@photonsurge/shared/director";
 import { quakeToSegment, alertFeatureToSegment } from "../lib/select-segment";
 import type { CableOverlay } from "../lib/cables-overlay";
+import type { Fault } from "@photonsurge/shared/faults/types";
 
 export interface GlobeHandle {
   flyTo: (center: [number, number], zoom?: number) => void;
@@ -74,6 +76,7 @@ export interface GlobeProps {
   quakes?: Quake[];
   /** Submarine cables + landing stations. */
   cables?: CableOverlay;
+  faults?: Fault[];
   interactive?: boolean;
   onCameraChange?: (center: [number, number], zoom: number) => void;
   /** [lng,lat] of the active event to pulse-highlight, or null/undefined for none. */
@@ -148,7 +151,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 }
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, interactive = true, onCameraChange, pulseAt, onSelect },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, faults, interactive = true, onCameraChange, pulseAt, onSelect },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -605,6 +608,12 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       layers.push(...cableLayers(cables.cables, cables.landings));
     }
 
+    // Tectonic plate boundaries read as reference geography — above borders/
+    // weather, below the live event overlays (alerts/quakes/cities/tracks).
+    if (state.showFaults && faults && faults.length) {
+      layers.push(...faultLayers(faults));
+    }
+
     // Weather-alert polygons above borders, below cities/tracks. Kept mounted
     // (visibility toggled, not added/removed) so a director cut flipping
     // showAlerts doesn't force a cold re-tessellation of every polygon.
@@ -663,6 +672,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showAlerts,
     state.showSeismic,
     state.showCables,
+    state.showFaults,
     state.showGraticule,
     state.graticuleColor,
     state.graticuleLabels,
@@ -674,6 +684,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     alerts,
     quakes,
     cables,
+    faults,
     nestKey,
   ]);
 

@@ -331,6 +331,14 @@ export default function ControlPanel({
         />
       </Section>
 
+      <Section title="Tectonics">
+        <Toggle
+          label="Plate boundaries"
+          checked={state.showFaults}
+          onChange={(showFaults) => patch({ showFaults })}
+        />
+      </Section>
+
       <Section title="Graticule">
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
           <Toggle

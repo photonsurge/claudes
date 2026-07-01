@@ -34,7 +34,7 @@
     "bullmq": "5.73.4",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.19.4",
-    "uuid": "^14.0.0"
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

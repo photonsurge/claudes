@@ -18,6 +18,7 @@ import {
   OCEAN_VIEWS,
   ORBITAL_VIEW_ZOOM,
   ORBITAL_VIEWS,
+  quakeMapPlan,
 } from "@photonsurge/shared/director-rois";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
@@ -120,7 +121,13 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
           timeMs: q.time ? q.time.getTime() : undefined,
           tsunami: q.tsunami,
         });
-        const seg = make("quake", q.quakeId, c.title, c.subtitle, [q.lng, q.lat], 5, holdMs);
+        // Quakes are geophysical — the map is a backdrop, not a forecast. Read
+        // the ocean story when tsunami-flagged, else a neutral temp/sst backdrop.
+        const tsunami = Boolean(q.tsunami);
+        const seg = make("quake", q.quakeId, c.title, c.subtitle, [q.lng, q.lat], 5, holdMs, {
+          activeVariable: quakeMapPlan(tsunami).cycle[0],
+        });
+        seg.tsunami = tsunami;
         seg.details = c.details;
         pool.push({ score: 40 + q.mag * 10, segment: seg });
       }

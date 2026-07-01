@@ -25,6 +25,14 @@ describe("imageUnscaleFor", () => {
     expect(imageUnscaleFor("snow")).toEqual([0, 500]);
   });
 
+  it("defines a radar (dBZ) decode range wider than its 5..75 colour domain", () => {
+    expect(SCALAR_IMAGE_UNSCALE.radar).toBeDefined();
+    const [min, max] = imageUnscaleFor("radar");
+    expect(min).toBeLessThan(5); // covers the clear-air floor
+    expect(max).toBeGreaterThanOrEqual(75); // covers hail cores
+    expect(SCALAR_IMAGE_UNSCALE.radar).toEqual([-30, 80]);
+  });
+
   it("falls back to the registry colour domain for vars without an explicit range", () => {
     // wind has no SCALAR_IMAGE_UNSCALE entry -> uses registry domain [0,60].
     expect(imageUnscaleFor("wind")).toEqual([0, 60]);

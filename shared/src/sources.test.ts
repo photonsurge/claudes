@@ -38,25 +38,44 @@ describe("supplier resolution", () => {
     expect(on).not.toContain("ifs");
   });
 
-  it("sst is supplied by both gfs (fallback) and rtofs (preferred), rtofs first", () => {
+  it("sst is supplied by both gfs (fallback) and rtofs (preferred), rtofs above gfs", () => {
     const srcs = sourcesForVariable("sst").map((s) => s.id);
     expect(srcs).toContain("gfs");
     expect(srcs).toContain("rtofs");
-    // Highest priority first — RTOFS (real ocean) beats GFS-masked.
-    expect(srcs[0]).toBe("rtofs");
+    // Real ocean (RTOFS + its regional nests) beats GFS-masked SST: every RTOFS
+    // supplier outranks GFS. (Regional RTOFS nests, when present, sort above the
+    // global rtofs base — but all are above gfs.)
+    const globalRtofsBase = sourcesForVariable("sst").filter((s) => s.minZoom === undefined);
+    expect(globalRtofsBase[0].id).toBe("rtofs");
+    expect(srcs.indexOf("rtofs")).toBeLessThan(srcs.indexOf("gfs"));
   });
 
   it("preferredSource returns the highest-priority ENABLED source", () => {
-    expect(preferredSource("sst")?.id).toBe("rtofs");
-    // wave: the regional mosaic outranks the 0p25 global base.
-    expect(preferredSource("wave")?.id).toBe("gfswave-mosaic");
-    // current is RTOFS-only.
-    expect(preferredSource("current")?.id).toBe("rtofs");
+    // sst preferred supplier is an RTOFS product (a regional RTOFS nest when one
+    // covers, else the global rtofs base) — always above GFS-masked SST.
+    expect(preferredSource("sst")?.id).toMatch(/^rtofs/);
+    // wave: the regional basin NESTS (Phase 2a, priority 25) outrank the global
+    // mosaic (20), which itself outranks the 0p25 global base (10). The client
+    // stacks a nest over the mosaic inside its bbox and falls back to the mosaic
+    // elsewhere.
+    expect(preferredSource("wave")?.id).toBe("gfswave-atlocn");
+    // The mosaic remains the highest-priority always-on GLOBAL base (non-nest).
+    const globalWaveBases = sourcesForVariable("wave").filter((s) => s.minZoom === undefined);
+    expect(globalWaveBases[0].id).toBe("gfswave-mosaic");
+    // current is RTOFS-only (base or a regional RTOFS nest).
+    expect(preferredSource("current")?.variables).toContain("current");
+    expect(preferredSource("current")?.id).toMatch(/^rtofs/);
   });
 
-  it("ocean-only variables resolve to RTOFS", () => {
-    expect(sourcesForVariable("current").map((s) => s.id)).toEqual(["rtofs"]);
-    expect(sourcesForVariable("salinity").map((s) => s.id)).toEqual(["rtofs"]);
+  it("ocean-only variables resolve to RTOFS (base + any regional RTOFS nests)", () => {
+    for (const v of ["current", "salinity"]) {
+      const srcs = sourcesForVariable(v);
+      expect(srcs.length).toBeGreaterThan(0);
+      // Every supplier of an ocean-only variable is an RTOFS product.
+      for (const s of srcs) expect(s.id).toMatch(/^rtofs/);
+      // The global rtofs base is among them.
+      expect(srcs.map((s) => s.id)).toContain("rtofs");
+    }
   });
 
   it("finer sources outrank coarser for the same variable", () => {

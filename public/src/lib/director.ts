@@ -23,6 +23,7 @@ import {
   type SegmentKind,
 } from "@photonsurge/shared/director";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
+import { quakeMapPlan } from "@photonsurge/shared/director-rois";
 import { useSocket } from "./socket-provider";
 
 /**
@@ -33,21 +34,28 @@ import { useSocket } from "./socket-provider";
  * switch in lockstep — the same deterministic trick as the spin/push-in, with no
  * extra socket traffic.
  *
- * `storm` cuts don't appear here: their map sequence + cadence come from the
- * per-hazard plan (hazardMapPlan) keyed by the segment's classified hazard, so a
- * heat warning reads humidity→temp while a tornado reads CAPE→radar→gust.
+ * Event cuts don't appear here — they use a curated, kind-specific plan instead:
+ * `storm` reads the per-hazard plan (hazardMapPlan) so a heat warning shows
+ * humidity→temp and a tornado CAPE→radar→gust; `quake` reads quakeMapPlan (ocean
+ * story when tsunami-flagged, else a neutral temp/sst backdrop — never humidity).
  */
 const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
   tour: ["temp", "humidity", "rain", "gust", "cloud"],
   weather: ["temp", "humidity", "rain", "gust", "cloud"],
-  quake: ["temp", "humidity", "rain", "gust", "sst"],
 };
 const VAR_CYCLE_MS = 5500;
 
-/** The field sequence + per-map cadence for a cut (hazard plan for storms). */
+/** Event cuts open on their plan's headline field rather than a varied offset. */
+const EVENT_KINDS = new Set<SegmentKind>(["storm", "quake"]);
+
+/** The field sequence + per-map cadence for a cut (curated plan for event kinds). */
 function cutCycle(cut: Segment): { cycle: string[]; periodMs: number } {
   if (cut.kind === "storm") {
     const plan = hazardMapPlan(cut.hazard);
+    return { cycle: plan.cycle, periodMs: plan.cycleMs };
+  }
+  if (cut.kind === "quake") {
+    const plan = quakeMapPlan(cut.tsunami);
     return { cycle: plan.cycle, periodMs: plan.cycleMs };
   }
   return { cycle: VAR_CYCLE[cut.kind] ?? [], periodMs: VAR_CYCLE_MS };
@@ -66,11 +74,12 @@ export function useCutVariable(cut: Segment | null): string | null {
       return;
     }
     const epoch = cut.patch.spinEpoch ?? 0;
-    // Ambient filler (tour/weather/quake) starts each airing on a different field
+    // Ambient filler (tour/weather) starts each airing on a different field
     // (derived from the cut's epoch, so /control and /watch still agree) — the map
-    // sequence isn't identical every time. A hazard shot instead always OPENS on
-    // its plan's headline field (heat → humidity), so the editorial choice holds.
-    const offset = cut.kind === "storm" ? 0 : Math.floor(epoch / 1000);
+    // sequence isn't identical every time. An event shot instead always OPENS on
+    // its plan's headline field (heat → humidity, tsunami → sst), so the editorial
+    // choice holds.
+    const offset = EVENT_KINDS.has(cut.kind) ? 0 : Math.floor(epoch / 1000);
     const pick = () => {
       const elapsed = Math.max(0, Date.now() - epoch);
       setVariable(cycle[(Math.floor(elapsed / periodMs) + offset) % cycle.length]);
