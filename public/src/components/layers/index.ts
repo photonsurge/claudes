@@ -27,7 +27,7 @@ import {
   type Bounds,
 } from "./props";
 import { resolveEntries, type ResolverCamera } from "./resolve";
-import { DEPTH_OCCLUDE, DEPTH_TEST } from "./depth";
+import { DEPTH_OCCLUDE, DEPTH_TEST, DEPTH_PAINT } from "./depth";
 
 /** A resolver mapping a texture URL to an already-loaded image (or undefined). */
 export type TextureResolver = (url: string) => LoadedTexture | undefined;
@@ -108,13 +108,25 @@ export function scalarRasterLayers(
     if (!bounds) return;
     const props = scalarRasterPropsFromEntry(entry, variableId, fhr, bounds, {
       ...opts,
+      // A nest REPLACES the base in its footprint rather than stacking on it: at
+      // the base's 0.7 the two coincident rasters would compound to ~0.9 and read
+      // as a brighter patch. Full opacity makes the nest's own pixels fully cover
+      // the base beneath, so the region shows the sharper field at one consistent
+      // exposure (its transparent no-data pixels still let the base through).
+      opacity: i === 0 ? opts?.opacity : opts?.opacity ?? 1,
       idSuffix: i === 0 ? "" : `-${entry.sourceId ?? `n${i}`}`,
     });
     if (!props) return;
     const image = resolve(props.image);
     if (!image) return;
+    // Base SEALS the depth sphere (DEPTH_OCCLUDE). A nest sits coincident with the
+    // base raster, so it must NOT compete for depth — DEPTH_PAINT (no test/write,
+    // far side culled by GlobeView's back-face cull) paints it uniformly on top
+    // instead of z-fighting into the "spiky fill" artifact. Drawn after the base
+    // (finest last), so the nest wins in its bbox.
+    const parameters = i === 0 ? DEPTH_OCCLUDE : DEPTH_PAINT;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    out.push(new RasterLayer({ ...props, image: image as any, parameters: DEPTH_OCCLUDE }));
+    out.push(new RasterLayer({ ...props, image: image as any, parameters }));
   });
   return out;
 }

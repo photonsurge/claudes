@@ -14,6 +14,9 @@
  */
 import { WAVE_NEST_SOURCES } from "./sources.waveNests";
 import { RTOFS_REGIONAL_SOURCES } from "./sources.rtofsRegional";
+import { ICON_GLOBAL_SOURCES } from "./sources.iconGlobal";
+import { HRDPS_SOURCES } from "./sources.hrdps";
+import { UKV_SOURCES } from "./sources.ukv";
 
 /** How often a source publishes a new run. */
 export type Cadence =
@@ -25,6 +28,7 @@ export type SourceGrid =
   | "regular"
   | "curvilinear" // 2-D lon/lat coord arrays, e.g. RTOFS tripolar HYCOM
   | "lambert" // Lambert conformal conic, e.g. HRRR CONUS — regrid to regular via wgrib2
+  | "rotated" // rotated lat-lon pole, e.g. ECCC HRDPS — regrid to regular via wgrib2
   | "icosahedral"
   | "gaussian-reduced"
   | "geostationary";
@@ -180,12 +184,37 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
     grid: "regular",
     dims: { width: 1215, height: 746 },
     resolutionDeg: 0.02,
-    bbox: [-4, 43, 20, 58], // ICON-D2 covers Germany + surrounds
+    // The exact DWD ICON-D2 regular-lat-lon grid: 1215×746 points at 0.02°,
+    // origin −3.94/43.18 → extent −3.94+1214·0.02=20.34, 43.18+745·0.02=58.08.
+    // MUST match dims·res exactly or the baked texture is displayed stretched
+    // (the client uses this bbox as the RasterLayer bounds and the bake origin).
+    bbox: [-3.94, 43.18, 20.34, 58.08],
     cadence: { kind: "cron", runsUtc: [0, 3, 6, 9, 12, 15, 18, 21] },
     latencyMinutes: 120,
-    variables: ["temp", "wind", "gust"],
-    priority: 30, // nest: beats the GFS/IFS global base inside its bbox
+    variables: ["temp", "wind", "gust", "humidity"],
+    priority: 30, // nest: beats ICON-EU + the GFS/IFS global base inside its bbox
     minZoom: 3.5,
+    enabled: true,
+    attribution: "© Deutscher Wetterdienst (DWD)",
+  },
+
+  // EU-wide — DWD ICON-EU 6.5 km. Coarser than ICON-D2 but covers ALL of Europe
+  // (Ireland, UK, Iberia, Scandinavia, E. Europe) where the D2 central-Europe box
+  // misses. Exact regular-lat-lon grid: 1097×657 @ 0.0625°, origin −23.5/29.5 →
+  // extent −23.5+1096·0.0625=45.0, 29.5+656·0.0625=70.5 (bbox = dims·res exactly).
+  "icon-eu": {
+    id: "icon-eu",
+    label: "DWD ICON-EU 6.5 km (Europe)",
+    format: "grib2",
+    grid: "regular",
+    dims: { width: 1097, height: 657 },
+    resolutionDeg: 0.0625,
+    bbox: [-23.5, 29.5, 45.0, 70.5],
+    cadence: { kind: "cron", runsUtc: [0, 6, 12, 18] },
+    latencyMinutes: 150,
+    variables: ["temp", "wind", "gust", "humidity"],
+    priority: 28, // below ICON-D2 (30): D2's 2.2 km wins in central Europe overlap
+    minZoom: 3, // activates a touch sooner/wider than D2 (3.5), covering UK/EU
     enabled: true,
     attribution: "© Deutscher Wetterdienst (DWD)",
   },
@@ -234,6 +263,9 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
   // satellite lives here once its reproject path exists (data-expansion §6/§7).
   ...WAVE_NEST_SOURCES,
   ...RTOFS_REGIONAL_SOURCES,
+  ...ICON_GLOBAL_SOURCES,
+  ...HRDPS_SOURCES,
+  ...UKV_SOURCES,
 };
 
 export const getSource = (id: string): SourceDescriptor | undefined => SOURCE_REGISTRY[id];

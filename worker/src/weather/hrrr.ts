@@ -19,7 +19,7 @@ import { log } from "@photonsurge/shared/utill/logger";
 
 import { bakeScalar } from "../grib/bakeScalar";
 import { bakeVector } from "../grib/bakeVector";
-import { regridTileToGlobal } from "../merge/mosaic";
+import { regridTileToGlobal, regridWindPair } from "../merge/mosaic";
 import { downloadToTemp, cleanupTemp, headOk } from "./download";
 import { nomadsGate } from "./politeness";
 import { forecastSteps, cfg } from "./config";
@@ -98,13 +98,20 @@ export async function ingestHrrr(now = new Date()): Promise<IngestResult> {
       for (const [variableId, spec] of Object.entries(HRRR_PARAMS)) {
         try {
           if (spec.encoding === "uv") {
-            // Regrid U and V from Lambert → regular lat-lon subset (winds rotated
-            // to earth-relative by -new_grid_winds earth inside regridTileToGlobal).
-            const u = await regridTileToGlobal({ gribPath, outPath: `${gribPath}.${variableId}.u.rg`, match: spec.match[0], newgrid: HRRR_NEWGRID, width: W, height: H });
-            track(`${gribPath}.${variableId}.u.rg`);
-            const v = await regridTileToGlobal({ gribPath, outPath: `${gribPath}.${variableId}.v.rg`, match: spec.match[1], newgrid: HRRR_NEWGRID, width: W, height: H });
-            track(`${gribPath}.${variableId}.v.rg`);
-            const res = await bakeVector({ variableId, u: u.values, v: v.values, width: W, height: H, preRolled: true });
+            // Regrid the U/V PAIR TOGETHER (Lambert → regular lat-lon subset).
+            // HRRR winds are grid-relative, so rotating them to earth-relative
+            // (-new_grid_winds earth) requires BOTH components in one wgrib2 pass;
+            // regridding lone components yields empty output (the black-hole bug).
+            const { u, v } = await regridWindPair({
+              gribPath,
+              outPath: `${gribPath}.${variableId}.uv.rg`,
+              matchBoth: `(${spec.match[0]}|${spec.match[1]})`,
+              matchU: spec.match[0],
+              matchV: spec.match[1],
+              newgrid: HRRR_NEWGRID, width: W, height: H,
+            });
+            track(`${gribPath}.${variableId}.uv.rg`);
+            const res = await bakeVector({ variableId, u, v, width: W, height: H, preRolled: true });
             tag(variableId, {
               encoding: "uv", units: "m/s", domain: res.domain, palette: variableId,
               imageUnscale: res.imageUnscale, vectorUnscale: res.imageUnscale,

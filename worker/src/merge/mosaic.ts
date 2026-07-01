@@ -124,3 +124,40 @@ export async function regridTileToGlobal(args: {
   // Dump the regridded field as raw floats on the target grid.
   return extractField({ gribPath: args.outPath, width: args.width, height: args.height, runner });
 }
+
+/**
+ * Regrid a wind U/V PAIR together and return both earth-relative components.
+ * Rotating grid-relative winds to earth-relative (`-new_grid_winds earth`) needs
+ * BOTH components present in ONE wgrib2 pass — regridding a lone component gives
+ * empty output (the bug that black-holed HRRR/rotated-grid wind nests). We match
+ * both with `matchBoth`, regrid once, then split the 2-record output by `matchU`
+ * / `matchV`. Use for grid-relative sources (HRRR Lambert, HRDPS rotated); an
+ * already-earth-relative regular grid (DWD ICON regular-lat-lon) needs no
+ * rotation and can regrid components independently.
+ */
+export async function regridWindPair(args: {
+  gribPath: string;
+  outPath: string;
+  matchBoth: string;
+  matchU: string;
+  matchV: string;
+  newgrid: string;
+  width: number;
+  height: number;
+  runner?: Wgrib2Runner;
+}): Promise<{ u: Float32Array; v: Float32Array }> {
+  const runner = args.runner ?? runWgrib2;
+  await runner([
+    args.gribPath,
+    "-match",
+    args.matchBoth,
+    "-new_grid_winds",
+    "earth",
+    "-new_grid",
+    ...args.newgrid.split(" "),
+    args.outPath,
+  ]);
+  const u = await extractField({ gribPath: args.outPath, match: args.matchU, width: args.width, height: args.height, runner });
+  const v = await extractField({ gribPath: args.outPath, match: args.matchV, width: args.width, height: args.height, runner });
+  return { u: u.values, v: v.values };
+}

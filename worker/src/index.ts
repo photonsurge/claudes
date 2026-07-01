@@ -161,12 +161,17 @@ process.on("uncaughtException", (err) => {
       // rest — polling just re-checks availability. MRMS radar polls fast (live
       // layer); HRRR/ICON-D2 are hourly/3-hourly forecast nests.
       { event: "refreshIconD2", sourceId: "icon-d2", every: Number(process.env.ICON_D2_INGEST_MS || 30 * 60 * 1000) },
+      { event: "refreshIconEu", sourceId: "icon-eu", every: Number(process.env.ICON_EU_INGEST_MS || 30 * 60 * 1000) },
       { event: "refreshHrrr", sourceId: "hrrr", every: Number(process.env.HRRR_INGEST_MS || 30 * 60 * 1000) },
       { event: "refreshMrms", sourceId: "mrms", every: Number(process.env.MRMS_INGEST_MS || 2 * 60 * 1000) },
       // 2a/2e cover MANY sources (4 wave basins, 11 RTOFS windows); one job each
       // loops its whole family, so a single sentinel id gates the group's schedule.
       { event: "refreshWaveNests", sourceId: "gfswave-atlocn", every: Number(process.env.WAVE_NEST_INGEST_MS || 60 * 60 * 1000) },
       { event: "refreshRtofsRegional", sourceId: "rtofs-westatl", every: Number(process.env.RTOFS_REGIONAL_INGEST_MS || 3 * 60 * 60 * 1000) },
+      // "Everywhere" nests: worldwide 13 km + Canada 2.5 km + UK 2 km.
+      { event: "refreshIconGlobal", sourceId: "icon-global", every: Number(process.env.ICON_GLOBAL_INGEST_MS || 60 * 60 * 1000) },
+      { event: "refreshHrdps", sourceId: "hrdps", every: Number(process.env.HRDPS_INGEST_MS || 30 * 60 * 1000) },
+      { event: "refreshUkv", sourceId: "ukv", every: Number(process.env.UKV_INGEST_MS || 30 * 60 * 1000) },
     ];
     // Only schedule ENABLED sources (IFS is off by default until CCSDS-validated).
     for (const { event, sourceId, every } of sourceJobs.filter((j) => getSource(j.sourceId)?.enabled)) {
@@ -176,6 +181,18 @@ process.on("uncaughtException", (err) => {
           { domain: "weather", type: "weather", event, data: {} },
           { repeat: { every }, jobId: `weather-${event}` },
         );
+        // BullMQ `repeat: { every }` only fires the FIRST run one interval later,
+        // so a fresh worker would sit empty for up to `every` ms. Kick each ingest
+        // ONCE at boot so everything auto-populates immediately (then the repeat
+        // takes over). Idempotent (alreadyPublished skips) + nomadsGate-throttled,
+        // so it just re-checks availability. Disable with WEATHER_INGEST_ON_BOOT=false.
+        if (process.env.WEATHER_INGEST_ON_BOOT !== "false") {
+          await myQueue.add(
+            "do",
+            { domain: "weather", type: "weather", event, data: {} },
+            { removeOnComplete: true, removeOnFail: true },
+          );
+        }
         log(TAG, `registered repeatable weather.${event}`, { every });
       } catch (err) {
         log(TAG, `failed to register weather.${event}`, { err: summarizeForLog(err) });

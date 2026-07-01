@@ -33,7 +33,7 @@ import {
 } from "./layers";
 import { resolveEntries, activeNestSignature, type ResolverCamera } from "./layers/resolve";
 import type { City } from "../lib/cities";
-import { tracksLayer, orbitLayer, trailsLayer, filterTrails, trackLabelData } from "./layers/tracks";
+import { tracksLayer, orbitLayer, trailsLayer, filterTrails, trackLabelData, type TrackHighlight } from "./layers/tracks";
 import { cityLabelMinZoom, cityDetail } from "../lib/cities";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
@@ -81,6 +81,8 @@ export interface GlobeProps {
   onCameraChange?: (center: [number, number], zoom: number) => void;
   /** [lng,lat] of the active event to pulse-highlight, or null/undefined for none. */
   pulseAt?: [number, number] | null;
+  /** On-air plane/ship to spotlight with a locator ring on the globe, or null. */
+  highlightTrack?: TrackHighlight | null;
   /**
    * Click-to-select an event/quake → its info-box segment (null when the click
    * misses every pickable event). Undefined disables selection entirely.
@@ -151,7 +153,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 }
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, faults, interactive = true, onCameraChange, pulseAt, onSelect },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, faults, interactive = true, onCameraChange, pulseAt, highlightTrack, onSelect },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -641,6 +643,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
           aircraftStyle: state.aircraftStyle,
           shipStyle: state.shipStyle,
           zoom: state.camera.zoom,
+          highlight: highlightTrack ?? null,
         }),
       );
 
@@ -686,6 +689,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     cables,
     faults,
     nestKey,
+    highlightTrack?.kind,
+    highlightTrack?.code,
   ]);
 
   // Animate the event pulse: while an event is on air, re-commit the layers each

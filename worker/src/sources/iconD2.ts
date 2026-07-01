@@ -19,14 +19,16 @@ const DWD_ROOT = "https://opendata.dwd.de/weather/nwp/icon-d2/grib";
  * maps to the u/v pair (u_10m/v_10m); temp/gust are single scalars.
  *
  * Fields:
- *   temp → t_2m     (2 m air temperature, K)
- *   wind → u_10m / v_10m   (10 m wind components, m/s)
- *   gust → vmax_10m (10 m max wind gust, m/s)
+ *   temp     → t_2m     (2 m air temperature, K)
+ *   wind     → u_10m / v_10m   (10 m wind components, m/s)
+ *   gust     → vmax_10m (10 m max wind gust, m/s)
+ *   humidity → relhum_2m (2 m relative humidity, %)
  */
 export const ICON_D2_VAR_TOKENS: Record<string, string[]> = {
   temp: ["t_2m"],
   wind: ["u_10m", "v_10m"],
   gust: ["vmax_10m"],
+  humidity: ["relhum_2m"],
 };
 
 /** wgrib2 -match token per DWD field (single record per single-var file). */
@@ -36,6 +38,8 @@ export const ICON_D2_FIELD_MATCH: Record<string, string> = {
   v_10m: ":VGRD:10 m above ground:",
   // DWD VMAX_10M is coded as WMO MAXGUST at 10 m above ground.
   vmax_10m: ":(MAXGUST|GUST):10 m above ground:",
+  // DWD RELHUM_2M is coded as WMO RH at 2 m above ground (already %).
+  relhum_2m: ":RH:2 m above ground:",
 };
 
 /** Zero-pad a forecast hour to 3 digits (DWD filenames use fff). */

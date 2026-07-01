@@ -205,6 +205,51 @@ function arrowPolygon(d: Track, sizeDeg: number): [number, number, number][] {
   return shapeToCoords(d, sizeDeg, ARROW_SHAPE);
 }
 
+/** The on-air track to spotlight (aircraft/ship), matched by kind + code. */
+export interface TrackHighlight {
+  kind: "aircraft" | "ship";
+  /** ICAO24 (aircraft) or MMSI (ship) — matched to Track.code, case-insensitive. */
+  code: string;
+}
+
+/** Bright locator colour for the selected/on-air track. */
+const HIGHLIGHT_COLOR: RGB = [255, 255, 255];
+
+/**
+ * Locator layers for the director's on-air plane/ship: a translucent enlarged
+ * glyph "glow" that haloes the marker, plus a bright fixed-size ring so the
+ * viewer can pick it out of dense traffic. Both are polygon/scatter (Icon/Text
+ * render blank under the globe view). The glow is drawn UNDER the marker; the
+ * ring OVER everything.
+ */
+function highlightLayers(track: Track, style: TrackStyle, markerSizeDeg: number) {
+  const glow = new SolidPolygonLayer<Track>({
+    id: "live-tracks-highlight-glow",
+    data: [track],
+    getPolygon: (d) =>
+      style.icon === "glyph" ? glyphPolygon(d, markerSizeDeg * 1.9) : arrowPolygon(d, markerSizeDeg * 1.9),
+    getFillColor: [...HIGHLIGHT_COLOR, 70] as unknown as RGB,
+    parameters: DEPTH_TEST,
+    updateTriggers: { getPolygon: [track.id, markerSizeDeg, style.icon] },
+  });
+  const ring = new ScatterplotLayer<Track>({
+    id: "live-tracks-highlight-ring",
+    data: [track],
+    getPosition: trackPosition,
+    getRadius: 26,
+    radiusUnits: "pixels",
+    radiusMinPixels: 14,
+    stroked: true,
+    filled: false,
+    getLineColor: [...HIGHLIGHT_COLOR, 230] as unknown as RGB,
+    lineWidthUnits: "pixels",
+    getLineWidth: 2,
+    parameters: DEPTH_TEST,
+    updateTriggers: { getPosition: [track.id] },
+  });
+  return { glow, ring };
+}
+
 /** Per-kind silhouette for the "glyph" icon mode (plane / ship / diamond). */
 function glyphPolygon(d: Track, sizeDeg: number): [number, number, number][] {
   const shape = d.kind === "aircraft" ? PLANE_SHAPE : d.kind === "ship" ? SHIP_SHAPE : DIAMOND_SHAPE;
@@ -218,6 +263,8 @@ export function tracksLayer(
     aircraftStyle?: TrackStyle;
     shipStyle?: TrackStyle;
     zoom?: number;
+    /** The on-air aircraft/ship to spotlight with a locator ring, or null. */
+    highlight?: TrackHighlight | null;
   } = {},
 ) {
   const satelliteStyle = opts.satelliteStyle ?? { ...DEFAULT_STYLE, icon: "dot" };
@@ -278,9 +325,24 @@ export function tracksLayer(
       ? dotLayer(`${id}-dot`, data, style)
       : markerLayer(`${id}-icon`, data, style);
 
+  // Spotlight the director's on-air plane/ship: match by code within the already
+  // filtered set (so a filtered-out target isn't ringed), glow UNDER the marker,
+  // ring OVER everything.
+  let hi: ReturnType<typeof highlightLayers> | null = null;
+  if (opts.highlight) {
+    const code = opts.highlight.code.toLowerCase();
+    const pool = opts.highlight.kind === "aircraft" ? aircraft : ships;
+    const target = pool.find((t) => (t.code ?? "").toLowerCase() === code);
+    if (target) {
+      hi = highlightLayers(target, opts.highlight.kind === "aircraft" ? aircraftStyle : shipStyle, markerSizeDeg);
+    }
+  }
+
   if (sats.length) layers.push(dotLayer("live-tracks-sat", sats, satelliteStyle));
+  if (hi) layers.push(hi.glow);
   if (aircraft.length) layers.push(trackLayer("live-tracks-aircraft", aircraft, aircraftStyle));
   if (ships.length) layers.push(trackLayer("live-tracks-ship", ships, shipStyle));
+  if (hi) layers.push(hi.ring);
 
   // Name labels are NOT drawn here: deck's TextLayer renders blank under the
   // _GlobeView build (canvas font atlases come back empty — see the icon/text-
