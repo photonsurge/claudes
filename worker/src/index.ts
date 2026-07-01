@@ -16,6 +16,7 @@ import { join, extname, basename } from "path";
 import { QUEUE_NAME } from "@photonsurge/shared/utill/bull-utils";
 import { getQueue, getRedisOptions } from "@photonsurge/shared/bull/bull";
 import { getDb } from "@photonsurge/shared/utill/mongoose";
+import { getSource } from "@photonsurge/shared/sources";
 import { log } from "@photonsurge/shared/utill/logger";
 import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
@@ -152,12 +153,13 @@ process.on("uncaughtException", (err) => {
   // the whole group with MULTISOURCE_INGEST_ENABLED=false. Per-source cadence env-
   // tunable; defaults suit each product's refresh (IFS/wave 6-hourly, RTOFS daily).
   if (process.env.MULTISOURCE_INGEST_ENABLED !== "false") {
-    const sourceJobs: Array<{ event: string; every: number }> = [
-      { event: "refreshIfs", every: Number(process.env.IFS_INGEST_MS || 60 * 60 * 1000) },
-      { event: "refreshWaves", every: Number(process.env.WAVE_INGEST_MS || 60 * 60 * 1000) },
-      { event: "refreshRtofs", every: Number(process.env.RTOFS_INGEST_MS || 3 * 60 * 60 * 1000) },
+    const sourceJobs: Array<{ event: string; sourceId: string; every: number }> = [
+      { event: "refreshIfs", sourceId: "ifs", every: Number(process.env.IFS_INGEST_MS || 60 * 60 * 1000) },
+      { event: "refreshWaves", sourceId: "gfswave-mosaic", every: Number(process.env.WAVE_INGEST_MS || 60 * 60 * 1000) },
+      { event: "refreshRtofs", sourceId: "rtofs", every: Number(process.env.RTOFS_INGEST_MS || 3 * 60 * 60 * 1000) },
     ];
-    for (const { event, every } of sourceJobs) {
+    // Only schedule ENABLED sources (IFS is off by default until CCSDS-validated).
+    for (const { event, sourceId, every } of sourceJobs.filter((j) => getSource(j.sourceId)?.enabled)) {
       try {
         await myQueue.add(
           "do",

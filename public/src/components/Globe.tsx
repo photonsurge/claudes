@@ -14,6 +14,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -31,7 +32,14 @@ import {
   type TextureResolver,
 } from "./layers";
 import type { City } from "../lib/cities";
-import { tracksLayer, orbitLayer, trailsLayer, filterTrails } from "./layers/tracks";
+import {
+  tracksLayer,
+  orbitLayer,
+  trailsLayer,
+  filterTrails,
+  trackLabelData,
+  type TrackLabel,
+} from "./layers/tracks";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
 import { seismicLayer } from "./layers/seismic";
@@ -41,6 +49,7 @@ import { nightLayer } from "./layers/nightside";
 import { subsolarPoint } from "../lib/sun";
 import { discFromProject, type Disc } from "../lib/globe-geom";
 import GlobeAtmosphere from "./GlobeAtmosphere";
+import GlobeLabels from "./GlobeLabels";
 import type { Track, Quake } from "../lib/tracks/types";
 import type { TrackPath } from "../lib/tracks/client";
 import type { OrbitSegment } from "../lib/tracks/orbit";
@@ -203,6 +212,14 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // with the globe (its graticule ticks track globe longitude, not the screen).
     return disc ? { ...disc, lng: vs.longitude } : null;
   }, []);
+
+  // Live deck viewport + sub-camera point for the HTML label overlay
+  // (GlobeLabels). Read only refs, so their identity stays stable across renders.
+  const getViewport = useCallback(() => deckRef.current?.getViewports?.()[0] ?? null, []);
+  const getCamera = useCallback(
+    () => ({ longitude: viewStateRef.current.longitude, latitude: viewStateRef.current.latitude }),
+    [],
+  );
 
   const onCameraChangeRef = useRef(onCameraChange);
   useEffect(() => {
@@ -597,7 +614,6 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     if (tracks.length)
       layers.push(
         ...tracksLayer(tracks, {
-          labels: state.showTrackLabels,
           satelliteStyle: state.satelliteStyle,
           aircraftStyle: state.aircraftStyle,
           shipStyle: state.shipStyle,
@@ -663,6 +679,41 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pulseAt?.[0], pulseAt?.[1], hoverPulse?.[0], hoverPulse?.[1]]);
 
+  // Name labels for the HTML overlay (deck's TextLayer draws blank under the
+  // globe). Track names honour the "Names" toggle; city names follow the Cities
+  // layer. Capitals gold, other cities white — matching the city dots.
+  const overlayLabels = useMemo<TrackLabel[]>(() => {
+    const out: TrackLabel[] = [];
+    if (state.showTrackLabels) {
+      out.push(
+        ...trackLabelData(tracks, {
+          satelliteStyle: state.satelliteStyle,
+          aircraftStyle: state.aircraftStyle,
+          shipStyle: state.shipStyle,
+        }),
+      );
+    }
+    if (state.showCities) {
+      for (const c of cities) {
+        out.push({
+          id: `city:${c.lng.toFixed(3)},${c.lat.toFixed(3)}`,
+          text: c.name,
+          position: [c.lng, c.lat, 0],
+          color: c.isCapital ? [255, 215, 0] : [255, 255, 255],
+        });
+      }
+    }
+    return out;
+  }, [
+    state.showTrackLabels,
+    state.showCities,
+    tracks,
+    cities,
+    state.satelliteStyle,
+    state.aircraftStyle,
+    state.shipStyle,
+  ]);
+
   return (
     <div style={{ position: "absolute", inset: 0 }}>
       <canvas
@@ -670,6 +721,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
       />
       <GlobeAtmosphere getDisc={getDisc} enabled={state.showAtmosphere !== false} />
+      <GlobeLabels getViewport={getViewport} getCamera={getCamera} labels={overlayLabels} />
     </div>
   );
 });

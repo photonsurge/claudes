@@ -85,7 +85,12 @@ const modelPriority = (model: string): number => getSource(model)?.priority ?? 0
  * renders whatever forecast hours a variable actually has (e.g. RTOFS = f0 only),
  * so scrubbing past a source's last step simply drops that layer for those steps.
  */
-export function composeManifest(runs: RunLike[]): WeatherManifest | null {
+export function composeManifest(allRuns: RunLike[]): WeatherManifest | null {
+  // Only display sources that are ENABLED (unknown models default to shown).
+  // IFS is enabled:false by default — it's CCSDS-packed and must be validated
+  // before use; without honoring this it wins temp/wind/pressure and, if the
+  // worker's wgrib2 can't unpack CCSDS, bakes zeros → "all purple" temperature.
+  const runs = allRuns.filter((r) => getSource(r.model)?.enabled ?? true);
   if (!runs.length) return null;
   const runTime = (r: RunLike) => new Date(r.run as any).getTime();
 

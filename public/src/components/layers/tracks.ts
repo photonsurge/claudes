@@ -1,4 +1,4 @@
-import { ScatterplotLayer, PathLayer, TextLayer, SolidPolygonLayer } from "@deck.gl/layers";
+import { ScatterplotLayer, PathLayer, SolidPolygonLayer } from "@deck.gl/layers";
 import type { Track } from "../../lib/tracks/types";
 import type { TrackStyle } from "@photonsurge/shared/control";
 import type { OrbitSegment } from "../../lib/tracks/orbit";
@@ -214,7 +214,6 @@ function glyphPolygon(d: Track, sizeDeg: number): [number, number, number][] {
 export function tracksLayer(
   tracks: Track[],
   opts: {
-    labels?: boolean;
     satelliteStyle?: TrackStyle;
     aircraftStyle?: TrackStyle;
     shipStyle?: TrackStyle;
@@ -224,8 +223,6 @@ export function tracksLayer(
   const satelliteStyle = opts.satelliteStyle ?? { ...DEFAULT_STYLE, icon: "dot" };
   const aircraftStyle = opts.aircraftStyle ?? DEFAULT_STYLE;
   const shipStyle = opts.shipStyle ?? DEFAULT_STYLE;
-  const styleFor = (d: Track): TrackStyle =>
-    d.kind === "aircraft" ? aircraftStyle : d.kind === "ship" ? shipStyle : satelliteStyle;
   // Arrow size in degrees, scaled so it's ~constant on screen across zooms.
   const markerSizeDeg = Math.min(8, Math.max(0.05, 0.25 * Math.pow(2, 5 - (opts.zoom ?? 4))));
 
@@ -285,37 +282,52 @@ export function tracksLayer(
   if (aircraft.length) layers.push(trackLayer("live-tracks-aircraft", aircraft, aircraftStyle));
   if (ships.length) layers.push(trackLayer("live-tracks-ship", ships, shipStyle));
 
-  if (opts.labels) {
-    const labelColor = (d: Track): RGB => colorFor(d, styleFor(d));
-    const labelProps = {
-      id: "live-track-labels",
-      // Spatially thinned (one label per grid cell) so dense traffic stays
-      // readable. We do this in JS rather than CollisionFilterExtension because
-      // that extension's collision pass mis-culls under _GlobeView (labels
-      // vanish entirely). SDF text + outline so it reads over any basemap.
-      data: labelSubset([...sats, ...aircraft, ...ships]),
-      getPosition: trackPosition,
-      // Name/code only — deck's SDF TextLayer can't render colour flag emoji
-      // (those show in the hover tooltip + admin tables, which are HTML).
-      getText: (d: Track) => d.name ?? "",
-      getColor: (d: Track) => [...labelColor(d), 235],
-      getSize: 12,
-      sizeUnits: "pixels",
-      getPixelOffset: [9, 0],
-      getTextAnchor: "start",
-      getAlignmentBaseline: "center",
-      fontFamily: "system-ui, sans-serif",
-      fontWeight: 600,
-      outlineWidth: 3,
-      outlineColor: [0, 0, 0, 230],
-      fontSettings: { sdf: true, radius: 12 },
-      parameters: DEPTH_TEST,
-    };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    layers.push(new TextLayer(labelProps as any));
-  }
-
+  // Name labels are NOT drawn here: deck's TextLayer renders blank under the
+  // _GlobeView build (canvas font atlases come back empty — see the icon/text-
+  // atlas note). They're drawn as an HTML overlay instead; see trackLabelData +
+  // GlobeLabels.
   return layers;
+}
+
+/** A single track name label, as plain data for the HTML overlay. */
+export interface TrackLabel {
+  id: string;
+  text: string;
+  /** [lng, lat, altM] — same position the marker/dot uses, so they line up. */
+  position: [number, number, number];
+  color: RGB;
+}
+
+/**
+ * The name labels for the live-track overlay, as plain data for a DOM overlay
+ * (GlobeLabels) rather than a deck layer — deck's TextLayer renders blank under
+ * the _GlobeView build. Applies the same per-type display filters and per-kind
+ * cell thinning as the markers, so the labels match exactly what's shown.
+ */
+export function trackLabelData(
+  tracks: Track[],
+  opts: {
+    satelliteStyle?: TrackStyle;
+    aircraftStyle?: TrackStyle;
+    shipStyle?: TrackStyle;
+  } = {},
+): TrackLabel[] {
+  const satelliteStyle = opts.satelliteStyle ?? { ...DEFAULT_STYLE, icon: "dot" };
+  const aircraftStyle = opts.aircraftStyle ?? DEFAULT_STYLE;
+  const shipStyle = opts.shipStyle ?? DEFAULT_STYLE;
+  const styleFor = (d: Track): TrackStyle =>
+    d.kind === "aircraft" ? aircraftStyle : d.kind === "ship" ? shipStyle : satelliteStyle;
+  const sats = tracks.filter((t) => t.kind === "satellite" && passesFilter(t, satelliteStyle));
+  const aircraft = tracks.filter((t) => t.kind === "aircraft" && passesFilter(t, aircraftStyle));
+  const ships = tracks.filter((t) => t.kind === "ship" && passesFilter(t, shipStyle));
+  return labelSubset([...sats, ...aircraft, ...ships])
+    .filter((d) => d.name)
+    .map((d) => ({
+      id: d.id,
+      text: d.name as string,
+      position: trackPosition(d),
+      color: colorFor(d, styleFor(d)),
+    }));
 }
 
 /**

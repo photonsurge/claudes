@@ -102,10 +102,12 @@ describe("composeManifest (multi-supplier portfolio)", () => {
     expect(composeManifest([])).toBeNull();
   });
 
-  it("picks each variable from its highest-priority source", () => {
-    expect(m.variables.temp.files["0"]).toBe(textureUrl("ifs-temp")); // ifs > gfs
-    expect(m.variables.sst.files["0"]).toBe(textureUrl("rtofs-sst")); // rtofs > gfs
-    expect(m.variables.wave.files["0"]).toBe(textureUrl("mosaic-wave")); // mosaic > gfs
+  it("picks each variable from its highest-priority ENABLED source", () => {
+    // ifs is enabled:false in the registry, so it does NOT win temp despite its
+    // higher priority — the base GFS temp wins (prevents the CCSDS "all purple").
+    expect(m.variables.temp.files["0"]).toBe(textureUrl("gfs-temp"));
+    expect(m.variables.sst.files["0"]).toBe(textureUrl("rtofs-sst")); // rtofs enabled > gfs
+    expect(m.variables.wave.files["0"]).toBe(textureUrl("mosaic-wave")); // mosaic enabled > gfs
     expect(m.variables.humidity.files["0"]).toBe(textureUrl("gfs-hum")); // gfs-only
     expect(m.variables.current.files["0"]).toBe(textureUrl("rtofs-cur")); // rtofs-only
     expect(m.variables.salinity.files["0"]).toBe(textureUrl("rtofs-sal"));
@@ -126,8 +128,8 @@ describe("composeManifest (multi-supplier portfolio)", () => {
 
   it("tags each variable with its winning source + run time", () => {
     expect(m.variables.sst.sourceId).toBe("rtofs");
-    expect(m.variables.temp.sourceId).toBe("ifs");
-    expect(m.variables.humidity.sourceId).toBe("gfs"); // falls back to run.model
+    expect(m.variables.temp.sourceId).toBe("gfs"); // ifs disabled → gfs wins
+    expect(m.variables.humidity.sourceId).toBe("gfs");
     expect(m.variables.sst.runTimeUtc).toBe("2026-06-30T00:00:00.000Z");
   });
 });

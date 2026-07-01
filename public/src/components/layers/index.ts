@@ -5,7 +5,7 @@
  */
 "use client";
 
-import { ScatterplotLayer, TextLayer } from "@deck.gl/layers";
+import { ScatterplotLayer } from "@deck.gl/layers";
 import {
   RasterLayer,
   ParticleLayer,
@@ -33,13 +33,6 @@ export type TextureResolver = (url: string) => LoadedTexture | undefined;
  * (0x100–0x17F: Ō, ō, İ, ā …). A fixed superset keeps the SDF atlas stable for
  * broadcast instead of rebuilding/flashing as new accented names appear.
  */
-const CITY_CHARACTER_SET: string[] = (() => {
-  const chars: string[] = [];
-  for (let c = 0x20; c <= 0x7e; c++) chars.push(String.fromCodePoint(c));
-  for (let c = 0xa0; c <= 0x17f; c++) chars.push(String.fromCodePoint(c));
-  return chars;
-})();
-
 /**
  * Vector ParticleLayer for any uv field (wind, ocean current). Decodes u/v via
  * the manifest's `vectorUnscale`; `opts.colorByMagnitude` colours by speed
@@ -116,12 +109,14 @@ export function pressureLayers(
 export function cityLayer(
   cities: City[],
   subsolar?: [number, number],
-): Array<ScatterplotLayer | TextLayer> {
+): Array<ScatterplotLayer> {
   const props = cityProps(cities, subsolar);
   // When the sun moves, the per-city night factor changes → recompute the dot
   // radius/colour. Keyed to the subsolar point (rounded, so it retriggers as the
   // terminator advances but not on every identical rebuild).
   const nightKey = subsolar ? `${subsolar[0].toFixed(1)},${subsolar[1].toFixed(1)}` : "off";
+  // Dots only. City NAME labels are drawn by the HTML overlay (GlobeLabels), not
+  // a TextLayer — deck's font atlases come back blank under the _GlobeView build.
   return [
     new ScatterplotLayer({
       ...props.scatter,
@@ -133,24 +128,6 @@ export function cityLayer(
       pickable: false,
       parameters: DEPTH_TEST,
       updateTriggers: { getRadius: nightKey, getFillColor: nightKey },
-    }),
-    new TextLayer({
-      ...props.text,
-      getColor: [255, 255, 255, 230],
-      getTextAnchor: "start",
-      getAlignmentBaseline: "center",
-      getPixelOffset: [8, 0],
-      // SDF font rendering is required for outlines; without it deck warns
-      // "fontSettings.sdf is required to render outline".
-      fontSettings: { sdf: true, buffer: 8, radius: 12 },
-      outlineWidth: 2,
-      outlineColor: [0, 0, 0, 255],
-      fontFamily: "system-ui, sans-serif",
-      // City names include accented/non-ASCII glyphs (é, ã, Ō, İ …). Build the
-      // glyph atlas from the actual labels so nothing renders blank.
-      characterSet: CITY_CHARACTER_SET,
-      pickable: false,
-      parameters: DEPTH_TEST,
     }),
   ];
 }
