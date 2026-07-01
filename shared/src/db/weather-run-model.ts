@@ -24,8 +24,19 @@ export interface iWeatherVariableEntry {
   units: string;
   domain?: [number, number];
   palette?: string;
-  /** Wind only: the byte-scale range used to encode u/v into the RG PNG. */
+  /** Scalar: the byte-scale range the grayscale value decodes back to. */
   imageUnscale?: [number, number];
+  /** Vector ("uv"): symmetric per-channel byte-scale range, i.e. [-max,max]. */
+  vectorUnscale?: [number, number];
+  // ── Source tagging (multi-supplier portfolio; all optional/back-compat) ─────
+  /** Which SourceDescriptor produced this texture, e.g. "gfs", "ifs", "rtofs". */
+  sourceId?: string;
+  /** Source nominal resolution (deg); smaller wins in overlap. */
+  resolutionDeg?: number;
+  /** [west,south,east,north] this texture covers; global = [-180,-90,180,90]. */
+  bbox?: [number, number, number, number];
+  /** Merge priority; higher (finer/nested) composites on top. */
+  priority?: number;
   files: Record<string, string>;
 }
 

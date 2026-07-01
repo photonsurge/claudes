@@ -30,31 +30,34 @@ export async function bakeVariableStep(
   prevAccumPath: string | undefined,
   stepHours: number,
 ): Promise<BakeVariableStepResult> {
+  // Only GFS-bound variables reach this path (ingest skips the rest).
+  const gfs = variable.gfs;
+  if (!gfs) throw new Error(`bakeVariableStep: ${variable.id} has no GFS binding`);
   // Masked scalars (SST/snow) also pull the GFS land-sea mask (LAND:surface) in
   // the same subset so we can bake the off-side as transparent.
-  const masked = variable.encoding === "scalar" && !!variable.gfs.mask;
+  const masked = variable.encoding === "scalar" && !!gfs.mask;
   const url = buildNomadsUrl({
     date,
     cycle,
     fhr,
-    vars: masked ? [...variable.gfs.vars, "LAND"] : variable.gfs.vars,
-    levels: masked ? [...variable.gfs.levels, "surface"] : variable.gfs.levels,
-    product: variable.gfs.product,
+    vars: masked ? [...gfs.vars, "LAND"] : gfs.vars,
+    levels: masked ? [...gfs.levels, "surface"] : gfs.levels,
+    product: gfs.product,
   });
   const gribPath = await downloadToTemp(url, `${variable.id}.f${padFhr(fhr)}.grib2`);
 
   if (variable.encoding === "uv") {
-    const u = await extractField({ gribPath, match: `:${variable.gfs.vars[0]}:`, ...GFS_GRID });
-    const v = await extractField({ gribPath, match: `:${variable.gfs.vars[1]}:`, ...GFS_GRID });
+    const u = await extractField({ gribPath, match: `:${gfs.vars[0]}:`, ...GFS_GRID });
+    const v = await extractField({ gribPath, match: `:${gfs.vars[1]}:`, ...GFS_GRID });
     const res = await bakeWind({ u: u.values, v: v.values, width: u.width, height: u.height });
     return { ...res, gribPath };
   }
 
-  const field = await extractField({ gribPath, match: `:${variable.gfs.vars[0]}:`, ...GFS_GRID });
+  const field = await extractField({ gribPath, match: `:${gfs.vars[0]}:`, ...GFS_GRID });
   let prevValues: Float32Array | undefined;
   let deltaHours: number | undefined;
-  if (variable.gfs.accumulated && prevAccumPath) {
-    const prev = await extractField({ gribPath: prevAccumPath, match: `:${variable.gfs.vars[0]}:`, ...GFS_GRID });
+  if (gfs.accumulated && prevAccumPath) {
+    const prev = await extractField({ gribPath: prevAccumPath, match: `:${gfs.vars[0]}:`, ...GFS_GRID });
     prevValues = prev.values;
     deltaHours = stepHours;
   }

@@ -61,8 +61,8 @@ export function scalarKeepMask(
   land?: Float32Array,
 ): Uint8Array | undefined {
   const reg = VARIABLE_REGISTRY[variableId];
-  const maskSide = reg?.gfs.mask;
-  const minVisible = reg?.gfs.minVisible;
+  const maskSide = reg?.gfs?.mask;
+  const minVisible = reg?.gfs?.minVisible;
 
   const keep = new Uint8Array(physical.length);
   let dropped = false;

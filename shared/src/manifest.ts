@@ -12,6 +12,13 @@ export interface WeatherVariableManifest {
   domain?: [number, number];
   palette?: string;
   imageUnscale?: [number, number];
+  /** Vector ("uv"): symmetric per-channel decode range [-max,max]. */
+  vectorUnscale?: [number, number];
+  // ── Source tagging (multi-supplier; optional so single-source stays valid) ──
+  sourceId?: string;
+  resolutionDeg?: number;
+  bbox?: [number, number, number, number];
+  priority?: number;
   /** forecast-hour (string) → texture URL */
   files: Record<string, string>;
 }

@@ -14,6 +14,23 @@ export const GFS_BOUNDS = [-180, -90, 180, 90] as const;
 export const WIND_IMAGE_UNSCALE: [number, number] = [-128, 128];
 
 /**
+ * Per-vector-variable symmetric encode range [-max,max] (in the baked unit),
+ * applied to BOTH channels (R=u, G=v). Stored in the manifest as `vectorUnscale`
+ * so the client decodes u/v back. Wind reuses the wide ±128 m/s range; ocean
+ * currents are slow (<~2.5 m/s even in the Gulf Stream) so ±3 m/s gives usable
+ * 8-bit resolution.
+ */
+export const VECTOR_IMAGE_UNSCALE: Record<string, [number, number]> = {
+  wind: WIND_IMAGE_UNSCALE,
+  current: [-3, 3], // m/s surface current
+};
+
+/** Resolve the symmetric vector encode range for a uv variable. */
+export function vectorImageUnscaleFor(variableId: string): [number, number] {
+  return VECTOR_IMAGE_UNSCALE[variableId] ?? WIND_IMAGE_UNSCALE;
+}
+
+/**
  * Per-scalar-variable decode ranges (in the baked/display unit). Chosen wider
  * than the registry colour domain to safely cover physical extremes.
  */
@@ -28,6 +45,7 @@ export const SCALAR_IMAGE_UNSCALE: Record<string, [number, number]> = {
   cloud: [0, 100], // %
   snow: [0, 500], // cm (deep snowpack; SNOD baked metres → cm)
   wave: [0, 30], // m significant wave height (record seas ~20m)
+  salinity: [25, 40], // PSU (open ocean ~32-37; wider to cover coastal/brine)
 };
 
 /** Resolve the decode range for a variable, defaulting to its colour domain. */

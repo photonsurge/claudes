@@ -93,6 +93,11 @@ export default function ControlPanel({
             checked={state.showDayNight}
             onChange={(showDayNight) => patch({ showDayNight })}
           />
+          <Toggle
+            label="Broadcast chrome"
+            checked={state.showBroadcastChrome}
+            onChange={(showBroadcastChrome) => patch({ showBroadcastChrome })}
+          />
         </div>
       </Section>
 

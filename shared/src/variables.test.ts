@@ -43,12 +43,22 @@ describe("VARIABLE_REGISTRY integrity", () => {
     expect(PALETTES[v.palette]).toBeDefined();
     expect(v.domain).toHaveLength(2);
     expect(v.domain[0]).toBeLessThan(v.domain[1]);
-    expect(v.gfs.vars.length).toBeGreaterThan(0);
-    expect(v.gfs.levels.length).toBeGreaterThan(0);
-    if (v.encoding === "uv") {
-      expect(v.gfs.vars.length).toBe(2);
-      expect(v.kind).toBe("particle");
+    // GFS binding is optional (ocean-only vars have none); assert only when set.
+    if (v.gfs) {
+      expect(v.gfs.vars.length).toBeGreaterThan(0);
+      expect(v.gfs.levels.length).toBeGreaterThan(0);
+      if (v.encoding === "uv") expect(v.gfs.vars.length).toBe(2);
     }
+    if (v.encoding === "uv") expect(v.kind).toBe("particle");
+  });
+
+  it("ocean-only variables (current, salinity) have no GFS binding", () => {
+    expect(VARIABLE_REGISTRY.current).toBeDefined();
+    expect(VARIABLE_REGISTRY.current.encoding).toBe("uv");
+    expect(VARIABLE_REGISTRY.current.gfs).toBeUndefined();
+    expect(VARIABLE_REGISTRY.salinity).toBeDefined();
+    expect(VARIABLE_REGISTRY.salinity.encoding).toBe("scalar");
+    expect(VARIABLE_REGISTRY.salinity.gfs).toBeUndefined();
   });
 
   it("wind is uv-encoded, scalars are scalar-encoded", () => {

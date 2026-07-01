@@ -88,6 +88,45 @@ export function windRgba(
 }
 
 /**
+ * Build raw RGBA bytes for a vector (uv) texture with optional nodata masking.
+ * Generalises `windRgba`: R = scaled u, G = scaled v, B = 0. When `keep` is
+ * given, pixels where `keep[i]` is falsy bake as nodata (alpha 0) — how ocean
+ * currents get their land/undefined transparent. Wind passes no mask (opaque).
+ */
+export function vectorRgba(
+  u: Float32Array,
+  v: Float32Array,
+  width: number,
+  height: number,
+  imageUnscale: [number, number],
+  keep?: ArrayLike<number>,
+): Buffer {
+  const n = width * height;
+  const buf = Buffer.allocUnsafe(n * 4);
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    buf[o] = scaleToByte(u[i], imageUnscale);
+    buf[o + 1] = scaleToByte(v[i], imageUnscale);
+    buf[o + 2] = 0;
+    buf[o + 3] = keep && !keep[i] ? 0 : 255;
+  }
+  return buf;
+}
+
+/** Encode a vector (uv) RGBA PNG via sharp; `keep` masks nodata to alpha 0. */
+export async function encodeVectorPng(
+  u: Float32Array,
+  v: Float32Array,
+  width: number,
+  height: number,
+  imageUnscale: [number, number],
+  keep?: ArrayLike<number>,
+): Promise<Buffer> {
+  const raw = vectorRgba(u, v, width, height, imageUnscale, keep);
+  return sharp(raw, { raw: { width, height, channels: 4 } }).png().toBuffer();
+}
+
+/**
  * Build raw RGBA bytes for a scalar (grayscale) texture. When `keep` is given,
  * pixels where `keep[i]` is falsy are baked as nodata (alpha 0) — WeatherLayers
  * skips alpha-0 texels, which is how we mask SST to ocean, snow to land, etc.

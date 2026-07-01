@@ -280,6 +280,8 @@ export interface ControlState {
   showAtmosphere: boolean;
   /** Shade the night hemisphere from the real sun position + light up night cities. */
   showDayNight: boolean;
+  /** Overlay the broadcast chrome (tickers, brand, LIVE, alert panel, monitor). */
+  showBroadcastChrome: boolean;
 }
 
 export const DEFAULT_CONTROL_STATE: ControlState = {
@@ -322,6 +324,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   graticuleLabels: true,
   showAtmosphere: true,
   showDayNight: false,
+  showBroadcastChrome: false,
 };
 
 /**
@@ -414,5 +417,9 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
       typeof patch.showAtmosphere === "boolean" ? patch.showAtmosphere : base.showAtmosphere ?? true,
     showDayNight:
       typeof patch.showDayNight === "boolean" ? patch.showDayNight : base.showDayNight ?? false,
+    showBroadcastChrome:
+      typeof patch.showBroadcastChrome === "boolean"
+        ? patch.showBroadcastChrome
+        : base.showBroadcastChrome ?? false,
   };
 }

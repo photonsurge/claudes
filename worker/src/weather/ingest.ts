@@ -75,6 +75,10 @@ export async function runIngest(job: Job) {
     const variables: Record<string, iWeatherVariableEntry> = {};
 
     for (const variable of Object.values(VARIABLE_REGISTRY)) {
+      // GFS ingest only handles variables with a GFS binding. Ocean-only vars
+      // (current/salinity, and RTOFS-preferred SST) are baked by their own
+      // source path; GFS still supplies masked SST here as the fallback.
+      if (!variable.gfs) continue;
       // Each variable is independent: a missing field (e.g. APCP/rain has no
       // record at f000) skips just that variable, it doesn't fail the whole run.
       try {

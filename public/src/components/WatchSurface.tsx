@@ -16,6 +16,7 @@ import { useCables } from "../lib/cables-overlay";
 import type { City } from "../lib/cities";
 import GlobeView from "./GlobeView";
 import AlertLegend from "./AlertLegend";
+import BroadcastFrame from "./broadcast/BroadcastFrame";
 
 interface WatchSurfaceProps {
   state: ControlState;
@@ -58,10 +59,23 @@ export default function WatchSurface({ state, manifest, cities, sceneName, pulse
         interactive={false}
         pulseAt={pulseAt}
       />
-      <AlertLegend
-        alerts={state.showAlerts ? alerts : []}
-        quakes={state.showSeismic ? quakes : []}
-      />
+      {/* The broadcast chrome carries its own legend/alert furniture, so the plain
+          map key only shows on the clean (chrome-off) surface to avoid clashing. */}
+      {!state.showBroadcastChrome ? (
+        <AlertLegend
+          alerts={state.showAlerts ? alerts : []}
+          quakes={state.showSeismic ? quakes : []}
+        />
+      ) : null}
+      {state.showBroadcastChrome ? (
+        <BroadcastFrame
+          state={state}
+          manifest={manifest}
+          alerts={state.showAlerts ? alerts : []}
+          quakes={state.showSeismic ? quakes : []}
+          tracks={tracks}
+        />
+      ) : null}
       <div
         style={{
           position: "absolute",

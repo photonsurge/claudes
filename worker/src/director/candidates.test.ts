@@ -112,7 +112,9 @@ describe("buildCandidates", () => {
     const empty = fakeDb({ quakes: [], alerts: [], aircraft: [], ships: [] });
     const pool = await buildCandidates(empty, cfg());
     expect(pool.length).toBeGreaterThan(0);
-    const fillerKinds = new Set(["intro", "ocean", "tour"]);
+    // Filler kinds: the global intro, ocean spins, curated tours, and orbital
+    // shots (gated to ingested TLE groups so they're never empty).
+    const fillerKinds = new Set(["intro", "ocean", "orbital", "tour"]);
     expect(pool.every((c) => fillerKinds.has(c.segment.kind))).toBe(true);
   });
 });

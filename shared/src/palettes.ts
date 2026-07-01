@@ -102,6 +102,25 @@ export const PALETTES: Record<string, Palette> = {
     [0.85, "#c84fb0"],
     [1.0, "#e02747"],
   ],
+  // Ocean current speed (|v|), viridis-like: slow indigo → fast yellow. Colours
+  // the current particle/arrow layer by magnitude over 0..3 m/s.
+  current: [
+    [0.0, "#3b1f6b"],
+    [0.25, "#3457a8"],
+    [0.5, "#1f9bb0"],
+    [0.7, "#2fbf6f"],
+    [0.85, "#a8d84a"],
+    [1.0, "#f2e23a"],
+  ],
+  // Sea surface salinity: fresher green → saltier deep blue/violet, an
+  // oceanographic ramp over ~30..40 PSU.
+  salinity: [
+    [0.0, "#1f6f4a"],
+    [0.3, "#2f9bd6"],
+    [0.55, "#3257b0"],
+    [0.8, "#3b2f8f"],
+    [1.0, "#6a1f7a"],
+  ],
   // Wind particle speed colouring.
   wind: [
     [0.0, "#e8f0ff"],

@@ -52,7 +52,13 @@ export interface iVariableMeta {
   palette: string;
   /** Expected [min,max] in the primary display unit (for the colour ramp). */
   domain: [number, number];
-  gfs: iGfsField;
+  /**
+   * GFS field binding. Optional now: ocean-only variables (`current`,
+   * `salinity`) have no GFS source and are supplied by RTOFS instead — see
+   * `sources.ts` (`sourcesForVariable`) for the full supplier list per variable.
+   * The GFS ingest loop skips any variable without a `gfs` binding.
+   */
+  gfs?: iGfsField;
 }
 
 export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
@@ -187,6 +193,31 @@ export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
     // The grid is bitmap-masked over land (GRIB UNDEFINED), which bakeScalar
     // bakes transparent — no separate land mask needed.
     gfs: { vars: ["HTSGW"], levels: ["surface"], product: "wave" },
+  },
+  // ── Ocean variables (RTOFS, no GFS source) ──────────────────────────────────
+  current: {
+    id: "current",
+    label: "Ocean current",
+    // Vector field (u,v) — reuses the existing "uv" 2-channel encoding, coloured
+    // by magnitude on the client like wind particles. Supplied by RTOFS surface
+    // currents (m/s); land/nodata baked transparent.
+    encoding: "uv",
+    kind: "particle",
+    units: "m/s",
+    altUnit: "kt",
+    altConvert: (v) => v * 1.943844,
+    palette: "current",
+    domain: [0, 3],
+  },
+  salinity: {
+    id: "salinity",
+    label: "Sea surface salinity",
+    encoding: "scalar",
+    kind: "raster",
+    units: "PSU",
+    palette: "salinity",
+    // Open-ocean sea-surface salinity sits ~32–37 PSU; domain kept a touch wider.
+    domain: [30, 40],
   },
 };
 

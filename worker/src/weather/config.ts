@@ -20,6 +20,16 @@ export function cfg(): WeatherConfig {
   };
 }
 
+/**
+ * Feature flag: when true, the atmospheric base is ECMWF IFS instead of GFS
+ * (GFS stays wired as the failover). Off by default — IFS lags ~9h and must be
+ * validated per §11 before becoming the default. Read at the boundary (director/
+ * check) so it can flip without a rebuild.
+ */
+export function ifsAsDefaultBase(): boolean {
+  return process.env.IFS_AS_DEFAULT_BASE === "true";
+}
+
 /** Forecast steps f000..forecastHours by stepHours (stepHours floored at 1). */
 export function forecastSteps(forecastHours: number, stepHours: number): number[] {
   const out: number[] = [];

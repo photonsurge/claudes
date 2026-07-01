@@ -17,6 +17,7 @@ import type { LoadedTexture } from "../../lib/textures";
 import type { City } from "../../lib/cities";
 import {
   windParticleProps,
+  vectorParticleProps,
   scalarRasterProps,
   pressureProps,
   cityProps,
@@ -39,13 +40,19 @@ const CITY_CHARACTER_SET: string[] = (() => {
   return chars;
 })();
 
-export function windParticleLayer(
+/**
+ * Vector ParticleLayer for any uv field (wind, ocean current). Decodes u/v via
+ * the manifest's `vectorUnscale`; `opts.colorByMagnitude` colours by speed
+ * (currents) instead of the flat colour (wind).
+ */
+export function vectorParticleLayer(
   manifest: WeatherManifest,
+  variableId: string,
   fhr: number,
   resolve: TextureResolver,
-  opts?: Parameters<typeof windParticleProps>[2],
+  opts?: Parameters<typeof vectorParticleProps>[3],
 ): ParticleLayer | null {
-  const props = windParticleProps(manifest, fhr, opts);
+  const props = vectorParticleProps(manifest, variableId, fhr, opts);
   if (!props) return null;
   const image = resolve(props.image);
   if (!image) return null;
@@ -56,6 +63,15 @@ export function windParticleLayer(
   // bleed back-side particles through AND disable depth for later layers).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return new ParticleLayer({ ...props, image: image as any, parameters: DEPTH_TEST });
+}
+
+export function windParticleLayer(
+  manifest: WeatherManifest,
+  fhr: number,
+  resolve: TextureResolver,
+  opts?: Parameters<typeof windParticleProps>[2],
+): ParticleLayer | null {
+  return vectorParticleLayer(manifest, "wind", fhr, resolve, opts);
 }
 
 export function scalarRasterLayer(

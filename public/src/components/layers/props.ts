@@ -33,7 +33,7 @@ export function textureUrlFor(
   return v.files[String(fhr)];
 }
 
-export interface WindParticleProps {
+export interface VectorParticleProps {
   id: string;
   image: string;
   imageUnscale: [number, number];
@@ -45,33 +45,54 @@ export interface WindParticleProps {
   width: number;
   /** Particle colour (RGBA); white reads cleanly on dark/satellite globes. */
   color: [number, number, number, number];
-  /** Must be true to advect the particles along the wind field. */
+  /**
+   * Optional magnitude colour ramp (physical units). When set (e.g. ocean
+   * currents coloured by |v|), the ParticleLayer colours by speed instead of the
+   * flat `color`; wind omits it and keeps the single white colour.
+   */
+  palette?: Palette;
+  /** Must be true to advect the particles along the field. */
   animate: boolean;
   opacity: number;
   visible: boolean;
 }
 
-/** PURE props for the wind ParticleLayer. Returns null if no wind texture. */
-export function windParticleProps(
+/** Back-compat alias — wind is a vector particle field. */
+export type WindParticleProps = VectorParticleProps;
+
+export interface VectorParticleOpts {
+  numParticles?: number;
+  maxAge?: number;
+  speedFactor?: number;
+  width?: number;
+  opacity?: number;
+  /** Particle colour as a hex string (`#rrggbb`); defaults to white. */
+  color?: string;
+  /** Colour particles by magnitude using the variable's palette. */
+  colorByMagnitude?: boolean;
+}
+
+/**
+ * PURE props for a vector ParticleLayer (wind, ocean current, …). Reads the
+ * variable's `vectorUnscale` (or legacy `imageUnscale`) to decode u/v. Returns
+ * null when the variable has no texture/unscale at this step.
+ */
+export function vectorParticleProps(
   manifest: WeatherManifest,
+  variableId: string,
   fhr: number,
-  opts: {
-    numParticles?: number;
-    maxAge?: number;
-    speedFactor?: number;
-    width?: number;
-    opacity?: number;
-    /** Particle colour as a hex string (`#rrggbb`); defaults to white. */
-    color?: string;
-  } = {},
-): WindParticleProps | null {
-  const image = textureUrlFor(manifest, "wind", fhr);
-  const entry = manifest.variables.wind;
-  if (!image || !entry?.imageUnscale) return null;
-  return {
-    id: `wind-${fhr}`,
+  opts: VectorParticleOpts = {},
+): VectorParticleProps | null {
+  const image = textureUrlFor(manifest, variableId, fhr);
+  const entry = manifest.variables[variableId];
+  const unscale = entry?.vectorUnscale ?? entry?.imageUnscale;
+  if (!image || !entry || !unscale) return null;
+  const meta = getVariable(variableId);
+  const domain = entry.domain ?? meta?.domain;
+  const props: VectorParticleProps = {
+    id: `${variableId}-${fhr}`,
     image,
-    imageUnscale: entry.imageUnscale,
+    imageUnscale: unscale,
     bounds: manifestBounds(manifest),
     numParticles: opts.numParticles ?? 6000,
     // nullschool/Windy look: enough trail + speed to read as flow, animated.
@@ -83,6 +104,22 @@ export function windParticleProps(
     opacity: opts.opacity ?? 0.9,
     visible: true,
   };
+  if (opts.colorByMagnitude) {
+    const paletteId = entry.palette ?? meta?.palette ?? variableId;
+    // WeatherLayers maps the ramp against decoded speed, so scale 0..1 stops onto
+    // the variable's magnitude domain (e.g. current 0..3 m/s).
+    props.palette = scalePaletteToDomain(getPalette(paletteId), domain);
+  }
+  return props;
+}
+
+/** PURE props for the wind ParticleLayer. Returns null if no wind texture. */
+export function windParticleProps(
+  manifest: WeatherManifest,
+  fhr: number,
+  opts: Omit<VectorParticleOpts, "colorByMagnitude"> = {},
+): WindParticleProps | null {
+  return vectorParticleProps(manifest, "wind", fhr, opts);
 }
 
 /**
