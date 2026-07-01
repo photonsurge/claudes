@@ -3,9 +3,23 @@
  * Shared by manual admin entry and (later) the Windy catalog ingest, so both
  * paths produce the same canonical `Cam`. No I/O here — easy to unit test.
  */
-import type { Cam, CamProvider, CamStatus, CamStreamKind, CamLiveStream } from "./types";
+import type {
+  Cam,
+  CamProvider,
+  CamStatus,
+  CamStreamKind,
+  CamLiveStream,
+  CamAttribution,
+} from "./types";
 
-const PROVIDERS: CamProvider[] = ["windy", "youtube", "manual", "other"];
+const PROVIDERS: CamProvider[] = [
+  "windy",
+  "tfl",
+  "national_highways",
+  "youtube",
+  "manual",
+  "other",
+];
 const STATUSES: CamStatus[] = ["active", "inactive", "unknown"];
 const STREAM_KINDS: CamStreamKind[] = ["hls", "youtube", "mp4", "iframe"];
 
@@ -60,6 +74,20 @@ export function normaliseLive(
   return { kind, url };
 }
 
+/** Build a clean attribution block, dropping it entirely if there's no provider. */
+export function normaliseAttribution(
+  input: { provider?: unknown; requiredText?: unknown; linkUrl?: unknown } | undefined | null,
+): CamAttribution | undefined {
+  if (!input) return undefined;
+  const provider = trimOrUndef(input.provider);
+  if (!provider) return undefined;
+  return {
+    provider,
+    requiredText: trimOrUndef(input.requiredText),
+    linkUrl: trimOrUndef(input.linkUrl),
+  };
+}
+
 /**
  * Validate + canonicalise an arbitrary input into a `Cam`. Returns null when
  * the record is unusable (missing id/title or an out-of-range coordinate) so
@@ -104,6 +132,9 @@ export function normaliseCam(input: Record<string, unknown>): Cam | null {
     playerUrl: trimOrUndef(input.playerUrl),
     live,
     tags: tags && tags.length ? tags : undefined,
+    attribution: normaliseAttribution(
+      input.attribution as { provider?: unknown; requiredText?: unknown; linkUrl?: unknown },
+    ),
     fetchedAt,
   };
 }

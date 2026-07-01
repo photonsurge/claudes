@@ -276,6 +276,10 @@ export interface ControlState {
   graticuleColor: string;
   /** Draw the named labels (Equator, Tropic of Cancer …) on the graticule. */
   graticuleLabels: boolean;
+  /** Atmospheric rim glow + pedestal ring around the globe (broadcast beauty). */
+  showAtmosphere: boolean;
+  /** Shade the night hemisphere from the real sun position + light up night cities. */
+  showDayNight: boolean;
 }
 
 export const DEFAULT_CONTROL_STATE: ControlState = {
@@ -316,6 +320,8 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showGraticule: false,
   graticuleColor: "#7dd3fc",
   graticuleLabels: true,
+  showAtmosphere: true,
+  showDayNight: false,
 };
 
 /**
@@ -404,5 +410,9 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
       typeof patch.graticuleColor === "string" ? patch.graticuleColor : base.graticuleColor ?? "#7dd3fc",
     graticuleLabels:
       typeof patch.graticuleLabels === "boolean" ? patch.graticuleLabels : base.graticuleLabels ?? true,
+    showAtmosphere:
+      typeof patch.showAtmosphere === "boolean" ? patch.showAtmosphere : base.showAtmosphere ?? true,
+    showDayNight:
+      typeof patch.showDayNight === "boolean" ? patch.showDayNight : base.showDayNight ?? false,
   };
 }

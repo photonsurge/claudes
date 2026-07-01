@@ -83,6 +83,16 @@ export default function ControlPanel({
           />
           <Toggle label="Radar" checked={state.showRadar} onChange={(showRadar) => patch({ showRadar })} />
           <Toggle label="Cities" checked={state.showCities} onChange={(showCities) => patch({ showCities })} />
+          <Toggle
+            label="Atmosphere"
+            checked={state.showAtmosphere}
+            onChange={(showAtmosphere) => patch({ showAtmosphere })}
+          />
+          <Toggle
+            label="Day/Night"
+            checked={state.showDayNight}
+            onChange={(showDayNight) => patch({ showDayNight })}
+          />
         </div>
       </Section>
 

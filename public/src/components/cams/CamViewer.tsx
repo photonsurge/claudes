@@ -17,8 +17,39 @@ const frame: React.CSSProperties = {
   display: "block",
 };
 const hint: React.CSSProperties = { color: "#8b95a7", fontSize: 12, marginTop: 6 };
+const attributionStyle: React.CSSProperties = { color: "#6b7280", fontSize: 11, marginTop: 4 };
+
+/**
+ * Provider attribution / linkback. Several sources (Windy especially) REQUIRE
+ * this to be shown wherever the cam is displayed — always render it when present.
+ */
+function Attribution({ cam }: { cam: Cam }) {
+  const a = cam.attribution;
+  if (!a) return null;
+  const text = a.requiredText || a.provider;
+  return (
+    <div style={attributionStyle}>
+      {a.linkUrl ? (
+        <a href={a.linkUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#6b7280" }}>
+          {text}
+        </a>
+      ) : (
+        text
+      )}
+    </div>
+  );
+}
 
 export default function CamViewer({ cam }: { cam: Cam }) {
+  return (
+    <div>
+      <CamMedia cam={cam} />
+      <Attribution cam={cam} />
+    </div>
+  );
+}
+
+function CamMedia({ cam }: { cam: Cam }) {
   const live = cam.live;
 
   if (live) {

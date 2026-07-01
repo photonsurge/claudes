@@ -22,6 +22,7 @@ import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 import { initSocket, closeSocket } from "./socket";
 import { startDirector, stopDirector } from "./director/loop";
 import { getEnabledSources } from "./alerts/registry";
+import { getEnabledCamSources } from "./cams/registry";
 import { summarizeForLog } from "./utils";
 import packageJson from "../package.json";
 
@@ -157,6 +158,27 @@ process.on("uncaughtException", (err) => {
       log(TAG, `registered repeatable alerts.ingest`, { source: source.id, every: source.pollIntervalSec });
     } catch (err) {
       log(TAG, `failed to register alerts.ingest`, { source: source.id, err: summarizeForLog(err) });
+    }
+  }
+
+  // ---- Repeatable cams.ingest jobs (one per enabled camera source) ----
+  // Each source polls its provider on its own pollIntervalSec and upserts the
+  // canonical catalog into Mongo; the public app reads only that cache. A fixed
+  // jobId per source de-dups the scheduler across restarts (mirrors alerts).
+  // `immediately` seeds the catalog at boot so a fresh DB shows cams right away.
+  // Sources self-disable when prerequisites are missing (e.g. no Windy key).
+  if (process.env.CAMS_INGEST_ENABLED !== "false") {
+    for (const source of getEnabledCamSources()) {
+      try {
+        await myQueue.add(
+          "do",
+          { domain: "cams", type: "cams", event: "ingest", data: { source: source.id } },
+          { repeat: { every: source.pollIntervalSec * 1000, immediately: true }, jobId: `cams-${source.id}` },
+        );
+        log(TAG, `registered repeatable cams.ingest`, { source: source.id, every: source.pollIntervalSec });
+      } catch (err) {
+        log(TAG, `failed to register cams.ingest`, { source: source.id, err: summarizeForLog(err) });
+      }
     }
   }
 

@@ -9,14 +9,15 @@ import type { Cable, LandingPoint, LngLat } from "./types";
  *   properties { id, name, color }.
  * Landing points: a FeatureCollection of Points, properties { id, name }.
  *
- * Repo: https://github.com/telegeography/www.submarinecablemap.com
- * The worker fetches these into Mongo; the public app reads only the cache.
+ * Served live by the Submarine Cable Map site (the GitHub repo doesn't publish
+ * the built GeoJSON). The worker fetches these into Mongo; the public app reads
+ * only the cache. Override CABLE_API_BASE if the path ever moves.
  */
-const RAW_BASE =
-  "https://raw.githubusercontent.com/telegeography/www.submarinecablemap.com/master/web/public/api/v3";
+const API_BASE =
+  process.env.CABLE_API_BASE || "https://www.submarinecablemap.com/api/v3";
 
-export const CABLE_GEO_URL = `${RAW_BASE}/cable/cable-geo.json`;
-export const LANDING_GEO_URL = `${RAW_BASE}/landing-point/landing-point-geo.json`;
+export const CABLE_GEO_URL = `${API_BASE}/cable/cable-geo.json`;
+export const LANDING_GEO_URL = `${API_BASE}/landing-point/landing-point-geo.json`;
 
 export const CABLE_ATTRIBUTION = "Submarine cables © TeleGeography";
 
@@ -53,12 +54,16 @@ function lineToPath(coords: unknown): LngLat[] {
  * Parse the cable GeoJSON FeatureCollection into `Cable[]`. Handles both
  * LineString (single path) and MultiLineString (many paths) geometries; drops
  * features without a usable id or any vertices.
+ *
+ * The source splits some cables across SEVERAL features sharing one `id` (each
+ * feature is a distinct `feature_id` segment), so we merge by `id` — otherwise
+ * a cable would keep only one of its stretches.
  */
 export function parseCablesGeo(json: unknown): Cable[] {
   const features = (json as GeoCollection | null)?.features;
   if (!Array.isArray(features)) return [];
 
-  const out: Cable[] = [];
+  const byId = new Map<string, Cable>();
   for (const f of features) {
     const id = String(f.properties?.id ?? "").trim();
     if (!id) continue;
@@ -74,14 +79,20 @@ export function parseCablesGeo(json: unknown): Cable[] {
       paths = [];
     }
     if (!paths.length) continue;
-    out.push({
-      id,
-      name: String(f.properties?.name ?? id),
-      color: typeof f.properties?.color === "string" ? f.properties.color : undefined,
-      paths,
-    });
+
+    const existing = byId.get(id);
+    if (existing) {
+      existing.paths.push(...paths);
+    } else {
+      byId.set(id, {
+        id,
+        name: String(f.properties?.name ?? id),
+        color: typeof f.properties?.color === "string" ? f.properties.color : undefined,
+        paths,
+      });
+    }
   }
-  return out;
+  return [...byId.values()];
 }
 
 /** Parse the landing-point GeoJSON FeatureCollection into `LandingPoint[]`. */

@@ -12,6 +12,7 @@ import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { getPalette, type Palette } from "@photonsurge/shared/palettes";
 import { getVariable } from "@photonsurge/shared/variables";
 import type { City } from "../../lib/cities";
+import { cosSunZenith, nightAlpha } from "../../lib/sun";
 
 /** WeatherLayers `bounds` is [west, south, east, north]. */
 export type Bounds = [number, number, number, number];
@@ -224,17 +225,41 @@ export interface CityTextProps {
   getSize: (c: City) => number;
 }
 
-/** PURE props for city markers (scatter) and labels (text). */
-export function cityProps(cities: City[]): { scatter: CityScatterProps; text: CityTextProps } {
+/**
+ * PURE props for city markers (scatter) and labels (text). When `subsolar` is
+ * given (day/night mode on), cities on the dark side "light up": their dots grow
+ * a little and warm to a sodium-glow amber, so the night hemisphere reads as a
+ * field of city lights (as on the reference broadcast globe). Day-side cities
+ * keep their normal look.
+ */
+export function cityProps(
+  cities: City[],
+  subsolar?: [number, number],
+): { scatter: CityScatterProps; text: CityTextProps } {
   const getPosition = (c: City): [number, number] => [c.lng, c.lat];
+  /** 0 in daylight → 1 in deep night, for this city. */
+  const night = (c: City) => (subsolar ? nightAlpha(cosSunZenith(c.lng, c.lat, subsolar)) : 0);
   return {
     scatter: {
       id: "cities-scatter",
       data: cities,
       getPosition,
-      getRadius: (c) => (c.isCapital ? 6 : 4),
-      getFillColor: (c) =>
-        c.isCapital ? [255, 215, 0, 255] : [255, 255, 255, 220],
+      getRadius: (c) => (c.isCapital ? 6 : 4) + night(c) * 3,
+      getFillColor: (c) => {
+        const day: [number, number, number, number] = c.isCapital
+          ? [255, 215, 0, 255]
+          : [255, 255, 255, 220];
+        const t = night(c);
+        if (t === 0) return day;
+        // Warm the glow toward sodium-amber and lift the alpha on the dark side.
+        const glow: [number, number, number, number] = [255, 208, 130, 255];
+        return [
+          Math.round(day[0] + (glow[0] - day[0]) * t),
+          Math.round(day[1] + (glow[1] - day[1]) * t),
+          Math.round(day[2] + (glow[2] - day[2]) * t),
+          Math.round(day[3] + (255 - day[3]) * t),
+        ];
+      },
     },
     text: {
       id: "cities-text",

@@ -149,4 +149,20 @@ describe("cityProps", () => {
   it("text uses the city name", () => {
     expect(text.getText(cities[1])).toBe("Reading");
   });
+
+  it("lights up night-side cities (bigger, warmer, brighter) when a subsolar point is given", () => {
+    // Sun over the far side of the planet → London is deep in night.
+    const nightSub: [number, number] = [179, 0];
+    const dayScatter = cityProps(cities).scatter;
+    const nightScatter = cityProps(cities, nightSub).scatter;
+    const london = cities[0];
+    expect(nightScatter.getRadius(london)).toBeGreaterThan(dayScatter.getRadius(london));
+    const [r, g, b, a] = nightScatter.getFillColor(london);
+    // Warmed toward amber (blue channel drops) and fully opaque.
+    expect(b).toBeLessThan(r);
+    expect(a).toBe(255);
+    // A capital's day colour is unchanged when the city sits in full daylight.
+    const daySub: [number, number] = [-0.12, 51.5]; // sun straight over London
+    expect(cityProps(cities, daySub).scatter.getFillColor(london)).toEqual([255, 215, 0, 255]);
+  });
 });

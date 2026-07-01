@@ -47,6 +47,28 @@ describe("parseCablesGeo", () => {
     expect(cables).toEqual([]);
   });
 
+  it("merges several features that share one cable id into one cable", () => {
+    // The source splits some cables into multiple feature_id segments under one id.
+    const cables = parseCablesGeo({
+      features: [
+        {
+          properties: { id: "split", name: "Split Cable", feature_id: "split-0" },
+          geometry: { type: "MultiLineString", coordinates: [[[0, 0], [1, 1]]] },
+        },
+        {
+          properties: { id: "split", name: "Split Cable", feature_id: "split-1" },
+          geometry: { type: "LineString", coordinates: [[5, 5], [6, 6]] },
+        },
+      ],
+    });
+    expect(cables).toHaveLength(1);
+    expect(cables[0].id).toBe("split");
+    expect(cables[0].paths).toEqual([
+      [[0, 0], [1, 1]],
+      [[5, 5], [6, 6]],
+    ]);
+  });
+
   it("falls back to id when name is missing and tolerates junk input", () => {
     const [cable] = parseCablesGeo({
       features: [

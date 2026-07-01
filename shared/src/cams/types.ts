@@ -11,7 +11,13 @@
 
 export type CamStatus = "active" | "inactive" | "unknown";
 
-export type CamProvider = "windy" | "youtube" | "manual" | "other";
+export type CamProvider =
+  | "windy"
+  | "tfl"
+  | "national_highways"
+  | "youtube"
+  | "manual"
+  | "other";
 
 /** How a continuous live stream should be embedded by the viewer. */
 export type CamStreamKind = "hls" | "youtube" | "mp4" | "iframe";
@@ -20,6 +26,20 @@ export interface CamLiveStream {
   kind: CamStreamKind;
   /** HLS manifest URL, YouTube watch/embed URL or id, mp4 URL, or iframe src. */
   url: string;
+}
+
+/**
+ * Provider attribution. Several sources (Windy especially) require the provider
+ * name + a linkback to be shown wherever the cam is displayed, so we persist it
+ * alongside each row rather than reconstruct it per-provider in the UI.
+ */
+export interface CamAttribution {
+  /** Display name, e.g. "windy.com", "Transport for London". */
+  provider: string;
+  /** Exact text a provider mandates, e.g. "Webcams provided by windy.com". */
+  requiredText?: string;
+  /** The URL the attribution must link back to (the cam's provider page). */
+  linkUrl?: string;
 }
 
 export interface Cam {
@@ -45,6 +65,30 @@ export interface Cam {
   /** A true continuous live stream, when the cam publishes one. */
   live?: CamLiveStream;
   tags?: string[];
+  /** Provider attribution (required linkback for some sources, e.g. Windy). */
+  attribution?: CamAttribution;
   /** When the catalog entry was last refreshed from the provider (epoch ms). */
   fetchedAt?: number;
+}
+
+/**
+ * Catalog-source adapter (spec §5). Every automatic source implements the same
+ * single step — pull/refresh its catalogue into canonical `Cam[]` — so adding a
+ * provider is one new file registered in the worker's cam registry. Mirrors the
+ * `AlertSource` contract used by the alerts feature: the worker registers one
+ * repeatable ingest job per enabled source, keyed on `pollIntervalSec`.
+ */
+export interface CamSource {
+  /** Stable source id, also the `camId` prefix (e.g. "windy" → "windy:1234"). */
+  id: string;
+  /** The canonical provider these cams are stored under. */
+  provider: CamProvider;
+  /** Human region/coverage label, for logs. */
+  region: string;
+  /** How often the worker re-polls this catalogue, in seconds. */
+  pollIntervalSec: number;
+  /** Off sources are skipped by the registry (e.g. missing API key). */
+  enabled: boolean;
+  /** Pull/refresh the full catalogue into canonical Cams (already normalised). */
+  fetchCatalogue(): Promise<Cam[]>;
 }

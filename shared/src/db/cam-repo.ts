@@ -24,6 +24,13 @@ export function toCam(doc: iCamModel): Cam {
     playerUrl: doc.playerUrl,
     live: doc.live ? { kind: doc.live.kind, url: doc.live.url } : undefined,
     tags: doc.tags && doc.tags.length ? doc.tags : undefined,
+    attribution: doc.attribution
+      ? {
+          provider: doc.attribution.provider,
+          requiredText: doc.attribution.requiredText,
+          linkUrl: doc.attribution.linkUrl,
+        }
+      : undefined,
     fetchedAt: doc.fetchedAt ? new Date(doc.fetchedAt).getTime() : undefined,
   };
 }
@@ -41,6 +48,7 @@ const setDoc = (c: Cam, fetchedAt: Date) => ({
   playerUrl: c.playerUrl,
   live: c.live,
   tags: c.tags,
+  attribution: c.attribution,
   fetchedAt: c.fetchedAt ? new Date(c.fetchedAt) : fetchedAt,
   loc: { type: "Point" as const, coordinates: [c.lng, c.lat] as [number, number] },
 });

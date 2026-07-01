@@ -97,8 +97,15 @@ export function pressureLayers(
   ];
 }
 
-export function cityLayer(cities: City[]): Array<ScatterplotLayer | TextLayer> {
-  const props = cityProps(cities);
+export function cityLayer(
+  cities: City[],
+  subsolar?: [number, number],
+): Array<ScatterplotLayer | TextLayer> {
+  const props = cityProps(cities, subsolar);
+  // When the sun moves, the per-city night factor changes → recompute the dot
+  // radius/colour. Keyed to the subsolar point (rounded, so it retriggers as the
+  // terminator advances but not on every identical rebuild).
+  const nightKey = subsolar ? `${subsolar[0].toFixed(1)},${subsolar[1].toFixed(1)}` : "off";
   return [
     new ScatterplotLayer({
       ...props.scatter,
@@ -109,6 +116,7 @@ export function cityLayer(cities: City[]): Array<ScatterplotLayer | TextLayer> {
       getLineColor: [0, 0, 0, 180],
       pickable: false,
       parameters: DEPTH_TEST,
+      updateTriggers: { getRadius: nightKey, getFillColor: nightKey },
     }),
     new TextLayer({
       ...props.text,

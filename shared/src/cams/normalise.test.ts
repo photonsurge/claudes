@@ -1,4 +1,11 @@
-import { normaliseCam, normaliseLive, youtubeId, isValidLat, isValidLng } from "./normalise";
+import {
+  normaliseCam,
+  normaliseLive,
+  normaliseAttribution,
+  youtubeId,
+  isValidLat,
+  isValidLng,
+} from "./normalise";
 
 describe("isValidLat / isValidLng", () => {
   it("accepts in-range coordinates", () => {
@@ -54,8 +61,36 @@ describe("normaliseLive", () => {
   });
 });
 
+describe("normaliseAttribution", () => {
+  it("builds a clean block and trims fields", () => {
+    expect(
+      normaliseAttribution({ provider: " windy.com ", requiredText: "Webcams provided by windy.com", linkUrl: " https://x " }),
+    ).toEqual({ provider: "windy.com", requiredText: "Webcams provided by windy.com", linkUrl: "https://x" });
+  });
+  it("drops attribution without a provider", () => {
+    expect(normaliseAttribution({ linkUrl: "https://x" })).toBeUndefined();
+    expect(normaliseAttribution(undefined)).toBeUndefined();
+  });
+});
+
 describe("normaliseCam", () => {
   const base = { camId: "abc", title: "Harbour cam", lat: 50, lng: 0 };
+
+  it("keeps the new tfl/national_highways providers and carries attribution", () => {
+    const tfl = normaliseCam({ ...base, provider: "tfl" });
+    expect(tfl?.provider).toBe("tfl");
+    const nh = normaliseCam({ ...base, provider: "national_highways" });
+    expect(nh?.provider).toBe("national_highways");
+    const withAttr = normaliseCam({
+      ...base,
+      attribution: { provider: "windy.com", requiredText: "Webcams provided by windy.com" },
+    });
+    expect(withAttr?.attribution).toEqual({
+      provider: "windy.com",
+      requiredText: "Webcams provided by windy.com",
+      linkUrl: undefined,
+    });
+  });
 
   it("normalises a minimal valid record with defaults", () => {
     expect(normaliseCam({ ...base })).toEqual({

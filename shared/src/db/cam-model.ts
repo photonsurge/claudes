@@ -26,6 +26,7 @@ export interface iCam extends iGeneralModel {
   playerUrl?: string;
   live?: { kind: CamStreamKind; url: string };
   tags?: string[];
+  attribution?: { provider: string; requiredText?: string; linkUrl?: string };
   /** When the worker last refreshed this cam from its provider. */
   fetchedAt: Date;
   loc?: { type: "Point"; coordinates: [number, number] };
@@ -44,13 +45,22 @@ const LiveSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const AttributionSchema = new mongoose.Schema(
+  {
+    provider: { type: String, required: true },
+    requiredText: { type: String, required: false },
+    linkUrl: { type: String, required: false },
+  },
+  { _id: false },
+);
+
 const CamSchema = new mongoose.Schema<iCamModel>(
   {
     id: { type: String, required: true, unique: true, default: () => uuidv4() },
     camId: { type: String, required: true, unique: true },
     provider: {
       type: String,
-      enum: ["windy", "youtube", "manual", "other"],
+      enum: ["windy", "tfl", "national_highways", "youtube", "manual", "other"],
       required: true,
       default: "manual",
     },
@@ -70,6 +80,7 @@ const CamSchema = new mongoose.Schema<iCamModel>(
     playerUrl: { type: String, required: false },
     live: { type: LiveSchema, required: false },
     tags: { type: [String], required: false },
+    attribution: { type: AttributionSchema, required: false },
     fetchedAt: { type: Date, required: true, default: () => new Date() },
     loc: {
       type: { type: String, enum: ["Point"], default: "Point" },

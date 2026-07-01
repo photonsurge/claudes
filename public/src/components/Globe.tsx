@@ -11,6 +11,7 @@
  */
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -36,6 +37,10 @@ import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
 import { seismicLayer } from "./layers/seismic";
 import { graticuleLayer } from "./layers/graticule";
 import { cableLayers } from "./layers/cables";
+import { nightLayer } from "./layers/nightside";
+import { subsolarPoint } from "../lib/sun";
+import { discFromProject, type Disc } from "../lib/globe-geom";
+import GlobeAtmosphere from "./GlobeAtmosphere";
 import type { Track, Quake } from "../lib/tracks/types";
 import type { TrackPath } from "../lib/tracks/client";
 import type { OrbitSegment } from "../lib/tracks/orbit";
@@ -173,6 +178,31 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   const [loadedTextures, setLoadedTextures] = useState<Map<string, LoadedTexture>>(new Map());
   // Whether sharp XYZ tiles overlay the raster base (true once zoomed in).
   const [tilesActive, setTilesActive] = useState(state.camera.zoom >= TILE_MIN_ZOOM);
+
+  // Bumps roughly once a minute so the day/night terminator advances with the
+  // real sun without recomputing on every unrelated render.
+  const [sunTick, setSunTick] = useState(0);
+  useEffect(() => {
+    if (!state.showDayNight) return;
+    const t = setInterval(() => setSunTick((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, [state.showDayNight]);
+
+  // The globe's on-screen disc (centre + radius, CSS px) from the live deck
+  // viewport — feeds the atmosphere/ring overlay. Reads only refs, so its
+  // identity is stable across renders.
+  const getDisc = useCallback((): (Disc & { lng: number }) | null => {
+    const deck = deckRef.current;
+    if (!deck) return null;
+    const vp = deck.getViewports?.()[0];
+    if (!vp) return null;
+    const vs = viewStateRef.current;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const disc = discFromProject((c) => (vp as any).project(c), vs.longitude, vs.latitude);
+    // Carry the sub-camera longitude so the pedestal ring can spin in lock-step
+    // with the globe (its graticule ticks track globe longitude, not the screen).
+    return disc ? { ...disc, lng: vs.longitude } : null;
+  }, []);
 
   const onCameraChangeRef = useRef(onCameraChange);
   useEffect(() => {
@@ -511,6 +541,12 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const layers: any[] = [...basemapLayers(state, tilesActive)];
 
+    // Day/night terminator: shade the earth's night hemisphere from the real sun
+    // position. Sits directly on the basemap, below the weather + overlays so
+    // borders/cities/alerts stay bright on top. `sunTick` advances it over time.
+    const subsolar = state.showDayNight ? subsolarPoint(new Date()) : null;
+    if (subsolar) layers.push(nightLayer(subsolar));
+
     if (manifest) {
       if (state.activeVariable) {
         const l = scalarRasterLayer(manifest, state.activeVariable, state.fhr, resolve);
@@ -546,7 +582,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // Earthquakes above alerts, below cities/tracks.
     if (state.showSeismic && quakes.length) layers.push(...seismicLayer(quakes));
 
-    if (state.showCities && cities.length) layers.push(...cityLayer(cities));
+    if (state.showCities && cities.length)
+      layers.push(...cityLayer(cities, subsolar ?? undefined));
 
     // Live tracks overlay sits on top of everything (trails + orbit rings under
     // the point markers).
@@ -599,6 +636,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showGraticule,
     state.graticuleColor,
     state.graticuleLabels,
+    state.showDayNight,
+    sunTick,
     tracks,
     orbits,
     trails,
@@ -625,10 +664,13 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   }, [pulseAt?.[0], pulseAt?.[1], hoverPulse?.[0], hoverPulse?.[1]]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
-    />
+    <div style={{ position: "absolute", inset: 0 }}>
+      <canvas
+        ref={canvasRef}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      />
+      <GlobeAtmosphere getDisc={getDisc} enabled={state.showAtmosphere !== false} />
+    </div>
   );
 });
 
