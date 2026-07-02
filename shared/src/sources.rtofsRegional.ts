@@ -37,125 +37,128 @@
  */
 import type { SourceDescriptor } from "./sources";
 
-/** All RTOFS regional windows share cadence/latency/priority/minZoom/res. */
+/** All RTOFS regional windows share cadence/latency/priority/minZoom. */
 const RTOFS_REGIONAL_CADENCE = { kind: "cron" as const, runsUtc: [0] }; // one 00z run/day
-const RTOFS_REGIONAL_RES = 0.083; // 1/12°
 const RTOFS_REGIONAL_PRIORITY = 25; // above global rtofs (20): native window wins in overlap
 const RTOFS_REGIONAL_MINZOOM = 3;
 const RTOFS_REGIONAL_LATENCY = 8 * 60; // ~8h, same product lag as the global RTOFS base
-const RTOFS_REGIONAL_VARS = ["sst", "current", "salinity"]; // VERIFY per-window from a live inventory
+const RTOFS_REGIONAL_VARS = ["sst", "current", "salinity"];
 
-/** Pixel dims spanning [W,E]×[S,N] edge-to-edge at ~res° (nx points → span/res+1). */
-function dimsFor(bbox: [number, number, number, number], res = RTOFS_REGIONAL_RES) {
-  const [w, s, e, n] = bbox;
-  return {
-    width: Math.round((e - w) / res) + 1,
-    height: Math.round((n - s) / res) + 1,
-  };
+/**
+ * Geometry per window, MEASURED from a live `wgrib2 -grid` of each *_std.grb2
+ * (2026-07). These are the source of truth for first-render / debug outlines; the
+ * worker RE-PROBES each file at ingest and publishes the probed bounds, so a
+ * future NOMADS grid change self-corrects rather than shearing (that silent
+ * mismatch was the original striping bug).
+ *
+ * `bounds` is [W,S,E,N] anchored at wrapLon(lon0); E may exceed 180 where the
+ * window straddles the antimeridian (the periodic globe renders it across the
+ * dateline). `res` is the true grid spacing.
+ */
+interface RtofsGeom {
+  bbox: [number, number, number, number];
+  dims: { width: number; height: number };
+  res: number;
+  /** false → coarser than the global 1/12° base, kept out of the overlay stack. */
+  enabled?: boolean;
 }
 
 function rtofsNest(
   id: string,
   label: string,
-  bbox: [number, number, number, number],
+  geom: RtofsGeom,
   variables: string[] = RTOFS_REGIONAL_VARS,
 ): SourceDescriptor {
   return {
     id,
     label,
     format: "grib2",
-    grid: "regular", // VERIFY: *_std.grb2 regional windows are regular lat-lon
-    dims: dimsFor(bbox),
-    resolutionDeg: RTOFS_REGIONAL_RES,
-    bbox,
+    grid: "regular", // *_std.grb2 regional windows are regular lat-lon (verified)
+    dims: geom.dims,
+    resolutionDeg: geom.res,
+    bbox: geom.bbox,
     cadence: RTOFS_REGIONAL_CADENCE,
     latencyMinutes: RTOFS_REGIONAL_LATENCY,
     variables,
     priority: RTOFS_REGIONAL_PRIORITY,
     minZoom: RTOFS_REGIONAL_MINZOOM,
-    enabled: true,
+    enabled: geom.enabled ?? true,
     attribution: "NOAA/NCEP Global RTOFS",
   };
 }
 
 export const RTOFS_REGIONAL_SOURCES: Record<string, SourceDescriptor> = {
-  // US East Coast + W. Atlantic. NOMADS token `west_atl`.
-  "rtofs-westatl": rtofsNest(
-    "rtofs-westatl",
-    "NOAA RTOFS 1/12° (US East / W. Atlantic)",
-    [-100, 5, -50, 55], // VERIFY: west_atl window [W,S,E,N]
-  ),
-  // US West Coast (CONUS Pacific). NOMADS token `west_conus`.
-  "rtofs-westconus": rtofsNest(
-    "rtofs-westconus",
-    "NOAA RTOFS 1/12° (US West Coast)",
-    [-140, 20, -110, 50], // VERIFY: west_conus window [W,S,E,N]
-  ),
-  // Alaska (Gulf of Alaska + coastal). NOMADS token `alaska`.
-  "rtofs-alaska": rtofsNest(
-    "rtofs-alaska",
-    "NOAA RTOFS 1/12° (Alaska)",
-    [-180, 45, -120, 72], // VERIFY: alaska window [W,S,E,N]
-  ),
-  // Gulf of Alaska (finer sub-window). NOMADS token `gulf_alaska`.
-  "rtofs-gulfalaska": rtofsNest(
-    "rtofs-gulfalaska",
-    "NOAA RTOFS 1/12° (Gulf of Alaska)",
-    [-160, 50, -130, 62], // VERIFY: gulf_alaska window [W,S,E,N]
-  ),
-  // Bering Sea. NOMADS token `bering`.
-  "rtofs-bering": rtofsNest(
-    "rtofs-bering",
-    "NOAA RTOFS 1/12° (Bering Sea)",
-    [-180, 50, -155, 68], // VERIFY: bering window [W,S,E,N]
-  ),
-  // Arctic. NOMADS token `arctic`.
-  "rtofs-arctic": rtofsNest(
-    "rtofs-arctic",
-    "NOAA RTOFS 1/12° (Arctic)",
-    [-180, 65, 180, 90], // VERIFY: arctic window [W,S,E,N]
-  ),
-  // Hudson Bay / Baffin. NOMADS token `hudson_baffin`.
-  "rtofs-hudsonbaffin": rtofsNest(
-    "rtofs-hudsonbaffin",
-    "NOAA RTOFS 1/12° (Hudson Bay / Baffin)",
-    [-100, 50, -50, 80], // VERIFY: hudson_baffin window [W,S,E,N]
-  ),
-  // Hawaii. NOMADS token `honolulu`.
-  "rtofs-hawaii": rtofsNest(
-    "rtofs-hawaii",
-    "NOAA RTOFS 1/12° (Hawaii)",
-    [-170, 15, -150, 30], // VERIFY: honolulu window [W,S,E,N]
-  ),
-  // W. Pacific / Guam. NOMADS token `guam`.
-  "rtofs-guam": rtofsNest(
-    "rtofs-guam",
-    "NOAA RTOFS 1/12° (W. Pacific / Guam)",
-    [130, 5, 155, 25], // VERIFY: guam window [W,S,E,N]
-  ),
-  // Samoa (S. Pacific). NOMADS token `samoa`.
-  "rtofs-samoa": rtofsNest(
-    "rtofs-samoa",
-    "NOAA RTOFS 1/12° (Samoa / S. Pacific)",
-    [-180, -20, -160, -5], // VERIFY: samoa window [W,S,E,N]
-  ),
-  // Tropical Pacific (LOW-RES). NOMADS token `trop_paci_lowres`. DISABLED: a live
-  // `wgrib2 -grid` (2026-07) shows this window is NOT a 1/12° nest — it is a 120×80
-  // grid at 1.0° spanning lat −40..40, lon 130..250 (i.e. 130°E across the dateline
-  // to 110°W). Two disqualifiers as a "regional nest":
-  //   1. At 1.0° it is COARSER than the global RTOFS base (1/12°), so as a
-  //      higher-priority overlay it would REPLACE finer base data with worse.
-  //   2. It crosses the antimeridian, which the −180..180 / W<E regular-grid
-  //      subset+bake path can't express (dims/bbox derived here never match the
-  //      native grid → "no variables baked" every run).
-  // Re-enable only behind a 0..360 (or split-descriptor) + coarse-res path that
-  // ranks it BELOW the global base, if it's ever worth it.
-  "rtofs-troppac": {
-    ...rtofsNest(
-      "rtofs-troppac",
-      "NOAA RTOFS 1° (Tropical Pacific, low-res)",
-      [-170, -20, -70, 30],
-    ),
+  // US East Coast + W. Atlantic. lon 260..306 → −100..−54, lat 10..44.8, 0.08°.
+  "rtofs-westatl": rtofsNest("rtofs-westatl", "NOAA RTOFS 1/12° (US East / W. Atlantic)", {
+    bbox: [-100, 10, -54, 44.8],
+    dims: { width: 575, height: 435 },
+    res: 0.08,
+  }),
+  // US West Coast. lon 210..260 → −150..−100, lat 10..60, 0.08°.
+  "rtofs-westconus": rtofsNest("rtofs-westconus", "NOAA RTOFS 1/12° (US West Coast)", {
+    bbox: [-150, 10, -100, 60],
+    dims: { width: 625, height: 625 },
+    res: 0.08,
+  }),
+  // Alaska. DISABLED: native grid is 0.30° (350×150) — COARSER than the global
+  // 1/12° base, so as a higher-priority overlay it would replace finer data.
+  "rtofs-alaska": rtofsNest("rtofs-alaska", "NOAA RTOFS 0.3° (Alaska)", {
+    bbox: [140, 40, 245, 85], // lon 140..245 (crosses 180)
+    dims: { width: 350, height: 150 },
+    res: 0.3,
     enabled: false,
-  },
+  }),
+  // Gulf of Alaska. DISABLED: native grid is 0.50° (84×45) — far coarser than base.
+  "rtofs-gulfalaska": rtofsNest("rtofs-gulfalaska", "NOAA RTOFS 0.5° (Gulf of Alaska)", {
+    bbox: [-165, 40, -123, 62.5], // lon 195..237 → −165..−123
+    dims: { width: 84, height: 45 },
+    res: 0.5,
+    enabled: false,
+  }),
+  // Bering Sea. lon 155..211 (crosses 180 → E 211), lat 40..67.2, 0.08°.
+  "rtofs-bering": rtofsNest("rtofs-bering", "NOAA RTOFS 1/12° (Bering Sea)", {
+    bbox: [155, 40, 211, 67.2],
+    dims: { width: 700, height: 340 },
+    res: 0.08,
+  }),
+  // Arctic. lon 160..236 (crosses 180 → E 236), lat 60..80, 0.08°.
+  "rtofs-arctic": rtofsNest("rtofs-arctic", "NOAA RTOFS 1/12° (Arctic)", {
+    bbox: [160, 60, 236, 80],
+    dims: { width: 950, height: 250 },
+    res: 0.08,
+  }),
+  // Hudson Bay / Baffin. DISABLED: native grid is 0.25° (328×152) — coarser than base.
+  "rtofs-hudsonbaffin": rtofsNest("rtofs-hudsonbaffin", "NOAA RTOFS 0.25° (Hudson Bay / Baffin)", {
+    bbox: [-109, 40, -27, 78], // lon 251..333 → −109..−27
+    dims: { width: 328, height: 152 },
+    res: 0.25,
+    enabled: false,
+  }),
+  // Hawaii. lon 180..230 → −180..−130, lat 0..40, 0.08°.
+  "rtofs-hawaii": rtofsNest("rtofs-hawaii", "NOAA RTOFS 1/12° (Hawaii)", {
+    bbox: [-180, 0, -130, 40],
+    dims: { width: 625, height: 500 },
+    res: 0.08,
+  }),
+  // W. Pacific / Guam. lon 130..180, lat 0..30, 0.08°.
+  "rtofs-guam": rtofsNest("rtofs-guam", "NOAA RTOFS 1/12° (W. Pacific / Guam)", {
+    bbox: [130, 0, 180, 30],
+    dims: { width: 625, height: 375 },
+    res: 0.08,
+  }),
+  // Samoa (S. Pacific). lon 170..214.8 (crosses 180 → E 214.8), lat −30..0, 0.08°.
+  "rtofs-samoa": rtofsNest("rtofs-samoa", "NOAA RTOFS 1/12° (Samoa / S. Pacific)", {
+    bbox: [170, -30, 214.8, 0],
+    dims: { width: 560, height: 375 },
+    res: 0.08,
+  }),
+  // Tropical Pacific (LOW-RES). NOMADS token `trop_paci_lowres`. DISABLED: a live
+  // `wgrib2 -grid` (2026-07) shows a 120×80 grid at 1.0° (lat −40..40, lon 130..250)
+  // — coarser than the global 1/12° base, so it would replace finer data with worse.
+  "rtofs-troppac": rtofsNest("rtofs-troppac", "NOAA RTOFS 1° (Tropical Pacific, low-res)", {
+    bbox: [130, -40, 250, 40], // lon 130..250 (crosses 180)
+    dims: { width: 120, height: 80 },
+    res: 1.0,
+    enabled: false,
+  }),
 };

@@ -264,9 +264,10 @@ function onAirFeature(features: AlertFeature[], at: [number, number]): AlertFeat
  * On-air highlight: while the director holds an alert, breathe *its own area*
  * (fill opacity + a widening lit edge) so the eye locks onto the shape being
  * talked about, not a free-floating reticle. Re-built every frame by the globe's
- * pulse loop, so `now` drives the phase. When the on-air event has no drawn
- * polygon (point-only / geometry stripped) we fall back to a pulsing
- * hazard-coloured dot at the framing point.
+ * pulse loop, so `now` drives the phase. Only when the on-air event has no drawn
+ * polygon (point-only / geometry stripped) do we fall back to a pulsing sonar
+ * ring + hazard-coloured dot at the framing point — a real area never gets the
+ * location marker, since its breathing outline already carries the highlight.
  */
 export function onAirPulseLayers(
   features: AlertFeature[],
@@ -287,11 +288,18 @@ export function onAirPulseLayers(
   const c: [number, number, number] = onAir ? base(onAir) : [255, 95, 95];
   const lit: [number, number, number] = lighten(c, 0.6);
 
+  // When the on-air event has a real drawn area (Polygon/MultiPolygon), the
+  // breathing outline below IS the highlight — the eye locks onto the shape, so
+  // we deliberately suppress the location ping/dot marker. The marker is a
+  // "here, since there's nothing else to see" fallback for point-only alerts,
+  // mirroring how the static badge is only drawn where there's no area.
+  const area = onAir ? hasArea(onAir) : false;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const layers: any[] = [];
 
   // 1 ─ Breathe the on-air area itself, so the eye locks onto the exact shape.
-  if (onAir && (onAir.geometry as { coordinates?: unknown })?.coordinates) {
+  if (area) {
     layers.push(
       new GeoJsonLayer({
         id: "alerts-onair-fill",
@@ -308,11 +316,12 @@ export function onAirPulseLayers(
         updateTriggers: { getFillColor: now, getLineColor: now, getLineWidth: now },
       }),
     );
+    return layers;
   }
 
-  // 2 ─ An expanding "sonar" ring at the framing point — bold, on top of
-  //     everything, always shown while on air so the pulse is unmistakable even
-  //     when the area is tiny or off the matched-polygon path.
+  // 2 ─ No drawable area → an expanding "sonar" ring at the framing point plus a
+  //     breathing core dot, so a point-only alert still reads unmistakably on a
+  //     wide broadcast shot.
   layers.push(
     new ScatterplotLayer<{ position: [number, number] }>({
       id: "alerts-onair-ping",
@@ -332,8 +341,8 @@ export function onAirPulseLayers(
       parameters: DEPTH_TEST,
       updateTriggers: { getRadius: now, getLineColor: now, getLineWidth: now },
     }),
-    // 3 ─ A solid breathing core dot under the ring (anchors the ping; also the
-    //     sole highlight when the on-air event has no drawn polygon).
+    // 3 ─ A solid breathing core dot under the ring (anchors the ping; the sole
+    //     highlight when the on-air event has no drawn polygon).
     new ScatterplotLayer<{ position: [number, number] }>({
       id: "alerts-onair-dot",
       data: [{ position: at }],

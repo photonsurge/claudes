@@ -187,6 +187,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     event: "enrichWiki",
     group: "Cities",
   },
+  {
+    id: "elevation-bake",
+    label: "Bake elevation relief",
+    description:
+      "Download ETOPO 2022 terrain + ocean-floor bathymetry and bake the static elevation contour texture (~466 MB download, one-time; drives the Terrain → Elevation contours overlay).",
+    domain: "elevation",
+    type: "elevation",
+    event: "refresh",
+    group: "Static datasets",
+  },
 ];
 
 export const getTriggerableJob = (id: string): TriggerableJob | undefined =>

@@ -46,6 +46,10 @@ export const SCALAR_IMAGE_UNSCALE: Record<string, [number, number]> = {
   snow: [0, 500], // cm (deep snowpack; SNOD baked metres → cm)
   wave: [0, 30], // m significant wave height (record seas ~20m)
   salinity: [25, 40], // PSU (open ocean ~32-37; wider to cover coastal/brine)
+  // Static terrain, metres. Challenger Deep (~−10,900) → Everest (~8,850). 8-bit
+  // grayscale over this 20 km span quantises to ~78 m/step, so the finest usable
+  // contour interval is ~100 m (coarser reads cleaner on a broadcast globe).
+  elevation: [-11000, 9000],
   // dBZ. Wider than the 5..75 colour domain so hail cores (>75) and the sub-5
   // clear-air floor still decode without clipping. The floor + MRMS no-coverage
   // sentinels (-999/-99) bake TRANSPARENT via radarKeepMask, so the exact low end

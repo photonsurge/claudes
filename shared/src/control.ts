@@ -219,6 +219,12 @@ export interface ControlState {
   windMode: WindMode;
   /** Isolines for the active scalar variable. */
   showContours: boolean;
+  /** Static terrain relief: topographic + bathymetric contour lines. */
+  showElevation: boolean;
+  /** Elevation contour minor-line spacing, metres (operator-tunable). */
+  elevationInterval: number;
+  /** Elevation contour emphasised (major) line spacing, metres. */
+  elevationMajorInterval: number;
   /** Live RainViewer radar overlay. */
   showRadar: boolean;
   /** Overlay live satellite positions (SGP4, client-side). */
@@ -274,6 +280,9 @@ export interface ControlState {
   showCables: boolean;
   /** Overlay tectonic plate boundaries (Bird 2003) on the globe. */
   showFaults: boolean;
+  /** DEBUG: outline each active weather-map source's bbox + label on the globe, so
+   *  the operator can see which model (base/nest) renders where and check alignment. */
+  showMapSource: boolean;
   /** Overlay the reference graticule (equator, tropics, polar circles, meridians). */
   showGraticule: boolean;
   /** Graticule line + label colour (hex `#rrggbb`). */
@@ -303,6 +312,9 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   wind: { ...DEFAULT_WIND_SETTINGS },
   windMode: "particles",
   showContours: false,
+  showElevation: false,
+  elevationInterval: 500,
+  elevationMajorInterval: 2000,
   showRadar: false,
   showSatellites: false,
   showAircraft: false,
@@ -326,6 +338,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   seismicMinMag: 2.5,
   showCables: false,
   showFaults: false,
+  showMapSource: false,
   showGraticule: false,
   graticuleColor: "#7dd3fc",
   graticuleLabels: true,
@@ -382,6 +395,14 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     windMode: patch.windMode ?? base.windMode ?? "particles",
     showContours:
       typeof patch.showContours === "boolean" ? patch.showContours : base.showContours ?? false,
+    showElevation:
+      typeof patch.showElevation === "boolean" ? patch.showElevation : base.showElevation ?? false,
+    elevationInterval:
+      typeof patch.elevationInterval === "number" ? patch.elevationInterval : base.elevationInterval ?? 500,
+    elevationMajorInterval:
+      typeof patch.elevationMajorInterval === "number"
+        ? patch.elevationMajorInterval
+        : base.elevationMajorInterval ?? 2000,
     showRadar: typeof patch.showRadar === "boolean" ? patch.showRadar : base.showRadar ?? false,
     showSatellites:
       typeof patch.showSatellites === "boolean" ? patch.showSatellites : base.showSatellites ?? false,
@@ -416,6 +437,8 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
       typeof patch.seismicMinMag === "number" ? patch.seismicMinMag : base.seismicMinMag ?? 2.5,
     showCables: typeof patch.showCables === "boolean" ? patch.showCables : base.showCables ?? false,
     showFaults: typeof patch.showFaults === "boolean" ? patch.showFaults : base.showFaults ?? false,
+    showMapSource:
+      typeof patch.showMapSource === "boolean" ? patch.showMapSource : base.showMapSource ?? false,
     showGraticule:
       typeof patch.showGraticule === "boolean" ? patch.showGraticule : base.showGraticule ?? false,
     graticuleColor:

@@ -77,21 +77,21 @@ describe("RTOFS_WINDOWS table (token ↔ descriptor join)", () => {
   });
 
   describe.each(RTOFS_WINDOWS)("$sourceId geometry", (win) => {
-    it("has a well-formed bbox (W<E, S<N) within global bounds", () => {
+    it("has a well-formed bbox (W<E monotonic, S<N, W wrapped)", () => {
       const [w, s, e, n] = win.bbox;
+      // West edge is wrapped into −180..180; East extends by the ascending span and
+      // MAY exceed 180 when the window crosses the antimeridian (periodic globe).
       expect(w).toBeLessThan(e);
       expect(s).toBeLessThan(n);
       expect(w).toBeGreaterThanOrEqual(-180);
-      expect(e).toBeLessThanOrEqual(180);
+      expect(w).toBeLessThan(180);
+      expect(e - w).toBeLessThan(360); // a sub-global span, never wraps the planet
       expect(s).toBeGreaterThanOrEqual(-90);
       expect(n).toBeLessThanOrEqual(90);
     });
 
-    it("is a regional window finer-or-equal than, and inside, the global rtofs base", () => {
+    it("is a sub-global, zoom-gated window that outranks the global base", () => {
       const src = getSource(win.sourceId)!;
-      // Same 1/12° native resolution as the global base (a native window, not coarser).
-      expect(src.resolutionDeg).toBeLessThanOrEqual(globalRtofs.resolutionDeg + 1e-9);
-      // A true sub-global window: strictly narrower than the whole planet somewhere.
       const [w, s, e, n] = win.bbox;
       const spansGlobe = w <= -180 && e >= 180 && s <= -90 && n >= 90;
       expect(spansGlobe).toBe(false);
@@ -101,13 +101,21 @@ describe("RTOFS_WINDOWS table (token ↔ descriptor join)", () => {
       expect(src.minZoom).toBeGreaterThan(0);
     });
 
-    it("declares dims spanning its bbox at ~1/12°", () => {
+    it("only ENABLED windows are finer-or-equal to the global base (coarse ones disabled)", () => {
       const src = getSource(win.sourceId)!;
-      const [w, s, e, n] = win.bbox;
-      expect(win.dims.width).toBe(Math.round((e - w) / src.resolutionDeg) + 1);
-      expect(win.dims.height).toBe(Math.round((n - s) / src.resolutionDeg) + 1);
+      if (src.enabled === false) {
+        // Disabled precisely BECAUSE they are coarser than the 1/12° base.
+        expect(src.resolutionDeg).toBeGreaterThan(globalRtofs.resolutionDeg + 1e-9);
+      } else {
+        expect(src.resolutionDeg).toBeLessThanOrEqual(globalRtofs.resolutionDeg + 1e-9);
+      }
+    });
+
+    it("declares real measured grid dims (nx,ny > 1)", () => {
       expect(win.dims.width).toBeGreaterThan(1);
       expect(win.dims.height).toBeGreaterThan(1);
+      expect(Number.isInteger(win.dims.width)).toBe(true);
+      expect(Number.isInteger(win.dims.height)).toBe(true);
     });
 
     it("only supplies ocean variables we have match tokens for", () => {

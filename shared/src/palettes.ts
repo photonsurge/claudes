@@ -129,6 +129,21 @@ export const PALETTES: Record<string, Palette> = {
     [0.9, "#f2802e"],
     [1.0, "#df2727"],
   ],
+  // Hypsometric relief over the elevation domain (−11,000..9,000 m). Sea level
+  // sits at ≈0.55 of the ramp, so deep ocean is abyssal blue → shelf cyan →
+  // coastal green → upland tan/brown → snow-capped white. Colours the elevation
+  // contour lines by height (bathymetry cool, mountains warm).
+  elevation: [
+    [0.0, "#081d58"],
+    [0.3, "#225ea8"],
+    [0.5, "#41b6c4"],
+    [0.55, "#c7e9b4"],
+    [0.63, "#78c679"],
+    [0.73, "#d9c05a"],
+    [0.83, "#a0562a"],
+    [0.92, "#6f5647"],
+    [1.0, "#ffffff"],
+  ],
   // Radar reflectivity (dBZ), NWS-style over the 5..75 dBZ domain: light drizzle
   // teal/green → moderate rain yellow → heavy orange/red → hail magenta/white.
   // The <5 dBZ floor bakes transparent (minVisible) so clear air shows the map.

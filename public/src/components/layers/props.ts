@@ -288,6 +288,54 @@ export function pressureProps(
   };
 }
 
+export interface ElevationContourProps {
+  id: string;
+  image: string;
+  imageUnscale: [number, number] | undefined;
+  bounds: Bounds;
+  interval: number;
+  /** Thicker, emphasised contour every N metres. */
+  majorInterval: number;
+  width: number;
+  /** Colour isolines by height (bathymetry cool, mountains warm). */
+  palette: Palette;
+}
+
+/**
+ * PURE props for the static elevation contour layer. Unlike pressure this is NOT
+ * forecast-hour indexed — terrain never changes, so it is baked once at fhr 0 and
+ * we ignore the timeline: pick the single stored texture regardless of `fhr` so
+ * the relief stays put as the operator scrubs the forecast. Returns null when no
+ * elevation texture has been baked yet (`yarn refresh:elevation` not run).
+ */
+export function elevationProps(
+  manifest: WeatherManifest,
+  opts: { interval?: number; majorInterval?: number } = {},
+): { contour: ElevationContourProps } | null {
+  const entry = manifest.variables.elevation;
+  if (!entry) return null;
+  // Static: the single baked step (key "0"), or whatever the only key is.
+  const image = entry.files["0"] ?? Object.values(entry.files)[0];
+  if (!image) return null;
+  const meta = getVariable("elevation");
+  const domain = entry.domain ?? meta?.domain;
+  // WeatherLayers maps the palette against the DECODED metre value, so scale the
+  // 0..1 ramp onto the elevation domain (e.g. −11000..9000 m).
+  const palette = scalePaletteToDomain(getPalette(entry.palette ?? meta?.palette ?? "elevation"), domain);
+  return {
+    contour: {
+      id: "elevation-contour",
+      image,
+      imageUnscale: entry.imageUnscale,
+      bounds: manifestBounds(manifest),
+      interval: opts.interval ?? 500,
+      majorInterval: opts.majorInterval ?? 2000,
+      width: 1,
+      palette,
+    },
+  };
+}
+
 export interface CityScatterProps {
   id: string;
   data: City[];

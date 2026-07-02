@@ -10,6 +10,7 @@
     "dotenv": "17.4.1",
     "express": "^5.1.0",
     "fflate": "^0.8.2",
+    "geotiff": "^2.1.3",
     "node-cron": "^4.2.1",
     "sharp": "^0.34.4",
     "socket.io-client": "^4.8.3"
@@ -43,6 +44,7 @@
     "refresh:wave-nests": "ts-node src/scripts/refreshWaveNests.ts",
     "refresh:rtofs-regional": "ts-node src/scripts/refreshRtofsRegional.ts",
     "refresh:openmeteo": "ts-node src/scripts/refreshOpenMeteo.ts",
+    "refresh:elevation": "ts-node src/scripts/refreshElevation.ts",
     "pull": "ts-node src/scripts/check.ts",
     "reingest": "ts-node src/scripts/reingest.ts",
     "reset:weather": "ts-node src/scripts/resetWeather.ts",

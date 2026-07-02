@@ -19,9 +19,10 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import { getSource } from "@photonsurge/shared/sources";
 import { log } from "@photonsurge/shared/utill/logger";
 
-import { extractField } from "../grib/wgrib2";
+import { extractField, probeGridGeometry } from "../grib/wgrib2";
 import { bakeScalar } from "../grib/bakeScalar";
 import { bakeVector } from "../grib/bakeVector";
+import { wrapLon } from "../regrid/curvilinear";
 import { downloadToTemp, cleanupTemp, headOk } from "./download";
 import { nomadsGate } from "./politeness";
 import { publishSourceRun, type BakedVariable } from "./publishSourceRun";
@@ -34,6 +35,46 @@ import {
 } from "../sources/rtofsRegional";
 
 const TAG = "job:weather:source";
+
+/** The real baked-grid geometry for a window, derived from its GRIB2 header. */
+export interface RegionalGrid {
+  width: number;
+  height: number;
+  resDeg: number;
+  /** [W,S,E,N] in a −180..180-anchored frame; E may exceed 180 when the window
+   *  crosses the antimeridian (the periodic globe places it correctly). */
+  bounds: [number, number, number, number];
+}
+
+/**
+ * Turn a probed GRIB2 grid def into the baked-texture geometry: real nx/ny for the
+ * reshape (so rows don't shear) and the published bounds. wgrib2 dumps `-order
+ * we:ns` (col0 = the grid's first longitude, row0 = north), so we anchor the WEST
+ * edge at `wrapLon(lon0)` and extend EAST by the full ascending span — this keeps
+ * W < E monotonic even for a window that straddles 180 (E then lands > 180, which
+ * the periodic globe renders across the dateline). Pure.
+ */
+export function regionalGridFromGeometry(geom: {
+  nx: number;
+  ny: number;
+  lat0: number;
+  lat1: number;
+  lon0: number;
+  lon1: number;
+  dLon: number;
+}): RegionalGrid {
+  const latS = Math.min(geom.lat0, geom.lat1);
+  const latN = Math.max(geom.lat0, geom.lat1);
+  const span = geom.lon1 - geom.lon0; // ascending, positive
+  const west = wrapLon(geom.lon0);
+  const east = west + span;
+  return {
+    width: geom.nx,
+    height: geom.ny,
+    resDeg: geom.dLon,
+    bounds: [west, latS, east, latN],
+  };
+}
 
 /** True if a complete published run already exists for this model+run time. */
 async function alreadyPublished(model: string, runDate: Date): Promise<boolean> {
@@ -52,8 +93,6 @@ async function ingestWindow(
     return { skipped: true, model: source.id, run: run.runDate.toISOString(), reason: "already published" };
   }
 
-  const W = win.dims.width;
-  const H = win.dims.height;
   const variables: Record<string, BakedVariable> = {};
   const tmp: string[] = [];
   try {
@@ -69,6 +108,22 @@ async function ingestWindow(
       return { skipped: true, model: source.id, run: run.runDate.toISOString(), reason: "download failed" };
     }
     tmp.push(gribPath);
+
+    // Read the TRUE grid geometry from the file — never trust the descriptor's
+    // guessed dims/bbox (a wrong nx shears every row → horizontal striping). Probe
+    // once from a representative record all steps share.
+    const probeMatch =
+      RTOFS_REGIONAL_VAR_MATCH[win.variables.find((v) => RTOFS_REGIONAL_VAR_MATCH[v]) ?? "sst"]
+        ?.match[0] ?? ":WTMP:";
+    let grid: ReturnType<typeof regionalGridFromGeometry>;
+    try {
+      grid = regionalGridFromGeometry(await probeGridGeometry({ gribPath, match: probeMatch }));
+    } catch (err) {
+      log(TAG, "rtofs-regional: grid probe failed", { window: win.sourceId, err: String(err) });
+      return { skipped: true, model: source.id, run: run.runDate.toISOString(), reason: "grid probe failed" };
+    }
+    const W = grid.width;
+    const H = grid.height;
 
     const field = async (match: string) =>
       (await extractField({ gribPath, match, width: W, height: H })).values;
@@ -90,8 +145,8 @@ async function ingestWindow(
               imageUnscale: res.imageUnscale,
               vectorUnscale: res.imageUnscale,
               sourceId: source.id,
-              resolutionDeg: source.resolutionDeg,
-              bbox: source.bbox,
+              resolutionDeg: grid.resDeg,
+              bbox: grid.bounds,
               priority: source.priority,
             },
             buffers: { 0: res.buffer },
@@ -111,8 +166,8 @@ async function ingestWindow(
               palette: variableId,
               imageUnscale: res.imageUnscale,
               sourceId: source.id,
-              resolutionDeg: source.resolutionDeg,
-              bbox: source.bbox,
+              resolutionDeg: grid.resDeg,
+              bbox: grid.bounds,
               priority: source.priority,
             },
             buffers: { 0: res.buffer },
@@ -130,8 +185,8 @@ async function ingestWindow(
     const { runId } = await publishSourceRun({
       model: source.id,
       runDate: run.runDate,
-      bounds: [...source.bbox],
-      grid: { width: W, height: H, res: source.resolutionDeg },
+      bounds: [...grid.bounds],
+      grid: { width: W, height: H, res: grid.resDeg },
       steps: [{ fhr: 0, validTime: run.runDate.toISOString() }],
       variables,
     });

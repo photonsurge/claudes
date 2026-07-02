@@ -47,6 +47,9 @@ describe("mergeControlState", () => {
       wind: { numParticles: 1234, speedFactor: 3, maxAge: 7, width: 5, opacity: 0.5, color: "#abcdef" },
       windMode: "barbs",
       showContours: true,
+      showElevation: true,
+      elevationInterval: 250,
+      elevationMajorInterval: 1000,
       showRadar: true,
       showSatellites: true,
       showAircraft: true,
@@ -77,6 +80,7 @@ describe("mergeControlState", () => {
       showDayNight: true,
       showBroadcastChrome: true,
       broadcastTheme: "command",
+      showMapSource: true,
     };
     // Deep-equal proves no key was dropped or altered by the merge.
     expect(mergeControlState(DEFAULT_CONTROL_STATE, custom)).toEqual(custom);

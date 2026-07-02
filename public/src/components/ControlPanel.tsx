@@ -339,6 +339,56 @@ export default function ControlPanel({
         />
       </Section>
 
+      <Section title="Debug">
+        <Toggle
+          label="Show map source (bbox + name)"
+          checked={state.showMapSource}
+          onChange={(showMapSource) => patch({ showMapSource })}
+        />
+      </Section>
+
+      <Section title="Terrain">
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <Toggle
+            label="Elevation contours"
+            checked={state.showElevation}
+            onChange={(showElevation) => patch({ showElevation })}
+          />
+          {state.showElevation && (
+            <>
+              <Field label="Line every">
+                <select
+                  value={state.elevationInterval}
+                  onChange={(e) => patch({ elevationInterval: Number(e.target.value) })}
+                  aria-label="Elevation contour interval"
+                  style={miniSelect}
+                >
+                  {[100, 250, 500, 1000, 2000].map((m) => (
+                    <option key={m} value={m}>
+                      {m >= 1000 ? `${m / 1000} km` : `${m} m`}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Bold every">
+                <select
+                  value={state.elevationMajorInterval}
+                  onChange={(e) => patch({ elevationMajorInterval: Number(e.target.value) })}
+                  aria-label="Elevation major contour interval"
+                  style={miniSelect}
+                >
+                  {[1000, 2000, 5000, 10000].map((m) => (
+                    <option key={m} value={m}>
+                      {m / 1000} km
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </>
+          )}
+        </div>
+      </Section>
+
       <Section title="Graticule">
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
           <Toggle

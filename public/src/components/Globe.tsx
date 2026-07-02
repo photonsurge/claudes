@@ -28,6 +28,7 @@ import {
   scalarRasterLayers,
   vectorParticleLayers,
   pressureLayers,
+  elevationLayers,
   cityLayer,
   type TextureResolver,
 } from "./layers";
@@ -39,6 +40,7 @@ import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
 import { seismicLayer } from "./layers/seismic";
 import { graticuleLayer } from "./layers/graticule";
+import { sourceDebugLayers } from "./layers/sourceDebug";
 import { cableLayers } from "./layers/cables";
 import { faultLayers } from "./layers/faults";
 import { nightLayer } from "./layers/nightside";
@@ -549,6 +551,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     if (state.showWind) addEntries("wind");
     if (state.activeVariable) addEntries(state.activeVariable);
     if (state.showPressure) add(textureUrlFor(manifest, "pressure", state.fhr));
+    // Elevation is static (baked at fhr 0), so always pull its single texture
+    // regardless of the active forecast hour.
+    if (state.showElevation) add(textureUrlFor(manifest, "elevation", 0));
 
     let cancelled = false;
     [...urls].forEach((url) => {
@@ -564,7 +569,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     return () => {
       cancelled = true;
     };
-  }, [manifest, state.fhr, state.activeVariable, state.showWind, state.showPressure, nestKey]);
+  }, [manifest, state.fhr, state.activeVariable, state.showWind, state.showPressure, state.showElevation, nestKey]);
 
   // ── Rebuild all layers (basemap → weather → borders → cities) ─────────────
   useEffect(() => {
@@ -597,6 +602,14 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         layers.push(...scalarRasterLayers(manifest, state.activeVariable, state.fhr, resolve, camera));
       }
       if (state.showPressure) layers.push(...pressureLayers(manifest, state.fhr, resolve));
+      if (state.showElevation) {
+        layers.push(
+          ...elevationLayers(manifest, resolve, {
+            interval: state.elevationInterval,
+            majorInterval: state.elevationMajorInterval,
+          }),
+        );
+      }
       if (state.showWind) {
         layers.push(...vectorParticleLayers(manifest, "wind", state.fhr, resolve, camera, state.wind));
       }
@@ -604,6 +617,17 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
 
     // Country borders sit ABOVE the weather fill.
     layers.push(countriesLayer(state));
+
+    // DEBUG: outline each active weather-map source's bbox + label, above the
+    // borders so you can check which model renders where vs the coastline.
+    if (state.showMapSource && manifest && state.activeVariable) {
+      layers.push(
+        ...sourceDebugLayers(manifest, state.activeVariable, {
+          center: state.camera.center,
+          zoom: state.camera.zoom,
+        }),
+      );
+    }
 
     // Reference graticule (equator/tropics/polar circles + meridians) — drawn
     // above the borders as a geographic reference, below the live overlays.
@@ -664,6 +688,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.basemap,
     state.activeVariable,
     state.showPressure,
+    state.showElevation,
+    state.elevationInterval,
+    state.elevationMajorInterval,
     state.showWind,
     state.showCities,
     state.fhr,
@@ -683,6 +710,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showSeismic,
     state.showCables,
     state.showFaults,
+    state.showMapSource,
     state.showGraticule,
     state.graticuleColor,
     state.graticuleLabels,

@@ -234,6 +234,22 @@ export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
     // shows through where it isn't raining.
     domain: [5, 75],
   },
+  // ── Static terrain (no forecast source) ─────────────────────────────────────
+  elevation: {
+    id: "elevation",
+    label: "Elevation",
+    encoding: "scalar",
+    // Drawn as isolines like pressure — topographic + bathymetric contour lines.
+    kind: "contour",
+    units: "m",
+    palette: "elevation",
+    // Mariana Trench (~−10,900 m) → Everest (~8,850 m). Land + ocean floor.
+    domain: [-11000, 9000],
+    // No `gfs` (or any) source binding: elevation is STATIC terrain baked once
+    // from a DEM by `yarn refresh:elevation`, not the forecast ingest loop. The
+    // GFS ingest skips any variable without a `gfs` field, so this never rides a
+    // weather run — it publishes its own tiny single-step "elevation" run.
+  },
 };
 
 /** Scalar variables that can be the single active colour field. */

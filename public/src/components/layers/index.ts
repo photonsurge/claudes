@@ -22,6 +22,7 @@ import {
   scalarRasterProps,
   scalarRasterPropsFromEntry,
   pressureProps,
+  elevationProps,
   cityProps,
   manifestBounds,
   type Bounds,
@@ -254,6 +255,28 @@ export function pressureLayers(
     new ContourLayer({ ...props.contour, image: image as any, parameters: DEPTH_TEST }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     new HighLowLayer({ ...props.highLow, image: image as any, parameters: DEPTH_TEST }),
+  ];
+}
+
+/**
+ * Static elevation contour lines (topographic + bathymetric). One ContourLayer,
+ * fhr-agnostic — the terrain texture is baked once and reused across the whole
+ * timeline. No HighLowLayer (terrain has no "H/L" markers like pressure does).
+ */
+export function elevationLayers(
+  manifest: WeatherManifest,
+  resolve: TextureResolver,
+  opts?: Parameters<typeof elevationProps>[1],
+): ContourLayer[] {
+  const props = elevationProps(manifest, opts);
+  if (!props) return [];
+  const image = resolve(props.contour.image);
+  if (!image) return [];
+  // Depth-tested so far-side contour lines are occluded by the depth sphere
+  // rather than showing through the front of the globe.
+  return [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    new ContourLayer({ ...props.contour, image: image as any, parameters: DEPTH_TEST }),
   ];
 }
 

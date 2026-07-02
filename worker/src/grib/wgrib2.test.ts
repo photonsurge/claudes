@@ -1,4 +1,9 @@
-import { parseRawFloat32, extractField } from "./wgrib2";
+import {
+  parseRawFloat32,
+  extractField,
+  parseGridGeometry,
+  probeGridGeometry,
+} from "./wgrib2";
 
 describe("parseRawFloat32", () => {
   it("parses little-endian float32 stream into a grid", () => {
@@ -128,5 +133,70 @@ describe("extractField", () => {
     expect(grid.width).toBe(1440);
     expect(grid.height).toBe(721);
     expect(grid.values.length).toBe(1440 * 721);
+  });
+
+  it("keeps the FIRST record when a match selects several on the same grid", async () => {
+    // RTOFS regional files bundle 24 hourly steps → ":WTMP:" returns N records.
+    const width = 2;
+    const height = 2;
+    const rec1 = [1, 2, 3, 4];
+    const rec2 = [5, 6, 7, 8];
+    const buf = Buffer.alloc((rec1.length + rec2.length) * 4);
+    [...rec1, ...rec2].forEach((v, i) => buf.writeFloatLE(v, i * 4));
+    const runner = jest.fn().mockResolvedValue(buf);
+    const grid = await extractField({ gribPath: "/multi.grib2", match: ":WTMP:", width, height, runner });
+    expect(Array.from(grid.values)).toEqual(rec1); // first record only
+  });
+
+  it("throws when output is not a whole multiple of nx*ny (wrong dims → would shear)", async () => {
+    // 44044 declared vs a 210000-point record: 210000 is NOT a multiple of 44044.
+    const buf = Buffer.alloc(210_000 * 4);
+    const runner = jest.fn().mockResolvedValue(buf);
+    await expect(
+      extractField({ gribPath: "/x.grib2", match: ":WTMP:", width: 242, height: 182, runner }),
+    ).rejects.toThrow(/not a whole multiple/);
+  });
+});
+
+describe("parseGridGeometry", () => {
+  const SAMOA = `1:0:grid_template=0:winds(N/S):
+\tlat-lon grid:(560 x 375) units 1e-06 input WE:SN output WE:SN res 48
+\tlat -30.000000 to -0.000001 by 0.080000
+\tlon 170.000000 to 214.800000 by 0.080000 #points=210000`;
+
+  it("parses nx/ny, lat/lon extent and spacing from a wgrib2 -grid block", () => {
+    const g = parseGridGeometry(SAMOA);
+    expect(g).toEqual({
+      nx: 560,
+      ny: 375,
+      lat0: -30,
+      lat1: -0.000001,
+      dLat: 0.08,
+      lon0: 170,
+      lon1: 214.8,
+      dLon: 0.08,
+    });
+  });
+
+  it("throws on a non-lat-lon / unparseable block", () => {
+    expect(() => parseGridGeometry("polar stereographic grid: blah")).toThrow(/unparseable/);
+  });
+});
+
+describe("probeGridGeometry", () => {
+  it("runs `-grid` with the match and parses the first record's block", async () => {
+    // A multi-record match prints one identical block per record; parse the first.
+    const block = `1:0:grid_template=0:winds(N/S):
+\tlat-lon grid:(575 x 435) units 1e-06 input WE:SN output WE:SN res 48
+\tlat 10.000000 to 44.800000 by 0.080000
+\tlon 260.000000 to 306.000000 by 0.080000 #points=250125`;
+    const runner = jest.fn().mockResolvedValue(Buffer.from(`${block}\n${block}`, "utf8"));
+    const g = await probeGridGeometry({ gribPath: "/west_atl.grib2", match: ":WTMP:", runner });
+    expect(g.nx).toBe(575);
+    expect(g.ny).toBe(435);
+    expect(g.lon0).toBe(260);
+    expect(g.lon1).toBe(306);
+    const args = runner.mock.calls[0][0] as string[];
+    expect(args).toEqual(["/west_atl.grib2", "-match", ":WTMP:", "-grid"]);
   });
 });
