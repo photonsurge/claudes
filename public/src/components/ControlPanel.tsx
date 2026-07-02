@@ -329,6 +329,15 @@ export default function ControlPanel({
           checked={state.showCables}
           onChange={(showCables) => patch({ showCables })}
         />
+        {state.showCables && (
+          <div style={{ paddingLeft: 16 }}>
+            <Toggle
+              label="Cable names"
+              checked={state.showCableLabels}
+              onChange={(showCableLabels) => patch({ showCableLabels })}
+            />
+          </div>
+        )}
       </Section>
 
       <Section title="Tectonics">

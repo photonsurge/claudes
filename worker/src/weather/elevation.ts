@@ -10,6 +10,13 @@
 // `yarn refresh:elevation` one-shot script. This core NEVER closes the Mongo
 // connection (the worker owns it) — the script wrapper handles its own teardown.
 
+import { mkdir, stat, rename } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { homedir } from "node:os";
+import { join, basename } from "node:path";
+
 import { fromFile } from "geotiff";
 import { getVariable } from "@photonsurge/shared/variables";
 import { log } from "@photonsurge/shared/utill/logger";
@@ -17,7 +24,6 @@ import { log } from "@photonsurge/shared/utill/logger";
 import { encodeScalarPng } from "../grib/encode";
 import { imageUnscaleFor } from "../grib/bake";
 import { publishSourceRun } from "./publishSourceRun";
-import { downloadToTemp, cleanupTemp } from "./download";
 
 const TAG = "elevation";
 
@@ -25,12 +31,49 @@ const TAG = "elevation";
  * ETOPO 2022, 60 arc-second, "surface" (ice-surface) elevation, single global
  * GeoTIFF with origin N90/W180 → row 0 = north, column 0 = −180°, matching the
  * baker's grid convention exactly (so NO longitude roll is needed).
+ *
+ * ETOPO releases are STATIC — a new version lands only every few years (2022 is
+ * current), so the cached file below effectively never needs re-fetching.
  */
 export const DEFAULT_DEM_URL =
   "https://www.ngdc.noaa.gov/mgg/global/relief/ETOPO2022/data/60s/60s_surface_elev_gtif/ETOPO_2022_v1_60s_N90W180_surface.tif";
 
 /** Output rows read per strip — bounds peak memory to one horizontal band. */
 const STRIP_OUT_ROWS = 120;
+
+/** Persistent DEM cache dir (override with ELEVATION_CACHE_DIR). */
+function cacheDir(): string {
+  return process.env.ELEVATION_CACHE_DIR ?? join(homedir(), ".cache", "weatherchannel", "dem");
+}
+
+/**
+ * Return a local path to the DEM, downloading it into the persistent cache only
+ * the first time. The 466 MB source is STATIC, so once cached it's reused forever
+ * — no more re-downloading on every bake. Streams to a `.part` file and renames
+ * on success, so an interrupted download never leaves a truncated "cached" file.
+ */
+async function ensureCachedDem(url: string): Promise<string> {
+  const dir = cacheDir();
+  await mkdir(dir, { recursive: true });
+  const dest = join(dir, basename(new URL(url).pathname) || "dem.tif");
+  try {
+    const s = await stat(dest);
+    if (s.size > 0) {
+      log(TAG, `using cached DEM: ${dest} (${(s.size / 1e6).toFixed(0)} MB)`);
+      return dest;
+    }
+  } catch {
+    // not cached yet
+  }
+  log(TAG, `downloading DEM → cache (~466 MB, one time): ${url}`);
+  const res = await fetch(url);
+  if (!res.ok || !res.body) throw new Error(`DEM download failed ${res.status} for ${url}`);
+  const part = `${dest}.part`;
+  await pipeline(Readable.fromWeb(res.body as never), createWriteStream(part));
+  await rename(part, dest);
+  log(TAG, `cached DEM → ${dest}`);
+  return dest;
+}
 
 export interface IngestElevationOpts {
   /** Local GeoTIFF path — skips the ~466 MB download. */
@@ -64,17 +107,11 @@ export async function ingestElevation(opts: IngestElevationOpts = {}): Promise<I
   const localPath = opts.demPath ?? process.env.ELEVATION_DEM_PATH;
   const url = opts.demUrl ?? process.env.ELEVATION_DEM_URL ?? DEFAULT_DEM_URL;
 
-  let demPath = localPath;
-  let downloaded: string | undefined;
-  if (!demPath) {
-    log(TAG, `downloading DEM (~466 MB, one time): ${url}`);
-    demPath = downloaded = await downloadToTemp(url, "etopo.tif");
-    log(TAG, `downloaded → ${demPath}`);
-  } else {
-    log(TAG, `using local DEM: ${demPath}`);
-  }
+  // Explicit local file wins; otherwise use (and populate) the persistent cache.
+  const demPath = localPath ?? (await ensureCachedDem(url));
+  if (localPath) log(TAG, `using local DEM: ${demPath}`);
 
-  try {
+  {
     const tiff = await fromFile(demPath);
     const image = await tiff.getImage();
     const srcW = image.getWidth();
@@ -142,7 +179,5 @@ export async function ingestElevation(opts: IngestElevationOpts = {}): Promise<I
     });
 
     return { width: W, height: H, bytes: buffer.byteLength, runId };
-  } finally {
-    if (downloaded) await cleanupTemp(downloaded);
   }
 }

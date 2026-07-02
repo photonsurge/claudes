@@ -72,6 +72,7 @@ describe("mergeControlState", () => {
       showSeismic: true,
       seismicMinMag: 4.5,
       showCables: true,
+      showCableLabels: true,
       showFaults: true,
       showGraticule: true,
       graticuleColor: "#abcdef",

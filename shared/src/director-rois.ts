@@ -140,6 +140,7 @@ const LAYERS_OFF: Partial<ControlState> = {
   showCities: false,
   showRadar: false,
   showCables: false,
+  showCableLabels: false,
   showFaults: false,
   showAlerts: false,
   showSeismic: false,

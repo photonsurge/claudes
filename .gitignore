@@ -11,6 +11,6 @@ logs/
 *.log
 
 .DS_Store
-
+scratchpad/
 # Downloaded basemap assets (run ./fetch-assets.sh to populate)
 public/public/data/

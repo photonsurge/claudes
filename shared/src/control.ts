@@ -278,6 +278,8 @@ export interface ControlState {
   seismicMinMag: number;
   /** Overlay submarine fiber-optic cables + landing stations on the globe. */
   showCables: boolean;
+  /** Label each submarine cable with its name (needs showCables). */
+  showCableLabels: boolean;
   /** Overlay tectonic plate boundaries (Bird 2003) on the globe. */
   showFaults: boolean;
   /** DEBUG: outline each active weather-map source's bbox + label on the globe, so
@@ -337,6 +339,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showSeismic: false,
   seismicMinMag: 2.5,
   showCables: false,
+  showCableLabels: false,
   showFaults: false,
   showMapSource: false,
   showGraticule: false,
@@ -436,6 +439,8 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     seismicMinMag:
       typeof patch.seismicMinMag === "number" ? patch.seismicMinMag : base.seismicMinMag ?? 2.5,
     showCables: typeof patch.showCables === "boolean" ? patch.showCables : base.showCables ?? false,
+    showCableLabels:
+      typeof patch.showCableLabels === "boolean" ? patch.showCableLabels : base.showCableLabels ?? false,
     showFaults: typeof patch.showFaults === "boolean" ? patch.showFaults : base.showFaults ?? false,
     showMapSource:
       typeof patch.showMapSource === "boolean" ? patch.showMapSource : base.showMapSource ?? false,

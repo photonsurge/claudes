@@ -26,6 +26,8 @@ import { listCities, type City } from "../../lib/cities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
 import { useQuakes } from "../../lib/seismic-overlay";
+import { useCables } from "../../lib/cables-overlay";
+import { useFaults } from "../../lib/faults-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
 import DirectorPanel from "../../components/DirectorPanel";
@@ -87,6 +89,8 @@ export default function ControlPage() {
   });
   const alerts = useAlertFeatures(shown.showAlerts, shown.alertSeverityMin);
   const quakes = useQuakes(shown.showSeismic, shown.seismicMinMag);
+  const cables = useCables(shown.showCables);
+  const faults = useFaults(shown.showFaults);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,6 +149,8 @@ export default function ControlPage() {
           trails={trails}
           alerts={alerts}
           quakes={quakes}
+          cables={cables}
+          faults={faults}
           interactive
           pulseAt={eventPulse(director)}
           // Click-to-select is only live while the director is idle — a cut owns

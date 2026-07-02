@@ -101,6 +101,7 @@ const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     showSeismic: { type: Boolean, required: true, default: false },
     seismicMinMag: { type: Number, required: true, default: 2.5 },
     showCables: { type: Boolean, required: true, default: false },
+    showCableLabels: { type: Boolean, required: true, default: false },
     showFaults: { type: Boolean, required: true, default: false },
   },
   mongoTimestamps,

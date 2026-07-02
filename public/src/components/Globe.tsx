@@ -638,7 +638,11 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // Submarine cables read as reference geography — above borders/weather,
     // below the live event overlays (alerts/quakes/cities/tracks).
     if (state.showCables && cables && cables.cables.length) {
-      layers.push(...cableLayers(cables.cables, cables.landings));
+      layers.push(
+        ...cableLayers(cables.cables, cables.landings, {
+          cableLabels: state.showCableLabels,
+        }),
+      );
     }
 
     // Tectonic plate boundaries read as reference geography — above borders/
@@ -709,6 +713,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showAlerts,
     state.showSeismic,
     state.showCables,
+    state.showCableLabels,
     state.showFaults,
     state.showMapSource,
     state.showGraticule,

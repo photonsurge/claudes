@@ -35,14 +35,87 @@ import {
   type OmRun,
   type FetchJson,
 } from "../sources/openMeteo";
+import {
+  lccGridFromOrigin,
+  lccGridFromCorners,
+  reprojectScalar,
+  outDims,
+  type NativeGrid,
+} from "./reproject";
 
 const TAG = "job:weather:source";
 
-/** True if a complete published run already exists for this model+run time. */
-async function alreadyPublished(model: string, runDate: Date): Promise<boolean> {
+/**
+ * Open-Meteo nests on a PROJECTED native grid: reproject to regular lat/lon before
+ * bake (see reproject.ts + docs/openmeteo-grid-defs.md). Only the VERIFIED Lambert
+ * Conic pair for now — ukmo (LAEA, redundant with direct `ukv`) and meteoswiss
+ * (rotated pole, provisional) stay disabled until ported. A scalar-only path: wind
+ * on a projected grid is grid-relative and needs vector rotation (not done yet).
+ */
+interface ProjectedNest {
+  grid: NativeGrid;
+  bbox: [number, number, number, number];
+  outW: number;
+  outH: number;
+  outRes: number;
+}
+function projectedNest(grid: NativeGrid, bbox: [number, number, number, number], dxM: number): ProjectedNest {
+  const { width, height } = outDims(bbox, dxM);
+  return { grid, bbox, outW: width, outH: height, outRes: (bbox[3] - bbox[1]) / (height - 1) };
+}
+const PROJECTED_NESTS: Record<string, ProjectedNest> = {
+  "dmi-europe": projectedNest(
+    lccGridFromOrigin({ nx: 1906, ny: 1606, dx: 2000, dy: 2000, originLat: 39.671, originLon: -25.421997,
+      proj: { lam0: -8, phi0: 55.5, phi1: 55.5, radius: 6371229 } }),
+    [-25.421997, 39.670998, 40.069855, 62.667618], 2000,
+  ),
+  "metno-nordic": (() => {
+    const grid = lccGridFromCorners({ nx: 1796, ny: 2321, swLat: 52.30272, swLon: 1.9184653, neLat: 72.18527, neLon: 41.764282,
+      proj: { lam0: 15, phi0: 63, phi1: 63, radius: 6371229 } });
+    return projectedNest(grid, [1.918457, 52.302723, 41.764282, 72.18527], Math.abs(grid.dx));
+  })(),
+};
+
+/** Read one scalar var → north-up bake grid: reproject when projected, else flip. */
+async function readScalarGrid(
+  readOm: OmChildReader,
+  name: string,
+  W: number,
+  H: number,
+  proj: ProjectedNest | undefined,
+): Promise<Float32Array | undefined> {
+  const raw = await readOm(name);
+  if (!raw) return undefined;
+  if (proj) {
+    if (raw.length !== proj.grid.nx * proj.grid.ny) {
+      throw new Error(`open-meteo: ${name} length ${raw.length} != native ${proj.grid.nx}×${proj.grid.ny}`);
+    }
+    return reprojectScalar(raw, proj.grid, proj.bbox, proj.outW, proj.outH);
+  }
+  if (raw.length !== W * H) throw new Error(`open-meteo: ${name} length ${raw.length} != ${W}×${H}`);
+  return flipRows(raw, W, H);
+}
+
+/**
+ * True if a complete published run already exists for this model+run time AND (when
+ * `expectGrid` is given) it was baked on the SAME grid we'd produce now. A grid
+ * mismatch (e.g. a model switched to the reprojected output grid) returns false so
+ * the next ingest re-bakes onto the corrected grid instead of skipping (self-heal;
+ * mirrors iconCommon's bounds-check — see memory openmeteo-projected-grids).
+ */
+async function alreadyPublished(
+  model: string,
+  runDate: Date,
+  expectGrid?: { width: number; height: number },
+): Promise<boolean> {
   const db = await getAppDb();
   const existing = await db.weatherRuns.getByQuery({ model, run: runDate, status: "complete", published: true });
-  return !!(existing.success && existing.data);
+  if (!(existing.success && existing.data)) return false;
+  if (expectGrid) {
+    const g = (existing.data as { grid?: { width?: number; height?: number } }).grid;
+    if (g?.width !== expectGrid.width || g?.height !== expectGrid.height) return false;
+  }
+  return true;
 }
 
 /** Plain-fetch JSON (latest.json). Injected into omLatestRun so the resolver stays pure. */
@@ -127,12 +200,20 @@ async function openOmFile(path: string): Promise<{ read: OmChildReader; dispose:
 async function ingestOneModel(model: OmModel): Promise<IngestResult> {
   const source = getSource(model.sourceId)!;
   const run: OmRun = await omLatestRun(model.omModel, fetchJson);
-  if (await alreadyPublished(source.id, run.runDate)) {
-    return { skipped: true, model: source.id, run: run.runDate.toISOString(), reason: "already published" };
-  }
 
   const W = model.dims.width;
   const H = model.dims.height;
+  // Projected nests reproject to a lat/lon output grid; others bake at native dims.
+  const proj = PROJECTED_NESTS[model.sourceId];
+  const bakeW = proj?.outW ?? W;
+  const bakeH = proj?.outH ?? H;
+  // Skip only when a run is BOTH already published AND on the grid we'd now bake —
+  // so switching a model to the reprojected output grid (different dims) forces a
+  // clean re-bake instead of serving the stale flat-baked texture.
+  if (await alreadyPublished(source.id, run.runDate, { width: bakeW, height: bakeH })) {
+    return { skipped: true, model: source.id, run: run.runDate.toISOString(), reason: "already published" };
+  }
+
   const variables: Record<string, BakedVariable> = {};
   const tmp: string[] = [];
   try {
@@ -151,10 +232,10 @@ async function ingestOneModel(model: OmModel): Promise<IngestResult> {
       for (const [variableId, omName] of Object.entries(model.varMap.scalars)) {
         if (!source.variables.includes(variableId)) continue;
         try {
-          const grid = await readGrid(readOm, omName, W, H);
+          const grid = await readScalarGrid(readOm, omName, W, H, proj);
           if (!grid) { log(TAG, "open-meteo: scalar absent, skipped", { model: source.id, variableId, omName }); continue; }
           const res = await bakeScalar({
-            variableId, values: grid, width: W, height: H, preRolled: true, skipUnitConvert: true,
+            variableId, values: grid, width: bakeW, height: bakeH, preRolled: true, skipUnitConvert: true,
           });
           variables[variableId] = {
             meta: {
@@ -178,7 +259,10 @@ async function ingestOneModel(model: OmModel): Promise<IngestResult> {
       }
 
       // Wind: u/v are EARTH-RELATIVE m/s → bake the pair directly (no rotation).
-      if (model.varMap.windUV && source.variables.includes("wind")) {
+      // Projected nests skip wind: on a Lambert/rotated grid u/v are grid-relative
+      // and would need vector rotation (not ported yet), and reprojecting each
+      // component separately doesn't rotate the direction.
+      if (model.varMap.windUV && source.variables.includes("wind") && !proj) {
         try {
           const u = await readGrid(readOm, model.varMap.windUV.u, W, H);
           const v = await readGrid(readOm, model.varMap.windUV.v, W, H);
@@ -212,7 +296,7 @@ async function ingestOneModel(model: OmModel): Promise<IngestResult> {
       model: source.id,
       runDate: run.runDate,
       bounds: [...source.bbox],
-      grid: { width: W, height: H, res: source.resolutionDeg },
+      grid: { width: bakeW, height: bakeH, res: proj?.outRes ?? source.resolutionDeg },
       steps: [{ fhr: 0, validTime }],
       variables,
     });

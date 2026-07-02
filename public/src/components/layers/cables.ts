@@ -14,11 +14,78 @@ import { DEPTH_TEST } from "./depth";
  * depthTest is ON so far-side cables are occluded by the globe's depth sphere
  * instead of bleeding through the front (same convention as the weather fills).
  *
- * Note on geometry: under deck's _GlobeView a polyline only curves with the
- * sphere if it has enough intermediate vertices. TeleGeography's paths are
- * already densely sampled great-circle routes, so they bend correctly without
- * us subdividing them.
+ * Note on geometry: under deck's _GlobeView a PathLayer draws each segment as a
+ * straight 3D chord, NOT a geodesic. A long trans-ocean stretch therefore sinks
+ * below the sphere at its midpoint, where depthTest (on) has the globe occlude
+ * it — leaving the mid-ocean gaps TeleGeography's sparse waypoints would show.
+ * So we great-circle-densify any segment longer than DENSIFY_STEP_DEG, keeping
+ * the polyline hugging the surface end to end.
  */
+
+/** Max great-circle gap (degrees of arc) between consecutive path vertices
+ * before we interpolate. ~2° keeps every chord's sag under the depth sphere. */
+const DENSIFY_STEP_DEG = 2;
+const DEG = Math.PI / 180;
+
+/** Great-circle distance between two [lng,lat] points, in degrees of arc. */
+function arcDeg(a: [number, number], b: [number, number]): number {
+  const [lng1, lat1] = a;
+  const [lng2, lat2] = b;
+  const φ1 = lat1 * DEG;
+  const φ2 = lat2 * DEG;
+  const dφ = (lat2 - lat1) * DEG;
+  const dλ = (lng2 - lng1) * DEG;
+  const h =
+    Math.sin(dφ / 2) ** 2 +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(dλ / 2) ** 2;
+  return (2 * Math.asin(Math.min(1, Math.sqrt(h)))) / DEG;
+}
+
+/** Slerp two [lng,lat] points via 3D unit vectors and back to lng/lat. */
+function slerp(
+  a: [number, number],
+  b: [number, number],
+  t: number,
+): [number, number] {
+  const toVec = ([lng, lat]: [number, number]) => {
+    const φ = lat * DEG;
+    const λ = lng * DEG;
+    return [Math.cos(φ) * Math.cos(λ), Math.cos(φ) * Math.sin(λ), Math.sin(φ)];
+  };
+  const va = toVec(a);
+  const vb = toVec(b);
+  let dot = va[0] * vb[0] + va[1] * vb[1] + va[2] * vb[2];
+  dot = Math.max(-1, Math.min(1, dot));
+  const ω = Math.acos(dot);
+  if (ω < 1e-9) return a;
+  const s = Math.sin(ω);
+  const k1 = Math.sin((1 - t) * ω) / s;
+  const k2 = Math.sin(t * ω) / s;
+  const x = k1 * va[0] + k2 * vb[0];
+  const y = k1 * va[1] + k2 * vb[1];
+  const z = k1 * va[2] + k2 * vb[2];
+  const lat = Math.atan2(z, Math.sqrt(x * x + y * y)) / DEG;
+  const lng = Math.atan2(y, x) / DEG;
+  return [lng, lat];
+}
+
+/** Subdivide any segment longer than DENSIFY_STEP_DEG along its great circle so
+ * the polyline follows the globe instead of chording under it. */
+function densify(path: [number, number][]): [number, number][] {
+  if (path.length < 2) return path;
+  const out: [number, number][] = [path[0]];
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1];
+    const b = path[i];
+    const d = arcDeg(a, b);
+    if (d > DENSIFY_STEP_DEG) {
+      const steps = Math.ceil(d / DENSIFY_STEP_DEG);
+      for (let s = 1; s < steps; s++) out.push(slerp(a, b, s / steps));
+    }
+    out.push(b);
+  }
+  return out;
+}
 
 /** Stable glyph atlas covering ASCII + Latin-1 + Latin-Extended-A (accented
  * station names) so labels never render blank or re-flash mid-broadcast. */
@@ -42,7 +109,8 @@ function toCablePaths(cables: Cable[]): CablePath[] {
   for (const c of cables) {
     const [r, g, b] = hexToRgba(c.color);
     for (const path of c.paths) {
-      if (path.length >= 2) out.push({ path, color: [r, g, b], name: c.name });
+      if (path.length >= 2)
+        out.push({ path: densify(path), color: [r, g, b], name: c.name });
     }
   }
   return out;
@@ -51,6 +119,30 @@ function toCablePaths(cables: Cable[]): CablePath[] {
 export interface CableLayerOptions {
   /** Draw landing-station labels (decluttered). Default true. */
   labels?: boolean;
+  /** Draw a name label on each cable route (decluttered). Default false. */
+  cableLabels?: boolean;
+}
+
+/** One cable-name label anchored at the midpoint of its longest stretch. */
+interface CableLabel {
+  position: [number, number];
+  name: string;
+}
+
+/** Place one label per cable at the midpoint vertex of its longest path, so the
+ * text sits out over the ocean on the route rather than piling up at a coast. */
+function toCableLabels(cables: Cable[]): CableLabel[] {
+  const out: CableLabel[] = [];
+  for (const c of cables) {
+    let best: [number, number][] | null = null;
+    for (const p of c.paths) {
+      if (p.length >= 2 && (!best || p.length > best.length)) best = p;
+    }
+    if (!best) continue;
+    const mid = best[Math.floor(best.length / 2)];
+    out.push({ position: [mid[0], mid[1]], name: c.name });
+  }
+  return out;
 }
 
 export function cableLayers(
@@ -125,6 +217,36 @@ export function cableLayers(
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     layers.push(new TextLayer(labelProps as any));
+  }
+
+  if (opts.cableLabels) {
+    const cableLabelData = toCableLabels(cables);
+    const cableLabelProps = {
+      id: "cable-name-labels",
+      data: cableLabelData,
+      getPosition: (d: CableLabel) => [d.position[0], d.position[1], 0],
+      getText: (d: CableLabel) => d.name,
+      getColor: [180, 220, 255, 235],
+      getSize: 11,
+      sizeUnits: "pixels",
+      getTextAnchor: "middle",
+      getAlignmentBaseline: "center",
+      fontFamily: "system-ui, sans-serif",
+      fontSettings: { sdf: true, buffer: 8, radius: 12 },
+      outlineWidth: 2,
+      outlineColor: [0, 0, 0, 255],
+      characterSet: LABEL_CHARACTER_SET,
+      // Own collision group so cable names declutter against each other but not
+      // against the landing-station labels — the two label sets are independent.
+      extensions: [new CollisionFilterExtension()],
+      collisionGroup: "cable-names",
+      collisionTestProps: { sizeScale: 2 },
+      pickable: false,
+      parameters: DEPTH_TEST,
+      updateTriggers: { getText: cableLabelData.length },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    layers.push(new TextLayer(cableLabelProps as any));
   }
 
   return layers;

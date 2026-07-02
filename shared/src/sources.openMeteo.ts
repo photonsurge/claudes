@@ -91,10 +91,10 @@ export const OPENMETEO_SOURCES: Record<string, SourceDescriptor> = {
     variables: ["temp", "wind", "gust", "humidity"],
     priority: 33,
     minZoom: 4.5,
-    // DISABLED 2026-07-02: projected native grid (ICON-CH2) baked as flat lat/lon →
-    // stretched/misaligned on the globe (verified vs coastline + icon-eu). Re-enable
-    // only after the ingest reprojects it to regular lat/lon (like the direct UKV cdo
-    // path). ICON-EU/ICON-global cover this region correctly meanwhile. See [[country-highres-nests]].
+    // DISABLED: ROTATED-POLE native grid (not Lambert) — reprojection not ported yet
+    // (only LCC is: dmi/metno). Provisional and low-value (icon-2i-italy + arome-austria
+    // + icon-eu already cover the Alps correctly). Re-enable after the rotated-pole path
+    // lands + a live check. See docs/openmeteo-grid-defs.md.
     enabled: false,
     attribution: "MeteoSwiss via Open-Meteo (CC BY 4.0)",
   },
@@ -129,9 +129,9 @@ export const OPENMETEO_SOURCES: Record<string, SourceDescriptor> = {
     variables: ["temp", "gust", "humidity"],
     priority: 31,
     minZoom: 3.5,
-    // DISABLED 2026-07-02: projected native grid (DMI HARMONIE) baked as flat lat/lon
-    // → badly distorted (UK appeared over France/Belgium). Re-enable after reprojection.
-    enabled: false,
+    // Lambert-Conic native grid → reprojected to lat/lon at ingest (worker
+    // reproject.ts / PROJECTED_NESTS). Verified aligned vs the coastline 2026-07-03.
+    enabled: true,
     attribution: "DMI via Open-Meteo (CC BY 4.0)",
   },
   // GeoSphere AROME Austria — 2 km Alps/Danube. temp/humidity/gust.
@@ -148,9 +148,9 @@ export const OPENMETEO_SOURCES: Record<string, SourceDescriptor> = {
     variables: ["temp", "gust", "humidity"],
     priority: 33,
     minZoom: 4.5,
-    // DISABLED 2026-07-02: projected native grid (AROME Austria) baked as flat lat/lon
-    // → stretched/misaligned. Re-enable after reprojection.
-    enabled: false,
+    // Genuine WGS84 lat/lon (crs_wkt) — never actually projected; an earlier
+    // correlation over-flagged it. Bakes correctly as-is. Re-enabled 2026-07-03.
+    enabled: true,
     attribution: "GeoSphere Austria via Open-Meteo (CC BY 4.0)",
   },
   // ItaliaMeteo ARPAE ICON-2I — 2 km Italy/central-Med. temp/humidity/gust.
@@ -167,9 +167,9 @@ export const OPENMETEO_SOURCES: Record<string, SourceDescriptor> = {
     variables: ["temp", "gust", "humidity"],
     priority: 33,
     minZoom: 4.5,
-    // DISABLED 2026-07-02: projected/rotated native grid (ICON-2I) baked as flat lat/lon
-    // → stretched/misaligned. Re-enable after reprojection.
-    enabled: false,
+    // Genuine WGS84 lat/lon (crs_wkt) — never actually projected; an earlier
+    // correlation over-flagged it. Bakes correctly as-is. Re-enabled 2026-07-03.
+    enabled: true,
     attribution: "ItaliaMeteo ARPAE via Open-Meteo (CC BY 4.0)",
   },
   // MET Norway Nordic-PP — ~1 km Scandinavia. temp/humidity/gust.
@@ -186,9 +186,9 @@ export const OPENMETEO_SOURCES: Record<string, SourceDescriptor> = {
     variables: ["temp", "gust", "humidity"],
     priority: 33,
     minZoom: 4,
-    // DISABLED 2026-07-02: projected native grid (MET Nordic Lambert) baked as flat
-    // lat/lon → shifted ~+1.5° lon + stretched. Re-enable after reprojection.
-    enabled: false,
+    // Lambert-Conic native grid → reprojected to lat/lon at ingest (worker
+    // reproject.ts / PROJECTED_NESTS). Verified aligned vs the coastline 2026-07-03.
+    enabled: true,
     attribution: "MET Norway via Open-Meteo (CC BY 4.0)",
   },
   // UK Met Office UKV 2 km (via Open-Meteo) — temp/humidity/gust. Wins over our
