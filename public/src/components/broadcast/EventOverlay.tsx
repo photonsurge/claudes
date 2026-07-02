@@ -38,13 +38,21 @@ function Bracket({ corner, color }: { corner: "tl" | "tr" | "bl" | "br"; color: 
   );
 }
 
-export default function EventOverlay({ segment }: { segment: Segment }) {
+export default function EventOverlay({
+  segment,
+  extraDetails = [],
+}: {
+  segment: Segment;
+  /** Extra rows appended after the segment's own details (e.g. a nearest-city
+   *  place line for aircraft/ship, which the segment shape doesn't carry). */
+  extraDetails?: { label: string; value: string }[];
+}) {
   const color = KIND_COLOR[segment.kind] ?? "#38bdf8";
   const kindLabel = KIND_LABEL[segment.kind] ?? segment.kind;
   const name = segment.title.toUpperCase();
   // The full detail set from the segment (Magnitude, Depth, Occurred, …) — the
   // same rows the old bottom-left card showed, now folded into the reticle.
-  const details = segment.details ?? [];
+  const details = [...(segment.details ?? []), ...extraDetails];
 
   const left = (STAGE_W - W) / 2;
   const top0 = (STAGE_H - H) / 2 - 40;
@@ -74,8 +82,8 @@ export default function EventOverlay({ segment }: { segment: Segment }) {
       <div
         style={{
           position: "absolute",
-          top: 18,
-          left: 26,
+          top: -48,
+          left: -54,
           minWidth: 250,
           padding: "9px 13px",
           background: "rgba(8,13,22,0.78)",

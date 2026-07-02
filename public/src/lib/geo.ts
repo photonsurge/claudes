@@ -46,6 +46,27 @@ export function nearby<T>(
   return out;
 }
 
+/**
+ * The single nearest item to `center` ([lng,lat]) with NO radius bound, or null
+ * if nothing has a location. For place context on a moving target (aircraft /
+ * ship) where the nearest city can be far — mid-ocean it still names the closest
+ * landfall rather than showing nothing.
+ */
+export function nearest<T>(
+  items: T[],
+  center: [number, number],
+  getPoint: (item: T) => [number, number] | null,
+): Nearby<T> | null {
+  let best: Nearby<T> | null = null;
+  for (const item of items) {
+    const p = getPoint(item);
+    if (!p) continue;
+    const distanceKm = haversineKm(center, p);
+    if (!best || distanceKm < best.distanceKm) best = { item, distanceKm };
+  }
+  return best;
+}
+
 /** Compact distance readout, e.g. 4.2 → "4 km", 132.7 → "133 km". */
 export function formatKm(km: number): string {
   return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;

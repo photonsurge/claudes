@@ -1,4 +1,4 @@
-import { haversineKm, nearby, formatKm } from "./geo";
+import { haversineKm, nearby, nearest, formatKm } from "./geo";
 
 describe("haversineKm", () => {
   it("is zero for the same point", () => {
@@ -41,6 +41,31 @@ describe("nearby", () => {
 
   it("returns empty when nothing is in range", () => {
     expect(nearby(pts, [100, 80], getPoint, 10)).toEqual([]);
+  });
+});
+
+describe("nearest", () => {
+  const pts = [
+    { name: "close", lng: 0.5, lat: 0 },
+    { name: "far", lng: 30, lat: 0 },
+    { name: "noloc", lng: NaN, lat: NaN },
+  ];
+  const getPoint = (p: (typeof pts)[number]): [number, number] | null =>
+    Number.isFinite(p.lng) && Number.isFinite(p.lat) ? [p.lng, p.lat] : null;
+
+  it("returns the single closest item regardless of distance (no radius bound)", () => {
+    const r = nearest(pts, [25, 0], getPoint); // near lng 25 → 'far' (lng 30) wins over 'close' (lng 0.5)
+    expect(r?.item.name).toBe("far");
+    expect(r?.distanceKm).toBeGreaterThan(0);
+  });
+
+  it("names the closest landfall even when it's far away (mid-ocean case)", () => {
+    const r = nearest(pts, [-90, -40], getPoint);
+    expect(r?.item.name).toBe("close");
+  });
+
+  it("is null when no item has a location", () => {
+    expect(nearest([{ name: "noloc", lng: NaN, lat: NaN }], [0, 0], getPoint)).toBeNull();
   });
 });
 

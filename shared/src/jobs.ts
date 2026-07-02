@@ -11,9 +11,53 @@ export interface TriggerableJob {
   domain: string;
   type: string;
   event: string;
+  /** UI section header on the admin Jobs page (jobs render grouped by this). */
+  group: string;
 }
 
+/**
+ * Weather-map source refreshes. Each maps to a `weather.<event>` handler in
+ * worker/src/jobs/weather.ts, mirroring the scheduled ingest fleet
+ * (worker/src/weather/sourceSchedule.ts) so the operator can force a "run now".
+ * A worker test cross-checks these events against the real fleet to catch drift.
+ */
+const WEATHER_MAP_JOBS: TriggerableJob[] = (
+  [
+    ["weather-ifs", "ECMWF IFS (global)", "Re-ingest the ECMWF IFS global base (off by default until CCSDS-validated).", "refreshIfs"],
+    ["weather-waves", "GFS-Wave (global mosaic)", "Re-ingest the global GFS-Wave height/direction mosaic.", "refreshWaves"],
+    ["weather-rtofs", "RTOFS ocean (global)", "Re-ingest the global RTOFS SST / currents / salinity base.", "refreshRtofs"],
+    ["weather-icon-global", "ICON global (13 km, everywhere)", "Re-ingest DWD ICON 13 km — the worldwide zoom-in bump under regional nests.", "refreshIconGlobal"],
+    ["weather-icon-eu", "ICON-EU (Europe 6.5 km)", "Re-ingest the DWD ICON-EU regional nest.", "refreshIconEu"],
+    ["weather-icon-d2", "ICON-D2 (central Europe 2 km)", "Re-ingest the DWD ICON-D2 high-res nest.", "refreshIconD2"],
+    ["weather-hrrr", "HRRR (US 3 km)", "Re-ingest the NOAA HRRR CONUS nest.", "refreshHrrr"],
+    ["weather-mrms", "MRMS (US radar)", "Re-ingest the NOAA MRMS radar mosaic (nest-only).", "refreshMrms"],
+    ["weather-hrdps", "HRDPS (Canada 2.5 km)", "Re-ingest the ECCC HRDPS nest.", "refreshHrdps"],
+    ["weather-ukv", "UKV (UK 2 km)", "Re-ingest the Met Office UKV nest.", "refreshUkv"],
+    ["weather-openmeteo", "Open-Meteo nests (JMA, AROME, …)", "Re-ingest the Open-Meteo .om national high-res family.", "refreshOpenMeteo"],
+    ["weather-wave-nests", "GFS-Wave basin nests", "Re-ingest the regional GFS-Wave basin nests.", "refreshWaveNests"],
+    ["weather-rtofs-regional", "RTOFS regional windows", "Re-ingest the 11 regional RTOFS windows.", "refreshRtofsRegional"],
+  ] as const
+).map(([id, label, description, event]) => ({
+  id,
+  label,
+  description,
+  domain: "weather",
+  type: "weather",
+  event,
+  group: "Weather maps",
+}));
+
 export const TRIGGERABLE_JOBS: TriggerableJob[] = [
+  {
+    id: "weather-check",
+    label: "Check weather run",
+    description: "Look for a newer GFS run and bake it.",
+    domain: "weather",
+    type: "weather",
+    event: "check",
+    group: "Weather maps",
+  },
+  ...WEATHER_MAP_JOBS,
   {
     id: "alerts-ingest",
     label: "Ingest alerts",
@@ -21,6 +65,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "alerts",
     type: "alerts",
     event: "ingest",
+    group: "Alerts & events",
   },
   {
     id: "tles",
@@ -29,6 +74,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "tracks",
     type: "tracks",
     event: "ingestTles",
+    group: "Tracks",
   },
   {
     id: "snapshot-aircraft",
@@ -37,6 +83,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "tracks",
     type: "tracks",
     event: "snapshotAircraft",
+    group: "Tracks",
   },
   {
     id: "snapshot-ships",
@@ -45,6 +92,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "tracks",
     type: "tracks",
     event: "snapshotShips",
+    group: "Tracks",
   },
   {
     id: "snapshot-seismic",
@@ -53,14 +101,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "tracks",
     type: "tracks",
     event: "snapshotSeismic",
-  },
-  {
-    id: "weather-check",
-    label: "Check weather run",
-    description: "Look for a newer GFS run and bake it.",
-    domain: "weather",
-    type: "weather",
-    event: "check",
+    group: "Tracks",
   },
   {
     id: "summaries-hourly",
@@ -69,6 +110,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "summaries",
     type: "summaries",
     event: "generateHourly",
+    group: "Alerts & events",
   },
   {
     id: "summaries-12h",
@@ -77,6 +119,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "summaries",
     type: "summaries",
     event: "generate12h",
+    group: "Alerts & events",
   },
   {
     id: "summaries-daily",
@@ -85,6 +128,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "summaries",
     type: "summaries",
     event: "generateDaily",
+    group: "Alerts & events",
   },
 ];
 

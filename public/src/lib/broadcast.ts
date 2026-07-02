@@ -4,7 +4,7 @@
  * short strings the on-air furniture displays, so the formatting is unit-tested
  * and the components stay dumb.
  */
-import type { AlertFeature } from "./alerts";
+import type { Alert, AlertFeature } from "./alerts";
 import type { Quake, Track } from "./tracks/types";
 import { SEVERITY_LABELS, SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
 import { hazardMeta, type HazardType } from "./hazard";
@@ -128,6 +128,55 @@ export function alertSummary(alerts: AlertFeature[], quakes: Quake[] = []): Area
     .sort((a, b) => b.count - a.count);
 
   return { total: distinct.length, quakeCount: quakes.length, bySeverity, byHazard };
+}
+
+export interface WorldSummary {
+  /** Distinct active alerts worldwide (clustered events counted once). */
+  alertTotal: number;
+  /** Non-zero severity buckets, most severe first. */
+  bySeverity: { rank: number; label: string; color: string; count: number }[];
+  /** Quakes in the seismic feed window (USGS default ≈ last 24h). */
+  quakeCount: number;
+  /** Strongest quake in that window (0 if none). */
+  maxMag: number;
+  /** The strongest quake itself, for its place label — or null. */
+  maxQuake: Quake | null;
+}
+
+/**
+ * Whole-planet situation summary for the always-on WORLD WATCH panel — "how many
+ * active warnings, how severe, and the biggest quake" over the last day. Unlike
+ * alertSummary (which works off in-view GeoJSON features), this counts the RAW
+ * alerts so geocode-only warnings with no polygon still register, and de-dupes
+ * cross-source clusters by keeping each group's representative (id === groupId).
+ */
+export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummary {
+  // One row per clustered event (a warning carried by both WMO + MeteoAlarm
+  // counts once); alerts the API didn't group have no groupId and pass through.
+  const distinct = alerts.filter((a) => !a.groupId || a.id === a.groupId);
+
+  const sev = new Map<number, number>();
+  for (const a of distinct) sev.set(a.maxSeverityRank, (sev.get(a.maxSeverityRank) ?? 0) + 1);
+  const bySeverity = [...sev.entries()]
+    .filter(([rank]) => rank > 0) // drop None/info from the severity breakdown
+    .map(([rank, count]) => ({
+      rank,
+      label: SEVERITY_LABELS[rank as 0 | 1 | 2 | 3 | 4] ?? String(rank),
+      color: SEVERITY_COLORS[rank as 0 | 1 | 2 | 3 | 4] ?? "#9ca3af",
+      count,
+    }))
+    .sort((a, b) => b.rank - a.rank);
+
+  let maxQuake: Quake | null = null;
+  for (const q of quakes) if (!maxQuake || q.mag > maxQuake.mag) maxQuake = q;
+
+  return {
+    alertTotal: distinct.length,
+    bySeverity,
+    quakeCount: quakes.length,
+    maxMag: maxQuake?.mag ?? 0,
+    maxQuake,
+  };
 }
 
 /** "Tsunami Watch: Fiji Region — YELLOW" for the live-alert panel body. */

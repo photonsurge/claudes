@@ -25,12 +25,18 @@ export interface QuakeContentInput {
   mag: number;
   place?: string;
   depthKm: number;
-  /** Event time, epoch ms (absolute UTC is shown, never a stale "ago"). */
+  /**
+   * Event time, epoch ms. Drives the "Ago" (elapsed) + "Occurred" (absolute UTC)
+   * rows. "Ago" is safe because these segments are rebuilt each director tick
+   * (same as the alert "Active for" row), so the elapsed time stays current.
+   */
   timeMs?: number;
+  /** "Now" for the elapsed-time row; defaults to Date.now() (testable). */
+  nowMs?: number;
   tsunami?: boolean;
 }
 
-/** Earthquake card: magnitude headline, depth class, absolute time + region. */
+/** Earthquake card: magnitude headline, depth class, time (ago + absolute) + region. */
 export function quakeSegmentContent(q: QuakeContentInput): SegmentContent {
   const subtitle = `M${q.mag.toFixed(1)}${q.place ? ` · ${q.place}` : ""}`;
   const details: SegmentContent["details"] = [
@@ -38,6 +44,8 @@ export function quakeSegmentContent(q: QuakeContentInput): SegmentContent {
     { label: "Depth", value: `${Math.round(q.depthKm)} km · ${quakeDepthLabel(q.depthKm)}` },
   ];
   if (q.timeMs != null && Number.isFinite(q.timeMs)) {
+    const now = q.nowMs ?? Date.now();
+    details.push({ label: "Ago", value: agoLabel(Math.max(0, Math.floor((now - q.timeMs) / 60000))) });
     details.push({ label: "Occurred", value: `${new Date(q.timeMs).toISOString().slice(0, 16).replace("T", " ")} UTC` });
   }
   if (q.place) details.push({ label: "Region", value: q.place });
@@ -73,6 +81,11 @@ function activeForLabel(mins: number): string {
   if (h < 24) return `${h}h ${mins % 60}m`;
   const d = Math.floor(h / 24);
   return `${d}d ${h % 24}h`;
+}
+
+/** "just now" / "45m ago" / "3h 12m ago" — elapsed since a point-in-time event. */
+function agoLabel(mins: number): string {
+  return mins < 1 ? "just now" : `${activeForLabel(mins)} ago`;
 }
 
 /** Severe-weather card: place + country subtitle, severity/type/source rows. */

@@ -1,6 +1,6 @@
 {
   "name": "worker",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
@@ -43,6 +43,7 @@
     "refresh:openmeteo": "ts-node src/scripts/refreshOpenMeteo.ts",
     "pull": "ts-node src/scripts/check.ts",
     "reingest": "ts-node src/scripts/reingest.ts",
+    "reset:weather": "ts-node src/scripts/resetWeather.ts",
     "test": "jest",
     "test:watch": "jest --watch"
   },

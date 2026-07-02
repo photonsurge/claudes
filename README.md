@@ -151,6 +151,46 @@ hydra's 3000/4000/5000). Mongo, Redis and `worker` stay internal to the compose
 network. The weather/geocode env vars flow into the `worker` and `public`
 containers via `env_file: .env` — no per-service wiring needed.
 
+### Run on another box (self-contained, no registry)
+
+`./build` / `./start.sh` push to and pull from the private titan registry. On a
+fresh box with no registry access, build the images **locally** instead — the
+compose file already carries `build:` sections, so `--build` needs nothing but
+the repo and Docker.
+
+```bash
+# 0. On the box: install Docker Engine + the compose plugin, then clone the repo
+#    (the FULL repo is the build context — shared/ must be present).
+git clone <repo-url> weather && cd weather
+
+# 1. Env: copy the sample and fill it in.
+cp .env.sample .env
+#    - openssl rand -hex 32  → JWT_SECRET, WORKER_AUTH_SECRET, SOCKET_TOKEN_SECRET
+#    - set MONGO_ROOT_PASSWORD / REDIS_PASSWORD (and match them in MONGODB_URI)
+#    - NEXT_PUBLIC_SOCKET_URL is BAKED INTO the client bundle at build time, so it
+#      must be the socket URL the *browser* will hit (e.g. http://<box-ip>:10101).
+#    - ALLOWED_ORIGINS must list the public URL (e.g. http://<box-ip>:10100).
+#    - BIND_HOST=0.0.0.0 to reach the ports directly (default 127.0.0.1 = nginx only).
+
+# 2. Basemap assets are git-ignored — fetch them BEFORE building or the globe has
+#    no satellite/terrain/borders (needs curl on the host).
+./fetch-assets.sh
+
+# 3. Build the images locally and start the whole stack (mongo + redis + 3 services).
+docker compose up -d --build
+
+# --- day to day ---
+docker compose ps                 # status
+docker compose logs -f worker     # follow a service (worker | socket | public)
+docker compose up -d --build      # rebuild + restart after a git pull
+docker compose down               # stop  (add -v to also wipe mongo/redis volumes)
+```
+
+Then open `http://<box-ip>:10100`. If you front it with nginx/TLS instead, leave
+`BIND_HOST` at `127.0.0.1` and point the vhost at `127.0.0.1:10100` (web) and
+`127.0.0.1:10101` (socket). Re-run step 3's `--build` whenever `NEXT_PUBLIC_SOCKET_URL`
+changes, since it's compiled into the client bundle.
+
 ## Environment variables
 
 ### Core / infra

@@ -82,7 +82,10 @@ export function createDb(conn: Connection) {
      * gfs/ifs/rtofs/gfswave-mosaic. Retention keeps only a few runs per model.
      */
     async latestPublishedRunsByModel() {
-      const res = await weatherRuns.getAll({ published: true }, { sort: { run: -1 } });
+      // Tiebreak by generatedAt so that when a run is RE-baked for the same cycle
+      // time (e.g. after a descriptor bbox correction), the newest bake wins over
+      // the stale duplicate rather than losing an undefined same-`run` tie.
+      const res = await weatherRuns.getAll({ published: true }, { sort: { run: -1, generatedAt: -1 } });
       const rows = res.success && res.data ? res.data : [];
       const byModel = new Map<string, (typeof rows)[number]>();
       for (const r of rows) if (!byModel.has(r.model)) byModel.set(r.model, r);

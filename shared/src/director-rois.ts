@@ -88,8 +88,8 @@ export interface OrbitalView {
 
 export const ORBITAL_VIEWS: OrbitalView[] = [
   { group: "starlink", title: "Starlink", subtitle: "Low-Earth-orbit internet constellation", zoom: 3.0 },
-  { group: "gps-ops", title: "GPS Constellation", subtitle: "Navigation · medium Earth orbit", zoom: 1.5 },
-  { group: "galileo", title: "Galileo", subtitle: "European navigation constellation", zoom: 1.4 },
+  { group: "gps-ops", title: "GPS Constellation", subtitle: "Navigation · medium Earth orbit", zoom: 1.0 },
+  { group: "galileo", title: "Galileo", subtitle: "European navigation constellation", zoom: 0.9 },
   { group: "stations", title: "Space Stations", subtitle: "ISS & crewed platforms", zoom: 3.2 },
   { group: "weather", title: "Weather Satellites", subtitle: "Polar & geostationary", zoom: 1.3 },
   { group: "visual", title: "Brightest Satellites", subtitle: "Visible to the naked eye", zoom: 2.6 },

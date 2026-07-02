@@ -12,7 +12,7 @@ import {
   ContourLayer,
   HighLowLayer,
 } from "weatherlayers-gl";
-import type { WeatherManifest } from "@photonsurge/shared/manifest";
+import type { WeatherManifest, WeatherVariableManifest } from "@photonsurge/shared/manifest";
 import type { LoadedTexture } from "../../lib/textures";
 import type { City } from "../../lib/cities";
 import {
@@ -102,33 +102,94 @@ export function scalarRasterLayers(
 ): RasterLayer[] {
   const entries = resolveEntries(manifest.variables[variableId], camera);
   const out: RasterLayer[] = [];
-  entries.forEach((entry, i) => {
-    // Base (i === 0) fills the globe; nests clip to their own bbox.
-    const bounds: Bounds | undefined = i === 0 ? manifestBounds(manifest) : entry.bbox;
-    if (!bounds) return;
-    const props = scalarRasterPropsFromEntry(entry, variableId, fhr, bounds, {
+  // Nests render at the SAME opacity as the base (props default 0.7), NOT forced
+  // opaque. Single-winner draws only ONE detail nest over the base, so the old
+  // "opaque to avoid double-exposing the base" rule just made the high-res region
+  // POP as a brighter box (a hard seam vs the semi-transparent base). Matching the
+  // base opacity makes the nest read as the same surface with finer detail inside.
+  const buildNest = (e: WeatherVariableManifest, i: number) =>
+    e.bbox ? scalarRasterPropsFromEntry(e, variableId, fhr, e.bbox, { ...opts, idSuffix: `-${e.sourceId ?? `n${i}`}` }) : null;
+  // Base (entries[0]) fills the globe and SEALS the depth sphere (DEPTH_OCCLUDE).
+  const base = entries[0];
+  const baseBounds = base ? manifestBounds(manifest) : undefined;
+  let baseNestIndex = -1;
+  if (base && baseBounds) {
+    const props = scalarRasterPropsFromEntry(base, variableId, fhr, baseBounds, {
       ...opts,
-      // A nest REPLACES the base in its footprint rather than stacking on it: at
-      // the base's 0.7 the two coincident rasters would compound to ~0.9 and read
-      // as a brighter patch. Full opacity makes the nest's own pixels fully cover
-      // the base beneath, so the region shows the sharper field at one consistent
-      // exposure (its transparent no-data pixels still let the base through).
-      opacity: i === 0 ? opts?.opacity : opts?.opacity ?? 1,
-      idSuffix: i === 0 ? "" : `-${entry.sourceId ?? `n${i}`}`,
+      opacity: opts?.opacity,
+      idSuffix: "",
     });
-    if (!props) return;
-    const image = resolve(props.image);
-    if (!image) return;
-    // Base SEALS the depth sphere (DEPTH_OCCLUDE). A nest sits coincident with the
-    // base raster, so it must NOT compete for depth — DEPTH_PAINT (no test/write,
-    // far side culled by GlobeView's back-face cull) paints it uniformly on top
-    // instead of z-fighting into the "spiky fill" artifact. Drawn after the base
-    // (finest last), so the nest wins in its bbox.
-    const parameters = i === 0 ? DEPTH_OCCLUDE : DEPTH_PAINT;
+    const image = props && resolve(props.image);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    out.push(new RasterLayer({ ...props, image: image as any, parameters }));
-  });
+    if (props && image) out.push(new RasterLayer({ ...props, image: image as any, parameters: DEPTH_OCCLUDE }));
+    else {
+      // No TRUE global base drew (nest-only variable, e.g. temp/humidity whose base
+      // has empty `files`). Promote the COARSEST loaded nest — icon-global spans the
+      // whole globe (minZoom 2) — to act as the base so the planet still gets colour
+      // UNDER the fine regional nest, instead of going black outside the nest bbox.
+      const coarse = pickCoarsestLoaded(entries, buildNest, resolve);
+      if (coarse) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        out.push(new RasterLayer({ ...coarse.props, image: coarse.image as any, parameters: DEPTH_OCCLUDE }));
+        baseNestIndex = coarse.index;
+      }
+    }
+  }
+  // Nests: over the base draw ONLY the finest available one, never a stack.
+  // `resolveEntries` returns nests coarsest→finest, so we walk from the finest end
+  // and take the first whose texture is loaded. Stacking every active nest painted
+  // each one's rectangular bbox as a hard-edged seam (models disagree, so the edges
+  // show); one clip-to-bbox raster over the base has a single edge, and the coarser
+  // overlapping nests never draw. It REPLACES the base in its footprint (full
+  // opacity), sitting coincident so it must not fight depth → DEPTH_PAINT. Skip it
+  // when it's the very nest already drawn as the promoted base (single active nest).
+  const finest = pickFinestLoaded(entries, buildNest, resolve);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (finest && finest.index !== baseNestIndex) out.push(new RasterLayer({ ...finest.props, image: finest.image as any, parameters: DEPTH_PAINT }));
   return out;
+}
+
+/**
+ * From resolver entries `[base, ...nests]` (nests coarsest→finest), find the first
+ * nest (scanning in `dir` direction over the nest range) whose props build AND
+ * whose texture is already loaded. Returns its props + image + index, or null when
+ * no nest is active/ready. Shared by the scalar + vector builders.
+ */
+function pickLoadedNest<P extends { image: string }>(
+  entries: WeatherVariableManifest[],
+  build: (entry: WeatherVariableManifest, index: number) => P | null,
+  resolve: TextureResolver,
+  dir: "finest" | "coarsest",
+): { props: P; image: LoadedTexture; index: number } | null {
+  const from = dir === "finest" ? entries.length - 1 : 1;
+  const to = dir === "finest" ? 1 : entries.length - 1;
+  const step = dir === "finest" ? -1 : 1;
+  for (let i = from; dir === "finest" ? i >= to : i <= to; i += step) {
+    const props = build(entries[i], i);
+    if (!props) continue;
+    const image = resolve(props.image);
+    if (!image) continue;
+    return { props, image, index: i };
+  }
+  return null;
+}
+
+/** The FINEST loaded nest — the detail overlay painted on top of the base. */
+function pickFinestLoaded<P extends { image: string }>(
+  entries: WeatherVariableManifest[],
+  build: (entry: WeatherVariableManifest, index: number) => P | null,
+  resolve: TextureResolver,
+) {
+  return pickLoadedNest(entries, build, resolve, "finest");
+}
+
+/** The COARSEST loaded nest — promoted to base when a variable has no true base. */
+function pickCoarsestLoaded<P extends { image: string }>(
+  entries: WeatherVariableManifest[],
+  build: (entry: WeatherVariableManifest, index: number) => P | null,
+  resolve: TextureResolver,
+) {
+  return pickLoadedNest(entries, build, resolve, "coarsest");
 }
 
 /**
@@ -146,19 +207,33 @@ export function vectorParticleLayers(
 ): ParticleLayer[] {
   const entries = resolveEntries(manifest.variables[variableId], camera);
   const out: ParticleLayer[] = [];
-  entries.forEach((entry, i) => {
-    const bounds: Bounds | undefined = i === 0 ? manifestBounds(manifest) : entry.bbox;
-    if (!bounds) return;
-    const props = vectorParticlePropsFromEntry(entry, variableId, fhr, bounds, {
-      ...opts,
-      idSuffix: i === 0 ? "" : `-${entry.sourceId ?? `n${i}`}`,
-    });
-    if (!props) return;
-    const image = resolve(props.image);
-    if (!image) return;
+  const buildNest = (e: WeatherVariableManifest, i: number) =>
+    e.bbox ? vectorParticlePropsFromEntry(e, variableId, fhr, e.bbox, { ...opts, idSuffix: `-${e.sourceId ?? `n${i}`}` }) : null;
+  // Base (entries[0]) fills the globe.
+  const base = entries[0];
+  const baseBounds = base ? manifestBounds(manifest) : undefined;
+  let baseNestIndex = -1;
+  if (base && baseBounds) {
+    const props = vectorParticlePropsFromEntry(base, variableId, fhr, baseBounds, { ...opts, idSuffix: "" });
+    const image = props && resolve(props.image);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    out.push(new ParticleLayer({ ...props, image: image as any, parameters: DEPTH_TEST }));
-  });
+    if (props && image) out.push(new ParticleLayer({ ...props, image: image as any, parameters: DEPTH_TEST }));
+    else {
+      // No true global base — promote the coarsest loaded nest (icon-global spans the
+      // globe) to base so wind still flows worldwide under the fine regional nest.
+      const coarse = pickCoarsestLoaded(entries, buildNest, resolve);
+      if (coarse) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        out.push(new ParticleLayer({ ...coarse.props, image: coarse.image as any, parameters: DEPTH_TEST }));
+        baseNestIndex = coarse.index;
+      }
+    }
+  }
+  // Only the finest available nest particles draw — same single-winner rule as the
+  // scalar raster, so overlapping regional wind fields don't stack (see there).
+  const finest = pickFinestLoaded(entries, buildNest, resolve);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (finest && finest.index !== baseNestIndex) out.push(new ParticleLayer({ ...finest.props, image: finest.image as any, parameters: DEPTH_TEST }));
   return out;
 }
 

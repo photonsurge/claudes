@@ -8,8 +8,9 @@ import {
   topAlert,
   alertBannerText,
   alertSummary,
+  worldWatchSummary,
 } from "./broadcast";
-import type { AlertFeature } from "./alerts";
+import type { Alert, AlertFeature } from "./alerts";
 import type { Quake, Track } from "./tracks/types";
 
 const quake = (over: Partial<Quake> = {}): Quake => ({
@@ -120,6 +121,53 @@ describe("alertSummary", () => {
     expect(s.total).toBe(0);
     expect(s.bySeverity).toEqual([]);
     expect(s.byHazard).toEqual([]);
+  });
+});
+
+describe("worldWatchSummary", () => {
+  const raw = (rank: number, over: Partial<Alert> = {}): Alert =>
+    ({
+      id: over.id ?? `a${rank}-${Math.random()}`,
+      source: "test",
+      identifier: "x",
+      sender: "s",
+      sent: "2026-07-02T00:00:00Z",
+      msgType: "Alert",
+      status: "Actual",
+      active: true,
+      maxSeverityRank: rank as Alert["maxSeverityRank"],
+      info: [],
+      ...over,
+    }) as Alert;
+
+  it("buckets active alerts by severity (non-zero, most severe first) and totals them", () => {
+    const s = worldWatchSummary(
+      [raw(4), raw(3), raw(3), raw(0), raw(2)],
+      [quake({ mag: 4.1 }), quake({ mag: 6.3, place: "off Japan" })],
+    );
+    expect(s.alertTotal).toBe(5); // rank-0 still counts toward the total…
+    // …but is dropped from the severity breakdown.
+    expect(s.bySeverity.map((b) => [b.rank, b.count])).toEqual([
+      [4, 1],
+      [3, 2],
+      [2, 1],
+    ]);
+    expect(s.quakeCount).toBe(2);
+    expect(s.maxMag).toBe(6.3);
+    expect(s.maxQuake?.place).toBe("off Japan");
+  });
+
+  it("counts a cross-source cluster once (keeps the representative)", () => {
+    const rep = raw(4, { id: "g1", groupId: "g1" });
+    const member = raw(4, { id: "g1-member", groupId: "g1" });
+    const solo = raw(2, { id: "solo" }); // no groupId → passes through
+    const s = worldWatchSummary([rep, member, solo], []);
+    expect(s.alertTotal).toBe(2);
+  });
+
+  it("is quiet with no data", () => {
+    const s = worldWatchSummary([], []);
+    expect(s).toMatchObject({ alertTotal: 0, bySeverity: [], quakeCount: 0, maxMag: 0, maxQuake: null });
   });
 });
 

@@ -26,11 +26,31 @@ export type IngestResult =
   | { published: true; model: string; run: string; runId: string; variables: string[] }
   | { skipped: true; model: string; run: string; reason: string };
 
-/** True if a complete published run already exists for this model+run time. */
+/** [W,S,E,N] bounds equal within a small tolerance (float grid maths). */
+function boundsMatch(a: number[] | undefined, b: number[] | undefined): boolean {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+}
+
+/**
+ * True if a complete published run already exists for this model+run time AND it
+ * was baked on the CURRENT descriptor grid. If the stored bounds differ from the
+ * descriptor bbox — i.e. the grid was corrected after this run baked (ICON-D2's
+ * [-4,43,20,58] → [-3.94,43.18,20.34,58.08]) — we return false so the next ingest
+ * re-bakes it onto the right grid instead of skipping. The manifest tiebreaks the
+ * duplicate by generatedAt, so the fresh bake wins immediately.
+ */
 export async function alreadyPublished(model: string, runDate: Date): Promise<boolean> {
   const db = await getAppDb();
   const existing = await db.weatherRuns.getByQuery({ model, run: runDate, status: "complete", published: true });
-  return !!(existing.success && existing.data);
+  if (!(existing.success && existing.data)) return false;
+  const want = getSource(model)?.bbox;
+  const stored = (existing.data as { bounds?: number[] }).bounds;
+  if (want && !boundsMatch(stored, want)) {
+    log(TAG, "published run has stale bounds — re-baking onto corrected grid", { model, stored, want });
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -75,21 +95,18 @@ export function descriptorNewGrid(sourceId: string): { newgrid: string; width: n
  * regular, so the bake runs with `preRolled: true`) and return the Float32 grid.
  * Runs `wgrib2 IN -match RE -new_grid ...`.
  *
- * WIND-FIX (approach b): we DELIBERATELY do NOT pass `-new_grid_winds earth`
- * here. `-new_grid_winds earth` only makes sense when U AND V are regridded
- * TOGETHER in one wgrib2 invocation — wgrib2 needs the vector PAIR to rotate
- * grid-relative winds to earth-relative. Feeding it a LONE u (or v) component
- * with `-new_grid_winds earth` produced empty output → the wind texture baked
- * black (temp/gust, being scalars, were unaffected — exactly the symptom seen:
- * wind never attached while temp/gust did).
- *
- * The DWD `regular-lat-lon` ICON variant is ALREADY on a regular grid and its
- * u_10m/v_10m are ALREADY earth-relative (east/north), so no rotation is needed:
- * each component regrids correctly as a plain scalar with `-new_grid` alone.
- * VERIFY: on a live DWD file the two lone-component regrids now yield full-length
- * non-empty grids (extractField throws on short/empty output, so a black texture
- * surfaces as a bake error rather than silently). Scalars (temp/gust/humidity)
- * are unchanged.
+ * WIND-FIX: pass `-new_grid_vectors none`. `-new_grid` treats U/V as a VECTOR
+ * PAIR and — critically — wgrib2 DEFAULTS `-new_grid_winds` to `earth` even when
+ * we don't set it (it prints "Warning: -new_grid_winds set to earth"). Given a
+ * LONE u (or v) component it then refuses to interpolate ("last field UGRD was
+ * not interpolated (missing V)") and writes ZERO bytes → extractField throws
+ * "short output for match=*" and wind never bakes (scalars were unaffected —
+ * exactly the symptom seen). `-new_grid_vectors none` makes wgrib2 interpolate
+ * EVERY field as an independent scalar, no U/V pairing. DWD's `regular-lat-lon`
+ * ICON winds are ALREADY earth-relative, so per-component interpolation is
+ * correct (no rotation needed). Verified on a live DWD u_10m file: 0 bytes with
+ * the pairing default, full 1215×746 grid with `-new_grid_vectors none`. Harmless
+ * for scalars (temp/gust/humidity have no vector partner to disable).
  */
 export async function extractOnDescriptorGrid(
   gribPath: string,
@@ -101,6 +118,7 @@ export async function extractOnDescriptorGrid(
   const outPath = `${gribPath}.rg.grib2`;
   await runWgrib2([
     gribPath,
+    "-new_grid_vectors", "none",
     "-match", match,
     "-new_grid", ...newgrid.split(" "),
     outPath,
@@ -142,13 +160,18 @@ export async function ingestIconNest(cfg: IconIngestConfig, now = new Date()): P
   const variables: Record<string, BakedVariable> = {};
   const tag = (id: string, meta: BakedVariable["meta"]) => (variables[id] ??= { meta, buffers: {} });
   const tmp: string[] = [];
+  // Per-invocation token so two concurrent ingests of the SAME nest (a repeatable
+  // firing while a boot-kick / reset re-kick of the same source is still running)
+  // never share a temp path. Without it both wrote `icon-d2.relhum_2m.f001.grib2`,
+  // one truncating the other mid-read → wgrib2 "read outside of file, bad grib file".
+  const runTag = `${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`;
 
   /** Download + bunzip2 one DWD field for a step; returns the plain GRIB2 path. */
   const fetchField = async (field: string, step: number): Promise<string> => {
     await nomadsGate();
     const bz = await downloadToTemp(
       cfg.buildUrl({ date: run.date, cycle: run.cycle, step, field }),
-      `${cfg.sourceId}.${field}.f${cfg.padStep(step)}.grib2.bz2`,
+      `${cfg.sourceId}.${runTag}.${field}.f${cfg.padStep(step)}.grib2.bz2`,
     );
     tmp.push(bz);
     const grib = bz.replace(/\.bz2$/, "");

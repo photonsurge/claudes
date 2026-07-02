@@ -17,6 +17,21 @@ interface Result {
   at: string;
 }
 
+/** Group jobs by their `group`, preserving first-seen (catalog) order. */
+function groupJobs(jobs: TriggerableJob[]): Array<[string, TriggerableJob[]]> {
+  const order: string[] = [];
+  const byGroup = new Map<string, TriggerableJob[]>();
+  for (const j of jobs) {
+    const g = j.group ?? "Other";
+    if (!byGroup.has(g)) {
+      byGroup.set(g, []);
+      order.push(g);
+    }
+    byGroup.get(g)!.push(j);
+  }
+  return order.map((g) => [g, byGroup.get(g)!]);
+}
+
 export default function JobsPage() {
   const [jobs, setJobs] = useState<TriggerableJob[]>([]);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
@@ -72,50 +87,65 @@ export default function JobsPage() {
           )}
         </div>
 
-        <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
-          {jobs.map((j) => {
-            const r = results[j.id];
-            return (
-              <div
-                key={j.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 14,
-                  padding: 14,
-                  borderRadius: 8,
-                  border: "1px solid #1b2030",
-                  background: "#0c111c",
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600 }}>{j.label}</div>
-                  <div style={{ color: "#8b95a7", fontSize: 13 }}>{j.description}</div>
-                  {r && (
-                    <div style={{ fontSize: 12, marginTop: 4, color: r.ok ? "#4ade80" : "#fca5a5" }}>
-                      {r.ok ? `queued (#${r.jobId})` : `failed: ${r.error}`} · {new Date(r.at).toLocaleTimeString()}
+        {groupJobs(jobs).map(([group, groupJobsList]) => (
+          <section key={group} style={{ marginTop: 22 }}>
+            <h3
+              style={{
+                margin: "0 0 10px",
+                fontSize: 12,
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                color: "#8b95a7",
+              }}
+            >
+              {group}
+            </h3>
+            <div style={{ display: "grid", gap: 12 }}>
+              {groupJobsList.map((j) => {
+                const r = results[j.id];
+                return (
+                  <div
+                    key={j.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 14,
+                      padding: 14,
+                      borderRadius: 8,
+                      border: "1px solid #1b2030",
+                      background: "#0c111c",
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600 }}>{j.label}</div>
+                      <div style={{ color: "#8b95a7", fontSize: 13 }}>{j.description}</div>
+                      {r && (
+                        <div style={{ fontSize: 12, marginTop: 4, color: r.ok ? "#4ade80" : "#fca5a5" }}>
+                          {r.ok ? `queued (#${r.jobId})` : `failed: ${r.error}`} · {new Date(r.at).toLocaleTimeString()}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => run(j.id)}
-                  disabled={busy === j.id}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: 6,
-                    border: "1px solid #333",
-                    background: busy === j.id ? "#1a1f2b" : "#2563eb",
-                    color: "#fff",
-                    cursor: "pointer",
-                  }}
-                >
-                  {busy === j.id ? "…" : "Run now"}
-                </button>
-              </div>
-            );
-          })}
-        </div>
+                    <button
+                      type="button"
+                      onClick={() => run(j.id)}
+                      disabled={busy === j.id}
+                      style={{
+                        padding: "8px 16px",
+                        borderRadius: 6,
+                        border: "1px solid #333",
+                        background: busy === j.id ? "#1a1f2b" : "#2563eb",
+                        color: "#fff",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {busy === j.id ? "…" : "Run now"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ))}
 
         <div style={{ marginTop: 28 }}>
           <LogTail limit={100} title="Recent activity" />

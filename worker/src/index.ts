@@ -22,6 +22,7 @@ import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
 import { initSocket, closeSocket } from "./socket";
 import { startDirector, stopDirector } from "./director/loop";
+import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
 import { getEnabledSources } from "./alerts/registry";
 import { getEnabledCamSources } from "./cams/registry";
 import { summarizeForLog } from "./utils";
@@ -153,32 +154,12 @@ process.on("uncaughtException", (err) => {
   // the whole group with MULTISOURCE_INGEST_ENABLED=false. Per-source cadence env-
   // tunable; defaults suit each product's refresh (IFS/wave 6-hourly, RTOFS daily).
   if (process.env.MULTISOURCE_INGEST_ENABLED !== "false") {
-    const sourceJobs: Array<{ event: string; sourceId: string; every: number }> = [
-      { event: "refreshIfs", sourceId: "ifs", every: Number(process.env.IFS_INGEST_MS || 60 * 60 * 1000) },
-      { event: "refreshWaves", sourceId: "gfswave-mosaic", every: Number(process.env.WAVE_INGEST_MS || 60 * 60 * 1000) },
-      { event: "refreshRtofs", sourceId: "rtofs", every: Number(process.env.RTOFS_INGEST_MS || 3 * 60 * 60 * 1000) },
-      // Phase 2 regional nests (zoom-gated high-res overlays). Idempotent like the
-      // rest — polling just re-checks availability. MRMS radar polls fast (live
-      // layer); HRRR/ICON-D2 are hourly/3-hourly forecast nests.
-      { event: "refreshIconD2", sourceId: "icon-d2", every: Number(process.env.ICON_D2_INGEST_MS || 30 * 60 * 1000) },
-      { event: "refreshIconEu", sourceId: "icon-eu", every: Number(process.env.ICON_EU_INGEST_MS || 30 * 60 * 1000) },
-      { event: "refreshHrrr", sourceId: "hrrr", every: Number(process.env.HRRR_INGEST_MS || 30 * 60 * 1000) },
-      { event: "refreshMrms", sourceId: "mrms", every: Number(process.env.MRMS_INGEST_MS || 2 * 60 * 1000) },
-      // 2a/2e cover MANY sources (4 wave basins, 11 RTOFS windows); one job each
-      // loops its whole family, so a single sentinel id gates the group's schedule.
-      { event: "refreshWaveNests", sourceId: "gfswave-atlocn", every: Number(process.env.WAVE_NEST_INGEST_MS || 60 * 60 * 1000) },
-      { event: "refreshRtofsRegional", sourceId: "rtofs-westatl", every: Number(process.env.RTOFS_REGIONAL_INGEST_MS || 3 * 60 * 60 * 1000) },
-      // "Everywhere" nests: worldwide 13 km + Canada 2.5 km + UK 2 km.
-      { event: "refreshIconGlobal", sourceId: "icon-global", every: Number(process.env.ICON_GLOBAL_INGEST_MS || 60 * 60 * 1000) },
-      { event: "refreshHrdps", sourceId: "hrdps", every: Number(process.env.HRDPS_INGEST_MS || 30 * 60 * 1000) },
-      { event: "refreshUkv", sourceId: "ukv", every: Number(process.env.UKV_INGEST_MS || 30 * 60 * 1000) },
-      // Open-Meteo `.om` spatial nests for gated countries (JMA Japan now; AU/CN/KR
-      // one-line adds). One job loops the whole OM_MODELS family, so the JMA source
-      // id gates the group's schedule (mirrors the wave/RTOFS-regional sentinels).
-      { event: "refreshOpenMeteo", sourceId: "jma-msm", every: Number(process.env.OPENMETEO_INGEST_MS || 30 * 60 * 1000) },
-    ];
+    // The ingest fleet lives in one shared list (weather/sourceSchedule.ts) so the
+    // reset script re-kicks exactly what the scheduler registers — no drift.
     // Only schedule ENABLED sources (IFS is off by default until CCSDS-validated).
-    for (const { event, sourceId, every } of sourceJobs.filter((j) => getSource(j.sourceId)?.enabled)) {
+    for (const job of WEATHER_SOURCE_JOBS.filter((j) => getSource(j.sourceId)?.enabled)) {
+      const { event } = job;
+      const every = jobEveryMs(job);
       try {
         await myQueue.add(
           "do",
