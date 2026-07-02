@@ -329,6 +329,32 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable tides.* (sea-level gauges for the on-air tsunami monitor) ----
+  // `refreshStations` rebuilds the global IOC gauge catalog (near-static, daily);
+  // `snapshotTides` caches recent water-level series for the gauges nearest what's
+  // on air (frequent, focus-driven — a handful of stations per tick). The public
+  // gauge reads Mongo only. `immediately` seeds the catalog at boot so the first
+  // snapshot has stations to resolve against. Disable with TIDES_ENABLED=false.
+  if (process.env.TIDES_ENABLED !== "false") {
+    const TIDE_STATIONS_MS = Number(process.env.TIDE_STATIONS_MS || 24 * 60 * 60 * 1000);
+    const TIDE_SNAPSHOT_MS = Number(process.env.TIDE_SNAPSHOT_MS || 10 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "tides", type: "tides", event: "refreshStations", data: {} },
+        { repeat: { every: TIDE_STATIONS_MS, immediately: true }, jobId: "tides-refresh-stations" },
+      );
+      await myQueue.add(
+        "do",
+        { domain: "tides", type: "tides", event: "snapshotTides", data: {} },
+        { repeat: { every: TIDE_SNAPSHOT_MS }, jobId: "tides-snapshot" },
+      );
+      log(TAG, `registered repeatable tides.*`, { stationsMs: TIDE_STATIONS_MS, snapshotMs: TIDE_SNAPSHOT_MS });
+    } catch (err) {
+      log(TAG, `failed to register tides.*`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable summaries.generate* (global weather-event round-ups → Mongo) ----
   // One repeatable per cadence (hourly / 12-hourly / daily). Each aggregates the
   // active events into a stored round-up (+ optional LLM narrative) that the admin

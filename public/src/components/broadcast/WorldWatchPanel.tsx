@@ -1,44 +1,97 @@
 "use client";
 
 /**
- * Top-right "WORLD WATCH": an always-on, whole-planet situation summary — how
- * many active warnings (bucketed by severity) and the biggest earthquake in the
- * last day. Unlike the single-event LiveAlertPanel it never hides and doesn't
- * follow the operator's show-alerts/seismic toggles: it pulls its own global
- * tally (see useWorldWatch) so the broadcast always carries a state-of-the-world
+ * Top-right "WORLD WATCH": an always-on, whole-planet situation feed — a compact
+ * severity/quake tally in the header, then a live list that constantly scrolls
+ * through every active warning and every recent earthquake, most-serious first.
+ * Unlike the single-event LiveAlertPanel it never hides and doesn't follow the
+ * operator's show-alerts/seismic toggles: it pulls its own global feed (see
+ * useWorldWatch) so the broadcast always carries a rolling state-of-the-world
  * readout. Pointer-inert like the rest of the chrome.
  */
 import { useWorldWatch } from "../../lib/world-watch";
+import type { WorldWatchItem } from "../../lib/broadcast";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
-/** "Extreme" → "EXT", "Severe" → "SEV" … — compact chip label. */
-const abbrev = (label: string) => label.slice(0, 3).toUpperCase();
+/** Rows shown before the list starts marqueeing (taller feeds auto-scroll). */
+const VISIBLE = 6;
+const ROW_H = 34;
 
-function Row({
-  icon,
-  label,
-  children,
-}: {
-  icon: string;
-  label: string;
-  children: React.ReactNode;
-}) {
+function FeedRow({ item }: { item: WorldWatchItem }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "#9fb0c8" }}>
-        {icon} {label}
+    <div
+      style={{
+        height: ROW_H,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        borderTop: "1px solid rgba(255,255,255,0.05)",
+      }}
+    >
+      <span
+        style={{
+          flex: "0 0 auto",
+          minWidth: 40,
+          textAlign: "center",
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: 0.4,
+          color: item.color,
+          padding: "2px 6px",
+          borderRadius: 5,
+          background: `${item.color}1f`,
+          border: `1px solid ${item.color}55`,
+        }}
+      >
+        {item.tag}
       </span>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{children}</div>
+      <div style={{ minWidth: 0, display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: "#e6edf7",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            maxWidth: 190,
+          }}
+        >
+          {item.title}
+        </span>
+        {item.sub ? (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: item.kind === "quake" && item.sub.startsWith("TSUNAMI") ? "#f97316" : "#8fa0b8",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              maxWidth: 190,
+              letterSpacing: 0.3,
+            }}
+          >
+            {item.sub}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
 
 export default function WorldWatchPanel({ theme = DEFAULT_THEME }: { theme?: BroadcastTheme }) {
   const s = useWorldWatch();
-  const chips = s.bySeverity.slice(0, 3); // top few severities; total carries the rest
-  const topColor = chips[0]?.color ?? theme.accent;
-  const hasExtreme = chips[0]?.rank === 4;
-  const quiet = s.alertTotal === 0 && s.quakeCount === 0;
+  const feed = s.feed;
+  const topColor = s.bySeverity[0]?.color ?? theme.accent;
+  const quiet = feed.length === 0;
+
+  // Once the feed outgrows the window, marquee it vertically: we render the list
+  // twice and slide up by exactly one copy, so the loop is seamless. Duration
+  // scales with length (a busy planet scrolls faster but stays readable).
+  const scrolling = feed.length > VISIBLE;
+  const viewH = Math.min(feed.length, VISIBLE) * ROW_H;
+  const duration = Math.max(12, feed.length * 2.4);
 
   return (
     <div
@@ -60,7 +113,8 @@ export default function WorldWatchPanel({ theme = DEFAULT_THEME }: { theme?: Bro
         gap: 7,
       }}
     >
-      <style>{"@keyframes bcast-wwpulse{0%,100%{opacity:1}50%{opacity:0.45}}"}</style>
+      <style>{"@keyframes bcast-wwscroll{from{transform:translateY(0)}to{transform:translateY(-50%)}}"}</style>
+
       <div
         style={{
           display: "flex",
@@ -78,6 +132,22 @@ export default function WorldWatchPanel({ theme = DEFAULT_THEME }: { theme?: Bro
         </span>
       </div>
 
+      {/* Compact tally line — how many warnings, how many quakes, at a glance. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: 0.4,
+          color: "#9fb0c8",
+        }}
+      >
+        <span style={{ color: topColor }}>⚠ {s.alertTotal} ALERTS</span>
+        <span>🌐 {s.quakeCount} QUAKES</span>
+      </div>
+
       {quiet ? (
         <div
           style={{
@@ -86,59 +156,32 @@ export default function WorldWatchPanel({ theme = DEFAULT_THEME }: { theme?: Bro
             color: "#7f8ea6",
             textAlign: "right",
             letterSpacing: 0.5,
+            paddingTop: 2,
           }}
         >
           MONITORING · ALL QUIET
         </div>
       ) : (
-        <>
-          <Row icon="⚠" label="ALERTS">
-            {chips.map((c) => (
-              <span key={c.rank} style={{ fontSize: 12, fontWeight: 800, color: c.color }}>
-                {c.count} {abbrev(c.label)}
-              </span>
+        <div style={{ height: viewH, overflow: "hidden", position: "relative" }}>
+          <div
+            style={
+              scrolling
+                ? {
+                    animation: `bcast-wwscroll ${duration}s linear infinite`,
+                    willChange: "transform",
+                  }
+                : undefined
+            }
+          >
+            {feed.map((item) => (
+              <FeedRow key={item.key} item={item} />
             ))}
-            <span
-              style={{
-                fontSize: 13,
-                fontWeight: 800,
-                color: "#e6edf7",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              {s.alertTotal}
-              {hasExtreme ? (
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: topColor,
-                    boxShadow: `0 0 8px ${topColor}`,
-                    animation: "bcast-wwpulse 1.2s ease-in-out infinite",
-                  }}
-                />
-              ) : null}
-            </span>
-          </Row>
-
-          <Row icon="🌐" label="SEISMIC">
-            <span
-              style={{
-                fontSize: 13,
-                fontWeight: 800,
-                color: s.maxMag >= 6 ? "#f97316" : "#43d9ff",
-              }}
-            >
-              {s.maxMag > 0 ? `M${s.maxMag.toFixed(1)}` : "—"}
-            </span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#9fb0c8" }}>
-              {s.quakeCount} quakes
-            </span>
-          </Row>
-        </>
+            {/* Second copy: only needed while marqueeing, for the seamless wrap. */}
+            {scrolling
+              ? feed.map((item) => <FeedRow key={`dup:${item.key}`} item={item} />)
+              : null}
+          </div>
+        </div>
       )}
     </div>
   );

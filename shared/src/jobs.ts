@@ -13,7 +13,36 @@ export interface TriggerableJob {
   event: string;
   /** UI section header on the admin Jobs page (jobs render grouped by this). */
   group: string;
+  /**
+   * Optional preset payload merged into the enqueue `data` (e.g. a city seed
+   * tier). Lets several buttons target the same handler with different params
+   * without a bespoke form — the admin POST route spreads this over `data`.
+   */
+  data?: Record<string, unknown>;
 }
+
+/**
+ * City-overlay dataset jobs. The seed variants are the tier "picker": each button
+ * reseeds the cities collection from a different GeoNames population floor (finer
+ * tier = more small towns, revealed progressively by zoom). Enrichment fetches
+ * Wikipedia photo/blurb for prominent cities — run it AFTER a reseed (a reseed
+ * replaces the collection, dropping the cached enrichment).
+ */
+const CITY_JOBS: TriggerableJob[] = [
+  ["cities-seed-15k", "Reseed cities · towns ≥15k (default)", "cities15000", "≈27k places."],
+  ["cities-seed-5k", "Reseed cities · towns ≥5k", "cities5000", "≈55k places."],
+  ["cities-seed-1k", "Reseed cities · small towns ≥1k", "cities1000", "≈140k places."],
+  ["cities-seed-500", "Reseed cities · everything ≥500", "cities500", "≈200k places, heaviest."],
+].map(([id, label, tier, size]) => ({
+  id,
+  label,
+  description: `Replace the cities overlay dataset from GeoNames ${tier} — ${size} Drops cached Wikipedia enrichment; re-run enrichment after.`,
+  domain: "cities",
+  type: "cities",
+  event: "seed",
+  group: "Cities",
+  data: { tier },
+}));
 
 /**
  * Weather-map source refreshes. Each maps to a `weather.<event>` handler in
@@ -104,6 +133,24 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Tracks",
   },
   {
+    id: "refresh-tide-stations",
+    label: "Refresh tide stations",
+    description: "Rebuild the global IOC sea-level gauge catalog.",
+    domain: "tides",
+    type: "tides",
+    event: "refreshStations",
+    group: "Tracks",
+  },
+  {
+    id: "snapshot-tides",
+    label: "Snapshot tide gauges",
+    description: "Cache water-level series for gauges near what's on air.",
+    domain: "tides",
+    type: "tides",
+    event: "snapshotTides",
+    group: "Tracks",
+  },
+  {
     id: "summaries-hourly",
     label: "Round-up (hourly)",
     description: "Generate the hourly global weather-event round-up.",
@@ -129,6 +176,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     type: "summaries",
     event: "generateDaily",
     group: "Alerts & events",
+  },
+  ...CITY_JOBS,
+  {
+    id: "cities-enrich",
+    label: "Enrich cities (Wikipedia)",
+    description: "Fetch a Wikipedia photo + blurb for prominent cities (≥100k + capitals). Run after a reseed.",
+    domain: "cities",
+    type: "cities",
+    event: "enrichWiki",
+    group: "Cities",
   },
 ];
 

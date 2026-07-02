@@ -9,6 +9,7 @@
     "bullmq": "5.73.4",
     "dotenv": "17.4.1",
     "express": "^5.1.0",
+    "fflate": "^0.8.2",
     "node-cron": "^4.2.1",
     "sharp": "^0.34.4",
     "socket.io-client": "^4.8.3"
@@ -27,6 +28,7 @@
     "enrich:wiki": "ts-node src/scripts/enrichWikipedia.ts",
     "refresh:cables": "ts-node src/scripts/refreshCables.ts",
     "refresh:faults": "ts-node src/scripts/refreshFaults.ts",
+    "refresh:tides": "ts-node src/scripts/refreshTides.ts",
     "refresh:cams": "ts-node src/scripts/refreshCams.ts",
     "refresh:ifs": "ts-node src/scripts/refreshIfs.ts",
     "refresh:rtofs": "ts-node src/scripts/refreshRtofs.ts",

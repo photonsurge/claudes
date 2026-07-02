@@ -146,7 +146,12 @@ export default function BroadcastFrame({
         </div>
 
         <div style={{ position: "absolute", bottom: TICKER_H + INSET, right: INSET }}>
-          <MonitorCluster quakes={quakes} theme={theme} />
+          <MonitorCluster
+            quakes={quakes}
+            onAirSegment={onAirSegment}
+            regionCenter={state.camera.center}
+            theme={theme}
+          />
         </div>
 
         <Ticker title="GLOBAL ALERT TICKER" items={ticker} edge="bottom" height={TICKER_H} theme={theme} />

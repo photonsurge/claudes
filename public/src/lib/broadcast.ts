@@ -5,6 +5,7 @@
  * and the components stay dumb.
  */
 import type { Alert, AlertFeature } from "./alerts";
+import { primaryInfo, areaSummary } from "./alerts";
 import type { Quake, Track } from "./tracks/types";
 import { SEVERITY_LABELS, SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
 import { hazardMeta, type HazardType } from "./hazard";
@@ -65,11 +66,16 @@ export function buildTicker(input: {
   return [...new Set(items)];
 }
 
+/** Active alerts, de-duped by area and sorted most-severe first — the full list. */
+export function sortedAlerts(alerts: AlertFeature[]): AlertFeature[] {
+  return dedupeAlerts(alerts).sort(
+    (a, b) => b.properties.severityRank - a.properties.severityRank,
+  );
+}
+
 /** Active alerts, de-duped by area and sorted most-severe first (top N). */
 export function topAlerts(alerts: AlertFeature[], n = 6): AlertFeature[] {
-  return dedupeAlerts(alerts)
-    .sort((a, b) => b.properties.severityRank - a.properties.severityRank)
-    .slice(0, n);
+  return sortedAlerts(alerts).slice(0, n);
 }
 
 /** The single most severe active alert (drives the event reticle), or null. */
@@ -177,6 +183,81 @@ export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummar
     maxMag: maxQuake?.mag ?? 0,
     maxQuake,
   };
+}
+
+/** One line in the always-on WORLD WATCH feed — an alert or a quake. */
+export interface WorldWatchItem {
+  key: string;
+  kind: "alert" | "quake";
+  /** Severity colour (alerts) or magnitude colour (quakes). */
+  color: string;
+  /** Bold lead chip — "SEVERE" / "M6.3". */
+  tag: string;
+  /** Main line — the hazard event or the quake's place. */
+  title: string;
+  /** Subtitle — the area, or "TSUNAMI POTENTIAL" (empty if none). */
+  sub: string;
+  /** Sort weight, higher = shown first. */
+  weight: number;
+}
+
+/** Magnitude → the same 0-4 importance scale alerts use, so the feed interleaves. */
+function quakeWeight(mag: number): number {
+  if (mag >= 7) return 4;
+  if (mag >= 6) return 3;
+  if (mag >= 5) return 2;
+  return 1;
+}
+
+/** Colour a quake by magnitude (matches the SEISMIC row: orange for the big ones). */
+function quakeColor(mag: number): string {
+  if (mag >= 7) return "#ef4444";
+  if (mag >= 6) return "#f97316";
+  if (mag >= 5) return "#facc15";
+  return "#43d9ff";
+}
+
+/**
+ * The full whole-planet feed the always-on WORLD WATCH panel scrolls through —
+ * every active alert (clustered events counted once, like worldWatchSummary) plus
+ * every quake in the ~24h window, merged and sorted most-serious first so a big
+ * quake rides above minor warnings. No cap: the panel marquees the whole list.
+ */
+export function worldWatchFeed(alerts: Alert[], quakes: Quake[]): WorldWatchItem[] {
+  const distinct = alerts.filter((a) => !a.groupId || a.id === a.groupId);
+  const items: WorldWatchItem[] = [];
+
+  for (const a of distinct) {
+    const rank = a.maxSeverityRank;
+    const info = primaryInfo(a);
+    const area = areaSummary(a);
+    items.push({
+      key: `a:${a.id}`,
+      kind: "alert",
+      color: SEVERITY_COLORS[rank] ?? "#9ca3af",
+      tag: (SEVERITY_LABELS[rank] ?? "ALERT").toUpperCase(),
+      title: info?.event ?? "Alert",
+      sub: area === "—" ? "" : area,
+      weight: rank,
+    });
+  }
+
+  for (const q of quakes) {
+    items.push({
+      key: `q:${q.id}`,
+      kind: "quake",
+      color: quakeColor(q.mag),
+      tag: `M${q.mag.toFixed(1)}`,
+      title: q.place ?? `${q.lat.toFixed(1)}, ${q.lng.toFixed(1)}`,
+      sub: q.tsunami ? "TSUNAMI POTENTIAL" : "",
+      weight: quakeWeight(q.mag),
+    });
+  }
+
+  // Most serious first; on a tie surface alerts before quakes for a stable order.
+  return items.sort(
+    (a, b) => b.weight - a.weight || (a.kind === b.kind ? 0 : a.kind === "alert" ? -1 : 1),
+  );
 }
 
 /** "Tsunami Watch: Fiji Region — YELLOW" for the live-alert panel body. */

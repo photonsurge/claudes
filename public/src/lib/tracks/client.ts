@@ -1,4 +1,5 @@
 import type { Aircraft, Quake, SatellitePosition, Ship, TleRecord } from "./types";
+import type { TideGaugeResponse } from "../tides/types";
 
 export interface SatellitesResponse {
   group: string;
@@ -88,6 +89,19 @@ export async function listQuakes(
   const body = await res.json().catch(() => null);
   if (!body) return { count: 0, quakes: [] };
   return body as QuakesResponse;
+}
+
+/**
+ * Worker-cached sea-level series for the tide gauge nearest `[lng,lat]`. Returns
+ * `{ station: null }` when no gauge is within range (the gauge then hides).
+ */
+export async function getTideGauge(lat: number, lng: number, maxKm?: number): Promise<TideGaugeResponse> {
+  const q = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+  if (maxKm != null) q.set("maxKm", String(maxKm));
+  const res = await fetch(`/api/tracks/tide?${q.toString()}`, { cache: "no-store" });
+  const body = await res.json().catch(() => null);
+  if (!body) return { station: null };
+  return body as TideGaugeResponse;
 }
 
 // ── Position-history replay ────────────────────────────────────────────────

@@ -1,13 +1,19 @@
 "use client";
 
 /**
- * Top-right "LIVE ALERT PANEL": the single most severe active alert, in a
- * pulsing hazard-tinted card. Renders nothing when nothing is active.
+ * Top-centre "LIVE ALERT PANEL": constantly cycles through EVERY active alert
+ * (de-duped, most-severe first), one at a time in a pulsing hazard-tinted card,
+ * so the broadcast rolls through the whole warning list instead of freezing on
+ * the single worst one. Renders nothing when nothing is active.
  */
+import { useEffect, useState } from "react";
 import type { AlertFeature } from "../../lib/alerts";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
-import { topAlert, alertBannerText } from "../../lib/broadcast";
+import { sortedAlerts, alertBannerText } from "../../lib/broadcast";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+
+/** Seconds each alert holds on screen before advancing to the next. */
+const HOLD_MS = 5000;
 
 export default function LiveAlertPanel({
   alerts,
@@ -18,8 +24,19 @@ export default function LiveAlertPanel({
   theme?: BroadcastTheme;
   compact?: boolean;
 }) {
-  const top = topAlert(alerts);
-  if (!top) return null;
+  const list = sortedAlerts(alerts);
+  const [idx, setIdx] = useState(0);
+
+  // Advance on a timer; the modulo keeps us in range as the list grows/shrinks.
+  useEffect(() => {
+    if (list.length <= 1) return;
+    const iv = setInterval(() => setIdx((n) => n + 1), HOLD_MS);
+    return () => clearInterval(iv);
+  }, [list.length]);
+
+  if (list.length === 0) return null;
+  const pos = idx % list.length;
+  const top = list[pos];
   const color = SEVERITY_COLORS[top.properties.severityRank] ?? theme.accent;
 
   return (
@@ -66,6 +83,10 @@ export default function LiveAlertPanel({
       </div>
       <div
         style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-end",
+          gap: 8,
           fontSize: 9,
           fontWeight: 800,
           letterSpacing: 1.4,
@@ -73,7 +94,12 @@ export default function LiveAlertPanel({
           marginBottom: 3,
         }}
       >
-        LIVE ALERT PANEL
+        <span>LIVE ALERT PANEL</span>
+        {list.length > 1 ? (
+          <span style={{ color, letterSpacing: 1 }}>
+            {pos + 1}/{list.length}
+          </span>
+        ) : null}
       </div>
       <div
         style={{

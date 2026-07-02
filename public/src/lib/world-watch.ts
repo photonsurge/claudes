@@ -3,16 +3,27 @@
 import { useEffect, useState } from "react";
 import { listAlerts } from "./alerts";
 import { listQuakes } from "./tracks/client";
-import { worldWatchSummary, type WorldSummary } from "./broadcast";
+import {
+  worldWatchSummary,
+  worldWatchFeed,
+  type WorldSummary,
+  type WorldWatchItem,
+} from "./broadcast";
 import { useSocket } from "./socket-provider";
 import { ALERTS_UPDATED, TRACKS_UPDATED } from "@photonsurge/shared/control";
 
-const EMPTY: WorldSummary = {
+/** The summary tally plus the full scrolling feed of individual alerts + quakes. */
+export interface WorldWatchState extends WorldSummary {
+  feed: WorldWatchItem[];
+}
+
+const EMPTY: WorldWatchState = {
   alertTotal: 0,
   bySeverity: [],
   quakeCount: 0,
   maxMag: 0,
   maxQuake: null,
+  feed: [],
 };
 
 /**
@@ -24,8 +35,8 @@ const EMPTY: WorldSummary = {
  * fallback if the socket is down. All active alerts (every severity) are pulled
  * so the counts are honest; quakes come from the USGS feed's ~24h window.
  */
-export function useWorldWatch(): WorldSummary {
-  const [summary, setSummary] = useState<WorldSummary>(EMPTY);
+export function useWorldWatch(): WorldWatchState {
+  const [summary, setSummary] = useState<WorldWatchState>(EMPTY);
   const { socket } = useSocket();
   const [liveTick, setLiveTick] = useState(0);
 
@@ -51,7 +62,10 @@ export function useWorldWatch(): WorldSummary {
         listQuakes(),
       ]);
       if (cancelled) return;
-      setSummary(worldWatchSummary(alerts, quakesRes.quakes));
+      setSummary({
+        ...worldWatchSummary(alerts, quakesRes.quakes),
+        feed: worldWatchFeed(alerts, quakesRes.quakes),
+      });
     };
     poll();
     const iv = setInterval(poll, 60000);

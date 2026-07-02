@@ -207,6 +207,26 @@ describe("composeManifest — regional nests", () => {
     expect(m.variables.temp.files["0"]).toBe(textureUrl("gfs-temp"));
     expect(m.variables.temp.nests).toBeUndefined();
   });
+
+  // icon-global is a nest source (declares minZoom 2) but its bbox spans the planet.
+  const iconGlobal: RunLike = {
+    model: "icon-global", run: new Date("2026-06-30T00:00:00Z"),
+    bounds: [-180, -90, 179.75, 90], grid: { width: 2879, height: 1441, res: 0.125 },
+    steps: [{ validTime: "a", fhr: 0 }],
+    variables: { temp: sv("icon-global-temp") },
+  };
+
+  it("promotes a GLOBAL-coverage nest to the base when no true base supplies the variable", () => {
+    // No gfs: temp is supplied only by nests. icon-global spans the globe, so it
+    // becomes the always-on base (WITH files) — renders at every zoom, not only
+    // past a nest's minZoom — while the regional icon-d2 stays a nest.
+    const m = composeManifest([iconGlobal, iconD2])!;
+    expect(m.variables.temp.files["0"]).toBe(textureUrl("icon-global-temp")); // base HAS files
+    expect(m.variables.temp.sourceId).toBe("icon-global");
+    // The promoted global base is NOT also listed as a nest (no double, coincident draw).
+    const nestIds = (m.variables.temp.nests ?? []).map((n) => n.sourceId);
+    expect(nestIds).toEqual(["icon-d2"]);
+  });
 });
 
 describe("mapFreshness / ageLabel", () => {

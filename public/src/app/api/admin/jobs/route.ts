@@ -45,7 +45,9 @@ export async function POST(req: Request) {
       job.domain,
       job.type,
       job.event,
-      { trigger: "admin" },
+      // Spread the job's preset payload (e.g. a city seed tier) over the base
+      // trigger marker so several buttons can target one handler with different args.
+      { trigger: "admin", ...(job.data ?? {}) },
       undefined,
       QUEUE_PRIORITY.HIGH,
     );

@@ -74,6 +74,19 @@ export function buildManifestFromRun(run: RunLike): WeatherManifest {
 const modelPriority = (model: string): number => getSource(model)?.priority ?? 0;
 
 /**
+ * Does a bbox span (near) the whole planet? Such a nest (e.g. icon-global,
+ * bbox ≈ [-180,-90,180,90]) can stand in as the always-on base for a variable
+ * with no true global base, so it renders at every zoom rather than only past
+ * its `minZoom`. The east edge tolerance covers grids that stop at the last cell
+ * centre (icon-global's 179.75).
+ */
+function isGlobalCoverage(bbox?: number[]): boolean {
+  if (!bbox || bbox.length < 4) return false;
+  const [w, s, e, n] = bbox;
+  return w <= -179 && e >= 179 && s <= -89 && n >= 89;
+}
+
+/**
  * PURE: compose ONE client manifest from the latest run of each model, picking
  * per variable the entry from the highest-`priority` GLOBAL BASE source that
  * supplies it (rtofs SST/currents/salinity > gfs-masked; gfswave-mosaic > gfs
@@ -142,22 +155,40 @@ export function composeManifest(allRuns: RunLike[]): WeatherManifest | null {
   for (const varId of varIds) {
     const baseSel = chosen[varId];
     let vm: WeatherVariableManifest;
+    // A nest entry promoted to be the base — excluded from `nests` below so it does
+    // not also draw as a (coincident) overlay.
+    let promotedBase: iWeatherVariableEntry | undefined;
     if (baseSel) {
       vm = variableManifest(baseSel.entry);
       stamp(vm, baseSel.run, baseSel.entry);
     } else {
-      // NEST-ONLY variable: synthesise a base carrying the top nest's metadata but
-      // NO files, so the global base layer is skipped and only nests render.
-      const top = [...nestRuns[varId]].sort(
+      // NO true global base (temp/humidity/wind here: GFS/IFS not supplying them).
+      // Promote a GLOBAL-coverage nest (icon-global, bbox spans the planet) to BE the
+      // base WITH its files, so the variable renders across the whole globe at EVERY
+      // zoom — not only once zoomed past a nest's minZoom, below which it went bare.
+      const byPriorityAsc = [...nestRuns[varId]].sort(
         (a, b) => (getSource(a.run.model)?.priority ?? 0) - (getSource(b.run.model)?.priority ?? 0),
-      ).at(-1)!;
-      vm = variableManifest({ ...top.entry, files: {} });
-      stamp(vm, top.run, top.entry);
+      );
+      const globalBase = byPriorityAsc.find(({ run, entry }) =>
+        isGlobalCoverage(entry.bbox ?? getSource(run.model)?.bbox),
+      );
+      if (globalBase) {
+        vm = variableManifest(globalBase.entry); // WITH files → the always-on base
+        stamp(vm, globalBase.run, globalBase.entry);
+        promotedBase = globalBase.entry;
+      } else {
+        // Truly regional nest-only variable (e.g. MRMS radar): empty-files base so
+        // nothing renders globally — only its zoom-gated nests, in-region.
+        const top = byPriorityAsc.at(-1)!;
+        vm = variableManifest({ ...top.entry, files: {} });
+        stamp(vm, top.run, top.entry);
+      }
     }
 
     const nests = nestRuns[varId];
     if (nests?.length) {
       vm.nests = nests
+        .filter(({ entry }) => entry !== promotedBase)
         .map(({ run, entry }) => {
           const nvm = variableManifest(entry);
           const src = getSource(run.model);

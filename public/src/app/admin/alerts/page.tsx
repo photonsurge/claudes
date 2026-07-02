@@ -97,6 +97,19 @@ export default function AlertsPage() {
   // heavy geometry clustering runs in /api/alerts, not the browser).
   const groups = bucketByGroupId(shown);
 
+  // The group whose Debug view is open in the full-screen modal (if any).
+  const debugGroup = debugId ? groups.find((g) => g.id === debugId) ?? null : null;
+
+  // Close the modal on Escape.
+  useEffect(() => {
+    if (!debugGroup) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDebugId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [debugGroup]);
+
   return (
     <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
       <section style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
@@ -281,24 +294,6 @@ export default function AlertsPage() {
                     )}
                   </td>
                 </tr>
-                {debugId === g.id && (
-                  <tr>
-                    <td colSpan={8} style={{ padding: 0, borderTop: "1px solid #1b2030" }}>
-                      {multi && (
-                        <div style={{ padding: "8px 14px", color: "#8b95a7", fontSize: 12, borderBottom: "1px solid #1b2030" }}>
-                          {g.members.length} alerts from {g.sources.length} source{g.sources.length === 1 ? "" : "s"} matched by overlapping area + hazard:
-                          {g.members.map((m) => (
-                            <div key={m.id} style={{ color: "#cbd5e1", marginTop: 4 }}>
-                              <span style={{ ...sourceChip, marginRight: 6 }}>{m.source}</span>
-                              {primaryInfo(m)?.event} — {areaSummary(m)}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <pre style={debugPre}>{JSON.stringify(multi ? g.members : rep, null, 2)}</pre>
-                    </td>
-                  </tr>
-                )}
                 </Fragment>
               );
             })}
@@ -316,6 +311,50 @@ export default function AlertsPage() {
           </tbody>
         </table>
       </section>
+
+      {debugGroup && (() => {
+        const rep = debugGroup.representative;
+        const info = primaryInfo(rep);
+        const multi = debugGroup.members.length > 1;
+        const h = hazardMeta(debugGroup.hazard);
+        return (
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setDebugId(null)}
+            style={modalOverlay}
+          >
+            <div onClick={(e) => e.stopPropagation()} style={modalPanel}>
+              <header style={modalHeader}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <span style={{ color: h.color, fontSize: 15 }}>
+                    {h.icon} {h.label}
+                  </span>
+                  <span style={{ color: "#e5e7eb", fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {info?.event ?? "—"}
+                  </span>
+                </div>
+                <button type="button" onClick={() => setDebugId(null)} style={modalClose} aria-label="Close">
+                  ✕
+                </button>
+              </header>
+              {multi && (
+                <div style={{ padding: "10px 18px", color: "#8b95a7", fontSize: 13, borderBottom: "1px solid #1b2030", flexShrink: 0 }}>
+                  {debugGroup.members.length} alerts from {debugGroup.sources.length} source
+                  {debugGroup.sources.length === 1 ? "" : "s"} matched by overlapping area + hazard:
+                  {debugGroup.members.map((m) => (
+                    <div key={m.id} style={{ color: "#cbd5e1", marginTop: 4 }}>
+                      <span style={{ ...sourceChip, marginRight: 6 }}>{m.source}</span>
+                      {primaryInfo(m)?.event} — {areaSummary(m)}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <pre style={modalPre}>{JSON.stringify(multi ? debugGroup.members : rep, null, 2)}</pre>
+            </div>
+          </div>
+        );
+      })()}
     </main>
   );
 }
@@ -370,15 +409,57 @@ const debugBtn: React.CSSProperties = {
   cursor: "pointer",
   fontSize: 12,
 };
-const debugPre: React.CSSProperties = {
+const modalOverlay: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(3, 6, 12, 0.8)",
+  backdropFilter: "blur(2px)",
+  display: "flex",
+  alignItems: "stretch",
+  justifyContent: "center",
+  padding: 24,
+  zIndex: 1000,
+};
+const modalPanel: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  width: "100%",
+  maxWidth: 1100,
+  background: "#0a0e16",
+  border: "1px solid #2a3344",
+  borderRadius: 10,
+  overflow: "hidden",
+  boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+};
+const modalHeader: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  padding: "12px 18px",
+  borderBottom: "1px solid #1b2030",
+  flexShrink: 0,
+};
+const modalClose: React.CSSProperties = {
+  border: "1px solid #2a3344",
+  background: "#1a1f2b",
+  color: "#cbd5e1",
+  borderRadius: 6,
+  width: 30,
+  height: 30,
+  cursor: "pointer",
+  fontSize: 14,
+  flexShrink: 0,
+};
+const modalPre: React.CSSProperties = {
   margin: 0,
-  padding: "12px 14px",
+  padding: "14px 18px",
   background: "#070a11",
   color: "#9ca3af",
-  fontSize: 11,
+  fontSize: 12,
   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
   whiteSpace: "pre-wrap",
   wordBreak: "break-word",
-  maxHeight: 380,
+  flex: 1,
   overflow: "auto",
 };

@@ -4,11 +4,13 @@ import {
   trackTicker,
   buildTicker,
   dedupeAlerts,
+  sortedAlerts,
   topAlerts,
   topAlert,
   alertBannerText,
   alertSummary,
   worldWatchSummary,
+  worldWatchFeed,
 } from "./broadcast";
 import type { Alert, AlertFeature } from "./alerts";
 import type { Quake, Track } from "./tracks/types";
@@ -94,6 +96,14 @@ describe("dedupeAlerts / topAlerts", () => {
     const list = topAlerts([alert(1), alert(4, { areaDesc: "A" }), alert(2, { areaDesc: "B" })], 2);
     expect(list.map((a) => a.properties.severityRank)).toEqual([4, 2]);
   });
+  it("sortedAlerts keeps the whole list, most-severe first (no cap)", () => {
+    const list = sortedAlerts([
+      alert(1, { areaDesc: "A" }),
+      alert(4, { areaDesc: "B" }),
+      alert(2, { areaDesc: "C" }),
+    ]);
+    expect(list.map((a) => a.properties.severityRank)).toEqual([4, 2, 1]);
+  });
 });
 
 describe("alertSummary", () => {
@@ -168,6 +178,49 @@ describe("worldWatchSummary", () => {
   it("is quiet with no data", () => {
     const s = worldWatchSummary([], []);
     expect(s).toMatchObject({ alertTotal: 0, bySeverity: [], quakeCount: 0, maxMag: 0, maxQuake: null });
+  });
+});
+
+describe("worldWatchFeed", () => {
+  const raw = (rank: number, event: string, area: string, over: Partial<Alert> = {}): Alert =>
+    ({
+      id: over.id ?? `${event}-${area}`,
+      source: "test",
+      identifier: "x",
+      sender: "s",
+      sent: "2026-07-02T00:00:00Z",
+      msgType: "Alert",
+      status: "Actual",
+      active: true,
+      maxSeverityRank: rank as Alert["maxSeverityRank"],
+      info: [{ event, severityRank: rank, area: [{ areaDesc: area, geocodes: [] }] }],
+      ...over,
+    }) as Alert;
+
+  it("lists alerts and quakes, most-serious first, with a big quake above minor alerts", () => {
+    const feed = worldWatchFeed(
+      [raw(4, "Tornado Warning", "Kansas"), raw(1, "Frost Advisory", "Alps")],
+      [quake({ id: "big", mag: 7.2, place: "off Chile" }), quake({ id: "sm", mag: 3.1 })],
+    );
+    expect(feed.map((f) => f.kind)).toEqual(["alert", "quake", "alert", "quake"]);
+    // Extreme alert (rank 4) and M7.2 both weight 4 — alert wins the tie, quake next.
+    expect(feed[0]).toMatchObject({ kind: "alert", title: "Tornado Warning", sub: "Kansas" });
+    expect(feed[1]).toMatchObject({ kind: "quake", tag: "M7.2", title: "off Chile" });
+    // Then the rank-1 advisory, then the M3.1 minnow.
+    expect(feed[2].title).toBe("Frost Advisory");
+    expect(feed[3].tag).toBe("M3.1");
+  });
+
+  it("flags tsunami quakes and counts a cross-source cluster once", () => {
+    const rep = raw(3, "Storm", "A", { id: "g1", groupId: "g1" });
+    const member = raw(3, "Sturm", "A", { id: "g1-m", groupId: "g1" });
+    const feed = worldWatchFeed([rep, member], [quake({ id: "t", mag: 6.5, tsunami: true })]);
+    expect(feed.filter((f) => f.kind === "alert").length).toBe(1);
+    expect(feed.find((f) => f.kind === "quake")?.sub).toBe("TSUNAMI POTENTIAL");
+  });
+
+  it("is empty with no data", () => {
+    expect(worldWatchFeed([], [])).toEqual([]);
   });
 });
 
