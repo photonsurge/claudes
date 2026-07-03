@@ -54,12 +54,14 @@ export function nestMinZoom(nest: WeatherVariableManifest): number {
  * nest actually COVERS what you're looking at (not just its centre point). The
  * globe frames a span of `360 / 2^(zoom-1.9)` degrees (inverse of `zoomForBbox`);
  * we take the central `frac` of that around the camera centre. A nest whose bbox
- * fully contains this box covers the landmass in view with margin, so drawing it
- * over the base leaves no seam cutting through the middle of the scene.
+ * fully contains this box wins. A SMALLER `frac` lets a nest qualify while more
+ * zoomed OUT (it only has to cover the very middle of the view), so regional maps
+ * appear earlier and sit as an overlay on the base — at the cost of the nest's
+ * edges being visible in-frame rather than off-screen.
  */
 export function viewCentralBbox(
   camera: ResolverCamera,
-  frac = 0.4,
+  frac = 0.22,
 ): [number, number, number, number] {
   const half = 180 / Math.pow(2, camera.zoom - 1.9);
   const r = Math.max(0.01, half * frac);
@@ -73,6 +75,33 @@ export function bboxContainsBbox(
   inner: [number, number, number, number],
 ): boolean {
   return outer[0] <= inner[0] && outer[1] <= inner[1] && outer[2] >= inner[2] && outer[3] >= inner[3];
+}
+
+/**
+ * BEST-FIT ranking of a variable's nests for the current camera: the nests whose bbox
+ * COVERS the central view (`viewCentralBbox`), ordered FINEST-resolution first (ties →
+ * higher priority). This is the pure decision behind single-winner rendering — the GL
+ * builder walks this list and draws the first nest whose texture is loaded. Picking by
+ * coverage-then-resolution (not manifest priority order) is why the UK gets ukv/dmi (a
+ * fine nest spanning all of Britain) instead of arome-france, whose north edge cuts the
+ * landmass and would leave a seam. A nest that only covers PART of the view is excluded,
+ * so no winner ever cuts through the middle of the scene. `entries[0]` (the base) is
+ * skipped; an empty result means "draw base only".
+ */
+export function rankNestsByFit(
+  entries: WeatherVariableManifest[],
+  camera: ResolverCamera,
+): WeatherVariableManifest[] {
+  const target = viewCentralBbox(camera);
+  return entries
+    .slice(1)
+    .filter((e) => !!e.bbox && bboxContainsBbox(e.bbox, target))
+    .sort((a, b) => {
+      const ra = a.resolutionDeg ?? 1;
+      const rb = b.resolutionDeg ?? 1;
+      if (ra !== rb) return ra - rb; // finer (smaller degrees/cell) first
+      return (b.priority ?? 0) - (a.priority ?? 0); // tie → higher priority first
+    });
 }
 
 /**

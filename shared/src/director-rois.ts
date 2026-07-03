@@ -40,32 +40,171 @@ export const REGIONS_OF_INTEREST: RegionOfInterest[] = [
 /** Global establishing shot — the intro/idle spin. */
 export const GLOBAL_VIEW: { center: [number, number]; zoom: number } = {
   center: [0, 20],
-  // Fills the frame height — the globe disk stays centred so nothing clips.
-  zoom: 3.0,
+  // Pulled in tighter than "fills the frame height" (3.0) so the planet reads big
+  // and immersive on the world spins — the disk crops slightly top/bottom, which
+  // is the intended broadcast look for a spinning globe (not a full disk on black).
+  zoom: 3.6,
 };
 
 /** Ocean world spins — same full-frame world view as the intro. */
-export const OCEAN_VIEW_ZOOM = 3.0;
+export const OCEAN_VIEW_ZOOM = 3.6;
 
 /**
- * Ocean "world map" modes — full-globe spins coloured by an ocean variable
- * (already ingested: sst/wave/salinity). The director rotates through these as
- * ambient filler alongside the temperature intro when the `ocean` kind is enabled.
+ * "Map types" a global world spin tours WHILE it rotates — so an establishing
+ * spin showcases the channel's looks instead of holding one static field for its
+ * whole hold. The client (useDirectorCut) steps through these on the same
+ * spinEpoch clock as the spin, so /control and /watch switch in lockstep with no
+ * extra socket traffic, and the on-air label follows the map type.
+ *
+ * Each entry is a full look (scalar field + overlay toggles) folded over the
+ * shot's preset — so it must own every toggle it varies (LAYERS_OFF gives the
+ * clean base; the intro/ocean presets set wind/pressure). `needs` gates a type on
+ * live data actually being available (aurora/satimg bake separately; ocean fields
+ * may not be ingested) so a spin never lands on a blank map.
  */
-export interface OceanView {
-  /** Segment subject id (→ "ocean:<id>"). */
+export type MapTypeNeed =
+  | { kind: "variable"; id: string } // scalar field must be present in the manifest
+  | { kind: "aurora" } // the SWPC OVATION frame must be baked
+  | { kind: "satimg" }; // at least one geostationary frame must be baked
+
+export interface GlobalMapType {
+  /** Stable id (for keys/debug). */
   id: string;
-  /** Variable registry id to make the active colour field. */
-  variable: string;
+  /** On-air title while this look is up (e.g. "Aurora & Space Weather"). */
   title: string;
+  /** On-air subtitle. */
   subtitle: string;
+  /** The look: ControlState fields folded over the spin preset. Owns what it varies. */
+  patch: Partial<ControlState>;
+  /** Live-data dependency; the client drops a type whose feed has no frame yet. */
+  needs?: MapTypeNeed;
 }
 
-export const OCEAN_VIEWS: OceanView[] = [
-  { id: "sst", variable: "sst", title: "Ocean Temperature", subtitle: "Sea surface temperature" },
-  { id: "waves", variable: "wave", title: "Ocean Swell", subtitle: "Significant wave height" },
-  { id: "salinity", variable: "salinity", title: "Ocean Salinity", subtitle: "Sea surface salinity" },
+/**
+ * The intro world spin's tour: the core GFS fields plus the new "map types"
+ * (aurora, live satellite imagery). Opens on temperature (index 0) so the
+ * establishing shot always leads on the hero field, then works outward. No ocean
+ * fields here — those belong to the ocean spin's own tour below.
+ */
+export const INTRO_MAP_TYPES: GlobalMapType[] = [
+  {
+    id: "temp",
+    title: "Global Temperature",
+    subtitle: "Surface air temperature",
+    patch: { activeVariable: "temp", showWind: true, showPressure: true },
+    needs: { kind: "variable", id: "temp" },
+  },
+  {
+    id: "cloud",
+    title: "Global Cloud Cover",
+    subtitle: "Total cloud cover",
+    patch: { activeVariable: "cloud", showWind: false, showPressure: false },
+    needs: { kind: "variable", id: "cloud" },
+  },
+  {
+    id: "rain",
+    title: "Global Precipitation",
+    subtitle: "Rain & snow rate",
+    patch: { activeVariable: "rain", showWind: false, showPressure: false },
+    needs: { kind: "variable", id: "rain" },
+  },
+  {
+    id: "aurora",
+    title: "Aurora & Space Weather",
+    subtitle: "OVATION auroral oval · live Kp",
+    // No scalar field: the aurora glow reads over the dark globe. Wind/pressure off.
+    patch: { activeVariable: null, showWind: false, showPressure: false, showAurora: true },
+    needs: { kind: "aurora" },
+  },
+  {
+    id: "satimg",
+    title: "Satellite View",
+    subtitle: "Live geostationary imagery",
+    patch: { activeVariable: null, showWind: false, showPressure: false, showSatImg: true },
+    needs: { kind: "satimg" },
+  },
 ];
+
+/**
+ * The ocean world spin's tour: the ingested ocean fields, toured within one spin
+ * (replacing the old one-field-per-cut ocean shots). Surface wind stays on — it
+ * reads well over sea-surface temperature and swell. Opens on SST.
+ */
+export const OCEAN_MAP_TYPES: GlobalMapType[] = [
+  {
+    id: "sst",
+    title: "Ocean Temperature",
+    subtitle: "Sea surface temperature",
+    patch: { activeVariable: "sst", showWind: true },
+    needs: { kind: "variable", id: "sst" },
+  },
+  {
+    id: "wave",
+    title: "Ocean Swell",
+    subtitle: "Significant wave height",
+    patch: { activeVariable: "wave", showWind: true },
+    needs: { kind: "variable", id: "wave" },
+  },
+  {
+    id: "salinity",
+    title: "Ocean Salinity",
+    subtitle: "Sea surface salinity",
+    patch: { activeVariable: "salinity", showWind: true },
+    needs: { kind: "variable", id: "salinity" },
+  },
+];
+
+/**
+ * The terrain looks a `quake` shot tours WHILE it holds on the epicentre — so a
+ * seismic beat isn't one static map for its whole hold. No GFS weather field is
+ * relevant to a quake (meteorology over a fault reads as nonsense), so every look
+ * is geophysical: elevation contours, shaded relief, then the satellite view. The
+ * epicentre rings + plate boundaries + submarine cables + cities all come from the
+ * quake PRESET and stay lit under every look; each type here only swaps the base
+ * map + contour rendering. Opens on the contour look (it matches the preset, so
+ * the first frame is stable before the client's rotation kicks in). Unlike the
+ * intro/ocean spins these do NOT relabel the on-air card — the earthquake headline
+ * (magnitude/place) stays put; only the map underneath changes.
+ */
+export const QUAKE_MAP_TYPES: GlobalMapType[] = [
+  {
+    id: "contours",
+    title: "Elevation Contours",
+    subtitle: "Terrain height · colour-by-height isolines",
+    // Dark base + colour-by-height contour lines (intervals come from the preset).
+    patch: { basemap: DEFAULT_BASEMAP_ID, activeVariable: null, showElevation: true },
+    needs: { kind: "variable", id: "elevation" },
+  },
+  {
+    id: "relief",
+    title: "Shaded Relief",
+    subtitle: "ETOPO hypsometric terrain",
+    // Colour-by-height relief FILL (ETOPO 2022) with the contour lines drawn over.
+    patch: { basemap: "relief", activeVariable: null, showElevation: true },
+    needs: { kind: "variable", id: "elevation" },
+  },
+  {
+    id: "satellite",
+    title: "Satellite View",
+    subtitle: "The terrain from orbit",
+    // Real imagery of the epicentre; contours off so the ground reads cleanly.
+    patch: { basemap: "satellite", activeVariable: null, showElevation: false },
+  },
+];
+
+/**
+ * The map-type tour for a segment kind, or null for kinds that don't tour (they
+ * either hold one field or run a curated per-event plan). Global spins (intro/
+ * ocean) tour their world looks; the `quake` event shot tours terrain looks while
+ * it holds on the epicentre. Shared by the worker (opening field) and the client
+ * (the within-shot rotation + relabel gating).
+ */
+export function globalMapTour(kind: SegmentKind): GlobalMapType[] | null {
+  if (kind === "intro") return INTRO_MAP_TYPES;
+  if (kind === "ocean") return OCEAN_MAP_TYPES;
+  if (kind === "quake") return QUAKE_MAP_TYPES;
+  return null;
+}
 
 /**
  * Orbital "world" modes — a satellite constellation's orbits spun on a pulled-
@@ -148,6 +287,10 @@ const LAYERS_OFF: Partial<ControlState> = {
   showCables: false,
   showCableLabels: false,
   showFaults: false,
+  // The "map type" overlays: off by default so a spin's aurora/satellite look
+  // doesn't stick into the next map step (or a scene's into a director shot).
+  showAurora: false,
+  showSatImg: false,
   showAlerts: false,
   showSeismic: false,
   showAircraft: false,
@@ -179,6 +322,9 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     showWind: true,
     // Synoptic H/L systems on the global spin read as "weather channel".
     showPressure: true,
+    // Cities + labels on every mode; the progressive zoom reveal keeps a
+    // whole-globe spin to just the major cities so it never turns to text soup.
+    showCities: true,
     autoSpin: true,
     spinSpeed: 6,
     zoomDrift: 0,
@@ -189,6 +335,7 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
   ocean: {
     ...LAYERS_OFF,
     showWind: true,
+    showCities: true,
     autoSpin: true,
     spinSpeed: 6,
     zoomDrift: 0,
@@ -202,6 +349,7 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     showSatellites: true,
     showOrbits: true,
     showTrackLabels: true,
+    showCities: true,
     autoSpin: true,
     spinSpeed: 5,
     zoomDrift: 0,

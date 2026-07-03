@@ -15,7 +15,7 @@
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import type { Segment } from "@photonsurge/shared/director";
-import type { AuroraMeta } from "@photonsurge/shared/aurora/types";
+import type { AuroraOverlay } from "../../lib/aurora-overlay";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake, Track } from "../../lib/tracks/types";
 import type { City } from "../../lib/cities";
@@ -34,6 +34,7 @@ import KpIndexPanel from "./KpIndexPanel";
 import MonitorCluster from "./MonitorCluster";
 import EventOverlay from "./EventOverlay";
 import EventNearbyPanel from "./EventNearbyPanel";
+import TrackInfoPanel from "./TrackInfoPanel";
 import OnAirCard from "./OnAirCard";
 import { isTargetedEvent, KIND_COLOR } from "./kinds";
 
@@ -78,7 +79,7 @@ export default function BroadcastFrame({
   /** Worker-cached webcams — for the "near this event" panel. */
   cams?: Cam[];
   /** Cached aurora frame (carries the Kp index) — for the space-weather readout. */
-  aurora?: AuroraMeta | null;
+  aurora?: AuroraOverlay | null;
   theme?: BroadcastTheme;
   /** The on-air director segment — drives the event reticle so it matches what's
    *  actually selected. Null when nothing is on air (reticle hidden). */
@@ -87,9 +88,12 @@ export default function BroadcastFrame({
   const scale = useStageScale();
   const ticker = buildTicker({ alerts, quakes, tracks });
   const eventTargeted = onAirSegment ? isTargetedEvent(onAirSegment.kind) : false;
+  // A notable aircraft/ship carries a rich Track Info card on the segment; when
+  // present it takes the bottom-left slot (superseding the nearby-cities panel).
+  const hasTrackInfo = onAirSegment?.trackInfo != null;
   // Space-weather readout rides on the aurora overlay: only when the oval is on
   // and the cached frame actually carries a Kp reading.
-  const kpShown = state.showAurora && aurora?.kp != null;
+  const kpShown = state.showAurora && aurora?.meta.kp != null;
 
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 5 }}>
@@ -118,9 +122,18 @@ export default function BroadcastFrame({
           )
         ) : null}
 
+        {/* Notable aircraft/ship → the rich Track Info card (photo + story), which
+            takes precedence over the nearby-cities panel in the bottom-left slot. */}
+        {hasTrackInfo && onAirSegment ? (
+          <div style={{ position: "absolute", left: INSET, bottom: TICKER_H + INSET }}>
+            <TrackInfoPanel segment={onAirSegment} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
+          </div>
+        ) : null}
+
         {/* "Near this event" — cities (with Wikipedia photo/blurb) + webcams
-            around a targeted event. Bottom-left, which the reticle leaves free. */}
-        {eventTargeted && onAirSegment ? (
+            around a targeted event. Bottom-left, which the reticle leaves free.
+            Skipped when a Track Info card is already occupying that slot. */}
+        {eventTargeted && onAirSegment && !hasTrackInfo ? (
           <div style={{ position: "absolute", left: INSET, bottom: TICKER_H + INSET }}>
             <EventNearbyPanel
               center={onAirSegment.camera.center}
@@ -141,7 +154,7 @@ export default function BroadcastFrame({
             overlay is on; pushes the intensity meter down so they don't overlap. */}
         {kpShown ? (
           <div style={{ position: "absolute", top: TICKER_H + INSET + 128, left: INSET }}>
-            <KpIndexPanel kp={aurora?.kp} theme={theme} />
+            <KpIndexPanel kp={aurora?.meta.kp} theme={theme} />
           </div>
         ) : null}
 

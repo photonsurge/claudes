@@ -1,0 +1,77 @@
+/**
+ * Advertisement domain types, shared by the public app (admin CRUD + serving)
+ * and — later — the broadcast display + director. An ad is a piece of sponsor
+ * creative (an image now; small video today, large video via GridFS later) plus
+ * lightweight metadata. The media bytes live in Mongo and are streamed through a
+ * dedicated route, so the wire `Ad` carries only metadata + enough to build the
+ * media URL, never the bytes themselves.
+ */
+
+export type AdStatus = "active" | "inactive";
+
+/** Which kind of creative the bytes are. Drives how the viewer renders it. */
+export type AdMediaType = "image" | "video";
+
+/**
+ * Where the media bytes live. `inline` = on the ad doc (Mongo Buffer, fine for
+ * images and short clips well under the 16 MB doc limit). `gridfs` is reserved
+ * for large video: same metadata shape, bytes streamed from a GridFS bucket.
+ * Storing the discriminator now means the video path is purely additive later.
+ */
+export type AdStorage = "inline" | "gridfs";
+
+/** Image types accepted for upload. */
+export const AD_IMAGE_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+] as const;
+
+/** Video types accepted for upload (inline while under the size cap). */
+export const AD_VIDEO_TYPES = ["video/mp4", "video/webm"] as const;
+
+/**
+ * Ceiling for inline (on-doc) media. Mongo caps a document at 16 MB; we keep a
+ * margin for metadata. Anything larger is rejected until GridFS video lands.
+ */
+export const MAX_INLINE_AD_BYTES = 12 * 1024 * 1024;
+
+/** Map an upload's content-type to a media kind, or null if unsupported. */
+export function adMediaTypeFor(contentType: string): AdMediaType | null {
+  const ct = contentType.toLowerCase().split(";")[0].trim();
+  if ((AD_IMAGE_TYPES as readonly string[]).includes(ct)) return "image";
+  if ((AD_VIDEO_TYPES as readonly string[]).includes(ct)) return "video";
+  return null;
+}
+
+/** Editable metadata for an ad (everything except identity + the bytes). */
+export interface AdMeta {
+  title: string;
+  status: AdStatus;
+  /** Sponsor / advertiser display name. */
+  advertiser?: string;
+  /** Where the ad points (for reference now; click-through later). */
+  clickUrl?: string;
+  /** Rotation weight — higher shows more often once scheduling exists. */
+  weight: number;
+  tags?: string[];
+  notes?: string;
+}
+
+/** The canonical wire shape returned by the admin/serve APIs. No bytes. */
+export interface Ad extends AdMeta {
+  /** Stable id (the upsert/edit key), generated on create. */
+  adId: string;
+  mediaType: AdMediaType;
+  /** MIME type of the stored media, e.g. "image/png", "video/mp4". */
+  contentType: string;
+  byteSize: number;
+  width?: number;
+  height?: number;
+  storage: AdStorage;
+  /** Epoch ms. */
+  createdAt?: number;
+  /** Epoch ms — also the media-URL cache-buster. */
+  updatedAt?: number;
+}

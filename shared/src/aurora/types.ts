@@ -12,6 +12,19 @@
 /** [west, south, east, north] in degrees — the baked PNG's geographic extent. */
 export type AuroraBounds = [number, number, number, number];
 
+/**
+ * Render params shared by the worker bake and the client RasterLayer. The frame
+ * is a SCALAR probability texture (like radar/SST): the worker packs probability
+ * into the PNG and masks everything at/below `AURORA_FLOOR` to transparent; the
+ * client decodes with `AURORA_IMAGE_UNSCALE` and colours it over `AURORA_DOMAIN`
+ * with the `aurora` palette. Rendering as a WeatherLayers RasterLayer (finely
+ * tessellated) — NOT a coarse full-globe BitmapLayer, which chords the sphere and
+ * leaks the oval as diamond artifacts near the limb.
+ */
+export const AURORA_FLOOR = 3; // aurora probability (%) below which pixels are transparent
+export const AURORA_IMAGE_UNSCALE: [number, number] = [0, 100]; // byte ↔ probability decode
+export const AURORA_DOMAIN: [number, number] = [AURORA_FLOOR, 50]; // palette spread
+
 /** Metadata for one baked aurora frame (no pixel bytes). */
 export interface AuroraFrame {
   /** SWPC observation time (ISO) the OVATION grid was derived from. */

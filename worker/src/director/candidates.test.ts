@@ -65,15 +65,14 @@ describe("buildCandidates", () => {
     expect(pool.filter((c) => c.segment.kind === "tour").length).toBeGreaterThan(5);
   });
 
-  it("adds global ocean spins that assert their own ocean variable", async () => {
+  it("adds one global ocean spin that opens on SST and spins (tours the rest client-side)", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
-    const sst = pool.find((c) => c.segment.id === "ocean:sst");
-    const waves = pool.find((c) => c.segment.id === "ocean:waves");
-    const salinity = pool.find((c) => c.segment.id === "ocean:salinity");
-    expect(sst?.segment.patch.activeVariable).toBe("sst");
-    expect(sst?.segment.patch.autoSpin).toBe(true); // world map spins
-    expect(waves?.segment.patch.activeVariable).toBe("wave");
-    expect(salinity?.segment.patch.activeVariable).toBe("salinity");
+    const ocean = pool.filter((c) => c.segment.kind === "ocean");
+    // Collapsed from one-candidate-per-field to a single touring spin.
+    expect(ocean.length).toBe(1);
+    expect(ocean[0].segment.id).toBe("ocean:world");
+    expect(ocean[0].segment.patch.activeVariable).toBe("sst"); // opens on the hero field
+    expect(ocean[0].segment.patch.autoSpin).toBe(true); // world map spins
   });
 
   it("holds regional tours on their subject (no global spin)", async () => {

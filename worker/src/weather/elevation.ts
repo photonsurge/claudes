@@ -21,6 +21,8 @@ import { fromFile } from "geotiff";
 import { getVariable } from "@photonsurge/shared/variables";
 import { log } from "@photonsurge/shared/utill/logger";
 
+import { getAppDb } from "@photonsurge/shared/db/index";
+
 import { encodeScalarPng } from "../grib/encode";
 import { imageUnscaleFor } from "../grib/bake";
 import { publishSourceRun } from "./publishSourceRun";
@@ -83,6 +85,8 @@ export interface IngestElevationOpts {
   /** Output grid width / height (default 2160×1080). */
   width?: number;
   height?: number;
+  /** Re-bake even if an elevation run is already published (default false). */
+  force?: boolean;
 }
 
 export interface IngestElevationResult {
@@ -102,6 +106,25 @@ export async function ingestElevation(opts: IngestElevationOpts = {}): Promise<I
   const H = opts.height ?? Number(process.env.ELEVATION_BAKE_HEIGHT ?? 1080);
   if (!Number.isInteger(W) || !Number.isInteger(H) || W < 2 || H < 2) {
     throw new Error(`bad bake dims ${W}×${H}`);
+  }
+
+  // Terrain is STATIC — if an elevation run is already published, skip the whole
+  // 466 MB read + strip resample + PNG encode (the slow part) and reuse it. Pass
+  // `force` (or ELEVATION_FORCE=1) to re-bake, e.g. after a resolution change.
+  const force = opts.force ?? process.env.ELEVATION_FORCE === "1";
+  if (!force) {
+    const db = await getAppDb();
+    const existing = await db.weatherRuns.getByQuery({ model: "elevation", status: "complete", published: true });
+    if (existing.success && existing.data) {
+      const run = existing.data as { grid?: { width?: number; height?: number }; runId?: string; _id?: unknown };
+      log(TAG, "elevation already published — skipping bake (pass force to re-bake)");
+      return {
+        width: run.grid?.width ?? W,
+        height: run.grid?.height ?? H,
+        bytes: 0,
+        runId: run.runId ?? String(run._id ?? ""),
+      };
+    }
   }
 
   const localPath = opts.demPath ?? process.env.ELEVATION_DEM_PATH;

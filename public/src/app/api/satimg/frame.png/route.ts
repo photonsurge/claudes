@@ -5,19 +5,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/aurora/image
- * Streams the worker-baked aurora glow PNG bytes straight from Mongo for the
- * overlay's BitmapLayer. Callers append `?v=<updatedAt>` (from /api/aurora) so
- * each baked frame gets a unique URL — hence the long cache: a new frame changes
- * `v` and busts it. 404 until the worker has baked the first frame.
+ * GET /api/satimg/frame.png?sat=<id>
+ * Streams one bird's worker-baked, reprojected RGBA PNG from Mongo for the overlay's
+ * BitmapLayer. `sat` selects the bird (default "himawari9"). Callers append
+ * `&v=<updatedAt>` (from /api/satimg) so each baked frame gets a unique URL — hence
+ * the long cache. 404 until the worker has baked that bird's first frame.
  */
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const sat = new URL(req.url).searchParams.get("sat") || "himawari9";
     const db = await getAppDb();
-    const frame = await db.aurora.latestPng();
+    const frame = await db.satimg.latestPng(sat);
     if (!frame) {
       return NextResponse.json(
-        { error: "no aurora frame baked yet" },
+        { error: `no satimg frame baked yet for ${sat}` },
         { status: 404, headers: { "Cache-Control": "no-store" } },
       );
     }

@@ -57,20 +57,78 @@ for the schedulers — no need to restart or kill a running worker.
 | `yarn refresh:faults` | Refresh the tectonic plate-boundary overlay (Bird 2003). |
 | `yarn refresh:tides` | Refresh tide-gauge stations + series (IOC sea-level). |
 | `yarn refresh:cams` | Refresh the webcam catalog from the enabled providers. |
+| `yarn refresh:satimg [satId]` | Bake one geostationary satellite full-disk (default `himawari9`) into a global PNG. **Needs the satpy venv — see below.** |
+
+### Satellite imagery (satpy sidecar)
+
+`refresh:satimg` and the `satimg.refresh` job shell out to a Python sidecar
+(`src/satimg/himawari.py`) that pulls the latest Himawari-9 full-disk from the open
+`noaa-himawari9` AWS bucket (no credentials), reprojects the geostationary disk onto
+a global plate-carrée PNG via **satpy**, and stores one cached frame per bird in
+Mongo (`db.satimg`). The Node worker only spawns the script + reads the PNG — the
+same shell-out shape as `wgrib2`.
+
+One-time setup (a **dedicated** venv — don't pollute base anaconda):
+
+```
+python3 -m venv worker/.venv-satimg
+worker/.venv-satimg/bin/pip install -r worker/src/satimg/requirements.txt
+```
+
+Then point the worker at it and enable the job:
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `SATIMG_PYTHON` | `python3` | Interpreter — set to `worker/.venv-satimg/bin/python`. |
+| `SATIMG_REFRESH_ENABLED` | *(off)* | Set `true` to register the repeatable bake job. Off by default so a worker without the venv doesn't fail every cycle. |
+| `SATIMG_SATS` | `himawari9` | Comma list of birds to bake (one job each). |
+| `SATIMG_REFRESH_MS` | `600000` | Bake cadence (~10 min = Himawari's FLDK scan interval). |
+| `SATIMG_COMPOSITE` | `true_color` | satpy composite or bare band. `true_color` is daytime-only (night side transparent); use `B13` (clean IR) for an always-on cloud layer. |
+| `SATIMG_RESOLUTION` | `0.05` | Output grid resolution in degrees. |
+
+Smoke-test the bake before enabling the cron:
+
+```
+SATIMG_PYTHON=worker/.venv-satimg/bin/python yarn refresh:satimg
+```
 
 ## Weather pipeline
 
-**Global bases** (always-on, whole-globe):
+### Which command produces which variable
 
-| Command | Source |
+The manifest composes each variable from its highest-**priority** published source
+(base) plus any zoom-gated **nests**. So a variable only appears if *something*
+below has published it. Notably, **rain / storm (CAPE) / cloud / snow / pressure
+come from GFS ONLY** — if you haven't run `yarn pull`, they're absent entirely.
+
+| Variable | Global base (priority) | Regional nests |
+| --- | --- | --- |
+| temp | **icon-global** (12) › gfs (10) | icon-eu, icon-d2, ukv, hrrr, hrdps, openmeteo |
+| humidity | **icon-global** › gfs | icon-eu, icon-d2, ukv, hrrr, hrdps, openmeteo |
+| wind | **icon-global** › gfs | icon-eu, icon-d2, ukv, hrrr, hrdps, openmeteo |
+| gust | **icon-global** › gfs | openmeteo family |
+| **rain** | **gfs only** | — |
+| **storm (CAPE)** | **gfs only** | — |
+| **cloud** | **gfs only** | — |
+| **snow** | **gfs only** | — |
+| **pressure** | **gfs only** (isobar contours) | — |
+| sst / current / salinity | **rtofs** | rtofs-regional windows |
+| wave | **gfswave-mosaic** | wave-nests (atlocn, wcoast) |
+| radar | — (nest-only) | mrms (US) |
+| elevation | **etopo** (static) | — |
+
+### Global bases (always-on, whole-globe)
+
+| Command | Source / notes |
 | --- | --- |
-| `yarn pull` | Kick the real GFS pipeline now (enqueues `weather.check`; needs the worker running). |
-| `yarn refresh:ifs` | ECMWF IFS 0.25° (off by default until CCSDS-validated). |
-| `yarn refresh:waves` | GFS-Wave global height/direction mosaic. |
+| `yarn pull` | **How to get GFS.** Enqueues `weather.check` → ingests the latest GFS cycle (rain, storm/CAPE, gust, pressure, cloud, snow, + temp/wind/humidity). **Non-destructive**; needs the worker running. No `refresh:gfs` one-shot exists — GFS runs through the queue. |
+| `yarn refresh:icon-global` | DWD ICON 13 km worldwide — **base for temp/wind/humidity/gust** (priority 12 > GFS 10, so it wins those). Gust sources f001 (no f000 analysis step). |
 | `yarn refresh:rtofs` | RTOFS global SST / currents / salinity. |
-| `yarn refresh:icon-global` | DWD ICON 13 km — the worldwide "everywhere" field; **de-facto base for temp/wind/humidity**. |
+| `yarn refresh:waves` | GFS-Wave global significant-height mosaic. |
+| `yarn refresh:ifs` | ECMWF IFS 0.25° (off by default until CCSDS-validated). |
+| `yarn refresh:elevation` | Static ETOPO topo+bathy contour base (rarely needs re-running). |
 
-**Regional nests** (zoom-gated high-res overlays):
+### Regional nests (zoom-gated high-res overlays)
 
 | Command | Region |
 | --- | --- |
@@ -80,12 +138,40 @@ for the schedulers — no need to restart or kill a running worker.
 | `yarn refresh:mrms` | MRMS — US radar (nest-only) |
 | `yarn refresh:hrdps` | HRDPS — Canada 2.5 km |
 | `yarn refresh:ukv` | UKV — UK 2 km |
-| `yarn refresh:openmeteo` | Open-Meteo `.om` national high-res family (JMA, AROME-France, MeteoSwiss, …) |
-| `yarn refresh:wave-nests` | GFS-Wave basin nests (atlocn / epacif / wcoast / ecg) |
-| `yarn refresh:rtofs-regional` | RTOFS regional windows (11 windows) |
+| `yarn refresh:openmeteo` | Open-Meteo `.om` national high-res family (JMA, AROME-France, MeteoSwiss, DMI, MET-Norway, KNMI, AROME-Austria, ICON-2I). Several are **reprojected** at ingest (LCC / rotated-pole). |
+| `yarn refresh:wave-nests` | GFS-Wave basin nests (atlocn, wcoast; epacif disabled — antimeridian). |
+| `yarn refresh:rtofs-regional` | RTOFS regional windows (bering, atlocn, hawaii, …). |
 
 Each weather refresh is **idempotent** — if that model+run is already published
-it re-checks and skips (no re-bake, no upstream hammering).
+it skips (no re-bake, no upstream hammering). Several adapters (open-meteo, wave-
+nests, rtofs-regional) also **self-heal**: if a published run's grid dims differ
+from what the current descriptor/probe would produce, they re-bake it.
+
+### Validation
+
+| Command | What it does |
+| --- | --- |
+| `yarn check:maps` | Dump a coastline-overlay per served weather texture to `scratchpad/align/` to eyeball georeferencing. `--var <id>` / `--only <sourceId,…>` to scope; needs `public` running. |
+| `yarn check:satimg` | Dump a coastline-overlay per satellite disk to `scratchpad/satimg/` to eyeball the geostationary footprint / reprojection. Uses the worker-baked frame when `public` is up, else a **synthetic** disk computed from the visibility geometry (runs offline, no satpy). `--sat <id>` to scope; `--synthetic` to force the stand-in. |
+
+### Reload every map — `yarn refresh:all`
+
+One command reloads the whole list. It runs `pull` (GFS, async) then every
+`refresh:*` **sequentially** — sequential is inherently polite to NOAA/DWD (one
+download stream at a time), and it **continues past any map that fails** (e.g. a
+fresh cycle still 404-ing on latency) instead of aborting the batch.
+
+```bash
+cd worker && yarn refresh:all
+```
+
+Use it after a `yarn reingest` (or on an empty DB) to repopulate everything. GFS
+(rain/CAPE/cloud/snow/pressure) bakes asynchronously in the running worker while
+the one-shots run, so it lands a little after the command returns.
+
+> Don't run the `refresh:*` scripts in **parallel** — each is its own process, so
+> they don't share the `nomadsGate` politeness throttle and would hammer upstream.
+> `refresh:all` is sequential on purpose.
 
 ## Maintenance / reset
 

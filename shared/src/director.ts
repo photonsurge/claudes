@@ -85,6 +85,45 @@ export interface Segment {
   tsunami?: boolean;
   /** Kind-specific detail rows for the operator info box (severity, depth, …). */
   details?: { label: string; value: string }[];
+  /**
+   * For `flight`/`ship` segments: rich identity for the on-air Track Info card —
+   * photo + story + type/operator. Present when the craft matched the notable
+   * catalog (photo/story) or the aircraftMeta cache (type/operator). Rides on the
+   * segment, so it reaches /watch over the existing director socket with no extra
+   * plumbing. See TrackInfo.
+   */
+  trackInfo?: TrackInfo;
+}
+
+/**
+ * Rich on-air identity for an aircraft/ship, attached to its segment. Everything
+ * optional — a craft with no catalog match still carries whatever the live snapshot
+ * + aircraftMeta cache know. `notable`/`vip` drive on-air emphasis (a VIP such as
+ * Air Force One is the top tier).
+ */
+export interface TrackInfo {
+  /** Catalog display name, e.g. "Air Force One". */
+  label?: string;
+  /** Catalog grouping, e.g. "government" | "research" | "cruise". */
+  category?: string;
+  /** Photo URL (planespotters airframe shot, else the Wikipedia lead image). */
+  photoUrl?: string;
+  /** Photographer credit (planespotters requires attribution). */
+  photoCredit?: string;
+  /** Link back to the photo page. */
+  photoLink?: string;
+  /** Aircraft type / vessel type, e.g. "Boeing VC-25A". */
+  type?: string;
+  operator?: string;
+  registration?: string;
+  flag?: string;
+  country?: string;
+  /** Short Wikipedia blurb. */
+  extract?: string;
+  /** Matched the curated notable-tracks catalog. */
+  notable?: boolean;
+  /** Top-tier VIP (e.g. Air Force One). */
+  vip?: boolean;
 }
 
 /**

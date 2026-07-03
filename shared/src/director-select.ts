@@ -4,8 +4,10 @@
  * one airs next. Deterministic given its rng, so it's unit-tested without a DB.
  *
  * Selection model (operator-requested):
- *  1. Opener — the very first cut of a session is the intro spin, and intro only
- *     ever airs then (it's excluded from every later cut).
+ *  1. Opener — the very first cut of a session is the intro spin. It can also
+ *     recur later as ordinary global filler: the intro now TOURS map types as it
+ *     spins (temp → cloud → aurora → satellite), so it's no longer the static
+ *     shot that had to be shown once and retired.
  *  2. Random kind — each subsequent cut picks a KIND at random from those present
  *     in the pool, avoiding an immediate repeat of the just-aired kind.
  *  3. Fair rotation — within that kind, pick at random among the LEAST-aired
@@ -70,9 +72,10 @@ export function selectNext(pool: Candidate[], opts: SelectOpts): Segment | null 
     if (intro) return intro.segment;
   }
 
-  // Intro never airs again after the opener.
-  let eligible = pool.filter((c) => c.segment.kind !== "intro");
-  if (eligible.length === 0) eligible = pool.slice();
+  // After the opener the intro is a normal candidate — it tours map types now, so
+  // it earns a place in the recurring rotation. The "avoid an immediate kind
+  // repeat" rule below still keeps it from airing twice back-to-back.
+  const eligible = pool.slice();
 
   // 2. Pick a KIND at random, avoiding an immediate repeat where possible.
   const lastId = opts.history[opts.history.length - 1];

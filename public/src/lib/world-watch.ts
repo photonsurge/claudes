@@ -17,6 +17,14 @@ export interface WorldWatchState extends WorldSummary {
   feed: WorldWatchItem[];
 }
 
+/**
+ * World Watch only surfaces events worth broadcasting: Severe/Extreme alerts
+ * (rank >= 3 — no Moderate or below) and "decent" quakes (M4.5+, the usual
+ * widely-felt / significant threshold). Server applies both floors.
+ */
+const MIN_ALERT_SEVERITY = 3; // 0 None · 1 Minor · 2 Moderate · 3 Severe · 4 Extreme
+const MIN_QUAKE_MAG = 4.5;
+
 const EMPTY: WorldWatchState = {
   alertTotal: 0,
   bySeverity: [],
@@ -32,8 +40,9 @@ const EMPTY: WorldWatchState = {
  * the camera bbox — this is a global situation summary that stays on screen no
  * matter what the map is currently showing. We refetch on the same socket beats
  * the overlays use (ALERTS_UPDATED / TRACKS_UPDATED:seismic); the interval is a
- * fallback if the socket is down. All active alerts (every severity) are pulled
- * so the counts are honest; quakes come from the USGS feed's ~24h window.
+ * fallback if the socket is down. Only broadcast-worthy events are pulled —
+ * Severe/Extreme alerts and M4.5+ quakes (see MIN_ALERT_SEVERITY / MIN_QUAKE_MAG)
+ * — so the tally reflects the significant activity, not every minor advisory.
  */
 export function useWorldWatch(): WorldWatchState {
   const [summary, setSummary] = useState<WorldWatchState>(EMPTY);
@@ -58,8 +67,8 @@ export function useWorldWatch(): WorldWatchState {
     let cancelled = false;
     const poll = async () => {
       const [alerts, quakesRes] = await Promise.all([
-        listAlerts({ activeOnly: true, severityMin: 0, limit: 5000 }),
-        listQuakes(),
+        listAlerts({ activeOnly: true, severityMin: MIN_ALERT_SEVERITY, limit: 5000 }),
+        listQuakes(undefined, MIN_QUAKE_MAG),
       ]);
       if (cancelled) return;
       setSummary({

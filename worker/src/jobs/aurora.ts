@@ -2,9 +2,10 @@ import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { fetchOvation } from "@photonsurge/shared/aurora/ovation";
 import { fetchKp } from "@photonsurge/shared/aurora/kp";
+import { AURORA_FLOOR, AURORA_IMAGE_UNSCALE } from "@photonsurge/shared/aurora/types";
 import { log } from "@photonsurge/shared/utill/logger";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
-import { rollLongitude, encodeAuroraPng } from "../grib/encode";
+import { rollLongitude, encodeAuroraScalarPng } from "../grib/encode";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
@@ -25,7 +26,10 @@ export async function refresh(_job: Job) {
     // OVATION longitude is 0..360 (col 0 = 0°E); roll to -180..180 for a
     // plate-carrée PNG with bounds [-180,-90,180,90].
     const rolled = rollLongitude(grid.values, grid.width, grid.height);
-    const png = await encodeAuroraPng(rolled, grid.width, grid.height);
+    // Mask sub-floor cells to transparent so only the oval draws (nodata alpha 0).
+    const keep = new Uint8Array(rolled.length);
+    for (let i = 0; i < rolled.length; i++) keep[i] = rolled[i] > AURORA_FLOOR ? 1 : 0;
+    const png = await encodeAuroraScalarPng(rolled, grid.width, grid.height, AURORA_IMAGE_UNSCALE, keep);
 
     // Kp drives the oval but comes from a separate feed — a Kp outage must not
     // fail the whole bake, so read it best-effort and leave it null on error.

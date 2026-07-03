@@ -5,6 +5,21 @@ import type { iAuroraModel } from "./aurora-model";
 /** The one singleton key — there is only ever a single cached aurora frame. */
 const LATEST = "latest";
 
+/**
+ * Coerce whatever Mongo hands back for a stored Buffer field into real PNG bytes.
+ * Depending on `.lean()` + the driver's `promoteBuffers` setting, `png` can come
+ * back as a Node Buffer, a BSON `Binary` (subtype 0, bytes on `.buffer`), or a
+ * plain Uint8Array. `Buffer.from(binary)` on a BSON Binary yields GARBAGE (the
+ * browser then fails with "source image could not be decoded"), so normalise here.
+ */
+function toPngBuffer(v: any): Buffer {
+  if (Buffer.isBuffer(v)) return v;
+  if (v && v._bsontype === "Binary") return Buffer.from(v.buffer ?? v.value?.() ?? []);
+  if (v && v.buffer instanceof Uint8Array) return Buffer.from(v.buffer);
+  if (v instanceof Uint8Array) return Buffer.from(v);
+  return Buffer.from(v ?? []);
+}
+
 /** Everything the worker hands the repo for one baked frame. */
 export interface AuroraBakeInput {
   observationTime: Date;
@@ -78,10 +93,14 @@ export function makeAuroraRepo(auroraModel: Model<iAuroraModel>) {
 
     /** The baked PNG bytes for the image route, or null if unbaked. */
     async latestPng(): Promise<{ data: Buffer; contentType: string; updatedAt: string } | null> {
-      const doc = await auroraModel.findOne({ frameId: LATEST }).lean().exec();
+      // No `.lean()` so Mongoose casts `png` back to a real Buffer; `toPngBuffer`
+      // still guards the Binary/Uint8Array cases defensively.
+      const doc = await auroraModel.findOne({ frameId: LATEST }).exec();
       if (!doc || !doc.png) return null;
+      const data = toPngBuffer(doc.png);
+      if (!data.length) return null;
       return {
-        data: Buffer.from(doc.png as any),
+        data,
         contentType: doc.contentType ?? "image/png",
         updatedAt: new Date(doc.fetchedAt).toISOString(),
       };

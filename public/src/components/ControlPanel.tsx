@@ -322,6 +322,11 @@ export default function ControlPanel({
               </select>
             </label>
           )}
+          <Toggle
+            label="🔥 Wildfires"
+            checked={state.showFires}
+            onChange={(showFires) => patch({ showFires })}
+          />
         </div>
       </Section>
 
@@ -355,6 +360,14 @@ export default function ControlPanel({
           label="Aurora oval (magnetic activity)"
           checked={state.showAurora}
           onChange={(showAurora) => patch({ showAurora })}
+        />
+      </Section>
+
+      <Section title="Satellite imagery">
+        <Toggle
+          label="Live satellite (Himawari-9 …)"
+          checked={state.showSatImg}
+          onChange={(showSatImg) => patch({ showSatImg })}
         />
       </Section>
 

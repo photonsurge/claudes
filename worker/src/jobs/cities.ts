@@ -19,6 +19,7 @@ import {
   DEFAULT_CITIES_TIER,
 } from "@photonsurge/shared/cities/geonames";
 import { CITIES_UPDATED } from "@photonsurge/shared/control";
+import { fetchWikiSummary } from "@photonsurge/shared/utill/wikipedia";
 import { log } from "@photonsurge/shared/utill/logger";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
@@ -78,32 +79,10 @@ export async function seed(job: Job) {
 
 // ── Wikipedia enrichment ──────────────────────────────────────────────────────
 
-// Wikipedia's API policy requires a descriptive User-Agent with contact info.
-const WIKI_UA =
-  "LiveWeatherGlobe/0.1 (broadcast city enrichment; https://github.com/; contact ravergeek@gmail.com)";
 const STALE_DAYS = 30;
 const GAP_MS = 150; // ~6-7 req/s — well within Wikipedia's limits, still kind.
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-type Summary = { title: string; extract?: string; thumb?: string };
-
-/** Fetch a Wikipedia REST summary for an exact title, or a miss reason. */
-async function fetchSummary(title: string): Promise<Summary | "missing" | "disambig"> {
-  const slug = encodeURIComponent(title.replace(/ /g, "_"));
-  const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${slug}?redirect=true`;
-  const res = await fetch(url, { headers: { "User-Agent": WIKI_UA, accept: "application/json" } });
-  if (res.status === 404) return "missing";
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  const j: any = await res.json();
-  if (typeof j?.type === "string" && j.type.includes("disambiguation")) return "disambig";
-  return {
-    title: j?.title ?? title,
-    extract: typeof j?.extract === "string" && j.extract.trim() ? j.extract.trim() : undefined,
-    thumb: j?.thumbnail?.source,
-  };
-}
 
 export interface WikiEnrichOpts {
   /** Enrich cities with population ≥ this (plus every capital). Default 100k. */
@@ -138,11 +117,11 @@ export async function runWikiEnrich(opts: WikiEnrichOpts = {}) {
   let noMatch = 0;
   for (const c of cities) {
     try {
-      let r = await fetchSummary(c.name);
+      let r = await fetchWikiSummary(c.name);
       // Disambiguation / missing → retry with the "Name, Country" title form.
       if ((r === "missing" || r === "disambig") && c.country) {
         await sleep(GAP_MS);
-        r = await fetchSummary(`${c.name}, ${c.country}`);
+        r = await fetchWikiSummary(`${c.name}, ${c.country}`);
       }
       if (r === "missing" || r === "disambig") {
         noMatch++;

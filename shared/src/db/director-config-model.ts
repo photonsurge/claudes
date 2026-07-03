@@ -20,6 +20,8 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
     holdSeconds: { type: Number, required: true, default: 12 },
     kinds: {
       intro: { type: Boolean, default: true },
+      ocean: { type: Boolean, default: true },
+      orbital: { type: Boolean, default: true },
       tour: { type: Boolean, default: true },
       weather: { type: Boolean, default: true },
       storm: { type: Boolean, default: true },

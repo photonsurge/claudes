@@ -74,6 +74,8 @@ describe("mergeControlState", () => {
       showCableLabels: true,
       showFaults: true,
       showAurora: true,
+      showSatImg: true,
+      showFires: true,
       showGraticule: true,
       graticuleColor: "#abcdef",
       graticuleLabels: false,

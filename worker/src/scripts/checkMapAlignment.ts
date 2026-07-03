@@ -16,31 +16,15 @@
 //   yarn check:maps --only ukv,dmi-europe
 //   BASE=http://host:10100 yarn check:maps
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import sharp from "sharp";
+import { type Bbox, loadCoastline, coastlineSvg } from "./coastline";
 
 const ROOT = resolve(__dirname, "../../..");
-const GEOJSON = resolve(ROOT, "public/public/data/countries.geojson");
 const OUTDIR = resolve(ROOT, "scratchpad/align");
 const BASE = process.env.BASE ?? "http://localhost:10100";
 const OUT_W = 720;
-
-type Bbox = [number, number, number, number];
-type Ring = [number, number][];
-
-function rings(geom: { type: string; coordinates: unknown }): Ring[] {
-  if (geom.type === "Polygon") return geom.coordinates as Ring[];
-  if (geom.type === "MultiPolygon") return (geom.coordinates as Ring[][]).flat();
-  return [];
-}
-
-async function loadCoastline(): Promise<Ring[]> {
-  if (!existsSync(GEOJSON)) throw new Error(`coastline not found: ${GEOJSON} — run ./fetch-assets.sh`);
-  const gj = JSON.parse(await readFile(GEOJSON, "utf8")) as { features: { geometry: { type: string; coordinates: unknown } }[] };
-  return gj.features.flatMap((f) => rings(f.geometry));
-}
 
 interface MapEntry { kind: "base" | "nest"; variable: string; bbox: Bbox; tex: string; }
 
@@ -62,30 +46,6 @@ function collectMaps(manifest: any, wantVar?: string): Map<string, MapEntry> {
     }
   }
   return out;
-}
-
-/** Coastline as an SVG overlay (red polylines) sized to the output raster. */
-function coastlineSvg(coast: Ring[], bbox: Bbox, w: number, h: number): Buffer {
-  const [west, south, east, north] = bbox;
-  // Antimeridian-crossing windows carry east > 180 (e.g. rtofs-bering 155→211). The
-  // coastline is in −180..180, so lift any lon west of the dateline by +360 into the
-  // window's ascending frame before projecting.
-  const wrap = (lo: number) => (east > 180 && lo < west ? lo + 360 : lo);
-  const px = (lo: number, la: number) => [
-    ((wrap(lo) - west) / (east - west) * (w - 1)).toFixed(1),
-    ((north - la) / (north - south) * (h - 1)).toFixed(1),
-  ];
-  const lines: string[] = [];
-  for (const ring of coast) {
-    const pts = ring
-      .filter(([lo, la]) => {
-        const x = wrap(lo);
-        return x >= west - 2 && x <= east + 2 && la >= south - 2 && la <= north + 2;
-      })
-      .map(([lo, la]) => px(lo, la).join(","));
-    if (pts.length > 1) lines.push(`<polyline points="${pts.join(" ")}" fill="none" stroke="#ff4646" stroke-width="1"/>`);
-  }
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${lines.join("")}</svg>`);
 }
 
 /**

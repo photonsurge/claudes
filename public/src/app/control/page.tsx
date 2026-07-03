@@ -21,7 +21,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../lib/socket-provider";
 import { fetchManifest } from "../../lib/manifest";
 import { listScenes, fetchSceneState, useSceneEmitter } from "../../lib/scenes";
-import { useDirector, useDirectorPatch, eventPulse } from "../../lib/director";
+import { useDirector, useDirectorCut, eventPulse } from "../../lib/director";
 import { listCities, type City } from "../../lib/cities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
@@ -29,6 +29,8 @@ import { useQuakes } from "../../lib/seismic-overlay";
 import { useCables } from "../../lib/cables-overlay";
 import { useFaults } from "../../lib/faults-overlay";
 import { useAurora } from "../../lib/aurora-overlay";
+import { useSatImg } from "../../lib/satimg-overlay";
+import { useFires } from "../../lib/fires-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
 import DirectorPanel from "../../components/DirectorPanel";
@@ -71,7 +73,7 @@ export default function ControlPage() {
     }
   }, [director?.seq, director?.active, director?.segment]);
 
-  const cutPatch = useDirectorPatch(cut);
+  const { patch: cutPatch, segment: onAir } = useDirectorCut(cut, manifest);
   const shown = useMemo(
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),
     [state, cutPatch],
@@ -93,6 +95,8 @@ export default function ControlPage() {
   const cables = useCables(shown.showCables);
   const faults = useFaults(shown.showFaults);
   const aurora = useAurora(shown.showAurora);
+  const satimg = useSatImg(shown.showSatImg);
+  const fires = useFires(shown.showFires);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,6 +158,8 @@ export default function ControlPage() {
           cables={cables}
           faults={faults}
           aurora={aurora}
+          satimg={satimg}
+          fires={fires}
           interactive
           pulseAt={eventPulse(director)}
           // Click-to-select is only live while the director is idle — a cut owns
@@ -169,9 +175,9 @@ export default function ControlPage() {
         {shown.showAlerts || shown.showSeismic ? (
           <AlertLegend alerts={alerts} quakes={quakes} />
         ) : null}
-        {director?.active && director.segment ? (
+        {director?.active && onAir ? (
           <ViewingOverlay
-            segment={director.segment}
+            segment={onAir}
             variable={shown.activeVariable}
             state={shown}
             upNext={director.upNext}

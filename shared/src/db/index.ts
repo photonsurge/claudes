@@ -26,9 +26,14 @@ import { getFaultModel } from "./fault-model";
 import { makeFaultRepo } from "./fault-repo";
 import { getAuroraModel } from "./aurora-model";
 import { makeAuroraRepo } from "./aurora-repo";
+import { getSatImgModel } from "./satimg-model";
+import { makeSatImgRepo } from "./satimg-repo";
+import { getFireModel } from "./fire-model";
+import { makeFireRepo } from "./fire-repo";
 import { getCamModel } from "./cam-model";
 import { makeCamRepo } from "./cam-repo";
 import { getAircraftMetaModel, iAircraftMetaModel } from "./aircraft-meta-model";
+import { getNotableTrackModel, iNotableTrackModel } from "./notable-track-model";
 import { getLogModel } from "./log-model";
 import { getBroadcastStateModel, BROADCAST_STATE_ID } from "./broadcast-state-model";
 import { getDirectorConfigModel } from "./director-config-model";
@@ -69,8 +74,11 @@ export function createDb(conn: Connection) {
     cables: makeCableRepo(getCableModel(conn), getCableLandingModel(conn)),
     faults: makeFaultRepo(getFaultModel(conn)),
     aurora: makeAuroraRepo(getAuroraModel(conn)),
+    satimg: makeSatImgRepo(getSatImgModel(conn)),
+    fires: makeFireRepo(getFireModel(conn)),
     cams: makeCamRepo(getCamModel(conn)),
     aircraftMeta: mongoCrud<iAircraftMetaModel>(getAircraftMetaModel(conn)),
+    notableTracks: mongoCrud<iNotableTrackModel>(getNotableTrackModel(conn)),
     logs: mongoCrud(getLogModel(conn)),
     broadcastState,
     directorConfig,

@@ -27,7 +27,7 @@ import {
   manifestBounds,
   type Bounds,
 } from "./props";
-import { resolveEntries, viewCentralBbox, bboxContainsBbox, type ResolverCamera } from "./resolve";
+import { resolveEntries, rankNestsByFit, type ResolverCamera } from "./resolve";
 import { DEPTH_OCCLUDE, DEPTH_TEST, DEPTH_PAINT } from "./depth";
 
 /** A resolver mapping a texture URL to an already-loaded image (or undefined). */
@@ -189,22 +189,16 @@ function pickBestFitLoaded<P extends { image: string }>(
   resolve: TextureResolver,
   camera: ResolverCamera,
 ): { props: P; image: LoadedTexture; index: number } | null {
-  const target = viewCentralBbox(camera);
-  let best: { props: P; image: LoadedTexture; index: number; res: number; pr: number } | null = null;
-  for (let i = 1; i < entries.length; i++) {
-    const e = entries[i];
-    if (!e.bbox || !bboxContainsBbox(e.bbox, target)) continue;
-    const props = build(e, i);
+  // Pure ranking (coverage-gated, finest-first) → draw the first whose texture is loaded.
+  for (const nest of rankNestsByFit(entries, camera)) {
+    const index = entries.indexOf(nest);
+    const props = build(nest, index);
     if (!props) continue;
     const image = resolve(props.image);
     if (!image) continue;
-    const res = e.resolutionDeg ?? 1;
-    const pr = e.priority ?? 0;
-    if (!best || res < best.res || (res === best.res && pr > best.pr)) {
-      best = { props, image, index: i, res, pr };
-    }
+    return { props, image, index };
   }
-  return best ? { props: best.props, image: best.image, index: best.index } : null;
+  return null;
 }
 
 /** The COARSEST loaded nest — promoted to base when a variable has no true base. */

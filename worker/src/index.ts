@@ -117,7 +117,15 @@ process.on("uncaughtException", (err) => {
       }
     },
     // BullMQ requires maxRetriesPerRequest: null on the worker's blocking connection.
-    { connection: { ...getRedisOptions(), maxRetriesPerRequest: null }, concurrency: 5, stalledInterval: 30_000, maxStalledCount: 2 },
+    // Process up to WORKER_CONCURRENCY jobs at once (default 10). Downloads are still
+    // throttled process-wide by nomadsGate() and CPU bakes by bakePool, so raising
+    // this mostly lets independent ingests/snapshots overlap instead of queueing.
+    {
+      connection: { ...getRedisOptions(), maxRetriesPerRequest: null },
+      concurrency: Number(process.env.WORKER_CONCURRENCY || 10),
+      stalledInterval: 30_000,
+      maxStalledCount: 2,
+    },
   );
 
   // Clear stale repeatable schedules before re-registering. BullMQ keys a
@@ -270,6 +278,18 @@ process.on("uncaughtException", (err) => {
           jobId: "tracks-enrich-aircraft",
         },
       );
+      // Cache photo + blurb onto the notable-tracks catalog. LOW PRIORITY (>0 so
+      // it never competes with the live snapshots) and slow (staleness-gated +
+      // a tiny catalog), so it barely touches the keyless services.
+      await myQueue.add(
+        "do",
+        { domain: "notable", type: "notable", event: "enrichNotable", data: {} },
+        {
+          repeat: { every: Number(process.env.NOTABLE_ENRICH_MS || 3_600_000), immediately: true },
+          jobId: "notable-enrich",
+          priority: 10,
+        },
+      );
       log(TAG, `registered repeatable tracks.snapshot`, {
         aircraftMs: AIRCRAFT_SNAPSHOT_MS,
         shipMs: SHIP_SNAPSHOT_MS,
@@ -345,6 +365,52 @@ process.on("uncaughtException", (err) => {
       log(TAG, `registered repeatable aurora.refresh`, { everyMs: AURORA_REFRESH_MS });
     } catch (err) {
       log(TAG, `failed to register aurora.refresh`, summarizeForLog(err));
+    }
+  }
+
+  // ---- Repeatable fires.snapshot (NASA FIRMS active fires → Mongo) ----
+  // FIRMS republishes NRT detections a few times a day; poll every 30 min by
+  // default (cheap; upserts dedup). The job itself no-ops without FIRMS_MAP_KEY,
+  // but skip scheduling entirely when the key is absent so a keyless dev env stays
+  // quiet. Disable with FIRE_SNAPSHOT_ENABLED=false.
+  if (process.env.FIRE_SNAPSHOT_ENABLED !== "false" && (process.env.FIRMS_MAP_KEY || "").trim()) {
+    const FIRE_SNAPSHOT_MS = Number(process.env.FIRE_SNAPSHOT_MS || 30 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "fires", type: "fires", event: "snapshot", data: {} },
+        { repeat: { every: FIRE_SNAPSHOT_MS, immediately: true }, jobId: "fires-snapshot" },
+      );
+      log(TAG, `registered repeatable fires.snapshot`, { everyMs: FIRE_SNAPSHOT_MS });
+    } catch (err) {
+      log(TAG, `failed to register fires.snapshot`, summarizeForLog(err));
+    }
+  }
+
+  // ---- Repeatable satimg.refresh (geostationary satellite imagery → baked PNG → Mongo) ----
+  // Himawari-9 full-disk from the open AWS bucket, reprojected to a global PNG by a
+  // satpy sidecar (worker/src/satimg/*). OPT-IN: the sidecar needs a Python venv with
+  // satpy (see WORKER.md), so this stays OFF unless SATIMG_REFRESH_ENABLED=true — a
+  // worker without the venv would otherwise fail this job every cycle. ~10-min cadence
+  // matches Himawari's 10-min FLDK scan (+ ~15-20 min ingest lag). One job per bird
+  // listed in SATIMG_SATS (default "himawari9"); `immediately` seeds at boot.
+  if (process.env.SATIMG_REFRESH_ENABLED === "true") {
+    const SATIMG_REFRESH_MS = Number(process.env.SATIMG_REFRESH_MS || 10 * 60 * 1000);
+    const birds = (process.env.SATIMG_SATS || "himawari9")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (const satId of birds) {
+      try {
+        await myQueue.add(
+          "do",
+          { domain: "satimg", type: "satimg", event: "refresh", data: { satellite: satId } },
+          { repeat: { every: SATIMG_REFRESH_MS, immediately: true }, jobId: `satimg-refresh-${satId}` },
+        );
+        log(TAG, `registered repeatable satimg.refresh`, { satId, everyMs: SATIMG_REFRESH_MS });
+      } catch (err) {
+        log(TAG, `failed to register satimg.refresh`, { satId, err: summarizeForLog(err) });
+      }
     }
   }
 

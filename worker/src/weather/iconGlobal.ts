@@ -169,13 +169,15 @@ export async function ingestIconGlobal(now = new Date()): Promise<IngestResult> 
     for (const fhr of iconGlobalForecastSteps()) {
       for (const [variableId, fields] of Object.entries(ICON_GLOBAL_VAR_TOKENS)) {
         // DWD max-gust (vmax_10m) is a max-over-interval field: it has NO analysis
-        // step, so f000 404s. Skip it at fhr 0 (it bakes from f001 once
-        // ICON_GLOBAL_FORECAST_HOURS ≥ 1) rather than logging a failure each run.
-        if (variableId === "gust" && fhr === 0) continue;
+        // (f000) step. Rather than skip gust entirely under the default f0-only
+        // config (→ no global gust base ever), source the fhr-0 slot from f001 —
+        // the first real gust interval, a fine stand-in for "current" gust. Other
+        // fields (instantaneous) use their own fhr.
+        const srcStep = variableId === "gust" && fhr === 0 ? 1 : fhr;
         try {
           if (variableId === "wind") {
-            const uPath = await fetchField(fields[0], fhr);
-            const vPath = await fetchField(fields[1], fhr);
+            const uPath = await fetchField(fields[0], srcStep);
+            const vPath = await fetchField(fields[1], srcStep);
             // WIND: remap the PAIR (each earth-relative post-remap), bake directly.
             const u = await remapAndExtract({ inPath: uPath, match: ICON_GLOBAL_FIELD_MATCH[fields[0]], gridPath, weightsPath, width, height });
             const v = await remapAndExtract({ inPath: vPath, match: ICON_GLOBAL_FIELD_MATCH[fields[1]], gridPath, weightsPath, width, height });
@@ -195,7 +197,7 @@ export async function ingestIconGlobal(now = new Date()): Promise<IngestResult> 
             }).buffers[fhr] = r.buffer;
           } else {
             const field = fields[0];
-            const path = await fetchField(field, fhr);
+            const path = await fetchField(field, srcStep);
             const values = await remapAndExtract({ inPath: path, match: ICON_GLOBAL_FIELD_MATCH[field], gridPath, weightsPath, width, height });
             tmp.push(`${path}.rg.grib2`);
             // temp K→°C; gust already m/s, humidity already % (skip unit convert).

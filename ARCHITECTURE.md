@@ -30,6 +30,10 @@ operator /control ─ control:state (socket) + PATCH /api/broadcast/state │
 ```
 
 ## Weather pipeline (worker)
+> **Detailed file-by-file source map:** [`docs/weather-source-map.md`](docs/weather-source-map.md)
+> — every ingest adapter, the bake pipeline, grid transforms, manifest composition, the
+> nest resolver, data contracts, and the hard-won gotchas. Start there when touching maps.
+
 - `src/sources/gfs.ts` builds NOMADS GRIB-filter URLs + finds the latest complete cycle.
 - `src/weather/ingest.ts` downloads each variable×forecast-hour, bakes via `src/grib/*`
   (`wgrib2` → raw Float32 → `sharp` PNG), stores `WeatherTexture` docs, then writes the

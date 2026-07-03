@@ -169,6 +169,17 @@ export const PALETTES: Record<string, Palette> = {
     [0.94, "#f0c0d0"],
     [1.0, "#ffffff"],
   ],
+  // Aurora oval (OVATION probability). Green low-activity → yellow → red at the
+  // energetic core, mirroring how auroras brighten green→red with intensity. The
+  // sub-floor probability bakes transparent (nodata mask), like radar's clear-air
+  // floor, so only the oval glows over the poles.
+  aurora: [
+    [0.0, "#1ef07a"],
+    [0.35, "#7bf05a"],
+    [0.6, "#e6f23a"],
+    [0.8, "#f2802e"],
+    [1.0, "#ff2e5a"],
+  ],
   // Radar reflectivity (dBZ), NWS-style over the 5..75 dBZ domain: light drizzle
   // teal/green → moderate rain yellow → heavy orange/red → hail magenta/white.
   // The <5 dBZ floor bakes transparent (minVisible) so clear air shows the map.

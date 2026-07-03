@@ -25,9 +25,16 @@ describe("selectNext", () => {
     expect(selectNext(pool, { history: [], isFirst: true })?.kind).toBe("intro");
   });
 
-  it("never airs the intro again after the opener", () => {
+  it("doesn't re-air the intro immediately after itself (avoid a kind repeat)", () => {
     const pool = [cand("intro:global", "intro"), cand("tour:a", "tour")];
+    // Last shot was the intro → the avoid-immediate-repeat rule steers to the tour.
     expect(selectNext(pool, { history: ["intro:global"], rng: () => 0 })?.kind).toBe("tour");
+  });
+
+  it("re-airs the intro later as a recurring global spin (it tours map types now)", () => {
+    const pool = [cand("intro:global", "intro"), cand("tour:a", "tour")];
+    // Last shot was a tour, so the intro is eligible again; rng→0 picks the first kind.
+    expect(selectNext(pool, { history: ["tour:a"], rng: () => 0 })?.kind).toBe("intro");
   });
 
   it("cycles the least-aired item of a kind before repeating", () => {

@@ -63,15 +63,34 @@ export function bunzip2ToFile(inPath: string, outPath: string): Promise<string> 
     const out = createWriteStream(outPath);
     // `bunzip2 -c` decompresses to stdout without touching the input file.
     const child = spawn("bunzip2", ["-c", inPath]);
-    child.on("error", reject);
-    child.stdout.pipe(out);
     let stderr = "";
+    let exitCode: number | null = null;
+    let flushed = false;
+    let settled = false;
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+    // Resolve ONLY once the child exited 0 AND the output stream has fully flushed
+    // to disk (its "finish" event). Resolving on the child's "close" alone — before
+    // the pipe finished writing — hands wgrib2 a half-written file → sporadic
+    // "read outside of file, bad grib file" truncation errors.
+    const maybeDone = () => {
+      if (settled || exitCode === null || !flushed) return;
+      if (exitCode === 0) {
+        settled = true;
+        resolve(outPath);
+      } else {
+        fail(new Error(`bunzip2 exited ${exitCode}: ${stderr.trim()}`));
+      }
+    };
+    child.on("error", fail);
+    out.on("error", fail);
     child.stderr.on("data", (d) => (stderr += String(d)));
-    child.on("close", (code) => {
-      out.close();
-      if (code === 0) resolve(outPath);
-      else reject(new Error(`bunzip2 exited ${code}: ${stderr.trim()}`));
-    });
+    child.stdout.pipe(out);
+    out.on("finish", () => { flushed = true; maybeDone(); });
+    child.on("close", (code) => { exitCode = code ?? 0; maybeDone(); });
   });
 }
 

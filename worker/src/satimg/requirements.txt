@@ -1,0 +1,12 @@
+# Python deps for the Himawari-9 satellite-imagery bake sidecar (himawari.py).
+# Install into a DEDICATED venv (do NOT pollute base anaconda), then point the
+# worker at it with SATIMG_PYTHON=/path/to/venv/bin/python. See WORKER.md.
+#
+#   python3 -m venv worker/.venv-satimg
+#   worker/.venv-satimg/bin/pip install -r worker/src/satimg/requirements.txt
+#
+# satpy pulls in pyresample, trollimage, dask, xarray, numpy transitively.
+satpy
+s3fs
+pyspectral   # atmospheric (Rayleigh) correction — required by the true_color recipe
+Pillow       # simple_image PNG writer

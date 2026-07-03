@@ -17,6 +17,8 @@ import { useQuakes } from "../lib/seismic-overlay";
 import { useCables } from "../lib/cables-overlay";
 import { useFaults } from "../lib/faults-overlay";
 import { useAurora } from "../lib/aurora-overlay";
+import { useSatImg } from "../lib/satimg-overlay";
+import { useFires } from "../lib/fires-overlay";
 import { useCams } from "../lib/cams/useCams";
 import type { City } from "../lib/cities";
 import GlobeView from "./GlobeView";
@@ -60,6 +62,8 @@ export default function WatchSurface({
   const cables = useCables(state.showCables);
   const faults = useFaults(state.showFaults);
   const aurora = useAurora(state.showAurora);
+  const satimg = useSatImg(state.showSatImg);
+  const fires = useFires(state.showFires);
   // Webcams feed the "near this event" broadcast panel; only load them when the
   // chrome is on (the plain surface doesn't show the panel).
   const cams = useCams(state.showBroadcastChrome);
@@ -89,6 +93,8 @@ export default function WatchSurface({
         cables={cables}
         faults={faults}
         aurora={aurora}
+        satimg={satimg}
+        fires={fires}
         interactive={false}
         pulseAt={pulseAt}
         highlightTrack={highlightTrack}

@@ -5,6 +5,7 @@ import {
   bboxContains,
   bboxContainsBbox,
   viewCentralBbox,
+  rankNestsByFit,
   nestActive,
   resolveEntries,
   activeNestSignature,
@@ -69,6 +70,55 @@ describe("viewCentralBbox + bboxContainsBbox (best-fit coverage)", () => {
     const aromeFrance: [number, number, number, number] = [-12, 37.5, 16, 55.4];
     expect(bboxContainsBbox(ukv, view)).toBe(true);
     expect(bboxContainsBbox(aromeFrance, view)).toBe(false); // north edge cuts the view
+  });
+});
+
+describe("rankNestsByFit (best-fit single-winner selection)", () => {
+  // Real temp nests over the UK, with true bboxes + resolutions from the registry.
+  const base = entry({ sourceId: "icon-global", bbox: [-180, -90, 180, 90], resolutionDeg: 0.125 });
+  const iconEu = entry({ sourceId: "icon-eu", bbox: [-23.5, 29.5, 45, 70.5], resolutionDeg: 0.0625, priority: 28 });
+  const ukv = entry({ sourceId: "ukv", bbox: [-12, 48, 4.992, 60.996], resolutionDeg: 0.018, priority: 26 });
+  const dmi = entry({ sourceId: "dmi-europe", bbox: [-25.42, 39.67, 40.07, 62.67], resolutionDeg: 0.0143, priority: 27 });
+  const aromeFr = entry({ sourceId: "arome-france", bbox: [-12, 37.5, 16, 55.4], resolutionDeg: 0.01, priority: 30 });
+  const iconD2 = entry({ sourceId: "icon-d2", bbox: [-3.94, 43.18, 20.34, 58.08], resolutionDeg: 0.02, priority: 28 });
+  const ukEntries = [base, iconEu, ukv, dmi, aromeFr, iconD2];
+  const overUK = { center: [-2, 54] as [number, number], zoom: 6 };
+
+  it("excludes arome-france (its 55.4°N edge cuts the UK view) even though it's finest+highest-priority", () => {
+    const ranked = rankNestsByFit(ukEntries, overUK).map((e) => e.sourceId);
+    expect(ranked).not.toContain("arome-france");
+    expect(ranked).toContain("ukv"); // spans all of Britain → covers the view
+    expect(ranked).toContain("dmi-europe");
+  });
+
+  it("orders covering nests FINEST-resolution first (the winner is entries[0])", () => {
+    const ranked = rankNestsByFit(ukEntries, overUK);
+    // dmi (0.0143) is finer than ukv (0.018) and icon-eu (0.0625) → wins.
+    expect(ranked[0].sourceId).toBe("dmi-europe");
+    for (let i = 1; i < ranked.length; i++) {
+      expect(ranked[i - 1].resolutionDeg!).toBeLessThanOrEqual(ranked[i].resolutionDeg!);
+    }
+  });
+
+  it("never includes the base (entries[0])", () => {
+    expect(rankNestsByFit(ukEntries, overUK).map((e) => e.sourceId)).not.toContain("icon-global");
+  });
+
+  it("returns [] when zoomed out so far no nest covers the central view → base only", () => {
+    expect(rankNestsByFit(ukEntries, { center: [-2, 54], zoom: 2 })).toEqual([]);
+  });
+
+  it("breaks resolution ties on higher priority", () => {
+    const a = entry({ sourceId: "a", bbox: EUROPE, resolutionDeg: 0.02, priority: 10 });
+    const b = entry({ sourceId: "b", bbox: EUROPE, resolutionDeg: 0.02, priority: 20 });
+    const ranked = rankNestsByFit([base, a, b], { center: [8, 50], zoom: 7 });
+    expect(ranked[0].sourceId).toBe("b"); // same res → higher priority wins
+  });
+
+  it("ignores nests with no bbox", () => {
+    const noBbox = entry({ sourceId: "nobbox", resolutionDeg: 0.005 });
+    const ranked = rankNestsByFit([base, noBbox, dmi], overUK).map((e) => e.sourceId);
+    expect(ranked).not.toContain("nobbox");
   });
 });
 

@@ -16,7 +16,7 @@ import { useSocket } from "../../../lib/socket-provider";
 import { fetchManifest } from "../../../lib/manifest";
 import { listCities, type City } from "../../../lib/cities";
 import { useSceneState, listScenes } from "../../../lib/scenes";
-import { useDirector, useDirectorPatch, eventPulse } from "../../../lib/director";
+import { useDirector, useDirectorCut, eventPulse } from "../../../lib/director";
 import WatchSurface from "../../../components/WatchSurface";
 import ViewingOverlay from "../../../components/ViewingOverlay";
 
@@ -49,7 +49,7 @@ export default function SceneWatchPage() {
     }
   }, [director?.seq, director?.active, director?.segment]);
 
-  const cutPatch = useDirectorPatch(cut);
+  const { patch: cutPatch, segment: onAir } = useDirectorCut(cut, manifest);
   const shown = useMemo(
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),
     [state, cutPatch],
@@ -91,13 +91,13 @@ export default function SceneWatchPage() {
         cities={cities}
         sceneName={sceneName}
         pulseAt={eventPulse(director)}
-        onAirSegment={director?.active ? director.segment : null}
+        onAirSegment={director?.active ? onAir : null}
       />
       {/* Chrome-on: the on-air detail lives in the event reticle, so the separate
           lower-left card is suppressed to avoid duplication. */}
-      {director?.active && director.segment && !shown.showBroadcastChrome ? (
+      {director?.active && onAir && !shown.showBroadcastChrome ? (
         <ViewingOverlay
-          segment={director.segment}
+          segment={onAir}
           variable={shown.activeVariable}
           state={shown}
           upNext={director.upNext}

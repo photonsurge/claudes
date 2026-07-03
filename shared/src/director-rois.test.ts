@@ -1,4 +1,13 @@
-import { quakeMapPlan, QUAKE_TSUNAMI_PLAN, QUAKE_LAND_PLAN } from "./director-rois";
+import {
+  quakeMapPlan,
+  QUAKE_TSUNAMI_PLAN,
+  QUAKE_LAND_PLAN,
+  globalMapTour,
+  INTRO_MAP_TYPES,
+  OCEAN_MAP_TYPES,
+  QUAKE_MAP_TYPES,
+  PRESETS,
+} from "./director-rois";
 
 describe("quakeMapPlan", () => {
   it("reads the ocean story (sst → wave) for a tsunami-flagged quake", () => {
@@ -17,5 +26,50 @@ describe("quakeMapPlan", () => {
     for (const plan of [QUAKE_TSUNAMI_PLAN, QUAKE_LAND_PLAN]) {
       for (const v of plan.cycle) expect(meteo.has(v)).toBe(false);
     }
+  });
+});
+
+describe("globalMapTour", () => {
+  it("tours the intro spin (opening on temperature) and the ocean spin (opening on SST)", () => {
+    expect(globalMapTour("intro")).toBe(INTRO_MAP_TYPES);
+    expect(globalMapTour("ocean")).toBe(OCEAN_MAP_TYPES);
+    expect(INTRO_MAP_TYPES[0].id).toBe("temp"); // hero field leads
+    expect(OCEAN_MAP_TYPES[0].id).toBe("sst");
+  });
+
+  it("doesn't tour kinds that hold a field or run a curated plan", () => {
+    for (const kind of ["tour", "weather", "storm", "flight", "ship", "orbital"] as const) {
+      expect(globalMapTour(kind)).toBeNull();
+    }
+  });
+
+  it("tours geophysical terrain looks for a quake (opening on elevation contours)", () => {
+    const tour = globalMapTour("quake");
+    expect(tour).toBe(QUAKE_MAP_TYPES);
+    expect(tour![0].id).toBe("contours"); // hero look matches the quake preset
+    // No weather field on any quake look — a quake reads as terrain, not forecast.
+    for (const t of QUAKE_MAP_TYPES) expect(t.patch.activeVariable ?? null).toBeNull();
+    // The alternates actually swap the base map (relief fill, satellite imagery).
+    expect(QUAKE_MAP_TYPES.map((t) => t.patch.basemap)).toEqual(
+      expect.arrayContaining(["relief", "satellite"]),
+    );
+  });
+
+  it("includes the new 'map types' (aurora, satellite imagery) gated on live data", () => {
+    const aurora = INTRO_MAP_TYPES.find((t) => t.id === "aurora");
+    const satimg = INTRO_MAP_TYPES.find((t) => t.id === "satimg");
+    expect(aurora?.needs).toEqual({ kind: "aurora" });
+    expect(satimg?.needs).toEqual({ kind: "satimg" });
+    // The overlay looks drop the scalar field so the glow / imagery reads cleanly.
+    expect(aurora?.patch.activeVariable).toBeNull();
+    expect(aurora?.patch.showAurora).toBe(true);
+    expect(satimg?.patch.showSatImg).toBe(true);
+  });
+
+  it("asserts the map-type overlays OFF in the director's clean base so looks don't stick", () => {
+    // Every non-aurora/satimg step relies on the preset base resetting these.
+    expect(PRESETS.intro.showAurora).toBe(false);
+    expect(PRESETS.intro.showSatImg).toBe(false);
+    expect(PRESETS.ocean.showAurora).toBe(false);
   });
 });

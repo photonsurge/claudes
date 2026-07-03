@@ -45,6 +45,8 @@ import { sourceDebugLayers } from "./layers/sourceDebug";
 import { cableLayers, cableNameLabels } from "./layers/cables";
 import { faultLayers } from "./layers/faults";
 import { auroraLayers } from "./layers/aurora";
+import { satimgLayers } from "./layers/satimg";
+import { fireLayers } from "./layers/fires";
 import { nightLayer } from "./layers/nightside";
 import { subsolarPoint } from "../lib/sun";
 import { discFromProject, type Disc } from "../lib/globe-geom";
@@ -58,7 +60,9 @@ import type { Segment } from "@photonsurge/shared/director";
 import { quakeToSegment, alertFeatureToSegment } from "../lib/select-segment";
 import type { CableOverlay } from "../lib/cables-overlay";
 import type { Fault } from "@photonsurge/shared/faults/types";
-import type { AuroraMeta } from "@photonsurge/shared/aurora/types";
+import type { AuroraOverlay } from "../lib/aurora-overlay";
+import type { SatImgOverlay } from "../lib/satimg-overlay";
+import type { Fire } from "@photonsurge/shared/fires/types";
 
 export interface GlobeHandle {
   flyTo: (center: [number, number], zoom?: number) => void;
@@ -82,8 +86,12 @@ export interface GlobeProps {
   /** Submarine cables + landing stations. */
   cables?: CableOverlay;
   faults?: Fault[];
-  /** Latest baked aurora frame metadata (NOAA SWPC OVATION), or null. */
-  aurora?: AuroraMeta | null;
+  /** Latest baked aurora frame + decoded texture (NOAA SWPC OVATION), or null. */
+  aurora?: AuroraOverlay | null;
+  /** Latest baked geostationary satellite-imagery frames (Himawari-9 …), or null. */
+  satimg?: SatImgOverlay | null;
+  /** Worker-cached active fires (NASA FIRMS). */
+  fires?: Fire[];
   interactive?: boolean;
   onCameraChange?: (center: [number, number], zoom: number) => void;
   /** [lng,lat] of the active event to pulse-highlight, or null/undefined for none. */
@@ -163,7 +171,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, faults, aurora, interactive = true, onCameraChange, pulseAt, highlightTrack, onSelect },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, faults, aurora, satimg, fires = [], interactive = true, onCameraChange, pulseAt, highlightTrack, onSelect },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -669,11 +677,18 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       layers.push(...graticuleLayer(state.graticuleColor, state.graticuleLabels));
     }
 
+    // Geostationary satellite imagery — real cloud disk(s) draped above the
+    // weather/wind, below the reference overlays so those stay crisp on top. Full-
+    // globe PNG per bird (transparent off-disk); the far side is depth-occluded.
+    if (state.showSatImg && satimg?.frames.length) {
+      layers.push(...satimgLayers(satimg.frames));
+    }
+
     // Aurora oval — a translucent glow above the weather/wind/borders but below
     // the vector reference overlays (cables/faults/alerts/cities/tracks) so those
     // stay crisp on top. Pre-baked PNG; the far-side oval is depth-occluded.
-    if (state.showAurora && aurora) {
-      layers.push(...auroraLayers(aurora));
+    if (state.showAurora && aurora?.texture) {
+      layers.push(...auroraLayers(aurora.meta, aurora.texture));
     }
 
     // Submarine cables read as reference geography — above borders/weather,
@@ -695,6 +710,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
 
     // Earthquakes above alerts, below cities/tracks.
     if (state.showSeismic && quakes.length) layers.push(...seismicLayer(quakes));
+
+    // Active fires (FIRMS) — glowing hot-spots, above alerts, below cities/tracks.
+    if (state.showFires && fires.length) layers.push(...fireLayers(fires));
 
     if (state.showCities && cities.length)
       layers.push(...cityLayer(cities, subsolar ?? undefined));
@@ -752,6 +770,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showCableLabels,
     state.showFaults,
     state.showAurora,
+    state.showSatImg,
+    state.showFires,
     state.showMapSource,
     state.showGraticule,
     state.graticuleColor,
@@ -766,6 +786,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     cables,
     faults,
     aurora,
+    satimg,
+    fires,
     nestKey,
     highlightTrack?.kind,
     highlightTrack?.code,

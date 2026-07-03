@@ -178,7 +178,7 @@ async function readGrid(
  * imports @openmeteo/file-reader (WASM/ESM) so the pure sources module and the
  * unit tests never touch it. Returns the reader plus a dispose fn.
  */
-async function openOmFile(path: string): Promise<{ read: OmChildReader; dispose: () => void }> {
+async function openOmFile(path: string): Promise<{ read: OmChildReader; dispose: () => Promise<void> }> {
   // Lazy ESM import of the OM-Files reader (WASM-backed). See sources/openMeteo.ts
   // for the confirmed API: OmFileReader.create(FileBackend) → getChildByName →
   // getDimensions → read({ type: OmDataType.FloatArray, ranges }).
@@ -188,7 +188,7 @@ async function openOmFile(path: string): Promise<{ read: OmChildReader; dispose:
     FileBackend: new (source: string) => unknown;
     OmDataType: { FloatArray: number };
   };
-  const backend = new FileBackend(path);
+  const backend = new FileBackend(path) as unknown as { close?: () => Promise<void> };
   const root = await OmFileReader.create(backend);
   const read: OmChildReader = async (name: string) => {
     const child = await root.getChildByName(name);
@@ -198,8 +198,13 @@ async function openOmFile(path: string): Promise<{ read: OmChildReader; dispose:
     const data: Float32Array = await child.read({ type: OmDataType.FloatArray, ranges });
     return data;
   };
-  const dispose = () => {
+  // Dispose the reader AND close the FileBackend's fs handle. Skipping the backend
+  // close leaks the file descriptor until GC finalizes it (Node DEP0137 warning:
+  // "Closing a FileHandle object on garbage collection"), which under the long-lived
+  // worker can climb toward EMFILE. Close is async, so callers should await dispose().
+  const dispose = async () => {
     try { (root as { dispose?: () => void }).dispose?.(); } catch { /* ignore */ }
+    try { await backend.close?.(); } catch { /* ignore */ }
   };
   return { read, dispose };
 }
@@ -292,7 +297,7 @@ async function ingestOneModel(model: OmModel): Promise<IngestResult> {
         }
       }
     } finally {
-      dispose();
+      await dispose();
     }
 
     if (Object.keys(variables).length === 0) {
