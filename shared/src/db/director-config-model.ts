@@ -17,13 +17,46 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
   {
     id: { type: String, required: true, unique: true, default: DIRECTOR_CONFIG_ID },
     mode: { type: String, required: true, enum: ["off", "auto"], default: "off" },
-    holdSeconds: { type: Number, required: true, default: 12 },
+    // Per-kind hold (seconds). Quake/storm entries are the fallback only — the
+    // per-level maps below drive those kinds. Defaults mirror DEFAULT_*_HOLD_SECONDS.
+    kindHoldSeconds: {
+      intro: { type: Number, default: 17 },
+      ocean: { type: Number, default: 17 },
+      orbital: { type: Number, default: 17 },
+      tour: { type: Number, default: 12 },
+      country: { type: Number, default: 12 },
+      weather: { type: Number, default: 12 },
+      storm: { type: Number, default: 12 },
+      quake: { type: Number, default: 12 },
+      flight: { type: Number, default: 12 },
+      ship: { type: Number, default: 12 },
+      ad: { type: Number, default: 12 },
+    },
+    // Per-magnitude-class hold for quake segments (seconds).
+    quakeHoldSeconds: {
+      micro: { type: Number, default: 8 },
+      minor: { type: Number, default: 8 },
+      light: { type: Number, default: 10 },
+      moderate: { type: Number, default: 12 },
+      strong: { type: Number, default: 16 },
+      major: { type: Number, default: 22 },
+      great: { type: Number, default: 30 },
+    },
+    // Per-severity-level hold for storm segments (seconds).
+    stormHoldSeconds: {
+      info: { type: Number, default: 10 },
+      minor: { type: Number, default: 10 },
+      moderate: { type: Number, default: 12 },
+      severe: { type: Number, default: 16 },
+      extreme: { type: Number, default: 24 },
+    },
     transitionSeconds: { type: Number, required: true, default: 4 },
     kinds: {
       intro: { type: Boolean, default: true },
       ocean: { type: Boolean, default: true },
       orbital: { type: Boolean, default: true },
       tour: { type: Boolean, default: true },
+      country: { type: Boolean, default: true },
       weather: { type: Boolean, default: true },
       storm: { type: Boolean, default: true },
       quake: { type: Boolean, default: true },
@@ -31,6 +64,7 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
       ship: { type: Boolean, default: true },
       ad: { type: Boolean, default: false },
     },
+    countries: { type: [String], default: ["uk", "japan"] },
     minQuakeMag: { type: Number, required: true, default: 4.5 },
     minAlertSeverity: { type: Number, required: true, default: 3 },
     adEveryNShots: { type: Number, required: true, default: 6 },

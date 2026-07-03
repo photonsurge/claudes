@@ -1,4 +1,5 @@
-import { shiftDate, fetchGibs, GIBS_TRUECOLOR_LAYERS } from "./gibs";
+import sharp from "sharp";
+import { shiftDate, fetchGibs, fetchGibsFeed, dimsFor, holeFill, GIBS_TRUECOLOR_LAYERS } from "./gibs";
 
 describe("shiftDate", () => {
   it("shifts UTC days and rolls over month boundaries", () => {
@@ -22,6 +23,7 @@ describe("fetchGibs", () => {
     const urls: string[] = [];
     const res = await fetchGibs({
       date: "2026-07-03",
+      fillDays: 1, // single-day path: byte-identical passthrough (no compositing)
       fetchImpl: (async (u: string) => {
         urls.push(u);
         return fakeRes(120_000); // a real multi-KB mosaic
@@ -37,6 +39,7 @@ describe("fetchGibs", () => {
   it("walks back a day when the newest is unpublished (empty body)", async () => {
     const res = await fetchGibs({
       date: "2026-07-03",
+      fillDays: 1,
       fetchImpl: (async (u: string) => {
         // Newest day not ready → tiny body; the day before is full.
         return u.includes("TIME=2026-07-03") ? fakeRes(2_000) : fakeRes(200_000);
@@ -53,5 +56,78 @@ describe("fetchGibs", () => {
         fetchImpl: (async () => fakeRes(1_000)) as unknown as typeof fetch,
       }),
     ).rejects.toThrow(/GIBS fetch failed/);
+  });
+});
+
+/** Build a 1×N RGBA PNG from a column of [r,g,b,a] pixels (top→bottom). */
+function pngCol(...pixels: number[][]): Promise<Buffer> {
+  const raw = Buffer.from(pixels.flat());
+  return sharp(raw, { raw: { width: 1, height: pixels.length, channels: 4 } }).png().toBuffer();
+}
+/** Decode a PNG back to a flat RGBA byte array. */
+async function rgba(png: Buffer): Promise<number[]> {
+  const { data } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  return Array.from(data);
+}
+
+describe("holeFill", () => {
+  it("fills a solid no-data (near-black) hole from an older day, keeping fresh pixels", async () => {
+    // 3px column: mid row is a solid gap bounded by real imagery above & below.
+    const newest = await pngCol([0, 200, 0, 255], [0, 0, 0, 255], [0, 150, 0, 255]);
+    const older = await pngCol([40, 40, 200, 255], [0, 0, 200, 255], [40, 40, 200, 255]);
+    const out = await rgba(await holeFill([newest, older]));
+    expect(out.slice(0, 3)).toEqual([0, 200, 0]); // fresh top untouched
+    expect(out.slice(4, 7)).toEqual([0, 0, 200]); // gap filled from the older day
+    expect(out.slice(8, 11)).toEqual([0, 150, 0]); // fresh bottom untouched
+  });
+
+  it("rejects a lone horizontal scan line (half-ingested granule stripe) and fills it", async () => {
+    // Mid row carries data but is bounded above & below by gaps → not 'solid'.
+    const newest = await pngCol([50, 50, 50, 255], [0, 0, 0, 255], [200, 200, 200, 255], [0, 0, 0, 255], [60, 60, 60, 255]);
+    const older = await pngCol([30, 60, 90, 255], [30, 60, 90, 255], [40, 80, 120, 255], [30, 60, 90, 255], [30, 60, 90, 255]);
+    const out = await rgba(await holeFill([newest, older]));
+    // The bright stripe (row 2) is replaced by the older day's contiguous imagery…
+    expect(out.slice(8, 11)).toEqual([40, 80, 120]);
+    // …and its bounding gaps (rows 1,3) too.
+    expect(out.slice(4, 7)).toEqual([30, 60, 90]);
+    expect(out.slice(12, 15)).toEqual([30, 60, 90]);
+    // Fresh edge rows are kept.
+    expect(out.slice(0, 3)).toEqual([50, 50, 50]);
+    expect(out.slice(16, 19)).toEqual([60, 60, 60]);
+  });
+
+  it("passes a single day through untouched", async () => {
+    const only = await pngCol([1, 2, 3, 255], [4, 5, 6, 255]);
+    expect(await holeFill([only])).toBe(only);
+  });
+});
+
+describe("dimsFor", () => {
+  it("keeps the geographic aspect at the target long-edge", () => {
+    // Wide bbox → width = maxPx.
+    expect(dimsFor([-150, -65, 10, 65], 1600)).toEqual({ width: 1600, height: 1300 });
+    // Full globe 2:1 → width = maxPx, height = maxPx/2.
+    expect(dimsFor([-180, -90, 180, 90], 2048)).toEqual({ width: 2048, height: 1024 });
+  });
+});
+
+describe("fetchGibsFeed", () => {
+  it("live feed: regional bbox, layer, and NO TIME (latest slot)", async () => {
+    let url = "";
+    const r = await fetchGibsFeed("goes-east", {
+      fetchImpl: (async (u: string) => {
+        url = u;
+        return fakeRes(300_000);
+      }) as unknown as typeof fetch,
+    });
+    expect(r.when).toBe("latest");
+    expect(r.bounds).toEqual([-150, -65, 10, 65]);
+    expect(url).toContain("GOES-East_ABI_GeoColor");
+    expect(url).toContain("bbox=-65%2C-150%2C65%2C10"); // S,W,N,E
+    expect(url).not.toContain("TIME=");
+  });
+
+  it("throws on an unknown feed id", async () => {
+    await expect(fetchGibsFeed("nope")).rejects.toThrow(/unknown satimg feed/);
   });
 });

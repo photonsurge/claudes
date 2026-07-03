@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { listShips } from "../../lib/tracks/client";
 import type { Ship } from "../../lib/tracks/types";
 import { mmsiCountry } from "@photonsurge/shared/tracks/flags";
+import { listNotable, keyFor } from "../../lib/tracks/notable";
+import NotableButton from "./NotableButton";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "./styles";
 
 // [w, s, e, n] regions for the AIS bounding-box subscription. "World" (no bbox)
@@ -23,6 +25,20 @@ export default function ShipsTable() {
   const [configured, setConfigured] = useState(true);
   const [note, setNote] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Which vessels are already in the notable catalog (by `${kind}:${code}` id).
+  const [notable, setNotable] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    listNotable().then((list) => setNotable(new Set(list.map((n) => n.id))));
+  }, []);
+  const setNotableFor = (mmsi: string, on: boolean) =>
+    setNotable((prev) => {
+      const next = new Set(prev);
+      const k = keyFor("ship", mmsi);
+      if (on) next.add(k);
+      else next.delete(k);
+      return next;
+    });
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -88,6 +104,7 @@ export default function ShipsTable() {
             <th style={thNum}>Lon</th>
             <th style={thNum}>SOG (kn)</th>
             <th style={thNum}>COG</th>
+            <th style={th}>Notable</th>
           </tr>
         </thead>
         <tbody>
@@ -102,12 +119,21 @@ export default function ShipsTable() {
               <td style={tdNum}>{s.lng.toFixed(3)}</td>
               <td style={tdNum}>{s.sogKn != null ? s.sogKn.toFixed(1) : "—"}</td>
               <td style={tdNum}>{s.cogDeg != null ? `${s.cogDeg.toFixed(0)}°` : "—"}</td>
+              <td style={td}>
+                <NotableButton
+                  kind="ship"
+                  code={s.mmsi}
+                  label={s.name ?? undefined}
+                  isNotable={notable.has(keyFor("ship", s.mmsi))}
+                  onChange={(on) => setNotableFor(s.mmsi, on)}
+                />
+              </td>
             </tr>
             );
           })}
           {rows.length === 0 && (
             <tr>
-              <td style={td} colSpan={7}>
+              <td style={td} colSpan={8}>
                 {loading ? "Sampling…" : "No vessels in this sample — try another region."}
               </td>
             </tr>

@@ -1,27 +1,16 @@
 "use client";
 
 /**
- * Operator controls for the per-scene auto-director. Off/Auto toggle, hold time,
- * which kinds are eligible, event thresholds, and a Skip button — plus a live
- * "on air / up next" readout fed by the worker's director:state. Edits PATCH the
- * scene's director config; the worker picks them up within ~1s.
+ * Operator controls for the per-scene auto-director. Off/Auto toggle, per-kind
+ * (and per-event-level) hold times, which kinds are eligible, event thresholds,
+ * and a Skip button — plus a live "on air / up next" readout fed by the worker's
+ * director:state. Edits PATCH the scene's director config; the worker picks them
+ * up within ~1s.
  */
 import { useEffect, useState } from "react";
-import { SEGMENT_KINDS, type SegmentKind } from "@photonsurge/shared/director";
+import { COUNTRY_SHOTS } from "@photonsurge/shared/director-countries";
 import { useDirectorConfig, useDirector } from "../lib/director";
-
-const KIND_LABEL: Record<SegmentKind, string> = {
-  intro: "Intro spin",
-  ocean: "Ocean (world)",
-  orbital: "Orbital (satellites)",
-  tour: "Region tour",
-  weather: "Weather",
-  storm: "Severe storms",
-  quake: "Earthquakes",
-  flight: "Aircraft",
-  ship: "Ships",
-  ad: "Sponsor ads",
-};
+import DirectorHolds from "./DirectorHolds";
 
 const box: React.CSSProperties = {
   background: "#0a0e16",
@@ -97,20 +86,6 @@ export default function DirectorPanel({ sceneId }: { sceneId: string }) {
         <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 12 }}>Starting up…</div>
       ) : null}
 
-      {/* Hold time */}
-      <label style={{ display: "block", fontSize: 12, opacity: 0.8, marginBottom: 12 }}>
-        Hold per shot: <strong>{config.holdSeconds}s</strong>
-        <input
-          type="range"
-          min={4}
-          max={40}
-          step={1}
-          value={config.holdSeconds}
-          onChange={(e) => update({ holdSeconds: Number(e.target.value) })}
-          style={{ width: "100%", marginTop: 4 }}
-        />
-      </label>
-
       {/* Transition time — the deliberate, set camera move between shots */}
       <label style={{ display: "block", fontSize: 12, opacity: 0.8, marginBottom: 12 }}>
         Transition: <strong>{config.transitionSeconds}s</strong>
@@ -125,20 +100,48 @@ export default function DirectorPanel({ sceneId }: { sceneId: string }) {
         />
       </label>
 
-      {/* Eligible kinds */}
-      <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>Show:</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 10px", marginBottom: 12 }}>
-        {SEGMENT_KINDS.map((k) => (
-          <label key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={!!config.kinds[k]}
-              onChange={(e) => update({ kinds: { [k]: e.target.checked } as Record<SegmentKind, boolean> })}
-            />
-            {KIND_LABEL[k]}
-          </label>
-        ))}
-      </div>
+      {/* Eligible kinds, each checkbox inline with its hold slider(s) —
+          quake/storm split into per-level holds */}
+      <DirectorHolds config={config} update={update} />
+
+      {/* Favourite countries — the spotlights the country kind rotates through */}
+      {config.kinds.country ? (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>
+            Favourite countries ({config.countries.length}):
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "2px 10px",
+              maxHeight: 180,
+              overflowY: "auto",
+              paddingRight: 4,
+            }}
+          >
+            {COUNTRY_SHOTS.map((c) => {
+              const on = config.countries.includes(c.id);
+              return (
+                <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() =>
+                      update({
+                        countries: on
+                          ? config.countries.filter((id) => id !== c.id)
+                          : [...config.countries, c.id],
+                      })
+                    }
+                  />
+                  {c.flag} {c.name}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {/* Ad cadence — only relevant when Sponsor ads are enabled */}
       {config.kinds.ad ? (

@@ -22,8 +22,6 @@ export interface HazardMapPlan {
   cycle: string[];
   /** ms to hold each map before rotating to the next. */
   cycleMs: number;
-  /** Hold-time multiplier vs the base segment hold (>1 lingers on slow hazards). */
-  holdScale: number;
 }
 
 /** Base cadence when a hazard doesn't override it. */
@@ -37,25 +35,25 @@ export const DEFAULT_CYCLE_MS = 5500;
 export const DEFAULT_STORM_PLAN: HazardMapPlan = {
   cycle: ["gust", "rain", "storm", "humidity"],
   cycleMs: DEFAULT_CYCLE_MS,
-  holdScale: 1,
 };
 
 /**
  * Bespoke plans keyed by hazard. Only the fields worth editing are listed; the
- * resolver fills cycleMs/holdScale from the default. Geophysical hazards
+ * resolver fills cycleMs from the default. Geophysical hazards
  * (tsunami/volcano/landslide) intentionally have no weather plan — they fall
  * back to the default storm read.
  *
  * Timing intent: slow, thermal hazards (heat/drought/fog) get a longer per-map
  * dwell so the field is legible; fast, convective hazards (tornado/cyclone) cut
- * quicker and linger longer overall (holdScale) because they're the headline.
+ * quicker. How long the whole shot holds is the operator's call — the director
+ * config's per-severity storm holds (stormHoldSeconds), not this plan.
  */
 const PLANS: Partial<Record<HazardType, Partial<HazardMapPlan>>> = {
   // Heat: open on humidity (heat-index context) then the temperature itself.
   heat: { cycle: ["humidity", "temp"], cycleMs: 6500 },
   cold: { cycle: ["temp", "snow", "gust"], cycleMs: 6000 },
   wind: { cycle: ["gust", "temp"], cycleMs: 5000 },
-  tornado: { cycle: ["storm", "rain", "gust"], cycleMs: 4500, holdScale: 1.15 },
+  tornado: { cycle: ["storm", "rain", "gust"], cycleMs: 4500 },
   thunderstorm: { cycle: ["storm", "rain", "gust"], cycleMs: 4500 },
   rain: { cycle: ["rain", "humidity", "storm"], cycleMs: 5500 },
   flood: { cycle: ["rain", "humidity"], cycleMs: 6000 },
@@ -68,7 +66,7 @@ const PLANS: Partial<Record<HazardType, Partial<HazardMapPlan>>> = {
   coastal: { cycle: ["wave", "gust"], cycleMs: 5500 },
   marine: { cycle: ["wave", "gust"], cycleMs: 5500 },
   avalanche: { cycle: ["snow", "temp"], cycleMs: 6000 },
-  cyclone: { cycle: ["gust", "rain", "storm", "humidity"], cycleMs: 4500, holdScale: 1.25 },
+  cyclone: { cycle: ["gust", "rain", "storm", "humidity"], cycleMs: 4500 },
   drought: { cycle: ["temp", "humidity"], cycleMs: 7000 },
 };
 
@@ -79,6 +77,5 @@ export function hazardMapPlan(hazard: HazardType | undefined): HazardMapPlan {
   return {
     cycle: p.cycle?.length ? p.cycle : DEFAULT_STORM_PLAN.cycle,
     cycleMs: p.cycleMs ?? DEFAULT_CYCLE_MS,
-    holdScale: p.holdScale ?? 1,
   };
 }

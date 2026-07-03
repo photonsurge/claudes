@@ -387,15 +387,34 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable geomag.refresh (IGRF total-intensity field → baked scalar PNG) ----
+  // The geomagnetic field drifts only slowly (secular variation), so re-bake weekly
+  // by default. A fixed jobId de-dups across restarts; `immediately` seeds the cache
+  // at boot so a fresh DB shows the field right away. Disable with GEOMAG_REFRESH_ENABLED=false.
+  if (process.env.GEOMAG_REFRESH_ENABLED !== "false") {
+    const GEOMAG_REFRESH_MS = Number(process.env.GEOMAG_REFRESH_MS || 7 * 24 * 60 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "geomag", type: "geomag", event: "refresh", data: {} },
+        { repeat: { every: GEOMAG_REFRESH_MS, immediately: true }, jobId: "geomag-refresh" },
+      );
+      log(TAG, `registered repeatable geomag.refresh`, { everyMs: GEOMAG_REFRESH_MS });
+    } catch (err) {
+      log(TAG, `failed to register geomag.refresh`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable satimg.refresh (satellite imagery → cloud-keyed PNG → Mongo) ----
-  // DEFAULT source "gibs": one HTTP GET of NASA GIBS' global true-color mosaic, cloud-
-  // keyed so clear sky is transparent and only clouds drape on the globe. Pure Node
-  // (no venv, Docker-trivial) → ON by default; opt out with SATIMG_REFRESH_ENABLED=
-  // false. The mosaic updates ~daily, so refresh every 6h to catch the new day + retry
-  // gaps. `immediately` seeds the cache at boot. Set SATIMG_SOURCE=satpy for the raw
-  // Himawari-9 disk bake instead (needs the Python venv — see WORKER.md).
+  // DEFAULT source "gibs": bakes every "clouds" FEED (global daily true-colour mosaic +
+  // live GOES-East/West GeoColor + Himawari IR) into its own cached frame, cloud-keyed
+  // so clear sky is transparent and only clouds drape on the globe. Pure Node (no venv,
+  // Docker-trivial) → ON by default; opt out with SATIMG_REFRESH_ENABLED=false. The
+  // live discs update ~10-min, so refresh every 30 min (the global mosaic is daily but
+  // re-fetching is cheap). `immediately` seeds at boot. SATIMG_SOURCE=satpy → raw
+  // Himawari disk bake instead (needs the Python venv — see WORKER.md).
   if (process.env.SATIMG_REFRESH_ENABLED !== "false") {
-    const SATIMG_REFRESH_MS = Number(process.env.SATIMG_REFRESH_MS || 6 * 60 * 60 * 1000);
+    const SATIMG_REFRESH_MS = Number(process.env.SATIMG_REFRESH_MS || 30 * 60 * 1000);
     try {
       await myQueue.add(
         "do",

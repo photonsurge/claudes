@@ -17,20 +17,29 @@ export interface iBasemap {
  * Raw XYZ tile templates, shared between the MapLibre BASEMAPS styles (below)
  * and the deck.gl GlobeView (which renders them via a TileLayer onto the
  * sphere). Single source of truth so the flat map and the globe show the same
- * imagery. `{z}/{y}/{x}` for Esri (ArcGIS order), `{z}/{x}/{y}` for the rest.
+ * imagery. `{z}/{y}/{x}` for Esri and GIBS (row-before-column order), `{z}/{x}/{y}`
+ * for the rest.
  */
 export const TILE_TEMPLATES = {
   cartoDark: "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
   esriImagery:
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
   openTopo: "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+  // NASA Black Marble (VIIRS city lights) via keyless GIBS WMTS. Static composite
+  // ("default" time); tiles exist only to zoom 8 — cap maxzoom wherever it's used.
+  gibsNight:
+    "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png",
 } as const;
+
+/** Deepest zoom the GIBS Black Marble tile set provides (GoogleMapsCompatible_Level8). */
+export const NIGHT_TILE_MAX_ZOOM = 8;
 
 const rasterStyle = (
   id: string,
   tiles: string[],
   attribution: string,
   background = "#0a0e16",
+  maxzoom = 19,
 ): Record<string, unknown> => ({
   version: 8,
   // Glyphs are needed for any future text layers (city labels are drawn via deck.gl).
@@ -41,7 +50,7 @@ const rasterStyle = (
       tiles,
       tileSize: 256,
       attribution,
-      maxzoom: 19,
+      maxzoom,
     },
   },
   layers: [
@@ -88,6 +97,20 @@ export const BASEMAPS: iBasemap[] = [
       ],
       "© OpenStreetMap contributors, SRTM | © OpenTopoMap (CC-BY-SA)",
       "#0b1410",
+    ),
+  },
+  {
+    // NASA "Black Marble" — the VIIRS Earth-at-night city-lights composite, served
+    // keyless by GIBS. The globe draws /data/night.jpg (fetch-assets.sh) as the base
+    // image with these WMTS tiles overlaid once zoomed in (they stop at zoom 8).
+    id: "night",
+    label: "Night",
+    style: rasterStyle(
+      "gibs-night",
+      [TILE_TEMPLATES.gibsNight],
+      "Imagery © NASA EOSDIS GIBS (VIIRS Black Marble)",
+      "#000308",
+      NIGHT_TILE_MAX_ZOOM,
     ),
   },
   {

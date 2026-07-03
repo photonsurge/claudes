@@ -17,6 +17,7 @@ import type {
 
 import { emitWorkerEvent } from "../socket";
 import { runRetention } from "./retention";
+import { archiveRun } from "./archive";
 
 const TAG = "job:weather:source";
 
@@ -98,6 +99,18 @@ export async function publishSourceRun(args: PublishSourceRunArgs): Promise<{ ru
 
     emitWorkerEvent({ type: "weather:run", targetType: "weather", data: { run: runDate.toISOString(), model } });
     await runRetention(db as any, retainRuns);
+
+    // Long-term archive: copy the analysis-hour frames before this run ages
+    // out of retention. Never fails the (already published) run.
+    await archiveRun(db as any, {
+      id: runId,
+      model,
+      run: runDate,
+      bounds: [...bounds],
+      grid: { ...grid },
+      steps,
+      variables: entries,
+    }).catch((ex) => log(TAG, "archive failed", { model, err: String(ex) }));
 
     log(TAG, "published", { model, run: runDate.toISOString(), runId });
     return { runId };

@@ -2,6 +2,8 @@ import mongoose, { Connection } from "mongoose";
 import { iGeneralModel, mongoTimestamps } from "../interfaces/iGeneralModel";
 import { getModel } from "../utill/getModel";
 import type { ControlState } from "../control";
+import { AUDIO_MODES } from "../control";
+import { defaultSatImgFeeds } from "../satimg/types";
 
 /** The id of the single broadcast-state document (single-domain → one row). */
 export const BROADCAST_STATE_ID = "default" as const;
@@ -33,7 +35,7 @@ export interface iBroadcastStateModel extends iBroadcastState {
   name?: string;
 }
 
-const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
+export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
   {
     id: { type: String, required: true, unique: true, default: BROADCAST_STATE_ID },
     /** Operator-facing scene name. The singleton "default" doc is "Main". */
@@ -83,7 +85,9 @@ const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     satelliteGroup: { type: String, required: true, default: "visual" },
     autoSpin: { type: Boolean, required: true, default: false },
     spinSpeed: { type: Number, required: true, default: 8 },
+    zoomDrift: { type: Number, required: true, default: 0 },
     spinEpoch: { type: Number, required: true, default: 0 },
+    cutTransitionMs: { type: Number, required: true, default: 0 },
     showTrackLabels: { type: Boolean, required: true, default: false },
     satelliteStyle: {
       color: { type: String, required: true, enum: COLOR_MODES, default: "kind" },
@@ -104,6 +108,7 @@ const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     trailOpacity: { type: Number, required: true, default: 0.35 },
     showAlerts: { type: Boolean, required: true, default: false },
     alertSeverityMin: { type: Number, required: true, default: 0 },
+    alertHazardsOff: { type: [String], required: true, default: [] },
     showSeismic: { type: Boolean, required: true, default: false },
     seismicMinMag: { type: Number, required: true, default: 2.5 },
     showCables: { type: Boolean, required: true, default: false },
@@ -111,8 +116,23 @@ const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     showFaults: { type: Boolean, required: true, default: false },
     showAurora: { type: Boolean, required: true, default: false },
     showSatImg: { type: Boolean, required: true, default: false },
-    satImgOpacity: { type: Number, required: true, default: 0.85 },
+    satImgFeeds: { type: mongoose.Schema.Types.Mixed, required: true, default: () => defaultSatImgFeeds() },
     showFires: { type: Boolean, required: true, default: false },
+    showMagneticField: { type: Boolean, required: true, default: false },
+    showMapSource: { type: Boolean, required: true, default: false },
+    showGraticule: { type: Boolean, required: true, default: false },
+    graticuleColor: { type: String, required: true, default: "#7dd3fc" },
+    graticuleLabels: { type: Boolean, required: true, default: true },
+    showAtmosphere: { type: Boolean, required: true, default: true },
+    showDayNight: { type: Boolean, required: true, default: false },
+    showBroadcastChrome: { type: Boolean, required: true, default: true },
+    broadcastTheme: { type: String, required: true, default: "aurora" },
+    audio: {
+      enabled: { type: Boolean, required: true, default: false },
+      mode: { type: String, required: true, enum: AUDIO_MODES, default: "auto" },
+      volume: { type: Number, required: true, default: 0.7 },
+      muted: { type: Boolean, required: true, default: false },
+    },
   },
   mongoTimestamps,
 );

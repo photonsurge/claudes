@@ -19,10 +19,12 @@ import { useFaults } from "../lib/faults-overlay";
 import { useAurora } from "../lib/aurora-overlay";
 import { useSatImg } from "../lib/satimg-overlay";
 import { useFires } from "../lib/fires-overlay";
+import { useGeomag } from "../lib/geomag-overlay";
 import { useCams } from "../lib/cams/useCams";
 import type { City } from "../lib/cities";
 import GlobeView from "./GlobeView";
 import AlertLegend from "./AlertLegend";
+import BroadcastBed from "./audio/BroadcastBed";
 import BroadcastFrame from "./broadcast/BroadcastFrame";
 import AdBreak from "./broadcast/AdBreak";
 import { getBroadcastTheme } from "./broadcast/config";
@@ -58,13 +60,14 @@ export default function WatchSurface({
     center: state.camera.center,
     zoom: state.camera.zoom,
   });
-  const alerts = useAlertFeatures(state.showAlerts, state.alertSeverityMin);
+  const alerts = useAlertFeatures(state.showAlerts, state.alertSeverityMin, state.alertHazardsOff);
   const quakes = useQuakes(state.showSeismic, state.seismicMinMag);
   const cables = useCables(state.showCables);
   const faults = useFaults(state.showFaults);
   const aurora = useAurora(state.showAurora);
   const satimg = useSatImg(state.showSatImg);
   const fires = useFires(state.showFires);
+  const geomag = useGeomag(state.showMagneticField);
   // Webcams feed the "near this event" broadcast panel; only load them when the
   // chrome is on (the plain surface doesn't show the panel).
   const cams = useCams(state.showBroadcastChrome);
@@ -96,6 +99,7 @@ export default function WatchSurface({
         aurora={aurora}
         satimg={satimg}
         fires={fires}
+        geomag={geomag}
         interactive={false}
         pulseAt={pulseAt}
         highlightTrack={highlightTrack}
@@ -106,6 +110,8 @@ export default function WatchSurface({
         <AlertLegend
           alerts={state.showAlerts ? alerts : []}
           quakes={state.showSeismic ? quakes : []}
+          aurora={aurora}
+          geomag={geomag}
         />
       ) : null}
       {state.showBroadcastChrome ? (
@@ -118,6 +124,7 @@ export default function WatchSurface({
           cities={cities}
           cams={cams}
           aurora={aurora}
+          geomag={geomag}
           theme={getBroadcastTheme(state.broadcastTheme)}
           onAirSegment={onAirSegment ?? null}
         />
@@ -156,6 +163,11 @@ export default function WatchSurface({
       {/* Full-frame ad interstitial — covers the globe + chrome when the director
           cuts to an ad. Renders nothing for every other segment kind. */}
       <AdBreak segment={onAirSegment ?? null} />
+
+      {/* Generative music bed — operator-driven via state.audio (synced over the
+          same socket as the rest of the ControlState). Renders UI only while a
+          browser blocks autoplay; in OBS it just plays. */}
+      <BroadcastBed audio={state.audio} segment={onAirSegment ?? null} />
     </main>
   );
 }

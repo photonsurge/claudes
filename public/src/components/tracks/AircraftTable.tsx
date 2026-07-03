@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { listAircraft } from "../../lib/tracks/client";
 import type { Aircraft } from "../../lib/tracks/types";
 import { countryNameFlag } from "@photonsurge/shared/tracks/flags";
+import { listNotable, keyFor } from "../../lib/tracks/notable";
+import NotableButton from "./NotableButton";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "./styles";
 
 // A few handy regions to scope the (heavy) global feed. [w, s, e, n].
@@ -21,6 +23,20 @@ export default function AircraftTable() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which aircraft are already in the notable catalog (by `${kind}:${code}` id).
+  const [notable, setNotable] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    listNotable().then((list) => setNotable(new Set(list.map((n) => n.id))));
+  }, []);
+  const setNotableFor = (icao24: string, on: boolean) =>
+    setNotable((prev) => {
+      const next = new Set(prev);
+      const k = keyFor("aircraft", icao24);
+      if (on) next.add(k);
+      else next.delete(k);
+      return next;
+    });
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -80,6 +96,7 @@ export default function AircraftTable() {
             <th style={thNum}>Alt (m)</th>
             <th style={thNum}>Speed (m/s)</th>
             <th style={thNum}>Track</th>
+            <th style={th}>Notable</th>
           </tr>
         </thead>
         <tbody>
@@ -95,11 +112,20 @@ export default function AircraftTable() {
               <td style={tdNum}>{a.altM != null ? a.altM.toFixed(0) : "—"}</td>
               <td style={tdNum}>{a.velocityMS != null ? a.velocityMS.toFixed(0) : "—"}</td>
               <td style={tdNum}>{a.headingDeg != null ? `${a.headingDeg.toFixed(0)}°` : "—"}</td>
+              <td style={td}>
+                <NotableButton
+                  kind="aircraft"
+                  code={a.icao24}
+                  label={a.callsign ?? undefined}
+                  isNotable={notable.has(keyFor("aircraft", a.icao24))}
+                  onChange={(on) => setNotableFor(a.icao24, on)}
+                />
+              </td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td style={td} colSpan={10}>
+              <td style={td} colSpan={11}>
                 {loading ? "Loading…" : "No aircraft — try another region or refresh."}
               </td>
             </tr>

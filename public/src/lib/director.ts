@@ -46,6 +46,7 @@ import { useSocket } from "./socket-provider";
  */
 const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
   tour: ["temp", "humidity", "rain", "gust", "cloud"],
+  country: ["temp", "humidity", "rain", "gust", "cloud"],
   weather: ["temp", "humidity", "rain", "gust", "cloud"],
 };
 const VAR_CYCLE_MS = 5500;
@@ -268,7 +269,16 @@ export function useDirectorConfig(sceneId: string): {
   }, [sceneId]);
 
   const update = (patch: Partial<DirectorConfig>) => {
-    setConfig((prev) => ({ ...prev, ...patch, kinds: { ...prev.kinds, ...(patch.kinds ?? {}) } }));
+    // Optimistic deep-merge for the map-shaped fields, so a single-slider patch
+    // (e.g. { quakeHoldSeconds: { great: 40 } }) doesn't wipe its siblings.
+    setConfig((prev) => ({
+      ...prev,
+      ...patch,
+      kinds: { ...prev.kinds, ...(patch.kinds ?? {}) },
+      kindHoldSeconds: { ...prev.kindHoldSeconds, ...(patch.kindHoldSeconds ?? {}) },
+      quakeHoldSeconds: { ...prev.quakeHoldSeconds, ...(patch.quakeHoldSeconds ?? {}) },
+      stormHoldSeconds: { ...prev.stormHoldSeconds, ...(patch.stormHoldSeconds ?? {}) },
+    }));
     void patchDirectorConfig(sceneId, patch).then(setConfig);
   };
 

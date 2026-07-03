@@ -9,13 +9,14 @@
 import { BitmapLayer, GeoJsonLayer, SolidPolygonLayer } from "@deck.gl/layers";
 import { TileLayer } from "@deck.gl/geo-layers";
 import { DEFAULT_BASEMAP_COLORS, type ControlState } from "@photonsurge/shared/control";
-import { TILE_TEMPLATES } from "@photonsurge/shared/basemaps";
+import { TILE_TEMPLATES, NIGHT_TILE_MAX_ZOOM } from "@photonsurge/shared/basemaps";
 import { DEPTH_OCCLUDE, DEPTH_TEST, DEPTH_PAINT } from "./depth";
 
 export const LAND_URL = "/data/land.geojson";
 export const COUNTRIES_URL = "/data/countries.geojson";
 export const SATELLITE_IMG = "/data/satellite.jpg";
 export const TERRAIN_IMG = "/data/terrain.jpg";
+export const NIGHT_IMG = "/data/night.jpg";
 
 /** View zoom at/above which sharp XYZ tiles overlay the base image. Below this
  *  the tiles would be large flat quads chording the sphere (black artifacts). */
@@ -55,24 +56,32 @@ export function hexToRgb(hex: string | undefined): [number, number, number] {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-/** A single global equirectangular image wrapped on the sphere (no tiles). */
+/** A single global equirectangular image wrapped on the sphere (no tiles).
+ *  DEPTH_PAINT + back-face cull (mirrors satimg.ts): a full-globe BitmapLayer is
+ *  only a few flat quads that bow slightly inside the true sphere, so depth-
+ *  TESTING it against the finely-tessellated `background` grid below z-fights —
+ *  a lattice of diamond artifacts that gets worse further from the camera and
+ *  clears up zoomed in. Painting (no depth test/write) over the already-correct
+ *  depth sphere `background` wrote, with the far hemisphere culled geometrically
+ *  instead of numerically, sidesteps the z-fight entirely. */
 function globalImageLayer(id: string, image: string) {
   return new BitmapLayer({
     id: `basemap-image-${id}`,
     image,
     bounds: [-180, -90, 180, 90],
-    // Seal the surface so the limb (and any far-side overlays) stay occluded.
-    parameters: DEPTH_OCCLUDE,
+    parameters: { ...DEPTH_PAINT, cullMode: "back" },
   });
 }
 
-/** Sharp XYZ raster tiles overlaid on the base image (zoomed-in detail). */
-function tileBasemapLayer(id: string, template: string) {
+/** Sharp XYZ raster tiles overlaid on the base image (zoomed-in detail).
+ *  `maxZoom` caps tile FETCHING (deeper views stretch the deepest tiles) for
+ *  sets that stop early, like GIBS Black Marble's zoom-8 pyramid. */
+function tileBasemapLayer(id: string, template: string, maxZoom = 19) {
   return new TileLayer({
     id: `basemap-tiles-${id}`,
     data: template,
     minZoom: 0,
-    maxZoom: 19,
+    maxZoom,
     tileSize: 256,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     renderSubLayers: (props: any) => {
@@ -98,13 +107,14 @@ export function basemapLayers(
   hasGlobalRaster: boolean,
 ): any[] {
   const colors = state.basemapColors ?? DEFAULT_BASEMAP_COLORS;
-  const isRaster = state.basemap === "satellite" || state.basemap === "terrain";
-  // Something else already seals the surface as the depth occluder: the base
-  // image (satellite/terrain) or a full-globe weather raster. A nest-only
-  // variable (radar) has NO full-globe raster, so `hasGlobalRaster` is false and
-  // the background must seal the depth sphere itself — otherwise nothing writes
-  // depth and the far hemisphere bleeds through the front ("see-through planet").
-  const hasOccluder = isRaster || hasGlobalRaster;
+  const isRaster =
+    state.basemap === "satellite" || state.basemap === "terrain" || state.basemap === "night";
+  // `background` (the finely-subdivided GLOBE_CELLS grid) is always the depth
+  // occluder EXCEPT when a full-globe weather raster is also drawn on top — that
+  // raster writes its own depth (DEPTH_OCCLUDE, in layers/index.ts), and letting
+  // both write would z-fight two different meshes approximating the same sphere.
+  // The raster/terrain/night IMAGE never writes depth itself (see
+  // globalImageLayer) — it paints over whatever `background` already sealed.
   const background = new SolidPolygonLayer({
     id: "basemap-bg",
     data: GLOBE_CELLS,
@@ -113,7 +123,7 @@ export function basemapLayers(
     stroked: false,
     filled: true,
     getFillColor: isRaster ? [0, 3, 8] : hexToRgb(colors.ocean),
-    parameters: hasOccluder ? DEPTH_TEST : DEPTH_OCCLUDE,
+    parameters: hasGlobalRaster ? DEPTH_TEST : DEPTH_OCCLUDE,
   });
 
   if (state.basemap === "satellite") {
@@ -126,6 +136,13 @@ export function basemapLayers(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const layers: any[] = [background, globalImageLayer("terrain", TERRAIN_IMG)];
     if (tilesActive) layers.push(tileBasemapLayer("terrain", TILE_TEMPLATES.openTopo));
+    return layers;
+  }
+
+  if (state.basemap === "night") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const layers: any[] = [background, globalImageLayer("night", NIGHT_IMG)];
+    if (tilesActive) layers.push(tileBasemapLayer("night", TILE_TEMPLATES.gibsNight, NIGHT_TILE_MAX_ZOOM));
     return layers;
   }
 

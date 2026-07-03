@@ -17,6 +17,8 @@
 import type { ControlState } from "./control";
 import type { HazardType } from "./alerts/hazard";
 import type { AdMediaType } from "./ads/types";
+import { DEFAULT_DIRECTOR_COUNTRIES, sanitizeDirectorCountries } from "./director-countries";
+import { QUAKE_MAGNITUDE_BANDS, quakeMagnitudeClass, type QuakeMagnitudeClass } from "./seismic";
 
 /** Socket event: worker → every browser. The current on-air segment + queue. */
 export const DIRECTOR_STATE = "director:state" as const;
@@ -26,6 +28,7 @@ export type SegmentKind =
   | "intro" // global establishing spin
   | "ocean" // global spin coloured by an ocean field (SST / waves)
   | "tour" // curated region flyover (ambient filler when nothing notable)
+  | "country" // an operator-favourited country spotlight (national weather check)
   | "weather" // scalar field over a region of interest
   | "storm" // a severe-weather alert area
   | "quake" // a recent significant earthquake
@@ -39,6 +42,7 @@ export const SEGMENT_KINDS: SegmentKind[] = [
   "ocean",
   "orbital",
   "tour",
+  "country",
   "weather",
   "storm",
   "quake",
@@ -186,14 +190,48 @@ export interface DirectorState {
 export type DirectorMode = "off" | "auto";
 
 /**
+ * Storm hold levels — one named tier per normalised alert severityRank (0–4),
+ * so the operator can dwell on an Extreme warning far longer than a Minor one.
+ * Named keys (not the numeric rank) so the Mongo doc reads as prose and can
+ * never be mistaken for an array. Strongest first, matching the UI order.
+ */
+export const STORM_LEVELS = [
+  { key: "extreme", rank: 4, label: "Extreme" },
+  { key: "severe", rank: 3, label: "Severe" },
+  { key: "moderate", rank: 2, label: "Moderate" },
+  { key: "minor", rank: 1, label: "Minor" },
+  { key: "info", rank: 0, label: "None / info" },
+] as const;
+
+export type StormLevel = (typeof STORM_LEVELS)[number]["key"];
+
+/** Bucket a normalised alert severityRank (0–4) into its hold level. */
+export function stormLevelForRank(rank: number): StormLevel {
+  const hit = STORM_LEVELS.find((l) => rank >= l.rank);
+  return (hit ?? STORM_LEVELS[STORM_LEVELS.length - 1]).key;
+}
+
+/** Ordered quake hold levels (strongest first) — the magnitude classes on air. */
+export const QUAKE_LEVELS: QuakeMagnitudeClass[] = QUAKE_MAGNITUDE_BANDS.map((b) => b.cls);
+
+/**
  * Operator-set, durable director configuration. Persisted to Mongo; the worker
  * re-reads it every tick so changes take effect within one tick with no socket
  * plumbing in the operator→worker direction.
  */
 export interface DirectorConfig {
   mode: DirectorMode;
-  /** Default hold per segment, seconds (event kinds may extend this). */
-  holdSeconds: number;
+  /**
+   * Hold per segment KIND, seconds — every action type gets its own duration.
+   * For the event kinds this is only the fallback: `quake` and `storm` shots
+   * take their hold from the per-level maps below instead, so an Extreme
+   * warning can dwell far longer than a Minor one.
+   */
+  kindHoldSeconds: Record<SegmentKind, number>;
+  /** Hold per quake magnitude class (micro … great), seconds. */
+  quakeHoldSeconds: Record<QuakeMagnitudeClass, number>;
+  /** Hold per storm severity level (info … extreme), seconds. */
+  stormHoldSeconds: Record<StormLevel, number>;
   /**
    * Fixed camera-flight time between shots, seconds — the "set" transition. The
    * worker stamps `holdMs`→hold and this→`cutTransitionMs` on every cut, so each
@@ -202,6 +240,11 @@ export interface DirectorConfig {
   transitionSeconds: number;
   /** Which kinds are eligible to be scheduled. */
   kinds: Record<SegmentKind, boolean>;
+  /**
+   * Favourite country ids (see COUNTRY_SHOTS) the `country` kind rotates
+   * through — the operator's "channels we cover" list. Catalog-ordered.
+   */
+  countries: string[];
   /** Only schedule quakes at/above this magnitude. */
   minQuakeMag: number;
   /** Only schedule storms at/above this normalised severity (0–4). */
@@ -219,15 +262,56 @@ export interface DirectorConfig {
   skipNonce: number;
 }
 
+/**
+ * Default hold per kind. The world spins (intro/ocean/orbital) run long — they
+ * tour several map types within the one shot (was the old holdSeconds × 1.4).
+ */
+export const DEFAULT_KIND_HOLD_SECONDS: Record<SegmentKind, number> = {
+  intro: 17,
+  ocean: 17,
+  orbital: 17,
+  tour: 12,
+  country: 12,
+  weather: 12,
+  storm: 12,
+  quake: 12,
+  flight: 12,
+  ship: 12,
+  ad: 12,
+};
+
+/** Default hold per quake magnitude class — the bigger the quake, the longer the dwell. */
+export const DEFAULT_QUAKE_HOLD_SECONDS: Record<QuakeMagnitudeClass, number> = {
+  micro: 8,
+  minor: 8,
+  light: 10,
+  moderate: 12,
+  strong: 16,
+  major: 22,
+  great: 30,
+};
+
+/** Default hold per storm severity level — Extreme headlines linger. */
+export const DEFAULT_STORM_HOLD_SECONDS: Record<StormLevel, number> = {
+  info: 10,
+  minor: 10,
+  moderate: 12,
+  severe: 16,
+  extreme: 24,
+};
+
 export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   mode: "off",
-  holdSeconds: 12,
+  kindHoldSeconds: DEFAULT_KIND_HOLD_SECONDS,
+  quakeHoldSeconds: DEFAULT_QUAKE_HOLD_SECONDS,
+  stormHoldSeconds: DEFAULT_STORM_HOLD_SECONDS,
   transitionSeconds: 4,
   kinds: {
     intro: true,
     ocean: true,
     orbital: true,
     tour: true,
+    country: true,
     weather: true,
     storm: true,
     quake: true,
@@ -237,6 +321,7 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
     // uploaded some). Opt-in, like a paid feature should be.
     ad: false,
   },
+  countries: DEFAULT_DIRECTOR_COUNTRIES,
   minQuakeMag: 4.5,
   minAlertSeverity: 3,
   adEveryNShots: 6,
@@ -244,6 +329,25 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
 };
 
 const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+
+/**
+ * Merge a partial hold map (untrusted) onto a base — unknown keys dropped,
+ * non-numbers ignored, and every hold clamped to the same 3s floor as before.
+ */
+function mergeHolds<K extends string>(
+  keys: readonly K[],
+  base: Record<K, number>,
+  patch: Partial<Record<K, number>> | undefined,
+): Record<K, number> {
+  const out = { ...base };
+  if (patch) {
+    for (const k of keys) {
+      const v = patch[k];
+      if (typeof v === "number" && Number.isFinite(v)) out[k] = Math.max(3, v);
+    }
+  }
+  return out;
+}
 
 /**
  * Merge a partial (possibly untrusted, from HTTP) director-config patch onto a
@@ -261,14 +365,38 @@ export function mergeDirectorConfig(
   }
   return {
     mode: patch.mode === "off" || patch.mode === "auto" ? patch.mode : base.mode,
-    holdSeconds: Math.max(3, num(patch.holdSeconds, base.holdSeconds)),
+    kindHoldSeconds: mergeHolds(SEGMENT_KINDS, base.kindHoldSeconds, patch.kindHoldSeconds),
+    quakeHoldSeconds: mergeHolds(QUAKE_LEVELS, base.quakeHoldSeconds, patch.quakeHoldSeconds),
+    stormHoldSeconds: mergeHolds(
+      STORM_LEVELS.map((l) => l.key),
+      base.stormHoldSeconds,
+      patch.stormHoldSeconds,
+    ),
     transitionSeconds: Math.max(0.5, num(patch.transitionSeconds, base.transitionSeconds)),
     kinds,
+    countries: sanitizeDirectorCountries(patch.countries) ?? base.countries,
     minQuakeMag: num(patch.minQuakeMag, base.minQuakeMag),
     minAlertSeverity: num(patch.minAlertSeverity, base.minAlertSeverity),
     adEveryNShots: Math.max(1, Math.round(num(patch.adEveryNShots, base.adEveryNShots))),
     skipNonce: num(patch.skipNonce, base.skipNonce),
   };
+}
+
+/** Configured hold for a segment kind, in ms. */
+export function kindHoldMs(cfg: DirectorConfig, kind: SegmentKind): number {
+  return Math.round(num(cfg.kindHoldSeconds?.[kind], DEFAULT_KIND_HOLD_SECONDS[kind]) * 1000);
+}
+
+/** Configured hold for a quake of this magnitude, in ms (per magnitude class). */
+export function quakeHoldMs(cfg: DirectorConfig, mag: number): number {
+  const cls = quakeMagnitudeClass(mag);
+  return Math.round(num(cfg.quakeHoldSeconds?.[cls], DEFAULT_QUAKE_HOLD_SECONDS[cls]) * 1000);
+}
+
+/** Configured hold for a storm alert of this severityRank, in ms (per level). */
+export function stormHoldMs(cfg: DirectorConfig, severityRank: number): number {
+  const level = stormLevelForRank(severityRank);
+  return Math.round(num(cfg.stormHoldSeconds?.[level], DEFAULT_STORM_HOLD_SECONDS[level]) * 1000);
 }
 
 export const INITIAL_DIRECTOR_STATE: DirectorState = {

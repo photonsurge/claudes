@@ -49,8 +49,8 @@ function fakeDb(over: Partial<Record<string, any>> = {}): AppDb {
         ],
       }),
     },
-    notableTracks: {
-      getAll: async () => ({ data: over.notableTracks ?? [] }),
+    vehicles: {
+      notableCatalog: async () => over.vehicles ?? [],
     },
   } as unknown as AppDb;
 }
@@ -82,6 +82,25 @@ describe("buildCandidates", () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     const tour = pool.find((c) => c.segment.kind === "tour")!;
     expect(tour.segment.patch.autoSpin).toBe(false);
+  });
+
+  it("spotlights the favourite countries with flag + national-weather framing", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg());
+    const countries = pool.filter((c) => c.segment.kind === "country");
+    // Defaults: UK + Japan, one spotlight each.
+    expect(countries.map((c) => c.segment.id).sort()).toEqual(["country:japan", "country:uk"]);
+    const uk = countries.find((c) => c.segment.id === "country:uk")!;
+    expect(uk.segment.title).toBe("United Kingdom");
+    expect(uk.segment.icon).toBe("🇬🇧");
+    expect(uk.segment.patch.autoSpin).toBe(false); // holds on the country
+    expect(uk.segment.patch.showAlerts).toBe(true); // the national warnings picture
+    expect(uk.segment.patch.showRadar).toBe(true);
+  });
+
+  it("follows the operator's favourites list and skips unknown ids", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg({ countries: ["france", "atlantis"] }));
+    const ids = pool.filter((c) => c.segment.kind === "country").map((c) => c.segment.id);
+    expect(ids).toEqual(["country:france"]);
   });
 
   it("scores a big quake above filler and frames its epicentre", async () => {
@@ -145,7 +164,7 @@ describe("buildCandidates", () => {
       // because it's in the catalog, proving catalog match beats the altitude gate.
       aircraft: [{ externalId: "adfeb7", name: "AF1", country: "United States", lng: 0, lat: 51, altM: 3000 }],
       aircraftMeta: [],
-      notableTracks: [
+      vehicles: [
         {
           id: "aircraft:adfeb7", kind: "aircraft", code: "adfeb7", label: "Air Force One",
           category: "government", enabled: true, vip: true, type: "Boeing VC-25A",
@@ -168,7 +187,7 @@ describe("buildCandidates", () => {
     const db = fakeDb({
       // speed 3kn is below the 12kn fast-mover gate — catalog match includes it.
       ships: [{ externalId: "310627000", name: "QM2", lng: 1, lat: 50, speed: 3, headingDeg: 90 }],
-      notableTracks: [
+      vehicles: [
         { id: "ship:310627000", kind: "ship", code: "310627000", label: "Queen Mary 2", enabled: true, type: "Ocean liner", wikiExtract: "A liner…" },
       ],
     });
@@ -177,6 +196,24 @@ describe("buildCandidates", () => {
     expect(ship.score).toBe(45); // NOTABLE_SCORE (not a VIP)
     expect(ship.segment.title).toBe("Queen Mary 2");
     expect(ship.segment.trackInfo).toMatchObject({ label: "Queen Mary 2", notable: true });
+  });
+
+  it("stamps per-kind and per-event-level holds onto segments", async () => {
+    const pool = await buildCandidates(
+      fakeDb(),
+      cfg({
+        kindHoldSeconds: { ...DEFAULT_DIRECTOR_CONFIG.kindHoldSeconds, tour: 20 },
+        quakeHoldSeconds: { ...DEFAULT_DIRECTOR_CONFIG.quakeHoldSeconds, strong: 25 },
+        stormHoldSeconds: { ...DEFAULT_DIRECTOR_CONFIG.stormHoldSeconds, extreme: 40 },
+      }),
+    );
+    expect(pool.find((c) => c.segment.kind === "tour")!.segment.holdMs).toBe(20_000);
+    // The fake quake is M6.1 → "strong"; the fake alert is severityRank 4 → "extreme".
+    expect(pool.find((c) => c.segment.id === "quake:q1")!.segment.holdMs).toBe(25_000);
+    expect(pool.find((c) => c.segment.kind === "storm")!.segment.holdMs).toBe(40_000);
+    // Untouched kinds keep their own defaults (world spins run long).
+    expect(pool.find((c) => c.segment.id === "intro:global")!.segment.holdMs).toBe(17_000);
+    expect(pool.find((c) => c.segment.kind === "ship")!.segment.holdMs).toBe(12_000);
   });
 
   it("honours disabled kinds", async () => {
@@ -190,9 +227,10 @@ describe("buildCandidates", () => {
     const empty = fakeDb({ quakes: [], alerts: [], aircraft: [], ships: [] });
     const pool = await buildCandidates(empty, cfg());
     expect(pool.length).toBeGreaterThan(0);
-    // Filler kinds: the global intro, ocean spins, curated tours, and orbital
-    // shots (gated to ingested TLE groups so they're never empty).
-    const fillerKinds = new Set(["intro", "ocean", "orbital", "tour"]);
+    // Filler kinds: the global intro, ocean spins, curated tours, country
+    // spotlights, and orbital shots (gated to ingested TLE groups so they're
+    // never empty).
+    const fillerKinds = new Set(["intro", "ocean", "orbital", "tour", "country"]);
     expect(pool.every((c) => fillerKinds.has(c.segment.kind))).toBe(true);
   });
 });

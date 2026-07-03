@@ -1,12 +1,19 @@
 "use client";
 
 /**
- * Aurora oval overlay. Rendered through WeatherLayers' `RasterLayer` — the same
- * finely-tessellated path the weather/SST rasters use — from a SCALAR probability
- * texture the worker bakes (sub-floor cells masked transparent). A coarse
- * full-globe `BitmapLayer` chords the sphere and leaks the oval as diamond
- * artifacts near the limb; RasterLayer hugs the sphere so the far-side oval is
- * cleanly depth-occluded. The `aurora` palette colours it green→red by intensity.
+ * Aurora oval overlay. Rendered through WeatherLayers' `RasterLayer` from a
+ * SCALAR probability texture the worker bakes (sub-floor cells masked
+ * transparent). The `aurora` palette colours it green→red by intensity.
+ *
+ * DEPTH_PAINT + explicit back-face cull (mirrors satimg.ts and the basemap's
+ * draped land fill): the aurora surface sits almost exactly at the same radius
+ * as the basemap sphere beneath it, so depth-TEST-based parameters (DEPTH_TEST,
+ * DEPTH_OCCLUDE) z-fight against that near-coincident depth — visible as a
+ * lattice of diamond artifacts that gets worse the further out you zoom (depth
+ * precision loss) and clears up zoomed in. DEPTH_PAINT sidesteps the z-buffer
+ * entirely and paints in draw order (aurora is pushed after the basemap/weather
+ * layers in Globe.tsx, so it draws on top); `cullMode: "back"` drops the far
+ * hemisphere's triangles geometrically instead of numerically.
  */
 import { RasterLayer } from "weatherlayers-gl";
 import type { TextureData } from "weatherlayers-gl";
@@ -17,14 +24,10 @@ import {
   type AuroraMeta,
 } from "@photonsurge/shared/aurora/types";
 import { scalePaletteToDomain } from "./props";
-import { DEPTH_TEST } from "./depth";
+import { DEPTH_PAINT } from "./depth";
 
-/**
- * The aurora oval as a WeatherLayers RasterLayer. DEPTH_TEST (not DEPTH_OCCLUDE):
- * it's a translucent overlay above the weather, so its far-side hemisphere is
- * occluded by the globe's depth sphere but it doesn't reseal depth — cities,
- * tracks and labels above it still draw on top.
- */
+const AURORA_PARAMS = { ...DEPTH_PAINT, cullMode: "back" };
+
 export function auroraLayers(meta: AuroraMeta, texture: TextureData, opacity = 0.85) {
   return [
     new RasterLayer({
@@ -39,7 +42,7 @@ export function auroraLayers(meta: AuroraMeta, texture: TextureData, opacity = 0
       domain: AURORA_DOMAIN,
       opacity,
       visible: true,
-      parameters: DEPTH_TEST,
+      parameters: AURORA_PARAMS,
     }),
   ];
 }

@@ -46,6 +46,19 @@ describe("basemapLayers", () => {
     expect(ids(basemapLayers(state("terrain"), false, false))).not.toContain("basemap-tiles-terrain");
   });
 
+  it("night = Black Marble base image + zoom-capped GIBS tiles when active", () => {
+    expect(ids(basemapLayers(state("night"), false, false))).toEqual([
+      "basemap-bg",
+      "basemap-image-night",
+    ]);
+    const zoomed = basemapLayers(state("night"), true, false);
+    expect(ids(zoomed)).toContain("basemap-tiles-night");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tiles = zoomed.find((l: any) => l.props.id === "basemap-tiles-night") as any;
+    // GIBS Black Marble's tile pyramid ends at zoom 8 — deeper views stretch z8 tiles.
+    expect(tiles.props.maxZoom).toBe(8);
+  });
+
   it("dark ocean background uses the operator's ocean colour", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const bg = basemapLayers(state("dark", { ocean: "#010203" }), false, false)[0] as any;
@@ -53,9 +66,11 @@ describe("basemapLayers", () => {
   });
 
   it("raster basemaps use a near-black background (not the ocean colour)", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const bg = basemapLayers(state("satellite"), false, false)[0] as any;
-    expect(bg.props.getFillColor).toEqual([0, 3, 8]);
+    for (const id of ["satellite", "terrain", "night"]) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const bg = basemapLayers(state(id), false, false)[0] as any;
+      expect(bg.props.getFillColor).toEqual([0, 3, 8]);
+    }
   });
 
   // Regression: the background grid must SEAL the depth sphere (write depth) unless
@@ -86,8 +101,26 @@ describe("basemapLayers", () => {
     );
   });
 
-  it("raster basemap (satellite) seals depth via its base image, not the background", () => {
-    expect(bgParams(state("satellite"), false).depthWriteEnabled).toBe(false);
+  it("raster basemap (satellite) still lets the background seal depth — the image only paints", () => {
+    // Regression: the base image used to write its own depth (DEPTH_OCCLUDE), a
+    // coarse few-quad mesh that z-fights the finely-tessellated background grid
+    // (diamond artifacts near the limb). The background stays the sole writer.
+    expect(bgParams(state("satellite"), false).depthWriteEnabled).toBe(true);
+  });
+
+  it("night basemap still lets the background seal depth — the image only paints", () => {
+    expect(bgParams(state("night"), false).depthWriteEnabled).toBe(true);
+  });
+
+  it("the base image never depth-tests/writes and culls its own far hemisphere", () => {
+    for (const id of ["satellite", "terrain", "night"]) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const layers = basemapLayers(state(id), false, false) as any[];
+      const image = layers.find((l) => l.props.id === `basemap-image-${id}`);
+      expect(image.props.parameters.depthTest).toBe(false);
+      expect(image.props.parameters.depthWriteEnabled).toBe(false);
+      expect(image.props.parameters.cullMode).toBe("back");
+    }
   });
 });
 

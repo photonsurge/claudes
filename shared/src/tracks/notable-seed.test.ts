@@ -1,5 +1,5 @@
 import { NOTABLE_SEED } from "./notable-seed";
-import { notableId } from "../db/notable-track-model";
+import { vehicleId } from "../db/vehicle-model";
 
 describe("NOTABLE_SEED", () => {
   it("every entry has a label, a valid kind and a wikiTitle to enrich from", () => {
@@ -12,7 +12,7 @@ describe("NOTABLE_SEED", () => {
   });
 
   it("has no duplicate catalog keys", () => {
-    const keys = NOTABLE_SEED.map((s) => notableId(s.kind, s.code));
+    const keys = NOTABLE_SEED.map((s) => vehicleId(s.kind, s.code));
     expect(new Set(keys).size).toBe(keys.length);
   });
 

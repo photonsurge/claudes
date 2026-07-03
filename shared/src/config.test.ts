@@ -42,10 +42,16 @@ describe("REGION_PRESETS", () => {
 });
 
 describe("BASEMAPS", () => {
-  it("has the three switchable styles", () => {
+  it("has the switchable styles", () => {
     expect(BASEMAPS.map((b) => b.id)).toEqual(
-      expect.arrayContaining(["dark", "satellite", "terrain"]),
+      expect.arrayContaining(["dark", "satellite", "terrain", "night", "relief"]),
     );
+  });
+  it("night tiles stop at the GIBS zoom-8 pyramid", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const style = BASEMAPS.find((b) => b.id === "night")!.style as any;
+    const src = Object.values(style.sources)[0] as { maxzoom: number };
+    expect(src.maxzoom).toBe(8);
   });
   it.each(BASEMAPS)("$id is a usable MapLibre raster style", (b) => {
     const style = b.style as any;

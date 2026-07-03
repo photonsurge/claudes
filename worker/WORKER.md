@@ -57,40 +57,60 @@ for the schedulers — no need to restart or kill a running worker.
 | `yarn refresh:faults` | Refresh the tectonic plate-boundary overlay (Bird 2003). |
 | `yarn refresh:tides` | Refresh tide-gauge stations + series (IOC sea-level). |
 | `yarn refresh:cams` | Refresh the webcam catalog from the enabled providers. |
-| `yarn refresh:satimg [satId]` | Bake one geostationary satellite full-disk (default `himawari9`) into a global PNG. **Needs the satpy venv — see below.** |
+| `yarn refresh:satimg` | Bake the satellite-imagery frame into Mongo (`db.satimg`). Default source = GIBS (no setup). |
 
-### Satellite imagery (satpy sidecar)
+### Satellite imagery
 
-`refresh:satimg` and the `satimg.refresh` job shell out to a Python sidecar
-(`src/satimg/himawari.py`) that pulls the latest Himawari-9 full-disk from the open
-`noaa-himawari9` AWS bucket (no credentials), reprojects the geostationary disk onto
-a global plate-carrée PNG via **satpy**, and stores one cached frame per bird in
-Mongo (`db.satimg`). The Node worker only spawns the script + reads the PNG — the
-same shell-out shape as `wgrib2`.
+The `satimg.refresh` job (and `yarn refresh:satimg`) bakes a cached satellite frame
+**per feed** into Mongo (`db.satimg`, keyed by `satId`); the public app reads only that
+cache. The operator ticks each feed on/off and sets its own opacity in the control panel
+(`SATIMG_FEEDS` in shared). Two sources, chosen by `SATIMG_SOURCE`:
 
-One-time setup (a **dedicated** venv — don't pollute base anaconda):
+**`gibs` (DEFAULT — pure Node, Docker-trivial, no Python).** One HTTP GET per feed of the
+relevant NASA GIBS WMS layer (keyless, already reprojected to plate-carrée). The feeds:
+
+- **`global`** — daily true-color mosaic (5 polar orbiters stacked in one WMS request to
+  fill swath gaps), full globe, **cloud-keyed** via `sharp` (per-pixel alpha from
+  brightness → clouds opaque, clear sky transparent so the globe/weather shows through).
+  Defaults to *yesterday* (newest COMPLETE UTC day; "today" is a half-imaged globe).
+  **Gap-filled** across the last few days: the freshest day's latest orbit is often only
+  half-processed, leaving a solid black no-data wedge AND a half-ingested granule of thin
+  bright scan-line stripes. `holeFill` composites newest-on-top and replaces only pixels
+  that aren't *solid* (a pixel AND its two vertical neighbours must carry data — this
+  rejects the lone scan lines the cloud-key would otherwise keep as fake white "cloud"
+  stripes). Fresh pixels stay fresh; ghosting is confined to the holes. Residual stripes
+  at the extreme south are polar-winter night (no daytime pass on any day) and unfixable.
+- **`goes-east` / `goes-west`** — live GeoColor (~10-min), regional bbox, NOT cloud-keyed
+  (GeoColor's bright oceans survive the key), shown whole and blended by the feed opacity.
+- **`himawari`** — live Band-13 Clean IR (~10-min), Asia/Australia bbox, not keyed.
+
+Live feeds send NO `TIME` (GIBS returns the layer's latest slot). Runs on a 30-min cron,
+ON by default. Per-feed frames are guarded under Mongo's 16 MB BSON limit (`maxPx` in
+`gibs.ts`, ~15.5 MB hard cap); a feed that errors is skipped, the rest still bake.
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `SATIMG_SOURCE` | `gibs` | `gibs` (WMS fetch) or `satpy` (raw Himawari bake, below). |
+| `SATIMG_REFRESH_ENABLED` | *(on)* | Set `false` to disable the cron. |
+| `SATIMG_REFRESH_MS` | `1800000` | Bake cadence (30 min — live feeds refresh ~10-min). |
+| `SATIMG_WIDTH` / `SATIMG_HEIGHT` | `2048`/`1024` | `global` fetch size (kept < Mongo's 16 MB doc limit; regional feeds size from per-feed `maxPx`). |
+| `SATIMG_FILL_DAYS` | `3` | Consecutive days composited to gap-fill `global` (1 = off). |
+| `SATIMG_CLOUDKEY` | *(on)* | Set `false` to store the opaque true-color as-is (no see-through). |
+| `SATIMG_CK_LO`/`_HI`/`_GAMMA`/`_SATSUPPRESS`/`_BOOST` | see `grade.ts` | Cloud-key tuning (brightness ramp, desert suppression, cloud punch). |
+
+**`satpy` (opt-in — raw Himawari-9 disk, needs a Python venv).** Shells out to
+`src/satimg/himawari.py` (same shape as `wgrib2`): pulls the latest full-disk from the
+open `noaa-himawari9` S3 bucket and reprojects via **satpy**. Live geostationary (~15-20
+min) but heavy (HSD download + reproject, minutes) and Python-dependent — reach for it
+only when you need a live disk. Setup (a **dedicated** venv — don't pollute base anaconda):
 
 ```
 python3 -m venv worker/.venv-satimg
 worker/.venv-satimg/bin/pip install -r worker/src/satimg/requirements.txt
+SATIMG_SOURCE=satpy SATIMG_PYTHON=worker/.venv-satimg/bin/python yarn refresh:satimg
 ```
 
-Then point the worker at it and enable the job:
-
-| Env | Default | Meaning |
-| --- | --- | --- |
-| `SATIMG_PYTHON` | `python3` | Interpreter — set to `worker/.venv-satimg/bin/python`. |
-| `SATIMG_REFRESH_ENABLED` | *(off)* | Set `true` to register the repeatable bake job. Off by default so a worker without the venv doesn't fail every cycle. |
-| `SATIMG_SATS` | `himawari9` | Comma list of birds to bake (one job each). |
-| `SATIMG_REFRESH_MS` | `600000` | Bake cadence (~10 min = Himawari's FLDK scan interval). |
-| `SATIMG_COMPOSITE` | `true_color` | satpy composite or bare band. `true_color` is daytime-only (night side transparent); use `B13` (clean IR) for an always-on cloud layer. |
-| `SATIMG_RESOLUTION` | `0.05` | Output grid resolution in degrees. |
-
-Smoke-test the bake before enabling the cron:
-
-```
-SATIMG_PYTHON=worker/.venv-satimg/bin/python yarn refresh:satimg
-```
+`SATIMG_COMPOSITE` (default `true_color`; `B13` = always-on IR) picks the band/composite.
 
 ## Weather pipeline
 
@@ -172,6 +192,26 @@ the one-shots run, so it lands a little after the command returns.
 > Don't run the `refresh:*` scripts in **parallel** — each is its own process, so
 > they don't share the `nomadsGate` politeness throttle and would hammer upstream.
 > `refresh:all` is sequential on purpose.
+
+## Long-term frame archive (history)
+
+Every publish (GFS ingest and all `refresh:*` sources) also copies its
+archive-eligible steps — default **f000 + f003**, i.e. the near-analysis — into
+the `WeatherFrame` collection, which run retention **never prunes**. That's what
+powers the `/api/weather/history/*` endpoints (point time series + min/max/avg
+stats at any lat/lng, frame listings for later map replay).
+
+| Command | What it does |
+| --- | --- |
+| `yarn archive:backfill` | One-shot: walk every published run still in Mongo and archive its eligible frames. Idempotent (upsert on model+variable+validTime; lower fhr wins). Run once to seed history. |
+
+Env knobs (all optional):
+
+- `WEATHER_ARCHIVE=off` — disable archiving entirely (on by default).
+- `WEATHER_ARCHIVE_FHRS=0,3` — which forecast hours to archive per run.
+- `WEATHER_ARCHIVE_KEEP_DAYS=0` — prune frames older than N days; `0` (default)
+  keeps everything forever. At f000+f003 the archive grows a few tens of MB/day
+  across the whole portfolio.
 
 ## Maintenance / reset
 

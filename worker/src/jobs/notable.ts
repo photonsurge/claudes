@@ -1,17 +1,17 @@
 /**
- * Notable-tracks catalog jobs (worker side of the "Notable Tracks" feature):
+ * Notable-vehicle jobs — the curated subset of the persistent vehicle registry
+ * (db.vehicles) that we surface on air:
  *
- *  • seedNotable  — upsert the curated starter list (shared/tracks/notable-seed)
- *                   WITHOUT clobbering worker-enriched fields, so a reseed is safe.
+ *  • seedNotable  — mark the curated starter list (shared/tracks/notable-seed) as
+ *                   notable vehicles WITHOUT clobbering enriched/lifecycle fields.
  *  • enrichNotable — cache a photo + blurb (+ type/operator/flag) onto each enabled
- *                    catalog entry from FREE keyless sources, read Mongo at air time.
+ *                    notable vehicle from FREE keyless sources, read Mongo at air time.
  *
  * Enrichment is deliberately LOW-PRIORITY and never duplicates work:
- *   - only `enabled` entries, only when stale (STALE_DAYS) — the catalog is tiny.
+ *   - only notable + enabled vehicles, only when stale (STALE_DAYS) — a tiny set.
  *   - aircraft type/operator is READ from the existing `aircraftMeta` cache (filled
  *     by tracks.enrichAircraft from hexdb), never re-fetched here — no duplicate GETs.
- *   - Wikipedia (by article title) + planespotters (by hex) are notable-only, so
- *     they don't overlap the city/aircraft enrichments either.
+ *   - Wikipedia (by article title) + planespotters (by hex) are notable-only.
  *
  * The `seedNotable` / `runNotableEnrich` cores are exported so the `yarn seed:notable`
  * and `yarn enrich:notable` one-shots run the exact same code as the job handlers.
@@ -19,7 +19,7 @@
 import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { NOTABLE_SEED } from "@photonsurge/shared/tracks/notable-seed";
-import { notableId, type iNotableTrackModel } from "@photonsurge/shared/db/notable-track-model";
+import { vehicleId, type iVehicle } from "@photonsurge/shared/db/vehicle-model";
 import { fetchWikiSummary } from "@photonsurge/shared/utill/wikipedia";
 import { fetchAircraftPhoto } from "@photonsurge/shared/tracks/planespotters";
 import { mmsiCountry } from "@photonsurge/shared/tracks/flags";
@@ -34,46 +34,37 @@ const STALE_DAYS = 30;
 const GAP_MS = 250; // gentle — keyless services + a tiny catalog, so pace calls.
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Drop undefined keys so an upsert `$set` never nulls a field it didn't mean to. */
-const defined = <T extends Record<string, unknown>>(o: T): Partial<T> =>
-  Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
-
 // ── Seed ──────────────────────────────────────────────────────────────────────
 
 /**
- * Upsert the curated catalog. Only ever writes the CURATED fields (label, wiki
- * title, flags, seed type/operator) — never the enriched ones (photo/blurb/
- * *FetchedAt) — so re-running keeps whatever the enrich job has cached.
+ * Flag the curated starter list as notable vehicles. `upsertCurated` writes only
+ * the curated fields (label/wikiTitle/notable/vip/seed type…) and never the
+ * enriched or lifecycle ones, so re-running keeps enrichment + sighting history.
  */
 export async function seedNotable() {
   const db = await getAppDb();
   let upserted = 0;
   for (const s of NOTABLE_SEED) {
-    const code = s.code.trim().toLowerCase();
-    const id = notableId(s.kind, code);
-    await db.notableTracks.upsertByID(
-      id,
-      defined({
-        id,
-        kind: s.kind,
-        code,
-        label: s.label,
-        category: s.category,
-        wikiTitle: s.wikiTitle,
-        enabled: s.enabled ?? true,
-        vip: s.vip,
-        type: s.type,
-        operator: s.operator,
-        registration: s.registration,
-        imo: s.imo,
-        notes: s.notes,
-      }) as Partial<iNotableTrackModel>,
-    );
+    await db.vehicles.upsertCurated({
+      kind: s.kind,
+      code: s.code.trim().toLowerCase(),
+      label: s.label,
+      category: s.category,
+      wikiTitle: s.wikiTitle,
+      notable: true,
+      enabled: s.enabled ?? true,
+      vip: s.vip,
+      type: s.type,
+      operator: s.operator,
+      registration: s.registration,
+      imo: s.imo,
+      notes: s.notes,
+    });
     upserted++;
   }
   const result = { seeded: upserted };
   log(TAG, `seedNotable done`, result);
-  blogInfo(TAG, `seeded ${upserted} notable tracks`, result, "notable", "seed");
+  blogInfo(TAG, `seeded ${upserted} notable vehicles`, result, "notable", "seed");
   emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "notable", count: upserted } });
   return result;
 }
@@ -94,19 +85,24 @@ export async function seed(_job: Job) {
 export interface NotableEnrichOpts {
   /** Re-fetch even entries enriched within STALE_DAYS. */
   force?: boolean;
+  /** Enrich only these vehicle ids (an explicit target is always fetched now).
+   *  Used by the admin "★ Enrich" button so a just-added craft fills in seconds. */
+  ids?: string[];
 }
 
 /**
- * Fill photo + blurb (+ type/operator/flag) onto each enabled catalog entry.
+ * Fill photo + blurb (+ type/operator/flag) onto each enabled notable vehicle.
  * Incremental (staleness-gated) + gently paced. Returns a small summary.
  */
 export async function runNotableEnrich(opts: NotableEnrichOpts = {}) {
-  const force = Boolean(opts.force);
+  const targeted = Array.isArray(opts.ids) && opts.ids.length > 0;
+  const force = Boolean(opts.force) || targeted; // an explicit target is fetched now
   const db = await getAppDb();
   const staleMs = Date.now() - STALE_DAYS * 86_400_000;
 
-  const res = await db.notableTracks.getAll({ enabled: true }, { limit: 0 });
-  const all = res.data ?? [];
+  const catalog = await db.vehicles.notableCatalog();
+  const targetIds = targeted ? new Set(opts.ids) : null;
+  const all = targetIds ? catalog.filter((v) => targetIds.has(v.id)) : catalog;
   if (!all.length) return { candidates: 0, enriched: 0, withPhoto: 0 };
 
   // Preload the aircraftMeta cache for the aircraft in the catalog — REUSE the
@@ -122,7 +118,7 @@ export async function runNotableEnrich(opts: NotableEnrichOpts = {}) {
   for (const n of all) {
     const needWiki = force || !n.wikiFetchedAt || n.wikiFetchedAt < staleMs;
     const needPhoto = n.kind === "aircraft" && (force || !n.photoFetchedAt || n.photoFetchedAt < staleMs);
-    const patch: Partial<iNotableTrackModel> = {};
+    const patch: Partial<iVehicle> = {};
 
     // Wikipedia photo + blurb, from the exact article title.
     if (needWiki && n.wikiTitle) {
@@ -156,7 +152,7 @@ export async function runNotableEnrich(opts: NotableEnrichOpts = {}) {
     }
 
     // Type/operator/registration from the aircraftMeta cache (no network), only
-    // to fill gaps the seed didn't provide.
+    // to fill gaps the seed/sighting didn't provide.
     if (n.kind === "aircraft") {
       const m = metaByCode.get(n.code);
       if (m) {
@@ -176,7 +172,7 @@ export async function runNotableEnrich(opts: NotableEnrichOpts = {}) {
     }
 
     if (Object.keys(patch).length) {
-      await db.notableTracks.updateByID(n.id, patch);
+      await db.vehicles.patch(n.id, patch);
       enriched++;
       if (patch.photoUrl || n.photoUrl) withPhoto++;
     }
@@ -193,7 +189,10 @@ export async function runNotableEnrich(opts: NotableEnrichOpts = {}) {
 export async function enrichNotable(job: Job) {
   const d = job.data?.data ?? {};
   try {
-    return await runNotableEnrich({ force: Boolean(d.force) });
+    return await runNotableEnrich({
+      force: Boolean(d.force),
+      ids: Array.isArray(d.ids) ? d.ids.filter((x: unknown) => typeof x === "string") : undefined,
+    });
   } catch (err) {
     log(TAG, `enrichNotable failed`, { err: summarizeForLog(err) });
     blogErr(TAG, `notable enrichment failed`, err, "notable", "enrich");

@@ -47,6 +47,7 @@ import { faultLayers } from "./layers/faults";
 import { auroraLayers } from "./layers/aurora";
 import { satimgLayers } from "./layers/satimg";
 import { fireLayers } from "./layers/fires";
+import { geomagLayers } from "./layers/geomag";
 import { nightLayer } from "./layers/nightside";
 import { subsolarPoint } from "../lib/sun";
 import { discFromProject, type Disc } from "../lib/globe-geom";
@@ -63,6 +64,7 @@ import type { Fault } from "@photonsurge/shared/faults/types";
 import type { AuroraOverlay } from "../lib/aurora-overlay";
 import type { SatImgOverlay } from "../lib/satimg-overlay";
 import type { Fire } from "@photonsurge/shared/fires/types";
+import type { GeomagOverlay } from "../lib/geomag-overlay";
 
 export interface GlobeHandle {
   flyTo: (center: [number, number], zoom?: number) => void;
@@ -92,6 +94,8 @@ export interface GlobeProps {
   satimg?: SatImgOverlay | null;
   /** Worker-cached active fires (NASA FIRMS). */
   fires?: Fire[];
+  /** Baked geomagnetic-field frame + decoded texture (IGRF total intensity), or null. */
+  geomag?: GeomagOverlay | null;
   interactive?: boolean;
   onCameraChange?: (center: [number, number], zoom: number) => void;
   /** [lng,lat] of the active event to pulse-highlight, or null/undefined for none. */
@@ -171,7 +175,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, faults, aurora, satimg, fires = [], interactive = true, onCameraChange, pulseAt, highlightTrack, onSelect },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, faults, aurora, satimg, fires = [], geomag, interactive = true, onCameraChange, pulseAt, highlightTrack, onSelect },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -676,6 +680,12 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     }
 
     // Country borders sit ABOVE the weather fill.
+    // Global geomagnetic-field intensity (IGRF) — a full-globe scalar field drawn
+    // as the surface (under borders/cities/overlays), like the weather rasters.
+    if (state.showMagneticField && geomag?.texture) {
+      layers.push(...geomagLayers(geomag.meta, geomag.texture));
+    }
+
     layers.push(countriesLayer(state));
 
     // DEBUG: outline each active weather-map source's bbox + label, above the
@@ -699,7 +709,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // weather/wind, below the reference overlays so those stay crisp on top. Full-
     // globe PNG per bird (transparent off-disk); the far side is depth-occluded.
     if (state.showSatImg && satimg?.frames.length) {
-      layers.push(...satimgLayers(satimg.frames, state.satImgOpacity));
+      layers.push(...satimgLayers(satimg.frames, state.satImgFeeds));
     }
 
     // Aurora oval — a translucent glow above the weather/wind/borders but below
@@ -789,8 +799,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showFaults,
     state.showAurora,
     state.showSatImg,
-    state.satImgOpacity,
+    state.satImgFeeds,
     state.showFires,
+    state.showMagneticField,
     state.showMapSource,
     state.showGraticule,
     state.graticuleColor,
@@ -807,6 +818,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     aurora,
     satimg,
     fires,
+    geomag,
     nestKey,
     highlightTrack?.kind,
     highlightTrack?.code,

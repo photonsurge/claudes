@@ -2,7 +2,8 @@ import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { log } from "@photonsurge/shared/utill/logger";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
-import { fetchGibs } from "../satimg/gibs";
+import { SATIMG_FEEDS } from "@photonsurge/shared/satimg/types";
+import { fetchGibsFeed } from "../satimg/gibs";
 import { cloudKey, cloudKeyFromEnv } from "../satimg/grade";
 import { bakeHimawari } from "../satimg/bake";
 import { summarizeForLog } from "../utils";
@@ -36,28 +37,47 @@ export async function refresh(job: Job) {
   }
 }
 
-/** GIBS global true-color → cloud-keyed frame. */
+/** Bake every GIBS feed (global daily + live geostationary discs) → cloud-keyed frames. */
 async function refreshGibs(db: Awaited<ReturnType<typeof getAppDb>>) {
-  const raw = await fetchGibs();
-  // Cloud-key so clear sky is transparent (the globe/weather shows through). Skip with
-  // SATIMG_CLOUDKEY=false to store the opaque true-color as-is.
-  const png = process.env.SATIMG_CLOUDKEY === "false" ? raw.png : await cloudKey(raw.png, cloudKeyFromEnv());
-  await db.satimg.replace({
-    satId: "global",
-    satName: "GIBS True Color",
-    subLon: 0, // N/A for a global mosaic
-    composite: raw.layers[0] ?? "truecolor",
-    observationTime: new Date(`${raw.date}T00:00:00Z`),
-    bounds: raw.bounds,
-    width: raw.width,
-    height: raw.height,
-    png,
-  });
-  const result = { satId: "global", date: raw.date, keyed: png !== raw.png, bytes: png.length };
-  log(TAG, `satimg refresh done`, result);
-  blogInfo(TAG, `satimg bake: GIBS true-color @ ${raw.date}`, result, "satimg", "refresh");
-  emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "satimg", satId: "global" } });
-  return result;
+  const ck = process.env.SATIMG_CLOUDKEY !== "false";
+  const opts = cloudKeyFromEnv();
+  const done: Array<{ feed: string; when: string; bytes: number }> = [];
+
+  // One feed failing (upstream hiccup, a satellite in eclipse) must not sink the rest.
+  for (const feed of SATIMG_FEEDS) {
+    try {
+      const r = await fetchGibsFeed(feed.id);
+      // Cloud-key only feeds that read as clouds when keyed (the true-colour mosaic);
+      // GeoColor/IR discs are shown whole and blended by their opacity. SATIMG_CLOUDKEY
+      // =false disables keying entirely.
+      const png = ck && r.cloudKey ? await cloudKey(r.png, opts) : r.png;
+      // Guard Mongo's 16 MB BSON doc limit with a clear error instead of a raw BSON one.
+      if (png.length > 15_500_000) {
+        throw new Error(`frame ${(png.length / 1e6).toFixed(1)}MB > 15.5MB — lower this feed's maxPx`);
+      }
+      await db.satimg.replace({
+        satId: feed.id,
+        satName: feed.label,
+        subLon: 0, // N/A for mosaics/discs
+        composite: feed.id,
+        observationTime: r.when === "latest" ? new Date() : new Date(`${r.when}T00:00:00Z`),
+        bounds: r.bounds,
+        width: r.width,
+        height: r.height,
+        png,
+      });
+      done.push({ feed: feed.id, when: r.when, bytes: png.length });
+      log(TAG, `satimg feed baked`, { feed: feed.id, when: r.when, bytes: png.length });
+    } catch (err) {
+      log(TAG, `satimg feed failed`, { feed: feed.id, err: summarizeForLog(err) });
+      blogErr(TAG, `satimg feed failed (${feed.id})`, err, "satimg", "refresh");
+    }
+  }
+
+  if (!done.length) throw new Error("all satimg feeds failed");
+  blogInfo(TAG, `satimg bake: ${done.length}/${SATIMG_FEEDS.length} feeds`, { done }, "satimg", "refresh");
+  emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "satimg" } });
+  return { feeds: done };
 }
 
 /** Raw Himawari-9 satpy bake (opt-in). */

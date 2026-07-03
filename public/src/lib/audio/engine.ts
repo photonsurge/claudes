@@ -4,12 +4,27 @@
  * Everything is synthesized live from oscillators + noise via the Web Audio API
  * (no samples, no libraries) so it is copyright-safe for a 24/7 stream and never
  * repeats. One `energy` value (0..1) drives the whole arrangement: it free-runs
- * a slow drift that starts chill and is nudged up by `severity` / event pulses —
- * in the app that severity comes from the director's on-air segment. See the
- * `/music` lab page; the plan is to hang this off `useDirector` in WatchSurface.
+ * a slow drift that starts chill and is nudged up by `severity` / event pulses,
+ * or is pinned outright by a fixed AudioMode (setMode). On air it's driven by
+ * <BroadcastBed> in WatchSurface from the synced ControlState.audio + the
+ * director's on-air segment; the `/music` lab page drives it by hand.
  *
  * Browser-only: no AudioContext is created until start().
  */
+import type { AudioMode } from "@photonsurge/shared/control";
+
+/**
+ * Pinned energy target per fixed AudioMode — centred inside each SECTION band
+ * below, so a pinned mode lands squarely in its named section. "auto" has no
+ * entry: energy free-runs off drift + severity.
+ */
+export const MODE_ENERGY: Record<Exclude<AudioMode, "auto">, number> = {
+  chill: 0.18,
+  lounge: 0.38,
+  deep: 0.53,
+  minimal: 0.68,
+  breaks: 0.85,
+};
 
 export interface StemDef {
   id: string;
@@ -109,6 +124,8 @@ export class AuroraBed {
   private energy = 0.18;
   private severity = 0;
   private eventBoost = 0;
+  /** Pinned energy target (a fixed AudioMode), or null to free-run ("auto"). */
+  private forcedEnergy: number | null = null;
   private padVoices: PadVoice[] = [];
   private lastChord: Chord | null = null;
   private motif: { s: number; n: number }[] | null = null;
@@ -132,6 +149,7 @@ export class AuroraBed {
     this.lastChord = null;
     this.motif = null;
     this.nextNoteTime = ctx.currentTime + 0.08;
+    if (this.schedTimer) clearInterval(this.schedTimer);
     this.schedTimer = setInterval(() => this.scheduler(), 25);
   }
 
@@ -145,6 +163,19 @@ export class AuroraBed {
   /** severity fraction 0..1 (director on-air intensity in the app). */
   setSeverity(x: number): void {
     this.severity = clamp(x, 0, 1) * 0.42;
+  }
+
+  /** Pin the arrangement to a fixed section, or "auto" to free-run again. */
+  setMode(mode: AudioMode): void {
+    this.forcedEnergy = mode === "auto" ? null : MODE_ENERGY[mode] ?? null;
+  }
+
+  /**
+   * Underlying AudioContext state, for autoplay-block detection: "suspended"
+   * while `playing` means the browser refused resume() without a user gesture.
+   */
+  contextState(): AudioContextState | null {
+    return this.ctx?.state ?? null;
   }
 
   /** one-shot: spike energy + riser (an event cut / eventPulse in the app). */
@@ -774,7 +805,7 @@ export class AuroraBed {
     const t = ctx.currentTime - this.startTime;
     const drift = 0.34 + 0.13 * Math.sin((t / 150) * Math.PI * 2 - Math.PI / 2);
     this.eventBoost *= Math.exp(-dt / 6.5);
-    const target = clamp(drift + this.severity + this.eventBoost, 0, 1);
+    const target = clamp((this.forcedEnergy ?? drift + this.severity) + this.eventBoost, 0, 1);
     this.energy += (target - this.energy) * clamp(dt * 1.6, 0, 0.2);
     this.energyFilter.frequency.setTargetAtTime(650 + this.energy * 5200, ctx.currentTime, 0.08);
     this.padFilter.frequency.setTargetAtTime(520 + this.energy * 2400, ctx.currentTime, 0.1);

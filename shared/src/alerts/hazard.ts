@@ -63,6 +63,10 @@ export const HAZARDS: HazardMeta[] = [
 const META = Object.fromEntries(HAZARDS.map((h) => [h.id, h])) as Record<HazardType, HazardMeta>;
 export const hazardMeta = (h: HazardType): HazardMeta => META[h] ?? META.other;
 
+/** Runtime guard for untrusted (socket/HTTP) hazard-type values. */
+export const isHazardType = (v: unknown): v is HazardType =>
+  typeof v === "string" && v in META;
+
 /** MeteoAlarm `awareness_type` leading code → hazard. */
 const MA_CODE: Record<string, HazardType> = {
   "1": "wind",

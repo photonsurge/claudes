@@ -7,7 +7,9 @@ import { fetchAircraft } from "@photonsurge/shared/tracks/opensky";
 import { collectShips } from "@photonsurge/shared/tracks/aisstream";
 import { fetchQuakes, DEFAULT_USGS_FEED } from "@photonsurge/shared/tracks/usgs";
 import { fetchAircraftMeta } from "@photonsurge/shared/tracks/hexdb";
+import { mmsiCountry, countryNameFlag } from "@photonsurge/shared/tracks/flags";
 import type { iTrackSnapshot } from "@photonsurge/shared/db/track-snapshot-model";
+import type { AppDb } from "@photonsurge/shared/db/index";
 import { log } from "@photonsurge/shared/utill/logger";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 import { summarizeForLog } from "../utils";
@@ -183,6 +185,37 @@ export async function ingestTles(job: Job) {
  * positions forward from `batchAt` using heading + speed, so a slow poll still
  * looks alive. All rows share `batchAt` (also the replay frame).
  */
+/** Registry disabled? (defaults on). */
+const REGISTRY_ENABLED = process.env.VEHICLE_REGISTRY_ENABLED !== "false";
+
+/**
+ * Upsert the persistent vehicle registry (db.vehicles) from a snapshot frame —
+ * identity + lifecycle (firstSeen/lastSeen/timesSeen/last position) for EVERY
+ * craft, plus a trail point for notable ones. Best-effort: a registry hiccup
+ * never fails the live snapshot.
+ */
+async function recordVehicleRegistry(db: AppDb, kind: "aircraft" | "ship", snaps: iTrackSnapshot[], at: Date) {
+  if (!REGISTRY_ENABLED || !snaps.length) return;
+  try {
+    const rows = snaps.map((s) => {
+      const ship = kind === "ship" ? mmsiCountry(s.externalId) : undefined;
+      return {
+        kind,
+        code: s.externalId,
+        name: s.name,
+        country: kind === "ship" ? ship?.name : s.country,
+        flag: kind === "ship" ? ship?.flag : countryNameFlag(s.country) || undefined,
+        lng: s.lng,
+        lat: s.lat,
+      };
+    });
+    const trailIds = await db.vehicles.notableIds();
+    await db.vehicles.recordSightings(rows, { at, trailIds });
+  } catch (err) {
+    log(TAG, `vehicle registry upsert failed`, { kind, err: summarizeForLog(err) });
+  }
+}
+
 export async function snapshotAircraft(_job: Job) {
   const db = await getAppDb();
   const batchAt = new Date();
@@ -234,6 +267,7 @@ export async function snapshotAircraft(_job: Job) {
   }
 
   const recorded = await db.trackSnapshots.record([...aircraft.values()]);
+  await recordVehicleRegistry(db, "aircraft", [...aircraft.values()], batchAt);
   const result = { batchAt: batchAt.toISOString(), aircraft: aircraft.size, recorded };
   log(TAG, `snapshotAircraft done`, result);
   blogInfo(TAG, `aircraft snapshot: ${aircraft.size} tracks (${recorded} recorded)`, result, "tracks", "aircraft");
@@ -283,6 +317,7 @@ export async function snapshotShips(_job: Job) {
   }
 
   const recorded = await db.trackSnapshots.record([...ships.values()]);
+  await recordVehicleRegistry(db, "ship", [...ships.values()], batchAt);
   const result = { batchAt: batchAt.toISOString(), ships: ships.size, recorded };
   log(TAG, `snapshotShips done`, result);
   blogInfo(TAG, `ship snapshot: ${ships.size} vessels (${recorded} recorded)`, result, "tracks", "ships");

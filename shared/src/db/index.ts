@@ -4,6 +4,8 @@ import { iEntity, makeCollection } from "./generic";
 import { mongoCrud } from "./mongoose-generic";
 import { getWeatherRunModel, iWeatherRunModel } from "./weather-run-model";
 import { getWeatherTextureModel } from "./weather-texture-model";
+import { getWeatherFrameModel } from "./weather-frame-model";
+import { makeWeatherFrameRepo } from "./weather-frame-repo";
 import { getCityModel } from "./city-model";
 import { getAlertModel } from "./alert-model";
 import { makeAlertsRepo } from "./alerts-repo";
@@ -30,12 +32,15 @@ import { getSatImgModel } from "./satimg-model";
 import { makeSatImgRepo } from "./satimg-repo";
 import { getFireModel } from "./fire-model";
 import { makeFireRepo } from "./fire-repo";
+import { getGeomagModel } from "./geomag-model";
+import { makeGeomagRepo } from "./geomag-repo";
 import { getCamModel } from "./cam-model";
 import { makeCamRepo } from "./cam-repo";
 import { getAdModel } from "./ad-model";
 import { makeAdRepo } from "./ad-repo";
 import { getAircraftMetaModel, iAircraftMetaModel } from "./aircraft-meta-model";
-import { getNotableTrackModel, iNotableTrackModel } from "./notable-track-model";
+import { getVehicleModel } from "./vehicle-model";
+import { makeVehicleRepo } from "./vehicle-repo";
 import { getLogModel } from "./log-model";
 import { getBroadcastStateModel, BROADCAST_STATE_ID } from "./broadcast-state-model";
 import { getDirectorConfigModel } from "./director-config-model";
@@ -65,6 +70,7 @@ export function createDb(conn: Connection) {
     pings: makeCollection<iPing>(conn, "pings"),
     weatherRuns,
     weatherTextures: mongoCrud(getWeatherTextureModel(conn)),
+    weatherFrames: makeWeatherFrameRepo(getWeatherFrameModel(conn)),
     cities: mongoCrud(getCityModel(conn)),
     alerts: makeAlertsRepo(getAlertModel(conn)),
     satelliteTles: makeSatelliteTleRepo(getSatelliteTleModel(conn)),
@@ -78,10 +84,11 @@ export function createDb(conn: Connection) {
     aurora: makeAuroraRepo(getAuroraModel(conn)),
     satimg: makeSatImgRepo(getSatImgModel(conn)),
     fires: makeFireRepo(getFireModel(conn)),
+    geomag: makeGeomagRepo(getGeomagModel(conn)),
     cams: makeCamRepo(getCamModel(conn)),
     ads: makeAdRepo(getAdModel(conn)),
     aircraftMeta: mongoCrud<iAircraftMetaModel>(getAircraftMetaModel(conn)),
-    notableTracks: mongoCrud<iNotableTrackModel>(getNotableTrackModel(conn)),
+    vehicles: makeVehicleRepo(getVehicleModel(conn)),
     logs: mongoCrud(getLogModel(conn)),
     broadcastState,
     directorConfig,

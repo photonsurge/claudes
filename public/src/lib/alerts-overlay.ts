@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listAlerts, alertsToFeatures, type AlertFeature } from "./alerts";
 import { useSocket } from "./socket-provider";
 import { ALERTS_UPDATED } from "@photonsurge/shared/control";
@@ -19,8 +19,15 @@ import { ALERTS_UPDATED } from "@photonsurge/shared/control";
  * each time, the overlay would blank out and reload (5000-row fetch + full
  * re-tessellation) on every shot. Instead the data stays warm and the globe
  * just toggles layer *visibility* (see alertsLayer's `visible`).
+ *
+ * `hazardsOff` (operator's per-hazard-type toggles) is applied AFTER the fetch,
+ * so flipping a hazard chip filters instantly from the warm data — no refetch.
  */
-export function useAlertFeatures(enabled: boolean, severityMin: number): AlertFeature[] {
+export function useAlertFeatures(
+  enabled: boolean,
+  severityMin: number,
+  hazardsOff: readonly string[] = [],
+): AlertFeature[] {
   const [features, setFeatures] = useState<AlertFeature[]>([]);
   const { socket } = useSocket();
   const [liveTick, setLiveTick] = useState(0);
@@ -61,5 +68,12 @@ export function useAlertFeatures(enabled: boolean, severityMin: number): AlertFe
     };
   }, [armed, severityMin, liveTick]);
 
-  return features;
+  // Key on the joined list, not the array identity — socket state updates hand
+  // us a fresh array each render even when the selection hasn't changed.
+  const offKey = [...hazardsOff].sort().join(",");
+  return useMemo(() => {
+    if (!offKey) return features;
+    const off = new Set(offKey.split(","));
+    return features.filter((f) => !off.has(f.properties.hazard));
+  }, [features, offKey]);
 }

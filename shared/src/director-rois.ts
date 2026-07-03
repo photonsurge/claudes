@@ -117,6 +117,15 @@ export const INTRO_MAP_TYPES: GlobalMapType[] = [
     needs: { kind: "aurora" },
   },
   {
+    id: "night",
+    title: "Earth at Night",
+    subtitle: "VIIRS city lights",
+    // The Black Marble basemap IS the look — no scalar field or chrome, so the
+    // lights read. A static local asset, so no `needs` gate. The next look's fold
+    // over the preset (LAYERS_OFF pins basemap) reverts the base automatically.
+    patch: { basemap: "night", activeVariable: null, showWind: false, showPressure: false },
+  },
+  {
     id: "satimg",
     title: "Satellite View",
     subtitle: "Live geostationary imagery",
@@ -189,6 +198,14 @@ export const QUAKE_MAP_TYPES: GlobalMapType[] = [
     subtitle: "The terrain from orbit",
     // Real imagery of the epicentre; contours off so the ground reads cleanly.
     patch: { basemap: "satellite", activeVariable: null, showElevation: false },
+  },
+  {
+    id: "night",
+    title: "City Lights",
+    subtitle: "Population footprint at night",
+    // Black Marble around the epicentre — the lights read as WHO is nearby (the
+    // population exposure), the geophysical counterpart to the terrain looks.
+    patch: { basemap: "night", activeVariable: null, showElevation: false },
   },
 ];
 
@@ -362,6 +379,24 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     autoSpin: false,
     spinSpeed: 0,
     zoomDrift: 0.02,
+  },
+  // A favourite-country spotlight reads as the national weather check: synoptic
+  // pressure + live radar + any active warnings over the framed country, with the
+  // ambient field cycle (temp → humidity → rain → …) running client-side like a
+  // tour. Warnings drop the severity floor so the country's real alert picture
+  // shows, not just the headline-grade ones the scene baseline may filter to.
+  country: {
+    ...LAYERS_OFF,
+    activeVariable: "temp",
+    showWind: true,
+    showPressure: true,
+    showRadar: true,
+    showAlerts: true,
+    alertSeverityMin: 0,
+    showCities: true,
+    autoSpin: false,
+    spinSpeed: 0,
+    zoomDrift: 0.025,
   },
   weather: {
     ...LAYERS_OFF,

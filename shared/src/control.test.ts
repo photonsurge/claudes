@@ -1,6 +1,7 @@
 import {
   DEFAULT_CONTROL_STATE,
   DEFAULT_BASEMAP_COLORS,
+  DEFAULT_AUDIO_SETTINGS,
   mergeControlState,
   CONTROL_STATE,
   WEATHER_RUN,
@@ -69,6 +70,7 @@ describe("mergeControlState", () => {
       trailOpacity: 0.5,
       showAlerts: true,
       alertSeverityMin: 3,
+      alertHazardsOff: ["marine", "fog"],
       showSeismic: true,
       seismicMinMag: 4.5,
       showCables: true,
@@ -76,8 +78,14 @@ describe("mergeControlState", () => {
       showFaults: true,
       showAurora: true,
       showSatImg: true,
-      satImgOpacity: 0.7,
+      satImgFeeds: {
+        global: { on: true, opacity: 0.7 },
+        "goes-east": { on: false, opacity: 0.9 },
+        "goes-west": { on: true, opacity: 0.5 },
+        himawari: { on: true, opacity: 0.8 },
+      },
       showFires: true,
+      showMagneticField: true,
       showGraticule: true,
       graticuleColor: "#abcdef",
       graticuleLabels: false,
@@ -86,6 +94,7 @@ describe("mergeControlState", () => {
       showBroadcastChrome: true,
       broadcastTheme: "command",
       showMapSource: true,
+      audio: { enabled: true, mode: "deep", volume: 0.45, muted: true },
     };
     // Deep-equal proves no key was dropped or altered by the merge.
     expect(mergeControlState(DEFAULT_CONTROL_STATE, custom)).toEqual(custom);
@@ -100,6 +109,15 @@ describe("mergeControlState", () => {
     expect(next.basemap).toBe("satellite");
     expect(next.showWind).toBe(false);
     expect(next.showPressure).toBe(base.showPressure);
+  });
+
+  it("sanitises alertHazardsOff to known hazard types and dedupes", () => {
+    const next = mergeControlState(base, {
+      alertHazardsOff: ["fog", "bogus", "fog", "marine"] as never,
+    });
+    expect(next.alertHazardsOff).toEqual(["fog", "marine"]);
+    // Missing from the patch → keeps the base value.
+    expect(mergeControlState(next, {}).alertHazardsOff).toEqual(["fog", "marine"]);
   });
 
   it("allows activeVariable to be set to null but not clobbered by undefined", () => {
@@ -133,6 +151,25 @@ describe("mergeControlState", () => {
     const legacy = { ...DEFAULT_CONTROL_STATE, basemapColors: undefined as any };
     const next = mergeControlState(legacy, {});
     expect(next.basemapColors).toEqual(DEFAULT_BASEMAP_COLORS);
+  });
+
+  it("merges audio partially, keeping untouched fields", () => {
+    const next = mergeControlState(base, { audio: { muted: true } as any });
+    expect(next.audio.muted).toBe(true);
+    expect(next.audio.mode).toBe(base.audio.mode);
+    expect(next.audio.volume).toBe(base.audio.volume);
+  });
+
+  it("rejects an unknown audio mode and clamps volume", () => {
+    const next = mergeControlState(base, { audio: { mode: "dubstep", volume: 4 } as any });
+    expect(next.audio.mode).toBe(DEFAULT_AUDIO_SETTINGS.mode);
+    expect(next.audio.volume).toBe(1);
+  });
+
+  it("backfills audio when the base state predates the field", () => {
+    const legacy = { ...DEFAULT_CONTROL_STATE, audio: undefined as any };
+    const next = mergeControlState(legacy, {});
+    expect(next.audio).toEqual(DEFAULT_AUDIO_SETTINGS);
   });
 });
 

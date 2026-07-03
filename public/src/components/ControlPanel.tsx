@@ -10,7 +10,10 @@ import type {
   TrackColorMode,
   TrackIconMode,
   ElevationLineColor,
+  AudioMode,
 } from "@photonsurge/shared/control";
+import { AUDIO_MODES } from "@photonsurge/shared/control";
+import { SATIMG_FEEDS } from "@photonsurge/shared/satimg/types";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { mapFreshness } from "../lib/manifest";
 import { legendVariableFor } from "../lib/legend";
@@ -23,6 +26,7 @@ import WindControls from "./WindControls";
 import Timeline from "./Timeline";
 import Legend from "./Legend";
 import SearchFlyTo from "./SearchFlyTo";
+import AlertHazardChips from "./AlertHazardChips";
 import { THEME_OPTIONS } from "./broadcast/config";
 
 /**
@@ -45,6 +49,16 @@ const spinSpeedToPos = (speed: number): number => {
 };
 /** Wrap any longitude into the -180..180 range for the position slider. */
 const normaliseLng = (lng: number): number => (((lng + 180) % 360) + 360) % 360 - 180;
+
+/** Operator-facing labels for the audio bed's modes (see shared AUDIO_MODES). */
+const AUDIO_MODE_LABELS: Record<AudioMode, string> = {
+  auto: "Auto — follows broadcast",
+  chill: "Chill Out",
+  lounge: "Lounge House",
+  deep: "Deep House",
+  minimal: "Minimal Techno",
+  breaks: "Breaks · Severe",
+};
 
 export interface ControlPanelProps {
   state: ControlState;
@@ -133,6 +147,57 @@ export default function ControlPanel({
             </Field>
           </div>
         )}
+      </Section>
+
+      <Section title="Audio bed">
+        {(() => {
+          const audio = state.audio;
+          const setAudio = (p: Partial<typeof audio>) => patch({ audio: { ...audio, ...p } });
+          return (
+            <>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+                <Toggle label="Music" checked={audio.enabled} onChange={(enabled) => setAudio({ enabled })} />
+                {audio.enabled && (
+                  <>
+                    <Field label="Mode">
+                      <select
+                        value={audio.mode}
+                        onChange={(e) => setAudio({ mode: e.target.value as AudioMode })}
+                        aria-label="Audio mode"
+                        style={miniSelect}
+                      >
+                        {AUDIO_MODES.map((m) => (
+                          <option key={m} value={m}>
+                            {AUDIO_MODE_LABELS[m]}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <PillToggle label="🔇 Mute" checked={audio.muted} onChange={(muted) => setAudio({ muted })} />
+                    <Field label="Volume">
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={audio.volume}
+                        onChange={(e) => setAudio({ volume: Number(e.target.value) })}
+                        aria-label="Audio volume"
+                      />
+                      <span style={{ color: "#fff", width: 34, textAlign: "right" }}>
+                        {Math.round(audio.volume * 100)}%
+                      </span>
+                    </Field>
+                  </>
+                )}
+              </div>
+              <div style={{ marginTop: 6, fontSize: 11, color: "#8b95a7" }}>
+                Generative music on <b>/watch</b> — Auto follows the on-air segment; browsers need one
+                click on the watch page before audio can start (OBS plays immediately).
+              </div>
+            </>
+          );
+        })()}
       </Section>
 
       {state.showWind && (
@@ -290,6 +355,14 @@ export default function ControlPanel({
             </label>
           )}
         </div>
+        {state.showAlerts && (
+          <div style={{ marginTop: 10 }}>
+            <AlertHazardChips
+              hazardsOff={state.alertHazardsOff}
+              onChange={(alertHazardsOff) => patch({ alertHazardsOff })}
+            />
+          </div>
+        )}
       </Section>
 
       <Section title="Seismic">
@@ -356,35 +429,54 @@ export default function ControlPanel({
       </Section>
 
       <Section title="Space weather">
-        <Toggle
-          label="Aurora oval (magnetic activity)"
-          checked={state.showAurora}
-          onChange={(showAurora) => patch({ showAurora })}
-        />
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <Toggle
+            label="Aurora oval (magnetic activity)"
+            checked={state.showAurora}
+            onChange={(showAurora) => patch({ showAurora })}
+          />
+          <Toggle
+            label="Magnetic field (global)"
+            checked={state.showMagneticField}
+            onChange={(showMagneticField) => patch({ showMagneticField })}
+          />
+        </div>
       </Section>
 
-      <Section title="Satellite imagery">
+      <Section title="Satellite clouds">
         <Toggle
-          label="Satellite clouds (true colour)"
+          label="Show cloud feeds"
           checked={state.showSatImg}
           onChange={(showSatImg) => patch({ showSatImg })}
         />
-        {state.showSatImg && (
-          <Field label="Opacity">
-            <input
-              type="range"
-              min={0.1}
-              max={1}
-              step={0.05}
-              value={state.satImgOpacity}
-              onChange={(e) => patch({ satImgOpacity: Number(e.target.value) })}
-              aria-label="Satellite opacity"
-            />
-            <span style={{ color: "#fff", width: 32, textAlign: "right" }}>
-              {Math.round(state.satImgOpacity * 100)}%
-            </span>
-          </Field>
-        )}
+        {state.showSatImg &&
+          SATIMG_FEEDS.map((feed) => {
+            const fs = state.satImgFeeds[feed.id] ?? { on: false, opacity: 0.85 };
+            const setFeed = (p: Partial<typeof fs>) =>
+              patch({ satImgFeeds: { ...state.satImgFeeds, [feed.id]: { ...fs, ...p } } });
+            return (
+              <div key={feed.id} style={{ marginTop: 6 }}>
+                <Toggle label={feed.label} checked={fs.on} onChange={(on) => setFeed({ on })} />
+                <div style={{ fontSize: 11, color: "#8b95a7", margin: "2px 0 0 2px" }}>{feed.region}</div>
+                {fs.on && (
+                  <Field label="Opacity">
+                    <input
+                      type="range"
+                      min={0.1}
+                      max={1}
+                      step={0.05}
+                      value={fs.opacity}
+                      onChange={(e) => setFeed({ opacity: Number(e.target.value) })}
+                      aria-label={`${feed.label} opacity`}
+                    />
+                    <span style={{ color: "#fff", width: 32, textAlign: "right" }}>
+                      {Math.round(fs.opacity * 100)}%
+                    </span>
+                  </Field>
+                )}
+              </div>
+            );
+          })}
       </Section>
 
       <Section title="Debug">

@@ -80,3 +80,52 @@ export interface SatImgMeta extends SatImgFrame {
   /** When the worker last baked this frame (ISO) — busts the image URL cache. */
   updatedAt: string;
 }
+
+/**
+ * One selectable "clouds" FEED — a source + its coverage area. The worker bakes each
+ * feed into its own cached frame (satId = feed id); the operator ticks which feeds to
+ * show and sets each one's opacity. `bounds` is both the fetch window and the globe
+ * BitmapLayer extent (imagery is transparent outside its disk, so a generous window is
+ * fine). Live geostationary feeds refresh ~10-min; the global mosaic is daily.
+ */
+export interface SatImgFeed {
+  id: string;
+  label: string;
+  region: string;
+  bounds: SatImgBounds;
+  live: boolean;
+}
+
+/**
+ * The feed set the globe can drape. Constrained by what NASA GIBS actually serves:
+ * a global daily true-colour mosaic (covers everywhere incl. Africa/Europe), plus
+ * live GOES-East/West GeoColor (Americas/Pacific) and Himawari clean-IR (Asia). GIBS
+ * carries no Meteosat and no Himawari GeoColor, so those regions lean on the global.
+ */
+export const SATIMG_FEEDS: SatImgFeed[] = [
+  { id: "global", label: "Global true colour", region: "Whole world · daily", bounds: [-180, -90, 180, 90], live: false },
+  { id: "goes-east", label: "GOES-East", region: "Americas · Atlantic · live", bounds: [-150, -65, 10, 65], live: true },
+  { id: "goes-west", label: "GOES-West", region: "Pacific · W Americas · live", bounds: [-180, -65, -60, 65], live: true },
+  { id: "himawari", label: "Himawari (IR)", region: "Asia · Australia · live", bounds: [60, -65, 180, 65], live: true },
+];
+
+/** Per-feed operator state: shown + its own opacity. */
+export interface SatImgFeedState {
+  on: boolean;
+  opacity: number;
+}
+
+/** Default per-feed state — the global mosaic on, the live regional discs off. */
+export const DEFAULT_SATIMG_FEEDS: Record<string, SatImgFeedState> = {
+  global: { on: true, opacity: 0.85 },
+  "goes-east": { on: false, opacity: 0.9 },
+  "goes-west": { on: false, opacity: 0.9 },
+  himawari: { on: false, opacity: 0.9 },
+};
+
+/** Fresh deep copy of the default feed state (so callers never share nested refs). */
+export function defaultSatImgFeeds(): Record<string, SatImgFeedState> {
+  const out: Record<string, SatImgFeedState> = {};
+  for (const [id, s] of Object.entries(DEFAULT_SATIMG_FEEDS)) out[id] = { ...s };
+  return out;
+}

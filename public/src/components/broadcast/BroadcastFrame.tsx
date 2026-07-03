@@ -16,11 +16,13 @@ import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import type { Segment } from "@photonsurge/shared/director";
 import type { AuroraOverlay } from "../../lib/aurora-overlay";
+import type { GeomagOverlay } from "../../lib/geomag-overlay";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake, Track } from "../../lib/tracks/types";
 import type { City } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
 import { buildTicker } from "../../lib/broadcast";
+import { bboxForCamera } from "../../lib/history-client";
 import { legendVariableFor } from "../../lib/legend";
 import { nearest, formatKm } from "../../lib/geo";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
@@ -31,7 +33,9 @@ import IntensityMeter from "./IntensityMeter";
 import LiveAlertPanel from "./LiveAlertPanel";
 import WorldWatchPanel from "./WorldWatchPanel";
 import KpIndexPanel from "./KpIndexPanel";
+import SpaceWeatherMeter from "./SpaceWeatherMeter";
 import MonitorCluster from "./MonitorCluster";
+import PointHistoryPanel from "./PointHistoryPanel";
 import EventOverlay from "./EventOverlay";
 import EventNearbyPanel from "./EventNearbyPanel";
 import QuakeReport from "./QuakeReport";
@@ -67,6 +71,7 @@ export default function BroadcastFrame({
   cities = [],
   cams = [],
   aurora = null,
+  geomag = null,
   theme = DEFAULT_THEME,
   onAirSegment = null,
 }: {
@@ -81,6 +86,8 @@ export default function BroadcastFrame({
   cams?: Cam[];
   /** Cached aurora frame (carries the Kp index) — for the space-weather readout. */
   aurora?: AuroraOverlay | null;
+  /** Cached geomagnetic-field frame — for the space-weather colour-key ramp. */
+  geomag?: GeomagOverlay | null;
   theme?: BroadcastTheme;
   /** The on-air director segment — drives the event reticle so it matches what's
    *  actually selected. Null when nothing is on air (reticle hidden). */
@@ -95,6 +102,10 @@ export default function BroadcastFrame({
   // Space-weather readout rides on the aurora overlay: only when the oval is on
   // and the cached frame actually carries a Kp reading.
   const kpShown = state.showAurora && aurora?.meta.kp != null;
+  // Colour-key ramp for the aurora oval / magnetic field — both hooks already
+  // return null when their toggle is off, so presence alone gates this.
+  const spaceWeatherShown = aurora?.meta != null || geomag?.meta != null;
+  const intensityShown = legendVariableFor(state) != null;
 
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 5 }}>
@@ -176,6 +187,20 @@ export default function BroadcastFrame({
           <IntensityMeter variable={legendVariableFor(state)} units={state.units} theme={theme} />
         </div>
 
+        {/* Space-weather colour key, stacked below whichever of Kp / the active
+            variable's intensity meter are showing. */}
+        {spaceWeatherShown ? (
+          <div
+            style={{
+              position: "absolute",
+              top: TICKER_H + INSET + 128 + (kpShown ? 72 : 0) + (intensityShown ? 260 : 0),
+              left: INSET,
+            }}
+          >
+            <SpaceWeatherMeter aurora={aurora} geomag={geomag} theme={theme} />
+          </div>
+        ) : null}
+
         {/* Single most-severe active alert — moved to top-centre so the prime
             top-right slot can carry the always-on WORLD WATCH summary. Hidden
             (returns null) when the operator has alerts off or none are active. */}
@@ -189,7 +214,32 @@ export default function BroadcastFrame({
           <WorldWatchPanel theme={theme} />
         </div>
 
-        <div style={{ position: "absolute", bottom: TICKER_H + INSET, right: INSET }}>
+        {/* Bottom-right column: archived history charts for the focus, stacked
+            above the global monitor. Targeted events sample their exact point;
+            wide shots aggregate the framed AREA instead. Both self-hide. */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: TICKER_H + INSET,
+            right: INSET,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: 10,
+          }}
+        >
+          <PointHistoryPanel
+            center={onAirSegment?.camera.center ?? state.camera.center ?? null}
+            bbox={
+              !eventTargeted
+                ? bboxForCamera(
+                    onAirSegment?.camera.center ?? state.camera.center,
+                    onAirSegment?.camera.zoom ?? state.camera.zoom,
+                  )
+                : null
+            }
+            theme={theme}
+          />
           <MonitorCluster
             quakes={quakes}
             onAirSegment={onAirSegment}

@@ -16,6 +16,7 @@ import type {
 import { emitWorkerEvent } from "../socket";
 import { GFS_GRID, GFS_BOUNDS } from "../grib/bake";
 import { runRetention } from "./retention";
+import { archiveRun } from "./archive";
 import { cleanupTemp } from "./download";
 import { cfg, forecastSteps, runDateFor } from "./config";
 import { bakeVariableStep } from "./bakeVariableStep";
@@ -140,6 +141,18 @@ export async function runIngest(job: Job) {
     });
 
     await runRetention(db as any, retainRuns);
+
+    // Long-term archive: copy the analysis-hour frames before this run ages
+    // out of retention. Never fails the (already published) run.
+    await archiveRun(db as any, {
+      id: runId,
+      model,
+      run: runDate,
+      bounds: [...GFS_BOUNDS],
+      grid: { ...GFS_GRID },
+      steps,
+      variables,
+    }).catch((ex) => log(TAG, "ingest: archive failed", { err: String(ex) }));
 
     log(TAG, "ingest: published", { run: runDate.toISOString(), runId });
     return { published: true, run: runDate.toISOString(), runId };

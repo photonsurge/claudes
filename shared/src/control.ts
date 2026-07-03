@@ -8,6 +8,9 @@
  * mount then live-updates from CONTROL_STATE.
  */
 
+import { DEFAULT_SATIMG_FEEDS, defaultSatImgFeeds, type SatImgFeedState } from "./satimg/types";
+import { isHazardType, type HazardType } from "./alerts/hazard";
+
 /** Socket event names (also the worker→browser weather event). */
 export const CONTROL_STATE = "control:state" as const;
 export const WEATHER_RUN = "weather:run" as const;
@@ -117,6 +120,36 @@ export const WIND_PRESETS: Record<string, WindSettings> = {
 /** How the wind field is drawn. */
 export type WindMode = "particles" | "barbs";
 
+/**
+ * How the generative audio bed on /watch picks its section. "auto" follows the
+ * broadcast (on-air segment severity + the engine's slow drift); the named modes
+ * pin the arrangement to one section regardless of what's on air.
+ */
+export type AudioMode = "auto" | "chill" | "lounge" | "deep" | "minimal" | "breaks";
+export const AUDIO_MODES: AudioMode[] = ["auto", "chill", "lounge", "deep", "minimal", "breaks"];
+
+/**
+ * Operator settings for the generative music bed. Set on /control, played by
+ * every /watch (the bed synthesizes client-side, so this is settings-only —
+ * no audio travels over the socket).
+ */
+export interface AudioSettings {
+  /** Master on/off for the bed on the watch surface. */
+  enabled: boolean;
+  mode: AudioMode;
+  /** Master volume 0..1. Kept while muted so unmute restores the level. */
+  volume: number;
+  /** Hard-mute without losing the volume setting. */
+  muted: boolean;
+}
+
+export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
+  enabled: false,
+  mode: "auto",
+  volume: 0.7,
+  muted: false,
+};
+
 /** How elevation contour lines are coloured. */
 export type ElevationLineColor = "default" | "elevation" | "custom";
 
@@ -200,6 +233,27 @@ export const DEFAULT_SATELLITE_STYLE: TrackStyle = {
 /** Clamp a number into [lo, hi], falling back to `dflt` if not finite. */
 const clampNum = (v: unknown, lo: number, hi: number, dflt: number): number =>
   typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : dflt;
+
+/**
+ * Merge a (possibly untrusted) partial per-feed clouds patch onto a base, validating
+ * each known feed's `on`/`opacity`. Always returns exactly the registered feed ids so
+ * the shape round-trips deterministically through the control→/watch sync.
+ */
+function mergeSatImgFeeds(
+  base: Record<string, SatImgFeedState> | undefined,
+  patch: Record<string, Partial<SatImgFeedState>> | undefined,
+): Record<string, SatImgFeedState> {
+  const out: Record<string, SatImgFeedState> = {};
+  for (const id of Object.keys(DEFAULT_SATIMG_FEEDS)) {
+    const b = base?.[id] ?? DEFAULT_SATIMG_FEEDS[id];
+    const p = patch?.[id] ?? {};
+    out[id] = {
+      on: typeof p.on === "boolean" ? p.on : b.on,
+      opacity: clampNum(p.opacity, 0, 1, b.opacity),
+    };
+  }
+  return out;
+}
 
 /**
  * Merge a (possibly untrusted) partial TrackStyle onto a base, validating each
@@ -308,6 +362,11 @@ export interface ControlState {
   showAlerts: boolean;
   /** Only show alerts at/above this severityRank (0–4). */
   alertSeverityMin: number;
+  /**
+   * Hazard types HIDDEN from the alert overlay (empty = show everything).
+   * Stored as an off-list so newly added hazard types default to visible.
+   */
+  alertHazardsOff: HazardType[];
   /** Overlay recent earthquakes (USGS) on the globe. */
   showSeismic: boolean;
   /** Only show quakes at/above this magnitude. */
@@ -320,12 +379,14 @@ export interface ControlState {
   showFaults: boolean;
   /** Overlay the live aurora oval (NOAA SWPC OVATION) — a geomagnetic activity map. */
   showAurora: boolean;
-  /** Overlay live-ish geostationary satellite imagery (Himawari-9 …) draped on the globe. */
+  /** Master toggle for the satellite "clouds" overlay (per-feed state in satImgFeeds). */
   showSatImg: boolean;
-  /** Satellite-imagery layer opacity 0–1 (the cloud overlay is see-through by design). */
-  satImgOpacity: number;
+  /** Per-feed clouds state — each source/coverage-area's on-flag + opacity (keyed by feed id). */
+  satImgFeeds: Record<string, SatImgFeedState>;
   /** Overlay active-fire detections (NASA FIRMS VIIRS/MODIS hot-spots). */
   showFires: boolean;
+  /** Overlay the global geomagnetic-field intensity (IGRF) — the whole-globe magnetic map. */
+  showMagneticField: boolean;
   /** DEBUG: outline each active weather-map source's bbox + label on the globe, so
    *  the operator can see which model (base/nest) renders where and check alignment. */
   showMapSource: boolean;
@@ -343,6 +404,8 @@ export interface ControlState {
   showBroadcastChrome: boolean;
   /** Broadcast chrome theme/brand preset id (see broadcast/config). */
   broadcastTheme: string;
+  /** Generative music bed played on /watch (mode/volume/mute, operator-driven). */
+  audio: AudioSettings;
 }
 
 export const DEFAULT_CONTROL_STATE: ControlState = {
@@ -380,6 +443,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   trailOpacity: 0.35,
   showAlerts: false,
   alertSeverityMin: 0,
+  alertHazardsOff: [],
   showSeismic: false,
   seismicMinMag: 2.5,
   showCables: false,
@@ -387,8 +451,9 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showFaults: false,
   showAurora: false,
   showSatImg: false,
-  satImgOpacity: 0.85,
+  satImgFeeds: defaultSatImgFeeds(),
   showFires: false,
+  showMagneticField: false,
   showMapSource: false,
   showGraticule: false,
   graticuleColor: "#7dd3fc",
@@ -397,6 +462,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showDayNight: false,
   showBroadcastChrome: true,
   broadcastTheme: "aurora",
+  audio: { ...DEFAULT_AUDIO_SETTINGS },
 };
 
 /**
@@ -500,6 +566,9 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
       typeof patch.alertSeverityMin === "number"
         ? patch.alertSeverityMin
         : base.alertSeverityMin ?? 0,
+    alertHazardsOff: Array.isArray(patch.alertHazardsOff)
+      ? [...new Set(patch.alertHazardsOff.filter(isHazardType))]
+      : base.alertHazardsOff ?? [],
     showSeismic: typeof patch.showSeismic === "boolean" ? patch.showSeismic : base.showSeismic ?? false,
     seismicMinMag:
       typeof patch.seismicMinMag === "number" ? patch.seismicMinMag : base.seismicMinMag ?? 2.5,
@@ -509,8 +578,10 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     showFaults: typeof patch.showFaults === "boolean" ? patch.showFaults : base.showFaults ?? false,
     showAurora: typeof patch.showAurora === "boolean" ? patch.showAurora : base.showAurora ?? false,
     showSatImg: typeof patch.showSatImg === "boolean" ? patch.showSatImg : base.showSatImg ?? false,
-    satImgOpacity: clampNum(patch.satImgOpacity, 0, 1, base.satImgOpacity ?? 0.85),
+    satImgFeeds: mergeSatImgFeeds(base.satImgFeeds, patch.satImgFeeds),
     showFires: typeof patch.showFires === "boolean" ? patch.showFires : base.showFires ?? false,
+    showMagneticField:
+      typeof patch.showMagneticField === "boolean" ? patch.showMagneticField : base.showMagneticField ?? false,
     showMapSource:
       typeof patch.showMapSource === "boolean" ? patch.showMapSource : base.showMapSource ?? false,
     showGraticule:
@@ -529,5 +600,19 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
         : base.showBroadcastChrome ?? true,
     broadcastTheme:
       typeof patch.broadcastTheme === "string" ? patch.broadcastTheme : base.broadcastTheme ?? "aurora",
+    audio: {
+      enabled:
+        typeof patch.audio?.enabled === "boolean"
+          ? patch.audio.enabled
+          : base.audio?.enabled ?? DEFAULT_AUDIO_SETTINGS.enabled,
+      mode: AUDIO_MODES.includes(patch.audio?.mode as AudioMode)
+        ? (patch.audio?.mode as AudioMode)
+        : base.audio?.mode ?? DEFAULT_AUDIO_SETTINGS.mode,
+      volume: clampNum(patch.audio?.volume ?? base.audio?.volume, 0, 1, DEFAULT_AUDIO_SETTINGS.volume),
+      muted:
+        typeof patch.audio?.muted === "boolean"
+          ? patch.audio.muted
+          : base.audio?.muted ?? DEFAULT_AUDIO_SETTINGS.muted,
+    },
   };
 }

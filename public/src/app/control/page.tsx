@@ -31,6 +31,7 @@ import { useFaults } from "../../lib/faults-overlay";
 import { useAurora } from "../../lib/aurora-overlay";
 import { useSatImg } from "../../lib/satimg-overlay";
 import { useFires } from "../../lib/fires-overlay";
+import { useGeomag } from "../../lib/geomag-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
 import DirectorPanel from "../../components/DirectorPanel";
@@ -91,13 +92,14 @@ export default function ControlPage() {
     center: shown.camera.center,
     zoom: shown.camera.zoom,
   });
-  const alerts = useAlertFeatures(shown.showAlerts, shown.alertSeverityMin);
+  const alerts = useAlertFeatures(shown.showAlerts, shown.alertSeverityMin, shown.alertHazardsOff);
   const quakes = useQuakes(shown.showSeismic, shown.seismicMinMag);
   const cables = useCables(shown.showCables);
   const faults = useFaults(shown.showFaults);
   const aurora = useAurora(shown.showAurora);
   const satimg = useSatImg(shown.showSatImg);
   const fires = useFires(shown.showFires);
+  const geomag = useGeomag(shown.showMagneticField);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +163,7 @@ export default function ControlPage() {
           aurora={aurora}
           satimg={satimg}
           fires={fires}
+          geomag={geomag}
           interactive
           pulseAt={eventPulse(director)}
           // Click-to-select is only live while the director is idle — a cut owns
@@ -173,8 +176,8 @@ export default function ControlPage() {
             apply({ ...state, camera: { center, zoom } });
           }}
         />
-        {shown.showAlerts || shown.showSeismic ? (
-          <AlertLegend alerts={alerts} quakes={quakes} />
+        {shown.showAlerts || shown.showSeismic || shown.showAurora || shown.showMagneticField ? (
+          <AlertLegend alerts={alerts} quakes={quakes} aurora={aurora} geomag={geomag} />
         ) : null}
         {director?.active && onAir ? (
           <ViewingOverlay

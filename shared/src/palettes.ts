@@ -180,6 +180,17 @@ export const PALETTES: Record<string, Palette> = {
     [0.8, "#f2802e"],
     [1.0, "#ff2e5a"],
   ],
+  // Geomagnetic total-field intensity (nT) over ~23,000..65,000. Weak deep-blue at
+  // the tilted geomagnetic equator → teal → warm yellow → red at the strong poles,
+  // an oceanographic-style ramp that reads the equator-to-pole field at a glance.
+  geomag: [
+    [0.0, "#2b2f8f"],
+    [0.25, "#2f7dc6"],
+    [0.5, "#48c9a9"],
+    [0.7, "#cfe05a"],
+    [0.85, "#f29b2e"],
+    [1.0, "#c0181f"],
+  ],
   // Radar reflectivity (dBZ), NWS-style over the 5..75 dBZ domain: light drizzle
   // teal/green → moderate rain yellow → heavy orange/red → hail magenta/white.
   // The <5 dBZ floor bakes transparent (minVisible) so clear air shows the map.

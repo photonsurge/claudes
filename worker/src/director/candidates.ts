@@ -8,9 +8,17 @@
  * so "what's newsworthy" is one readable place to tune.
  */
 import type { AppDb } from "@photonsurge/shared/db/index";
-import type { DirectorConfig, Segment, SegmentKind, TrackInfo } from "@photonsurge/shared/director";
+import {
+  kindHoldMs,
+  quakeHoldMs,
+  stormHoldMs,
+  type DirectorConfig,
+  type Segment,
+  type SegmentKind,
+  type TrackInfo,
+} from "@photonsurge/shared/director";
 import type { Candidate } from "@photonsurge/shared/director-select";
-import { notableId, type iNotableTrackModel } from "@photonsurge/shared/db/notable-track-model";
+import { vehicleId, vehicleLabel, type iVehicle } from "@photonsurge/shared/db/vehicle-model";
 import {
   PRESETS,
   REGIONS_OF_INTEREST,
@@ -20,6 +28,7 @@ import {
   ORBITAL_VIEW_ZOOM,
   ORBITAL_VIEWS,
 } from "@photonsurge/shared/director-rois";
+import { countryShot } from "@photonsurge/shared/director-countries";
 import { adMediaPath } from "@photonsurge/shared/ads/types";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
@@ -61,12 +70,12 @@ const VIP_SCORE = 80;
  * payload. Operator overrides win; catalog values win over live gap-fills.
  */
 function notableTrackInfo(
-  n: iNotableTrackModel,
+  n: iVehicle,
   live: { type?: string; operator?: string; registration?: string; flag?: string; country?: string },
 ): TrackInfo {
   const override = n.photoUrlOverride?.trim();
   return {
-    label: n.label,
+    label: vehicleLabel(n),
     category: n.category,
     photoUrl: override || n.photoUrl,
     photoCredit: override ? undefined : n.photoCredit,
@@ -83,12 +92,12 @@ function notableTrackInfo(
 }
 
 /** Curated filler: one global intro spin + a rotation of regions of interest. */
-function fillerCandidates(cfg: DirectorConfig, holdMs: number): Candidate[] {
+function fillerCandidates(cfg: DirectorConfig): Candidate[] {
   const out: Candidate[] = [];
   if (cfg.kinds.intro) {
     out.push({
       score: 6,
-      segment: make("intro", "global", "Global Weather", undefined, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, Math.round(holdMs * 1.4)),
+      segment: make("intro", "global", "Global Weather", undefined, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, kindHoldMs(cfg, "intro")),
     });
   }
   if (cfg.kinds.ocean) {
@@ -105,7 +114,7 @@ function fillerCandidates(cfg: DirectorConfig, holdMs: number): Candidate[] {
         "Sea surface & swell",
         GLOBAL_VIEW.center,
         OCEAN_VIEW_ZOOM,
-        Math.round(holdMs * 1.4),
+        kindHoldMs(cfg, "ocean"),
         { activeVariable: OCEAN_MAP_TYPES[0].patch.activeVariable ?? "sst" },
       ),
     });
@@ -125,7 +134,7 @@ function fillerCandidates(cfg: DirectorConfig, holdMs: number): Candidate[] {
           view.subtitle,
           GLOBAL_VIEW.center,
           view.zoom ?? ORBITAL_VIEW_ZOOM,
-          Math.round(holdMs * 1.4),
+          kindHoldMs(cfg, "orbital"),
           { satelliteGroup: view.group },
         ),
       });
@@ -133,7 +142,18 @@ function fillerCandidates(cfg: DirectorConfig, holdMs: number): Candidate[] {
   }
   if (cfg.kinds.tour) {
     for (const roi of REGIONS_OF_INTEREST) {
-      out.push({ score: 5, segment: make("tour", roi.id, roi.name, "Regional weather", roi.center, roi.zoom, holdMs) });
+      out.push({ score: 5, segment: make("tour", roi.id, roi.name, "Regional weather", roi.center, roi.zoom, kindHoldMs(cfg, "tour")) });
+    }
+  }
+  if (cfg.kinds.country) {
+    // The operator's favourite countries (DirectorConfig.countries) — one
+    // spotlight candidate each; unknown ids (stale config) are just skipped.
+    for (const id of cfg.countries) {
+      const c = countryShot(id);
+      if (!c) continue;
+      const seg = make("country", c.id, c.name, "Country spotlight · National weather", c.center, c.zoom, kindHoldMs(cfg, "country"));
+      seg.icon = c.flag;
+      out.push({ score: 6, segment: seg });
     }
   }
   return out;
@@ -161,7 +181,7 @@ export async function buildAdSegment(
     subtitle: ad.advertiser,
     camera,
     patch: { camera },
-    holdMs: Math.round(cfg.holdSeconds * 1000),
+    holdMs: kindHoldMs(cfg, "ad"),
     ad: {
       adId: ad.adId,
       title: ad.title,
@@ -174,16 +194,15 @@ export async function buildAdSegment(
 }
 
 export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<Candidate[]> {
-  const holdMs = Math.round(cfg.holdSeconds * 1000);
-  const pool: Candidate[] = fillerCandidates(cfg, holdMs);
+  const pool: Candidate[] = fillerCandidates(cfg);
 
   // Notable-tracks catalog (enabled) — matched by `${kind}:${code}` to boost the
   // genuinely interesting craft onto air and hang the on-air Track Info card off
   // them. Loaded once; only when a track kind is eligible so we skip the query.
-  let notableByKey = new Map<string, iNotableTrackModel>();
+  let notableByKey = new Map<string, iVehicle>();
   if (cfg.kinds.flight || cfg.kinds.ship) {
-    const nres = await db.notableTracks.getAll({ enabled: true }, { limit: 0 });
-    notableByKey = new Map((nres.data ?? []).map((n) => [notableId(n.kind, n.code), n]));
+    const cat = await db.vehicles.notableCatalog();
+    notableByKey = new Map(cat.map((n) => [vehicleId(n.kind, n.code), n]));
   }
 
   // --- Earthquakes: magnitude is the headline; recent + big ranks highest. ---
@@ -202,7 +221,9 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
         // elevation contours + faults/cables), not a weather field. The quake
         // preset owns that look; tsunami still flags ocean-risk framing downstream.
         const tsunami = Boolean(q.tsunami);
-        const seg = make("quake", q.quakeId, c.title, c.subtitle, [q.lng, q.lat], 5, holdMs);
+        // Hold scales with the headline: a Great quake dwells far longer than a
+        // Light one — the operator tunes each magnitude class (quakeHoldSeconds).
+        const seg = make("quake", q.quakeId, c.title, c.subtitle, [q.lng, q.lat], 5, quakeHoldMs(cfg, q.mag));
         seg.tsunami = tsunami;
         seg.quake = { mag: q.mag, depthKm: q.depthKm };
         seg.details = c.details;
@@ -226,8 +247,9 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
         const sinceIso = info?.onset ?? info?.effective ?? a.sent;
         const sinceMs = sinceIso ? Date.parse(sinceIso) : NaN;
         const hazard = classifyHazard({ event: info?.event, parameters: info?.parameters });
-        // The hazard drives which maps the shot cycles and how long it holds:
-        // open on the plan's first field and stretch the hold for slow hazards.
+        // The hazard drives which maps the shot cycles — open on the plan's
+        // first field. How LONG it holds is the severity's call: the operator
+        // tunes each level (stormHoldSeconds), Extreme lingering the longest.
         const plan = hazardMapPlan(hazard);
         // Same classification/labels the map badge/legend + click-to-select card
         // use — subtitle leads with place then country ("Brest Region · 🇧🇾 Belarus").
@@ -242,7 +264,7 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
           center,
           sinceMs: Number.isNaN(sinceMs) ? undefined : sinceMs,
         });
-        const seg = make("storm", `${a.source}:${a.identifier}`, c.title, c.subtitle, center, 4.5, Math.round(holdMs * plan.holdScale), {
+        const seg = make("storm", `${a.source}:${a.identifier}`, c.title, c.subtitle, center, 4.5, stormHoldMs(cfg, sev), {
           activeVariable: plan.cycle[0],
         });
         seg.hazard = hazard;
@@ -264,7 +286,7 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
       // then the top-6 cruising jets, deduped by ICAO24.
       const byId = new Map<string, (typeof rows)[number]>();
       for (const r of rows) {
-        if (notableByKey.has(notableId("aircraft", r.externalId))) byId.set(r.externalId, r);
+        if (notableByKey.has(vehicleId("aircraft", r.externalId))) byId.set(r.externalId, r);
       }
       for (const r of rows
         .filter((r) => typeof r.altM === "number" && (r.altM as number) > 9000)
@@ -281,15 +303,15 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
         : { data: [] };
       const metaById = new Map((metaRes.data ?? []).map((m) => [m.id, m]));
       for (const r of chosen) {
-        const notable = notableByKey.get(notableId("aircraft", r.externalId));
-        const name = notable?.label || r.name?.trim() || r.externalId.toUpperCase();
+        const notable = notableByKey.get(vehicleId("aircraft", r.externalId));
+        const name = notable ? vehicleLabel(notable) : r.name?.trim() || r.externalId.toUpperCase();
         const hasAlt = typeof r.altM === "number";
         const altKft = hasAlt ? Math.round(((r.altM as number) * 3.281) / 100) / 10 : 0;
         const m = metaById.get(r.externalId.toLowerCase());
         // Flag from OpenSky origin_country; lead the subtitle with it when known.
         const flag = countryNameFlag(r.country);
         const subtitle = `${flag ? `${flag} ` : ""}Aircraft${hasAlt ? ` · FL${Math.round(altKft * 10)}` : ""}`;
-        const seg = make("flight", r.externalId, name, subtitle, [r.lng, r.lat], 6, holdMs);
+        const seg = make("flight", r.externalId, name, subtitle, [r.lng, r.lat], 6, kindHoldMs(cfg, "flight"));
         const details: Detail[] = [];
         if (m?.type) details.push({ label: "Type", value: m.type });
         if (m?.operator) details.push({ label: "Operator", value: m.operator });
@@ -317,7 +339,7 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
       const { rows } = await db.trackSnapshots.latest({ kind: "ship" });
       const byId = new Map<string, (typeof rows)[number]>();
       for (const r of rows) {
-        if (notableByKey.has(notableId("ship", r.externalId))) byId.set(r.externalId, r);
+        if (notableByKey.has(vehicleId("ship", r.externalId))) byId.set(r.externalId, r);
       }
       for (const r of rows
         .filter((r) => typeof r.speed === "number" && (r.speed as number) > 12)
@@ -326,13 +348,13 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
         if (!byId.has(r.externalId)) byId.set(r.externalId, r);
       }
       for (const r of [...byId.values()]) {
-        const notable = notableByKey.get(notableId("ship", r.externalId));
+        const notable = notableByKey.get(vehicleId("ship", r.externalId));
         // Flag country from the MMSI MID (first 3 digits) — no feed call needed.
         const country = mmsiCountry(r.externalId);
-        const name = notable?.label || r.name?.trim() || `MMSI ${r.externalId}`;
+        const name = notable ? vehicleLabel(notable) : r.name?.trim() || `MMSI ${r.externalId}`;
         const spd = typeof r.speed === "number" ? Math.round(r.speed) : undefined;
         const subtitle = `${country?.flag ? `${country.flag} ` : ""}Vessel${spd != null ? ` · ${spd} kn` : ""}`;
-        const seg = make("ship", r.externalId, name, subtitle, [r.lng, r.lat], 6.5, holdMs);
+        const seg = make("ship", r.externalId, name, subtitle, [r.lng, r.lat], 6.5, kindHoldMs(cfg, "ship"));
         const details: Detail[] = [];
         if (spd != null) details.push({ label: "Speed", value: `${spd} kn` });
         if (typeof r.headingDeg === "number") details.push({ label: "Course", value: `${Math.round(r.headingDeg)}°` });

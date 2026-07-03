@@ -57,7 +57,7 @@ export default function SandboxPage() {
     center: state.camera.center,
     zoom: state.camera.zoom,
   });
-  const alerts = useAlertFeatures(state.showAlerts, state.alertSeverityMin);
+  const alerts = useAlertFeatures(state.showAlerts, state.alertSeverityMin, state.alertHazardsOff);
   const quakes = useQuakes(state.showSeismic, state.seismicMinMag);
   const cables = useCables(state.showCables);
   const faults = useFaults(state.showFaults);

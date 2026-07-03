@@ -17,7 +17,7 @@ import { buildCandidates } from "../director/candidates";
   const all = await db.directorConfig.getAll({}, { limit: 0 });
   console.log("\n=== director configs in Mongo ===");
   for (const c of (all.data ?? []) as any[]) {
-    console.log(`  scene=${c.id}  mode=${c.mode}  hold=${c.holdSeconds}s  minQuakeMag=${c.minQuakeMag}  minSev=${c.minAlertSeverity}`);
+    console.log(`  scene=${c.id}  mode=${c.mode}  hold(tour)=${c.kindHoldSeconds?.tour ?? "?"}s  minQuakeMag=${c.minQuakeMag}  minSev=${c.minAlertSeverity}`);
   }
   if (!(all.data ?? []).length) console.log("  (none — no scene has ever had its director config saved)");
 

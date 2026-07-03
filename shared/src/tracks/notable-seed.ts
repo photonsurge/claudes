@@ -1,4 +1,4 @@
-import type { NotableKind } from "../db/notable-track-model";
+import type { VehicleKind } from "../db/vehicle-model";
 
 /**
  * Curated starter list for the notable-tracks catalog. Deliberately small — this
@@ -15,7 +15,7 @@ import type { NotableKind } from "../db/notable-track-model";
  * (photo/blurb/type), so re-running is safe.
  */
 export interface NotableSeed {
-  kind: NotableKind;
+  kind: VehicleKind;
   /** ICAO24 hex (aircraft) or MMSI (ship). Lowercased on upsert. */
   code: string;
   label: string;

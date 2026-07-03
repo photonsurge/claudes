@@ -38,7 +38,7 @@ describe("globalMapTour", () => {
   });
 
   it("doesn't tour kinds that hold a field or run a curated plan", () => {
-    for (const kind of ["tour", "weather", "storm", "flight", "ship", "orbital"] as const) {
+    for (const kind of ["tour", "country", "weather", "storm", "flight", "ship", "orbital"] as const) {
       expect(globalMapTour(kind)).toBeNull();
     }
   });
@@ -49,9 +49,10 @@ describe("globalMapTour", () => {
     expect(tour![0].id).toBe("contours"); // hero look matches the quake preset
     // No weather field on any quake look — a quake reads as terrain, not forecast.
     for (const t of QUAKE_MAP_TYPES) expect(t.patch.activeVariable ?? null).toBeNull();
-    // The alternates actually swap the base map (relief fill, satellite imagery).
+    // The alternates actually swap the base map (relief fill, satellite imagery,
+    // night city lights).
     expect(QUAKE_MAP_TYPES.map((t) => t.patch.basemap)).toEqual(
-      expect.arrayContaining(["relief", "satellite"]),
+      expect.arrayContaining(["relief", "satellite", "night"]),
     );
   });
 
@@ -64,6 +65,16 @@ describe("globalMapTour", () => {
     expect(aurora?.patch.activeVariable).toBeNull();
     expect(aurora?.patch.showAurora).toBe(true);
     expect(satimg?.patch.showSatImg).toBe(true);
+  });
+
+  it("tours Earth at Night on the intro spin, ungated (static local asset)", () => {
+    const night = INTRO_MAP_TYPES.find((t) => t.id === "night");
+    expect(night?.patch.basemap).toBe("night");
+    // No scalar field or chrome — the city lights are the look.
+    expect(night?.patch.activeVariable).toBeNull();
+    expect(night?.patch.showWind).toBe(false);
+    // Always available (baked into /data), so no live-data gate.
+    expect(night?.needs).toBeUndefined();
   });
 
   it("asserts the map-type overlays OFF in the director's clean base so looks don't stick", () => {
