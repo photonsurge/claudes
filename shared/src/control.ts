@@ -311,6 +311,8 @@ export interface ControlState {
   showCableLabels: boolean;
   /** Overlay tectonic plate boundaries (Bird 2003) on the globe. */
   showFaults: boolean;
+  /** Overlay the live aurora oval (NOAA SWPC OVATION) — a geomagnetic activity map. */
+  showAurora: boolean;
   /** DEBUG: outline each active weather-map source's bbox + label on the globe, so
    *  the operator can see which model (base/nest) renders where and check alignment. */
   showMapSource: boolean;
@@ -369,6 +371,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showCables: false,
   showCableLabels: false,
   showFaults: false,
+  showAurora: false,
   showMapSource: false,
   showGraticule: false,
   graticuleColor: "#7dd3fc",
@@ -485,6 +488,7 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     showCableLabels:
       typeof patch.showCableLabels === "boolean" ? patch.showCableLabels : base.showCableLabels ?? false,
     showFaults: typeof patch.showFaults === "boolean" ? patch.showFaults : base.showFaults ?? false,
+    showAurora: typeof patch.showAurora === "boolean" ? patch.showAurora : base.showAurora ?? false,
     showMapSource:
       typeof patch.showMapSource === "boolean" ? patch.showMapSource : base.showMapSource ?? false,
     showGraticule:

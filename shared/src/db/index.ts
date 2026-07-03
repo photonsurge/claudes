@@ -24,6 +24,8 @@ import { getCableLandingModel } from "./cable-landing-model";
 import { makeCableRepo } from "./cable-repo";
 import { getFaultModel } from "./fault-model";
 import { makeFaultRepo } from "./fault-repo";
+import { getAuroraModel } from "./aurora-model";
+import { makeAuroraRepo } from "./aurora-repo";
 import { getCamModel } from "./cam-model";
 import { makeCamRepo } from "./cam-repo";
 import { getAircraftMetaModel, iAircraftMetaModel } from "./aircraft-meta-model";
@@ -66,6 +68,7 @@ export function createDb(conn: Connection) {
     eventSummaries: makeEventSummaryRepo(getEventSummaryModel(conn)),
     cables: makeCableRepo(getCableModel(conn), getCableLandingModel(conn)),
     faults: makeFaultRepo(getFaultModel(conn)),
+    aurora: makeAuroraRepo(getAuroraModel(conn)),
     cams: makeCamRepo(getCamModel(conn)),
     aircraftMeta: mongoCrud<iAircraftMetaModel>(getAircraftMetaModel(conn)),
     logs: mongoCrud(getLogModel(conn)),

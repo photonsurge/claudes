@@ -97,27 +97,36 @@ async function greyscale(pngUrl: string, bbox: Bbox): Promise<{ data: Buffer; w:
   const [west, south, east, north] = bbox;
   const targetH = Math.max(1, Math.round(OUT_W * (north - south) / (east - west)));
   const buf = Buffer.from(await (await fetch(BASE + pngUrl)).arrayBuffer());
-  const img = sharp(buf).ensureAlpha().resize({ width: OUT_W, height: targetH, fit: "fill" });
-  const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
+
+  // Resize the REAL texture ONCE (sharp's own pipeline), then read it out. Reconstructing a
+  // raw buffer by hand and resizing that is what introduced lane/stripe artifacts — this
+  // keeps a single tested resize of the actual image, so the overlay reflects the texture.
+  const { data, info } = await sharp(buf)
+    .ensureAlpha()
+    .resize({ width: OUT_W, height: targetH, fit: "fill" })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
   const { width: w, height: h, channels: ch } = info;
 
-  // HISTOGRAM-EQUALISE the opaque R values → maximum tonal separation, so the field's
-  // structure (gradients, fronts, swell bands) reads crisply regardless of how little of
-  // the imageUnscale range it fills. The equalised value is remapped into [40,255] so
-  // ocean stays clearly brighter than the near-black land/nodata.
+  // LINEAR percentile stretch of opaque R into [40,255] so a low-amplitude field (e.g. 0–3 m
+  // waves in a 0–30 m imageUnscale) is visible without looking blank. Monotone ramp → no
+  // banding; bounds = 2nd–98th percentile so outliers don't flatten it. Display-only.
   const hist = new Uint32Array(256);
   let opaque = 0;
   for (let i = 0; i < w * h; i++) {
     if ((ch >= 4 ? data[i * ch + 3] : 255) === 0) continue;
     hist[data[i * ch]]++; opaque++;
   }
-  const lut = new Uint8Array(256);
+  let lo = 0, hi = 255;
   if (opaque > 0) {
-    let c = 0;
-    for (let v = 0; v < 256; v++) {
-      c += hist[v];
-      lut[v] = Math.round((c / opaque) * 215) + 40; // CDF → [40,255]
-    }
+    const loN = opaque * 0.02, hiN = opaque * 0.98;
+    let c = 0; for (let v = 0; v < 256; v++) { c += hist[v]; if (c >= loN) { lo = v; break; } }
+    c = 0; for (let v = 0; v < 256; v++) { c += hist[v]; if (c >= hiN) { hi = v; break; } }
+    if (hi <= lo) hi = lo + 1;
+  }
+  const lut = new Uint8Array(256);
+  for (let v = 0; v < 256; v++) {
+    lut[v] = Math.max(40, Math.min(255, Math.round(((v - lo) / (hi - lo)) * 215) + 40));
   }
 
   const rgb = Buffer.allocUnsafe(w * h * 3);

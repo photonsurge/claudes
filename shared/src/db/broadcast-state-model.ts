@@ -109,6 +109,7 @@ const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     showCables: { type: Boolean, required: true, default: false },
     showCableLabels: { type: Boolean, required: true, default: false },
     showFaults: { type: Boolean, required: true, default: false },
+    showAurora: { type: Boolean, required: true, default: false },
   },
   mongoTimestamps,
 );

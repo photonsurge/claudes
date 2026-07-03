@@ -76,11 +76,26 @@ export function regionalGridFromGeometry(geom: {
   };
 }
 
-/** True if a complete published run already exists for this model+run time. */
-async function alreadyPublished(model: string, runDate: Date): Promise<boolean> {
+/**
+ * True if a complete published run already exists for this model+run time AND (when
+ * `expectGrid` is given) it was baked on the SAME grid we'd produce now. A grid-dims
+ * mismatch means the run is stale — e.g. baked with the descriptor's guessed dims before
+ * the probe-geometry logic, which leaves the served texture striped/wrong — so we treat it
+ * as absent and re-bake on the real probed grid. Mirrors the open-meteo / wave-nest self-heal.
+ */
+async function alreadyPublished(
+  model: string,
+  runDate: Date,
+  expectGrid?: { width: number; height: number },
+): Promise<boolean> {
   const db = await getAppDb();
   const existing = await db.weatherRuns.getByQuery({ model, run: runDate, status: "complete", published: true });
-  return !!(existing.success && existing.data);
+  if (!(existing.success && existing.data)) return false;
+  if (expectGrid) {
+    const g = (existing.data as { grid?: { width?: number; height?: number } }).grid;
+    if (g?.width !== expectGrid.width || g?.height !== expectGrid.height) return false;
+  }
+  return true;
 }
 
 /** Bake one window's variables and publish, or return a skip. */
@@ -89,9 +104,9 @@ async function ingestWindow(
   run: { date: string; runDate: Date },
 ): Promise<IngestResult> {
   const source = getSource(win.sourceId)!;
-  if (await alreadyPublished(source.id, run.runDate)) {
-    return { skipped: true, model: source.id, run: run.runDate.toISOString(), reason: "already published" };
-  }
+  // NOTE: the published-guard is checked AFTER probing the real grid below (not here), so a
+  // stale run baked on the wrong (descriptor-guessed) dims is detected and re-baked. That
+  // costs one download per already-current window per run — acceptable for a daily product.
 
   const variables: Record<string, BakedVariable> = {};
   const tmp: string[] = [];
@@ -124,6 +139,12 @@ async function ingestWindow(
     }
     const W = grid.width;
     const H = grid.height;
+
+    // Skip only if an existing run was baked on THIS real grid; a stale run on the old
+    // guessed dims (→ striped texture) has different dims and re-bakes.
+    if (await alreadyPublished(source.id, run.runDate, { width: W, height: H })) {
+      return { skipped: true, model: source.id, run: run.runDate.toISOString(), reason: "already published" };
+    }
 
     const field = async (match: string) =>
       (await extractField({ gribPath, match, width: W, height: H })).values;
