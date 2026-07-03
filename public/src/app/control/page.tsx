@@ -28,6 +28,7 @@ import { useAlertFeatures } from "../../lib/alerts-overlay";
 import { useQuakes } from "../../lib/seismic-overlay";
 import { useCables } from "../../lib/cables-overlay";
 import { useFaults } from "../../lib/faults-overlay";
+import { useAurora } from "../../lib/aurora-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
 import DirectorPanel from "../../components/DirectorPanel";
@@ -91,6 +92,7 @@ export default function ControlPage() {
   const quakes = useQuakes(shown.showSeismic, shown.seismicMinMag);
   const cables = useCables(shown.showCables);
   const faults = useFaults(shown.showFaults);
+  const aurora = useAurora(shown.showAurora);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +153,7 @@ export default function ControlPage() {
           quakes={quakes}
           cables={cables}
           faults={faults}
+          aurora={aurora}
           interactive
           pulseAt={eventPulse(director)}
           // Click-to-select is only live while the director is idle — a cut owns

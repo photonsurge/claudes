@@ -30,11 +30,49 @@ export function defaultMinZoom(resolutionDeg: number): number {
   return Math.max(2, Math.min(6, 2 + steps));
 }
 
+/**
+ * How much to lower every nest's zoom floor so regional detail becomes ELIGIBLE
+ * earlier as you zoom. Safe because the winner is separately gated on actually
+ * covering the view (see `viewCentralBbox` + the best-fit picker) — an eligible
+ * nest that doesn't cover what you're looking at simply doesn't win.
+ */
+const MIN_ZOOM_LOWER = 1;
+
 /** The zoom floor for a nest: explicit `minZoom`, else derived from resolution. */
 export function nestMinZoom(nest: WeatherVariableManifest): number {
-  if (typeof nest.minZoom === "number") return nest.minZoom;
-  if (typeof nest.resolutionDeg === "number") return defaultMinZoom(nest.resolutionDeg);
-  return 3;
+  const base =
+    typeof nest.minZoom === "number"
+      ? nest.minZoom
+      : typeof nest.resolutionDeg === "number"
+        ? defaultMinZoom(nest.resolutionDeg)
+        : 3;
+  return Math.max(2.5, base - MIN_ZOOM_LOWER);
+}
+
+/**
+ * The central slice of the current viewport, as a bbox, used to decide whether a
+ * nest actually COVERS what you're looking at (not just its centre point). The
+ * globe frames a span of `360 / 2^(zoom-1.9)` degrees (inverse of `zoomForBbox`);
+ * we take the central `frac` of that around the camera centre. A nest whose bbox
+ * fully contains this box covers the landmass in view with margin, so drawing it
+ * over the base leaves no seam cutting through the middle of the scene.
+ */
+export function viewCentralBbox(
+  camera: ResolverCamera,
+  frac = 0.4,
+): [number, number, number, number] {
+  const half = 180 / Math.pow(2, camera.zoom - 1.9);
+  const r = Math.max(0.01, half * frac);
+  const [lng, lat] = camera.center;
+  return [lng - r, Math.max(-90, lat - r), lng + r, Math.min(90, lat + r)];
+}
+
+/** Does `outer` fully contain `inner` (both [w,s,e,n])? No antimeridian wrap (v1). */
+export function bboxContainsBbox(
+  outer: [number, number, number, number],
+  inner: [number, number, number, number],
+): boolean {
+  return outer[0] <= inner[0] && outer[1] <= inner[1] && outer[2] >= inner[2] && outer[3] >= inner[3];
 }
 
 /**

@@ -13,6 +13,8 @@ export interface AuroraBakeInput {
   width: number;
   height: number;
   maxProb: number;
+  kp?: number | null;
+  kpTime?: Date | null;
   png: Buffer;
   contentType?: string;
 }
@@ -24,6 +26,8 @@ const toMeta = (doc: any): AuroraMeta => ({
   width: doc.width,
   height: doc.height,
   maxProb: doc.maxProb ?? 0,
+  kp: doc.kp ?? null,
+  kpTime: doc.kpTime ? new Date(doc.kpTime).toISOString() : null,
   updatedAt: new Date(doc.fetchedAt).toISOString(),
 });
 
@@ -49,6 +53,8 @@ export function makeAuroraRepo(auroraModel: Model<iAuroraModel>) {
             width: frame.width,
             height: frame.height,
             maxProb: frame.maxProb,
+            kp: frame.kp ?? null,
+            kpTime: frame.kpTime ?? null,
             png: frame.png,
             contentType: frame.contentType ?? "image/png",
             fetchedAt: new Date(),

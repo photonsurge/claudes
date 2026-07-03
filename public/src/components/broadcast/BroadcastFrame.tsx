@@ -15,6 +15,7 @@
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import type { Segment } from "@photonsurge/shared/director";
+import type { AuroraMeta } from "@photonsurge/shared/aurora/types";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake, Track } from "../../lib/tracks/types";
 import type { City } from "../../lib/cities";
@@ -29,6 +30,7 @@ import BrandPanel from "./BrandPanel";
 import IntensityMeter from "./IntensityMeter";
 import LiveAlertPanel from "./LiveAlertPanel";
 import WorldWatchPanel from "./WorldWatchPanel";
+import KpIndexPanel from "./KpIndexPanel";
 import MonitorCluster from "./MonitorCluster";
 import EventOverlay from "./EventOverlay";
 import EventNearbyPanel from "./EventNearbyPanel";
@@ -62,6 +64,7 @@ export default function BroadcastFrame({
   tracks = [],
   cities = [],
   cams = [],
+  aurora = null,
   theme = DEFAULT_THEME,
   onAirSegment = null,
 }: {
@@ -74,6 +77,8 @@ export default function BroadcastFrame({
   cities?: City[];
   /** Worker-cached webcams — for the "near this event" panel. */
   cams?: Cam[];
+  /** Cached aurora frame (carries the Kp index) — for the space-weather readout. */
+  aurora?: AuroraMeta | null;
   theme?: BroadcastTheme;
   /** The on-air director segment — drives the event reticle so it matches what's
    *  actually selected. Null when nothing is on air (reticle hidden). */
@@ -82,6 +87,9 @@ export default function BroadcastFrame({
   const scale = useStageScale();
   const ticker = buildTicker({ alerts, quakes, tracks });
   const eventTargeted = onAirSegment ? isTargetedEvent(onAirSegment.kind) : false;
+  // Space-weather readout rides on the aurora overlay: only when the oval is on
+  // and the cached frame actually carries a Kp reading.
+  const kpShown = state.showAurora && aurora?.kp != null;
 
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 5 }}>
@@ -129,7 +137,17 @@ export default function BroadcastFrame({
           <BrandPanel theme={theme} />
         </div>
 
-        <div style={{ position: "absolute", top: TICKER_H + INSET + 128, left: INSET }}>
+        {/* Geomagnetic Kp readout, tucked under the brand block when the aurora
+            overlay is on; pushes the intensity meter down so they don't overlap. */}
+        {kpShown ? (
+          <div style={{ position: "absolute", top: TICKER_H + INSET + 128, left: INSET }}>
+            <KpIndexPanel kp={aurora?.kp} theme={theme} />
+          </div>
+        ) : null}
+
+        <div
+          style={{ position: "absolute", top: TICKER_H + INSET + 128 + (kpShown ? 72 : 0), left: INSET }}
+        >
           <IntensityMeter variable={legendVariableFor(state)} units={state.units} theme={theme} />
         </div>
 

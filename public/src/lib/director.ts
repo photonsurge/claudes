@@ -36,7 +36,7 @@ import { useSocket } from "./socket-provider";
  * Event cuts don't appear here — they use a curated, kind-specific plan instead:
  * `storm` reads the per-hazard plan (hazardMapPlan) so a heat warning shows
  * humidity→temp and a tornado CAPE→radar→gust. `quake` shots carry no weather
- * field at all — they read as a static geology base (relief + contour lines).
+ * field at all — they read as a static geology base (dark base + contour lines).
  */
 const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
   tour: ["temp", "humidity", "rain", "gust", "cloud"],
@@ -53,7 +53,7 @@ function cutCycle(cut: Segment): { cycle: string[]; periodMs: number } {
     const plan = hazardMapPlan(cut.hazard);
     return { cycle: plan.cycle, periodMs: plan.cycleMs };
   }
-  // quake has no cycle — it's a static geology base (relief + contours), no field.
+  // quake has no cycle — it's a static geology base (dark + contours), no field.
   return { cycle: VAR_CYCLE[cut.kind] ?? [], periodMs: VAR_CYCLE_MS };
 }
 

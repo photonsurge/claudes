@@ -174,3 +174,72 @@ export async function encodeScalarPng(
   const raw = scalarRgba(values, width, height, imageUnscale, keep);
   return sharp(raw, { raw: { width, height, channels: 4 } }).png().toBuffer();
 }
+
+// ── Aurora glow (OVATION probability → pre-coloured translucent RGBA) ──────────
+//
+// The aurora overlay is a pre-baked glow BitmapLayer (not a scalar field decoded
+// on the GPU), so we colour it here. Probability (0–100%) maps to a green →
+// yellow-green → red ramp with alpha rising from faint to bright. Below a small
+// floor the pixel is fully transparent so the quiet-time background haze doesn't
+// wash the whole globe green. Crucially the RGB is NEVER black — even transparent
+// pixels carry the low green — so the smoothing blur in `encodeAuroraPng` mixes
+// green into green at the oval's edge instead of dragging black halos in.
+
+/** Probability at/below which the pixel is fully transparent. */
+export const AURORA_FLOOR = 3;
+/** Probability treated as the top of the ramp (storm-level oval); clamps above. */
+export const AURORA_REF = 50;
+
+const clamp01 = (t: number): number => (t < 0 ? 0 : t > 1 ? 1 : t);
+const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+
+/** green → yellow-green → red across t∈[0,1]. */
+function auroraRamp(t: number): [number, number, number] {
+  if (t < 0.5) {
+    const u = t / 0.5;
+    return [lerp(30, 190, u), lerp(220, 240, u), lerp(120, 70, u)];
+  }
+  const u = (t - 0.5) / 0.5;
+  return [lerp(190, 255, u), lerp(240, 70, u), lerp(70, 90, u)];
+}
+
+/** Map an aurora probability (%) to an [r,g,b,a] glow colour. */
+export function auroraColor(prob: number): [number, number, number, number] {
+  const t = clamp01((prob - AURORA_FLOOR) / (AURORA_REF - AURORA_FLOOR));
+  const [r, g, b] = auroraRamp(t); // ramp(0) is green, never black
+  const a = prob <= AURORA_FLOOR ? 0 : Math.round(clamp01((70 + t * 160) / 255) * 255);
+  return [Math.round(r), Math.round(g), Math.round(b), a];
+}
+
+/** Build raw pre-coloured RGBA glow bytes for an aurora probability grid. */
+export function auroraRgba(values: Float32Array, width: number, height: number): Buffer {
+  const n = width * height;
+  const buf = Buffer.allocUnsafe(n * 4);
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    const [r, g, b, a] = auroraColor(values[i]);
+    buf[o] = r;
+    buf[o + 1] = g;
+    buf[o + 2] = b;
+    buf[o + 3] = a;
+  }
+  return buf;
+}
+
+/**
+ * Encode the aurora glow to a PNG. The 1° source grid is upsampled ×4 with cubic
+ * interpolation and lightly blurred so the oval reads as a soft diffuse glow on
+ * the globe rather than blocky 1° cells.
+ */
+export async function encodeAuroraPng(
+  values: Float32Array,
+  width: number,
+  height: number,
+): Promise<Buffer> {
+  const raw = auroraRgba(values, width, height);
+  return sharp(raw, { raw: { width, height, channels: 4 } })
+    .resize(width * 4, height * 4, { kernel: "cubic" })
+    .blur(2)
+    .png()
+    .toBuffer();
+}

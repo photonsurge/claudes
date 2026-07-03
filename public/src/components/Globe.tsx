@@ -44,6 +44,7 @@ import { graticuleLayer } from "./layers/graticule";
 import { sourceDebugLayers } from "./layers/sourceDebug";
 import { cableLayers, cableNameLabels } from "./layers/cables";
 import { faultLayers } from "./layers/faults";
+import { auroraLayers } from "./layers/aurora";
 import { nightLayer } from "./layers/nightside";
 import { subsolarPoint } from "../lib/sun";
 import { discFromProject, type Disc } from "../lib/globe-geom";
@@ -57,6 +58,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import { quakeToSegment, alertFeatureToSegment } from "../lib/select-segment";
 import type { CableOverlay } from "../lib/cables-overlay";
 import type { Fault } from "@photonsurge/shared/faults/types";
+import type { AuroraMeta } from "@photonsurge/shared/aurora/types";
 
 export interface GlobeHandle {
   flyTo: (center: [number, number], zoom?: number) => void;
@@ -80,6 +82,8 @@ export interface GlobeProps {
   /** Submarine cables + landing stations. */
   cables?: CableOverlay;
   faults?: Fault[];
+  /** Latest baked aurora frame metadata (NOAA SWPC OVATION), or null. */
+  aurora?: AuroraMeta | null;
   interactive?: boolean;
   onCameraChange?: (center: [number, number], zoom: number) => void;
   /** [lng,lat] of the active event to pulse-highlight, or null/undefined for none. */
@@ -159,7 +163,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, faults, interactive = true, onCameraChange, pulseAt, highlightTrack, onSelect },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, faults, aurora, interactive = true, onCameraChange, pulseAt, highlightTrack, onSelect },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -665,6 +669,13 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       layers.push(...graticuleLayer(state.graticuleColor, state.graticuleLabels));
     }
 
+    // Aurora oval — a translucent glow above the weather/wind/borders but below
+    // the vector reference overlays (cables/faults/alerts/cities/tracks) so those
+    // stay crisp on top. Pre-baked PNG; the far-side oval is depth-occluded.
+    if (state.showAurora && aurora) {
+      layers.push(...auroraLayers(aurora));
+    }
+
     // Submarine cables read as reference geography — above borders/weather,
     // below the live event overlays (alerts/quakes/cities/tracks).
     if (state.showCables && cables && cables.cables.length) {
@@ -740,6 +751,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showCables,
     state.showCableLabels,
     state.showFaults,
+    state.showAurora,
     state.showMapSource,
     state.showGraticule,
     state.graticuleColor,
@@ -753,6 +765,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     quakes,
     cables,
     faults,
+    aurora,
     nestKey,
     highlightTrack?.kind,
     highlightTrack?.code,

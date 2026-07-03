@@ -67,14 +67,21 @@ function collectMaps(manifest: any, wantVar?: string): Map<string, MapEntry> {
 /** Coastline as an SVG overlay (red polylines) sized to the output raster. */
 function coastlineSvg(coast: Ring[], bbox: Bbox, w: number, h: number): Buffer {
   const [west, south, east, north] = bbox;
+  // Antimeridian-crossing windows carry east > 180 (e.g. rtofs-bering 155→211). The
+  // coastline is in −180..180, so lift any lon west of the dateline by +360 into the
+  // window's ascending frame before projecting.
+  const wrap = (lo: number) => (east > 180 && lo < west ? lo + 360 : lo);
   const px = (lo: number, la: number) => [
-    ((lo - west) / (east - west) * (w - 1)).toFixed(1),
+    ((wrap(lo) - west) / (east - west) * (w - 1)).toFixed(1),
     ((north - la) / (north - south) * (h - 1)).toFixed(1),
   ];
   const lines: string[] = [];
   for (const ring of coast) {
     const pts = ring
-      .filter(([lo, la]) => lo >= west - 2 && lo <= east + 2 && la >= south - 2 && la <= north + 2)
+      .filter(([lo, la]) => {
+        const x = wrap(lo);
+        return x >= west - 2 && x <= east + 2 && la >= south - 2 && la <= north + 2;
+      })
       .map(([lo, la]) => px(lo, la).join(","));
     if (pts.length > 1) lines.push(`<polyline points="${pts.join(" ")}" fill="none" stroke="#ff4646" stroke-width="1"/>`);
   }

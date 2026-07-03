@@ -130,10 +130,9 @@ export function quakeMapPlan(tsunami?: boolean): QuakeMapPlan {
  * contours would bleed into the next quake shot. Spreading LAYERS_OFF guarantees
  * a clean slate; the preset's own keys below are the only layers that light up.
  *
- * Also asserts a neutral base map every cut: the `quake` preset switches to the
- * colour-by-height "relief" basemap, and merges are over /watch's *live* state,
- * so without resetting it here that relief globe would bleed into the next shot.
- * The quake preset overrides `basemap` back to "relief" after spreading this.
+ * Also asserts the dark default base map every cut: merges are over /watch's
+ * *live* state, so pinning basemap here keeps a scene's non-default base (or one
+ * hand-picked on a previous cut) from bleeding into the director's shots.
  *
  * Not included here (set explicitly per preset when relevant): activeVariable,
  * the camera-motion trio (autoSpin/spinSpeed/zoomDrift) and event filter
@@ -246,15 +245,15 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     zoomDrift: 0.045,
   },
   // A geology beat: no GFS weather field is relevant to a quake, so the shot
-  // drops the scalar map entirely and reads as terrain. The "relief" basemap
-  // paints colour-by-height hypsometry (ETOPO 2022); showElevation draws the
-  // contour lines over it (250 m minor / 10 km major, coloured by height); and
-  // cables + plate boundaries tell the sever-risk / fault-origin story.
+  // drops the scalar map entirely and reads as terrain — the dark default base
+  // with colour-by-height elevation contour lines (250 m minor / 10 km major)
+  // drawn over it, and cables + plate boundaries telling the sever-risk /
+  // fault-origin story.
   quake: {
     ...LAYERS_OFF,
-    // Colour-by-height relief base + contour lines = the geology look. No scalar
-    // field: activeVariable null, and useCutVariable no longer cycles for quakes.
-    basemap: "relief",
+    // Dark default base (from LAYERS_OFF) + colour-by-height contour lines = the
+    // geology look. No scalar field: activeVariable null, and useCutVariable no
+    // longer cycles a weather field for quakes.
     activeVariable: null,
     showElevation: true,
     elevation: { ...DEFAULT_ELEVATION_SETTINGS, interval: 250, majorInterval: 10000 },

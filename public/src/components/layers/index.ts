@@ -27,7 +27,7 @@ import {
   manifestBounds,
   type Bounds,
 } from "./props";
-import { resolveEntries, type ResolverCamera } from "./resolve";
+import { resolveEntries, viewCentralBbox, bboxContainsBbox, type ResolverCamera } from "./resolve";
 import { DEPTH_OCCLUDE, DEPTH_TEST, DEPTH_PAINT } from "./depth";
 
 /** A resolver mapping a texture URL to an already-loaded image (or undefined). */
@@ -144,7 +144,7 @@ export function scalarRasterLayers(
   // overlapping nests never draw. It REPLACES the base in its footprint (full
   // opacity), sitting coincident so it must not fight depth → DEPTH_PAINT. Skip it
   // when it's the very nest already drawn as the promoted base (single active nest).
-  const finest = pickFinestLoaded(entries, buildNest, resolve);
+  const finest = pickBestFitLoaded(entries, buildNest, resolve, camera);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (finest && finest.index !== baseNestIndex) out.push(new RasterLayer({ ...finest.props, image: finest.image as any, parameters: DEPTH_PAINT }));
   return out;
@@ -175,13 +175,36 @@ function pickLoadedNest<P extends { image: string }>(
   return null;
 }
 
-/** The FINEST loaded nest — the detail overlay painted on top of the base. */
-function pickFinestLoaded<P extends { image: string }>(
+/**
+ * BEST-FIT winner: of the active+loaded nests, the finest-resolution one whose bbox
+ * fully COVERS the central view (`viewCentralBbox`). Picking by coverage-then-resolution
+ * (not manifest priority order) means the UK gets ukv/dmi — a fine nest that spans all of
+ * Britain — instead of a higher-priority nest like arome-france whose edge cuts across the
+ * landmass and leaves a seam with the base above it. Returns null when no active nest
+ * covers the view (→ only the base draws, never a mid-scene seam). Ties break on priority.
+ */
+function pickBestFitLoaded<P extends { image: string }>(
   entries: WeatherVariableManifest[],
   build: (entry: WeatherVariableManifest, index: number) => P | null,
   resolve: TextureResolver,
-) {
-  return pickLoadedNest(entries, build, resolve, "finest");
+  camera: ResolverCamera,
+): { props: P; image: LoadedTexture; index: number } | null {
+  const target = viewCentralBbox(camera);
+  let best: { props: P; image: LoadedTexture; index: number; res: number; pr: number } | null = null;
+  for (let i = 1; i < entries.length; i++) {
+    const e = entries[i];
+    if (!e.bbox || !bboxContainsBbox(e.bbox, target)) continue;
+    const props = build(e, i);
+    if (!props) continue;
+    const image = resolve(props.image);
+    if (!image) continue;
+    const res = e.resolutionDeg ?? 1;
+    const pr = e.priority ?? 0;
+    if (!best || res < best.res || (res === best.res && pr > best.pr)) {
+      best = { props, image, index: i, res, pr };
+    }
+  }
+  return best ? { props: best.props, image: best.image, index: best.index } : null;
 }
 
 /** The COARSEST loaded nest — promoted to base when a variable has no true base. */
@@ -232,7 +255,7 @@ export function vectorParticleLayers(
   }
   // Only the finest available nest particles draw — same single-winner rule as the
   // scalar raster, so overlapping regional wind fields don't stack (see there).
-  const finest = pickFinestLoaded(entries, buildNest, resolve);
+  const finest = pickBestFitLoaded(entries, buildNest, resolve, camera);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (finest && finest.index !== baseNestIndex) out.push(new ParticleLayer({ ...finest.props, image: finest.image as any, parameters: DEPTH_TEST }));
   return out;

@@ -21,6 +21,10 @@ export interface iAurora extends iGeneralModel {
   height: number;
   /** Peak probability across the grid (%, 0–100). */
   maxProb: number;
+  /** Latest planetary Kp index (0–9), or null when the Kp feed was unavailable. */
+  kp: number | null;
+  /** Time of the latest Kp reading, or null. */
+  kpTime: Date | null;
   /** The baked, pre-coloured RGBA glow PNG. */
   png: Buffer;
   contentType: string;
@@ -42,6 +46,8 @@ const AuroraSchema = new mongoose.Schema<iAuroraModel>(
     width: { type: Number, required: true },
     height: { type: Number, required: true },
     maxProb: { type: Number, required: true, default: 0 },
+    kp: { type: Number, required: false, default: null },
+    kpTime: { type: Date, required: false, default: null },
     png: { type: Buffer, required: true },
     contentType: { type: String, required: true, default: "image/png" },
     fetchedAt: { type: Date, required: true, default: () => new Date() },

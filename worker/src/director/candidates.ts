@@ -121,7 +121,7 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
           timeMs: q.time ? q.time.getTime() : undefined,
           tsunami: q.tsunami,
         });
-        // Quakes are geophysical — the shot reads as terrain (relief basemap +
+        // Quakes are geophysical — the shot reads as terrain (dark base +
         // elevation contours + faults/cables), not a weather field. The quake
         // preset owns that look; tsunami still flags ocean-risk framing downstream.
         const tsunami = Boolean(q.tsunami);

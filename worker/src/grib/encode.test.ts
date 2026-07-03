@@ -8,6 +8,11 @@ import {
   scalarRgba,
   encodeWindPng,
   encodeScalarPng,
+  auroraColor,
+  auroraRgba,
+  encodeAuroraPng,
+  AURORA_FLOOR,
+  AURORA_REF,
 } from "./encode";
 
 describe("scaleToByte", () => {
@@ -169,7 +174,60 @@ describe("windRgba / scalarRgba", () => {
   });
 });
 
+describe("auroraColor / auroraRgba", () => {
+  it("is fully transparent at/below the floor", () => {
+    expect(auroraColor(0)[3]).toBe(0);
+    expect(auroraColor(AURORA_FLOOR)[3]).toBe(0);
+  });
+
+  it("keeps RGB non-black even when transparent (so the blur has no black halo)", () => {
+    const [r, g, b, a] = auroraColor(0);
+    expect(a).toBe(0);
+    expect(r + g + b).toBeGreaterThan(0); // green low end, never black
+  });
+
+  it("alpha rises with probability above the floor", () => {
+    const low = auroraColor(AURORA_FLOOR + 5)[3];
+    const mid = auroraColor((AURORA_FLOOR + AURORA_REF) / 2)[3];
+    const high = auroraColor(AURORA_REF)[3];
+    expect(low).toBeGreaterThan(0);
+    expect(mid).toBeGreaterThan(low);
+    expect(high).toBeGreaterThanOrEqual(mid);
+  });
+
+  it("ramps green (low) toward red (high)", () => {
+    const lowGreen = auroraColor(AURORA_FLOOR + 1); // near green end
+    const high = auroraColor(AURORA_REF); // red end
+    expect(lowGreen[1]).toBeGreaterThan(lowGreen[0]); // G > R when green
+    expect(high[0]).toBeGreaterThan(high[1]); // R > G when red
+  });
+
+  it("clamps probabilities above the reference to full-ramp alpha", () => {
+    expect(auroraColor(999)[3]).toBe(auroraColor(AURORA_REF)[3]);
+  });
+
+  it("auroraRgba packs one [r,g,b,a] per cell", () => {
+    const buf = auroraRgba(Float32Array.from([0, AURORA_REF]), 2, 1);
+    expect(buf.length).toBe(2 * 4);
+    expect(buf[3]).toBe(0); // first cell transparent
+    expect(buf[7]).toBeGreaterThan(0); // second cell opaque-ish
+  });
+});
+
 describe("PNG encoders", () => {
+  it("encodeAuroraPng upsamples ×4 into a valid RGBA PNG", async () => {
+    const w = 8;
+    const h = 4;
+    const vals = new Float32Array(w * h).fill(20);
+    const png = await encodeAuroraPng(vals, w, h);
+    const meta = await sharp(png).metadata();
+    expect(meta.format).toBe("png");
+    expect(meta.width).toBe(w * 4);
+    expect(meta.height).toBe(h * 4);
+    expect(meta.channels).toBe(4);
+  });
+
+
   it("encodeWindPng produces a valid PNG of expected dims", async () => {
     const w = 8;
     const h = 4;

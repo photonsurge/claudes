@@ -329,6 +329,25 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable aurora.refresh (SWPC OVATION oval → baked glow PNG → Mongo) ----
+  // The auroral oval moves with geomagnetic activity; SWPC republishes every few
+  // minutes, so refresh on a fast cron (5 min by default). A fixed jobId de-dups
+  // across restarts; `immediately` seeds the cache at boot so a fresh DB shows the
+  // oval right away. Disable with AURORA_REFRESH_ENABLED=false.
+  if (process.env.AURORA_REFRESH_ENABLED !== "false") {
+    const AURORA_REFRESH_MS = Number(process.env.AURORA_REFRESH_MS || 5 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "aurora", type: "aurora", event: "refresh", data: {} },
+        { repeat: { every: AURORA_REFRESH_MS, immediately: true }, jobId: "aurora-refresh" },
+      );
+      log(TAG, `registered repeatable aurora.refresh`, { everyMs: AURORA_REFRESH_MS });
+    } catch (err) {
+      log(TAG, `failed to register aurora.refresh`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable tides.* (sea-level gauges for the on-air tsunami monitor) ----
   // `refreshStations` rebuilds the global IOC gauge catalog (near-static, daily);
   // `snapshotTides` caches recent water-level series for the gauges nearest what's

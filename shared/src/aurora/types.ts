@@ -26,6 +26,10 @@ export interface AuroraFrame {
   height: number;
   /** Peak aurora probability across the grid (%, 0–100). Drives the HUD readout. */
   maxProb: number;
+  /** Latest planetary Kp index (0–9) — the geomagnetic activity level, or null. */
+  kp: number | null;
+  /** ISO time of the latest Kp reading, or null when unavailable. */
+  kpTime: string | null;
 }
 
 /** What the overlay hook receives: frame metadata plus a cache-bust key. */

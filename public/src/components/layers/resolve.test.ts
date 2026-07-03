@@ -3,6 +3,8 @@ import {
   defaultMinZoom,
   nestMinZoom,
   bboxContains,
+  bboxContainsBbox,
+  viewCentralBbox,
   nestActive,
   resolveEntries,
   activeNestSignature,
@@ -33,14 +35,40 @@ describe("defaultMinZoom", () => {
 });
 
 describe("nestMinZoom", () => {
-  it("prefers an explicit minZoom over the derived default", () => {
-    expect(nestMinZoom(entry({ minZoom: 4.2, resolutionDeg: 0.02 }))).toBe(4.2);
+  // Every floor is lowered by 1 (clamped ≥2.5) so nests become ELIGIBLE ~1 zoom
+  // level earlier; the best-fit winner (coverage-gated) stops that showing seams.
+  it("prefers an explicit minZoom (lowered by 1) over the derived default", () => {
+    expect(nestMinZoom(entry({ minZoom: 4.2, resolutionDeg: 0.02 }))).toBeCloseTo(3.2);
   });
-  it("derives from resolutionDeg when minZoom is absent", () => {
-    expect(nestMinZoom(entry({ resolutionDeg: 0.125 }))).toBeCloseTo(3);
+  it("derives from resolutionDeg when minZoom is absent (then lowers, clamped ≥2.5)", () => {
+    expect(nestMinZoom(entry({ resolutionDeg: 0.125 }))).toBeCloseTo(2.5); // 3 − 1 → clamp 2.5
+    expect(nestMinZoom(entry({ resolutionDeg: 0.02 }))).toBeCloseTo(defaultMinZoom(0.02) - 1);
   });
-  it("falls back to 3 when neither is present", () => {
-    expect(nestMinZoom(entry({}))).toBe(3);
+  it("falls back to 3 (→2.5 after lowering) when neither is present", () => {
+    expect(nestMinZoom(entry({}))).toBeCloseTo(2.5);
+  });
+});
+
+describe("viewCentralBbox + bboxContainsBbox (best-fit coverage)", () => {
+  it("shrinks with zoom (a closer view needs less coverage)", () => {
+    const wide = viewCentralBbox({ center: [-2, 54], zoom: 4 });
+    const tight = viewCentralBbox({ center: [-2, 54], zoom: 6 });
+    const span = (b: [number, number, number, number]) => b[2] - b[0];
+    expect(span(tight)).toBeLessThan(span(wide));
+  });
+
+  it("is centred on the camera", () => {
+    const b = viewCentralBbox({ center: [10, 40], zoom: 5 });
+    expect((b[0] + b[2]) / 2).toBeCloseTo(10);
+    expect((b[1] + b[3]) / 2).toBeCloseTo(40);
+  });
+
+  it("a UK-spanning nest covers a close UK view; a France nest cut at 55.4°N does not", () => {
+    const view = viewCentralBbox({ center: [-2, 54], zoom: 6 });
+    const ukv: [number, number, number, number] = [-12, 48, 4.992, 60.996];
+    const aromeFrance: [number, number, number, number] = [-12, 37.5, 16, 55.4];
+    expect(bboxContainsBbox(ukv, view)).toBe(true);
+    expect(bboxContainsBbox(aromeFrance, view)).toBe(false); // north edge cuts the view
   });
 });
 
@@ -54,11 +82,11 @@ describe("bboxContains", () => {
 });
 
 describe("nestActive", () => {
-  const conus = entry({ sourceId: "hrrr", bbox: CONUS, minZoom: 3.5 });
+  const conus = entry({ sourceId: "hrrr", bbox: CONUS, minZoom: 3.5 }); // floor → 2.5 after lowering
 
   it("active only when zoomed in AND centred inside the bbox", () => {
     expect(nestActive(conus, { center: [-100, 40], zoom: 4 })).toBe(true);
-    expect(nestActive(conus, { center: [-100, 40], zoom: 3 })).toBe(false); // zoomed out
+    expect(nestActive(conus, { center: [-100, 40], zoom: 2 })).toBe(false); // below 2.5 floor
     expect(nestActive(conus, { center: [10, 50], zoom: 5 })).toBe(false); // outside bbox
   });
 
@@ -67,9 +95,9 @@ describe("nestActive", () => {
   });
 
   it("uses the derived floor when minZoom is omitted", () => {
-    const fine = entry({ bbox: CONUS, resolutionDeg: 0.03 }); // derived floor ≈ 5.06
-    expect(nestActive(fine, { center: [-100, 40], zoom: 5 })).toBe(false);
-    expect(nestActive(fine, { center: [-100, 40], zoom: 6 })).toBe(true);
+    const fine = entry({ bbox: CONUS, resolutionDeg: 0.03 }); // derived ≈5.06, lowered ≈4.06
+    expect(nestActive(fine, { center: [-100, 40], zoom: 4 })).toBe(false);
+    expect(nestActive(fine, { center: [-100, 40], zoom: 5 })).toBe(true);
   });
 });
 

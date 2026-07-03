@@ -350,6 +350,14 @@ export default function ControlPanel({
         />
       </Section>
 
+      <Section title="Space weather">
+        <Toggle
+          label="Aurora oval (magnetic activity)"
+          checked={state.showAurora}
+          onChange={(showAurora) => patch({ showAurora })}
+        />
+      </Section>
+
       <Section title="Debug">
         <Toggle
           label="Show map source (bbox + name)"
