@@ -24,6 +24,7 @@ import { log } from "@photonsurge/shared/utill/logger";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
 import { summarizeForLog } from "../utils";
+import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue";
 
 const TAG = "job:cities";
 const DUMP = "https://download.geonames.org/export/dump";
@@ -93,6 +94,17 @@ export interface WikiEnrichOpts {
   force?: boolean;
 }
 
+/** Build the candidate query. A zero population threshold explicitly means all
+ * cities, including older/manual records with no population field at all. */
+export function wikiEnrichQuery(minPopulation: number, staleBefore: Date, force: boolean) {
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  const query: any = minPopulation <= 0
+    ? {}
+    : { $or: [{ population: { $gte: minPopulation } }, { isCapital: true }] };
+  if (!force) query.wikiFetchedAt = { $not: { $gt: staleBefore } };
+  return query;
+}
+
 /** Cache Wikipedia title/thumb/extract onto prominent city docs. Incremental
  *  (skips fresh ones unless force); never closes the connection (caller owns it). */
 export async function runWikiEnrich(opts: WikiEnrichOpts = {}) {
@@ -102,9 +114,7 @@ export async function runWikiEnrich(opts: WikiEnrichOpts = {}) {
 
   const db = await getAppDb();
   const staleBefore = new Date(Date.now() - STALE_DAYS * 86_400_000);
-  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  const query: any = { $or: [{ population: { $gte: minPopulation } }, { isCapital: true }] };
-  if (!force) query.wikiFetchedAt = { $not: { $gt: staleBefore } };
+  const query = wikiEnrichQuery(minPopulation, staleBefore, force);
 
   let q = db.cities.model.find(query).sort({ population: -1 });
   if (limit > 0) q = q.limit(limit);
@@ -157,6 +167,45 @@ export async function enrichWiki(job: Job) {
   } catch (err) {
     log(TAG, `enrichWiki failed`, { err: summarizeForLog(err) });
     blogErr(TAG, `city wiki enrichment failed`, err, "cities", "enrich");
+    throw err;
+  }
+}
+
+/**
+ * Long-running all-city enrichment, split into a chain of bounded jobs. Each
+ * batch updates fetchedAt, so the next batch naturally selects the next stale
+ * rows without fragile offsets. A completely failed batch stops the chain to
+ * avoid an infinite retry storm during an upstream outage.
+ */
+export async function enrichWikiAll(job: Job) {
+  const d = job.data?.data ?? {};
+  const batchSize = Math.min(Math.max(Number(d.batchSize) || 100, 10), 500);
+  const batch = Math.max(Number(d.batch) || 1, 1);
+  const maxBatches = Math.min(Math.max(Number(d.maxBatches) || 2_000, 1), 5_000);
+  try {
+    const result = await runWikiEnrich({ minPopulation: 0, limit: batchSize, force: false });
+    const processed = result.enriched + result.noMatch;
+    const shouldContinue = result.candidates === batchSize && processed > 0 && batch < maxBatches;
+    if (shouldContinue) {
+      await sendToQueue(
+        "cities",
+        "cities",
+        "enrichWikiAll",
+        { batchSize, batch: batch + 1, maxBatches },
+        undefined,
+        QUEUE_PRIORITY.LOW,
+      );
+    }
+    return {
+      ...result,
+      batch,
+      batchSize,
+      continued: shouldContinue,
+      stalled: result.candidates > 0 && processed === 0,
+    };
+  } catch (err) {
+    log(TAG, `enrichWikiAll batch ${batch} failed`, { err: summarizeForLog(err) });
+    blogErr(TAG, `all-city enrichment batch ${batch} failed`, err, "cities", "enrich-all");
     throw err;
   }
 }

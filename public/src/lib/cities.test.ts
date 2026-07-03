@@ -1,4 +1,4 @@
-import { validateCity, cityLabelMinZoom, formatPopulation, cityDetail } from "./cities";
+import { validateCity, cityLabelMinZoom, formatPopulation, cityDetail, getCity, listCitiesPage, queueCitiesEnrichment } from "./cities";
 
 describe("cityLabelMinZoom", () => {
   it("shows capitals and mega-cities on the whole-globe view", () => {
@@ -92,5 +92,71 @@ describe("validateCity", () => {
     const r = validateCity({ name: "x", lat: 0, lng: 0, country: "  " });
     expect(r.value?.isCapital).toBe(false);
     expect(r.value?.country).toBeUndefined();
+  });
+});
+
+describe("queueCitiesEnrichment", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it("queues the allowlisted city enrichment worker job", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, jobId: "42" }),
+    })) as unknown as typeof fetch;
+
+    await expect(queueCitiesEnrichment()).resolves.toEqual({ ok: true, jobId: "42", alreadyQueued: false });
+    expect(global.fetch).toHaveBeenCalledWith("/api/admin/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "cities-enrich-all" }),
+    });
+  });
+
+  it("can queue the smaller prominent-city job separately", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, jobId: "43" }),
+    })) as unknown as typeof fetch;
+
+    await queueCitiesEnrichment("prominent");
+    expect(global.fetch).toHaveBeenCalledWith("/api/admin/jobs", expect.objectContaining({
+      body: JSON.stringify({ id: "cities-enrich" }),
+    }));
+  });
+});
+
+describe("listCitiesPage", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it("requests the selected page and ordering", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ cities: [], count: 0, total: 60, page: 2, pageSize: 25, pageCount: 3 }),
+    })) as unknown as typeof fetch;
+
+    await listCitiesPage({ pageIndex: 1, pageSize: 25, sortBy: "name", sortDirection: "asc", q: "lon" });
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/cities?page=2&pageSize=25&sort=name&direction=asc&q=lon",
+      { cache: "no-store" },
+    );
+  });
+});
+
+describe("getCity", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it("loads the full record used by the dedicated city page", async () => {
+    const city = { id: "city:paris", name: "Paris", lat: 48.85, lng: 2.35 };
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ city }),
+    })) as unknown as typeof fetch;
+
+    await expect(getCity("city:paris")).resolves.toEqual({ city });
+    expect(global.fetch).toHaveBeenCalledWith("/api/cities/city%3Aparis", { cache: "no-store" });
   });
 });

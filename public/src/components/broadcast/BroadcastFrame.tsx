@@ -216,12 +216,14 @@ export default function BroadcastFrame({
 
         {/* Bottom-right column: archived history charts for the focus, stacked
             above the global monitor. Targeted events sample their exact point;
-            wide shots aggregate the framed AREA instead. Both self-hide. */}
+            wide shots aggregate the framed AREA instead. Both self-hide. It is
+            inset a little farther than the other edge furniture so the larger
+            charts do not feel pinned to the frame. */}
         <div
           style={{
             position: "absolute",
             bottom: TICKER_H + INSET,
-            right: INSET,
+            right: INSET + 18,
             display: "flex",
             flexDirection: "column",
             alignItems: "flex-end",

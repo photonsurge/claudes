@@ -7,6 +7,24 @@ export const dynamic = "force-dynamic";
 
 const NO_CACHE = { "Cache-Control": "no-store" };
 
+/** GET /api/cities/[id] — one complete city record, including enrichment. */
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  try {
+    const db = await getAppDb();
+    const result = await db.cities.getByID(decodeURIComponent(id));
+    if (!result?.success || !result.data) {
+      return NextResponse.json({ error: "city not found" }, { status: 404, headers: NO_CACHE });
+    }
+    return NextResponse.json({ city: result.data }, { status: 200, headers: NO_CACHE });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 502, headers: NO_CACHE });
+  }
+}
+
 /** PATCH /api/cities/[id] — update a city (validated). */
 export async function PATCH(
   req: Request,

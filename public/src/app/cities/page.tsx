@@ -7,18 +7,24 @@
  * (and /control) refetch their city list. Next is not a socket emitter, so the
  * page itself broadcasts the change over its own socket connection.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PaginationState, SortingState } from "@tanstack/react-table";
 import { CITIES_UPDATED, DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
 import { useSocket } from "../../lib/socket-provider";
 import {
-  listCities,
+  listCitiesPage,
   createCity,
   updateCity,
   deleteCity,
+  queueCitiesEnrichment,
+  type CityEnrichmentScope,
+  type CitySortField,
   type City,
   type ValidatedCity,
 } from "../../lib/cities";
 import CityEditor from "../../components/CityEditor";
+import CityEnrichmentCard from "../../components/cities/CityEnrichmentCard";
+import CitiesTable from "../../components/cities/CitiesTable";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 
 export default function CitiesPage() {
@@ -26,12 +32,52 @@ export default function CitiesPage() {
   const [cities, setCities] = useState<City[]>([]);
   const [editing, setEditing] = useState<City | null>(null);
   const [adding, setAdding] = useState(false);
+  const [selected, setSelected] = useState<City | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [total, setTotal] = useState(0);
+  const [pageCount, setPageCount] = useState(0);
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 25 });
+  const [sorting, setSorting] = useState<SortingState>([{ id: "population", desc: true }]);
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [enriching, setEnriching] = useState<CityEnrichmentScope | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const globe = useRef<GlobeHandle | null>(null);
+  const requestId = useRef(0);
 
-  const reload = async () => setCities(await listCities());
+  const reload = useCallback(async () => {
+    const activeRequest = ++requestId.current;
+    setLoading(true);
+    setLoadError(null);
+    const sort = sorting[0] ?? { id: "population", desc: true };
+    const result = await listCitiesPage({
+      pageIndex: pagination.pageIndex,
+      pageSize: pagination.pageSize,
+      sortBy: sort.id as CitySortField,
+      sortDirection: sort.desc ? "desc" : "asc",
+      q: query || undefined,
+    });
+    if (activeRequest !== requestId.current) return;
+    setCities(result.cities);
+    setTotal(result.total);
+    setPageCount(result.pageCount);
+    setLoadError(result.error ?? null);
+    setSelected((current) => current ? result.cities.find((city) => city.id === current.id) ?? current : null);
+    setLoading(false);
+  }, [pagination.pageIndex, pagination.pageSize, query, sorting]);
+
   useEffect(() => {
     reload();
-  }, []);
+  }, [reload]);
+
+  // The worker emits this after enrichment, so an open result refreshes itself.
+  useEffect(() => {
+    if (!socket) return;
+    const onUpdated = () => reload();
+    socket.on(CITIES_UPDATED, onUpdated);
+    return () => { socket.off(CITIES_UPDATED, onUpdated); };
+  }, [reload, socket]);
 
   const notify = () => socket?.emit(CITIES_UPDATED, { reason: "cities-page" });
 
@@ -56,10 +102,27 @@ export default function CitiesPage() {
 
   const handleDelete = async (id: string) => {
     if (await deleteCity(id)) {
+      setSelected((current) => current?.id === id ? null : current);
       await reload();
       notify();
     }
   };
+
+  const handleEnrich = async (scope: CityEnrichmentScope) => {
+    setEnriching(scope);
+    setNotice(null);
+    const result = await queueCitiesEnrichment(scope);
+    const label = scope === "all" ? "All-city enrichment" : "Prominent-city enrichment";
+    const refreshNote = scope === "all" ? "Results refresh after each batch." : "Results refresh when the job finishes.";
+    setNotice(result.ok
+      ? `${result.alreadyQueued ? `${label} is already running` : `${label} queued`}${result.jobId ? ` (#${result.jobId})` : ""}. ${refreshNote}`
+      : `Could not queue enrichment: ${result.error ?? "unknown error"}`);
+    setEnriching(null);
+  };
+
+  const enrichedCount = cities.filter((city) => city.wikiTitle || city.wikiThumb || city.wikiExtract).length;
+  const checkedCount = cities.filter((city) => city.wikiFetchedAt).length;
+  const resetToFirstPage = () => setPagination((current) => ({ ...current, pageIndex: 0 }));
 
   const previewState = useMemo(
     () => ({ ...DEFAULT_CONTROL_STATE, activeVariable: null, showWind: false, showCities: true }),
@@ -68,13 +131,42 @@ export default function CitiesPage() {
 
   return (
     <main style={{ display: "flex", height: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ width: 520, padding: 20, overflowY: "auto", borderRight: "1px solid #1b2030" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <section style={{ width: 680, padding: 20, overflowY: "auto", borderRight: "1px solid #1b2030" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <h2 style={{ margin: 0 }}>Cities</h2>
-          <button type="button" onClick={() => { setAdding(true); setEditing(null); }} style={primary}>
-            + Add city
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" onClick={reload} disabled={loading} style={ghost}>{loading ? "…" : "Refresh"}</button>
+            <button type="button" onClick={() => handleEnrich("prominent")} disabled={enriching !== null} style={{ ...primary, background: "#0f766e" }}>
+              {enriching === "prominent" ? "Queueing…" : "Enrich prominent"}
+            </button>
+            <button type="button" onClick={() => handleEnrich("all")} disabled={enriching !== null} style={primary}>
+              {enriching === "all" ? "Queueing…" : "Enrich all · low priority"}
+            </button>
+            <button type="button" onClick={() => { setAdding(true); setEditing(null); }} style={primary}>+ Add city</button>
+          </div>
         </div>
+
+        <div style={{ color: "#8b95a7", fontSize: 12, marginTop: 8 }}>
+          Showing {cities.length} of {total.toLocaleString()} cities · this page: {enrichedCount} enriched · {checkedCount} checked
+        </div>
+        {notice && <div role="status" style={{ color: notice.startsWith("Could not") ? "#fca5a5" : "#a7f3d0", fontSize: 12, marginTop: 7 }}>{notice}</div>}
+        {loadError && <div role="alert" style={{ color: "#fca5a5", fontSize: 12, marginTop: 7 }}>{loadError}</div>}
+
+        <form
+          onSubmit={(event) => { event.preventDefault(); setQuery(search.trim()); resetToFirstPage(); }}
+          style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}
+        >
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search city, country or region"
+            aria-label="Search cities"
+            style={{ flex: 1, minWidth: 0, background: "#1a1f2b", color: "#fff", border: "1px solid #333", borderRadius: 5, padding: "7px 9px" }}
+          />
+          <button type="submit" style={ghost}>Search</button>
+        </form>
+
+        {selected && <CityEnrichmentCard city={selected} onClose={() => setSelected(null)} />}
 
         {adding && (
           <div style={card}>
@@ -102,47 +194,22 @@ export default function CitiesPage() {
           </div>
         )}
 
-        <table style={{ width: "100%", marginTop: 16, borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ textAlign: "left", color: "#8b95a7" }}>
-              <th style={th}>Name</th>
-              <th style={th}>Country</th>
-              <th style={th}>Lat</th>
-              <th style={th}>Lng</th>
-              <th style={th}>Pop</th>
-              <th style={th}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {cities.map((c) => (
-              <tr key={c.id} style={{ borderTop: "1px solid #1b2030" }}>
-                <td style={td}>
-                  {c.isCapital ? "★ " : ""}
-                  {c.name}
-                </td>
-                <td style={td}>{c.country ?? ""}</td>
-                <td style={td}>{c.lat.toFixed(2)}</td>
-                <td style={td}>{c.lng.toFixed(2)}</td>
-                <td style={td}>{c.population?.toLocaleString() ?? ""}</td>
-                <td style={td}>
-                  <button type="button" onClick={() => { setEditing(c); setAdding(false); }} style={ghost}>
-                    Edit
-                  </button>{" "}
-                  <button type="button" onClick={() => handleDelete(c.id)} style={danger}>
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {cities.length === 0 && (
-              <tr>
-                <td style={td} colSpan={6}>
-                  No cities yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        <CitiesTable
+          cities={cities}
+          total={total}
+          pageCount={pageCount}
+          loading={loading}
+          pagination={pagination}
+          sorting={sorting}
+          onPaginationChange={setPagination}
+          onSortingChange={(updater) => {
+            setSorting((current) => typeof updater === "function" ? updater(current) : updater);
+            resetToFirstPage();
+          }}
+          onSelect={(city) => { setSelected(city); globe.current?.flyTo([city.lng, city.lat], 5); }}
+          onEdit={(city) => { setEditing(city); setAdding(false); }}
+          onDelete={handleDelete}
+        />
       </section>
 
       <div style={{ position: "relative", flex: 1 }}>
@@ -169,7 +236,6 @@ const ghost: React.CSSProperties = {
   cursor: "pointer",
   fontSize: 12,
 };
-const danger: React.CSSProperties = { ...ghost, borderColor: "#7f1d1d", color: "#fca5a5" };
 const card: React.CSSProperties = {
   marginTop: 16,
   padding: 16,
@@ -177,5 +243,3 @@ const card: React.CSSProperties = {
   border: "1px solid #1b2030",
   background: "#0c111c",
 };
-const th: React.CSSProperties = { padding: "6px 8px", fontWeight: 600 };
-const td: React.CSSProperties = { padding: "6px 8px" };

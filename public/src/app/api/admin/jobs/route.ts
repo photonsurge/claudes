@@ -41,6 +41,20 @@ export async function POST(req: Request) {
   }
 
   try {
+    // The all-city job chains its own bounded continuations. Reuse an existing
+    // active/waiting chain so an impatient double-click cannot start two sets of
+    // Wikipedia requests in parallel.
+    if (job.id === "cities-enrich-all") {
+      const queue = getQueue();
+      const existing = (await queue.getJobs(["active", "waiting", "delayed", "prioritized"], 0, 100))
+        .find((candidate) => candidate.data?.type === "cities" && candidate.data?.event === "enrichWikiAll");
+      if (existing) {
+        return NextResponse.json(
+          { ok: true, id: job.id, jobId: String(existing.id ?? ""), alreadyQueued: true, at: new Date().toISOString() },
+          { status: 200, headers: NO_CACHE },
+        );
+      }
+    }
     const enqueued = await sendToQueue(
       job.domain,
       job.type,
@@ -49,7 +63,7 @@ export async function POST(req: Request) {
       // trigger marker so several buttons can target one handler with different args.
       { trigger: "admin", ...(job.data ?? {}) },
       undefined,
-      QUEUE_PRIORITY.HIGH,
+      job.priority ?? QUEUE_PRIORITY.HIGH,
     );
     await PublicBackLogger(
       "public",

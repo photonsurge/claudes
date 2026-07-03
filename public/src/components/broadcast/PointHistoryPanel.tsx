@@ -63,10 +63,10 @@ const VARIABLE_LABEL: Record<string, string> = {
   radar: "RADAR",
 };
 
-/** Chart box inside the 210px card. */
-const CHART_W = 186;
-const CHART_H = 26;
-const PAD_Y = 3;
+/** Logical chart box inside the 300px (border-box) card. */
+const CHART_W = 270;
+const CHART_H = 30;
+const PAD_Y = 4;
 
 /** A plottable moment: time + the number to draw. */
 export interface SparkPoint {
@@ -133,25 +133,27 @@ function MiniChart({
   if (!spark) return null;
   const last = spark.pts[spark.pts.length - 1];
   const latestVal = [...points].reverse().find((p) => p.value != null)?.value ?? null;
-  const area = `${toPath(spark.pts)} L${CHART_W},${CHART_H} L0,${CHART_H} Z`;
+  const first = spark.pts[0];
+  const area = `${toPath(spark.pts)} L${last[0]},${CHART_H} L${first[0]},${CHART_H} Z`;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-        <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.1, color: "#9fb0c8" }}>
-          <span style={{ color, marginRight: 5 }}>▮</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 2, width: "100%" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.15, color: "#aebdd2" }}>
+          <span style={{ color, marginRight: 6 }}>▮</span>
           {label}
         </span>
-        <span style={{ fontSize: 11, fontWeight: 800, color: "#e6eefb", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 14, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
           {latestVal != null ? formatReading(latestVal) : "—"}
-          <span style={{ fontSize: 8, fontWeight: 700, color: "#8ea3bf", marginLeft: 3 }}>{units}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: "#9db0ca", marginLeft: 4 }}>{units}</span>
         </span>
       </div>
       <svg
-        width={CHART_W}
+        width="100%"
         height={CHART_H}
         viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-        style={{ display: "block", borderRadius: 4, background: "rgba(4,10,20,0.72)" }}
+        preserveAspectRatio="none"
+        style={{ display: "block", borderRadius: 5, background: "rgba(4,10,20,0.78)" }}
       >
         <path d={area} fill={color} opacity={0.16} />
         {avg != null ? (
@@ -161,15 +163,15 @@ function MiniChart({
             x2={CHART_W}
             y2={spark.yOf(avg)}
             stroke="#9fb0c8"
-            strokeWidth={1}
-            strokeDasharray="3 3"
+            strokeWidth={1.1}
+            strokeDasharray="4 4"
             opacity={0.55}
           />
         ) : null}
-        <path d={toPath(spark.pts)} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        {last ? <circle cx={last[0]} cy={last[1]} r={2.6} fill={color} stroke="#040a14" strokeWidth={1} /> : null}
+        <path d={toPath(spark.pts)} fill="none" stroke={color} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+        {last ? <circle cx={last[0]} cy={last[1]} r={3} fill={color} stroke="#040a14" strokeWidth={1.2} /> : null}
       </svg>
-      <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 0.4, color: "#7d8da5" }}>{caption}</div>
+      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.45, color: "#91a1b9" }}>{caption}</div>
     </div>
   );
 }
@@ -178,8 +180,8 @@ function MiniChart({
 function SectionTitle({ title, tag, accent }: { title: string; tag: string; accent: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.4, color: "#dfe7f5" }}>{title}</span>
-      <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: 1, color: accent }}>{tag}</span>
+      <span style={{ fontSize: 12, fontWeight: 850, letterSpacing: 1.5, color: "#eef4ff" }}>{title}</span>
+      <span style={{ fontSize: 9, fontWeight: 750, letterSpacing: 1.05, color: accent }}>{tag}</span>
     </div>
   );
 }
@@ -278,11 +280,12 @@ export default function PointHistoryPanel({
   return (
     <div
       style={{
-        width: 210,
+        width: 300,
+        boxSizing: "border-box",
         display: "flex",
         flexDirection: "column",
         gap: 8,
-        padding: "10px 12px",
+        padding: "12px 14px",
         background: theme.panelBg,
         border: theme.panelBorder,
         borderRadius: 12,

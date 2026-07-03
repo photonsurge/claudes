@@ -22,6 +22,7 @@
     "@luma.gl/core": "9.3.x",
     "@luma.gl/engine": "9.3.x",
     "@photonsurge/shared": "file:../shared",
+    "@tanstack/react-table": "^8.21.3",
     "geotiff": "^3.0.0",
     "maplibre-gl": "^5.0.0",
     "next": "16.2.6",

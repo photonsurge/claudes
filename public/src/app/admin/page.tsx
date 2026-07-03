@@ -14,11 +14,12 @@ interface AdminLink {
 const LINKS: AdminLink[] = [
   { href: "/admin/alerts", title: "Weather alerts", desc: "Ingested CAP alerts — filter by severity / active.", ready: true },
   { href: "/admin/summaries", title: "Round-ups", desc: "Scheduled global weather-event summaries + narrative.", ready: true },
-  { href: "/cities", title: "Cities", desc: "Curated city markers shown on the globe.", ready: true },
+  { href: "/cities", title: "Cities", desc: "City markers, Wikipedia enrichment results and map preview.", ready: true },
   { href: "/control", title: "Operator console", desc: "Live broadcast control — variables, basemap, camera.", ready: true },
   { href: "/watch", title: "Watch (broadcast)", desc: "The output view that goes to stream.", ready: true },
   { href: "/admin/scenes", title: "Scenes", desc: "Named /watch/:id globes for OBS sources / overlay windows.", ready: true },
   { href: "/admin/tracks", title: "Live tracks", desc: "Satellites (SGP4), aircraft (ADS-B), ships (AIS).", ready: true },
+  { href: "/admin/vehicles", title: "Vehicles in DB", desc: "Persistent aircraft and ship registry, including enrichment results.", ready: true },
   { href: "/admin/cams", title: "Webcams", desc: "Catalogued live cams — status, location, preview.", ready: true },
   { href: "/admin/ads", title: "Ads", desc: "Sponsor images/video shown on the broadcast.", ready: true },
   { href: "/admin/jobs", title: "Worker jobs", desc: "Trigger ingest/snapshot jobs; view the queue.", ready: true },

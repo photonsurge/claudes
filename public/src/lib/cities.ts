@@ -124,6 +124,26 @@ export interface ListCitiesOptions {
   capital?: boolean;
 }
 
+export type CitySortField = "name" | "country" | "lat" | "lng" | "population" | "isCapital" | "rank" | "wikiFetchedAt" | "updated";
+
+export interface ListCitiesPageOptions {
+  pageIndex: number;
+  pageSize: number;
+  sortBy: CitySortField;
+  sortDirection: "asc" | "desc";
+  q?: string;
+}
+
+export interface CitiesPageResult {
+  cities: City[];
+  count: number;
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  error?: string;
+}
+
 export async function listCities(opts: ListCitiesOptions = {}): Promise<City[]> {
   const q = new URLSearchParams();
   if (opts.limit) q.set("limit", String(opts.limit));
@@ -134,6 +154,39 @@ export async function listCities(opts: ListCitiesOptions = {}): Promise<City[]> 
   if (!res.ok) return [];
   const json = await res.json();
   return (json?.cities ?? []) as City[];
+}
+
+/** Server-paged city registry for the operator table; globe callers keep using listCities. */
+export async function listCitiesPage(opts: ListCitiesPageOptions): Promise<CitiesPageResult> {
+  const q = new URLSearchParams({
+    page: String(opts.pageIndex + 1),
+    pageSize: String(opts.pageSize),
+    sort: opts.sortBy,
+    direction: opts.sortDirection,
+  });
+  if (opts.q) q.set("q", opts.q);
+  try {
+    const res = await fetch(`/api/cities?${q.toString()}`, { cache: "no-store" });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body) {
+      return { cities: [], count: 0, total: 0, page: 1, pageSize: opts.pageSize, pageCount: 0, error: body?.error ?? `HTTP ${res.status}` };
+    }
+    return body as CitiesPageResult;
+  } catch (error) {
+    return { cities: [], count: 0, total: 0, page: 1, pageSize: opts.pageSize, pageCount: 0, error: String(error) };
+  }
+}
+
+/** Fetch one full city record for its dedicated details page. */
+export async function getCity(id: string): Promise<{ city?: City; error?: string }> {
+  try {
+    const res = await fetch(`/api/cities/${encodeURIComponent(id)}`, { cache: "no-store" });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body?.city) return { error: body?.error ?? `HTTP ${res.status}` };
+    return { city: body.city as City };
+  } catch (error) {
+    return { error: String(error) };
+  }
 }
 
 export async function createCity(value: ValidatedCity): Promise<City | null> {
@@ -159,4 +212,29 @@ export async function updateCity(id: string, value: Partial<ValidatedCity>): Pro
 export async function deleteCity(id: string): Promise<boolean> {
   const res = await fetch(`/api/cities/${id}`, { method: "DELETE" });
   return res.ok;
+}
+
+export interface QueueCitiesEnrichmentResult {
+  ok: boolean;
+  jobId?: string;
+  alreadyQueued?: boolean;
+  error?: string;
+}
+
+export type CityEnrichmentScope = "prominent" | "all";
+
+/** Queue either the quick prominent-city run or the low-priority all-city chain. */
+export async function queueCitiesEnrichment(scope: CityEnrichmentScope = "all"): Promise<QueueCitiesEnrichmentResult> {
+  try {
+    const res = await fetch("/api/admin/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: scope === "all" ? "cities-enrich-all" : "cities-enrich" }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body?.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` };
+    return { ok: true, jobId: body.jobId, alreadyQueued: body.alreadyQueued === true };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
 }

@@ -13,6 +13,8 @@ export interface TriggerableJob {
   event: string;
   /** UI section header on the admin Jobs page (jobs render grouped by this). */
   group: string;
+  /** BullMQ priority (1 high, 5 normal, 10 low). Admin triggers default high. */
+  priority?: 1 | 5 | 10;
   /**
    * Optional preset payload merged into the enqueue `data` (e.g. a city seed
    * tier). Lets several buttons target the same handler with different params
@@ -186,6 +188,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     type: "cities",
     event: "enrichWiki",
     group: "Cities",
+  },
+  {
+    id: "cities-enrich-all",
+    label: "Enrich all cities (Wikipedia)",
+    description: "Fetch a Wikipedia photo + blurb for every city in restartable batches of 100. Fresh cities are skipped.",
+    domain: "cities",
+    type: "cities",
+    event: "enrichWikiAll",
+    group: "Cities",
+    priority: 10,
   },
   {
     id: "elevation-bake",

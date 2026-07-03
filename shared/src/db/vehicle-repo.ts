@@ -30,6 +30,7 @@ export interface ListOpts {
   /** Case-insensitive substring over label/name/code. */
   q?: string;
   limit?: number;
+  skip?: number;
   sort?: Record<string, 1 | -1>;
 }
 
@@ -58,6 +59,7 @@ export function makeVehicleRepo(model: Model<iVehicleModel>) {
         (query as Record<string, unknown>).$or = [{ label: rx }, { name: rx }, { code: rx }];
       }
       let q = model.find(query, CLEAN).sort(opts.sort ?? { lastSeen: -1 });
+      if (opts.skip && opts.skip > 0) q = q.skip(opts.skip);
       if (opts.limit && opts.limit > 0) q = q.limit(opts.limit);
       const docs = await q.lean().exec();
       return docs.map((d) => strip<iVehicle>(d));
