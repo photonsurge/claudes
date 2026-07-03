@@ -582,9 +582,15 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // itself; a nest-only variable (radar) does not, so the basemap background must
     // stay the occluder. Detected by whether the active variable has a base texture
     // at this fhr.
-    const hasGlobalRaster = !!(
+    const weatherRaster = !!(
       manifest && state.activeVariable && textureUrlFor(manifest, state.activeVariable, state.fhr)
     );
+    // Elevation is a full-globe WeatherLayers surface too — when it's on with no
+    // weather raster it must SEAL the depth sphere itself (via its relief raster),
+    // so it counts as a global raster for the basemap occluder decision. Otherwise
+    // the basemap would occlude at the wrong depth and hide the contours.
+    const elevationOn = !!(manifest && state.showElevation && textureUrlFor(manifest, "elevation", 0));
+    const hasGlobalRaster = weatherRaster || elevationOn;
     const layers: any[] = [...basemapLayers(state, tilesActive, hasGlobalRaster)];
 
     // Day/night terminator: shade the earth's night hemisphere from the real sun
@@ -602,11 +608,14 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         layers.push(...scalarRasterLayers(manifest, state.activeVariable, state.fhr, resolve, camera));
       }
       if (state.showPressure) layers.push(...pressureLayers(manifest, state.fhr, resolve));
-      if (state.showElevation) {
+      if (elevationOn) {
         layers.push(
           ...elevationLayers(manifest, resolve, {
             interval: state.elevationInterval,
             majorInterval: state.elevationMajorInterval,
+            // No weather raster to seal the surface → draw the relief base so the
+            // contours aren't depth-culled by the basemap sphere.
+            relief: !weatherRaster,
           }),
         );
       }

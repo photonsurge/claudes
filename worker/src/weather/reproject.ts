@@ -74,6 +74,38 @@ export function lccGridFromOrigin(a: {
   return { nx: a.nx, ny: a.ny, x0, y0, dx: a.dx, dy: a.dy, fwd };
 }
 
+/**
+ * Rotated-pole forward projector: (lat,lon)° → [rlon, rlat]° in the rotated grid.
+ * `poleLat`/`poleLon` = geographic location of the rotated grid's NORTH pole (Open-Meteo
+ * `RotatedLatLonProjection(latitude, longitude)`). A 3-D rotation aligns that pole to the
+ * true north; the −180° on rotated longitude matches Open-Meteo's rotated prime meridian
+ * (verified: pole 43/190 maps central Switzerland to rotated ≈(−0.7,−1.0)).
+ */
+export function rotatedProjector(poleLat: number, poleLon: number): (lat: number, lon: number) => [number, number] {
+  const thp = (90 - poleLat) * D2R;
+  const lp = poleLon * D2R;
+  return (lat: number, lon: number): [number, number] => {
+    const la = lat * D2R, lo = lon * D2R;
+    const x = Math.cos(la) * Math.cos(lo), y = Math.cos(la) * Math.sin(lo), z = Math.sin(la);
+    const xz = Math.cos(-lp) * x - Math.sin(-lp) * y, yz = Math.sin(-lp) * x + Math.cos(-lp) * y;
+    const x2 = Math.cos(-thp) * xz + Math.sin(-thp) * z, y2 = yz, z2 = -Math.sin(-thp) * xz + Math.cos(-thp) * z;
+    const rlat = Math.asin(Math.max(-1, Math.min(1, z2))) * R2D;
+    const rlon = wrapLonDeg(Math.atan2(y2, x2) * R2D - 180);
+    return [rlon, rlat]; // [x = rotated lon, y = rotated lat]
+  };
+}
+
+/** Rotated-pole grid: origin + spacing are in ROTATED DEGREES (fwd returns [rlon,rlat]). */
+export function rotatedGridDeg(a: {
+  nx: number; ny: number; dx: number; dy: number;
+  originRLon: number; originRLat: number; poleLat: number; poleLon: number;
+}): NativeGrid {
+  return {
+    nx: a.nx, ny: a.ny, x0: a.originRLon, y0: a.originRLat, dx: a.dx, dy: a.dy,
+    fwd: rotatedProjector(a.poleLat, a.poleLon),
+  };
+}
+
 /** LCC grid given the SW + NE corner lat/lon (Open-Meteo "range" form); dx/dy derived. */
 export function lccGridFromCorners(a: {
   nx: number; ny: number;

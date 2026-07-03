@@ -297,8 +297,13 @@ export interface ElevationContourProps {
   /** Thicker, emphasised contour every N metres. */
   majorInterval: number;
   width: number;
-  /** Colour isolines by height (bathymetry cool, mountains warm). */
-  palette: Palette;
+  /**
+   * SOLID bright line colour (RGBA). Terrain contours are drawn one flat colour
+   * — NOT the hypsometric palette — because palette-by-height paints deep-ocean
+   * isolines dark blue on a dark globe, i.e. invisible. A warm off-white reads on
+   * both land and sea.
+   */
+  color: [number, number, number, number];
 }
 
 /**
@@ -317,21 +322,16 @@ export function elevationProps(
   // Static: the single baked step (key "0"), or whatever the only key is.
   const image = entry.files["0"] ?? Object.values(entry.files)[0];
   if (!image) return null;
-  const meta = getVariable("elevation");
-  const domain = entry.domain ?? meta?.domain;
-  // WeatherLayers maps the palette against the DECODED metre value, so scale the
-  // 0..1 ramp onto the elevation domain (e.g. −11000..9000 m).
-  const palette = scalePaletteToDomain(getPalette(entry.palette ?? meta?.palette ?? "elevation"), domain);
   return {
     contour: {
       id: "elevation-contour",
       image,
       imageUnscale: entry.imageUnscale,
       bounds: manifestBounds(manifest),
-      interval: opts.interval ?? 500,
-      majorInterval: opts.majorInterval ?? 2000,
-      width: 1,
-      palette,
+      interval: opts.interval ?? 250,
+      majorInterval: opts.majorInterval ?? 1000,
+      width: 1.5,
+      color: [255, 224, 178, 255],
     },
   };
 }

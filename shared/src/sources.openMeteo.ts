@@ -91,11 +91,10 @@ export const OPENMETEO_SOURCES: Record<string, SourceDescriptor> = {
     variables: ["temp", "wind", "gust", "humidity"],
     priority: 33,
     minZoom: 4.5,
-    // DISABLED: ROTATED-POLE native grid (not Lambert) — reprojection not ported yet
-    // (only LCC is: dmi/metno). Provisional and low-value (icon-2i-italy + arome-austria
-    // + icon-eu already cover the Alps correctly). Re-enable after the rotated-pole path
-    // lands + a live check. See docs/openmeteo-grid-defs.md.
-    enabled: false,
+    // Rotated-pole native grid → reprojected to lat/lon at ingest (worker reproject.ts
+    // rotatedGridDeg, pole 43/190). Verified: Alps ridge sits under the Swiss/Austrian/
+    // Italian borders 2026-07-03.
+    enabled: true,
     attribution: "MeteoSwiss via Open-Meteo (CC BY 4.0)",
   },
   // KNMI HARMONIE-AROME Netherlands — ~2 km. temp/humidity/gust.

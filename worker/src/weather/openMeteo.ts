@@ -38,10 +38,14 @@ import {
 import {
   lccGridFromOrigin,
   lccGridFromCorners,
+  rotatedGridDeg,
   reprojectScalar,
   outDims,
   type NativeGrid,
 } from "./reproject";
+
+/** ~metres per degree at the equator, for sizing a degree-spaced grid's output. */
+const M_PER_DEG = 111_320;
 
 const TAG = "job:weather:source";
 
@@ -74,6 +78,10 @@ const PROJECTED_NESTS: Record<string, ProjectedNest> = {
       proj: { lam0: 15, phi0: 63, phi1: 63, radius: 6371229 } });
     return projectedNest(grid, [1.918457, 52.302723, 41.764282, 72.18527], Math.abs(grid.dx));
   })(),
+  "meteoswiss-ch2": projectedNest(
+    rotatedGridDeg({ nx: 545, ny: 353, dx: 0.02, dy: 0.02, originRLon: -6.46, originRLat: -4.06, poleLat: 43.0, poleLon: 190.0 }),
+    [1.2333984, 42.57854, 16.846222, 49.786846], 0.02 * M_PER_DEG,
+  ),
 };
 
 /** Read one scalar var → north-up bake grid: reproject when projected, else flip. */

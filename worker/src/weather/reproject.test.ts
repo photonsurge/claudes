@@ -2,6 +2,8 @@ import {
   lccProjector,
   lccGridFromOrigin,
   lccGridFromCorners,
+  rotatedProjector,
+  rotatedGridDeg,
   reprojectScalar,
   outDims,
   type NativeGrid,
@@ -42,6 +44,30 @@ describe("grid builders", () => {
     expect(y1).toBeCloseTo(g.y0 + (g.ny - 1) * g.dy, 2);
     expect(g.dx).toBeGreaterThan(500); // sane metre spacing (~1–3 km)
     expect(g.dx).toBeLessThan(5000);
+  });
+});
+
+describe("rotatedProjector (meteoswiss pole 43/190)", () => {
+  const fwd = rotatedProjector(43.0, 190.0);
+  it("maps central Switzerland near the rotated origin (inside the grid extent)", () => {
+    const [rlon, rlat] = fwd(46.0, 9.0);
+    // grid extent: rlon[-6.46..4.42], rlat[-4.06..2.98]
+    expect(rlon).toBeGreaterThan(-6.46);
+    expect(rlon).toBeLessThan(4.42);
+    expect(rlat).toBeGreaterThan(-4.06);
+    expect(rlat).toBeLessThan(2.98);
+  });
+  it("rotatedGridDeg exposes the rotated origin as (x0,y0)", () => {
+    const g = rotatedGridDeg({ nx: 545, ny: 353, dx: 0.02, dy: 0.02, originRLon: -6.46, originRLat: -4.06, poleLat: 43.0, poleLon: 190.0 });
+    expect(g.x0).toBe(-6.46);
+    expect(g.y0).toBe(-4.06);
+    // a Swiss point lands at a valid (col,row)
+    const [rlon, rlat] = g.fwd(46.8, 8.2);
+    const col = (rlon - g.x0) / g.dx, row = (rlat - g.y0) / g.dy;
+    expect(col).toBeGreaterThanOrEqual(0);
+    expect(col).toBeLessThanOrEqual(g.nx - 1);
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(row).toBeLessThanOrEqual(g.ny - 1);
   });
 });
 
