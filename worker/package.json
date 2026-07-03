@@ -27,6 +27,7 @@
     "ingest:tles": "ts-node src/scripts/ingestTles.ts",
     "snapshot:tracks": "ts-node src/scripts/snapshotTracks.ts",
     "check:maps": "ts-node src/scripts/checkMapAlignment.ts",
+    "gen:countries": "node ../scripts/gen-country-bboxes.mjs",
     "enrich:wiki": "ts-node src/scripts/enrichWikipedia.ts",
     "refresh:cables": "ts-node src/scripts/refreshCables.ts",
     "refresh:faults": "ts-node src/scripts/refreshFaults.ts",

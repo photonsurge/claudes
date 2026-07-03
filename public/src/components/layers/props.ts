@@ -297,43 +297,66 @@ export interface ElevationContourProps {
   /** Thicker, emphasised contour every N metres. */
   majorInterval: number;
   width: number;
-  /**
-   * SOLID bright line colour (RGBA). Terrain contours are drawn one flat colour
-   * — NOT the hypsometric palette — because palette-by-height paints deep-ocean
-   * isolines dark blue on a dark globe, i.e. invisible. A warm off-white reads on
-   * both land and sea.
-   */
-  color: [number, number, number, number];
+  opacity: number;
+  /** Colour-by-height ramp (colorMode "elevation"); mutually exclusive with `color`. */
+  palette?: Palette;
+  /** Flat line colour RGBA (colorMode "default"/"custom"); else `palette` is used. */
+  color?: [number, number, number, number];
 }
 
+/** How the contour LINES are coloured, plus their width/opacity/spacing. */
+export interface ElevationLineOpts {
+  colorMode?: "default" | "elevation" | "custom";
+  /** Hex `#rrggbb` for the "custom" flat colour. */
+  color?: string;
+  width?: number;
+  opacity?: number;
+  interval?: number;
+  majorInterval?: number;
+}
+
+/** Flat warm-white used by the "default" colour mode — reads on land and sea. */
+const DEFAULT_ELEVATION_LINE_RGBA: [number, number, number, number] = [255, 224, 178, 255];
+
 /**
- * PURE props for the static elevation contour layer. Unlike pressure this is NOT
- * forecast-hour indexed — terrain never changes, so it is baked once at fhr 0 and
- * we ignore the timeline: pick the single stored texture regardless of `fhr` so
- * the relief stays put as the operator scrubs the forecast. Returns null when no
+ * PURE props for the static elevation contour LINE overlay. Unlike pressure this
+ * is NOT forecast-hour indexed — terrain never changes, so it is baked once at
+ * fhr 0 and we ignore the timeline (pick the single stored texture regardless of
+ * `fhr`). Lines are either a flat colour ("default"/"custom") or coloured by
+ * height ("elevation" → the brighter `elevation_line` ramp). Returns null when no
  * elevation texture has been baked yet (`yarn refresh:elevation` not run).
  */
 export function elevationProps(
   manifest: WeatherManifest,
-  opts: { interval?: number; majorInterval?: number } = {},
+  opts: ElevationLineOpts = {},
 ): { contour: ElevationContourProps } | null {
   const entry = manifest.variables.elevation;
   if (!entry) return null;
   // Static: the single baked step (key "0"), or whatever the only key is.
   const image = entry.files["0"] ?? Object.values(entry.files)[0];
   if (!image) return null;
-  return {
-    contour: {
-      id: "elevation-contour",
-      image,
-      imageUnscale: entry.imageUnscale,
-      bounds: manifestBounds(manifest),
-      interval: opts.interval ?? 250,
-      majorInterval: opts.majorInterval ?? 1000,
-      width: 1.5,
-      color: [255, 224, 178, 255],
-    },
+  const meta = getVariable("elevation");
+  const domain = entry.domain ?? meta?.domain;
+  const mode = opts.colorMode ?? "elevation";
+  const contour: ElevationContourProps = {
+    id: "elevation-contour",
+    image,
+    imageUnscale: entry.imageUnscale,
+    bounds: manifestBounds(manifest),
+    interval: opts.interval ?? 250,
+    majorInterval: opts.majorInterval ?? 1000,
+    width: opts.width ?? 1.5,
+    opacity: opts.opacity ?? 1,
   };
+  if (mode === "elevation") {
+    // WeatherLayers maps the ramp against the DECODED metre value.
+    contour.palette = scalePaletteToDomain(getPalette("elevation_line"), domain);
+  } else if (mode === "custom") {
+    contour.color = hexToRgba(opts.color);
+  } else {
+    contour.color = DEFAULT_ELEVATION_LINE_RGBA;
+  }
+  return { contour };
 }
 
 export interface CityScatterProps {

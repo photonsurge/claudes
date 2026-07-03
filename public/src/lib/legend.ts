@@ -11,7 +11,23 @@ import {
   msToKnots,
   getVariable,
 } from "@photonsurge/shared/variables";
-import type { TempUnit, WindUnit } from "@photonsurge/shared/control";
+import type { ControlState, TempUnit, WindUnit } from "@photonsurge/shared/control";
+
+/**
+ * Which variable the legend should describe for a given state. The active weather
+ * variable wins; otherwise elevation IS the on-screen map when the Relief basemap
+ * is picked or the contours are coloured by height — both want the metres legend.
+ * Returns null when nothing legendable is showing (e.g. flat-coloured contours on
+ * a dark basemap).
+ */
+export function legendVariableFor(
+  state: Pick<ControlState, "activeVariable" | "basemap" | "showElevation" | "elevation">,
+): string | null {
+  if (state.activeVariable) return state.activeVariable;
+  const elevationShown =
+    state.basemap === "relief" || (state.showElevation && state.elevation.colorMode === "elevation");
+  return elevationShown ? "elevation" : null;
+}
 
 export interface LegendStop {
   /** Value in the displayed unit. */

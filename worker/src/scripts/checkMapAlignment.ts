@@ -81,19 +81,51 @@ function coastlineSvg(coast: Ring[], bbox: Bbox, w: number, h: number): Buffer {
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${lines.join("")}</svg>`);
 }
 
-/** Texture PNG → greyscale RGB raw (R channel; nodata/α=0 → near-black), resized. */
-async function greyscale(pngUrl: string): Promise<{ data: Buffer; w: number; h: number }> {
+/**
+ * Texture PNG → greyscale RGB raw (R channel; nodata/α=0 → near-black), resized to the
+ * GEOGRAPHIC bbox aspect (how the client stretches it over `bounds` on the globe) — NOT
+ * the texture's own pixel aspect, which would shear the image and fake a misalignment.
+ *
+ * The R channel is the low byte of the SCALED value, so a field whose values fill only a
+ * fraction of its `imageUnscale` range (e.g. 0–3 m waves in a 0–30 m unscale → R 0–25)
+ * renders near-black and looks "blank" even though data is present. So we CONTRAST-STRETCH
+ * the opaque pixels across the 2nd–98th percentile of their own R range → the field's
+ * shape (and thus its alignment) is visible regardless of amplitude. Purely a display
+ * transform; it does not touch the served texture.
+ */
+async function greyscale(pngUrl: string, bbox: Bbox): Promise<{ data: Buffer; w: number; h: number }> {
+  const [west, south, east, north] = bbox;
+  const targetH = Math.max(1, Math.round(OUT_W * (north - south) / (east - west)));
   const buf = Buffer.from(await (await fetch(BASE + pngUrl)).arrayBuffer());
-  const img = sharp(buf).ensureAlpha().resize({ width: OUT_W });
+  const img = sharp(buf).ensureAlpha().resize({ width: OUT_W, height: targetH, fit: "fill" });
   const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
   const { width: w, height: h, channels: ch } = info;
+
+  // HISTOGRAM-EQUALISE the opaque R values → maximum tonal separation, so the field's
+  // structure (gradients, fronts, swell bands) reads crisply regardless of how little of
+  // the imageUnscale range it fills. The equalised value is remapped into [40,255] so
+  // ocean stays clearly brighter than the near-black land/nodata.
+  const hist = new Uint32Array(256);
+  let opaque = 0;
+  for (let i = 0; i < w * h; i++) {
+    if ((ch >= 4 ? data[i * ch + 3] : 255) === 0) continue;
+    hist[data[i * ch]]++; opaque++;
+  }
+  const lut = new Uint8Array(256);
+  if (opaque > 0) {
+    let c = 0;
+    for (let v = 0; v < 256; v++) {
+      c += hist[v];
+      lut[v] = Math.round((c / opaque) * 215) + 40; // CDF → [40,255]
+    }
+  }
+
   const rgb = Buffer.allocUnsafe(w * h * 3);
   for (let i = 0; i < w * h; i++) {
-    const r = data[i * ch];
     const a = ch >= 4 ? data[i * ch + 3] : 255;
     const o = i * 3;
     if (a === 0) { rgb[o] = 10; rgb[o + 1] = 10; rgb[o + 2] = 14; }
-    else { rgb[o] = r; rgb[o + 1] = r; rgb[o + 2] = r; }
+    else { const g = lut[data[i * ch]]; rgb[o] = g; rgb[o + 1] = g; rgb[o + 2] = g; }
   }
   return { data: rgb, w, h };
 }
@@ -119,7 +151,7 @@ async function main() {
     if (only && !only.includes(sid)) continue;
     const m = maps.get(sid)!;
     try {
-      const { data, w, h } = await greyscale(m.tex);
+      const { data, w, h } = await greyscale(m.tex, m.bbox);
       const svg = coastlineSvg(coast, m.bbox, w, h);
       const out = resolve(OUTDIR, `${sid}.png`);
       await sharp(data, { raw: { width: w, height: h, channels: 3 } })

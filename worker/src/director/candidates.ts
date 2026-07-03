@@ -18,7 +18,6 @@ import {
   OCEAN_VIEWS,
   ORBITAL_VIEW_ZOOM,
   ORBITAL_VIEWS,
-  quakeMapPlan,
 } from "@photonsurge/shared/director-rois";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
@@ -122,12 +121,11 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
           timeMs: q.time ? q.time.getTime() : undefined,
           tsunami: q.tsunami,
         });
-        // Quakes are geophysical — the map is a backdrop, not a forecast. Read
-        // the ocean story when tsunami-flagged, else a neutral temp/sst backdrop.
+        // Quakes are geophysical — the shot reads as terrain (relief basemap +
+        // elevation contours + faults/cables), not a weather field. The quake
+        // preset owns that look; tsunami still flags ocean-risk framing downstream.
         const tsunami = Boolean(q.tsunami);
-        const seg = make("quake", q.quakeId, c.title, c.subtitle, [q.lng, q.lat], 5, holdMs, {
-          activeVariable: quakeMapPlan(tsunami).cycle[0],
-        });
+        const seg = make("quake", q.quakeId, c.title, c.subtitle, [q.lng, q.lat], 5, holdMs);
         seg.tsunami = tsunami;
         seg.details = c.details;
         pool.push({ score: 40 + q.mag * 10, segment: seg });

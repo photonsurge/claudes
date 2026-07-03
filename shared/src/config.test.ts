@@ -1,18 +1,38 @@
-import { REGION_PRESETS, getRegion } from "./regions";
+import { REGION_PRESETS, REGION_GROUPS, getRegion, regionsInGroup, favoriteRegions } from "./regions";
 import { BASEMAPS, getBasemap, DEFAULT_BASEMAP_ID } from "./basemaps";
 import { PALETTES } from "./palettes";
 import { textureUrl } from "./manifest";
 
 describe("REGION_PRESETS", () => {
+  const groupIds = new Set(REGION_GROUPS.map((g) => g.id));
+
   it.each(REGION_PRESETS)("$id has a valid bbox", (r) => {
     const [w, s, e, n] = r.bbox;
     expect(r.bbox).toHaveLength(4);
+    // Longitude may run east past +180 for an antimeridian-centred ocean, but
+    // must stay ordered and no wider than the globe.
     expect(w).toBeGreaterThanOrEqual(-180);
-    expect(e).toBeLessThanOrEqual(180);
+    expect(e).toBeLessThanOrEqual(360);
     expect(w).toBeLessThan(e);
+    expect(e - w).toBeLessThanOrEqual(360);
     expect(s).toBeGreaterThanOrEqual(-90);
     expect(n).toBeLessThanOrEqual(90);
     expect(s).toBeLessThan(n);
+  });
+  it.each(REGION_PRESETS)("$id belongs to a declared group", (r) => {
+    expect(groupIds.has(r.group)).toBe(true);
+  });
+  it("has unique preset ids", () => {
+    const ids = REGION_PRESETS.map((r) => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+  it("every group holds at least one preset", () => {
+    for (const g of REGION_GROUPS) expect(regionsInGroup(g.id).length).toBeGreaterThan(0);
+  });
+  it("exposes a non-empty curated Favorites strip", () => {
+    const favs = favoriteRegions();
+    expect(favs.length).toBeGreaterThan(0);
+    expect(favs.every((r) => r.favorite)).toBe(true);
   });
   it("includes western_europe and conus and looks them up", () => {
     expect(getRegion("western_europe")).toBeDefined();

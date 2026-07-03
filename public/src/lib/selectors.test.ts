@@ -9,10 +9,10 @@ import { DEFAULT_BASEMAP_ID } from "@photonsurge/shared/basemaps";
 
 describe("region / bbox helpers", () => {
   it("converts a known region bbox to fitBounds corners", () => {
-    // uk: [-11, 49.5, 2.5, 61]
+    // uk: [-16, 46, 7, 65]
     expect(regionFitBounds("uk")).toEqual([
-      [-11, 49.5],
-      [2.5, 61],
+      [-16, 46],
+      [7, 65],
     ]);
   });
   it("returns null for an unknown region", () => {

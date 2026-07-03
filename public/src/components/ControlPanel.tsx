@@ -9,9 +9,11 @@ import type {
   TrackStyle,
   TrackColorMode,
   TrackIconMode,
+  ElevationLineColor,
 } from "@photonsurge/shared/control";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { mapFreshness } from "../lib/manifest";
+import { legendVariableFor } from "../lib/legend";
 import { SATELLITE_GROUPS } from "../lib/tracks/celestrak";
 import { severityLabel } from "../lib/alerts";
 import VariablePicker from "./VariablePicker";
@@ -363,38 +365,90 @@ export default function ControlPanel({
             checked={state.showElevation}
             onChange={(showElevation) => patch({ showElevation })}
           />
-          {state.showElevation && (
-            <>
-              <Field label="Line every">
-                <select
-                  value={state.elevationInterval}
-                  onChange={(e) => patch({ elevationInterval: Number(e.target.value) })}
-                  aria-label="Elevation contour interval"
-                  style={miniSelect}
-                >
-                  {[100, 250, 500, 1000, 2000].map((m) => (
-                    <option key={m} value={m}>
-                      {m >= 1000 ? `${m / 1000} km` : `${m} m`}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Bold every">
-                <select
-                  value={state.elevationMajorInterval}
-                  onChange={(e) => patch({ elevationMajorInterval: Number(e.target.value) })}
-                  aria-label="Elevation major contour interval"
-                  style={miniSelect}
-                >
-                  {[1000, 2000, 5000, 10000].map((m) => (
-                    <option key={m} value={m}>
-                      {m / 1000} km
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </>
-          )}
+          {state.showElevation && (() => {
+            const el = state.elevation;
+            const setElev = (p: Partial<typeof el>) => patch({ elevation: { ...el, ...p } });
+            return (
+              <>
+                <Field label="Colour">
+                  <select
+                    value={el.colorMode}
+                    onChange={(e) => setElev({ colorMode: e.target.value as ElevationLineColor })}
+                    aria-label="Contour colour mode"
+                    style={miniSelect}
+                  >
+                    <option value="default">Default</option>
+                    <option value="elevation">By height</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                  {el.colorMode === "custom" && (
+                    <input
+                      type="color"
+                      value={el.color}
+                      onChange={(e) => setElev({ color: e.target.value })}
+                      aria-label="Contour colour"
+                      style={{ width: 28, height: 22, padding: 0, border: "1px solid #333", borderRadius: 4, background: "none" }}
+                    />
+                  )}
+                </Field>
+                <Field label="Width">
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={4}
+                    step={0.5}
+                    value={el.width}
+                    onChange={(e) => setElev({ width: Number(e.target.value) })}
+                    aria-label="Contour line width"
+                  />
+                  <span style={{ color: "#fff", width: 30, textAlign: "right" }}>{el.width}px</span>
+                </Field>
+                <Field label="Opacity">
+                  <input
+                    type="range"
+                    min={0.1}
+                    max={1}
+                    step={0.05}
+                    value={el.opacity}
+                    onChange={(e) => setElev({ opacity: Number(e.target.value) })}
+                    aria-label="Contour opacity"
+                  />
+                  <span style={{ color: "#fff", width: 34, textAlign: "right" }}>{Math.round(el.opacity * 100)}%</span>
+                </Field>
+                <Field label="Line every">
+                  <select
+                    value={el.interval}
+                    onChange={(e) => setElev({ interval: Number(e.target.value) })}
+                    aria-label="Elevation contour interval"
+                    style={miniSelect}
+                  >
+                    {[100, 250, 500, 1000, 2000].map((m) => (
+                      <option key={m} value={m}>
+                        {m >= 1000 ? `${m / 1000} km` : `${m} m`}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Bold every">
+                  <select
+                    value={el.majorInterval}
+                    onChange={(e) => setElev({ majorInterval: Number(e.target.value) })}
+                    aria-label="Elevation major contour interval"
+                    style={miniSelect}
+                  >
+                    {[1000, 2000, 5000, 10000].map((m) => (
+                      <option key={m} value={m}>
+                        {m / 1000} km
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </>
+            );
+          })()}
+        </div>
+        <div style={{ marginTop: 6, fontSize: 11, color: "#8b95a7" }}>
+          Tip: pick the <b>Relief</b> basemap below for the full shaded-relief terrain map.
         </div>
       </Section>
 
@@ -519,10 +573,10 @@ export default function ControlPanel({
         </div>
       </Section>
 
-      {state.activeVariable && (
+      {legendVariableFor(state) && (
         <Section title="Legend">
           <Legend
-            variableId={state.activeVariable}
+            variableId={legendVariableFor(state)}
             units={state.units}
             onUnitsChange={(units) => patch({ units })}
           />

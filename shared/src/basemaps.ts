@@ -90,6 +90,23 @@ export const BASEMAPS: iBasemap[] = [
       "#0b1410",
     ),
   },
+  {
+    // Shaded hypsometric relief baked from ETOPO 2022 (worker `refresh:elevation`).
+    // Rendered on the globe by deck from the Mongo elevation texture (NOT tiles),
+    // so the MapLibre `style` here is just a dark background fallback for the flat
+    // map — the deck GlobeView paints the actual relief raster.
+    id: "relief",
+    label: "Relief",
+    style: rasterStyle(
+      "carto-dark",
+      [
+        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+      ],
+      "Relief: NOAA NCEI ETOPO 2022 | © OpenStreetMap contributors © CARTO",
+    ),
+  },
 ];
 
 export const DEFAULT_BASEMAP_ID = "dark";

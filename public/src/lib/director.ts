@@ -23,7 +23,6 @@ import {
   type SegmentKind,
 } from "@photonsurge/shared/director";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
-import { quakeMapPlan } from "@photonsurge/shared/director-rois";
 import { useSocket } from "./socket-provider";
 
 /**
@@ -36,8 +35,8 @@ import { useSocket } from "./socket-provider";
  *
  * Event cuts don't appear here — they use a curated, kind-specific plan instead:
  * `storm` reads the per-hazard plan (hazardMapPlan) so a heat warning shows
- * humidity→temp and a tornado CAPE→radar→gust; `quake` reads quakeMapPlan (ocean
- * story when tsunami-flagged, else a neutral temp/sst backdrop — never humidity).
+ * humidity→temp and a tornado CAPE→radar→gust. `quake` shots carry no weather
+ * field at all — they read as a static geology base (relief + contour lines).
  */
 const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
   tour: ["temp", "humidity", "rain", "gust", "cloud"],
@@ -46,7 +45,7 @@ const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
 const VAR_CYCLE_MS = 5500;
 
 /** Event cuts open on their plan's headline field rather than a varied offset. */
-const EVENT_KINDS = new Set<SegmentKind>(["storm", "quake"]);
+const EVENT_KINDS = new Set<SegmentKind>(["storm"]);
 
 /** The field sequence + per-map cadence for a cut (curated plan for event kinds). */
 function cutCycle(cut: Segment): { cycle: string[]; periodMs: number } {
@@ -54,10 +53,7 @@ function cutCycle(cut: Segment): { cycle: string[]; periodMs: number } {
     const plan = hazardMapPlan(cut.hazard);
     return { cycle: plan.cycle, periodMs: plan.cycleMs };
   }
-  if (cut.kind === "quake") {
-    const plan = quakeMapPlan(cut.tsunami);
-    return { cycle: plan.cycle, periodMs: plan.cycleMs };
-  }
+  // quake has no cycle — it's a static geology base (relief + contours), no field.
   return { cycle: VAR_CYCLE[cut.kind] ?? [], periodMs: VAR_CYCLE_MS };
 }
 

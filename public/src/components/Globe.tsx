@@ -29,6 +29,7 @@ import {
   vectorParticleLayers,
   pressureLayers,
   elevationLayers,
+  elevationReliefLayer,
   cityLayer,
   type TextureResolver,
 } from "./layers";
@@ -41,7 +42,7 @@ import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
 import { seismicLayer } from "./layers/seismic";
 import { graticuleLayer } from "./layers/graticule";
 import { sourceDebugLayers } from "./layers/sourceDebug";
-import { cableLayers } from "./layers/cables";
+import { cableLayers, cableNameLabels } from "./layers/cables";
 import { faultLayers } from "./layers/faults";
 import { nightLayer } from "./layers/nightside";
 import { subsolarPoint } from "../lib/sun";
@@ -153,6 +154,9 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
   const span = Math.max(Math.abs(e - w), Math.abs(n - s)) || 1;
   return Math.max(2.5, Math.min(6, Math.log2(360 / span) + 1.9));
 }
+
+/** Wrap a longitude into −180..180 (ocean bboxes may run east past +180). */
+const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, faults, interactive = true, onCameraChange, pulseAt, highlightTrack, onSelect },
@@ -355,7 +359,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     flyTo: (center, zoom) =>
       flyToInternal(center[0], center[1], zoom ?? viewStateRef.current.zoom),
     fitBounds: (bbox) =>
-      flyToInternal((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2, zoomForBbox(bbox)),
+      flyToInternal(normLng((bbox[0] + bbox[2]) / 2), (bbox[1] + bbox[3]) / 2, zoomForBbox(bbox)),
   }));
 
   // ── Deck init (once) ──────────────────────────────────────────────────────
@@ -552,8 +556,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     if (state.activeVariable) addEntries(state.activeVariable);
     if (state.showPressure) add(textureUrlFor(manifest, "pressure", state.fhr));
     // Elevation is static (baked at fhr 0), so always pull its single texture
-    // regardless of the active forecast hour.
-    if (state.showElevation) add(textureUrlFor(manifest, "elevation", 0));
+    // regardless of the active forecast hour. Needed for the contour overlay AND
+    // the "Relief" basemap.
+    if (state.showElevation || state.basemap === "relief") add(textureUrlFor(manifest, "elevation", 0));
 
     let cancelled = false;
     [...urls].forEach((url) => {
@@ -569,7 +574,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     return () => {
       cancelled = true;
     };
-  }, [manifest, state.fhr, state.activeVariable, state.showWind, state.showPressure, state.showElevation, nestKey]);
+  }, [manifest, state.fhr, state.activeVariable, state.showWind, state.showPressure, state.showElevation, state.basemap, nestKey]);
 
   // ── Rebuild all layers (basemap → weather → borders → cities) ─────────────
   useEffect(() => {
@@ -585,12 +590,15 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     const weatherRaster = !!(
       manifest && state.activeVariable && textureUrlFor(manifest, state.activeVariable, state.fhr)
     );
-    // Elevation is a full-globe WeatherLayers surface too — when it's on with no
-    // weather raster it must SEAL the depth sphere itself (via its relief raster),
-    // so it counts as a global raster for the basemap occluder decision. Otherwise
-    // the basemap would occlude at the wrong depth and hide the contours.
-    const elevationOn = !!(manifest && state.showElevation && textureUrlFor(manifest, "elevation", 0));
-    const hasGlobalRaster = weatherRaster || elevationOn;
+    // The elevation texture backs both the "Relief" basemap and the contour
+    // overlay. Either is a full-globe WeatherLayers surface that must SEAL the depth
+    // sphere itself (relief raster at full or 0 opacity) — otherwise the basemap
+    // occludes at the wrong depth and hides the contour lines. So any of them means
+    // the basemap must NOT be the occluder.
+    const elevationTex = !!(manifest && textureUrlFor(manifest, "elevation", 0));
+    const reliefBasemap = state.basemap === "relief" && elevationTex;
+    const contourOn = state.showElevation && elevationTex;
+    const hasGlobalRaster = weatherRaster || reliefBasemap || contourOn;
     const layers: any[] = [...basemapLayers(state, tilesActive, hasGlobalRaster)];
 
     // Day/night terminator: shade the earth's night hemisphere from the real sun
@@ -604,18 +612,31 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       // the current camera (finest on top). `nestKey` in the deps re-runs this
       // only when the active-nest set flips, not on every camera tick.
       const camera: ResolverCamera = { center: state.camera.center, zoom: state.camera.zoom };
+      // Relief BASE: the shaded hypsometric map when the "Relief" basemap is picked
+      // (full opacity). Otherwise, if contours are on with no weather raster to seal
+      // the surface, drop an INVISIBLE (opacity 0) relief that writes depth only, so
+      // the lines aren't culled by the basemap sphere. Either way it sits UNDER the
+      // weather + contours.
+      if (reliefBasemap) {
+        const relief = elevationReliefLayer(manifest, resolve, { opacity: 1 });
+        if (relief) layers.push(relief);
+      } else if (contourOn && !weatherRaster) {
+        const sealer = elevationReliefLayer(manifest, resolve, { opacity: 0 });
+        if (sealer) layers.push(sealer);
+      }
       if (state.activeVariable) {
         layers.push(...scalarRasterLayers(manifest, state.activeVariable, state.fhr, resolve, camera));
       }
       if (state.showPressure) layers.push(...pressureLayers(manifest, state.fhr, resolve));
-      if (elevationOn) {
+      if (contourOn) {
         layers.push(
           ...elevationLayers(manifest, resolve, {
-            interval: state.elevationInterval,
-            majorInterval: state.elevationMajorInterval,
-            // No weather raster to seal the surface → draw the relief base so the
-            // contours aren't depth-culled by the basemap sphere.
-            relief: !weatherRaster,
+            colorMode: state.elevation.colorMode,
+            color: state.elevation.color,
+            width: state.elevation.width,
+            opacity: state.elevation.opacity,
+            interval: state.elevation.interval,
+            majorInterval: state.elevation.majorInterval,
           }),
         );
       }
@@ -647,11 +668,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // Submarine cables read as reference geography — above borders/weather,
     // below the live event overlays (alerts/quakes/cities/tracks).
     if (state.showCables && cables && cables.cables.length) {
-      layers.push(
-        ...cableLayers(cables.cables, cables.landings, {
-          cableLabels: state.showCableLabels,
-        }),
-      );
+      layers.push(...cableLayers(cables.cables, cables.landings));
     }
 
     // Tectonic plate boundaries read as reference geography — above borders/
@@ -702,8 +719,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.activeVariable,
     state.showPressure,
     state.showElevation,
-    state.elevationInterval,
-    state.elevationMajorInterval,
+    state.elevation,
     state.showWind,
     state.showCities,
     state.fhr,
@@ -775,6 +791,13 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         out.push({ ...l, minZoom: 0 });
       }
     }
+    if (state.showCables && state.showCableLabels && cables) {
+      for (const l of cableNameLabels(cables.cables)) {
+        // Reveal cable names once zoomed a little past the whole-globe view so
+        // the ocean isn't a wall of text at minimum zoom.
+        out.push({ ...l, minZoom: 3 });
+      }
+    }
     if (state.showCities) {
       for (const c of cities) {
         const minZoom = cityLabelMinZoom(c);
@@ -795,6 +818,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   }, [
     state.showTrackLabels,
     state.showCities,
+    state.showCables,
+    state.showCableLabels,
+    cables,
     tracks,
     cities,
     state.satelliteStyle,

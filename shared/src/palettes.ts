@@ -129,19 +129,44 @@ export const PALETTES: Record<string, Palette> = {
     [0.9, "#f2802e"],
     [1.0, "#df2727"],
   ],
-  // Hypsometric relief over the elevation domain (−11,000..9,000 m). Sea level
-  // sits at ≈0.55 of the ramp, so deep ocean is abyssal blue → shelf cyan →
-  // coastal green → upland tan/brown → snow-capped white. Colours the elevation
-  // contour lines by height (bathymetry cool, mountains warm).
+  // Hypsometric relief over the elevation domain (−11,000..9,000 m). Sea level is
+  // ≈0.55 of the ramp; a sharp cyan→green step there marks the coastline. Many
+  // stops so the colours SPREAD across depth (abyss → shelf) and height (lowland →
+  // peak) instead of bunching in the common mid-range. Used by the Relief basemap.
   elevation: [
-    [0.0, "#081d58"],
-    [0.3, "#225ea8"],
-    [0.5, "#41b6c4"],
-    [0.55, "#c7e9b4"],
-    [0.63, "#78c679"],
-    [0.73, "#d9c05a"],
-    [0.83, "#a0562a"],
-    [0.92, "#6f5647"],
+    [0.0, "#050436"],
+    [0.14, "#0b1a70"],
+    [0.28, "#15479e"],
+    [0.4, "#2f7dc6"],
+    [0.49, "#5fb3df"],
+    [0.545, "#a6e3f0"],
+    [0.55, "#2e8b57"],
+    [0.61, "#77c25a"],
+    [0.67, "#c6de83"],
+    [0.73, "#e6c877"],
+    [0.8, "#cd8f4c"],
+    [0.88, "#9c5a37"],
+    [0.94, "#b294a6"],
+    [1.0, "#ffffff"],
+  ],
+  // Elevation CONTOUR LINES coloured by height — a brighter, well-spread variant
+  // of the relief ramp so thin strokes read on a dark globe (the relief palette's
+  // deep blues vanish as lines). Same 14-stop spread; cool blues below sea level →
+  // green at the coast (≈0.55) → warm tans/browns → white peaks.
+  elevation_line: [
+    [0.0, "#6f8cff"],
+    [0.14, "#5fa8ff"],
+    [0.28, "#4fc6ff"],
+    [0.4, "#7fe0ff"],
+    [0.49, "#b8f2ff"],
+    [0.545, "#dbffff"],
+    [0.55, "#7dffb0"],
+    [0.61, "#b6f08a"],
+    [0.67, "#e0f086"],
+    [0.73, "#f5dd7a"],
+    [0.8, "#f5b96a"],
+    [0.88, "#f09a72"],
+    [0.94, "#f0c0d0"],
     [1.0, "#ffffff"],
   ],
   // Radar reflectivity (dBZ), NWS-style over the 5..75 dBZ domain: light drizzle

@@ -29,7 +29,9 @@ import type { SourceDescriptor } from "./sources";
 
 /** Basin nests all share cadence/latency/priority/minZoom — build them uniformly. */
 const WAVE_NEST_CADENCE = { kind: "cron" as const, runsUtc: [0, 6, 12, 18] };
-const WAVE_NEST_RES = 0.16;
+// GFS-Wave regional basins are on a 1/6° grid (0.166667°), NOT 0.16° — verified
+// from live NOMADS GRIB2 headers (`by 0.166667`). Using 0.16 mis-sized the dims.
+const WAVE_NEST_RES = 1 / 6;
 const WAVE_NEST_PRIORITY = 25; // above gfswave-mosaic (20): native basin wins in overlap
 const WAVE_NEST_MINZOOM = 3.5;
 const WAVE_NEST_LATENCY = 240; // ~4h, same product lag as the global wave base
@@ -47,13 +49,14 @@ function waveNest(
   id: string,
   label: string,
   bbox: [number, number, number, number],
+  dims: { width: number; height: number } = dimsFor(bbox),
 ): SourceDescriptor {
   return {
     id,
     label,
     format: "grib2",
     grid: "regular",
-    dims: dimsFor(bbox),
+    dims,
     resolutionDeg: WAVE_NEST_RES,
     bbox,
     cadence: WAVE_NEST_CADENCE,
@@ -67,23 +70,34 @@ function waveNest(
 }
 
 export const WAVE_NEST_SOURCES: Record<string, SourceDescriptor> = {
-  // N. Atlantic basin. VERIFY: gfswave.tCCz.atlocn.0p16 extent ≈ 98°W–10°E, 0–65°N.
+  // N. Atlantic basin. VERIFIED against live GRIB2 header (gfs.20260702/12):
+  // 301×331, lat 55→0, lon 260→310 (0..360) = −100..−50 in −180..180.
   "gfswave-atlocn": waveNest(
     "gfswave-atlocn",
     "NOAA GFS-Wave 0.16° (N. Atlantic)",
-    [-98, 0, 10, 65], // VERIFY: atlocn grid [W,S,E,N]
+    [-100, 0, -50, 55], // atlocn.0p16 grid [W,S,E,N]
+    { width: 301, height: 331 },
   ),
-  // E. Pacific basin. VERIFY: gfswave.tCCz.epacif.0p16 extent ≈ 170°E–77°W, 20°S–66°N.
-  "gfswave-epacif": waveNest(
-    "gfswave-epacif",
-    "NOAA GFS-Wave 0.16° (E. Pacific)",
-    [-170, -20, -77, 66], // VERIFY: epacif grid [W,S,E,N]
-  ),
-  // US West Coast. VERIFY: gfswave.tCCz.wcoast.0p16 extent ≈ 165°W–116°W, 25°N–50°N.
+  // E. Pacific basin. VERIFIED header: 511×301, lat 30→−20, lon 130→215 — i.e.
+  // 130°E → 155°W, which CROSSES THE ANTIMERIDIAN. A plain W<E lat-lon window can't
+  // express it and the wgrib2 subset/bake + client bbox both assume −180..180 with
+  // W<E, so this basin is DISABLED until dateline-aware subsetting is added. The
+  // global gfswave-mosaic still covers the central Pacific meanwhile.
+  "gfswave-epacif": {
+    ...waveNest(
+      "gfswave-epacif",
+      "NOAA GFS-Wave 0.16° (E. Pacific)",
+      [130, -20, 215, 30], // real extent (0..360 lon), antimeridian-crossing
+      { width: 511, height: 301 },
+    ),
+    enabled: false,
+  },
+  // US West Coast. VERIFIED header: 241×151, lat 50→25, lon 210→250 = −150..−110.
   "gfswave-wcoast": waveNest(
     "gfswave-wcoast",
     "NOAA GFS-Wave 0.16° (US West Coast)",
-    [-165, 25, -116, 50], // VERIFY: wcoast grid [W,S,E,N]
+    [-150, 25, -110, 50], // wcoast.0p16 grid [W,S,E,N]
+    { width: 241, height: 151 },
   ),
   // US East Coast + Gulf of Mexico. DISABLED: NOAA does NOT publish an `ecg` grid
   // at 0.16° — a live `wave/gridded/` listing (2026-07) carries only atlocn /

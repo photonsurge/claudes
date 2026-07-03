@@ -6,7 +6,8 @@
  * somewhere photogenic to point. PRESETS define which layers each SegmentKind
  * turns on; the worker merges a preset with a camera to make a Segment.patch.
  */
-import type { ControlState } from "./control";
+import { DEFAULT_ELEVATION_SETTINGS, type ControlState } from "./control";
+import { DEFAULT_BASEMAP_ID } from "./basemaps";
 import type { SegmentKind } from "./director";
 
 export interface RegionOfInterest {
@@ -129,11 +130,17 @@ export function quakeMapPlan(tsunami?: boolean): QuakeMapPlan {
  * contours would bleed into the next quake shot. Spreading LAYERS_OFF guarantees
  * a clean slate; the preset's own keys below are the only layers that light up.
  *
+ * Also asserts a neutral base map every cut: the `quake` preset switches to the
+ * colour-by-height "relief" basemap, and merges are over /watch's *live* state,
+ * so without resetting it here that relief globe would bleed into the next shot.
+ * The quake preset overrides `basemap` back to "relief" after spreading this.
+ *
  * Not included here (set explicitly per preset when relevant): activeVariable,
  * the camera-motion trio (autoSpin/spinSpeed/zoomDrift) and event filter
  * overrides (alertSeverityMin/seismicMinMag) — those aren't on/off layers.
  */
 const LAYERS_OFF: Partial<ControlState> = {
+  basemap: DEFAULT_BASEMAP_ID,
   showWind: false,
   showPressure: false,
   showContours: false,
@@ -238,24 +245,30 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     spinSpeed: 0,
     zoomDrift: 0.045,
   },
+  // A geology beat: no GFS weather field is relevant to a quake, so the shot
+  // drops the scalar map entirely and reads as terrain. The "relief" basemap
+  // paints colour-by-height hypsometry (ETOPO 2022); showElevation draws the
+  // contour lines over it (250 m minor / 10 km major, coloured by height); and
+  // cables + plate boundaries tell the sever-risk / fault-origin story.
   quake: {
     ...LAYERS_OFF,
+    // Colour-by-height relief base + contour lines = the geology look. No scalar
+    // field: activeVariable null, and useCutVariable no longer cycles for quakes.
+    basemap: "relief",
+    activeVariable: null,
+    showElevation: true,
+    elevation: { ...DEFAULT_ELEVATION_SETTINGS, interval: 250, majorInterval: 10000 },
     showSeismic: true,
-    // Likewise show all quakes so the framed one isn't filtered out by the
-    // baseline minimum magnitude.
+    // Show all quakes so the framed one isn't filtered out by the baseline min mag.
     seismicMinMag: 0,
-    // Submarine cables + seismic tell a story: quakes are what sever them, so
-    // lighting up the cable network under a quake shot frames the risk.
+    // Submarine cables: quakes are what sever them — the network frames the risk.
     showCables: true,
-    // Tectonic plate boundaries are where quakes originate — drawing them under
-    // a quake shot shows the fault the event sits on.
+    // Tectonic plate boundaries: the fault the event sits on.
     showFaults: true,
     showCities: true,
     autoSpin: false,
     spinSpeed: 0,
     zoomDrift: 0.045,
-    // activeVariable left unset on purpose — useCutVariable cycles a weather
-    // field (temp/humidity/rain/…) under the quake so the map isn't static.
   },
   flight: {
     ...LAYERS_OFF,

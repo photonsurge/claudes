@@ -39,22 +39,37 @@ const ymdCycleToDate = (date: string, cycle: string): Date =>
     Number(date.slice(0, 4)), Number(date.slice(4, 6)) - 1, Number(date.slice(6, 8)), Number(cycle), 0, 0, 0,
   ));
 
-/** True if a complete published run already exists for this model+run time. */
-async function alreadyPublished(model: string, runDate: Date): Promise<boolean> {
+/**
+ * True if a complete published run already exists for this model+run time AND (when
+ * `expectGrid` is given) it was baked on the SAME grid we'd produce now. A grid-dims
+ * mismatch means the descriptor bbox/dims changed (e.g. an atlocn/wcoast extent fix)
+ * → treat the stale run as absent so the corrected grid re-bakes. Mirrors the
+ * open-meteo self-heal.
+ */
+async function alreadyPublished(
+  model: string,
+  runDate: Date,
+  expectGrid?: { width: number; height: number },
+): Promise<boolean> {
   const db = await getAppDb();
   const existing = await db.weatherRuns.getByQuery({ model, run: runDate, status: "complete", published: true });
-  return !!(existing.success && existing.data);
+  if (!(existing.success && existing.data)) return false;
+  if (expectGrid) {
+    const g = (existing.data as { grid?: { width?: number; height?: number } }).grid;
+    if (g?.width !== expectGrid.width || g?.height !== expectGrid.height) return false;
+  }
+  return true;
 }
 
 /** Ingest ONE wave-basin nest for the given run. */
 async function ingestOneNest(tile: WaveNestTile, run: { date: string; cycle: string }, runDate: Date): Promise<IngestResult> {
   const source = getSource(tile.sourceId)!;
-  if (await alreadyPublished(source.id, runDate)) {
+  const { width, height } = tile.dims;
+  if (await alreadyPublished(source.id, runDate, { width, height })) {
     return { skipped: true, model: source.id, run: runDate.toISOString(), reason: "already published" };
   }
   const { forecastHours, stepHours } = cfg();
   const steps = forecastSteps(forecastHours, stepHours);
-  const { width, height } = tile.dims;
 
   const wave: BakedVariable = {
     meta: {

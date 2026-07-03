@@ -63,10 +63,12 @@ describe("WAVE_NEST_TOKENS", () => {
     }
   });
 
-  it("enables the three published basins; gfswave-ecg is intentionally disabled (no NOAA ecg 0p16 grid)", () => {
+  it("enables the atlocn + wcoast basins; epacif (antimeridian-crossing) and ecg (no upstream grid) are disabled", () => {
     expect(getSource("gfswave-atlocn")!.enabled).toBe(true);
-    expect(getSource("gfswave-epacif")!.enabled).toBe(true);
     expect(getSource("gfswave-wcoast")!.enabled).toBe(true);
+    // epacif.0p16 is lon 130→215 (130°E → 155°W) — crosses the antimeridian, which
+    // the −180..180 W<E subset/bake can't express yet. See sources.waveNests.ts.
+    expect(getSource("gfswave-epacif")!.enabled).toBe(false);
     // ecg 0p16 does not exist upstream (404s) — atlocn already covers it. See sources.waveNests.ts.
     expect(getSource("gfswave-ecg")!.enabled).toBe(false);
   });
@@ -79,7 +81,11 @@ describe("region → bbox table (waveNestTiles)", () => {
     expect(tiles.map((t) => t.sourceId).sort()).toEqual([...NEST_IDS].sort());
   });
 
-  it.each(NEST_IDS)("%s bbox is well-formed (W<E, S<N) and finer than 0.25° global", (id) => {
+  // Enabled basins must be plain −180..180 W<E windows (epacif is disabled precisely
+  // because it crosses the antimeridian, so it's excluded from the strict range check).
+  const ENABLED_IDS = NEST_IDS.filter((id) => getSource(id)!.enabled);
+
+  it.each(ENABLED_IDS)("%s bbox is well-formed (W<E, S<N) and finer than 0.25° global", (id) => {
     const t = waveNestTile(id);
     const [w, s, e, n] = t.bbox;
     expect(t.bbox).toHaveLength(4);
@@ -92,8 +98,8 @@ describe("region → bbox table (waveNestTiles)", () => {
     expect(n).toBeLessThanOrEqual(90);
     expect(e - w).toBeLessThan(360);
     expect(n - s).toBeLessThan(180);
-    // 0.16° basins are strictly finer than the 0.25° global wave base.
-    expect(t.res).toBeCloseTo(0.16, 5);
+    // 1/6° basins are strictly finer than the 0.25° global wave base.
+    expect(t.res).toBeCloseTo(1 / 6, 5);
     expect(t.res).toBeLessThan(0.25);
   });
 

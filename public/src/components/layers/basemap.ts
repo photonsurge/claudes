@@ -129,6 +129,15 @@ export function basemapLayers(
     return layers;
   }
 
+  if (state.basemap === "relief") {
+    // The shaded hypsometric relief raster is added by Globe (it needs the Mongo
+    // elevation texture, unavailable here). We just lay down the ocean-dark
+    // background sphere; once the relief texture loads it occludes this, and
+    // `hasOccluder` (true via hasGlobalRaster) flips the bg to non-writing. No land
+    // GeoJSON fill — the relief paints land and sea itself.
+    return [background];
+  }
+
   // dark: ocean sphere + recolourable land fill.
   return [
     background,

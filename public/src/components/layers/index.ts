@@ -259,47 +259,52 @@ export function pressureLayers(
 }
 
 /**
- * Static elevation contour lines (topographic + bathymetric), fhr-agnostic — the
- * terrain texture is baked once and reused across the whole timeline. No
- * HighLowLayer (terrain has no "H/L" markers like pressure does).
- *
- * `relief`: when elevation is the ONLY weather layer (no active variable raster),
- * the ContourLayer would be depth-culled by the basemap sphere — the WeatherLayers
- * surface sits a hair behind deck's basemap polygon, so nothing at that surface
- * writes depth and the basemap occludes it. Drawing a hypsometric relief RASTER
- * first (DEPTH_OCCLUDE) seals the depth at the WeatherLayers surface so the lines
- * pass, AND doubles as a terrain tint. When a weather raster is active it already
- * seals that surface, so we skip the relief and draw pure contours over it.
+ * The full-globe hypsometric RELIEF raster (the "Relief" basemap, and the depth
+ * sealer for the contour overlay). Full opacity paints the shaded relief map;
+ * `opacity: 0` makes an INVISIBLE depth-only sealer so the contour lines aren't
+ * culled by the basemap sphere when there's no other full-globe raster (the
+ * WeatherLayers surface sits a hair behind deck's basemap polygon, so something
+ * must write depth AT that surface). Static/fhr-agnostic. Returns null if the
+ * elevation texture isn't loaded yet.
+ */
+export function elevationReliefLayer(
+  manifest: WeatherManifest,
+  resolve: TextureResolver,
+  opts?: { opacity?: number },
+): RasterLayer | null {
+  const entry = manifest.variables.elevation;
+  if (!entry) return null;
+  const rp = scalarRasterPropsFromEntry(entry, "elevation", 0, manifestBounds(manifest), {
+    opacity: opts?.opacity ?? 1,
+    idSuffix: "-relief",
+  });
+  const image = rp && resolve(rp.image);
+  if (!rp || !image) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new RasterLayer({ ...rp, image: image as any, parameters: DEPTH_OCCLUDE });
+}
+
+/**
+ * Static elevation contour LINE overlay (topographic + bathymetric), fhr-agnostic.
+ * Lines only — the filled look is the "Relief" basemap / `elevationReliefLayer`.
+ * Colour/width/opacity/spacing come from `opts` (ElevationSettings). No HighLow
+ * markers (terrain has no "H/L" like pressure).
  */
 export function elevationLayers(
   manifest: WeatherManifest,
   resolve: TextureResolver,
-  opts?: { interval?: number; majorInterval?: number; relief?: boolean; reliefOpacity?: number },
-): Array<ContourLayer | RasterLayer> {
-  const entry = manifest.variables.elevation;
-  if (!entry) return [];
-  const out: Array<ContourLayer | RasterLayer> = [];
-
-  if (opts?.relief) {
-    const rp = scalarRasterPropsFromEntry(entry, "elevation", 0, manifestBounds(manifest), {
-      // Strong hypsometric relief so the standalone terrain view (no weather
-      // overlay) reads as a proper shaded relief globe, with the bright contour
-      // lines on top — that's the whole point of the layer on its own.
-      opacity: opts.reliefOpacity ?? 0.9,
-      idSuffix: "-relief",
-    });
-    const rImage = rp && resolve(rp.image);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (rp && rImage) out.push(new RasterLayer({ ...rp, image: rImage as any, parameters: DEPTH_OCCLUDE }));
-  }
-
+  opts?: Parameters<typeof elevationProps>[1],
+): ContourLayer[] {
   const props = elevationProps(manifest, opts);
-  const cImage = props && resolve(props.contour.image);
+  if (!props) return [];
+  const image = resolve(props.contour.image);
+  if (!image) return [];
   // Depth-tested so far-side contour lines are occluded rather than bleeding
   // through the front of the globe.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (props && cImage) out.push(new ContourLayer({ ...props.contour, image: cImage as any, parameters: DEPTH_TEST }));
-  return out;
+  return [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    new ContourLayer({ ...props.contour, image: image as any, parameters: DEPTH_TEST }),
+  ];
 }
 
 export function cityLayer(

@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * Geocode search box + region preset buttons. On a hit it fitBounds to the
- * bbox; region presets fitBounds to their preset bbox.
+ * Geocode search box + grouped region picker. On a hit it fitBounds to the
+ * bbox; the picker fitBounds to a preset/country bbox.
  */
 import { useState } from "react";
-import { REGION_PRESETS } from "@photonsurge/shared/regions";
+import RegionPicker from "./RegionPicker";
 import { geocode } from "../lib/geocode";
 
 export interface SearchFlyToProps {
@@ -64,13 +64,7 @@ export default function SearchFlyTo({ onFitBounds, onFlyTo }: SearchFlyToProps) 
         </button>
       </form>
       {error && <div style={{ color: "#f87171", fontSize: 11, marginTop: 4 }}>{error}</div>}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
-        {REGION_PRESETS.map((r) => (
-          <button key={r.id} type="button" onClick={() => onFitBounds(r.bbox)} style={chip}>
-            {r.label}
-          </button>
-        ))}
-      </div>
+      <RegionPicker onFitBounds={onFitBounds} />
     </div>
   );
 }
@@ -80,15 +74,6 @@ const btn: React.CSSProperties = {
   borderRadius: 6,
   border: "1px solid #333",
   background: "#2563eb",
-  color: "#fff",
-  cursor: "pointer",
-};
-const chip: React.CSSProperties = {
-  padding: "3px 8px",
-  fontSize: 11,
-  borderRadius: 5,
-  border: "1px solid #333",
-  background: "#1a1f2b",
   color: "#fff",
   cursor: "pointer",
 };

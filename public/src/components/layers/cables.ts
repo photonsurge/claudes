@@ -119,20 +119,22 @@ function toCablePaths(cables: Cable[]): CablePath[] {
 export interface CableLayerOptions {
   /** Draw landing-station labels (decluttered). Default true. */
   labels?: boolean;
-  /** Draw a name label on each cable route (decluttered). Default false. */
-  cableLabels?: boolean;
 }
 
-/** One cable-name label anchored at the midpoint of its longest stretch. */
-interface CableLabel {
-  position: [number, number];
-  name: string;
+/** Overlay-label datum for a cable name (rendered as HTML, not a deck TextLayer:
+ * deck's TextLayer draws blank under _GlobeView — see GlobeLabels). */
+export interface CableNameLabel {
+  id: string;
+  text: string;
+  position: [number, number, number];
+  color: [number, number, number];
 }
 
-/** Place one label per cable at the midpoint vertex of its longest path, so the
- * text sits out over the ocean on the route rather than piling up at a coast. */
-function toCableLabels(cables: Cable[]): CableLabel[] {
-  const out: CableLabel[] = [];
+/** One name label per cable, anchored at the midpoint vertex of its longest
+ * stretch, so the text sits out over the ocean on the route rather than piling
+ * up at a coast. Fed into Globe's HTML label overlay (GlobeLabels). */
+export function cableNameLabels(cables: Cable[]): CableNameLabel[] {
+  const out: CableNameLabel[] = [];
   for (const c of cables) {
     let best: [number, number][] | null = null;
     for (const p of c.paths) {
@@ -140,7 +142,15 @@ function toCableLabels(cables: Cable[]): CableLabel[] {
     }
     if (!best) continue;
     const mid = best[Math.floor(best.length / 2)];
-    out.push({ position: [mid[0], mid[1]], name: c.name });
+    const [r, g, b] = hexToRgba(c.color);
+    out.push({
+      id: `cable:${c.id}`,
+      text: c.name,
+      position: [mid[0], mid[1], 0],
+      // Tint the name with the cable's own wire colour so a label reads back to
+      // its line at a glance (labels sit on dark ocean, so raw colour is legible).
+      color: [r, g, b],
+    });
   }
   return out;
 }
@@ -217,36 +227,6 @@ export function cableLayers(
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     layers.push(new TextLayer(labelProps as any));
-  }
-
-  if (opts.cableLabels) {
-    const cableLabelData = toCableLabels(cables);
-    const cableLabelProps = {
-      id: "cable-name-labels",
-      data: cableLabelData,
-      getPosition: (d: CableLabel) => [d.position[0], d.position[1], 0],
-      getText: (d: CableLabel) => d.name,
-      getColor: [180, 220, 255, 235],
-      getSize: 11,
-      sizeUnits: "pixels",
-      getTextAnchor: "middle",
-      getAlignmentBaseline: "center",
-      fontFamily: "system-ui, sans-serif",
-      fontSettings: { sdf: true, buffer: 8, radius: 12 },
-      outlineWidth: 2,
-      outlineColor: [0, 0, 0, 255],
-      characterSet: LABEL_CHARACTER_SET,
-      // Own collision group so cable names declutter against each other but not
-      // against the landing-station labels — the two label sets are independent.
-      extensions: [new CollisionFilterExtension()],
-      collisionGroup: "cable-names",
-      collisionTestProps: { sizeScale: 2 },
-      pickable: false,
-      parameters: DEPTH_TEST,
-      updateTriggers: { getText: cableLabelData.length },
-    };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    layers.push(new TextLayer(cableLabelProps as any));
   }
 
   return layers;

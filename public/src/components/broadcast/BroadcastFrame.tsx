@@ -20,6 +20,7 @@ import type { Quake, Track } from "../../lib/tracks/types";
 import type { City } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
 import { buildTicker } from "../../lib/broadcast";
+import { legendVariableFor } from "../../lib/legend";
 import { nearest, formatKm } from "../../lib/geo";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { useStageScale, STAGE_W, STAGE_H } from "./useStageScale";
@@ -129,7 +130,7 @@ export default function BroadcastFrame({
         </div>
 
         <div style={{ position: "absolute", top: TICKER_H + INSET + 128, left: INSET }}>
-          <IntensityMeter variable={state.activeVariable} units={state.units} theme={theme} />
+          <IntensityMeter variable={legendVariableFor(state)} units={state.units} theme={theme} />
         </div>
 
         {/* Single most-severe active alert — moved to top-centre so the prime

@@ -117,6 +117,37 @@ export const WIND_PRESETS: Record<string, WindSettings> = {
 /** How the wind field is drawn. */
 export type WindMode = "particles" | "barbs";
 
+/** How elevation contour lines are coloured. */
+export type ElevationLineColor = "default" | "elevation" | "custom";
+
+/**
+ * Tunable elevation contour-line look — the terrain LINE overlay (distinct from
+ * the filled "relief" basemap). Lines can be a flat colour, coloured by height
+ * (bathymetry cool → peaks warm), or a flat operator-picked colour.
+ */
+export interface ElevationSettings {
+  colorMode: ElevationLineColor;
+  /** Flat line colour (hex `#rrggbb`) used when colorMode is "default"/"custom". */
+  color: string;
+  /** Line width in pixels. */
+  width: number;
+  /** Line opacity 0..1. */
+  opacity: number;
+  /** Minor contour spacing, metres. */
+  interval: number;
+  /** Major (bold, emphasised) contour spacing, metres. */
+  majorInterval: number;
+}
+
+export const DEFAULT_ELEVATION_SETTINGS: ElevationSettings = {
+  colorMode: "elevation",
+  color: "#ffe0b2",
+  width: 1.5,
+  opacity: 1,
+  interval: 250,
+  majorInterval: 1000,
+};
+
 /**
  * How a track type's markers are coloured. "custom" uses `TrackStyle.customColor`
  * (a flat operator-chosen hex); the others are data-driven gradients.
@@ -219,12 +250,10 @@ export interface ControlState {
   windMode: WindMode;
   /** Isolines for the active scalar variable. */
   showContours: boolean;
-  /** Static terrain relief: topographic + bathymetric contour lines. */
+  /** Static terrain contour LINE overlay (the "relief" basemap is separate). */
   showElevation: boolean;
-  /** Elevation contour minor-line spacing, metres (operator-tunable). */
-  elevationInterval: number;
-  /** Elevation contour emphasised (major) line spacing, metres. */
-  elevationMajorInterval: number;
+  /** Elevation contour-line appearance (colour mode, width, opacity, intervals). */
+  elevation: ElevationSettings;
   /** Live RainViewer radar overlay. */
   showRadar: boolean;
   /** Overlay live satellite positions (SGP4, client-side). */
@@ -315,8 +344,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   windMode: "particles",
   showContours: false,
   showElevation: false,
-  elevationInterval: 500,
-  elevationMajorInterval: 2000,
+  elevation: { ...DEFAULT_ELEVATION_SETTINGS },
   showRadar: false,
   showSatellites: false,
   showAircraft: false,
@@ -400,12 +428,27 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
       typeof patch.showContours === "boolean" ? patch.showContours : base.showContours ?? false,
     showElevation:
       typeof patch.showElevation === "boolean" ? patch.showElevation : base.showElevation ?? false,
-    elevationInterval:
-      typeof patch.elevationInterval === "number" ? patch.elevationInterval : base.elevationInterval ?? 500,
-    elevationMajorInterval:
-      typeof patch.elevationMajorInterval === "number"
-        ? patch.elevationMajorInterval
-        : base.elevationMajorInterval ?? 2000,
+    elevation: {
+      colorMode:
+        patch.elevation?.colorMode ?? base.elevation?.colorMode ?? DEFAULT_ELEVATION_SETTINGS.colorMode,
+      color: patch.elevation?.color ?? base.elevation?.color ?? DEFAULT_ELEVATION_SETTINGS.color,
+      width:
+        typeof patch.elevation?.width === "number"
+          ? patch.elevation.width
+          : base.elevation?.width ?? DEFAULT_ELEVATION_SETTINGS.width,
+      opacity:
+        typeof patch.elevation?.opacity === "number"
+          ? patch.elevation.opacity
+          : base.elevation?.opacity ?? DEFAULT_ELEVATION_SETTINGS.opacity,
+      interval:
+        typeof patch.elevation?.interval === "number"
+          ? patch.elevation.interval
+          : base.elevation?.interval ?? DEFAULT_ELEVATION_SETTINGS.interval,
+      majorInterval:
+        typeof patch.elevation?.majorInterval === "number"
+          ? patch.elevation.majorInterval
+          : base.elevation?.majorInterval ?? DEFAULT_ELEVATION_SETTINGS.majorInterval,
+    },
     showRadar: typeof patch.showRadar === "boolean" ? patch.showRadar : base.showRadar ?? false,
     showSatellites:
       typeof patch.showSatellites === "boolean" ? patch.showSatellites : base.showSatellites ?? false,
