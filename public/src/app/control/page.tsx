@@ -35,6 +35,7 @@ import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
 import DirectorPanel from "../../components/DirectorPanel";
 import ViewingOverlay from "../../components/ViewingOverlay";
+import QuakeReport from "../../components/broadcast/QuakeReport";
 import AlertLegend from "../../components/AlertLegend";
 import { DebugButton } from "../../lib/client/debug";
 
@@ -197,6 +198,23 @@ export default function ControlPage() {
             onClose={() => setSelected(null)}
           />
         ) : null}
+
+        {/* Seismic report for the on-air (director) / clicked quake — magnitude &
+            depth breakdown + nearest cities. Top-right, clear of the top-left
+            legend and the bottom-left "now viewing" card. */}
+        {(() => {
+          const seg = director?.active && onAir ? onAir : selected;
+          return seg?.kind === "quake" && seg.quake ? (
+            <div style={{ position: "absolute", top: 16, right: 16, zIndex: 4 }}>
+              <QuakeReport
+                mag={seg.quake.mag}
+                depthKm={seg.quake.depthKm}
+                center={seg.camera.center}
+                cities={cities}
+              />
+            </div>
+          ) : null;
+        })()}
       </div>
       <aside
         style={{

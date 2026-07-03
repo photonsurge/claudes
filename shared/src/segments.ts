@@ -8,7 +8,7 @@
  * caller (the worker's `make()`, the client's segment builder) since those come
  * from source-specific shapes (Mongo docs vs. API JSON).
  */
-import { quakeDepthLabel } from "./seismic";
+import { quakeDepthLabel, quakeMagnitudeLabel } from "./seismic";
 import { continentOf } from "./alerts/geo";
 import { hazardMeta, type HazardType } from "./alerts/hazard";
 import { alertCountryLabel } from "./alerts/country";
@@ -40,7 +40,7 @@ export interface QuakeContentInput {
 export function quakeSegmentContent(q: QuakeContentInput): SegmentContent {
   const subtitle = `M${q.mag.toFixed(1)}${q.place ? ` · ${q.place}` : ""}`;
   const details: SegmentContent["details"] = [
-    { label: "Magnitude", value: `M${q.mag.toFixed(1)}` },
+    { label: "Magnitude", value: `M${q.mag.toFixed(1)} · ${quakeMagnitudeLabel(q.mag)}` },
     { label: "Depth", value: `${Math.round(q.depthKm)} km · ${quakeDepthLabel(q.depthKm)}` },
   ];
   if (q.timeMs != null && Number.isFinite(q.timeMs)) {

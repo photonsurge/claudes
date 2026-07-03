@@ -20,6 +20,7 @@ import {
   ORBITAL_VIEW_ZOOM,
   ORBITAL_VIEWS,
 } from "@photonsurge/shared/director-rois";
+import { adMediaPath } from "@photonsurge/shared/ads/types";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
@@ -138,6 +139,40 @@ function fillerCandidates(cfg: DirectorConfig, holdMs: number): Candidate[] {
   return out;
 }
 
+/**
+ * Build a full-frame ad interstitial, or null when no active ad exists. Unlike
+ * the other kinds this doesn't go through the scored pool — the loop injects it
+ * on a fixed cadence (adEveryNShots), so we pick the ad here directly (weighted
+ * by `weight`). The globe is covered by the ad card, so the camera just holds
+ * where the previous shot left it and no layers change.
+ */
+export async function buildAdSegment(
+  db: AppDb,
+  cfg: DirectorConfig,
+  prevCamera?: Segment["camera"],
+): Promise<Segment | null> {
+  const ad = await db.ads.pickForAir();
+  if (!ad) return null;
+  const camera = prevCamera ?? { center: GLOBAL_VIEW.center, zoom: GLOBAL_VIEW.zoom };
+  return {
+    id: `ad:${ad.adId}`,
+    kind: "ad",
+    title: ad.title,
+    subtitle: ad.advertiser,
+    camera,
+    patch: { camera },
+    holdMs: Math.round(cfg.holdSeconds * 1000),
+    ad: {
+      adId: ad.adId,
+      title: ad.title,
+      mediaType: ad.mediaType,
+      mediaUrl: adMediaPath(ad.adId, ad.updatedAt),
+      advertiser: ad.advertiser,
+      clickUrl: ad.clickUrl,
+    },
+  };
+}
+
 export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<Candidate[]> {
   const holdMs = Math.round(cfg.holdSeconds * 1000);
   const pool: Candidate[] = fillerCandidates(cfg, holdMs);
@@ -169,6 +204,7 @@ export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<C
         const tsunami = Boolean(q.tsunami);
         const seg = make("quake", q.quakeId, c.title, c.subtitle, [q.lng, q.lat], 5, holdMs);
         seg.tsunami = tsunami;
+        seg.quake = { mag: q.mag, depthKm: q.depthKm };
         seg.details = c.details;
         pool.push({ score: 40 + q.mag * 10, segment: seg });
       }

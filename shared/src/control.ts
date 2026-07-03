@@ -281,6 +281,13 @@ export interface ControlState {
    * from the same anchor with no per-frame socket traffic.
    */
   spinEpoch: number;
+  /**
+   * Fixed camera-flight duration for a director cut, in ms. The auto-director
+   * stamps this on every cut's patch (from its `transitionSeconds` setting) so
+   * each shot flies in for the same deliberate, set time instead of the default
+   * distance-scaled duration. 0 = auto (manual operator flyTo keeps auto).
+   */
+  cutTransitionMs: number;
   /** Show name labels on the live-track overlay (decluttered). */
   showTrackLabels: boolean;
   /** Marker styling + filters for satellites (icon is always a dot). */
@@ -315,6 +322,8 @@ export interface ControlState {
   showAurora: boolean;
   /** Overlay live-ish geostationary satellite imagery (Himawari-9 …) draped on the globe. */
   showSatImg: boolean;
+  /** Satellite-imagery layer opacity 0–1 (the cloud overlay is see-through by design). */
+  satImgOpacity: number;
   /** Overlay active-fire detections (NASA FIRMS VIIRS/MODIS hot-spots). */
   showFires: boolean;
   /** DEBUG: outline each active weather-map source's bbox + label on the globe, so
@@ -360,6 +369,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   spinSpeed: 8,
   zoomDrift: 0,
   spinEpoch: 0,
+  cutTransitionMs: 0,
   showTrackLabels: false,
   satelliteStyle: { ...DEFAULT_SATELLITE_STYLE },
   aircraftStyle: { ...DEFAULT_TRACK_STYLE },
@@ -377,6 +387,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showFaults: false,
   showAurora: false,
   showSatImg: false,
+  satImgOpacity: 0.85,
   showFires: false,
   showMapSource: false,
   showGraticule: false,
@@ -469,6 +480,8 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     spinSpeed: typeof patch.spinSpeed === "number" ? patch.spinSpeed : base.spinSpeed ?? 8,
     zoomDrift: typeof patch.zoomDrift === "number" ? patch.zoomDrift : base.zoomDrift ?? 0,
     spinEpoch: typeof patch.spinEpoch === "number" ? patch.spinEpoch : base.spinEpoch ?? 0,
+    cutTransitionMs:
+      typeof patch.cutTransitionMs === "number" ? patch.cutTransitionMs : base.cutTransitionMs ?? 0,
     showTrackLabels:
       typeof patch.showTrackLabels === "boolean"
         ? patch.showTrackLabels
@@ -496,6 +509,7 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     showFaults: typeof patch.showFaults === "boolean" ? patch.showFaults : base.showFaults ?? false,
     showAurora: typeof patch.showAurora === "boolean" ? patch.showAurora : base.showAurora ?? false,
     showSatImg: typeof patch.showSatImg === "boolean" ? patch.showSatImg : base.showSatImg ?? false,
+    satImgOpacity: clampNum(patch.satImgOpacity, 0, 1, base.satImgOpacity ?? 0.85),
     showFires: typeof patch.showFires === "boolean" ? patch.showFires : base.showFires ?? false,
     showMapSource:
       typeof patch.showMapSource === "boolean" ? patch.showMapSource : base.showMapSource ?? false,

@@ -18,6 +18,7 @@ export const KIND_COLOR: Record<SegmentKind, string> = {
   quake: "#e08a1e",
   flight: "#2aa6c0",
   ship: "#3b6ea5",
+  ad: "#d4a017",
 };
 
 /** Short kind badge label. */
@@ -31,6 +32,7 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
   quake: "Seismic",
   flight: "Aircraft",
   ship: "Vessel",
+  ad: "Sponsor",
 };
 
 /** Kinds that are a single tracked point → get the centred event reticle. */

@@ -52,4 +52,16 @@ describe("mergeDirectorConfig", () => {
   it("carries a skip bump through", () => {
     expect(mergeDirectorConfig(base, { skipNonce: 7 }).skipNonce).toBe(7);
   });
+
+  it("ships the ad kind off by default", () => {
+    expect(SEGMENT_KINDS).toContain("ad");
+    expect(DEFAULT_DIRECTOR_CONFIG.kinds.ad).toBe(false);
+  });
+
+  it("clamps the ad cadence to a floor of 1 and rounds it", () => {
+    expect(mergeDirectorConfig(base, { adEveryNShots: 0 }).adEveryNShots).toBe(1);
+    expect(mergeDirectorConfig(base, { adEveryNShots: -3 }).adEveryNShots).toBe(1);
+    expect(mergeDirectorConfig(base, { adEveryNShots: 5.6 }).adEveryNShots).toBe(6);
+    expect(mergeDirectorConfig(base, { adEveryNShots: "x" as any }).adEveryNShots).toBe(base.adEveryNShots);
+  });
 });

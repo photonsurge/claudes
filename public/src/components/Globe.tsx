@@ -21,7 +21,7 @@ import {
 import { Deck, _GlobeView as GlobeView } from "@deck.gl/core";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
-import { loadTexture, type LoadedTexture } from "../lib/textures";
+import { loadTexture, preloadTextures, type LoadedTexture } from "../lib/textures";
 import { textureUrlFor } from "./layers/props";
 import { basemapLayers, countriesLayer, TILE_MIN_ZOOM } from "./layers/basemap";
 import {
@@ -334,7 +334,13 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     while (endLng - startLng < -180) endLng += 360;
     const dist = Math.hypot(endLng - startLng, lat - startLat);
     const dZoom = Math.abs(zoom - startZoom);
-    const duration = Math.min(FLY_MAX, Math.max(FLY_MIN, 1300 + dist * 28 + dZoom * 320));
+    // A director cut flies for a deliberate, operator-set time (state.cutTransitionMs,
+    // stamped on each cut by the worker) so every transition holds the same slow,
+    // cinematic pace. Manual operator flies (cutTransitionMs = 0) keep the default
+    // distance-scaled duration.
+    const fixed = state.cutTransitionMs ?? 0;
+    const duration =
+      fixed > 0 ? fixed : Math.min(FLY_MAX, Math.max(FLY_MIN, 1300 + dist * 28 + dZoom * 320));
     // Keep the mid-flight pull-back shallow so cuts stay near the surface and the
     // weather/eye-candy never shrinks to a distant dot before settling.
     const dip = Math.min(1.0, dist * 0.014); // zoom levels to pull back mid-flight
@@ -588,6 +594,18 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     };
   }, [manifest, state.fhr, state.activeVariable, state.showWind, state.showPressure, state.showElevation, state.basemap, nestKey]);
 
+  // ── Keep EVERY weather map decoded in RAM (instant director cuts) ──────────
+  // Warm the texture cache for all variables' global base maps at the active
+  // fhr, not just the one on screen. A director cut — or a within-shot field
+  // cycle — then switches instantly: the decoded TextureData is already in
+  // memory, so there's no mid-broadcast network fetch (the "control feels slow
+  // when directed" lag). The module cache holds the decoded texture, so this is
+  // literally all the maps kept in RAM. Aurora/sat-imagery use their own loaders.
+  useEffect(() => {
+    if (!manifest) return;
+    preloadTextures(Object.keys(manifest.variables).map((id) => textureUrlFor(manifest, id, state.fhr)));
+  }, [manifest, state.fhr]);
+
   // ── Rebuild all layers (basemap → weather → borders → cities) ─────────────
   useEffect(() => {
     const deck = deckRef.current;
@@ -681,7 +699,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // weather/wind, below the reference overlays so those stay crisp on top. Full-
     // globe PNG per bird (transparent off-disk); the far side is depth-occluded.
     if (state.showSatImg && satimg?.frames.length) {
-      layers.push(...satimgLayers(satimg.frames));
+      layers.push(...satimgLayers(satimg.frames, state.satImgOpacity));
     }
 
     // Aurora oval — a translucent glow above the weather/wind/borders but below
@@ -771,6 +789,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showFaults,
     state.showAurora,
     state.showSatImg,
+    state.satImgOpacity,
     state.showFires,
     state.showMapSource,
     state.showGraticule,

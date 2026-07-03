@@ -24,6 +24,7 @@ import type { City } from "../lib/cities";
 import GlobeView from "./GlobeView";
 import AlertLegend from "./AlertLegend";
 import BroadcastFrame from "./broadcast/BroadcastFrame";
+import AdBreak from "./broadcast/AdBreak";
 import { getBroadcastTheme } from "./broadcast/config";
 
 interface WatchSurfaceProps {
@@ -151,6 +152,10 @@ export default function WatchSurface({
           })()}
         </div>
       ) : null}
+
+      {/* Full-frame ad interstitial — covers the globe + chrome when the director
+          cuts to an ad. Renders nothing for every other segment kind. */}
+      <AdBreak segment={onAirSegment ?? null} />
     </main>
   );
 }

@@ -33,6 +33,10 @@ export interface iAd extends iGeneralModel {
   data: Buffer;
   /** GridFS file id when the bytes are stored out-of-doc (large video). */
   gridfsId?: string;
+  /** When the director last aired this ad (undefined = never). */
+  lastShownAt?: Date;
+  /** Durable count of how many times this ad has aired. */
+  timesShown: number;
 }
 
 export interface iAdModel extends iAd {
@@ -69,6 +73,8 @@ const AdSchema = new mongoose.Schema<iAdModel>(
     },
     data: { type: Buffer, required: false },
     gridfsId: { type: String, required: false },
+    lastShownAt: { type: Date, required: false },
+    timesShown: { type: Number, required: true, default: 0 },
   },
   mongoTimestamps,
 );

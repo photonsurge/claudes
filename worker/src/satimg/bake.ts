@@ -115,7 +115,14 @@ export function parseBakeMeta(stdout: string): SatImgBakeMeta {
 export async function bakeHimawari(opts: BakeHimawariOptions = {}): Promise<SatImgBakeResult> {
   const satellite = opts.satellite ?? "himawari9";
   const python = resolvePython(opts.python ?? process.env.SATIMG_PYTHON ?? "python3");
-  const script = opts.script ?? join(__dirname, "himawari.py");
+  // himawari.py is a source asset — `tsc` does NOT copy it into dist/, so a compiled
+  // run (node dist) finds nothing beside __dirname. Prefer the co-located script
+  // (ts-node dev, or a build that copies it), else fall back to the repo source path.
+  const script =
+    opts.script ??
+    (existsSync(join(__dirname, "himawari.py"))
+      ? join(__dirname, "himawari.py")
+      : resolve(REPO_ROOT, "worker/src/satimg/himawari.py"));
   const composite = opts.composite ?? process.env.SATIMG_COMPOSITE ?? "true_color";
   const resolution = opts.resolution ?? Number(process.env.SATIMG_RESOLUTION || 0.05);
   const timeoutMs = opts.timeoutMs ?? Number(process.env.SATIMG_TIMEOUT_MS || 8 * 60 * 1000);

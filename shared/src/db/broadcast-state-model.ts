@@ -111,6 +111,7 @@ const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     showFaults: { type: Boolean, required: true, default: false },
     showAurora: { type: Boolean, required: true, default: false },
     showSatImg: { type: Boolean, required: true, default: false },
+    satImgOpacity: { type: Number, required: true, default: 0.85 },
     showFires: { type: Boolean, required: true, default: false },
   },
   mongoTimestamps,

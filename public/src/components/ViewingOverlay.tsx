@@ -27,6 +27,7 @@ const KIND: Record<SegmentKind, { label: string; color: string }> = {
   quake: { label: "Seismic", color: "#e08a1e" },
   flight: { label: "Aircraft", color: "#2aa6c0" },
   ship: { label: "Vessel", color: "#3b6ea5" },
+  ad: { label: "Sponsor", color: "#d4a017" },
 };
 
 const STORAGE_KEY = "viewingOverlayPos";

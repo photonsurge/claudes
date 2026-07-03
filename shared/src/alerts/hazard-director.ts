@@ -9,7 +9,7 @@
  *
  * Pure + dependency-free (only the HazardType union) so both the worker (which
  * bakes the opening field + hold into the Segment) and the client
- * (useCutVariable, which rotates the maps) resolve the same plan.
+ * (useDirectorCut, which rotates the maps) resolve the same plan.
  *
  * `cycle` values are scalar-raster variable ids (see shared/src/variables.ts):
  * temp · humidity · rain · storm (CAPE) · gust · cloud · snow · sst · wave.

@@ -18,6 +18,7 @@ const KIND_LABEL: Record<SegmentKind, string> = {
   quake: "Seismic",
   flight: "Aircraft",
   ship: "Vessel",
+  ad: "Sponsor",
 };
 
 export default function DirectorCaption({

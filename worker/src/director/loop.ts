@@ -11,6 +11,7 @@
 import { getAppDb } from "@photonsurge/shared/db/index";
 import {
   DIRECTOR_STATE,
+  DEFAULT_DIRECTOR_CONFIG,
   type DirectorState,
   type Segment,
   type SegmentKind,
@@ -18,7 +19,7 @@ import {
 import { selectNext, type Candidate } from "@photonsurge/shared/director-select";
 import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "../socket";
-import { buildCandidates } from "./candidates";
+import { buildCandidates, buildAdSegment } from "./candidates";
 
 const TAG = "director";
 const TICK_MS = 1000;
@@ -46,8 +47,9 @@ interface SceneRunner {
   lastEmit: number;
 }
 
-/** Kinds that share the world-view center — excluded from the geo cooldown. */
-const GLOBAL_KINDS = new Set<SegmentKind>(["intro", "ocean", "orbital"]);
+/** Kinds that share the world-view center — excluded from the geo cooldown.
+ *  `ad` has no geography (it covers the globe), so it's exempt too. */
+const GLOBAL_KINDS = new Set<SegmentKind>(["intro", "ocean", "orbital", "ad"]);
 /** How many recent located centers to remember for the geo cooldown. */
 const GEO_RECENT_CAP = 8;
 /** Cap the per-segment tally map so a 24/7 run can't grow it unbounded. */
@@ -143,19 +145,37 @@ async function tick(): Promise<void> {
       const expired = !r.current || now >= r.endsAt;
 
       if (expired || skipRequested) {
-        const pool = await buildCandidates(db, cfg);
-        const counts = new Map<string, number>();
-        for (const [id, v] of r.seen) counts.set(id, v.count);
-        const next = selectNext(pool, {
-          history: r.history,
-          recentCenters: r.recentCenters,
-          counts,
-          isFirst: r.seq === 0,
-        });
+        // Commercial-break cadence: when ads are enabled, force a full-frame ad
+        // interstitial every Nth shot (never on the opener). Falls through to a
+        // normal cut if there's no active ad to air.
+        const adDue =
+          cfg.kinds.ad && cfg.adEveryNShots > 0 && r.seq > 0 && r.seq % cfg.adEveryNShots === 0;
+
+        let pool: Candidate[] = [];
+        let next: Segment | null = null;
+        if (adDue) next = await buildAdSegment(db, cfg, r.current?.camera);
+        if (!next) {
+          pool = await buildCandidates(db, cfg);
+          const counts = new Map<string, number>();
+          for (const [id, v] of r.seen) counts.set(id, v.count);
+          next = selectNext(pool, {
+            history: r.history,
+            recentCenters: r.recentCenters,
+            counts,
+            isFirst: r.seq === 0,
+          });
+        }
         if (next) {
           // Anchor any camera motion (orbit spin OR push-in zoom drift) to the
           // cut instant so /control and /watch compute it in phase from here.
           if (next.patch.autoSpin || next.patch.zoomDrift) next.patch.spinEpoch = now;
+
+          // Fly every cut for the operator-set transition time: /watch and /control
+          // read this off the merged ControlState in Globe.runFlight, so each shot
+          // eases in at the same deliberate pace instead of a distance-scaled one.
+          next.patch.cutTransitionMs = Math.round(
+            (cfg.transitionSeconds ?? DEFAULT_DIRECTOR_CONFIG.transitionSeconds) * 1000,
+          );
 
           // Tally this airing for the operator readout (last shown + count).
           const prior = r.seen.get(next.id);
@@ -174,10 +194,17 @@ async function tick(): Promise<void> {
           r.current = next;
           r.startedAt = now;
           r.endsAt = now + next.holdMs;
-          r.upNext = previewNext(pool, next.id);
+          // Ad cuts skip the candidate build, so keep the prior "coming up" rail.
+          r.upNext = pool.length ? previewNext(pool, next.id) : r.upNext;
           r.history.push(next.id);
           if (r.history.length > HISTORY_CAP) r.history.shift();
           r.lastSkipNonce = cfg.skipNonce;
+
+          // Durably record an ad airing (last shown + count) for the admin readout.
+          if (next.kind === "ad" && next.ad) {
+            await db.ads.markShown(next.ad.adId, new Date(now));
+          }
+
           emit(r, now);
           log(TAG, `cut`, { sceneId, seq: r.seq, kind: next.kind, id: next.id, times: r.timesShown });
         }

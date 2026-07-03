@@ -34,6 +34,7 @@ import KpIndexPanel from "./KpIndexPanel";
 import MonitorCluster from "./MonitorCluster";
 import EventOverlay from "./EventOverlay";
 import EventNearbyPanel from "./EventNearbyPanel";
+import QuakeReport from "./QuakeReport";
 import TrackInfoPanel from "./TrackInfoPanel";
 import OnAirCard from "./OnAirCard";
 import { isTargetedEvent, KIND_COLOR } from "./kinds";
@@ -130,17 +131,28 @@ export default function BroadcastFrame({
           </div>
         ) : null}
 
-        {/* "Near this event" — cities (with Wikipedia photo/blurb) + webcams
-            around a targeted event. Bottom-left, which the reticle leaves free.
-            Skipped when a Track Info card is already occupying that slot. */}
+        {/* Bottom-left context panel for a targeted event (the reticle leaves it
+            free; skipped when a Track Info card owns the slot). A quake gets the
+            seismic report (magnitude/depth breakdown + nearest cities); every
+            other event gets the "near this event" cities/webcams panel. */}
         {eventTargeted && onAirSegment && !hasTrackInfo ? (
           <div style={{ position: "absolute", left: INSET, bottom: TICKER_H + INSET }}>
-            <EventNearbyPanel
-              center={onAirSegment.camera.center}
-              cities={cities}
-              cams={cams}
-              color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
-            />
+            {onAirSegment.kind === "quake" && onAirSegment.quake ? (
+              <QuakeReport
+                mag={onAirSegment.quake.mag}
+                depthKm={onAirSegment.quake.depthKm}
+                center={onAirSegment.camera.center}
+                cities={cities}
+                color={KIND_COLOR.quake}
+              />
+            ) : (
+              <EventNearbyPanel
+                center={onAirSegment.camera.center}
+                cities={cities}
+                cams={cams}
+                color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
+              />
+            )}
           </div>
         ) : null}
 

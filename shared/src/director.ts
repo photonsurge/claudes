@@ -16,6 +16,7 @@
  */
 import type { ControlState } from "./control";
 import type { HazardType } from "./alerts/hazard";
+import type { AdMediaType } from "./ads/types";
 
 /** Socket event: worker → every browser. The current on-air segment + queue. */
 export const DIRECTOR_STATE = "director:state" as const;
@@ -30,7 +31,8 @@ export type SegmentKind =
   | "quake" // a recent significant earthquake
   | "flight" // a notable aircraft
   | "ship" // a notable vessel
-  | "orbital"; // a satellite constellation's orbits, spun on a world view
+  | "orbital" // a satellite constellation's orbits, spun on a world view
+  | "ad"; // a full-frame advertisement interstitial (a "commercial break")
 
 export const SEGMENT_KINDS: SegmentKind[] = [
   "intro",
@@ -42,6 +44,7 @@ export const SEGMENT_KINDS: SegmentKind[] = [
   "quake",
   "flight",
   "ship",
+  "ad",
 ];
 
 export interface DirectorCamera {
@@ -83,6 +86,12 @@ export interface Segment {
    * so the map is a backdrop, never a forecast.
    */
   tsunami?: boolean;
+  /**
+   * For `quake` segments: the raw seismic numbers behind the card, carried so the
+   * on-air + operator QuakeReport panels can classify magnitude/depth and frame
+   * the nearest cities without re-fetching or string-parsing the detail rows.
+   */
+  quake?: { mag: number; depthKm: number };
   /** Kind-specific detail rows for the operator info box (severity, depth, …). */
   details?: { label: string; value: string }[];
   /**
@@ -93,6 +102,26 @@ export interface Segment {
    * plumbing. See TrackInfo.
    */
   trackInfo?: TrackInfo;
+  /**
+   * For `ad` segments: the advertisement to display full-frame. Rides on the
+   * segment (like trackInfo) so /watch renders the ad interstitial straight from
+   * the director cut — no ad fetch on the client. See SegmentAd.
+   */
+  ad?: SegmentAd;
+}
+
+/**
+ * The advertisement a full-frame `ad` interstitial shows, attached to its
+ * segment by the worker. `mediaUrl` is the ready-to-use, cache-busted serve URL
+ * (`/api/ads/<id>/media?v=…`) so the client just drops it into an <img>/<video>.
+ */
+export interface SegmentAd {
+  adId: string;
+  title: string;
+  mediaType: AdMediaType;
+  mediaUrl: string;
+  advertiser?: string;
+  clickUrl?: string;
 }
 
 /**
@@ -165,12 +194,24 @@ export interface DirectorConfig {
   mode: DirectorMode;
   /** Default hold per segment, seconds (event kinds may extend this). */
   holdSeconds: number;
+  /**
+   * Fixed camera-flight time between shots, seconds — the "set" transition. The
+   * worker stamps `holdMs`→hold and this→`cutTransitionMs` on every cut, so each
+   * shot flies in for the same deliberate pace regardless of travel distance.
+   */
+  transitionSeconds: number;
   /** Which kinds are eligible to be scheduled. */
   kinds: Record<SegmentKind, boolean>;
   /** Only schedule quakes at/above this magnitude. */
   minQuakeMag: number;
   /** Only schedule storms at/above this normalised severity (0–4). */
   minAlertSeverity: number;
+  /**
+   * When the `ad` kind is enabled, force a full-frame ad interstitial every this
+   * many shots (a "commercial break" cadence). Min 1. Ignored when `kinds.ad`
+   * is off. A random ACTIVE ad is picked (weighted by its `weight`) each time.
+   */
+  adEveryNShots: number;
   /**
    * Bump to force-cut the current segment immediately. The worker remembers the
    * last value it acted on; any increase skips. (Monotonic, operator-driven.)
@@ -181,6 +222,7 @@ export interface DirectorConfig {
 export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   mode: "off",
   holdSeconds: 12,
+  transitionSeconds: 4,
   kinds: {
     intro: true,
     ocean: true,
@@ -191,9 +233,13 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
     quake: true,
     flight: true,
     ship: true,
+    // Off by default: ads only air once the operator enables them (and has
+    // uploaded some). Opt-in, like a paid feature should be.
+    ad: false,
   },
   minQuakeMag: 4.5,
   minAlertSeverity: 3,
+  adEveryNShots: 6,
   skipNonce: 0,
 };
 
@@ -216,9 +262,11 @@ export function mergeDirectorConfig(
   return {
     mode: patch.mode === "off" || patch.mode === "auto" ? patch.mode : base.mode,
     holdSeconds: Math.max(3, num(patch.holdSeconds, base.holdSeconds)),
+    transitionSeconds: Math.max(0.5, num(patch.transitionSeconds, base.transitionSeconds)),
     kinds,
     minQuakeMag: num(patch.minQuakeMag, base.minQuakeMag),
     minAlertSeverity: num(patch.minAlertSeverity, base.minAlertSeverity),
+    adEveryNShots: Math.max(1, Math.round(num(patch.adEveryNShots, base.adEveryNShots))),
     skipNonce: num(patch.skipNonce, base.skipNonce),
   };
 }

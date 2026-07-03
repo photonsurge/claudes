@@ -387,30 +387,27 @@ process.on("uncaughtException", (err) => {
     }
   }
 
-  // ---- Repeatable satimg.refresh (geostationary satellite imagery → baked PNG → Mongo) ----
-  // Himawari-9 full-disk from the open AWS bucket, reprojected to a global PNG by a
-  // satpy sidecar (worker/src/satimg/*). OPT-IN: the sidecar needs a Python venv with
-  // satpy (see WORKER.md), so this stays OFF unless SATIMG_REFRESH_ENABLED=true — a
-  // worker without the venv would otherwise fail this job every cycle. ~10-min cadence
-  // matches Himawari's 10-min FLDK scan (+ ~15-20 min ingest lag). One job per bird
-  // listed in SATIMG_SATS (default "himawari9"); `immediately` seeds at boot.
-  if (process.env.SATIMG_REFRESH_ENABLED === "true") {
-    const SATIMG_REFRESH_MS = Number(process.env.SATIMG_REFRESH_MS || 10 * 60 * 1000);
-    const birds = (process.env.SATIMG_SATS || "himawari9")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    for (const satId of birds) {
-      try {
-        await myQueue.add(
-          "do",
-          { domain: "satimg", type: "satimg", event: "refresh", data: { satellite: satId } },
-          { repeat: { every: SATIMG_REFRESH_MS, immediately: true }, jobId: `satimg-refresh-${satId}` },
-        );
-        log(TAG, `registered repeatable satimg.refresh`, { satId, everyMs: SATIMG_REFRESH_MS });
-      } catch (err) {
-        log(TAG, `failed to register satimg.refresh`, { satId, err: summarizeForLog(err) });
-      }
+  // ---- Repeatable satimg.refresh (satellite imagery → cloud-keyed PNG → Mongo) ----
+  // DEFAULT source "gibs": one HTTP GET of NASA GIBS' global true-color mosaic, cloud-
+  // keyed so clear sky is transparent and only clouds drape on the globe. Pure Node
+  // (no venv, Docker-trivial) → ON by default; opt out with SATIMG_REFRESH_ENABLED=
+  // false. The mosaic updates ~daily, so refresh every 6h to catch the new day + retry
+  // gaps. `immediately` seeds the cache at boot. Set SATIMG_SOURCE=satpy for the raw
+  // Himawari-9 disk bake instead (needs the Python venv — see WORKER.md).
+  if (process.env.SATIMG_REFRESH_ENABLED !== "false") {
+    const SATIMG_REFRESH_MS = Number(process.env.SATIMG_REFRESH_MS || 6 * 60 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "satimg", type: "satimg", event: "refresh", data: {} },
+        { repeat: { every: SATIMG_REFRESH_MS, immediately: true }, jobId: "satimg-refresh" },
+      );
+      log(TAG, `registered repeatable satimg.refresh`, {
+        everyMs: SATIMG_REFRESH_MS,
+        source: process.env.SATIMG_SOURCE ?? "gibs",
+      });
+    } catch (err) {
+      log(TAG, `failed to register satimg.refresh`, summarizeForLog(err));
     }
   }
 

@@ -37,6 +37,15 @@ export const AD_VIDEO_TYPES = ["video/mp4", "video/webm"] as const;
  */
 export const MAX_INLINE_AD_BYTES = 12 * 1024 * 1024;
 
+/**
+ * The serve URL for an ad's stored media, cache-busted by its last edit. Shared
+ * so the worker (building a director segment) and the public client build the
+ * exact same URL. `v` should be the ad's `updatedAt` (epoch ms).
+ */
+export function adMediaPath(adId: string, v?: number): string {
+  return `/api/ads/${encodeURIComponent(adId)}/media?v=${v ?? 0}`;
+}
+
 /** Map an upload's content-type to a media kind, or null if unsupported. */
 export function adMediaTypeFor(contentType: string): AdMediaType | null {
   const ct = contentType.toLowerCase().split(";")[0].trim();
@@ -74,4 +83,8 @@ export interface Ad extends AdMeta {
   createdAt?: number;
   /** Epoch ms — also the media-URL cache-buster. */
   updatedAt?: number;
+  /** Epoch ms this ad was last aired by the director, or undefined if never. */
+  lastShownAt?: number;
+  /** How many times this ad has aired (durable, across restarts). */
+  timesShown?: number;
 }

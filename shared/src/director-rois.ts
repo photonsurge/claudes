@@ -400,8 +400,8 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
   quake: {
     ...LAYERS_OFF,
     // Dark default base (from LAYERS_OFF) + colour-by-height contour lines = the
-    // geology look. No scalar field: activeVariable null, and useCutVariable no
-    // longer cycles a weather field for quakes.
+    // geology look. No scalar field: activeVariable null, and useDirectorCut has
+    // no map-step cycle for quakes (they read as static terrain).
     activeVariable: null,
     showElevation: true,
     elevation: { ...DEFAULT_ELEVATION_SETTINGS, interval: 250, majorInterval: 10000 },
@@ -443,5 +443,15 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     autoSpin: false,
     spinSpeed: 0,
     zoomDrift: 0.035,
+  },
+  // An ad interstitial covers the globe entirely with a full-frame card, so its
+  // preset doesn't matter visually — everything off keeps the hidden globe cheap
+  // and stops the previous shot's layers bleeding in behind the ad.
+  ad: {
+    ...LAYERS_OFF,
+    activeVariable: null,
+    autoSpin: false,
+    spinSpeed: 0,
+    zoomDrift: 0,
   },
 };

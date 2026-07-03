@@ -33,3 +33,15 @@ describe("quakeSegmentContent — time ago", () => {
     expect(row(c, "Occurred")).toBeUndefined();
   });
 });
+
+describe("quakeSegmentContent — magnitude & depth bands", () => {
+  it("tags the magnitude row with its descriptor band", () => {
+    expect(row(quakeSegmentContent({ mag: 6.3, depthKm: 12 }), "Magnitude")).toBe("M6.3 · Strong");
+    expect(row(quakeSegmentContent({ mag: 4.5, depthKm: 12 }), "Magnitude")).toBe("M4.5 · Light");
+  });
+
+  it("tags the depth row with its shallow/intermediate/deep class", () => {
+    expect(row(quakeSegmentContent({ mag: 5, depthKm: 12 }), "Depth")).toBe("12 km · Shallow");
+    expect(row(quakeSegmentContent({ mag: 5, depthKm: 150 }), "Depth")).toBe("150 km · Intermediate");
+  });
+});

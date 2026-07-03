@@ -49,6 +49,9 @@ function fakeDb(over: Partial<Record<string, any>> = {}): AppDb {
         ],
       }),
     },
+    notableTracks: {
+      getAll: async () => ({ data: over.notableTracks ?? [] }),
+    },
   } as unknown as AppDb;
 }
 
@@ -134,6 +137,46 @@ describe("buildCandidates", () => {
         { label: "MMSI", value: "232000001" },
       ]),
     );
+  });
+
+  it("boosts a catalogued VIP aircraft (any altitude) and attaches Track Info", async () => {
+    const db = fakeDb({
+      // altM 3000 is below the 9000m cruising-jet gate — it only makes the cut
+      // because it's in the catalog, proving catalog match beats the altitude gate.
+      aircraft: [{ externalId: "adfeb7", name: "AF1", country: "United States", lng: 0, lat: 51, altM: 3000 }],
+      aircraftMeta: [],
+      notableTracks: [
+        {
+          id: "aircraft:adfeb7", kind: "aircraft", code: "adfeb7", label: "Air Force One",
+          category: "government", enabled: true, vip: true, type: "Boeing VC-25A",
+          photoUrl: "https://cdn/af1.jpg", wikiExtract: "The VC-25A…",
+        },
+      ],
+    });
+    const pool = await buildCandidates(db, cfg());
+    const flight = pool.find((c) => c.segment.id === "flight:adfeb7")!;
+    expect(flight).toBeTruthy();
+    expect(flight.score).toBe(80); // VIP_SCORE — well above the generic 18
+    expect(flight.segment.title).toBe("Air Force One");
+    expect(flight.segment.trackInfo).toMatchObject({
+      label: "Air Force One", type: "Boeing VC-25A", photoUrl: "https://cdn/af1.jpg",
+      notable: true, vip: true,
+    });
+  });
+
+  it("boosts a catalogued ship (any speed) and attaches Track Info", async () => {
+    const db = fakeDb({
+      // speed 3kn is below the 12kn fast-mover gate — catalog match includes it.
+      ships: [{ externalId: "310627000", name: "QM2", lng: 1, lat: 50, speed: 3, headingDeg: 90 }],
+      notableTracks: [
+        { id: "ship:310627000", kind: "ship", code: "310627000", label: "Queen Mary 2", enabled: true, type: "Ocean liner", wikiExtract: "A liner…" },
+      ],
+    });
+    const pool = await buildCandidates(db, cfg());
+    const ship = pool.find((c) => c.segment.id === "ship:310627000")!;
+    expect(ship.score).toBe(45); // NOTABLE_SCORE (not a VIP)
+    expect(ship.segment.title).toBe("Queen Mary 2");
+    expect(ship.segment.trackInfo).toMatchObject({ label: "Queen Mary 2", notable: true });
   });
 
   it("honours disabled kinds", async () => {

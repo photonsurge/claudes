@@ -365,10 +365,26 @@ export default function ControlPanel({
 
       <Section title="Satellite imagery">
         <Toggle
-          label="Live satellite (Himawari-9 …)"
+          label="Satellite clouds (true colour)"
           checked={state.showSatImg}
           onChange={(showSatImg) => patch({ showSatImg })}
         />
+        {state.showSatImg && (
+          <Field label="Opacity">
+            <input
+              type="range"
+              min={0.1}
+              max={1}
+              step={0.05}
+              value={state.satImgOpacity}
+              onChange={(e) => patch({ satImgOpacity: Number(e.target.value) })}
+              aria-label="Satellite opacity"
+            />
+            <span style={{ color: "#fff", width: 32, textAlign: "right" }}>
+              {Math.round(state.satImgOpacity * 100)}%
+            </span>
+          </Field>
+        )}
       </Section>
 
       <Section title="Debug">

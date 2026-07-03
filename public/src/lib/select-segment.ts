@@ -28,6 +28,8 @@ export function quakeToSegment(q: Quake): Segment {
     title: c.title,
     subtitle: c.subtitle,
     details: c.details,
+    quake: { mag: q.mag, depthKm: q.depthKm },
+    tsunami: q.tsunami,
     camera: { center: [q.lng, q.lat], zoom: QUAKE_ZOOM },
     patch: {},
     holdMs: 0,

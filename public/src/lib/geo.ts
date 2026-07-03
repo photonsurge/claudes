@@ -71,3 +71,33 @@ export function nearest<T>(
 export function formatKm(km: number): string {
   return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
 }
+
+const COMPASS_16 = [
+  "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+  "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+] as const;
+
+/**
+ * Initial great-circle bearing in degrees (0–360, 0 = due north) from `from`
+ * toward `to`, each [lng, lat]. Used to say which way an epicentre lies from a
+ * city ("142 km NE of Tokyo" ⇒ bearing city→epicentre).
+ */
+export function initialBearingDeg(from: [number, number], to: [number, number]): number {
+  const lat1 = toRad(from[1]);
+  const lat2 = toRad(to[1]);
+  const dLng = toRad(to[0] - from[0]);
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** 16-point compass abbreviation for a bearing in degrees (e.g. 47 → "NE"). */
+export function compass16(bearingDeg: number): string {
+  const norm = ((bearingDeg % 360) + 360) % 360;
+  return COMPASS_16[Math.round(norm / 22.5) % 16];
+}
+
+/** Compass direction from a city ([lng,lat]) to an epicentre — "NE", "SSW", … */
+export function bearingLabel(from: [number, number], to: [number, number]): string {
+  return compass16(initialBearingDeg(from, to));
+}

@@ -1,4 +1,12 @@
-import { haversineKm, nearby, nearest, formatKm } from "./geo";
+import {
+  haversineKm,
+  nearby,
+  nearest,
+  formatKm,
+  initialBearingDeg,
+  compass16,
+  bearingLabel,
+} from "./geo";
 
 describe("haversineKm", () => {
   it("is zero for the same point", () => {
@@ -73,5 +81,28 @@ describe("formatKm", () => {
   it("keeps one decimal under 10 km, rounds above", () => {
     expect(formatKm(4.23)).toBe("4.2 km");
     expect(formatKm(132.7)).toBe("133 km");
+  });
+});
+
+describe("initialBearingDeg / compass16", () => {
+  const origin: [number, number] = [0, 0];
+  it("points to the cardinal directions", () => {
+    expect(initialBearingDeg(origin, [0, 10])).toBeCloseTo(0, 4); // due north
+    expect(initialBearingDeg(origin, [10, 0])).toBeCloseTo(90, 4); // due east
+    expect(initialBearingDeg(origin, [0, -10])).toBeCloseTo(180, 4); // due south
+    expect(initialBearingDeg(origin, [-10, 0])).toBeCloseTo(270, 4); // due west
+  });
+
+  it("maps degrees to 16-point compass abbreviations", () => {
+    expect(compass16(0)).toBe("N");
+    expect(compass16(45)).toBe("NE");
+    expect(compass16(90)).toBe("E");
+    expect(compass16(200)).toBe("SSW");
+    expect(compass16(359)).toBe("N"); // wraps back to north
+  });
+
+  it("bearingLabel names the epicentre direction from a city", () => {
+    // A quake to the north-east of a city reads "NE".
+    expect(bearingLabel([0, 0], [3, 3])).toBe("NE");
   });
 });

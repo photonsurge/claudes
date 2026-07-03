@@ -20,6 +20,7 @@ const KIND_LABEL: Record<SegmentKind, string> = {
   quake: "Earthquakes",
   flight: "Aircraft",
   ship: "Ships",
+  ad: "Sponsor ads",
 };
 
 const box: React.CSSProperties = {
@@ -110,6 +111,20 @@ export default function DirectorPanel({ sceneId }: { sceneId: string }) {
         />
       </label>
 
+      {/* Transition time — the deliberate, set camera move between shots */}
+      <label style={{ display: "block", fontSize: 12, opacity: 0.8, marginBottom: 12 }}>
+        Transition: <strong>{config.transitionSeconds}s</strong>
+        <input
+          type="range"
+          min={1}
+          max={12}
+          step={0.5}
+          value={config.transitionSeconds}
+          onChange={(e) => update({ transitionSeconds: Number(e.target.value) })}
+          style={{ width: "100%", marginTop: 4 }}
+        />
+      </label>
+
       {/* Eligible kinds */}
       <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>Show:</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 10px", marginBottom: 12 }}>
@@ -124,6 +139,22 @@ export default function DirectorPanel({ sceneId }: { sceneId: string }) {
           </label>
         ))}
       </div>
+
+      {/* Ad cadence — only relevant when Sponsor ads are enabled */}
+      {config.kinds.ad ? (
+        <label style={{ display: "block", fontSize: 12, opacity: 0.8, marginBottom: 12 }}>
+          Ad break every: <strong>{config.adEveryNShots} shots</strong>
+          <input
+            type="range"
+            min={2}
+            max={20}
+            step={1}
+            value={config.adEveryNShots}
+            onChange={(e) => update({ adEveryNShots: Number(e.target.value) })}
+            style={{ width: "100%", marginTop: 4 }}
+          />
+        </label>
+      ) : null}
 
       {/* Thresholds */}
       <label style={{ display: "block", fontSize: 12, opacity: 0.8, marginBottom: 8 }}>

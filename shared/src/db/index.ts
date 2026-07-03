@@ -32,6 +32,8 @@ import { getFireModel } from "./fire-model";
 import { makeFireRepo } from "./fire-repo";
 import { getCamModel } from "./cam-model";
 import { makeCamRepo } from "./cam-repo";
+import { getAdModel } from "./ad-model";
+import { makeAdRepo } from "./ad-repo";
 import { getAircraftMetaModel, iAircraftMetaModel } from "./aircraft-meta-model";
 import { getNotableTrackModel, iNotableTrackModel } from "./notable-track-model";
 import { getLogModel } from "./log-model";
@@ -77,6 +79,7 @@ export function createDb(conn: Connection) {
     satimg: makeSatImgRepo(getSatImgModel(conn)),
     fires: makeFireRepo(getFireModel(conn)),
     cams: makeCamRepo(getCamModel(conn)),
+    ads: makeAdRepo(getAdModel(conn)),
     aircraftMeta: mongoCrud<iAircraftMetaModel>(getAircraftMetaModel(conn)),
     notableTracks: mongoCrud<iNotableTrackModel>(getNotableTrackModel(conn)),
     logs: mongoCrud(getLogModel(conn)),

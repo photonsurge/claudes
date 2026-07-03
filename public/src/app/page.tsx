@@ -33,9 +33,11 @@ export default function Home() {
           maxWidth: 820,
         }}
       >
-        <Launch href="/watch" label="Watch" sub="Full-screen broadcast globe" accent="#2563eb" />
-        <Launch href="/control" label="Control" sub="Operator console" accent="#2563eb" />
+        <Launch href="/watch" label="Watch" sub="Full-screen broadcast globe" accent="#2563eb" blank />
+        <Launch href="/control" label="Control" sub="Operator console" accent="#2563eb" blank />
+        <Launch href="/sandbox" label="Sandbox" sub="Detached globe — off-air, yours to play with" accent="#2563eb" blank />
         <Launch href="/admin" label="Admin" sub="Alerts, tracks, cities & tools" />
+        <Launch href="/music" label="Music" sub="Generative broadcast audio bed" accent="#54e6a6" />
       </nav>
 
       <div style={{ display: "flex", gap: 14, marginTop: 18, fontSize: 13 }}>
@@ -52,15 +54,20 @@ function Launch({
   label,
   sub,
   accent,
+  blank,
 }: {
   href: string;
   label: string;
   sub: string;
   accent?: string;
+  /** Open in a new tab/window (used for the live globe surfaces). */
+  blank?: boolean;
 }) {
   return (
     <Link
       href={href}
+      target={blank ? "_blank" : undefined}
+      rel={blank ? "noreferrer" : undefined}
       style={{
         display: "block",
         padding: "20px 24px",
