@@ -56,6 +56,7 @@
     "refresh:elevation": "ts-node src/scripts/refreshElevation.ts",
     "refresh:gfs": "ts-node src/scripts/refreshGfs.ts",
     "archive:backfill": "ts-node src/scripts/archiveBackfill.ts",
+    "refresh:climate": "ts-node src/scripts/refreshClimate.ts",
     "refresh:all": "for j in gfs icon-global rtofs waves elevation icon-eu icon-d2 ukv hrrr hrdps mrms openmeteo rtofs-regional wave-nests; do echo \"\\n== refresh:$j ==\"; yarn --silent refresh:$j || echo \"(refresh:$j failed — continuing)\"; done",
     "pull": "ts-node src/scripts/check.ts",
     "reingest": "ts-node src/scripts/reingest.ts",

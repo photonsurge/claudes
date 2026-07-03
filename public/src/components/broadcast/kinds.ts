@@ -44,3 +44,14 @@ const TARGETED = new Set<SegmentKind>(["storm", "quake", "flight", "ship"]);
 export function isTargetedEvent(kind: SegmentKind): boolean {
   return TARGETED.has(kind);
 }
+
+/** Kinds whose camera just sits on GLOBAL_VIEW's arbitrary framing point rather
+ *  than a real ground location — there's nothing meaningful to sample weather
+ *  or climate history for, so panels keyed on the camera centre should hide. */
+const NO_LOCATION = new Set<SegmentKind>(["intro", "ocean", "orbital"]);
+
+/** True when the segment's camera centre is a real ground location worth
+ *  sampling (as opposed to an arbitrary global framing point). */
+export function hasRealLocation(kind: SegmentKind): boolean {
+  return !NO_LOCATION.has(kind);
+}

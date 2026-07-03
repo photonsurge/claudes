@@ -456,6 +456,25 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable climate.snapshotClimate (past-year ERA5 for what's on air) ----
+  // Focus-driven like tides: caches the past year of Open-Meteo/ERA5 daily
+  // climate for the on-air camera point + significant quakes, one Mongo doc per
+  // 0.1° key, refreshed daily. The public /climate route (director-mode PAST
+  // YEAR charts) reads Mongo only. Disable with CLIMATE_ENABLED=false.
+  if (process.env.CLIMATE_ENABLED !== "false") {
+    const CLIMATE_SNAPSHOT_MS = Number(process.env.CLIMATE_SNAPSHOT_MS || 10 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "climate", type: "climate", event: "snapshotClimate", data: {} },
+        { repeat: { every: CLIMATE_SNAPSHOT_MS, immediately: true }, jobId: "climate-snapshot" },
+      );
+      log(TAG, `registered repeatable climate.snapshotClimate`, { snapshotMs: CLIMATE_SNAPSHOT_MS });
+    } catch (err) {
+      log(TAG, `failed to register climate.snapshotClimate`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable summaries.generate* (global weather-event round-ups → Mongo) ----
   // One repeatable per cadence (hourly / 12-hourly / daily). Each aggregates the
   // active events into a stored round-up (+ optional LLM narrative) that the admin

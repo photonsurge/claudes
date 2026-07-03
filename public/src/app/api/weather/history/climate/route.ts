@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
-import { fetchClimateYearCached, bucketDaily, bucketValue } from "../../../../../lib/climate";
+import { getAppDb } from "@photonsurge/shared/db/index";
+import { bucketDaily, bucketValue } from "@photonsurge/shared/climate/buckets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/** How far a cached climate doc may sit from the requested point. */
+const NEAREST_KM = Number(process.env.CLIMATE_NEAREST_KM || 300);
+
 /**
  * GET /api/weather/history/climate?lat=&lng=[&granularity=daily|weekly|monthly]
  *
- * The past year at a point from ERA5 reanalysis (Open-Meteo archive): daily
- * temp mean/max/min, humidity, rain and wind — optionally folded into ISO-week
- * or calendar-month buckets for the director-mode year charts. This is the
- * "before our own archive existed" companion to /point.
+ * The past year at a point from ERA5 reanalysis — served from the WORKER's
+ * Mongo cache only (the worker's focus-driven climate job fetches Open-Meteo;
+ * the browser and this route never touch the feed). Returns the nearest cached
+ * doc within CLIMATE_NEAREST_KM, daily or folded into ISO-week / calendar-month
+ * buckets for the director-mode year charts; 404 when nothing is cached near
+ * the point yet (the panel section hides until the worker's next snapshot).
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -24,22 +30,25 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "lat and lng are required" }, { status: 400 });
   }
 
-  const year = await fetchClimateYearCached(lat, lng);
-  if (!year) {
+  const db = await getAppDb();
+  const near = await db.climateYears.nearest({ lng, lat, maxKm: NEAREST_KM });
+  if (!near) {
     return NextResponse.json(
-      { error: "climate source unavailable" },
-      { status: 502, headers: { "Cache-Control": "no-store" } },
+      { error: "no cached climate near this point yet" },
+      { status: 404, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  const { climate, distanceKm } = near;
+
+  if (granularity === "daily") {
+    return NextResponse.json(
+      { ...climate, distanceKm },
+      { headers: { "Cache-Control": "public, max-age=3600" } },
     );
   }
 
-  if (granularity === "daily") {
-    return NextResponse.json(year, {
-      headers: { "Cache-Control": "public, max-age=3600" },
-    });
-  }
-
-  const datasets = year.datasets.map((d) => {
-    const buckets = bucketDaily(year.dates, d.values, granularity);
+  const datasets = climate.datasets.map((d) => {
+    const buckets = bucketDaily(climate.dates, d.values, granularity);
     return {
       variable: d.variable,
       units: d.units,
@@ -47,7 +56,7 @@ export async function GET(req: Request) {
     };
   });
   return NextResponse.json(
-    { lat: year.lat, lng: year.lng, granularity, datasets },
+    { lat: climate.lat, lng: climate.lng, granularity, distanceKm, datasets },
     { headers: { "Cache-Control": "public, max-age=3600" } },
   );
 }

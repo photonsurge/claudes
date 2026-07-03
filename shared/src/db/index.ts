@@ -6,6 +6,8 @@ import { getWeatherRunModel, iWeatherRunModel } from "./weather-run-model";
 import { getWeatherTextureModel } from "./weather-texture-model";
 import { getWeatherFrameModel } from "./weather-frame-model";
 import { makeWeatherFrameRepo } from "./weather-frame-repo";
+import { getClimateYearModel } from "./climate-year-model";
+import { makeClimateYearRepo } from "./climate-year-repo";
 import { getCityModel } from "./city-model";
 import { getAlertModel } from "./alert-model";
 import { makeAlertsRepo } from "./alerts-repo";
@@ -71,6 +73,7 @@ export function createDb(conn: Connection) {
     weatherRuns,
     weatherTextures: mongoCrud(getWeatherTextureModel(conn)),
     weatherFrames: makeWeatherFrameRepo(getWeatherFrameModel(conn)),
+    climateYears: makeClimateYearRepo(getClimateYearModel(conn)),
     cities: mongoCrud(getCityModel(conn)),
     alerts: makeAlertsRepo(getAlertModel(conn)),
     satelliteTles: makeSatelliteTleRepo(getSatelliteTleModel(conn)),

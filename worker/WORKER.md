@@ -213,6 +213,24 @@ Env knobs (all optional):
   keeps everything forever. At f000+f003 the archive grows a few tens of MB/day
   across the whole portfolio.
 
+### Past-year climate cache (ERA5)
+
+The `climate.snapshotClimate` repeatable (every 10 min, focus-driven like tides)
+fetches the **past year of Open-Meteo/ERA5 daily climate** for the on-air camera
+point + significant quakes — one Mongo doc per 0.1° key, refreshed daily, TTL'd
+away two weeks after the focus moves on. The public
+`/api/weather/history/climate` route (director-mode **PAST YEAR** charts) reads
+Mongo only — the browser/Next never call the feed.
+
+| Command | What it does |
+| --- | --- |
+| `yarn refresh:climate` | One-shot: run the focus-driven snapshot now (seed the cache for the current camera point without waiting out the cron). |
+
+Env knobs: `CLIMATE_ENABLED=false` (kill switch), `CLIMATE_SNAPSHOT_MS`,
+`CLIMATE_MAX_AGE_MS` (re-fetch age, default 24 h), `CLIMATE_MAX_FETCHES`
+(politeness cap per tick), `CLIMATE_FOCUS_MIN_MAG`, `CLIMATE_TTL_SEC` (doc TTL),
+and on the public side `CLIMATE_NEAREST_KM` (serve radius, default 300).
+
 ## Maintenance / reset
 
 | Command | What it does |

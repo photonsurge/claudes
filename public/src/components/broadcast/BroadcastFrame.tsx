@@ -41,7 +41,7 @@ import EventNearbyPanel from "./EventNearbyPanel";
 import QuakeReport from "./QuakeReport";
 import TrackInfoPanel from "./TrackInfoPanel";
 import OnAirCard from "./OnAirCard";
-import { isTargetedEvent, KIND_COLOR } from "./kinds";
+import { hasRealLocation, isTargetedEvent, KIND_COLOR } from "./kinds";
 
 /** Design-stage layout constants (in 1080p reference pixels). */
 const TICKER_H = 34;
@@ -96,6 +96,9 @@ export default function BroadcastFrame({
   const scale = useStageScale();
   const ticker = buildTicker({ alerts, quakes, tracks });
   const eventTargeted = onAirSegment ? isTargetedEvent(onAirSegment.kind) : false;
+  // Global spins (intro/ocean/orbital) frame an arbitrary point, not a real
+  // ground location — the weather/climate history panel has nothing to sample.
+  const segmentHasLocation = onAirSegment ? hasRealLocation(onAirSegment.kind) : true;
   // A notable aircraft/ship carries a rich Track Info card on the segment; when
   // present it takes the bottom-left slot (superseding the nearby-cities panel).
   const hasTrackInfo = onAirSegment?.trackInfo != null;
@@ -231,9 +234,9 @@ export default function BroadcastFrame({
           }}
         >
           <PointHistoryPanel
-            center={onAirSegment?.camera.center ?? state.camera.center ?? null}
+            center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}
             bbox={
-              !eventTargeted
+              segmentHasLocation && !eventTargeted
                 ? bboxForCamera(
                     onAirSegment?.camera.center ?? state.camera.center,
                     onAirSegment?.camera.zoom ?? state.camera.zoom,

@@ -103,13 +103,20 @@ export function scalarRasterLayers(
 ): RasterLayer[] {
   const entries = resolveEntries(manifest.variables[variableId], camera);
   const out: RasterLayer[] = [];
-  // Nests render at the SAME opacity as the base (props default 0.7), NOT forced
-  // opaque. Single-winner draws only ONE detail nest over the base, so the old
-  // "opaque to avoid double-exposing the base" rule just made the high-res region
-  // POP as a brighter box (a hard seam vs the semi-transparent base). Matching the
-  // base opacity makes the nest read as the same surface with finer detail inside.
   const buildNest = (e: WeatherVariableManifest, i: number) =>
     e.bbox ? scalarRasterPropsFromEntry(e, variableId, fhr, e.bbox, { ...opts, idSuffix: `-${e.sourceId ?? `n${i}`}` }) : null;
+  // The finest nest draws MORE opaque than the base so its higher-res detail
+  // actually reads as more vivid, not just a same-opacity patch that barely
+  // differs from what's underneath (a hard seam vs the base is an acceptable
+  // trade-off for a nest that is genuinely better data).
+  const NEST_OPACITY = 0.95;
+  const buildFinestNest = (e: WeatherVariableManifest, i: number) =>
+    e.bbox
+      ? scalarRasterPropsFromEntry(e, variableId, fhr, e.bbox, {
+          opacity: NEST_OPACITY,
+          idSuffix: `-${e.sourceId ?? `n${i}`}`,
+        })
+      : null;
   // Base (entries[0]) fills the globe and SEALS the depth sphere (DEPTH_OCCLUDE).
   const base = entries[0];
   const baseBounds = base ? manifestBounds(manifest) : undefined;
@@ -144,7 +151,7 @@ export function scalarRasterLayers(
   // overlapping nests never draw. It REPLACES the base in its footprint (full
   // opacity), sitting coincident so it must not fight depth → DEPTH_PAINT. Skip it
   // when it's the very nest already drawn as the promoted base (single active nest).
-  const finest = pickBestFitLoaded(entries, buildNest, resolve, camera);
+  const finest = pickBestFitLoaded(entries, buildFinestNest, resolve, camera);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (finest && finest.index !== baseNestIndex) out.push(new RasterLayer({ ...finest.props, image: finest.image as any, parameters: DEPTH_PAINT }));
   return out;

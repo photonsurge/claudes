@@ -34,12 +34,12 @@ export default function OnAirCard({
   return (
     <div
       style={{
-        width: 320,
-        padding: "11px 14px",
+        width: 460,
+        padding: "16px 20px",
         background: theme.panelBg,
         border: theme.panelBorder,
-        borderLeft: `3px solid ${color}`,
-        borderRadius: 12,
+        borderLeft: `4px solid ${color}`,
+        borderRadius: 14,
         boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
         backdropFilter: "blur(8px)",
         WebkitBackdropFilter: "blur(8px)",
@@ -49,26 +49,26 @@ export default function OnAirCard({
       }}
     >
       <style>{"@keyframes bcast-onair{0%,100%{opacity:1}50%{opacity:0.4}}"}</style>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
         <span
           style={{
-            fontSize: 9,
+            fontSize: 12,
             fontWeight: 800,
             letterSpacing: 1,
             textTransform: "uppercase",
-            padding: "2px 7px",
-            borderRadius: 4,
+            padding: "3px 10px",
+            borderRadius: 5,
             background: color,
             color: "#fff",
           }}
         >
           {kindLabel}
         </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 9, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc" }}>
           <span
             style={{
-              width: 7,
-              height: 7,
+              width: 9,
+              height: 9,
               borderRadius: "50%",
               background: "#ff3b3b",
               animation: "bcast-onair 1.4s ease-in-out infinite",
@@ -78,25 +78,25 @@ export default function OnAirCard({
         </span>
       </div>
 
-      <div style={{ fontSize: 21, fontWeight: 800, lineHeight: 1.1 }}>
+      <div style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.1 }}>
         {segment.icon ? `${segment.icon} ` : ""}
         {segment.title}
       </div>
       {segment.subtitle ? (
-        <div style={{ fontSize: 12.5, opacity: 0.82, marginTop: 3 }}>{segment.subtitle}</div>
+        <div style={{ fontSize: 17, opacity: 0.82, marginTop: 4 }}>{segment.subtitle}</div>
       ) : null}
 
       {details.length ? (
         <div
           style={{
-            marginTop: 10,
-            paddingTop: 9,
+            marginTop: 14,
+            paddingTop: 12,
             borderTop: "1px solid rgba(120,140,170,0.15)",
             display: "grid",
             gridTemplateColumns: "auto 1fr",
-            rowGap: 3,
-            columnGap: 12,
-            fontSize: 12,
+            rowGap: 5,
+            columnGap: 16,
+            fontSize: 16,
           }}
         >
           {details.map((d) => (

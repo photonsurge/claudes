@@ -11,20 +11,20 @@ import type { AreaSummary } from "../../lib/broadcast";
 export default function AreaStatus({ summary }: { summary: AreaSummary }) {
   const { total, quakeCount, bySeverity, byHazard } = summary;
   return (
-    <div style={{ marginTop: 11, paddingTop: 10, borderTop: "1px solid rgba(120,140,170,0.18)" }}>
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(120,140,170,0.18)" }}>
       {/* Headline counts */}
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 11 }}>
+        <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc" }}>
           IN VIEW
         </span>
-        <span style={{ fontSize: 20, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontSize: 28, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
           {total}
         </span>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#9fb3cc" }}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#9fb3cc" }}>
           alert{total === 1 ? "" : "s"}
         </span>
         {quakeCount ? (
-          <span style={{ fontSize: 11, fontWeight: 700, color: "#e08a1e" }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "#e08a1e" }}>
             · {quakeCount} seismic
           </span>
         ) : null}
@@ -32,23 +32,23 @@ export default function AreaStatus({ summary }: { summary: AreaSummary }) {
 
       {/* Severity strip — proportional bar + labelled counts. */}
       {bySeverity.length ? (
-        <div style={{ marginBottom: 9 }}>
-          <div style={{ display: "flex", height: 7, borderRadius: 4, overflow: "hidden", gap: 1 }}>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", height: 11, borderRadius: 5, overflow: "hidden", gap: 1 }}>
             {bySeverity.map((s) => (
               <div
                 key={s.rank}
                 title={`${s.label}: ${s.count}`}
-                style={{ flex: s.count, background: s.color, minWidth: 3 }}
+                style={{ flex: s.count, background: s.color, minWidth: 4 }}
               />
             ))}
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 10px", marginTop: 6 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "5px 14px", marginTop: 9 }}>
             {bySeverity.map((s) => (
               <span
                 key={s.rank}
-                style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700 }}
+                style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 15, fontWeight: 700 }}
               >
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color }} />
+                <span style={{ width: 11, height: 11, borderRadius: 3, background: s.color }} />
                 <span style={{ fontVariantNumeric: "tabular-nums", color: "#fff" }}>{s.count}</span>
                 <span style={{ color: "#9fb3cc", fontWeight: 600 }}>{s.label}</span>
               </span>
@@ -59,20 +59,20 @@ export default function AreaStatus({ summary }: { summary: AreaSummary }) {
 
       {/* Hazard-type breakdown — top types with icon + count. */}
       {byHazard.length ? (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "5px 10px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "7px 14px" }}>
           {byHazard.slice(0, 8).map((h) => (
             <span
               key={h.hazard}
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 5,
-                fontSize: 11.5,
+                gap: 7,
+                fontSize: 15.5,
                 fontWeight: 700,
                 color: "#dfe7f5",
               }}
             >
-              <span style={{ fontSize: 12 }}>{h.icon}</span>
+              <span style={{ fontSize: 17 }}>{h.icon}</span>
               <span style={{ color: h.color, fontVariantNumeric: "tabular-nums" }}>{h.count}</span>
               <span style={{ opacity: 0.75, fontWeight: 600 }}>{h.label}</span>
             </span>

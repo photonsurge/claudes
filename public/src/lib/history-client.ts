@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import type { AreaHistorySeries, HistoryPoint, HistorySeries } from "./weather-history";
-import type { ClimateBucket, ClimateDataset } from "./climate";
+import type { ClimateBucket, ClimateDataset } from "@photonsurge/shared/climate/types";
 
 export type { AreaHistorySeries, HistoryPoint, HistorySeries };
 

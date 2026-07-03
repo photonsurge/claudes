@@ -1,4 +1,6 @@
-import { parseClimateYear, bucketDaily, bucketValue, isoWeekStart } from "./climate";
+import { parseClimateYear } from "./openmeteo";
+import { bucketDaily, bucketValue, isoWeekStart } from "./buckets";
+import { climateKey } from "./types";
 
 const OM_BODY = {
   daily: {
@@ -31,6 +33,13 @@ describe("parseClimateYear", () => {
   it("rejects an empty/invalid payload", () => {
     expect(parseClimateYear(0, 0, {})).toBeNull();
     expect(parseClimateYear(0, 0, { daily: { time: [] } })).toBeNull();
+  });
+});
+
+describe("climateKey", () => {
+  it("rounds to 0.1° so nearby foci share one cached doc", () => {
+    expect(climateKey(51.507, -0.128)).toBe("51.5,-0.1");
+    expect(climateKey(51.512, -0.101)).toBe("51.5,-0.1");
   });
 });
 
