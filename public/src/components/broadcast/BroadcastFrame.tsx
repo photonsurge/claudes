@@ -95,6 +95,13 @@ export default function BroadcastFrame({
 }) {
   const scale = useStageScale();
   const ticker = buildTicker({ alerts, quakes, tracks });
+  // A round-up segment takes over the bottom crawl with its own narrative
+  // (single long line, so it just scrolls through once and loops) instead of
+  // mixing it into the alert/quake/track feed — the top crawl keeps showing
+  // the standing feed throughout.
+  const summaryOnAir = onAirSegment?.kind === "summary" ? onAirSegment.summary : null;
+  const bottomTickerTitle = summaryOnAir ? "GLOBAL ROUND-UP" : "GLOBAL ALERT TICKER";
+  const bottomTickerItems = summaryOnAir ? [summaryOnAir.narrative] : ticker;
   const eventTargeted = onAirSegment ? isTargetedEvent(onAirSegment.kind) : false;
   // Global spins (intro/ocean/orbital) frame an arbitrary point, not a real
   // ground location — the weather/climate history panel has nothing to sample.
@@ -253,7 +260,7 @@ export default function BroadcastFrame({
           />
         </div>
 
-        <Ticker title="GLOBAL ALERT TICKER" items={ticker} edge="bottom" height={TICKER_H} theme={theme} />
+        <Ticker title={bottomTickerTitle} items={bottomTickerItems} edge="bottom" height={TICKER_H} theme={theme} />
       </div>
     </div>
   );

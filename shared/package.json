@@ -31,6 +31,7 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.2",
     "bullmq": "5.73.4",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.19.4",

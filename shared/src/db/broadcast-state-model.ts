@@ -1,4 +1,5 @@
 import mongoose, { Connection } from "mongoose";
+import { randomBytes } from "node:crypto";
 import { iGeneralModel, mongoTimestamps } from "../interfaces/iGeneralModel";
 import { getModel } from "../utill/getModel";
 import type { ControlState } from "../control";
@@ -33,6 +34,8 @@ export interface iBroadcastStateModel extends iBroadcastState {
   _id: string;
   /** Operator-facing scene name. The singleton "default" doc is "Main". */
   name?: string;
+  /** Secret gating the tokened /watch URL for this scene. Not part of ControlState. */
+  watchToken?: string;
 }
 
 export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
@@ -40,6 +43,8 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     id: { type: String, required: true, unique: true, default: BROADCAST_STATE_ID },
     /** Operator-facing scene name. The singleton "default" doc is "Main". */
     name: { type: String, required: false, default: "Main" },
+    /** Secret gating the tokened /watch URL for this scene. */
+    watchToken: { type: String, required: false, default: () => randomBytes(24).toString("hex") },
     activeVariable: { type: String, required: false, default: "temp" },
     fhr: { type: Number, required: true, default: 0 },
     basemap: { type: String, required: true, default: "dark" },

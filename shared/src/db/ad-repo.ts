@@ -44,6 +44,7 @@ export function toAd(doc: iAdModel): Ad {
     updatedAt: doc.updated ? new Date(doc.updated).getTime() : undefined,
     lastShownAt: doc.lastShownAt ? new Date(doc.lastShownAt).getTime() : undefined,
     timesShown: doc.timesShown ?? 0,
+    totalDisplayMs: doc.totalDisplayMs ?? 0,
   };
 }
 
@@ -181,12 +182,14 @@ export function makeAdRepo(model: Model<iAdModel>) {
 
     /**
      * Pick one active ad to air, weighted by `weight` (director commercial
-     * break). Returns null when nothing is active. Pure selection lives in
-     * `pickAdForAir`; the repo just supplies the active pool (no bytes).
+     * break). `excludeAdId` (the previous airing) is skipped so two breaks in a
+     * row don't repeat the same ad, unless it's the only active one. Returns
+     * null when nothing is active. Pure selection lives in `pickAdForAir`; the
+     * repo just supplies the active pool (no bytes).
      */
-    async pickForAir(rng?: () => number): Promise<Ad | null> {
+    async pickForAir(rng?: () => number, excludeAdId?: string): Promise<Ad | null> {
       const active = await this.list({ status: "active" });
-      return pickAdForAir(active, rng);
+      return pickAdForAir(active, rng, excludeAdId);
     },
 
     /**
@@ -197,6 +200,16 @@ export function makeAdRepo(model: Model<iAdModel>) {
       await model
         .updateOne({ adId }, { $set: { lastShownAt: at }, $inc: { timesShown: 1 } })
         .exec();
+    },
+
+    /**
+     * Add actual on-screen milliseconds for one airing. Called by the director
+     * when the ad's cut ENDS (not when it starts), so a manual skip mid-break
+     * records real dwell time rather than the nominal hold duration.
+     */
+    async recordImpression(adId: string, ms: number): Promise<void> {
+      if (ms <= 0) return;
+      await model.updateOne({ adId }, { $inc: { totalDisplayMs: ms } }).exec();
     },
 
     /** Delete an ad by id. Returns true if one was removed. */

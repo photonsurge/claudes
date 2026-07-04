@@ -29,6 +29,7 @@ const KIND: Record<SegmentKind, { label: string; color: string }> = {
   flight: { label: "Aircraft", color: "#2aa6c0" },
   ship: { label: "Vessel", color: "#3b6ea5" },
   ad: { label: "Sponsor", color: "#d4a017" },
+  summary: { label: "Round-Up", color: "#8a5fd1" },
 };
 
 const STORAGE_KEY = "viewingOverlayPos";

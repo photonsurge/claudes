@@ -1,4 +1,4 @@
-import { selectNext, type Candidate } from "./director-select";
+import { selectNext, selectPriority, type Candidate } from "./director-select";
 import type { Segment, SegmentKind } from "./director";
 
 const seg = (id: string, kind: SegmentKind, center: [number, number] = [0, 0]): Segment => ({
@@ -10,9 +10,9 @@ const seg = (id: string, kind: SegmentKind, center: [number, number] = [0, 0]): 
   holdMs: 12000,
 });
 
-const cand = (id: string, kind: SegmentKind, center?: [number, number]): Candidate => ({
+const cand = (id: string, kind: SegmentKind, center?: [number, number], score = 1): Candidate => ({
   segment: seg(id, kind, center),
-  score: 1,
+  score,
 });
 
 describe("selectNext", () => {
@@ -61,5 +61,44 @@ describe("selectNext", () => {
     expect(
       selectNext(pool, { history: [], recentCenters: [[10, 47]], rng: () => 0 })?.id,
     ).toBe("storm:b");
+  });
+});
+
+describe("selectPriority", () => {
+  it("returns null when nothing new is waiting", () => {
+    const pool = [cand("tour:a", "tour")];
+    expect(selectPriority(pool, new Map())).toBeNull();
+  });
+
+  it("ignores an already-aired quake/storm/summary", () => {
+    const pool = [cand("quake:x", "quake"), cand("summary:y", "summary")];
+    const counts = new Map([
+      ["quake:x", 1],
+      ["summary:y", 1],
+    ]);
+    expect(selectPriority(pool, counts)).toBeNull();
+  });
+
+  it("puts a fresh round-up ahead of a brand-new quake/storm", () => {
+    const pool = [cand("quake:x", "quake"), cand("summary:y", "summary"), cand("storm:z", "storm")];
+    expect(selectPriority(pool, new Map())?.id).toBe("summary:y");
+  });
+
+  it("falls through to quake/storm once no summary is waiting", () => {
+    const pool = [cand("tour:a", "tour"), cand("storm:z", "storm", undefined, 62)];
+    expect(selectPriority(pool, new Map())?.id).toBe("storm:z");
+  });
+
+  it("picks the highest-scored candidate within a priority kind", () => {
+    const pool = [
+      cand("quake:small", "quake", undefined, 60),
+      cand("quake:big", "quake", undefined, 140),
+    ];
+    expect(selectPriority(pool, new Map())?.id).toBe("quake:big");
+  });
+
+  it("doesn't preempt for ordinary filler kinds", () => {
+    const pool = [cand("tour:a", "tour"), cand("country:b", "country")];
+    expect(selectPriority(pool, new Map())).toBeNull();
   });
 });

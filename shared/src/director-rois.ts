@@ -126,6 +126,15 @@ export const INTRO_MAP_TYPES: GlobalMapType[] = [
     patch: { basemap: "night", activeVariable: null, showWind: false, showPressure: false },
   },
   {
+    id: "world",
+    title: "World",
+    subtitle: "Land & ocean",
+    // The plain globe: no scalar field or overlay, just the land/ocean base and
+    // cities from the intro preset — a breather between the data-heavy looks and
+    // the satellite finale. Static local asset, so no `needs` gate.
+    patch: { activeVariable: null, showWind: false, showPressure: false },
+  },
+  {
     id: "satimg",
     title: "Satellite View",
     subtitle: "Live geostationary imagery",
@@ -487,6 +496,17 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     activeVariable: null,
     autoSpin: false,
     spinSpeed: 0,
+    zoomDrift: 0,
+  },
+  // A round-up ticker reads over the lower third, so — unlike the ad card — the
+  // globe stays the visible, alive backdrop: same calm world spin as intro/ocean,
+  // no scalar field so it never competes with the on-screen text.
+  summary: {
+    ...LAYERS_OFF,
+    activeVariable: null,
+    showCities: true,
+    autoSpin: true,
+    spinSpeed: 4,
     zoomDrift: 0,
   },
 };

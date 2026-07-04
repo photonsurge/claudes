@@ -32,6 +32,7 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
   flight: "Aircraft",
   ship: "Ships",
   ad: "Sponsor ads",
+  summary: "Round-up ticker",
 };
 
 /** Kinds whose hold comes from a per-level map, not the kind slider. */

@@ -17,6 +17,7 @@
 import type { ControlState } from "./control";
 import type { HazardType } from "./alerts/hazard";
 import type { AdMediaType } from "./ads/types";
+import type { SummaryPeriod } from "./db/event-summary-model";
 import { DEFAULT_DIRECTOR_COUNTRIES, sanitizeDirectorCountries } from "./director-countries";
 import { QUAKE_MAGNITUDE_BANDS, quakeMagnitudeClass, type QuakeMagnitudeClass } from "./seismic";
 
@@ -35,7 +36,8 @@ export type SegmentKind =
   | "flight" // a notable aircraft
   | "ship" // a notable vessel
   | "orbital" // a satellite constellation's orbits, spun on a world view
-  | "ad"; // a full-frame advertisement interstitial (a "commercial break")
+  | "ad" // a full-frame advertisement interstitial (a "commercial break")
+  | "summary"; // a generated round-up narrative, read as a lower-third ticker
 
 export const SEGMENT_KINDS: SegmentKind[] = [
   "intro",
@@ -49,6 +51,7 @@ export const SEGMENT_KINDS: SegmentKind[] = [
   "flight",
   "ship",
   "ad",
+  "summary",
 ];
 
 export interface DirectorCamera {
@@ -112,6 +115,12 @@ export interface Segment {
    * the director cut — no ad fetch on the client. See SegmentAd.
    */
   ad?: SegmentAd;
+  /**
+   * For `summary` segments: the generated round-up narrative to read as a
+   * lower-third ticker. Rides on the segment (like `ad`) so /watch renders it
+   * straight from the director cut — no extra fetch. See SegmentSummary.
+   */
+  summary?: SegmentSummary;
 }
 
 /**
@@ -126,6 +135,20 @@ export interface SegmentAd {
   mediaUrl: string;
   advertiser?: string;
   clickUrl?: string;
+}
+
+/**
+ * The round-up narrative a `summary` segment reads out, attached to its segment
+ * by the worker (see worker/src/director/candidates.ts `summaryCandidates`).
+ * `id` is the source EventSummary doc id — used to avoid re-airing the same
+ * round-up twice in a session.
+ */
+export interface SegmentSummary {
+  id: string;
+  period: SummaryPeriod;
+  narrative: string;
+  /** ISO timestamp the round-up was generated. */
+  generatedAt: string;
 }
 
 /**
@@ -278,6 +301,9 @@ export const DEFAULT_KIND_HOLD_SECONDS: Record<SegmentKind, number> = {
   flight: 12,
   ship: 12,
   ad: 12,
+  /** Floor only — actual hold scales with the narrative's reading time (see
+   *  summaryCandidates), capped separately at 60s. */
+  summary: 20,
 };
 
 /** Default hold per quake magnitude class — the bigger the quake, the longer the dwell. */
@@ -320,6 +346,9 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
     // Off by default: ads only air once the operator enables them (and has
     // uploaded some). Opt-in, like a paid feature should be.
     ad: false,
+    // On by default: free, auto-generated content — nothing to upload/configure
+    // (a summary with no successful narrative just never produces a candidate).
+    summary: true,
   },
   countries: DEFAULT_DIRECTOR_COUNTRIES,
   minQuakeMag: 4.5,

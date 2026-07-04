@@ -20,6 +20,7 @@ const KIND_LABEL: Record<SegmentKind, string> = {
   flight: "Aircraft",
   ship: "Vessel",
   ad: "Sponsor",
+  summary: "Round-Up",
 };
 
 export default function DirectorCaption({

@@ -47,6 +47,17 @@ const fmtLastShown = (ms?: number): string =>
       })
     : "—";
 
+/** Cumulative on-screen time across every airing, e.g. "3m 20s". */
+const fmtDuration = (ms?: number): string => {
+  if (!ms) return "—";
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+};
+
 export default function AdsTable() {
   const [rows, setRows] = useState<Ad[]>([]);
   const [status, setStatus] = useState<"" | AdStatus>("");
@@ -140,6 +151,7 @@ export default function AdsTable() {
                 <th style={thNum}>Size</th>
                 <th style={thNum}>Weight</th>
                 <th style={th}>Last shown</th>
+                <th style={th}>On screen</th>
                 <th style={th}>Status</th>
                 <th style={th}></th>
               </tr>
@@ -160,6 +172,9 @@ export default function AdsTable() {
                     <td style={tdNum}>{a.weight}</td>
                     <td style={{ ...td, color: "#8b95a7", whiteSpace: "nowrap" }} title={a.timesShown ? `${a.timesShown}× total` : "never aired"}>
                       {fmtLastShown(a.lastShownAt)}
+                    </td>
+                    <td style={{ ...td, color: "#8b95a7", whiteSpace: "nowrap" }} title="cumulative time actually on screen">
+                      {fmtDuration(a.totalDisplayMs)}
                     </td>
                     <td style={td}>
                       <button
@@ -185,7 +200,7 @@ export default function AdsTable() {
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td style={td} colSpan={8}>
+                  <td style={td} colSpan={9}>
                     {loading ? "Loading…" : "No ads yet — add one above."}
                   </td>
                 </tr>

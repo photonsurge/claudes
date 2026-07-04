@@ -1,4 +1,5 @@
 import type { Connection } from "mongoose";
+import { randomBytes } from "node:crypto";
 import { getDb } from "../utill/mongoose";
 import { iEntity, makeCollection } from "./generic";
 import { mongoCrud } from "./mongoose-generic";
@@ -44,6 +45,8 @@ import { getAircraftMetaModel, iAircraftMetaModel } from "./aircraft-meta-model"
 import { getVehicleModel } from "./vehicle-model";
 import { makeVehicleRepo } from "./vehicle-repo";
 import { getLogModel } from "./log-model";
+import { getUserModel } from "./user-model";
+import { makeUserRepo } from "./user-repo";
 import { getBroadcastStateModel, BROADCAST_STATE_ID } from "./broadcast-state-model";
 import { getDirectorConfigModel } from "./director-config-model";
 import { DEFAULT_CONTROL_STATE, MAIN_SCENE_ID } from "../control";
@@ -93,6 +96,7 @@ export function createDb(conn: Connection) {
     aircraftMeta: mongoCrud<iAircraftMetaModel>(getAircraftMetaModel(conn)),
     vehicles: makeVehicleRepo(getVehicleModel(conn)),
     logs: mongoCrud(getLogModel(conn)),
+    users: makeUserRepo(getUserModel(conn)),
     broadcastState,
     directorConfig,
 
@@ -122,10 +126,21 @@ export function createDb(conn: Connection) {
       return [...byModel.values()];
     },
 
+    /**
+     * Backfills `watchToken` onto scene docs created before the field existed.
+     * The schema `default` only populates on insert, not on pre-existing rows.
+     */
+    async ensureWatchToken(doc: any) {
+      if (!doc || doc.watchToken) return doc;
+      const watchToken = randomBytes(24).toString("hex");
+      const updated = await broadcastState.updateByID(doc.id, { watchToken } as any);
+      return updated.data ?? { ...doc, watchToken };
+    },
+
     /** The singleton broadcast state, seeded with defaults if absent. */
     async getOrInitBroadcastState() {
       const existing = await broadcastState.getByID(BROADCAST_STATE_ID);
-      if (existing.success && existing.data) return existing.data;
+      if (existing.success && existing.data) return this.ensureWatchToken(existing.data);
       const created = await broadcastState.upsertByID(BROADCAST_STATE_ID, {
         ...DEFAULT_CONTROL_STATE,
         name: "Main",
@@ -173,6 +188,7 @@ export function createDb(conn: Connection) {
           id: d.id as string,
           name: (d.name as string) || (d.id === MAIN_SCENE_ID ? "Main" : d.id),
           updatedAt: d.updated ?? d.updatedAt,
+          watchToken: d.watchToken as string | undefined,
         }))
         .sort((a: { id: string; name: string }, b: { id: string; name: string }) =>
           a.id === MAIN_SCENE_ID ? -1 : b.id === MAIN_SCENE_ID ? 1 : a.name.localeCompare(b.name),
@@ -182,7 +198,16 @@ export function createDb(conn: Connection) {
     /** A single scene doc by id, or null if it doesn't exist. */
     async getScene(id: string) {
       const res = await broadcastState.getByID(id);
-      return res.success && res.data ? res.data : null;
+      return res.success && res.data ? this.ensureWatchToken(res.data) : null;
+    },
+
+    /** Rotates a scene's watch token, invalidating any previously-issued URL. */
+    async rotateSceneToken(id: string): Promise<string | null> {
+      const doc = id === MAIN_SCENE_ID ? await this.getOrInitBroadcastState() : await this.getScene(id);
+      if (!doc) return null;
+      const watchToken = randomBytes(24).toString("hex");
+      await broadcastState.updateByID(id, { watchToken } as any);
+      return watchToken;
     },
 
     /**

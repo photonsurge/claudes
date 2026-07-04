@@ -87,4 +87,6 @@ export interface Ad extends AdMeta {
   lastShownAt?: number;
   /** How many times this ad has aired (durable, across restarts). */
   timesShown?: number;
+  /** Cumulative milliseconds this ad has actually been on screen (durable). */
+  totalDisplayMs?: number;
 }

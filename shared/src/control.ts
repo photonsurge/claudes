@@ -47,6 +47,8 @@ export interface SceneMeta {
   name: string;
   /** ISO update time, if known. */
   updatedAt?: string;
+  /** Secret gating this scene's /watch URL. Admin-only — omitted from public listings. */
+  watchToken?: string;
 }
 
 /**

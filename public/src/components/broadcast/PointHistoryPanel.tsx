@@ -16,6 +16,7 @@
  * scaled broadcast stage; pointer-inert (video output — no hover layer).
  * Self-hiding while the archive and climate source are both empty.
  */
+import { useEffect, useState } from "react";
 import {
   usePointHistory,
   useAreaHistory,
@@ -24,6 +25,30 @@ import {
   type ClimateBucketedDataset,
 } from "../../lib/history-client";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+
+/** How many mini-charts a section shows at once before advancing. */
+const CHARTS_PER_SLIDE = 4;
+/** How long each slide holds before advancing to the next. */
+const SLIDE_HOLD_MS = 6000;
+
+/**
+ * Paginates a section's charts into fixed-size slides and auto-advances on a
+ * timer, so a section with many variables (a mixed land/sea area bbox can
+ * easily have a dozen) reads as a slideshow instead of one long scroll.
+ */
+function usePagedSlides<T>(items: T[], perPage: number): { visible: T[]; page: number; pageCount: number } {
+  const pageCount = Math.max(1, Math.ceil(items.length / perPage));
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    if (pageCount <= 1) return;
+    const iv = setInterval(() => setIdx((n) => n + 1), SLIDE_HOLD_MS);
+    return () => clearInterval(iv);
+  }, [pageCount]);
+
+  const page = idx % pageCount;
+  return { visible: items.slice(page * perPage, page * perPage + perPage), page, pageCount };
+}
 
 /** Validated dark-surface categorical palette (see dataviz palette check). */
 const VARIABLE_COLOR: Record<string, string> = {
@@ -177,11 +202,27 @@ function MiniChart({
 }
 
 /** Section header row inside the card. */
-function SectionTitle({ title, tag, accent }: { title: string; tag: string; accent: string }) {
+function SectionTitle({
+  title,
+  tag,
+  accent,
+  page,
+  pageCount,
+}: {
+  title: string;
+  tag: string;
+  accent: string;
+  /** Current/total slide, when the section has more than one page. */
+  page?: number;
+  pageCount?: number;
+}) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
       <span style={{ fontSize: 12, fontWeight: 850, letterSpacing: 1.5, color: "#eef4ff" }}>{title}</span>
-      <span style={{ fontSize: 9, fontWeight: 750, letterSpacing: 1.05, color: accent }}>{tag}</span>
+      <span style={{ fontSize: 9, fontWeight: 750, letterSpacing: 1.05, color: accent }}>
+        {tag}
+        {pageCount != null && pageCount > 1 ? ` · ${(page ?? 0) + 1}/${pageCount}` : ""}
+      </span>
     </div>
   );
 }
@@ -275,6 +316,9 @@ export default function PointHistoryPanel({
     };
   }).filter((r): r is NonNullable<typeof r> => r != null);
 
+  const liveSlide = usePagedSlides(liveCharts, CHARTS_PER_SLIDE);
+  const climateSlide = usePagedSlides(climateRows, CHARTS_PER_SLIDE);
+
   if (!liveCharts.length && !climateRows.length) return null;
 
   return (
@@ -302,8 +346,10 @@ export default function PointHistoryPanel({
             title={bbox ? "AREA HISTORY" : "POINT HISTORY"}
             tag={`LAST ${HISTORY_WINDOW_HOURS} H`}
             accent={theme.accent}
+            page={liveSlide.page}
+            pageCount={liveSlide.pageCount}
           />
-          {liveCharts.map((c) => (
+          {liveSlide.visible.map((c) => (
             <MiniChart
               key={c.variable}
               label={VARIABLE_LABEL[c.variable] ?? c.variable.toUpperCase()}
@@ -319,8 +365,14 @@ export default function PointHistoryPanel({
 
       {climateRows.length ? (
         <>
-          <SectionTitle title="PAST YEAR" tag="MONTHLY · ERA5" accent={theme.accent} />
-          {climateRows.map((row) => (
+          <SectionTitle
+            title="PAST YEAR"
+            tag="MONTHLY · ERA5"
+            accent={theme.accent}
+            page={climateSlide.page}
+            pageCount={climateSlide.pageCount}
+          />
+          {climateSlide.visible.map((row) => (
             <MiniChart
               key={row.variable}
               label={row.label}

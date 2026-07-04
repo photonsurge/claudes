@@ -151,6 +151,11 @@ describe("mergeDirectorConfig", () => {
     expect(DEFAULT_DIRECTOR_CONFIG.kinds.ad).toBe(false);
   });
 
+  it("ships the summary (round-up) kind on by default", () => {
+    expect(SEGMENT_KINDS).toContain("summary");
+    expect(DEFAULT_DIRECTOR_CONFIG.kinds.summary).toBe(true);
+  });
+
   it("ships the country kind on by default with UK + Japan favourited", () => {
     expect(SEGMENT_KINDS).toContain("country");
     expect(DEFAULT_DIRECTOR_CONFIG.kinds.country).toBe(true);

@@ -37,6 +37,8 @@ export interface iAd extends iGeneralModel {
   lastShownAt?: Date;
   /** Durable count of how many times this ad has aired. */
   timesShown: number;
+  /** Durable cumulative on-screen milliseconds across every airing. */
+  totalDisplayMs: number;
 }
 
 export interface iAdModel extends iAd {
@@ -75,6 +77,7 @@ const AdSchema = new mongoose.Schema<iAdModel>(
     gridfsId: { type: String, required: false },
     lastShownAt: { type: Date, required: false },
     timesShown: { type: Number, required: true, default: 0 },
+    totalDisplayMs: { type: Number, required: true, default: 0 },
   },
   mongoTimestamps,
 );

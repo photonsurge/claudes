@@ -52,8 +52,20 @@ function fakeDb(over: Partial<Record<string, any>> = {}): AppDb {
     vehicles: {
       notableCatalog: async () => over.vehicles ?? [],
     },
+    eventSummaries: {
+      latest: async (period: string) => (over.eventSummaries ?? {})[period] ?? null,
+    },
   } as unknown as AppDb;
 }
+
+const freshSummary = (over: Partial<Record<string, any>> = {}) => ({
+  id: "sum1",
+  period: "hourly",
+  narrativeStatus: "ok",
+  narrative: "Severe storms are impacting the Gulf Coast while a strong quake rattled Japan.",
+  generatedAt: new Date(),
+  ...over,
+});
 
 const cfg = (over: Partial<DirectorConfig> = {}): DirectorConfig => ({
   ...DEFAULT_DIRECTOR_CONFIG,
@@ -232,5 +244,47 @@ describe("buildCandidates", () => {
     // never empty).
     const fillerKinds = new Set(["intro", "ocean", "orbital", "tour", "country"]);
     expect(pool.every((c) => fillerKinds.has(c.segment.kind))).toBe(true);
+  });
+
+  describe("round-up summary candidates", () => {
+    it("adds a candidate for a fresh, successful hourly round-up", async () => {
+      const db = fakeDb({ eventSummaries: { hourly: freshSummary() } });
+      const pool = await buildCandidates(db, cfg());
+      const summary = pool.find((c) => c.segment.id === "summary:sum1");
+      expect(summary).toBeTruthy();
+      expect(summary!.segment.summary?.narrative).toContain("Gulf Coast");
+      expect(summary!.segment.summary?.period).toBe("hourly");
+    });
+
+    it("skips a summary with no successful narrative (skipped/error/empty)", async () => {
+      const db = fakeDb({
+        eventSummaries: {
+          hourly: freshSummary({ narrativeStatus: "skipped", narrative: "" }),
+          "12h": freshSummary({ id: "sum2", period: "12h", narrativeStatus: "ok", narrative: "   " }),
+        },
+      });
+      const pool = await buildCandidates(db, cfg());
+      expect(pool.some((c) => c.segment.kind === "summary")).toBe(false);
+    });
+
+    it("never re-airs a summary already shown this session", async () => {
+      const db = fakeDb({ eventSummaries: { hourly: freshSummary() } });
+      const seen = new Map([["summary:sum1", 1]]);
+      const pool = await buildCandidates(db, cfg(), seen);
+      expect(pool.some((c) => c.segment.kind === "summary")).toBe(false);
+    });
+
+    it("skips a stale round-up the director missed while off", async () => {
+      const stale = new Date(Date.now() - 4 * 60 * 60 * 1000); // 4h old hourly round-up
+      const db = fakeDb({ eventSummaries: { hourly: freshSummary({ generatedAt: stale }) } });
+      const pool = await buildCandidates(db, cfg());
+      expect(pool.some((c) => c.segment.kind === "summary")).toBe(false);
+    });
+
+    it("honours the summary kind toggle", async () => {
+      const db = fakeDb({ eventSummaries: { hourly: freshSummary() } });
+      const pool = await buildCandidates(db, cfg({ kinds: { summary: false } as any }));
+      expect(pool.some((c) => c.segment.kind === "summary")).toBe(false);
+    });
   });
 });

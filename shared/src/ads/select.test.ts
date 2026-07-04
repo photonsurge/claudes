@@ -41,6 +41,18 @@ describe("pickAdForAir", () => {
     expect(pickAdForAir(ads, () => 0.0)?.adId).toBe("a");
     expect(pickAdForAir(ads, () => 0.9)?.adId).toBe("b");
   });
+
+  it("excludes the previous airing so back-to-back breaks don't repeat", () => {
+    const ads = [ad({ adId: "a" }), ad({ adId: "b" })];
+    // rng() => 0 would normally pick "a" first, but it just aired.
+    expect(pickAdForAir(ads, () => 0, "a")?.adId).toBe("b");
+    expect(pickAdForAir(ads, () => 0, "b")?.adId).toBe("a");
+  });
+
+  it("still shows the excluded ad when it's the only active one", () => {
+    const ads = [ad({ adId: "a" }), ad({ adId: "off", status: "inactive" })];
+    expect(pickAdForAir(ads, () => 0, "a")?.adId).toBe("a");
+  });
 });
 
 describe("adMediaPath", () => {

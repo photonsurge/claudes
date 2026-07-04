@@ -35,6 +35,7 @@ import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
 import { quakeSegmentContent, alertSegmentContent } from "@photonsurge/shared/segments";
 import { mmsiCountry, countryNameFlag } from "@photonsurge/shared/tracks/flags";
+import type { SummaryPeriod } from "@photonsurge/shared/db/event-summary-model";
 import { tleGroups } from "../jobs/tracks";
 
 const make = (
@@ -170,8 +171,9 @@ export async function buildAdSegment(
   db: AppDb,
   cfg: DirectorConfig,
   prevCamera?: Segment["camera"],
+  excludeAdId?: string,
 ): Promise<Segment | null> {
-  const ad = await db.ads.pickForAir();
+  const ad = await db.ads.pickForAir(undefined, excludeAdId);
   if (!ad) return null;
   const camera = prevCamera ?? { center: GLOBAL_VIEW.center, zoom: GLOBAL_VIEW.zoom };
   return {
@@ -193,8 +195,66 @@ export async function buildAdSegment(
   };
 }
 
-export async function buildCandidates(db: AppDb, cfg: DirectorConfig): Promise<Candidate[]> {
+const SUMMARY_PERIODS: { period: SummaryPeriod; label: string; staleAfterMs: number }[] = [
+  { period: "hourly", label: "Hourly round-up", staleAfterMs: 3 * 60 * 60 * 1000 },
+  { period: "12h", label: "12-hour round-up", staleAfterMs: 36 * 60 * 60 * 1000 },
+  { period: "daily", label: "Daily round-up", staleAfterMs: 3 * 24 * 60 * 60 * 1000 },
+];
+
+/** Ticker reading speed — scrolling text reads faster than spoken narration. */
+const SUMMARY_WORDS_PER_MIN = 170;
+const SUMMARY_MAX_HOLD_MS = 60_000;
+
+/**
+ * One candidate per period whose latest round-up has a real narrative, hasn't
+ * already aired this session (`seenCounts`), and isn't stale (the director was
+ * off for a while and the round-up is no longer "current"). Unlike ads this is
+ * a normal scored candidate — it competes in the pool like any other filler,
+ * it's just guaranteed to disappear once shown instead of repeating.
+ */
+async function summaryCandidates(
+  db: AppDb,
+  cfg: DirectorConfig,
+  seenCounts?: Map<string, number>,
+): Promise<Candidate[]> {
+  const out: Candidate[] = [];
+  const now = Date.now();
+  for (const { period, label, staleAfterMs } of SUMMARY_PERIODS) {
+    let doc;
+    try {
+      doc = await db.eventSummaries.latest(period);
+    } catch {
+      continue; // not ingested yet — skip
+    }
+    if (!doc || doc.narrativeStatus !== "ok" || !doc.narrative.trim()) continue;
+    const id = `summary:${doc.id}`;
+    if (seenCounts?.get(id)) continue; // already aired this session
+    if (now - new Date(doc.generatedAt).getTime() > staleAfterMs) continue;
+
+    const words = doc.narrative.trim().split(/\s+/).length;
+    const holdMs = Math.min(
+      SUMMARY_MAX_HOLD_MS,
+      Math.max(kindHoldMs(cfg, "summary"), Math.round((words / SUMMARY_WORDS_PER_MIN) * 60_000)),
+    );
+    const seg = make("summary", doc.id, "Global Round-Up", label, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, holdMs);
+    seg.summary = {
+      id: doc.id,
+      period,
+      narrative: doc.narrative,
+      generatedAt: doc.generatedAt instanceof Date ? doc.generatedAt.toISOString() : String(doc.generatedAt),
+    };
+    out.push({ score: 8, segment: seg });
+  }
+  return out;
+}
+
+export async function buildCandidates(
+  db: AppDb,
+  cfg: DirectorConfig,
+  seenCounts?: Map<string, number>,
+): Promise<Candidate[]> {
   const pool: Candidate[] = fillerCandidates(cfg);
+  if (cfg.kinds.summary) pool.push(...(await summaryCandidates(db, cfg, seenCounts)));
 
   // Notable-tracks catalog (enabled) — matched by `${kind}:${code}` to boost the
   // genuinely interesting craft onto air and hang the on-air Track Info card off

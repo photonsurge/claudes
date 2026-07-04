@@ -16,7 +16,7 @@ import {
   type Segment,
   type SegmentKind,
 } from "@photonsurge/shared/director";
-import { selectNext, type Candidate } from "@photonsurge/shared/director-select";
+import { selectNext, selectPriority, type Candidate } from "@photonsurge/shared/director-select";
 import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "../socket";
 import { buildCandidates, buildAdSegment } from "./candidates";
@@ -43,6 +43,8 @@ interface SceneRunner {
   /** The current segment's prior-airing time + running count (operator readout). */
   lastShownAt?: number;
   timesShown?: number;
+  /** adId of the last ad aired, so the next break doesn't repeat it. */
+  lastAdId?: string;
   lastSkipNonce: number;
   lastEmit: number;
 }
@@ -145,6 +147,11 @@ async function tick(): Promise<void> {
       const expired = !r.current || now >= r.endsAt;
 
       if (expired || skipRequested) {
+        // Captured before the cut so we can record how long the outgoing
+        // segment actually held the screen (a manual skip cuts it short).
+        const prevSegment = r.current;
+        const prevStartedAt = r.startedAt;
+
         // Commercial-break cadence: when ads are enabled, force a full-frame ad
         // interstitial every Nth shot (never on the opener). Falls through to a
         // normal cut if there's no active ad to air.
@@ -153,17 +160,24 @@ async function tick(): Promise<void> {
 
         let pool: Candidate[] = [];
         let next: Segment | null = null;
-        if (adDue) next = await buildAdSegment(db, cfg, r.current?.camera);
+        if (adDue) next = await buildAdSegment(db, cfg, r.current?.camera, r.lastAdId);
         if (!next) {
-          pool = await buildCandidates(db, cfg);
           const counts = new Map<string, number>();
           for (const [id, v] of r.seen) counts.set(id, v.count);
-          next = selectNext(pool, {
-            history: r.history,
-            recentCenters: r.recentCenters,
-            counts,
-            isFirst: r.seq === 0,
-          });
+          pool = await buildCandidates(db, cfg, counts);
+          // Breaking news preempts random rotation on every cut but the very
+          // first (which always opens on the intro) — a fresh round-up or a
+          // brand-new quake/storm airs at the next opportunity, not whenever
+          // fair rotation happens to land on its kind.
+          next = r.seq > 0 ? selectPriority(pool, counts) : null;
+          if (!next) {
+            next = selectNext(pool, {
+              history: r.history,
+              recentCenters: r.recentCenters,
+              counts,
+              isFirst: r.seq === 0,
+            });
+          }
         }
         if (next) {
           // Anchor any camera motion (orbit spin OR push-in zoom drift) to the
@@ -202,7 +216,14 @@ async function tick(): Promise<void> {
 
           // Durably record an ad airing (last shown + count) for the admin readout.
           if (next.kind === "ad" && next.ad) {
+            r.lastAdId = next.ad.adId;
             await db.ads.markShown(next.ad.adId, new Date(now));
+          }
+
+          // The outgoing segment just left the screen — if it was an ad, bank
+          // the real time it aired (not the nominal hold) for the admin readout.
+          if (prevSegment?.kind === "ad" && prevSegment.ad) {
+            await db.ads.recordImpression(prevSegment.ad.adId, now - prevStartedAt);
           }
 
           emit(r, now);
