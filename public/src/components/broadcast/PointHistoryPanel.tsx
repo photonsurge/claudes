@@ -145,8 +145,10 @@ export function sparkPoints(series: SparkPoint[]): { pts: [number, number][]; yO
 const toPath = (pts: [number, number][]) =>
   `M${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" L")}`;
 
-/** One labeled sparkline row: title, latest reading, trace, caption. */
-function MiniChart({
+/** One labeled sparkline row: title, latest reading, trace, caption. Exported
+ *  so other broadcast cards (e.g. EventNearbyPanel's featured-city climate
+ *  strip) can draw the exact same chart without re-implementing it. */
+export function MiniChart({
   label,
   color,
   units,
@@ -276,6 +278,34 @@ const CLIMATE_ROWS: Array<{
 const avgOf = (d: ClimateBucketedDataset) =>
   d.buckets.reduce((a, b) => a + b.value, 0) / Math.max(1, d.buckets.length);
 
+/** Turn a point's raw climate datasets into the "PAST YEAR" chart rows (temp/
+ *  humidity/rain, fixed order, skipping any variable with too little data) —
+ *  exported so a second, smaller card (EventNearbyPanel's featured city) can
+ *  show the same past-year charts without duplicating this mapping. */
+export function buildClimateRows(datasets: ClimateBucketedDataset[]): Array<{
+  variable: ClimateBucketedDataset["variable"];
+  label: string;
+  color: string;
+  units: string;
+  points: SparkPoint[];
+  avg: number;
+  caption: string;
+}> {
+  return CLIMATE_ROWS.map((row) => {
+    const d = datasets.find((x) => x.variable === row.variable);
+    if (!d || d.buckets.length < 2) return null;
+    return {
+      variable: row.variable,
+      label: row.label,
+      color: row.color,
+      units: d.units,
+      points: d.buckets.map((b) => ({ t: bucketTime(b.key), value: b.value })),
+      avg: avgOf(d),
+      caption: row.caption(d, datasets),
+    };
+  }).filter((r): r is NonNullable<typeof r> => r != null);
+}
+
 export default function PointHistoryPanel({
   center,
   bbox = null,
@@ -312,17 +342,7 @@ export default function PointHistoryPanel({
           : "",
       }));
 
-  const climateRows = CLIMATE_ROWS.map((row) => {
-    const d = climate.datasets.find((x) => x.variable === row.variable);
-    if (!d || d.buckets.length < 2) return null;
-    return {
-      ...row,
-      units: d.units,
-      points: d.buckets.map((b) => ({ t: bucketTime(b.key), value: b.value })),
-      avg: avgOf(d),
-      caption: row.caption(d, climate.datasets),
-    };
-  }).filter((r): r is NonNullable<typeof r> => r != null);
+  const climateRows = buildClimateRows(climate.datasets);
 
   const liveSlide = usePagedSlides(liveCharts, CHARTS_PER_SLIDE);
   const climateSlide = usePagedSlides(climateRows, CHARTS_PER_SLIDE);
