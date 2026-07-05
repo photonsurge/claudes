@@ -231,6 +231,36 @@ describe("buildCandidates", () => {
     expect(tour.segment.patch.satImgFeeds).toBeUndefined();
   });
 
+  it("a kindLooks satImgFeeds snapshot wins over the satImgLook shortcut", async () => {
+    const pool = await buildCandidates(
+      fakeDb(),
+      cfg({
+        kindLooks: {
+          quake: {
+            satImgLook: "watervapour",
+            satImgFeeds: { "goes-east": { on: true, opacity: 0.5, look: "geocolor" } },
+          },
+        },
+      }),
+    );
+    const q = pool.find((c) => c.segment.id === "quake:q1")!;
+    // The full per-feed snapshot overrides the single-look shortcut for feeds it names.
+    expect(q.segment.patch.satImgFeeds?.["goes-east"]).toEqual({ on: true, opacity: 0.5, look: "geocolor" });
+  });
+
+  it("applies a kindLooks activeVariable override, but a segment's own computed variable still wins", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg({ kindLooks: { quake: { activeVariable: "humidity" } } }));
+    const q = pool.find((c) => c.segment.id === "quake:q1")!;
+    expect(q.segment.patch.activeVariable).toBe("humidity");
+    // storm always computes its own activeVariable ("gust") via PRESETS/extra — an
+    // operator override must not clobber it.
+    const storm = pool.find((c) => c.segment.kind === "storm");
+    const stormCfg = cfg({ kindLooks: { storm: { activeVariable: "humidity" } } });
+    const stormPool = await buildCandidates(fakeDb(), stormCfg);
+    const s = stormPool.find((c) => c.segment.id === storm?.segment.id);
+    expect(s?.segment.patch.activeVariable).toBe("gust");
+  });
+
   it("derives a storm centroid from the alert polygon", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     const storm = pool.find((c) => c.segment.kind === "storm");

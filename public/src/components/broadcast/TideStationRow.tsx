@@ -2,7 +2,7 @@
 
 /**
  * A dedicated row of individual tide-gauge boxes, shown along the bottom-centre
- * of the screen (stacked above MonitorCluster/SeismicStationRow) whenever more
+ * of the screen (stacked above TsunamiMonitor) whenever more
  * than one real coastal sea-level station is cached near what's on air —
  * mirrors SeismicStationRow, swapping the ground-motion trace for the filled
  * water-level wave.

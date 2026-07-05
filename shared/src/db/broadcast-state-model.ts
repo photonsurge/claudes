@@ -138,6 +138,7 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
       volume: { type: Number, required: true, default: 0.7 },
       muted: { type: Boolean, required: true, default: false },
     },
+    startAt: { type: Number, required: false, default: null },
   },
   mongoTimestamps,
 );

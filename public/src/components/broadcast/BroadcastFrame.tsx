@@ -3,7 +3,7 @@
 /**
  * The on-air chrome overlaying the globe/map: top + bottom crawls, the brand
  * block + LIVE badge, a top-centre live-alert panel + intensity meter, a
- * top-right world-watch summary and a bottom-right global monitor.
+ * top-right world-watch summary and bottom seismic/tsunami global monitors.
  *
  * Built for VIDEO, not the responsive web: the furniture is authored once at a
  * 1920×1080 design stage and scaled as a whole to the output resolution (see
@@ -37,7 +37,7 @@ import WorldWatchPanel from "./WorldWatchPanel";
 import WorldSituationPanel from "./WorldSituationPanel";
 import KpIndexPanel from "./KpIndexPanel";
 import SpaceWeatherMeter from "./SpaceWeatherMeter";
-import MonitorCluster from "./MonitorCluster";
+import { SeismicMonitor, TsunamiMonitor } from "./MonitorCluster";
 import SeismicStationRow from "./SeismicStationRow";
 import TideStationRow from "./TideStationRow";
 import PointHistoryPanel from "./PointHistoryPanel";
@@ -306,10 +306,12 @@ export default function BroadcastFrame({
           <UpNextPanel items={upNext} />
         </div>
 
-        {/* Bottom-centre column: the global monitor (seismic + tsunami gauge)
-            hugs the bottom edge; whenever several nearby stations are cached,
-            the dedicated station rows stack above it — their own boxes, not
-            squeezed into the small cluster card. */}
+        {/* Bottom-centre row: seismic monitor column to the left, tsunami gauge
+            column to the right — both anchored to the same bottom edge
+            (alignItems: flex-end + column-reverse) so either can grow upward
+            independently without disturbing the other's baseline. The gauges
+            row (NEARBY TSUNAMI GAUGES) sits closest to the bottom edge in its
+            column, with the GLOBAL MONITOR tsunami card stacked above it. */}
         <div
           style={{
             position: "absolute",
@@ -317,21 +319,26 @@ export default function BroadcastFrame({
             left: "50%",
             transform: "translateX(-50%)",
             display: "flex",
-            flexDirection: "column-reverse",
-            alignItems: "center",
-            gap: 14,
+            flexDirection: "row",
+            alignItems: "flex-end",
+            gap: 24,
           }}
         >
-          <MonitorCluster
-            quakes={quakes}
-            seismoStations={seismoStations}
-            seismoActive={seismoActive}
-            onAirSegment={onAirSegment}
-            regionCenter={state.camera.center}
-            theme={theme}
-          />
-          <SeismicStationRow stations={seismoStations} onAirSegment={onAirSegment} theme={theme} />
-          <TideStationRow onAirSegment={onAirSegment} regionCenter={state.camera.center} theme={theme} />
+          <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 14 }}>
+            <SeismicMonitor
+              quakes={quakes}
+              seismoStations={seismoStations}
+              seismoActive={seismoActive}
+              onAirSegment={onAirSegment}
+              regionCenter={state.camera.center}
+              theme={theme}
+            />
+            <SeismicStationRow stations={seismoStations} onAirSegment={onAirSegment} theme={theme} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 14 }}>
+            <TideStationRow onAirSegment={onAirSegment} regionCenter={state.camera.center} theme={theme} />
+            <TsunamiMonitor onAirSegment={onAirSegment} regionCenter={state.camera.center} theme={theme} />
+          </div>
         </div>
 
         <Ticker title={bottomTickerTitle} items={bottomTickerItems} edge="bottom" height={TICKER_H} theme={theme} />

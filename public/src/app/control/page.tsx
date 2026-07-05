@@ -293,7 +293,13 @@ export default function ControlPage() {
             }}
           />
         </div>
-        <DirectorPanel sceneId={sceneId} config={directorConfig} update={updateDirectorConfig} liveState={state} />
+        <DirectorPanel
+          sceneId={sceneId}
+          config={directorConfig}
+          update={updateDirectorConfig}
+          liveState={state}
+          applyLive={apply}
+        />
         <ControlPanel
           state={state}
           manifest={manifest}

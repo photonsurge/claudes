@@ -310,6 +310,7 @@ export const LAYERS_OFF: Partial<ControlState> = {
   showWind: false,
   showPressure: false,
   showContours: false,
+  showElevation: false,
   showCities: false,
   showRadar: false,
   showCables: false,
@@ -327,6 +328,8 @@ export const LAYERS_OFF: Partial<ControlState> = {
   showOrbits: false,
   showTrails: false,
   showTrackLabels: false,
+  showFires: false,
+  showMagneticField: false,
 };
 
 /**

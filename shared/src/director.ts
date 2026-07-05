@@ -21,7 +21,7 @@ import type { AdMediaType } from "./ads/types";
 import type { SummaryPeriod } from "./db/event-summary-model";
 import type { SeverityRank } from "./db/alert-model";
 import { DEFAULT_DIRECTOR_COUNTRIES, sanitizeDirectorCountries } from "./director-countries";
-import { isSatImgLook } from "./satimg/types";
+import { isSatImgLook, SATIMG_FEEDS, type SatImgFeedState } from "./satimg/types";
 import { QUAKE_MAGNITUDE_BANDS, quakeMagnitudeClass, type QuakeMagnitudeClass } from "./seismic";
 
 /** Socket event: worker → every browser. The current on-air segment + queue. */
@@ -369,6 +369,10 @@ export interface KindLook {
   showSatImg?: boolean | null;
   /** Composite look every disc shows for this shot type (SATIMG_LOOKS id; null = inherit). */
   satImgLook?: string | null;
+  /** The scalar weather field shown for this shot type (null/undefined = inherit live). */
+  activeVariable?: string | null;
+  /** Per-feed satellite state (on/opacity/composite look), keyed by feed id (null/undefined = inherit live). */
+  satImgFeeds?: Partial<Record<string, Partial<SatImgFeedState>>> | null;
 }
 
 /**
@@ -514,6 +518,27 @@ function mergeBoolMapMap(
 }
 
 const WIND_KEYS = ["numParticles", "speedFactor", "maxAge", "width", "opacity", "color"] as const;
+const SATIMG_FEED_IDS = new Set(SATIMG_FEEDS.map((f) => f.id));
+
+/**
+ * Sanitize an untrusted satImgFeeds patch — unknown feed ids dropped, each
+ * feed's on/opacity/look validated field-by-field. Returns undefined for a
+ * missing/invalid patch (clears back to "inherit live").
+ */
+function sanitizeSatImgFeedsPatch(raw: unknown): Partial<Record<string, Partial<SatImgFeedState>>> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Partial<Record<string, Partial<SatImgFeedState>>> = {};
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!SATIMG_FEED_IDS.has(id) || !v || typeof v !== "object") continue;
+    const fv = v as Record<string, unknown>;
+    const entry: Partial<SatImgFeedState> = {};
+    if (typeof fv.on === "boolean") entry.on = fv.on;
+    if (typeof fv.opacity === "number" && Number.isFinite(fv.opacity)) entry.opacity = fv.opacity;
+    if (typeof fv.look === "string") entry.look = fv.look;
+    out[id] = entry;
+  }
+  return out;
+}
 
 /**
  * Merge a per-kind look map (untrusted) onto a base — unknown kinds dropped,
@@ -565,6 +590,12 @@ function mergeKindLooks(
       }
       if ("satImgLook" in inner) {
         cur.satImgLook = isSatImgLook(inner.satImgLook) ? (inner.satImgLook as string) : undefined;
+      }
+      if ("activeVariable" in inner) {
+        cur.activeVariable = typeof inner.activeVariable === "string" ? inner.activeVariable : undefined;
+      }
+      if ("satImgFeeds" in inner) {
+        cur.satImgFeeds = sanitizeSatImgFeedsPatch(inner.satImgFeeds);
       }
       out[k] = cur;
     }

@@ -1,15 +1,14 @@
 "use client";
 
 /**
- * Bottom-right "GLOBAL MONITOR": a scrolling seismograph + a real tide gauge,
- * both keyed to WHAT'S ON AIR. The seismo reflects the quakes relevant to the
- * focused event/region (its magnitude drives the amplitude + the M-tag); the
- * tsunami gauge plots the genuine recent water-level series of a coastal
+ * Two "GLOBAL MONITOR" cards, keyed to WHAT'S ON AIR: `SeismicMonitor` (bottom
+ * -left) draws a scrolling seismograph for the quakes relevant to the focused
+ * event/region (its magnitude drives the amplitude + the M-tag); `TsunamiMonitor`
+ * (bottom-centre) plots the genuine recent water-level series of a coastal
  * station near the shot (worker-cached IOC data), cycling through whichever
- * nearby gauges are cached — same pattern as the seismic feed. Each readout
- * HIDES when it isn't relevant — no nearby quake, or no coastal gauge in
- * range — and the whole card disappears when neither applies, so it never
- * shows ambient filler.
+ * nearby gauges are cached — same pattern as the seismic feed. Each card HIDES
+ * when it isn't relevant — no nearby quake, or no coastal gauge in range — so
+ * neither ever shows ambient filler.
  */
 import type { Segment } from "@photonsurge/shared/director";
 import type { TideSample } from "@photonsurge/shared/tides/types";
@@ -182,7 +181,33 @@ function Panel({
 
 const W = 300;
 
-export default function MonitorCluster({
+function CardShell({ theme, children }: { theme: BroadcastTheme; children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        width: 210,
+        display: "flex",
+        flexDirection: "column",
+        gap: 9,
+        padding: "10px 12px",
+        background: theme.panelBg,
+        border: theme.panelBorder,
+        borderRadius: 12,
+        boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        pointerEvents: "none",
+        fontFamily: "system-ui, sans-serif",
+      }}
+    >
+      <style>{"@keyframes bcast-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
+      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.4, color: "#dfe7f5" }}>GLOBAL MONITOR</div>
+      {children}
+    </div>
+  );
+}
+
+export function SeismicMonitor({
   quakes,
   seismoStations = [],
   seismoActive = null,
@@ -204,10 +229,6 @@ export default function MonitorCluster({
   const focus: [number, number] | null = onAirSegment?.camera.center ?? regionCenter ?? null;
   const isQuakeSeg = onAirSegment?.kind === "quake";
 
-  // Always call the hook (rules of hooks); stations is [] until a gauge is near.
-  const tide = useTideGauge(focus, true);
-
-  // ── Seismic relevance ──────────────────────────────────────────────────
   // Focused shot: only quakes near the focus count. Wide/unfocused shot: keep
   // the whole-planet behaviour (global strongest quake) so the monitor still
   // reads as an ambient global seismograph when nothing specific is on air.
@@ -235,112 +256,106 @@ export default function MonitorCluster({
         }`
       : undefined;
 
-  // ── Tsunami relevance ──────────────────────────────────────────────────
+  if (!showSeismic) return null;
+
+  return (
+    <CardShell theme={theme}>
+      <Panel
+        title="SEISMIC MONITOR"
+        icon={<HeartbeatIcon active={!!realSeismoSamples} />}
+        tag={maxMag > 0 ? `M${maxMag.toFixed(1)}` : "PLOT"}
+        caption={stationCaption ?? (seismicPlace ? truncate(seismicPlace, 34) : undefined)}
+        theme={theme}
+      >
+        {realSeismoSamples ? (
+          <svg
+            width="200%"
+            height="100%"
+            viewBox={`0 0 ${W * 2} 42`}
+            preserveAspectRatio="none"
+            style={{ position: "absolute", inset: 0, animation: "bcast-trace 9s linear infinite" }}
+          >
+            <path d={realLinePath(realSeismoSamples, W, 42)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
+            <path
+              d={realLinePath(realSeismoSamples, W, 42)}
+              transform={`translate(${W},0)`}
+              fill="none"
+              stroke="#43d9ff"
+              strokeWidth="1.2"
+            />
+          </svg>
+        ) : (
+          <svg
+            width="200%"
+            height="100%"
+            viewBox={`0 0 ${W * 2} 42`}
+            preserveAspectRatio="none"
+            style={{ position: "absolute", inset: 0, animation: "bcast-trace 6s linear infinite" }}
+          >
+            <path d={seismoPath(W, 42, amp)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
+            <path d={seismoPath(W, 42, amp)} transform={`translate(${W},0)`} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
+          </svg>
+        )}
+      </Panel>
+    </CardShell>
+  );
+}
+
+export function TsunamiMonitor({
+  onAirSegment = null,
+  regionCenter,
+  theme = DEFAULT_THEME,
+}: {
+  /** The on-air director segment — drives what's "relevant". */
+  onAirSegment?: Segment | null;
+  /** Current camera centre [lng,lat] — the fallback focus for wide shots. */
+  regionCenter?: [number, number];
+  theme?: BroadcastTheme;
+}) {
+  const focus: [number, number] | null = onAirSegment?.camera.center ?? regionCenter ?? null;
+  const tide = useTideGauge(focus, true);
+
   // A coastal gauge being in range IS the relevance signal — draw its real
-  // series. Hide entirely when nothing's cached near the shot. The caller
-  // (this hook) cycles `tide.active` through `tide.stations` on a timer, same
-  // as the seismic feed, so a stretch of coast shows more than one gauge.
+  // series. Hide entirely when nothing's cached near the shot. The hook
+  // cycles `tide.active` through `tide.stations` on a timer, same as the
+  // seismic feed, so a stretch of coast shows more than one gauge.
   const tideActive = tide.active;
   const samples = tideActive?.samples?.length ? tideActive.samples : null;
-  const showTsunami = !!samples;
   const tideIdx = tideActive ? tide.stations.indexOf(tideActive) : -1;
   const tideTag =
     tideActive && tideIdx >= 0
       ? `${truncate(tideActive.name, 14)}${tide.stations.length > 1 ? ` · ${tideIdx + 1}/${tide.stations.length}` : ""}`
       : "SEA LEVEL";
 
-  if (!showSeismic && !showTsunami) return null;
+  if (!samples) return null;
 
-  const tr = samples ? trend(samples) : null;
+  const tr = trend(samples);
 
   return (
-    <div
-      style={{
-        width: 210,
-        display: "flex",
-        flexDirection: "column",
-        gap: 9,
-        padding: "10px 12px",
-        background: theme.panelBg,
-        border: theme.panelBorder,
-        borderRadius: 12,
-        boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-      }}
-    >
-      <style>{"@keyframes bcast-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
-      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.4, color: "#dfe7f5" }}>GLOBAL MONITOR</div>
-
-      {showSeismic ? (
-        <Panel
-          title="SEISMIC MONITOR"
-          icon={<HeartbeatIcon active={!!realSeismoSamples} />}
-          tag={maxMag > 0 ? `M${maxMag.toFixed(1)}` : "PLOT"}
-          caption={stationCaption ?? (seismicPlace ? truncate(seismicPlace, 34) : undefined)}
-          theme={theme}
+    <CardShell theme={theme}>
+      <Panel
+        title="TSUNAMI GAUGE"
+        icon={<WaveIcon active />}
+        tag={tideTag}
+        caption={
+          <span>
+            {tideActive?.latest?.toFixed(2)} m <span style={{ color: tr.color }}>{tr.arrow}</span>
+          </span>
+        }
+        theme={theme}
+      >
+        <svg
+          width="200%"
+          height="100%"
+          viewBox={`0 0 ${W * 2} 42`}
+          preserveAspectRatio="none"
+          style={{ position: "absolute", inset: 0, animation: "bcast-trace 11s linear infinite" }}
         >
-          {realSeismoSamples ? (
-            <svg
-              width="200%"
-              height="100%"
-              viewBox={`0 0 ${W * 2} 42`}
-              preserveAspectRatio="none"
-              style={{ position: "absolute", inset: 0, animation: "bcast-trace 9s linear infinite" }}
-            >
-              <path d={realLinePath(realSeismoSamples, W, 42)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
-              <path
-                d={realLinePath(realSeismoSamples, W, 42)}
-                transform={`translate(${W},0)`}
-                fill="none"
-                stroke="#43d9ff"
-                strokeWidth="1.2"
-              />
-            </svg>
-          ) : (
-            <svg
-              width="200%"
-              height="100%"
-              viewBox={`0 0 ${W * 2} 42`}
-              preserveAspectRatio="none"
-              style={{ position: "absolute", inset: 0, animation: "bcast-trace 6s linear infinite" }}
-            >
-              <path d={seismoPath(W, 42, amp)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
-              <path d={seismoPath(W, 42, amp)} transform={`translate(${W},0)`} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
-            </svg>
-          )}
-        </Panel>
-      ) : null}
-
-      {showTsunami && samples ? (
-        <Panel
-          title="TSUNAMI GAUGE"
-          icon={<WaveIcon active={showTsunami} />}
-          tag={tideTag}
-          caption={
-            tr ? (
-              <span>
-                {tideActive?.latest?.toFixed(2)} m <span style={{ color: tr.color }}>{tr.arrow}</span>
-              </span>
-            ) : undefined
-          }
-          theme={theme}
-        >
-          <svg
-            width="200%"
-            height="100%"
-            viewBox={`0 0 ${W * 2} 42`}
-            preserveAspectRatio="none"
-            style={{ position: "absolute", inset: 0, animation: "bcast-trace 11s linear infinite" }}
-          >
-            <path d={realWavePath(samples, W, 42)} fill="rgba(60,150,230,0.5)" />
-            <path d={realWavePath(samples, W, 42)} transform={`translate(${W},0)`} fill="rgba(60,150,230,0.5)" />
-          </svg>
-        </Panel>
-      ) : null}
-    </div>
+          <path d={realWavePath(samples, W, 42)} fill="rgba(60,150,230,0.5)" />
+          <path d={realWavePath(samples, W, 42)} transform={`translate(${W},0)`} fill="rgba(60,150,230,0.5)" />
+        </svg>
+      </Panel>
+    </CardShell>
   );
 }
 

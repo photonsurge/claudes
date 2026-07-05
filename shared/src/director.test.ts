@@ -257,6 +257,40 @@ describe("mergeDirectorConfig", () => {
     expect(cleared.kindLooks.storm?.satImgLook).toBe("watervapour");
   });
 
+  it("merges a kindLooks activeVariable override, ignoring non-strings, and clears with null", () => {
+    const merged = mergeDirectorConfig(base, {
+      kindLooks: { storm: { activeVariable: "gust" } },
+    });
+    expect(merged.kindLooks.storm?.activeVariable).toBe("gust");
+
+    const rejected = mergeDirectorConfig(merged, { kindLooks: { storm: { activeVariable: 7 as never } } });
+    expect(rejected.kindLooks.storm?.activeVariable).toBeUndefined();
+
+    const cleared = mergeDirectorConfig(merged, { kindLooks: { storm: { activeVariable: null } } });
+    expect(cleared.kindLooks.storm?.activeVariable).toBeUndefined();
+  });
+
+  it("merges a kindLooks satImgFeeds patch, dropping unknown feed ids and invalid fields", () => {
+    const merged = mergeDirectorConfig(base, {
+      kindLooks: {
+        storm: {
+          satImgFeeds: {
+            "goes-east": { on: true, opacity: 0.6, look: "geocolor" },
+            bogus: { on: true, opacity: 1 },
+            himawari: { opacity: "x" as any, on: "y" as any },
+          },
+        },
+      } as any,
+    });
+    expect(merged.kindLooks.storm?.satImgFeeds).toEqual({
+      "goes-east": { on: true, opacity: 0.6, look: "geocolor" },
+      himawari: {},
+    });
+
+    const cleared = mergeDirectorConfig(merged, { kindLooks: { storm: { satImgFeeds: null } } });
+    expect(cleared.kindLooks.storm?.satImgFeeds).toBeUndefined();
+  });
+
   it("merges kindSlides per kind, sanitizing each slide's look/overlays and dropping malformed entries", () => {
     const merged = mergeDirectorConfig(base, {
       kindSlides: {

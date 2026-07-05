@@ -4,7 +4,7 @@
  * A dedicated row of individual station boxes, shown along the bottom-centre
  * of the screen (stacked above the GLOBAL MONITOR cluster) whenever a focused
  * quake event has more than one real live seismograph station nearby.
- * Separate from MonitorCluster's compact SEISMIC MONITOR panel (which keeps
+ * Separate from SeismicMonitor's compact SEISMIC MONITOR panel (which keeps
  * showing a single cycling trace for the ambient/wide-shot case) — an event
  * with several nearby stations gets each one as its own visible box instead
  * of squeezing them into one small card.

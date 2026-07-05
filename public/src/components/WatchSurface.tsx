@@ -30,6 +30,7 @@ import BroadcastBed from "./audio/BroadcastBed";
 import BroadcastFrame from "./broadcast/BroadcastFrame";
 import AdBreak from "./broadcast/AdBreak";
 import LoadingScreen from "./broadcast/LoadingScreen";
+import StartCountdown from "./broadcast/StartCountdown";
 import { getBroadcastTheme } from "./broadcast/config";
 
 interface WatchSurfaceProps {
@@ -44,6 +45,8 @@ interface WatchSurfaceProps {
   onAirSegment?: Segment | null;
   /** Director's "coming up" preview — drives the chrome's UP NEXT hint. */
   upNext?: { kind: SegmentKind; title: string }[];
+  /** Name of the on-air segment kind's active saved "slide" look, if any. */
+  slideName?: string;
 }
 
 export default function WatchSurface({
@@ -54,6 +57,7 @@ export default function WatchSurface({
   pulseAt,
   onAirSegment,
   upNext = [],
+  slideName,
 }: WatchSurfaceProps) {
   // Latches true once every weather variable's texture at the current fhr has
   // decoded (see Globe's own "keep every map in RAM" preload). Gates the cold-
@@ -76,7 +80,7 @@ export default function WatchSurface({
   });
   const alerts = useAlertFeatures(state.showAlerts && ready, state.alertSeverityMin, state.alertHazardsOff);
   const quakes = useQuakes(state.showSeismic && ready, state.seismicMinMag);
-  // Same focus point MonitorCluster uses for the fake-vs-real trace decision:
+  // Same focus point SeismicMonitor uses for the fake-vs-real trace decision:
   // the on-air segment's location if there is one, else the current camera.
   const seismoFocus: [number, number] | null = onAirSegment?.camera.center ?? state.camera.center ?? null;
   const { stations: seismoStations, active: seismoActive } = useSeismoGauge(seismoFocus, state.showSeismic && ready);
@@ -184,6 +188,24 @@ export default function WatchSurface({
           })()}
         </div>
       ) : null}
+      {/* Active slide name — only on the clean surface, mirroring the bottom-left
+          attribution label but in the opposite corner. */}
+      {!state.showBroadcastChrome && slideName ? (
+        <div
+          style={{
+            position: "absolute",
+            right: 16,
+            bottom: 16,
+            color: "rgba(255,255,255,0.85)",
+            fontFamily: "system-ui, sans-serif",
+            fontSize: 13,
+            textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+            pointerEvents: "none",
+          }}
+        >
+          {slideName}
+        </div>
+      ) : null}
 
       {/* Full-frame ad interstitial — covers the globe + chrome when the director
           cuts to an ad. Renders nothing for every other segment kind. */}
@@ -197,6 +219,11 @@ export default function WatchSurface({
       {/* Cold-start cover: hides the globe until its textures are ready (see
           `ready` above), then fades. Never reappears once dismissed. */}
       <LoadingScreen visible={!ready} theme={theme} />
+
+      {/* Pre-broadcast countdown + credits — operator-set via DirectorPanel
+          (state.startAt). Sits above LoadingScreen so the reveal is always the
+          countdown finishing, not the globe popping in behind it. */}
+      <StartCountdown startAt={state.startAt} theme={theme} />
     </main>
   );
 }

@@ -4,31 +4,32 @@
  * Operator controls for the per-scene auto-director. Off/Auto toggle, per-kind
  * (and per-event-level) hold times, which kinds are eligible, event thresholds,
  * a Skip button, which basemap "map types" each touring kind (intro/ocean/quake)
- * cycles through, per-kind overlay on/off overrides, and a saved-"slide"
- * library per kind (save/load/update/delete a named snapshot of the live
- * map) — plus a live "on air / up next" readout fed by the worker's
- * director:state. `config`/`update` are lifted
+ * cycles through, and a saved-"slide" library per kind (save/load/update/
+ * delete a named snapshot of the live map's basemap, satellite, wind, and
+ * overlay toggles) — plus a live "on air / up next" readout fed by the
+ * worker's director:state. `config`/`update` are lifted
  * to the parent (/control) so the live preview shares the exact same config the
  * operator is editing here; edits PATCH the scene's director config and the
  * worker picks them up within ~1s.
+ *
+ * While auto is actually running, the setup form below the on-air readout is
+ * replaced by a "Recently aired" session log (client-only, resets on reload) —
+ * the operator glances at what's played rather than re-fiddling the setup form
+ * mid-broadcast. "⚙ Settings" swaps back to the full form without leaving auto.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { COUNTRY_SHOTS } from "@photonsurge/shared/director-countries";
 import {
   INTRO_MAP_TYPES,
   OCEAN_MAP_TYPES,
   QUAKE_MAP_TYPES,
-  PRESETS,
   OVERLAY_KEYS,
   type GlobalMapType,
 } from "@photonsurge/shared/director-rois";
 import { SEGMENT_KINDS, type DirectorConfig, type KindSlide, type SegmentKind } from "@photonsurge/shared/director";
-import { BASEMAPS } from "@photonsurge/shared/basemaps";
-import { SATIMG_LOOKS } from "@photonsurge/shared/satimg/types";
-import { DEFAULT_WIND_SETTINGS, type ControlState } from "@photonsurge/shared/control";
+import { mergeControlState, type ControlState } from "@photonsurge/shared/control";
 import { useDirector } from "../lib/director";
 import DirectorHolds, { KIND_LABEL } from "./DirectorHolds";
-import WindControls from "./WindControls";
 
 const box: React.CSSProperties = {
   background: "#0a0e16",
@@ -52,32 +53,92 @@ function enabledMapTypeIds(config: DirectorConfig, kind: SegmentKind, catalog: G
   return ids && ids.length ? ids : catalog.map((t) => t.id);
 }
 
-/** The overlay-toggle keys a kind's preset actually turns on — the only ones worth exposing. */
-function overlayTogglesFor(kind: SegmentKind): string[] {
-  const preset = PRESETS[kind] as Record<string, unknown>;
-  return OVERLAY_KEYS.filter((k) => preset[k] === true);
-}
-
-/** "showTrackLabels" -> "Track labels". */
-function humanizeOverlayKey(key: string): string {
-  return key.replace(/^show/, "").replace(/([A-Z])/g, " $1").trim();
-}
-
-/** Snapshot the live operator map into a slide's look + overlay toggles for `kind`. */
-function slideFromLive(kind: SegmentKind, live: ControlState): Pick<KindSlide, "look" | "overlays"> {
+/**
+ * Snapshot the live operator map into a slide's look + every toggleable
+ * overlay (see OVERLAY_KEYS) — a slide should reproduce the whole look
+ * exactly, not just the layers this kind's preset happens to default on.
+ */
+function slideFromLive(live: ControlState): Pick<KindSlide, "look" | "overlays"> {
   const overlays: Partial<Record<string, boolean>> = {};
-  for (const key of overlayTogglesFor(kind)) {
+  for (const key of OVERLAY_KEYS) {
     overlays[key] = Boolean((live as unknown as Record<string, boolean>)[key]);
   }
+  const satImgFeeds: Record<string, ControlState["satImgFeeds"][string]> = {};
+  for (const [id, feed] of Object.entries(live.satImgFeeds ?? {})) satImgFeeds[id] = { ...feed };
   return {
     look: {
       basemap: live.basemap,
       windMode: live.windMode,
       wind: { ...live.wind },
       showSatImg: live.showSatImg,
+      activeVariable: live.activeVariable,
+      satImgFeeds,
     },
     overlays,
   };
+}
+
+/** The live-map patch a slide would apply — the inverse of slideFromLive. */
+function controlPatchFromSlide(slide: KindSlide, live: ControlState): Partial<ControlState> {
+  const patch: Partial<ControlState> = { ...slide.overlays };
+  if (slide.look.basemap) patch.basemap = slide.look.basemap;
+  if (slide.look.windMode) patch.windMode = slide.look.windMode;
+  if (slide.look.wind) patch.wind = { ...live.wind, ...slide.look.wind };
+  if (typeof slide.look.showSatImg === "boolean") patch.showSatImg = slide.look.showSatImg;
+  if (slide.look.activeVariable) patch.activeVariable = slide.look.activeVariable;
+  if (slide.look.satImgFeeds) patch.satImgFeeds = slide.look.satImgFeeds as ControlState["satImgFeeds"];
+  return patch;
+}
+
+function shallowEqual(a: Record<string, unknown> | undefined | null, b: Record<string, unknown> | undefined | null): boolean {
+  const ao = a ?? {};
+  const bo = b ?? {};
+  const keys = new Set([...Object.keys(ao), ...Object.keys(bo)]);
+  for (const k of keys) {
+    if ((ao as Record<string, unknown>)[k] !== (bo as Record<string, unknown>)[k]) return false;
+  }
+  return true;
+}
+
+/** Per-feed satImgFeeds equality — each feed compared field-by-field, not by reference. */
+function satImgFeedsEqual(
+  a: Partial<Record<string, unknown>> | null | undefined,
+  b: Partial<Record<string, unknown>> | null | undefined,
+): boolean {
+  const ao = a ?? {};
+  const bo = b ?? {};
+  const ids = new Set([...Object.keys(ao), ...Object.keys(bo)]);
+  for (const id of ids) {
+    if (!shallowEqual(ao[id] as Record<string, unknown>, bo[id] as Record<string, unknown>)) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether a slide's saved look+overlays exactly match the current live
+ * snapshot — used so the "active" highlight reflects reality (settings match)
+ * rather than a stale remembered id (e.g. after loading a different kind's
+ * slide changed the one shared live map, or after hand-tweaking the globe).
+ */
+function slideIsLive(slide: KindSlide, live: ControlState): boolean {
+  const current = slideFromLive(live);
+  return (
+    (slide.look.basemap ?? null) === (current.look.basemap ?? null) &&
+    (slide.look.windMode ?? null) === (current.look.windMode ?? null) &&
+    (slide.look.showSatImg ?? null) === (current.look.showSatImg ?? null) &&
+    (slide.look.activeVariable ?? null) === (current.look.activeVariable ?? null) &&
+    shallowEqual(slide.look.wind, current.look.wind) &&
+    satImgFeedsEqual(slide.look.satImgFeeds, current.look.satImgFeeds) &&
+    shallowEqual(slide.overlays, current.overlays)
+  );
+}
+
+/** Compact "how long ago" for the session log (seconds/minutes only — this is a
+ *  recent-history glance, not a durable timestamped record). */
+function agoLabel(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s ago`;
+  return `${Math.round(s / 60)}m ago`;
 }
 
 export default function DirectorPanel({
@@ -85,14 +146,24 @@ export default function DirectorPanel({
   config,
   update,
   liveState,
+  applyLive,
 }: {
   sceneId: string;
   config: DirectorConfig;
   update: (patch: Partial<DirectorConfig>) => void;
   liveState: ControlState;
+  applyLive: (next: ControlState) => void;
 }) {
   const live = useDirector(sceneId);
   const auto = config.mode === "auto";
+
+  // Brief "Updated ✓" flash per kind after hitting the slide Update button —
+  // otherwise the action is silent and looks like it did nothing.
+  const [justUpdated, setJustUpdated] = useState<Partial<Record<SegmentKind, boolean>>>({});
+  const flashUpdated = (kind: SegmentKind) => {
+    setJustUpdated((prev) => ({ ...prev, [kind]: true }));
+    setTimeout(() => setJustUpdated((prev) => ({ ...prev, [kind]: false })), 1500);
+  };
 
   // Live countdown for the on-air readout.
   const [now, setNow] = useState(() => Date.now());
@@ -101,6 +172,34 @@ export default function DirectorPanel({
     return () => clearInterval(t);
   }, []);
   const remaining = live?.endsAt ? Math.max(0, Math.round((live.endsAt - now) / 1000)) : 0;
+
+  // Session log: every kind/title that's aired, newest first — a lightweight,
+  // client-only history (resets on page reload, this isn't a durable record).
+  // While the show is actually playing the operator mostly wants to glance at
+  // what's already run + what's up next, not re-fiddle the setup form, so this
+  // replaces the full config form below (toggle back with "⚙ Settings").
+  const [history, setHistory] = useState<{ kind: SegmentKind; title: string; ts: number }[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const lastLoggedRef = useRef<{ seq: number; kind: SegmentKind; title: string } | null>(null);
+  useEffect(() => {
+    if (!live?.segment) return;
+    const prior = lastLoggedRef.current;
+    if (prior && prior.seq !== live.seq) {
+      setHistory((h) => [{ kind: prior.kind, title: prior.title, ts: Date.now() }, ...h].slice(0, 10));
+    }
+    lastLoggedRef.current = { seq: live.seq, kind: live.segment.kind, title: live.segment.title };
+  }, [live?.seq, live?.segment]);
+  // Auto mode just switched on/off — reset the log-vs-settings toggle so it
+  // doesn't come back up already showing settings from a prior session.
+  useEffect(() => {
+    setShowSettings(false);
+  }, [auto]);
+
+  // Pre-broadcast countdown (ControlState.startAt) — a "starting in…" screen
+  // on /watch, independent of auto-director mode.
+  const [countdownSecs, setCountdownSecs] = useState(30);
+  const countdownRemaining = liveState.startAt ? Math.max(0, Math.ceil((liveState.startAt - now) / 1000)) : 0;
+  const countdownActive = liveState.startAt != null && countdownRemaining > 0;
 
   return (
     <section className="director-panel" style={{ marginBottom: 18, borderBottom: "1px solid #1b2030", paddingBottom: 16 }}>
@@ -138,6 +237,51 @@ export default function DirectorPanel({
         >
           Skip ⏭
         </button>
+        {auto ? (
+          <button
+            onClick={() => setShowSettings((s) => !s)}
+            style={{ ...box, cursor: "pointer" }}
+            title={showSettings ? "Back to the session log" : "Edit setup while the show is running"}
+          >
+            {showSettings ? "📜 Log" : "⚙ Settings"}
+          </button>
+        ) : null}
+      </div>
+
+      {/* Pre-broadcast countdown */}
+      <div style={{ ...box, marginBottom: 12, padding: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, opacity: 0.7, marginBottom: 8 }}>
+          PRE-BROADCAST COUNTDOWN
+        </div>
+        {countdownActive ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 20, fontWeight: 800 }}>{countdownRemaining}s</span>
+            <button
+              onClick={() => applyLive(mergeControlState(liveState, { startAt: null }))}
+              style={{ ...box, cursor: "pointer" }}
+            >
+              Go live now
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="number"
+              min={5}
+              max={600}
+              value={countdownSecs}
+              onChange={(e) => setCountdownSecs(Math.max(5, Number(e.target.value) || 30))}
+              style={{ ...box, width: 64 }}
+            />
+            <span style={{ fontSize: 12, opacity: 0.7 }}>seconds</span>
+            <button
+              onClick={() => applyLive(mergeControlState(liveState, { startAt: Date.now() + countdownSecs * 1000 }))}
+              style={{ ...box, cursor: "pointer", fontWeight: 700, flex: 1, background: "#1f7a3f", borderColor: "#2bbe63" }}
+            >
+              Start countdown ▶
+            </button>
+          </div>
+        )}
       </div>
 
       {/* On-air readout */}
@@ -160,6 +304,32 @@ export default function DirectorPanel({
         <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 12 }}>Starting up…</div>
       ) : null}
 
+      {/* While auto is actually running, the operator mostly wants a glance at
+          what's aired + what's next, not the full setup form — that's one
+          "⚙ Settings" click away. Off (or "⚙ Settings" clicked), show the form. */}
+      {auto && !showSettings ? (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>Recently aired:</div>
+          {history.length ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              {history.map((h, i) => (
+                <div
+                  key={i}
+                  style={{ fontSize: 12, opacity: 0.75, display: "flex", justifyContent: "space-between", gap: 8 }}
+                >
+                  <span>
+                    {KIND_LABEL[h.kind]} · {h.title}
+                  </span>
+                  <span style={{ opacity: 0.6, whiteSpace: "nowrap" }}>{agoLabel(now - h.ts)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, opacity: 0.5 }}>Nothing aired yet this session.</div>
+          )}
+        </div>
+      ) : (
+        <>
       {/* Transition time — the deliberate, set camera move between shots */}
       <label style={{ display: "block", fontSize: 12, opacity: 0.8, marginBottom: 12 }}>
         Transition: <strong style={{ fontSize: 15 }}>{config.transitionSeconds}s</strong>
@@ -252,219 +422,163 @@ export default function DirectorPanel({
         </div>
       ) : null}
 
-      {/* Look per shot type — per-kind overlay on/off, basemap, and wind look,
-          layered onto that kind's preset (see DirectorConfig.overlayOverrides
-          / kindLooks). Every eligible kind gets a block, even ones with no
-          overlay toggles (ad/summary), since basemap + wind still apply. */}
+      {/* Look per shot type — a saved-slide library per kind (see
+          DirectorConfig.kindSlides/activeSlideId). Save/Update snapshot the
+          live map (basemap, satellite, wind, this kind's overlay toggles)
+          into a named slide; clicking a slide loads it via that kind's
+          kindLooks/overlayOverrides. */}
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Look per shot type:</div>
-        {SEGMENT_KINDS.filter((k) => config.kinds[k]).map((kind) => {
-          const keys = overlayTogglesFor(kind);
-          const look = config.kindLooks[kind];
-          const hasCustomWind = !!look?.wind || !!look?.windMode;
+        {/* Round-up (summary) tours its own generated stops rather than holding
+            one fixed look, so a saved slide wouldn't mean anything for it. */}
+        {SEGMENT_KINDS.filter((k) => config.kinds[k] && k !== "summary").map((kind) => {
+          const slides = config.kindSlides[kind] ?? [];
+          const activeId = config.activeSlideId[kind];
+          const load = (id: string) => {
+            const slide = slides.find((s) => s.id === id);
+            update({
+              kindLooks: { ...config.kindLooks, [kind]: slide ? { ...slide.look } : {} },
+              overlayOverrides: { ...config.overlayOverrides, [kind]: slide ? { ...slide.overlays } : {} },
+              activeSlideId: { ...config.activeSlideId, [kind]: id },
+            });
+            // Also push it onto the live map immediately — kindLooks/overlayOverrides
+            // above only take effect once the director actually cuts to this kind,
+            // so without this a slide switch shows no visible change while idle.
+            if (slide) applyLive(mergeControlState(liveState, controlPatchFromSlide(slide, liveState)));
+          };
+          const saveNew = () => {
+            const name = window.prompt("Name this slide:");
+            if (!name) return;
+            const snapshot = slideFromLive(liveState);
+            const newSlide: KindSlide = { id: crypto.randomUUID(), name, ...snapshot };
+            update({
+              kindSlides: { ...config.kindSlides, [kind]: [...slides, newSlide] },
+              kindLooks: { ...config.kindLooks, [kind]: newSlide.look },
+              overlayOverrides: { ...config.overlayOverrides, [kind]: newSlide.overlays },
+              activeSlideId: { ...config.activeSlideId, [kind]: newSlide.id },
+            });
+          };
+          const updateSelected = () => {
+            if (!activeId) return;
+            const snapshot = slideFromLive(liveState);
+            update({
+              kindSlides: {
+                ...config.kindSlides,
+                [kind]: slides.map((s) => (s.id === activeId ? { ...s, ...snapshot } : s)),
+              },
+              kindLooks: { ...config.kindLooks, [kind]: snapshot.look },
+              overlayOverrides: { ...config.overlayOverrides, [kind]: snapshot.overlays },
+            });
+            flashUpdated(kind);
+          };
+          const renameSlide = (id: string) => {
+            const current = slides.find((s) => s.id === id);
+            const name = window.prompt("Rename this slide:", current?.name ?? "");
+            if (!name) return;
+            update({
+              kindSlides: { ...config.kindSlides, [kind]: slides.map((s) => (s.id === id ? { ...s, name } : s)) },
+            });
+          };
+          const deleteSlide = (id: string) => {
+            if (!window.confirm("Delete this slide?")) return;
+            update({
+              kindSlides: { ...config.kindSlides, [kind]: slides.filter((s) => s.id !== id) },
+              activeSlideId: activeId === id ? { ...config.activeSlideId, [kind]: null } : config.activeSlideId,
+            });
+          };
+          const copyTo = (slide: KindSlide, target: SegmentKind) => {
+            const copy: KindSlide = { ...slide, id: crypto.randomUUID() };
+            update({
+              kindSlides: { ...config.kindSlides, [target]: [...(config.kindSlides[target] ?? []), copy] },
+            });
+          };
           return (
-            <div
-              key={kind}
-              style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #1b2030" }}
-            >
+            <div key={kind} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #1b2030" }}>
               <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 4 }}>{KIND_LABEL[kind]}</div>
-
-              {(() => {
-                const slides = config.kindSlides[kind] ?? [];
-                const activeId = config.activeSlideId[kind];
-                return (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-                    <span style={{ opacity: 0.7, fontSize: 12 }}>Slide:</span>
-                    <select
-                      value={activeId ?? ""}
-                      onChange={(e) => {
-                        const id = e.target.value;
-                        const slide = slides.find((s) => s.id === id);
-                        update({
-                          kindLooks: { ...config.kindLooks, [kind]: slide ? { ...slide.look } : {} },
-                          overlayOverrides: { ...config.overlayOverrides, [kind]: slide ? { ...slide.overlays } : {} },
-                          activeSlideId: { ...config.activeSlideId, [kind]: id || null },
-                        });
-                      }}
-                      style={{ ...box, padding: "3px 6px" }}
-                    >
-                      <option value="">— custom (unsaved) —</option>
-                      {slides.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const name = window.prompt("Name this slide:");
-                        if (!name) return;
-                        const snapshot = slideFromLive(kind, liveState);
-                        const newSlide: KindSlide = { id: crypto.randomUUID(), name, ...snapshot };
-                        update({
-                          kindSlides: { ...config.kindSlides, [kind]: [...slides, newSlide] },
-                          kindLooks: { ...config.kindLooks, [kind]: newSlide.look },
-                          overlayOverrides: { ...config.overlayOverrides, [kind]: newSlide.overlays },
-                          activeSlideId: { ...config.activeSlideId, [kind]: newSlide.id },
-                        });
-                      }}
-                      style={{ ...box, cursor: "pointer", padding: "3px 8px" }}
-                      title="Save the current live map as a new slide for this shot type"
-                    >
-                      + Save as new
-                    </button>
-                    {activeId ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const snapshot = slideFromLive(kind, liveState);
-                            update({
-                              kindSlides: {
-                                ...config.kindSlides,
-                                [kind]: slides.map((s) => (s.id === activeId ? { ...s, ...snapshot } : s)),
-                              },
-                              kindLooks: { ...config.kindLooks, [kind]: snapshot.look },
-                              overlayOverrides: { ...config.overlayOverrides, [kind]: snapshot.overlays },
-                            });
-                          }}
-                          style={{ ...box, cursor: "pointer", padding: "3px 8px" }}
-                          title="Overwrite this slide with the current live map"
-                        >
-                          ⟳ Update
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!window.confirm("Delete this slide?")) return;
-                            update({
-                              kindSlides: { ...config.kindSlides, [kind]: slides.filter((s) => s.id !== activeId) },
-                              activeSlideId: { ...config.activeSlideId, [kind]: null },
-                            });
-                          }}
-                          style={{ ...box, cursor: "pointer", padding: "3px 8px", color: "#ff6a6a" }}
-                        >
-                          ✕ Delete
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                );
-              })()}
-
-              {keys.length ? (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", marginBottom: 6 }}>
-                  {keys.map((key) => {
-                    const current = config.overlayOverrides[kind]?.[key] ?? true;
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {slides.length === 0 ? (
+                  <div style={{ fontSize: 12, opacity: 0.5 }}>No saved slides yet</div>
+                ) : (
+                  slides.map((s) => {
+                    const selected = s.id === activeId;
+                    // Only glow green when the live map still exactly matches this
+                    // slide — selecting it (or another kind's slide) can drift the
+                    // shared live map away without clearing the stale id.
+                    const isLive = selected && slideIsLive(s, liveState);
                     return (
-                      <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                        <input
-                          type="checkbox"
-                          checked={current}
-                          onChange={() =>
-                            update({
-                              overlayOverrides: {
-                                ...config.overlayOverrides,
-                                [kind]: { ...config.overlayOverrides[kind], [key]: !current },
-                              },
-                            })
-                          }
-                        />
-                        {humanizeOverlayKey(key)}
-                      </label>
+                      <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <button
+                          type="button"
+                          onClick={() => load(s.id)}
+                          style={{
+                            ...box,
+                            flex: 1,
+                            textAlign: "left",
+                            cursor: "pointer",
+                            background: isLive ? "#1f7a3f" : box.background,
+                            borderColor: isLive ? "#2bbe63" : selected ? "#3a7bd5" : "#2a3344",
+                          }}
+                        >
+                          {s.name}
+                          {selected && !isLive ? (
+                            <span style={{ opacity: 0.6, fontSize: 11 }}> (modified)</span>
+                          ) : null}
+                        </button>
+                        {selected ? (
+                          <button
+                            type="button"
+                            onClick={updateSelected}
+                            style={{ ...box, cursor: "pointer", padding: "3px 8px" }}
+                            title="Overwrite this slide with the current live map"
+                          >
+                            {justUpdated[kind] ? "✓ Updated" : "⟳ Update"}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => renameSlide(s.id)}
+                          style={{ ...box, cursor: "pointer", padding: "3px 8px" }}
+                          title="Rename this slide"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteSlide(s.id)}
+                          style={{ ...box, cursor: "pointer", padding: "3px 8px", color: "#ff6a6a" }}
+                          title="Delete this slide"
+                        >
+                          ✕
+                        </button>
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            const target = e.target.value as SegmentKind;
+                            if (target) copyTo(s, target);
+                          }}
+                          style={{ ...box, padding: "3px 4px", fontSize: 12 }}
+                          title="Copy this slide to another shot type"
+                        >
+                          <option value="">⧉ Copy to…</option>
+                          {SEGMENT_KINDS.filter((k) => k !== kind && config.kinds[k]).map((k) => (
+                            <option key={k} value={k}>
+                              {KIND_LABEL[k]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     );
-                  })}
-                </div>
-              ) : null}
-
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 6 }}>
-                <span style={{ opacity: 0.7 }}>Basemap:</span>
-                <select
-                  value={look?.basemap ?? ""}
-                  onChange={(e) =>
-                    update({
-                      kindLooks: {
-                        ...config.kindLooks,
-                        [kind]: { ...config.kindLooks[kind], basemap: e.target.value || null },
-                      },
-                    })
-                  }
-                  style={{ ...box, padding: "3px 6px" }}
+                  })
+                )}
+                <button
+                  type="button"
+                  onClick={saveNew}
+                  style={{ ...box, cursor: "pointer", alignSelf: "flex-start" }}
+                  title="Save the current live map as a new slide for this shot type"
                 >
-                  <option value="">Auto (kind default)</option>
-                  {BASEMAPS.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 6 }}>
-                <span style={{ opacity: 0.7 }}>Satellite:</span>
-                <select
-                  value={look?.showSatImg === false ? "off" : look?.satImgLook ?? ""}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    const sat: Partial<typeof look> =
-                      v === ""
-                        ? { showSatImg: null, satImgLook: null } // inherit live
-                        : v === "off"
-                          ? { showSatImg: false, satImgLook: null }
-                          : { showSatImg: true, satImgLook: v };
-                    update({
-                      kindLooks: { ...config.kindLooks, [kind]: { ...config.kindLooks[kind], ...sat } },
-                    });
-                  }}
-                  style={{ ...box, padding: "3px 6px" }}
-                >
-                  <option value="">Auto (inherit)</option>
-                  <option value="off">Off</option>
-                  {SATIMG_LOOKS.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                <input
-                  type="checkbox"
-                  checked={hasCustomWind}
-                  onChange={(e) =>
-                    update({
-                      kindLooks: {
-                        ...config.kindLooks,
-                        [kind]: e.target.checked
-                          ? { ...config.kindLooks[kind], wind: { ...DEFAULT_WIND_SETTINGS }, windMode: "particles" }
-                          : { ...config.kindLooks[kind], wind: null, windMode: null },
-                      },
-                    })
-                  }
-                />
-                Custom wind for this shot type
-              </label>
-
-              {hasCustomWind ? (
-                <div style={{ paddingLeft: 22, marginTop: 6 }}>
-                  <WindControls
-                    wind={{ ...DEFAULT_WIND_SETTINGS, ...look?.wind }}
-                    mode={look?.windMode ?? "particles"}
-                    onWind={(w) =>
-                      update({
-                        kindLooks: { ...config.kindLooks, [kind]: { ...config.kindLooks[kind], wind: w } },
-                      })
-                    }
-                    onMode={(m) =>
-                      update({
-                        kindLooks: { ...config.kindLooks, [kind]: { ...config.kindLooks[kind], windMode: m } },
-                      })
-                    }
-                  />
-                </div>
-              ) : null}
+                  + Save current look as new slide
+                </button>
+              </div>
             </div>
           );
         })}
@@ -511,6 +625,8 @@ export default function DirectorPanel({
           style={{ width: "100%", marginTop: 4 }}
         />
       </label>
+        </>
+      )}
     </section>
   );
 }

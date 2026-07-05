@@ -416,6 +416,13 @@ export interface ControlState {
   broadcastTheme: string;
   /** Generative music bed played on /watch (mode/volume/mute, operator-driven). */
   audio: AudioSettings;
+  /**
+   * Wall-clock ms target for the pre-broadcast countdown reveal. While set and
+   * in the future, /watch covers the globe with a "starting in…" countdown +
+   * credits screen instead of the live broadcast. Null = no countdown pending
+   * (go straight to the live surface).
+   */
+  startAt: number | null;
 }
 
 export const DEFAULT_CONTROL_STATE: ControlState = {
@@ -473,6 +480,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showBroadcastChrome: true,
   broadcastTheme: "aurora",
   audio: { ...DEFAULT_AUDIO_SETTINGS },
+  startAt: null,
 };
 
 /**
@@ -624,5 +632,7 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
           ? patch.audio.muted
           : base.audio?.muted ?? DEFAULT_AUDIO_SETTINGS.muted,
     },
+    startAt:
+      patch.startAt === null ? null : typeof patch.startAt === "number" ? patch.startAt : base.startAt ?? null,
   };
 }

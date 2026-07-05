@@ -98,6 +98,7 @@ describe("mergeControlState", () => {
       broadcastTheme: "command",
       showMapSource: true,
       audio: { enabled: true, mode: "deep", volume: 0.45, muted: true },
+      startAt: 1732000000000,
     };
     // Deep-equal proves no key was dropped or altered by the merge.
     expect(mergeControlState(DEFAULT_CONTROL_STATE, custom)).toEqual(custom);
@@ -173,6 +174,14 @@ describe("mergeControlState", () => {
     const legacy = { ...DEFAULT_CONTROL_STATE, audio: undefined as any };
     const next = mergeControlState(legacy, {});
     expect(next.audio).toEqual(DEFAULT_AUDIO_SETTINGS);
+  });
+
+  it("sets, clears, and preserves the pre-broadcast countdown target", () => {
+    expect(base.startAt).toBeNull();
+    const started = mergeControlState(base, { startAt: 1732000000000 });
+    expect(started.startAt).toBe(1732000000000);
+    expect(mergeControlState(started, {}).startAt).toBe(1732000000000);
+    expect(mergeControlState(started, { startAt: null }).startAt).toBeNull();
   });
 });
 

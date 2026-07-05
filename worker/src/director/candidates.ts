@@ -36,7 +36,7 @@ import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
 import { quakeSegmentContent, alertSegmentContent } from "@photonsurge/shared/segments";
-import { discLookFeeds } from "@photonsurge/shared/satimg/types";
+import { discLookFeeds, type SatImgFeedState } from "@photonsurge/shared/satimg/types";
 import { mmsiCountry, countryNameFlag } from "@photonsurge/shared/tracks/flags";
 import type { SummaryPeriod, iEventSummaryModel } from "@photonsurge/shared/db/event-summary-model";
 import { tleGroups } from "../jobs/tracks";
@@ -76,6 +76,13 @@ const make = (
       // composite so an on disc flips to this shot's look (see discLookFeeds).
       ...(look?.showSatImg != null ? { showSatImg: look.showSatImg } : {}),
       ...(look?.satImgLook ? { satImgFeeds: discLookFeeds(look.satImgLook) } : {}),
+      // A saved slide's full per-feed snapshot (on/opacity/look) is more specific
+      // than the single-look shortcut above, so it wins when both are present.
+      ...(look?.satImgFeeds ? { satImgFeeds: look.satImgFeeds as Record<string, SatImgFeedState> } : {}),
+      // The kind's own computed variable (weather/ocean cycle client-side, storm
+      // sets "gust" in PRESETS) always wins via `extra` below; this only fills in
+      // for kinds that don't compute one themselves.
+      ...(look?.activeVariable ? { activeVariable: look.activeVariable } : {}),
       ...extra,
       camera: { center, zoom },
     },

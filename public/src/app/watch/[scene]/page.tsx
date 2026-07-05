@@ -66,6 +66,12 @@ function SceneWatchPageInner() {
   // Layers in extra local cities once a director cut zooms into a region — the
   // base `cities` fetch stays a fixed, bounded world set.
   const shownCities = useRegionCities(cities, shown.camera.center, shown.camera.zoom);
+  // Name of the on-air kind's active saved slide, if the operator loaded one.
+  const slideName = useMemo(() => {
+    if (!onAir) return undefined;
+    const id = directorConfig.activeSlideId[onAir.kind];
+    return directorConfig.kindSlides[onAir.kind]?.find((s) => s.id === id)?.name;
+  }, [directorConfig, onAir]);
 
   // Cold start the globally-shared data + resolve this scene's display name.
   useEffect(() => {
@@ -124,6 +130,7 @@ function SceneWatchPageInner() {
         pulseAt={eventPulse(director)}
         onAirSegment={director?.active ? onAir : null}
         upNext={director?.active ? director.upNext : []}
+        slideName={director?.active ? slideName : undefined}
       />
       {/* Chrome-on: the on-air detail lives in the event reticle, so the separate
           lower-left card is suppressed to avoid duplication. */}

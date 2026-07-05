@@ -73,6 +73,12 @@ function WatchPageInner() {
   // Layers in extra local cities once a director cut (or the operator) zooms
   // into a region — the base `cities` fetch stays a fixed, bounded world set.
   const shownCities = useRegionCities(cities, shown.camera.center, shown.camera.zoom);
+  // Name of the on-air kind's active saved slide, if the operator loaded one.
+  const slideName = useMemo(() => {
+    if (!onAir) return undefined;
+    const id = directorConfig.activeSlideId[onAir.kind];
+    return directorConfig.kindSlides[onAir.kind]?.find((s) => s.id === id)?.name;
+  }, [directorConfig, onAir]);
 
   // Cold start.
   useEffect(() => {
@@ -140,6 +146,7 @@ function WatchPageInner() {
         pulseAt={eventPulse(director)}
         onAirSegment={director?.active ? onAir : null}
         upNext={director?.active ? director.upNext : []}
+        slideName={director?.active ? slideName : undefined}
       />
       {/* When the broadcast chrome is on, the on-air detail lives inside the event
           reticle, so the separate lower-left card is suppressed to avoid duplication. */}
