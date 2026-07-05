@@ -4,10 +4,12 @@
  * Bottom-right "GLOBAL MONITOR": a scrolling seismograph + a real tide gauge,
  * both keyed to WHAT'S ON AIR. The seismo reflects the quakes relevant to the
  * focused event/region (its magnitude drives the amplitude + the M-tag); the
- * tsunami gauge plots the genuine recent water-level series of the coastal
- * station nearest the shot (worker-cached IOC data). Each readout HIDES when it
- * isn't relevant — no nearby quake, or no coastal gauge in range — and the whole
- * card disappears when neither applies, so it never shows ambient filler.
+ * tsunami gauge plots the genuine recent water-level series of a coastal
+ * station near the shot (worker-cached IOC data), cycling through whichever
+ * nearby gauges are cached — same pattern as the seismic feed. Each readout
+ * HIDES when it isn't relevant — no nearby quake, or no coastal gauge in
+ * range — and the whole card disappears when neither applies, so it never
+ * shows ambient filler.
  */
 import type { Segment } from "@photonsurge/shared/director";
 import type { TideSample } from "@photonsurge/shared/tides/types";
@@ -195,8 +197,8 @@ export default function MonitorCluster({
   const focus: [number, number] | null = onAirSegment?.camera.center ?? regionCenter ?? null;
   const isQuakeSeg = onAirSegment?.kind === "quake";
 
-  // Always call the hook (rules of hooks); it returns null until a gauge is near.
-  const gauge = useTideGauge(focus, true);
+  // Always call the hook (rules of hooks); stations is [] until a gauge is near.
+  const tide = useTideGauge(focus, true);
 
   // ── Seismic relevance ──────────────────────────────────────────────────
   // Focused shot: only quakes near the focus count. Wide/unfocused shot: keep
@@ -228,9 +230,17 @@ export default function MonitorCluster({
 
   // ── Tsunami relevance ──────────────────────────────────────────────────
   // A coastal gauge being in range IS the relevance signal — draw its real
-  // series. Hide entirely when nothing's cached near the shot.
-  const samples = gauge?.station && gauge.samples?.length ? gauge.samples : null;
+  // series. Hide entirely when nothing's cached near the shot. The caller
+  // (this hook) cycles `tide.active` through `tide.stations` on a timer, same
+  // as the seismic feed, so a stretch of coast shows more than one gauge.
+  const tideActive = tide.active;
+  const samples = tideActive?.samples?.length ? tideActive.samples : null;
   const showTsunami = !!samples;
+  const tideIdx = tideActive ? tide.stations.indexOf(tideActive) : -1;
+  const tideTag =
+    tideActive && tideIdx >= 0
+      ? `${truncate(tideActive.name, 14)}${tide.stations.length > 1 ? ` · ${tideIdx + 1}/${tide.stations.length}` : ""}`
+      : "SEA LEVEL";
 
   if (!showSeismic && !showTsunami) return null;
 
@@ -299,11 +309,11 @@ export default function MonitorCluster({
       {showTsunami && samples ? (
         <Panel
           title="TSUNAMI GAUGE"
-          tag={gauge?.station ? truncate(gauge.station.name, 18) : "SEA LEVEL"}
+          tag={tideTag}
           caption={
             tr ? (
               <span>
-                {gauge?.latest?.toFixed(2)} m <span style={{ color: tr.color }}>{tr.arrow}</span>
+                {tideActive?.latest?.toFixed(2)} m <span style={{ color: tr.color }}>{tr.arrow}</span>
               </span>
             ) : undefined
           }

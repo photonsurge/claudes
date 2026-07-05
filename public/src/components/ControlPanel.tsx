@@ -13,7 +13,7 @@ import type {
   AudioMode,
 } from "@photonsurge/shared/control";
 import { AUDIO_MODES } from "@photonsurge/shared/control";
-import { SATIMG_FEEDS } from "@photonsurge/shared/satimg/types";
+import { SATIMG_FEEDS, SATIMG_LOOKS } from "@photonsurge/shared/satimg/types";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { mapFreshness } from "../lib/manifest";
 import { legendVariableFor } from "../lib/legend";
@@ -449,6 +449,35 @@ export default function ControlPanel({
           checked={state.showSatImg}
           onChange={(showSatImg) => patch({ showSatImg })}
         />
+        {state.showSatImg && (
+          <Field label="Look">
+            <select
+              aria-label="Satellite look"
+              value={state.satImgLook}
+              onChange={(e) => patch({ satImgLook: e.target.value })}
+              style={{
+                background: "#0a0e16",
+                color: "#fff",
+                border: "1px solid #2a3344",
+                borderRadius: 6,
+                padding: "3px 6px",
+                fontSize: 12,
+              }}
+            >
+              {SATIMG_LOOKS.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+        {state.showSatImg && (
+          <div style={{ fontSize: 11, color: "#8b95a7", margin: "2px 0 6px 2px" }}>
+            Look applies to the live discs (GOES · Meteosat · Himawari); each falls back to
+            IR where it lacks that composite.
+          </div>
+        )}
         {state.showSatImg &&
           SATIMG_FEEDS.map((feed) => {
             const fs = state.satImgFeeds[feed.id] ?? { on: false, opacity: 0.85 };

@@ -1,5 +1,5 @@
 import type { Aircraft, Quake, SatellitePosition, Ship, TleRecord } from "./types";
-import type { TideGaugeResponse } from "../tides/types";
+import type { TideStationsResponse } from "../tides/types";
 import type { SeismoStationsResponse } from "../seismo/types";
 
 export interface SatellitesResponse {
@@ -93,16 +93,17 @@ export async function listQuakes(
 }
 
 /**
- * Worker-cached sea-level series for the tide gauge nearest `[lng,lat]`. Returns
- * `{ station: null }` when no gauge is within range (the gauge then hides).
+ * Worker-cached sea-level series for the tide gauges nearest `[lng,lat]`
+ * (plural — the panel cycles through them, like the seismic feed). Returns
+ * `{ stations: [] }` when none are within range.
  */
-export async function getTideGauge(lat: number, lng: number, maxKm?: number): Promise<TideGaugeResponse> {
+export async function getTideStations(lat: number, lng: number, maxKm?: number): Promise<TideStationsResponse> {
   const q = new URLSearchParams({ lat: String(lat), lng: String(lng) });
   if (maxKm != null) q.set("maxKm", String(maxKm));
   const res = await fetch(`/api/tracks/tide?${q.toString()}`, { cache: "no-store" });
   const body = await res.json().catch(() => null);
-  if (!body) return { station: null };
-  return body as TideGaugeResponse;
+  if (!body) return { stations: [] };
+  return body as TideStationsResponse;
 }
 
 /**

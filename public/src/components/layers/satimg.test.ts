@@ -13,9 +13,17 @@ const frame = (satId: string, bounds: [number, number, number, number]): SatImgM
   updatedAt: "2026-07-02T06:00:00Z",
 });
 
+const GLOBE: [number, number, number, number] = [-180, -90, 180, 90];
+const GOES_E: [number, number, number, number] = [-150, -65, 10, 65];
+const LIGHT: [number, number, number, number] = [-65, -65, 65, 65];
+
+// The worker bakes the mosaic + lightning under their feed id, and each disc under
+// `${disc}:${look}` (here goes-east has geocolor + ir).
 const FRAMES = [
-  frame("global", [-180, -90, 180, 90]),
-  frame("goes-east", [-150, -65, 10, 65]),
+  frame("global", GLOBE),
+  frame("goes-east:geocolor", GOES_E),
+  frame("goes-east:ir", GOES_E),
+  frame("lightning", LIGHT),
 ];
 
 const feeds = (o: Record<string, SatImgFeedState>) => o;
@@ -24,36 +32,55 @@ const feeds = (o: Record<string, SatImgFeedState>) => o;
 const ids = (ls: any[]) => ls.map((l) => l.props.id);
 
 describe("satimgLayers", () => {
-  it("draws only feeds toggled ON", () => {
+  it("draws only feeds toggled ON (mosaic + disc under the chosen look)", () => {
     const ls = satimgLayers(
       FRAMES,
-      feeds({ global: { on: true, opacity: 0.8 }, "goes-east": { on: false, opacity: 0.9 } }),
+      feeds({ global: { on: true, opacity: 0.8 }, "goes-east": { on: true, opacity: 0.9 } }),
+      "geocolor",
     );
-    expect(ids(ls)).toEqual(["satimg-global"]);
+    expect(ids(ls).sort()).toEqual(["satimg-global", "satimg-goes-east"]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const east = ls.find((l: any) => l.props.id === "satimg-goes-east") as any;
+    // The disc resolves to the `${id}:${look}` frame + its bounds/opacity.
+    expect(east.props.image).toContain("sat=goes-east%3Ageocolor");
+    expect(east.props.opacity).toBe(0.9);
+    expect(east.props.bounds).toEqual(GOES_E);
   });
 
-  it("skips frames with no matching feed state", () => {
-    const ls = satimgLayers([frame("mystery", [-10, -10, 10, 10])], feeds({}));
+  it("switching look re-points the same disc layer at a new satId (cache-busted URL)", () => {
+    const on = feeds({ "goes-east": { on: true, opacity: 1 } });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const geo = satimgLayers(FRAMES, on, "geocolor")[0] as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ir = satimgLayers(FRAMES, on, "ir")[0] as any;
+    expect(geo.props.id).toBe("satimg-goes-east"); // stable layer id
+    expect(ir.props.id).toBe("satimg-goes-east");
+    expect(geo.props.image).toContain("sat=goes-east%3Ageocolor");
+    expect(ir.props.image).toContain("sat=goes-east%3Air");
+  });
+
+  it("falls back to the disc's IR frame when it doesn't carry the chosen look", () => {
+    // goes-east has no `dust` frame here → uses goes-east:ir.
+    const ls = satimgLayers(FRAMES, feeds({ "goes-east": { on: true, opacity: 1 } }), "dust");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((ls[0] as any).props.image).toContain("sat=goes-east%3Air");
+  });
+
+  it("skips a disc with no baked frame at all, and any off feed", () => {
+    const ls = satimgLayers(
+      [frame("goes-west:ir", GOES_E)],
+      feeds({ "goes-east": { on: true, opacity: 1 }, global: { on: false, opacity: 1 } }),
+      "geocolor",
+    );
     expect(ls).toHaveLength(0);
   });
 
-  it("applies each feed's own opacity + bounds, and paints (no depth test) so it can't diamond-cull", () => {
-    const ls = satimgLayers(
-      FRAMES,
-      feeds({ global: { on: true, opacity: 0.5 }, "goes-east": { on: true, opacity: 0.9 } }),
-    );
+  it("draws the lightning overlay by its own id (not look-dependent) and paints (no depth test)", () => {
+    const ls = satimgLayers(FRAMES, feeds({ lightning: { on: true, opacity: 0.95 } }), "dust");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const east = ls.find((l: any) => l.props.id === "satimg-goes-east") as any;
-    expect(east.props.opacity).toBe(0.9);
-    expect(east.props.bounds).toEqual([-150, -65, 10, 65]);
-    // The render fix: depth test OFF (avoids the coarse-quad diamond cull) + back-face cull.
-    expect(east.props.parameters.depthTest).toBe(false);
-    expect(east.props.parameters.cullMode).toBe("back");
-  });
-
-  it("cache-busts the image URL on a fresh bake (updatedAt in the query)", () => {
-    const ls = satimgLayers([FRAMES[0]], feeds({ global: { on: true, opacity: 1 } }));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((ls[0] as any).props.image).toContain("v=2026-07-02T06%3A00%3A00Z");
+    const lx = ls.find((l: any) => l.props.id === "satimg-lightning") as any;
+    expect(lx.props.image).toContain("sat=lightning");
+    expect(lx.props.parameters.depthTest).toBe(false);
+    expect(lx.props.parameters.cullMode).toBe("back");
   });
 });

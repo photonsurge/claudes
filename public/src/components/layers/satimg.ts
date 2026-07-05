@@ -11,7 +11,7 @@
  * depth — cities / tracks / labels above it still draw on top (mirrors aurora).
  */
 import { BitmapLayer } from "@deck.gl/layers";
-import type { SatImgMeta, SatImgFeedState } from "@photonsurge/shared/satimg/types";
+import { SATIMG_FEEDS, type SatImgMeta, type SatImgFeedState } from "@photonsurge/shared/satimg/types";
 import { DEPTH_PAINT } from "./depth";
 
 /**
@@ -26,33 +26,45 @@ import { DEPTH_PAINT } from "./depth";
 const SATIMG_PARAMS = { ...DEPTH_PAINT, cullMode: "back" };
 
 /**
- * One BitmapLayer per baked feed the operator has ticked ON, at that feed's own
- * opacity, over its own coverage bounds (global mosaic + live regional discs, each
- * transparent outside its data). `feeds` is the per-feed control state keyed by
- * satId; frames whose feed is off (or unknown) are skipped.
+ * One BitmapLayer per FEED the operator has ticked ON, drawn over its coverage bounds at
+ * its own opacity (each frame is transparent outside its data). `feeds` is the per-feed
+ * on/opacity state (keyed by feed id); `look` is the global composite every disc follows.
  *
- * DEPTH_PAINT (not DEPTH_TEST): a BitmapLayer's coarse globe mesh bows each quad
- * INSIDE the sphere, so depth-testing against the globe culls every quad's centre
- * and leaves its corners — the "diamond artifacts" the aurora layer warns about
- * (aurora dodges it by using WeatherLayers' finely-tessellated RasterLayer, which
- * only colourmaps scalar data and can't render this RGBA imagery). DEPTH_PAINT
- * skips the depth test so each quad paints whole; the far hemisphere is culled by
- * GlobeView's `cullMode: 'back'` — the same trick the draped land fill uses.
+ * Frame resolution by feed kind:
+ *  - `mosaic` / `overlay` (global, lightning): the frame whose satId === the feed id.
+ *  - `disc`: the frame `${id}:${look}`, falling back to `${id}:ir` when that disc doesn't
+ *    carry the chosen look (every disc bakes an IR frame). Switching `look` re-points the
+ *    same layer id at a new satId → new cache-busted URL, so the disc updates in place.
+ *
+ * DEPTH_PAINT (not DEPTH_TEST): a BitmapLayer's coarse globe mesh bows each quad INSIDE
+ * the sphere, so depth-testing against the globe culls every quad's centre and leaves its
+ * corners — the "diamond artifacts". DEPTH_PAINT skips the test so each quad paints whole;
+ * the far hemisphere is culled by GlobeView's built-in `cullMode: 'back'`.
  */
 export function satimgLayers(
   frames: SatImgMeta[],
   feeds: Record<string, SatImgFeedState>,
+  look: string,
 ): BitmapLayer[] {
-  return frames
-    .filter((f) => feeds[f.satId]?.on)
-    .map(
-      (f) =>
-        new BitmapLayer({
-          id: `satimg-${f.satId}`,
-          image: `/api/satimg/frame.png?sat=${encodeURIComponent(f.satId)}&v=${encodeURIComponent(f.updatedAt)}`,
-          bounds: f.bounds,
-          opacity: feeds[f.satId]?.opacity ?? 1,
-          parameters: SATIMG_PARAMS,
-        }),
+  const byId = new Map(frames.map((f) => [f.satId, f]));
+  const layers: BitmapLayer[] = [];
+  for (const feed of SATIMG_FEEDS) {
+    const fs = feeds[feed.id];
+    if (!fs?.on) continue;
+    const frame =
+      feed.kind === "disc"
+        ? byId.get(`${feed.id}:${look}`) ?? byId.get(`${feed.id}:ir`)
+        : byId.get(feed.id);
+    if (!frame) continue;
+    layers.push(
+      new BitmapLayer({
+        id: `satimg-${feed.id}`,
+        image: `/api/satimg/frame.png?sat=${encodeURIComponent(frame.satId)}&v=${encodeURIComponent(frame.updatedAt)}`,
+        bounds: frame.bounds,
+        opacity: fs.opacity ?? 1,
+        parameters: SATIMG_PARAMS,
+      }),
     );
+  }
+  return layers;
 }

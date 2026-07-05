@@ -170,9 +170,10 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
 /**
  * Build a full-frame ad interstitial, or null when no active ad exists. Unlike
  * the other kinds this doesn't go through the scored pool — the loop injects it
- * on a fixed cadence (adEveryNShots), so we pick the ad here directly (weighted
- * by `weight`). The globe is covered by the ad card, so the camera just holds
- * where the previous shot left it and no layers change.
+ * on a fixed cadence (adEveryNShots), so we pick the ad here directly, rotating
+ * through every active ad before any repeats. The globe is covered by the ad
+ * card, so the camera just holds where the previous shot left it and no layers
+ * change.
  */
 export async function buildAdSegment(
   db: AppDb,

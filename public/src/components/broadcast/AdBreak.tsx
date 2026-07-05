@@ -6,17 +6,46 @@
  * globe keeps spinning visibly behind it (the broadcast reads as "still live"
  * during the break). Driven by `segment.ad`; renders nothing for any other kind.
  *
+ * Cross-fades in/out rather than popping — the outgoing card is kept mounted
+ * (holding its own content, not the live `ad` prop) until its fade-out finishes,
+ * so both a hard cut in and a hard cut out feel like part of the same broadcast.
+ *
  * Pointer-inert like the rest of the /watch surface. Video plays muted + looped
  * (browser autoplay + no clash with the audio bed); per-ad audio can come later.
  */
+import { useEffect, useRef, useState } from "react";
 import type { Segment } from "@photonsurge/shared/director";
 
 const MAX_W = "min(70vw, 900px)";
 const MAX_H = "62vh";
+const FADE_MS = 450;
+
+type AirAd = NonNullable<Segment["ad"]>;
 
 export default function AdBreak({ segment }: { segment: Segment | null }) {
-  const ad = segment?.kind === "ad" ? segment.ad : null;
-  if (!ad) return null;
+  const ad = segment?.kind === "ad" ? (segment.ad ?? null) : null;
+  const [shown, setShown] = useState<AirAd | null>(null);
+  const [visible, setVisible] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    if (ad) {
+      setShown(ad);
+      const raf = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(raf);
+    }
+    setVisible(false);
+    hideTimer.current = setTimeout(() => setShown(null), FADE_MS);
+    return () => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    };
+  }, [ad?.adId]);
+
+  if (!shown) return null;
 
   return (
     <div
@@ -28,6 +57,8 @@ export default function AdBreak({ segment }: { segment: Segment | null }) {
         alignItems: "center",
         justifyContent: "center",
         pointerEvents: "none",
+        opacity: visible ? 1 : 0,
+        transition: `opacity ${FADE_MS}ms ease`,
       }}
     >
       <div
@@ -56,11 +87,11 @@ export default function AdBreak({ segment }: { segment: Segment | null }) {
         >
           Advertisement
         </div>
-        {ad.mediaType === "video" ? (
+        {shown.mediaType === "video" ? (
           // eslint-disable-next-line jsx-a11y/media-has-caption
           <video
-            key={ad.mediaUrl}
-            src={ad.mediaUrl}
+            key={shown.mediaUrl}
+            src={shown.mediaUrl}
             autoPlay
             muted
             loop
@@ -70,9 +101,9 @@ export default function AdBreak({ segment }: { segment: Segment | null }) {
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            key={ad.mediaUrl}
-            src={ad.mediaUrl}
-            alt={ad.title}
+            key={shown.mediaUrl}
+            src={shown.mediaUrl}
+            alt={shown.title}
             style={{ maxWidth: MAX_W, maxHeight: MAX_H, objectFit: "contain", display: "block" }}
           />
         )}

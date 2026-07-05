@@ -12,8 +12,10 @@ const TAG = "job:tides";
 
 /** How near a focus point a gauge must be to be worth caching for it. */
 const FOCUS_RADIUS_KM = Number(process.env.TIDE_FOCUS_RADIUS_KM || 600);
-/** Cap on gauges cached per snapshot — the gauge only shows the single nearest. */
+/** Cap on gauges cached per snapshot across all focus points. */
 const MAX_STATIONS = Number(process.env.TIDE_MAX_STATIONS || 8);
+/** Gauges cached per focus point — lets the panel cycle through a few real neighbours, not just the nearest. */
+const STATIONS_PER_FOCUS = Number(process.env.TIDE_STATIONS_PER_FOCUS || 3);
 /** Recent-series window to cache per station, hours. */
 const SERIES_HOURS = Number(process.env.TIDE_SERIES_HOURS || 6);
 /** Magnitude floor for quakes that pull a nearby gauge into the cache. */
@@ -60,23 +62,27 @@ async function focusPoints(db: Awaited<ReturnType<typeof getAppDb>>): Promise<[n
 }
 
 /**
- * Dispatched as type "tides", event "snapshotTides". Focus-driven: resolves the
- * gauges nearest what's currently on air (camera + significant quakes), fetches
- * each one's recent water-level series and caches it. Keeps upstream load to a
- * handful of stations per tick and makes the cached data inherently relevant to
- * the broadcast. The public gauge reads only this cache.
+ * Dispatched as type "tides", event "snapshotTides". Focus-driven: resolves a
+ * handful of gauges nearest what's currently on air (camera + significant
+ * quakes), fetches each one's recent water-level series and caches it. Keeps
+ * upstream load to a bounded set of stations per tick, makes the cached data
+ * inherently relevant to the broadcast, and gives the public gauge several
+ * real neighbours to cycle through instead of just the single nearest. The
+ * public gauge reads only this cache.
  */
 export async function snapshotTides(_job: Job) {
   const db = await getAppDb();
   try {
     const points = await focusPoints(db);
-    // Nearest station to each focus point, deduped, capped.
+    // A few nearest stations per focus point, deduped, capped overall.
     const chosen = new Map<string, { stationId: string; provider: "ioc" | "coops" | "dart"; name: string; lng: number; lat: number; sensor?: string }>();
     for (const [lng, lat] of points) {
       if (chosen.size >= MAX_STATIONS) break;
-      const near = await db.tideStations.nearest({ lng, lat, maxKm: FOCUS_RADIUS_KM });
-      if (!near) continue;
-      chosen.set(`${near.station.provider}:${near.station.stationId}`, near.station);
+      const near = await db.tideStations.nearMany({ lng, lat, maxKm: FOCUS_RADIUS_KM, limit: STATIONS_PER_FOCUS });
+      for (const n of near) {
+        if (chosen.size >= MAX_STATIONS) break;
+        chosen.set(`${n.station.provider}:${n.station.stationId}`, n.station);
+      }
     }
 
     let cached = 0;

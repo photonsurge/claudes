@@ -22,10 +22,10 @@ export interface NearestStation {
 }
 
 /**
- * Tide-gauge catalog persistence + nearest-station lookup. `replace` swaps the
+ * Tide-gauge catalog persistence + nearby-stations lookup. `replace` swaps the
  * whole set on each refresh (upsert on `key`, then prune vanished stations, like
- * the cable repo); `nearest` uses the `2dsphere` index to find the gauge closest
- * to an event within an optional radius.
+ * the cable repo); `nearMany` uses the `2dsphere` index to find the handful of
+ * gauges closest to an event, for the worker's focus-driven snapshot selection.
  */
 export function makeTideStationRepo(model: Model<iTideStationModel>) {
   return {
@@ -62,22 +62,18 @@ export function makeTideStationRepo(model: Model<iTideStationModel>) {
       return { stations: stations.length };
     },
 
-    /** Nearest station to `[lng,lat]`, within `maxKm` if given, else null. */
-    async nearest(opts: {
-      lng: number;
-      lat: number;
-      maxKm?: number;
-    }): Promise<NearestStation | null> {
+    /** The `limit` stations nearest `[lng,lat]`, within `maxKm` if given. */
+    async nearMany(opts: { lng: number; lat: number; maxKm?: number; limit?: number }): Promise<NearestStation[]> {
       const geoNear: Record<string, unknown> = {
         near: { type: "Point", coordinates: [opts.lng, opts.lat] },
         distanceField: "distanceM",
         spherical: true,
       };
       if (typeof opts.maxKm === "number") geoNear.maxDistance = opts.maxKm * 1000;
-      const rows = await model.aggregate([{ $geoNear: geoNear } as any, { $limit: 1 }]).exec();
-      const doc = rows[0];
-      if (!doc) return null;
-      return { station: strip(doc), distanceKm: (doc.distanceM ?? 0) / 1000 };
+      const rows = await model
+        .aggregate([{ $geoNear: geoNear } as any, { $limit: opts.limit ?? 1 }])
+        .exec();
+      return rows.map((doc: any) => ({ station: strip(doc), distanceKm: (doc.distanceM ?? 0) / 1000 }));
     },
 
     async count(): Promise<number> {

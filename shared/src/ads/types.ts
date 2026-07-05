@@ -62,7 +62,7 @@ export interface AdMeta {
   advertiser?: string;
   /** Where the ad points (for reference now; click-through later). */
   clickUrl?: string;
-  /** Rotation weight — higher shows more often once scheduling exists. */
+  /** Tiebreaker when multiple ads are equally due in the rotation — higher wins. */
   weight: number;
   tags?: string[];
   notes?: string;

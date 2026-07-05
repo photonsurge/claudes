@@ -5,7 +5,7 @@
  * and the components stay dumb.
  */
 import type { Alert, AlertFeature } from "./alerts";
-import { primaryInfo, areaSummary } from "./alerts";
+import { primaryInfo, areaSummary, expiresLabel } from "./alerts";
 import type { Quake, Track } from "./tracks/types";
 import { SEVERITY_LABELS, SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
 import {
@@ -15,7 +15,10 @@ import {
   type QuakeMagnitudeClass,
 } from "@photonsurge/shared/seismic";
 import { alertRepPoint, continentOf } from "@photonsurge/shared/alerts/geo";
-import { hazardMeta, type HazardType } from "./hazard";
+import { hazardMeta, classifyHazard, type HazardType } from "./hazard";
+import { isoToFlag } from "@photonsurge/shared/tracks/flags";
+import { nearest } from "./geo";
+import type { City } from "./cities";
 
 /** "SEISMIC M5.9 · 12km SSW of … · TSUNAMI POTENTIAL" */
 export function quakeTicker(q: Quake): string {
@@ -176,14 +179,30 @@ export interface WorldSummary {
  * ever covers the US) rather than going unclassified.
  */
 function alertContinent(a: Alert): string | undefined {
+  const pt = alertRepPointOf(a);
+  const c = pt ? continentOf(pt[0], pt[1]) : undefined;
+  return c ?? (a.source === "nws" ? "North America" : undefined);
+}
+
+/** The first usable [lng,lat] across an alert's areas (first geometry wins). */
+function alertRepPointOf(a: Alert): [number, number] | null {
   for (const info of a.info ?? []) {
     for (const ar of info.area ?? []) {
       const pt = alertRepPoint(ar.geometry ?? null);
-      const c = pt ? continentOf(pt[0], pt[1]) : undefined;
-      if (c) return c;
+      if (pt) return pt;
     }
   }
-  return a.source === "nws" ? "North America" : undefined;
+  return null;
+}
+
+/** Nearest city's flag within range, so a rep point far from any city stays flag-less
+ *  rather than naming the wrong country. */
+const FLAG_RADIUS_KM = 350;
+function nearestFlag(point: [number, number] | null, cities: City[]): string {
+  if (!point || cities.length === 0) return "";
+  const n = nearest(cities, point, (c) => [c.lng, c.lat]);
+  if (!n || n.distanceKm > FLAG_RADIUS_KM) return "";
+  return isoToFlag(n.item.cc);
 }
 
 /**
@@ -299,10 +318,16 @@ export interface WorldWatchItem {
   color: string;
   /** Bold lead chip — "SEVERE" / "M6.3". */
   tag: string;
+  /** Hazard glyph (alerts) or a seismic glyph (quakes) — from the shared hazard vocabulary. */
+  icon: string;
+  /** Nearest enriched city's flag within range, "" if none close enough to trust. */
+  flag: string;
   /** Main line — the hazard event or the quake's place. */
   title: string;
   /** Subtitle — the area, or "TSUNAMI POTENTIAL" (empty if none). */
   sub: string;
+  /** "in 42m" / "expired" countdown for alerts, undefined for quakes / no expiry. */
+  expiresIn?: string;
   /** Sort weight, higher = shown first. */
   weight: number;
 }
@@ -323,13 +348,21 @@ function quakeColor(mag: number): string {
   return "#43d9ff";
 }
 
+/** No dedicated hazard category for seismic activity — one fixed glyph for every quake row. */
+const QUAKE_ICON = "🌎";
+
 /**
  * The full whole-planet feed the always-on WORLD WATCH panel scrolls through —
  * every active alert (clustered events counted once, like worldWatchSummary) plus
  * every quake in the ~24h window, merged and sorted most-serious first so a big
  * quake rides above minor warnings. No cap: the panel marquees the whole list.
+ *
+ * `cities` (the same curated, wiki-enriched set the "near this event" panel
+ * uses) is optional and purely cosmetic: when given, each row gets the flag of
+ * its nearest city within FLAG_RADIUS_KM so the feed reads at a glance without
+ * a fresh network call.
  */
-export function worldWatchFeed(alerts: Alert[], quakes: Quake[]): WorldWatchItem[] {
+export function worldWatchFeed(alerts: Alert[], quakes: Quake[], cities: City[] = []): WorldWatchItem[] {
   const distinct = alerts.filter((a) => !a.groupId || a.id === a.groupId);
   const items: WorldWatchItem[] = [];
 
@@ -337,13 +370,17 @@ export function worldWatchFeed(alerts: Alert[], quakes: Quake[]): WorldWatchItem
     const rank = a.maxSeverityRank;
     const info = primaryInfo(a);
     const area = areaSummary(a);
+    const hazard = classifyHazard({ event: info?.event, parameters: info?.parameters });
     items.push({
       key: `a:${a.id}`,
       kind: "alert",
       color: SEVERITY_COLORS[rank] ?? "#9ca3af",
       tag: (SEVERITY_LABELS[rank] ?? "ALERT").toUpperCase(),
+      icon: hazardMeta(hazard).icon,
+      flag: nearestFlag(alertRepPointOf(a), cities),
       title: info?.event ?? "Alert",
       sub: area === "—" ? "" : area,
+      expiresIn: a.expiresAt ? expiresLabel(a) : undefined,
       weight: rank,
     });
   }
@@ -354,6 +391,8 @@ export function worldWatchFeed(alerts: Alert[], quakes: Quake[]): WorldWatchItem
       kind: "quake",
       color: quakeColor(q.mag),
       tag: `M${q.mag.toFixed(1)}`,
+      icon: QUAKE_ICON,
+      flag: nearestFlag([q.lng, q.lat], cities),
       title: q.place ?? `${q.lat.toFixed(1)}, ${q.lng.toFixed(1)}`,
       sub: q.tsunami ? "TSUNAMI POTENTIAL" : "",
       weight: quakeWeight(q.mag),

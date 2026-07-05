@@ -1,20 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getTideGauge } from "./tracks/client";
-import type { TideGaugeResponse } from "./tides/types";
+import { getTideStations } from "./tracks/client";
+import type { TideStationReading } from "./tides/types";
 import { useSocket } from "./socket-provider";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 
+/** How often the gauge switches which nearby station is "active". */
+const CYCLE_MS = 8000;
+
+export interface TideGauge {
+  /** Nearby cached gauges, nearest first. Empty when none are in range. */
+  stations: TideStationReading[];
+  /** Which entry of `stations` is currently "on air" in the panel. */
+  active: TideStationReading | null;
+}
+
 /**
- * Fetch the worker-cached sea-level series for the tide gauge nearest an on-air
- * point ([lng,lat]). Returns null when disabled, no point, or no gauge in range
- * — the broadcast gauge then hides ("not relevant"). The worker emits
- * TRACKS_UPDATED (kind:"tides") after each snapshot, so we refetch the instant a
- * fresh series lands; the interval is a fallback if the socket is down.
+ * Fetch the worker-cached sea-level series for the tide gauges nearest an
+ * on-air point ([lng,lat]), and cycle which one is "active" — mirrors
+ * useSeismoGauge. Returns `stations: []` when disabled, no point, or nothing
+ * in range — callers then hide. The worker emits TRACKS_UPDATED
+ * (kind:"tides") after each snapshot, so we refetch the instant fresh
+ * samples land; the interval is a fallback if the socket is down.
  */
-export function useTideGauge(center: [number, number] | null, enabled = true): TideGaugeResponse | null {
-  const [gauge, setGauge] = useState<TideGaugeResponse | null>(null);
+export function useTideGauge(center: [number, number] | null, enabled = true): TideGauge {
+  const [stations, setStations] = useState<TideStationReading[]>([]);
+  const [activeIdx, setActiveIdx] = useState(0);
   const { socket } = useSocket();
   const [liveTick, setLiveTick] = useState(0);
 
@@ -34,13 +46,13 @@ export function useTideGauge(center: [number, number] | null, enabled = true): T
 
   useEffect(() => {
     if (!enabled || lat == null || lng == null) {
-      setGauge(null);
+      setStations([]);
       return;
     }
     let cancelled = false;
     const poll = async () => {
-      const r = await getTideGauge(lat, lng);
-      if (!cancelled) setGauge(r);
+      const r = await getTideStations(lat, lng);
+      if (!cancelled) setStations(r.stations);
     };
     poll();
     const iv = setInterval(poll, 120000);
@@ -50,5 +62,14 @@ export function useTideGauge(center: [number, number] | null, enabled = true): T
     };
   }, [enabled, lat, lng, liveTick]);
 
-  return gauge;
+  // Cycle the active station on a timer; reset to 0 whenever the set changes
+  // shape so a shrinking list can't leave the index pointing past the end.
+  useEffect(() => {
+    setActiveIdx(0);
+    if (stations.length < 2) return;
+    const iv = setInterval(() => setActiveIdx((i) => (i + 1) % stations.length), CYCLE_MS);
+    return () => clearInterval(iv);
+  }, [stations.length]);
+
+  return { stations, active: stations[activeIdx] ?? null };
 }

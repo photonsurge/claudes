@@ -27,22 +27,23 @@ describe("makeTideSeriesRepo", () => {
     expect(opts).toEqual({ upsert: true });
   });
 
-  it("nearest returns the geoNear hit with distance in km", async () => {
+  it("nearMany returns the geoNear hits with distance in km", async () => {
     const doc = { ...series, updatedAt: new Date(series.updatedAt), distanceM: 42_000 };
     const aggregate = jest.fn(() => ({ exec: async () => [doc] }));
     const repo = makeTideSeriesRepo({ aggregate } as unknown as Model<iTideSeriesModel>);
-    const near = await repo.nearest({ lng: 144, lat: 44, maxKm: 100 });
-    expect(near?.distanceKm).toBe(42);
-    expect(near?.series).toMatchObject({ stationId: "abas", unit: "m", latest: 1.3 });
+    const near = await repo.nearMany({ lng: 144, lat: 44, maxKm: 100, limit: 4 });
+    expect(near[0]?.distanceKm).toBe(42);
+    expect(near[0]?.series).toMatchObject({ stationId: "abas", unit: "m", latest: 1.3 });
     // maxKm converted to metres in the $geoNear stage.
-    const stage = ((aggregate.mock.calls[0] as any[])[0] as any)[0].$geoNear;
-    expect(stage.maxDistance).toBe(100_000);
-    expect(stage.spherical).toBe(true);
+    const [stages] = aggregate.mock.calls[0] as any[];
+    expect(stages[0].$geoNear.maxDistance).toBe(100_000);
+    expect(stages[0].$geoNear.spherical).toBe(true);
+    expect(stages[1].$limit).toBe(4);
   });
 
-  it("nearest returns null when nothing is in range", async () => {
+  it("nearMany returns an empty array when nothing is in range", async () => {
     const aggregate = jest.fn(() => ({ exec: async () => [] }));
     const repo = makeTideSeriesRepo({ aggregate } as unknown as Model<iTideSeriesModel>);
-    expect(await repo.nearest({ lng: 0, lat: 0, maxKm: 50 })).toBeNull();
+    expect(await repo.nearMany({ lng: 0, lat: 0, maxKm: 50 })).toEqual([]);
   });
 });

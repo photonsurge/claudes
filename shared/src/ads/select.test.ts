@@ -21,30 +21,45 @@ describe("pickAdForAir", () => {
   });
 
   it("only ever picks an active ad", () => {
-    const ads = [ad({ adId: "off", status: "inactive", weight: 100 }), ad({ adId: "on", weight: 1 })];
-    for (let r = 0; r < 1; r += 0.05) {
-      expect(pickAdForAir(ads, () => r)?.adId).toBe("on");
-    }
+    const ads = [ad({ adId: "off", status: "inactive", timesShown: 0 }), ad({ adId: "on", timesShown: 5 })];
+    expect(pickAdForAir(ads, () => 0)?.adId).toBe("on");
   });
 
-  it("weights the pick by `weight` (rng maps into the cumulative band)", () => {
-    // weights 1 (a) then 3 (b): total 4. roll = rng*4.
-    const ads = [ad({ adId: "a", weight: 1 }), ad({ adId: "b", weight: 3 })];
-    expect(pickAdForAir(ads, () => 0.0)?.adId).toBe("a"); // roll 0 → a
-    expect(pickAdForAir(ads, () => 0.2)?.adId).toBe("a"); // roll 0.8 → a (band [0,1))
-    expect(pickAdForAir(ads, () => 0.3)?.adId).toBe("b"); // roll 1.2 → b (band [1,4))
+  it("rotates to the least-shown ad, not a repeat of the leader", () => {
+    // "a" has already aired twice, "b" and "c" never have — both are due
+    // before "a" gets another turn, regardless of weight.
+    const ads = [
+      ad({ adId: "a", timesShown: 2, weight: 5 }),
+      ad({ adId: "b", timesShown: 0 }),
+      ad({ adId: "c", timesShown: 0 }),
+    ];
+    const pick = pickAdForAir(ads, () => 0)?.adId;
+    expect(["b", "c"]).toContain(pick);
+    expect(pick).not.toBe("a");
+  });
+
+  it("cycles the whole set before repeating once every ad has aired equally", () => {
+    const ads = [ad({ adId: "a", timesShown: 3 }), ad({ adId: "b", timesShown: 3 })];
+    // Now tied on timesShown and lastShownAt — falls back to weight/exclude/rng.
+    expect(pickAdForAir(ads, () => 0, "a")?.adId).toBe("b");
+    expect(pickAdForAir(ads, () => 0, "b")?.adId).toBe("a");
+  });
+
+  it("uses weight only to break a genuine tie among equally-due ads", () => {
+    const ads = [ad({ adId: "a", timesShown: 0, weight: 1 }), ad({ adId: "b", timesShown: 0, weight: 5 })];
     expect(pickAdForAir(ads, () => 0.99)?.adId).toBe("b");
   });
 
-  it("falls back to uniform random when all weights are zero", () => {
-    const ads = [ad({ adId: "a", weight: 0 }), ad({ adId: "b", weight: 0 })];
-    expect(pickAdForAir(ads, () => 0.0)?.adId).toBe("a");
-    expect(pickAdForAir(ads, () => 0.9)?.adId).toBe("b");
+  it("prefers whoever aired longest ago when timesShown ties", () => {
+    const ads = [
+      ad({ adId: "a", timesShown: 1, lastShownAt: 200 }),
+      ad({ adId: "b", timesShown: 1, lastShownAt: 100 }),
+    ];
+    expect(pickAdForAir(ads, () => 0)?.adId).toBe("b");
   });
 
   it("excludes the previous airing so back-to-back breaks don't repeat", () => {
     const ads = [ad({ adId: "a" }), ad({ adId: "b" })];
-    // rng() => 0 would normally pick "a" first, but it just aired.
     expect(pickAdForAir(ads, () => 0, "a")?.adId).toBe("b");
     expect(pickAdForAir(ads, () => 0, "b")?.adId).toBe("a");
   });

@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import type { Segment } from "@photonsurge/shared/director";
 import type { Quake } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
+import type { TideStationReading } from "../../lib/tides/types";
 import { useTideGauge } from "../../lib/tide-gauge";
 import MonitorCluster from "./MonitorCluster";
 
@@ -19,11 +20,16 @@ const stormAtOrigin: Segment = {
   holdMs: 1000,
 };
 
-const gaugeNearby = {
-  station: { stationId: "abas", provider: "ioc" as const, name: "Abashiri", lat: 44, lng: 144, distanceKm: 12 },
-  unit: "m" as const,
-  latest: 1.27,
+const abashiri: TideStationReading = {
+  stationId: "abas",
+  provider: "ioc",
+  name: "Abashiri",
+  lat: 44,
+  lng: 144,
+  distanceKm: 12,
+  unit: "m",
   samples: [{ t: 1, v: 1.2 }, { t: 2, v: 1.45 }],
+  latest: 1.27,
   updatedAt: 0,
 };
 
@@ -31,7 +37,7 @@ beforeEach(() => mockGauge.mockReset());
 
 describe("MonitorCluster relevance", () => {
   it("shows the global seismograph with its magnitude on a wide shot", () => {
-    mockGauge.mockReturnValue(null);
+    mockGauge.mockReturnValue({ stations: [], active: null });
     render(<MonitorCluster quakes={[quakeFarFromOrigin]} />);
     expect(screen.getByText("SEISMIC MONITOR")).toBeInTheDocument();
     expect(screen.getByText("M6.2")).toBeInTheDocument();
@@ -39,13 +45,13 @@ describe("MonitorCluster relevance", () => {
   });
 
   it("hides everything (renders null) on a focused land shot with nothing relevant", () => {
-    mockGauge.mockReturnValue(null);
+    mockGauge.mockReturnValue({ stations: [], active: null });
     const { container } = render(<MonitorCluster quakes={[quakeFarFromOrigin]} onAirSegment={stormAtOrigin} />);
     expect(container).toBeEmptyDOMElement();
   });
 
   it("shows the tsunami gauge with the real station + level when a coastal gauge is in range", () => {
-    mockGauge.mockReturnValue(gaugeNearby);
+    mockGauge.mockReturnValue({ stations: [abashiri], active: abashiri });
     render(<MonitorCluster quakes={[quakeFarFromOrigin]} onAirSegment={stormAtOrigin} />);
     expect(screen.getByText("TSUNAMI GAUGE")).toBeInTheDocument();
     expect(screen.getByText("Abashiri")).toBeInTheDocument();
@@ -54,8 +60,15 @@ describe("MonitorCluster relevance", () => {
     expect(screen.queryByText("SEISMIC MONITOR")).not.toBeInTheDocument();
   });
 
+  it("shows the active tide station's name + a position-in-set caption when multiple gauges are in range", () => {
+    const other: TideStationReading = { ...abashiri, stationId: "other", name: "Somewhere Else" };
+    mockGauge.mockReturnValue({ stations: [abashiri, other], active: abashiri });
+    render(<MonitorCluster quakes={[quakeFarFromOrigin]} onAirSegment={stormAtOrigin} />);
+    expect(screen.getByText("Abashiri · 1/2")).toBeInTheDocument();
+  });
+
   it("shows the active real seismograph station's name + a position-in-set caption when in range", () => {
-    mockGauge.mockReturnValue(null);
+    mockGauge.mockReturnValue({ stations: [], active: null });
     const stationA: SeismoStationReading = {
       net: "IU",
       sta: "ANMO",

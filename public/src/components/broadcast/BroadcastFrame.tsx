@@ -270,13 +270,12 @@ export default function BroadcastFrame({
           }}
         >
           <WorldSituationPanel theme={theme} />
-          <WorldWatchPanel theme={theme} />
+          <WorldWatchPanel theme={theme} cities={cities} />
         </div>
 
-        {/* Bottom-right column: the global monitor, stacked above the UP NEXT
-            hint and the always-on SYSLOG feed. column-reverse anchors the
-            feed's newest line to the bottom edge, with UP NEXT and the
-            monitor stacking upward above it. */}
+        {/* Bottom-right column: UP NEXT hint stacked above the always-on
+            SYSLOG feed. column-reverse anchors the feed's newest line to the
+            bottom edge, with UP NEXT stacking upward above it. */}
         <div
           style={{
             position: "absolute",
@@ -290,6 +289,18 @@ export default function BroadcastFrame({
         >
           <SyslogFeed />
           <UpNextPanel items={upNext} />
+        </div>
+
+        {/* Global monitor (seismic + tsunami gauge) — bottom-centre, clear of
+            the left intensity meter and the right syslog/up-next column. */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: TICKER_H + INSET,
+            left: "50%",
+            transform: "translateX(-50%)",
+          }}
+        >
           <MonitorCluster
             quakes={quakes}
             seismoStations={seismoStations}

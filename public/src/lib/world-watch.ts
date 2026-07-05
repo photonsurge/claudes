@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { Alert } from "./alerts";
 import { listAlerts } from "./alerts";
 import { listQuakes } from "./tracks/client";
+import type { Quake } from "./tracks/types";
 import {
   worldWatchSummary,
   worldWatchFeed,
@@ -11,6 +13,7 @@ import {
 } from "./broadcast";
 import { useSocket } from "./socket-provider";
 import { ALERTS_UPDATED, TRACKS_UPDATED } from "@photonsurge/shared/control";
+import type { City } from "./cities";
 
 /** The summary tally plus the full scrolling feed of individual alerts + quakes. */
 export interface WorldWatchState extends WorldSummary {
@@ -28,16 +31,7 @@ export interface WorldWatchState extends WorldSummary {
 const MIN_ALERT_SEVERITY = 3; // 0 None · 1 Minor · 2 Moderate · 3 Severe · 4 Extreme
 const MIN_QUAKE_MAG = 4.5;
 
-const EMPTY: WorldWatchState = {
-  alertTotal: 0,
-  bySeverity: [],
-  quakeCount: 0,
-  byMagClass: [],
-  maxMag: 0,
-  maxQuake: null,
-  byContinent: [],
-  feed: [],
-};
+const EMPTY_RAW: { alerts: Alert[]; quakes: Quake[] } = { alerts: [], quakes: [] };
 
 /**
  * The whole-planet alert + seismic tally behind the always-on WORLD WATCH panel.
@@ -50,9 +44,14 @@ const EMPTY: WorldWatchState = {
  * Minor alerts and M2.5+ quakes — shows in the stat tiles and continent bars;
  * only the scrolling ACTIVE FEED narrows back down to broadcast-worthy events
  * (see MIN_ALERT_SEVERITY / MIN_QUAKE_MAG).
+ *
+ * `cities` (the curated, wiki-enriched set BroadcastFrame already loads for the
+ * "near this event" panel) is optional and only flavours the feed rows with a
+ * nearest-city flag — kept out of the network-polling effect's deps so passing
+ * a fresh array reference each render doesn't trigger a refetch.
  */
-export function useWorldWatch(): WorldWatchState {
-  const [summary, setSummary] = useState<WorldWatchState>(EMPTY);
+export function useWorldWatch(cities: City[] = []): WorldWatchState {
+  const [raw, setRaw] = useState(EMPTY_RAW);
   const { socket } = useSocket();
   const [liveTick, setLiveTick] = useState(0);
 
@@ -78,12 +77,7 @@ export function useWorldWatch(): WorldWatchState {
         listQuakes(),
       ]);
       if (cancelled) return;
-      const feedAlerts = alerts.filter((a) => a.maxSeverityRank >= MIN_ALERT_SEVERITY);
-      const feedQuakes = quakesRes.quakes.filter((q) => q.mag >= MIN_QUAKE_MAG);
-      setSummary({
-        ...worldWatchSummary(alerts, quakesRes.quakes),
-        feed: worldWatchFeed(feedAlerts, feedQuakes),
-      });
+      setRaw({ alerts, quakes: quakesRes.quakes });
     };
     poll();
     const iv = setInterval(poll, 60000);
@@ -93,5 +87,12 @@ export function useWorldWatch(): WorldWatchState {
     };
   }, [liveTick]);
 
-  return summary;
+  return useMemo(() => {
+    const feedAlerts = raw.alerts.filter((a) => a.maxSeverityRank >= MIN_ALERT_SEVERITY);
+    const feedQuakes = raw.quakes.filter((q) => q.mag >= MIN_QUAKE_MAG);
+    return {
+      ...worldWatchSummary(raw.alerts, raw.quakes),
+      feed: worldWatchFeed(feedAlerts, feedQuakes, cities),
+    };
+  }, [raw, cities]);
 }

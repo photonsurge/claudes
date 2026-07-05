@@ -45,6 +45,9 @@ interface SceneRunner {
   timesShown?: number;
   /** adId of the last ad aired, so the next break doesn't repeat it. */
   lastAdId?: string;
+  /** An ad slot came due but breaking news preempted it — air it on the very
+   *  next cut instead of waiting another full `adEveryNShots` cycle. */
+  pendingAd: boolean;
   lastSkipNonce: number;
   lastEmit: number;
 }
@@ -71,6 +74,7 @@ const newRunner = (sceneId: string): SceneRunner => ({
   startedAt: 0,
   endsAt: 0,
   upNext: [],
+  pendingAd: false,
   lastSkipNonce: 0,
   lastEmit: 0,
 });
@@ -156,20 +160,36 @@ async function tick(): Promise<void> {
         // interstitial every Nth shot (never on the opener). Falls through to a
         // normal cut if there's no active ad to air.
         const adDue =
-          cfg.kinds.ad && cfg.adEveryNShots > 0 && r.seq > 0 && r.seq % cfg.adEveryNShots === 0;
+          cfg.kinds.ad &&
+          cfg.adEveryNShots > 0 &&
+          r.seq > 0 &&
+          (r.pendingAd || r.seq % cfg.adEveryNShots === 0);
+
+        const counts = new Map<string, number>();
+        for (const [id, v] of r.seen) counts.set(id, v.count);
 
         let pool: Candidate[] = [];
         let next: Segment | null = null;
-        if (adDue) next = await buildAdSegment(db, cfg, r.current?.camera, r.lastAdId);
-        if (!next) {
-          const counts = new Map<string, number>();
-          for (const [id, v] of r.seen) counts.set(id, v.count);
+        let priority: Segment | null = null;
+        if (adDue) {
+          // A brand-new quake/storm/round-up nobody's seen this session outranks
+          // a scheduled ad break — build the pool early just to check, and defer
+          // the ad by one cut rather than let it stall breaking news.
           pool = await buildCandidates(db, cfg, counts);
+          priority = r.seq > 0 ? selectPriority(pool, counts) : null;
+          if (priority) {
+            r.pendingAd = true;
+          } else {
+            next = await buildAdSegment(db, cfg, r.current?.camera, r.lastAdId);
+          }
+        }
+        if (!next) {
+          if (!pool.length) pool = await buildCandidates(db, cfg, counts);
           // Breaking news preempts random rotation on every cut but the very
           // first (which always opens on the intro) — a fresh round-up or a
           // brand-new quake/storm airs at the next opportunity, not whenever
           // fair rotation happens to land on its kind.
-          next = r.seq > 0 ? selectPriority(pool, counts) : null;
+          next = priority ?? (r.seq > 0 ? selectPriority(pool, counts) : null);
           if (!next) {
             next = selectNext(pool, {
               history: r.history,
@@ -180,6 +200,7 @@ async function tick(): Promise<void> {
           }
         }
         if (next) {
+          if (next.kind === "ad") r.pendingAd = false;
           // Anchor any camera motion (orbit spin OR push-in zoom drift) to the
           // cut instant so /control and /watch compute it in phase from here.
           if (next.patch.autoSpin || next.patch.zoomDrift) next.patch.spinEpoch = now;

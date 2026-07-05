@@ -61,10 +61,13 @@ for the schedulers — no need to restart or kill a running worker.
 
 ### Satellite imagery
 
-The `satimg.refresh` job (and `yarn refresh:satimg`) bakes a cached satellite frame
-**per feed** into Mongo (`db.satimg`, keyed by `satId`); the public app reads only that
-cache. The operator ticks each feed on/off and sets its own opacity in the control panel
-(`SATIMG_FEEDS` in shared). Two sources, chosen by `SATIMG_SOURCE`:
+The `satimg.refresh` job (and `yarn refresh:satimg`) bakes cached satellite frames into
+Mongo (`db.satimg`, keyed by `satId`); the public app reads only that cache. The operator
+ticks each feed on/off + opacity (`SATIMG_FEEDS`) and picks ONE global **look** every live
+disc follows (`SATIMG_LOOKS` — GeoColor / IR / water vapour / air mass / dust / fire temp).
+Each disc is baked in EVERY look it carries (satId `${disc}:${look}`) so switching is
+instant; a disc that lacks the chosen look falls back to its `ir` frame (every disc bakes
+one). Two sources, chosen by `SATIMG_SOURCE`:
 
 **`gibs` (DEFAULT — pure Node, Docker-trivial, no Python).** One HTTP GET per feed of the
 relevant NASA GIBS WMS layer (keyless, already reprojected to plate-carrée). The feeds:
@@ -80,27 +83,31 @@ relevant NASA GIBS WMS layer (keyless, already reprojected to plate-carrée). Th
   rejects the lone scan lines the cloud-key would otherwise keep as fake white "cloud"
   stripes). Fresh pixels stay fresh; ghosting is confined to the holes. Residual stripes
   at the extreme south are polar-winter night (no daytime pass on any day) and unfixable.
-- **`goes-east` / `goes-west`** — live GeoColor (~10-min), regional bbox, NOT cloud-keyed
-  (GeoColor's bright oceans survive the key), shown whole and blended by the feed opacity.
-- **`himawari`** — live Band-13 Clean IR (~10-min), Asia/Australia bbox, not keyed.
-- **`meteosat-0` / `meteosat-iodc`** — the Meteosat discs GIBS doesn't carry, from
-  **EUMETSAT's EUMETView WMS** (`view.eumetsat.int/geoserver/wms`, ALSO keyless — public
-  GetMap, no account/token needed for the bake). `meteosat-0` = MTG `rgb_geocolour` at 0°
-  (Europe/Africa/Atlantic, GeoColor day+night); `meteosat-iodc` = MSG `ir108` clean IR at
-  45.5°E (Indian Ocean/E-Africa/S-Asia, 24/7). Per-feed `wms` in `FEED_FETCH` switches the
-  base URL; EUMETView (GeoServer) needs an empty `STYLES` param, GIBS needs `STYLE=default`.
-  Together the four live discs + the daily mosaic wrap the whole globe.
+- **DISCS** (`goes-east` · `goes-west` · `himawari` · `meteosat-0` · `meteosat-iodc`) —
+  live geostationary, regional bbox, NOT cloud-keyed (shown whole, blended by opacity).
+  Each is baked in every look from `LOOK_LAYERS` (`gibs.ts`): GOES/Himawari looks are GIBS
+  ABI/AHI layers; the Meteosat discs come from **EUMETSAT's EUMETView WMS**
+  (`view.eumetsat.int/geoserver/wms`, ALSO keyless — public GetMap, no account/token). MTG
+  is at 0° (GeoColor/dust/fire), MSG fills 0°'s IR/WV/air-mass and the whole IODC disc at
+  45.5°E. `looksFor(disc)` lists what to bake; `fetchDiscLook(disc, look)` fetches it. GIBS
+  needs `STYLE=default`, EUMETView (GeoServer) needs an empty `STYLES` — the fetch branches
+  on base URL. Together the five discs + the daily mosaic wrap the whole globe.
+- **`lightning`** — OVERLAY feed (not a disc look): EUMETSAT MTG **Lightning Imager**
+  (`mtg_fd:li_afa`), transparent 5-min flash activity over Europe/Africa/Atlantic, drawn on
+  top. A quiet frame is tiny, so its `minBytes` guard is low (200 B).
 
-Live feeds send NO `TIME` (the server returns the layer's latest slot). Runs on a 30-min cron,
-ON by default. Per-feed frames are guarded under Mongo's 16 MB BSON limit (`maxPx` in
-`gibs.ts`, ~15.5 MB hard cap); a feed that errors is skipped, the rest still bake.
+Live fetches send NO `TIME` (the server returns the layer's latest slot) + `TRANSPARENT=true`.
+Runs on a 30-min cron, ON by default. Every frame is guarded under Mongo's 16 MB BSON limit
+(`maxPx` in `gibs.ts`, ~15.5 MB hard cap); a frame that errors is skipped, the rest bake.
+The full bake is ~24 frames (mosaic + lightning + ~22 disc×look) — trim with `SATIMG_BAKE_LOOKS`.
 
 | Env | Default | Meaning |
 | --- | --- | --- |
 | `SATIMG_SOURCE` | `gibs` | `gibs` (WMS fetch) or `satpy` (raw Himawari bake, below). |
 | `SATIMG_REFRESH_ENABLED` | *(on)* | Set `false` to disable the cron. |
 | `SATIMG_REFRESH_MS` | `1800000` | Bake cadence (30 min — live feeds refresh ~10-min). |
-| `SATIMG_WIDTH` / `SATIMG_HEIGHT` | `2048`/`1024` | `global` fetch size (kept < Mongo's 16 MB doc limit; regional feeds size from per-feed `maxPx`). |
+| `SATIMG_BAKE_LOOKS` | *(all)* | CSV allowlist of looks to bake per disc (e.g. `geocolor,ir,watervapour`); `ir` always kept. Trims frame count / Mongo size. |
+| `SATIMG_WIDTH` / `SATIMG_HEIGHT` | `2048`/`1024` | `global` fetch size (kept < Mongo's 16 MB doc limit; discs size from per-feed `maxPx`). |
 | `SATIMG_FILL_DAYS` | `3` | Consecutive days composited to gap-fill `global` (1 = off). |
 | `SATIMG_CLOUDKEY` | *(on)* | Set `false` to store the opaque true-color as-is (no see-through). |
 | `SATIMG_CK_LO`/`_HI`/`_GAMMA`/`_SATSUPPRESS`/`_BOOST` | see `grade.ts` | Cloud-key tuning (brightness ramp, desert suppression, cloud punch). |

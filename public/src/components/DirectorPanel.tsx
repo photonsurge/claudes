@@ -92,7 +92,13 @@ export default function DirectorPanel({
   const remaining = live?.endsAt ? Math.max(0, Math.round((live.endsAt - now) / 1000)) : 0;
 
   return (
-    <section style={{ marginBottom: 18, borderBottom: "1px solid #1b2030", paddingBottom: 16 }}>
+    <section className="director-panel" style={{ marginBottom: 18, borderBottom: "1px solid #1b2030", paddingBottom: 16 }}>
+      <style>{`
+        .director-panel input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 10px; border-radius: 6px; background: #2a3344; outline: none; cursor: pointer; }
+        .director-panel input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 3px solid #3a7bd5; cursor: pointer; }
+        .director-panel input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 3px solid #3a7bd5; cursor: pointer; }
+        .director-panel input[type=range]:focus-visible { box-shadow: 0 0 0 2px #3a7bd5; }
+      `}</style>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Auto-director</h3>
         <span style={{ fontSize: 11, opacity: 0.6 }}>scene: {sceneId}</span>
@@ -145,7 +151,7 @@ export default function DirectorPanel({
 
       {/* Transition time — the deliberate, set camera move between shots */}
       <label style={{ display: "block", fontSize: 12, opacity: 0.8, marginBottom: 12 }}>
-        Transition: <strong>{config.transitionSeconds}s</strong>
+        Transition: <strong style={{ fontSize: 15 }}>{config.transitionSeconds}s</strong>
         <input
           type="range"
           min={1}
@@ -153,7 +159,7 @@ export default function DirectorPanel({
           step={0.5}
           value={config.transitionSeconds}
           onChange={(e) => update({ transitionSeconds: Number(e.target.value) })}
-          style={{ width: "100%", marginTop: 4 }}
+          style={{ width: "100%", marginTop: 6 }}
         />
       </label>
 

@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { shiftDate, fetchGibs, fetchGibsFeed, dimsFor, holeFill, GIBS_TRUECOLOR_LAYERS } from "./gibs";
+import { shiftDate, fetchGibs, fetchGibsFeed, fetchDiscLook, looksFor, dimsFor, holeFill, GIBS_TRUECOLOR_LAYERS } from "./gibs";
 
 describe("shiftDate", () => {
   it("shifts UTC days and rolls over month boundaries", () => {
@@ -111,10 +111,10 @@ describe("dimsFor", () => {
   });
 });
 
-describe("fetchGibsFeed", () => {
-  it("live feed: regional bbox, layer, and NO TIME (latest slot)", async () => {
+describe("fetchDiscLook", () => {
+  it("GOES disc look: GIBS layer, regional bbox, STYLE=default, TRANSPARENT, NO TIME", async () => {
     let url = "";
-    const r = await fetchGibsFeed("goes-east", {
+    const r = await fetchDiscLook("goes-east", "geocolor", {
       fetchImpl: (async (u: string) => {
         url = u;
         return fakeRes(300_000);
@@ -122,14 +122,17 @@ describe("fetchGibsFeed", () => {
     });
     expect(r.when).toBe("latest");
     expect(r.bounds).toEqual([-150, -65, 10, 65]);
+    expect(r.cloudKey).toBe(false);
     expect(url).toContain("GOES-East_ABI_GeoColor");
     expect(url).toContain("bbox=-65%2C-150%2C65%2C10"); // S,W,N,E
+    expect(url).toContain("TRANSPARENT=true");
+    expect(url).toContain("STYLE=default");
     expect(url).not.toContain("TIME=");
   });
 
-  it("Meteosat feed: hits EUMETView WMS with empty STYLES (not GIBS STYLE=default)", async () => {
+  it("Meteosat disc look: EUMETView WMS with empty STYLES (not GIBS STYLE=default)", async () => {
     let url = "";
-    const r = await fetchGibsFeed("meteosat-0", {
+    await fetchDiscLook("meteosat-0", "geocolor", {
       fetchImpl: (async (u: string) => {
         url = u;
         return fakeRes(500_000);
@@ -139,7 +142,50 @@ describe("fetchGibsFeed", () => {
     expect(url).toContain(encodeURIComponent("mtg_fd:rgb_geocolour"));
     expect(url).toContain("STYLES=");
     expect(url).not.toContain("STYLE=default");
-    expect(url).not.toContain("TIME=");
+  });
+
+  it("water-vapour look maps meteosat-0 to the MSG wv062 layer", async () => {
+    let url = "";
+    await fetchDiscLook("meteosat-0", "watervapour", {
+      fetchImpl: (async (u: string) => {
+        url = u;
+        return fakeRes(500_000);
+      }) as unknown as typeof fetch,
+    });
+    expect(url).toContain(encodeURIComponent("msg_fes:wv062"));
+  });
+
+  it("throws for a look a disc doesn't carry", async () => {
+    await expect(fetchDiscLook("himawari", "dust")).rejects.toThrow(/no satimg look 'dust'/);
+  });
+});
+
+describe("looksFor", () => {
+  it("returns all of a disc's looks by default", () => {
+    expect(looksFor("goes-east").sort()).toEqual(["airmass", "dust", "firetemp", "geocolor", "ir"]);
+    expect(looksFor("himawari").sort()).toEqual(["airmass", "ir"]);
+  });
+  it("narrows to the SATIMG_BAKE_LOOKS allowlist but always keeps ir", () => {
+    const prev = process.env.SATIMG_BAKE_LOOKS;
+    process.env.SATIMG_BAKE_LOOKS = "geocolor";
+    expect(looksFor("goes-east").sort()).toEqual(["geocolor", "ir"]);
+    if (prev === undefined) delete process.env.SATIMG_BAKE_LOOKS;
+    else process.env.SATIMG_BAKE_LOOKS = prev;
+  });
+});
+
+describe("fetchGibsFeed", () => {
+  it("lightning overlay: EUMETView li_afa layer, transparent, tiny frame allowed", async () => {
+    let url = "";
+    const r = await fetchGibsFeed("lightning", {
+      fetchImpl: (async (u: string) => {
+        url = u;
+        return fakeRes(4_000); // a quiet lightning frame is small — must still pass
+      }) as unknown as typeof fetch,
+    });
+    expect(url).toContain("view.eumetsat.int/geoserver/wms");
+    expect(url).toContain(encodeURIComponent("mtg_fd:li_afa"));
+    expect(url).toContain("TRANSPARENT=true");
     expect(r.bounds).toEqual([-65, -65, 65, 65]);
     expect(r.cloudKey).toBe(false);
   });

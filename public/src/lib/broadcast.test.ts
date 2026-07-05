@@ -14,6 +14,7 @@ import {
 } from "./broadcast";
 import type { Alert, AlertFeature } from "./alerts";
 import type { Quake, Track } from "./tracks/types";
+import type { City } from "./cities";
 
 const quake = (over: Partial<Quake> = {}): Quake => ({
   id: "q1",
@@ -263,6 +264,46 @@ describe("worldWatchFeed", () => {
 
   it("is empty with no data", () => {
     expect(worldWatchFeed([], [])).toEqual([]);
+  });
+
+  const city = (over: Partial<City> = {}): City =>
+    ({ id: "c1", name: "Paris", lat: 48.85, lng: 2.35, cc: "FR", ...over }) as City;
+
+  const withPoint = (a: Alert, lng: number, lat: number): Alert => ({
+    ...a,
+    info: a.info.map((i) => ({
+      ...i,
+      area: i.area.map((ar) => ({ ...ar, geometry: { type: "Point", coordinates: [lng, lat] } })),
+    })),
+  });
+
+  it("classifies the hazard icon and flags the nearest enriched city", () => {
+    const wildfire = withPoint(raw(4, "Forest Fire Warning", "Île-de-France"), 2.3, 48.86);
+    const feed = worldWatchFeed([wildfire], [], [city()]);
+    expect(feed[0].icon).toBe("🔥");
+    expect(feed[0].flag).toBe("🇫🇷");
+  });
+
+  it("leaves the flag empty when no city is within range", () => {
+    const alertRow = withPoint(raw(4, "Tornado Warning", "Kansas"), -98, 39);
+    const feed = worldWatchFeed([alertRow], [], [city({ lat: -33.87, lng: 151.21, cc: "AU" })]);
+    expect(feed[0].flag).toBe("");
+  });
+
+  it("flags a quake by its own coordinates, independent of any alert", () => {
+    const feed = worldWatchFeed([], [quake({ lat: 48.85, lng: 2.35 })], [city()]);
+    expect(feed[0].icon).toBe("🌎");
+    expect(feed[0].flag).toBe("🇫🇷");
+  });
+
+  it("carries an expiry countdown for alerts that have one, omitting it otherwise", () => {
+    const withExpiry = raw(4, "Forest Fire Warning", "Île-de-France", {
+      expiresAt: "2099-01-01T00:00:00Z",
+    });
+    const withoutExpiry = raw(2, "Frost Advisory", "Alps");
+    const feed = worldWatchFeed([withExpiry, withoutExpiry], []);
+    expect(feed.find((f) => f.title === "Forest Fire Warning")?.expiresIn).toMatch(/^(in \d+[mh]|expired)$/);
+    expect(feed.find((f) => f.title === "Frost Advisory")?.expiresIn).toBeUndefined();
   });
 });
 

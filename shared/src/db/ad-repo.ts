@@ -181,11 +181,12 @@ export function makeAdRepo(model: Model<iAdModel>) {
     },
 
     /**
-     * Pick one active ad to air, weighted by `weight` (director commercial
-     * break). `excludeAdId` (the previous airing) is skipped so two breaks in a
-     * row don't repeat the same ad, unless it's the only active one. Returns
-     * null when nothing is active. Pure selection lives in `pickAdForAir`; the
-     * repo just supplies the active pool (no bytes).
+     * Pick one active ad to air, rotating through every active ad before any
+     * repeats (director commercial break). `excludeAdId` (the previous airing)
+     * is a last-resort tiebreaker so two breaks in a row don't repeat the same
+     * ad, unless it's the only active one. Returns null when nothing is
+     * active. Pure selection lives in `pickAdForAir`; the repo just supplies
+     * the active pool (no bytes).
      */
     async pickForAir(rng?: () => number, excludeAdId?: string): Promise<Ad | null> {
       const active = await this.list({ status: "active" });

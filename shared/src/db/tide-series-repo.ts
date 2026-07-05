@@ -24,10 +24,11 @@ export interface NearestSeries {
 }
 
 /**
- * Recent water-level series persistence + nearest lookup. The worker `upsert`s
- * one doc per near-the-action station each snapshot; the public gauge reads the
- * single `nearest` cached series to the on-air point (or null when none is in
- * range — the gauge then hides).
+ * Recent water-level series persistence + nearby-stations lookup. The worker
+ * `upsert`s one doc per near-the-action station each snapshot; the public
+ * gauge reads `nearMany` for the SET of cached series near the on-air point
+ * (plural — it cycles through them like the seismic panel), empty when
+ * nothing's in range (the gauge then hides).
  */
 export function makeTideSeriesRepo(model: Model<iTideSeriesModel>) {
   return {
@@ -56,22 +57,18 @@ export function makeTideSeriesRepo(model: Model<iTideSeriesModel>) {
       );
     },
 
-    /** Nearest cached series to `[lng,lat]`, within `maxKm` if given, else null. */
-    async nearest(opts: {
-      lng: number;
-      lat: number;
-      maxKm?: number;
-    }): Promise<NearestSeries | null> {
+    /** The `limit` cached series nearest `[lng,lat]`, within `maxKm` if given. */
+    async nearMany(opts: { lng: number; lat: number; maxKm?: number; limit?: number }): Promise<NearestSeries[]> {
       const geoNear: Record<string, unknown> = {
         near: { type: "Point", coordinates: [opts.lng, opts.lat] },
         distanceField: "distanceM",
         spherical: true,
       };
       if (typeof opts.maxKm === "number") geoNear.maxDistance = opts.maxKm * 1000;
-      const rows = await model.aggregate([{ $geoNear: geoNear } as any, { $limit: 1 }]).exec();
-      const doc = rows[0];
-      if (!doc) return null;
-      return { series: strip(doc), distanceKm: (doc.distanceM ?? 0) / 1000 };
+      const rows = await model
+        .aggregate([{ $geoNear: geoNear } as any, { $limit: opts.limit ?? 6 }])
+        .exec();
+      return rows.map((doc: any) => ({ series: strip(doc), distanceKm: (doc.distanceM ?? 0) / 1000 }));
     },
 
     async count(): Promise<number> {

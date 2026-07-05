@@ -715,7 +715,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // weather/wind, below the reference overlays so those stay crisp on top. Full-
     // globe PNG per bird (transparent off-disk); the far side is depth-occluded.
     if (state.showSatImg && satimg?.frames.length) {
-      layers.push(...satimgLayers(satimg.frames, state.satImgFeeds));
+      layers.push(...satimgLayers(satimg.frames, state.satImgFeeds, state.satImgLook));
     }
 
     // Aurora oval — a translucent glow above the weather/wind/borders but below
@@ -817,6 +817,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showAurora,
     state.showSatImg,
     state.satImgFeeds,
+    state.satImgLook,
     state.showFires,
     state.showMagneticField,
     state.showMapSource,

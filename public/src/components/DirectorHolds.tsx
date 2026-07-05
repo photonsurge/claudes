@@ -55,7 +55,7 @@ function Slider({
       step={1}
       value={seconds}
       onChange={(e) => onChange(Number(e.target.value))}
-      style={{ width: "100%", display: "block" }}
+      style={{ width: "100%", display: "block", marginTop: 4 }}
     />
   );
 }
@@ -74,7 +74,7 @@ function LevelRow({
     <div style={{ marginBottom: 4 }}>
       <span style={{ display: "flex", justifyContent: "space-between", fontSize: 12, opacity: 0.85 }}>
         <span>{label}</span>
-        <strong>{seconds}s</strong>
+        <strong style={{ fontSize: 14 }}>{seconds}s</strong>
       </span>
       <Slider seconds={seconds} onChange={onChange} max={90} />
     </div>
@@ -113,7 +113,7 @@ export default function DirectorHolds({
               />
               <span style={{ flex: 1 }}>{KIND_LABEL[k]}</span>
               {on && !levelled ? (
-                <strong style={{ fontSize: 12 }}>{config.kindHoldSeconds[k]}s</strong>
+                <strong style={{ fontSize: 14 }}>{config.kindHoldSeconds[k]}s</strong>
               ) : null}
             </label>
 

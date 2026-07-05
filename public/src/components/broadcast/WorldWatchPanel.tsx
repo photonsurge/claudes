@@ -13,6 +13,7 @@
  */
 import { useWorldWatch } from "../../lib/world-watch";
 import type { WorldWatchItem } from "../../lib/broadcast";
+import type { City } from "../../lib/cities";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
 /** Rows shown before the list starts marqueeing (taller feeds auto-scroll). */
@@ -31,6 +32,9 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
         background: `${item.color}14`,
       }}
     >
+      <span style={{ flex: "0 0 auto", fontSize: 17, lineHeight: 1 }} title={item.kind === "quake" ? "Seismic" : undefined}>
+        {item.icon}
+      </span>
       <span
         style={{
           flex: "0 0 auto",
@@ -48,7 +52,7 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
       >
         {item.tag}
       </span>
-      <div style={{ minWidth: 0, display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+      <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
         <span
           style={{
             fontSize: 14,
@@ -57,9 +61,10 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            maxWidth: 230,
+            maxWidth: 210,
           }}
         >
+          {item.flag ? `${item.flag} ` : ""}
           {item.title}
         </span>
         {item.sub ? (
@@ -71,7 +76,7 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
-              maxWidth: 230,
+              maxWidth: 210,
               letterSpacing: 0.3,
             }}
           >
@@ -79,12 +84,32 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
           </span>
         ) : null}
       </div>
+      {item.expiresIn ? (
+        <span
+          style={{
+            flex: "0 0 auto",
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: 0.3,
+            color: item.expiresIn === "expired" ? "#6b7688" : "#7f8ea6",
+          }}
+        >
+          {item.expiresIn}
+        </span>
+      ) : null}
     </div>
   );
 }
 
-export default function WorldWatchPanel({ theme = DEFAULT_THEME }: { theme?: BroadcastTheme }) {
-  const s = useWorldWatch();
+export default function WorldWatchPanel({
+  theme = DEFAULT_THEME,
+  cities = [],
+}: {
+  theme?: BroadcastTheme;
+  /** Curated, wiki-enriched cities (BroadcastFrame already loads these) — used only to flag rows. */
+  cities?: City[];
+}) {
+  const s = useWorldWatch(cities);
   const feed = s.feed;
   const quiet = feed.length === 0;
 
