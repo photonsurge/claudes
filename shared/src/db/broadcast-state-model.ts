@@ -4,7 +4,7 @@ import { iGeneralModel, mongoTimestamps } from "../interfaces/iGeneralModel";
 import { getModel } from "../utill/getModel";
 import type { ControlState } from "../control";
 import { AUDIO_MODES } from "../control";
-import { defaultSatImgFeeds } from "../satimg/types";
+import { defaultSatImgFeeds, DEFAULT_SATIMG_LOOK } from "../satimg/types";
 
 /** The id of the single broadcast-state document (single-domain → one row). */
 export const BROADCAST_STATE_ID = "default" as const;
@@ -122,6 +122,7 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     showAurora: { type: Boolean, required: true, default: false },
     showSatImg: { type: Boolean, required: true, default: false },
     satImgFeeds: { type: mongoose.Schema.Types.Mixed, required: true, default: () => defaultSatImgFeeds() },
+    satImgLook: { type: String, required: true, default: DEFAULT_SATIMG_LOOK },
     showFires: { type: Boolean, required: true, default: false },
     showMagneticField: { type: Boolean, required: true, default: false },
     showMapSource: { type: Boolean, required: true, default: false },

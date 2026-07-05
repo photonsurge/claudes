@@ -88,13 +88,45 @@ export interface SatImgMeta extends SatImgFrame {
  * BitmapLayer extent (imagery is transparent outside its disk, so a generous window is
  * fine). Live geostationary feeds refresh ~10-min; the global mosaic is daily.
  */
+/**
+ * How a feed resolves to a baked frame:
+ *  - `mosaic`  — the daily global true-colour (its own cloud-keyed frame, satId = id).
+ *  - `disc`    — a geostationary disc that follows the global `satImgLook`; the worker
+ *                bakes one frame per look, satId = `${id}:${look}`, so switching look is
+ *                instant. Falls back to the disc's IR frame when a look isn't available.
+ *  - `overlay` — a transparent product drawn on top of everything (lightning), satId = id.
+ */
+export type SatImgFeedKind = "mosaic" | "disc" | "overlay";
+
 export interface SatImgFeed {
   id: string;
   label: string;
   region: string;
   bounds: SatImgBounds;
   live: boolean;
+  kind: SatImgFeedKind;
 }
+
+/**
+ * The composite "look" every live disc follows, chosen once globally by the operator.
+ * Each disc maps to its own equivalent layer (see the worker's LOOK_LAYERS); a look a
+ * disc doesn't carry falls back to that disc's Infrared frame (every disc has IR).
+ */
+export interface SatImgLook {
+  id: string;
+  label: string;
+}
+export const SATIMG_LOOKS: SatImgLook[] = [
+  { id: "geocolor", label: "GeoColor" },
+  { id: "ir", label: "Infrared" },
+  { id: "watervapour", label: "Water vapour" },
+  { id: "airmass", label: "Air mass" },
+  { id: "dust", label: "Dust" },
+  { id: "firetemp", label: "Fire temp" },
+];
+export const DEFAULT_SATIMG_LOOK = "geocolor";
+export const isSatImgLook = (v: unknown): v is string =>
+  typeof v === "string" && SATIMG_LOOKS.some((l) => l.id === v);
 
 /**
  * The feed set the globe can drape. NASA GIBS (keyless WMS) serves the global daily
@@ -104,12 +136,13 @@ export interface SatImgFeed {
  * Ocean (45.5°E). Together the four live discs + the daily mosaic wrap the whole globe.
  */
 export const SATIMG_FEEDS: SatImgFeed[] = [
-  { id: "global", label: "Global true colour", region: "Whole world · daily", bounds: [-180, -90, 180, 90], live: false },
-  { id: "goes-east", label: "GOES-East", region: "Americas · Atlantic · live", bounds: [-150, -65, 10, 65], live: true },
-  { id: "goes-west", label: "GOES-West", region: "Pacific · W Americas · live", bounds: [-180, -65, -60, 65], live: true },
-  { id: "himawari", label: "Himawari (IR)", region: "Asia · Australia · live", bounds: [60, -65, 180, 65], live: true },
-  { id: "meteosat-0", label: "Meteosat-0 (GeoColor)", region: "Europe · Africa · Atlantic · live", bounds: [-65, -65, 65, 65], live: true },
-  { id: "meteosat-iodc", label: "Meteosat IODC (IR)", region: "Indian Ocean · E Africa · S Asia · live", bounds: [-25, -65, 116, 65], live: true },
+  { id: "global", label: "Global true colour", region: "Whole world · daily", bounds: [-180, -90, 180, 90], live: false, kind: "mosaic" },
+  { id: "goes-east", label: "GOES-East", region: "Americas · Atlantic · live", bounds: [-150, -65, 10, 65], live: true, kind: "disc" },
+  { id: "goes-west", label: "GOES-West", region: "Pacific · W Americas · live", bounds: [-180, -65, -60, 65], live: true, kind: "disc" },
+  { id: "himawari", label: "Himawari", region: "Asia · Australia · live", bounds: [60, -65, 180, 65], live: true, kind: "disc" },
+  { id: "meteosat-0", label: "Meteosat-0", region: "Europe · Africa · Atlantic · live", bounds: [-65, -65, 65, 65], live: true, kind: "disc" },
+  { id: "meteosat-iodc", label: "Meteosat IODC", region: "Indian Ocean · E Africa · S Asia · live", bounds: [-25, -65, 116, 65], live: true, kind: "disc" },
+  { id: "lightning", label: "⚡ Lightning", region: "Europe · Africa · Atlantic · 5-min", bounds: [-65, -65, 65, 65], live: true, kind: "overlay" },
 ];
 
 /** Per-feed operator state: shown + its own opacity. */
@@ -126,6 +159,7 @@ export const DEFAULT_SATIMG_FEEDS: Record<string, SatImgFeedState> = {
   himawari: { on: false, opacity: 0.9 },
   "meteosat-0": { on: false, opacity: 0.9 },
   "meteosat-iodc": { on: false, opacity: 0.9 },
+  lightning: { on: false, opacity: 0.95 },
 };
 
 /** Fresh deep copy of the default feed state (so callers never share nested refs). */

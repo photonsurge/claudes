@@ -1,4 +1,4 @@
-import { generateNarrative, buildPrompt } from "./openrouter";
+import { generateNarrative, buildPrompt, summaryTrend } from "./openrouter";
 import type { AggregateResult } from "./aggregate";
 
 const AGG: AggregateResult = {
@@ -25,6 +25,23 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("the past hour");
     expect(prompt).toContain('"alertsActive": 3');
     expect(prompt).toContain("East Asia");
+  });
+
+  it("embeds the trend when given one", () => {
+    const prompt = buildPrompt(AGG, "hourly", { alertsActiveDelta: 5, quakeCountDelta: -1 });
+    expect(prompt).toContain("trendSincePreviousRoundUp");
+    expect(prompt).toContain('"alertsActiveDelta": 5');
+  });
+});
+
+describe("summaryTrend", () => {
+  it("returns null with no prior round-up", () => {
+    expect(summaryTrend(AGG.stats, null)).toBeNull();
+  });
+
+  it("diffs alertsActive/quakeCount against the previous round-up", () => {
+    const prev = { ...AGG.stats, alertsActive: 1, quakeCount: 3 };
+    expect(summaryTrend(AGG.stats, prev)).toEqual({ alertsActiveDelta: 2, quakeCountDelta: -2 });
   });
 });
 

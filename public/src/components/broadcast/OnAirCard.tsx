@@ -78,12 +78,33 @@ export default function OnAirCard({
         </span>
       </div>
 
-      <div style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.1 }}>
+      <div
+        style={{
+          fontSize: 30,
+          fontWeight: 800,
+          lineHeight: 1.1,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
         {segment.icon ? `${segment.icon} ` : ""}
         {segment.title}
       </div>
       {segment.subtitle ? (
-        <div style={{ fontSize: 17, opacity: 0.82, marginTop: 4 }}>{segment.subtitle}</div>
+        <div
+          style={{
+            fontSize: 17,
+            opacity: 0.82,
+            marginTop: 4,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {segment.subtitle}
+        </div>
       ) : null}
 
       {details.length ? (

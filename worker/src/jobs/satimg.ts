@@ -3,7 +3,7 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import { log } from "@photonsurge/shared/utill/logger";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 import { SATIMG_FEEDS } from "@photonsurge/shared/satimg/types";
-import { fetchGibsFeed } from "../satimg/gibs";
+import { fetchGibsFeed, fetchDiscLook, looksFor, type GibsFeedResult } from "../satimg/gibs";
 import { cloudKey, cloudKeyFromEnv } from "../satimg/grade";
 import { bakeHimawari } from "../satimg/bake";
 import { summarizeForLog } from "../utils";
@@ -37,47 +37,65 @@ export async function refresh(job: Job) {
   }
 }
 
-/** Bake every GIBS feed (global daily + live geostationary discs) → cloud-keyed frames. */
+/**
+ * Bake every satellite frame the globe can draw: the daily true-colour MOSAIC (cloud-
+ * keyed), the lightning OVERLAY, and — for each geostationary DISC — one frame PER
+ * available look (satId `${disc}:${look}`) so the operator's global look switches
+ * instantly. Each unit is baked independently: one upstream hiccup / eclipse / missing
+ * look must not sink the rest.
+ */
 async function refreshGibs(db: Awaited<ReturnType<typeof getAppDb>>) {
   const ck = process.env.SATIMG_CLOUDKEY !== "false";
   const opts = cloudKeyFromEnv();
-  const done: Array<{ feed: string; when: string; bytes: number }> = [];
+  const done: Array<{ satId: string; when: string; bytes: number }> = [];
 
-  // One feed failing (upstream hiccup, a satellite in eclipse) must not sink the rest.
+  // Store one baked frame under a satId. `keyable` gates the cloud-key to the mosaic.
+  const store = async (satId: string, label: string, r: GibsFeedResult) => {
+    const png = ck && r.cloudKey ? await cloudKey(r.png, opts) : r.png;
+    // Guard Mongo's 16 MB BSON doc limit with a clear error instead of a raw BSON one.
+    if (png.length > 15_500_000) {
+      throw new Error(`frame ${(png.length / 1e6).toFixed(1)}MB > 15.5MB — lower this feed's maxPx`);
+    }
+    await db.satimg.replace({
+      satId,
+      satName: label,
+      subLon: 0, // N/A for mosaics/discs
+      composite: satId,
+      observationTime: r.when === "latest" ? new Date() : new Date(`${r.when}T00:00:00Z`),
+      bounds: r.bounds,
+      width: r.width,
+      height: r.height,
+      png,
+    });
+    done.push({ satId, when: r.when, bytes: png.length });
+    log(TAG, `satimg frame baked`, { satId, when: r.when, bytes: png.length });
+  };
+
+  // The full bake plan: (satId, label, fetch-thunk). Discs fan out over their looks.
+  const plan: Array<{ satId: string; label: string; fetch: () => Promise<GibsFeedResult> }> = [];
   for (const feed of SATIMG_FEEDS) {
-    try {
-      const r = await fetchGibsFeed(feed.id);
-      // Cloud-key only feeds that read as clouds when keyed (the true-colour mosaic);
-      // GeoColor/IR discs are shown whole and blended by their opacity. SATIMG_CLOUDKEY
-      // =false disables keying entirely.
-      const png = ck && r.cloudKey ? await cloudKey(r.png, opts) : r.png;
-      // Guard Mongo's 16 MB BSON doc limit with a clear error instead of a raw BSON one.
-      if (png.length > 15_500_000) {
-        throw new Error(`frame ${(png.length / 1e6).toFixed(1)}MB > 15.5MB — lower this feed's maxPx`);
+    if (feed.kind === "disc") {
+      for (const look of looksFor(feed.id)) {
+        plan.push({ satId: `${feed.id}:${look}`, label: `${feed.label} · ${look}`, fetch: () => fetchDiscLook(feed.id, look) });
       }
-      await db.satimg.replace({
-        satId: feed.id,
-        satName: feed.label,
-        subLon: 0, // N/A for mosaics/discs
-        composite: feed.id,
-        observationTime: r.when === "latest" ? new Date() : new Date(`${r.when}T00:00:00Z`),
-        bounds: r.bounds,
-        width: r.width,
-        height: r.height,
-        png,
-      });
-      done.push({ feed: feed.id, when: r.when, bytes: png.length });
-      log(TAG, `satimg feed baked`, { feed: feed.id, when: r.when, bytes: png.length });
-    } catch (err) {
-      log(TAG, `satimg feed failed`, { feed: feed.id, err: summarizeForLog(err) });
-      blogErr(TAG, `satimg feed failed (${feed.id})`, err, "satimg", "refresh");
+    } else {
+      plan.push({ satId: feed.id, label: feed.label, fetch: () => fetchGibsFeed(feed.id) });
     }
   }
 
-  if (!done.length) throw new Error("all satimg feeds failed");
-  blogInfo(TAG, `satimg bake: ${done.length}/${SATIMG_FEEDS.length} feeds`, { done }, "satimg", "refresh");
+  for (const unit of plan) {
+    try {
+      await store(unit.satId, unit.label, await unit.fetch());
+    } catch (err) {
+      log(TAG, `satimg frame failed`, { satId: unit.satId, err: summarizeForLog(err) });
+      blogErr(TAG, `satimg frame failed (${unit.satId})`, err, "satimg", "refresh");
+    }
+  }
+
+  if (!done.length) throw new Error("all satimg frames failed");
+  blogInfo(TAG, `satimg bake: ${done.length}/${plan.length} frames`, { done }, "satimg", "refresh");
   emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "satimg" } });
-  return { feeds: done };
+  return { frames: done };
 }
 
 /** Raw Himawari-9 satpy bake (opt-in). */

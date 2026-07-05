@@ -5,7 +5,7 @@
  * and fully degrading: with no OPENROUTER_API_KEY the round-up is still stored,
  * just without prose (`status: "skipped"`).
  */
-import type { SummaryPeriod, NarrativeStatus } from "@photonsurge/shared/db/event-summary-model";
+import type { SummaryPeriod, NarrativeStatus, iSummaryStats } from "@photonsurge/shared/db/event-summary-model";
 import type { AggregateResult } from "./aggregate";
 
 export interface NarrativeResult {
@@ -24,11 +24,27 @@ const PERIOD_LABEL: Record<SummaryPeriod, string> = {
   daily: "the past 24 hours",
 };
 
+/** Alerts-active / quake-count deltas vs. the previous round-up of the same cadence. */
+export interface SummaryTrend {
+  alertsActiveDelta: number;
+  quakeCountDelta: number;
+}
+
+/** `prev` stats → the deltas worth mentioning, or null when there's no prior round-up to compare against. */
+export function summaryTrend(current: iSummaryStats, prev: iSummaryStats | null): SummaryTrend | null {
+  if (!prev) return null;
+  return {
+    alertsActiveDelta: current.alertsActive - prev.alertsActive,
+    quakeCountDelta: current.quakeCount - prev.quakeCount,
+  };
+}
+
 /** Assemble the user prompt from the deterministic facts (no invented data). */
-export function buildPrompt(agg: AggregateResult, period: SummaryPeriod): string {
+export function buildPrompt(agg: AggregateResult, period: SummaryPeriod, trend?: SummaryTrend | null): string {
   const facts = {
     window: PERIOD_LABEL[period],
     stats: agg.stats,
+    trendSincePreviousRoundUp: trend ?? undefined,
     hotspots: agg.hotspots.slice(0, 12),
     topEvents: agg.topEvents,
     sources: agg.sources,
@@ -39,6 +55,8 @@ export function buildPrompt(agg: AggregateResult, period: SummaryPeriod): string
     "Lead with the most severe hotspots, name the regions, and mention notable",
     "individual events (major quakes, cyclones, extreme alerts). 2–3 tight paragraphs,",
     "broadcast anchor tone, no headings or bullet lists.",
+    "If trendSincePreviousRoundUp is present and a delta is non-trivial, briefly note",
+    "the change (e.g. \"up from N alerts last hour\") — skip it if both deltas are near zero.",
     "",
     "```json",
     JSON.stringify(facts, null, 2),
@@ -54,6 +72,7 @@ export function buildPrompt(agg: AggregateResult, period: SummaryPeriod): string
 export async function generateNarrative(
   agg: AggregateResult,
   period: SummaryPeriod,
+  trend?: SummaryTrend | null,
 ): Promise<NarrativeResult> {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return { narrative: "", status: "skipped" };
@@ -78,7 +97,7 @@ export async function generateNarrative(
         max_tokens: 700,
         messages: [
           { role: "system", content: system },
-          { role: "user", content: buildPrompt(agg, period) },
+          { role: "user", content: buildPrompt(agg, period, trend) },
         ],
       }),
     });

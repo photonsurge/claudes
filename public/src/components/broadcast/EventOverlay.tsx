@@ -121,25 +121,49 @@ export default function EventOverlay({
         ))}
       </div>
 
-      {/* Event name, lower-centre of the frame. */}
+      {/* Event name, lower-centre of the frame. Width-capped + ellipsised: some
+          sources (e.g. an NWS multi-county areaDesc) can hand back a very long
+          subtitle, and nowrap-with-no-limit let that run off both edges. */}
       <div
         style={{
           position: "absolute",
           bottom: 26,
           left: "50%",
           transform: "translateX(-50%)",
+          maxWidth: W - 40,
           textAlign: "center",
           fontFamily: "system-ui, sans-serif",
           textShadow: "0 2px 10px rgba(0,0,0,0.8)",
-          whiteSpace: "nowrap",
         }}
       >
-        <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: 2, color: "#fff" }}>
+        <div
+          style={{
+            fontSize: 26,
+            fontWeight: 800,
+            letterSpacing: 2,
+            color: "#fff",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
           {segment.icon ? `${segment.icon} ` : ""}
           {name}
         </div>
         {segment.subtitle ? (
-          <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: 0.5, color: "#cfe0f5", opacity: 0.85, marginTop: 2 }}>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              letterSpacing: 0.5,
+              color: "#cfe0f5",
+              opacity: 0.85,
+              marginTop: 2,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
             {segment.subtitle}
           </div>
         ) : null}

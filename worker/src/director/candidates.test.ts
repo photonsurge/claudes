@@ -64,6 +64,8 @@ const freshSummary = (over: Partial<Record<string, any>> = {}) => ({
   narrativeStatus: "ok",
   narrative: "Severe storms are impacting the Gulf Coast while a strong quake rattled Japan.",
   generatedAt: new Date(),
+  hotspots: [],
+  topEvents: [],
   ...over,
 });
 
@@ -274,6 +276,28 @@ describe("buildCandidates", () => {
       expect(summary!.segment.summary?.period).toBe("hourly");
     });
 
+    it("tours the round-up's hotspots then its named top events as camera stops", async () => {
+      const db = fakeDb({
+        eventSummaries: {
+          hourly: freshSummary({
+            hotspots: [
+              { label: "Gulf Coast", lng: -90, lat: 27, count: 3, maxSeverity: 4, hazards: ["Hurricane"], kinds: ["alert"] },
+            ],
+            topEvents: [
+              { kind: "quake", refId: "q1", title: "M6.1 — Off Japan", severity: 3, hazard: undefined, lng: 140, lat: 38 },
+              { kind: "alert", refId: "a-no-geo", title: "Geocode-only advisory", severity: 1 }, // no lng/lat — dropped
+            ],
+          }),
+        },
+      });
+      const pool = await buildCandidates(db, cfg());
+      const summary = pool.find((c) => c.segment.id === "summary:sum1")!;
+      expect(summary.segment.summary?.stops).toEqual([
+        { label: "Gulf Coast", subtitle: "Hurricane · 3 events", lng: -90, lat: 27, severity: 4 },
+        { label: "M6.1 — Off Japan", subtitle: undefined, lng: 140, lat: 38, severity: 3 },
+      ]);
+    });
+
     it("skips a summary with no successful narrative (skipped/error/empty)", async () => {
       const db = fakeDb({
         eventSummaries: {
@@ -303,6 +327,28 @@ describe("buildCandidates", () => {
       const db = fakeDb({ eventSummaries: { hourly: freshSummary() } });
       const pool = await buildCandidates(db, cfg({ kinds: { summary: false } as any }));
       expect(pool.some((c) => c.segment.kind === "summary")).toBe(false);
+    });
+
+    it("builds camera stops from hotspots then geocoded top events", async () => {
+      const db = fakeDb({
+        eventSummaries: {
+          hourly: freshSummary({
+            hotspots: [
+              { label: "Gulf Coast", lng: -90, lat: 29, count: 3, maxSeverity: 4, hazards: ["wind"], kinds: ["alert"] },
+            ],
+            topEvents: [
+              { kind: "quake", refId: "q1", title: "M6.5 — Off Japan", severity: 4, lng: 140, lat: 38 },
+              { kind: "quake", refId: "q2", title: "No coords", severity: 3 }, // dropped: no lng/lat
+            ],
+          }),
+        },
+      });
+      const pool = await buildCandidates(db, cfg());
+      const stops = pool.find((c) => c.segment.id === "summary:sum1")!.segment.summary!.stops!;
+      expect(stops).toEqual([
+        { label: "Gulf Coast", subtitle: "wind · 3 events", lng: -90, lat: 29, severity: 4 },
+        { label: "M6.5 — Off Japan", subtitle: undefined, lng: 140, lat: 38, severity: 4 },
+      ]);
     });
   });
 });

@@ -1,5 +1,6 @@
 import type { Aircraft, Quake, SatellitePosition, Ship, TleRecord } from "./types";
 import type { TideGaugeResponse } from "../tides/types";
+import type { SeismoStationsResponse } from "../seismo/types";
 
 export interface SatellitesResponse {
   group: string;
@@ -102,6 +103,20 @@ export async function getTideGauge(lat: number, lng: number, maxKm?: number): Pr
   const body = await res.json().catch(() => null);
   if (!body) return { station: null };
   return body as TideGaugeResponse;
+}
+
+/**
+ * Worker-cached live seismograph series for the stations nearest `[lng,lat]`
+ * (plural — the panel cycles through them). Returns `{ stations: [] }` when
+ * none are within range.
+ */
+export async function getSeismoStations(lat: number, lng: number, maxKm?: number): Promise<SeismoStationsResponse> {
+  const q = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+  if (maxKm != null) q.set("maxKm", String(maxKm));
+  const res = await fetch(`/api/tracks/seismo?${q.toString()}`, { cache: "no-store" });
+  const body = await res.json().catch(() => null);
+  if (!body) return { stations: [] };
+  return body as SeismoStationsResponse;
 }
 
 // ── Position-history replay ────────────────────────────────────────────────

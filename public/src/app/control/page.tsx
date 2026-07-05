@@ -26,6 +26,7 @@ import { listCities, type City } from "../../lib/cities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
 import { useQuakes } from "../../lib/seismic-overlay";
+import { useSeismoGauge } from "../../lib/seismo-gauge";
 import { useCables } from "../../lib/cables-overlay";
 import { useFaults } from "../../lib/faults-overlay";
 import { useAurora } from "../../lib/aurora-overlay";
@@ -102,6 +103,7 @@ export default function ControlPage() {
   });
   const alerts = useAlertFeatures(shown.showAlerts, shown.alertSeverityMin, shown.alertHazardsOff);
   const quakes = useQuakes(shown.showSeismic, shown.seismicMinMag);
+  const { stations: seismoStations, active: seismoActive } = useSeismoGauge(shown.camera.center, shown.showSeismic);
   const cables = useCables(shown.showCables);
   const faults = useFaults(shown.showFaults);
   const aurora = useAurora(shown.showAurora);
@@ -166,6 +168,8 @@ export default function ControlPage() {
           trails={trails}
           alerts={alerts}
           quakes={quakes}
+          seismoStations={seismoStations}
+          seismoActive={seismoActive}
           cables={cables}
           faults={faults}
           aurora={aurora}

@@ -14,6 +14,7 @@ import type { TideSample } from "@photonsurge/shared/tides/types";
 import { nearby } from "../../lib/geo";
 import { useTideGauge } from "../../lib/tide-gauge";
 import type { Quake } from "../../lib/tracks/types";
+import type { SeismoStationReading } from "../../lib/seismo/types";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
 /** Radius (km) of quakes counted as "relevant" to a focused quake vs a region. */
@@ -42,11 +43,37 @@ function seismoPath(w: number, h: number, amp: number): string {
 }
 
 /**
+ * A stroked seismograph trace from REAL samples, normalised into the box —
+ * reads as a proper line trace (unlike the tide gauge's filled area below,
+ * which suits "water level" but not "ground motion"). Falls back to a flat
+ * mid-line when the series is degenerate (all equal / single point).
+ */
+function realLinePath(samples: { v: number }[], w: number, h: number): string {
+  const n = samples.length;
+  if (n === 0) return `M0,${h / 2} L${w},${h / 2}`;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const s of samples) {
+    if (s.v < min) min = s.v;
+    if (s.v > max) max = s.v;
+  }
+  const span = max - min;
+  const pts: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const x = n === 1 ? 0 : (i / (n - 1)) * w;
+    const norm = span > 1e-6 ? (samples[i].v - min) / span : 0.5;
+    const y = h * 0.85 - norm * (h * 0.7);
+    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  return `M${pts.join(" L")}`;
+}
+
+/**
  * A filled water-level path from REAL samples, normalised into the box: lowest
  * reading sits low, highest sits high. Falls back to a flat mid-line when the
  * series is degenerate (all equal / single point).
  */
-function realWavePath(samples: TideSample[], w: number, h: number): string {
+function realWavePath(samples: { v: number }[], w: number, h: number): string {
   const n = samples.length;
   if (n === 0) return `M0,${h} L${w},${h} Z`;
   let min = Infinity;
@@ -148,11 +175,17 @@ const W = 300;
 
 export default function MonitorCluster({
   quakes,
+  seismoStations = [],
+  seismoActive = null,
   onAirSegment = null,
   regionCenter,
   theme = DEFAULT_THEME,
 }: {
   quakes: Quake[];
+  /** Worker-cached live seismograph stations near what's on air. */
+  seismoStations?: SeismoStationReading[];
+  /** Which of `seismoStations` is currently "on air" here (cycled by the caller). */
+  seismoActive?: SeismoStationReading | null;
   /** The on-air director segment — drives what's "relevant". */
   onAirSegment?: Segment | null;
   /** Current camera centre [lng,lat] — the fallback focus for wide shots. */
@@ -179,6 +212,19 @@ export default function MonitorCluster({
   // relevant quake is nearby; hide on a focused land shot with nothing seismic.
   const showSeismic = !focus || isQuakeSeg || relevantQuakes.length > 0;
   const seismicPlace = topQuake?.place;
+
+  // A real live station in range draws the genuine waveform instead of the
+  // synthetic noise; the caller (WatchSurface) already cycles `seismoActive`
+  // through `seismoStations` on a timer, keeping this in sync with the globe
+  // overlay's highlighted marker.
+  const realSeismoSamples = seismoActive?.samples?.length ? seismoActive.samples : null;
+  const activeIdx = seismoActive ? seismoStations.indexOf(seismoActive) : -1;
+  const stationCaption =
+    seismoActive && activeIdx >= 0
+      ? `${truncate(seismoActive.siteName?.split(",")[0]?.trim() || `${seismoActive.net}.${seismoActive.sta}`, 24)}${
+          seismoStations.length > 1 ? ` · ${activeIdx + 1}/${seismoStations.length}` : ""
+        }`
+      : undefined;
 
   // ── Tsunami relevance ──────────────────────────────────────────────────
   // A coastal gauge being in range IS the relevance signal — draw its real
@@ -215,19 +261,38 @@ export default function MonitorCluster({
         <Panel
           title="SEISMIC MONITOR"
           tag={maxMag > 0 ? `M${maxMag.toFixed(1)}` : "PLOT"}
-          caption={seismicPlace ? truncate(seismicPlace, 34) : undefined}
+          caption={stationCaption ?? (seismicPlace ? truncate(seismicPlace, 34) : undefined)}
           theme={theme}
         >
-          <svg
-            width="200%"
-            height="100%"
-            viewBox={`0 0 ${W * 2} 42`}
-            preserveAspectRatio="none"
-            style={{ position: "absolute", inset: 0, animation: "bcast-trace 6s linear infinite" }}
-          >
-            <path d={seismoPath(W, 42, amp)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
-            <path d={seismoPath(W, 42, amp)} transform={`translate(${W},0)`} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
-          </svg>
+          {realSeismoSamples ? (
+            <svg
+              width="200%"
+              height="100%"
+              viewBox={`0 0 ${W * 2} 42`}
+              preserveAspectRatio="none"
+              style={{ position: "absolute", inset: 0, animation: "bcast-trace 9s linear infinite" }}
+            >
+              <path d={realLinePath(realSeismoSamples, W, 42)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
+              <path
+                d={realLinePath(realSeismoSamples, W, 42)}
+                transform={`translate(${W},0)`}
+                fill="none"
+                stroke="#43d9ff"
+                strokeWidth="1.2"
+              />
+            </svg>
+          ) : (
+            <svg
+              width="200%"
+              height="100%"
+              viewBox={`0 0 ${W * 2} 42`}
+              preserveAspectRatio="none"
+              style={{ position: "absolute", inset: 0, animation: "bcast-trace 6s linear infinite" }}
+            >
+              <path d={seismoPath(W, 42, amp)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
+              <path d={seismoPath(W, 42, amp)} transform={`translate(${W},0)`} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
+            </svg>
+          )}
         </Panel>
       ) : null}
 

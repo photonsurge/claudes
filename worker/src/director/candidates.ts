@@ -15,6 +15,7 @@ import {
   type DirectorConfig,
   type Segment,
   type SegmentKind,
+  type SegmentSummaryStop,
   type TrackInfo,
 } from "@photonsurge/shared/director";
 import type { Candidate } from "@photonsurge/shared/director-select";
@@ -35,7 +36,7 @@ import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
 import { quakeSegmentContent, alertSegmentContent } from "@photonsurge/shared/segments";
 import { mmsiCountry, countryNameFlag } from "@photonsurge/shared/tracks/flags";
-import type { SummaryPeriod } from "@photonsurge/shared/db/event-summary-model";
+import type { SummaryPeriod, iEventSummaryModel } from "@photonsurge/shared/db/event-summary-model";
 import { tleGroups } from "../jobs/tracks";
 
 const make = (
@@ -212,6 +213,27 @@ const SUMMARY_WORDS_PER_MIN = 170;
 const SUMMARY_MAX_HOLD_MS = 60_000;
 
 /**
+ * The places a round-up's camera tours while its narrative plays — the doc's
+ * geographic hotspot clusters (broad sweep) followed by its named top events
+ * (the specific warnings/quakes the narrative calls out), each carrying enough
+ * to render an on-air info card (place, hazard/count, severity).
+ */
+function summaryStops(doc: iEventSummaryModel): SegmentSummaryStop[] {
+  const stops: SegmentSummaryStop[] = (doc.hotspots ?? []).map((h) => ({
+    label: h.label,
+    subtitle: [h.hazards[0], h.count > 1 ? `${h.count} events` : undefined].filter(Boolean).join(" · ") || undefined,
+    lng: h.lng,
+    lat: h.lat,
+    severity: h.maxSeverity,
+  }));
+  for (const e of doc.topEvents ?? []) {
+    if (e.lng == null || e.lat == null) continue;
+    stops.push({ label: e.title, subtitle: e.hazard, lng: e.lng, lat: e.lat, severity: e.severity });
+  }
+  return stops;
+}
+
+/**
  * One candidate per period whose latest round-up has a real narrative, hasn't
  * already aired this session (`seenCounts`), and isn't stale (the director was
  * off for a while and the round-up is no longer "current"). Unlike ads this is
@@ -248,6 +270,7 @@ async function summaryCandidates(
       period,
       narrative: doc.narrative,
       generatedAt: doc.generatedAt instanceof Date ? doc.generatedAt.toISOString() : String(doc.generatedAt),
+      stops: summaryStops(doc),
     };
     out.push({ score: 8, segment: seg });
   }

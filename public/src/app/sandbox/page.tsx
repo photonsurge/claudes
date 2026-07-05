@@ -27,6 +27,7 @@ import { listCities, type City } from "../../lib/cities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
 import { useQuakes } from "../../lib/seismic-overlay";
+import { useSeismoGauge } from "../../lib/seismo-gauge";
 import { useCables } from "../../lib/cables-overlay";
 import { useFaults } from "../../lib/faults-overlay";
 import { useAurora } from "../../lib/aurora-overlay";
@@ -59,6 +60,7 @@ export default function SandboxPage() {
   });
   const alerts = useAlertFeatures(state.showAlerts, state.alertSeverityMin, state.alertHazardsOff);
   const quakes = useQuakes(state.showSeismic, state.seismicMinMag);
+  const { stations: seismoStations, active: seismoActive } = useSeismoGauge(state.camera.center, state.showSeismic);
   const cables = useCables(state.showCables);
   const faults = useFaults(state.showFaults);
   const aurora = useAurora(state.showAurora);
@@ -115,6 +117,8 @@ export default function SandboxPage() {
           trails={trails}
           alerts={alerts}
           quakes={quakes}
+          seismoStations={seismoStations}
+          seismoActive={seismoActive}
           cables={cables}
           faults={faults}
           aurora={aurora}

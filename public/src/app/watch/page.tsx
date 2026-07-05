@@ -135,6 +135,7 @@ function WatchPageInner() {
         cities={cities}
         pulseAt={eventPulse(director)}
         onAirSegment={director?.active ? onAir : null}
+        upNext={director?.active ? director.upNext : []}
       />
       {/* When the broadcast chrome is on, the on-air detail lives inside the event
           reticle, so the separate lower-left card is suppressed to avoid duplication. */}

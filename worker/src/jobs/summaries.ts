@@ -7,7 +7,7 @@ import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
 import { aggregate } from "../summaries/aggregate";
-import { generateNarrative } from "../summaries/openrouter";
+import { generateNarrative, summaryTrend } from "../summaries/openrouter";
 
 const TAG = "job:summaries";
 
@@ -21,8 +21,10 @@ const TAG = "job:summaries";
 async function run(period: SummaryPeriod): Promise<{ id?: string; period: SummaryPeriod; narrativeStatus: string }> {
   const db = await getAppDb();
   try {
+    const prev = await db.eventSummaries.latest(period);
     const agg = await aggregate(db, period);
-    const narrative = await generateNarrative(agg, period);
+    const trend = summaryTrend(agg.stats, prev?.stats ?? null);
+    const narrative = await generateNarrative(agg, period, trend);
     const saved = await db.eventSummaries.create({
       period,
       windowStart: agg.windowStart,

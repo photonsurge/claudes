@@ -40,6 +40,7 @@ import { cityLabelMinZoom, cityDetail } from "../lib/cities";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
 import { seismicLayer } from "./layers/seismic";
+import { seismographStationLayers } from "./layers/seismograph-stations";
 import { graticuleLayer } from "./layers/graticule";
 import { sourceDebugLayers } from "./layers/sourceDebug";
 import { cableLayers, cableNameLabels } from "./layers/cables";
@@ -54,6 +55,7 @@ import { discFromProject, type Disc } from "../lib/globe-geom";
 import GlobeAtmosphere from "./GlobeAtmosphere";
 import GlobeLabels, { type OverlayLabel } from "./GlobeLabels";
 import type { Track, Quake } from "../lib/tracks/types";
+import type { SeismoStationReading } from "../lib/seismo/types";
 import type { TrackPath } from "../lib/tracks/client";
 import type { OrbitSegment } from "../lib/tracks/orbit";
 import type { AlertFeature } from "../lib/alerts";
@@ -85,6 +87,10 @@ export interface GlobeProps {
   alerts?: AlertFeature[];
   /** Recent earthquakes (USGS). */
   quakes?: Quake[];
+  /** Worker-cached live seismograph stations near what's on air. */
+  seismoStations?: SeismoStationReading[];
+  /** Which of `seismoStations` is currently "on air" in the SEISMIC MONITOR panel. */
+  seismoActive?: SeismoStationReading | null;
   /** Submarine cables + landing stations. */
   cables?: CableOverlay;
   faults?: Fault[];
@@ -175,7 +181,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], cables, faults, aurora, satimg, fires = [], geomag, interactive = true, onCameraChange, pulseAt, highlightTrack, onSelect },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], seismoStations = [], seismoActive = null, cables, faults, aurora, satimg, fires = [], geomag, interactive = true, onCameraChange, pulseAt, highlightTrack, onSelect },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -739,6 +745,17 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // Earthquakes above alerts, below cities/tracks.
     if (state.showSeismic && quakes.length) layers.push(...seismicLayer(quakes));
 
+    // Live seismograph stations — the real instruments behind the SEISMIC
+    // MONITOR trace, shown near an on-air quake/region so the map and panel agree.
+    if (state.showSeismic && seismoStations.length) {
+      layers.push(
+        ...seismographStationLayers(
+          seismoStations,
+          seismoActive ? `${seismoActive.net}.${seismoActive.sta}.${seismoActive.loc}.${seismoActive.cha}` : null,
+        ),
+      );
+    }
+
     // Active fires (FIRMS) — glowing hot-spots, above alerts, below cities/tracks.
     if (state.showFires && fires.length) layers.push(...fireLayers(fires));
 
@@ -813,6 +830,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     trails,
     alerts,
     quakes,
+    seismoStations,
+    seismoActive,
     cables,
     faults,
     aurora,

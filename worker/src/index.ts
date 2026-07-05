@@ -22,6 +22,7 @@ import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
 import { initSocket, closeSocket } from "./socket";
 import { startDirector, stopDirector } from "./director/loop";
+import { startSeismoStream, stopSeismoStream } from "./seismo/loop";
 import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
 import { getEnabledSources } from "./alerts/registry";
 import { getEnabledCamSources } from "./cams/registry";
@@ -94,6 +95,11 @@ process.on("uncaughtException", (err) => {
   // Auto-director: a self-running camera/sequencer per scene that's in "auto"
   // mode. Runs in-process (not a BullMQ job) — reads Mongo + emits director:state.
   startDirector();
+
+  // Live seismograph: a persistent SeedLink TCP connection to the stations
+  // nearest what's on air, not a BullMQ job — the connection must stay open
+  // between ticks. Disable with SEISMO_ENABLED=false.
+  if (process.env.SEISMO_ENABLED !== "false") startSeismoStream();
 
   const bullWorker = new Worker(
     QUEUE_NAME,
@@ -456,6 +462,24 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable seismo.refreshStations (GSN broadband-station catalog) ----
+  // Near-static reference data (daily); the live SeedLink loop reads it to
+  // pick stations near what's on air. `immediately` seeds the catalog at boot
+  // so the stream has stations to resolve against right away.
+  if (process.env.SEISMO_ENABLED !== "false") {
+    const SEISMO_STATIONS_MS = Number(process.env.SEISMO_STATIONS_MS || 24 * 60 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "seismo", type: "seismo", event: "refreshStations", data: {} },
+        { repeat: { every: SEISMO_STATIONS_MS, immediately: true }, jobId: "seismo-refresh-stations" },
+      );
+      log(TAG, `registered repeatable seismo.refreshStations`, { stationsMs: SEISMO_STATIONS_MS });
+    } catch (err) {
+      log(TAG, `failed to register seismo.refreshStations`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable climate.snapshotClimate (past-year ERA5 for what's on air) ----
   // Focus-driven like tides: caches the past year of Open-Meteo/ERA5 daily
   // climate for the on-air camera point + significant quakes, one Mongo doc per
@@ -545,6 +569,7 @@ process.on("uncaughtException", (err) => {
     // candidates and emitting director:state cuts. If we don't kill it here it
     // carries on cutting shots the whole time bullWorker.close() drains jobs.
     stopDirector();
+    stopSeismoStream();
 
     // Backstop: if the graceful drain wedges (e.g. a stuck job holding its
     // lock), force-exit so quit always actually quits.

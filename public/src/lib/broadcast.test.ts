@@ -163,6 +163,10 @@ describe("worldWatchSummary", () => {
       [2, 1],
     ]);
     expect(s.quakeCount).toBe(2);
+    expect(s.byMagClass.map((b) => [b.cls, b.count])).toEqual([
+      ["strong", 1], // 6.3
+      ["light", 1], // 4.1
+    ]);
     expect(s.maxMag).toBe(6.3);
     expect(s.maxQuake?.place).toBe("off Japan");
   });
@@ -206,11 +210,15 @@ describe("worldWatchSummary", () => {
     );
     expect(s.byContinent[0]).toMatchObject({ continent: "Europe", alertCount: 1, quakeCount: 2, total: 3 });
     expect(s.byContinent[0].bySeverity).toEqual([{ rank: 4, label: "Extreme", color: "#ef4444", count: 1 }]);
+    expect(s.byContinent[0].byMagClass).toEqual([
+      { cls: "moderate", label: "Moderate", color: "#eab308", count: 2 }, // both quakes default to mag 5.9
+    ]);
     expect(s.byContinent.find((c) => c.continent === "North America")).toMatchObject({
       alertCount: 1,
       quakeCount: 0,
       total: 1,
       bySeverity: [{ rank: 3, label: "Severe", color: "#f97316", count: 1 }],
+      byMagClass: [],
     });
   });
 });

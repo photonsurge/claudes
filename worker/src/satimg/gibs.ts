@@ -196,28 +196,81 @@ export async function fetchGibs(opts: FetchGibsOptions = {}): Promise<GibsFetchR
 }
 
 /**
- * Worker-side fetch config per feed id: GIBS layer(s), live?, target long-edge px, and
- * whether to CLOUD-KEY the result. Keying (brightness→alpha) only reads as "clouds" for
- * the true-colour mosaic (dark oceans go transparent); GeoColor's bright oceans and IR's
- * grey background survive the key, so those discs are shown whole and blended by opacity.
+ * Worker-side fetch config for the two NON-disc feeds. `global` is the daily true-colour
+ * mosaic (cloud-keyed so clear sky goes transparent); `lightning` is the MTG Lightning
+ * Imager overlay (already transparent — a low `minBytes` lets a quiet, near-empty frame
+ * through). The geostationary DISCS are configured by LOOK_LAYERS instead, since each one
+ * bakes several composites (see below).
  */
 interface FeedFetchCfg {
   layers: string[];
   live: boolean;
   maxPx: number;
   cloudKey: boolean;
-  /** WMS base URL — defaults to GIBS; the Meteosat feeds point at EUMETView. */
+  /** WMS base URL — defaults to GIBS; the EUMETSAT feeds point at EUMETView. */
   wms?: string;
+  /** Reject bodies smaller than this as errors (default 10 KB; lightning is tiny). */
+  minBytes?: number;
 }
 
 const FEED_FETCH: Record<string, FeedFetchCfg> = {
   global: { layers: GIBS_TRUECOLOR_LAYERS, live: false, maxPx: 2048, cloudKey: true },
-  "goes-east": { layers: ["GOES-East_ABI_GeoColor"], live: true, maxPx: 1536, cloudKey: false },
-  "goes-west": { layers: ["GOES-West_ABI_GeoColor"], live: true, maxPx: 1536, cloudKey: false },
-  himawari: { layers: ["Himawari_AHI_Band13_Clean_Infrared"], live: true, maxPx: 1536, cloudKey: false },
-  "meteosat-0": { layers: ["mtg_fd:rgb_geocolour"], live: true, maxPx: 1536, cloudKey: false, wms: EUMETVIEW_WMS },
-  "meteosat-iodc": { layers: ["msg_iodc:ir108"], live: true, maxPx: 1536, cloudKey: false, wms: EUMETVIEW_WMS },
+  lightning: { layers: ["mtg_fd:li_afa"], live: true, maxPx: 1536, cloudKey: false, wms: EUMETVIEW_WMS, minBytes: 200 },
 };
+
+/**
+ * Per-disc composite "look" → WMS layer(s). The operator picks ONE look globally
+ * (control-state `satImgLook`); the worker bakes every disc in every look it carries so
+ * switching is instant (satId = `${disc}:${look}`). GOES/Himawari looks come from GIBS,
+ * the Meteosat discs from EUMETView (MTG at 0°, MSG at 0° for the bands MTG lacks, MSG at
+ * IODC). Every disc has an `ir` entry — the universal fallback when a look is unavailable.
+ */
+const LOOK_LAYERS: Record<string, Record<string, { layers: string[]; wms?: string }>> = {
+  "goes-east": {
+    geocolor: { layers: ["GOES-East_ABI_GeoColor"] },
+    ir: { layers: ["GOES-East_ABI_Band13_Clean_Infrared"] },
+    airmass: { layers: ["GOES-East_ABI_Air_Mass"] },
+    dust: { layers: ["GOES-East_ABI_Dust"] },
+    firetemp: { layers: ["GOES-East_ABI_FireTemp"] },
+  },
+  "goes-west": {
+    geocolor: { layers: ["GOES-West_ABI_GeoColor"] },
+    ir: { layers: ["GOES-West_ABI_Band13_Clean_Infrared"] },
+    airmass: { layers: ["GOES-West_ABI_Air_Mass"] },
+    dust: { layers: ["GOES-West_ABI_Dust"] },
+    firetemp: { layers: ["GOES-West_ABI_FireTemp"] },
+  },
+  himawari: {
+    ir: { layers: ["Himawari_AHI_Band13_Clean_Infrared"] },
+    airmass: { layers: ["Himawari_AHI_Air_Mass"] },
+  },
+  "meteosat-0": {
+    geocolor: { layers: ["mtg_fd:rgb_geocolour"], wms: EUMETVIEW_WMS },
+    ir: { layers: ["msg_fes:ir108"], wms: EUMETVIEW_WMS },
+    watervapour: { layers: ["msg_fes:wv062"], wms: EUMETVIEW_WMS },
+    airmass: { layers: ["msg_fes:rgb_airmass"], wms: EUMETVIEW_WMS },
+    dust: { layers: ["msg_fes:rgb_dust"], wms: EUMETVIEW_WMS },
+    firetemp: { layers: ["mtg_fd:rgb_firetemperature"], wms: EUMETVIEW_WMS },
+  },
+  "meteosat-iodc": {
+    ir: { layers: ["msg_iodc:ir108"], wms: EUMETVIEW_WMS },
+    airmass: { layers: ["msg_iodc:rgb_airmass"], wms: EUMETVIEW_WMS },
+    dust: { layers: ["msg_iodc:rgb_dust"], wms: EUMETVIEW_WMS },
+    watervapour: { layers: ["msg_iodc:wv062"], wms: EUMETVIEW_WMS },
+  },
+};
+
+/** Which looks the worker bakes for a disc — all it carries, optionally narrowed by the
+ *  SATIMG_BAKE_LOOKS allowlist (but `ir` is always kept as the render fallback). */
+export function looksFor(discId: string): string[] {
+  const all = Object.keys(LOOK_LAYERS[discId] ?? {});
+  const allow = (process.env.SATIMG_BAKE_LOOKS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!allow.length) return all;
+  return all.filter((l) => allow.includes(l) || l === "ir");
+}
 
 /** Pixel dims for a bbox at a target long-edge resolution (keeps the geographic aspect). */
 export function dimsFor(bounds: [number, number, number, number], maxPx: number): { width: number; height: number } {
@@ -240,9 +293,48 @@ export interface GibsFeedResult {
 }
 
 /**
- * Fetch one feed's newest image. `global` is the daily true-colour mosaic (full globe,
- * walk-back over the newest complete day); a `live` feed is ONE GetMap over the feed's
- * bbox with NO TIME — GIBS then serves that geostationary layer's latest 10-min slot.
+ * One live GetMap over `bounds` with NO TIME — the server returns the layer's latest
+ * slot. Shared by every geostationary fetch (disc looks + lightning). GIBS expects
+ * `STYLE=default`; GeoServer/EUMETView expects an empty `STYLES` (a named "default" style
+ * 404s there). `TRANSPARENT=true` keeps off-disk / no-data pixels see-through.
+ */
+async function fetchLiveWms(
+  f: typeof fetch,
+  base: string,
+  layers: string[],
+  bounds: [number, number, number, number],
+  maxPx: number,
+  label: string,
+  minBytes = 10_000,
+): Promise<{ png: Buffer; width: number; height: number }> {
+  const { width, height } = dimsFor(bounds, maxPx);
+  const [w, s, e, n] = bounds;
+  const p = new URLSearchParams({
+    version: "1.3.0",
+    service: "WMS",
+    request: "GetMap",
+    format: "image/png",
+    TRANSPARENT: "true",
+    CRS: "EPSG:4326",
+    bbox: `${s},${w},${n},${e}`, // WMS 1.3.0 EPSG:4326 axis order = S,W,N,E
+    WIDTH: String(width),
+    HEIGHT: String(height),
+    layers: layers.join(","),
+  });
+  if (base === WMS) p.set("STYLE", "default");
+  else p.set("STYLES", "");
+  const res = await f(`${base}?${p.toString()}`);
+  if (!res.ok) throw new Error(`satimg ${label} HTTP ${res.status}`);
+  const ct = res.headers.get("content-type") || "";
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (ct.includes("xml") || buf.length < minBytes) throw new Error(`satimg ${label} empty/xml (${buf.length}B)`);
+  return { png: buf, width, height };
+}
+
+/**
+ * Fetch a NON-disc feed's newest image: `global` (daily true-colour mosaic, gap-filled
+ * walk-back) or `lightning` (live MTG Lightning Imager overlay). Disc looks go through
+ * `fetchDiscLook` instead.
  */
 export async function fetchGibsFeed(
   feedId: string,
@@ -258,29 +350,21 @@ export async function fetchGibsFeed(
   }
 
   const f = opts.fetchImpl ?? fetch;
-  const base = cfg.wms ?? WMS;
-  const { width, height } = dimsFor(feed.bounds, cfg.maxPx);
-  const [w, s, e, n] = feed.bounds;
-  const p = new URLSearchParams({
-    version: "1.3.0",
-    service: "WMS",
-    request: "GetMap",
-    format: "image/png",
-    CRS: "EPSG:4326",
-    bbox: `${s},${w},${n},${e}`, // WMS 1.3.0 EPSG:4326 axis order = S,W,N,E
-    WIDTH: String(width),
-    HEIGHT: String(height),
-    layers: cfg.layers.join(","),
-    // No TIME → both GIBS and EUMETView return the layer's latest available slot.
-  });
-  // GIBS expects STYLE=default; GeoServer (EUMETView) expects an empty STYLES (= the
-  // layer's own default) — a named "default" style 404s there.
-  if (base === WMS) p.set("STYLE", "default");
-  else p.set("STYLES", "");
-  const res = await f(`${base}?${p.toString()}`);
-  if (!res.ok) throw new Error(`satimg ${feedId} HTTP ${res.status}`);
-  const ct = res.headers.get("content-type") || "";
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (ct.includes("xml") || buf.length < 10_000) throw new Error(`satimg ${feedId} empty/xml (${buf.length}B)`);
-  return { png: buf, bounds: feed.bounds, width, height, when: "latest", cloudKey: cfg.cloudKey };
+  const r = await fetchLiveWms(f, cfg.wms ?? WMS, cfg.layers, feed.bounds, cfg.maxPx, feedId, cfg.minBytes);
+  return { png: r.png, bounds: feed.bounds, width: r.width, height: r.height, when: "latest", cloudKey: cfg.cloudKey };
+}
+
+/** Fetch one disc in one look (satId `${discId}:${lookId}`) — a live GetMap over the disc's
+ *  bounds. Never cloud-keyed (discs are shown whole, blended by their opacity). */
+export async function fetchDiscLook(
+  discId: string,
+  lookId: string,
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<GibsFeedResult> {
+  const feed = SATIMG_FEEDS.find((f) => f.id === discId);
+  const look = LOOK_LAYERS[discId]?.[lookId];
+  if (!feed || !look) throw new Error(`no satimg look '${lookId}' for disc '${discId}'`);
+  const f = opts.fetchImpl ?? fetch;
+  const r = await fetchLiveWms(f, look.wms ?? WMS, look.layers, feed.bounds, 1536, `${discId}:${lookId}`);
+  return { png: r.png, bounds: feed.bounds, width: r.width, height: r.height, when: "latest", cloudKey: false };
 }

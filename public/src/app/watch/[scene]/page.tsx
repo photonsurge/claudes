@@ -119,6 +119,7 @@ function SceneWatchPageInner() {
         sceneName={sceneName}
         pulseAt={eventPulse(director)}
         onAirSegment={director?.active ? onAir : null}
+        upNext={director?.active ? director.upNext : []}
       />
       {/* Chrome-on: the on-air detail lives in the event reticle, so the separate
           lower-left card is suppressed to avoid duplication. */}

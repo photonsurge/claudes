@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import type { Segment } from "@photonsurge/shared/director";
 import type { Quake } from "../../lib/tracks/types";
+import type { SeismoStationReading } from "../../lib/seismo/types";
 import { useTideGauge } from "../../lib/tide-gauge";
 import MonitorCluster from "./MonitorCluster";
 
@@ -51,5 +52,33 @@ describe("MonitorCluster relevance", () => {
     expect(screen.getByText(/1\.27 m/)).toBeInTheDocument();
     // Seismic hidden — the storm shot is far from any quake.
     expect(screen.queryByText("SEISMIC MONITOR")).not.toBeInTheDocument();
+  });
+
+  it("shows the active real seismograph station's name + a position-in-set caption when in range", () => {
+    mockGauge.mockReturnValue(null);
+    const stationA: SeismoStationReading = {
+      net: "IU",
+      sta: "ANMO",
+      loc: "00",
+      cha: "BHZ",
+      siteName: "Albuquerque, New Mexico, USA",
+      lat: 35,
+      lng: -106,
+      distanceKm: 40,
+      sampleRateHz: 40,
+      samples: [{ t: 1, v: 100 }, { t: 2, v: 105 }],
+      latest: 105,
+      updatedAt: 0,
+    };
+    const stationB: SeismoStationReading = { ...stationA, sta: "OTHER", siteName: "Somewhere Else" };
+    render(
+      <MonitorCluster
+        quakes={[quakeFarFromOrigin]}
+        seismoStations={[stationA, stationB]}
+        seismoActive={stationA}
+      />,
+    );
+    expect(screen.getByText("SEISMIC MONITOR")).toBeInTheDocument();
+    expect(screen.getByText("Albuquerque · 1/2")).toBeInTheDocument();
   });
 });

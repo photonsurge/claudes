@@ -5,6 +5,8 @@ import {
   quakeMagnitudeClass,
   quakeMagnitudeLabel,
   quakeMagnitudeBlurb,
+  quakeMagnitudeColor,
+  QUAKE_CLASS_COLORS,
   QUAKE_MAGNITUDE_BANDS,
   QUAKE_DEPTH_BANDS,
 } from "./seismic";
@@ -47,6 +49,15 @@ describe("quakeMagnitudeClass / labels", () => {
   it("exposes a human label + blurb per magnitude", () => {
     expect(quakeMagnitudeLabel(6.3)).toBe("Strong");
     expect(quakeMagnitudeBlurb(6.3)).toMatch(/destructive/i);
+  });
+});
+
+describe("quakeMagnitudeColor", () => {
+  it("ramps green (micro) to dark red (great), one colour per class", () => {
+    expect(quakeMagnitudeColor(1)).toBe(QUAKE_CLASS_COLORS.micro);
+    expect(quakeMagnitudeColor(6.3)).toBe(QUAKE_CLASS_COLORS.strong);
+    expect(quakeMagnitudeColor(8.5)).toBe(QUAKE_CLASS_COLORS.great);
+    expect(new Set(Object.values(QUAKE_CLASS_COLORS)).size).toBe(7); // every class distinct
   });
 });
 

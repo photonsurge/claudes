@@ -8,6 +8,12 @@ import type { Alert, AlertFeature } from "./alerts";
 import { primaryInfo, areaSummary } from "./alerts";
 import type { Quake, Track } from "./tracks/types";
 import { SEVERITY_LABELS, SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
+import {
+  QUAKE_CLASS_COLORS,
+  QUAKE_MAGNITUDE_BANDS,
+  quakeMagnitudeClass,
+  type QuakeMagnitudeClass,
+} from "@photonsurge/shared/seismic";
 import { alertRepPoint, continentOf } from "@photonsurge/shared/alerts/geo";
 import { hazardMeta, type HazardType } from "./hazard";
 
@@ -144,6 +150,8 @@ export interface WorldSummary {
   bySeverity: { rank: number; label: string; color: string; count: number }[];
   /** Quakes in the seismic feed window (USGS default ≈ last 24h). */
   quakeCount: number;
+  /** Non-empty magnitude-class buckets, strongest first. */
+  byMagClass: { cls: QuakeMagnitudeClass; label: string; color: string; count: number }[];
   /** Strongest quake in that window (0 if none). */
   maxMag: number;
   /** The strongest quake itself, for its place label — or null. */
@@ -156,6 +164,8 @@ export interface WorldSummary {
     total: number;
     /** This continent's alerts broken down by severity — non-zero ranks, most severe first. */
     bySeverity: { rank: number; label: string; color: string; count: number }[];
+    /** This continent's quakes broken down by magnitude class, strongest first. */
+    byMagClass: { cls: QuakeMagnitudeClass; label: string; color: string; count: number }[];
   }[];
 }
 
@@ -183,6 +193,18 @@ function alertContinent(a: Alert): string | undefined {
  * alerts so geocode-only warnings with no polygon still register, and de-dupes
  * cross-source clusters by keeping each group's representative (id === groupId).
  */
+/** Bucket raw magnitude-class counts into the ordered (strongest-first), non-empty rows. */
+function magClassRows(
+  counts: Map<QuakeMagnitudeClass, number>,
+): { cls: QuakeMagnitudeClass; label: string; color: string; count: number }[] {
+  return QUAKE_MAGNITUDE_BANDS.filter((b) => (counts.get(b.cls) ?? 0) > 0).map((b) => ({
+    cls: b.cls,
+    label: b.label,
+    color: QUAKE_CLASS_COLORS[b.cls],
+    count: counts.get(b.cls) as number,
+  }));
+}
+
 export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummary {
   // One row per clustered event (a warning carried by both WMO + MeteoAlarm
   // counts once); alerts the API didn't group have no groupId and pass through.
@@ -200,12 +222,24 @@ export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummar
     }))
     .sort((a, b) => b.rank - a.rank);
 
+  const magCounts = new Map<QuakeMagnitudeClass, number>();
+  for (const q of quakes) {
+    const cls = quakeMagnitudeClass(q.mag);
+    magCounts.set(cls, (magCounts.get(cls) ?? 0) + 1);
+  }
+  const byMagClass = magClassRows(magCounts);
+
   let maxQuake: Quake | null = null;
   for (const q of quakes) if (!maxQuake || q.mag > maxQuake.mag) maxQuake = q;
 
-  const cont = new Map<string, { alertCount: number; quakeCount: number; sev: Map<number, number> }>();
+  const cont = new Map<
+    string,
+    { alertCount: number; quakeCount: number; sev: Map<number, number>; mag: Map<QuakeMagnitudeClass, number> }
+  >();
   const contOf = (continent: string) => {
-    const cur = cont.get(continent) ?? { alertCount: 0, quakeCount: 0, sev: new Map<number, number>() };
+    const cur =
+      cont.get(continent) ??
+      { alertCount: 0, quakeCount: 0, sev: new Map<number, number>(), mag: new Map<QuakeMagnitudeClass, number>() };
     cont.set(continent, cur);
     return cur;
   };
@@ -218,7 +252,11 @@ export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummar
   }
   for (const q of quakes) {
     const c = continentOf(q.lng, q.lat);
-    if (c) contOf(c).quakeCount += 1;
+    if (!c) continue;
+    const cur = contOf(c);
+    cur.quakeCount += 1;
+    const cls = quakeMagnitudeClass(q.mag);
+    cur.mag.set(cls, (cur.mag.get(cls) ?? 0) + 1);
   }
   const byContinent = [...cont.entries()]
     .map(([continent, v]) => ({
@@ -238,6 +276,7 @@ export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummar
           count,
         }))
         .sort((a, b) => b.rank - a.rank),
+      byMagClass: magClassRows(v.mag),
     }))
     .sort((x, y) => y.total - x.total);
 
@@ -245,6 +284,7 @@ export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummar
     alertTotal: distinct.length,
     bySeverity,
     quakeCount: quakes.length,
+    byMagClass,
     maxMag: maxQuake?.mag ?? 0,
     maxQuake,
     byContinent,

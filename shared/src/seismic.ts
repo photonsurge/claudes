@@ -130,3 +130,25 @@ export function quakeMagnitudeLabel(mag: number): string {
 export function quakeMagnitudeBlurb(mag: number): string {
   return quakeMagnitudeBand(mag).blurb;
 }
+
+/**
+ * Magnitude class → chip colour, green (micro) through red (great) — the same
+ * ramp the on-air QuakeReport chip and epicentre-ring tint use, so a magnitude
+ * always reads the same colour everywhere it's shown (reports, legends, the
+ * World Watch severity breakdown).
+ */
+export const QUAKE_CLASS_COLORS: Record<QuakeMagnitudeClass, string> = {
+  micro: "#94a3b8", // rarely felt — neutral slate, not part of the felt-impact ramp,
+  // kept light enough to still read as a filled bar segment on a dark panel
+  minor: "#22c55e",
+  light: "#84cc16",
+  moderate: "#eab308",
+  strong: "#f97316",
+  major: "#ef4444",
+  great: "#b91c1c",
+};
+
+/** Magnitude → chip colour (green minor → dark-red great). */
+export function quakeMagnitudeColor(mag: number): string {
+  return QUAKE_CLASS_COLORS[quakeMagnitudeClass(mag)];
+}

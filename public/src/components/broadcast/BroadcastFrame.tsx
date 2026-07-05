@@ -14,11 +14,12 @@
  */
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
-import type { Segment } from "@photonsurge/shared/director";
+import type { Segment, SegmentKind } from "@photonsurge/shared/director";
 import type { AuroraOverlay } from "../../lib/aurora-overlay";
 import type { GeomagOverlay } from "../../lib/geomag-overlay";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake, Track } from "../../lib/tracks/types";
+import type { SeismoStationReading } from "../../lib/seismo/types";
 import type { City } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
 import { buildTicker } from "../../lib/broadcast";
@@ -32,6 +33,7 @@ import BrandPanel from "./BrandPanel";
 import IntensityMeter from "./IntensityMeter";
 import LiveAlertPanel from "./LiveAlertPanel";
 import WorldWatchPanel from "./WorldWatchPanel";
+import WorldSituationPanel from "./WorldSituationPanel";
 import KpIndexPanel from "./KpIndexPanel";
 import SpaceWeatherMeter from "./SpaceWeatherMeter";
 import MonitorCluster from "./MonitorCluster";
@@ -41,6 +43,8 @@ import EventNearbyPanel from "./EventNearbyPanel";
 import QuakeReport from "./QuakeReport";
 import TrackInfoPanel from "./TrackInfoPanel";
 import OnAirCard from "./OnAirCard";
+import SyslogFeed from "./SyslogFeed";
+import UpNextPanel from "./UpNextPanel";
 import { hasRealLocation, isTargetedEvent, KIND_COLOR } from "./kinds";
 
 /** Design-stage layout constants (in 1080p reference pixels). */
@@ -67,6 +71,8 @@ export default function BroadcastFrame({
   manifest,
   alerts = [],
   quakes = [],
+  seismoStations = [],
+  seismoActive = null,
   tracks = [],
   cities = [],
   cams = [],
@@ -74,11 +80,16 @@ export default function BroadcastFrame({
   geomag = null,
   theme = DEFAULT_THEME,
   onAirSegment = null,
+  upNext = [],
 }: {
   state: ControlState;
   manifest: WeatherManifest | null;
   alerts?: AlertFeature[];
   quakes?: Quake[];
+  /** Worker-cached live seismograph stations near what's on air. */
+  seismoStations?: SeismoStationReading[];
+  /** Which of `seismoStations` is currently "on air" in the SEISMIC MONITOR panel. */
+  seismoActive?: SeismoStationReading | null;
   tracks?: Track[];
   /** Curated cities — for the "near this event" panel. */
   cities?: City[];
@@ -92,6 +103,9 @@ export default function BroadcastFrame({
   /** The on-air director segment — drives the event reticle so it matches what's
    *  actually selected. Null when nothing is on air (reticle hidden). */
   onAirSegment?: Segment | null;
+  /** Director's best-guess "coming up" preview (score-ranked at the last cut,
+   *  not a committed pick) — drives the small UP NEXT line by the SYSLOG feed. */
+  upNext?: { kind: SegmentKind; title: string }[];
 }) {
   const scale = useStageScale();
   const ticker = buildTicker({ alerts, quakes, tracks });
@@ -239,17 +253,47 @@ export default function BroadcastFrame({
           <LiveAlertPanel alerts={alerts} theme={theme} />
         </div>
 
-        {/* Whole-planet situation summary. Always on and independent of the
-            show-alerts/seismic toggles — it fetches its own global tally. */}
-        <div style={{ position: "absolute", top: TICKER_H + INSET, right: INSET }}>
+        {/* Whole-planet situation summary — two separate stacked cards, not one
+            crowded panel: the hero tally (WorldSituationPanel) reads as the
+            "how much/how bad" headline, the scrolling feed (WorldWatchPanel)
+            as the "which ones" detail below it. Both independent of the
+            operator's show-alerts/seismic toggles — each fetches its own
+            global tally. */}
+        <div
+          style={{
+            position: "absolute",
+            top: TICKER_H + INSET,
+            right: INSET,
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+          }}
+        >
+          <WorldSituationPanel theme={theme} />
           <WorldWatchPanel theme={theme} />
         </div>
 
-        {/* Bottom-right: the global monitor, alone now that the history panel
-            has moved to the bottom-left column above the on-air context card. */}
-        <div style={{ position: "absolute", bottom: TICKER_H + INSET, right: INSET }}>
+        {/* Bottom-right column: the global monitor, stacked above the UP NEXT
+            hint and the always-on SYSLOG feed. column-reverse anchors the
+            feed's newest line to the bottom edge, with UP NEXT and the
+            monitor stacking upward above it. */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: TICKER_H + INSET,
+            right: INSET,
+            display: "flex",
+            flexDirection: "column-reverse",
+            alignItems: "flex-end",
+            gap: 10,
+          }}
+        >
+          <SyslogFeed />
+          <UpNextPanel items={upNext} />
           <MonitorCluster
             quakes={quakes}
+            seismoStations={seismoStations}
+            seismoActive={seismoActive}
             onAirSegment={onAirSegment}
             regionCenter={state.camera.center}
             theme={theme}

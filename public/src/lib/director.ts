@@ -26,6 +26,7 @@ import {
 } from "@photonsurge/shared/director";
 import { globalMapTour, type MapTypeNeed } from "@photonsurge/shared/director-rois";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
+import { severityLabel } from "./alerts";
 import { useSocket } from "./socket-provider";
 
 /**
@@ -52,6 +53,9 @@ const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
 const VAR_CYCLE_MS = 5500;
 /** Per-map dwell for the global map-type tour — a touch longer, each look is a beat. */
 const GLOBAL_MAP_CYCLE_MS = 6000;
+/** Camera dwell per round-up stop, and the zoom it flies to — a point-focused look, same as quake/alert shots. */
+const SUMMARY_STOP_MS = 5000;
+const SUMMARY_STOP_ZOOM = 5;
 
 /** One step of a cut's within-shot rotation: the look, plus an optional relabel. */
 interface MapStep {
@@ -149,6 +153,19 @@ function cutSteps(
   if (cut.kind === "storm") {
     const plan = hazardMapPlan(cut.hazard);
     return { steps: plan.cycle.map((v) => ({ patch: { activeVariable: v } })), periodMs: plan.cycleMs, anchored: true };
+  }
+  if (cut.kind === "summary") {
+    // Fly to each hotspot/top-event in turn and relabel the on-air card with
+    // its place + severity, instead of holding the static global view for the
+    // whole narration. No stops (older round-up predating this field, or one
+    // with no geocoded events) just keeps the global view.
+    const steps = (cut.summary?.stops ?? []).map(
+      (s): MapStep => ({
+        patch: { camera: { center: [s.lng, s.lat], zoom: SUMMARY_STOP_ZOOM } },
+        label: { title: s.label, subtitle: [severityLabel(s.severity), s.subtitle].filter(Boolean).join(" · ") },
+      }),
+    );
+    return { steps, periodMs: SUMMARY_STOP_MS, anchored: true };
   }
   const cyc = VAR_CYCLE[cut.kind] ?? [];
   return { steps: cyc.map((v) => ({ patch: { activeVariable: v } })), periodMs: VAR_CYCLE_MS, anchored: false };

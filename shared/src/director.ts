@@ -18,6 +18,7 @@ import type { ControlState } from "./control";
 import type { HazardType } from "./alerts/hazard";
 import type { AdMediaType } from "./ads/types";
 import type { SummaryPeriod } from "./db/event-summary-model";
+import type { SeverityRank } from "./db/alert-model";
 import { DEFAULT_DIRECTOR_COUNTRIES, sanitizeDirectorCountries } from "./director-countries";
 import { QUAKE_MAGNITUDE_BANDS, quakeMagnitudeClass, type QuakeMagnitudeClass } from "./seismic";
 
@@ -149,6 +150,28 @@ export interface SegmentSummary {
   narrative: string;
   /** ISO timestamp the round-up was generated. */
   generatedAt: string;
+  /**
+   * Places the round-up touches on, in narrative order — the client flies the
+   * camera to each in turn and shows a small info card (place/hazard/severity)
+   * alongside the ticker. Empty when the round-up's stats/topEvents carried no
+   * coordinates (camera stays on the global view).
+   */
+  stops?: SegmentSummaryStop[];
+}
+
+/**
+ * One camera stop within a `summary` segment's round-up tour, sourced from the
+ * EventSummary doc's `hotspots`/`topEvents` (see worker/src/director/candidates.ts
+ * `summaryCandidates`). Drives both the camera fly-to and the on-air info card.
+ */
+export interface SegmentSummaryStop {
+  /** Place/cluster label, e.g. "Southern Europe" or a specific alert title. */
+  label: string;
+  /** Secondary line, e.g. hazard type or event count. */
+  subtitle?: string;
+  lng: number;
+  lat: number;
+  severity: SeverityRank;
 }
 
 /**

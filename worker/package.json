@@ -40,6 +40,7 @@
     "refresh:geomag": "ts-node src/scripts/refreshGeomag.ts",
     "refresh:satimg": "ts-node src/scripts/refreshSatimg.ts",
     "refresh:tides": "ts-node src/scripts/refreshTides.ts",
+    "refresh:seismo": "ts-node src/scripts/refreshSeismo.ts",
     "refresh:cams": "ts-node src/scripts/refreshCams.ts",
     "refresh:ifs": "ts-node src/scripts/refreshIfs.ts",
     "refresh:rtofs": "ts-node src/scripts/refreshRtofs.ts",
