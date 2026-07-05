@@ -3,7 +3,7 @@ import {
   mergeControlState,
   CONTROL_STATE,
 } from "@photonsurge/shared/control";
-import { emitControlState } from "./control";
+import { emitControlState, fetchBroadcastState } from "./control";
 
 describe("mergeControlState round-trip from socket payloads", () => {
   it("applies a partial patch and keeps untouched fields", () => {
@@ -49,5 +49,28 @@ describe("emitControlState", () => {
     const persist = jest.fn();
     emitControlState(null, DEFAULT_CONTROL_STATE, persist);
     expect(persist).toHaveBeenCalled();
+  });
+});
+
+describe("fetchBroadcastState", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it("flags a 401 as tokenError instead of silently returning defaults", async () => {
+    global.fetch = jest.fn(async () => ({ ok: false, status: 401 })) as unknown as typeof fetch;
+    const { state, tokenError } = await fetchBroadcastState("bad-token");
+    expect(tokenError).toBe(true);
+    expect(state).toEqual(DEFAULT_CONTROL_STATE);
+    expect(global.fetch).toHaveBeenCalledWith("/api/broadcast/state?token=bad-token", { cache: "no-store" });
+  });
+
+  it("returns the parsed state with tokenError false on success", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ activeVariable: "wind" }),
+    })) as unknown as typeof fetch;
+    const { state, tokenError } = await fetchBroadcastState();
+    expect(tokenError).toBe(false);
+    expect(state.activeVariable).toBe("wind");
   });
 });

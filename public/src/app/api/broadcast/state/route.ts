@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { BROADCAST_STATE_ID } from "@photonsurge/shared/db/broadcast-state-model";
+import { SESSION_COOKIE, readSession, isAdmin } from "@photonsurge/shared/utill/session";
 import {
   DEFAULT_CONTROL_STATE,
   mergeControlState,
@@ -17,10 +19,23 @@ function toControlState(doc: Partial<ControlState> | null | undefined): ControlS
   return mergeControlState(DEFAULT_CONTROL_STATE, doc ?? {});
 }
 
-/** GET /api/broadcast/state — the singleton operator state (seeded). */
-export async function GET() {
+/**
+ * GET /api/broadcast/state?token=... — the singleton operator state (seeded).
+ * /watch (the bare main-scene OBS output, can't log in) authorizes via `token`
+ * matching the doc's watchToken; the admin session cookie also works.
+ */
+export async function GET(req: Request) {
   const db = await getAppDb();
   const doc = await db.getOrInitBroadcastState();
+
+  const sessionToken = (await cookies()).get(SESSION_COOKIE)?.value;
+  const session = sessionToken ? readSession(sessionToken) : null;
+  const tokenParam = new URL(req.url).searchParams.get("token");
+  const watchToken = (doc as { watchToken?: string }).watchToken;
+  if (!isAdmin(session) && (!watchToken || tokenParam !== watchToken)) {
+    return NextResponse.json({ error: "missing or invalid watch token" }, { status: 401, headers: NO_CACHE });
+  }
+
   return NextResponse.json(toControlState(doc), { status: 200, headers: NO_CACHE });
 }
 

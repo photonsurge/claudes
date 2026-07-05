@@ -4,7 +4,7 @@ import {
   MAIN_SCENE_ID,
   DEFAULT_CONTROL_STATE,
 } from "@photonsurge/shared/control";
-import { emitSceneState, listScenes, createScene, deleteScene } from "./scenes";
+import { emitSceneState, listScenes, createScene, deleteScene, fetchSceneState, rotateSceneToken } from "./scenes";
 
 describe("emitSceneState", () => {
   it("emits a scene envelope and persists for a named scene", () => {
@@ -68,5 +68,38 @@ describe("scene CRUD wrappers", () => {
 
     mockFetch(() => ({ ok: false, status: 400, _json: { error: "protected" } } as never));
     expect(await deleteScene("default")).toEqual({ ok: false, error: "protected" });
+  });
+
+  it("fetchSceneState flags a 401 as tokenError, distinct from other failures", async () => {
+    mockFetch(() => ({ _json: { activeVariable: "temp" } } as never));
+    expect(await fetchSceneState("default")).toEqual(
+      expect.objectContaining({ tokenError: false, state: expect.objectContaining({ activeVariable: "temp" }) }),
+    );
+
+    mockFetch(() => ({ ok: false, status: 401 }));
+    const { tokenError, state } = await fetchSceneState("default", "bad-token");
+    expect(tokenError).toBe(true);
+    expect(state).toEqual(DEFAULT_CONTROL_STATE);
+
+    mockFetch(() => ({ ok: false, status: 404 }));
+    expect((await fetchSceneState("missing")).tokenError).toBe(false);
+  });
+
+  it("fetchSceneState appends the token as a query param", async () => {
+    let calledUrl = "";
+    mockFetch((url) => {
+      calledUrl = url;
+      return { _json: {} } as never;
+    });
+    await fetchSceneState("default", "abc123");
+    expect(calledUrl).toBe("/api/scenes/default?token=abc123");
+  });
+
+  it("rotateSceneToken returns the new token or the error", async () => {
+    mockFetch(() => ({ _json: { watchToken: "new-token" } } as never));
+    expect(await rotateSceneToken("default")).toEqual({ token: "new-token" });
+
+    mockFetch(() => ({ ok: false, status: 404, _json: { error: "no such scene" } } as never));
+    expect(await rotateSceneToken("missing")).toEqual({ error: "no such scene" });
   });
 });

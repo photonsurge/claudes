@@ -21,7 +21,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../lib/socket-provider";
 import { fetchManifest } from "../../lib/manifest";
 import { listScenes, fetchSceneState, useSceneEmitter } from "../../lib/scenes";
-import { useDirector, useDirectorCut, eventPulse } from "../../lib/director";
+import { useDirector, useDirectorConfig, useDirectorCut, eventPulse } from "../../lib/director";
 import { listCities, type City } from "../../lib/cities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
@@ -58,6 +58,10 @@ export default function ControlPage() {
   // so heartbeats don't re-trigger the fly, and the baseline `state` is left
   // untouched so turning Auto off restores the operator's own framing.
   const director = useDirector(sceneId);
+  // Lifted here (not inside DirectorPanel) so the live preview below and the
+  // panel's edits share one config — an operator toggling a map type sees the
+  // preview update immediately instead of the two diverging.
+  const { config: directorConfig, update: updateDirectorConfig } = useDirectorConfig(sceneId);
   const [cut, setCut] = useState<Segment | null>(null);
   // Click-to-select: the operator can click an event/quake while the director is
   // idle to pin its info box (same card the director shows on air).
@@ -75,7 +79,11 @@ export default function ControlPage() {
     }
   }, [director?.seq, director?.active, director?.segment]);
 
-  const { patch: cutPatch, segment: onAir } = useDirectorCut(cut, manifest);
+  const { patch: cutPatch, segment: onAir } = useDirectorCut(
+    cut,
+    manifest,
+    cut ? directorConfig.mapTypes[cut.kind] : undefined,
+  );
   const shown = useMemo(
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),
     [state, cutPatch],
@@ -104,7 +112,7 @@ export default function ControlPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [s, m, c, sc] = await Promise.all([
+      const [{ state: s }, m, c, sc] = await Promise.all([
         fetchSceneState(MAIN_SCENE_ID),
         fetchManifest(),
         listCities(),
@@ -141,7 +149,7 @@ export default function ControlPage() {
   // Switch the scene the operator is driving; load that scene's persisted state.
   const switchScene = async (id: string) => {
     setSceneId(id);
-    const next = await fetchSceneState(id);
+    const { state: next } = await fetchSceneState(id);
     setState(next);
   };
 
@@ -276,7 +284,7 @@ export default function ControlPage() {
             }}
           />
         </div>
-        <DirectorPanel sceneId={sceneId} />
+        <DirectorPanel sceneId={sceneId} config={directorConfig} update={updateDirectorConfig} />
         <ControlPanel
           state={state}
           manifest={manifest}

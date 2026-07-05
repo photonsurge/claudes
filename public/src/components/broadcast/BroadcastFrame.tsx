@@ -116,6 +116,33 @@ export default function BroadcastFrame({
   // return null when their toggle is off, so presence alone gates this.
   const spaceWeatherShown = aurora?.meta != null || geomag?.meta != null;
   const intensityShown = legendVariableFor(state) != null;
+  // Whatever currently owns the bottom-left slot (mutually exclusive on
+  // segment kind) — the history panel stacks above whichever of these is on
+  // screen, so it always reads as "left column" rather than a fixed position.
+  const leftBottomPanel = !onAirSegment
+    ? null
+    : hasTrackInfo
+      ? <TrackInfoPanel segment={onAirSegment} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
+      : eventTargeted
+        ? onAirSegment.kind === "quake" && onAirSegment.quake
+          ? (
+            <QuakeReport
+              mag={onAirSegment.quake.mag}
+              depthKm={onAirSegment.quake.depthKm}
+              center={onAirSegment.camera.center}
+              cities={cities}
+              color={KIND_COLOR.quake}
+            />
+          )
+          : (
+            <EventNearbyPanel
+              center={onAirSegment.camera.center}
+              cities={cities}
+              cams={cams}
+              color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
+            />
+          )
+        : <OnAirCard segment={onAirSegment} alerts={alerts} quakes={quakes} theme={theme} />;
 
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 5 }}>
@@ -134,48 +161,42 @@ export default function BroadcastFrame({
         {/* Targeted point events (storm/quake/aircraft/ship) get the centred
             reticle; wide shots (global/ocean/region/…) get a small card tucked
             lower-left so we don't frame empty screen. */}
-        {onAirSegment ? (
-          isTargetedEvent(onAirSegment.kind) ? (
-            <EventOverlay segment={onAirSegment} extraDetails={nearestCityDetails(onAirSegment, cities)} />
-          ) : (
-            <div style={{ position: "absolute", left: INSET, bottom: TICKER_H + INSET }}>
-              <OnAirCard segment={onAirSegment} alerts={alerts} quakes={quakes} theme={theme} />
-            </div>
-          )
+        {onAirSegment && isTargetedEvent(onAirSegment.kind) ? (
+          <EventOverlay segment={onAirSegment} extraDetails={nearestCityDetails(onAirSegment, cities)} />
         ) : null}
 
-        {/* Notable aircraft/ship → the rich Track Info card (photo + story), which
-            takes precedence over the nearby-cities panel in the bottom-left slot. */}
-        {hasTrackInfo && onAirSegment ? (
-          <div style={{ position: "absolute", left: INSET, bottom: TICKER_H + INSET }}>
-            <TrackInfoPanel segment={onAirSegment} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
-          </div>
-        ) : null}
-
-        {/* Bottom-left context panel for a targeted event (the reticle leaves it
-            free; skipped when a Track Info card owns the slot). A quake gets the
-            seismic report (magnitude/depth breakdown + nearest cities); every
-            other event gets the "near this event" cities/webcams panel. */}
-        {eventTargeted && onAirSegment && !hasTrackInfo ? (
-          <div style={{ position: "absolute", left: INSET, bottom: TICKER_H + INSET }}>
-            {onAirSegment.kind === "quake" && onAirSegment.quake ? (
-              <QuakeReport
-                mag={onAirSegment.quake.mag}
-                depthKm={onAirSegment.quake.depthKm}
-                center={onAirSegment.camera.center}
-                cities={cities}
-                color={KIND_COLOR.quake}
-              />
-            ) : (
-              <EventNearbyPanel
-                center={onAirSegment.camera.center}
-                cities={cities}
-                cams={cams}
-                color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
-              />
-            )}
-          </div>
-        ) : null}
+        {/* Bottom-left column: the archived history charts for the focus, stacked
+            above whichever context card currently owns the bottom-left slot (the
+            wide-shot "now viewing" card, a Track Info card for a notable
+            aircraft/ship, or the targeted-event quake/nearby-cities report — all
+            mutually exclusive on segment kind). column-reverse anchors the
+            context card to the bottom edge regardless of the history panel's
+            (self-hiding, variable-height) content. */}
+        <div
+          style={{
+            position: "absolute",
+            left: INSET,
+            bottom: TICKER_H + INSET,
+            display: "flex",
+            flexDirection: "column-reverse",
+            alignItems: "flex-start",
+            gap: 10,
+          }}
+        >
+          {leftBottomPanel}
+          <PointHistoryPanel
+            center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}
+            bbox={
+              segmentHasLocation && !eventTargeted
+                ? bboxForCamera(
+                    onAirSegment?.camera.center ?? state.camera.center,
+                    onAirSegment?.camera.zoom ?? state.camera.zoom,
+                  )
+                : null
+            }
+            theme={theme}
+          />
+        </div>
 
         <Ticker title={theme.tickerTitle} items={ticker} edge="top" height={TICKER_H} theme={theme} />
 
@@ -224,34 +245,9 @@ export default function BroadcastFrame({
           <WorldWatchPanel theme={theme} />
         </div>
 
-        {/* Bottom-right column: archived history charts for the focus, stacked
-            above the global monitor. Targeted events sample their exact point;
-            wide shots aggregate the framed AREA instead. Both self-hide. It is
-            inset a little farther than the other edge furniture so the larger
-            charts do not feel pinned to the frame. */}
-        <div
-          style={{
-            position: "absolute",
-            bottom: TICKER_H + INSET,
-            right: INSET + 18,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-end",
-            gap: 10,
-          }}
-        >
-          <PointHistoryPanel
-            center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}
-            bbox={
-              segmentHasLocation && !eventTargeted
-                ? bboxForCamera(
-                    onAirSegment?.camera.center ?? state.camera.center,
-                    onAirSegment?.camera.zoom ?? state.camera.zoom,
-                  )
-                : null
-            }
-            theme={theme}
-          />
+        {/* Bottom-right: the global monitor, alone now that the history panel
+            has moved to the bottom-left column above the on-air context card. */}
+        <div style={{ position: "absolute", bottom: TICKER_H + INSET, right: INSET }}>
           <MonitorCluster
             quakes={quakes}
             onAirSegment={onAirSegment}

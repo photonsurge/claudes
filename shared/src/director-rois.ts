@@ -176,13 +176,15 @@ export const OCEAN_MAP_TYPES: GlobalMapType[] = [
  * The terrain looks a `quake` shot tours WHILE it holds on the epicentre — so a
  * seismic beat isn't one static map for its whole hold. No GFS weather field is
  * relevant to a quake (meteorology over a fault reads as nonsense), so every look
- * is geophysical: elevation contours, shaded relief, then the satellite view. The
- * epicentre rings + plate boundaries + submarine cables + cities all come from the
- * quake PRESET and stay lit under every look; each type here only swaps the base
- * map + contour rendering. Opens on the contour look (it matches the preset, so
- * the first frame is stable before the client's rotation kicks in). Unlike the
- * intro/ocean spins these do NOT relabel the on-air card — the earthquake headline
- * (magnitude/place) stays put; only the map underneath changes.
+ * is geophysical: elevation contours, shaded relief, then city lights. Satellite
+ * imagery is deliberately excluded — real-world orbital imagery over an epicentre
+ * reads as a stock photo, not a geophysical instrument view. The epicentre rings +
+ * plate boundaries + submarine cables + cities all come from the quake PRESET and
+ * stay lit under every look; each type here only swaps the base map + contour
+ * rendering. Opens on the contour look (it matches the preset, so the first frame
+ * is stable before the client's rotation kicks in). Unlike the intro/ocean spins
+ * these do NOT relabel the on-air card — the earthquake headline (magnitude/place)
+ * stays put; only the map underneath changes.
  */
 export const QUAKE_MAP_TYPES: GlobalMapType[] = [
   {
@@ -202,13 +204,6 @@ export const QUAKE_MAP_TYPES: GlobalMapType[] = [
     needs: { kind: "variable", id: "elevation" },
   },
   {
-    id: "satellite",
-    title: "Satellite View",
-    subtitle: "The terrain from orbit",
-    // Real imagery of the epicentre; contours off so the ground reads cleanly.
-    patch: { basemap: "satellite", activeVariable: null, showElevation: false },
-  },
-  {
     id: "night",
     title: "City Lights",
     subtitle: "Population footprint at night",
@@ -224,12 +219,19 @@ export const QUAKE_MAP_TYPES: GlobalMapType[] = [
  * ocean) tour their world looks; the `quake` event shot tours terrain looks while
  * it holds on the epicentre. Shared by the worker (opening field) and the client
  * (the within-shot rotation + relabel gating).
+ *
+ * `enabledIds` (from DirectorConfig.mapTypes[kind]) subtractively filters the
+ * catalog to the operator-enabled looks — omitted/empty means "all enabled"
+ * (today's behaviour). If the filter would leave zero looks, falls back to the
+ * full catalog rather than airing a dead tour.
  */
-export function globalMapTour(kind: SegmentKind): GlobalMapType[] | null {
-  if (kind === "intro") return INTRO_MAP_TYPES;
-  if (kind === "ocean") return OCEAN_MAP_TYPES;
-  if (kind === "quake") return QUAKE_MAP_TYPES;
-  return null;
+export function globalMapTour(kind: SegmentKind, enabledIds?: string[]): GlobalMapType[] | null {
+  const full =
+    kind === "intro" ? INTRO_MAP_TYPES : kind === "ocean" ? OCEAN_MAP_TYPES : kind === "quake" ? QUAKE_MAP_TYPES : null;
+  if (!full) return null;
+  if (!enabledIds || enabledIds.length === 0) return full;
+  const filtered = full.filter((t) => enabledIds.includes(t.id));
+  return filtered.length ? filtered : full;
 }
 
 /**
@@ -303,7 +305,7 @@ export function quakeMapPlan(tsunami?: boolean): QuakeMapPlan {
  * the camera-motion trio (autoSpin/spinSpeed/zoomDrift) and event filter
  * overrides (alertSeverityMin/seismicMinMag) — those aren't on/off layers.
  */
-const LAYERS_OFF: Partial<ControlState> = {
+export const LAYERS_OFF: Partial<ControlState> = {
   basemap: DEFAULT_BASEMAP_ID,
   showWind: false,
   showPressure: false,
@@ -326,6 +328,17 @@ const LAYERS_OFF: Partial<ControlState> = {
   showTrails: false,
   showTrackLabels: false,
 };
+
+/**
+ * The fixed set of boolean layer toggles a PRESET can turn on — every key of
+ * LAYERS_OFF except `basemap` (a string, owned by the map-type tour, not an
+ * overlay). This is the allow-list operator-configurable overlay overrides are
+ * restricted to (see DirectorConfig.overlayOverrides) — never camera,
+ * `activeVariable`, `basemap`, or `elevation`'s numeric settings.
+ */
+export const OVERLAY_KEYS = Object.keys(LAYERS_OFF).filter(
+  (k) => k !== "basemap",
+) as (keyof ControlState)[];
 
 /**
  * Layer preset per kind (everything except the camera, which the worker fills

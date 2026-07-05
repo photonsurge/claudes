@@ -56,6 +56,7 @@ export default function ScenesPage() {
         <p style={{ color: "#8b95a7", marginTop: 6 }}>
           Each scene renders at <code>/watch/&lt;id&gt;</code> — use that URL as an OBS browser
           source or overlay window. Drive a scene live from the <Link href="/control" style={{ color: "#60a5fa" }}>operator console</Link>.
+          Tokened OBS URLs live in <Link href="/admin/access" style={{ color: "#60a5fa" }}>Access</Link>.
         </p>
 
         {/* Create */}

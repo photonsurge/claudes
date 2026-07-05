@@ -177,7 +177,41 @@ describe("worldWatchSummary", () => {
 
   it("is quiet with no data", () => {
     const s = worldWatchSummary([], []);
-    expect(s).toMatchObject({ alertTotal: 0, bySeverity: [], quakeCount: 0, maxMag: 0, maxQuake: null });
+    expect(s).toMatchObject({
+      alertTotal: 0,
+      bySeverity: [],
+      quakeCount: 0,
+      maxMag: 0,
+      maxQuake: null,
+      byContinent: [],
+    });
+  });
+
+  it("buckets alerts and quakes by continent, busiest first", () => {
+    const spain = raw(4, {
+      id: "eu1",
+      info: [
+        {
+          event: "Storm",
+          severityRank: 4,
+          area: [{ areaDesc: "Spain", geometry: { type: "Point", coordinates: [-3, 40] }, geocodes: [] }],
+        },
+      ],
+    });
+    // Geocode-only NWS alert has no geometry — falls back to the source's home region.
+    const nws = raw(3, { id: "us1", source: "nws" });
+    const s = worldWatchSummary(
+      [spain, nws],
+      [quake({ id: "q1", lng: -3, lat: 40 }), quake({ id: "q2", lng: -3, lat: 40 })],
+    );
+    expect(s.byContinent[0]).toMatchObject({ continent: "Europe", alertCount: 1, quakeCount: 2, total: 3 });
+    expect(s.byContinent[0].bySeverity).toEqual([{ rank: 4, label: "Extreme", color: "#ef4444", count: 1 }]);
+    expect(s.byContinent.find((c) => c.continent === "North America")).toMatchObject({
+      alertCount: 1,
+      quakeCount: 0,
+      total: 1,
+      bySeverity: [{ rank: 3, label: "Severe", color: "#f97316", count: 1 }],
+    });
   });
 });
 

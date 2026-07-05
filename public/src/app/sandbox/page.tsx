@@ -68,7 +68,7 @@ export default function SandboxPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [s, m, c] = await Promise.all([
+      const [{ state: s }, m, c] = await Promise.all([
         fetchSceneState(MAIN_SCENE_ID),
         fetchManifest(),
         listCities(),

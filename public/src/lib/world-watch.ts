@@ -31,6 +31,7 @@ const EMPTY: WorldWatchState = {
   quakeCount: 0,
   maxMag: 0,
   maxQuake: null,
+  byContinent: [],
   feed: [],
 };
 

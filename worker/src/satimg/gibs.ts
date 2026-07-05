@@ -11,6 +11,10 @@ import { SATIMG_FEEDS } from "@photonsurge/shared/satimg/types";
 /** GIBS WMS endpoint (EPSG:4326 "best" available imagery). */
 const WMS = "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi";
 
+/** EUMETSAT EUMETView WMS (GeoServer) — keyless, public GetMap. Serves the Meteosat
+ *  discs (MTG at 0°, MSG-IODC) that GIBS doesn't carry, in EPSG:4326 plate-carrée. */
+const EUMETVIEW_WMS = "https://view.eumetsat.int/geoserver/wms";
+
 /**
  * Polar-orbiter true-color layers, stacked so one satellite's daily swath GAPS are
  * filled by another's pass (WMS composites LAYERS bottom→top in a single GetMap).
@@ -197,11 +201,22 @@ export async function fetchGibs(opts: FetchGibsOptions = {}): Promise<GibsFetchR
  * the true-colour mosaic (dark oceans go transparent); GeoColor's bright oceans and IR's
  * grey background survive the key, so those discs are shown whole and blended by opacity.
  */
-const FEED_FETCH: Record<string, { layers: string[]; live: boolean; maxPx: number; cloudKey: boolean }> = {
+interface FeedFetchCfg {
+  layers: string[];
+  live: boolean;
+  maxPx: number;
+  cloudKey: boolean;
+  /** WMS base URL — defaults to GIBS; the Meteosat feeds point at EUMETView. */
+  wms?: string;
+}
+
+const FEED_FETCH: Record<string, FeedFetchCfg> = {
   global: { layers: GIBS_TRUECOLOR_LAYERS, live: false, maxPx: 2048, cloudKey: true },
   "goes-east": { layers: ["GOES-East_ABI_GeoColor"], live: true, maxPx: 1536, cloudKey: false },
   "goes-west": { layers: ["GOES-West_ABI_GeoColor"], live: true, maxPx: 1536, cloudKey: false },
   himawari: { layers: ["Himawari_AHI_Band13_Clean_Infrared"], live: true, maxPx: 1536, cloudKey: false },
+  "meteosat-0": { layers: ["mtg_fd:rgb_geocolour"], live: true, maxPx: 1536, cloudKey: false, wms: EUMETVIEW_WMS },
+  "meteosat-iodc": { layers: ["msg_iodc:ir108"], live: true, maxPx: 1536, cloudKey: false, wms: EUMETVIEW_WMS },
 };
 
 /** Pixel dims for a bbox at a target long-edge resolution (keeps the geographic aspect). */
@@ -243,6 +258,7 @@ export async function fetchGibsFeed(
   }
 
   const f = opts.fetchImpl ?? fetch;
+  const base = cfg.wms ?? WMS;
   const { width, height } = dimsFor(feed.bounds, cfg.maxPx);
   const [w, s, e, n] = feed.bounds;
   const p = new URLSearchParams({
@@ -250,18 +266,21 @@ export async function fetchGibsFeed(
     service: "WMS",
     request: "GetMap",
     format: "image/png",
-    STYLE: "default",
     CRS: "EPSG:4326",
     bbox: `${s},${w},${n},${e}`, // WMS 1.3.0 EPSG:4326 axis order = S,W,N,E
     WIDTH: String(width),
     HEIGHT: String(height),
     layers: cfg.layers.join(","),
-    // No TIME → GIBS returns the geostationary layer's latest available slot.
+    // No TIME → both GIBS and EUMETView return the layer's latest available slot.
   });
-  const res = await f(`${WMS}?${p.toString()}`);
-  if (!res.ok) throw new Error(`GIBS ${feedId} HTTP ${res.status}`);
+  // GIBS expects STYLE=default; GeoServer (EUMETView) expects an empty STYLES (= the
+  // layer's own default) — a named "default" style 404s there.
+  if (base === WMS) p.set("STYLE", "default");
+  else p.set("STYLES", "");
+  const res = await f(`${base}?${p.toString()}`);
+  if (!res.ok) throw new Error(`satimg ${feedId} HTTP ${res.status}`);
   const ct = res.headers.get("content-type") || "";
   const buf = Buffer.from(await res.arrayBuffer());
-  if (ct.includes("xml") || buf.length < 10_000) throw new Error(`GIBS ${feedId} empty/xml (${buf.length}B)`);
+  if (ct.includes("xml") || buf.length < 10_000) throw new Error(`satimg ${feedId} empty/xml (${buf.length}B)`);
   return { png: buf, bounds: feed.bounds, width, height, when: "latest", cloudKey: cfg.cloudKey };
 }

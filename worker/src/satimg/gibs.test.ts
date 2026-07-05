@@ -127,6 +127,23 @@ describe("fetchGibsFeed", () => {
     expect(url).not.toContain("TIME=");
   });
 
+  it("Meteosat feed: hits EUMETView WMS with empty STYLES (not GIBS STYLE=default)", async () => {
+    let url = "";
+    const r = await fetchGibsFeed("meteosat-0", {
+      fetchImpl: (async (u: string) => {
+        url = u;
+        return fakeRes(500_000);
+      }) as unknown as typeof fetch,
+    });
+    expect(url).toContain("view.eumetsat.int/geoserver/wms");
+    expect(url).toContain(encodeURIComponent("mtg_fd:rgb_geocolour"));
+    expect(url).toContain("STYLES=");
+    expect(url).not.toContain("STYLE=default");
+    expect(url).not.toContain("TIME=");
+    expect(r.bounds).toEqual([-65, -65, 65, 65]);
+    expect(r.cloudKey).toBe(false);
+  });
+
   it("throws on an unknown feed id", async () => {
     await expect(fetchGibsFeed("nope")).rejects.toThrow(/unknown satimg feed/);
   });

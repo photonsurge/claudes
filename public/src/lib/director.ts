@@ -130,8 +130,9 @@ function useMapTypeAvailability(manifest: WeatherManifest | null): MapTypeAvaila
 function cutSteps(
   cut: Segment,
   avail: MapTypeAvailability,
+  mapTypeIds?: string[],
 ): { steps: MapStep[]; periodMs: number; anchored: boolean } {
-  const tour = globalMapTour(cut.kind);
+  const tour = globalMapTour(cut.kind, mapTypeIds);
   if (tour) {
     // Global spins ARE the map type, so they relabel the on-air card per look. An
     // event shot (quake) keeps its headline card (magnitude/place) and only swaps
@@ -158,9 +159,9 @@ function cutSteps(
  * Updates on a slow timer (not per frame); the index is derived deterministically
  * from spinEpoch so every client agrees.
  */
-function useMapStep(cut: Segment | null, avail: MapTypeAvailability): MapStep | null {
+function useMapStep(cut: Segment | null, avail: MapTypeAvailability, mapTypeIds?: string[]): MapStep | null {
   const [step, setStep] = useState<MapStep | null>(null);
-  const resolved = useMemo(() => (cut ? cutSteps(cut, avail) : null), [cut, avail]);
+  const resolved = useMemo(() => (cut ? cutSteps(cut, avail, mapTypeIds) : null), [cut, avail, mapTypeIds]);
   const epoch = cut?.patch.spinEpoch ?? 0;
 
   useEffect(() => {
@@ -204,9 +205,11 @@ export function eventPulse(director: DirectorState | null): [number, number] | n
 export function useDirectorCut(
   cut: Segment | null,
   manifest: WeatherManifest | null,
+  /** Operator-enabled map-type ids for the cut's kind (DirectorConfig.mapTypes[kind]). */
+  mapTypeIds?: string[],
 ): { patch: Partial<ControlState> | null; segment: Segment | null } {
   const avail = useMapTypeAvailability(manifest);
-  const step = useMapStep(cut, avail);
+  const step = useMapStep(cut, avail, mapTypeIds);
   return useMemo(() => {
     if (!cut) return { patch: null, segment: null };
     const patch = step ? { ...cut.patch, ...step.patch } : cut.patch;

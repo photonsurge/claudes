@@ -83,6 +83,8 @@ describe("mergeControlState", () => {
         "goes-east": { on: false, opacity: 0.9 },
         "goes-west": { on: true, opacity: 0.5 },
         himawari: { on: true, opacity: 0.8 },
+        "meteosat-0": { on: true, opacity: 0.6 },
+        "meteosat-iodc": { on: false, opacity: 0.9 },
       },
       showFires: true,
       showMagneticField: true,

@@ -11,6 +11,8 @@ const ISSUER = "thronix";
 export type DecodedToken = JwtPayload & {
   sub?: string;
   actorType?: string;
+  /** Admin role claim, carried by session tokens and admin-minted socket tokens. */
+  role?: string;
 };
 
 const resolveSecret = (secretOverride?: string): string => {

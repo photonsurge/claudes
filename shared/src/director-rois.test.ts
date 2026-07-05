@@ -49,11 +49,20 @@ describe("globalMapTour", () => {
     expect(tour![0].id).toBe("contours"); // hero look matches the quake preset
     // No weather field on any quake look — a quake reads as terrain, not forecast.
     for (const t of QUAKE_MAP_TYPES) expect(t.patch.activeVariable ?? null).toBeNull();
-    // The alternates actually swap the base map (relief fill, satellite imagery,
-    // night city lights).
+    // The alternates actually swap the base map (relief fill, night city lights).
+    // No satellite imagery — real-world orbital imagery over an epicentre reads
+    // as a stock photo, not a geophysical instrument view.
     expect(QUAKE_MAP_TYPES.map((t) => t.patch.basemap)).toEqual(
-      expect.arrayContaining(["relief", "satellite", "night"]),
+      expect.arrayContaining(["relief", "night"]),
     );
+    expect(QUAKE_MAP_TYPES.map((t) => t.patch.basemap)).not.toContain("satellite");
+  });
+
+  it("filters the tour to operator-enabled ids, falling back to the full catalog if the filter is empty or all-unmatched", () => {
+    expect(globalMapTour("quake", ["relief", "night"])!.map((t) => t.id)).toEqual(["relief", "night"]);
+    expect(globalMapTour("quake", [])).toBe(QUAKE_MAP_TYPES);
+    expect(globalMapTour("quake", undefined)).toBe(QUAKE_MAP_TYPES);
+    expect(globalMapTour("quake", ["nonexistent-id"])).toBe(QUAKE_MAP_TYPES);
   });
 
   it("includes the new 'map types' (aurora, satellite imagery) gated on live data", () => {

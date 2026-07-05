@@ -79,14 +79,14 @@ describe("selectPriority", () => {
     expect(selectPriority(pool, counts)).toBeNull();
   });
 
-  it("puts a fresh round-up ahead of a brand-new quake/storm", () => {
+  it("puts a brand-new quake/storm ahead of a fresh round-up", () => {
     const pool = [cand("quake:x", "quake"), cand("summary:y", "summary"), cand("storm:z", "storm")];
-    expect(selectPriority(pool, new Map())?.id).toBe("summary:y");
+    expect(selectPriority(pool, new Map())?.id).not.toBe("summary:y");
   });
 
-  it("falls through to quake/storm once no summary is waiting", () => {
-    const pool = [cand("tour:a", "tour"), cand("storm:z", "storm", undefined, 62)];
-    expect(selectPriority(pool, new Map())?.id).toBe("storm:z");
+  it("falls through to the round-up once no quake/storm is waiting", () => {
+    const pool = [cand("tour:a", "tour"), cand("summary:y", "summary")];
+    expect(selectPriority(pool, new Map())?.id).toBe("summary:y");
   });
 
   it("picks the highest-scored candidate within a priority kind", () => {

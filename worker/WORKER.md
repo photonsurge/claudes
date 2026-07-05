@@ -83,8 +83,15 @@ relevant NASA GIBS WMS layer (keyless, already reprojected to plate-carrée). Th
 - **`goes-east` / `goes-west`** — live GeoColor (~10-min), regional bbox, NOT cloud-keyed
   (GeoColor's bright oceans survive the key), shown whole and blended by the feed opacity.
 - **`himawari`** — live Band-13 Clean IR (~10-min), Asia/Australia bbox, not keyed.
+- **`meteosat-0` / `meteosat-iodc`** — the Meteosat discs GIBS doesn't carry, from
+  **EUMETSAT's EUMETView WMS** (`view.eumetsat.int/geoserver/wms`, ALSO keyless — public
+  GetMap, no account/token needed for the bake). `meteosat-0` = MTG `rgb_geocolour` at 0°
+  (Europe/Africa/Atlantic, GeoColor day+night); `meteosat-iodc` = MSG `ir108` clean IR at
+  45.5°E (Indian Ocean/E-Africa/S-Asia, 24/7). Per-feed `wms` in `FEED_FETCH` switches the
+  base URL; EUMETView (GeoServer) needs an empty `STYLES` param, GIBS needs `STYLE=default`.
+  Together the four live discs + the daily mosaic wrap the whole globe.
 
-Live feeds send NO `TIME` (GIBS returns the layer's latest slot). Runs on a 30-min cron,
+Live feeds send NO `TIME` (the server returns the layer's latest slot). Runs on a 30-min cron,
 ON by default. Per-feed frames are guarded under Mongo's 16 MB BSON limit (`maxPx` in
 `gibs.ts`, ~15.5 MB hard cap); a feed that errors is skipped, the rest still bake.
 

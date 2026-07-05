@@ -283,6 +283,19 @@ export interface DirectorConfig {
    * last value it acted on; any increase skips. (Monotonic, operator-driven.)
    */
   skipNonce: number;
+  /**
+   * Which basemap/"map type" looks each touring kind (intro/ocean/quake) cycles
+   * through, by id (see GlobalMapType.id in director-rois). A kind absent here,
+   * or given an empty list, tours its full catalog (today's behaviour) — this is
+   * purely a subtractive filter, never additive.
+   */
+  mapTypes: Partial<Record<SegmentKind, string[]>>;
+  /**
+   * Per-kind boolean overlay overrides layered onto PRESETS[kind] (see
+   * OVERLAY_KEYS in director-rois) — e.g. turn off a quake's plate-boundary
+   * overlay without touching any other kind. Empty = today's PRESETS untouched.
+   */
+  overlayOverrides: Partial<Record<SegmentKind, Partial<Record<string, boolean>>>>;
 }
 
 /**
@@ -355,6 +368,8 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   minAlertSeverity: 3,
   adEveryNShots: 6,
   skipNonce: 0,
+  mapTypes: {},
+  overlayOverrides: {},
 };
 
 const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
@@ -373,6 +388,50 @@ function mergeHolds<K extends string>(
     for (const k of keys) {
       const v = patch[k];
       if (typeof v === "number" && Number.isFinite(v)) out[k] = Math.max(3, v);
+    }
+  }
+  return out;
+}
+
+/**
+ * Merge a per-kind string-array map (untrusted) onto a base — unknown kinds
+ * dropped, non-string-array values ignored. Used for `mapTypes`.
+ */
+function mergeStringArrayMap(
+  base: Partial<Record<SegmentKind, string[]>>,
+  patch: Partial<Record<SegmentKind, string[]>> | undefined,
+): Partial<Record<SegmentKind, string[]>> {
+  const out = { ...base };
+  if (patch) {
+    for (const k of SEGMENT_KINDS) {
+      const v = patch[k];
+      if (Array.isArray(v) && v.every((id) => typeof id === "string")) out[k] = v;
+    }
+  }
+  return out;
+}
+
+/**
+ * Merge a per-kind boolean-map map (untrusted) onto a base — unknown kinds
+ * dropped, non-boolean values ignored, each kind's inner map merged (not
+ * replaced) so a single-toggle patch doesn't wipe its siblings. Used for
+ * `overlayOverrides`.
+ */
+function mergeBoolMapMap(
+  base: Partial<Record<SegmentKind, Partial<Record<string, boolean>>>>,
+  patch: Partial<Record<SegmentKind, Partial<Record<string, boolean>>>> | undefined,
+): Partial<Record<SegmentKind, Partial<Record<string, boolean>>>> {
+  const out = { ...base };
+  if (patch) {
+    for (const k of SEGMENT_KINDS) {
+      const inner = patch[k];
+      if (!inner || typeof inner !== "object") continue;
+      const cur = { ...(out[k] ?? {}) };
+      for (const key of Object.keys(inner)) {
+        const v = inner[key];
+        if (typeof v === "boolean") cur[key] = v;
+      }
+      out[k] = cur;
     }
   }
   return out;
@@ -408,6 +467,8 @@ export function mergeDirectorConfig(
     minAlertSeverity: num(patch.minAlertSeverity, base.minAlertSeverity),
     adEveryNShots: Math.max(1, Math.round(num(patch.adEveryNShots, base.adEveryNShots))),
     skipNonce: num(patch.skipNonce, base.skipNonce),
+    mapTypes: mergeStringArrayMap(base.mapTypes, patch.mapTypes),
+    overlayOverrides: mergeBoolMapMap(base.overlayOverrides, patch.overlayOverrides),
   };
 }
 

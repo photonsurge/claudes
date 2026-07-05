@@ -90,6 +90,12 @@ describe("buildCandidates", () => {
     expect(ocean[0].segment.patch.autoSpin).toBe(true); // world map spins
   });
 
+  it("opens the ocean spin on the first operator-enabled map type, not always SST", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg({ mapTypes: { ocean: ["wave", "salinity"] } }));
+    const ocean = pool.find((c) => c.segment.kind === "ocean")!;
+    expect(ocean.segment.patch.activeVariable).toBe("wave");
+  });
+
   it("holds regional tours on their subject (no global spin)", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     const tour = pool.find((c) => c.segment.kind === "tour")!;
@@ -124,6 +130,18 @@ describe("buildCandidates", () => {
     expect(q!.segment.camera.center).toEqual([140, 38]);
     const tour = pool.find((c) => c.segment.kind === "tour")!;
     expect(q!.score).toBeGreaterThan(tour.score);
+  });
+
+  it("layers an operator overlayOverride onto the preset without touching other kinds", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg({ overlayOverrides: { quake: { showFaults: false } } }));
+    const q = pool.find((c) => c.segment.id === "quake:q1")!;
+    expect(q.segment.patch.showFaults).toBe(false);
+    // The preset's other quake toggles are untouched.
+    expect(q.segment.patch.showCables).toBe(true);
+    // Unrelated kinds don't pick up the override.
+    const tour = pool.find((c) => c.segment.kind === "tour")!;
+    expect(tour.segment.patch.showFaults).toBe(false); // both default to false via LAYERS_OFF
+    expect(tour.segment.patch.showWind).toBe(true); // tour's own preset untouched
   });
 
   it("derives a storm centroid from the alert polygon", async () => {

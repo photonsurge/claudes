@@ -10,7 +10,8 @@
  * (refetch manifest / cities). Old textures are kept until new ones load by the
  * Globe's texture cache (no flash).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import {
   CONTROL_STATE,
@@ -26,20 +27,25 @@ import { useSocket } from "../../lib/socket-provider";
 import { fetchBroadcastState } from "../../lib/control";
 import { fetchManifest } from "../../lib/manifest";
 import { listCities, type City } from "../../lib/cities";
-import { useDirector, useDirectorCut, eventPulse } from "../../lib/director";
+import { useDirector, useDirectorConfig, useDirectorCut, eventPulse } from "../../lib/director";
 import WatchSurface from "../../components/WatchSurface";
 import ViewingOverlay from "../../components/ViewingOverlay";
 
-export default function WatchPage() {
+function WatchPageInner() {
+  const token = useSearchParams().get("token") ?? undefined;
   const { socket } = useSocket();
   const [state, setState] = useState<ControlState>(DEFAULT_CONTROL_STATE);
   const [manifest, setManifest] = useState<WeatherManifest | null>(null);
   const [cities, setCities] = useState<City[]>([]);
+  const [tokenError, setTokenError] = useState(false);
 
   // Auto-director: the main scene ("default") is directed by the worker. Fold the
   // current shot's camera + layer patch over the operator baseline, re-applying
   // only on a new cut (seq change) so heartbeats don't restart the camera fly.
   const director = useDirector(MAIN_SCENE_ID);
+  // Read-only here — /watch never edits the director config, just respects the
+  // operator's enabled map-type tours (e.g. which basemaps a quake cycles through).
+  const { config: directorConfig } = useDirectorConfig(MAIN_SCENE_ID);
   const [cut, setCut] = useState<Segment | null>(null);
   const lastSeq = useRef<number>(-1);
   useEffect(() => {
@@ -54,7 +60,11 @@ export default function WatchPage() {
 
   // The current shot's look + its map-type-relabelled segment (global spins retitle
   // per map type as they tour — "Global Temperature" → "Aurora & Space Weather" …).
-  const { patch: cutPatch, segment: onAir } = useDirectorCut(cut, manifest);
+  const { patch: cutPatch, segment: onAir } = useDirectorCut(
+    cut,
+    manifest,
+    cut ? directorConfig.mapTypes[cut.kind] : undefined,
+  );
   const shown = useMemo(
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),
     [state, cutPatch],
@@ -64,20 +74,21 @@ export default function WatchPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [s, m, c] = await Promise.all([
-        fetchBroadcastState(),
+      const [{ state: s, tokenError: te }, m, c] = await Promise.all([
+        fetchBroadcastState(token),
         fetchManifest(),
         listCities(),
       ]);
       if (cancelled) return;
       setState(s);
+      setTokenError(te);
       setManifest(m);
       setCities(c);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [token]);
 
   // Live updates.
   useEffect(() => {
@@ -96,6 +107,25 @@ export default function WatchPage() {
       socket.off(CITIES_UPDATED, onCities);
     };
   }, [socket]);
+
+  if (tokenError) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#000",
+          color: "#8b95a7",
+          fontFamily: "system-ui, sans-serif",
+          fontSize: 14,
+        }}
+      >
+        Invalid or missing watch token.
+      </main>
+    );
+  }
 
   return (
     <>
@@ -117,5 +147,13 @@ export default function WatchPage() {
         />
       ) : null}
     </>
+  );
+}
+
+export default function WatchPage() {
+  return (
+    <Suspense fallback={null}>
+      <WatchPageInner />
+    </Suspense>
   );
 }

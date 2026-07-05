@@ -22,6 +22,10 @@ import { getTideStationModel } from "./tide-station-model";
 import { makeTideStationRepo } from "./tide-station-repo";
 import { getTideSeriesModel } from "./tide-series-model";
 import { makeTideSeriesRepo } from "./tide-series-repo";
+import { getSeismoStationModel } from "./seismo-station-model";
+import { makeSeismoStationRepo } from "./seismo-station-repo";
+import { getSeismoSeriesModel } from "./seismo-series-model";
+import { makeSeismoSeriesRepo } from "./seismo-series-repo";
 import { getEventSummaryModel } from "./event-summary-model";
 import { makeEventSummaryRepo } from "./event-summary-repo";
 import { getCableModel } from "./cable-model";
@@ -84,6 +88,8 @@ export function createDb(conn: Connection) {
     quakes: makeQuakeRepo(getQuakeModel(conn)),
     tideStations: makeTideStationRepo(getTideStationModel(conn)),
     tideSeries: makeTideSeriesRepo(getTideSeriesModel(conn)),
+    seismoStations: makeSeismoStationRepo(getSeismoStationModel(conn)),
+    seismoSeries: makeSeismoSeriesRepo(getSeismoSeriesModel(conn)),
     eventSummaries: makeEventSummaryRepo(getEventSummaryModel(conn)),
     cables: makeCableRepo(getCableModel(conn), getCableLandingModel(conn)),
     faults: makeFaultRepo(getFaultModel(conn)),

@@ -175,4 +175,27 @@ describe("mergeDirectorConfig", () => {
     expect(mergeDirectorConfig(base, { adEveryNShots: 5.6 }).adEveryNShots).toBe(6);
     expect(mergeDirectorConfig(base, { adEveryNShots: "x" as any }).adEveryNShots).toBe(base.adEveryNShots);
   });
+
+  it("merges mapTypes per kind, dropping non-string-array values and unknown kinds", () => {
+    const merged = mergeDirectorConfig(base, {
+      mapTypes: { quake: ["relief", "night"], bogus: ["x"], intro: "not-an-array" } as any,
+    });
+    expect(merged.mapTypes.quake).toEqual(["relief", "night"]);
+    expect(merged.mapTypes.intro).toBeUndefined();
+    expect((merged.mapTypes as any).bogus).toBeUndefined();
+    // A second patch only touching `intro` doesn't drop the earlier `quake` entry.
+    const merged2 = mergeDirectorConfig(merged, { mapTypes: { intro: ["temp"] } });
+    expect(merged2.mapTypes.quake).toEqual(["relief", "night"]);
+    expect(merged2.mapTypes.intro).toEqual(["temp"]);
+  });
+
+  it("merges overlayOverrides per kind, keeping only boolean leaves and not dropping sibling keys", () => {
+    const merged = mergeDirectorConfig(base, {
+      overlayOverrides: { quake: { showFaults: false, showCities: "yes" as any } },
+    });
+    expect(merged.overlayOverrides.quake).toEqual({ showFaults: false });
+    // A follow-up single-key patch merges into the same kind's map, not replacing it.
+    const merged2 = mergeDirectorConfig(merged, { overlayOverrides: { quake: { showCables: false } } });
+    expect(merged2.overlayOverrides.quake).toEqual({ showFaults: false, showCables: false });
+  });
 });

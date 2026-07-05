@@ -3,13 +3,25 @@
 /**
  * Operator controls for the per-scene auto-director. Off/Auto toggle, per-kind
  * (and per-event-level) hold times, which kinds are eligible, event thresholds,
- * and a Skip button — plus a live "on air / up next" readout fed by the worker's
- * director:state. Edits PATCH the scene's director config; the worker picks them
- * up within ~1s.
+ * a Skip button, which basemap "map types" each touring kind (intro/ocean/quake)
+ * cycles through, per-kind overlay on/off overrides — plus a live "on air / up
+ * next" readout fed by the worker's director:state. `config`/`update` are lifted
+ * to the parent (/control) so the live preview shares the exact same config the
+ * operator is editing here; edits PATCH the scene's director config and the
+ * worker picks them up within ~1s.
  */
 import { useEffect, useState } from "react";
 import { COUNTRY_SHOTS } from "@photonsurge/shared/director-countries";
-import { useDirectorConfig, useDirector } from "../lib/director";
+import {
+  INTRO_MAP_TYPES,
+  OCEAN_MAP_TYPES,
+  QUAKE_MAP_TYPES,
+  PRESETS,
+  OVERLAY_KEYS,
+  type GlobalMapType,
+} from "@photonsurge/shared/director-rois";
+import type { DirectorConfig, SegmentKind } from "@photonsurge/shared/director";
+import { useDirector } from "../lib/director";
 import DirectorHolds from "./DirectorHolds";
 
 const box: React.CSSProperties = {
@@ -21,8 +33,53 @@ const box: React.CSSProperties = {
   fontSize: 13,
 };
 
-export default function DirectorPanel({ sceneId }: { sceneId: string }) {
-  const { config, update } = useDirectorConfig(sceneId);
+/** Kinds whose "map type" tour catalog the operator can subset (see globalMapTour). */
+const TOURED_KINDS: { kind: SegmentKind; label: string; catalog: GlobalMapType[] }[] = [
+  { kind: "intro", label: "Global spin (intro)", catalog: INTRO_MAP_TYPES },
+  { kind: "ocean", label: "Ocean spin", catalog: OCEAN_MAP_TYPES },
+  { kind: "quake", label: "Earthquake terrain looks", catalog: QUAKE_MAP_TYPES },
+];
+
+/** The enabled map-type ids for a kind — an absent/empty list means "all enabled". */
+function enabledMapTypeIds(config: DirectorConfig, kind: SegmentKind, catalog: GlobalMapType[]): string[] {
+  const ids = config.mapTypes[kind];
+  return ids && ids.length ? ids : catalog.map((t) => t.id);
+}
+
+/** The overlay-toggle keys a kind's preset actually turns on — the only ones worth exposing. */
+function overlayTogglesFor(kind: SegmentKind): string[] {
+  const preset = PRESETS[kind] as Record<string, unknown>;
+  return OVERLAY_KEYS.filter((k) => preset[k] === true);
+}
+
+/** "showTrackLabels" -> "Track labels". */
+function humanizeOverlayKey(key: string): string {
+  return key.replace(/^show/, "").replace(/([A-Z])/g, " $1").trim();
+}
+
+/** Kinds worth showing an overlay-override editor for (only ones with any togglable key). */
+const OVERLAY_KIND_ORDER: SegmentKind[] = [
+  "intro",
+  "ocean",
+  "orbital",
+  "tour",
+  "country",
+  "weather",
+  "storm",
+  "quake",
+  "flight",
+  "ship",
+];
+
+export default function DirectorPanel({
+  sceneId,
+  config,
+  update,
+}: {
+  sceneId: string;
+  config: DirectorConfig;
+  update: (patch: Partial<DirectorConfig>) => void;
+}) {
   const live = useDirector(sceneId);
   const auto = config.mode === "auto";
 
@@ -104,6 +161,41 @@ export default function DirectorPanel({ sceneId }: { sceneId: string }) {
           quake/storm split into per-level holds */}
       <DirectorHolds config={config} update={update} />
 
+      {/* Map-type tours — which basemaps/looks each touring kind cycles through */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Map types shown:</div>
+        {TOURED_KINDS.filter((t) => config.kinds[t.kind]).map(({ kind, label, catalog }) => {
+          const enabled = enabledMapTypeIds(config, kind, catalog);
+          return (
+            <div key={kind} style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 2 }}>{label}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px" }}>
+                {catalog.map((t) => {
+                  const on = enabled.includes(t.id);
+                  return (
+                    <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() =>
+                          update({
+                            mapTypes: {
+                              ...config.mapTypes,
+                              [kind]: on ? enabled.filter((id) => id !== t.id) : [...enabled, t.id],
+                            },
+                          })
+                        }
+                      />
+                      {t.title}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       {/* Favourite countries — the spotlights the country kind rotates through */}
       {config.kinds.country ? (
         <div style={{ marginBottom: 12 }}>
@@ -142,6 +234,41 @@ export default function DirectorPanel({ sceneId }: { sceneId: string }) {
           </div>
         </div>
       ) : null}
+
+      {/* Overlay overrides — per-kind on/off for the layers that kind's preset uses */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Overlays per shot type:</div>
+        {OVERLAY_KIND_ORDER.filter((k) => config.kinds[k] && overlayTogglesFor(k).length > 0).map((kind) => {
+          const keys = overlayTogglesFor(kind);
+          return (
+            <div key={kind} style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 2, textTransform: "capitalize" }}>{kind}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px" }}>
+                {keys.map((key) => {
+                  const current = config.overlayOverrides[kind]?.[key] ?? true;
+                  return (
+                    <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={current}
+                        onChange={() =>
+                          update({
+                            overlayOverrides: {
+                              ...config.overlayOverrides,
+                              [kind]: { ...config.overlayOverrides[kind], [key]: !current },
+                            },
+                          })
+                        }
+                      />
+                      {humanizeOverlayKey(key)}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       {/* Ad cadence — only relevant when Sponsor ads are enabled */}
       {config.kinds.ad ? (

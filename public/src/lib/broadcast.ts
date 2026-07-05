@@ -8,6 +8,7 @@ import type { Alert, AlertFeature } from "./alerts";
 import { primaryInfo, areaSummary } from "./alerts";
 import type { Quake, Track } from "./tracks/types";
 import { SEVERITY_LABELS, SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
+import { alertRepPoint, continentOf } from "@photonsurge/shared/alerts/geo";
 import { hazardMeta, type HazardType } from "./hazard";
 
 /** "SEISMIC M5.9 · 12km SSW of … · TSUNAMI POTENTIAL" */
@@ -147,6 +148,32 @@ export interface WorldSummary {
   maxMag: number;
   /** The strongest quake itself, for its place label — or null. */
   maxQuake: Quake | null;
+  /** Alert + quake tally per continent, busiest first (undetectable ones dropped). */
+  byContinent: {
+    continent: string;
+    alertCount: number;
+    quakeCount: number;
+    total: number;
+    /** This continent's alerts broken down by severity — non-zero ranks, most severe first. */
+    bySeverity: { rank: number; label: string; color: string; count: number }[];
+  }[];
+}
+
+/**
+ * Best-effort continent for an alert — the first area with usable geometry, via
+ * the same representative-point logic the map badge/director use. Geocode-only
+ * feeds with no polygon fall back on the source's known home region (NWS only
+ * ever covers the US) rather than going unclassified.
+ */
+function alertContinent(a: Alert): string | undefined {
+  for (const info of a.info ?? []) {
+    for (const ar of info.area ?? []) {
+      const pt = alertRepPoint(ar.geometry ?? null);
+      const c = pt ? continentOf(pt[0], pt[1]) : undefined;
+      if (c) return c;
+    }
+  }
+  return a.source === "nws" ? "North America" : undefined;
 }
 
 /**
@@ -176,12 +203,51 @@ export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummar
   let maxQuake: Quake | null = null;
   for (const q of quakes) if (!maxQuake || q.mag > maxQuake.mag) maxQuake = q;
 
+  const cont = new Map<string, { alertCount: number; quakeCount: number; sev: Map<number, number> }>();
+  const contOf = (continent: string) => {
+    const cur = cont.get(continent) ?? { alertCount: 0, quakeCount: 0, sev: new Map<number, number>() };
+    cont.set(continent, cur);
+    return cur;
+  };
+  for (const a of distinct) {
+    const c = alertContinent(a);
+    if (!c) continue;
+    const cur = contOf(c);
+    cur.alertCount += 1;
+    cur.sev.set(a.maxSeverityRank, (cur.sev.get(a.maxSeverityRank) ?? 0) + 1);
+  }
+  for (const q of quakes) {
+    const c = continentOf(q.lng, q.lat);
+    if (c) contOf(c).quakeCount += 1;
+  }
+  const byContinent = [...cont.entries()]
+    .map(([continent, v]) => ({
+      continent,
+      alertCount: v.alertCount,
+      quakeCount: v.quakeCount,
+      total: v.alertCount + v.quakeCount,
+      // Per-continent severity mix — same rank→label/colour mapping as the
+      // panel-wide breakdown, so a busy continent's bar reads by severity
+      // instead of a flat "how many alerts" blob.
+      bySeverity: [...v.sev.entries()]
+        .filter(([rank]) => rank > 0)
+        .map(([rank, count]) => ({
+          rank,
+          label: SEVERITY_LABELS[rank as 0 | 1 | 2 | 3 | 4] ?? String(rank),
+          color: SEVERITY_COLORS[rank as 0 | 1 | 2 | 3 | 4] ?? "#9ca3af",
+          count,
+        }))
+        .sort((a, b) => b.rank - a.rank),
+    }))
+    .sort((x, y) => y.total - x.total);
+
   return {
     alertTotal: distinct.length,
     bySeverity,
     quakeCount: quakes.length,
     maxMag: maxQuake?.mag ?? 0,
     maxQuake,
+    byContinent,
   };
 }
 

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { generateShortLivedJwt } from "@photonsurge/shared/utill/jwt";
+import { SESSION_COOKIE, readSession, isAdmin } from "@photonsurge/shared/utill/session";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
@@ -8,8 +11,12 @@ export const dynamic = "force-dynamic";
  * connection (actorType "user"). Signed with SOCKET_TOKEN_SECRET — the same
  * secret the socket server validates user tokens against.
  *
- * In a real app you'd derive `sub` from the authenticated session; here it's a
- * generated guest id so the demo works with no auth system.
+ * Every page (including anonymous /watch, via the root SocketProvider) calls
+ * this on mount, so it can't require a session — instead it upgrades the
+ * token when one is present: an admin session cookie yields a `role: "admin"`
+ * claim, which is what socket/src/handlers/relay.ts checks before allowing a
+ * client to emit control:state. Anonymous callers still get a receive-only
+ * guest token, same as before.
  */
 export async function GET() {
   const secret = process.env.SOCKET_TOKEN_SECRET;
@@ -17,8 +24,14 @@ export async function GET() {
     return NextResponse.json({ error: "SOCKET_TOKEN_SECRET not set" }, { status: 500 });
   }
 
-  const sub = `guest-${Math.random().toString(36).slice(2, 10)}`;
-  const token = generateShortLivedJwt({ sub, actorType: "user" }, "1h", secret);
+  const sessionToken = (await cookies()).get(SESSION_COOKIE)?.value;
+  const session = sessionToken ? readSession(sessionToken) : null;
+
+  const payload = isAdmin(session)
+    ? { sub: session!.sub, role: "admin", actorType: "user" }
+    : { sub: `guest-${Math.random().toString(36).slice(2, 10)}`, actorType: "user" };
+
+  const token = generateShortLivedJwt(payload, "1h", secret);
 
   return NextResponse.json({
     token,

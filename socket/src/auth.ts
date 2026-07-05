@@ -57,6 +57,7 @@ export async function authenticateSocket(socket: Socket): Promise<AuthResult> {
     try {
       const v = validateJwt(token, process.env.SOCKET_TOKEN_SECRET);
       const userId = v.sub || "";
+      const role = v.role;
       return {
         ok: true,
         context: {
@@ -64,8 +65,8 @@ export async function authenticateSocket(socket: Socket): Promise<AuthResult> {
           actorId: userId ? `user-${userId}` : `guest-${socket.id}`,
           ...(userId ? { userId } : {}),
           sessionId: socket.id,
-          roles: ["user"],
-          scopes: ["public:receive"],
+          roles: role ? ["user", role] : ["user"],
+          scopes: role === "admin" ? ["public:receive", "control:emit"] : ["public:receive"],
           ip,
         },
       };

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { BROADCAST_STATE_ID } from "@photonsurge/shared/db/broadcast-state-model";
+import { SESSION_COOKIE, readSession, isAdmin } from "@photonsurge/shared/utill/session";
 import {
   DEFAULT_CONTROL_STATE,
   mergeControlState,
@@ -23,14 +25,27 @@ async function loadScene(db: Awaited<ReturnType<typeof getAppDb>>, id: string) {
   return id === MAIN_SCENE_ID ? await db.getOrInitBroadcastState() : await db.getScene(id);
 }
 
-/** GET /api/scenes/:id — the scene's ControlState (404 if missing). */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+/**
+ * GET /api/scenes/:id?token=... — the scene's ControlState (404 if missing).
+ * /watch/:id (OBS, can't log in) authorizes via `token` matching the scene's
+ * watchToken; the admin session cookie also works (e.g. previewing from /admin).
+ */
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = await getAppDb();
   const doc = await loadScene(db, id);
   if (!doc) {
     return NextResponse.json({ error: "no such scene" }, { status: 404, headers: NO_CACHE });
   }
+
+  const sessionToken = (await cookies()).get(SESSION_COOKIE)?.value;
+  const session = sessionToken ? readSession(sessionToken) : null;
+  const tokenParam = new URL(req.url).searchParams.get("token");
+  const watchToken = (doc as { watchToken?: string }).watchToken;
+  if (!isAdmin(session) && (!watchToken || tokenParam !== watchToken)) {
+    return NextResponse.json({ error: "missing or invalid watch token" }, { status: 401, headers: NO_CACHE });
+  }
+
   return NextResponse.json(toControlState(doc), { status: 200, headers: NO_CACHE });
 }
 

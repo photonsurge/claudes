@@ -35,9 +35,9 @@ export function registerHandlers(io: Server, socket: SocketWithContext) {
     io.to(PUBLIC_ROOM).emit(type, payload);
   });
 
-  // Operator → watchers relay. Only authenticated browsers may drive /watch.
+  // Operator → watchers relay. Only an admin-role browser may drive /watch.
   socket.on(CONTROL_STATE, (payload: Record<string, unknown>) => {
-    if (!canRelayControlState(ctx.actorType)) {
+    if (!canRelayControlState(ctx)) {
       warn("relay.denied", { socketId: socket.id, actorType: ctx.actorType, event: CONTROL_STATE });
       return;
     }
@@ -49,7 +49,7 @@ export function registerHandlers(io: Server, socket: SocketWithContext) {
   // control:state; the `{ id, state }` envelope lets each watcher filter to its
   // own scene.
   socket.on(SCENE_STATE, (payload: { id?: string } & Record<string, unknown>) => {
-    if (!canRelayControlState(ctx.actorType)) {
+    if (!canRelayControlState(ctx)) {
       warn("relay.denied", { socketId: socket.id, actorType: ctx.actorType, event: SCENE_STATE });
       return;
     }

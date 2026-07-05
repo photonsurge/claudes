@@ -18,15 +18,21 @@ import {
 } from "@photonsurge/shared/control";
 import { useSocket } from "./socket-provider";
 
-/** Cold-start the broadcast state from the API. */
-export async function fetchBroadcastState(): Promise<ControlState> {
+/** Cold-start the broadcast state from the API. `tokenError` is true on a 401
+ * (missing/invalid watch token) so callers can show that distinctly from
+ * "still loading" instead of silently falling back to defaults. */
+export async function fetchBroadcastState(
+  token?: string,
+): Promise<{ state: ControlState; tokenError: boolean }> {
   try {
-    const res = await fetch("/api/broadcast/state", { cache: "no-store" });
-    if (!res.ok) return DEFAULT_CONTROL_STATE;
+    const qs = token ? `?token=${encodeURIComponent(token)}` : "";
+    const res = await fetch(`/api/broadcast/state${qs}`, { cache: "no-store" });
+    if (res.status === 401) return { state: DEFAULT_CONTROL_STATE, tokenError: true };
+    if (!res.ok) return { state: DEFAULT_CONTROL_STATE, tokenError: false };
     const json = await res.json();
-    return mergeControlState(DEFAULT_CONTROL_STATE, json ?? {});
+    return { state: mergeControlState(DEFAULT_CONTROL_STATE, json ?? {}), tokenError: false };
   } catch {
-    return DEFAULT_CONTROL_STATE;
+    return { state: DEFAULT_CONTROL_STATE, tokenError: false };
   }
 }
 
@@ -34,27 +40,30 @@ export async function fetchBroadcastState(): Promise<ControlState> {
  * Subscribe to live control state. Cold-starts from the API, then applies any
  * CONTROL_STATE socket patches via the shared merge. Returns the live state.
  */
-export function useBroadcastState(): {
+export function useBroadcastState(token?: string): {
   state: ControlState;
   setState: React.Dispatch<React.SetStateAction<ControlState>>;
   ready: boolean;
+  tokenError: boolean;
 } {
   const { socket } = useSocket();
   const [state, setState] = useState<ControlState>(DEFAULT_CONTROL_STATE);
   const [ready, setReady] = useState(false);
+  const [tokenError, setTokenError] = useState(false);
 
   // Cold start.
   useEffect(() => {
     let cancelled = false;
-    fetchBroadcastState().then((s) => {
+    fetchBroadcastState(token).then(({ state: s, tokenError: te }) => {
       if (cancelled) return;
       setState(s);
+      setTokenError(te);
       setReady(true);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [token]);
 
   // Live updates.
   useEffect(() => {
@@ -67,7 +76,7 @@ export function useBroadcastState(): {
     };
   }, [socket]);
 
-  return { state, setState, ready };
+  return { state, setState, ready, tokenError };
 }
 
 const PERSIST_DEBOUNCE_MS = 400;

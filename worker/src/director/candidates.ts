@@ -24,7 +24,7 @@ import {
   REGIONS_OF_INTEREST,
   GLOBAL_VIEW,
   OCEAN_VIEW_ZOOM,
-  OCEAN_MAP_TYPES,
+  globalMapTour,
   ORBITAL_VIEW_ZOOM,
   ORBITAL_VIEWS,
 } from "@photonsurge/shared/director-rois";
@@ -46,6 +46,7 @@ const make = (
   center: [number, number],
   zoom: number,
   holdMs: number,
+  cfg: DirectorConfig,
   /** Extra per-segment ControlState (e.g. ocean shots set their own variable). */
   extra?: Partial<Segment["patch"]>,
 ): Segment => ({
@@ -54,7 +55,10 @@ const make = (
   title,
   subtitle,
   camera: { center, zoom },
-  patch: { ...PRESETS[kind], ...extra, camera: { center, zoom } },
+  // Operator overlay overrides (DirectorConfig.overlayOverrides) layer onto the
+  // kind's preset but never beat `extra` — a segment's own computed fields
+  // (activeVariable, satelliteGroup, …) always win.
+  patch: { ...PRESETS[kind], ...cfg.overlayOverrides?.[kind], ...extra, camera: { center, zoom } },
   holdMs,
 });
 
@@ -98,7 +102,7 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
   if (cfg.kinds.intro) {
     out.push({
       score: 6,
-      segment: make("intro", "global", "Global Weather", undefined, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, kindHoldMs(cfg, "intro")),
+      segment: make("intro", "global", "Global Weather", undefined, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, kindHoldMs(cfg, "intro"), cfg),
     });
   }
   if (cfg.kinds.ocean) {
@@ -116,7 +120,8 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
         GLOBAL_VIEW.center,
         OCEAN_VIEW_ZOOM,
         kindHoldMs(cfg, "ocean"),
-        { activeVariable: OCEAN_MAP_TYPES[0].patch.activeVariable ?? "sst" },
+        cfg,
+        { activeVariable: globalMapTour("ocean", cfg.mapTypes.ocean)?.[0]?.patch.activeVariable ?? "sst" },
       ),
     });
   }
@@ -136,6 +141,7 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
           GLOBAL_VIEW.center,
           view.zoom ?? ORBITAL_VIEW_ZOOM,
           kindHoldMs(cfg, "orbital"),
+          cfg,
           { satelliteGroup: view.group },
         ),
       });
@@ -143,7 +149,7 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
   }
   if (cfg.kinds.tour) {
     for (const roi of REGIONS_OF_INTEREST) {
-      out.push({ score: 5, segment: make("tour", roi.id, roi.name, "Regional weather", roi.center, roi.zoom, kindHoldMs(cfg, "tour")) });
+      out.push({ score: 5, segment: make("tour", roi.id, roi.name, "Regional weather", roi.center, roi.zoom, kindHoldMs(cfg, "tour"), cfg) });
     }
   }
   if (cfg.kinds.country) {
@@ -152,7 +158,7 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
     for (const id of cfg.countries) {
       const c = countryShot(id);
       if (!c) continue;
-      const seg = make("country", c.id, c.name, "Country spotlight · National weather", c.center, c.zoom, kindHoldMs(cfg, "country"));
+      const seg = make("country", c.id, c.name, "Country spotlight · National weather", c.center, c.zoom, kindHoldMs(cfg, "country"), cfg);
       seg.icon = c.flag;
       out.push({ score: 6, segment: seg });
     }
@@ -236,7 +242,7 @@ async function summaryCandidates(
       SUMMARY_MAX_HOLD_MS,
       Math.max(kindHoldMs(cfg, "summary"), Math.round((words / SUMMARY_WORDS_PER_MIN) * 60_000)),
     );
-    const seg = make("summary", doc.id, "Global Round-Up", label, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, holdMs);
+    const seg = make("summary", doc.id, "Global Round-Up", label, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, holdMs, cfg);
     seg.summary = {
       id: doc.id,
       period,
@@ -283,7 +289,7 @@ export async function buildCandidates(
         const tsunami = Boolean(q.tsunami);
         // Hold scales with the headline: a Great quake dwells far longer than a
         // Light one — the operator tunes each magnitude class (quakeHoldSeconds).
-        const seg = make("quake", q.quakeId, c.title, c.subtitle, [q.lng, q.lat], 5, quakeHoldMs(cfg, q.mag));
+        const seg = make("quake", q.quakeId, c.title, c.subtitle, [q.lng, q.lat], 5, quakeHoldMs(cfg, q.mag), cfg);
         seg.tsunami = tsunami;
         seg.quake = { mag: q.mag, depthKm: q.depthKm };
         seg.details = c.details;
@@ -324,7 +330,7 @@ export async function buildCandidates(
           center,
           sinceMs: Number.isNaN(sinceMs) ? undefined : sinceMs,
         });
-        const seg = make("storm", `${a.source}:${a.identifier}`, c.title, c.subtitle, center, 4.5, stormHoldMs(cfg, sev), {
+        const seg = make("storm", `${a.source}:${a.identifier}`, c.title, c.subtitle, center, 4.5, stormHoldMs(cfg, sev), cfg, {
           activeVariable: plan.cycle[0],
         });
         seg.hazard = hazard;
@@ -371,7 +377,7 @@ export async function buildCandidates(
         // Flag from OpenSky origin_country; lead the subtitle with it when known.
         const flag = countryNameFlag(r.country);
         const subtitle = `${flag ? `${flag} ` : ""}Aircraft${hasAlt ? ` · FL${Math.round(altKft * 10)}` : ""}`;
-        const seg = make("flight", r.externalId, name, subtitle, [r.lng, r.lat], 6, kindHoldMs(cfg, "flight"));
+        const seg = make("flight", r.externalId, name, subtitle, [r.lng, r.lat], 6, kindHoldMs(cfg, "flight"), cfg);
         const details: Detail[] = [];
         if (m?.type) details.push({ label: "Type", value: m.type });
         if (m?.operator) details.push({ label: "Operator", value: m.operator });
@@ -414,7 +420,7 @@ export async function buildCandidates(
         const name = notable ? vehicleLabel(notable) : r.name?.trim() || `MMSI ${r.externalId}`;
         const spd = typeof r.speed === "number" ? Math.round(r.speed) : undefined;
         const subtitle = `${country?.flag ? `${country.flag} ` : ""}Vessel${spd != null ? ` · ${spd} kn` : ""}`;
-        const seg = make("ship", r.externalId, name, subtitle, [r.lng, r.lat], 6.5, kindHoldMs(cfg, "ship"));
+        const seg = make("ship", r.externalId, name, subtitle, [r.lng, r.lat], 6.5, kindHoldMs(cfg, "ship"), cfg);
         const details: Detail[] = [];
         if (spd != null) details.push({ label: "Speed", value: `${spd} kn` });
         if (typeof r.headingDeg === "number") details.push({ label: "Course", value: `${Math.round(r.headingDeg)}°` });

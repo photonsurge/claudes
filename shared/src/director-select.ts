@@ -4,10 +4,11 @@
  * one airs next. Deterministic given its rng, so it's unit-tested without a DB.
  *
  * Selection model (operator-requested):
- *  0. Priority — ahead of everything but the opener: a fresh round-up narrative
- *     (rare, and it goes stale — get it out while it's current), then any
- *     brand-new quake/storm nobody's seen yet this session. Breaking news
- *     doesn't wait its turn in random kind rotation. See `selectPriority`.
+ *  0. Priority — ahead of everything but the opener: any brand-new quake/storm
+ *     nobody's seen yet this session, then a fresh round-up narrative (rare,
+ *     and it goes stale — get it out once no breaking alert is waiting).
+ *     Breaking news doesn't wait its turn in random kind rotation. See
+ *     `selectPriority`.
  *  1. Opener — the very first cut of a session is the intro spin. It can also
  *     recur later as ordinary global filler: the intro now TOURS map types as it
  *     spins (temp → cloud → aurora → satellite), so it's no longer the static
@@ -59,12 +60,13 @@ function degApart(a: [number, number], b: [number, number]): number {
 const pickRandom = <T>(arr: T[], rng: () => number): T =>
   arr[Math.min(arr.length - 1, Math.floor(rng() * arr.length))];
 
-/** Kinds eligible for the priority tier, most urgent first. */
-const PRIORITY_KINDS: SegmentKind[] = ["summary", "quake", "storm"];
+/** Kinds eligible for the priority tier, most urgent first — a breaking
+ *  quake/storm outranks a round-up narrative. */
+const PRIORITY_KINDS: SegmentKind[] = ["quake", "storm", "summary"];
 
 /**
- * Breaking-news preempt: a fresh round-up narrative, or a quake/storm alert
- * nobody's seen yet this session, cut to it now instead of waiting on random
+ * Breaking-news preempt: a quake/storm alert nobody's seen yet this session,
+ * else a fresh round-up narrative, cut to it now instead of waiting on random
  * kind rotation. Checked before `selectNext` on every cut but the opener —
  * returns null once nothing new is waiting, so the caller falls through to
  * normal fair rotation. `counts` is the same per-segment airing tally passed to

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { SESSION_COOKIE, readSession, isAdmin } from "@photonsurge/shared/utill/session";
 import {
   DEFAULT_CONTROL_STATE,
   mergeControlState,
@@ -13,13 +15,22 @@ export const dynamic = "force-dynamic";
 
 const NO_CACHE = { "Cache-Control": "no-store" };
 
-/** GET /api/scenes — every broadcast scene as `{ id, name, updatedAt }`. */
+/**
+ * GET /api/scenes — every broadcast scene as `{ id, name, updatedAt }`. Called
+ * unauthenticated by /watch/:id (to resolve a display name), so `watchToken`
+ * is only included for an admin session — never leaked to anonymous callers.
+ */
 export async function GET() {
   const db = await getAppDb();
   // Ensure the main scene exists so the list is never empty on a fresh db.
   await db.getOrInitBroadcastState();
   const scenes = await db.listScenes();
-  return NextResponse.json({ scenes }, { status: 200, headers: NO_CACHE });
+
+  const sessionToken = (await cookies()).get(SESSION_COOKIE)?.value;
+  const session = sessionToken ? readSession(sessionToken) : null;
+  const out = isAdmin(session) ? scenes : scenes.map(({ watchToken: _t, ...rest }) => rest);
+
+  return NextResponse.json({ scenes: out }, { status: 200, headers: NO_CACHE });
 }
 
 /**

@@ -26,8 +26,9 @@ import {
 } from "../../lib/history-client";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
-/** How many mini-charts a section shows at once before advancing. */
-const CHARTS_PER_SLIDE = 4;
+/** How many charts a section shows at once before advancing — one at a time,
+ *  each drawn large, so a section reads as a slideshow rather than a stack. */
+const CHARTS_PER_SLIDE = 1;
 /** How long each slide holds before advancing to the next. */
 const SLIDE_HOLD_MS = 6000;
 
@@ -88,10 +89,17 @@ const VARIABLE_LABEL: Record<string, string> = {
   radar: "RADAR",
 };
 
-/** Logical chart box inside the 300px (border-box) card. */
-const CHART_W = 270;
-const CHART_H = 30;
-const PAD_Y = 4;
+/** Outer card width — matches the other bottom-left context cards
+ *  (TrackInfoPanel/QuakeReport/EventNearbyPanel) so the stacked column
+ *  reads as one consistent left edge. */
+const PANEL_W = 320;
+const PANEL_PAD_X = 16;
+
+/** Logical chart box inside the card. One chart shows at a time now, so it
+ *  can afford to be drawn tall rather than as a thin sparkline. */
+const CHART_W = PANEL_W - 2 * PANEL_PAD_X;
+const CHART_H = 108;
+const PAD_Y = 6;
 
 /** A plottable moment: time + the number to draw. */
 export interface SparkPoint {
@@ -162,15 +170,15 @@ function MiniChart({
   const area = `${toPath(spark.pts)} L${last[0]},${CHART_H} L${first[0]},${CHART_H} Z`;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2, width: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
-        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.15, color: "#aebdd2" }}>
+        <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: 1.2, color: "#aebdd2" }}>
           <span style={{ color, marginRight: 6 }}>▮</span>
           {label}
         </span>
-        <span style={{ fontSize: 14, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 20, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
           {latestVal != null ? formatReading(latestVal) : "—"}
-          <span style={{ fontSize: 10, fontWeight: 700, color: "#9db0ca", marginLeft: 4 }}>{units}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#9db0ca", marginLeft: 4 }}>{units}</span>
         </span>
       </div>
       <svg
@@ -178,9 +186,9 @@ function MiniChart({
         height={CHART_H}
         viewBox={`0 0 ${CHART_W} ${CHART_H}`}
         preserveAspectRatio="none"
-        style={{ display: "block", borderRadius: 5, background: "rgba(4,10,20,0.78)" }}
+        style={{ display: "block", borderRadius: 6, background: "rgba(4,10,20,0.78)" }}
       >
-        <path d={area} fill={color} opacity={0.16} />
+        <path d={area} fill={color} opacity={0.18} />
         {avg != null ? (
           <line
             x1={0}
@@ -188,15 +196,15 @@ function MiniChart({
             x2={CHART_W}
             y2={spark.yOf(avg)}
             stroke="#9fb0c8"
-            strokeWidth={1.1}
-            strokeDasharray="4 4"
+            strokeWidth={1.2}
+            strokeDasharray="5 5"
             opacity={0.55}
           />
         ) : null}
-        <path d={toPath(spark.pts)} fill="none" stroke={color} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-        {last ? <circle cx={last[0]} cy={last[1]} r={3} fill={color} stroke="#040a14" strokeWidth={1.2} /> : null}
+        <path d={toPath(spark.pts)} fill="none" stroke={color} strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
+        {last ? <circle cx={last[0]} cy={last[1]} r={4} fill={color} stroke="#040a14" strokeWidth={1.5} /> : null}
       </svg>
-      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.45, color: "#91a1b9" }}>{caption}</div>
+      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, color: "#91a1b9" }}>{caption}</div>
     </div>
   );
 }
@@ -324,12 +332,12 @@ export default function PointHistoryPanel({
   return (
     <div
       style={{
-        width: 300,
+        width: PANEL_W,
         boxSizing: "border-box",
         display: "flex",
         flexDirection: "column",
-        gap: 8,
-        padding: "12px 14px",
+        gap: 10,
+        padding: `14px ${PANEL_PAD_X}px`,
         background: theme.panelBg,
         border: theme.panelBorder,
         borderRadius: 12,

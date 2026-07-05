@@ -1,11 +1,20 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { SESSION_COOKIE, readSession } from "@photonsurge/shared/utill/session";
 
 /**
  * Admin section layout — a slim sticky bar with a link back to the launcher,
  * shared by /admin and every /admin/* page so there's always a way home without
  * touching each page. The admin pages render their own full-bleed <main> below.
+ *
+ * Reads the session server-side to show who's logged in + a logout button.
+ * By the time this renders, proxy.ts has already verified the session, so
+ * `session` is practically always set here — the check is just defensive.
  */
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const session = token ? readSession(token) : null;
+
   return (
     <>
       <header
@@ -15,6 +24,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           zIndex: 50,
           display: "flex",
           alignItems: "center",
+          justifyContent: "space-between",
           gap: 10,
           height: 40,
           padding: "0 16px",
@@ -24,13 +34,37 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           fontSize: 13,
         }}
       >
-        <Link href="/" style={{ color: "#8b95a7", textDecoration: "none" }}>
-          ← Home
-        </Link>
-        <span style={{ color: "#3a4152" }}>/</span>
-        <Link href="/admin" style={{ color: "#cdd4e0", textDecoration: "none" }}>
-          Admin
-        </Link>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Link href="/" style={{ color: "#8b95a7", textDecoration: "none" }}>
+            ← Home
+          </Link>
+          <span style={{ color: "#3a4152" }}>/</span>
+          <Link href="/admin" style={{ color: "#cdd4e0", textDecoration: "none" }}>
+            Admin
+          </Link>
+        </div>
+        {session && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#8b95a7" }}>
+            <span>{session.email}</span>
+            <form action="/api/auth/logout" method="POST">
+              <button
+                type="submit"
+                style={{
+                  background: "none",
+                  border: "1px solid #3a4152",
+                  color: "#cdd4e0",
+                  borderRadius: 4,
+                  padding: "3px 8px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: 13,
+                }}
+              >
+                Log out
+              </button>
+            </form>
+          </div>
+        )}
       </header>
       {children}
     </>

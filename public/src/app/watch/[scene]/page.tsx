@@ -7,8 +7,8 @@
  * globally and refetched on WEATHER_RUN / CITIES_UPDATED. The bare `/watch`
  * (main scene) lives in ../page.tsx; both render the shared <WatchSurface>.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { WEATHER_RUN, CITIES_UPDATED, mergeControlState } from "@photonsurge/shared/control";
 import type { Segment } from "@photonsurge/shared/director";
@@ -16,19 +16,20 @@ import { useSocket } from "../../../lib/socket-provider";
 import { fetchManifest } from "../../../lib/manifest";
 import { listCities, type City } from "../../../lib/cities";
 import { useSceneState, listScenes } from "../../../lib/scenes";
-import { useDirector, useDirectorCut, eventPulse } from "../../../lib/director";
+import { useDirector, useDirectorConfig, useDirectorCut, eventPulse } from "../../../lib/director";
 import WatchSurface from "../../../components/WatchSurface";
 import ViewingOverlay from "../../../components/ViewingOverlay";
 
-export default function SceneWatchPage() {
+function SceneWatchPageInner() {
   const params = useParams<{ scene: string }>();
+  const token = useSearchParams().get("token") ?? undefined;
   const sceneId = useMemo(() => {
     const s = params?.scene;
     return decodeURIComponent(Array.isArray(s) ? s[0] : s ?? "");
   }, [params]);
 
   const { socket } = useSocket();
-  const { state } = useSceneState(sceneId);
+  const { state, tokenError } = useSceneState(sceneId, token);
   const [manifest, setManifest] = useState<WeatherManifest | null>(null);
   const [cities, setCities] = useState<City[]>([]);
   const [sceneName, setSceneName] = useState<string | undefined>(undefined);
@@ -37,6 +38,9 @@ export default function SceneWatchPage() {
   // camera + layer patch over the scene's manual baseline. We only re-apply on a
   // new cut (seq change) so heartbeats don't retrigger the camera fly.
   const director = useDirector(sceneId);
+  // Read-only here — this page never edits the director config, just respects
+  // the operator's enabled map-type tours (e.g. which basemaps a quake cycles through).
+  const { config: directorConfig } = useDirectorConfig(sceneId);
   const [cut, setCut] = useState<Segment | null>(null);
   const lastSeq = useRef<number>(-1);
   useEffect(() => {
@@ -49,7 +53,11 @@ export default function SceneWatchPage() {
     }
   }, [director?.seq, director?.active, director?.segment]);
 
-  const { patch: cutPatch, segment: onAir } = useDirectorCut(cut, manifest);
+  const { patch: cutPatch, segment: onAir } = useDirectorCut(
+    cut,
+    manifest,
+    cut ? directorConfig.mapTypes[cut.kind] : undefined,
+  );
   const shown = useMemo(
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),
     [state, cutPatch],
@@ -83,6 +91,25 @@ export default function SceneWatchPage() {
     };
   }, [socket]);
 
+  if (tokenError) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#000",
+          color: "#8b95a7",
+          fontFamily: "system-ui, sans-serif",
+          fontSize: 14,
+        }}
+      >
+        Invalid or missing watch token.
+      </main>
+    );
+  }
+
   return (
     <>
       <WatchSurface
@@ -104,5 +131,13 @@ export default function SceneWatchPage() {
         />
       ) : null}
     </>
+  );
+}
+
+export default function SceneWatchPage() {
+  return (
+    <Suspense fallback={null}>
+      <SceneWatchPageInner />
+    </Suspense>
   );
 }

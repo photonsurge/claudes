@@ -33,15 +33,33 @@ export async function listScenes(): Promise<SceneMeta[]> {
   }
 }
 
-/** Cold-start a single scene's ControlState from the API (defaults on failure). */
-export async function fetchSceneState(id: string): Promise<ControlState> {
+/** Cold-start a single scene's ControlState from the API (defaults on failure).
+ * `tokenError` is true on a 401 (missing/invalid watch token) so /watch/:id can
+ * show that distinctly from "still loading" instead of silently defaulting. */
+export async function fetchSceneState(
+  id: string,
+  token?: string,
+): Promise<{ state: ControlState; tokenError: boolean }> {
   try {
-    const res = await fetch(`/api/scenes/${encodeURIComponent(id)}`, { cache: "no-store" });
-    if (!res.ok) return DEFAULT_CONTROL_STATE;
+    const qs = token ? `?token=${encodeURIComponent(token)}` : "";
+    const res = await fetch(`/api/scenes/${encodeURIComponent(id)}${qs}`, { cache: "no-store" });
+    if (res.status === 401) return { state: DEFAULT_CONTROL_STATE, tokenError: true };
+    if (!res.ok) return { state: DEFAULT_CONTROL_STATE, tokenError: false };
     const json = await res.json();
-    return mergeControlState(DEFAULT_CONTROL_STATE, json ?? {});
+    return { state: mergeControlState(DEFAULT_CONTROL_STATE, json ?? {}), tokenError: false };
   } catch {
-    return DEFAULT_CONTROL_STATE;
+    return { state: DEFAULT_CONTROL_STATE, tokenError: false };
+  }
+}
+
+/** Rotate a scene's watch token, invalidating any previously-copied /watch URL. */
+export async function rotateSceneToken(id: string): Promise<{ token?: string; error?: string }> {
+  try {
+    const res = await fetch(`/api/scenes/${encodeURIComponent(id)}/rotate-token`, { method: "POST" });
+    const json = await res.json().catch(() => ({}));
+    return res.ok ? { token: json.watchToken } : { error: json.error || `HTTP ${res.status}` };
+  } catch (err) {
+    return { error: String(err) };
   }
 }
 
@@ -92,24 +110,29 @@ export async function persistScene(id: string, state: ControlState): Promise<voi
  * from the API, then apply SCENE_STATE patches whose id matches. Returns the
  * live state + a `ready` flag.
  */
-export function useSceneState(sceneId: string): { state: ControlState; ready: boolean } {
+export function useSceneState(
+  sceneId: string,
+  token?: string,
+): { state: ControlState; ready: boolean; tokenError: boolean } {
   const { socket } = useSocket();
   const [state, setState] = useState<ControlState>(DEFAULT_CONTROL_STATE);
   const [ready, setReady] = useState(false);
+  const [tokenError, setTokenError] = useState(false);
 
-  // Cold start (re-runs if the id changes).
+  // Cold start (re-runs if the id or token changes).
   useEffect(() => {
     let cancelled = false;
     setReady(false);
-    fetchSceneState(sceneId).then((s) => {
+    fetchSceneState(sceneId, token).then(({ state: s, tokenError: te }) => {
       if (cancelled) return;
       setState(s);
+      setTokenError(te);
       setReady(true);
     });
     return () => {
       cancelled = true;
     };
-  }, [sceneId]);
+  }, [sceneId, token]);
 
   // Live updates scoped to this scene id.
   useEffect(() => {
@@ -124,7 +147,7 @@ export function useSceneState(sceneId: string): { state: ControlState; ready: bo
     };
   }, [socket, sceneId]);
 
-  return { state, ready };
+  return { state, ready, tokenError };
 }
 
 const PERSIST_DEBOUNCE_MS = 400;

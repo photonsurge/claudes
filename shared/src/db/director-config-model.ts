@@ -69,6 +69,10 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
     minAlertSeverity: { type: Number, required: true, default: 3 },
     adEveryNShots: { type: Number, required: true, default: 6 },
     skipNonce: { type: Number, required: true, default: 0 },
+    // Dynamic per-kind keys (SegmentKind → string[] / bool map) — Mixed, same
+    // precedent as satImgFeeds in broadcast-state-model.ts.
+    mapTypes: { type: mongoose.Schema.Types.Mixed, default: {} },
+    overlayOverrides: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   mongoTimestamps,
 );
