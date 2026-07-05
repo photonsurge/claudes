@@ -92,9 +92,10 @@ const make = (
 
 type Detail = { label: string; value: string };
 
-/** Score boosts so catalogued craft actually reach air (ordinary tracks are 14-18):
- *  a plain notable clears the fillers/tracks; a VIP (Air Force One) tops them. Kept
- *  below severe-weather/quake headlines — tunable later; the data drives it. */
+/** Score for the two tiers of catalogued (enriched) craft — a plain notable clears
+ *  the fillers, a VIP (Air Force One) tops them. Kept below severe-weather/quake
+ *  headlines — tunable later; the data drives it. Only catalogued craft ever reach
+ *  the flight/ship pool (see buildCandidates), so every candidate gets one of these. */
 const NOTABLE_SCORE = 45;
 const VIP_SCORE = 80;
 
@@ -123,6 +124,7 @@ function notableTrackInfo(
     photoUrl: override || n.photoUrl,
     photoCredit: override ? undefined : n.photoCredit,
     photoLink: override ? undefined : n.photoLink,
+    manufacturer: n.manufacturer,
     type: n.type || live.type,
     operator: n.operator || live.operator,
     registration: n.registration || live.registration,
@@ -407,24 +409,13 @@ export async function buildCandidates(
     }
   }
 
-  // --- Notable aircraft: catalogued craft (any altitude) + the highest cruising
-  //     jets in the latest frame. Catalog matches get a big boost + Track Info. ---
+  // --- Notable aircraft: ONLY craft matching the enriched catalog (any altitude —
+  //     a VIP on approach still counts). Every flight segment therefore carries a
+  //     Track Info card; plain unenriched blips never make the pool. ---
   if (cfg.kinds.flight) {
     try {
       const { rows } = await db.trackSnapshots.latest({ kind: "aircraft" });
-      // Catalog matches first (regardless of altitude — a VIP on approach counts),
-      // then the top-6 cruising jets, deduped by ICAO24.
-      const byId = new Map<string, (typeof rows)[number]>();
-      for (const r of rows) {
-        if (notableByKey.has(vehicleId("aircraft", r.externalId))) byId.set(r.externalId, r);
-      }
-      for (const r of rows
-        .filter((r) => typeof r.altM === "number" && (r.altM as number) > 9000)
-        .sort((x, y) => (y.altM as number) - (x.altM as number))
-        .slice(0, 6)) {
-        if (!byId.has(r.externalId)) byId.set(r.externalId, r);
-      }
-      const chosen = [...byId.values()];
+      const chosen = rows.filter((r) => notableByKey.has(vehicleId("aircraft", r.externalId)));
       // Join the cached hexdb metadata (registration/type/operator) by ICAO24 —
       // same lookup the public aircraft route uses, keyed by lowercase hex.
       const icaos = [...new Set(chosen.map((r) => r.externalId.toLowerCase()))];
@@ -433,8 +424,8 @@ export async function buildCandidates(
         : { data: [] };
       const metaById = new Map((metaRes.data ?? []).map((m) => [m.id, m]));
       for (const r of chosen) {
-        const notable = notableByKey.get(vehicleId("aircraft", r.externalId));
-        const name = notable ? vehicleLabel(notable) : r.name?.trim() || r.externalId.toUpperCase();
+        const notable = notableByKey.get(vehicleId("aircraft", r.externalId))!;
+        const name = vehicleLabel(notable);
         const hasAlt = typeof r.altM === "number";
         const altKft = hasAlt ? Math.round(((r.altM as number) * 3.281) / 100) / 10 : 0;
         const m = metaById.get(r.externalId.toLowerCase());
@@ -450,38 +441,26 @@ export async function buildCandidates(
         if (hasAlt) details.push({ label: "Altitude", value: `FL${Math.round(altKft * 10)} · ${Math.round(r.altM as number).toLocaleString()} m` });
         if (typeof r.headingDeg === "number") details.push({ label: "Heading", value: `${Math.round(r.headingDeg)}°` });
         seg.details = details;
-        if (notable) {
-          seg.trackInfo = notableTrackInfo(notable, { type: m?.type, operator: m?.operator, registration: m?.registration, flag, country: r.country });
-          pool.push({ score: notable.vip ? VIP_SCORE : NOTABLE_SCORE, segment: seg });
-        } else {
-          pool.push({ score: 18, segment: seg });
-        }
+        seg.trackInfo = notableTrackInfo(notable, { type: m?.type, operator: m?.operator, registration: m?.registration, flag, country: r.country });
+        pool.push({ score: notable.vip ? VIP_SCORE : NOTABLE_SCORE, segment: seg });
       }
     } catch {
       /* no aircraft frame — skip */
     }
   }
 
-  // --- Notable ships: catalogued vessels (any speed) + the fastest movers in the
-  //     latest frame. Catalog matches get a big boost + Track Info. ---
+  // --- Notable ships: ONLY vessels matching the enriched catalog (any speed).
+  //     Every ship segment therefore carries a Track Info card; plain unenriched
+  //     AIS blips never make the pool. ---
   if (cfg.kinds.ship) {
     try {
       const { rows } = await db.trackSnapshots.latest({ kind: "ship" });
-      const byId = new Map<string, (typeof rows)[number]>();
-      for (const r of rows) {
-        if (notableByKey.has(vehicleId("ship", r.externalId))) byId.set(r.externalId, r);
-      }
-      for (const r of rows
-        .filter((r) => typeof r.speed === "number" && (r.speed as number) > 12)
-        .sort((x, y) => (y.speed as number) - (x.speed as number))
-        .slice(0, 4)) {
-        if (!byId.has(r.externalId)) byId.set(r.externalId, r);
-      }
-      for (const r of [...byId.values()]) {
-        const notable = notableByKey.get(vehicleId("ship", r.externalId));
+      const chosen = rows.filter((r) => notableByKey.has(vehicleId("ship", r.externalId)));
+      for (const r of chosen) {
+        const notable = notableByKey.get(vehicleId("ship", r.externalId))!;
         // Flag country from the MMSI MID (first 3 digits) — no feed call needed.
         const country = mmsiCountry(r.externalId);
-        const name = notable ? vehicleLabel(notable) : r.name?.trim() || `MMSI ${r.externalId}`;
+        const name = vehicleLabel(notable);
         const spd = typeof r.speed === "number" ? Math.round(r.speed) : undefined;
         const subtitle = `${country?.flag ? `${country.flag} ` : ""}Vessel${spd != null ? ` · ${spd} kn` : ""}`;
         const seg = make("ship", r.externalId, name, subtitle, [r.lng, r.lat], 6.5, kindHoldMs(cfg, "ship"), cfg);
@@ -491,12 +470,8 @@ export async function buildCandidates(
         if (country) details.push({ label: "Flag", value: `${country.flag ? `${country.flag} ` : ""}${country.name}` });
         details.push({ label: "MMSI", value: r.externalId });
         seg.details = details;
-        if (notable) {
-          seg.trackInfo = notableTrackInfo(notable, { flag: country?.flag, country: country?.name });
-          pool.push({ score: notable.vip ? VIP_SCORE : NOTABLE_SCORE, segment: seg });
-        } else {
-          pool.push({ score: 14, segment: seg });
-        }
+        seg.trackInfo = notableTrackInfo(notable, { flag: country?.flag, country: country?.name });
+        pool.push({ score: notable.vip ? VIP_SCORE : NOTABLE_SCORE, segment: seg });
       }
     } catch {
       /* no ship frame — skip */

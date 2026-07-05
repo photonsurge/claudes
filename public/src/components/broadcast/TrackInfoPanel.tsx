@@ -29,7 +29,10 @@ export default function TrackInfoPanel({
   const isAir = segment.kind === "flight";
   const heading = info.vip ? "VIP TRACK" : isAir ? "NOTABLE AIRCRAFT" : "NOTABLE VESSEL";
   const title = info.label || segment.title;
-  const typeLine = [info.type, info.operator].filter(Boolean).join(" · ");
+  // Manufacturer reads redundant when `type` already leads with it (e.g. "Boeing VC-25A").
+  const manufacturer =
+    info.manufacturer && !info.type?.toLowerCase().startsWith(info.manufacturer.toLowerCase()) ? info.manufacturer : undefined;
+  const typeLine = [manufacturer, info.type, info.operator].filter(Boolean).join(" · ");
   const idLine = [info.flag ? `${info.flag} ${info.country ?? ""}`.trim() : info.country, info.registration]
     .filter(Boolean)
     .join(" · ");
@@ -63,6 +66,23 @@ export default function TrackInfoPanel({
         }}
       >
         {info.vip ? <span aria-hidden>★</span> : null}▸ {heading}
+        {info.category ? (
+          <span
+            style={{
+              marginLeft: "auto",
+              fontSize: 8,
+              fontWeight: 700,
+              letterSpacing: 0.6,
+              color: "#9fb3cc",
+              background: "rgba(159,179,204,0.14)",
+              padding: "2px 6px",
+              borderRadius: 999,
+              textTransform: "uppercase",
+            }}
+          >
+            {info.category}
+          </span>
+        ) : null}
       </div>
 
       <div style={{ padding: "0 12px 10px" }}>

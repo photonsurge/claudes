@@ -195,6 +195,8 @@ export interface TrackInfo {
   photoLink?: string;
   /** Aircraft type / vessel type, e.g. "Boeing VC-25A". */
   type?: string;
+  /** Builder, e.g. "Boeing" or the shipyard — shown only when distinct from `type`. */
+  manufacturer?: string;
   operator?: string;
   registration?: string;
   flag?: string;

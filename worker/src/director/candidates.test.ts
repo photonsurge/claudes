@@ -50,7 +50,13 @@ function fakeDb(over: Partial<Record<string, any>> = {}): AppDb {
       }),
     },
     vehicles: {
-      notableCatalog: async () => over.vehicles ?? [],
+      // Flight/ship candidates are catalog-gated now — the default fixtures
+      // model an already-enriched craft/vessel so the plain "picks notable
+      // aircraft/ships" tests below don't need to restate the catalog match.
+      notableCatalog: async () => over.vehicles ?? [
+        { id: "aircraft:abc123", kind: "aircraft", code: "abc123", name: "BAW123", enabled: true, notable: true },
+        { id: "ship:232000001", kind: "ship", code: "232000001", name: "Boaty", enabled: true, notable: true },
+      ],
     },
     eventSummaries: {
       latest: async (period: string) => (over.eventSummaries ?? {})[period] ?? null,
@@ -276,6 +282,17 @@ describe("buildCandidates", () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     expect(pool.some((c) => c.segment.id === "flight:abc123")).toBe(true);
     expect(pool.some((c) => c.segment.id === "ship:232000001")).toBe(true);
+  });
+
+  it("excludes aircraft/ships that aren't in the notable catalog, even at cruising altitude/speed", async () => {
+    const db = fakeDb({
+      aircraft: [{ externalId: "xyz999", name: "RANDOM1", country: "Germany", lng: 10, lat: 50, altM: 11000 }],
+      ships: [{ externalId: "999000111", name: "RandomShip", lng: 5, lat: 40, speed: 20 }],
+      vehicles: [], // nothing catalogued — a plain blip no longer earns air time
+    });
+    const pool = await buildCandidates(db, cfg());
+    expect(pool.some((c) => c.segment.kind === "flight")).toBe(false);
+    expect(pool.some((c) => c.segment.kind === "ship")).toBe(false);
   });
 
   it("enriches aircraft with flag, type and operator from cached meta", async () => {

@@ -52,4 +52,30 @@ describe("TrackInfoPanel", () => {
     render(<TrackInfoPanel segment={seg} />);
     expect(screen.getByText(/VIP TRACK/)).toBeInTheDocument();
   });
+
+  it("shows the catalog category as a badge and the manufacturer alongside type/operator", () => {
+    const seg: Segment = {
+      ...base,
+      trackInfo: {
+        label: "Queen Mary 2",
+        category: "cruise",
+        manufacturer: "Fincantieri",
+        type: "Ocean liner",
+        operator: "Cunard",
+        notable: true,
+      },
+    };
+    render(<TrackInfoPanel segment={seg} />);
+    expect(screen.getByText("cruise")).toBeInTheDocument();
+    expect(screen.getByText("Fincantieri · Ocean liner · Cunard")).toBeInTheDocument();
+  });
+
+  it("hides manufacturer when type already leads with it (avoids redundancy)", () => {
+    const seg: Segment = {
+      ...base,
+      trackInfo: { label: "Air Force One", manufacturer: "Boeing", type: "Boeing VC-25A", notable: true },
+    };
+    render(<TrackInfoPanel segment={seg} />);
+    expect(screen.getByText("Boeing VC-25A")).toBeInTheDocument();
+  });
 });
