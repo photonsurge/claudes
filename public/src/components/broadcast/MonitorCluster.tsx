@@ -18,6 +18,7 @@ import { useTideGauge } from "../../lib/tide-gauge";
 import type { Quake } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { HeartbeatIcon, WaveIcon } from "./icons";
 
 /** Radius (km) of quakes counted as "relevant" to a focused quake vs a region. */
 const QUAKE_FOCUS_KM = 800;
@@ -50,7 +51,7 @@ function seismoPath(w: number, h: number, amp: number): string {
  * which suits "water level" but not "ground motion"). Falls back to a flat
  * mid-line when the series is degenerate (all equal / single point).
  */
-function realLinePath(samples: { v: number }[], w: number, h: number): string {
+export function realLinePath(samples: { v: number }[], w: number, h: number): string {
   const n = samples.length;
   if (n === 0) return `M0,${h / 2} L${w},${h / 2}`;
   let min = Infinity;
@@ -75,7 +76,7 @@ function realLinePath(samples: { v: number }[], w: number, h: number): string {
  * reading sits low, highest sits high. Falls back to a flat mid-line when the
  * series is degenerate (all equal / single point).
  */
-function realWavePath(samples: { v: number }[], w: number, h: number): string {
+export function realWavePath(samples: { v: number }[], w: number, h: number): string {
   const n = samples.length;
   if (n === 0) return `M0,${h} L${w},${h} Z`;
   let min = Infinity;
@@ -107,12 +108,15 @@ function trend(samples: TideSample[]): { arrow: string; color: string } {
 
 function Panel({
   title,
+  icon,
   tag,
   caption,
   children,
   theme,
 }: {
   title: string;
+  /** Small glyph identifying the instrument kind (heartbeat/wave). */
+  icon?: React.ReactNode;
   tag?: string;
   /** Small readout overlaid at the bottom-left of the trace box. */
   caption?: React.ReactNode;
@@ -122,7 +126,10 @@ function Panel({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-        <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.1, color: "#9fb0c8" }}>{title}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, fontWeight: 800, letterSpacing: 1.1, color: "#9fb0c8" }}>
+          {icon}
+          {title}
+        </span>
         {tag ? (
           <span
             style={{
@@ -270,6 +277,7 @@ export default function MonitorCluster({
       {showSeismic ? (
         <Panel
           title="SEISMIC MONITOR"
+          icon={<HeartbeatIcon active={!!realSeismoSamples} />}
           tag={maxMag > 0 ? `M${maxMag.toFixed(1)}` : "PLOT"}
           caption={stationCaption ?? (seismicPlace ? truncate(seismicPlace, 34) : undefined)}
           theme={theme}
@@ -309,6 +317,7 @@ export default function MonitorCluster({
       {showTsunami && samples ? (
         <Panel
           title="TSUNAMI GAUGE"
+          icon={<WaveIcon active={showTsunami} />}
           tag={tideTag}
           caption={
             tr ? (

@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * The left-edge vertical colour scale ("INTENSITY METER" / "THREAT MATRIX"): the
- * active weather variable's palette as a gradient bar with a few value labels and
- * chevron cues. Renders nothing when no scalar map is on air.
+ * The top-centre horizontal colour scale ("INTENSITY METER" / "THREAT MATRIX"): the
+ * active weather variable's palette as a gradient bar with a few value labels.
+ * Renders nothing when no scalar map is on air.
  */
 import type { ControlState } from "@photonsurge/shared/control";
 import { getVariable } from "@photonsurge/shared/variables";
@@ -28,14 +28,12 @@ export default function IntensityMeter({
   if (!meta || !legend) return null;
 
   const palette = getPalette(meta.palette);
-  // Vertical gradient: high value at the TOP, so stops run 100%→0% down the bar.
-  const gradient = `linear-gradient(to top, ${palette
+  // Horizontal gradient: low value on the LEFT, so stops run low%→high% left to right.
+  const gradient = `linear-gradient(to right, ${palette
     .map(([stop, hex]) => `${hex} ${Math.round(stop * 100)}%`)
     .join(", ")})`;
-  const barH = compact ? 150 : 210;
-  // Top → bottom labels (reverse of the low→high stops).
-  const labels = [...legend.stops].reverse();
-  // Nearest palette colour at a normalised position, for the per-band chevrons.
+  const barW = compact ? 260 : 360;
+  // Nearest palette colour at a normalised position, for the accent underline.
   const hexAt = (t: number) => {
     let best = palette[0][1];
     let bd = Infinity;
@@ -54,14 +52,8 @@ export default function IntensityMeter({
       style={{
         display: "flex",
         flexDirection: "column",
+        alignItems: "center",
         gap: 8,
-        padding: compact ? "8px 9px" : "10px 12px",
-        background: theme.panelBg,
-        border: theme.panelBorder,
-        borderRadius: 12,
-        boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
         pointerEvents: "none",
         fontFamily: "system-ui, sans-serif",
         color: "#dfe7f5",
@@ -69,74 +61,70 @@ export default function IntensityMeter({
     >
       {/* Hero: the ACTIVE MAP TYPE, big and unmissable — this is what viewers
           need to read first. The meter title becomes a small eyebrow above it. */}
-      <div>
-        <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: 1.6, opacity: 0.55 }}>
+      <div style={{ textAlign: "center" }}>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: 1.8,
+            opacity: 0.7,
+            textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+          }}
+        >
           {theme.meterTitle}
         </div>
         <div
           style={{
-            fontSize: compact ? 16 : 20,
+            fontSize: compact ? 19 : 24,
             fontWeight: 800,
             letterSpacing: 0.3,
             lineHeight: 1.05,
             color: "#fff",
             marginTop: 2,
-            textShadow: "0 1px 6px rgba(0,0,0,0.5)",
+            textShadow: "0 1px 8px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.5)",
           }}
         >
           {meta.label}
           {legend.unit ? (
-            <span style={{ fontSize: compact ? 11 : 13, fontWeight: 700, color: hexAt(1), marginLeft: 6 }}>
+            <span style={{ fontSize: compact ? 13 : 15, fontWeight: 700, color: hexAt(1), marginLeft: 6 }}>
               {legend.unit}
             </span>
           ) : null}
         </div>
-        {/* Accent underline in the scale's hot colour, tying the name to the bar. */}
-        <div
-          style={{
-            marginTop: 6,
-            height: 3,
-            width: 44,
-            borderRadius: 2,
-            background: hexAt(1),
-            boxShadow: `0 0 8px ${hexAt(1)}88`,
-          }}
-        />
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <div
-          style={{
-            width: compact ? 14 : 18,
-            height: barH,
-            borderRadius: 5,
-            background: gradient,
-            border: "1px solid rgba(0,0,0,0.5)",
-            boxShadow: "inset 0 0 6px rgba(0,0,0,0.4)",
-          }}
-        />
-        <div
-          style={{
-            height: barH,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "space-between",
-            fontSize: compact ? 9 : 10,
-            fontWeight: 600,
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {labels.map((s, i) => (
-            <span
-              key={i}
-              style={{ opacity: 0.9, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}
-            >
-              <span style={{ color: hexAt(s.t), fontWeight: 900, textShadow: "0 0 4px rgba(0,0,0,0.6)" }}>
-                ❯
-              </span>
-              {s.label}
-            </span>
-          ))}
-        </div>
+      <div
+        style={{
+          width: barW,
+          height: compact ? 14 : 19,
+          borderRadius: 5,
+          background: gradient,
+          border: "1px solid rgba(0,0,0,0.6)",
+          boxShadow: "0 4px 14px rgba(0,0,0,0.5), inset 0 0 6px rgba(0,0,0,0.4)",
+        }}
+      />
+      <div
+        style={{
+          width: barW,
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: compact ? 10.5 : 12,
+          fontWeight: 700,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {legend.stops.map((s, i) => (
+          <span
+            key={i}
+            style={{
+              color: hexAt(s.t),
+              opacity: 0.95,
+              whiteSpace: "nowrap",
+              textShadow: "0 1px 4px rgba(0,0,0,0.9)",
+            }}
+          >
+            {s.label}
+          </span>
+        ))}
       </div>
     </div>
   );

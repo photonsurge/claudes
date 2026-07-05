@@ -2,8 +2,8 @@
 
 /**
  * The on-air chrome overlaying the globe/map: top + bottom crawls, the brand
- * block + LIVE badge, the left intensity meter, a top-right live-alert panel and
- * a bottom-right global monitor.
+ * block + LIVE badge, a top-centre live-alert panel + intensity meter, a
+ * top-right world-watch summary and a bottom-right global monitor.
  *
  * Built for VIDEO, not the responsive web: the furniture is authored once at a
  * 1920×1080 design stage and scaled as a whole to the output resolution (see
@@ -38,6 +38,8 @@ import WorldSituationPanel from "./WorldSituationPanel";
 import KpIndexPanel from "./KpIndexPanel";
 import SpaceWeatherMeter from "./SpaceWeatherMeter";
 import MonitorCluster from "./MonitorCluster";
+import SeismicStationRow from "./SeismicStationRow";
+import TideStationRow from "./TideStationRow";
 import PointHistoryPanel from "./PointHistoryPanel";
 import EventOverlay from "./EventOverlay";
 import EventNearbyPanel from "./EventNearbyPanel";
@@ -136,7 +138,6 @@ export default function BroadcastFrame({
   // Colour-key ramp for the aurora oval / magnetic field — both hooks already
   // return null when their toggle is off, so presence alone gates this.
   const spaceWeatherShown = aurora?.meta != null || geomag?.meta != null;
-  const intensityShown = legendVariableFor(state) != null;
   // Whatever currently owns the bottom-left slot (mutually exclusive on
   // segment kind) — the history panel stacks above whichever of these is on
   // screen, so it always reads as "left column" rather than a fixed position.
@@ -233,19 +234,13 @@ export default function BroadcastFrame({
           </div>
         ) : null}
 
-        <div
-          style={{ position: "absolute", top: TICKER_H + INSET + 128 + (kpShown ? 72 : 0), left: INSET }}
-        >
-          <IntensityMeter variable={legendVariableFor(state)} units={state.units} theme={theme} />
-        </div>
-
-        {/* Space-weather colour key, stacked below whichever of Kp / the active
-            variable's intensity meter are showing. */}
+        {/* Space-weather colour key, stacked below whichever of Kp / the brand
+            block are showing (the intensity meter moved to top-centre). */}
         {spaceWeatherShown ? (
           <div
             style={{
               position: "absolute",
-              top: TICKER_H + INSET + 128 + (kpShown ? 72 : 0) + (intensityShown ? 260 : 0),
+              top: TICKER_H + INSET + 128 + (kpShown ? 72 : 0),
               left: INSET,
             }}
           >
@@ -253,19 +248,32 @@ export default function BroadcastFrame({
           </div>
         ) : null}
 
-        {/* Single most-severe active alert — moved to top-centre so the prime
-            top-right slot can carry the always-on WORLD WATCH summary. Hidden
-            (returns null) when the operator has alerts off or none are active. */}
-        <div style={{ position: "absolute", top: TICKER_H + INSET, left: "50%", transform: "translateX(-50%)" }}>
+        {/* Top-centre column: single most-severe active alert, stacked above the
+            active variable's intensity meter/legend (moved here, horizontal, so
+            the prime top-right slot can carry the always-on WORLD WATCH summary
+            instead). Each hides independently when it has nothing to show. */}
+        <div
+          style={{
+            position: "absolute",
+            top: TICKER_H + INSET,
+            left: "50%",
+            transform: "translateX(-50%)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
           <LiveAlertPanel alerts={alerts} theme={theme} />
+          <IntensityMeter variable={legendVariableFor(state)} units={state.units} theme={theme} />
         </div>
 
         {/* Whole-planet situation summary — two separate stacked cards, not one
             crowded panel: the hero tally (WorldSituationPanel) reads as the
             "how much/how bad" headline, the scrolling feed (WorldWatchPanel)
             as the "which ones" detail below it. Both independent of the
-            operator's show-alerts/seismic toggles — each fetches its own
-            global tally. */}
+            operator's show-alerts/seismic toggles — they share one fetch
+            (worldWatch, above) instead of each pulling their own. */}
         <div
           style={{
             position: "absolute",
@@ -298,14 +306,20 @@ export default function BroadcastFrame({
           <UpNextPanel items={upNext} />
         </div>
 
-        {/* Global monitor (seismic + tsunami gauge) — bottom-centre, clear of
-            the left intensity meter and the right syslog/up-next column. */}
+        {/* Bottom-centre column: the global monitor (seismic + tsunami gauge)
+            hugs the bottom edge; whenever several nearby stations are cached,
+            the dedicated station rows stack above it — their own boxes, not
+            squeezed into the small cluster card. */}
         <div
           style={{
             position: "absolute",
             bottom: TICKER_H + INSET,
             left: "50%",
             transform: "translateX(-50%)",
+            display: "flex",
+            flexDirection: "column-reverse",
+            alignItems: "center",
+            gap: 14,
           }}
         >
           <MonitorCluster
@@ -316,6 +330,8 @@ export default function BroadcastFrame({
             regionCenter={state.camera.center}
             theme={theme}
           />
+          <SeismicStationRow stations={seismoStations} onAirSegment={onAirSegment} theme={theme} />
+          <TideStationRow onAirSegment={onAirSegment} regionCenter={state.camera.center} theme={theme} />
         </div>
 
         <Ticker title={bottomTickerTitle} items={bottomTickerItems} edge="bottom" height={TICKER_H} theme={theme} />

@@ -113,15 +113,45 @@ export function cityDetail(city: Pick<City, "country" | "population" | "isCapita
   return parts.length ? parts.join(" · ") : undefined;
 }
 
+// ── Region (zoom-in) fetch sizing ────────────────────────────────────────────
+//
+// The globe's base city set is a fixed, bounded list (the world's biggest +
+// capital cities — see the /api/cities default). Zooming into a region layers
+// in extra local cities via a `bbox`-scoped fetch; these two helpers size that
+// query so it never pulls in more than the current view could actually show.
+
+/** Population floor for a region fetch at a given zoom — the inverse of
+ * `cityLabelMinZoom`'s bands, so a region query never pulls in a city too
+ * small to be revealed (as a label) at the zoom that triggered the fetch. */
+export function regionMinPop(zoom: number): number {
+  if (zoom >= 6.8) return 0;
+  if (zoom >= 6.2) return 20_000;
+  if (zoom >= 5.6) return 50_000;
+  if (zoom >= 5.0) return 100_000;
+  if (zoom >= 4.4) return 200_000;
+  if (zoom >= 3.8) return 500_000;
+  if (zoom >= 3.2) return 1_000_000;
+  return 2_000_000;
+}
+
+/** Half-width/height (degrees) of the bbox fetched around the camera at a
+ * given zoom — shrinks as you zoom in so the query roughly tracks what's on
+ * screen instead of always pulling a fixed-size chunk of the world. */
+export function regionHalfExtentDeg(zoom: number): number {
+  return Math.min(60, Math.max(2, 90 / Math.pow(1.5, zoom)));
+}
+
 // ── Client CRUD ──────────────────────────────────────────────────────────────
 
 export interface ListCitiesOptions {
-  /** Max rows (default: unlimited — every matching city). */
+  /** Max rows (default: server default — see /api/cities). */
   limit?: number;
   /** Only cities with population ≥ this. */
   minPop?: number;
   /** Only capitals. */
   capital?: boolean;
+  /** [west, south, east, north] — only cities inside this box (wraps the antimeridian if west > east). */
+  bbox?: [number, number, number, number];
 }
 
 export type CitySortField = "name" | "country" | "lat" | "lng" | "population" | "isCapital" | "rank" | "wikiFetchedAt" | "updated";
@@ -149,6 +179,7 @@ export async function listCities(opts: ListCitiesOptions = {}): Promise<City[]> 
   if (opts.limit) q.set("limit", String(opts.limit));
   if (opts.minPop) q.set("minPop", String(opts.minPop));
   if (opts.capital) q.set("capital", "1");
+  if (opts.bbox) q.set("bbox", opts.bbox.map((n) => n.toFixed(4)).join(","));
   const qs = q.toString();
   const res = await fetch(`/api/cities${qs ? `?${qs}` : ""}`, { cache: "no-store" });
   if (!res.ok) return [];

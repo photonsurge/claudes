@@ -17,11 +17,14 @@
  *    `minZoom`, and its dim detail line once past `detailMinZoom`; so the globe
  *    view stays clean and detail arrives as you zoom in.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
 export interface OverlayLabel {
   id: string;
   text: string;
+  /** Small glyph rendered before the text (e.g. a station-type icon). Purely
+   *  decorative — not counted by `labelWidth()`'s collision estimate. */
+  icon?: ReactNode;
   /** Dim secondary line (e.g. "United Kingdom · 9.0M"), shown when zoomed in. */
   detail?: string;
   /** [lng, lat, altM] — same position the marker/dot uses, so they line up. */
@@ -45,6 +48,69 @@ function unit(lng: number, lat: number): [number, number, number] {
   return [cl * Math.cos(lo), cl * Math.sin(lo), Math.sin(la)];
 }
 
+// ── Collision avoidance ───────────────────────────────────────────────────
+// A dense conurbation (Barcelona's satellite towns, Madrid's suburbs …) can
+// reveal a dozen same-tier labels within a few dozen pixels of each other.
+// Each frame, labels are placed in priority order (biggest/capital first —
+// `minZoom` is already that ranking) into a coarse screen-space grid; a label
+// whose estimated box collides with an already-placed one is hidden (its dot,
+// drawn by the separate deck.gl scatter layer, stays visible either way — only
+// the crowded TEXT thins out, same as any decluttered map).
+const LABEL_H = 15;
+const CHAR_W = 6.3;
+const GRID_CELL = 48;
+
+/** Rough on-screen text width, so collision testing never needs a DOM read. */
+export function labelWidth(text: string): number {
+  return Math.min(240, 18 + text.length * CHAR_W);
+}
+
+export class LabelGrid {
+  private cells = new Map<string, Array<[number, number, number, number]>>();
+
+  clear() {
+    this.cells.clear();
+  }
+
+  private forCells(x0: number, y0: number, x1: number, y1: number, fn: (key: string) => void) {
+    const cx0 = Math.floor(x0 / GRID_CELL);
+    const cx1 = Math.floor(x1 / GRID_CELL);
+    const cy0 = Math.floor(y0 / GRID_CELL);
+    const cy1 = Math.floor(y1 / GRID_CELL);
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) fn(`${cx},${cy}`);
+    }
+  }
+
+  /** True if the box overlaps anything already placed. */
+  collides(x0: number, y0: number, x1: number, y1: number): boolean {
+    let hit = false;
+    this.forCells(x0, y0, x1, y1, (key) => {
+      if (hit) return;
+      const rects = this.cells.get(key);
+      if (!rects) return;
+      for (const [rx0, ry0, rx1, ry1] of rects) {
+        if (x0 < rx1 && x1 > rx0 && y0 < ry1 && y1 > ry0) {
+          hit = true;
+          break;
+        }
+      }
+    });
+    return hit;
+  }
+
+  place(x0: number, y0: number, x1: number, y1: number) {
+    this.forCells(x0, y0, x1, y1, (key) => {
+      let rects = this.cells.get(key);
+      if (!rects) {
+        rects = [];
+        this.cells.set(key, rects);
+      }
+      rects.push([x0, y0, x1, y1]);
+    });
+  }
+}
+
 export default function GlobeLabels({
   getViewport,
   getCamera,
@@ -58,13 +124,32 @@ export default function GlobeLabels({
 }) {
   const elRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const detailRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const labelsRef = useRef<OverlayLabel[]>(labels);
-  labelsRef.current = labels;
+  // Biggest/capital first (lowest minZoom) so a crowded conurbation always
+  // keeps its most important label and thins out the smaller neighbours.
+  const priorityLabels = useMemo(
+    () => [...labels].sort((a, b) => (a.minZoom ?? 0) - (b.minZoom ?? 0)),
+    [labels],
+  );
+  const priorityRef = useRef<OverlayLabel[]>(priorityLabels);
+  priorityRef.current = priorityLabels;
+  const gridRef = useRef<LabelGrid>(new LabelGrid());
 
   // Project + position every frame (camera may be spinning/zooming without new data).
   useEffect(() => {
     let raf = 0;
     const loop = () => {
+      // deck.gl can throw an internal assertion from getViewport()/project()
+      // mid-transition (e.g. between view changes) — an uncaught throw here
+      // would skip the reschedule below and permanently freeze every label
+      // for the rest of the session, so guard per frame instead.
+      try {
+        tick();
+      } catch {
+        /* transient — try again next frame */
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    const tick = () => {
       const vp = getViewport();
       if (vp) {
         const cam = getCamera();
@@ -72,7 +157,9 @@ export default function GlobeLabels({
         const w = vp.width;
         const h = vp.height;
         const zoom = vp.zoom ?? 0;
-        for (const l of labelsRef.current) {
+        const grid = gridRef.current;
+        grid.clear();
+        for (const l of priorityRef.current) {
           const el = elRefs.current.get(l.id);
           if (!el) continue;
           // Progressive reveal: below the label's minZoom it's not shown at all.
@@ -94,6 +181,19 @@ export default function GlobeLabels({
             el.style.opacity = "0";
             continue;
           }
+          // Decluttering: skip (hide) this label if a higher-priority one
+          // already claimed overlapping screen space this frame. Box is
+          // anchored the same way the CSS lays the text out — right of the
+          // point, vertically centred.
+          const x0 = x;
+          const y0 = y - LABEL_H / 2;
+          const x1 = x + labelWidth(l.text);
+          const y1 = y0 + LABEL_H;
+          if (grid.collides(x0, y0, x1, y1)) {
+            el.style.opacity = "0";
+            continue;
+          }
+          grid.place(x0, y0, x1, y1);
           el.style.opacity = "1";
           el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
           const detail = detailRefs.current.get(l.id);
@@ -102,7 +202,6 @@ export default function GlobeLabels({
           }
         }
       }
-      raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
@@ -135,12 +234,16 @@ export default function GlobeLabels({
         >
           <div
             style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 3,
               fontSize: 12,
               fontWeight: 600,
               color: `rgb(${l.color[0]}, ${l.color[1]}, ${l.color[2]})`,
               textShadow: "0 0 3px #000, 0 0 3px #000, 0 1px 2px #000",
             }}
           >
+            {l.icon}
             {l.text}
           </div>
           {l.detail ? (

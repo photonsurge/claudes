@@ -74,6 +74,8 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
     mapTypes: { type: mongoose.Schema.Types.Mixed, default: {} },
     overlayOverrides: { type: mongoose.Schema.Types.Mixed, default: {} },
     kindLooks: { type: mongoose.Schema.Types.Mixed, default: {} },
+    kindSlides: { type: mongoose.Schema.Types.Mixed, default: {} },
+    activeSlideId: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   mongoTimestamps,
 );

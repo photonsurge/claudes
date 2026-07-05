@@ -21,6 +21,7 @@ import type { AdMediaType } from "./ads/types";
 import type { SummaryPeriod } from "./db/event-summary-model";
 import type { SeverityRank } from "./db/alert-model";
 import { DEFAULT_DIRECTOR_COUNTRIES, sanitizeDirectorCountries } from "./director-countries";
+import { isSatImgLook } from "./satimg/types";
 import { QUAKE_MAGNITUDE_BANDS, quakeMagnitudeClass, type QuakeMagnitudeClass } from "./seismic";
 
 /** Socket event: worker → every browser. The current on-air segment + queue. */
@@ -327,6 +328,32 @@ export interface DirectorConfig {
    * setting (today's behaviour, unchanged).
    */
   kindLooks: Partial<Record<SegmentKind, KindLook>>;
+  /**
+   * Named, saved looks ("slides") per kind — a library the operator saves to
+   * and loads from. The look actually APPLIED to a kind still lives in
+   * `kindLooks`/`overlayOverrides` above; loading a slide just copies its
+   * fields into those. Slides themselves are never read by the worker.
+   */
+  kindSlides: Partial<Record<SegmentKind, KindSlide[]>>;
+  /**
+   * Which saved slide (by id) is currently loaded per kind, if any — lets the
+   * operator's "Update"/"Delete" buttons target the right one. Purely a UI
+   * convenience; not read by the worker. `null` clears back to "no slide
+   * selected" (see `mergeActiveSlideId`).
+   */
+  activeSlideId: Partial<Record<SegmentKind, string | null>>;
+}
+
+/**
+ * A named, saved snapshot of a KindLook + its overlay toggles for one kind
+ * (see `DirectorConfig.kindSlides`) — e.g. "Cinematic dark" or "Daytime
+ * clean". Captured from the live map when the operator hits "Save as new".
+ */
+export interface KindSlide {
+  id: string;
+  name: string;
+  look: KindLook;
+  overlays: Partial<Record<string, boolean>>;
 }
 
 /**
@@ -338,6 +365,10 @@ export interface KindLook {
   basemap?: string | null;
   windMode?: WindMode | null;
   wind?: Partial<WindSettings> | null;
+  /** Force the satellite overlay on/off for this shot type (null/undefined = inherit live). */
+  showSatImg?: boolean | null;
+  /** Composite look every disc shows for this shot type (SATIMG_LOOKS id; null = inherit). */
+  satImgLook?: string | null;
 }
 
 /**
@@ -413,6 +444,8 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   mapTypes: {},
   overlayOverrides: {},
   kindLooks: {},
+  kindSlides: {},
+  activeSlideId: {},
 };
 
 const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
@@ -527,7 +560,77 @@ function mergeKindLooks(
           cur.wind = w;
         }
       }
+      if ("showSatImg" in inner) {
+        cur.showSatImg = typeof inner.showSatImg === "boolean" ? inner.showSatImg : undefined;
+      }
+      if ("satImgLook" in inner) {
+        cur.satImgLook = isSatImgLook(inner.satImgLook) ? (inner.satImgLook as string) : undefined;
+      }
       out[k] = cur;
+    }
+  }
+  return out;
+}
+
+/**
+ * Sanitize one untrusted slide object into a valid KindSlide, or null if it's
+ * missing an id/name. Reuses mergeKindLooks/the overlay-boolean rule so a
+ * slide's `look`/`overlays` are validated exactly like a live kindLooks/
+ * overlayOverrides patch would be.
+ */
+function sanitizeKindSlide(kind: SegmentKind, raw: unknown): KindSlide | null {
+  if (!raw || typeof raw !== "object") return null;
+  const s = raw as Record<string, unknown>;
+  if (typeof s.id !== "string" || typeof s.name !== "string") return null;
+  const look = mergeKindLooks({}, { [kind]: s.look as KindLook })[kind] ?? {};
+  const overlaysRaw = s.overlays;
+  const overlays: Partial<Record<string, boolean>> = {};
+  if (overlaysRaw && typeof overlaysRaw === "object") {
+    for (const [key, v] of Object.entries(overlaysRaw as Record<string, unknown>)) {
+      if (typeof v === "boolean") overlays[key] = v;
+    }
+  }
+  return { id: s.id, name: s.name, look, overlays };
+}
+
+/**
+ * Merge a per-kind slide-list map (untrusted) onto a base — unknown kinds
+ * dropped, non-array values ignored. Unlike kindLooks/overlayOverrides this
+ * REPLACES a kind's list wholesale rather than merging item-by-item, since
+ * save/update/delete already send the kind's full intended list. Used for
+ * `kindSlides`.
+ */
+function mergeKindSlides(
+  base: Partial<Record<SegmentKind, KindSlide[]>>,
+  patch: Partial<Record<SegmentKind, KindSlide[]>> | undefined,
+): Partial<Record<SegmentKind, KindSlide[]>> {
+  const out = { ...base };
+  if (patch) {
+    for (const k of SEGMENT_KINDS) {
+      const list = patch[k];
+      if (!Array.isArray(list)) continue;
+      out[k] = list.map((s) => sanitizeKindSlide(k, s)).filter((s): s is KindSlide => s !== null);
+    }
+  }
+  return out;
+}
+
+/**
+ * Merge a per-kind slide-id map (untrusted) onto a base — unknown kinds
+ * dropped, non-string values ignored, `null` clears back to "no slide
+ * selected". Used for `activeSlideId`.
+ */
+function mergeActiveSlideId(
+  base: Partial<Record<SegmentKind, string | null>>,
+  patch: Partial<Record<SegmentKind, string | null>> | undefined,
+): Partial<Record<SegmentKind, string | null>> {
+  const out = { ...base };
+  if (patch) {
+    for (const k of SEGMENT_KINDS) {
+      if (!(k in patch)) continue;
+      const v = patch[k];
+      if (v === null) delete out[k];
+      else if (typeof v === "string") out[k] = v;
     }
   }
   return out;
@@ -566,6 +669,8 @@ export function mergeDirectorConfig(
     mapTypes: mergeStringArrayMap(base.mapTypes, patch.mapTypes),
     overlayOverrides: mergeBoolMapMap(base.overlayOverrides, patch.overlayOverrides),
     kindLooks: mergeKindLooks(base.kindLooks, patch.kindLooks),
+    kindSlides: mergeKindSlides(base.kindSlides, patch.kindSlides),
+    activeSlideId: mergeActiveSlideId(base.activeSlideId, patch.activeSlideId),
   };
 }
 

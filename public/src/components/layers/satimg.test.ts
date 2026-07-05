@@ -32,11 +32,10 @@ const feeds = (o: Record<string, SatImgFeedState>) => o;
 const ids = (ls: any[]) => ls.map((l) => l.props.id);
 
 describe("satimgLayers", () => {
-  it("draws only feeds toggled ON (mosaic + disc under the chosen look)", () => {
+  it("draws only feeds toggled ON (mosaic + disc under its own look)", () => {
     const ls = satimgLayers(
       FRAMES,
-      feeds({ global: { on: true, opacity: 0.8 }, "goes-east": { on: true, opacity: 0.9 } }),
-      "geocolor",
+      feeds({ global: { on: true, opacity: 0.8 }, "goes-east": { on: true, opacity: 0.9, look: "geocolor" } }),
     );
     expect(ids(ls).sort()).toEqual(["satimg-global", "satimg-goes-east"]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,21 +46,32 @@ describe("satimgLayers", () => {
     expect(east.props.bounds).toEqual(GOES_E);
   });
 
-  it("switching look re-points the same disc layer at a new satId (cache-busted URL)", () => {
-    const on = feeds({ "goes-east": { on: true, opacity: 1 } });
+  it("each disc uses ITS OWN look (per-satellite, not global)", () => {
+    // Two discs, different looks — proves the look is read per-feed.
+    const FR = [
+      frame("goes-east:geocolor", GOES_E),
+      frame("goes-east:ir", GOES_E),
+      frame("goes-west:ir", GOES_E),
+      frame("goes-west:dust", GOES_E),
+    ];
+    const ls = satimgLayers(
+      FR,
+      feeds({
+        "goes-east": { on: true, opacity: 1, look: "geocolor" },
+        "goes-west": { on: true, opacity: 1, look: "dust" },
+      }),
+    );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const geo = satimgLayers(FRAMES, on, "geocolor")[0] as any;
+    const east = ls.find((l: any) => l.props.id === "satimg-goes-east") as any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ir = satimgLayers(FRAMES, on, "ir")[0] as any;
-    expect(geo.props.id).toBe("satimg-goes-east"); // stable layer id
-    expect(ir.props.id).toBe("satimg-goes-east");
-    expect(geo.props.image).toContain("sat=goes-east%3Ageocolor");
-    expect(ir.props.image).toContain("sat=goes-east%3Air");
+    const west = ls.find((l: any) => l.props.id === "satimg-goes-west") as any;
+    expect(east.props.image).toContain("sat=goes-east%3Ageocolor");
+    expect(west.props.image).toContain("sat=goes-west%3Adust");
   });
 
-  it("falls back to the disc's IR frame when it doesn't carry the chosen look", () => {
+  it("falls back to the disc's IR frame when it doesn't carry its chosen look", () => {
     // goes-east has no `dust` frame here → uses goes-east:ir.
-    const ls = satimgLayers(FRAMES, feeds({ "goes-east": { on: true, opacity: 1 } }), "dust");
+    const ls = satimgLayers(FRAMES, feeds({ "goes-east": { on: true, opacity: 1, look: "dust" } }));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((ls[0] as any).props.image).toContain("sat=goes-east%3Air");
   });
@@ -69,14 +79,13 @@ describe("satimgLayers", () => {
   it("skips a disc with no baked frame at all, and any off feed", () => {
     const ls = satimgLayers(
       [frame("goes-west:ir", GOES_E)],
-      feeds({ "goes-east": { on: true, opacity: 1 }, global: { on: false, opacity: 1 } }),
-      "geocolor",
+      feeds({ "goes-east": { on: true, opacity: 1, look: "geocolor" }, global: { on: false, opacity: 1 } }),
     );
     expect(ls).toHaveLength(0);
   });
 
   it("draws the lightning overlay by its own id (not look-dependent) and paints (no depth test)", () => {
-    const ls = satimgLayers(FRAMES, feeds({ lightning: { on: true, opacity: 0.95 } }), "dust");
+    const ls = satimgLayers(FRAMES, feeds({ lightning: { on: true, opacity: 0.95 } }));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const lx = ls.find((l: any) => l.props.id === "satimg-lightning") as any;
     expect(lx.props.image).toContain("sat=lightning");

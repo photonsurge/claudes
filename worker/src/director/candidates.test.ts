@@ -134,6 +134,56 @@ describe("buildCandidates", () => {
     expect(q!.score).toBeGreaterThan(tour.score);
   });
 
+  it("only flags a quake breaking when it's actually recent (not just unaired)", async () => {
+    const recent = await buildCandidates(
+      fakeDb({ quakes: [{ quakeId: "q1", mag: 6.1, place: "Off Japan", lng: 140, lat: 38, time: new Date() }] }),
+      cfg(),
+    );
+    expect(recent.find((c) => c.segment.id === "quake:q1")!.breaking).toBe(true);
+
+    const stale = await buildCandidates(
+      fakeDb({
+        quakes: [{ quakeId: "q1", mag: 6.1, place: "Off Japan", lng: 140, lat: 38, time: new Date(Date.now() - 60 * 60 * 1000) }],
+      }),
+      cfg(),
+    );
+    expect(stale.find((c) => c.segment.id === "quake:q1")!.breaking).toBe(false);
+
+    // No timestamp at all (shouldn't happen, but don't let it default to breaking).
+    const untimed = await buildCandidates(fakeDb(), cfg());
+    expect(untimed.find((c) => c.segment.id === "quake:q1")!.breaking).toBe(false);
+  });
+
+  it("only flags a storm breaking when its onset is recent (not just unaired)", async () => {
+    const alert = (onset: string | undefined) => [
+      {
+        source: "nws",
+        identifier: "a1",
+        maxSeverityRank: 4,
+        info: [
+          {
+            event: "Hurricane Warning",
+            onset,
+            area: [
+              {
+                areaDesc: "Gulf Coast",
+                geometry: { type: "Polygon", coordinates: [[[-90, 25], [-88, 25], [-88, 27], [-90, 27], [-90, 25]]] },
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    const recent = await buildCandidates(fakeDb({ alerts: alert(new Date().toISOString()) }), cfg());
+    expect(recent.find((c) => c.segment.kind === "storm")!.breaking).toBe(true);
+
+    const stale = await buildCandidates(
+      fakeDb({ alerts: alert(new Date(Date.now() - 60 * 60 * 1000).toISOString()) }),
+      cfg(),
+    );
+    expect(stale.find((c) => c.segment.kind === "storm")!.breaking).toBe(false);
+  });
+
   it("layers an operator overlayOverride onto the preset without touching other kinds", async () => {
     const pool = await buildCandidates(fakeDb(), cfg({ overlayOverrides: { quake: { showFaults: false } } }));
     const q = pool.find((c) => c.segment.id === "quake:q1")!;
@@ -161,6 +211,24 @@ describe("buildCandidates", () => {
     const tour = pool.find((c) => c.segment.kind === "tour")!;
     expect(tour.segment.patch.basemap).not.toBe("night");
     expect(tour.segment.patch.wind).toBeUndefined();
+  });
+
+  it("applies a kindLooks satellite look — showSatImg on + every disc's look set", async () => {
+    const pool = await buildCandidates(
+      fakeDb(),
+      cfg({ kindLooks: { quake: { showSatImg: true, satImgLook: "watervapour" } } }),
+    );
+    const q = pool.find((c) => c.segment.id === "quake:q1")!;
+    expect(q.segment.patch.showSatImg).toBe(true);
+    // Discs get the look; on/opacity are left to merge from the live base (not set here).
+    expect(q.segment.patch.satImgFeeds?.["meteosat-0"]?.look).toBe("watervapour");
+    expect(q.segment.patch.satImgFeeds?.["goes-east"]?.look).toBe("watervapour");
+    expect((q.segment.patch.satImgFeeds?.["meteosat-0"] as { on?: boolean }).on).toBeUndefined();
+    // The mosaic feed is not a disc → not in the look patch.
+    expect(q.segment.patch.satImgFeeds?.["global"]).toBeUndefined();
+    // Other kinds untouched.
+    const tour = pool.find((c) => c.segment.kind === "tour")!;
+    expect(tour.segment.patch.satImgFeeds).toBeUndefined();
   });
 
   it("derives a storm centroid from the alert polygon", async () => {

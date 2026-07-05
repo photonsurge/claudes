@@ -24,6 +24,7 @@ import { useSocket } from "../../lib/socket-provider";
 import { fetchManifest } from "../../lib/manifest";
 import { fetchSceneState } from "../../lib/scenes";
 import { listCities, type City } from "../../lib/cities";
+import { useRegionCities } from "../../lib/useRegionCities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
 import { useQuakes } from "../../lib/seismic-overlay";
@@ -46,6 +47,9 @@ export default function SandboxPage() {
   const [selected, setSelected] = useState<Segment | null>(null);
   const globe = useRef<GlobeHandle | null>(null);
   const { socket } = useSocket();
+  // Layers in extra local cities once the operator pans/zooms into a region —
+  // the base `cities` fetch stays a fixed, bounded world set.
+  const shownCities = useRegionCities(cities, state.camera.center, state.camera.zoom);
 
   const { tracks, orbits, trails } = useTracks({
     showSatellites: state.showSatellites,
@@ -111,7 +115,7 @@ export default function SandboxPage() {
           ref={globe}
           state={state}
           manifest={manifest}
-          cities={cities}
+          cities={shownCities}
           tracks={tracks}
           orbits={orbits}
           trails={trails}

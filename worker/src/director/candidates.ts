@@ -36,6 +36,7 @@ import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
 import { quakeSegmentContent, alertSegmentContent } from "@photonsurge/shared/segments";
+import { discLookFeeds } from "@photonsurge/shared/satimg/types";
 import { mmsiCountry, countryNameFlag } from "@photonsurge/shared/tracks/flags";
 import type { SummaryPeriod, iEventSummaryModel } from "@photonsurge/shared/db/event-summary-model";
 import { tleGroups } from "../jobs/tracks";
@@ -71,6 +72,10 @@ const make = (
       ...(look?.basemap ? { basemap: look.basemap } : {}),
       ...(look?.windMode ? { windMode: look.windMode } : {}),
       ...(look?.wind ? { wind: { ...DEFAULT_WIND_SETTINGS, ...look.wind } } : {}),
+      // Per-kind satellite look: force the overlay on/off, and set every disc's
+      // composite so an on disc flips to this shot's look (see discLookFeeds).
+      ...(look?.showSatImg != null ? { showSatImg: look.showSatImg } : {}),
+      ...(look?.satImgLook ? { satImgFeeds: discLookFeeds(look.satImgLook) } : {}),
       ...extra,
       camera: { center, zoom },
     },
@@ -85,6 +90,16 @@ type Detail = { label: string; value: string };
  *  below severe-weather/quake headlines — tunable later; the data drives it. */
 const NOTABLE_SCORE = 45;
 const VIP_SCORE = 80;
+
+/**
+ * How recent a quake/storm has to be to jump the priority-preempt tier
+ * (`selectPriority`). `db.quakes.list`/`db.alerts.list` return the top N by
+ * magnitude/severity with no time cutoff, so right after a session starts (or
+ * the worker restarts) most of that backlog is "unaired" — without this window
+ * every one of them would preempt fair rotation in turn, and the show would
+ * play nothing but quakes/storms until the whole backlog finally airs once.
+ */
+const BREAKING_NEWS_WINDOW_MS = 20 * 60 * 1000;
 
 /**
  * Merge a notable catalog entry with the live meta into the on-air TrackInfo card
@@ -299,6 +314,7 @@ export async function buildCandidates(
   seenCounts?: Map<string, number>,
 ): Promise<Candidate[]> {
   const pool: Candidate[] = fillerCandidates(cfg);
+  const now = Date.now();
   if (cfg.kinds.summary) pool.push(...(await summaryCandidates(db, cfg, seenCounts)));
 
   // Notable-tracks catalog (enabled) — matched by `${kind}:${code}` to boost the
@@ -332,7 +348,8 @@ export async function buildCandidates(
         seg.tsunami = tsunami;
         seg.quake = { mag: q.mag, depthKm: q.depthKm };
         seg.details = c.details;
-        pool.push({ score: 40 + q.mag * 10, segment: seg });
+        const breaking = q.time ? now - q.time.getTime() <= BREAKING_NEWS_WINDOW_MS : false;
+        pool.push({ score: 40 + q.mag * 10, segment: seg, breaking });
       }
     } catch {
       /* no quakes cached yet — fillers carry the show */
@@ -375,7 +392,8 @@ export async function buildCandidates(
         seg.hazard = hazard;
         seg.icon = c.icon;
         seg.details = c.details;
-        pool.push({ score: 50 + sev * 12, segment: seg });
+        const breaking = !Number.isNaN(sinceMs) && now - sinceMs <= BREAKING_NEWS_WINDOW_MS;
+        pool.push({ score: 50 + sev * 12, segment: seg, breaking });
       }
     } catch {
       /* alerts not ingested — skip */

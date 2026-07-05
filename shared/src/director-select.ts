@@ -7,8 +7,14 @@
  *  0. Priority — ahead of everything but the opener: any brand-new quake/storm
  *     nobody's seen yet this session, then a fresh round-up narrative (rare,
  *     and it goes stale — get it out once no breaking alert is waiting).
- *     Breaking news doesn't wait its turn in random kind rotation. See
- *     `selectPriority`.
+ *     Breaking news doesn't wait its turn in random kind rotation. Only
+ *     candidates the builder actually flags `breaking` are eligible here — an
+ *     older event that's merely unaired-this-session (e.g. a backlog of
+ *     days-old quakes right after the session starts) does NOT camp this tier
+ *     and starve every other kind; it just airs later through fair rotation.
+ *     A cooldown also caps priority to at most every OTHER cut, so a
+ *     continuous global stream of genuinely-new alerts can't monopolize every
+ *     single cut either. See `selectPriority`.
  *  1. Opener — the very first cut of a session is the intro spin. It can also
  *     recur later as ordinary global filler: the intro now TOURS map types as it
  *     spins (temp → cloud → aurora → satellite), so it's no longer the static
@@ -27,6 +33,15 @@ export interface Candidate {
   segment: Segment;
   /** Higher = more newsworthy. Kept for the "coming up" preview, not selection. */
   score: number;
+  /**
+   * Eligible to preempt fair rotation via `selectPriority` (see PRIORITY_KINDS).
+   * Defaults to true when omitted. Set false for a priority-kind candidate that's
+   * merely unaired-this-session but not actually recent — e.g. a backlog of
+   * days-old quakes shouldn't ALL cut the line ahead of every other kind just
+   * because a fresh session hasn't shown them yet; they still air, but through
+   * normal fair rotation like any other candidate.
+   */
+  breaking?: boolean;
 }
 
 /** World-view kinds share a single camera center, so they're exempt from the
@@ -61,8 +76,10 @@ const pickRandom = <T>(arr: T[], rng: () => number): T =>
   arr[Math.min(arr.length - 1, Math.floor(rng() * arr.length))];
 
 /** Kinds eligible for the priority tier, most urgent first — a breaking
- *  quake/storm outranks a round-up narrative. */
-const PRIORITY_KINDS: SegmentKind[] = ["quake", "storm", "summary"];
+ *  quake/storm outranks a round-up narrative. Exported so the "up next"
+ *  preview (worker/src/director/loop.ts) can mirror this same ordering
+ *  instead of drifting out of sync with its own copy. */
+export const PRIORITY_KINDS: SegmentKind[] = ["quake", "storm", "summary"];
 
 /**
  * Breaking-news preempt: a quake/storm alert nobody's seen yet this session,
@@ -71,11 +88,24 @@ const PRIORITY_KINDS: SegmentKind[] = ["quake", "storm", "summary"];
  * returns null once nothing new is waiting, so the caller falls through to
  * normal fair rotation. `counts` is the same per-segment airing tally passed to
  * `selectNext`; a segment with no entry has never aired this session.
+ *
+ * `opts.cooldown` forces a null (no preempt) regardless of what's waiting. The
+ * caller sets it when the PREVIOUS cut was itself a priority pick: across
+ * NWS + Meteoalarm + WMO + GDACS combined, some alert somewhere on the planet
+ * is almost always freshly onset, so without a cooldown "breaking news"
+ * preempts every single cut forever and the show never reaches fair rotation
+ * at all — the opposite of "rare interrupt." The cooldown guarantees at least
+ * one normal cut between any two priority cuts.
  */
-export function selectPriority(pool: Candidate[], counts: Map<string, number>): Segment | null {
+export function selectPriority(
+  pool: Candidate[],
+  counts: Map<string, number>,
+  opts?: { cooldown?: boolean },
+): Segment | null {
+  if (opts?.cooldown) return null;
   for (const kind of PRIORITY_KINDS) {
     const unaired = pool
-      .filter((c) => c.segment.kind === kind && !counts.has(c.segment.id))
+      .filter((c) => c.segment.kind === kind && !counts.has(c.segment.id) && c.breaking !== false)
       .sort((a, b) => b.score - a.score);
     if (unaired.length > 0) return unaired[0].segment;
   }

@@ -101,4 +101,30 @@ describe("selectPriority", () => {
     const pool = [cand("tour:a", "tour"), cand("country:b", "country")];
     expect(selectPriority(pool, new Map())).toBeNull();
   });
+
+  it("doesn't let a backlog of unaired-but-stale quakes camp the priority tier", () => {
+    // A fresh session backlog (e.g. just entered auto mode) can carry many
+    // unaired quakes that aren't actually breaking — they should fall through
+    // to fair rotation instead of forcing the whole backlog onto air in a row.
+    const pool = [
+      { ...cand("quake:old1", "quake"), breaking: false },
+      { ...cand("quake:old2", "quake"), breaking: false },
+      cand("tour:a", "tour"),
+    ];
+    expect(selectPriority(pool, new Map())).toBeNull();
+  });
+
+  it("still preempts for a quake explicitly flagged breaking", () => {
+    const pool = [{ ...cand("quake:new", "quake"), breaking: true }, cand("tour:a", "tour")];
+    expect(selectPriority(pool, new Map())?.id).toBe("quake:new");
+  });
+
+  it("suppresses even a genuinely breaking candidate during cooldown", () => {
+    // A continuous stream of genuinely-new alerts (real-world scale: NWS +
+    // Meteoalarm + WMO + GDACS combined) must still interleave with fair
+    // rotation rather than preempting every cut back to back.
+    const pool = [{ ...cand("storm:new", "storm"), breaking: true }];
+    expect(selectPriority(pool, new Map(), { cooldown: true })).toBeNull();
+    expect(selectPriority(pool, new Map(), { cooldown: false })?.id).toBe("storm:new");
+  });
 });

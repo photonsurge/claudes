@@ -335,6 +335,7 @@ export function elevationLayers(
 export function cityLayer(
   cities: City[],
   subsolar?: [number, number],
+  zoom = 0,
 ): Array<ScatterplotLayer> {
   const props = cityProps(cities, subsolar);
   // When the sun moves, the per-city night factor changes → recompute the dot
@@ -354,6 +355,14 @@ export function cityLayer(
       pickable: false,
       parameters: DEPTH_TEST,
       updateTriggers: { getRadius: nightKey, getFillColor: nightKey },
+      // GPU-side filter (no data re-upload as zoom changes): a city's dot only
+      // draws once `zoom` reaches the same threshold that reveals its name, so
+      // the whole-globe view isn't a blizzard of every small town's dot — the
+      // same ~300 largest cities show at low zoom, thousands more fill in as
+      // you push into a region.
+      extensions: [new DataFilterExtension({ filterSize: 1 })],
+      getFilterValue: props.scatter.getFilterValue,
+      filterRange: [0, zoom],
     }),
   ];
 }

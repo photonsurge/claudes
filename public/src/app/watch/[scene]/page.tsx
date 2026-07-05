@@ -15,6 +15,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../../lib/socket-provider";
 import { fetchManifest } from "../../../lib/manifest";
 import { listCities, type City } from "../../../lib/cities";
+import { useRegionCities } from "../../../lib/useRegionCities";
 import { useSceneState, listScenes } from "../../../lib/scenes";
 import { useDirector, useDirectorConfig, useDirectorCut, eventPulse } from "../../../lib/director";
 import WatchSurface from "../../../components/WatchSurface";
@@ -62,6 +63,9 @@ function SceneWatchPageInner() {
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),
     [state, cutPatch],
   );
+  // Layers in extra local cities once a director cut zooms into a region — the
+  // base `cities` fetch stays a fixed, bounded world set.
+  const shownCities = useRegionCities(cities, shown.camera.center, shown.camera.zoom);
 
   // Cold start the globally-shared data + resolve this scene's display name.
   useEffect(() => {
@@ -115,7 +119,7 @@ function SceneWatchPageInner() {
       <WatchSurface
         state={shown}
         manifest={manifest}
-        cities={cities}
+        cities={shownCities}
         sceneName={sceneName}
         pulseAt={eventPulse(director)}
         onAirSegment={director?.active ? onAir : null}

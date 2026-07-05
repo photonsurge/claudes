@@ -40,7 +40,7 @@ import { cityLabelMinZoom, cityDetail } from "../lib/cities";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
 import { seismicLayer } from "./layers/seismic";
-import { seismographStationLayers } from "./layers/seismograph-stations";
+import { seismographStationLayers, seismoKeyOf, seismoShortName } from "./layers/seismograph-stations";
 import { graticuleLayer } from "./layers/graticule";
 import { sourceDebugLayers } from "./layers/sourceDebug";
 import { cableLayers, cableNameLabels } from "./layers/cables";
@@ -67,6 +67,7 @@ import type { AuroraOverlay } from "../lib/aurora-overlay";
 import type { SatImgOverlay } from "../lib/satimg-overlay";
 import type { Fire } from "@photonsurge/shared/fires/types";
 import type { GeomagOverlay } from "../lib/geomag-overlay";
+import { HeartbeatIcon } from "./broadcast/icons";
 
 export interface GlobeHandle {
   flyTo: (center: [number, number], zoom?: number) => void;
@@ -128,7 +129,6 @@ const MAX_PUSH_IN = 1.2;
 /** Smooth accel/decel so flights ease in and out instead of jerking. */
 const easeInOutCubic = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-
 
 /** Hover tooltip for a picked live track (aircraft/ship/satellite). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -267,11 +267,37 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     motionRef.current = state.autoSpin || !!state.zoomDrift;
   });
 
+  // Re-filter the (already-built) city dots in place as the live zoom changes,
+  // without rebuilding the whole layer stack. `.clone()` only patches the
+  // filterRange uniform the DataFilterExtension reads — the underlying data
+  // buffer stays put. Still, this runs from the per-frame camera callbacks
+  // (orbit spin, flights, drag), so it's gated on the zoom actually having
+  // moved past the coarse bucket cities reveal at — a plain orbit spin holds
+  // zoom constant and would otherwise re-commit the entire layer stack for no
+  // visual change, every single frame.
+  const lastCityZoomRef = useRef(-Infinity);
+  const refreshCityZoom = (zoom: number) => {
+    if (Math.abs(zoom - lastCityZoomRef.current) < 0.05) return;
+    const idx = baseLayersRef.current.findIndex((l) => l?.id === "cities-scatter");
+    if (idx === -1) return;
+    lastCityZoomRef.current = zoom;
+    const layer = baseLayersRef.current[idx];
+    const next = layer.clone({ filterRange: [0, zoom] });
+    if (next === layer) return;
+    baseLayersRef.current = [
+      ...baseLayersRef.current.slice(0, idx),
+      next,
+      ...baseLayersRef.current.slice(idx + 1),
+    ];
+    commitLayers();
+  };
+
   const applyViewState = (vs: ViewState) => {
     viewStateRef.current = vs;
     if (typeof vs.zoom === "number") {
       const want = vs.zoom >= TILE_MIN_ZOOM;
       setTilesActive((prev) => (prev === want ? prev : want));
+      refreshCityZoom(vs.zoom);
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     deckRef.current?.setProps({ viewState: vs } as any);
@@ -456,6 +482,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         // transition's onTransitionEnd instead.
         if (interactionState?.inTransition) return;
         deck.setProps({ viewState } as Parameters<typeof deck.setProps>[0]);
+        refreshCityZoom(viewState.zoom);
         onCameraChangeRef.current?.([viewState.longitude, viewState.latitude], viewState.zoom);
       },
     });
@@ -638,7 +665,12 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     const elevationTex = !!(manifest && textureUrlFor(manifest, "elevation", 0));
     const reliefBasemap = state.basemap === "relief" && elevationTex;
     const contourOn = state.showElevation && elevationTex;
-    const hasGlobalRaster = weatherRaster || reliefBasemap || contourOn;
+    // The geomag overlay is likewise a full-globe WeatherLayers RasterLayer (the
+    // IGRF total-intensity field), so it needs to seal its own depth exactly like
+    // the weather raster / relief — otherwise the basemap sphere depth-culls it
+    // when it's the only overlay on.
+    const geomagOn = !!(state.showMagneticField && geomag?.texture);
+    const hasGlobalRaster = weatherRaster || reliefBasemap || contourOn || geomagOn;
     const layers: any[] = [...basemapLayers(state, tilesActive, hasGlobalRaster)];
 
     // Day/night terminator: shade the earth's night hemisphere from the real sun
@@ -715,7 +747,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // weather/wind, below the reference overlays so those stay crisp on top. Full-
     // globe PNG per bird (transparent off-disk); the far side is depth-occluded.
     if (state.showSatImg && satimg?.frames.length) {
-      layers.push(...satimgLayers(satimg.frames, state.satImgFeeds, state.satImgLook));
+      layers.push(...satimgLayers(satimg.frames, state.satImgFeeds));
     }
 
     // Aurora oval — a translucent glow above the weather/wind/borders but below
@@ -760,7 +792,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     if (state.showFires && fires.length) layers.push(...fireLayers(fires));
 
     if (state.showCities && cities.length)
-      layers.push(...cityLayer(cities, subsolar ?? undefined));
+      layers.push(...cityLayer(cities, subsolar ?? undefined, viewStateRef.current.zoom));
 
     // Live tracks overlay sits on top of everything (trails + orbit rings under
     // the point markers).
@@ -817,7 +849,6 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showAurora,
     state.showSatImg,
     state.satImgFeeds,
-    state.satImgLook,
     state.showFires,
     state.showMagneticField,
     state.showMapSource,
@@ -900,15 +931,34 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         });
       }
     }
+    if (state.showSeismic && seismoStations.length) {
+      const activeKey = seismoActive
+        ? `${seismoActive.net}.${seismoActive.sta}.${seismoActive.loc}.${seismoActive.cha}`
+        : null;
+      for (const s of seismoStations) {
+        const isActive = seismoKeyOf(s) === activeKey;
+        out.push({
+          id: `seismo:${seismoKeyOf(s)}`,
+          icon: <HeartbeatIcon active={isActive} />,
+          text: seismoShortName(s),
+          position: [s.lng, s.lat, 0],
+          color: isActive ? [67, 217, 255] : [200, 215, 230],
+          minZoom: 0,
+        });
+      }
+    }
     return out;
   }, [
     state.showTrackLabels,
     state.showCities,
+    state.showSeismic,
     state.showCables,
     state.showCableLabels,
     cables,
     tracks,
     cities,
+    seismoStations,
+    seismoActive,
     state.satelliteStyle,
     state.aircraftStyle,
     state.shipStyle,

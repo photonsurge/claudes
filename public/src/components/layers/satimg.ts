@@ -28,13 +28,13 @@ const SATIMG_PARAMS = { ...DEPTH_PAINT, cullMode: "back" };
 /**
  * One BitmapLayer per FEED the operator has ticked ON, drawn over its coverage bounds at
  * its own opacity (each frame is transparent outside its data). `feeds` is the per-feed
- * on/opacity state (keyed by feed id); `look` is the global composite every disc follows.
+ * state (keyed by feed id) — for a DISC it also carries that disc's own composite `look`.
  *
  * Frame resolution by feed kind:
  *  - `mosaic` / `overlay` (global, lightning): the frame whose satId === the feed id.
- *  - `disc`: the frame `${id}:${look}`, falling back to `${id}:ir` when that disc doesn't
- *    carry the chosen look (every disc bakes an IR frame). Switching `look` re-points the
- *    same layer id at a new satId → new cache-busted URL, so the disc updates in place.
+ *  - `disc`: the frame `${id}:${feedLook}`, falling back to `${id}:ir` when that disc
+ *    doesn't carry its chosen look (every disc bakes an IR frame). Changing a disc's look
+ *    re-points the same layer id at a new satId → new cache-busted URL, updating in place.
  *
  * DEPTH_PAINT (not DEPTH_TEST): a BitmapLayer's coarse globe mesh bows each quad INSIDE
  * the sphere, so depth-testing against the globe culls every quad's centre and leaves its
@@ -44,7 +44,6 @@ const SATIMG_PARAMS = { ...DEPTH_PAINT, cullMode: "back" };
 export function satimgLayers(
   frames: SatImgMeta[],
   feeds: Record<string, SatImgFeedState>,
-  look: string,
 ): BitmapLayer[] {
   const byId = new Map(frames.map((f) => [f.satId, f]));
   const layers: BitmapLayer[] = [];
@@ -53,7 +52,7 @@ export function satimgLayers(
     if (!fs?.on) continue;
     const frame =
       feed.kind === "disc"
-        ? byId.get(`${feed.id}:${look}`) ?? byId.get(`${feed.id}:ir`)
+        ? byId.get(`${feed.id}:${fs.look ?? "geocolor"}`) ?? byId.get(`${feed.id}:ir`)
         : byId.get(feed.id);
     if (!frame) continue;
     layers.push(

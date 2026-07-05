@@ -449,35 +449,6 @@ export default function ControlPanel({
           checked={state.showSatImg}
           onChange={(showSatImg) => patch({ showSatImg })}
         />
-        {state.showSatImg && (
-          <Field label="Look">
-            <select
-              aria-label="Satellite look"
-              value={state.satImgLook}
-              onChange={(e) => patch({ satImgLook: e.target.value })}
-              style={{
-                background: "#0a0e16",
-                color: "#fff",
-                border: "1px solid #2a3344",
-                borderRadius: 6,
-                padding: "3px 6px",
-                fontSize: 12,
-              }}
-            >
-              {SATIMG_LOOKS.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
-        {state.showSatImg && (
-          <div style={{ fontSize: 11, color: "#8b95a7", margin: "2px 0 6px 2px" }}>
-            Look applies to the live discs (GOES · Meteosat · Himawari); each falls back to
-            IR where it lacks that composite.
-          </div>
-        )}
         {state.showSatImg &&
           SATIMG_FEEDS.map((feed) => {
             const fs = state.satImgFeeds[feed.id] ?? { on: false, opacity: 0.85 };
@@ -487,6 +458,29 @@ export default function ControlPanel({
               <div key={feed.id} style={{ marginTop: 6 }}>
                 <Toggle label={feed.label} checked={fs.on} onChange={(on) => setFeed({ on })} />
                 <div style={{ fontSize: 11, color: "#8b95a7", margin: "2px 0 0 2px" }}>{feed.region}</div>
+                {fs.on && feed.kind === "disc" && (
+                  <Field label="Look">
+                    <select
+                      aria-label={`${feed.label} look`}
+                      value={fs.look ?? "geocolor"}
+                      onChange={(e) => setFeed({ look: e.target.value })}
+                      style={{
+                        background: "#0a0e16",
+                        color: "#fff",
+                        border: "1px solid #2a3344",
+                        borderRadius: 6,
+                        padding: "3px 6px",
+                        fontSize: 12,
+                      }}
+                    >
+                      {SATIMG_LOOKS.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
                 {fs.on && (
                   <Field label="Opacity">
                     <input

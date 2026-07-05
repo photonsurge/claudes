@@ -62,6 +62,18 @@ export default function GlobeAtmosphere({
     if (!enabled) return;
     let raf = 0;
     const loop = () => {
+      // deck.gl can throw an internal assertion from getViewports()/project()
+      // mid-transition (e.g. between view changes) — getDisc() isn't wrapped
+      // itself, so guard here: an uncaught throw would otherwise skip the
+      // reschedule below and permanently freeze this overlay for the session.
+      try {
+        tick();
+      } catch {
+        /* transient — try again next frame */
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    const tick = () => {
       const d = getDisc();
       if (d) {
         const glow = glowRef.current;
@@ -100,7 +112,6 @@ export default function GlobeAtmosphere({
           ticks.setAttribute("transform", `rotate(${rot.toFixed(2)} 100 100)`);
         }
       }
-      raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);

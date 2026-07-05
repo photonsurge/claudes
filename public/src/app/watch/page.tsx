@@ -27,6 +27,7 @@ import { useSocket } from "../../lib/socket-provider";
 import { fetchBroadcastState } from "../../lib/control";
 import { fetchManifest } from "../../lib/manifest";
 import { listCities, type City } from "../../lib/cities";
+import { useRegionCities } from "../../lib/useRegionCities";
 import { useDirector, useDirectorConfig, useDirectorCut, eventPulse } from "../../lib/director";
 import WatchSurface from "../../components/WatchSurface";
 import ViewingOverlay from "../../components/ViewingOverlay";
@@ -69,6 +70,9 @@ function WatchPageInner() {
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),
     [state, cutPatch],
   );
+  // Layers in extra local cities once a director cut (or the operator) zooms
+  // into a region — the base `cities` fetch stays a fixed, bounded world set.
+  const shownCities = useRegionCities(cities, shown.camera.center, shown.camera.zoom);
 
   // Cold start.
   useEffect(() => {
@@ -132,7 +136,7 @@ function WatchPageInner() {
       <WatchSurface
         state={shown}
         manifest={manifest}
-        cities={cities}
+        cities={shownCities}
         pulseAt={eventPulse(director)}
         onAirSegment={director?.active ? onAir : null}
         upNext={director?.active ? director.upNext : []}

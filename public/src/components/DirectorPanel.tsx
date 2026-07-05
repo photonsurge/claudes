@@ -4,8 +4,10 @@
  * Operator controls for the per-scene auto-director. Off/Auto toggle, per-kind
  * (and per-event-level) hold times, which kinds are eligible, event thresholds,
  * a Skip button, which basemap "map types" each touring kind (intro/ocean/quake)
- * cycles through, per-kind overlay on/off overrides — plus a live "on air / up
- * next" readout fed by the worker's director:state. `config`/`update` are lifted
+ * cycles through, per-kind overlay on/off overrides, and a saved-"slide"
+ * library per kind (save/load/update/delete a named snapshot of the live
+ * map) — plus a live "on air / up next" readout fed by the worker's
+ * director:state. `config`/`update` are lifted
  * to the parent (/control) so the live preview shares the exact same config the
  * operator is editing here; edits PATCH the scene's director config and the
  * worker picks them up within ~1s.
@@ -20,9 +22,10 @@ import {
   OVERLAY_KEYS,
   type GlobalMapType,
 } from "@photonsurge/shared/director-rois";
-import { SEGMENT_KINDS, type DirectorConfig, type SegmentKind } from "@photonsurge/shared/director";
+import { SEGMENT_KINDS, type DirectorConfig, type KindSlide, type SegmentKind } from "@photonsurge/shared/director";
 import { BASEMAPS } from "@photonsurge/shared/basemaps";
-import { DEFAULT_WIND_SETTINGS } from "@photonsurge/shared/control";
+import { SATIMG_LOOKS } from "@photonsurge/shared/satimg/types";
+import { DEFAULT_WIND_SETTINGS, type ControlState } from "@photonsurge/shared/control";
 import { useDirector } from "../lib/director";
 import DirectorHolds, { KIND_LABEL } from "./DirectorHolds";
 import WindControls from "./WindControls";
@@ -60,14 +63,33 @@ function humanizeOverlayKey(key: string): string {
   return key.replace(/^show/, "").replace(/([A-Z])/g, " $1").trim();
 }
 
+/** Snapshot the live operator map into a slide's look + overlay toggles for `kind`. */
+function slideFromLive(kind: SegmentKind, live: ControlState): Pick<KindSlide, "look" | "overlays"> {
+  const overlays: Partial<Record<string, boolean>> = {};
+  for (const key of overlayTogglesFor(kind)) {
+    overlays[key] = Boolean((live as unknown as Record<string, boolean>)[key]);
+  }
+  return {
+    look: {
+      basemap: live.basemap,
+      windMode: live.windMode,
+      wind: { ...live.wind },
+      showSatImg: live.showSatImg,
+    },
+    overlays,
+  };
+}
+
 export default function DirectorPanel({
   sceneId,
   config,
   update,
+  liveState,
 }: {
   sceneId: string;
   config: DirectorConfig;
   update: (patch: Partial<DirectorConfig>) => void;
+  liveState: ControlState;
 }) {
   const live = useDirector(sceneId);
   const auto = config.mode === "auto";
@@ -247,6 +269,90 @@ export default function DirectorPanel({
             >
               <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 4 }}>{KIND_LABEL[kind]}</div>
 
+              {(() => {
+                const slides = config.kindSlides[kind] ?? [];
+                const activeId = config.activeSlideId[kind];
+                return (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                    <span style={{ opacity: 0.7, fontSize: 12 }}>Slide:</span>
+                    <select
+                      value={activeId ?? ""}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        const slide = slides.find((s) => s.id === id);
+                        update({
+                          kindLooks: { ...config.kindLooks, [kind]: slide ? { ...slide.look } : {} },
+                          overlayOverrides: { ...config.overlayOverrides, [kind]: slide ? { ...slide.overlays } : {} },
+                          activeSlideId: { ...config.activeSlideId, [kind]: id || null },
+                        });
+                      }}
+                      style={{ ...box, padding: "3px 6px" }}
+                    >
+                      <option value="">— custom (unsaved) —</option>
+                      {slides.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const name = window.prompt("Name this slide:");
+                        if (!name) return;
+                        const snapshot = slideFromLive(kind, liveState);
+                        const newSlide: KindSlide = { id: crypto.randomUUID(), name, ...snapshot };
+                        update({
+                          kindSlides: { ...config.kindSlides, [kind]: [...slides, newSlide] },
+                          kindLooks: { ...config.kindLooks, [kind]: newSlide.look },
+                          overlayOverrides: { ...config.overlayOverrides, [kind]: newSlide.overlays },
+                          activeSlideId: { ...config.activeSlideId, [kind]: newSlide.id },
+                        });
+                      }}
+                      style={{ ...box, cursor: "pointer", padding: "3px 8px" }}
+                      title="Save the current live map as a new slide for this shot type"
+                    >
+                      + Save as new
+                    </button>
+                    {activeId ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const snapshot = slideFromLive(kind, liveState);
+                            update({
+                              kindSlides: {
+                                ...config.kindSlides,
+                                [kind]: slides.map((s) => (s.id === activeId ? { ...s, ...snapshot } : s)),
+                              },
+                              kindLooks: { ...config.kindLooks, [kind]: snapshot.look },
+                              overlayOverrides: { ...config.overlayOverrides, [kind]: snapshot.overlays },
+                            });
+                          }}
+                          style={{ ...box, cursor: "pointer", padding: "3px 8px" }}
+                          title="Overwrite this slide with the current live map"
+                        >
+                          ⟳ Update
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!window.confirm("Delete this slide?")) return;
+                            update({
+                              kindSlides: { ...config.kindSlides, [kind]: slides.filter((s) => s.id !== activeId) },
+                              activeSlideId: { ...config.activeSlideId, [kind]: null },
+                            });
+                          }}
+                          style={{ ...box, cursor: "pointer", padding: "3px 8px", color: "#ff6a6a" }}
+                        >
+                          ✕ Delete
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                );
+              })()}
+
               {keys.length ? (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", marginBottom: 6 }}>
                   {keys.map((key) => {
@@ -290,6 +396,34 @@ export default function DirectorPanel({
                   {BASEMAPS.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 6 }}>
+                <span style={{ opacity: 0.7 }}>Satellite:</span>
+                <select
+                  value={look?.showSatImg === false ? "off" : look?.satImgLook ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    const sat: Partial<typeof look> =
+                      v === ""
+                        ? { showSatImg: null, satImgLook: null } // inherit live
+                        : v === "off"
+                          ? { showSatImg: false, satImgLook: null }
+                          : { showSatImg: true, satImgLook: v };
+                    update({
+                      kindLooks: { ...config.kindLooks, [kind]: { ...config.kindLooks[kind], ...sat } },
+                    });
+                  }}
+                  style={{ ...box, padding: "3px 6px" }}
+                >
+                  <option value="">Auto (inherit)</option>
+                  <option value="off">Off</option>
+                  {SATIMG_LOOKS.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.label}
                     </option>
                   ))}
                 </select>

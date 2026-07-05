@@ -11,20 +11,24 @@ const SORT_FIELDS = new Set(["name", "country", "lat", "lng", "population", "isC
 
 /**
  * GET /api/cities — cities for overlays, sorted by population desc.
- * Query params (all optional): `limit` (max 20000), `minPop`, `capital=1`.
- * No `limit` → every matching city is returned (no arbitrary cap) so the globe
- * can show as much detail as a zoomed-in shot calls for.
+ * Query params (all optional): `limit` (max 20000, default 300), `minPop`,
+ * `capital=1`, `bbox=west,south,east,north`.
+ *
+ * The globe never holds every city at once — that's thousands of always-on
+ * dots and DOM name labels, which tanks frame rate. Instead: a bounded default
+ * (300, the world's biggest/capital cities) covers the whole-globe view, and a
+ * `bbox` query — scoped to whatever region the camera is currently framing —
+ * layers in the extra local detail a country/city spotlight needs.
  */
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const paged = sp.has("page") || sp.has("pageSize") || sp.has("sort") || sp.has("q");
+  const hasBbox = sp.has("bbox");
   const pageSize = paged
     ? Math.floor(Math.min(Math.max(Number(sp.get("pageSize")) || 25, 1), MAX_PAGE_SIZE))
-    : sp.has("limit")
-      ? Math.min(Math.max(Number(sp.get("limit")) || 1, 1), 20000)
-      : undefined;
+    : Math.min(Math.max(Number(sp.get("limit")) || (hasBbox ? 2000 : 300), 1), 20000);
   const page = paged ? Math.max(Math.floor(Number(sp.get("page")) || 1), 1) : 1;
-  const skip = paged ? (page - 1) * pageSize! : 0;
+  const skip = paged ? (page - 1) * pageSize : 0;
   const minPop = Math.max(Number(sp.get("minPop")) || 0, 0);
   const capital = sp.get("capital");
   const q = sp.get("q")?.trim();
@@ -39,6 +43,19 @@ export async function GET(req: Request) {
   if (q) {
     const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
     query.$or = [{ name: rx }, { country: rx }, { cc: rx }, { region: rx }];
+  }
+  if (hasBbox) {
+    const parts = (sp.get("bbox") ?? "").split(",").map(Number);
+    if (parts.length === 4 && parts.every(Number.isFinite)) {
+      const [w, s, e, n] = parts;
+      query.lat = { $gte: Math.max(s, -90), $lte: Math.min(n, 90) };
+      if (w <= e) {
+        query.lng = { $gte: w, $lte: e };
+      } else {
+        // Box wraps the antimeridian (west > east).
+        query.$or = [{ lng: { $gte: w } }, { lng: { $lte: e } }];
+      }
+    }
   }
 
   const db = await getAppDb();
@@ -56,7 +73,7 @@ export async function GET(req: Request) {
       total: paged ? total : cities.length,
       page,
       pageSize,
-      pageCount: paged ? Math.ceil(total / pageSize!) : cities.length ? 1 : 0,
+      pageCount: paged ? Math.ceil(total / pageSize) : cities.length ? 1 : 0,
       sort: sortField,
       direction: direction === 1 ? "asc" : "desc",
     },

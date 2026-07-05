@@ -11,7 +11,6 @@
 import {
   DEFAULT_SATIMG_FEEDS,
   defaultSatImgFeeds,
-  DEFAULT_SATIMG_LOOK,
   isSatImgLook,
   type SatImgFeedState,
 } from "./satimg/types";
@@ -255,9 +254,12 @@ function mergeSatImgFeeds(
   for (const id of Object.keys(DEFAULT_SATIMG_FEEDS)) {
     const b = base?.[id] ?? DEFAULT_SATIMG_FEEDS[id];
     const p = patch?.[id] ?? {};
+    const look = isSatImgLook(p.look) ? p.look : b.look;
     out[id] = {
       on: typeof p.on === "boolean" ? p.on : b.on,
       opacity: clampNum(p.opacity, 0, 1, b.opacity),
+      // Discs carry a composite look; mosaic/overlay feeds leave it undefined.
+      ...(look !== undefined ? { look } : {}),
     };
   }
   return out;
@@ -389,10 +391,8 @@ export interface ControlState {
   showAurora: boolean;
   /** Master toggle for the satellite "clouds" overlay (per-feed state in satImgFeeds). */
   showSatImg: boolean;
-  /** Per-feed clouds state — each source/coverage-area's on-flag + opacity (keyed by feed id). */
+  /** Per-feed clouds state — each source's on-flag + opacity + (disc) composite look. */
   satImgFeeds: Record<string, SatImgFeedState>;
-  /** Composite "look" every live disc follows (GeoColor / IR / water vapour / air mass / …). */
-  satImgLook: string;
   /** Overlay active-fire detections (NASA FIRMS VIIRS/MODIS hot-spots). */
   showFires: boolean;
   /** Overlay the global geomagnetic-field intensity (IGRF) — the whole-globe magnetic map. */
@@ -462,7 +462,6 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showAurora: false,
   showSatImg: false,
   satImgFeeds: defaultSatImgFeeds(),
-  satImgLook: DEFAULT_SATIMG_LOOK,
   showFires: false,
   showMagneticField: false,
   showMapSource: false,
@@ -590,9 +589,6 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     showAurora: typeof patch.showAurora === "boolean" ? patch.showAurora : base.showAurora ?? false,
     showSatImg: typeof patch.showSatImg === "boolean" ? patch.showSatImg : base.showSatImg ?? false,
     satImgFeeds: mergeSatImgFeeds(base.satImgFeeds, patch.satImgFeeds),
-    satImgLook: isSatImgLook(patch.satImgLook)
-      ? patch.satImgLook
-      : base.satImgLook ?? DEFAULT_SATIMG_LOOK,
     showFires: typeof patch.showFires === "boolean" ? patch.showFires : base.showFires ?? false,
     showMagneticField:
       typeof patch.showMagneticField === "boolean" ? patch.showMagneticField : base.showMagneticField ?? false,

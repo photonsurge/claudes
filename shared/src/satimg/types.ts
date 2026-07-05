@@ -91,7 +91,7 @@ export interface SatImgMeta extends SatImgFrame {
 /**
  * How a feed resolves to a baked frame:
  *  - `mosaic`  — the daily global true-colour (its own cloud-keyed frame, satId = id).
- *  - `disc`    — a geostationary disc that follows the global `satImgLook`; the worker
+ *  - `disc`    — a geostationary disc showing its OWN `look` (per-feed state); the worker
  *                bakes one frame per look, satId = `${id}:${look}`, so switching look is
  *                instant. Falls back to the disc's IR frame when a look isn't available.
  *  - `overlay` — a transparent product drawn on top of everything (lightning), satId = id.
@@ -145,20 +145,22 @@ export const SATIMG_FEEDS: SatImgFeed[] = [
   { id: "lightning", label: "⚡ Lightning", region: "Europe · Africa · Atlantic · 5-min", bounds: [-65, -65, 65, 65], live: true, kind: "overlay" },
 ];
 
-/** Per-feed operator state: shown + its own opacity. */
+/** Per-feed operator state: shown + its own opacity + (for discs) its own composite look. */
 export interface SatImgFeedState {
   on: boolean;
   opacity: number;
+  /** Composite this DISC shows (id from SATIMG_LOOKS); ignored for mosaic/overlay feeds. */
+  look?: string;
 }
 
 /** Default per-feed state — the global mosaic on, the live regional discs off. */
 export const DEFAULT_SATIMG_FEEDS: Record<string, SatImgFeedState> = {
   global: { on: true, opacity: 0.85 },
-  "goes-east": { on: false, opacity: 0.9 },
-  "goes-west": { on: false, opacity: 0.9 },
-  himawari: { on: false, opacity: 0.9 },
-  "meteosat-0": { on: false, opacity: 0.9 },
-  "meteosat-iodc": { on: false, opacity: 0.9 },
+  "goes-east": { on: false, opacity: 0.9, look: "geocolor" },
+  "goes-west": { on: false, opacity: 0.9, look: "geocolor" },
+  himawari: { on: false, opacity: 0.9, look: "ir" }, // no GeoColor on GIBS
+  "meteosat-0": { on: false, opacity: 0.9, look: "geocolor" },
+  "meteosat-iodc": { on: false, opacity: 0.9, look: "ir" }, // no GeoColor at IODC
   lightning: { on: false, opacity: 0.95 },
 };
 
@@ -166,5 +168,18 @@ export const DEFAULT_SATIMG_FEEDS: Record<string, SatImgFeedState> = {
 export function defaultSatImgFeeds(): Record<string, SatImgFeedState> {
   const out: Record<string, SatImgFeedState> = {};
   for (const [id, s] of Object.entries(DEFAULT_SATIMG_FEEDS)) out[id] = { ...s };
+  return out;
+}
+
+/**
+ * A satImgFeeds PATCH that sets EVERY disc's look to `look`, leaving on/opacity to merge
+ * from the base. Used by the director to apply "one look per shot-type" across the discs.
+ * Each entry sets ONLY `look`; it's typed as a full SatImgFeedState to satisfy the
+ * Segment.patch (`Partial<ControlState>`) contract, and `mergeSatImgFeeds` reads on/opacity
+ * defensively (`?? base`), so the intentionally-omitted fields are safe at runtime.
+ */
+export function discLookFeeds(look: string): Record<string, SatImgFeedState> {
+  const out: Record<string, SatImgFeedState> = {};
+  for (const f of SATIMG_FEEDS) if (f.kind === "disc") out[f.id] = { look } as unknown as SatImgFeedState;
   return out;
 }

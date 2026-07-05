@@ -219,9 +219,9 @@ const FEED_FETCH: Record<string, FeedFetchCfg> = {
 };
 
 /**
- * Per-disc composite "look" → WMS layer(s). The operator picks ONE look globally
- * (control-state `satImgLook`); the worker bakes every disc in every look it carries so
- * switching is instant (satId = `${disc}:${look}`). GOES/Himawari looks come from GIBS,
+ * Per-disc composite "look" → WMS layer(s). The operator picks each disc's look
+ * independently (per-feed `satImgFeeds[disc].look`); the worker bakes every disc in every
+ * look it carries so switching is instant (satId = `${disc}:${look}`). GOES/Himawari looks come from GIBS,
  * the Meteosat discs from EUMETView (MTG at 0°, MSG at 0° for the bands MTG lacks, MSG at
  * IODC). Every disc has an `ir` entry — the universal fallback when a look is unavailable.
  */

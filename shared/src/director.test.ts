@@ -240,4 +240,65 @@ describe("mergeDirectorConfig", () => {
     });
     expect(clearedAll.kindLooks.storm).toEqual({ basemap: undefined, windMode: undefined });
   });
+
+  it("merges a kindLooks satellite look/on-off, validates the look, and clears with null", () => {
+    const merged = mergeDirectorConfig(base, {
+      kindLooks: { storm: { showSatImg: true, satImgLook: "watervapour" } },
+    });
+    expect(merged.kindLooks.storm?.showSatImg).toBe(true);
+    expect(merged.kindLooks.storm?.satImgLook).toBe("watervapour");
+    // An unknown look is rejected (→ undefined), not stored.
+    const bad = mergeDirectorConfig(merged, { kindLooks: { storm: { satImgLook: "bogus" as never } } });
+    expect(bad.kindLooks.storm?.satImgLook).toBeUndefined();
+    expect(bad.kindLooks.storm?.showSatImg).toBe(true); // sibling untouched
+    // Explicit null clears back to inherit.
+    const cleared = mergeDirectorConfig(merged, { kindLooks: { storm: { showSatImg: null } } });
+    expect(cleared.kindLooks.storm?.showSatImg).toBeUndefined();
+    expect(cleared.kindLooks.storm?.satImgLook).toBe("watervapour");
+  });
+
+  it("merges kindSlides per kind, sanitizing each slide's look/overlays and dropping malformed entries", () => {
+    const merged = mergeDirectorConfig(base, {
+      kindSlides: {
+        storm: [
+          {
+            id: "a",
+            name: "Cinematic",
+            look: { basemap: "night", wind: { speedFactor: 20, color: 123 as any } },
+            overlays: { showFaults: false, showCities: "yes" as any },
+          },
+          { id: "b" } as any, // missing name — dropped
+        ],
+        atlantis: [{ id: "c", name: "x", look: {}, overlays: {} }],
+      } as any,
+    });
+    expect(merged.kindSlides.storm).toEqual([
+      {
+        id: "a",
+        name: "Cinematic",
+        look: { basemap: "night", wind: { speedFactor: 20 } },
+        overlays: { showFaults: false },
+      },
+    ]);
+    expect((merged.kindSlides as any).atlantis).toBeUndefined();
+
+    // Replaces the kind's list wholesale (not merged item-by-item) — a
+    // save/delete round trip sends the kind's full intended list.
+    const merged2 = mergeDirectorConfig(merged, { kindSlides: { storm: [] } });
+    expect(merged2.kindSlides.storm).toEqual([]);
+  });
+
+  it("merges activeSlideId per kind, keeping only strings, and clears with null", () => {
+    const merged = mergeDirectorConfig(base, { activeSlideId: { storm: "a", quake: 5 as any } });
+    expect(merged.activeSlideId.storm).toBe("a");
+    expect(merged.activeSlideId.quake).toBeUndefined();
+
+    const cleared = mergeDirectorConfig(merged, { activeSlideId: { storm: null } });
+    expect(cleared.activeSlideId.storm).toBeUndefined();
+
+    // Untouched kinds/keys survive a follow-up patch.
+    const merged2 = mergeDirectorConfig(merged, { activeSlideId: { quake: "q1" } });
+    expect(merged2.activeSlideId.storm).toBe("a");
+    expect(merged2.activeSlideId.quake).toBe("q1");
+  });
 });

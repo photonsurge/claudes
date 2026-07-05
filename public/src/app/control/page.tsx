@@ -23,6 +23,7 @@ import { fetchManifest } from "../../lib/manifest";
 import { listScenes, fetchSceneState, useSceneEmitter } from "../../lib/scenes";
 import { useDirector, useDirectorConfig, useDirectorCut, eventPulse } from "../../lib/director";
 import { listCities, type City } from "../../lib/cities";
+import { useRegionCities } from "../../lib/useRegionCities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
 import { useQuakes } from "../../lib/seismic-overlay";
@@ -89,6 +90,10 @@ export default function ControlPage() {
     () => (cutPatch ? mergeControlState(state, cutPatch) : state),
     [state, cutPatch],
   );
+  // Layers in extra local cities once a director cut (or the operator's own
+  // pan/zoom) pushes in on a region — the base `cities` fetch stays a fixed,
+  // bounded world set.
+  const shownCities = useRegionCities(cities, shown.camera.center, shown.camera.zoom);
 
   const { tracks, orbits, trails } = useTracks({
     showSatellites: shown.showSatellites,
@@ -162,7 +167,7 @@ export default function ControlPage() {
           ref={globe}
           state={shown}
           manifest={manifest}
-          cities={cities}
+          cities={shownCities}
           tracks={tracks}
           orbits={orbits}
           trails={trails}
@@ -225,7 +230,7 @@ export default function ControlPage() {
                 mag={seg.quake.mag}
                 depthKm={seg.quake.depthKm}
                 center={seg.camera.center}
-                cities={cities}
+                cities={shownCities}
               />
             </div>
           ) : null;
@@ -288,7 +293,7 @@ export default function ControlPage() {
             }}
           />
         </div>
-        <DirectorPanel sceneId={sceneId} config={directorConfig} update={updateDirectorConfig} />
+        <DirectorPanel sceneId={sceneId} config={directorConfig} update={updateDirectorConfig} liveState={state} />
         <ControlPanel
           state={state}
           manifest={manifest}
