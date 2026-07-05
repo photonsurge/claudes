@@ -198,4 +198,46 @@ describe("mergeDirectorConfig", () => {
     const merged2 = mergeDirectorConfig(merged, { overlayOverrides: { quake: { showCables: false } } });
     expect(merged2.overlayOverrides.quake).toEqual({ showFaults: false, showCables: false });
   });
+
+  it("merges kindLooks per kind — basemap and wind fields independently, siblings preserved", () => {
+    const merged = mergeDirectorConfig(base, {
+      kindLooks: { storm: { basemap: "night", wind: { speedFactor: 16, color: "#cfe8ff" } } },
+    });
+    expect(merged.kindLooks.storm).toEqual({
+      basemap: "night",
+      wind: { speedFactor: 16, color: "#cfe8ff" },
+    });
+
+    // A follow-up patch touching only one wind field doesn't wipe the others or the basemap.
+    const merged2 = mergeDirectorConfig(merged, {
+      kindLooks: { storm: { wind: { numParticles: 9000 } } },
+    });
+    expect(merged2.kindLooks.storm).toEqual({
+      basemap: "night",
+      wind: { speedFactor: 16, color: "#cfe8ff", numParticles: 9000 },
+    });
+
+    // Non-boolean-typed junk on wind numeric keys is ignored; unknown kinds dropped.
+    const merged3 = mergeDirectorConfig(merged2, {
+      kindLooks: {
+        storm: { wind: { speedFactor: "fast" as any } },
+        atlantis: { basemap: "dark" },
+      } as any,
+    });
+    expect(merged3.kindLooks.storm?.wind?.speedFactor).toBe(16);
+    expect((merged3.kindLooks as any).atlantis).toBeUndefined();
+  });
+
+  it("clears kindLooks fields with an explicit null, leaving siblings alone", () => {
+    const merged = mergeDirectorConfig(base, {
+      kindLooks: { storm: { basemap: "night", windMode: "particles", wind: { speedFactor: 16 } } },
+    });
+    const cleared = mergeDirectorConfig(merged, { kindLooks: { storm: { wind: null } } });
+    expect(cleared.kindLooks.storm).toEqual({ basemap: "night", windMode: "particles" });
+
+    const clearedAll = mergeDirectorConfig(cleared, {
+      kindLooks: { storm: { basemap: null, windMode: null } },
+    });
+    expect(clearedAll.kindLooks.storm).toEqual({ basemap: undefined, windMode: undefined });
+  });
 });

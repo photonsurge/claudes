@@ -19,6 +19,7 @@ import {
   type TrackInfo,
 } from "@photonsurge/shared/director";
 import type { Candidate } from "@photonsurge/shared/director-select";
+import { DEFAULT_WIND_SETTINGS } from "@photonsurge/shared/control";
 import { vehicleId, vehicleLabel, type iVehicle } from "@photonsurge/shared/db/vehicle-model";
 import {
   PRESETS,
@@ -50,18 +51,32 @@ const make = (
   cfg: DirectorConfig,
   /** Extra per-segment ControlState (e.g. ocean shots set their own variable). */
   extra?: Partial<Segment["patch"]>,
-): Segment => ({
-  id: `${kind}:${subject}`,
-  kind,
-  title,
-  subtitle,
-  camera: { center, zoom },
-  // Operator overlay overrides (DirectorConfig.overlayOverrides) layer onto the
-  // kind's preset but never beat `extra` — a segment's own computed fields
-  // (activeVariable, satelliteGroup, …) always win.
-  patch: { ...PRESETS[kind], ...cfg.overlayOverrides?.[kind], ...extra, camera: { center, zoom } },
-  holdMs,
-});
+): Segment => {
+  // Operator per-kind look (DirectorConfig.kindLooks) — basemap/wind, applied
+  // self-contained against defaults (not whatever's live) so a kind's look is
+  // deterministic regardless of what the previous cut left behind.
+  const look = cfg.kindLooks?.[kind];
+  return {
+    id: `${kind}:${subject}`,
+    kind,
+    title,
+    subtitle,
+    camera: { center, zoom },
+    // Operator overlay overrides (DirectorConfig.overlayOverrides) layer onto the
+    // kind's preset but never beat `extra` — a segment's own computed fields
+    // (activeVariable, satelliteGroup, …) always win.
+    patch: {
+      ...PRESETS[kind],
+      ...cfg.overlayOverrides?.[kind],
+      ...(look?.basemap ? { basemap: look.basemap } : {}),
+      ...(look?.windMode ? { windMode: look.windMode } : {}),
+      ...(look?.wind ? { wind: { ...DEFAULT_WIND_SETTINGS, ...look.wind } } : {}),
+      ...extra,
+      camera: { center, zoom },
+    },
+    holdMs,
+  };
+};
 
 type Detail = { label: string; value: string };
 

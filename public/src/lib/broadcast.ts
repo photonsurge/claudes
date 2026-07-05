@@ -17,7 +17,7 @@ import {
 import { alertRepPoint, continentOf } from "@photonsurge/shared/alerts/geo";
 import { hazardMeta, classifyHazard, type HazardType } from "./hazard";
 import { isoToFlag } from "@photonsurge/shared/tracks/flags";
-import { nearest } from "./geo";
+import { nearby, type Nearby } from "./geo";
 import type { City } from "./cities";
 
 /** "SEISMIC M5.9 · 12km SSW of … · TSUNAMI POTENTIAL" */
@@ -195,14 +195,28 @@ function alertRepPointOf(a: Alert): [number, number] | null {
   return null;
 }
 
-/** Nearest city's flag within range, so a rep point far from any city stays flag-less
- *  rather than naming the wrong country. */
-const FLAG_RADIUS_KM = 350;
-function nearestFlag(point: [number, number] | null, cities: City[]): string {
-  if (!point || cities.length === 0) return "";
-  const n = nearest(cities, point, (c) => [c.lng, c.lat]);
-  if (!n || n.distanceKm > FLAG_RADIUS_KM) return "";
-  return isoToFlag(n.item.cc);
+/** Notable cities within range, nearest first — the flag/name/photo source for a
+ *  feed row. Filtered to places with a real population (or capitals), same as
+ *  EventNearbyPanel, so a rep point doesn't get flagged/named by some tiny
+ *  unnamed hamlet that merely happens to be the closest point in the dataset. */
+const NEARBY_RADIUS_KM = 350;
+const MAX_NEARBY_NAMES = 2;
+function nearbyPlaces(point: [number, number] | null, cities: City[]): Nearby<City>[] {
+  if (!point || cities.length === 0) return [];
+  const notable = cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital);
+  return nearby(notable, point, (c) => [c.lng, c.lat], NEARBY_RADIUS_KM);
+}
+
+/** "near Wichita, Topeka" from the nearest notable cities, or "" if none are close. */
+function nearNamesLabel(places: Nearby<City>[]): string {
+  if (!places.length) return "";
+  return `near ${places.slice(0, MAX_NEARBY_NAMES).map((p) => p.item.name).join(", ")}`;
+}
+
+/** A photo for the row — the nearest notable city that actually has one (mirrors
+ *  EventNearbyPanel's "featured" pick), not necessarily the single nearest place. */
+function nearbyPhoto(places: Nearby<City>[]): string | undefined {
+  return places.find((p) => p.item.wikiThumb)?.item.wikiThumb;
 }
 
 /**
@@ -322,9 +336,11 @@ export interface WorldWatchItem {
   icon: string;
   /** Nearest enriched city's flag within range, "" if none close enough to trust. */
   flag: string;
+  /** Wikipedia thumbnail of the nearest enriched city that has one, if any. */
+  photo?: string;
   /** Main line — the hazard event or the quake's place. */
   title: string;
-  /** Subtitle — the area, or "TSUNAMI POTENTIAL" (empty if none). */
+  /** Subtitle — the area (+ "near City, City" if any are close), or "TSUNAMI POTENTIAL". */
   sub: string;
   /** "in 42m" / "expired" countdown for alerts, undefined for quakes / no expiry. */
   expiresIn?: string;
@@ -358,9 +374,10 @@ const QUAKE_ICON = "🌎";
  * quake rides above minor warnings. No cap: the panel marquees the whole list.
  *
  * `cities` (the same curated, wiki-enriched set the "near this event" panel
- * uses) is optional and purely cosmetic: when given, each row gets the flag of
- * its nearest city within FLAG_RADIUS_KM so the feed reads at a glance without
- * a fresh network call.
+ * uses) is optional and purely cosmetic: when given, each row gets the flag,
+ * up to two named nearby places, and a photo (if one of them has a Wikipedia
+ * thumbnail) from whatever's within NEARBY_RADIUS_KM — so the feed reads at a
+ * glance without a fresh network call.
  */
 export function worldWatchFeed(alerts: Alert[], quakes: Quake[], cities: City[] = []): WorldWatchItem[] {
   const distinct = alerts.filter((a) => !a.groupId || a.id === a.groupId);
@@ -371,30 +388,36 @@ export function worldWatchFeed(alerts: Alert[], quakes: Quake[], cities: City[] 
     const info = primaryInfo(a);
     const area = areaSummary(a);
     const hazard = classifyHazard({ event: info?.event, parameters: info?.parameters });
+    const places = nearbyPlaces(alertRepPointOf(a), cities);
+    const sub = [area === "—" ? "" : area, nearNamesLabel(places)].filter(Boolean).join(" · ");
     items.push({
       key: `a:${a.id}`,
       kind: "alert",
       color: SEVERITY_COLORS[rank] ?? "#9ca3af",
       tag: (SEVERITY_LABELS[rank] ?? "ALERT").toUpperCase(),
       icon: hazardMeta(hazard).icon,
-      flag: nearestFlag(alertRepPointOf(a), cities),
+      flag: places[0] ? isoToFlag(places[0].item.cc) : "",
+      photo: nearbyPhoto(places),
       title: info?.event ?? "Alert",
-      sub: area === "—" ? "" : area,
+      sub,
       expiresIn: a.expiresAt ? expiresLabel(a) : undefined,
       weight: rank,
     });
   }
 
   for (const q of quakes) {
+    const places = nearbyPlaces([q.lng, q.lat], cities);
+    const sub = [q.tsunami ? "TSUNAMI POTENTIAL" : "", nearNamesLabel(places)].filter(Boolean).join(" · ");
     items.push({
       key: `q:${q.id}`,
       kind: "quake",
       color: quakeColor(q.mag),
       tag: `M${q.mag.toFixed(1)}`,
       icon: QUAKE_ICON,
-      flag: nearestFlag([q.lng, q.lat], cities),
+      flag: places[0] ? isoToFlag(places[0].item.cc) : "",
+      photo: nearbyPhoto(places),
       title: q.place ?? `${q.lat.toFixed(1)}, ${q.lng.toFixed(1)}`,
-      sub: q.tsunami ? "TSUNAMI POTENTIAL" : "",
+      sub,
       weight: quakeWeight(q.mag),
     });
   }

@@ -10,10 +10,15 @@
  * operator's show-alerts/seismic toggles: it pulls its own global feed (see
  * useWorldWatch) so the broadcast always carries a rolling state-of-the-world
  * readout. Pointer-inert like the rest of the chrome.
+ *
+ * Takes the shared tally as a prop rather than calling useWorldWatch itself —
+ * BroadcastFrame fetches it once (already flavoured with the nearest-city flag
+ * via its own `cities` argument) and hands the same result to this AND
+ * WorldSituationPanel, so the (potentially 5000-row) global fetch never
+ * doubles up.
  */
-import { useWorldWatch } from "../../lib/world-watch";
+import type { WorldWatchState } from "../../lib/world-watch";
 import type { WorldWatchItem } from "../../lib/broadcast";
-import type { City } from "../../lib/cities";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
 /** Rows shown before the list starts marqueeing (taller feeds auto-scroll). */
@@ -32,9 +37,18 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
         background: `${item.color}14`,
       }}
     >
-      <span style={{ flex: "0 0 auto", fontSize: 17, lineHeight: 1 }} title={item.kind === "quake" ? "Seismic" : undefined}>
-        {item.icon}
-      </span>
+      {item.photo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.photo}
+          alt=""
+          style={{ flex: "0 0 auto", width: 30, height: 30, borderRadius: 6, objectFit: "cover" }}
+        />
+      ) : (
+        <span style={{ flex: "0 0 auto", width: 30, textAlign: "center", fontSize: 17, lineHeight: 1 }} title={item.kind === "quake" ? "Seismic" : undefined}>
+          {item.icon}
+        </span>
+      )}
       <span
         style={{
           flex: "0 0 auto",
@@ -102,14 +116,13 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
 }
 
 export default function WorldWatchPanel({
+  worldWatch,
   theme = DEFAULT_THEME,
-  cities = [],
 }: {
+  worldWatch: WorldWatchState;
   theme?: BroadcastTheme;
-  /** Curated, wiki-enriched cities (BroadcastFrame already loads these) — used only to flag rows. */
-  cities?: City[];
 }) {
-  const s = useWorldWatch(cities);
+  const s = worldWatch;
   const feed = s.feed;
   const quiet = feed.length === 0;
 

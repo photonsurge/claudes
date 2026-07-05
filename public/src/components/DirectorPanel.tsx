@@ -20,9 +20,12 @@ import {
   OVERLAY_KEYS,
   type GlobalMapType,
 } from "@photonsurge/shared/director-rois";
-import type { DirectorConfig, SegmentKind } from "@photonsurge/shared/director";
+import { SEGMENT_KINDS, type DirectorConfig, type SegmentKind } from "@photonsurge/shared/director";
+import { BASEMAPS } from "@photonsurge/shared/basemaps";
+import { DEFAULT_WIND_SETTINGS } from "@photonsurge/shared/control";
 import { useDirector } from "../lib/director";
-import DirectorHolds from "./DirectorHolds";
+import DirectorHolds, { KIND_LABEL } from "./DirectorHolds";
+import WindControls from "./WindControls";
 
 const box: React.CSSProperties = {
   background: "#0a0e16",
@@ -56,20 +59,6 @@ function overlayTogglesFor(kind: SegmentKind): string[] {
 function humanizeOverlayKey(key: string): string {
   return key.replace(/^show/, "").replace(/([A-Z])/g, " $1").trim();
 }
-
-/** Kinds worth showing an overlay-override editor for (only ones with any togglable key). */
-const OVERLAY_KIND_ORDER: SegmentKind[] = [
-  "intro",
-  "ocean",
-  "orbital",
-  "tour",
-  "country",
-  "weather",
-  "storm",
-  "quake",
-  "flight",
-  "ship",
-];
 
 export default function DirectorPanel({
   sceneId,
@@ -241,36 +230,107 @@ export default function DirectorPanel({
         </div>
       ) : null}
 
-      {/* Overlay overrides — per-kind on/off for the layers that kind's preset uses */}
+      {/* Look per shot type — per-kind overlay on/off, basemap, and wind look,
+          layered onto that kind's preset (see DirectorConfig.overlayOverrides
+          / kindLooks). Every eligible kind gets a block, even ones with no
+          overlay toggles (ad/summary), since basemap + wind still apply. */}
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Overlays per shot type:</div>
-        {OVERLAY_KIND_ORDER.filter((k) => config.kinds[k] && overlayTogglesFor(k).length > 0).map((kind) => {
+        <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Look per shot type:</div>
+        {SEGMENT_KINDS.filter((k) => config.kinds[k]).map((kind) => {
           const keys = overlayTogglesFor(kind);
+          const look = config.kindLooks[kind];
+          const hasCustomWind = !!look?.wind || !!look?.windMode;
           return (
-            <div key={kind} style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 2, textTransform: "capitalize" }}>{kind}</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px" }}>
-                {keys.map((key) => {
-                  const current = config.overlayOverrides[kind]?.[key] ?? true;
-                  return (
-                    <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                      <input
-                        type="checkbox"
-                        checked={current}
-                        onChange={() =>
-                          update({
-                            overlayOverrides: {
-                              ...config.overlayOverrides,
-                              [kind]: { ...config.overlayOverrides[kind], [key]: !current },
-                            },
-                          })
-                        }
-                      />
-                      {humanizeOverlayKey(key)}
-                    </label>
-                  );
-                })}
-              </div>
+            <div
+              key={kind}
+              style={{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #1b2030" }}
+            >
+              <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 4 }}>{KIND_LABEL[kind]}</div>
+
+              {keys.length ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", marginBottom: 6 }}>
+                  {keys.map((key) => {
+                    const current = config.overlayOverrides[kind]?.[key] ?? true;
+                    return (
+                      <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                        <input
+                          type="checkbox"
+                          checked={current}
+                          onChange={() =>
+                            update({
+                              overlayOverrides: {
+                                ...config.overlayOverrides,
+                                [kind]: { ...config.overlayOverrides[kind], [key]: !current },
+                              },
+                            })
+                          }
+                        />
+                        {humanizeOverlayKey(key)}
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 6 }}>
+                <span style={{ opacity: 0.7 }}>Basemap:</span>
+                <select
+                  value={look?.basemap ?? ""}
+                  onChange={(e) =>
+                    update({
+                      kindLooks: {
+                        ...config.kindLooks,
+                        [kind]: { ...config.kindLooks[kind], basemap: e.target.value || null },
+                      },
+                    })
+                  }
+                  style={{ ...box, padding: "3px 6px" }}
+                >
+                  <option value="">Auto (kind default)</option>
+                  {BASEMAPS.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={hasCustomWind}
+                  onChange={(e) =>
+                    update({
+                      kindLooks: {
+                        ...config.kindLooks,
+                        [kind]: e.target.checked
+                          ? { ...config.kindLooks[kind], wind: { ...DEFAULT_WIND_SETTINGS }, windMode: "particles" }
+                          : { ...config.kindLooks[kind], wind: null, windMode: null },
+                      },
+                    })
+                  }
+                />
+                Custom wind for this shot type
+              </label>
+
+              {hasCustomWind ? (
+                <div style={{ paddingLeft: 22, marginTop: 6 }}>
+                  <WindControls
+                    wind={{ ...DEFAULT_WIND_SETTINGS, ...look?.wind }}
+                    mode={look?.windMode ?? "particles"}
+                    onWind={(w) =>
+                      update({
+                        kindLooks: { ...config.kindLooks, [kind]: { ...config.kindLooks[kind], wind: w } },
+                      })
+                    }
+                    onMode={(m) =>
+                      update({
+                        kindLooks: { ...config.kindLooks, [kind]: { ...config.kindLooks[kind], windMode: m } },
+                      })
+                    }
+                  />
+                </div>
+              ) : null}
             </div>
           );
         })}

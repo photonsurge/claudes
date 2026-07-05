@@ -888,7 +888,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       for (const c of cities) {
         const minZoom = cityLabelMinZoom(c);
         out.push({
-          id: `city:${c.lng.toFixed(3)},${c.lat.toFixed(3)}`,
+          id: `city:${c.id}`,
           text: c.name,
           detail: cityDetail(c),
           position: [c.lng, c.lat, 0],

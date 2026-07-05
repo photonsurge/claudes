@@ -116,7 +116,7 @@ export function cityDetail(city: Pick<City, "country" | "population" | "isCapita
 // ── Client CRUD ──────────────────────────────────────────────────────────────
 
 export interface ListCitiesOptions {
-  /** Max rows (default: server default 300). */
+  /** Max rows (default: unlimited — every matching city). */
   limit?: number;
   /** Only cities with population ≥ this. */
   minPop?: number;

@@ -146,6 +146,23 @@ describe("buildCandidates", () => {
     expect(tour.segment.patch.showWind).toBe(true); // tour's own preset untouched
   });
 
+  it("layers a kindLooks basemap + wind override onto the preset without touching other kinds", async () => {
+    const pool = await buildCandidates(
+      fakeDb(),
+      cfg({ kindLooks: { quake: { basemap: "night", wind: { speedFactor: 16, color: "#cfe8ff" } } } }),
+    );
+    const q = pool.find((c) => c.segment.id === "quake:q1")!;
+    expect(q.segment.patch.basemap).toBe("night");
+    expect(q.segment.patch.wind?.speedFactor).toBe(16);
+    expect(q.segment.patch.wind?.color).toBe("#cfe8ff");
+    // Unspecified wind fields fall back to DEFAULT_WIND_SETTINGS, not whatever's live.
+    expect(q.segment.patch.wind?.numParticles).toBe(6000);
+    // Unrelated kinds keep their own preset basemap/wind untouched.
+    const tour = pool.find((c) => c.segment.kind === "tour")!;
+    expect(tour.segment.patch.basemap).not.toBe("night");
+    expect(tour.segment.patch.wind).toBeUndefined();
+  });
+
   it("derives a storm centroid from the alert polygon", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     const storm = pool.find((c) => c.segment.kind === "storm");

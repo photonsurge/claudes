@@ -49,8 +49,16 @@ const EMPTY_RAW: { alerts: Alert[]; quakes: Quake[] } = { alerts: [], quakes: []
  * "near this event" panel) is optional and only flavours the feed rows with a
  * nearest-city flag — kept out of the network-polling effect's deps so passing
  * a fresh array reference each render doesn't trigger a refetch.
+ *
+ * Called ONCE by BroadcastFrame and threaded down as a prop to both
+ * WorldSituationPanel and WorldWatchPanel — they render the same tally from two
+ * angles, so a second independent hook instance would double the (potentially
+ * 5000-row) fetch on every mount for no reason. `enabled` defers the cold-start
+ * fetch until the globe's own textures are ready (see useGlobeReadyOnce), so it
+ * doesn't compete with those for bandwidth right when the loading screen is
+ * racing to dismiss.
  */
-export function useWorldWatch(cities: City[] = []): WorldWatchState {
+export function useWorldWatch(cities: City[] = [], enabled = true): WorldWatchState {
   const [raw, setRaw] = useState(EMPTY_RAW);
   const { socket } = useSocket();
   const [liveTick, setLiveTick] = useState(0);
@@ -70,6 +78,7 @@ export function useWorldWatch(cities: City[] = []): WorldWatchState {
   }, [socket]);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     const poll = async () => {
       const [alerts, quakesRes] = await Promise.all([
@@ -85,7 +94,7 @@ export function useWorldWatch(cities: City[] = []): WorldWatchState {
       cancelled = true;
       clearInterval(iv);
     };
-  }, [liveTick]);
+  }, [liveTick, enabled]);
 
   return useMemo(() => {
     const feedAlerts = raw.alerts.filter((a) => a.maxSeverityRank >= MIN_ALERT_SEVERITY);

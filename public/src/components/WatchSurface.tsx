@@ -23,11 +23,13 @@ import { useFires } from "../lib/fires-overlay";
 import { useGeomag } from "../lib/geomag-overlay";
 import { useCams } from "../lib/cams/useCams";
 import type { City } from "../lib/cities";
+import { useGlobeReadyOnce } from "../lib/globe-ready";
 import GlobeView from "./GlobeView";
 import AlertLegend from "./AlertLegend";
 import BroadcastBed from "./audio/BroadcastBed";
 import BroadcastFrame from "./broadcast/BroadcastFrame";
 import AdBreak from "./broadcast/AdBreak";
+import LoadingScreen from "./broadcast/LoadingScreen";
 import { getBroadcastTheme } from "./broadcast/config";
 
 interface WatchSurfaceProps {
@@ -53,10 +55,18 @@ export default function WatchSurface({
   onAirSegment,
   upNext = [],
 }: WatchSurfaceProps) {
+  // Latches true once every weather variable's texture at the current fhr has
+  // decoded (see Globe's own "keep every map in RAM" preload). Gates the cold-
+  // start loading screen AND defers the overlay fetches below so they don't
+  // compete with those texture decodes for bandwidth/CPU during the race to
+  // first reveal — everything still pops in immediately after, well before a
+  // director cut or map-type switch would need it.
+  const ready = useGlobeReadyOnce(manifest, state.fhr);
+
   const { tracks, orbits, trails } = useTracks({
-    showSatellites: state.showSatellites,
-    showAircraft: state.showAircraft,
-    showShips: state.showShips,
+    showSatellites: state.showSatellites && ready,
+    showAircraft: state.showAircraft && ready,
+    showShips: state.showShips && ready,
     showOrbits: state.showOrbits,
     showTrails: state.showTrails,
     trailMinutes: state.trailMinutes,
@@ -64,21 +74,22 @@ export default function WatchSurface({
     center: state.camera.center,
     zoom: state.camera.zoom,
   });
-  const alerts = useAlertFeatures(state.showAlerts, state.alertSeverityMin, state.alertHazardsOff);
-  const quakes = useQuakes(state.showSeismic, state.seismicMinMag);
+  const alerts = useAlertFeatures(state.showAlerts && ready, state.alertSeverityMin, state.alertHazardsOff);
+  const quakes = useQuakes(state.showSeismic && ready, state.seismicMinMag);
   // Same focus point MonitorCluster uses for the fake-vs-real trace decision:
   // the on-air segment's location if there is one, else the current camera.
   const seismoFocus: [number, number] | null = onAirSegment?.camera.center ?? state.camera.center ?? null;
-  const { stations: seismoStations, active: seismoActive } = useSeismoGauge(seismoFocus, state.showSeismic);
-  const cables = useCables(state.showCables);
-  const faults = useFaults(state.showFaults);
-  const aurora = useAurora(state.showAurora);
-  const satimg = useSatImg(state.showSatImg);
-  const fires = useFires(state.showFires);
-  const geomag = useGeomag(state.showMagneticField);
+  const { stations: seismoStations, active: seismoActive } = useSeismoGauge(seismoFocus, state.showSeismic && ready);
+  const cables = useCables(state.showCables && ready);
+  const faults = useFaults(state.showFaults && ready);
+  const aurora = useAurora(state.showAurora && ready);
+  const satimg = useSatImg(state.showSatImg && ready);
+  const fires = useFires(state.showFires && ready);
+  const geomag = useGeomag(state.showMagneticField && ready);
   // Webcams feed the "near this event" broadcast panel; only load them when the
   // chrome is on (the plain surface doesn't show the panel).
-  const cams = useCams(state.showBroadcastChrome);
+  const cams = useCams(state.showBroadcastChrome && ready);
+  const theme = getBroadcastTheme(state.broadcastTheme);
 
   // When the director is on a plane/ship, spotlight that exact marker on the
   // globe. The segment id is `flight:<icao24>` / `ship:<mmsi>` — map "flight" to
@@ -137,9 +148,10 @@ export default function WatchSurface({
           cams={cams}
           aurora={aurora}
           geomag={geomag}
-          theme={getBroadcastTheme(state.broadcastTheme)}
+          theme={theme}
           onAirSegment={onAirSegment ?? null}
           upNext={upNext}
+          assetsReady={ready}
         />
       ) : null}
       {/* Plain run/attribution label — only on the clean surface; the broadcast
@@ -181,6 +193,10 @@ export default function WatchSurface({
           same socket as the rest of the ControlState). Renders UI only while a
           browser blocks autoplay; in OBS it just plays. */}
       <BroadcastBed audio={state.audio} segment={onAirSegment ?? null} />
+
+      {/* Cold-start cover: hides the globe until its textures are ready (see
+          `ready` above), then fades. Never reappears once dismissed. */}
+      <LoadingScreen visible={!ready} theme={theme} />
     </main>
   );
 }

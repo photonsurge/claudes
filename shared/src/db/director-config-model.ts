@@ -73,6 +73,7 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
     // precedent as satImgFeeds in broadcast-state-model.ts.
     mapTypes: { type: mongoose.Schema.Types.Mixed, default: {} },
     overlayOverrides: { type: mongoose.Schema.Types.Mixed, default: {} },
+    kindLooks: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   mongoTimestamps,
 );

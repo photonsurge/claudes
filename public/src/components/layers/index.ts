@@ -6,6 +6,7 @@
 "use client";
 
 import { ScatterplotLayer } from "@deck.gl/layers";
+import { DataFilterExtension } from "@deck.gl/extensions";
 import {
   RasterLayer,
   ParticleLayer,

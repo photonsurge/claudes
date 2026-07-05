@@ -93,9 +93,16 @@ async function refreshGibs(db: Awaited<ReturnType<typeof getAppDb>>) {
   }
 
   if (!done.length) throw new Error("all satimg frames failed");
-  blogInfo(TAG, `satimg bake: ${done.length}/${plan.length} frames`, { done }, "satimg", "refresh");
+
+  // Drop any stale frame not in this bake plan (renamed/removed feeds or looks — e.g.
+  // the old plain `goes-east` from before the disc×look split). Guarded on a non-empty
+  // plan so a bad run can't wipe the cache.
+  const { removed } = await db.satimg.pruneExcept(plan.map((p) => p.satId));
+  if (removed) log(TAG, `satimg pruned stale frames`, { removed });
+
+  blogInfo(TAG, `satimg bake: ${done.length}/${plan.length} frames`, { done, pruned: removed }, "satimg", "refresh");
   emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "satimg" } });
-  return { frames: done };
+  return { frames: done, pruned: removed };
 }
 
 /** Raw Himawari-9 satpy bake (opt-in). */

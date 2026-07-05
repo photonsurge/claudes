@@ -10,8 +10,12 @@
  * they read better as two distinct blocks than one crowded card. Deliberately
  * independent of the operator's show-alerts/seismic toggles and the camera
  * bbox (see useWorldWatch). Pointer-inert like the rest of the chrome.
+ *
+ * Takes the shared tally as a prop rather than calling useWorldWatch itself —
+ * BroadcastFrame fetches it once and hands the same result to this AND
+ * WorldWatchPanel, so the (potentially 5000-row) global fetch never doubles up.
  */
-import { useWorldWatch } from "../../lib/world-watch";
+import type { WorldWatchState } from "../../lib/world-watch";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
 /** Hero count + caption. */
@@ -174,8 +178,14 @@ function ContinentRow({
   );
 }
 
-export default function WorldSituationPanel({ theme = DEFAULT_THEME }: { theme?: BroadcastTheme }) {
-  const s = useWorldWatch();
+export default function WorldSituationPanel({
+  worldWatch,
+  theme = DEFAULT_THEME,
+}: {
+  worldWatch: WorldWatchState;
+  theme?: BroadcastTheme;
+}) {
+  const s = worldWatch;
   const topColor = s.bySeverity[0]?.color ?? theme.accent;
 
   // Each column's own busiest continent — so the alerts bar and the quakes bar

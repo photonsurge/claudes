@@ -12,6 +12,7 @@ import type { WeatherManifest, WeatherVariableManifest } from "@photonsurge/shar
 import { getPalette, type Palette } from "@photonsurge/shared/palettes";
 import { getVariable } from "@photonsurge/shared/variables";
 import type { City } from "../../lib/cities";
+import { cityLabelMinZoom } from "../../lib/cities";
 import { cosSunZenith, nightAlpha } from "../../lib/sun";
 
 /** WeatherLayers `bounds` is [west, south, east, north]. */
@@ -365,6 +366,8 @@ export interface CityScatterProps {
   getPosition: (c: City) => [number, number];
   getRadius: (c: City) => number;
   getFillColor: (c: City) => [number, number, number, number];
+  /** The globe zoom at which this city's dot should appear (same threshold as its label). */
+  getFilterValue: (c: City) => number;
 }
 
 export interface CityTextProps {
@@ -410,6 +413,10 @@ export function cityProps(
           Math.round(day[3] + (255 - day[3]) * t),
         ];
       },
+      // Same population/capital-driven threshold as the name label — so a
+      // whole-globe view isn't a snowstorm of tiny towns' dots, and a dot only
+      // appears once you've zoomed in far enough to read its name anyway.
+      getFilterValue: (c) => cityLabelMinZoom(c),
     },
     text: {
       id: "cities-text",

@@ -26,6 +26,7 @@ import { buildTicker } from "../../lib/broadcast";
 import { bboxForCamera } from "../../lib/history-client";
 import { legendVariableFor } from "../../lib/legend";
 import { nearest, formatKm } from "../../lib/geo";
+import { useWorldWatch } from "../../lib/world-watch";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { useStageScale, STAGE_W, STAGE_H } from "./useStageScale";
 import Ticker from "./Ticker";
@@ -81,6 +82,7 @@ export default function BroadcastFrame({
   theme = DEFAULT_THEME,
   onAirSegment = null,
   upNext = [],
+  assetsReady = true,
 }: {
   state: ControlState;
   manifest: WeatherManifest | null;
@@ -106,8 +108,13 @@ export default function BroadcastFrame({
   /** Director's best-guess "coming up" preview (score-ranked at the last cut,
    *  not a committed pick) — drives the small UP NEXT line by the SYSLOG feed. */
   upNext?: { kind: SegmentKind; title: string }[];
+  /** True once the globe's own textures are ready (see useGlobeReadyOnce) —
+   *  defers the WORLD WATCH panels' cold-start fetch so it doesn't compete with
+   *  those for bandwidth while the loading screen is still up. */
+  assetsReady?: boolean;
 }) {
   const scale = useStageScale();
+  const worldWatch = useWorldWatch(cities, assetsReady);
   const ticker = buildTicker({ alerts, quakes, tracks });
   // A round-up segment takes over the bottom crawl with its own narrative
   // (single long line, so it just scrolls through once and loops) instead of
@@ -269,8 +276,8 @@ export default function BroadcastFrame({
             gap: 14,
           }}
         >
-          <WorldSituationPanel theme={theme} />
-          <WorldWatchPanel theme={theme} cities={cities} />
+          <WorldSituationPanel worldWatch={worldWatch} theme={theme} />
+          <WorldWatchPanel worldWatch={worldWatch} theme={theme} />
         </div>
 
         {/* Bottom-right column: UP NEXT hint stacked above the always-on

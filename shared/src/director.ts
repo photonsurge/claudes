@@ -14,7 +14,8 @@
  * by /control via /api/director/config and read by the worker each tick. Same
  * cold-start-from-Mongo pattern as the broadcast ControlState.
  */
-import type { ControlState } from "./control";
+import type { ControlState, WindSettings, WindMode } from "./control";
+import { DEFAULT_WIND_SETTINGS } from "./control";
 import type { HazardType } from "./alerts/hazard";
 import type { AdMediaType } from "./ads/types";
 import type { SummaryPeriod } from "./db/event-summary-model";
@@ -319,6 +320,24 @@ export interface DirectorConfig {
    * overlay without touching any other kind. Empty = today's PRESETS untouched.
    */
   overlayOverrides: Partial<Record<SegmentKind, Partial<Record<string, boolean>>>>;
+  /**
+   * Per-kind basemap + wind-particle look overrides, layered onto whatever's
+   * globally live — e.g. give storm shots a denser, faster wind look than a
+   * country spotlight. Absent kind/field falls back to the live operator
+   * setting (today's behaviour, unchanged).
+   */
+  kindLooks: Partial<Record<SegmentKind, KindLook>>;
+}
+
+/**
+ * A per-kind basemap + wind-particle override (see `DirectorConfig.kindLooks`).
+ * A field set to `null` in a patch clears it back to "inherit the live
+ * setting" (see `mergeKindLooks`) — `undefined` just means "not touched".
+ */
+export interface KindLook {
+  basemap?: string | null;
+  windMode?: WindMode | null;
+  wind?: Partial<WindSettings> | null;
 }
 
 /**
@@ -393,6 +412,7 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   skipNonce: 0,
   mapTypes: {},
   overlayOverrides: {},
+  kindLooks: {},
 };
 
 const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
@@ -460,6 +480,59 @@ function mergeBoolMapMap(
   return out;
 }
 
+const WIND_KEYS = ["numParticles", "speedFactor", "maxAge", "width", "opacity", "color"] as const;
+
+/**
+ * Merge a per-kind look map (untrusted) onto a base — unknown kinds dropped,
+ * each kind's `basemap`/`windMode`/`wind` merged field-by-field (not
+ * replaced), so a patch touching one wind slider doesn't wipe the kind's
+ * other fields. Since patches travel as JSON (where an `undefined` value is
+ * indistinguishable from an absent key), a key must be explicitly present —
+ * checked with `in`, not `!== undefined` — to be touched at all; send `null`
+ * to clear a field back to "inherit the live setting". Used for `kindLooks`.
+ */
+function mergeKindLooks(
+  base: Partial<Record<SegmentKind, KindLook>>,
+  patch: Partial<Record<SegmentKind, KindLook>> | undefined,
+): Partial<Record<SegmentKind, KindLook>> {
+  const out = { ...base };
+  if (patch) {
+    for (const k of SEGMENT_KINDS) {
+      const inner = patch[k] as Record<string, unknown> | null | undefined;
+      if (!inner || typeof inner !== "object") continue;
+      const curBase = out[k] ?? {};
+      const cur: KindLook = { ...curBase };
+
+      if ("basemap" in inner) {
+        cur.basemap = typeof inner.basemap === "string" ? inner.basemap : undefined;
+      }
+      if ("windMode" in inner) {
+        cur.windMode = inner.windMode === "particles" || inner.windMode === "barbs" ? inner.windMode : undefined;
+      }
+      if ("wind" in inner) {
+        const windPatch = inner.wind as Record<string, unknown> | null | undefined;
+        if (!windPatch || typeof windPatch !== "object") {
+          cur.wind = undefined;
+        } else {
+          const w: Partial<WindSettings> = { ...curBase.wind };
+          for (const key of WIND_KEYS) {
+            if (!(key in windPatch)) continue;
+            const v = windPatch[key];
+            if (key === "color") {
+              if (typeof v === "string") w.color = v;
+            } else if (typeof v === "number" && Number.isFinite(v)) {
+              (w as Record<string, number>)[key] = v;
+            }
+          }
+          cur.wind = w;
+        }
+      }
+      out[k] = cur;
+    }
+  }
+  return out;
+}
+
 /**
  * Merge a partial (possibly untrusted, from HTTP) director-config patch onto a
  * base. Pure — used by the API route and unit-tested. Mirrors mergeControlState.
@@ -492,6 +565,7 @@ export function mergeDirectorConfig(
     skipNonce: num(patch.skipNonce, base.skipNonce),
     mapTypes: mergeStringArrayMap(base.mapTypes, patch.mapTypes),
     overlayOverrides: mergeBoolMapMap(base.overlayOverrides, patch.overlayOverrides),
+    kindLooks: mergeKindLooks(base.kindLooks, patch.kindLooks),
   };
 }
 

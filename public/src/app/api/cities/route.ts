@@ -11,17 +11,20 @@ const SORT_FIELDS = new Set(["name", "country", "lat", "lng", "population", "isC
 
 /**
  * GET /api/cities — cities for overlays, sorted by population desc.
- * Query params (all optional): `limit` (default 300, max 8000), `minPop`,
- * `capital=1`. Defaults keep the globe readable while the DB holds ~7k cities.
+ * Query params (all optional): `limit` (max 20000), `minPop`, `capital=1`.
+ * No `limit` → every matching city is returned (no arbitrary cap) so the globe
+ * can show as much detail as a zoomed-in shot calls for.
  */
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const paged = sp.has("page") || sp.has("pageSize") || sp.has("sort") || sp.has("q");
   const pageSize = paged
     ? Math.floor(Math.min(Math.max(Number(sp.get("pageSize")) || 25, 1), MAX_PAGE_SIZE))
-    : Math.min(Math.max(Number(sp.get("limit")) || 300, 1), 8000);
+    : sp.has("limit")
+      ? Math.min(Math.max(Number(sp.get("limit")) || 1, 1), 20000)
+      : undefined;
   const page = paged ? Math.max(Math.floor(Number(sp.get("page")) || 1), 1) : 1;
-  const skip = paged ? (page - 1) * pageSize : 0;
+  const skip = paged ? (page - 1) * pageSize! : 0;
   const minPop = Math.max(Number(sp.get("minPop")) || 0, 0);
   const capital = sp.get("capital");
   const q = sp.get("q")?.trim();
@@ -53,7 +56,7 @@ export async function GET(req: Request) {
       total: paged ? total : cities.length,
       page,
       pageSize,
-      pageCount: paged ? Math.ceil(total / pageSize) : cities.length ? 1 : 0,
+      pageCount: paged ? Math.ceil(total / pageSize!) : cities.length ? 1 : 0,
       sort: sortField,
       direction: direction === 1 ? "asc" : "desc",
     },

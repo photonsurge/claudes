@@ -267,7 +267,7 @@ describe("worldWatchFeed", () => {
   });
 
   const city = (over: Partial<City> = {}): City =>
-    ({ id: "c1", name: "Paris", lat: 48.85, lng: 2.35, cc: "FR", ...over }) as City;
+    ({ id: "c1", name: "Paris", lat: 48.85, lng: 2.35, cc: "FR", population: 2_100_000, ...over }) as City;
 
   const withPoint = (a: Alert, lng: number, lat: number): Alert => ({
     ...a,
@@ -294,6 +294,47 @@ describe("worldWatchFeed", () => {
     const feed = worldWatchFeed([], [quake({ lat: 48.85, lng: 2.35 })], [city()]);
     expect(feed[0].icon).toBe("🌎");
     expect(feed[0].flag).toBe("🇫🇷");
+  });
+
+  it("names up to two nearby notable cities, nearest first", () => {
+    const wildfire = withPoint(raw(4, "Forest Fire Warning", "Île-de-France"), 2.3, 48.86);
+    const feed = worldWatchFeed(
+      [wildfire],
+      [],
+      [
+        city({ id: "versailles", name: "Versailles", lat: 48.8, lng: 2.13 }),
+        city({ id: "paris", name: "Paris", lat: 48.85, lng: 2.35 }),
+        city({ id: "reims", name: "Reims", lat: 49.26, lng: 4.03 }),
+      ],
+    );
+    expect(feed[0].sub).toBe("Île-de-France · near Paris, Versailles");
+  });
+
+  it("ignores tiny, non-notable places for names/flag/photo", () => {
+    const wildfire = withPoint(raw(4, "Forest Fire Warning", "Île-de-France"), 2.3, 48.86);
+    const hamlet = city({ id: "hamlet", name: "Tinytown", lat: 48.86, lng: 2.31, population: 0, isCapital: false });
+    const feed = worldWatchFeed([wildfire], [], [hamlet]);
+    expect(feed[0].flag).toBe("");
+    expect(feed[0].sub).toBe("Île-de-France");
+  });
+
+  it("picks a photo from the nearest notable city that has one", () => {
+    const wildfire = withPoint(raw(4, "Forest Fire Warning", "Île-de-France"), 2.3, 48.86);
+    const feed = worldWatchFeed(
+      [wildfire],
+      [],
+      [
+        city({ id: "paris", name: "Paris", lat: 48.85, lng: 2.35 }),
+        city({ id: "versailles", name: "Versailles", lat: 48.8, lng: 2.13, wikiThumb: "https://example.com/versailles.jpg" }),
+      ],
+    );
+    expect(feed[0].photo).toBe("https://example.com/versailles.jpg");
+  });
+
+  it("has no photo when no nearby city carries one", () => {
+    const wildfire = withPoint(raw(4, "Forest Fire Warning", "Île-de-France"), 2.3, 48.86);
+    const feed = worldWatchFeed([wildfire], [], [city()]);
+    expect(feed[0].photo).toBeUndefined();
   });
 
   it("carries an expiry countdown for alerts that have one, omitting it otherwise", () => {

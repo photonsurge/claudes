@@ -114,6 +114,19 @@ export function makeSatImgRepo(satImgModel: Model<iSatImgModel>) {
       };
     },
 
+    /**
+     * Drop every cached frame whose satId is NOT in `keep` — the worker calls this
+     * after a bake with the current plan's satIds so stale frames (a feed/look that was
+     * renamed or removed, e.g. the old plain `goes-east` before the disc×look split)
+     * don't linger and bloat the collection. No-op when `keep` is empty (a failed bake
+     * must never wipe the cache).
+     */
+    async pruneExcept(keep: string[]): Promise<{ removed: number }> {
+      if (!keep.length) return { removed: 0 };
+      const res = await satImgModel.deleteMany({ satId: { $nin: keep } });
+      return { removed: res.deletedCount ?? 0 };
+    },
+
     async count(): Promise<{ satimg: number }> {
       const satimg = await satImgModel.estimatedDocumentCount();
       return { satimg };
