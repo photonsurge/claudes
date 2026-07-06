@@ -26,11 +26,11 @@ describe("forecastSteps", () => {
     expect(forecastSteps(3, 6)).toEqual([0]);
   });
 
-  it("matches the production default (48h / 3h = 17 steps)", () => {
-    const steps = forecastSteps(48, 3);
-    expect(steps).toHaveLength(17);
+  it("matches the production default (72h / 3h = 25 steps)", () => {
+    const steps = forecastSteps(72, 3);
+    expect(steps).toHaveLength(25);
     expect(steps[0]).toBe(0);
-    expect(steps[steps.length - 1]).toBe(48);
+    expect(steps[steps.length - 1]).toBe(72);
   });
 });
 
@@ -63,7 +63,7 @@ describe("cfg", () => {
     delete process.env.FORECAST_HOURS;
     delete process.env.STEP_HOURS;
     delete process.env.RETAIN_RUNS;
-    expect(cfg()).toEqual({ model: "gfs", forecastHours: 48, stepHours: 3, retainRuns: 3 });
+    expect(cfg()).toEqual({ model: "gfs", forecastHours: 72, stepHours: 3, retainRuns: 3 });
   });
 
   it("reads overrides from the environment", () => {

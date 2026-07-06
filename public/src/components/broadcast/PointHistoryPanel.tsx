@@ -224,8 +224,9 @@ export function MiniChart({
   );
 }
 
-/** Section header row inside the card. */
-function SectionTitle({
+/** Section header row inside the card. Exported so other broadcast cards
+ *  (e.g. ForecastPanel) share the same title/tag/page-counter styling. */
+export function SectionTitle({
   title,
   tag,
   accent,

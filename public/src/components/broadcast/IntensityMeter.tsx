@@ -29,8 +29,9 @@ export default function IntensityMeter({
   showSatImg?: boolean;
   satImgFeeds?: ControlState["satImgFeeds"];
 }) {
+  const sat = satImgCaptionFor(showSatImg, satImgFeeds);
+
   if (!variable) {
-    const sat = satImgCaptionFor(showSatImg, satImgFeeds);
     if (!sat) return null;
     return (
       <div style={{ textAlign: "center", pointerEvents: "none", fontFamily: "system-ui, sans-serif" }}>
@@ -168,6 +169,24 @@ export default function IntensityMeter({
           </span>
         ))}
       </div>
+      {/* The `global` satellite feed drapes over whatever variable is on air
+          (see satimg-feature memory), so the meter above is showing the
+          variable's legend, not the imagery's — without this, live satellite
+          cloud cover appears on the globe with no on-screen indication at all. */}
+      {sat ? (
+        <div
+          style={{
+            fontSize: compact ? 10 : 11,
+            fontWeight: 700,
+            opacity: 0.8,
+            color: "#dfe7f5",
+            textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+            marginTop: -2,
+          }}
+        >
+          🛰 {sat.subtitle}
+        </div>
+      ) : null}
     </div>
   );
 }

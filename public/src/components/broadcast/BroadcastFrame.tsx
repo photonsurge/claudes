@@ -41,7 +41,8 @@ import SpaceWeatherMeter from "./SpaceWeatherMeter";
 import { SeismicMonitor, TsunamiMonitor } from "./MonitorCluster";
 import SeismicStationRow from "./SeismicStationRow";
 import TideStationRow from "./TideStationRow";
-import PointHistoryPanel from "./PointHistoryPanel";
+import PointHistoryPanel, { usePagedSlides } from "./PointHistoryPanel";
+import ForecastPanel from "./ForecastPanel";
 import EventOverlay from "./EventOverlay";
 import EventNearbyPanel from "./EventNearbyPanel";
 import QuakeReport from "./QuakeReport";
@@ -142,11 +143,31 @@ export default function BroadcastFrame({
   // return null when their toggle is off, so presence alone gates this.
   const spaceWeatherShown = aurora?.meta != null || geomag?.meta != null;
   // A country spotlight scopes the global alerts/quakes feeds down to its own
-  // bbox (`shared/director-countries`) so the on-air card's "IN VIEW" rollup
-  // reads as the nation's, not the whole planet's.
-  const countryOnAir = onAirSegment?.kind === "country" ? countryShot(onAirSegment.id) : undefined;
-  const countryAlerts = countryOnAir ? scopeAlertsToBbox(alerts, countryOnAir.bbox) : alerts;
-  const countryQuakes = countryOnAir ? scopeQuakesToBbox(quakes, countryOnAir.bbox) : quakes;
+  // bbox (`shared/director-countries`); a region tour / weather-check segment
+  // has no fixed bbox but does sit on a real ground location, so it gets the
+  // same treatment via the camera's own framing (see bboxForCamera) — without
+  // this, every wide shot but "country" showed the same whole-planet "IN VIEW"
+  // tally no matter what was actually on screen.
+  // Segment ids are "kind:subject" (see worker's `make()`), so a country
+  // segment's id is e.g. "country:portugal" — the catalog is keyed by the
+  // bare subject.
+  const countryOnAir =
+    onAirSegment?.kind === "country" ? countryShot(onAirSegment.id.split(":")[1] ?? "") : undefined;
+  const areaBbox = countryOnAir
+    ? countryOnAir.bbox
+    : onAirSegment && segmentHasLocation && !eventTargeted
+      ? bboxForCamera(onAirSegment.camera.center, onAirSegment.camera.zoom)
+      : undefined;
+  const areaAlerts = areaBbox ? scopeAlertsToBbox(alerts, areaBbox) : alerts;
+  const areaQuakes = areaBbox ? scopeQuakesToBbox(quakes, areaBbox) : quakes;
+
+  // Country spotlight alternates the "IN VIEW" roundup card and the "TOP
+  // CITIES" info card as separate slides instead of stacking both — stacked,
+  // the combined column ran taller than the frame and cut off against the top
+  // edge. Both stay mounted (toggled via display, not conditional rendering)
+  // so CountrySpotlightPanel's own featured-city/climate timers and fetched
+  // city list survive across the toggle instead of resetting every time.
+  const countrySlide = usePagedSlides(countryOnAir ? [0, 1] : [], 1);
 
   // Whatever currently owns the bottom-left slot (mutually exclusive on
   // segment kind) — the history panel stacks above whichever of these is on
@@ -176,12 +197,16 @@ export default function BroadcastFrame({
           )
         : countryOnAir
           ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <OnAirCard segment={onAirSegment} alerts={countryAlerts} quakes={countryQuakes} theme={theme} />
-              <CountrySpotlightPanel country={countryOnAir} color={KIND_COLOR.country} />
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <div style={{ display: countrySlide.page === 0 ? "block" : "none" }}>
+                <OnAirCard segment={onAirSegment} alerts={areaAlerts} quakes={areaQuakes} theme={theme} />
+              </div>
+              <div style={{ display: countrySlide.page === 1 ? "block" : "none" }}>
+                <CountrySpotlightPanel country={countryOnAir} color={KIND_COLOR.country} />
+              </div>
             </div>
           )
-          : <OnAirCard segment={onAirSegment} alerts={alerts} quakes={quakes} theme={theme} />;
+          : <OnAirCard segment={onAirSegment} alerts={areaAlerts} quakes={areaQuakes} theme={theme} />;
 
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 5 }}>
@@ -209,7 +234,10 @@ export default function BroadcastFrame({
             extraDetails={nearestCityDetails(onAirSegment, cities)}
             historyPanel={
               segmentHasLocation ? (
-                <PointHistoryPanel center={onAirSegment.camera.center} theme={theme} compact />
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <PointHistoryPanel center={onAirSegment.camera.center} theme={theme} compact />
+                  <ForecastPanel center={onAirSegment.camera.center} theme={theme} compact />
+                </div>
               ) : null
             }
           />
@@ -236,6 +264,20 @@ export default function BroadcastFrame({
           }}
         >
           {leftBottomPanel}
+          {!eventTargeted ? (
+            <ForecastPanel
+              center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}
+              bbox={
+                segmentHasLocation
+                  ? bboxForCamera(
+                      onAirSegment?.camera.center ?? state.camera.center,
+                      onAirSegment?.camera.zoom ?? state.camera.zoom,
+                    )
+                  : null
+              }
+              theme={theme}
+            />
+          ) : null}
           {!eventTargeted ? (
             <PointHistoryPanel
               center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}

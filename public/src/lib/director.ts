@@ -214,11 +214,13 @@ export function eventPulse(director: DirectorState | null): [number, number] | n
 }
 
 /** ISO-3166 alpha-2 of the on-air country spotlight to glow-highlight on the
- *  globe, or null. The segment's id is the CountryShot catalog id (e.g.
- *  "portugal"), not the ISO code itself — see shared/director-countries. */
+ *  globe, or null. Segment ids are "kind:subject" (e.g. "country:portugal"),
+ *  so the CountryShot catalog lookup needs the bare subject — see
+ *  shared/director-countries. */
 export function activeCountryIso(director: DirectorState | null): string | null {
   if (!director?.active || director.segment?.kind !== "country") return null;
-  return countryShot(director.segment.id)?.iso2 ?? null;
+  const subject = director.segment.id.split(":")[1] ?? "";
+  return countryShot(subject)?.iso2 ?? null;
 }
 
 /**

@@ -431,6 +431,22 @@ const SEED_OVERLAYS_OFF: Partial<Record<string, boolean>> = Object.fromEntries(
   OVERLAY_KEYS.map((k) => [k, false]),
 );
 
+/**
+ * A background-only wind look for slides where wind isn't the point — thin,
+ * slow, and translucent so it never competes with the actual subject (the
+ * scalar field / satellite photo / cities). The dramatic `WIND_PRESETS.storm`
+ * look (and the flight kind's jet-stream slide) stays at full strength
+ * un-toned-down — for those, showing prominent wind IS the point of the shot.
+ */
+const SUBTLE_WIND: WindSettings = { numParticles: 2500, speedFactor: 4, maxAge: 35, width: 1, opacity: 0.1, color: "#ffffff" };
+
+/**
+ * The dedicated wind-showcase look — denser and faster than the base
+ * `WIND_PRESETS.storm`, at full opacity, for the handful of slides where
+ * dramatic wind IS the point (storm chaser, rough seas, the jet stream).
+ */
+const GUST_WIND: WindSettings = { ...WIND_PRESETS.storm, numParticles: 14000, speedFactor: 20, opacity: 1 };
+
 function seedSlide(id: string, name: string, look: KindLook, on: readonly string[]): KindSlide {
   const overlays = { ...SEED_OVERLAYS_OFF };
   for (const k of on) overlays[k] = true;
@@ -453,7 +469,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     seedSlide(
       "intro-cinematic-dark",
       "Cinematic Dark",
-      { basemap: "dark", windMode: "particles", wind: { ...WIND_PRESETS.dense, opacity: 0.5 } },
+      { basemap: "dark", windMode: "particles", wind: SUBTLE_WIND },
       ["showWind", "showPressure", "showCities"],
     ),
     seedSlide(
@@ -462,18 +478,28 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       { basemap: "night", windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } },
       ["showCities"],
     ),
+    seedSlide("intro-aurora-glow", "Aurora Glow", { windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } }, [
+      "showAurora",
+      "showCities",
+    ]),
   ],
   ocean: [
     seedSlide(
       "ocean-storm-seas",
       "Storm Seas",
-      { windMode: "particles", wind: WIND_PRESETS.storm, activeVariable: "wave" },
+      { windMode: "particles", wind: GUST_WIND, activeVariable: "wave" },
       ["showWind", "showCities"],
     ),
     seedSlide("ocean-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
       "showSatImg",
       "showCities",
     ]),
+    seedSlide(
+      "ocean-salinity",
+      "Ocean Salinity",
+      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "salinity" },
+      ["showWind", "showCities"],
+    ),
   ],
   orbital: [
     seedSlide("orbital-classic", "Constellation Classic", { basemap: "dark" }, [
@@ -488,24 +514,36 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showTrackLabels",
       "showCities",
     ]),
+    seedSlide("orbital-true-color", "True Color", { basemap: "satellite" }, [
+      "showSatellites",
+      "showOrbits",
+      "showTrackLabels",
+      "showCities",
+    ]),
   ],
   tour: [
     seedSlide(
       "tour-weather-check",
       "Weather Check",
-      { windMode: "particles", wind: { ...WIND_PRESETS.default, opacity: 0.5 }, activeVariable: "temp" },
+      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "temp" },
       ["showWind", "showElevation", "showCities"],
     ),
     seedSlide("tour-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
       "showSatImg",
       "showCities",
     ]),
+    seedSlide(
+      "tour-storm-watch",
+      "Storm Watch",
+      { windMode: "particles", wind: GUST_WIND, activeVariable: "rain" },
+      ["showWind", "showPressure", "showRadar", "showCities"],
+    ),
   ],
   country: [
     seedSlide(
       "country-national-check",
       "National Weather Check",
-      { windMode: "particles", wind: { ...WIND_PRESETS.default, opacity: 0.5 } },
+      { windMode: "particles", wind: SUBTLE_WIND },
       ["showWind", "showPressure", "showRadar", "showAlerts", "showElevation", "showCities"],
     ),
     seedSlide("country-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
@@ -513,12 +551,20 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showAlerts",
       "showCities",
     ]),
+    seedSlide("country-barb-chart", "Barb Chart", { windMode: "barbs", wind: SUBTLE_WIND }, [
+      "showWind",
+      "showPressure",
+      "showRadar",
+      "showAlerts",
+      "showElevation",
+      "showCities",
+    ]),
   ],
   weather: [
     seedSlide(
       "weather-synoptic-standard",
       "Synoptic Standard",
-      { windMode: "particles", wind: { ...WIND_PRESETS.default, opacity: 0.5 }, activeVariable: "temp" },
+      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "temp" },
       ["showWind", "showPressure", "showContours", "showRadar", "showAlerts", "showElevation", "showCities"],
     ),
     seedSlide("weather-satellite-clouds", "Satellite Clouds", { showSatImg: true, satImgLook: "geocolor" }, [
@@ -526,9 +572,18 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showAlerts",
       "showCities",
     ]),
+    seedSlide("weather-wind-barbs", "Wind Barbs", { windMode: "barbs", wind: SUBTLE_WIND, activeVariable: "rain" }, [
+      "showWind",
+      "showPressure",
+      "showContours",
+      "showRadar",
+      "showAlerts",
+      "showElevation",
+      "showCities",
+    ]),
   ],
   storm: [
-    seedSlide("storm-chaser", "Storm Chaser", { windMode: "particles", wind: WIND_PRESETS.storm }, [
+    seedSlide("storm-chaser", "Storm Chaser", { windMode: "particles", wind: GUST_WIND }, [
       "showWind",
       "showPressure",
       "showRadar",
@@ -540,6 +595,12 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showAlerts",
       "showCities",
     ]),
+    seedSlide(
+      "storm-radar-focus",
+      "Radar Focus",
+      { windMode: "barbs", wind: SUBTLE_WIND, activeVariable: "rain" },
+      ["showWind", "showPressure", "showContours", "showRadar", "showAlerts", "showCities"],
+    ),
   ],
   quake: [
     seedSlide("quake-terrain-contours", "Terrain Contours", { basemap: "dark" }, [
@@ -556,9 +617,16 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showFaults",
       "showCities",
     ]),
+    seedSlide("quake-shaded-relief", "Shaded Relief", { basemap: "relief" }, [
+      "showElevation",
+      "showSeismic",
+      "showCables",
+      "showFaults",
+      "showCities",
+    ]),
   ],
   flight: [
-    seedSlide("flight-jet-stream", "Jet Stream", { windMode: "particles", wind: { ...WIND_PRESETS.dense, opacity: 0.5 } }, [
+    seedSlide("flight-jet-stream", "Jet Stream", { windMode: "particles", wind: GUST_WIND }, [
       "showWind",
       "showAircraft",
       "showTrails",
@@ -572,9 +640,16 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showTrackLabels",
       "showCities",
     ]),
+    seedSlide("flight-barb-chart", "Barb Chart", { windMode: "barbs", wind: SUBTLE_WIND }, [
+      "showWind",
+      "showAircraft",
+      "showTrails",
+      "showTrackLabels",
+      "showCities",
+    ]),
   ],
   ship: [
-    seedSlide("ship-rough-seas", "Rough Seas", { windMode: "particles", wind: WIND_PRESETS.storm }, [
+    seedSlide("ship-rough-seas", "Rough Seas", { windMode: "particles", wind: GUST_WIND }, [
       "showWind",
       "showShips",
       "showTrails",
@@ -588,6 +663,12 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showTrackLabels",
       "showCities",
     ]),
+    seedSlide(
+      "ship-calm-passage",
+      "Calm Passage",
+      { windMode: "particles", wind: SUBTLE_WIND },
+      ["showWind", "showShips", "showTrails", "showTrackLabels", "showCities"],
+    ),
   ],
 };
 

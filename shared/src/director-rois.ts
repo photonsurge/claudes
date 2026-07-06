@@ -539,13 +539,15 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
   },
   // A round-up ticker reads over the lower third, so — unlike the ad card — the
   // globe stays the visible, alive backdrop: same calm world spin as intro/ocean,
-  // no scalar field so it never competes with the on-screen text. Seismic +
-  // alert markers stay lit (severity/magnitude floors dropped, same as
-  // storm/quake/country) so the events the narration is summarizing are
-  // actually visible on the globe while it spins.
+  // temperature + wind so it still reads as an actual weather map (not a bare
+  // globe with markers) while the narration plays. Seismic + alert markers
+  // stay lit (severity/magnitude floors dropped, same as storm/quake/country)
+  // so the events the narration is summarizing are actually visible too.
   summary: {
     ...LAYERS_OFF,
-    activeVariable: null,
+    activeVariable: "temp",
+    showWind: true,
+    showPressure: true,
     showCities: true,
     showSeismic: true,
     seismicMinMag: 0,

@@ -14,7 +14,7 @@ export interface WeatherConfig {
 export function cfg(): WeatherConfig {
   return {
     model: process.env.MODEL || "gfs",
-    forecastHours: Number(process.env.FORECAST_HOURS || 48),
+    forecastHours: Number(process.env.FORECAST_HOURS || 72),
     stepHours: Number(process.env.STEP_HOURS || 3),
     retainRuns: Number(process.env.RETAIN_RUNS || 3),
   };

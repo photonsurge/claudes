@@ -17,6 +17,7 @@ import { emitWorkerEvent } from "../socket";
 import { GFS_GRID, GFS_BOUNDS } from "../grib/bake";
 import { runRetention } from "./retention";
 import { archiveRun } from "./archive";
+import { archiveForecastRun } from "./archiveForecast";
 import { cleanupTemp } from "./download";
 import { cfg, forecastSteps, runDateFor } from "./config";
 import { bakeVariableStep } from "./bakeVariableStep";
@@ -153,6 +154,19 @@ export async function runIngest(job: Job) {
       steps,
       variables,
     }).catch((ex) => log(TAG, "ingest: archive failed", { err: String(ex) }));
+
+    // Rolling forecast store: copy every baked step so the next few days'
+    // predictions are durably queryable (unlike the run's own textures, which
+    // retention prunes after a few cycles). Never fails the published run.
+    await archiveForecastRun(db as any, {
+      id: runId,
+      model,
+      run: runDate,
+      bounds: [...GFS_BOUNDS],
+      grid: { ...GFS_GRID },
+      steps,
+      variables,
+    }).catch((ex) => log(TAG, "ingest: forecast archive failed", { err: String(ex) }));
 
     log(TAG, "ingest: published", { run: runDate.toISOString(), runId });
     return { published: true, run: runDate.toISOString(), runId };
