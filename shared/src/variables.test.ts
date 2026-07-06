@@ -66,9 +66,10 @@ describe("VARIABLE_REGISTRY integrity", () => {
     expect(VARIABLE_REGISTRY.temp.encoding).toBe("scalar");
   });
 
-  it("SCALAR_VARIABLE_IDS only contains raster variables (no wind/pressure)", () => {
+  it("SCALAR_VARIABLE_IDS excludes particle fields but includes pressure (selectable colour map + isobars)", () => {
     expect(SCALAR_VARIABLE_IDS).not.toContain("wind");
-    expect(SCALAR_VARIABLE_IDS).not.toContain("pressure");
+    expect(SCALAR_VARIABLE_IDS).not.toContain("current");
+    expect(SCALAR_VARIABLE_IDS).toContain("pressure");
     expect(SCALAR_VARIABLE_IDS).toContain("temp");
   });
 

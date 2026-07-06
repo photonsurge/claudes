@@ -121,8 +121,9 @@ export async function ingestHrrr(now = new Date()): Promise<IngestResult> {
             const f = await regridTileToGlobal({ gribPath, outPath: `${gribPath}.${variableId}.rg`, match: spec.match[0], newgrid: HRRR_NEWGRID, width: W, height: H });
             track(`${gribPath}.${variableId}.rg`);
             const res = await bakeScalar({ variableId, values: f.values, width: W, height: H, preRolled: true });
+            const units = variableId === "temp" ? "°C" : variableId === "pressure" ? "hPa" : "m/s";
             tag(variableId, {
-              encoding: "scalar", units: variableId === "temp" ? "°C" : "m/s", domain: res.domain, palette: variableId,
+              encoding: "scalar", units, domain: res.domain, palette: variableId,
               imageUnscale: res.imageUnscale,
               sourceId: source.id, resolutionDeg: source.resolutionDeg, bbox: source.bbox, priority: source.priority,
             }).buffers[fhr] = res.buffer;

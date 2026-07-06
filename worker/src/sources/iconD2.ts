@@ -23,15 +23,21 @@ const DWD_ROOT = "https://opendata.dwd.de/weather/nwp/icon-d2/grib";
  *   wind     → u_10m / v_10m   (10 m wind components, m/s)
  *   gust     → vmax_10m (10 m max wind gust, m/s)
  *   humidity → relhum_2m (2 m relative humidity, %)
+ *   pressure → pmsl     (mean sea-level pressure, Pa)
  */
 export const ICON_D2_VAR_TOKENS: Record<string, string[]> = {
   temp: ["t_2m"],
   wind: ["u_10m", "v_10m"],
   gust: ["vmax_10m"],
   humidity: ["relhum_2m"],
+  pressure: ["pmsl"],
 };
 
-/** wgrib2 -match token per DWD field (single record per single-var file). */
+/**
+ * wgrib2 -match token per DWD field (single record per single-var file).
+ * VERIFIED (live opendata.dwd.de listing, 2026-07-06): pmsl decodes as
+ * `PRMSL:mean sea level` — same WMO shortName GFS uses for MSLP.
+ */
 export const ICON_D2_FIELD_MATCH: Record<string, string> = {
   t_2m: ":TMP:2 m above ground:",
   u_10m: ":UGRD:10 m above ground:",
@@ -40,6 +46,7 @@ export const ICON_D2_FIELD_MATCH: Record<string, string> = {
   vmax_10m: ":(MAXGUST|GUST):10 m above ground:",
   // DWD RELHUM_2M is coded as WMO RH at 2 m above ground (already %).
   relhum_2m: ":RH:2 m above ground:",
+  pmsl: ":PRMSL:mean sea level:",
 };
 
 /** Zero-pad a forecast hour to 3 digits (DWD filenames use fff). */

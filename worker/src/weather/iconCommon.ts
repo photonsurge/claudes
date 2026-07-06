@@ -227,10 +227,11 @@ export async function ingestIconNest(cfg: IconIngestConfig, now = new Date()): P
             const path = await fetchField(field, fhr);
             const values = await extractOnDescriptorGrid(path, cfg.fieldMatch[field], newgrid, width, height);
             tmp.push(`${path}.rg.grib2`);
-            // temp K→°C; gust already m/s, humidity already % (skip unit convert).
+            // temp K→°C; pressure Pa→hPa; gust already m/s, humidity already % (skip unit convert).
             const skipUnitConvert = variableId === "gust" || variableId === "humidity";
             const res2 = await bakeScalar({ variableId, values, width, height, preRolled: true, skipUnitConvert });
-            const units = variableId === "temp" ? "°C" : variableId === "humidity" ? "%" : "m/s";
+            const units =
+              variableId === "temp" ? "°C" : variableId === "humidity" ? "%" : variableId === "pressure" ? "hPa" : "m/s";
             tag(variableId, {
               encoding: "scalar",
               units,

@@ -48,8 +48,11 @@ function lighten(c: [number, number, number], t: number): [number, number, numbe
 }
 const withA = (c: [number, number, number], a: number): [number, number, number, number] => [c[0], c[1], c[2], a];
 
-/** Matches KIND_COLOR.country in components/broadcast/kinds.ts. */
-const GLOW_COLOR: [number, number, number] = [63, 143, 143];
+/** Same teal family as KIND_COLOR.country (components/broadcast/kinds.ts) but
+ *  brighter/more saturated — that muted tone reads fine as a small UI badge,
+ *  but a globe-spanning glow needs more punch to actually shine against the
+ *  weather raster from a wide shot. */
+const GLOW_COLOR: [number, number, number] = [70, 225, 225];
 
 /**
  * A breathing multi-pass halo around the spotlighted country's boundary — wide
@@ -68,52 +71,65 @@ export function countryGlowLayers(feature: CountryFeature | null, now: number): 
   const data = [feature];
 
   return [
-    // 1 ─ Wide soft halo (outer bloom).
+    // 1 ─ Outer bloom — very wide, low-opacity, so it reads from a whole-globe shot.
+    new GeoJsonLayer({
+      id: "country-glow-bloom",
+      data,
+      filled: false,
+      stroked: true,
+      getLineColor: () => withA(lighten(GLOW_COLOR, 0.4), 30 + 22 * breathe),
+      getLineWidth: () => 26 + 14 * breathe,
+      lineWidthUnits: "pixels",
+      lineWidthMinPixels: 20,
+      parameters: DEPTH_TEST,
+      updateTriggers: { getLineColor: now, getLineWidth: now },
+    }),
+    // 2 ─ Wide soft halo.
     new GeoJsonLayer({
       id: "country-glow-wide",
       data,
       filled: false,
       stroked: true,
-      getLineColor: () => withA(lighten(GLOW_COLOR, 0.35), 20 + 16 * breathe),
-      getLineWidth: () => 10 + 6 * breathe,
+      getLineColor: () => withA(lighten(GLOW_COLOR, 0.35), 70 + 50 * breathe),
+      getLineWidth: () => 14 + 8 * breathe,
       lineWidthUnits: "pixels",
-      lineWidthMinPixels: 8,
+      lineWidthMinPixels: 11,
       parameters: DEPTH_TEST,
       updateTriggers: { getLineColor: now, getLineWidth: now },
     }),
-    // 2 ─ Mid glow.
+    // 3 ─ Mid glow.
     new GeoJsonLayer({
       id: "country-glow-mid",
       data,
       filled: false,
       stroked: true,
-      getLineColor: () => withA(lighten(GLOW_COLOR, 0.2), 55 + 40 * breathe),
-      getLineWidth: () => 4 + 2 * breathe,
+      getLineColor: () => withA(lighten(GLOW_COLOR, 0.2), 140 + 90 * breathe),
+      getLineWidth: () => 7 + 4 * breathe,
       lineWidthUnits: "pixels",
-      lineWidthMinPixels: 3,
+      lineWidthMinPixels: 5,
       parameters: DEPTH_TEST,
       updateTriggers: { getLineColor: now, getLineWidth: now },
     }),
-    // 3 ─ Translucent fill so the whole country reads as lit, not just its edge.
+    // 4 ─ Translucent fill so the whole country reads as lit, not just its edge.
     new GeoJsonLayer({
       id: "country-glow-fill",
       data,
       filled: true,
       stroked: false,
-      getFillColor: () => withA(GLOW_COLOR, 8 + 12 * breathe),
+      getFillColor: () => withA(GLOW_COLOR, 26 + 34 * breathe),
       parameters: DEPTH_TEST,
       updateTriggers: { getFillColor: now },
     }),
-    // 4 ─ Crisp lit edge on top.
+    // 5 ─ Crisp lit edge on top, near-solid at the breath's peak.
     new GeoJsonLayer({
       id: "country-glow-edge",
       data,
       filled: false,
       stroked: true,
-      getLineColor: () => withA(lit, 170 + 60 * breathe),
-      getLineWidth: () => 1.5 + 1.5 * breathe,
+      getLineColor: () => withA(lit, 220 + 35 * breathe),
+      getLineWidth: () => 2.5 + 2.5 * breathe,
       lineWidthUnits: "pixels",
-      lineWidthMinPixels: 1.5,
+      lineWidthMinPixels: 2,
       parameters: DEPTH_TEST,
       updateTriggers: { getLineColor: now, getLineWidth: now },
     }),

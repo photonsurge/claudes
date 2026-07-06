@@ -47,10 +47,11 @@ describe("ICON_D2 variable → DWD field token map", () => {
     expect(ICON_D2_VAR_TOKENS.wind).toEqual(["u_10m", "v_10m"]);
     expect(ICON_D2_VAR_TOKENS.gust).toEqual(["vmax_10m"]);
     expect(ICON_D2_VAR_TOKENS.humidity).toEqual(["relhum_2m"]);
+    expect(ICON_D2_VAR_TOKENS.pressure).toEqual(["pmsl"]);
   });
 
-  it("covers exactly the four source variables (temp/wind/gust/humidity)", () => {
-    expect(Object.keys(ICON_D2_VAR_TOKENS).sort()).toEqual(["gust", "humidity", "temp", "wind"]);
+  it("covers exactly the five source variables (temp/wind/gust/humidity/pressure)", () => {
+    expect(Object.keys(ICON_D2_VAR_TOKENS).sort()).toEqual(["gust", "humidity", "pressure", "temp", "wind"]);
   });
 
   it("provides a wgrib2 -match token for every field it references", () => {

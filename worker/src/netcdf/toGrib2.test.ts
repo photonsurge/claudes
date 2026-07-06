@@ -23,6 +23,25 @@ describe("buildCdoArgs", () => {
     const a = buildCdoArgs({ inPath: "in.nc", outPath: "o.grb2", remapGrid: "global_0.08" });
     expect(a).toEqual(["-f", "grb2", "remapbil,global_0.08", "in.nc", "o.grb2"]);
   });
+
+  it("sellevel is the innermost op, after remap + selname (no copy)", () => {
+    const a = buildCdoArgs({
+      inPath: "in.nc",
+      outPath: "o.grb2",
+      remapGrid: "global_0.08",
+      selnames: ["temperature"],
+      sellevel: 500,
+    });
+    expect(a).toEqual([
+      "-f", "grb2", "remapbil,global_0.08", "-selname,temperature", "-sellevel,500", "in.nc", "o.grb2",
+    ]);
+    expect(a).not.toContain("copy");
+  });
+
+  it("sellevel alone is the outer (file-reading) op", () => {
+    const a = buildCdoArgs({ inPath: "in.nc", outPath: "o.grb2", sellevel: 100 });
+    expect(a).toEqual(["-f", "grb2", "sellevel,100", "in.nc", "o.grb2"]);
+  });
 });
 
 describe("netcdfToGrib2", () => {

@@ -31,6 +31,7 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
       flight: { type: Number, default: 12 },
       ship: { type: Number, default: 12 },
       ad: { type: Number, default: 12 },
+      summary: { type: Number, default: 20 },
     },
     // Per-magnitude-class hold for quake segments (seconds).
     quakeHoldSeconds: {
@@ -63,6 +64,7 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
       flight: { type: Boolean, default: true },
       ship: { type: Boolean, default: true },
       ad: { type: Boolean, default: false },
+      summary: { type: Boolean, default: true },
     },
     countries: { type: [String], default: ["uk", "japan"] },
     minQuakeMag: { type: Number, required: true, default: 4.5 },

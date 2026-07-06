@@ -41,6 +41,8 @@ import { getSatImgModel } from "./satimg-model";
 import { makeSatImgRepo } from "./satimg-repo";
 import { getFireModel } from "./fire-model";
 import { makeFireRepo } from "./fire-repo";
+import { getVolcanoModel } from "./volcano-model";
+import { makeVolcanoRepo } from "./volcano-repo";
 import { getGeomagModel } from "./geomag-model";
 import { makeGeomagRepo } from "./geomag-repo";
 import { getCamModel } from "./cam-model";
@@ -99,6 +101,7 @@ export function createDb(conn: Connection) {
     aurora: makeAuroraRepo(getAuroraModel(conn)),
     satimg: makeSatImgRepo(getSatImgModel(conn)),
     fires: makeFireRepo(getFireModel(conn)),
+    volcanoes: makeVolcanoRepo(getVolcanoModel(conn)),
     geomag: makeGeomagRepo(getGeomagModel(conn)),
     cams: makeCamRepo(getCamModel(conn)),
     ads: makeAdRepo(getAdModel(conn)),

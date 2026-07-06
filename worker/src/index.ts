@@ -393,6 +393,24 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable volcanoes.snapshot (NASA EONET active volcanoes → Mongo) ----
+  // EONET republishes a few times a day; poll every 30 min by default (cheap;
+  // upserts dedup). Keyless, so — unlike fires.snapshot — always scheduled.
+  // Disable with VOLCANO_SNAPSHOT_ENABLED=false.
+  if (process.env.VOLCANO_SNAPSHOT_ENABLED !== "false") {
+    const VOLCANO_SNAPSHOT_MS = Number(process.env.VOLCANO_SNAPSHOT_MS || 30 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "volcanoes", type: "volcanoes", event: "snapshot", data: {} },
+        { repeat: { every: VOLCANO_SNAPSHOT_MS, immediately: true }, jobId: "volcanoes-snapshot" },
+      );
+      log(TAG, `registered repeatable volcanoes.snapshot`, { everyMs: VOLCANO_SNAPSHOT_MS });
+    } catch (err) {
+      log(TAG, `failed to register volcanoes.snapshot`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable geomag.refresh (IGRF total-intensity field → baked scalar PNG) ----
   // The geomagnetic field drifts only slowly (secular variation), so re-bake weekly
   // by default. A fixed jobId de-dups across restarts; `immediately` seeds the cache

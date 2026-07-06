@@ -97,3 +97,33 @@ export async function archiveForecastRun(
   if (written > 0) log(TAG, "forecast archived", { model: run.model, written });
   return { written };
 }
+
+/** The db surface backfillForecastFromPublishedRuns needs beyond ForecastArchiveDb. */
+export interface ForecastBackfillDb extends ForecastArchiveDb {
+  weatherRuns: {
+    getAll: (
+      query: Record<string, unknown>,
+      opts: Record<string, unknown>,
+    ) => Promise<{ success: boolean; data?: ArchivableRun[] }>;
+  };
+}
+
+/**
+ * Walk every published WeatherRun still in Mongo and copy its steps into the
+ * forecast store. Shared by the `forecast:backfill` one-shot script and the
+ * admin "Backfill 3-day forecast" job button, so the store can be seeded
+ * immediately after deploying this feature instead of waiting for the next
+ * scheduled GFS cycle. Idempotent (newer run wins per validTime).
+ */
+export async function backfillForecastFromPublishedRuns(
+  db: ForecastBackfillDb,
+): Promise<{ runsProcessed: number; written: number }> {
+  const res = await db.weatherRuns.getAll({ published: true }, { sort: { run: 1 } });
+  const rows = res.success && res.data ? res.data : [];
+  let written = 0;
+  for (const run of rows) {
+    const out = await archiveForecastRun(db, run);
+    written += out.written;
+  }
+  return { runsProcessed: rows.length, written };
+}

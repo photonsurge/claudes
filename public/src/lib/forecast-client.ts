@@ -9,7 +9,7 @@ import type { ForecastDay, AreaForecastDay } from "./weather-forecast";
 
 export type { ForecastDay, AreaForecastDay };
 
-function useForecastFetch<T>(key: string, url: string): { data: T | null; loading: boolean } {
+function useForecastFetch<T>(key: string, urlFor: () => string): { data: T | null; loading: boolean } {
   const [state, setState] = useState<{ key: string; data: T | null; loading: boolean }>({
     key: "",
     data: null,
@@ -23,7 +23,7 @@ function useForecastFetch<T>(key: string, url: string): { data: T | null; loadin
     }
     let cancelled = false;
     setState({ key, data: null, loading: true });
-    fetch(url)
+    fetch(urlFor())
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null)
       .then((data: T | null) => {
@@ -47,8 +47,7 @@ export function usePointForecast(center: [number, number] | null): {
   const lat = center ? center[1].toFixed(2) : null;
   const lng = center ? center[0].toFixed(2) : null;
   const key = lat != null && lng != null ? `pt|${lat}|${lng}` : "";
-  const { data, loading } = useForecastFetch<{ days: ForecastDay[] }>(
-    key,
+  const { data, loading } = useForecastFetch<{ days: ForecastDay[] }>(key, () =>
     `/api/weather/forecast/point?${new URLSearchParams({ lat: lat!, lng: lng! })}`,
   );
   return { days: data?.days ?? [], loading };
@@ -61,8 +60,7 @@ export function useAreaForecast(bbox: [number, number, number, number] | null): 
 } {
   const rounded = bbox ? bbox.map((v) => v.toFixed(1)) : null;
   const key = rounded ? `area|${rounded.join(",")}` : "";
-  const { data, loading } = useForecastFetch<{ days: AreaForecastDay[] }>(
-    key,
+  const { data, loading } = useForecastFetch<{ days: AreaForecastDay[] }>(key, () =>
     `/api/weather/forecast/area?${new URLSearchParams({
       west: rounded![0],
       south: rounded![1],

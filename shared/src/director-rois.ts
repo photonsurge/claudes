@@ -118,6 +118,15 @@ export const INTRO_MAP_TYPES: GlobalMapType[] = [
     needs: { kind: "variable", id: "rain" },
   },
   {
+    id: "pressure",
+    title: "Global Pressure",
+    subtitle: "Mean sea-level pressure · isobars",
+    // Colour field PLUS the isobar contour + H/L overlay reads as a real surface
+    // pressure chart, unlike the other looks which keep showPressure off.
+    patch: { activeVariable: "pressure", showWind: false, showPressure: true, showAurora: false, showSatImg: false, showCables: false },
+    needs: { kind: "variable", id: "pressure" },
+  },
+  {
     id: "aurora",
     title: "Aurora & Space Weather",
     subtitle: "OVATION auroral oval · live Kp",

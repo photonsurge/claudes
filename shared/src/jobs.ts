@@ -57,6 +57,7 @@ const WEATHER_MAP_JOBS: TriggerableJob[] = (
     ["weather-ifs", "ECMWF IFS (global)", "Re-ingest the ECMWF IFS global base (off by default until CCSDS-validated).", "refreshIfs"],
     ["weather-waves", "GFS-Wave (global mosaic)", "Re-ingest the global GFS-Wave height/direction mosaic.", "refreshWaves"],
     ["weather-rtofs", "RTOFS ocean (global)", "Re-ingest the global RTOFS SST / currents / salinity base.", "refreshRtofs"],
+    ["weather-rtofs-depth", "RTOFS temperature-at-depth (global)", "Re-ingest the global RTOFS 100/500/2000/5000m ocean temperature chapters.", "refreshRtofsDepth"],
     ["weather-icon-global", "ICON global (13 km, everywhere)", "Re-ingest DWD ICON 13 km — the worldwide zoom-in bump under regional nests.", "refreshIconGlobal"],
     ["weather-icon-eu", "ICON-EU (Europe 6.5 km)", "Re-ingest the DWD ICON-EU regional nest.", "refreshIconEu"],
     ["weather-icon-d2", "ICON-D2 (central Europe 2 km)", "Re-ingest the DWD ICON-D2 high-res nest.", "refreshIconD2"],
@@ -89,6 +90,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Weather maps",
   },
   ...WEATHER_MAP_JOBS,
+  {
+    id: "forecast-backfill",
+    label: "Backfill 3-day forecast",
+    description:
+      "Copy every published run's steps into the rolling forecast store — use once after deploying the forecast feature, or any time the daily-outlook strip looks stale.",
+    domain: "weather",
+    type: "forecast",
+    event: "backfill",
+    group: "Weather maps",
+  },
   {
     id: "alerts-ingest",
     label: "Ingest alerts",

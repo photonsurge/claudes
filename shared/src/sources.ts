@@ -133,6 +133,27 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
     attribution: "NOAA/NCEP Global RTOFS",
   },
 
+  // Temperature-at-depth chapters (100/500/2000/5000m), from the GLOBAL 3-D
+  // `rtofs_glo_3dz_*_daily_3ztio.nc` cube — same curvilinear grid as `rtofs`
+  // above, published separately (own ~816MB/day download, nowcast only) so its
+  // publish cadence/idempotency don't couple to the surface pipeline. Surface
+  // (0m) reuses the existing `sst` variable/source — no separate chapter here.
+  "rtofs-depth": {
+    id: "rtofs-depth",
+    label: "NOAA Global RTOFS 1/12° temperature-at-depth (netCDF)",
+    format: "netcdf",
+    grid: "curvilinear",
+    dims: { width: 4500, height: 2250 }, // matches RTOFS_TARGET_GRID (global_0.08 cdo remap)
+    resolutionDeg: 0.083,
+    bbox: [-180, -80, 180, 90],
+    cadence: { kind: "cron", runsUtc: [0] }, // one 00z run/day
+    latencyMinutes: 8 * 60, // ~8h; poll rather than trust a fixed time
+    variables: ["sst100", "sst500", "sst2000", "sst5000"],
+    priority: 20,
+    enabled: true,
+    attribution: "NOAA/NCEP Global RTOFS",
+  },
+
   // ── Waves ────────────────────────────────────────────────────────────────
   // NOTE: NOAA does NOT publish a genuine global 0.16° wave grid — `global.0p16`
   // is only a 52.5°N–15°S band (2160×406). The whole-planet grid is `global.0p25`
@@ -192,7 +213,7 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
     bbox: [-3.94, 43.18, 20.34, 58.08],
     cadence: { kind: "cron", runsUtc: [0, 3, 6, 9, 12, 15, 18, 21] },
     latencyMinutes: 120,
-    variables: ["temp", "wind", "gust", "humidity"],
+    variables: ["temp", "wind", "gust", "humidity", "pressure"],
     priority: 30, // nest: beats ICON-EU + the GFS/IFS global base inside its bbox
     minZoom: 3.5,
     enabled: true,
@@ -213,7 +234,7 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
     bbox: [-23.5, 29.5, 45.0, 70.5],
     cadence: { kind: "cron", runsUtc: [0, 6, 12, 18] },
     latencyMinutes: 150,
-    variables: ["temp", "wind", "gust", "humidity"],
+    variables: ["temp", "wind", "gust", "humidity", "pressure"],
     priority: 28, // below ICON-D2 (30): D2's 2.2 km wins in central Europe overlap
     minZoom: 3, // activates a touch sooner/wider than D2 (3.5), covering UK/EU
     enabled: true,
@@ -232,7 +253,7 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
     bbox: [-134, 21, -60, 53], // HRRR CONUS extent
     cadence: { kind: "interval", minutes: 60 }, // hourly runs
     latencyMinutes: 90,
-    variables: ["temp", "wind", "gust"],
+    variables: ["temp", "wind", "gust", "pressure"],
     priority: 30,
     minZoom: 3.5,
     enabled: true,

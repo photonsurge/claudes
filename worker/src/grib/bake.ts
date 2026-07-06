@@ -42,6 +42,13 @@ export const SCALAR_IMAGE_UNSCALE: Record<string, [number, number]> = {
   gust: [0, 120], // m/s
   pressure: [870, 1085], // hPa MSLP
   sst: [-5, 40], // °C (water temp; wider than the -2..32 colour domain)
+  // Live-baked physical extremes (2026): 100m -2.7..30.0, 500m -2.3..21.7,
+  // 2000m -1.1..14.0, 5000m -1.8..3.9°C — decode ranges below cover those with
+  // margin, wider than each variable's colour domain (see variables.ts).
+  sst100: [-5, 32],
+  sst500: [-5, 24],
+  sst2000: [-3, 16],
+  sst5000: [-3, 6],
   cloud: [0, 100], // %
   snow: [0, 500], // cm (deep snowpack; SNOD baked metres → cm)
   wave: [0, 30], // m significant wave height (record seas ~20m)

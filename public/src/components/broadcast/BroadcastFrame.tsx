@@ -38,7 +38,7 @@ import WorldWatchPanel from "./WorldWatchPanel";
 import WorldSituationPanel from "./WorldSituationPanel";
 import KpIndexPanel from "./KpIndexPanel";
 import SpaceWeatherMeter from "./SpaceWeatherMeter";
-import { SeismicMonitor, TsunamiMonitor } from "./MonitorCluster";
+import { SeismicMonitor, TsunamiMonitor, WeatherMonitors } from "./MonitorCluster";
 import SeismicStationRow from "./SeismicStationRow";
 import TideStationRow from "./TideStationRow";
 import PointHistoryPanel, { usePagedSlides } from "./PointHistoryPanel";
@@ -48,7 +48,8 @@ import EventNearbyPanel from "./EventNearbyPanel";
 import QuakeReport from "./QuakeReport";
 import TrackInfoPanel from "./TrackInfoPanel";
 import OnAirCard from "./OnAirCard";
-import CountrySpotlightPanel from "./CountrySpotlightPanel";
+import RoundupStatsPanel from "./RoundupStatsPanel";
+import TopCitiesPanel from "./TopCitiesPanel";
 import SyslogFeed from "./SyslogFeed";
 import UpNextPanel from "./UpNextPanel";
 import BuildInfoTag from "./BuildInfoTag";
@@ -153,21 +154,34 @@ export default function BroadcastFrame({
   // bare subject.
   const countryOnAir =
     onAirSegment?.kind === "country" ? countryShot(onAirSegment.id.split(":")[1] ?? "") : undefined;
+  // A round-up tours a fresh hotspot every few seconds by patching `state.camera`
+  // to that stop's centre (see director.ts's summary cutSteps) — the segment's
+  // own `camera` field stays pinned to the base global framing the whole time,
+  // so scoping off of it would tally the whole planet no matter which stop is
+  // currently shown. `state.camera` is the one place that actually tracks the
+  // live stop.
   const areaBbox = countryOnAir
     ? countryOnAir.bbox
-    : onAirSegment && segmentHasLocation && !eventTargeted
-      ? bboxForCamera(onAirSegment.camera.center, onAirSegment.camera.zoom)
-      : undefined;
+    : onAirSegment?.kind === "summary"
+      ? bboxForCamera(state.camera.center, state.camera.zoom)
+      : onAirSegment && segmentHasLocation && !eventTargeted
+        ? bboxForCamera(onAirSegment.camera.center, onAirSegment.camera.zoom)
+        : undefined;
   const areaAlerts = areaBbox ? scopeAlertsToBbox(alerts, areaBbox) : alerts;
   const areaQuakes = areaBbox ? scopeQuakesToBbox(quakes, areaBbox) : quakes;
 
-  // Country spotlight alternates the "IN VIEW" roundup card and the "TOP
-  // CITIES" info card as separate slides instead of stacking both — stacked,
-  // the combined column ran taller than the frame and cut off against the top
-  // edge. Both stay mounted (toggled via display, not conditional rendering)
-  // so CountrySpotlightPanel's own featured-city/climate timers and fetched
-  // city list survive across the toggle instead of resetting every time.
-  const countrySlide = usePagedSlides(countryOnAir ? [0, 1] : [], 1);
+  // Country spotlights and region tours both alternate the "IN VIEW" roundup
+  // card and the "TOP CITIES" info card as separate slides instead of
+  // stacking both — stacked, the combined column ran taller than the frame
+  // and cut off against the top edge. Both stay mounted (toggled via
+  // display, not conditional rendering) so TopCitiesPanel's own featured-
+  // city/climate timers and fetched city list survive across the toggle
+  // instead of resetting every time.
+  const wideCitiesBbox =
+    onAirSegment && !eventTargeted && !hasTrackInfo && (onAirSegment.kind === "country" || onAirSegment.kind === "tour")
+      ? areaBbox
+      : undefined;
+  const wideCitiesSlide = usePagedSlides(wideCitiesBbox ? [0, 1] : [], 1);
 
   // Whatever currently owns the bottom-left slot (mutually exclusive on
   // segment kind) — the history panel stacks above whichever of these is on
@@ -195,14 +209,14 @@ export default function BroadcastFrame({
               color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
             />
           )
-        : countryOnAir
+        : wideCitiesBbox
           ? (
             <div style={{ display: "flex", flexDirection: "column" }}>
-              <div style={{ display: countrySlide.page === 0 ? "block" : "none" }}>
+              <div style={{ display: wideCitiesSlide.page === 0 ? "block" : "none" }}>
                 <OnAirCard segment={onAirSegment} alerts={areaAlerts} quakes={areaQuakes} theme={theme} />
               </div>
-              <div style={{ display: countrySlide.page === 1 ? "block" : "none" }}>
-                <CountrySpotlightPanel country={countryOnAir} color={KIND_COLOR.country} />
+              <div style={{ display: wideCitiesSlide.page === 1 ? "block" : "none" }}>
+                <TopCitiesPanel bbox={wideCitiesBbox} color={KIND_COLOR[onAirSegment.kind]} />
               </div>
             </div>
           )
@@ -264,6 +278,9 @@ export default function BroadcastFrame({
           }}
         >
           {leftBottomPanel}
+          {summaryOnAir ? (
+            <RoundupStatsPanel stats={summaryOnAir.stats} sources={summaryOnAir.sources} theme={theme} />
+          ) : null}
           {!eventTargeted ? (
             <ForecastPanel
               center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}
@@ -388,10 +405,11 @@ export default function BroadcastFrame({
           <UpNextPanel items={upNext} />
         </div>
 
-        {/* Bottom-centre row: seismic monitor column to the left, tsunami gauge
-            column to the right — both anchored to the same bottom edge
-            (alignItems: flex-end + column-reverse) so either can grow upward
-            independently without disturbing the other's baseline. The gauges
+        {/* Bottom-centre row: seismic monitor column, the extra weather-
+            instrument cards (wind/pressure/wave), then the tsunami gauge
+            column — all anchored to the same bottom edge (alignItems:
+            flex-end + column-reverse) so any of them can grow upward
+            independently without disturbing the others' baseline. The gauges
             row (NEARBY TSUNAMI GAUGES) sits closest to the bottom edge in its
             column; the GLOBAL MONITOR tsunami card only appears above it when
             there's a single gauge in range (it hides itself once the row has
@@ -405,10 +423,10 @@ export default function BroadcastFrame({
             display: "flex",
             flexDirection: "row",
             alignItems: "flex-end",
-            gap: 24,
+            gap: 16,
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 10 }}>
             <SeismicMonitor
               quakes={quakes}
               seismoStations={seismoStations}
@@ -419,7 +437,8 @@ export default function BroadcastFrame({
             />
             <SeismicStationRow stations={seismoStations} onAirSegment={onAirSegment} theme={theme} />
           </div>
-          <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 14 }}>
+          <WeatherMonitors onAirSegment={onAirSegment} regionCenter={state.camera.center} theme={theme} />
+          <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 10 }}>
             <TideStationRow onAirSegment={onAirSegment} regionCenter={state.camera.center} theme={theme} />
             <TsunamiMonitor onAirSegment={onAirSegment} regionCenter={state.camera.center} theme={theme} />
           </div>

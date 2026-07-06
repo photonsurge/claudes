@@ -89,6 +89,7 @@ describe("mergeControlState", () => {
         lightning: { on: true, opacity: 0.95 },
       },
       showFires: true,
+      showVolcanoes: true,
       showMagneticField: true,
       magneticFieldOpacity: 0.4,
       showGraticule: true,

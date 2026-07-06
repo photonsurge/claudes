@@ -74,14 +74,17 @@ export interface HrrrParam {
 }
 
 /**
- * The HRRR fields we ingest, keyed by app variable id (temp/wind/gust — matching
- * getSource("hrrr").variables).
+ * The HRRR fields we ingest, keyed by app variable id (temp/wind/gust/pressure —
+ * matching getSource("hrrr").variables).
  *
- * VERIFY (against a live wrfsfcf00 inventory):
- *   TMP  : 2 m above ground   → var_TMP=on  & lev_2_m_above_ground=on
- *   UGRD : 10 m above ground  → var_UGRD=on & lev_10_m_above_ground=on
- *   VGRD : 10 m above ground  → var_VGRD=on & lev_10_m_above_ground=on
- *   GUST : surface            → var_GUST=on & lev_surface=on
+ * VERIFIED (live wrfsfcf00 inventory, 2026-07-06):
+ *   TMP   : 2 m above ground   → var_TMP=on   & lev_2_m_above_ground=on
+ *   UGRD  : 10 m above ground  → var_UGRD=on  & lev_10_m_above_ground=on
+ *   VGRD  : 10 m above ground  → var_VGRD=on  & lev_10_m_above_ground=on
+ *   GUST  : surface            → var_GUST=on  & lev_surface=on
+ *   MSLMA : mean sea level     → var_MSLMA=on & lev_mean_sea_level=on — HRRR codes
+ *           MSLP as MSLMA (MAPS/mass-consistent reduction), NOT PRMSL like GFS;
+ *           confirmed via `wgrib2 -inv` on a live hrrr.tHHz.wrfsfcf00.grib2.
  */
 export const HRRR_PARAMS: Record<string, HrrrParam> = {
   temp: {
@@ -102,6 +105,12 @@ export const HRRR_PARAMS: Record<string, HrrrParam> = {
     match: [":GUST:surface:"],
     encoding: "scalar",
   },
+  pressure: {
+    vars: ["MSLMA"],
+    levels: ["mean_sea_level"],
+    match: [":MSLMA:mean sea level:"],
+    encoding: "scalar",
+  },
 };
 
 /** Zero-pad a forecast hour to 2 digits (HRRR uses wrfsfcf<FF>, e.g. f00). */
@@ -118,7 +127,7 @@ export interface BuildHrrrUrlArgs {
   fhr: number;
   /**
    * The variables to request. Each supplies its var_/lev_ filter tokens.
-   * Defaults to every variable in HRRR_PARAMS (temp/wind/gust).
+   * Defaults to every variable in HRRR_PARAMS (temp/wind/gust/pressure).
    */
   params?: HrrrParam[];
 }

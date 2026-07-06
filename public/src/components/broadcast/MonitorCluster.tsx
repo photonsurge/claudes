@@ -14,10 +14,12 @@ import type { Segment } from "@photonsurge/shared/director";
 import type { TideSample } from "@photonsurge/shared/tides/types";
 import { nearby } from "../../lib/geo";
 import { useTideGauge } from "../../lib/tide-gauge";
+import { usePointHistory, type HistorySeries } from "../../lib/history-client";
+import { formatReading } from "./PointHistoryPanel";
 import type { Quake } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
-import { HeartbeatIcon, WaveIcon } from "./icons";
+import { HeartbeatIcon, WaveIcon, WindIcon, GaugeIcon } from "./icons";
 
 /** Radius (km) of quakes counted as "relevant" to a focused quake vs a region. */
 const QUAKE_FOCUS_KM = 800;
@@ -123,23 +125,23 @@ function Panel({
   theme: BroadcastTheme;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, fontWeight: 800, letterSpacing: 1.1, color: "#9fb0c8" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 8, fontWeight: 800, letterSpacing: 1, color: "#9fb0c8" }}>
           {icon}
           {title}
         </span>
         {tag ? (
           <span
             style={{
-              fontSize: 8,
+              fontSize: 7.5,
               fontWeight: 700,
-              letterSpacing: 1,
+              letterSpacing: 0.8,
               color: theme.accent,
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
-              maxWidth: 118,
+              maxWidth: 98,
             }}
           >
             {tag}
@@ -148,8 +150,8 @@ function Panel({
       </div>
       <div
         style={{
-          height: 42,
-          borderRadius: 6,
+          height: TRACE_H,
+          borderRadius: 5,
           background: "rgba(4,10,20,0.72)",
           border: "1px solid rgba(90,120,160,0.25)",
           overflow: "hidden",
@@ -161,11 +163,11 @@ function Panel({
           <div
             style={{
               position: "absolute",
-              left: 6,
-              bottom: 4,
-              fontSize: 8,
+              left: 5,
+              bottom: 3,
+              fontSize: 7.5,
               fontWeight: 700,
-              letterSpacing: 0.5,
+              letterSpacing: 0.4,
               color: "#cdd8ea",
               textShadow: "0 1px 2px rgba(0,0,0,0.8)",
               pointerEvents: "none",
@@ -179,20 +181,22 @@ function Panel({
   );
 }
 
-const W = 300;
+const W = 250;
+/** Height of every monitor's trace box, in both CSS and the SVG viewBox math. */
+const TRACE_H = 34;
 
 function CardShell({ theme, children }: { theme: BroadcastTheme; children: React.ReactNode }) {
   return (
     <div
       style={{
-        width: 210,
+        width: 172,
         display: "flex",
         flexDirection: "column",
-        gap: 9,
-        padding: "10px 12px",
+        gap: 7,
+        padding: "8px 10px",
         background: theme.panelBg,
         border: theme.panelBorder,
-        borderRadius: 12,
+        borderRadius: 10,
         boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
         backdropFilter: "blur(8px)",
         WebkitBackdropFilter: "blur(8px)",
@@ -201,7 +205,7 @@ function CardShell({ theme, children }: { theme: BroadcastTheme; children: React
       }}
     >
       <style>{"@keyframes bcast-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
-      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.4, color: "#dfe7f5" }}>GLOBAL MONITOR</div>
+      <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.2, color: "#dfe7f5" }}>GLOBAL MONITOR</div>
       {children}
     </div>
   );
@@ -271,13 +275,13 @@ export function SeismicMonitor({
           <svg
             width="200%"
             height="100%"
-            viewBox={`0 0 ${W * 2} 42`}
+            viewBox={`0 0 ${W * 2} ${TRACE_H}`}
             preserveAspectRatio="none"
             style={{ position: "absolute", inset: 0, animation: "bcast-trace 9s linear infinite" }}
           >
-            <path d={realLinePath(realSeismoSamples, W, 42)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
+            <path d={realLinePath(realSeismoSamples, W, TRACE_H)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
             <path
-              d={realLinePath(realSeismoSamples, W, 42)}
+              d={realLinePath(realSeismoSamples, W, TRACE_H)}
               transform={`translate(${W},0)`}
               fill="none"
               stroke="#43d9ff"
@@ -288,12 +292,12 @@ export function SeismicMonitor({
           <svg
             width="200%"
             height="100%"
-            viewBox={`0 0 ${W * 2} 42`}
+            viewBox={`0 0 ${W * 2} ${TRACE_H}`}
             preserveAspectRatio="none"
             style={{ position: "absolute", inset: 0, animation: "bcast-trace 6s linear infinite" }}
           >
-            <path d={seismoPath(W, 42, amp)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
-            <path d={seismoPath(W, 42, amp)} transform={`translate(${W},0)`} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
+            <path d={seismoPath(W, TRACE_H, amp)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
+            <path d={seismoPath(W, TRACE_H, amp)} transform={`translate(${W},0)`} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
           </svg>
         )}
       </Panel>
@@ -353,12 +357,12 @@ export function TsunamiMonitor({
         <svg
           width="200%"
           height="100%"
-          viewBox={`0 0 ${W * 2} 42`}
+          viewBox={`0 0 ${W * 2} ${TRACE_H}`}
           preserveAspectRatio="none"
           style={{ position: "absolute", inset: 0, animation: "bcast-trace 11s linear infinite" }}
         >
-          <path d={realWavePath(samples, W, 42)} fill="rgba(60,150,230,0.5)" />
-          <path d={realWavePath(samples, W, 42)} transform={`translate(${W},0)`} fill="rgba(60,150,230,0.5)" />
+          <path d={realWavePath(samples, W, TRACE_H)} fill="rgba(60,150,230,0.5)" />
+          <path d={realWavePath(samples, W, TRACE_H)} transform={`translate(${W},0)`} fill="rgba(60,150,230,0.5)" />
         </svg>
       </Panel>
     </CardShell>
@@ -369,4 +373,96 @@ export function TsunamiMonitor({
  *  but captions have no width box). */
 function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+/** Pull a variable's series out of the archive response as plottable
+ *  `{v}` samples (line paths want `.value`, uv-encoded ones like wind carry
+ *  `.speed` instead) — null when the archive has nothing usable yet. */
+function historySamples(series: HistorySeries[], variable: string): { v: number }[] | null {
+  const found = series.find((s) => s.variable === variable);
+  if (!found) return null;
+  const pts = found.series
+    .map((p) => p.value ?? p.speed)
+    .filter((v): v is number => v != null && Number.isFinite(v));
+  return pts.length >= 2 ? pts.map((v) => ({ v })) : null;
+}
+
+const WEATHER_MONITORS: {
+  variable: string;
+  title: string;
+  color: string;
+  /** Filled swell area (like the tsunami gauge) instead of a stroked line. */
+  wave?: boolean;
+  icon: React.ReactNode;
+  animMs: number;
+}[] = [
+  { variable: "wind", title: "WIND MONITOR", color: "#9085e9", icon: <WindIcon active />, animMs: 7000 },
+  { variable: "pressure", title: "PRESSURE MONITOR", color: "#f2a33d", icon: <GaugeIcon active />, animMs: 10000 },
+  { variable: "wave", title: "WAVE MONITOR", color: "#3987e5", wave: true, icon: <WaveIcon active />, animMs: 9000 },
+];
+
+/**
+ * Extra "GLOBAL MONITOR" cards alongside the seismic/tsunami pair — wind,
+ * barometric pressure, and wave height, all read from the same archived
+ * point-history the POINT HISTORY panel already fetches (see history-client's
+ * usePointHistory), just as a permanent glance-strip instead of a slideshow.
+ * Each card hides on its own once its variable has too little archived data
+ * for the focus point, same self-hiding rule as SeismicMonitor/TsunamiMonitor.
+ */
+export function WeatherMonitors({
+  onAirSegment = null,
+  regionCenter,
+  theme = DEFAULT_THEME,
+}: {
+  onAirSegment?: Segment | null;
+  regionCenter?: [number, number];
+  theme?: BroadcastTheme;
+}) {
+  const focus: [number, number] | null = onAirSegment?.camera.center ?? regionCenter ?? null;
+  const { series } = usePointHistory(focus);
+
+  return (
+    <>
+      {WEATHER_MONITORS.map((spec) => {
+        const samples = historySamples(series, spec.variable);
+        if (!samples) return null;
+        const units = series.find((s) => s.variable === spec.variable)?.units ?? "";
+        const latest = samples[samples.length - 1].v;
+        const path = spec.wave ? realWavePath(samples, W, TRACE_H) : realLinePath(samples, W, TRACE_H);
+
+        return (
+          <div key={spec.variable} style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center" }}>
+            <CardShell theme={theme}>
+              <Panel
+                title={spec.title}
+                icon={spec.icon}
+                tag={`${formatReading(latest)}${units ? ` ${units}` : ""}`}
+                theme={theme}
+              >
+                <svg
+                  width="200%"
+                  height="100%"
+                  viewBox={`0 0 ${W * 2} ${TRACE_H}`}
+                  preserveAspectRatio="none"
+                  style={{ position: "absolute", inset: 0, animation: `bcast-trace ${spec.animMs}ms linear infinite` }}
+                >
+                  {spec.wave ? (
+                    <>
+                      <path d={path} fill="rgba(60,150,230,0.5)" />
+                      <path d={path} transform={`translate(${W},0)`} fill="rgba(60,150,230,0.5)" />
+                    </>
+                  ) : (
+                    <>
+                      <path d={path} fill="none" stroke={spec.color} strokeWidth="1.2" />
+                      <path d={path} transform={`translate(${W},0)`} fill="none" stroke={spec.color} strokeWidth="1.2" />
+                    </>
+                  )}
+                </svg>
+              </Panel>
+            </CardShell>
+          </div>
+        );
+      })}
+    </>
+  );
 }

@@ -316,6 +316,8 @@ async function summaryCandidates(
       narrative: doc.narrative,
       generatedAt: doc.generatedAt instanceof Date ? doc.generatedAt.toISOString() : String(doc.generatedAt),
       stops: summaryStops(doc),
+      stats: doc.stats,
+      sources: doc.sources,
     };
     out.push({ score: 8, segment: seg });
   }

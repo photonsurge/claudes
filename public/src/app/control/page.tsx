@@ -33,6 +33,7 @@ import { useFaults } from "../../lib/faults-overlay";
 import { useAurora } from "../../lib/aurora-overlay";
 import { useSatImg } from "../../lib/satimg-overlay";
 import { useFires } from "../../lib/fires-overlay";
+import { useVolcanoes } from "../../lib/volcanoes-overlay";
 import { useGeomag } from "../../lib/geomag-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
@@ -114,6 +115,7 @@ export default function ControlPage() {
   const aurora = useAurora(shown.showAurora);
   const satimg = useSatImg(shown.showSatImg);
   const fires = useFires(shown.showFires);
+  const volcanoes = useVolcanoes(shown.showVolcanoes);
   const geomag = useGeomag(shown.showMagneticField);
 
   useEffect(() => {
@@ -180,6 +182,7 @@ export default function ControlPage() {
           aurora={aurora}
           satimg={satimg}
           fires={fires}
+          volcanoes={volcanoes}
           geomag={geomag}
           interactive
           pulseAt={eventPulse(director)}

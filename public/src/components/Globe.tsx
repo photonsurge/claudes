@@ -49,6 +49,7 @@ import { faultLayers } from "./layers/faults";
 import { auroraLayers } from "./layers/aurora";
 import { satimgLayers } from "./layers/satimg";
 import { fireLayers } from "./layers/fires";
+import { volcanoLayers } from "./layers/volcanoes";
 import { geomagLayers } from "./layers/geomag";
 import { nightLayer } from "./layers/nightside";
 import { subsolarPoint } from "../lib/sun";
@@ -61,12 +62,13 @@ import type { TrackPath } from "../lib/tracks/client";
 import type { OrbitSegment } from "../lib/tracks/orbit";
 import type { AlertFeature } from "../lib/alerts";
 import type { Segment } from "@photonsurge/shared/director";
-import { quakeToSegment, alertFeatureToSegment } from "../lib/select-segment";
+import { quakeToSegment, alertFeatureToSegment, volcanoToSegment } from "../lib/select-segment";
 import type { CableOverlay } from "../lib/cables-overlay";
 import type { Fault } from "@photonsurge/shared/faults/types";
 import type { AuroraOverlay } from "../lib/aurora-overlay";
 import type { SatImgOverlay } from "../lib/satimg-overlay";
 import type { Fire } from "@photonsurge/shared/fires/types";
+import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { GeomagOverlay } from "../lib/geomag-overlay";
 import { HeartbeatIcon } from "./broadcast/icons";
 
@@ -102,6 +104,8 @@ export interface GlobeProps {
   satimg?: SatImgOverlay | null;
   /** Worker-cached active fires (NASA FIRMS). */
   fires?: Fire[];
+  /** Worker-cached active volcanoes (NASA EONET). */
+  volcanoes?: Volcano[];
   /** Baked geomagnetic-field frame + decoded texture (IGRF total intensity), or null. */
   geomag?: GeomagOverlay | null;
   interactive?: boolean;
@@ -184,7 +188,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], seismoStations = [], seismoActive = null, cables, faults, aurora, satimg, fires = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, highlightTrack, onSelect },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], seismoStations = [], seismoActive = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, highlightTrack, onSelect },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -479,7 +483,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
           setHoverPulse(next ? next.at : null);
         }
       },
-      // Click an earthquake / alert polygon → its info-box segment (same card the
+      // Click an earthquake / alert polygon / volcano → its info-box segment (same card the
       // director shows on air). Clicking empty globe clears the selection.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onClick: (info: any) => {
@@ -488,6 +492,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         const layerId: string = info?.layer?.id ?? "";
         if (info?.object && layerId.startsWith("seismic")) cb(quakeToSegment(info.object));
         else if (info?.object && layerId.startsWith("alerts")) cb(alertFeatureToSegment(info.object));
+        else if (info?.object && layerId.startsWith("volcano")) cb(volcanoToSegment(info.object));
         else cb(null);
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -817,6 +822,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // Active fires (FIRMS) — glowing hot-spots, above alerts, below cities/tracks.
     if (state.showFires && fires.length) layers.push(...fireLayers(fires));
 
+    // Active volcanoes (EONET) — molten-glow cone markers, same layer band as fires.
+    if (state.showVolcanoes && volcanoes.length) layers.push(...volcanoLayers(volcanoes));
+
     if (state.showCities && cities.length)
       layers.push(...cityLayer(cities, subsolar ?? undefined, viewStateRef.current.zoom));
 
@@ -877,6 +885,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showSatImg,
     state.satImgFeeds,
     state.showFires,
+    state.showVolcanoes,
     state.showMagneticField,
     state.magneticFieldOpacity,
     state.showMapSource,
@@ -897,6 +906,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     aurora,
     satimg,
     fires,
+    volcanoes,
     geomag,
     nestKey,
     highlightTrack?.kind,

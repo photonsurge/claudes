@@ -7,12 +7,15 @@
 import type { Segment } from "@photonsurge/shared/director";
 import { quakeSegmentContent, alertSegmentContent } from "@photonsurge/shared/segments";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
+import { hazardMeta } from "@photonsurge/shared/alerts/hazard";
 import type { Quake } from "./tracks/types";
 import type { AlertFeature } from "./alerts";
+import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 
 /** Frame zooms mirror the director's quake/storm shots (candidates.ts). */
 const QUAKE_ZOOM = 5;
 const STORM_ZOOM = 4.5;
+const VOLCANO_ZOOM = 6;
 
 export function quakeToSegment(q: Quake): Segment {
   const c = quakeSegmentContent({
@@ -61,6 +64,36 @@ export function alertFeatureToSegment(f: AlertFeature): Segment | null {
     icon: c.icon,
     details: c.details,
     camera: { center, zoom: STORM_ZOOM },
+    patch: {},
+    holdMs: 0,
+  };
+}
+
+const utcLabel = (ms: number) => `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+
+/**
+ * Reuses the generic `storm`-kind card (title/subtitle/details/icon) rather
+ * than a dedicated `SegmentKind` — a volcano's status IS a hazard classification
+ * (see HazardType "volcano"), so this rides the same icon/colour the GDACS
+ * volcanic-activity alerts already use, just sourced from the EONET point feed
+ * instead of an alert polygon.
+ */
+export function volcanoToSegment(v: Volcano): Segment {
+  const meta = hazardMeta("volcano");
+  const details: { label: string; value: string }[] = [
+    { label: "Status", value: v.status === "erupting" ? "Erupting" : "Volcanic unrest" },
+    { label: "First reported", value: utcLabel(v.firstDate) },
+    { label: "Last update", value: utcLabel(v.lastDate) },
+  ];
+  return {
+    id: `volcano:${v.id}`,
+    kind: "storm",
+    title: v.name,
+    subtitle: v.status === "erupting" ? "Active eruption" : "Ongoing unrest",
+    icon: meta.icon,
+    hazard: "volcano",
+    details,
+    camera: { center: [v.lng, v.lat], zoom: VOLCANO_ZOOM },
     patch: {},
     holdMs: 0,
   };

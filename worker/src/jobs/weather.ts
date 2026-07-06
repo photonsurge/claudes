@@ -10,6 +10,7 @@ import { runCheck } from "../weather/check";
 import { runIngest } from "../weather/ingest";
 import { runSeedSample } from "../weather/seed";
 import { ingestIfs, ingestRtofs, ingestWaveMosaic } from "../weather/multiSource";
+import { ingestRtofsDepth } from "../weather/rtofsDepth";
 import { ingestIconD2 } from "../weather/iconD2";
 import { ingestIconEu } from "../weather/iconEu";
 import { ingestHrrr } from "../weather/hrrr";
@@ -47,18 +48,23 @@ export async function refreshRtofs(_job: Job) {
   return ingestRtofs();
 }
 
+/** NOAA RTOFS temperature-at-depth (100/500/2000/5000m) — see ../weather/rtofsDepth.ts */
+export async function refreshRtofsDepth(_job: Job) {
+  return ingestRtofsDepth();
+}
+
 /** GFS-Wave regional mosaic — see ../weather/multiSource.ts */
 export async function refreshWaves(_job: Job) {
   return ingestWaveMosaic();
 }
 
 // ── Phase 2 regional NESTS (zoom-gated high-res overlays) ─────────────────────
-/** DWD ICON-D2 2.2 km Europe (temp/wind/gust/humidity) — see ../weather/iconD2.ts */
+/** DWD ICON-D2 2.2 km Europe (temp/wind/gust/humidity/pressure) — see ../weather/iconD2.ts */
 export async function refreshIconD2(_job: Job) {
   return ingestIconD2();
 }
 
-/** DWD ICON-EU 6.5 km all-Europe (temp/wind/gust/humidity) — see ../weather/iconEu.ts */
+/** DWD ICON-EU 6.5 km all-Europe (temp/wind/gust/humidity/pressure) — see ../weather/iconEu.ts */
 export async function refreshIconEu(_job: Job) {
   return ingestIconEu();
 }
@@ -89,7 +95,7 @@ export async function refreshIconGlobal(_job: Job) {
   return ingestIconGlobal();
 }
 
-/** ECCC HRDPS 2.5 km Canada (temp/wind/gust/humidity) — see ../weather/hrdps.ts */
+/** ECCC HRDPS 2.5 km Canada (temp/wind/gust/humidity/pressure) — see ../weather/hrdps.ts */
 export async function refreshHrdps(_job: Job) {
   return ingestHrdps();
 }

@@ -54,11 +54,12 @@ describe("HRDPS variable → datamart token map (VERIFIED against the live listi
     expect(HRDPS_PARAMS.wind.tokens).toEqual(["UGRD_AGL-10m", "VGRD_AGL-10m"]);
     expect(HRDPS_PARAMS.gust.tokens).toEqual(["GUST_AGL-10m"]);
     expect(HRDPS_PARAMS.humidity.tokens).toEqual(["RH_AGL-2m"]);
+    expect(HRDPS_PARAMS.pressure.tokens).toEqual(["PRMSL_MSL"]);
   });
 
-  it("covers exactly the four source variables (temp/wind/gust/humidity)", () => {
-    expect(Object.keys(HRDPS_PARAMS).sort()).toEqual(["gust", "humidity", "temp", "wind"]);
-    expect(getSource("hrdps")!.variables.sort()).toEqual(["gust", "humidity", "temp", "wind"]);
+  it("covers exactly the five source variables (temp/wind/gust/humidity/pressure)", () => {
+    expect(Object.keys(HRDPS_PARAMS).sort()).toEqual(["gust", "humidity", "pressure", "temp", "wind"]);
+    expect(getSource("hrdps")!.variables.sort()).toEqual(["gust", "humidity", "pressure", "temp", "wind"]);
   });
 
   it("marks wind as the uv pair and everything else scalar, each with a -match", () => {

@@ -137,7 +137,7 @@ export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
     encoding: "scalar",
     kind: "contour",
     units: "hPa",
-    palette: "temp",
+    palette: "pressure",
     domain: [950, 1050],
     gfs: { vars: ["PRMSL"], levels: ["mean_sea_level"] },
   },
@@ -155,6 +155,58 @@ export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
     // the surface skin temperature, which over ocean is the model's SST — and
     // mask to sea (via the LAND field) so land skin temp is dropped.
     gfs: { vars: ["TMP"], levels: ["surface"], mask: "sea" },
+  },
+  // ── Sea temperature at depth (RTOFS 3-D, no GFS source) ─────────────────────
+  // Same underlying quantity as `sst`, sliced at fixed depths from the global
+  // 3-D RTOFS cube (see worker/src/sources/rtofsDepth.ts). Each depth gets its
+  // own `domain`: the deep ocean's actual range collapses toward near-freezing,
+  // so reusing `sst`'s -2..32 domain would render every depth as a flat,
+  // uninformative colour past the thermocline. Domains calibrated (2026) against
+  // a live-baked global run's p1/p50/p99: 100m -2.7..27.6..30.0°C,
+  // 500m -2.3..15.0..21.7°C, 2000m -1.1..4.4..14.0°C, 5000m -1.8..2.2..3.9°C.
+  sst100: {
+    id: "sst100",
+    label: "Sea temp @100m",
+    encoding: "scalar",
+    kind: "raster",
+    units: "°C",
+    altUnit: "°F",
+    altConvert: (v) => (v * 9) / 5 + 32,
+    palette: "sst",
+    domain: [-2, 28],
+  },
+  sst500: {
+    id: "sst500",
+    label: "Sea temp @500m",
+    encoding: "scalar",
+    kind: "raster",
+    units: "°C",
+    altUnit: "°F",
+    altConvert: (v) => (v * 9) / 5 + 32,
+    palette: "sst",
+    domain: [-2, 16],
+  },
+  sst2000: {
+    id: "sst2000",
+    label: "Sea temp @2000m",
+    encoding: "scalar",
+    kind: "raster",
+    units: "°C",
+    altUnit: "°F",
+    altConvert: (v) => (v * 9) / 5 + 32,
+    palette: "sst",
+    domain: [-1, 5],
+  },
+  sst5000: {
+    id: "sst5000",
+    label: "Sea temp @5000m",
+    encoding: "scalar",
+    kind: "raster",
+    units: "°C",
+    altUnit: "°F",
+    altConvert: (v) => (v * 9) / 5 + 32,
+    palette: "sst",
+    domain: [-1, 3],
   },
   cloud: {
     id: "cloud",
@@ -252,9 +304,14 @@ export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
   },
 };
 
-/** Scalar variables that can be the single active colour field. */
+/**
+ * Scalar variables that can be the single active colour field. Pressure is
+ * `kind: "contour"` (it also draws isobar lines via the separate showPressure
+ * toggle) but its baked texture is an ordinary scalar raster like temp/humidity,
+ * so it's explicitly included here to be selectable as a coloured map too.
+ */
 export const SCALAR_VARIABLE_IDS = Object.values(VARIABLE_REGISTRY)
-  .filter((v) => v.kind === "raster")
+  .filter((v) => v.kind === "raster" || v.id === "pressure")
   .map((v) => v.id);
 
 export const getVariable = (id: string): iVariableMeta | undefined => VARIABLE_REGISTRY[id];

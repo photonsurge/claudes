@@ -71,7 +71,13 @@ export interface HrdpsParam {
  *   wind     → UGRD_AGL-10m / VGRD_AGL-10m  (10 m wind, m/s, GRID-relative)
  *   gust     → GUST_AGL-10m (10 m wind gust, m/s)
  *   humidity → RH_AGL-2m    (2 m relative humidity, already %)
+ *   pressure → PRMSL_MSL    (mean sea-level pressure, Pa → hPa at bake)
  * wgrib2 -match tokens are the standard WMO names after regrid.
+ *
+ * VERIFIED (live dd.weather.gc.ca listing, 2026-07-06): the datamart directory
+ * carries `<ts>_MSC_HRDPS_PRMSL_MSL_RLatLon0.0225_PT<hhh>H.grib2` (note the `_MSL`
+ * suffix, not `_AGL-*`), and `wgrib2 -inv` on that file decodes it as
+ * `PRMSL:mean sea level` — same WMO shortName as GFS/ICON.
  */
 export const HRDPS_PARAMS: Record<string, HrdpsParam> = {
   temp: {
@@ -92,6 +98,11 @@ export const HRDPS_PARAMS: Record<string, HrdpsParam> = {
   humidity: {
     tokens: ["RH_AGL-2m"],
     match: [":RH:2 m above ground:"],
+    encoding: "scalar",
+  },
+  pressure: {
+    tokens: ["PRMSL_MSL"],
+    match: [":PRMSL:mean sea level:"],
     encoding: "scalar",
   },
 };

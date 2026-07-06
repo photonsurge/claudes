@@ -124,6 +124,7 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     showSatImg: { type: Boolean, required: true, default: false },
     satImgFeeds: { type: mongoose.Schema.Types.Mixed, required: true, default: () => defaultSatImgFeeds() },
     showFires: { type: Boolean, required: true, default: false },
+    showVolcanoes: { type: Boolean, required: true, default: false },
     showMagneticField: { type: Boolean, required: true, default: false },
     magneticFieldOpacity: { type: Number, required: true, default: 0.8 },
     showMapSource: { type: Boolean, required: true, default: false },

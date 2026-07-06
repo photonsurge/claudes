@@ -42,7 +42,7 @@ const ymdCycleToDate = (date: string, cycle: string): Date =>
   ));
 
 /** True if a complete published run already exists for this model+run time. */
-async function alreadyPublished(model: string, runDate: Date): Promise<boolean> {
+export async function alreadyPublished(model: string, runDate: Date): Promise<boolean> {
   const db = await getAppDb();
   const existing = await db.weatherRuns.getByQuery({ model, run: runDate, status: "complete", published: true });
   return !!(existing.success && existing.data);

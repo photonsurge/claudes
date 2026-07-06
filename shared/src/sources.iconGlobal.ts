@@ -6,7 +6,8 @@
  * priority so any tighter regional box (HRRR/ICON-D2/…) still wins in its bbox.
  *
  * Filled + kept consistent (dims·res == bbox) by the ICON-global adapter. Spread
- * into SOURCE_REGISTRY by sources.ts. The temp/wind/gust/humidity vars exist.
+ * into SOURCE_REGISTRY by sources.ts. The temp/wind/gust/humidity/pressure vars
+ * exist.
  */
 import type { SourceDescriptor } from "./sources";
 
@@ -37,7 +38,7 @@ export const ICON_GLOBAL_SOURCES: Record<string, SourceDescriptor> = {
     bbox: [-180, -90, 179.75, 90],
     cadence: { kind: "cron", runsUtc: [0, 6, 12, 18] },
     latencyMinutes: 240, // ~4h to publish the run; poll rather than trust
-    variables: ["temp", "wind", "gust", "humidity"],
+    variables: ["temp", "wind", "gust", "humidity", "pressure"],
     // LOW nest priority: any tighter regional nest (HRRR 30, ICON-D2 30, ICON-EU
     // 28, UKV/HRDPS, wave/ocean nests) still wins inside its bbox; icon-global
     // only fills the everywhere-else gap above the global base.

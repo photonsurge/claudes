@@ -25,6 +25,9 @@ export const WEATHER_SOURCE_JOBS: WeatherSourceJob[] = [
   { event: "refreshIfs", sourceId: "ifs", envKey: "IFS_INGEST_MS", defaultMs: 60 * MIN },
   { event: "refreshWaves", sourceId: "gfswave-mosaic", envKey: "WAVE_INGEST_MS", defaultMs: 60 * MIN },
   { event: "refreshRtofs", sourceId: "rtofs", envKey: "RTOFS_INGEST_MS", defaultMs: 180 * MIN },
+  // Temperature-at-depth chapters; polls cheaply (alreadyPublished skips
+  // before the 816MB download), so the same cadence as the surface run is fine.
+  { event: "refreshRtofsDepth", sourceId: "rtofs-depth", envKey: "RTOFS_DEPTH_INGEST_MS", defaultMs: 180 * MIN },
   // Phase 2 regional nests (zoom-gated high-res overlays).
   { event: "refreshIconD2", sourceId: "icon-d2", envKey: "ICON_D2_INGEST_MS", defaultMs: 30 * MIN },
   { event: "refreshIconEu", sourceId: "icon-eu", envKey: "ICON_EU_INGEST_MS", defaultMs: 30 * MIN },

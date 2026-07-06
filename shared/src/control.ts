@@ -397,6 +397,8 @@ export interface ControlState {
   satImgFeeds: Record<string, SatImgFeedState>;
   /** Overlay active-fire detections (NASA FIRMS VIIRS/MODIS hot-spots). */
   showFires: boolean;
+  /** Overlay currently-active volcanoes (NASA EONET). */
+  showVolcanoes: boolean;
   /** Overlay the global geomagnetic-field intensity (IGRF) — the whole-globe magnetic map. */
   showMagneticField: boolean;
   /** Geomagnetic-field overlay opacity (0–1). */
@@ -475,6 +477,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showSatImg: false,
   satImgFeeds: defaultSatImgFeeds(),
   showFires: false,
+  showVolcanoes: false,
   showMagneticField: false,
   magneticFieldOpacity: 0.8,
   showMapSource: false,
@@ -606,6 +609,8 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     showSatImg: typeof patch.showSatImg === "boolean" ? patch.showSatImg : base.showSatImg ?? false,
     satImgFeeds: mergeSatImgFeeds(base.satImgFeeds, patch.satImgFeeds),
     showFires: typeof patch.showFires === "boolean" ? patch.showFires : base.showFires ?? false,
+    showVolcanoes:
+      typeof patch.showVolcanoes === "boolean" ? patch.showVolcanoes : base.showVolcanoes ?? false,
     showMagneticField:
       typeof patch.showMagneticField === "boolean" ? patch.showMagneticField : base.showMagneticField ?? false,
     magneticFieldOpacity:

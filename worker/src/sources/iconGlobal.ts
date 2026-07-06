@@ -89,20 +89,23 @@ export function buildIconGlobalRemapArgs(args: {
  *   wind     → u_10m / v_10m   (10 m wind components, m/s, earth-relative post-remap)
  *   gust     → vmax_10m   (10 m max wind gust, m/s)
  *   humidity → relhum_2m  (2 m relative humidity, %)
+ *   pressure → pmsl       (mean sea-level pressure, Pa)
  */
 export const ICON_GLOBAL_VAR_TOKENS: Record<string, string[]> = {
   temp: ["t_2m"],
   wind: ["u_10m", "v_10m"],
   gust: ["vmax_10m"],
   humidity: ["relhum_2m"],
+  pressure: ["pmsl"],
 };
 
 /**
  * wgrib2 -match token per DWD field on the REMAPPED (regular) GRIB2. IDENTICAL to
  * ICON-D2/EU — the WMO param coding is the same across ICON nests, and cdo remap
  * preserves the GRIB2 param definitions.
- * VERIFY: cdo remap output keeps these WMO shortNames (TMP/UGRD/VGRD/MAXGUST/RH)
- * — confirm on a live remapped file if a bake ever returns empty.
+ * VERIFIED (live opendata.dwd.de listing, 2026-07-06): pmsl decodes as
+ * `PRMSL:mean sea level` on the pre-remap icosahedral file — same field cdo remap
+ * carries through, consistent with the other four fields' verified behaviour.
  */
 export const ICON_GLOBAL_FIELD_MATCH: Record<string, string> = {
   t_2m: ":TMP:2 m above ground:",
@@ -112,6 +115,7 @@ export const ICON_GLOBAL_FIELD_MATCH: Record<string, string> = {
   vmax_10m: ":(MAXGUST|GUST):10 m above ground:",
   // DWD RELHUM_2M is coded as WMO RH at 2 m above ground (already %).
   relhum_2m: ":RH:2 m above ground:",
+  pmsl: ":PRMSL:mean sea level:",
 };
 
 /** Zero-pad a forecast hour to 3 digits (DWD filenames use fff). */

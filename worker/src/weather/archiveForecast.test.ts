@@ -2,7 +2,9 @@ import {
   forecastArchiveEnabled,
   selectForecastSteps,
   archiveForecastRun,
+  backfillForecastFromPublishedRuns,
   type ForecastArchiveDb,
+  type ForecastBackfillDb,
 } from "./archiveForecast";
 import type { ArchivableRun } from "./archive";
 
@@ -127,5 +129,56 @@ describe("archiveForecastRun", () => {
     await archiveForecastRun(db, run);
     expect(prunedCutoff).not.toBeNull();
     expect((prunedCutoff as unknown as Date).getTime()).toBeLessThan(Date.now());
+  });
+});
+
+describe("backfillForecastFromPublishedRuns", () => {
+  const run: ArchivableRun = {
+    id: "run-1",
+    model: "gfs",
+    run: new Date(Date.UTC(2026, 0, 1, 0)),
+    bounds: [-180, -90, 180, 90],
+    grid: { width: 1440, height: 721, res: 0.25 },
+    steps: [0, 3].map((fhr) => ({
+      fhr,
+      validTime: new Date(Date.UTC(2026, 0, 1, fhr)).toISOString(),
+    })),
+    variables: {
+      temp: { encoding: "scalar", units: "°C", imageUnscale: [-90, 60], files: { "0": "tex-t0", "3": "tex-t3" } },
+    } as any,
+  };
+
+  const makeBackfillDb = (runs: ArchivableRun[]) => {
+    const upserts: any[] = [];
+    const db: ForecastBackfillDb = {
+      weatherTextures: {
+        getByID: async (id: string) => ({ success: true, data: { data: Buffer.from(id) } }),
+      },
+      weatherForecastFrames: {
+        upsert: async (f: any) => {
+          upserts.push(f);
+          return { written: true };
+        },
+        pruneOlderThan: async () => 0,
+      },
+      weatherRuns: {
+        getAll: async () => ({ success: true, data: runs }),
+      },
+    };
+    return { db, upserts };
+  };
+
+  it("walks every published run and totals what was written", async () => {
+    const { db, upserts } = makeBackfillDb([run, { ...run, id: "run-2", model: "ifs" }]);
+    const res = await backfillForecastFromPublishedRuns(db);
+    expect(res.runsProcessed).toBe(2);
+    expect(res.written).toBe(4); // 2 steps x 2 runs
+    expect(upserts).toHaveLength(4);
+  });
+
+  it("handles no published runs", async () => {
+    const { db } = makeBackfillDb([]);
+    const res = await backfillForecastFromPublishedRuns(db);
+    expect(res).toEqual({ runsProcessed: 0, written: 0 });
   });
 });

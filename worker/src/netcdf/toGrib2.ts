@@ -26,6 +26,9 @@ export interface CdoConvertArgs {
   outPath: string;
   /** netCDF variable names to keep (cdo -selname). Omit to copy all. */
   selnames?: string[];
+  /** Single vertical level to extract (cdo -sellevel), e.g. a depth in metres
+   *  for a 3-D ocean field. Applied innermost (first), before selname/remap. */
+  sellevel?: number;
   /** wgrib2/cdo grid spec for -remapbil (native tripolar only). */
   remapGrid?: string;
   cdoBin?: string;
@@ -37,18 +40,21 @@ export interface CdoConvertArgs {
  *
  * cdo chains operators right-to-left: the rightmost reads the file, and only the
  * INNER (piped) operators take a leading `-`; the outermost takes none. Crucially
- * `remapbil`/`selname` are themselves file-reading operators, so `copy` is used
- * ONLY when neither is present (appending `copy` alongside remapbil is the
- * "No Operators with missing input left" abort). Forms produced:
- *   plain           : cdo -f grb2 copy IN OUT
- *   remap           : cdo -f grb2 remapbil,GRID IN OUT
- *   remap + selname : cdo -f grb2 remapbil,GRID -selname,VARS IN OUT
- *   selname         : cdo -f grb2 selname,VARS IN OUT
+ * `remapbil`/`selname`/`sellevel` are themselves file-reading operators, so
+ * `copy` is used ONLY when none are present (appending `copy` alongside
+ * remapbil is the "No Operators with missing input left" abort). Forms
+ * produced:
+ *   plain             : cdo -f grb2 copy IN OUT
+ *   remap             : cdo -f grb2 remapbil,GRID IN OUT
+ *   remap + selname   : cdo -f grb2 remapbil,GRID -selname,VARS IN OUT
+ *   + sellevel        : cdo -f grb2 remapbil,GRID -selname,VARS -sellevel,N IN OUT
+ *   selname           : cdo -f grb2 selname,VARS IN OUT
  */
 export function buildCdoArgs(args: Omit<CdoConvertArgs, "runner" | "cdoBin">): string[] {
   const chain: string[] = [];
   if (args.remapGrid) chain.push(`remapbil,${args.remapGrid}`);
   if (args.selnames?.length) chain.push(`selname,${args.selnames.join(",")}`);
+  if (args.sellevel !== undefined) chain.push(`sellevel,${args.sellevel}`);
   if (chain.length === 0) chain.push("copy");
   // Outermost operator: no dash; each subsequent piped operator: leading dash.
   const ops = chain.map((op, i) => (i === 0 ? op : `-${op}`));

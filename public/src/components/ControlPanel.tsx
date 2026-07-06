@@ -400,6 +400,11 @@ export default function ControlPanel({
             checked={state.showFires}
             onChange={(showFires) => patch({ showFires })}
           />
+          <Toggle
+            label="🌋 Volcanoes"
+            checked={state.showVolcanoes}
+            onChange={(showVolcanoes) => patch({ showVolcanoes })}
+          />
         </div>
       </Section>
 

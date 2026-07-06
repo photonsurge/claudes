@@ -40,7 +40,7 @@ export const HRDPS_SOURCES: Record<string, SourceDescriptor> = {
     bbox: [-153.0, 27.5, -40.995, 70.52],
     cadence: { kind: "cron", runsUtc: [0, 6, 12, 18] },
     latencyMinutes: 90,
-    variables: ["temp", "wind", "gust", "humidity"],
+    variables: ["temp", "wind", "gust", "humidity", "pressure"],
     priority: 30, // nest: beats the GFS/IFS global base inside its bbox
     minZoom: 3.5,
     enabled: true,

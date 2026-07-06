@@ -68,10 +68,11 @@ describe("ICON_GLOBAL variable → DWD field token map", () => {
     expect(ICON_GLOBAL_VAR_TOKENS.wind).toEqual(["u_10m", "v_10m"]);
     expect(ICON_GLOBAL_VAR_TOKENS.gust).toEqual(["vmax_10m"]);
     expect(ICON_GLOBAL_VAR_TOKENS.humidity).toEqual(["relhum_2m"]);
+    expect(ICON_GLOBAL_VAR_TOKENS.pressure).toEqual(["pmsl"]);
   });
 
-  it("covers exactly the four source variables (temp/wind/gust/humidity)", () => {
-    expect(Object.keys(ICON_GLOBAL_VAR_TOKENS).sort()).toEqual(["gust", "humidity", "temp", "wind"]);
+  it("covers exactly the five source variables (temp/wind/gust/humidity/pressure)", () => {
+    expect(Object.keys(ICON_GLOBAL_VAR_TOKENS).sort()).toEqual(["gust", "humidity", "pressure", "temp", "wind"]);
   });
 
   it("matches the descriptor's declared variable set", () => {

@@ -20,6 +20,7 @@ import { useFaults } from "../lib/faults-overlay";
 import { useAurora } from "../lib/aurora-overlay";
 import { useSatImg } from "../lib/satimg-overlay";
 import { useFires } from "../lib/fires-overlay";
+import { useVolcanoes } from "../lib/volcanoes-overlay";
 import { useGeomag } from "../lib/geomag-overlay";
 import { useCams } from "../lib/cams/useCams";
 import type { City } from "../lib/cities";
@@ -92,6 +93,7 @@ export default function WatchSurface({
   const aurora = useAurora(state.showAurora && ready);
   const satimg = useSatImg(state.showSatImg && ready);
   const fires = useFires(state.showFires && ready);
+  const volcanoes = useVolcanoes(state.showVolcanoes && ready);
   const geomag = useGeomag(state.showMagneticField && ready);
   // Webcams feed the "near this event" broadcast panel; only load them when the
   // chrome is on (the plain surface doesn't show the panel).
@@ -127,6 +129,7 @@ export default function WatchSurface({
         aurora={aurora}
         satimg={satimg}
         fires={fires}
+        volcanoes={volcanoes}
         geomag={geomag}
         interactive={false}
         pulseAt={pulseAt}

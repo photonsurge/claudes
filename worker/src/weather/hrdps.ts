@@ -162,10 +162,11 @@ export async function ingestHrdps(now = new Date()): Promise<IngestResult> {
             const path = await fetchField(spec.tokens[0], fhr);
             const values = await regridScalar(path, spec.match[0]);
             track(`${path}.rg.grib2`);
-            // temp K→°C via convertScalarUnits; gust already m/s, humidity already %.
+            // temp K→°C, pressure Pa→hPa via convertScalarUnits; gust already m/s, humidity already %.
             const skipUnitConvert = variableId === "gust" || variableId === "humidity";
             const res = await bakeScalar({ variableId, values, width: W, height: H, preRolled: true, skipUnitConvert });
-            const units = variableId === "temp" ? "°C" : variableId === "humidity" ? "%" : "m/s";
+            const units =
+              variableId === "temp" ? "°C" : variableId === "humidity" ? "%" : variableId === "pressure" ? "hPa" : "m/s";
             tag(variableId, {
               encoding: "scalar", units, domain: res.domain, palette: variableId,
               imageUnscale: res.imageUnscale,
