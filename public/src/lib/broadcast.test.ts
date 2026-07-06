@@ -9,6 +9,8 @@ import {
   topAlert,
   alertBannerText,
   alertSummary,
+  scopeAlertsToBbox,
+  scopeQuakesToBbox,
   worldWatchSummary,
   worldWatchFeed,
 } from "./broadcast";
@@ -135,6 +137,28 @@ describe("alertSummary", () => {
   });
 });
 
+describe("scopeAlertsToBbox / scopeQuakesToBbox", () => {
+  // Roughly Portugal's mainland bbox.
+  const portugal: [number, number, number, number] = [-9.6, 36.8, -6.1, 42.2];
+
+  it("keeps only alerts whose representative point falls inside the bbox", () => {
+    const inside = { ...alert(3, { areaDesc: "Lisboa" }), geometry: { type: "Point", coordinates: [-9.14, 38.72] } };
+    const outside = { ...alert(3, { areaDesc: "Paris" }), geometry: { type: "Point", coordinates: [2.35, 48.86] } };
+    expect(scopeAlertsToBbox([inside, outside], portugal)).toEqual([inside]);
+  });
+
+  it("drops alerts with no derivable representative point", () => {
+    const noGeometry = { ...alert(2), geometry: { type: "Point", coordinates: [] } } as AlertFeature;
+    expect(scopeAlertsToBbox([noGeometry], portugal)).toEqual([]);
+  });
+
+  it("keeps only quakes inside the bbox", () => {
+    const inside = quake({ id: "in", lng: -9.14, lat: 38.72 });
+    const outside = quake({ id: "out", lng: 2.35, lat: 48.86 });
+    expect(scopeQuakesToBbox([inside, outside], portugal)).toEqual([inside]);
+  });
+});
+
 describe("worldWatchSummary", () => {
   const raw = (rank: number, over: Partial<Alert> = {}): Alert =>
     ({
@@ -252,6 +276,20 @@ describe("worldWatchFeed", () => {
     // Then the rank-1 advisory, then the M3.1 minnow.
     expect(feed[2].title).toBe("Frost Advisory");
     expect(feed[3].tag).toBe("M3.1");
+  });
+
+  it("orders same-tier quakes by exact magnitude, not arrival order", () => {
+    // All three land in the same 4.5-4.99 bucket — before the continuous-weight
+    // fix these tied and fell back to insertion order regardless of magnitude.
+    const feed = worldWatchFeed(
+      [],
+      [
+        quake({ id: "a", mag: 4.5 }),
+        quake({ id: "b", mag: 4.7 }),
+        quake({ id: "c", mag: 4.6 }),
+      ],
+    );
+    expect(feed.map((f) => f.tag)).toEqual(["M4.7", "M4.6", "M4.5"]);
   });
 
   it("flags tsunami quakes and counts a cross-source cluster once", () => {

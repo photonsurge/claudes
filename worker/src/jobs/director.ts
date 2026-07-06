@@ -1,7 +1,7 @@
 /**
- * Auto-director config jobs (worker side of the admin "Director" button):
+ * Auto-director config jobs (worker side of the admin "Director" buttons):
  *
- *  • seedSlides — backfill DEFAULT_KIND_SLIDES onto every scene's director
+ *  • seedSlides  — backfill DEFAULT_KIND_SLIDES onto every scene's director
  *    config, so a fresh "Look per shot type" panel has a starter library.
  *    Schema/DEFAULT_DIRECTOR_CONFIG defaults only populate a doc at insert
  *    time, never on read of a pre-existing one, so a scene created before
@@ -9,9 +9,14 @@
  *    broadcastState.watchToken / ensureWatchToken). Non-destructive and
  *    repeatable: only fills a kind whose slide list is currently empty, so
  *    it never clobbers slides the operator has since saved.
+ *  • clearSlides — wipe every scene's saved-slide library back to empty, so
+ *    a re-run of seedSlides lays down the current DEFAULT_KIND_SLIDES again
+ *    (mainly for iterating on the starter set itself). Destructive: also
+ *    drops any slide the operator saved by hand.
  *
- * `seedKindSlides` is exported so the `yarn seed:director-slides` one-shot
- * script runs the exact same code as the button.
+ * `seedKindSlides`/`clearKindSlides` are exported so the `yarn
+ * seed:director-slides`/`yarn clear:director-slides` one-shot scripts run
+ * the exact same code as the buttons.
  */
 import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
@@ -56,6 +61,42 @@ export async function seedSlides(_job: Job) {
   } catch (err) {
     log(TAG, "seedSlides failed", { err: summarizeForLog(err) });
     blogErr(TAG, "director slide seeding failed", err, "director", "seedSlides");
+    throw err;
+  }
+}
+
+/** Wipe every scene's saved-slide library back to empty (per kind, only where non-empty). */
+export async function clearKindSlides() {
+  const db = await getAppDb();
+  const scenes = await db.listScenes();
+
+  const cleared: Record<string, string[]> = {};
+  for (const scene of scenes) {
+    const cfg = await db.getOrInitDirectorConfig(scene.id);
+    const patch: Partial<Record<SegmentKind, KindSlide[]>> = {};
+    for (const kind of SEGMENT_KINDS) {
+      if ((cfg.kindSlides[kind] ?? []).length > 0) patch[kind] = [];
+    }
+    if (Object.keys(patch).length === 0) continue;
+    await db.saveDirectorConfig(scene.id, { kindSlides: patch });
+    cleared[scene.id] = Object.keys(patch);
+  }
+
+  const result = { scenes: scenes.length, cleared };
+  log(TAG, "clearSlides done", result);
+  return result;
+}
+
+/** Job handler: `director.clearSlides` — the admin "Clear look slides" button. */
+export async function clearSlides(_job: Job) {
+  try {
+    const result = await clearKindSlides();
+    const kinds = Object.values(result.cleared).flat().length;
+    blogInfo(TAG, `director slides cleared: ${kinds} kind(s) across ${Object.keys(result.cleared).length} scene(s)`, result, "director", "clearSlides");
+    return result;
+  } catch (err) {
+    log(TAG, "clearSlides failed", { err: summarizeForLog(err) });
+    blogErr(TAG, "director slide clearing failed", err, "director", "clearSlides");
     throw err;
   }
 }

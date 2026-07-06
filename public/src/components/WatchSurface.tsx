@@ -41,6 +41,8 @@ interface WatchSurfaceProps {
   sceneName?: string;
   /** [lng,lat] of the active event to pulse-highlight, or null. */
   pulseAt?: [number, number] | null;
+  /** ISO-3166 alpha-2 of the on-air country spotlight to glow-highlight, or null. */
+  glowCountryIso?: string | null;
   /** On-air director segment — drives the broadcast event reticle. */
   onAirSegment?: Segment | null;
   /** Director's "coming up" preview — drives the chrome's UP NEXT hint. */
@@ -55,6 +57,7 @@ export default function WatchSurface({
   cities,
   sceneName,
   pulseAt,
+  glowCountryIso,
   onAirSegment,
   upNext = [],
   slideName,
@@ -127,6 +130,7 @@ export default function WatchSurface({
         geomag={geomag}
         interactive={false}
         pulseAt={pulseAt}
+        glowCountryIso={glowCountryIso}
         highlightTrack={highlightTrack}
       />
       {/* The broadcast chrome carries its own legend/alert furniture, so the plain

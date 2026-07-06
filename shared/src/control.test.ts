@@ -77,6 +77,7 @@ describe("mergeControlState", () => {
       showCableLabels: true,
       showFaults: true,
       showAurora: true,
+      auroraOpacity: 0.6,
       showSatImg: true,
       satImgFeeds: {
         global: { on: true, opacity: 0.7 },
@@ -89,6 +90,7 @@ describe("mergeControlState", () => {
       },
       showFires: true,
       showMagneticField: true,
+      magneticFieldOpacity: 0.4,
       showGraticule: true,
       graticuleColor: "#abcdef",
       graticuleLabels: false,

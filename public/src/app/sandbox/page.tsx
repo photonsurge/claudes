@@ -33,6 +33,7 @@ import { useCables } from "../../lib/cables-overlay";
 import { useFaults } from "../../lib/faults-overlay";
 import { useAurora } from "../../lib/aurora-overlay";
 import { useSatImg } from "../../lib/satimg-overlay";
+import { useGeomag } from "../../lib/geomag-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
 import ViewingOverlay from "../../components/ViewingOverlay";
@@ -69,6 +70,7 @@ export default function SandboxPage() {
   const faults = useFaults(state.showFaults);
   const aurora = useAurora(state.showAurora);
   const satimg = useSatImg(state.showSatImg);
+  const geomag = useGeomag(state.showMagneticField);
 
   // Cold start from the main scene so we open on whatever's currently on air.
   useEffect(() => {
@@ -127,12 +129,13 @@ export default function SandboxPage() {
           faults={faults}
           aurora={aurora}
           satimg={satimg}
+          geomag={geomag}
           interactive
           onSelect={setSelected}
           onCameraChange={(center, zoom) => apply({ ...state, camera: { center, zoom } })}
         />
-        {state.showAlerts || state.showSeismic ? (
-          <AlertLegend alerts={alerts} quakes={quakes} />
+        {state.showAlerts || state.showSeismic || state.showAurora || state.showMagneticField ? (
+          <AlertLegend alerts={alerts} quakes={quakes} aurora={aurora} geomag={geomag} />
         ) : null}
         {selected ? (
           <ViewingOverlay

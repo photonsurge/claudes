@@ -219,6 +219,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Director",
   },
   {
+    id: "director-clear-slides",
+    label: "Clear look slides",
+    description:
+      "Wipe every scene's saved \"Look per shot type\" slide library back to empty — including any slide an operator saved by hand. Run \"Seed look slides\" after to lay down the starter set again.",
+    domain: "director",
+    type: "director",
+    event: "clearSlides",
+    group: "Director",
+  },
+  {
     id: "elevation-bake",
     label: "Bake elevation relief",
     description:

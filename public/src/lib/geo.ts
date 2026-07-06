@@ -101,3 +101,15 @@ export function compass16(bearingDeg: number): string {
 export function bearingLabel(from: [number, number], to: [number, number]): string {
   return compass16(initialBearingDeg(from, to));
 }
+
+/** True when [lng,lat] falls inside a [west,south,east,north] box — wraps the
+ *  antimeridian when west > east, same convention as `/api/cities`'s bbox. */
+export function withinBbox(
+  lng: number,
+  lat: number,
+  bbox: [number, number, number, number],
+): boolean {
+  const [w, s, e, n] = bbox;
+  if (lat < s || lat > n) return false;
+  return w <= e ? lng >= w && lng <= e : lng >= w || lng <= e;
+}

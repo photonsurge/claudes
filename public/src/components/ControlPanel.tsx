@@ -435,11 +435,43 @@ export default function ControlPanel({
             checked={state.showAurora}
             onChange={(showAurora) => patch({ showAurora })}
           />
+          {state.showAurora && (
+            <Field label="Opacity">
+              <input
+                type="range"
+                min={0.1}
+                max={1}
+                step={0.05}
+                value={state.auroraOpacity}
+                onChange={(e) => patch({ auroraOpacity: Number(e.target.value) })}
+                aria-label="Aurora opacity"
+              />
+              <span style={{ color: "#fff", width: 34, textAlign: "right" }}>
+                {Math.round(state.auroraOpacity * 100)}%
+              </span>
+            </Field>
+          )}
           <Toggle
             label="Magnetic field (global)"
             checked={state.showMagneticField}
             onChange={(showMagneticField) => patch({ showMagneticField })}
           />
+          {state.showMagneticField && (
+            <Field label="Opacity">
+              <input
+                type="range"
+                min={0.1}
+                max={1}
+                step={0.05}
+                value={state.magneticFieldOpacity}
+                onChange={(e) => patch({ magneticFieldOpacity: Number(e.target.value) })}
+                aria-label="Magnetic field opacity"
+              />
+              <span style={{ color: "#fff", width: 34, textAlign: "right" }}>
+                {Math.round(state.magneticFieldOpacity * 100)}%
+              </span>
+            </Field>
+          )}
         </div>
       </Section>
 

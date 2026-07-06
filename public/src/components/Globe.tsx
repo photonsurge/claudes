@@ -39,6 +39,7 @@ import { tracksLayer, orbitLayer, trailsLayer, filterTrails, trackLabelData, typ
 import { cityLabelMinZoom, cityDetail } from "../lib/cities";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
+import { countryFeatureFor, countryGlowLayers } from "./layers/countryGlow";
 import { seismicLayer } from "./layers/seismic";
 import { seismographStationLayers, seismoKeyOf, seismoShortName } from "./layers/seismograph-stations";
 import { graticuleLayer } from "./layers/graticule";
@@ -107,6 +108,8 @@ export interface GlobeProps {
   onCameraChange?: (center: [number, number], zoom: number) => void;
   /** [lng,lat] of the active event to pulse-highlight, or null/undefined for none. */
   pulseAt?: [number, number] | null;
+  /** ISO-3166 alpha-2 of the on-air country spotlight to glow-highlight, or null. */
+  glowCountryIso?: string | null;
   /** On-air plane/ship to spotlight with a locator ring on the globe, or null. */
   highlightTrack?: TrackHighlight | null;
   /**
@@ -181,7 +184,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], seismoStations = [], seismoActive = null, cables, faults, aurora, satimg, fires = [], geomag, interactive = true, onCameraChange, pulseAt, highlightTrack, onSelect },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], seismoStations = [], seismoActive = null, cables, faults, aurora, satimg, fires = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, highlightTrack, onSelect },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -193,6 +196,24 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   useEffect(() => {
     pulseAtRef.current = pulseAt ?? null;
   });
+  // The spotlighted country's resolved boundary feature (async — countries.geojson
+  // is fetched/parsed once by countryGlow.ts, then cached), read by the pulse rAF
+  // loop below so the glow keeps breathing every frame it's on air.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const glowFeatureRef = useRef<any>(null);
+  useEffect(() => {
+    if (!glowCountryIso) {
+      glowFeatureRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    countryFeatureFor(glowCountryIso).then((f) => {
+      if (!cancelled) glowFeatureRef.current = f;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [glowCountryIso]);
   // Hover-pulse (control/interactive only): hovering an alert breathes its own
   // area, hovering a quake pings its epicentre — the same on-air highlight, so
   // the operator can "feel out" an event before clicking to pin its card. The
@@ -315,7 +336,12 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     let pulse: any[] = [];
     if (cut) pulse = onAirPulseLayers(alertsRef.current, cut, Date.now());
     else if (hover) pulse = onAirPulseLayers(hover.features, hover.at, Date.now());
-    const layers = pulse.length ? [...baseLayersRef.current, ...pulse] : baseLayersRef.current;
+    // A country spotlight breathes its boundary glow independently of (and
+    // alongside) the point pulse above — the two kinds never overlap on air.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const glow = countryGlowLayers(glowFeatureRef.current, Date.now()) as any[];
+    const extra = [...pulse, ...glow];
+    const layers = extra.length ? [...baseLayersRef.current, ...extra] : baseLayersRef.current;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     deckRef.current?.setProps({ layers } as any);
   };
@@ -721,7 +747,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // Global geomagnetic-field intensity (IGRF) — a full-globe scalar field drawn
     // as the surface (under borders/cities/overlays), like the weather rasters.
     if (state.showMagneticField && geomag?.texture) {
-      layers.push(...geomagLayers(geomag.meta, geomag.texture));
+      layers.push(...geomagLayers(geomag.meta, geomag.texture, state.magneticFieldOpacity));
     }
 
     layers.push(countriesLayer(state));
@@ -754,7 +780,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // the vector reference overlays (cables/faults/alerts/cities/tracks) so those
     // stay crisp on top. Pre-baked PNG; the far-side oval is depth-occluded.
     if (state.showAurora && aurora?.texture) {
-      layers.push(...auroraLayers(aurora.meta, aurora.texture));
+      layers.push(...auroraLayers(aurora.meta, aurora.texture, state.auroraOpacity));
     }
 
     // Submarine cables read as reference geography — above borders/weather,
@@ -847,10 +873,12 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showCableLabels,
     state.showFaults,
     state.showAurora,
+    state.auroraOpacity,
     state.showSatImg,
     state.satImgFeeds,
     state.showFires,
     state.showMagneticField,
+    state.magneticFieldOpacity,
     state.showMapSource,
     state.showGraticule,
     state.graticuleColor,
@@ -878,7 +906,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // Animate the event pulse: while an event is on air, re-commit the layers each
   // frame so the rings expand/fade. When it clears, commit once without them.
   useEffect(() => {
-    if (!pulseAt && !hoverPulse) {
+    if (!pulseAt && !hoverPulse && !glowCountryIso) {
       commitLayers();
       return;
     }
@@ -890,7 +918,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pulseAt?.[0], pulseAt?.[1], hoverPulse?.[0], hoverPulse?.[1]]);
+  }, [pulseAt?.[0], pulseAt?.[1], hoverPulse?.[0], hoverPulse?.[1], glowCountryIso]);
 
   // Name labels for the HTML overlay (deck's TextLayer draws blank under the
   // globe). Track names honour the "Names" toggle and always show (minZoom 0);

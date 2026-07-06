@@ -6,6 +6,7 @@ import {
   initialBearingDeg,
   compass16,
   bearingLabel,
+  withinBbox,
 } from "./geo";
 
 describe("haversineKm", () => {
@@ -104,5 +105,29 @@ describe("initialBearingDeg / compass16", () => {
   it("bearingLabel names the epicentre direction from a city", () => {
     // A quake to the north-east of a city reads "NE".
     expect(bearingLabel([0, 0], [3, 3])).toBe("NE");
+  });
+});
+
+describe("withinBbox", () => {
+  const portugal: [number, number, number, number] = [-9.6, 36.8, -6.1, 42.2];
+
+  it("is true for a point inside the box", () => {
+    expect(withinBbox(-9.14, 38.72, portugal)).toBe(true); // Lisbon
+  });
+
+  it("is false for a point outside the box", () => {
+    expect(withinBbox(2.35, 48.86, portugal)).toBe(false); // Paris
+  });
+
+  it("is true exactly on the box edges", () => {
+    expect(withinBbox(-9.6, 36.8, portugal)).toBe(true);
+    expect(withinBbox(-6.1, 42.2, portugal)).toBe(true);
+  });
+
+  it("wraps the antimeridian when west > east", () => {
+    const wraps: [number, number, number, number] = [170, -10, -170, 10];
+    expect(withinBbox(175, 0, wraps)).toBe(true);
+    expect(withinBbox(-175, 0, wraps)).toBe(true);
+    expect(withinBbox(0, 0, wraps)).toBe(false);
   });
 });

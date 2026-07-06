@@ -22,6 +22,26 @@ describe("COUNTRY_SHOTS catalog", () => {
     }
   });
 
+  it("has a unique ISO-3166 alpha-2 code and a sane bbox for every country", () => {
+    const codes = COUNTRY_SHOTS.map((c) => c.iso2);
+    expect(new Set(codes).size).toBe(codes.length);
+    for (const c of COUNTRY_SHOTS) {
+      expect(c.iso2).toMatch(/^[A-Z]{2}$/);
+      const [w, s, e, n] = c.bbox;
+      expect(w).toBeGreaterThanOrEqual(-180);
+      expect(e).toBeLessThanOrEqual(180);
+      expect(w).toBeLessThan(e);
+      expect(s).toBeGreaterThanOrEqual(-90);
+      expect(n).toBeLessThanOrEqual(90);
+      expect(s).toBeLessThan(n);
+      // The framing centre should actually fall inside its own bbox.
+      expect(c.center[0]).toBeGreaterThanOrEqual(w);
+      expect(c.center[0]).toBeLessThanOrEqual(e);
+      expect(c.center[1]).toBeGreaterThanOrEqual(s);
+      expect(c.center[1]).toBeLessThanOrEqual(n);
+    }
+  });
+
   it("includes the default favourites (UK + Japan)", () => {
     expect(DEFAULT_DIRECTOR_COUNTRIES).toEqual(["uk", "japan"]);
     for (const id of DEFAULT_DIRECTOR_COUNTRIES) {

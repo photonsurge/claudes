@@ -267,6 +267,19 @@ describe("buildCandidates", () => {
     expect(s?.segment.patch.activeVariable).toBe("gust");
   });
 
+  it("applies a kindLooks auroraOpacity/magneticFieldOpacity override without touching other kinds", async () => {
+    const pool = await buildCandidates(
+      fakeDb(),
+      cfg({ kindLooks: { quake: { auroraOpacity: 0.4, magneticFieldOpacity: 0.6 } } }),
+    );
+    const q = pool.find((c) => c.segment.id === "quake:q1")!;
+    expect(q.segment.patch.auroraOpacity).toBe(0.4);
+    expect(q.segment.patch.magneticFieldOpacity).toBe(0.6);
+    const tour = pool.find((c) => c.segment.kind === "tour")!;
+    expect(tour.segment.patch.auroraOpacity).toBeUndefined();
+    expect(tour.segment.patch.magneticFieldOpacity).toBeUndefined();
+  });
+
   it("derives a storm centroid from the alert polygon", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     const storm = pool.find((c) => c.segment.kind === "storm");

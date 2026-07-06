@@ -25,6 +25,7 @@ import {
   type SegmentKind,
 } from "@photonsurge/shared/director";
 import { globalMapTour, type MapTypeNeed } from "@photonsurge/shared/director-rois";
+import { countryShot } from "@photonsurge/shared/director-countries";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
 import { severityLabel } from "./alerts";
 import { useSocket } from "./socket-provider";
@@ -210,6 +211,14 @@ const PULSE_KINDS = new Set<SegmentKind>(["storm", "quake"]);
 export function eventPulse(director: DirectorState | null): [number, number] | null {
   if (!director?.active || !director.segment) return null;
   return PULSE_KINDS.has(director.segment.kind) ? director.segment.camera.center : null;
+}
+
+/** ISO-3166 alpha-2 of the on-air country spotlight to glow-highlight on the
+ *  globe, or null. The segment's id is the CountryShot catalog id (e.g.
+ *  "portugal"), not the ISO code itself — see shared/director-countries. */
+export function activeCountryIso(director: DirectorState | null): string | null {
+  if (!director?.active || director.segment?.kind !== "country") return null;
+  return countryShot(director.segment.id)?.iso2 ?? null;
 }
 
 /**

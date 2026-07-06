@@ -22,7 +22,8 @@ import type { Quake, Track } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
 import type { City } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
-import { buildTicker } from "../../lib/broadcast";
+import { countryShot } from "@photonsurge/shared/director-countries";
+import { buildTicker, scopeAlertsToBbox, scopeQuakesToBbox } from "../../lib/broadcast";
 import { bboxForCamera } from "../../lib/history-client";
 import { legendVariableFor } from "../../lib/legend";
 import { nearest, formatKm } from "../../lib/geo";
@@ -46,8 +47,10 @@ import EventNearbyPanel from "./EventNearbyPanel";
 import QuakeReport from "./QuakeReport";
 import TrackInfoPanel from "./TrackInfoPanel";
 import OnAirCard from "./OnAirCard";
+import CountrySpotlightPanel from "./CountrySpotlightPanel";
 import SyslogFeed from "./SyslogFeed";
 import UpNextPanel from "./UpNextPanel";
+import BuildInfoTag from "./BuildInfoTag";
 import { hasRealLocation, isTargetedEvent, KIND_COLOR } from "./kinds";
 
 /** Design-stage layout constants (in 1080p reference pixels). */
@@ -138,6 +141,13 @@ export default function BroadcastFrame({
   // Colour-key ramp for the aurora oval / magnetic field — both hooks already
   // return null when their toggle is off, so presence alone gates this.
   const spaceWeatherShown = aurora?.meta != null || geomag?.meta != null;
+  // A country spotlight scopes the global alerts/quakes feeds down to its own
+  // bbox (`shared/director-countries`) so the on-air card's "IN VIEW" rollup
+  // reads as the nation's, not the whole planet's.
+  const countryOnAir = onAirSegment?.kind === "country" ? countryShot(onAirSegment.id) : undefined;
+  const countryAlerts = countryOnAir ? scopeAlertsToBbox(alerts, countryOnAir.bbox) : alerts;
+  const countryQuakes = countryOnAir ? scopeQuakesToBbox(quakes, countryOnAir.bbox) : quakes;
+
   // Whatever currently owns the bottom-left slot (mutually exclusive on
   // segment kind) — the history panel stacks above whichever of these is on
   // screen, so it always reads as "left column" rather than a fixed position.
@@ -164,7 +174,14 @@ export default function BroadcastFrame({
               color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
             />
           )
-        : <OnAirCard segment={onAirSegment} alerts={alerts} quakes={quakes} theme={theme} />;
+        : countryOnAir
+          ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <OnAirCard segment={onAirSegment} alerts={countryAlerts} quakes={countryQuakes} theme={theme} />
+              <CountrySpotlightPanel country={countryOnAir} color={KIND_COLOR.country} />
+            </div>
+          )
+          : <OnAirCard segment={onAirSegment} alerts={alerts} quakes={quakes} theme={theme} />;
 
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 5 }}>
@@ -309,9 +326,10 @@ export default function BroadcastFrame({
           <WorldWatchPanel worldWatch={worldWatch} theme={theme} />
         </div>
 
-        {/* Bottom-right column: UP NEXT hint stacked above the always-on
-            SYSLOG feed. column-reverse anchors the feed's newest line to the
-            bottom edge, with UP NEXT stacking upward above it. */}
+        {/* Bottom-right column: UP NEXT hint, the SYSLOG feed, and the build
+            stamp anchored beneath both. column-reverse anchors the first child
+            (BuildInfoTag) to the bottom edge, with SYSLOG then UP NEXT
+            stacking upward above it. */}
         <div
           style={{
             position: "absolute",
@@ -323,6 +341,7 @@ export default function BroadcastFrame({
             gap: 10,
           }}
         >
+          <BuildInfoTag />
           <SyslogFeed />
           <UpNextPanel items={upNext} />
         </div>

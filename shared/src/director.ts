@@ -379,6 +379,10 @@ export interface KindLook {
   activeVariable?: string | null;
   /** Per-feed satellite state (on/opacity/composite look), keyed by feed id (null/undefined = inherit live). */
   satImgFeeds?: Partial<Record<string, Partial<SatImgFeedState>>> | null;
+  /** Aurora oval overlay opacity for this shot type (null/undefined = inherit live). */
+  auroraOpacity?: number | null;
+  /** Geomagnetic-field overlay opacity for this shot type (null/undefined = inherit live). */
+  magneticFieldOpacity?: number | null;
 }
 
 /**
@@ -449,13 +453,13 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     seedSlide(
       "intro-cinematic-dark",
       "Cinematic Dark",
-      { basemap: "dark", windMode: "particles", wind: WIND_PRESETS.dense },
+      { basemap: "dark", windMode: "particles", wind: { ...WIND_PRESETS.dense, opacity: 0.5 } },
       ["showWind", "showPressure", "showCities"],
     ),
     seedSlide(
       "intro-city-lights",
       "City Lights",
-      { basemap: "night", windMode: "particles", wind: WIND_PRESETS.calm },
+      { basemap: "night", windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } },
       ["showCities"],
     ),
   ],
@@ -489,8 +493,8 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     seedSlide(
       "tour-weather-check",
       "Weather Check",
-      { windMode: "particles", wind: WIND_PRESETS.default, activeVariable: "temp" },
-      ["showWind", "showCities"],
+      { windMode: "particles", wind: { ...WIND_PRESETS.default, opacity: 0.5 }, activeVariable: "temp" },
+      ["showWind", "showElevation", "showCities"],
     ),
     seedSlide("tour-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
       "showSatImg",
@@ -501,8 +505,8 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     seedSlide(
       "country-national-check",
       "National Weather Check",
-      { windMode: "particles", wind: WIND_PRESETS.default },
-      ["showWind", "showPressure", "showRadar", "showAlerts", "showCities"],
+      { windMode: "particles", wind: { ...WIND_PRESETS.default, opacity: 0.5 } },
+      ["showWind", "showPressure", "showRadar", "showAlerts", "showElevation", "showCities"],
     ),
     seedSlide("country-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
       "showSatImg",
@@ -514,11 +518,12 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     seedSlide(
       "weather-synoptic-standard",
       "Synoptic Standard",
-      { windMode: "particles", wind: WIND_PRESETS.default, activeVariable: "temp" },
-      ["showWind", "showPressure", "showContours", "showRadar", "showCities"],
+      { windMode: "particles", wind: { ...WIND_PRESETS.default, opacity: 0.5 }, activeVariable: "temp" },
+      ["showWind", "showPressure", "showContours", "showRadar", "showAlerts", "showElevation", "showCities"],
     ),
     seedSlide("weather-satellite-clouds", "Satellite Clouds", { showSatImg: true, satImgLook: "geocolor" }, [
       "showSatImg",
+      "showAlerts",
       "showCities",
     ]),
   ],
@@ -553,7 +558,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     ]),
   ],
   flight: [
-    seedSlide("flight-jet-stream", "Jet Stream", { windMode: "particles", wind: WIND_PRESETS.dense }, [
+    seedSlide("flight-jet-stream", "Jet Stream", { windMode: "particles", wind: { ...WIND_PRESETS.dense, opacity: 0.5 } }, [
       "showWind",
       "showAircraft",
       "showTrails",
@@ -769,6 +774,18 @@ function mergeKindLooks(
       }
       if ("satImgFeeds" in inner) {
         cur.satImgFeeds = sanitizeSatImgFeedsPatch(inner.satImgFeeds);
+      }
+      if ("auroraOpacity" in inner) {
+        cur.auroraOpacity =
+          typeof inner.auroraOpacity === "number" && Number.isFinite(inner.auroraOpacity)
+            ? inner.auroraOpacity
+            : undefined;
+      }
+      if ("magneticFieldOpacity" in inner) {
+        cur.magneticFieldOpacity =
+          typeof inner.magneticFieldOpacity === "number" && Number.isFinite(inner.magneticFieldOpacity)
+            ? inner.magneticFieldOpacity
+            : undefined;
       }
       out[k] = cur;
     }

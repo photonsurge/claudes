@@ -1,48 +1,33 @@
 "use client";
 
 /**
- * "Who's affected" panel for an on-air targeted event (storm / quake / aircraft
- * / ship). Given the event's [lng,lat] it shows the cities within range — a
- * featured city slot that cycles through every nearby city (photo + Wikipedia
- * blurb when the City doc has one, worker-cached; see enrich:wiki, plus a
- * "PAST YEAR" climate strip for that same city — same chart as PointHistoryPanel,
- * just keyed to the featured city instead of the on-air camera centre), a
- * compact list of the other nearby cities with population + distance, and any
- * live webcams near the event. Pure presentation inside the scaled broadcast
- * stage; pointer-inert.
+ * "TOP CITIES" panel for an on-air country spotlight — the country's biggest
+ * cities (population-ranked, scoped to the country's bbox via listCities, same
+ * plumbing the region zoom-in cities layer already uses), with a featured slot
+ * that cycles through them (photo + Wikipedia blurb when the City doc has one,
+ * worker-cached; see enrich:wiki) plus a "PAST YEAR" climate strip for that
+ * city — same chart as PointHistoryPanel/EventNearbyPanel, just keyed to
+ * whichever city is currently featured. Pure presentation inside the scaled
+ * broadcast stage; pointer-inert.
  */
 import { useEffect, useState } from "react";
-import type { City } from "../../lib/cities";
-import { formatPopulation } from "../../lib/cities";
-import type { Cam } from "../../lib/cams/types";
-import { nearby, formatKm } from "../../lib/geo";
+import type { CountryShot } from "@photonsurge/shared/director-countries";
+import { listCities, formatPopulation, type City } from "../../lib/cities";
 import { useClimateYear } from "../../lib/history-client";
 import { MiniChart, buildClimateRows, usePagedSlides, sparkPoints, toPath, CHART_W, formatReading } from "./PointHistoryPanel";
 
-const CITY_RADIUS_KM = 500;
-const CAM_RADIUS_KM = 400;
-const MAX_CITY_ROWS = 6;
-const MAX_CAMS = 3;
+const TOP_CITY_LIMIT = 8;
 /** Seconds the featured city holds before the slide advances to the next. */
 const FEATURED_HOLD_MS = 7000;
-/** Inline per-row trend sparkline size — small enough to sit beside the
- *  population/distance text rather than taking its own card. Rendered width is
- *  much narrower than `CHART_W` (the viewBox), so the SVG scale itself thins
- *  the trace — bump strokeWidth up front to compensate, so it still reads
- *  clearly on video output. */
 const ROW_SPARK_W = 64;
 const ROW_SPARK_H = 24;
 const ROW_SPARK_STROKE = 9;
 
-/**
- * One "other nearby city" row: name/pop/distance text plus a small past-year
- * temperature sparkline, fetched independently per row (own `useClimateYear`
- * call) since each city sits at its own point. Cheap: the climate route is a
- * worker-cached Mongo nearest-lookup, not a live upstream call, so one fetch
- * per visible row is fine. Self-omits the sparkline (text-only row) when nothing
- * is cached within range for that city.
- */
-function NearbyCityRow({ city, distanceKm }: { city: City; distanceKm: number }) {
+/** One "other top city" row: name/population plus a small past-year
+ *  temperature sparkline, fetched independently per row — same shape as
+ *  EventNearbyPanel's NearbyCityRow, minus the distance (population rank is
+ *  the sort here, not proximity). */
+function TopCityRow({ city }: { city: City }) {
   const climate = useClimateYear([city.lng, city.lat], "monthly");
   const tempRow = buildClimateRows(climate.datasets).find((r) => r.variable === "temp");
   const spark = tempRow ? sparkPoints(tempRow.points, ROW_SPARK_H) : null;
@@ -55,7 +40,7 @@ function NearbyCityRow({ city, distanceKm }: { city: City; distanceKm: number })
           {city.name}
         </div>
         <div style={{ color: "#8ea3bf", whiteSpace: "nowrap" }}>
-          {[formatPopulation(city.population), formatKm(distanceKm)].filter(Boolean).join(" · ")}
+          {[formatPopulation(city.population), city.isCapital ? "capital" : null].filter(Boolean).join(" · ")}
         </div>
       </div>
       {spark ? (
@@ -79,42 +64,37 @@ function NearbyCityRow({ city, distanceKm }: { city: City; distanceKm: number })
   );
 }
 
-const cityPoint = (c: City): [number, number] => [c.lng, c.lat];
-const camPoint = (c: Cam): [number, number] | null =>
-  Number.isFinite(c.lng) && Number.isFinite(c.lat) ? [c.lng, c.lat] : null;
-
-export default function EventNearbyPanel({
-  center,
-  cities,
-  cams,
-  color = "#38bdf8",
+export default function CountrySpotlightPanel({
+  country,
+  color = "#3f8f8f",
 }: {
-  center: [number, number];
-  cities: City[];
-  cams: Cam[];
+  country: CountryShot;
   color?: string;
 }) {
-  // Cities with a real population (or capitals) so tiny unnamed places don't
-  // crowd out the notable ones; nearest first.
-  const near = nearby(
-    cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital),
-    center,
-    cityPoint,
-    CITY_RADIUS_KM,
-  );
-  const nearCams = nearby(cams, center, camPoint, CAM_RADIUS_KM);
+  const [cities, setCities] = useState<City[]>([]);
 
-  // Cycle the featured slot through every nearby city, nearest first, looping.
+  useEffect(() => {
+    let cancelled = false;
+    listCities({ bbox: country.bbox, limit: TOP_CITY_LIMIT }).then((res) => {
+      if (!cancelled) setCities(res);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // country.bbox is a stable array reference from the COUNTRY_SHOTS catalog
+    // (looked up once by id), so the id alone is enough to re-fetch on switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [country.id]);
+
+  // Cycle the featured slot through every top city, biggest first, looping.
   const [slide, setSlide] = useState(0);
   useEffect(() => {
-    if (near.length <= 1) return;
+    if (cities.length <= 1) return;
     const iv = setInterval(() => setSlide((n) => n + 1), FEATURED_HOLD_MS);
     return () => clearInterval(iv);
-  }, [near.length]);
+  }, [cities.length]);
 
-  const featuredEntry = near.length ? near[slide % near.length] : undefined;
-  const featured = featuredEntry?.item;
-  const featuredDist = featuredEntry?.distanceKm;
+  const featured = cities.length ? cities[slide % cities.length] : undefined;
 
   // A single cheap fetch (cached per rounded lat/lng) — safe to re-request on
   // every slide tick since it just tracks the currently-featured city. Must
@@ -126,13 +106,9 @@ export default function EventNearbyPanel({
   // instead of stacking temp/humidity/rain all at once.
   const climateSlide = usePagedSlides(climateRows, 1);
 
-  if (!near.length && !nearCams.length) return null;
+  if (!cities.length) return null;
 
-  const rest = near.filter((n) => n.item !== featured);
-  const shownRows = rest.slice(0, MAX_CITY_ROWS);
-  const moreCities = rest.length - shownRows.length;
-  const shownCams = nearCams.slice(0, MAX_CAMS);
-  const moreCams = nearCams.length - shownCams.length;
+  const rest = cities.filter((c) => c !== featured);
 
   return (
     <div
@@ -158,10 +134,10 @@ export default function EventNearbyPanel({
           padding: "10px 16px 7px",
         }}
       >
-        ▸ NEAR THIS EVENT
+        ▸ TOP CITIES
       </div>
 
-      {/* Featured city — photo + blurb; slot cycles through every nearby city. */}
+      {/* Featured city — photo + blurb; slot cycles through every top city. */}
       {featured ? (
         <div style={{ padding: "0 16px 13px" }}>
           {featured.wikiThumb ? (
@@ -181,14 +157,12 @@ export default function EventNearbyPanel({
           ) : null}
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <span style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{featured.name}</span>
-            {featuredDist != null ? (
-              <span style={{ fontSize: 14, fontWeight: 700, color }}>{formatKm(featuredDist)}</span>
+            {formatPopulation(featured.population) ? (
+              <span style={{ fontSize: 14, fontWeight: 700, color }}>{formatPopulation(featured.population)}</span>
             ) : null}
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#aebfd6", marginTop: 2 }}>
-            {[featured.country, formatPopulation(featured.population), featured.isCapital ? "capital" : null]
-              .filter(Boolean)
-              .join(" · ")}
+            {[featured.country, featured.isCapital ? "capital" : null].filter(Boolean).join(" · ")}
           </div>
           {featured.wikiExtract ? (
             <div
@@ -209,9 +183,9 @@ export default function EventNearbyPanel({
         </div>
       ) : null}
 
-      {/* Featured city's past-year climate — same chart PointHistoryPanel
-          draws for the on-air focus, keyed to this city instead. One variable
-          at a time (timer-paged), not all three stacked. */}
+      {/* Featured city's past-year climate — same chart PointHistoryPanel/
+          EventNearbyPanel draw, keyed to this city. One variable at a time
+          (timer-paged), not all three stacked. */}
       {climateRows.length ? (
         <div style={{ borderTop: "1px solid rgba(120,140,170,0.14)", padding: "9px 16px 4px", display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -238,52 +212,13 @@ export default function EventNearbyPanel({
         </div>
       ) : null}
 
-      {/* Other nearby cities — name/pop/distance plus each city's own past-year
-          temperature sparkline (NearbyCityRow), fetched per row. */}
-      {shownRows.length ? (
+      {/* Other top cities — name/population plus each city's own past-year
+          temperature sparkline (TopCityRow), fetched per row. */}
+      {rest.length ? (
         <div style={{ borderTop: "1px solid rgba(120,140,170,0.14)", padding: "8px 16px 10px", fontSize: 13 }}>
-          {shownRows.map((n) => (
-            <NearbyCityRow key={n.item.id} city={n.item} distanceKm={n.distanceKm} />
+          {rest.map((c) => (
+            <TopCityRow key={c.id} city={c} />
           ))}
-          {moreCities > 0 ? (
-            <div style={{ fontSize: 11, color: "#7d8da5", marginTop: 4, opacity: 0.75 }}>
-              +{moreCities} more within {CITY_RADIUS_KM} km
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* Nearby webcams. */}
-      {shownCams.length ? (
-        <div style={{ borderTop: "1px solid rgba(120,140,170,0.14)", padding: "9px 16px 13px" }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc", marginBottom: 8 }}>
-            ▸ LIVE WEBCAMS
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            {shownCams.map((n) => (
-              <div key={n.item.camId} style={{ flex: 1, minWidth: 0 }}>
-                {n.item.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={n.item.imageUrl}
-                    alt={n.item.title}
-                    style={{ width: "100%", height: 72, objectFit: "cover", borderRadius: 5, display: "block" }}
-                  />
-                ) : (
-                  <div style={{ width: "100%", height: 72, borderRadius: 5, background: "#141b28" }} />
-                )}
-                <div style={{ fontSize: 11, color: "#aebfd6", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {n.item.title}
-                </div>
-                <div style={{ fontSize: 11, color: "#7d8da5" }}>{formatKm(n.distanceKm)}</div>
-              </div>
-            ))}
-          </div>
-          {moreCams > 0 ? (
-            <div style={{ fontSize: 11, color: "#7d8da5", marginTop: 5, opacity: 0.75 }}>
-              +{moreCams} more within {CAM_RADIUS_KM} km
-            </div>
-          ) : null}
         </div>
       ) : null}
     </div>

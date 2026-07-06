@@ -73,6 +73,8 @@ function slideFromLive(live: ControlState): Pick<KindSlide, "look" | "overlays">
       showSatImg: live.showSatImg,
       activeVariable: live.activeVariable,
       satImgFeeds,
+      auroraOpacity: live.auroraOpacity,
+      magneticFieldOpacity: live.magneticFieldOpacity,
     },
     overlays,
   };
@@ -87,6 +89,9 @@ function controlPatchFromSlide(slide: KindSlide, live: ControlState): Partial<Co
   if (typeof slide.look.showSatImg === "boolean") patch.showSatImg = slide.look.showSatImg;
   if (slide.look.activeVariable) patch.activeVariable = slide.look.activeVariable;
   if (slide.look.satImgFeeds) patch.satImgFeeds = slide.look.satImgFeeds as ControlState["satImgFeeds"];
+  if (typeof slide.look.auroraOpacity === "number") patch.auroraOpacity = slide.look.auroraOpacity;
+  if (typeof slide.look.magneticFieldOpacity === "number")
+    patch.magneticFieldOpacity = slide.look.magneticFieldOpacity;
   return patch;
 }
 
@@ -127,6 +132,8 @@ function slideIsLive(slide: KindSlide, live: ControlState): boolean {
     (slide.look.windMode ?? null) === (current.look.windMode ?? null) &&
     (slide.look.showSatImg ?? null) === (current.look.showSatImg ?? null) &&
     (slide.look.activeVariable ?? null) === (current.look.activeVariable ?? null) &&
+    (slide.look.auroraOpacity ?? null) === (current.look.auroraOpacity ?? null) &&
+    (slide.look.magneticFieldOpacity ?? null) === (current.look.magneticFieldOpacity ?? null) &&
     shallowEqual(slide.look.wind, current.look.wind) &&
     satImgFeedsEqual(slide.look.satImgFeeds, current.look.satImgFeeds) &&
     shallowEqual(slide.overlays, current.overlays)

@@ -83,6 +83,8 @@ const make = (
       // sets "gust" in PRESETS) always wins via `extra` below; this only fills in
       // for kinds that don't compute one themselves.
       ...(look?.activeVariable ? { activeVariable: look.activeVariable } : {}),
+      ...(look?.auroraOpacity != null ? { auroraOpacity: look.auroraOpacity } : {}),
+      ...(look?.magneticFieldOpacity != null ? { magneticFieldOpacity: look.magneticFieldOpacity } : {}),
       ...extra,
       camera: { center, zoom },
     },

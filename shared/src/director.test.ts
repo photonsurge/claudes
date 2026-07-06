@@ -291,6 +291,26 @@ describe("mergeDirectorConfig", () => {
     expect(cleared.kindLooks.storm?.satImgFeeds).toBeUndefined();
   });
 
+  it("merges kindLooks auroraOpacity/magneticFieldOpacity, ignoring non-numbers, and clears with null", () => {
+    const merged = mergeDirectorConfig(base, {
+      kindLooks: { storm: { auroraOpacity: 0.4, magneticFieldOpacity: 0.6 } },
+    });
+    expect(merged.kindLooks.storm?.auroraOpacity).toBe(0.4);
+    expect(merged.kindLooks.storm?.magneticFieldOpacity).toBe(0.6);
+
+    const rejected = mergeDirectorConfig(merged, {
+      kindLooks: { storm: { auroraOpacity: "x" as never } },
+    });
+    expect(rejected.kindLooks.storm?.auroraOpacity).toBeUndefined();
+    expect(rejected.kindLooks.storm?.magneticFieldOpacity).toBe(0.6);
+
+    const cleared = mergeDirectorConfig(merged, {
+      kindLooks: { storm: { auroraOpacity: null, magneticFieldOpacity: null } },
+    });
+    expect(cleared.kindLooks.storm?.auroraOpacity).toBeUndefined();
+    expect(cleared.kindLooks.storm?.magneticFieldOpacity).toBeUndefined();
+  });
+
   it("merges kindSlides per kind, sanitizing each slide's look/overlays and dropping malformed entries", () => {
     const merged = mergeDirectorConfig(base, {
       kindSlides: {

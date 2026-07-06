@@ -389,6 +389,8 @@ export interface ControlState {
   showFaults: boolean;
   /** Overlay the live aurora oval (NOAA SWPC OVATION) — a geomagnetic activity map. */
   showAurora: boolean;
+  /** Aurora oval overlay opacity (0–1). */
+  auroraOpacity: number;
   /** Master toggle for the satellite "clouds" overlay (per-feed state in satImgFeeds). */
   showSatImg: boolean;
   /** Per-feed clouds state — each source's on-flag + opacity + (disc) composite look. */
@@ -397,6 +399,8 @@ export interface ControlState {
   showFires: boolean;
   /** Overlay the global geomagnetic-field intensity (IGRF) — the whole-globe magnetic map. */
   showMagneticField: boolean;
+  /** Geomagnetic-field overlay opacity (0–1). */
+  magneticFieldOpacity: number;
   /** DEBUG: outline each active weather-map source's bbox + label on the globe, so
    *  the operator can see which model (base/nest) renders where and check alignment. */
   showMapSource: boolean;
@@ -467,10 +471,12 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showCableLabels: false,
   showFaults: false,
   showAurora: false,
+  auroraOpacity: 0.85,
   showSatImg: false,
   satImgFeeds: defaultSatImgFeeds(),
   showFires: false,
   showMagneticField: false,
+  magneticFieldOpacity: 0.8,
   showMapSource: false,
   showGraticule: false,
   graticuleColor: "#7dd3fc",
@@ -595,11 +601,17 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
       typeof patch.showCableLabels === "boolean" ? patch.showCableLabels : base.showCableLabels ?? false,
     showFaults: typeof patch.showFaults === "boolean" ? patch.showFaults : base.showFaults ?? false,
     showAurora: typeof patch.showAurora === "boolean" ? patch.showAurora : base.showAurora ?? false,
+    auroraOpacity:
+      typeof patch.auroraOpacity === "number" ? patch.auroraOpacity : base.auroraOpacity ?? 0.85,
     showSatImg: typeof patch.showSatImg === "boolean" ? patch.showSatImg : base.showSatImg ?? false,
     satImgFeeds: mergeSatImgFeeds(base.satImgFeeds, patch.satImgFeeds),
     showFires: typeof patch.showFires === "boolean" ? patch.showFires : base.showFires ?? false,
     showMagneticField:
       typeof patch.showMagneticField === "boolean" ? patch.showMagneticField : base.showMagneticField ?? false,
+    magneticFieldOpacity:
+      typeof patch.magneticFieldOpacity === "number"
+        ? patch.magneticFieldOpacity
+        : base.magneticFieldOpacity ?? 0.8,
     showMapSource:
       typeof patch.showMapSource === "boolean" ? patch.showMapSource : base.showMapSource ?? false,
     showGraticule:

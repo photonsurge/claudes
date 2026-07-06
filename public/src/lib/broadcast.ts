@@ -17,7 +17,7 @@ import {
 import { alertRepPoint, continentOf } from "@photonsurge/shared/alerts/geo";
 import { hazardMeta, classifyHazard, type HazardType } from "./hazard";
 import { isoToFlag } from "@photonsurge/shared/tracks/flags";
-import { nearby, type Nearby } from "./geo";
+import { nearby, withinBbox, type Nearby } from "./geo";
 import type { City } from "./cities";
 
 /** "SEISMIC M5.9 · 12km SSW of … · TSUNAMI POTENTIAL" */
@@ -91,6 +91,26 @@ export function topAlerts(alerts: AlertFeature[], n = 6): AlertFeature[] {
 /** The single most severe active alert (drives the event reticle), or null. */
 export function topAlert(alerts: AlertFeature[]): AlertFeature | null {
   return topAlerts(alerts, 1)[0] ?? null;
+}
+
+/** Alerts actually inside a [west,south,east,north] box (a country spotlight's
+ *  approximate bbox) — the app's `alerts` prop is otherwise global, so a
+ *  country's "IN VIEW" rollup needs this filter first. Geocode-only alerts
+ *  with no derivable representative point are dropped (can't be geographically
+ *  scoped rather than wrongly assumed in-country). */
+export function scopeAlertsToBbox(
+  alerts: AlertFeature[],
+  bbox: [number, number, number, number],
+): AlertFeature[] {
+  return alerts.filter((a) => {
+    const pt = alertRepPoint(a.geometry);
+    return pt ? withinBbox(pt[0], pt[1], bbox) : false;
+  });
+}
+
+/** Quakes actually inside a [west,south,east,north] box — see scopeAlertsToBbox. */
+export function scopeQuakesToBbox(quakes: Quake[], bbox: [number, number, number, number]): Quake[] {
+  return quakes.filter((q) => withinBbox(q.lng, q.lat, bbox));
 }
 
 export interface AreaSummary {
@@ -346,14 +366,23 @@ export interface WorldWatchItem {
   expiresIn?: string;
   /** Sort weight, higher = shown first. */
   weight: number;
+  /** Epoch ms tie-breaker (alert `sent` / quake `time`) — newer first within equal weight. */
+  sortTime: number;
 }
 
-/** Magnitude → the same 0-4 importance scale alerts use, so the feed interleaves. */
+/**
+ * Magnitude → the same 0-4 importance scale alerts use, so the feed interleaves,
+ * but continuous *within* a tier (not just floor(mag)) so e.g. M4.9 outranks
+ * M4.5 instead of tying — ties used to fall back to arrival order, which is why
+ * the feed looked shuffled among same-tier quakes. The top tier (M7+) stays flat
+ * at exactly 4 so it still ties with (and loses to) Extreme alerts rather than
+ * creeping past them.
+ */
 function quakeWeight(mag: number): number {
   if (mag >= 7) return 4;
-  if (mag >= 6) return 3;
-  if (mag >= 5) return 2;
-  return 1;
+  if (mag >= 6) return 3 + Math.min(0.99, mag - 6);
+  if (mag >= 5) return 2 + Math.min(0.99, mag - 5);
+  return 1 + Math.min(0.99, (mag - 4.5) / 0.5);
 }
 
 /** Colour a quake by magnitude (matches the SEISMIC row: orange for the big ones). */
@@ -402,6 +431,7 @@ export function worldWatchFeed(alerts: Alert[], quakes: Quake[], cities: City[] 
       sub,
       expiresIn: a.expiresAt ? expiresLabel(a) : undefined,
       weight: rank,
+      sortTime: Date.parse(a.sent) || 0,
     });
   }
 
@@ -419,12 +449,17 @@ export function worldWatchFeed(alerts: Alert[], quakes: Quake[], cities: City[] 
       title: q.place ?? `${q.lat.toFixed(1)}, ${q.lng.toFixed(1)}`,
       sub,
       weight: quakeWeight(q.mag),
+      sortTime: q.time,
     });
   }
 
-  // Most serious first; on a tie surface alerts before quakes for a stable order.
+  // Most serious first (weight, now continuous within a tier so e.g. M4.9 beats
+  // M4.5 instead of tying); on a weight tie, group by kind, then newest first.
   return items.sort(
-    (a, b) => b.weight - a.weight || (a.kind === b.kind ? 0 : a.kind === "alert" ? -1 : 1),
+    (a, b) =>
+      b.weight - a.weight ||
+      (a.kind === b.kind ? 0 : a.kind === "alert" ? -1 : 1) ||
+      b.sortTime - a.sortTime,
   );
 }
 

@@ -99,8 +99,10 @@ const PANEL_W = 320;
 const PANEL_PAD_X = 16;
 
 /** Logical chart box inside the card. One chart shows at a time now, so it
- *  can afford to be drawn tall rather than as a thin sparkline. */
-const CHART_W = PANEL_W - 2 * PANEL_PAD_X;
+ *  can afford to be drawn tall rather than as a thin sparkline. Exported so a
+ *  compact embed can size its own (smaller, CSS-scaled) sparkline SVG against
+ *  the same viewBox `sparkPoints` lays its x-coordinates out on. */
+export const CHART_W = PANEL_W - 2 * PANEL_PAD_X;
 const CHART_H = 108;
 const PAD_Y = 6;
 
@@ -148,7 +150,9 @@ export function sparkPoints(
   return { pts, yOf };
 }
 
-const toPath = (pts: [number, number][]) =>
+/** Exported so a compact embed (e.g. EventNearbyPanel's per-city sparkline)
+ *  can draw a trace from `sparkPoints` output without its own copy. */
+export const toPath = (pts: [number, number][]) =>
   `M${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" L")}`;
 
 /** One labeled sparkline row: title, latest reading, trace, caption. Exported

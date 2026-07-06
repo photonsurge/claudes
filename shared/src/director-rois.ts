@@ -100,21 +100,21 @@ export const INTRO_MAP_TYPES: GlobalMapType[] = [
     id: "temp",
     title: "Global Temperature",
     subtitle: "Surface air temperature",
-    patch: { activeVariable: "temp", showWind: true, showPressure: true, showAurora: false, showSatImg: false },
+    patch: { activeVariable: "temp", showWind: true, showPressure: true, showAurora: false, showSatImg: false, showCables: false },
     needs: { kind: "variable", id: "temp" },
   },
   {
     id: "cloud",
     title: "Global Cloud Cover",
     subtitle: "Total cloud cover",
-    patch: { activeVariable: "cloud", showWind: false, showPressure: false, showAurora: false, showSatImg: false },
+    patch: { activeVariable: "cloud", showWind: false, showPressure: false, showAurora: false, showSatImg: false, showCables: false },
     needs: { kind: "variable", id: "cloud" },
   },
   {
     id: "rain",
     title: "Global Precipitation",
     subtitle: "Rain & snow rate",
-    patch: { activeVariable: "rain", showWind: false, showPressure: false, showAurora: false, showSatImg: false },
+    patch: { activeVariable: "rain", showWind: false, showPressure: false, showAurora: false, showSatImg: false, showCables: false },
     needs: { kind: "variable", id: "rain" },
   },
   {
@@ -122,7 +122,7 @@ export const INTRO_MAP_TYPES: GlobalMapType[] = [
     title: "Aurora & Space Weather",
     subtitle: "OVATION auroral oval · live Kp",
     // No scalar field: the aurora glow reads over the dark globe. Wind/pressure off.
-    patch: { activeVariable: null, showWind: false, showPressure: false, showAurora: true, showSatImg: false },
+    patch: { activeVariable: null, showWind: false, showPressure: false, showAurora: true, showSatImg: false, showCables: false },
     needs: { kind: "aurora" },
   },
   {
@@ -130,9 +130,12 @@ export const INTRO_MAP_TYPES: GlobalMapType[] = [
     title: "Earth at Night",
     subtitle: "VIIRS city lights",
     // The Black Marble basemap IS the look — no scalar field or chrome, so the
-    // lights read. A static local asset, so no `needs` gate. The next look's fold
-    // over the preset (LAYERS_OFF pins basemap) reverts the base automatically.
-    patch: { basemap: "night", activeVariable: null, showWind: false, showPressure: false, showAurora: false, showSatImg: false },
+    // lights read. Submarine cables stay lit here (and only here): a bare-black
+    // Pacific stretch with no city lights nearby otherwise reads as a dead frame,
+    // and the cable network gives open ocean something to look at. A static
+    // local asset, so no `needs` gate. The next look's fold over the preset
+    // (LAYERS_OFF pins basemap) reverts the base automatically.
+    patch: { basemap: "night", activeVariable: null, showWind: false, showPressure: false, showAurora: false, showSatImg: false, showCables: true },
   },
   {
     id: "world",
@@ -141,13 +144,13 @@ export const INTRO_MAP_TYPES: GlobalMapType[] = [
     // The plain globe: no scalar field or overlay, just the land/ocean base and
     // cities from the intro preset — a breather between the data-heavy looks and
     // the satellite finale. Static local asset, so no `needs` gate.
-    patch: { activeVariable: null, showWind: false, showPressure: false, showAurora: false, showSatImg: false },
+    patch: { activeVariable: null, showWind: false, showPressure: false, showAurora: false, showSatImg: false, showCables: false },
   },
   {
     id: "satimg",
     title: "Satellite View",
     subtitle: "Live geostationary imagery",
-    patch: { activeVariable: null, showWind: false, showPressure: false, showAurora: false, showSatImg: true },
+    patch: { activeVariable: null, showWind: false, showPressure: false, showAurora: false, showSatImg: true, showCables: false },
     needs: { kind: "satimg" },
   },
 ];
@@ -264,12 +267,23 @@ export interface OrbitalView {
 }
 
 export const ORBITAL_VIEWS: OrbitalView[] = [
+  // Low-Earth-orbit showcases — close zoom so the shell hugs the globe.
+  { group: "stations", title: "Space Stations", subtitle: "ISS & crewed platforms", zoom: 3.2 },
+  { group: "visual", title: "Brightest Satellites", subtitle: "Visible to the naked eye", zoom: 2.6 },
   { group: "starlink", title: "Starlink", subtitle: "Low-Earth-orbit internet constellation", zoom: 3.0 },
+  { group: "noaa", title: "NOAA Polar Fleet", subtitle: "Polar-orbiting weather satellites", zoom: 3.0 },
+  { group: "resource", title: "Earth Observation", subtitle: "Land-imaging satellites", zoom: 3.0 },
+  { group: "science", title: "Science Missions", subtitle: "Hubble & orbital observatories", zoom: 3.0 },
+  { group: "sarsat", title: "Search & Rescue", subtitle: "COSPAS-SARSAT distress-beacon relay", zoom: 3.0 },
+  { group: "dmc", title: "Disaster Monitoring", subtitle: "Rapid-revisit imaging constellation", zoom: 3.0 },
+  { group: "engineering", title: "Tech Demonstrators", subtitle: "Experimental & engineering satellites", zoom: 3.0 },
+  // Medium/geostationary showcases — pulled back so the much larger ring fits.
+  { group: "weather", title: "Weather Satellites", subtitle: "Polar & geostationary", zoom: 1.3 },
   { group: "gps-ops", title: "GPS Constellation", subtitle: "Navigation · medium Earth orbit", zoom: 1.0 },
   { group: "galileo", title: "Galileo", subtitle: "European navigation constellation", zoom: 0.9 },
-  { group: "stations", title: "Space Stations", subtitle: "ISS & crewed platforms", zoom: 3.2 },
-  { group: "weather", title: "Weather Satellites", subtitle: "Polar & geostationary", zoom: 1.3 },
-  { group: "visual", title: "Brightest Satellites", subtitle: "Visible to the naked eye", zoom: 2.6 },
+  { group: "tdrss", title: "TDRS Relay Network", subtitle: "NASA's data-relay satellites", zoom: 0.85 },
+  { group: "goes", title: "GOES Constellation", subtitle: "Geostationary weather watch", zoom: 0.8 },
+  { group: "geo", title: "Geostationary Fleet", subtitle: "Communications & broadcast satellites", zoom: 0.8 },
 ];
 
 /** Default orbital framing when a view doesn't set its own zoom. */
@@ -525,11 +539,18 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
   },
   // A round-up ticker reads over the lower third, so — unlike the ad card — the
   // globe stays the visible, alive backdrop: same calm world spin as intro/ocean,
-  // no scalar field so it never competes with the on-screen text.
+  // no scalar field so it never competes with the on-screen text. Seismic +
+  // alert markers stay lit (severity/magnitude floors dropped, same as
+  // storm/quake/country) so the events the narration is summarizing are
+  // actually visible on the globe while it spins.
   summary: {
     ...LAYERS_OFF,
     activeVariable: null,
     showCities: true,
+    showSeismic: true,
+    seismicMinMag: 0,
+    showAlerts: true,
+    alertSeverityMin: 0,
     autoSpin: true,
     spinSpeed: 4,
     zoomDrift: 0,
