@@ -51,9 +51,12 @@ services:
     env_file: .env
     environment:
       PORT: 10102
+      ELEVATION_CACHE_DIR: /app/dem-cache
     # Worker HTTP (health/status) — proxied/health-checked via nginx.
     ports:
       - "${BIND_HOST:-127.0.0.1}:10102:10102"
+    volumes:
+      - dem-cache:/app/dem-cache
     depends_on: [mongodb, redis, socket]
     networks: [internal]
 
@@ -69,10 +72,14 @@ services:
     env_file: .env
     environment:
       PORT: 10100
+      # Server-side status checks (/api/status) hit these over the compose
+      # `internal` network by service name — not the host-published ports.
+      SOCKET_INTERNAL_URL: http://socket:10101
+      WORKER_INTERNAL_URL: http://worker:10102
     # Next.js app — nginx proxies the public domain here.
     ports:
       - "${BIND_HOST:-127.0.0.1}:10100:10100"
-    depends_on: [mongodb, redis, socket]
+    depends_on: [mongodb, redis, socket, worker]
     networks: [internal]
 
 networks:
@@ -82,3 +89,4 @@ networks:
 volumes:
   mongo-data:
   redis-data:
+  dem-cache:

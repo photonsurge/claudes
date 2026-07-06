@@ -15,7 +15,7 @@
  * cold-start-from-Mongo pattern as the broadcast ControlState.
  */
 import type { ControlState, WindSettings, WindMode } from "./control";
-import { DEFAULT_WIND_SETTINGS } from "./control";
+import { DEFAULT_WIND_SETTINGS, WIND_PRESETS } from "./control";
 import type { HazardType } from "./alerts/hazard";
 import type { AdMediaType } from "./ads/types";
 import type { SummaryPeriod } from "./db/event-summary-model";
@@ -23,6 +23,10 @@ import type { SeverityRank } from "./db/alert-model";
 import { DEFAULT_DIRECTOR_COUNTRIES, sanitizeDirectorCountries } from "./director-countries";
 import { isSatImgLook, SATIMG_FEEDS, type SatImgFeedState } from "./satimg/types";
 import { QUAKE_MAGNITUDE_BANDS, quakeMagnitudeClass, type QuakeMagnitudeClass } from "./seismic";
+// Value import (not just a type) — safe despite director-rois.ts importing
+// SegmentKind back from here, since that reverse import is `import type`
+// (erased at runtime), so there's no actual circular runtime dependency.
+import { OVERLAY_KEYS } from "./director-rois";
 
 /** Socket event: worker → every browser. The current on-air segment + queue. */
 export const DIRECTOR_STATE = "director:state" as const;
@@ -418,6 +422,170 @@ export const DEFAULT_STORM_HOLD_SECONDS: Record<StormLevel, number> = {
   extreme: 24,
 };
 
+/** Every overlay toggle off — the base a seed slide's `on` list layers onto. */
+const SEED_OVERLAYS_OFF: Partial<Record<string, boolean>> = Object.fromEntries(
+  OVERLAY_KEYS.map((k) => [k, false]),
+);
+
+function seedSlide(id: string, name: string, look: KindLook, on: readonly string[]): KindSlide {
+  const overlays = { ...SEED_OVERLAYS_OFF };
+  for (const k of on) overlays[k] = true;
+  return { id, name, look, overlays };
+}
+
+/**
+ * Starter "look" library per kind (see `DirectorConfig.kindSlides`) — two
+ * curated slides each, so a fresh "Look per shot type" panel isn't empty.
+ * `ad`/`summary` are skipped: an ad is a full-frame card (the map underneath
+ * never shows) and a summary tours its own generated stops, so neither kind
+ * has a single fixed look worth saving (see their PRESETS comments).
+ *
+ * Purely a saved-slide seed — none of these are pre-loaded into `kindLooks`/
+ * `overlayOverrides`, so a fresh config's actual on-air look is unchanged
+ * until the operator picks one.
+ */
+export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
+  intro: [
+    seedSlide(
+      "intro-cinematic-dark",
+      "Cinematic Dark",
+      { basemap: "dark", windMode: "particles", wind: WIND_PRESETS.dense },
+      ["showWind", "showPressure", "showCities"],
+    ),
+    seedSlide(
+      "intro-city-lights",
+      "City Lights",
+      { basemap: "night", windMode: "particles", wind: WIND_PRESETS.calm },
+      ["showCities"],
+    ),
+  ],
+  ocean: [
+    seedSlide(
+      "ocean-storm-seas",
+      "Storm Seas",
+      { windMode: "particles", wind: WIND_PRESETS.storm, activeVariable: "wave" },
+      ["showWind", "showCities"],
+    ),
+    seedSlide("ocean-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
+      "showSatImg",
+      "showCities",
+    ]),
+  ],
+  orbital: [
+    seedSlide("orbital-classic", "Constellation Classic", { basemap: "dark" }, [
+      "showSatellites",
+      "showOrbits",
+      "showTrackLabels",
+      "showCities",
+    ]),
+    seedSlide("orbital-night-side", "Over the Night Side", { basemap: "night" }, [
+      "showSatellites",
+      "showOrbits",
+      "showTrackLabels",
+      "showCities",
+    ]),
+  ],
+  tour: [
+    seedSlide(
+      "tour-weather-check",
+      "Weather Check",
+      { windMode: "particles", wind: WIND_PRESETS.default, activeVariable: "temp" },
+      ["showWind", "showCities"],
+    ),
+    seedSlide("tour-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
+      "showSatImg",
+      "showCities",
+    ]),
+  ],
+  country: [
+    seedSlide(
+      "country-national-check",
+      "National Weather Check",
+      { windMode: "particles", wind: WIND_PRESETS.default },
+      ["showWind", "showPressure", "showRadar", "showAlerts", "showCities"],
+    ),
+    seedSlide("country-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
+      "showSatImg",
+      "showAlerts",
+      "showCities",
+    ]),
+  ],
+  weather: [
+    seedSlide(
+      "weather-synoptic-standard",
+      "Synoptic Standard",
+      { windMode: "particles", wind: WIND_PRESETS.default, activeVariable: "temp" },
+      ["showWind", "showPressure", "showContours", "showRadar", "showCities"],
+    ),
+    seedSlide("weather-satellite-clouds", "Satellite Clouds", { showSatImg: true, satImgLook: "geocolor" }, [
+      "showSatImg",
+      "showCities",
+    ]),
+  ],
+  storm: [
+    seedSlide("storm-chaser", "Storm Chaser", { windMode: "particles", wind: WIND_PRESETS.storm }, [
+      "showWind",
+      "showPressure",
+      "showRadar",
+      "showAlerts",
+      "showCities",
+    ]),
+    seedSlide("storm-satellite-eye", "Satellite Eye", { showSatImg: true, satImgLook: "ir" }, [
+      "showSatImg",
+      "showAlerts",
+      "showCities",
+    ]),
+  ],
+  quake: [
+    seedSlide("quake-terrain-contours", "Terrain Contours", { basemap: "dark" }, [
+      "showElevation",
+      "showSeismic",
+      "showCables",
+      "showFaults",
+      "showCities",
+    ]),
+    seedSlide("quake-city-lights", "City Lights", { basemap: "night" }, [
+      "showElevation",
+      "showSeismic",
+      "showCables",
+      "showFaults",
+      "showCities",
+    ]),
+  ],
+  flight: [
+    seedSlide("flight-jet-stream", "Jet Stream", { windMode: "particles", wind: WIND_PRESETS.dense }, [
+      "showWind",
+      "showAircraft",
+      "showTrails",
+      "showTrackLabels",
+      "showCities",
+    ]),
+    seedSlide("flight-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
+      "showSatImg",
+      "showAircraft",
+      "showTrails",
+      "showTrackLabels",
+      "showCities",
+    ]),
+  ],
+  ship: [
+    seedSlide("ship-rough-seas", "Rough Seas", { windMode: "particles", wind: WIND_PRESETS.storm }, [
+      "showWind",
+      "showShips",
+      "showTrails",
+      "showTrackLabels",
+      "showCities",
+    ]),
+    seedSlide("ship-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
+      "showSatImg",
+      "showShips",
+      "showTrails",
+      "showTrackLabels",
+      "showCities",
+    ]),
+  ],
+};
+
 export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   mode: "off",
   kindHoldSeconds: DEFAULT_KIND_HOLD_SECONDS,
@@ -448,9 +616,12 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   adEveryNShots: 6,
   skipNonce: 0,
   mapTypes: {},
-  overlayOverrides: {},
+  // Region tours ship with pressure + radar on by default so the ambient filler
+  // reads as an actual weather check rather than a bare scalar-field map — same
+  // "Look per shot type" mechanism the operator can retune via a saved slide.
+  overlayOverrides: { tour: { showPressure: true, showRadar: true } },
   kindLooks: {},
-  kindSlides: {},
+  kindSlides: DEFAULT_KIND_SLIDES,
   activeSlideId: {},
 };
 

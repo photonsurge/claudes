@@ -61,6 +61,15 @@ export const OCEAN_VIEW_ZOOM = 3.6;
  * clean base; the intro/ocean presets set wind/pressure). `needs` gates a type on
  * live data actually being available (aurora/satimg bake separately; ocean fields
  * may not be ingested) so a spin never lands on a blank map.
+ *
+ * Crucially, "clean base" isn't guaranteed: an operator's per-kind look
+ * (DirectorConfig.kindLooks / overlayOverrides) can bake showAurora/showSatImg
+ * true into the segment's baseline patch before any step ever folds over it (see
+ * `make()` in worker/src/director/candidates.ts). Every entry here therefore sets
+ * showAurora/showSatImg explicitly (true where it's the point of the look, false
+ * everywhere else) rather than relying on LAYERS_OFF — otherwise an operator
+ * enabling satellite imagery for a kind strands it on through every OTHER look in
+ * that kind's tour too (e.g. rain/temp cuts rendering under a satellite overlay).
  */
 export type MapTypeNeed =
   | { kind: "variable"; id: string } // scalar field must be present in the manifest
@@ -91,21 +100,21 @@ export const INTRO_MAP_TYPES: GlobalMapType[] = [
     id: "temp",
     title: "Global Temperature",
     subtitle: "Surface air temperature",
-    patch: { activeVariable: "temp", showWind: true, showPressure: true },
+    patch: { activeVariable: "temp", showWind: true, showPressure: true, showAurora: false, showSatImg: false },
     needs: { kind: "variable", id: "temp" },
   },
   {
     id: "cloud",
     title: "Global Cloud Cover",
     subtitle: "Total cloud cover",
-    patch: { activeVariable: "cloud", showWind: false, showPressure: false },
+    patch: { activeVariable: "cloud", showWind: false, showPressure: false, showAurora: false, showSatImg: false },
     needs: { kind: "variable", id: "cloud" },
   },
   {
     id: "rain",
     title: "Global Precipitation",
     subtitle: "Rain & snow rate",
-    patch: { activeVariable: "rain", showWind: false, showPressure: false },
+    patch: { activeVariable: "rain", showWind: false, showPressure: false, showAurora: false, showSatImg: false },
     needs: { kind: "variable", id: "rain" },
   },
   {
@@ -113,7 +122,7 @@ export const INTRO_MAP_TYPES: GlobalMapType[] = [
     title: "Aurora & Space Weather",
     subtitle: "OVATION auroral oval · live Kp",
     // No scalar field: the aurora glow reads over the dark globe. Wind/pressure off.
-    patch: { activeVariable: null, showWind: false, showPressure: false, showAurora: true },
+    patch: { activeVariable: null, showWind: false, showPressure: false, showAurora: true, showSatImg: false },
     needs: { kind: "aurora" },
   },
   {
@@ -123,7 +132,7 @@ export const INTRO_MAP_TYPES: GlobalMapType[] = [
     // The Black Marble basemap IS the look — no scalar field or chrome, so the
     // lights read. A static local asset, so no `needs` gate. The next look's fold
     // over the preset (LAYERS_OFF pins basemap) reverts the base automatically.
-    patch: { basemap: "night", activeVariable: null, showWind: false, showPressure: false },
+    patch: { basemap: "night", activeVariable: null, showWind: false, showPressure: false, showAurora: false, showSatImg: false },
   },
   {
     id: "world",
@@ -132,13 +141,13 @@ export const INTRO_MAP_TYPES: GlobalMapType[] = [
     // The plain globe: no scalar field or overlay, just the land/ocean base and
     // cities from the intro preset — a breather between the data-heavy looks and
     // the satellite finale. Static local asset, so no `needs` gate.
-    patch: { activeVariable: null, showWind: false, showPressure: false },
+    patch: { activeVariable: null, showWind: false, showPressure: false, showAurora: false, showSatImg: false },
   },
   {
     id: "satimg",
     title: "Satellite View",
     subtitle: "Live geostationary imagery",
-    patch: { activeVariable: null, showWind: false, showPressure: false, showSatImg: true },
+    patch: { activeVariable: null, showWind: false, showPressure: false, showAurora: false, showSatImg: true },
     needs: { kind: "satimg" },
   },
 ];
@@ -153,21 +162,21 @@ export const OCEAN_MAP_TYPES: GlobalMapType[] = [
     id: "sst",
     title: "Ocean Temperature",
     subtitle: "Sea surface temperature",
-    patch: { activeVariable: "sst", showWind: true },
+    patch: { activeVariable: "sst", showWind: true, showAurora: false, showSatImg: false },
     needs: { kind: "variable", id: "sst" },
   },
   {
     id: "wave",
     title: "Ocean Swell",
     subtitle: "Significant wave height",
-    patch: { activeVariable: "wave", showWind: true },
+    patch: { activeVariable: "wave", showWind: true, showAurora: false, showSatImg: false },
     needs: { kind: "variable", id: "wave" },
   },
   {
     id: "salinity",
     title: "Ocean Salinity",
     subtitle: "Sea surface salinity",
-    patch: { activeVariable: "salinity", showWind: true },
+    patch: { activeVariable: "salinity", showWind: true, showAurora: false, showSatImg: false },
     needs: { kind: "variable", id: "salinity" },
   },
 ];
@@ -192,7 +201,7 @@ export const QUAKE_MAP_TYPES: GlobalMapType[] = [
     title: "Elevation Contours",
     subtitle: "Terrain height · colour-by-height isolines",
     // Dark base + colour-by-height contour lines (intervals come from the preset).
-    patch: { basemap: DEFAULT_BASEMAP_ID, activeVariable: null, showElevation: true },
+    patch: { basemap: DEFAULT_BASEMAP_ID, activeVariable: null, showElevation: true, showAurora: false, showSatImg: false },
     needs: { kind: "variable", id: "elevation" },
   },
   {
@@ -200,7 +209,7 @@ export const QUAKE_MAP_TYPES: GlobalMapType[] = [
     title: "Shaded Relief",
     subtitle: "ETOPO hypsometric terrain",
     // Colour-by-height relief FILL (ETOPO 2022) with the contour lines drawn over.
-    patch: { basemap: "relief", activeVariable: null, showElevation: true },
+    patch: { basemap: "relief", activeVariable: null, showElevation: true, showAurora: false, showSatImg: false },
     needs: { kind: "variable", id: "elevation" },
   },
   {
@@ -209,7 +218,7 @@ export const QUAKE_MAP_TYPES: GlobalMapType[] = [
     subtitle: "Population footprint at night",
     // Black Marble around the epicentre — the lights read as WHO is nearby (the
     // population exposure), the geophysical counterpart to the terrain looks.
-    patch: { basemap: "night", activeVariable: null, showElevation: false },
+    patch: { basemap: "night", activeVariable: null, showElevation: false, showAurora: false, showSatImg: false },
   },
 ];
 

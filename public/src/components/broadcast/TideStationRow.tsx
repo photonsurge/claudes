@@ -2,10 +2,10 @@
 
 /**
  * A dedicated row of individual tide-gauge boxes, shown along the bottom-centre
- * of the screen (stacked above TsunamiMonitor) whenever more
- * than one real coastal sea-level station is cached near what's on air —
- * mirrors SeismicStationRow, swapping the ground-motion trace for the filled
- * water-level wave.
+ * of the screen whenever 2+ real coastal sea-level stations are cached near
+ * what's on air — TsunamiMonitor's single-gauge card hides itself once this
+ * row takes over, so the two never double up. Mirrors SeismicStationRow,
+ * swapping the ground-motion trace for the filled water-level wave.
  */
 import type { Segment } from "@photonsurge/shared/director";
 import type { TideStationReading } from "../../lib/tides/types";

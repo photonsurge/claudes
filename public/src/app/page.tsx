@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ServiceStatusPanel from "../components/ServiceStatusPanel";
 
 /** Launcher / home. The ping demo (PingPanel + /api/ping) stays on disk but is
  * no longer linked from here. */
@@ -44,6 +45,10 @@ export default function Home() {
         <Quick href="/admin/alerts" label="Weather alerts" />
         <Quick href="/admin/tracks" label="Live tracks" />
         <Quick href="/cities" label="Cities" />
+      </div>
+
+      <div style={{ marginTop: 26 }}>
+        <ServiceStatusPanel compact />
       </div>
     </main>
   );

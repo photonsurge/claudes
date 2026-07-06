@@ -16,8 +16,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { Segment } from "@photonsurge/shared/director";
 
-const MAX_W = "min(70vw, 900px)";
-const MAX_H = "62vh";
+const MAX_W = "min(92vw, 1500px)";
+const MAX_H = "86vh";
 const FADE_MS = 450;
 
 type AirAd = NonNullable<Segment["ad"]>;

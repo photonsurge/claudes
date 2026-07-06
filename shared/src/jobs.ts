@@ -135,6 +135,15 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Tracks",
   },
   {
+    id: "refresh-seismo-stations",
+    label: "Refresh seismograph stations",
+    description: "Rebuild the global GSN broadband-station catalog used to pick live waveform stations near what's on air.",
+    domain: "seismo",
+    type: "seismo",
+    event: "refreshStations",
+    group: "Tracks",
+  },
+  {
     id: "refresh-tide-stations",
     label: "Refresh tide stations",
     description: "Rebuild the global IOC sea-level gauge catalog.",
@@ -198,6 +207,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     event: "enrichWikiAll",
     group: "Cities",
     priority: 10,
+  },
+  {
+    id: "director-seed-slides",
+    label: "Seed look slides",
+    description:
+      "Backfill the \"Look per shot type\" starter slide library onto every scene's director config. Only fills a kind with no saved slides yet — never overwrites what an operator has saved.",
+    domain: "director",
+    type: "director",
+    event: "seedSlides",
+    group: "Director",
   },
   {
     id: "elevation-bake",

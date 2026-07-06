@@ -150,7 +150,10 @@ const EventSummarySchema = new mongoose.Schema<iEventSummaryModel>(
     stats: { type: SummaryStatsSchema, required: true, default: {} },
     hotspots: { type: [SummaryHotspotSchema], default: [] },
     topEvents: { type: [SummaryTopEventSchema], default: [] },
-    narrative: { type: String, required: true, default: "" },
+    // NOT required: Mongoose's built-in String required-check treats "" as missing,
+    // which would reject the documented "empty when skipped/errored" case. `default`
+    // alone already guarantees the field is always populated.
+    narrative: { type: String, default: "" },
     narrativeStatus: { type: String, required: true, default: "skipped" },
     sources: { type: [String], default: [] },
     llm: { type: mongoose.Schema.Types.Mixed, required: false },

@@ -63,7 +63,8 @@ RUN apt-get update && \
     cdo -V 2>&1 | grep -qiE 'Climate Data Operators|cdo version'
 
 RUN groupadd --system --gid 1001 nodejs && \
-    useradd  --system --uid 1001 --gid nodejs --no-create-home worker
+    useradd  --system --uid 1001 --gid nodejs --no-create-home worker && \
+    mkdir -p /app/dem-cache && chown worker:nodejs /app/dem-cache
 
 COPY --from=builder --chown=worker:nodejs /app/worker/dist         ./dist
 COPY --from=builder --chown=worker:nodejs /app/worker/node_modules ./node_modules

@@ -17,7 +17,7 @@ import { formatPopulation } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
 import { nearby, formatKm } from "../../lib/geo";
 import { useClimateYear } from "../../lib/history-client";
-import { MiniChart, buildClimateRows } from "./PointHistoryPanel";
+import { MiniChart, buildClimateRows, usePagedSlides } from "./PointHistoryPanel";
 
 const CITY_RADIUS_KM = 500;
 const CAM_RADIUS_KM = 400;
@@ -69,6 +69,9 @@ export default function EventNearbyPanel({
   const featuredCenter = featured ? ([featured.lng, featured.lat] as [number, number]) : null;
   const climate = useClimateYear(featuredCenter, "monthly");
   const climateRows = buildClimateRows(climate.datasets);
+  // One chart at a time (same timer-driven slideshow as PointHistoryPanel)
+  // instead of stacking temp/humidity/rain all at once.
+  const climateSlide = usePagedSlides(climateRows, 1);
 
   if (!near.length && !nearCams.length) return null;
 
@@ -154,13 +157,21 @@ export default function EventNearbyPanel({
       ) : null}
 
       {/* Featured city's past-year climate — same chart PointHistoryPanel
-          draws for the on-air focus, keyed to this city instead. */}
+          draws for the on-air focus, keyed to this city instead. One variable
+          at a time (timer-paged), not all three stacked. */}
       {climateRows.length ? (
         <div style={{ borderTop: "1px solid rgba(120,140,170,0.14)", padding: "9px 16px 4px", display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc" }}>
-            ▸ {featured?.name.toUpperCase()} · PAST YEAR
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc" }}>
+              ▸ {featured?.name.toUpperCase()} · PAST YEAR
+            </span>
+            {climateSlide.pageCount > 1 ? (
+              <span style={{ fontSize: 9, fontWeight: 750, letterSpacing: 1.05, color }}>
+                {climateSlide.page + 1}/{climateSlide.pageCount}
+              </span>
+            ) : null}
           </div>
-          {climateRows.map((row) => (
+          {climateSlide.visible.map((row) => (
             <MiniChart
               key={row.variable}
               label={row.label}

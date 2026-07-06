@@ -51,6 +51,28 @@ const GLOBAL_KINDS = new Set<SegmentKind>(["intro", "ocean", "orbital"]);
 /** Suppress a located shot within this many degrees of a recently-aired one. */
 export const DEFAULT_GEO_COOLDOWN_DEG = 8;
 
+/**
+ * Minimum wall-clock gap between two round-up (`summary`) airings. Hourly/12h/
+ * daily round-ups can all fall due near the same moment (a fresh session, or
+ * the three cadences' boundaries lining up) — each is a distinct unaired
+ * candidate, so without an explicit gap the priority tier (and fair rotation,
+ * once the priority cooldown lands on a normal cut) can string them together
+ * only a cut or two apart. That reads as round-ups hogging the show even
+ * though the existing per-cut cooldown is doing its job for any SINGLE kind.
+ */
+export const SUMMARY_MIN_GAP_MS = 6 * 60 * 1000;
+
+/**
+ * Drop `summary` candidates from the pool while the last round-up aired too
+ * recently. Pass `null` when no round-up has aired yet this session (nothing
+ * to gap against). Everything else in the pool passes through unchanged, so
+ * this can wrap the pool once and feed both `selectPriority` and `selectNext`.
+ */
+export function applySummaryGap(pool: Candidate[], msSinceLastSummary: number | null): Candidate[] {
+  if (msSinceLastSummary == null || msSinceLastSummary >= SUMMARY_MIN_GAP_MS) return pool;
+  return pool.filter((c) => c.segment.kind !== "summary");
+}
+
 export interface SelectOpts {
   /** Recent segment ids, oldest→newest — used only to avoid same-kind-in-a-row. */
   history: string[];

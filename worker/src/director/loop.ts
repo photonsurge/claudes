@@ -16,7 +16,13 @@ import {
   type Segment,
   type SegmentKind,
 } from "@photonsurge/shared/director";
-import { selectNext, selectPriority, PRIORITY_KINDS, type Candidate } from "@photonsurge/shared/director-select";
+import {
+  selectNext,
+  selectPriority,
+  applySummaryGap,
+  PRIORITY_KINDS,
+  type Candidate,
+} from "@photonsurge/shared/director-select";
 import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "../socket";
 import { buildCandidates, buildAdSegment } from "./candidates";
@@ -45,6 +51,9 @@ interface SceneRunner {
   timesShown?: number;
   /** adId of the last ad aired, so the next break doesn't repeat it. */
   lastAdId?: string;
+  /** When a `summary` (round-up) segment last aired, for the minimum-gap check
+   *  (see `applySummaryGap`) — undefined until the first one airs this session. */
+  lastSummaryAt?: number;
   /** The last cut was itself a priority (breaking-news) pick — gates the NEXT
    *  cut's priority check so breaking news can't fire two cuts in a row (see
    *  `selectPriority`'s cooldown option). */
@@ -84,25 +93,51 @@ const newRunner = (sceneId: string): SceneRunner => ({
   lastEmit: 0,
 });
 
+/** Fisher–Yates shuffle — used to sample kinds the same unbiased way `selectNext`
+ *  actually picks one (uniformly at random), instead of inventing a fake
+ *  "readiness order" that mostly ties at 0 and silently freezes to insertion
+ *  order (see previewNext's doc comment for why that was wrong). */
+function shuffled<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/** Random pick among a kind's least-aired candidates — mirrors `selectNext`'s
+ *  own fair-rotation tie-break exactly (not "highest score"). */
+function pickLeastAired(cands: Candidate[], counts: Map<string, number>): Candidate {
+  const countOf = (id: string) => counts.get(id) ?? 0;
+  const minCount = Math.min(...cands.map((c) => countOf(c.segment.id)));
+  const atMin = cands.filter((c) => countOf(c.segment.id) === minCount);
+  return atMin[Math.floor(Math.random() * atMin.length)];
+}
+
 /**
- * Top few upcoming shots (one per kind) for a "coming up" rail. This mirrors
- * the REAL selection order rather than just sorting by newsworthiness score —
- * a pure score sort is almost always "Seismic · Severe · …" (quake/storm
- * candidates carry the highest scores) regardless of what fair rotation will
- * actually reach next, which reads as flatly wrong once cooldown/breaking
- * gating (see `selectPriority`) makes the real picks far more varied:
+ * Top few upcoming shots (one per kind) for a "coming up" rail — a best-guess
+ * hint, not a promise (see UpNextPanel). `selectNext` picks the NEXT kind
+ * UNIFORMLY AT RANDOM among those present (excluding the just-aired kind) —
+ * there's no "readiness order" to predict, so this samples the same way
+ * rather than inventing one. An earlier version sorted kinds by least-aired
+ * count, but that mostly ties at 0 and silently freezes to a fixed order
+ * (whichever kind happens to build first), so "up next" would show the same
+ * couple of kinds forever regardless of what actually aired next — reads as
+ * flatly wrong once you watch it not budge cut after cut.
  *  - If the cooldown gate (see `selectPriority`) permits it, the single
  *    highest-scored still-unaired breaking candidate leads, same as the real
  *    priority tier would pick.
- *  - The remaining slots are one representative per OTHER kind, ordered by
- *    that kind's least-aired count (ascending) — the kind fair rotation is
- *    most "due" for, not the kind with the loudest headline.
+ *  - The remaining slots are a random sample of OTHER kinds (excluding the
+ *    kind that just aired, same as the real avoid-immediate-repeat rule),
+ *    each showing a random pick among ITS least-aired candidates.
  */
 function previewNext(
   pool: Candidate[],
   excludeId: string,
   counts: Map<string, number>,
   cooldownActive: boolean,
+  lastKind?: SegmentKind,
 ): { kind: SegmentKind; title: string }[] {
   const eligible = pool.filter((c) => c.segment.id !== excludeId);
   const out: { kind: SegmentKind; title: string }[] = [];
@@ -115,14 +150,12 @@ function previewNext(
   }
 
   const seenKinds = new Set(out.map((o) => o.kind));
-  const remainingKinds = [...new Set(eligible.map((c) => c.segment.kind))].filter((k) => !seenKinds.has(k));
-  const minCountOf = (kind: SegmentKind) =>
-    Math.min(...eligible.filter((c) => c.segment.kind === kind).map((c) => counts.get(c.segment.id) ?? 0));
-  remainingKinds.sort((a, b) => minCountOf(a) - minCountOf(b));
+  let remainingKinds = [...new Set(eligible.map((c) => c.segment.kind))].filter((k) => !seenKinds.has(k));
+  if (lastKind && remainingKinds.length > 1) remainingKinds = remainingKinds.filter((k) => k !== lastKind);
 
-  for (const kind of remainingKinds) {
-    const top = eligible.filter((c) => c.segment.kind === kind).sort((a, b) => b.score - a.score)[0];
-    if (top) out.push({ kind, title: top.segment.title });
+  for (const kind of shuffled(remainingKinds)) {
+    const cands = eligible.filter((c) => c.segment.kind === kind);
+    out.push({ kind, title: pickLeastAired(cands, counts).segment.title });
     if (out.length >= 3) break;
   }
   return out;
@@ -213,11 +246,13 @@ async function tick(): Promise<void> {
         let next: Segment | null = null;
         let priority: Segment | null = null;
         let pickedViaPriority = false;
+        const msSinceSummary = r.lastSummaryAt != null ? now - r.lastSummaryAt : null;
+
         if (adDue) {
           // A brand-new quake/storm/round-up nobody's seen this session outranks
           // a scheduled ad break — build the pool early just to check, and defer
           // the ad by one cut rather than let it stall breaking news.
-          pool = await buildCandidates(db, cfg, counts);
+          pool = applySummaryGap(await buildCandidates(db, cfg, counts), msSinceSummary);
           priority = r.seq > 0 ? selectPriority(pool, counts, { cooldown }) : null;
           if (priority) {
             r.pendingAd = true;
@@ -226,7 +261,7 @@ async function tick(): Promise<void> {
           }
         }
         if (!next) {
-          if (!pool.length) pool = await buildCandidates(db, cfg, counts);
+          if (!pool.length) pool = applySummaryGap(await buildCandidates(db, cfg, counts), msSinceSummary);
           // Breaking news preempts random rotation on every cut but the very
           // first (which always opens on the intro) — a fresh round-up or a
           // brand-new quake/storm airs at the next opportunity, not whenever
@@ -246,6 +281,7 @@ async function tick(): Promise<void> {
         if (next) {
           r.lastCutWasPriority = pickedViaPriority;
           if (next.kind === "ad") r.pendingAd = false;
+          if (next.kind === "summary") r.lastSummaryAt = now;
           // Anchor any camera motion (orbit spin OR push-in zoom drift) to the
           // cut instant so /control and /watch compute it in phase from here.
           if (next.patch.autoSpin || next.patch.zoomDrift) next.patch.spinEpoch = now;
@@ -275,7 +311,7 @@ async function tick(): Promise<void> {
           r.startedAt = now;
           r.endsAt = now + next.holdMs;
           // Ad cuts skip the candidate build, so keep the prior "coming up" rail.
-          r.upNext = pool.length ? previewNext(pool, next.id, counts, r.lastCutWasPriority) : r.upNext;
+          r.upNext = pool.length ? previewNext(pool, next.id, counts, r.lastCutWasPriority, next.kind) : r.upNext;
           r.history.push(next.id);
           if (r.history.length > HISTORY_CAP) r.history.shift();
           r.lastSkipNonce = cfg.skipNonce;

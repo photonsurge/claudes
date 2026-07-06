@@ -90,10 +90,10 @@ describe("TsunamiMonitor relevance", () => {
     expect(screen.getByText(/1\.27 m/)).toBeInTheDocument();
   });
 
-  it("shows the active tide station's name + a position-in-set caption when multiple gauges are in range", () => {
+  it("hides (renders null) when 2+ gauges are in range, deferring to TideStationRow", () => {
     const other: TideStationReading = { ...abashiri, stationId: "other", name: "Somewhere Else" };
     mockGauge.mockReturnValue({ stations: [abashiri, other], active: abashiri });
-    render(<TsunamiMonitor onAirSegment={stormAtOrigin} />);
-    expect(screen.getByText("Abashiri · 1/2")).toBeInTheDocument();
+    const { container } = render(<TsunamiMonitor onAirSegment={stormAtOrigin} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

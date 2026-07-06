@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ServiceStatusPanel from "../../components/ServiceStatusPanel";
 
 /**
  * /admin — hub linking the admin list/console pages. Kept data-light (just
@@ -35,6 +36,10 @@ export default function AdminPage() {
       <section style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
         <h2 style={{ marginTop: 0 }}>Admin</h2>
         <p style={{ color: "#8b95a7", marginTop: 0 }}>Lists and consoles for the weather globe.</p>
+
+        <div style={{ marginBottom: 16 }}>
+          <ServiceStatusPanel />
+        </div>
 
         <div
           style={{

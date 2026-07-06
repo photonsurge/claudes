@@ -181,10 +181,21 @@ export default function BroadcastFrame({
         }}
       >
         {/* Targeted point events (storm/quake/aircraft/ship) get the centred
-            reticle; wide shots (global/ocean/region/…) get a small card tucked
-            lower-left so we don't frame empty screen. */}
+            reticle (its own compact history panel tucked top-right, so the
+            trend context travels with the event instead of stacking a second
+            "PAST YEAR" card in the bottom-left column); wide shots (global/
+            ocean/region/…) get a small card tucked lower-left so we don't
+            frame empty screen. */}
         {onAirSegment && isTargetedEvent(onAirSegment.kind) ? (
-          <EventOverlay segment={onAirSegment} extraDetails={nearestCityDetails(onAirSegment, cities)} />
+          <EventOverlay
+            segment={onAirSegment}
+            extraDetails={nearestCityDetails(onAirSegment, cities)}
+            historyPanel={
+              segmentHasLocation ? (
+                <PointHistoryPanel center={onAirSegment.camera.center} theme={theme} compact />
+              ) : null
+            }
+          />
         ) : null}
 
         {/* Bottom-left column: the archived history charts for the focus, stacked
@@ -193,7 +204,9 @@ export default function BroadcastFrame({
             aircraft/ship, or the targeted-event quake/nearby-cities report — all
             mutually exclusive on segment kind). column-reverse anchors the
             context card to the bottom edge regardless of the history panel's
-            (self-hiding, variable-height) content. */}
+            (self-hiding, variable-height) content. Only shown for wide (non-
+            targeted) shots — targeted events carry their own compact copy in
+            the EventOverlay reticle above instead. */}
         <div
           style={{
             position: "absolute",
@@ -206,18 +219,20 @@ export default function BroadcastFrame({
           }}
         >
           {leftBottomPanel}
-          <PointHistoryPanel
-            center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}
-            bbox={
-              segmentHasLocation && !eventTargeted
-                ? bboxForCamera(
-                    onAirSegment?.camera.center ?? state.camera.center,
-                    onAirSegment?.camera.zoom ?? state.camera.zoom,
-                  )
-                : null
-            }
-            theme={theme}
-          />
+          {!eventTargeted ? (
+            <PointHistoryPanel
+              center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}
+              bbox={
+                segmentHasLocation
+                  ? bboxForCamera(
+                      onAirSegment?.camera.center ?? state.camera.center,
+                      onAirSegment?.camera.zoom ?? state.camera.zoom,
+                    )
+                  : null
+              }
+              theme={theme}
+            />
+          ) : null}
         </div>
 
         <Ticker title={theme.tickerTitle} items={ticker} edge="top" height={TICKER_H} theme={theme} />
@@ -265,7 +280,13 @@ export default function BroadcastFrame({
           }}
         >
           <LiveAlertPanel alerts={alerts} theme={theme} />
-          <IntensityMeter variable={legendVariableFor(state)} units={state.units} theme={theme} />
+          <IntensityMeter
+            variable={legendVariableFor(state)}
+            units={state.units}
+            theme={theme}
+            showSatImg={state.showSatImg}
+            satImgFeeds={state.satImgFeeds}
+          />
         </div>
 
         {/* Whole-planet situation summary — two separate stacked cards, not one
@@ -311,7 +332,9 @@ export default function BroadcastFrame({
             (alignItems: flex-end + column-reverse) so either can grow upward
             independently without disturbing the other's baseline. The gauges
             row (NEARBY TSUNAMI GAUGES) sits closest to the bottom edge in its
-            column, with the GLOBAL MONITOR tsunami card stacked above it. */}
+            column; the GLOBAL MONITOR tsunami card only appears above it when
+            there's a single gauge in range (it hides itself once the row has
+            2+, to avoid showing the same gauge twice). */}
         <div
           style={{
             position: "absolute",

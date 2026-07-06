@@ -172,6 +172,28 @@ export function defaultSatImgFeeds(): Record<string, SatImgFeedState> {
 }
 
 /**
+ * The on-screen caption for a satellite-imagery shot — there's no scalar legend
+ * (it's photographic, not a value gradient), so this is what tells the viewer
+ * what they're looking at: which feed(s) are draped, and the composite look for
+ * the live discs. Returns null when the overlay is off or every feed is off.
+ */
+export function satImgCaptionFor(
+  showSatImg: boolean | undefined,
+  feeds: Record<string, SatImgFeedState> | undefined,
+): { title: string; subtitle: string } | null {
+  if (!showSatImg) return null;
+  const on = SATIMG_FEEDS.filter((f) => feeds?.[f.id]?.on);
+  if (!on.length) return null;
+
+  const title = on.map((f) => f.label).join(" · ");
+  const discLooks = new Set(
+    on.filter((f) => f.kind === "disc").map((f) => feeds?.[f.id]?.look ?? DEFAULT_SATIMG_LOOK),
+  );
+  const lookLabel = discLooks.size === 1 ? SATIMG_LOOKS.find((l) => l.id === [...discLooks][0])?.label : null;
+  return { title, subtitle: lookLabel ? `Live satellite imagery · ${lookLabel}` : "Live satellite imagery" };
+}
+
+/**
  * A satImgFeeds PATCH that sets EVERY disc's look to `look`, leaving on/opacity to merge
  * from the base. Used by the director to apply "one look per shot-type" across the discs.
  * Each entry sets ONLY `look`; it's typed as a full SatImgFeedState to satisfy the

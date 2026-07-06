@@ -327,6 +327,12 @@ export function TsunamiMonitor({
       ? `${truncate(tideActive.name, 14)}${tide.stations.length > 1 ? ` · ${tideIdx + 1}/${tide.stations.length}` : ""}`
       : "SEA LEVEL";
 
+  // TideStationRow already shows every nearby gauge (including this one) once
+  // 2+ are cached — showing this single-gauge card on top of that row is a
+  // redundant duplicate, so defer to the row in that case.
+  const withData = tide.stations.filter((s) => s.samples?.length);
+  if (withData.length >= 2) return null;
+
   if (!samples) return null;
 
   const tr = trend(samples);

@@ -1,4 +1,4 @@
-import { selectNext, selectPriority, type Candidate } from "./director-select";
+import { selectNext, selectPriority, applySummaryGap, SUMMARY_MIN_GAP_MS, type Candidate } from "./director-select";
 import type { Segment, SegmentKind } from "./director";
 
 const seg = (id: string, kind: SegmentKind, center: [number, number] = [0, 0]): Segment => ({
@@ -126,5 +126,27 @@ describe("selectPriority", () => {
     const pool = [{ ...cand("storm:new", "storm"), breaking: true }];
     expect(selectPriority(pool, new Map(), { cooldown: true })).toBeNull();
     expect(selectPriority(pool, new Map(), { cooldown: false })?.id).toBe("storm:new");
+  });
+});
+
+describe("applySummaryGap", () => {
+  const pool = [cand("summary:hourly", "summary"), cand("tour:a", "tour")];
+
+  it("passes the pool through unchanged when no round-up has aired yet", () => {
+    expect(applySummaryGap(pool, null)).toBe(pool);
+  });
+
+  it("passes the pool through once the gap has elapsed", () => {
+    expect(applySummaryGap(pool, SUMMARY_MIN_GAP_MS)).toBe(pool);
+  });
+
+  it("drops summary candidates while the last round-up is still within the gap", () => {
+    const filtered = applySummaryGap(pool, SUMMARY_MIN_GAP_MS - 1);
+    expect(filtered.map((c) => c.segment.kind)).toEqual(["tour"]);
+  });
+
+  it("leaves every other kind untouched", () => {
+    const multi = [cand("summary:hourly", "summary"), cand("summary:daily", "summary"), cand("quake:x", "quake")];
+    expect(applySummaryGap(multi, 0).map((c) => c.segment.id)).toEqual(["quake:x"]);
   });
 });

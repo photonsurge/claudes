@@ -41,11 +41,16 @@ function Bracket({ corner, color }: { corner: "tl" | "tr" | "bl" | "br"; color: 
 export default function EventOverlay({
   segment,
   extraDetails = [],
+  historyPanel,
 }: {
   segment: Segment;
   /** Extra rows appended after the segment's own details (e.g. a nearest-city
    *  place line for aircraft/ship, which the segment shape doesn't carry). */
   extraDetails?: { label: string; value: string }[];
+  /** A compact PointHistoryPanel for this event's focus, tucked into the
+   *  reticle's top-right (mirrors the tracking label's top-left slot) instead
+   *  of competing for space in the bottom-left column. */
+  historyPanel?: React.ReactNode;
 }) {
   const color = KIND_COLOR[segment.kind] ?? "#38bdf8";
   const kindLabel = KIND_LABEL[segment.kind] ?? segment.kind;
@@ -120,6 +125,13 @@ export default function EventOverlay({
           <Row key={d.label} label={d.label.toUpperCase()} value={d.value} color={color} />
         ))}
       </div>
+
+      {/* History panel, top-right of the frame — mirrors the tracking label's
+          top-left slot so the reticle carries its own trend context instead of
+          the bottom-left column. */}
+      {historyPanel ? (
+        <div style={{ position: "absolute", top: -48, right: -54 }}>{historyPanel}</div>
+      ) : null}
 
       {/* Event name, lower-centre of the frame. Width-capped + ellipsised: some
           sources (e.g. an NWS multi-county areaDesc) can hand back a very long

@@ -189,7 +189,10 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
   }
   if (cfg.kinds.tour) {
     for (const roi of REGIONS_OF_INTEREST) {
-      out.push({ score: 5, segment: make("tour", roi.id, roi.name, "Regional weather", roi.center, roi.zoom, kindHoldMs(cfg, "tour"), cfg) });
+      out.push({
+        score: 5,
+        segment: make("tour", roi.id, roi.name, "Regional weather · Pressure & radar", roi.center, roi.zoom, kindHoldMs(cfg, "tour"), cfg),
+      });
     }
   }
   if (cfg.kinds.country) {
@@ -377,6 +380,14 @@ export async function buildCandidates(
         const sev = typeof a.maxSeverityRank === "number" ? a.maxSeverityRank : info?.severityRank ?? 0;
         const sinceIso = info?.onset ?? info?.effective ?? a.sent;
         const sinceMs = sinceIso ? Date.parse(sinceIso) : NaN;
+        // "Breaking" must be keyed off when WE first saw this (source, identifier)
+        // pair (`created`, Mongoose-managed — untouched by the `$set` on every
+        // re-upsert), NOT the CAP onset/effective/sent above: national met
+        // services routinely re-stamp those on every refresh of an ONGOING
+        // warning, so deriving freshness from them made a days-old Extreme
+        // alert look permanently brand-new and camp the priority tier forever
+        // (it kept winning selectPriority's "highest-scored breaking" pick).
+        const firstSeenMs = a.created ? new Date(a.created).getTime() : NaN;
         const hazard = classifyHazard({ event: info?.event, parameters: info?.parameters });
         // The hazard drives which maps the shot cycles — open on the plan's
         // first field. How LONG it holds is the severity's call: the operator
@@ -401,7 +412,7 @@ export async function buildCandidates(
         seg.hazard = hazard;
         seg.icon = c.icon;
         seg.details = c.details;
-        const breaking = !Number.isNaN(sinceMs) && now - sinceMs <= BREAKING_NEWS_WINDOW_MS;
+        const breaking = !Number.isNaN(firstSeenMs) && now - firstSeenMs <= BREAKING_NEWS_WINDOW_MS;
         pool.push({ score: 50 + sev * 12, segment: seg, breaking });
       }
     } catch {

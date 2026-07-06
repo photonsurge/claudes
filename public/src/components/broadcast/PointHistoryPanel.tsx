@@ -36,8 +36,11 @@ const SLIDE_HOLD_MS = 6000;
  * Paginates a section's charts into fixed-size slides and auto-advances on a
  * timer, so a section with many variables (a mixed land/sea area bbox can
  * easily have a dozen) reads as a slideshow instead of one long scroll.
+ * Exported so other broadcast cards with the same "one at a time" need (e.g.
+ * EventNearbyPanel's featured-city climate strip) can reuse the same timer
+ * instead of stacking every chart at once.
  */
-function usePagedSlides<T>(items: T[], perPage: number): { visible: T[]; page: number; pageCount: number } {
+export function usePagedSlides<T>(items: T[], perPage: number): { visible: T[]; page: number; pageCount: number } {
   const pageCount = Math.max(1, Math.ceil(items.length / perPage));
   const [idx, setIdx] = useState(0);
 
@@ -119,7 +122,10 @@ export function formatReading(v: number): string {
  * linearly on x so an outage gap reads as a gap in slope, not a lie of
  * continuity. Returns null for degenerate series.
  */
-export function sparkPoints(series: SparkPoint[]): { pts: [number, number][]; yOf: (v: number) => number } | null {
+export function sparkPoints(
+  series: SparkPoint[],
+  height: number = CHART_H,
+): { pts: [number, number][]; yOf: (v: number) => number } | null {
   const vals = series.map((p) => p.value).filter((v): v is number => v != null && Number.isFinite(v));
   if (vals.length < 2) return null;
   const t0 = new Date(series[0].t).getTime();
@@ -132,7 +138,7 @@ export function sparkPoints(series: SparkPoint[]): { pts: [number, number][]; yO
     min -= 0.5;
     max += 0.5;
   }
-  const yOf = (v: number) => PAD_Y + (1 - (v - min) / (max - min)) * (CHART_H - 2 * PAD_Y);
+  const yOf = (v: number) => PAD_Y + (1 - (v - min) / (max - min)) * (height - 2 * PAD_Y);
   const pts: [number, number][] = [];
   for (const p of series) {
     if (p.value == null || !Number.isFinite(p.value)) continue;
@@ -155,6 +161,7 @@ export function MiniChart({
   points,
   avg,
   caption,
+  height = CHART_H,
 }: {
   label: string;
   color: string;
@@ -163,13 +170,15 @@ export function MiniChart({
   /** Where to draw the dashed reference line (omitted when null). */
   avg: number | null;
   caption: string;
+  /** Chart height in px — smaller for a compact embed (e.g. inside EventOverlay). */
+  height?: number;
 }) {
-  const spark = sparkPoints(points);
+  const spark = sparkPoints(points, height);
   if (!spark) return null;
   const last = spark.pts[spark.pts.length - 1];
   const latestVal = [...points].reverse().find((p) => p.value != null)?.value ?? null;
   const first = spark.pts[0];
-  const area = `${toPath(spark.pts)} L${last[0]},${CHART_H} L${first[0]},${CHART_H} Z`;
+  const area = `${toPath(spark.pts)} L${last[0]},${height} L${first[0]},${height} Z`;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
@@ -185,8 +194,8 @@ export function MiniChart({
       </div>
       <svg
         width="100%"
-        height={CHART_H}
-        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+        height={height}
+        viewBox={`0 0 ${CHART_W} ${height}`}
         preserveAspectRatio="none"
         style={{ display: "block", borderRadius: 6, background: "rgba(4,10,20,0.78)" }}
       >
@@ -306,17 +315,30 @@ export function buildClimateRows(datasets: ClimateBucketedDataset[]): Array<{
   }).filter((r): r is NonNullable<typeof r> => r != null);
 }
 
+/** Compact sizing for the embedded-in-EventOverlay variant — narrower panel,
+ *  shorter charts, tighter padding, so it reads as a small side note rather
+ *  than the full bottom-left card. */
+const COMPACT_PANEL_W = 220;
+const COMPACT_CHART_H = 56;
+
 export default function PointHistoryPanel({
   center,
   bbox = null,
   theme = DEFAULT_THEME,
+  compact = false,
 }: {
   /** Focus point [lng, lat] — the on-air segment's centre (or camera fallback). */
   center: [number, number] | null;
   /** The framed area on wide shots — switches the live section to area stats. */
   bbox?: [number, number, number, number] | null;
   theme?: BroadcastTheme;
+  /** Small side-note sizing for embedding inside EventOverlay (see kinds.ts
+   *  isTargetedEvent) instead of the full bottom-left card. */
+  compact?: boolean;
 }) {
+  const panelW = compact ? COMPACT_PANEL_W : PANEL_W;
+  const chartH = compact ? COMPACT_CHART_H : CHART_H;
+  const panelPadX = compact ? 12 : PANEL_PAD_X;
   const point = usePointHistory(bbox ? null : center);
   const area = useAreaHistory(bbox);
   const climate = useClimateYear(center, "monthly");
@@ -352,12 +374,12 @@ export default function PointHistoryPanel({
   return (
     <div
       style={{
-        width: PANEL_W,
+        width: panelW,
         boxSizing: "border-box",
         display: "flex",
         flexDirection: "column",
-        gap: 10,
-        padding: `14px ${PANEL_PAD_X}px`,
+        gap: compact ? 6 : 10,
+        padding: `${compact ? 10 : 14}px ${panelPadX}px`,
         background: theme.panelBg,
         border: theme.panelBorder,
         borderRadius: 12,
@@ -386,6 +408,7 @@ export default function PointHistoryPanel({
               points={c.points}
               avg={c.avg}
               caption={c.caption}
+              height={chartH}
             />
           ))}
         </>
@@ -409,6 +432,7 @@ export default function PointHistoryPanel({
               points={row.points}
               avg={row.avg}
               caption={row.caption}
+              height={chartH}
             />
           ))}
         </>

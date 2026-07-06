@@ -8,6 +8,7 @@
 import type { ControlState } from "@photonsurge/shared/control";
 import { getVariable } from "@photonsurge/shared/variables";
 import { getPalette } from "@photonsurge/shared/palettes";
+import { satImgCaptionFor } from "@photonsurge/shared/satimg/types";
 import { buildLegend } from "../../lib/legend";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
@@ -16,13 +17,54 @@ export default function IntensityMeter({
   units,
   theme = DEFAULT_THEME,
   compact = false,
+  showSatImg,
+  satImgFeeds,
 }: {
   variable: string | null;
   units: ControlState["units"];
   theme?: BroadcastTheme;
   compact?: boolean;
+  /** Satellite-imagery state — there's no scalar legend for photographic feeds,
+   *  so when `variable` is null this renders a feed/look caption instead. */
+  showSatImg?: boolean;
+  satImgFeeds?: ControlState["satImgFeeds"];
 }) {
-  if (!variable) return null;
+  if (!variable) {
+    const sat = satImgCaptionFor(showSatImg, satImgFeeds);
+    if (!sat) return null;
+    return (
+      <div style={{ textAlign: "center", pointerEvents: "none", fontFamily: "system-ui, sans-serif" }}>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: 1.8,
+            opacity: 0.7,
+            color: "#dfe7f5",
+            textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+          }}
+        >
+          LIVE IMAGERY
+        </div>
+        <div
+          style={{
+            fontSize: compact ? 19 : 24,
+            fontWeight: 800,
+            letterSpacing: 0.3,
+            lineHeight: 1.05,
+            color: "#fff",
+            marginTop: 2,
+            textShadow: "0 1px 8px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.5)",
+          }}
+        >
+          {sat.title}
+        </div>
+        <div style={{ fontSize: compact ? 11 : 12.5, opacity: 0.85, color: "#dfe7f5", marginTop: 2 }}>
+          {sat.subtitle}
+        </div>
+      </div>
+    );
+  }
   const meta = getVariable(variable);
   const legend = buildLegend(variable, units);
   if (!meta || !legend) return null;

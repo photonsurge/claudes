@@ -1,6 +1,6 @@
 {
   "name": "worker",
-  "version": "0.1.10",
+  "version": "0.1.12",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
@@ -25,6 +25,7 @@
     "seed:capitals": "ts-node src/scripts/seedCapitals.ts",
     "seed:cities": "ts-node src/scripts/seedCities.ts",
     "seed:notable": "ts-node src/scripts/seedNotable.ts",
+    "seed:director-slides": "ts-node src/scripts/seedDirectorSlides.ts",
     "enrich:notable": "ts-node src/scripts/enrichNotable.ts",
     "ingest:alerts": "ts-node src/scripts/ingestAlerts.ts",
     "ingest:tles": "ts-node src/scripts/ingestTles.ts",
