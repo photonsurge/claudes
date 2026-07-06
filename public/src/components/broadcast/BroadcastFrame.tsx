@@ -42,6 +42,7 @@ import { SeismicMonitor, TsunamiMonitor, WeatherMonitors } from "./MonitorCluste
 import SeismicStationRow from "./SeismicStationRow";
 import TideStationRow from "./TideStationRow";
 import PointHistoryPanel, { usePagedSlides } from "./PointHistoryPanel";
+import DepthProfilePanel from "./DepthProfilePanel";
 import ForecastPanel from "./ForecastPanel";
 import EventOverlay from "./EventOverlay";
 import EventNearbyPanel from "./EventNearbyPanel";
@@ -250,6 +251,7 @@ export default function BroadcastFrame({
               segmentHasLocation ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <PointHistoryPanel center={onAirSegment.camera.center} theme={theme} compact />
+                  <DepthProfilePanel center={onAirSegment.camera.center} manifest={manifest} theme={theme} compact />
                   <ForecastPanel center={onAirSegment.camera.center} theme={theme} compact />
                 </div>
               ) : null
@@ -306,6 +308,13 @@ export default function BroadcastFrame({
                     )
                   : null
               }
+              theme={theme}
+            />
+          ) : null}
+          {!eventTargeted ? (
+            <DepthProfilePanel
+              center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}
+              manifest={manifest}
               theme={theme}
             />
           ) : null}

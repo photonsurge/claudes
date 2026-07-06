@@ -26,6 +26,11 @@ export interface iVolcano extends iGeneralModel {
   sourceUrl?: string;
   fetchedAt: Date;
   loc?: { type: "Point"; coordinates: [number, number] };
+  /** Wikipedia enrichment (see worker/src/jobs/volcanoes.ts#enrichWiki). */
+  wikiTitle?: string;
+  wikiThumb?: string;
+  wikiExtract?: string;
+  wikiFetchedAt?: Date;
 }
 
 export interface iVolcanoModel extends iVolcano {
@@ -49,6 +54,10 @@ const VolcanoSchema = new mongoose.Schema<iVolcanoModel>(
       type: { type: String, enum: ["Point"], default: "Point" },
       coordinates: { type: [Number] },
     },
+    wikiTitle: { type: String, required: false },
+    wikiThumb: { type: String, required: false },
+    wikiExtract: { type: String, required: false },
+    wikiFetchedAt: { type: Date, required: false },
   },
   { timestamps: false },
 );

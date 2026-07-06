@@ -133,7 +133,7 @@ export async function enrichAircraft(_job: Job) {
  */
 export const tleGroups = (): string[] =>
   (process.env.SATELLITE_GROUPS ||
-    "stations,visual,weather,noaa,goes,resource,science,geo,tdrss,sarsat,dmc,engineering,gps-ops,galileo")
+    "stations,visual,weather,goes,resource,science,geo,tdrss,sarsat,dmc,engineering,gps-ops,galileo")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);

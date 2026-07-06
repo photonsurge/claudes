@@ -249,6 +249,24 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     event: "refresh",
     group: "Static datasets",
   },
+  {
+    id: "volcanoes-snapshot",
+    label: "Refresh active volcanoes",
+    description: "Re-pull NASA EONET's currently-active (\"open\") volcano events into Mongo now.",
+    domain: "volcanoes",
+    type: "volcanoes",
+    event: "snapshot",
+    group: "Volcanoes",
+  },
+  {
+    id: "volcanoes-enrich",
+    label: "Enrich volcanoes (Wikipedia)",
+    description: "Fetch a Wikipedia photo + blurb for each active volcano. Fresh ones (< 30 days) are skipped.",
+    domain: "volcanoes",
+    type: "volcanoes",
+    event: "enrichWiki",
+    group: "Volcanoes",
+  },
 ];
 
 export const getTriggerableJob = (id: string): TriggerableJob | undefined =>

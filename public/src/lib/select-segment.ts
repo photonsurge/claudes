@@ -93,6 +93,18 @@ export function volcanoToSegment(v: Volcano): Segment {
     icon: meta.icon,
     hazard: "volcano",
     details,
+    // Reuses the notable-tracks TrackInfo card for the Wikipedia photo/blurb —
+    // its fields (label/category/photoUrl/extract) are generic enough to fit a
+    // volcano, not just an aircraft/vessel. Undefined (not this whole object)
+    // until the worker's enrichWiki job has run for this event.
+    trackInfo: v.wikiExtract || v.wikiThumb
+      ? {
+          label: v.name,
+          category: "Volcano",
+          photoUrl: v.wikiThumb,
+          extract: v.wikiExtract,
+        }
+      : undefined,
     camera: { center: [v.lng, v.lat], zoom: VOLCANO_ZOOM },
     patch: {},
     holdMs: 0,

@@ -394,9 +394,10 @@ process.on("uncaughtException", (err) => {
   }
 
   // ---- Repeatable volcanoes.snapshot (NASA EONET active volcanoes → Mongo) ----
-  // EONET republishes a few times a day; poll every 30 min by default (cheap;
-  // upserts dedup). Keyless, so — unlike fires.snapshot — always scheduled.
-  // Disable with VOLCANO_SNAPSHOT_ENABLED=false.
+  // Individual volcano events update slowly (weeks to months apart, not daily),
+  // but polling every 30 min is still cheap and keeps new events showing up
+  // promptly (upserts dedup). Keyless, so — unlike fires.snapshot — always
+  // scheduled. Disable with VOLCANO_SNAPSHOT_ENABLED=false.
   if (process.env.VOLCANO_SNAPSHOT_ENABLED !== "false") {
     const VOLCANO_SNAPSHOT_MS = Number(process.env.VOLCANO_SNAPSHOT_MS || 30 * 60 * 1000);
     try {
@@ -409,6 +410,24 @@ process.on("uncaughtException", (err) => {
     } catch (err) {
       log(TAG, `failed to register volcanoes.snapshot`, summarizeForLog(err));
     }
+  }
+
+  // Cache a Wikipedia photo + blurb onto each active volcano. LOW PRIORITY
+  // (>0 so it never competes with the live snapshots) and slow (staleness-
+  // gated + a tiny catalog), so it barely touches Wikipedia.
+  try {
+    await myQueue.add(
+      "do",
+      { domain: "volcanoes", type: "volcanoes", event: "enrichWiki", data: {} },
+      {
+        repeat: { every: Number(process.env.VOLCANO_ENRICH_MS || 6 * 3_600_000), immediately: true },
+        jobId: "volcanoes-enrich",
+        priority: 10,
+      },
+    );
+    log(TAG, `registered repeatable volcanoes.enrichWiki`);
+  } catch (err) {
+    log(TAG, `failed to register volcanoes.enrichWiki`, summarizeForLog(err));
   }
 
   // ---- Repeatable geomag.refresh (IGRF total-intensity field → baked scalar PNG) ----

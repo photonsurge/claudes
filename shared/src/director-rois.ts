@@ -280,7 +280,6 @@ export const ORBITAL_VIEWS: OrbitalView[] = [
   { group: "stations", title: "Space Stations", subtitle: "ISS & crewed platforms", zoom: 3.2 },
   { group: "visual", title: "Brightest Satellites", subtitle: "Visible to the naked eye", zoom: 2.6 },
   { group: "starlink", title: "Starlink", subtitle: "Low-Earth-orbit internet constellation", zoom: 3.0 },
-  { group: "noaa", title: "NOAA Polar Fleet", subtitle: "Polar-orbiting weather satellites", zoom: 3.0 },
   { group: "resource", title: "Earth Observation", subtitle: "Land-imaging satellites", zoom: 3.0 },
   { group: "science", title: "Science Missions", subtitle: "Hubble & orbital observatories", zoom: 3.0 },
   { group: "sarsat", title: "Search & Rescue", subtitle: "COSPAS-SARSAT distress-beacon relay", zoom: 3.0 },

@@ -40,6 +40,7 @@ import ControlPanel from "../../components/ControlPanel";
 import DirectorPanel from "../../components/DirectorPanel";
 import ViewingOverlay from "../../components/ViewingOverlay";
 import QuakeReport from "../../components/broadcast/QuakeReport";
+import TrackInfoPanel from "../../components/broadcast/TrackInfoPanel";
 import AlertLegend from "../../components/AlertLegend";
 import { DebugButton } from "../../lib/client/debug";
 
@@ -224,11 +225,20 @@ export default function ControlPage() {
         ) : null}
 
         {/* Seismic report for the on-air (director) / clicked quake — magnitude &
-            depth breakdown + nearest cities. Top-right, clear of the top-left
-            legend and the bottom-left "now viewing" card. */}
+            depth breakdown + nearest cities. Track Info card (Wikipedia photo +
+            blurb) for the clicked volcano/notable track. Top-right, clear of the
+            top-left legend and the bottom-left "now viewing" card. */}
         {(() => {
           const seg = director?.active && onAir ? onAir : selected;
-          return seg?.kind === "quake" && seg.quake ? (
+          if (!seg) return null;
+          if (seg.trackInfo) {
+            return (
+              <div style={{ position: "absolute", top: 16, right: 16, zIndex: 4 }}>
+                <TrackInfoPanel segment={seg} />
+              </div>
+            );
+          }
+          return seg.kind === "quake" && seg.quake ? (
             <div style={{ position: "absolute", top: 16, right: 16, zIndex: 4 }}>
               <QuakeReport
                 mag={seg.quake.mag}

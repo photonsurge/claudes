@@ -12,6 +12,10 @@ const strip = (doc: any): Volcano => ({
   firstDate: new Date(doc.firstDate).getTime(),
   lastDate: new Date(doc.lastDate).getTime(),
   sourceUrl: doc.sourceUrl || undefined,
+  wikiTitle: doc.wikiTitle || undefined,
+  wikiThumb: doc.wikiThumb || undefined,
+  wikiExtract: doc.wikiExtract || undefined,
+  wikiFetchedAt: doc.wikiFetchedAt ? new Date(doc.wikiFetchedAt).getTime() : undefined,
 });
 
 /**
@@ -72,6 +76,20 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
 
     async count(): Promise<number> {
       return model.estimatedDocumentCount();
+    },
+
+    /** Volcanoes whose Wikipedia enrichment is missing or older than `staleBefore` (unless `force`). */
+    async listNeedingEnrichment(staleBefore: Date, force = false): Promise<iVolcanoModel[]> {
+      const q = force ? {} : { wikiFetchedAt: { $not: { $gt: staleBefore } } };
+      return model.find(q).lean().exec();
+    },
+
+    /** Patch Wikipedia enrichment fields onto one volcano by its source `volcanoId`. */
+    async updateEnrichment(
+      volcanoId: string,
+      patch: { wikiTitle?: string; wikiThumb?: string; wikiExtract?: string; wikiFetchedAt: Date },
+    ): Promise<void> {
+      await model.updateOne({ volcanoId }, { $set: patch }).exec();
     },
   };
 }

@@ -2,17 +2,23 @@ import type { Volcano, VolcanoStatus } from "./types";
 
 /**
  * NASA EONET (Earth Observatory Natural Event Tracker) "volcanoes" category —
- * near-real-time eruption/activity reports, worldwide, no key required:
+ * worldwide volcanic-activity reports, no key required:
  *   https://eonet.gsfc.nasa.gov/api/v3/categories/volcanoes?status=open
  * We ask for `status=open` only — EONET's own notion of "still active" — so the
  * worker's cache is naturally just the currently-active set; an event that
  * closes (or simply stops being reported) ages out of Mongo via the TTL on
  * `fetchedAt` instead of needing a full-replace sync.
+ *
+ * Unlike EONET's wildfire/storm categories, individual volcano events are NOT
+ * pinged daily — a genuinely ongoing eruption (e.g. Kilauea) can go many months
+ * between geometry updates, and some "open" events sit untouched for years. So
+ * VOLCANO_RECENT_MS is deliberately wide — a short window (days) would leave
+ * "erupting" almost never true even for volcanoes actively erupting right now.
  */
 export const EONET_API_BASE = process.env.EONET_API_BASE || "https://eonet.gsfc.nasa.gov/api/v3";
 
 /** A report within this window of "now" reads as actively "erupting". */
-export const VOLCANO_RECENT_MS = 14 * 24 * 60 * 60 * 1000;
+export const VOLCANO_RECENT_MS = 90 * 24 * 60 * 60 * 1000;
 
 function statusFor(lastDateMs: number, nowMs: number): VolcanoStatus {
   return nowMs - lastDateMs <= VOLCANO_RECENT_MS ? "erupting" : "unrest";

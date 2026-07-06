@@ -26,6 +26,12 @@ export interface Volcano {
   lastDate: number;
   /** Link to a source report, if the feed provided one. */
   sourceUrl?: string;
+  /** Wikipedia enrichment (see worker/src/jobs/volcanoes.ts#enrichWiki) — absent until the enrich job has run. */
+  wikiTitle?: string;
+  wikiThumb?: string;
+  wikiExtract?: string;
+  /** Epoch ms of the last enrichment attempt (set even on a no-match, to avoid re-querying every run). */
+  wikiFetchedAt?: number;
 }
 
 /** Everything the volcano overlay needs in one cached payload. */

@@ -38,6 +38,8 @@ import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
 import ViewingOverlay from "../../components/ViewingOverlay";
 import AlertLegend from "../../components/AlertLegend";
+import Legend from "../../components/Legend";
+import { legendVariableFor } from "../../lib/legend";
 import { DebugButton } from "../../lib/client/debug";
 
 export default function SandboxPage() {
@@ -136,6 +138,33 @@ export default function SandboxPage() {
         />
         {state.showAlerts || state.showSeismic || state.showAurora || state.showMagneticField ? (
           <AlertLegend alerts={alerts} quakes={quakes} aurora={aurora} geomag={geomag} />
+        ) : null}
+        {/* Active weather-map colour key — /watch only shows this inside a director
+            segment's on-air card, so the freewheeling sandbox (no director) would
+            otherwise never show it. Suppressed when something's click-selected,
+            since ViewingOverlay already renders the same legend in that card. */}
+        {!selected && legendVariableFor(state) ? (
+          <div
+            style={{
+              position: "absolute",
+              left: 24,
+              bottom: 24,
+              padding: "10px 14px",
+              fontFamily: "system-ui, sans-serif",
+              background: "linear-gradient(180deg, rgba(12,17,28,0.82), rgba(8,12,20,0.88))",
+              border: "1px solid rgba(120,140,170,0.22)",
+              borderRadius: 12,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.45)",
+              backdropFilter: "blur(10px)",
+              WebkitBackdropFilter: "blur(10px)",
+            }}
+          >
+            <Legend
+              variableId={legendVariableFor(state)}
+              units={state.units}
+              onUnitsChange={(units) => apply({ ...state, units })}
+            />
+          </div>
         ) : null}
         {selected ? (
           <ViewingOverlay

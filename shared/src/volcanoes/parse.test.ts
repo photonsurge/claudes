@@ -16,7 +16,7 @@ const EONET_JSON = {
     {
       id: "EONET_2",
       title: "  Mount   Etna, Italy ",
-      geometry: [{ date: "2026-05-01T00:00:00Z", type: "Point", coordinates: [15.0, 37.75] }],
+      geometry: [{ date: "2024-01-01T00:00:00Z", type: "Point", coordinates: [15.0, 37.75] }],
     },
     {
       id: "EONET_3",

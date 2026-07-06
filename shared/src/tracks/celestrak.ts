@@ -16,7 +16,6 @@ export const SATELLITE_GROUPS: SatelliteGroup[] = [
   // Notable named individual satellites — the interesting, one-of-a-kind craft.
   // Weather/environment birds are especially on-brand for the globe.
   { id: "weather", label: "Weather" },
-  { id: "noaa", label: "NOAA (polar)" },
   { id: "goes", label: "GOES (geostationary)" },
   { id: "resource", label: "Earth observation" },
   { id: "science", label: "Science (Hubble, etc.)" },
