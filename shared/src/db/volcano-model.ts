@@ -25,6 +25,8 @@ export interface iVolcano extends iGeneralModel {
   status: string;
   firstDate: Date;
   lastDate: Date;
+  /** When `status` last actually changed (not just re-reported) — see Volcano.statusChangedAt. */
+  statusChangedAt: Date;
   sourceUrl?: string;
   latestReport?: string;
   reportDateRange?: string;
@@ -53,6 +55,7 @@ const VolcanoSchema = new mongoose.Schema<iVolcanoModel>(
     status: { type: String, required: true },
     firstDate: { type: Date, required: true },
     lastDate: { type: Date, required: true },
+    statusChangedAt: { type: Date, required: true, default: () => new Date() },
     sourceUrl: { type: String, required: false },
     latestReport: { type: String, required: false },
     reportDateRange: { type: String, required: false },

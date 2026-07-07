@@ -177,6 +177,7 @@ export default function SandboxPage() {
               variableId={legendVariableFor(state)}
               units={state.units}
               onUnitsChange={(units) => apply({ ...state, units })}
+              manifest={manifest}
             />
           </div>
         ) : null}
@@ -190,6 +191,7 @@ export default function SandboxPage() {
             label="SELECTED"
             accent="#38bdf8"
             onClose={() => setSelected(null)}
+            manifest={manifest}
           />
         ) : null}
       </div>

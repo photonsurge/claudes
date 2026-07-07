@@ -1,4 +1,11 @@
-import { clusterHotspots, magToSeverity, alertCentroid, aggregate, type HotspotPoint } from "./aggregate";
+import {
+  clusterHotspots,
+  magToSeverity,
+  volcanoStatusToSeverity,
+  alertCentroid,
+  aggregate,
+  type HotspotPoint,
+} from "./aggregate";
 
 describe("magToSeverity", () => {
   it.each([
@@ -9,6 +16,16 @@ describe("magToSeverity", () => {
     [1.5, 1],
   ])("maps M%s → rank %i", (mag, rank) => {
     expect(magToSeverity(mag as number)).toBe(rank);
+  });
+});
+
+describe("volcanoStatusToSeverity", () => {
+  it.each([
+    ["erupting", 3],
+    ["unrest", 2],
+    ["dormant", 1],
+  ])("maps %s → rank %i", (status, rank) => {
+    expect(volcanoStatusToSeverity(status as any)).toBe(rank);
   });
 });
 
@@ -62,11 +79,12 @@ describe("clusterHotspots", () => {
 describe("aggregate", () => {
   const now = new Date("2026-07-01T12:00:00.000Z");
 
-  const stubDb = (over: Partial<Record<"alerts" | "quakes" | "trackSnapshots", any>> = {}) =>
+  const stubDb = (over: Partial<Record<"alerts" | "quakes" | "trackSnapshots" | "volcanoes", any>> = {}) =>
     ({
       alerts: { list: async () => over.alerts ?? [] },
       quakes: { list: async () => over.quakes ?? [] },
       trackSnapshots: { latest: async () => over.trackSnapshots ?? { at: null, rows: [] } },
+      volcanoes: { list: async () => over.volcanoes ?? [] },
     }) as any;
 
   it("reduces alerts into severity/hazard/source stats and counts cyclones", async () => {
@@ -119,6 +137,20 @@ describe("aggregate", () => {
     expect(res.topEvents[0].kind).toBe("quake");
     expect(res.topEvents[0].severity).toBe(4);
     expect(res.sources).toContain("usgs");
+  });
+
+  it("counts erupting/unrest volcanoes but excludes dormant ones from stats and topEvents", async () => {
+    const volcanoes = [
+      { id: "gvp:1", name: "Etna", status: "erupting", lng: 15, lat: 37.7, lastDate: now.getTime() },
+      { id: "gvp:2", name: "Merapi", status: "unrest", lng: 110.4, lat: -7.5, lastDate: now.getTime() },
+      { id: "gvp:3", name: "Fuji", status: "dormant", lng: 138.7, lat: 35.4, lastDate: now.getTime() },
+    ];
+    const res = await aggregate(stubDb({ volcanoes }), "daily", now);
+    expect(res.stats.volcanoCount).toBe(2);
+    expect(res.stats.volcanoErupting).toBe(1);
+    expect(res.topEvents.map((e) => e.refId)).toEqual(["gvp:1", "gvp:2"]);
+    expect(res.topEvents.every((e) => e.kind !== "volcano" || e.hazard === "volcano")).toBe(true);
+    expect(res.sources).toContain("gvp");
   });
 
   it("computes the lookback window from the cadence", async () => {

@@ -105,31 +105,37 @@ function MiniBar({
   );
 }
 
-/** One "Asia [alerts bar] 129  [quakes bar] 63" row — two side-by-side mini
- *  graphs (alerts | quakes), each its own colour ramp and scale, so the two
- *  event types never blend into one ambiguous bar. */
+/** One "Asia [alerts bar] 129  [quakes bar] 63  [volcanoes bar] 2" row — three
+ *  side-by-side mini graphs (alerts | quakes | volcanoes), each its own colour
+ *  ramp and scale, so the three event types never blend into one ambiguous bar. */
 function ContinentRow({
   continent,
   alertCount,
   bySeverity,
   quakeCount,
   byMagClass,
+  volcanoCount,
+  byVolcanoStatus,
   maxAlert,
   maxQuake,
+  maxVolcano,
 }: {
   continent: string;
   alertCount: number;
   bySeverity: { rank: number; color: string; count: number }[];
   quakeCount: number;
   byMagClass: { cls: string; color: string; count: number }[];
+  volcanoCount: number;
+  byVolcanoStatus: { status: string; color: string; count: number }[];
   maxAlert: number;
   maxQuake: number;
+  maxVolcano: number;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <span
         style={{
-          flex: "0 0 82px",
+          flex: "0 0 66px",
           fontSize: 11,
           fontWeight: 700,
           color: "#c3cee0",
@@ -147,7 +153,7 @@ function ContinentRow({
       />
       <span
         style={{
-          flex: "0 0 20px",
+          flex: "0 0 18px",
           textAlign: "right",
           fontSize: 11,
           fontWeight: 700,
@@ -164,7 +170,7 @@ function ContinentRow({
       />
       <span
         style={{
-          flex: "0 0 20px",
+          flex: "0 0 18px",
           textAlign: "right",
           fontSize: 11,
           fontWeight: 700,
@@ -173,6 +179,23 @@ function ContinentRow({
         }}
       >
         {quakeCount}
+      </span>
+      <MiniBar
+        count={volcanoCount}
+        max={maxVolcano}
+        segments={byVolcanoStatus.map((b) => ({ key: `volc:${b.status}`, color: b.color, count: b.count }))}
+      />
+      <span
+        style={{
+          flex: "0 0 18px",
+          textAlign: "right",
+          fontSize: 11,
+          fontWeight: 700,
+          color: "#9fb0c8",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {volcanoCount}
       </span>
     </div>
   );
@@ -187,11 +210,13 @@ export default function WorldSituationPanel({
 }) {
   const s = worldWatch;
   const topColor = s.bySeverity[0]?.color ?? theme.accent;
+  const volcanoColor = s.byVolcanoStatus[0]?.color ?? "#f97316";
 
-  // Each column's own busiest continent — so the alerts bar and the quakes bar
-  // scale independently and neither one silently swamps the other.
+  // Each column's own busiest continent — so the alerts bar, quakes bar, and
+  // volcanoes bar each scale independently and none silently swamps another.
   const maxAlert = Math.max(1, ...s.byContinent.map((c) => c.alertCount));
   const maxQuake = Math.max(1, ...s.byContinent.map((c) => c.quakeCount));
+  const maxVolcano = Math.max(1, ...s.byContinent.map((c) => c.volcanoCount));
 
   return (
     <div
@@ -230,9 +255,10 @@ export default function WorldSituationPanel({
         </span>
       </div>
 
-      <div style={{ display: "flex", gap: 22 }}>
+      <div style={{ display: "flex", gap: 18 }}>
         <StatTile label="ALERTS" value={s.alertTotal} color={topColor} />
         <StatTile label="QUAKES" value={s.quakeCount} color={theme.accent} />
+        <StatTile label="VOLCANOES" value={s.volcanoCount} color={volcanoColor} />
       </div>
 
       {s.bySeverity.length > 0 ? (
@@ -251,16 +277,24 @@ export default function WorldSituationPanel({
         </div>
       ) : null}
 
+      {s.byVolcanoStatus.length > 0 ? (
+        <div style={{ display: "flex", flexWrap: "wrap", rowGap: 6, columnGap: 14 }}>
+          {s.byVolcanoStatus.map((b) => (
+            <BreakdownChip key={b.status} label={b.label} count={b.count} color={b.color} />
+          ))}
+        </div>
+      ) : null}
+
       {s.byContinent.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {/* Column legend — once, not per row — so it's clear the two mini
-              graphs below are ALERTS then QUAKES, not one blended bar. */}
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <span style={{ flex: "0 0 82px" }} />
+          {/* Column legend — once, not per row — so it's clear the three mini
+              graphs below are ALERTS, QUAKES, then VOLCANOES, not one blended bar. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ flex: "0 0 66px" }} />
             <span style={{ flex: 1, fontSize: 9, fontWeight: 800, letterSpacing: 1, color: topColor }}>
               ALERTS
             </span>
-            <span style={{ flex: "0 0 20px" }} />
+            <span style={{ flex: "0 0 18px" }} />
             <span
               style={{
                 flex: 1,
@@ -273,7 +307,20 @@ export default function WorldSituationPanel({
             >
               QUAKES
             </span>
-            <span style={{ flex: "0 0 20px" }} />
+            <span style={{ flex: "0 0 18px" }} />
+            <span
+              style={{
+                flex: 1,
+                textAlign: "right",
+                fontSize: 9,
+                fontWeight: 800,
+                letterSpacing: 1,
+                color: volcanoColor,
+              }}
+            >
+              VOLCANOES
+            </span>
+            <span style={{ flex: "0 0 18px" }} />
           </div>
           {s.byContinent.map((c) => (
             <ContinentRow
@@ -283,8 +330,11 @@ export default function WorldSituationPanel({
               bySeverity={c.bySeverity}
               quakeCount={c.quakeCount}
               byMagClass={c.byMagClass}
+              volcanoCount={c.volcanoCount}
+              byVolcanoStatus={c.byVolcanoStatus}
               maxAlert={maxAlert}
               maxQuake={maxQuake}
+              maxVolcano={maxVolcano}
             />
           ))}
         </div>

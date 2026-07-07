@@ -5,6 +5,8 @@ import type { Alert } from "./alerts";
 import { listAlerts } from "./alerts";
 import { listQuakes } from "./tracks/client";
 import type { Quake } from "./tracks/types";
+import { listVolcanoes } from "./volcanoes-overlay";
+import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import {
   worldWatchSummary,
   worldWatchFeed,
@@ -31,19 +33,21 @@ export interface WorldWatchState extends WorldSummary {
 const MIN_ALERT_SEVERITY = 3; // 0 None · 1 Minor · 2 Moderate · 3 Severe · 4 Extreme
 const MIN_QUAKE_MAG = 4.5;
 
-const EMPTY_RAW: { alerts: Alert[]; quakes: Quake[] } = { alerts: [], quakes: [] };
+const EMPTY_RAW: { alerts: Alert[]; quakes: Quake[]; volcanoes: Volcano[] } = { alerts: [], quakes: [], volcanoes: [] };
 
 /**
- * The whole-planet alert + seismic tally behind the always-on WORLD WATCH panel.
- * Deliberately independent of the operator's showAlerts/showSeismic toggles and
- * the camera bbox — this is a global situation summary that stays on screen no
- * matter what the map is currently showing. We refetch on the same socket beats
- * the overlays use (ALERTS_UPDATED / TRACKS_UPDATED:seismic); the interval is a
- * fallback if the socket is down. The tally fetches every active alert and every
- * cached quake (no severity/magnitude floor) so the full picture — down to
- * Minor alerts and M2.5+ quakes — shows in the stat tiles and continent bars;
- * only the scrolling ACTIVE FEED narrows back down to broadcast-worthy events
- * (see MIN_ALERT_SEVERITY / MIN_QUAKE_MAG).
+ * The whole-planet alert + seismic + volcano tally behind the always-on WORLD
+ * WATCH panel. Deliberately independent of the operator's showAlerts/showSeismic
+ * toggles and the camera bbox — this is a global situation summary that stays on
+ * screen no matter what the map is currently showing. We refetch on the same
+ * socket beats the overlays use (ALERTS_UPDATED / TRACKS_UPDATED:seismic|volcanoes);
+ * the interval is a fallback if the socket is down. The tally fetches every
+ * active alert and every cached quake (no severity/magnitude floor) so the full
+ * picture — down to Minor alerts and M2.5+ quakes — shows in the stat tiles and
+ * continent bars; only the scrolling ACTIVE FEED narrows back down to
+ * broadcast-worthy events (see MIN_ALERT_SEVERITY / MIN_QUAKE_MAG). Volcanoes are
+ * always fetched in full (every status, no cap) but dormant ones are dropped
+ * inside worldWatchSummary/worldWatchFeed — erupting/unrest only, everywhere.
  *
  * `cities` (the curated, wiki-enriched set BroadcastFrame already loads for the
  * "near this event" panel) is optional and only flavours the feed rows with a
@@ -67,7 +71,7 @@ export function useWorldWatch(cities: City[] = [], enabled = true): WorldWatchSt
     if (!socket) return;
     const onAlerts = () => setLiveTick((n) => n + 1);
     const onTracks = (p?: { kind?: string }) => {
-      if (!p || p.kind === "seismic") setLiveTick((n) => n + 1);
+      if (!p || p.kind === "seismic" || p.kind === "volcanoes") setLiveTick((n) => n + 1);
     };
     socket.on(ALERTS_UPDATED, onAlerts);
     socket.on(TRACKS_UPDATED, onTracks);
@@ -81,12 +85,13 @@ export function useWorldWatch(cities: City[] = [], enabled = true): WorldWatchSt
     if (!enabled) return;
     let cancelled = false;
     const poll = async () => {
-      const [alerts, quakesRes] = await Promise.all([
+      const [alerts, quakesRes, volcanoes] = await Promise.all([
         listAlerts({ activeOnly: true, limit: 5000 }),
         listQuakes(),
+        listVolcanoes(),
       ]);
       if (cancelled) return;
-      setRaw({ alerts, quakes: quakesRes.quakes });
+      setRaw({ alerts, quakes: quakesRes.quakes, volcanoes });
     };
     poll();
     const iv = setInterval(poll, 60000);
@@ -100,8 +105,8 @@ export function useWorldWatch(cities: City[] = [], enabled = true): WorldWatchSt
     const feedAlerts = raw.alerts.filter((a) => a.maxSeverityRank >= MIN_ALERT_SEVERITY);
     const feedQuakes = raw.quakes.filter((q) => q.mag >= MIN_QUAKE_MAG);
     return {
-      ...worldWatchSummary(raw.alerts, raw.quakes),
-      feed: worldWatchFeed(feedAlerts, feedQuakes, cities),
+      ...worldWatchSummary(raw.alerts, raw.quakes, raw.volcanoes),
+      feed: worldWatchFeed(feedAlerts, feedQuakes, cities, raw.volcanoes),
     };
   }, [raw, cities]);
 }

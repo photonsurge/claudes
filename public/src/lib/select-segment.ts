@@ -5,9 +5,8 @@
  * card text is byte-identical to a director cut for the same event.
  */
 import type { Segment } from "@photonsurge/shared/director";
-import { quakeSegmentContent, alertSegmentContent } from "@photonsurge/shared/segments";
+import { quakeSegmentContent, alertSegmentContent, volcanoSegmentContent } from "@photonsurge/shared/segments";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
-import { hazardMeta } from "@photonsurge/shared/alerts/hazard";
 import type { Quake } from "./tracks/types";
 import type { AlertFeature } from "./alerts";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
@@ -69,42 +68,25 @@ export function alertFeatureToSegment(f: AlertFeature): Segment | null {
   };
 }
 
-const utcLabel = (ms: number) => `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
-
-const VOLCANO_STATUS_SUBTITLE: Record<Volcano["status"], string> = {
-  erupting: "Active eruption",
-  unrest: "Volcanic unrest",
-  dormant: "Easing off / dormant",
-};
-const VOLCANO_STATUS_LABEL: Record<Volcano["status"], string> = {
-  erupting: "Erupting",
-  unrest: "Unrest",
-  dormant: "Dormant",
-};
-
 /**
  * Reuses the generic `storm`-kind card (title/subtitle/details/icon) rather
  * than a dedicated `SegmentKind` — a volcano's status IS a hazard classification
  * (see HazardType "volcano"), so this rides the same icon/colour the GDACS
  * volcanic-activity alerts already use, just sourced from the Smithsonian/USGS
- * weekly bulletin instead of an alert polygon.
+ * weekly bulletin instead of an alert polygon. Content (title/subtitle/details)
+ * comes from the shared builder so this card is byte-identical to the one the
+ * auto-director renders for the same volcano (see worker/director/candidates.ts).
  */
 export function volcanoToSegment(v: Volcano): Segment {
-  const meta = hazardMeta("volcano");
-  const details: { label: string; value: string }[] = [
-    { label: "Status", value: VOLCANO_STATUS_LABEL[v.status] },
-    { label: "Location", value: `${v.lat.toFixed(3)}, ${v.lng.toFixed(3)}` },
-    { label: "This week's report", value: utcLabel(v.lastDate) },
-  ];
-  if (v.country) details.splice(1, 0, { label: "Country", value: v.country });
+  const c = volcanoSegmentContent(v);
   return {
     id: `volcano:${v.id}`,
     kind: "storm",
-    title: v.name,
-    subtitle: VOLCANO_STATUS_SUBTITLE[v.status],
-    icon: meta.icon,
+    title: c.title,
+    subtitle: c.subtitle,
+    icon: c.icon,
     hazard: "volcano",
-    details,
+    details: c.details,
     // Reuses the notable-tracks TrackInfo card for the photo/blurb — its
     // fields (label/category/photoUrl/extract) are generic enough to fit a
     // volcano, not just an aircraft/vessel. Prefers this week's own bulletin

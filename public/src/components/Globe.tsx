@@ -49,7 +49,7 @@ import { faultLayers } from "./layers/faults";
 import { auroraLayers } from "./layers/aurora";
 import { satimgLayers } from "./layers/satimg";
 import { fireLayers } from "./layers/fires";
-import { volcanoLayers } from "./layers/volcanoes";
+import { volcanoLayers, volcanoPosition, volcanoColor } from "./layers/volcanoes";
 import { geomagLayers } from "./layers/geomag";
 import { nightLayer } from "./layers/nightside";
 import { subsolarPoint } from "../lib/sun";
@@ -70,7 +70,7 @@ import type { SatImgOverlay } from "../lib/satimg-overlay";
 import type { Fire } from "@photonsurge/shared/fires/types";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { GeomagOverlay } from "../lib/geomag-overlay";
-import { HeartbeatIcon } from "./broadcast/icons";
+import { HeartbeatIcon, VolcanoIcon } from "./broadcast/icons";
 
 export interface GlobeHandle {
   flyTo: (center: [number, number], zoom?: number) => void;
@@ -838,7 +838,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // Active fires (FIRMS) — glowing hot-spots, above alerts, below cities/tracks.
     if (state.showFires && fires.length) layers.push(...fireLayers(fires));
 
-    // Active volcanoes (EONET) — molten-glow cone markers, same layer band as fires.
+    // Active volcanoes (Smithsonian/USGS weekly bulletin) — glow + click target,
+    // same layer band as fires; the cone glyph itself is the DOM overlay below.
     if (state.showVolcanoes && volcanoes.length) layers.push(...volcanoLayers(volcanoes));
 
     if (state.showCities && cities.length)
@@ -1001,6 +1002,19 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         });
       }
     }
+    if (state.showVolcanoes && volcanoes.length) {
+      for (const v of volcanoes) {
+        const [r, g, b] = volcanoColor(v);
+        out.push({
+          id: `volcano:${v.id}`,
+          icon: <VolcanoIcon color={`rgb(${r}, ${g}, ${b})`} size={v.status === "erupting" ? 16 : v.status === "unrest" ? 13 : 10} />,
+          text: v.status === "erupting" ? v.name : "",
+          position: volcanoPosition(v),
+          color: [r, g, b],
+          minZoom: 0,
+        });
+      }
+    }
     return out;
   }, [
     state.showTrackLabels,
@@ -1008,11 +1022,13 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showSeismic,
     state.showCables,
     state.showCableLabels,
+    state.showVolcanoes,
     cables,
     tracks,
     cities,
     seismoStations,
     seismoActive,
+    volcanoes,
     state.satelliteStyle,
     state.aircraftStyle,
     state.shipStyle,

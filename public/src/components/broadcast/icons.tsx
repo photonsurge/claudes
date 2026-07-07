@@ -65,3 +65,19 @@ export function GaugeIcon({ active = false, size = 12 }: { active?: boolean; siz
     </svg>
   );
 }
+
+/** Twin-peak cone with a crater notch, filled solid in the volcano's status colour. */
+export function VolcanoIcon({ color = "#ef4444", size = 12 }: { color?: string; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" style={{ flex: "none" }}>
+      <path
+        d="M1 13.5 L6 5 L7.5 7.5 L10 2.5 L15 13.5 Z"
+        fill={color}
+        stroke="#000"
+        strokeOpacity="0.55"
+        strokeWidth="0.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

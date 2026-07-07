@@ -185,7 +185,19 @@ const W = 250;
 /** Height of every monitor's trace box, in both CSS and the SVG viewBox math. */
 const TRACE_H = 34;
 
-function CardShell({ theme, children }: { theme: BroadcastTheme; children: React.ReactNode }) {
+function CardShell({
+  theme,
+  children,
+  label = "GLOBAL MONITOR",
+}: {
+  theme: BroadcastTheme;
+  children: React.ReactNode;
+  /** Card-family label. Defaults to "GLOBAL MONITOR" for Seismic/Tsunami, which
+   *  do fall back to genuine whole-planet behaviour on a wide/unfocused shot;
+   *  callers whose data is always a single point sample (e.g. WeatherMonitors)
+   *  should override this so the label doesn't imply planet-wide coverage. */
+  label?: string;
+}) {
   return (
     <div
       style={{
@@ -205,7 +217,7 @@ function CardShell({ theme, children }: { theme: BroadcastTheme; children: React
       }}
     >
       <style>{"@keyframes bcast-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
-      <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.2, color: "#dfe7f5" }}>GLOBAL MONITOR</div>
+      <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.2, color: "#dfe7f5" }}>{label}</div>
       {children}
     </div>
   );
@@ -432,7 +444,7 @@ export function WeatherMonitors({
 
         return (
           <div key={spec.variable} style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center" }}>
-            <CardShell theme={theme}>
+            <CardShell theme={theme} label="LOCAL MONITOR">
               <Panel
                 title={spec.title}
                 icon={spec.icon}

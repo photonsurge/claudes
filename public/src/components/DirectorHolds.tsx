@@ -27,7 +27,7 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
   tour: "Region tour",
   country: "Countries",
   weather: "Weather",
-  storm: "Severe storms",
+  storm: "Severe storms / volcanoes",
   quake: "Earthquakes",
   flight: "Aircraft",
   ship: "Ships",

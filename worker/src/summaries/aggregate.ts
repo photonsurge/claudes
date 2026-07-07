@@ -9,6 +9,7 @@ import type { AppDb } from "@photonsurge/shared/db/index";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
 import { countryContaining } from "@photonsurge/shared/director-countries";
+import type { VolcanoStatus } from "@photonsurge/shared/volcanoes/types";
 import type {
   SummaryPeriod,
   iSummaryStats,
@@ -24,6 +25,13 @@ export function magToSeverity(mag: number): SeverityRank {
   if (mag >= 6) return 4;
   if (mag >= 5) return 3;
   if (mag >= 4) return 2;
+  return 1;
+}
+
+/** Volcano status → the shared 0–4 severity scale (dormant never reaches here — filtered out upstream). */
+export function volcanoStatusToSeverity(status: VolcanoStatus): SeverityRank {
+  if (status === "erupting") return 3;
+  if (status === "unrest") return 2;
   return 1;
 }
 
@@ -172,6 +180,12 @@ export async function aggregate(
   const alerts = await db.alerts.list({ activeOnly: true });
   const quakes = await db.quakes.list({ minMag: 2.5 });
   const ships = await db.trackSnapshots.latest({ kind: "ship" }).catch(() => ({ at: null, rows: [] }));
+  // Dormant volcanoes carry no headline — excluded from stats/hotspots/topEvents
+  // entirely (they still render on the map overlay, which reads the cache directly).
+  const volcanoes = await db.volcanoes
+    .list()
+    .then((vs) => vs.filter((v) => v.status !== "dormant"))
+    .catch(() => []);
 
   const points: HotspotPoint[] = [];
   const topEvents: iSummaryTopEvent[] = [];
@@ -231,6 +245,26 @@ export async function aggregate(
   const tracksNotable = ships.rows.length;
   if (tracksNotable) sources.add("tracks:ship");
 
+  // ---- Volcanoes (erupting + unrest only) ----
+  let volcanoErupting = 0;
+  for (const v of volcanoes) {
+    const sev = volcanoStatusToSeverity(v.status);
+    if (v.status === "erupting") volcanoErupting += 1;
+    points.push({ lng: v.lng, lat: v.lat, sev, hazard: "volcano", kind: "volcano" });
+    topEvents.push({
+      kind: "volcano",
+      refId: v.id,
+      title: `${v.name} — ${v.status === "erupting" ? "Erupting" : "Unrest"}`,
+      severity: sev,
+      hazard: "volcano",
+      lng: v.lng,
+      lat: v.lat,
+      at: new Date(v.lastDate).toISOString(),
+      source: "gvp",
+    });
+  }
+  if (volcanoes.length) sources.add("gvp");
+
   const stats: iSummaryStats = {
     alertsActive: alerts.length,
     alertsBySeverity: bySeverity,
@@ -240,6 +274,8 @@ export async function aggregate(
     quakeMaxMag,
     cyclones,
     tracksNotable,
+    volcanoCount: volcanoes.length,
+    volcanoErupting,
   };
 
   // Rank top events by severity (quake magnitude breaks ties for quakes) then recency.

@@ -7,6 +7,15 @@ import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 
 const EMPTY: Volcano[] = [];
 
+/** Plain fetch of the worker-cached volcano feed — every status, no cap.
+ *  Shared by the overlay hook below and by anything else that needs a
+ *  one-shot read (e.g. the World Watch tally) without the polling machinery. */
+export async function listVolcanoes(): Promise<Volcano[]> {
+  const res = await fetch("/api/volcanoes", { cache: "no-store" });
+  const body = await res.json().catch(() => null);
+  return body?.volcanoes ?? [];
+}
+
 /**
  * Poll worker-cached NASA EONET active volcanoes for the globe overlay. Like
  * fires, this is a slow-moving cached feed (no dead reckoning). The worker
@@ -38,9 +47,8 @@ export function useVolcanoes(enabled: boolean): Volcano[] {
     let cancelled = false;
     const poll = async () => {
       try {
-        const res = await fetch("/api/volcanoes", { cache: "no-store" });
-        const body = await res.json().catch(() => null);
-        if (!cancelled && body) setVolcanoes(body.volcanoes ?? []);
+        const vs = await listVolcanoes();
+        if (!cancelled) setVolcanoes(vs);
       } catch {
         /* leave previous data in place on a transient fetch error */
       }

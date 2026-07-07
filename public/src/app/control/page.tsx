@@ -211,6 +211,7 @@ export default function ControlPage() {
             lastShownAt={director.lastShownAt}
             timesShown={director.timesShown}
             draggable
+            manifest={manifest}
           />
         ) : selected ? (
           <ViewingOverlay
@@ -222,6 +223,7 @@ export default function ControlPage() {
             label="SELECTED"
             accent="#38bdf8"
             onClose={() => setSelected(null)}
+            manifest={manifest}
           />
         ) : null}
 

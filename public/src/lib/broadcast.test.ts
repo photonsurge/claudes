@@ -17,6 +17,7 @@ import {
 import type { Alert, AlertFeature } from "./alerts";
 import type { Quake, Track } from "./tracks/types";
 import type { City } from "./cities";
+import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 
 const quake = (over: Partial<Quake> = {}): Quake => ({
   id: "q1",
@@ -26,6 +27,19 @@ const quake = (over: Partial<Quake> = {}): Quake => ({
   lng: 10,
   lat: 20,
   depthKm: 10,
+  ...over,
+});
+
+const volcano = (over: Partial<Volcano> = {}): Volcano => ({
+  id: "gvp:1",
+  name: "Etna",
+  country: "Italy",
+  lat: 37.75,
+  lng: 15.0,
+  status: "erupting",
+  firstDate: 0,
+  lastDate: 0,
+  statusChangedAt: 0,
   ...over,
 });
 
@@ -246,6 +260,33 @@ describe("worldWatchSummary", () => {
       byMagClass: [],
     });
   });
+
+  it("counts erupting/unrest volcanoes but excludes dormant ones", () => {
+    const s = worldWatchSummary(
+      [],
+      [],
+      [volcano({ status: "erupting" }), volcano({ id: "gvp:2", status: "unrest" }), volcano({ id: "gvp:3", status: "dormant" })],
+    );
+    expect(s.volcanoCount).toBe(2);
+    expect(s.byVolcanoStatus).toEqual([
+      { status: "erupting", label: "Erupting", color: "#ef4444", count: 1 },
+      { status: "unrest", label: "Unrest", color: "#f97316", count: 1 },
+    ]);
+  });
+
+  it("folds active volcanoes into the per-continent tally, dormant excluded", () => {
+    const s = worldWatchSummary(
+      [],
+      [],
+      [
+        volcano({ id: "gvp:1", status: "erupting", lng: 15, lat: 37.75 }), // Europe
+        volcano({ id: "gvp:2", status: "dormant", lng: 15, lat: 37.75 }), // Europe, but excluded
+      ],
+    );
+    const europe = s.byContinent.find((c) => c.continent === "Europe");
+    expect(europe).toMatchObject({ volcanoCount: 1, total: 1 });
+    expect(europe?.byVolcanoStatus).toEqual([{ status: "erupting", label: "Erupting", color: "#ef4444", count: 1 }]);
+  });
 });
 
 describe("worldWatchFeed", () => {
@@ -383,6 +424,27 @@ describe("worldWatchFeed", () => {
     const feed = worldWatchFeed([withExpiry, withoutExpiry], []);
     expect(feed.find((f) => f.title === "Forest Fire Warning")?.expiresIn).toMatch(/^(in \d+[mh]|expired)$/);
     expect(feed.find((f) => f.title === "Frost Advisory")?.expiresIn).toBeUndefined();
+  });
+
+  it("includes erupting/unrest volcanoes, ranked above minor alerts, but drops dormant ones", () => {
+    const feed = worldWatchFeed(
+      [raw(1, "Frost Advisory", "Alps")],
+      [],
+      [],
+      [
+        volcano({ id: "gvp:1", status: "erupting" }),
+        volcano({ id: "gvp:2", name: "Merapi", status: "unrest" }),
+        volcano({ id: "gvp:3", name: "Fuji", status: "dormant" }),
+      ],
+    );
+    expect(feed.map((f) => f.kind)).toEqual(["volcano", "volcano", "alert"]);
+    expect(feed.find((f) => f.title === "Fuji")).toBeUndefined();
+    const erupting = feed.find((f) => f.title === "Etna")!;
+    expect(erupting).toMatchObject({ kind: "volcano", tag: "ERUPTING", color: "#ef4444", icon: "🌋" });
+  });
+
+  it("is empty with no data (including no volcanoes)", () => {
+    expect(worldWatchFeed([], [], [], [])).toEqual([]);
   });
 });
 

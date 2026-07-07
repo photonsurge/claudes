@@ -13,6 +13,8 @@ const AGG: AggregateResult = {
     quakeMaxMag: 6.5,
     cyclones: 1,
     tracksNotable: 0,
+    volcanoCount: 0,
+    volcanoErupting: 0,
   },
   hotspots: [{ label: "East Asia", lng: 140, lat: 38, count: 2, maxSeverity: 4, hazards: ["cyclone"], kinds: ["alert"] }],
   topEvents: [{ kind: "quake", refId: "q1", title: "M6.5 — Off Japan", severity: 4, source: "usgs" }],

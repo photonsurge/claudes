@@ -62,6 +62,9 @@ function fakeDb(over: Partial<Record<string, any>> = {}): AppDb {
     eventSummaries: {
       latest: async (period: string) => (over.eventSummaries ?? {})[period] ?? null,
     },
+    volcanoes: {
+      list: async () => over.volcanoes ?? [],
+    },
   } as unknown as AppDb;
 }
 
@@ -207,6 +210,77 @@ describe("buildCandidates", () => {
       cfg(),
     );
     expect(stale.find((c) => c.segment.kind === "storm")!.breaking).toBe(false);
+  });
+
+  it("adds an erupting volcano candidate reusing the storm kind/hazard", async () => {
+    const pool = await buildCandidates(
+      fakeDb({
+        volcanoes: [
+          { id: "gvp:1", name: "Etna", country: "Italy", status: "erupting", lng: 15, lat: 37.7, lastDate: Date.now(), statusChangedAt: Date.now() },
+        ],
+      }),
+      cfg(),
+    );
+    const v = pool.find((c) => c.segment.id === "volcano:gvp:1");
+    expect(v).toBeTruthy();
+    expect(v!.segment.kind).toBe("storm");
+    expect(v!.segment.hazard).toBe("volcano");
+    expect(v!.segment.title).toBe("Etna");
+    expect(v!.segment.camera.center).toEqual([15, 37.7]);
+    expect(v!.score).toBeCloseTo(50 + 3 * 12); // sev 3 (erupting)
+  });
+
+  it("excludes dormant volcanoes from the candidate pool", async () => {
+    const pool = await buildCandidates(
+      fakeDb({
+        volcanoes: [
+          { id: "gvp:2", name: "Fuji", status: "dormant", lng: 138.7, lat: 35.4, lastDate: Date.now(), statusChangedAt: Date.now() },
+        ],
+      }),
+      cfg(),
+    );
+    expect(pool.find((c) => c.segment.id === "volcano:gvp:2")).toBeUndefined();
+  });
+
+  it("only flags a volcano breaking when its status just flipped to erupting", async () => {
+    const justChanged = await buildCandidates(
+      fakeDb({
+        volcanoes: [
+          { id: "gvp:1", name: "Etna", status: "erupting", lng: 15, lat: 37.7, lastDate: Date.now(), statusChangedAt: Date.now() },
+        ],
+      }),
+      cfg(),
+    );
+    expect(justChanged.find((c) => c.segment.id === "volcano:gvp:1")!.breaking).toBe(true);
+
+    const longErupting = await buildCandidates(
+      fakeDb({
+        volcanoes: [
+          {
+            id: "gvp:1",
+            name: "Etna",
+            status: "erupting",
+            lng: 15,
+            lat: 37.7,
+            lastDate: Date.now(),
+            statusChangedAt: Date.now() - 7 * 60 * 60 * 1000, // outside the wider volcano breaking window
+          },
+        ],
+      }),
+      cfg(),
+    );
+    expect(longErupting.find((c) => c.segment.id === "volcano:gvp:1")!.breaking).toBe(false);
+
+    const unrest = await buildCandidates(
+      fakeDb({
+        volcanoes: [
+          { id: "gvp:3", name: "Merapi", status: "unrest", lng: 110.4, lat: -7.5, lastDate: Date.now(), statusChangedAt: Date.now() },
+        ],
+      }),
+      cfg(),
+    );
+    // Only a fresh transition to erupting counts as breaking — unrest never does.
+    expect(unrest.find((c) => c.segment.id === "volcano:gvp:3")!.breaking).toBe(false);
   });
 
   it("layers an operator overlayOverride onto the preset without touching other kinds", async () => {

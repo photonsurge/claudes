@@ -27,6 +27,8 @@ const baseSummary: iEventSummary = {
     quakeMaxMag: 0,
     cyclones: 0,
     tracksNotable: 0,
+    volcanoCount: 0,
+    volcanoErupting: 0,
   },
   hotspots: [],
   topEvents: [],

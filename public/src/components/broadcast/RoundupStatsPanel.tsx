@@ -38,6 +38,7 @@ export default function RoundupStatsPanel({
     { label: "ACTIVE ALERTS", value: stats.alertsActive },
     { label: "CYCLONES", value: stats.cyclones },
     { label: "QUAKES", value: stats.quakeCount, sub: stats.quakeMaxMag ? `M${stats.quakeMaxMag.toFixed(1)} max` : undefined },
+    { label: "VOLCANOES", value: stats.volcanoCount, sub: stats.volcanoErupting ? `${stats.volcanoErupting} erupting` : undefined },
     { label: "NOTABLE TRACKS", value: stats.tracksNotable },
   ].filter((t) => t.value > 0);
   if (!tiles.length && !sources?.length) return null;

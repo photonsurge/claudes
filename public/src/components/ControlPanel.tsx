@@ -15,7 +15,6 @@ import type {
 import { AUDIO_MODES } from "@photonsurge/shared/control";
 import { SATIMG_FEEDS, SATIMG_LOOKS } from "@photonsurge/shared/satimg/types";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
-import { mapFreshness } from "../lib/manifest";
 import { legendVariableFor } from "../lib/legend";
 import { SATELLITE_GROUPS } from "../lib/tracks/celestrak";
 import { severityLabel } from "../lib/alerts";
@@ -84,18 +83,6 @@ export default function ControlPanel({
           value={state.activeVariable}
           onChange={(activeVariable) => patch({ activeVariable })}
         />
-        {(() => {
-          // Which supplier feeds the active map, and when it last updated.
-          const f = mapFreshness(manifest, state.activeVariable, Date.now());
-          if (!f) return null;
-          return (
-            <div style={{ marginTop: 8, fontSize: 12, color: "rgba(255,255,255,0.6)", display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <span style={{ fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>{f.source}</span>
-              <span>· run {f.runLabel}</span>
-              <span>· updated {f.updatedLabel}</span>
-            </div>
-          );
-        })()}
       </Section>
 
       <Section title="Layers">
@@ -768,6 +755,7 @@ export default function ControlPanel({
             variableId={legendVariableFor(state)}
             units={state.units}
             onUnitsChange={(units) => patch({ units })}
+            manifest={manifest}
           />
         </Section>
       )}

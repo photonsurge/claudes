@@ -19,6 +19,7 @@ import { hazardMeta, classifyHazard, type HazardType } from "./hazard";
 import { isoToFlag } from "@photonsurge/shared/tracks/flags";
 import { nearby, withinBbox, type Nearby } from "./geo";
 import type { City } from "./cities";
+import type { Volcano, VolcanoStatus } from "@photonsurge/shared/volcanoes/types";
 
 /** "SEISMIC M5.9 · 12km SSW of … · TSUNAMI POTENTIAL" */
 export function quakeTicker(q: Quake): string {
@@ -179,16 +180,23 @@ export interface WorldSummary {
   maxMag: number;
   /** The strongest quake itself, for its place label — or null. */
   maxQuake: Quake | null;
-  /** Alert + quake tally per continent, busiest first (undetectable ones dropped). */
+  /** Active volcanoes worldwide (erupting + unrest only — dormant is excluded everywhere here). */
+  volcanoCount: number;
+  /** Non-empty status buckets (erupting/unrest), most severe first. */
+  byVolcanoStatus: { status: VolcanoStatus; label: string; color: string; count: number }[];
+  /** Alert + quake + volcano tally per continent, busiest first (undetectable ones dropped). */
   byContinent: {
     continent: string;
     alertCount: number;
     quakeCount: number;
+    volcanoCount: number;
     total: number;
     /** This continent's alerts broken down by severity — non-zero ranks, most severe first. */
     bySeverity: { rank: number; label: string; color: string; count: number }[];
     /** This continent's quakes broken down by magnitude class, strongest first. */
     byMagClass: { cls: QuakeMagnitudeClass; label: string; color: string; count: number }[];
+    /** This continent's volcanoes broken down by status, most severe first. */
+    byVolcanoStatus: { status: VolcanoStatus; label: string; color: string; count: number }[];
   }[];
 }
 
@@ -258,7 +266,29 @@ function magClassRows(
   }));
 }
 
-export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummary {
+/** Same colours the globe overlay uses for volcano markers (see components/layers/volcanoes.ts). */
+const VOLCANO_STATUS_META: Record<VolcanoStatus, { label: string; color: string }> = {
+  erupting: { label: "Erupting", color: "#ef4444" },
+  unrest: { label: "Unrest", color: "#f97316" },
+  dormant: { label: "Dormant", color: "#94a3b8" },
+};
+/** Dormant volcanoes carry no headline — excluded from every World Watch count. */
+const ACTIVE_VOLCANO_STATUSES: VolcanoStatus[] = ["erupting", "unrest"];
+
+/** Bucket raw volcano-status counts into the ordered (most severe first), non-empty rows. */
+function volcanoStatusRows(
+  counts: Map<VolcanoStatus, number>,
+): { status: VolcanoStatus; label: string; color: string; count: number }[] {
+  return ACTIVE_VOLCANO_STATUSES.filter((s) => (counts.get(s) ?? 0) > 0).map((s) => ({
+    status: s,
+    label: VOLCANO_STATUS_META[s].label,
+    color: VOLCANO_STATUS_META[s].color,
+    count: counts.get(s) as number,
+  }));
+}
+
+export function worldWatchSummary(alerts: Alert[], quakes: Quake[], volcanoes: Volcano[] = []): WorldSummary {
+  const activeVolcanoes = volcanoes.filter((v) => v.status !== "dormant");
   // One row per clustered event (a warning carried by both WMO + MeteoAlarm
   // counts once); alerts the API didn't group have no groupId and pass through.
   const distinct = alerts.filter((a) => !a.groupId || a.id === a.groupId);
@@ -285,14 +315,32 @@ export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummar
   let maxQuake: Quake | null = null;
   for (const q of quakes) if (!maxQuake || q.mag > maxQuake.mag) maxQuake = q;
 
+  const volcanoCounts = new Map<VolcanoStatus, number>();
+  for (const v of activeVolcanoes) volcanoCounts.set(v.status, (volcanoCounts.get(v.status) ?? 0) + 1);
+  const byVolcanoStatus = volcanoStatusRows(volcanoCounts);
+
   const cont = new Map<
     string,
-    { alertCount: number; quakeCount: number; sev: Map<number, number>; mag: Map<QuakeMagnitudeClass, number> }
+    {
+      alertCount: number;
+      quakeCount: number;
+      volcanoCount: number;
+      sev: Map<number, number>;
+      mag: Map<QuakeMagnitudeClass, number>;
+      volc: Map<VolcanoStatus, number>;
+    }
   >();
   const contOf = (continent: string) => {
     const cur =
       cont.get(continent) ??
-      { alertCount: 0, quakeCount: 0, sev: new Map<number, number>(), mag: new Map<QuakeMagnitudeClass, number>() };
+      {
+        alertCount: 0,
+        quakeCount: 0,
+        volcanoCount: 0,
+        sev: new Map<number, number>(),
+        mag: new Map<QuakeMagnitudeClass, number>(),
+        volc: new Map<VolcanoStatus, number>(),
+      };
     cont.set(continent, cur);
     return cur;
   };
@@ -311,12 +359,20 @@ export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummar
     const cls = quakeMagnitudeClass(q.mag);
     cur.mag.set(cls, (cur.mag.get(cls) ?? 0) + 1);
   }
+  for (const v of activeVolcanoes) {
+    const c = continentOf(v.lng, v.lat);
+    if (!c) continue;
+    const cur = contOf(c);
+    cur.volcanoCount += 1;
+    cur.volc.set(v.status, (cur.volc.get(v.status) ?? 0) + 1);
+  }
   const byContinent = [...cont.entries()]
     .map(([continent, v]) => ({
       continent,
       alertCount: v.alertCount,
       quakeCount: v.quakeCount,
-      total: v.alertCount + v.quakeCount,
+      volcanoCount: v.volcanoCount,
+      total: v.alertCount + v.quakeCount + v.volcanoCount,
       // Per-continent severity mix — same rank→label/colour mapping as the
       // panel-wide breakdown, so a busy continent's bar reads by severity
       // instead of a flat "how many alerts" blob.
@@ -330,6 +386,7 @@ export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummar
         }))
         .sort((a, b) => b.rank - a.rank),
       byMagClass: magClassRows(v.mag),
+      byVolcanoStatus: volcanoStatusRows(v.volc),
     }))
     .sort((x, y) => y.total - x.total);
 
@@ -340,19 +397,21 @@ export function worldWatchSummary(alerts: Alert[], quakes: Quake[]): WorldSummar
     byMagClass,
     maxMag: maxQuake?.mag ?? 0,
     maxQuake,
+    volcanoCount: activeVolcanoes.length,
+    byVolcanoStatus,
     byContinent,
   };
 }
 
-/** One line in the always-on WORLD WATCH feed — an alert or a quake. */
+/** One line in the always-on WORLD WATCH feed — an alert, a quake, or a volcano. */
 export interface WorldWatchItem {
   key: string;
-  kind: "alert" | "quake";
-  /** Severity colour (alerts) or magnitude colour (quakes). */
+  kind: "alert" | "quake" | "volcano";
+  /** Severity colour (alerts), magnitude colour (quakes), or status colour (volcanoes). */
   color: string;
-  /** Bold lead chip — "SEVERE" / "M6.3". */
+  /** Bold lead chip — "SEVERE" / "M6.3" / "ERUPTING". */
   tag: string;
-  /** Hazard glyph (alerts) or a seismic glyph (quakes) — from the shared hazard vocabulary. */
+  /** Hazard glyph — from the shared hazard vocabulary (a fixed seismic glyph for quakes). */
   icon: string;
   /** Nearest enriched city's flag within range, "" if none close enough to trust. */
   flag: string;
@@ -396,11 +455,24 @@ function quakeColor(mag: number): string {
 /** No dedicated hazard category for seismic activity — one fixed glyph for every quake row. */
 const QUAKE_ICON = "🌎";
 
+/** Status → the same importance scale quakeWeight uses — erupting rides near the
+ *  top of the Extreme/M6+ tier, unrest sits around Moderate/M5. Dormant never
+ *  reaches here (filtered out before this is called). */
+function volcanoWeight(status: VolcanoStatus): number {
+  return status === "erupting" ? 3.5 : 2;
+}
+
+/** Colour a volcano row by status — same palette as the globe overlay markers. */
+function volcanoColor(status: VolcanoStatus): string {
+  return VOLCANO_STATUS_META[status].color;
+}
+
 /**
  * The full whole-planet feed the always-on WORLD WATCH panel scrolls through —
- * every active alert (clustered events counted once, like worldWatchSummary) plus
- * every quake in the ~24h window, merged and sorted most-serious first so a big
- * quake rides above minor warnings. No cap: the panel marquees the whole list.
+ * every active alert (clustered events counted once, like worldWatchSummary),
+ * every quake in the ~24h window, and every erupting/unrest volcano — merged and
+ * sorted most-serious first so a big quake or fresh eruption rides above minor
+ * warnings. No cap: the panel marquees the whole list.
  *
  * `cities` (the same curated, wiki-enriched set the "near this event" panel
  * uses) is optional and purely cosmetic: when given, each row gets the flag,
@@ -408,7 +480,12 @@ const QUAKE_ICON = "🌎";
  * thumbnail) from whatever's within NEARBY_RADIUS_KM — so the feed reads at a
  * glance without a fresh network call.
  */
-export function worldWatchFeed(alerts: Alert[], quakes: Quake[], cities: City[] = []): WorldWatchItem[] {
+export function worldWatchFeed(
+  alerts: Alert[],
+  quakes: Quake[],
+  cities: City[] = [],
+  volcanoes: Volcano[] = [],
+): WorldWatchItem[] {
   const distinct = alerts.filter((a) => !a.groupId || a.id === a.groupId);
   const items: WorldWatchItem[] = [];
 
@@ -450,6 +527,25 @@ export function worldWatchFeed(alerts: Alert[], quakes: Quake[], cities: City[] 
       sub,
       weight: quakeWeight(q.mag),
       sortTime: q.time,
+    });
+  }
+
+  for (const v of volcanoes) {
+    if (v.status === "dormant") continue;
+    const places = nearbyPlaces([v.lng, v.lat], cities);
+    const sub = [v.country ?? "", nearNamesLabel(places)].filter(Boolean).join(" · ");
+    items.push({
+      key: `v:${v.id}`,
+      kind: "volcano",
+      color: volcanoColor(v.status),
+      tag: VOLCANO_STATUS_META[v.status].label.toUpperCase(),
+      icon: hazardMeta("volcano").icon,
+      flag: places[0] ? isoToFlag(places[0].item.cc) : "",
+      photo: v.wikiThumb ?? nearbyPhoto(places),
+      title: v.name,
+      sub,
+      weight: volcanoWeight(v.status),
+      sortTime: v.lastDate,
     });
   }
 

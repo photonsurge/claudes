@@ -27,6 +27,14 @@ export interface Volcano {
   firstDate: number;
   /** Epoch ms of the current report (the bulletin's publish date). */
   lastDate: number;
+  /**
+   * Epoch ms this volcano's `status` last actually changed value (not just
+   * re-reported) — the closest available "just started erupting" signal, since
+   * the weekly bulletin's own dates don't distinguish a fresh transition from
+   * a routine re-poll of an ongoing eruption. Set on insert and whenever
+   * `status` differs from what was previously stored (see volcano-repo.ts).
+   */
+  statusChangedAt: number;
   /** Link to the Smithsonian GVP volcano page. */
   sourceUrl?: string;
   /** The current week's report text, HTML-stripped — what's actually happening right now. */

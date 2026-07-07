@@ -158,6 +158,7 @@ function WatchPageInner() {
           variable={shown.activeVariable}
           state={shown}
           upNext={director.upNext}
+          manifest={manifest}
         />
       ) : null}
     </>

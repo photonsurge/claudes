@@ -12,6 +12,7 @@ import { quakeDepthLabel, quakeMagnitudeLabel } from "./seismic";
 import { continentOf } from "./alerts/geo";
 import { hazardMeta, type HazardType } from "./alerts/hazard";
 import { alertCountryLabel } from "./alerts/country";
+import type { VolcanoStatus } from "./volcanoes/types";
 
 export interface SegmentContent {
   title: string;
@@ -105,4 +106,38 @@ export function alertSegmentContent(a: AlertContentInput): SegmentContent {
     details.push({ label: "Active for", value: activeForLabel(Math.max(0, Math.round((now - a.sinceMs) / 60000))) });
   }
   return { title: a.event || "Weather Warning", subtitle, icon: hazardMeta(a.hazard).icon, details };
+}
+
+export interface VolcanoContentInput {
+  name: string;
+  country?: string;
+  status: VolcanoStatus;
+  lat: number;
+  lng: number;
+  /** Epoch ms — the current weekly bulletin's publish date. */
+  lastDate: number;
+}
+
+const VOLCANO_STATUS_SUBTITLE: Record<VolcanoStatus, string> = {
+  erupting: "Active eruption",
+  unrest: "Volcanic unrest",
+  dormant: "Easing off / dormant",
+};
+const VOLCANO_STATUS_LABEL: Record<VolcanoStatus, string> = {
+  erupting: "Erupting",
+  unrest: "Unrest",
+  dormant: "Dormant",
+};
+
+const utcLabel = (ms: number) => `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+
+/** Volcano card: status headline, country, and this week's report date — reuses
+ *  the "volcano" hazard glyph (see hazard.ts) since a volcano's status IS a
+ *  hazard classification, not a dedicated segment kind. */
+export function volcanoSegmentContent(v: VolcanoContentInput): SegmentContent {
+  const details: SegmentContent["details"] = [{ label: "Status", value: VOLCANO_STATUS_LABEL[v.status] }];
+  if (v.country) details.push({ label: "Country", value: v.country });
+  details.push({ label: "Location", value: `${v.lat.toFixed(3)}, ${v.lng.toFixed(3)}` });
+  details.push({ label: "This week's report", value: utcLabel(v.lastDate) });
+  return { title: v.name, subtitle: VOLCANO_STATUS_SUBTITLE[v.status], icon: hazardMeta("volcano").icon, details };
 }

@@ -151,6 +151,11 @@ export default function SummariesPage() {
                 value={shown.stats.quakeCount}
                 sub={shown.stats.quakeMaxMag ? `max M${shown.stats.quakeMaxMag.toFixed(1)}` : undefined}
               />
+              <StatCard
+                label="Volcanoes"
+                value={shown.stats.volcanoCount}
+                sub={shown.stats.volcanoErupting ? `${shown.stats.volcanoErupting} erupting` : undefined}
+              />
               <StatCard label="Notable tracks" value={shown.stats.tracksNotable} />
               <div style={{ ...card, flex: "1 1 260px" }}>
                 <div style={cardLabel}>Alerts by severity</div>

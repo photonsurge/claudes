@@ -36,11 +36,12 @@ import { adMediaPath } from "@photonsurge/shared/ads/types";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
-import { quakeSegmentContent, alertSegmentContent } from "@photonsurge/shared/segments";
+import { quakeSegmentContent, alertSegmentContent, volcanoSegmentContent } from "@photonsurge/shared/segments";
 import { discLookFeeds, type SatImgFeedState } from "@photonsurge/shared/satimg/types";
 import { mmsiCountry, countryNameFlag } from "@photonsurge/shared/tracks/flags";
 import type { SummaryPeriod, iEventSummaryModel } from "@photonsurge/shared/db/event-summary-model";
 import { tleGroups } from "../jobs/tracks";
+import { volcanoStatusToSeverity } from "../summaries/aggregate";
 
 const make = (
   kind: SegmentKind,
@@ -111,6 +112,20 @@ const VIP_SCORE = 80;
  * play nothing but quakes/storms until the whole backlog finally airs once.
  */
 const BREAKING_NEWS_WINDOW_MS = 20 * 60 * 1000;
+
+/**
+ * Volcanoes get their own, much wider breaking-news window: the source is a
+ * *weekly* bulletin (polled every 30 min), so there's no per-event "it just
+ * happened" timestamp the way a quake or alert has — the best signal available
+ * is `statusChangedAt`, when OUR cache last saw the status actually flip (see
+ * volcano-repo.ts's pipeline-update upsert). A few hours gives that transition
+ * room to surface across a couple of poll cycles without staying "breaking"
+ * for the volcano's entire multi-week eruption.
+ */
+const VOLCANO_BREAKING_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+/** Frame zoom mirrors the manual click-to-select path (see public/lib/select-segment.ts). */
+const VOLCANO_ZOOM = 6;
 
 /**
  * Merge a notable catalog entry with the live meta into the on-air TrackInfo card
@@ -391,6 +406,33 @@ export async function buildCandidates(
       }
     } catch {
       /* no quakes cached yet — fillers carry the show */
+    }
+  }
+
+  // --- Volcanoes: reuses the "storm" kind/toggle (see select-segment.ts's
+  //     volcanoToSegment — a volcano's status IS a hazard classification, not a
+  //     dedicated SegmentKind). Erupting/unrest only; dormant carries no headline. ---
+  if (cfg.kinds.storm) {
+    try {
+      const volcanoes = (await db.volcanoes.list()).filter((v) => v.status !== "dormant");
+      for (const v of volcanoes) {
+        const c = volcanoSegmentContent(v);
+        const sev = volcanoStatusToSeverity(v.status);
+        const seg = make("storm", `volcano:${v.id}`, c.title, c.subtitle, [v.lng, v.lat], VOLCANO_ZOOM, stormHoldMs(cfg, sev), cfg);
+        seg.hazard = "volcano";
+        seg.icon = c.icon;
+        seg.details = c.details;
+        // Same TrackInfo shape (photo/blurb) the manual click path builds — see
+        // select-segment.ts's volcanoToSegment for why the bulletin text wins
+        // over the evergreen Wikipedia extract when both are present.
+        seg.trackInfo = v.wikiThumb || v.wikiExtract || v.latestReport
+          ? { label: v.name, category: "Volcano", photoUrl: v.wikiThumb, extract: v.latestReport || v.wikiExtract }
+          : undefined;
+        const breaking = v.status === "erupting" && now - v.statusChangedAt <= VOLCANO_BREAKING_WINDOW_MS;
+        pool.push({ score: 50 + sev * 12, segment: seg, breaking });
+      }
+    } catch {
+      /* no volcanoes cached yet — fillers carry the show */
     }
   }
 

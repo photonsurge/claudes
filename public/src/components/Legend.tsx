@@ -8,19 +8,25 @@
 import { getPalette } from "@photonsurge/shared/palettes";
 import { getVariable } from "@photonsurge/shared/variables";
 import type { TempUnit, WindUnit } from "@photonsurge/shared/control";
+import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { buildLegend } from "../lib/legend";
+import { mapFreshness } from "../lib/manifest";
 
 export interface LegendProps {
   variableId: string | null;
   units: { wind: WindUnit; temp: TempUnit };
   onUnitsChange?: (units: { wind: WindUnit; temp: TempUnit }) => void;
+  /** When supplied, shows the source + data age under the colour ramp. */
+  manifest?: WeatherManifest | null;
 }
 
-export default function Legend({ variableId, units, onUnitsChange }: LegendProps) {
+export default function Legend({ variableId, units, onUnitsChange, manifest }: LegendProps) {
   if (!variableId) return null;
   const meta = getVariable(variableId);
   const legend = buildLegend(variableId, units);
   if (!meta || !legend) return null;
+
+  const freshness = manifest ? mapFreshness(manifest, variableId, Date.now()) : null;
 
   const palette = getPalette(meta.palette);
   const gradient = `linear-gradient(to right, ${palette
@@ -47,6 +53,12 @@ export default function Legend({ variableId, units, onUnitsChange }: LegendProps
           </span>
         ))}
       </div>
+
+      {freshness && (
+        <div style={{ marginTop: 4, fontSize: 10, opacity: 0.7 }}>
+          {freshness.source} · run {freshness.runLabel} · updated {freshness.updatedLabel}
+        </div>
+      )}
 
       {(showTemp || showWind) && onUnitsChange && (
         <div style={{ marginTop: 6 }}>

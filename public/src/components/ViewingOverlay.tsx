@@ -10,9 +10,11 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ControlState } from "@photonsurge/shared/control";
 import type { Segment, SegmentKind } from "@photonsurge/shared/director";
+import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { getVariable } from "@photonsurge/shared/variables";
 import { getPalette } from "@photonsurge/shared/palettes";
 import { buildLegend } from "../lib/legend";
+import { mapFreshness } from "../lib/manifest";
 
 /** Max zoom a push-in adds over a hold — keep in sync with Globe's MAX_PUSH_IN. */
 const MAX_PUSH_IN = 1.2;
@@ -51,7 +53,15 @@ function Meta({ label, value }: { label: string; value: string }) {
  * with evenly-spaced value labels. Returns null when no scalar map is shown
  * (e.g. wind-only shots) so the card stays tight. Reuses the pure legend math.
  */
-function MapLegend({ variable, units }: { variable: string | null; units: ControlState["units"] }) {
+function MapLegend({
+  variable,
+  units,
+  manifest,
+}: {
+  variable: string | null;
+  units: ControlState["units"];
+  manifest?: WeatherManifest | null;
+}) {
   if (!variable) return null;
   const meta = getVariable(variable);
   const legend = buildLegend(variable, units);
@@ -61,6 +71,7 @@ function MapLegend({ variable, units }: { variable: string | null; units: Contro
   const gradient = `linear-gradient(to right, ${palette
     .map(([stop, hex]) => `${hex} ${Math.round(stop * 100)}%`)
     .join(", ")})`;
+  const freshness = manifest ? mapFreshness(manifest, variable, Date.now()) : null;
 
   return (
     <div style={{ marginTop: 11, paddingTop: 11, borderTop: "1px solid rgba(120,140,170,0.15)" }}>
@@ -84,6 +95,11 @@ function MapLegend({ variable, units }: { variable: string | null; units: Contro
           </span>
         ))}
       </div>
+      {freshness && (
+        <div style={{ marginTop: 4, fontSize: 9, opacity: 0.7 }}>
+          {freshness.source} · run {freshness.runLabel} · updated {freshness.updatedLabel}
+        </div>
+      )}
     </div>
   );
 }
@@ -109,6 +125,7 @@ export default function ViewingOverlay({
   label = "ON AIR",
   accent = "#ff5252",
   onClose,
+  manifest,
 }: {
   segment: Segment;
   variable: string | null;
@@ -124,6 +141,8 @@ export default function ViewingOverlay({
   accent?: string;
   /** When set, a ✕ dismisses the card (manual selection only). */
   onClose?: () => void;
+  /** When supplied, the legend shows the source + data age. */
+  manifest?: WeatherManifest | null;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
@@ -321,7 +340,7 @@ export default function ViewingOverlay({
           </div>
         ) : null}
 
-        <MapLegend variable={variable} units={state.units} />
+        <MapLegend variable={variable} units={state.units} manifest={manifest} />
 
         {/* Operator-only recurrence readout — not on the /watch broadcast. */}
         {draggable && timesShown ? (

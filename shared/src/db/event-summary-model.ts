@@ -37,7 +37,7 @@ export interface iSummaryHotspot {
 
 /** A single notable event surfaced in the round-up. */
 export interface iSummaryTopEvent {
-  kind: "alert" | "quake" | "track";
+  kind: "alert" | "quake" | "track" | "volcano";
   /** Source id — alert.id / quakeId / track externalId. */
   refId: string;
   title: string;
@@ -64,6 +64,10 @@ export interface iSummaryStats {
   cyclones: number;
   /** Live tracks flagged notable. */
   tracksNotable: number;
+  /** Active volcanoes (erupting + unrest; dormant excluded). */
+  volcanoCount: number;
+  /** Active volcanoes currently erupting (subset of volcanoCount). */
+  volcanoErupting: number;
 }
 
 /** LLM call metadata (present when a narrative was attempted). */
@@ -136,6 +140,8 @@ const SummaryStatsSchema = new mongoose.Schema<iSummaryStats>(
     quakeMaxMag: { type: Number, required: true, default: 0 },
     cyclones: { type: Number, required: true, default: 0 },
     tracksNotable: { type: Number, required: true, default: 0 },
+    volcanoCount: { type: Number, required: true, default: 0 },
+    volcanoErupting: { type: Number, required: true, default: 0 },
   },
   { _id: false },
 );
