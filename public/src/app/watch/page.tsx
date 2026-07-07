@@ -144,8 +144,8 @@ function WatchPageInner() {
         manifest={manifest}
         cities={shownCities}
         pulseAt={eventPulse(director)}
-        glowCountryIso={activeCountryIso(director)}
-        glowRegionBbox={activeRegionBbox(director)}
+        glowCountryIso={activeCountryIso(director, shown.camera.center)}
+        glowRegionBbox={activeRegionBbox(director, shown.camera)}
         onAirSegment={director?.active ? onAir : null}
         upNext={director?.active ? director.upNext : []}
         slideName={director?.active ? slideName : undefined}

@@ -8,6 +8,7 @@
 import type { AppDb } from "@photonsurge/shared/db/index";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
+import { countryContaining } from "@photonsurge/shared/director-countries";
 import type {
   SummaryPeriod,
   iSummaryStats,
@@ -61,8 +62,12 @@ export function alertCentroid(alert: {
   return found ? { lng: (minX + maxX) / 2, lat: (minY + maxY) / 2 } : null;
 }
 
-/** A coarse human region for a coordinate — good enough for a hotspot label. */
+/** A human label for a coordinate — the curated country name when the point
+ *  falls inside one (so a hotspot reads "France", not a raw coordinate),
+ *  else a coarse continent/ocean bucket as a fallback. */
 export function regionLabel(lng: number, lat: number): string {
+  const country = countryContaining(lng, lat);
+  if (country) return country.name;
   const ns = lat >= 0 ? "N" : "S";
   const ew = lng >= 0 ? "E" : "W";
   const coord = `${Math.abs(lat).toFixed(0)}°${ns}, ${Math.abs(lng).toFixed(0)}°${ew}`;

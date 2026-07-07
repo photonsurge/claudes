@@ -59,6 +59,13 @@ describe("activeCountryIso", () => {
     );
     expect(iso).toBeNull();
   });
+
+  it("resolves the live camera centre to a country during a round-up stop", () => {
+    const roundup = director({ segment: segment({ id: "summary:1", kind: "summary" }) });
+    expect(activeCountryIso(roundup, [2.5, 46.5])).toBe("FR"); // stop over France
+    expect(activeCountryIso(roundup, [-40, 30])).toBeNull(); // stop over open ocean
+    expect(activeCountryIso(roundup)).toBeNull(); // no live centre passed
+  });
 });
 
 describe("activeRegionBbox", () => {
@@ -78,5 +85,16 @@ describe("activeRegionBbox", () => {
     expect(e).toBeGreaterThan(-30);
     expect(s).toBeLessThan(45);
     expect(n).toBeGreaterThan(45);
+  });
+
+  it("frames a round-up stop's live camera when it isn't over a curated country", () => {
+    const roundup = director({ segment: segment({ id: "summary:1", kind: "summary" }) });
+    const bbox = activeRegionBbox(roundup, { center: [-40, 30], zoom: 5 }); // mid-Atlantic
+    expect(bbox).not.toBeNull();
+  });
+
+  it("defers to the country glow (returns null) when a round-up stop is over a curated country", () => {
+    const roundup = director({ segment: segment({ id: "summary:1", kind: "summary" }) });
+    expect(activeRegionBbox(roundup, { center: [2.5, 46.5], zoom: 5 })).toBeNull(); // France
   });
 });

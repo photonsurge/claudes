@@ -71,6 +71,15 @@ const byId = new Map(COUNTRY_SHOTS.map((c) => [c.id, c]));
 /** Catalog lookup, or undefined for an id we don't know (stale config). */
 export const countryShot = (id: string): CountryShot | undefined => byId.get(id);
 
+/** The curated country whose bbox contains [lng,lat], or undefined outside all
+ *  of them — lets a data-driven point (a round-up hotspot, say) snap to a real
+ *  country instead of a raw coordinate. First catalog match wins. */
+export function countryContaining(lng: number, lat: number): CountryShot | undefined {
+  return COUNTRY_SHOTS.find(
+    (c) => lng >= c.bbox[0] && lng <= c.bbox[2] && lat >= c.bbox[1] && lat <= c.bbox[3],
+  );
+}
+
 /** The operator's starting favourites. */
 export const DEFAULT_DIRECTOR_COUNTRIES: string[] = ["uk", "japan"];
 

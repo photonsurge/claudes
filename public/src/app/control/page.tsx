@@ -187,8 +187,8 @@ export default function ControlPage() {
           geomag={geomag}
           interactive
           pulseAt={eventPulse(director)}
-          glowCountryIso={activeCountryIso(director)}
-          glowRegionBbox={activeRegionBbox(director)}
+          glowCountryIso={activeCountryIso(director, shown.camera.center)}
+          glowRegionBbox={activeRegionBbox(director, shown.camera)}
           // Click-to-select is only live while the director is idle — a cut owns
           // the on-air card, so manual selection is suppressed during playback.
           onSelect={cut ? undefined : setSelected}

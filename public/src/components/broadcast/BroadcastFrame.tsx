@@ -22,7 +22,7 @@ import type { Quake, Track } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
 import type { City } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
-import { countryShot } from "@photonsurge/shared/director-countries";
+import { countryShot, countryContaining } from "@photonsurge/shared/director-countries";
 import { buildTicker, scopeAlertsToBbox, scopeQuakesToBbox } from "../../lib/broadcast";
 import { bboxForCamera } from "../../lib/history-client";
 import { legendVariableFor } from "../../lib/legend";
@@ -160,14 +160,19 @@ export default function BroadcastFrame({
   // own `camera` field stays pinned to the base global framing the whole time,
   // so scoping off of it would tally the whole planet no matter which stop is
   // currently shown. `state.camera` is the one place that actually tracks the
-  // live stop.
+  // live stop. When that stop lands inside a curated country, tally against its
+  // real bbox (exactly like a country spotlight) instead of a camera-zoom guess.
+  const summaryCountry =
+    onAirSegment?.kind === "summary" ? countryContaining(state.camera.center[0], state.camera.center[1]) : undefined;
   const areaBbox = countryOnAir
     ? countryOnAir.bbox
-    : onAirSegment?.kind === "summary"
-      ? bboxForCamera(state.camera.center, state.camera.zoom)
-      : onAirSegment && segmentHasLocation && !eventTargeted
-        ? bboxForCamera(onAirSegment.camera.center, onAirSegment.camera.zoom)
-        : undefined;
+    : summaryCountry
+      ? summaryCountry.bbox
+      : onAirSegment?.kind === "summary"
+        ? bboxForCamera(state.camera.center, state.camera.zoom)
+        : onAirSegment && segmentHasLocation && !eventTargeted
+          ? bboxForCamera(onAirSegment.camera.center, onAirSegment.camera.zoom)
+          : undefined;
   const areaAlerts = areaBbox ? scopeAlertsToBbox(alerts, areaBbox) : alerts;
   const areaQuakes = areaBbox ? scopeQuakesToBbox(quakes, areaBbox) : quakes;
 

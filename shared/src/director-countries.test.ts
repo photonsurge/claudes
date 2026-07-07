@@ -1,6 +1,7 @@
 import {
   COUNTRY_SHOTS,
   countryShot,
+  countryContaining,
   DEFAULT_DIRECTOR_COUNTRIES,
   sanitizeDirectorCountries,
 } from "./director-countries";
@@ -53,6 +54,17 @@ describe("COUNTRY_SHOTS catalog", () => {
 
   it("looks up by id and misses unknowns", () => {
     expect(countryShot("nope")).toBeUndefined();
+  });
+});
+
+describe("countryContaining", () => {
+  it("finds the country whose bbox holds a point", () => {
+    expect(countryContaining(2.5, 46.5)?.id).toBe("france");
+    expect(countryContaining(137.5, 37.5)?.id).toBe("japan");
+  });
+
+  it("is undefined for open ocean / no match", () => {
+    expect(countryContaining(-40, 30)).toBeUndefined(); // mid-Atlantic
   });
 });
 

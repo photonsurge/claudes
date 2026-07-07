@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Two-peak cone with a crater notch + a small plume, single flat colour
+       so IconLayer can tint it per status (mask mode). -->
+  <path fill="#ffffff" d="M2 60 L21 22 C22.5 19 25.5 19 27 22 L30 28 L34.5 12 C35.5 9.5 38.5 9.5 39.5 12 L62 60 Z" />
+  <circle fill="#ffffff" cx="38" cy="5" r="3.2" />
+  <circle fill="#ffffff" cx="43" cy="1.5" r="2.2" />
+</svg>

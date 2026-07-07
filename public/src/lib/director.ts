@@ -25,7 +25,7 @@ import {
   type SegmentKind,
 } from "@photonsurge/shared/director";
 import { globalMapTour, type MapTypeNeed } from "@photonsurge/shared/director-rois";
-import { countryShot } from "@photonsurge/shared/director-countries";
+import { countryShot, countryContaining } from "@photonsurge/shared/director-countries";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
 import { severityLabel } from "./alerts";
 import { bboxForCamera } from "./history-client";
@@ -217,21 +217,51 @@ export function eventPulse(director: DirectorState | null): [number, number] | n
 /** ISO-3166 alpha-2 of the on-air country spotlight to glow-highlight on the
  *  globe, or null. Segment ids are "kind:subject" (e.g. "country:portugal"),
  *  so the CountryShot catalog lookup needs the bare subject — see
- *  shared/director-countries. */
-export function activeCountryIso(director: DirectorState | null): string | null {
-  if (!director?.active || director.segment?.kind !== "country") return null;
-  const subject = director.segment.id.split(":")[1] ?? "";
-  return countryShot(subject)?.iso2 ?? null;
+ *  shared/director-countries.
+ *
+ *  A round-up ("summary") tours a fresh hotspot every few seconds by patching
+ *  the *live* camera rather than moving `segment.camera` (which stays pinned
+ *  to the global view the whole time — see cutSteps' summary branch below),
+ *  so callers pass that live centre in as `liveCenter` (e.g. /watch's `shown.
+ *  camera.center`); when the current stop lands inside a curated country this
+ *  glows it exactly like a real country spotlight. */
+export function activeCountryIso(
+  director: DirectorState | null,
+  liveCenter?: [number, number],
+): string | null {
+  if (!director?.active || !director.segment) return null;
+  if (director.segment.kind === "country") {
+    const subject = director.segment.id.split(":")[1] ?? "";
+    return countryShot(subject)?.iso2 ?? null;
+  }
+  if (director.segment.kind === "summary" && liveCenter) {
+    return countryContaining(liveCenter[0], liveCenter[1])?.iso2 ?? null;
+  }
+  return null;
 }
 
 /** The framed [west,south,east,north] box of the on-air region tour, or null —
  *  a "tour" shot has no fixed catalog bbox (unlike a country spotlight), just
  *  the camera's own framing, so the globe glows every country boundary that
- *  falls inside it instead of a single spotlighted one. */
-export function activeRegionBbox(director: DirectorState | null): [number, number, number, number] | null {
-  if (!director?.active || director.segment?.kind !== "tour") return null;
-  const { center, zoom } = director.segment.camera;
-  return bboxForCamera(center, zoom);
+ *  falls inside it instead of a single spotlighted one.
+ *
+ *  A round-up stop gets the same "whole area" treatment off its live camera
+ *  (see `activeCountryIso` above) whenever the stop *isn't* inside a curated
+ *  country — country glow takes priority there instead. */
+export function activeRegionBbox(
+  director: DirectorState | null,
+  liveCamera?: { center: [number, number]; zoom: number },
+): [number, number, number, number] | null {
+  if (!director?.active || !director.segment) return null;
+  if (director.segment.kind === "tour") {
+    const { center, zoom } = director.segment.camera;
+    return bboxForCamera(center, zoom);
+  }
+  if (director.segment.kind === "summary" && liveCamera) {
+    if (countryContaining(liveCamera.center[0], liveCamera.center[1])) return null;
+    return bboxForCamera(liveCamera.center, liveCamera.zoom);
+  }
+  return null;
 }
 
 /**
