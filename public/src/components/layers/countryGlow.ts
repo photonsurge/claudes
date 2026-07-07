@@ -36,6 +36,47 @@ export async function countryFeatureFor(iso2: string): Promise<CountryFeature | 
   return byIso.get(iso2.toUpperCase()) ?? null;
 }
 
+function ringBbox(ring: number[][]): [number, number, number, number] {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const [lng, lat] of ring) {
+    if (lng < w) w = lng;
+    if (lng > e) e = lng;
+    if (lat < s) s = lat;
+    if (lat > n) n = lat;
+  }
+  return [w, s, e, n];
+}
+
+/** Every ring's own bbox — Polygon: one outer ring; MultiPolygon: one per part
+ *  — so a country whose parts straddle the antimeridian (Russia, Fiji) is
+ *  tested piece-by-piece instead of collapsing to one bogus globe-spanning
+ *  box that would falsely overlap almost any framed region. */
+function partBboxes(geometry: { type?: string; coordinates?: unknown } | null): [number, number, number, number][] {
+  if (geometry?.type === "Polygon") return [ringBbox((geometry.coordinates as number[][][])[0])];
+  if (geometry?.type === "MultiPolygon")
+    return (geometry.coordinates as number[][][][]).map((poly) => ringBbox(poly[0]));
+  return [];
+}
+
+function bboxesOverlap(
+  a: [number, number, number, number],
+  b: [number, number, number, number],
+): boolean {
+  return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+}
+
+/** Every country whose boundary overlaps a framed [west,south,east,north] box
+ *  — used to glow all the countries inside a wide "region" tour shot, rather
+ *  than a single spotlighted one. Bbox-vs-bbox only (not true polygon
+ *  intersection): an approximation, same spirit as bboxForCamera's own
+ *  "heuristic, not a projection" — fine for a broadcast highlight. */
+export async function countriesInBbox(bbox: [number, number, number, number]): Promise<CountryFeature[]> {
+  const byIso = await loadCountryFeatures();
+  return [...byIso.values()].filter((feature) =>
+    partBboxes(feature.geometry).some((partBox) => bboxesOverlap(partBox, bbox)),
+  );
+}
+
 /** One full breath of the glow, in ms. */
 const GLOW_PERIOD_MS = 2600;
 
@@ -55,20 +96,21 @@ const withA = (c: [number, number, number], a: number): [number, number, number,
 const GLOW_COLOR: [number, number, number] = [70, 225, 225];
 
 /**
- * A breathing multi-pass halo around the spotlighted country's boundary — wide
- * soft glow, mid glow, translucent fill, crisp lit edge — reusing the same
- * layering technique alertsLayer/onAirPulseLayers use to make an on-air weather
- * area "shine out" against the basemap, so a country spotlight reads as
- * visually distinct on the globe instead of relying on the camera move alone.
- * Returns [] until the feature has resolved (still loading, or an id with no
+ * A breathing multi-pass halo around one or more spotlighted countries'
+ * boundaries — wide soft glow, mid glow, translucent fill, crisp lit edge —
+ * reusing the same layering technique alertsLayer/onAirPulseLayers use to make
+ * an on-air weather area "shine out" against the basemap, so a country
+ * spotlight (a single feature) or a region tour (every country in view) reads
+ * as visually distinct on the globe instead of relying on the camera move
+ * alone. Returns [] while nothing has resolved yet (still loading, or no
  * geojson match).
  */
-export function countryGlowLayers(feature: CountryFeature | null, now: number): unknown[] {
-  if (!feature) return [];
+export function countryGlowLayers(features: CountryFeature[], now: number): unknown[] {
+  if (!features.length) return [];
   const phase = (now % GLOW_PERIOD_MS) / GLOW_PERIOD_MS;
   const breathe = 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI);
   const lit = lighten(GLOW_COLOR, 0.6);
-  const data = [feature];
+  const data = features;
 
   return [
     // 1 ─ Outer bloom — very wide, low-opacity, so it reads from a whole-globe shot.

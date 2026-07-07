@@ -21,7 +21,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../lib/socket-provider";
 import { fetchManifest } from "../../lib/manifest";
 import { listScenes, fetchSceneState, useSceneEmitter } from "../../lib/scenes";
-import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso } from "../../lib/director";
+import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
 import { listCities, type City } from "../../lib/cities";
 import { useRegionCities } from "../../lib/useRegionCities";
 import { useTracks } from "../../lib/tracks/useTracks";
@@ -188,6 +188,7 @@ export default function ControlPage() {
           interactive
           pulseAt={eventPulse(director)}
           glowCountryIso={activeCountryIso(director)}
+          glowRegionBbox={activeRegionBbox(director)}
           // Click-to-select is only live while the director is idle — a cut owns
           // the on-air card, so manual selection is suppressed during playback.
           onSelect={cut ? undefined : setSelected}

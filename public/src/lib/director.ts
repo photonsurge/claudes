@@ -28,6 +28,7 @@ import { globalMapTour, type MapTypeNeed } from "@photonsurge/shared/director-ro
 import { countryShot } from "@photonsurge/shared/director-countries";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
 import { severityLabel } from "./alerts";
+import { bboxForCamera } from "./history-client";
 import { useSocket } from "./socket-provider";
 
 /**
@@ -221,6 +222,16 @@ export function activeCountryIso(director: DirectorState | null): string | null 
   if (!director?.active || director.segment?.kind !== "country") return null;
   const subject = director.segment.id.split(":")[1] ?? "";
   return countryShot(subject)?.iso2 ?? null;
+}
+
+/** The framed [west,south,east,north] box of the on-air region tour, or null —
+ *  a "tour" shot has no fixed catalog bbox (unlike a country spotlight), just
+ *  the camera's own framing, so the globe glows every country boundary that
+ *  falls inside it instead of a single spotlighted one. */
+export function activeRegionBbox(director: DirectorState | null): [number, number, number, number] | null {
+  if (!director?.active || director.segment?.kind !== "tour") return null;
+  const { center, zoom } = director.segment.camera;
+  return bboxForCamera(center, zoom);
 }
 
 /**

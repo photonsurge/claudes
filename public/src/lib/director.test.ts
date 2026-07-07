@@ -1,4 +1,4 @@
-import { eventPulse, activeCountryIso } from "./director";
+import { eventPulse, activeCountryIso, activeRegionBbox } from "./director";
 import type { DirectorState, Segment } from "@photonsurge/shared/director";
 
 const segment = (over: Partial<Segment> = {}): Segment => ({
@@ -58,5 +58,25 @@ describe("activeCountryIso", () => {
       director({ segment: segment({ id: "country:atlantis", kind: "country", title: "Atlantis" }) }),
     );
     expect(iso).toBeNull();
+  });
+});
+
+describe("activeRegionBbox", () => {
+  it("is null when the director is idle or not on a region tour", () => {
+    expect(activeRegionBbox(null)).toBeNull();
+    expect(activeRegionBbox(director({ active: false }))).toBeNull();
+    expect(
+      activeRegionBbox(director({ segment: segment({ id: "country:portugal", kind: "country" }) })),
+    ).toBeNull();
+  });
+
+  it("frames the on-air tour segment's own camera, not a catalog bbox", () => {
+    const bbox = activeRegionBbox(director()); // default fixture: kind "tour", center [-30,45], zoom 3
+    expect(bbox).not.toBeNull();
+    const [w, s, e, n] = bbox!;
+    expect(w).toBeLessThan(-30);
+    expect(e).toBeGreaterThan(-30);
+    expect(s).toBeLessThan(45);
+    expect(n).toBeGreaterThan(45);
   });
 });

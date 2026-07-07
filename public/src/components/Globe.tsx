@@ -39,7 +39,7 @@ import { tracksLayer, orbitLayer, trailsLayer, filterTrails, trackLabelData, typ
 import { cityLabelMinZoom, cityDetail } from "../lib/cities";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
-import { countryFeatureFor, countryGlowLayers } from "./layers/countryGlow";
+import { countryFeatureFor, countriesInBbox, countryGlowLayers } from "./layers/countryGlow";
 import { seismicLayer } from "./layers/seismic";
 import { seismographStationLayers, seismoKeyOf, seismoShortName } from "./layers/seismograph-stations";
 import { graticuleLayer } from "./layers/graticule";
@@ -114,6 +114,11 @@ export interface GlobeProps {
   pulseAt?: [number, number] | null;
   /** ISO-3166 alpha-2 of the on-air country spotlight to glow-highlight, or null. */
   glowCountryIso?: string | null;
+  /** Framed [west,south,east,north] box of an on-air region tour — every
+   *  country boundary overlapping it glows, instead of a single spotlighted
+   *  one. Mutually exclusive with glowCountryIso in practice (a segment is
+   *  either a country spotlight or a region tour, never both). */
+  glowRegionBbox?: [number, number, number, number] | null;
   /** On-air plane/ship to spotlight with a locator ring on the globe, or null. */
   highlightTrack?: TrackHighlight | null;
   /**
@@ -188,7 +193,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], seismoStations = [], seismoActive = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, highlightTrack, onSelect },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], seismoStations = [], seismoActive = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, glowRegionBbox, highlightTrack, onSelect },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -200,24 +205,35 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   useEffect(() => {
     pulseAtRef.current = pulseAt ?? null;
   });
-  // The spotlighted country's resolved boundary feature (async — countries.geojson
-  // is fetched/parsed once by countryGlow.ts, then cached), read by the pulse rAF
-  // loop below so the glow keeps breathing every frame it's on air.
+  // The resolved boundary feature(s) to glow (async — countries.geojson is
+  // fetched/parsed once by countryGlow.ts, then cached), read by the pulse rAF
+  // loop below so the glow keeps breathing every frame it's on air. A country
+  // spotlight resolves to its single feature; a region tour resolves to every
+  // country overlapping the framed bbox.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const glowFeatureRef = useRef<any>(null);
+  const glowFeatureRef = useRef<any[]>([]);
   useEffect(() => {
-    if (!glowCountryIso) {
-      glowFeatureRef.current = null;
-      return;
+    if (glowCountryIso) {
+      let cancelled = false;
+      countryFeatureFor(glowCountryIso).then((f) => {
+        if (!cancelled) glowFeatureRef.current = f ? [f] : [];
+      });
+      return () => {
+        cancelled = true;
+      };
     }
-    let cancelled = false;
-    countryFeatureFor(glowCountryIso).then((f) => {
-      if (!cancelled) glowFeatureRef.current = f;
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [glowCountryIso]);
+    if (glowRegionBbox) {
+      let cancelled = false;
+      countriesInBbox(glowRegionBbox).then((fs) => {
+        if (!cancelled) glowFeatureRef.current = fs;
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    glowFeatureRef.current = [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [glowCountryIso, glowRegionBbox?.[0], glowRegionBbox?.[1], glowRegionBbox?.[2], glowRegionBbox?.[3]]);
   // Hover-pulse (control/interactive only): hovering an alert breathes its own
   // area, hovering a quake pings its epicentre — the same on-air highlight, so
   // the operator can "feel out" an event before clicking to pin its card. The
@@ -916,7 +932,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // Animate the event pulse: while an event is on air, re-commit the layers each
   // frame so the rings expand/fade. When it clears, commit once without them.
   useEffect(() => {
-    if (!pulseAt && !hoverPulse && !glowCountryIso) {
+    if (!pulseAt && !hoverPulse && !glowCountryIso && !glowRegionBbox) {
       commitLayers();
       return;
     }
@@ -928,7 +944,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pulseAt?.[0], pulseAt?.[1], hoverPulse?.[0], hoverPulse?.[1], glowCountryIso]);
+  }, [pulseAt?.[0], pulseAt?.[1], hoverPulse?.[0], hoverPulse?.[1], glowCountryIso, glowRegionBbox?.[0], glowRegionBbox?.[1], glowRegionBbox?.[2], glowRegionBbox?.[3]]);
 
   // Name labels for the HTML overlay (deck's TextLayer draws blank under the
   // globe). Track names honour the "Names" toggle and always show (minZoom 0);

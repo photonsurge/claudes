@@ -97,6 +97,26 @@ export function syntheticSst(width: number, height: number): Float32Array {
   return out;
 }
 
+const ABYSS_C = 1.5;
+const THERMOCLINE_SCALE_M = 600;
+
+/**
+ * Synthetic temperature-at-depth: decays the surface `syntheticSst` field
+ * toward an abyssal baseline via a single exponential — not calibrated to
+ * real RTOFS values (see worker/src/sources/rtofsDepth.ts for the real,
+ * live-calibrated per-depth domains), just plausible enough for a demo
+ * profile shape (warm surface → near-freezing abyssal, everywhere).
+ */
+export function syntheticSstAtDepth(depth: number): (width: number, height: number) => Float32Array {
+  return (width: number, height: number) => {
+    const surface = syntheticSst(width, height);
+    const decay = Math.exp(-depth / THERMOCLINE_SCALE_M);
+    const out = new Float32Array(surface.length);
+    for (let i = 0; i < surface.length; i++) out[i] = ABYSS_C + (surface[i] - ABYSS_C) * decay;
+    return out;
+  };
+}
+
 /** Synthetic cloud cover %: swirling bands 0..100. */
 export function syntheticCloud(width: number, height: number): Float32Array {
   const out = new Float32Array(width * height);

@@ -44,6 +44,8 @@ interface WatchSurfaceProps {
   pulseAt?: [number, number] | null;
   /** ISO-3166 alpha-2 of the on-air country spotlight to glow-highlight, or null. */
   glowCountryIso?: string | null;
+  /** Framed bbox of an on-air region tour — every country inside it glows. */
+  glowRegionBbox?: [number, number, number, number] | null;
   /** On-air director segment — drives the broadcast event reticle. */
   onAirSegment?: Segment | null;
   /** Director's "coming up" preview — drives the chrome's UP NEXT hint. */
@@ -59,6 +61,7 @@ export default function WatchSurface({
   sceneName,
   pulseAt,
   glowCountryIso,
+  glowRegionBbox,
   onAirSegment,
   upNext = [],
   slideName,
@@ -134,6 +137,7 @@ export default function WatchSurface({
         interactive={false}
         pulseAt={pulseAt}
         glowCountryIso={glowCountryIso}
+        glowRegionBbox={glowRegionBbox}
         highlightTrack={highlightTrack}
       />
       {/* The broadcast chrome carries its own legend/alert furniture, so the plain

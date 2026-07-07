@@ -17,7 +17,7 @@ import { fetchManifest } from "../../../lib/manifest";
 import { listCities, type City } from "../../../lib/cities";
 import { useRegionCities } from "../../../lib/useRegionCities";
 import { useSceneState, listScenes } from "../../../lib/scenes";
-import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso } from "../../../lib/director";
+import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox } from "../../../lib/director";
 import WatchSurface from "../../../components/WatchSurface";
 import ViewingOverlay from "../../../components/ViewingOverlay";
 
@@ -129,6 +129,7 @@ function SceneWatchPageInner() {
         sceneName={sceneName}
         pulseAt={eventPulse(director)}
         glowCountryIso={activeCountryIso(director)}
+        glowRegionBbox={activeRegionBbox(director)}
         onAirSegment={director?.active ? onAir : null}
         upNext={director?.active ? director.upNext : []}
         slideName={director?.active ? slideName : undefined}

@@ -35,6 +35,7 @@ import { useAurora } from "../../lib/aurora-overlay";
 import { useSatImg } from "../../lib/satimg-overlay";
 import { useGeomag } from "../../lib/geomag-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
+import DepthProfilePanel from "../../components/broadcast/DepthProfilePanel";
 import ControlPanel from "../../components/ControlPanel";
 import ViewingOverlay from "../../components/ViewingOverlay";
 import AlertLegend from "../../components/AlertLegend";
@@ -139,6 +140,13 @@ export default function SandboxPage() {
         {state.showAlerts || state.showSeismic || state.showAurora || state.showMagneticField ? (
           <AlertLegend alerts={alerts} quakes={quakes} aurora={aurora} geomag={geomag} />
         ) : null}
+        {/* No director/segment on this page — feed the operator's own live
+            camera position directly. Self-hides over land or wherever the
+            depth textures haven't been seeded yet (see `yarn seed`). Bottom
+            RIGHT so it doesn't collide with the bottom-left Legend below. */}
+        <div style={{ position: "absolute", right: 24, bottom: 24 }}>
+          <DepthProfilePanel center={state.camera.center} manifest={manifest} />
+        </div>
         {/* Active weather-map colour key — /watch only shows this inside a director
             segment's on-air card, so the freewheeling sandbox (no director) would
             otherwise never show it. Suppressed when something's click-selected,

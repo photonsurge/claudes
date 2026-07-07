@@ -21,6 +21,7 @@ import {
   syntheticWind,
   syntheticTemp,
   syntheticSst,
+  syntheticSstAtDepth,
   syntheticCloud,
   syntheticSnow,
   syntheticWave,
@@ -43,6 +44,13 @@ const SYNTHETIC_SCALARS: {
 }[] = [
   { id: "temp", gen: syntheticTemp },
   { id: "sst", gen: syntheticSst },
+  // Depth chapters have no `gfs` registry binding (RTOFS-only, like
+  // salinity/current) so scalarKeepMask has no land mask to apply — same
+  // situation as `wave` below, hence the same `oceanOnly` sentinel-stamp.
+  { id: "sst100", gen: syntheticSstAtDepth(100), oceanOnly: true },
+  { id: "sst500", gen: syntheticSstAtDepth(500), oceanOnly: true },
+  { id: "sst2000", gen: syntheticSstAtDepth(2000), oceanOnly: true },
+  { id: "sst5000", gen: syntheticSstAtDepth(5000), oceanOnly: true },
   { id: "cloud", gen: syntheticCloud },
   { id: "snow", gen: syntheticSnow },
   { id: "wave", gen: syntheticWave, oceanOnly: true },
