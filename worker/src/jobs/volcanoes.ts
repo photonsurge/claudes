@@ -1,6 +1,6 @@
 import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
-import { fetchVolcanoes } from "@photonsurge/shared/volcanoes/eonet";
+import { fetchVolcanoes } from "@photonsurge/shared/volcanoes/gvp";
 import { fetchWikiSummary } from "@photonsurge/shared/utill/wikipedia";
 import { log } from "@photonsurge/shared/utill/logger";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
@@ -11,10 +11,11 @@ import { emitWorkerEvent } from "../socket";
 const TAG = "job:volcanoes";
 
 /**
- * Dispatched as type "volcanoes", event "snapshot". Pulls NASA EONET's
- * currently-active ("open") volcano events (whole globe, no key) and upserts
- * them into Mongo on the source event id; a TTL on `fetchedAt` drops events
- * that stop showing up in the feed. The public route reads only this cache.
+ * Dispatched as type "volcanoes", event "snapshot". Pulls the Smithsonian/USGS
+ * Weekly Volcanic Activity Report (whole globe, no key) and upserts them into
+ * Mongo on the volcano's stable VOTW number; a TTL on `fetchedAt` drops
+ * volcanoes that stop showing up in the bulletin. The public route reads only
+ * this cache.
  */
 export async function snapshot(_job: Job) {
   const db = await getAppDb();
@@ -42,11 +43,10 @@ const GAP_MS = 150; // ~6-7 req/s — well within Wikipedia's limits, still kind
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * EONET titles are noisy ("Kilauea Volcano, Hawaii", "Nevados del Chillan
- * Volcano, Chile") — the actual Wikipedia article is usually just the bare
- * volcano name. Try progressively shorter candidates: the full title, then
- * without the trailing ", place" clause, then without a trailing "Volcano"
- * suffix — first non-missing/disambiguation hit wins.
+ * The report's own volcano name is usually already close to the Wikipedia
+ * article title (e.g. "Nevados de Chillan"), but sometimes needs a nudge — try
+ * the bare name, then without a trailing "Volcano"/"Volcanic Complex" suffix
+ * some entries carry — first non-missing/disambiguation hit wins.
  */
 export function titleCandidates(name: string): string[] {
   const out = [name];
@@ -110,6 +110,8 @@ export async function runVolcanoWikiEnrich(opts: VolcanoWikiEnrichOpts = {}) {
     "volcanoes",
     "enrich",
   );
+  // Live push so the overlay/admin table refetch the instant enrichment lands.
+  if (enriched > 0) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: enriched } });
   return result;
 }
 

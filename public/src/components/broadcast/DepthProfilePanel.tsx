@@ -1,30 +1,33 @@
 "use client";
 
 /**
- * "SEA TEMP PROFILE" — a vertical temperature-vs-depth chart at the on-air
- * focus, sampled live from the already-decoded texture cache (see
+ * "SEA TEMP PROFILE" — a colour-coded water-column strip at the on-air focus,
+ * sampled live from the already-decoded texture cache (see
  * lib/depthProfile.ts — no archive, no network fetch beyond what Globe.tsx
  * already preloads). Shows all 5 depth chapters (surface/100/500/2000/5000m)
  * AT ONCE, unlike the single-chapter overlay VariablePicker switches between.
- * Self-hiding over land / wherever fewer than 2 chapters have data, same
- * "no data → no chart" convention as PointHistoryPanel.
+ *
+ * Each band is coloured with the SAME "sst" palette (and that chapter's OWN
+ * colour domain — see depthProfile.ts) used to paint that variable on the
+ * globe, so the panel reads as an extension of the map's colour language
+ * instead of an abstract chart. Self-hiding over land / wherever fewer than
+ * 2 chapters have data, same "no data → no chart" convention as
+ * PointHistoryPanel.
  */
 import { useEffect, useState } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
+import { getPalette, type Palette } from "@photonsurge/shared/palettes";
 import { sampleDepthProfile, type DepthProfilePoint } from "../../lib/depthProfile";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
-import { SectionTitle, toPath, formatReading, CHART_W } from "./PointHistoryPanel";
+import { SectionTitle, formatReading } from "./PointHistoryPanel";
 
 const PANEL_W = 320;
 const PANEL_PAD_X = 16;
-const CHART_H = 150;
-const COMPACT_PANEL_W = 220;
-const COMPACT_CHART_H = 100;
+const ROW_H = 30;
+const ROW_GAP = 3;
 
-/** Room reserved on each side of the plotted line for the depth/value labels. */
-const LABEL_LEFT_W = 34;
-const LABEL_RIGHT_W = 40;
-const PAD_Y = 12;
+const COMPACT_PANEL_W = 220;
+const COMPACT_ROW_H = 22;
 
 const DEPTH_LABEL: Record<number, string> = {
   0: "SURFACE",
@@ -34,36 +37,48 @@ const DEPTH_LABEL: Record<number, string> = {
   5000: "5000m",
 };
 
-export interface ProfileRow extends DepthProfilePoint {
-  x: number;
-  y: number;
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-/**
- * Map sampled points onto the chart box: temperature -> x (linear, with the
- * same flat-series epsilon-widen guard PointHistoryPanel's `sparkPoints`
- * uses), depth chapter -> y as EVENLY SPACED rows (not a true-to-scale depth
- * axis — a linear 0-5000m scale would crush the top 4 chapters into the first
- * 10% of the chart, which reads as "nothing changes near the surface" when
- * the opposite is true).
- */
-export function profileRows(points: DepthProfilePoint[], height: number = CHART_H): ProfileRow[] | null {
-  if (points.length < 2) return null;
-  const temps = points.map((p) => p.tempC);
-  let min = Math.min(...temps);
-  let max = Math.max(...temps);
-  if (max - min < 1e-9) {
-    min -= 0.5;
-    max += 0.5;
+function rgbToHex([r, g, b]: [number, number, number]): string {
+  const c = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+  return `#${c(r)}${c(g)}${c(b)}`;
+}
+
+/** Linearly interpolate a hex colour from a palette at a normalised stop (0..1). */
+export function colorAtStop(palette: Palette, t: number): string {
+  const clamped = Math.max(0, Math.min(1, t));
+  let lo = palette[0];
+  let hi = palette[palette.length - 1];
+  for (let i = 0; i < palette.length - 1; i++) {
+    if (clamped >= palette[i][0] && clamped <= palette[i + 1][0]) {
+      lo = palette[i];
+      hi = palette[i + 1];
+      break;
+    }
   }
-  const innerW = CHART_W - LABEL_LEFT_W - LABEL_RIGHT_W;
-  const innerH = height - 2 * PAD_Y;
-  const n = points.length;
-  return points.map((p, i) => ({
-    ...p,
-    x: LABEL_LEFT_W + ((p.tempC - min) / (max - min)) * innerW,
-    y: n === 1 ? height / 2 : PAD_Y + (i / (n - 1)) * innerH,
-  }));
+  const span = hi[0] - lo[0];
+  const f = span > 0 ? (clamped - lo[0]) / span : 0;
+  const a = hexToRgb(lo[1]);
+  const b = hexToRgb(hi[1]);
+  return rgbToHex([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]);
+}
+
+/** Map a physical value to its palette colour over the variable's OWN domain
+ *  — deliberately per-chapter, not one shared range (see depthProfile.ts). */
+export function colorForValue(palette: Palette, domain: [number, number], value: number): string {
+  const [min, max] = domain;
+  const t = max > min ? (value - min) / (max - min) : 0;
+  return colorAtStop(palette, t);
+}
+
+/** White or near-black text, whichever reads clearly against `bg`. */
+export function textColorFor(bg: string): string {
+  const [r, g, b] = hexToRgb(bg);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? "#0a0e16" : "#f3f7ff";
 }
 
 export default function DepthProfilePanel({
@@ -97,14 +112,11 @@ export default function DepthProfilePanel({
     };
   }, [manifest, lat, lng]);
 
+  if (!points) return null;
+
   const panelW = compact ? COMPACT_PANEL_W : PANEL_W;
-  const chartH = compact ? COMPACT_CHART_H : CHART_H;
+  const rowH = compact ? COMPACT_ROW_H : ROW_H;
   const panelPadX = compact ? 12 : PANEL_PAD_X;
-  const rows = points ? profileRows(points, chartH) : null;
-
-  if (!rows) return null;
-
-  const path = toPath(rows.map((r) => [r.x, r.y] as [number, number]));
 
   return (
     <div
@@ -126,26 +138,34 @@ export default function DepthProfilePanel({
       }}
     >
       <SectionTitle title="SEA TEMP PROFILE" tag="LIVE · BY DEPTH" accent={theme.accent} />
-      <svg
-        width="100%"
-        height={chartH}
-        viewBox={`0 0 ${CHART_W} ${chartH}`}
-        preserveAspectRatio="none"
-        style={{ display: "block", borderRadius: 6, background: "rgba(4,10,20,0.78)" }}
-      >
-        <path d={path} fill="none" stroke={theme.accent} strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
-        {rows.map((r) => (
-          <g key={r.depth}>
-            <circle cx={r.x} cy={r.y} r={4} fill={theme.accent} stroke="#040a14" strokeWidth={1.5} />
-            <text x={2} y={r.y + 3} fontSize={9.5} fontWeight={750} fill="#9db0ca">
-              {DEPTH_LABEL[r.depth] ?? `${r.depth}m`}
-            </text>
-            <text x={CHART_W - 2} y={r.y + 3} fontSize={10.5} fontWeight={800} fill="#f3f7ff" textAnchor="end">
-              {formatReading(r.tempC)}°
-            </text>
-          </g>
-        ))}
-      </svg>
+      <div style={{ display: "flex", flexDirection: "column", gap: ROW_GAP }}>
+        {points.map((p) => {
+          const bg = colorForValue(getPalette(p.palette), p.domain, p.tempC);
+          const fg = textColorFor(bg);
+          return (
+            <div
+              key={p.depth}
+              style={{
+                height: rowH,
+                borderRadius: 6,
+                background: bg,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "0 10px",
+                boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.15)",
+              }}
+            >
+              <span style={{ fontSize: compact ? 9.5 : 11, fontWeight: 800, letterSpacing: 0.8, color: fg }}>
+                {DEPTH_LABEL[p.depth] ?? `${p.depth}m`}
+              </span>
+              <span style={{ fontSize: compact ? 11 : 13, fontWeight: 850, color: fg }}>
+                {formatReading(p.tempC)}°
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

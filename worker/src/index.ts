@@ -393,11 +393,12 @@ process.on("uncaughtException", (err) => {
     }
   }
 
-  // ---- Repeatable volcanoes.snapshot (NASA EONET active volcanoes → Mongo) ----
-  // Individual volcano events update slowly (weeks to months apart, not daily),
-  // but polling every 30 min is still cheap and keeps new events showing up
-  // promptly (upserts dedup). Keyless, so — unlike fires.snapshot — always
-  // scheduled. Disable with VOLCANO_SNAPSHOT_ENABLED=false.
+  // ---- Repeatable volcanoes.snapshot (Smithsonian/USGS Weekly Volcanic Activity Report → Mongo) ----
+  // The bulletin itself only republishes once a week (Thursdays) — polling
+  // more often than that never finds anything NEW mid-week, it just catches
+  // Thursday's fresh drop sooner after it posts. Still cheap (keyless, small
+  // feed), so poll every 30 min by default. Keyless, so — unlike fires.snapshot
+  // — always scheduled. Disable with VOLCANO_SNAPSHOT_ENABLED=false.
   if (process.env.VOLCANO_SNAPSHOT_ENABLED !== "false") {
     const VOLCANO_SNAPSHOT_MS = Number(process.env.VOLCANO_SNAPSHOT_MS || 30 * 60 * 1000);
     try {

@@ -48,9 +48,9 @@ import { useSocket } from "./socket-provider";
  *    keeps the magnitude/place label rather than relabelling per look.
  */
 const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
-  tour: ["temp", "humidity", "rain", "gust", "cloud"],
-  country: ["temp", "humidity", "rain", "gust", "cloud"],
-  weather: ["temp", "humidity", "rain", "gust", "cloud"],
+  tour: ["temp", "humidity", "rain", "gust", "cloud", "visibility"],
+  country: ["temp", "humidity", "rain", "gust", "cloud", "visibility"],
+  weather: ["temp", "humidity", "rain", "gust", "cloud", "visibility"],
 };
 const VAR_CYCLE_MS = 5500;
 /** Per-map dwell for the global map-type tour — a touch longer, each look is a beat. */

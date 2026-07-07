@@ -9,12 +9,19 @@
  */
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { sampleFrame } from "@photonsurge/shared/weather/sample";
+import { getVariable } from "@photonsurge/shared/variables";
 import { loadTexture } from "./textures";
 import { textureUrlFor } from "../components/layers/props";
 
 export interface DepthProfilePoint {
   depth: number;
   tempC: number;
+  /** This chapter's own colour domain — deliberately NOT shared across depths
+   *  (deep water's real range collapses toward near-freezing), so a caller
+   *  colouring this point must use ITS domain, not a fixed -2..32 range, to
+   *  stay consistent with how the same variable is coloured on the map. */
+  domain: [number, number];
+  palette: string;
 }
 
 /**
@@ -73,7 +80,14 @@ export async function sampleDepthProfile(
       lat,
       lng,
     );
-    if (sample?.kind === "scalar") points.push({ depth, tempC: sample.value });
+    if (sample?.kind === "scalar") {
+      const meta = getVariable(variableId);
+      // Same domain/palette resolution scalarRasterPropsFromEntry uses to
+      // colour this variable on the map (public/src/components/layers/props.ts).
+      const domain = entry.domain ?? meta?.domain ?? [-2, 32];
+      const palette = entry.palette ?? meta?.palette ?? "sst";
+      points.push({ depth, tempC: sample.value, domain, palette });
+    }
   }
   return points.length >= 2 ? points : null;
 }

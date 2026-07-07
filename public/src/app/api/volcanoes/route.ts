@@ -9,16 +9,17 @@ const NO_CACHE = { "Cache-Control": "no-store" };
 
 /**
  * GET /api/volcanoes?status=erupting&limit=0
- * Reads the worker-cached NASA EONET active-volcano events from Mongo — the
- * public app NEVER calls EONET directly. Returns EVERYTHING by default (no cap).
- * Configure the cadence on the worker (VOLCANO_SNAPSHOT_MS).
+ * Reads the worker-cached Smithsonian/USGS Weekly Volcanic Activity Report
+ * from Mongo — the public app NEVER calls the feed directly. Returns
+ * EVERYTHING by default (no cap). Configure the cadence on the worker
+ * (VOLCANO_SNAPSHOT_MS).
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
 
   const statusRaw = url.searchParams.get("status");
   const status: VolcanoStatus | undefined =
-    statusRaw === "erupting" || statusRaw === "unrest" ? statusRaw : undefined;
+    statusRaw === "erupting" || statusRaw === "unrest" || statusRaw === "dormant" ? statusRaw : undefined;
 
   const limitRaw = Number(url.searchParams.get("limit"));
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;

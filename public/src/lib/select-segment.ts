@@ -71,38 +71,53 @@ export function alertFeatureToSegment(f: AlertFeature): Segment | null {
 
 const utcLabel = (ms: number) => `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 
+const VOLCANO_STATUS_SUBTITLE: Record<Volcano["status"], string> = {
+  erupting: "Active eruption",
+  unrest: "Volcanic unrest",
+  dormant: "Easing off / dormant",
+};
+const VOLCANO_STATUS_LABEL: Record<Volcano["status"], string> = {
+  erupting: "Erupting",
+  unrest: "Unrest",
+  dormant: "Dormant",
+};
+
 /**
  * Reuses the generic `storm`-kind card (title/subtitle/details/icon) rather
  * than a dedicated `SegmentKind` — a volcano's status IS a hazard classification
  * (see HazardType "volcano"), so this rides the same icon/colour the GDACS
- * volcanic-activity alerts already use, just sourced from the EONET point feed
- * instead of an alert polygon.
+ * volcanic-activity alerts already use, just sourced from the Smithsonian/USGS
+ * weekly bulletin instead of an alert polygon.
  */
 export function volcanoToSegment(v: Volcano): Segment {
   const meta = hazardMeta("volcano");
   const details: { label: string; value: string }[] = [
-    { label: "Status", value: v.status === "erupting" ? "Erupting" : "Volcanic unrest" },
-    { label: "First reported", value: utcLabel(v.firstDate) },
-    { label: "Last update", value: utcLabel(v.lastDate) },
+    { label: "Status", value: VOLCANO_STATUS_LABEL[v.status] },
+    { label: "Location", value: `${v.lat.toFixed(3)}, ${v.lng.toFixed(3)}` },
+    { label: "This week's report", value: utcLabel(v.lastDate) },
   ];
+  if (v.country) details.splice(1, 0, { label: "Country", value: v.country });
   return {
     id: `volcano:${v.id}`,
     kind: "storm",
     title: v.name,
-    subtitle: v.status === "erupting" ? "Active eruption" : "Ongoing unrest",
+    subtitle: VOLCANO_STATUS_SUBTITLE[v.status],
     icon: meta.icon,
     hazard: "volcano",
     details,
-    // Reuses the notable-tracks TrackInfo card for the Wikipedia photo/blurb —
-    // its fields (label/category/photoUrl/extract) are generic enough to fit a
-    // volcano, not just an aircraft/vessel. Undefined (not this whole object)
-    // until the worker's enrichWiki job has run for this event.
-    trackInfo: v.wikiExtract || v.wikiThumb
+    // Reuses the notable-tracks TrackInfo card for the photo/blurb — its
+    // fields (label/category/photoUrl/extract) are generic enough to fit a
+    // volcano, not just an aircraft/vessel. Prefers this week's own bulletin
+    // text (current, authoritative) over the evergreen Wikipedia extract when
+    // both are present; the photo always comes from Wikipedia (the bulletin
+    // carries no images). Undefined (not this whole object) until there's
+    // something to show.
+    trackInfo: v.wikiThumb || v.wikiExtract || v.latestReport
       ? {
           label: v.name,
           category: "Volcano",
           photoUrl: v.wikiThumb,
-          extract: v.wikiExtract,
+          extract: v.latestReport || v.wikiExtract,
         }
       : undefined,
     camera: { center: [v.lng, v.lat], zoom: VOLCANO_ZOOM },

@@ -6,12 +6,15 @@ import type { iVolcanoModel } from "./volcano-model";
 const strip = (doc: any): Volcano => ({
   id: doc.volcanoId,
   name: doc.name,
+  country: doc.country || undefined,
   lat: doc.lat,
   lng: doc.lng,
   status: doc.status as VolcanoStatus,
   firstDate: new Date(doc.firstDate).getTime(),
   lastDate: new Date(doc.lastDate).getTime(),
   sourceUrl: doc.sourceUrl || undefined,
+  latestReport: doc.latestReport || undefined,
+  reportDateRange: doc.reportDateRange || undefined,
   wikiTitle: doc.wikiTitle || undefined,
   wikiThumb: doc.wikiThumb || undefined,
   wikiExtract: doc.wikiExtract || undefined,
@@ -27,7 +30,13 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
   return {
     model,
 
-    /** Upsert a batch of volcanoes on `volcanoId`. Fills the GeoJSON `loc`. */
+    /**
+     * Upsert a batch of volcanoes on `volcanoId`. Fills the GeoJSON `loc`.
+     * `firstDate` is only set on the FIRST insert (via `$setOnInsert`) — it
+     * tracks "since when has our cache been tracking this volcano" rather than
+     * the source's own event-start concept (the weekly bulletin doesn't have
+     * one), so it must not be overwritten on every re-poll.
+     */
     async upsertMany(volcanoes: Volcano[]): Promise<{ upserted: number; matched: number }> {
       if (!volcanoes.length) return { upserted: 0, matched: 0 };
       const fetchedAt = new Date();
@@ -37,16 +46,18 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
           update: {
             $set: {
               name: v.name,
+              country: v.country,
               lat: v.lat,
               lng: v.lng,
               status: v.status,
-              firstDate: new Date(v.firstDate),
               lastDate: new Date(v.lastDate),
               sourceUrl: v.sourceUrl,
+              latestReport: v.latestReport,
+              reportDateRange: v.reportDateRange,
               fetchedAt,
               loc: { type: "Point" as const, coordinates: [v.lng, v.lat] as [number, number] },
             },
-            $setOnInsert: { id: uuidv4() },
+            $setOnInsert: { id: uuidv4(), firstDate: new Date(v.firstDate) },
           },
           upsert: true,
         },

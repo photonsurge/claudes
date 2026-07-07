@@ -6,13 +6,13 @@ import {
 import { HAZARDS, type HazardType } from "./hazard";
 
 describe("hazardMapPlan", () => {
-  it("opens a heat warning on humidity (heat-index context)", () => {
-    expect(hazardMapPlan("heat").cycle[0]).toBe("humidity");
+  it("opens a heat warning on dewpoint (heat-index context)", () => {
+    expect(hazardMapPlan("heat").cycle[0]).toBe("dewpoint");
   });
 
-  it("reads a tornado through CAPE → radar → gust and cuts quicker", () => {
+  it("reads a tornado through CAPE → CIN → rain → gust and cuts quicker", () => {
     const p = hazardMapPlan("tornado");
-    expect(p.cycle).toEqual(["storm", "rain", "gust"]);
+    expect(p.cycle).toEqual(["storm", "cin", "rain", "gust"]);
     expect(p.cycleMs).toBeLessThan(DEFAULT_CYCLE_MS);
   });
 

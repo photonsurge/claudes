@@ -19,13 +19,17 @@ import { imageUnscaleFor, type BakeResult } from "./bake";
  *  - rain:  PRATE kg m⁻² s⁻¹ (= mm/s) -> mm/h
  *  - sst:   WTMP K -> °C
  *  - snow:  SNOD m -> cm
- *  - others: identity (RH already %, CAPE J/kg, GUST m/s, TCDC %).
+ *  - dewpoint: DPT K -> °C
+ *  - soil:  SOILW 0..1 volumetric fraction -> %
+ *  - visibility: VIS m -> km
+ *  - others: identity (RH already %, CAPE/CIN J/kg, GUST m/s, TCDC %).
  */
 export function convertScalarUnits(variableId: string, values: Float32Array): Float32Array {
   const out = new Float32Array(values.length);
   switch (variableId) {
     case "temp":
     case "sst":
+    case "dewpoint":
       for (let i = 0; i < values.length; i++) out[i] = kelvinToCelsius(values[i]);
       return out;
     case "pressure":
@@ -36,6 +40,12 @@ export function convertScalarUnits(variableId: string, values: Float32Array): Fl
       return out;
     case "snow":
       for (let i = 0; i < values.length; i++) out[i] = metersToCm(values[i]);
+      return out;
+    case "soil":
+      for (let i = 0; i < values.length; i++) out[i] = values[i] * 100;
+      return out;
+    case "visibility":
+      for (let i = 0; i < values.length; i++) out[i] = values[i] / 1000;
       return out;
     default:
       out.set(values);

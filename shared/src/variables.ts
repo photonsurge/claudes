@@ -286,6 +286,55 @@ export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
     // shows through where it isn't raining.
     domain: [5, 75],
   },
+  // ── Broadcast-relevant GFS fields beyond the core set ───────────────────────
+  visibility: {
+    id: "visibility",
+    label: "Visibility",
+    encoding: "scalar",
+    kind: "raster",
+    units: "km",
+    palette: "visibility",
+    domain: [0, 20],
+    // VIS arrives in metres; baked to km (see convertScalarUnits). GFS reports
+    // an "unlimited visibility" ceiling around 24 km, just outside the domain.
+    gfs: { vars: ["VIS"], levels: ["surface"] },
+  },
+  dewpoint: {
+    id: "dewpoint",
+    label: "Dewpoint",
+    encoding: "scalar",
+    kind: "raster",
+    units: "°C",
+    altUnit: "°F",
+    altConvert: (v) => (v * 9) / 5 + 32,
+    palette: "dewpoint",
+    domain: [-30, 30],
+    // DPT arrives in Kelvin, same K→°C bake as temp/sst.
+    gfs: { vars: ["DPT"], levels: ["2_m_above_ground"] },
+  },
+  cin: {
+    id: "cin",
+    label: "Storm cap (CIN)",
+    encoding: "scalar",
+    kind: "raster",
+    units: "J/kg",
+    palette: "cin",
+    // CIN is ≤ 0; more negative = a stronger cap suppressing convection.
+    domain: [-300, 0],
+    gfs: { vars: ["CIN"], levels: ["surface"] },
+  },
+  soil: {
+    id: "soil",
+    label: "Soil moisture",
+    encoding: "scalar",
+    kind: "raster",
+    units: "%",
+    palette: "soil",
+    domain: [0, 50],
+    // SOILW is a 0..1 volumetric fraction; baked ×100 for display. Land-only —
+    // ocean cells are GRIB-undefined and drop out via the existing bitmap mask.
+    gfs: { vars: ["SOILW"], levels: ["0-0.1_m_below_ground"] },
+  },
   // ── Static terrain (no forecast source) ─────────────────────────────────────
   elevation: {
     id: "elevation",

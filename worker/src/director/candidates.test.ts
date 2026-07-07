@@ -1,5 +1,6 @@
 import { buildCandidates } from "./candidates";
 import { DEFAULT_DIRECTOR_CONFIG, type DirectorConfig } from "@photonsurge/shared/director";
+import { SEA_POINTS } from "@photonsurge/shared/director-sea-points";
 import type { AppDb } from "@photonsurge/shared/db/index";
 
 /** Minimal fake DB facade exposing just what buildCandidates reads. */
@@ -91,11 +92,29 @@ describe("buildCandidates", () => {
   it("adds one global ocean spin that opens on SST and spins (tours the rest client-side)", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     const ocean = pool.filter((c) => c.segment.kind === "ocean");
-    // Collapsed from one-candidate-per-field to a single touring spin.
-    expect(ocean.length).toBe(1);
-    expect(ocean[0].segment.id).toBe("ocean:world");
-    expect(ocean[0].segment.patch.activeVariable).toBe("sst"); // opens on the hero field
-    expect(ocean[0].segment.patch.autoSpin).toBe(true); // world map spins
+    // The spin, plus one held-still candidate per notable sea point.
+    expect(ocean.length).toBe(1 + SEA_POINTS.length);
+    const spin = ocean.find((c) => c.segment.id === "ocean:world")!;
+    expect(spin.segment.patch.activeVariable).toBe("sst"); // opens on the hero field
+    expect(spin.segment.patch.autoSpin).toBe(true); // world map spins
+  });
+
+  it("spotlights every notable sea point, held still (no spin) on its own location", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg());
+    const ocean = pool.filter((c) => c.segment.kind === "ocean");
+    for (const p of SEA_POINTS) {
+      const seg = ocean.find((c) => c.segment.id === `ocean:${p.id}`)!;
+      expect(seg).toBeDefined();
+      expect(seg.segment.title).toBe(p.name);
+      expect(seg.segment.camera.center).toEqual(p.center);
+      expect(seg.segment.patch.activeVariable).toBe("sst");
+      expect(seg.segment.patch.autoSpin).toBe(false); // holds on the point
+    }
+  });
+
+  it("drops every ocean candidate — spin AND sea points — when the kind is disabled", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg({ kinds: { ocean: false } }));
+    expect(pool.filter((c) => c.segment.kind === "ocean")).toEqual([]);
   });
 
   it("opens the ocean spin on the first operator-enabled map type, not always SST", async () => {

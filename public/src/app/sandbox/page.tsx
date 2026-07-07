@@ -34,6 +34,8 @@ import { useFaults } from "../../lib/faults-overlay";
 import { useAurora } from "../../lib/aurora-overlay";
 import { useSatImg } from "../../lib/satimg-overlay";
 import { useGeomag } from "../../lib/geomag-overlay";
+import { useFires } from "../../lib/fires-overlay";
+import { useVolcanoes } from "../../lib/volcanoes-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import DepthProfilePanel from "../../components/broadcast/DepthProfilePanel";
 import ControlPanel from "../../components/ControlPanel";
@@ -74,6 +76,8 @@ export default function SandboxPage() {
   const aurora = useAurora(state.showAurora);
   const satimg = useSatImg(state.showSatImg);
   const geomag = useGeomag(state.showMagneticField);
+  const fires = useFires(state.showFires);
+  const volcanoes = useVolcanoes(state.showVolcanoes);
 
   // Cold start from the main scene so we open on whatever's currently on air.
   useEffect(() => {
@@ -132,6 +136,8 @@ export default function SandboxPage() {
           faults={faults}
           aurora={aurora}
           satimg={satimg}
+          fires={fires}
+          volcanoes={volcanoes}
           geomag={geomag}
           interactive
           onSelect={setSelected}

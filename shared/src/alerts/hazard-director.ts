@@ -12,7 +12,8 @@
  * (useDirectorCut, which rotates the maps) resolve the same plan.
  *
  * `cycle` values are scalar-raster variable ids (see shared/src/variables.ts):
- * temp · humidity · rain · storm (CAPE) · gust · cloud · snow · sst · wave.
+ * temp · humidity · rain · storm (CAPE) · gust · cloud · snow · sst · wave ·
+ * dewpoint · cin · visibility · soil.
  * cycle[0] is the field the shot OPENS on.
  */
 import type { HazardType } from "./hazard";
@@ -49,25 +50,29 @@ export const DEFAULT_STORM_PLAN: HazardMapPlan = {
  * config's per-severity storm holds (stormHoldSeconds), not this plan.
  */
 const PLANS: Partial<Record<HazardType, Partial<HazardMapPlan>>> = {
-  // Heat: open on humidity (heat-index context) then the temperature itself.
-  heat: { cycle: ["humidity", "temp"], cycleMs: 6500 },
+  // Heat: open on dewpoint (the actual heat-index driver) then humidity/temp.
+  heat: { cycle: ["dewpoint", "humidity", "temp"], cycleMs: 6500 },
   cold: { cycle: ["temp", "snow", "gust"], cycleMs: 6000 },
   wind: { cycle: ["gust", "temp"], cycleMs: 5000 },
-  tornado: { cycle: ["storm", "rain", "gust"], cycleMs: 4500 },
-  thunderstorm: { cycle: ["storm", "rain", "gust"], cycleMs: 4500 },
+  // CIN pairs with CAPE to show whether the cap is holding.
+  tornado: { cycle: ["storm", "cin", "rain", "gust"], cycleMs: 4500 },
+  thunderstorm: { cycle: ["storm", "cin", "rain", "gust"], cycleMs: 4500 },
   rain: { cycle: ["rain", "humidity", "storm"], cycleMs: 5500 },
   flood: { cycle: ["rain", "humidity"], cycleMs: 6000 },
   "snow-ice": { cycle: ["snow", "temp", "rain"], cycleMs: 6000 },
-  fog: { cycle: ["humidity", "cloud"], cycleMs: 6500 },
+  // Visibility opens the shot since it IS the fog story.
+  fog: { cycle: ["visibility", "humidity", "cloud"], cycleMs: 6500 },
   // Fire-weather triangle: heat, dryness (low humidity), wind.
   fire: { cycle: ["temp", "humidity", "gust"], cycleMs: 5500 },
-  dust: { cycle: ["gust", "temp"], cycleMs: 5000 },
+  // Dust storms are fundamentally a visibility story.
+  dust: { cycle: ["visibility", "gust", "temp"], cycleMs: 5000 },
   air: { cycle: ["cloud", "humidity"], cycleMs: 6500 },
   coastal: { cycle: ["wave", "gust"], cycleMs: 5500 },
   marine: { cycle: ["wave", "gust"], cycleMs: 5500 },
   avalanche: { cycle: ["snow", "temp"], cycleMs: 6000 },
   cyclone: { cycle: ["gust", "rain", "storm", "humidity"], cycleMs: 4500 },
-  drought: { cycle: ["temp", "humidity"], cycleMs: 7000 },
+  // Soil moisture is the headline drought field.
+  drought: { cycle: ["soil", "temp", "humidity"], cycleMs: 7000 },
 };
 
 /** The resolved map plan for a hazard (never null — falls back to the storm read). */

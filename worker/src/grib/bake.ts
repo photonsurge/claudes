@@ -62,6 +62,10 @@ export const SCALAR_IMAGE_UNSCALE: Record<string, [number, number]> = {
   // sentinels (-999/-99) bake TRANSPARENT via radarKeepMask, so the exact low end
   // only needs to hold light/near-zero echo (values below ~5 dBZ are masked out).
   radar: [-30, 80],
+  visibility: [0, 30], // km
+  dewpoint: [-50, 45], // °C
+  cin: [-1000, 0], // J/kg (strong caps can exceed -300)
+  soil: [0, 100], // % (headroom above the physical ~50% ceiling)
 };
 
 /** Resolve the decode range for a variable, defaulting to its colour domain. */

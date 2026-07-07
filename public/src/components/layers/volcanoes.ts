@@ -3,37 +3,46 @@ import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import { DEPTH_TEST } from "./depth";
 
 /**
- * Active-volcano overlay (NASA EONET). Each event draws as a small "cone" glyph
- * — a hot core with a wide, pulsing-looking glow ring — coloured molten
- * red-orange when actively erupting and a cooler smoky amber when it's just
- * ongoing unrest with no fresh eruption report. Pickable (like the seismic
- * ring) so the operator can click one to pull up its info card. Depth-tested
- * like every globe layer so far-hemisphere volcanoes are occluded by the
- * planet. Erupting events get a name label; unrest events stay unlabeled to
- * keep the map readable.
+ * Active-volcano overlay (Smithsonian/USGS weekly bulletin). Each volcano draws
+ * as a solid triangle "cone" glyph — deliberately NOT a circle, so it reads as
+ * distinct from the quake/fire dot markers at a glance — sitting on a soft
+ * ambient glow, colour-coded by the report's own status tier: red when
+ * actively erupting, orange for elevated unrest with no fresh eruption, and
+ * grey once a report reads as easing off/dormant. The glyph is a TextLayer
+ * (Unicode "▲") rather than an IconLayer — canvas-built icon atlases render
+ * blank under deck's _GlobeView, while built-in SDF text rendering doesn't.
+ * Pickable so the operator can click one to pull up its info card.
+ * Depth-tested like every globe layer so far-hemisphere volcanoes are
+ * occluded by the planet. Erupting events get a name label; unrest/dormant
+ * stay unlabeled to keep the map readable.
  */
 
 export const VOLCANO_STATUS_COLORS: Record<Volcano["status"], [number, number, number]> = {
-  erupting: [255, 64, 32], // molten red-orange
-  unrest: [196, 132, 58], // smoky amber advisory
+  erupting: [239, 68, 68], // red — active eruption
+  unrest: [249, 115, 22], // orange — elevated unrest, no fresh eruption
+  dormant: [148, 163, 184], // grey — easing off / no longer erupting
 };
 
 export function volcanoColor(v: Volcano): [number, number, number] {
   return VOLCANO_STATUS_COLORS[v.status];
 }
 
+const GLOW_RADIUS: Record<Volcano["status"], number> = { erupting: 26, unrest: 16, dormant: 11 };
+const GLOW_ALPHA: Record<Volcano["status"], number> = { erupting: 70, unrest: 45, dormant: 28 };
+const GLYPH_SIZE: Record<Volcano["status"], number> = { erupting: 20, unrest: 15, dormant: 11 };
+
 export function volcanoLayers(volcanoes: Volcano[]) {
   const erupting = volcanoes.filter((v) => v.status === "erupting");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const layers: any[] = [
-    // Wide glow halo — bigger and hotter for actively-erupting events.
+    // Wide glow halo — bigger and hotter the more active the status.
     new ScatterplotLayer<Volcano>({
       id: "volcano-glow",
       data: volcanoes,
       getPosition: (d) => [d.lng, d.lat, 0],
-      getRadius: (d) => (d.status === "erupting" ? 30 : 16),
-      getFillColor: (d) => [...volcanoColor(d), d.status === "erupting" ? 80 : 45] as [number, number, number, number],
+      getRadius: (d) => GLOW_RADIUS[d.status],
+      getFillColor: (d) => [...volcanoColor(d), GLOW_ALPHA[d.status]] as [number, number, number, number],
       radiusUnits: "pixels",
       radiusMinPixels: 10,
       radiusMaxPixels: 60,
@@ -42,45 +51,26 @@ export function volcanoLayers(volcanoes: Volcano[]) {
       parameters: DEPTH_TEST,
       updateTriggers: { getFillColor: volcanoes.length, getRadius: volcanoes.length },
     }),
-    // Cone ring — hollow, status-tinted. `filled` with a transparent fill keeps
-    // the whole disc clickable (like the seismic epicentre ring).
-    new ScatterplotLayer<Volcano>({
-      id: "volcano-ring",
+    // The cone glyph itself — a solid triangle, status-coloured, outlined for
+    // contrast against any basemap. This is the pickable, identifying marker.
+    new TextLayer<Volcano>({
+      id: "volcano-glyph",
       data: volcanoes,
       getPosition: (d) => [d.lng, d.lat, 0],
-      getRadius: 9,
-      filled: true,
-      getFillColor: [0, 0, 0, 0],
-      stroked: true,
-      getLineColor: (d) => [...volcanoColor(d), 235] as [number, number, number, number],
-      getLineWidth: 2,
-      radiusUnits: "pixels",
-      radiusMinPixels: 9,
-      radiusMaxPixels: 14,
-      lineWidthUnits: "pixels",
-      lineWidthMinPixels: 2,
+      getText: () => "▲",
+      getColor: (d) => [...volcanoColor(d), 255] as [number, number, number, number],
+      getSize: (d) => GLYPH_SIZE[d.status],
+      sizeUnits: "pixels",
+      getTextAnchor: "middle",
+      getAlignmentBaseline: "center",
+      fontFamily: "system-ui, sans-serif",
+      fontSettings: { sdf: true },
+      outlineWidth: 2,
+      outlineColor: [0, 0, 0, 220],
+      characterSet: "auto",
       pickable: true,
       parameters: DEPTH_TEST,
-      updateTriggers: { getLineColor: volcanoes.length },
-    }),
-    // Bright core.
-    new ScatterplotLayer<Volcano>({
-      id: "volcano-core",
-      data: volcanoes,
-      getPosition: (d) => [d.lng, d.lat, 0],
-      getRadius: 3,
-      getFillColor: (d) => [...volcanoColor(d), 255] as [number, number, number, number],
-      getLineColor: [255, 255, 255, 220],
-      radiusUnits: "pixels",
-      radiusMinPixels: 2,
-      radiusMaxPixels: 4,
-      lineWidthUnits: "pixels",
-      getLineWidth: 0.75,
-      lineWidthMinPixels: 0.5,
-      stroked: true,
-      pickable: true,
-      parameters: DEPTH_TEST,
-      updateTriggers: { getFillColor: volcanoes.length },
+      updateTriggers: { getColor: volcanoes.length, getSize: volcanoes.length },
     }),
   ];
 
@@ -93,13 +83,14 @@ export function volcanoLayers(volcanoes: Volcano[]) {
       getColor: [255, 255, 255, 235],
       getSize: 11,
       sizeUnits: "pixels",
-      getPixelOffset: [0, -14],
+      getPixelOffset: [0, -18],
       getTextAnchor: "middle",
       getAlignmentBaseline: "bottom",
       fontFamily: "system-ui, sans-serif",
       fontSettings: { sdf: true },
       outlineWidth: 2,
       outlineColor: [0, 0, 0, 200],
+      characterSet: "auto",
       parameters: DEPTH_TEST,
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

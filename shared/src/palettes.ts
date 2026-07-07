@@ -204,6 +204,40 @@ export const PALETTES: Record<string, Palette> = {
     [0.85, "#f800fd"],
     [1.0, "#ffffff"],
   ],
+  // Visibility: fog/haze white-grey at the low end → clear pale blue as it opens up.
+  visibility: [
+    [0.0, "#e8e8e8"],
+    [0.25, "#c7ccd1"],
+    [0.5, "#9fb6c9"],
+    [0.75, "#5f9bcf"],
+    [1.0, "#2f6fb0"],
+  ],
+  // Dewpoint: dry brown → humid green/teal comfort ramp over the -30..30°C domain.
+  dewpoint: [
+    [0.0, "#6b4a2b"],
+    [0.4, "#b08a4c"],
+    [0.6, "#8fd86a"],
+    [0.8, "#2f9bd6"],
+    [1.0, "#1f3f9b"],
+  ],
+  // Storm cap (CIN): near-neutral at 0 (no cap) → cool blue/purple as the cap
+  // strengthens. Deliberately cool, not storm's hot green→red — a strong CIN
+  // SUPPRESSES convection, the opposite direction of CAPE risk.
+  cin: [
+    [0.0, "#3b2f6b"],
+    [0.3, "#3257b0"],
+    [0.6, "#2f9bd6"],
+    [0.85, "#a6d9ec"],
+    [1.0, "#e8eef2"],
+  ],
+  // Soil moisture: dry brown → wet green/blue, classic soil-moisture ramp over 0..50%.
+  soil: [
+    [0.0, "#8a5a2b"],
+    [0.3, "#b08a4c"],
+    [0.55, "#8fae4c"],
+    [0.8, "#3f9b5f"],
+    [1.0, "#2f6fb0"],
+  ],
 };
 
 export const getPalette = (id: string): Palette => PALETTES[id] ?? PALETTES.temp;

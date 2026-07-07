@@ -360,6 +360,7 @@ export const LAYERS_OFF: Partial<ControlState> = {
   showTrails: false,
   showTrackLabels: false,
   showFires: false,
+  showVolcanoes: false,
   showMagneticField: false,
 };
 

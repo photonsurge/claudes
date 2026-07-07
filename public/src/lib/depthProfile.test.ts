@@ -5,6 +5,7 @@ jest.mock("./textures", () => ({
 }));
 
 import { loadTexture } from "./textures";
+import { getVariable } from "@photonsurge/shared/variables";
 import { sampleDepthProfile } from "./depthProfile";
 
 const mockLoadTexture = loadTexture as jest.MockedFunction<typeof loadTexture>;
@@ -58,6 +59,15 @@ describe("sampleDepthProfile", () => {
     // byteToValue(byte, [-5,40]): -5 + byte/255*45
     expect(points![0].tempC).toBeCloseTo(-5 + (200 / 255) * 45, 5);
     expect(points![4].tempC).toBeCloseTo(-5 + (40 / 255) * 45, 5);
+  });
+
+  it("carries each chapter's OWN colour domain (deep water isn't coloured on the surface's -2..32 scale)", async () => {
+    const points = await sampleDepthProfile(makeManifest(), 0, 0);
+    const byDepth = Object.fromEntries(points!.map((p) => [p.depth, p]));
+    expect(byDepth[0].domain).toEqual(getVariable("sst")!.domain);
+    expect(byDepth[5000].domain).toEqual(getVariable("sst5000")!.domain);
+    expect(byDepth[0].domain).not.toEqual(byDepth[5000].domain);
+    expect(byDepth[0].palette).toBe("sst");
   });
 
   it("skips a chapter missing from the manifest and still returns the rest", async () => {
