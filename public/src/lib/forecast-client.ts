@@ -23,7 +23,11 @@ function useForecastFetch<T>(key: string, urlFor: () => string): { data: T | nul
     }
     let cancelled = false;
     setState({ key, data: null, loading: true });
-    fetch(urlFor())
+    if (typeof globalThis.fetch !== "function") {
+      setState({ key, data: null, loading: false });
+      return;
+    }
+    globalThis.fetch(urlFor())
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null)
       .then((data: T | null) => {

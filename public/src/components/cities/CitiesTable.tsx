@@ -76,7 +76,7 @@ export default function CitiesTable({
             {row.original.isCapital ? "★ " : ""}{row.original.name}
           </Link>
           <button type="button" onClick={() => onSelect(row.original)} aria-label={`Preview ${row.original.name}`} style={{ display: "block", border: 0, padding: 0, marginTop: 2, background: "none", color: muted, cursor: "pointer", fontSize: 10 }}>
-            preview on globe
+            forecast + globe
           </button>
         </div>
       ),

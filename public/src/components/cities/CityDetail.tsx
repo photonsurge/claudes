@@ -7,6 +7,7 @@ import { getCity, type City } from "../../lib/cities";
 import GlobeView from "../GlobeView";
 import PointHistoryPanel from "../broadcast/PointHistoryPanel";
 import { cityEnrichmentStatus } from "./CityEnrichmentCard";
+import CityUpcomingForecast from "./CityUpcomingForecast";
 
 const muted = "#8b95a7";
 const panel = { border: "1px solid #1b2030", borderRadius: 9, background: "#0c111c" } as const;
@@ -78,6 +79,8 @@ export default function CityDetail({ id }: { id: string }) {
             <a href={osmUrl} target="_blank" rel="noreferrer" style={linkButton}>Open map ↗</a>
           </div>
         </div>
+
+        <CityUpcomingForecast city={city} />
 
         <div style={{ display: "grid", gridTemplateColumns: (city.wikiPhoto || city.wikiThumb) ? "minmax(260px, .8fr) minmax(0, 1.2fr)" : "1fr", gap: 22, marginTop: 22 }}>
           {(city.wikiPhoto || city.wikiThumb) && (

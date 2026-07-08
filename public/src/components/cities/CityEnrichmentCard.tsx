@@ -1,6 +1,7 @@
 "use client";
 
 import type { City } from "../../lib/cities";
+import CityUpcomingForecast from "./CityUpcomingForecast";
 
 const muted = "#8b95a7";
 
@@ -31,6 +32,8 @@ export default function CityEnrichmentCard({ city, onClose }: { city: City; onCl
         </div>
         <button type="button" onClick={onClose} aria-label="Close city details" style={{ border: 0, background: "none", color: muted, cursor: "pointer", fontSize: 18 }}>×</button>
       </div>
+
+      <CityUpcomingForecast city={city} compact />
 
       <div style={{ display: "grid", gridTemplateColumns: (city.wikiPhoto || city.wikiThumb) ? "110px minmax(0, 1fr)" : "1fr", gap: 12, marginTop: 12 }}>
         {(city.wikiPhoto || city.wikiThumb) && (
