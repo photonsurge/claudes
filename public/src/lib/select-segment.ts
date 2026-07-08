@@ -5,7 +5,7 @@
  * card text is byte-identical to a director cut for the same event.
  */
 import type { Segment } from "@photonsurge/shared/director";
-import { quakeSegmentContent, alertSegmentContent, volcanoSegmentContent } from "@photonsurge/shared/segments";
+import { quakeSegmentContent, alertSegmentContent, volcanoSegmentContent, volcanoTrackInfo } from "@photonsurge/shared/segments";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import type { Quake } from "./tracks/types";
 import type { AlertFeature } from "./alerts";
@@ -69,39 +69,25 @@ export function alertFeatureToSegment(f: AlertFeature): Segment | null {
 }
 
 /**
- * Reuses the generic `storm`-kind card (title/subtitle/details/icon) rather
- * than a dedicated `SegmentKind` — a volcano's status IS a hazard classification
- * (see HazardType "volcano"), so this rides the same icon/colour the GDACS
- * volcanic-activity alerts already use, just sourced from the Smithsonian/USGS
- * weekly bulletin instead of an alert polygon. Content (title/subtitle/details)
- * comes from the shared builder so this card is byte-identical to the one the
- * auto-director renders for the same volcano (see worker/director/candidates.ts).
+ * Content (title/subtitle/details/icon) comes from the shared builder so this
+ * card is byte-identical to the one the auto-director renders for the same
+ * volcano (see worker/director/candidates.ts) — same `volcano:{id}` segment id
+ * too, so a manually-clicked volcano and an auto-directed cut of it are
+ * recognised as the same segment (cooldown/dedup, "last shown" readout).
  */
 export function volcanoToSegment(v: Volcano): Segment {
   const c = volcanoSegmentContent(v);
   return {
     id: `volcano:${v.id}`,
-    kind: "storm",
+    kind: "volcano",
     title: c.title,
     subtitle: c.subtitle,
     icon: c.icon,
-    hazard: "volcano",
     details: c.details,
-    // Reuses the notable-tracks TrackInfo card for the photo/blurb — its
-    // fields (label/category/photoUrl/extract) are generic enough to fit a
-    // volcano, not just an aircraft/vessel. Prefers this week's own bulletin
-    // text (current, authoritative) over the evergreen Wikipedia extract when
-    // both are present; the photo always comes from Wikipedia (the bulletin
-    // carries no images). Undefined (not this whole object) until there's
-    // something to show.
-    trackInfo: v.wikiThumb || v.wikiExtract || v.latestReport
-      ? {
-          label: v.name,
-          category: "Volcano",
-          photoUrl: v.wikiThumb,
-          extract: v.latestReport || v.wikiExtract,
-        }
-      : undefined,
+    // Reuses the notable-tracks TrackInfo card for the photo/blurb, plus the
+    // richer facts/gallery/USGS-alert fields — see volcanoTrackInfo for the
+    // single shared builder (also used by the auto-director).
+    trackInfo: volcanoTrackInfo(v),
     camera: { center: [v.lng, v.lat], zoom: VOLCANO_ZOOM },
     patch: {},
     holdMs: 0,

@@ -22,8 +22,9 @@ import type { Quake, Track } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
 import type { City } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
+import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import { countryShot, countryContaining } from "@photonsurge/shared/director-countries";
-import { buildTicker, scopeAlertsToBbox, scopeQuakesToBbox } from "../../lib/broadcast";
+import { buildTicker, scopeAlertsToBbox, scopeQuakesToBbox, scopeVolcanoesToBbox } from "../../lib/broadcast";
 import { bboxForCamera } from "../../lib/history-client";
 import { legendVariableFor } from "../../lib/legend";
 import { nearest, formatKm } from "../../lib/geo";
@@ -48,6 +49,7 @@ import EventOverlay from "./EventOverlay";
 import EventNearbyPanel from "./EventNearbyPanel";
 import QuakeReport from "./QuakeReport";
 import TrackInfoPanel from "./TrackInfoPanel";
+import VolcanoFactsPanel, { volcanoFactsSlideHasContent } from "./VolcanoFactsPanel";
 import OnAirCard from "./OnAirCard";
 import RoundupStatsPanel from "./RoundupStatsPanel";
 import TopCitiesPanel from "./TopCitiesPanel";
@@ -80,6 +82,7 @@ export default function BroadcastFrame({
   manifest,
   alerts = [],
   quakes = [],
+  volcanoes = [],
   seismoStations = [],
   seismoActive = null,
   tracks = [],
@@ -96,6 +99,8 @@ export default function BroadcastFrame({
   manifest: WeatherManifest | null;
   alerts?: AlertFeature[];
   quakes?: Quake[];
+  /** Worker-cached active-volcano feed — for the country/region "IN VIEW" rollup. */
+  volcanoes?: Volcano[];
   /** Worker-cached live seismograph stations near what's on air. */
   seismoStations?: SeismoStationReading[];
   /** Which of `seismoStations` is currently "on air" in the SEISMIC MONITOR panel. */
@@ -175,6 +180,7 @@ export default function BroadcastFrame({
           : undefined;
   const areaAlerts = areaBbox ? scopeAlertsToBbox(alerts, areaBbox) : alerts;
   const areaQuakes = areaBbox ? scopeQuakesToBbox(quakes, areaBbox) : quakes;
+  const areaVolcanoes = areaBbox ? scopeVolcanoesToBbox(volcanoes, areaBbox) : volcanoes;
 
   // Country spotlights and region tours both alternate the "IN VIEW" roundup
   // card and the "TOP CITIES" info card as separate slides instead of
@@ -188,6 +194,22 @@ export default function BroadcastFrame({
       ? areaBbox
       : undefined;
   const wideCitiesSlide = usePagedSlides(wideCitiesBbox ? [0, 1] : [], 1);
+  // Quakes stack the magnitude/depth breakdown above the "who's affected"
+  // photo/blurb/webcam panel — together they run far taller than the frame
+  // and cut off against the top edge, so (same fix as wideCitiesSlide above)
+  // they alternate as slides instead of stacking. Both stay mounted (display
+  // toggle, not conditional render) so EventNearbyPanel's own featured-city
+  // cycle and fetched data survive across the toggle.
+  const quakeSlide = usePagedSlides(
+    onAirSegment?.kind === "quake" && onAirSegment.quake ? [0, 1] : [],
+    1,
+  );
+  // Volcano Track Info similarly alternates photo+blurb with the richer
+  // gallery/facts/USGS-alert slide (same "ran taller than the frame" reason
+  // as quakeSlide/wideCitiesSlide) — only when there's actually a second
+  // slide's worth of content to show.
+  const volcanoHasFacts = onAirSegment?.kind === "volcano" && volcanoFactsSlideHasContent(onAirSegment.trackInfo);
+  const volcanoSlide = usePagedSlides(volcanoHasFacts ? [0, 1] : [], 1);
 
   // Whatever currently owns the bottom-left slot (mutually exclusive on
   // segment kind) — the history panel stacks above whichever of these is on
@@ -195,17 +217,40 @@ export default function BroadcastFrame({
   const leftBottomPanel = !onAirSegment
     ? null
     : hasTrackInfo
-      ? <TrackInfoPanel segment={onAirSegment} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
+      ? volcanoHasFacts
+        ? (
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <div style={{ display: volcanoSlide.page === 0 ? "block" : "none" }}>
+              <TrackInfoPanel segment={onAirSegment} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
+            </div>
+            <div style={{ display: volcanoSlide.page === 1 ? "block" : "none" }}>
+              <VolcanoFactsPanel info={onAirSegment.trackInfo!} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
+            </div>
+          </div>
+        )
+        : <TrackInfoPanel segment={onAirSegment} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
       : eventTargeted
         ? onAirSegment.kind === "quake" && onAirSegment.quake
           ? (
-            <QuakeReport
-              mag={onAirSegment.quake.mag}
-              depthKm={onAirSegment.quake.depthKm}
-              center={onAirSegment.camera.center}
-              cities={cities}
-              color={KIND_COLOR.quake}
-            />
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <div style={{ display: quakeSlide.page === 0 ? "block" : "none" }}>
+                <QuakeReport
+                  mag={onAirSegment.quake.mag}
+                  depthKm={onAirSegment.quake.depthKm}
+                  center={onAirSegment.camera.center}
+                  cities={cities}
+                  color={KIND_COLOR.quake}
+                />
+              </div>
+              <div style={{ display: quakeSlide.page === 1 ? "block" : "none" }}>
+                <EventNearbyPanel
+                  center={onAirSegment.camera.center}
+                  cities={cities}
+                  cams={cams}
+                  color={KIND_COLOR.quake}
+                />
+              </div>
+            </div>
           )
           : (
             <EventNearbyPanel
@@ -219,14 +264,14 @@ export default function BroadcastFrame({
           ? (
             <div style={{ display: "flex", flexDirection: "column" }}>
               <div style={{ display: wideCitiesSlide.page === 0 ? "block" : "none" }}>
-                <OnAirCard segment={onAirSegment} alerts={areaAlerts} quakes={areaQuakes} theme={theme} />
+                <OnAirCard segment={onAirSegment} alerts={areaAlerts} quakes={areaQuakes} volcanoes={areaVolcanoes} theme={theme} />
               </div>
               <div style={{ display: wideCitiesSlide.page === 1 ? "block" : "none" }}>
                 <TopCitiesPanel bbox={wideCitiesBbox} color={KIND_COLOR[onAirSegment.kind]} />
               </div>
             </div>
           )
-          : <OnAirCard segment={onAirSegment} alerts={areaAlerts} quakes={areaQuakes} theme={theme} />;
+          : <OnAirCard segment={onAirSegment} alerts={areaAlerts} quakes={areaQuakes} volcanoes={areaVolcanoes} theme={theme} />;
 
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 5 }}>

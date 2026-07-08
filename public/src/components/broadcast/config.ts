@@ -9,6 +9,11 @@ export interface BroadcastTheme {
   name: string;
   /** Small line under the name. */
   tagline: string;
+  /** Optional third, dimmer line under the tagline. */
+  strapline?: string;
+  /** Monogram style for the top-left mark. "orbit" draws a globe+satellite-ring
+   *  glyph; omitted falls back to the classic circle+swoosh monogram. */
+  iconVariant?: "orbit";
   /** Header chip on the top ticker. */
   tickerTitle: string;
   /** Title over the left colour scale. */
@@ -32,11 +37,13 @@ export const BROADCAST_THEMES: Record<string, BroadcastTheme> = {
     panelBorder: "1px solid rgba(120,140,170,0.25)",
   },
   command: {
-    name: "G.O.D.S. COMMAND",
-    tagline: "GLOBAL OBSERVATION & DEFENSE SYSTEM",
+    name: "G.O.D.S.",
+    tagline: "GLOBAL ORBITAL DETECTION SYSTEM",
+    strapline: "LIVE PLANETARY MONITORING",
+    iconVariant: "orbit",
     tickerTitle: "VIGIL TAPE",
     meterTitle: "THREAT MATRIX",
-    accent: "#f5b301",
+    accent: "#4dc8ff",
     panelBg: "linear-gradient(180deg, rgba(10,20,38,0.86), rgba(6,13,26,0.93))",
     panelBorder: "1px solid rgba(90,150,210,0.32)",
   },
@@ -54,11 +61,11 @@ export const BROADCAST_THEMES: Record<string, BroadcastTheme> = {
 /** Picker options for the operator console. */
 export const THEME_OPTIONS: { id: string; label: string }[] = [
   { id: "aurora", label: "Aurora" },
-  { id: "command", label: "Command" },
+  { id: "command", label: "G.O.D.S." },
   { id: "storm", label: "Storm" },
 ];
 
-export const DEFAULT_THEME: BroadcastTheme = BROADCAST_THEMES.aurora;
+export const DEFAULT_THEME: BroadcastTheme = BROADCAST_THEMES.command;
 
 /** Resolve a theme id to its preset, falling back to the default. */
 export function getBroadcastTheme(id?: string): BroadcastTheme {

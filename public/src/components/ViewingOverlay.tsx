@@ -27,6 +27,7 @@ const KIND: Record<SegmentKind, { label: string; color: string }> = {
   country: { label: "Country", color: "#3f8f8f" },
   weather: { label: "Weather", color: "#2f8f4e" },
   storm: { label: "Severe", color: "#d23a3a" },
+  volcano: { label: "Volcano", color: "#c2410c" },
   quake: { label: "Seismic", color: "#e08a1e" },
   flight: { label: "Aircraft", color: "#2aa6c0" },
   ship: { label: "Vessel", color: "#3b6ea5" },

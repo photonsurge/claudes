@@ -101,7 +101,7 @@ const pickRandom = <T>(arr: T[], rng: () => number): T =>
  *  quake/storm outranks a round-up narrative. Exported so the "up next"
  *  preview (worker/src/director/loop.ts) can mirror this same ordering
  *  instead of drifting out of sync with its own copy. */
-export const PRIORITY_KINDS: SegmentKind[] = ["quake", "storm", "summary"];
+export const PRIORITY_KINDS: SegmentKind[] = ["quake", "storm", "volcano", "summary"];
 
 /**
  * Breaking-news preempt: a quake/storm alert nobody's seen yet this session,

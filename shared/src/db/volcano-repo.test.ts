@@ -63,6 +63,25 @@ describe("makeVolcanoRepo", () => {
     expect(res).toEqual({ upserted: 0, matched: 0 });
   });
 
+  it("updateUsgsAlert upserts by volcanoId, sets alert fields + bumps fetchedAt, without touching status/firstDate on an existing doc", async () => {
+    const updateOne = jest.fn(() => ({ exec: jest.fn().mockResolvedValue({}) }));
+    const repo = makeVolcanoRepo({ updateOne } as unknown as Model<iVolcanoModel>);
+    const updatedAt = new Date("2026-07-07T19:15:18Z");
+    await repo.updateUsgsAlert(
+      "gvp:332010",
+      { name: "Kilauea", lat: 19.421, lng: -155.287 },
+      { usgsAlertLevel: "ADVISORY", usgsColorCode: "YELLOW", usgsUpdatedAt: updatedAt },
+    );
+    const [filter, update, opts] = updateOne.mock.calls[0] as any[];
+    expect(filter).toEqual({ volcanoId: "gvp:332010" });
+    expect(update.$set).toMatchObject({ usgsAlertLevel: "ADVISORY", usgsColorCode: "YELLOW", usgsUpdatedAt: updatedAt });
+    expect(update.$set.fetchedAt).toBeInstanceOf(Date);
+    expect(update.$set.status).toBeUndefined();
+    expect(update.$set.firstDate).toBeUndefined();
+    expect(update.$setOnInsert).toMatchObject({ name: "Kilauea", lat: 19.421, lng: -155.287, status: "unrest" });
+    expect(opts).toEqual({ upsert: true });
+  });
+
   it("list() strips docs back to the Volcano domain shape, including statusChangedAt", async () => {
     const doc = {
       volcanoId: "gvp:211060",

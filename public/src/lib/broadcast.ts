@@ -114,11 +114,21 @@ export function scopeQuakesToBbox(quakes: Quake[], bbox: [number, number, number
   return quakes.filter((q) => withinBbox(q.lng, q.lat, bbox));
 }
 
+/** Volcanoes actually inside a [west,south,east,north] box — see scopeAlertsToBbox. */
+export function scopeVolcanoesToBbox(
+  volcanoes: Volcano[],
+  bbox: [number, number, number, number],
+): Volcano[] {
+  return volcanoes.filter((v) => withinBbox(v.lng, v.lat, bbox));
+}
+
 export interface AreaSummary {
   /** Distinct active alerts in view (de-duped by area + hazard). */
   total: number;
   /** Active earthquakes in view. */
   quakeCount: number;
+  /** Erupting/unrest volcanoes in view (dormant excluded, as everywhere else). */
+  volcanoCount: number;
   /** Non-zero severity buckets, most severe first. */
   bySeverity: { rank: number; label: string; color: string; count: number }[];
   /** Hazard-type buckets, most common first. */
@@ -131,7 +141,11 @@ export interface AreaSummary {
  * reads at a glance instead of needing one card per event. Alerts are de-duped by
  * area + hazard so the same town in four languages counts once.
  */
-export function alertSummary(alerts: AlertFeature[], quakes: Quake[] = []): AreaSummary {
+export function alertSummary(
+  alerts: AlertFeature[],
+  quakes: Quake[] = [],
+  volcanoes: Volcano[] = [],
+): AreaSummary {
   const seen = new Map<string, AlertFeature>();
   for (const a of alerts) {
     const p = a.properties;
@@ -164,7 +178,9 @@ export function alertSummary(alerts: AlertFeature[], quakes: Quake[] = []): Area
     })
     .sort((a, b) => b.count - a.count);
 
-  return { total: distinct.length, quakeCount: quakes.length, bySeverity, byHazard };
+  const volcanoCount = volcanoes.filter((v) => v.status !== "dormant").length;
+
+  return { total: distinct.length, quakeCount: quakes.length, volcanoCount, bySeverity, byHazard };
 }
 
 export interface WorldSummary {

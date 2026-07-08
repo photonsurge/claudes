@@ -16,6 +16,7 @@ export const KIND_COLOR: Record<SegmentKind, string> = {
   country: "#3f8f8f",
   weather: "#2f8f4e",
   storm: "#d23a3a",
+  volcano: "#c2410c",
   quake: "#e08a1e",
   flight: "#2aa6c0",
   ship: "#3b6ea5",
@@ -32,6 +33,7 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
   country: "Country",
   weather: "Weather",
   storm: "Severe",
+  volcano: "Volcano",
   quake: "Seismic",
   flight: "Aircraft",
   ship: "Vessel",
@@ -40,7 +42,7 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
 };
 
 /** Kinds that are a single tracked point → get the centred event reticle. */
-const TARGETED = new Set<SegmentKind>(["storm", "quake", "flight", "ship"]);
+const TARGETED = new Set<SegmentKind>(["storm", "volcano", "quake", "flight", "ship"]);
 
 /** True when the segment is a specific point the reticle should frame. */
 export function isTargetedEvent(kind: SegmentKind): boolean {

@@ -400,7 +400,7 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     // whole-globe spin to just the major cities so it never turns to text soup.
     showCities: true,
     autoSpin: true,
-    spinSpeed: 6,
+    spinSpeed: 3,
     zoomDrift: 0,
   },
   // Global ocean spin — the active ocean variable (sst / wave) is filled in per
@@ -411,7 +411,7 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     showWind: true,
     showCities: true,
     autoSpin: true,
-    spinSpeed: 6,
+    spinSpeed: 3,
     zoomDrift: 0,
   },
   // Orbital constellation showcase — no weather map, just the dark globe with
@@ -425,7 +425,7 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     showTrackLabels: true,
     showCities: true,
     autoSpin: true,
-    spinSpeed: 5,
+    spinSpeed: 2.5,
     zoomDrift: 0,
   },
   tour: {
@@ -480,6 +480,23 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     // Drop the severity filter while framing a storm so the very alert the
     // director picked is guaranteed visible (the scene baseline may filter higher).
     alertSeverityMin: 0,
+    showCities: true,
+    autoSpin: false,
+    spinSpeed: 0,
+    zoomDrift: 0.045,
+  },
+  // Same geology read as the quake preset below (no weather field is relevant
+  // to an eruption) plus the volcano overlay itself so the erupting/unrest
+  // marker the director picked is actually visible on screen.
+  volcano: {
+    ...LAYERS_OFF,
+    activeVariable: null,
+    showElevation: true,
+    elevation: { ...DEFAULT_ELEVATION_SETTINGS, interval: 250, majorInterval: 10000 },
+    showVolcanoes: true,
+    // Volcanoes cluster along subduction zones — the plate-boundary line tells
+    // the "why here" story, same reasoning as the quake preset's showFaults.
+    showFaults: true,
     showCities: true,
     autoSpin: false,
     spinSpeed: 0,
@@ -565,7 +582,7 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     alertSeverityMin: 0,
     showVolcanoes: true,
     autoSpin: true,
-    spinSpeed: 4,
+    spinSpeed: 2,
     zoomDrift: 0,
   },
 };

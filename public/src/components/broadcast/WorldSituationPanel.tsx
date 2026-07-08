@@ -249,7 +249,7 @@ export default function WorldSituationPanel({
           color: "#dfe7f5",
         }}
       >
-        <span>WORLD WATCH</span>
+        <span>DETECTION GRID</span>
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: theme.accent }}>
           LAST 24H
         </span>
@@ -257,8 +257,8 @@ export default function WorldSituationPanel({
 
       <div style={{ display: "flex", gap: 18 }}>
         <StatTile label="ALERTS" value={s.alertTotal} color={topColor} />
-        <StatTile label="QUAKES" value={s.quakeCount} color={theme.accent} />
-        <StatTile label="VOLCANOES" value={s.volcanoCount} color={volcanoColor} />
+        <StatTile label="SEISMIC" value={s.quakeCount} color={theme.accent} />
+        <StatTile label="VOLCANIC" value={s.volcanoCount} color={volcanoColor} />
       </div>
 
       {s.bySeverity.length > 0 ? (
@@ -288,7 +288,7 @@ export default function WorldSituationPanel({
       {s.byContinent.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {/* Column legend — once, not per row — so it's clear the three mini
-              graphs below are ALERTS, QUAKES, then VOLCANOES, not one blended bar. */}
+              graphs below are ALERTS, SEISMIC, then VOLCANIC, not one blended bar. */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ flex: "0 0 66px" }} />
             <span style={{ flex: 1, fontSize: 9, fontWeight: 800, letterSpacing: 1, color: topColor }}>
@@ -305,7 +305,7 @@ export default function WorldSituationPanel({
                 color: theme.accent,
               }}
             >
-              QUAKES
+              SEISMIC
             </span>
             <span style={{ flex: "0 0 18px" }} />
             <span
@@ -318,7 +318,7 @@ export default function WorldSituationPanel({
                 color: volcanoColor,
               }}
             >
-              VOLCANOES
+              VOLCANIC
             </span>
             <span style={{ flex: "0 0 18px" }} />
           </div>

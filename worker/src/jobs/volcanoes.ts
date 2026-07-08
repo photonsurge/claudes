@@ -1,12 +1,15 @@
 import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { fetchVolcanoes } from "@photonsurge/shared/volcanoes/gvp";
-import { fetchWikiSummary } from "@photonsurge/shared/utill/wikipedia";
+import { fetchUsgsVonaAlerts } from "@photonsurge/shared/volcanoes/usgs-vona";
+import { fetchWikiSummary, fetchWikiGallery } from "@photonsurge/shared/utill/wikipedia";
+import { fetchVolcanoFacts } from "@photonsurge/shared/utill/wikidata";
 import { log } from "@photonsurge/shared/utill/logger";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
+import { parseReportFacts } from "../volcanoes/parseReport";
 
 const TAG = "job:volcanoes";
 
@@ -86,14 +89,21 @@ export async function runVolcanoWikiEnrich(opts: VolcanoWikiEnrichOpts = {}) {
         noMatch++;
         await db.volcanoes.updateEnrichment(v.volcanoId, { wikiFetchedAt: new Date() });
       } else {
+        await sleep(GAP_MS);
+        const [gallery, facts] = await Promise.all([fetchWikiGallery(r.title), fetchVolcanoFacts(r.title)]);
         await db.volcanoes.updateEnrichment(v.volcanoId, {
           wikiTitle: r.title,
           wikiThumb: r.thumb,
+          wikiPhoto: r.photo,
           wikiExtract: r.extract,
+          wikiGallery: gallery.length ? gallery : undefined,
           wikiFetchedAt: new Date(),
+          elevationM: facts.elevationM,
+          volcanoType: facts.volcanoType,
+          lastEruptionYear: facts.lastEruptionYear,
         });
         enriched++;
-        if (r.thumb) withPhoto++;
+        if (r.thumb || r.photo) withPhoto++;
       }
     } catch (err) {
       log(TAG, `enrichWiki ${v.name} failed`, summarizeForLog(err));
@@ -123,6 +133,97 @@ export async function enrichWiki(job: Job) {
   } catch (err) {
     log(TAG, `enrichWiki failed`, summarizeForLog(err));
     blogErr(TAG, `volcano wiki enrichment failed`, err, "volcanoes", "enrich");
+    throw err;
+  }
+}
+
+// ── LLM bulletin parsing ──────────────────────────────────────────────────────
+
+/**
+ * Re-parse each volcano whose weekly `latestReport` text is newer than its
+ * last LLM parse (see volcano-repo.ts#listNeedingReportParse) — unlike wiki
+ * enrichment this re-runs every time a fresh bulletin lands, not on a 30-day
+ * gate. Fully skips (never touches Mongo) when `OPENROUTER_API_KEY` is unset.
+ */
+export async function runVolcanoReportParse() {
+  const db = await getAppDb();
+  const volcanoes = await db.volcanoes.listNeedingReportParse();
+  log(TAG, `parseReports ${volcanoes.length} candidates`);
+
+  let parsed = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (const v of volcanoes) {
+    const facts = await parseReportFacts(v.latestReport ?? "");
+    if (facts.status === "skipped") {
+      skipped++;
+      break; // no API key configured — every subsequent call will also skip.
+    }
+    if (facts.status === "error") {
+      failed++;
+      log(TAG, `parseReports ${v.name} failed`, facts.error);
+      continue;
+    }
+    await db.volcanoes.updateEnrichment(v.volcanoId, {
+      reportVei: facts.vei,
+      reportPlumeHeightM: facts.plumeHeightM,
+      reportParsedAt: new Date(),
+    });
+    parsed++;
+    await sleep(GAP_MS);
+  }
+
+  const result = { candidates: volcanoes.length, parsed, skipped, failed };
+  log(TAG, `parseReports done`, result);
+  if (parsed > 0) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: parsed } });
+  return result;
+}
+
+/** Job handler: `volcanoes.parseReports`. */
+export async function parseReports(_job: Job) {
+  try {
+    return await runVolcanoReportParse();
+  } catch (err) {
+    log(TAG, `parseReports failed`, summarizeForLog(err));
+    blogErr(TAG, `volcano report parsing failed`, err, "volcanoes", "parseReports");
+    throw err;
+  }
+}
+
+// ── USGS VONA (near-real-time alert level, US-monitored volcanoes only) ─────
+
+/**
+ * Pulls the USGS Volcano Notification Service "elevated" feed — much fresher
+ * than the weekly GVP bulletin, but only covers US-monitored volcanoes
+ * (Hawaii/Alaska/Cascades/etc.) and is an undocumented endpoint, so failures
+ * here are logged and swallowed rather than thrown where reasonable per-item,
+ * while a total fetch failure still surfaces (matches the GVP snapshot).
+ */
+export async function snapshotUsgs(_job: Job) {
+  const db = await getAppDb();
+  try {
+    const alerts = await fetchUsgsVonaAlerts();
+    for (const a of alerts) {
+      await db.volcanoes.updateUsgsAlert(
+        a.volcanoId,
+        { name: a.name, lat: a.lat, lng: a.lng },
+        {
+          usgsAlertLevel: a.alertLevel,
+          usgsColorCode: a.colorCode,
+          usgsNoticeSynopsis: a.noticeSynopsis,
+          usgsNoticeUrl: a.noticeUrl,
+          usgsUpdatedAt: new Date(a.updatedAtMs),
+        },
+      );
+    }
+    const result = { alerts: alerts.length };
+    log(TAG, `usgs vona snapshot done`, result);
+    blogInfo(TAG, `usgs vona snapshot: ${alerts.length} elevated`, result, "volcanoes", "snapshotUsgs");
+    if (alerts.length > 0) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: alerts.length } });
+    return result;
+  } catch (err) {
+    log(TAG, `usgs vona snapshot failed`, summarizeForLog(err));
+    blogErr(TAG, `usgs vona snapshot failed`, err, "volcanoes", "snapshotUsgs");
     throw err;
   }
 }

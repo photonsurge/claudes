@@ -16,6 +16,7 @@ const KIND_LABEL: Record<SegmentKind, string> = {
   country: "Country",
   weather: "Weather",
   storm: "Severe",
+  volcano: "Volcano",
   quake: "Seismic",
   flight: "Aircraft",
   ship: "Vessel",

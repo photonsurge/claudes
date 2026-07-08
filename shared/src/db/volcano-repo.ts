@@ -18,8 +18,21 @@ const strip = (doc: any): Volcano => ({
   reportDateRange: doc.reportDateRange || undefined,
   wikiTitle: doc.wikiTitle || undefined,
   wikiThumb: doc.wikiThumb || undefined,
+  wikiPhoto: doc.wikiPhoto || undefined,
   wikiExtract: doc.wikiExtract || undefined,
+  wikiGallery: doc.wikiGallery?.length ? doc.wikiGallery : undefined,
   wikiFetchedAt: doc.wikiFetchedAt ? new Date(doc.wikiFetchedAt).getTime() : undefined,
+  elevationM: doc.elevationM ?? undefined,
+  volcanoType: doc.volcanoType || undefined,
+  lastEruptionYear: doc.lastEruptionYear ?? undefined,
+  usgsAlertLevel: doc.usgsAlertLevel || undefined,
+  usgsColorCode: doc.usgsColorCode || undefined,
+  usgsNoticeSynopsis: doc.usgsNoticeSynopsis || undefined,
+  usgsNoticeUrl: doc.usgsNoticeUrl || undefined,
+  usgsUpdatedAt: doc.usgsUpdatedAt ? new Date(doc.usgsUpdatedAt).getTime() : undefined,
+  reportVei: doc.reportVei ?? undefined,
+  reportPlumeHeightM: doc.reportPlumeHeightM ?? undefined,
+  reportParsedAt: doc.reportParsedAt ? new Date(doc.reportParsedAt).getTime() : undefined,
 });
 
 /**
@@ -109,12 +122,84 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
       return model.find(q).lean().exec();
     },
 
-    /** Patch Wikipedia enrichment fields onto one volcano by its source `volcanoId`. */
+    /**
+     * Volcanoes with report text that hasn't been LLM-parsed since it last
+     * changed — i.e. `reportParsedAt` missing, or older than this week's
+     * `lastDate` (a fresh bulletin landed since the last parse). Unlike wiki
+     * enrichment's 30-day gate, this re-checks every new weekly report.
+     */
+    async listNeedingReportParse(): Promise<iVolcanoModel[]> {
+      return model
+        .find({
+          latestReport: { $exists: true, $ne: "" },
+          $expr: { $or: [{ $eq: ["$reportParsedAt", null] }, { $lt: ["$reportParsedAt", "$lastDate"] }] },
+        })
+        .lean()
+        .exec();
+    },
+
+    /** Patch Wikipedia/Wikidata/LLM enrichment fields onto one volcano by its source `volcanoId`. */
     async updateEnrichment(
       volcanoId: string,
-      patch: { wikiTitle?: string; wikiThumb?: string; wikiExtract?: string; wikiFetchedAt: Date },
+      patch: {
+        wikiTitle?: string;
+        wikiThumb?: string;
+        wikiPhoto?: string;
+        wikiExtract?: string;
+        wikiGallery?: string[];
+        wikiFetchedAt?: Date;
+        elevationM?: number;
+        volcanoType?: string;
+        lastEruptionYear?: number;
+        reportVei?: number;
+        reportPlumeHeightM?: number;
+        reportParsedAt?: Date;
+      },
     ): Promise<void> {
       await model.updateOne({ volcanoId }, { $set: patch }).exec();
+    },
+
+    /**
+     * Patch USGS VONA alert fields onto a volcano, upserting a bare-bones stub
+     * doc if it isn't already tracked from this week's GVP bulletin (USGS's
+     * monitored set and the weekly bulletin's set don't perfectly overlap).
+     * Never touches firstDate/status/etc. — those stay GVP-bulletin-owned.
+     * Also bumps `fetchedAt` so a volcano USGS still lists as elevated doesn't
+     * age out of the TTL just because the weekly bulletin stopped mentioning it.
+     */
+    async updateUsgsAlert(
+      volcanoId: string,
+      stub: { name: string; lat: number; lng: number },
+      patch: {
+        usgsAlertLevel?: string;
+        usgsColorCode?: string;
+        usgsNoticeSynopsis?: string;
+        usgsNoticeUrl?: string;
+        usgsUpdatedAt: Date;
+      },
+    ): Promise<void> {
+      const now = new Date();
+      await model
+        .updateOne(
+          { volcanoId },
+          {
+            $set: { ...patch, fetchedAt: now },
+            $setOnInsert: {
+              id: uuidv4(),
+              name: stub.name,
+              lat: stub.lat,
+              lng: stub.lng,
+              status: "unrest",
+              firstDate: now,
+              lastDate: now,
+              statusChangedAt: now,
+              fetchedAt: now,
+              loc: { type: "Point" as const, coordinates: [stub.lng, stub.lat] as [number, number] },
+            },
+          },
+          { upsert: true },
+        )
+        .exec();
     },
   };
 }

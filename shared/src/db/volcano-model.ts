@@ -35,8 +35,21 @@ export interface iVolcano extends iGeneralModel {
   /** Wikipedia enrichment (see worker/src/jobs/volcanoes.ts#enrichWiki). */
   wikiTitle?: string;
   wikiThumb?: string;
+  wikiPhoto?: string;
   wikiExtract?: string;
+  wikiGallery?: string[];
   wikiFetchedAt?: Date;
+  elevationM?: number;
+  volcanoType?: string;
+  lastEruptionYear?: number;
+  usgsAlertLevel?: string;
+  usgsColorCode?: string;
+  usgsNoticeSynopsis?: string;
+  usgsNoticeUrl?: string;
+  usgsUpdatedAt?: Date;
+  reportVei?: number;
+  reportPlumeHeightM?: number;
+  reportParsedAt?: Date;
 }
 
 export interface iVolcanoModel extends iVolcano {
@@ -66,8 +79,21 @@ const VolcanoSchema = new mongoose.Schema<iVolcanoModel>(
     },
     wikiTitle: { type: String, required: false },
     wikiThumb: { type: String, required: false },
+    wikiPhoto: { type: String, required: false },
     wikiExtract: { type: String, required: false },
+    wikiGallery: { type: [String], required: false },
     wikiFetchedAt: { type: Date, required: false },
+    elevationM: { type: Number, required: false },
+    volcanoType: { type: String, required: false },
+    lastEruptionYear: { type: Number, required: false },
+    usgsAlertLevel: { type: String, required: false },
+    usgsColorCode: { type: String, required: false },
+    usgsNoticeSynopsis: { type: String, required: false },
+    usgsNoticeUrl: { type: String, required: false },
+    usgsUpdatedAt: { type: Date, required: false },
+    reportVei: { type: Number, required: false },
+    reportPlumeHeightM: { type: Number, required: false },
+    reportParsedAt: { type: Date, required: false },
   },
   { timestamps: false },
 );

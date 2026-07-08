@@ -11,6 +11,7 @@ import {
   alertSummary,
   scopeAlertsToBbox,
   scopeQuakesToBbox,
+  scopeVolcanoesToBbox,
   worldWatchSummary,
   worldWatchFeed,
 } from "./broadcast";
@@ -148,6 +149,16 @@ describe("alertSummary", () => {
     expect(s.total).toBe(0);
     expect(s.bySeverity).toEqual([]);
     expect(s.byHazard).toEqual([]);
+    expect(s.volcanoCount).toBe(0);
+  });
+
+  it("counts erupting/unrest volcanoes but excludes dormant ones", () => {
+    const s = alertSummary(
+      [],
+      [],
+      [volcano({ status: "erupting" }), volcano({ id: "gvp:2", status: "unrest" }), volcano({ id: "gvp:3", status: "dormant" })],
+    );
+    expect(s.volcanoCount).toBe(2);
   });
 });
 
@@ -170,6 +181,12 @@ describe("scopeAlertsToBbox / scopeQuakesToBbox", () => {
     const inside = quake({ id: "in", lng: -9.14, lat: 38.72 });
     const outside = quake({ id: "out", lng: 2.35, lat: 48.86 });
     expect(scopeQuakesToBbox([inside, outside], portugal)).toEqual([inside]);
+  });
+
+  it("keeps only volcanoes inside the bbox", () => {
+    const inside = volcano({ id: "in", lng: -9.14, lat: 38.72 });
+    const outside = volcano({ id: "out", lng: 2.35, lat: 48.86 });
+    expect(scopeVolcanoesToBbox([inside, outside], portugal)).toEqual([inside]);
   });
 });
 

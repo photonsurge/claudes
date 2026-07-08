@@ -24,6 +24,7 @@ import { DEFAULT_DIRECTOR_COUNTRIES, sanitizeDirectorCountries } from "./directo
 import { DEFAULT_SEA_POINTS, sanitizeDirectorSeaPoints } from "./director-sea-points";
 import { isSatImgLook, SATIMG_FEEDS, type SatImgFeedState } from "./satimg/types";
 import { QUAKE_MAGNITUDE_BANDS, quakeMagnitudeClass, type QuakeMagnitudeClass } from "./seismic";
+import type { VolcanoStatus } from "./volcanoes/types";
 // Value import (not just a type) — safe despite director-rois.ts importing
 // SegmentKind back from here, since that reverse import is `import type`
 // (erased at runtime), so there's no actual circular runtime dependency.
@@ -40,6 +41,7 @@ export type SegmentKind =
   | "country" // an operator-favourited country spotlight (national weather check)
   | "weather" // scalar field over a region of interest
   | "storm" // a severe-weather alert area
+  | "volcano" // an erupting or unrest volcano (Smithsonian/USGS bulletin)
   | "quake" // a recent significant earthquake
   | "flight" // a notable aircraft
   | "ship" // a notable vessel
@@ -55,6 +57,7 @@ export const SEGMENT_KINDS: SegmentKind[] = [
   "country",
   "weather",
   "storm",
+  "volcano",
   "quake",
   "flight",
   "ship",
@@ -218,6 +221,14 @@ export interface TrackInfo {
   notable?: boolean;
   /** Top-tier VIP (e.g. Air Force One). */
   vip?: boolean;
+  /** Volcano-only: a few extra photos for a second-slide gallery strip. */
+  gallery?: string[];
+  /** Volcano-only: "stratovolcano · 3,357 m · last known eruption 2021" — pre-joined so the panel stays generic. */
+  facts?: string;
+  /** Volcano-only: USGS VONA near-real-time alert (only set for the US-monitored subset). */
+  alert?: { level?: string; colorCode?: string; synopsis?: string; noticeUrl?: string; updatedAt?: number };
+  /** Volcano-only: LLM-parsed facts from this week's bulletin, e.g. "VEI 2 · plume 3,000 m". */
+  reportFacts?: string;
 }
 
 /**
@@ -276,6 +287,25 @@ export function stormLevelForRank(rank: number): StormLevel {
 export const QUAKE_LEVELS: QuakeMagnitudeClass[] = QUAKE_MAGNITUDE_BANDS.map((b) => b.cls);
 
 /**
+ * Volcano hold levels — one named tier per schedulable status, strongest
+ * first. Unlike storm/quake there's no VEI or other intensity number in the
+ * source bulletin, so this tracks the Smithsonian/USGS status directly rather
+ * than a numeric band; `dormant` never reaches here (excluded upstream, see
+ * candidates.ts) so it isn't a level.
+ */
+export const VOLCANO_LEVELS = [
+  { key: "erupting", status: "erupting", label: "Erupting" },
+  { key: "unrest", status: "unrest", label: "Unrest" },
+] as const satisfies { key: string; status: VolcanoStatus; label: string }[];
+
+export type VolcanoLevel = (typeof VOLCANO_LEVELS)[number]["key"];
+
+/** Bucket a volcano status into its hold level (dormant never airs, see above). */
+export function volcanoLevelForStatus(status: VolcanoStatus): VolcanoLevel {
+  return status === "erupting" ? "erupting" : "unrest";
+}
+
+/**
  * Operator-set, durable director configuration. Persisted to Mongo; the worker
  * re-reads it every tick so changes take effect within one tick with no socket
  * plumbing in the operator→worker direction.
@@ -293,6 +323,8 @@ export interface DirectorConfig {
   quakeHoldSeconds: Record<QuakeMagnitudeClass, number>;
   /** Hold per storm severity level (info … extreme), seconds. */
   stormHoldSeconds: Record<StormLevel, number>;
+  /** Hold per volcano status level (unrest / erupting), seconds. */
+  volcanoHoldSeconds: Record<VolcanoLevel, number>;
   /**
    * Fixed camera-flight time between shots, seconds — the "set" transition. The
    * worker stamps `holdMs`→hold and this→`cutTransitionMs` on every cut, so each
@@ -410,6 +442,7 @@ export const DEFAULT_KIND_HOLD_SECONDS: Record<SegmentKind, number> = {
   country: 12,
   weather: 12,
   storm: 12,
+  volcano: 12,
   quake: 12,
   flight: 12,
   ship: 12,
@@ -437,6 +470,12 @@ export const DEFAULT_STORM_HOLD_SECONDS: Record<StormLevel, number> = {
   moderate: 12,
   severe: 16,
   extreme: 24,
+};
+
+/** Default hold per volcano status level — an active eruption lingers longer than mere unrest. */
+export const DEFAULT_VOLCANO_HOLD_SECONDS: Record<VolcanoLevel, number> = {
+  unrest: 14,
+  erupting: 22,
 };
 
 /** Every overlay toggle off — the base a seed slide's `on` list layers onto. */
@@ -842,6 +881,7 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   kindHoldSeconds: DEFAULT_KIND_HOLD_SECONDS,
   quakeHoldSeconds: DEFAULT_QUAKE_HOLD_SECONDS,
   stormHoldSeconds: DEFAULT_STORM_HOLD_SECONDS,
+  volcanoHoldSeconds: DEFAULT_VOLCANO_HOLD_SECONDS,
   transitionSeconds: 4,
   kinds: {
     intro: true,
@@ -851,6 +891,7 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
     country: true,
     weather: true,
     storm: true,
+    volcano: true,
     quake: true,
     flight: true,
     ship: true,
@@ -1127,6 +1168,11 @@ export function mergeDirectorConfig(
       base.stormHoldSeconds,
       patch.stormHoldSeconds,
     ),
+    volcanoHoldSeconds: mergeHolds(
+      VOLCANO_LEVELS.map((l) => l.key),
+      base.volcanoHoldSeconds,
+      patch.volcanoHoldSeconds,
+    ),
     transitionSeconds: Math.max(0.5, num(patch.transitionSeconds, base.transitionSeconds)),
     kinds,
     countries: sanitizeDirectorCountries(patch.countries) ?? base.countries,
@@ -1158,6 +1204,12 @@ export function quakeHoldMs(cfg: DirectorConfig, mag: number): number {
 export function stormHoldMs(cfg: DirectorConfig, severityRank: number): number {
   const level = stormLevelForRank(severityRank);
   return Math.round(num(cfg.stormHoldSeconds?.[level], DEFAULT_STORM_HOLD_SECONDS[level]) * 1000);
+}
+
+/** Configured hold for a volcano of this status, in ms (per level). */
+export function volcanoHoldMs(cfg: DirectorConfig, status: VolcanoStatus): number {
+  const level = volcanoLevelForStatus(status);
+  return Math.round(num(cfg.volcanoHoldSeconds?.[level], DEFAULT_VOLCANO_HOLD_SECONDS[level]) * 1000);
 }
 
 export const INITIAL_DIRECTOR_STATE: DirectorState = {

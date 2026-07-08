@@ -198,12 +198,13 @@ describe("buildCandidates", () => {
     expect(untimed.find((c) => c.segment.id === "quake:q1")!.breaking).toBe(false);
   });
 
-  it("only flags a storm breaking when its onset is recent (not just unaired)", async () => {
-    const alert = (onset: string | undefined) => [
+  it("flags a storm breaking based on when we first saw it, not the CAP onset/effective timestamps", async () => {
+    const alert = (created: string, onset?: string) => [
       {
         source: "nws",
         identifier: "a1",
         maxSeverityRank: 4,
+        created,
         info: [
           {
             event: "Hurricane Warning",
@@ -221,14 +222,18 @@ describe("buildCandidates", () => {
     const recent = await buildCandidates(fakeDb({ alerts: alert(new Date().toISOString()) }), cfg());
     expect(recent.find((c) => c.segment.kind === "storm")!.breaking).toBe(true);
 
+    // Ingested an hour ago — no longer breaking, even though NWS re-stamped the onset
+    // just now (national met services do this on every refresh of an ongoing warning).
     const stale = await buildCandidates(
-      fakeDb({ alerts: alert(new Date(Date.now() - 60 * 60 * 1000).toISOString()) }),
+      fakeDb({
+        alerts: alert(new Date(Date.now() - 60 * 60 * 1000).toISOString(), new Date().toISOString()),
+      }),
       cfg(),
     );
     expect(stale.find((c) => c.segment.kind === "storm")!.breaking).toBe(false);
   });
 
-  it("adds an erupting volcano candidate reusing the storm kind/hazard", async () => {
+  it("adds an erupting volcano candidate as its own segment kind", async () => {
     const pool = await buildCandidates(
       fakeDb({
         volcanoes: [
@@ -237,10 +242,9 @@ describe("buildCandidates", () => {
       }),
       cfg(),
     );
-    const v = pool.find((c) => c.segment.id === "storm:gvp:1");
+    const v = pool.find((c) => c.segment.id === "volcano:gvp:1");
     expect(v).toBeTruthy();
-    expect(v!.segment.kind).toBe("storm");
-    expect(v!.segment.hazard).toBe("volcano");
+    expect(v!.segment.kind).toBe("volcano");
     expect(v!.segment.title).toBe("Etna");
     expect(v!.segment.camera.center).toEqual([15, 37.7]);
     expect(v!.score).toBeCloseTo(50 + 3 * 12); // sev 3 (erupting)
@@ -255,7 +259,7 @@ describe("buildCandidates", () => {
       }),
       cfg(),
     );
-    expect(pool.find((c) => c.segment.id === "storm:gvp:2")).toBeUndefined();
+    expect(pool.find((c) => c.segment.id === "volcano:gvp:2")).toBeUndefined();
   });
 
   it("only flags a volcano breaking when its status just flipped to erupting", async () => {
@@ -267,7 +271,7 @@ describe("buildCandidates", () => {
       }),
       cfg(),
     );
-    expect(justChanged.find((c) => c.segment.id === "storm:gvp:1")!.breaking).toBe(true);
+    expect(justChanged.find((c) => c.segment.id === "volcano:gvp:1")!.breaking).toBe(true);
 
     const longErupting = await buildCandidates(
       fakeDb({
@@ -285,7 +289,7 @@ describe("buildCandidates", () => {
       }),
       cfg(),
     );
-    expect(longErupting.find((c) => c.segment.id === "storm:gvp:1")!.breaking).toBe(false);
+    expect(longErupting.find((c) => c.segment.id === "volcano:gvp:1")!.breaking).toBe(false);
 
     const unrest = await buildCandidates(
       fakeDb({
@@ -296,7 +300,7 @@ describe("buildCandidates", () => {
       cfg(),
     );
     // Only a fresh transition to erupting counts as breaking — unrest never does.
-    expect(unrest.find((c) => c.segment.id === "storm:gvp:3")!.breaking).toBe(false);
+    expect(unrest.find((c) => c.segment.id === "volcano:gvp:3")!.breaking).toBe(false);
   });
 
   it("layers an operator overlayOverride onto the preset without touching other kinds", async () => {

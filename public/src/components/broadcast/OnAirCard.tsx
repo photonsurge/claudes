@@ -8,6 +8,7 @@
  * rows — the same info the old free-floating "now viewing" card carried.
  */
 import type { Segment } from "@photonsurge/shared/director";
+import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake } from "../../lib/tracks/types";
 import { alertSummary } from "../../lib/broadcast";
@@ -19,17 +20,19 @@ export default function OnAirCard({
   segment,
   alerts = [],
   quakes = [],
+  volcanoes = [],
   theme = DEFAULT_THEME,
 }: {
   segment: Segment;
   alerts?: AlertFeature[];
   quakes?: Quake[];
+  volcanoes?: Volcano[];
   theme?: BroadcastTheme;
 }) {
   const color = KIND_COLOR[segment.kind] ?? theme.accent;
   const kindLabel = KIND_LABEL[segment.kind] ?? segment.kind;
   const details = (segment.details ?? []).slice(0, 3);
-  const summary = alertSummary(alerts, quakes);
+  const summary = alertSummary(alerts, quakes, volcanoes);
 
   return (
     <div
@@ -130,8 +133,17 @@ export default function OnAirCard({
       ) : null}
 
       {/* On a wide/area shot, roll up everything on screen into a count + type
-          breakdown so a busy region reads at a glance. */}
-      {summary.total || summary.quakeCount ? <AreaStatus summary={summary} /> : null}
+          breakdown so a busy region reads at a glance. For a country/region
+          spotlight with nothing active, say so rather than leaving a silent gap. */}
+      {summary.total || summary.quakeCount || summary.volcanoCount ? (
+        <AreaStatus summary={summary} />
+      ) : segment.kind === "country" || segment.kind === "tour" ? (
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(120,140,170,0.18)" }}>
+          <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.2, color: "#7f8ea6" }}>
+            NO ACTIVE ALERTS
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -25,6 +25,14 @@ const STATUS_COLOR: Record<VolcanoStatus, string> = {
   dormant: "#94a3b8",
 };
 
+// USGS aviation colour code, straight from the VONA feed (not a status we derive ourselves).
+const USGS_COLOR: Record<string, string> = {
+  RED: "#ef4444",
+  ORANGE: "#f97316",
+  YELLOW: "#eab308",
+  GREEN: "#34d399",
+};
+
 const STATUS_LABEL: Record<VolcanoStatus, string> = {
   erupting: "Erupting",
   unrest: "Unrest",
@@ -146,6 +154,7 @@ export default function VolcanoesTable() {
                 <th style={th}>Status</th>
                 <th style={th}>Last update</th>
                 <th style={th}>Wiki</th>
+                <th style={th}>USGS alert</th>
                 <th style={thNum}>Lat</th>
                 <th style={thNum}>Lng</th>
               </tr>
@@ -165,6 +174,9 @@ export default function VolcanoesTable() {
                     <td style={{ ...td, color: STATUS_COLOR[v.status] }}>● {STATUS_LABEL[v.status]}</td>
                     <td style={{ ...td, color: "#8b95a7" }}>{formatDate(v.lastDate)}</td>
                     <td style={{ ...td, color: wiki.color }}>{wiki.label}</td>
+                    <td style={{ ...td, color: v.usgsColorCode ? USGS_COLOR[v.usgsColorCode] ?? "#cbd5e1" : "#8b95a7" }}>
+                      {v.usgsColorCode ? `● ${v.usgsColorCode}` : "—"}
+                    </td>
                     <td style={tdNum}>{v.lat.toFixed(3)}</td>
                     <td style={tdNum}>{v.lng.toFixed(3)}</td>
                   </tr>
@@ -172,7 +184,7 @@ export default function VolcanoesTable() {
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td style={td} colSpan={7}>
+                  <td style={td} colSpan={8}>
                     {volcanoes.length === 0 ? "No active volcanoes cached yet — hit Refresh now." : "No matches."}
                   </td>
                 </tr>
@@ -193,26 +205,80 @@ export default function VolcanoesTable() {
                 ×
               </button>
             </div>
-            {selected.wikiThumb && (
+            {(selected.wikiPhoto || selected.wikiThumb) && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={selected.wikiThumb}
+                src={selected.wikiPhoto || selected.wikiThumb}
                 alt=""
                 style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 6, background: "#080b11" }}
               />
+            )}
+            {selected.wikiGallery && selected.wikiGallery.length > 0 && (
+              <div style={{ display: "flex", gap: 4, marginTop: 4, overflowX: "auto" }}>
+                {selected.wikiGallery.map((url) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={url}
+                    src={url}
+                    alt=""
+                    style={{ width: 60, height: 44, objectFit: "cover", borderRadius: 4, background: "#080b11", flexShrink: 0 }}
+                  />
+                ))}
+              </div>
             )}
             <div style={{ ...asOf, marginTop: 8, color: STATUS_COLOR[selected.status] }}>
               ● {STATUS_LABEL[selected.status]}
               {selected.country ? ` · ${selected.country}` : ""}
             </div>
+            {(selected.volcanoType || selected.elevationM || selected.lastEruptionYear) && (
+              <div style={asOf}>
+                {[
+                  selected.volcanoType,
+                  selected.elevationM ? `${selected.elevationM.toLocaleString()} m` : undefined,
+                  selected.lastEruptionYear ? `last known eruption ${selected.lastEruptionYear}` : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </div>
+            )}
             <div style={asOf}>
               This week's report{selected.reportDateRange ? ` (${selected.reportDateRange})` : ""}: {formatDate(selected.lastDate)}
             </div>
             <div style={asOf}>Tracked here since: {formatDate(selected.firstDate)}</div>
+            {selected.usgsColorCode && (
+              <div style={{ marginTop: 10, border: "1px solid #1b2030", borderRadius: 6, padding: 8 }}>
+                <div style={{ color: USGS_COLOR[selected.usgsColorCode] ?? "#cbd5e1", fontSize: 12, fontWeight: 600 }}>
+                  ● USGS {selected.usgsColorCode}
+                  {selected.usgsAlertLevel ? ` / ${selected.usgsAlertLevel}` : ""}
+                </div>
+                {selected.usgsNoticeSynopsis && (
+                  <p style={{ color: "#cbd5e1", fontSize: 12, lineHeight: 1.4, margin: "4px 0 0" }}>
+                    {selected.usgsNoticeSynopsis}
+                  </p>
+                )}
+                {selected.usgsUpdatedAt && <div style={asOf}>Updated: {formatDate(selected.usgsUpdatedAt)}</div>}
+                {selected.usgsNoticeUrl && (
+                  <a href={selected.usgsNoticeUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", fontSize: 12, display: "inline-block", marginTop: 4 }}>
+                    USGS notice ↗
+                  </a>
+                )}
+              </div>
+            )}
             {selected.latestReport && (
               <div style={{ marginTop: 10 }}>
                 <div style={{ ...asOf, textTransform: "uppercase", letterSpacing: 0.6, fontSize: 10 }}>Latest bulletin</div>
                 <p style={{ color: "#cbd5e1", fontSize: 12, lineHeight: 1.45, margin: "4px 0 0" }}>{selected.latestReport}</p>
+                {(selected.reportVei !== undefined || selected.reportPlumeHeightM !== undefined) && (
+                  <div style={asOf}>
+                    Parsed:{" "}
+                    {[
+                      selected.reportVei !== undefined ? `VEI ${selected.reportVei}` : undefined,
+                      selected.reportPlumeHeightM !== undefined ? `plume ${selected.reportPlumeHeightM.toLocaleString()} m` : undefined,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                )}
               </div>
             )}
             {selected.wikiExtract && (

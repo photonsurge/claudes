@@ -9,7 +9,7 @@
 import type { AreaSummary } from "../../lib/broadcast";
 
 export default function AreaStatus({ summary }: { summary: AreaSummary }) {
-  const { total, quakeCount, bySeverity, byHazard } = summary;
+  const { total, quakeCount, volcanoCount, bySeverity, byHazard } = summary;
   return (
     <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(120,140,170,0.18)" }}>
       {/* Headline counts */}
@@ -26,6 +26,11 @@ export default function AreaStatus({ summary }: { summary: AreaSummary }) {
         {quakeCount ? (
           <span style={{ fontSize: 15, fontWeight: 700, color: "#e08a1e" }}>
             · {quakeCount} seismic
+          </span>
+        ) : null}
+        {volcanoCount ? (
+          <span style={{ fontSize: 15, fontWeight: 700, color: "#ef4444" }}>
+            · {volcanoCount} volcanic
           </span>
         ) : null}
       </div>

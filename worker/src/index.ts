@@ -413,9 +413,9 @@ process.on("uncaughtException", (err) => {
     }
   }
 
-  // Cache a Wikipedia photo + blurb onto each active volcano. LOW PRIORITY
-  // (>0 so it never competes with the live snapshots) and slow (staleness-
-  // gated + a tiny catalog), so it barely touches Wikipedia.
+  // Cache a Wikipedia photo/gallery + Wikidata facts onto each active volcano.
+  // LOW PRIORITY (>0 so it never competes with the live snapshots) and slow
+  // (staleness-gated + a tiny catalog), so it barely touches Wikipedia/Wikidata.
   try {
     await myQueue.add(
       "do",
@@ -429,6 +429,47 @@ process.on("uncaughtException", (err) => {
     log(TAG, `registered repeatable volcanoes.enrichWiki`);
   } catch (err) {
     log(TAG, `failed to register volcanoes.enrichWiki`, summarizeForLog(err));
+  }
+
+  // LLM-parse each volcano's weekly bulletin text into a couple of structured
+  // facts (plume height, VEI) — re-checks every time a fresh bulletin lands
+  // (see volcano-repo.ts#listNeedingReportParse), not on a fixed staleness gate,
+  // so this can poll fairly often; it's a no-op re-scan when nothing's new.
+  // Fully skips (no Mongo writes) when OPENROUTER_API_KEY is unset.
+  try {
+    await myQueue.add(
+      "do",
+      { domain: "volcanoes", type: "volcanoes", event: "parseReports", data: {} },
+      {
+        repeat: { every: Number(process.env.VOLCANO_PARSE_MS || 3_600_000), immediately: true },
+        jobId: "volcanoes-parse-reports",
+        priority: 10,
+      },
+    );
+    log(TAG, `registered repeatable volcanoes.parseReports`);
+  } catch (err) {
+    log(TAG, `failed to register volcanoes.parseReports`, summarizeForLog(err));
+  }
+
+  // USGS Volcano Notification Service "elevated" feed — near-real-time alert
+  // level for the subset of volcanoes USGS actively monitors (US/Alaska/
+  // Hawaii/Cascades). Keyless but an undocumented endpoint, so poll modestly
+  // and let failures degrade (the GVP snapshot above is unaffected either way).
+  // Disable with VOLCANO_USGS_ENABLED=false.
+  if (process.env.VOLCANO_USGS_ENABLED !== "false") {
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "volcanoes", type: "volcanoes", event: "snapshotUsgs", data: {} },
+        {
+          repeat: { every: Number(process.env.VOLCANO_USGS_MS || 15 * 60_000), immediately: true },
+          jobId: "volcanoes-snapshot-usgs",
+        },
+      );
+      log(TAG, `registered repeatable volcanoes.snapshotUsgs`);
+    } catch (err) {
+      log(TAG, `failed to register volcanoes.snapshotUsgs`, summarizeForLog(err));
+    }
   }
 
   // ---- Repeatable geomag.refresh (IGRF total-intensity field → baked scalar PNG) ----

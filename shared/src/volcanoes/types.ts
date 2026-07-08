@@ -44,9 +44,32 @@ export interface Volcano {
   /** Wikipedia enrichment (see worker/src/jobs/volcanoes.ts#enrichWiki) — absent until the enrich job has run. */
   wikiTitle?: string;
   wikiThumb?: string;
+  /** Full-resolution version of wikiThumb (Wikipedia's `originalimage`) — prefer for the large detail view. */
+  wikiPhoto?: string;
   wikiExtract?: string;
+  /** A handful of additional photo URLs pulled from the article's embedded images, for a gallery strip. */
+  wikiGallery?: string[];
   /** Epoch ms of the last enrichment attempt (set even on a no-match, to avoid re-querying every run). */
   wikiFetchedAt?: number;
+  /** Wikidata-sourced facts (see fetchVolcanoFacts) — absent until enrichment has run or on a miss. */
+  elevationM?: number;
+  volcanoType?: string;
+  lastEruptionYear?: number;
+  /**
+   * USGS Volcano Notification Service alert state (see usgs-vona.ts) — only
+   * populated for the subset of volcanoes USGS actively monitors (US, Alaska,
+   * Hawaii, Cascades). Far fresher than the weekly GVP bulletin when present.
+   */
+  usgsAlertLevel?: string;
+  usgsColorCode?: string;
+  usgsNoticeSynopsis?: string;
+  usgsNoticeUrl?: string;
+  usgsUpdatedAt?: number;
+  /** LLM-parsed facts from this week's `latestReport` text (see worker/src/volcanoes/parseReport.ts). */
+  reportVei?: number;
+  reportPlumeHeightM?: number;
+  /** Epoch ms the report text was last parsed — compared against `lastDate` to skip re-parsing an unchanged bulletin. */
+  reportParsedAt?: number;
 }
 
 /** Everything the volcano overlay needs in one cached payload. */

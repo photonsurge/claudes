@@ -27,6 +27,7 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
       country: { type: Number, default: 12 },
       weather: { type: Number, default: 12 },
       storm: { type: Number, default: 12 },
+      volcano: { type: Number, default: 12 },
       quake: { type: Number, default: 12 },
       flight: { type: Number, default: 12 },
       ship: { type: Number, default: 12 },
@@ -51,6 +52,11 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
       severe: { type: Number, default: 16 },
       extreme: { type: Number, default: 24 },
     },
+    // Per-status-level hold for volcano segments (seconds).
+    volcanoHoldSeconds: {
+      unrest: { type: Number, default: 14 },
+      erupting: { type: Number, default: 22 },
+    },
     transitionSeconds: { type: Number, required: true, default: 4 },
     kinds: {
       intro: { type: Boolean, default: true },
@@ -60,6 +66,7 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
       country: { type: Boolean, default: true },
       weather: { type: Boolean, default: true },
       storm: { type: Boolean, default: true },
+      volcano: { type: Boolean, default: true },
       quake: { type: Boolean, default: true },
       flight: { type: Boolean, default: true },
       ship: { type: Boolean, default: true },

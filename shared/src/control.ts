@@ -487,7 +487,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showAtmosphere: true,
   showDayNight: false,
   showBroadcastChrome: true,
-  broadcastTheme: "aurora",
+  broadcastTheme: "command",
   audio: { ...DEFAULT_AUDIO_SETTINGS },
   startAt: null,
 };
@@ -634,7 +634,7 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
         ? patch.showBroadcastChrome
         : base.showBroadcastChrome ?? true,
     broadcastTheme:
-      typeof patch.broadcastTheme === "string" ? patch.broadcastTheme : base.broadcastTheme ?? "aurora",
+      typeof patch.broadcastTheme === "string" ? patch.broadcastTheme : base.broadcastTheme ?? "command",
     audio: {
       enabled:
         typeof patch.audio?.enabled === "boolean"

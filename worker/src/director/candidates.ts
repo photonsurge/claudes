@@ -12,6 +12,7 @@ import {
   kindHoldMs,
   quakeHoldMs,
   stormHoldMs,
+  volcanoHoldMs,
   type DirectorConfig,
   type Segment,
   type SegmentKind,
@@ -36,7 +37,7 @@ import { adMediaPath } from "@photonsurge/shared/ads/types";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
-import { quakeSegmentContent, alertSegmentContent, volcanoSegmentContent } from "@photonsurge/shared/segments";
+import { quakeSegmentContent, alertSegmentContent, volcanoSegmentContent, volcanoTrackInfo } from "@photonsurge/shared/segments";
 import { discLookFeeds, type SatImgFeedState } from "@photonsurge/shared/satimg/types";
 import { mmsiCountry, countryNameFlag } from "@photonsurge/shared/tracks/flags";
 import type { SummaryPeriod, iEventSummaryModel } from "@photonsurge/shared/db/event-summary-model";
@@ -413,25 +414,18 @@ export async function buildCandidates(
     }
   }
 
-  // --- Volcanoes: reuses the "storm" kind/toggle (see select-segment.ts's
-  //     volcanoToSegment — a volcano's status IS a hazard classification, not a
-  //     dedicated SegmentKind). Erupting/unrest only; dormant carries no headline. ---
-  if (cfg.kinds.storm) {
+  // --- Volcanoes: erupting/unrest only; dormant carries no headline. ---
+  if (cfg.kinds.volcano) {
     try {
       const volcanoes = (await db.volcanoes.list()).filter((v) => v.status !== "dormant");
       for (const v of volcanoes) {
         const c = volcanoSegmentContent(v);
         const sev = volcanoStatusToSeverity(v.status);
-        const seg = make("storm", v.id, c.title, c.subtitle, [v.lng, v.lat], VOLCANO_ZOOM, stormHoldMs(cfg, sev), cfg);
-        seg.hazard = "volcano";
+        const seg = make("volcano", v.id, c.title, c.subtitle, [v.lng, v.lat], VOLCANO_ZOOM, volcanoHoldMs(cfg, v.status), cfg);
         seg.icon = c.icon;
         seg.details = c.details;
-        // Same TrackInfo shape (photo/blurb) the manual click path builds — see
-        // select-segment.ts's volcanoToSegment for why the bulletin text wins
-        // over the evergreen Wikipedia extract when both are present.
-        seg.trackInfo = v.wikiThumb || v.wikiExtract || v.latestReport
-          ? { label: v.name, category: "Volcano", photoUrl: v.wikiThumb, extract: v.latestReport || v.wikiExtract }
-          : undefined;
+        // Same TrackInfo the manual click path builds — see segments.ts#volcanoTrackInfo.
+        seg.trackInfo = volcanoTrackInfo(v);
         const breaking = v.status === "erupting" && now - v.statusChangedAt <= VOLCANO_BREAKING_WINDOW_MS;
         pool.push({ score: 50 + sev * 12, segment: seg, breaking });
       }

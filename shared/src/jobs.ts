@@ -252,7 +252,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   {
     id: "volcanoes-snapshot",
     label: "Refresh active volcanoes",
-    description: "Re-pull NASA EONET's currently-active (\"open\") volcano events into Mongo now.",
+    description: "Re-pull the Smithsonian/USGS Weekly Volcanic Activity Report into Mongo now.",
     domain: "volcanoes",
     type: "volcanoes",
     event: "snapshot",
@@ -261,10 +261,30 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   {
     id: "volcanoes-enrich",
     label: "Enrich volcanoes (Wikipedia)",
-    description: "Fetch a Wikipedia photo + blurb for each active volcano. Fresh ones (< 30 days) are skipped.",
+    description:
+      "Fetch a Wikipedia photo/gallery + Wikidata facts (elevation, type, last eruption) for each active volcano. Fresh ones (< 30 days) are skipped.",
     domain: "volcanoes",
     type: "volcanoes",
     event: "enrichWiki",
+    group: "Volcanoes",
+  },
+  {
+    id: "volcanoes-parse-reports",
+    label: "Parse volcano bulletins (LLM)",
+    description:
+      "LLM-parse each volcano's weekly bulletin text for plume height/VEI. Requires OPENROUTER_API_KEY; no-ops without it.",
+    domain: "volcanoes",
+    type: "volcanoes",
+    event: "parseReports",
+    group: "Volcanoes",
+  },
+  {
+    id: "volcanoes-snapshot-usgs",
+    label: "Refresh USGS volcano alerts",
+    description: "Re-pull the USGS Volcano Notification Service elevated-status feed (US-monitored volcanoes only).",
+    domain: "volcanoes",
+    type: "volcanoes",
+    event: "snapshotUsgs",
     group: "Volcanoes",
   },
 ];

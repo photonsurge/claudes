@@ -206,7 +206,7 @@ function useMapStep(cut: Segment | null, avail: MapTypeAvailability, mapTypeIds?
 }
 
 /** Event kinds worth pulse-highlighting on the globe (a fixed point of interest). */
-const PULSE_KINDS = new Set<SegmentKind>(["storm", "quake"]);
+const PULSE_KINDS = new Set<SegmentKind>(["storm", "quake", "volcano"]);
 
 /** The [lng,lat] to pulse-highlight for the current shot, or null. */
 export function eventPulse(director: DirectorState | null): [number, number] | null {
@@ -350,6 +350,7 @@ export function useDirectorConfig(sceneId: string): {
       kindHoldSeconds: { ...prev.kindHoldSeconds, ...(patch.kindHoldSeconds ?? {}) },
       quakeHoldSeconds: { ...prev.quakeHoldSeconds, ...(patch.quakeHoldSeconds ?? {}) },
       stormHoldSeconds: { ...prev.stormHoldSeconds, ...(patch.stormHoldSeconds ?? {}) },
+      volcanoHoldSeconds: { ...prev.volcanoHoldSeconds, ...(patch.volcanoHoldSeconds ?? {}) },
     }));
     void patchDirectorConfig(sceneId, patch).then(setConfig);
   };

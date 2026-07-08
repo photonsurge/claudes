@@ -15,10 +15,12 @@
 import {
   SEGMENT_KINDS,
   STORM_LEVELS,
+  VOLCANO_LEVELS,
   type DirectorConfig,
   type SegmentKind,
 } from "@photonsurge/shared/director";
 import { QUAKE_MAGNITUDE_BANDS } from "@photonsurge/shared/seismic";
+import InfoTip from "./InfoTip";
 
 export const KIND_LABEL: Record<SegmentKind, string> = {
   intro: "Intro spin",
@@ -27,7 +29,8 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
   tour: "Region tour",
   country: "Countries",
   weather: "Weather",
-  storm: "Severe storms / volcanoes",
+  storm: "Severe storms",
+  volcano: "Volcanoes",
   quake: "Earthquakes",
   flight: "Aircraft",
   ship: "Ships",
@@ -36,12 +39,12 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
 };
 
 /** Kinds whose hold comes from a per-level map, not the kind slider. */
-const LEVELLED_KINDS = new Set<SegmentKind>(["quake", "storm"]);
+const LEVELLED_KINDS = new Set<SegmentKind>(["quake", "storm", "volcano"]);
 
 function Slider({
   seconds,
   onChange,
-  max = 60,
+  max = 300,
 }: {
   seconds: number;
   onChange: (s: number) => void;
@@ -76,7 +79,7 @@ function LevelRow({
         <span>{label}</span>
         <strong style={{ fontSize: 14 }}>{seconds}s</strong>
       </span>
-      <Slider seconds={seconds} onChange={onChange} max={90} />
+      <Slider seconds={seconds} onChange={onChange} max={300} />
     </div>
   );
 }
@@ -99,7 +102,10 @@ export default function DirectorHolds({
 
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>Show · hold per shot:</div>
+      <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4, display: "flex", alignItems: "center" }}>
+        Show · hold per shot:
+        <InfoTip text="Tick a shot type to make it eligible to air, and drag its slider for how long it holds each time. Quakes/storms/volcanoes hold per severity tier instead of one slider." />
+      </div>
       {SEGMENT_KINDS.map((k) => {
         const on = !!config.kinds[k];
         const levelled = LEVELLED_KINDS.has(k);
@@ -159,6 +165,22 @@ export default function DirectorHolds({
                     seconds={config.stormHoldSeconds[l.key]}
                     onChange={(s) =>
                       update({ stormHoldSeconds: { [l.key]: s } as DirectorConfig["stormHoldSeconds"] })
+                    }
+                  />
+                ))}
+              </div>
+            ) : null}
+
+            {/* Volcanoes: one hold per status level instead of a kind slider. */}
+            {on && k === "volcano" ? (
+              <div style={{ paddingLeft: 22, marginTop: 4 }}>
+                {VOLCANO_LEVELS.map((l) => (
+                  <LevelRow
+                    key={l.key}
+                    label={l.label}
+                    seconds={config.volcanoHoldSeconds[l.key]}
+                    onChange={(s) =>
+                      update({ volcanoHoldSeconds: { [l.key]: s } as DirectorConfig["volcanoHoldSeconds"] })
                     }
                   />
                 ))}

@@ -1,15 +1,18 @@
 "use client";
 
 /**
- * On-air "Track Info" card for a notable aircraft/ship the director has put up —
- * a photo (planespotters airframe shot or the Wikipedia lead image), the craft's
+ * On-air "Track Info" card for a notable aircraft/ship the director has put up, or
+ * (reusing the same photo+blurb layout) an active volcano segment — a photo
+ * (planespotters airframe shot or the Wikipedia lead image), the subject's
  * name + type/operator/flag, a short Wikipedia blurb, and a couple of live stats
  * (altitude/heading or speed/course) pulled from the segment's detail rows.
  *
  * Driven entirely by `segment.trackInfo`, which the worker attaches when a live
- * track matches the notable-tracks catalog — so it appears exactly when the globe
- * highlight ring is on that craft. Pure presentation inside the scaled broadcast
- * stage; pointer-inert. Returns null for any segment without trackInfo.
+ * track matches the notable-tracks catalog (or a volcano segment is built) — so it
+ * appears exactly when the globe highlight ring is on that subject. The heading is
+ * derived from `segment.hazard`/`segment.kind`, not from `trackInfo.category` (which
+ * is catalog free-text for flights/ships). Pure presentation inside the scaled
+ * broadcast stage; pointer-inert. Returns null for any segment without trackInfo.
  */
 import type { Segment } from "@photonsurge/shared/director";
 
@@ -26,8 +29,15 @@ export default function TrackInfoPanel({
   const info = segment.trackInfo;
   if (!info) return null;
 
-  const isAir = segment.kind === "flight";
-  const heading = info.vip ? "VIP TRACK" : isAir ? "NOTABLE AIRCRAFT" : "NOTABLE VESSEL";
+  const heading = info.vip
+    ? "VIP TRACK"
+    : segment.hazard === "volcano"
+      ? "ACTIVE VOLCANO"
+      : segment.kind === "flight"
+        ? "NOTABLE AIRCRAFT"
+        : segment.kind === "ship"
+          ? "NOTABLE VESSEL"
+          : "NOTABLE TRACK";
   const title = info.label || segment.title;
   // Manufacturer reads redundant when `type` already leads with it (e.g. "Boeing VC-25A").
   const manufacturer =

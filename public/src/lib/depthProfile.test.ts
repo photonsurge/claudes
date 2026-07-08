@@ -93,6 +93,28 @@ describe("sampleDepthProfile", () => {
     expect(points).toBeNull();
   });
 
+  it("returns null over a land point even when RTOFS chapters leak real values (coastal remap bleed)", async () => {
+    const manifest = makeManifest({
+      elevation: {
+        encoding: "scalar",
+        units: "m",
+        imageUnscale: [-11000, 9000],
+        bbox: [-180, -90, 180, 90],
+        files: { "0": "https://tex/elevation" },
+      },
+    });
+    mockLoadTexture.mockImplementation(async (url: string) => {
+      if (url === "https://tex/elevation") {
+        // byteToValue(200, [-11000,9000]) = -11000 + 200/255*20000 ≈ 4686m — land.
+        return flatTexture(200);
+      }
+      const byte = { "https://tex/sst": 200, "https://tex/sst100": 180, "https://tex/sst500": 140, "https://tex/sst2000": 60, "https://tex/sst5000": 40 }[url]!;
+      return flatTexture(byte);
+    });
+    const points = await sampleDepthProfile(manifest, -32.5, -71.2);
+    expect(points).toBeNull();
+  });
+
   it("returns null when fewer than 2 chapters have data", async () => {
     const manifest = makeManifest();
     delete (manifest.variables as any).sst100;

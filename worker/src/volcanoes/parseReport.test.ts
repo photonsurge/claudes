@@ -1,0 +1,49 @@
+import { parseReportFacts } from "./parseReport";
+
+describe("parseReportFacts", () => {
+  const OLD = process.env.OPENROUTER_API_KEY;
+  afterEach(() => {
+    if (OLD === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = OLD;
+  });
+
+  it("skips when no API key is configured", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    const res = await parseReportFacts("Ash plume rose to 3km, VEI 2 explosion reported.");
+    expect(res.status).toBe("skipped");
+  });
+
+  it("skips on empty report text even with a key configured", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    const res = await parseReportFacts("   ");
+    expect(res.status).toBe("skipped");
+  });
+
+  it("parses plumeHeightM/vei out of the completion JSON", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '{"plumeHeightM": 3000, "vei": 2}' } }] }),
+    }) as unknown as typeof fetch;
+    const res = await parseReportFacts("Ash plume rose to 3km, VEI 2 explosion reported.", fetchImpl);
+    expect(res).toMatchObject({ status: "ok", plumeHeightM: 3000, vei: 2 });
+  });
+
+  it("returns an error on a non-2xx response", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    const fetchImpl = jest.fn().mockResolvedValue({ ok: false, status: 429, text: async () => "rate limited" }) as unknown as typeof fetch;
+    const res = await parseReportFacts("some report text", fetchImpl);
+    expect(res.status).toBe("error");
+    expect(res.error).toContain("429");
+  });
+
+  it("returns an error when the completion has no parseable JSON", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "no idea" } }] }),
+    }) as unknown as typeof fetch;
+    const res = await parseReportFacts("some report text", fetchImpl);
+    expect(res.status).toBe("error");
+  });
+});

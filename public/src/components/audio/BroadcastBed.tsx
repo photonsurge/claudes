@@ -32,6 +32,7 @@ export const KIND_SEVERITY: Partial<Record<SegmentKind, number>> = {
   flight: 0.35,
   ship: 0.35,
   storm: 0.9,
+  volcano: 0.85,
   quake: 0.85,
   ad: 0,
 };
@@ -40,7 +41,7 @@ export const KIND_SEVERITY: Partial<Record<SegmentKind, number>> = {
 const IDLE_SEVERITY = 0.15;
 
 /** Event kinds whose arrival fires a one-shot energy spike + riser. */
-const PULSE_KINDS = new Set<SegmentKind>(["storm", "quake"]);
+const PULSE_KINDS = new Set<SegmentKind>(["storm", "quake", "volcano"]);
 
 /** How long after start() before concluding the browser blocked autoplay. */
 const BLOCK_PROBE_MS = 600;

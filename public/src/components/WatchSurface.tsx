@@ -156,6 +156,7 @@ export default function WatchSurface({
           manifest={manifest}
           alerts={state.showAlerts ? alerts : []}
           quakes={state.showSeismic ? quakes : []}
+          volcanoes={state.showVolcanoes ? volcanoes : []}
           seismoStations={state.showSeismic ? seismoStations : []}
           seismoActive={state.showSeismic ? seismoActive : null}
           tracks={tracks}
