@@ -15,6 +15,9 @@ import { textureUrlFor } from "../components/layers/props";
 
 export interface DepthProfilePoint {
   depth: number;
+  /** The scalar variable this chapter reads (e.g. "sst100") — lets a caller
+   *  match this row against the map's current `activeVariable`. */
+  variableId: string;
   tempC: number;
   /** This chapter's own colour domain — deliberately NOT shared across depths
    *  (deep water's real range collapses toward near-freezing), so a caller

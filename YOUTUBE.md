@@ -1,5 +1,12 @@
 # YouTube auto-streaming — spec (not yet built)
 
+> Superseded in scope by [docs/streaming-runs-plan.md](docs/streaming-runs-plan.md),
+> which generalizes this into N concurrent operator-started **runs** (bounded
+> duration, any scene, optional chat monitoring) instead of one always-on rotating
+> stream. The rotation mechanics below — broadcast create/bind/transition, the
+> OAuth and obs-websocket open questions — are still the reference for how each
+> run's YouTube binding actually works; read this file for that detail.
+
 Goal: run the `/watch` globe as an unattended 24/7 YouTube live stream, rotating to a
 fresh broadcast every **~11h** so we never hit YouTube's hard 12h ingestion cutoff (a
 forced cutoff truncates the VOD and is worse for stats than a clean handoff). Each

@@ -32,7 +32,6 @@ import {
   ORBITAL_VIEWS,
 } from "@photonsurge/shared/director-rois";
 import { countryShot } from "@photonsurge/shared/director-countries";
-import { seaPointShot } from "@photonsurge/shared/director-sea-points";
 import { adMediaPath } from "@photonsurge/shared/ads/types";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
@@ -183,31 +182,6 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
         { activeVariable: globalMapTour("ocean", cfg.mapTypes.ocean)?.[0]?.patch.activeVariable ?? "sst" },
       ),
     });
-
-    // Notable named sea points — same "ocean" kind, fair-rotated alongside the
-    // spin above, but holding steady (autoSpin off) so a real, specific
-    // location is on camera instead of wherever the spin happened to drift
-    // to (the sea-temp-at-depth profile/map need an actual ocean point). The
-    // operator's favourites (DirectorConfig.seaPoints) gate the set — stale
-    // ids are just skipped, mirroring the country-spotlight loop above.
-    for (const id of cfg.seaPoints) {
-      const p = seaPointShot(id);
-      if (!p) continue;
-      out.push({
-        score: 6,
-        segment: make(
-          "ocean",
-          p.id,
-          p.name,
-          `Ocean temperature · ${p.blurb}`,
-          p.center,
-          p.zoom,
-          kindHoldMs(cfg, "ocean"),
-          cfg,
-          { activeVariable: "sst", autoSpin: false },
-        ),
-      });
-    }
   }
   if (cfg.kinds.orbital) {
     // Only air constellations whose TLEs the worker actually ingests
@@ -431,6 +405,30 @@ export async function buildCandidates(
       }
     } catch {
       /* no volcanoes cached yet — fillers carry the show */
+    }
+  }
+
+  // --- Ocean monitoring points: DB-backed catalog (currents/features plus
+  // real depth-monitoring regions — Niño boxes, Atlantic MDR, North Sea, Med,
+  // Indian Ocean Dipole). Same "ocean" kind, fair-rotated alongside the global
+  // spin filler above, but holding steady (autoSpin off, or a slow drift for
+  // depth-cycle shots) so a real, specific location is on camera instead of
+  // wherever the spin happened to drift to (the sea-temp-at-depth
+  // profile/map need an actual ocean point). Managed at /admin/sea-points —
+  // `enabled: false` points are simply skipped, no favourites list needed. ---
+  if (cfg.kinds.ocean) {
+    try {
+      const seaPoints = (await db.seaPoints.list()).filter((p) => p.enabled);
+      for (const p of seaPoints) {
+        const patch = p.depthCycle
+          ? { activeVariable: "sst", autoSpin: true, spinSpeed: 2.5 }
+          : { activeVariable: "sst", autoSpin: false };
+        const seg = make("ocean", p.pointId, p.name, `Ocean temperature · ${p.blurb}`, [p.lng, p.lat], p.zoom, kindHoldMs(cfg, "ocean"), cfg, patch);
+        seg.depthCycle = p.depthCycle;
+        pool.push({ score: 6, segment: seg });
+      }
+    } catch {
+      /* no sea points seeded yet — fillers carry the show */
     }
   }
 

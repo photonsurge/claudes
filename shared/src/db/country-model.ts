@@ -19,9 +19,13 @@ export interface iCountry extends iGeneralModel {
   iso3?: string;
   continent?: string;
   subregion?: string;
-  /** Main-landmass framing box [west, south, east, north] — same convention as countries.generated.ts. */
+  /** [west, south, east, north] over the WHOLE country's real geometry (every
+   *  island/territory) — deliberately NOT the same "biggest ring only"
+   *  convention as the camera-framing countries.generated.ts, since an
+   *  archipelago nation's area-weather stats need to cover all its territory. */
   bbox: [number, number, number, number];
-  /** Simplified (Douglas–Peucker) boundary — the area-weather job's polygon mask. */
+  /** Simplified (Douglas–Peucker) MultiPolygon over every ring of every merged
+   *  feature — the area-weather job's polygon mask (geo/pointInPolygon.ts). */
   geometry: { type: "Polygon" | "MultiPolygon"; coordinates: any };
   /** Wikipedia enrichment (see worker/src/jobs/countries.ts). */
   wikiTitle?: string;
@@ -65,7 +69,12 @@ const CountrySchema = new mongoose.Schema<iCountryModel>(
 );
 
 CountrySchema.index({ countryId: 1 }, { unique: true, name: "country_id_ix" });
-CountrySchema.index({ geometry: "2dsphere" }, { name: "country_geo_ix" });
+// No 2dsphere index: MongoDB enforces strict simple-polygon GeoJSON (no
+// self-intersecting rings), which Douglas–Peucker simplification doesn't
+// guarantee for small/complex coastlines. `geometry` is only ever read by
+// the in-process `pointInPolygon` ray-cast (geo/pointInPolygon.ts), which
+// tolerates the rare minor artifact fine for area-weather masking purposes —
+// add the index later if a real Mongo geo-query need shows up.
 
 export const getCountryModel = (conn: Connection) =>
   getModel<iCountryModel>(conn, "Country", CountrySchema);

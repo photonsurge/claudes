@@ -53,6 +53,8 @@ import { getGeomagModel } from "./geomag-model";
 import { makeGeomagRepo } from "./geomag-repo";
 import { getCamModel } from "./cam-model";
 import { makeCamRepo } from "./cam-repo";
+import { getSeaPointModel } from "./sea-point-model";
+import { makeSeaPointRepo } from "./sea-point-repo";
 import { getAdModel } from "./ad-model";
 import { makeAdRepo } from "./ad-repo";
 import { getAircraftMetaModel, iAircraftMetaModel } from "./aircraft-meta-model";
@@ -113,6 +115,7 @@ export function createDb(conn: Connection) {
     areaWeatherReports: makeAreaWeatherReportRepo(getAreaWeatherReportModel(conn)),
     geomag: makeGeomagRepo(getGeomagModel(conn)),
     cams: makeCamRepo(getCamModel(conn)),
+    seaPoints: makeSeaPointRepo(getSeaPointModel(conn)),
     ads: makeAdRepo(getAdModel(conn)),
     aircraftMeta: mongoCrud<iAircraftMetaModel>(getAircraftMetaModel(conn)),
     vehicles: makeVehicleRepo(getVehicleModel(conn)),

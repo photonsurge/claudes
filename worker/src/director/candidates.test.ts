@@ -1,6 +1,6 @@
 import { buildCandidates } from "./candidates";
 import { DEFAULT_DIRECTOR_CONFIG, type DirectorConfig } from "@photonsurge/shared/director";
-import { SEA_POINTS } from "@photonsurge/shared/director-sea-points";
+import { SEED_SEA_POINTS } from "@photonsurge/shared/director-sea-points";
 import type { AppDb } from "@photonsurge/shared/db/index";
 
 /** Minimal fake DB facade exposing just what buildCandidates reads. */
@@ -65,6 +65,9 @@ function fakeDb(over: Partial<Record<string, any>> = {}): AppDb {
     volcanoes: {
       list: async () => over.volcanoes ?? [],
     },
+    seaPoints: {
+      list: async () => over.seaPoints ?? SEED_SEA_POINTS,
+    },
   } as unknown as AppDb;
 }
 
@@ -95,23 +98,37 @@ describe("buildCandidates", () => {
   it("adds one global ocean spin that opens on SST and spins (tours the rest client-side)", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     const ocean = pool.filter((c) => c.segment.kind === "ocean");
-    // The spin, plus one held-still candidate per notable sea point.
-    expect(ocean.length).toBe(1 + SEA_POINTS.length);
+    // The spin, plus one held-still candidate per enabled DB sea point.
+    expect(ocean.length).toBe(1 + SEED_SEA_POINTS.length);
     const spin = ocean.find((c) => c.segment.id === "ocean:world")!;
     expect(spin.segment.patch.activeVariable).toBe("sst"); // opens on the hero field
     expect(spin.segment.patch.autoSpin).toBe(true); // world map spins
   });
 
-  it("spotlights every notable sea point, held still (no spin) on its own location", async () => {
+  it("spotlights every enabled sea point, non-depth-cycle points held still", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     const ocean = pool.filter((c) => c.segment.kind === "ocean");
-    for (const p of SEA_POINTS) {
-      const seg = ocean.find((c) => c.segment.id === `ocean:${p.id}`)!;
+    for (const p of SEED_SEA_POINTS.filter((sp) => !sp.depthCycle)) {
+      const seg = ocean.find((c) => c.segment.id === `ocean:${p.pointId}`)!;
       expect(seg).toBeDefined();
       expect(seg.segment.title).toBe(p.name);
-      expect(seg.segment.camera.center).toEqual(p.center);
+      expect(seg.segment.camera.center).toEqual([p.lng, p.lat]);
       expect(seg.segment.patch.activeVariable).toBe("sst");
       expect(seg.segment.patch.autoSpin).toBe(false); // holds on the point
+      expect(seg.segment.depthCycle).toBe(false);
+    }
+  });
+
+  it("depth-cycle monitoring points (Niño/MDR/North Sea/Med/IOD) drift slowly instead of holding still", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg());
+    const ocean = pool.filter((c) => c.segment.kind === "ocean");
+    for (const p of SEED_SEA_POINTS.filter((sp) => sp.depthCycle)) {
+      const seg = ocean.find((c) => c.segment.id === `ocean:${p.pointId}`)!;
+      expect(seg).toBeDefined();
+      expect(seg.segment.patch.activeVariable).toBe("sst");
+      expect(seg.segment.patch.autoSpin).toBe(true);
+      expect(seg.segment.patch.spinSpeed).toBe(2.5);
+      expect(seg.segment.depthCycle).toBe(true);
     }
   });
 
@@ -120,20 +137,12 @@ describe("buildCandidates", () => {
     expect(pool.filter((c) => c.segment.kind === "ocean")).toEqual([]);
   });
 
-  it("restricts sea-point candidates to the operator's favourites (spin unaffected)", async () => {
-    const pool = await buildCandidates(fakeDb(), cfg({ seaPoints: ["gulf-stream", "mariana-trench"] }));
+  it("excludes a sea point the admin has disabled, without touching the rest", async () => {
+    const seaPoints = SEED_SEA_POINTS.map((p) => (p.pointId === "gulf-stream" ? { ...p, enabled: false } : p));
+    const pool = await buildCandidates(fakeDb({ seaPoints }), cfg());
     const ocean = pool.filter((c) => c.segment.kind === "ocean");
-    expect(ocean.map((c) => c.segment.id).sort()).toEqual([
-      "ocean:gulf-stream",
-      "ocean:mariana-trench",
-      "ocean:world",
-    ]);
-  });
-
-  it("skips a stale/unknown favourited sea-point id", async () => {
-    const pool = await buildCandidates(fakeDb(), cfg({ seaPoints: ["gulf-stream", "atlantis"] }));
-    const ocean = pool.filter((c) => c.segment.kind === "ocean");
-    expect(ocean.map((c) => c.segment.id).sort()).toEqual(["ocean:gulf-stream", "ocean:world"]);
+    expect(ocean.find((c) => c.segment.id === "ocean:gulf-stream")).toBeUndefined();
+    expect(ocean.length).toBe(SEED_SEA_POINTS.length); // world spin + all but the disabled one
   });
 
   it("opens the ocean spin on the first operator-enabled map type, not always SST", async () => {

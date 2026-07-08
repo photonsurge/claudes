@@ -56,6 +56,14 @@ const VAR_CYCLE_MS = 5500;
 /** Per-map dwell for the global map-type tour — a touch longer, each look is a beat. */
 const GLOBAL_MAP_CYCLE_MS = 6000;
 /**
+ * Ocean monitoring-region shots (`Segment.depthCycle`, see
+ * `worker/src/director/candidates.ts`) flip through the sea-temp-at-depth
+ * chapters instead of the normal ocean field tour — the editorial point IS
+ * the thermocline (El Niño/ENSO, Atlantic MDR, North Sea, Med, IOD).
+ */
+const DEPTH_CYCLE_VARS = ["sst", "sst100", "sst500", "sst2000", "sst5000"];
+const DEPTH_CYCLE_MS = 2500;
+/**
  * Camera dwell per round-up stop, and the zoom it flies to — a point-focused
  * look, same as quake/alert shots. Each stop change flies the camera (taking
  * cut.patch.cutTransitionMs, the operator's transition-speed setting), so the
@@ -144,6 +152,13 @@ function cutSteps(
   avail: MapTypeAvailability,
   mapTypeIds?: string[],
 ): { steps: MapStep[]; periodMs: number; anchored: boolean } {
+  if (cut.kind === "ocean" && cut.depthCycle) {
+    return {
+      steps: DEPTH_CYCLE_VARS.map((v) => ({ patch: { activeVariable: v } })),
+      periodMs: DEPTH_CYCLE_MS,
+      anchored: false,
+    };
+  }
   const tour = globalMapTour(cut.kind, mapTypeIds);
   if (tour) {
     // Global spins ARE the map type, so they relabel the on-air card per look. An

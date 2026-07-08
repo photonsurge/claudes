@@ -1,0 +1,189 @@
+# Plan: multi-run live streaming (bounded-duration runs + chat monitoring)
+
+> Status: **planned, not started.** Goal: let an operator start/stop N concurrent,
+> time-boxed broadcast **runs** (each bound to an existing scene, each optionally
+> publishing to YouTube, each optionally monitoring platform chat) instead of the
+> single always-on `/watch` capture we have today. Generalizes and folds in
+> `YOUTUBE.md`'s single-rotating-stream design rather than replacing it — see that
+> file for the YouTube broadcast create/bind/transition mechanics, which still
+> apply per-run. LLM-based chat moderation/narration is explicitly out of scope
+> here (parked separately, see `presenter-llm-plan` memory).
+
+## Where we are today
+
+The multi-stream substrate already exists — it's the *time-boxing* and the
+*platform binding* that are missing.
+
+| Piece | State |
+|---|---|
+| Multiple concurrent named streams | **Already built.** `shared/src/control.ts` `SCENE_STATE` event + `SceneMeta`; `shared/src/db/broadcast-state-model.ts` one Mongo doc per scene (`id`, `name`, `watchToken`); `/api/scenes/*`, `/watch/:id`, `/admin/scenes`, `/admin/access` (tokened OBS-source URLs). Each scene is a permanent, manually-created, always-on config — no lifetime, no external platform tie-in. |
+| Bounded lifetime / start-stop-auto-end | **Missing entirely.** Closest analogs are `DirectorConfig.mode: "off"\|"auto"` (per-scene, persisted, no end time) and the director loop's in-memory per-segment `endsAt` hold timer (single always-on process, not a schedulable run). No BullMQ self-terminating job pattern exists anywhere yet. |
+| YouTube API integration | **Nothing built.** No `googleapis` dependency, no OAuth, no `.env.sample` entries. `YOUTUBE.md` is a detailed spec (not yet built) for a single unattended 24/7 stream that rotates broadcasts every ~11h to dodge YouTube's 12h ingestion cutoff. Its rotation flow (create → bind → confirm live → close old) is the right mechanic, just scoped to one stream instead of N operator-started runs. |
+| Chat monitoring | **Nothing built**, but shape agreed this session (see Decisions). |
+| Socket fan-out model | All browsers join one `PUBLIC_ROOM`; every scene's `SCENE_STATE`/`DIRECTOR_STATE` traffic goes to every browser and is filtered client-side by an `id` in the payload — broadcast-then-filter, not room-per-scene. Fine at current scale; worth re-checking if run count grows large (see Open questions). |
+| Worker job scheduling | BullMQ only, via fixed `jobId` + `{repeat: {every|pattern}}`. `worker/src/index.ts:137-147` warns that changing a repeatable's interval under the same `jobId` leaves the *old* schedule firing alongside the new one unless explicitly cleared — directly relevant once runs start adding/removing delayed jobs dynamically. |
+
+## Decisions (locked in)
+
+1. **A "run" is a new Mongo collection referencing `sceneId`, not fields bolted
+   onto `BroadcastState`.** Scenes stay permanent/reusable config; runs are the
+   bounded-lifetime layer on top. One scene can host many runs over time.
+2. **One active run per scene at a time.** A scene's `ControlState` is singular
+   (camera/director/etc.) — a second concurrent run on the same scene would fight
+   over control. Concurrency comes from running on *different* scenes, not
+   stacking runs on one.
+3. **Auto-end via a BullMQ delayed job** (`{delay: durationMs}`), not a cron —
+   this is exactly what `YOUTUBE.md` already proposed for rotation, and it
+   generalizes cleanly to "end this specific run."
+4. **Chat is operator-only, never on-air by default.** A `LiveChatPanel` lives in
+   `/control`, not `/watch` — putting unmoderated viewer chat in front of viewers
+   is a bigger product decision than operator visibility into it. Highlights
+   (e.g. superchats) get an explicit manual **promote-to-ticker** action into the
+   existing `summary` Ticker segment kind — curated, not automatic.
+5. **YouTube chat = worker poll job** (`liveChatMessages.list`, no push API
+   exists — server-given `pollingIntervalMillis`, typically 2–5s). **Twitch/Kick
+   chat = persistent adapter living in the `socket` process** (real push
+   transport: Twitch IRC via `tmi.js`, or EventSub over WS) — different
+   transport shape, different home. Both normalize to one message shape before
+   they reach the client.
+6. **v1 ships YouTube publish automation only.** Twitch/Kick are chat-monitoring
+   sources in v1, not outbound streaming targets — actually publishing to them is
+   a distinct, larger scope for later.
+
+## Core concept
+
+```
+Run.status: scheduled → live → ending → ended
+                       ↘ stopped (manual, any point before ended)
+                       ↘ failed  (platform binding error)
+
+on create (POST /api/runs { sceneId, durationMs?, platforms, chat }):
+  if platforms.youtube: client.createBroadcast() + bindStream()  → store ids on run
+  status = "live"; startAt = now
+  if durationMs: BullMQ delayed job "run-end:<runId>", delay: durationMs
+  emit RUN_STATE
+
+on delayed job fire (auto-end)  OR  POST /api/runs/:id/stop (manual):
+  status = "ending"
+  if platforms.youtube: client.transitionToComplete()
+  status = "ended"; endedAt = now
+  cancel any still-pending "run-end:<runId>" job (manual-stop path)
+  emit RUN_STATE
+```
+
+Run doc shape:
+```
+Run {
+  _id, sceneId,
+  status: "scheduled"|"live"|"ending"|"ended"|"stopped"|"failed",
+  startAt, durationMs (null = unbounded, manual stop only), endedAt,
+  platforms: {
+    youtube?: { broadcastId, streamId, liveChatId, channelId, accountId },
+    twitch?:  { channelLogin, chatOnly: true },
+    kick?:    { channelSlug,  chatOnly: true },
+  },
+  chat: { enabled, promoteToTicker },
+  createdBy, createdAt, updatedAt
+}
+```
+
+Normalized chat message (both transports funnel into this before hitting the
+client — mirrors the `worker:event` relay pattern already used for other
+worker→socket traffic):
+```
+ChatMessage { runId, sceneId, platform: "youtube"|"twitch"|"kick",
+              author, text, ts, isMod, superchatAmount? }
+```
+
+## Phases
+
+### Phase 0 — Run data model (`shared/`)
+- `shared/src/db/run-model.ts` (new): Mongoose schema per the shape above.
+- `shared/src/db/index.ts`: `createRun`, `getRun`, `listRuns(sceneId?)`,
+  `updateRun`, `endRun` — mirrors the existing scene data-access layer
+  (`getOrInitBroadcastState`, `listScenes`, ~L150-260).
+- `shared/src/runs.ts` (new): `RUN_STATE` socket event (mirrors `SCENE_STATE` in
+  `control.ts`), `RunStatus` type, `CHAT_MESSAGE` event + `ChatMessage` type.
+- `shared/src/db/broadcast-state-model.ts`: add minimal `chat: { enabled,
+  promoteToTicker }` to `ControlState` — must land here too, not just the type,
+  per the strict-Mongoose parity requirement (`controlstate-persist-schema.md`).
+
+### Phase 1 — Run lifecycle control (`worker/` + `public/`)
+- `worker/src/jobs/run-lifecycle.ts` (new): BullMQ delayed job handling
+  auto-end + manual-stop cancellation. Must explicitly remove the prior delayed
+  job by id before re-adding on any duration change — same caveat `index.ts`
+  already documents for repeatables.
+- `public/src/app/api/runs/route.ts` (new): `POST` create+start, `GET` list.
+- `public/src/app/api/runs/[id]/stop/route.ts` (new): `POST` stop.
+- `public/src/app/admin/runs/page.tsx` (new): pick scene, duration (or
+  unbounded), platforms to bind; Start/Stop buttons mirror the `stoppable` job
+  pattern already in `shared/src/jobs.ts` / the admin Jobs panel.
+
+### Phase 2 — YouTube binding (`worker/` + `shared/`)
+- `shared/src/db/youtube-account-model.ts` (new): OAuth refresh token storage,
+  one doc per connected channel — resolves `YOUTUBE.md`'s open "env var vs
+  Mongo" question in favor of Mongo (multi-channel is plausible once runs
+  exist).
+- `worker/src/youtube/client.ts` (new): `googleapis` wrapper —
+  `createBroadcast`, `bindStream`, `transitionToLive`, `transitionToComplete`,
+  `resolveLiveChatId`. Lifts steps 1/3/5 of `YOUTUBE.md`'s rotation flow,
+  adapted to fire per-run instead of per-11h-rotation.
+- `worker/src/jobs/run-lifecycle.ts`: extended to call into `client.ts` on run
+  start/end.
+- Add `googleapis` to `worker/package.json`.
+- **v1 ships manual stream-key handoff** (operator copies the key into OBS) —
+  no `obs-websocket` automation yet. Same deferral `YOUTUBE.md` already made;
+  not re-litigated here.
+
+### Phase 3 — Chat ingestion (`worker/` + `socket/` + `public/`)
+- `worker/src/jobs/youtube-chat.ts` (new): self-rescheduling BullMQ delayed job
+  per live run with a YouTube binding — polls `liveChatMessages.list`,
+  re-schedules itself at the server-given `pollingIntervalMillis`, emits
+  `CHAT_MESSAGE` via `emitWorkerEvent`. Not Mongo-cached — chat is ephemeral,
+  not historical data.
+- `socket/src/adapters/twitch.ts` (new): persistent `tmi.js` connection,
+  opened/closed on `RUN_STATE` transitions for runs with a Twitch binding.
+  Kick would reuse the same adapter shape with a different client — not built
+  in v1, deferred until the Twitch path proves out.
+- `socket/src/handlers/relay.ts`: extend the relay policy so `CHAT_MESSAGE`
+  from the worker (YouTube path) is allowed through the same way `worker:event`
+  is today.
+- `public/src/lib/chat.ts` (new): `useChatMessages(runId)` — mirrors
+  `useSceneState`'s cold-start + live-subscribe shape.
+- `public/src/components/control/LiveChatPanel.tsx` (new): operator-only,
+  mounted in `/control`. "Promote to ticker" action on a message pushes it into
+  the existing `summary` Ticker segment.
+
+## Explicitly out of scope for v1
+- On-air chat display (any `/watch` component) — operator-only, per Decision 4.
+- LLM-based abuse detection, auto-moderation, or auto-narration of chat —
+  parked separately, not part of this spec.
+- Twitch/Kick as outbound publish targets — chat monitoring only in v1.
+- `obs-websocket` automation of the stream-key handoff — manual for v1, same
+  deferral as `YOUTUBE.md`.
+- Seamless/no-reconnect stream rebinding — carried over from `YOUTUBE.md`,
+  still not worth the complexity (stats reset per-video regardless).
+
+## Open questions / decisions needed
+- **OAuth token encryption at rest**: Mongo storage is decided (Phase 2); the
+  encryption mechanism (app-level secret vs KMS) isn't.
+- **`ControlState.chat.{enabled,promoteToTicker}` scope**: this plan defaults to
+  per-scene (persistent operator preference, survives across runs on that
+  scene). Could instead reset per-run if that's a better fit — flag if so.
+- **Title/description templating** for YouTube broadcasts (static vs pulled from
+  `ControlState` at run-start time) — carried over unresolved from `YOUTUBE.md`.
+- **Failure handling/alerting** if a YouTube API call or the OBS handoff fails
+  mid-run (retry / alert channel / leave on old broadcast) — carried over
+  unresolved from `YOUTUBE.md`.
+- **Socket fan-out at higher run counts**: broadcast-then-filter is fine today;
+  revisit room-per-run if concurrent run count grows enough to matter.
+
+## Scope
+~9 new files (shared: 3, worker: 4, socket: 2, public: 5 — some overlap in
+counting shared helpers) + edits to ~4 existing files, across all four
+phases/packages. Similar order of magnitude to `regional-highres-plan.md`.
+
+## Start here
+Phase 0 (run data model) — every later phase reads/writes through it, and it's
+where the "new collection vs fields-on-scene" call gets made concrete in code
+before anything schedules against it.

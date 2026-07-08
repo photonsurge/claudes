@@ -169,18 +169,6 @@ describe("mergeDirectorConfig", () => {
     expect(mergeDirectorConfig(base, {}).countries).toEqual(base.countries);
   });
 
-  it("ships the ocean kind with every sea point favourited by default", () => {
-    expect(DEFAULT_DIRECTOR_CONFIG.kinds.ocean).toBe(true);
-    expect(DEFAULT_DIRECTOR_CONFIG.seaPoints.length).toBeGreaterThan(0);
-  });
-
-  it("sanitizes a seaPoints patch to known catalog ids and keeps base otherwise", () => {
-    expect(mergeDirectorConfig(base, { seaPoints: ["gulf-stream", "atlantis"] }).seaPoints).toEqual(["gulf-stream"]);
-    expect(mergeDirectorConfig(base, { seaPoints: [] }).seaPoints).toEqual([]);
-    expect(mergeDirectorConfig(base, { seaPoints: "gulf-stream" as any }).seaPoints).toEqual(base.seaPoints);
-    expect(mergeDirectorConfig(base, {}).seaPoints).toEqual(base.seaPoints);
-  });
-
   it("clamps the ad cadence to a floor of 1 and rounds it", () => {
     expect(mergeDirectorConfig(base, { adEveryNShots: 0 }).adEveryNShots).toBe(1);
     expect(mergeDirectorConfig(base, { adEveryNShots: -3 }).adEveryNShots).toBe(1);
