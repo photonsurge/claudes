@@ -12,7 +12,8 @@ import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake } from "../../lib/tracks/types";
 import { alertSummary } from "../../lib/broadcast";
-import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import BroadcastCard from "./BroadcastCard";
 import { KIND_COLOR, KIND_LABEL } from "./kinds";
 import AreaStatus from "./AreaStatus";
 
@@ -35,51 +36,7 @@ export default function OnAirCard({
   const summary = alertSummary(alerts, quakes, volcanoes);
 
   return (
-    <div
-      style={{
-        width: 460,
-        padding: "16px 20px",
-        background: theme.panelBg,
-        ...accentBorder(theme.panelBorder, `4px solid ${color}`),
-        borderRadius: 14,
-        boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-        color: "#e6edf7",
-      }}
-    >
-      <style>{"@keyframes bcast-onair{0%,100%{opacity:1}50%{opacity:0.4}}"}</style>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 800,
-            letterSpacing: 1,
-            textTransform: "uppercase",
-            padding: "3px 10px",
-            borderRadius: 5,
-            background: color,
-            color: "#fff",
-          }}
-        >
-          {kindLabel}
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc" }}>
-          <span
-            style={{
-              width: 9,
-              height: 9,
-              borderRadius: "50%",
-              background: "#ff3b3b",
-              animation: "bcast-onair 1.4s ease-in-out infinite",
-            }}
-          />
-          ON AIR
-        </span>
-      </div>
-
+    <BroadcastCard accent={color} badge={kindLabel} badgeColor={color} live theme={theme}>
       <div
         style={{
           fontSize: 30,
@@ -143,6 +100,6 @@ export default function OnAirCard({
           </span>
         </div>
       ) : null}
-    </div>
+    </BroadcastCard>
   );
 }

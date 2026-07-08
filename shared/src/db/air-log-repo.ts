@@ -102,6 +102,17 @@ export function makeAirLogRepo(runModel: Model<iAirRunModel>, entryModel: Model<
       const docs = await entryModel.find({ runId }).sort({ seq: 1 }).lean().exec();
       return docs.map((d) => strip<iAirEntry>(d));
     },
+
+    /**
+     * Every airing of one subject across all runs, newest-first — e.g.
+     * "storm:nws:XYZ" for an alert's "when did this air" panel.
+     */
+    async listEntriesForSegment(segmentId: string, limit = 0): Promise<iAirEntry[]> {
+      let q = entryModel.find({ segmentId }).sort({ startedAt: -1 });
+      if (limit > 0) q = q.limit(limit);
+      const docs = await q.lean().exec();
+      return docs.map((d) => strip<iAirEntry>(d));
+    },
   };
 }
 

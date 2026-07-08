@@ -575,6 +575,16 @@ export function worldWatchFeed(
   );
 }
 
+/** The feed rows of a single event kind — for the per-category WORLD REPORT
+ *  deck slides (ALERTS / SEISMIC / VOLCANOES each show only their own kind).
+ *  Order is preserved, so rows stay most-serious-first per worldWatchFeed. */
+export function filterFeedByKind(
+  feed: WorldWatchItem[],
+  kind: WorldWatchItem["kind"],
+): WorldWatchItem[] {
+  return feed.filter((item) => item.kind === kind);
+}
+
 /** Raw areaDesc if the source gave one, else the nearest notable city/cities —
  *  same fallback worldWatchFeed already uses so the two on-air panels agree. */
 export function alertAreaLabel(a: AlertFeature, cities: City[] = []): string {

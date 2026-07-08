@@ -18,7 +18,7 @@ import type { Cam } from "../../lib/cams/types";
 import { nearby, formatKm } from "../../lib/geo";
 import { useClimateYear } from "../../lib/history-client";
 import { MiniChart, buildClimateRows, usePagedSlides, sparkPoints, toPath, CHART_W, formatReading } from "./PointHistoryPanel";
-import { accentBorder } from "./config";
+import BroadcastCard, { CardEyebrow, CardSection } from "./BroadcastCard";
 
 const CITY_RADIUS_KM = 500;
 const CAM_RADIUS_KM = 400;
@@ -136,34 +136,10 @@ export default function EventNearbyPanel({
   const moreCams = nearCams.length - shownCams.length;
 
   return (
-    <div
-      style={{
-        width: 440,
-        background: "rgba(8,13,22,0.82)",
-        ...accentBorder(`1px solid ${color}44`, `3px solid ${color}`),
-        borderRadius: 8,
-        backdropFilter: "blur(4px)",
-        WebkitBackdropFilter: "blur(4px)",
-        fontFamily: "system-ui, sans-serif",
-        color: "#e6eefb",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          letterSpacing: 1.4,
-          color: "#9fb3cc",
-          padding: "10px 16px 7px",
-        }}
-      >
-        ▸ NEAR THIS EVENT
-      </div>
-
+    <BroadcastCard accent={color} eyebrow="Near This Event">
       {/* Featured city — photo + blurb; slot cycles through every nearby city. */}
       {featured ? (
-        <div style={{ padding: "0 16px 13px" }}>
+        <div>
           {featured.wikiThumb ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -213,11 +189,9 @@ export default function EventNearbyPanel({
           draws for the on-air focus, keyed to this city instead. One variable
           at a time (timer-paged), not all three stacked. */}
       {climateRows.length ? (
-        <div style={{ borderTop: "1px solid rgba(120,140,170,0.14)", padding: "9px 16px 4px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <CardSection style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc" }}>
-              ▸ {featured?.name.toUpperCase()} · PAST YEAR
-            </span>
+            <CardEyebrow>{featured?.name.toUpperCase()} · Past Year</CardEyebrow>
             {climateSlide.pageCount > 1 ? (
               <span style={{ fontSize: 9, fontWeight: 750, letterSpacing: 1.05, color }}>
                 {climateSlide.page + 1}/{climateSlide.pageCount}
@@ -235,13 +209,13 @@ export default function EventNearbyPanel({
               caption={row.caption}
             />
           ))}
-        </div>
+        </CardSection>
       ) : null}
 
       {/* Other nearby cities — name/pop/distance plus each city's own past-year
           temperature sparkline (NearbyCityRow), fetched per row. */}
       {shownRows.length ? (
-        <div style={{ borderTop: "1px solid rgba(120,140,170,0.14)", padding: "8px 16px 10px", fontSize: 13 }}>
+        <CardSection style={{ fontSize: 13 }}>
           {shownRows.map((n) => (
             <NearbyCityRow key={n.item.id} city={n.item} distanceKm={n.distanceKm} />
           ))}
@@ -250,15 +224,12 @@ export default function EventNearbyPanel({
               +{moreCities} more within {CITY_RADIUS_KM} km
             </div>
           ) : null}
-        </div>
+        </CardSection>
       ) : null}
 
       {/* Nearby webcams. */}
       {shownCams.length ? (
-        <div style={{ borderTop: "1px solid rgba(120,140,170,0.14)", padding: "9px 16px 13px" }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc", marginBottom: 8 }}>
-            ▸ LIVE WEBCAMS
-          </div>
+        <CardSection eyebrow="Live Webcams">
           <div style={{ display: "flex", gap: 8 }}>
             {shownCams.map((n) => (
               <div key={n.item.camId} style={{ flex: 1, minWidth: 0 }}>
@@ -284,8 +255,8 @@ export default function EventNearbyPanel({
               +{moreCams} more within {CAM_RADIUS_KM} km
             </div>
           ) : null}
-        </div>
+        </CardSection>
       ) : null}
-    </div>
+    </BroadcastCard>
   );
 }

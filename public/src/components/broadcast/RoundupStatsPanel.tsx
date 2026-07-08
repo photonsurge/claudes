@@ -9,7 +9,8 @@
  * ground location, see hasRealLocation in ./kinds).
  */
 import type { iSummaryStats } from "@photonsurge/shared/db/event-summary-model";
-import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import BroadcastCard, { DIVIDER } from "./BroadcastCard";
 
 function Stat({ label, value, sub }: { label: string; value: number; sub?: string }) {
   if (!value) return null;
@@ -44,21 +45,7 @@ export default function RoundupStatsPanel({
   if (!tiles.length && !sources?.length) return null;
 
   return (
-    <div
-      style={{
-        width: 460,
-        padding: "12px 20px",
-        background: theme.panelBg,
-        ...accentBorder(theme.panelBorder, `4px solid ${theme.accent}`),
-        borderRadius: 14,
-        boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-        color: "#e6edf7",
-      }}
-    >
+    <BroadcastCard theme={theme}>
       {tiles.length ? (
         <div style={{ display: "flex", gap: 18 }}>
           {tiles.map((t) => (
@@ -71,7 +58,7 @@ export default function RoundupStatsPanel({
           style={{
             marginTop: tiles.length ? 10 : 0,
             paddingTop: tiles.length ? 8 : 0,
-            borderTop: tiles.length ? "1px solid rgba(120,140,170,0.15)" : undefined,
+            borderTop: tiles.length ? DIVIDER : undefined,
             fontSize: 11,
             color: "#8b98ae",
             letterSpacing: 0.3,
@@ -80,6 +67,6 @@ export default function RoundupStatsPanel({
           Sources: {sources.join(", ")}
         </div>
       ) : null}
-    </div>
+    </BroadcastCard>
   );
 }

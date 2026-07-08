@@ -133,3 +133,43 @@ describe("alerts-repo upsert — translation carry-forward", () => {
     expect(captured.$set.info[0].translationHash).toBeUndefined();
   });
 });
+
+describe("alerts-repo chain — CAP lifecycle walk", () => {
+  const focal = {
+    source: "nws",
+    identifier: "urn:oid:2.49.0.1.840.0.abc+1",
+    references: ["w-nws.webmaster@noaa.gov,urn:oid:2.49.0.1.840.0.prev,2026-07-08T00:00:00Z"],
+  };
+
+  it("matches the focal id, the ids it references, and later docs referencing it (regex-escaped)", async () => {
+    let capturedQuery: any;
+    const model = {
+      findOne: () => ({ select: () => ({ lean: () => ({ exec: async () => focal }) }) }),
+      find: jest.fn((q: any) => {
+        capturedQuery = q;
+        return { select: () => ({ sort: () => ({ lean: () => ({ exec: async () => [{ __v: 0, id: "a1" }] }) }) }) };
+      }),
+    } as any;
+    const repo = makeAlertsRepo(model);
+
+    const out = await repo.chain("nws", focal.identifier);
+
+    expect(capturedQuery.source).toBe("nws");
+    const [byId, byRef] = capturedQuery.$or;
+    // Both the focal identifier and the referenced (superseded) identifier are in the $in.
+    expect(byId.identifier.$in).toEqual([focal.identifier, "urn:oid:2.49.0.1.840.0.prev"]);
+    // The regex must escape CAP identifiers' special chars (the "+" here).
+    expect(byRef.references.$regex).toBe("urn:oid:2\\.49\\.0\\.1\\.840\\.0\\.abc\\+1");
+    expect(out).toEqual([{ id: "a1" }]);
+  });
+
+  it("returns [] when the focal alert does not exist", async () => {
+    const model = {
+      findOne: () => ({ select: () => ({ lean: () => ({ exec: async () => null }) }) }),
+      find: jest.fn(),
+    } as any;
+    const repo = makeAlertsRepo(model);
+    expect(await repo.chain("nws", "nope")).toEqual([]);
+    expect(model.find).not.toHaveBeenCalled();
+  });
+});

@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { listCities, formatPopulation, type City } from "../../lib/cities";
 import { useClimateYear } from "../../lib/history-client";
 import { MiniChart, buildClimateRows, usePagedSlides, sparkPoints, toPath, CHART_W, formatReading } from "./PointHistoryPanel";
-import { accentBorder } from "./config";
+import BroadcastCard, { CardEyebrow, CardSection } from "./BroadcastCard";
 
 const TOP_CITY_LIMIT = 8;
 /** Seconds the featured city holds before the slide advances to the next. */
@@ -113,34 +113,10 @@ export default function TopCitiesPanel({
   const rest = cities.filter((c) => c !== featured);
 
   return (
-    <div
-      style={{
-        width: 440,
-        background: "rgba(8,13,22,0.82)",
-        ...accentBorder(`1px solid ${color}44`, `3px solid ${color}`),
-        borderRadius: 8,
-        backdropFilter: "blur(4px)",
-        WebkitBackdropFilter: "blur(4px)",
-        fontFamily: "system-ui, sans-serif",
-        color: "#e6eefb",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          letterSpacing: 1.4,
-          color: "#9fb3cc",
-          padding: "10px 16px 7px",
-        }}
-      >
-        ▸ TOP CITIES
-      </div>
-
+    <BroadcastCard accent={color} eyebrow="Top Cities">
       {/* Featured city — photo + blurb; slot cycles through every top city. */}
       {featured ? (
-        <div style={{ padding: "0 16px 13px" }}>
+        <div>
           {featured.wikiThumb ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -188,11 +164,9 @@ export default function TopCitiesPanel({
           EventNearbyPanel draw, keyed to this city. One variable at a time
           (timer-paged), not all three stacked. */}
       {climateRows.length ? (
-        <div style={{ borderTop: "1px solid rgba(120,140,170,0.14)", padding: "9px 16px 4px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <CardSection style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc" }}>
-              ▸ {featured?.name.toUpperCase()} · PAST YEAR
-            </span>
+            <CardEyebrow>{featured?.name.toUpperCase()} · Past Year</CardEyebrow>
             {climateSlide.pageCount > 1 ? (
               <span style={{ fontSize: 9, fontWeight: 750, letterSpacing: 1.05, color }}>
                 {climateSlide.page + 1}/{climateSlide.pageCount}
@@ -210,18 +184,18 @@ export default function TopCitiesPanel({
               caption={row.caption}
             />
           ))}
-        </div>
+        </CardSection>
       ) : null}
 
       {/* Other top cities — name/population plus each city's own past-year
           temperature sparkline (TopCityRow), fetched per row. */}
       {rest.length ? (
-        <div style={{ borderTop: "1px solid rgba(120,140,170,0.14)", padding: "8px 16px 10px", fontSize: 13 }}>
+        <CardSection style={{ fontSize: 13 }}>
           {rest.map((c) => (
             <TopCityRow key={c.id} city={c} />
           ))}
-        </div>
+        </CardSection>
       ) : null}
-    </div>
+    </BroadcastCard>
   );
 }

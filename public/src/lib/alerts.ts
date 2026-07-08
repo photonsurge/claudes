@@ -98,6 +98,30 @@ export async function listAlerts(opts: ListAlertsOpts = {}): Promise<Alert[]> {
   return Array.isArray(body?.alerts) ? body.alerts : [];
 }
 
+/** Full alert doc as the detail page sees it (list shape + provenance extras). */
+export type AlertDoc = Alert & {
+  scope?: string;
+  references: string[];
+  ingestedAt: string;
+  raw?: unknown;
+};
+
+export interface AlertDetail {
+  alert: AlertDoc;
+  /** CAP lifecycle chain (referenced + referencing messages), oldest-first. */
+  chain: AlertDoc[];
+  /** Director as-run entries that aired this alert, newest-first. */
+  aired: import("./airlog").AirEntry[];
+}
+
+/** One alert in full + its update chain + when it aired. `id` may be the doc
+ *  uuid or the composite "source:identifier" key (used by run-timeline links). */
+export async function getAlertDetail(id: string): Promise<AlertDetail | null> {
+  const res = await fetch(`/api/admin/alerts/${encodeURIComponent(id)}`, { cache: "no-store" });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export const severityColor = (rank: SeverityRank): string => SEVERITY_COLORS[rank];
 export const severityLabel = (rank: SeverityRank): string => SEVERITY_LABELS[rank];
 

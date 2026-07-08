@@ -1,0 +1,162 @@
+"use client";
+
+/**
+ * The single card shell for the on-air LEFT COLUMN. Every context/event/mode
+ * panel that used to roll its own container (OnAirCard's themed glass, or the
+ * compact `rgba(8,13,22,.82)` report look QuakeReport/TrackInfo hardcoded)
+ * renders inside this instead, so the whole column reads as one system: same
+ * themed glass background, hairline border with a coloured accent stripe,
+ * radius, drop shadow, blur, width, base ink + font.
+ *
+ * Header is optional and comes in two flavours (a panel usually picks one):
+ *   • `badge` — a coloured kind chip, optionally with a pulsing ON AIR dot
+ *     (the OnAirCard look), and
+ *   • `eyebrow` — a `▸ SECTION` micro-label (the QuakeReport/TrackInfo look),
+ *     with room for a right-aligned chip via `headerRight`.
+ *
+ * Body is `children`. Sub-sections divided by a hairline use <CardSection>.
+ * Pure presentation inside the scaled broadcast stage; pointer-inert.
+ */
+import type { CSSProperties, ReactNode } from "react";
+import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
+
+/** One column width so the stacked cards share clean left/right edges. */
+export const CARD_W = 420;
+
+/** Shared ink tokens — every left-column panel drew from these ad-hoc before. */
+export const INK = "#e6edf7";
+export const MUTED = "#9fb3cc";
+export const DIM = "#8ea3bf";
+export const DIVIDER = "1px solid rgba(120,140,170,0.15)";
+export const ON_AIR_RED = "#ff3b3b";
+
+/** Standard `▸ SECTION` micro-label used for card + sub-section headers. */
+export function CardEyebrow({ children, color = MUTED }: { children: ReactNode; color?: string }) {
+  return (
+    <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.4, textTransform: "uppercase", color }}>
+      {children}
+    </div>
+  );
+}
+
+/** A sub-block within a card, separated from what's above it by a hairline
+ *  (unless `first`), with an optional eyebrow label. */
+export function CardSection({
+  eyebrow,
+  first = false,
+  children,
+  style,
+}: {
+  eyebrow?: ReactNode;
+  first?: boolean;
+  children: ReactNode;
+  style?: CSSProperties;
+}) {
+  return (
+    <div
+      style={{
+        marginTop: first ? 0 : 12,
+        paddingTop: first ? 0 : 12,
+        borderTop: first ? undefined : DIVIDER,
+        ...style,
+      }}
+    >
+      {eyebrow ? <div style={{ marginBottom: 6 }}><CardEyebrow>{eyebrow}</CardEyebrow></div> : null}
+      {children}
+    </div>
+  );
+}
+
+export default function BroadcastCard({
+  accent,
+  badge,
+  badgeColor,
+  live = false,
+  eyebrow,
+  eyebrowColor = MUTED,
+  headerRight,
+  width = CARD_W,
+  theme = DEFAULT_THEME,
+  children,
+  style,
+}: {
+  /** Left accent stripe colour — defaults to the theme accent. */
+  accent?: string;
+  /** Coloured kind chip in the header (e.g. "Country", "Seismic"). */
+  badge?: string;
+  /** Chip background — defaults to `accent`. */
+  badgeColor?: string;
+  /** Show the pulsing ON AIR dot beside the badge. */
+  live?: boolean;
+  /** `▸ SECTION` micro-header, when the panel has no kind chip. */
+  eyebrow?: ReactNode;
+  /** Eyebrow tint — defaults to the muted ink (e.g. gold for a VIP track). */
+  eyebrowColor?: string;
+  /** Right-aligned header content (e.g. a category chip). */
+  headerRight?: ReactNode;
+  width?: number;
+  theme?: BroadcastTheme;
+  children: ReactNode;
+  style?: CSSProperties;
+}) {
+  const stripe = accent ?? theme.accent;
+  const hasBadgeRow = badge != null || live;
+  const hasEyebrowRow = eyebrow != null || headerRight != null;
+
+  return (
+    <div
+      style={{
+        width,
+        padding: "14px 20px",
+        background: theme.panelBg,
+        ...accentBorder(theme.panelBorder, `4px solid ${stripe}`),
+        borderRadius: 14,
+        boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        pointerEvents: "none",
+        fontFamily: "system-ui, sans-serif",
+        color: INK,
+        ...style,
+      }}
+    >
+      {live ? <style>{"@keyframes bcast-onair{0%,100%{opacity:1}50%{opacity:0.4}}"}</style> : null}
+
+      {hasBadgeRow ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          {badge != null ? (
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                padding: "3px 10px",
+                borderRadius: 5,
+                background: badgeColor ?? stripe,
+                color: "#fff",
+              }}
+            >
+              {badge}
+            </span>
+          ) : null}
+          {live ? (
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, color: MUTED }}>
+              <span style={{ width: 9, height: 9, borderRadius: "50%", background: ON_AIR_RED, animation: "bcast-onair 1.4s ease-in-out infinite" }} />
+              ON AIR
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {hasEyebrowRow ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+          {eyebrow != null ? <CardEyebrow color={eyebrowColor}>▸ {eyebrow}</CardEyebrow> : null}
+          {headerRight != null ? <div style={{ marginLeft: "auto" }}>{headerRight}</div> : null}
+        </div>
+      ) : null}
+
+      {children}
+    </div>
+  );
+}

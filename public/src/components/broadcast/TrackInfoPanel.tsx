@@ -15,7 +15,7 @@
  * broadcast stage; pointer-inert. Returns null for any segment without trackInfo.
  */
 import type { Segment } from "@photonsurge/shared/director";
-import { accentBorder } from "./config";
+import BroadcastCard, { DIVIDER } from "./BroadcastCard";
 
 /** Detail rows that change moment-to-moment — worth showing live under the photo. */
 const LIVE_LABELS = new Set(["Altitude", "Heading", "Speed", "Course"]);
@@ -50,36 +50,14 @@ export default function TrackInfoPanel({
   const liveStats = (segment.details ?? []).filter((d) => LIVE_LABELS.has(d.label));
 
   return (
-    <div
-      style={{
-        width: 380,
-        background: "rgba(8,13,22,0.82)",
-        ...accentBorder(`1px solid ${color}44`, `3px solid ${color}`),
-        borderRadius: 8,
-        backdropFilter: "blur(4px)",
-        WebkitBackdropFilter: "blur(4px)",
-        fontFamily: "system-ui, sans-serif",
-        color: "#e6eefb",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          fontSize: 9,
-          fontWeight: 800,
-          letterSpacing: 1.4,
-          color: info.vip ? "#ffd76a" : "#9fb3cc",
-          padding: "8px 12px 6px",
-        }}
-      >
-        {info.vip ? <span aria-hidden>★</span> : null}▸ {heading}
-        {info.category ? (
+    <BroadcastCard
+      accent={color}
+      eyebrow={<>{info.vip ? "★ " : ""}{heading}</>}
+      eyebrowColor={info.vip ? "#ffd76a" : undefined}
+      headerRight={
+        info.category ? (
           <span
             style={{
-              marginLeft: "auto",
               fontSize: 8,
               fontWeight: 700,
               letterSpacing: 0.6,
@@ -92,10 +70,10 @@ export default function TrackInfoPanel({
           >
             {info.category}
           </span>
-        ) : null}
-      </div>
-
-      <div style={{ padding: "0 12px 10px" }}>
+        ) : undefined
+      }
+    >
+      <div>
         {info.photoUrl ? (
           <div style={{ position: "relative", marginBottom: 7 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -158,8 +136,9 @@ export default function TrackInfoPanel({
       {liveStats.length ? (
         <div
           style={{
-            borderTop: "1px solid rgba(120,140,170,0.14)",
-            padding: "6px 12px 9px",
+            marginTop: 10,
+            paddingTop: 9,
+            borderTop: DIVIDER,
             display: "flex",
             flexWrap: "wrap",
             gap: "2px 14px",
@@ -173,6 +152,6 @@ export default function TrackInfoPanel({
           ))}
         </div>
       ) : null}
-    </div>
+    </BroadcastCard>
   );
 }

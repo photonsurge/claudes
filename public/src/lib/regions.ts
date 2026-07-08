@@ -10,13 +10,39 @@ export interface RegionWithWeather extends iRegionModel {
   weather: iAreaWeatherReportModel | null;
 }
 
+/** One region plus its latest area-weather snapshot and recent history — the /regions/[id] payload. */
+export interface RegionDetail {
+  region: iRegionModel;
+  weather: iAreaWeatherReportModel | null;
+  history: iAreaWeatherReportModel[];
+}
+
 const EMPTY: RegionWithWeather[] = [];
+
+/** Enrichment status label + colour for a region — mirrors `countryEnrichmentStatus`. */
+export function regionEnrichmentStatus(r: Pick<iRegionModel, "wikiTitle" | "wikiThumb" | "wikiExtract" | "wikiFetchedAt">): { label: string; color: string } {
+  if (r.wikiTitle || r.wikiThumb || r.wikiExtract) return { label: "Enriched", color: "#34d399" };
+  if (r.wikiFetchedAt) return { label: "Checked — no match", color: "#fbbf24" };
+  return { label: "Not enriched", color: "#8b95a7" };
+}
 
 /** Plain fetch of the worker-seeded region catalog, each with its latest area-weather report inlined. */
 export async function listRegions(): Promise<RegionWithWeather[]> {
   const res = await fetch("/api/regions", { cache: "no-store" });
   const body = await res.json().catch(() => null);
   return body?.regions ?? [];
+}
+
+/** Fetch one full region record (+ area-weather history) for its dedicated details page. */
+export async function getRegion(id: string): Promise<{ detail?: RegionDetail; error?: string }> {
+  try {
+    const res = await fetch(`/api/regions/${encodeURIComponent(id)}`, { cache: "no-store" });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body?.region) return { error: body?.error ?? `HTTP ${res.status}` };
+    return { detail: { region: body.region, weather: body.weather ?? null, history: body.history ?? [] } };
+  } catch (error) {
+    return { error: String(error) };
+  }
 }
 
 /** Poll the Region catalog for the admin table. Mirrors `useCountries`. */

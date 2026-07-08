@@ -139,6 +139,43 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       await model.updateOne({ id: alertId }, { $set }).exec();
     },
 
+    /** One alert by id, full doc (including `raw` — the detail page shows it). */
+    async getById(id: string): Promise<iAlertModel | null> {
+      const doc = await model.findOne({ id }).lean().exec();
+      return doc ? strip(doc) : null;
+    },
+
+    /**
+     * The CAP lifecycle chain around one message: same-source docs it
+     * references (the messages it updates/cancels) plus docs that reference
+     * IT (later updates), plus the focal message itself. CAP references are
+     * "sender,identifier,sent" strings, so both directions match on the
+     * identifier substring. Sorted oldest-first by `sent` — a ready-made
+     * timeline. `raw` is dropped (chain rows are summary rows).
+     */
+    async chain(source: string, identifier: string): Promise<iAlertModel[]> {
+      const focal = await model.findOne({ source, identifier }).select({ raw: 0 }).lean().exec();
+      if (!focal) return [];
+      // Identifiers this message points back at (middle CSV field of each ref).
+      const backIds = (focal.references ?? [])
+        .map((ref) => ref.split(",")[1] ?? ref)
+        .filter(Boolean);
+      const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const docs = await model
+        .find({
+          source,
+          $or: [
+            { identifier: { $in: [identifier, ...backIds] } },
+            { references: { $regex: escaped } },
+          ],
+        })
+        .select({ raw: 0 })
+        .sort({ sent: 1 })
+        .lean()
+        .exec();
+      return docs.map(strip);
+    },
+
     async list(opts: AlertListOpts = {}): Promise<iAlertModel[]> {
       const q: Record<string, unknown> = {};
       if (opts.activeOnly) q.active = true;

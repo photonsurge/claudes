@@ -15,6 +15,7 @@ import { usePointForecast, useAreaForecast, type ForecastDay, type AreaForecastD
 import { formatReading } from "./PointHistoryPanel";
 import { SectionTitle } from "./PointHistoryPanel";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import BroadcastCard from "./BroadcastCard";
 import { hazardMeta } from "../../lib/hazard";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
 
@@ -144,29 +145,18 @@ export default function ForecastPanel({
   if (!days.length) return null;
 
   return (
-    <div
-      style={{
-        boxSizing: "border-box",
-        display: "flex",
-        flexDirection: "column",
-        gap: compact ? 6 : 10,
-        padding: `${compact ? 10 : 14}px 16px`,
-        background: theme.panelBg,
-        border: theme.panelBorder,
-        borderRadius: 12,
-        boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-      }}
+    <BroadcastCard
+      theme={theme}
+      style={{ width: "auto", boxSizing: "border-box", padding: `${compact ? 10 : 14}px 16px` }}
     >
-      <SectionTitle title="3-DAY FORECAST" tag={bbox ? "AREA" : "POINT"} accent={theme.accent} />
-      <div style={{ display: "flex", flexDirection: "row", gap: STRIP_GAP }}>
-        {days.map((d) => (
-          <DayCard key={d.date} day={d} accent={theme.accent} compact={compact} />
-        ))}
+      <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 10 }}>
+        <SectionTitle title="3-DAY FORECAST" tag={bbox ? "AREA" : "POINT"} accent={theme.accent} />
+        <div style={{ display: "flex", flexDirection: "row", gap: STRIP_GAP }}>
+          {days.map((d) => (
+            <DayCard key={d.date} day={d} accent={theme.accent} compact={compact} />
+          ))}
+        </div>
       </div>
-    </div>
+    </BroadcastCard>
   );
 }

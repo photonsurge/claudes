@@ -37,28 +37,22 @@ import Ticker from "./Ticker";
 import BrandPanel from "./BrandPanel";
 import IntensityMeter from "./IntensityMeter";
 import LiveAlertPanel from "./LiveAlertPanel";
-import WorldWatchPanel from "./WorldWatchPanel";
-import WorldSituationPanel from "./WorldSituationPanel";
+import WorldReportDeck from "./WorldReportDeck";
 import KpIndexPanel from "./KpIndexPanel";
 import SpaceWeatherMeter from "./SpaceWeatherMeter";
 import { SeismicMonitor, TsunamiMonitor, WeatherMonitors } from "./MonitorCluster";
 import SeismicStationRow from "./SeismicStationRow";
 import TideStationRow from "./TideStationRow";
-import PointHistoryPanel, { usePagedSlides } from "./PointHistoryPanel";
+import PointHistoryPanel from "./PointHistoryPanel";
 import DepthProfilePanel from "./DepthProfilePanel";
 import ForecastPanel from "./ForecastPanel";
 import EventOverlay from "./EventOverlay";
-import EventNearbyPanel from "./EventNearbyPanel";
-import QuakeReport from "./QuakeReport";
-import TrackInfoPanel from "./TrackInfoPanel";
-import VolcanoFactsPanel, { volcanoFactsSlideHasContent } from "./VolcanoFactsPanel";
-import VolcanoNearbyPanel, { volcanoNearbySlideHasContent } from "./VolcanoNearbyPanel";
-import OnAirCard from "./OnAirCard";
 import RoundupStatsPanel from "./RoundupStatsPanel";
-import TopCitiesPanel from "./TopCitiesPanel";
 import SyslogFeed from "./SyslogFeed";
 import UpNextPanel from "./UpNextPanel";
 import BuildInfoTag from "./BuildInfoTag";
+import SlideDeck from "./SlideDeck";
+import { modeSlides } from "./mode-slides";
 import { hasRealLocation, isTargetedEvent, KIND_COLOR } from "./kinds";
 
 /** Design-stage layout constants (in 1080p reference pixels). */
@@ -199,128 +193,43 @@ export default function BroadcastFrame({
   const areaQuakes = areaBbox ? scopeQuakesToBbox(quakes, areaBbox) : quakes;
   const areaVolcanoes = areaBbox ? scopeVolcanoesToBbox(volcanoes, areaBbox) : volcanoes;
 
-  // Country spotlights and region tours both alternate the "IN VIEW" roundup
-  // card and the "TOP CITIES" info card as separate slides instead of
-  // stacking both — stacked, the combined column ran taller than the frame
-  // and cut off against the top edge. Both stay mounted (toggled via
-  // display, not conditional rendering) so TopCitiesPanel's own featured-
-  // city/climate timers and fetched city list survive across the toggle
-  // instead of resetting every time.
+  // A country spotlight / region tour scopes the "IN VIEW" roundup + "TOP
+  // CITIES" info to this framed area — set here so mode-slides can turn them
+  // into the wide-shot deck (they'd overflow the frame stacked, so the deck
+  // rotates them instead). Only when the shot has a real framed area (not a
+  // targeted point or a notable-track segment).
   const wideCitiesBbox =
     onAirSegment && !eventTargeted && !hasTrackInfo && (onAirSegment.kind === "country" || onAirSegment.kind === "tour")
       ? areaBbox
       : undefined;
-  // Lifted purely to know synchronously whether the forecast strip will have
-  // anything to show before deciding whether it gets a 3rd slide page below —
-  // ForecastPanel re-fetches the same (rounded, Cache-Control: max-age=60) URL
-  // when it mounts as that page; the duplicate call is cheap and one-time per
-  // bbox change.
+  // Whether the country/tour area forecast has data — decides if it earns its
+  // own slide in the deck (see mode-slides). ForecastPanel re-fetches the same
+  // (rounded, Cache-Control: max-age=60) URL when it mounts as that slide; the
+  // duplicate call is cheap and one-time per bbox change.
   const wideCitiesForecast = useAreaForecast(wideCitiesBbox ?? null);
   const wideCitiesHasForecast = wideCitiesForecast.days.length > 0;
-  const wideCitiesPages = wideCitiesBbox ? [0, 1, ...(wideCitiesHasForecast ? [2] : [])] : [];
-  const wideCitiesSlide = usePagedSlides(wideCitiesPages, 1);
-  // Quakes stack the magnitude/depth breakdown above the "who's affected"
-  // photo/blurb/webcam panel — together they run far taller than the frame
-  // and cut off against the top edge, so (same fix as wideCitiesSlide above)
-  // they alternate as slides instead of stacking. Both stay mounted (display
-  // toggle, not conditional render) so EventNearbyPanel's own featured-city
-  // cycle and fetched data survive across the toggle.
-  const quakeSlide = usePagedSlides(
-    onAirSegment?.kind === "quake" && onAirSegment.quake ? [0, 1] : [],
-    1,
-  );
-  // Volcano Track Info similarly alternates photo+blurb with the richer
-  // gallery/facts/USGS-alert slide and a third "what else is nearby" slide
-  // (same "ran taller than the frame" reason as quakeSlide/wideCitiesSlide) —
-  // each page only appears when it actually has content, so a volcano with no
-  // USGS alert / nothing nearby still cycles cleanly through what it does have.
-  const volcanoHasFacts = onAirSegment?.kind === "volcano" && volcanoFactsSlideHasContent(onAirSegment.trackInfo);
-  const volcanoHasNearby =
-    onAirSegment?.kind === "volcano" &&
-    volcanoNearbySlideHasContent(onAirSegment.camera.center, cities, quakes, alerts);
-  const volcanoPages = onAirSegment?.kind === "volcano" ? [0, ...(volcanoHasFacts ? [1] : []), ...(volcanoHasNearby ? [2] : [])] : [];
-  const volcanoSlide = usePagedSlides(volcanoPages.length > 1 ? volcanoPages : [], 1);
-  const volcanoActivePage = volcanoSlide.visible[0] ?? 0;
 
-  // Whatever currently owns the bottom-left slot (mutually exclusive on
-  // segment kind) — the history panel stacks above whichever of these is on
-  // screen, so it always reads as "left column" rather than a fixed position.
-  const leftBottomPanel = !onAirSegment
-    ? null
-    : hasTrackInfo
-      ? volcanoHasFacts || volcanoHasNearby
-        ? (
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ display: volcanoActivePage === 0 ? "block" : "none" }}>
-              <TrackInfoPanel segment={onAirSegment} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
-            </div>
-            {volcanoHasFacts ? (
-              <div style={{ display: volcanoActivePage === 1 ? "block" : "none" }}>
-                <VolcanoFactsPanel info={onAirSegment.trackInfo!} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
-              </div>
-            ) : null}
-            {volcanoHasNearby ? (
-              <div style={{ display: volcanoActivePage === 2 ? "block" : "none" }}>
-                <VolcanoNearbyPanel
-                  center={onAirSegment.camera.center}
-                  cities={cities}
-                  quakes={quakes}
-                  alerts={alerts}
-                  color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
-                />
-              </div>
-            ) : null}
-          </div>
-        )
-        : <TrackInfoPanel segment={onAirSegment} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
-      : eventTargeted
-        ? onAirSegment.kind === "quake" && onAirSegment.quake
-          ? (
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              <div style={{ display: quakeSlide.page === 0 ? "block" : "none" }}>
-                <QuakeReport
-                  mag={onAirSegment.quake.mag}
-                  depthKm={onAirSegment.quake.depthKm}
-                  center={onAirSegment.camera.center}
-                  cities={cities}
-                  color={KIND_COLOR.quake}
-                />
-              </div>
-              <div style={{ display: quakeSlide.page === 1 ? "block" : "none" }}>
-                <EventNearbyPanel
-                  center={onAirSegment.camera.center}
-                  cities={cities}
-                  cams={cams}
-                  color={KIND_COLOR.quake}
-                />
-              </div>
-            </div>
-          )
-          : (
-            <EventNearbyPanel
-              center={onAirSegment.camera.center}
-              cities={cities}
-              cams={cams}
-              color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
-            />
-          )
-        : wideCitiesBbox
-          ? (
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              <div style={{ display: wideCitiesSlide.page === 0 ? "block" : "none" }}>
-                <OnAirCard segment={onAirSegment} alerts={areaAlerts} quakes={areaQuakes} volcanoes={areaVolcanoes} theme={theme} />
-              </div>
-              <div style={{ display: wideCitiesSlide.page === 1 ? "block" : "none" }}>
-                <TopCitiesPanel bbox={wideCitiesBbox} color={KIND_COLOR[onAirSegment.kind]} />
-              </div>
-              {wideCitiesHasForecast ? (
-                <div style={{ display: wideCitiesSlide.page === 2 ? "block" : "none" }}>
-                  <ForecastPanel center={null} bbox={wideCitiesBbox} theme={theme} />
-                </div>
-              ) : null}
-            </div>
-          )
-          : <OnAirCard segment={onAirSegment} alerts={areaAlerts} quakes={areaQuakes} volcanoes={areaVolcanoes} theme={theme} />;
+  // The bottom-left mode deck: one ordered, content-filtered slide list per
+  // segment kind (mode-slides), replacing the old nested-ternary +
+  // usePagedSlides page bookkeeping. SlideDeck cross-fades through it and keeps
+  // every slide mounted, preserving each panel's own featured-city cycle /
+  // fetched data across a rotation — the same invariant the old display-toggle
+  // pages had. The history panel still stacks above it, so the whole thing
+  // reads as one left column rather than a fixed position.
+  const leftDeck = onAirSegment
+    ? modeSlides(onAirSegment, {
+        cities,
+        cams,
+        quakes,
+        alerts,
+        areaAlerts,
+        areaQuakes,
+        areaVolcanoes,
+        wideCitiesBbox,
+        wideCitiesHasForecast,
+        theme,
+      })
+    : [];
 
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 5 }}>
@@ -378,7 +287,9 @@ export default function BroadcastFrame({
             gap: 10,
           }}
         >
-          {leftBottomPanel}
+          {onAirSegment ? (
+            <SlideDeck slides={leftDeck} dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
+          ) : null}
           {summaryOnAir ? (
             <RoundupStatsPanel stats={summaryOnAir.stats} sources={summaryOnAir.sources} theme={theme} />
           ) : null}
@@ -474,24 +385,20 @@ export default function BroadcastFrame({
           />
         </div>
 
-        {/* Whole-planet situation summary — two separate stacked cards, not one
-            crowded panel: the hero tally (WorldSituationPanel) reads as the
-            "how much/how bad" headline, the scrolling feed (WorldWatchPanel)
-            as the "which ones" detail below it. Both independent of the
-            operator's show-alerts/seismic toggles — they share one fetch
-            (worldWatch, above) instead of each pulling their own. */}
+        {/* Whole-planet situation summary — an auto-rotating deck. Slide 1 is
+            the DETECTION GRID hero tally + ACTIVE FEED (as before); it then
+            cycles a global weather report and single-category ALERTS / SEISMIC /
+            VOLCANOES drill-downs. All independent of the operator's
+            show-alerts/seismic toggles — the deck reuses the one worldWatch
+            fetch (above) rather than each panel pulling its own. */}
         <div
           style={{
             position: "absolute",
             top: TICKER_H + INSET,
             right: INSET,
-            display: "flex",
-            flexDirection: "column",
-            gap: 14,
           }}
         >
-          <WorldSituationPanel worldWatch={worldWatch} theme={theme} />
-          <WorldWatchPanel worldWatch={worldWatch} theme={theme} />
+          <WorldReportDeck worldWatch={worldWatch} manifest={manifest} theme={theme} />
         </div>
 
         {/* Bottom-right column: UP NEXT hint, the SYSLOG feed, and the build

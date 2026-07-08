@@ -10,6 +10,13 @@ export interface CountryWithWeather extends iCountryModel {
   weather: iAreaWeatherReportModel | null;
 }
 
+/** One country plus its latest area-weather snapshot and recent history — the /countries/[id] payload. */
+export interface CountryDetail {
+  country: iCountryModel;
+  weather: iAreaWeatherReportModel | null;
+  history: iAreaWeatherReportModel[];
+}
+
 const EMPTY: CountryWithWeather[] = [];
 
 /** ISO 3166-1 alpha-2 → flag emoji (regional-indicator Unicode trick) — computed on the fly, never stored. */
@@ -18,11 +25,30 @@ export function flagEmoji(iso2?: string): string {
   return String.fromCodePoint(...[...iso2.toUpperCase()].map((c) => 127397 + c.charCodeAt(0)));
 }
 
+/** Enrichment status label + colour for a country — mirrors `cityEnrichmentStatus`. */
+export function countryEnrichmentStatus(c: Pick<iCountryModel, "wikiTitle" | "wikiThumb" | "wikiExtract" | "wikiFetchedAt">): { label: string; color: string } {
+  if (c.wikiTitle || c.wikiThumb || c.wikiExtract) return { label: "Enriched", color: "#34d399" };
+  if (c.wikiFetchedAt) return { label: "Checked — no match", color: "#fbbf24" };
+  return { label: "Not enriched", color: "#8b95a7" };
+}
+
 /** Plain fetch of the worker-seeded country catalog, each with its latest area-weather report inlined. */
 export async function listCountries(): Promise<CountryWithWeather[]> {
   const res = await fetch("/api/countries", { cache: "no-store" });
   const body = await res.json().catch(() => null);
   return body?.countries ?? [];
+}
+
+/** Fetch one full country record (+ area-weather history) for its dedicated details page. */
+export async function getCountry(id: string): Promise<{ detail?: CountryDetail; error?: string }> {
+  try {
+    const res = await fetch(`/api/countries/${encodeURIComponent(id)}`, { cache: "no-store" });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body?.country) return { error: body?.error ?? `HTTP ${res.status}` };
+    return { detail: { country: body.country, weather: body.weather ?? null, history: body.history ?? [] } };
+  } catch (error) {
+    return { error: String(error) };
+  }
 }
 
 /**

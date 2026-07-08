@@ -18,7 +18,7 @@ import { SEVERITY_LABELS, SEVERITY_COLORS } from "@photonsurge/shared/alerts/sev
 import { quakeMagnitudeLabel, quakeMagnitudeColor } from "@photonsurge/shared/seismic";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { nearby, formatKm, bearingLabel } from "../../lib/geo";
-import { accentBorder } from "./config";
+import BroadcastCard, { CardSection } from "./BroadcastCard";
 
 const CITY_RADIUS_KM = 500;
 const QUAKE_RADIUS_KM = 500;
@@ -66,14 +66,6 @@ export function volcanoNearbySlideHasContent(
   );
 }
 
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc", marginBottom: 5 }}>
-      ▸ {children}
-    </div>
-  );
-}
-
 export default function VolcanoNearbyPanel({
   center,
   cities,
@@ -95,26 +87,9 @@ export default function VolcanoNearbyPanel({
   if (!near.length && !nearQ.length && !nearA.length) return null;
 
   return (
-    <div
-      style={{
-        width: 380,
-        background: "rgba(8,13,22,0.82)",
-        ...accentBorder(`1px solid ${color}44`, `3px solid ${color}`),
-        borderRadius: 8,
-        backdropFilter: "blur(4px)",
-        WebkitBackdropFilter: "blur(4px)",
-        fontFamily: "system-ui, sans-serif",
-        color: "#e6eefb",
-        overflow: "hidden",
-      }}
-    >
-      <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.4, color: "#9fb3cc", padding: "8px 12px 6px" }}>
-        ▸ NEARBY
-      </div>
-
+    <BroadcastCard accent={color} eyebrow="Nearby">
       {near.length ? (
-        <div style={{ padding: "0 12px 9px" }}>
-          <SectionHeader>NEAREST CITIES</SectionHeader>
+        <CardSection first eyebrow="Nearest Cities">
           {near.map((n) => (
             <div
               key={n.item.id}
@@ -132,12 +107,11 @@ export default function VolcanoNearbyPanel({
               </span>
             </div>
           ))}
-        </div>
+        </CardSection>
       ) : null}
 
       {nearQ.length ? (
-        <div style={{ borderTop: near.length ? "1px solid rgba(120,140,170,0.14)" : undefined, padding: "9px 12px" }}>
-          <SectionHeader>NEARBY SEISMIC ACTIVITY</SectionHeader>
+        <CardSection first={!near.length} eyebrow="Nearby Seismic Activity">
           {nearQ.map((n) => (
             <div key={n.item.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, padding: "2px 0" }}>
               <span
@@ -161,12 +135,11 @@ export default function VolcanoNearbyPanel({
               </span>
             </div>
           ))}
-        </div>
+        </CardSection>
       ) : null}
 
       {nearA.length ? (
-        <div style={{ borderTop: near.length || nearQ.length ? "1px solid rgba(120,140,170,0.14)" : undefined, padding: "9px 12px 11px" }}>
-          <SectionHeader>NEARBY ALERTS</SectionHeader>
+        <CardSection first={!near.length && !nearQ.length} eyebrow="Nearby Alerts">
           {nearA.map((n) => (
             <div key={n.item.properties.id} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 11, padding: "2px 0" }}>
               <span
@@ -190,8 +163,8 @@ export default function VolcanoNearbyPanel({
               </span>
             </div>
           ))}
-        </div>
+        </CardSection>
       ) : null}
-    </div>
+    </BroadcastCard>
   );
 }

@@ -18,7 +18,7 @@ import {
 import type { City } from "../../lib/cities";
 import { formatPopulation } from "../../lib/cities";
 import { nearby, formatKm, bearingLabel } from "../../lib/geo";
-import { accentBorder } from "./config";
+import BroadcastCard, { CardSection } from "./BroadcastCard";
 
 /** Notable-only floor so ocean/remote quakes still name recognisable places. */
 const MIN_CITY_POP = 50_000;
@@ -77,7 +77,7 @@ function Reading({
   blurb: string;
 }) {
   return (
-    <div style={{ padding: "8px 12px" }}>
+    <div style={{ padding: "6px 0" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc", width: 62 }}>
           {label}
@@ -114,31 +114,7 @@ export default function QuakeReport({
   ).slice(0, MAX_CITIES);
 
   return (
-    <div
-      style={{
-        width: 320,
-        background: "rgba(8,13,22,0.82)",
-        ...accentBorder(`1px solid ${color}44`, `3px solid ${color}`),
-        borderRadius: 8,
-        backdropFilter: "blur(4px)",
-        WebkitBackdropFilter: "blur(4px)",
-        fontFamily: "system-ui, sans-serif",
-        color: "#e6eefb",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 9,
-          fontWeight: 800,
-          letterSpacing: 1.4,
-          color: "#9fb3cc",
-          padding: "8px 12px 4px",
-        }}
-      >
-        ▸ SEISMIC REPORT
-      </div>
-
+    <BroadcastCard accent={color} eyebrow="Seismic Report">
       <Reading
         label="MAGNITUDE"
         value={`M${mag.toFixed(1)}`}
@@ -155,10 +131,7 @@ export default function QuakeReport({
       />
 
       {near.length ? (
-        <div style={{ borderTop: "1px solid rgba(120,140,170,0.14)", padding: "7px 12px 9px" }}>
-          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc", marginBottom: 5 }}>
-            ▸ NEAREST CITIES
-          </div>
+        <CardSection eyebrow="Nearest Cities">
           {near.map((n) => (
             <div
               key={n.item.id}
@@ -183,8 +156,8 @@ export default function QuakeReport({
               </span>
             </div>
           ))}
-        </div>
+        </CardSection>
       ) : null}
-    </div>
+    </BroadcastCard>
   );
 }

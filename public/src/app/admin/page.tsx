@@ -24,6 +24,7 @@ export const ADMIN_LINKS: AdminLink[] = [
   { group: "Broadcast", href: "/admin/scenes", title: "Scenes", desc: "Named /watch/:id globes for OBS sources and overlays.", ready: true },
   { group: "Broadcast", href: "/admin/access", title: "Access", desc: "Tokened OBS/YouTube URLs per scene — copy, rotate.", ready: true },
   { group: "Broadcast", href: "/admin/ads", title: "Ads", desc: "Sponsor images/video shown on the broadcast.", ready: true },
+  { group: "Broadcast", href: "/admin/runs", title: "Runs", desc: "As-run log — what the auto-director aired, shot by shot.", ready: true },
 
   { group: "Signals", href: "/admin/alerts", title: "Weather alerts", desc: "Ingested CAP alerts — filter by severity / active.", ready: true },
   { group: "Signals", href: "/admin/summaries", title: "Round-ups", desc: "Scheduled global weather-event summaries + narrative.", ready: true },

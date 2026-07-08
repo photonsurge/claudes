@@ -20,6 +20,7 @@ import { getPalette, type Palette } from "@photonsurge/shared/palettes";
 import { sampleDepthProfile, type DepthProfilePoint } from "../../lib/depthProfile";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { SectionTitle, formatReading } from "./PointHistoryPanel";
+import BroadcastCard from "./BroadcastCard";
 
 const PANEL_W = 320;
 const PANEL_PAD_X = 16;
@@ -124,26 +125,13 @@ export default function DepthProfilePanel({
   const panelPadX = compact ? 12 : PANEL_PAD_X;
 
   return (
-    <div
-      style={{
-        width: panelW,
-        boxSizing: "border-box",
-        display: "flex",
-        flexDirection: "column",
-        gap: compact ? 6 : 10,
-        padding: `${compact ? 10 : 14}px ${panelPadX}px`,
-        background: theme.panelBg,
-        border: theme.panelBorder,
-        borderRadius: 12,
-        boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-      }}
+    <BroadcastCard
+      theme={theme}
+      style={{ width: panelW, boxSizing: "border-box", padding: `${compact ? 10 : 14}px ${panelPadX}px` }}
     >
-      <SectionTitle title="SEA TEMP PROFILE" tag="LIVE · BY DEPTH" accent={theme.accent} />
-      <div style={{ display: "flex", flexDirection: "column", gap: ROW_GAP }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 10 }}>
+        <SectionTitle title="SEA TEMP PROFILE" tag="LIVE · BY DEPTH" accent={theme.accent} />
+        <div style={{ display: "flex", flexDirection: "column", gap: ROW_GAP }}>
         {points.map((p) => {
           const bg = colorForValue(getPalette(p.palette), p.domain, p.tempC);
           const fg = textColorFor(bg);
@@ -173,7 +161,8 @@ export default function DepthProfilePanel({
             </div>
           );
         })}
+        </div>
       </div>
-    </div>
+    </BroadcastCard>
   );
 }

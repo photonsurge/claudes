@@ -15,7 +15,7 @@
  * should check that before alternating slides at all.
  */
 import type { TrackInfo } from "@photonsurge/shared/director";
-import { accentBorder } from "./config";
+import BroadcastCard, { CardSection } from "./BroadcastCard";
 
 const USGS_COLOR: Record<string, string> = {
   RED: "#ef4444",
@@ -33,75 +33,48 @@ export default function VolcanoFactsPanel({ info, color = "#38bdf8" }: { info: T
   if (!volcanoFactsSlideHasContent(info)) return null;
 
   return (
-    <div
-      style={{
-        width: 380,
-        background: "rgba(8,13,22,0.82)",
-        ...accentBorder(`1px solid ${color}44`, `3px solid ${color}`),
-        borderRadius: 8,
-        backdropFilter: "blur(4px)",
-        WebkitBackdropFilter: "blur(4px)",
-        fontFamily: "system-ui, sans-serif",
-        color: "#e6eefb",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 9,
-          fontWeight: 800,
-          letterSpacing: 1.4,
-          color: "#9fb3cc",
-          padding: "8px 12px 6px",
-        }}
-      >
-        ▸ VOLCANO FACTS
-      </div>
+    <BroadcastCard accent={color} eyebrow="Volcano Facts">
+      {info.gallery && info.gallery.length ? (
+        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+          {info.gallery.slice(0, 4).map((url) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={url}
+              src={url}
+              alt=""
+              style={{ flex: 1, height: 60, objectFit: "cover", borderRadius: 4, display: "block" }}
+            />
+          ))}
+        </div>
+      ) : null}
 
-      <div style={{ padding: "0 12px 10px" }}>
-        {info.gallery && info.gallery.length ? (
-          <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-            {info.gallery.slice(0, 4).map((url) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={url}
-                src={url}
-                alt=""
-                style={{ flex: 1, height: 60, objectFit: "cover", borderRadius: 4, display: "block" }}
-              />
-            ))}
+      {info.facts ? (
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#e6eefb" }}>{info.facts}</div>
+      ) : null}
+
+      {info.alert ? (
+        <CardSection>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              color: (info.alert.colorCode && USGS_COLOR[info.alert.colorCode]) || "#e6eefb",
+            }}
+          >
+            ● USGS {info.alert.colorCode}
+            {info.alert.level ? ` / ${info.alert.level}` : ""}
           </div>
-        ) : null}
+          {info.alert.synopsis ? (
+            <div style={{ fontSize: 11, lineHeight: 1.4, color: "#cdd9ec", marginTop: 3 }}>{info.alert.synopsis}</div>
+          ) : null}
+        </CardSection>
+      ) : null}
 
-        {info.facts ? (
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#e6eefb" }}>{info.facts}</div>
-        ) : null}
-
-        {info.alert ? (
-          <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(120,140,170,0.14)" }}>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 800,
-                color: (info.alert.colorCode && USGS_COLOR[info.alert.colorCode]) || "#e6eefb",
-              }}
-            >
-              ● USGS {info.alert.colorCode}
-              {info.alert.level ? ` / ${info.alert.level}` : ""}
-            </div>
-            {info.alert.synopsis ? (
-              <div style={{ fontSize: 11, lineHeight: 1.4, color: "#cdd9ec", marginTop: 3 }}>{info.alert.synopsis}</div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {info.reportFacts ? (
-          <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(120,140,170,0.14)" }}>
-            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1, color: "#9fb3cc" }}>THIS WEEK'S BULLETIN, PARSED</div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#e6eefb", marginTop: 2 }}>{info.reportFacts}</div>
-          </div>
-        ) : null}
-      </div>
-    </div>
+      {info.reportFacts ? (
+        <CardSection eyebrow="This week's bulletin, parsed">
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#e6eefb" }}>{info.reportFacts}</div>
+        </CardSection>
+      ) : null}
+    </BroadcastCard>
   );
 }

@@ -7,6 +7,7 @@
  * map overlay are a later milestone.
  */
 import { Fragment, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   listAlerts,
   severityColor,
@@ -350,6 +351,9 @@ export default function AlertsPage() {
                     >
                       {debugId === g.id ? "Hide" : multi ? `Debug (${g.members.length})` : "Debug"}
                     </button>
+                    <Link href={`/admin/alerts/${rep.id}`} style={{ color: "#60a5fa", marginLeft: 8 }}>
+                      Details
+                    </Link>
                     {info?.web && (
                       <a href={info.web} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", marginLeft: 8 }}>
                         link
@@ -409,6 +413,9 @@ export default function AlertsPage() {
                     <div key={m.id} style={{ color: "#cbd5e1", marginTop: 4 }}>
                       <span style={{ ...sourceChip, marginRight: 6 }}>{m.source}</span>
                       {primaryInfo(m)?.event} — {areaSummary(m)}
+                      <Link href={`/admin/alerts/${m.id}`} style={{ color: "#60a5fa", marginLeft: 8 }}>
+                        details
+                      </Link>
                     </div>
                   ))}
                 </div>
