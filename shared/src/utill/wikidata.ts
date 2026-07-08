@@ -91,3 +91,50 @@ export async function fetchVolcanoFacts(
     return {};
   }
 }
+
+/**
+ * Structured city facts pulled from Wikidata, same two-round-trip shape as
+ * `fetchVolcanoFacts`: `P571` = inception (founding date), `P2046` = area
+ * (square kilometres, unit QID Q712226), `P2044` = elevation above sea level
+ * (metres). Keyless. Never throws — degrades to an empty object on any miss.
+ */
+export interface CityFacts {
+  foundedYear?: number;
+  areaKm2?: number;
+  elevationM?: number;
+}
+
+const SQ_KM_QID = "Q712226";
+
+export async function fetchCityFacts(
+  wikipediaTitle: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CityFacts> {
+  try {
+    const qid = await fetchWikidataQid(wikipediaTitle, fetchImpl);
+    if (!qid) return {};
+
+    const entityJ = await fetchJson(`https://www.wikidata.org/wiki/Special:EntityData/${qid}.json`, fetchImpl);
+    const claims = entityJ?.entities?.[qid]?.claims ?? {};
+
+    const inceptionTime: string | undefined = claims.P571?.[0]?.mainsnak?.datavalue?.value?.time;
+    const inceptionMatch = inceptionTime?.match(/^\+?(\d+)-/);
+    const foundedYear = inceptionMatch ? Number(inceptionMatch[1]) : undefined;
+
+    const areaClaim = claims.P2046?.[0]?.mainsnak?.datavalue?.value;
+    const areaKm2 =
+      areaClaim?.unit?.endsWith(`/${SQ_KM_QID}`) && Number.isFinite(Number(areaClaim.amount))
+        ? Number(areaClaim.amount)
+        : undefined;
+
+    const elevationClaim = claims.P2044?.[0]?.mainsnak?.datavalue?.value;
+    const elevationM =
+      elevationClaim?.unit?.endsWith(`/${METRE_QID}`) && Number.isFinite(Number(elevationClaim.amount))
+        ? Number(elevationClaim.amount)
+        : undefined;
+
+    return { foundedYear, areaKm2, elevationM };
+  } catch {
+    return {};
+  }
+}

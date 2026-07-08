@@ -72,9 +72,13 @@ function OrbitMark({ size, accent }: { size: number; accent: string }) {
 export default function BrandPanel({
   theme = DEFAULT_THEME,
   compact = false,
+  live = false,
 }: {
   theme?: BroadcastTheme;
   compact?: boolean;
+  /** Show the pulsing LIVE badge — true only while the auto-director is
+   *  actively driving the broadcast; an idle/off director isn't "on air". */
+  live?: boolean;
 }) {
   const clock = useClock();
   return (
@@ -147,36 +151,38 @@ export default function BrandPanel({
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "4px 10px 4px 8px",
-            clipPath: "polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)",
-            background: "linear-gradient(180deg, rgba(40,6,6,0.95), rgba(20,3,3,0.95))",
-            border: `1px solid ${LIVE_RED}8c`,
-            fontFamily: "system-ui, sans-serif",
-            fontSize: 11,
-            fontWeight: 800,
-            letterSpacing: 1.5,
-            color: "#fff",
-            textShadow: `0 0 8px ${LIVE_RED}cc`,
-            boxShadow: `0 0 14px ${LIVE_RED}73, inset 0 0 8px ${LIVE_RED}33`,
-          }}
-        >
-          <span
+        {live && (
+          <div
             style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: "#fff",
-              boxShadow: `0 0 6px ${LIVE_RED}`,
-              animation: "bcast-livepulse 1.4s ease-in-out infinite",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "4px 10px 4px 8px",
+              clipPath: "polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)",
+              background: "linear-gradient(180deg, rgba(40,6,6,0.95), rgba(20,3,3,0.95))",
+              border: `1px solid ${LIVE_RED}8c`,
+              fontFamily: "system-ui, sans-serif",
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing: 1.5,
+              color: "#fff",
+              textShadow: `0 0 8px ${LIVE_RED}cc`,
+              boxShadow: `0 0 14px ${LIVE_RED}73, inset 0 0 8px ${LIVE_RED}33`,
             }}
-          />
-          LIVE
-        </div>
+          >
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: "#fff",
+                boxShadow: `0 0 6px ${LIVE_RED}`,
+                animation: "bcast-livepulse 1.4s ease-in-out infinite",
+              }}
+            />
+            LIVE
+          </div>
+        )}
         <span
           style={{
             fontFamily: "system-ui, sans-serif",

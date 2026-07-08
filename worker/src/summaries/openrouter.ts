@@ -7,6 +7,7 @@
  */
 import type { SummaryPeriod, NarrativeStatus, iSummaryStats } from "@photonsurge/shared/db/event-summary-model";
 import type { AggregateResult } from "./aggregate";
+import { callOpenRouter } from "../lib/openrouter";
 
 export interface NarrativeResult {
   narrative: string;
@@ -77,47 +78,25 @@ export async function generateNarrative(
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return { narrative: "", status: "skipped" };
 
-  const base = process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
   const model = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
   const system =
     "You are the newsroom writer for a 24/7 weather broadcast. You write tight, " +
     "accurate round-ups of global weather events from structured data.";
 
-  const started = Date.now();
-  try {
-    const res = await fetch(`${base}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.4,
-        max_tokens: 700,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: buildPrompt(agg, period, trend) },
-        ],
-      }),
-    });
-    const latencyMs = Date.now() - started;
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      return { narrative: "", status: "error", latencyMs, error: `${res.status} ${body}`.slice(0, 500) };
-    }
-    const body: any = await res.json();
-    const narrative: string = body?.choices?.[0]?.message?.content ?? "";
-    return {
-      narrative,
-      status: narrative ? "ok" : "error",
-      model: body?.model ?? model,
-      promptTokens: body?.usage?.prompt_tokens,
-      completionTokens: body?.usage?.completion_tokens,
-      latencyMs,
-      error: narrative ? undefined : "empty completion",
-    };
-  } catch (err) {
-    return { narrative: "", status: "error", latencyMs: Date.now() - started, error: String(err).slice(0, 500) };
-  }
+  const res = await callOpenRouter({
+    model,
+    system,
+    user: buildPrompt(agg, period, trend),
+    temperature: 0.4,
+    maxTokens: 700,
+  });
+  return {
+    narrative: res.content,
+    status: res.status,
+    model: res.model,
+    promptTokens: res.promptTokens,
+    completionTokens: res.completionTokens,
+    latencyMs: res.latencyMs,
+    error: res.error,
+  };
 }

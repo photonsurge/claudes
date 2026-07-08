@@ -79,10 +79,10 @@ export default function CityDetail({ id }: { id: string }) {
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: city.wikiThumb ? "minmax(260px, .8fr) minmax(0, 1.2fr)" : "1fr", gap: 22, marginTop: 22 }}>
-          {city.wikiThumb && (
+        <div style={{ display: "grid", gridTemplateColumns: (city.wikiPhoto || city.wikiThumb) ? "minmax(260px, .8fr) minmax(0, 1.2fr)" : "1fr", gap: 22, marginTop: 22 }}>
+          {(city.wikiPhoto || city.wikiThumb) && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={city.wikiThumb} alt="" style={{ width: "100%", maxHeight: 380, objectFit: "cover", borderRadius: 8, background: "#080b11" }} />
+            <img src={city.wikiPhoto || city.wikiThumb} alt="" style={{ width: "100%", maxHeight: 380, objectFit: "cover", borderRadius: 8, background: "#080b11" }} />
           )}
           <div>
             <h2 style={{ fontSize: 14, margin: "0 0 12px" }}>City data</h2>
@@ -93,10 +93,27 @@ export default function CityDetail({ id }: { id: string }) {
               <Field label="Region">{city.region || "—"}</Field>
               <Field label="Prominence rank">{city.rank ?? "—"}</Field>
               <Field label="Database ID">{city.id}</Field>
+              <Field label="Founded">{city.foundedYear ?? "—"}</Field>
+              <Field label="Area">{city.areaKm2 ? `${city.areaKm2.toLocaleString()} km²` : "—"}</Field>
+              <Field label="Elevation">{city.elevationM != null ? `${city.elevationM.toLocaleString()} m` : "—"}</Field>
             </dl>
             {city.wikiExtract && <p style={{ color: "#cbd5e1", lineHeight: 1.6, fontSize: 14, margin: "20px 0 0" }}>{city.wikiExtract}</p>}
           </div>
         </div>
+
+        {city.wikiGallery && city.wikiGallery.length > 0 && (
+          <div style={{ display: "flex", gap: 6, marginTop: 14, overflowX: "auto" }}>
+            {city.wikiGallery.map((url) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={url}
+                src={url}
+                alt=""
+                style={{ width: 120, height: 88, objectFit: "cover", borderRadius: 6, background: "#080b11", flexShrink: 0 }}
+              />
+            ))}
+          </div>
+        )}
 
         <h2 style={{ fontSize: 14, margin: "24px 0 12px" }}>Wikipedia enrichment</h2>
         <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px 20px", margin: 0 }}>

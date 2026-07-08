@@ -55,8 +55,14 @@ const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
 const VAR_CYCLE_MS = 5500;
 /** Per-map dwell for the global map-type tour — a touch longer, each look is a beat. */
 const GLOBAL_MAP_CYCLE_MS = 6000;
-/** Camera dwell per round-up stop, and the zoom it flies to — a point-focused look, same as quake/alert shots. */
-const SUMMARY_STOP_MS = 5000;
+/**
+ * Camera dwell per round-up stop, and the zoom it flies to — a point-focused
+ * look, same as quake/alert shots. Each stop change flies the camera (taking
+ * cut.patch.cutTransitionMs, the operator's transition-speed setting), so the
+ * period must clear that flight time or the next stop fires before the camera
+ * has arrived — this settle window is on top of the flight, not instead of it.
+ */
+const SUMMARY_STOP_SETTLE_MS = 4000;
 const SUMMARY_STOP_ZOOM = 5;
 
 /** One step of a cut's within-shot rotation: the look, plus an optional relabel. */
@@ -167,7 +173,8 @@ function cutSteps(
         label: { title: s.label, subtitle: [severityLabel(s.severity), s.subtitle].filter(Boolean).join(" · ") },
       }),
     );
-    return { steps, periodMs: SUMMARY_STOP_MS, anchored: true };
+    const flightMs = cut.patch.cutTransitionMs ?? 4000;
+    return { steps, periodMs: flightMs + SUMMARY_STOP_SETTLE_MS, anchored: true };
   }
   const cyc = VAR_CYCLE[cut.kind] ?? [];
   return { steps: cyc.map((v) => ({ patch: { activeVariable: v } })), periodMs: VAR_CYCLE_MS, anchored: false };

@@ -10,8 +10,8 @@
  * Driven entirely by `segment.trackInfo`, which the worker attaches when a live
  * track matches the notable-tracks catalog (or a volcano segment is built) — so it
  * appears exactly when the globe highlight ring is on that subject. The heading is
- * derived from `segment.hazard`/`segment.kind`, not from `trackInfo.category` (which
- * is catalog free-text for flights/ships). Pure presentation inside the scaled
+ * derived from `segment.kind`, not from `trackInfo.category` (which is catalog
+ * free-text for flights/ships). Pure presentation inside the scaled
  * broadcast stage; pointer-inert. Returns null for any segment without trackInfo.
  */
 import type { Segment } from "@photonsurge/shared/director";
@@ -31,7 +31,7 @@ export default function TrackInfoPanel({
 
   const heading = info.vip
     ? "VIP TRACK"
-    : segment.hazard === "volcano"
+    : segment.kind === "volcano"
       ? "ACTIVE VOLCANO"
       : segment.kind === "flight"
         ? "NOTABLE AIRCRAFT"

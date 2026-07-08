@@ -19,7 +19,8 @@ import {
   DEFAULT_CITIES_TIER,
 } from "@photonsurge/shared/cities/geonames";
 import { CITIES_UPDATED } from "@photonsurge/shared/control";
-import { fetchWikiSummary } from "@photonsurge/shared/utill/wikipedia";
+import { fetchWikiSummary, fetchWikiGallery, fetchWikiIntro } from "@photonsurge/shared/utill/wikipedia";
+import { fetchCityFacts } from "@photonsurge/shared/utill/wikidata";
 import { log } from "@photonsurge/shared/utill/logger";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
@@ -137,14 +138,24 @@ export async function runWikiEnrich(opts: WikiEnrichOpts = {}) {
         noMatch++;
         await db.cities.updateByID(c.id, { wikiFetchedAt: new Date() });
       } else {
+        const [gallery, intro, facts] = await Promise.all([
+          fetchWikiGallery(r.title, 8),
+          fetchWikiIntro(r.title),
+          fetchCityFacts(r.title),
+        ]);
         await db.cities.updateByID(c.id, {
           wikiTitle: r.title,
           wikiThumb: r.thumb,
-          wikiExtract: r.extract,
+          wikiPhoto: r.photo,
+          wikiExtract: intro || r.extract,
+          wikiGallery: gallery.length ? gallery : undefined,
           wikiFetchedAt: new Date(),
+          foundedYear: facts.foundedYear,
+          areaKm2: facts.areaKm2,
+          elevationM: facts.elevationM,
         });
         enriched++;
-        if (r.thumb) withPhoto++;
+        if (r.thumb || r.photo) withPhoto++;
       }
     } catch (err) {
       log(TAG, `enrichWiki ${c.name} failed`, { err: summarizeForLog(err) });
@@ -182,8 +193,9 @@ export async function enrichWikiAll(job: Job) {
   const batchSize = Math.min(Math.max(Number(d.batchSize) || 100, 10), 500);
   const batch = Math.max(Number(d.batch) || 1, 1);
   const maxBatches = Math.min(Math.max(Number(d.maxBatches) || 2_000, 1), 5_000);
+  const minPopulation = Number.isFinite(d.minPopulation) ? Number(d.minPopulation) : 100_000;
   try {
-    const result = await runWikiEnrich({ minPopulation: 0, limit: batchSize, force: false });
+    const result = await runWikiEnrich({ minPopulation, limit: batchSize, force: false });
     const processed = result.enriched + result.noMatch;
     const shouldContinue = result.candidates === batchSize && processed > 0 && batch < maxBatches;
     if (shouldContinue) {

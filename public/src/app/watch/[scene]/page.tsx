@@ -133,6 +133,7 @@ function SceneWatchPageInner() {
         onAirSegment={director?.active ? onAir : null}
         upNext={director?.active ? director.upNext : []}
         slideName={director?.active ? slideName : undefined}
+        directorOn={!!director?.active}
       />
       {/* Chrome-on: the on-air detail lives in the event reticle, so the separate
           lower-left card is suppressed to avoid duplication. */}

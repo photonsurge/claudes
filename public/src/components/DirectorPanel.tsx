@@ -5,13 +5,14 @@
  * a pre-broadcast countdown, and a live "on air / up next" readout — always
  * visible at the top regardless of setup state. Below that, the setup form
  * is split into two tabs:
- *  - "Director settings": which kinds air and their hold durations
- *    (DirectorHolds), transition pacing, sponsor-ad cadence, and event
- *    thresholds (DirectorTuning).
- *  - "Map/View settings": which basemap looks each touring kind cycles
- *    through (DirectorMapTypes), the country/sea-point spotlight catalogs
- *    (DirectorSpotlights), and the saved-look slide library per kind
- *    (DirectorSlides).
+ *  - "Director settings": pure pacing/threshold knobs — transition speed,
+ *    sponsor-ad cadence, and the quake/storm event thresholds
+ *    (DirectorTuning). Nothing here names a shot type.
+ *  - "Map/View settings": everything about what's on screen — which kinds
+ *    air and their hold durations (DirectorHolds), which basemap looks each
+ *    touring kind cycles through (DirectorMapTypes), the country/sea-point
+ *    spotlight catalogs (DirectorSpotlights), and the saved-look slide
+ *    library per kind (DirectorSlides).
  *
  * `config`/`update` are lifted to the parent (/control) so the live preview
  * shares the exact same config the operator is editing here; edits PATCH the
@@ -118,12 +119,10 @@ export default function DirectorPanel({
           </div>
 
           {activeTab === "director" ? (
-            <>
-              <DirectorHolds config={config} update={update} />
-              <DirectorTuning config={config} update={update} />
-            </>
+            <DirectorTuning config={config} update={update} />
           ) : (
             <>
+              <DirectorHolds config={config} update={update} />
               <DirectorMapTypes config={config} update={update} />
               <DirectorSpotlights config={config} update={update} />
               <DirectorSlides config={config} update={update} liveState={liveState} applyLive={applyLive} />

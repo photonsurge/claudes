@@ -14,7 +14,7 @@ import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 /** Frame zooms mirror the director's quake/storm shots (candidates.ts). */
 const QUAKE_ZOOM = 5;
 const STORM_ZOOM = 4.5;
-const VOLCANO_ZOOM = 6;
+const VOLCANO_ZOOM = 5;
 
 export function quakeToSegment(q: Quake): Segment {
   const c = quakeSegmentContent({

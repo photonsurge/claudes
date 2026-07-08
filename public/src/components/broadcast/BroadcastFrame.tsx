@@ -94,6 +94,7 @@ export default function BroadcastFrame({
   onAirSegment = null,
   upNext = [],
   assetsReady = true,
+  directorOn = false,
 }: {
   state: ControlState;
   manifest: WeatherManifest | null;
@@ -125,6 +126,9 @@ export default function BroadcastFrame({
    *  defers the WORLD WATCH panels' cold-start fetch so it doesn't compete with
    *  those for bandwidth while the loading screen is still up. */
   assetsReady?: boolean;
+  /** Whether the auto-director is actively driving this scene — gates the
+   *  brand block's LIVE badge (an idle/off director isn't on air). */
+  directorOn?: boolean;
 }) {
   const scale = useStageScale();
   const worldWatch = useWorldWatch(cities, assetsReady);
@@ -373,7 +377,7 @@ export default function BroadcastFrame({
         <Ticker title={theme.tickerTitle} items={ticker} edge="top" height={TICKER_H} theme={theme} />
 
         <div style={{ position: "absolute", top: TICKER_H + INSET, left: INSET }}>
-          <BrandPanel theme={theme} />
+          <BrandPanel theme={theme} live={directorOn} />
         </div>
 
         {/* Geomagnetic Kp readout, tucked under the brand block when the aurora

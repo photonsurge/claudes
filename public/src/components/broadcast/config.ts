@@ -39,7 +39,7 @@ export const BROADCAST_THEMES: Record<string, BroadcastTheme> = {
   command: {
     name: "G.O.D.S.",
     tagline: "GLOBAL ORBITAL DETECTION SYSTEM",
-    strapline: "LIVE PLANETARY MONITORING",
+    strapline: "DETECT. TRACK. PROTECT.",
     iconVariant: "orbit",
     tickerTitle: "VIGIL TAPE",
     meterTitle: "THREAT MATRIX",

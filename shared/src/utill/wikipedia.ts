@@ -93,3 +93,31 @@ export async function fetchWikiGallery(
     return [];
   }
 }
+
+/**
+ * Longer plain-text intro than the REST summary's `extract` gives (that one is
+ * often just a sentence or two) — same lead section, via the MediaWiki action
+ * API's `extracts` prop with an explicit character budget. Keyless. Returns
+ * undefined on any miss/error, since callers already have the shorter summary
+ * extract to fall back to.
+ */
+export async function fetchWikiIntro(
+  title: string,
+  chars = 1200,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | undefined> {
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(
+      title,
+    )}&prop=extracts&exintro=1&explaintext=1&exchars=${chars}&redirects=1&format=json`;
+    const res = await fetchImpl(url, { headers: { "User-Agent": WIKI_UA, accept: "application/json" } });
+    if (!res.ok) return undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const j: any = await res.json();
+    const pages = Object.values(j?.query?.pages ?? {}) as any[];
+    const extract: string | undefined = pages[0]?.extract;
+    return extract && extract.trim() ? extract.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}

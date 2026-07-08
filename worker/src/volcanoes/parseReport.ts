@@ -1,11 +1,12 @@
 /**
  * LLM-assisted parsing of a volcano's freeform weekly bulletin text into a
  * few structured facts (plume height, VEI) regex can't reliably pull out of
- * inconsistent prose. Same OpenRouter wrapper pattern as
- * worker/src/summaries/openrouter.ts#generateNarrative: env-gated on
- * `OPENROUTER_API_KEY` (shared with the round-up narrator — no separate key),
- * "use ONLY the given text, don't invent" prompting, never throws.
+ * inconsistent prose. Uses the shared OpenRouter wrapper (../lib/openrouter):
+ * env-gated on `OPENROUTER_API_KEY` (shared with the round-up narrator — no
+ * separate key), "use ONLY the given text, don't invent" prompting, never throws.
  */
+import { callOpenRouter } from "../lib/openrouter";
+
 export interface ParsedReportFacts {
   plumeHeightM?: number;
   vei?: number;
@@ -39,31 +40,20 @@ export async function parseReportFacts(
   if (!key) return { status: "skipped" };
   if (!reportText.trim()) return { status: "skipped" };
 
-  const base = process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
   const model = process.env.OPENROUTER_VOLCANO_MODEL || process.env.OPENROUTER_MODEL || "google/gemini-flash-1.5";
 
+  const res = await callOpenRouter({
+    model,
+    system: SYSTEM,
+    user: buildPrompt(reportText),
+    temperature: 0,
+    maxTokens: 100,
+    fetchImpl,
+  });
+  if (res.status === "error") return { status: "error", error: res.error };
+  const match = res.content.match(/\{[\s\S]*\}/);
+  if (!match) return { status: "error", error: "no JSON in completion" };
   try {
-    const res = await fetchImpl(`${base}/chat/completions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        max_tokens: 100,
-        messages: [
-          { role: "system", content: SYSTEM },
-          { role: "user", content: buildPrompt(reportText) },
-        ],
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      return { status: "error", error: `${res.status} ${body}`.slice(0, 500) };
-    }
-    const body: any = await res.json();
-    const content: string = body?.choices?.[0]?.message?.content ?? "";
-    const match = content.match(/\{[\s\S]*\}/);
-    if (!match) return { status: "error", error: "no JSON in completion" };
     const parsed = JSON.parse(match[0]);
     return {
       status: "ok",

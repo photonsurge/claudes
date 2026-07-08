@@ -55,6 +55,16 @@ export interface iAlertInfo {
   /** Source-specific extras, untouched. */
   parameters?: Record<string, string>;
   area: iAlertArea[];
+
+  // translation enrichment (worker/src/alerts/translate.ts) — filled lazily, not part of the source feed
+  /** LLM-detected language of headline/description, e.g. "zh". Distinct from `language` (source-declared, often absent). */
+  detectedLanguage?: string;
+  translatedHeadline?: string;
+  translatedDescription?: string;
+  translatedInstruction?: string;
+  translatedAt?: string;
+  /** sha1 of `headline|description|instruction` at the time of translation — lets re-ingested-but-unchanged alerts skip re-translation. */
+  translationHash?: string;
 }
 
 export interface iAlert extends iGeneralModel {
@@ -123,6 +133,13 @@ const AlertInfoSchema = new mongoose.Schema<iAlertInfo>(
     sourceSeverity: { type: String, required: false },
     parameters: { type: mongoose.Schema.Types.Mixed, required: false },
     area: { type: [AlertAreaSchema], default: [] },
+
+    detectedLanguage: { type: String, required: false },
+    translatedHeadline: { type: String, required: false },
+    translatedDescription: { type: String, required: false },
+    translatedInstruction: { type: String, required: false },
+    translatedAt: { type: String, required: false },
+    translationHash: { type: String, required: false },
   },
   { _id: false },
 );

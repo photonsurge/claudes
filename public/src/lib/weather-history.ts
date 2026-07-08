@@ -134,16 +134,17 @@ export async function buildHistorySeries(
   lng: number,
 ): Promise<HistorySeries> {
   const picked = pickFramesForPoint(frames, lat, lng);
+  const samples = await Promise.all(picked.map((frame) => sampleFrameCached(frame, lat, lng)));
   const series: HistoryPoint[] = [];
   const statValues: number[] = [];
   let encoding: "scalar" | "uv" = "scalar";
   let units = "";
 
-  for (const frame of picked) {
+  picked.forEach((frame, i) => {
     encoding = frame.encoding;
     units = frame.units || units;
-    const sample = await sampleFrameCached(frame, lat, lng);
-    if (!sample) continue;
+    const sample = samples[i];
+    if (!sample) return;
     const point: HistoryPoint = {
       t: new Date(frame.validTime).toISOString(),
       model: frame.model,
@@ -159,7 +160,7 @@ export async function buildHistorySeries(
       statValues.push(sample.speed);
     }
     series.push(point);
-  }
+  });
 
   return { variable, encoding, units, lat, lng, series, stats: seriesStats(statValues) };
 }
@@ -229,6 +230,7 @@ export async function buildAreaHistorySeries(
   let centerLng = (bbox[0] + bbox[2]) / 2;
   if (bbox[2] < bbox[0]) centerLng = ((bbox[0] + bbox[2] + 360) / 2 + 180) % 360 - 180; // seam-crossing window
   const picked = pickFramesForPoint(frames, centerLat, centerLng);
+  const statsPerFrame = await Promise.all(picked.map((frame) => areaStatsCached(frame, bbox)));
 
   const series: AreaHistoryPoint[] = [];
   const means: number[] = [];
@@ -237,11 +239,11 @@ export async function buildAreaHistorySeries(
   let areaMin: number | null = null;
   let areaMax: number | null = null;
 
-  for (const frame of picked) {
+  picked.forEach((frame, i) => {
     encoding = frame.encoding;
     units = frame.units || units;
-    const stats = await areaStatsCached(frame, bbox);
-    if (!stats) continue;
+    const stats = statsPerFrame[i];
+    if (!stats) return;
     series.push({
       t: new Date(frame.validTime).toISOString(),
       model: frame.model,
@@ -253,7 +255,7 @@ export async function buildAreaHistorySeries(
     means.push(stats.mean);
     areaMin = areaMin == null ? stats.min : Math.min(areaMin, stats.min);
     areaMax = areaMax == null ? stats.max : Math.max(areaMax, stats.max);
-  }
+  });
 
   return { variable, encoding, units, bbox, series, stats: seriesStats(means), areaMin, areaMax };
 }

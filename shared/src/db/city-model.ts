@@ -29,10 +29,20 @@ export interface iCity extends iGeneralModel {
   wikiTitle?: string;
   /** Thumbnail image URL from the Wikipedia REST summary. */
   wikiThumb?: string;
-  /** Short plain-text extract (first paragraph) from the Wikipedia summary. */
+  /** Full-resolution version of the same lead image. */
+  wikiPhoto?: string;
+  /** Plain-text intro extract from Wikipedia (several paragraphs where available). */
   wikiExtract?: string;
+  /** Extra article images beyond the lead photo. */
+  wikiGallery?: string[];
   /** When the worker last fetched Wikipedia for this city. */
   wikiFetchedAt?: Date;
+  /** Wikidata founding/inception year. */
+  foundedYear?: number;
+  /** Wikidata area, square kilometres. */
+  areaKm2?: number;
+  /** Wikidata elevation above sea level, metres. */
+  elevationM?: number;
 }
 
 export interface iCityModel extends iCity {
@@ -54,8 +64,13 @@ const CitySchema = new mongoose.Schema<iCityModel>(
     rank: { type: Number, required: false, default: 10 },
     wikiTitle: { type: String, required: false, trim: true, maxlength: 200 },
     wikiThumb: { type: String, required: false, trim: true, maxlength: 600 },
-    wikiExtract: { type: String, required: false, trim: true, maxlength: 2000 },
+    wikiPhoto: { type: String, required: false, trim: true, maxlength: 600 },
+    wikiExtract: { type: String, required: false, trim: true, maxlength: 4000 },
+    wikiGallery: { type: [String], required: false },
     wikiFetchedAt: { type: Date, required: false },
+    foundedYear: { type: Number, required: false },
+    areaKm2: { type: Number, required: false },
+    elevationM: { type: Number, required: false },
   },
   mongoTimestamps,
 );

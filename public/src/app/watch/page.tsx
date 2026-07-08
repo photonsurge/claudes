@@ -149,6 +149,7 @@ function WatchPageInner() {
         onAirSegment={director?.active ? onAir : null}
         upNext={director?.active ? director.upNext : []}
         slideName={director?.active ? slideName : undefined}
+        directorOn={!!director?.active}
       />
       {/* When the broadcast chrome is on, the on-air detail lives inside the event
           reticle, so the separate lower-left card is suppressed to avoid duplication. */}

@@ -79,6 +79,26 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       return res.modifiedCount ?? 0;
     },
 
+    /** Write back an LLM translation for one `info[]` entry (worker/src/alerts/translate.ts). */
+    async updateTranslation(
+      alertId: string,
+      infoIndex: number,
+      patch: {
+        detectedLanguage?: string;
+        translatedHeadline?: string;
+        translatedDescription?: string;
+        translatedInstruction?: string;
+        translatedAt: string;
+        translationHash: string;
+      },
+    ): Promise<void> {
+      const $set: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(patch)) {
+        if (value !== undefined) $set[`info.${infoIndex}.${key}`] = value;
+      }
+      await model.updateOne({ id: alertId }, { $set }).exec();
+    },
+
     async list(opts: AlertListOpts = {}): Promise<iAlertModel[]> {
       const q: Record<string, unknown> = {};
       if (opts.activeOnly) q.active = true;

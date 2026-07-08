@@ -52,6 +52,9 @@ interface WatchSurfaceProps {
   upNext?: { kind: SegmentKind; title: string }[];
   /** Name of the on-air segment kind's active saved "slide" look, if any. */
   slideName?: string;
+  /** Whether the auto-director is actively driving this scene — gates the
+   *  brand block's LIVE badge (an idle/off director isn't on air). */
+  directorOn?: boolean;
 }
 
 export default function WatchSurface({
@@ -65,6 +68,7 @@ export default function WatchSurface({
   onAirSegment,
   upNext = [],
   slideName,
+  directorOn = false,
 }: WatchSurfaceProps) {
   // Latches true once every weather variable's texture at the current fhr has
   // decoded (see Globe's own "keep every map in RAM" preload). Gates the cold-
@@ -168,6 +172,7 @@ export default function WatchSurface({
           onAirSegment={onAirSegment ?? null}
           upNext={upNext}
           assetsReady={ready}
+          directorOn={directorOn}
         />
       ) : null}
       {/* Plain run/attribution label — only on the clean surface; the broadcast

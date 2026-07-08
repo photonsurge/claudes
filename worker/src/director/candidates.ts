@@ -126,7 +126,7 @@ const BREAKING_NEWS_WINDOW_MS = 20 * 60 * 1000;
 const VOLCANO_BREAKING_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 /** Frame zoom mirrors the manual click-to-select path (see public/lib/select-segment.ts). */
-const VOLCANO_ZOOM = 6;
+const VOLCANO_ZOOM = 5;
 
 /**
  * Merge a notable catalog entry with the live meta into the on-air TrackInfo card

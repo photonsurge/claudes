@@ -195,7 +195,6 @@ export function featuresToCapMessages(features: WmoFeature[], exclude: Set<strin
     if (p.c != null) parameters.certainty = String(p.c);
 
     const info: CapInfo = {
-      language: "en",
       category: [p.marine === "1" || p.marine === 1 ? "Marine" : "Met"],
       event: typeof p.event === "string" ? p.event : "",
       urgency: "Expected",

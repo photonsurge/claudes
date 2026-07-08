@@ -142,7 +142,7 @@ export async function GET(req: Request) {
  *  - pause | resume | drain    : queue-wide controls
  */
 export async function POST(req: Request) {
-  let body: { action?: string; id?: string; type?: string } = {};
+  let body: { action?: string; id?: string; type?: string; event?: string } = {};
   try {
     body = (await req.json()) ?? {};
   } catch {
@@ -173,6 +173,21 @@ export async function POST(req: Request) {
         detail = await q.clean(0, 10_000, type as any);
         break;
       }
+      case "stopChain": {
+        // Halts a self-chaining job (e.g. cities.enrichWikiAll) by removing every
+        // not-yet-started link still queued for it. The currently active batch,
+        // if any, finishes naturally — there's no cooperative mid-batch abort.
+        if (!body.type || !body.event) {
+          return NextResponse.json({ error: "missing type/event" }, { status: 400, headers: NO_CACHE });
+        }
+        const pending = await q.getJobs(["waiting", "delayed"], 0, -1, false);
+        const matches = pending.filter(
+          (j: any) => j?.data?.type === body.type && j?.data?.event === body.event,
+        );
+        await Promise.all(matches.map((j: any) => j.remove()));
+        detail = { removed: matches.length };
+        break;
+      }
       case "retry":
       case "remove":
       case "promote": {
@@ -197,7 +212,7 @@ export async function POST(req: Request) {
       "queue",
       id ?? action ?? "",
     );
-    return NextResponse.json({ ok: true, action, id: id ?? null }, { status: 200, headers: NO_CACHE });
+    return NextResponse.json({ ok: true, action, id: id ?? null, detail }, { status: 200, headers: NO_CACHE });
   } catch (err) {
     return NextResponse.json({ ok: false, action, error: String(err) }, { status: 502, headers: NO_CACHE });
   }

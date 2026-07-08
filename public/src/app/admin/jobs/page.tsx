@@ -17,6 +17,13 @@ interface Result {
   at: string;
 }
 
+interface StopResult {
+  ok: boolean;
+  removed?: number;
+  error?: string;
+  at: string;
+}
+
 /** Group jobs by their `group`, preserving first-seen (catalog) order. */
 function groupJobs(jobs: TriggerableJob[]): Array<[string, TriggerableJob[]]> {
   const order: string[] = [];
@@ -36,7 +43,9 @@ export default function JobsPage() {
   const [jobs, setJobs] = useState<TriggerableJob[]>([]);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [results, setResults] = useState<Record<string, Result>>({});
+  const [stopResults, setStopResults] = useState<Record<string, StopResult>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [stopping, setStopping] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const res = await fetch("/api/admin/jobs", { cache: "no-store" });
@@ -72,6 +81,25 @@ export default function JobsPage() {
     }
   };
 
+  const stop = async (j: TriggerableJob) => {
+    setStopping(j.id);
+    try {
+      const res = await fetch("/api/admin/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stopChain", type: j.type, event: j.event }),
+      });
+      const body = await res.json().catch(() => ({}));
+      setStopResults((r) => ({
+        ...r,
+        [j.id]: { ok: !!body.ok, removed: body.detail?.removed, error: body.error, at: new Date().toISOString() },
+      }));
+      refresh();
+    } finally {
+      setStopping(null);
+    }
+  };
+
   return (
     <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
       <section style={{ maxWidth: 760, margin: "0 auto", padding: 24 }}>
@@ -103,6 +131,7 @@ export default function JobsPage() {
             <div style={{ display: "grid", gap: 12 }}>
               {groupJobsList.map((j) => {
                 const r = results[j.id];
+                const sr = stopResults[j.id];
                 return (
                   <div
                     key={j.id}
@@ -124,7 +153,30 @@ export default function JobsPage() {
                           {r.ok ? `queued (#${r.jobId})` : `failed: ${r.error}`} · {new Date(r.at).toLocaleTimeString()}
                         </div>
                       )}
+                      {sr && (
+                        <div style={{ fontSize: 12, marginTop: 4, color: sr.ok ? "#4ade80" : "#fca5a5" }}>
+                          {sr.ok ? `stopped — ${sr.removed ?? 0} queued batch(es) removed` : `failed: ${sr.error}`} ·{" "}
+                          {new Date(sr.at).toLocaleTimeString()}
+                        </div>
+                      )}
                     </div>
+                    {j.stoppable && (
+                      <button
+                        type="button"
+                        onClick={() => stop(j)}
+                        disabled={stopping === j.id}
+                        style={{
+                          padding: "8px 16px",
+                          borderRadius: 6,
+                          border: "1px solid #333",
+                          background: stopping === j.id ? "#1a1f2b" : "#7f1d1d",
+                          color: "#fff",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {stopping === j.id ? "…" : "Stop"}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => run(j.id)}

@@ -21,6 +21,12 @@ export interface TriggerableJob {
    * without a bespoke form — the admin POST route spreads this over `data`.
    */
   data?: Record<string, unknown>;
+  /**
+   * Self-chaining jobs (e.g. cities-enrich-all) can be halted mid-run: the admin
+   * Jobs page shows a "Stop" button that removes every not-yet-started link
+   * still queued for this job's `type`/`event` via the queue `stopChain` action.
+   */
+  stoppable?: boolean;
 }
 
 /**
@@ -212,12 +218,15 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   {
     id: "cities-enrich-all",
     label: "Enrich all cities (Wikipedia)",
-    description: "Fetch a Wikipedia photo + blurb for every city in restartable batches of 100. Fresh cities are skipped.",
+    description:
+      "Fetch a Wikipedia photo/gallery + Wikidata facts for prominent cities (≥100k + capitals) in restartable batches of 100. Fresh cities are skipped. Use Stop to halt a run in progress.",
     domain: "cities",
     type: "cities",
     event: "enrichWikiAll",
     group: "Cities",
     priority: 10,
+    data: { minPopulation: 100_000 },
+    stoppable: true,
   },
   {
     id: "director-seed-slides",
