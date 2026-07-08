@@ -24,6 +24,28 @@ describe("fetchWikiSummary", () => {
     const fetchImpl = jest.fn().mockResolvedValue({ status: 404, ok: false }) as unknown as typeof fetch;
     expect(await fetchWikiSummary("Nonexistent Page", fetchImpl)).toBe("missing");
   });
+
+  it("retries a 429 and succeeds once Wikipedia stops throttling", async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 429, ok: false, headers: { get: () => null } })
+      .mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({ title: "Mount Etna", extract: "An active volcano." }),
+      }) as unknown as typeof fetch;
+
+    const r = await fetchWikiSummary("Mount Etna", fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(r).not.toBe("missing");
+    expect(r).not.toBe("disambig");
+    expect((r as any).title).toBe("Mount Etna");
+  });
+
+  it("gives up and throws after repeated 429s", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue({ status: 429, ok: false, headers: { get: () => null } }) as unknown as typeof fetch;
+    await expect(fetchWikiSummary("Mount Etna", fetchImpl)).rejects.toThrow("HTTP 429");
+  });
 });
 
 describe("fetchWikiGallery", () => {

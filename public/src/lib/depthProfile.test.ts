@@ -56,6 +56,7 @@ describe("sampleDepthProfile", () => {
     const points = await sampleDepthProfile(makeManifest(), 0, 0);
     expect(points).not.toBeNull();
     expect(points!.map((p) => p.depth)).toEqual([0, 100, 500, 2000, 5000]);
+    expect(points!.map((p) => p.variableId)).toEqual(["sst", "sst100", "sst500", "sst2000", "sst5000"]);
     // byteToValue(byte, [-5,40]): -5 + byte/255*45
     expect(points![0].tempC).toBeCloseTo(-5 + (200 / 255) * 45, 5);
     expect(points![4].tempC).toBeCloseTo(-5 + (40 / 255) * 45, 5);

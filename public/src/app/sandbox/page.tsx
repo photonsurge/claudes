@@ -151,7 +151,7 @@ export default function SandboxPage() {
             depth textures haven't been seeded yet (see `yarn seed`). Bottom
             RIGHT so it doesn't collide with the bottom-left Legend below. */}
         <div style={{ position: "absolute", right: 24, bottom: 24 }}>
-          <DepthProfilePanel center={state.camera.center} manifest={manifest} />
+          <DepthProfilePanel center={state.camera.center} manifest={manifest} activeVariable={state.activeVariable} />
         </div>
         {/* Active weather-map colour key — /watch only shows this inside a director
             segment's on-air card, so the freewheeling sandbox (no director) would

@@ -16,6 +16,42 @@ export const WIKI_UA =
 export type WikiSummary = { title: string; extract?: string; thumb?: string; photo?: string };
 
 /**
+ * Wikipedia's rate limit is per-IP, not per-caller — countries, regions,
+ * cities, volcanoes and notable-tracks enrichment each import this module and
+ * pace their OWN calls, but their repeatable jobs can fire together (e.g. all
+ * `immediately: true` on worker startup), and independent per-job pacing
+ * doesn't stop their combined request rate from bursting past what a single
+ * process should send. This gate serializes every request this process makes
+ * to Wikipedia to one shared minimum interval regardless of which job is
+ * calling, and retries a 429 with backoff (honoring `Retry-After` when sent)
+ * instead of letting one burst fail every remaining item in the run.
+ */
+const MIN_GAP_MS = 150;
+const MAX_RETRIES = 2;
+let nextSlot = 0;
+
+async function pacedFetch(
+  fetchImpl: typeof fetch,
+  url: string,
+  headers: Record<string, string>,
+): Promise<Awaited<ReturnType<typeof fetch>>> {
+  for (let attempt = 0; ; attempt++) {
+    const now = Date.now();
+    const wait = Math.max(0, nextSlot - now);
+    nextSlot = Math.max(now, nextSlot) + MIN_GAP_MS;
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+
+    const res = await fetchImpl(url, { headers });
+    if (res.status !== 429 || attempt >= MAX_RETRIES) return res;
+
+    const retryAfterSec = Number(res.headers?.get?.("retry-after"));
+    const backoffMs =
+      Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 : MIN_GAP_MS * 2 ** (attempt + 1);
+    await new Promise((r) => setTimeout(r, Math.min(backoffMs, 5_000)));
+  }
+}
+
+/**
  * Fetch a Wikipedia REST summary for an EXACT title. Returns the summary, or a
  * miss reason ("missing" = no such page, "disambig" = ambiguous) so callers can
  * retry with a more specific title before giving up. Throws on transient HTTP
@@ -27,7 +63,7 @@ export async function fetchWikiSummary(
 ): Promise<WikiSummary | "missing" | "disambig"> {
   const slug = encodeURIComponent(title.replace(/ /g, "_"));
   const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${slug}?redirect=true`;
-  const res = await fetchImpl(url, { headers: { "User-Agent": WIKI_UA, accept: "application/json" } });
+  const res = await pacedFetch(fetchImpl, url, { "User-Agent": WIKI_UA, accept: "application/json" });
   if (res.status === 404) return "missing";
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,7 +102,7 @@ export async function fetchWikiGallery(
     const listUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(
       title,
     )}&prop=images&imlimit=50&format=json`;
-    const listRes = await fetchImpl(listUrl, { headers: { "User-Agent": WIKI_UA, accept: "application/json" } });
+    const listRes = await pacedFetch(fetchImpl, listUrl, { "User-Agent": WIKI_UA, accept: "application/json" });
     if (!listRes.ok) return [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const listJ: any = await listRes.json();
@@ -81,7 +117,7 @@ export async function fetchWikiGallery(
     const infoUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(
       fileTitles.join("|"),
     )}&prop=imageinfo&iiprop=url&iiurlwidth=${width}&format=json`;
-    const infoRes = await fetchImpl(infoUrl, { headers: { "User-Agent": WIKI_UA, accept: "application/json" } });
+    const infoRes = await pacedFetch(fetchImpl, infoUrl, { "User-Agent": WIKI_UA, accept: "application/json" });
     if (!infoRes.ok) return [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const infoJ: any = await infoRes.json();
@@ -110,7 +146,7 @@ export async function fetchWikiIntro(
     const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(
       title,
     )}&prop=extracts&exintro=1&explaintext=1&exchars=${chars}&redirects=1&format=json`;
-    const res = await fetchImpl(url, { headers: { "User-Agent": WIKI_UA, accept: "application/json" } });
+    const res = await pacedFetch(fetchImpl, url, { "User-Agent": WIKI_UA, accept: "application/json" });
     if (!res.ok) return undefined;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const j: any = await res.json();

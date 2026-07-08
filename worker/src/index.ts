@@ -617,6 +617,58 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable areaWeather.run (hourly per-country/region weather snapshot) ----
+  // Offset 10 past the hour so it doesn't contend with summaries-hourly's :00 run.
+  // Country/region CATALOG seeding (countries.seed/regions.seed) is intentionally
+  // NOT scheduled here — Natural Earth boundaries and the curated region list
+  // don't change; reseed manually (yarn seed:countries/seed:regions or the
+  // matching /admin/jobs buttons) if the source data is ever refreshed.
+  if (process.env.AREA_WEATHER_ENABLED !== "false") {
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "areaWeather", type: "areaWeather", event: "run", data: {} },
+        { repeat: { pattern: process.env.AREA_WEATHER_CRON || "10 * * * *" }, jobId: "area-weather-run" },
+      );
+      log(TAG, `registered repeatable areaWeather.run`);
+    } catch (err) {
+      log(TAG, `failed to register areaWeather.run`, summarizeForLog(err));
+    }
+  }
+
+  // ---- Repeatable countries/regions.enrichWiki ----
+  // Population/capital/currency + a photo/blurb barely change — a daily sweep
+  // (staleness-gated at 30 days internally, so most days it's a no-op scan) is
+  // plenty. LOW PRIORITY so it never competes with live data jobs.
+  try {
+    await myQueue.add(
+      "do",
+      { domain: "countries", type: "countries", event: "enrichWiki", data: {} },
+      {
+        repeat: { every: Number(process.env.COUNTRY_ENRICH_MS || 24 * 3_600_000), immediately: true },
+        jobId: "countries-enrich",
+        priority: 10,
+      },
+    );
+    log(TAG, `registered repeatable countries.enrichWiki`);
+  } catch (err) {
+    log(TAG, `failed to register countries.enrichWiki`, summarizeForLog(err));
+  }
+  try {
+    await myQueue.add(
+      "do",
+      { domain: "regions", type: "regions", event: "enrichWiki", data: {} },
+      {
+        repeat: { every: Number(process.env.REGION_ENRICH_MS || 24 * 3_600_000), immediately: true },
+        jobId: "regions-enrich",
+        priority: 10,
+      },
+    );
+    log(TAG, `registered repeatable regions.enrichWiki`);
+  } catch (err) {
+    log(TAG, `failed to register regions.enrichWiki`, summarizeForLog(err));
+  }
+
   // ---- Express HTTP server (health/status probes) ----
   const app = express();
   app.use(express.json());

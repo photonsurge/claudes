@@ -120,7 +120,7 @@ export async function sampleDepthProfile(
       // colour this variable on the map (public/src/components/layers/props.ts).
       const domain = entry.domain ?? meta?.domain ?? [-2, 32];
       const palette = entry.palette ?? meta?.palette ?? "sst";
-      points.push({ depth, tempC: sample.value, domain, palette });
+      points.push({ depth, variableId, tempC: sample.value, domain, palette });
     }
   }
   return points.length >= 2 ? points : null;

@@ -86,6 +86,7 @@ export default function DepthProfilePanel({
   manifest,
   theme = DEFAULT_THEME,
   compact = false,
+  activeVariable = null,
 }: {
   /** Focus point [lng, lat] — same source PointHistoryPanel reads. */
   center: [number, number] | null;
@@ -93,6 +94,10 @@ export default function DepthProfilePanel({
   theme?: BroadcastTheme;
   /** Small side-note sizing for embedding inside EventOverlay. */
   compact?: boolean;
+  /** The map's current scalar variable — highlights the matching row, e.g.
+   *  while an ocean depth-cycle scene flips through the chapters (see
+   *  DEPTH_CYCLE_VARS in lib/director.ts). */
+  activeVariable?: string | null;
 }) {
   const [points, setPoints] = useState<DepthProfilePoint[] | null>(null);
   const lng = center?.[0] ?? null;
@@ -142,6 +147,7 @@ export default function DepthProfilePanel({
         {points.map((p) => {
           const bg = colorForValue(getPalette(p.palette), p.domain, p.tempC);
           const fg = textColorFor(bg);
+          const isActive = activeVariable != null && p.variableId === activeVariable;
           return (
             <div
               key={p.depth}
@@ -153,7 +159,9 @@ export default function DepthProfilePanel({
                 alignItems: "center",
                 justifyContent: "space-between",
                 padding: "0 10px",
-                boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.15)",
+                boxShadow: isActive
+                  ? `inset 0 0 0 2px ${theme.accent}, 0 0 10px ${theme.accent}`
+                  : "inset 0 0 0 1px rgba(0,0,0,0.15)",
               }}
             >
               <span style={{ fontSize: compact ? 9.5 : 11, fontWeight: 800, letterSpacing: 0.8, color: fg }}>

@@ -13,8 +13,11 @@ const mockSample = sampleDepthProfile as jest.MockedFunction<typeof sampleDepthP
 
 const manifest = { model: "rtofs" } as unknown as WeatherManifest;
 
+const VARIABLE_BY_DEPTH: Record<number, string> = { 0: "sst", 100: "sst100", 500: "sst500", 2000: "sst2000", 5000: "sst5000" };
+
 const point = (depth: number, tempC: number, domain: [number, number] = [-2, 32]) => ({
   depth,
+  variableId: VARIABLE_BY_DEPTH[depth],
   tempC,
   domain,
   palette: "sst",
@@ -46,6 +49,19 @@ describe("DepthProfilePanel", () => {
     expect(screen.getByText("5000m")).toBeInTheDocument();
     expect(screen.getByText("26.4°")).toBeInTheDocument();
     expect(screen.getByText("1.9°")).toBeInTheDocument();
+  });
+
+  it("highlights the row matching activeVariable, none highlighted when it's null/absent", async () => {
+    mockSample.mockResolvedValue([point(0, 26.4), point(100, 21.1), point(500, 9.8)]);
+    const { rerender } = render(<DepthProfilePanel center={[-79.8, 26.1]} manifest={manifest} activeVariable="sst500" />);
+    await waitFor(() => expect(screen.getByText("500m")).toBeInTheDocument());
+    const row500 = screen.getByText("500m").closest("div") as HTMLElement;
+    expect(row500.style.boxShadow).toContain("inset 0 0 0 2px");
+    const row100 = screen.getByText("100m").closest("div") as HTMLElement;
+    expect(row100.style.boxShadow).not.toContain("inset 0 0 0 2px");
+
+    rerender(<DepthProfilePanel center={[-79.8, 26.1]} manifest={manifest} />);
+    expect((screen.getByText("500m").closest("div") as HTMLElement).style.boxShadow).not.toContain("inset 0 0 0 2px");
   });
 
   it("hides entirely when sampling resolves null (land point)", async () => {
