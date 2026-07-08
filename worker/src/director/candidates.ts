@@ -31,7 +31,7 @@ import {
   ORBITAL_VIEWS,
 } from "@photonsurge/shared/director-rois";
 import { countryShot } from "@photonsurge/shared/director-countries";
-import { SEA_POINTS } from "@photonsurge/shared/director-sea-points";
+import { seaPointShot } from "@photonsurge/shared/director-sea-points";
 import { adMediaPath } from "@photonsurge/shared/ads/types";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
@@ -186,8 +186,12 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
     // Notable named sea points — same "ocean" kind, fair-rotated alongside the
     // spin above, but holding steady (autoSpin off) so a real, specific
     // location is on camera instead of wherever the spin happened to drift
-    // to (the sea-temp-at-depth profile/map need an actual ocean point).
-    for (const p of SEA_POINTS) {
+    // to (the sea-temp-at-depth profile/map need an actual ocean point). The
+    // operator's favourites (DirectorConfig.seaPoints) gate the set — stale
+    // ids are just skipped, mirroring the country-spotlight loop above.
+    for (const id of cfg.seaPoints) {
+      const p = seaPointShot(id);
+      if (!p) continue;
       out.push({
         score: 6,
         segment: make(
@@ -418,7 +422,7 @@ export async function buildCandidates(
       for (const v of volcanoes) {
         const c = volcanoSegmentContent(v);
         const sev = volcanoStatusToSeverity(v.status);
-        const seg = make("storm", `volcano:${v.id}`, c.title, c.subtitle, [v.lng, v.lat], VOLCANO_ZOOM, stormHoldMs(cfg, sev), cfg);
+        const seg = make("storm", v.id, c.title, c.subtitle, [v.lng, v.lat], VOLCANO_ZOOM, stormHoldMs(cfg, sev), cfg);
         seg.hazard = "volcano";
         seg.icon = c.icon;
         seg.details = c.details;

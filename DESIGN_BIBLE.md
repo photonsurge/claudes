@@ -36,6 +36,69 @@ ticker items, summaries).
 
 ---
 
+## 1a. Reference screenshots
+
+Live captures of the actual running product (`aurora` theme, standby/no-scene
+state) — use these as ground truth for how the tokens in this document
+actually compose on screen.
+
+**`/watch` — the on-air broadcast surface** (`docs/design-bible/watch-broadcast-surface.png`)
+Shows, at once: the top ticker with its angled title chip, the brand panel +
+pulsing LIVE badge (top-left), the Kp/geomagnetic + aurora-oval glass panels,
+the intensity-meter color legend (top-center), the WORLD WATCH rollup
+(top-right), SEA TEMP PROFILE and AREA HISTORY cards (bottom-left), three
+LOCAL MONITOR trace cards (bottom-center), and the bottom alert ticker. This
+is the single best image for absorbing the glass-panel language, the
+uppercase/wide-tracking HUD type, and the cyan "live data" accent.
+
+**`/control` — the operator console** (`docs/design-bible/control-operator-console.png`)
+The flat, utilitarian tooling surface: MAP KEY legend, the Auto-director
+toggle/countdown, and the per-segment-kind hold-time sliders. Notice this
+surface has *no* glass/blur/gradient — solid dark panels, sharp small-radius
+corners, a single blue accent for interactive controls. This is the contrast
+case to the broadcast surface above; don't let the two visual languages
+bleed into each other.
+
+---
+
+## 1b. Segment-kind gallery (`docs/design-bible/gallery/`)
+
+Auto-director cycling through real on-air content — captured live via
+`public/scripts/design-bible-screenshots.mjs` (see that file's header for how
+to re-run it). Each shows the same glass-panel/HUD language wrapped around a
+different kind of on-air content, which is the best way to see how the system
+*scales* across segment kinds rather than just what one frame looks like:
+
+- **`view-01.png`** — Global Pressure (MSLP): wide shot, isobar contour lines,
+  dense city-label field, diverging pressure palette (§4.3).
+- **`view-02.png`** — Storm (CAPE) with a **severe-weather event card**: the
+  red-bordered "EVENT DETECTION OVERLAY" (severity 4/4 "Extreme"), a named
+  storm marker + label, live satellite cloud texture blended under the CAPE
+  ramp.
+- **`view-03.png`** — Elevation basemap with an **earthquake event card** +
+  the bottom-left "SEISMIC REPORT" detail panel (magnitude/depth banding,
+  nearest-cities table) + the SEISMIC MONITOR trace card.
+- **`view-04.png`** — Temperature, close orbital framing on a **tracked
+  aircraft** ("AIRCRAFT · EVENT DETECTION OVERLAY" + a NOTABLE AIRCRAFT card)
+  over the SEA TEMP PROFILE card.
+- **`view-05.png`** — Temperature, regional zoom thick with live air-traffic
+  markers (a realistic "busy sky" moment) plus city population labels —
+  useful for checking marker-density legibility against a data-viz basemap.
+- **`control.png`** — `/control` mid-broadcast: the live globe preview, an
+  on-air "ROUND-UP" card (Spain · extreme fire · 88 events), and the full
+  VARIABLE/LAYERS picker — the operator's-eye view of the same broadcast.
+- **`admin-hub.png`** — `/admin`: the flat card-grid hub linking every admin
+  tool (alerts, scenes, tracks, volcanoes, queue, etc.) — ground truth for the
+  admin surface's typography and card treatment referenced in §4.6.
+
+Not pictured (would need a genuinely active severe alert / large quake to
+trigger on its own): the dedicated "Severe storms / volcanoes" and
+"Earthquakes" director segment kinds beyond the event-card overlays already
+visible above, and the `command`/`storm` theme re-skins (`--watch-only`
+skips these; drop the flag to capture them too).
+
+---
+
 ## 2. Design philosophy
 
 - **Broadcast HUD, not a web app.** Every on-screen element is a floating

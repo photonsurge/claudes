@@ -19,6 +19,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { COUNTRY_SHOTS } from "@photonsurge/shared/director-countries";
+import { SEA_POINTS } from "@photonsurge/shared/director-sea-points";
 import {
   INTRO_MAP_TYPES,
   OCEAN_MAP_TYPES,
@@ -422,6 +423,46 @@ export default function DirectorPanel({
                     }
                   />
                   {c.flag} {c.name}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Favourite sea points — the named locations the ocean kind rotates
+          through alongside its global spin (see director-sea-points.ts) */}
+      {config.kinds.ocean ? (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>
+            Favourite sea points ({config.seaPoints.length}):
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "2px 10px",
+              maxHeight: 180,
+              overflowY: "auto",
+              paddingRight: 4,
+            }}
+          >
+            {SEA_POINTS.map((p) => {
+              const on = config.seaPoints.includes(p.id);
+              return (
+                <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() =>
+                      update({
+                        seaPoints: on
+                          ? config.seaPoints.filter((id) => id !== p.id)
+                          : [...config.seaPoints, p.id],
+                      })
+                    }
+                  />
+                  {p.name}
                 </label>
               );
             })}

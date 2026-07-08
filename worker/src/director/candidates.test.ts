@@ -120,6 +120,22 @@ describe("buildCandidates", () => {
     expect(pool.filter((c) => c.segment.kind === "ocean")).toEqual([]);
   });
 
+  it("restricts sea-point candidates to the operator's favourites (spin unaffected)", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg({ seaPoints: ["gulf-stream", "mariana-trench"] }));
+    const ocean = pool.filter((c) => c.segment.kind === "ocean");
+    expect(ocean.map((c) => c.segment.id).sort()).toEqual([
+      "ocean:gulf-stream",
+      "ocean:mariana-trench",
+      "ocean:world",
+    ]);
+  });
+
+  it("skips a stale/unknown favourited sea-point id", async () => {
+    const pool = await buildCandidates(fakeDb(), cfg({ seaPoints: ["gulf-stream", "atlantis"] }));
+    const ocean = pool.filter((c) => c.segment.kind === "ocean");
+    expect(ocean.map((c) => c.segment.id).sort()).toEqual(["ocean:gulf-stream", "ocean:world"]);
+  });
+
   it("opens the ocean spin on the first operator-enabled map type, not always SST", async () => {
     const pool = await buildCandidates(fakeDb(), cfg({ mapTypes: { ocean: ["wave", "salinity"] } }));
     const ocean = pool.find((c) => c.segment.kind === "ocean")!;
@@ -221,7 +237,7 @@ describe("buildCandidates", () => {
       }),
       cfg(),
     );
-    const v = pool.find((c) => c.segment.id === "volcano:gvp:1");
+    const v = pool.find((c) => c.segment.id === "storm:gvp:1");
     expect(v).toBeTruthy();
     expect(v!.segment.kind).toBe("storm");
     expect(v!.segment.hazard).toBe("volcano");
@@ -239,7 +255,7 @@ describe("buildCandidates", () => {
       }),
       cfg(),
     );
-    expect(pool.find((c) => c.segment.id === "volcano:gvp:2")).toBeUndefined();
+    expect(pool.find((c) => c.segment.id === "storm:gvp:2")).toBeUndefined();
   });
 
   it("only flags a volcano breaking when its status just flipped to erupting", async () => {
@@ -251,7 +267,7 @@ describe("buildCandidates", () => {
       }),
       cfg(),
     );
-    expect(justChanged.find((c) => c.segment.id === "volcano:gvp:1")!.breaking).toBe(true);
+    expect(justChanged.find((c) => c.segment.id === "storm:gvp:1")!.breaking).toBe(true);
 
     const longErupting = await buildCandidates(
       fakeDb({
@@ -269,7 +285,7 @@ describe("buildCandidates", () => {
       }),
       cfg(),
     );
-    expect(longErupting.find((c) => c.segment.id === "volcano:gvp:1")!.breaking).toBe(false);
+    expect(longErupting.find((c) => c.segment.id === "storm:gvp:1")!.breaking).toBe(false);
 
     const unrest = await buildCandidates(
       fakeDb({
@@ -280,7 +296,7 @@ describe("buildCandidates", () => {
       cfg(),
     );
     // Only a fresh transition to erupting counts as breaking — unrest never does.
-    expect(unrest.find((c) => c.segment.id === "volcano:gvp:3")!.breaking).toBe(false);
+    expect(unrest.find((c) => c.segment.id === "storm:gvp:3")!.breaking).toBe(false);
   });
 
   it("layers an operator overlayOverride onto the preset without touching other kinds", async () => {

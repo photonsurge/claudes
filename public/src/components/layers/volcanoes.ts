@@ -32,7 +32,7 @@ export function volcanoColor(v: Volcano): [number, number, number] {
   return VOLCANO_STATUS_COLORS[v.status];
 }
 
-const GLOW_RADIUS: Record<Volcano["status"], number> = { erupting: 26, unrest: 16, dormant: 11 };
+const GLOW_RADIUS: Record<Volcano["status"], number> = { erupting: 40, unrest: 30, dormant: 22 };
 const GLOW_ALPHA: Record<Volcano["status"], number> = { erupting: 70, unrest: 45, dormant: 28 };
 
 export function volcanoLayers(volcanoes: Volcano[]) {

@@ -1007,7 +1007,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         const [r, g, b] = volcanoColor(v);
         out.push({
           id: `volcano:${v.id}`,
-          icon: <VolcanoIcon color={`rgb(${r}, ${g}, ${b})`} size={v.status === "erupting" ? 16 : v.status === "unrest" ? 13 : 10} />,
+          icon: <VolcanoIcon color={`rgb(${r}, ${g}, ${b})`} size={v.status === "erupting" ? 34 : v.status === "unrest" ? 27 : 20} />,
           text: v.status === "erupting" ? v.name : "",
           position: volcanoPosition(v),
           color: [r, g, b],

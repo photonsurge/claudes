@@ -76,7 +76,11 @@ describe("makeVolcanoRepo", () => {
       statusChangedAt: new Date(1_700_000_000_000),
     };
     const exec = jest.fn(async () => [doc]);
-    const chain = { sort: jest.fn(() => chain), limit: jest.fn(() => chain), lean: jest.fn(() => chain), exec };
+    const chain: Record<string, jest.Mock> = {};
+    chain.sort = jest.fn(() => chain);
+    chain.limit = jest.fn(() => chain);
+    chain.lean = jest.fn(() => chain);
+    chain.exec = exec;
     const find = jest.fn(() => chain);
     const repo = makeVolcanoRepo({ find } as unknown as Model<iVolcanoModel>);
     const [v] = await repo.list();

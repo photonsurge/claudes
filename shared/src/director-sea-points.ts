@@ -40,3 +40,18 @@ export const SEA_POINTS: SeaPointShot[] = [
 
 export const seaPointShot = (id: string): SeaPointShot | undefined =>
   SEA_POINTS.find((p) => p.id === id);
+
+/** Default favourites: every catalog entry, so behaviour is unchanged until
+ *  an operator actually deselects one in DirectorPanel. */
+export const DEFAULT_SEA_POINTS: string[] = SEA_POINTS.map((p) => p.id);
+
+/**
+ * Sanitize a `DirectorConfig.seaPoints` patch. Mirrors
+ * `sanitizeDirectorCountries` exactly: non-array -> null (merge keeps the
+ * base); otherwise keeps only known ids, deduped, in catalog order.
+ */
+export function sanitizeDirectorSeaPoints(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const want = new Set(v.filter((x): x is string => typeof x === "string"));
+  return SEA_POINTS.filter((p) => want.has(p.id)).map((p) => p.id);
+}

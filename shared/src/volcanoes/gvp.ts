@@ -101,6 +101,11 @@ export function parseGvpWeekly(xml: string, nowMs: number): Volcano[] {
       status: statusForLabel(activityLabel),
       firstDate: lastDate,
       lastDate,
+      // Placeholder — like firstDate, only meaningful on a brand-new volcano's
+      // first insert. The repo's pipeline-update upsert (see volcano-repo.ts)
+      // computes the real value server-side from the previously stored status
+      // and never reads this field, so any re-poll's value here is ignored.
+      statusChangedAt: lastDate,
       sourceUrl: `https://volcano.si.edu/volcano.cfm?vn=${volcanoNumber}`,
       latestReport: description ? stripHtml(description) : undefined,
       reportDateRange: reportDateRange.trim(),

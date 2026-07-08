@@ -21,6 +21,7 @@ import type { AdMediaType } from "./ads/types";
 import type { SummaryPeriod, iSummaryStats } from "./db/event-summary-model";
 import type { SeverityRank } from "./db/alert-model";
 import { DEFAULT_DIRECTOR_COUNTRIES, sanitizeDirectorCountries } from "./director-countries";
+import { DEFAULT_SEA_POINTS, sanitizeDirectorSeaPoints } from "./director-sea-points";
 import { isSatImgLook, SATIMG_FEEDS, type SatImgFeedState } from "./satimg/types";
 import { QUAKE_MAGNITUDE_BANDS, quakeMagnitudeClass, type QuakeMagnitudeClass } from "./seismic";
 // Value import (not just a type) — safe despite director-rois.ts importing
@@ -305,6 +306,12 @@ export interface DirectorConfig {
    * through — the operator's "channels we cover" list. Catalog-ordered.
    */
   countries: string[];
+  /**
+   * Favourite sea-point ids (see SEA_POINTS) the `ocean` kind rotates
+   * through alongside its global spin — the operator's "which currents/
+   * features we visit" list. Catalog-ordered.
+   */
+  seaPoints: string[];
   /** Only schedule quakes at/above this magnitude. */
   minQuakeMag: number;
   /** Only schedule storms at/above this normalised severity (0–4). */
@@ -855,6 +862,7 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
     summary: true,
   },
   countries: DEFAULT_DIRECTOR_COUNTRIES,
+  seaPoints: DEFAULT_SEA_POINTS,
   minQuakeMag: 4.5,
   minAlertSeverity: 3,
   adEveryNShots: 6,
@@ -1122,6 +1130,7 @@ export function mergeDirectorConfig(
     transitionSeconds: Math.max(0.5, num(patch.transitionSeconds, base.transitionSeconds)),
     kinds,
     countries: sanitizeDirectorCountries(patch.countries) ?? base.countries,
+    seaPoints: sanitizeDirectorSeaPoints(patch.seaPoints) ?? base.seaPoints,
     minQuakeMag: num(patch.minQuakeMag, base.minQuakeMag),
     minAlertSeverity: num(patch.minAlertSeverity, base.minAlertSeverity),
     adEveryNShots: Math.max(1, Math.round(num(patch.adEveryNShots, base.adEveryNShots))),
