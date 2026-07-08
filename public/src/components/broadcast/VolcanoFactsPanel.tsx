@@ -34,7 +34,7 @@ export default function VolcanoFactsPanel({ info, color = "#38bdf8" }: { info: T
   return (
     <div
       style={{
-        width: 320,
+        width: 380,
         background: "rgba(8,13,22,0.82)",
         border: `1px solid ${color}44`,
         borderLeft: `3px solid ${color}`,

@@ -164,11 +164,18 @@ export interface AreaStats {
  * grid wraps. Very large windows are strided down to ~`maxSamples` pixels so a
  * whole-hemisphere shot stays cheap. Null when the window misses the frame,
  * everything is nodata, or the frame lacks its decode range.
+ *
+ * `mask`, when given, is an additional per-pixel predicate (lat, lng) checked
+ * alongside the nodata test — e.g. a real country boundary via
+ * `geo/pointInPolygon`, so a bbox that's just a framing rectangle doesn't
+ * pull in ocean/neighbouring-country pixels. Omit it for a plain bbox
+ * average (every existing caller does).
  */
 export function areaStatsFrame(
   frame: FrameLike,
   bbox: [number, number, number, number],
   maxSamples = 50_000,
+  mask?: (lat: number, lng: number) => boolean,
 ): AreaStats | null {
   const { width, height, bounds, res, rgba } = frame;
   const unscale = frame.encoding === "uv" ? frame.vectorUnscale ?? frame.imageUnscale : frame.imageUnscale;
@@ -211,6 +218,7 @@ export function areaStatsFrame(
       const px = global ? (x0 + cx) % width : x0 + cx;
       const o = (ry * width + px) * 4;
       if (rgba[o + 3] === 0) continue; // nodata
+      if (mask && !mask(bounds[3] - ry * res, normalizeLng(bounds[0] + px * res))) continue;
       let v: number;
       if (frame.encoding === "uv") {
         const u = byteToValue(rgba[o], unscale);

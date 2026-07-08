@@ -15,6 +15,9 @@ import { useTracks } from "../lib/tracks/useTracks";
 import { useAlertFeatures } from "../lib/alerts-overlay";
 import { useQuakes } from "../lib/seismic-overlay";
 import { useSeismoGauge } from "../lib/seismo-gauge";
+import { useTideGauge } from "../lib/tide-gauge";
+import { usePointHistory } from "../lib/history-client";
+import { selectWeatherPoint } from "../lib/weather-point";
 import { useCables } from "../lib/cables-overlay";
 import { useFaults } from "../lib/faults-overlay";
 import { useAurora } from "../lib/aurora-overlay";
@@ -95,6 +98,14 @@ export default function WatchSurface({
   // the on-air segment's location if there is one, else the current camera.
   const seismoFocus: [number, number] | null = onAirSegment?.camera.center ?? state.camera.center ?? null;
   const { stations: seismoStations, active: seismoActive } = useSeismoGauge(seismoFocus, state.showSeismic && ready);
+  // Same focus point TsunamiMonitor/WeatherMonitors use — fetched once here so
+  // the globe's tide/weather-point markers and the HUD cards always agree,
+  // mirroring the seismic wiring above.
+  const tideFocus: [number, number] | null = onAirSegment?.camera.center ?? state.camera.center ?? null;
+  const { stations: tideStations, active: tideActive } = useTideGauge(tideFocus, ready);
+  const pointFocus: [number, number] | null = onAirSegment?.camera.center ?? state.camera.center ?? null;
+  const { series: pointHistorySeries } = usePointHistory(ready ? pointFocus : null);
+  const weatherPoint = selectWeatherPoint(onAirSegment ?? null, pointHistorySeries);
   const cables = useCables(state.showCables && ready);
   const faults = useFaults(state.showFaults && ready);
   const aurora = useAurora(state.showAurora && ready);
@@ -131,6 +142,10 @@ export default function WatchSurface({
         quakes={quakes}
         seismoStations={state.showSeismic ? seismoStations : []}
         seismoActive={state.showSeismic ? seismoActive : null}
+        tideStations={tideStations}
+        tideActive={tideActive}
+        weatherPointCenter={weatherPoint?.center ?? null}
+        weatherPointLabel={weatherPoint?.label ?? null}
         cables={cables}
         faults={faults}
         aurora={aurora}
@@ -163,6 +178,9 @@ export default function WatchSurface({
           volcanoes={state.showVolcanoes ? volcanoes : []}
           seismoStations={state.showSeismic ? seismoStations : []}
           seismoActive={state.showSeismic ? seismoActive : null}
+          tideStations={tideStations}
+          tideActive={tideActive}
+          pointHistorySeries={pointHistorySeries}
           tracks={tracks}
           cities={cities}
           cams={cams}

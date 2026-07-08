@@ -138,3 +138,56 @@ export async function fetchCityFacts(
     return {};
   }
 }
+
+/**
+ * Structured country facts, same two-round-trip shape as `fetchVolcanoFacts`/
+ * `fetchCityFacts`: `P1082` = population (plain quantity, no unit), `P36` =
+ * capital (resolves to a place-name label), `P38` = currency (resolves to a
+ * currency-name label). Keyless. Never throws — degrades to an empty object
+ * on any miss.
+ */
+export interface CountryFacts {
+  population?: number;
+  capital?: string;
+  currency?: string;
+}
+
+export async function fetchCountryFacts(
+  wikipediaTitle: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CountryFacts> {
+  try {
+    const qid = await fetchWikidataQid(wikipediaTitle, fetchImpl);
+    if (!qid) return {};
+
+    const entityJ = await fetchJson(`https://www.wikidata.org/wiki/Special:EntityData/${qid}.json`, fetchImpl);
+    const claims = entityJ?.entities?.[qid]?.claims ?? {};
+
+    const populationAmount = claims.P1082?.[0]?.mainsnak?.datavalue?.value?.amount;
+    const population = Number.isFinite(Number(populationAmount)) ? Number(populationAmount) : undefined;
+
+    const capitalQid: string | undefined = claims.P36?.[0]?.mainsnak?.datavalue?.value?.id;
+    const currencyQid: string | undefined = claims.P38?.[0]?.mainsnak?.datavalue?.value?.id;
+
+    const labelQids = [capitalQid, currencyQid].filter(Boolean) as string[];
+    const labels: Record<string, string> = labelQids.length
+      ? await fetchJson(
+          `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${labelQids.join(
+            "|",
+          )}&props=labels&languages=en&format=json`,
+          fetchImpl,
+        ).then((j) =>
+          Object.fromEntries(
+            Object.entries(j?.entities ?? {}).map(([id, e]: [string, any]) => [id, e?.labels?.en?.value]),
+          ),
+        )
+      : {};
+
+    const capital = capitalQid ? labels[capitalQid] : undefined;
+    const currency = currencyQid ? labels[currencyQid] : undefined;
+
+    return { population, capital, currency };
+  } catch {
+    return {};
+  }
+}

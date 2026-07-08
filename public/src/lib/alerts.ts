@@ -14,6 +14,8 @@ export interface AlertInfo {
   severity?: string;
   severityRank: SeverityRank;
   headline?: string;
+  description?: string;
+  instruction?: string;
   /** When the hazard begins / took effect (CAP onset / effective, ISO). */
   onset?: string;
   effective?: string;
@@ -22,7 +24,33 @@ export interface AlertInfo {
   /** Source-specific extras (e.g. MeteoAlarm awareness_type, GDACS eventtype). */
   parameters?: Record<string, string>;
   area: AlertArea[];
+
+  // translation enrichment (worker/src/alerts/translate.ts) — "" until translated,
+  // and left "" for already-English source text (see alerts-repo.ts#updateTranslation).
+  detectedLanguage?: string;
+  translatedHeadline?: string;
+  translatedDescription?: string;
+  translatedInstruction?: string;
+  translatedAt?: string;
 }
+
+/** "translated" (non-English source, translated fields present), "english" (source
+ *  already English, nothing to translate), or "pending" (not yet processed). */
+export function translationStatus(a: Alert): "translated" | "english" | "pending" {
+  const info = primaryInfo(a);
+  if (!info?.translatedAt) return "pending";
+  if (info.translatedHeadline || info.translatedDescription || info.translatedInstruction) return "translated";
+  return "english";
+}
+
+/** Headline text, preferring the English translation when one exists. */
+export const displayHeadline = (info?: AlertInfo): string | undefined => info?.translatedHeadline || info?.headline;
+/** Description text, preferring the English translation when one exists. */
+export const displayDescription = (info?: AlertInfo): string | undefined =>
+  info?.translatedDescription || info?.description;
+/** Instruction text, preferring the English translation when one exists. */
+export const displayInstruction = (info?: AlertInfo): string | undefined =>
+  info?.translatedInstruction || info?.instruction;
 
 /** The cross-source hazard category for an alert (heat/flood/wind/…). */
 export function alertHazard(a: Alert): HazardType {
@@ -91,6 +119,11 @@ export interface AlertFeature {
     /** Source-specific severity label ("Orange"/"Extreme"), if the feed gives one. */
     level?: string;
     headline?: string;
+    instruction?: string;
+    /** English translations (worker/src/alerts/translate.ts) — "" when not yet processed or source is already English. */
+    translatedHeadline?: string;
+    translatedDescription?: string;
+    translatedInstruction?: string;
     /** When the hazard became active (onset ?? effective ?? sent), ISO. */
     since?: string;
     expires?: string;
@@ -122,6 +155,10 @@ export function alertsToFeatures(alerts: Alert[]): AlertFeature[] {
             areaDesc: area.areaDesc,
             level: info.severity,
             headline: info.headline,
+            instruction: info.instruction,
+            translatedHeadline: info.translatedHeadline,
+            translatedDescription: info.translatedDescription,
+            translatedInstruction: info.translatedInstruction,
             since: info.onset ?? info.effective ?? a.sent,
             expires: a.expiresAt,
             web: info.web,

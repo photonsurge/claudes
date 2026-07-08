@@ -1,6 +1,7 @@
 import type { Model } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 import type { iAlert, iAlertModel } from "./alert-model";
+import { alertContentHash } from "../alerts/content-hash";
 
 export interface AlertListOpts {
   activeOnly?: boolean;
@@ -26,9 +27,43 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
   return {
     model,
 
-    /** Insert-or-update by the dedup key. Returns true if a new doc was inserted. */
+    /**
+     * Insert-or-update by the dedup key. Returns true if a new doc was inserted.
+     *
+     * `rest.info` is the WHOLE freshly re-parsed info array from this poll — a
+     * Mongo `$set` on an array field replaces it wholesale, not a merge. Left
+     * alone, a still-active alert's `info[]` would lose the translate job's
+     * cached fields on every re-poll (WMO alone re-polls every 10 minutes),
+     * causing it to be re-translated forever. So: read the existing doc first
+     * and carry forward each info entry's translation iff its content hash
+     * still matches — an unchanged bulletin keeps its cached translation, a
+     * changed one is correctly left blank for the next translate tick.
+     */
     async upsert(alert: iAlert): Promise<{ inserted: boolean }> {
       const { id: _id, ...rest } = alert as iAlert & { id?: string };
+
+      const existing = await model
+        .findOne({ source: alert.source, identifier: alert.identifier }, { info: 1 })
+        .lean()
+        .exec();
+      if (existing?.info?.length) {
+        rest.info = rest.info.map((info, i) => {
+          const prev = existing.info[i];
+          if (!prev?.translationHash) return info;
+          const hash = alertContentHash(info.headline ?? "", info.description ?? "", info.instruction ?? "");
+          if (hash !== prev.translationHash) return info;
+          return {
+            ...info,
+            detectedLanguage: prev.detectedLanguage,
+            translatedHeadline: prev.translatedHeadline,
+            translatedDescription: prev.translatedDescription,
+            translatedInstruction: prev.translatedInstruction,
+            translatedAt: prev.translatedAt,
+            translationHash: prev.translationHash,
+          };
+        });
+      }
+
       const res = await model
         .updateOne(
           { source: alert.source, identifier: alert.identifier },
@@ -79,22 +114,27 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       return res.modifiedCount ?? 0;
     },
 
-    /** Write back an LLM translation for one `info[]` entry (worker/src/alerts/translate.ts). */
+    /**
+     * Write back an LLM translation for one `info[]` entry (worker/src/alerts/translate.ts).
+     * Callers always pass complete strings — "" for English-source text (no translation
+     * needed) rather than omitting the field — so a re-translated-to-English alert
+     * properly clears any stale translated text from an earlier non-English version.
+     */
     async updateTranslation(
       alertId: string,
       infoIndex: number,
       patch: {
-        detectedLanguage?: string;
-        translatedHeadline?: string;
-        translatedDescription?: string;
-        translatedInstruction?: string;
+        detectedLanguage: string;
+        translatedHeadline: string;
+        translatedDescription: string;
+        translatedInstruction: string;
         translatedAt: string;
         translationHash: string;
       },
     ): Promise<void> {
       const $set: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(patch)) {
-        if (value !== undefined) $set[`info.${infoIndex}.${key}`] = value;
+        $set[`info.${infoIndex}.${key}`] = value;
       }
       await model.updateOne({ id: alertId }, { $set }).exec();
     },

@@ -193,6 +193,17 @@ describe("areaStatsFrame", () => {
     expect(areaStatsFrame(frame, [100, 0, 120, 20])).toBeNull(); // window elsewhere
   });
 
+  it("applies an optional per-pixel mask on top of the bbox window", () => {
+    // Keep only the western two columns (lng <= 10): 0,10 / 40,50 / 80,90.
+    const western = areaStatsFrame(frame, [0, 0, 30, 20], 50_000, (_lat, lng) => lng <= 10)!;
+    expect(western.count).toBe(6);
+    expect(western.min).toBe(0);
+    expect(western.max).toBe(90);
+    expect(western.mean).toBeCloseTo(45, 5);
+    // A mask that matches nothing misses cleanly, same as a bbox miss.
+    expect(areaStatsFrame(frame, [0, 0, 30, 20], 50_000, () => false)).toBeNull();
+  });
+
   it("wraps an antimeridian window on a global grid", () => {
     // 4-wide global grid: columns at -180,-90,0,90; single row.
     const g: FrameLike = {

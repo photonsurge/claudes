@@ -29,6 +29,7 @@ const LINKS: AdminLink[] = [
   { href: "/admin/queue", title: "Queue", desc: "BullMQ dashboard — browse/retry jobs, schedules, pause.", ready: true },
   { href: "/admin/logs", title: "Back log", desc: "Saved log of worker/job activity.", ready: true },
   { href: "/admin/users", title: "Users", desc: "Admin accounts for /admin and /control.", ready: true },
+  { href: "/admin/db", title: "Database", desc: "Mongo collection sizes, doc counts, storage summary.", ready: true },
 ];
 
 export default function AdminPage() {

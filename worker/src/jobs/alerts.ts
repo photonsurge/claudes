@@ -8,6 +8,8 @@ import { blogInfo, blogErr } from "../blog";
 import { ALERTS_UPDATED } from "@photonsurge/shared/control";
 import { emitWorkerEvent } from "../socket";
 
+export { translate } from "../alerts/translate";
+
 const TAG = "job:alerts";
 
 /**

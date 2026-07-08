@@ -20,3 +20,15 @@ export function searchCountries(query: string): iCountryBbox[] {
     (c) => c.name.toLowerCase().includes(q) || c.id.includes(q),
   );
 }
+
+/** The full-catalog country whose mainland bbox contains [lng,lat], or undefined
+ *  over open ocean / a landmass with no bbox match (first catalog match wins on
+ *  the rare overlap). Unlike `director-countries.ts`'s `countryContaining` (a
+ *  curated ~30-country subset for camera spotlights), this checks all ~240
+ *  countries — for callers that just need "what country is this point in",
+ *  e.g. round-up hotspot labelling. */
+export function countryBboxContaining(lng: number, lat: number): iCountryBbox | undefined {
+  return COUNTRY_BBOXES.find(
+    (c) => lng >= c.bbox[0] && lng <= c.bbox[2] && lat >= c.bbox[1] && lat <= c.bbox[3],
+  );
+}

@@ -1,20 +1,25 @@
 "use client";
 
 /**
- * Two "GLOBAL MONITOR" cards, keyed to WHAT'S ON AIR: `SeismicMonitor` (bottom
- * -left) draws a scrolling seismograph for the quakes relevant to the focused
- * event/region (its magnitude drives the amplitude + the M-tag); `TsunamiMonitor`
- * (bottom-centre) plots the genuine recent water-level series of a coastal
- * station near the shot (worker-cached IOC data), cycling through whichever
- * nearby gauges are cached — same pattern as the seismic feed. Each card HIDES
- * when it isn't relevant — no nearby quake, or no coastal gauge in range — so
- * neither ever shows ambient filler.
+ * "GLOBAL MONITOR" / "LOCAL MONITOR" cards, keyed to WHAT'S ON AIR:
+ * `SeismicMonitor` (bottom-left) draws a scrolling seismograph for the quakes
+ * relevant to the focused event/region (its magnitude drives the amplitude +
+ * the M-tag); `TsunamiMonitor` (bottom-centre) plots the genuine recent
+ * water-level series of a coastal station near the shot (worker-cached IOC
+ * data), cycling through whichever nearby gauges are cached; `WeatherMonitors`
+ * draws wind/pressure/wave from the archived point-history at the focus.
+ * Every card HIDES when it isn't relevant (no nearby quake/gauge, or too
+ * little archived data) so none ever shows ambient filler. All three sources
+ * are fetched once in WatchSurface.tsx and passed down as props here AND to
+ * Globe.tsx, which draws the matching station/point marker + name on the
+ * globe itself (layers/seismograph-stations.ts, layers/tide-stations.ts,
+ * lib/weather-point.ts) — so the map and these cards always agree.
  */
 import type { Segment } from "@photonsurge/shared/director";
 import type { TideSample } from "@photonsurge/shared/tides/types";
 import { nearby } from "../../lib/geo";
-import { useTideGauge } from "../../lib/tide-gauge";
-import { usePointHistory, type HistorySeries } from "../../lib/history-client";
+import type { TideStationReading } from "../../lib/tides/types";
+import { historySamples, type HistorySeries } from "../../lib/history-client";
 import { formatReading } from "./PointHistoryPanel";
 import type { Quake } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
@@ -318,35 +323,33 @@ export function SeismicMonitor({
 }
 
 export function TsunamiMonitor({
-  onAirSegment = null,
-  regionCenter,
+  stations,
+  active,
   theme = DEFAULT_THEME,
 }: {
-  /** The on-air director segment — drives what's "relevant". */
-  onAirSegment?: Segment | null;
-  /** Current camera centre [lng,lat] — the fallback focus for wide shots. */
-  regionCenter?: [number, number];
+  /** Nearby cached tide gauges — lifted once in WatchSurface so this panel and
+   *  the globe's tide markers always agree on what's cached. */
+  stations: TideStationReading[];
+  /** Which of `stations` is currently "on air" here (cycled by the caller). */
+  active: TideStationReading | null;
   theme?: BroadcastTheme;
 }) {
-  const focus: [number, number] | null = onAirSegment?.camera.center ?? regionCenter ?? null;
-  const tide = useTideGauge(focus, true);
-
   // A coastal gauge being in range IS the relevance signal — draw its real
-  // series. Hide entirely when nothing's cached near the shot. The hook
-  // cycles `tide.active` through `tide.stations` on a timer, same as the
-  // seismic feed, so a stretch of coast shows more than one gauge.
-  const tideActive = tide.active;
+  // series. Hide entirely when nothing's cached near the shot. The caller
+  // cycles `active` through `stations` on a timer, same as the seismic feed,
+  // so a stretch of coast shows more than one gauge.
+  const tideActive = active;
   const samples = tideActive?.samples?.length ? tideActive.samples : null;
-  const tideIdx = tideActive ? tide.stations.indexOf(tideActive) : -1;
+  const tideIdx = tideActive ? stations.indexOf(tideActive) : -1;
   const tideTag =
     tideActive && tideIdx >= 0
-      ? `${truncate(tideActive.name, 14)}${tide.stations.length > 1 ? ` · ${tideIdx + 1}/${tide.stations.length}` : ""}`
+      ? `${truncate(tideActive.name, 14)}${stations.length > 1 ? ` · ${tideIdx + 1}/${stations.length}` : ""}`
       : "SEA LEVEL";
 
   // TideStationRow already shows every nearby gauge (including this one) once
   // 2+ are cached — showing this single-gauge card on top of that row is a
   // redundant duplicate, so defer to the row in that case.
-  const withData = tide.stations.filter((s) => s.samples?.length);
+  const withData = stations.filter((s) => s.samples?.length);
   if (withData.length >= 2) return null;
 
   if (!samples) return null;
@@ -387,18 +390,6 @@ function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
-/** Pull a variable's series out of the archive response as plottable
- *  `{v}` samples (line paths want `.value`, uv-encoded ones like wind carry
- *  `.speed` instead) — null when the archive has nothing usable yet. */
-function historySamples(series: HistorySeries[], variable: string): { v: number }[] | null {
-  const found = series.find((s) => s.variable === variable);
-  if (!found) return null;
-  const pts = found.series
-    .map((p) => p.value ?? p.speed)
-    .filter((v): v is number => v != null && Number.isFinite(v));
-  return pts.length >= 2 ? pts.map((v) => ({ v })) : null;
-}
-
 const WEATHER_MONITORS: {
   variable: string;
   title: string;
@@ -422,17 +413,15 @@ const WEATHER_MONITORS: {
  * for the focus point, same self-hiding rule as SeismicMonitor/TsunamiMonitor.
  */
 export function WeatherMonitors({
-  onAirSegment = null,
-  regionCenter,
+  series,
   theme = DEFAULT_THEME,
 }: {
-  onAirSegment?: Segment | null;
-  regionCenter?: [number, number];
+  /** Archived point-history at the on-air focus — lifted once in WatchSurface
+   *  (see lib/history-client's usePointHistory) so this panel and the globe's
+   *  weather-point marker read the same fetch. */
+  series: HistorySeries[];
   theme?: BroadcastTheme;
 }) {
-  const focus: [number, number] | null = onAirSegment?.camera.center ?? regionCenter ?? null;
-  const { series } = usePointHistory(focus);
-
   return (
     <>
       {WEATHER_MONITORS.map((spec) => {

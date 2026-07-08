@@ -58,6 +58,9 @@ import GlobeAtmosphere from "./GlobeAtmosphere";
 import GlobeLabels, { type OverlayLabel } from "./GlobeLabels";
 import type { Track, Quake } from "../lib/tracks/types";
 import type { SeismoStationReading } from "../lib/seismo/types";
+import type { TideStationReading } from "../lib/tides/types";
+import { tideStationLayers, tideKeyOf, tideShortName } from "./layers/tide-stations";
+import { stationMarkerLayers } from "./layers/monitor-stations";
 import type { TrackPath } from "../lib/tracks/client";
 import type { OrbitSegment } from "../lib/tracks/orbit";
 import type { AlertFeature } from "../lib/alerts";
@@ -70,7 +73,7 @@ import type { SatImgOverlay } from "../lib/satimg-overlay";
 import type { Fire } from "@photonsurge/shared/fires/types";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { GeomagOverlay } from "../lib/geomag-overlay";
-import { HeartbeatIcon, VolcanoIcon } from "./broadcast/icons";
+import { HeartbeatIcon, VolcanoIcon, WaveIcon, MonitorPinIcon } from "./broadcast/icons";
 
 export interface GlobeHandle {
   flyTo: (center: [number, number], zoom?: number) => void;
@@ -95,6 +98,16 @@ export interface GlobeProps {
   seismoStations?: SeismoStationReading[];
   /** Which of `seismoStations` is currently "on air" in the SEISMIC MONITOR panel. */
   seismoActive?: SeismoStationReading | null;
+  /** Worker-cached tide gauges near what's on air. */
+  tideStations?: TideStationReading[];
+  /** Which of `tideStations` is currently "on air" in the TSUNAMI GAUGE panel. */
+  tideActive?: TideStationReading | null;
+  /** [lng,lat] of the on-air point the WIND/PRESSURE/WAVE "LOCAL MONITOR"
+   *  cards are reading, or null to hide the marker (no segment, no data, or
+   *  the segment already has its own globe marker — see WatchSurface). */
+  weatherPointCenter?: [number, number] | null;
+  /** Display name for `weatherPointCenter` (the on-air segment's title). */
+  weatherPointLabel?: string | null;
   /** Submarine cables + landing stations. */
   cables?: CableOverlay;
   faults?: Fault[];
@@ -193,7 +206,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], seismoStations = [], seismoActive = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, glowRegionBbox, highlightTrack, onSelect },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], seismoStations = [], seismoActive = null, tideStations = [], tideActive = null, weatherPointCenter = null, weatherPointLabel = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, glowRegionBbox, highlightTrack, onSelect },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -835,6 +848,27 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       );
     }
 
+    // Live tide gauges — the real instruments behind the TSUNAMI GAUGE trace,
+    // same pattern as the seismograph stations above.
+    if (tideStations.length) {
+      layers.push(...tideStationLayers(tideStations, tideActive ? tideKeyOf(tideActive) : null));
+    }
+
+    // The on-air point the WIND/PRESSURE/WAVE "LOCAL MONITOR" cards are
+    // reading — always drawn "active" since it's the single on-air point, not
+    // one of several candidates.
+    if (weatherPointCenter) {
+      layers.push(
+        ...stationMarkerLayers(
+          "weather-point",
+          [weatherPointCenter],
+          (d) => [d[0], d[1], 0],
+          () => true,
+          [144, 133, 233],
+        ),
+      );
+    }
+
     // Active fires (FIRMS) — glowing hot-spots, above alerts, below cities/tracks.
     if (state.showFires && fires.length) layers.push(...fireLayers(fires));
 
@@ -918,6 +952,10 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     quakes,
     seismoStations,
     seismoActive,
+    tideStations,
+    tideActive,
+    weatherPointCenter?.[0],
+    weatherPointCenter?.[1],
     cables,
     faults,
     aurora,
@@ -1015,6 +1053,30 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         });
       }
     }
+    if (tideStations.length) {
+      const activeKey = tideActive ? tideKeyOf(tideActive) : null;
+      for (const s of tideStations) {
+        const isActive = tideKeyOf(s) === activeKey;
+        out.push({
+          id: `tide:${tideKeyOf(s)}`,
+          icon: <WaveIcon active={isActive} />,
+          text: tideShortName(s),
+          position: [s.lng, s.lat, 0],
+          color: isActive ? [60, 150, 230] : [200, 215, 230],
+          minZoom: 0,
+        });
+      }
+    }
+    if (weatherPointCenter && weatherPointLabel) {
+      out.push({
+        id: "weather-point",
+        icon: <MonitorPinIcon active />,
+        text: weatherPointLabel,
+        position: [weatherPointCenter[0], weatherPointCenter[1], 0],
+        color: [144, 133, 233],
+        minZoom: 0,
+      });
+    }
     return out;
   }, [
     state.showTrackLabels,
@@ -1028,6 +1090,11 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     cities,
     seismoStations,
     seismoActive,
+    tideStations,
+    tideActive,
+    weatherPointCenter?.[0],
+    weatherPointCenter?.[1],
+    weatherPointLabel,
     volcanoes,
     state.satelliteStyle,
     state.aircraftStyle,

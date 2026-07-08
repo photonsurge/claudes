@@ -10,7 +10,7 @@ Every data source already carries time; nothing ties them together.
 
 | Source | Provider | Storage model | Time field | Rendered on globe |
 |---|---|---|---|---|
-| Weather (wind/temp/pressure) | NOAA GFS 0.25° | `WeatherRun` + `WeatherTexture` | `steps[].validTime` / `fhr` | yes — driven by `state.fhr` |
+| Weather (wind/temp/pressure) | NOAA GFS 0.25° | `WeatherRun` + `WeatherTexture` (live, 3-run retention) **+ `WeatherFrame`** (long-term archive, ~3h cadence, kept forever) | `steps[].validTime` / `fhr` (live); `validTime` (archive) | yes — driven by `state.fhr` (live only; archive not wired to the globe yet) |
 | Alerts | WMO SWIC, NWS, MeteoAlarm, GDACS | `Alert` | `effective` / `expires` | yes |
 | Aircraft | ADS-B.lol / OpenSky | `TrackSnapshot` | `batchAt` frames (6h TTL) | yes (live only) |
 | Ships | aisstream.io | `TrackSnapshot` | `batchAt` frames (6h TTL) | yes (live only) |
@@ -55,14 +55,27 @@ Per-layer mapping from `T`:
 
 | Layer | Past (T ≤ now) | Future (T > now) |
 |---|---|---|
-| Weather | `fhr` ← step nearest T; clamp to analysis (fhr 0) if T < run | `fhr` ← forecast step nearest T |
+| Weather | T < run: nearest `WeatherFrame` archive snapshot (~3h resolution); T ≥ run: `fhr` ← step nearest T | `fhr` ← forecast step nearest T |
 | Aircraft/Ships | snap to history frame nearest T (no dead-reckon) | freeze last frame, fade over ~30 min |
 | Satellites | propagate TLE → T | propagate TLE → T |
 | Alerts | active where `effective ≤ T ≤ expires` | same |
 | Quakes | events with `time ≤ T` in trailing window | freeze + fade |
 
-Asymmetry to surface in the UI: GFS only stores now→future, so scrubbing into the
-past pins weather to analysis (fhr 0).
+Asymmetry to surface in the UI: `WeatherRun`/`WeatherTexture` only stores
+now→future (3-run retention prunes old cycles), so scrubbing into the past on
+that path alone would pin weather to analysis (fhr 0). BUT the `WeatherFrame`
+archive (`shared/src/db/weather-frame-model.ts`) already gives real past
+data: every publishing model archives its lowest forecast hours (default
+f000/f003) per `(model, variable, validTime)`, kept forever
+(`archiveKeepDays()` defaults to 0 = no pruning). `public/src/app/api/weather/
+history/frames/route.ts` already lists archived frame metadata + ready PNG
+URLs per variable/time-range — its own comment calls this "the manifest a
+'map at a previous point in time' replay will iterate." So Phase 3's past-T
+weather mapping should read from `WeatherFrame` (via that route's query
+shape, or a shared helper), not just clamp to fhr 0 — the one gap is it's
+near-analysis only (~3h cadence, no forecast steps), so past-T resolution is
+coarser than future-T. See `db.weatherFrames.listMeta()` /
+`WeatherFrameRepo` for the query surface.
 
 ## Phases
 

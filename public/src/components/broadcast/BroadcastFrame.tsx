@@ -20,12 +20,14 @@ import type { GeomagOverlay } from "../../lib/geomag-overlay";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake, Track } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
+import type { TideStationReading } from "../../lib/tides/types";
 import type { City } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import { countryShot, countryContaining } from "@photonsurge/shared/director-countries";
 import { buildTicker, scopeAlertsToBbox, scopeQuakesToBbox, scopeVolcanoesToBbox } from "../../lib/broadcast";
-import { bboxForCamera } from "../../lib/history-client";
+import { bboxForCamera, type HistorySeries } from "../../lib/history-client";
+import { useAreaForecast } from "../../lib/forecast-client";
 import { legendVariableFor } from "../../lib/legend";
 import { nearest, formatKm } from "../../lib/geo";
 import { useWorldWatch } from "../../lib/world-watch";
@@ -50,6 +52,7 @@ import EventNearbyPanel from "./EventNearbyPanel";
 import QuakeReport from "./QuakeReport";
 import TrackInfoPanel from "./TrackInfoPanel";
 import VolcanoFactsPanel, { volcanoFactsSlideHasContent } from "./VolcanoFactsPanel";
+import VolcanoNearbyPanel, { volcanoNearbySlideHasContent } from "./VolcanoNearbyPanel";
 import OnAirCard from "./OnAirCard";
 import RoundupStatsPanel from "./RoundupStatsPanel";
 import TopCitiesPanel from "./TopCitiesPanel";
@@ -85,6 +88,9 @@ export default function BroadcastFrame({
   volcanoes = [],
   seismoStations = [],
   seismoActive = null,
+  tideStations = [],
+  tideActive = null,
+  pointHistorySeries = [],
   tracks = [],
   cities = [],
   cams = [],
@@ -106,6 +112,13 @@ export default function BroadcastFrame({
   seismoStations?: SeismoStationReading[];
   /** Which of `seismoStations` is currently "on air" in the SEISMIC MONITOR panel. */
   seismoActive?: SeismoStationReading | null;
+  /** Worker-cached tide gauges near what's on air. */
+  tideStations?: TideStationReading[];
+  /** Which of `tideStations` is currently "on air" in the TSUNAMI GAUGE panel. */
+  tideActive?: TideStationReading | null;
+  /** Archived point-history at the on-air focus, for the WIND/PRESSURE/WAVE
+   *  "LOCAL MONITOR" cards. */
+  pointHistorySeries?: HistorySeries[];
   tracks?: Track[];
   /** Curated cities — for the "near this event" panel. */
   cities?: City[];
@@ -197,7 +210,15 @@ export default function BroadcastFrame({
     onAirSegment && !eventTargeted && !hasTrackInfo && (onAirSegment.kind === "country" || onAirSegment.kind === "tour")
       ? areaBbox
       : undefined;
-  const wideCitiesSlide = usePagedSlides(wideCitiesBbox ? [0, 1] : [], 1);
+  // Lifted purely to know synchronously whether the forecast strip will have
+  // anything to show before deciding whether it gets a 3rd slide page below —
+  // ForecastPanel re-fetches the same (rounded, Cache-Control: max-age=60) URL
+  // when it mounts as that page; the duplicate call is cheap and one-time per
+  // bbox change.
+  const wideCitiesForecast = useAreaForecast(wideCitiesBbox ?? null);
+  const wideCitiesHasForecast = wideCitiesForecast.days.length > 0;
+  const wideCitiesPages = wideCitiesBbox ? [0, 1, ...(wideCitiesHasForecast ? [2] : [])] : [];
+  const wideCitiesSlide = usePagedSlides(wideCitiesPages, 1);
   // Quakes stack the magnitude/depth breakdown above the "who's affected"
   // photo/blurb/webcam panel — together they run far taller than the frame
   // and cut off against the top edge, so (same fix as wideCitiesSlide above)
@@ -209,11 +230,17 @@ export default function BroadcastFrame({
     1,
   );
   // Volcano Track Info similarly alternates photo+blurb with the richer
-  // gallery/facts/USGS-alert slide (same "ran taller than the frame" reason
-  // as quakeSlide/wideCitiesSlide) — only when there's actually a second
-  // slide's worth of content to show.
+  // gallery/facts/USGS-alert slide and a third "what else is nearby" slide
+  // (same "ran taller than the frame" reason as quakeSlide/wideCitiesSlide) —
+  // each page only appears when it actually has content, so a volcano with no
+  // USGS alert / nothing nearby still cycles cleanly through what it does have.
   const volcanoHasFacts = onAirSegment?.kind === "volcano" && volcanoFactsSlideHasContent(onAirSegment.trackInfo);
-  const volcanoSlide = usePagedSlides(volcanoHasFacts ? [0, 1] : [], 1);
+  const volcanoHasNearby =
+    onAirSegment?.kind === "volcano" &&
+    volcanoNearbySlideHasContent(onAirSegment.camera.center, cities, quakes, alerts);
+  const volcanoPages = onAirSegment?.kind === "volcano" ? [0, ...(volcanoHasFacts ? [1] : []), ...(volcanoHasNearby ? [2] : [])] : [];
+  const volcanoSlide = usePagedSlides(volcanoPages.length > 1 ? volcanoPages : [], 1);
+  const volcanoActivePage = volcanoSlide.visible[0] ?? 0;
 
   // Whatever currently owns the bottom-left slot (mutually exclusive on
   // segment kind) — the history panel stacks above whichever of these is on
@@ -221,15 +248,28 @@ export default function BroadcastFrame({
   const leftBottomPanel = !onAirSegment
     ? null
     : hasTrackInfo
-      ? volcanoHasFacts
+      ? volcanoHasFacts || volcanoHasNearby
         ? (
           <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ display: volcanoSlide.page === 0 ? "block" : "none" }}>
+            <div style={{ display: volcanoActivePage === 0 ? "block" : "none" }}>
               <TrackInfoPanel segment={onAirSegment} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
             </div>
-            <div style={{ display: volcanoSlide.page === 1 ? "block" : "none" }}>
-              <VolcanoFactsPanel info={onAirSegment.trackInfo!} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
-            </div>
+            {volcanoHasFacts ? (
+              <div style={{ display: volcanoActivePage === 1 ? "block" : "none" }}>
+                <VolcanoFactsPanel info={onAirSegment.trackInfo!} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
+              </div>
+            ) : null}
+            {volcanoHasNearby ? (
+              <div style={{ display: volcanoActivePage === 2 ? "block" : "none" }}>
+                <VolcanoNearbyPanel
+                  center={onAirSegment.camera.center}
+                  cities={cities}
+                  quakes={quakes}
+                  alerts={alerts}
+                  color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
+                />
+              </div>
+            ) : null}
           </div>
         )
         : <TrackInfoPanel segment={onAirSegment} color={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
@@ -273,6 +313,11 @@ export default function BroadcastFrame({
               <div style={{ display: wideCitiesSlide.page === 1 ? "block" : "none" }}>
                 <TopCitiesPanel bbox={wideCitiesBbox} color={KIND_COLOR[onAirSegment.kind]} />
               </div>
+              {wideCitiesHasForecast ? (
+                <div style={{ display: wideCitiesSlide.page === 2 ? "block" : "none" }}>
+                  <ForecastPanel center={null} bbox={wideCitiesBbox} theme={theme} />
+                </div>
+              ) : null}
             </div>
           )
           : <OnAirCard segment={onAirSegment} alerts={areaAlerts} quakes={areaQuakes} volcanoes={areaVolcanoes} theme={theme} />;
@@ -337,7 +382,7 @@ export default function BroadcastFrame({
           {summaryOnAir ? (
             <RoundupStatsPanel stats={summaryOnAir.stats} sources={summaryOnAir.sources} theme={theme} />
           ) : null}
-          {!eventTargeted ? (
+          {!eventTargeted && !wideCitiesBbox ? (
             <ForecastPanel
               center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}
               bbox={
@@ -418,7 +463,7 @@ export default function BroadcastFrame({
             gap: 10,
           }}
         >
-          <LiveAlertPanel alerts={alerts} theme={theme} />
+          <LiveAlertPanel alerts={alerts} cities={cities} theme={theme} />
           <IntensityMeter
             variable={legendVariableFor(state)}
             units={state.units}
@@ -500,10 +545,10 @@ export default function BroadcastFrame({
             />
             <SeismicStationRow stations={seismoStations} onAirSegment={onAirSegment} theme={theme} />
           </div>
-          <WeatherMonitors onAirSegment={onAirSegment} regionCenter={state.camera.center} theme={theme} />
+          <WeatherMonitors series={pointHistorySeries} theme={theme} />
           <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 10 }}>
-            <TideStationRow onAirSegment={onAirSegment} regionCenter={state.camera.center} theme={theme} />
-            <TsunamiMonitor onAirSegment={onAirSegment} regionCenter={state.camera.center} theme={theme} />
+            <TideStationRow stations={tideStations} theme={theme} />
+            <TsunamiMonitor stations={tideStations} active={tideActive} theme={theme} />
           </div>
         </div>
 

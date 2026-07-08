@@ -155,7 +155,7 @@ export function volcanoSegmentContent(v: VolcanoContentInput): SegmentContent {
  * an auto-directed cut of it render byte-identical on-air cards. Undefined
  * (not a mostly-empty object) until there's something worth showing.
  */
-export function volcanoTrackInfo(v: Volcano): TrackInfo | undefined {
+export function volcanoTrackInfo(v: Volcano, nowMs = Date.now()): TrackInfo | undefined {
   if (!v.wikiThumb && !v.wikiPhoto && !v.wikiExtract && !v.latestReport) return undefined;
 
   const facts =
@@ -175,6 +175,15 @@ export function volcanoTrackInfo(v: Volcano): TrackInfo | undefined {
       .filter(Boolean)
       .join(" · ") || undefined;
 
+  const heldMins = Math.max(0, Math.round((nowMs - v.statusChangedAt) / 60000));
+  const statusLine = [
+    VOLCANO_STATUS_LABEL[v.status],
+    v.reportDateRange ? `report ${v.reportDateRange}` : undefined,
+    `status held ${activeForLabel(heldMins)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return {
     label: v.name,
     category: "Volcano",
@@ -182,6 +191,7 @@ export function volcanoTrackInfo(v: Volcano): TrackInfo | undefined {
     photoUrl: v.wikiPhoto || v.wikiThumb,
     // This week's own bulletin text (current, authoritative) wins over the evergreen Wikipedia extract when both are present.
     extract: v.latestReport || v.wikiExtract,
+    country: v.country,
     gallery: v.wikiGallery,
     facts,
     alert: v.usgsColorCode
@@ -194,5 +204,7 @@ export function volcanoTrackInfo(v: Volcano): TrackInfo | undefined {
         }
       : undefined,
     reportFacts,
+    statusLine,
+    sourceUrl: v.sourceUrl,
   };
 }

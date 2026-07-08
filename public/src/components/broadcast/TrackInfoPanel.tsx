@@ -51,7 +51,7 @@ export default function TrackInfoPanel({
   return (
     <div
       style={{
-        width: 320,
+        width: 380,
         background: "rgba(8,13,22,0.82)",
         border: `1px solid ${color}44`,
         borderLeft: `3px solid ${color}`,
@@ -130,6 +130,9 @@ export default function TrackInfoPanel({
         {idLine ? (
           <div style={{ fontSize: 11, fontWeight: 600, color: "#aebfd6", marginTop: 1 }}>{idLine}</div>
         ) : null}
+        {info.statusLine ? (
+          <div style={{ fontSize: 10.5, fontWeight: 600, color: "#8ea3bf", marginTop: 1 }}>{info.statusLine}</div>
+        ) : null}
 
         {info.extract ? (
           <div
@@ -139,13 +142,16 @@ export default function TrackInfoPanel({
               color: "#cdd9ec",
               marginTop: 6,
               display: "-webkit-box",
-              WebkitLineClamp: 4,
+              WebkitLineClamp: 9,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
             }}
           >
             {info.extract}
           </div>
+        ) : null}
+        {info.sourceUrl ? (
+          <div style={{ fontSize: 9.5, color: "#63748e", marginTop: 5 }}>Source: Smithsonian GVP</div>
         ) : null}
       </div>
 

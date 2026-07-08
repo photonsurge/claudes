@@ -1,6 +1,5 @@
-import { ScatterplotLayer } from "@deck.gl/layers";
 import type { SeismoStationReading } from "../../lib/seismo/types";
-import { DEPTH_TEST } from "./depth";
+import { stationMarkerLayers } from "./monitor-stations";
 
 /**
  * Live seismograph-station markers — the real GSN stations the worker is
@@ -21,37 +20,13 @@ export const seismoShortName = (s: SeismoStationReading): string =>
   s.siteName?.split(",")[0]?.trim() || `${s.net}.${s.sta}`;
 
 export function seismographStationLayers(stations: SeismoStationReading[], activeKey?: string | null) {
-  const active = stations.filter((s) => seismoKeyOf(s) === activeKey);
-
-  return [
-    // Halo behind the station currently driving the SEISMIC MONITOR trace.
-    new ScatterplotLayer<SeismoStationReading>({
-      id: "seismograph-station-halo",
-      data: active,
-      getPosition: (d) => [d.lng, d.lat, 0],
-      getRadius: 18,
-      getFillColor: [67, 217, 255, 70],
-      radiusUnits: "pixels",
-      stroked: false,
-      pickable: false,
-      parameters: DEPTH_TEST,
-    }),
-    new ScatterplotLayer<SeismoStationReading>({
-      id: "seismograph-station-marker",
-      data: stations,
-      getPosition: (d) => [d.lng, d.lat, 0],
-      getRadius: (d) => (seismoKeyOf(d) === activeKey ? 6 : 4),
-      getFillColor: (d) => (seismoKeyOf(d) === activeKey ? [67, 217, 255, 255] : [160, 190, 215, 210]),
-      stroked: true,
-      getLineColor: [10, 18, 28, 220],
-      lineWidthUnits: "pixels",
-      getLineWidth: 1,
-      radiusUnits: "pixels",
-      radiusMinPixels: 3,
-      radiusMaxPixels: 8,
-      pickable: true,
-      parameters: DEPTH_TEST,
-      updateTriggers: { getRadius: activeKey, getFillColor: activeKey },
-    }),
-  ];
+  return stationMarkerLayers(
+    "seismograph-station",
+    stations,
+    (d) => [d.lng, d.lat, 0],
+    (d) => seismoKeyOf(d) === activeKey,
+    [67, 217, 255],
+    [160, 190, 215],
+    activeKey,
+  );
 }

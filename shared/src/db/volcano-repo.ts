@@ -193,7 +193,6 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
               firstDate: now,
               lastDate: now,
               statusChangedAt: now,
-              fetchedAt: now,
               loc: { type: "Point" as const, coordinates: [stub.lng, stub.lat] as [number, number] },
             },
           },

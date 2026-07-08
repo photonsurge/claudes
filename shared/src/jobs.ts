@@ -116,6 +116,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Alerts & events",
   },
   {
+    id: "alerts-translate",
+    label: "Translate alerts (LLM)",
+    description:
+      "LLM-translate non-English Severe/Extreme active alerts' headline/description/instruction to English. Requires OPENROUTER_API_KEY; no-ops without it. Unchanged alerts are skipped on repeat runs.",
+    domain: "alerts",
+    type: "alerts",
+    event: "translate",
+    group: "Alerts & events",
+  },
+  {
     id: "tles",
     label: "Refresh satellite TLEs",
     description: "Fetch the configured Celestrak groups into Mongo.",

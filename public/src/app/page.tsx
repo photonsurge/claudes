@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ServiceStatusPanel from "../components/ServiceStatusPanel";
+import StreamStatusBadge from "../components/StreamStatusBadge";
 
 /** Launcher / home. The ping demo (PingPanel + /api/ping) stays on disk but is
  * no longer linked from here. */
@@ -23,6 +24,10 @@ export default function Home() {
       <p style={{ margin: 0, color: "#8b95a7", fontSize: 15 }}>
         NOAA weather · alerts · live satellites, aircraft & ships
       </p>
+
+      <div style={{ marginTop: 4 }}>
+        <StreamStatusBadge />
+      </div>
 
       <nav
         style={{

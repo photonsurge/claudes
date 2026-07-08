@@ -1,4 +1,4 @@
-import { fetchVolcanoFacts } from "./wikidata";
+import { fetchVolcanoFacts, fetchCountryFacts } from "./wikidata";
 
 // Fixture values mirror a real lookup against Mount Etna (Q16990), verified live
 // before writing this module: P2044 = elevation (metres), P31 = instance of
@@ -89,5 +89,54 @@ describe("fetchVolcanoFacts", () => {
   it("never throws — degrades to {} on a network error", async () => {
     const fetchImpl = jest.fn().mockRejectedValue(new Error("down")) as unknown as typeof fetch;
     await expect(fetchVolcanoFacts("Mount Etna", fetchImpl)).resolves.toEqual({});
+  });
+});
+
+// Fixture values mirror a real lookup against the United Kingdom (Q145): P1082
+// = population (plain quantity, no unit), P36 = capital (London, Q84), P38 =
+// currency (Pound sterling, Q4916).
+describe("fetchCountryFacts", () => {
+  it("extracts population, capital label, and currency label", async () => {
+    const fetchImpl = jest.fn() as unknown as jest.Mock;
+    fetchImpl
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ query: { pages: { "1": { pageprops: { wikibase_item: "Q145" } } } } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          entities: {
+            Q145: {
+              claims: {
+                P1082: [{ mainsnak: { datavalue: { value: { amount: "+67326569" } } } }],
+                P36: [{ mainsnak: { datavalue: { value: { id: "Q84" } } } }],
+                P38: [{ mainsnak: { datavalue: { value: { id: "Q4916" } } } }],
+              },
+            },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          entities: {
+            Q84: { labels: { en: { value: "London" } } },
+            Q4916: { labels: { en: { value: "Pound sterling" } } },
+          },
+        }),
+      });
+    const facts = await fetchCountryFacts("United Kingdom", fetchImpl as unknown as typeof fetch);
+    expect(facts).toEqual({ population: 67326569, capital: "London", currency: "Pound sterling" });
+  });
+
+  it("returns {} when the article has no Wikidata item", async () => {
+    const fetchImpl = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ query: { pages: { "1": {} } } }) }) as unknown as typeof fetch;
+    expect(await fetchCountryFacts("Untracked Place", fetchImpl)).toEqual({});
+  });
+
+  it("never throws — degrades to {} on a network error", async () => {
+    const fetchImpl = jest.fn().mockRejectedValue(new Error("down")) as unknown as typeof fetch;
+    await expect(fetchCountryFacts("United Kingdom", fetchImpl)).resolves.toEqual({});
   });
 });

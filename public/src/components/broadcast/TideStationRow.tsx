@@ -7,9 +7,7 @@
  * row takes over, so the two never double up. Mirrors SeismicStationRow,
  * swapping the ground-motion trace for the filled water-level wave.
  */
-import type { Segment } from "@photonsurge/shared/director";
 import type { TideStationReading } from "../../lib/tides/types";
-import { useTideGauge } from "../../lib/tide-gauge";
 import { realWavePath } from "./MonitorCluster";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { WaveIcon } from "./icons";
@@ -66,18 +64,14 @@ function GaugeBox({ station, primary, theme }: { station: TideStationReading; pr
 }
 
 export default function TideStationRow({
-  onAirSegment = null,
-  regionCenter,
+  stations,
   theme = DEFAULT_THEME,
 }: {
-  /** The on-air director segment — its camera centre is the focus point. */
-  onAirSegment?: Segment | null;
-  /** Current camera centre [lng,lat] — the fallback focus for wide shots. */
-  regionCenter?: [number, number];
+  /** Nearby cached tide gauges — lifted once in WatchSurface so this row and
+   *  the globe's tide markers always agree on what's cached. */
+  stations: TideStationReading[];
   theme?: BroadcastTheme;
 }) {
-  const focus: [number, number] | null = onAirSegment?.camera.center ?? regionCenter ?? null;
-  const { stations } = useTideGauge(focus, true);
   const withData = stations.filter((s) => s.samples?.length);
   if (withData.length < 2) return null;
 

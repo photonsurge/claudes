@@ -229,6 +229,11 @@ export interface TrackInfo {
   alert?: { level?: string; colorCode?: string; synopsis?: string; noticeUrl?: string; updatedAt?: number };
   /** Volcano-only: LLM-parsed facts from this week's bulletin, e.g. "VEI 2 · plume 3,000 m". */
   reportFacts?: string;
+  /** Volcano-only: status + report date range + how long the status has held, pre-joined,
+   *  e.g. "Erupting · report 25 Jun-1 Jul 2026 · status held 6d 4h". */
+  statusLine?: string;
+  /** Volcano-only: link to the Smithsonian GVP volcano page. */
+  sourceUrl?: string;
 }
 
 /**

@@ -3,15 +3,8 @@ import type { Segment } from "@photonsurge/shared/director";
 import type { Quake } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
 import type { TideStationReading } from "../../lib/tides/types";
-import { useTideGauge } from "../../lib/tide-gauge";
-import { usePointHistory } from "../../lib/history-client";
+import type { HistorySeries } from "../../lib/history-client";
 import { SeismicMonitor, TsunamiMonitor, WeatherMonitors } from "./MonitorCluster";
-
-jest.mock("../../lib/tide-gauge", () => ({ useTideGauge: jest.fn() }));
-const mockGauge = useTideGauge as jest.Mock;
-
-jest.mock("../../lib/history-client", () => ({ usePointHistory: jest.fn() }));
-const mockHistory = usePointHistory as jest.Mock;
 
 const quakeFarFromOrigin: Quake = { id: "q1", mag: 6.2, place: "Off Kermadec", time: 0, lng: 178, lat: -30, depthKm: 10 };
 
@@ -36,11 +29,6 @@ const abashiri: TideStationReading = {
   latest: 1.27,
   updatedAt: 0,
 };
-
-beforeEach(() => {
-  mockGauge.mockReset();
-  mockHistory.mockReset();
-});
 
 describe("SeismicMonitor relevance", () => {
   it("shows the global seismograph with its magnitude on a wide shot", () => {
@@ -84,14 +72,12 @@ describe("SeismicMonitor relevance", () => {
 
 describe("TsunamiMonitor relevance", () => {
   it("hides (renders null) when nothing's cached near the shot", () => {
-    mockGauge.mockReturnValue({ stations: [], active: null });
-    const { container } = render(<TsunamiMonitor onAirSegment={stormAtOrigin} />);
+    const { container } = render(<TsunamiMonitor stations={[]} active={null} />);
     expect(container).toBeEmptyDOMElement();
   });
 
   it("shows the tsunami gauge with the real station + level when a coastal gauge is in range", () => {
-    mockGauge.mockReturnValue({ stations: [abashiri], active: abashiri });
-    render(<TsunamiMonitor onAirSegment={stormAtOrigin} />);
+    render(<TsunamiMonitor stations={[abashiri]} active={abashiri} />);
     expect(screen.getByText("TSUNAMI GAUGE")).toBeInTheDocument();
     expect(screen.getByText("Abashiri")).toBeInTheDocument();
     expect(screen.getByText(/1\.27 m/)).toBeInTheDocument();
@@ -99,45 +85,40 @@ describe("TsunamiMonitor relevance", () => {
 
   it("hides (renders null) when 2+ gauges are in range, deferring to TideStationRow", () => {
     const other: TideStationReading = { ...abashiri, stationId: "other", name: "Somewhere Else" };
-    mockGauge.mockReturnValue({ stations: [abashiri, other], active: abashiri });
-    const { container } = render(<TsunamiMonitor onAirSegment={stormAtOrigin} />);
+    const { container } = render(<TsunamiMonitor stations={[abashiri, other]} active={abashiri} />);
     expect(container).toBeEmptyDOMElement();
   });
 });
 
 describe("WeatherMonitors", () => {
   it("renders nothing when the archive has no series for the focus", () => {
-    mockHistory.mockReturnValue({ series: [], loading: false });
-    const { container } = render(<WeatherMonitors onAirSegment={stormAtOrigin} />);
+    const { container } = render(<WeatherMonitors series={[]} />);
     expect(container).toBeEmptyDOMElement();
   });
 
   it("shows a card per variable with 2+ archived samples, with its latest reading + units", () => {
-    mockHistory.mockReturnValue({
-      series: [
-        {
-          variable: "wind",
-          encoding: "uv",
-          units: "m/s",
-          lat: 0,
-          lng: 0,
-          series: [{ t: "1", model: "gfs", fhr: 0, speed: 4 }, { t: "2", model: "gfs", fhr: 1, speed: 6 }],
-          stats: null,
-        },
-        {
-          variable: "pressure",
-          encoding: "scalar",
-          units: "hPa",
-          lat: 0,
-          lng: 0,
-          // Single sample isn't enough to draw a trace.
-          series: [{ t: "1", model: "gfs", fhr: 0, value: 1008 }],
-          stats: null,
-        },
-      ],
-      loading: false,
-    });
-    render(<WeatherMonitors onAirSegment={stormAtOrigin} />);
+    const series: HistorySeries[] = [
+      {
+        variable: "wind",
+        encoding: "uv",
+        units: "m/s",
+        lat: 0,
+        lng: 0,
+        series: [{ t: "1", model: "gfs", fhr: 0, speed: 4 }, { t: "2", model: "gfs", fhr: 1, speed: 6 }],
+        stats: null,
+      },
+      {
+        variable: "pressure",
+        encoding: "scalar",
+        units: "hPa",
+        lat: 0,
+        lng: 0,
+        // Single sample isn't enough to draw a trace.
+        series: [{ t: "1", model: "gfs", fhr: 0, value: 1008 }],
+        stats: null,
+      },
+    ];
+    render(<WeatherMonitors series={series} />);
     expect(screen.getByText("WIND MONITOR")).toBeInTheDocument();
     expect(screen.getByText("6 m/s")).toBeInTheDocument();
     expect(screen.queryByText("PRESSURE MONITOR")).not.toBeInTheDocument();

@@ -575,10 +575,21 @@ export function worldWatchFeed(
   );
 }
 
-/** "Tsunami Watch: Fiji Region — YELLOW" for the live-alert panel body. */
-export function alertBannerText(a: AlertFeature): string {
+/** Raw areaDesc if the source gave one, else the nearest notable city/cities —
+ *  same fallback worldWatchFeed already uses so the two on-air panels agree. */
+export function alertAreaLabel(a: AlertFeature, cities: City[] = []): string {
+  if (a.properties.areaDesc) return a.properties.areaDesc;
+  const places = nearbyPlaces(alertRepPoint(a.geometry), cities);
+  return nearNamesLabel(places);
+}
+
+/** "Tsunami Watch: Fiji Region — YELLOW" for the live-alert panel body. Prefers
+ *  the English translation of the headline when the source alert isn't English. */
+export function alertBannerText(a: AlertFeature, cities: City[] = []): string {
   const p = a.properties;
-  const area = p.areaDesc ? `: ${p.areaDesc}` : "";
+  const event = p.translatedHeadline || p.event;
+  const areaText = alertAreaLabel(a, cities);
+  const area = areaText ? `: ${areaText}` : "";
   const level = p.level ?? SEVERITY_LABELS[p.severityRank];
-  return `${p.event}${area}${level ? ` — ${level.toUpperCase()}` : ""}`;
+  return `${event}${area}${level ? ` — ${level.toUpperCase()}` : ""}`;
 }

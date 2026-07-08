@@ -162,6 +162,29 @@ export function useAreaHistory(
   return { series: orderHistoryVariables(Object.keys(byVar)).map((v) => byVar[v]), loading };
 }
 
+/** Variables the "LOCAL MONITOR" (wind/pressure/wave) HUD cards + matching
+ *  globe marker read — see broadcast/MonitorCluster.tsx's WeatherMonitors. */
+export const MONITOR_VARIABLES = ["wind", "pressure", "wave"];
+
+/** Pull a variable's series out of the archive response as plottable `{v}`
+ *  samples (line paths want `.value`, uv-encoded ones like wind carry
+ *  `.speed` instead) — null when the archive has nothing usable yet. */
+export function historySamples(series: HistorySeries[], variable: string): { v: number }[] | null {
+  const found = series.find((s) => s.variable === variable);
+  if (!found) return null;
+  const pts = found.series
+    .map((p) => p.value ?? p.speed)
+    .filter((v): v is number => v != null && Number.isFinite(v));
+  return pts.length >= 2 ? pts.map((v) => ({ v })) : null;
+}
+
+/** True once at least one monitor variable has enough archived samples to
+ *  draw — the same self-hide rule WeatherMonitors' HUD cards use, reused by
+ *  Globe.tsx to gate the matching map marker so both surfaces always agree. */
+export function hasMonitorSamples(series: HistorySeries[]): boolean {
+  return MONITOR_VARIABLES.some((v) => historySamples(series, v) != null);
+}
+
 // ── Past-year climate (ERA5 reanalysis via /climate) ───────────────────────
 
 export interface ClimateBucketedDataset {

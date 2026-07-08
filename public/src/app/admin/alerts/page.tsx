@@ -15,7 +15,12 @@ import {
   areaSummary,
   expiresLabel,
   alertHazard,
+  translationStatus,
+  displayHeadline,
+  displayDescription,
+  displayInstruction,
   type Alert,
+  type AlertInfo,
 } from "../../../lib/alerts";
 import { HAZARDS, hazardMeta } from "../../../lib/hazard";
 import { bucketByGroupId } from "../../../lib/alertGroups";
@@ -27,6 +32,7 @@ export default function AlertsPage() {
   const [loading, setLoading] = useState(false);
   const [debugId, setDebugId] = useState<string | null>(null);
   const [ingestMsg, setIngestMsg] = useState<string | null>(null);
+  const [translateMsg, setTranslateMsg] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState("all");
   const [hazardFilter, setHazardFilter] = useState("all");
   const [query, setQuery] = useState("");
@@ -65,6 +71,31 @@ export default function AlertsPage() {
     }
   }, [reload]);
 
+  // Trigger the worker's alerts.translate (LLM) job. Sequential per-alert calls
+  // make this slower than ingest, so give it more time before auto-refreshing.
+  const translateNow = useCallback(async () => {
+    setTranslateMsg("Queuing…");
+    try {
+      const res = await fetch("/api/admin/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: "alerts-translate" }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (body?.ok) {
+        setTranslateMsg(`Translating (job #${body.jobId})… refreshing in 20s`);
+        setTimeout(() => {
+          setTranslateMsg(null);
+          reload();
+        }, 20000);
+      } else {
+        setTranslateMsg(`Failed: ${body?.error ?? "queue unreachable"}`);
+      }
+    } catch (err) {
+      setTranslateMsg(`Failed: ${String(err)}`);
+    }
+  }, [reload]);
+
   useEffect(() => {
     reload();
   }, [reload]);
@@ -87,7 +118,7 @@ export default function AlertsPage() {
     const q = query.trim().toLowerCase();
     if (q) {
       const info = primaryInfo(a);
-      const hay = `${info?.event ?? ""} ${info?.headline ?? ""} ${areaSummary(a)} ${a.source}`.toLowerCase();
+      const hay = `${info?.event ?? ""} ${displayHeadline(info) ?? ""} ${displayDescription(info) ?? ""} ${areaSummary(a)} ${a.source}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -183,11 +214,19 @@ export default function AlertsPage() {
             <button type="button" onClick={ingestNow} style={ingestBtn} disabled={!!ingestMsg}>
               Ingest now
             </button>
+            <button type="button" onClick={translateNow} style={ingestBtn} disabled={!!translateMsg}>
+              Translate now
+            </button>
           </div>
         </div>
         {ingestMsg && (
           <div style={{ marginTop: 8, fontSize: 13, color: ingestMsg.startsWith("Failed") ? "#fca5a5" : "#86efac" }}>
             {ingestMsg}
+          </div>
+        )}
+        {translateMsg && (
+          <div style={{ marginTop: 8, fontSize: 13, color: translateMsg.startsWith("Failed") ? "#fca5a5" : "#86efac" }}>
+            {translateMsg}
           </div>
         )}
 
@@ -200,6 +239,7 @@ export default function AlertsPage() {
               <th style={th}>Area</th>
               <th style={th}>Sources</th>
               <th style={th}>Msg</th>
+              <th style={th}>Translated</th>
               <th style={th}>Expires</th>
               <th style={th}></th>
             </tr>
@@ -253,10 +293,31 @@ export default function AlertsPage() {
                     </span>
                   </td>
                   <td style={td}>
-                    <div style={{ fontWeight: 600 }}>{info?.event ?? "—"}</div>
-                    {info?.headline && (
-                      <div style={{ color: "#8b95a7", fontSize: 12 }}>{info.headline}</div>
-                    )}
+                    {(() => {
+                      const headline = displayHeadline(info) ?? info?.event ?? "—";
+                      const isTranslated = !!info?.translatedHeadline;
+                      const lang = info?.detectedLanguage;
+                      return (
+                        <>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
+                            <span>{headline}</span>
+                            {isTranslated && lang && (
+                              <span title={`Machine-translated from "${lang}"`} style={langTag}>
+                                {lang.toUpperCase()}→EN
+                              </span>
+                            )}
+                          </div>
+                          {info?.event && info.event !== headline && (
+                            <div style={{ color: "#8b95a7", fontSize: 12 }}>{info.event}</div>
+                          )}
+                          {isTranslated && info?.headline && info.headline !== headline && (
+                            <div style={{ color: "#5b6478", fontSize: 11, fontStyle: "italic" }}>
+                              orig: {info.headline}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </td>
                   <td style={td}>{areaSummary(rep)}</td>
                   <td style={{ ...td, whiteSpace: "nowrap" }}>
@@ -277,6 +338,7 @@ export default function AlertsPage() {
                     </span>
                   </td>
                   <td style={td}>{rep.msgType}</td>
+                  <td style={td}>{translatedBadge(translationStatus(rep))}</td>
                   <td style={td}>{expiresLabel(rep)}</td>
                   <td style={{ ...td, whiteSpace: "nowrap" }}>
                     <button
@@ -299,7 +361,7 @@ export default function AlertsPage() {
             })}
             {groups.length === 0 && (
               <tr>
-                <td style={td} colSpan={8}>
+                <td style={td} colSpan={9}>
                   {loading
                     ? "Loading…"
                     : alerts.length
@@ -350,12 +412,67 @@ export default function AlertsPage() {
                   ))}
                 </div>
               )}
+              {info && <TranslationDebugPanel info={info} />}
               <pre style={modalPre}>{JSON.stringify(multi ? debugGroup.members : rep, null, 2)}</pre>
             </div>
           </div>
         );
       })()}
     </main>
+  );
+}
+
+/** "Translated" (green) / "English source" (gray) / "Pending" (amber) — mirrors
+ *  VolcanoesTable's wikiStatus() badge convention. */
+function translatedBadge(status: "translated" | "english" | "pending") {
+  const meta =
+    status === "translated"
+      ? { label: "Translated", color: "#34d399" }
+      : status === "english"
+        ? { label: "English source", color: "#8b95a7" }
+        : { label: "Pending", color: "#fbbf24" };
+  return <span style={{ color: meta.color }}>{meta.label}</span>;
+}
+
+/** Original-vs-translated debug view (Debug modal) — one row per field, blank rows
+ *  hidden. Shown before the raw JSON dump so translation quality is checkable at
+ *  a glance instead of hunting through the doc. */
+function TranslationDebugPanel({ info }: { info: AlertInfo }) {
+  const rows: { label: string; original?: string; translated?: string }[] = [
+    { label: "Headline", original: info.headline, translated: info.translatedHeadline },
+    { label: "Description", original: info.description, translated: info.translatedDescription },
+    { label: "Instruction", original: info.instruction, translated: info.translatedInstruction },
+  ].filter((r) => r.original || r.translated);
+
+  if (!rows.length) return null;
+
+  return (
+    <div style={{ padding: "12px 18px", borderBottom: "1px solid #1b2030", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <span style={{ color: "#8b95a7", fontSize: 11, fontWeight: 700, letterSpacing: 1 }}>TRANSLATION</span>
+        {info.detectedLanguage ? (
+          <span style={langTag}>{info.detectedLanguage.toUpperCase()}→EN</span>
+        ) : (
+          <span style={{ color: "#5b6478", fontSize: 11, fontStyle: "italic" }}>not yet processed</span>
+        )}
+        {info.translatedAt && (
+          <span style={{ color: "#5b6478", fontSize: 11 }}>{new Date(info.translatedAt).toLocaleString()}</span>
+        )}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "90px 1fr", rowGap: 8, columnGap: 10, fontSize: 12.5 }}>
+        {rows.map((r) => (
+          <Fragment key={r.label}>
+            <div style={{ color: "#8b95a7" }}>{r.label}</div>
+            <div>
+              <div style={{ color: "#cbd5e1" }}>{r.translated || r.original || "—"}</div>
+              {r.translated && r.original && r.translated !== r.original && (
+                <div style={{ color: "#5b6478", fontStyle: "italic", marginTop: 2 }}>orig: {r.original}</div>
+              )}
+            </div>
+          </Fragment>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -390,6 +507,17 @@ const ingestBtn: React.CSSProperties = {
   background: "#14532d",
   color: "#bbf7d0",
   cursor: "pointer",
+};
+const langTag: React.CSSProperties = {
+  display: "inline-block",
+  padding: "0px 5px",
+  borderRadius: 4,
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: 0.3,
+  background: "#1e3a5f",
+  color: "#93c5fd",
+  border: "1px solid #2c5a8f",
 };
 const sourceChip: React.CSSProperties = {
   display: "inline-block",

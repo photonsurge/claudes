@@ -215,6 +215,21 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable alerts.translate job ----
+  // Own cadence, decoupled from ingest, so a slow LLM call never blocks the poll
+  // tick. No-ops (never touches Mongo) when OPENROUTER_API_KEY is unset.
+  const ALERTS_TRANSLATE_MS = Number(process.env.ALERTS_TRANSLATE_MS || 15 * 60 * 1000);
+  try {
+    await myQueue.add(
+      "do",
+      { domain: "alerts", type: "alerts", event: "translate", data: {} },
+      { repeat: { every: ALERTS_TRANSLATE_MS }, jobId: "alerts-translate" },
+    );
+    log(TAG, `registered repeatable alerts.translate`, { every: ALERTS_TRANSLATE_MS });
+  } catch (err) {
+    log(TAG, `failed to register alerts.translate`, { err: summarizeForLog(err) });
+  }
+
   // ---- Repeatable cams.ingest jobs (one per enabled camera source) ----
   // Each source polls its provider on its own pollIntervalSec and upserts the
   // canonical catalog into Mongo; the public app reads only that cache. A fixed

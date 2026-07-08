@@ -66,6 +66,24 @@ export function GaugeIcon({ active = false, size = 12 }: { active?: boolean; siz
   );
 }
 
+/** Generic instrument pin — the on-air point the WIND/PRESSURE/WAVE "LOCAL
+ *  MONITOR" cards are reading, not a named station like the seismo/tide dots. */
+export function MonitorPinIcon({ active = false, size = 12 }: { active?: boolean; size?: number }) {
+  const color = active ? "#9085e9" : "#c8d5e6";
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" style={{ flex: "none" }}>
+      <path
+        d="M8 1.5 C4.5 1.5 2 4.1 2 7.2 C2 10.8 8 14.5 8 14.5 C8 14.5 14 10.8 14 7.2 C14 4.1 11.5 1.5 8 1.5 Z"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <circle cx="8" cy="7.2" r="1.8" fill={color} />
+    </svg>
+  );
+}
+
 /** Twin-peak cone with a crater notch, filled solid in the volcano's status colour. */
 export function VolcanoIcon({ color = "#ef4444", size = 12 }: { color?: string; size?: number }) {
   return (

@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import type { AlertFeature } from "../../lib/alerts";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
 import { sortedAlerts, alertBannerText } from "../../lib/broadcast";
+import type { City } from "../../lib/cities";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
 /** Seconds each alert holds on screen before advancing to the next. */
@@ -17,10 +18,13 @@ const HOLD_MS = 5000;
 
 export default function LiveAlertPanel({
   alerts,
+  cities = [],
   theme = DEFAULT_THEME,
   compact = false,
 }: {
   alerts: AlertFeature[];
+  /** For the areaDesc-missing fallback (nearest notable city) — mirrors WorldWatchPanel. */
+  cities?: City[];
   theme?: BroadcastTheme;
   compact?: boolean;
 }) {
@@ -38,6 +42,7 @@ export default function LiveAlertPanel({
   const pos = idx % list.length;
   const top = list[pos];
   const color = SEVERITY_COLORS[top.properties.severityRank] ?? theme.accent;
+  const instruction = top.properties.translatedInstruction || top.properties.instruction;
 
   return (
     <div
@@ -113,7 +118,7 @@ export default function LiveAlertPanel({
           textShadow: "0 1px 2px rgba(0,0,0,0.8)",
         }}
       >
-        <span>{alertBannerText(top)}</span>
+        <span>{alertBannerText(top, cities)}</span>
         <span
           style={{
             width: 8,
@@ -126,6 +131,23 @@ export default function LiveAlertPanel({
           }}
         />
       </div>
+      {instruction && (
+        <div
+          style={{
+            marginTop: 4,
+            fontSize: compact ? 10 : 11,
+            fontWeight: 500,
+            color: "#c9d3e3",
+            textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {instruction}
+        </div>
+      )}
     </div>
   );
 }
