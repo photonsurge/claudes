@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
 import { listScenes, rotateSceneToken } from "../../../lib/scenes";
+import AdminPageShell from "../../../components/admin/AdminPageShell";
 
 export default function AccessPage() {
   const [scenes, setScenes] = useState<SceneMeta[]>([]);
@@ -45,59 +46,61 @@ export default function AccessPage() {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   return (
-    <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ maxWidth: 760, margin: "0 auto", padding: 24 }}>
-        <h2 style={{ margin: 0 }}>Access</h2>
-        <p style={{ color: "#8b95a7", marginTop: 6 }}>
+    <AdminPageShell
+      title="Access"
+      description={
+        <>
           Tokened OBS/YouTube URLs for each scene. Paste the copied URL into your OBS browser
           source instead of the bare <code>/watch/&lt;id&gt;</code> address — anyone with the
           token can view the output, so rotate it if a URL ever leaks. Manage scene content in{" "}
           <Link href="/admin/scenes" style={{ color: "#60a5fa" }}>Scenes</Link>.
-        </p>
-        {error && <div style={{ color: "#fca5a5", fontSize: 13, marginTop: 8 }}>{error}</div>}
+        </>
+      }
+      maxWidth={760}
+    >
+      {error && <div style={{ color: "#fca5a5", fontSize: 13, marginTop: 8 }}>{error}</div>}
 
-        <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
-          {scenes.map((s) => {
-            const watch = `/watch/${s.id}`;
-            const tokenedUrl = s.watchToken ? `${origin}${watch}?token=${s.watchToken}` : null;
-            return (
-              <div
-                key={s.id}
-                style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c" }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600 }}>
-                    {s.name}
-                    {s.id === MAIN_SCENE_ID && (
-                      <span style={{ fontSize: 11, color: "#8b95a7", border: "1px solid #2a3344", borderRadius: 4, padding: "1px 5px", marginLeft: 8 }}>main</span>
-                    )}
-                  </div>
-                  <div style={{ color: "#8b95a7", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {tokenedUrl ?? "no token yet — generate one"}
-                  </div>
+      <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+        {scenes.map((s) => {
+          const watch = `/watch/${s.id}`;
+          const tokenedUrl = s.watchToken ? `${origin}${watch}?token=${s.watchToken}` : null;
+          return (
+            <div
+              key={s.id}
+              style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c" }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600 }}>
+                  {s.name}
+                  {s.id === MAIN_SCENE_ID && (
+                    <span style={{ fontSize: 11, color: "#8b95a7", border: "1px solid #2a3344", borderRadius: 4, padding: "1px 5px", marginLeft: 8 }}>main</span>
+                  )}
                 </div>
-                {tokenedUrl && (
-                  <button
-                    type="button"
-                    onClick={() => copy(s.id, tokenedUrl)}
-                    style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #2a3344", background: "#0a0e16", color: "#cdd4e0", cursor: "pointer", fontSize: 13 }}
-                  >
-                    {copiedId === s.id ? "Copied" : "Copy"}
-                  </button>
-                )}
+                <div style={{ color: "#8b95a7", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {tokenedUrl ?? "no token yet — generate one"}
+                </div>
+              </div>
+              {tokenedUrl && (
                 <button
                   type="button"
-                  onClick={() => rotate(s.id)}
-                  disabled={rotatingId === s.id}
+                  onClick={() => copy(s.id, tokenedUrl)}
                   style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #2a3344", background: "#0a0e16", color: "#cdd4e0", cursor: "pointer", fontSize: 13 }}
                 >
-                  {rotatingId === s.id ? "…" : s.watchToken ? "Rotate token" : "Generate token"}
+                  {copiedId === s.id ? "Copied" : "Copy"}
                 </button>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-    </main>
+              )}
+              <button
+                type="button"
+                onClick={() => rotate(s.id)}
+                disabled={rotatingId === s.id}
+                style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #2a3344", background: "#0a0e16", color: "#cdd4e0", cursor: "pointer", fontSize: 13 }}
+              >
+                {rotatingId === s.id ? "…" : s.watchToken ? "Rotate token" : "Generate token"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </AdminPageShell>
   );
 }

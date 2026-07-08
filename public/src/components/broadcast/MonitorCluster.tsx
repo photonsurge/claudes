@@ -189,6 +189,8 @@ function Panel({
 const W = 250;
 /** Height of every monitor's trace box, in both CSS and the SVG viewBox math. */
 const TRACE_H = 34;
+const ROW_BOX_W = 132;
+const ROW_BOX_H = 42;
 
 function CardShell({
   theme,
@@ -404,66 +406,155 @@ const WEATHER_MONITORS: {
   { variable: "wave", title: "WAVE MONITOR", color: "#3987e5", wave: true, icon: <WaveIcon active />, animMs: 9000 },
 ];
 
+function formatMonitorLocation(series: HistorySeries[], locationLabel?: string | null): string {
+  const label = locationLabel?.trim();
+  if (label) return label;
+
+  const sampled = series.find((s) => Number.isFinite(s.lat) && Number.isFinite(s.lng));
+  if (!sampled) return "LOCAL POINT";
+
+  const lat = `${Math.abs(sampled.lat).toFixed(1)}${sampled.lat >= 0 ? "N" : "S"}`;
+  const lng = `${Math.abs(sampled.lng).toFixed(1)}${sampled.lng >= 0 ? "E" : "W"}`;
+  return `${lat} ${lng}`;
+}
+
+function WeatherMonitorBox({
+  spec,
+  samples,
+  latestLabel,
+  locationLabel,
+  theme,
+}: {
+  spec: (typeof WEATHER_MONITORS)[number];
+  samples: { v: number }[];
+  latestLabel: string;
+  locationLabel: string;
+  theme: BroadcastTheme;
+}) {
+  const path = spec.wave ? realWavePath(samples, ROW_BOX_W, ROW_BOX_H) : realLinePath(samples, ROW_BOX_W, ROW_BOX_H);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, width: ROW_BOX_W }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
+        <span
+          style={{
+            fontSize: 9,
+            fontWeight: 800,
+            letterSpacing: 0.4,
+            color: "#c8d5e6",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {locationLabel}
+        </span>
+        <span style={{ fontSize: 8, fontWeight: 700, color: theme.accent, whiteSpace: "nowrap" }}>{latestLabel}</span>
+      </div>
+      <div
+        style={{
+          height: ROW_BOX_H,
+          borderRadius: 6,
+          background: "rgba(4,10,20,0.72)",
+          border: "1px solid rgba(90,120,160,0.25)",
+          overflow: "hidden",
+          position: "relative",
+        }}
+      >
+        <svg
+          width="200%"
+          height="100%"
+          viewBox={`0 0 ${ROW_BOX_W * 2} ${ROW_BOX_H}`}
+          preserveAspectRatio="none"
+          style={{ position: "absolute", inset: 0, animation: `weather-row-trace ${spec.animMs}ms linear infinite` }}
+        >
+          {spec.wave ? (
+            <>
+              <path d={path} fill="rgba(60,150,230,0.5)" />
+              <path d={path} transform={`translate(${ROW_BOX_W},0)`} fill="rgba(60,150,230,0.5)" />
+            </>
+          ) : (
+            <>
+              <path d={path} fill="none" stroke={spec.color} strokeWidth="1.1" />
+              <path d={path} transform={`translate(${ROW_BOX_W},0)`} fill="none" stroke={spec.color} strokeWidth="1.1" />
+            </>
+          )}
+        </svg>
+        <div
+          style={{
+            position: "absolute",
+            left: 5,
+            bottom: 3,
+            display: "flex",
+            alignItems: "center",
+            gap: 3,
+            fontSize: 7.5,
+            fontWeight: 800,
+            letterSpacing: 0.6,
+            color: "#dfe7f5",
+            textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+            pointerEvents: "none",
+          }}
+        >
+          {spec.icon}
+          {spec.title}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
- * Extra "GLOBAL MONITOR" cards alongside the seismic/tsunami pair — wind,
- * barometric pressure, and wave height, all read from the same archived
- * point-history the POINT HISTORY panel already fetches (see history-client's
- * usePointHistory), just as a permanent glance-strip instead of a slideshow.
- * Each card hides on its own once its variable has too little archived data
- * for the focus point, same self-hiding rule as SeismicMonitor/TsunamiMonitor.
+ * Local wind, barometric pressure, and wave height, all read from the same
+ * archived point-history the POINT HISTORY panel already fetches (see
+ * history-client's usePointHistory), just as a permanent glance-strip instead
+ * of a slideshow. Each blob hides on its own once its variable has too little
+ * archived data for the focus point, same self-hiding rule as
+ * SeismicMonitor/TsunamiMonitor.
  */
 export function WeatherMonitors({
   series,
+  locationLabel = null,
   theme = DEFAULT_THEME,
 }: {
   /** Archived point-history at the on-air focus — lifted once in WatchSurface
    *  (see lib/history-client's usePointHistory) so this panel and the globe's
    *  weather-point marker read the same fetch. */
   series: HistorySeries[];
+  /** Human-readable on-air place name for the shared local monitor focus. */
+  locationLabel?: string | null;
   theme?: BroadcastTheme;
 }) {
-  return (
-    <>
-      {WEATHER_MONITORS.map((spec) => {
-        const samples = historySamples(series, spec.variable);
-        if (!samples) return null;
-        const units = series.find((s) => s.variable === spec.variable)?.units ?? "";
-        const latest = samples[samples.length - 1].v;
-        const path = spec.wave ? realWavePath(samples, W, TRACE_H) : realLinePath(samples, W, TRACE_H);
+  const location = formatMonitorLocation(series, locationLabel);
+  const visible = WEATHER_MONITORS.map((spec) => {
+    const samples = historySamples(series, spec.variable);
+    if (!samples) return null;
+    const units = series.find((s) => s.variable === spec.variable)?.units ?? "";
+    const latest = samples[samples.length - 1].v;
+    return { spec, samples, latestLabel: `${formatReading(latest)}${units ? ` ${units}` : ""}` };
+  }).filter((item): item is { spec: (typeof WEATHER_MONITORS)[number]; samples: { v: number }[]; latestLabel: string } => item != null);
 
-        return (
-          <div key={spec.variable} style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center" }}>
-            <CardShell theme={theme} label="LOCAL MONITOR">
-              <Panel
-                title={spec.title}
-                icon={spec.icon}
-                tag={`${formatReading(latest)}${units ? ` ${units}` : ""}`}
-                theme={theme}
-              >
-                <svg
-                  width="200%"
-                  height="100%"
-                  viewBox={`0 0 ${W * 2} ${TRACE_H}`}
-                  preserveAspectRatio="none"
-                  style={{ position: "absolute", inset: 0, animation: `bcast-trace ${spec.animMs}ms linear infinite` }}
-                >
-                  {spec.wave ? (
-                    <>
-                      <path d={path} fill="rgba(60,150,230,0.5)" />
-                      <path d={path} transform={`translate(${W},0)`} fill="rgba(60,150,230,0.5)" />
-                    </>
-                  ) : (
-                    <>
-                      <path d={path} fill="none" stroke={spec.color} strokeWidth="1.2" />
-                      <path d={path} transform={`translate(${W},0)`} fill="none" stroke={spec.color} strokeWidth="1.2" />
-                    </>
-                  )}
-                </svg>
-              </Panel>
-            </CardShell>
-          </div>
-        );
-      })}
-    </>
+  if (visible.length === 0) return null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center", pointerEvents: "none" }}>
+      <style>{"@keyframes weather-row-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
+      <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 800, letterSpacing: 1.4, color: "#dfe7f5" }}>
+        <WindIcon active size={11} />
+        LOCAL MONITORS
+      </span>
+      <div style={{ display: "flex", gap: 10 }}>
+        {visible.map((item) => (
+          <WeatherMonitorBox
+            key={item.spec.variable}
+            spec={item.spec}
+            samples={item.samples}
+            latestLabel={item.latestLabel}
+            locationLabel={location}
+            theme={theme}
+          />
+        ))}
+      </div>
+    </div>
   );
 }

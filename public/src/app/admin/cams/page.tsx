@@ -6,17 +6,15 @@
  * map area-list build on this same catalog later.
  */
 import CamsTable from "../../../components/cams/CamsTable";
+import AdminPageShell from "../../../components/admin/AdminPageShell";
 
 export default function CamsPage() {
   return (
-    <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
-        <h2 style={{ marginTop: 0 }}>Webcams</h2>
-        <p style={{ color: "#8b95a7", marginTop: 0 }}>
-          Catalogued live cams — status, location and a preview. Add YouTube/HLS streams or still/timelapse URLs.
-        </p>
-        <CamsTable />
-      </section>
-    </main>
+    <AdminPageShell
+      title="Webcams"
+      description="Catalogued live cams — status, location and a preview. Add YouTube/HLS streams or still/timelapse URLs."
+    >
+      <CamsTable />
+    </AdminPageShell>
   );
 }

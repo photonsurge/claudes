@@ -1,16 +1,48 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
 import { getCity, type City } from "../../lib/cities";
+import { HISTORY_WINDOW_HOURS, useClimateYear, usePointHistory } from "../../lib/history-client";
 import GlobeView from "../GlobeView";
-import PointHistoryPanel from "../broadcast/PointHistoryPanel";
+import { MiniChart, buildClimateRows } from "../broadcast/PointHistoryPanel";
 import { cityEnrichmentStatus } from "./CityEnrichmentCard";
 import CityUpcomingForecast from "./CityUpcomingForecast";
 
 const muted = "#8b95a7";
 const panel = { border: "1px solid #1b2030", borderRadius: 9, background: "#0c111c" } as const;
+const HISTORY_COLOR: Record<string, string> = {
+  temp: "#e66767",
+  humidity: "#199e70",
+  wind: "#9085e9",
+  gust: "#d55181",
+  rain: "#3987e5",
+  storm: "#d95926",
+  pressure: "#c98500",
+  cloud: "#008300",
+  snow: "#3987e5",
+  sst: "#199e70",
+  current: "#9085e9",
+  salinity: "#d55181",
+  wave: "#3987e5",
+  radar: "#d95926",
+};
+const HISTORY_LABEL: Record<string, string> = {
+  temp: "TEMPERATURE",
+  humidity: "HUMIDITY",
+  wind: "WIND",
+  gust: "GUSTS",
+  rain: "RAIN RATE",
+  storm: "CAPE",
+  pressure: "PRESSURE",
+  cloud: "CLOUD COVER",
+  snow: "SNOW DEPTH",
+  sst: "SEA TEMP",
+  current: "CURRENT",
+  salinity: "SALINITY",
+  wave: "WAVE HEIGHT",
+  radar: "RADAR",
+};
 
 function formatDate(value?: Date): string {
   if (!value) return "—";
@@ -25,6 +57,84 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <dd style={{ margin: "4px 0 0", color: "#e2e8f0", fontSize: 14, overflowWrap: "anywhere" }}>{children ?? "—"}</dd>
     </div>
   );
+}
+
+function CityWeatherHistory({ city }: { city: City }) {
+  const center: [number, number] = [city.lng, city.lat];
+  const point = usePointHistory(center);
+  const climate = useClimateYear(center, "monthly");
+  const liveCharts = point.series.map((s) => ({
+    variable: s.variable,
+    units: s.units,
+    points: s.series.map((p) => ({ t: p.t, value: p.value ?? p.speed ?? null })),
+    avg: s.stats?.avg ?? null,
+    caption: s.stats
+      ? `avg ${formatHistoryReading(s.stats.avg)} · min ${formatHistoryReading(s.stats.min)} · max ${formatHistoryReading(s.stats.max)}`
+      : "",
+  }));
+  const climateRows = buildClimateRows(climate.datasets);
+  const hasCharts = liveCharts.length > 0 || climateRows.length > 0;
+
+  return (
+    <section style={{ ...panel, marginTop: 16, padding: 15 }}>
+      <div style={{ color: "#cbd5e1", fontSize: 13 }}>Weather history</div>
+      <div style={{ color: muted, fontSize: 11, marginTop: 3 }}>
+        Point data at {city.lat.toFixed(5)}, {city.lng.toFixed(5)} · recent archive and past-year climate
+      </div>
+      {!hasCharts ? (
+        <div style={{ marginTop: 12, color: muted, fontSize: 13 }}>
+          {point.loading || climate.loading ? "Loading weather history…" : "No weather history available for this city yet."}
+        </div>
+      ) : (
+        <>
+          {liveCharts.length ? (
+            <>
+              <div style={historySectionLabel}>Last {HISTORY_WINDOW_HOURS} hours</div>
+              <div style={historyGrid}>
+                {liveCharts.map((c) => (
+                  <div key={c.variable} style={historyCard}>
+                    <MiniChart
+                      label={HISTORY_LABEL[c.variable] ?? c.variable.toUpperCase()}
+                      color={HISTORY_COLOR[c.variable] ?? "#3987e5"}
+                      units={c.units}
+                      points={c.points}
+                      avg={c.avg}
+                      caption={c.caption}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
+          {climateRows.length ? (
+            <>
+              <div style={historySectionLabel}>Past year</div>
+              <div style={historyGrid}>
+                {climateRows.map((row) => (
+                  <div key={row.variable} style={historyCard}>
+                    <MiniChart
+                      label={row.label}
+                      color={row.color}
+                      units={row.units}
+                      points={row.points}
+                      avg={row.avg}
+                      caption={row.caption}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
+function formatHistoryReading(v: number): string {
+  const abs = Math.abs(v);
+  if (abs >= 100) return String(Math.round(v));
+  return (Math.round(v * 10) / 10).toString();
 }
 
 export default function CityDetail({ id }: { id: string }) {
@@ -60,9 +170,7 @@ export default function CityDetail({ id }: { id: string }) {
 
   return (
     <div>
-      <Link href="/cities" style={{ color: "#60a5fa", textDecoration: "none", fontSize: 13 }}>← Cities</Link>
-
-      <article style={{ ...panel, padding: 20, marginTop: 12 }}>
+      <article style={{ ...panel, padding: 20 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
@@ -136,15 +244,7 @@ export default function CityDetail({ id }: { id: string }) {
         </section>
       )}
 
-      <section style={{ ...panel, marginTop: 16, padding: 15 }}>
-        <div style={{ color: "#cbd5e1", fontSize: 13 }}>Weather history</div>
-        <div style={{ color: muted, fontSize: 11, marginTop: 3 }}>
-          Point data at {city.lat.toFixed(5)}, {city.lng.toFixed(5)} · recent archive and past-year climate
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 12 }}>
-          <PointHistoryPanel center={[city.lng, city.lat]} />
-        </div>
-      </section>
+      <CityWeatherHistory city={city} />
 
       <details style={{ ...panel, padding: 14, marginTop: 16 }}>
         <summary style={{ color: muted, cursor: "pointer", fontSize: 12 }}>Raw city record</summary>
@@ -163,4 +263,25 @@ const linkButton: React.CSSProperties = {
   color: "#dbeafe",
   textDecoration: "none",
   fontSize: 12,
+};
+
+const historySectionLabel: React.CSSProperties = {
+  margin: "16px 0 8px",
+  color: "#8b95a7",
+  fontSize: 11,
+  fontWeight: 800,
+  letterSpacing: 1,
+  textTransform: "uppercase",
+};
+const historyGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+  gap: 12,
+};
+const historyCard: React.CSSProperties = {
+  minWidth: 0,
+  padding: 12,
+  borderRadius: 8,
+  border: "1px solid #1b2030",
+  background: "#080c14",
 };

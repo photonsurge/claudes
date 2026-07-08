@@ -24,6 +24,7 @@ import {
 } from "../../../lib/alerts";
 import { HAZARDS, hazardMeta } from "../../../lib/hazard";
 import { bucketByGroupId } from "../../../lib/alertGroups";
+import AdminPageShell from "../../../components/admin/AdminPageShell";
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -142,83 +143,83 @@ export default function AlertsPage() {
   }, [debugGroup]);
 
   return (
-    <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <h2 style={{ margin: 0 }}>
-            Weather alerts{" "}
-            <span style={{ color: "#8b95a7", fontSize: 14, fontWeight: 400 }}>
-              ({groups.length} event{groups.length === 1 ? "" : "s"}
-              {shown.length !== groups.length ? ` · ${shown.length} alerts` : ""}
-              {shown.length !== alerts.length ? ` of ${alerts.length}` : ""})
-            </span>
-          </h2>
-          <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-            <label style={controlLabel}>
-              Source
-              <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} style={select}>
-                <option value="all">all adapters</option>
-                {sources.map((s) => (
-                  <option key={s} value={s}>
-                    {s} ({bySource[s]})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label style={controlLabel}>
-              Hazard
-              <select value={hazardFilter} onChange={(e) => setHazardFilter(e.target.value)} style={select}>
-                <option value="all">all types</option>
-                {HAZARDS.filter((h) => byHazard[h.id]).map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.icon} {h.label} ({byHazard[h.id]})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="type / area…"
-              style={{
-                background: "#0a0e16",
-                color: "#fff",
-                border: "1px solid #2a3344",
-                borderRadius: 5,
-                padding: "5px 8px",
-                fontSize: 13,
-                minWidth: 130,
-              }}
-            />
-            <label style={controlLabel}>
-              <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />
-              Active only
-            </label>
-            <label style={controlLabel}>
-              Min severity
-              <select
-                value={severityMin}
-                onChange={(e) => setSeverityMin(Number(e.target.value))}
-                style={select}
-              >
-                {[0, 1, 2, 3, 4].map((r) => (
-                  <option key={r} value={r}>
-                    {r} — {severityLabel(r as 0)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="button" onClick={reload} style={primary} disabled={loading}>
-              {loading ? "…" : "Refresh"}
-            </button>
-            <button type="button" onClick={ingestNow} style={ingestBtn} disabled={!!ingestMsg}>
-              Ingest now
-            </button>
-            <button type="button" onClick={translateNow} style={ingestBtn} disabled={!!translateMsg}>
-              Translate now
-            </button>
-          </div>
+    <AdminPageShell
+      title="Weather alerts"
+      description={
+        <>
+          {groups.length} event{groups.length === 1 ? "" : "s"}
+          {shown.length !== groups.length ? ` · ${shown.length} alerts` : ""}
+          {shown.length !== alerts.length ? ` of ${alerts.length}` : ""}
+        </>
+      }
+      actions={
+        <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={controlLabel}>
+            Source
+            <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} style={select}>
+              <option value="all">all adapters</option>
+              {sources.map((s) => (
+                <option key={s} value={s}>
+                  {s} ({bySource[s]})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={controlLabel}>
+            Hazard
+            <select value={hazardFilter} onChange={(e) => setHazardFilter(e.target.value)} style={select}>
+              <option value="all">all types</option>
+              {HAZARDS.filter((h) => byHazard[h.id]).map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.icon} {h.label} ({byHazard[h.id]})
+                </option>
+              ))}
+            </select>
+          </label>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="type / area…"
+            style={{
+              background: "#0a0e16",
+              color: "#fff",
+              border: "1px solid #2a3344",
+              borderRadius: 5,
+              padding: "5px 8px",
+              fontSize: 13,
+              minWidth: 130,
+            }}
+          />
+          <label style={controlLabel}>
+            <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />
+            Active only
+          </label>
+          <label style={controlLabel}>
+            Min severity
+            <select
+              value={severityMin}
+              onChange={(e) => setSeverityMin(Number(e.target.value))}
+              style={select}
+            >
+              {[0, 1, 2, 3, 4].map((r) => (
+                <option key={r} value={r}>
+                  {r} — {severityLabel(r as 0)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" onClick={reload} style={primary} disabled={loading}>
+            {loading ? "…" : "Refresh"}
+          </button>
+          <button type="button" onClick={ingestNow} style={ingestBtn} disabled={!!ingestMsg}>
+            Ingest now
+          </button>
+          <button type="button" onClick={translateNow} style={ingestBtn} disabled={!!translateMsg}>
+            Translate now
+          </button>
         </div>
+      }
+    >
         {ingestMsg && (
           <div style={{ marginTop: 8, fontSize: 13, color: ingestMsg.startsWith("Failed") ? "#fca5a5" : "#86efac" }}>
             {ingestMsg}
@@ -372,7 +373,7 @@ export default function AlertsPage() {
             )}
           </tbody>
         </table>
-      </section>
+
 
       {debugGroup && (() => {
         const rep = debugGroup.representative;
@@ -418,7 +419,7 @@ export default function AlertsPage() {
           </div>
         );
       })()}
-    </main>
+    </AdminPageShell>
   );
 }
 

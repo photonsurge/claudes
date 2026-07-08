@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
-import { buildForecastDays } from "../../../../../lib/weather-forecast";
+import { buildForecastDays, buildForecastSteps } from "../../../../../lib/weather-forecast";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,10 +9,11 @@ export const dynamic = "force-dynamic";
 const DEFAULT_VARIABLES = ["temp", "wind", "gust", "rain", "cloud", "storm"];
 
 /**
- * GET /api/weather/forecast/point?lat=&lng=[&variables=temp,wind,...][&model=]
+ * GET /api/weather/forecast/point?lat=&lng=[&variables=temp,wind,...][&model=][&shape=days|steps]
  *
- * Sample the rolling forecast store (today + next 3 days) at a point and
- * return one daily hi/lo card per day, plus any derived hazard flags.
+ * Sample the rolling forecast store at a point. `shape=days` (default) returns
+ * one daily hi/lo card per day; `shape=steps` returns the full 3-hourly
+ * timeline (today..+72h). Both carry derived condition + hazard flags.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -24,6 +25,7 @@ export async function GET(req: Request) {
   const requested = url.searchParams.get("variables")?.split(",").map((v) => v.trim()).filter(Boolean);
   const variables = requested && requested.length ? requested : DEFAULT_VARIABLES;
   const model = url.searchParams.get("model") ?? undefined;
+  const shape = url.searchParams.get("shape") === "steps" ? "steps" : "days";
 
   const db = await getAppDb();
   const framesByVariable: Record<string, any[]> = {};
@@ -33,7 +35,10 @@ export async function GET(req: Request) {
     }),
   );
 
-  const payload = await buildForecastDays(framesByVariable, lat, lng);
+  const payload =
+    shape === "steps"
+      ? await buildForecastSteps(framesByVariable, lat, lng)
+      : await buildForecastDays(framesByVariable, lat, lng);
   return NextResponse.json(payload, {
     headers: { "Cache-Control": "public, max-age=60" },
   });

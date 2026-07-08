@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { TriggerableJob } from "@photonsurge/shared/jobs";
+import AdminPageShell from "../../../components/admin/AdminPageShell";
 import LogTail from "../../../components/admin/LogTail";
 
 interface Result {
@@ -101,19 +102,21 @@ export default function JobsPage() {
   };
 
   return (
-    <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ maxWidth: 760, margin: "0 auto", padding: 24 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-          <h2 style={{ margin: 0 }}>Worker jobs</h2>
-          {counts ? (
-            <div style={{ color: "#8b95a7", fontSize: 12 }}>
-              queue · active {counts.active ?? 0} · waiting {counts.waiting ?? 0} · done{" "}
-              {counts.completed ?? 0} · failed {counts.failed ?? 0}
-            </div>
-          ) : (
-            <div style={{ color: "#fca5a5", fontSize: 12 }}>queue unreachable (worker/Redis down?)</div>
-          )}
-        </div>
+    <AdminPageShell
+      title="Worker jobs"
+      description="Manual triggers for worker ingest, snapshot and enrichment jobs."
+      maxWidth={760}
+      actions={
+        counts ? (
+          <div style={{ color: "#8b95a7", fontSize: 12 }}>
+            queue · active {counts.active ?? 0} · waiting {counts.waiting ?? 0} · done{" "}
+            {counts.completed ?? 0} · failed {counts.failed ?? 0}
+          </div>
+        ) : (
+          <div style={{ color: "#fca5a5", fontSize: 12 }}>queue unreachable (worker/Redis down?)</div>
+        )
+      }
+    >
 
         {groupJobs(jobs).map(([group, groupJobsList]) => (
           <section key={group} style={{ marginTop: 22 }}>
@@ -202,7 +205,6 @@ export default function JobsPage() {
         <div style={{ marginTop: 28 }}>
           <LogTail limit={100} title="Recent activity" />
         </div>
-      </section>
-    </main>
+    </AdminPageShell>
   );
 }

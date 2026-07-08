@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AdminPageShell from "../../components/admin/AdminPageShell";
 import ServiceStatusPanel from "../../components/ServiceStatusPanel";
 
 /**
@@ -37,56 +38,51 @@ const LINKS: AdminLink[] = [
 
 export default function AdminPage() {
   return (
-    <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
-        <h2 style={{ marginTop: 0 }}>Admin</h2>
-        <p style={{ color: "#8b95a7", marginTop: 0 }}>Lists and consoles for the weather globe.</p>
+    <AdminPageShell title="Admin" description="Lists and consoles for the weather globe." maxWidth={900}>
+      <div style={{ marginBottom: 16 }}>
+        <ServiceStatusPanel />
+      </div>
 
-        <div style={{ marginBottom: 16 }}>
-          <ServiceStatusPanel />
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-            gap: 14,
-            marginTop: 16,
-          }}
-        >
-          {LINKS.map((l) => {
-            const card = (
-              <div
-                style={{
-                  padding: 16,
-                  borderRadius: 8,
-                  border: "1px solid #1b2030",
-                  background: "#0c111c",
-                  height: "100%",
-                  opacity: l.ready ? 1 : 0.55,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <h3 style={{ margin: 0, fontSize: 15 }}>{l.title}</h3>
-                  {!l.ready && (
-                    <span style={{ fontSize: 11, color: "#8b95a7", border: "1px solid #2a3344", borderRadius: 4, padding: "1px 5px" }}>
-                      soon
-                    </span>
-                  )}
-                </div>
-                <div style={{ color: "#8b95a7", fontSize: 13, marginTop: 6 }}>{l.desc}</div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+          gap: 14,
+          marginTop: 16,
+        }}
+      >
+        {LINKS.map((l) => {
+          const card = (
+            <div
+              style={{
+                padding: 16,
+                borderRadius: 8,
+                border: "1px solid #1b2030",
+                background: "#0c111c",
+                height: "100%",
+                opacity: l.ready ? 1 : 0.55,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <h3 style={{ margin: 0, fontSize: 15 }}>{l.title}</h3>
+                {!l.ready && (
+                  <span style={{ fontSize: 11, color: "#8b95a7", border: "1px solid #2a3344", borderRadius: 4, padding: "1px 5px" }}>
+                    soon
+                  </span>
+                )}
               </div>
-            );
-            return l.ready ? (
-              <Link key={l.href} href={l.href} style={{ textDecoration: "none", color: "inherit" }}>
-                {card}
-              </Link>
-            ) : (
-              <div key={l.href}>{card}</div>
-            );
-          })}
-        </div>
-      </section>
-    </main>
+              <div style={{ color: "#8b95a7", fontSize: 13, marginTop: 6 }}>{l.desc}</div>
+            </div>
+          );
+          return l.ready ? (
+            <Link key={l.href} href={l.href} style={{ textDecoration: "none", color: "inherit" }}>
+              {card}
+            </Link>
+          ) : (
+            <div key={l.href}>{card}</div>
+          );
+        })}
+      </div>
+    </AdminPageShell>
   );
 }

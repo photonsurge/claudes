@@ -6,17 +6,15 @@
  * reseed/enrich/weather-refresh triggers.
  */
 import RegionsTable from "../../../components/regions/RegionsTable";
+import AdminPageShell from "../../../components/admin/AdminPageShell";
 
 export default function RegionsPage() {
   return (
-    <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
-        <h2 style={{ marginTop: 0 }}>Regions</h2>
-        <p style={{ color: "#8b95a7", marginTop: 0 }}>
-          Oceans, continents, EU blocs and UK nations — Wikipedia enrichment and the latest area-weather snapshot.
-        </p>
-        <RegionsTable />
-      </section>
-    </main>
+    <AdminPageShell
+      title="Regions"
+      description="Oceans, continents, EU blocs and UK nations — Wikipedia enrichment and the latest area-weather snapshot."
+    >
+      <RegionsTable />
+    </AdminPageShell>
   );
 }

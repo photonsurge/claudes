@@ -1,12 +1,17 @@
+import AdminPageShell from "../../../components/admin/AdminPageShell";
 import CityDetail from "../../../components/cities/CityDetail";
 
 export default async function CityPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const cityId = decodeURIComponent(id);
   return (
-    <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ maxWidth: 1150, margin: "0 auto", padding: 24 }}>
-        <CityDetail id={decodeURIComponent(id)} />
-      </section>
-    </main>
+    <AdminPageShell
+      title="City detail"
+      description={cityId}
+      maxWidth={1150}
+      crumbs={[{ href: "/cities", label: "Cities" }, { label: cityId }]}
+    >
+      <CityDetail id={cityId} />
+    </AdminPageShell>
   );
 }

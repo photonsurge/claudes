@@ -23,6 +23,7 @@ import {
   type ValidatedCity,
 } from "../../lib/cities";
 import CityEditor from "../../components/CityEditor";
+import AdminPageShell from "../../components/admin/AdminPageShell";
 import CityEnrichmentCard from "../../components/cities/CityEnrichmentCard";
 import CitiesTable from "../../components/cities/CitiesTable";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
@@ -130,92 +131,107 @@ export default function CitiesPage() {
   );
 
   return (
-    <main style={{ display: "flex", height: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ width: 680, padding: 20, overflowY: "auto", borderRight: "1px solid #1b2030" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <h2 style={{ margin: 0 }}>Cities</h2>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" onClick={reload} disabled={loading} style={ghost}>{loading ? "…" : "Refresh"}</button>
-            <button type="button" onClick={() => handleEnrich("prominent")} disabled={enriching !== null} style={{ ...primary, background: "#0f766e" }}>
-              {enriching === "prominent" ? "Queueing…" : "Enrich prominent"}
-            </button>
-            <button type="button" onClick={() => handleEnrich("all")} disabled={enriching !== null} style={primary}>
-              {enriching === "all" ? "Queueing…" : "Enrich all · low priority"}
-            </button>
-            <button type="button" onClick={() => { setAdding(true); setEditing(null); }} style={primary}>+ Add city</button>
-          </div>
-        </div>
-
-        <div style={{ color: "#8b95a7", fontSize: 12, marginTop: 8 }}>
+    <AdminPageShell
+      title="Cities"
+      description={
+        <>
           Showing {cities.length} of {total.toLocaleString()} cities · this page: {enrichedCount} enriched · {checkedCount} checked
-        </div>
-        {notice && <div role="status" style={{ color: notice.startsWith("Could not") ? "#fca5a5" : "#a7f3d0", fontSize: 12, marginTop: 7 }}>{notice}</div>}
-        {loadError && <div role="alert" style={{ color: "#fca5a5", fontSize: 12, marginTop: 7 }}>{loadError}</div>}
+        </>
+      }
+      maxWidth={1600}
+      actions={
+        <>
+          <button type="button" onClick={reload} disabled={loading} style={ghost}>{loading ? "…" : "Refresh"}</button>
+          <button type="button" onClick={() => handleEnrich("prominent")} disabled={enriching !== null} style={{ ...primary, background: "#0f766e" }}>
+            {enriching === "prominent" ? "Queueing…" : "Enrich prominent"}
+          </button>
+          <button type="button" onClick={() => handleEnrich("all")} disabled={enriching !== null} style={primary}>
+            {enriching === "all" ? "Queueing…" : "Enrich all · low priority"}
+          </button>
+          <button type="button" onClick={() => { setAdding(true); setEditing(null); }} style={primary}>+ Add city</button>
+        </>
+      }
+      crumbs={[{ label: "Cities" }]}
+    >
+      {notice && <div role="status" style={{ color: notice.startsWith("Could not") ? "#fca5a5" : "#a7f3d0", fontSize: 12, marginBottom: 7 }}>{notice}</div>}
+      {loadError && <div role="alert" style={{ color: "#fca5a5", fontSize: 12, marginBottom: 7 }}>{loadError}</div>}
 
-        <form
-          onSubmit={(event) => { event.preventDefault(); setQuery(search.trim()); resetToFirstPage(); }}
-          style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}
-        >
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search city, country or region"
-            aria-label="Search cities"
-            style={{ flex: 1, minWidth: 0, background: "#1a1f2b", color: "#fff", border: "1px solid #333", borderRadius: 5, padding: "7px 9px" }}
-          />
-          <button type="submit" style={ghost}>Search</button>
-        </form>
-
-        {selected && <CityEnrichmentCard city={selected} onClose={() => setSelected(null)} />}
-
-        {adding && (
-          <div style={card}>
-            <h3 style={{ marginTop: 0, fontSize: 14 }}>New city</h3>
-            <CityEditor submitLabel="Create" onSubmit={handleCreate} onCancel={() => setAdding(false)} />
-          </div>
-        )}
-
-        {editing && (
-          <div style={card}>
-            <h3 style={{ marginTop: 0, fontSize: 14 }}>Edit {editing.name}</h3>
-            <CityEditor
-              submitLabel="Save"
-              initial={{
-                name: editing.name,
-                country: editing.country,
-                lat: editing.lat,
-                lng: editing.lng,
-                population: editing.population,
-                isCapital: editing.isCapital,
-              }}
-              onSubmit={(v) => handleUpdate(editing.id, v)}
-              onCancel={() => setEditing(null)}
+      <div
+        style={{
+          display: "flex",
+          minHeight: "calc(100vh - 190px)",
+          border: "1px solid #1b2030",
+          borderRadius: 8,
+          overflow: "hidden",
+          background: "#070a11",
+        }}
+      >
+        <section style={{ width: 680, padding: 20, overflowY: "auto", borderRight: "1px solid #1b2030", background: "#0a0e16" }}>
+          <form
+            onSubmit={(event) => { event.preventDefault(); setQuery(search.trim()); resetToFirstPage(); }}
+            style={{ display: "flex", gap: 8, alignItems: "center" }}
+          >
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search city, country or region"
+              aria-label="Search cities"
+              style={{ flex: 1, minWidth: 0, background: "#1a1f2b", color: "#fff", border: "1px solid #333", borderRadius: 5, padding: "7px 9px" }}
             />
-          </div>
-        )}
+            <button type="submit" style={ghost}>Search</button>
+          </form>
 
-        <CitiesTable
-          cities={cities}
-          total={total}
-          pageCount={pageCount}
-          loading={loading}
-          pagination={pagination}
-          sorting={sorting}
-          onPaginationChange={setPagination}
-          onSortingChange={(updater) => {
-            setSorting((current) => typeof updater === "function" ? updater(current) : updater);
-            resetToFirstPage();
-          }}
-          onSelect={(city) => { setSelected(city); globe.current?.flyTo([city.lng, city.lat], 5); }}
-          onEdit={(city) => { setEditing(city); setAdding(false); }}
-          onDelete={handleDelete}
-        />
-      </section>
+          {selected && <CityEnrichmentCard city={selected} onClose={() => setSelected(null)} />}
 
-      <div style={{ position: "relative", flex: 1 }}>
-        <GlobeView ref={globe} state={previewState} manifest={null} cities={cities} interactive />
+          {adding && (
+            <div style={card}>
+              <h3 style={{ marginTop: 0, fontSize: 14 }}>New city</h3>
+              <CityEditor submitLabel="Create" onSubmit={handleCreate} onCancel={() => setAdding(false)} />
+            </div>
+          )}
+
+          {editing && (
+            <div style={card}>
+              <h3 style={{ marginTop: 0, fontSize: 14 }}>Edit {editing.name}</h3>
+              <CityEditor
+                submitLabel="Save"
+                initial={{
+                  name: editing.name,
+                  country: editing.country,
+                  lat: editing.lat,
+                  lng: editing.lng,
+                  population: editing.population,
+                  isCapital: editing.isCapital,
+                }}
+                onSubmit={(v) => handleUpdate(editing.id, v)}
+                onCancel={() => setEditing(null)}
+              />
+            </div>
+          )}
+
+          <CitiesTable
+            cities={cities}
+            total={total}
+            pageCount={pageCount}
+            loading={loading}
+            pagination={pagination}
+            sorting={sorting}
+            onPaginationChange={setPagination}
+            onSortingChange={(updater) => {
+              setSorting((current) => typeof updater === "function" ? updater(current) : updater);
+              resetToFirstPage();
+            }}
+            onSelect={(city) => { setSelected(city); globe.current?.flyTo([city.lng, city.lat], 5); }}
+            onEdit={(city) => { setEditing(city); setAdding(false); }}
+            onDelete={handleDelete}
+          />
+        </section>
+
+        <div style={{ position: "relative", flex: 1, minWidth: 360 }}>
+          <GlobeView ref={globe} state={previewState} manifest={null} cities={cities} interactive />
+        </div>
       </div>
-    </main>
+    </AdminPageShell>
   );
 }
 

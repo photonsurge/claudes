@@ -18,6 +18,7 @@ import {
   type SummaryPeriod,
   type EventSummary,
 } from "../../../lib/summaries";
+import AdminPageShell from "../../../components/admin/AdminPageShell";
 
 const fmtTime = (iso?: string | Date): string => {
   if (!iso) return "—";
@@ -90,39 +91,35 @@ export default function SummariesPage() {
   const shown = history.find((h) => h.id === selectedId) ?? latest;
 
   return (
-    <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <h2 style={{ margin: 0 }}>
-            Round-ups{" "}
-            <span style={{ color: "#8b95a7", fontSize: 14, fontWeight: 400 }}>
-              global weather-event summaries
-            </span>
-          </h2>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", gap: 2, background: "#0c111c", border: "1px solid #1b2030", borderRadius: 8, padding: 3 }}>
-              {SUMMARY_PERIODS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setPeriod(p.id)}
-                  style={{
-                    ...tabBtn,
-                    ...(period === p.id ? { background: "#2563eb", color: "#fff" } : null),
-                  }}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <button type="button" onClick={reload} style={primary} disabled={loading}>
-              {loading ? "…" : "Refresh"}
-            </button>
-            <button type="button" onClick={generateNow} style={genBtn} disabled={!!genMsg}>
-              Generate now
-            </button>
+    <AdminPageShell
+      title="Round-ups"
+      description="Scheduled global weather-event summaries and broadcast narrative."
+      actions={
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 2, background: "#0c111c", border: "1px solid #1b2030", borderRadius: 8, padding: 3 }}>
+            {SUMMARY_PERIODS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setPeriod(p.id)}
+                style={{
+                  ...tabBtn,
+                  ...(period === p.id ? { background: "#2563eb", color: "#fff" } : null),
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
+          <button type="button" onClick={reload} style={primary} disabled={loading}>
+            {loading ? "…" : "Refresh"}
+          </button>
+          <button type="button" onClick={generateNow} style={genBtn} disabled={!!genMsg}>
+            Generate now
+          </button>
         </div>
+      }
+    >
         {genMsg && (
           <div style={{ marginTop: 8, fontSize: 13, color: genMsg.startsWith("Failed") ? "#fca5a5" : "#86efac" }}>
             {genMsg}
@@ -309,8 +306,7 @@ export default function SummariesPage() {
             )}
           </>
         )}
-      </section>
-    </main>
+    </AdminPageShell>
   );
 }
 

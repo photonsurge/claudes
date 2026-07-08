@@ -118,7 +118,9 @@ describe("WeatherMonitors", () => {
         stats: null,
       },
     ];
-    render(<WeatherMonitors series={series} />);
+    render(<WeatherMonitors series={series} locationLabel="Chiayi City" />);
+    expect(screen.getByText("Chiayi City")).toBeInTheDocument();
+    expect(screen.getByText("LOCAL MONITORS")).toBeInTheDocument();
     expect(screen.getByText("WIND MONITOR")).toBeInTheDocument();
     expect(screen.getByText("6 m/s")).toBeInTheDocument();
     expect(screen.queryByText("PRESSURE MONITOR")).not.toBeInTheDocument();

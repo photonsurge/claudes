@@ -5,9 +5,9 @@
 // fixed variable list, so there's nothing to stream progressively).
 
 import { useEffect, useState } from "react";
-import type { ForecastDay, AreaForecastDay } from "./weather-forecast";
+import type { ForecastDay, AreaForecastDay, ForecastStep } from "./weather-forecast";
 
-export type { ForecastDay, AreaForecastDay };
+export type { ForecastDay, AreaForecastDay, ForecastStep };
 
 function useForecastFetch<T>(key: string, urlFor: () => string): { data: T | null; loading: boolean } {
   const [state, setState] = useState<{ key: string; data: T | null; loading: boolean }>({
@@ -55,6 +55,20 @@ export function usePointForecast(center: [number, number] | null): {
     `/api/weather/forecast/point?${new URLSearchParams({ lat: lat!, lng: lng! })}`,
   );
   return { days: data?.days ?? [], loading };
+}
+
+/** Full 3-hourly forecast timeline (today..+72h) at a point; null disables. */
+export function usePointForecastSteps(center: [number, number] | null): {
+  steps: ForecastStep[];
+  loading: boolean;
+} {
+  const lat = center ? center[1].toFixed(2) : null;
+  const lng = center ? center[0].toFixed(2) : null;
+  const key = lat != null && lng != null ? `pt-steps|${lat}|${lng}` : "";
+  const { data, loading } = useForecastFetch<{ steps: ForecastStep[] }>(key, () =>
+    `/api/weather/forecast/point?${new URLSearchParams({ lat: lat!, lng: lng!, shape: "steps" })}`,
+  );
+  return { steps: data?.steps ?? [], loading };
 }
 
 /** 3-day-ahead forecast over a bbox (area mode); null disables. */

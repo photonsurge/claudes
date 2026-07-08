@@ -546,7 +546,11 @@ export default function BroadcastFrame({
             />
             <SeismicStationRow stations={seismoStations} onAirSegment={onAirSegment} theme={theme} />
           </div>
-          <WeatherMonitors series={pointHistorySeries} theme={theme} />
+          <WeatherMonitors
+            series={pointHistorySeries}
+            locationLabel={onAirSegment && segmentHasLocation ? onAirSegment.title : null}
+            theme={theme}
+          />
           <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 10 }}>
             <TideStationRow stations={tideStations} theme={theme} />
             <TsunamiMonitor stations={tideStations} active={tideActive} theme={theme} />

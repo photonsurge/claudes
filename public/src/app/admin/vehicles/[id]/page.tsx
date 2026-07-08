@@ -1,12 +1,16 @@
+import AdminPageShell from "../../../../components/admin/AdminPageShell";
 import VehicleDetail from "../../../../components/vehicles/VehicleDetail";
 
 export default async function VehiclePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const vehicleId = decodeURIComponent(id);
   return (
-    <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
-        <VehicleDetail id={decodeURIComponent(id)} />
-      </section>
-    </main>
+    <AdminPageShell
+      title="Vehicle detail"
+      description={vehicleId}
+      crumbs={[{ href: "/admin/vehicles", label: "Vehicles" }, { label: vehicleId }]}
+    >
+      <VehicleDetail id={vehicleId} />
+    </AdminPageShell>
   );
 }

@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import QueueJob, { type SerializedJob, type JobAction } from "../../../components/admin/QueueJob";
+import AdminPageShell from "../../../components/admin/AdminPageShell";
 
 const STATES = ["active", "waiting", "prioritized", "delayed", "failed", "completed", "paused"] as const;
 type State = (typeof STATES)[number];
@@ -119,35 +120,36 @@ export default function QueuePage() {
   const jobs = data?.jobs ?? [];
 
   return (
-    <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ maxWidth: 860, margin: "0 auto", padding: 24 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <h2 style={{ margin: 0 }}>Queue</h2>
-            <div style={{ color: "#5b6577", fontSize: 12, marginTop: 2 }}>
-              {data?.queue ?? "…"}
-              {data?.paused && <span style={{ color: "#fbbf24", marginLeft: 8 }}>⏸ paused</span>}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => post({ action: data?.paused ? "resume" : "pause" })}
-              style={toolBtn(data?.paused ? "#14532d" : "#3a2a10")}
-            >
-              {data?.paused ? "Resume queue" : "Pause queue"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setLive((v) => !v)}
-              style={toolBtn(live ? "#14532d" : "#1a1f2b")}
-              title="Auto-refresh every 4s"
-            >
-              {live ? "● live" : "paused"}
-            </button>
-          </div>
-        </div>
+    <AdminPageShell
+      title="Queue"
+      description={
+        <>
+          {data?.queue ?? "…"}
+          {data?.paused && <span style={{ color: "#fbbf24", marginLeft: 8 }}>paused</span>}
+        </>
+      }
+      maxWidth={860}
+      actions={
+        <>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => post({ action: data?.paused ? "resume" : "pause" })}
+            style={toolBtn(data?.paused ? "#14532d" : "#3a2a10")}
+          >
+            {data?.paused ? "Resume queue" : "Pause queue"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setLive((v) => !v)}
+            style={toolBtn(live ? "#14532d" : "#1a1f2b")}
+            title="Auto-refresh every 4s"
+          >
+            {live ? "● live" : "paused"}
+          </button>
+        </>
+      }
+    >
 
         {data?.error && (
           <div style={{ marginTop: 14, padding: 12, borderRadius: 8, border: "1px solid #3a1620", background: "#1a0d12", color: "#fca5a5", fontSize: 13 }}>
@@ -267,7 +269,6 @@ export default function QueuePage() {
             <div style={{ padding: 14, color: "#5b6577", fontSize: 13 }}>No repeatable schedules registered.</div>
           )}
         </div>
-      </section>
-    </main>
+    </AdminPageShell>
   );
 }

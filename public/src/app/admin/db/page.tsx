@@ -5,6 +5,7 @@
  * and storage/index sizes. Read-only info page, no operator actions.
  */
 import { useCallback, useEffect, useState } from "react";
+import AdminPageShell from "../../../components/admin/AdminPageShell";
 
 interface CollectionSummary {
   name: string;
@@ -65,38 +66,40 @@ export default function DbSummaryPage() {
   const maxSize = summary ? Math.max(1, ...summary.collections.map((c) => c.totalSize)) : 1;
 
   return (
-    <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ maxWidth: 980, margin: "0 auto", padding: 24 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-          <h2 style={{ margin: 0 }}>Database</h2>
-          <button
-            type="button"
-            onClick={refresh}
-            style={{
-              padding: "6px 12px",
-              borderRadius: 6,
-              border: "1px solid #333",
-              background: "#151b28",
-              color: "#cdd4e0",
-              cursor: "pointer",
-              fontSize: 12,
-            }}
-          >
-            Refresh
-          </button>
+    <AdminPageShell
+      title="Database"
+      description="Mongo collection sizes, document counts and storage summary."
+      maxWidth={980}
+      actions={
+        <button
+          type="button"
+          onClick={refresh}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 6,
+            border: "1px solid #333",
+            background: "#151b28",
+            color: "#cdd4e0",
+            cursor: "pointer",
+            fontSize: 12,
+          }}
+        >
+          Refresh
+        </button>
+      }
+    >
+
+      {error && (
+        <div style={{ marginTop: 16, padding: 12, borderRadius: 8, border: "1px solid #7f1d1d", background: "#1a0f0f", color: "#fca5a5", fontSize: 13 }}>
+          {error}
         </div>
+      )}
 
-        {error && (
-          <div style={{ marginTop: 16, padding: 12, borderRadius: 8, border: "1px solid #7f1d1d", background: "#1a0f0f", color: "#fca5a5", fontSize: 13 }}>
-            {error}
+      {summary && (
+        <>
+          <div style={{ color: "#8b95a7", fontSize: 13, marginTop: 4 }}>
+            {summary.db} · as of {new Date(summary.at).toLocaleTimeString()}
           </div>
-        )}
-
-        {summary && (
-          <>
-            <div style={{ color: "#8b95a7", fontSize: 13, marginTop: 4 }}>
-              {summary.db} · as of {new Date(summary.at).toLocaleTimeString()}
-            </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginTop: 16 }}>
               {[
@@ -155,11 +158,10 @@ export default function DbSummaryPage() {
                 ))}
               </tbody>
             </table>
-          </>
-        )}
+        </>
+      )}
 
-        {!summary && !error && <div style={{ color: "#8b95a7", marginTop: 16 }}>Loading…</div>}
-      </section>
-    </main>
+      {!summary && !error && <div style={{ color: "#8b95a7", marginTop: 16 }}>Loading…</div>}
+    </AdminPageShell>
   );
 }
