@@ -11,7 +11,7 @@ import type { AlertFeature } from "../../lib/alerts";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
 import { sortedAlerts, alertBannerText } from "../../lib/broadcast";
 import type { City } from "../../lib/cities";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
 
 /** Seconds each alert holds on screen before advancing to the next. */
 const HOLD_MS = 5000;
@@ -51,8 +51,7 @@ export default function LiveAlertPanel({
         maxWidth: compact ? 240 : 340,
         padding: compact ? "8px 26px 8px 11px" : "10px 30px 10px 14px",
         background: theme.panelBg,
-        border: `1px solid ${color}66`,
-        borderLeft: `3px solid ${color}`,
+        ...accentBorder(`1px solid ${color}66`, `3px solid ${color}`),
         borderRadius: 10,
         boxShadow: `0 8px 26px rgba(0,0,0,0.45), 0 0 14px ${color}33`,
         backdropFilter: "blur(8px)",

@@ -170,9 +170,10 @@ const AlertSchema = new mongoose.Schema<iAlertModel>(
 
 // Dedup key — the heart of upsert/supersede (spec §5).
 AlertSchema.index({ source: 1, identifier: 1 }, { unique: true, name: "alert_dedup_ix" });
-// "active now" queries and the expiry sweep.
-AlertSchema.index({ active: 1, maxSeverityRank: -1 }, { name: "alert_active_sev_ix" });
-AlertSchema.index({ expiresAt: 1 }, { name: "alert_expires_ix" });
+// "active now" list — matches list()'s sort exactly so the polled /api/alerts
+// read is fully index-served (no in-memory sort of thousands of CAP docs).
+AlertSchema.index({ active: 1, maxSeverityRank: -1, sent: -1 }, { name: "alert_active_sev_sent_ix" });
+// Per-source sweeps (expiry, supersede, deactivate-missing).
 AlertSchema.index({ source: 1, active: 1 }, { name: "alert_source_active_ix" });
 // Point/region lookups ($geoIntersects). Sparse: geocode-only feeds have no geometry.
 AlertSchema.index({ "info.area.geometry": "2dsphere" }, { name: "alert_geo_ix", sparse: true });

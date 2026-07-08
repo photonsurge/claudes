@@ -16,7 +16,7 @@
  * WorldWatchPanel, so the (potentially 5000-row) global fetch never doubles up.
  */
 import type { WorldWatchState } from "../../lib/world-watch";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
 
 /** Hero count + caption. */
 function StatTile({ label, value, color }: { label: string; value: number; color: string }) {
@@ -225,8 +225,7 @@ export default function WorldSituationPanel({
         width: 400,
         padding: "20px 24px",
         background: theme.panelBg,
-        border: theme.panelBorder,
-        borderLeft: `5px solid ${topColor}`,
+        ...accentBorder(theme.panelBorder, `5px solid ${topColor}`),
         borderRadius: 16,
         boxShadow: `0 12px 36px rgba(0,0,0,0.5), 0 0 20px ${topColor}28`,
         backdropFilter: "blur(8px)",

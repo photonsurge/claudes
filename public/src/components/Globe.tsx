@@ -22,6 +22,7 @@ import { Deck, _GlobeView as GlobeView } from "@deck.gl/core";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { loadTexture, preloadTextures, type LoadedTexture } from "../lib/textures";
+import { useCrossfadeVariable } from "../lib/crossfade";
 import { textureUrlFor } from "./layers/props";
 import { basemapLayers, countriesLayer, TILE_MIN_ZOOM } from "./layers/basemap";
 import {
@@ -211,6 +212,10 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const deckRef = useRef<Deck<GlobeView[]> | null>(null);
+  // Smoothly crossfades the scalar raster between successive activeVariable
+  // values (manual picks, VAR_CYCLE, or the ocean depth-cycle scene) instead
+  // of the instant mount/unmount a raw variable-id-keyed layer id would do.
+  const variableFade = useCrossfadeVariable(state.activeVariable, 700);
   // The non-pulse layers, kept so the pulse rAF can re-commit them each frame.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const baseLayersRef = useRef<any[]>([]);
@@ -757,7 +762,23 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         if (sealer) layers.push(sealer);
       }
       if (state.activeVariable) {
-        layers.push(...scalarRasterLayers(manifest, state.activeVariable, state.fhr, resolve, camera));
+        // Mid-crossfade: draw the outgoing variable fading out UNDER the
+        // incoming one fading in (see useCrossfadeVariable) instead of the
+        // instant hard cut a bare activeVariable switch would produce.
+        if (variableFade.from && variableFade.progress < 1) {
+          layers.push(
+            ...scalarRasterLayers(manifest, variableFade.from, state.fhr, resolve, camera, {
+              opacity: 0.7 * (1 - variableFade.progress),
+            }),
+          );
+          layers.push(
+            ...scalarRasterLayers(manifest, variableFade.to, state.fhr, resolve, camera, {
+              opacity: 0.7 * variableFade.progress,
+            }),
+          );
+        } else {
+          layers.push(...scalarRasterLayers(manifest, state.activeVariable, state.fhr, resolve, camera));
+        }
       }
       if (state.showPressure) layers.push(...pressureLayers(manifest, state.fhr, resolve));
       if (contourOn) {
@@ -908,6 +929,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     tilesActive,
     state.basemap,
     state.activeVariable,
+    variableFade.from,
+    variableFade.to,
+    variableFade.progress,
     state.showPressure,
     state.showElevation,
     state.elevation,

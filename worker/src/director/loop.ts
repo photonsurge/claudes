@@ -26,6 +26,7 @@ import {
 import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "../socket";
 import { buildCandidates, buildAdSegment } from "./candidates";
+import { airLogCut, airLogSceneOff } from "./airlog";
 
 const TAG = "director";
 const TICK_MS = 1000;
@@ -63,6 +64,9 @@ interface SceneRunner {
   pendingAd: boolean;
   lastSkipNonce: number;
   lastEmit: number;
+  /** The open AirRun (as-run log) for this session — set on the first cut.
+   *  A worker crash leaves it dangling; the next session's startRun closes it. */
+  runId?: string;
 }
 
 /** Kinds that share the world-view center — excluded from the geo cooldown.
@@ -202,8 +206,10 @@ async function tick(): Promise<void> {
     // Scenes that just left auto mode: tell watchers the director stood down.
     for (const sceneId of [...runners.keys()]) {
       if (!autoSet.has(sceneId)) {
+        const closingRunId = runners.get(sceneId)?.runId;
         runners.delete(sceneId);
         emitInactive(sceneId);
+        await airLogSceneOff(db, closingRunId, now);
         log(TAG, `scene left auto`, { sceneId });
       }
     }
@@ -329,6 +335,11 @@ async function tick(): Promise<void> {
           }
 
           emit(r, now);
+
+          // As-run log: persist the cut (and close the outgoing entry) for
+          // /admin/runs review. Best-effort — airLogCut never throws.
+          await airLogCut(db, r, next, { skipRequested, breaking: pickedViaPriority, now });
+
           log(TAG, `cut`, { sceneId, seq: r.seq, kind: next.kind, id: next.id, times: r.timesShown });
         }
       } else if (now - r.lastEmit >= HEARTBEAT_MS) {

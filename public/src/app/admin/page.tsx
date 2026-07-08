@@ -24,6 +24,7 @@ const LINKS: AdminLink[] = [
   { href: "/admin/vehicles", title: "Vehicles in DB", desc: "Persistent aircraft and ship registry, including enrichment results.", ready: true },
   { href: "/admin/cams", title: "Webcams", desc: "Catalogued live cams — status, location, preview.", ready: true },
   { href: "/admin/volcanoes", title: "Volcanoes", desc: "Active volcanoes (NASA EONET) — status, Wikipedia enrichment.", ready: true },
+  { href: "/admin/sea-points", title: "Sea points", desc: "Ocean-monitoring catalog the Director's ocean kind rotates through.", ready: true },
   { href: "/admin/countries", title: "Countries", desc: "Full country catalog — boundaries, enrichment, area-weather.", ready: true },
   { href: "/admin/regions", title: "Regions", desc: "Oceans, continents, EU blocs, UK nations — enrichment, area-weather.", ready: true },
   { href: "/admin/ads", title: "Ads", desc: "Sponsor images/video shown on the broadcast.", ready: true },

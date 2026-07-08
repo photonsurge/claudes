@@ -14,7 +14,8 @@ import { logError } from "../utill/logger";
  */
 
 export interface iGetAllOptions<T> {
-  sort?: Record<string, 1 | -1>;
+  /** `null` skips sorting entirely — use for $in-batch lookups where order is irrelevant. */
+  sort?: Record<string, 1 | -1> | null;
   limit?: number;
   skip?: number;
 }
@@ -59,7 +60,9 @@ export function mongoCrud<T extends { id?: string }>(model: Model<T>) {
       opts: iGetAllOptions<T> = {},
     ): Promise<tGeneralResponse<T[]>> {
       try {
-        let q = model.find(query).sort((opts.sort ?? { created: -1 }) as any);
+        let q = model.find(query);
+        const sort = opts.sort === null ? null : (opts.sort ?? { created: -1 });
+        if (sort) q = q.sort(sort as any);
         if (typeof opts.skip === "number") q = q.skip(opts.skip);
         if (typeof opts.limit === "number") q = q.limit(opts.limit);
         const docs = await q.lean().exec();

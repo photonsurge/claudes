@@ -102,7 +102,7 @@ export async function enrichAircraft(_job: Job) {
   if (!rows.length) return { enriched: 0, todo: 0 };
 
   const icaos = [...new Set(rows.map((r) => r.externalId.toLowerCase()))];
-  const existing = await db.aircraftMeta.getAll({ id: { $in: icaos } }, { limit: icaos.length });
+  const existing = await db.aircraftMeta.getAll({ id: { $in: icaos } }, { limit: icaos.length, sort: null });
   const known = new Set((existing.data ?? []).map((m) => m.id));
   const todo = icaos.filter((i) => !known.has(i)).slice(0, ENRICH_CAP);
 

@@ -61,6 +61,8 @@ import { getAircraftMetaModel, iAircraftMetaModel } from "./aircraft-meta-model"
 import { getVehicleModel } from "./vehicle-model";
 import { makeVehicleRepo } from "./vehicle-repo";
 import { getLogModel } from "./log-model";
+import { getAirEntryModel, getAirRunModel } from "./air-log-model";
+import { makeAirLogRepo } from "./air-log-repo";
 import { getUserModel } from "./user-model";
 import { makeUserRepo } from "./user-repo";
 import { getBroadcastStateModel, BROADCAST_STATE_ID } from "./broadcast-state-model";
@@ -120,6 +122,7 @@ export function createDb(conn: Connection) {
     aircraftMeta: mongoCrud<iAircraftMetaModel>(getAircraftMetaModel(conn)),
     vehicles: makeVehicleRepo(getVehicleModel(conn)),
     logs: mongoCrud(getLogModel(conn)),
+    airLog: makeAirLogRepo(getAirRunModel(conn), getAirEntryModel(conn)),
     users: makeUserRepo(getUserModel(conn)),
     broadcastState,
     directorConfig,

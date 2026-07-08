@@ -12,7 +12,7 @@ import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake } from "../../lib/tracks/types";
 import { alertSummary } from "../../lib/broadcast";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { KIND_COLOR, KIND_LABEL } from "./kinds";
 import AreaStatus from "./AreaStatus";
 
@@ -40,8 +40,7 @@ export default function OnAirCard({
         width: 460,
         padding: "16px 20px",
         background: theme.panelBg,
-        border: theme.panelBorder,
-        borderLeft: `4px solid ${color}`,
+        ...accentBorder(theme.panelBorder, `4px solid ${color}`),
         borderRadius: 14,
         boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
         backdropFilter: "blur(8px)",

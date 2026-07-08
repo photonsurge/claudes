@@ -109,7 +109,7 @@ export async function runNotableEnrich(opts: NotableEnrichOpts = {}) {
   // hexdb data enrichAircraft already fetched, rather than calling hexdb again.
   const aircraftCodes = [...new Set(all.filter((n) => n.kind === "aircraft").map((n) => n.code))];
   const metaRes = aircraftCodes.length
-    ? await db.aircraftMeta.getAll({ id: { $in: aircraftCodes } }, { limit: aircraftCodes.length })
+    ? await db.aircraftMeta.getAll({ id: { $in: aircraftCodes } }, { limit: aircraftCodes.length, sort: null })
     : { data: [] as { id: string; type?: string; operator?: string; registration?: string }[] };
   const metaByCode = new Map((metaRes.data ?? []).map((m) => [m.id, m]));
 

@@ -74,3 +74,17 @@ export function getBroadcastTheme(id?: string): BroadcastTheme {
 
 /** The LIVE badge stays broadcast-red regardless of theme accent. */
 export const LIVE_RED = "#ff3b3b";
+
+/**
+ * Panel border with an accent stripe on the left. Spelled out per side because
+ * React forbids mixing the `border` shorthand with `borderLeft` in one style
+ * object (updates to one can clobber the other on rerender).
+ */
+export function accentBorder(base: string, left: string): {
+  borderTop: string;
+  borderRight: string;
+  borderBottom: string;
+  borderLeft: string;
+} {
+  return { borderTop: base, borderRight: base, borderBottom: base, borderLeft: left };
+}

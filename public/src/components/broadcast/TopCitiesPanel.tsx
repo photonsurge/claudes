@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { listCities, formatPopulation, type City } from "../../lib/cities";
 import { useClimateYear } from "../../lib/history-client";
 import { MiniChart, buildClimateRows, usePagedSlides, sparkPoints, toPath, CHART_W, formatReading } from "./PointHistoryPanel";
+import { accentBorder } from "./config";
 
 const TOP_CITY_LIMIT = 8;
 /** Seconds the featured city holds before the slide advances to the next. */
@@ -116,8 +117,7 @@ export default function TopCitiesPanel({
       style={{
         width: 440,
         background: "rgba(8,13,22,0.82)",
-        border: `1px solid ${color}44`,
-        borderLeft: `3px solid ${color}`,
+        ...accentBorder(`1px solid ${color}44`, `3px solid ${color}`),
         borderRadius: 8,
         backdropFilter: "blur(4px)",
         WebkitBackdropFilter: "blur(4px)",

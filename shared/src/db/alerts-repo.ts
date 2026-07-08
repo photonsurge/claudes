@@ -157,6 +157,9 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       }
       const docs = await model
         .find(q)
+        // `raw` is the original feed payload kept for debugging/re-parsing; it can
+        // dwarf the parsed doc and no list() consumer reads it.
+        .select({ raw: 0 })
         .sort({ maxSeverityRank: -1, sent: -1 })
         .limit(opts.limit ?? 0) // 0 = no cap; return all matching alerts
         .lean()

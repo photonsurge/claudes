@@ -51,7 +51,7 @@ export async function GET(req: Request) {
     ]);
     const aircraftCodes = [...new Set(rows.filter((vehicle) => vehicle.kind === "aircraft").map((vehicle) => vehicle.code))];
     const metaResult = aircraftCodes.length
-      ? await db.aircraftMeta.getAll({ id: { $in: aircraftCodes } }, { limit: aircraftCodes.length })
+      ? await db.aircraftMeta.getAll({ id: { $in: aircraftCodes } }, { limit: aircraftCodes.length, sort: null })
       : { data: [] };
     const metaByCode = new Map((metaResult.data ?? []).map((meta) => [meta.id, meta]));
     // Persistent paths can contain thousands of points. The collection endpoint

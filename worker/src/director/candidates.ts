@@ -495,7 +495,7 @@ export async function buildCandidates(
       // same lookup the public aircraft route uses, keyed by lowercase hex.
       const icaos = [...new Set(chosen.map((r) => r.externalId.toLowerCase()))];
       const metaRes = icaos.length
-        ? await db.aircraftMeta.getAll({ id: { $in: icaos } }, { limit: icaos.length })
+        ? await db.aircraftMeta.getAll({ id: { $in: icaos } }, { limit: icaos.length, sort: null })
         : { data: [] };
       const metaById = new Map((metaRes.data ?? []).map((m) => [m.id, m]));
       for (const r of chosen) {

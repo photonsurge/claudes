@@ -29,10 +29,13 @@ export function makeAreaWeatherReportRepo(model: Model<iAreaWeatherReportModel>)
 
     /** Newest report per place, across every place of `placeKind` — one Mongo round trip for the admin table. */
     async latestByKind(placeKind: AreaPlaceKind): Promise<iAreaWeatherReportModel[]> {
+      // Sort order mirrors area_weather_place_gen_ix so the $group/$first turns
+      // into a DISTINCT_SCAN: one index seek per place instead of sorting the
+      // whole ever-growing history on every poll.
       const docs = await model
         .aggregate([
           { $match: { placeKind } },
-          { $sort: { generatedAt: -1 } },
+          { $sort: { placeId: 1, generatedAt: -1 } },
           { $group: { _id: "$placeId", doc: { $first: "$$ROOT" } } },
           { $replaceRoot: { newRoot: "$doc" } },
         ])

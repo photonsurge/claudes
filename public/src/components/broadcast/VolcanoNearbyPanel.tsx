@@ -18,6 +18,7 @@ import { SEVERITY_LABELS, SEVERITY_COLORS } from "@photonsurge/shared/alerts/sev
 import { quakeMagnitudeLabel, quakeMagnitudeColor } from "@photonsurge/shared/seismic";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { nearby, formatKm, bearingLabel } from "../../lib/geo";
+import { accentBorder } from "./config";
 
 const CITY_RADIUS_KM = 500;
 const QUAKE_RADIUS_KM = 500;
@@ -98,8 +99,7 @@ export default function VolcanoNearbyPanel({
       style={{
         width: 380,
         background: "rgba(8,13,22,0.82)",
-        border: `1px solid ${color}44`,
-        borderLeft: `3px solid ${color}`,
+        ...accentBorder(`1px solid ${color}44`, `3px solid ${color}`),
         borderRadius: 8,
         backdropFilter: "blur(4px)",
         WebkitBackdropFilter: "blur(4px)",

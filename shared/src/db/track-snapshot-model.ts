@@ -50,7 +50,9 @@ export interface iTrackSnapshotModel extends iTrackSnapshot {
 
 const TrackSnapshotSchema = new mongoose.Schema<iTrackSnapshotModel>(
   {
-    id: { type: String, required: true, unique: true, default: () => uuidv4() },
+    // No unique index: snapshots are insert-only and never looked up by id — a
+    // unique index on a 10M+ row collection is pure write amplification.
+    id: { type: String, required: true, default: () => uuidv4() },
     kind: { type: String, required: true, enum: ["aircraft", "ship"] },
     externalId: { type: String, required: true },
     name: { type: String, required: false },
@@ -73,8 +75,10 @@ const TrackSnapshotSchema = new mongoose.Schema<iTrackSnapshotModel>(
 );
 
 // Replay: pick frames (batchAt) in a time window, then all rows of a frame.
+// No 2dsphere on `loc`: bbox filters ($geoWithin) apply after the frame is
+// already narrowed by this index, so a geo index never gets picked — it only
+// taxed every insert on the biggest collection in the DB.
 TrackSnapshotSchema.index({ kind: 1, batchAt: 1 }, { name: "snap_kind_batch_ix" });
-TrackSnapshotSchema.index({ loc: "2dsphere" }, { name: "snap_geo_ix", sparse: true });
 // Auto-expire old history.
 TrackSnapshotSchema.index({ batchAt: 1 }, { name: "snap_ttl_ix", expireAfterSeconds: TTL_SEC });
 

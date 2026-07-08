@@ -15,6 +15,7 @@
  * broadcast stage; pointer-inert. Returns null for any segment without trackInfo.
  */
 import type { Segment } from "@photonsurge/shared/director";
+import { accentBorder } from "./config";
 
 /** Detail rows that change moment-to-moment — worth showing live under the photo. */
 const LIVE_LABELS = new Set(["Altitude", "Heading", "Speed", "Course"]);
@@ -53,8 +54,7 @@ export default function TrackInfoPanel({
       style={{
         width: 380,
         background: "rgba(8,13,22,0.82)",
-        border: `1px solid ${color}44`,
-        borderLeft: `3px solid ${color}`,
+        ...accentBorder(`1px solid ${color}44`, `3px solid ${color}`),
         borderRadius: 8,
         backdropFilter: "blur(4px)",
         WebkitBackdropFilter: "blur(4px)",

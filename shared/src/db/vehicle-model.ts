@@ -103,8 +103,10 @@ const PointSchema = new mongoose.Schema<iVehiclePoint>(
 const VehicleSchema = new mongoose.Schema<iVehicleModel>(
   {
     id: { type: String, required: true, unique: true },
-    kind: { type: String, required: true, enum: ["aircraft", "ship"], index: true },
-    code: { type: String, required: true, index: true },
+    // kind is covered by vehicle_kind_lastseen_ix below; code lookups go through
+    // the composite `id` (`kind:code`), so neither needs its own index.
+    kind: { type: String, required: true, enum: ["aircraft", "ship"] },
+    code: { type: String, required: true },
 
     name: { type: String, required: false },
     country: { type: String, required: false },
@@ -145,6 +147,8 @@ const VehicleSchema = new mongoose.Schema<iVehicleModel>(
 
 // Sort/browse the registry by recency; the notable index above filters the catalog.
 VehicleSchema.index({ lastSeen: -1 }, { name: "vehicle_lastseen_ix" });
+// Admin tables: list one kind, newest-sighting first — served entirely by the index.
+VehicleSchema.index({ kind: 1, lastSeen: -1 }, { name: "vehicle_kind_lastseen_ix" });
 
 export const getVehicleModel = (conn: Connection) =>
   getModel<iVehicleModel>(conn, "Vehicle", VehicleSchema);

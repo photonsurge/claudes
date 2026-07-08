@@ -15,6 +15,7 @@
  * should check that before alternating slides at all.
  */
 import type { TrackInfo } from "@photonsurge/shared/director";
+import { accentBorder } from "./config";
 
 const USGS_COLOR: Record<string, string> = {
   RED: "#ef4444",
@@ -36,8 +37,7 @@ export default function VolcanoFactsPanel({ info, color = "#38bdf8" }: { info: T
       style={{
         width: 380,
         background: "rgba(8,13,22,0.82)",
-        border: `1px solid ${color}44`,
-        borderLeft: `3px solid ${color}`,
+        ...accentBorder(`1px solid ${color}44`, `3px solid ${color}`),
         borderRadius: 8,
         backdropFilter: "blur(4px)",
         WebkitBackdropFilter: "blur(4px)",

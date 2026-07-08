@@ -1,10 +1,10 @@
 "use client";
 
-/** The named-location spotlights two kinds rotate through: countries (its
- *  own kind) and sea points (alongside the ocean kind's global spin — see
- *  shared/director-sea-points). */
+/** The country kind's favourites picker. (The ocean kind has no equivalent
+ *  here — its sea-point catalog is enabled/disabled directly at
+ *  /admin/sea-points, not favourited per scene; see
+ *  worker/src/director/candidates.ts.) */
 import { COUNTRY_SHOTS } from "@photonsurge/shared/director-countries";
-import { SEA_POINTS } from "@photonsurge/shared/director-sea-points";
 import type { DirectorConfig } from "@photonsurge/shared/director";
 import CheckboxGrid from "./CheckboxGrid";
 import InfoTip from "./InfoTip";
@@ -29,22 +29,6 @@ export default function DirectorSpotlights({
             selected={config.countries}
             onToggle={(id, on) =>
               update({ countries: on ? config.countries.filter((x) => x !== id) : [...config.countries, id] })
-            }
-          />
-        </div>
-      ) : null}
-
-      {config.kinds.ocean ? (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4, display: "flex", alignItems: "center" }}>
-            Favourite sea points ({config.seaPoints.length}):
-            <InfoTip text="Named locations the ocean kind visits alongside its global spin." />
-          </div>
-          <CheckboxGrid
-            items={SEA_POINTS.map((p) => ({ id: p.id, label: p.name }))}
-            selected={config.seaPoints}
-            onToggle={(id, on) =>
-              update({ seaPoints: on ? config.seaPoints.filter((x) => x !== id) : [...config.seaPoints, id] })
             }
           />
         </div>

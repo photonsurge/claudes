@@ -18,6 +18,7 @@ import type { Cam } from "../../lib/cams/types";
 import { nearby, formatKm } from "../../lib/geo";
 import { useClimateYear } from "../../lib/history-client";
 import { MiniChart, buildClimateRows, usePagedSlides, sparkPoints, toPath, CHART_W, formatReading } from "./PointHistoryPanel";
+import { accentBorder } from "./config";
 
 const CITY_RADIUS_KM = 500;
 const CAM_RADIUS_KM = 400;
@@ -139,8 +140,7 @@ export default function EventNearbyPanel({
       style={{
         width: 440,
         background: "rgba(8,13,22,0.82)",
-        border: `1px solid ${color}44`,
-        borderLeft: `3px solid ${color}`,
+        ...accentBorder(`1px solid ${color}44`, `3px solid ${color}`),
         borderRadius: 8,
         backdropFilter: "blur(4px)",
         WebkitBackdropFilter: "blur(4px)",

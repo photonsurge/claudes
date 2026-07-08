@@ -41,7 +41,7 @@ export async function GET(req: Request) {
     // Join the cached hexdb metadata (registration/type/operator) by ICAO24.
     const icaos = [...new Set(rows.map((r) => r.externalId.toLowerCase()))];
     const metaRes = icaos.length
-      ? await db.aircraftMeta.getAll({ id: { $in: icaos } }, { limit: icaos.length })
+      ? await db.aircraftMeta.getAll({ id: { $in: icaos } }, { limit: icaos.length, sort: null })
       : { data: [] };
     const metaById = new Map((metaRes.data ?? []).map((m) => [m.id, m]));
 

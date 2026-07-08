@@ -13,6 +13,7 @@
 import type { Segment } from "@photonsurge/shared/director";
 import { STAGE_W, STAGE_H } from "./useStageScale";
 import { KIND_COLOR, KIND_LABEL } from "./kinds";
+import { accentBorder } from "./config";
 
 const W = 660;
 const H = 440;
@@ -92,8 +93,7 @@ export default function EventOverlay({
           minWidth: 250,
           padding: "9px 13px",
           background: "rgba(8,13,22,0.78)",
-          border: `1px solid ${color}44`,
-          borderLeft: `3px solid ${color}`,
+          ...accentBorder(`1px solid ${color}44`, `3px solid ${color}`),
           borderRadius: 6,
           backdropFilter: "blur(4px)",
           WebkitBackdropFilter: "blur(4px)",
