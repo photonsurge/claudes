@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
 import { getCity, type City } from "../../lib/cities";
 import { HISTORY_WINDOW_HOURS, useClimateYear, usePointHistory } from "../../lib/history-client";
+import { usePointForecastSteps } from "../../lib/forecast-client";
 import GlobeView from "../GlobeView";
 import { MiniChart, buildClimateRows } from "../broadcast/PointHistoryPanel";
+import ForecastTimeline from "../forecast/ForecastTimeline";
 import { cityEnrichmentStatus } from "./CityEnrichmentCard";
 import CityUpcomingForecast from "./CityUpcomingForecast";
 
@@ -57,6 +59,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <dd style={{ margin: "4px 0 0", color: "#e2e8f0", fontSize: 14, overflowWrap: "anywhere" }}>{children ?? "—"}</dd>
     </div>
   );
+}
+
+function CityForecastTimeline({ city }: { city: City }) {
+  const { steps, loading } = usePointForecastSteps([city.lng, city.lat]);
+  return <ForecastTimeline steps={steps} loading={loading} title="72-hour timeline" />;
 }
 
 function CityWeatherHistory({ city }: { city: City }) {
@@ -189,6 +196,7 @@ export default function CityDetail({ id }: { id: string }) {
         </div>
 
         <CityUpcomingForecast city={city} />
+        <CityForecastTimeline city={city} />
 
         <div style={{ display: "grid", gridTemplateColumns: (city.wikiPhoto || city.wikiThumb) ? "minmax(260px, .8fr) minmax(0, 1.2fr)" : "1fr", gap: 22, marginTop: 22 }}>
           {(city.wikiPhoto || city.wikiThumb) && (

@@ -4,8 +4,10 @@ import {
   precipChanceFromSteps,
   deriveCondition,
   buildForecastDays,
+  buildForecastSteps,
   buildAreaForecastDays,
   localDayOffsetHours,
+  humanDayLabel,
 } from "./weather-forecast";
 import type { iWeatherForecastFrameModel } from "@photonsurge/shared/db/weather-forecast-frame-model";
 
@@ -148,6 +150,61 @@ describe("buildForecastDays", () => {
     const frame = frameOf();
     const out = await buildForecastDays({ temp: [frame] }, 50, 120);
     expect(out.days).toEqual([]);
+  });
+});
+
+describe("humanDayLabel", () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-07-06T00:00:00Z")); // a Monday
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it("labels today/tomorrow by name and later days by weekday", () => {
+    expect(humanDayLabel("2026-07-06", 0)).toBe("Today");
+    expect(humanDayLabel("2026-07-07", 0)).toBe("Tomorrow");
+    expect(humanDayLabel("2026-07-08", 0)).toBe("Wednesday");
+    expect(humanDayLabel("2026-07-09", 0)).toBe("Thursday");
+  });
+
+  it("never returns a +N label", () => {
+    expect(humanDayLabel("2026-07-08", 0)).not.toMatch(/\+/);
+  });
+});
+
+describe("buildForecastSteps", () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-07-06T00:00:00Z"));
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it("keeps 3-hourly steps with per-step temp, labels, condition and hazards", async () => {
+    const s0 = frameOf({ validTime: new Date("2026-07-06T00:00:00Z"), data: scalarPng(2, 2, 153) }); // 0°C
+    const s3 = frameOf({ validTime: new Date("2026-07-06T03:00:00Z"), data: scalarPng(2, 2, 255) }); // 60°C
+    const out = await buildForecastSteps({ temp: [s0, s3] }, 5, 5);
+
+    expect(out.steps).toHaveLength(2);
+    expect(out.steps.map((s) => s.hourLabel)).toEqual(["00:00", "03:00"]);
+    expect(out.steps.map((s) => s.dayLabel)).toEqual(["Today", "Today"]);
+    expect(out.steps[0].temp).toBeCloseTo(0, 5);
+    expect(out.steps[1].temp).toBeCloseTo(60, 5);
+    expect(out.steps[1].hazards.some((h) => h.hazard === "heat")).toBe(true);
+    expect(out.steps[1].condition).toBe("sunny");
+  });
+
+  it("applies the longitude local-hour offset to step labels", async () => {
+    const frame = frameOf({
+      validTime: new Date("2026-07-06T00:00:00Z"),
+      bounds: [40, 0, 50, 10], // cover lng 45
+      data: scalarPng(2, 2, 153),
+    });
+    const out = await buildForecastSteps({ temp: [frame] }, 5, 45); // round(45/15) = +3h offset
+    expect(out.steps[0].hourLabel).toBe("03:00");
+  });
+
+  it("returns no steps when nothing covers the point", async () => {
+    const frame = frameOf();
+    const out = await buildForecastSteps({ temp: [frame] }, 50, 120);
+    expect(out.steps).toEqual([]);
   });
 });
 

@@ -154,7 +154,7 @@ export default function BroadcastFrame({
   const bottomTickerTitle = summaryOnAir ? "GLOBAL ROUND-UP" : "GLOBAL ALERT TICKER";
   const bottomTickerItems = summaryOnAir ? [summaryOnAir.narrative] : ticker;
   const eventTargeted = onAirSegment ? isTargetedEvent(onAirSegment.kind) : false;
-  // Global spins (intro/ocean/orbital) frame an arbitrary point, not a real
+  // Global spins (intro/global/ocean/orbital) frame an arbitrary point, not a real
   // ground location — the weather/climate history panel has nothing to sample.
   const segmentHasLocation = onAirSegment ? hasRealLocation(onAirSegment.kind) : true;
   // A notable aircraft/ship carries a rich Track Info card on the segment; when

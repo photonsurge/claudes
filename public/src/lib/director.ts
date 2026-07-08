@@ -37,7 +37,7 @@ import { useSocket } from "./socket-provider";
  * spinEpoch + a fixed period, so /control and /watch switch in lockstep — the same
  * deterministic trick as the spin/push-in, with no extra socket traffic):
  *
- *  - GLOBAL world spins (intro/ocean) tour full "MAP TYPES" — a scalar field OR an
+ *  - GLOBAL world spins (intro/global/ocean) tour full "MAP TYPES" — a scalar field OR an
  *    overlay look (aurora, live satellite imagery) — and relabel the on-air card
  *    per type. The tour tables live in shared/director-rois (globalMapTour), and
  *    each type is gated on live data being available so a spin never lands blank.
@@ -164,7 +164,7 @@ function cutSteps(
     // Global spins ARE the map type, so they relabel the on-air card per look. An
     // event shot (quake) keeps its headline card (magnitude/place) and only swaps
     // the map underneath — so don't attach a per-type label for those.
-    const relabel = cut.kind === "intro" || cut.kind === "ocean";
+    const relabel = cut.kind === "intro" || cut.kind === "global" || cut.kind === "ocean";
     const steps = tour
       .filter((t) => needMet(t.needs, avail))
       .map((t): MapStep => ({

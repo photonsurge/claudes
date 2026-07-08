@@ -1,9 +1,16 @@
 "use client";
 
 import type { City } from "../../lib/cities";
+import { usePointForecastSteps } from "../../lib/forecast-client";
+import ForecastTimeline from "../forecast/ForecastTimeline";
 import CityUpcomingForecast from "./CityUpcomingForecast";
 
 const muted = "#8b95a7";
+
+function CityForecastTimelineSlim({ city }: { city: Pick<City, "lat" | "lng"> }) {
+  const { steps, loading } = usePointForecastSteps([city.lng, city.lat]);
+  return <ForecastTimeline steps={steps} loading={loading} title="72-hour timeline" slim />;
+}
 
 function formatDate(value?: Date): string {
   if (!value) return "Not run";
@@ -34,6 +41,7 @@ export default function CityEnrichmentCard({ city, onClose }: { city: City; onCl
       </div>
 
       <CityUpcomingForecast city={city} compact />
+      <CityForecastTimelineSlim city={city} />
 
       <div style={{ display: "grid", gridTemplateColumns: (city.wikiPhoto || city.wikiThumb) ? "110px minmax(0, 1fr)" : "1fr", gap: 12, marginTop: 12 }}>
         {(city.wikiPhoto || city.wikiThumb) && (

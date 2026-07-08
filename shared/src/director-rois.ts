@@ -90,10 +90,14 @@ export interface GlobalMapType {
 }
 
 /**
- * The intro world spin's tour: the core GFS fields plus the new "map types"
- * (aurora, live satellite imagery). Opens on temperature (index 0) so the
- * establishing shot always leads on the hero field, then works outward. No ocean
- * fields here — those belong to the ocean spin's own tour below.
+ * The world spin's tour: the core GFS fields plus the new "map types" (aurora,
+ * live satellite imagery). Opens on temperature (index 0) so the establishing
+ * shot always leads on the hero field, then works outward. No ocean fields here —
+ * those belong to the ocean spin's own tour below.
+ *
+ * Shared by BOTH the `intro` opener and the recurring `global` spin (see
+ * globalMapTour) — they differ only in scheduling, not look. The name stays
+ * INTRO_* for continuity with the opener that introduced it.
  */
 export const INTRO_MAP_TYPES: GlobalMapType[] = [
   {
@@ -237,7 +241,7 @@ export const QUAKE_MAP_TYPES: GlobalMapType[] = [
 /**
  * The map-type tour for a segment kind, or null for kinds that don't tour (they
  * either hold one field or run a curated per-event plan). Global spins (intro/
- * ocean) tour their world looks; the `quake` event shot tours terrain looks while
+ * global/ocean) tour their world looks; the `quake` event shot tours terrain looks while
  * it holds on the epicentre. Shared by the worker (opening field) and the client
  * (the within-shot rotation + relabel gating).
  *
@@ -247,8 +251,16 @@ export const QUAKE_MAP_TYPES: GlobalMapType[] = [
  * full catalog rather than airing a dead tour.
  */
 export function globalMapTour(kind: SegmentKind, enabledIds?: string[]): GlobalMapType[] | null {
+  // `intro` (the one-time opener) and `global` (the recurring world spin) share
+  // the same world map-type tour — the only difference is scheduling, not look.
   const full =
-    kind === "intro" ? INTRO_MAP_TYPES : kind === "ocean" ? OCEAN_MAP_TYPES : kind === "quake" ? QUAKE_MAP_TYPES : null;
+    kind === "intro" || kind === "global"
+      ? INTRO_MAP_TYPES
+      : kind === "ocean"
+        ? OCEAN_MAP_TYPES
+        : kind === "quake"
+          ? QUAKE_MAP_TYPES
+          : null;
   if (!full) return null;
   if (!enabledIds || enabledIds.length === 0) return full;
   const filtered = full.filter((t) => enabledIds.includes(t.id));
@@ -384,8 +396,8 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
   // Per-shot camera "mode" so the globe is always alive but never wanders off a
   // subject. Two deterministic motions (in phase across /control and /watch via
   // spinEpoch):
-  //   • GLOBAL shots (intro/ocean) SPIN — autoSpin rotates the whole world, which
-  //     only reads right on a full-globe view.
+  //   • GLOBAL shots (intro/global/ocean) SPIN — autoSpin rotates the whole world,
+  //     which only reads right on a full-globe view.
   //   • EVERYTHING ELSE HOLDS on its subject (no spin — autoSpin advances the
   //     camera longitude, which would drift a framed region off-screen) and
   //     instead breathes with a slow zoomDrift push-in. Regional tours/weather
@@ -398,6 +410,19 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     showPressure: true,
     // Cities + labels on every mode; the progressive zoom reveal keeps a
     // whole-globe spin to just the major cities so it never turns to text soup.
+    showCities: true,
+    autoSpin: true,
+    spinSpeed: 3,
+    zoomDrift: 0,
+  },
+  // The recurring world spin — identical layer stack to the intro opener (both
+  // tour INTRO_MAP_TYPES); the only difference is scheduling (intro airs once at
+  // session start, global recurs as ordinary global filler).
+  global: {
+    ...LAYERS_OFF,
+    activeVariable: "temp",
+    showWind: true,
+    showPressure: true,
     showCities: true,
     autoSpin: true,
     spinSpeed: 3,

@@ -23,7 +23,8 @@ import { QUAKE_MAGNITUDE_BANDS } from "@photonsurge/shared/seismic";
 import InfoTip from "./InfoTip";
 
 export const KIND_LABEL: Record<SegmentKind, string> = {
-  intro: "Intro spin",
+  intro: "Intro spin (opener)",
+  global: "Global spin",
   ocean: "Ocean (world)",
   orbital: "Orbital (satellites)",
   tour: "Region tour",

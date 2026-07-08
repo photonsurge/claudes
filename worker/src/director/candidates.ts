@@ -1,8 +1,9 @@
 /**
  * Build the scored candidate pool the director picks from each cut. Live events
  * (earthquakes, severe-weather alerts, notable flights/ships) come from the same
- * Mongo caches the public overlays read; curated regions (ROIs + a global intro)
- * are always added as filler so the channel never runs out of somewhere to look.
+ * Mongo caches the public overlays read; curated regions (ROIs + the intro opener
+ * and recurring global spin) are always added as filler so the channel never runs
+ * out of somewhere to look.
  *
  * Pure-ish: takes a DB facade + config, returns Candidates. Scoring lives here
  * so "what's newsworthy" is one readable place to tune.
@@ -154,13 +155,26 @@ function notableTrackInfo(
   };
 }
 
-/** Curated filler: one global intro spin + a rotation of regions of interest. */
+/**
+ * Curated filler: the one-time intro opener + the recurring global spin (same
+ * world map-type tour) + a rotation of regions of interest.
+ */
 function fillerCandidates(cfg: DirectorConfig): Candidate[] {
   const out: Candidate[] = [];
   if (cfg.kinds.intro) {
+    // The session opener — selectNext only airs it on the very first cut, then
+    // retires it (see director-select). Still built every tick so that cut has it.
     out.push({
       score: 6,
       segment: make("intro", "global", "Global Weather", undefined, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, kindHoldMs(cfg, "intro"), cfg),
+    });
+  }
+  if (cfg.kinds.global) {
+    // The recurring world spin — identical look to the intro opener (it tours the
+    // same INTRO_MAP_TYPES client-side), just aired as ordinary global filler.
+    out.push({
+      score: 6,
+      segment: make("global", "world", "Global Weather", undefined, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, kindHoldMs(cfg, "global"), cfg),
     });
   }
   if (cfg.kinds.ocean) {

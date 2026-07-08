@@ -20,12 +20,29 @@ const VARIABLES: { variable: string; units: string }[] = [
  *  covers a slow ingest cycle without ever reporting genuinely stale data. */
 const FRAME_LOOKBACK_MS = 6 * 3_600_000;
 
-/** The freshest archived frame (highest validTime) per tracked variable, decoded and ready to sample. */
+/** True when a frame's bounds span the whole globe (~360° longitude) — same
+ *  test `areaStatsFrame`/`latLngToPixel` use internally (shared/src/weather/sample.ts). */
+function isGlobalBounds(bounds: number[], res: number): boolean {
+  return Math.abs(bounds[2] - bounds[0] - 360) < res;
+}
+
+/**
+ * The freshest GLOBALLY-COVERING frame per tracked variable, decoded and
+ * ready to sample. `weatherFrames` holds many models per variable — a global
+ * base (gfs) alongside high-res regional nests (icon-d2, hrrr, metno-nordic,
+ * …) for the map layers. Picking "whichever model has the newest validTime"
+ * regardless of coverage would silently pick a regional nest whenever it
+ * happens to be the freshest run — every country outside that nest's bounds
+ * then gets skipped for "no data", not an error. Every country/region needs
+ * a number, so this job only ever considers global-coverage frames.
+ */
 async function latestVariableFrames(db: AppDb): Promise<VariableFrame[]> {
   const from = new Date(Date.now() - FRAME_LOOKBACK_MS);
   const out: VariableFrame[] = [];
   for (const v of VARIABLES) {
-    const series = await db.weatherFrames.getSeries({ variable: v.variable, from });
+    const series = (await db.weatherFrames.getSeries({ variable: v.variable, from })).filter((f) =>
+      isGlobalBounds(f.bounds, f.grid.res),
+    );
     if (!series.length) continue;
     const newest = series.reduce((a, b) => (b.validTime > a.validTime ? b : a));
     out.push({ variable: v.variable, units: v.units, frame: await decodeFrame(newest) });

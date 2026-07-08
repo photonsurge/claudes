@@ -24,6 +24,7 @@ import { AuroraBed } from "../../lib/audio/engine";
  */
 export const KIND_SEVERITY: Partial<Record<SegmentKind, number>> = {
   intro: 0.05,
+  global: 0.05,
   ocean: 0.1,
   orbital: 0.25,
   tour: 0.3,

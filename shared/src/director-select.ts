@@ -15,10 +15,11 @@
  *     A cooldown also caps priority to at most every OTHER cut, so a
  *     continuous global stream of genuinely-new alerts can't monopolize every
  *     single cut either. See `selectPriority`.
- *  1. Opener — the very first cut of a session is the intro spin. It can also
- *     recur later as ordinary global filler: the intro now TOURS map types as it
- *     spins (temp → cloud → aurora → satellite), so it's no longer the static
- *     shot that had to be shown once and retired.
+ *  1. Opener — the very first cut of a session is the `intro` spin, then the
+ *     intro is retired for the rest of the session (it never recurs in
+ *     rotation). The ongoing world spin is its own kind, `global`, which TOURS
+ *     the same map types (temp → cloud → aurora → satellite) and airs as
+ *     ordinary recurring global filler like any other kind.
  *  2. Random kind — each subsequent cut picks a KIND at random from those present
  *     in the pool, avoiding an immediate repeat of the just-aired kind.
  *  3. Fair rotation — within that kind, pick at random among the LEAST-aired
@@ -46,7 +47,7 @@ export interface Candidate {
 
 /** World-view kinds share a single camera center, so they're exempt from the
  *  geographic cooldown (otherwise airing one would block the others). */
-const GLOBAL_KINDS = new Set<SegmentKind>(["intro", "ocean", "orbital"]);
+const GLOBAL_KINDS = new Set<SegmentKind>(["intro", "global", "ocean", "orbital"]);
 
 /** Suppress a located shot within this many degrees of a recently-aired one. */
 export const DEFAULT_GEO_COOLDOWN_DEG = 8;
@@ -151,10 +152,13 @@ export function selectNext(pool: Candidate[], opts: SelectOpts): Segment | null 
     if (intro) return intro.segment;
   }
 
-  // After the opener the intro is a normal candidate — it tours map types now, so
-  // it earns a place in the recurring rotation. The "avoid an immediate kind
-  // repeat" rule below still keeps it from airing twice back-to-back.
-  const eligible = pool.slice();
+  // After the opener the intro is retired for the session — it's a one-time
+  // establishing shot, not recurring filler. The recurring world spin is the
+  // `global` kind (identical tour), which stays eligible below. Guard against a
+  // pool that somehow holds only the intro (every other kind disabled) so we
+  // still return a segment rather than nothing.
+  let eligible = pool.filter((c) => c.segment.kind !== "intro");
+  if (eligible.length === 0) eligible = pool.slice();
 
   // 2. Pick a KIND at random, avoiding an immediate repeat where possible.
   const lastId = opts.history[opts.history.length - 1];

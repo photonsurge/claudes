@@ -32,6 +32,8 @@ describe("quakeMapPlan", () => {
 describe("globalMapTour", () => {
   it("tours the intro spin (opening on temperature) and the ocean spin (opening on SST)", () => {
     expect(globalMapTour("intro")).toBe(INTRO_MAP_TYPES);
+    // The recurring global spin shares the intro opener's exact tour.
+    expect(globalMapTour("global")).toBe(INTRO_MAP_TYPES);
     expect(globalMapTour("ocean")).toBe(OCEAN_MAP_TYPES);
     expect(INTRO_MAP_TYPES[0].id).toBe("temp"); // hero field leads
     expect(OCEAN_MAP_TYPES[0].id).toBe("sst");
@@ -90,6 +92,8 @@ describe("globalMapTour", () => {
     // Every non-aurora/satimg step relies on the preset base resetting these.
     expect(PRESETS.intro.showAurora).toBe(false);
     expect(PRESETS.intro.showSatImg).toBe(false);
+    expect(PRESETS.global.showAurora).toBe(false);
+    expect(PRESETS.global.showSatImg).toBe(false);
     expect(PRESETS.ocean.showAurora).toBe(false);
   });
 });

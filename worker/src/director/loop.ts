@@ -71,7 +71,7 @@ interface SceneRunner {
 
 /** Kinds that share the world-view center — excluded from the geo cooldown.
  *  `ad` has no geography (it covers the globe), so it's exempt too. */
-const GLOBAL_KINDS = new Set<SegmentKind>(["intro", "ocean", "orbital", "ad"]);
+const GLOBAL_KINDS = new Set<SegmentKind>(["intro", "global", "ocean", "orbital", "ad"]);
 /** How many recent located centers to remember for the geo cooldown. */
 const GEO_RECENT_CAP = 8;
 /** Cap the per-segment tally map so a 24/7 run can't grow it unbounded. */

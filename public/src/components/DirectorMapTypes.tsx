@@ -9,7 +9,8 @@ import type { DirectorConfig, SegmentKind } from "@photonsurge/shared/director";
 import InfoTip from "./InfoTip";
 
 const TOURED_KINDS: { kind: SegmentKind; label: string; catalog: GlobalMapType[] }[] = [
-  { kind: "intro", label: "Global spin (intro)", catalog: INTRO_MAP_TYPES },
+  { kind: "intro", label: "Intro spin (opener)", catalog: INTRO_MAP_TYPES },
+  { kind: "global", label: "Global spin", catalog: INTRO_MAP_TYPES },
   { kind: "ocean", label: "Ocean spin", catalog: OCEAN_MAP_TYPES },
   { kind: "quake", label: "Earthquake terrain looks", catalog: QUAKE_MAP_TYPES },
 ];

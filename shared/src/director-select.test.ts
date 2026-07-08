@@ -21,20 +21,27 @@ describe("selectNext", () => {
   });
 
   it("opens the session on the intro spin", () => {
-    const pool = [cand("tour:a", "tour"), cand("intro:global", "intro")];
+    const pool = [cand("tour:a", "tour"), cand("intro:global", "intro"), cand("global:world", "global")];
     expect(selectNext(pool, { history: [], isFirst: true })?.kind).toBe("intro");
   });
 
-  it("doesn't re-air the intro immediately after itself (avoid a kind repeat)", () => {
-    const pool = [cand("intro:global", "intro"), cand("tour:a", "tour")];
-    // Last shot was the intro → the avoid-immediate-repeat rule steers to the tour.
-    expect(selectNext(pool, { history: ["intro:global"], rng: () => 0 })?.kind).toBe("tour");
+  it("retires the intro after the opener — it never recurs in rotation", () => {
+    const pool = [cand("intro:global", "intro"), cand("global:world", "global"), cand("tour:a", "tour")];
+    // On any cut but the first, the intro is excluded from the pool entirely (it's
+    // a one-time opener). Sweep the rng: only the global spin / tour ever come up.
+    const seen = new Set<string>();
+    for (let i = 0; i < 20; i++) {
+      const kind = selectNext(pool, { history: ["quake:z"], rng: () => i / 20 })?.kind;
+      if (kind) seen.add(kind);
+    }
+    expect(seen.has("intro")).toBe(false);
+    expect(seen.has("global")).toBe(true);
   });
 
-  it("re-airs the intro later as a recurring global spin (it tours map types now)", () => {
-    const pool = [cand("intro:global", "intro"), cand("tour:a", "tour")];
-    // Last shot was a tour, so the intro is eligible again; rng→0 picks the first kind.
-    expect(selectNext(pool, { history: ["tour:a"], rng: () => 0 })?.kind).toBe("intro");
+  it("airs the recurring global spin as ordinary filler (the intro's old recurring role)", () => {
+    const pool = [cand("global:world", "global"), cand("tour:a", "tour")];
+    // Last shot was a tour, so the global spin is eligible; rng→0 picks the first kind.
+    expect(selectNext(pool, { history: ["tour:a"], rng: () => 0 })?.kind).toBe("global");
   });
 
   it("cycles the least-aired item of a kind before repeating", () => {

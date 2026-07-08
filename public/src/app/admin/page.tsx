@@ -11,77 +11,102 @@ interface AdminLink {
   title: string;
   desc: string;
   ready: boolean;
+  group: AdminGroup;
 }
 
-const LINKS: AdminLink[] = [
-  { href: "/admin/alerts", title: "Weather alerts", desc: "Ingested CAP alerts — filter by severity / active.", ready: true },
-  { href: "/admin/summaries", title: "Round-ups", desc: "Scheduled global weather-event summaries + narrative.", ready: true },
-  { href: "/cities", title: "Cities", desc: "City markers, Wikipedia enrichment results and map preview.", ready: true },
-  { href: "/control", title: "Operator console", desc: "Live broadcast control — variables, basemap, camera.", ready: true },
-  { href: "/watch", title: "Watch (broadcast)", desc: "The output view that goes to stream.", ready: true },
-  { href: "/admin/scenes", title: "Scenes", desc: "Named /watch/:id globes for OBS sources / overlay windows.", ready: true },
-  { href: "/admin/access", title: "Access", desc: "Tokened OBS/YouTube URLs per scene — copy, rotate.", ready: true },
-  { href: "/admin/tracks", title: "Live tracks", desc: "Satellites (SGP4), aircraft (ADS-B), ships (AIS).", ready: true },
-  { href: "/admin/vehicles", title: "Vehicles in DB", desc: "Persistent aircraft and ship registry, including enrichment results.", ready: true },
-  { href: "/admin/cams", title: "Webcams", desc: "Catalogued live cams — status, location, preview.", ready: true },
-  { href: "/admin/volcanoes", title: "Volcanoes", desc: "Active volcanoes (NASA EONET) — status, Wikipedia enrichment.", ready: true },
-  { href: "/admin/sea-points", title: "Sea points", desc: "Ocean-monitoring catalog the Director's ocean kind rotates through.", ready: true },
-  { href: "/admin/countries", title: "Countries", desc: "Full country catalog — boundaries, enrichment, area-weather.", ready: true },
-  { href: "/admin/regions", title: "Regions", desc: "Oceans, continents, EU blocs, UK nations — enrichment, area-weather.", ready: true },
-  { href: "/admin/ads", title: "Ads", desc: "Sponsor images/video shown on the broadcast.", ready: true },
-  { href: "/admin/jobs", title: "Worker jobs", desc: "Trigger ingest/snapshot jobs; view the queue.", ready: true },
-  { href: "/admin/queue", title: "Queue", desc: "BullMQ dashboard — browse/retry jobs, schedules, pause.", ready: true },
-  { href: "/admin/logs", title: "Back log", desc: "Saved log of worker/job activity.", ready: true },
-  { href: "/admin/users", title: "Users", desc: "Admin accounts for /admin and /control.", ready: true },
-  { href: "/admin/db", title: "Database", desc: "Mongo collection sizes, doc counts, storage summary.", ready: true },
+type AdminGroup = "Broadcast" | "Signals" | "Catalogs" | "Operations";
+
+const GROUPS: AdminGroup[] = ["Broadcast", "Signals", "Catalogs", "Operations"];
+
+export const ADMIN_LINKS: AdminLink[] = [
+  { group: "Broadcast", href: "/control", title: "Operator console", desc: "Live broadcast control — variables, basemap, camera.", ready: true },
+  { group: "Broadcast", href: "/watch", title: "Watch", desc: "The output view that goes to stream.", ready: true },
+  { group: "Broadcast", href: "/admin/scenes", title: "Scenes", desc: "Named /watch/:id globes for OBS sources and overlays.", ready: true },
+  { group: "Broadcast", href: "/admin/access", title: "Access", desc: "Tokened OBS/YouTube URLs per scene — copy, rotate.", ready: true },
+  { group: "Broadcast", href: "/admin/ads", title: "Ads", desc: "Sponsor images/video shown on the broadcast.", ready: true },
+
+  { group: "Signals", href: "/admin/alerts", title: "Weather alerts", desc: "Ingested CAP alerts — filter by severity / active.", ready: true },
+  { group: "Signals", href: "/admin/summaries", title: "Round-ups", desc: "Scheduled global weather-event summaries + narrative.", ready: true },
+  { group: "Signals", href: "/admin/tracks", title: "Live tracks", desc: "Satellites (SGP4), aircraft (ADS-B), ships (AIS).", ready: true },
+
+  { group: "Catalogs", href: "/cities", title: "Cities", desc: "City markers, Wikipedia enrichment results and map preview.", ready: true },
+  { group: "Catalogs", href: "/admin/vehicles", title: "Vehicles", desc: "Persistent aircraft and ship registry, including enrichment results.", ready: true },
+  { group: "Catalogs", href: "/admin/cams", title: "Webcams", desc: "Catalogued live cams — status, location, preview.", ready: true },
+  { group: "Catalogs", href: "/admin/volcanoes", title: "Volcanoes", desc: "Active volcanoes — status, reports and Wikipedia enrichment.", ready: true },
+  { group: "Catalogs", href: "/admin/sea-points", title: "Sea points", desc: "Ocean-monitoring catalog the Director's ocean kind rotates through.", ready: true },
+  { group: "Catalogs", href: "/admin/countries", title: "Countries", desc: "Full country catalog — boundaries, enrichment, area-weather.", ready: true },
+  { group: "Catalogs", href: "/admin/regions", title: "Regions", desc: "Oceans, continents, EU blocs, UK nations — enrichment, area-weather.", ready: true },
+
+  { group: "Operations", href: "/admin/jobs", title: "Worker jobs", desc: "Trigger ingest/snapshot jobs; view the queue.", ready: true },
+  { group: "Operations", href: "/admin/queue", title: "Queue", desc: "BullMQ dashboard — browse/retry jobs, schedules, pause.", ready: true },
+  { group: "Operations", href: "/admin/logs", title: "Back log", desc: "Saved log of worker/job activity.", ready: true },
+  { group: "Operations", href: "/admin/users", title: "Users", desc: "Admin accounts for /admin and /control.", ready: true },
+  { group: "Operations", href: "/admin/db", title: "Database", desc: "Mongo collection sizes, doc counts, storage summary.", ready: true },
 ];
 
 export default function AdminPage() {
   return (
-    <AdminPageShell title="Admin" description="Lists and consoles for the weather globe." maxWidth={900}>
+    <AdminPageShell title="Admin" description="Lists and consoles for the weather globe." maxWidth={1180}>
       <div style={{ marginBottom: 16 }}>
         <ServiceStatusPanel />
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-          gap: 14,
-          marginTop: 16,
-        }}
-      >
-        {LINKS.map((l) => {
-          const card = (
-            <div
+      <div style={{ display: "grid", gap: 22, marginTop: 16 }}>
+        {GROUPS.map((group) => (
+          <section key={group}>
+            <h2
               style={{
-                padding: 16,
-                borderRadius: 8,
-                border: "1px solid #1b2030",
-                background: "#0c111c",
-                height: "100%",
-                opacity: l.ready ? 1 : 0.55,
+                margin: "0 0 10px",
+                color: "#8b95a7",
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: 1,
+                textTransform: "uppercase",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <h3 style={{ margin: 0, fontSize: 15 }}>{l.title}</h3>
-                {!l.ready && (
-                  <span style={{ fontSize: 11, color: "#8b95a7", border: "1px solid #2a3344", borderRadius: 4, padding: "1px 5px" }}>
-                    soon
-                  </span>
-                )}
-              </div>
-              <div style={{ color: "#8b95a7", fontSize: 13, marginTop: 6 }}>{l.desc}</div>
+              {group}
+            </h2>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                gap: 12,
+              }}
+            >
+              {ADMIN_LINKS.filter((l) => l.group === group).map((l) => {
+                const card = (
+                  <div
+                    style={{
+                      padding: 16,
+                      borderRadius: 8,
+                      border: "1px solid #1b2030",
+                      background: "#0c111c",
+                      height: "100%",
+                      opacity: l.ready ? 1 : 0.55,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <h3 style={{ margin: 0, fontSize: 15 }}>{l.title}</h3>
+                      {!l.ready && (
+                        <span style={{ fontSize: 11, color: "#8b95a7", border: "1px solid #2a3344", borderRadius: 4, padding: "1px 5px" }}>
+                          soon
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ color: "#8b95a7", fontSize: 13, marginTop: 6 }}>{l.desc}</div>
+                  </div>
+                );
+                return l.ready ? (
+                  <Link key={l.href} href={l.href} style={{ textDecoration: "none", color: "inherit" }}>
+                    {card}
+                  </Link>
+                ) : (
+                  <div key={l.href}>{card}</div>
+                );
+              })}
             </div>
-          );
-          return l.ready ? (
-            <Link key={l.href} href={l.href} style={{ textDecoration: "none", color: "inherit" }}>
-              {card}
-            </Link>
-          ) : (
-            <div key={l.href}>{card}</div>
-          );
-        })}
+          </section>
+        ))}
       </div>
     </AdminPageShell>
   );

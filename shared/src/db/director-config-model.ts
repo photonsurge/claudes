@@ -21,6 +21,7 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
     // per-level maps below drive those kinds. Defaults mirror DEFAULT_*_HOLD_SECONDS.
     kindHoldSeconds: {
       intro: { type: Number, default: 17 },
+      global: { type: Number, default: 17 },
       ocean: { type: Number, default: 17 },
       orbital: { type: Number, default: 17 },
       tour: { type: Number, default: 12 },
@@ -60,6 +61,7 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
     transitionSeconds: { type: Number, required: true, default: 4 },
     kinds: {
       intro: { type: Boolean, default: true },
+      global: { type: Boolean, default: true },
       ocean: { type: Boolean, default: true },
       orbital: { type: Boolean, default: true },
       tour: { type: Boolean, default: true },

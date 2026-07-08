@@ -2,7 +2,7 @@
  * Segment-kind presentation helpers shared by the broadcast on-air elements.
  * A "targeted" kind is a single point the director frames on screen (storm,
  * quake, aircraft, ship) → the centred EVENT DETECTION reticle. The wide kinds
- * (global intro, ocean, orbital, region tour, weather) have no single target, so
+ * (intro, global spin, ocean, orbital, region tour, weather) have no single target, so
  * they get a small tucked-away card instead of a reticle framing empty screen.
  */
 import type { SegmentKind } from "@photonsurge/shared/director";
@@ -10,6 +10,7 @@ import type { SegmentKind } from "@photonsurge/shared/director";
 /** Per-kind accent — matches the "now viewing" card's kind badge colours. */
 export const KIND_COLOR: Record<SegmentKind, string> = {
   intro: "#1f9d72",
+  global: "#1f9d72",
   ocean: "#1c7fb8",
   orbital: "#6a59c0",
   tour: "#3b6ea5",
@@ -27,6 +28,7 @@ export const KIND_COLOR: Record<SegmentKind, string> = {
 /** Short kind badge label. */
 export const KIND_LABEL: Record<SegmentKind, string> = {
   intro: "Live",
+  global: "Live",
   ocean: "Ocean",
   orbital: "Orbital",
   tour: "Region",
@@ -52,7 +54,7 @@ export function isTargetedEvent(kind: SegmentKind): boolean {
 /** Kinds whose camera just sits on GLOBAL_VIEW's arbitrary framing point rather
  *  than a real ground location — there's nothing meaningful to sample weather
  *  or climate history for, so panels keyed on the camera centre should hide. */
-const NO_LOCATION = new Set<SegmentKind>(["intro", "ocean", "orbital", "summary"]);
+const NO_LOCATION = new Set<SegmentKind>(["intro", "global", "ocean", "orbital", "summary"]);
 
 /** True when the segment's camera centre is a real ground location worth
  *  sampling (as opposed to an arbitrary global framing point). */

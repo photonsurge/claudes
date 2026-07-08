@@ -34,7 +34,8 @@ export const DIRECTOR_STATE = "director:state" as const;
 
 /** What kind of thing a segment is showing — also the OBS-scene key (phase 2). */
 export type SegmentKind =
-  | "intro" // global establishing spin
+  | "intro" // one-time session opener — the establishing world spin, shown once at the top of a session
+  | "global" // the recurring world spin (same map-type tour as the intro), aired as ordinary global filler
   | "ocean" // global spin coloured by an ocean field (SST / waves)
   | "tour" // curated region flyover (ambient filler when nothing notable)
   | "country" // an operator-favourited country spotlight (national weather check)
@@ -50,6 +51,7 @@ export type SegmentKind =
 
 export const SEGMENT_KINDS: SegmentKind[] = [
   "intro",
+  "global",
   "ocean",
   "orbital",
   "tour",
@@ -365,7 +367,7 @@ export interface DirectorConfig {
    */
   skipNonce: number;
   /**
-   * Which basemap/"map type" looks each touring kind (intro/ocean/quake) cycles
+   * Which basemap/"map type" looks each touring kind (intro/global/ocean/quake) cycles
    * through, by id (see GlobalMapType.id in director-rois). A kind absent here,
    * or given an empty list, tours its full catalog (today's behaviour) — this is
    * purely a subtractive filter, never additive.
@@ -436,11 +438,12 @@ export interface KindLook {
 }
 
 /**
- * Default hold per kind. The world spins (intro/ocean/orbital) run long — they
- * tour several map types within the one shot (was the old holdSeconds × 1.4).
+ * Default hold per kind. The world spins (intro/global/ocean/orbital) run long —
+ * they tour several map types within the one shot (was the old holdSeconds × 1.4).
  */
 export const DEFAULT_KIND_HOLD_SECONDS: Record<SegmentKind, number> = {
   intro: 17,
+  global: 17,
   ocean: 17,
   orbital: 17,
   tour: 12,
@@ -552,6 +555,39 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       ["showWind", "showCities"],
     ),
     seedSlide("intro-magnetic-field", "Magnetic Field", { basemap: "dark" }, ["showMagneticField", "showCities"]),
+  ],
+  // The recurring world spin shares the intro opener's look library — same
+  // establishing-shot looks, just aired as ordinary global filler rather than once.
+  global: [
+    seedSlide(
+      "global-cinematic-dark",
+      "Cinematic Dark",
+      { basemap: "dark", windMode: "particles", wind: SUBTLE_WIND },
+      ["showWind", "showPressure", "showCities"],
+    ),
+    seedSlide(
+      "global-city-lights",
+      "City Lights",
+      { basemap: "night", windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } },
+      ["showCities"],
+    ),
+    seedSlide("global-aurora-glow", "Aurora Glow", { windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } }, [
+      "showAurora",
+      "showCities",
+    ]),
+    seedSlide(
+      "global-pressure-systems",
+      "Pressure Systems",
+      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "pressure" },
+      ["showWind", "showPressure", "showCities"],
+    ),
+    seedSlide(
+      "global-snow-ice",
+      "Snow & Ice",
+      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "snow" },
+      ["showWind", "showCities"],
+    ),
+    seedSlide("global-magnetic-field", "Magnetic Field", { basemap: "dark" }, ["showMagneticField", "showCities"]),
   ],
   ocean: [
     seedSlide(
@@ -890,6 +926,7 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   transitionSeconds: 4,
   kinds: {
     intro: true,
+    global: true,
     ocean: true,
     orbital: true,
     tour: true,

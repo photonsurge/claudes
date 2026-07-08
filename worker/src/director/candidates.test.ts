@@ -89,9 +89,10 @@ const cfg = (over: Partial<DirectorConfig> = {}): DirectorConfig => ({
 });
 
 describe("buildCandidates", () => {
-  it("always includes curated filler (intro + ocean + tours)", async () => {
+  it("always includes curated filler (intro opener + recurring global spin + ocean + tours)", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     expect(pool.some((c) => c.segment.id === "intro:global")).toBe(true);
+    expect(pool.some((c) => c.segment.id === "global:world")).toBe(true);
     expect(pool.filter((c) => c.segment.kind === "tour").length).toBeGreaterThan(5);
   });
 
@@ -526,10 +527,10 @@ describe("buildCandidates", () => {
     const empty = fakeDb({ quakes: [], alerts: [], aircraft: [], ships: [] });
     const pool = await buildCandidates(empty, cfg());
     expect(pool.length).toBeGreaterThan(0);
-    // Filler kinds: the global intro, ocean spins, curated tours, country
-    // spotlights, and orbital shots (gated to ingested TLE groups so they're
-    // never empty).
-    const fillerKinds = new Set(["intro", "ocean", "orbital", "tour", "country"]);
+    // Filler kinds: the intro opener, the recurring global spin, ocean spins,
+    // curated tours, country spotlights, and orbital shots (gated to ingested
+    // TLE groups so they're never empty).
+    const fillerKinds = new Set(["intro", "global", "ocean", "orbital", "tour", "country"]);
     expect(pool.every((c) => fillerKinds.has(c.segment.kind))).toBe(true);
   });
 

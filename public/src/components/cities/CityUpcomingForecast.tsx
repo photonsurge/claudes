@@ -5,6 +5,15 @@ import { usePointForecast, type ForecastDay } from "../../lib/forecast-client";
 
 const muted = "#8b95a7";
 
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** Human day label: Today / Tomorrow / weekday name — never "+2"/"+3". */
+function humanLabel(day: ForecastDay): string {
+  if (day.label === "TODAY") return "Today";
+  if (day.label === "TOMORROW") return "Tomorrow";
+  return WEEKDAYS[new Date(`${day.date}T00:00:00Z`).getUTCDay()];
+}
+
 function formatTemp(value: number | null): string {
   return value == null ? "--" : `${Math.round(value)}°`;
 }
@@ -60,7 +69,7 @@ export default function CityUpcomingForecast({
           {forecast.days.map((day) => (
             <div key={day.date} style={{ border: "1px solid #1b2030", borderRadius: 6, background: "#070c15", padding: compact ? 8 : 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "baseline" }}>
-                <strong style={{ color: "#bfdbfe", fontSize: 11 }}>{day.label}</strong>
+                <strong style={{ color: "#bfdbfe", fontSize: 11 }}>{humanLabel(day)}</strong>
                 <span style={{ color: "#93c5fd", fontSize: 10, textTransform: "capitalize", whiteSpace: "nowrap" }}>
                   {day.condition.replace(/-/g, " ")}
                 </span>

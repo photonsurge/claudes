@@ -21,6 +21,7 @@ const MAX_PUSH_IN = 1.2;
 
 const KIND: Record<SegmentKind, { label: string; color: string }> = {
   intro: { label: "Live", color: "#1f9d72" },
+  global: { label: "Live", color: "#1f9d72" },
   ocean: { label: "Ocean", color: "#1c7fb8" },
   orbital: { label: "Orbital", color: "#6a59c0" },
   tour: { label: "Region", color: "#3b6ea5" },
