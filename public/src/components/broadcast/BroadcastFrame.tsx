@@ -58,6 +58,7 @@ import { hasRealLocation, isTargetedEvent, KIND_COLOR } from "./kinds";
 /** Design-stage layout constants (in 1080p reference pixels). */
 const TICKER_H = 34;
 const INSET = 30;
+const BRAND_STACK_H = 242;
 
 /**
  * A "Nearest City" reticle row for a moving target (aircraft / ship) — the
@@ -340,7 +341,7 @@ export default function BroadcastFrame({
         {/* Geomagnetic Kp readout, tucked under the brand block when the aurora
             overlay is on; pushes the intensity meter down so they don't overlap. */}
         {kpShown ? (
-          <div style={{ position: "absolute", top: TICKER_H + INSET + 128, left: INSET }}>
+          <div style={{ position: "absolute", top: TICKER_H + INSET + BRAND_STACK_H, left: INSET }}>
             <KpIndexPanel kp={aurora?.meta.kp} theme={theme} />
           </div>
         ) : null}
@@ -351,7 +352,7 @@ export default function BroadcastFrame({
           <div
             style={{
               position: "absolute",
-              top: TICKER_H + INSET + 128 + (kpShown ? 72 : 0),
+              top: TICKER_H + INSET + BRAND_STACK_H + (kpShown ? 72 : 0),
               left: INSET,
             }}
           >

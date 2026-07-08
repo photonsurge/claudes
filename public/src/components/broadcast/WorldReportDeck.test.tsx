@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { DECK_SLIDES } from "./WorldReportDeck";
 import HazardScreen from "./HazardScreen";
+import AboutPanel from "./AboutPanel";
 import { filterFeedByKind } from "../../lib/broadcast";
 import type { WorldWatchItem } from "../../lib/broadcast";
 import { DEFAULT_THEME } from "./config";
@@ -78,5 +79,14 @@ describe("HazardScreen", () => {
       />,
     );
     expect(screen.getByText("NO ACTIVE VOLCANOES")).toBeInTheDocument();
+  });
+});
+
+describe("AboutPanel", () => {
+  it("renders the G.O.D.S. about copy and warning-service disclaimer", () => {
+    render(<AboutPanel theme={DEFAULT_THEME} />);
+    expect(screen.getByText("About G.O.D.S.")).toBeInTheDocument();
+    expect(screen.getByText(/live visual monitoring platform created by Thronix/)).toBeInTheDocument();
+    expect(screen.getByText(/not an official warning service/)).toBeInTheDocument();
   });
 });

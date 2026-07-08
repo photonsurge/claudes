@@ -28,8 +28,8 @@ export interface BroadcastTheme {
 
 export const BROADCAST_THEMES: Record<string, BroadcastTheme> = {
   aurora: {
-    name: "LIVE WEATHER GLOBE",
-    tagline: "GLOBAL WEATHER & FLIGHT OPS",
+    name: "G.O.D.S.",
+    tagline: "Global Orbital Detection System",
     tickerTitle: "GLOBAL FEED",
     meterTitle: "INTENSITY METER",
     accent: "#38bdf8",
@@ -38,7 +38,7 @@ export const BROADCAST_THEMES: Record<string, BroadcastTheme> = {
   },
   command: {
     name: "G.O.D.S.",
-    tagline: "GLOBAL ORBITAL DETECTION SYSTEM",
+    tagline: "Global Orbital Detection System",
     strapline: "DETECT. TRACK. PROTECT.",
     iconVariant: "orbit",
     tickerTitle: "VIGIL TAPE",

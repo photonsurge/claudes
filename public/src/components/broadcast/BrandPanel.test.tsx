@@ -13,10 +13,25 @@ describe("BrandPanel", () => {
     expect(screen.getByText("LIVE")).toBeInTheDocument();
   });
 
-  it("renders the theme's name, tagline and strapline", () => {
+  it("renders the G.O.D.S. banner asset for G.O.D.S. themes", () => {
     render(<BrandPanel theme={BROADCAST_THEMES.command} />);
-    expect(screen.getByText("G.O.D.S.")).toBeInTheDocument();
-    expect(screen.getByText("GLOBAL ORBITAL DETECTION SYSTEM")).toBeInTheDocument();
-    expect(screen.getByText("DETECT. TRACK. PROTECT.")).toBeInTheDocument();
+    const banner = screen.getByAltText("G.O.D.S. Global Orbital Detection System");
+    expect(banner).toHaveAttribute("src", "/gods_banner_transparent.png");
+    expect(banner).toHaveStyle({ width: "500px" });
+  });
+
+  it("renders the global city clock strip", () => {
+    render(<BrandPanel theme={BROADCAST_THEMES.command} />);
+    expect(screen.getByText("LONDON")).toBeInTheDocument();
+    expect(screen.getByText("NEW YORK")).toBeInTheDocument();
+    expect(screen.getByText("BEIJING")).toBeInTheDocument();
+    expect(screen.getByText("TOKYO")).toBeInTheDocument();
+    expect(screen.getByText("MOSCOW")).toBeInTheDocument();
+  });
+
+  it("renders theme text for non-G.O.D.S. themes", () => {
+    render(<BrandPanel theme={BROADCAST_THEMES.storm} />);
+    expect(screen.getByText("STORM WATCH LIVE")).toBeInTheDocument();
+    expect(screen.getByText("SEVERE WEATHER OPERATIONS")).toBeInTheDocument();
   });
 });
