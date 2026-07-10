@@ -113,6 +113,12 @@ export default function TrackInfoPanel({
         ) : null}
 
         {info.extract ? (
+          // The volcano `extract` is this week's full GVP bulletin (usually
+          // ~15-18 lines), the primary content of the card — clamp high enough
+          // that it renders in full rather than cutting off mid-sentence. The
+          // card is bottom-anchored in the left deck and grows upward into ~800px
+          // of headroom, so a tall block fits; the clamp only exists to bound a
+          // pathologically long Wikipedia lead when there's no bulletin.
           <div
             style={{
               fontSize: 11,
@@ -120,7 +126,7 @@ export default function TrackInfoPanel({
               color: "#cdd9ec",
               marginTop: 6,
               display: "-webkit-box",
-              WebkitLineClamp: 9,
+              WebkitLineClamp: 24,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
             }}

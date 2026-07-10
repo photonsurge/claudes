@@ -17,7 +17,7 @@ import { formatPopulation } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
 import { nearby, formatKm } from "../../lib/geo";
 import { useClimateYear } from "../../lib/history-client";
-import { MiniChart, buildClimateRows, usePagedSlides, sparkPoints, toPath, CHART_W, formatReading } from "./PointHistoryPanel";
+import { MiniChart, buildClimateRows, sparkPoints, toPath, CHART_W, formatReading } from "./PointHistoryPanel";
 import BroadcastCard, { CardEyebrow, CardSection } from "./BroadcastCard";
 
 const CITY_RADIUS_KM = 500;
@@ -34,6 +34,10 @@ const FEATURED_HOLD_MS = 7000;
 const ROW_SPARK_W = 64;
 const ROW_SPARK_H = 24;
 const ROW_SPARK_STROKE = 9;
+/** Past-year charts are stacked all-at-once (temp / humidity / rain) rather than
+ *  paged one at a time, so each is drawn shorter than the full-size
+ *  PointHistoryPanel chart (CHART_H = 108) to keep the three-high column compact. */
+const CLIMATE_CHART_H = 62;
 
 /**
  * One "other nearby city" row: name/pop/distance text plus a small past-year
@@ -123,9 +127,6 @@ export default function EventNearbyPanel({
   const featuredCenter = featured ? ([featured.lng, featured.lat] as [number, number]) : null;
   const climate = useClimateYear(featuredCenter, "monthly");
   const climateRows = buildClimateRows(climate.datasets);
-  // One chart at a time (same timer-driven slideshow as PointHistoryPanel)
-  // instead of stacking temp/humidity/rain all at once.
-  const climateSlide = usePagedSlides(climateRows, 1);
 
   if (!near.length && !nearCams.length) return null;
 
@@ -186,19 +187,13 @@ export default function EventNearbyPanel({
       ) : null}
 
       {/* Featured city's past-year climate — same chart PointHistoryPanel
-          draws for the on-air focus, keyed to this city instead. One variable
-          at a time (timer-paged), not all three stacked. */}
+          draws for the on-air focus, keyed to this city instead. All three
+          variables (temp / humidity / rain) stacked at once, drawn shorter,
+          rather than a timer-paged slideshow — three-high reads richer. */}
       {climateRows.length ? (
         <CardSection style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <CardEyebrow>{featured?.name.toUpperCase()} · Past Year</CardEyebrow>
-            {climateSlide.pageCount > 1 ? (
-              <span style={{ fontSize: 9, fontWeight: 750, letterSpacing: 1.05, color }}>
-                {climateSlide.page + 1}/{climateSlide.pageCount}
-              </span>
-            ) : null}
-          </div>
-          {climateSlide.visible.map((row) => (
+          <CardEyebrow>{featured?.name.toUpperCase()} · Past Year</CardEyebrow>
+          {climateRows.map((row) => (
             <MiniChart
               key={row.variable}
               label={row.label}
@@ -207,6 +202,7 @@ export default function EventNearbyPanel({
               points={row.points}
               avg={row.avg}
               caption={row.caption}
+              height={CLIMATE_CHART_H}
             />
           ))}
         </CardSection>

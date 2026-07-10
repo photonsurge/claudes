@@ -17,6 +17,8 @@
  */
 import type { Segment } from "@photonsurge/shared/director";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
+import type { WeatherManifest } from "@photonsurge/shared/manifest";
+import type { iSummaryStats } from "@photonsurge/shared/db/event-summary-model";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake } from "../../lib/tracks/types";
 import type { City } from "../../lib/cities";
@@ -27,6 +29,9 @@ import { KIND_COLOR, isTargetedEvent } from "./kinds";
 import OnAirCard from "./OnAirCard";
 import TopCitiesPanel from "./TopCitiesPanel";
 import ForecastPanel from "./ForecastPanel";
+import PointHistoryPanel from "./PointHistoryPanel";
+import DepthProfilePanel from "./DepthProfilePanel";
+import RoundupStatsPanel from "./RoundupStatsPanel";
 import QuakeReport from "./QuakeReport";
 import EventNearbyPanel from "./EventNearbyPanel";
 import TrackInfoPanel from "./TrackInfoPanel";
@@ -53,7 +58,54 @@ export interface ModeSlideContext {
   /** Whether the area forecast has data — decides if the forecast slide shows
    *  (computed in BroadcastFrame since it needs a hook). */
   wideCitiesHasForecast: boolean;
+  /** Focus point / framed bbox for the WEATHER (forecast) + CURRENT & RECENT
+   *  (AREA HISTORY) + ocean-depth slides. Folded into the deck so the left
+   *  column is ONE rotating card per mode instead of a tall stack. */
+  histCenter: [number, number] | null;
+  histBbox: [number, number, number, number] | null;
+  /** Whether the on-air kind sits on a real ground location — gates the AREA
+   *  HISTORY slide (global/orbital/intro shots have nothing to sample). */
+  segmentHasLocation: boolean;
+  /** A plain (non-region) wide shot's framed-area forecast has data — gates its
+   *  weather slide (region/tour use wideCitiesHasForecast instead). */
+  hasFramedForecast: boolean;
+  /** Ocean scene — offers the sea-temp-by-depth slide. */
+  showDepth: boolean;
+  depthCenter: [number, number] | null;
+  manifest: WeatherManifest | null;
+  activeVariable: string | null;
+  /** Round-up narrative stats — folds the summary mode's stats card into the
+   *  deck rather than stacking it below. */
+  roundup?: { stats?: iSummaryStats; sources?: string[] };
   theme: BroadcastTheme;
+}
+
+/**
+ * The shared "context" slides every located wide shot carries after its own
+ * mode cards: WEATHER (framed-area forecast) is pushed by the caller (its data
+ * guard differs region vs. plain), then CURRENT & RECENT (AREA HISTORY trend
+ * charts) and, on ocean scenes, the sea-temp-by-depth profile. Folded in here
+ * so they rotate as slides instead of stacking below the deck.
+ */
+function contextSlides(ctx: ModeSlideContext): DeckSlide[] {
+  const out: DeckSlide[] = [];
+  if (ctx.segmentHasLocation && (ctx.histCenter || ctx.histBbox)) {
+    out.push({ id: "history", node: <PointHistoryPanel center={ctx.histCenter} bbox={ctx.histBbox} theme={ctx.theme} /> });
+  }
+  if (ctx.showDepth && ctx.depthCenter) {
+    out.push({
+      id: "depth",
+      node: (
+        <DepthProfilePanel
+          center={ctx.depthCenter}
+          manifest={ctx.manifest}
+          activeVariable={ctx.activeVariable}
+          theme={ctx.theme}
+        />
+      ),
+    });
+  }
+  return out;
 }
 
 /** The mode's ordered, content-filtered deck. Caller guards `segment` non-null. */
@@ -111,8 +163,9 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     return slides;
   }
 
-  // Country spotlight / region tour — the "now viewing" area rollup, the area's
-  // top cities, and (only when there's data) an area forecast.
+  // Country spotlight / region tour — reads START → CITIES → WEATHER → CURRENT &
+  // RECENT: the "now viewing" area rollup, the area's close cities, the area
+  // forecast (when it has data), then the AREA HISTORY trend charts.
   if (ctx.wideCitiesBbox) {
     slides.push({
       id: "onair",
@@ -122,13 +175,25 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     if (ctx.wideCitiesHasForecast) {
       slides.push({ id: "forecast", node: <ForecastPanel center={null} bbox={ctx.wideCitiesBbox} theme={ctx.theme} /> });
     }
+    slides.push(...contextSlides(ctx));
     return slides;
   }
 
-  // Any other wide shot — just the "now viewing" card.
+  // Any other wide shot — the "now viewing" card (START), the round-up stats on a
+  // summary shot, then the same WEATHER → CURRENT & RECENT context slides.
   slides.push({
     id: "onair",
     node: <OnAirCard segment={segment} alerts={ctx.areaAlerts} quakes={ctx.areaQuakes} volcanoes={ctx.areaVolcanoes} theme={ctx.theme} />,
   });
+  if (segment.kind === "summary" && ctx.roundup) {
+    slides.push({
+      id: "roundup",
+      node: <RoundupStatsPanel stats={ctx.roundup.stats} sources={ctx.roundup.sources} theme={ctx.theme} />,
+    });
+  }
+  if (ctx.hasFramedForecast) {
+    slides.push({ id: "forecast", node: <ForecastPanel center={ctx.histCenter} bbox={ctx.histBbox} theme={ctx.theme} /> });
+  }
+  slides.push(...contextSlides(ctx));
   return slides;
 }

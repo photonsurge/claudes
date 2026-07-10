@@ -15,6 +15,14 @@ const ctx = (over: Partial<ModeSlideContext> = {}): ModeSlideContext => ({
   areaQuakes: [],
   areaVolcanoes: [],
   wideCitiesHasForecast: false,
+  histCenter: null,
+  histBbox: null,
+  segmentHasLocation: false,
+  hasFramedForecast: false,
+  showDepth: false,
+  depthCenter: null,
+  manifest: null,
+  activeVariable: null,
   theme: DEFAULT_THEME,
   ...over,
 });
@@ -63,5 +71,45 @@ describe("modeSlides", () => {
     expect(ids(withFacts, ctx({ cities: [cityAt(0, 0)] }))).toEqual(["track", "volcano-facts", "volcano-nearby"]);
     // No facts and nothing nearby → just the track card.
     expect(ids(seg({ kind: "volcano", trackInfo: { label: "V" } }), ctx())).toEqual(["track"]);
+  });
+
+  const bbox: [number, number, number, number] = [-1, -1, 1, 1];
+
+  it("a located wide shot folds in the AREA HISTORY (current & recent) slide", () => {
+    expect(
+      ids(seg({ kind: "weather" }), ctx({ segmentHasLocation: true, histCenter: [0, 0], histBbox: bbox })),
+    ).toEqual(["onair", "history"]);
+  });
+
+  it("a located wide shot with framed forecast reads START → WEATHER → CURRENT & RECENT", () => {
+    expect(
+      ids(
+        seg({ kind: "weather" }),
+        ctx({ segmentHasLocation: true, histCenter: [0, 0], histBbox: bbox, hasFramedForecast: true }),
+      ),
+    ).toEqual(["onair", "forecast", "history"]);
+  });
+
+  it("a region spotlight folds AREA HISTORY after its cities + forecast", () => {
+    expect(
+      ids(
+        seg({ kind: "country" }),
+        ctx({
+          wideCitiesBbox: bbox,
+          wideCitiesHasForecast: true,
+          segmentHasLocation: true,
+          histCenter: [0, 0],
+          histBbox: bbox,
+        }),
+      ),
+    ).toEqual(["onair", "topcities", "forecast", "history"]);
+  });
+
+  it("an ocean shot adds the sea-temp-by-depth slide", () => {
+    expect(ids(seg({ kind: "ocean" }), ctx({ showDepth: true, depthCenter: [0, 0] }))).toEqual(["onair", "depth"]);
+  });
+
+  it("a summary shot folds the round-up stats into the deck", () => {
+    expect(ids(seg({ kind: "summary" }), ctx({ roundup: { sources: [] } }))).toEqual(["onair", "roundup"]);
   });
 });

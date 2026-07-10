@@ -5,6 +5,8 @@ import {
   buildTicker,
   dedupeAlerts,
   sortedAlerts,
+  freshAlerts,
+  issuedAgoLabel,
   topAlerts,
   topAlert,
   alertBannerText,
@@ -75,6 +77,14 @@ describe("ticker line builders", () => {
   it("prefixes an alert with its severity label", () => {
     expect(alertTicker(alert(3))).toBe("SEVERE: Tsunami Watch · Fiji Region");
   });
+  it("prepends the nearest notable city's flag when cities are supplied", () => {
+    const near = { id: "c", name: "Null Island City", lat: 0, lng: 0, cc: "FR", population: 5000 } as City;
+    expect(alertTicker(alert(3), [near])).toBe("🇫🇷 SEVERE: Tsunami Watch · Fiji Region");
+  });
+  it("omits the flag when no notable city is within range", () => {
+    const far = { id: "c", name: "Sydney", lat: -33.87, lng: 151.21, cc: "AU", population: 5_000_000 } as City;
+    expect(alertTicker(alert(3), [far])).toBe("SEVERE: Tsunami Watch · Fiji Region");
+  });
   it("prefers the translated headline over the raw event when present", () => {
     expect(alertTicker(alert(3, { event: "台风红色预警", translatedHeadline: "Typhoon Red Alert" }))).toBe(
       "SEVERE: Typhoon Red Alert · Fiji Region",
@@ -126,6 +136,56 @@ describe("dedupeAlerts / topAlerts", () => {
       alert(2, { areaDesc: "C" }),
     ]);
     expect(list.map((a) => a.properties.severityRank)).toEqual([4, 2, 1]);
+  });
+});
+
+describe("freshAlerts", () => {
+  const NOW = Date.parse("2026-07-10T12:00:00Z");
+  const at = (minsAgo: number) => new Date(NOW - minsAgo * 60_000).toISOString();
+
+  it("keeps alerts issued within the window and drops older ones", () => {
+    const list = freshAlerts(
+      [
+        alert(4, { areaDesc: "Fresh", sent: at(20) }),
+        alert(2, { areaDesc: "Stale", sent: at(90) }), // >60m → gone even though active
+        alert(3, { areaDesc: "Edge", sent: at(59) }),
+      ],
+      60,
+      NOW,
+    );
+    expect(list.map((a) => a.properties.areaDesc).sort()).toEqual(["Edge", "Fresh"]);
+  });
+
+  it("falls back to `since` when no issue time is present, and drops undated alerts", () => {
+    const list = freshAlerts(
+      [
+        alert(3, { areaDesc: "BySince", sent: undefined, since: at(10) }),
+        alert(3, { areaDesc: "Undated", sent: undefined, since: undefined }),
+      ],
+      60,
+      NOW,
+    );
+    expect(list.map((a) => a.properties.areaDesc)).toEqual(["BySince"]);
+  });
+
+  it("respects a custom window", () => {
+    const list = freshAlerts([alert(3, { areaDesc: "A", sent: at(20) })], 10, NOW);
+    expect(list).toHaveLength(0);
+  });
+});
+
+describe("issuedAgoLabel", () => {
+  const NOW = Date.parse("2026-07-10T12:00:00Z");
+  const at = (minsAgo: number) => new Date(NOW - minsAgo * 60_000).toISOString();
+  it("formats minutes, hours, and just-now", () => {
+    expect(issuedAgoLabel(at(0), NOW)).toBe("just now");
+    expect(issuedAgoLabel(at(12), NOW)).toBe("12m ago");
+    expect(issuedAgoLabel(at(63), NOW)).toBe("1h 3m ago");
+    expect(issuedAgoLabel(at(120), NOW)).toBe("2h ago");
+  });
+  it("returns empty for a missing/unparseable timestamp", () => {
+    expect(issuedAgoLabel(undefined, NOW)).toBe("");
+    expect(issuedAgoLabel("not-a-date", NOW)).toBe("");
   });
 });
 
@@ -490,5 +550,15 @@ describe("topAlert / alertBannerText", () => {
     expect(alertBannerText(alert(2, { level: "Yellow" }))).toBe(
       "Tsunami Watch: Fiji Region — YELLOW",
     );
+  });
+  it("caps a sprawling areaDesc but keeps the severity suffix intact", () => {
+    const long =
+      "R.M. of Edenwold including Balgonie and Piapot Res.; R.M. of North Qu'Appelle including Fort Qu'Appelle";
+    const text = alertBannerText(alert(4, { areaDesc: long, level: "Red" }));
+    expect(text.endsWith(" — RED")).toBe(true);
+    expect(text).toContain("…");
+    // area portion (between ": " and " — ") stays within the 40-char cap
+    const area = text.slice(text.indexOf(": ") + 2, text.lastIndexOf(" — "));
+    expect(area.length).toBeLessThanOrEqual(41); // 40 + ellipsis
   });
 });

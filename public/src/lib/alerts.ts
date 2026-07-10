@@ -148,6 +148,9 @@ export interface AlertFeature {
     translatedHeadline?: string;
     translatedDescription?: string;
     translatedInstruction?: string;
+    /** When the alert was ISSUED (CAP `sent`), ISO — drives the "new alerts only"
+     *  recency window on the live panel (see freshAlerts). */
+    sent?: string;
     /** When the hazard became active (onset ?? effective ?? sent), ISO. */
     since?: string;
     expires?: string;
@@ -183,6 +186,7 @@ export function alertsToFeatures(alerts: Alert[]): AlertFeature[] {
             translatedHeadline: info.translatedHeadline,
             translatedDescription: info.translatedDescription,
             translatedInstruction: info.translatedInstruction,
+            sent: a.sent,
             since: info.onset ?? info.effective ?? a.sent,
             expires: a.expiresAt,
             web: info.web,

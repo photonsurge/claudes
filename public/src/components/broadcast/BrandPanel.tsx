@@ -15,22 +15,6 @@ const WORLD_CLOCKS = [
   { label: "MOSCOW", timeZone: "Europe/Moscow" },
 ] as const;
 
-/** The G.O.D.S. banner PNG (2048×682) bakes a tall transparent margin above and
- *  below the artwork — the logo only occupies y:120–521. Rendered raw, that
- *  padding floats the logo low with dead space above and below. We keep the
- *  <img> at its natural width (so its drop-shadow still has room) and crop the
- *  vertical padding with negative margins, so the logo sits at the block top and
- *  the readout/clock strip tucks up tight beneath it. */
-const GODS_ART = { y0: 120, y1: 521, fw: 2048, fh: 682 } as const;
-
-function godsArtCrop(imgWidth: number) {
-  const scale = imgWidth / GODS_ART.fw;
-  return {
-    topPad: Math.round(GODS_ART.y0 * scale),
-    bottomPad: Math.round((GODS_ART.fh - GODS_ART.y1) * scale),
-  };
-}
-
 /** Live operator readout for the top-left block: the on-air shot (its kind as the
  *  field label, its target/title as the value) and the weather attribute painted
  *  on the globe. So an aircraft shot reads "AIRCRAFT · Air Force One" and a
@@ -64,7 +48,7 @@ function StatusReadout({
         display: "flex",
         alignItems: "stretch",
         gap: 6,
-        padding: "3px 8px",
+        padding: "5px 11px",
         background:
           "linear-gradient(180deg, rgba(8,13,24,0.72), rgba(5,9,18,0.84))",
         border: theme.panelBorder,
@@ -92,7 +76,7 @@ function StatusReadout({
         >
           <span
             style={{
-              fontSize: 7,
+              fontSize: 8.5,
               fontWeight: 800,
               letterSpacing: 0.9,
               color: theme.accent,
@@ -104,7 +88,7 @@ function StatusReadout({
           </span>
           <span
             style={{
-              fontSize: 9,
+              fontSize: 11,
               fontWeight: 700,
               letterSpacing: 0.3,
               color: "#dce9fb",
@@ -236,7 +220,6 @@ export default function BrandPanel({
   const clocks = useWorldClocks();
   const usesGodsBanner = theme.name === "G.O.D.S.";
   const bannerWidth = compact ? 400 : 620;
-  const art = usesGodsBanner ? godsArtCrop(bannerWidth) : null;
   return (
     <div
       style={{
@@ -257,10 +240,8 @@ export default function BrandPanel({
             display: "block",
             width: bannerWidth,
             height: "auto",
-            // Crop the PNG's baked transparent frame: lift the logo to the top of
-            // the block and pull the readout/clocks up beneath it (godsArtMetrics).
-            marginTop: art ? -art.topPad : 0,
-            marginBottom: art ? -art.bottomPad : 0,
+            // The banner PNG is tightly cropped (no baked frame), so it stacks
+            // directly with the readout/clock strip beneath it — no margin fixup.
             filter: "drop-shadow(0 8px 26px rgba(0,0,0,0.5))",
           }}
         />
@@ -365,6 +346,7 @@ export default function BrandPanel({
           alignItems: "center",
           gap: 8,
           flexWrap: "nowrap",
+          marginTop: -6,
         }}
       >
         {live && (
@@ -406,8 +388,8 @@ export default function BrandPanel({
           style={{
             display: "grid",
             gridTemplateColumns: `repeat(${WORLD_CLOCKS.length}, minmax(0, 1fr))`,
-            gap: 4,
-            padding: "5px 8px",
+            gap: 6,
+            padding: "7px 12px",
             background:
               "linear-gradient(180deg, rgba(8,13,24,0.72), rgba(5,9,18,0.84))",
             border: theme.panelBorder,
@@ -417,49 +399,60 @@ export default function BrandPanel({
             WebkitBackdropFilter: "blur(8px)",
           }}
         >
-          {clocks.map((clock) => (
-            <div
-              key={clock.label}
-              style={{
-                minWidth: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: 1,
-                alignItems: "center",
-              }}
-            >
-              <span
+          {clocks.map((clock, i) => {
+            // London (the first clock) is the home reading — keep it at full
+            // size; the other cities ride along smaller.
+            const primary = i === 0;
+            return (
+              <div
+                key={clock.label}
                 style={{
-                  maxWidth: "100%",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  fontFamily: "system-ui, sans-serif",
-                  fontSize: 6.5,
-                  fontWeight: 800,
-                  letterSpacing: 0.6,
-                  color: theme.accent,
-                  opacity: 0.9,
+                  minWidth: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                  alignItems: "center",
                 }}
               >
-                {clock.label}
-              </span>
-              <span
-                style={{
-                  fontFamily:
-                    "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                  fontSize: compact ? 8.5 : 10,
-                  fontWeight: 700,
-                  letterSpacing: 0,
-                  color: "#dce9fb",
-                  fontVariantNumeric: "tabular-nums",
-                  textShadow: "0 1px 2px rgba(0,0,0,0.8)",
-                }}
-              >
-                {clock.time || "--:--:--"}
-              </span>
-            </div>
-          ))}
+                <span
+                  style={{
+                    maxWidth: "100%",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontFamily: "system-ui, sans-serif",
+                    fontSize: primary ? 8 : 6.5,
+                    fontWeight: 800,
+                    letterSpacing: 0.7,
+                    color: theme.accent,
+                    opacity: 0.9,
+                  }}
+                >
+                  {clock.label}
+                </span>
+                <span
+                  style={{
+                    fontFamily:
+                      "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                    fontSize: primary
+                      ? compact
+                        ? 10.5
+                        : 12.5
+                      : compact
+                        ? 8.5
+                        : 10,
+                    fontWeight: 700,
+                    letterSpacing: 0,
+                    color: "#dce9fb",
+                    fontVariantNumeric: "tabular-nums",
+                    textShadow: "0 1px 2px rgba(0,0,0,0.8)",
+                  }}
+                >
+                  {clock.time || "--:--:--"}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

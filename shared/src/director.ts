@@ -623,26 +623,11 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showCities",
     ]),
   ],
+  // Space mode always rides the default (dark) basemap — a satellite constellation
+  // reads best against the plain dark globe, not a terrain/satellite/night photo
+  // backdrop. The two seeded looks differ by their aurora overlay, not the basemap.
   orbital: [
     seedSlide("orbital-classic", "Constellation Classic", { basemap: "dark" }, [
-      "showSatellites",
-      "showOrbits",
-      "showTrackLabels",
-      "showCities",
-    ]),
-    seedSlide("orbital-night-side", "Over the Night Side", { basemap: "night" }, [
-      "showSatellites",
-      "showOrbits",
-      "showTrackLabels",
-      "showCities",
-    ]),
-    seedSlide("orbital-true-color", "True Color", { basemap: "satellite" }, [
-      "showSatellites",
-      "showOrbits",
-      "showTrackLabels",
-      "showCities",
-    ]),
-    seedSlide("orbital-terrain-below", "Terrain Below", { basemap: "terrain" }, [
       "showSatellites",
       "showOrbits",
       "showTrackLabels",

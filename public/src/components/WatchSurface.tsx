@@ -30,6 +30,7 @@ import type { City } from "../lib/cities";
 import { useGlobeReadyOnce } from "../lib/globe-ready";
 import GlobeView from "./GlobeView";
 import AlertLegend from "./AlertLegend";
+import FullscreenButton from "./FullscreenButton";
 import BroadcastBed from "./audio/BroadcastBed";
 import BroadcastFrame from "./broadcast/BroadcastFrame";
 import AdBreak from "./broadcast/AdBreak";
@@ -259,6 +260,10 @@ export default function WatchSurface({
           (state.startAt). Sits above LoadingScreen so the reveal is always the
           countdown finishing, not the globe popping in behind it. */}
       <StartCountdown startAt={state.startAt} theme={theme} />
+
+      {/* Tap-to-fullscreen — Android phone viewers only; self-hides on OBS/iOS/
+          desktop (see FullscreenButton). */}
+      <FullscreenButton />
     </main>
   );
 }

@@ -5,10 +5,9 @@
 // just draw the true coast over a baked raster so any misregistration is visible.
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dataFile } from "../dataDir";
 
-const ROOT = resolve(__dirname, "../../..");
-export const GEOJSON = resolve(ROOT, "public/public/data/countries.geojson");
+export const GEOJSON = dataFile("countries.geojson");
 
 export type Bbox = [number, number, number, number];
 export type Ring = [number, number][];

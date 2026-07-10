@@ -27,14 +27,25 @@ export function quakeTicker(q: Quake): string {
   return `SEISMIC M${q.mag.toFixed(1)} · ${loc}${q.tsunami ? " · TSUNAMI POTENTIAL" : ""}`;
 }
 
-/** "TSUNAMI WATCH: Fiji Region" (severity-prefixed hazard + area). Prefers the
- *  English translation of the event/headline when the source isn't English. */
-export function alertTicker(a: AlertFeature): string {
+/** Nearest notable city's country flag for an alert, "" if none within range —
+ *  the same nearest-enriched-city logic the World Watch feed and area label use,
+ *  so the ticker flag agrees with those panels. */
+function alertFlag(a: AlertFeature, cities: City[]): string {
+  const places = nearbyPlaces(alertRepPoint(a.geometry), cities);
+  return places[0] ? isoToFlag(places[0].item.cc) : "";
+}
+
+/** "🇫🇯 TSUNAMI WATCH: Fiji Region" (nearest-city flag + severity-prefixed hazard
+ *  + area). The flag is omitted when no notable city is close enough to trust (or
+ *  no cities were supplied). Prefers the English translation of the event/headline
+ *  when the source isn't English. */
+export function alertTicker(a: AlertFeature, cities: City[] = []): string {
   const p = a.properties;
   const sev = SEVERITY_LABELS[p.severityRank];
   const area = p.areaDesc ? ` · ${p.areaDesc}` : "";
   const event = p.translatedHeadline || p.event;
-  return `${sev ? `${sev.toUpperCase()}: ` : ""}${event}${area}`;
+  const flag = alertFlag(a, cities);
+  return `${flag ? `${flag} ` : ""}${sev ? `${sev.toUpperCase()}: ` : ""}${event}${area}`;
 }
 
 /** "🇺🇸 GLOBAL THUNDER-26 · AIRCRAFT" */
@@ -71,10 +82,13 @@ export function buildTicker(input: {
   alerts?: AlertFeature[];
   quakes?: Quake[];
   tracks?: Track[];
+  /** Curated, wiki-enriched cities — optional, purely for the per-alert country
+   *  flag (nearest notable place). Omit and alerts simply carry no flag. */
+  cities?: City[];
 }): string[] {
   const items: string[] = [];
   for (const q of input.quakes ?? []) items.push(quakeTicker(q));
-  for (const a of dedupeAlerts(input.alerts ?? [])) items.push(alertTicker(a));
+  for (const a of dedupeAlerts(input.alerts ?? [])) items.push(alertTicker(a, input.cities));
   for (const t of input.tracks ?? []) items.push(trackTicker(t));
   return [...new Set(items)];
 }
@@ -84,6 +98,43 @@ export function sortedAlerts(alerts: AlertFeature[]): AlertFeature[] {
   return dedupeAlerts(alerts).sort(
     (a, b) => b.properties.severityRank - a.properties.severityRank,
   );
+}
+
+/** How long a freshly-issued alert stays "new", in minutes — the live panel's window. */
+export const FRESH_ALERT_WINDOW_MIN = 60;
+
+/**
+ * "Just in" alerts — those ISSUED (CAP `sent`) within the last `windowMinutes`.
+ * The live alert panel cycles only these, so a warning surfaces when it's issued,
+ * holds for about an hour, then drops off on its own EVEN IF the hazard is still
+ * active — the panel reads as breaking news, not a standing list of everything
+ * live (the always-on World Watch panel is the comprehensive view). Falls back to
+ * `since` (onset/effective) when a feature carries no issue time.
+ */
+export function freshAlerts(
+  alerts: AlertFeature[],
+  windowMinutes: number = FRESH_ALERT_WINDOW_MIN,
+  now: number = Date.now(),
+): AlertFeature[] {
+  const cutoff = now - windowMinutes * 60_000;
+  return alerts.filter((a) => {
+    const iso = a.properties.sent ?? a.properties.since;
+    const t = iso ? Date.parse(iso) : NaN;
+    return Number.isFinite(t) && t >= cutoff;
+  });
+}
+
+/** "just now" / "12m ago" / "1h 3m ago" — how long since an alert was issued
+ *  (empty when the alert carries no usable timestamp). */
+export function issuedAgoLabel(iso: string | undefined, now: number = Date.now()): string {
+  const t = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(t)) return "";
+  const mins = Math.floor((now - t) / 60_000);
+  if (mins <= 0) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h}h ${m}m ago` : `${h}h ago`;
 }
 
 /** Active alerts, de-duped by area and sorted most-severe first (top N). */
@@ -595,12 +646,22 @@ export function alertAreaLabel(a: AlertFeature, cities: City[] = []): string {
   return nearNamesLabel(places);
 }
 
+/** Cap a label at `max` chars, cutting on a word boundary and adding an ellipsis. */
+function clampLabel(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const sp = cut.lastIndexOf(" ");
+  return `${(sp > max * 0.6 ? cut.slice(0, sp) : cut).trimEnd()}…`;
+}
+
 /** "Tsunami Watch: Fiji Region — YELLOW" for the live-alert panel body. Prefers
- *  the English translation of the headline when the source alert isn't English. */
+ *  the English translation of the headline when the source alert isn't English.
+ *  Event + area are each length-capped so the panel never overflows on alerts
+ *  with sprawling areaDesc lists; the severity suffix is always kept intact. */
 export function alertBannerText(a: AlertFeature, cities: City[] = []): string {
   const p = a.properties;
-  const event = p.translatedHeadline || p.event;
-  const areaText = alertAreaLabel(a, cities);
+  const event = clampLabel(p.translatedHeadline || p.event, 48);
+  const areaText = clampLabel(alertAreaLabel(a, cities), 40);
   const area = areaText ? `: ${areaText}` : "";
   const level = p.level ?? SEVERITY_LABELS[p.severityRank];
   return `${event}${area}${level ? ` — ${level.toUpperCase()}` : ""}`;

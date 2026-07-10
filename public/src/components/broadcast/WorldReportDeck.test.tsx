@@ -1,5 +1,4 @@
 import { render, screen } from "@testing-library/react";
-import { DECK_SLIDES } from "./WorldReportDeck";
 import HazardScreen from "./HazardScreen";
 import AboutPanel from "./AboutPanel";
 import { filterFeedByKind } from "../../lib/broadcast";
@@ -20,12 +19,6 @@ function feedItem(kind: WorldWatchItem["kind"], key: string): WorldWatchItem {
     sortTime: 0,
   };
 }
-
-describe("DECK_SLIDES", () => {
-  it("rotates DETECTION GRID first, then the world report, categories, and about", () => {
-    expect([...DECK_SLIDES]).toEqual(["detection", "hourly", "alerts", "seismic", "volcanoes", "about"]);
-  });
-});
 
 describe("filterFeedByKind", () => {
   const feed = [feedItem("alert", "a"), feedItem("quake", "q"), feedItem("volcano", "v"), feedItem("alert", "a2")];

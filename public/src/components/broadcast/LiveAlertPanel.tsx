@@ -1,15 +1,18 @@
 "use client";
 
 /**
- * Top-centre "LIVE ALERT PANEL": constantly cycles through EVERY active alert
- * (de-duped, most-severe first), one at a time in a pulsing hazard-tinted card,
- * so the broadcast rolls through the whole warning list instead of freezing on
- * the single worst one. Renders nothing when nothing is active.
+ * Top-centre "NEW ALERTS" panel: cycles through only the JUST-ISSUED warnings
+ * (issued within the last ~hour — see freshAlerts), de-duped and most-severe
+ * first, one at a time in a pulsing hazard-tinted card. A warning surfaces when
+ * it's issued, holds for about an hour, then drops off on its own even if the
+ * hazard is still active, so the panel reads as breaking news rather than a
+ * standing list (the always-on World Watch panel is the comprehensive view).
+ * Renders nothing when nothing has been issued recently.
  */
 import { useEffect, useState } from "react";
 import type { AlertFeature } from "../../lib/alerts";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
-import { sortedAlerts, alertBannerText } from "../../lib/broadcast";
+import { sortedAlerts, freshAlerts, issuedAgoLabel, FRESH_ALERT_WINDOW_MIN, alertBannerText } from "../../lib/broadcast";
 import type { City } from "../../lib/cities";
 import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
 
@@ -21,14 +24,28 @@ export default function LiveAlertPanel({
   cities = [],
   theme = DEFAULT_THEME,
   compact = false,
+  windowMinutes = FRESH_ALERT_WINDOW_MIN,
 }: {
   alerts: AlertFeature[];
   /** For the areaDesc-missing fallback (nearest notable city) — mirrors WorldWatchPanel. */
   cities?: City[];
   theme?: BroadcastTheme;
   compact?: boolean;
+  /** How long a just-issued alert keeps showing before it ages off (minutes). */
+  windowMinutes?: number;
 }) {
-  const list = sortedAlerts(alerts);
+  // Live clock, so alerts age out of the window on their own and the "Xm ago"
+  // label stays honest. Starts at 0 (SSR-safe: identical on server + first
+  // client render — no timestamp is fresh yet); the effect sets the real time on
+  // mount and every 30s after.
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setNow(Date.now());
+    const iv = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const list = sortedAlerts(freshAlerts(alerts, windowMinutes, now));
   const [idx, setIdx] = useState(0);
 
   // Advance on a timer; the modulo keeps us in range as the list grows/shrinks.
@@ -43,6 +60,7 @@ export default function LiveAlertPanel({
   const top = list[pos];
   const color = SEVERITY_COLORS[top.properties.severityRank] ?? theme.accent;
   const instruction = top.properties.translatedInstruction || top.properties.instruction;
+  const ago = issuedAgoLabel(top.properties.sent ?? top.properties.since, now);
 
   return (
     <div
@@ -83,7 +101,7 @@ export default function LiveAlertPanel({
           textShadow: "0 1px 1px rgba(0,0,0,0.5)",
         }}
       >
-        ISSUED
+        NEW
       </div>
       <div
         style={{
@@ -98,7 +116,8 @@ export default function LiveAlertPanel({
           marginBottom: 3,
         }}
       >
-        <span>LIVE ALERT PANEL</span>
+        <span>NEW ALERTS</span>
+        {ago ? <span style={{ color, letterSpacing: 1, fontWeight: 700 }}>ISSUED {ago.toUpperCase()}</span> : null}
         {list.length > 1 ? (
           <span style={{ color, letterSpacing: 1 }}>
             {pos + 1}/{list.length}

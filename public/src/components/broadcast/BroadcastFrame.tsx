@@ -12,6 +12,7 @@
  * never intercepts the capture surface, and derives entirely from data the watch
  * surface already has (alerts, quakes, tracks, the active variable's legend).
  */
+import { useMemo } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import type { Segment, SegmentKind } from "@photonsurge/shared/director";
@@ -58,10 +59,8 @@ import {
 import SeismicStationRow from "./SeismicStationRow";
 import TideStationRow from "./TideStationRow";
 import PointHistoryPanel from "./PointHistoryPanel";
-import DepthProfilePanel from "./DepthProfilePanel";
 import ForecastPanel from "./ForecastPanel";
 import EventOverlay from "./EventOverlay";
-import RoundupStatsPanel from "./RoundupStatsPanel";
 import SyslogFeed from "./SyslogFeed";
 import UpNextPanel from "./UpNextPanel";
 import BuildInfoTag from "./BuildInfoTag";
@@ -72,7 +71,7 @@ import { hasRealLocation, isTargetedEvent, KIND_COLOR } from "./kinds";
 /** Design-stage layout constants (in 1080p reference pixels). */
 const TICKER_H = 34;
 const INSET = 30;
-const BRAND_STACK_H = 242;
+const BRAND_STACK_H = 150;
 
 /**
  * A "Nearest City" reticle row for a moving target (aircraft / ship) — the
@@ -161,16 +160,24 @@ export default function BroadcastFrame({
 }) {
   const scale = useStageScale();
   const worldWatch = useWorldWatch(cities, assetsReady);
-  const ticker = buildTicker({ alerts, quakes, tracks });
+  // Memoised: each alert now scans the full cities set for its nearest-city flag,
+  // so only rebuild when the underlying feeds change, not on every re-render.
+  const ticker = useMemo(
+    () => buildTicker({ alerts, quakes, tracks, cities }),
+    [alerts, quakes, tracks, cities],
+  );
   // A round-up segment takes over the bottom crawl with its own narrative
   // (single long line, so it just scrolls through once and loops) instead of
   // mixing it into the alert/quake/track feed — the top crawl keeps showing
   // the standing feed throughout.
   const summaryOnAir =
     onAirSegment?.kind === "summary" ? onAirSegment.summary : null;
+  // Bottom crawl carries the same standing feed as the top, so it wears the same
+  // title chip (theme.tickerTitle, e.g. "GLOBAL FEED"); only a round-up takeover,
+  // which swaps in its own narrative, relabels the chip.
   const bottomTickerTitle = summaryOnAir
     ? "GLOBAL ROUND-UP"
-    : "GLOBAL ALERT TICKER";
+    : theme.tickerTitle;
   const bottomTickerItems = summaryOnAir ? [summaryOnAir.narrative] : ticker;
   const eventTargeted = onAirSegment
     ? isTargetedEvent(onAirSegment.kind)
@@ -256,13 +263,35 @@ export default function BroadcastFrame({
   const wideCitiesForecast = useAreaForecast(wideCitiesBbox ?? null);
   const wideCitiesHasForecast = wideCitiesForecast.days.length > 0;
 
+  // Focus point + framed bbox for the WEATHER (forecast) and CURRENT & RECENT
+  // (AREA HISTORY) context slides — the on-air centre, or the operator camera
+  // when the segment carries none; null on shots with no real ground location.
+  const histCenter = segmentHasLocation
+    ? (onAirSegment?.camera.center ?? state.camera.center ?? null)
+    : null;
+  const histBbox = segmentHasLocation
+    ? bboxForCamera(
+        onAirSegment?.camera.center ?? state.camera.center,
+        onAirSegment?.camera.zoom ?? state.camera.zoom,
+      )
+    : null;
+  // A plain (non-region) wide shot's framed-area forecast, gated on real data so
+  // the deck never rotates onto an empty weather slide — region/tour use
+  // wideCitiesForecast instead. Keyed on the bbox, so it only refetches on a cut.
+  const framedForecast = useAreaForecast(!wideCitiesBbox ? histBbox : null);
+  const hasFramedForecast = framedForecast.days.length > 0;
+  // Sea-temp-by-depth rides ocean scenes only; same null-on-no-location rule as
+  // the history panel it sat beside before.
+  const depthCenter = onAirSegment?.kind === "ocean" ? histCenter : null;
+
   // The bottom-left mode deck: one ordered, content-filtered slide list per
   // segment kind (mode-slides), replacing the old nested-ternary +
   // usePagedSlides page bookkeeping. SlideDeck cross-fades through it and keeps
   // every slide mounted, preserving each panel's own featured-city cycle /
-  // fetched data across a rotation — the same invariant the old display-toggle
-  // pages had. The history panel still stacks above it, so the whole thing
-  // reads as one left column rather than a fixed position.
+  // fetched data across a rotation. Every left-column card — the mode cards AND
+  // the weather / area-history / depth / round-up context cards — is a slide in
+  // this one deck now, so the column is a single tidy rotating card per mode
+  // instead of a tall stack.
   const leftDeck = onAirSegment
     ? modeSlides(onAirSegment, {
         cities,
@@ -274,6 +303,15 @@ export default function BroadcastFrame({
         areaVolcanoes,
         wideCitiesBbox,
         wideCitiesHasForecast,
+        histCenter,
+        histBbox,
+        segmentHasLocation,
+        hasFramedForecast,
+        showDepth: onAirSegment.kind === "ocean",
+        depthCenter,
+        manifest,
+        activeVariable: state.activeVariable,
+        roundup: summaryOnAir ? { stats: summaryOnAir.stats, sources: summaryOnAir.sources } : undefined,
         theme,
       })
     : [];
@@ -300,39 +338,33 @@ export default function BroadcastFrame({
           transformOrigin: "center center",
         }}
       >
-        {/* Targeted point events (storm/quake/aircraft/ship) get the centred
-            reticle (its own compact history panel tucked top-right, so the
-            trend context travels with the event instead of stacking a second
-            "PAST YEAR" card in the bottom-left column); wide shots (global/
-            ocean/region/…) get a small card tucked lower-left so we don't
-            frame empty screen. */}
+        {/* Targeted point events (storm/quake/aircraft/ship/volcano) get the
+            centred reticle + lower-third; the readouts that used to float off
+            its corners are anchored to the screen edges instead — tracking
+            detail top-left under the brand, point-history out on the right,
+            forecast down in the bottom-right (see the bottom-right column). Wide
+            shots (global/ocean/region/…) keep their lower-left card stack. */}
         {onAirSegment && isTargetedEvent(onAirSegment.kind) ? (
           <EventOverlay
             segment={onAirSegment}
             extraDetails={nearestCityDetails(onAirSegment, cities)}
+            theme={theme}
             historyPanel={
               segmentHasLocation ? (
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
-                >
-                  <PointHistoryPanel
-                    center={onAirSegment.camera.center}
-                    theme={theme}
-                    compact
-                  />
-                  <DepthProfilePanel
-                    center={onAirSegment.camera.center}
-                    manifest={manifest}
-                    theme={theme}
-                    compact
-                    activeVariable={state.activeVariable}
-                  />
-                  <ForecastPanel
-                    center={onAirSegment.camera.center}
-                    theme={theme}
-                    compact
-                  />
-                </div>
+                <PointHistoryPanel
+                  center={onAirSegment.camera.center}
+                  theme={theme}
+                  compact
+                />
+              ) : null
+            }
+            forecastPanel={
+              segmentHasLocation ? (
+                <ForecastPanel
+                  center={onAirSegment.camera.center}
+                  theme={theme}
+                  compact
+                />
               ) : null
             }
           />
@@ -358,65 +390,15 @@ export default function BroadcastFrame({
             gap: 10,
           }}
         >
+          {/* One rotating card per mode: the mode cards plus the weather /
+              area-history / depth / round-up context slides all live in this
+              deck now (see mode-slides), so nothing stacks below it. Targeted
+              events carry their own compact history in the EventOverlay reticle
+              above instead of a left-column card. */}
           {onAirSegment ? (
             <SlideDeck
               slides={leftDeck}
               dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
-            />
-          ) : null}
-          {summaryOnAir ? (
-            <RoundupStatsPanel
-              stats={summaryOnAir.stats}
-              sources={summaryOnAir.sources}
-              theme={theme}
-            />
-          ) : null}
-          {!eventTargeted && !wideCitiesBbox ? (
-            <ForecastPanel
-              center={
-                segmentHasLocation
-                  ? (onAirSegment?.camera.center ?? state.camera.center ?? null)
-                  : null
-              }
-              bbox={
-                segmentHasLocation
-                  ? bboxForCamera(
-                      onAirSegment?.camera.center ?? state.camera.center,
-                      onAirSegment?.camera.zoom ?? state.camera.zoom,
-                    )
-                  : null
-              }
-              theme={theme}
-            />
-          ) : null}
-          {!eventTargeted ? (
-            <PointHistoryPanel
-              center={
-                segmentHasLocation
-                  ? (onAirSegment?.camera.center ?? state.camera.center ?? null)
-                  : null
-              }
-              bbox={
-                segmentHasLocation
-                  ? bboxForCamera(
-                      onAirSegment?.camera.center ?? state.camera.center,
-                      onAirSegment?.camera.zoom ?? state.camera.zoom,
-                    )
-                  : null
-              }
-              theme={theme}
-            />
-          ) : null}
-          {!eventTargeted ? (
-            <DepthProfilePanel
-              center={
-                segmentHasLocation
-                  ? (onAirSegment?.camera.center ?? state.camera.center ?? null)
-                  : null
-              }
-              manifest={manifest}
-              theme={theme}
-              activeVariable={state.activeVariable}
             />
           ) : null}
         </div>
@@ -430,7 +412,7 @@ export default function BroadcastFrame({
         />
 
         <div
-          style={{ position: "absolute", top: TICKER_H + INSET, left: INSET }}
+          style={{ position: "absolute", top: TICKER_H + 12, left: -4 }}
         >
           <BrandPanel theme={theme} live={directorOn} status={brandStatus} />
         </div>
@@ -441,32 +423,20 @@ export default function BroadcastFrame({
           <div
             style={{
               position: "absolute",
-              top: TICKER_H + INSET + BRAND_STACK_H,
-              left: INSET,
+              top: TICKER_H + 12 + BRAND_STACK_H,
+              left: -4,
             }}
           >
             <KpIndexPanel kp={aurora?.meta.kp} theme={theme} />
           </div>
         ) : null}
 
-        {/* Space-weather colour key, stacked below whichever of Kp / the brand
-            block are showing (the intensity meter moved to top-centre). */}
-        {spaceWeatherShown ? (
-          <div
-            style={{
-              position: "absolute",
-              top: TICKER_H + INSET + BRAND_STACK_H + (kpShown ? 72 : 0),
-              left: INSET,
-            }}
-          >
-            <SpaceWeatherMeter aurora={aurora} geomag={geomag} theme={theme} />
-          </div>
-        ) : null}
-
         {/* Top-centre column: single most-severe active alert, stacked above the
-            active variable's intensity meter/legend (moved here, horizontal, so
-            the prime top-right slot can carry the always-on WORLD WATCH summary
-            instead). Each hides independently when it has nothing to show. */}
+            active variable's intensity meter/legend, then the space-weather
+            colour key (aurora oval / magnetic field) — all the on-air colour
+            legends live together here, horizontal, so the prime top-right slot
+            can carry the always-on WORLD WATCH summary instead. Each hides
+            independently when it has nothing to show. */}
         <div
           style={{
             position: "absolute",
@@ -487,14 +457,16 @@ export default function BroadcastFrame({
             showSatImg={state.showSatImg}
             satImgFeeds={state.satImgFeeds}
           />
+          {spaceWeatherShown ? (
+            <SpaceWeatherMeter aurora={aurora} geomag={geomag} theme={theme} />
+          ) : null}
         </div>
 
-        {/* Whole-planet situation summary — an auto-rotating deck. Slide 1 is
-            the DETECTION GRID hero tally + ACTIVE FEED (as before); it then
-            cycles a global weather report and single-category ALERTS / SEISMIC /
-            VOLCANOES drill-downs. All independent of the operator's
-            show-alerts/seismic toggles — the deck reuses the one worldWatch
-            fetch (above) rather than each panel pulling its own. */}
+        {/* Whole-planet situation summary — a static stack (no mode-to-mode
+            cycling): the latest hourly WORLD REPORT on top, then the ACTIVE
+            ALERTS drill-down. Independent of the operator's show-alerts/seismic
+            toggles — it reuses the one worldWatch fetch (above) rather than each
+            panel pulling its own. */}
         <div
           style={{
             position: "absolute",

@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { simplifyRing, type Point } from "@photonsurge/shared/geo/simplify";
@@ -10,13 +9,13 @@ import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
+import { dataFile } from "../dataDir";
 
 const TAG = "job:countries";
 
-// worker/src/jobs -> worker/src -> worker -> repo root (same depth as
-// worker/src/scripts, see scripts/coastline.ts).
-const ROOT = resolve(__dirname, "../../..");
-const GEOJSON = resolve(ROOT, "public/public/data/countries.geojson");
+// Natural Earth admin-0 geojson. Overridable via WEATHER_DATA_DIR so the worker
+// reads its own baked-in copy in Docker instead of the Next app's public dir.
+const GEOJSON = dataFile("countries.geojson");
 
 // ~5.5km at the equator — well under a GFS 0.25° pixel (~25km), so
 // simplification can't change which grid cells the polygon mask includes.
