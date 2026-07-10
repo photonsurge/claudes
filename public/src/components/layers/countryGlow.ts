@@ -104,12 +104,23 @@ const GLOW_COLOR: [number, number, number] = [70, 225, 225];
  * as visually distinct on the globe instead of relying on the camera move
  * alone. Returns [] while nothing has resolved yet (still loading, or no
  * geojson match).
+ *
+ * `opts.fill: false` drops the translucent interior fill — used when
+ * countryMapGlow paints real map imagery inside the country instead, so this
+ * only contributes the framing halo + rim. `opts.color` overrides the glow hue
+ * (a warm rim reads better than cyan around a lit map fill).
  */
-export function countryGlowLayers(features: CountryFeature[], now: number): unknown[] {
+export function countryGlowLayers(
+  features: CountryFeature[],
+  now: number,
+  opts?: { fill?: boolean; color?: [number, number, number] },
+): unknown[] {
   if (!features.length) return [];
+  const color = opts?.color ?? GLOW_COLOR;
+  const withFill = opts?.fill !== false;
   const phase = (now % GLOW_PERIOD_MS) / GLOW_PERIOD_MS;
   const breathe = 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI);
-  const lit = lighten(GLOW_COLOR, 0.6);
+  const lit = lighten(color, 0.6);
   const data = features;
 
   return [
@@ -119,7 +130,7 @@ export function countryGlowLayers(features: CountryFeature[], now: number): unkn
       data,
       filled: false,
       stroked: true,
-      getLineColor: () => withA(lighten(GLOW_COLOR, 0.4), 30 + 22 * breathe),
+      getLineColor: () => withA(lighten(color, 0.4), 30 + 22 * breathe),
       getLineWidth: () => 26 + 14 * breathe,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 20,
@@ -132,7 +143,7 @@ export function countryGlowLayers(features: CountryFeature[], now: number): unkn
       data,
       filled: false,
       stroked: true,
-      getLineColor: () => withA(lighten(GLOW_COLOR, 0.35), 70 + 50 * breathe),
+      getLineColor: () => withA(lighten(color, 0.35), 70 + 50 * breathe),
       getLineWidth: () => 14 + 8 * breathe,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 11,
@@ -145,7 +156,7 @@ export function countryGlowLayers(features: CountryFeature[], now: number): unkn
       data,
       filled: false,
       stroked: true,
-      getLineColor: () => withA(lighten(GLOW_COLOR, 0.2), 140 + 90 * breathe),
+      getLineColor: () => withA(lighten(color, 0.2), 140 + 90 * breathe),
       getLineWidth: () => 7 + 4 * breathe,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 5,
@@ -153,15 +164,20 @@ export function countryGlowLayers(features: CountryFeature[], now: number): unkn
       updateTriggers: { getLineColor: now, getLineWidth: now },
     }),
     // 4 ─ Translucent fill so the whole country reads as lit, not just its edge.
-    new GeoJsonLayer({
-      id: "country-glow-fill",
-      data,
-      filled: true,
-      stroked: false,
-      getFillColor: () => withA(GLOW_COLOR, 26 + 34 * breathe),
-      parameters: DEPTH_TEST,
-      updateTriggers: { getFillColor: now },
-    }),
+    //     Omitted when a real map-imagery fill (countryMapGlow) sits underneath.
+    ...(withFill
+      ? [
+          new GeoJsonLayer({
+            id: "country-glow-fill",
+            data,
+            filled: true,
+            stroked: false,
+            getFillColor: () => withA(color, 26 + 34 * breathe),
+            parameters: DEPTH_TEST,
+            updateTriggers: { getFillColor: now },
+          }),
+        ]
+      : []),
     // 5 ─ Crisp lit edge on top, near-solid at the breath's peak.
     new GeoJsonLayer({
       id: "country-glow-edge",

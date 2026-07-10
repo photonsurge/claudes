@@ -26,6 +26,21 @@ ssh "$HOST" "mkdir -p ~/$DIR"
 scp docker-compose.yml "$HOST:$DIR/docker-compose.yml"
 scp "$ENV_DEPLOY" "$HOST:$DIR/.env"
 
+# Basemap/geojson assets are bind-mounted into the worker + public containers
+# (docker-compose ${DATA_DIR:-./data}) instead of being baked into the images.
+# Push the local ./fetch-assets.sh output up to the host's ~/$DIR/data. rsync
+# skips unchanged files, so the ~50MB JPGs only transfer once. No --delete, so
+# a partial local dir never wipes the host.
+DATA_SRC="public/public/data"
+if [[ -f "$DATA_SRC/countries.geojson" ]]; then
+  echo "==> [$HOST] syncing basemap assets -> ~/$DIR/data/"
+  ssh "$HOST" "mkdir -p ~/$DIR/data"
+  rsync -az "$DATA_SRC/" "$HOST:$DIR/data/"
+else
+  echo "!! $DATA_SRC/countries.geojson missing — run ./fetch-assets.sh before deploy" >&2
+  echo "   (skipping asset sync; worker countries.seed + public /data will 404 on host)" >&2
+fi
+
 if [[ "${NO_UP:-0}" == "1" ]]; then
   echo "==> Done (synced only). On host: cd ~/$DIR && docker compose pull && docker compose up -d"
   exit 0

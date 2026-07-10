@@ -597,6 +597,28 @@ describe("buildCandidates", () => {
       expect(pool.some((c) => c.segment.kind === "summary")).toBe(false);
     });
 
+    describe("summaryTourHoldMs", () => {
+      it("keeps the narration-length hold (floored, ≤60s) when there are no stops", () => {
+        expect(summaryTourHoldMs(0, 4000, 30_000, 20_000)).toBe(30_000); // narration wins over floor
+        expect(summaryTourHoldMs(0, 4000, 10_000, 20_000)).toBe(20_000); // floor wins over short narration
+        expect(summaryTourHoldMs(0, 4000, 90_000, 20_000)).toBe(60_000); // capped at 60s
+      });
+
+      it("sizes the hold to cover the whole dwell tour when there are stops", () => {
+        // 3 stops × (4s flight + 40s dwell) = 132s — far past the old 60s cap.
+        expect(summaryTourHoldMs(3, 4000, 30_000, 20_000)).toBe(132_000);
+      });
+
+      it("bounds the toured stops so a huge round-up can't run for many minutes", () => {
+        // 20 stops clamp to SUMMARY_MAX_TOUR_STOPS (6) → 6 × 44s = 264s.
+        expect(summaryTourHoldMs(20, 4000, 30_000, 20_000)).toBe(264_000);
+      });
+
+      it("never returns less than the narration floor even with stops", () => {
+        expect(summaryTourHoldMs(1, 0, 100_000, 20_000)).toBe(100_000); // long narration beats 1-stop tour
+      });
+    });
+
     it("builds camera stops from hotspots then geocoded top events", async () => {
       const db = fakeDb({
         eventSummaries: {

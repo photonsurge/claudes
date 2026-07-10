@@ -8,3 +8,7 @@
 !**/.env.sample
 **/*.log
 **/.DS_Store
+# Fetched basemap assets (satellite/terrain/night JPGs + geojson). NOT baked
+# into any image — provided at runtime via the shared ./data bind-mount in
+# docker-compose. Run ./fetch-assets.sh to populate locally.
+public/public/data

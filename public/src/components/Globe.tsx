@@ -41,6 +41,8 @@ import { cityLabelMinZoom, cityDetail } from "../lib/cities";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
 import { countryFeatureFor, countriesInBbox, countryGlowLayers } from "./layers/countryGlow";
+import { countryMapGlowLayers, loadMapImage } from "./layers/countryMapGlow";
+import { TERRAIN_IMG } from "./layers/basemap";
 import { seismicLayer } from "./layers/seismic";
 import { seismographStationLayers, seismoKeyOf, seismoShortName } from "./layers/seismograph-stations";
 import { graticuleLayer } from "./layers/graticule";
@@ -265,6 +267,21 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     glowFeatureRef.current = [];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [glowCountryIso, glowRegionBbox?.[0], glowRegionBbox?.[1], glowRegionBbox?.[2], glowRegionBbox?.[3]]);
+  // The equirectangular basemap image the spotlight fills a country with (map
+  // AS the glow — see countryMapGlow). Loaded once, module-cached; until it's
+  // ready the glow falls back to countryGlow's own cyan fill.
+  const mapGlowImageRef = useRef<HTMLImageElement | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadMapImage(TERRAIN_IMG)
+      .then((img) => {
+        if (!cancelled) mapGlowImageRef.current = img;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // Hover-pulse (control/interactive only): hovering an alert breathes its own
   // area, hovering a quake pings its epicentre — the same on-air highlight, so
   // the operator can "feel out" an event before clicking to pin its card. The
@@ -394,8 +411,20 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     else if (hover) pulse = onAirPulseLayers(hover.features, hover.at, Date.now());
     // A country spotlight breathes its boundary glow independently of (and
     // alongside) the point pulse above — the two kinds never overlap on air.
+    // The fill IS real map imagery clipped to the country (countryMapGlow); when
+    // that's painting, countryGlow drops its cyan fill and frames it with a warm
+    // rim instead. Until the source image loads, it falls back to the cyan glow.
+    const now = Date.now();
+    const feats = glowFeatureRef.current;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const glow = countryGlowLayers(glowFeatureRef.current, Date.now()) as any[];
+    const mapFill = countryMapGlowLayers(feats, mapGlowImageRef.current, now) as any[];
+    const frame = countryGlowLayers(
+      feats,
+      now,
+      mapFill.length ? { fill: false, color: [255, 241, 209] } : undefined,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ) as any[];
+    const glow = [...mapFill, ...frame];
     const extra = [...pulse, ...glow];
     const layers = extra.length ? [...baseLayersRef.current, ...extra] : baseLayersRef.current;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

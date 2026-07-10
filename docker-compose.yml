@@ -52,11 +52,17 @@ services:
     environment:
       PORT: 10102
       ELEVATION_CACHE_DIR: /app/dem-cache
+      # Natural Earth geojson (countries.seed mask) — read from the shared host
+      # data dir mounted below, NOT baked into the image.
+      WEATHER_DATA_DIR: /app/data
     # Worker HTTP (health/status) — proxied/health-checked via nginx.
     ports:
       - "${BIND_HOST:-127.0.0.1}:10102:10102"
     volumes:
       - dem-cache:/app/dem-cache
+      # Shared basemap/geojson assets (./fetch-assets.sh output). Kept out of the
+      # registry image; the deploy syncs them to the host's ${DATA_DIR:-./data}.
+      - ${DATA_DIR:-./data}:/app/data:ro
     depends_on: [mongodb, redis, socket]
     networks: [internal]
 
@@ -79,6 +85,11 @@ services:
     # Next.js app — nginx proxies the public domain here.
     ports:
       - "${BIND_HOST:-127.0.0.1}:10100:10100"
+    volumes:
+      # Basemap textures + geojson served at /data. Same shared host dir as the
+      # worker; kept out of the registry image (Next serves public/ from disk at
+      # request time, so a bind-mount over the data subdir is served live).
+      - ${DATA_DIR:-./data}:/app/public/public/data:ro
     depends_on: [mongodb, redis, socket, worker]
     networks: [internal]
 

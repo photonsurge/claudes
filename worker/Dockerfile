@@ -71,13 +71,9 @@ COPY --from=builder --chown=worker:nodejs /app/worker/node_modules ./node_module
 COPY --from=builder --chown=worker:nodejs /app/worker/package.json ./package.json
 COPY --from=builder --chown=worker:nodejs /app/shared              ./shared
 
-# Natural Earth admin-0 geojson (from ./fetch-assets.sh, same source the Next app
-# serves at /data). The countries.seed job masks area-weather against it. The
-# worker bakes in its OWN copy and reads it via WEATHER_DATA_DIR, so it never
-# reaches into the public app's static folder. Run ./fetch-assets.sh before
-# building, or this COPY fails the build.
-COPY --chown=worker:nodejs public/public/data/countries.geojson /app/data/countries.geojson
-ENV WEATHER_DATA_DIR=/app/data
+# Static data (Natural Earth geojson) is NOT baked into the image — it's a host
+# bind-mount at /app/data (WEATHER_DATA_DIR), wired in docker-compose. Keeps the
+# registry image lean. The countries.seed job masks area-weather against it.
 
 USER worker
 EXPOSE 8080
