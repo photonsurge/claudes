@@ -16,6 +16,13 @@ const strip = (doc: any): SeismoStation => ({
   siteName: doc.siteName ?? undefined,
 });
 
+/** A station as the admin catalog sees it — the wire station plus its `key`. */
+export interface SeismoStationRow extends SeismoStation {
+  key: string;
+}
+
+const stripRow = (doc: any): SeismoStationRow => ({ ...strip(doc), key: doc.key });
+
 /** A station plus its great-circle distance from the query point. */
 export interface NearestSeismoStation {
   station: SeismoStation;
@@ -76,6 +83,18 @@ export function makeSeismoStationRepo(model: Model<iSeismoStationModel>) {
         .aggregate([{ $geoNear: geoNear } as any, { $limit: opts.limit ?? 1 }])
         .exec();
       return rows.map((doc: any) => ({ station: strip(doc), distanceKm: (doc.distanceM ?? 0) / 1000 }));
+    },
+
+    /** The whole station catalog (admin list), sorted by key. */
+    async list(limit = 0): Promise<SeismoStationRow[]> {
+      const docs = await model.find({}).sort({ key: 1 }).limit(limit).lean().exec();
+      return docs.map(stripRow);
+    },
+
+    /** A single station by its `net.sta.loc.cha` key (admin detail), or null. */
+    async get(key: string): Promise<SeismoStationRow | null> {
+      const doc = await model.findOne({ key }).lean().exec();
+      return doc ? stripRow(doc) : null;
     },
 
     async count(): Promise<number> {

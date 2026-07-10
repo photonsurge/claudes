@@ -112,6 +112,12 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
       return docs.map(strip);
     },
 
+    /** A single volcano by its source id (the admin detail read), or null. */
+    async get(volcanoId: string): Promise<Volcano | null> {
+      const doc = await model.findOne({ volcanoId }).lean().exec();
+      return doc ? strip(doc) : null;
+    },
+
     async count(): Promise<number> {
       return model.estimatedDocumentCount();
     },

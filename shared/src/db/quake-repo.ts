@@ -64,6 +64,12 @@ export function makeQuakeRepo(model: Model<iQuakeModel>) {
       return docs.map(strip);
     },
 
+    /** A single quake by its USGS id (the admin detail read), or null. */
+    async get(quakeId: string): Promise<iQuakeModel | null> {
+      const doc = await model.findOne({ quakeId }).lean().exec();
+      return doc ? strip(doc) : null;
+    },
+
     async count(): Promise<number> {
       return model.estimatedDocumentCount();
     },
