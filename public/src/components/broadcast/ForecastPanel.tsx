@@ -16,17 +16,8 @@ import { formatReading } from "./PointHistoryPanel";
 import { SectionTitle } from "./PointHistoryPanel";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import BroadcastCard from "./BroadcastCard";
-import { hazardMeta } from "../../lib/hazard";
+import { WeatherGlyph, WarnTriangle } from "./glyphs";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
-
-const CONDITION_GLYPH: Record<ForecastDay["condition"], string> = {
-  sunny: "☀️",
-  "partly-cloudy": "⛅",
-  cloudy: "☁️",
-  rain: "🌧️",
-  snow: "🌨️",
-  storm: "⛈️",
-};
 
 /** Common shape DayCard needs, whichever of point/area supplied it. */
 interface NormalizedDay {
@@ -97,18 +88,23 @@ function DayCard({ day, accent, compact }: { day: NormalizedDay; accent: string;
             position: "absolute",
             top: -6,
             right: -4,
-            fontSize: 12,
-            lineHeight: 1,
-            padding: "3px 4px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 18,
+            height: 18,
             borderRadius: 999,
             background: SEVERITY_COLORS[topHazard.severityRank] ?? accent,
+            boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
           }}
         >
-          {hazardMeta(topHazard.hazard).icon}
+          <WarnTriangle size={11} />
         </div>
       ) : null}
       <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: "#aebdd2" }}>{day.label}</span>
-      <span style={{ fontSize: compact ? 22 : 28, lineHeight: 1 }}>{CONDITION_GLYPH[day.condition]}</span>
+      <div style={{ height: compact ? 24 : 30, display: "flex", alignItems: "center" }}>
+        <WeatherGlyph condition={day.condition} size={compact ? 24 : 30} />
+      </div>
       <span style={{ fontSize: compact ? 15 : 18, fontWeight: 850, color: "#f3f7ff" }}>
         {day.hi != null ? formatReading(day.hi) : "—"}°
         <span style={{ fontSize: 12, fontWeight: 700, color: "#9db0ca", marginLeft: 4 }}>

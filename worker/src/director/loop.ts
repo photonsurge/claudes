@@ -288,9 +288,10 @@ async function tick(): Promise<void> {
           r.lastCutWasPriority = pickedViaPriority;
           if (next.kind === "ad") r.pendingAd = false;
           if (next.kind === "summary") r.lastSummaryAt = now;
-          // Anchor any camera motion (orbit spin OR push-in zoom drift) to the
-          // cut instant so /control and /watch compute it in phase from here.
-          if (next.patch.autoSpin || next.patch.zoomDrift) next.patch.spinEpoch = now;
+          // Anchor any camera motion (world spin, area orbit OR push-in zoom
+          // drift) to the cut instant so /control and /watch compute it in phase.
+          if (next.patch.autoSpin || next.patch.zoomDrift || next.patch.orbitDrift)
+            next.patch.spinEpoch = now;
 
           // Fly every cut for the operator-set transition time: /watch and /control
           // read this off the merged ControlState in Globe.runFlight, so each shot

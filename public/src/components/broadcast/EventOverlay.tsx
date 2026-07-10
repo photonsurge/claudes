@@ -14,6 +14,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import { STAGE_W, STAGE_H } from "./useStageScale";
 import { KIND_COLOR, KIND_LABEL } from "./kinds";
 import { accentBorder } from "./config";
+import { KindGlyph } from "./glyphs";
 
 const W = 660;
 const H = 440;
@@ -84,12 +85,14 @@ export default function EventOverlay({
         <Bracket corner="br" color={color} />
       </div>
 
-      {/* Tracking label panel, top-left of the frame — carries the on-air detail. */}
+      {/* Tracking label panel — carries the on-air detail. Pulled well out to the
+          upper-left of the frame (the brackets + event name stay centred on the
+          subject); these offsets only move THIS panel, not the reticle. */}
       <div
         style={{
           position: "absolute",
-          top: -48,
-          left: -54,
+          top: -88,
+          left: -280,
           minWidth: 250,
           padding: "9px 13px",
           background: "rgba(8,13,22,0.78)",
@@ -133,50 +136,85 @@ export default function EventOverlay({
         <div style={{ position: "absolute", top: -48, right: -54 }}>{historyPanel}</div>
       ) : null}
 
-      {/* Event name, lower-centre of the frame. Width-capped + ellipsised: some
-          sources (e.g. an NWS multi-county areaDesc) can hand back a very long
-          subtitle, and nowrap-with-no-limit let that run off both edges. */}
+      {/* Event name, lower-centre of the frame. A kind-tinted vector mark (never
+          an emoji) sits beside the name; a hairline accent rule + a small-caps
+          status line under it give it a designed lower-third feel. Width-capped
+          + ellipsised: some sources (e.g. an NWS multi-county areaDesc) can hand
+          back a very long subtitle, and nowrap-with-no-limit let that run off
+          both edges. */}
       <div
         style={{
           position: "absolute",
-          bottom: 26,
+          bottom: 24,
           left: "50%",
           transform: "translateX(-50%)",
           maxWidth: W - 40,
-          textAlign: "center",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
           fontFamily: "system-ui, sans-serif",
-          textShadow: "0 2px 10px rgba(0,0,0,0.8)",
+          textShadow: "0 2px 12px rgba(0,0,0,0.85)",
         }}
       >
-        <div
-          style={{
-            fontSize: 26,
-            fontWeight: 800,
-            letterSpacing: 2,
-            color: "#fff",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {segment.icon ? `${segment.icon} ` : ""}
-          {name}
-        </div>
-        {segment.subtitle ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, maxWidth: "100%" }}>
+          <KindGlyph kind={segment.kind} color={color} size={30} />
           <div
             style={{
-              fontSize: 13,
-              fontWeight: 600,
-              letterSpacing: 0.5,
-              color: "#cfe0f5",
-              opacity: 0.85,
-              marginTop: 2,
+              fontSize: 30,
+              fontWeight: 800,
+              letterSpacing: 3,
+              color: "#fff",
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
             }}
           >
-            {segment.subtitle}
+            {name}
+          </div>
+        </div>
+        <div
+          style={{
+            width: 150,
+            height: 2,
+            marginTop: 9,
+            borderRadius: 2,
+            background: `linear-gradient(90deg, transparent, ${color}, transparent)`,
+          }}
+        />
+        {segment.subtitle ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginTop: 8,
+              maxWidth: "100%",
+            }}
+          >
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: color,
+                boxShadow: `0 0 8px ${color}`,
+                flex: "none",
+              }}
+            />
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: 2.2,
+                textTransform: "uppercase",
+                color: "#dbe7f7",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {segment.subtitle}
+            </span>
           </div>
         ) : null}
       </div>

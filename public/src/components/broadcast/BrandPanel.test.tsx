@@ -15,9 +15,11 @@ describe("BrandPanel", () => {
 
   it("renders the G.O.D.S. banner asset for G.O.D.S. themes", () => {
     render(<BrandPanel theme={BROADCAST_THEMES.command} />);
-    const banner = screen.getByAltText("G.O.D.S. Global Orbital Detection System");
+    const banner = screen.getByAltText(
+      "G.O.D.S. Global Orbital Detection System",
+    );
     expect(banner).toHaveAttribute("src", "/gods_banner_transparent.png");
-    expect(banner).toHaveStyle({ width: "500px" });
+    expect(banner).toHaveStyle({ width: "620px" });
   });
 
   it("renders the global city clock strip", () => {
@@ -33,5 +35,36 @@ describe("BrandPanel", () => {
     render(<BrandPanel theme={BROADCAST_THEMES.storm} />);
     expect(screen.getByText("STORM WATCH LIVE")).toBeInTheDocument();
     expect(screen.getByText("SEVERE WEATHER OPERATIONS")).toBeInTheDocument();
+  });
+
+  it("renders the on-air shot as kind + target, plus the active attribute", () => {
+    render(
+      <BrandPanel
+        theme={BROADCAST_THEMES.command}
+        live
+        status={{
+          shotKind: "Aircraft",
+          shotTarget: "Air Force One",
+          attribute: "Temperature",
+        }}
+      />,
+    );
+    // Kind is the field label, the specific target is the value.
+    expect(screen.getByText("Aircraft")).toBeInTheDocument();
+    expect(screen.getByText("Air Force One")).toBeInTheDocument();
+    expect(screen.getByText("MAP")).toBeInTheDocument();
+    expect(screen.getByText("Temperature")).toBeInTheDocument();
+  });
+
+  it("drops the shot cell and shows a dash for the attribute when idle", () => {
+    render(
+      <BrandPanel
+        theme={BROADCAST_THEMES.command}
+        status={{ shotKind: null, shotTarget: null, attribute: null }}
+      />,
+    );
+    expect(screen.queryByText("Aircraft")).not.toBeInTheDocument();
+    expect(screen.getByText("MAP")).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
   });
 });

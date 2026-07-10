@@ -15,6 +15,111 @@ const WORLD_CLOCKS = [
   { label: "MOSCOW", timeZone: "Europe/Moscow" },
 ] as const;
 
+/** The G.O.D.S. banner PNG (2048×682) bakes a tall transparent margin above and
+ *  below the artwork — the logo only occupies y:120–521. Rendered raw, that
+ *  padding floats the logo low with dead space above and below. We keep the
+ *  <img> at its natural width (so its drop-shadow still has room) and crop the
+ *  vertical padding with negative margins, so the logo sits at the block top and
+ *  the readout/clock strip tucks up tight beneath it. */
+const GODS_ART = { y0: 120, y1: 521, fw: 2048, fh: 682 } as const;
+
+function godsArtCrop(imgWidth: number) {
+  const scale = imgWidth / GODS_ART.fw;
+  return {
+    topPad: Math.round(GODS_ART.y0 * scale),
+    bottomPad: Math.round((GODS_ART.fh - GODS_ART.y1) * scale),
+  };
+}
+
+/** Live operator readout for the top-left block: the on-air shot (its kind as the
+ *  field label, its target/title as the value) and the weather attribute painted
+ *  on the globe. So an aircraft shot reads "AIRCRAFT · Air Force One" and a
+ *  country shot reads "COUNTRIES · United Kingdom". */
+export interface BrandStatus {
+  /** On-air shot kind, used as the readout's field label (e.g. "Aircraft"). */
+  shotKind: string | null;
+  /** The shot's target/title, used as the value (e.g. "Air Force One", a
+   *  country name). Null when nothing's on air. */
+  shotTarget: string | null;
+  /** Human label for the active weather attribute, or null. */
+  attribute: string | null;
+}
+
+function StatusReadout({
+  status,
+  theme,
+}: {
+  status: BrandStatus;
+  theme: BroadcastTheme;
+}) {
+  const cells = [
+    ...(status.shotKind
+      ? [{ label: status.shotKind, value: status.shotTarget ?? "—" }]
+      : []),
+    { label: "MAP", value: status.attribute ?? "—" },
+  ];
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "stretch",
+        gap: 6,
+        padding: "3px 8px",
+        background:
+          "linear-gradient(180deg, rgba(8,13,24,0.72), rgba(5,9,18,0.84))",
+        border: theme.panelBorder,
+        borderRadius: 7,
+        boxShadow: "0 8px 22px rgba(0,0,0,0.34)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        fontFamily: "system-ui, sans-serif",
+      }}
+    >
+      {cells.map((cell, i) => (
+        <div
+          key={cell.label}
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: 4,
+            ...(i > 0
+              ? {
+                  borderLeft: "1px solid rgba(255,255,255,0.09)",
+                  paddingLeft: 7,
+                }
+              : {}),
+          }}
+        >
+          <span
+            style={{
+              fontSize: 7,
+              fontWeight: 800,
+              letterSpacing: 0.9,
+              color: theme.accent,
+              opacity: 0.85,
+              textTransform: "uppercase",
+            }}
+          >
+            {cell.label}
+          </span>
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: 0.3,
+              color: "#dce9fb",
+              whiteSpace: "nowrap",
+              textTransform: "uppercase",
+            }}
+          >
+            {cell.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type WorldClockReading = {
   label: string;
   time: string;
@@ -73,8 +178,21 @@ function OrbitMark({ size, accent }: { size: number; accent: string }) {
           opacity="0.5"
         />
       </g>
-      <circle cx="20" cy="20" r="11" fill="url(#gods-globe)" stroke="#7fd0ff" strokeWidth="0.6" />
-      <path d="M9.5 20a10.5 4 0 0 0 21 0" fill="none" stroke="#123a5c" strokeWidth="0.6" opacity="0.6" />
+      <circle
+        cx="20"
+        cy="20"
+        r="11"
+        fill="url(#gods-globe)"
+        stroke="#7fd0ff"
+        strokeWidth="0.6"
+      />
+      <path
+        d="M9.5 20a10.5 4 0 0 0 21 0"
+        fill="none"
+        stroke="#123a5c"
+        strokeWidth="0.6"
+        opacity="0.6"
+      />
       <g transform="rotate(-18 20 21)">
         <ellipse
           cx="20"
@@ -87,7 +205,14 @@ function OrbitMark({ size, accent }: { size: number; accent: string }) {
           strokeDasharray="36 36"
           strokeDashoffset="0"
         />
-        <rect x="27.4" y="8.6" width="2.6" height="2.6" rx="0.6" fill="#e8f4ff" />
+        <rect
+          x="27.4"
+          y="8.6"
+          width="2.6"
+          height="2.6"
+          rx="0.6"
+          fill="#e8f4ff"
+        />
       </g>
     </svg>
   );
@@ -97,19 +222,33 @@ export default function BrandPanel({
   theme = DEFAULT_THEME,
   compact = false,
   live = false,
+  status = null,
 }: {
   theme?: BroadcastTheme;
   compact?: boolean;
   /** Show the pulsing LIVE badge — true only while the auto-director is
    *  actively driving the broadcast; an idle/off director isn't "on air". */
   live?: boolean;
+  /** Operator readout (on-air shot + active attribute) shown under the mark.
+   *  Null hides the strip. */
+  status?: BrandStatus | null;
 }) {
   const clocks = useWorldClocks();
   const usesGodsBanner = theme.name === "G.O.D.S.";
-  const bannerWidth = compact ? 320 : 500;
+  const bannerWidth = compact ? 400 : 620;
+  const art = usesGodsBanner ? godsArtCrop(bannerWidth) : null;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, pointerEvents: "none" }}>
-      <style>{"@keyframes bcast-livepulse{0%,100%{opacity:1}50%{opacity:0.35}}"}</style>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        pointerEvents: "none",
+      }}
+    >
+      <style>
+        {"@keyframes bcast-livepulse{0%,100%{opacity:1}50%{opacity:0.35}}"}
+      </style>
       {usesGodsBanner ? (
         <img
           src="/gods_banner_transparent.png"
@@ -118,6 +257,10 @@ export default function BrandPanel({
             display: "block",
             width: bannerWidth,
             height: "auto",
+            // Crop the PNG's baked transparent frame: lift the logo to the top of
+            // the block and pull the readout/clocks up beneath it (godsArtMetrics).
+            marginTop: art ? -art.topPad : 0,
+            marginBottom: art ? -art.bottomPad : 0,
             filter: "drop-shadow(0 8px 26px rgba(0,0,0,0.5))",
           }}
         />
@@ -140,13 +283,38 @@ export default function BrandPanel({
           {theme.iconVariant === "orbit" ? (
             <OrbitMark size={compact ? 26 : 34} accent={theme.accent} />
           ) : (
-            <svg width={compact ? 26 : 34} height={compact ? 26 : 34} viewBox="0 0 40 40" aria-hidden>
-              <circle cx="20" cy="20" r="18" fill="none" stroke={theme.accent} strokeWidth="2" />
+            <svg
+              width={compact ? 26 : 34}
+              height={compact ? 26 : 34}
+              viewBox="0 0 40 40"
+              aria-hidden
+            >
+              <circle
+                cx="20"
+                cy="20"
+                r="18"
+                fill="none"
+                stroke={theme.accent}
+                strokeWidth="2"
+              />
               <circle cx="20" cy="20" r="18" fill="rgba(120,190,255,0.06)" />
-              <path d="M13 12h9a6 6 0 0 1 0 12h-9z M22 24l6 5" fill="none" stroke="#cfe2ff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+              <path
+                d="M13 12h9a6 6 0 0 1 0 12h-9z M22 24l6 5"
+                fill="none"
+                stroke="#cfe2ff"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           )}
-          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              lineHeight: 1.15,
+            }}
+          >
             <span
               style={{
                 fontSize: compact ? 15 : 19,
@@ -189,7 +357,16 @@ export default function BrandPanel({
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "stretch", gap: 8 }}>
+      {/* Operator readout + world clocks on one left-aligned strip beneath the
+          banner — small, single line, hugging the screen's left edge. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "nowrap",
+        }}
+      >
         {live && (
           <div
             style={{
@@ -197,8 +374,10 @@ export default function BrandPanel({
               alignItems: "center",
               gap: 6,
               padding: "4px 10px 4px 8px",
-              clipPath: "polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)",
-              background: "linear-gradient(180deg, rgba(40,6,6,0.95), rgba(20,3,3,0.95))",
+              clipPath:
+                "polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)",
+              background:
+                "linear-gradient(180deg, rgba(40,6,6,0.95), rgba(20,3,3,0.95))",
               border: `1px solid ${LIVE_RED}8c`,
               fontFamily: "system-ui, sans-serif",
               fontSize: 11,
@@ -222,14 +401,15 @@ export default function BrandPanel({
             LIVE
           </div>
         )}
+        {status && <StatusReadout status={status} theme={theme} />}
         <div
           style={{
-            width: usesGodsBanner ? bannerWidth : "auto",
             display: "grid",
             gridTemplateColumns: `repeat(${WORLD_CLOCKS.length}, minmax(0, 1fr))`,
-            gap: 5,
-            padding: "7px 9px",
-            background: "linear-gradient(180deg, rgba(8,13,24,0.72), rgba(5,9,18,0.84))",
+            gap: 4,
+            padding: "5px 8px",
+            background:
+              "linear-gradient(180deg, rgba(8,13,24,0.72), rgba(5,9,18,0.84))",
             border: theme.panelBorder,
             borderRadius: 10,
             boxShadow: "0 8px 22px rgba(0,0,0,0.34)",
@@ -244,7 +424,7 @@ export default function BrandPanel({
                 minWidth: 0,
                 display: "flex",
                 flexDirection: "column",
-                gap: 2,
+                gap: 1,
                 alignItems: "center",
               }}
             >
@@ -255,9 +435,9 @@ export default function BrandPanel({
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
                   fontFamily: "system-ui, sans-serif",
-                  fontSize: 8,
+                  fontSize: 6.5,
                   fontWeight: 800,
-                  letterSpacing: 0.8,
+                  letterSpacing: 0.6,
                   color: theme.accent,
                   opacity: 0.9,
                 }}
@@ -266,8 +446,9 @@ export default function BrandPanel({
               </span>
               <span
                 style={{
-                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                  fontSize: compact ? 10 : 12,
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                  fontSize: compact ? 8.5 : 10,
                   fontWeight: 700,
                   letterSpacing: 0,
                   color: "#dce9fb",

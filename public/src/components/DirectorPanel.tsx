@@ -94,7 +94,7 @@ export default function DirectorPanel({
       <DirectorCountdown liveState={liveState} applyLive={applyLive} />
 
       <DirectorOnAirReadout auto={auto} live={live} />
-      <DirectorRecentlyAired live={live} visible={auto && !showSettings} />
+      <DirectorRecentlyAired sceneId={sceneId} live={live} visible={auto && !showSettings} />
 
       {showForm ? (
         <>

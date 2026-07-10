@@ -147,7 +147,7 @@ function useMapTypeAvailability(manifest: WeatherManifest | null): MapTypeAvaila
 }
 
 /** The step sequence + cadence for a cut. `anchored` opens on step 0 (the hero look). */
-function cutSteps(
+export function cutSteps(
   cut: Segment,
   avail: MapTypeAvailability,
   mapTypeIds?: string[],
@@ -184,7 +184,11 @@ function cutSteps(
     // with no geocoded events) just keeps the global view.
     const steps = (cut.summary?.stops ?? []).map(
       (s): MapStep => ({
-        patch: { camera: { center: [s.lng, s.lat], zoom: SUMMARY_STOP_ZOOM } },
+        // A stop FRAMES a specific hotspot, so hold it like a country spotlight —
+        // override the summary preset's world spin (PRESETS.summary is autoSpin:true
+        // for the stop-less global backdrop). Spinning a framed, zoomed-in stop just
+        // drifts it off-screen — the "framed shots HOLD" rule in director-rois PRESETS.
+        patch: { camera: { center: [s.lng, s.lat], zoom: SUMMARY_STOP_ZOOM }, autoSpin: false, spinSpeed: 0 },
         label: { title: s.label, subtitle: [severityLabel(s.severity), s.subtitle].filter(Boolean).join(" · ") },
       }),
     );

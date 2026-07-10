@@ -35,8 +35,8 @@ export const ADMIN_LINKS: AdminLink[] = [
   { group: "Catalogs", href: "/admin/cams", title: "Webcams", desc: "Catalogued live cams — status, location, preview.", ready: true },
   { group: "Catalogs", href: "/admin/volcanoes", title: "Volcanoes", desc: "Active volcanoes — status, reports and Wikipedia enrichment.", ready: true },
   { group: "Catalogs", href: "/admin/sea-points", title: "Sea points", desc: "Ocean-monitoring catalog the Director's ocean kind rotates through.", ready: true },
-  { group: "Catalogs", href: "/admin/countries", title: "Countries", desc: "Full country catalog — boundaries, enrichment, area-weather.", ready: true },
-  { group: "Catalogs", href: "/admin/regions", title: "Regions", desc: "Oceans, continents, EU blocs, UK nations — enrichment, area-weather.", ready: true },
+  { group: "Catalogs", href: "/countries", title: "Countries", desc: "Full country catalog — boundaries, enrichment, area-weather and globe preview.", ready: true },
+  { group: "Catalogs", href: "/regions", title: "Regions", desc: "Oceans, continents, EU blocs, UK nations — enrichment, area-weather and globe preview.", ready: true },
 
   { group: "Operations", href: "/admin/jobs", title: "Worker jobs", desc: "Trigger ingest/snapshot jobs; view the queue.", ready: true },
   { group: "Operations", href: "/admin/queue", title: "Queue", desc: "BullMQ dashboard — browse/retry jobs, schedules, pause.", ready: true },

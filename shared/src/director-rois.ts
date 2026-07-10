@@ -345,8 +345,8 @@ export function quakeMapPlan(tsunami?: boolean): QuakeMapPlan {
  * hand-picked on a previous cut) from bleeding into the director's shots.
  *
  * Not included here (set explicitly per preset when relevant): activeVariable,
- * the camera-motion trio (autoSpin/spinSpeed/zoomDrift) and event filter
- * overrides (alertSeverityMin/seismicMinMag) — those aren't on/off layers.
+ * the camera-motion fields (autoSpin/spinSpeed/zoomDrift/orbitDrift) and event
+ * filter overrides (alertSeverityMin/seismicMinMag) — those aren't on/off layers.
  */
 export const LAYERS_OFF: Partial<ControlState> = {
   basemap: DEFAULT_BASEMAP_ID,
@@ -394,14 +394,16 @@ export const OVERLAY_KEYS = Object.keys(LAYERS_OFF).filter(
  */
 export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
   // Per-shot camera "mode" so the globe is always alive but never wanders off a
-  // subject. Two deterministic motions (in phase across /control and /watch via
+  // subject. Three deterministic motions (in phase across /control and /watch via
   // spinEpoch):
   //   • GLOBAL shots (intro/global/ocean) SPIN — autoSpin rotates the whole world,
   //     which only reads right on a full-globe view.
-  //   • EVERYTHING ELSE HOLDS on its subject (no spin — autoSpin advances the
-  //     camera longitude, which would drift a framed region off-screen) and
-  //     instead breathes with a slow zoomDrift push-in. Regional tours/weather
-  //     get a gentle drift; detail events (storm/quake/flight/ship) a stronger one.
+  //   • FRAMED AREA shots (tour/country/weather) ORBIT — orbitDrift circles the
+  //     framed centre slowly so the wide area shot moves without the subject
+  //     leaving frame (autoSpin's unbounded longitude advance would).
+  //   • DETAIL events (storm/quake/flight/ship) HOLD on the subject and breathe
+  //     with a stronger zoomDrift push-in only.
+  // All framed shots also carry a gentle zoomDrift push-in on top of the above.
   intro: {
     ...LAYERS_OFF,
     activeVariable: "temp",
@@ -461,6 +463,9 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     autoSpin: false,
     spinSpeed: 0,
     zoomDrift: 0.02,
+    // Slow orbit round the framed region so the wide area shot drifts alive
+    // instead of sitting dead-still (paired with the gentle push-in above).
+    orbitDrift: 6,
   },
   // A favourite-country spotlight reads as the national weather check: synoptic
   // pressure + live radar + any active warnings over the framed country, with the
@@ -480,6 +485,8 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     autoSpin: false,
     spinSpeed: 0,
     zoomDrift: 0.025,
+    // Circle the framed country slowly — a national-weather look that moves.
+    orbitDrift: 5,
   },
   weather: {
     ...LAYERS_OFF,
@@ -493,6 +500,7 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     autoSpin: false,
     spinSpeed: 0,
     zoomDrift: 0.02,
+    orbitDrift: 5,
   },
   storm: {
     ...LAYERS_OFF,

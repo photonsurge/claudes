@@ -117,4 +117,29 @@ describe("makeAirLogRepo", () => {
     await repo.listRuns({ limit: 5 });
     expect(limit).toHaveBeenCalledWith(5);
   });
+
+  it("recentEntries returns a scene's shots newest-first, capped (default 12), stripped", async () => {
+    const rows = [
+      { _id: "x", __v: 0, id: "e2", sceneId: "default", seq: 2, kind: "quake", startedAt: T1 },
+      { _id: "y", __v: 0, id: "e1", sceneId: "default", seq: 1, kind: "intro", startedAt: T0 },
+    ];
+    const limit = jest.fn(() => chain(rows));
+    const sort = jest.fn(() => ({ limit }));
+    const entry = fakeModel<iAirEntryModel>({ find: jest.fn(() => ({ sort })) });
+    const run = fakeModel<iAirRunModel>();
+    const repo = makeAirLogRepo(run.model, entry.model);
+
+    const out = await repo.recentEntries({ sceneId: "default" });
+
+    expect(entry.find).toHaveBeenCalledWith({ sceneId: "default" });
+    expect(sort).toHaveBeenCalledWith({ startedAt: -1 });
+    expect(limit).toHaveBeenCalledWith(12);
+    expect(out).toEqual([
+      { id: "e2", sceneId: "default", seq: 2, kind: "quake", startedAt: T1 },
+      { id: "e1", sceneId: "default", seq: 1, kind: "intro", startedAt: T0 },
+    ]);
+
+    await repo.recentEntries({ sceneId: "default", limit: 5 });
+    expect(limit).toHaveBeenCalledWith(5);
+  });
 });

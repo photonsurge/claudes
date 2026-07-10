@@ -75,6 +75,11 @@ describe("ticker line builders", () => {
   it("prefixes an alert with its severity label", () => {
     expect(alertTicker(alert(3))).toBe("SEVERE: Tsunami Watch · Fiji Region");
   });
+  it("prefers the translated headline over the raw event when present", () => {
+    expect(alertTicker(alert(3, { event: "台风红色预警", translatedHeadline: "Typhoon Red Alert" }))).toBe(
+      "SEVERE: Typhoon Red Alert · Fiji Region",
+    );
+  });
   it("formats a track with flag + kind", () => {
     expect(trackTicker(track())).toBe("🇺🇸 GLOBAL THUNDER-26 · AIRCRAFT");
   });
@@ -334,6 +339,14 @@ describe("worldWatchFeed", () => {
     // Then the rank-1 advisory, then the M3.1 minnow.
     expect(feed[2].title).toBe("Frost Advisory");
     expect(feed[3].tag).toBe("M3.1");
+  });
+
+  it("prefers a translated headline over the raw event for the feed title", () => {
+    const translated = raw(4, "台风红色预警", "Guangdong", {
+      info: [{ event: "台风红色预警", severityRank: 4, area: [{ areaDesc: "Guangdong", geocodes: [] }], translatedHeadline: "Typhoon Red Alert" }] as Alert["info"],
+    });
+    const feed = worldWatchFeed([translated], []);
+    expect(feed[0].title).toBe("Typhoon Red Alert");
   });
 
   it("orders same-tier quakes by exact magnitude, not arrival order", () => {

@@ -18,7 +18,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import BroadcastCard, { DIVIDER } from "./BroadcastCard";
 
 /** Detail rows that change moment-to-moment — worth showing live under the photo. */
-const LIVE_LABELS = new Set(["Altitude", "Heading", "Speed", "Course"]);
+const LIVE_LABELS = new Set(["Altitude", "Speed", "Heading", "Vert. rate", "Course", "Callsign"]);
 
 export default function TrackInfoPanel({
   segment,

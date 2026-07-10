@@ -152,6 +152,11 @@ const FLY_MAX = 7000;
 /** Max extra zoom a detail-shot push-in may add over its hold (zoom levels). */
 const MAX_PUSH_IN = 1.2;
 
+/** Seconds for one full slow orbit of a framed "area" shot (orbitDrift). */
+const ORBIT_PERIOD_S = 48;
+/** Seconds over which the orbit amplitude eases out from the anchor centre. */
+const ORBIT_EASE_S = 8;
+
 /** Smooth accel/decel so flights ease in and out instead of jerking. */
 const easeInOutCubic = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -321,9 +326,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // Live flag read inside the once-created deck callback below: true whenever a
   // deterministic camera motion (orbit spin or push-in zoom drift) owns the
   // camera, so onViewStateChange doesn't feed those frames back into React.
-  const motionRef = useRef(state.autoSpin || !!state.zoomDrift);
+  const motionRef = useRef(state.autoSpin || !!state.zoomDrift || !!state.orbitDrift);
   useEffect(() => {
-    motionRef.current = state.autoSpin || !!state.zoomDrift;
+    motionRef.current = state.autoSpin || !!state.zoomDrift || !!state.orbitDrift;
   });
 
   // Re-filter the (already-built) city dots in place as the live zoom changes,
@@ -609,14 +614,22 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   useEffect(() => {
     const spinSpeed = state.autoSpin ? state.spinSpeed : 0;
     const zoomDrift = state.zoomDrift || 0;
-    if (spinSpeed === 0 && zoomDrift === 0) return;
+    const orbitDrift = state.orbitDrift || 0;
+    if (spinSpeed === 0 && zoomDrift === 0 && orbitDrift === 0) return;
     // Anchor to the cut so motion is deterministic (same on /control and /watch).
-    // WIDE shots orbit (spinSpeed>0) around the anchor longitude; DETAIL shots
-    // push in (zoomDrift>0) while staying dead-centred on anchorLng/anchorLat.
+    // WIDE shots spin (spinSpeed>0) around the anchor longitude; FRAMED AREA shots
+    // orbit (orbitDrift>0) in a slow circle round the anchor; DETAIL shots push in
+    // (zoomDrift>0) while staying dead-centred on anchorLng/anchorLat.
     const anchorLng = state.camera.center[0];
     const anchorLat = state.camera.center[1];
     const anchorZoom = state.camera.zoom;
     const epoch = state.spinEpoch || Date.now();
+    // The orbit starts once the fly-in has settled and eases out from the anchor
+    // (amplitude 0 → orbitDrift), so handing off from runFlight never pops. Divide
+    // the lng offset by cos(lat) so the circle looks round, not squashed, at high
+    // latitude (clamped so a near-polar shot can't blow the offset up).
+    const flightSec = (state.cutTransitionMs || 0) / 1000;
+    const lngScale = Math.max(Math.cos((anchorLat * Math.PI) / 180), 0.35);
     let raf = 0;
     const loop = () => {
       // A flyTo/fitBounds is animating — let it own the camera this frame.
@@ -626,16 +639,33 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       }
       const dt = (Date.now() - epoch) / 1000;
       let longitude = anchorLng + spinSpeed * dt;
+      let latitude = anchorLat;
+      if (orbitDrift > 0) {
+        const ot = Math.max(0, dt - flightSec); // time since the fly-in settled
+        const amp = orbitDrift * (1 - Math.exp(-ot / ORBIT_EASE_S));
+        const theta = (2 * Math.PI * ot) / ORBIT_PERIOD_S;
+        longitude += (amp * Math.cos(theta)) / lngScale;
+        latitude += amp * Math.sin(theta);
+        latitude = Math.max(-85, Math.min(85, latitude));
+      }
       longitude = ((((longitude + 180) % 360) + 360) % 360) - 180; // wrap to −180..180
       // Creep closer, capped so a long hold doesn't bore through the surface.
       const zoom = anchorZoom + Math.min(zoomDrift * dt, MAX_PUSH_IN);
-      applyViewState({ longitude, latitude: anchorLat, zoom });
+      applyViewState({ longitude, latitude, zoom });
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.autoSpin, state.spinSpeed, state.zoomDrift, state.spinEpoch, state.camera]);
+  }, [
+    state.autoSpin,
+    state.spinSpeed,
+    state.zoomDrift,
+    state.orbitDrift,
+    state.cutTransitionMs,
+    state.spinEpoch,
+    state.camera,
+  ]);
 
   // On the operator, freeze the camera to the current longitude when a spin
   // stops so it doesn't snap back to the anchor and the next spin starts here.

@@ -113,6 +113,24 @@ export function makeAirLogRepo(runModel: Model<iAirRunModel>, entryModel: Model<
       const docs = await q.lean().exec();
       return docs.map((d) => strip<iAirEntry>(d));
     },
+
+    /**
+     * A scene's most-recently-aired shots, newest-first, spanning run
+     * boundaries (sorted by air time, not grouped by run). Backs the operator's
+     * live "recently aired" glance on /control — it reads this durable log so it
+     * survives reloads and never misses a cut, unlike the old client-only
+     * session tracker that only saw cuts while the page happened to be open.
+     */
+    async recentEntries(opts: { sceneId: string; limit?: number }): Promise<iAirEntry[]> {
+      const limit = opts.limit && opts.limit > 0 ? opts.limit : 12;
+      const docs = await entryModel
+        .find({ sceneId: opts.sceneId })
+        .sort({ startedAt: -1 })
+        .limit(limit)
+        .lean()
+        .exec();
+      return docs.map((d) => strip<iAirEntry>(d));
+    },
   };
 }
 

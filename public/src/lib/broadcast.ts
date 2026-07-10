@@ -27,12 +27,14 @@ export function quakeTicker(q: Quake): string {
   return `SEISMIC M${q.mag.toFixed(1)} · ${loc}${q.tsunami ? " · TSUNAMI POTENTIAL" : ""}`;
 }
 
-/** "TSUNAMI WATCH: Fiji Region" (severity-prefixed hazard + area). */
+/** "TSUNAMI WATCH: Fiji Region" (severity-prefixed hazard + area). Prefers the
+ *  English translation of the event/headline when the source isn't English. */
 export function alertTicker(a: AlertFeature): string {
   const p = a.properties;
   const sev = SEVERITY_LABELS[p.severityRank];
   const area = p.areaDesc ? ` · ${p.areaDesc}` : "";
-  return `${sev ? `${sev.toUpperCase()}: ` : ""}${p.event}${area}`;
+  const event = p.translatedHeadline || p.event;
+  return `${sev ? `${sev.toUpperCase()}: ` : ""}${event}${area}`;
 }
 
 /** "🇺🇸 GLOBAL THUNDER-26 · AIRCRAFT" */
@@ -520,7 +522,7 @@ export function worldWatchFeed(
       icon: hazardMeta(hazard).icon,
       flag: places[0] ? isoToFlag(places[0].item.cc) : "",
       photo: nearbyPhoto(places),
-      title: info?.event ?? "Alert",
+      title: info?.translatedHeadline || info?.event || "Alert",
       sub,
       expiresIn: a.expiresAt ? expiresLabel(a) : undefined,
       weight: rank,

@@ -58,6 +58,7 @@ describe("mergeControlState", () => {
       autoSpin: true,
       spinSpeed: 17,
       zoomDrift: 0,
+      orbitDrift: 4,
       spinEpoch: 123456789,
       cutTransitionMs: 4200,
       showTrackLabels: true,

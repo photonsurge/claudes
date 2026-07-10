@@ -91,6 +91,7 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     autoSpin: { type: Boolean, required: true, default: false },
     spinSpeed: { type: Number, required: true, default: 8 },
     zoomDrift: { type: Number, required: true, default: 0 },
+    orbitDrift: { type: Number, required: true, default: 0 },
     spinEpoch: { type: Number, required: true, default: 0 },
     cutTransitionMs: { type: Number, required: true, default: 0 },
     showTrackLabels: { type: Boolean, required: true, default: false },

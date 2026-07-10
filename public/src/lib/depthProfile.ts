@@ -44,9 +44,14 @@ const DEPTH_CHAPTERS: Array<{ depth: number; variableId: string }> = [
  * level). The RTOFS depth chapters are curvilinear-regridded with no land
  * mask of their own (see worker/src/weather/rtofsDepth.ts) — near a
  * coastline `cdo`'s remap can bleed a real ocean value onto a land target
- * cell instead of nodata, so the "≥2 chapters have data" fallback below isn't
- * reliable right at the coast. Returns null (unknown — don't block) if the
- * elevation texture itself has no coverage at this point.
+ * cell instead of nodata, so the "≥2 chapters have data" fallback isn't
+ * reliable right at the coast.
+ *
+ * Returns `true` (below sea level → open water), `false` (land), or `null`
+ * when we simply can't tell — the elevation overlay isn't baked into this
+ * manifest (it's a manual/admin bake, not part of `yarn seed`) or its texture
+ * won't load. How `sampleDepthProfile` treats that `null` depends on whether
+ * the shot is an ocean-area scene; see its ocean gate.
  */
 async function isOceanAt(manifest: WeatherManifest, lat: number, lng: number): Promise<boolean | null> {
   const entry = manifest.variables.elevation;
@@ -73,17 +78,30 @@ async function isOceanAt(manifest: WeatherManifest, lat: number, lng: number): P
  * Sample the profile at [lat,lng]. Always reads fhr 0 regardless of the
  * ambient timeline position: every chapter is analysis-only, so following the
  * live forecast-hour scrubber would silently blank the profile whenever the
- * operator is browsing a forecast step. Returns null over land (see
- * `isOceanAt`) or when fewer than 2 chapters have data at this point — that
- * absence IS the ocean-vs-land gate, the same "no data → no chart" convention
- * PointHistoryPanel already uses.
+ * operator is browsing a forecast step.
+ *
+ * Ocean gate — the panel is ocean-only, so it surfaces in exactly two cases:
+ *   • the focus point is confirmed open water by the elevation DEM, or
+ *   • we're on an ocean-area scene (`opts.oceanScene` — the `ocean` segment
+ *     kind: the SST/wave world spin and the Niño/Atlantic-MDR/North-Sea/Med/
+ *     IOD depth-cycle sea points), which are editorially over water.
+ * On a non-ocean scene we REQUIRE a positive DEM reading (`isOceanAt === true`);
+ * an unknown DEM (overlay not baked, or no coverage) is treated as "not ocean"
+ * and hides the panel, so it no longer leaks onto land via the RTOFS coastal
+ * remap bleed. On an ocean scene we allow an unknown DEM (the scene vouches for
+ * the water) but an explicit land reading still hides it — e.g. the ocean spin
+ * panning across a continent. Past the gate, fewer than 2 chapters with data
+ * also hides it (the same "no data → no chart" convention PointHistoryPanel
+ * uses).
  */
 export async function sampleDepthProfile(
   manifest: WeatherManifest,
   lat: number,
   lng: number,
+  opts: { oceanScene?: boolean } = {},
 ): Promise<DepthProfilePoint[] | null> {
-  if ((await isOceanAt(manifest, lat, lng)) === false) return null;
+  const ocean = await isOceanAt(manifest, lat, lng);
+  if (opts.oceanScene ? ocean === false : ocean !== true) return null;
   const points: DepthProfilePoint[] = [];
   for (const { depth, variableId } of DEPTH_CHAPTERS) {
     const entry = manifest.variables[variableId];

@@ -339,6 +339,15 @@ export interface ControlState {
    */
   zoomDrift: number;
   /**
+   * Slow orbit RADIUS in degrees for framed "area" shots (country / region tour /
+   * weather) — the camera circles the framed centre so the shot is alive without
+   * the subject drifting off-screen (unlike autoSpin, which advances longitude
+   * unbounded). Deterministic off spinEpoch like the spin/push-in: the amplitude
+   * eases out from the anchor after the fly-in settles, so /control and /watch
+   * trace the same circle and there's no pop when the cut lands. 0 = off.
+   */
+  orbitDrift: number;
+  /**
    * Wall-clock ms when the current spin/push anchor was set. Both /control and
    * /watch compute longitude = camera.center[0] + spinSpeed*(now-spinEpoch)/1000
    * and zoom = camera.zoom + zoomDrift*(now-spinEpoch)/1000, so they move in phase
@@ -454,6 +463,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   autoSpin: false,
   spinSpeed: 8,
   zoomDrift: 0,
+  orbitDrift: 0,
   spinEpoch: 0,
   cutTransitionMs: 0,
   showTrackLabels: false,
@@ -572,6 +582,7 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     autoSpin: typeof patch.autoSpin === "boolean" ? patch.autoSpin : base.autoSpin ?? false,
     spinSpeed: typeof patch.spinSpeed === "number" ? patch.spinSpeed : base.spinSpeed ?? 8,
     zoomDrift: typeof patch.zoomDrift === "number" ? patch.zoomDrift : base.zoomDrift ?? 0,
+    orbitDrift: typeof patch.orbitDrift === "number" ? patch.orbitDrift : base.orbitDrift ?? 0,
     spinEpoch: typeof patch.spinEpoch === "number" ? patch.spinEpoch : base.spinEpoch ?? 0,
     cutTransitionMs:
       typeof patch.cutTransitionMs === "number" ? patch.cutTransitionMs : base.cutTransitionMs ?? 0,

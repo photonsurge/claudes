@@ -477,6 +477,7 @@ export async function buildCandidates(
           source: String(a.source),
           identifier: String(a.identifier),
           event: info?.event,
+          translatedEvent: info?.translatedHeadline,
           severityRank: sev,
           level: info?.sourceSeverity,
           areaDesc: area?.areaDesc,
@@ -528,7 +529,21 @@ export async function buildCandidates(
         if (m?.registration) details.push({ label: "Registration", value: m.registration });
         if (r.country) details.push({ label: "Origin", value: `${flag ? `${flag} ` : ""}${r.country}` });
         if (hasAlt) details.push({ label: "Altitude", value: `FL${Math.round(altKft * 10)} · ${Math.round(r.altM as number).toLocaleString()} m` });
+        if (typeof r.speed === "number") {
+          const kt = Math.round((r.speed as number) * 1.94384);
+          details.push({ label: "Speed", value: `${kt} kn · ${Math.round(kt * 1.852)} km/h` });
+        }
         if (typeof r.headingDeg === "number") details.push({ label: "Heading", value: `${Math.round(r.headingDeg)}°` });
+        // Climb/descent — only when it's meaningfully off level (~100 fpm), rounded
+        // to the nearest 50 fpm so a live jitter doesn't read as spurious precision.
+        if (typeof r.verticalRateMS === "number" && Math.abs(r.verticalRateMS) >= 0.5) {
+          const fpm = Math.round((Math.abs(r.verticalRateMS as number) * 196.85) / 50) * 50;
+          const climbing = (r.verticalRateMS as number) > 0;
+          details.push({ label: "Vert. rate", value: `${climbing ? "▲" : "▼"} ${fpm.toLocaleString()} fpm` });
+        }
+        // Live ADS-B callsign (e.g. flight number) — distinct from the catalog name.
+        const call = r.name?.trim();
+        if (call && call.toUpperCase() !== name.toUpperCase()) details.push({ label: "Callsign", value: call });
         seg.details = details;
         seg.trackInfo = notableTrackInfo(notable, { type: m?.type, operator: m?.operator, registration: m?.registration, flag, country: r.country });
         pool.push({ score: notable.vip ? VIP_SCORE : NOTABLE_SCORE, segment: seg });

@@ -48,6 +48,7 @@ export function alertFeatureToSegment(f: AlertFeature): Segment | null {
     source: p.source,
     identifier: p.identifier,
     event: p.event,
+    translatedEvent: p.translatedHeadline,
     severityRank: p.severityRank,
     level: p.level,
     areaDesc: p.areaDesc,

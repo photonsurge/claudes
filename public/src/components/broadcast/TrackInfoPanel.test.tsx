@@ -47,6 +47,29 @@ describe("TrackInfoPanel", () => {
     expect(screen.getByText("Heading")).toBeInTheDocument();
   });
 
+  it("surfaces the live aircraft telemetry rows (speed, vertical rate, callsign)", () => {
+    const seg: Segment = {
+      ...base,
+      details: [
+        { label: "Type", value: "Boeing VC-25A" },
+        { label: "Altitude", value: "FL300 · 9,144 m" },
+        { label: "Speed", value: "480 kn · 889 km/h" },
+        { label: "Heading", value: "270°" },
+        { label: "Vert. rate", value: "▲ 1,200 fpm" },
+        { label: "Callsign", value: "AF1" },
+      ],
+      trackInfo: { label: "Air Force One", notable: true },
+    };
+    render(<TrackInfoPanel segment={seg} />);
+    expect(screen.getByText("Speed")).toBeInTheDocument();
+    expect(screen.getByText("480 kn · 889 km/h")).toBeInTheDocument();
+    expect(screen.getByText("Vert. rate")).toBeInTheDocument();
+    expect(screen.getByText("▲ 1,200 fpm")).toBeInTheDocument();
+    expect(screen.getByText("Callsign")).toBeInTheDocument();
+    // Type stays an identity row, never a live-stat chip.
+    expect(screen.queryByText("Type")).not.toBeInTheDocument();
+  });
+
   it("flags a VIP with the VIP heading", () => {
     const seg: Segment = { ...base, trackInfo: { label: "Air Force One", vip: true, notable: true } };
     render(<TrackInfoPanel segment={seg} />);

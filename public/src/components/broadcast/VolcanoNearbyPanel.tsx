@@ -153,7 +153,7 @@ export default function VolcanoNearbyPanel({
                 }}
               />
               <span style={{ minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#cdd9ec" }}>
-                {n.item.properties.event}
+                {n.item.properties.translatedHeadline || n.item.properties.event}
                 {n.item.properties.areaDesc ? (
                   <span style={{ color: "#7d8da5" }}>{` · ${n.item.properties.areaDesc}`}</span>
                 ) : null}

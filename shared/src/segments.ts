@@ -59,6 +59,8 @@ export interface AlertContentInput {
   source: string;
   identifier: string;
   event?: string;
+  /** English translation of `event`/headline (worker/src/alerts/translate.ts) — preferred for display when present, "" or unset for already-English/untranslated alerts. */
+  translatedEvent?: string;
   /** Normalised cross-source severity rank (0–4). */
   severityRank: number;
   /** Source-specific severity label (e.g. "Orange", "Extreme"), if any. */
@@ -90,13 +92,16 @@ function agoLabel(mins: number): string {
   return mins < 1 ? "just now" : `${activeForLabel(mins)} ago`;
 }
 
-/** Severe-weather card: place + country subtitle, severity/type/source rows. */
+/** Severe-weather card: place + country subtitle, severity/type/source rows.
+ *  Title/Type prefer the English translation over the source-language event
+ *  name when one exists. */
 export function alertSegmentContent(a: AlertContentInput): SegmentContent {
+  const event = a.translatedEvent || a.event;
   const country = alertCountryLabel(a);
   const area = continentOf(a.center[0], a.center[1]);
   const subtitle = [a.areaDesc, country].filter(Boolean).join(" · ") || undefined;
   const details: SegmentContent["details"] = [{ label: "Severity", value: `${a.severityRank}/4` }];
-  if (a.event) details.push({ label: "Type", value: a.event });
+  if (event) details.push({ label: "Type", value: event });
   if (a.level) details.push({ label: "Level", value: String(a.level) });
   if (country) details.push({ label: "Country", value: country });
   if (area) details.push({ label: "Area", value: area });
@@ -106,7 +111,7 @@ export function alertSegmentContent(a: AlertContentInput): SegmentContent {
     const now = a.nowMs ?? Date.now();
     details.push({ label: "Active for", value: activeForLabel(Math.max(0, Math.round((now - a.sinceMs) / 60000))) });
   }
-  return { title: a.event || "Weather Warning", subtitle, icon: hazardMeta(a.hazard).icon, details };
+  return { title: event || "Weather Warning", subtitle, icon: hazardMeta(a.hazard).icon, details };
 }
 
 export interface VolcanoContentInput {

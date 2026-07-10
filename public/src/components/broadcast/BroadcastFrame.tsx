@@ -24,11 +24,21 @@ import type { TideStationReading } from "../../lib/tides/types";
 import type { City } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
-import { countryShot, countryContaining } from "@photonsurge/shared/director-countries";
-import { buildTicker, scopeAlertsToBbox, scopeQuakesToBbox, scopeVolcanoesToBbox } from "../../lib/broadcast";
+import {
+  countryShot,
+  countryContaining,
+} from "@photonsurge/shared/director-countries";
+import {
+  buildTicker,
+  scopeAlertsToBbox,
+  scopeQuakesToBbox,
+  scopeVolcanoesToBbox,
+} from "../../lib/broadcast";
 import { bboxForCamera, type HistorySeries } from "../../lib/history-client";
 import { useAreaForecast } from "../../lib/forecast-client";
 import { legendVariableFor } from "../../lib/legend";
+import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
+import { KIND_LABEL } from "../DirectorHolds";
 import { nearest, formatKm } from "../../lib/geo";
 import { useWorldWatch } from "../../lib/world-watch";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
@@ -40,7 +50,11 @@ import LiveAlertPanel from "./LiveAlertPanel";
 import WorldReportDeck from "./WorldReportDeck";
 import KpIndexPanel from "./KpIndexPanel";
 import SpaceWeatherMeter from "./SpaceWeatherMeter";
-import { SeismicMonitor, TsunamiMonitor, WeatherMonitors } from "./MonitorCluster";
+import {
+  SeismicMonitor,
+  TsunamiMonitor,
+  WeatherMonitors,
+} from "./MonitorCluster";
 import SeismicStationRow from "./SeismicStationRow";
 import TideStationRow from "./TideStationRow";
 import PointHistoryPanel from "./PointHistoryPanel";
@@ -66,13 +80,20 @@ const BRAND_STACK_H = 242;
  * distance for geographic context (mid-ocean it still names the closest
  * landfall). Empty for every other kind (quakes/storms already carry a place).
  */
-function nearestCityDetails(segment: Segment, cities: City[]): { label: string; value: string }[] {
+function nearestCityDetails(
+  segment: Segment,
+  cities: City[],
+): { label: string; value: string }[] {
   if (segment.kind !== "flight" && segment.kind !== "ship") return [];
   const notable = cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital);
   const n = nearest(notable, segment.camera.center, (c) => [c.lng, c.lat]);
   if (!n) return [];
-  const name = n.item.country ? `${n.item.name}, ${n.item.country}` : n.item.name;
-  return [{ label: "Nearest City", value: `${name} · ${formatKm(n.distanceKm)}` }];
+  const name = n.item.country
+    ? `${n.item.name}, ${n.item.country}`
+    : n.item.name;
+  return [
+    { label: "Nearest City", value: `${name} · ${formatKm(n.distanceKm)}` },
+  ];
 }
 
 export default function BroadcastFrame({
@@ -145,13 +166,29 @@ export default function BroadcastFrame({
   // (single long line, so it just scrolls through once and loops) instead of
   // mixing it into the alert/quake/track feed — the top crawl keeps showing
   // the standing feed throughout.
-  const summaryOnAir = onAirSegment?.kind === "summary" ? onAirSegment.summary : null;
-  const bottomTickerTitle = summaryOnAir ? "GLOBAL ROUND-UP" : "GLOBAL ALERT TICKER";
+  const summaryOnAir =
+    onAirSegment?.kind === "summary" ? onAirSegment.summary : null;
+  const bottomTickerTitle = summaryOnAir
+    ? "GLOBAL ROUND-UP"
+    : "GLOBAL ALERT TICKER";
   const bottomTickerItems = summaryOnAir ? [summaryOnAir.narrative] : ticker;
-  const eventTargeted = onAirSegment ? isTargetedEvent(onAirSegment.kind) : false;
+  const eventTargeted = onAirSegment
+    ? isTargetedEvent(onAirSegment.kind)
+    : false;
+  // Top-left operator readout: the on-air shot (its kind + the specific target it
+  // framed, e.g. AIRCRAFT · Air Force One) and which weather attribute is painted.
+  const brandStatus = {
+    shotKind: onAirSegment ? KIND_LABEL[onAirSegment.kind] : null,
+    shotTarget: onAirSegment ? onAirSegment.title : null,
+    attribute: state.activeVariable
+      ? (VARIABLE_REGISTRY[state.activeVariable]?.label ?? state.activeVariable)
+      : null,
+  };
   // Global spins (intro/global/ocean/orbital) frame an arbitrary point, not a real
   // ground location — the weather/climate history panel has nothing to sample.
-  const segmentHasLocation = onAirSegment ? hasRealLocation(onAirSegment.kind) : true;
+  const segmentHasLocation = onAirSegment
+    ? hasRealLocation(onAirSegment.kind)
+    : true;
   // A notable aircraft/ship carries a rich Track Info card on the segment; when
   // present it takes the bottom-left slot (superseding the nearby-cities panel).
   const hasTrackInfo = onAirSegment?.trackInfo != null;
@@ -171,7 +208,9 @@ export default function BroadcastFrame({
   // segment's id is e.g. "country:portugal" — the catalog is keyed by the
   // bare subject.
   const countryOnAir =
-    onAirSegment?.kind === "country" ? countryShot(onAirSegment.id.split(":")[1] ?? "") : undefined;
+    onAirSegment?.kind === "country"
+      ? countryShot(onAirSegment.id.split(":")[1] ?? "")
+      : undefined;
   // A round-up tours a fresh hotspot every few seconds by patching `state.camera`
   // to that stop's centre (see director.ts's summary cutSteps) — the segment's
   // own `camera` field stays pinned to the base global framing the whole time,
@@ -180,7 +219,9 @@ export default function BroadcastFrame({
   // live stop. When that stop lands inside a curated country, tally against its
   // real bbox (exactly like a country spotlight) instead of a camera-zoom guess.
   const summaryCountry =
-    onAirSegment?.kind === "summary" ? countryContaining(state.camera.center[0], state.camera.center[1]) : undefined;
+    onAirSegment?.kind === "summary"
+      ? countryContaining(state.camera.center[0], state.camera.center[1])
+      : undefined;
   const areaBbox = countryOnAir
     ? countryOnAir.bbox
     : summaryCountry
@@ -192,7 +233,9 @@ export default function BroadcastFrame({
           : undefined;
   const areaAlerts = areaBbox ? scopeAlertsToBbox(alerts, areaBbox) : alerts;
   const areaQuakes = areaBbox ? scopeQuakesToBbox(quakes, areaBbox) : quakes;
-  const areaVolcanoes = areaBbox ? scopeVolcanoesToBbox(volcanoes, areaBbox) : volcanoes;
+  const areaVolcanoes = areaBbox
+    ? scopeVolcanoesToBbox(volcanoes, areaBbox)
+    : volcanoes;
 
   // A country spotlight / region tour scopes the "IN VIEW" roundup + "TOP
   // CITIES" info to this framed area — set here so mode-slides can turn them
@@ -200,7 +243,10 @@ export default function BroadcastFrame({
   // rotates them instead). Only when the shot has a real framed area (not a
   // targeted point or a notable-track segment).
   const wideCitiesBbox =
-    onAirSegment && !eventTargeted && !hasTrackInfo && (onAirSegment.kind === "country" || onAirSegment.kind === "tour")
+    onAirSegment &&
+    !eventTargeted &&
+    !hasTrackInfo &&
+    (onAirSegment.kind === "country" || onAirSegment.kind === "tour")
       ? areaBbox
       : undefined;
   // Whether the country/tour area forecast has data — decides if it earns its
@@ -233,7 +279,15 @@ export default function BroadcastFrame({
     : [];
 
   return (
-    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 5 }}>
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        overflow: "hidden",
+        zIndex: 5,
+      }}
+    >
       {/* 1080p design stage, uniformly scaled + centred to the output resolution. */}
       <div
         style={{
@@ -258,10 +312,26 @@ export default function BroadcastFrame({
             extraDetails={nearestCityDetails(onAirSegment, cities)}
             historyPanel={
               segmentHasLocation ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <PointHistoryPanel center={onAirSegment.camera.center} theme={theme} compact />
-                  <DepthProfilePanel center={onAirSegment.camera.center} manifest={manifest} theme={theme} compact activeVariable={state.activeVariable} />
-                  <ForecastPanel center={onAirSegment.camera.center} theme={theme} compact />
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                >
+                  <PointHistoryPanel
+                    center={onAirSegment.camera.center}
+                    theme={theme}
+                    compact
+                  />
+                  <DepthProfilePanel
+                    center={onAirSegment.camera.center}
+                    manifest={manifest}
+                    theme={theme}
+                    compact
+                    activeVariable={state.activeVariable}
+                  />
+                  <ForecastPanel
+                    center={onAirSegment.camera.center}
+                    theme={theme}
+                    compact
+                  />
                 </div>
               ) : null
             }
@@ -289,14 +359,25 @@ export default function BroadcastFrame({
           }}
         >
           {onAirSegment ? (
-            <SlideDeck slides={leftDeck} dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"} />
+            <SlideDeck
+              slides={leftDeck}
+              dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
+            />
           ) : null}
           {summaryOnAir ? (
-            <RoundupStatsPanel stats={summaryOnAir.stats} sources={summaryOnAir.sources} theme={theme} />
+            <RoundupStatsPanel
+              stats={summaryOnAir.stats}
+              sources={summaryOnAir.sources}
+              theme={theme}
+            />
           ) : null}
           {!eventTargeted && !wideCitiesBbox ? (
             <ForecastPanel
-              center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}
+              center={
+                segmentHasLocation
+                  ? (onAirSegment?.camera.center ?? state.camera.center ?? null)
+                  : null
+              }
               bbox={
                 segmentHasLocation
                   ? bboxForCamera(
@@ -310,7 +391,11 @@ export default function BroadcastFrame({
           ) : null}
           {!eventTargeted ? (
             <PointHistoryPanel
-              center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}
+              center={
+                segmentHasLocation
+                  ? (onAirSegment?.camera.center ?? state.camera.center ?? null)
+                  : null
+              }
               bbox={
                 segmentHasLocation
                   ? bboxForCamera(
@@ -324,7 +409,11 @@ export default function BroadcastFrame({
           ) : null}
           {!eventTargeted ? (
             <DepthProfilePanel
-              center={segmentHasLocation ? onAirSegment?.camera.center ?? state.camera.center ?? null : null}
+              center={
+                segmentHasLocation
+                  ? (onAirSegment?.camera.center ?? state.camera.center ?? null)
+                  : null
+              }
               manifest={manifest}
               theme={theme}
               activeVariable={state.activeVariable}
@@ -332,16 +421,30 @@ export default function BroadcastFrame({
           ) : null}
         </div>
 
-        <Ticker title={theme.tickerTitle} items={ticker} edge="top" height={TICKER_H} theme={theme} />
+        <Ticker
+          title={theme.tickerTitle}
+          items={ticker}
+          edge="top"
+          height={TICKER_H}
+          theme={theme}
+        />
 
-        <div style={{ position: "absolute", top: TICKER_H + INSET, left: INSET }}>
-          <BrandPanel theme={theme} live={directorOn} />
+        <div
+          style={{ position: "absolute", top: TICKER_H + INSET, left: INSET }}
+        >
+          <BrandPanel theme={theme} live={directorOn} status={brandStatus} />
         </div>
 
         {/* Geomagnetic Kp readout, tucked under the brand block when the aurora
             overlay is on; pushes the intensity meter down so they don't overlap. */}
         {kpShown ? (
-          <div style={{ position: "absolute", top: TICKER_H + INSET + BRAND_STACK_H, left: INSET }}>
+          <div
+            style={{
+              position: "absolute",
+              top: TICKER_H + INSET + BRAND_STACK_H,
+              left: INSET,
+            }}
+          >
             <KpIndexPanel kp={aurora?.meta.kp} theme={theme} />
           </div>
         ) : null}
@@ -399,7 +502,11 @@ export default function BroadcastFrame({
             right: INSET,
           }}
         >
-          <WorldReportDeck worldWatch={worldWatch} manifest={manifest} theme={theme} />
+          <WorldReportDeck
+            worldWatch={worldWatch}
+            manifest={manifest}
+            theme={theme}
+          />
         </div>
 
         {/* Bottom-right column: UP NEXT hint, the SYSLOG feed, and the build
@@ -443,7 +550,14 @@ export default function BroadcastFrame({
             gap: 16,
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 10 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column-reverse",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
             <SeismicMonitor
               quakes={quakes}
               seismoStations={seismoStations}
@@ -452,20 +566,43 @@ export default function BroadcastFrame({
               regionCenter={state.camera.center}
               theme={theme}
             />
-            <SeismicStationRow stations={seismoStations} onAirSegment={onAirSegment} theme={theme} />
+            <SeismicStationRow
+              stations={seismoStations}
+              onAirSegment={onAirSegment}
+              theme={theme}
+            />
           </div>
           <WeatherMonitors
             series={pointHistorySeries}
-            locationLabel={onAirSegment && segmentHasLocation ? onAirSegment.title : null}
+            locationLabel={
+              onAirSegment && segmentHasLocation ? onAirSegment.title : null
+            }
             theme={theme}
           />
-          <div style={{ display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 10 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column-reverse",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
             <TideStationRow stations={tideStations} theme={theme} />
-            <TsunamiMonitor stations={tideStations} active={tideActive} theme={theme} />
+            <TsunamiMonitor
+              stations={tideStations}
+              active={tideActive}
+              theme={theme}
+            />
           </div>
         </div>
 
-        <Ticker title={bottomTickerTitle} items={bottomTickerItems} edge="bottom" height={TICKER_H} theme={theme} />
+        <Ticker
+          title={bottomTickerTitle}
+          items={bottomTickerItems}
+          edge="bottom"
+          height={TICKER_H}
+          theme={theme}
+        />
       </div>
     </div>
   );

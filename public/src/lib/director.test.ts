@@ -1,5 +1,6 @@
-import { eventPulse, activeCountryIso, activeRegionBbox } from "./director";
+import { eventPulse, activeCountryIso, activeRegionBbox, cutSteps } from "./director";
 import type { DirectorState, Segment } from "@photonsurge/shared/director";
+import type { MapTypeAvailability } from "./director";
 
 const segment = (over: Partial<Segment> = {}): Segment => ({
   id: "tour:n-atlantic",
@@ -96,5 +97,35 @@ describe("activeRegionBbox", () => {
   it("defers to the country glow (returns null) when a round-up stop is over a curated country", () => {
     const roundup = director({ segment: segment({ id: "summary:1", kind: "summary" }) });
     expect(activeRegionBbox(roundup, { center: [2.5, 46.5], zoom: 5 })).toBeNull(); // France
+  });
+});
+
+describe("cutSteps", () => {
+  const avail: MapTypeAvailability = { variables: new Set(), aurora: false, satimg: false };
+
+  it("holds each round-up stop instead of inheriting the summary world spin", () => {
+    const roundup = segment({
+      id: "summary:1",
+      kind: "summary",
+      // The preset spins the stop-less global backdrop — a framed stop must override it.
+      patch: { autoSpin: true, spinSpeed: 2 },
+      summary: {
+        id: "1",
+        period: "daily",
+        narrative: "n",
+        generatedAt: "2026-07-10T00:00:00Z",
+        stops: [
+          { label: "Southern Europe", lng: 12, lat: 42, severity: 2 },
+          { label: "Japan", lng: 139, lat: 35, severity: 3 },
+        ],
+      },
+    });
+    const { steps } = cutSteps(roundup, avail);
+    expect(steps).toHaveLength(2);
+    for (const step of steps) {
+      expect(step.patch.autoSpin).toBe(false); // framed stop never spins off-screen
+      expect(step.patch.spinSpeed).toBe(0);
+      expect(step.patch.camera).toBeDefined();
+    }
   });
 });

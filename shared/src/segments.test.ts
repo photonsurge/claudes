@@ -1,4 +1,4 @@
-import { quakeSegmentContent, volcanoTrackInfo } from "./segments";
+import { quakeSegmentContent, alertSegmentContent, volcanoTrackInfo } from "./segments";
 import type { Volcano } from "./volcanoes/types";
 
 /** 2026-07-02T12:00:00Z as epoch ms — a fixed "now" so "Ago" is deterministic. */
@@ -44,6 +44,34 @@ describe("quakeSegmentContent — magnitude & depth bands", () => {
   it("tags the depth row with its shallow/intermediate/deep class", () => {
     expect(row(quakeSegmentContent({ mag: 5, depthKm: 12 }), "Depth")).toBe("12 km · Shallow");
     expect(row(quakeSegmentContent({ mag: 5, depthKm: 150 }), "Depth")).toBe("150 km · Intermediate");
+  });
+});
+
+describe("alertSegmentContent — translated title/Type", () => {
+  const base = {
+    source: "wmo",
+    identifier: "cn-cma-xx/2026/1",
+    severityRank: 4,
+    hazard: "wind" as const,
+    center: [104, 35] as [number, number],
+  };
+
+  it("falls back to the raw event when there's no translation", () => {
+    const c = alertSegmentContent({ ...base, event: "台风红色预警" });
+    expect(c.title).toBe("台风红色预警");
+    expect(c.details.find((d) => d.label === "Type")?.value).toBe("台风红色预警");
+  });
+
+  it("prefers translatedEvent for both the title and the Type row", () => {
+    const c = alertSegmentContent({ ...base, event: "台风红色预警", translatedEvent: "Typhoon Red Alert" });
+    expect(c.title).toBe("Typhoon Red Alert");
+    expect(c.details.find((d) => d.label === "Type")?.value).toBe("Typhoon Red Alert");
+  });
+
+  it("defaults to 'Weather Warning' when neither event nor translatedEvent is set", () => {
+    const c = alertSegmentContent({ ...base });
+    expect(c.title).toBe("Weather Warning");
+    expect(c.details.find((d) => d.label === "Type")).toBeUndefined();
   });
 });
 
