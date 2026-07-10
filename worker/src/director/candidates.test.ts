@@ -1,4 +1,4 @@
-import { buildCandidates } from "./candidates";
+import { buildCandidates, summaryTourHoldMs } from "./candidates";
 import { DEFAULT_DIRECTOR_CONFIG, type DirectorConfig } from "@photonsurge/shared/director";
 import { SEED_SEA_POINTS } from "@photonsurge/shared/director-sea-points";
 import type { AppDb } from "@photonsurge/shared/db/index";

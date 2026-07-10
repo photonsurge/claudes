@@ -492,6 +492,19 @@ const SEED_OVERLAYS_OFF: Partial<Record<string, boolean>> = Object.fromEntries(
 );
 
 /**
+ * The satellite-clouds snapshot a plain "Satellite View / Satellite Clouds" slide
+ * applies: the global true-colour mosaic ON, every regional geostationary disc (and
+ * the lightning overlay) OFF — so airing one shows the clean whole-planet cloud layer
+ * rather than the cluttered stack of GOES / Himawari / Meteosat discs. Only each feed's
+ * `on` is set, so a feed keeps its own opacity from the live state (global's included).
+ * The disc-specific looks (IR / water-vapour / dust / storm-eye) deliberately omit this —
+ * those products only exist on a disc, so they leave the per-feed state alone.
+ */
+const GLOBAL_ONLY_SATIMG: Partial<Record<string, Partial<SatImgFeedState>>> = Object.fromEntries(
+  SATIMG_FEEDS.map((f) => [f.id, { on: f.id === "global" }]),
+);
+
+/**
  * A background-only wind look for slides where wind isn't the point — thin,
  * slow, and translucent so it never competes with the actual subject (the
  * scalar field / satellite photo / cities). The dramatic `WIND_PRESETS.storm`
@@ -596,7 +609,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       { windMode: "particles", wind: GUST_WIND, activeVariable: "wave" },
       ["showWind", "showCities"],
     ),
-    seedSlide("ocean-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
+    seedSlide("ocean-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, [
       "showSatImg",
       "showCities",
     ]),
@@ -648,7 +661,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "temp" },
       ["showWind", "showElevation", "showCities"],
     ),
-    seedSlide("tour-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
+    seedSlide("tour-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, [
       "showSatImg",
       "showCities",
     ]),
@@ -684,7 +697,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       { windMode: "particles", wind: SUBTLE_WIND },
       ["showWind", "showPressure", "showRadar", "showAlerts", "showElevation", "showCities"],
     ),
-    seedSlide("country-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
+    seedSlide("country-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, [
       "showSatImg",
       "showAlerts",
       "showCities",
@@ -723,7 +736,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "temp" },
       ["showWind", "showPressure", "showContours", "showRadar", "showAlerts", "showElevation", "showCities"],
     ),
-    seedSlide("weather-satellite-clouds", "Satellite Clouds", { showSatImg: true, satImgLook: "geocolor" }, [
+    seedSlide("weather-satellite-clouds", "Satellite Clouds", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, [
       "showSatImg",
       "showAlerts",
       "showCities",
@@ -837,7 +850,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showTrackLabels",
       "showCities",
     ]),
-    seedSlide("flight-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
+    seedSlide("flight-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, [
       "showSatImg",
       "showAircraft",
       "showTrails",
@@ -874,7 +887,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showTrackLabels",
       "showCities",
     ]),
-    seedSlide("ship-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor" }, [
+    seedSlide("ship-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, [
       "showSatImg",
       "showShips",
       "showTrails",

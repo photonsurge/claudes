@@ -97,31 +97,44 @@ export function makeTrackSnapshotRepo(model: Model<iTrackSnapshotModel>) {
      * positions ordered oldest→newest. Aggregated in Mongo so we ship one line
      * per track (not every raw frame) — the source for the live trails overlay.
      * Only tracks with ≥2 points are returned (a single point can't draw a line).
+     *
+     * Pass `ids` to scope the aggregation to a handful of tracks (the live
+     * overlay sends the on-air + notable craft). Without it the whole window is
+     * grouped — one trail per track worldwide, which is both illegible and the
+     * slowest overlay to load, so the live path always scopes.
      */
     async paths(opts: {
       from: Date;
       kind?: TrackSnapshotKind;
+      ids?: string[];
       maxTracks?: number;
     }): Promise<Array<{ externalId: string; kind: TrackSnapshotKind; name?: string; path: [number, number][] }>> {
       const match: Record<string, unknown> = { batchAt: { $gte: opts.from } };
       if (opts.kind) match.kind = opts.kind;
-      const pipeline: PipelineStage[] = [
-        { $match: match },
-        { $sort: { batchAt: 1 } },
-        {
-          $group: {
-            _id: "$externalId",
-            kind: { $first: "$kind" },
-            name: { $last: "$name" },
-            // Push an object per point; $push won't take a 2-element array
-            // literal (Mongo reads it as multiple operator args).
-            pts: { $push: { lng: "$lng", lat: "$lat" } },
-          },
+      const pipeline: PipelineStage[] = [{ $match: match }];
+      // Scope to an explicit id set. Snapshot externalIds are stored raw (the
+      // provider's casing) while the registry lowercases its codes, so match on
+      // a lowered copy of both sides. The {kind,batchAt} window match runs first,
+      // so this filters an already-small slice — no index on externalId needed.
+      if (opts.ids && opts.ids.length) {
+        const idset = opts.ids.map((s) => s.toLowerCase());
+        pipeline.push({ $addFields: { _lid: { $toLower: "$externalId" } } } as PipelineStage);
+        pipeline.push({ $match: { _lid: { $in: idset } } } as PipelineStage);
+      }
+      pipeline.push({ $sort: { batchAt: 1 } } as PipelineStage);
+      pipeline.push({
+        $group: {
+          _id: "$externalId",
+          kind: { $first: "$kind" },
+          name: { $last: "$name" },
+          // Push an object per point; $push won't take a 2-element array
+          // literal (Mongo reads it as multiple operator args).
+          pts: { $push: { lng: "$lng", lat: "$lat" } },
         },
-        { $match: { "pts.1": { $exists: true } } },
-      ];
-      // No cap by default — every shown track gets a trail. Only limit when the
-      // caller explicitly asks (maxTracks > 0); 0/undefined = whole feed.
+      } as PipelineStage);
+      pipeline.push({ $match: { "pts.1": { $exists: true } } } as PipelineStage);
+      // No cap by default — every scoped track gets a trail. Only limit when the
+      // caller explicitly asks (maxTracks > 0); 0/undefined = whole (scoped) set.
       if (opts.maxTracks && opts.maxTracks > 0) pipeline.push({ $limit: opts.maxTracks } as PipelineStage);
       const rows = await model.aggregate(pipeline).exec();
       return rows.map((r: any) => ({

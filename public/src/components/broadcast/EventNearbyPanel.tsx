@@ -16,9 +16,8 @@ import type { City } from "../../lib/cities";
 import { formatPopulation } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
 import { nearby, formatKm } from "../../lib/geo";
-import { useClimateYear } from "../../lib/history-client";
-import { MiniChart, buildClimateRows, sparkPoints, toPath, CHART_W, formatReading } from "./PointHistoryPanel";
-import BroadcastCard, { CardEyebrow, CardSection } from "./BroadcastCard";
+import { FeaturedCityClimate, CityTempSpark } from "./CityHistory";
+import BroadcastCard, { CardSection } from "./BroadcastCard";
 
 const CITY_RADIUS_KM = 500;
 const CAM_RADIUS_KM = 400;
@@ -26,33 +25,13 @@ const MAX_CITY_ROWS = 6;
 const MAX_CAMS = 3;
 /** Seconds the featured city holds before the slide advances to the next. */
 const FEATURED_HOLD_MS = 7000;
-/** Inline per-row trend sparkline size — small enough to sit beside the
- *  population/distance text rather than taking its own card. Rendered width is
- *  much narrower than `CHART_W` (the viewBox), so the SVG scale itself thins
- *  the trace — bump strokeWidth up front to compensate, so it still reads
- *  clearly on video output. */
-const ROW_SPARK_W = 64;
-const ROW_SPARK_H = 24;
-const ROW_SPARK_STROKE = 9;
-/** Past-year charts are stacked all-at-once (temp / humidity / rain) rather than
- *  paged one at a time, so each is drawn shorter than the full-size
- *  PointHistoryPanel chart (CHART_H = 108) to keep the three-high column compact. */
-const CLIMATE_CHART_H = 62;
 
 /**
- * One "other nearby city" row: name/pop/distance text plus a small past-year
- * temperature sparkline, fetched independently per row (own `useClimateYear`
- * call) since each city sits at its own point. Cheap: the climate route is a
- * worker-cached Mongo nearest-lookup, not a live upstream call, so one fetch
- * per visible row is fine. Self-omits the sparkline (text-only row) when nothing
- * is cached within range for that city.
+ * One "other nearby city" row: name/pop/distance text plus the city's own small
+ * past-year temperature sparkline (CityTempSpark — self-omits to a text-only row
+ * when nothing is cached within range for that city).
  */
 function NearbyCityRow({ city, distanceKm }: { city: City; distanceKm: number }) {
-  const climate = useClimateYear([city.lng, city.lat], "monthly");
-  const tempRow = buildClimateRows(climate.datasets).find((r) => r.variable === "temp");
-  const spark = tempRow ? sparkPoints(tempRow.points, ROW_SPARK_H) : null;
-  const latest = tempRow ? [...tempRow.points].reverse().find((p) => p.value != null)?.value : null;
-
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "3px 0" }}>
       <div style={{ minWidth: 0, flex: 1 }}>
@@ -63,23 +42,7 @@ function NearbyCityRow({ city, distanceKm }: { city: City; distanceKm: number })
           {[formatPopulation(city.population), formatKm(distanceKm)].filter(Boolean).join(" · ")}
         </div>
       </div>
-      {spark ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-          {latest != null ? (
-            <span style={{ fontSize: 12, fontWeight: 800, color: tempRow!.color }}>{formatReading(latest)}°</span>
-          ) : null}
-          <svg width={ROW_SPARK_W} height={ROW_SPARK_H} viewBox={`0 0 ${CHART_W} ${ROW_SPARK_H}`} preserveAspectRatio="none">
-            <path
-              d={toPath(spark.pts)}
-              fill="none"
-              stroke={tempRow!.color}
-              strokeWidth={ROW_SPARK_STROKE}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
-          </svg>
-        </div>
-      ) : null}
+      <CityTempSpark city={city} />
     </div>
   );
 }
@@ -120,13 +83,6 @@ export default function EventNearbyPanel({
   const featuredEntry = near.length ? near[slide % near.length] : undefined;
   const featured = featuredEntry?.item;
   const featuredDist = featuredEntry?.distanceKm;
-
-  // A single cheap fetch (cached per rounded lat/lng) — safe to re-request on
-  // every slide tick since it just tracks the currently-featured city. Must
-  // run unconditionally (before the early return below) per rules-of-hooks.
-  const featuredCenter = featured ? ([featured.lng, featured.lat] as [number, number]) : null;
-  const climate = useClimateYear(featuredCenter, "monthly");
-  const climateRows = buildClimateRows(climate.datasets);
 
   if (!near.length && !nearCams.length) return null;
 
@@ -186,27 +142,9 @@ export default function EventNearbyPanel({
         </div>
       ) : null}
 
-      {/* Featured city's past-year climate — same chart PointHistoryPanel
-          draws for the on-air focus, keyed to this city instead. All three
-          variables (temp / humidity / rain) stacked at once, drawn shorter,
-          rather than a timer-paged slideshow — three-high reads richer. */}
-      {climateRows.length ? (
-        <CardSection style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <CardEyebrow>{featured?.name.toUpperCase()} · Past Year</CardEyebrow>
-          {climateRows.map((row) => (
-            <MiniChart
-              key={row.variable}
-              label={row.label}
-              color={row.color}
-              units={row.units}
-              points={row.points}
-              avg={row.avg}
-              caption={row.caption}
-              height={CLIMATE_CHART_H}
-            />
-          ))}
-        </CardSection>
-      ) : null}
+      {/* Featured city's past-year climate — temp / humidity / rain, keyed to
+          this city (FeaturedCityClimate, shared with the top-cities slide). */}
+      {featured ? <FeaturedCityClimate name={featured.name} center={[featured.lng, featured.lat]} /> : null}
 
       {/* Other nearby cities — name/pop/distance plus each city's own past-year
           temperature sparkline (NearbyCityRow), fetched per row. */}

@@ -64,13 +64,20 @@ const GLOBAL_MAP_CYCLE_MS = 6000;
 const DEPTH_CYCLE_VARS = ["sst", "sst100", "sst500", "sst2000", "sst5000"];
 const DEPTH_CYCLE_MS = 2500;
 /**
- * Camera dwell per round-up stop, and the zoom it flies to — a point-focused
- * look, same as quake/alert shots. Each stop change flies the camera (taking
- * cut.patch.cutTransitionMs, the operator's transition-speed setting), so the
- * period must clear that flight time or the next stop fires before the camera
- * has arrived — this settle window is on top of the flight, not instead of it.
+ * Camera dwell per round-up stop, and the zoom it flies to. A round-up parks on
+ * each stop long enough to play that country's whole left-column package — the
+ * nation card, its forecast, its active alerts, its capital + top cities, the
+ * round-up stats (see mode-slides' `summary` branch) — which the SlideDeck
+ * rotates through at HOLD_MS (6s) each. So the dwell has to clear a full deck
+ * rotation, not just a beat: ~40s covers the ~6-slide package with headroom.
+ *
+ * Each stop change flies the camera (taking cut.patch.cutTransitionMs, the
+ * operator's transition-speed setting); the dwell is ON TOP of that flight, not
+ * instead of it. NB the worker must size the segment's holdMs to
+ * stops × (flight + dwell) or the tour cuts away mid-package — see
+ * `summaryCandidates` in worker/src/director/candidates.ts.
  */
-const SUMMARY_STOP_SETTLE_MS = 4000;
+const SUMMARY_STOP_DWELL_MS = 40_000;
 const SUMMARY_STOP_ZOOM = 5;
 
 /** One step of a cut's within-shot rotation: the look, plus an optional relabel. */
@@ -193,7 +200,7 @@ export function cutSteps(
       }),
     );
     const flightMs = cut.patch.cutTransitionMs ?? 4000;
-    return { steps, periodMs: flightMs + SUMMARY_STOP_SETTLE_MS, anchored: true };
+    return { steps, periodMs: flightMs + SUMMARY_STOP_DWELL_MS, anchored: true };
   }
   const cyc = VAR_CYCLE[cut.kind] ?? [];
   return { steps: cyc.map((v) => ({ patch: { activeVariable: v } })), periodMs: VAR_CYCLE_MS, anchored: false };

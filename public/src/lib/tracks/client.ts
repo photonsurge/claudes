@@ -162,12 +162,42 @@ export interface TrackPath {
   path: [number, number][];
 }
 
-/** Per-track trailing paths over the last `minutes` (the live trails overlay). */
-export async function listTrackPaths(minutes: number, kind?: SnapshotKind): Promise<TrackPath[]> {
+/**
+ * Per-track trailing paths over the last `minutes` (the live trails overlay).
+ * `ids` scopes to a specific set of externalIds (on-air + notable craft) so the
+ * server aggregates a handful of routes instead of one per track worldwide.
+ */
+export async function listTrackPaths(
+  minutes: number,
+  kind?: SnapshotKind,
+  ids?: string[],
+): Promise<TrackPath[]> {
   const q = new URLSearchParams({ minutes: String(minutes) });
   if (kind) q.set("kind", kind);
+  if (ids && ids.length) q.set("ids", ids.join(","));
   const res = await fetch(`/api/tracks/history/paths?${q.toString()}`, { cache: "no-store" });
   const body = await res.json().catch(() => null);
   return Array.isArray(body?.paths) ? (body.paths as TrackPath[]) : [];
+}
+
+/**
+ * External ids (lowercased) of the curated notable catalog, grouped by kind.
+ * These plus the on-air craft are the only tracks the trails overlay draws a
+ * route behind — a trail per live track worldwide was illegible and slow.
+ */
+export async function listNotableCodes(): Promise<{ aircraft: string[]; ship: string[] }> {
+  const out = { aircraft: [] as string[], ship: [] as string[] };
+  try {
+    const res = await fetch(`/api/vehicles?notable=1`, { cache: "no-store" });
+    const body = await res.json().catch(() => null);
+    const vehicles: { kind?: string; code?: string }[] = Array.isArray(body?.vehicles) ? body.vehicles : [];
+    for (const v of vehicles) {
+      if (!v?.code) continue;
+      if (v.kind === "aircraft" || v.kind === "ship") out[v.kind].push(String(v.code).toLowerCase());
+    }
+  } catch {
+    /* offline / not configured → no notable trails, on-air still works */
+  }
+  return out;
 }
 

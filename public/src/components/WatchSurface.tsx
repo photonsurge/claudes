@@ -82,6 +82,18 @@ export default function WatchSurface({
   // director cut or map-type switch would need it.
   const ready = useGlobeReadyOnce(manifest, state.fhr);
 
+  // When the director is on a plane/ship, spotlight that exact marker on the
+  // globe. The segment id is `flight:<icao24>` / `ship:<mmsi>` — map "flight" to
+  // the aircraft track kind and match on the code (ICAO24/MMSI). Also scopes the
+  // trails overlay (only the on-air + notable craft get a route drawn).
+  const highlightTrack =
+    onAirSegment && (onAirSegment.kind === "flight" || onAirSegment.kind === "ship")
+      ? {
+          kind: (onAirSegment.kind === "flight" ? "aircraft" : "ship") as "aircraft" | "ship",
+          code: onAirSegment.id.split(":")[1] ?? "",
+        }
+      : null;
+
   const { tracks, orbits, trails } = useTracks({
     showSatellites: state.showSatellites && ready,
     showAircraft: state.showAircraft && ready,
@@ -90,6 +102,7 @@ export default function WatchSurface({
     showTrails: state.showTrails,
     trailMinutes: state.trailMinutes,
     satelliteGroup: state.satelliteGroup,
+    highlight: highlightTrack,
     center: state.camera.center,
     zoom: state.camera.zoom,
   });
@@ -118,17 +131,6 @@ export default function WatchSurface({
   // chrome is on (the plain surface doesn't show the panel).
   const cams = useCams(state.showBroadcastChrome && ready);
   const theme = getBroadcastTheme(state.broadcastTheme);
-
-  // When the director is on a plane/ship, spotlight that exact marker on the
-  // globe. The segment id is `flight:<icao24>` / `ship:<mmsi>` — map "flight" to
-  // the aircraft track kind and match on the code (ICAO24/MMSI).
-  const highlightTrack =
-    onAirSegment && (onAirSegment.kind === "flight" || onAirSegment.kind === "ship")
-      ? {
-          kind: (onAirSegment.kind === "flight" ? "aircraft" : "ship") as "aircraft" | "ship",
-          code: onAirSegment.id.split(":")[1] ?? "",
-        }
-      : null;
 
   return (
     <main style={{ position: "fixed", inset: 0, background: "#0a0e16", overflow: "hidden" }}>

@@ -64,6 +64,7 @@ import { tideStationLayers, tideKeyOf, tideShortName } from "./layers/tide-stati
 import { stationMarkerLayers } from "./layers/monitor-stations";
 import type { TrackPath } from "../lib/tracks/client";
 import type { OrbitSegment } from "../lib/tracks/orbit";
+import { orbitAmpCap } from "../lib/orbit-frame";
 import type { AlertFeature } from "../lib/alerts";
 import type { Segment } from "@photonsurge/shared/director";
 import { quakeToSegment, alertFeatureToSegment, volcanoToSegment } from "../lib/select-segment";
@@ -140,6 +141,13 @@ export interface GlobeProps {
    * misses every pickable event). Undefined disables selection entirely.
    */
   onSelect?: (segment: Segment | null) => void;
+  /**
+   * Click empty map (no pickable event under the cursor) → the picked lng/lat.
+   * When set, a plain click reports its coordinate here instead of clearing the
+   * selection; the caller turns it into a `weather` segment (see the sandbox's
+   * point-pick). Undefined keeps the default "empty click clears" behaviour.
+   */
+  onPickPoint?: (lng: number, lat: number) => void;
 }
 
 
@@ -212,7 +220,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], seismoStations = [], seismoActive = null, tideStations = [], tideActive = null, weatherPointCenter = null, weatherPointLabel = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, glowRegionBbox, highlightTrack, onSelect },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], seismoStations = [], seismoActive = null, tideStations = [], tideActive = null, weatherPointCenter = null, weatherPointLabel = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, glowRegionBbox, highlightTrack, onSelect, onPickPoint },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -321,6 +329,11 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   const onSelectRef = useRef(onSelect);
   useEffect(() => {
     onSelectRef.current = onSelect;
+  });
+
+  const onPickPointRef = useRef(onPickPoint);
+  useEffect(() => {
+    onPickPointRef.current = onPickPoint;
   });
 
   // Live flag read inside the once-created deck callback below: true whenever a
@@ -523,16 +536,26 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         }
       },
       // Click an earthquake / alert polygon / volcano → its info-box segment (same card the
-      // director shows on air). Clicking empty globe clears the selection.
+      // director shows on air). Clicking empty globe reports the picked lng/lat to
+      // onPickPoint (sandbox → weather-point card) when wired, else clears the selection.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onClick: (info: any) => {
-        const cb = onSelectRef.current;
-        if (!cb) return;
+        const select = onSelectRef.current;
+        const pick = onPickPointRef.current;
         const layerId: string = info?.layer?.id ?? "";
-        if (info?.object && layerId.startsWith("seismic")) cb(quakeToSegment(info.object));
-        else if (info?.object && layerId.startsWith("alerts")) cb(alertFeatureToSegment(info.object));
-        else if (info?.object && layerId.startsWith("volcano")) cb(volcanoToSegment(info.object));
-        else cb(null);
+        if (info?.object && layerId.startsWith("seismic")) select?.(quakeToSegment(info.object));
+        else if (info?.object && layerId.startsWith("alerts")) select?.(alertFeatureToSegment(info.object));
+        else if (info?.object && layerId.startsWith("volcano")) select?.(volcanoToSegment(info.object));
+        else {
+          // deck gives `coordinate` when the pointer is over the globe surface;
+          // it's undefined out in space, where a click should just clear.
+          const coord = info?.coordinate;
+          if (pick && Array.isArray(coord) && Number.isFinite(coord[0]) && Number.isFinite(coord[1])) {
+            pick(coord[0], coord[1]);
+          } else {
+            select?.(null);
+          }
+        }
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onViewStateChange: ({ viewState, interactionState }: any) => {
@@ -638,19 +661,24 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         return;
       }
       const dt = (Date.now() - epoch) / 1000;
+      // Creep closer, capped so a long hold doesn't bore through the surface.
+      const zoom = anchorZoom + Math.min(zoomDrift * dt, MAX_PUSH_IN);
       let longitude = anchorLng + spinSpeed * dt;
       let latitude = anchorLat;
       if (orbitDrift > 0) {
         const ot = Math.max(0, dt - flightSec); // time since the fly-in settled
-        const amp = orbitDrift * (1 - Math.exp(-ot / ORBIT_EASE_S));
+        // Bound the pan to a safe slice of what's on screen at the LIVE zoom so the
+        // framed subject can never drift out of frame (a fixed orbitDrift dragged
+        // small-country shots off toward an edge). The cap tightens as the push-in
+        // above zooms in, and depends on zoom alone — no canvas read — so /control
+        // and /watch compute the same amplitude and stay phase-locked.
+        const amp = Math.min(orbitDrift, orbitAmpCap(zoom)) * (1 - Math.exp(-ot / ORBIT_EASE_S));
         const theta = (2 * Math.PI * ot) / ORBIT_PERIOD_S;
         longitude += (amp * Math.cos(theta)) / lngScale;
         latitude += amp * Math.sin(theta);
         latitude = Math.max(-85, Math.min(85, latitude));
       }
       longitude = ((((longitude + 180) % 360) + 360) % 360) - 180; // wrap to −180..180
-      // Creep closer, capped so a long hold doesn't bore through the surface.
-      const zoom = anchorZoom + Math.min(zoomDrift * dt, MAX_PUSH_IN);
       applyViewState({ longitude, latitude, zoom });
       raf = requestAnimationFrame(loop);
     };

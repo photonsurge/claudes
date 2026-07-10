@@ -16,6 +16,7 @@ import { useTracks, type UseTracksOptions } from "./useTracks";
 import {
   fetchSatelliteTles,
   listAircraft,
+  listNotableCodes,
   listShips,
   listTrackPaths,
   type AircraftResponse,
@@ -32,6 +33,7 @@ jest.mock("./client", () => ({
   listAircraft: jest.fn(),
   listShips: jest.fn(),
   listTrackPaths: jest.fn(),
+  listNotableCodes: jest.fn(),
 }));
 jest.mock("./propagate", () => ({ propagateAll: jest.fn() }));
 jest.mock("./orbit", () => ({ orbitSegments: jest.fn() }));
@@ -108,6 +110,7 @@ const mockedFetchTles = fetchSatelliteTles as jest.MockedFunction<typeof fetchSa
 const mockedListAircraft = listAircraft as jest.MockedFunction<typeof listAircraft>;
 const mockedListShips = listShips as jest.MockedFunction<typeof listShips>;
 const mockedListTrackPaths = listTrackPaths as jest.MockedFunction<typeof listTrackPaths>;
+const mockedListNotableCodes = listNotableCodes as jest.MockedFunction<typeof listNotableCodes>;
 const mockedPropagateAll = propagateAll as jest.MockedFunction<typeof propagateAll>;
 const mockedOrbitSegments = orbitSegments as jest.MockedFunction<typeof orbitSegments>;
 
@@ -148,6 +151,7 @@ beforeEach(() => {
   mockedListAircraft.mockResolvedValue(acResponse([]));
   mockedListShips.mockResolvedValue(shipResponse([]));
   mockedListTrackPaths.mockResolvedValue([]);
+  mockedListNotableCodes.mockResolvedValue({ aircraft: [], ship: [] });
   mockedPropagateAll.mockReturnValue([]);
   mockedOrbitSegments.mockReturnValue([]);
 });
@@ -360,7 +364,10 @@ describe("useTracks — trails", () => {
     path: [[29.8, 0.2], [29.9, 0.1]],
   };
 
-  it("polls each enabled kind separately and merges the results", async () => {
+  it("polls each enabled kind, scoped to the notable ids, and merges the results", async () => {
+    // The two craft below are the notable catalog — trails are fetched only for
+    // them (plus any on-air craft), not one route per live track worldwide.
+    mockedListNotableCodes.mockResolvedValue({ aircraft: [AC_STILL.icao24], ship: [SHIP1.mmsi] });
     mockedListAircraft.mockResolvedValue(acResponse([AC_STILL]));
     mockedListShips.mockResolvedValue(shipResponse([{ ...SHIP1, sogKn: 0 }]));
     mockedListTrackPaths.mockImplementation(async (_min, kind) =>
@@ -373,28 +380,49 @@ describe("useTracks — trails", () => {
       trailMinutes: 45,
     });
 
-    expect(mockedListTrackPaths).toHaveBeenCalledWith(45, "aircraft");
-    expect(mockedListTrackPaths).toHaveBeenCalledWith(45, "ship");
+    expect(mockedListTrackPaths).toHaveBeenCalledWith(45, "aircraft", [AC_STILL.icao24]);
+    expect(mockedListTrackPaths).toHaveBeenCalledWith(45, "ship", [SHIP1.mmsi]);
     expect(result.current.trails.map((tr) => tr.externalId).sort()).toEqual(
       [AC_STILL.icao24, SHIP1.mmsi].sort(),
     );
   });
 
   it("only requests trail kinds that are shown, and none when trails are off", async () => {
+    mockedListNotableCodes.mockResolvedValue({ aircraft: [AC_STILL.icao24], ship: [] });
     mockedListAircraft.mockResolvedValue(acResponse([AC_STILL]));
     mockedListTrackPaths.mockResolvedValue([acTrail]);
     const { rerender } = await renderTracks({ showAircraft: true, showTrails: true });
 
     expect(mockedListTrackPaths).toHaveBeenCalledTimes(1);
-    expect(mockedListTrackPaths).toHaveBeenCalledWith(30, "aircraft"); // default 30min, no "ship" call
+    // default 30min, scoped to the notable aircraft, no "ship" call
+    expect(mockedListTrackPaths).toHaveBeenCalledWith(30, "aircraft", [AC_STILL.icao24]);
 
     rerender({ ...baseOpts, showAircraft: true, showTrails: false });
     await tick(60000);
     expect(mockedListTrackPaths).toHaveBeenCalledTimes(1); // no further polls
   });
 
+  it("scopes the fetch to the on-air highlight, and skips it entirely when nothing is notable or on air", async () => {
+    mockedListAircraft.mockResolvedValue(acResponse([AC_STILL]));
+    mockedListTrackPaths.mockResolvedValue([acTrail]);
+    // No notable catalog and no on-air craft → nothing to trail → no request.
+    const { rerender } = await renderTracks({ showAircraft: true, showTrails: true });
+    expect(mockedListTrackPaths).not.toHaveBeenCalled();
+
+    // Director puts this craft on air → its trail (only) is fetched.
+    rerender({
+      ...baseOpts,
+      showAircraft: true,
+      showTrails: true,
+      highlight: { kind: "aircraft", code: AC_STILL.icao24 },
+    });
+    await flush();
+    expect(mockedListTrackPaths).toHaveBeenCalledWith(30, "aircraft", [AC_STILL.icao24]);
+  });
+
   it("extends each trail's head to its live marker and drops orphans with no marker", async () => {
     const orphan: TrackPath = { externalId: "nolive99", kind: "aircraft", path: [[50, 50], [50.1, 50]] };
+    mockedListNotableCodes.mockResolvedValue({ aircraft: [AC_STILL.icao24], ship: [] });
     mockedListAircraft.mockResolvedValue(acResponse([AC_STILL]));
     mockedListTrackPaths.mockResolvedValue([acTrail, orphan]);
     const { result } = await renderTracks({ showAircraft: true, showTrails: true });
@@ -412,6 +440,7 @@ describe("useTracks — trails", () => {
       kind: "aircraft",
       path: [[-20.1, 40], [-20, 40]], // already ends at the live position
     };
+    mockedListNotableCodes.mockResolvedValue({ aircraft: [AC_STILL.icao24], ship: [] });
     mockedListAircraft.mockResolvedValue(acResponse([AC_STILL]));
     mockedListTrackPaths.mockResolvedValue([flush2]);
     const { result } = await renderTracks({ showAircraft: true, showTrails: true });

@@ -17,7 +17,7 @@ import {
 import { alertRepPoint, continentOf } from "@photonsurge/shared/alerts/geo";
 import { hazardMeta, classifyHazard, type HazardType } from "./hazard";
 import { isoToFlag } from "@photonsurge/shared/tracks/flags";
-import { nearby, withinBbox, type Nearby } from "./geo";
+import { nearby, haversineKm, withinBbox, type Nearby } from "./geo";
 import type { City } from "./cities";
 import type { Volcano, VolcanoStatus } from "@photonsurge/shared/volcanoes/types";
 
@@ -27,24 +27,56 @@ export function quakeTicker(q: Quake): string {
   return `SEISMIC M${q.mag.toFixed(1)} · ${loc}${q.tsunami ? " · TSUNAMI POTENTIAL" : ""}`;
 }
 
-/** Nearest notable city's country flag for an alert, "" if none within range —
- *  the same nearest-enriched-city logic the World Watch feed and area label use,
- *  so the ticker flag agrees with those panels. */
-function alertFlag(a: AlertFeature, cities: City[]): string {
-  const places = nearbyPlaces(alertRepPoint(a.geometry), cities);
-  return places[0] ? isoToFlag(places[0].item.cc) : "";
+/** Notable-city predicate — a real population or a capital, same as the World
+ *  Watch feed so the ticker flags agree with it. `notableCities()` applies it
+ *  ONCE per crawl build; the per-alert flag lookup then scans that subset. */
+export function notableCities(cities: City[]): City[] {
+  return cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital);
+}
+
+/**
+ * Nearest notable city's country flag for a point, "" if none within
+ * NEARBY_RADIUS_KM. A cheap lat/lng bounding-box pre-cull (no trig) rejects the
+ * vast majority of cities before any haversine, so this stays fast even scanning
+ * the full ~15k-city set once per alert — the naive "haversine every city" cost
+ * O(alerts × cities) trig calls and blocked the render for seconds on a busy
+ * global feed. `candidates` should already be the notable subset (see
+ * notableCities), so this doesn't re-filter per call.
+ */
+function nearestFlag(point: [number, number] | null, candidates: City[]): string {
+  if (!point) return "";
+  const [lng, lat] = point;
+  const dLat = NEARBY_RADIUS_KM / 111; // radius as degrees of latitude
+  // Longitude degrees shrink toward the poles; guard cos so the box doesn't blow
+  // up to the whole globe right at a pole (where any city is "nearby" anyway).
+  const dLng = dLat / Math.max(0.05, Math.cos((lat * Math.PI) / 180));
+  let cc: string | undefined;
+  let best = Infinity;
+  for (const c of candidates) {
+    if (Math.abs(c.lat - lat) > dLat) continue;
+    let dl = Math.abs(c.lng - lng);
+    if (dl > 180) dl = 360 - dl; // dateline wrap
+    if (dl > dLng) continue;
+    const d = haversineKm(point, [c.lng, c.lat]);
+    if (d <= NEARBY_RADIUS_KM && d < best) {
+      best = d;
+      cc = c.cc;
+    }
+  }
+  return cc ? isoToFlag(cc) : "";
 }
 
 /** "🇫🇯 TSUNAMI WATCH: Fiji Region" (nearest-city flag + severity-prefixed hazard
  *  + area). The flag is omitted when no notable city is close enough to trust (or
- *  no cities were supplied). Prefers the English translation of the event/headline
- *  when the source isn't English. */
-export function alertTicker(a: AlertFeature, cities: City[] = []): string {
+ *  no cities were supplied). Pass the notableCities() subset for the flag lookup.
+ *  Prefers the English translation of the event/headline when the source isn't
+ *  English. */
+export function alertTicker(a: AlertFeature, candidateCities: City[] = []): string {
   const p = a.properties;
   const sev = SEVERITY_LABELS[p.severityRank];
   const area = p.areaDesc ? ` · ${p.areaDesc}` : "";
   const event = p.translatedHeadline || p.event;
-  const flag = alertFlag(a, cities);
+  const flag = nearestFlag(alertRepPoint(a.geometry), candidateCities);
   return `${flag ? `${flag} ` : ""}${sev ? `${sev.toUpperCase()}: ` : ""}${event}${area}`;
 }
 
@@ -78,6 +110,18 @@ export function dedupeAlerts(alerts: AlertFeature[]): AlertFeature[] {
  * de-duped by area first (kills the multi-language repeats); no cap otherwise —
  * the crawl shows everything (long feeds just scroll longer).
  */
+/**
+ * The alert crawl lines — deduped by area, then each flagged by its nearest
+ * notable city. This is the EXPENSIVE part of the crawl (a per-alert city scan),
+ * so it's split out: the component memoises it on just [alerts, cities] and feeds
+ * the result to buildTicker as `alertLines`, so it does NOT rerun every time the
+ * faster-ticking track feed (dead-reckoned ~1×/s) changes reference.
+ */
+export function alertTickerLines(alerts: AlertFeature[], cities: City[] = []): string[] {
+  const candidates = notableCities(cities);
+  return dedupeAlerts(alerts).map((a) => alertTicker(a, candidates));
+}
+
 export function buildTicker(input: {
   alerts?: AlertFeature[];
   quakes?: Quake[];
@@ -85,10 +129,13 @@ export function buildTicker(input: {
   /** Curated, wiki-enriched cities — optional, purely for the per-alert country
    *  flag (nearest notable place). Omit and alerts simply carry no flag. */
   cities?: City[];
+  /** Pre-built alert lines (see alertTickerLines) — pass these to reuse a
+   *  memoised result instead of re-deriving (and re-flagging) from `alerts`. */
+  alertLines?: string[];
 }): string[] {
   const items: string[] = [];
   for (const q of input.quakes ?? []) items.push(quakeTicker(q));
-  for (const a of dedupeAlerts(input.alerts ?? [])) items.push(alertTicker(a, input.cities));
+  items.push(...(input.alertLines ?? alertTickerLines(input.alerts ?? [], input.cities)));
   for (const t of input.tracks ?? []) items.push(trackTicker(t));
   return [...new Set(items)];
 }

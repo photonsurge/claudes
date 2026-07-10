@@ -22,11 +22,14 @@ import type { iSummaryStats } from "@photonsurge/shared/db/event-summary-model";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake } from "../../lib/tracks/types";
 import type { City } from "../../lib/cities";
+import type { CountryAt } from "../../lib/countries";
 import type { Cam } from "../../lib/cams/types";
 import type { BroadcastTheme } from "./config";
 import type { DeckSlide } from "./SlideDeck";
 import { KIND_COLOR, isTargetedEvent } from "./kinds";
 import OnAirCard from "./OnAirCard";
+import CountryPanel from "./CountryPanel";
+import AreaAlertsPanel from "./AreaAlertsPanel";
 import TopCitiesPanel from "./TopCitiesPanel";
 import ForecastPanel from "./ForecastPanel";
 import PointHistoryPanel from "./PointHistoryPanel";
@@ -77,6 +80,10 @@ export interface ModeSlideContext {
   /** Round-up narrative stats — folds the summary mode's stats card into the
    *  deck rather than stacking it below. */
   roundup?: { stats?: iSummaryStats; sources?: string[] };
+  /** The enriched country the round-up tour is currently parked on (resolved
+   *  per stop via /api/countries/at) — drives the summary deck's "the nation"
+   *  card. Null when the stop is over ocean / outside every country. */
+  summaryCountry?: CountryAt | null;
   theme: BroadcastTheme;
 }
 
@@ -163,6 +170,38 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     return slides;
   }
 
+  // Round-up — a per-country package that plays while the tour dwells on each
+  // stop: the "now viewing" IN VIEW rollup (alerts/quakes/volcanoes), then the
+  // nation itself (flag/photo/blurb), its area forecast (country weather), its
+  // active-alerts drill-down, its capital + top cities (each with climate
+  // charts), and the round-up's own headline numbers. Every country-scoped slide
+  // guards on real content so an ocean/uncurated stop degrades to just the
+  // rollup + stats. `wideCitiesBbox` is the enriched country's real bbox here
+  // (set for summary in BroadcastFrame), so the cities/forecast reuse the same
+  // plumbing the country spotlight does.
+  if (segment.kind === "summary") {
+    slides.push({
+      id: "onair",
+      node: <OnAirCard segment={segment} alerts={ctx.areaAlerts} quakes={ctx.areaQuakes} volcanoes={ctx.areaVolcanoes} theme={ctx.theme} />,
+    });
+    if (ctx.summaryCountry) {
+      slides.push({ id: "nation", node: <CountryPanel country={ctx.summaryCountry} color={color} theme={ctx.theme} /> });
+    }
+    if (ctx.wideCitiesBbox && ctx.wideCitiesHasForecast) {
+      slides.push({ id: "forecast", node: <ForecastPanel center={null} bbox={ctx.wideCitiesBbox} theme={ctx.theme} /> });
+    }
+    if (ctx.areaAlerts.length) {
+      slides.push({ id: "alerts", node: <AreaAlertsPanel alerts={ctx.areaAlerts} color={color} theme={ctx.theme} /> });
+    }
+    if (ctx.wideCitiesBbox) {
+      slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
+    }
+    if (ctx.roundup) {
+      slides.push({ id: "roundup", node: <RoundupStatsPanel stats={ctx.roundup.stats} sources={ctx.roundup.sources} theme={ctx.theme} /> });
+    }
+    return slides;
+  }
+
   // Country spotlight / region tour — reads START → CITIES → WEATHER → CURRENT &
   // RECENT: the "now viewing" area rollup, the area's close cities, the area
   // forecast (when it has data), then the AREA HISTORY trend charts.
@@ -179,18 +218,12 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     return slides;
   }
 
-  // Any other wide shot — the "now viewing" card (START), the round-up stats on a
-  // summary shot, then the same WEATHER → CURRENT & RECENT context slides.
+  // Any other wide shot (intro / global / ocean / orbital) — the "now viewing"
+  // card (START), then the same WEATHER → CURRENT & RECENT context slides.
   slides.push({
     id: "onair",
     node: <OnAirCard segment={segment} alerts={ctx.areaAlerts} quakes={ctx.areaQuakes} volcanoes={ctx.areaVolcanoes} theme={ctx.theme} />,
   });
-  if (segment.kind === "summary" && ctx.roundup) {
-    slides.push({
-      id: "roundup",
-      node: <RoundupStatsPanel stats={ctx.roundup.stats} sources={ctx.roundup.sources} theme={ctx.theme} />,
-    });
-  }
   if (ctx.hasFramedForecast) {
     slides.push({ id: "forecast", node: <ForecastPanel center={ctx.histCenter} bbox={ctx.histBbox} theme={ctx.theme} /> });
   }

@@ -31,6 +31,7 @@ import {
 } from "@photonsurge/shared/director-countries";
 import {
   buildTicker,
+  alertTickerLines,
   scopeAlertsToBbox,
   scopeQuakesToBbox,
   scopeVolcanoesToBbox,
@@ -42,6 +43,7 @@ import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
 import { KIND_LABEL } from "../DirectorHolds";
 import { nearest, formatKm } from "../../lib/geo";
 import { useWorldWatch } from "../../lib/world-watch";
+import { useCountryAt } from "../../lib/countries";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { useStageScale, STAGE_W, STAGE_H } from "./useStageScale";
 import Ticker from "./Ticker";
@@ -160,11 +162,17 @@ export default function BroadcastFrame({
 }) {
   const scale = useStageScale();
   const worldWatch = useWorldWatch(cities, assetsReady);
-  // Memoised: each alert now scans the full cities set for its nearest-city flag,
-  // so only rebuild when the underlying feeds change, not on every re-render.
+  // The alert crawl lines carry a per-alert nearest-city flag scan (the crawl's
+  // one expensive step), so memoise them on JUST [alerts, cities] — otherwise the
+  // dead-reckoned track feed (new array ~1×/s) would rerun the whole scan every
+  // second and jam the render on a busy global feed. The final assembly is cheap.
+  const alertLines = useMemo(
+    () => alertTickerLines(alerts, cities),
+    [alerts, cities],
+  );
   const ticker = useMemo(
-    () => buildTicker({ alerts, quakes, tracks, cities }),
-    [alerts, quakes, tracks, cities],
+    () => buildTicker({ quakes, tracks, alertLines }),
+    [quakes, tracks, alertLines],
   );
   // A round-up segment takes over the bottom crawl with its own narrative
   // (single long line, so it just scrolls through once and loops) instead of
@@ -229,6 +237,15 @@ export default function BroadcastFrame({
     onAirSegment?.kind === "summary"
       ? countryContaining(state.camera.center[0], state.camera.center[1])
       : undefined;
+  // The enriched Country doc under the round-up's current stop — resolved from
+  // the full ~240-country Mongo catalog (real boundaries), unlike the ~30
+  // curated `countryContaining` above. Drives the "the nation" card's
+  // flag/photo/blurb/capital; scoping (cities/alerts) still uses the framed
+  // bbox below so an archipelago nation's Pacific territories don't drag cities
+  // in from the far side of the planet.
+  const summaryCountryDoc = useCountryAt(
+    onAirSegment?.kind === "summary" ? state.camera.center : null,
+  );
   const areaBbox = countryOnAir
     ? countryOnAir.bbox
     : summaryCountry
@@ -253,7 +270,9 @@ export default function BroadcastFrame({
     onAirSegment &&
     !eventTargeted &&
     !hasTrackInfo &&
-    (onAirSegment.kind === "country" || onAirSegment.kind === "tour")
+    (onAirSegment.kind === "country" ||
+      onAirSegment.kind === "tour" ||
+      onAirSegment.kind === "summary")
       ? areaBbox
       : undefined;
   // Whether the country/tour area forecast has data — decides if it earns its
@@ -312,6 +331,7 @@ export default function BroadcastFrame({
         manifest,
         activeVariable: state.activeVariable,
         roundup: summaryOnAir ? { stats: summaryOnAir.stats, sources: summaryOnAir.sources } : undefined,
+        summaryCountry: summaryCountryDoc,
         theme,
       })
     : [];
@@ -471,7 +491,7 @@ export default function BroadcastFrame({
           style={{
             position: "absolute",
             top: TICKER_H + INSET,
-            right: INSET,
+            right: INSET - 12,
           }}
         >
           <WorldReportDeck

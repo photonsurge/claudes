@@ -109,7 +109,35 @@ describe("modeSlides", () => {
     expect(ids(seg({ kind: "ocean" }), ctx({ showDepth: true, depthCenter: [0, 0] }))).toEqual(["onair", "depth"]);
   });
 
-  it("a summary shot folds the round-up stats into the deck", () => {
+  it("a summary shot with no country parked (ocean stop) shows just the rollup + stats", () => {
     expect(ids(seg({ kind: "summary" }), ctx({ roundup: { sources: [] } }))).toEqual(["onair", "roundup"]);
+  });
+
+  it("a summary parked on a country plays the full package deck in order", () => {
+    const country = { countryId: "jp", name: "Japan", iso2: "JP", bbox } as unknown as ModeSlideContext["summaryCountry"];
+    const alert = {
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [0, 0] },
+      properties: { id: "a", severityRank: 3, hazard: "wind", event: "Gale", areaDesc: "Coast" },
+    } as unknown as ModeSlideContext["areaAlerts"][number];
+    expect(
+      ids(
+        seg({ kind: "summary" }),
+        ctx({
+          summaryCountry: country,
+          wideCitiesBbox: bbox,
+          wideCitiesHasForecast: true,
+          areaAlerts: [alert],
+          roundup: { sources: [] },
+        }),
+      ),
+    ).toEqual(["onair", "nation", "forecast", "alerts", "topcities", "roundup"]);
+  });
+
+  it("a summary country with no alerts/forecast drops those slides but keeps nation + cities", () => {
+    const country = { countryId: "jp", name: "Japan", iso2: "JP", bbox } as unknown as ModeSlideContext["summaryCountry"];
+    expect(
+      ids(seg({ kind: "summary" }), ctx({ summaryCountry: country, wideCitiesBbox: bbox, roundup: { sources: [] } })),
+    ).toEqual(["onair", "nation", "topcities", "roundup"]);
   });
 });

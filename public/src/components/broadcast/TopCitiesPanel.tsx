@@ -7,29 +7,36 @@
  * featured slot that cycles through them (photo + Wikipedia blurb when the City
  * doc has one, worker-cached; see enrich:wiki) and a clean list of the rest.
  *
- * Deliberately CITIES-ONLY: the per-city past-year climate chart and per-row
- * temperature sparklines this used to also carry moved out — the deck now has
- * dedicated WEATHER (forecast) and CURRENT & RECENT (area history) slides, so
- * stacking climate here as well read as "a bit much". Pure presentation inside
- * the scaled broadcast stage; pointer-inert.
+ * Carries the same per-city history the "near this event" panel does: the
+ * featured city's past-year climate strip, and a small past-year temperature
+ * sparkline on each of the other city rows (both self-hiding when nothing is
+ * cached for that city). The whole-area trend charts still live on their own
+ * CURRENT & RECENT (area history) slide — this is the close-up on each named
+ * city. Pure presentation inside the scaled broadcast stage; pointer-inert.
  */
 import { useEffect, useState } from "react";
 import { listCities, formatPopulation, type City } from "../../lib/cities";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
+import { FeaturedCityClimate, CityTempSpark } from "./CityHistory";
 
 const TOP_CITY_LIMIT = 8;
 /** Seconds the featured city holds before the slide advances to the next. */
 const FEATURED_HOLD_MS = 7000;
 
-/** One "other city" row — just name + population/capital, no per-row chart. */
+/** One "other city" row — name + population/capital, with the city's own
+ *  past-year temperature sparkline at the right edge (self-hiding when nothing
+ *  is cached for it, leaving a clean text row). */
 function TopCityRow({ city }: { city: City }) {
   const meta = [formatPopulation(city.population), city.isCapital ? "capital" : null].filter(Boolean).join(" · ");
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "4px 0" }}>
-      <span style={{ fontWeight: 700, color: "#e6eefb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {city.name}
-      </span>
-      {meta ? <span style={{ color: "#8ea3bf", whiteSpace: "nowrap", flexShrink: 0 }}>{meta}</span> : null}
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontWeight: 700, color: "#e6eefb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {city.name}
+        </div>
+        {meta ? <div style={{ color: "#8ea3bf", whiteSpace: "nowrap" }}>{meta}</div> : null}
+      </div>
+      <CityTempSpark city={city} />
     </div>
   );
 }
@@ -110,7 +117,13 @@ export default function TopCitiesPanel({
         ) : null}
       </div>
 
-      {/* The rest of the area's cities — a clean name/population list. */}
+      {/* Featured city's past-year climate — the same temp/humidity/rain charts
+          the "near this event" panel and the area-history slide draw, keyed to
+          this city. Cycles with the featured slot above. */}
+      <FeaturedCityClimate name={featured.name} center={[featured.lng, featured.lat]} />
+
+      {/* The rest of the area's cities — a clean name/population list, each with
+          its own past-year temperature sparkline. */}
       {rest.length ? (
         <CardSection style={{ fontSize: 13 }}>
           {rest.map((c) => (

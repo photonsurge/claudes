@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 import { useSocket } from "../socket-provider";
-import { fetchSatelliteTles, listAircraft, listShips, listTrackPaths, type TrackPath } from "./client";
+import {
+  fetchSatelliteTles,
+  listAircraft,
+  listNotableCodes,
+  listShips,
+  listTrackPaths,
+  type TrackPath,
+} from "./client";
 import { propagateAll } from "./propagate";
 import { orbitSegments, type OrbitSegment } from "./orbit";
 import { aircraftToTrack, satelliteToTrack, shipToTrack } from "./toTrack";
@@ -20,6 +27,12 @@ export interface UseTracksOptions {
   showTrails?: boolean;
   /** Trail length in minutes of history. */
   trailMinutes?: number;
+  /**
+   * The on-air / director-highlighted craft. Trails are scoped to this plus the
+   * notable catalog — a route behind every one of ~20k live tracks was both
+   * illegible and the slowest overlay to load, so we only trail what matters.
+   */
+  highlight?: { kind: "aircraft" | "ship"; code: string } | null;
   /**
    * Camera centre/zoom. Retained for API compatibility but no longer scopes the
    * aircraft/ship polls — the worker caches the whole world (OpenSky /states/all
@@ -84,11 +97,16 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
   const { showSatellites, showAircraft, showShips, showOrbits, satelliteGroup } = opts;
   const showTrails = opts.showTrails ?? false;
   const trailMinutes = opts.trailMinutes ?? 30;
+  const highlight = opts.highlight ?? null;
   const [satTracks, setSatTracks] = useState<Track[]>([]);
   const [acTracks, setAcTracks] = useState<Track[]>([]);
   const [shipTracks, setShipTracks] = useState<Track[]>([]);
   const [orbits, setOrbits] = useState<OrbitSegment[]>([]);
   const [trails, setTrails] = useState<TrackPath[]>([]);
+  const [notableCodes, setNotableCodes] = useState<{ aircraft: string[]; ship: string[] }>({
+    aircraft: [],
+    ship: [],
+  });
 
   // Live push: the worker emits TRACKS_UPDATED after it records a new snapshot
   // frame. Bumping this tick re-runs the aircraft/ship/trail polls immediately,
@@ -187,8 +205,28 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
     };
   }, [showShips, liveTick]);
 
-  // Trails: per-track recent routes from recorded history, only for the kinds
-  // currently shown. Re-polled on a slow cadence (the history grows ~every 2min).
+  // Notable catalog codes — the curated craft that always get a trail. Loaded
+  // once when trails are on and refreshed slowly (the catalog changes rarely).
+  useEffect(() => {
+    if (!showTrails) {
+      setNotableCodes({ aircraft: [], ship: [] });
+      return;
+    }
+    let cancelled = false;
+    const load = () => listNotableCodes().then((c) => !cancelled && setNotableCodes(c));
+    load();
+    const iv = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [showTrails]);
+
+  // Trails: per-track recent routes from recorded history, scoped to the on-air
+  // highlight + the notable catalog (not one route per live track worldwide —
+  // that was illegible and by far the slowest overlay to load). Re-polled on a
+  // slow cadence (the history grows ~every 2min) and when the on-air craft
+  // changes so its trail appears promptly.
   useEffect(() => {
     const kinds: ("aircraft" | "ship")[] = [];
     if (showAircraft) kinds.push("aircraft");
@@ -197,11 +235,24 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
       setTrails([]);
       return;
     }
+    // The externalIds worth a trail for a given kind: notable catalog ∪ on-air.
+    const idsFor = (k: "aircraft" | "ship"): string[] => {
+      const ids = new Set(notableCodes[k]);
+      if (highlight && highlight.kind === k && highlight.code) ids.add(highlight.code.toLowerCase());
+      return [...ids];
+    };
     let cancelled = false;
     const poll = async () => {
-      // Fetch each kind separately so they don't share (and starve each other
-      // out of) the server's per-request track cap, then merge.
-      const rows = (await Promise.all(kinds.map((k) => listTrackPaths(trailMinutes, k)))).flat();
+      // Fetch each kind separately (its own scoped id set) then merge. A kind
+      // with nothing to trail is skipped — no request, no global fetch.
+      const rows = (
+        await Promise.all(
+          kinds.map((k) => {
+            const ids = idsFor(k);
+            return ids.length ? listTrackPaths(trailMinutes, k, ids) : Promise.resolve<TrackPath[]>([]);
+          }),
+        )
+      ).flat();
       if (!cancelled) setTrails(sanitizeTrails(rows));
     };
     poll();
@@ -210,7 +261,7 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
       cancelled = true;
       clearInterval(iv);
     };
-  }, [showTrails, trailMinutes, showAircraft, showShips, liveTick]);
+  }, [showTrails, trailMinutes, showAircraft, showShips, liveTick, notableCodes, highlight?.kind, highlight?.code]);
 
   // Projection tick (~1s): dead-reckon aircraft + ships from their last frame so
   // motion is smooth despite the slow poll. dtSec clamped so a stale frame can't

@@ -24,6 +24,8 @@ import { useSocket } from "../../lib/socket-provider";
 import { fetchManifest } from "../../lib/manifest";
 import { fetchSceneState } from "../../lib/scenes";
 import { listCities, type City } from "../../lib/cities";
+import { nearest, formatKm } from "../../lib/geo";
+import { pointToSegment } from "../../lib/select-segment";
 import { useRegionCities } from "../../lib/useRegionCities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
@@ -38,6 +40,7 @@ import { useFires } from "../../lib/fires-overlay";
 import { useVolcanoes } from "../../lib/volcanoes-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import DepthProfilePanel from "../../components/broadcast/DepthProfilePanel";
+import ForecastPanel from "../../components/broadcast/ForecastPanel";
 import ControlPanel from "../../components/ControlPanel";
 import ViewingOverlay from "../../components/ViewingOverlay";
 import AlertLegend from "../../components/AlertLegend";
@@ -117,6 +120,24 @@ export default function SandboxPage() {
   // difference from /control's `apply` — nothing here reaches /watch.
   const apply = (next: ControlState) => setState(next);
 
+  // Click a plain point (no event under the cursor) → the same "Now viewing"
+  // weather card /watch shows on air, anchored here. Labelled by the nearest
+  // shown city (a plain coordinate when none is near), which also becomes the
+  // globe pin. `shownCities` (region-augmented) gives better names when zoomed.
+  const pickPoint = (lng: number, lat: number) => {
+    const near = nearest(shownCities, [lng, lat], (c) => [c.lng, c.lat]);
+    const fmtLat = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? "N" : "S"}`;
+    const fmtLng = `${Math.abs(lng).toFixed(1)}°${lng >= 0 ? "E" : "W"}`;
+    if (!near) {
+      setSelected(pointToSegment(lng, lat, `${fmtLat} ${fmtLng}`));
+      return;
+    }
+    const country = near.item.country ? `, ${near.item.country}` : "";
+    const title = near.distanceKm < 25 ? near.item.name : `Near ${near.item.name}`;
+    const subtitle = `${formatKm(near.distanceKm)} from ${near.item.name}${country} · ${fmtLat} ${fmtLng}`;
+    setSelected(pointToSegment(lng, lat, title, subtitle));
+  };
+
   return (
     <main style={{ display: "flex", height: "100vh", background: "#0a0e16", color: "#fff" }}>
       <div style={{ position: "relative", flex: 1 }}>
@@ -139,8 +160,13 @@ export default function SandboxPage() {
           fires={fires}
           volcanoes={volcanoes}
           geomag={geomag}
+          // Pin + label the picked weather point (kind "weather" is only ever a
+          // plain point-click here — events carry their own marker).
+          weatherPointCenter={selected?.kind === "weather" ? selected.camera.center : null}
+          weatherPointLabel={selected?.kind === "weather" ? selected.title : null}
           interactive
           onSelect={setSelected}
+          onPickPoint={pickPoint}
           onCameraChange={(center, zoom) => apply({ ...state, camera: { center, zoom } })}
         />
         {state.showAlerts || state.showSeismic || state.showAurora || state.showMagneticField ? (
@@ -179,6 +205,14 @@ export default function SandboxPage() {
               onUnitsChange={(units) => apply({ ...state, units })}
               manifest={manifest}
             />
+          </div>
+        ) : null}
+        {/* Clicked a plain point → its 3-day forecast strip (the same box /watch
+            shows on air), top-centre above the "Now viewing" card. Self-hides
+            when the forecast store has no run for that point. */}
+        {selected?.kind === "weather" ? (
+          <div style={{ position: "absolute", top: 24, left: "50%", transform: "translateX(-50%)", zIndex: 5 }}>
+            <ForecastPanel center={selected.camera.center} />
           </div>
         ) : null}
         {selected ? (

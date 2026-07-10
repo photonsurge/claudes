@@ -51,6 +51,50 @@ export async function getCountry(id: string): Promise<{ detail?: CountryDetail; 
   }
 }
 
+/** An enriched country minus its heavy boundary geometry — the /api/countries/at payload. */
+export type CountryAt = Omit<iCountryModel, "geometry">;
+
+/** The enriched country whose real boundary contains [lng,lat], or null over
+ *  ocean / outside every country. Backs the round-up's per-stop "the place" card. */
+export async function getCountryAt(lng: number, lat: number): Promise<CountryAt | null> {
+  try {
+    const res = await fetch(`/api/countries/at?lng=${lng}&lat=${lat}`, { cache: "no-store" });
+    const body = await res.json().catch(() => null);
+    return body?.country ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the enriched country under a moving camera centre (the round-up tour
+ * parks on a fresh hotspot each stop). `center` null → no lookup, returns null.
+ * Rounds the coordinate before firing so the in-flight camera interpolation
+ * doesn't spam the point-in-polygon route on every frame — only a settled stop
+ * (a meaningfully different point) triggers a fetch.
+ */
+export function useCountryAt(center: [number, number] | null): CountryAt | null {
+  const [country, setCountry] = useState<CountryAt | null>(null);
+  const key = center ? `${center[0].toFixed(0)},${center[1].toFixed(0)}` : null;
+
+  useEffect(() => {
+    if (!key) {
+      setCountry(null);
+      return;
+    }
+    let cancelled = false;
+    const [lng, lat] = key.split(",").map(Number);
+    getCountryAt(lng, lat).then((c) => {
+      if (!cancelled) setCountry(c);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+
+  return country;
+}
+
 /**
  * Poll the Country catalog for the admin table. The seed/enrich/area-weather
  * jobs all emit TRACKS_UPDATED (kind:"countries") on completion, so the table

@@ -285,7 +285,41 @@ const SUMMARY_PERIODS: { period: SummaryPeriod; label: string; staleAfterMs: num
 
 /** Ticker reading speed — scrolling text reads faster than spoken narration. */
 const SUMMARY_WORDS_PER_MIN = 170;
+/** Narration-length cap for a STOP-LESS round-up (nothing to tour → just read). */
 const SUMMARY_MAX_HOLD_MS = 60_000;
+/**
+ * Dwell per toured stop — MUST track `SUMMARY_STOP_DWELL_MS` in
+ * public/src/lib/director.ts, which parks the camera on each stop ~40s to play
+ * that country's left-column package (nation → forecast → alerts → cities →
+ * stats). The hold below sizes the segment to cover the tour so it isn't cut
+ * mid-package.
+ */
+const SUMMARY_STOP_DWELL_MS = 40_000;
+/**
+ * Editorial segment-length guardrail: at ~40s/country, size the hold to cover at
+ * most this many stops so one round-up can't monopolise the channel for many
+ * minutes. Tunable. (A dedupe-by-country pass would make each slot a distinct
+ * nation; today the stops are hotspots-then-top-events, already fairly spread.)
+ */
+const SUMMARY_MAX_TOUR_STOPS = 6;
+
+/**
+ * How long a round-up holds on air. With geocoded stops it DWELLS — the camera
+ * parks on each for ~(flight + dwell), playing that country's package deck — so
+ * the hold must clear the whole tour, NOT the ≤60s narration cap (which would
+ * cut the tour off after the first country). A stop-less round-up keeps the
+ * old narration-length hold, floored by the operator's per-kind minimum.
+ */
+export function summaryTourHoldMs(
+  stopCount: number,
+  transitionMs: number,
+  narrationMs: number,
+  floorMs: number,
+): number {
+  if (stopCount <= 0) return Math.min(SUMMARY_MAX_HOLD_MS, Math.max(floorMs, narrationMs));
+  const toured = Math.min(stopCount, SUMMARY_MAX_TOUR_STOPS);
+  return Math.max(floorMs, narrationMs, toured * (transitionMs + SUMMARY_STOP_DWELL_MS));
+}
 
 /**
  * The places a round-up's camera tours while its narrative plays — the doc's
@@ -335,17 +369,17 @@ async function summaryCandidates(
     if (now - new Date(doc.generatedAt).getTime() > staleAfterMs) continue;
 
     const words = doc.narrative.trim().split(/\s+/).length;
-    const holdMs = Math.min(
-      SUMMARY_MAX_HOLD_MS,
-      Math.max(kindHoldMs(cfg, "summary"), Math.round((words / SUMMARY_WORDS_PER_MIN) * 60_000)),
-    );
+    const narrationMs = Math.round((words / SUMMARY_WORDS_PER_MIN) * 60_000);
+    const stops = summaryStops(doc);
+    const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
+    const holdMs = summaryTourHoldMs(stops.length, transitionMs, narrationMs, kindHoldMs(cfg, "summary"));
     const seg = make("summary", doc.id, "Global Round-Up", label, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, holdMs, cfg);
     seg.summary = {
       id: doc.id,
       period,
       narrative: doc.narrative,
       generatedAt: doc.generatedAt instanceof Date ? doc.generatedAt.toISOString() : String(doc.generatedAt),
-      stops: summaryStops(doc),
+      stops,
       stats: doc.stats,
       sources: doc.sources,
     };

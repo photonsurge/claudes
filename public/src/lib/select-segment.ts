@@ -15,6 +15,32 @@ import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 const QUAKE_ZOOM = 5;
 const STORM_ZOOM = 4.5;
 const VOLCANO_ZOOM = 5;
+/** Frame zoom for a plain clicked map point — a touch wider than a quake shot. */
+const POINT_ZOOM = 5;
+
+/**
+ * Turn a plain clicked map coordinate (no event feature under the cursor) into a
+ * `weather`-kind `Segment`, so the operator's click renders in the exact same
+ * "Now viewing" card /watch shows on air — just anchored at the picked point.
+ * `label` (nearest-city or coordinate name) and `subtitle` (distance/context)
+ * are resolved by the caller, which owns the cities list.
+ */
+export function pointToSegment(
+  lng: number,
+  lat: number,
+  label: string,
+  subtitle?: string,
+): Segment {
+  return {
+    id: `point:${lng.toFixed(3)},${lat.toFixed(3)}`,
+    kind: "weather",
+    title: label,
+    subtitle,
+    camera: { center: [lng, lat], zoom: POINT_ZOOM },
+    patch: {},
+    holdMs: 0,
+  };
+}
 
 export function quakeToSegment(q: Quake): Segment {
   const c = quakeSegmentContent({
