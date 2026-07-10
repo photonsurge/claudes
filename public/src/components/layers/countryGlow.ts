@@ -80,6 +80,32 @@ export async function countriesInBbox(bbox: [number, number, number, number]): P
 /** One full breath of the glow, in ms. */
 const GLOW_PERIOD_MS = 2600;
 
+/** ms each flag colour holds before blending into the next in the cycle. */
+const FLAG_DWELL_MS = 1400;
+
+/** Smoothly cycle a palette over time — blends adjacent colours so the glow
+ *  drifts through a country's flag colours rather than hard-cutting. One colour
+ *  → constant; empty → white. Pure/testable. */
+export function cyclePalette(
+  pal: [number, number, number][],
+  now: number,
+  dwellMs = FLAG_DWELL_MS,
+): [number, number, number] {
+  const n = pal.length;
+  if (n === 0) return [255, 255, 255];
+  if (n === 1) return pal[0];
+  const t = (((now / dwellMs) % n) + n) % n; // continuous 0..n, negative-safe
+  const i = Math.floor(t);
+  const f = t - i;
+  const a = pal[i % n];
+  const b = pal[(i + 1) % n];
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * f),
+    Math.round(a[1] + (b[1] - a[1]) * f),
+    Math.round(a[2] + (b[2] - a[2]) * f),
+  ];
+}
+
 function lighten(c: [number, number, number], t: number): [number, number, number] {
   return [
     Math.round(c[0] + (255 - c[0]) * t),
@@ -105,22 +131,36 @@ const GLOW_COLOR: [number, number, number] = [70, 225, 225];
  * alone. Returns [] while nothing has resolved yet (still loading, or no
  * geojson match).
  *
- * `opts.fill: false` drops the translucent interior fill — used when
- * countryMapGlow paints real map imagery inside the country instead, so this
- * only contributes the framing halo + rim. `opts.color` overrides the glow hue
- * (a warm rim reads better than cyan around a lit map fill).
+ * `opts.fill: false` drops the translucent interior fill, so the glow is just
+ * the framing halo + rim. `opts.color` overrides the base glow hue.
+ * `opts.paletteFor` colours each feature by its flag palette (resolved from
+ * `feature.properties.iso_a2`), cycling through the flag's colours over time;
+ * features with no palette fall back to `opts.color`.
  */
 export function countryGlowLayers(
   features: CountryFeature[],
   now: number,
-  opts?: { fill?: boolean; color?: [number, number, number] },
+  opts?: {
+    fill?: boolean;
+    color?: [number, number, number];
+    paletteFor?: (iso2: string) => [number, number, number][] | null | undefined;
+  },
 ): unknown[] {
   if (!features.length) return [];
   const color = opts?.color ?? GLOW_COLOR;
   const withFill = opts?.fill !== false;
+  const paletteFor = opts?.paletteFor;
   const phase = (now % GLOW_PERIOD_MS) / GLOW_PERIOD_MS;
   const breathe = 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI);
-  const lit = lighten(color, 0.6);
+  // Per-feature glow hue: a country's cycling flag colours, else the flat base.
+  const colorOf = (feature: CountryFeature): [number, number, number] => {
+    if (paletteFor) {
+      const iso = String(feature?.properties?.iso_a2 ?? "").toUpperCase();
+      const pal = paletteFor(iso);
+      if (pal && pal.length) return cyclePalette(pal, now);
+    }
+    return color;
+  };
   const data = features;
 
   return [
@@ -130,7 +170,7 @@ export function countryGlowLayers(
       data,
       filled: false,
       stroked: true,
-      getLineColor: () => withA(lighten(color, 0.4), 30 + 22 * breathe),
+      getLineColor: (f: CountryFeature) => withA(lighten(colorOf(f), 0.4), 30 + 22 * breathe),
       getLineWidth: () => 26 + 14 * breathe,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 20,
@@ -143,7 +183,7 @@ export function countryGlowLayers(
       data,
       filled: false,
       stroked: true,
-      getLineColor: () => withA(lighten(color, 0.35), 70 + 50 * breathe),
+      getLineColor: (f: CountryFeature) => withA(lighten(colorOf(f), 0.35), 70 + 50 * breathe),
       getLineWidth: () => 14 + 8 * breathe,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 11,
@@ -156,7 +196,7 @@ export function countryGlowLayers(
       data,
       filled: false,
       stroked: true,
-      getLineColor: () => withA(lighten(color, 0.2), 140 + 90 * breathe),
+      getLineColor: (f: CountryFeature) => withA(lighten(colorOf(f), 0.2), 140 + 90 * breathe),
       getLineWidth: () => 7 + 4 * breathe,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 5,
@@ -172,7 +212,7 @@ export function countryGlowLayers(
             data,
             filled: true,
             stroked: false,
-            getFillColor: () => withA(color, 26 + 34 * breathe),
+            getFillColor: (f: CountryFeature) => withA(colorOf(f), 26 + 34 * breathe),
             parameters: DEPTH_TEST,
             updateTriggers: { getFillColor: now },
           }),
@@ -184,7 +224,7 @@ export function countryGlowLayers(
       data,
       filled: false,
       stroked: true,
-      getLineColor: () => withA(lit, 220 + 35 * breathe),
+      getLineColor: (f: CountryFeature) => withA(lighten(colorOf(f), 0.6), 220 + 35 * breathe),
       getLineWidth: () => 2.5 + 2.5 * breathe,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 2,

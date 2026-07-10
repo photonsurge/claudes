@@ -207,14 +207,6 @@ export default function SandboxPage() {
             />
           </div>
         ) : null}
-        {/* Clicked a plain point → its 3-day forecast strip (the same box /watch
-            shows on air), top-centre above the "Now viewing" card. Self-hides
-            when the forecast store has no run for that point. */}
-        {selected?.kind === "weather" ? (
-          <div style={{ position: "absolute", top: 24, left: "50%", transform: "translateX(-50%)", zIndex: 5 }}>
-            <ForecastPanel center={selected.camera.center} />
-          </div>
-        ) : null}
         {selected ? (
           <ViewingOverlay
             segment={selected}
@@ -226,6 +218,14 @@ export default function SandboxPage() {
             accent="#38bdf8"
             onClose={() => setSelected(null)}
             manifest={manifest}
+            // Clicked a plain point → its 3-day forecast strip (the same data
+            // /watch shows on air) tucked inside the card, with a spinner while it
+            // loads and self-hiding when the store has no run for that point.
+            footer={
+              selected.kind === "weather" ? (
+                <ForecastPanel center={selected.camera.center} variant="inline" />
+              ) : null
+            }
           />
         ) : null}
       </div>

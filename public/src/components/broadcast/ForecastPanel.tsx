@@ -63,20 +63,31 @@ const CARD_W = 92;
 const COMPACT_CARD_W = 76;
 const STRIP_GAP = 8;
 
-function DayCard({ day, accent, compact }: { day: NormalizedDay; accent: string; compact: boolean }) {
+function DayCard({
+  day,
+  accent,
+  compact,
+  fill = false,
+}: {
+  day: NormalizedDay;
+  accent: string;
+  compact: boolean;
+  /** Fill an equal share of the row instead of a fixed width (embedded strip). */
+  fill?: boolean;
+}) {
   const topHazard = day.hazards[0];
   const width = compact ? COMPACT_CARD_W : CARD_W;
   return (
     <div
       style={{
         position: "relative",
-        width,
         boxSizing: "border-box",
+        ...(fill ? { flex: "1 1 0", minWidth: 0 } : { width }),
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         gap: 4,
-        padding: "8px 6px",
+        padding: fill ? "8px 3px" : "8px 6px",
         borderRadius: 8,
         background: "rgba(4,10,20,0.55)",
       }}
@@ -101,22 +112,51 @@ function DayCard({ day, accent, compact }: { day: NormalizedDay; accent: string;
           <WarnTriangle size={11} />
         </div>
       ) : null}
-      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: "#aebdd2" }}>{day.label}</span>
-      <div style={{ height: compact ? 24 : 30, display: "flex", alignItems: "center" }}>
-        <WeatherGlyph condition={day.condition} size={compact ? 24 : 30} />
+      <span style={{ fontSize: fill ? 10 : 11, fontWeight: 800, letterSpacing: 1, color: "#aebdd2" }}>{day.label}</span>
+      <div style={{ height: fill ? 22 : compact ? 24 : 30, display: "flex", alignItems: "center" }}>
+        <WeatherGlyph condition={day.condition} size={fill ? 22 : compact ? 24 : 30} />
       </div>
-      <span style={{ fontSize: compact ? 15 : 18, fontWeight: 850, color: "#f3f7ff" }}>
+      <span style={{ fontSize: fill ? 14 : compact ? 15 : 18, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
         {day.hi != null ? formatReading(day.hi) : "—"}°
-        <span style={{ fontSize: 12, fontWeight: 700, color: "#9db0ca", marginLeft: 4 }}>
+        <span style={{ fontSize: fill ? 10.5 : 12, fontWeight: 700, color: "#9db0ca", marginLeft: fill ? 3 : 4 }}>
           {day.lo != null ? `${formatReading(day.lo)}°` : ""}
         </span>
       </span>
-      <span style={{ fontSize: 10, fontWeight: 700, color: "#91a1b9" }}>
+      <span style={{ fontSize: fill ? 9 : 10, fontWeight: 700, color: "#91a1b9" }}>
         {day.wind != null ? `${formatReading(day.wind)} m/s` : "—"}
       </span>
-      <span style={{ fontSize: 10, fontWeight: 700, color: "#5fb0e6" }}>
+      <span style={{ fontSize: fill ? 9 : 10, fontWeight: 700, color: "#5fb0e6" }}>
         {day.precipChance != null ? `${day.precipChance}%` : ""}
       </span>
+    </div>
+  );
+}
+
+/** Small inline spinner while the forecast fetch is in flight (embedded strip). */
+function ForecastSpinner({ accent }: { accent: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 2px", opacity: 0.85 }}>
+      <style>{"@keyframes fc-spin{to{transform:rotate(360deg)}}"}</style>
+      <svg
+        width={15}
+        height={15}
+        viewBox="0 0 40 40"
+        aria-hidden
+        style={{ animation: "fc-spin 1.1s linear infinite" }}
+      >
+        <circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="5" />
+        <circle
+          cx="20"
+          cy="20"
+          r="17"
+          fill="none"
+          stroke={accent}
+          strokeWidth="5"
+          strokeLinecap="round"
+          strokeDasharray="80 200"
+        />
+      </svg>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, color: "#aebdd2" }}>Loading forecast…</span>
     </div>
   );
 }
@@ -126,6 +166,7 @@ export default function ForecastPanel({
   bbox = null,
   theme = DEFAULT_THEME,
   compact = false,
+  variant = "card",
 }: {
   /** Focus point [lng, lat] — the on-air segment's centre (or camera fallback). */
   center: [number, number] | null;
@@ -133,10 +174,39 @@ export default function ForecastPanel({
   bbox?: [number, number, number, number] | null;
   theme?: BroadcastTheme;
   compact?: boolean;
+  /** "card" (own BroadcastCard shell) or "inline" (bare section for embedding in
+   *  another card, e.g. the sandbox "SELECTED" overlay — shows a spinner while
+   *  loading and fills the host card's width). */
+  variant?: "card" | "inline";
 }) {
   const point = usePointForecast(bbox ? null : center);
   const area = useAreaForecast(bbox);
-  const days = (bbox ? area.days : point.days).map(normalizeDay);
+  const src = bbox ? area : point;
+  const days = src.days.map(normalizeDay);
+
+  // Inline: a bare section (matching ViewingOverlay's section styling) that shows
+  // a spinner while the fetch is in flight, then the fill-width day strip. Hides
+  // itself only once loading has finished with nothing to show.
+  if (variant === "inline") {
+    if (!days.length && !src.loading) return null;
+    return (
+      <div style={{ marginTop: 11, paddingTop: 11, borderTop: "1px solid rgba(120,140,170,0.15)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
+          <span style={{ fontSize: 9, letterSpacing: 1, opacity: 0.55, fontWeight: 700 }}>3-DAY FORECAST</span>
+          <span style={{ fontSize: 10, opacity: 0.7 }}>{bbox ? "AREA" : "POINT"}</span>
+        </div>
+        {days.length ? (
+          <div style={{ display: "flex", flexDirection: "row", gap: 5 }}>
+            {days.map((d) => (
+              <DayCard key={d.date} day={d} accent={theme.accent} compact fill />
+            ))}
+          </div>
+        ) : (
+          <ForecastSpinner accent={theme.accent} />
+        )}
+      </div>
+    );
+  }
 
   if (!days.length) return null;
 

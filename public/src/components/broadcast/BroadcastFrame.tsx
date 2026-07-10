@@ -237,22 +237,42 @@ export default function BroadcastFrame({
     onAirSegment?.kind === "summary"
       ? countryContaining(state.camera.center[0], state.camera.center[1])
       : undefined;
-  // The enriched Country doc under the round-up's current stop — resolved from
-  // the full ~240-country Mongo catalog (real boundaries), unlike the ~30
-  // curated `countryContaining` above. Drives the "the nation" card's
-  // flag/photo/blurb/capital; scoping (cities/alerts) still uses the framed
+  // The enriched Country doc under the on-air point — from the full ~240-country
+  // Mongo catalog (real boundaries), unlike the ~30 curated `countryContaining`
+  // above. Resolved once and reused for two things: the round-up's "the nation"
+  // card AND the uniform lede's "area" photo/blurb that EVERY mode's first slide
+  // now carries. A round-up tracks the moving stop (state.camera.center); any
+  // other located shot uses the segment's own centre; wide/oceanic/orbital shots
+  // have no ground point → null. Scoping (cities/alerts) still uses the framed
   // bbox below so an archipelago nation's Pacific territories don't drag cities
   // in from the far side of the planet.
-  const summaryCountryDoc = useCountryAt(
-    onAirSegment?.kind === "summary" ? state.camera.center : null,
-  );
+  const ledeCenter: [number, number] | null = !onAirSegment
+    ? null
+    : onAirSegment.kind === "summary"
+      ? state.camera.center
+      : segmentHasLocation
+        ? (onAirSegment.camera.center ?? state.camera.center ?? null)
+        : null;
+  const ledeCountryDoc = useCountryAt(ledeCenter);
+  const summaryCountryDoc = onAirSegment?.kind === "summary" ? ledeCountryDoc : null;
+  const areaInfo = ledeCountryDoc
+    ? {
+        name: ledeCountryDoc.name,
+        photo: ledeCountryDoc.wikiThumb ?? ledeCountryDoc.wikiPhoto ?? null,
+        blurb: ledeCountryDoc.wikiExtract ?? null,
+        iso2: ledeCountryDoc.iso2,
+      }
+    : null;
+  // Scope the on-air feeds to the framed area for the lede rollup — including
+  // targeted events (a small box around the epicentre/storm), so a quake's lede
+  // tallies nearby activity rather than the whole planet.
   const areaBbox = countryOnAir
     ? countryOnAir.bbox
     : summaryCountry
       ? summaryCountry.bbox
       : onAirSegment?.kind === "summary"
         ? bboxForCamera(state.camera.center, state.camera.zoom)
-        : onAirSegment && segmentHasLocation && !eventTargeted
+        : onAirSegment && segmentHasLocation
           ? bboxForCamera(onAirSegment.camera.center, onAirSegment.camera.zoom)
           : undefined;
   const areaAlerts = areaBbox ? scopeAlertsToBbox(alerts, areaBbox) : alerts;
@@ -332,6 +352,7 @@ export default function BroadcastFrame({
         activeVariable: state.activeVariable,
         roundup: summaryOnAir ? { stats: summaryOnAir.stats, sources: summaryOnAir.sources } : undefined,
         summaryCountry: summaryCountryDoc,
+        areaInfo,
         theme,
       })
     : [];

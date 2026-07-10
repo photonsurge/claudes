@@ -13,27 +13,33 @@ import type { AlertFeature } from "../../lib/alerts";
 import type { Quake } from "../../lib/tracks/types";
 import { alertSummary } from "../../lib/broadcast";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
-import BroadcastCard from "./BroadcastCard";
+import BroadcastCard, { CardSection, DIM } from "./BroadcastCard";
 import { KIND_COLOR, KIND_LABEL } from "./kinds";
 import AreaStatus from "./AreaStatus";
+import type { AreaInfo } from "./mode-slides";
 
 export default function OnAirCard({
   segment,
   alerts = [],
   quakes = [],
   volcanoes = [],
+  areaInfo = null,
   theme = DEFAULT_THEME,
 }: {
   segment: Segment;
   alerts?: AlertFeature[];
   quakes?: Quake[];
   volcanoes?: Volcano[];
+  /** "Where we are" — enriched photo + blurb for the on-air area, shown as the
+   *  uniform lede's area block. Null over ocean / before enrichment. */
+  areaInfo?: AreaInfo | null;
   theme?: BroadcastTheme;
 }) {
   const color = KIND_COLOR[segment.kind] ?? theme.accent;
   const kindLabel = KIND_LABEL[segment.kind] ?? segment.kind;
   const details = (segment.details ?? []).slice(0, 3);
   const summary = alertSummary(alerts, quakes, volcanoes);
+  const hasArea = areaInfo != null && (areaInfo.photo != null || areaInfo.blurb != null);
 
   return (
     <BroadcastCard accent={color} badge={kindLabel} badgeColor={color} live theme={theme}>
@@ -64,6 +70,40 @@ export default function OnAirCard({
         >
           {segment.subtitle}
         </div>
+      ) : null}
+
+      {/* "Where we are" — a compact area teaser (photo + short blurb) from the
+          enriched Country catalog, so every mode's first slide carries the same
+          sense of place. A fuller CountryPanel hero may follow later in the deck
+          (summary/round-up); this is the at-a-glance version. */}
+      {hasArea ? (
+        <CardSection eyebrow="The Area" style={{ marginTop: 14 }}>
+          {areaInfo!.photo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={areaInfo!.photo}
+              alt={areaInfo!.name}
+              style={{ width: "100%", height: 118, objectFit: "cover", borderRadius: 7, display: "block", marginBottom: 8 }}
+            />
+          ) : null}
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#e6eefb", lineHeight: 1.15 }}>{areaInfo!.name}</div>
+          {areaInfo!.blurb ? (
+            <div
+              style={{
+                fontSize: 12.5,
+                lineHeight: 1.45,
+                color: DIM,
+                marginTop: 4,
+                display: "-webkit-box",
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {areaInfo!.blurb}
+            </div>
+          ) : null}
+        </CardSection>
       ) : null}
 
       {details.length ? (

@@ -55,6 +55,14 @@ export interface TracksResult {
 const SAT_LIMIT = 100000;
 /** Max orbit rings to draw at once (heavy: ~90 verts each). */
 const ORBIT_CAP = 100000;
+/**
+ * At/above this camera zoom we're "zoomed into a region" and fetch the whole
+ * local aircraft/ship frame; below it (world spins + ocean/orbital views, all
+ * ≤3.6) the overlay shows only notable + on-air craft, so the world view loads
+ * a handful instead of ~13k aircraft / ~20k ships. Spin-safe: keyed on zoom
+ * (stable during auto-spin), not camera position (which the spin doesn't move).
+ */
+const DENSE_ZOOM = 4.5;
 
 /**
  * Clean up trail polylines so they don't "teleport" across the globe:
@@ -107,6 +115,26 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
     aircraft: [],
     ship: [],
   });
+
+  // Zoom tier + scoped id sets (shared by the marker polls and the trails poll).
+  const zoom = opts.zoom;
+  const dense = zoom >= DENSE_ZOOM;
+  const hlKind = highlight?.kind ?? null;
+  const hlCode = (highlight?.code ?? "").toLowerCase();
+  // The externalIds worth showing for a kind when zoomed out: the notable
+  // catalog ∪ the on-air craft. Content-joined into a key so the effects below
+  // re-run only when the SET changes, not on every (identical) notable refresh.
+  const scopeArr = (k: "aircraft" | "ship"): string[] => {
+    const ids = new Set(notableCodes[k]);
+    if (hlKind === k && hlCode) ids.add(hlCode);
+    return [...ids];
+  };
+  const acKey = scopeArr("aircraft").join(",");
+  const shipKey = scopeArr("ship").join(",");
+  // Markers fetch the whole local frame when zoomed in ("*" sentinel), else the
+  // scoped set; trails always use the scoped set regardless of zoom.
+  const acPollKey = dense ? "*" : acKey;
+  const shipPollKey = dense ? "*" : shipKey;
 
   // Live push: the worker emits TRACKS_UPDATED after it records a new snapshot
   // frame. Bumping this tick re-runs the aircraft/ship/trail polls immediately,
@@ -165,15 +193,22 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
   }, [showSatellites, showOrbits, satTles]);
 
   // Aircraft: re-fetch the worker's cached frame (~30s); positions are projected
-  // forward between frames by the tick below.
+  // forward between frames by the tick below. Zoomed in → whole global frame;
+  // zoomed out → only the notable + on-air craft (or nothing, so no request).
   useEffect(() => {
     if (!showAircraft) {
       setAcFrame({ at: 0, aircraft: [] });
       return;
     }
+    // `acPollKey` is "*" when zoomed in (→ whole frame) else the scoped id set.
+    const ids = dense ? undefined : acPollKey.split(",").filter(Boolean);
+    if (ids && ids.length === 0) {
+      setAcFrame({ at: 0, aircraft: [] });
+      return;
+    }
     let cancelled = false;
     const poll = async () => {
-      const r = await listAircraft(); // global — every cached aircraft worldwide
+      const r = await listAircraft(undefined, undefined, ids);
       const at = r.at ? Date.parse(r.at) : Date.now();
       if (!cancelled) setAcFrame({ at, aircraft: r.aircraft });
     };
@@ -183,17 +218,23 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
       cancelled = true;
       clearInterval(iv);
     };
-  }, [showAircraft, liveTick]);
+  }, [showAircraft, liveTick, dense, acPollKey]);
 
-  // Ships: re-fetch the worker's cached frame (~60s).
+  // Ships: re-fetch the worker's cached frame (~60s). Same zoom tiering as
+  // aircraft — whole global frame when zoomed in, notable + on-air when out.
   useEffect(() => {
     if (!showShips) {
       setShipFrame({ at: 0, ships: [] });
       return;
     }
+    const ids = dense ? undefined : shipPollKey.split(",").filter(Boolean);
+    if (ids && ids.length === 0) {
+      setShipFrame({ at: 0, ships: [] });
+      return;
+    }
     let cancelled = false;
     const poll = async () => {
-      const r = await listShips(); // global — every cached ship worldwide
+      const r = await listShips(undefined, ids);
       const at = r.at ? Date.parse(r.at) : Date.now();
       if (!cancelled) setShipFrame({ at, ships: r.ships });
     };
@@ -203,12 +244,13 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
       cancelled = true;
       clearInterval(iv);
     };
-  }, [showShips, liveTick]);
+  }, [showShips, liveTick, dense, shipPollKey]);
 
-  // Notable catalog codes — the curated craft that always get a trail. Loaded
-  // once when trails are on and refreshed slowly (the catalog changes rarely).
+  // Notable catalog codes — the curated craft that get a trail AND make up the
+  // zoomed-out marker set. Loaded once when any track kind is shown and
+  // refreshed slowly (the catalog changes rarely).
   useEffect(() => {
-    if (!showTrails) {
+    if (!showAircraft && !showShips) {
       setNotableCodes({ aircraft: [], ship: [] });
       return;
     }
@@ -220,7 +262,7 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
       cancelled = true;
       clearInterval(iv);
     };
-  }, [showTrails]);
+  }, [showAircraft, showShips]);
 
   // Trails: per-track recent routes from recorded history, scoped to the on-air
   // highlight + the notable catalog (not one route per live track worldwide —
@@ -235,12 +277,8 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
       setTrails([]);
       return;
     }
-    // The externalIds worth a trail for a given kind: notable catalog ∪ on-air.
-    const idsFor = (k: "aircraft" | "ship"): string[] => {
-      const ids = new Set(notableCodes[k]);
-      if (highlight && highlight.kind === k && highlight.code) ids.add(highlight.code.toLowerCase());
-      return [...ids];
-    };
+    // Same scoped id sets as the markers (notable ∪ on-air), zoom-independent.
+    const keyFor = (k: "aircraft" | "ship") => (k === "aircraft" ? acKey : shipKey);
     let cancelled = false;
     const poll = async () => {
       // Fetch each kind separately (its own scoped id set) then merge. A kind
@@ -248,7 +286,7 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
       const rows = (
         await Promise.all(
           kinds.map((k) => {
-            const ids = idsFor(k);
+            const ids = keyFor(k).split(",").filter(Boolean);
             return ids.length ? listTrackPaths(trailMinutes, k, ids) : Promise.resolve<TrackPath[]>([]);
           }),
         )
@@ -261,7 +299,7 @@ export function useTracks(opts: UseTracksOptions): TracksResult {
       cancelled = true;
       clearInterval(iv);
     };
-  }, [showTrails, trailMinutes, showAircraft, showShips, liveTick, notableCodes, highlight?.kind, highlight?.code]);
+  }, [showTrails, trailMinutes, showAircraft, showShips, liveTick, acKey, shipKey]);
 
   // Projection tick (~1s): dead-reckon aircraft + ships from their last frame so
   // motion is smooth despite the slow poll. dtSec clamped so a stale frame can't

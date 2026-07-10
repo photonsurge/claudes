@@ -121,7 +121,10 @@ const baseOpts: UseTracksOptions = {
   showOrbits: false,
   satelliteGroup: "active",
   center: [0, 0],
-  zoom: 2,
+  // Default the test camera to a "zoomed-in" (dense) zoom so the aircraft/ship
+  // frames fetch the whole world, as in most of these assertions. The zoomed-out
+  // scoping (notable + on-air only) has its own tests that override this.
+  zoom: 6,
 };
 
 /** Render the hook and flush the initial async polls (still at T0, dt = 0). */
@@ -447,6 +450,60 @@ describe("useTracks — trails", () => {
 
     expect(result.current.trails).toHaveLength(1);
     expect(result.current.trails[0].path).toEqual([[-20.1, 40], [-20, 40]]);
+  });
+});
+
+describe("useTracks — zoomed-out scoping (notable + on-air only)", () => {
+  it("fetches only the notable + on-air aircraft when zoomed out, not the global frame", async () => {
+    mockedListNotableCodes.mockResolvedValue({ aircraft: [AC_STILL.icao24], ship: [] });
+    mockedListAircraft.mockResolvedValue(acResponse([AC_STILL]));
+    const { result } = await renderTracks({ showAircraft: true, zoom: 2 });
+    await flush(); // let the notable fetch resolve → scoped re-poll
+
+    expect(mockedListAircraft).toHaveBeenCalledWith(undefined, undefined, [AC_STILL.icao24]);
+    expect(result.current.tracks.map((t) => t.code)).toEqual([AC_STILL.icao24]);
+  });
+
+  it("fetches no aircraft frame at all when zoomed out with nothing notable or on air", async () => {
+    mockedListAircraft.mockResolvedValue(acResponse([AC1]));
+    const { result } = await renderTracks({ showAircraft: true, zoom: 2 });
+    await flush();
+
+    expect(mockedListAircraft).not.toHaveBeenCalled();
+    expect(result.current.tracks).toEqual([]);
+  });
+
+  it("includes the on-air highlight in the zoomed-out scope even if it isn't notable", async () => {
+    mockedListAircraft.mockResolvedValue(acResponse([AC1]));
+    const { result } = await renderTracks({
+      showAircraft: true,
+      zoom: 2,
+      highlight: { kind: "aircraft", code: AC1.icao24 },
+    });
+    await flush();
+
+    expect(mockedListAircraft).toHaveBeenCalledWith(undefined, undefined, [AC1.icao24]);
+    expect(result.current.tracks.map((t) => t.code)).toEqual([AC1.icao24]);
+  });
+
+  it("fetches the whole global aircraft frame when zoomed in, ignoring the scope", async () => {
+    mockedListNotableCodes.mockResolvedValue({ aircraft: [AC_STILL.icao24], ship: [] });
+    mockedListAircraft.mockResolvedValue(acResponse([AC1, AC_STILL]));
+    const { result } = await renderTracks({ showAircraft: true, zoom: 6 });
+    await flush();
+
+    expect(mockedListAircraft).toHaveBeenCalledWith(undefined, undefined, undefined);
+    expect(result.current.tracks).toHaveLength(2);
+  });
+
+  it("scopes ships the same way when zoomed out", async () => {
+    mockedListNotableCodes.mockResolvedValue({ aircraft: [], ship: [SHIP1.mmsi] });
+    mockedListShips.mockResolvedValue(shipResponse([SHIP1]));
+    const { result } = await renderTracks({ showShips: true, zoom: 2 });
+    await flush();
+
+    expect(mockedListShips).toHaveBeenCalledWith(undefined, [SHIP1.mmsi]);
+    expect(result.current.tracks.map((t) => t.code)).toEqual([SHIP1.mmsi]);
   });
 });
 

@@ -39,14 +39,20 @@ export interface AircraftResponse {
   error?: string;
 }
 
-/** Live ADS-B aircraft snapshot. `bbox` is [w,s,e,n]. */
+/**
+ * Live ADS-B aircraft snapshot. `bbox` is [w,s,e,n]; `ids` scopes to a set of
+ * ICAO24s (notable + on-air craft, sent when zoomed out so the world view loads
+ * a handful instead of the whole planet).
+ */
 export async function listAircraft(
   bbox?: [number, number, number, number],
   limit?: number,
+  ids?: string[],
 ): Promise<AircraftResponse> {
   const q = new URLSearchParams();
   if (bbox) q.set("bbox", bbox.join(","));
   if (limit) q.set("limit", String(limit));
+  if (ids && ids.length) q.set("ids", ids.join(","));
   const res = await fetch(`/api/tracks/aircraft?${q.toString()}`, { cache: "no-store" });
   const body = await res.json().catch(() => null);
   if (!body) return { count: 0, total: 0, at: new Date().toISOString(), aircraft: [] };
@@ -62,10 +68,17 @@ export interface ShipsResponse {
   error?: string;
 }
 
-/** AIS ship snapshot. `bbox` is [w,s,e,n]. */
-export async function listShips(bbox?: [number, number, number, number]): Promise<ShipsResponse> {
+/**
+ * AIS ship snapshot. `bbox` is [w,s,e,n]; `ids` scopes to a set of MMSIs
+ * (notable + on-air craft, sent when zoomed out).
+ */
+export async function listShips(
+  bbox?: [number, number, number, number],
+  ids?: string[],
+): Promise<ShipsResponse> {
   const q = new URLSearchParams();
   if (bbox) q.set("bbox", bbox.join(","));
+  if (ids && ids.length) q.set("ids", ids.join(","));
   const res = await fetch(`/api/tracks/ships?${q.toString()}`, { cache: "no-store" });
   const body = await res.json().catch(() => null);
   if (!body) return { configured: false, count: 0, ships: [], note: "Request failed." };

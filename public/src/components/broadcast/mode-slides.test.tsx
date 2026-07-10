@@ -47,30 +47,37 @@ describe("modeSlides", () => {
     ]);
   });
 
-  it("a quake shows the seismic report then the cities-near enrichment", () => {
-    expect(ids(seg({ kind: "quake", quake: { mag: 6.1, depthKm: 10 } }), ctx())).toEqual(["quake", "nearby"]);
+  it("every mode leads with the uniform on-air lede", () => {
+    expect(ids(seg({ kind: "weather" }), ctx())[0]).toBe("onair");
+    expect(ids(seg({ kind: "quake", quake: { mag: 6.1, depthKm: 10 } }), ctx())[0]).toBe("onair");
+    expect(ids(seg({ kind: "storm" }), ctx())[0]).toBe("onair");
+    expect(ids(seg({ kind: "flight", trackInfo: { label: "AF1" } }), ctx())[0]).toBe("onair");
   });
 
-  it("a quake with no quake payload falls back to just the enrichment", () => {
-    expect(ids(seg({ kind: "quake" }), ctx())).toEqual(["nearby"]);
+  it("a quake shows the lede, seismic report then the cities-near enrichment", () => {
+    expect(ids(seg({ kind: "quake", quake: { mag: 6.1, depthKm: 10 } }), ctx())).toEqual(["onair", "quake", "nearby"]);
   });
 
-  it("a non-quake targeted event (storm) shows only the cities-near enrichment", () => {
-    expect(ids(seg({ kind: "storm" }), ctx())).toEqual(["nearby"]);
+  it("a quake with no quake payload falls back to the lede + enrichment", () => {
+    expect(ids(seg({ kind: "quake" }), ctx())).toEqual(["onair", "nearby"]);
   });
 
-  it("a notable track shows the track-info card", () => {
-    expect(ids(seg({ kind: "flight", trackInfo: { label: "AF1" } }), ctx())).toEqual(["track"]);
+  it("a non-quake targeted event (storm) shows the lede + cities-near enrichment", () => {
+    expect(ids(seg({ kind: "storm" }), ctx())).toEqual(["onair", "nearby"]);
+  });
+
+  it("a notable track shows the lede then the track-info card", () => {
+    expect(ids(seg({ kind: "flight", trackInfo: { label: "AF1" } }), ctx())).toEqual(["onair", "track"]);
   });
 
   it("a volcano adds its facts/nearby pages only when they carry content", () => {
     const withFacts = seg({ kind: "volcano", trackInfo: { facts: "Stratovolcano" } });
-    // No nearby data → facts only.
-    expect(ids(withFacts, ctx())).toEqual(["track", "volcano-facts"]);
+    // No nearby data → lede + facts only.
+    expect(ids(withFacts, ctx())).toEqual(["onair", "track", "volcano-facts"]);
     // A nearby city → the nearby page appears too.
-    expect(ids(withFacts, ctx({ cities: [cityAt(0, 0)] }))).toEqual(["track", "volcano-facts", "volcano-nearby"]);
-    // No facts and nothing nearby → just the track card.
-    expect(ids(seg({ kind: "volcano", trackInfo: { label: "V" } }), ctx())).toEqual(["track"]);
+    expect(ids(withFacts, ctx({ cities: [cityAt(0, 0)] }))).toEqual(["onair", "track", "volcano-facts", "volcano-nearby"]);
+    // No facts and nothing nearby → just the lede + track card.
+    expect(ids(seg({ kind: "volcano", trackInfo: { label: "V" } }), ctx())).toEqual(["onair", "track"]);
   });
 
   const bbox: [number, number, number, number] = [-1, -1, 1, 1];

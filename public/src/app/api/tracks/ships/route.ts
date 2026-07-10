@@ -11,11 +11,14 @@ const NO_CACHE = { "Cache-Control": "no-store" };
 const STALE_MS = 10 * 60 * 1000;
 
 /**
- * GET /api/tracks/ships?bbox=w,s,e,n
+ * GET /api/tracks/ships?bbox=w,s,e,n&ids=211,311
  * Reads the newest AIS frame the worker cached in Mongo — the public app NEVER
  * opens its own aisstream connection. Each ship carries heading + speed and the
  * frame time (`at`) so the client can dead-reckon between frames. Configure the
  * worker (AISSTREAM_API_KEY, SNAPSHOT_REGIONS, SHIP_SNAPSHOT_MS).
+ *
+ * `ids` scopes to a specific set of MMSIs (the overlay sends notable + on-air
+ * craft when zoomed out); a present-but-empty `ids` returns an empty frame.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -28,9 +31,21 @@ export async function GET(req: Request) {
     }
   }
 
+  const idsRaw = url.searchParams.get("ids");
+  const ids =
+    idsRaw != null ? idsRaw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean) : undefined;
+
+  // Scoped to an empty set → nothing to show; skip the query.
+  if (ids && ids.length === 0) {
+    return NextResponse.json(
+      { configured: true, count: 0, at: null, stale: false, ships: [] },
+      { status: 200, headers: NO_CACHE },
+    );
+  }
+
   try {
     const db = await getAppDb();
-    const { at, rows } = await db.trackSnapshots.latest({ kind: "ship", bbox });
+    const { at, rows } = await db.trackSnapshots.latest({ kind: "ship", bbox, ids });
     const ships: Ship[] = rows.map((r) => ({
       mmsi: r.externalId,
       name: r.name,

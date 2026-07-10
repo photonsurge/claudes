@@ -43,6 +43,19 @@ import VolcanoNearbyPanel, { volcanoNearbySlideHasContent } from "./VolcanoNearb
 
 const FALLBACK_ACCENT = "#38bdf8";
 
+/**
+ * The "area details" every mode's uniform first slide (OnAirCard) carries — a
+ * photo + short blurb for the place currently on air, resolved from the enriched
+ * Country catalog (worker/src/jobs/countries.ts) via /api/countries/at. Null over
+ * ocean / outside every country, or before the area has been enriched.
+ */
+export interface AreaInfo {
+  name: string;
+  photo: string | null;
+  blurb: string | null;
+  iso2?: string;
+}
+
 export interface ModeSlideContext {
   /** Curated cities — for the quake/event "cities near" + volcano nearby slides. */
   cities: City[];
@@ -84,6 +97,10 @@ export interface ModeSlideContext {
    *  per stop via /api/countries/at) — drives the summary deck's "the nation"
    *  card. Null when the stop is over ocean / outside every country. */
   summaryCountry?: CountryAt | null;
+  /** Enriched "where we are" — the DB country (photo + blurb) under the on-air
+   *  point, resolved in BroadcastFrame via /api/countries/at. Rendered as the
+   *  uniform lede's area block on EVERY mode's first slide. */
+  areaInfo?: AreaInfo | null;
   theme: BroadcastTheme;
 }
 
@@ -120,8 +137,28 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
   const color = KIND_COLOR[segment.kind] ?? FALLBACK_ACCENT;
   const slides: DeckSlide[] = [];
 
-  // Notable aircraft / ship / volcano — the rich Track Info card, plus the two
-  // extra volcano pages whenever they carry content.
+  // Uniform lede — EVERY director mode opens with the same on-air card: kind
+  // badge, event title and the pulsing ON AIR flag, plus the "where we are"
+  // area photo/blurb (ctx.areaInfo) and the local alerts/quakes/volcanoes
+  // rollup. The mode's own detail cards (seismic report, track info, cities,
+  // forecast…) follow as the remaining slides, so every mode reads the same on
+  // its first page.
+  slides.push({
+    id: "onair",
+    node: (
+      <OnAirCard
+        segment={segment}
+        alerts={ctx.areaAlerts}
+        quakes={ctx.areaQuakes}
+        volcanoes={ctx.areaVolcanoes}
+        areaInfo={ctx.areaInfo}
+        theme={ctx.theme}
+      />
+    ),
+  });
+
+  // Notable aircraft / ship / volcano — the rich Track Info card after the lede,
+  // plus the two extra volcano pages whenever they carry content.
   if (segment.trackInfo != null) {
     slides.push({ id: "track", node: <TrackInfoPanel segment={segment} color={color} /> });
     if (segment.kind === "volcano") {
@@ -180,10 +217,6 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
   // (set for summary in BroadcastFrame), so the cities/forecast reuse the same
   // plumbing the country spotlight does.
   if (segment.kind === "summary") {
-    slides.push({
-      id: "onair",
-      node: <OnAirCard segment={segment} alerts={ctx.areaAlerts} quakes={ctx.areaQuakes} volcanoes={ctx.areaVolcanoes} theme={ctx.theme} />,
-    });
     if (ctx.summaryCountry) {
       slides.push({ id: "nation", node: <CountryPanel country={ctx.summaryCountry} color={color} theme={ctx.theme} /> });
     }
@@ -206,10 +239,6 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
   // RECENT: the "now viewing" area rollup, the area's close cities, the area
   // forecast (when it has data), then the AREA HISTORY trend charts.
   if (ctx.wideCitiesBbox) {
-    slides.push({
-      id: "onair",
-      node: <OnAirCard segment={segment} alerts={ctx.areaAlerts} quakes={ctx.areaQuakes} volcanoes={ctx.areaVolcanoes} theme={ctx.theme} />,
-    });
     slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     if (ctx.wideCitiesHasForecast) {
       slides.push({ id: "forecast", node: <ForecastPanel center={null} bbox={ctx.wideCitiesBbox} theme={ctx.theme} /> });
@@ -218,12 +247,8 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     return slides;
   }
 
-  // Any other wide shot (intro / global / ocean / orbital) — the "now viewing"
-  // card (START), then the same WEATHER → CURRENT & RECENT context slides.
-  slides.push({
-    id: "onair",
-    node: <OnAirCard segment={segment} alerts={ctx.areaAlerts} quakes={ctx.areaQuakes} volcanoes={ctx.areaVolcanoes} theme={ctx.theme} />,
-  });
+  // Any other wide shot (intro / global / ocean / orbital) — after the lede, the
+  // same WEATHER → CURRENT & RECENT context slides.
   if (ctx.hasFramedForecast) {
     slides.push({ id: "forecast", node: <ForecastPanel center={ctx.histCenter} bbox={ctx.histBbox} theme={ctx.theme} /> });
   }

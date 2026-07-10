@@ -69,6 +69,7 @@ export function makeTrackSnapshotRepo(model: Model<iTrackSnapshotModel>) {
     async latest(opts: {
       kind: TrackSnapshotKind;
       bbox?: [number, number, number, number];
+      ids?: string[];
       limit?: number;
     }): Promise<{ at: Date | null; rows: iTrackSnapshotModel[] }> {
       const newest = await model
@@ -86,6 +87,15 @@ export function makeTrackSnapshotRepo(model: Model<iTrackSnapshotModel>) {
         q.loc = {
           $geoWithin: { $geometry: { type: "Polygon", coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] } },
         };
+      }
+      // Scope to an explicit id set (the overlay sends the notable + on-air craft
+      // when zoomed out, so the world view loads a handful instead of the whole
+      // planet). Case-insensitive — snapshot externalIds keep the provider's
+      // casing while the registry lowercases its codes; the {kind,batchAt} match
+      // above already narrows to one frame, so the $expr only scans that frame.
+      if (opts.ids && opts.ids.length) {
+        const idset = opts.ids.map((s) => s.toLowerCase());
+        q.$expr = { $in: [{ $toLower: "$externalId" }, idset] };
       }
       // limit 0 = no cap (Mongo) — return the whole frame for the live overlay.
       const docs = await model.find(q).limit(opts.limit ?? 0).lean().exec();

@@ -128,6 +128,7 @@ export default function ViewingOverlay({
   accent = "#ff5252",
   onClose,
   manifest,
+  footer,
 }: {
   segment: Segment;
   variable: string | null;
@@ -145,6 +146,9 @@ export default function ViewingOverlay({
   onClose?: () => void;
   /** When supplied, the legend shows the source + data age. */
   manifest?: WeatherManifest | null;
+  /** Extra content rendered inside the card body, below the legend (e.g. the
+   *  sandbox's inline 3-day forecast strip). */
+  footer?: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
@@ -343,6 +347,8 @@ export default function ViewingOverlay({
         ) : null}
 
         <MapLegend variable={variable} units={state.units} manifest={manifest} />
+
+        {footer}
 
         {/* Operator-only recurrence readout — not on the /watch broadcast. */}
         {draggable && timesShown ? (
