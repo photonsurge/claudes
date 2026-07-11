@@ -20,6 +20,20 @@ import {
   type SeriesStats,
 } from "@photonsurge/shared/weather/sample";
 import type { iWeatherFrameModel } from "@photonsurge/shared/db/weather-frame-model";
+import type { WeatherFrameMeta } from "@photonsurge/shared/db/weather-frame-repo";
+
+/**
+ * A frame LOADER: fetch one archived frame's full bytes by id (db.weatherFrames
+ * getByID), or null if gone. Passing this instead of a pre-loaded frames[] is
+ * what keeps memory bounded — the builders pull bytes for only the PICKED frames,
+ * a few at a time, and let each go before the next (see buildHistorySeries).
+ */
+export type FrameLoader = (id: string) => Promise<iWeatherFrameModel | null>;
+
+/** How many frames' bytes to hold in RAM at once while sampling a series. The
+ *  killer was loading EVERY frame's PNG up front (all vars × 72h → GBs → public
+ *  OOM); streaming this few at a time caps peak at ~this many decoded frames. */
+const STREAM_BATCH = Math.max(1, Number(process.env.HISTORY_STREAM_BATCH || 6));
 
 /** One sampled moment; scalar frames fill `value`, uv frames fill u/v/speed. */
 export interface HistoryPoint {
@@ -73,21 +87,30 @@ function cacheKey(frameId: string, lat: number, lng: number): string {
   return `${frameId}|${lat.toFixed(3)}|${lng.toFixed(3)}`;
 }
 
-/** Sample one frame at lat/lng through the memo; decodes at most once. */
-export async function sampleFrameCached(
-  frame: iWeatherFrameModel,
+/**
+ * Sample one frame at lat/lng through the memo; loads + decodes the bytes at
+ * most once. On a memo MISS it calls `loadFrame(id)` — so a frame's PNG is
+ * fetched only when actually sampled, and is released once its scalar sample is
+ * memoised (the memo holds tiny FrameSample values, never the bytes).
+ */
+async function sampleByIdCached(
+  id: string,
   lat: number,
   lng: number,
+  getFrame: () => Promise<iWeatherFrameModel | null>,
 ): Promise<FrameSample | null> {
-  const key = cacheKey(frame.id, lat, lng);
+  const key = cacheKey(id, lat, lng);
   const hit = sampleCache.get(key);
   if (hit !== undefined) return hit;
 
   let sample: FrameSample | null = null;
-  try {
-    sample = sampleFrame(await frameToSampleable(frame), lat, lng);
-  } catch {
-    sample = null; // undecodable frame reads as nodata
+  const frame = await getFrame(); // bytes fetched HERE, freed after decode
+  if (frame) {
+    try {
+      sample = sampleFrame(await frameToSampleable(frame), lat, lng);
+    } catch {
+      sample = null; // undecodable frame reads as nodata
+    }
   }
 
   if (sampleCache.size >= SAMPLE_CACHE_MAX) {
@@ -102,17 +125,56 @@ export async function sampleFrameCached(
   return sample;
 }
 
+/** Sample a full frame already in hand through the memo — for callers that load
+ *  their (fewer) frames up front, e.g. the forecast builder. */
+export async function sampleFrameCached(
+  frame: iWeatherFrameModel,
+  lat: number,
+  lng: number,
+): Promise<FrameSample | null> {
+  return sampleByIdCached(frame.id, lat, lng, async () => frame);
+}
+
+/** Sample a frame identified by metadata; its bytes are loaded via `loadFrame`
+ *  ONLY on a memo miss — the streaming path that keeps history memory bounded. */
+async function sampleMetaCached(
+  meta: WeatherFrameMeta,
+  lat: number,
+  lng: number,
+  loadFrame: FrameLoader,
+): Promise<FrameSample | null> {
+  return sampleByIdCached(meta.id, lat, lng, () => loadFrame(meta.id));
+}
+
+/**
+ * Sample `picked` frames in STREAM_BATCH-sized waves. Each wave loads + decodes
+ * at most STREAM_BATCH frames concurrently; those bytes are unreferenced (→ GC)
+ * before the next wave. This is the memory fix — peak RAM is a handful of frames,
+ * not the whole series. Returns results in `picked` order.
+ */
+async function streamSamples<T>(
+  picked: WeatherFrameMeta[],
+  sampleOne: (meta: WeatherFrameMeta) => Promise<T>,
+): Promise<T[]> {
+  const out = new Array<T>(picked.length);
+  for (let i = 0; i < picked.length; i += STREAM_BATCH) {
+    const wave = await Promise.all(picked.slice(i, i + STREAM_BATCH).map((m) => sampleOne(m)));
+    for (let j = 0; j < wave.length; j++) out[i + j] = wave[j];
+  }
+  return out;
+}
+
 /**
  * When several models archived the same variable+validTime (global run vs a
  * regional nest), keep — per valid time — only the finest-resolution frame
  * that actually covers the point. Frames not covering the point drop out.
  */
-export function pickFramesForPoint(
-  frames: iWeatherFrameModel[],
+export function pickFramesForPoint<F extends WeatherFrameMeta>(
+  frames: F[],
   lat: number,
   lng: number,
-): iWeatherFrameModel[] {
-  const byTime = new Map<string, iWeatherFrameModel>();
+): F[] {
+  const byTime = new Map<string, F>();
   for (const f of frames) {
     if (!latLngToPixel(lat, lng, { bounds: f.bounds, res: f.grid.res, width: f.grid.width, height: f.grid.height })) {
       continue;
@@ -126,15 +188,18 @@ export function pickFramesForPoint(
   );
 }
 
-/** Sample every frame at lat/lng and assemble the series + stats payload. */
+/** Sample every frame at lat/lng and assemble the series + stats payload.
+ *  Takes frame METADATA + a loader; picked frames' bytes are streamed in (a few
+ *  at a time) and freed — never the whole series in RAM at once. */
 export async function buildHistorySeries(
   variable: string,
-  frames: iWeatherFrameModel[],
+  meta: WeatherFrameMeta[],
   lat: number,
   lng: number,
+  loadFrame: FrameLoader,
 ): Promise<HistorySeries> {
-  const picked = pickFramesForPoint(frames, lat, lng);
-  const samples = await Promise.all(picked.map((frame) => sampleFrameCached(frame, lat, lng)));
+  const picked = pickFramesForPoint(meta, lat, lng);
+  const samples = await streamSamples(picked, (m) => sampleMetaCached(m, lat, lng, loadFrame));
   const series: HistoryPoint[] = [];
   const statValues: number[] = [];
   let encoding: "scalar" | "uv" = "scalar";
@@ -197,19 +262,24 @@ function areaCacheKey(frameId: string, bbox: [number, number, number, number]): 
   return `${frameId}|${bbox.map((v) => v.toFixed(1)).join(",")}`;
 }
 
-/** Spatially aggregate one frame over bbox through the memo (frames immutable). */
-async function areaStatsCached(
-  frame: iWeatherFrameModel,
+/** Spatially aggregate one frame over bbox through the memo (frames immutable).
+ *  Loads the bytes via `loadFrame` only on a memo miss, then frees them. */
+async function areaStatsMetaCached(
+  meta: WeatherFrameMeta,
   bbox: [number, number, number, number],
+  loadFrame: FrameLoader,
 ): Promise<AreaStats | null> {
-  const key = areaCacheKey(frame.id, bbox);
+  const key = areaCacheKey(meta.id, bbox);
   const hit = areaCache.get(key);
   if (hit !== undefined) return hit;
   let stats: AreaStats | null = null;
-  try {
-    stats = areaStatsFrame(await frameToSampleable(frame), bbox);
-  } catch {
-    stats = null;
+  const frame = await loadFrame(meta.id);
+  if (frame) {
+    try {
+      stats = areaStatsFrame(await frameToSampleable(frame), bbox);
+    } catch {
+      stats = null;
+    }
   }
   if (areaCache.size >= SAMPLE_CACHE_MAX) areaCache.clear();
   areaCache.set(key, stats);
@@ -223,14 +293,15 @@ async function areaStatsCached(
  */
 export async function buildAreaHistorySeries(
   variable: string,
-  frames: iWeatherFrameModel[],
+  meta: WeatherFrameMeta[],
   bbox: [number, number, number, number],
+  loadFrame: FrameLoader,
 ): Promise<AreaHistorySeries> {
   const centerLat = (bbox[1] + bbox[3]) / 2;
   let centerLng = (bbox[0] + bbox[2]) / 2;
   if (bbox[2] < bbox[0]) centerLng = ((bbox[0] + bbox[2] + 360) / 2 + 180) % 360 - 180; // seam-crossing window
-  const picked = pickFramesForPoint(frames, centerLat, centerLng);
-  const statsPerFrame = await Promise.all(picked.map((frame) => areaStatsCached(frame, bbox)));
+  const picked = pickFramesForPoint(meta, centerLat, centerLng);
+  const statsPerFrame = await streamSamples(picked, (m) => areaStatsMetaCached(m, bbox, loadFrame));
 
   const series: AreaHistoryPoint[] = [];
   const means: number[] = [];

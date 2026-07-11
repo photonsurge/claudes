@@ -3,9 +3,18 @@ import { logError, logWarn } from "./logger";
 
 const MONGODB_URI = process.env.MONGODB_URI as string;
 
+// While Mongo is unreachable a failed attempt clears connPromise (so we retry),
+// but a burst of concurrent callers would then each spin up its own
+// serverSelectionTimeoutMS attempt and surface an identical timeout error. Hold
+// the last failure for this window so callers arriving inside it fail fast on
+// the shared error instead of stampeding the (still-down) server.
+const FAIL_COOLDOWN_MS = Number(process.env.MONGO_FAIL_COOLDOWN_MS || 1000);
+
 interface MongooseCache {
   conn: Connection | null;
   connPromise: Promise<Connection> | null;
+  lastError: Error | null;
+  lastFailAt: number;
 }
 
 declare global {
@@ -15,7 +24,12 @@ declare global {
 
 const cached: MongooseCache =
   global.__mongooseCache ??
-  (global.__mongooseCache = { conn: null, connPromise: null });
+  (global.__mongooseCache = {
+    conn: null,
+    connPromise: null,
+    lastError: null,
+    lastFailAt: 0,
+  });
 
 /**
  * Single-domain DB connection. There is exactly one database, so there is no

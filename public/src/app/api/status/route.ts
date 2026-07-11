@@ -9,12 +9,17 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@photonsurge/shared/utill/mongoose";
 import { getQueue } from "@photonsurge/shared/bull/bull";
+import { withCache } from "../../../lib/focus/focus-cache";
 import packageJson from "../../../../package.json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const FETCH_TIMEOUT_MS = 3000;
+/** Every /watch tab + status panel polls this, and it fans out to socket +
+ *  worker + mongo + redis — so cache the aggregate briefly: N concurrent pollers
+ *  dedup to ONE fan-out per window instead of each hitting all four services. */
+const STATUS_TTL_SEC = Number(process.env.STATUS_CACHE_TTL_SEC || 10);
 
 interface ServiceStatus {
   name: string;
@@ -58,23 +63,26 @@ async function redisStatus(): Promise<ServiceStatus> {
 }
 
 export async function GET() {
-  const SOCKET_URL = process.env.SOCKET_INTERNAL_URL || "http://localhost:10101";
-  const WORKER_URL = process.env.WORKER_INTERNAL_URL || "http://localhost:10102";
+  const { value } = await withCache("status:v1", STATUS_TTL_SEC, async () => {
+    const SOCKET_URL = process.env.SOCKET_INTERNAL_URL || "http://localhost:10101";
+    const WORKER_URL = process.env.WORKER_INTERNAL_URL || "http://localhost:10102";
 
-  const [socket, worker, mongodb, redis] = await Promise.all([
-    httpService("socket", SOCKET_URL),
-    httpService("worker", WORKER_URL),
-    mongoStatus(),
-    redisStatus(),
-  ]);
+    const [socket, worker, mongodb, redis] = await Promise.all([
+      httpService("socket", SOCKET_URL),
+      httpService("worker", WORKER_URL),
+      mongoStatus(),
+      redisStatus(),
+    ]);
 
-  const services: ServiceStatus[] = [
-    { name: "public", version: packageJson.version, status: "ok" },
-    socket,
-    worker,
-    mongodb,
-    redis,
-  ];
+    const services: ServiceStatus[] = [
+      { name: "public", version: packageJson.version, status: "ok" },
+      socket,
+      worker,
+      mongodb,
+      redis,
+    ];
+    return { services, time: new Date().toISOString() };
+  });
 
-  return NextResponse.json({ services, time: new Date().toISOString() }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(value, { headers: { "Cache-Control": "no-store" } });
 }

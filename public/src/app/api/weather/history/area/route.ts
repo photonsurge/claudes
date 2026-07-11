@@ -29,14 +29,18 @@ export async function GET(req: Request) {
   }
 
   const db = await getAppDb();
-  const frames = await db.weatherFrames.getSeries({
+  // listMeta (no bytes) + a by-id loader: the builder streams only the picked
+  // frames' bytes a few at a time instead of buffering the whole series.
+  const meta = await db.weatherFrames.listMeta({
     variable,
     model: url.searchParams.get("model") ?? undefined,
     from: parseTimeParam(url.searchParams.get("from")),
     to: parseTimeParam(url.searchParams.get("to")),
   });
 
-  const payload = await buildAreaHistorySeries(variable, frames, [west, south, east, north]);
+  const payload = await buildAreaHistorySeries(variable, meta, [west, south, east, north], (id) =>
+    db.weatherFrames.getByID(id),
+  );
   return NextResponse.json(payload, {
     headers: { "Cache-Control": "public, max-age=60" },
   });

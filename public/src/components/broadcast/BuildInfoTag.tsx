@@ -14,7 +14,7 @@ interface ServiceStatus {
 }
 
 const MAIN_SERVICES = ["public", "socket", "worker"];
-const POLL_MS = 30_000;
+const POLL_MS = 120_000; // build SHA only changes on deploy — no need to poll /api/status often
 
 export default function BuildInfoTag() {
   const [services, setServices] = useState<ServiceStatus[] | null>(null);

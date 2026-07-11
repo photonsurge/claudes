@@ -47,6 +47,13 @@ function frameOf(over: Partial<iWeatherFrameModel> = {}): iWeatherFrameModel {
   } as iWeatherFrameModel;
 }
 
+/** A FrameLoader over in-memory fixtures — the builders now take metadata + a
+ *  by-id loader (they stream picked frames' bytes) rather than a pre-loaded
+ *  array. The fixture frames carry `data`, so they double as both. */
+function loaderFor(frames: iWeatherFrameModel[]) {
+  return (id: string) => Promise.resolve(frames.find((f) => f.id === id) ?? null);
+}
+
 describe("frameToSampleable + sampling round-trip", () => {
   it("decodes a baked PNG back to physical values", async () => {
     const grid = await frameToSampleable(frameOf());
@@ -96,7 +103,8 @@ describe("buildHistorySeries", () => {
       validTime: new Date("2026-07-01T03:00:00Z"),
       data: scalarPng(2, 2, [187, 187, 187, 187]), // +20 °C
     });
-    const out = await buildHistorySeries("temp", [cold, warm], 5, 5);
+    const frames = [cold, warm];
+    const out = await buildHistorySeries("temp", frames, 5, 5, loaderFor(frames));
     expect(out.series).toHaveLength(2);
     expect(out.units).toBe("°C");
     expect(out.series[0].value).toBeCloseTo(0, 5);
@@ -107,7 +115,8 @@ describe("buildHistorySeries", () => {
   });
 
   it("returns an empty series (null stats) when nothing covers the point", async () => {
-    const out = await buildHistorySeries("temp", [frameOf()], 50, 120);
+    const frames = [frameOf()];
+    const out = await buildHistorySeries("temp", frames, 50, 120, loaderFor(frames));
     expect(out.series).toEqual([]);
     expect(out.stats).toBeNull();
   });
@@ -115,8 +124,21 @@ describe("buildHistorySeries", () => {
   it("skips an undecodable frame instead of failing the series", async () => {
     const bad = frameOf({ data: Buffer.from("not a png") });
     const good = frameOf({ validTime: new Date("2026-07-01T03:00:00Z") });
-    const out = await buildHistorySeries("temp", [bad, good], 5, 5);
+    const frames = [bad, good];
+    const out = await buildHistorySeries("temp", frames, 5, 5, loaderFor(frames));
     expect(out.series).toHaveLength(1);
+  });
+
+  it("streams: loads bytes ONLY for the frames that cover the point (memory)", async () => {
+    // One frame covers the point, one is elsewhere. The far frame is dropped by
+    // pickFramesForPoint BEFORE any load, so its bytes are never fetched.
+    const here = frameOf({ id: "here", validTime: new Date("2026-07-01T00:00:00Z") });
+    const far = frameOf({ id: "far", bounds: [100, 0, 110, 10] });
+    const frames = [here, far];
+    const load = jest.fn(loaderFor(frames));
+    await buildHistorySeries("temp", frames, 5, 5, load);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledWith("here");
   });
 });
 

@@ -15,7 +15,7 @@ import { pointInPolygon, type SimpleGeometry } from "@photonsurge/shared/geo/poi
 import { bucketDaily, bucketValue } from "@photonsurge/shared/climate/buckets";
 import type { iCountryModel } from "@photonsurge/shared/db/country-model";
 
-import { buildHistorySeries, buildAreaHistorySeries } from "../weather-history";
+import { buildHistorySeries, buildAreaHistorySeries, type FrameLoader } from "../weather-history";
 import { buildForecastDays, buildAreaForecastDays } from "../weather-forecast";
 import { alertsToFeatures, type Alert, type AlertFeature } from "../alerts";
 import { isTargetedEvent, hasRealLocation } from "../../components/broadcast/kinds";
@@ -207,10 +207,14 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
       const batch = histVars.slice(i, i + HISTORY_BATCH);
       const built = await Promise.all(
         batch.map(async (v) => {
-          const frames = await db.weatherFrames.getSeries({ variable: v, from: historyFrom });
-          const pt = await buildHistorySeries(v, frames, lat, lng);
-          const ar = wantAreaHistory ? await buildAreaHistorySeries(v, frames, bbox) : null;
-          return { pt, ar }; // `frames` unreferenced after this scope → GC'd before next batch
+          // listMeta = frame metadata WITHOUT the PNG bytes; the builders then
+          // stream only the PICKED frames' bytes a few at a time (see
+          // buildHistorySeries), so we never hold a var's full 72h of textures.
+          const meta = await db.weatherFrames.listMeta({ variable: v, from: historyFrom });
+          const load: FrameLoader = (id) => db.weatherFrames.getByID(id);
+          const pt = await buildHistorySeries(v, meta, lat, lng, load);
+          const ar = wantAreaHistory ? await buildAreaHistorySeries(v, meta, bbox, load) : null;
+          return { pt, ar };
         }),
       );
       for (const b of built) {
