@@ -19,6 +19,7 @@ import { quakeMagnitudeLabel, quakeMagnitudeColor } from "@photonsurge/shared/se
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { nearby, formatKm, bearingLabel } from "../../lib/geo";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
+import { CityForecastStrip, useCityWeatherByIds } from "./CityForecastStrip";
 
 const CITY_RADIUS_KM = 500;
 const QUAKE_RADIUS_KM = 500;
@@ -84,6 +85,10 @@ export default function VolcanoNearbyPanel({
   const nearQ = nearbyQuakes(center, quakes);
   const nearA = nearbyAlerts(center, alerts);
 
+  // Live now + 3-day forecast per nearby town (worker cache, by city id — only
+  // ≥100k-pop cities are cached, smaller ones just carry no weather block).
+  const weather = useCityWeatherByIds(near.map((n) => n.item.id));
+
   if (!near.length && !nearQ.length && !nearA.length) return null;
 
   return (
@@ -91,20 +96,20 @@ export default function VolcanoNearbyPanel({
       {near.length ? (
         <CardSection first eyebrow="Nearest Cities">
           {near.map((n) => (
-            <div
-              key={n.item.id}
-              style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, fontSize: 11, padding: "2px 0" }}
-            >
-              <span style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                <span style={{ fontWeight: 700, color: "#e6eefb" }}>{n.item.name}</span>
-                {n.item.cc ? <span style={{ color: "#7d8da5" }}>{` ${n.item.cc}`}</span> : null}
-                {n.item.population ? (
-                  <span style={{ color: "#7d8da5" }}>{` · ${formatPopulation(n.item.population)}`}</span>
-                ) : null}
-              </span>
-              <span style={{ color: "#8ea3bf", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
-                {formatKm(n.distanceKm)} {bearingLabel(cityPoint(n.item), center)}
-              </span>
+            <div key={n.item.id} style={{ padding: "3px 0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, fontSize: 11 }}>
+                <span style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <span style={{ fontWeight: 700, color: "#e6eefb" }}>{n.item.name}</span>
+                  {n.item.cc ? <span style={{ color: "#7d8da5" }}>{` ${n.item.cc}`}</span> : null}
+                  {n.item.population ? (
+                    <span style={{ color: "#7d8da5" }}>{` · ${formatPopulation(n.item.population)}`}</span>
+                  ) : null}
+                </span>
+                <span style={{ color: "#8ea3bf", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                  {formatKm(n.distanceKm)} {bearingLabel(cityPoint(n.item), center)}
+                </span>
+              </div>
+              <CityForecastStrip city={weather.get(n.item.id)} color={color} />
             </div>
           ))}
         </CardSection>

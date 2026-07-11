@@ -42,8 +42,8 @@ describe("modeSlides", () => {
     const roundup = {
       narrative: "Settled and mild across the country.",
       inputs: { topCities: [], alerts: [], volcanoes: [] },
-    } as unknown as ModeSlideContext["countryRoundup"];
-    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, countryRoundup: roundup }))).toEqual([
+    } as unknown as ModeSlideContext["placeRoundup"];
+    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, placeRoundup: roundup }))).toEqual([
       "onair",
       "place-roundup",
       "topcities",
@@ -51,6 +51,17 @@ describe("modeSlides", () => {
     ]);
     // No round-up (or an empty one) → the slide is dropped, spotlight reads as before.
     expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities", "cityconditions"]);
+  });
+
+  it("a region ('area') spotlight plays the identical spotlight deck as a country", () => {
+    const bbox: [number, number, number, number] = [-1, -1, 1, 1];
+    const roundup = {
+      narrative: "Unsettled across the region.",
+      inputs: { topCities: [], alerts: [], volcanoes: [] },
+    } as unknown as ModeSlideContext["placeRoundup"];
+    expect(
+      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: roundup, wideCitiesHasForecast: true })),
+    ).toEqual(["onair", "place-roundup", "topcities", "cityconditions", "forecast"]);
   });
 
   it("a country spotlight adds top-cities, and the area forecast only when it has data", () => {

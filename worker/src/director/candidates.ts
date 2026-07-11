@@ -33,6 +33,7 @@ import {
   ORBITAL_VIEWS,
 } from "@photonsurge/shared/director-rois";
 import { countryShot } from "@photonsurge/shared/director-countries";
+import { regionShot } from "@photonsurge/shared/director-regions";
 import { adMediaPath } from "@photonsurge/shared/ads/types";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
@@ -227,6 +228,17 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
       if (!c) continue;
       const seg = make("country", c.id, c.name, "Country spotlight · National weather", c.center, c.zoom, kindHoldMs(cfg, "country"), cfg);
       seg.icon = c.flag;
+      out.push({ score: 6, segment: seg });
+    }
+  }
+  if (cfg.kinds.region) {
+    // The operator's favourite areas (DirectorConfig.regions) — one spotlight
+    // candidate each; camera framing is derived from the region bbox (see
+    // director-regions), and unknown ids (stale config) are just skipped.
+    for (const id of cfg.regions) {
+      const r = regionShot(id);
+      if (!r) continue;
+      const seg = make("region", r.id, r.name, "Region spotlight · Regional weather", r.center, r.zoom, kindHoldMs(cfg, "region"), cfg);
       out.push({ score: 6, segment: seg });
     }
   }

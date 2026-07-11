@@ -525,27 +525,82 @@ const SUBTLE_WIND: WindSettings = { numParticles: 2500, speedFactor: 4, maxAge: 
 
 /**
  * The dedicated wind-showcase look — denser and faster than the base
- * `WIND_PRESETS.storm`, at full opacity, for the handful of slides where
- * dramatic wind IS the point (storm chaser, rough seas, the jet stream).
+ * `WIND_PRESETS.storm`, for the handful of slides where dramatic wind IS the
+ * point (storm chaser, rough seas, the jet stream). Kept a touch above the
+ * general seed cap (0.3 vs 0.2) and exempted from it by reference below, so the
+ * showcase reads as stronger wind without blasting full opacity.
  */
-const GUST_WIND: WindSettings = { ...WIND_PRESETS.storm, numParticles: 14000, speedFactor: 20, opacity: 1 };
+const GUST_WIND: WindSettings = { ...WIND_PRESETS.storm, numParticles: 14000, speedFactor: 20, opacity: 0.3 };
 
 /**
  * Seed slides never blast wind particles at full strength — over an
  * establishing/global shot they read as noise. Cap particle opacity at 0.2 for
  * every seeded look (current and future). This is a seed-slide rule only, NOT a
- * general runtime clamp — an operator can still crank particles up live.
+ * general runtime clamp — an operator can still crank particles up live. The
+ * `GUST_WIND` showcase preset is the one deliberate exception (0.3).
  */
 const SEED_MAX_WIND_OPACITY = 0.2;
 
 function seedSlide(id: string, name: string, look: KindLook, on: readonly string[]): KindSlide {
   const overlays = { ...SEED_OVERLAYS_OFF };
   for (const k of on) overlays[k] = true;
-  const capped =
-    look.windMode === "particles" && look.wind && look.wind.opacity > SEED_MAX_WIND_OPACITY
-      ? { ...look, wind: { ...look.wind, opacity: SEED_MAX_WIND_OPACITY } }
-      : look;
+  const overCap =
+    look.windMode === "particles" &&
+    look.wind &&
+    look.wind !== GUST_WIND &&
+    (look.wind.opacity ?? 0) > SEED_MAX_WIND_OPACITY;
+  const capped = overCap ? { ...look, wind: { ...look.wind, opacity: SEED_MAX_WIND_OPACITY } } : look;
   return { id, name, look: capped, overlays };
+}
+
+/**
+ * The full land-spotlight look library, shared by the `country` and `region`
+ * ("area") kinds — same seeded slides, id-prefixed per kind so the two catalogs
+ * stay independent. One slide per LAND map type so a fresh config already covers
+ * the whole instrument: every land-relevant scalar field, both wind renders,
+ * each satellite look, the terrain/night basemaps and the magnetic field. Ocean
+ * fields (sst/wave/salinity/current) and the polar aurora are deliberately
+ * omitted — they read as empty over a land spotlight. Land chrome (alerts +
+ * elevation contours + cities) rides under every weather look; satellite/basemap
+ * looks drop the field-only overlays that would fight the imagery.
+ */
+function landSpotlightSlides(prefix: string): KindSlide[] {
+  const s = (id: string, name: string, look: KindLook, on: readonly string[]) =>
+    seedSlide(`${prefix}-${id}`, name, look, on);
+  // Land chrome carried under the weather-field looks.
+  const FIELD = ["showWind", "showAlerts", "showElevation", "showCities"] as const;
+  const FIELD_RADAR = ["showWind", "showRadar", "showAlerts", "showElevation", "showCities"] as const;
+  const FULL = ["showWind", "showPressure", "showRadar", "showAlerts", "showElevation", "showCities"] as const;
+  const IMG = ["showSatImg", "showAlerts", "showCities"] as const;
+  const p = (activeVariable?: string): KindLook => ({ windMode: "particles", wind: SUBTLE_WIND, activeVariable });
+  return [
+    // ── Scalar weather fields ────────────────────────────────────────────────
+    s("national-check", "National Weather Check", p(), FULL),
+    s("humidity-heat", "Humidity & Heat", p("humidity"), FIELD),
+    s("dewpoint", "Dewpoint", p("dewpoint"), FIELD),
+    s("rainfall", "Rainfall", p("rain"), FIELD_RADAR),
+    s("cloud-cover", "Cloud Cover", p("cloud"), FIELD),
+    s("snow-ice", "Snow & Ice", p("snow"), FIELD),
+    s("pressure-systems", "Pressure Systems", p("pressure"), ["showWind", "showPressure", "showAlerts", "showElevation", "showCities"]),
+    s("storm-energy", "Storm Energy", p("storm"), FIELD_RADAR),
+    s("storm-cap", "Storm Cap", p("cin"), FIELD_RADAR),
+    s("visibility", "Visibility", p("visibility"), FIELD),
+    s("soil-moisture", "Soil Moisture", p("soil"), FIELD),
+    s("severe-alert", "Severe Alert", { windMode: "particles", wind: GUST_WIND, activeVariable: "gust" }, ["showWind", "showPressure", "showRadar", "showAlerts", "showCities"]),
+    s("radar-focus", "Radar Focus", p("radar"), ["showWind", "showPressure", "showRadar", "showAlerts", "showCities"]),
+    // ── Barbs render of the same wind field ──────────────────────────────────
+    s("barb-chart", "Barb Chart", { windMode: "barbs", wind: SUBTLE_WIND }, FULL),
+    // ── Live satellite looks ─────────────────────────────────────────────────
+    s("satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, IMG),
+    s("satellite-ir", "Satellite IR", { showSatImg: true, satImgLook: "ir" }, IMG),
+    s("water-vapour", "Water Vapour", { showSatImg: true, satImgLook: "watervapour" }, IMG),
+    s("dust-haze", "Dust & Haze", { showSatImg: true, satImgLook: "dust" }, IMG),
+    // ── Terrain / basemap looks ──────────────────────────────────────────────
+    s("terrain-relief", "Terrain Relief", { basemap: "relief", windMode: "particles", wind: SUBTLE_WIND }, FULL),
+    s("topo-map", "Topo Map", { basemap: "terrain" }, ["showElevation", "showAlerts", "showCities"]),
+    s("city-lights", "City Lights", { basemap: "night" }, ["showAlerts", "showCities"]),
+    s("magnetic-field", "Magnetic Field", { basemap: "dark" }, ["showMagneticField", "showAlerts", "showCities"]),
+  ];
 }
 
 /**
@@ -675,86 +730,10 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showCities",
     ]),
   ],
-  country: [
-    seedSlide(
-      "country-national-check",
-      "National Weather Check",
-      { windMode: "particles", wind: SUBTLE_WIND },
-      ["showWind", "showPressure", "showRadar", "showAlerts", "showElevation", "showCities"],
-    ),
-    seedSlide("country-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, [
-      "showSatImg",
-      "showAlerts",
-      "showCities",
-    ]),
-    seedSlide("country-barb-chart", "Barb Chart", { windMode: "barbs", wind: SUBTLE_WIND }, [
-      "showWind",
-      "showPressure",
-      "showRadar",
-      "showAlerts",
-      "showElevation",
-      "showCities",
-    ]),
-    seedSlide(
-      "country-humidity-heat",
-      "Humidity & Heat",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "humidity" },
-      ["showWind", "showAlerts", "showElevation", "showCities"],
-    ),
-    seedSlide(
-      "country-severe-alert",
-      "Severe Alert",
-      { windMode: "particles", wind: GUST_WIND, activeVariable: "gust" },
-      ["showWind", "showPressure", "showRadar", "showAlerts", "showCities"],
-    ),
-    seedSlide(
-      "country-terrain-relief",
-      "Terrain Relief",
-      { basemap: "relief", windMode: "particles", wind: SUBTLE_WIND },
-      ["showWind", "showPressure", "showRadar", "showAlerts", "showElevation", "showCities"],
-    ),
-  ],
-  // Region ("area") spotlights share the country's national-weather look library
-  // — same seeded slides, region-scoped ids so the two catalogs stay independent.
-  region: [
-    seedSlide(
-      "region-regional-check",
-      "Regional Weather Check",
-      { windMode: "particles", wind: SUBTLE_WIND },
-      ["showWind", "showPressure", "showRadar", "showAlerts", "showElevation", "showCities"],
-    ),
-    seedSlide("region-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, [
-      "showSatImg",
-      "showAlerts",
-      "showCities",
-    ]),
-    seedSlide("region-barb-chart", "Barb Chart", { windMode: "barbs", wind: SUBTLE_WIND }, [
-      "showWind",
-      "showPressure",
-      "showRadar",
-      "showAlerts",
-      "showElevation",
-      "showCities",
-    ]),
-    seedSlide(
-      "region-humidity-heat",
-      "Humidity & Heat",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "humidity" },
-      ["showWind", "showAlerts", "showElevation", "showCities"],
-    ),
-    seedSlide(
-      "region-severe-alert",
-      "Severe Alert",
-      { windMode: "particles", wind: GUST_WIND, activeVariable: "gust" },
-      ["showWind", "showPressure", "showRadar", "showAlerts", "showCities"],
-    ),
-    seedSlide(
-      "region-terrain-relief",
-      "Terrain Relief",
-      { basemap: "relief", windMode: "particles", wind: SUBTLE_WIND },
-      ["showWind", "showPressure", "showRadar", "showAlerts", "showElevation", "showCities"],
-    ),
-  ],
+  country: landSpotlightSlides("country"),
+  // Region ("area") spotlights share the country's land look library — same
+  // seeded slides, region-scoped ids so the two catalogs stay independent.
+  region: landSpotlightSlides("region"),
   storm: [
     seedSlide("storm-chaser", "Storm Chaser", { windMode: "particles", wind: GUST_WIND }, [
       "showWind",

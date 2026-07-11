@@ -101,11 +101,12 @@ export interface ModeSlideContext {
    *  world spins (intro/global/ocean/orbital) that carry no `segment.summary`
    *  tour of their own. */
   worldRoundup?: { narrative?: string; stats?: iSummaryStats; sources?: string[] };
-  /** The framed country's latest per-place round-up (CountryRoundup, from the
-   *  place-roundups feature) — folded in as the country spotlight's SECOND slide,
-   *  the "state of the nation" AI narrative + place-scoped tally, right after the
-   *  on-air lede. Null off a country shot or before the country has a round-up. */
-  countryRoundup?: PlaceRoundup | null;
+  /** The framed place's latest per-place round-up (CountryRoundup for a country
+   *  spotlight, RegionRoundup for a region/area spotlight — both from the
+   *  place-roundups feature) — folded in as the spotlight's SECOND slide, the
+   *  "state of the place" AI narrative + place-scoped tally, right after the
+   *  on-air lede. Null off a spotlight or before the place has a round-up. */
+  placeRoundup?: PlaceRoundup | null;
   /** The enriched country the round-up tour is currently parked on (resolved
    *  per stop via /api/countries/at) — drives the summary deck's "the nation"
    *  card. Null when the stop is over ocean / outside every country. */
@@ -275,15 +276,17 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     return slides;
   }
 
-  // Country spotlight / wide framed shot — reads START → ROUND-UP → CITIES →
-  // WEATHER → CURRENT & RECENT: the "now viewing" area rollup, the framed
-  // country's own AI round-up (when it has one), the area's close cities, the
-  // area forecast (when it has data), then the AREA HISTORY trend charts. The
-  // round-up rides second so the "state of the nation" narrative reads right
-  // after the lede, before the drill-down cards.
+  // Country OR region ("area") spotlight / wide framed shot — reads START →
+  // ROUND-UP → CITIES → WEATHER → CURRENT & RECENT: the "now viewing" area
+  // rollup, the framed place's own AI round-up (when it has one), the area's
+  // close cities, the area forecast (when it has data), then the AREA HISTORY
+  // trend charts. The round-up rides second so the "state of the place"
+  // narrative reads right after the lede, before the drill-down cards. Country
+  // and region spotlights share this branch (both set wideCitiesBbox) so the two
+  // modes play the identical deck.
   if (ctx.wideCitiesBbox) {
-    if (placeRoundupSlideHasContent(ctx.countryRoundup)) {
-      slides.push({ id: "place-roundup", node: <PlaceRoundupPanel roundup={ctx.countryRoundup!} theme={ctx.theme} /> });
+    if (placeRoundupSlideHasContent(ctx.placeRoundup)) {
+      slides.push({ id: "place-roundup", node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} theme={ctx.theme} /> });
     }
     slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.wideCitiesBbox} color={color} /> });

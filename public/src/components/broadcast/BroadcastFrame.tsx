@@ -29,6 +29,7 @@ import {
   countryShot,
   countryContaining,
 } from "@photonsurge/shared/director-countries";
+import { regionShot } from "@photonsurge/shared/director-regions";
 import {
   buildTicker,
   alertTickerLines,
@@ -46,6 +47,7 @@ import { KIND_LABEL } from "../DirectorHolds";
 import { nearest, formatKm } from "../../lib/geo";
 import { useWorldWatch } from "../../lib/world-watch";
 import { useCountryAt } from "../../lib/countries";
+import { useRegion } from "../../lib/regions";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { useStageScale, STAGE_W, STAGE_H } from "./useStageScale";
 import Ticker from "./Ticker";
@@ -69,6 +71,7 @@ import SyslogFeed from "./SyslogFeed";
 import UpNextPanel from "./UpNextPanel";
 import BuildInfoTag from "./BuildInfoTag";
 import SlideDeck from "./SlideDeck";
+import FadeSwap from "./FadeSwap";
 import { useSegmentTransition } from "./useSegmentTransition";
 import { modeSlides } from "./mode-slides";
 import { hasRealLocation, isTargetedEvent, KIND_COLOR, KIND_LABEL as KIND_BADGE } from "./kinds";
@@ -234,6 +237,16 @@ export default function BroadcastFrame({
     onAirSegment?.kind === "country"
       ? countryShot(onAirSegment.id.split(":")[1] ?? "")
       : undefined;
+  // A region ("area") spotlight is the Region-catalog cousin of the country
+  // shot: same "kind:subject" id (e.g. "region:sahel"), framed + scoped off the
+  // region's bbox (shared/director-regions), and given the same wide-shot deck.
+  const regionId =
+    onAirSegment?.kind === "region" ? (onAirSegment.id.split(":")[1] ?? null) : null;
+  const regionOnAir = regionId ? regionShot(regionId) : undefined;
+  // The enriched Region doc (wiki photo/blurb) for the lede's area block —
+  // regions have no polygon, so this is a direct regionId fetch, not point-in-
+  // polygon like the country lookup. Null off a region shot / before enrichment.
+  const regionDoc = useRegion(regionId);
   // A round-up tours a fresh hotspot every few seconds by patching `state.camera`
   // to that stop's centre (see director.ts's summary cutSteps) — the segment's
   // own `camera` field stays pinned to the base global framing the whole time,
@@ -263,28 +276,47 @@ export default function BroadcastFrame({
         : null;
   const ledeCountryDoc = useCountryAt(ledeCenter);
   const summaryCountryDoc = onAirSegment?.summary ? ledeCountryDoc : null;
-  // The framed country's own per-place round-up (CountryRoundup) — the country
-  // spotlight's second slide. Keyed on the enriched Country under the on-air
-  // point (`ledeCountryDoc.countryId`, the same id the place-roundups worker
-  // writes against); only fetched for a `country` shot, and only when that
-  // country resolved. The hook returns null (→ no slide) until a round-up exists.
-  const countryRoundupId =
-    onAirSegment?.kind === "country" ? (ledeCountryDoc?.countryId ?? null) : null;
-  const countryRoundup = useLatestPlaceRoundup("country", countryRoundupId);
-  const areaInfo = ledeCountryDoc
-    ? {
-        name: ledeCountryDoc.name,
-        photo: ledeCountryDoc.wikiThumb ?? ledeCountryDoc.wikiPhoto ?? null,
-        blurb: ledeCountryDoc.wikiExtract ?? null,
-        iso2: ledeCountryDoc.iso2,
-      }
-    : null;
+  // The framed place's own per-place round-up — the spotlight's second slide.
+  // A country shot keys on the enriched Country under the on-air point
+  // (`ledeCountryDoc.countryId`, the id the place-roundups worker writes against);
+  // a region shot keys directly on its `regionId`. One hook, kind switches; it
+  // returns null (→ no slide) until a round-up exists for that place.
+  const placeRoundupKind = onAirSegment?.kind === "region" ? "region" : "country";
+  const placeRoundupId =
+    onAirSegment?.kind === "region"
+      ? regionId
+      : onAirSegment?.kind === "country"
+        ? (ledeCountryDoc?.countryId ?? null)
+        : null;
+  const placeRoundup = useLatestPlaceRoundup(placeRoundupKind, placeRoundupId);
+  // The lede's "area" photo/blurb: a region shot reads its own enriched Region
+  // doc (no polygon country under it to resolve); every other located shot uses
+  // the enriched Country under the on-air point.
+  const areaInfo =
+    onAirSegment?.kind === "region"
+      ? regionDoc
+        ? {
+            name: regionDoc.name,
+            photo: regionDoc.wikiThumb ?? regionDoc.wikiPhoto ?? null,
+            blurb: regionDoc.wikiExtract ?? null,
+          }
+        : null
+      : ledeCountryDoc
+        ? {
+            name: ledeCountryDoc.name,
+            photo: ledeCountryDoc.wikiThumb ?? ledeCountryDoc.wikiPhoto ?? null,
+            blurb: ledeCountryDoc.wikiExtract ?? null,
+            iso2: ledeCountryDoc.iso2,
+          }
+        : null;
   // Scope the on-air feeds to the framed area for the lede rollup — including
   // targeted events (a small box around the epicentre/storm), so a quake's lede
   // tallies nearby activity rather than the whole planet.
   const areaBbox = countryOnAir
     ? countryOnAir.bbox
-    : summaryCountry
+    : regionOnAir
+      ? regionOnAir.bbox
+      : summaryCountry
       ? summaryCountry.bbox
       : onAirSegment?.summary
         ? bboxForCamera(state.camera.center, state.camera.zoom)
@@ -306,7 +338,9 @@ export default function BroadcastFrame({
     onAirSegment &&
     !eventTargeted &&
     !hasTrackInfo &&
-    (onAirSegment.kind === "country" || onAirSegment.summary != null)
+    (onAirSegment.kind === "country" ||
+      onAirSegment.kind === "region" ||
+      onAirSegment.summary != null)
       ? areaBbox
       : undefined;
   // Whether the country area forecast has data — decides if it earns its
@@ -375,7 +409,7 @@ export default function BroadcastFrame({
             }
           : undefined,
         summaryCountry: summaryCountryDoc,
-        countryRoundup,
+        placeRoundup,
         areaInfo,
         theme,
       })
@@ -453,31 +487,31 @@ export default function BroadcastFrame({
             flexDirection: "column-reverse",
             alignItems: "flex-start",
             gap: 10,
-            // Vanish for the cut, fade back once the globe settles. The hide is
-            // instant (no out-transition) so the card's content swap to the new
-            // segment happens unseen; only the return fades in. Opacity (not
-            // unmount) keeps every slide's timers/fetches alive across the cut.
-            opacity: cutting ? 0 : 1,
-            transition: cutting ? "none" : "opacity 360ms ease",
           }}
         >
           {/* One rotating card per mode: the mode cards plus the weather /
               area-history / depth / round-up context slides all live in this
               deck now (see mode-slides), so nothing stacks below it. Targeted
               events carry their own compact history in the EventOverlay reticle
-              above instead of a left-column card. */}
-          {onAirSegment ? (
-            <SlideDeck
-              slides={leftDeck}
-              dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
-              chrome={{
-                badge: KIND_BADGE[onAirSegment.kind] ?? onAirSegment.kind,
-                badgeColor: KIND_COLOR[onAirSegment.kind],
-                title: onAirSegment.title,
-                accent: KIND_COLOR[onAirSegment.kind],
-              }}
-            />
-          ) : null}
+              above instead of a left-column card.
+
+              FadeSwap smoothly fades the card out for the cut (holding the old
+              card's content through the fade, swapping to the new segment behind
+              the black) and fades it back once the globe settles. */}
+          <FadeSwap hidden={cutting} style={{ display: "flex" }}>
+            {onAirSegment ? (
+              <SlideDeck
+                slides={leftDeck}
+                dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
+                chrome={{
+                  badge: KIND_BADGE[onAirSegment.kind] ?? onAirSegment.kind,
+                  badgeColor: KIND_COLOR[onAirSegment.kind],
+                  title: onAirSegment.title,
+                  accent: KIND_COLOR[onAirSegment.kind],
+                }}
+              />
+            ) : null}
+          </FadeSwap>
         </div>
 
         <Ticker

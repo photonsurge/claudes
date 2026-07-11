@@ -123,6 +123,12 @@ describe("mergeDirectorConfig", () => {
     expect(mergeDirectorConfig(base, { mode: "auto" }).mode).toBe("auto");
   });
 
+  it("sanitizes a regions favourites patch (known ids only; non-array keeps base)", () => {
+    expect(mergeDirectorConfig(base, { regions: ["europe", "atlantis"] }).regions).toEqual(["europe"]);
+    // A non-array patch is ignored — the base favourites survive.
+    expect(mergeDirectorConfig(base, { regions: "europe" as any }).regions).toEqual(base.regions);
+  });
+
   it("applies partial hold-map patches without dropping siblings, clamped to the 3s floor", () => {
     const merged = mergeDirectorConfig(base, {
       kindHoldSeconds: { country: 1 } as any, // below the floor

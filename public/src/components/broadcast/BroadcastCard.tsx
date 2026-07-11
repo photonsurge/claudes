@@ -47,6 +47,12 @@ export interface DeckChrome {
 }
 export const DeckChromeContext = createContext<DeckChrome | null>(null);
 
+/** Whether this card is the deck's currently on-air slide. SlideDeck sets it
+ *  per-slide (all slides stay mounted); the template's auto-scroll uses it to
+ *  reset to the top and hold when a slide airs, and to sit still while it waits
+ *  off-screen. Default true so a standalone (non-deck) card scrolls normally. */
+export const DeckSlideActiveContext = createContext<boolean>(true);
+
 /** Shared ink tokens — every left-column panel drew from these ad-hoc before. */
 export const INK = "#e6edf7";
 export const MUTED = "#9fb3cc";
@@ -124,6 +130,7 @@ export default function BroadcastCard({
   style?: CSSProperties;
 }) {
   const chrome = useContext(DeckChromeContext);
+  const slideActive = useContext(DeckSlideActiveContext);
   const stripe = chrome?.accent ?? accent ?? theme.accent;
 
   // Inside the on-air deck: render the shared template — event-type badge + event
@@ -190,8 +197,10 @@ export default function BroadcastCard({
           ) : null}
         </div>
         {/* Pointer-inert on air, so overlong bodies can't be hand-scrolled —
-            AutoScroll walks them top→bottom→top; content that fits sits still. */}
-        <AutoScroll style={{ flex: 1, minHeight: 0, overflowY: "hidden", padding: "2px 20px 16px" }}>
+            AutoScroll walks them top→bottom→top; content that fits sits still.
+            `active` resets it to the top when this slide airs (and holds it there
+            while it waits off-screen), so a slide always loads scrolled to top. */}
+        <AutoScroll active={slideActive} style={{ flex: 1, minHeight: 0, overflowY: "hidden", padding: "2px 20px 16px" }}>
           {children}
         </AutoScroll>
       </div>

@@ -20,17 +20,32 @@ export default function AutoScroll({
   speed = 34,
   /** Hold, in ms, at the top and bottom of the loop. */
   pause = 1600,
+  /** Whether this is the on-air slide. When false the region sits pinned at the
+   *  top and doesn't animate (so a slide waiting off-screen in the deck can't
+   *  drift down before it airs); each time it flips true the cycle restarts from
+   *  the top — so a slide always loads scrolled to the top. Default true for
+   *  standalone use. */
+  active = true,
 }: {
   children: ReactNode;
   style?: CSSProperties;
   speed?: number;
   pause?: number;
+  active?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = ref.current;
-    if (!el || typeof requestAnimationFrame !== "function") return;
+    if (!el) return;
+    // Off-screen slide: pin to the top and don't run the loop.
+    if (!active) {
+      el.scrollTop = 0;
+      return;
+    }
+    if (typeof requestAnimationFrame !== "function") return;
+    // Fresh cycle on (re)activation — start pinned at the top with the read hold.
+    el.scrollTop = 0;
 
     let raf = 0;
     let last = 0;
@@ -67,7 +82,7 @@ export default function AutoScroll({
 
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [speed, pause]);
+  }, [speed, pause, active]);
 
   return (
     <div ref={ref} style={style}>

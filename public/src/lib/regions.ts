@@ -48,6 +48,33 @@ export async function getRegion(id: string): Promise<{ detail?: RegionDetail; er
   }
 }
 
+/**
+ * The one enriched Region doc under an on-air region spotlight (wiki photo/blurb
+ * for the lede + its bbox), or null off a region shot / before enrichment. A
+ * focused single-doc fetch — unlike `useRegions`, which polls the whole catalog
+ * for the admin table. `regionId` null → no fetch. Enrichment rarely changes, so
+ * one fetch per region change is enough (no interval).
+ */
+export function useRegion(regionId: string | null): iRegionModel | null {
+  const [region, setRegion] = useState<iRegionModel | null>(null);
+
+  useEffect(() => {
+    if (!regionId) {
+      setRegion(null);
+      return;
+    }
+    let cancelled = false;
+    getRegion(regionId).then(({ detail }) => {
+      if (!cancelled) setRegion(detail?.region ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [regionId]);
+
+  return region;
+}
+
 /** Poll the Region catalog for the admin table. Mirrors `useCountries`. */
 export function useRegions(enabled = true): RegionWithWeather[] {
   const [regions, setRegions] = useState<RegionWithWeather[]>(EMPTY);

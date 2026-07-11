@@ -236,6 +236,23 @@ export async function listCityConditions(
   }
 }
 
+/** Worker-cached now + 3-day forecast for a specific set of cities (by their
+ *  `id`), used to hang weather off the distance-ranked "nearest cities" of a
+ *  quake / volcano slide. Empty on any error — callers degrade to no weather. */
+export async function listCityConditionsByIds(ids: string[]): Promise<CityCondition[]> {
+  const clean = ids.filter(Boolean);
+  if (!clean.length) return [];
+  const q = new URLSearchParams({ ids: clean.join(",") });
+  try {
+    const res = await fetch(`/api/cities/weather?${q.toString()}`, { cache: "no-store" });
+    if (!res.ok) return [];
+    const json = await res.json();
+    return (json?.cities ?? []) as CityCondition[];
+  } catch {
+    return [];
+  }
+}
+
 /** Server-paged city registry for the operator table; globe callers keep using listCities. */
 export async function listCitiesPage(opts: ListCitiesPageOptions): Promise<CitiesPageResult> {
   const q = new URLSearchParams({

@@ -14,15 +14,16 @@
  * scaled broadcast stage; pointer-inert.
  */
 import { useEffect, useState, type ReactNode } from "react";
-import { CARD_W, MUTED, DeckChromeContext, type DeckChrome } from "./BroadcastCard";
+import { CARD_W, MUTED, DeckChromeContext, DeckSlideActiveContext, type DeckChrome } from "./BroadcastCard";
 
 /** One rotation position. `id` must be stable across renders so React keeps the
  *  slide mounted (and its internal state alive) as data streams in. */
 export type DeckSlide = { id: string; node: ReactNode };
 
-/** How long each slide holds before the deck advances — matches the old
- *  usePagedSlides SLIDE_HOLD_MS so the on-air cadence is unchanged. */
-const HOLD_MS = 6000;
+/** How long each slide holds before the deck advances. Slowed from the original
+ *  6s so later slides' content has time to finish opening (and overlong bodies
+ *  have time to auto-scroll) before the deck moves on. */
+const HOLD_MS = 10000;
 const FADE_MS = 600;
 
 function Dots({ count, active, accent }: { count: number; active: number; accent: string }) {
@@ -72,7 +73,8 @@ export default function SlideDeck({
   if (count === 0) return null;
   const active = idx % count;
   // Single slide: no rotation, no dots, no crossfade layers needed — still wrap
-  // in the provider so it wears the same template.
+  // in the provider so it wears the same template. It's always the on-air slide,
+  // so the default-true active context is correct (no per-slide provider needed).
   if (count === 1) return <DeckChromeContext.Provider value={chrome}>{slides[0].node}</DeckChromeContext.Provider>;
 
   return (
@@ -88,7 +90,11 @@ export default function SlideDeck({
                 : { position: "absolute", inset: 0, opacity: 0, transition: `opacity ${FADE_MS}ms ease`, pointerEvents: "none" }
             }
           >
-            {s.node}
+            {/* Tell the slide whether it's on air so its body resets to the top
+                when it airs and doesn't auto-scroll while it waits off-screen. */}
+            <DeckSlideActiveContext.Provider value={i === active}>
+              {s.node}
+            </DeckSlideActiveContext.Provider>
           </div>
         ))}
         <Dots count={count} active={active} accent={dotColor} />

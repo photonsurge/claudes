@@ -25,6 +25,7 @@ const KIND: Record<SegmentKind, { label: string; color: string }> = {
   ocean: { label: "Ocean", color: "#1c7fb8" },
   orbital: { label: "Orbital", color: "#6a59c0" },
   country: { label: "Country", color: "#3f8f8f" },
+  region: { label: "Region", color: "#4a8f6f" },
   point: { label: "Point", color: "#2f8f4e" },
   storm: { label: "Severe", color: "#d23a3a" },
   volcano: { label: "Volcano", color: "#c2410c" },

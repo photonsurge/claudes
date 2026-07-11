@@ -171,6 +171,22 @@ describe("buildCandidates", () => {
     expect(ids).toEqual(["country:france"]);
   });
 
+  it("adds no region spotlights until the kind is enabled with favourites", async () => {
+    // Off by default → no region candidates even though the catalog exists.
+    const off = await buildCandidates(fakeDb(), cfg());
+    expect(off.some((c) => c.segment.kind === "region")).toBe(false);
+    // Enabled + a favourite area → one derived-framing region spotlight; unknown ids skipped.
+    const on = await buildCandidates(
+      fakeDb(),
+      cfg({ kinds: { region: true }, regions: ["europe", "atlantis"] }),
+    );
+    const regions = on.filter((c) => c.segment.kind === "region");
+    expect(regions.map((c) => c.segment.id)).toEqual(["region:europe"]);
+    const eu = regions[0].segment;
+    expect(eu.patch.autoSpin).toBe(false); // holds/orbits on the area like a country
+    expect(eu.camera.zoom).toBeGreaterThan(0);
+  });
+
   it("scores a big quake above filler and frames its epicentre", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     const q = pool.find((c) => c.segment.id === "quake:q1");

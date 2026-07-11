@@ -13,50 +13,12 @@
  * ForecastPanel/PointHistoryPanel — the whole broadcast stage reads in °C.
  */
 import { useEffect, useState } from "react";
-import { listCityConditions, formatPopulation, type CityCondition, type CityConditionDay } from "../../lib/cities";
+import { listCityConditions, formatPopulation, type CityCondition } from "../../lib/cities";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 import { formatReading } from "./PointHistoryPanel";
+import { DayChip } from "./CityForecastStrip";
 
 const CITY_LIMIT = 10;
-
-/** `YYYY-MM-DD` → a short day label (TODAY / TMRW / weekday). Local-time based;
- *  the cache's `date` is a UTC-derived calendar day, close enough for a chip. */
-function dayLabel(date: string): string {
-  const d = new Date(`${date}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return date.slice(5);
-  const today = new Date();
-  const dayMs = 24 * 60 * 60 * 1000;
-  const diff = Math.round((d.setHours(0, 0, 0, 0) - today.setHours(0, 0, 0, 0)) / dayMs);
-  if (diff <= 0) return "TODAY";
-  if (diff === 1) return "TMRW";
-  return ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][new Date(`${date}T00:00:00`).getDay()];
-}
-
-/** One day chip — label over hi/lo. */
-function DayChip({ day, color }: { day: CityConditionDay; color: string }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 1,
-        minWidth: 40,
-        padding: "3px 4px",
-        borderRadius: 6,
-        background: "rgba(4,10,20,0.5)",
-      }}
-    >
-      <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: 0.6, color: "#8ea3bf" }}>{dayLabel(day.date)}</span>
-      <span style={{ fontSize: 13, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
-        {day.hi != null ? `${formatReading(day.hi)}°` : "—"}
-        <span style={{ fontSize: 9.5, fontWeight: 700, color, marginLeft: 3 }}>
-          {day.lo != null ? `${formatReading(day.lo)}°` : ""}
-        </span>
-      </span>
-    </div>
-  );
-}
 
 /** One city row — name + population, the "now" temperature, then its 3-day strip. */
 function CityRow({ city, color }: { city: CityCondition; color: string }) {

@@ -49,6 +49,8 @@ import { useSocket } from "./socket-provider";
  */
 const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
   country: ["temp", "humidity", "rain", "gust", "cloud", "visibility"],
+  // A region ("area") spotlight tours the same ambient field cycle as a country.
+  region: ["temp", "humidity", "rain", "gust", "cloud", "visibility"],
 };
 const VAR_CYCLE_MS = 5500;
 /** Per-map dwell for the global map-type tour — a touch longer, each look is a beat. */
