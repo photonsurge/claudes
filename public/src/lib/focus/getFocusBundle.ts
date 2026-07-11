@@ -182,24 +182,44 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
   const histVars =
     detail === "broadcast" ? allVars.filter((v) => BROADCAST_HISTORY_VARS.has(v)) : allVars;
 
-  // History frames fetched ONCE per variable and shared by the point + area
-  // builders — they sample the same archive frames, so fetching twice (the old
-  // ~2×N getSeries fan-out) doubled the DB work for nothing.
+  // Point + area history are built in BOUNDED-MEMORY batches. getSeries returns
+  // 72h of TEXTURE-BYTE frames per variable; the old "load every var's frames into
+  // one map, then build" held ALL vars' textures at once — multiple GB per
+  // compose, and a couple of concurrent country/region composes blew public's heap
+  // to ~6GB and crash-looped the container. Instead we process a few vars at a
+  // time: fetch a batch's frames, build their point+area series, and let those
+  // frames be GC'd before the next batch. Peak memory is HISTORY_BATCH vars, not
+  // all ~13. (Each var's frames still feed BOTH point + area — no double fetch.)
   //
-  // CRITICAL: bound to the same rolling window the client renders
-  // (HISTORY_WINDOW_HOURS, mirrors history-client's fromParam). Without `from`,
-  // getSeries scans the ENTIRE never-pruned WeatherFrame archive — bytes and all —
-  // per variable, which was the dominant cost of a cache-miss compose.
+  // The window is bounded to HISTORY_WINDOW_HOURS (mirrors history-client's
+  // fromParam); without `from`, getSeries scans the ENTIRE never-pruned archive.
   const HISTORY_WINDOW_HOURS = 72;
   const historyFrom = new Date(Date.now() - HISTORY_WINDOW_HOURS * 3600 * 1000);
-  const historyFrames: Record<string, Awaited<ReturnType<typeof db.weatherFrames.getSeries>>> = {};
-  if (hasLoc) {
-    await Promise.all(
-      histVars.map(async (v) => {
-        historyFrames[v] = await db.weatherFrames.getSeries({ variable: v, from: historyFrom });
-      }),
-    );
-  }
+  const HISTORY_BATCH = Math.max(1, Number(process.env.FOCUS_HISTORY_BATCH || 3));
+  const buildHistories = async (): Promise<{
+    pointHistory: Awaited<ReturnType<typeof buildHistorySeries>>[];
+    areaHistory: Awaited<ReturnType<typeof buildAreaHistorySeries>>[];
+  }> => {
+    const pointHistory: Awaited<ReturnType<typeof buildHistorySeries>>[] = [];
+    const areaHistory: Awaited<ReturnType<typeof buildAreaHistorySeries>>[] = [];
+    if (!hasLoc) return { pointHistory, areaHistory };
+    for (let i = 0; i < histVars.length; i += HISTORY_BATCH) {
+      const batch = histVars.slice(i, i + HISTORY_BATCH);
+      const built = await Promise.all(
+        batch.map(async (v) => {
+          const frames = await db.weatherFrames.getSeries({ variable: v, from: historyFrom });
+          const pt = await buildHistorySeries(v, frames, lat, lng);
+          const ar = wantAreaHistory ? await buildAreaHistorySeries(v, frames, bbox) : null;
+          return { pt, ar }; // `frames` unreferenced after this scope → GC'd before next batch
+        }),
+      );
+      for (const b of built) {
+        pointHistory.push(b.pt);
+        if (b.ar) areaHistory.push(b.ar);
+      }
+    }
+    return { pointHistory, areaHistory };
+  };
 
   // Forecast frames fetched once, shared by point + area builders.
   const forecastFrames: Record<string, unknown[]> = {};
@@ -212,8 +232,7 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
   }
 
   const [
-    pointHistory,
-    areaHistory,
+    histories,
     pointForecastSeries,
     areaForecastSeries,
     climate,
@@ -227,14 +246,9 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     seismoStations,
     tideStations,
   ] = await Promise.all([
-    // pointHistory — reuse the shared per-variable frames (no re-fetch)
-    hasLoc
-      ? Promise.all(histVars.map((v) => buildHistorySeries(v, historyFrames[v], lat, lng)))
-      : Promise.resolve([]),
-    // areaHistory — same shared frames; skipped for targeted events
-    wantAreaHistory
-      ? Promise.all(histVars.map((v) => buildAreaHistorySeries(v, historyFrames[v], bbox)))
-      : Promise.resolve([]),
+    // point + area history — bounded-memory batched builder (peak = HISTORY_BATCH
+    // vars' frames, not all of them; see buildHistories above).
+    buildHistories(),
     // pointForecast
     hasLoc ? buildForecastDays(forecastFrames as never, lat, lng) : Promise.resolve(null),
     // areaForecast
@@ -304,6 +318,7 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
         )
       : Promise.resolve([]),
   ]);
+  const { pointHistory, areaHistory } = histories;
 
   // Roundups + area-weather report key off the resolved place.
   const countryRoundup = country ? await db.countryRoundups.latestForPlace(country.countryId) : null;
