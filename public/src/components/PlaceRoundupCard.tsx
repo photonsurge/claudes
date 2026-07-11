@@ -12,6 +12,13 @@ import { getPlaceRoundupDetail, type PlaceRoundup, type PlaceRoundupKind } from 
 
 const muted = "#8b95a7";
 const panel = { border: "1px solid #1b2030", borderRadius: 9, background: "#0c111c" } as const;
+const eyebrow = {
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: 1.2,
+  textTransform: "uppercase",
+  color: "#7c88a0",
+} as const;
 
 const fmt = (v?: string | Date): string => {
   if (!v) return "—";
@@ -65,17 +72,77 @@ export default function PlaceRoundupCard({ kind, placeId }: { kind: PlaceRoundup
             {latest.prevRoundupId ? " · continues previous" : " · first round-up"}
             {count > 1 ? ` · ${count} in history` : ""}
           </div>
-          {latest.narrative ? (
-            <p style={{ color: "#e2e8f0", lineHeight: 1.65, fontSize: 14, margin: "10px 0 0", whiteSpace: "pre-wrap" }}>
-              {latest.narrative}
-            </p>
-          ) : (
-            <div style={{ color: muted, fontSize: 12, marginTop: 8, fontStyle: "italic" }}>
-              {latest.narrativeStatus === "skipped"
-                ? "Narrative skipped (no OPENROUTER_API_KEY) — inputs were still captured."
-                : `Narrative error: ${latest.llm?.error ?? "unknown"}.`}
-            </div>
-          )}
+          {(() => {
+            const summary = latest.summary?.trim();
+            const stateOfPlay = latest.stateOfPlay?.trim();
+            const cities = (latest.cityOutlook ?? []).filter((c) => c.name && c.outlook);
+            const advice = latest.advice?.trim();
+            const hasSections = Boolean(summary || stateOfPlay || cities.length || advice);
+            const alertsActive =
+              (latest.inputs?.alertsTotal ?? latest.inputs?.alerts?.length ?? 0) > 0 ||
+              (latest.inputs?.volcanoes?.length ?? 0) > 0;
+
+            if (hasSections) {
+              return (
+                <div style={{ marginTop: 10 }}>
+                  {summary ? (
+                    <p style={{ color: "#f1f5f9", fontWeight: 700, fontSize: 15, lineHeight: 1.5, margin: 0 }}>{summary}</p>
+                  ) : null}
+                  {stateOfPlay ? (
+                    <p style={{ color: "#e2e8f0", lineHeight: 1.65, fontSize: 14, margin: "10px 0 0", whiteSpace: "pre-wrap" }}>
+                      {stateOfPlay}
+                    </p>
+                  ) : null}
+                  {cities.length ? (
+                    <div style={{ marginTop: 14 }}>
+                      <div style={eyebrow}>Next 24 hours</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                        {cities.map((c) => (
+                          <div key={c.name} style={{ fontSize: 13.5, lineHeight: 1.5, color: "#dbe4f0" }}>
+                            <span style={{ fontWeight: 700, color: "#f1f5f9" }}>{c.name}</span> — {c.outlook}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {advice ? (
+                    <div style={{ marginTop: 14 }}>
+                      <div style={eyebrow}>{alertsActive ? "Advice · alerts active" : "Advice"}</div>
+                      <p
+                        style={{
+                          color: "#eef3fa",
+                          fontSize: 13.5,
+                          lineHeight: 1.6,
+                          margin: "6px 0 0",
+                          paddingLeft: 10,
+                          borderLeft: `3px solid ${alertsActive ? "#f59e0b" : "#2a3346"}`,
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {advice}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            }
+
+            if (latest.narrative) {
+              return (
+                <p style={{ color: "#e2e8f0", lineHeight: 1.65, fontSize: 14, margin: "10px 0 0", whiteSpace: "pre-wrap" }}>
+                  {latest.narrative}
+                </p>
+              );
+            }
+
+            return (
+              <div style={{ color: muted, fontSize: 12, marginTop: 8, fontStyle: "italic" }}>
+                {latest.narrativeStatus === "skipped"
+                  ? "Narrative skipped (no OPENROUTER_API_KEY) — inputs were still captured."
+                  : `Narrative error: ${latest.llm?.error ?? "unknown"}.`}
+              </div>
+            );
+          })()}
         </>
       )}
     </section>

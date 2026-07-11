@@ -231,16 +231,65 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
       out.push({ score: 6, segment: seg });
     }
   }
-  if (cfg.kinds.region) {
-    // The operator's favourite areas (DirectorConfig.regions) — one spotlight
-    // candidate each; camera framing is derived from the region bbox (see
-    // director-regions), and unknown ids (stale config) are just skipped.
-    for (const id of cfg.regions) {
-      const r = regionShot(id);
-      if (!r) continue;
-      const seg = make("region", r.id, r.name, "Region spotlight · Regional weather", r.center, r.zoom, kindHoldMs(cfg, "region"), cfg);
-      out.push({ score: 6, segment: seg });
-    }
+  // Region ("area") candidates need a DB read (their tour stops come from the
+  // cities inside the bbox), so they're built in the async regionCandidates
+  // below rather than here.
+  return out;
+}
+
+/** How many cities an area tour visits — the biggest by population inside the
+ *  bbox. The region hold is sized to cover all of them (unlike a round-up, which
+ *  caps toured stops at SUMMARY_MAX_TOUR_STOPS), so this is the true stop count. */
+const REGION_TOUR_STOPS = 10;
+
+/**
+ * The camera stops an area tour visits: the biggest GeoNames cities inside the
+ * region's bbox, most-populous first. Antimeridian-safe (a couple of eligible
+ * areas run east past +180; cities store lng in −180..180). Returns [] when the
+ * area has no populated cities cached — the caller falls back to a spotlight.
+ */
+async function regionTourStops(db: AppDb, bbox: [number, number, number, number]): Promise<SegmentSummaryStop[]> {
+  const [w, s, e, n] = bbox;
+  const lngClause =
+    e > 180
+      ? { $or: [{ lng: { $gte: w } }, { lng: { $lte: e - 360 } }] }
+      : { lng: { $gte: w, $lte: e } };
+  const { data } = await db.cities.getAll(
+    { lat: { $gte: s, $lte: n }, population: { $gt: 0 }, ...lngClause } as never,
+    { sort: { population: -1 }, limit: REGION_TOUR_STOPS },
+  );
+  return (data ?? []).map((c) => ({
+    label: c.name,
+    subtitle: c.country || undefined,
+    lng: c.lng,
+    lat: c.lat,
+  }));
+}
+
+/**
+ * Operator-favourite Areas. Each airs as the "go round a place" tour when its
+ * bbox has cached cities (the client flies the camera to each, showing its
+ * weather), else falls back to a single framed spotlight. Camera framing is
+ * derived from the region bbox (see director-regions); unknown ids are skipped.
+ */
+async function regionCandidates(db: AppDb, cfg: DirectorConfig): Promise<Candidate[]> {
+  if (!cfg.kinds.region) return [];
+  const out: Candidate[] = [];
+  const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
+  for (const id of cfg.regions) {
+    const r = regionShot(id);
+    if (!r) continue;
+    const stops = await regionTourStops(db, r.bbox);
+    // Size the hold to fly EVERY city (flight + dwell each), floored by the
+    // operator's per-kind minimum — no SUMMARY_MAX_TOUR_STOPS cap here, or the
+    // tour would cut away mid-way through the later cities.
+    const holdMs = stops.length
+      ? Math.max(kindHoldMs(cfg, "region"), stops.length * (transitionMs + SUMMARY_STOP_DWELL_MS))
+      : kindHoldMs(cfg, "region");
+    const subtitle = stops.length ? "Area tour · Regional weather" : "Region spotlight · Regional weather";
+    const seg = make("region", r.id, r.name, subtitle, r.center, r.zoom, holdMs, cfg);
+    if (stops.length) seg.tourStops = stops;
+    out.push({ score: 6, segment: seg });
   }
   return out;
 }
@@ -411,6 +460,9 @@ export async function buildCandidates(
   // Round-ups ride the recurring global spin, so they only make sense when the
   // `global` kind is airing at all.
   if (cfg.kinds.global) pool.push(...(await summaryCandidates(db, cfg, seenCounts)));
+
+  // Areas (region tours) — each favourite region flies round its biggest cities.
+  pool.push(...(await regionCandidates(db, cfg)));
 
   // Notable-tracks catalog (enabled) — matched by `${kind}:${code}` to boost the
   // genuinely interesting craft onto air and hang the on-air Track Info card off

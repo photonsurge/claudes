@@ -68,6 +68,16 @@ function fakeDb(over: Partial<Record<string, any>> = {}): AppDb {
     seaPoints: {
       list: async () => over.seaPoints ?? SEED_SEA_POINTS,
     },
+    cities: {
+      // Region tours read the biggest cities inside the area bbox. Default: two
+      // European cities so a "europe" favourite tours; override per test.
+      getAll: async () => ({
+        data: over.cities ?? [
+          { name: "London", country: "United Kingdom", lng: -0.13, lat: 51.5, population: 8_900_000 },
+          { name: "Paris", country: "France", lng: 2.35, lat: 48.85, population: 2_100_000 },
+        ],
+      }),
+    },
   } as unknown as AppDb;
 }
 
@@ -171,11 +181,11 @@ describe("buildCandidates", () => {
     expect(ids).toEqual(["country:france"]);
   });
 
-  it("adds no region spotlights until the kind is enabled with favourites", async () => {
+  it("adds no region tours until the kind is enabled with favourites", async () => {
     // Off by default → no region candidates even though the catalog exists.
     const off = await buildCandidates(fakeDb(), cfg());
     expect(off.some((c) => c.segment.kind === "region")).toBe(false);
-    // Enabled + a favourite area → one derived-framing region spotlight; unknown ids skipped.
+    // Enabled + a favourite area → one derived-framing region tour; unknown ids skipped.
     const on = await buildCandidates(
       fakeDb(),
       cfg({ kinds: { region: true }, regions: ["europe", "atlantis"] }),
@@ -185,6 +195,34 @@ describe("buildCandidates", () => {
     const eu = regions[0].segment;
     expect(eu.patch.autoSpin).toBe(false); // holds/orbits on the area like a country
     expect(eu.camera.zoom).toBeGreaterThan(0);
+  });
+
+  it("tours the area's biggest cities as camera stops (most-populous first)", async () => {
+    const on = await buildCandidates(
+      fakeDb({
+        cities: [
+          { name: "Berlin", country: "Germany", lng: 13.4, lat: 52.5, population: 3_600_000 },
+          { name: "Madrid", country: "Spain", lng: -3.7, lat: 40.4, population: 3_200_000 },
+        ],
+      }),
+      cfg({ kinds: { region: true }, regions: ["europe"] }),
+    );
+    const eu = on.find((c) => c.segment.kind === "region")!.segment;
+    expect(eu.tourStops).toEqual([
+      { label: "Berlin", subtitle: "Germany", lng: 13.4, lat: 52.5 },
+      { label: "Madrid", subtitle: "Spain", lng: -3.7, lat: 40.4 },
+    ]);
+    expect(eu.subtitle).toBe("Area tour · Regional weather");
+  });
+
+  it("falls back to a single spotlight when the area has no cached cities", async () => {
+    const on = await buildCandidates(
+      fakeDb({ cities: [] }),
+      cfg({ kinds: { region: true }, regions: ["europe"] }),
+    );
+    const eu = on.find((c) => c.segment.kind === "region")!.segment;
+    expect(eu.tourStops).toBeUndefined();
+    expect(eu.subtitle).toBe("Region spotlight · Regional weather");
   });
 
   it("scores a big quake above filler and frames its epicentre", async () => {

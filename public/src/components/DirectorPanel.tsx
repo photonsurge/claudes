@@ -3,20 +3,24 @@
 /**
  * Operator controls for the per-scene auto-director: Off/Auto toggle, Skip,
  * a pre-broadcast countdown, and a live "on air / up next" readout — always
- * visible at the top regardless of setup state. Below that, the setup form
- * is split into two tabs:
- *  - "Director settings": pure pacing/threshold knobs — transition speed,
- *    sponsor-ad cadence, and the quake/storm event thresholds
- *    (DirectorTuning). Nothing here names a shot type.
- *  - "Map/View settings": everything about what's on screen — which kinds
- *    air and their hold durations (DirectorHolds), which basemap looks each
- *    touring kind cycles through (DirectorMapTypes), the country/sea-point
- *    spotlight catalogs (DirectorSpotlights), and the saved-look slide
- *    library per kind (DirectorSlides).
+ * visible at the top regardless of setup state. Below that, the setup form is
+ * split into two tabs over ONE shared draft:
+ *  - "Director settings": pacing/threshold knobs — transition speed, ad cadence,
+ *    quake/storm thresholds (DirectorTuning).
+ *  - "Map/View settings": everything on screen — which kinds air and their hold
+ *    durations (DirectorHolds), the basemap looks each touring kind cycles
+ *    through (DirectorMapTypes), the country/area spotlight catalogs
+ *    (DirectorSpotlights), and the saved-look slide library (DirectorSlides).
  *
- * `config`/`update` are lifted to the parent (/control) so the live preview
- * shares the exact same config the operator is editing here; edits PATCH the
- * scene's director config and the worker picks them up within ~1s.
+ * The form is click-to-save: fields on EITHER tab edit one local `draft`
+ * (`edit`) and only persist when the operator hits Save (`save`) — the Save bar
+ * sits below both tabs and commits the whole draft, so a slider drag or a run of
+ * checkbox ticks no longer fires a PATCH each. `dirty` drives the Save bar.
+ * The always-visible Auto/Skip controls bypass the draft via `applyNow` (they
+ * must take effect instantly); DirectorSlides likewise still pushes a clicked
+ * slide onto the live map immediately via `applyLive` — only its saved-slide
+ * config defers to Save. `config` here is the draft; the parent (/control)
+ * keeps rendering the live preview from the SAVED config.
  *
  * While auto is actually running, the setup form is replaced by a "Recently
  * aired" session log (DirectorRecentlyAired) — the operator glances at what's
@@ -47,13 +51,21 @@ type TabId = (typeof TABS)[number]["id"];
 export default function DirectorPanel({
   sceneId,
   config,
-  update,
+  applyNow,
+  edit,
+  save,
+  discard,
+  dirty,
   liveState,
   applyLive,
 }: {
   sceneId: string;
   config: DirectorConfig;
-  update: (patch: Partial<DirectorConfig>) => void;
+  applyNow: (patch: Partial<DirectorConfig>) => void;
+  edit: (patch: Partial<DirectorConfig>) => void;
+  save: () => void;
+  discard: () => void;
+  dirty: boolean;
   liveState: ControlState;
   applyLive: (next: ControlState) => void;
 }) {
@@ -85,8 +97,8 @@ export default function DirectorPanel({
 
       <DirectorModeBar
         auto={auto}
-        onToggleAuto={() => update({ mode: auto ? "off" : "auto" })}
-        onSkip={() => update({ skipNonce: config.skipNonce + 1 })}
+        onToggleAuto={() => applyNow({ mode: auto ? "off" : "auto" })}
+        onSkip={() => applyNow({ skipNonce: config.skipNonce + 1 })}
         showSettings={showSettings}
         onToggleSettings={() => setShowSettings((s) => !s)}
       />
@@ -119,15 +131,54 @@ export default function DirectorPanel({
           </div>
 
           {activeTab === "director" ? (
-            <DirectorTuning config={config} update={update} />
+            <DirectorTuning config={config} update={edit} />
           ) : (
             <>
-              <DirectorHolds config={config} update={update} />
-              <DirectorMapTypes config={config} update={update} />
-              <DirectorSpotlights config={config} update={update} />
-              <DirectorSlides config={config} update={update} liveState={liveState} applyLive={applyLive} />
+              <DirectorHolds config={config} update={edit} />
+              <DirectorMapTypes config={config} update={edit} />
+              <DirectorSpotlights config={config} update={edit} />
+              <DirectorSlides config={config} update={edit} liveState={liveState} applyLive={applyLive} />
             </>
           )}
+
+          <div
+            style={{
+              position: "sticky",
+              bottom: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginTop: 6,
+              padding: "10px 0",
+              background: "#0c111c",
+              borderTop: "1px solid #1b2030",
+            }}
+          >
+            <button
+              type="button"
+              onClick={save}
+              disabled={!dirty}
+              style={{
+                ...box,
+                cursor: dirty ? "pointer" : "default",
+                fontWeight: 600,
+                background: dirty ? "#1f7a3f" : box.background,
+                borderColor: dirty ? "#2bbe63" : "#2a3344",
+                opacity: dirty ? 1 : 0.5,
+              }}
+            >
+              Save changes
+            </button>
+            <button
+              type="button"
+              onClick={discard}
+              disabled={!dirty}
+              style={{ ...box, cursor: dirty ? "pointer" : "default", opacity: dirty ? 1 : 0.5 }}
+            >
+              Discard
+            </button>
+            {dirty ? <span style={{ fontSize: 12, color: "#ffb454" }}>• Unsaved changes</span> : null}
+          </div>
         </>
       ) : null}
     </section>

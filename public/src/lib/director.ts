@@ -23,6 +23,7 @@ import {
   type DirectorState,
   type Segment,
   type SegmentKind,
+  type SegmentSummaryStop,
 } from "@photonsurge/shared/director";
 import { globalMapTour, type MapTypeNeed } from "@photonsurge/shared/director-rois";
 import { countryShot, countryContaining } from "@photonsurge/shared/director-countries";
@@ -55,6 +56,24 @@ const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
 const VAR_CYCLE_MS = 5500;
 /** Per-map dwell for the global map-type tour — a touch longer, each look is a beat. */
 const GLOBAL_MAP_CYCLE_MS = 6000;
+/**
+ * The "just show the maps off" world spins. They ONLY tour MAP TYPES (the
+ * globalMapTour cycle) — they never fly the camera round hotspot stops and never
+ * glow a country. The go-round-a-place tour (camera fly-to + hold + caption +
+ * country glow) is the Areas (region) camera model instead; a spin that happens
+ * to carry a round-up narrative still shows it as static on-air graphics, but the
+ * camera keeps spinning the globe. See cutSteps / activeCountryIso below.
+ */
+const SPIN_KINDS = new Set<SegmentKind>(["intro", "global", "ocean"]);
+
+/** The go-round-a-place camera stops for a cut (an Areas/region tour), or
+ *  undefined. Region shots carry them on `tourStops` (worker-populated from the
+ *  area's biggest cities). SPIN_KINDS never tour — a `global` round-up's own
+ *  `summary.stops` are deliberately NOT flown; the spin just shows maps off. */
+function tourStopsOf(cut: Segment): SegmentSummaryStop[] | undefined {
+  if (SPIN_KINDS.has(cut.kind)) return undefined;
+  return cut.tourStops?.length ? cut.tourStops : undefined;
+}
 /**
  * Ocean monitoring-region shots (`Segment.depthCycle`, see
  * `worker/src/director/candidates.ts`) flip through the sea-temp-at-depth
@@ -166,20 +185,23 @@ export function cutSteps(
       anchored: false,
     };
   }
-  // A round-up rides a `global` spin: when it carries geocoded stops the spin
-  // BECOMES the round-up tour — fly to each hotspot/top-event in turn and relabel
-  // the on-air card with its place + severity, instead of the plain map-type
-  // cycle. Checked BEFORE globalMapTour so it wins for a global cut. A round-up
-  // with no stops (older doc, or one with no geocoded events) falls through to
-  // the normal global spin below — its narrative still shows as on-air graphics.
-  if (cut.summary?.stops?.length) {
-    const steps = cut.summary.stops.map(
+  // The go-round-a-place tour: when a cut carries geocoded stops, fly to each
+  // in turn and relabel the on-air card with its place, instead of a map-type
+  // cycle. This is the AREAS (region) camera model — SPIN_KINDS (intro/global/
+  // ocean) never tour (tourStopsOf returns undefined for them) so a world spin
+  // only ever shows maps off (it falls through to globalMapTour below); a
+  // round-up riding a spin still shows its narrative as graphics, but the globe
+  // keeps spinning rather than touring the stops.
+  const stops = tourStopsOf(cut);
+  if (stops?.length) {
+    const steps = stops.map(
       (s): MapStep => ({
         // A stop FRAMES a specific hotspot, so hold it like a country spotlight —
         // override the global spin's autoSpin. Spinning a framed, zoomed-in stop
         // just drifts it off-screen (the "framed shots HOLD" rule in director-rois).
         patch: { camera: { center: [s.lng, s.lat], zoom: SUMMARY_STOP_ZOOM }, autoSpin: false, spinSpeed: 0 },
-        label: { title: s.label, subtitle: [severityLabel(s.severity), s.subtitle].filter(Boolean).join(" · ") },
+        // Event stops caption their severity; a plain place (city) has none.
+        label: { title: s.label, subtitle: [s.severity != null ? severityLabel(s.severity) : undefined, s.subtitle].filter(Boolean).join(" · ") },
       }),
     );
     const flightMs = cut.patch.cutTransitionMs ?? 4000;
@@ -253,12 +275,11 @@ export function eventPulse(director: DirectorState | null): [number, number] | n
  *  so the CountryShot catalog lookup needs the bare subject — see
  *  shared/director-countries.
  *
- *  A round-up global spin tours a fresh hotspot every few seconds by patching
- *  the *live* camera rather than moving `segment.camera` (which stays pinned
- *  to the global view the whole time — see cutSteps' round-up branch above),
- *  so callers pass that live centre in as `liveCenter` (e.g. /watch's `shown.
- *  camera.center`); when the current stop lands inside a curated country this
- *  glows it exactly like a real country spotlight. */
+ *  An Areas (region) tour flies a fresh stop every few seconds by patching the
+ *  *live* camera rather than moving `segment.camera`, so callers pass that live
+ *  centre in as `liveCenter` (e.g. /watch's `shown.camera.center`); when the
+ *  current stop lands inside a curated country this glows it exactly like a real
+ *  country spotlight. SPIN_KINDS are excluded — a world spin just shows maps. */
 export function activeCountryIso(
   director: DirectorState | null,
   liveCenter?: [number, number],
@@ -268,7 +289,11 @@ export function activeCountryIso(
     const subject = director.segment.id.split(":")[1] ?? "";
     return countryShot(subject)?.iso2 ?? null;
   }
-  if (director.segment.summary && liveCenter) {
+  // An Areas tour flies a fresh stop every few seconds by patching the *live*
+  // camera; when a stop lands inside a curated country, glow it like a real
+  // spotlight. SPIN_KINDS never tour, so they never glow a country — a world
+  // spin just shows maps off.
+  if (tourStopsOf(director.segment)?.length && liveCenter) {
     return countryContaining(liveCenter[0], liveCenter[1])?.iso2 ?? null;
   }
   return null;
@@ -286,7 +311,7 @@ export function activeRegionBbox(
   liveCamera?: { center: [number, number]; zoom: number },
 ): [number, number, number, number] | null {
   if (!director?.active || !director.segment) return null;
-  if (director.segment.summary && liveCamera) {
+  if (tourStopsOf(director.segment)?.length && liveCamera) {
     if (countryContaining(liveCamera.center[0], liveCamera.center[1])) return null;
     return bboxForCamera(liveCamera.center, liveCamera.zoom);
   }
@@ -345,23 +370,60 @@ export async function patchDirectorConfig(
 }
 
 /**
- * Operator hook: load + edit a scene's director config. `update` PATCHes the
- * server and optimistically updates local state.
+ * Deep-merge a director-config patch over a base, spreading the map-shaped
+ * fields so a single-slider patch (e.g. `{ quakeHoldSeconds: { great: 40 } }`)
+ * doesn't wipe its siblings. Top-level scalars and wholesale-replaced maps
+ * (mapTypes/kindLooks/… — always patched as full objects by their editors)
+ * fall through the plain spread.
+ */
+export function mergeConfig(prev: DirectorConfig, patch: Partial<DirectorConfig>): DirectorConfig {
+  return {
+    ...prev,
+    ...patch,
+    kinds: { ...prev.kinds, ...(patch.kinds ?? {}) },
+    kindHoldSeconds: { ...prev.kindHoldSeconds, ...(patch.kindHoldSeconds ?? {}) },
+    quakeHoldSeconds: { ...prev.quakeHoldSeconds, ...(patch.quakeHoldSeconds ?? {}) },
+    stormHoldSeconds: { ...prev.stormHoldSeconds, ...(patch.stormHoldSeconds ?? {}) },
+    volcanoHoldSeconds: { ...prev.volcanoHoldSeconds, ...(patch.volcanoHoldSeconds ?? {}) },
+  };
+}
+
+/**
+ * Operator hook: load + edit a scene's director config as a click-to-save form.
+ *
+ * Two states are held: `config` is the SAVED server truth (what the worker reads
+ * and what the /watch pages + /control live preview render), and `draft` is the
+ * editable working copy the setup form mutates. Form fields call `edit` (local
+ * only, flags `dirty`); one `save()` PATCHes the whole draft. `applyNow` is the
+ * escape hatch for the always-visible controls that must take effect instantly
+ * (Auto on/off, Skip) — it PATCHes immediately and keeps both states in sync
+ * without disturbing pending draft edits. `update` is kept as an alias of
+ * `applyNow` for read-only consumers that never edit.
  */
 export function useDirectorConfig(sceneId: string): {
   config: DirectorConfig;
+  draft: DirectorConfig;
+  dirty: boolean;
   ready: boolean;
   update: (patch: Partial<DirectorConfig>) => void;
+  applyNow: (patch: Partial<DirectorConfig>) => void;
+  edit: (patch: Partial<DirectorConfig>) => void;
+  save: () => void;
+  discard: () => void;
 } {
   const [config, setConfig] = useState<DirectorConfig>(DEFAULT_DIRECTOR_CONFIG);
+  const [draft, setDraft] = useState<DirectorConfig>(DEFAULT_DIRECTOR_CONFIG);
+  const [dirty, setDirty] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setReady(false);
+    setDirty(false);
     fetchDirectorConfig(sceneId).then((c) => {
       if (cancelled) return;
       setConfig(c);
+      setDraft(c);
       setReady(true);
     });
     return () => {
@@ -369,22 +431,35 @@ export function useDirectorConfig(sceneId: string): {
     };
   }, [sceneId]);
 
-  const update = (patch: Partial<DirectorConfig>) => {
-    // Optimistic deep-merge for the map-shaped fields, so a single-slider patch
-    // (e.g. { quakeHoldSeconds: { great: 40 } }) doesn't wipe its siblings.
-    setConfig((prev) => ({
-      ...prev,
-      ...patch,
-      kinds: { ...prev.kinds, ...(patch.kinds ?? {}) },
-      kindHoldSeconds: { ...prev.kindHoldSeconds, ...(patch.kindHoldSeconds ?? {}) },
-      quakeHoldSeconds: { ...prev.quakeHoldSeconds, ...(patch.quakeHoldSeconds ?? {}) },
-      stormHoldSeconds: { ...prev.stormHoldSeconds, ...(patch.stormHoldSeconds ?? {}) },
-      volcanoHoldSeconds: { ...prev.volcanoHoldSeconds, ...(patch.volcanoHoldSeconds ?? {}) },
-    }));
+  // Immediate apply (Auto toggle / Skip): PATCH now and mirror into both states
+  // so a just-toggled mode isn't reverted by the untouched draft. Only `patch`
+  // is sent, so any pending form edits are left alone.
+  const applyNow = (patch: Partial<DirectorConfig>) => {
+    setConfig((prev) => mergeConfig(prev, patch));
+    setDraft((prev) => mergeConfig(prev, patch));
     void patchDirectorConfig(sceneId, patch).then(setConfig);
   };
 
-  return { config, ready, update };
+  // Form field edit: draft only, no network. Persisted later by save().
+  const edit = (patch: Partial<DirectorConfig>) => {
+    setDraft((prev) => mergeConfig(prev, patch));
+    setDirty(true);
+  };
+
+  const save = () => {
+    setDirty(false);
+    void patchDirectorConfig(sceneId, draft).then((c) => {
+      setConfig(c);
+      setDraft(c);
+    });
+  };
+
+  const discard = () => {
+    setDraft(config);
+    setDirty(false);
+  };
+
+  return { config, draft, dirty, ready, update: applyNow, applyNow, edit, save, discard };
 }
 
 /**

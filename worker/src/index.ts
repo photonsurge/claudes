@@ -617,17 +617,21 @@ process.on("uncaughtException", (err) => {
     }
   }
 
-  // ---- Repeatable placeRoundups.generate* (per-country/region 12h AI round-ups) ----
+  // ---- Repeatable placeRoundups.generate* (per-country/region local-time round-ups) ----
   // Two crons — countries (opt-in via roundupEnabled) and regions (all) — offset
-  // past summaries so the LLM calls don't bunch. Each loops its places, feeding
-  // the previous round-up back in for continuity. No-ops for prose without an
-  // OPENROUTER_API_KEY (inputs still stored). Fixed jobIds de-dup across restarts;
-  // trigger on demand from the /admin/jobs buttons too. Disable with
-  // PLACE_ROUNDUPS_ENABLED=false.
+  // past summaries so the LLM calls don't bunch. They now fire HOURLY, but each
+  // run only generates the places whose LOCAL time is currently in a target slot
+  // (~6am + ~6pm there, see placeRoundups/localTime.ts), so every place's round-up
+  // lands in its own morning/evening instead of a fixed UTC instant. Each loops
+  // its due places, feeding the previous round-up back in for continuity. No-ops
+  // for prose without an OPENROUTER_API_KEY (inputs still stored). Fixed jobIds
+  // de-dup across restarts; trigger on demand from the /admin/jobs buttons too
+  // (set PLACE_ROUNDUP_IGNORE_LOCAL_TIME=true to force the whole set). Disable
+  // with PLACE_ROUNDUPS_ENABLED=false.
   if (process.env.PLACE_ROUNDUPS_ENABLED !== "false") {
     const placeRoundupCrons = [
-      { event: "generateCountries", cron: process.env.PLACE_ROUNDUP_COUNTRIES_CRON || "20 0,12 * * *", id: "place-roundups-countries" },
-      { event: "generateRegions", cron: process.env.PLACE_ROUNDUP_REGIONS_CRON || "40 0,12 * * *", id: "place-roundups-regions" },
+      { event: "generateCountries", cron: process.env.PLACE_ROUNDUP_COUNTRIES_CRON || "20 * * * *", id: "place-roundups-countries" },
+      { event: "generateRegions", cron: process.env.PLACE_ROUNDUP_REGIONS_CRON || "40 * * * *", id: "place-roundups-regions" },
     ];
     for (const { event, cron, id } of placeRoundupCrons) {
       try {

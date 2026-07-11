@@ -40,6 +40,15 @@ export interface iRoundupCity {
   /** Today's daily hi/lo (°C) from the 3-day forecast, when available. */
   hi?: number;
   lo?: number;
+  /** Next 1–2 days of the daily forecast (hi/lo °C, rain mm, gust m/s) — the raw
+   *  material for a per-city "next 24 hours" outlook. */
+  daily?: { date: string; hi?: number; lo?: number; rain?: number; gust?: number }[];
+}
+
+/** A per-city "next 24 hours" line the LLM writes for one of the place's main cities. */
+export interface iRoundupCityOutlook {
+  name: string;
+  outlook: string;
 }
 
 /** One variable's area-weather aggregate over the whole place (mean/min/max). */
@@ -97,6 +106,10 @@ export interface iPlaceRoundupInputs {
   volcanoes: iRoundupVolcano[];
   tideGauges: iRoundupGauge[];
   seismoStations: iRoundupGauge[];
+  /** Regions only: the constituent country names present in the place (derived
+   *  from the scoped cities' `cc`), so a region round-up can be framed across the
+   *  countries it spans rather than as one nation. Absent/empty for countries. */
+  countries?: string[];
 }
 
 /** LLM call metadata (present when a narrative was attempted). */
@@ -119,8 +132,18 @@ export interface iPlaceRoundup extends iGeneralModel {
   windowEnd: string;
   /** Exactly what the LLM saw. */
   inputs: iPlaceRoundupInputs;
-  /** LLM prose; "" when skipped/errored. */
+  /** LLM prose; "" when skipped/errored. Legacy/fallback whole-narrative field —
+   *  now composed from the sections below (summary + state of play + advice) so
+   *  older consumers keep working; the structured sections are preferred. */
   narrative: string;
+  /** One–two sentence headline: the state of the place right now. */
+  summary?: string;
+  /** Detailed current conditions across the major cities + hazards. */
+  stateOfPlay?: string;
+  /** Per-main-city next-24h outlook (biggest cities + the capital). */
+  cityOutlook?: iRoundupCityOutlook[];
+  /** Advice for residents & visitors — scaled up when alerts/hazards are active. */
+  advice?: string;
   narrativeStatus: RoundupNarrativeStatus;
   /** The round-up this one was told about (continuity chain), if any. */
   prevRoundupId?: string;
@@ -131,6 +154,12 @@ export interface iPlaceRoundupModel extends iPlaceRoundup {
   id: string;
   _id: string;
 }
+
+/** Sub-schema for the per-city next-24h outlook array. */
+const CityOutlookSchema = new mongoose.Schema<iRoundupCityOutlook>(
+  { name: { type: String, required: true }, outlook: { type: String, required: true } },
+  { _id: false },
+);
 
 const PlaceRoundupSchema = new mongoose.Schema<iPlaceRoundupModel>(
   {
@@ -147,6 +176,12 @@ const PlaceRoundupSchema = new mongoose.Schema<iPlaceRoundupModel>(
     // NOT required: "" is the documented skipped/errored case, and Mongoose's
     // String required-check rejects "" — the default already guarantees a value.
     narrative: { type: String, default: "" },
+    // Structured sections (preferred over `narrative`). Defaulted, never required
+    // — a skipped/errored round-up leaves them empty.
+    summary: { type: String, default: "" },
+    stateOfPlay: { type: String, default: "" },
+    cityOutlook: { type: [CityOutlookSchema], default: [] },
+    advice: { type: String, default: "" },
     narrativeStatus: { type: String, required: true, default: "skipped" },
     prevRoundupId: { type: String, required: false },
     llm: { type: mongoose.Schema.Types.Mixed, required: false },

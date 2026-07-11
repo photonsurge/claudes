@@ -7,9 +7,28 @@ import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
 import { buildPlaceInputs, WINDOW_HOURS, type PlaceRef } from "../placeRoundups/aggregate";
+import { isPlaceDue } from "../placeRoundups/localTime";
 import { generatePlaceNarrative } from "../placeRoundups/openrouter";
 
 const TAG = "job:placeRoundups";
+
+/**
+ * Keep only the places whose LOCAL time is currently in a target slot and that
+ * haven't generated recently — so each place's round-up lands in its own morning
+ * / evening rather than at a fixed UTC instant. `repo.latestPerPlace()` gives the
+ * last generation time for every place in one round trip. Set
+ * PLACE_ROUNDUP_IGNORE_LOCAL_TIME=true to bypass (generate the whole set, the old
+ * behaviour — handy for a manual "generate now" of everything).
+ */
+async function filterDue(kind: "country" | "region", places: PlaceRef[], repo: PlaceRoundupRepo): Promise<PlaceRef[]> {
+  if (process.env.PLACE_ROUNDUP_IGNORE_LOCAL_TIME === "true") return places;
+  const latest = await repo.latestPerPlace();
+  const lastGen = new Map(latest.map((r) => [r.placeId, new Date(r.generatedAt)]));
+  const now = new Date();
+  const due = places.filter((p) => isPlaceDue(now, p.bbox, lastGen.get(p.id) ?? null));
+  log(TAG, `${kind} due this run`, { due: due.length, total: places.length });
+  return due;
+}
 
 /**
  * Generate one round-up for a single place: build the place-scoped inputs, fetch
@@ -31,6 +50,10 @@ async function runForPlace(db: AppDb, repo: PlaceRoundupRepo, place: PlaceRef) {
     windowEnd: now.toISOString(),
     inputs,
     narrative: narrative.narrative,
+    summary: narrative.summary,
+    stateOfPlay: narrative.stateOfPlay,
+    cityOutlook: narrative.cityOutlook,
+    advice: narrative.advice,
     narrativeStatus: narrative.status,
     prevRoundupId: prev?.id,
     llm: {
@@ -58,6 +81,9 @@ async function runBatch(
   repo: PlaceRoundupRepo,
   db: AppDb,
 ): Promise<{ kind: string; places: number; ok: number }> {
+  // Nothing due this hour (the common case now the schedule is local-time phased) —
+  // return quietly rather than logging a 0/0 batch every run.
+  if (!places.length) return { kind, places: 0, ok: 0 };
   let ok = 0;
   for (const place of places) {
     try {
@@ -88,7 +114,8 @@ export async function generateCountries(_job: Job) {
     iso2: c.iso2,
     capital: c.capital,
   }));
-  return runBatch("country", places, db.countryRoundups, db);
+  const due = await filterDue("country", places, db.countryRoundups);
+  return runBatch("country", due, db.countryRoundups, db);
 }
 
 /**
@@ -114,5 +141,6 @@ export async function generateRegions(_job: Job) {
       name: r.name,
       bbox: r.bbox,
     }));
-  return runBatch("region", places, db.regionRoundups, db);
+  const due = await filterDue("region", places, db.regionRoundups);
+  return runBatch("region", due, db.regionRoundups, db);
 }

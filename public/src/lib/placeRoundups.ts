@@ -12,6 +12,7 @@ export type {
   iPlaceRoundupModel as PlaceRoundup,
   iPlaceRoundupInputs as PlaceRoundupInputs,
   iRoundupCity as RoundupCity,
+  iRoundupCityOutlook as RoundupCityOutlook,
   iRoundupAlert as RoundupAlert,
   iRoundupVolcano as RoundupVolcano,
   iRoundupGauge as RoundupGauge,

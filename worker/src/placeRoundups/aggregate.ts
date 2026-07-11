@@ -101,6 +101,10 @@ async function scopedCities(db: AppDb, place: PlaceRef): Promise<iRoundupCity[]>
     rain: c.current?.rain,
     hi: c.daily?.[0]?.hi,
     lo: c.daily?.[0]?.lo,
+    // Today + tomorrow — enough for a per-city "next 24 hours" outlook.
+    daily: (c.daily ?? [])
+      .slice(0, 2)
+      .map((d) => ({ date: d.date, hi: d.hi, lo: d.lo, rain: d.rain, gust: d.gust })),
   });
 
   const top = pool.slice(0, TOP_CITIES).map(toCity);
@@ -170,6 +174,22 @@ async function scopedGauges(
   return { tideGauges, seismoStations };
 }
 
+/** PURE: distinct country names (via a cc→name map) for the cities in a region,
+ *  ordered by first appearance (cities arrive population-ranked). Unknown / missing
+ *  `cc` are dropped. So a region round-up can be framed across the countries it spans. */
+export function regionCountries(cities: iRoundupCity[], nameByCc: Map<string, string>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const c of cities) {
+    const cc = (c.cc ?? "").toLowerCase();
+    const name = cc && nameByCc.get(cc);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
 /** Assemble the full input snapshot for one place — everything the LLM sees. */
 export async function buildPlaceInputs(db: AppDb, place: PlaceRef): Promise<iPlaceRoundupInputs> {
   const inPlace = makeInPlace(place);
@@ -180,6 +200,18 @@ export async function buildPlaceInputs(db: AppDb, place: PlaceRef): Promise<iPla
     scopedVolcanoes(db, inPlace),
     scopedGauges(db, place),
   ]);
+
+  // Regions span multiple nations — surface which ones so the LLM frames the
+  // round-up (and its advice) across them. Countries are one nation, so skip it.
+  let countries: string[] | undefined;
+  if (place.kind === "region") {
+    const catalog = await db.countries.list().catch(() => []);
+    const nameByCc = new Map<string, string>();
+    for (const c of catalog) if (c.iso2) nameByCc.set(c.iso2.toLowerCase(), c.name);
+    const derived = regionCountries(topCities, nameByCc);
+    if (derived.length) countries = derived;
+  }
+
   return {
     topCities,
     area: area ? { stats: area.stats, hazards: area.hazards } : null,
@@ -188,5 +220,6 @@ export async function buildPlaceInputs(db: AppDb, place: PlaceRef): Promise<iPla
     volcanoes,
     tideGauges: gauges.tideGauges,
     seismoStations: gauges.seismoStations,
+    countries,
   };
 }

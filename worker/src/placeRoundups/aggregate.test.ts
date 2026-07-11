@@ -1,4 +1,5 @@
-import { inBbox, bboxCenter } from "./aggregate";
+import { inBbox, bboxCenter, regionCountries } from "./aggregate";
+import type { iRoundupCity } from "@photonsurge/shared/db/place-roundup-model";
 
 describe("inBbox", () => {
   const uk: [number, number, number, number] = [-8, 49, 2, 61];
@@ -40,5 +41,24 @@ describe("bboxCenter", () => {
     const c = bboxCenter([170, -10, -170, 10]);
     // Span is 20° across ±180 → centre sits at 180/-180, not 0.
     expect(Math.abs(Math.abs(c.lng) - 180)).toBeLessThan(0.001);
+  });
+});
+
+describe("regionCountries", () => {
+  const city = (name: string, cc?: string): iRoundupCity => ({ name, cc, lat: 0, lng: 0 });
+  const names = new Map([
+    ["gb", "United Kingdom"],
+    ["fr", "France"],
+    ["de", "Germany"],
+  ]);
+
+  it("returns distinct country names in first-appearance order", () => {
+    const out = regionCountries([city("London", "gb"), city("Paris", "fr"), city("Manchester", "gb")], names);
+    expect(out).toEqual(["United Kingdom", "France"]);
+  });
+
+  it("drops cities with unknown or missing cc", () => {
+    const out = regionCountries([city("London", "gb"), city("Nowhere", "zz"), city("Blank")], names);
+    expect(out).toEqual(["United Kingdom"]);
   });
 });

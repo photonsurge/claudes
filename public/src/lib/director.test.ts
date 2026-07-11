@@ -12,9 +12,16 @@ const segment = (over: Partial<Segment> = {}): Segment => ({
   ...over,
 });
 
-/** A minimal round-up payload — its mere presence (not its stops) is what
- *  `activeCountryIso`/`activeRegionBbox` key the round-up behaviour on now that
- *  the round-up rides a `global` spin. */
+/** The go-round-a-place camera stops an Areas (region) shot carries. Their
+ *  presence is what `activeCountryIso`/`activeRegionBbox`/`cutSteps` key the
+ *  tour + glow on — and only on non-spin cuts (a world spin never tours). */
+const tourStops = (): NonNullable<Segment["tourStops"]> => [
+  { label: "Paris", lng: 2.35, lat: 48.85 },
+  { label: "Tokyo", lng: 139.7, lat: 35.68 },
+];
+
+/** A round-up narrative payload — a world spin may carry it as on-air graphics,
+ *  but it must never drive the camera (no tour, no country glow). */
 const roundupPayload = (): NonNullable<Segment["summary"]> => ({
   id: "1",
   period: "daily",
@@ -71,11 +78,18 @@ describe("activeCountryIso", () => {
     expect(iso).toBeNull();
   });
 
-  it("resolves the live camera centre to a country during a round-up stop", () => {
-    const roundup = director({ segment: segment({ id: "global:1", kind: "global", summary: roundupPayload() }) });
-    expect(activeCountryIso(roundup, [2.5, 46.5])).toBe("FR"); // stop over France
-    expect(activeCountryIso(roundup, [-40, 30])).toBeNull(); // stop over open ocean
-    expect(activeCountryIso(roundup)).toBeNull(); // no live centre passed
+  it("resolves the live camera centre to a country during an Areas tour stop", () => {
+    const tour = director({ segment: segment({ id: "region:europe", kind: "region", tourStops: tourStops() }) });
+    expect(activeCountryIso(tour, [2.5, 46.5])).toBe("FR"); // stop over France
+    expect(activeCountryIso(tour, [-40, 30])).toBeNull(); // stop over open ocean
+    expect(activeCountryIso(tour)).toBeNull(); // no live centre passed
+  });
+
+  it("never glows a country for a world spin, even when it carries a round-up", () => {
+    // A round-up rides a `global` spin as narrative graphics only — the spin
+    // just shows maps off, so it never glows the country under the live camera.
+    const spin = director({ segment: segment({ id: "global:1", kind: "global", summary: roundupPayload() }) });
+    expect(activeCountryIso(spin, [2.5, 46.5])).toBeNull(); // over France, but it's a spin
   });
 });
 
@@ -88,44 +102,61 @@ describe("activeRegionBbox", () => {
     ).toBeNull();
   });
 
-  it("frames a round-up stop's live camera when it isn't over a curated country", () => {
-    const roundup = director({ segment: segment({ id: "global:1", kind: "global", summary: roundupPayload() }) });
-    const bbox = activeRegionBbox(roundup, { center: [-40, 30], zoom: 5 }); // mid-Atlantic
+  it("frames an Areas tour stop's live camera when it isn't over a curated country", () => {
+    const tour = director({ segment: segment({ id: "region:atlantic", kind: "region", tourStops: tourStops() }) });
+    const bbox = activeRegionBbox(tour, { center: [-40, 30], zoom: 5 }); // mid-Atlantic
     expect(bbox).not.toBeNull();
   });
 
-  it("defers to the country glow (returns null) when a round-up stop is over a curated country", () => {
-    const roundup = director({ segment: segment({ id: "global:1", kind: "global", summary: roundupPayload() }) });
-    expect(activeRegionBbox(roundup, { center: [2.5, 46.5], zoom: 5 })).toBeNull(); // France
+  it("defers to the country glow (returns null) when an Areas tour stop is over a curated country", () => {
+    const tour = director({ segment: segment({ id: "region:europe", kind: "region", tourStops: tourStops() }) });
+    expect(activeRegionBbox(tour, { center: [2.5, 46.5], zoom: 5 })).toBeNull(); // France
+  });
+
+  it("never frames a world spin, even when it carries a round-up", () => {
+    const spin = director({ segment: segment({ id: "global:1", kind: "global", summary: roundupPayload() }) });
+    expect(activeRegionBbox(spin, { center: [-40, 30], zoom: 5 })).toBeNull(); // a spin just shows maps
   });
 });
 
 describe("cutSteps", () => {
   const avail: MapTypeAvailability = { variables: new Set(), aurora: false, satimg: false };
 
-  it("holds each round-up stop instead of inheriting the global world spin", () => {
-    const roundup = segment({
-      id: "global:1",
-      kind: "global",
-      // The global spin's autoSpin drifts the stop-less backdrop — a framed stop must override it.
+  const tourStops = (): NonNullable<Segment["tourStops"]> => [
+    { label: "Southern Europe", lng: 12, lat: 42, severity: 2 },
+    { label: "Japan", lng: 139, lat: 35, severity: 3 },
+  ];
+  const roundupStops = (): NonNullable<Segment["summary"]> => ({
+    id: "1",
+    period: "daily",
+    narrative: "n",
+    generatedAt: "2026-07-10T00:00:00Z",
+    stops: tourStops(),
+  });
+
+  it("holds each Areas tour stop (the go-round-a-place camera model)", () => {
+    const tour = segment({
+      id: "region:europe",
+      kind: "region",
+      // A backdrop spin would drift a framed stop off-screen — each stop must override it.
       patch: { autoSpin: true, spinSpeed: 2 },
-      summary: {
-        id: "1",
-        period: "daily",
-        narrative: "n",
-        generatedAt: "2026-07-10T00:00:00Z",
-        stops: [
-          { label: "Southern Europe", lng: 12, lat: 42, severity: 2 },
-          { label: "Japan", lng: 139, lat: 35, severity: 3 },
-        ],
-      },
+      tourStops: tourStops(),
     });
-    const { steps } = cutSteps(roundup, avail);
+    const { steps } = cutSteps(tour, avail);
     expect(steps).toHaveLength(2);
     for (const step of steps) {
       expect(step.patch.autoSpin).toBe(false); // framed stop never spins off-screen
       expect(step.patch.spinSpeed).toBe(0);
       expect(step.patch.camera).toBeDefined();
     }
+  });
+
+  it("never tours a world spin — it shows maps off even when it carries stops", () => {
+    // A round-up rides a `global` spin as narrative graphics only; the camera
+    // keeps spinning through the map-type cycle rather than flying to the stops.
+    const spin = segment({ id: "global:1", kind: "global", summary: roundupStops() });
+    const { steps } = cutSteps(spin, avail);
+    expect(steps.length).toBeGreaterThan(2); // the globalMapTour cycle, not the 2 stops
+    expect(steps.every((s) => s.patch.camera === undefined)).toBe(true); // no fly-to
   });
 });

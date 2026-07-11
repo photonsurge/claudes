@@ -10,6 +10,8 @@ export interface OpenRouterCallOptions {
   user: string;
   temperature?: number;
   maxTokens?: number;
+  /** Ask the model for a strict JSON object reply (OpenAI-compatible `response_format`). */
+  responseFormat?: "json_object";
   fetchImpl?: typeof fetch;
 }
 
@@ -39,6 +41,7 @@ export async function callOpenRouter(opts: OpenRouterCallOptions): Promise<OpenR
         model: opts.model,
         temperature: opts.temperature ?? 0.4,
         max_tokens: opts.maxTokens ?? 700,
+        ...(opts.responseFormat ? { response_format: { type: opts.responseFormat } } : {}),
         messages: [
           { role: "system", content: opts.system },
           { role: "user", content: opts.user },

@@ -147,6 +147,17 @@ export interface Segment {
    * straight from the director cut — no extra fetch. See SegmentSummary.
    */
   summary?: SegmentSummary;
+  /**
+   * The camera stops an Areas (`region`) shot tours — the "go round a place"
+   * flythrough. The worker populates them from the biggest GeoNames cities
+   * inside the region's bbox (see worker/src/director/candidates.ts
+   * `regionCandidates`), so the client flies the camera to each in turn and
+   * captions it, glowing whichever country the stop lands in. Empty/absent when
+   * the area has no populated cities — the shot then falls back to a single
+   * framed spotlight. Kept separate from `summary` (which is round-up prose): a
+   * region tour carries places, not a narrative. See cutSteps in the client.
+   */
+  tourStops?: SegmentSummaryStop[];
 }
 
 /**
@@ -191,18 +202,20 @@ export interface SegmentSummary {
 }
 
 /**
- * One camera stop within a round-up spin's tour, sourced from the
- * EventSummary doc's `hotspots`/`topEvents` (see worker/src/director/candidates.ts
- * `summaryCandidates`). Drives both the camera fly-to and the on-air info card.
+ * One camera stop within a tour — a round-up spin's hotspot (from the
+ * EventSummary doc's `hotspots`/`topEvents`, see `summaryCandidates`) OR an
+ * Areas tour's city (from the region's biggest GeoNames cities, see
+ * `regionCandidates`). Drives both the camera fly-to and the on-air info card.
  */
 export interface SegmentSummaryStop {
-  /** Place/cluster label, e.g. "Southern Europe" or a specific alert title. */
+  /** Place/cluster label, e.g. "Southern Europe" or a city name. */
   label: string;
-  /** Secondary line, e.g. hazard type or event count. */
+  /** Secondary line, e.g. hazard type/event count, or a city's country. */
   subtitle?: string;
   lng: number;
   lat: number;
-  severity: SeverityRank;
+  /** Hazard severity for an event stop; omitted for a plain place (a city). */
+  severity?: SeverityRank;
 }
 
 /**

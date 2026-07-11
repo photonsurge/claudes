@@ -65,7 +65,15 @@ export default function ControlPage() {
   // Lifted here (not inside DirectorPanel) so the live preview below and the
   // panel's edits share one config — an operator toggling a map type sees the
   // preview update immediately instead of the two diverging.
-  const { config: directorConfig, update: updateDirectorConfig } = useDirectorConfig(sceneId);
+  const {
+    config: directorConfig,
+    draft: directorDraft,
+    dirty: directorDirty,
+    applyNow: applyDirectorNow,
+    edit: editDirector,
+    save: saveDirector,
+    discard: discardDirector,
+  } = useDirectorConfig(sceneId);
   const [cut, setCut] = useState<Segment | null>(null);
   // Click-to-select: the operator can click an event/quake while the director is
   // idle to pin its info box (same card the director shows on air).
@@ -312,8 +320,12 @@ export default function ControlPage() {
         </div>
         <DirectorPanel
           sceneId={sceneId}
-          config={directorConfig}
-          update={updateDirectorConfig}
+          config={directorDraft}
+          applyNow={applyDirectorNow}
+          edit={editDirector}
+          save={saveDirector}
+          discard={discardDirector}
+          dirty={directorDirty}
           liveState={state}
           applyLive={apply}
         />

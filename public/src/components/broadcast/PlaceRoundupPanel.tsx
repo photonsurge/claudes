@@ -16,6 +16,8 @@ import BroadcastCard, { CardSection, DIVIDER, MUTED } from "./BroadcastCard";
 /** True when a place round-up carries anything worth a slide (prose or inputs). */
 export function placeRoundupSlideHasContent(roundup: PlaceRoundup | null | undefined): boolean {
   if (!roundup) return false;
+  if (roundup.summary?.trim() || roundup.stateOfPlay?.trim() || roundup.advice?.trim()) return true;
+  if (roundup.cityOutlook?.length) return true;
   if (roundup.narrative?.trim()) return true;
   const i = roundup.inputs;
   return Boolean(i && (i.alerts.length || i.volcanoes.length || i.topCities.length));
@@ -41,8 +43,16 @@ export default function PlaceRoundupPanel({
   roundup: PlaceRoundup;
   theme?: BroadcastTheme;
 }) {
-  const { narrative, inputs } = roundup;
+  const { narrative, summary, stateOfPlay, cityOutlook, advice, inputs } = roundup;
+  const summaryText = summary?.trim();
+  const stateText = stateOfPlay?.trim();
+  const cities = (cityOutlook ?? []).filter((c) => c.name && c.outlook);
+  const adviceText = advice?.trim();
+  const hasSections = Boolean(summaryText || stateText || cities.length || adviceText);
+  // Older round-ups (pre-sections) only carry the composed narrative.
   const narrativeText = narrative?.trim();
+
+  const activeAlerts = inputs.alertsTotal ?? inputs.alerts.length;
 
   // The place's biggest city (top of the pre-sorted list) as a single headline read.
   const lead = inputs.topCities[0];
@@ -50,7 +60,7 @@ export default function PlaceRoundupPanel({
   const topHazard = [...(inputs.area?.hazards ?? [])].sort((a, b) => b.severityRank - a.severityRank)[0];
 
   const tiles = [
-    { label: "ACTIVE ALERTS", value: inputs.alertsTotal ?? inputs.alerts.length },
+    { label: "ACTIVE ALERTS", value: activeAlerts },
     { label: "VOLCANOES", value: inputs.volcanoes.length },
     {
       label: lead ? lead.name.toUpperCase() : "",
@@ -59,11 +69,36 @@ export default function PlaceRoundupPanel({
     },
   ].filter((t) => t.value > 0 && t.label);
 
-  if (!narrativeText && !tiles.length) return null;
+  if (!hasSections && !narrativeText && !tiles.length) return null;
+
+  // Advice reads louder when there's something to warn about.
+  const adviceUrgent = activeAlerts > 0 || inputs.volcanoes.length > 0;
 
   return (
     <BroadcastCard theme={theme}>
-      {narrativeText ? (
+      {hasSections ? (
+        <>
+          {summaryText ? (
+            <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.4, color: "#fff", marginBottom: stateText ? 10 : 0 }}>
+              {summaryText}
+            </div>
+          ) : null}
+          {stateText ? (
+            <div
+              style={{
+                fontSize: 14.5,
+                lineHeight: 1.5,
+                color: "#e8eef7",
+                marginBottom: tiles.length || topHazard ? 12 : 0,
+                paddingBottom: tiles.length || topHazard ? 10 : 0,
+                borderBottom: tiles.length || topHazard ? DIVIDER : undefined,
+              }}
+            >
+              {stateText}
+            </div>
+          ) : null}
+        </>
+      ) : narrativeText ? (
         <div
           style={{
             fontSize: 15,
@@ -77,6 +112,7 @@ export default function PlaceRoundupPanel({
           {narrativeText}
         </div>
       ) : null}
+
       {tiles.length ? (
         <div style={{ display: "flex", gap: 18 }}>
           {tiles.map((t) => (
@@ -89,7 +125,37 @@ export default function PlaceRoundupPanel({
           <span style={{ fontSize: 14, fontWeight: 700, color: "#e8eef7" }}>{topHazard.label}</span>
         </CardSection>
       ) : null}
-      {!narrativeText ? (
+
+      {cities.length ? (
+        <CardSection eyebrow="Next 24 hours">
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {cities.map((c) => (
+              <div key={c.name} style={{ fontSize: 13.5, lineHeight: 1.4, color: "#e8eef7" }}>
+                <span style={{ fontWeight: 800, color: "#fff" }}>{c.name}</span>
+                <span style={{ color: "#c4d0e0" }}> — {c.outlook}</span>
+              </div>
+            ))}
+          </div>
+        </CardSection>
+      ) : null}
+
+      {adviceText ? (
+        <CardSection eyebrow={adviceUrgent ? "Advice · alerts active" : "Advice"}>
+          <div
+            style={{
+              fontSize: 13.5,
+              lineHeight: 1.5,
+              color: "#eef3fa",
+              paddingLeft: 10,
+              borderLeft: `3px solid ${adviceUrgent ? "#f59e0b" : "rgba(120,140,170,0.35)"}`,
+            }}
+          >
+            {adviceText}
+          </div>
+        </CardSection>
+      ) : null}
+
+      {!hasSections && !narrativeText ? (
         <div style={{ marginTop: 12, fontSize: 11, color: MUTED, letterSpacing: 0.3 }}>
           Round-up narrative pending.
         </div>
