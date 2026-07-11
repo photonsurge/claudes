@@ -45,13 +45,13 @@ export const focusCache = { get, set };
 /**
  * Default TTL (seconds) for the always-on global feed caches (alerts / quakes /
  * volcanoes). Short by design: those feeds refresh on worker-ingest socket beats
- * (minutes apart), so a ~2m Redis hold keeps staleness bounded while collapsing
+ * (minutes apart), so a ~10m Redis hold keeps staleness bounded while collapsing
  * repeated polls, nearby recurring camera cuts, overlay/world-watch duplicate
  * fetches, and every
  * extra tab/OBS source onto one sub-ms read instead of a fresh Mongo query (and,
  * for alerts, the O(n²) cross-source clustering). Tune with FEED_CACHE_TTL_SEC.
  */
-export const FEED_TTL_SEC = Number(process.env.FEED_CACHE_TTL_SEC || 120);
+export const FEED_TTL_SEC = Number(process.env.FEED_CACHE_TTL_SEC || 600);
 
 /**
  * Read-through cache: return the cached value for `key`, else run `compute`,
