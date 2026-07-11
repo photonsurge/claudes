@@ -34,6 +34,25 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("trendSincePreviousRoundUp");
     expect(prompt).toContain('"alertsActiveDelta": 5');
   });
+
+  it("feeds the previous narrative back for continuity when given one", () => {
+    const cold = buildPrompt(AGG, "hourly");
+    expect(cold).toContain("There is no previous round-up");
+    const warm = buildPrompt(AGG, "hourly", null, { prevNarrative: "Last hour a cyclone formed off Japan." });
+    expect(warm).toContain("previousRoundUp");
+    expect(warm).toContain("Last hour a cyclone formed off Japan");
+    expect(warm).toContain("what has CHANGED");
+  });
+
+  it("weaves area context in only when it carries signal", () => {
+    const bare = buildPrompt(AGG, "hourly", null, { area: { areaWeather: [], placeHeadlines: [] } });
+    expect(bare).not.toContain("areaConditions");
+    const rich = buildPrompt(AGG, "hourly", null, {
+      area: { areaWeather: [{ name: "Spain", kind: "country", hazards: ["Heat"], maxSeverity: 3, stats: [] }], placeHeadlines: [] },
+    });
+    expect(rich).toContain("areaConditions");
+    expect(rich).toContain("Spain");
+  });
 });
 
 describe("summaryTrend", () => {

@@ -8,6 +8,7 @@
 import type { SummaryPeriod, NarrativeStatus, iSummaryStats } from "@photonsurge/shared/db/event-summary-model";
 import type { AggregateResult } from "./aggregate";
 import { callOpenRouter } from "../lib/openrouter";
+import { hasAreaSignal, type AreaContext } from "./areaContext";
 
 export interface NarrativeResult {
   narrative: string;
@@ -40,14 +41,32 @@ export function summaryTrend(current: iSummaryStats, prev: iSummaryStats | null)
   };
 }
 
+/** Optional continuity + regional context threaded into the prompt. */
+export interface NarrativeExtras {
+  /** The previous round-up's prose for this cadence — so the model writes continuity, not a cold snapshot. */
+  prevNarrative?: string | null;
+  /** Freshest per-place area weather + round-up headlines. */
+  area?: AreaContext | null;
+}
+
 /** Assemble the user prompt from the deterministic facts (no invented data). */
-export function buildPrompt(agg: AggregateResult, period: SummaryPeriod, trend?: SummaryTrend | null): string {
+export function buildPrompt(
+  agg: AggregateResult,
+  period: SummaryPeriod,
+  trend?: SummaryTrend | null,
+  extras?: NarrativeExtras,
+): string {
+  const prev = extras?.prevNarrative?.trim() || undefined;
+  const area = hasAreaSignal(extras?.area) ? extras!.area : undefined;
   const facts = {
     window: PERIOD_LABEL[period],
     stats: agg.stats,
     trendSincePreviousRoundUp: trend ?? undefined,
     hotspots: agg.hotspots.slice(0, 12),
     topEvents: agg.topEvents,
+    areaConditions: area?.areaWeather,
+    placeHeadlines: area?.placeHeadlines,
+    previousRoundUp: prev,
     sources: agg.sources,
   };
   return [
@@ -58,11 +77,19 @@ export function buildPrompt(agg: AggregateResult, period: SummaryPeriod, trend?:
     "broadcast anchor tone, no headings or bullet lists.",
     "If trendSincePreviousRoundUp is present and a delta is non-trivial, briefly note",
     "the change (e.g. \"up from N alerts last hour\") — skip it if both deltas are near zero.",
+    area
+      ? "Where `areaConditions` or `placeHeadlines` add colour (regional heat, wind, flooding), weave a line in — but only for places actually listed there."
+      : "",
+    prev
+      ? "`previousRoundUp` is the prose from the last update — note what has CHANGED since then (building, peaking, clearing) rather than repeating it, and do not contradict it."
+      : "There is no previous round-up — write it as the first update.",
     "",
     "```json",
     JSON.stringify(facts, null, 2),
     "```",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /**
@@ -74,6 +101,7 @@ export async function generateNarrative(
   agg: AggregateResult,
   period: SummaryPeriod,
   trend?: SummaryTrend | null,
+  extras?: NarrativeExtras,
 ): Promise<NarrativeResult> {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return { narrative: "", status: "skipped" };
@@ -86,7 +114,7 @@ export async function generateNarrative(
   const res = await callOpenRouter({
     model,
     system,
-    user: buildPrompt(agg, period, trend),
+    user: buildPrompt(agg, period, trend, extras),
     temperature: 0.4,
     maxTokens: 700,
   });

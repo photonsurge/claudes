@@ -8,8 +8,13 @@ import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
 import { aggregate } from "../summaries/aggregate";
 import { generateNarrative, summaryTrend } from "../summaries/openrouter";
+import { buildAreaContext } from "../summaries/areaContext";
+import { generate12hRollup } from "../summaries/rollup";
 
 const TAG = "job:summaries";
+
+/** How many recent hourly round-ups the 12h retrospective synthesises. */
+const ROLLUP_HOURS = 12;
 
 /**
  * Generate one global weather-event round-up for `period`: aggregate the active
@@ -22,9 +27,27 @@ async function run(period: SummaryPeriod): Promise<{ id?: string; period: Summar
   const db = await getAppDb();
   try {
     const prev = await db.eventSummaries.latest(period);
-    const agg = await aggregate(db, period);
-    const trend = summaryTrend(agg.stats, prev?.stats ?? null);
-    const narrative = await generateNarrative(agg, period, trend);
+    // `agg` is always the current snapshot — it backs the deterministic
+    // stats/hotspots/topEvents the map + panels read, for every cadence.
+    const [agg, area] = await Promise.all([aggregate(db, period), buildAreaContext(db)]);
+
+    // The 12h round-up is a retrospective SYNTHESIS of the recent hourly
+    // round-ups (+ the current snapshot + area context); hourly/daily narrate
+    // the snapshot directly, with the previous prose fed back for continuity.
+    let narrative;
+    if (period === "12h") {
+      const hourlies = await db.eventSummaries.list({ period: "hourly", limit: ROLLUP_HOURS });
+      narrative = await generate12hRollup(hourlies, agg, { area, prevNarrative: prev?.narrative });
+    } else {
+      const trend = summaryTrend(agg.stats, prev?.stats ?? null);
+      narrative = await generateNarrative(agg, period, trend, { area, prevNarrative: prev?.narrative });
+    }
+
+    // Note area/round-up provenance when they actually contributed.
+    if (area.areaWeather.length) agg.sources.push("area-weather");
+    if (area.placeHeadlines.length) agg.sources.push("place-roundups");
+    agg.sources = [...new Set(agg.sources)].sort();
+
     const saved = await db.eventSummaries.create({
       period,
       windowStart: agg.windowStart,

@@ -12,16 +12,30 @@ import { generatePlaceNarrative } from "../placeRoundups/openrouter";
 
 const TAG = "job:placeRoundups";
 
+/** A manual /admin trigger arrives as `data.data.trigger === "admin"`; the cron sends `{}`. */
+function isManualTrigger(job: Job): boolean {
+  return (job.data as { data?: { trigger?: string } } | undefined)?.data?.trigger === "admin";
+}
+
 /**
  * Keep only the places whose LOCAL time is currently in a target slot and that
  * haven't generated recently — so each place's round-up lands in its own morning
  * / evening rather than at a fixed UTC instant. `repo.latestPerPlace()` gives the
- * last generation time for every place in one round trip. Set
- * PLACE_ROUNDUP_IGNORE_LOCAL_TIME=true to bypass (generate the whole set, the old
- * behaviour — handy for a manual "generate now" of everything).
+ * last generation time for every place in one round trip.
+ *
+ * The local-time gate applies to the HOURLY CRON only. A manual "Generate now"
+ * click (/admin/place-roundups or /admin/jobs) arrives with `trigger:"admin"` and
+ * bypasses the gate — an operator clicking the button wants the whole set now, not
+ * "nothing, because it isn't 6am anywhere". PLACE_ROUNDUP_IGNORE_LOCAL_TIME=true
+ * forces the bypass globally (incl. the cron) if ever needed.
  */
-async function filterDue(kind: "country" | "region", places: PlaceRef[], repo: PlaceRoundupRepo): Promise<PlaceRef[]> {
-  if (process.env.PLACE_ROUNDUP_IGNORE_LOCAL_TIME === "true") return places;
+async function filterDue(
+  kind: "country" | "region",
+  places: PlaceRef[],
+  repo: PlaceRoundupRepo,
+  manual: boolean,
+): Promise<PlaceRef[]> {
+  if (manual || process.env.PLACE_ROUNDUP_IGNORE_LOCAL_TIME === "true") return places;
   const latest = await repo.latestPerPlace();
   const lastGen = new Map(latest.map((r) => [r.placeId, new Date(r.generatedAt)]));
   const now = new Date();
@@ -102,7 +116,7 @@ async function runBatch(
 }
 
 /** Country round-ups — only the opt-in (`roundupEnabled`) countries. */
-export async function generateCountries(_job: Job) {
+export async function generateCountries(job: Job) {
   const db = await getAppDb();
   const countries = await db.countries.listRoundupEnabled();
   const places: PlaceRef[] = countries.map((c) => ({
@@ -114,7 +128,7 @@ export async function generateCountries(_job: Job) {
     iso2: c.iso2,
     capital: c.capital,
   }));
-  const due = await filterDue("country", places, db.countryRoundups);
+  const due = await filterDue("country", places, db.countryRoundups, isManualTrigger(job));
   return runBatch("country", due, db.countryRoundups, db);
 }
 
@@ -130,7 +144,7 @@ const EXCLUDED_REGION_IDS = new Set(
 );
 
 /** Region round-ups — every region except the whole-planet framing ones (bbox-scoped, no opt-in). */
-export async function generateRegions(_job: Job) {
+export async function generateRegions(job: Job) {
   const db = await getAppDb();
   const regions = await db.regions.list();
   const places: PlaceRef[] = regions
@@ -141,6 +155,6 @@ export async function generateRegions(_job: Job) {
       name: r.name,
       bbox: r.bbox,
     }));
-  const due = await filterDue("region", places, db.regionRoundups);
+  const due = await filterDue("region", places, db.regionRoundups, isManualTrigger(job));
   return runBatch("region", due, db.regionRoundups, db);
 }

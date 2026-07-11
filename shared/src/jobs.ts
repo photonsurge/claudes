@@ -97,6 +97,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   },
   ...WEATHER_MAP_JOBS,
   {
+    id: "weather-clear-gfs",
+    label: "Clear GFS data",
+    description:
+      "Delete every stored GFS run + its baked textures, so the globe shows no GFS overlay until a fresh run bakes. Does NOT touch the long-term history archive. Run \"Check weather run\" afterwards to rebake the current cycle.",
+    domain: "weather",
+    type: "weather",
+    event: "clearGfs",
+    group: "Weather maps",
+  },
+  {
     id: "forecast-backfill",
     label: "Backfill 3-day forecast",
     description:
@@ -217,9 +227,9 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   },
   {
     id: "place-roundups-countries",
-    label: "Country AI round-ups (12h)",
+    label: "Country AI round-ups (local ~6am/6pm)",
     description:
-      "Generate a 12-hour AI round-up for each round-up-enabled country — top-10 cities + capital conditions, area-weather, every active alert/volcano, and nearest tide/seismo gauges — continuing from the previous round-up. Enable countries on /countries.",
+      "Generate a 12-hour AI round-up for each round-up-enabled country — top-10 cities + capital conditions, area-weather, every active alert/volcano, and nearest tide/seismo gauges — continuing from the previous round-up. Scheduled hourly but each country only generates at its own local morning/evening; this button generates the whole set now. Enable countries on /countries.",
     domain: "placeRoundups",
     type: "placeRoundups",
     event: "generateCountries",
@@ -228,9 +238,9 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   },
   {
     id: "place-roundups-regions",
-    label: "Region AI round-ups (12h)",
+    label: "Region AI round-ups (local ~6am/6pm)",
     description:
-      "Generate a 12-hour AI round-up for every region — top cities, area-weather, active alerts/volcanoes and nearest gauges — continuing from the previous round-up.",
+      "Generate a 12-hour AI round-up for every region — top cities, area-weather, active alerts/volcanoes and nearest gauges — continuing from the previous round-up. Scheduled hourly but each region only generates at its own local morning/evening; this button generates the whole set now.",
     domain: "placeRoundups",
     type: "placeRoundups",
     event: "generateRegions",

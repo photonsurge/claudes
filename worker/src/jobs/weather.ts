@@ -21,6 +21,7 @@ import { ingestIconGlobal } from "../weather/iconGlobal";
 import { ingestHrdps } from "../weather/hrdps";
 import { ingestUkv } from "../weather/ukv";
 import { ingestOpenMeteo } from "../weather/openMeteo";
+import { runClearGfs } from "../weather/clear";
 
 /** See ../weather/check.ts */
 export async function check(job: Job) {
@@ -35,6 +36,11 @@ export async function ingest(job: Job) {
 /** See ../weather/seed.ts */
 export async function seedSample(job: Job) {
   return runSeedSample(job);
+}
+
+/** Delete every stored GFS run + its baked textures — see ../weather/clear.ts */
+export async function clearGfs(job: Job) {
+  return runClearGfs(job);
 }
 
 // ── Multi-supplier ingests (each idempotent: skips if already published) ──────

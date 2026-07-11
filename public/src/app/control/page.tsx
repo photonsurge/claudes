@@ -37,7 +37,7 @@ import { useVolcanoes } from "../../lib/volcanoes-overlay";
 import { useGeomag } from "../../lib/geomag-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
-import DirectorPanel from "../../components/DirectorPanel";
+import DirectorPanel, { type TabId as DirectorTabId } from "../../components/DirectorPanel";
 import ViewingOverlay from "../../components/ViewingOverlay";
 import QuakeReport from "../../components/broadcast/QuakeReport";
 import TrackInfoPanel from "../../components/broadcast/TrackInfoPanel";
@@ -74,6 +74,20 @@ export default function ControlPage() {
     save: saveDirector,
     discard: discardDirector,
   } = useDirectorConfig(sceneId);
+  // Director panel tab + settings-visibility are lifted here so the separate
+  // live-map ControlPanel can be hidden while the operator works the Director
+  // tab (its own settings form), and shown again on the Map/View tab or when
+  // the director is just running its log.
+  const [directorTab, setDirectorTab] = useState<DirectorTabId>("director");
+  const [directorShowSettings, setDirectorShowSettings] = useState(false);
+  const directorAuto = directorDraft.mode === "auto";
+  // Auto just switched — reset the log-vs-settings toggle so the form doesn't
+  // reappear already open from a prior session.
+  useEffect(() => {
+    setDirectorShowSettings(false);
+  }, [directorAuto]);
+  const directorFormOpen = !directorAuto || directorShowSettings;
+  const showControlPanel = !(directorFormOpen && directorTab === "director");
   const [cut, setCut] = useState<Segment | null>(null);
   // Click-to-select: the operator can click an event/quake while the director is
   // idle to pin its info box (same card the director shows on air).
@@ -328,22 +342,28 @@ export default function ControlPage() {
           dirty={directorDirty}
           liveState={state}
           applyLive={apply}
+          activeTab={directorTab}
+          onTabChange={setDirectorTab}
+          showSettings={directorShowSettings}
+          onToggleSettings={() => setDirectorShowSettings((s) => !s)}
         />
-        <ControlPanel
-          state={state}
-          manifest={manifest}
-          onChange={apply}
-          // Flying to a place means "look here" — stop the idle spin first so it
-          // doesn't drag the globe back to the old anchor when the flight lands.
-          onFitBounds={(bbox) => {
-            if (state.autoSpin) apply({ ...state, autoSpin: false });
-            globe.current?.fitBounds(bbox);
-          }}
-          onFlyTo={(center, zoom) => {
-            if (state.autoSpin) apply({ ...state, autoSpin: false });
-            globe.current?.flyTo(center, zoom);
-          }}
-        />
+        {showControlPanel ? (
+          <ControlPanel
+            state={state}
+            manifest={manifest}
+            onChange={apply}
+            // Flying to a place means "look here" — stop the idle spin first so it
+            // doesn't drag the globe back to the old anchor when the flight lands.
+            onFitBounds={(bbox) => {
+              if (state.autoSpin) apply({ ...state, autoSpin: false });
+              globe.current?.fitBounds(bbox);
+            }}
+            onFlyTo={(center, zoom) => {
+              if (state.autoSpin) apply({ ...state, autoSpin: false });
+              globe.current?.flyTo(center, zoom);
+            }}
+          />
+        ) : null}
       </aside>
     </main>
   );

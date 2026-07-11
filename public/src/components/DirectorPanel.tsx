@@ -5,12 +5,12 @@
  * a pre-broadcast countdown, and a live "on air / up next" readout — always
  * visible at the top regardless of setup state. Below that, the setup form is
  * split into two tabs over ONE shared draft:
- *  - "Director settings": pacing/threshold knobs — transition speed, ad cadence,
- *    quake/storm thresholds (DirectorTuning).
- *  - "Map/View settings": everything on screen — which kinds air and their hold
- *    durations (DirectorHolds), the basemap looks each touring kind cycles
- *    through (DirectorMapTypes), the country/area spotlight catalogs
- *    (DirectorSpotlights), and the saved-look slide library (DirectorSlides).
+ *  - "Director settings": how the show runs — pacing/threshold knobs
+ *    (DirectorTuning), which kinds air and their hold durations (DirectorHolds),
+ *    the country/area spotlight catalogs (DirectorSpotlights), and the saved-look
+ *    slide library per kind (DirectorSlides).
+ *  - "Map/View settings": the basemap looks each touring kind cycles through
+ *    (DirectorMapTypes).
  *
  * The form is click-to-save: fields on EITHER tab edit one local `draft`
  * (`edit`) and only persist when the operator hits Save (`save`) — the Save bar
@@ -27,7 +27,6 @@
  * played rather than re-fiddling the setup form mid-broadcast. "⚙ Settings"
  * swaps back to the form without leaving auto.
  */
-import { useEffect, useState } from "react";
 import type { DirectorConfig } from "@photonsurge/shared/director";
 import type { ControlState } from "@photonsurge/shared/control";
 import { useDirector } from "../lib/director";
@@ -46,7 +45,7 @@ const TABS = [
   { id: "director", label: "Director settings" },
   { id: "map", label: "Map/View settings" },
 ] as const;
-type TabId = (typeof TABS)[number]["id"];
+export type TabId = (typeof TABS)[number]["id"];
 
 export default function DirectorPanel({
   sceneId,
@@ -58,6 +57,10 @@ export default function DirectorPanel({
   dirty,
   liveState,
   applyLive,
+  activeTab,
+  onTabChange,
+  showSettings,
+  onToggleSettings,
 }: {
   sceneId: string;
   config: DirectorConfig;
@@ -68,17 +71,15 @@ export default function DirectorPanel({
   dirty: boolean;
   liveState: ControlState;
   applyLive: (next: ControlState) => void;
+  // Tab + settings-visibility are lifted to /control so the parent can hide the
+  // separate live-map ControlPanel while the operator is on the Director tab.
+  activeTab: TabId;
+  onTabChange: (tab: TabId) => void;
+  showSettings: boolean;
+  onToggleSettings: () => void;
 }) {
   const live = useDirector(sceneId);
   const auto = config.mode === "auto";
-
-  const [showSettings, setShowSettings] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabId>("director");
-  // Auto mode just switched on/off — reset the log-vs-settings toggle so it
-  // doesn't come back up already showing settings from a prior session.
-  useEffect(() => {
-    setShowSettings(false);
-  }, [auto]);
 
   const showForm = !auto || showSettings;
 
@@ -100,7 +101,7 @@ export default function DirectorPanel({
         onToggleAuto={() => applyNow({ mode: auto ? "off" : "auto" })}
         onSkip={() => applyNow({ skipNonce: config.skipNonce + 1 })}
         showSettings={showSettings}
-        onToggleSettings={() => setShowSettings((s) => !s)}
+        onToggleSettings={onToggleSettings}
       />
 
       <DirectorCountdown liveState={liveState} applyLive={applyLive} />
@@ -115,7 +116,7 @@ export default function DirectorPanel({
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setActiveTab(t.id)}
+                onClick={() => onTabChange(t.id)}
                 style={{
                   ...box,
                   cursor: "pointer",
@@ -131,14 +132,14 @@ export default function DirectorPanel({
           </div>
 
           {activeTab === "director" ? (
-            <DirectorTuning config={config} update={edit} />
-          ) : (
             <>
+              <DirectorTuning config={config} update={edit} />
               <DirectorHolds config={config} update={edit} />
-              <DirectorMapTypes config={config} update={edit} />
               <DirectorSpotlights config={config} update={edit} />
               <DirectorSlides config={config} update={edit} liveState={liveState} applyLive={applyLive} />
             </>
+          ) : (
+            <DirectorMapTypes config={config} update={edit} />
           )}
 
           <div

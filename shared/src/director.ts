@@ -617,6 +617,47 @@ function landSpotlightSlides(prefix: string): KindSlide[] {
 }
 
 /**
+ * The whole-planet establishing-shot library, shared by the `intro` (one-time
+ * opener) and `global` (recurring world spin) kinds — same seeded slides,
+ * id-prefixed per kind so the two catalogs stay independent. Mirrors
+ * `landSpotlightSlides` but for the globe: a handful of cinematic basemap looks
+ * plus one slide per NON-SEA scalar field, so a fresh config's globe rotation
+ * already showcases every land-and-atmosphere variable the instrument carries
+ * (temperature, humidity, dewpoint, rain, cloud, snow, pressure, CAPE, CIN,
+ * visibility, soil, gust). Ocean fields (sst/wave/salinity/current) and the
+ * nest-only radar are omitted — they read as empty or absent over a global spin.
+ * Every field look rides a subtle background wind + city labels; the cinematic
+ * basemap looks (city lights / aurora / magnetic) drop the field so the imagery
+ * leads.
+ */
+function establishingSlides(prefix: string): KindSlide[] {
+  const s = (id: string, name: string, look: KindLook, on: readonly string[]) =>
+    seedSlide(`${prefix}-${id}`, name, look, on);
+  const FIELD = ["showWind", "showCities"] as const;
+  const p = (activeVariable?: string): KindLook => ({ windMode: "particles", wind: SUBTLE_WIND, activeVariable });
+  return [
+    // ── Cinematic establishing looks ─────────────────────────────────────────
+    s("cinematic-dark", "Cinematic Dark", { basemap: "dark", windMode: "particles", wind: SUBTLE_WIND }, ["showWind", "showPressure", "showCities"]),
+    s("city-lights", "City Lights", { basemap: "night", windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } }, ["showCities"]),
+    s("aurora-glow", "Aurora Glow", { windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } }, ["showAurora", "showCities"]),
+    s("magnetic-field", "Magnetic Field", { basemap: "dark" }, ["showMagneticField", "showCities"]),
+    // ── Scalar weather fields — one slide per non-sea variable ───────────────
+    s("temperature", "Temperature", p("temp"), FIELD),
+    s("humidity-heat", "Humidity & Heat", p("humidity"), FIELD),
+    s("dewpoint", "Dewpoint", p("dewpoint"), FIELD),
+    s("rainfall", "Rainfall", p("rain"), FIELD),
+    s("cloud-cover", "Cloud Cover", p("cloud"), FIELD),
+    s("snow-ice", "Snow & Ice", p("snow"), FIELD),
+    s("pressure-systems", "Pressure Systems", p("pressure"), ["showWind", "showPressure", "showCities"]),
+    s("storm-energy", "Storm Energy", p("storm"), FIELD),
+    s("storm-cap", "Storm Cap", p("cin"), FIELD),
+    s("visibility", "Visibility", p("visibility"), FIELD),
+    s("soil-moisture", "Soil Moisture", p("soil"), FIELD),
+    s("severe-wind", "Severe Wind", { windMode: "particles", wind: GUST_WIND, activeVariable: "gust" }, FIELD),
+  ];
+}
+
+/**
  * Starter "look" library per kind (see `DirectorConfig.kindSlides`) — two
  * curated slides each, so a fresh "Look per shot type" panel isn't empty.
  * `ad` is skipped: an ad is a full-frame card (the map underneath never shows),
@@ -627,70 +668,12 @@ function landSpotlightSlides(prefix: string): KindSlide[] {
  * until the operator picks one.
  */
 export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
-  intro: [
-    seedSlide(
-      "intro-cinematic-dark",
-      "Cinematic Dark",
-      { basemap: "dark", windMode: "particles", wind: SUBTLE_WIND },
-      ["showWind", "showPressure", "showCities"],
-    ),
-    seedSlide(
-      "intro-city-lights",
-      "City Lights",
-      { basemap: "night", windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } },
-      ["showCities"],
-    ),
-    seedSlide("intro-aurora-glow", "Aurora Glow", { windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } }, [
-      "showAurora",
-      "showCities",
-    ]),
-    seedSlide(
-      "intro-pressure-systems",
-      "Pressure Systems",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "pressure" },
-      ["showWind", "showPressure", "showCities"],
-    ),
-    seedSlide(
-      "intro-snow-ice",
-      "Snow & Ice",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "snow" },
-      ["showWind", "showCities"],
-    ),
-    seedSlide("intro-magnetic-field", "Magnetic Field", { basemap: "dark" }, ["showMagneticField", "showCities"]),
-  ],
+  // One-time opener: the full whole-planet establishing library (see
+  // `establishingSlides` — cinematic basemaps + one slide per non-sea variable).
+  intro: establishingSlides("intro"),
   // The recurring world spin shares the intro opener's look library — same
   // establishing-shot looks, just aired as ordinary global filler rather than once.
-  global: [
-    seedSlide(
-      "global-cinematic-dark",
-      "Cinematic Dark",
-      { basemap: "dark", windMode: "particles", wind: SUBTLE_WIND },
-      ["showWind", "showPressure", "showCities"],
-    ),
-    seedSlide(
-      "global-city-lights",
-      "City Lights",
-      { basemap: "night", windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } },
-      ["showCities"],
-    ),
-    seedSlide("global-aurora-glow", "Aurora Glow", { windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } }, [
-      "showAurora",
-      "showCities",
-    ]),
-    seedSlide(
-      "global-pressure-systems",
-      "Pressure Systems",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "pressure" },
-      ["showWind", "showPressure", "showCities"],
-    ),
-    seedSlide(
-      "global-snow-ice",
-      "Snow & Ice",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "snow" },
-      ["showWind", "showCities"],
-    ),
-    seedSlide("global-magnetic-field", "Magnetic Field", { basemap: "dark" }, ["showMagneticField", "showCities"]),
-  ],
+  global: establishingSlides("global"),
   ocean: [
     seedSlide(
       "ocean-storm-seas",
