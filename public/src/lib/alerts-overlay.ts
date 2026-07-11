@@ -54,15 +54,21 @@ export function useAlertFeatures(
     if (!armed) return;
     let cancelled = false;
     const poll = async () => {
-      const alerts = await listAlerts({ activeOnly: true, severityMin, limit: 5000 });
+      // Drop severityMin from the QUERY so this shares world-watch's canonical
+      // `/api/alerts?active=1&limit=5000` Redis entry — one of the two heavy
+      // 7s alerts fetches becomes a 6ms hit. The operator's severity floor is
+      // applied client-side (like hazardsOff below), so raising it also filters
+      // instantly instead of refetching.
+      const alerts = await listAlerts({ activeOnly: true, limit: 5000 });
+      // A transient empty/failed FETCH must not blank an on-air overlay; keep the
+      // last good features. (A legit filter-to-empty below still clears it.)
+      if (cancelled || alerts.length === 0) return;
       // One polygon per event: keep only each cluster's representative (id ===
-      // groupId). Grouping itself was done server-side (see /api/alerts).
-      const oncePerEvent = alerts.filter((a) => !a.groupId || a.id === a.groupId);
-      const next = alertsToFeatures(oncePerEvent);
-      // A transient empty/failed fetch must not blank an on-air overlay; keep
-      // the last good features until a real non-empty result arrives.
-      if (cancelled || next.length === 0) return;
-      setFeatures(next);
+      // groupId; grouping done server-side), at or above the operator's floor.
+      const oncePerEvent = alerts.filter(
+        (a) => (!a.groupId || a.id === a.groupId) && a.maxSeverityRank >= severityMin,
+      );
+      setFeatures(alertsToFeatures(oncePerEvent));
     };
     poll();
     // io-driven: ALERTS_UPDATED (above) refetches the instant alerts change, so

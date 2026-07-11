@@ -39,8 +39,12 @@ export function useQuakes(enabled: boolean, minMag: number): Quake[] {
     }
     let cancelled = false;
     const poll = async () => {
-      const r = await listQuakes(undefined, minMag);
-      if (!cancelled) setQuakes(r.quakes);
+      // Share world-watch's canonical `/api/tracks/seismic` (all quakes) Redis
+      // entry instead of a separate ?minMag= query — one of the two fetches
+      // becomes a cache hit. Apply the operator's magnitude floor client-side, so
+      // changing it filters instantly instead of refetching.
+      const r = await listQuakes();
+      if (!cancelled) setQuakes(r.quakes.filter((q) => q.mag >= minMag));
     };
     poll();
     const iv = setInterval(poll, QUAKE_FALLBACK_MS);

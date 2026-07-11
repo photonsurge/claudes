@@ -4,7 +4,7 @@
  * per-city /climate requests stop 404-ing. Guards the zoom gate, the
  * antimeridian window, and fail-open behaviour.
  */
-import { framedCityPoints } from "./climate";
+import { framedCityPoints, cityClimatePoints } from "./climate";
 
 // Only db.cities.getAll is exercised by framedCityPoints.
 function mockDb(getAll: jest.Mock) {
@@ -57,5 +57,35 @@ describe("framedCityPoints", () => {
   it("is fail-open: a query error yields [] and never throws", async () => {
     const getAll = jest.fn().mockRejectedValue(new Error("mongo down"));
     await expect(framedCityPoints(mockDb(getAll), [0, 40], 5)).resolves.toEqual([]);
+  });
+});
+
+describe("cityClimatePoints", () => {
+  it("dedups cities sharing a 0.1° key, keeping the first (biggest) seen", () => {
+    // Two London points round to the same 0.1° key; the biggest-first input keeps
+    // the first. A distinct city keeps its own key.
+    const pts = cityClimatePoints([
+      { lat: 51.5074, lng: -0.1278 }, // London → 51.5,-0.1
+      { lat: 51.52, lng: -0.09 }, //     also 51.5,-0.1 — dropped
+      { lat: 52.48, lng: -1.9 }, //      Birmingham → 52.5,-1.9
+    ]);
+    expect(pts).toEqual([
+      { key: "51.5,-0.1", lat: 51.5074, lng: -0.1278 },
+      { key: "52.5,-1.9", lat: 52.48, lng: -1.9 },
+    ]);
+  });
+
+  it("skips rows with non-numeric / non-finite coords", () => {
+    const pts = cityClimatePoints([
+      { lat: 50, lng: 10 },
+      { lat: null as any, lng: 10 },
+      { lat: NaN, lng: 10 },
+      { lat: 40, lng: "x" as any },
+    ]);
+    expect(pts).toEqual([{ key: "50.0,10.0", lat: 50, lng: 10 }]);
+  });
+
+  it("returns [] for an empty list", () => {
+    expect(cityClimatePoints([])).toEqual([]);
   });
 });

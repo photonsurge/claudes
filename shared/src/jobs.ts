@@ -124,7 +124,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "climate",
     type: "climate",
     event: "backfillClimate",
-    group: "Weather maps",
+    group: "Climate",
     priority: 10,
     data: { minPopulation: 100_000 },
     stoppable: true,

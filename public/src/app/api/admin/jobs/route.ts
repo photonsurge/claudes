@@ -72,13 +72,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    // The all-city job chains its own bounded continuations. Reuse an existing
-    // active/waiting chain so an impatient double-click cannot start two sets of
-    // Wikipedia requests in parallel.
-    if (job.id === "cities-enrich-all") {
+    // Stoppable jobs (cities-enrich-all, climate-backfill, …) chain their own
+    // bounded continuations. Reuse an existing active/waiting chain so an
+    // impatient double-click cannot start two parallel sweeps of the same work.
+    if (job.stoppable) {
       const queue = getQueue();
       const existing = (await queue.getJobs(["active", "waiting", "delayed", "prioritized"], 0, 100))
-        .find((candidate) => candidate.data?.type === "cities" && candidate.data?.event === "enrichWikiAll");
+        .find((candidate) => candidate.data?.type === job.type && candidate.data?.event === job.event);
       if (existing) {
         return NextResponse.json(
           { ok: true, id: job.id, jobId: String(existing.id ?? ""), alreadyQueued: true, at: new Date().toISOString() },
