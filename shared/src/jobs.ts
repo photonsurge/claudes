@@ -343,6 +343,15 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Countries & Regions",
   },
   {
+    id: "regions-places",
+    label: "Rebuild region places",
+    description: "Recompute each land region's member countries + biggest cities from the curated relations. Run after seeding countries & cities.",
+    domain: "regions",
+    type: "regions",
+    event: "enrichPlaces",
+    group: "Countries & Regions",
+  },
+  {
     id: "area-weather-run",
     label: "Refresh area-weather reports",
     description: "Snapshot mean/min/max temp/gust/rain + hazard flags for every country (real boundary) and region (bbox) right now.",

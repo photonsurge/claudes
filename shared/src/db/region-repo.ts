@@ -1,6 +1,6 @@
 import type { Model } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
-import type { iRegion, iRegionModel } from "./region-model";
+import type { iRegion, iRegionModel, iRegionCountry, iRegionCity } from "./region-model";
 
 const strip = (doc: any): iRegionModel => {
   const { __v, _id, ...rest } = doc;
@@ -67,6 +67,14 @@ export function makeRegionRepo(model: Model<iRegionModel>) {
         wikiGallery?: string[];
         wikiFetchedAt?: Date;
       },
+    ): Promise<void> {
+      await model.updateOne({ regionId }, { $set: patch }).exec();
+    },
+
+    /** Store the recomputed places dossier (member countries + biggest cities). */
+    async updatePlaces(
+      regionId: string,
+      patch: { countries?: iRegionCountry[]; topCities?: iRegionCity[]; placesFetchedAt?: Date },
     ): Promise<void> {
       await model.updateOne({ regionId }, { $set: patch }).exec();
     },

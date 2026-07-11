@@ -87,6 +87,9 @@ export default function RegionsPage() {
           <button type="button" onClick={() => trigger("regions-enrich", "Enrich")} style={primary} disabled={busy === "regions-enrich"}>
             {busy === "regions-enrich" ? "…" : "Enrich all (Wikipedia)"}
           </button>
+          <button type="button" onClick={() => trigger("regions-places", "Places")} style={primary} disabled={busy === "regions-places"}>
+            {busy === "regions-places" ? "…" : "Rebuild places"}
+          </button>
           <button type="button" onClick={() => trigger("area-weather-run", "Weather refresh")} style={primary} disabled={busy === "area-weather-run"}>
             {busy === "area-weather-run" ? "…" : "Refresh weather now"}
           </button>

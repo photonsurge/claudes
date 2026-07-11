@@ -148,7 +148,9 @@ export default function BroadcastCard({
           fontFamily: "system-ui, sans-serif",
           color: INK,
           overflow: "hidden",
-          ...style,
+          // NB: the template deliberately does NOT spread the panel's `style` —
+          // it owns the uniform size, so a panel's own `width`/`padding` override
+          // (e.g. ForecastPanel's `width:"auto"`) can't break the fixed template.
         }}
       >
         <div style={{ padding: "14px 20px 10px", flexShrink: 0 }}>

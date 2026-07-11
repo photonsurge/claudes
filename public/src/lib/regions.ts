@@ -5,6 +5,7 @@ import { useSocket } from "./socket-provider";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 import type { iAreaWeatherReportModel } from "@photonsurge/shared/db/area-weather-report-model";
+import type { RegionActivity } from "@photonsurge/shared/region-activity";
 
 export interface RegionWithWeather extends iRegionModel {
   weather: iAreaWeatherReportModel | null;
@@ -15,6 +16,8 @@ export interface RegionDetail {
   region: iRegionModel;
   weather: iAreaWeatherReportModel | null;
   history: iAreaWeatherReportModel[];
+  /** Live alerts/seismic/volcanic within the region (null for oceans). */
+  activity: RegionActivity | null;
 }
 
 const EMPTY: RegionWithWeather[] = [];
@@ -39,7 +42,7 @@ export async function getRegion(id: string): Promise<{ detail?: RegionDetail; er
     const res = await fetch(`/api/regions/${encodeURIComponent(id)}`, { cache: "no-store" });
     const body = await res.json().catch(() => null);
     if (!res.ok || !body?.region) return { error: body?.error ?? `HTTP ${res.status}` };
-    return { detail: { region: body.region, weather: body.weather ?? null, history: body.history ?? [] } };
+    return { detail: { region: body.region, weather: body.weather ?? null, history: body.history ?? [], activity: body.activity ?? null } };
   } catch (error) {
     return { error: String(error) };
   }

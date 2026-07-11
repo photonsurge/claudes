@@ -11,11 +11,12 @@
  * guess, not a real alert) surfaces on a card when that day crosses a
  * wind/heat/cold/rain/storm floor.
  */
+import { useContext } from "react";
 import { usePointForecast, useAreaForecast, type ForecastDay, type AreaForecastDay } from "../../lib/forecast-client";
 import { formatReading } from "./PointHistoryPanel";
 import { SectionTitle } from "./PointHistoryPanel";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
-import BroadcastCard from "./BroadcastCard";
+import BroadcastCard, { DeckChromeContext } from "./BroadcastCard";
 import { WeatherGlyph, WarnTriangle } from "./glyphs";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
 
@@ -183,6 +184,10 @@ export default function ForecastPanel({
   const area = useAreaForecast(bbox);
   const src = bbox ? area : point;
   const days = src.days.map(normalizeDay);
+  // Inside the on-air deck the fixed-size template owns the shell, so fill the
+  // full card width with the day strip (like RoundupStatsPanel's tiles) rather
+  // than the compact, left-clustered fixed-width cards used off-deck.
+  const inDeck = useContext(DeckChromeContext) != null;
 
   // Inline: a bare section (matching ViewingOverlay's section styling) that shows
   // a spinner while the fetch is in flight, then the fill-width day strip. Hides
@@ -213,13 +218,13 @@ export default function ForecastPanel({
   return (
     <BroadcastCard
       theme={theme}
-      style={{ width: "auto", boxSizing: "border-box", padding: `${compact ? 10 : 14}px 16px` }}
+      style={inDeck ? undefined : { width: "auto", boxSizing: "border-box", padding: `${compact ? 10 : 14}px 16px` }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 10 }}>
         <SectionTitle title="3-DAY FORECAST" tag={bbox ? "AREA" : "POINT"} accent={theme.accent} />
         <div style={{ display: "flex", flexDirection: "row", gap: STRIP_GAP }}>
           {days.map((d) => (
-            <DayCard key={d.date} day={d} accent={theme.accent} compact={compact} />
+            <DayCard key={d.date} day={d} accent={theme.accent} compact={compact} fill={inDeck} />
           ))}
         </div>
       </div>

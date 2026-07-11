@@ -23,6 +23,13 @@ function formatDate(value?: Date): string {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
 
+function formatPop(n?: number): string {
+  if (!n) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return String(n);
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -121,6 +128,103 @@ export default function RegionDetail({ id }: { id: string }) {
         </dl>
       </article>
 
+      {region.group !== "ocean" ? (
+        <section style={{ ...panel, marginTop: 16, padding: 15 }}>
+          <div style={{ color: "#cbd5e1", fontSize: 13 }}>Places</div>
+          <div style={{ color: muted, fontSize: 11, marginTop: 3 }}>
+            {region.placesFetchedAt
+              ? `Member countries + biggest cities · updated ${formatDate(region.placesFetchedAt)}`
+              : "Not built yet — hit Rebuild places on the catalog page."}
+          </div>
+
+          {region.countries && region.countries.length > 0 && (
+            <>
+              <div style={historySectionLabel}>Countries ({region.countries.length})</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {region.countries.map((c) => (
+                  <div key={c.cc} style={countryChip} title={c.cityCount ? `${c.cityCount} cities` : undefined}>
+                    <span style={{ color: "#e2e8f0", fontSize: 13 }}>{c.name}</span>
+                    {c.topCity && <span style={{ color: muted, fontSize: 11 }}>· {c.topCity}</span>}
+                    {c.population ? <span style={{ color: "#64748b", fontSize: 11 }}>· {formatPop(c.population)}</span> : null}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {region.topCities && region.topCities.length > 0 && (
+            <>
+              <div style={historySectionLabel}>Biggest cities ({region.topCities.length})</div>
+              <div style={cityGrid}>
+                {region.topCities.map((c, i) => (
+                  <div key={`${c.name}-${c.lat}-${c.lng}-${i}`} style={cityRow}>
+                    <span style={{ color: "#e2e8f0", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                    <span style={{ color: muted, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.country ?? c.cc ?? ""}</span>
+                    <span style={{ color: "#94a3b8", fontSize: 12, textAlign: "right" }}>{formatPop(c.population)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      ) : null}
+
+      {data?.activity && (
+        <section style={{ ...panel, marginTop: 16, padding: 15 }}>
+          <div style={{ color: "#cbd5e1", fontSize: 13 }}>Activity now</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            <span style={activityChip}>⚠ {data.activity.alerts.count} alerts</span>
+            <span style={activityChip}>◒ {data.activity.seismic.count} quakes{data.activity.seismic.maxMag ? ` · max M${data.activity.seismic.maxMag.toFixed(1)}` : ""}</span>
+            <span style={activityChip}>🌋 {data.activity.volcanic.count} volcanoes</span>
+          </div>
+
+          {data.activity.alerts.items.length > 0 && (
+            <>
+              <div style={historySectionLabel}>Alerts</div>
+              <div style={{ display: "grid", gap: 4 }}>
+                {data.activity.alerts.items.map((a) => (
+                  <div key={a.id} style={activityRow}>
+                    <span style={{ color: "#fca5a5", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.event || "Alert"}</span>
+                    <span style={{ color: muted, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.area || a.headline || ""}</span>
+                    <span style={{ color: "#f97316", fontSize: 11, textAlign: "right" }}>sev {a.severity}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {data.activity.seismic.items.length > 0 && (
+            <>
+              <div style={historySectionLabel}>Earthquakes</div>
+              <div style={{ display: "grid", gap: 4 }}>
+                {data.activity.seismic.items.map((q) => (
+                  <div key={q.id} style={activityRow}>
+                    <span style={{ color: "#e2e8f0", fontSize: 13 }}>M{q.mag.toFixed(1)}</span>
+                    <span style={{ color: muted, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.place || ""}</span>
+                    <span style={{ color: "#94a3b8", fontSize: 11, textAlign: "right" }}>{formatDate(q.time)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {data.activity.volcanic.items.length > 0 && (
+            <>
+              <div style={historySectionLabel}>Volcanoes</div>
+              <div style={{ display: "grid", gap: 4 }}>
+                {data.activity.volcanic.items.map((v) => (
+                  <div key={v.id} style={activityRow}>
+                    <span style={{ color: "#e2e8f0", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.name}</span>
+                    <span style={{ color: muted, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.country || ""}</span>
+                    <span style={{ color: "#f59e0b", fontSize: 11, textAlign: "right" }}>{v.status}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
       {previewState && (
         <section style={{ ...panel, marginTop: 16, overflow: "hidden" }}>
           <div style={{ padding: "12px 15px", borderBottom: "1px solid #1b2030", color: "#cbd5e1", fontSize: 13 }}>Location preview</div>
@@ -197,4 +301,44 @@ const historyCard: React.CSSProperties = {
   borderRadius: 8,
   border: "1px solid #1b2030",
   background: "#080c14",
+};
+const countryChip: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "baseline",
+  gap: 5,
+  padding: "5px 10px",
+  borderRadius: 6,
+  border: "1px solid #1b2030",
+  background: "#080c14",
+};
+const cityGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+  gap: "4px 14px",
+};
+const cityRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr auto auto",
+  alignItems: "baseline",
+  gap: 8,
+  padding: "5px 8px",
+  borderBottom: "1px solid #131926",
+  minWidth: 0,
+};
+const activityChip: React.CSSProperties = {
+  padding: "4px 10px",
+  borderRadius: 6,
+  border: "1px solid #1b2030",
+  background: "#080c14",
+  color: "#cbd5e1",
+  fontSize: 12,
+};
+const activityRow: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "auto 1fr auto",
+  alignItems: "baseline",
+  gap: 8,
+  padding: "5px 8px",
+  borderBottom: "1px solid #131926",
+  minWidth: 0,
 };
