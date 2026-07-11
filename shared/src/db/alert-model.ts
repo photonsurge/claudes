@@ -182,5 +182,15 @@ AlertSchema.index({ active: 1, maxSeverityRank: -1, sent: -1 }, { name: "alert_a
 AlertSchema.index({ source: 1, active: 1 }, { name: "alert_source_active_ix" });
 // Point/region lookups ($geoIntersects). Sparse: geocode-only feeds have no geometry.
 AlertSchema.index({ "info.area.geometry": "2dsphere" }, { name: "alert_geo_ix", sparse: true });
+// Area-scoped ACTIVE-alert intersect — the focus bundle's areaAlerts + /api/alerts?bbox
+// ({active:true, "info.area.geometry":$geoIntersects}). Without the active-equality
+// prefix the planner prefers the active-sort index and scans EVERY active alert
+// (thousands), geo-filtering in memory for a handful of hits — and keeps burning
+// ~1s replanning that terrible plan. This prefix makes the intersect index-driven:
+// a tiny candidate set, so the {maxSeverityRank,sent} sort over it is trivial.
+AlertSchema.index(
+  { active: 1, "info.area.geometry": "2dsphere" },
+  { name: "alert_active_geo_ix", sparse: true },
+);
 
 export const getAlertModel = (conn: Connection) => getModel<iAlertModel>(conn, "Alert", AlertSchema);

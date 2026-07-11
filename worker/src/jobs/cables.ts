@@ -9,6 +9,13 @@ import { emitWorkerEvent } from "../socket";
 
 const TAG = "job:cables";
 
+// Skip the whole-set rewrite if the cache is younger than this. Under the weekly
+// cron so a normal scheduled run still refreshes; it only suppresses the extra
+// boot run (the job is registered immediately:true) so a worker restart doesn't
+// re-write ~500 big path arrays every time. Override with the env; `force` (the
+// manual yarn script) always refreshes.
+const CABLE_MAX_AGE_MS = Number(process.env.CABLE_REFRESH_MAX_AGE_MS || 6 * 24 * 60 * 60 * 1000);
+
 /**
  * Dispatched as type "cables", event "refresh". Pulls TeleGeography's open
  * submarine-cable + landing-point GeoJSON and replaces the cached set in Mongo.
@@ -18,7 +25,17 @@ const TAG = "job:cables";
  */
 export async function refresh(_job: Job) {
   const db = await getAppDb();
+  const force = Boolean((_job?.data as { force?: boolean } | undefined)?.force);
   try {
+    // Near-static + a heavy geometry rewrite → don't redo it on every boot.
+    if (!force) {
+      const newest = await db.cables.newestFetchedAt();
+      if (newest && Date.now() - newest.getTime() < CABLE_MAX_AGE_MS) {
+        const result = { skipped: true, ageHours: Math.round((Date.now() - newest.getTime()) / 3_600_000) };
+        log(TAG, `cables cache fresh — skipping refresh`, result);
+        return result;
+      }
+    }
     const { cables, landings } = await fetchCableData();
     const r = await db.cables.replace(cables, landings);
     const result = { cables: r.cables, landings: r.landings };

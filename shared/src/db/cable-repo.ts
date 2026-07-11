@@ -75,6 +75,15 @@ export function makeCableRepo(
       return { cables: cables.length, landings: landings.length };
     },
 
+    /** When the cached set was last written (newest cable's fetchedAt), or null if empty. */
+    async newestFetchedAt(): Promise<Date | null> {
+      const doc = await cableModel
+        .findOne({}, { fetchedAt: 1, _id: 0 })
+        .sort({ fetchedAt: -1 })
+        .lean();
+      return doc?.fetchedAt ? new Date(doc.fetchedAt) : null;
+    },
+
     /** The full cached dataset for the overlay. */
     async list(): Promise<{ cables: Cable[]; landings: LandingPoint[] }> {
       const [cableDocs, landingDocs] = await Promise.all([

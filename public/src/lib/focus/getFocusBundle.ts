@@ -19,6 +19,7 @@ import { cityGeoWithinBox } from "@photonsurge/shared/db/city-model";
 import { buildHistorySeries, buildAreaHistorySeries, type FrameLoader } from "../weather-history";
 import { buildForecastDays, buildAreaForecastDays } from "../weather-forecast";
 import { alertsToFeatures, type Alert, type AlertFeature } from "../alerts";
+import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { isTargetedEvent, hasRealLocation } from "../../components/broadcast/kinds";
 import { haversineKm } from "../geo";
 import { regionMinPop } from "../cities";
@@ -91,6 +92,19 @@ async function climateFor(
 
 function bboxArea(b: [number, number, number, number]): number {
   return Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
+}
+
+/**
+ * The bundle's areaAlerts feed the on-air PANELS (headline/severity) and the
+ * client bbox re-scope, which needs only a representative point — the globe draws
+ * alert polygons from the separate overlay feed, not the bundle. So replace each
+ * alert's full MultiPolygon with a single rep point: a busy region returned ~10MB
+ * of coordinates per cut (into Redis + the client heap) for geometry nothing here
+ * renders. Falls back to the original geometry if no point resolves.
+ */
+function slimAlertGeometry(f: AlertFeature): AlertFeature {
+  const pt = alertRepPoint(f.geometry as Parameters<typeof alertRepPoint>[0]);
+  return pt ? { ...f, geometry: { type: "Point", coordinates: pt } } : f;
 }
 
 /** Smallest country whose real geometry contains the point (mirrors /api/countries/at). */
@@ -268,7 +282,7 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     hasLoc
       ? db.alerts
           .list({ activeOnly: true, bbox })
-          .then((rows) => alertsToFeatures(rows as unknown as Alert[]))
+          .then((rows) => alertsToFeatures(rows as unknown as Alert[]).map(slimAlertGeometry))
       : Promise.resolve([] as AlertFeature[]),
     // areaQuakes
     hasLoc ? db.quakes.list({ bbox, limit: 50 }).then((rows) => rows.map(mapQuake)) : Promise.resolve([]),

@@ -11,7 +11,8 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import { refresh } from "../jobs/cables";
 
 (async () => {
-  const res = await refresh({ id: "manual", data: { data: {} } } as unknown as Job);
+  // force: bypass the freshness gate — a manual run always re-pulls.
+  const res = await refresh({ id: "manual", data: { force: true } } as unknown as Job);
   console.log("cables refresh:", res);
   const db = await getAppDb();
   console.log("totals in Mongo:", await db.cables.count());
