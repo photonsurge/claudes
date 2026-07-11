@@ -4,7 +4,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import type { City } from "../../lib/cities";
 
 const seg = (over: Record<string, unknown>): Segment =>
-  ({ kind: "weather", id: "weather:x", title: "X", camera: { center: [0, 0], zoom: 3 }, ...over }) as unknown as Segment;
+  ({ kind: "point", id: "point:x", title: "X", camera: { center: [0, 0], zoom: 3 }, ...over }) as unknown as Segment;
 
 const ctx = (over: Partial<ModeSlideContext> = {}): ModeSlideContext => ({
   cities: [],
@@ -34,7 +34,23 @@ const ids = (s: Segment, c: ModeSlideContext) => modeSlides(s, c).map((x) => x.i
 
 describe("modeSlides", () => {
   it("a plain wide shot shows only the now-viewing card", () => {
-    expect(ids(seg({ kind: "weather" }), ctx())).toEqual(["onair"]);
+    expect(ids(seg({ kind: "point" }), ctx())).toEqual(["onair"]);
+  });
+
+  it("a country spotlight folds its place round-up in as the second slide when it has one", () => {
+    const bbox: [number, number, number, number] = [-1, -1, 1, 1];
+    const roundup = {
+      narrative: "Settled and mild across the country.",
+      inputs: { topCities: [], alerts: [], volcanoes: [] },
+    } as unknown as ModeSlideContext["countryRoundup"];
+    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, countryRoundup: roundup }))).toEqual([
+      "onair",
+      "place-roundup",
+      "topcities",
+      "cityconditions",
+    ]);
+    // No round-up (or an empty one) → the slide is dropped, spotlight reads as before.
+    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities", "cityconditions"]);
   });
 
   it("a country spotlight adds top-cities, and the area forecast only when it has data", () => {
@@ -49,22 +65,32 @@ describe("modeSlides", () => {
   });
 
   it("every mode leads with the uniform on-air lede", () => {
-    expect(ids(seg({ kind: "weather" }), ctx())[0]).toBe("onair");
+    expect(ids(seg({ kind: "point" }), ctx())[0]).toBe("onair");
     expect(ids(seg({ kind: "quake", quake: { mag: 6.1, depthKm: 10 } }), ctx())[0]).toBe("onair");
     expect(ids(seg({ kind: "storm" }), ctx())[0]).toBe("onair");
     expect(ids(seg({ kind: "flight", trackInfo: { label: "AF1" } }), ctx())[0]).toBe("onair");
   });
 
-  it("a quake shows the lede, seismic report then the cities-near enrichment", () => {
-    expect(ids(seg({ kind: "quake", quake: { mag: 6.1, depthKm: 10 } }), ctx())).toEqual(["onair", "quake", "nearby"]);
+  it("a targeted event reads lede → [seismic] → close cities → forecast → near-event", () => {
+    const bbox: [number, number, number, number] = [-1, -1, 1, 1];
+    // Framed area + a rich near-event (two cities) → the full targeted deck.
+    expect(
+      ids(
+        seg({ kind: "quake", quake: { mag: 6.1, depthKm: 10 } }),
+        ctx({ histBbox: bbox, histCenter: [0, 0], hasFramedForecast: true, cities: [cityAt(0, 0), cityAt(0.1, 0.1)] }),
+      ),
+    ).toEqual(["onair", "quake", "topcities", "cityconditions", "forecast", "nearby"]);
+    // A storm (no quake payload) with a framed area but no forecast/near-event
+    // content → just the lede + the close-cities pages.
+    expect(ids(seg({ kind: "storm" }), ctx({ histBbox: bbox }))).toEqual(["onair", "topcities", "cityconditions"]);
   });
 
-  it("a quake with no quake payload falls back to the lede + enrichment", () => {
-    expect(ids(seg({ kind: "quake" }), ctx())).toEqual(["onair", "nearby"]);
-  });
-
-  it("a non-quake targeted event (storm) shows the lede + cities-near enrichment", () => {
-    expect(ids(seg({ kind: "storm" }), ctx())).toEqual(["onair", "nearby"]);
+  it("drops the sparse near-event page when it would show a single bare city", () => {
+    // One curated city with no photo/blurb and no cams → the old empty
+    // 'near this event' card is no longer added.
+    expect(ids(seg({ kind: "storm" }), ctx({ cities: [cityAt(0, 0)] }))).toEqual(["onair"]);
+    // A second nearby city makes the page worth a slide again.
+    expect(ids(seg({ kind: "storm" }), ctx({ cities: [cityAt(0, 0), cityAt(0.1, 0.1)] }))).toEqual(["onair", "nearby"]);
   });
 
   it("a notable track shows the lede then the track-info card", () => {
@@ -85,14 +111,14 @@ describe("modeSlides", () => {
 
   it("a located wide shot folds in the AREA HISTORY (current & recent) slide", () => {
     expect(
-      ids(seg({ kind: "weather" }), ctx({ segmentHasLocation: true, histCenter: [0, 0], histBbox: bbox })),
+      ids(seg({ kind: "point" }), ctx({ segmentHasLocation: true, histCenter: [0, 0], histBbox: bbox })),
     ).toEqual(["onair", "history"]);
   });
 
   it("a located wide shot with framed forecast reads START → WEATHER → CURRENT & RECENT", () => {
     expect(
       ids(
-        seg({ kind: "weather" }),
+        seg({ kind: "point" }),
         ctx({ segmentHasLocation: true, histCenter: [0, 0], histBbox: bbox, hasFramedForecast: true }),
       ),
     ).toEqual(["onair", "forecast", "history"]);

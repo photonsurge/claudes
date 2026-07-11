@@ -41,7 +41,7 @@ import { useSocket } from "./socket-provider";
  *    overlay look (aurora, live satellite imagery) — and relabel the on-air card
  *    per type. The tour tables live in shared/director-rois (globalMapTour), and
  *    each type is gated on live data being available so a spin never lands blank.
- *  - REGION shots (country/weather) sweep the valid land fields; `storm` reads the
+ *  - REGION shots (country) sweep the valid land fields; `storm` reads the
  *    per-hazard plan (hazardMapPlan) so a heat warning shows humidity→temp and a
  *    tornado CAPE→radar→gust. `quake` tours terrain looks (contours → relief →
  *    satellite) under a fixed headline card — no weather field, and the card
@@ -49,7 +49,6 @@ import { useSocket } from "./socket-provider";
  */
 const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
   country: ["temp", "humidity", "rain", "gust", "cloud", "visibility"],
-  weather: ["temp", "humidity", "rain", "gust", "cloud", "visibility"],
 };
 const VAR_CYCLE_MS = 5500;
 /** Per-map dwell for the global map-type tour — a touch longer, each look is a beat. */

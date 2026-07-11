@@ -1,8 +1,11 @@
 /**
- * Client helpers + types for the per-place AI round-ups admin screen. Fetches
- * from /api/admin/place-roundups; re-exports the shared model shapes so the page
- * has one import for both.
+ * Client helpers + types for the per-place AI round-ups. The admin screen reads
+ * the index + history from /api/admin/place-roundups; the broadcast frame polls a
+ * single place's latest from the public /api/roundup/place. Re-exports the shared
+ * model shapes so callers have one import for both.
  */
+import { useEffect, useState } from "react";
+
 export type {
   PlaceRoundupKind,
   RoundupNarrativeStatus,
@@ -48,6 +51,52 @@ export async function getPlaceRoundupDetail(
   );
   if (!res.ok) throw new Error(`place round-up detail fetch failed: ${res.status}`);
   return res.json();
+}
+
+/** Just the latest round-up for one place, from the public broadcast endpoint —
+ *  the region-mode deck slide (no history/index). Null when the place has none. */
+export async function getLatestPlaceRoundup(
+  kind: PlaceRoundupKind,
+  placeId: string,
+): Promise<iPlaceRoundupModel | null> {
+  const res = await fetch(`/api/roundup/place?kind=${kind}&placeId=${encodeURIComponent(placeId)}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`place round-up fetch failed: ${res.status}`);
+  const body = (await res.json()) as { latest: iPlaceRoundupModel | null };
+  return body.latest;
+}
+
+/** Poll one place's latest round-up so a country/region shot carries its current
+ *  narrative + stats. Place round-ups regenerate on a 12h cadence, so a 5-minute
+ *  refresh is plenty; `placeId` null (off a region shot) clears + skips fetching. */
+export function useLatestPlaceRoundup(
+  kind: PlaceRoundupKind,
+  placeId: string | null,
+): iPlaceRoundupModel | null {
+  const [roundup, setRoundup] = useState<iPlaceRoundupModel | null>(null);
+
+  useEffect(() => {
+    if (!placeId) {
+      setRoundup(null);
+      return;
+    }
+    let cancelled = false;
+    const load = () =>
+      getLatestPlaceRoundup(kind, placeId)
+        .then((r) => {
+          if (!cancelled) setRoundup(r);
+        })
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [kind, placeId]);
+
+  return roundup;
 }
 
 /** Kind tabs — each maps to the job that generates it, for the "Generate now" button. */

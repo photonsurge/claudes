@@ -28,7 +28,7 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
   ocean: "Ocean (world)",
   orbital: "Orbital (satellites)",
   country: "Countries",
-  weather: "Weather",
+  point: "Point (sandbox)", // not director-scheduled; DirectorHolds iterates SEGMENT_KINDS so this never renders
   storm: "Severe storms",
   volcano: "Volcanoes",
   quake: "Earthquakes",

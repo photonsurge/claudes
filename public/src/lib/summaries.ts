@@ -12,6 +12,7 @@ export type {
   iSummaryTopEvent as SummaryTopEvent,
 } from "@photonsurge/shared/db/event-summary-model";
 
+import { useEffect, useState } from "react";
 import type { SummaryPeriod, iEventSummaryModel } from "@photonsurge/shared/db/event-summary-model";
 
 export interface SummariesResponse {
@@ -30,6 +31,41 @@ export async function getSummaries(
   });
   if (!res.ok) throw new Error(`summaries fetch failed: ${res.status}`);
   return res.json();
+}
+
+/** Just the latest round-up for a cadence — the broadcast frame's world-spin
+ *  deck slide (no history needed). Fetches the public /api/roundup/latest. */
+export async function getLatestRoundup(
+  period: SummaryPeriod = "hourly",
+): Promise<iEventSummaryModel | null> {
+  const res = await fetch(`/api/roundup/latest?period=${period}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`roundup fetch failed: ${res.status}`);
+  const body = (await res.json()) as { latest: iEventSummaryModel | null };
+  return body.latest;
+}
+
+/** Poll the latest round-up so world spins carry the current narrative + stats.
+ *  Round-ups regenerate hourly, so a 5-minute refresh is plenty. */
+export function useLatestRoundup(period: SummaryPeriod = "hourly"): iEventSummaryModel | null {
+  const [roundup, setRoundup] = useState<iEventSummaryModel | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      getLatestRoundup(period)
+        .then((r) => {
+          if (!cancelled) setRoundup(r);
+        })
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [period]);
+
+  return roundup;
 }
 
 /** Cadence tab metadata. */

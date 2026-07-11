@@ -37,6 +37,8 @@ import {
   scopeVolcanoesToBbox,
 } from "../../lib/broadcast";
 import { bboxForCamera, type HistorySeries } from "../../lib/history-client";
+import { useLatestRoundup } from "../../lib/summaries";
+import { useLatestPlaceRoundup } from "../../lib/placeRoundups";
 import { useAreaForecast } from "../../lib/forecast-client";
 import { legendVariableFor } from "../../lib/legend";
 import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
@@ -67,6 +69,7 @@ import SyslogFeed from "./SyslogFeed";
 import UpNextPanel from "./UpNextPanel";
 import BuildInfoTag from "./BuildInfoTag";
 import SlideDeck from "./SlideDeck";
+import { useSegmentTransition } from "./useSegmentTransition";
 import { modeSlides } from "./mode-slides";
 import { hasRealLocation, isTargetedEvent, KIND_COLOR, KIND_LABEL as KIND_BADGE } from "./kinds";
 
@@ -161,6 +164,11 @@ export default function BroadcastFrame({
   directorOn?: boolean;
 }) {
   const scale = useStageScale();
+  // While the director cuts to the next shot the globe flies for
+  // `state.cutTransitionMs`; hide the bottom-left deck for that window so it
+  // doesn't sit frozen on the old card (or flash the new one) mid-flight, then
+  // fade it back once the new shot lands.
+  const cutting = useSegmentTransition(onAirSegment?.id ?? null, state.cutTransitionMs);
   const worldWatch = useWorldWatch(cities, assetsReady);
   // The alert crawl lines carry a per-alert nearest-city flag scan (the crawl's
   // one expensive step), so memoise them on JUST [alerts, cities] — otherwise the
@@ -180,6 +188,11 @@ export default function BroadcastFrame({
   // throughout, so the day's live alerts/quakes/tracks stay on screen even while
   // a round-up airs.
   const summaryOnAir = onAirSegment?.summary ?? null;
+  // The current global round-up, fetched independently of the segment — so the
+  // plain world spins (intro/global/ocean/orbital), which carry no `summary`
+  // tour of their own, still surface the live "state of the planet" narrative +
+  // headline numbers as a deck slide (see mode-slides' wide-shot branch).
+  const worldRoundupDoc = useLatestRoundup("hourly");
   const bottomTickerTitle = theme.tickerTitle;
   const bottomTickerItems = ticker;
   const eventTargeted = onAirSegment
@@ -250,6 +263,14 @@ export default function BroadcastFrame({
         : null;
   const ledeCountryDoc = useCountryAt(ledeCenter);
   const summaryCountryDoc = onAirSegment?.summary ? ledeCountryDoc : null;
+  // The framed country's own per-place round-up (CountryRoundup) — the country
+  // spotlight's second slide. Keyed on the enriched Country under the on-air
+  // point (`ledeCountryDoc.countryId`, the same id the place-roundups worker
+  // writes against); only fetched for a `country` shot, and only when that
+  // country resolved. The hook returns null (→ no slide) until a round-up exists.
+  const countryRoundupId =
+    onAirSegment?.kind === "country" ? (ledeCountryDoc?.countryId ?? null) : null;
+  const countryRoundup = useLatestPlaceRoundup("country", countryRoundupId);
   const areaInfo = ledeCountryDoc
     ? {
         name: ledeCountryDoc.name,
@@ -346,7 +367,15 @@ export default function BroadcastFrame({
         roundup: summaryOnAir
           ? { narrative: summaryOnAir.narrative, stats: summaryOnAir.stats, sources: summaryOnAir.sources }
           : undefined,
+        worldRoundup: worldRoundupDoc
+          ? {
+              narrative: worldRoundupDoc.narrative,
+              stats: worldRoundupDoc.stats,
+              sources: worldRoundupDoc.sources,
+            }
+          : undefined,
         summaryCountry: summaryCountryDoc,
+        countryRoundup,
         areaInfo,
         theme,
       })
@@ -424,6 +453,12 @@ export default function BroadcastFrame({
             flexDirection: "column-reverse",
             alignItems: "flex-start",
             gap: 10,
+            // Vanish for the cut, fade back once the globe settles. The hide is
+            // instant (no out-transition) so the card's content swap to the new
+            // segment happens unseen; only the return fades in. Opacity (not
+            // unmount) keeps every slide's timers/fetches alive across the cut.
+            opacity: cutting ? 0 : 1,
+            transition: cutting ? "none" : "opacity 360ms ease",
           }}
         >
           {/* One rotating card per mode: the mode cards plus the weather /

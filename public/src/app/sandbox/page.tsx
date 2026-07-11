@@ -160,10 +160,10 @@ export default function SandboxPage() {
           fires={fires}
           volcanoes={volcanoes}
           geomag={geomag}
-          // Pin + label the picked weather point (kind "weather" is only ever a
-          // plain point-click here — events carry their own marker).
-          weatherPointCenter={selected?.kind === "weather" ? selected.camera.center : null}
-          weatherPointLabel={selected?.kind === "weather" ? selected.title : null}
+          // Pin + label the picked point (kind "point" is only ever a plain
+          // point-click here — events carry their own marker).
+          weatherPointCenter={selected?.kind === "point" ? selected.camera.center : null}
+          weatherPointLabel={selected?.kind === "point" ? selected.title : null}
           interactive
           onSelect={setSelected}
           onPickPoint={pickPoint}
@@ -222,7 +222,7 @@ export default function SandboxPage() {
             // /watch shows on air) tucked inside the card, with a spinner while it
             // loads and self-hiding when the store has no run for that point.
             footer={
-              selected.kind === "weather" ? (
+              selected.kind === "point" ? (
                 <ForecastPanel center={selected.camera.center} variant="inline" />
               ) : null
             }

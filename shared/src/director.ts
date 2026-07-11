@@ -21,6 +21,7 @@ import type { AdMediaType } from "./ads/types";
 import type { SummaryPeriod, iSummaryStats } from "./db/event-summary-model";
 import type { SeverityRank } from "./db/alert-model";
 import { DEFAULT_DIRECTOR_COUNTRIES, sanitizeDirectorCountries } from "./director-countries";
+import { DEFAULT_DIRECTOR_REGIONS, sanitizeDirectorRegions } from "./director-regions";
 import { isSatImgLook, SATIMG_FEEDS, type SatImgFeedState } from "./satimg/types";
 import { QUAKE_MAGNITUDE_BANDS, quakeMagnitudeClass, type QuakeMagnitudeClass } from "./seismic";
 import type { VolcanoStatus } from "./volcanoes/types";
@@ -38,7 +39,8 @@ export type SegmentKind =
   | "global" // the recurring world spin (same map-type tour as the intro), aired as ordinary global filler
   | "ocean" // global spin coloured by an ocean field (SST / waves)
   | "country" // an operator-favourited country spotlight (national weather check)
-  | "weather" // scalar field over a region of interest
+  | "region" // an operator-favourited region/area spotlight (regional weather check) — the Region catalog cousin of `country`
+  | "point" // a manually-clicked map point (the /sandbox inspector) — NOT director-scheduled, see SEGMENT_KINDS
   | "storm" // a severe-weather alert area
   | "volcano" // an erupting or unrest volcano (Smithsonian/USGS bulletin)
   | "quake" // a recent significant earthquake
@@ -47,13 +49,19 @@ export type SegmentKind =
   | "orbital" // a satellite constellation's orbits, spun on a world view
   | "ad"; // a full-frame advertisement interstitial (a "commercial break")
 
+/**
+ * The kinds the auto-director can schedule (drives the operator's per-kind
+ * enable/hold/look UI). Deliberately a SUBSET of `SegmentKind`: `point` is a
+ * segment the /sandbox inspector produces on a map click, not a director mode,
+ * so it is omitted here and never appears as an operator toggle or candidate.
+ */
 export const SEGMENT_KINDS: SegmentKind[] = [
   "intro",
   "global",
   "ocean",
   "orbital",
   "country",
-  "weather",
+  "region",
   "storm",
   "volcano",
   "quake",
@@ -350,6 +358,12 @@ export interface DirectorConfig {
    * through — the operator's "channels we cover" list. Catalog-ordered.
    */
   countries: string[];
+  /**
+   * Favourite region ids (see REGION_SHOTS) the `region` kind rotates through —
+   * the "areas we cover" list, the Region-catalog cousin of `countries`.
+   * Catalog-ordered.
+   */
+  regions: string[];
   /** Only schedule quakes at/above this magnitude. */
   minQuakeMag: number;
   /** Only schedule storms at/above this normalised severity (0–4). */
@@ -446,7 +460,8 @@ export const DEFAULT_KIND_HOLD_SECONDS: Record<SegmentKind, number> = {
   ocean: 17,
   orbital: 17,
   country: 12,
-  weather: 12,
+  region: 12,
+  point: 12, // sandbox-only kind (not director-scheduled); entry kept for the exhaustive Record
   storm: 12,
   volcano: 12,
   quake: 12,
@@ -515,10 +530,22 @@ const SUBTLE_WIND: WindSettings = { numParticles: 2500, speedFactor: 4, maxAge: 
  */
 const GUST_WIND: WindSettings = { ...WIND_PRESETS.storm, numParticles: 14000, speedFactor: 20, opacity: 1 };
 
+/**
+ * Seed slides never blast wind particles at full strength — over an
+ * establishing/global shot they read as noise. Cap particle opacity at 0.2 for
+ * every seeded look (current and future). This is a seed-slide rule only, NOT a
+ * general runtime clamp — an operator can still crank particles up live.
+ */
+const SEED_MAX_WIND_OPACITY = 0.2;
+
 function seedSlide(id: string, name: string, look: KindLook, on: readonly string[]): KindSlide {
   const overlays = { ...SEED_OVERLAYS_OFF };
   for (const k of on) overlays[k] = true;
-  return { id, name, look, overlays };
+  const capped =
+    look.windMode === "particles" && look.wind && look.wind.opacity > SEED_MAX_WIND_OPACITY
+      ? { ...look, wind: { ...look.wind, opacity: SEED_MAX_WIND_OPACITY } }
+      : look;
+  return { id, name, look: capped, overlays };
 }
 
 /**
@@ -687,44 +714,46 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       ["showWind", "showPressure", "showRadar", "showAlerts", "showElevation", "showCities"],
     ),
   ],
-  weather: [
+  // Region ("area") spotlights share the country's national-weather look library
+  // — same seeded slides, region-scoped ids so the two catalogs stay independent.
+  region: [
     seedSlide(
-      "weather-synoptic-standard",
-      "Synoptic Standard",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "temp" },
-      ["showWind", "showPressure", "showContours", "showRadar", "showAlerts", "showElevation", "showCities"],
+      "region-regional-check",
+      "Regional Weather Check",
+      { windMode: "particles", wind: SUBTLE_WIND },
+      ["showWind", "showPressure", "showRadar", "showAlerts", "showElevation", "showCities"],
     ),
-    seedSlide("weather-satellite-clouds", "Satellite Clouds", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, [
+    seedSlide("region-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, [
       "showSatImg",
       "showAlerts",
       "showCities",
     ]),
-    seedSlide("weather-wind-barbs", "Wind Barbs", { windMode: "barbs", wind: SUBTLE_WIND, activeVariable: "rain" }, [
+    seedSlide("region-barb-chart", "Barb Chart", { windMode: "barbs", wind: SUBTLE_WIND }, [
       "showWind",
       "showPressure",
-      "showContours",
       "showRadar",
       "showAlerts",
       "showElevation",
       "showCities",
     ]),
     seedSlide(
-      "weather-humidity-map",
-      "Humidity Map",
+      "region-humidity-heat",
+      "Humidity & Heat",
       { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "humidity" },
-      ["showWind", "showPressure", "showElevation", "showCities"],
+      ["showWind", "showAlerts", "showElevation", "showCities"],
     ),
     seedSlide(
-      "weather-snow-forecast",
-      "Snow Forecast",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "snow" },
-      ["showWind", "showElevation", "showCities"],
+      "region-severe-alert",
+      "Severe Alert",
+      { windMode: "particles", wind: GUST_WIND, activeVariable: "gust" },
+      ["showWind", "showPressure", "showRadar", "showAlerts", "showCities"],
     ),
-    seedSlide("weather-infrared-clouds", "Infrared Clouds", { showSatImg: true, satImgLook: "ir" }, [
-      "showSatImg",
-      "showAlerts",
-      "showCities",
-    ]),
+    seedSlide(
+      "region-terrain-relief",
+      "Terrain Relief",
+      { basemap: "relief", windMode: "particles", wind: SUBTLE_WIND },
+      ["showWind", "showPressure", "showRadar", "showAlerts", "showElevation", "showCities"],
+    ),
   ],
   storm: [
     seedSlide("storm-chaser", "Storm Chaser", { windMode: "particles", wind: GUST_WIND }, [
@@ -886,7 +915,10 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
     ocean: true,
     orbital: true,
     country: true,
-    weather: true,
+    // Off by default: the region kind is opt-in — the operator enables it and
+    // picks favourite areas, like introducing any new mode.
+    region: false,
+    point: false, // sandbox-only kind (not director-scheduled); never surfaced as an operator toggle
     storm: true,
     volcano: true,
     quake: true,
@@ -897,6 +929,7 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
     ad: false,
   },
   countries: DEFAULT_DIRECTOR_COUNTRIES,
+  regions: DEFAULT_DIRECTOR_REGIONS,
   minQuakeMag: 4.5,
   minAlertSeverity: 3,
   adEveryNShots: 6,
@@ -1166,6 +1199,7 @@ export function mergeDirectorConfig(
     transitionSeconds: Math.max(0.5, num(patch.transitionSeconds, base.transitionSeconds)),
     kinds,
     countries: sanitizeDirectorCountries(patch.countries) ?? base.countries,
+    regions: sanitizeDirectorRegions(patch.regions) ?? base.regions,
     minQuakeMag: num(patch.minQuakeMag, base.minQuakeMag),
     minAlertSeverity: num(patch.minAlertSeverity, base.minAlertSeverity),
     adEveryNShots: Math.max(1, Math.round(num(patch.adEveryNShots, base.adEveryNShots))),

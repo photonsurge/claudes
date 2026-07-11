@@ -36,8 +36,10 @@ import ForecastPanel from "./ForecastPanel";
 import PointHistoryPanel from "./PointHistoryPanel";
 import DepthProfilePanel from "./DepthProfilePanel";
 import RoundupStatsPanel from "./RoundupStatsPanel";
+import PlaceRoundupPanel, { placeRoundupSlideHasContent } from "./PlaceRoundupPanel";
+import type { PlaceRoundup } from "../../lib/placeRoundups";
 import QuakeReport from "./QuakeReport";
-import EventNearbyPanel from "./EventNearbyPanel";
+import EventNearbyPanel, { eventNearbySlideHasContent } from "./EventNearbyPanel";
 import TrackInfoPanel from "./TrackInfoPanel";
 import VolcanoFactsPanel, { volcanoFactsSlideHasContent } from "./VolcanoFactsPanel";
 import VolcanoNearbyPanel, { volcanoNearbySlideHasContent } from "./VolcanoNearbyPanel";
@@ -94,6 +96,16 @@ export interface ModeSlideContext {
   /** Round-up narrative + stats — folds the round-up's on-air card (narrative
    *  text and headline numbers) into the deck rather than the bottom ticker. */
   roundup?: { narrative?: string; stats?: iSummaryStats; sources?: string[] };
+  /** The current global round-up (latest hourly), fetched independently of the
+   *  segment — surfaces the round-up narrative + headline numbers on the plain
+   *  world spins (intro/global/ocean/orbital) that carry no `segment.summary`
+   *  tour of their own. */
+  worldRoundup?: { narrative?: string; stats?: iSummaryStats; sources?: string[] };
+  /** The framed country's latest per-place round-up (CountryRoundup, from the
+   *  place-roundups feature) — folded in as the country spotlight's SECOND slide,
+   *  the "state of the nation" AI narrative + place-scoped tally, right after the
+   *  on-air lede. Null off a country shot or before the country has a round-up. */
+  countryRoundup?: PlaceRoundup | null;
   /** The enriched country the round-up tour is currently parked on (resolved
    *  per stop via /api/countries/at) — drives the summary deck's "the nation"
    *  card. Null when the stop is over ocean / outside every country. */
@@ -184,8 +196,14 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     return slides;
   }
 
-  // Targeted point event (storm / quake / …) — the seismic breakdown (quakes
-  // only) then the "who's affected / cities near" enrichment.
+  // Targeted point event (storm / quake / …) — reads LEDE → [seismic breakdown]
+  // → CLOSE CITIES → WEATHER → near-event extras. The quake report leads (quakes
+  // only), then the same bbox-scoped TOP CITIES + CITY CONDITIONS pages a country
+  // spotlight carries (framed to the event's area), so the affected towns air as
+  // real pages from the full city DB instead of the old single sparse
+  // "near this event" card. The detailed forecast follows, and the near-event
+  // page (webcams / distance-ranked cycle) rides last, only when it carries
+  // content beyond a bare city name.
   if (isTargetedEvent(segment.kind)) {
     if (segment.kind === "quake" && segment.quake) {
       slides.push({
@@ -201,10 +219,19 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
         ),
       });
     }
-    slides.push({
-      id: "nearby",
-      node: <EventNearbyPanel center={segment.camera.center} cities={ctx.cities} cams={ctx.cams} color={color} />,
-    });
+    if (ctx.histBbox) {
+      slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.histBbox} color={color} /> });
+      slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.histBbox} color={color} /> });
+    }
+    if (ctx.hasFramedForecast) {
+      slides.push({ id: "forecast", node: <ForecastPanel center={ctx.histCenter} bbox={ctx.histBbox} theme={ctx.theme} /> });
+    }
+    if (eventNearbySlideHasContent(segment.camera.center, ctx.cities, ctx.cams)) {
+      slides.push({
+        id: "nearby",
+        node: <EventNearbyPanel center={segment.camera.center} cities={ctx.cities} cams={ctx.cams} color={color} />,
+      });
+    }
     return slides;
   }
 
@@ -248,10 +275,16 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     return slides;
   }
 
-  // Country spotlight / wide framed shot — reads START → CITIES → WEATHER →
-  // CURRENT & RECENT: the "now viewing" area rollup, the area's close cities, the
-  // area forecast (when it has data), then the AREA HISTORY trend charts.
+  // Country spotlight / wide framed shot — reads START → ROUND-UP → CITIES →
+  // WEATHER → CURRENT & RECENT: the "now viewing" area rollup, the framed
+  // country's own AI round-up (when it has one), the area's close cities, the
+  // area forecast (when it has data), then the AREA HISTORY trend charts. The
+  // round-up rides second so the "state of the nation" narrative reads right
+  // after the lede, before the drill-down cards.
   if (ctx.wideCitiesBbox) {
+    if (placeRoundupSlideHasContent(ctx.countryRoundup)) {
+      slides.push({ id: "place-roundup", node: <PlaceRoundupPanel roundup={ctx.countryRoundup!} theme={ctx.theme} /> });
+    }
     slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     if (ctx.wideCitiesHasForecast) {
@@ -262,7 +295,25 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
   }
 
   // Any other wide shot (intro / global / ocean / orbital) — after the lede, the
-  // same WEATHER → CURRENT & RECENT context slides.
+  // current global round-up (narrative + headline numbers), then the same
+  // WEATHER → CURRENT & RECENT context slides. The round-up rides here — not
+  // just the dedicated `segment.summary` tour above — so every world spin
+  // carries the live "state of the planet" card. Gated on !segmentHasLocation so
+  // only the genuine whole-world modes get it (a located weather-check shot that
+  // also falls through here does not).
+  if (!ctx.segmentHasLocation && ctx.worldRoundup) {
+    slides.push({
+      id: "roundup",
+      node: (
+        <RoundupStatsPanel
+          narrative={ctx.worldRoundup.narrative}
+          stats={ctx.worldRoundup.stats}
+          sources={ctx.worldRoundup.sources}
+          theme={ctx.theme}
+        />
+      ),
+    });
+  }
   if (ctx.hasFramedForecast) {
     slides.push({ id: "forecast", node: <ForecastPanel center={ctx.histCenter} bbox={ctx.histBbox} theme={ctx.theme} /> });
   }

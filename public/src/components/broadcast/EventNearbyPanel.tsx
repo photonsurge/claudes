@@ -51,6 +51,26 @@ const cityPoint = (c: City): [number, number] => [c.lng, c.lat];
 const camPoint = (c: Cam): [number, number] | null =>
   Number.isFinite(c.lng) && Number.isFinite(c.lat) ? [c.lng, c.lat] : null;
 
+/**
+ * Whether the "near this event" page carries enough to be worth a slide. The
+ * close cities themselves now air on the TOP CITIES / CITY CONDITIONS pages
+ * (bbox-scoped, from the full city DB), so this page earns its slot only for its
+ * unique content: nearby webcams, OR a nearby city rich enough (photo/blurb, or
+ * more than one) that it won't render as a bare name over empty space — the
+ * "sparse single city" look this used to fall into over data-thin regions.
+ */
+export function eventNearbySlideHasContent(center: [number, number], cities: City[], cams: Cam[]): boolean {
+  if (nearby(cams, center, camPoint, CAM_RADIUS_KM).length) return true;
+  const near = nearby(
+    cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital),
+    center,
+    cityPoint,
+    CITY_RADIUS_KM,
+  );
+  if (near.length >= 2) return true;
+  return near.some((n) => n.item.wikiThumb != null || n.item.wikiExtract != null);
+}
+
 export default function EventNearbyPanel({
   center,
   cities,

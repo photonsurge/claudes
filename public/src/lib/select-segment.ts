@@ -20,8 +20,10 @@ const POINT_ZOOM = 5;
 
 /**
  * Turn a plain clicked map coordinate (no event feature under the cursor) into a
- * `weather`-kind `Segment`, so the operator's click renders in the exact same
- * "Now viewing" card /watch shows on air — just anchored at the picked point.
+ * `point`-kind `Segment`, so the operator's click renders in the same "Now
+ * viewing" card /watch shows on air — just anchored at the picked point. `point`
+ * is a sandbox-only kind (never director-scheduled): a non-targeted, real-location
+ * shot, so it gets the tucked-away card + a forecast footer rather than a reticle.
  * `label` (nearest-city or coordinate name) and `subtitle` (distance/context)
  * are resolved by the caller, which owns the cities list.
  */
@@ -33,7 +35,7 @@ export function pointToSegment(
 ): Segment {
   return {
     id: `point:${lng.toFixed(3)},${lat.toFixed(3)}`,
-    kind: "weather",
+    kind: "point",
     title: label,
     subtitle,
     camera: { center: [lng, lat], zoom: POINT_ZOOM },

@@ -47,7 +47,6 @@ export const KIND_COLORS: Partial<Record<SegmentKind, string>> & { default: stri
   ocean: "#38bdf8",
   orbital: "#818cf8",
   country: "#4ade80",
-  weather: "#a3e635",
   storm: "#f97316",
   volcano: "#f43f5e",
   quake: "#fbbf24",

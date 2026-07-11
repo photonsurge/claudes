@@ -19,6 +19,7 @@
  */
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
 import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
+import AutoScroll from "./AutoScroll";
 
 /** One column width so the stacked cards share clean left/right edges. */
 export const CARD_W = 420;
@@ -153,10 +154,12 @@ export default function BroadcastCard({
           // (e.g. ForecastPanel's `width:"auto"`) can't break the fixed template.
         }}
       >
-        <div style={{ padding: "14px 20px 10px", flexShrink: 0 }}>
+        {/* One-line title bar: badge chip + event title on a single row. The
+            right padding clears the deck's page-dot indicator (top-right). */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 64px 11px 20px", flexShrink: 0 }}>
           <span
             style={{
-              display: "inline-block",
+              flexShrink: 0,
               fontSize: 12,
               fontWeight: 800,
               letterSpacing: 1,
@@ -172,21 +175,25 @@ export default function BroadcastCard({
           {chrome.title ? (
             <div
               style={{
-                fontSize: 19,
+                flex: 1,
+                minWidth: 0,
+                fontSize: 18,
                 fontWeight: 800,
-                lineHeight: 1.14,
-                marginTop: 8,
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
+                lineHeight: 1.1,
+                whiteSpace: "nowrap",
                 overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
               {chrome.title}
             </div>
           ) : null}
         </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "2px 20px 16px" }}>{children}</div>
+        {/* Pointer-inert on air, so overlong bodies can't be hand-scrolled —
+            AutoScroll walks them top→bottom→top; content that fits sits still. */}
+        <AutoScroll style={{ flex: 1, minHeight: 0, overflowY: "hidden", padding: "2px 20px 16px" }}>
+          {children}
+        </AutoScroll>
       </div>
     );
   }

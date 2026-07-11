@@ -369,7 +369,7 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
   // spinEpoch):
   //   • GLOBAL shots (intro/global/ocean) SPIN — autoSpin rotates the whole world,
   //     which only reads right on a full-globe view.
-  //   • FRAMED AREA shots (country/weather) ORBIT — orbitDrift circles the
+  //   • FRAMED AREA shots (country) ORBIT — orbitDrift circles the
   //     framed centre slowly so the wide area shot moves without the subject
   //     leaving frame (autoSpin's unbounded longitude advance would).
   //   • DETAIL events (storm/quake/flight/ship) HOLD on the subject and breathe
@@ -447,20 +447,29 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     // Circle the framed country slowly — a national-weather look that moves.
     orbitDrift: 5,
   },
-  weather: {
+  // A region ("area") spotlight is the sub-national / multi-country cousin of the
+  // country shot — identical national-weather read (pressure + radar + warnings +
+  // the ambient field cycle), just framed on a Region-catalog area instead of a
+  // single country. Same preset so the two modes look the same on air.
+  region: {
     ...LAYERS_OFF,
     activeVariable: "temp",
     showWind: true,
     showPressure: true,
-    showContours: true,
-    // RainViewer radar shows the actual precip inside the framed region.
     showRadar: true,
+    showAlerts: true,
+    alertSeverityMin: 0,
     showCities: true,
+    showVolcanoes: true,
     autoSpin: false,
     spinSpeed: 0,
-    zoomDrift: 0.02,
+    zoomDrift: 0.025,
     orbitDrift: 5,
   },
+  // Sandbox-only kind: /sandbox applies the operator's own live camera directly
+  // and never runs the director, so this preset is never applied — the entry
+  // only satisfies the exhaustive Record<SegmentKind, …>.
+  point: {},
   storm: {
     ...LAYERS_OFF,
     activeVariable: "gust",

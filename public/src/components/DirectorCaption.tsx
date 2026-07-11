@@ -14,7 +14,7 @@ const KIND_LABEL: Record<SegmentKind, string> = {
   ocean: "Ocean",
   orbital: "Orbital",
   country: "Country",
-  weather: "Weather",
+  point: "Point",
   storm: "Severe",
   volcano: "Volcano",
   quake: "Seismic",
