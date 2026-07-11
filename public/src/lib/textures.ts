@@ -5,8 +5,22 @@
  * height }) — NOT an ImageBitmap. `imageUnscale` (how we decode wind u/v and
  * scalar values from the PNG bytes) only works on Uint8 TextureData, so we load
  * via WeatherLayers' own `loadTextureData`, which decodes a PNG URL into that
- * shape. Textures are immutable per run (the URL embeds the texture id), so we
- * cache the promise by URL for the page session.
+ * shape. Textures are immutable per URL (the URL embeds the texture id / a
+ * `?v=` bake stamp), so we cache the decoded promise by URL.
+ *
+ * BOUNDED (LRU) — this is the client's dominant memory leak fix. A 24/7 stream
+ * mints new texture URLs without end: every worker run embeds a fresh texture
+ * id, the timeline scrubs a run's forecast steps, the map-type tour cycles
+ * overlays, and aurora/geomag/satimg re-bake under a new `?v=`. Each decoded
+ * value is a full RGBA grid (a global GFS frame is ~4 MB). The old "cache for
+ * the page session" Map never evicted, so the tab retained every frame it had
+ * ever shown and RSS climbed for the life of the broadcast. We now keep only
+ * the last TEXTURE_CACHE_MAX distinct URLs (LRU): the live working set — all
+ * vars at the current step + the timeline's preloaded neighbours + the cycling
+ * map types + aurora/geomag — stays warm, while old runs'/steps' textures evict
+ * and their bytes are freed. This is a MEMORY bound, not a product cap: an
+ * evicted texture just reloads transparently on its next request, so it never
+ * limits what the globe can display.
  */
 "use client";
 
@@ -19,6 +33,30 @@ import type { TextureData } from "weatherlayers-gl";
 export type LoadedTexture = TextureData;
 
 const cache = new Map<string, Promise<LoadedTexture>>();
+/**
+ * Max distinct decoded textures held at once. Sized well above the live working
+ * set (all manifest vars at one step ~15-20, + the timeline's neighbour steps,
+ * + a few cycling map types, + aurora/geomag) so scrubbing and map-cycling stay
+ * cache-warm and never evict what's on screen — but bounded so a day-long
+ * broadcast can't accumulate every run's frames.
+ */
+const TEXTURE_CACHE_MAX = 96;
+
+/** Mark `url` most-recently-used (Map iterates in insertion order, so delete +
+ *  re-set moves it to the newest slot). Keeps the on-screen/hot set unevictable. */
+function touch(url: string, p: Promise<LoadedTexture>): void {
+  cache.delete(url);
+  cache.set(url, p);
+}
+
+/** Drop least-recently-used entries (oldest-first) until back within the cap. */
+function evictLru(): void {
+  while (cache.size > TEXTURE_CACHE_MAX) {
+    const oldest = cache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
 
 let loaderPromise: Promise<(url: string) => Promise<TextureData>> | null = null;
 function getLoader(): Promise<(url: string) => Promise<TextureData>> {
@@ -32,16 +70,19 @@ function getLoader(): Promise<(url: string) => Promise<TextureData>> {
 
 /** Load (or return cached) texture for a URL as WeatherLayers TextureData. */
 export function loadTexture(url: string): Promise<LoadedTexture> {
-  let p = cache.get(url);
-  if (!p) {
-    p = getLoader()
-      .then((load) => load(url))
-      .catch((err) => {
-        cache.delete(url); // allow a future retry
-        throw err;
-      });
-    cache.set(url, p);
+  const existing = cache.get(url);
+  if (existing) {
+    touch(url, existing); // refresh recency so the live set never evicts
+    return existing;
   }
+  const p = getLoader()
+    .then((load) => load(url))
+    .catch((err) => {
+      cache.delete(url); // allow a future retry
+      throw err;
+    });
+  cache.set(url, p);
+  evictLru();
   return p;
 }
 
@@ -53,7 +94,11 @@ export function isTextureCached(url: string): boolean {
 /** Warm the cache for a list of URLs (e.g. neighbouring timeline steps). */
 export function preloadTextures(urls: Array<string | undefined>): void {
   for (const url of urls) {
-    if (url && !cache.has(url)) void loadTexture(url);
+    // Best-effort cache warming: swallow failures here so a missing/unbaked
+    // texture can't surface as an unhandledRejection. `loadTexture` already
+    // evicts the failed entry so it retries, and the real on-demand load path
+    // (Globe's per-fhr effect) will warn when the texture is actually needed.
+    if (url && !cache.has(url)) void loadTexture(url).catch(() => {});
   }
 }
 

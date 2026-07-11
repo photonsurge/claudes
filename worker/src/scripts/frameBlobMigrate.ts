@@ -36,13 +36,13 @@ async function migrate(
   const cursor = model
     .find({ data: { $exists: true } })
     .select({ id: 1, data: 1, _id: 0 })
-    .lean()
+    .lean<{ id: string; data?: Buffer }>()
     .cursor({ batchSize: 25 });
 
   let moved = 0;
   for (let doc = await cursor.next(); doc; doc = await cursor.next()) {
     if (!doc.data) continue;
-    await blobs.put(doc.id, doc.data as Buffer); // sidecar first…
+    await blobs.put(doc.id, doc.data); // sidecar first…
     await model.updateOne({ id: doc.id }, { $unset: { data: "" } }); // …then drop inline
     moved++;
     if (moved % LOG_EVERY === 0) console.log(`  ${label}: ${moved}/${total}`);
