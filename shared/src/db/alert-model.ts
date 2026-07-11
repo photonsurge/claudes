@@ -186,11 +186,16 @@ AlertSchema.index({ "info.area.geometry": "2dsphere" }, { name: "alert_geo_ix", 
 // ({active:true, "info.area.geometry":$geoIntersects}). Without the active-equality
 // prefix the planner prefers the active-sort index and scans EVERY active alert
 // (thousands), geo-filtering in memory for a handful of hits — and keeps burning
-// ~1s replanning that terrible plan. This prefix makes the intersect index-driven:
-// a tiny candidate set, so the {maxSeverityRank,sent} sort over it is trivial.
+// ~1s replanning that terrible plan. The partial filter is important: `sparse`
+// only excludes documents without geometry; it would still retain every inactive
+// historical alert. Keeping only active documents makes both reads and lifecycle
+// updates cheaper as expired/superseded alerts leave the index.
 AlertSchema.index(
   { active: 1, "info.area.geometry": "2dsphere" },
-  { name: "alert_active_geo_ix", sparse: true },
+  {
+    name: "alert_active_geo_ix",
+    partialFilterExpression: { active: true },
+  },
 );
 
 export const getAlertModel = (conn: Connection) => getModel<iAlertModel>(conn, "Alert", AlertSchema);
