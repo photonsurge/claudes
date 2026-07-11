@@ -1,5 +1,6 @@
 import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { cityGeoWithinBox } from "@photonsurge/shared/db/city-model";
 import { fetchClimateYear } from "@photonsurge/shared/climate/openmeteo";
 import { climateKey } from "@photonsurge/shared/climate/types";
 import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue";
@@ -70,14 +71,12 @@ export async function framedCityPoints(
   // Box shrinks with zoom but never below ±3.5° so it always ⊇ the event
   // nearby-cities ±3° box; capped so a mid-zoom shot can't pull a hemisphere.
   const half = Math.max(3.5, Math.min(30, 180 / Math.pow(2, zoom)));
-  const s = Math.max(-90, lat - half);
-  const n = Math.min(90, lat + half);
-  const wrap = (l: number) => ((l + 540) % 360) - 180;
-  const w = wrap(lng - half);
-  const e = wrap(lng + half);
-  const query: Record<string, unknown> = { lat: { $gte: s, $lte: n } };
-  if (w <= e) query.lng = { $gte: w, $lte: e };
-  else query.$or = [{ lng: { $gte: w } }, { lng: { $lte: e } }]; // antimeridian-safe
+  const s = lat - half;
+  const n = lat + half;
+  const w = lng - half;
+  const e = lng + half;
+  // 2dsphere box on `loc` (antimeridian- and ±90-safe); no more population-index walk.
+  const query: Record<string, unknown> = { loc: cityGeoWithinBox(w, s, e, n) };
   try {
     const res = await db.cities.getAll(query, { sort: { population: -1 }, limit: FRAMED_CITY_LIMIT });
     const rows = (res?.data ?? []) as Array<{ lng: number; lat: number }>;

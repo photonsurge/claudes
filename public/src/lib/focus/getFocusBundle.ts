@@ -14,6 +14,7 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import { pointInPolygon, type SimpleGeometry } from "@photonsurge/shared/geo/pointInPolygon";
 import { bucketDaily, bucketValue } from "@photonsurge/shared/climate/buckets";
 import type { iCountryModel } from "@photonsurge/shared/db/country-model";
+import { cityGeoWithinBox } from "@photonsurge/shared/db/city-model";
 
 import { buildHistorySeries, buildAreaHistorySeries, type FrameLoader } from "../weather-history";
 import { buildForecastDays, buildAreaForecastDays } from "../weather-forecast";
@@ -396,9 +397,7 @@ async function topCitiesFor(
 ): Promise<FocusCity[]> {
   const [w, s, e, nth] = bbox;
   const query: Record<string, unknown> = { population: { $gte: regionMinPop(zoom) } };
-  query.lat = { $gte: Math.max(s, -90), $lte: Math.min(nth, 90) };
-  if (w <= e) query.lng = { $gte: w, $lte: e };
-  else query.$or = [{ lng: { $gte: w } }, { lng: { $lte: e } }];
+  query.loc = cityGeoWithinBox(w, s, e, nth);
   const res = await db.cities.getAll(query, { sort: { population: -1 }, limit: 8 });
   const cities = (res?.data ?? []) as FocusCity["city"][];
   return Promise.all(
@@ -414,8 +413,7 @@ async function nearbyCitiesFor(
 ): Promise<FocusNearbyCity[]> {
   const half = 3; // degrees — a tight box around the event
   const query: Record<string, unknown> = {
-    lat: { $gte: lat - half, $lte: lat + half },
-    lng: { $gte: lng - half, $lte: lng + half },
+    loc: cityGeoWithinBox(lng - half, lat - half, lng + half, lat + half),
   };
   const res = await db.cities.getAll(query, { sort: { population: -1 }, limit: 6 });
   const cities = (res?.data ?? []) as FocusNearbyCity["city"][];

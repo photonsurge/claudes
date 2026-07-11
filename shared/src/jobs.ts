@@ -130,6 +130,17 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     stoppable: true,
   },
   {
+    id: "frame-blobs-migrate",
+    label: "Migrate frame textures → sidecar",
+    description:
+      "One-off: move WeatherFrame + WeatherForecastFrame texture bytes out of the metadata docs into their WeatherFrameData/WeatherForecastFrameData sidecar collections, so history metadata scans stop paging the whole texture archive through Mongo (the fix for high Mongo memory/IO). Run ONCE after deploying the blob-store split. Idempotent + crash-safe; the first run is heavy (reads every inline blob once, in low-priority batches). Same as `yarn migrate:frame-blobs`.",
+    domain: "maintenance",
+    type: "maintenance",
+    event: "migrateFrameBlobs",
+    group: "Maintenance",
+    priority: 10,
+  },
+  {
     id: "alerts-ingest",
     label: "Ingest alerts",
     description: "Pull active NWS alerts into Mongo.",
@@ -261,6 +272,17 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     priority: 5,
   },
   ...CITY_JOBS,
+  {
+    id: "cities-backfill-loc",
+    label: "Backfill city geo-index (loc)",
+    description:
+      "One-time: add the 2dsphere `loc` point to city docs seeded before the geo index existed, so in-view city lookups (nearby-event, area tours, climate warm) use the geospatial index instead of scanning the whole population index. Idempotent — skips cities that already have it. Reseeds set it automatically, so this only matters right after deploying the field.",
+    domain: "cities",
+    type: "cities",
+    event: "backfillLoc",
+    group: "Cities",
+    priority: 5,
+  },
   {
     id: "cities-enrich",
     label: "Enrich cities (Wikipedia)",

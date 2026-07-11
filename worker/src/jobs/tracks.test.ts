@@ -48,6 +48,9 @@ delete process.env.AISSTREAM_API_KEY;
 delete process.env.USGS_FEED;
 delete process.env.SATELLITE_GROUPS;
 delete process.env.VEHICLE_REGISTRY_ENABLED;
+// Refresh the whole registry every frame by default, so the existing snapshot
+// tests see the full row set; the cadence test below flips this on per-test.
+process.env.VEHICLE_REGISTRY_FULL_MS = "0";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const tracks = require("./tracks") as typeof import("./tracks");
 
@@ -95,6 +98,9 @@ afterEach(() => {
   delete process.env.AIRCRAFT_PROVIDER;
   delete process.env.AISSTREAM_API_KEY;
   delete process.env.USGS_FEED;
+  // Restore the every-frame default + clear the throttle for the next test.
+  process.env.VEHICLE_REGISTRY_FULL_MS = "0";
+  tracks.__resetRegistryThrottle();
 });
 
 describe("tracks job registry ↔ handlers", () => {
@@ -344,6 +350,28 @@ describe("snapshotShips", () => {
       [expect.objectContaining({ kind: "ship", code: "232000001", country: "United Kingdom", flag: "🇬🇧" })],
       expect.anything(),
     );
+  });
+
+  it("throttles the full registry refresh but keeps notable vessels live every frame", async () => {
+    process.env.AISSTREAM_API_KEY = "k";
+    // 10min window — the second snapshot lands ms later, so it's throttled.
+    process.env.VEHICLE_REGISTRY_FULL_MS = "600000";
+    tracks.__resetRegistryThrottle();
+    db.vehicles.notableIds.mockResolvedValue(new Set(["ship:232000001"]));
+    (collectShips as jest.Mock).mockResolvedValue([
+      { mmsi: "232000001", name: "Boaty", lng: 1, lat: 50 }, // notable → always recorded
+      { mmsi: "310627000", name: "QM2", lng: -40, lat: 42 }, // not notable → full frames only
+    ]);
+
+    await tracks.snapshotShips(job()); // first frame: full refresh
+    await tracks.snapshotShips(job()); // second frame: throttled → notable only
+
+    const first = db.vehicles.recordSightings.mock.calls[0][0] as { code: string }[];
+    const second = db.vehicles.recordSightings.mock.calls[1][0] as { code: string }[];
+    expect(first.map((r) => r.code).sort()).toEqual(["232000001", "310627000"]);
+    expect(second.map((r) => r.code)).toEqual(["232000001"]);
+    // The live snapshot itself always records the whole frame regardless.
+    expect((db.trackSnapshots.record.mock.calls[1][0] as unknown[]).length).toBe(2);
   });
 });
 

@@ -8,6 +8,7 @@ import { collectShips } from "@photonsurge/shared/tracks/aisstream";
 import { fetchQuakes, DEFAULT_USGS_FEED } from "@photonsurge/shared/tracks/usgs";
 import { fetchAircraftMeta } from "@photonsurge/shared/tracks/hexdb";
 import { mmsiCountry, countryNameFlag } from "@photonsurge/shared/tracks/flags";
+import { vehicleId } from "@photonsurge/shared/db/vehicle-model";
 import type { iTrackSnapshot } from "@photonsurge/shared/db/track-snapshot-model";
 import type { AppDb } from "@photonsurge/shared/db/index";
 import { log } from "@photonsurge/shared/utill/logger";
@@ -189,15 +190,61 @@ export async function ingestTles(job: Job) {
 const REGISTRY_ENABLED = process.env.VEHICLE_REGISTRY_ENABLED !== "false";
 
 /**
+ * How often the FULL vehicle-registry refresh runs, per kind (ms). The globe /
+ * broadcast read `trackSnapshots` (the live frame) — NOT this registry — so
+ * refreshing lastSeen/timesSeen/last-position for EVERY craft is background
+ * bookkeeping that only the admin registry table reads. At global AIS coverage
+ * that's 10k+ upserts (~4.5s of Mongo write locks) on every ~6min ship snapshot,
+ * which is wasteful. Between full refreshes we still persist the notable/on-air
+ * craft every frame (a tiny set — keeps their lastSeen + trail breadcrumb live),
+ * so nothing on air changes; only non-notable registry rows get a coarser
+ * lastSeen (up to this many ms stale). Set 0 to refresh the whole registry every
+ * snapshot (old behaviour). Read live (not a load-time const) so it can be tuned
+ * or exercised in tests without a reload.
+ */
+const registryFullMs = (): number => Number(process.env.VEHICLE_REGISTRY_FULL_MS ?? 20 * 60_000);
+
+/** Per-kind wall clock (ms) of the last full registry refresh (worker = 1 process). */
+const lastFullRegistry: Record<string, number> = {};
+
+/** Test hook: clear the full-refresh throttle so cadence tests start clean. */
+export function __resetRegistryThrottle(): void {
+  for (const k of Object.keys(lastFullRegistry)) delete lastFullRegistry[k];
+}
+
+/**
+ * Is a full-registry refresh due for `kind` at frame time `at`? Records the tick
+ * when it returns true. `VEHICLE_REGISTRY_FULL_MS=0` forces every frame full and
+ * never records a tick, so it stays stateless.
+ */
+function fullRegistryDue(kind: string, at: Date): boolean {
+  const every = registryFullMs();
+  if (every <= 0) return true;
+  const now = at.getTime();
+  if (now - (lastFullRegistry[kind] ?? 0) >= every) {
+    lastFullRegistry[kind] = now;
+    return true;
+  }
+  return false;
+}
+
+/**
  * Upsert the persistent vehicle registry (db.vehicles) from a snapshot frame —
- * identity + lifecycle (firstSeen/lastSeen/timesSeen/last position) for EVERY
- * craft, plus a trail point for notable ones. Best-effort: a registry hiccup
- * never fails the live snapshot.
+ * identity + lifecycle (firstSeen/lastSeen/timesSeen/last position), plus a trail
+ * point for notable craft. On a full-refresh frame every craft is upserted; on
+ * the frames in between only the notable/on-air craft are (see registryFullMs),
+ * so the expensive whole-frame write runs at a coarse cadence while notable craft
+ * stay live every frame. Best-effort: a registry hiccup never fails the snapshot.
  */
 async function recordVehicleRegistry(db: AppDb, kind: "aircraft" | "ship", snaps: iTrackSnapshot[], at: Date) {
   if (!REGISTRY_ENABLED || !snaps.length) return;
   try {
-    const rows = snaps.map((s) => {
+    const trailIds = await db.vehicles.notableIds();
+    const source = fullRegistryDue(kind, at)
+      ? snaps
+      : snaps.filter((s) => trailIds.has(vehicleId(kind, s.externalId)));
+    if (!source.length) return;
+    const rows = source.map((s) => {
       const ship = kind === "ship" ? mmsiCountry(s.externalId) : undefined;
       return {
         kind,
@@ -209,7 +256,6 @@ async function recordVehicleRegistry(db: AppDb, kind: "aircraft" | "ship", snaps
         lat: s.lat,
       };
     });
-    const trailIds = await db.vehicles.notableIds();
     await db.vehicles.recordSightings(rows, { at, trailIds });
   } catch (err) {
     log(TAG, `vehicle registry upsert failed`, { kind, err: summarizeForLog(err) });

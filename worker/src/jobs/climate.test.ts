@@ -32,17 +32,16 @@ describe("framedCityPoints", () => {
       [135.5, 34.7],
     ]);
     const [query, opts] = getAll.mock.calls[0];
-    expect(query.lat).toBeDefined();
-    expect(query.lng).toBeDefined(); // simple (non-wrapping) window
+    expect(query.loc).toBeDefined(); // 2dsphere box on `loc` (antimeridian-safe)
     expect(opts.sort).toEqual({ population: -1 });
     expect(typeof opts.limit).toBe("number");
   });
 
-  it("uses an $or window across the antimeridian", async () => {
+  it("queries a 2dsphere `loc` box near the antimeridian (no flat-lng special case)", async () => {
     const getAll = jest.fn().mockResolvedValue({ data: [] });
     await framedCityPoints(mockDb(getAll), [179, 0], 5);
     const [query] = getAll.mock.calls[0];
-    expect(query.$or).toBeDefined();
+    expect(query.loc).toBeDefined(); // seam handled inside cityGeoWithinBox
     expect(query.lng).toBeUndefined();
   });
 

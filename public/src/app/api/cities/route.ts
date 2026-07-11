@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { cityGeoWithinBox } from "@photonsurge/shared/db/city-model";
 import { validateCity } from "../../../lib/cities";
 import { withCache, FEED_TTL_SEC } from "../../../lib/focus/focus-cache";
 
@@ -65,13 +66,9 @@ async function buildCities(sp: URLSearchParams) {
     const parts = (sp.get("bbox") ?? "").split(",").map(Number);
     if (parts.length === 4 && parts.every(Number.isFinite)) {
       const [w, s, e, n] = parts;
-      query.lat = { $gte: Math.max(s, -90), $lte: Math.min(n, 90) };
-      if (w <= e) {
-        query.lng = { $gte: w, $lte: e };
-      } else {
-        // Box wraps the antimeridian (west > east).
-        query.$or = [{ lng: { $gte: w } }, { lng: { $lte: e } }];
-      }
+      // 2dsphere box on `loc` (antimeridian-safe, no population-index walk).
+      // On its own field, so it composes with the text-search `$or` above.
+      query.loc = cityGeoWithinBox(w, s, e, n);
     }
   }
 

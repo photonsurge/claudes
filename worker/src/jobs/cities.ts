@@ -221,3 +221,63 @@ export async function enrichWikiAll(job: Job) {
     throw err;
   }
 }
+
+// ── 2dsphere backfill ─────────────────────────────────────────────────────────
+
+const BACKFILL_BATCH = 2000;
+
+/**
+ * Job handler: `cities.backfillLoc` — fill the 2dsphere `loc` Point onto city
+ * docs seeded before the field existed, so `$geoWithin` box lookups use the geo
+ * index instead of walking the population index end-to-end. Reseeds set `loc`
+ * directly (the parser), so this is a one-time catch-up after deploying the
+ * field; it's idempotent — only docs missing `loc` are touched, so it's safe to
+ * re-run and cheap once complete.
+ */
+export async function backfillLoc(_job?: Job) {
+  const db = await getAppDb();
+  const cursor = db.cities.model
+    .find({ loc: { $exists: false } }, { id: 1, lat: 1, lng: 1, _id: 0 })
+    .lean()
+    .cursor({ batchSize: BACKFILL_BATCH });
+
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  let ops: any[] = [];
+  let updated = 0;
+  let skipped = 0;
+  const flush = async () => {
+    if (!ops.length) return;
+    await db.cities.model.bulkWrite(ops, { ordered: false });
+    updated += ops.length;
+    ops = [];
+    log(TAG, `backfillLoc ${updated} filled…`);
+  };
+
+  try {
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    for (let doc = (await cursor.next()) as any; doc; doc = (await cursor.next()) as any) {
+      const lng = Number(doc.lng);
+      const lat = Number(doc.lat);
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+        skipped++;
+        continue;
+      }
+      ops.push({
+        updateOne: {
+          filter: { id: doc.id },
+          update: { $set: { loc: { type: "Point", coordinates: [lng, lat] } } },
+        },
+      });
+      if (ops.length >= BACKFILL_BATCH) await flush();
+    }
+    await flush();
+  } finally {
+    await cursor.close();
+  }
+
+  const remaining = await db.cities.model.countDocuments({ loc: { $exists: false } });
+  const result = { updated, skipped, remaining };
+  log(TAG, `backfillLoc done`, result);
+  blogInfo(TAG, `city geo-index backfill: ${updated} filled, ${remaining} still without loc`, result, "cities", "backfill-loc");
+  return result;
+}

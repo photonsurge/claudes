@@ -1,6 +1,6 @@
 {
   "name": "worker",
-  "version": "0.1.29",
+  "version": "0.1.30",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
@@ -73,6 +73,7 @@
     "refresh:gfs": "ts-node src/scripts/refreshGfs.ts",
     "archive:backfill": "ts-node src/scripts/archiveBackfill.ts",
     "migrate:frame-blobs": "ts-node src/scripts/frameBlobMigrate.ts",
+    "migrate:track-indexes": "ts-node src/scripts/syncTrackIndexes.ts",
     "forecast:backfill": "ts-node src/scripts/forecastBackfill.ts",
     "refresh:climate": "ts-node src/scripts/refreshClimate.ts",
     "backfill:climate": "ts-node src/scripts/backfillClimate.ts",

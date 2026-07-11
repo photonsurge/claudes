@@ -28,6 +28,8 @@ export interface GeonameCityDoc {
   region: string;
   lat: number;
   lng: number;
+  /** GeoJSON [lng, lat] for the 2dsphere `loc` index (see city-model.ts). */
+  loc: { type: "Point"; coordinates: [number, number] };
   population: number;
   isCapital: boolean;
   rank: number;
@@ -89,6 +91,7 @@ export function parseGeonamesCities(
       region: "",
       lat,
       lng,
+      loc: { type: "Point", coordinates: [lng, lat] },
       population,
       isCapital,
       rank: rankFromPop(population, isCapital),

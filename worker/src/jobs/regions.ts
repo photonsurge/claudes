@@ -1,5 +1,6 @@
 import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { cityGeoWithinBox } from "@photonsurge/shared/db/city-model";
 import { REGION_PRESETS } from "@photonsurge/shared/regions";
 import { memberCountryCodes, isBboxScoped, isLandGroup } from "@photonsurge/shared/region-membership";
 import type { iRegionCountry, iRegionCity } from "@photonsurge/shared/db/region-model";
@@ -164,8 +165,7 @@ export async function runRegionPlaces(): Promise<{ regions: number; withCountrie
     const query: Record<string, unknown> = { cc: { $in: ccVariants } };
     if (isBboxScoped(r.regionId)) {
       const [w, s, e, n] = r.bbox;
-      query.lng = { $gte: w, $lte: e };
-      query.lat = { $gte: s, $lte: n };
+      query.loc = cityGeoWithinBox(w, s, e, n);
     }
     const cityDocs = await db.cities.model
       .find(query, { id: 1, name: 1, country: 1, cc: 1, lat: 1, lng: 1, population: 1, _id: 0 })
