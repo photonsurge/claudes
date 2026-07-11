@@ -27,7 +27,6 @@ export const KIND_SEVERITY: Partial<Record<SegmentKind, number>> = {
   global: 0.05,
   ocean: 0.1,
   orbital: 0.25,
-  tour: 0.3,
   country: 0.35,
   weather: 0.4,
   flight: 0.35,

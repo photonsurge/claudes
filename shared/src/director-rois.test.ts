@@ -40,7 +40,7 @@ describe("globalMapTour", () => {
   });
 
   it("doesn't tour kinds that hold a field or run a curated plan", () => {
-    for (const kind of ["tour", "country", "weather", "storm", "flight", "ship", "orbital"] as const) {
+    for (const kind of ["country", "weather", "storm", "flight", "ship", "orbital"] as const) {
       expect(globalMapTour(kind)).toBeNull();
     }
   });

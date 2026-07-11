@@ -37,7 +37,7 @@ describe("modeSlides", () => {
     expect(ids(seg({ kind: "weather" }), ctx())).toEqual(["onair"]);
   });
 
-  it("a country/tour spotlight adds top-cities, and the area forecast only when it has data", () => {
+  it("a country spotlight adds top-cities, and the area forecast only when it has data", () => {
     const bbox: [number, number, number, number] = [-1, -1, 1, 1];
     expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities"]);
     expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, wideCitiesHasForecast: true }))).toEqual([

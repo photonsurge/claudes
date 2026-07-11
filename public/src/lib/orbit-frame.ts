@@ -1,5 +1,5 @@
 /**
- * Keep a framed-area ORBIT shot (tour / country / weather kinds) on its subject.
+ * Keep a framed-area ORBIT shot (country / weather kinds) on its subject.
  *
  * Those shots don't spin the whole globe — they slowly pan the camera centre in a
  * circle around the framed centre so a wide area shot drifts alive (see the orbit

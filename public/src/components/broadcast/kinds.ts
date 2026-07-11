@@ -2,7 +2,7 @@
  * Segment-kind presentation helpers shared by the broadcast on-air elements.
  * A "targeted" kind is a single point the director frames on screen (storm,
  * quake, aircraft, ship) → the centred EVENT DETECTION reticle. The wide kinds
- * (intro, global spin, ocean, orbital, region tour, weather) have no single target, so
+ * (intro, global spin, ocean, orbital, weather) have no single target, so
  * they get a small tucked-away card instead of a reticle framing empty screen.
  */
 import type { SegmentKind } from "@photonsurge/shared/director";
@@ -13,7 +13,6 @@ export const KIND_COLOR: Record<SegmentKind, string> = {
   global: "#1f9d72",
   ocean: "#1c7fb8",
   orbital: "#6a59c0",
-  tour: "#3b6ea5",
   country: "#3f8f8f",
   weather: "#2f8f4e",
   storm: "#d23a3a",
@@ -31,7 +30,6 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
   global: "Live",
   ocean: "Ocean",
   orbital: "Orbital",
-  tour: "Region",
   country: "Country",
   weather: "Weather",
   storm: "Severe",

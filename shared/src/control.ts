@@ -339,7 +339,7 @@ export interface ControlState {
    */
   zoomDrift: number;
   /**
-   * Slow orbit RADIUS in degrees for framed "area" shots (country / region tour /
+   * Slow orbit RADIUS in degrees for framed "area" shots (country /
    * weather) — the camera circles the framed centre so the shot is alive without
    * the subject drifting off-screen (unlike autoSpin, which advances longitude
    * unbounded). Deterministic off spinEpoch like the spin/push-in: the amplitude

@@ -37,7 +37,6 @@ export type SegmentKind =
   | "intro" // one-time session opener — the establishing world spin, shown once at the top of a session
   | "global" // the recurring world spin (same map-type tour as the intro), aired as ordinary global filler
   | "ocean" // global spin coloured by an ocean field (SST / waves)
-  | "tour" // curated region flyover (ambient filler when nothing notable)
   | "country" // an operator-favourited country spotlight (national weather check)
   | "weather" // scalar field over a region of interest
   | "storm" // a severe-weather alert area
@@ -54,7 +53,6 @@ export const SEGMENT_KINDS: SegmentKind[] = [
   "global",
   "ocean",
   "orbital",
-  "tour",
   "country",
   "weather",
   "storm",
@@ -78,7 +76,7 @@ export interface DirectorCamera {
  * selector can apply a cooldown and not show the same quake twice in a row.
  */
 export interface Segment {
-  /** Stable id, e.g. "quake:us7000abcd" or "tour:n-atlantic". */
+  /** Stable id, e.g. "quake:us7000abcd" or "country:japan". */
   id: string;
   kind: SegmentKind;
   /** Big on-air label, e.g. "Severe Storm". */
@@ -446,7 +444,6 @@ export const DEFAULT_KIND_HOLD_SECONDS: Record<SegmentKind, number> = {
   global: 17,
   ocean: 17,
   orbital: 17,
-  tour: 12,
   country: 12,
   weather: 12,
   storm: 12,
@@ -653,42 +650,6 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showAurora",
       "showCities",
     ]),
-  ],
-  tour: [
-    seedSlide(
-      "tour-weather-check",
-      "Weather Check",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "temp" },
-      ["showWind", "showElevation", "showCities"],
-    ),
-    seedSlide("tour-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, [
-      "showSatImg",
-      "showCities",
-    ]),
-    seedSlide(
-      "tour-storm-watch",
-      "Storm Watch",
-      { windMode: "particles", wind: GUST_WIND, activeVariable: "rain" },
-      ["showWind", "showPressure", "showRadar", "showCities"],
-    ),
-    seedSlide(
-      "tour-humidity-check",
-      "Humidity Check",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "humidity" },
-      ["showWind", "showElevation", "showCities"],
-    ),
-    seedSlide(
-      "tour-snow-watch",
-      "Snow Watch",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "snow" },
-      ["showWind", "showCities"],
-    ),
-    seedSlide(
-      "tour-pressure-systems",
-      "Pressure Systems",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "pressure" },
-      ["showWind", "showPressure", "showElevation", "showCities"],
-    ),
   ],
   country: [
     seedSlide(
@@ -927,7 +888,6 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
     global: true,
     ocean: true,
     orbital: true,
-    tour: true,
     country: true,
     weather: true,
     storm: true,
@@ -948,10 +908,7 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   adEveryNShots: 6,
   skipNonce: 0,
   mapTypes: {},
-  // Region tours ship with pressure + radar on by default so the ambient filler
-  // reads as an actual weather check rather than a bare scalar-field map — same
-  // "Look per shot type" mechanism the operator can retune via a saved slide.
-  overlayOverrides: { tour: { showPressure: true, showRadar: true } },
+  overlayOverrides: {},
   kindLooks: {},
   kindSlides: DEFAULT_KIND_SLIDES,
   activeSlideId: {},

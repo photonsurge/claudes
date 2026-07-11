@@ -27,7 +27,6 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
   global: "Global spin",
   ocean: "Ocean (world)",
   orbital: "Orbital (satellites)",
-  tour: "Region tour",
   country: "Countries",
   weather: "Weather",
   storm: "Severe storms",

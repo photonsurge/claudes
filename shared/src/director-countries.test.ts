@@ -17,7 +17,7 @@ describe("COUNTRY_SHOTS catalog", () => {
       expect(c.center[0]).toBeLessThanOrEqual(180);
       expect(c.center[1]).toBeGreaterThanOrEqual(-90);
       expect(c.center[1]).toBeLessThanOrEqual(90);
-      // Country framings sit between the regional tours (~3) and city close-ups.
+      // Country framings sit between the wide world spins (~3) and city close-ups.
       expect(c.zoom).toBeGreaterThanOrEqual(3);
       expect(c.zoom).toBeLessThanOrEqual(5.5);
     }

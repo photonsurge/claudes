@@ -66,8 +66,8 @@ function bboxesOverlap(
 }
 
 /** Every country whose boundary overlaps a framed [west,south,east,north] box
- *  — used to glow all the countries inside a wide "region" tour shot, rather
- *  than a single spotlighted one. Bbox-vs-bbox only (not true polygon
+ *  — used to glow all the countries inside a wide framed shot, rather than a
+ *  single spotlighted one. Bbox-vs-bbox only (not true polygon
  *  intersection): an approximation, same spirit as bboxForCamera's own
  *  "heuristic, not a projection" — fine for a broadcast highlight. */
 export async function countriesInBbox(bbox: [number, number, number, number]): Promise<CountryFeature[]> {
@@ -126,7 +126,7 @@ const GLOW_COLOR: [number, number, number] = [70, 225, 225];
  * boundaries — wide soft glow, mid glow, translucent fill, crisp lit edge —
  * reusing the same layering technique alertsLayer/onAirPulseLayers use to make
  * an on-air weather area "shine out" against the basemap, so a country
- * spotlight (a single feature) or a region tour (every country in view) reads
+ * spotlight (a single feature) or a wide framed shot (every country in view) reads
  * as visually distinct on the globe instead of relying on the camera move
  * alone. Returns [] while nothing has resolved yet (still loading, or no
  * geojson match).

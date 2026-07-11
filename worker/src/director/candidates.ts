@@ -1,9 +1,9 @@
 /**
  * Build the scored candidate pool the director picks from each cut. Live events
  * (earthquakes, severe-weather alerts, notable flights/ships) come from the same
- * Mongo caches the public overlays read; curated regions (ROIs + the intro opener
- * and recurring global spin) are always added as filler so the channel never runs
- * out of somewhere to look.
+ * Mongo caches the public overlays read; curated establishing shots (the intro
+ * opener + recurring global/ocean spins + country spotlights) are always added as
+ * filler so the channel never runs out of somewhere to look.
  *
  * Pure-ish: takes a DB facade + config, returns Candidates. Scoring lives here
  * so "what's newsworthy" is one readable place to tune.
@@ -25,7 +25,6 @@ import { DEFAULT_WIND_SETTINGS } from "@photonsurge/shared/control";
 import { vehicleId, vehicleLabel, type iVehicle } from "@photonsurge/shared/db/vehicle-model";
 import {
   PRESETS,
-  REGIONS_OF_INTEREST,
   GLOBAL_VIEW,
   OCEAN_VIEW_ZOOM,
   globalMapTour,
@@ -157,7 +156,7 @@ function notableTrackInfo(
 
 /**
  * Curated filler: the one-time intro opener + the recurring global spin (same
- * world map-type tour) + a rotation of regions of interest.
+ * world map-type tour) + the ocean spin + operator-favourite country spotlights.
  */
 function fillerCandidates(cfg: DirectorConfig): Candidate[] {
   const out: Candidate[] = [];
@@ -216,14 +215,6 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
           cfg,
           { satelliteGroup: view.group },
         ),
-      });
-    }
-  }
-  if (cfg.kinds.tour) {
-    for (const roi of REGIONS_OF_INTEREST) {
-      out.push({
-        score: 5,
-        segment: make("tour", roi.id, roi.name, "Regional weather · Pressure & radar", roi.center, roi.zoom, kindHoldMs(cfg, "tour"), cfg),
       });
     }
   }

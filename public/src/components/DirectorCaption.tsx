@@ -13,7 +13,6 @@ const KIND_LABEL: Record<SegmentKind, string> = {
   global: "Live",
   ocean: "Ocean",
   orbital: "Orbital",
-  tour: "Region",
   country: "Country",
   weather: "Weather",
   storm: "Severe",

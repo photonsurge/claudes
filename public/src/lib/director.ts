@@ -41,14 +41,13 @@ import { useSocket } from "./socket-provider";
  *    overlay look (aurora, live satellite imagery) — and relabel the on-air card
  *    per type. The tour tables live in shared/director-rois (globalMapTour), and
  *    each type is gated on live data being available so a spin never lands blank.
- *  - REGION shots (tour/weather) sweep the valid land fields; `storm` reads the
+ *  - REGION shots (country/weather) sweep the valid land fields; `storm` reads the
  *    per-hazard plan (hazardMapPlan) so a heat warning shows humidity→temp and a
  *    tornado CAPE→radar→gust. `quake` tours terrain looks (contours → relief →
  *    satellite) under a fixed headline card — no weather field, and the card
  *    keeps the magnitude/place label rather than relabelling per look.
  */
 const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
-  tour: ["temp", "humidity", "rain", "gust", "cloud", "visibility"],
   country: ["temp", "humidity", "rain", "gust", "cloud", "visibility"],
   weather: ["temp", "humidity", "rain", "gust", "cloud", "visibility"],
 };
@@ -273,12 +272,11 @@ export function activeCountryIso(
   return null;
 }
 
-/** The framed [west,south,east,north] box of the on-air region tour, or null —
- *  a "tour" shot has no fixed catalog bbox (unlike a country spotlight), just
- *  the camera's own framing, so the globe glows every country boundary that
+/** The framed [west,south,east,north] box of a wide on-air shot with no single
+ *  spotlighted subject, or null — the globe glows every country boundary that
  *  falls inside it instead of a single spotlighted one.
  *
- *  A round-up stop gets the same "whole area" treatment off its live camera
+ *  A round-up stop gets this "whole area" treatment off its live camera
  *  (see `activeCountryIso` above) whenever the stop *isn't* inside a curated
  *  country — country glow takes priority there instead. */
 export function activeRegionBbox(
@@ -286,10 +284,6 @@ export function activeRegionBbox(
   liveCamera?: { center: [number, number]; zoom: number },
 ): [number, number, number, number] | null {
   if (!director?.active || !director.segment) return null;
-  if (director.segment.kind === "tour") {
-    const { center, zoom } = director.segment.camera;
-    return bboxForCamera(center, zoom);
-  }
   if (director.segment.kind === "summary" && liveCamera) {
     if (countryContaining(liveCamera.center[0], liveCamera.center[1])) return null;
     return bboxForCamera(liveCamera.center, liveCamera.zoom);

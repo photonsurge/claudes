@@ -11,7 +11,7 @@ describe("SEED_SEA_POINTS", () => {
       expect(p.lng).toBeLessThanOrEqual(180);
       expect(p.lat).toBeGreaterThanOrEqual(-90);
       expect(p.lat).toBeLessThanOrEqual(90);
-      // Held-still regional shots, same ballpark as country/tour framings.
+      // Held-still regional shots, same ballpark as country framings.
       expect(p.zoom).toBeGreaterThanOrEqual(3);
       expect(p.zoom).toBeLessThanOrEqual(5.5);
       expect(p.enabled).toBe(true);

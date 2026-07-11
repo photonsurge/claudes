@@ -42,11 +42,11 @@ describe("director event + defaults", () => {
     }
   });
 
-  it("holds the world spins longer than a plain tour (the old ×1.4 intent)", () => {
+  it("holds the world spins longer than a framed shot (the old ×1.4 intent)", () => {
     const d = DEFAULT_DIRECTOR_CONFIG.kindHoldSeconds;
-    expect(d.intro).toBeGreaterThan(d.tour);
-    expect(d.ocean).toBeGreaterThan(d.tour);
-    expect(d.orbital).toBeGreaterThan(d.tour);
+    expect(d.intro).toBeGreaterThan(d.country);
+    expect(d.ocean).toBeGreaterThan(d.country);
+    expect(d.orbital).toBeGreaterThan(d.country);
   });
 
   it("dwells longer the bigger the event", () => {
@@ -74,13 +74,13 @@ describe("stormLevelForRank", () => {
 
 describe("hold resolvers", () => {
   const cfg = mergeDirectorConfig(DEFAULT_DIRECTOR_CONFIG, {
-    kindHoldSeconds: { tour: 20 } as DirectorConfig["kindHoldSeconds"],
+    kindHoldSeconds: { country: 20 } as DirectorConfig["kindHoldSeconds"],
     quakeHoldSeconds: { great: 45 } as DirectorConfig["quakeHoldSeconds"],
     stormHoldSeconds: { extreme: 33 } as DirectorConfig["stormHoldSeconds"],
   });
 
   it("resolves a kind hold in ms", () => {
-    expect(kindHoldMs(cfg, "tour")).toBe(20_000);
+    expect(kindHoldMs(cfg, "country")).toBe(20_000);
     expect(kindHoldMs(cfg, "ship")).toBe(12_000); // untouched default
   });
 
@@ -99,7 +99,7 @@ describe("hold resolvers", () => {
     delete (legacy as Record<string, unknown>).kindHoldSeconds;
     delete (legacy as Record<string, unknown>).quakeHoldSeconds;
     delete (legacy as Record<string, unknown>).stormHoldSeconds;
-    expect(kindHoldMs(legacy, "tour")).toBe(12_000);
+    expect(kindHoldMs(legacy, "country")).toBe(12_000);
     expect(quakeHoldMs(legacy, 8.2)).toBe(30_000);
     expect(stormHoldMs(legacy, 4)).toBe(24_000);
   });
@@ -125,11 +125,11 @@ describe("mergeDirectorConfig", () => {
 
   it("applies partial hold-map patches without dropping siblings, clamped to the 3s floor", () => {
     const merged = mergeDirectorConfig(base, {
-      kindHoldSeconds: { tour: 1 } as any, // below the floor
+      kindHoldSeconds: { country: 1 } as any, // below the floor
       quakeHoldSeconds: { great: 45 } as any,
       stormHoldSeconds: { extreme: 33, moderate: "x" } as any, // non-number ignored
     });
-    expect(merged.kindHoldSeconds.tour).toBe(3); // clamped
+    expect(merged.kindHoldSeconds.country).toBe(3); // clamped
     expect(merged.kindHoldSeconds.intro).toBe(base.kindHoldSeconds.intro); // untouched
     expect(merged.quakeHoldSeconds.great).toBe(45);
     expect(merged.quakeHoldSeconds.strong).toBe(base.quakeHoldSeconds.strong);

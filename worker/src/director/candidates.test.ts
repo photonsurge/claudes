@@ -89,11 +89,11 @@ const cfg = (over: Partial<DirectorConfig> = {}): DirectorConfig => ({
 });
 
 describe("buildCandidates", () => {
-  it("always includes curated filler (intro opener + recurring global spin + ocean + tours)", async () => {
+  it("always includes curated filler (intro opener + recurring global spin + ocean + countries)", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     expect(pool.some((c) => c.segment.id === "intro:global")).toBe(true);
     expect(pool.some((c) => c.segment.id === "global:world")).toBe(true);
-    expect(pool.filter((c) => c.segment.kind === "tour").length).toBeGreaterThan(5);
+    expect(pool.some((c) => c.segment.kind === "country")).toBe(true);
   });
 
   it("adds one global ocean spin that opens on SST and spins (tours the rest client-side)", async () => {
@@ -152,12 +152,6 @@ describe("buildCandidates", () => {
     expect(ocean.segment.patch.activeVariable).toBe("wave");
   });
 
-  it("holds regional tours on their subject (no global spin)", async () => {
-    const pool = await buildCandidates(fakeDb(), cfg());
-    const tour = pool.find((c) => c.segment.kind === "tour")!;
-    expect(tour.segment.patch.autoSpin).toBe(false);
-  });
-
   it("spotlights the favourite countries with flag + national-weather framing", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     const countries = pool.filter((c) => c.segment.kind === "country");
@@ -184,8 +178,8 @@ describe("buildCandidates", () => {
     expect(q!.score).toBeCloseTo(40 + 6.1 * 10); // 101
     expect(q!.segment.subtitle).toBe("M6.1 · Off Japan");
     expect(q!.segment.camera.center).toEqual([140, 38]);
-    const tour = pool.find((c) => c.segment.kind === "tour")!;
-    expect(q!.score).toBeGreaterThan(tour.score);
+    const filler = pool.find((c) => c.segment.kind === "country")!;
+    expect(q!.score).toBeGreaterThan(filler.score);
   });
 
   it("only flags a quake breaking when it's actually recent (not just unaired)", async () => {
@@ -320,9 +314,9 @@ describe("buildCandidates", () => {
     // The preset's other quake toggles are untouched.
     expect(q.segment.patch.showCables).toBe(true);
     // Unrelated kinds don't pick up the override.
-    const tour = pool.find((c) => c.segment.kind === "tour")!;
-    expect(tour.segment.patch.showFaults).toBe(false); // both default to false via LAYERS_OFF
-    expect(tour.segment.patch.showWind).toBe(true); // tour's own preset untouched
+    const other = pool.find((c) => c.segment.kind === "country")!;
+    expect(other.segment.patch.showFaults).toBe(false); // both default to false via LAYERS_OFF
+    expect(other.segment.patch.showWind).toBe(true); // country's own preset untouched
   });
 
   it("layers a kindLooks basemap + wind override onto the preset without touching other kinds", async () => {
@@ -337,9 +331,9 @@ describe("buildCandidates", () => {
     // Unspecified wind fields fall back to DEFAULT_WIND_SETTINGS, not whatever's live.
     expect(q.segment.patch.wind?.numParticles).toBe(6000);
     // Unrelated kinds keep their own preset basemap/wind untouched.
-    const tour = pool.find((c) => c.segment.kind === "tour")!;
-    expect(tour.segment.patch.basemap).not.toBe("night");
-    expect(tour.segment.patch.wind).toBeUndefined();
+    const other = pool.find((c) => c.segment.kind === "country")!;
+    expect(other.segment.patch.basemap).not.toBe("night");
+    expect(other.segment.patch.wind).toBeUndefined();
   });
 
   it("applies a kindLooks satellite look — showSatImg on + every disc's look set", async () => {
@@ -356,8 +350,8 @@ describe("buildCandidates", () => {
     // The mosaic feed is not a disc → not in the look patch.
     expect(q.segment.patch.satImgFeeds?.["global"]).toBeUndefined();
     // Other kinds untouched.
-    const tour = pool.find((c) => c.segment.kind === "tour")!;
-    expect(tour.segment.patch.satImgFeeds).toBeUndefined();
+    const other = pool.find((c) => c.segment.kind === "country")!;
+    expect(other.segment.patch.satImgFeeds).toBeUndefined();
   });
 
   it("a kindLooks satImgFeeds snapshot wins over the satImgLook shortcut", async () => {
@@ -398,9 +392,9 @@ describe("buildCandidates", () => {
     const q = pool.find((c) => c.segment.id === "quake:q1")!;
     expect(q.segment.patch.auroraOpacity).toBe(0.4);
     expect(q.segment.patch.magneticFieldOpacity).toBe(0.6);
-    const tour = pool.find((c) => c.segment.kind === "tour")!;
-    expect(tour.segment.patch.auroraOpacity).toBeUndefined();
-    expect(tour.segment.patch.magneticFieldOpacity).toBeUndefined();
+    const other = pool.find((c) => c.segment.kind === "country")!;
+    expect(other.segment.patch.auroraOpacity).toBeUndefined();
+    expect(other.segment.patch.magneticFieldOpacity).toBeUndefined();
   });
 
   it("derives a storm centroid from the alert polygon", async () => {
@@ -502,12 +496,12 @@ describe("buildCandidates", () => {
     const pool = await buildCandidates(
       fakeDb(),
       cfg({
-        kindHoldSeconds: { ...DEFAULT_DIRECTOR_CONFIG.kindHoldSeconds, tour: 20 },
+        kindHoldSeconds: { ...DEFAULT_DIRECTOR_CONFIG.kindHoldSeconds, country: 20 },
         quakeHoldSeconds: { ...DEFAULT_DIRECTOR_CONFIG.quakeHoldSeconds, strong: 25 },
         stormHoldSeconds: { ...DEFAULT_DIRECTOR_CONFIG.stormHoldSeconds, extreme: 40 },
       }),
     );
-    expect(pool.find((c) => c.segment.kind === "tour")!.segment.holdMs).toBe(20_000);
+    expect(pool.find((c) => c.segment.kind === "country")!.segment.holdMs).toBe(20_000);
     // The fake quake is M6.1 → "strong"; the fake alert is severityRank 4 → "extreme".
     expect(pool.find((c) => c.segment.id === "quake:q1")!.segment.holdMs).toBe(25_000);
     expect(pool.find((c) => c.segment.kind === "storm")!.segment.holdMs).toBe(40_000);
@@ -528,9 +522,9 @@ describe("buildCandidates", () => {
     const pool = await buildCandidates(empty, cfg());
     expect(pool.length).toBeGreaterThan(0);
     // Filler kinds: the intro opener, the recurring global spin, ocean spins,
-    // curated tours, country spotlights, and orbital shots (gated to ingested
-    // TLE groups so they're never empty).
-    const fillerKinds = new Set(["intro", "global", "ocean", "orbital", "tour", "country"]);
+    // country spotlights, and orbital shots (gated to ingested TLE groups so
+    // they're never empty).
+    const fillerKinds = new Set(["intro", "global", "ocean", "orbital", "country"]);
     expect(pool.every((c) => fillerKinds.has(c.segment.kind))).toBe(true);
   });
 

@@ -24,7 +24,6 @@ const KIND: Record<SegmentKind, { label: string; color: string }> = {
   global: { label: "Live", color: "#1f9d72" },
   ocean: { label: "Ocean", color: "#1c7fb8" },
   orbital: { label: "Orbital", color: "#6a59c0" },
-  tour: { label: "Region", color: "#3b6ea5" },
   country: { label: "Country", color: "#3f8f8f" },
   weather: { label: "Weather", color: "#2f8f4e" },
   storm: { label: "Severe", color: "#d23a3a" },

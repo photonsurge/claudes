@@ -187,6 +187,55 @@ export async function listCities(opts: ListCitiesOptions = {}): Promise<City[]> 
   return (json?.cities ?? []) as City[];
 }
 
+/** Worker-cached current conditions for one city (native units: temp °C, wind/
+ *  rain m/s & mm) — surfaced on the on-air "CITY CONDITIONS" slide. */
+export interface CityConditionNow {
+  temp?: number;
+  wind?: number;
+  rain?: number;
+}
+
+/** One day of a city's cached 3-day forecast (native units). */
+export interface CityConditionDay {
+  date: string;
+  hi?: number;
+  lo?: number;
+  rain?: number;
+  gust?: number;
+}
+
+/** A city with its current conditions + 3-day forecast, from /api/cities/weather. */
+export interface CityCondition {
+  cityId: string;
+  name: string;
+  cc?: string;
+  lat: number;
+  lng: number;
+  population?: number;
+  current?: CityConditionNow;
+  daily?: CityConditionDay[];
+}
+
+/** The biggest cities in `bbox`, population-ranked, each with cached now + 3-day
+ *  forecast. Empty on any error — the slide self-hides. */
+export async function listCityConditions(
+  bbox: [number, number, number, number],
+  limit = 10,
+): Promise<CityCondition[]> {
+  const q = new URLSearchParams({
+    bbox: bbox.map((n) => n.toFixed(4)).join(","),
+    limit: String(limit),
+  });
+  try {
+    const res = await fetch(`/api/cities/weather?${q.toString()}`, { cache: "no-store" });
+    if (!res.ok) return [];
+    const json = await res.json();
+    return (json?.cities ?? []) as CityCondition[];
+  } catch {
+    return [];
+  }
+}
+
 /** Server-paged city registry for the operator table; globe callers keep using listCities. */
 export async function listCitiesPage(opts: ListCitiesPageOptions): Promise<CitiesPageResult> {
   const q = new URLSearchParams({

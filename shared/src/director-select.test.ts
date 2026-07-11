@@ -21,14 +21,14 @@ describe("selectNext", () => {
   });
 
   it("opens the session on the intro spin", () => {
-    const pool = [cand("tour:a", "tour"), cand("intro:global", "intro"), cand("global:world", "global")];
+    const pool = [cand("weather:a", "weather"), cand("intro:global", "intro"), cand("global:world", "global")];
     expect(selectNext(pool, { history: [], isFirst: true })?.kind).toBe("intro");
   });
 
   it("retires the intro after the opener — it never recurs in rotation", () => {
-    const pool = [cand("intro:global", "intro"), cand("global:world", "global"), cand("tour:a", "tour")];
+    const pool = [cand("intro:global", "intro"), cand("global:world", "global"), cand("weather:a", "weather")];
     // On any cut but the first, the intro is excluded from the pool entirely (it's
-    // a one-time opener). Sweep the rng: only the global spin / tour ever come up.
+    // a one-time opener). Sweep the rng: only the global spin / weather ever come up.
     const seen = new Set<string>();
     for (let i = 0; i < 20; i++) {
       const kind = selectNext(pool, { history: ["quake:z"], rng: () => i / 20 })?.kind;
@@ -39,27 +39,27 @@ describe("selectNext", () => {
   });
 
   it("airs the recurring global spin as ordinary filler (the intro's old recurring role)", () => {
-    const pool = [cand("global:world", "global"), cand("tour:a", "tour")];
-    // Last shot was a tour, so the global spin is eligible; rng→0 picks the first kind.
-    expect(selectNext(pool, { history: ["tour:a"], rng: () => 0 })?.kind).toBe("global");
+    const pool = [cand("global:world", "global"), cand("weather:a", "weather")];
+    // Last shot was a weather shot, so the global spin is eligible; rng→0 picks the first kind.
+    expect(selectNext(pool, { history: ["weather:a"], rng: () => 0 })?.kind).toBe("global");
   });
 
   it("cycles the least-aired item of a kind before repeating", () => {
-    const pool = [cand("tour:a", "tour"), cand("tour:b", "tour")];
-    const counts = new Map([["tour:a", 1]]); // a already shown once, b never
+    const pool = [cand("weather:a", "weather"), cand("weather:b", "weather")];
+    const counts = new Map([["weather:a", 1]]); // a already shown once, b never
     // Only b is at the minimum count → it's picked regardless of rng.
-    expect(selectNext(pool, { history: [], counts, rng: () => 0 })?.id).toBe("tour:b");
+    expect(selectNext(pool, { history: [], counts, rng: () => 0 })?.id).toBe("weather:b");
   });
 
   it("picks at random among equally-least-aired items", () => {
-    const pool = [cand("tour:a", "tour"), cand("tour:b", "tour")];
+    const pool = [cand("weather:a", "weather"), cand("weather:b", "weather")];
     // Both at count 0 → both eligible; rng near 1 selects the second.
-    expect(selectNext(pool, { history: [], rng: () => 0.99 })?.id).toBe("tour:b");
+    expect(selectNext(pool, { history: [], rng: () => 0.99 })?.id).toBe("weather:b");
   });
 
   it("avoids repeating the just-aired kind when another exists", () => {
-    const pool = [cand("quake:x", "quake"), cand("tour:a", "tour")];
-    expect(selectNext(pool, { history: ["quake:y"], rng: () => 0 })?.kind).toBe("tour");
+    const pool = [cand("quake:x", "quake"), cand("weather:a", "weather")];
+    expect(selectNext(pool, { history: ["quake:y"], rng: () => 0 })?.kind).toBe("weather");
   });
 
   it("spreads located shots away from a recently-aired region", () => {
@@ -73,7 +73,7 @@ describe("selectNext", () => {
 
 describe("selectPriority", () => {
   it("returns null when nothing new is waiting", () => {
-    const pool = [cand("tour:a", "tour")];
+    const pool = [cand("weather:a", "weather")];
     expect(selectPriority(pool, new Map())).toBeNull();
   });
 
@@ -92,7 +92,7 @@ describe("selectPriority", () => {
   });
 
   it("falls through to the round-up once no quake/storm is waiting", () => {
-    const pool = [cand("tour:a", "tour"), cand("summary:y", "summary")];
+    const pool = [cand("weather:a", "weather"), cand("summary:y", "summary")];
     expect(selectPriority(pool, new Map())?.id).toBe("summary:y");
   });
 
@@ -105,7 +105,7 @@ describe("selectPriority", () => {
   });
 
   it("doesn't preempt for ordinary filler kinds", () => {
-    const pool = [cand("tour:a", "tour"), cand("country:b", "country")];
+    const pool = [cand("weather:a", "weather"), cand("country:b", "country")];
     expect(selectPriority(pool, new Map())).toBeNull();
   });
 
@@ -116,13 +116,13 @@ describe("selectPriority", () => {
     const pool = [
       { ...cand("quake:old1", "quake"), breaking: false },
       { ...cand("quake:old2", "quake"), breaking: false },
-      cand("tour:a", "tour"),
+      cand("weather:a", "weather"),
     ];
     expect(selectPriority(pool, new Map())).toBeNull();
   });
 
   it("still preempts for a quake explicitly flagged breaking", () => {
-    const pool = [{ ...cand("quake:new", "quake"), breaking: true }, cand("tour:a", "tour")];
+    const pool = [{ ...cand("quake:new", "quake"), breaking: true }, cand("weather:a", "weather")];
     expect(selectPriority(pool, new Map())?.id).toBe("quake:new");
   });
 
@@ -137,7 +137,7 @@ describe("selectPriority", () => {
 });
 
 describe("applySummaryGap", () => {
-  const pool = [cand("summary:hourly", "summary"), cand("tour:a", "tour")];
+  const pool = [cand("summary:hourly", "summary"), cand("weather:a", "weather")];
 
   it("passes the pool through unchanged when no round-up has aired yet", () => {
     expect(applySummaryGap(pool, null)).toBe(pool);
@@ -149,7 +149,7 @@ describe("applySummaryGap", () => {
 
   it("drops summary candidates while the last round-up is still within the gap", () => {
     const filtered = applySummaryGap(pool, SUMMARY_MIN_GAP_MS - 1);
-    expect(filtered.map((c) => c.segment.kind)).toEqual(["tour"]);
+    expect(filtered.map((c) => c.segment.kind)).toEqual(["weather"]);
   });
 
   it("leaves every other kind untouched", () => {

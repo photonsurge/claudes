@@ -32,6 +32,32 @@ export function makeCityWeatherRepo(model: Model<iCityWeatherModel>) {
       return docs.map(strip);
     },
 
+    /**
+     * The `limit` biggest cities inside `bbox` (`[west, south, east, north]`),
+     * population-ranked, each with its cached `current` + `daily` — the read
+     * behind the on-air country/round-up "CITY CONDITIONS" slide. The cache
+     * carries lat/lng/population, so this queries it directly (no City join).
+     * Handles an antimeridian-wrapping box (west > east) like the cities route.
+     */
+    async topByBbox(
+      bbox: [number, number, number, number],
+      limit: number,
+    ): Promise<iCityWeatherModel[]> {
+      const [w, s, e, n] = bbox;
+      if (![w, s, e, n].every(Number.isFinite) || limit <= 0) return [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const query: any = { lat: { $gte: Math.max(s, -90), $lte: Math.min(n, 90) } };
+      if (w <= e) query.lng = { $gte: w, $lte: e };
+      else query.$or = [{ lng: { $gte: w } }, { lng: { $lte: e } }];
+      const docs = await model
+        .find(query)
+        .sort({ population: -1 })
+        .limit(Math.floor(limit))
+        .lean()
+        .exec();
+      return docs.map(strip);
+    },
+
     async get(cityId: string): Promise<iCityWeatherModel | null> {
       const doc = await model.findOne({ cityId }).lean().exec();
       return doc ? strip(doc) : null;

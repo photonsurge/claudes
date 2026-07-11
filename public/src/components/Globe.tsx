@@ -130,10 +130,11 @@ export interface GlobeProps {
   pulseAt?: [number, number] | null;
   /** ISO-3166 alpha-2 of the on-air country spotlight to glow-highlight, or null. */
   glowCountryIso?: string | null;
-  /** Framed [west,south,east,north] box of an on-air region tour — every
-   *  country boundary overlapping it glows, instead of a single spotlighted
-   *  one. Mutually exclusive with glowCountryIso in practice (a segment is
-   *  either a country spotlight or a region tour, never both). */
+  /** Framed [west,south,east,north] box of a wide on-air shot with no single
+   *  subject (e.g. a round-up stop) — every country boundary overlapping it
+   *  glows, instead of a single spotlighted one. Mutually exclusive with
+   *  glowCountryIso in practice (a segment glows either a single country or a
+   *  whole framed area, never both). */
   glowRegionBbox?: [number, number, number, number] | null;
   /** On-air plane/ship to spotlight with a locator ring on the globe, or null. */
   highlightTrack?: TrackHighlight | null;
@@ -240,8 +241,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // The resolved boundary feature(s) to glow (async — countries.geojson is
   // fetched/parsed once by countryGlow.ts, then cached), read by the pulse rAF
   // loop below so the glow keeps breathing every frame it's on air. A country
-  // spotlight resolves to its single feature; a region tour resolves to every
-  // country overlapping the framed bbox.
+  // spotlight resolves to its single feature; a wide framed shot resolves to
+  // every country overlapping the framed bbox.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const glowFeatureRef = useRef<any[]>([]);
   useEffect(() => {

@@ -31,6 +31,7 @@ import OnAirCard from "./OnAirCard";
 import CountryPanel from "./CountryPanel";
 import AreaAlertsPanel from "./AreaAlertsPanel";
 import TopCitiesPanel from "./TopCitiesPanel";
+import CityConditionsPanel from "./CityConditionsPanel";
 import ForecastPanel from "./ForecastPanel";
 import PointHistoryPanel from "./PointHistoryPanel";
 import DepthProfilePanel from "./DepthProfilePanel";
@@ -68,8 +69,8 @@ export interface ModeSlideContext {
   areaAlerts: AlertFeature[];
   areaQuakes: Quake[];
   areaVolcanoes: Volcano[];
-  /** Set for a country spotlight / region tour — enables the TOP CITIES +
-   *  area-forecast slides (bbox the framed area was scoped to). */
+  /** Set for a country spotlight (or other wide framed shot) — enables the TOP
+   *  CITIES + area-forecast slides (bbox the framed area was scoped to). */
   wideCitiesBbox?: [number, number, number, number];
   /** Whether the area forecast has data — decides if the forecast slide shows
    *  (computed in BroadcastFrame since it needs a hook). */
@@ -228,6 +229,7 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     }
     if (ctx.wideCitiesBbox) {
       slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
+      slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     }
     if (ctx.roundup) {
       slides.push({ id: "roundup", node: <RoundupStatsPanel stats={ctx.roundup.stats} sources={ctx.roundup.sources} theme={ctx.theme} /> });
@@ -235,11 +237,12 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     return slides;
   }
 
-  // Country spotlight / region tour — reads START → CITIES → WEATHER → CURRENT &
-  // RECENT: the "now viewing" area rollup, the area's close cities, the area
-  // forecast (when it has data), then the AREA HISTORY trend charts.
+  // Country spotlight / wide framed shot — reads START → CITIES → WEATHER →
+  // CURRENT & RECENT: the "now viewing" area rollup, the area's close cities, the
+  // area forecast (when it has data), then the AREA HISTORY trend charts.
   if (ctx.wideCitiesBbox) {
     slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
+    slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     if (ctx.wideCitiesHasForecast) {
       slides.push({ id: "forecast", node: <ForecastPanel center={null} bbox={ctx.wideCitiesBbox} theme={ctx.theme} /> });
     }

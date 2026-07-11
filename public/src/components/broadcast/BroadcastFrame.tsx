@@ -214,8 +214,8 @@ export default function BroadcastFrame({
   // return null when their toggle is off, so presence alone gates this.
   const spaceWeatherShown = aurora?.meta != null || geomag?.meta != null;
   // A country spotlight scopes the global alerts/quakes feeds down to its own
-  // bbox (`shared/director-countries`); a region tour / weather-check segment
-  // has no fixed bbox but does sit on a real ground location, so it gets the
+  // bbox (`shared/director-countries`); a weather-check segment has no fixed
+  // bbox but does sit on a real ground location, so it gets the
   // same treatment via the camera's own framing (see bboxForCamera) — without
   // this, every wide shot but "country" showed the same whole-planet "IN VIEW"
   // tally no matter what was actually on screen.
@@ -281,21 +281,19 @@ export default function BroadcastFrame({
     ? scopeVolcanoesToBbox(volcanoes, areaBbox)
     : volcanoes;
 
-  // A country spotlight / region tour scopes the "IN VIEW" roundup + "TOP
-  // CITIES" info to this framed area — set here so mode-slides can turn them
-  // into the wide-shot deck (they'd overflow the frame stacked, so the deck
-  // rotates them instead). Only when the shot has a real framed area (not a
-  // targeted point or a notable-track segment).
+  // A country spotlight scopes the "IN VIEW" roundup + "TOP CITIES" info to this
+  // framed area — set here so mode-slides can turn them into the wide-shot deck
+  // (they'd overflow the frame stacked, so the deck rotates them instead). Only
+  // when the shot has a real framed area (not a targeted point or a
+  // notable-track segment).
   const wideCitiesBbox =
     onAirSegment &&
     !eventTargeted &&
     !hasTrackInfo &&
-    (onAirSegment.kind === "country" ||
-      onAirSegment.kind === "tour" ||
-      onAirSegment.kind === "summary")
+    (onAirSegment.kind === "country" || onAirSegment.kind === "summary")
       ? areaBbox
       : undefined;
-  // Whether the country/tour area forecast has data — decides if it earns its
+  // Whether the country area forecast has data — decides if it earns its
   // own slide in the deck (see mode-slides). ForecastPanel re-fetches the same
   // (rounded, Cache-Control: max-age=60) URL when it mounts as that slide; the
   // duplicate call is cheap and one-time per bbox change.
@@ -314,8 +312,8 @@ export default function BroadcastFrame({
         onAirSegment?.camera.zoom ?? state.camera.zoom,
       )
     : null;
-  // A plain (non-region) wide shot's framed-area forecast, gated on real data so
-  // the deck never rotates onto an empty weather slide — region/tour use
+  // A plain (non-country) wide shot's framed-area forecast, gated on real data so
+  // the deck never rotates onto an empty weather slide — country shots use
   // wideCitiesForecast instead. Keyed on the bbox, so it only refetches on a cut.
   const framedForecast = useAreaForecast(!wideCitiesBbox ? histBbox : null);
   const hasFramedForecast = framedForecast.days.length > 0;

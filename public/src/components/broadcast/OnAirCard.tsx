@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Compact on-air card for WIDE shots (global intro, ocean, orbital, region tour,
+ * Compact on-air card for WIDE shots (global intro, ocean, orbital,
  * weather) — the ones with no single point to frame, so the centred event
  * reticle would just box empty screen. Tucked lower-left, themed + scaled inside
  * the design stage. Shows the kind badge, title/subtitle and a couple of detail
@@ -119,11 +119,11 @@ export default function OnAirCard({
       ) : null}
 
       {/* On a wide/area shot, roll up everything on screen into a count + type
-          breakdown so a busy region reads at a glance. For a country/region
+          breakdown so a busy region reads at a glance. For a country
           spotlight with nothing active, say so rather than leaving a silent gap. */}
       {summary.total || summary.quakeCount || summary.volcanoCount ? (
         <AreaStatus summary={summary} />
-      ) : segment.kind === "country" || segment.kind === "tour" ? (
+      ) : segment.kind === "country" ? (
         <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(120,140,170,0.18)" }}>
           <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.2, color: "#7f8ea6" }}>
             NO ACTIVE ALERTS

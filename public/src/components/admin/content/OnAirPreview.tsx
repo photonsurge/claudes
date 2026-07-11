@@ -22,7 +22,7 @@ import type { AreaInfo } from "../../broadcast/mode-slides";
 const KIND_FOR: Record<AdminEntityType, SegmentKind> = {
   city: "country",
   country: "country",
-  region: "tour",
+  region: "country",
   volcano: "volcano",
   alert: "storm",
   quake: "quake",
