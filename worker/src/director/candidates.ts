@@ -23,6 +23,7 @@ import {
 import type { Candidate } from "@photonsurge/shared/director-select";
 import { DEFAULT_WIND_SETTINGS } from "@photonsurge/shared/control";
 import { vehicleId, vehicleLabel, type iVehicle } from "@photonsurge/shared/db/vehicle-model";
+import type { iRegionCity } from "@photonsurge/shared/db/region-model";
 import {
   PRESETS,
   ROUNDUP_MARKERS,
@@ -237,57 +238,63 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
   return out;
 }
 
-/** How many COUNTRIES an area tour visits — the biggest by in-area presence, one
- *  representative (largest) city each. The region hold is sized to cover them all
- *  (unlike a round-up, which caps toured stops at SUMMARY_MAX_TOUR_STOPS), so this
- *  is the true stop count. */
-const REGION_TOUR_COUNTRIES = 10;
-
-/** How many cities to scan before reducing to one-per-country — a generous cap so
- *  every sizeable country in the area is represented by its biggest city. */
-const REGION_CITY_SCAN = 500;
+/** How many camera stops an area tour visits at most — the region's biggest
+ *  cities, round-robined across its member countries so a multi-country area
+ *  reads as a spread of nations while a single-country area (the UK) simply
+ *  tours its own biggest cities. The region hold is sized to cover every stop
+ *  (unlike a round-up, which caps toured stops at SUMMARY_MAX_TOUR_STOPS). */
+const REGION_TOUR_STOPS = 10;
 
 /**
- * The camera stops an area tour visits: the biggest COUNTRIES inside the region's
- * bbox, each framed on its largest in-area city, biggest country first. We pull
- * the area's biggest cities and reduce them to one representative (largest-
- * population) city per country, so the tour reads as "the major countries of this
- * area" rather than a list of cities that might all sit in one country. Each stop
- * carries its ISO so the globe can glow the exact country — including ones outside
- * the curated `country` catalog. Antimeridian-safe (a couple of eligible areas run
- * east past +180; cities store lng in −180..180). Returns [] when the area has no
- * populated cities cached — the caller falls back to a single framed spotlight.
+ * The camera stops an area tour visits: the region's biggest cities, taken from
+ * the CURATED `topCities` dossier on the Region doc (regions.enrichPlaces). That
+ * dossier is scoped to the region's MEMBER COUNTRIES (region-membership) — plus a
+ * bbox cut for sub-national bands — which is the whole point: a UK area tours UK
+ * cities and never bleeds across its bounding box into Paris/Dublin the way a raw
+ * lat/lng query does. Cities are round-robined across the member countries
+ * (biggest in-region presence first), so a multi-country area reads as a spread of
+ * nations while a single-country area just tours its own cities in population
+ * order. Each stop carries its ISO so the globe glows the exact country. Returns
+ * [] when the region has no cached cities (not yet enriched) — the caller falls
+ * back to a single framed spotlight rather than an out-of-region guess.
  */
-async function regionTourStops(db: AppDb, bbox: [number, number, number, number]): Promise<SegmentSummaryStop[]> {
-  const [w, s, e, n] = bbox;
-  const lngClause =
-    e > 180
-      ? { $or: [{ lng: { $gte: w } }, { lng: { $lte: e - 360 } }] }
-      : { lng: { $gte: w, $lte: e } };
-  const { data } = await db.cities.getAll(
-    { lat: { $gte: s, $lte: n }, population: { $gt: 0 }, ...lngClause } as never,
-    { sort: { population: -1 }, limit: REGION_CITY_SCAN },
-  );
-  // Reduce to one representative (largest) city per country. Sort here too so the
-  // grouping never depends on the query's own ordering — the first city seen for a
-  // country is then guaranteed to be its biggest.
-  const rows = data ?? [];
-  const byCountry = new Map<string, (typeof rows)[number]>();
-  for (const c of [...rows].sort((a, b) => (b.population ?? 0) - (a.population ?? 0))) {
-    const key = c.cc || c.country;
-    if (!key || byCountry.has(key)) continue;
-    byCountry.set(key, c);
+async function regionTourStops(db: AppDb, regionId: string): Promise<SegmentSummaryStop[]> {
+  const region = await db.regions.get(regionId);
+  const cities = region?.topCities ?? [];
+  if (!cities.length) return [];
+  // Group the (already population-ranked) cities by country, preserving that
+  // order within each country so list[rank] is the country's rank-th biggest city.
+  const byCountry = new Map<string, iRegionCity[]>();
+  for (const c of cities) {
+    const key = (c.cc || c.country || "").toLowerCase();
+    if (!key) continue;
+    const arr = byCountry.get(key);
+    if (arr) arr.push(c);
+    else byCountry.set(key, [c]);
   }
-  return [...byCountry.values()]
-    .sort((a, b) => (b.population ?? 0) - (a.population ?? 0))
-    .slice(0, REGION_TOUR_COUNTRIES)
-    .map((c) => ({
-      label: c.name,
-      subtitle: c.country || undefined,
-      lng: c.lng,
-      lat: c.lat,
-      iso2: c.cc ? c.cc.toUpperCase() : undefined,
-    }));
+  const sumPop = (list: iRegionCity[]) => list.reduce((s, c) => s + (c.population ?? 0), 0);
+  const countries = [...byCountry.values()].sort((a, b) => sumPop(b) - sumPop(a));
+  // Round-robin: biggest city of each country (biggest-presence country first),
+  // then the 2nd of each, and so on, until we've filled the stop budget.
+  const stops: SegmentSummaryStop[] = [];
+  for (let rank = 0; stops.length < REGION_TOUR_STOPS; rank++) {
+    let advanced = false;
+    for (const list of countries) {
+      const c = list[rank];
+      if (!c) continue;
+      advanced = true;
+      stops.push({
+        label: c.name,
+        subtitle: c.country || undefined,
+        lng: c.lng,
+        lat: c.lat,
+        iso2: c.cc ? c.cc.toUpperCase() : undefined,
+      });
+      if (stops.length >= REGION_TOUR_STOPS) break;
+    }
+    if (!advanced) break;
+  }
+  return stops;
 }
 
 /**
@@ -303,7 +310,7 @@ async function regionCandidates(db: AppDb, cfg: DirectorConfig): Promise<Candida
   for (const id of cfg.regions) {
     const r = regionShot(id);
     if (!r) continue;
-    const stops = await regionTourStops(db, r.bbox);
+    const stops = await regionTourStops(db, r.id);
     // Size the hold to fly EVERY city (flight + dwell each), floored by the
     // operator's per-kind minimum — no SUMMARY_MAX_TOUR_STOPS cap here, or the
     // tour would cut away mid-way through the later cities.

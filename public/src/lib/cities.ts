@@ -181,10 +181,18 @@ export async function listCities(opts: ListCitiesOptions = {}): Promise<City[]> 
   if (opts.capital) q.set("capital", "1");
   if (opts.bbox) q.set("bbox", opts.bbox.map((n) => n.toFixed(4)).join(","));
   const qs = q.toString();
-  const res = await fetch(`/api/cities${qs ? `?${qs}` : ""}`, { cache: "no-store" });
-  if (!res.ok) return [];
-  const json = await res.json();
-  return (json?.cities ?? []) as City[];
+  try {
+    const res = await fetch(`/api/cities${qs ? `?${qs}` : ""}`, { cache: "no-store" });
+    if (!res.ok) return [];
+    const json = await res.json();
+    return (json?.cities ?? []) as City[];
+  } catch {
+    // Transient network / HMR-rebuild "Failed to fetch" — fail soft to empty
+    // (same contract as the !res.ok path). Callers like useRegionCities chain a
+    // bare .then() with no .catch(), so a throw here surfaces as an unhandled
+    // runtime error.
+    return [];
+  }
 }
 
 /** Worker-cached current conditions for one city (native units: temp °C, wind/

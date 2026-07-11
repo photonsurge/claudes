@@ -149,10 +149,11 @@ export interface Segment {
   summary?: SegmentSummary;
   /**
    * The camera stops an Areas (`region`) shot tours — the "go round a place"
-   * flythrough. The worker populates them from the biggest GeoNames cities
-   * inside the region's bbox (see worker/src/director/candidates.ts
-   * `regionCandidates`), so the client flies the camera to each in turn and
-   * captions it, glowing whichever country the stop lands in. Empty/absent when
+   * flythrough. The worker populates them from the region's biggest cities —
+   * the curated `topCities` dossier, scoped to its member countries (see
+   * worker/src/director/candidates.ts `regionCandidates`) — so the client flies
+   * the camera to each in turn and captions it, glowing whichever country the
+   * stop lands in (a UK area tours UK cities, never a neighbour). Empty/absent when
    * the area has no populated cities — the shot then falls back to a single
    * framed spotlight. Kept separate from `summary` (which is round-up prose): a
    * region tour carries places, not a narrative. See cutSteps in the client.
@@ -204,8 +205,9 @@ export interface SegmentSummary {
 /**
  * One camera stop within a tour — a round-up spin's hotspot (from the
  * EventSummary doc's `hotspots`/`topEvents`, see `summaryCandidates`) OR an
- * Areas tour's city (from the region's biggest GeoNames cities, see
- * `regionCandidates`). Drives both the camera fly-to and the on-air info card.
+ * Areas tour's city (from the region's curated, member-country-scoped biggest
+ * cities, see `regionCandidates`). Drives both the camera fly-to and the on-air
+ * info card.
  */
 export interface SegmentSummaryStop {
   /** Place/cluster label, e.g. "Southern Europe" or a city name. */
