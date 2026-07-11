@@ -215,6 +215,26 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     event: "generateDaily",
     group: "Alerts & events",
   },
+  {
+    id: "place-roundups-countries",
+    label: "Country AI round-ups (12h)",
+    description:
+      "Generate a 12-hour AI round-up for each round-up-enabled country — top-10 cities + capital conditions, area-weather, every active alert/volcano, and nearest tide/seismo gauges — continuing from the previous round-up. Enable countries on /countries.",
+    domain: "placeRoundups",
+    type: "placeRoundups",
+    event: "generateCountries",
+    group: "Alerts & events",
+  },
+  {
+    id: "place-roundups-regions",
+    label: "Region AI round-ups (12h)",
+    description:
+      "Generate a 12-hour AI round-up for every region — top cities, area-weather, active alerts/volcanoes and nearest gauges — continuing from the previous round-up.",
+    domain: "placeRoundups",
+    type: "placeRoundups",
+    event: "generateRegions",
+    group: "Alerts & events",
+  },
   ...CITY_JOBS,
   {
     id: "cities-enrich",

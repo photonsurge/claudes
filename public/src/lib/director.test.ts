@@ -12,6 +12,16 @@ const segment = (over: Partial<Segment> = {}): Segment => ({
   ...over,
 });
 
+/** A minimal round-up payload — its mere presence (not its stops) is what
+ *  `activeCountryIso`/`activeRegionBbox` key the round-up behaviour on now that
+ *  the round-up rides a `global` spin. */
+const roundupPayload = (): NonNullable<Segment["summary"]> => ({
+  id: "1",
+  period: "daily",
+  narrative: "n",
+  generatedAt: "2026-07-10T00:00:00Z",
+});
+
 const director = (over: Partial<DirectorState> = {}): DirectorState => ({
   sceneId: "default",
   seq: 1,
@@ -62,7 +72,7 @@ describe("activeCountryIso", () => {
   });
 
   it("resolves the live camera centre to a country during a round-up stop", () => {
-    const roundup = director({ segment: segment({ id: "summary:1", kind: "summary" }) });
+    const roundup = director({ segment: segment({ id: "global:1", kind: "global", summary: roundupPayload() }) });
     expect(activeCountryIso(roundup, [2.5, 46.5])).toBe("FR"); // stop over France
     expect(activeCountryIso(roundup, [-40, 30])).toBeNull(); // stop over open ocean
     expect(activeCountryIso(roundup)).toBeNull(); // no live centre passed
@@ -79,13 +89,13 @@ describe("activeRegionBbox", () => {
   });
 
   it("frames a round-up stop's live camera when it isn't over a curated country", () => {
-    const roundup = director({ segment: segment({ id: "summary:1", kind: "summary" }) });
+    const roundup = director({ segment: segment({ id: "global:1", kind: "global", summary: roundupPayload() }) });
     const bbox = activeRegionBbox(roundup, { center: [-40, 30], zoom: 5 }); // mid-Atlantic
     expect(bbox).not.toBeNull();
   });
 
   it("defers to the country glow (returns null) when a round-up stop is over a curated country", () => {
-    const roundup = director({ segment: segment({ id: "summary:1", kind: "summary" }) });
+    const roundup = director({ segment: segment({ id: "global:1", kind: "global", summary: roundupPayload() }) });
     expect(activeRegionBbox(roundup, { center: [2.5, 46.5], zoom: 5 })).toBeNull(); // France
   });
 });
@@ -93,11 +103,11 @@ describe("activeRegionBbox", () => {
 describe("cutSteps", () => {
   const avail: MapTypeAvailability = { variables: new Set(), aurora: false, satimg: false };
 
-  it("holds each round-up stop instead of inheriting the summary world spin", () => {
+  it("holds each round-up stop instead of inheriting the global world spin", () => {
     const roundup = segment({
-      id: "summary:1",
-      kind: "summary",
-      // The preset spins the stop-less global backdrop — a framed stop must override it.
+      id: "global:1",
+      kind: "global",
+      // The global spin's autoSpin drifts the stop-less backdrop — a framed stop must override it.
       patch: { autoSpin: true, spinSpeed: 2 },
       summary: {
         id: "1",

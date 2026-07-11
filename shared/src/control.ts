@@ -26,6 +26,8 @@ export const TRACKS_UPDATED = "tracks:updated" as const;
 export const ALERTS_UPDATED = "alerts:updated" as const;
 /** Worker → browser: a new weather-event round-up was generated (admin refetch). */
 export const SUMMARIES_UPDATED = "summaries:updated" as const;
+/** Worker → browser: a new per-country/region AI round-up was generated (admin refetch). */
+export const PLACE_ROUNDUPS_UPDATED = "placeRoundups:updated" as const;
 
 /**
  * Operator → watchers relay for a *named scene*. `CONTROL_STATE` drives the one

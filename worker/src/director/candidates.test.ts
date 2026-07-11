@@ -529,13 +529,18 @@ describe("buildCandidates", () => {
   });
 
   describe("round-up summary candidates", () => {
-    it("adds a candidate for a fresh, successful hourly round-up", async () => {
+    it("adds a round-up candidate riding the global spin (id global:<docid>, markers lit)", async () => {
       const db = fakeDb({ eventSummaries: { hourly: freshSummary() } });
       const pool = await buildCandidates(db, cfg());
-      const summary = pool.find((c) => c.segment.id === "summary:sum1");
+      const summary = pool.find((c) => c.segment.id === "global:sum1");
       expect(summary).toBeTruthy();
+      expect(summary!.segment.kind).toBe("global"); // rides the global spin, not a `summary` kind
       expect(summary!.segment.summary?.narrative).toContain("Gulf Coast");
       expect(summary!.segment.summary?.period).toBe("hourly");
+      // Event markers layered on so the story's quakes/alerts/volcanoes show.
+      expect(summary!.segment.patch.showSeismic).toBe(true);
+      expect(summary!.segment.patch.showAlerts).toBe(true);
+      expect(summary!.segment.patch.showVolcanoes).toBe(true);
     });
 
     it("tours the round-up's hotspots then its named top events as camera stops", async () => {
@@ -553,7 +558,7 @@ describe("buildCandidates", () => {
         },
       });
       const pool = await buildCandidates(db, cfg());
-      const summary = pool.find((c) => c.segment.id === "summary:sum1")!;
+      const summary = pool.find((c) => c.segment.id === "global:sum1")!;
       expect(summary.segment.summary?.stops).toEqual([
         { label: "Gulf Coast", subtitle: "Hurricane · 3 events", lng: -90, lat: 27, severity: 4 },
         { label: "M6.1 — Off Japan", subtitle: undefined, lng: 140, lat: 38, severity: 3 },
@@ -568,27 +573,27 @@ describe("buildCandidates", () => {
         },
       });
       const pool = await buildCandidates(db, cfg());
-      expect(pool.some((c) => c.segment.kind === "summary")).toBe(false);
+      expect(pool.some((c) => c.segment.summary != null)).toBe(false);
     });
 
     it("never re-airs a summary already shown this session", async () => {
       const db = fakeDb({ eventSummaries: { hourly: freshSummary() } });
-      const seen = new Map([["summary:sum1", 1]]);
+      const seen = new Map([["global:sum1", 1]]);
       const pool = await buildCandidates(db, cfg(), seen);
-      expect(pool.some((c) => c.segment.kind === "summary")).toBe(false);
+      expect(pool.some((c) => c.segment.summary != null)).toBe(false);
     });
 
     it("skips a stale round-up the director missed while off", async () => {
       const stale = new Date(Date.now() - 4 * 60 * 60 * 1000); // 4h old hourly round-up
       const db = fakeDb({ eventSummaries: { hourly: freshSummary({ generatedAt: stale }) } });
       const pool = await buildCandidates(db, cfg());
-      expect(pool.some((c) => c.segment.kind === "summary")).toBe(false);
+      expect(pool.some((c) => c.segment.summary != null)).toBe(false);
     });
 
-    it("honours the summary kind toggle", async () => {
+    it("drops the round-up when the global spin is disabled (it rides the global kind)", async () => {
       const db = fakeDb({ eventSummaries: { hourly: freshSummary() } });
-      const pool = await buildCandidates(db, cfg({ kinds: { summary: false } as any }));
-      expect(pool.some((c) => c.segment.kind === "summary")).toBe(false);
+      const pool = await buildCandidates(db, cfg({ kinds: { global: false } as any }));
+      expect(pool.some((c) => c.segment.summary != null)).toBe(false);
     });
 
     describe("summaryTourHoldMs", () => {
@@ -628,7 +633,7 @@ describe("buildCandidates", () => {
         },
       });
       const pool = await buildCandidates(db, cfg());
-      const stops = pool.find((c) => c.segment.id === "summary:sum1")!.segment.summary!.stops!;
+      const stops = pool.find((c) => c.segment.id === "global:sum1")!.segment.summary!.stops!;
       expect(stops).toEqual([
         { label: "Gulf Coast", subtitle: "wind · 3 events", lng: -90, lat: 29, severity: 4 },
         { label: "M6.5 — Off Japan", subtitle: undefined, lng: 140, lat: 38, severity: 4 },

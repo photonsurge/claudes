@@ -30,6 +30,8 @@ import { getSeismoSeriesModel } from "./seismo-series-model";
 import { makeSeismoSeriesRepo } from "./seismo-series-repo";
 import { getEventSummaryModel } from "./event-summary-model";
 import { makeEventSummaryRepo } from "./event-summary-repo";
+import { getCountryRoundupModel, getRegionRoundupModel } from "./place-roundup-model";
+import { makePlaceRoundupRepo } from "./place-roundup-repo";
 import { getCableModel } from "./cable-model";
 import { getCableLandingModel } from "./cable-landing-model";
 import { makeCableRepo } from "./cable-repo";
@@ -113,6 +115,8 @@ export function createDb(conn: Connection) {
     seismoStations: makeSeismoStationRepo(getSeismoStationModel(conn)),
     seismoSeries: makeSeismoSeriesRepo(getSeismoSeriesModel(conn)),
     eventSummaries: makeEventSummaryRepo(getEventSummaryModel(conn)),
+    countryRoundups: makePlaceRoundupRepo(getCountryRoundupModel(conn)),
+    regionRoundups: makePlaceRoundupRepo(getRegionRoundupModel(conn)),
     cables: makeCableRepo(getCableModel(conn), getCableLandingModel(conn)),
     faults: makeFaultRepo(getFaultModel(conn)),
     aurora: makeAuroraRepo(getAuroraModel(conn)),

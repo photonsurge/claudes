@@ -37,6 +37,9 @@ export interface iCountry extends iGeneralModel {
   population?: number;
   capital?: string;
   currency?: string;
+  /** Opt-in flag: generate a 12h AI round-up for this country (default off —
+   *  toggled from the /countries admin table). Regions always generate. */
+  roundupEnabled?: boolean;
 }
 
 export interface iCountryModel extends iCountry {
@@ -64,6 +67,7 @@ const CountrySchema = new mongoose.Schema<iCountryModel>(
     population: { type: Number, required: false },
     capital: { type: String, required: false },
     currency: { type: String, required: false },
+    roundupEnabled: { type: Boolean, required: false, default: false },
   },
   { timestamps: false },
 );

@@ -54,6 +54,17 @@ export function makeCountryRepo(model: Model<iCountryModel>) {
       return doc ? strip(doc) : null;
     },
 
+    /** Countries opted in to 12h AI round-ups, name-sorted (the round-up job's work-list). */
+    async listRoundupEnabled(): Promise<iCountryModel[]> {
+      const docs = await model.find({ roundupEnabled: true }).sort({ name: 1 }).lean().exec();
+      return docs.map(strip);
+    },
+
+    /** Flip a country's round-up opt-in (the /countries admin toggle). */
+    async setRoundupEnabled(countryId: string, enabled: boolean): Promise<void> {
+      await model.updateOne({ countryId }, { $set: { roundupEnabled: enabled } }).exec();
+    },
+
     /** Countries whose Wikipedia enrichment is missing or older than `staleBefore` (unless `force`). */
     async listNeedingEnrichment(staleBefore: Date, force = false): Promise<iCountryModel[]> {
       const q = force ? {} : { wikiFetchedAt: { $not: { $gt: staleBefore } } };

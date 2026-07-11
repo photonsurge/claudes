@@ -58,8 +58,8 @@ describe("RunTimelineEntry", () => {
     render(
       <RunTimelineEntry
         entry={entry({
-          kind: "summary",
-          segmentId: "summary:abc",
+          kind: "global",
+          segmentId: "global:abc",
           title: "Global Round-Up",
           stops: [
             { label: "Southern Europe", subtitle: "Heat", lng: 14, lat: 41 },
