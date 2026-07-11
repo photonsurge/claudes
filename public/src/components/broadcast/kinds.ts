@@ -21,7 +21,6 @@ export const KIND_COLOR: Record<SegmentKind, string> = {
   flight: "#2aa6c0",
   ship: "#3b6ea5",
   ad: "#d4a017",
-  summary: "#8a5fd1",
 };
 
 /** Short kind badge label. */
@@ -38,7 +37,6 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
   flight: "Aircraft",
   ship: "Vessel",
   ad: "Sponsor",
-  summary: "Round-Up",
 };
 
 /** Kinds that are a single tracked point → get the centred event reticle. */
@@ -52,7 +50,7 @@ export function isTargetedEvent(kind: SegmentKind): boolean {
 /** Kinds whose camera just sits on GLOBAL_VIEW's arbitrary framing point rather
  *  than a real ground location — there's nothing meaningful to sample weather
  *  or climate history for, so panels keyed on the camera centre should hide. */
-const NO_LOCATION = new Set<SegmentKind>(["intro", "global", "ocean", "orbital", "summary"]);
+const NO_LOCATION = new Set<SegmentKind>(["intro", "global", "ocean", "orbital"]);
 
 /** True when the segment's camera centre is a real ground location worth
  *  sampling (as opposed to an arbitrary global framing point). */

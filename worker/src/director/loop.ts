@@ -19,7 +19,6 @@ import {
 import {
   selectNext,
   selectPriority,
-  applySummaryGap,
   PRIORITY_KINDS,
   type Candidate,
 } from "@photonsurge/shared/director-select";
@@ -52,9 +51,6 @@ interface SceneRunner {
   timesShown?: number;
   /** adId of the last ad aired, so the next break doesn't repeat it. */
   lastAdId?: string;
-  /** When a `summary` (round-up) segment last aired, for the minimum-gap check
-   *  (see `applySummaryGap`) — undefined until the first one airs this session. */
-  lastSummaryAt?: number;
   /** The last cut was itself a priority (breaking-news) pick — gates the NEXT
    *  cut's priority check so breaking news can't fire two cuts in a row (see
    *  `selectPriority`'s cooldown option). */
@@ -252,13 +248,12 @@ async function tick(): Promise<void> {
         let next: Segment | null = null;
         let priority: Segment | null = null;
         let pickedViaPriority = false;
-        const msSinceSummary = r.lastSummaryAt != null ? now - r.lastSummaryAt : null;
 
         if (adDue) {
-          // A brand-new quake/storm/round-up nobody's seen this session outranks
+          // A brand-new quake/storm/volcano nobody's seen this session outranks
           // a scheduled ad break — build the pool early just to check, and defer
           // the ad by one cut rather than let it stall breaking news.
-          pool = applySummaryGap(await buildCandidates(db, cfg, counts), msSinceSummary);
+          pool = await buildCandidates(db, cfg, counts);
           priority = r.seq > 0 ? selectPriority(pool, counts, { cooldown }) : null;
           if (priority) {
             r.pendingAd = true;
@@ -267,11 +262,11 @@ async function tick(): Promise<void> {
           }
         }
         if (!next) {
-          if (!pool.length) pool = applySummaryGap(await buildCandidates(db, cfg, counts), msSinceSummary);
+          if (!pool.length) pool = await buildCandidates(db, cfg, counts);
           // Breaking news preempts random rotation on every cut but the very
-          // first (which always opens on the intro) — a fresh round-up or a
-          // brand-new quake/storm airs at the next opportunity, not whenever
-          // fair rotation happens to land on its kind.
+          // first (which always opens on the intro) — a brand-new quake/storm/
+          // volcano airs at the next opportunity, not whenever fair rotation
+          // happens to land on its kind.
           next = priority ?? (r.seq > 0 ? selectPriority(pool, counts, { cooldown }) : null);
           if (next) {
             pickedViaPriority = true;
@@ -287,7 +282,6 @@ async function tick(): Promise<void> {
         if (next) {
           r.lastCutWasPriority = pickedViaPriority;
           if (next.kind === "ad") r.pendingAd = false;
-          if (next.kind === "summary") r.lastSummaryAt = now;
           // Anchor any camera motion (world spin, area orbit OR push-in zoom
           // drift) to the cut instant so /control and /watch compute it in phase.
           if (next.patch.autoSpin || next.patch.zoomDrift || next.patch.orbitDrift)

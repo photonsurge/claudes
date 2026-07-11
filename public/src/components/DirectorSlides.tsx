@@ -6,8 +6,7 @@
  * named slide; clicking a slide loads it via that kind's
  * kindLooks/overlayOverrides, and pushes it onto the live map immediately so
  * an idle operator sees the change without waiting for the director to cut to
- * this kind. Round-up ("summary") tours its own generated stops rather than
- * holding one fixed look, so it has no slide library.
+ * this kind.
  */
 import { useState } from "react";
 import { SEGMENT_KINDS, type KindSlide, type SegmentKind } from "@photonsurge/shared/director";
@@ -43,7 +42,7 @@ export default function DirectorSlides({
         Look per shot type:
         <InfoTip text="Save the live map's basemap/wind/satellite/overlay look as a named slide per shot type, then switch between saved looks any time. Clicking a slide also pushes it onto the live map now." />
       </div>
-      {SEGMENT_KINDS.filter((k) => config.kinds[k] && k !== "summary").map((kind) => {
+      {SEGMENT_KINDS.filter((k) => config.kinds[k]).map((kind) => {
         const slides = config.kindSlides[kind] ?? [];
         const activeId = config.activeSlideId[kind];
         const load = (id: string) => {

@@ -25,6 +25,7 @@ import { DEFAULT_WIND_SETTINGS } from "@photonsurge/shared/control";
 import { vehicleId, vehicleLabel, type iVehicle } from "@photonsurge/shared/db/vehicle-model";
 import {
   PRESETS,
+  ROUNDUP_MARKERS,
   GLOBAL_VIEW,
   OCEAN_VIEW_ZOOM,
   globalMapTour,
@@ -334,11 +335,18 @@ function summaryStops(doc: iEventSummaryModel): SegmentSummaryStop[] {
 }
 
 /**
- * One candidate per period whose latest round-up has a real narrative, hasn't
- * already aired this session (`seenCounts`), and isn't stale (the director was
- * off for a while and the round-up is no longer "current"). Unlike ads this is
- * a normal scored candidate — it competes in the pool like any other filler,
- * it's just guaranteed to disappear once shown instead of repeating.
+ * One round-up candidate per period whose latest EventSummary has a real
+ * narrative, hasn't already aired this session (`seenCounts`), and isn't stale
+ * (the director was off for a while and the round-up is no longer "current").
+ *
+ * A round-up rides on the recurring `global` world spin — the spin BECOMES the
+ * round-up: it tours the doc's hotspot stops with the narrative + stats shown as
+ * on-air graphics (see the client's `cutSteps` / mode-slides `segment.summary`
+ * branch), instead of the plain map-type cycle. The event-marker overlays
+ * (ROUNDUP_MARKERS) are layered on so the seismic/alert/volcano markers behind
+ * the story are lit. The stable id `global:<docid>` (unique per round-up doc) is
+ * what makes fair rotation air each fresh round-up once before repeating, exactly
+ * like any other `global` item.
  */
 async function summaryCandidates(
   db: AppDb,
@@ -355,7 +363,7 @@ async function summaryCandidates(
       continue; // not ingested yet — skip
     }
     if (!doc || doc.narrativeStatus !== "ok" || !doc.narrative.trim()) continue;
-    const id = `summary:${doc.id}`;
+    const id = `global:${doc.id}`;
     if (seenCounts?.get(id)) continue; // already aired this session
     if (now - new Date(doc.generatedAt).getTime() > staleAfterMs) continue;
 
@@ -363,8 +371,10 @@ async function summaryCandidates(
     const narrationMs = Math.round((words / SUMMARY_WORDS_PER_MIN) * 60_000);
     const stops = summaryStops(doc);
     const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
-    const holdMs = summaryTourHoldMs(stops.length, transitionMs, narrationMs, kindHoldMs(cfg, "summary"));
-    const seg = make("summary", doc.id, "Global Round-Up", label, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, holdMs, cfg);
+    const holdMs = summaryTourHoldMs(stops.length, transitionMs, narrationMs, kindHoldMs(cfg, "global"));
+    // The round-up rides a `global` spin (id → `global:<docid>`) with the
+    // event markers layered on so the story's quakes/alerts/volcanoes show.
+    const seg = make("global", doc.id, "Global Round-Up", label, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, holdMs, cfg, ROUNDUP_MARKERS);
     seg.summary = {
       id: doc.id,
       period,
@@ -386,7 +396,9 @@ export async function buildCandidates(
 ): Promise<Candidate[]> {
   const pool: Candidate[] = fillerCandidates(cfg);
   const now = Date.now();
-  if (cfg.kinds.summary) pool.push(...(await summaryCandidates(db, cfg, seenCounts)));
+  // Round-ups ride the recurring global spin, so they only make sense when the
+  // `global` kind is airing at all.
+  if (cfg.kinds.global) pool.push(...(await summaryCandidates(db, cfg, seenCounts)));
 
   // Notable-tracks catalog (enabled) — matched by `${kind}:${code}` to boost the
   // genuinely interesting craft onto air and hang the on-air Track Info card off

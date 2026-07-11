@@ -54,7 +54,6 @@ export const KIND_COLORS: Partial<Record<SegmentKind, string>> & { default: stri
   flight: "#22d3ee",
   ship: "#2dd4bf",
   ad: "#eab308",
-  summary: "#c084fc",
   default: "#8b95a7",
 };
 

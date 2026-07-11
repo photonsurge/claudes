@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Round-up "more info" card — the headline numbers and source provenance
- * behind a `summary` segment's narrative (see SegmentSummary.stats/sources,
+ * Round-up card — the narrative text plus the headline numbers and source
+ * provenance behind a round-up (see SegmentSummary.narrative/stats/sources,
  * shared/src/director.ts), mirroring the stat tally already shown on
- * /admin/summaries. Sits in the bottom-left column above OnAirCard while a
- * round-up is on air — that slot is otherwise empty for `summary` (no real
- * ground location, see hasRealLocation in ./kinds).
+ * /admin/summaries. This is the round-up narrative's on-air home now that it no
+ * longer takes over the bottom ticker: it rotates in the left-column deck while
+ * a round-up world spin tours its hotspots (see mode-slides `segment.summary`).
  */
 import type { iSummaryStats } from "@photonsurge/shared/db/event-summary-model";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
@@ -26,26 +26,44 @@ function Stat({ label, value, sub }: { label: string; value: number; sub?: strin
 }
 
 export default function RoundupStatsPanel({
+  narrative,
   stats,
   sources,
   theme = DEFAULT_THEME,
 }: {
+  narrative?: string;
   stats?: iSummaryStats;
   sources?: string[];
   theme?: BroadcastTheme;
 }) {
-  if (!stats) return null;
-  const tiles = [
-    { label: "ACTIVE ALERTS", value: stats.alertsActive },
-    { label: "CYCLONES", value: stats.cyclones },
-    { label: "QUAKES", value: stats.quakeCount, sub: stats.quakeMaxMag ? `M${stats.quakeMaxMag.toFixed(1)} max` : undefined },
-    { label: "VOLCANOES", value: stats.volcanoCount, sub: stats.volcanoErupting ? `${stats.volcanoErupting} erupting` : undefined },
-    { label: "NOTABLE TRACKS", value: stats.tracksNotable },
-  ].filter((t) => t.value > 0);
-  if (!tiles.length && !sources?.length) return null;
+  const tiles = stats
+    ? [
+        { label: "ACTIVE ALERTS", value: stats.alertsActive },
+        { label: "CYCLONES", value: stats.cyclones },
+        { label: "QUAKES", value: stats.quakeCount, sub: stats.quakeMaxMag ? `M${stats.quakeMaxMag.toFixed(1)} max` : undefined },
+        { label: "VOLCANOES", value: stats.volcanoCount, sub: stats.volcanoErupting ? `${stats.volcanoErupting} erupting` : undefined },
+        { label: "NOTABLE TRACKS", value: stats.tracksNotable },
+      ].filter((t) => t.value > 0)
+    : [];
+  const narrativeText = narrative?.trim();
+  if (!narrativeText && !tiles.length && !sources?.length) return null;
 
   return (
     <BroadcastCard theme={theme}>
+      {narrativeText ? (
+        <div
+          style={{
+            fontSize: 15,
+            lineHeight: 1.5,
+            color: "#e8eef7",
+            marginBottom: tiles.length || sources?.length ? 12 : 0,
+            paddingBottom: tiles.length || sources?.length ? 10 : 0,
+            borderBottom: tiles.length || sources?.length ? DIVIDER : undefined,
+          }}
+        >
+          {narrativeText}
+        </div>
+      ) : null}
       {tiles.length ? (
         <div style={{ display: "flex", gap: 18 }}>
           {tiles.map((t) => (

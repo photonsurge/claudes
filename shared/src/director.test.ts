@@ -151,9 +151,9 @@ describe("mergeDirectorConfig", () => {
     expect(DEFAULT_DIRECTOR_CONFIG.kinds.ad).toBe(false);
   });
 
-  it("ships the summary (round-up) kind on by default", () => {
-    expect(SEGMENT_KINDS).toContain("summary");
-    expect(DEFAULT_DIRECTOR_CONFIG.kinds.summary).toBe(true);
+  it("has no standalone summary kind — round-ups ride the global spin", () => {
+    expect(SEGMENT_KINDS).not.toContain("summary" as never);
+    expect(SEGMENT_KINDS).toContain("global");
   });
 
   it("ships the country kind on by default with UK + Japan favourited", () => {

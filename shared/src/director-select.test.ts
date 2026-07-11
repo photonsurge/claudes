@@ -1,4 +1,4 @@
-import { selectNext, selectPriority, applySummaryGap, SUMMARY_MIN_GAP_MS, type Candidate } from "./director-select";
+import { selectNext, selectPriority, type Candidate } from "./director-select";
 import type { Segment, SegmentKind } from "./director";
 
 const seg = (id: string, kind: SegmentKind, center: [number, number] = [0, 0]): Segment => ({
@@ -77,23 +77,13 @@ describe("selectPriority", () => {
     expect(selectPriority(pool, new Map())).toBeNull();
   });
 
-  it("ignores an already-aired quake/storm/summary", () => {
-    const pool = [cand("quake:x", "quake"), cand("summary:y", "summary")];
+  it("ignores an already-aired quake/storm", () => {
+    const pool = [cand("quake:x", "quake"), cand("storm:y", "storm")];
     const counts = new Map([
       ["quake:x", 1],
-      ["summary:y", 1],
+      ["storm:y", 1],
     ]);
     expect(selectPriority(pool, counts)).toBeNull();
-  });
-
-  it("puts a brand-new quake/storm ahead of a fresh round-up", () => {
-    const pool = [cand("quake:x", "quake"), cand("summary:y", "summary"), cand("storm:z", "storm")];
-    expect(selectPriority(pool, new Map())?.id).not.toBe("summary:y");
-  });
-
-  it("falls through to the round-up once no quake/storm is waiting", () => {
-    const pool = [cand("weather:a", "weather"), cand("summary:y", "summary")];
-    expect(selectPriority(pool, new Map())?.id).toBe("summary:y");
   });
 
   it("picks the highest-scored candidate within a priority kind", () => {
@@ -134,26 +124,18 @@ describe("selectPriority", () => {
     expect(selectPriority(pool, new Map(), { cooldown: true })).toBeNull();
     expect(selectPriority(pool, new Map(), { cooldown: false })?.id).toBe("storm:new");
   });
-});
 
-describe("applySummaryGap", () => {
-  const pool = [cand("summary:hourly", "summary"), cand("weather:a", "weather")];
-
-  it("passes the pool through unchanged when no round-up has aired yet", () => {
-    expect(applySummaryGap(pool, null)).toBe(pool);
-  });
-
-  it("passes the pool through once the gap has elapsed", () => {
-    expect(applySummaryGap(pool, SUMMARY_MIN_GAP_MS)).toBe(pool);
-  });
-
-  it("drops summary candidates while the last round-up is still within the gap", () => {
-    const filtered = applySummaryGap(pool, SUMMARY_MIN_GAP_MS - 1);
-    expect(filtered.map((c) => c.segment.kind)).toEqual(["weather"]);
-  });
-
-  it("leaves every other kind untouched", () => {
-    const multi = [cand("summary:hourly", "summary"), cand("summary:daily", "summary"), cand("quake:x", "quake")];
-    expect(applySummaryGap(multi, 0).map((c) => c.segment.id)).toEqual(["quake:x"]);
+  it("never preempts for a round-up (it rides the global spin, not the priority tier)", () => {
+    // A round-up now rides a `global` segment (id `global:<docid>`); it must NOT
+    // cut the line like a breaking quake — it surfaces through fair rotation.
+    const roundup = { ...cand("global:sum1", "global"), score: 8 };
+    roundup.segment.summary = {
+      id: "sum1",
+      period: "daily",
+      narrative: "n",
+      generatedAt: "2026-07-10T00:00:00Z",
+    };
+    const pool = [roundup, cand("weather:a", "weather")];
+    expect(selectPriority(pool, new Map())).toBeNull();
   });
 });

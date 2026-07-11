@@ -4,10 +4,11 @@
  * one airs next. Deterministic given its rng, so it's unit-tested without a DB.
  *
  * Selection model (operator-requested):
- *  0. Priority — ahead of everything but the opener: any brand-new quake/storm
- *     nobody's seen yet this session, then a fresh round-up narrative (rare,
- *     and it goes stale — get it out once no breaking alert is waiting).
- *     Breaking news doesn't wait its turn in random kind rotation. Only
+ *  0. Priority — ahead of everything but the opener: any brand-new quake/storm/
+ *     volcano nobody's seen yet this session. Breaking news doesn't wait its
+ *     turn in random kind rotation. (Round-ups aren't priority — they ride the
+ *     recurring `global` spin and surface through fair rotation, once each.)
+ *     Only
  *     candidates the builder actually flags `breaking` are eligible here — an
  *     older event that's merely unaired-this-session (e.g. a backlog of
  *     days-old quakes right after the session starts) does NOT camp this tier
@@ -52,28 +53,6 @@ const GLOBAL_KINDS = new Set<SegmentKind>(["intro", "global", "ocean", "orbital"
 /** Suppress a located shot within this many degrees of a recently-aired one. */
 export const DEFAULT_GEO_COOLDOWN_DEG = 8;
 
-/**
- * Minimum wall-clock gap between two round-up (`summary`) airings. Hourly/12h/
- * daily round-ups can all fall due near the same moment (a fresh session, or
- * the three cadences' boundaries lining up) — each is a distinct unaired
- * candidate, so without an explicit gap the priority tier (and fair rotation,
- * once the priority cooldown lands on a normal cut) can string them together
- * only a cut or two apart. That reads as round-ups hogging the show even
- * though the existing per-cut cooldown is doing its job for any SINGLE kind.
- */
-export const SUMMARY_MIN_GAP_MS = 6 * 60 * 1000;
-
-/**
- * Drop `summary` candidates from the pool while the last round-up aired too
- * recently. Pass `null` when no round-up has aired yet this session (nothing
- * to gap against). Everything else in the pool passes through unchanged, so
- * this can wrap the pool once and feed both `selectPriority` and `selectNext`.
- */
-export function applySummaryGap(pool: Candidate[], msSinceLastSummary: number | null): Candidate[] {
-  if (msSinceLastSummary == null || msSinceLastSummary >= SUMMARY_MIN_GAP_MS) return pool;
-  return pool.filter((c) => c.segment.kind !== "summary");
-}
-
 export interface SelectOpts {
   /** Recent segment ids, oldest→newest — used only to avoid same-kind-in-a-row. */
   history: string[];
@@ -98,16 +77,15 @@ function degApart(a: [number, number], b: [number, number]): number {
 const pickRandom = <T>(arr: T[], rng: () => number): T =>
   arr[Math.min(arr.length - 1, Math.floor(rng() * arr.length))];
 
-/** Kinds eligible for the priority tier, most urgent first — a breaking
- *  quake/storm outranks a round-up narrative. Exported so the "up next"
- *  preview (worker/src/director/loop.ts) can mirror this same ordering
- *  instead of drifting out of sync with its own copy. */
-export const PRIORITY_KINDS: SegmentKind[] = ["quake", "storm", "volcano", "summary"];
+/** Kinds eligible for the priority tier, most urgent first. Exported so the
+ *  "up next" preview (worker/src/director/loop.ts) can mirror this same
+ *  ordering instead of drifting out of sync with its own copy. */
+export const PRIORITY_KINDS: SegmentKind[] = ["quake", "storm", "volcano"];
 
 /**
- * Breaking-news preempt: a quake/storm alert nobody's seen yet this session,
- * else a fresh round-up narrative, cut to it now instead of waiting on random
- * kind rotation. Checked before `selectNext` on every cut but the opener —
+ * Breaking-news preempt: a quake/storm/volcano nobody's seen yet this session,
+ * cut to it now instead of waiting on random kind rotation. Checked before
+ * `selectNext` on every cut but the opener —
  * returns null once nothing new is waiting, so the caller falls through to
  * normal fair rotation. `counts` is the same per-segment airing tally passed to
  * `selectNext`; a segment with no entry has never aired this session.

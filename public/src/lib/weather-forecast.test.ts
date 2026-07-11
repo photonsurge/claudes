@@ -1,6 +1,7 @@
 import { PNG } from "pngjs";
 import {
   bucketForecastDays,
+  dayLabels,
   precipChanceFromSteps,
   deriveCondition,
   buildForecastDays,
@@ -80,6 +81,28 @@ describe("bucketForecastDays", () => {
   it("dedupes multiple steps landing in the same calendar day", () => {
     const times = [new Date("2026-07-06T00:00:00Z"), new Date("2026-07-06T09:00:00Z")];
     expect(bucketForecastDays(times, 0)).toHaveLength(1);
+  });
+
+  it("extends past +3 when a larger maxDays is requested (the daily outlook)", () => {
+    const times = Array.from({ length: 10 }, (_, i) =>
+      new Date(Date.parse("2026-07-06T12:00:00Z") + i * 86_400_000),
+    );
+    const days = bucketForecastDays(times, 0, 10);
+    expect(days).toHaveLength(10);
+    expect(days.map((d) => d.label)).toEqual([
+      "TODAY", "TOMORROW", "+2", "+3", "+4", "+5", "+6", "+7", "+8", "+9",
+    ]);
+  });
+});
+
+describe("dayLabels", () => {
+  it("labels TODAY/TOMORROW then +N up to the requested count", () => {
+    expect(dayLabels(4)).toEqual(["TODAY", "TOMORROW", "+2", "+3"]);
+    expect(dayLabels(1)).toEqual(["TODAY"]);
+  });
+
+  it("clamps to the 16-day store ceiling", () => {
+    expect(dayLabels(999)).toHaveLength(16);
   });
 });
 

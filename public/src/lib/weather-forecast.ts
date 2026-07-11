@@ -217,16 +217,28 @@ function stats(values: number[]): { mean: number; min: number; max: number } | n
   return { mean: sum / values.length, min, max };
 }
 
-/** Build the 3-day (today + next 3) daily card data for a point. */
+/**
+ * Build daily hi/lo card data for a point. Defaults to the detailed 3-day strip
+ * (today + next 3); pass a larger `maxDays` for the extended daily outlook that
+ * the 12-hourly store now backs (up to ~16 days). Sampling is bounded to that
+ * horizon so only the shown days are decoded.
+ */
 export async function buildForecastDays(
   framesByVariable: Record<string, iWeatherForecastFrameModel[]>,
   lat: number,
   lng: number,
+  maxDays: number = DEFAULT_FORECAST_DAYS,
 ): Promise<ForecastSeries> {
-  const { units, samplesByVariable, allValidTimes } = await samplePointSeries(framesByVariable, lat, lng);
+  // +1 day of slack so the final day's frames aren't clipped by the local offset.
+  const { units, samplesByVariable, allValidTimes } = await samplePointSeries(
+    framesByVariable,
+    lat,
+    lng,
+    (maxDays + 1) * 24,
+  );
 
   const offset = localDayOffsetHours(lng);
-  const dayKeys = bucketForecastDays(allValidTimes, lng);
+  const dayKeys = bucketForecastDays(allValidTimes, lng, maxDays);
 
   const days: ForecastDay[] = dayKeys.map(({ date, label }) => {
     const forDay = (variable: string) =>
@@ -319,7 +331,9 @@ export async function buildForecastSteps(
   lat: number,
   lng: number,
 ): Promise<ForecastStepSeries> {
-  const { units, samplesByVariable } = await samplePointSeries(framesByVariable, lat, lng);
+  // Timeline stays the detailed 3-hourly track only (today..+72h); the coarse
+  // 12-hourly outlook tail beyond that is for the daily cards, not this series.
+  const { units, samplesByVariable } = await samplePointSeries(framesByVariable, lat, lng, 72);
   const offset = localDayOffsetHours(lng);
 
   // Union every variable's samples by validTime into one row per step.
@@ -414,10 +428,15 @@ interface AreaVariableSample {
   stats: AreaStats;
 }
 
-/** Build the 3-day (today + next 3) daily card data over a bbox. */
+/**
+ * Build daily card data over a bbox. Defaults to the detailed 3-day strip; pass
+ * a larger `maxDays` for the extended daily outlook. Frames past the shown
+ * horizon are skipped so the far-future tail isn't decoded needlessly.
+ */
 export async function buildAreaForecastDays(
   framesByVariable: Record<string, iWeatherForecastFrameModel[]>,
   bbox: [number, number, number, number],
+  maxDays: number = DEFAULT_FORECAST_DAYS,
 ): Promise<AreaForecastSeries> {
   const centerLat = (bbox[1] + bbox[3]) / 2;
   let centerLng = (bbox[0] + bbox[2]) / 2;
@@ -426,11 +445,14 @@ export async function buildAreaForecastDays(
   const units: Record<string, string> = {};
   const samplesByVariable: Record<string, AreaVariableSample[]> = {};
   const allValidTimes: Date[] = [];
+  // +1 day of slack so the final day isn't clipped by the local offset.
+  const horizonMs = Date.now() + (maxDays + 1) * 24 * 3600 * 1000;
 
   for (const [variable, frames] of Object.entries(framesByVariable)) {
     const picked = pickFramesForPoint(frames as any, centerLat, centerLng);
     const samples: AreaVariableSample[] = [];
     for (const frame of picked) {
+      if (new Date(frame.validTime).getTime() > horizonMs) continue;
       units[variable] = frame.units || units[variable] || "";
       try {
         const grid = await frameToSampleable(frame as any);
@@ -447,7 +469,7 @@ export async function buildAreaForecastDays(
   }
 
   const offset = localDayOffsetHours(centerLng);
-  const dayKeys = bucketForecastDays(allValidTimes, centerLng);
+  const dayKeys = bucketForecastDays(allValidTimes, centerLng, maxDays);
 
   const days: AreaForecastDay[] = dayKeys.map(({ date, label }) => {
     const forDay = (variable: string) =>

@@ -174,19 +174,14 @@ export default function BroadcastFrame({
     () => buildTicker({ quakes, tracks, alertLines }),
     [quakes, tracks, alertLines],
   );
-  // A round-up segment takes over the bottom crawl with its own narrative
-  // (single long line, so it just scrolls through once and loops) instead of
-  // mixing it into the alert/quake/track feed — the top crawl keeps showing
-  // the standing feed throughout.
-  const summaryOnAir =
-    onAirSegment?.kind === "summary" ? onAirSegment.summary : null;
-  // Bottom crawl carries the same standing feed as the top, so it wears the same
-  // title chip (theme.tickerTitle, e.g. "GLOBAL FEED"); only a round-up takeover,
-  // which swaps in its own narrative, relabels the chip.
-  const bottomTickerTitle = summaryOnAir
-    ? "GLOBAL ROUND-UP"
-    : theme.tickerTitle;
-  const bottomTickerItems = summaryOnAir ? [summaryOnAir.narrative] : ticker;
+  // The round-up narrative rides on a `global` spin (see director.ts's
+  // `Segment.summary`) — surfaced as on-air graphics (the round-up deck card),
+  // NOT by hijacking the bottom crawl. Both crawls keep the standing global feed
+  // throughout, so the day's live alerts/quakes/tracks stay on screen even while
+  // a round-up airs.
+  const summaryOnAir = onAirSegment?.summary ?? null;
+  const bottomTickerTitle = theme.tickerTitle;
+  const bottomTickerItems = ticker;
   const eventTargeted = onAirSegment
     ? isTargetedEvent(onAirSegment.kind)
     : false;
@@ -234,7 +229,7 @@ export default function BroadcastFrame({
   // live stop. When that stop lands inside a curated country, tally against its
   // real bbox (exactly like a country spotlight) instead of a camera-zoom guess.
   const summaryCountry =
-    onAirSegment?.kind === "summary"
+    onAirSegment?.summary
       ? countryContaining(state.camera.center[0], state.camera.center[1])
       : undefined;
   // The enriched Country doc under the on-air point — from the full ~240-country
@@ -248,13 +243,13 @@ export default function BroadcastFrame({
   // in from the far side of the planet.
   const ledeCenter: [number, number] | null = !onAirSegment
     ? null
-    : onAirSegment.kind === "summary"
+    : onAirSegment.summary
       ? state.camera.center
       : segmentHasLocation
         ? (onAirSegment.camera.center ?? state.camera.center ?? null)
         : null;
   const ledeCountryDoc = useCountryAt(ledeCenter);
-  const summaryCountryDoc = onAirSegment?.kind === "summary" ? ledeCountryDoc : null;
+  const summaryCountryDoc = onAirSegment?.summary ? ledeCountryDoc : null;
   const areaInfo = ledeCountryDoc
     ? {
         name: ledeCountryDoc.name,
@@ -270,7 +265,7 @@ export default function BroadcastFrame({
     ? countryOnAir.bbox
     : summaryCountry
       ? summaryCountry.bbox
-      : onAirSegment?.kind === "summary"
+      : onAirSegment?.summary
         ? bboxForCamera(state.camera.center, state.camera.zoom)
         : onAirSegment && segmentHasLocation
           ? bboxForCamera(onAirSegment.camera.center, onAirSegment.camera.zoom)
@@ -290,7 +285,7 @@ export default function BroadcastFrame({
     onAirSegment &&
     !eventTargeted &&
     !hasTrackInfo &&
-    (onAirSegment.kind === "country" || onAirSegment.kind === "summary")
+    (onAirSegment.kind === "country" || onAirSegment.summary != null)
       ? areaBbox
       : undefined;
   // Whether the country area forecast has data — decides if it earns its
@@ -348,7 +343,9 @@ export default function BroadcastFrame({
         depthCenter,
         manifest,
         activeVariable: state.activeVariable,
-        roundup: summaryOnAir ? { stats: summaryOnAir.stats, sources: summaryOnAir.sources } : undefined,
+        roundup: summaryOnAir
+          ? { narrative: summaryOnAir.narrative, stats: summaryOnAir.stats, sources: summaryOnAir.sources }
+          : undefined,
         summaryCountry: summaryCountryDoc,
         areaInfo,
         theme,

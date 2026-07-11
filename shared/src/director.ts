@@ -45,8 +45,7 @@ export type SegmentKind =
   | "flight" // a notable aircraft
   | "ship" // a notable vessel
   | "orbital" // a satellite constellation's orbits, spun on a world view
-  | "ad" // a full-frame advertisement interstitial (a "commercial break")
-  | "summary"; // a generated round-up narrative, read as a lower-third ticker
+  | "ad"; // a full-frame advertisement interstitial (a "commercial break")
 
 export const SEGMENT_KINDS: SegmentKind[] = [
   "intro",
@@ -61,7 +60,6 @@ export const SEGMENT_KINDS: SegmentKind[] = [
   "flight",
   "ship",
   "ad",
-  "summary",
 ];
 
 export interface DirectorCamera {
@@ -133,8 +131,11 @@ export interface Segment {
    */
   ad?: SegmentAd;
   /**
-   * For `summary` segments: the generated round-up narrative to read as a
-   * lower-third ticker. Rides on the segment (like `ad`) so /watch renders it
+   * The generated round-up narrative a world spin presents. When set on a
+   * `global` spin (see worker/src/director/candidates.ts `summaryCandidates`)
+   * the spin BECOMES the round-up: it tours the round-up's hotspot `stops` and
+   * shows the narrative + stats as on-air graphics, instead of the plain
+   * map-type cycle. Rides on the segment (like `ad`) so /watch renders it
    * straight from the director cut — no extra fetch. See SegmentSummary.
    */
   summary?: SegmentSummary;
@@ -155,7 +156,7 @@ export interface SegmentAd {
 }
 
 /**
- * The round-up narrative a `summary` segment reads out, attached to its segment
+ * The round-up narrative a `global` spin presents, attached to its segment
  * by the worker (see worker/src/director/candidates.ts `summaryCandidates`).
  * `id` is the source EventSummary doc id — used to avoid re-airing the same
  * round-up twice in a session.
@@ -182,7 +183,7 @@ export interface SegmentSummary {
 }
 
 /**
- * One camera stop within a `summary` segment's round-up tour, sourced from the
+ * One camera stop within a round-up spin's tour, sourced from the
  * EventSummary doc's `hotspots`/`topEvents` (see worker/src/director/candidates.ts
  * `summaryCandidates`). Drives both the camera fly-to and the on-air info card.
  */
@@ -452,9 +453,6 @@ export const DEFAULT_KIND_HOLD_SECONDS: Record<SegmentKind, number> = {
   flight: 12,
   ship: 12,
   ad: 12,
-  /** Floor only — actual hold scales with the narrative's reading time (see
-   *  summaryCandidates), capped separately at 60s. */
-  summary: 20,
 };
 
 /** Default hold per quake magnitude class — the bigger the quake, the longer the dwell. */
@@ -526,9 +524,8 @@ function seedSlide(id: string, name: string, look: KindLook, on: readonly string
 /**
  * Starter "look" library per kind (see `DirectorConfig.kindSlides`) — two
  * curated slides each, so a fresh "Look per shot type" panel isn't empty.
- * `ad`/`summary` are skipped: an ad is a full-frame card (the map underneath
- * never shows) and a summary tours its own generated stops, so neither kind
- * has a single fixed look worth saving (see their PRESETS comments).
+ * `ad` is skipped: an ad is a full-frame card (the map underneath never shows),
+ * so it has no single fixed look worth saving (see its PRESETS comment).
  *
  * Purely a saved-slide seed — none of these are pre-loaded into `kindLooks`/
  * `overlayOverrides`, so a fresh config's actual on-air look is unchanged
@@ -898,9 +895,6 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
     // Off by default: ads only air once the operator enables them (and has
     // uploaded some). Opt-in, like a paid feature should be.
     ad: false,
-    // On by default: free, auto-generated content — nothing to upload/configure
-    // (a summary with no successful narrative just never produces a candidate).
-    summary: true,
   },
   countries: DEFAULT_DIRECTOR_COUNTRIES,
   minQuakeMag: 4.5,

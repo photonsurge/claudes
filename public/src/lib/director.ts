@@ -165,6 +165,25 @@ export function cutSteps(
       anchored: false,
     };
   }
+  // A round-up rides a `global` spin: when it carries geocoded stops the spin
+  // BECOMES the round-up tour — fly to each hotspot/top-event in turn and relabel
+  // the on-air card with its place + severity, instead of the plain map-type
+  // cycle. Checked BEFORE globalMapTour so it wins for a global cut. A round-up
+  // with no stops (older doc, or one with no geocoded events) falls through to
+  // the normal global spin below — its narrative still shows as on-air graphics.
+  if (cut.summary?.stops?.length) {
+    const steps = cut.summary.stops.map(
+      (s): MapStep => ({
+        // A stop FRAMES a specific hotspot, so hold it like a country spotlight —
+        // override the global spin's autoSpin. Spinning a framed, zoomed-in stop
+        // just drifts it off-screen (the "framed shots HOLD" rule in director-rois).
+        patch: { camera: { center: [s.lng, s.lat], zoom: SUMMARY_STOP_ZOOM }, autoSpin: false, spinSpeed: 0 },
+        label: { title: s.label, subtitle: [severityLabel(s.severity), s.subtitle].filter(Boolean).join(" · ") },
+      }),
+    );
+    const flightMs = cut.patch.cutTransitionMs ?? 4000;
+    return { steps, periodMs: flightMs + SUMMARY_STOP_DWELL_MS, anchored: true };
+  }
   const tour = globalMapTour(cut.kind, mapTypeIds);
   if (tour) {
     // Global spins ARE the map type, so they relabel the on-air card per look. An
@@ -182,24 +201,6 @@ export function cutSteps(
   if (cut.kind === "storm") {
     const plan = hazardMapPlan(cut.hazard);
     return { steps: plan.cycle.map((v) => ({ patch: { activeVariable: v } })), periodMs: plan.cycleMs, anchored: true };
-  }
-  if (cut.kind === "summary") {
-    // Fly to each hotspot/top-event in turn and relabel the on-air card with
-    // its place + severity, instead of holding the static global view for the
-    // whole narration. No stops (older round-up predating this field, or one
-    // with no geocoded events) just keeps the global view.
-    const steps = (cut.summary?.stops ?? []).map(
-      (s): MapStep => ({
-        // A stop FRAMES a specific hotspot, so hold it like a country spotlight —
-        // override the summary preset's world spin (PRESETS.summary is autoSpin:true
-        // for the stop-less global backdrop). Spinning a framed, zoomed-in stop just
-        // drifts it off-screen — the "framed shots HOLD" rule in director-rois PRESETS.
-        patch: { camera: { center: [s.lng, s.lat], zoom: SUMMARY_STOP_ZOOM }, autoSpin: false, spinSpeed: 0 },
-        label: { title: s.label, subtitle: [severityLabel(s.severity), s.subtitle].filter(Boolean).join(" · ") },
-      }),
-    );
-    const flightMs = cut.patch.cutTransitionMs ?? 4000;
-    return { steps, periodMs: flightMs + SUMMARY_STOP_DWELL_MS, anchored: true };
   }
   const cyc = VAR_CYCLE[cut.kind] ?? [];
   return { steps: cyc.map((v) => ({ patch: { activeVariable: v } })), periodMs: VAR_CYCLE_MS, anchored: false };
@@ -251,9 +252,9 @@ export function eventPulse(director: DirectorState | null): [number, number] | n
  *  so the CountryShot catalog lookup needs the bare subject — see
  *  shared/director-countries.
  *
- *  A round-up ("summary") tours a fresh hotspot every few seconds by patching
+ *  A round-up global spin tours a fresh hotspot every few seconds by patching
  *  the *live* camera rather than moving `segment.camera` (which stays pinned
- *  to the global view the whole time — see cutSteps' summary branch below),
+ *  to the global view the whole time — see cutSteps' round-up branch above),
  *  so callers pass that live centre in as `liveCenter` (e.g. /watch's `shown.
  *  camera.center`); when the current stop lands inside a curated country this
  *  glows it exactly like a real country spotlight. */
@@ -266,7 +267,7 @@ export function activeCountryIso(
     const subject = director.segment.id.split(":")[1] ?? "";
     return countryShot(subject)?.iso2 ?? null;
   }
-  if (director.segment.kind === "summary" && liveCenter) {
+  if (director.segment.summary && liveCenter) {
     return countryContaining(liveCenter[0], liveCenter[1])?.iso2 ?? null;
   }
   return null;
@@ -284,7 +285,7 @@ export function activeRegionBbox(
   liveCamera?: { center: [number, number]; zoom: number },
 ): [number, number, number, number] | null {
   if (!director?.active || !director.segment) return null;
-  if (director.segment.kind === "summary" && liveCamera) {
+  if (director.segment.summary && liveCamera) {
     if (countryContaining(liveCamera.center[0], liveCamera.center[1])) return null;
     return bboxForCamera(liveCamera.center, liveCamera.zoom);
   }

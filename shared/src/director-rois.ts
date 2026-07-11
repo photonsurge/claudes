@@ -556,25 +556,22 @@ export const PRESETS: Record<SegmentKind, Partial<ControlState>> = {
     spinSpeed: 0,
     zoomDrift: 0,
   },
-  // A round-up ticker reads over the lower third, so — unlike the ad card — the
-  // globe stays the visible, alive backdrop: same calm world spin as intro/ocean,
-  // temperature + wind so it still reads as an actual weather map (not a bare
-  // globe with markers) while the narration plays. Seismic + alert markers
-  // stay lit (severity/magnitude floors dropped, same as storm/quake/country)
-  // so the events the narration is summarizing are actually visible too.
-  summary: {
-    ...LAYERS_OFF,
-    activeVariable: "temp",
-    showWind: true,
-    showPressure: true,
-    showCities: true,
-    showSeismic: true,
-    seismicMinMag: 0,
-    showAlerts: true,
-    alertSeverityMin: 0,
-    showVolcanoes: true,
-    autoSpin: true,
-    spinSpeed: 2,
-    zoomDrift: 0,
-  },
+};
+
+/**
+ * Event-marker overlays the worker layers onto a `global` spin that's carrying a
+ * round-up (see `summaryCandidates` in worker/src/director/candidates.ts) — so
+ * the seismic / alert / volcano markers behind the day's story are actually lit
+ * while the round-up tours its hotspots. Severity/magnitude floors are dropped
+ * (same as storm/quake/country) so every event the narration summarizes shows,
+ * not just the headline-grade ones the scene baseline may filter to. Folded onto
+ * the plain `global` preset via the candidate's `extra` patch, so a round-up
+ * spin reads as the world spin PLUS the events it's narrating.
+ */
+export const ROUNDUP_MARKERS: Partial<ControlState> = {
+  showSeismic: true,
+  seismicMinMag: 0,
+  showAlerts: true,
+  alertSeverityMin: 0,
+  showVolcanoes: true,
 };

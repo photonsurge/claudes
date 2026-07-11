@@ -91,9 +91,9 @@ export interface ModeSlideContext {
   depthCenter: [number, number] | null;
   manifest: WeatherManifest | null;
   activeVariable: string | null;
-  /** Round-up narrative stats — folds the summary mode's stats card into the
-   *  deck rather than stacking it below. */
-  roundup?: { stats?: iSummaryStats; sources?: string[] };
+  /** Round-up narrative + stats — folds the round-up's on-air card (narrative
+   *  text and headline numbers) into the deck rather than the bottom ticker. */
+  roundup?: { narrative?: string; stats?: iSummaryStats; sources?: string[] };
   /** The enriched country the round-up tour is currently parked on (resolved
    *  per stop via /api/countries/at) — drives the summary deck's "the nation"
    *  card. Null when the stop is over ocean / outside every country. */
@@ -208,16 +208,17 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     return slides;
   }
 
-  // Round-up — a per-country package that plays while the tour dwells on each
-  // stop: the "now viewing" IN VIEW rollup (alerts/quakes/volcanoes), then the
-  // nation itself (flag/photo/blurb), its area forecast (country weather), its
-  // active-alerts drill-down, its capital + top cities (each with climate
-  // charts), and the round-up's own headline numbers. Every country-scoped slide
-  // guards on real content so an ocean/uncurated stop degrades to just the
-  // rollup + stats. `wideCitiesBbox` is the enriched country's real bbox here
-  // (set for summary in BroadcastFrame), so the cities/forecast reuse the same
-  // plumbing the country spotlight does.
-  if (segment.kind === "summary") {
+  // Round-up (a world spin carrying `segment.summary`) — a per-country package
+  // that plays while the tour dwells on each stop: the "now viewing" IN VIEW
+  // rollup (alerts/quakes/volcanoes), then the nation itself (flag/photo/blurb),
+  // its area forecast (country weather), its active-alerts drill-down, its
+  // capital + top cities (each with climate charts), and the round-up's own
+  // narrative + headline numbers. Every country-scoped slide guards on real
+  // content so an ocean/uncurated stop degrades to just the rollup + narrative.
+  // `wideCitiesBbox` is the enriched country's real bbox here (set for the
+  // round-up in BroadcastFrame), so cities/forecast reuse the same plumbing the
+  // country spotlight does.
+  if (segment.summary) {
     if (ctx.summaryCountry) {
       slides.push({ id: "nation", node: <CountryPanel country={ctx.summaryCountry} color={color} theme={ctx.theme} /> });
     }
@@ -232,7 +233,17 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
       slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     }
     if (ctx.roundup) {
-      slides.push({ id: "roundup", node: <RoundupStatsPanel stats={ctx.roundup.stats} sources={ctx.roundup.sources} theme={ctx.theme} /> });
+      slides.push({
+        id: "roundup",
+        node: (
+          <RoundupStatsPanel
+            narrative={ctx.roundup.narrative}
+            stats={ctx.roundup.stats}
+            sources={ctx.roundup.sources}
+            theme={ctx.theme}
+          />
+        ),
+      });
     }
     return slides;
   }
