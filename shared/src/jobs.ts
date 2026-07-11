@@ -352,6 +352,15 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Countries & Regions",
   },
   {
+    id: "city-weather-refresh",
+    label: "Refresh city weather cache",
+    description: "Sample the frame archive + forecast at every city ≥100k and cache 24h trend + current + 3-day forecast.",
+    domain: "regions",
+    type: "cityWeather",
+    event: "refresh",
+    group: "Countries & Regions",
+  },
+  {
     id: "area-weather-run",
     label: "Refresh area-weather reports",
     description: "Snapshot mean/min/max temp/gust/rain + hazard flags for every country (real boundary) and region (bbox) right now.",

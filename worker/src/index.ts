@@ -636,6 +636,22 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable cityWeather.refresh (hourly ≥100k-city point cache) ----
+  // Offset to :20 so temp/wind/rain frames + the forecast store are settled from
+  // the top-of-hour ingest before this samples them.
+  if (process.env.CITY_WEATHER_ENABLED !== "false") {
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "cityWeather", type: "cityWeather", event: "refresh", data: {} },
+        { repeat: { pattern: process.env.CITY_WEATHER_CRON || "20 * * * *" }, jobId: "city-weather-refresh" },
+      );
+      log(TAG, `registered repeatable cityWeather.refresh`);
+    } catch (err) {
+      log(TAG, `failed to register cityWeather.refresh`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable countries/regions.enrichWiki ----
   // Population/capital/currency + a photo/blurb barely change — a daily sweep
   // (staleness-gated at 30 days internally, so most days it's a no-op scan) is

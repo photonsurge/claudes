@@ -168,12 +168,13 @@ export async function runRegionPlaces(): Promise<{ regions: number; withCountrie
       query.lat = { $gte: s, $lte: n };
     }
     const cityDocs = await db.cities.model
-      .find(query, { name: 1, country: 1, cc: 1, lat: 1, lng: 1, population: 1 })
+      .find(query, { id: 1, name: 1, country: 1, cc: 1, lat: 1, lng: 1, population: 1, _id: 0 })
       .sort({ population: -1 })
       .lean()
       .exec();
 
     const ranked: iRegionCity[] = cityDocs.map((c: any) => ({
+      cityId: c.id,
       name: c.name,
       country: c.country,
       cc: c.cc,

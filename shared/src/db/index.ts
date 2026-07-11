@@ -47,6 +47,8 @@ import { getCountryModel } from "./country-model";
 import { makeCountryRepo } from "./country-repo";
 import { getRegionModel } from "./region-model";
 import { makeRegionRepo } from "./region-repo";
+import { getCityWeatherModel } from "./city-weather-model";
+import { makeCityWeatherRepo } from "./city-weather-repo";
 import { getAreaWeatherReportModel } from "./area-weather-report-model";
 import { makeAreaWeatherReportRepo } from "./area-weather-report-repo";
 import { getGeomagModel } from "./geomag-model";
@@ -101,6 +103,7 @@ export function createDb(conn: Connection) {
     weatherForecastFrames: makeWeatherForecastFrameRepo(getWeatherForecastFrameModel(conn)),
     climateYears: makeClimateYearRepo(getClimateYearModel(conn)),
     cities: mongoCrud(getCityModel(conn)),
+    cityWeather: makeCityWeatherRepo(getCityWeatherModel(conn)),
     alerts: makeAlertsRepo(getAlertModel(conn)),
     satelliteTles: makeSatelliteTleRepo(getSatelliteTleModel(conn)),
     trackSnapshots: makeTrackSnapshotRepo(getTrackSnapshotModel(conn)),

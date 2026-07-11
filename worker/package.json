@@ -35,6 +35,7 @@
     "enrich:countries": "ts-node src/scripts/enrichCountries.ts",
     "enrich:regions": "ts-node src/scripts/enrichRegions.ts",
     "enrich:region-places": "ts-node src/scripts/enrichRegionPlaces.ts",
+    "refresh:city-weather": "ts-node src/scripts/refreshCityWeather.ts",
     "status:enrich": "ts-node src/scripts/enrichStatus.ts",
     "ingest:alerts": "ts-node src/scripts/ingestAlerts.ts",
     "ingest:tles": "ts-node src/scripts/ingestTles.ts",

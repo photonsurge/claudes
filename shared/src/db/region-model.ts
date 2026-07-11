@@ -20,6 +20,8 @@ export interface iRegionCountry {
 
 /** A biggest-city entry stored on a land region for the dossier / slides. */
 export interface iRegionCity {
+  /** City.id — join key into the CityWeather cache. */
+  cityId?: string;
   name: string;
   country?: string;
   /** ISO-3166 alpha-2 (as stored on the City). */
@@ -98,6 +100,7 @@ const RegionSchema = new mongoose.Schema<iRegionModel>(
       type: [
         new mongoose.Schema<iRegionCity>(
           {
+            cityId: { type: String, required: false },
             name: { type: String, required: true },
             country: { type: String, required: false },
             cc: { type: String, required: false },
