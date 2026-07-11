@@ -32,3 +32,31 @@ export async function GET(
     return NextResponse.json({ error: String(error) }, { status: 502, headers: NO_CACHE });
   }
 }
+
+/**
+ * PATCH /api/countries/[id] — toggle a country's 12h AI round-up opt-in
+ * (`roundupEnabled`). Body: `{ roundupEnabled: boolean }`. The round-up job's
+ * work-list is exactly the enabled set.
+ */
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const countryId = decodeURIComponent(id);
+  try {
+    const body = (await req.json().catch(() => ({}))) as { roundupEnabled?: unknown };
+    if (typeof body.roundupEnabled !== "boolean") {
+      return NextResponse.json({ error: "roundupEnabled (boolean) required" }, { status: 400, headers: NO_CACHE });
+    }
+    const db = await getAppDb();
+    const country = await db.countries.get(countryId);
+    if (!country) {
+      return NextResponse.json({ error: "country not found" }, { status: 404, headers: NO_CACHE });
+    }
+    await db.countries.setRoundupEnabled(countryId, body.roundupEnabled);
+    return NextResponse.json({ countryId, roundupEnabled: body.roundupEnabled }, { status: 200, headers: NO_CACHE });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 502, headers: NO_CACHE });
+  }
+}

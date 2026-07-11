@@ -51,6 +51,20 @@ export async function getCountry(id: string): Promise<{ detail?: CountryDetail; 
   }
 }
 
+/** Toggle a country's 12h AI round-up opt-in. Returns true on success. */
+export async function setCountryRoundup(countryId: string, roundupEnabled: boolean): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/countries/${encodeURIComponent(countryId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roundupEnabled }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** An enriched country minus its heavy boundary geometry — the /api/countries/at payload. */
 export type CountryAt = Omit<iCountryModel, "geometry">;
 

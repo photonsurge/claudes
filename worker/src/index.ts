@@ -634,7 +634,9 @@ process.on("uncaughtException", (err) => {
         await myQueue.add(
           "do",
           { domain: "placeRoundups", type: "placeRoundups", event, data: {} },
-          { repeat: { pattern: cron }, jobId: id, priority: 10 },
+          // Normal priority (5): heavier than a live tick shouldn't wait on, but
+          // not the low-priority bucket where enrichment sweeps sit.
+          { repeat: { pattern: cron }, jobId: id, priority: 5 },
         );
         log(TAG, `registered repeatable placeRoundups.${event}`, { cron });
       } catch (err) {

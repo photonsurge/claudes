@@ -90,7 +90,10 @@ export interface iRoundupGauge {
 export interface iPlaceRoundupInputs {
   topCities: iRoundupCity[];
   area?: { stats: iRoundupAreaStat[]; hazards: iRoundupHazard[] } | null;
+  /** Most-severe active alerts inside the place — bounded so the LLM prompt stays
+   *  within token limits; `alertsTotal` is the true count before the cap. */
   alerts: iRoundupAlert[];
+  alertsTotal?: number;
   volcanoes: iRoundupVolcano[];
   tideGauges: iRoundupGauge[];
   seismoStations: iRoundupGauge[];

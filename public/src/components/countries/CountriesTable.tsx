@@ -23,11 +23,14 @@ export default function CountriesTable({
   totalCount,
   selectedId,
   onSelect,
+  onToggleRoundup,
 }: {
   countries: CountryWithWeather[];
   totalCount: number;
   selectedId: string | null;
   onSelect: (country: CountryWithWeather) => void;
+  /** Flip a country's 12h AI round-up opt-in. */
+  onToggleRoundup: (country: CountryWithWeather, enabled: boolean) => void;
 }) {
   return (
     <div style={{ overflowX: "auto", border: "1px solid #1b2030", borderRadius: 8, marginTop: 14 }}>
@@ -39,6 +42,7 @@ export default function CountriesTable({
             <th style={th}>Subregion</th>
             <th style={th}>Enrichment</th>
             <th style={thNum}>Weather</th>
+            <th style={{ ...thNum, whiteSpace: "nowrap" }} title="12h AI round-up opt-in">Round-up</th>
           </tr>
         </thead>
         <tbody>
@@ -67,12 +71,21 @@ export default function CountriesTable({
                 <td style={{ ...td, color: muted }}>{c.subregion ?? "—"}</td>
                 <td style={{ ...td, color: status.color, whiteSpace: "nowrap" }}>● {status.label}</td>
                 <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{weatherSummary(c)}</td>
+                <td style={{ ...td, textAlign: "right" }}>
+                  <input
+                    type="checkbox"
+                    checked={!!c.roundupEnabled}
+                    onChange={(e) => onToggleRoundup(c, e.target.checked)}
+                    aria-label={`Toggle 12h AI round-up for ${c.name}`}
+                    style={{ cursor: "pointer", width: 16, height: 16 }}
+                  />
+                </td>
               </tr>
             );
           })}
           {countries.length === 0 && (
             <tr>
-              <td style={{ ...td, padding: 18, color: muted }} colSpan={5}>
+              <td style={{ ...td, padding: 18, color: muted }} colSpan={6}>
                 {totalCount === 0 ? "No countries seeded yet — hit Reseed catalog." : "No countries match this search."}
               </td>
             </tr>

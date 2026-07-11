@@ -8,7 +8,7 @@
  */
 import { useMemo, useRef, useState } from "react";
 import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
-import { useCountries, type CountryWithWeather } from "../../lib/countries";
+import { useCountries, setCountryRoundup, type CountryWithWeather } from "../../lib/countries";
 import AdminPageShell from "../../components/admin/AdminPageShell";
 import CountriesTable from "../../components/countries/CountriesTable";
 import CountryEnrichmentCard from "../../components/countries/CountryEnrichmentCard";
@@ -35,6 +35,9 @@ export default function CountriesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // Optimistic overrides for the round-up opt-in — the countries hook polls on a
+  // 120s interval, so reflect a toggle immediately instead of waiting it out.
+  const [roundupOverrides, setRoundupOverrides] = useState<Record<string, boolean>>({});
   const globe = useRef<GlobeHandle | null>(null);
 
   const continents = useMemo(
@@ -47,9 +50,27 @@ export default function CountriesPage() {
       countries
         .filter((c) => (continent ? c.continent === continent : true))
         .filter((c) => (q ? c.name.toLowerCase().includes(q) : true))
+        .map((c) =>
+          c.countryId in roundupOverrides ? { ...c, roundupEnabled: roundupOverrides[c.countryId] } : c,
+        )
         .sort((a, b) => a.name.localeCompare(b.name)),
-    [countries, continent, q],
+    [countries, continent, q, roundupOverrides],
   );
+
+  const roundupCount = useMemo(
+    () => countries.filter((c) => (c.countryId in roundupOverrides ? roundupOverrides[c.countryId] : c.roundupEnabled)).length,
+    [countries, roundupOverrides],
+  );
+
+  const toggleRoundup = async (country: CountryWithWeather, enabled: boolean) => {
+    setRoundupOverrides((m) => ({ ...m, [country.countryId]: enabled }));
+    const ok = await setCountryRoundup(country.countryId, enabled);
+    if (!ok) {
+      // Revert the optimistic flip on failure.
+      setRoundupOverrides((m) => ({ ...m, [country.countryId]: !enabled }));
+      setNote(`Round-up toggle failed for ${country.name}.`);
+    }
+  };
 
   const selected = selectedId ? countries.find((c) => c.id === selectedId) ?? null : null;
   const enrichedCount = countries.filter((c) => c.wikiTitle || c.wikiThumb || c.wikiExtract).length;
@@ -77,7 +98,7 @@ export default function CountriesPage() {
       title="Countries"
       description={
         <>
-          Showing {rows.length} of {countries.length} countries · {enrichedCount} enriched
+          Showing {rows.length} of {countries.length} countries · {enrichedCount} enriched · {roundupCount} round-up enabled
         </>
       }
       maxWidth={1600}
@@ -136,7 +157,7 @@ export default function CountriesPage() {
 
           {selected && <CountryEnrichmentCard country={selected} onClose={() => setSelectedId(null)} />}
 
-          <CountriesTable countries={rows} totalCount={countries.length} selectedId={selectedId} onSelect={onSelect} />
+          <CountriesTable countries={rows} totalCount={countries.length} selectedId={selectedId} onSelect={onSelect} onToggleRoundup={toggleRoundup} />
         </section>
 
         <div style={{ position: "relative", flex: 1, minWidth: 360 }}>

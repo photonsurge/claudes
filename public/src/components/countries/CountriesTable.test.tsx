@@ -21,7 +21,9 @@ const uk = {
 
 it("links each country to its detail page and previews on select", () => {
   const onSelect = jest.fn();
-  render(<CountriesTable countries={[uk]} totalCount={1} selectedId={null} onSelect={onSelect} />);
+  render(
+    <CountriesTable countries={[uk]} totalCount={1} selectedId={null} onSelect={onSelect} onToggleRoundup={() => {}} />,
+  );
 
   expect(screen.getByRole("link", { name: /United Kingdom/ })).toHaveAttribute("href", "/countries/gb");
   expect(screen.getByText("14°C")).toBeInTheDocument();
@@ -31,7 +33,16 @@ it("links each country to its detail page and previews on select", () => {
   expect(onSelect).toHaveBeenCalledWith(uk);
 });
 
+it("toggles a country's round-up opt-in", () => {
+  const onToggleRoundup = jest.fn();
+  render(
+    <CountriesTable countries={[uk]} totalCount={1} selectedId={null} onSelect={() => {}} onToggleRoundup={onToggleRoundup} />,
+  );
+  fireEvent.click(screen.getByRole("checkbox", { name: /round-up for United Kingdom/i }));
+  expect(onToggleRoundup).toHaveBeenCalledWith(uk, true);
+});
+
 it("shows a seed hint when the catalog is empty", () => {
-  render(<CountriesTable countries={[]} totalCount={0} selectedId={null} onSelect={() => {}} />);
+  render(<CountriesTable countries={[]} totalCount={0} selectedId={null} onSelect={() => {}} onToggleRoundup={() => {}} />);
   expect(screen.getByText(/No countries seeded yet/)).toBeInTheDocument();
 });

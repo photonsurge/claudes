@@ -13,6 +13,7 @@ import { flagEmoji, getCountry, countryEnrichmentStatus, type CountryDetail as C
 import { areaWeatherSeries } from "../../lib/area-weather";
 import GlobeView, { type GlobeHandle } from "../GlobeView";
 import { MiniChart } from "../broadcast/PointHistoryPanel";
+import PlaceRoundupCard from "../PlaceRoundupCard";
 
 const muted = "#8b95a7";
 const panel = { border: "1px solid #1b2030", borderRadius: 9, background: "#0c111c" } as const;
@@ -167,6 +168,8 @@ export default function CountryDetail({ id }: { id: string }) {
           </>
         )}
       </section>
+
+      <PlaceRoundupCard kind="country" placeId={country.countryId} />
 
       <details style={{ ...panel, padding: 14, marginTop: 16 }}>
         <summary style={{ color: muted, cursor: "pointer", fontSize: 12 }}>Raw country record</summary>

@@ -91,15 +91,28 @@ export async function generateCountries(_job: Job) {
   return runBatch("country", places, db.countryRoundups, db);
 }
 
-/** Region round-ups — every region (bbox-scoped, no opt-in). */
+/**
+ * Region ids to skip — the whole-planet "world" framing region isn't a real
+ * region: it grabs every global alert (thousands) and just duplicates the global
+ * summary. Env-extendable (comma-separated regionIds).
+ */
+const EXCLUDED_REGION_IDS = new Set(
+  ["world", ...(process.env.PLACE_ROUNDUP_EXCLUDE_REGIONS || "").split(",")]
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+/** Region round-ups — every region except the whole-planet framing ones (bbox-scoped, no opt-in). */
 export async function generateRegions(_job: Job) {
   const db = await getAppDb();
   const regions = await db.regions.list();
-  const places: PlaceRef[] = regions.map((r) => ({
-    kind: "region",
-    id: r.regionId,
-    name: r.name,
-    bbox: r.bbox,
-  }));
+  const places: PlaceRef[] = regions
+    .filter((r) => !EXCLUDED_REGION_IDS.has(r.regionId.toLowerCase()))
+    .map((r) => ({
+      kind: "region",
+      id: r.regionId,
+      name: r.name,
+      bbox: r.bbox,
+    }));
   return runBatch("region", places, db.regionRoundups, db);
 }

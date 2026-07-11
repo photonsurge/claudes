@@ -224,6 +224,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     type: "placeRoundups",
     event: "generateCountries",
     group: "Alerts & events",
+    priority: 5,
   },
   {
     id: "place-roundups-regions",
@@ -234,6 +235,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     type: "placeRoundups",
     event: "generateRegions",
     group: "Alerts & events",
+    priority: 5,
   },
   ...CITY_JOBS,
   {

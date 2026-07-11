@@ -26,6 +26,11 @@ export const WINDOW_HOURS = 12;
 /** How many population-ranked cities to feed the model (the capital is added on top when missing). */
 const TOP_CITIES = 10;
 
+/** Cap on alerts fed to the LLM (most-severe first). A whole-continent region can
+ *  hold thousands of active alerts — sending them all blows the prompt's token
+ *  budget (and errored the call). The true count is preserved as `alertsTotal`. */
+const MAX_LLM_ALERTS = 50;
+
 export interface PlaceRef {
   kind: PlaceRoundupKind;
   /** countryId / regionId. */
@@ -107,8 +112,12 @@ async function scopedCities(db: AppDb, place: PlaceRef): Promise<iRoundupCity[]>
   return top;
 }
 
-/** Active alerts whose footprint centroid falls inside the place. */
-async function scopedAlerts(db: AppDb, inPlace: (lng: number, lat: number) => boolean): Promise<iRoundupAlert[]> {
+/** Active alerts whose footprint centroid falls inside the place — most-severe
+ *  first, capped at `MAX_LLM_ALERTS` with the true total reported separately. */
+async function scopedAlerts(
+  db: AppDb,
+  inPlace: (lng: number, lat: number) => boolean,
+): Promise<{ alerts: iRoundupAlert[]; total: number }> {
   const alerts = await db.alerts.list({ activeOnly: true });
   const out: iRoundupAlert[] = [];
   for (const a of alerts) {
@@ -127,7 +136,7 @@ async function scopedAlerts(db: AppDb, inPlace: (lng: number, lat: number) => bo
     });
   }
   out.sort((x, y) => y.severityRank - x.severityRank);
-  return out;
+  return { alerts: out.slice(0, MAX_LLM_ALERTS), total: out.length };
 }
 
 /** Active (erupting/unrest) volcanoes inside the place. */
@@ -174,7 +183,8 @@ export async function buildPlaceInputs(db: AppDb, place: PlaceRef): Promise<iPla
   return {
     topCities,
     area: area ? { stats: area.stats, hazards: area.hazards } : null,
-    alerts,
+    alerts: alerts.alerts,
+    alertsTotal: alerts.total,
     volcanoes,
     tideGauges: gauges.tideGauges,
     seismoStations: gauges.seismoStations,
