@@ -2,8 +2,8 @@ import type { SeismoStationReading } from "../../lib/seismo/types";
 import { stationMarkerLayers } from "./monitor-stations";
 
 /**
- * Live seismograph-station markers — the real GSN stations the worker is
- * currently streaming near what's on air (see worker/src/seismo/loop.ts).
+ * Live seismograph-station markers — the real GSN stations the worker last
+ * snapshotted near what's on air (see worker/src/seismo/snapshot.ts).
  * Distinct from the earthquake epicentre overlay (`seismic.ts`): those are
  * event points, these are instrument locations. The station the panel
  * currently has "on air" gets a halo + brighter marker so the map and the

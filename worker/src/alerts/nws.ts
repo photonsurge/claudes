@@ -94,7 +94,7 @@ function featureToCapMessage(feature: any): CapMessage | null {
 export const nwsSource: AlertSource = {
   id: "nws",
   region: "United States + US Pacific",
-  pollIntervalSec: 60,
+  pollIntervalSec: Number(process.env.NWS_POLL_SEC || 60),
   enabled: true,
   reconcile: true, // single API fetch = reliable full snapshot of active US alerts
 

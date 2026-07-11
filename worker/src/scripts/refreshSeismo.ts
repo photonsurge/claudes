@@ -1,7 +1,7 @@
 /**
  * Manual one-shot seismo-station seeding — `yarn refresh:seismo`. Rebuilds the
- * global GSN broadband-station catalog so the live SeedLink loop has stations
- * to resolve focus against without waiting out the worker's daily cron.
+ * global GSN broadband-station catalog so the snapshot job has stations to
+ * resolve focus against without waiting out the worker's daily cron.
  */
 import { loadWorkerEnv } from "../loadEnv";
 loadWorkerEnv();

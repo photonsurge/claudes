@@ -22,7 +22,6 @@ import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
 import { initSocket, closeSocket } from "./socket";
 import { startDirector, stopDirector } from "./director/loop";
-import { startSeismoStream, stopSeismoStream } from "./seismo/loop";
 import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
 import { getEnabledSources } from "./alerts/registry";
 import { getEnabledCamSources } from "./cams/registry";
@@ -31,6 +30,28 @@ import packageJson from "../package.json";
 
 const TAG = "worker";
 const PORT = Number(process.env.PORT || 8080);
+
+// De-sync the repeatable jobs. A BullMQ `every` schedule with no `offset`
+// anchors its phase to when it was first registered — so every job registered
+// in this boot loop lands on the SAME clock grid and they all fire together
+// (and, per BullMQ, `immediately:true` on an `every` job is a no-op that just
+// means "delay 0" — i.e. the whole fleet also stampedes at boot). Giving each
+// job a stable per-jobId `offset` phase-shifts it off that shared grid so the
+// load spreads out instead of spiking. Capped so even a daily catalog job still
+// first-runs within JOB_STAGGER_MS of boot (seeding stays prompt); the spread
+// window is min(interval, cap). Deterministic (FNV-1a on the jobId) so a job
+// keeps the same phase across restarts and BullMQ doesn't churn the schedule.
+const MAX_STAGGER_MS = Number(process.env.JOB_STAGGER_MS || 4 * 60 * 1000);
+function staggerOffset(jobId: string, everyMs: number): number {
+  const span = Math.min(everyMs, MAX_STAGGER_MS);
+  if (span <= 0) return 0;
+  let h = 2166136261;
+  for (let i = 0; i < jobId.length; i++) {
+    h ^= jobId.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) % span;
+}
 
 const waitForMongo = async () => {
   const MAX_ATTEMPTS = 30;
@@ -95,11 +116,6 @@ process.on("uncaughtException", (err) => {
   // Auto-director: a self-running camera/sequencer per scene that's in "auto"
   // mode. Runs in-process (not a BullMQ job) — reads Mongo + emits director:state.
   startDirector();
-
-  // Live seismograph: a persistent SeedLink TCP connection to the stations
-  // nearest what's on air, not a BullMQ job — the connection must stay open
-  // between ticks. Disable with SEISMO_ENABLED=false.
-  if (process.env.SEISMO_ENABLED !== "false") startSeismoStream();
 
   const bullWorker = new Worker(
     QUEUE_NAME,
@@ -178,7 +194,7 @@ process.on("uncaughtException", (err) => {
         await myQueue.add(
           "do",
           { domain: "weather", type: "weather", event, data: {} },
-          { repeat: { every }, jobId: `weather-${event}` },
+          { repeat: { every, offset: staggerOffset(`weather-${event}`, every) }, jobId: `weather-${event}` },
         );
         // BullMQ `repeat: { every }` only fires the FIRST run one interval later,
         // so a fresh worker would sit empty for up to `every` ms. Kick each ingest
@@ -207,7 +223,13 @@ process.on("uncaughtException", (err) => {
       await myQueue.add(
         "do",
         { domain: "alerts", type: "alerts", event: "ingest", data: { source: source.id } },
-        { repeat: { every: source.pollIntervalSec * 1000 }, jobId: `alerts-${source.id}` },
+        {
+          repeat: {
+            every: source.pollIntervalSec * 1000,
+            offset: staggerOffset(`alerts-${source.id}`, source.pollIntervalSec * 1000),
+          },
+          jobId: `alerts-${source.id}`,
+        },
       );
       log(TAG, `registered repeatable alerts.ingest`, { source: source.id, every: source.pollIntervalSec });
     } catch (err) {
@@ -223,7 +245,10 @@ process.on("uncaughtException", (err) => {
     await myQueue.add(
       "do",
       { domain: "alerts", type: "alerts", event: "translate", data: {} },
-      { repeat: { every: ALERTS_TRANSLATE_MS }, jobId: "alerts-translate" },
+      {
+        repeat: { every: ALERTS_TRANSLATE_MS, offset: staggerOffset("alerts-translate", ALERTS_TRANSLATE_MS) },
+        jobId: "alerts-translate",
+      },
     );
     log(TAG, `registered repeatable alerts.translate`, { every: ALERTS_TRANSLATE_MS });
   } catch (err) {
@@ -242,7 +267,14 @@ process.on("uncaughtException", (err) => {
         await myQueue.add(
           "do",
           { domain: "cams", type: "cams", event: "ingest", data: { source: source.id } },
-          { repeat: { every: source.pollIntervalSec * 1000, immediately: true }, jobId: `cams-${source.id}` },
+          {
+            repeat: {
+              every: source.pollIntervalSec * 1000,
+              immediately: true,
+              offset: staggerOffset(`cams-${source.id}`, source.pollIntervalSec * 1000),
+            },
+            jobId: `cams-${source.id}`,
+          },
         );
         log(TAG, `registered repeatable cams.ingest`, { source: source.id, every: source.pollIntervalSec });
       } catch (err) {
@@ -260,7 +292,10 @@ process.on("uncaughtException", (err) => {
     await myQueue.add(
       "do",
       { domain: "tracks", type: "tracks", event: "ingestTles", data: {} },
-      { repeat: { every: TLE_INGEST_MS, immediately: true }, jobId: "tracks-tles" },
+      {
+        repeat: { every: TLE_INGEST_MS, immediately: true, offset: staggerOffset("tracks-tles", TLE_INGEST_MS) },
+        jobId: "tracks-tles",
+      },
     );
     log(TAG, `registered repeatable tracks.ingestTles`, { everyMs: TLE_INGEST_MS });
   } catch (err) {
@@ -283,19 +318,37 @@ process.on("uncaughtException", (err) => {
       await myQueue.add(
         "do",
         { domain: "tracks", type: "tracks", event: "snapshotAircraft", data: {} },
-        { repeat: { every: AIRCRAFT_SNAPSHOT_MS, immediately: true }, jobId: "tracks-snapshot-aircraft" },
+        {
+          repeat: {
+            every: AIRCRAFT_SNAPSHOT_MS,
+            immediately: true,
+            offset: staggerOffset("tracks-snapshot-aircraft", AIRCRAFT_SNAPSHOT_MS),
+          },
+          jobId: "tracks-snapshot-aircraft",
+        },
       );
       await myQueue.add(
         "do",
         { domain: "tracks", type: "tracks", event: "snapshotShips", data: {} },
-        { repeat: { every: SHIP_SNAPSHOT_MS, immediately: true }, jobId: "tracks-snapshot-ships" },
+        {
+          repeat: {
+            every: SHIP_SNAPSHOT_MS,
+            immediately: true,
+            offset: staggerOffset("tracks-snapshot-ships", SHIP_SNAPSHOT_MS),
+          },
+          jobId: "tracks-snapshot-ships",
+        },
       );
       // Progressively fill the keyless hexdb aircraft-metadata cache.
       await myQueue.add(
         "do",
         { domain: "tracks", type: "tracks", event: "enrichAircraft", data: {} },
         {
-          repeat: { every: Number(process.env.AIRCRAFT_ENRICH_MS || 60_000), immediately: true },
+          repeat: {
+            every: Number(process.env.AIRCRAFT_ENRICH_MS || 60_000),
+            immediately: true,
+            offset: staggerOffset("tracks-enrich-aircraft", Number(process.env.AIRCRAFT_ENRICH_MS || 60_000)),
+          },
           jobId: "tracks-enrich-aircraft",
         },
       );
@@ -306,7 +359,11 @@ process.on("uncaughtException", (err) => {
         "do",
         { domain: "notable", type: "notable", event: "enrichNotable", data: {} },
         {
-          repeat: { every: Number(process.env.NOTABLE_ENRICH_MS || 3_600_000), immediately: true },
+          repeat: {
+            every: Number(process.env.NOTABLE_ENRICH_MS || 3_600_000),
+            immediately: true,
+            offset: staggerOffset("notable-enrich", Number(process.env.NOTABLE_ENRICH_MS || 3_600_000)),
+          },
           jobId: "notable-enrich",
           priority: 10,
         },
@@ -326,7 +383,10 @@ process.on("uncaughtException", (err) => {
       await myQueue.add(
         "do",
         { domain: "tracks", type: "tracks", event: "snapshotSeismic", data: {} },
-        { repeat: { every: SEISMIC_SNAPSHOT_MS }, jobId: "tracks-snapshot-seismic" },
+        {
+          repeat: { every: SEISMIC_SNAPSHOT_MS, offset: staggerOffset("tracks-snapshot-seismic", SEISMIC_SNAPSHOT_MS) },
+          jobId: "tracks-snapshot-seismic",
+        },
       );
       log(TAG, `registered repeatable tracks.snapshotSeismic`, { everyMs: SEISMIC_SNAPSHOT_MS });
     } catch (err) {
@@ -344,7 +404,10 @@ process.on("uncaughtException", (err) => {
       await myQueue.add(
         "do",
         { domain: "cables", type: "cables", event: "refresh", data: {} },
-        { repeat: { every: CABLE_REFRESH_MS, immediately: true }, jobId: "cables-refresh" },
+        {
+          repeat: { every: CABLE_REFRESH_MS, immediately: true, offset: staggerOffset("cables-refresh", CABLE_REFRESH_MS) },
+          jobId: "cables-refresh",
+        },
       );
       log(TAG, `registered repeatable cables.refresh`, { everyMs: CABLE_REFRESH_MS });
     } catch (err) {
@@ -362,7 +425,10 @@ process.on("uncaughtException", (err) => {
       await myQueue.add(
         "do",
         { domain: "faults", type: "faults", event: "refresh", data: {} },
-        { repeat: { every: FAULT_REFRESH_MS, immediately: true }, jobId: "faults-refresh" },
+        {
+          repeat: { every: FAULT_REFRESH_MS, immediately: true, offset: staggerOffset("faults-refresh", FAULT_REFRESH_MS) },
+          jobId: "faults-refresh",
+        },
       );
       log(TAG, `registered repeatable faults.refresh`, { everyMs: FAULT_REFRESH_MS });
     } catch (err) {
@@ -381,7 +447,10 @@ process.on("uncaughtException", (err) => {
       await myQueue.add(
         "do",
         { domain: "aurora", type: "aurora", event: "refresh", data: {} },
-        { repeat: { every: AURORA_REFRESH_MS, immediately: true }, jobId: "aurora-refresh" },
+        {
+          repeat: { every: AURORA_REFRESH_MS, immediately: true, offset: staggerOffset("aurora-refresh", AURORA_REFRESH_MS) },
+          jobId: "aurora-refresh",
+        },
       );
       log(TAG, `registered repeatable aurora.refresh`, { everyMs: AURORA_REFRESH_MS });
     } catch (err) {
@@ -400,7 +469,10 @@ process.on("uncaughtException", (err) => {
       await myQueue.add(
         "do",
         { domain: "fires", type: "fires", event: "snapshot", data: {} },
-        { repeat: { every: FIRE_SNAPSHOT_MS, immediately: true }, jobId: "fires-snapshot" },
+        {
+          repeat: { every: FIRE_SNAPSHOT_MS, immediately: true, offset: staggerOffset("fires-snapshot", FIRE_SNAPSHOT_MS) },
+          jobId: "fires-snapshot",
+        },
       );
       log(TAG, `registered repeatable fires.snapshot`, { everyMs: FIRE_SNAPSHOT_MS });
     } catch (err) {
@@ -420,7 +492,10 @@ process.on("uncaughtException", (err) => {
       await myQueue.add(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "snapshot", data: {} },
-        { repeat: { every: VOLCANO_SNAPSHOT_MS, immediately: true }, jobId: "volcanoes-snapshot" },
+        {
+          repeat: { every: VOLCANO_SNAPSHOT_MS, immediately: true, offset: staggerOffset("volcanoes-snapshot", VOLCANO_SNAPSHOT_MS) },
+          jobId: "volcanoes-snapshot",
+        },
       );
       log(TAG, `registered repeatable volcanoes.snapshot`, { everyMs: VOLCANO_SNAPSHOT_MS });
     } catch (err) {
@@ -436,7 +511,11 @@ process.on("uncaughtException", (err) => {
       "do",
       { domain: "volcanoes", type: "volcanoes", event: "enrichWiki", data: {} },
       {
-        repeat: { every: Number(process.env.VOLCANO_ENRICH_MS || 6 * 3_600_000), immediately: true },
+        repeat: {
+          every: Number(process.env.VOLCANO_ENRICH_MS || 6 * 3_600_000),
+          immediately: true,
+          offset: staggerOffset("volcanoes-enrich", Number(process.env.VOLCANO_ENRICH_MS || 6 * 3_600_000)),
+        },
         jobId: "volcanoes-enrich",
         priority: 10,
       },
@@ -456,7 +535,11 @@ process.on("uncaughtException", (err) => {
       "do",
       { domain: "volcanoes", type: "volcanoes", event: "parseReports", data: {} },
       {
-        repeat: { every: Number(process.env.VOLCANO_PARSE_MS || 3_600_000), immediately: true },
+        repeat: {
+          every: Number(process.env.VOLCANO_PARSE_MS || 3_600_000),
+          immediately: true,
+          offset: staggerOffset("volcanoes-parse-reports", Number(process.env.VOLCANO_PARSE_MS || 3_600_000)),
+        },
         jobId: "volcanoes-parse-reports",
         priority: 10,
       },
@@ -477,7 +560,11 @@ process.on("uncaughtException", (err) => {
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "snapshotUsgs", data: {} },
         {
-          repeat: { every: Number(process.env.VOLCANO_USGS_MS || 15 * 60_000), immediately: true },
+          repeat: {
+            every: Number(process.env.VOLCANO_USGS_MS || 15 * 60_000),
+            immediately: true,
+            offset: staggerOffset("volcanoes-snapshot-usgs", Number(process.env.VOLCANO_USGS_MS || 15 * 60_000)),
+          },
           jobId: "volcanoes-snapshot-usgs",
         },
       );
@@ -497,7 +584,10 @@ process.on("uncaughtException", (err) => {
       await myQueue.add(
         "do",
         { domain: "geomag", type: "geomag", event: "refresh", data: {} },
-        { repeat: { every: GEOMAG_REFRESH_MS, immediately: true }, jobId: "geomag-refresh" },
+        {
+          repeat: { every: GEOMAG_REFRESH_MS, immediately: true, offset: staggerOffset("geomag-refresh", GEOMAG_REFRESH_MS) },
+          jobId: "geomag-refresh",
+        },
       );
       log(TAG, `registered repeatable geomag.refresh`, { everyMs: GEOMAG_REFRESH_MS });
     } catch (err) {
@@ -519,7 +609,10 @@ process.on("uncaughtException", (err) => {
       await myQueue.add(
         "do",
         { domain: "satimg", type: "satimg", event: "refresh", data: {} },
-        { repeat: { every: SATIMG_REFRESH_MS, immediately: true }, jobId: "satimg-refresh" },
+        {
+          repeat: { every: SATIMG_REFRESH_MS, immediately: true, offset: staggerOffset("satimg-refresh", SATIMG_REFRESH_MS) },
+          jobId: "satimg-refresh",
+        },
       );
       log(TAG, `registered repeatable satimg.refresh`, {
         everyMs: SATIMG_REFRESH_MS,
@@ -543,12 +636,18 @@ process.on("uncaughtException", (err) => {
       await myQueue.add(
         "do",
         { domain: "tides", type: "tides", event: "refreshStations", data: {} },
-        { repeat: { every: TIDE_STATIONS_MS, immediately: true }, jobId: "tides-refresh-stations" },
+        {
+          repeat: { every: TIDE_STATIONS_MS, immediately: true, offset: staggerOffset("tides-refresh-stations", TIDE_STATIONS_MS) },
+          jobId: "tides-refresh-stations",
+        },
       );
       await myQueue.add(
         "do",
         { domain: "tides", type: "tides", event: "snapshotTides", data: {} },
-        { repeat: { every: TIDE_SNAPSHOT_MS }, jobId: "tides-snapshot" },
+        {
+          repeat: { every: TIDE_SNAPSHOT_MS, offset: staggerOffset("tides-snapshot", TIDE_SNAPSHOT_MS) },
+          jobId: "tides-snapshot",
+        },
       );
       log(TAG, `registered repeatable tides.*`, { stationsMs: TIDE_STATIONS_MS, snapshotMs: TIDE_SNAPSHOT_MS });
     } catch (err) {
@@ -557,20 +656,44 @@ process.on("uncaughtException", (err) => {
   }
 
   // ---- Repeatable seismo.refreshStations (GSN broadband-station catalog) ----
-  // Near-static reference data (daily); the live SeedLink loop reads it to
-  // pick stations near what's on air. `immediately` seeds the catalog at boot
-  // so the stream has stations to resolve against right away.
+  // Near-static reference data (daily); the snapshot job reads it to pick
+  // stations near what's on air. `immediately` seeds the catalog at boot so the
+  // first snapshot has stations to resolve against right away.
   if (process.env.SEISMO_ENABLED !== "false") {
     const SEISMO_STATIONS_MS = Number(process.env.SEISMO_STATIONS_MS || 24 * 60 * 60 * 1000);
     try {
       await myQueue.add(
         "do",
         { domain: "seismo", type: "seismo", event: "refreshStations", data: {} },
-        { repeat: { every: SEISMO_STATIONS_MS, immediately: true }, jobId: "seismo-refresh-stations" },
+        {
+          repeat: { every: SEISMO_STATIONS_MS, immediately: true, offset: staggerOffset("seismo-refresh-stations", SEISMO_STATIONS_MS) },
+          jobId: "seismo-refresh-stations",
+        },
       );
       log(TAG, `registered repeatable seismo.refreshStations`, { stationsMs: SEISMO_STATIONS_MS });
     } catch (err) {
       log(TAG, `failed to register seismo.refreshStations`, summarizeForLog(err));
+    }
+
+    // ---- Repeatable seismo.snapshot (short waveform burst, not an always-on stream) ----
+    // Replaces the old persistent SeedLink connection: every few minutes we open
+    // SeedLink, grab a short window of waveform for the in-focus stations, then
+    // close. Between snapshots the worker does no seismic work. Tune the cadence
+    // with SEISMO_SNAPSHOT_MS and the per-burst capture length with
+    // SEISMO_SNAPSHOT_WINDOW_SEC.
+    const SEISMO_SNAPSHOT_MS = Number(process.env.SEISMO_SNAPSHOT_MS || 5 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "seismo", type: "seismo", event: "snapshot", data: {} },
+        {
+          repeat: { every: SEISMO_SNAPSHOT_MS, immediately: true, offset: staggerOffset("seismo-snapshot", SEISMO_SNAPSHOT_MS) },
+          jobId: "seismo-snapshot",
+        },
+      );
+      log(TAG, `registered repeatable seismo.snapshot`, { snapshotMs: SEISMO_SNAPSHOT_MS });
+    } catch (err) {
+      log(TAG, `failed to register seismo.snapshot`, summarizeForLog(err));
     }
   }
 
@@ -585,7 +708,10 @@ process.on("uncaughtException", (err) => {
       await myQueue.add(
         "do",
         { domain: "climate", type: "climate", event: "snapshotClimate", data: {} },
-        { repeat: { every: CLIMATE_SNAPSHOT_MS, immediately: true }, jobId: "climate-snapshot" },
+        {
+          repeat: { every: CLIMATE_SNAPSHOT_MS, immediately: true, offset: staggerOffset("climate-snapshot", CLIMATE_SNAPSHOT_MS) },
+          jobId: "climate-snapshot",
+        },
       );
       log(TAG, `registered repeatable climate.snapshotClimate`, { snapshotMs: CLIMATE_SNAPSHOT_MS });
     } catch (err) {
@@ -763,7 +889,6 @@ process.on("uncaughtException", (err) => {
     // candidates and emitting director:state cuts. If we don't kill it here it
     // carries on cutting shots the whole time bullWorker.close() drains jobs.
     stopDirector();
-    stopSeismoStream();
 
     // Backstop: if the graceful drain wedges (e.g. a stuck job holding its
     // lock), force-exit so quit always actually quits.

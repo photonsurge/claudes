@@ -17,8 +17,8 @@ const DEFAULT_LIMIT = 6;
  * the given point (plural — the broadcast panel cycles through them and the
  * globe overlay highlights whichever is active), or `{ stations: [] }` when
  * none are in range. The public app never talks to SeedLink directly; the
- * worker streams only the stations near what's on air (see worker's
- * seismo/loop.ts).
+ * worker snapshots only the stations near what's on air (see worker's
+ * seismo/snapshot.ts).
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
