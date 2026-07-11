@@ -130,13 +130,17 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
 
   const targeted = isTargetedEvent(kind);
   const hasLoc = hasRealLocation(kind);
-  // Any located shot frames an area (histBbox === this bbox on the client), and the
-  // deck renders TOP CITIES + framed WEATHER for it — targeted events included. The
-  // bundle stamps `bbox` unconditionally, so it MUST carry the area data for that
-  // bbox or a covering selector would serve an intentionally-empty array (blank
-  // slide) instead of falling back to a live fetch. Hence area === hasLoc, not
-  // `!targeted && hasLoc`. Wide/no-location kinds (histBbox null) get no area.
-  const wantArea = hasLoc;
+  // TOP CITIES + framed WEATHER (area forecast) render for ANY located shot,
+  // targeted events included (their deck pushes those slides over histBbox, which
+  // === this bbox). The bundle stamps `bbox` unconditionally, so it MUST carry
+  // these or a covering selector serves an intentionally-empty array (blank slide)
+  // instead of falling back.
+  const wantAreaFrame = hasLoc;
+  // Area HISTORY (the AREA HISTORY deck slide) is only ever requested with a bbox
+  // by wide/country/region shots; targeted events render POINT history in the
+  // event reticle (bbox=null) and never call useAreaHistorySeries with a bbox — so
+  // skip the expensive per-variable area-pixel scan for them.
+  const wantAreaHistory = !targeted && hasLoc;
   const isRegion = kind === "region";
 
   const db = await getAppDb();
@@ -145,9 +149,28 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
   // client's /variables waterfall).
   const histVars = hasLoc ? await db.weatherFrames.variables() : [];
 
+  // History frames fetched ONCE per variable and shared by the point + area
+  // builders — they sample the same archive frames, so fetching twice (the old
+  // ~2×N getSeries fan-out) doubled the DB work for nothing.
+  //
+  // CRITICAL: bound to the same rolling window the client renders
+  // (HISTORY_WINDOW_HOURS, mirrors history-client's fromParam). Without `from`,
+  // getSeries scans the ENTIRE never-pruned WeatherFrame archive — bytes and all —
+  // per variable, which was the dominant cost of a cache-miss compose.
+  const HISTORY_WINDOW_HOURS = 72;
+  const historyFrom = new Date(Date.now() - HISTORY_WINDOW_HOURS * 3600 * 1000);
+  const historyFrames: Record<string, Awaited<ReturnType<typeof db.weatherFrames.getSeries>>> = {};
+  if (hasLoc) {
+    await Promise.all(
+      histVars.map(async (v) => {
+        historyFrames[v] = await db.weatherFrames.getSeries({ variable: v, from: historyFrom });
+      }),
+    );
+  }
+
   // Forecast frames fetched once, shared by point + area builders.
   const forecastFrames: Record<string, unknown[]> = {};
-  if (hasLoc || wantArea) {
+  if (hasLoc) {
     await Promise.all(
       FORECAST_VARIABLES.map(async (v) => {
         forecastFrames[v] = await db.weatherForecastFrames.getSeries({ variable: v });
@@ -171,30 +194,22 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     seismoStations,
     tideStations,
   ] = await Promise.all([
-    // pointHistory
+    // pointHistory — reuse the shared per-variable frames (no re-fetch)
     hasLoc
-      ? Promise.all(
-          histVars.map(async (v) =>
-            buildHistorySeries(v, await db.weatherFrames.getSeries({ variable: v }), lat, lng),
-          ),
-        )
+      ? Promise.all(histVars.map((v) => buildHistorySeries(v, historyFrames[v], lat, lng)))
       : Promise.resolve([]),
-    // areaHistory
-    wantArea
-      ? Promise.all(
-          histVars.map(async (v) =>
-            buildAreaHistorySeries(v, await db.weatherFrames.getSeries({ variable: v }), bbox),
-          ),
-        )
+    // areaHistory — same shared frames; skipped for targeted events
+    wantAreaHistory
+      ? Promise.all(histVars.map((v) => buildAreaHistorySeries(v, historyFrames[v], bbox)))
       : Promise.resolve([]),
     // pointForecast
     hasLoc ? buildForecastDays(forecastFrames as never, lat, lng) : Promise.resolve(null),
     // areaForecast
-    wantArea ? buildAreaForecastDays(forecastFrames as never, bbox) : Promise.resolve(null),
+    wantAreaFrame ? buildAreaForecastDays(forecastFrames as never, bbox) : Promise.resolve(null),
     // climate (focus point)
     hasLoc ? climateFor(db, lng, lat) : Promise.resolve([]),
-    // topCities (wide/country/region shots)
-    wantArea ? topCitiesFor(db, bbox, zoom) : Promise.resolve([]),
+    // topCities (located shots — incl. targeted CLOSE CITIES)
+    wantAreaFrame ? topCitiesFor(db, bbox, zoom) : Promise.resolve([]),
     // nearbyCities (targeted events)
     targeted ? nearbyCitiesFor(db, lng, lat) : Promise.resolve([]),
     // areaAlerts
