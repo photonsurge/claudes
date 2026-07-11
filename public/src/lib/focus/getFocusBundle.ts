@@ -130,7 +130,13 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
 
   const targeted = isTargetedEvent(kind);
   const hasLoc = hasRealLocation(kind);
-  const wantArea = !targeted && hasLoc; // wide/country/region/weather shots frame an area
+  // Any located shot frames an area (histBbox === this bbox on the client), and the
+  // deck renders TOP CITIES + framed WEATHER for it — targeted events included. The
+  // bundle stamps `bbox` unconditionally, so it MUST carry the area data for that
+  // bbox or a covering selector would serve an intentionally-empty array (blank
+  // slide) instead of falling back to a live fetch. Hence area === hasLoc, not
+  // `!targeted && hasLoc`. Wide/no-location kinds (histBbox null) get no area.
+  const wantArea = hasLoc;
   const isRegion = kind === "region";
 
   const db = await getAppDb();

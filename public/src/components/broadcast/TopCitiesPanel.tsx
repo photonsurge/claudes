@@ -15,11 +15,11 @@
  * city. Pure presentation inside the scaled broadcast stage; pointer-inert.
  */
 import { useEffect, useState } from "react";
-import { listCities, formatPopulation, type City } from "../../lib/cities";
+import { formatPopulation, type City } from "../../lib/cities";
+import { useTopCities } from "../../lib/focus/focus-client";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 import { FeaturedCityClimate, CityTempSpark } from "./CityHistory";
 
-const TOP_CITY_LIMIT = 8;
 /** Seconds the featured city holds before the slide advances to the next. */
 const FEATURED_HOLD_MS = 7000;
 
@@ -48,22 +48,9 @@ export default function TopCitiesPanel({
   bbox: [number, number, number, number];
   color?: string;
 }) {
-  const [cities, setCities] = useState<City[]>([]);
-  // Round so a slow-drifting camera (tour/weather kinds' zoomDrift) doesn't
-  // refetch on every frame's imperceptible bbox change — only re-fetch once
-  // the framed area has meaningfully moved.
-  const roundedBbox = bbox.map((v) => v.toFixed(1)).join(",");
-
-  useEffect(() => {
-    let cancelled = false;
-    listCities({ bbox, limit: TOP_CITY_LIMIT }).then((res) => {
-      if (!cancelled) setCities(res);
-    });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roundedBbox]);
+  // Top cities in view, climate baked in — served from the one /api/focus bundle
+  // when it frames this bbox, else a live bbox fetch (rounded dedup + cap inside).
+  const cities = useTopCities(bbox);
 
   // Cycle the featured slot through every top city, biggest first, looping.
   const [slide, setSlide] = useState(0);

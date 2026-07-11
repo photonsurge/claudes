@@ -14,9 +14,12 @@ import type { Segment, SegmentKind } from "@photonsurge/shared/director";
 import { useTracks } from "../lib/tracks/useTracks";
 import { useAlertFeatures } from "../lib/alerts-overlay";
 import { useQuakes } from "../lib/seismic-overlay";
-import { useSeismoGauge } from "../lib/seismo-gauge";
-import { useTideGauge } from "../lib/tide-gauge";
-import { usePointHistory } from "../lib/history-client";
+import {
+  FocusProvider,
+  useSeismoStations,
+  useTideStations,
+  usePointHistorySeries,
+} from "../lib/focus/focus-client";
 import { selectWeatherPoint } from "../lib/weather-point";
 import { useCables } from "../lib/cables-overlay";
 import { useFaults } from "../lib/faults-overlay";
@@ -61,7 +64,7 @@ interface WatchSurfaceProps {
   directorOn?: boolean;
 }
 
-export default function WatchSurface({
+function WatchSurfaceBody({
   state,
   manifest,
   cities,
@@ -73,14 +76,16 @@ export default function WatchSurface({
   upNext = [],
   slideName,
   directorOn = false,
-}: WatchSurfaceProps) {
+  ready,
+}: WatchSurfaceProps & { ready: boolean }) {
   // Latches true once every weather variable's texture at the current fhr has
   // decoded (see Globe's own "keep every map in RAM" preload). Gates the cold-
   // start loading screen AND defers the overlay fetches below so they don't
   // compete with those texture decodes for bandwidth/CPU during the race to
   // first reveal — everything still pops in immediately after, well before a
   // director cut or map-type switch would need it.
-  const ready = useGlobeReadyOnce(manifest, state.fhr);
+  // `ready` is latched once in the WatchSurface wrapper (below) and passed in, so
+  // a single latch feeds both the FocusProvider gate and every overlay here.
 
   // When the director is on a plane/ship, spotlight that exact marker on the
   // globe. The segment id is `flight:<icao24>` / `ship:<mmsi>` — map "flight" to
@@ -111,14 +116,14 @@ export default function WatchSurface({
   // Same focus point SeismicMonitor uses for the fake-vs-real trace decision:
   // the on-air segment's location if there is one, else the current camera.
   const seismoFocus: [number, number] | null = onAirSegment?.camera.center ?? state.camera.center ?? null;
-  const { stations: seismoStations, active: seismoActive } = useSeismoGauge(seismoFocus, state.showSeismic && ready);
+  const { stations: seismoStations, active: seismoActive } = useSeismoStations(seismoFocus);
   // Same focus point TsunamiMonitor/WeatherMonitors use — fetched once here so
   // the globe's tide/weather-point markers and the HUD cards always agree,
   // mirroring the seismic wiring above.
   const tideFocus: [number, number] | null = onAirSegment?.camera.center ?? state.camera.center ?? null;
-  const { stations: tideStations, active: tideActive } = useTideGauge(tideFocus, ready);
+  const { stations: tideStations, active: tideActive } = useTideStations(tideFocus);
   const pointFocus: [number, number] | null = onAirSegment?.camera.center ?? state.camera.center ?? null;
-  const { series: pointHistorySeries } = usePointHistory(ready ? pointFocus : null);
+  const { series: pointHistorySeries } = usePointHistorySeries(pointFocus);
   const weatherPoint = selectWeatherPoint(onAirSegment ?? null, pointHistorySeries);
   const cables = useCables(state.showCables && ready);
   const faults = useFaults(state.showFaults && ready);
@@ -267,5 +272,21 @@ export default function WatchSurface({
           desktop (see FullscreenButton). */}
       <FullscreenButton />
     </main>
+  );
+}
+
+/**
+ * Wrapper: latches `ready` once and mounts the FocusProvider so a single
+ * /api/focus fetch per on-air cut feeds every panel below (globe markers +
+ * broadcast chrome). The body must be a descendant of the provider to read its
+ * selectors, hence the split. `ready` gates the provider fetch exactly like it
+ * used to gate the individual overlay hooks.
+ */
+export default function WatchSurface(props: WatchSurfaceProps) {
+  const ready = useGlobeReadyOnce(props.manifest, props.state.fhr);
+  return (
+    <FocusProvider onAirSegment={props.onAirSegment ?? null} camera={props.state.camera} enabled={ready}>
+      <WatchSurfaceBody {...props} ready={ready} />
+    </FocusProvider>
   );
 }

@@ -16,7 +16,7 @@
  * so a row/strip simply reads as text-only rather than leaving an empty chart.
  */
 import type { City } from "../../lib/cities";
-import { useClimateYear } from "../../lib/history-client";
+import { useClimateFor } from "../../lib/focus/focus-client";
 import { buildClimateRows, sparkPoints, toPath, CHART_W, formatReading, type SparkPoint } from "./PointHistoryPanel";
 import { CardSection, CardEyebrow } from "./BroadcastCard";
 
@@ -118,7 +118,7 @@ export function FeaturedCityClimate({
   center: [number, number];
   height?: number;
 }) {
-  const climate = useClimateYear(center, "monthly");
+  const climate = useClimateFor(center);
   const rows = buildClimateRows(climate.datasets);
   if (!rows.length) return null;
 
@@ -149,7 +149,7 @@ export function FeaturedCityClimate({
  * nothing is cached within range.
  */
 export function CityTempSpark({ city }: { city: City }) {
-  const climate = useClimateYear([city.lng, city.lat], "monthly");
+  const climate = useClimateFor([city.lng, city.lat]);
   const tempRow = buildClimateRows(climate.datasets).find((r) => r.variable === "temp");
   const spark = tempRow ? sparkPoints(tempRow.points, ROW_SPARK_H) : null;
   if (!tempRow || !spark) return null;

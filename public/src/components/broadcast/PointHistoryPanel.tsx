@@ -17,13 +17,8 @@
  * Self-hiding while the archive and climate source are both empty.
  */
 import { useEffect, useState } from "react";
-import {
-  usePointHistory,
-  useAreaHistory,
-  useClimateYear,
-  HISTORY_WINDOW_HOURS,
-  type ClimateBucketedDataset,
-} from "../../lib/history-client";
+import { HISTORY_WINDOW_HOURS, type ClimateBucketedDataset } from "../../lib/history-client";
+import { usePointHistorySeries, useAreaHistorySeries, useClimateFor } from "../../lib/focus/focus-client";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import BroadcastCard from "./BroadcastCard";
 
@@ -345,9 +340,9 @@ export default function PointHistoryPanel({
   const panelW = compact ? COMPACT_PANEL_W : PANEL_W;
   const chartH = compact ? COMPACT_CHART_H : CHART_H;
   const panelPadX = compact ? 12 : PANEL_PAD_X;
-  const point = usePointHistory(bbox ? null : center);
-  const area = useAreaHistory(bbox);
-  const climate = useClimateYear(center, "monthly");
+  const point = usePointHistorySeries(center, bbox);
+  const area = useAreaHistorySeries(bbox);
+  const climate = useClimateFor(center);
 
   const liveCharts = bbox
     ? area.series.map((s) => ({

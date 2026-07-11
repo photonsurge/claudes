@@ -39,15 +39,18 @@ import {
 } from "../../lib/broadcast";
 import { bboxForCamera, type HistorySeries } from "../../lib/history-client";
 import { useLatestRoundup } from "../../lib/summaries";
-import { useLatestPlaceRoundup } from "../../lib/placeRoundups";
-import { useAreaForecast } from "../../lib/forecast-client";
+import {
+  useFocusRegion,
+  useFocusCountry,
+  useCountryRoundup,
+  useRegionRoundup,
+  useAreaForecastDays,
+} from "../../lib/focus/focus-client";
 import { legendVariableFor } from "../../lib/legend";
 import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
 import { KIND_LABEL } from "../DirectorHolds";
 import { nearest, formatKm } from "../../lib/geo";
 import { useWorldWatch } from "../../lib/world-watch";
-import { useCountryAt } from "../../lib/countries";
-import { useRegion } from "../../lib/regions";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { useStageScale, STAGE_W, STAGE_H } from "./useStageScale";
 import Ticker from "./Ticker";
@@ -246,7 +249,7 @@ export default function BroadcastFrame({
   // The enriched Region doc (wiki photo/blurb) for the lede's area block —
   // regions have no polygon, so this is a direct regionId fetch, not point-in-
   // polygon like the country lookup. Null off a region shot / before enrichment.
-  const regionDoc = useRegion(regionId);
+  const regionDoc = useFocusRegion();
   // A round-up tours a fresh hotspot every few seconds by patching `state.camera`
   // to that stop's centre (see director.ts's summary cutSteps) — the segment's
   // own `camera` field stays pinned to the base global framing the whole time,
@@ -274,21 +277,25 @@ export default function BroadcastFrame({
       : segmentHasLocation
         ? (onAirSegment.camera.center ?? state.camera.center ?? null)
         : null;
-  const ledeCountryDoc = useCountryAt(ledeCenter);
+  const ledeCountryDoc = useFocusCountry(ledeCenter);
   const summaryCountryDoc = onAirSegment?.summary ? ledeCountryDoc : null;
   // The framed place's own per-place round-up — the spotlight's second slide.
   // A country shot keys on the enriched Country under the on-air point
   // (`ledeCountryDoc.countryId`, the id the place-roundups worker writes against);
   // a region shot keys directly on its `regionId`. One hook, kind switches; it
   // returns null (→ no slide) until a round-up exists for that place.
-  const placeRoundupKind = onAirSegment?.kind === "region" ? "region" : "country";
-  const placeRoundupId =
+  // Both roundup selectors run every render (React hook rules); pick by kind to
+  // preserve the exact region→region / country→country / else→null semantics.
+  // The selectors serve the one /api/focus bundle when it covers this shot, else
+  // fall back to a live /api/roundup/place fetch keyed on the resolved place id.
+  const regionRoundup = useRegionRoundup();
+  const countryRoundup = useCountryRoundup();
+  const placeRoundup =
     onAirSegment?.kind === "region"
-      ? regionId
+      ? regionRoundup
       : onAirSegment?.kind === "country"
-        ? (ledeCountryDoc?.countryId ?? null)
+        ? countryRoundup
         : null;
-  const placeRoundup = useLatestPlaceRoundup(placeRoundupKind, placeRoundupId);
   // The lede's "area" photo/blurb: a region shot reads its own enriched Region
   // doc (no polygon country under it to resolve); every other located shot uses
   // the enriched Country under the on-air point.
@@ -347,7 +354,7 @@ export default function BroadcastFrame({
   // own slide in the deck (see mode-slides). ForecastPanel re-fetches the same
   // (rounded, Cache-Control: max-age=60) URL when it mounts as that slide; the
   // duplicate call is cheap and one-time per bbox change.
-  const wideCitiesForecast = useAreaForecast(wideCitiesBbox ?? null);
+  const wideCitiesForecast = useAreaForecastDays(wideCitiesBbox ?? null);
   const wideCitiesHasForecast = wideCitiesForecast.days.length > 0;
 
   // Focus point + framed bbox for the WEATHER (forecast) and CURRENT & RECENT
@@ -365,7 +372,7 @@ export default function BroadcastFrame({
   // A plain (non-country) wide shot's framed-area forecast, gated on real data so
   // the deck never rotates onto an empty weather slide — country shots use
   // wideCitiesForecast instead. Keyed on the bbox, so it only refetches on a cut.
-  const framedForecast = useAreaForecast(!wideCitiesBbox ? histBbox : null);
+  const framedForecast = useAreaForecastDays(!wideCitiesBbox ? histBbox : null);
   const hasFramedForecast = framedForecast.days.length > 0;
   // Sea-temp-by-depth rides ocean scenes only; same null-on-no-location rule as
   // the history panel it sat beside before.

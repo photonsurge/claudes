@@ -12,7 +12,8 @@
  * wind/heat/cold/rain/storm floor.
  */
 import { useContext } from "react";
-import { usePointForecast, useAreaForecast, type ForecastDay, type AreaForecastDay } from "../../lib/forecast-client";
+import { type ForecastDay, type AreaForecastDay } from "../../lib/forecast-client";
+import { usePointForecastDays, useAreaForecastDays } from "../../lib/focus/focus-client";
 import { formatReading } from "./PointHistoryPanel";
 import { SectionTitle } from "./PointHistoryPanel";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
@@ -180,8 +181,8 @@ export default function ForecastPanel({
    *  loading and fills the host card's width). */
   variant?: "card" | "inline";
 }) {
-  const point = usePointForecast(bbox ? null : center);
-  const area = useAreaForecast(bbox);
+  const point = usePointForecastDays(bbox ? null : center);
+  const area = useAreaForecastDays(bbox);
   const src = bbox ? area : point;
   const days = src.days.map(normalizeDay);
   // Inside the on-air deck the fixed-size template owns the shell, so fill the

@@ -804,6 +804,44 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showCities",
     ]),
   ],
+  volcano: [
+    seedSlide("volcano-terrain-contours", "Terrain Contours", { basemap: "dark" }, [
+      "showElevation",
+      "showVolcanoes",
+      "showCables",
+      "showFaults",
+      "showCities",
+    ]),
+    seedSlide("volcano-city-lights", "City Lights", { basemap: "night" }, [
+      "showElevation",
+      "showVolcanoes",
+      "showCables",
+      "showFaults",
+      "showCities",
+    ]),
+    seedSlide("volcano-shaded-relief", "Shaded Relief", { basemap: "relief" }, [
+      "showElevation",
+      "showVolcanoes",
+      "showCables",
+      "showFaults",
+      "showCities",
+    ]),
+    seedSlide("volcano-topo-map", "Topo Map", { basemap: "terrain" }, [
+      "showElevation",
+      "showVolcanoes",
+      "showCables",
+      "showFaults",
+      "showCities",
+    ]),
+    seedSlide("volcano-magnetic-signature", "Magnetic Signature", { basemap: "dark" }, [
+      "showElevation",
+      "showVolcanoes",
+      "showCables",
+      "showFaults",
+      "showMagneticField",
+      "showCities",
+    ]),
+  ],
   flight: [
     seedSlide("flight-jet-stream", "Jet Stream", { windMode: "particles", wind: GUST_WIND }, [
       "showWind",
