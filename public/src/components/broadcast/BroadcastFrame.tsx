@@ -124,6 +124,7 @@ export default function BroadcastFrame({
   geomag = null,
   theme = DEFAULT_THEME,
   onAirSegment = null,
+  focusCaption = null,
   upNext = [],
   assetsReady = true,
   directorOn = false,
@@ -158,6 +159,9 @@ export default function BroadcastFrame({
   /** The on-air director segment — drives the event reticle so it matches what's
    *  actually selected. Null when nothing is on air (reticle hidden). */
   onAirSegment?: Segment | null;
+  /** Current Areas-tour stop caption (city + country) — drives the centre place
+   *  reticle while the left card keeps naming the area. Null off a tour. */
+  focusCaption?: { title: string; subtitle: string } | null;
   /** Director's best-guess "coming up" preview (score-ranked at the last cut,
    *  not a committed pick) — drives the small UP NEXT line by the SYSLOG feed. */
   upNext?: { kind: SegmentKind; title: string }[];
@@ -473,6 +477,24 @@ export default function BroadcastFrame({
                 />
               ) : null
             }
+          />
+        ) : null}
+
+        {/* Areas (region) tour: the camera frames each country's biggest city dead-
+            centre, so a caption-only reticle names the CURRENT CITY there while the
+            left card keeps naming the area. Deliberately no history/forecast side-
+            panels — those fetch at the moving stop centre, which the area-centred
+            /api/focus bundle can't cover, so we keep this reticle fetch-free. */}
+        {onAirSegment?.kind === "region" && focusCaption ? (
+          <EventOverlay
+            segment={{
+              ...onAirSegment,
+              title: focusCaption.title,
+              subtitle: focusCaption.subtitle,
+              details: [],
+            }}
+            variant="place"
+            theme={theme}
           />
         ) : null}
 

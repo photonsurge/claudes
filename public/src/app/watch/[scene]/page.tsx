@@ -54,7 +54,7 @@ function SceneWatchPageInner() {
     }
   }, [director?.seq, director?.active, director?.segment]);
 
-  const { patch: cutPatch, segment: onAir } = useDirectorCut(
+  const { patch: cutPatch, segment: onAir, focus } = useDirectorCut(
     cut,
     manifest,
     cut ? directorConfig.mapTypes[cut.kind] : undefined,
@@ -131,6 +131,7 @@ function SceneWatchPageInner() {
         glowCountryIso={activeCountryIso(director, shown.camera.center)}
         glowRegionBbox={activeRegionBbox(director, shown.camera)}
         onAirSegment={director?.active ? onAir : null}
+        focusCaption={director?.active ? focus : null}
         upNext={director?.active ? director.upNext : []}
         slideName={director?.active ? slideName : undefined}
         directorOn={!!director?.active}

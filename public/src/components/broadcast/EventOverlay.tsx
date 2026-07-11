@@ -81,6 +81,7 @@ export default function EventOverlay({
   extraDetails = [],
   historyPanel,
   forecastPanel,
+  variant = "event",
   theme = DEFAULT_THEME,
 }: {
   segment: Segment;
@@ -91,6 +92,9 @@ export default function EventOverlay({
   historyPanel?: React.ReactNode;
   /** 3-day forecast strip, hung off the reticle's bottom-right (FORECAST_POS). */
   forecastPanel?: React.ReactNode;
+  /** "event" (default) reads as a detection lock on a hazard; "place" softens the
+   *  wording to NOW VIEWING / LOCATION for a calm Areas-tour city. */
+  variant?: "event" | "place";
   /** Active broadcast theme — the tracking label draws its glass from the same
    *  tokens as the rest of the on-air cards. */
   theme?: BroadcastTheme;
@@ -138,7 +142,7 @@ export default function EventOverlay({
 
       {/* Tracking-detail readout, hung onto the reticle's top-left corner. */}
       <div style={{ position: "absolute", ...LABEL_POS }}>
-        <EventTrackingLabel segment={segment} extraDetails={extraDetails} theme={theme} />
+        <EventTrackingLabel segment={segment} extraDetails={extraDetails} variant={variant} theme={theme} />
       </div>
 
       {/* Point-history trend, top-right of the frame (pushed out to the right). */}
@@ -246,18 +250,21 @@ export default function EventOverlay({
 function EventTrackingLabel({
   segment,
   extraDetails = [],
+  variant = "event",
   theme = DEFAULT_THEME,
 }: {
   segment: Segment;
   /** Extra rows appended after the segment's own details (e.g. a nearest-city
    *  place line for aircraft/ship, which the segment shape doesn't carry). */
   extraDetails?: { label: string; value: string }[];
+  variant?: "event" | "place";
   theme?: BroadcastTheme;
 }) {
   const color = KIND_COLOR[segment.kind] ?? "#38bdf8";
   const kindLabel = KIND_LABEL[segment.kind] ?? segment.kind;
   const name = segment.title.toUpperCase();
   const details = [...(segment.details ?? []), ...extraDetails];
+  const isPlace = variant === "place";
   return (
     <div
       style={{
@@ -290,10 +297,14 @@ function EventTrackingLabel({
           {kindLabel}
         </span>
         <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.4, color: "#9fb3cc" }}>
-          ▸ EVENT DETECTION OVERLAY
+          ▸ {isPlace ? "NOW VIEWING" : "EVENT DETECTION OVERLAY"}
         </span>
       </div>
-      <Row label="EVENT TRACKING" value={`${name} [ACTIVE]`} color={color} />
+      <Row
+        label={isPlace ? "LOCATION" : "EVENT TRACKING"}
+        value={isPlace ? name : `${name} [ACTIVE]`}
+        color={color}
+      />
       {details.map((d) => (
         <Row key={d.label} label={d.label.toUpperCase()} value={d.value} color={color} />
       ))}

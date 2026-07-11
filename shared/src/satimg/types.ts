@@ -171,6 +171,30 @@ export function defaultSatImgFeeds(): Record<string, SatImgFeedState> {
   return out;
 }
 
+/** Feed ids of every live geostationary DISC (GOES / Himawari / Meteosat). */
+const SATIMG_DISC_IDS = new Set(
+  SATIMG_FEEDS.filter((f) => f.kind === "disc").map((f) => f.id),
+);
+
+/**
+ * The broadcast (`/watch`) satImg-feeds filter: force every live geostationary DISC
+ * OFF, leaving the global mosaic and any overlay (lightning) exactly as the operator
+ * set them. On the broadcast globe the regional discs render with limb / z-fight
+ * artefacts and each only covers a third of the planet, so the stream shows the clean
+ * whole-world cloud layer and never a disc. This is applied ONLY on the outgoing
+ * broadcast surface (WatchSurface) — the operator console (`/sandbox`, `/control`)
+ * keeps full disc control. Returns a fresh object; nested feed states are copied.
+ */
+export function broadcastSatImgFeeds(
+  feeds: Record<string, SatImgFeedState> | undefined,
+): Record<string, SatImgFeedState> {
+  const out: Record<string, SatImgFeedState> = {};
+  for (const [id, s] of Object.entries(feeds ?? {})) {
+    out[id] = SATIMG_DISC_IDS.has(id) ? { ...s, on: false } : { ...s };
+  }
+  return out;
+}
+
 /**
  * The on-screen caption for a satellite-imagery shot — there's no scalar legend
  * (it's photographic, not a value gradient), so this is what tells the viewer

@@ -78,10 +78,11 @@ export function useLatestPlaceRoundup(
   const [roundup, setRoundup] = useState<iPlaceRoundupModel | null>(null);
 
   useEffect(() => {
-    if (!placeId) {
-      setRoundup(null);
-      return;
-    }
+    // Clear on EVERY place change so a country/region shot never shows the
+    // PREVIOUS place's round-up while the new one loads (same stale-hold fix as
+    // useCountryAt / useRegion).
+    setRoundup(null);
+    if (!placeId) return;
     let cancelled = false;
     const load = () =>
       getLatestPlaceRoundup(kind, placeId)

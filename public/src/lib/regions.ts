@@ -59,10 +59,10 @@ export function useRegion(regionId: string | null): iRegionModel | null {
   const [region, setRegion] = useState<iRegionModel | null>(null);
 
   useEffect(() => {
-    if (!regionId) {
-      setRegion(null);
-      return;
-    }
+    // Clear on EVERY id change so a region shot never shows the PREVIOUS region's
+    // doc while the new one loads (mirrors useCountryAt's stale-hold fix).
+    setRegion(null);
+    if (!regionId) return;
     let cancelled = false;
     getRegion(regionId).then(({ detail }) => {
       if (!cancelled) setRegion(detail?.region ?? null);

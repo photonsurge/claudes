@@ -197,20 +197,24 @@ describe("buildCandidates", () => {
     expect(eu.camera.zoom).toBeGreaterThan(0);
   });
 
-  it("tours the area's biggest cities as camera stops (most-populous first)", async () => {
+  it("tours the area's biggest countries — one representative (largest) city each", async () => {
     const on = await buildCandidates(
       fakeDb({
         cities: [
-          { name: "Berlin", country: "Germany", lng: 13.4, lat: 52.5, population: 3_600_000 },
-          { name: "Madrid", country: "Spain", lng: -3.7, lat: 40.4, population: 3_200_000 },
+          { name: "Berlin", country: "Germany", cc: "de", lng: 13.4, lat: 52.5, population: 3_600_000 },
+          { name: "Madrid", country: "Spain", cc: "es", lng: -3.7, lat: 40.4, population: 3_200_000 },
+          // A second German city must NOT add a stop — its country already has one.
+          { name: "Hamburg", country: "Germany", cc: "de", lng: 10.0, lat: 53.55, population: 1_800_000 },
         ],
       }),
       cfg({ kinds: { region: true }, regions: ["europe"] }),
     );
     const eu = on.find((c) => c.segment.kind === "region")!.segment;
+    // Germany + Spain — one stop each, framed on the country's biggest city
+    // (Berlin, not Hamburg), biggest country first; ISO upper-cased for the glow.
     expect(eu.tourStops).toEqual([
-      { label: "Berlin", subtitle: "Germany", lng: 13.4, lat: 52.5 },
-      { label: "Madrid", subtitle: "Spain", lng: -3.7, lat: 40.4 },
+      { label: "Berlin", subtitle: "Germany", lng: 13.4, lat: 52.5, iso2: "DE" },
+      { label: "Madrid", subtitle: "Spain", lng: -3.7, lat: 40.4, iso2: "ES" },
     ]);
     expect(eu.subtitle).toBe("Area tour · Regional weather");
   });

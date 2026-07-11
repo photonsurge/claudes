@@ -85,6 +85,19 @@ describe("activeCountryIso", () => {
     expect(activeCountryIso(tour)).toBeNull(); // no live centre passed
   });
 
+  it("prefers the tour stop's own ISO — glows countries outside the curated catalog", () => {
+    // Nigeria isn't in the curated `country` catalog, so the point lookup can't
+    // glow it — the worker-tagged stop ISO must (exact stop-coord match).
+    const tour = director({
+      segment: segment({
+        id: "region:africa",
+        kind: "region",
+        tourStops: [{ label: "Lagos", subtitle: "Nigeria", lng: 3.4, lat: 6.5, iso2: "NG" }],
+      }),
+    });
+    expect(activeCountryIso(tour, [3.4, 6.5])).toBe("NG");
+  });
+
   it("never glows a country for a world spin, even when it carries a round-up", () => {
     // A round-up rides a `global` spin as narrative graphics only — the spin
     // just shows maps off, so it never glows the country under the live camera.
@@ -111,6 +124,17 @@ describe("activeRegionBbox", () => {
   it("defers to the country glow (returns null) when an Areas tour stop is over a curated country", () => {
     const tour = director({ segment: segment({ id: "region:europe", kind: "region", tourStops: tourStops() }) });
     expect(activeRegionBbox(tour, { center: [2.5, 46.5], zoom: 5 })).toBeNull(); // France
+  });
+
+  it("defers to the stop's own ISO glow (returns null) even outside the curated catalog", () => {
+    const tour = director({
+      segment: segment({
+        id: "region:africa",
+        kind: "region",
+        tourStops: [{ label: "Lagos", subtitle: "Nigeria", lng: 3.4, lat: 6.5, iso2: "NG" }],
+      }),
+    });
+    expect(activeRegionBbox(tour, { center: [3.4, 6.5], zoom: 5 })).toBeNull();
   });
 
   it("never frames a world spin, even when it carries a round-up", () => {
@@ -151,6 +175,15 @@ describe("cutSteps", () => {
     }
   });
 
+  it("captions each Areas tour stop as `focus` (the reticle), not a title relabel", () => {
+    // A tour step marks its city caption `focus` so useDirectorCut routes it to the
+    // centre reticle and leaves the shot's own (area) title intact.
+    const tour = segment({ id: "region:europe", kind: "region", tourStops: tourStops() });
+    const { steps } = cutSteps(tour, avail);
+    expect(steps.every((s) => s.focus === true)).toBe(true);
+    expect(steps[0].label?.title).toBe("Southern Europe");
+  });
+
   it("never tours a world spin — it shows maps off even when it carries stops", () => {
     // A round-up rides a `global` spin as narrative graphics only; the camera
     // keeps spinning through the map-type cycle rather than flying to the stops.
@@ -158,5 +191,7 @@ describe("cutSteps", () => {
     const { steps } = cutSteps(spin, avail);
     expect(steps.length).toBeGreaterThan(2); // the globalMapTour cycle, not the 2 stops
     expect(steps.every((s) => s.patch.camera === undefined)).toBe(true); // no fly-to
+    // A global map-type step relabels the card (title), it is never a `focus` step.
+    expect(steps.every((s) => !s.focus)).toBe(true);
   });
 });

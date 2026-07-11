@@ -104,6 +104,13 @@ interface MapStep {
   patch: Partial<ControlState>;
   /** Global tours relabel the on-air card per map type; other cuts keep their title. */
   label?: { title: string; subtitle: string };
+  /**
+   * When set, `label` is the current tour STOP (a city on an Areas tour) — it is
+   * surfaced as the separate `focus` caption for the centre reticle, NOT used to
+   * relabel the shot's own title. The shot's title stays the AREA name, so the
+   * left-column card keeps naming the area while the reticle names the city.
+   */
+  focus?: boolean;
 }
 
 /**
@@ -200,8 +207,11 @@ export function cutSteps(
         // override the global spin's autoSpin. Spinning a framed, zoomed-in stop
         // just drifts it off-screen (the "framed shots HOLD" rule in director-rois).
         patch: { camera: { center: [s.lng, s.lat], zoom: SUMMARY_STOP_ZOOM }, autoSpin: false, spinSpeed: 0 },
-        // Event stops caption their severity; a plain place (city) has none.
+        // The stop caption (city + its country, or an event stop's severity) rides
+        // the centre reticle as `focus`, NOT the shot title — the card keeps naming
+        // the AREA while the reticle names the current place. See useDirectorCut.
         label: { title: s.label, subtitle: [s.severity != null ? severityLabel(s.severity) : undefined, s.subtitle].filter(Boolean).join(" · ") },
+        focus: true,
       }),
     );
     const flightMs = cut.patch.cutTransitionMs ?? 4000;
@@ -290,10 +300,14 @@ export function activeCountryIso(
     return countryShot(subject)?.iso2 ?? null;
   }
   // An Areas tour flies a fresh stop every few seconds by patching the *live*
-  // camera; when a stop lands inside a curated country, glow it like a real
-  // spotlight. SPIN_KINDS never tour, so they never glow a country — a world
-  // spin just shows maps off.
-  if (tourStopsOf(director.segment)?.length && liveCenter) {
+  // camera. Prefer the stop's own ISO (worker-tagged from the framed country, so
+  // even countries outside the curated catalog glow); fall back to the curated
+  // point lookup for stops with no ISO (e.g. a round-up hotspot). SPIN_KINDS never
+  // tour, so they never glow a country — a world spin just shows maps off.
+  const stops = tourStopsOf(director.segment);
+  if (stops?.length && liveCenter) {
+    const hit = stops.find((s) => s.lng === liveCenter[0] && s.lat === liveCenter[1]);
+    if (hit?.iso2) return hit.iso2;
     return countryContaining(liveCenter[0], liveCenter[1])?.iso2 ?? null;
   }
   return null;
@@ -311,7 +325,12 @@ export function activeRegionBbox(
   liveCamera?: { center: [number, number]; zoom: number },
 ): [number, number, number, number] | null {
   if (!director?.active || !director.segment) return null;
-  if (tourStopsOf(director.segment)?.length && liveCamera) {
+  const stops = tourStopsOf(director.segment);
+  if (stops?.length && liveCamera) {
+    // A stop the country glow already owns (its own ISO, or a curated country
+    // under it) doesn't also get the whole-frame boundary glow.
+    const hit = stops.find((s) => s.lng === liveCamera.center[0] && s.lat === liveCamera.center[1]);
+    if (hit?.iso2) return null;
     if (countryContaining(liveCamera.center[0], liveCamera.center[1])) return null;
     return bboxForCamera(liveCamera.center, liveCamera.zoom);
   }
@@ -330,16 +349,27 @@ export function useDirectorCut(
   manifest: WeatherManifest | null,
   /** Operator-enabled map-type ids for the cut's kind (DirectorConfig.mapTypes[kind]). */
   mapTypeIds?: string[],
-): { patch: Partial<ControlState> | null; segment: Segment | null } {
+): {
+  patch: Partial<ControlState> | null;
+  segment: Segment | null;
+  /** The current Areas tour stop's caption (city + country) for the centre
+   *  reticle — null on every non-tour step. Kept separate from `segment` so the
+   *  card keeps the area title while the reticle names the place. */
+  focus: { title: string; subtitle: string } | null;
+} {
   const avail = useMapTypeAvailability(manifest);
   const step = useMapStep(cut, avail, mapTypeIds);
   return useMemo(() => {
-    if (!cut) return { patch: null, segment: null };
+    if (!cut) return { patch: null, segment: null, focus: null };
     const patch = step ? { ...cut.patch, ...step.patch } : cut.patch;
-    const segment = step?.label
-      ? { ...cut, title: step.label.title, subtitle: step.label.subtitle }
-      : cut;
-    return { patch, segment };
+    // A tour step (`focus`) captions the reticle, not the shot title; a global
+    // map-type step relabels the card as it always has.
+    const focus = step?.focus && step.label ? step.label : null;
+    const segment =
+      step?.label && !step.focus
+        ? { ...cut, title: step.label.title, subtitle: step.label.subtitle }
+        : cut;
+    return { patch, segment, focus };
   }, [cut, step]);
 }
 

@@ -216,6 +216,13 @@ export interface SegmentSummaryStop {
   lat: number;
   /** Hazard severity for an event stop; omitted for a plain place (a city). */
   severity?: SeverityRank;
+  /**
+   * ISO-3166 alpha-2 of the country this stop sits in — set on an Areas
+   * (`region`) tour so the globe glows the exact country under the stop
+   * (`activeCountryIso`), including countries outside the curated `country`
+   * catalog. Absent on round-up hotspots (which glow via the curated lookup).
+   */
+  iso2?: string;
 }
 
 /**

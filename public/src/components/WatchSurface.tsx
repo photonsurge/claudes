@@ -7,8 +7,10 @@
  * small run/attribution label. No chrome — designed to be captured as a YouTube
  * output or an OBS browser source.
  */
+import { useMemo } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
+import { broadcastSatImgFeeds } from "@photonsurge/shared/satimg/types";
 import { mapFreshness } from "../lib/manifest";
 import type { Segment, SegmentKind, DirectorState } from "@photonsurge/shared/director";
 import { useTracks } from "../lib/tracks/useTracks";
@@ -55,6 +57,9 @@ interface WatchSurfaceProps {
   glowRegionBbox?: [number, number, number, number] | null;
   /** On-air director segment — drives the broadcast event reticle. */
   onAirSegment?: Segment | null;
+  /** Current Areas-tour stop caption (city + country) — drives the centre place
+   *  reticle while the card keeps naming the area. Null off a tour. */
+  focusCaption?: { title: string; subtitle: string } | null;
   /** Director's "coming up" preview — drives the chrome's UP NEXT hint. */
   upNext?: DirectorState["upNext"];
   /** Name of the on-air segment kind's active saved "slide" look, if any. */
@@ -73,6 +78,7 @@ function WatchSurfaceBody({
   glowCountryIso,
   glowRegionBbox,
   onAirSegment,
+  focusCaption,
   upNext = [],
   slideName,
   directorOn = false,
@@ -137,10 +143,22 @@ function WatchSurfaceBody({
   const cams = useCams(state.showBroadcastChrome && ready);
   const theme = getBroadcastTheme(state.broadcastTheme);
 
+  // Broadcast rule: the /watch output only ever shows the clean global cloud mosaic
+  // (plus the lightning overlay) — every regional geostationary disc (GOES / Himawari /
+  // Meteosat) is forced off here so the stream never shows the artefacty, third-of-a-
+  // planet discs, whatever a slide or an operator toggle left in the live state. The
+  // operator console (/sandbox, /control) renders its own globe and is unaffected, so
+  // discs stay fully usable there. Only satImgFeeds differs from `state`; memoised on
+  // `state` so the deck.gl globe keeps a stable prop between socket beats.
+  const broadcastState = useMemo(
+    () => ({ ...state, satImgFeeds: broadcastSatImgFeeds(state.satImgFeeds) }),
+    [state],
+  );
+
   return (
     <main style={{ position: "fixed", inset: 0, background: "#0a0e16", overflow: "hidden" }}>
       <GlobeView
-        state={state}
+        state={broadcastState}
         manifest={manifest}
         cities={cities}
         tracks={tracks}
@@ -179,7 +197,7 @@ function WatchSurfaceBody({
       ) : null}
       {state.showBroadcastChrome ? (
         <BroadcastFrame
-          state={state}
+          state={broadcastState}
           manifest={manifest}
           alerts={state.showAlerts ? alerts : []}
           quakes={state.showSeismic ? quakes : []}
@@ -196,6 +214,7 @@ function WatchSurfaceBody({
           geomag={geomag}
           theme={theme}
           onAirSegment={onAirSegment ?? null}
+          focusCaption={focusCaption ?? null}
           upNext={upNext}
           assetsReady={ready}
           directorOn={directorOn}

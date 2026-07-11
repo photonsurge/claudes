@@ -92,10 +92,13 @@ export function useCountryAt(center: [number, number] | null): CountryAt | null 
   const key = center ? `${center[0].toFixed(0)},${center[1].toFixed(0)}` : null;
 
   useEffect(() => {
-    if (!key) {
-      setCountry(null);
-      return;
-    }
+    // Clear on EVERY key change (not just key→null) so the panel never shows the
+    // PREVIOUS location's country while the new point resolves — that stale hold
+    // is the on-air "shows previous country / shows on US" flash. `key` is rounded
+    // to 0dp, so only a real move (a new cut/stop) changes it; blanking then is
+    // correct because the old value is genuinely wrong for the new location.
+    setCountry(null);
+    if (!key) return;
     let cancelled = false;
     const [lng, lat] = key.split(",").map(Number);
     getCountryAt(lng, lat).then((c) => {

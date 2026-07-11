@@ -61,7 +61,7 @@ function WatchPageInner() {
 
   // The current shot's look + its map-type-relabelled segment (global spins retitle
   // per map type as they tour — "Global Temperature" → "Aurora & Space Weather" …).
-  const { patch: cutPatch, segment: onAir } = useDirectorCut(
+  const { patch: cutPatch, segment: onAir, focus } = useDirectorCut(
     cut,
     manifest,
     cut ? directorConfig.mapTypes[cut.kind] : undefined,
@@ -147,6 +147,7 @@ function WatchPageInner() {
         glowCountryIso={activeCountryIso(director, shown.camera.center)}
         glowRegionBbox={activeRegionBbox(director, shown.camera)}
         onAirSegment={director?.active ? onAir : null}
+        focusCaption={director?.active ? focus : null}
         upNext={director?.active ? director.upNext : []}
         slideName={director?.active ? slideName : undefined}
         directorOn={!!director?.active}

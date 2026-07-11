@@ -237,16 +237,26 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
   return out;
 }
 
-/** How many cities an area tour visits — the biggest by population inside the
- *  bbox. The region hold is sized to cover all of them (unlike a round-up, which
- *  caps toured stops at SUMMARY_MAX_TOUR_STOPS), so this is the true stop count. */
-const REGION_TOUR_STOPS = 10;
+/** How many COUNTRIES an area tour visits — the biggest by in-area presence, one
+ *  representative (largest) city each. The region hold is sized to cover them all
+ *  (unlike a round-up, which caps toured stops at SUMMARY_MAX_TOUR_STOPS), so this
+ *  is the true stop count. */
+const REGION_TOUR_COUNTRIES = 10;
+
+/** How many cities to scan before reducing to one-per-country — a generous cap so
+ *  every sizeable country in the area is represented by its biggest city. */
+const REGION_CITY_SCAN = 500;
 
 /**
- * The camera stops an area tour visits: the biggest GeoNames cities inside the
- * region's bbox, most-populous first. Antimeridian-safe (a couple of eligible
- * areas run east past +180; cities store lng in −180..180). Returns [] when the
- * area has no populated cities cached — the caller falls back to a spotlight.
+ * The camera stops an area tour visits: the biggest COUNTRIES inside the region's
+ * bbox, each framed on its largest in-area city, biggest country first. We pull
+ * the area's biggest cities and reduce them to one representative (largest-
+ * population) city per country, so the tour reads as "the major countries of this
+ * area" rather than a list of cities that might all sit in one country. Each stop
+ * carries its ISO so the globe can glow the exact country — including ones outside
+ * the curated `country` catalog. Antimeridian-safe (a couple of eligible areas run
+ * east past +180; cities store lng in −180..180). Returns [] when the area has no
+ * populated cities cached — the caller falls back to a single framed spotlight.
  */
 async function regionTourStops(db: AppDb, bbox: [number, number, number, number]): Promise<SegmentSummaryStop[]> {
   const [w, s, e, n] = bbox;
@@ -256,14 +266,28 @@ async function regionTourStops(db: AppDb, bbox: [number, number, number, number]
       : { lng: { $gte: w, $lte: e } };
   const { data } = await db.cities.getAll(
     { lat: { $gte: s, $lte: n }, population: { $gt: 0 }, ...lngClause } as never,
-    { sort: { population: -1 }, limit: REGION_TOUR_STOPS },
+    { sort: { population: -1 }, limit: REGION_CITY_SCAN },
   );
-  return (data ?? []).map((c) => ({
-    label: c.name,
-    subtitle: c.country || undefined,
-    lng: c.lng,
-    lat: c.lat,
-  }));
+  // Reduce to one representative (largest) city per country. Sort here too so the
+  // grouping never depends on the query's own ordering — the first city seen for a
+  // country is then guaranteed to be its biggest.
+  const rows = data ?? [];
+  const byCountry = new Map<string, (typeof rows)[number]>();
+  for (const c of [...rows].sort((a, b) => (b.population ?? 0) - (a.population ?? 0))) {
+    const key = c.cc || c.country;
+    if (!key || byCountry.has(key)) continue;
+    byCountry.set(key, c);
+  }
+  return [...byCountry.values()]
+    .sort((a, b) => (b.population ?? 0) - (a.population ?? 0))
+    .slice(0, REGION_TOUR_COUNTRIES)
+    .map((c) => ({
+      label: c.name,
+      subtitle: c.country || undefined,
+      lng: c.lng,
+      lat: c.lat,
+      iso2: c.cc ? c.cc.toUpperCase() : undefined,
+    }));
 }
 
 /**
