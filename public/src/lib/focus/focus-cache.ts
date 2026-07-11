@@ -41,3 +41,33 @@ export async function set(key: string, value: unknown, ttlSec: number): Promise<
 }
 
 export const focusCache = { get, set };
+
+/**
+ * Default TTL (seconds) for the always-on global feed caches (alerts / quakes /
+ * volcanoes). Short by design: those feeds refresh on worker-ingest socket beats
+ * (minutes apart), so a ~30s Redis hold barely lags a new event while collapsing
+ * the repeated 60s polls + the overlay/world-watch DUPLICATE fetches + every
+ * extra tab/OBS source onto one sub-ms read instead of a fresh Mongo query (and,
+ * for alerts, the O(n²) cross-source clustering). Tune with FEED_CACHE_TTL_SEC.
+ */
+export const FEED_TTL_SEC = Number(process.env.FEED_CACHE_TTL_SEC || 30);
+
+/**
+ * Read-through cache: return the cached value for `key`, else run `compute`,
+ * cache it for `ttlSec`, and return it. FAIL-OPEN end to end — a Redis outage
+ * just runs `compute` (so the route degrades to a live Mongo read, never errors
+ * on the cache). `compute` errors propagate (the caller keeps its own error
+ * handling); only successful values are cached. Returns `hit` so the route can
+ * stamp an `X-Cache` header.
+ */
+export async function withCache<T>(
+  key: string,
+  ttlSec: number,
+  compute: () => Promise<T>,
+): Promise<{ value: T; hit: boolean }> {
+  const cached = await get<T>(key);
+  if (cached !== null) return { value: cached, hit: true };
+  const value = await compute();
+  await set(key, value, ttlSec);
+  return { value, hit: false };
+}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { groupAlerts } from "../../../lib/alertGroups";
+import { withCache, FEED_TTL_SEC } from "../../../lib/focus/focus-cache";
 import type { Alert } from "../../../lib/alerts";
 
 export const runtime = "nodejs";
@@ -33,26 +34,40 @@ export async function GET(req: Request) {
     }
   }
 
-  const db = await getAppDb();
-  const alerts = await db.alerts.list({
-    activeOnly: q.get("active") === "1" || q.get("active") === "true",
-    source: q.get("source") || undefined,
-    severityMin: num("severityMin"),
-    limit: num("limit"),
-    bbox,
+  const activeOnly = q.get("active") === "1" || q.get("active") === "true";
+  const source = q.get("source") || undefined;
+  const severityMin = num("severityMin");
+  const limit = num("limit");
+
+  // Redis result-cache keyed by the full param set that determines the response —
+  // so the overlay + world-watch DUPLICATE fetches, the 60s re-polls, and every
+  // extra tab/OBS source collapse onto one sub-ms read instead of re-running the
+  // (up-to-5000-row) Mongo query + O(n²) clustering each time. Fail-open.
+  const key = `feed:v1:alerts:${activeOnly ? 1 : 0}:${source ?? "-"}:${severityMin ?? "-"}:${limit ?? "-"}:${
+    bbox ? bbox.map((n) => n.toFixed(2)).join(",") : "-"
+  }`;
+
+  const { value, hit } = await withCache(key, FEED_TTL_SEC, async () => {
+    const db = await getAppDb();
+    const alerts = await db.alerts.list({ activeOnly, source, severityMin, limit, bbox });
+
+    // Cross-source clustering (same hazard + overlapping footprint) runs HERE on
+    // the server, not in the browser — it's O(n²) over geometry and would stutter
+    // the UI. Tag every alert with its cluster id + the full set of reporting
+    // sources; the client just buckets by groupId (O(n)). Cached with the list so
+    // repeat polls skip this too.
+    const list = alerts as unknown as Alert[];
+    for (const g of groupAlerts(list)) {
+      for (const m of g.members) {
+        m.groupId = g.id;
+        m.groupSources = g.sources;
+      }
+    }
+    return { alerts: list, count: list.length };
   });
 
-  // Cross-source clustering (same hazard + overlapping footprint) runs HERE on
-  // the server, not in the browser — it's O(n²) over geometry and would stutter
-  // the UI. Tag every alert with its cluster id + the full set of reporting
-  // sources; the client just buckets by groupId (O(n)).
-  const list = alerts as unknown as Alert[];
-  for (const g of groupAlerts(list)) {
-    for (const m of g.members) {
-      m.groupId = g.id;
-      m.groupSources = g.sources;
-    }
-  }
-
-  return NextResponse.json({ alerts: list, count: list.length }, { status: 200, headers: NO_CACHE });
+  return NextResponse.json(value, {
+    status: 200,
+    headers: { ...NO_CACHE, "X-Cache": hit ? "hit" : "miss" },
+  });
 }

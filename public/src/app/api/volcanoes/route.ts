@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { withCache, FEED_TTL_SEC } from "../../../lib/focus/focus-cache";
 import type { VolcanoStatus } from "@photonsurge/shared/volcanoes/types";
 
 export const runtime = "nodejs";
@@ -25,12 +26,16 @@ export async function GET(req: Request) {
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
 
   try {
-    const db = await getAppDb();
-    const volcanoes = await db.volcanoes.list({ status, limit });
-    return NextResponse.json(
-      { count: volcanoes.length, volcanoes },
-      { status: 200, headers: NO_CACHE },
-    );
+    const key = `feed:v1:volcanoes:${status ?? "-"}:${limit ?? "-"}`;
+    const { value, hit } = await withCache(key, FEED_TTL_SEC, async () => {
+      const db = await getAppDb();
+      const volcanoes = await db.volcanoes.list({ status, limit });
+      return { count: volcanoes.length, volcanoes };
+    });
+    return NextResponse.json(value, {
+      status: 200,
+      headers: { ...NO_CACHE, "X-Cache": hit ? "hit" : "miss" },
+    });
   } catch (err) {
     return NextResponse.json(
       { error: String(err), volcanoes: [], count: 0 },

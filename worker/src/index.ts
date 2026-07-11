@@ -127,14 +127,18 @@ process.on("uncaughtException", (err) => {
       if (!handler) throw new Error(`No handler for type: ${type}`);
       const fn = handler[event];
       if (!fn) throw new Error(`No handler for event: ${type}.${event}`);
+      const startedAt = Date.now();
       try {
         const result = await fn(job);
-        log(TAG, `job:done  [${job.id}] ${type}.${event}`);
-        WorkerBackLogger(TAG, "event", `job:${type}`, `${type}.${event} done`, result, type, String(job.id ?? ""));
+        const ms = Date.now() - startedAt;
+        log(TAG, `job:done  [${job.id}] ${type}.${event} (${ms}ms)`);
+        const detail = result && typeof result === "object" ? { ...result, ms } : { result, ms };
+        WorkerBackLogger(TAG, "event", `job:${type}`, `${type}.${event} done in ${ms}ms`, detail, type, String(job.id ?? ""));
         return result;
       } catch (ex) {
-        log(TAG, `job:error [${job.id}] ${type}.${event}`, summarizeForLog(ex));
-        WorkerBackLogger(TAG, "error", `job:${type}`, `${type}.${event} failed`, summarizeForLog(ex), type, String(job.id ?? ""));
+        const ms = Date.now() - startedAt;
+        log(TAG, `job:error [${job.id}] ${type}.${event} (${ms}ms)`, summarizeForLog(ex));
+        WorkerBackLogger(TAG, "error", `job:${type}`, `${type}.${event} failed after ${ms}ms`, summarizeForLog(ex), type, String(job.id ?? ""));
         throw ex;
       }
     },
@@ -819,7 +823,11 @@ process.on("uncaughtException", (err) => {
       "do",
       { domain: "countries", type: "countries", event: "enrichWiki", data: {} },
       {
-        repeat: { every: Number(process.env.COUNTRY_ENRICH_MS || 24 * 3_600_000), immediately: true },
+        repeat: {
+          every: Number(process.env.COUNTRY_ENRICH_MS || 24 * 3_600_000),
+          immediately: true,
+          offset: staggerOffset("countries-enrich", Number(process.env.COUNTRY_ENRICH_MS || 24 * 3_600_000)),
+        },
         jobId: "countries-enrich",
         priority: 10,
       },
@@ -833,7 +841,11 @@ process.on("uncaughtException", (err) => {
       "do",
       { domain: "regions", type: "regions", event: "enrichWiki", data: {} },
       {
-        repeat: { every: Number(process.env.REGION_ENRICH_MS || 24 * 3_600_000), immediately: true },
+        repeat: {
+          every: Number(process.env.REGION_ENRICH_MS || 24 * 3_600_000),
+          immediately: true,
+          offset: staggerOffset("regions-enrich", Number(process.env.REGION_ENRICH_MS || 24 * 3_600_000)),
+        },
         jobId: "regions-enrich",
         priority: 10,
       },

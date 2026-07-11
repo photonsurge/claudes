@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { validateCity } from "../../../lib/cities";
+import { cachedJson } from "../../../lib/response-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,16 @@ const SORT_FIELDS = new Set(["name", "country", "lat", "lng", "population", "isC
  */
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
+  // Canonical (param-sorted) key so `?limit=300` and `?limit=300&x=` — or the
+  // same params in a different order — reuse one cache entry. Cities only change
+  // on an admin reseed/enrich, so a short TTL is safely fresh and collapses the
+  // whole-globe default set (limit=300), which every viewer polls, to one read.
+  const canon = new URLSearchParams(sp);
+  canon.sort();
+  return cachedJson(`cities:v1:${canon.toString()}`, 60, () => buildCities(sp));
+}
+
+async function buildCities(sp: URLSearchParams) {
   const paged = sp.has("page") || sp.has("pageSize") || sp.has("sort") || sp.has("q");
   const hasBbox = sp.has("bbox");
   const pageSize = paged
@@ -66,19 +77,16 @@ export async function GET(req: Request) {
     paged ? db.cities.model.countDocuments(query).exec() : Promise.resolve(0),
   ]);
   const cities = res?.data ?? [];
-  return NextResponse.json(
-    {
-      cities,
-      count: cities.length,
-      total: paged ? total : cities.length,
-      page,
-      pageSize,
-      pageCount: paged ? Math.ceil(total / pageSize) : cities.length ? 1 : 0,
-      sort: sortField,
-      direction: direction === 1 ? "asc" : "desc",
-    },
-    { status: 200, headers: NO_CACHE },
-  );
+  return {
+    cities,
+    count: cities.length,
+    total: paged ? total : cities.length,
+    page,
+    pageSize,
+    pageCount: paged ? Math.ceil(total / pageSize) : cities.length ? 1 : 0,
+    sort: sortField,
+    direction: direction === 1 ? "asc" : "desc",
+  };
 }
 
 /** POST /api/cities — create a city after validation. */

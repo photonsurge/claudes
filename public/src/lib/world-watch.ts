@@ -33,7 +33,16 @@ export interface WorldWatchState extends WorldSummary {
 const MIN_ALERT_SEVERITY = 3; // 0 None · 1 Minor · 2 Moderate · 3 Severe · 4 Extreme
 const MIN_QUAKE_MAG = 4.5;
 
-const EMPTY_RAW: { alerts: Alert[]; quakes: Quake[]; volcanoes: Volcano[] } = { alerts: [], quakes: [], volcanoes: [] };
+const EMPTY_ALERTS: Alert[] = [];
+const EMPTY_QUAKES: Quake[] = [];
+const EMPTY_VOLCANOES: Volcano[] = [];
+/** Fallback re-poll cadence when the socket is down — long, because the socket
+ *  beat (worker ingest) is the primary trigger; this is just a safety net so a
+ *  dropped/reconnected socket eventually reconciles. Alerts/volcanoes ingest
+ *  minutes apart; only quakes move often. */
+const ALERT_FALLBACK_MS = 10 * 60 * 1000;
+const QUAKE_FALLBACK_MS = 5 * 60 * 1000;
+const VOLCANO_FALLBACK_MS = 10 * 60 * 1000;
 
 /**
  * The whole-planet alert + seismic + volcano tally behind the always-on WORLD
@@ -63,50 +72,83 @@ const EMPTY_RAW: { alerts: Alert[]; quakes: Quake[]; volcanoes: Volcano[] } = { 
  * racing to dismiss.
  */
 export function useWorldWatch(cities: City[] = [], enabled = true): WorldWatchState {
-  const [raw, setRaw] = useState(EMPTY_RAW);
+  const [alerts, setAlerts] = useState<Alert[]>(EMPTY_ALERTS);
+  const [quakes, setQuakes] = useState<Quake[]>(EMPTY_QUAKES);
+  const [volcanoes, setVolcanoes] = useState<Volcano[]>(EMPTY_VOLCANOES);
   const { socket } = useSocket();
-  const [liveTick, setLiveTick] = useState(0);
 
+  // Three INDEPENDENT socket-driven fetchers — the whole point of the split: an
+  // alerts refetch is the 7s one (5000 CAP docs), so it must fire ONLY when
+  // alerts actually change (ALERTS_UPDATED, minutes apart), never on the frequent
+  // quake/volcano ticks. Previously one combined poll re-pulled all three on any
+  // beat + every 60s, so every quake update paid the 7s alerts cost. Each fetcher
+  // does one initial load, then refetches on its own socket event, with a long
+  // interval only as a socket-down fallback. (The Redis feed-cache makes the
+  // occasional refetch a hit anyway.)
   useEffect(() => {
-    if (!socket) return;
-    const onAlerts = () => setLiveTick((n) => n + 1);
-    const onTracks = (p?: { kind?: string }) => {
-      if (!p || p.kind === "seismic" || p.kind === "volcanoes") setLiveTick((n) => n + 1);
-    };
-    socket.on(ALERTS_UPDATED, onAlerts);
-    socket.on(TRACKS_UPDATED, onTracks);
+    if (!enabled) return;
+    let cancelled = false;
+    const load = () =>
+      listAlerts({ activeOnly: true, limit: 5000 }).then((a) => {
+        if (!cancelled) setAlerts(a);
+      });
+    load();
+    const onAlerts = () => load();
+    socket?.on(ALERTS_UPDATED, onAlerts);
+    const iv = setInterval(load, ALERT_FALLBACK_MS);
     return () => {
-      socket.off(ALERTS_UPDATED, onAlerts);
-      socket.off(TRACKS_UPDATED, onTracks);
+      cancelled = true;
+      socket?.off(ALERTS_UPDATED, onAlerts);
+      clearInterval(iv);
     };
-  }, [socket]);
+  }, [enabled, socket]);
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    const poll = async () => {
-      const [alerts, quakesRes, volcanoes] = await Promise.all([
-        listAlerts({ activeOnly: true, limit: 5000 }),
-        listQuakes(),
-        listVolcanoes(),
-      ]);
-      if (cancelled) return;
-      setRaw({ alerts, quakes: quakesRes.quakes, volcanoes });
+    const load = () =>
+      listQuakes().then((r) => {
+        if (!cancelled) setQuakes(r.quakes);
+      });
+    load();
+    const onTracks = (p?: { kind?: string }) => {
+      if (!p || p.kind === "seismic") load();
     };
-    poll();
-    const iv = setInterval(poll, 60000);
+    socket?.on(TRACKS_UPDATED, onTracks);
+    const iv = setInterval(load, QUAKE_FALLBACK_MS);
     return () => {
       cancelled = true;
+      socket?.off(TRACKS_UPDATED, onTracks);
       clearInterval(iv);
     };
-  }, [liveTick, enabled]);
+  }, [enabled, socket]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    const load = () =>
+      listVolcanoes().then((v) => {
+        if (!cancelled) setVolcanoes(v);
+      });
+    load();
+    const onTracks = (p?: { kind?: string }) => {
+      if (!p || p.kind === "volcanoes") load();
+    };
+    socket?.on(TRACKS_UPDATED, onTracks);
+    const iv = setInterval(load, VOLCANO_FALLBACK_MS);
+    return () => {
+      cancelled = true;
+      socket?.off(TRACKS_UPDATED, onTracks);
+      clearInterval(iv);
+    };
+  }, [enabled, socket]);
 
   return useMemo(() => {
-    const feedAlerts = raw.alerts.filter((a) => a.maxSeverityRank >= MIN_ALERT_SEVERITY);
-    const feedQuakes = raw.quakes.filter((q) => q.mag >= MIN_QUAKE_MAG);
+    const feedAlerts = alerts.filter((a) => a.maxSeverityRank >= MIN_ALERT_SEVERITY);
+    const feedQuakes = quakes.filter((q) => q.mag >= MIN_QUAKE_MAG);
     return {
-      ...worldWatchSummary(raw.alerts, raw.quakes, raw.volcanoes),
-      feed: worldWatchFeed(feedAlerts, feedQuakes, cities, raw.volcanoes),
+      ...worldWatchSummary(alerts, quakes, volcanoes),
+      feed: worldWatchFeed(feedAlerts, feedQuakes, cities, volcanoes),
     };
-  }, [raw, cities]);
+  }, [alerts, quakes, volcanoes, cities]);
 }

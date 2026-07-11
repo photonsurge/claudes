@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { withCache, FEED_TTL_SEC } from "../../../../lib/focus/focus-cache";
 import type { Quake } from "../../../../lib/tracks/types";
 
 export const runtime = "nodejs";
@@ -33,23 +34,29 @@ export async function GET(req: Request) {
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
 
   try {
-    const db = await getAppDb();
-    const rows = await db.quakes.list({ minMag, bbox, limit });
-    const quakes: Quake[] = rows.map((r) => ({
-      id: r.quakeId,
-      mag: r.mag,
-      place: r.place,
-      time: new Date(r.time).getTime(),
-      lng: r.lng,
-      lat: r.lat,
-      depthKm: r.depthKm,
-      url: r.url,
-      tsunami: r.tsunami || undefined,
-    }));
-    return NextResponse.json(
-      { count: quakes.length, quakes },
-      { status: 200, headers: NO_CACHE },
-    );
+    const key = `feed:v1:quakes:${minMag ?? "-"}:${limit ?? "-"}:${
+      bbox ? bbox.map((n) => n.toFixed(2)).join(",") : "-"
+    }`;
+    const { value, hit } = await withCache(key, FEED_TTL_SEC, async () => {
+      const db = await getAppDb();
+      const rows = await db.quakes.list({ minMag, bbox, limit });
+      const quakes: Quake[] = rows.map((r) => ({
+        id: r.quakeId,
+        mag: r.mag,
+        place: r.place,
+        time: new Date(r.time).getTime(),
+        lng: r.lng,
+        lat: r.lat,
+        depthKm: r.depthKm,
+        url: r.url,
+        tsunami: r.tsunami || undefined,
+      }));
+      return { count: quakes.length, quakes };
+    });
+    return NextResponse.json(value, {
+      status: 200,
+      headers: { ...NO_CACHE, "X-Cache": hit ? "hit" : "miss" },
+    });
   } catch (err) {
     return NextResponse.json(
       { error: String(err), quakes: [], count: 0 },

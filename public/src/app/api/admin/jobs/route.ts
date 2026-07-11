@@ -9,8 +9,16 @@ export const dynamic = "force-dynamic";
 
 const NO_CACHE = { "Cache-Control": "no-store" };
 
-/** GET /api/admin/jobs — the triggerable jobs + current queue counts. */
-export async function GET() {
+/**
+ * GET /api/admin/jobs — the triggerable jobs + current queue counts.
+ * GET /api/admin/jobs?jobId=123 — status of one enqueued job, incl. how long it
+ * ran (BullMQ stamps processedOn/finishedOn; admin jobs are kept for 1h). The
+ * jobs page polls this after "Run now" to show the execution time.
+ */
+export async function GET(req: Request) {
+  const jobId = new URL(req.url).searchParams.get("jobId");
+  if (jobId) return jobStatus(jobId);
+
   let counts: Record<string, number> | null = null;
   try {
     counts = await getQueue().getJobCounts(
@@ -24,6 +32,29 @@ export async function GET() {
     /* Redis down — still return the job list so the UI renders */
   }
   return NextResponse.json({ jobs: TRIGGERABLE_JOBS, counts }, { status: 200, headers: NO_CACHE });
+}
+
+/** One job's live state + run duration, for the jobs page to poll. */
+async function jobStatus(jobId: string) {
+  try {
+    const job = await getQueue().getJob(jobId);
+    if (!job) {
+      // Either never existed or completed >1h ago and was reaped. Treat as gone.
+      return NextResponse.json({ jobId, state: "unknown" }, { status: 200, headers: NO_CACHE });
+    }
+    const state = await job.getState();
+    const processedOn = job.processedOn ?? null;
+    const finishedOn = job.finishedOn ?? null;
+    // Wall-clock the handler ran for. Falls back to now for a still-running job.
+    const durationMs =
+      processedOn != null ? (finishedOn ?? Date.now()) - processedOn : null;
+    return NextResponse.json(
+      { jobId, state, processedOn, finishedOn, durationMs, failedReason: job.failedReason ?? null },
+      { status: 200, headers: NO_CACHE },
+    );
+  } catch (err) {
+    return NextResponse.json({ jobId, state: "unknown", error: String(err) }, { status: 200, headers: NO_CACHE });
+  }
 }
 
 /** POST /api/admin/jobs { id } — enqueue a worker job by its registry id. */

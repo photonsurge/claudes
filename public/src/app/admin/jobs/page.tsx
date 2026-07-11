@@ -6,7 +6,7 @@
  * work (fetch → Mongo). This page is the manual "run now" surface alongside the
  * worker's own schedules.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { TriggerableJob } from "@photonsurge/shared/jobs";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import LogTail from "../../../components/admin/LogTail";
@@ -16,6 +16,39 @@ interface Result {
   jobId?: string;
   error?: string;
   at: string;
+  /** Live BullMQ state once we start polling the enqueued job. */
+  state?: string;
+  /** How long the handler has run / ran, in ms. */
+  durationMs?: number | null;
+  failedReason?: string | null;
+}
+
+/** ms → "840ms" / "3.2s" / "1m4s". */
+function fmtDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.round((ms % 60_000) / 1000);
+  return `${m}m${s}s`;
+}
+
+/** The one-line status + colour for a triggered job's result row. */
+function resultLine(r: Result): { text: string; color: string } {
+  if (!r.ok) return { text: `failed: ${r.error}`, color: "#fca5a5" };
+  const d = typeof r.durationMs === "number" ? fmtDuration(r.durationMs) : null;
+  switch (r.state) {
+    case "completed":
+      return { text: d ? `done in ${d}` : "done", color: "#4ade80" };
+    case "failed":
+      return { text: `failed after ${d ?? "?"}${r.failedReason ? `: ${r.failedReason}` : ""}`, color: "#fca5a5" };
+    case "active":
+      return { text: d ? `running… ${d}` : "running…", color: "#fbbf24" };
+    case "unknown":
+      // Reaped after completion (admin jobs kept 1h) or never landed — best-effort.
+      return { text: `queued (#${r.jobId})`, color: "#8b95a7" };
+    default:
+      return { text: `queued (#${r.jobId})`, color: "#8b95a7" };
+  }
 }
 
 interface StopResult {
@@ -47,6 +80,8 @@ export default function JobsPage() {
   const [stopResults, setStopResults] = useState<Record<string, StopResult>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [stopping, setStopping] = useState<string | null>(null);
+  // Latest enqueued jobId per row, so an in-flight poll knows if it's been superseded.
+  const latestJob = useRef<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     const res = await fetch("/api/admin/jobs", { cache: "no-store" });
@@ -63,6 +98,34 @@ export default function JobsPage() {
     return () => clearInterval(iv);
   }, [refresh]);
 
+  /**
+   * Poll the enqueued job until it finishes, surfacing its live state + run
+   * duration on the row. Bails if the row was re-run (jobId changed) or after a
+   * generous cap (weather bakes can take minutes).
+   */
+  const pollStatus = useCallback(async (id: string, jobId: string) => {
+    const started = Date.now();
+    const MAX_MS = 5 * 60 * 1000;
+    while (Date.now() - started < MAX_MS) {
+      await new Promise((r) => setTimeout(r, 1200));
+      let st: { state?: string; durationMs?: number | null; failedReason?: string | null } | null = null;
+      try {
+        const res = await fetch(`/api/admin/jobs?jobId=${encodeURIComponent(jobId)}`, { cache: "no-store" });
+        st = await res.json().catch(() => null);
+      } catch {
+        continue; // transient — keep polling
+      }
+      if (!st) continue;
+      if (latestJob.current[id] !== jobId) return; // a newer run superseded this one
+      setResults((r) =>
+        r[id]?.jobId === jobId
+          ? { ...r, [id]: { ...r[id], state: st!.state, durationMs: st!.durationMs, failedReason: st!.failedReason } }
+          : r,
+      );
+      if (st.state === "completed" || st.state === "failed" || st.state === "unknown") return;
+    }
+  }, []);
+
   const run = async (id: string) => {
     setBusy(id);
     try {
@@ -77,6 +140,10 @@ export default function JobsPage() {
         [id]: { ok: !!body.ok, jobId: body.jobId, error: body.error, at: new Date().toISOString() },
       }));
       refresh();
+      if (body.ok && body.jobId) {
+        latestJob.current[id] = String(body.jobId);
+        void pollStatus(id, String(body.jobId));
+      }
     } finally {
       setBusy(null);
     }
@@ -151,11 +218,14 @@ export default function JobsPage() {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 600 }}>{j.label}</div>
                       <div style={{ color: "#8b95a7", fontSize: 13 }}>{j.description}</div>
-                      {r && (
-                        <div style={{ fontSize: 12, marginTop: 4, color: r.ok ? "#4ade80" : "#fca5a5" }}>
-                          {r.ok ? `queued (#${r.jobId})` : `failed: ${r.error}`} · {new Date(r.at).toLocaleTimeString()}
-                        </div>
-                      )}
+                      {r && (() => {
+                        const line = resultLine(r);
+                        return (
+                          <div style={{ fontSize: 12, marginTop: 4, color: line.color }}>
+                            {line.text} · {new Date(r.at).toLocaleTimeString()}
+                          </div>
+                        );
+                      })()}
                       {sr && (
                         <div style={{ fontSize: 12, marginTop: 4, color: sr.ok ? "#4ade80" : "#fca5a5" }}>
                           {sr.ok ? `stopped — ${sr.removed ?? 0} queued batch(es) removed` : `failed: ${sr.error}`} ·{" "}
