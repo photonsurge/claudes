@@ -1,22 +1,40 @@
 // weather/config.ts
-// Env-driven ingest configuration plus small pure helpers for enumerating
-// forecast steps and resolving a run's nominal Date. Kept dependency-free and
-// pure so the boundaries are unit-testable.
+// Ingest configuration plus small pure helpers for enumerating forecast steps
+// and resolving a run's nominal Date. Kept dependency-free and pure so the
+// boundaries are unit-testable.
+//
+// The horizons are deliberately HARDCODED (not env-driven): every environment
+// bakes the same curve — a detailed 3-hourly track out to 72h, PLUS a coarser
+// 12-hourly "daily outlook" out to the GFS ceiling (384h / 16 days) so the
+// broadcast can reach for future days beyond the detailed window.
 
 export interface WeatherConfig {
   model: string;
   forecastHours: number;
   stepHours: number;
   retainRuns: number;
+  dailyHours: number;
+  dailyStepHours: number;
 }
 
-/** Read ingest config from the environment, applying the production defaults. */
+/** Detailed 3-hourly track: f000..72h. */
+export const FORECAST_HOURS = 72;
+export const STEP_HOURS = 3;
+/** Extended daily outlook: 12-hourly f000..384h (16 days, the GFS ceiling). */
+export const DAILY_HOURS = 384;
+export const DAILY_STEP_HOURS = 12;
+/** Published runs kept before retention prunes. */
+export const RETAIN_RUNS = 3;
+
+/** Hardcoded ingest config. Intentionally NOT env-driven — see file header. */
 export function cfg(): WeatherConfig {
   return {
-    model: process.env.MODEL || "gfs",
-    forecastHours: Number(process.env.FORECAST_HOURS || 72),
-    stepHours: Number(process.env.STEP_HOURS || 3),
-    retainRuns: Number(process.env.RETAIN_RUNS || 3),
+    model: "gfs",
+    forecastHours: FORECAST_HOURS,
+    stepHours: STEP_HOURS,
+    retainRuns: RETAIN_RUNS,
+    dailyHours: DAILY_HOURS,
+    dailyStepHours: DAILY_STEP_HOURS,
   };
 }
 
@@ -35,6 +53,20 @@ export function forecastSteps(forecastHours: number, stepHours: number): number[
   const out: number[] = [];
   for (let f = 0; f <= forecastHours; f += Math.max(1, stepHours)) out.push(f);
   return out;
+}
+
+/**
+ * The full set of forecast hours a run bakes: the detailed 3-hourly track
+ * (0..forecastHours) unioned with the coarser daily outlook (0..dailyHours by
+ * dailyStepHours), de-duplicated and sorted ascending. Below forecastHours the
+ * two overlap (12 is a multiple of 3), so the only extra frames are the >72h
+ * daily steps (84, 96 … 384). Each 12-hourly step is a valid GFS lead hour, so
+ * no cadence special-casing is needed.
+ */
+export function bakeSteps(c: WeatherConfig): number[] {
+  const set = new Set<number>(forecastSteps(c.forecastHours, c.stepHours));
+  for (let f = 0; f <= c.dailyHours; f += Math.max(1, c.dailyStepHours)) set.add(f);
+  return [...set].sort((a, b) => a - b);
 }
 
 /** Resolve the nominal run Date (UTC) from a YYYYMMDD date + HH cycle. */

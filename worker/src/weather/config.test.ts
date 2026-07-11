@@ -1,4 +1,4 @@
-import { cfg, forecastSteps, runDateFor } from "./config";
+import { cfg, forecastSteps, bakeSteps, runDateFor } from "./config";
 
 describe("forecastSteps", () => {
   it("enumerates f000..forecastHours inclusive by stepHours", () => {
@@ -53,29 +53,56 @@ describe("runDateFor", () => {
 });
 
 describe("cfg", () => {
-  const ORIG = { ...process.env };
-  afterEach(() => {
-    process.env = { ...ORIG };
+  const HARDCODED = {
+    model: "gfs",
+    forecastHours: 72,
+    stepHours: 3,
+    retainRuns: 3,
+    dailyHours: 384,
+    dailyStepHours: 12,
+  };
+
+  it("returns the hardcoded production config", () => {
+    expect(cfg()).toEqual(HARDCODED);
   });
 
-  it("applies production defaults when env is unset", () => {
-    delete process.env.MODEL;
-    delete process.env.FORECAST_HOURS;
-    delete process.env.STEP_HOURS;
-    delete process.env.RETAIN_RUNS;
-    expect(cfg()).toEqual({ model: "gfs", forecastHours: 72, stepHours: 3, retainRuns: 3 });
-  });
-
-  it("reads overrides from the environment", () => {
+  it("ignores environment overrides (config is hardcoded, not env-driven)", () => {
     process.env.MODEL = "gefs";
-    process.env.FORECAST_HOURS = "120";
+    process.env.FORECAST_HOURS = "999";
     process.env.STEP_HOURS = "6";
     process.env.RETAIN_RUNS = "10";
-    expect(cfg()).toEqual({ model: "gefs", forecastHours: 120, stepHours: 6, retainRuns: 10 });
+    try {
+      expect(cfg()).toEqual(HARDCODED);
+    } finally {
+      delete process.env.MODEL;
+      delete process.env.FORECAST_HOURS;
+      delete process.env.STEP_HOURS;
+      delete process.env.RETAIN_RUNS;
+    }
+  });
+});
+
+describe("bakeSteps", () => {
+  it("keeps the full detailed 3-hourly track out to 72h", () => {
+    const steps = bakeSteps(cfg());
+    for (const f of forecastSteps(72, 3)) expect(steps).toContain(f);
   });
 
-  it("coerces numeric env vars to numbers", () => {
-    process.env.RETAIN_RUNS = "0";
-    expect(cfg().retainRuns).toBe(0);
+  it("adds the 12-hourly daily outlook out to the 384h GFS ceiling", () => {
+    const steps = bakeSteps(cfg());
+    expect(steps).toContain(84);
+    expect(steps).toContain(240);
+    expect(steps[steps.length - 1]).toBe(384);
+  });
+
+  it("emits no >72h step that is not a 12-hour multiple", () => {
+    const steps = bakeSteps(cfg());
+    expect(steps.filter((f) => f > 72 && f % 12 !== 0)).toEqual([]);
+  });
+
+  it("is sorted ascending with no duplicates across the union boundary", () => {
+    const steps = bakeSteps(cfg());
+    expect(steps).toEqual([...steps].sort((a, b) => a - b));
+    expect(new Set(steps).size).toBe(steps.length);
   });
 });

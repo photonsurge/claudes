@@ -39,10 +39,11 @@ describe("modeSlides", () => {
 
   it("a country spotlight adds top-cities, and the area forecast only when it has data", () => {
     const bbox: [number, number, number, number] = [-1, -1, 1, 1];
-    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities"]);
+    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities", "cityconditions"]);
     expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, wideCitiesHasForecast: true }))).toEqual([
       "onair",
       "topcities",
+      "cityconditions",
       "forecast",
     ]);
   });
@@ -109,7 +110,7 @@ describe("modeSlides", () => {
           histBbox: bbox,
         }),
       ),
-    ).toEqual(["onair", "topcities", "forecast", "history"]);
+    ).toEqual(["onair", "topcities", "cityconditions", "forecast", "history"]);
   });
 
   it("an ocean shot adds the sea-temp-by-depth slide", () => {
@@ -138,13 +139,13 @@ describe("modeSlides", () => {
           roundup: { sources: [] },
         }),
       ),
-    ).toEqual(["onair", "nation", "forecast", "alerts", "topcities", "roundup"]);
+    ).toEqual(["onair", "nation", "forecast", "alerts", "topcities", "cityconditions", "roundup"]);
   });
 
   it("a summary country with no alerts/forecast drops those slides but keeps nation + cities", () => {
     const country = { countryId: "jp", name: "Japan", iso2: "JP", bbox } as unknown as ModeSlideContext["summaryCountry"];
     expect(
       ids(seg({ kind: "summary" }), ctx({ summaryCountry: country, wideCitiesBbox: bbox, roundup: { sources: [] } })),
-    ).toEqual(["onair", "nation", "topcities", "roundup"]);
+    ).toEqual(["onair", "nation", "topcities", "cityconditions", "roundup"]);
   });
 });

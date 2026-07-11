@@ -34,4 +34,12 @@ describe("rollupForecastDays", () => {
     const days = rollupForecastDays([{ t: D1, rain: -3 }, { t: D1 + H, rain: 4 }]);
     expect(days[0].rain).toBe(4);
   });
+
+  it("ignores NaN samples so they can't poison hi/lo/gust/rain", () => {
+    const days = rollupForecastDays([
+      { t: D1, temp: NaN, gust: NaN, rain: NaN },
+      { t: D1 + 12 * H, temp: 18, gust: 7, rain: 2 },
+    ]);
+    expect(days[0]).toEqual({ date: "2026-07-11", hi: 18, lo: 18, gust: 7, rain: 2 });
+  });
 });

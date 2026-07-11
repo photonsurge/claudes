@@ -18,7 +18,7 @@ import {
 } from "@photonsurge/shared/weather/forecastHazard";
 import type { iWeatherForecastFrameModel } from "@photonsurge/shared/db/weather-forecast-frame-model";
 
-export type ForecastDayLabel = "TODAY" | "TOMORROW" | "+2" | "+3";
+export type ForecastDayLabel = "TODAY" | "TOMORROW" | `+${number}`;
 export type ForecastCondition = "sunny" | "partly-cloudy" | "cloudy" | "rain" | "snow" | "storm";
 
 /** A day-bucket key: which calendar day (at the point's local-hour offset) and its card label. */
@@ -28,7 +28,18 @@ export interface ForecastDayKey {
   date: string;
 }
 
-const DAY_LABELS: ForecastDayLabel[] = ["TODAY", "TOMORROW", "+2", "+3"];
+/** Detailed 3-day card strip; the extended daily outlook passes a larger count. */
+export const DEFAULT_FORECAST_DAYS = 4;
+/** Longest daily outlook the 12-hourly store can back (GFS 384h ≈ 16 days). */
+export const MAX_FORECAST_DAYS = 16;
+
+/** Day-card labels: TODAY, TOMORROW, then +2, +3 … up to `count` days. */
+export function dayLabels(count: number): ForecastDayLabel[] {
+  const n = Math.max(1, Math.min(MAX_FORECAST_DAYS, Math.floor(count)));
+  const out: ForecastDayLabel[] = ["TODAY", "TOMORROW"];
+  for (let i = 2; i < n; i++) out.push(`+${i}`);
+  return out.slice(0, n);
+}
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -61,22 +72,28 @@ function localDateKey(date: Date, offsetHours: number): string {
 }
 
 /**
- * Bucket every step's validTime into up to 4 calendar days (today + next 3)
- * from "now" at this point's approximate local offset. Steps outside that
- * window are dropped.
+ * Bucket every step's validTime into up to `maxDays` calendar days (today +
+ * next maxDays-1) from "now" at this point's approximate local offset. Steps
+ * outside that window are dropped. Defaults to the detailed 4-day strip; the
+ * extended daily outlook passes a larger count.
  */
-export function bucketForecastDays(validTimes: Date[], lng: number): ForecastDayKey[] {
+export function bucketForecastDays(
+  validTimes: Date[],
+  lng: number,
+  maxDays: number = DEFAULT_FORECAST_DAYS,
+): ForecastDayKey[] {
+  const labels = dayLabels(maxDays);
   const offset = localDayOffsetHours(lng);
   const todayMs = Date.parse(localDateKey(new Date(), offset));
   const byKey = new Map<string, number>();
   for (const t of validTimes) {
     const key = localDateKey(t, offset);
     const idx = Math.round((Date.parse(key) - todayMs) / 86_400_000);
-    if (idx >= 0 && idx < DAY_LABELS.length && !byKey.has(key)) byKey.set(key, idx);
+    if (idx >= 0 && idx < labels.length && !byKey.has(key)) byKey.set(key, idx);
   }
   return [...byKey.entries()]
     .sort((a, b) => a[1] - b[1])
-    .map(([date, idx]) => ({ key: date, label: DAY_LABELS[idx], date }));
+    .map(([date, idx]) => ({ key: date, label: labels[idx], date }));
 }
 
 /**
@@ -158,15 +175,21 @@ async function samplePointSeries(
   framesByVariable: Record<string, iWeatherForecastFrameModel[]>,
   lat: number,
   lng: number,
+  maxHours?: number,
 ): Promise<PointSeries> {
   const units: Record<string, string> = {};
   const samplesByVariable: Record<string, VariableSample[]> = {};
   const allValidTimes: Date[] = [];
+  // The store now holds a 12-hourly outlook out to 16 days; a bounded caller
+  // (the detailed 3-day cards, the 72h timeline) skips frames past its horizon
+  // so it doesn't decode the far-future tail it will never show.
+  const horizonMs = maxHours != null ? Date.now() + maxHours * 3600 * 1000 : Infinity;
 
   for (const [variable, frames] of Object.entries(framesByVariable)) {
     const picked = pickFramesForPoint(frames as any, lat, lng);
     const samples: VariableSample[] = [];
     for (const frame of picked) {
+      if (new Date(frame.validTime).getTime() > horizonMs) continue;
       units[variable] = frame.units || units[variable] || "";
       const sample = await sampleFrameCached(frame as any, lat, lng);
       if (!sample) continue;

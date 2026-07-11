@@ -19,7 +19,7 @@ import { runRetention } from "./retention";
 import { archiveRun } from "./archive";
 import { archiveForecastRun } from "./archiveForecast";
 import { cleanupTemp } from "./download";
-import { cfg, forecastSteps, runDateFor } from "./config";
+import { cfg, bakeSteps, runDateFor } from "./config";
 import { bakeVariableStep } from "./bakeVariableStep";
 
 const TAG = "job:weather";
@@ -31,7 +31,8 @@ const TAG = "job:weather";
  * never published.
  */
 export async function runIngest(job: Job) {
-  const { model, forecastHours, stepHours, retainRuns } = cfg();
+  const config = cfg();
+  const { model, stepHours, retainRuns } = config;
   const data = job.data?.data ?? {};
   const date: string = data.date;
   const cycle: string = data.cycle;
@@ -52,7 +53,10 @@ export async function runIngest(job: Job) {
     return { skipped: true, run: runDate.toISOString() };
   }
 
-  const steps: iWeatherStep[] = forecastSteps(forecastHours, stepHours).map((fhr) => ({
+  // The 3-hourly detailed track (0..72h) unioned with the 12-hourly daily
+  // outlook (0..384h). Computed once and reused for the run doc and the bake.
+  const bakedFhrs = bakeSteps(config);
+  const steps: iWeatherStep[] = bakedFhrs.map((fhr) => ({
     fhr,
     validTime: new Date(runDate.getTime() + fhr * 3600 * 1000).toISOString(),
   }));
@@ -93,10 +97,16 @@ export async function runIngest(job: Job) {
         };
 
         let prevAccumPath: string | undefined;
-        for (const fhr of forecastSteps(forecastHours, stepHours)) {
-          const baked = await bakeVariableStep(variable, date, cycle, fhr, prevAccumPath, stepHours);
+        let prevFhr: number | undefined;
+        for (const fhr of bakedFhrs) {
+          // Accumulated fields (precip) diff against the previous baked step, so
+          // the window is the actual gap between steps (3h in the detailed track,
+          // 12h across the daily-outlook tail) — not a fixed stepHours.
+          const windowHours = prevFhr === undefined ? stepHours : fhr - prevFhr;
+          const baked = await bakeVariableStep(variable, date, cycle, fhr, prevAccumPath, windowHours);
           tempPaths.push(baked.gribPath);
           if (variable.gfs.accumulated) prevAccumPath = baked.gribPath;
+          prevFhr = fhr;
 
           entry.imageUnscale = baked.imageUnscale;
           if (baked.encoding === "scalar") entry.domain = baked.domain;

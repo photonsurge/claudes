@@ -7,6 +7,20 @@ const strip = (doc: any): iCityWeatherModel => {
   return rest as iCityWeatherModel;
 };
 
+/**
+ * PURE: a Mongo lat/lng filter for cities inside `bbox` (`[west, south, east,
+ * north]`), clamping latitude and splitting an antimeridian-wrapping box
+ * (west > east) into an `$or` — the same rule the /api/cities route uses.
+ * Exported for unit testing `topByBbox`'s geometry without a live collection.
+ */
+export function cityBboxQuery(bbox: [number, number, number, number]): Record<string, unknown> {
+  const [w, s, e, n] = bbox;
+  const q: Record<string, unknown> = { lat: { $gte: Math.max(s, -90), $lte: Math.min(n, 90) } };
+  if (w <= e) q.lng = { $gte: w, $lte: e };
+  else q.$or = [{ lng: { $gte: w } }, { lng: { $lte: e } }];
+  return q;
+}
+
 /** CityWeather cache persistence — bulk upsert on `cityId`, read by id list. */
 export function makeCityWeatherRepo(model: Model<iCityWeatherModel>) {
   return {
@@ -43,14 +57,9 @@ export function makeCityWeatherRepo(model: Model<iCityWeatherModel>) {
       bbox: [number, number, number, number],
       limit: number,
     ): Promise<iCityWeatherModel[]> {
-      const [w, s, e, n] = bbox;
-      if (![w, s, e, n].every(Number.isFinite) || limit <= 0) return [];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const query: any = { lat: { $gte: Math.max(s, -90), $lte: Math.min(n, 90) } };
-      if (w <= e) query.lng = { $gte: w, $lte: e };
-      else query.$or = [{ lng: { $gte: w } }, { lng: { $lte: e } }];
+      if (!bbox.every(Number.isFinite) || limit <= 0) return [];
       const docs = await model
-        .find(query)
+        .find(cityBboxQuery(bbox))
         .sort({ population: -1 })
         .limit(Math.floor(limit))
         .lean()

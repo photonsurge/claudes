@@ -61,12 +61,15 @@ export function rollupForecastDays(
       byDay.set(date, day);
       order.push(date);
     }
-    if (s.temp != null) {
+    // Treat NaN like a miss — it's not nullish, so a bare `!= null` would let it
+    // poison hi/lo/gust and, via Math, taint the whole day.
+    const ok = (v?: number | null): v is number => v != null && !Number.isNaN(v);
+    if (ok(s.temp)) {
       day.hi = day.hi == null ? s.temp : Math.max(day.hi, s.temp);
       day.lo = day.lo == null ? s.temp : Math.min(day.lo, s.temp);
     }
-    if (s.gust != null) day.gust = day.gust == null ? s.gust : Math.max(day.gust, s.gust);
-    if (s.rain != null) day.rain = (day.rain ?? 0) + Math.max(0, s.rain);
+    if (ok(s.gust)) day.gust = day.gust == null ? s.gust : Math.max(day.gust, s.gust);
+    if (ok(s.rain)) day.rain = (day.rain ?? 0) + Math.max(0, s.rain);
   }
   return order.slice(0, maxDays).map((d) => byDay.get(d)!);
 }
@@ -83,7 +86,11 @@ async function sampleVar(
     const values: (number | null)[] = new Array(cities.length);
     for (let i = 0; i < cities.length; i++) {
       const s = sampleFrame(fl, cities[i].lat, cities[i].lng);
-      values[i] = s == null ? null : s.kind === "uv" ? s.speed : s.value;
+      const v = s == null ? null : s.kind === "uv" ? s.speed : s.value;
+      // A decode can yield NaN (e.g. a masked wind component) — that's not
+      // nullish, so it slips past the `?? undefined` guards downstream and Mongo
+      // rejects it on the Number cast. Normalise it to a real miss here.
+      values[i] = v == null || Number.isNaN(v) ? null : v;
     }
     out.push({ t: new Date(frame.validTime).getTime(), values });
   }
