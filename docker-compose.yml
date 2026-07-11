@@ -8,18 +8,23 @@ services:
   mongodb:
     image: mongo:8
     restart: unless-stopped
+    # --quiet drops the per-connection "accepted/ended" NETWORK log spam the pools
+    # + healthcheck otherwise flood the log with. Errors/warnings still log.
+    command: ["mongod", "--quiet"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
     volumes:
       - mongo-data:/data/db
-    # `ping` is allowed pre-auth, so no credentials needed to prove liveness.
-    # Consumers gate on this via depends_on.condition: service_healthy.
+    # Cheap TCP liveness: mongod only opens 27017 once it's ready to serve, so a
+    # raw connect is a valid readiness gate WITHOUT spinning up mongosh (a full
+    # Node shell that logged a "Connection not authenticating" line per probe).
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-      interval: 10s
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/27017"]
+      interval: 30s          # quiet steady-state
+      start_interval: 3s     # but probe fast during start_period so gating is snappy
       timeout: 5s
-      retries: 6
+      retries: 5
       start_period: 30s
     stop_grace_period: 30s
     networks: [internal]
@@ -35,9 +40,10 @@ services:
       - redis-data:/data
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
-      interval: 10s
+      interval: 30s
+      start_interval: 3s
       timeout: 5s
-      retries: 6
+      retries: 5
       start_period: 10s
     networks: [internal]
 
@@ -63,7 +69,8 @@ services:
         - node
         - -e
         - "require('http').get('http://127.0.0.1:'+(process.env.PORT||10101)+'/healthz',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"
-      interval: 15s
+      interval: 30s
+      start_interval: 5s
       timeout: 5s
       retries: 5
       start_period: 30s
@@ -106,7 +113,8 @@ services:
         - node
         - -e
         - "require('http').get('http://127.0.0.1:'+(process.env.PORT||10102)+'/healthz',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"
-      interval: 15s
+      interval: 30s
+      start_interval: 5s
       timeout: 5s
       retries: 5
       start_period: 60s
@@ -151,7 +159,8 @@ services:
         - node
         - -e
         - "require('http').get('http://127.0.0.1:'+(process.env.PORT||10100)+'/api/status',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"
-      interval: 15s
+      interval: 30s
+      start_interval: 5s
       timeout: 5s
       retries: 5
       start_period: 60s

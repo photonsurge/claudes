@@ -9,6 +9,7 @@ import { getWeatherFrameModel } from "./weather-frame-model";
 import { makeWeatherFrameRepo } from "./weather-frame-repo";
 import { getWeatherForecastFrameModel } from "./weather-forecast-frame-model";
 import { makeWeatherForecastFrameRepo } from "./weather-forecast-frame-repo";
+import { getBlobModel, makeBlobStore } from "./blob-store";
 import { getClimateYearModel } from "./climate-year-model";
 import { makeClimateYearRepo } from "./climate-year-repo";
 import { getCityModel } from "./city-model";
@@ -101,8 +102,14 @@ export function createDb(conn: Connection) {
     pings: makeCollection<iPing>(conn, "pings"),
     weatherRuns,
     weatherTextures: mongoCrud(getWeatherTextureModel(conn)),
-    weatherFrames: makeWeatherFrameRepo(getWeatherFrameModel(conn)),
-    weatherForecastFrames: makeWeatherForecastFrameRepo(getWeatherForecastFrameModel(conn)),
+    weatherFrames: makeWeatherFrameRepo(
+      getWeatherFrameModel(conn),
+      makeBlobStore(getBlobModel(conn, "WeatherFrameData")),
+    ),
+    weatherForecastFrames: makeWeatherForecastFrameRepo(
+      getWeatherForecastFrameModel(conn),
+      makeBlobStore(getBlobModel(conn, "WeatherForecastFrameData")),
+    ),
     climateYears: makeClimateYearRepo(getClimateYearModel(conn)),
     cities: mongoCrud(getCityModel(conn)),
     cityWeather: makeCityWeatherRepo(getCityWeatherModel(conn)),

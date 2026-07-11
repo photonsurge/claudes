@@ -38,6 +38,13 @@ export interface iWeatherFrame extends iGeneralModel {
   bounds: number[];
   grid: { width: number; height: number; res: number };
   contentType: TextureContentType;
+  /**
+   * Texture bytes. Stored in the `WeatherFrameData` sidecar collection and
+   * joined by id (see blob-store.ts) — `getSeries`/`getByID` reattach it, so a
+   * full frame always has it; the bytes-free view is `WeatherFrameMeta`
+   * (Omit<…,"data">). It must NOT be paged through Mongo by the `listMeta`
+   * scan, which is the whole point of the split.
+   */
   data: Buffer;
   byteSize: number;
 }
@@ -66,7 +73,10 @@ const WeatherFrameSchema = new mongoose.Schema<iWeatherFrameModel>(
       res: { type: Number, required: true },
     },
     contentType: { type: String, required: true, enum: ["image/png", "image/tiff"] },
-    data: { type: Buffer, required: true },
+    // Bytes live in the WeatherFrameData sidecar (blob-store). Optional here so
+    // new rows can be written metadata-only; pre-migration rows keep it inline
+    // as a read fallback until the backfill unsets them.
+    data: { type: Buffer, required: false },
     byteSize: { type: Number, required: true, default: 0 },
   },
   mongoTimestamps,

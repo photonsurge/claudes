@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { withCache, FEED_TTL_SEC } from "../../../../lib/focus/focus-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,10 +34,11 @@ export async function GET(req: Request) {
   }
 
   try {
-    const db = await getAppDb();
-    const near = await db.tideSeries.nearMany({ lng, lat, maxKm, limit });
-    return NextResponse.json(
-      {
+    const key = `feed:v1:tide:${lat.toFixed(3)}:${lng.toFixed(3)}:${maxKm}:${limit}`;
+    const { value, hit } = await withCache(key, FEED_TTL_SEC, async () => {
+      const db = await getAppDb();
+      const near = await db.tideSeries.nearMany({ lng, lat, maxKm, limit });
+      return {
         stations: near.map(({ series, distanceKm }) => ({
           stationId: series.stationId,
           provider: series.provider,
@@ -49,9 +51,12 @@ export async function GET(req: Request) {
           samples: series.samples,
           updatedAt: series.updatedAt,
         })),
-      },
-      { status: 200, headers: NO_CACHE },
-    );
+      };
+    });
+    return NextResponse.json(value, {
+      status: 200,
+      headers: { ...NO_CACHE, "X-Cache": hit ? "hit" : "miss" },
+    });
   } catch (err) {
     return NextResponse.json({ error: String(err), stations: [] }, { status: 502, headers: NO_CACHE });
   }

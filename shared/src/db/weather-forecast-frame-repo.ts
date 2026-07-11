@@ -1,6 +1,7 @@
 import type { Model } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 import type { iWeatherForecastFrame, iWeatherForecastFrameModel } from "./weather-forecast-frame-model";
+import type { BlobStore } from "./blob-store";
 
 /** Forecast frame metadata without the texture bytes. */
 export type WeatherForecastFrameMeta = Omit<iWeatherForecastFrameModel, "data">;
@@ -32,34 +33,52 @@ const variableQuery = (q: ForecastFrameQuery) => {
  * Rolling forecast-frame persistence. The worker upserts a frame per
  * (model, variable, validTime) after every ingest, newer run superseding
  * older; elapsed validTimes are pruned rather than retained forever.
+ *
+ * Bytes live in a `WeatherForecastFrameData` sidecar (`blobs`), not inline, so
+ * `listMeta` never pages textures through Mongo — see weather-frame-repo.ts and
+ * blob-store.ts for the rationale.
  */
-export function makeWeatherForecastFrameRepo(model: Model<iWeatherForecastFrameModel>) {
+export function makeWeatherForecastFrameRepo(
+  model: Model<iWeatherForecastFrameModel>,
+  blobs: BlobStore,
+) {
   return {
     model,
+    blobs,
 
     /** Upsert on (model, variable, validTime); newer run wins over older. */
     async upsert(
       frame: Omit<iWeatherForecastFrame, keyof { id?: string }>,
     ): Promise<{ written: boolean }> {
       const key = { model: frame.model, variable: frame.variable, validTime: frame.validTime };
-      const existing = await model.findOne(key).select({ run: 1 }).lean();
+      const existing = await model.findOne(key).select({ id: 1, run: 1 }).lean();
       if (existing && !forecastShouldReplace(existing.run, frame.run)) {
         return { written: false };
       }
+      const refId = existing?.id ?? uuidv4();
+      const { data, ...meta } = frame;
       await model.updateOne(
         key,
-        { $set: { ...frame }, $setOnInsert: { id: uuidv4() } },
+        { $set: meta, $setOnInsert: { id: refId }, $unset: { data: "" } },
         { upsert: true },
       );
+      await blobs.put(refId, data);
       return { written: true };
     },
 
-    /** Full frames (bytes included) for a variable, soonest validTime first. */
+    /** Full frames (bytes rejoined) for a variable, soonest validTime first. */
     async getSeries(q: ForecastFrameQuery): Promise<iWeatherForecastFrameModel[]> {
-      return model
+      const metas = await model
         .find(variableQuery(q))
         .sort({ validTime: 1 })
         .lean<iWeatherForecastFrameModel[]>();
+      const byId = await blobs.getMany(metas.map((m) => m.id));
+      return metas
+        .map((m) => {
+          const data = byId.get(m.id) ?? m.data; // fallback: legacy inline bytes
+          return data ? { ...m, data } : null;
+        })
+        .filter((f): f is iWeatherForecastFrameModel => f !== null);
     },
 
     /** Frame metadata only (no bytes) for a variable, soonest validTime first. */
@@ -71,13 +90,26 @@ export function makeWeatherForecastFrameRepo(model: Model<iWeatherForecastFrameM
         .lean<WeatherForecastFrameMeta[]>();
     },
 
+    /** One frame by public id, bytes rejoined; null if the frame or its bytes are gone. */
+    async getByID(id: string): Promise<iWeatherForecastFrameModel | null> {
+      const meta = await model.findOne({ id }).lean<iWeatherForecastFrameModel>();
+      if (!meta) return null;
+      const data = (await blobs.get(id)) ?? meta.data;
+      return data ? { ...meta, data } : null;
+    },
+
     /** Distinct variables currently in the forecast store. */
     async variables(): Promise<string[]> {
       return model.distinct("variable");
     },
 
-    /** Delete frames whose validTime has already passed `cutoff`; returns count. */
+    /** Delete frames whose validTime has already passed `cutoff` (and their bytes); returns count. */
     async pruneOlderThan(cutoff: Date): Promise<number> {
+      const stale = await model
+        .find({ validTime: { $lt: cutoff } })
+        .select({ id: 1, _id: 0 })
+        .lean<{ id: string }[]>();
+      await blobs.delete(stale.map((s) => s.id));
       const res = await model.deleteMany({ validTime: { $lt: cutoff } });
       return res.deletedCount ?? 0;
     },

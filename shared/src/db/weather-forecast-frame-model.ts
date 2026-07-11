@@ -34,6 +34,12 @@ export interface iWeatherForecastFrame extends iGeneralModel {
   bounds: number[];
   grid: { width: number; height: number; res: number };
   contentType: TextureContentType;
+  /**
+   * Texture bytes. Stored in the `WeatherForecastFrameData` sidecar collection
+   * and joined by id (blob-store.ts); `getSeries`/`getByID` reattach it. The
+   * bytes-free view is `WeatherForecastFrameMeta`. Must not be paged through
+   * Mongo by the `listMeta` scan.
+   */
   data: Buffer;
   byteSize: number;
 }
@@ -62,7 +68,10 @@ const WeatherForecastFrameSchema = new mongoose.Schema<iWeatherForecastFrameMode
       res: { type: Number, required: true },
     },
     contentType: { type: String, required: true, enum: ["image/png", "image/tiff"] },
-    data: { type: Buffer, required: true },
+    // Bytes live in the WeatherForecastFrameData sidecar (blob-store). Optional
+    // here so new rows are metadata-only; pre-migration rows keep it inline as a
+    // read fallback until the backfill unsets them.
+    data: { type: Buffer, required: false },
     byteSize: { type: Number, required: true, default: 0 },
   },
   mongoTimestamps,

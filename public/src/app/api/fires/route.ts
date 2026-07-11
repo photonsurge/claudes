@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { withCache, FEED_TTL_SEC } from "../../../lib/focus/focus-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,12 +32,18 @@ export async function GET(req: Request) {
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
 
   try {
-    const db = await getAppDb();
-    const fires = await db.fires.list({ minFrp, bbox, limit });
-    return NextResponse.json(
-      { count: fires.length, fires },
-      { status: 200, headers: NO_CACHE },
-    );
+    const key = `feed:v1:fires:${minFrp ?? "-"}:${limit ?? "-"}:${
+      bbox ? bbox.map((n) => n.toFixed(2)).join(",") : "-"
+    }`;
+    const { value, hit } = await withCache(key, FEED_TTL_SEC, async () => {
+      const db = await getAppDb();
+      const fires = await db.fires.list({ minFrp, bbox, limit });
+      return { count: fires.length, fires };
+    });
+    return NextResponse.json(value, {
+      status: 200,
+      headers: { ...NO_CACHE, "X-Cache": hit ? "hit" : "miss" },
+    });
   } catch (err) {
     return NextResponse.json(
       { error: String(err), fires: [], count: 0 },

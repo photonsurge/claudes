@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { withCache, FEED_TTL_SEC } from "../../../lib/focus/focus-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,12 +16,15 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  */
 export async function GET() {
   try {
-    const db = await getAppDb();
-    const { faults } = await db.faults.list();
-    return NextResponse.json(
-      { faults, count: faults.length },
-      { status: 200, headers: NO_CACHE },
-    );
+    const { value, hit } = await withCache("feed:v1:faults", FEED_TTL_SEC, async () => {
+      const db = await getAppDb();
+      const { faults } = await db.faults.list();
+      return { faults, count: faults.length };
+    });
+    return NextResponse.json(value, {
+      status: 200,
+      headers: { ...NO_CACHE, "X-Cache": hit ? "hit" : "miss" },
+    });
   } catch (err) {
     return NextResponse.json(
       { error: String(err), faults: [], count: 0 },
