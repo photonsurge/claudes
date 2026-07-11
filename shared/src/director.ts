@@ -280,8 +280,17 @@ export interface DirectorState {
   /** Wall-clock ms when the current segment started / will end. */
   startedAt: number;
   endsAt: number;
-  /** Titles of the next few queued segments — for a "coming up" rail. */
-  upNext: { kind: SegmentKind; title: string }[];
+  /** The next few queued segments — titles drive the "coming up" rail; the
+   *  optional focus params (camera + subject id) let /watch PRE-WARM the focus
+   *  bundle for the upcoming cut so its /api/focus fetch is a Redis hit when it
+   *  airs (zero-flash). Optional/back-compat: older workers omit them. */
+  upNext: {
+    kind: SegmentKind;
+    title: string;
+    center?: [number, number];
+    zoom?: number;
+    subject?: string | null;
+  }[];
   /**
    * Wall-clock ms this exact segment last aired earlier in the session, or
    * undefined if it's the first time. Operator-only readout ("last shown 4m

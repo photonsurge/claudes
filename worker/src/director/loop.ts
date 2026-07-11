@@ -45,7 +45,7 @@ interface SceneRunner {
   current: Segment | null;
   startedAt: number;
   endsAt: number;
-  upNext: { kind: SegmentKind; title: string }[];
+  upNext: DirectorState["upNext"];
   /** The current segment's prior-airing time + running count (operator readout). */
   lastShownAt?: number;
   timesShown?: number;
@@ -132,21 +132,32 @@ function pickLeastAired(cands: Candidate[], counts: Map<string, number>): Candid
  *    kind that just aired, same as the real avoid-immediate-repeat rule),
  *    each showing a random pick among ITS least-aired candidates.
  */
+type UpNextEntry = DirectorState["upNext"][number];
+
+/** Focus params from a segment so /watch can pre-warm its bundle before it airs. */
+function focusOf(seg: Candidate["segment"]): Pick<UpNextEntry, "center" | "zoom" | "subject"> {
+  return {
+    center: seg.camera.center,
+    zoom: seg.camera.zoom,
+    subject: seg.id.split(":")[1] ?? null,
+  };
+}
+
 function previewNext(
   pool: Candidate[],
   excludeId: string,
   counts: Map<string, number>,
   cooldownActive: boolean,
   lastKind?: SegmentKind,
-): { kind: SegmentKind; title: string }[] {
+): UpNextEntry[] {
   const eligible = pool.filter((c) => c.segment.id !== excludeId);
-  const out: { kind: SegmentKind; title: string }[] = [];
+  const out: UpNextEntry[] = [];
 
   if (!cooldownActive) {
     const breaking = eligible
       .filter((c) => PRIORITY_KINDS.includes(c.segment.kind) && c.breaking !== false && !counts.has(c.segment.id))
       .sort((a, b) => b.score - a.score)[0];
-    if (breaking) out.push({ kind: breaking.segment.kind, title: breaking.segment.title });
+    if (breaking) out.push({ kind: breaking.segment.kind, title: breaking.segment.title, ...focusOf(breaking.segment) });
   }
 
   const seenKinds = new Set(out.map((o) => o.kind));
@@ -155,7 +166,8 @@ function previewNext(
 
   for (const kind of shuffled(remainingKinds)) {
     const cands = eligible.filter((c) => c.segment.kind === kind);
-    out.push({ kind, title: pickLeastAired(cands, counts).segment.title });
+    const pick = pickLeastAired(cands, counts).segment;
+    out.push({ kind, title: pick.title, ...focusOf(pick) });
     if (out.length >= 3) break;
   }
   return out;

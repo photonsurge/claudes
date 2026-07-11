@@ -10,7 +10,7 @@
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { mapFreshness } from "../lib/manifest";
-import type { Segment, SegmentKind } from "@photonsurge/shared/director";
+import type { Segment, SegmentKind, DirectorState } from "@photonsurge/shared/director";
 import { useTracks } from "../lib/tracks/useTracks";
 import { useAlertFeatures } from "../lib/alerts-overlay";
 import { useQuakes } from "../lib/seismic-overlay";
@@ -56,7 +56,7 @@ interface WatchSurfaceProps {
   /** On-air director segment — drives the broadcast event reticle. */
   onAirSegment?: Segment | null;
   /** Director's "coming up" preview — drives the chrome's UP NEXT hint. */
-  upNext?: { kind: SegmentKind; title: string }[];
+  upNext?: DirectorState["upNext"];
   /** Name of the on-air segment kind's active saved "slide" look, if any. */
   slideName?: string;
   /** Whether the auto-director is actively driving this scene — gates the
@@ -285,7 +285,12 @@ function WatchSurfaceBody({
 export default function WatchSurface(props: WatchSurfaceProps) {
   const ready = useGlobeReadyOnce(props.manifest, props.state.fhr);
   return (
-    <FocusProvider onAirSegment={props.onAirSegment ?? null} camera={props.state.camera} enabled={ready}>
+    <FocusProvider
+      onAirSegment={props.onAirSegment ?? null}
+      camera={props.state.camera}
+      enabled={ready}
+      upcoming={props.upNext}
+    >
       <WatchSurfaceBody {...props} ready={ready} />
     </FocusProvider>
   );

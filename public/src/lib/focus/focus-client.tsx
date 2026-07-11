@@ -14,7 +14,7 @@
  * [focusKey, enabled] dep, aborts the in-flight request on every key change /
  * unmount, keeps the last bundle across cuts (no empty-flash), and fails open.
  */
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Segment, SegmentKind } from "@photonsurge/shared/director";
 import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 
@@ -97,17 +97,28 @@ function useCycledActive<T>(stations: T[]): T | null {
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
+/** An upcoming director shot carrying enough to pre-warm its bundle. */
+export interface UpcomingFocus {
+  kind: SegmentKind;
+  center?: Center;
+  zoom?: number;
+  subject?: string | null;
+}
+
 interface FocusProviderProps {
   onAirSegment: Segment | null;
   /** live operator camera — fallback centre/zoom + the moving round-up stop */
   camera: { center: Center; zoom: number };
   /** false until globe textures decode; no fetch / no fallback fires while false */
   enabled: boolean;
+  /** The director's next queued shots — the immediate next is pre-warmed into
+   *  Redis so its /api/focus fetch is a hit when it airs (zero-flash). */
+  upcoming?: UpcomingFocus[];
   detail?: FocusDetail;
   children: ReactNode;
 }
 
-export function FocusProvider({ onAirSegment, camera, enabled, detail = "broadcast", children }: FocusProviderProps) {
+export function FocusProvider({ onAirSegment, camera, enabled, upcoming, detail = "broadcast", children }: FocusProviderProps) {
   const kind: SegmentKind = onAirSegment?.kind ?? "global";
   const subject = onAirSegment?.id.split(":")[1] ?? null; // BARE subject id
   const focusCenter: Center = onAirSegment?.camera.center ?? camera.center;
@@ -165,6 +176,36 @@ export function FocusProvider({ onAirSegment, camera, enabled, detail = "broadca
     // primitive deps only — sub-grid drift that rounds to the same key never refetches
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusKey, enabled]);
+
+  // ── Pre-warm the immediate-next cut ──────────────────────────────────────
+  // The (OBS) browser fires a background /api/focus for the director's next shot
+  // ~one hold before it airs, so the server composes + Redis-caches it and the
+  // post-cut fetch is a 6ms hit (zero-flash). O(1) memory: only the next shot,
+  // re-warmed whenever its key changes (well inside the 60s cache TTL). Best
+  // effort — a miss just falls back to a normal ~1.4s compose.
+  const next = enabled ? upcoming?.[0] : undefined;
+  const nextKey =
+    next?.center && next.zoom != null
+      ? buildFocusKey({ kind: next.kind, center: next.center, zoom: next.zoom, detail, subject: next.subject ?? null })
+      : null;
+  const warmedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!nextKey || nextKey === focusKey || nextKey === warmedRef.current) return;
+    warmedRef.current = nextKey;
+    const n = next!; // nextKey non-null ⇒ center + zoom present
+    const ctrl = new AbortController();
+    const qs = new URLSearchParams({
+      kind: n.kind,
+      lng: String(n.center![0]),
+      lat: String(n.center![1]),
+      zoom: String(n.zoom!),
+      detail,
+    });
+    if (n.subject) qs.set("subject", n.subject);
+    fetch(`/api/focus?${qs.toString()}`, { signal: ctrl.signal }).catch(() => {}); // fire-and-forget, fail-open
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextKey]);
 
   const covers = () => bundle != null && bundle.key === focusKey;
   const atFocus = (c: Center | null, dp = 2) =>
