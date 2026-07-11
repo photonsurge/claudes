@@ -2,13 +2,31 @@ import { NextResponse } from "next/server";
 import { getFocusBundle } from "../../../lib/focus/getFocusBundle";
 import { buildFocusKey } from "../../../lib/focus/focusKey";
 import { focusCache } from "../../../lib/focus/focus-cache";
-import type { FocusDetail, FocusRequest } from "../../../lib/focus/types";
+import type { FocusBundle, FocusDetail, FocusRequest } from "../../../lib/focus/types";
 import type { SegmentKind } from "@photonsurge/shared/director";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DETAILS: FocusDetail[] = ["broadcast", "admin", "full"];
+
+/**
+ * In-flight compose de-duplication (single-flight). When `/watch` opens on
+ * several tabs / OBS sources at once they all request the SAME on-air focus key;
+ * without this each fires its own getFocusBundle — N parallel composes, each
+ * holding history texture frames in RAM (this is what let public spike to ~6GB).
+ * Coalescing them onto ONE compose bounds memory to a single compose regardless
+ * of viewer count. NOT a cache: entries are deleted the instant the compose
+ * settles (finally), so the map only ever holds the handful of keys composing
+ * right now — no unbounded growth over a 24/7 run.
+ */
+const inflight = new Map<string, Promise<FocusBundle>>();
+
+async function composeAndCache(key: string, focusReq: FocusRequest): Promise<FocusBundle> {
+  const bundle = await getFocusBundle(focusReq);
+  await focusCache.set(key, bundle, 60);
+  return bundle;
+}
 
 /**
  * GET /api/focus?kind=&lng=&lat=&zoom=&detail=broadcast&subject=
@@ -54,7 +72,17 @@ export async function GET(req: Request) {
     return NextResponse.json(cached, { headers: { ...headers, "X-Focus-Cache": "hit" } });
   }
 
-  const bundle = await getFocusBundle(focusReq);
-  await focusCache.set(key, bundle, 60);
-  return NextResponse.json(bundle, { headers: { ...headers, "X-Focus-Cache": "miss" } });
+  // Single-flight: reuse an in-flight compose for this key if one exists, else
+  // start one. Concurrent viewers of the same on-air shot share ONE compose.
+  let coalesced = true;
+  let pending = inflight.get(key);
+  if (!pending) {
+    coalesced = false;
+    pending = composeAndCache(key, focusReq).finally(() => inflight.delete(key));
+    inflight.set(key, pending);
+  }
+  const bundle = await pending;
+  return NextResponse.json(bundle, {
+    headers: { ...headers, "X-Focus-Cache": coalesced ? "wait" : "miss" },
+  });
 }
