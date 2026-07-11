@@ -21,14 +21,22 @@ async function loadList(db: AppDb, type: AdminEntityType): Promise<Record<string
       return (await db.countries.list()) as Record<string, any>[];
     case "region":
       return (await db.regions.list()) as Record<string, any>[];
-    case "volcano":
-      return (await db.volcanoes.list({})) as Record<string, any>[];
+    case "volcano": {
+      // Active only — exclude long-dormant volcanoes (keep erupting + unrest).
+      const all = await db.volcanoes.list({});
+      return all.filter((v) => v.status !== "dormant") as Record<string, any>[];
+    }
     case "alert":
-      return (await db.alerts.list({})) as Record<string, any>[];
+      // Active only — the feed marks expired/cancelled alerts inactive.
+      return (await db.alerts.list({ activeOnly: true })) as Record<string, any>[];
     case "quake":
       return (await db.quakes.list({ limit: 0 })) as Record<string, any>[];
-    case "seismic":
-      return (await db.seismoStations.list()) as Record<string, any>[];
+    case "seismic": {
+      // Active only — the stations the worker is currently streaming (near air).
+      const activeKeys = new Set(await db.seismoSeries.activeKeys());
+      const all = await db.seismoStations.list();
+      return all.filter((s) => activeKeys.has(s.key)) as Record<string, any>[];
+    }
     default:
       return [];
   }

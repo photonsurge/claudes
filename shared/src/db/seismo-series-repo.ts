@@ -76,6 +76,16 @@ export function makeSeismoSeriesRepo(model: Model<iSeismoSeriesModel>) {
       return rows.map((doc: any) => ({ series: strip(doc), distanceKm: (doc.distanceM ?? 0) / 1000 }));
     },
 
+    /**
+     * The station keys that currently have a live cached series — i.e. the
+     * stations the worker is actively streaming (near what's on air). Used by the
+     * admin content list to show "active only" seismic stations. No samples.
+     */
+    async activeKeys(): Promise<string[]> {
+      const docs = await model.find({}).select({ net: 1, sta: 1, loc: 1, cha: 1, key: 1, _id: 0 }).lean().exec();
+      return docs.map((d: any) => d.key || keyOf(d)).filter(Boolean);
+    },
+
     async count(): Promise<number> {
       return model.estimatedDocumentCount();
     },

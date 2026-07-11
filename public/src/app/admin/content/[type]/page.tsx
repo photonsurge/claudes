@@ -52,11 +52,12 @@ export default function AdminContentListPage() {
 
   const schema = ENTITY_SCHEMAS[type];
   const editedCount = items.filter((i) => i.edited || i.imageCount > 0).length;
+  const activeOnly = type === "alert" || type === "volcano" || type === "seismic";
 
   return (
     <AdminPageShell
       title={schema.plural}
-      description={`Edit on-air text and images for ${schema.plural.toLowerCase()}. ${editedCount} curated.`}
+      description={`Edit on-air text and images for ${schema.plural.toLowerCase()}${activeOnly ? " (active only)" : ""}. ${editedCount} curated.`}
       crumbs={[{ label: schema.plural }]}
       actions={
         <input
