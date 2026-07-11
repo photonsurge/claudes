@@ -47,6 +47,28 @@ function bboxForCamera(center: [number, number], zoom: number): [number, number,
  *  /api/weather/forecast/point's DEFAULT_VARIABLES). */
 const FORECAST_VARIABLES = ["temp", "wind", "gust", "rain", "cloud", "storm"];
 
+/** The variables the on-air history panels actually chart — mirrors
+ *  history-client's HISTORY_VARIABLE_ORDER MINUS `radar` (a slow nowcast, ~3.6s
+ *  per var to sample, not a real time series). `broadcast` detail limits the
+ *  history fan-out to these so a country/region compose doesn't pay for the ~8
+ *  niche archive layers (sst-depths, cin, soil, dewpoint, visibility…) the deck
+ *  never shows. Keep in sync with HISTORY_VARIABLE_ORDER. */
+const BROADCAST_HISTORY_VARS = new Set([
+  "temp",
+  "humidity",
+  "wind",
+  "gust",
+  "rain",
+  "storm",
+  "pressure",
+  "cloud",
+  "snow",
+  "sst",
+  "current",
+  "salinity",
+  "wave",
+]);
+
 /** Nearest cached climate → the monthly bucketed datasets the spark charts render. */
 async function climateFor(
   db: Awaited<ReturnType<typeof getAppDb>>,
@@ -145,9 +167,20 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
 
   const db = await getAppDb();
 
-  // Weather variables for the point-history fan-out (resolved once — kills the
-  // client's /variables waterfall).
-  const histVars = hasLoc ? await db.weatherFrames.variables() : [];
+  // Weather variables for the point/area history fan-out (resolved once — kills
+  // the client's /variables waterfall).
+  //
+  // BROADCAST breadth-gate: the archive now carries ~22 variables (the GFS
+  // expansion added visibility/dewpoint/cin/soil + ocean sst-depth layers, plus
+  // the slow `radar` nowcast). Fanning getSeries over ALL of them — each pulling
+  // 72h of frames WITH texture bytes, for point AND area — made a country/region
+  // compose ~16s and the panels never chart the niche layers anyway. So
+  // `broadcast` detail limits history to the charted set (mirrors history-client's
+  // HISTORY_VARIABLE_ORDER) minus `radar` (a 3.6s-per-var nowcast, not a
+  // meaningful time series); admin/full keep the full archive for deep dives.
+  const allVars = hasLoc ? await db.weatherFrames.variables() : [];
+  const histVars =
+    detail === "broadcast" ? allVars.filter((v) => BROADCAST_HISTORY_VARS.has(v)) : allVars;
 
   // History frames fetched ONCE per variable and shared by the point + area
   // builders — they sample the same archive frames, so fetching twice (the old

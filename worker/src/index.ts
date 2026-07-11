@@ -723,6 +723,31 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable climate.backfillClimate (weekly all-city past-year sweep) ----
+  // The focus snapshot above only caches what the live camera framed, so the
+  // director PAST YEAR / monthly-climate panel 404s anywhere the broadcast hasn't
+  // visited. This sweeps EVERY city >= floor (deduped 0.1° keys) into the cache in
+  // restartable LOW-priority batches. Weekly cadence keeps those docs refreshed
+  // ahead of the 14-day collection TTL (points not re-fetched <6 days are skipped
+  // internally, so most of a run is a cheap staleness scan). Disable with
+  // CLIMATE_BACKFILL_ENABLED=false; force now from the /admin/jobs button.
+  if (process.env.CLIMATE_BACKFILL_ENABLED !== "false") {
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "climate", type: "climate", event: "backfillClimate", data: {} },
+        {
+          repeat: { pattern: process.env.CLIMATE_BACKFILL_CRON || "30 3 * * 0" }, // Sundays 03:30
+          jobId: "climate-backfill",
+          priority: 10, // LOW — background bulk, never contends with live jobs
+        },
+      );
+      log(TAG, `registered repeatable climate.backfillClimate`);
+    } catch (err) {
+      log(TAG, `failed to register climate.backfillClimate`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable summaries.generate* (global weather-event round-ups → Mongo) ----
   // One repeatable per cadence (hourly / 12-hourly / daily). Each aggregates the
   // active events into a stored round-up (+ optional LLM narrative) that the admin

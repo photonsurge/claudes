@@ -23,6 +23,10 @@ import { ALERTS_UPDATED } from "@photonsurge/shared/control";
  * `hazardsOff` (operator's per-hazard-type toggles) is applied AFTER the fetch,
  * so flipping a hazard chip filters instantly from the warm data — no refetch.
  */
+/** Socket-down fallback re-poll cadence — the ALERTS_UPDATED beat is the primary
+ *  trigger, so this stays long (alerts ingest minutes apart); NOT the old 60s. */
+const ALERT_FALLBACK_MS = 10 * 60 * 1000;
+
 export function useAlertFeatures(
   enabled: boolean,
   severityMin: number,
@@ -61,7 +65,10 @@ export function useAlertFeatures(
       setFeatures(next);
     };
     poll();
-    const iv = setInterval(poll, 60000);
+    // io-driven: ALERTS_UPDATED (above) refetches the instant alerts change, so
+    // this is only a socket-down fallback — long, not the old 60s re-poll of the
+    // 5000-row feed (which fired even when nothing changed).
+    const iv = setInterval(poll, ALERT_FALLBACK_MS);
     return () => {
       cancelled = true;
       clearInterval(iv);

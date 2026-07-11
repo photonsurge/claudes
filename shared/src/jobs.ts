@@ -117,6 +117,19 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Weather maps",
   },
   {
+    id: "climate-backfill",
+    label: "Backfill city climate (past year, all ≥100k)",
+    description:
+      "Fetch the past year of ERA5 climate for every city ≥100k population (deduped to ~5.4k 0.1° points) in restartable LOW-priority batches, so the director PAST YEAR / monthly-climate panel has a nearby cached point everywhere — not just what the live camera has framed. Fresh points (<6 days) are skipped; re-runs weekly to stay under the 14-day cache TTL. Use Stop to halt a sweep in progress.",
+    domain: "climate",
+    type: "climate",
+    event: "backfillClimate",
+    group: "Weather maps",
+    priority: 10,
+    data: { minPopulation: 100_000 },
+    stoppable: true,
+  },
+  {
     id: "alerts-ingest",
     label: "Ingest alerts",
     description: "Pull active NWS alerts into Mongo.",

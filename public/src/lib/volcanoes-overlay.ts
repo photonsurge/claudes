@@ -6,6 +6,9 @@ import { useSocket } from "./socket-provider";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 
 const EMPTY: Volcano[] = [];
+/** Socket-down fallback cadence — TRACKS_UPDATED:volcanoes is the primary
+ *  trigger; NOT the old 120s re-poll. */
+const VOLCANO_FALLBACK_MS = 10 * 60 * 1000;
 
 /** Plain fetch of the worker-cached volcano feed — every status, no cap.
  *  Shared by the overlay hook below and by anything else that needs a
@@ -54,7 +57,7 @@ export function useVolcanoes(enabled: boolean): Volcano[] {
       }
     };
     poll();
-    const iv = setInterval(poll, 120000);
+    const iv = setInterval(poll, VOLCANO_FALLBACK_MS);
     return () => {
       cancelled = true;
       clearInterval(iv);

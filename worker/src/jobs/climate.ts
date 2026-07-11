@@ -2,11 +2,14 @@ import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { fetchClimateYear } from "@photonsurge/shared/climate/openmeteo";
 import { climateKey } from "@photonsurge/shared/climate/types";
+import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue";
 import { log } from "@photonsurge/shared/utill/logger";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 
 const TAG = "job:climate";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Re-fetch a cached point after this long (a year of reanalysis barely moves). */
 const MAX_AGE_MS = Number(process.env.CLIMATE_MAX_AGE_MS || 24 * 60 * 60 * 1000);
@@ -133,6 +136,145 @@ export async function snapshotClimate(_job: Job) {
   } catch (err) {
     log(TAG, `climate snapshot failed`, summarizeForLog(err));
     blogErr(TAG, `climate snapshot failed`, err, "climate", "snapshotClimate");
+    throw err;
+  }
+}
+
+// ── All-city climate backfill ──────────────────────────────────────────────
+// The focus-driven snapshot above only caches what the LIVE camera frames, so
+// the director's PAST YEAR / monthly-climate panel 404s for anywhere the
+// broadcast hasn't recently visited. This backfill fetches the past-year ERA5
+// climate for EVERY city >= a population floor (deduped to ~5.4k 0.1° keys at
+// >=100k), in restartable LOW-priority batches, so the panel has a nearby cached
+// point everywhere. Under the collection's 14-day TTL it re-runs weekly to keep
+// those docs alive (see worker/src/index.ts).
+
+/** Population floor for a city to get a backfilled climate doc. */
+const BACKFILL_POP_FLOOR = Number(process.env.CLIMATE_BACKFILL_POP_FLOOR || 100_000);
+/** Keys fetched within this window are skipped — comfortably under the 14-day
+ *  cache TTL and the weekly re-run, but long enough that a stopped/failed sweep
+ *  resumes (already-done keys aren't re-fetched) rather than restarting. */
+const BACKFILL_MAX_AGE_MS = Number(process.env.CLIMATE_BACKFILL_MAX_AGE_MS || 6 * 24 * 60 * 60 * 1000);
+/** Keys fetched per chained batch link (bounded so no one job runs for ages). */
+const BACKFILL_BATCH = Number(process.env.CLIMATE_BACKFILL_BATCH || 100);
+/** Hard cap on chained links — a backstop against a runaway loop. */
+const BACKFILL_MAX_BATCHES = Number(process.env.CLIMATE_BACKFILL_MAX_BATCHES || 2000);
+/** Politeness pause between Open-Meteo archive fetches (ms). */
+const BACKFILL_FETCH_GAP_MS = Number(process.env.CLIMATE_BACKFILL_GAP_MS || 150);
+
+/**
+ * Distinct 0.1° climate points for a city list, first-seen order preserved (feed
+ * a population-sorted list → biggest cities first). One representative lat/lng
+ * per key. Pure + exported for tests.
+ */
+export function cityClimatePoints(
+  cities: { lat: number; lng: number }[],
+): { key: string; lat: number; lng: number }[] {
+  const seen = new Set<string>();
+  const out: { key: string; lat: number; lng: number }[] = [];
+  for (const c of cities) {
+    if (typeof c.lat !== "number" || typeof c.lng !== "number") continue;
+    if (!Number.isFinite(c.lat) || !Number.isFinite(c.lng)) continue;
+    const key = climateKey(c.lat, c.lng);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ key, lat: c.lat, lng: c.lng });
+  }
+  return out;
+}
+
+/**
+ * One backfill batch: fetch the past year for the next `batchSize` city keys not
+ * already fresh (< BACKFILL_MAX_AGE_MS). Queue-agnostic — returns counts so the
+ * caller decides whether to continue (the job handler chains via BullMQ; the CLI
+ * loops in-process). A fetched key becomes fresh, so the next batch's `stale`
+ * set naturally advances — no fragile offsets (mirrors cities.enrichWikiAll).
+ */
+export async function backfillClimateBatch(
+  db: Awaited<ReturnType<typeof getAppDb>>,
+  opts: { minPop: number; batchSize: number; gapMs?: number },
+): Promise<{ keys: number; stale: number; fetched: number; failed: number; remaining: number }> {
+  const cityDocs = (await db.cities.model
+    .find({ population: { $gte: opts.minPop } }, { lat: 1, lng: 1, _id: 0 })
+    .sort({ population: -1 })
+    .lean()
+    .exec()) as { lat: number; lng: number }[];
+  const points = cityClimatePoints(cityDocs);
+  if (!points.length) return { keys: 0, stale: 0, fetched: 0, failed: 0, remaining: 0 };
+
+  const cutoff = new Date(Date.now() - BACKFILL_MAX_AGE_MS);
+  const fresh = await db.climateYears.freshKeys(
+    points.map((p) => p.key),
+    cutoff,
+  );
+  const stale = points.filter((p) => !fresh.has(p.key));
+  const slice = stale.slice(0, opts.batchSize);
+
+  let fetched = 0;
+  let failed = 0;
+  for (const p of slice) {
+    try {
+      const year = await fetchClimateYear(p.lat, p.lng);
+      if (year) {
+        await db.climateYears.upsert(year);
+        fetched++;
+      }
+    } catch (err) {
+      failed++;
+      log(TAG, `backfill fetch failed for ${p.key}`, summarizeForLog(err));
+    }
+    if (opts.gapMs) await sleep(opts.gapMs);
+  }
+
+  return { keys: points.length, stale: stale.length, fetched, failed, remaining: Math.max(0, stale.length - slice.length) };
+}
+
+/**
+ * Job handler `climate.backfillClimate`. Runs one bounded batch then, if stale
+ * keys remain and this batch made progress, enqueues the next link at LOW
+ * priority. A batch that fetched nothing (upstream outage) stops the chain
+ * rather than spinning — the weekly schedule / a manual re-run picks it back up.
+ */
+export async function backfillClimate(job: Job) {
+  const d = job.data?.data ?? {};
+  const minPop = Number.isFinite(d.minPopulation) ? Number(d.minPopulation) : BACKFILL_POP_FLOOR;
+  const batchSize = Math.min(Math.max(Number(d.batchSize) || BACKFILL_BATCH, 10), 500);
+  const batch = Math.max(Number(d.batch) || 1, 1);
+  const maxBatches = Math.min(Math.max(Number(d.maxBatches) || BACKFILL_MAX_BATCHES, 1), 5000);
+  const db = await getAppDb();
+  try {
+    const r = await backfillClimateBatch(db, { minPop, batchSize, gapMs: BACKFILL_FETCH_GAP_MS });
+    if (!r.keys) {
+      log(TAG, "backfill: no cities >= floor — seed cities first", { minPop });
+      return { ...r, minPop, batch, continued: false };
+    }
+    const shouldContinue = r.remaining > 0 && r.fetched > 0 && batch < maxBatches;
+    if (shouldContinue) {
+      await sendToQueue(
+        "climate",
+        "climate",
+        "backfillClimate",
+        { minPopulation: minPop, batchSize, batch: batch + 1, maxBatches },
+        undefined,
+        QUEUE_PRIORITY.LOW,
+      );
+    }
+    const result = { ...r, minPop, batch, continued: shouldContinue };
+    log(TAG, "backfill batch done", result);
+    // One blog line at the start and one at the end of a sweep — not per batch.
+    if (r.fetched > 0 && (batch === 1 || !shouldContinue)) {
+      blogInfo(
+        TAG,
+        `climate backfill: batch ${batch}, ${r.fetched} cached, ${r.remaining} to go`,
+        result,
+        "climate",
+        "backfillClimate",
+      );
+    }
+    return result;
+  } catch (err) {
+    log(TAG, `backfill batch ${batch} failed`, summarizeForLog(err));
+    blogErr(TAG, `climate backfill batch ${batch} failed`, err, "climate", "backfillClimate");
     throw err;
   }
 }

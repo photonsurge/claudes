@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { validateCity } from "../../../lib/cities";
-import { cachedJson } from "../../../lib/response-cache";
+import { withCache, FEED_TTL_SEC } from "../../../lib/focus/focus-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,13 +23,19 @@ const SORT_FIELDS = new Set(["name", "country", "lat", "lng", "population", "isC
  */
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
-  // Canonical (param-sorted) key so `?limit=300` and `?limit=300&x=` — or the
-  // same params in a different order — reuse one cache entry. Cities only change
-  // on an admin reseed/enrich, so a short TTL is safely fresh and collapses the
-  // whole-globe default set (limit=300), which every viewer polls, to one read.
+  // Canonical (param-sorted) key so the same params in any order reuse one entry.
+  // Cities only change on an admin reseed/enrich, so a short TTL is safely fresh
+  // and collapses the whole-globe default set (limit=300, which every viewer
+  // polls) plus its big serialize onto one Redis read. Fail-open.
   const canon = new URLSearchParams(sp);
   canon.sort();
-  return cachedJson(`cities:v1:${canon.toString()}`, 60, () => buildCities(sp));
+  const { value, hit } = await withCache(`feed:v1:cities:${canon.toString()}`, FEED_TTL_SEC, () =>
+    buildCities(sp),
+  );
+  return NextResponse.json(value, {
+    status: 200,
+    headers: { ...NO_CACHE, "X-Cache": hit ? "hit" : "miss" },
+  });
 }
 
 async function buildCities(sp: URLSearchParams) {

@@ -12,6 +12,10 @@ import { TRACKS_UPDATED } from "@photonsurge/shared/control";
  * (kind:"seismic") after each snapshot, so we refetch the instant a feed lands;
  * the interval is a fallback if the socket is down.
  */
+/** Socket-down fallback cadence — TRACKS_UPDATED:seismic is the primary trigger;
+ *  NOT the old 120s re-poll. */
+const QUAKE_FALLBACK_MS = 5 * 60 * 1000;
+
 export function useQuakes(enabled: boolean, minMag: number): Quake[] {
   const [quakes, setQuakes] = useState<Quake[]>([]);
   const { socket } = useSocket();
@@ -39,7 +43,7 @@ export function useQuakes(enabled: boolean, minMag: number): Quake[] {
       if (!cancelled) setQuakes(r.quakes);
     };
     poll();
-    const iv = setInterval(poll, 120000);
+    const iv = setInterval(poll, QUAKE_FALLBACK_MS);
     return () => {
       cancelled = true;
       clearInterval(iv);

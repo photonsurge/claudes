@@ -54,6 +54,20 @@ export function makeClimateYearRepo(model: Model<iClimateYearModel>) {
       return doc ? new Date(doc.fetchedAt).getTime() : null;
     },
 
+    /**
+     * Of `keys`, the subset already cached with `fetchedAt >= minFetchedAt` — one
+     * query, so the all-city backfill can skip the fresh keys and only fetch the
+     * stale ones (mirrors cities.enrichWikiAll's staleness-driven batching).
+     */
+    async freshKeys(keys: string[], minFetchedAt: Date): Promise<Set<string>> {
+      if (!keys.length) return new Set();
+      const docs = await model
+        .find({ key: { $in: keys }, fetchedAt: { $gte: minFetchedAt } })
+        .select({ key: 1, _id: 0 })
+        .lean();
+      return new Set(docs.map((d: any) => d.key as string));
+    },
+
     /** Nearest cached climate to `[lng,lat]`, within `maxKm` if given, else null. */
     async nearest(opts: { lng: number; lat: number; maxKm?: number }): Promise<NearestClimate | null> {
       const geoNear: Record<string, unknown> = {

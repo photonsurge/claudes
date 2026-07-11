@@ -1,9 +1,12 @@
+import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { composeManifest } from "../../../../lib/manifest";
-import { cachedJson } from "../../../../lib/response-cache";
+import { withCache, FEED_TTL_SEC } from "../../../../lib/focus/focus-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const NO_CACHE = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
 /**
  * GET /api/weather/manifest — the multi-supplier portfolio composed into ONE
@@ -11,15 +14,20 @@ export const dynamic = "force-dynamic";
  * gfswave-mosaic), with each variable served by its highest-priority source.
  * Returns `{run:null}` when nothing is published.
  *
- * The composed manifest is identical for every client until a new run
- * publishes, so it's cached in Redis for a short TTL: one Mongo read + compose
- * per TTL serves the whole broadcast instead of one per request. Runs are hours
- * apart, so the few seconds of staleness after a publish are invisible.
+ * Redis result-cache (withCache): the composed manifest is identical for every
+ * client until a new run publishes, so one Mongo read + compose per FEED_TTL_SEC
+ * serves the whole broadcast instead of one per request (every watch/scene/OBS
+ * source + the cold-start fetch). Runs are hours apart, so the short hold barely
+ * lags a publish. Fail-open — a Redis outage degrades to a live compose.
  */
 export async function GET() {
-  return cachedJson("weather:manifest:v1", 20, async () => {
+  const { value, hit } = await withCache("feed:v1:manifest", FEED_TTL_SEC, async () => {
     const db = await getAppDb();
     const runs = await db.latestPublishedRunsByModel();
     return composeManifest(runs) ?? { run: null };
+  });
+  return NextResponse.json(value, {
+    status: 200,
+    headers: { ...NO_CACHE, "X-Cache": hit ? "hit" : "miss" },
   });
 }
