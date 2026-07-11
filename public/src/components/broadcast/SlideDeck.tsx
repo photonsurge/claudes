@@ -14,7 +14,7 @@
  * scaled broadcast stage; pointer-inert.
  */
 import { useEffect, useState, type ReactNode } from "react";
-import { CARD_W, MUTED } from "./BroadcastCard";
+import { CARD_W, MUTED, DeckChromeContext, type DeckChrome } from "./BroadcastCard";
 
 /** One rotation position. `id` must be stable across renders so React keeps the
  *  slide mounted (and its internal state alive) as data streams in. */
@@ -49,12 +49,16 @@ export default function SlideDeck({
   width = CARD_W,
   holdMs = HOLD_MS,
   dotColor = MUTED,
+  chrome = null,
 }: {
   slides: DeckSlide[];
   width?: number;
   holdMs?: number;
   /** Active-dot colour — pass the segment's kind accent to match the card. */
   dotColor?: string;
+  /** Shared template (event-type badge + title, fixed size) applied to every
+   *  slide via context, so the whole deck reads as one card. */
+  chrome?: DeckChrome | null;
 }) {
   const count = slides.length;
   const [idx, setIdx] = useState(0);
@@ -67,25 +71,28 @@ export default function SlideDeck({
 
   if (count === 0) return null;
   const active = idx % count;
-  // Single slide: no rotation, no dots, no crossfade layers needed.
-  if (count === 1) return <>{slides[0].node}</>;
+  // Single slide: no rotation, no dots, no crossfade layers needed — still wrap
+  // in the provider so it wears the same template.
+  if (count === 1) return <DeckChromeContext.Provider value={chrome}>{slides[0].node}</DeckChromeContext.Provider>;
 
   return (
-    <div style={{ position: "relative", width }}>
-      {slides.map((s, i) => (
-        <div
-          key={s.id}
-          aria-hidden={i !== active}
-          style={
-            i === active
-              ? { position: "relative", opacity: 1, transition: `opacity ${FADE_MS}ms ease` }
-              : { position: "absolute", inset: 0, opacity: 0, transition: `opacity ${FADE_MS}ms ease`, pointerEvents: "none" }
-          }
-        >
-          {s.node}
-        </div>
-      ))}
-      <Dots count={count} active={active} accent={dotColor} />
-    </div>
+    <DeckChromeContext.Provider value={chrome}>
+      <div style={{ position: "relative", width }}>
+        {slides.map((s, i) => (
+          <div
+            key={s.id}
+            aria-hidden={i !== active}
+            style={
+              i === active
+                ? { position: "relative", opacity: 1, transition: `opacity ${FADE_MS}ms ease` }
+                : { position: "absolute", inset: 0, opacity: 0, transition: `opacity ${FADE_MS}ms ease`, pointerEvents: "none" }
+            }
+          >
+            {s.node}
+          </div>
+        ))}
+        <Dots count={count} active={active} accent={dotColor} />
+      </div>
+    </DeckChromeContext.Provider>
   );
 }

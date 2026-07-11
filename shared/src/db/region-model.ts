@@ -5,8 +5,8 @@ import { getModel } from "../utill/getModel";
 import type { RegionGroupId } from "../regions";
 
 /**
- * Named regions that aren't single countries — oceans, continents, EU blocs,
- * the UK's constituent nations — seeded from the curated `REGION_PRESETS`
+ * Named regions for camera framing — oceans, continents, and sub-continental
+ * regions (plus the UK as the one pinned country) — seeded from `REGION_PRESETS`
  * (`shared/src/regions.ts`) via `yarn seed:regions`. bbox-only (no polygon):
  * these aren't landmasses with a real boundary, so area-weather stats for a
  * region are a plain bbox average, unlike the polygon-masked Country catalog.

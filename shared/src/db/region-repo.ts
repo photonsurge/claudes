@@ -30,6 +30,16 @@ export function makeRegionRepo(model: Model<iRegionModel>) {
       return { upserted: res.upsertedCount ?? 0, matched: res.matchedCount ?? 0 };
     },
 
+    /** Drop any region whose `regionId` isn't in `keep` — reconciles the catalog
+     *  to the current `REGION_PRESETS` on reseed, so entries deleted from the
+     *  seed (e.g. a dropped "Key countries" group) don't linger in Mongo. Empty
+     *  `keep` is a no-op: never wipe the whole catalog on an empty/failed seed. */
+    async pruneExcept(keep: string[]): Promise<{ removed: number }> {
+      if (!keep.length) return { removed: 0 };
+      const res = await model.deleteMany({ regionId: { $nin: keep } });
+      return { removed: res.deletedCount ?? 0 };
+    },
+
     /** Every region, catalog (declared) order. Small bounded set — no cap. */
     async list(): Promise<iRegionModel[]> {
       const docs = await model.find({}).lean().exec();

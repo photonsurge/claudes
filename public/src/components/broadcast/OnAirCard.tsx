@@ -42,20 +42,10 @@ export default function OnAirCard({
   const hasArea = areaInfo != null && (areaInfo.photo != null || areaInfo.blurb != null);
 
   return (
-    <BroadcastCard accent={color} badge={kindLabel} badgeColor={color} live theme={theme}>
-      <div
-        style={{
-          fontSize: 30,
-          fontWeight: 800,
-          lineHeight: 1.1,
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        {segment.icon ? `${segment.icon} ` : ""}
-        {segment.title}
-      </div>
+    // badge/accent are ignored when this renders inside the on-air deck (the deck
+    // template supplies the event-type badge + title header); they only apply if
+    // OnAirCard is ever used standalone off-deck.
+    <BroadcastCard accent={color} badge={kindLabel} badgeColor={color} theme={theme}>
       {segment.subtitle ? (
         <div
           style={{

@@ -1,7 +1,7 @@
 /**
  * Manual one-shot region catalog seed — `yarn seed:regions`. Upserts the
- * curated `REGION_PRESETS` (oceans/continents/EU blocs/UK nations) into the
- * `Region` collection.
+ * curated `REGION_PRESETS` (oceans/continents/sub-regions) into the
+ * `Region` collection. Prunes regions dropped from the presets on each run.
  */
 import { loadWorkerEnv } from "../loadEnv";
 loadWorkerEnv();

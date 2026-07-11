@@ -30,6 +30,7 @@ export const ADMIN_LINKS: AdminLink[] = [
   { group: "Signals", href: "/admin/summaries", title: "Round-ups", desc: "Scheduled global weather-event summaries + narrative.", ready: true },
   { group: "Signals", href: "/admin/tracks", title: "Live tracks", desc: "Satellites (SGP4), aircraft (ADS-B), ships (AIS).", ready: true },
 
+  { group: "Catalogs", href: "/admin/content", title: "Content editor", desc: "Edit on-air text + images for cities, countries, regions, volcanoes, alerts, quakes and seismic stations — with a live on-air preview.", ready: true },
   { group: "Catalogs", href: "/cities", title: "Cities", desc: "City markers, Wikipedia enrichment results and map preview.", ready: true },
   { group: "Catalogs", href: "/admin/vehicles", title: "Vehicles", desc: "Persistent aircraft and ship registry, including enrichment results.", ready: true },
   { group: "Catalogs", href: "/admin/cams", title: "Webcams", desc: "Catalogued live cams — status, location, preview.", ready: true },

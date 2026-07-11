@@ -17,11 +17,34 @@
  * Body is `children`. Sub-sections divided by a hairline use <CardSection>.
  * Pure presentation inside the scaled broadcast stage; pointer-inert.
  */
-import type { CSSProperties, ReactNode } from "react";
+import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
 import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
 
 /** One column width so the stacked cards share clean left/right edges. */
 export const CARD_W = 420;
+/** Fixed card height in the on-air deck so every rotating slide is the SAME size
+ *  (no jump as the deck cross-fades); overlong bodies scroll inside. */
+export const CARD_H = 520;
+
+/**
+ * Per-deck "chrome" the on-air SlideDeck injects so every slide shares ONE
+ * template: the same event-type badge + event title header (no ON AIR) and the
+ * same fixed size. A BroadcastCard rendered inside a deck reads this from context
+ * and renders that template header + a scrolling body, overriding whatever
+ * per-panel badge/eyebrow/live it was constructed with — so the column reads as
+ * one card whose body changes per slide. Null (the default) → the standalone card
+ * look used off-deck (e.g. the operator console).
+ */
+export interface DeckChrome {
+  /** Event-type label, e.g. "Seismic", "Aircraft", "Country". */
+  badge: string;
+  badgeColor?: string;
+  /** Event title — the constant header repeated on every slide of the mode. */
+  title?: string;
+  accent?: string;
+  height?: number;
+}
+export const DeckChromeContext = createContext<DeckChrome | null>(null);
 
 /** Shared ink tokens — every left-column panel drew from these ad-hoc before. */
 export const INK = "#e6edf7";
@@ -99,7 +122,73 @@ export default function BroadcastCard({
   children: ReactNode;
   style?: CSSProperties;
 }) {
-  const stripe = accent ?? theme.accent;
+  const chrome = useContext(DeckChromeContext);
+  const stripe = chrome?.accent ?? accent ?? theme.accent;
+
+  // Inside the on-air deck: render the shared template — event-type badge + event
+  // title header (no ON AIR), fixed size, scrolling body — instead of the panel's
+  // own badge/eyebrow header, so every slide reads identically and only the body
+  // changes. The panel's `children` (incl. its inner CardSection eyebrows) render
+  // in the scroll area untouched.
+  if (chrome) {
+    return (
+      <div
+        style={{
+          width,
+          height: chrome.height ?? CARD_H,
+          display: "flex",
+          flexDirection: "column",
+          background: theme.panelBg,
+          ...accentBorder(theme.panelBorder, `4px solid ${stripe}`),
+          borderRadius: 14,
+          boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+          pointerEvents: "none",
+          fontFamily: "system-ui, sans-serif",
+          color: INK,
+          overflow: "hidden",
+          ...style,
+        }}
+      >
+        <div style={{ padding: "14px 20px 10px", flexShrink: 0 }}>
+          <span
+            style={{
+              display: "inline-block",
+              fontSize: 12,
+              fontWeight: 800,
+              letterSpacing: 1,
+              textTransform: "uppercase",
+              padding: "3px 10px",
+              borderRadius: 5,
+              background: chrome.badgeColor ?? stripe,
+              color: "#fff",
+            }}
+          >
+            {chrome.badge}
+          </span>
+          {chrome.title ? (
+            <div
+              style={{
+                fontSize: 19,
+                fontWeight: 800,
+                lineHeight: 1.14,
+                marginTop: 8,
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {chrome.title}
+            </div>
+          ) : null}
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "2px 20px 16px" }}>{children}</div>
+      </div>
+    );
+  }
+
   const hasBadgeRow = badge != null || live;
   const hasEyebrowRow = eyebrow != null || headerRight != null;
 

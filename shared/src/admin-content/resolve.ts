@@ -16,6 +16,13 @@ export interface ResolvedContent {
   images: AdminImage[];
   /** The raw stored overrides (so the editor can show what's been changed). */
   text: AdminTextOverrides;
+  /**
+   * The UNoverridden value of each editable field, keyed by field id. Lets the
+   * editor seed from the effective value yet only persist an override where the
+   * operator's text actually differs from the base (so unedited fields still
+   * track the feed).
+   */
+  baseText: AdminTextOverrides;
 }
 
 /** Load the raw base entity for `(type, id)`, or null if it doesn't exist. */
@@ -74,6 +81,21 @@ export const entityIdOf = (type: AdminEntityType, base: AdminEntity): string =>
   String(base[ENTITY_SCHEMAS[type].idField] ?? "");
 
 /**
+ * The base (un-overridden) value of each editable field, as strings. Reads an
+ * alert's fields off its primary `info[]` block; everything else top-level.
+ */
+export function baseTextOf(type: AdminEntityType, base: AdminEntity): AdminTextOverrides {
+  const out: AdminTextOverrides = {};
+  const source: Record<string, any> =
+    type === "alert" ? (Array.isArray(base.info) && base.info[0]) || {} : base;
+  for (const f of ENTITY_SCHEMAS[type].fields) {
+    const v = source[f.field];
+    if (v !== undefined && v !== null) out[f.field] = String(v);
+  }
+  return out;
+}
+
+/**
  * The full merged read for one entity: base doc + text overrides applied +
  * every uploaded image. This is what the admin detail page and the on-air
  * preview consume. Returns null when the base entity no longer exists.
@@ -90,7 +112,14 @@ export async function resolveAdminContent(
     db.adminEdits.textFor(type, entityId),
     db.adminImages.list(type, entityId),
   ]);
-  return { type, entityId, entity: applyTextOverrides(type, base, text), images, text };
+  return {
+    type,
+    entityId,
+    entity: applyTextOverrides(type, base, text),
+    images,
+    text,
+    baseText: baseTextOf(type, base),
+  };
 }
 
 /** One list row's admin-content decoration. */

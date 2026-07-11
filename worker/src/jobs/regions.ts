@@ -11,13 +11,22 @@ import { emitWorkerEvent } from "../socket";
 const TAG = "job:regions";
 
 /** Seed/refresh the Region catalog from the curated `REGION_PRESETS` (shared/src/regions.ts). */
-export async function runRegionSeed(): Promise<{ regions: number; upserted: number }> {
+export async function runRegionSeed(): Promise<{ regions: number; upserted: number; removed: number }> {
   const db = await getAppDb();
   const docs = REGION_PRESETS.map((r) => ({ regionId: r.id, name: r.label, group: r.group, bbox: r.bbox }));
   const res = await db.regions.upsertMany(docs);
-  const result = { regions: docs.length, upserted: res.upserted };
+  // Prune regions dropped from REGION_PRESETS so a reseed reflects deletions,
+  // not just additions/edits — otherwise removed presets linger in the catalog.
+  const pruned = await db.regions.pruneExcept(docs.map((d) => d.regionId));
+  const result = { regions: docs.length, upserted: res.upserted, removed: pruned.removed };
   log(TAG, "seed done", result);
-  blogInfo(TAG, `regions seed: ${docs.length} regions (${res.upserted} new)`, result, "regions", "seed");
+  blogInfo(
+    TAG,
+    `regions seed: ${docs.length} regions (${res.upserted} new, ${pruned.removed} removed)`,
+    result,
+    "regions",
+    "seed",
+  );
   emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "regions", count: docs.length } });
   return result;
 }

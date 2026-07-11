@@ -68,7 +68,7 @@ import UpNextPanel from "./UpNextPanel";
 import BuildInfoTag from "./BuildInfoTag";
 import SlideDeck from "./SlideDeck";
 import { modeSlides } from "./mode-slides";
-import { hasRealLocation, isTargetedEvent, KIND_COLOR } from "./kinds";
+import { hasRealLocation, isTargetedEvent, KIND_COLOR, KIND_LABEL as KIND_BADGE } from "./kinds";
 
 /** Design-stage layout constants (in 1080p reference pixels). */
 const TICKER_H = 34;
@@ -440,6 +440,12 @@ export default function BroadcastFrame({
             <SlideDeck
               slides={leftDeck}
               dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
+              chrome={{
+                badge: KIND_BADGE[onAirSegment.kind] ?? onAirSegment.kind,
+                badgeColor: KIND_COLOR[onAirSegment.kind],
+                title: onAirSegment.title,
+                accent: KIND_COLOR[onAirSegment.kind],
+              }}
             />
           ) : null}
         </div>
