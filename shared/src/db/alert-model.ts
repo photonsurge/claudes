@@ -170,6 +170,11 @@ const AlertSchema = new mongoose.Schema<iAlertModel>(
 
 // Dedup key — the heart of upsert/supersede (spec §5).
 AlertSchema.index({ source: 1, identifier: 1 }, { unique: true, name: "alert_dedup_ix" });
+// Unchanged-alert fast path: upsert() projects {sent,active} by (source,identifier)
+// to skip re-writing an already-active, same-`sent` alert on a full-feed re-poll.
+// Extending the dedup key with these two makes that check index-COVERED — it never
+// touches the (large) geometry doc. See alerts-repo.ts#upsert.
+AlertSchema.index({ source: 1, identifier: 1, sent: 1, active: 1 }, { name: "alert_ver_ix" });
 // "active now" list — matches list()'s sort exactly so the polled /api/alerts
 // read is fully index-served (no in-memory sort of thousands of CAP docs).
 AlertSchema.index({ active: 1, maxSeverityRank: -1, sent: -1 }, { name: "alert_active_sev_sent_ix" });

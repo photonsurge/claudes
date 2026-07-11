@@ -134,6 +134,46 @@ describe("alerts-repo upsert — translation carry-forward", () => {
   });
 });
 
+describe("alerts-repo upsert — unchanged-alert fast path", () => {
+  it("skips the write when the stored alert has the same `sent` and is still active", async () => {
+    const updateOne = jest.fn();
+    // First findOne is the covered {sent,active} check — return a matching, active head.
+    const model = {
+      findOne: () => ({ lean: () => ({ exec: async () => ({ sent: "2026-07-08T00:00:00.000Z", active: true }) }) }),
+      updateOne,
+    } as any;
+    const repo = makeAlertsRepo(model);
+    const res = await repo.upsert(baseAlert(baseInfo()));
+
+    expect(res.inserted).toBe(false);
+    expect(updateOne).not.toHaveBeenCalled(); // no 246KB re-write, no 2dsphere reindex
+  });
+
+  it("still writes when the stored alert is inactive (reactivation) even with the same `sent`", async () => {
+    const updateOne = jest.fn((_f: any, _u: any) => ({ exec: async () => ({ upsertedCount: 0 }) }));
+    const model = {
+      findOne: () => ({ lean: () => ({ exec: async () => ({ sent: "2026-07-08T00:00:00.000Z", active: false }) }) }),
+      updateOne,
+    } as any;
+    const repo = makeAlertsRepo(model);
+    await repo.upsert(baseAlert(baseInfo()));
+
+    expect(updateOne).toHaveBeenCalled();
+  });
+
+  it("still writes when `sent` changed (a genuinely updated bulletin)", async () => {
+    const updateOne = jest.fn((_f: any, _u: any) => ({ exec: async () => ({ upsertedCount: 0 }) }));
+    const model = {
+      findOne: () => ({ lean: () => ({ exec: async () => ({ sent: "2026-07-01T00:00:00.000Z", active: true }) }) }),
+      updateOne,
+    } as any;
+    const repo = makeAlertsRepo(model);
+    await repo.upsert(baseAlert(baseInfo())); // baseAlert.sent = 2026-07-08 ≠ stored 2026-07-01
+
+    expect(updateOne).toHaveBeenCalled();
+  });
+});
+
 describe("alerts-repo chain — CAP lifecycle walk", () => {
   const focal = {
     source: "nws",

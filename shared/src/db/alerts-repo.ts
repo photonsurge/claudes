@@ -42,10 +42,32 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
     async upsert(alert: iAlert): Promise<{ inserted: boolean }> {
       const { id: _id, ...rest } = alert as iAlert & { id?: string };
 
-      const existing = await model
-        .findOne({ source: alert.source, identifier: alert.identifier }, { info: 1 })
+      // Fast path: CAP messages are immutable per (source, identifier) — a real
+      // update ships a new identifier or a new `sent`. So an already-stored alert
+      // with the same `sent` that is still active is identical to what we'd write;
+      // skip the (heavy — the geometry can be 100s of KB and re-indexing it on the
+      // 2dsphere is the dominant cost) write entirely. Lifecycle changes are owned
+      // by the expire()/deactivateMissing() sweeps, not this upsert. On a full-feed
+      // re-poll this is the 99% case (thousands unchanged, a handful new) — the
+      // difference between a seconds-long and a minutes-long ingest. The projection
+      // is covered by alert_ver_ix, so the check never reads the geometry.
+      const head = await model
+        .findOne({ source: alert.source, identifier: alert.identifier }, { sent: 1, active: 1, _id: 0 })
         .lean()
         .exec();
+      if (head && head.sent === alert.sent && head.active) {
+        return { inserted: false };
+      }
+
+      // Writing (new / changed / reactivating a deactivated one): carry forward the
+      // translate job's cached fields so a re-ingest doesn't wipe them ($set
+      // replaces the info[] array wholesale). Only fetched on the write path.
+      const existing = head
+        ? await model
+            .findOne({ source: alert.source, identifier: alert.identifier }, { info: 1 })
+            .lean()
+            .exec()
+        : null;
       if (existing?.info?.length) {
         rest.info = rest.info.map((info, i) => {
           const prev = existing.info[i];
