@@ -13,14 +13,32 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
     volumes:
       - mongo-data:/data/db
+    # `ping` is allowed pre-auth, so no credentials needed to prove liveness.
+    # Consumers gate on this via depends_on.condition: service_healthy.
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    stop_grace_period: 30s
     networks: [internal]
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    environment:
+      # Referenced ($$-escaped) by the healthcheck below, not by the server.
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     networks: [internal]
 
   socket:
@@ -36,7 +54,19 @@ services:
     # Set BIND_HOST=0.0.0.0 if nginx runs off-box / in another container.
     ports:
       - "${BIND_HOST:-127.0.0.1}:10101:10101"
-    depends_on: [redis]
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://127.0.0.1:'+(process.env.PORT||10101)+'/healthz',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     networks: [internal]
 
   worker:
@@ -63,7 +93,23 @@ services:
       # Shared basemap/geojson assets (./fetch-assets.sh output). Kept out of the
       # registry image; the deploy syncs them to the host's ${DATA_DIR:-./data}.
       - ${DATA_DIR:-./data}:/app/data:ro
-    depends_on: [mongodb, redis, socket]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      socket:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://127.0.0.1:'+(process.env.PORT||10102)+'/healthz',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     networks: [internal]
 
   public:
@@ -90,7 +136,25 @@ services:
       # worker; kept out of the registry image (Next serves public/ from disk at
       # request time, so a bind-mount over the data subdir is served live).
       - ${DATA_DIR:-./data}:/app/public/public/data:ro
-    depends_on: [mongodb, redis, socket, worker]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      socket:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://127.0.0.1:'+(process.env.PORT||10100)+'/api/status',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     networks: [internal]
 
 networks:

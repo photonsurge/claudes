@@ -38,6 +38,16 @@ const cached: MongooseCache =
 export async function getDb(): Promise<Connection> {
   if (cached.conn) return cached.conn;
 
+  // No in-flight attempt and we failed very recently: reuse that error instead
+  // of opening yet another doomed connection (see FAIL_COOLDOWN_MS above).
+  if (
+    !cached.connPromise &&
+    cached.lastError &&
+    Date.now() - cached.lastFailAt < FAIL_COOLDOWN_MS
+  ) {
+    throw cached.lastError;
+  }
+
   if (!cached.connPromise) {
     if (!MONGODB_URI) {
       throw new Error("Please define the MONGODB_URI environment variable in .env");
@@ -51,6 +61,7 @@ export async function getDb(): Promise<Connection> {
       })
       .asPromise()
       .then((conn) => {
+        cached.lastError = null;
         conn.on("error", (err) => logError("[mongo] connection error", err));
         conn.on("disconnected", () => {
           logWarn("[mongo] connection disconnected — clearing cache");
@@ -63,6 +74,8 @@ export async function getDb(): Promise<Connection> {
         logWarn("[mongo] connection attempt failed — clearing cache");
         cached.conn = null;
         cached.connPromise = null;
+        cached.lastError = err instanceof Error ? err : new Error(String(err));
+        cached.lastFailAt = Date.now();
         throw err;
       });
   }
