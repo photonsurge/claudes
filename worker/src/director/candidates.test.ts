@@ -68,15 +68,18 @@ function fakeDb(over: Partial<Record<string, any>> = {}): AppDb {
     seaPoints: {
       list: async () => over.seaPoints ?? SEED_SEA_POINTS,
     },
-    cities: {
-      // Region tours read the biggest cities inside the area bbox. Default: two
-      // European cities so a "europe" favourite tours; override per test.
-      getAll: async () => ({
-        data: over.cities ?? [
-          { name: "London", country: "United Kingdom", lng: -0.13, lat: 51.5, population: 8_900_000 },
-          { name: "Paris", country: "France", lng: 2.35, lat: 48.85, population: 2_100_000 },
-        ],
-      }),
+    regions: {
+      // Region tours read the curated, member-country-scoped `topCities` dossier
+      // off the Region doc. Default: a couple of European cities so a "europe"
+      // favourite tours; override with `over.region` per test (incl. topCities: []).
+      get: async (regionId: string) =>
+        over.region ?? {
+          regionId,
+          topCities: [
+            { name: "London", country: "United Kingdom", cc: "gb", lng: -0.13, lat: 51.5, population: 8_900_000 },
+            { name: "Paris", country: "France", cc: "fr", lng: 2.35, lat: 48.85, population: 2_100_000 },
+          ],
+        },
     },
   } as unknown as AppDb;
 }
@@ -197,31 +200,57 @@ describe("buildCandidates", () => {
     expect(eu.camera.zoom).toBeGreaterThan(0);
   });
 
-  it("tours the area's biggest countries — one representative (largest) city each", async () => {
+  it("tours a multi-country area's biggest cities, round-robined across its member countries", async () => {
     const on = await buildCandidates(
       fakeDb({
-        cities: [
-          { name: "Berlin", country: "Germany", cc: "de", lng: 13.4, lat: 52.5, population: 3_600_000 },
-          { name: "Madrid", country: "Spain", cc: "es", lng: -3.7, lat: 40.4, population: 3_200_000 },
-          // A second German city must NOT add a stop — its country already has one.
-          { name: "Hamburg", country: "Germany", cc: "de", lng: 10.0, lat: 53.55, population: 1_800_000 },
-        ],
+        region: {
+          regionId: "europe",
+          // Curated topCities are already population-ranked and scoped to member
+          // countries (regions.enrichPlaces) — the tour never re-queries by bbox.
+          topCities: [
+            { name: "Berlin", country: "Germany", cc: "de", lng: 13.4, lat: 52.5, population: 3_600_000 },
+            { name: "Madrid", country: "Spain", cc: "es", lng: -3.7, lat: 40.4, population: 3_200_000 },
+            { name: "Hamburg", country: "Germany", cc: "de", lng: 10.0, lat: 53.55, population: 1_800_000 },
+          ],
+        },
       }),
       cfg({ kinds: { region: true }, regions: ["europe"] }),
     );
     const eu = on.find((c) => c.segment.kind === "region")!.segment;
-    // Germany + Spain — one stop each, framed on the country's biggest city
-    // (Berlin, not Hamburg), biggest country first; ISO upper-cased for the glow.
+    // Germany has the bigger in-region presence (Berlin+Hamburg), so it leads the
+    // round-robin: Berlin → Madrid → Hamburg. ISO upper-cased for the country glow.
     expect(eu.tourStops).toEqual([
       { label: "Berlin", subtitle: "Germany", lng: 13.4, lat: 52.5, iso2: "DE" },
       { label: "Madrid", subtitle: "Spain", lng: -3.7, lat: 40.4, iso2: "ES" },
+      { label: "Hamburg", subtitle: "Germany", lng: 10.0, lat: 53.55, iso2: "DE" },
     ]);
     expect(eu.subtitle).toBe("Area tour · Regional weather");
   });
 
+  it("keeps a single-country area (UK) inside its own borders — no cross-bbox bleed", async () => {
+    // Regression: the UK bbox overlaps France, but the tour must stay in the UK.
+    const on = await buildCandidates(
+      fakeDb({
+        region: {
+          regionId: "uk",
+          topCities: [
+            { name: "London", country: "United Kingdom", cc: "gb", lng: -0.13, lat: 51.5, population: 8_900_000 },
+            { name: "Birmingham", country: "United Kingdom", cc: "gb", lng: -1.9, lat: 52.48, population: 1_100_000 },
+            { name: "Glasgow", country: "United Kingdom", cc: "gb", lng: -4.25, lat: 55.86, population: 600_000 },
+          ],
+        },
+      }),
+      cfg({ kinds: { region: true }, regions: ["uk"] }),
+    );
+    const uk = on.find((c) => c.segment.kind === "region")!.segment;
+    // All three UK cities toured, in population order — and nothing foreign.
+    expect(uk.tourStops?.map((s) => s.label)).toEqual(["London", "Birmingham", "Glasgow"]);
+    expect(uk.tourStops?.every((s) => s.iso2 === "GB")).toBe(true);
+  });
+
   it("falls back to a single spotlight when the area has no cached cities", async () => {
     const on = await buildCandidates(
-      fakeDb({ cities: [] }),
+      fakeDb({ region: { regionId: "europe", topCities: [] } }),
       cfg({ kinds: { region: true }, regions: ["europe"] }),
     );
     const eu = on.find((c) => c.segment.kind === "region")!.segment;
