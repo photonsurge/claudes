@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getAppDb } from "@photonsurge/shared/db/index";
@@ -24,7 +25,7 @@ function toControlState(doc: Partial<ControlState> | null | undefined): ControlS
  * /watch (the bare main-scene OBS output, can't log in) authorizes via `token`
  * matching the doc's watchToken; the admin session cookie also works.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const db = await getAppDb();
   const doc = await db.getOrInitBroadcastState();
 
@@ -40,7 +41,7 @@ export async function GET(req: Request) {
 }
 
 /** PATCH /api/broadcast/state — merge a patch onto current, persist, return. */
-export async function PATCH(req: Request) {
+async function PATCH__impl(req: Request) {
   let patch: Partial<ControlState> = {};
   try {
     patch = (await req.json()) ?? {};
@@ -54,3 +55,7 @@ export async function PATCH(req: Request) {
   await db.broadcastState.upsertByID(BROADCAST_STATE_ID, merged);
   return NextResponse.json(merged, { status: 200, headers: NO_CACHE });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const PATCH = withApiLog(PATCH__impl);

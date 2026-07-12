@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { withCache, FEED_TTL_SEC } from "../../../lib/focus/focus-cache";
@@ -14,7 +15,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * the client fetches it once (and refetches on a worker `faults` socket push).
  * Configure the refresh cadence on the worker (FAULT_REFRESH_MS).
  */
-export async function GET() {
+async function GET__impl() {
   try {
     const { value, hit } = await withCache("feed:v1:faults", FEED_TTL_SEC, async () => {
       const db = await getAppDb();
@@ -32,3 +33,6 @@ export async function GET() {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

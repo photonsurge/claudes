@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { parseTimeParam } from "../../../../../lib/weather-history";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
  * first, each with the URL of its PNG — the manifest a "map at a previous
  * point in time" replay will iterate.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const variable = url.searchParams.get("variable");
   if (!variable) {
@@ -48,3 +49,6 @@ export async function GET(req: Request) {
     { headers: { "Cache-Control": "public, max-age=60" } },
   );
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

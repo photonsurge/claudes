@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import type { CamStatus } from "@photonsurge/shared/cams/types";
@@ -9,7 +10,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
 const STATUSES: CamStatus[] = ["active", "inactive", "unknown"];
 
 /** PATCH /api/admin/cams/[camId] — set status (admin toggle). */
-export async function PATCH(
+async function PATCH__impl(
   req: Request,
   { params }: { params: Promise<{ camId: string }> },
 ) {
@@ -37,7 +38,7 @@ export async function PATCH(
 }
 
 /** DELETE /api/admin/cams/[camId]. */
-export async function DELETE(
+async function DELETE__impl(
   _req: Request,
   { params }: { params: Promise<{ camId: string }> },
 ) {
@@ -49,3 +50,7 @@ export async function DELETE(
   }
   return NextResponse.json({ ok: true, camId }, { status: 200, headers: NO_CACHE });
 }
+
+// --- request logging (lib/api-log) ---
+export const PATCH = withApiLog(PATCH__impl);
+export const DELETE = withApiLog(DELETE__impl);

@@ -104,12 +104,12 @@ export function makeCamRepo(model: Model<iCamModel>) {
           $geoWithin: { $geometry: { type: "Polygon", coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] } },
         };
       }
-      const docs = await model
-        .find(query)
-        .sort({ fetchedAt: -1 })
-        .limit(opts.limit ?? 0)
-        .lean()
-        .exec();
+      let cursor = model.find(query).sort({ fetchedAt: -1 }).limit(opts.limit ?? 0);
+      // Force the geo index on bbox reads so the planner skips its multi-plan
+      // trial run (else it may walk `cam_status_ix` geo-filtering and burn
+      // 100ms+ of planningTimeMicros, replanning across differing box sizes).
+      if (opts.bbox) cursor = cursor.hint("cam_geo_ix");
+      const docs = await cursor.lean().exec();
       return docs.map((d) => toCam(strip(d)));
     },
 

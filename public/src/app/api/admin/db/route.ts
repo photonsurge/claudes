@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getDb } from "@photonsurge/shared/utill/mongoose";
 
@@ -22,7 +23,7 @@ interface CollectionSummary {
  * for the "Database" admin page. Reads `$collStats` off every collection in
  * one aggregation rather than N `collStats` commands.
  */
-export async function GET() {
+async function GET__impl() {
   const conn = await getDb();
   const db = conn.db;
   if (!db) {
@@ -75,3 +76,6 @@ export async function GET() {
     { status: 200, headers: NO_CACHE },
   );
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

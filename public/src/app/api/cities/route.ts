@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { cityGeoWithinBox } from "@photonsurge/shared/db/city-model";
@@ -22,7 +23,7 @@ const SORT_FIELDS = new Set(["name", "country", "lat", "lng", "population", "isC
  * `bbox` query — scoped to whatever region the camera is currently framing —
  * layers in the extra local detail a country/city spotlight needs.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const sp = new URL(req.url).searchParams;
   // Canonical (param-sorted) key so the same params in any order reuse one entry.
   // Cities only change on an admin reseed/enrich, so a short TTL is safely fresh
@@ -75,9 +76,17 @@ async function buildCities(sp: URLSearchParams) {
   const db = await getAppDb();
   const sort: Record<string, 1 | -1> = paged ? { [sortField]: direction } : { population: -1 };
   if (paged && sortField !== "name") sort.name = 1;
+  // A bbox query is bounded by the box's area, so the 2dsphere `loc` index is
+  // always the right access path — force it. Left to the planner, a sparse/
+  // low-population box instead gets the `population: -1` walk, which examines
+  // hundreds of docs to fill the limit and, worse, replans on every differently-
+  // sized box (all the cost is planningTimeMicros, not the scan). See city-model.
+  const hint = hasBbox ? "city_geo_ix" : undefined;
   const [res, total] = await Promise.all([
-    db.cities.getAll(query, { sort, limit: pageSize, skip }),
-    paged ? db.cities.model.countDocuments(query).exec() : Promise.resolve(0),
+    db.cities.getAll(query, { sort, limit: pageSize, skip, hint }),
+    paged
+      ? db.cities.model.countDocuments(query, hint ? { hint } : undefined).exec()
+      : Promise.resolve(0),
   ]);
   const cities = res?.data ?? [];
   return {
@@ -93,7 +102,7 @@ async function buildCities(sp: URLSearchParams) {
 }
 
 /** POST /api/cities — create a city after validation. */
-export async function POST(req: Request) {
+async function POST__impl(req: Request) {
   let body: unknown = {};
   try {
     body = await req.json();
@@ -116,3 +125,7 @@ export async function POST(req: Request) {
   }
   return NextResponse.json({ city: created.data }, { status: 201, headers: NO_CACHE });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const POST = withApiLog(POST__impl);

@@ -16,8 +16,19 @@ import { bucketDaily, bucketValue } from "@photonsurge/shared/climate/buckets";
 import type { iCountryModel } from "@photonsurge/shared/db/country-model";
 import { cityGeoWithinBox } from "@photonsurge/shared/db/city-model";
 
-import { buildHistorySeries, buildAreaHistorySeries, type FrameLoader } from "../weather-history";
-import { buildForecastDays, buildAreaForecastDays } from "../weather-forecast";
+import type { HistorySeries, AreaHistorySeries } from "@photonsurge/shared/weather/history-types";
+import {
+  workerPointHistory,
+  workerAreaHistory,
+  workerForecastPoint,
+  workerForecastArea,
+} from "../worker-sample";
+import {
+  buildForecastDays,
+  buildAreaForecastDays,
+  DEFAULT_FORECAST_DAYS,
+  forecastHorizonHours,
+} from "../weather-forecast";
 import {
   getWeatherPanel,
   BROADCAST_HISTORY_VARS as SHARED_BROADCAST_HISTORY_VARS,
@@ -203,23 +214,23 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
   const historyFrom = new Date(Date.now() - HISTORY_WINDOW_HOURS * 3600 * 1000);
   const HISTORY_BATCH = Math.max(1, Number(process.env.FOCUS_HISTORY_BATCH || 3));
   const buildHistories = async (): Promise<{
-    pointHistory: Awaited<ReturnType<typeof buildHistorySeries>>[];
-    areaHistory: Awaited<ReturnType<typeof buildAreaHistorySeries>>[];
+    pointHistory: HistorySeries[];
+    areaHistory: AreaHistorySeries[];
   }> => {
-    const pointHistory: Awaited<ReturnType<typeof buildHistorySeries>>[] = [];
-    const areaHistory: Awaited<ReturnType<typeof buildAreaHistorySeries>>[] = [];
+    const pointHistory: HistorySeries[] = [];
+    const areaHistory: AreaHistorySeries[] = [];
     if (!hasLoc) return { pointHistory, areaHistory };
     for (let i = 0; i < histVars.length; i += HISTORY_BATCH) {
       const batch = histVars.slice(i, i + HISTORY_BATCH);
       const built = await Promise.all(
         batch.map(async (v) => {
-          // listMeta = frame metadata WITHOUT the PNG bytes; the builders then
-          // stream only the PICKED frames' bytes a few at a time (see
-          // buildHistorySeries), so we never hold a var's full 72h of textures.
-          const meta = await db.weatherFrames.listMeta({ variable: v, from: historyFrom });
-          const load: FrameLoader = (id) => db.weatherFrames.getByID(id);
-          const pt = await buildHistorySeries(v, meta, lat, lng, load);
-          const ar = wantAreaHistory ? await buildAreaHistorySeries(v, meta, bbox, load) : null;
+          // Public no longer decodes — the worker samples the archive (sole frame
+          // decoder, bytes from the blob store) and returns the numeric series.
+          const fromMs = historyFrom.getTime();
+          const pt = await workerPointHistory({ variable: v, lat, lng, from: fromMs });
+          const ar = wantAreaHistory
+            ? await workerAreaHistory({ variable: v, bbox, from: fromMs })
+            : null;
           return { pt, ar };
         }),
       );
@@ -231,15 +242,10 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     return { pointHistory, areaHistory };
   };
 
-  // Forecast frames fetched once, shared by point + area builders.
-  const forecastFrames: Record<string, unknown[]> = {};
-  if (hasLoc) {
-    await Promise.all(
-      FORECAST_VARIABLES.map(async (v) => {
-        forecastFrames[v] = await db.weatherForecastFrames.getSeries({ variable: v });
-      }),
-    );
-  }
+  // Forecast is sampled by the worker (sole decoder); public only composes the
+  // day cards. Bounded to the detailed strip's horizon.
+  const fcstVars = FORECAST_VARIABLES as unknown as string[];
+  const fcstHours = forecastHorizonHours(DEFAULT_FORECAST_DAYS);
 
   // Resolve the country under the point ONCE — reused for both the bundle's
   // `country` field and the country panel lookup (was an in-parallel
@@ -280,10 +286,18 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     panel
       ? Promise.resolve({ pointHistory: panel.pointHistory, areaHistory: panel.areaHistory })
       : buildHistories(),
-    // pointForecast
-    hasLoc ? buildForecastDays(forecastFrames as never, lat, lng) : Promise.resolve(null),
+    // pointForecast — worker samples, public composes the cards
+    hasLoc
+      ? workerForecastPoint({ lat, lng, variables: fcstVars, maxHours: fcstHours }).then((s) =>
+          buildForecastDays(s, lat, lng),
+        )
+      : Promise.resolve(null),
     // areaForecast
-    wantAreaFrame ? buildAreaForecastDays(forecastFrames as never, bbox) : Promise.resolve(null),
+    wantAreaFrame
+      ? workerForecastArea({ bbox, variables: fcstVars, maxHours: fcstHours }).then((s) =>
+          buildAreaForecastDays(s, bbox),
+        )
+      : Promise.resolve(null),
     // climate (focus point)
     hasLoc ? climateFor(db, lng, lat) : Promise.resolve([]),
     // topCities (located shots — incl. targeted CLOSE CITIES)

@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { TRIGGERABLE_JOBS, getTriggerableJob } from "@photonsurge/shared/jobs";
 import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue";
@@ -15,7 +16,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * ran (BullMQ stamps processedOn/finishedOn; admin jobs are kept for 1h). The
  * jobs page polls this after "Run now" to show the execution time.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const jobId = new URL(req.url).searchParams.get("jobId");
   if (jobId) return jobStatus(jobId);
 
@@ -58,7 +59,7 @@ async function jobStatus(jobId: string) {
 }
 
 /** POST /api/admin/jobs { id } — enqueue a worker job by its registry id. */
-export async function POST(req: Request) {
+async function POST__impl(req: Request) {
   let body: { id?: string } = {};
   try {
     body = (await req.json()) ?? {};
@@ -116,3 +117,7 @@ export async function POST(req: Request) {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const POST = withApiLog(POST__impl);

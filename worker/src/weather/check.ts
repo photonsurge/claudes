@@ -24,7 +24,12 @@ export async function runCheck(_job: Job) {
   const db = await getAppDb();
 
   const latest: LatestRun = await latestAvailableRun(new Date(), headOk);
-  const published = await db.latestPublishedRun();
+  // Compare against the latest published GFS run specifically — NOT the global
+  // latest across all models. The multi-supplier fleet (ifs/rtofs/mrms…)
+  // publishes newer runs continuously, so the global latest is almost always
+  // some other model and this check would never see GFS as "newer", starving
+  // both the GFS render and the forecast archive it feeds.
+  const published = await db.latestPublishedRunForModel(model);
   const publishedTime = published?.run ? new Date(published.run).getTime() : 0;
 
   if (latest.runDate.getTime() <= publishedTime) {

@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { withCache, FEED_TTL_SEC } from "../../../../lib/focus/focus-cache";
@@ -15,7 +16,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * client just polls this on a slow interval. Configure the feed/cadence on the
  * worker (USGS_FEED, SEISMIC_SNAPSHOT_MS).
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
 
   let bbox: [number, number, number, number] | undefined;
@@ -64,3 +65,6 @@ export async function GET(req: Request) {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -13,7 +14,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * to show webcams near an on-air event. No limit (show all); the client filters
  * to the ones near the event. Refresh cadence lives on the worker.
  */
-export async function GET() {
+async function GET__impl() {
   try {
     const db = await getAppDb();
     const cams = await db.cams.list({ status: "active" });
@@ -25,3 +26,6 @@ export async function GET() {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

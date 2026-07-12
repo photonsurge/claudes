@@ -6,6 +6,7 @@
  * dev ports); mongo/redis are checked via the same connections shared already
  * maintains, so this adds no new connections.
  */
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getDb } from "@photonsurge/shared/utill/mongoose";
 import { getQueue } from "@photonsurge/shared/bull/bull";
@@ -62,7 +63,7 @@ async function redisStatus(): Promise<ServiceStatus> {
   }
 }
 
-export async function GET() {
+async function GET__impl() {
   const { value } = await withCache("status:v1", STATUS_TTL_SEC, async () => {
     const SOCKET_URL = process.env.SOCKET_INTERNAL_URL || "http://localhost:10101";
     const WORKER_URL = process.env.WORKER_INTERNAL_URL || "http://localhost:10102";
@@ -86,3 +87,6 @@ export async function GET() {
 
   return NextResponse.json(value, { headers: { "Cache-Control": "no-store" } });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

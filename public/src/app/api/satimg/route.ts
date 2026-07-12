@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -14,7 +15,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * reprojected PNG is served at /api/satimg/frame.png?sat=<id>. Bake cadence lives
  * on the worker (SATIMG_REFRESH_MS, ~10 min).
  */
-export async function GET() {
+async function GET__impl() {
   try {
     const db = await getAppDb();
     const { frames } = await db.satimg.all();
@@ -26,3 +27,6 @@ export async function GET() {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

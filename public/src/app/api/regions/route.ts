@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -12,7 +13,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * nations) from Mongo, each with its latest area-weather report (if the
  * hourly job has run yet) inlined as `weather`. Mirrors /api/countries.
  */
-export async function GET() {
+async function GET__impl() {
   try {
     const db = await getAppDb();
     const [regions, reports] = await Promise.all([
@@ -32,3 +33,6 @@ export async function GET() {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

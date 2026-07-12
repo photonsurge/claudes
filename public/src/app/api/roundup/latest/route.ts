@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import type { SummaryPeriod } from "@photonsurge/shared/db/event-summary-model";
@@ -14,7 +15,7 @@ const PERIODS: SummaryPeriod[] = ["hourly", "12h", "daily"];
  * /api/admin/summaries (which also returns history for the admin screen).
  * Query: ?period=hourly|12h|daily.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const raw = new URL(req.url).searchParams.get("period") as SummaryPeriod | null;
   const period: SummaryPeriod = raw && PERIODS.includes(raw) ? raw : "hourly";
 
@@ -23,3 +24,6 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ period, latest }, { status: 200, headers: NO_CACHE });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

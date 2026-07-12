@@ -54,6 +54,26 @@ describe("latestPublishedRun(sByModel)", () => {
     expect(await db.latestPublishedRun()).toBeNull();
   });
 
+  it("latestPublishedRunForModel scopes the newest-run query to one model", async () => {
+    const db = freshDb();
+    const getAll = jest.fn(async () => ok([{ model: "gfs", run: "2026-07-08T06" }]));
+    (db.weatherRuns as any).getAll = getAll;
+    const run = await db.latestPublishedRunForModel("gfs");
+    expect(getAll).toHaveBeenCalledWith(
+      { published: true, model: "gfs" },
+      { sort: { run: -1 }, limit: 1 },
+    );
+    expect(run).toMatchObject({ model: "gfs" });
+  });
+
+  it("latestPublishedRunForModel is null when that model has no published run or the read fails", async () => {
+    const db = freshDb();
+    (db.weatherRuns as any).getAll = jest.fn(async () => ok([]));
+    expect(await db.latestPublishedRunForModel("gfs")).toBeNull();
+    (db.weatherRuns as any).getAll = jest.fn(async () => missing);
+    expect(await db.latestPublishedRunForModel("gfs")).toBeNull();
+  });
+
   it("latestPublishedRunsByModel keeps only the first (newest) run per model, tiebroken by generatedAt in the query", async () => {
     const db = freshDb();
     const rows = [

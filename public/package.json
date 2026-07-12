@@ -1,6 +1,6 @@
 {
   "name": "public",
-  "version": "0.1.39",
+  "version": "0.1.41",
   "private": true,
   "scripts": {
     "update-shared": "rm -rf .next/; yarn upgrade @photonsurge/shared",
@@ -31,7 +31,6 @@
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "satellite.js": "^5.0.0",
-    "sharp": "^0.34.4",
     "socket.io-client": "^4.8.1",
     "weatherlayers-gl": "^2026.5.2"
   },

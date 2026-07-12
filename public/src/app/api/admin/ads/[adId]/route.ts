@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { normaliseAdPatch } from "@photonsurge/shared/ads/normalise";
@@ -13,7 +14,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * weight/tags/notes). Only fields present in the body are touched. Also serves
  * the admin status toggle.
  */
-export async function PATCH(
+async function PATCH__impl(
   req: Request,
   { params }: { params: Promise<{ adId: string }> },
 ) {
@@ -39,7 +40,7 @@ export async function PATCH(
  * keeping the id + metadata. `updated` bumps, so the media URL cache-buster
  * changes automatically.
  */
-export async function PUT(
+async function PUT__impl(
   req: Request,
   { params }: { params: Promise<{ adId: string }> },
 ) {
@@ -66,7 +67,7 @@ export async function PUT(
 }
 
 /** DELETE /api/admin/ads/[adId]. */
-export async function DELETE(
+async function DELETE__impl(
   _req: Request,
   { params }: { params: Promise<{ adId: string }> },
 ) {
@@ -78,3 +79,8 @@ export async function DELETE(
   }
   return NextResponse.json({ ok: true, adId }, { status: 200, headers: NO_CACHE });
 }
+
+// --- request logging (lib/api-log) ---
+export const PUT = withApiLog(PUT__impl);
+export const PATCH = withApiLog(PATCH__impl);
+export const DELETE = withApiLog(DELETE__impl);

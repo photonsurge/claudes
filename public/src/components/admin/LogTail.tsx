@@ -44,7 +44,16 @@ function Pill({ level }: { level: string }) {
 }
 
 /** Live tail of the back-log. Reusable on /admin/logs and /admin/jobs. */
-export default function LogTail({ limit = 200, title = "Logs" }: { limit?: number; title?: string }) {
+export default function LogTail({
+  limit = 200,
+  title = "Logs",
+  excludeType,
+}: {
+  limit?: number;
+  title?: string;
+  /** Comma-separated log `type`s to omit server-side (e.g. "request" to hide API-request lines). */
+  excludeType?: string;
+}) {
   const [logs, setLogs] = useState<iLogModel[]>([]);
   const [active, setActive] = useState<Set<Level>>(new Set());
   const [search, setSearch] = useState("");
@@ -53,11 +62,12 @@ export default function LogTail({ limit = 200, title = "Logs" }: { limit?: numbe
   const [now, setNow] = useState(() => Date.parse("2026-01-01T00:00:00Z"));
 
   const refresh = useCallback(async () => {
-    const res = await fetch(`/api/admin/logs?limit=${limit}`, { cache: "no-store" });
+    const exclude = excludeType ? `&exclude=${encodeURIComponent(excludeType)}` : "";
+    const res = await fetch(`/api/admin/logs?limit=${limit}${exclude}`, { cache: "no-store" });
     const body = await res.json().catch(() => null);
     if (body) setLogs(body.logs ?? []);
     setNow(Date.now());
-  }, [limit]);
+  }, [limit, excludeType]);
 
   useEffect(() => {
     refresh();

@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import type { PlaceRoundupKind } from "@photonsurge/shared/db/place-roundup-model";
@@ -14,7 +15,7 @@ const KINDS: PlaceRoundupKind[] = ["country", "region"];
  *   ?kind=country&placeId=gb&history=20         → that place's latest + recent history
  * Reads whichever collection matches `kind` (countryRoundups / regionRoundups).
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const q = new URL(req.url).searchParams;
   const raw = q.get("kind") as PlaceRoundupKind | null;
   const kind: PlaceRoundupKind = raw && KINDS.includes(raw) ? raw : "country";
@@ -35,3 +36,6 @@ export async function GET(req: Request) {
   const places = await repo.latestPerPlace();
   return NextResponse.json({ kind, places }, { status: 200, headers: NO_CACHE });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

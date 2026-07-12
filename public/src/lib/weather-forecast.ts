@@ -6,17 +6,13 @@
 // shape) — no duplicated PNG-decode logic.
 
 import {
-  frameToSampleable,
-  sampleFrameCached,
-  pickFramesForPoint,
-} from "./weather-history";
-import { areaStatsFrame, type AreaStats } from "@photonsurge/shared/weather/sample";
-import {
   classifyForecastDay,
   type DayAggregate,
   type ForecastHazardFlag,
 } from "@photonsurge/shared/weather/forecastHazard";
-import type { iWeatherForecastFrameModel } from "@photonsurge/shared/db/weather-forecast-frame-model";
+// The worker decodes + samples the forecast store; this file only COMPOSES the
+// day cards from those pre-sampled numbers (no sharp/PNG decode in public).
+import type { ForecastPointSeries, ForecastAreaSeries } from "./worker-sample";
 
 export type ForecastDayLabel = "TODAY" | "TOMORROW" | `+${number}`;
 export type ForecastCondition = "sunny" | "partly-cloudy" | "cloudy" | "rain" | "snow" | "storm";
@@ -153,55 +149,10 @@ export interface ForecastSeries {
   days: ForecastDay[];
 }
 
-interface VariableSample {
-  t: Date;
-  value: number;
-}
-
-interface PointSeries {
-  units: Record<string, string>;
-  samplesByVariable: Record<string, VariableSample[]>;
-  allValidTimes: Date[];
-}
-
-/**
- * Sample every picked frame at the point, grouped by variable — the single
- * decode/sample pass shared by the daily-card builder and the 3-hourly
- * timeline builder. Each variable's covering frames are picked, sampled at
- * (lat,lng), and returned with their validTime; `allValidTimes` is the flat
- * union used to bucket days.
- */
-async function samplePointSeries(
-  framesByVariable: Record<string, iWeatherForecastFrameModel[]>,
-  lat: number,
-  lng: number,
-  maxHours?: number,
-): Promise<PointSeries> {
-  const units: Record<string, string> = {};
-  const samplesByVariable: Record<string, VariableSample[]> = {};
-  const allValidTimes: Date[] = [];
-  // The store now holds a 12-hourly outlook out to 16 days; a bounded caller
-  // (the detailed 3-day cards, the 72h timeline) skips frames past its horizon
-  // so it doesn't decode the far-future tail it will never show.
-  const horizonMs = maxHours != null ? Date.now() + maxHours * 3600 * 1000 : Infinity;
-
-  for (const [variable, frames] of Object.entries(framesByVariable)) {
-    const picked = pickFramesForPoint(frames as any, lat, lng);
-    const samples: VariableSample[] = [];
-    for (const frame of picked) {
-      if (new Date(frame.validTime).getTime() > horizonMs) continue;
-      units[variable] = (frame as { units?: string }).units || units[variable] || "";
-      const sample = await sampleFrameCached(frame as any, lat, lng);
-      if (!sample) continue;
-      const t = new Date(frame.validTime);
-      samples.push({ t, value: sample.kind === "scalar" ? sample.value : sample.speed });
-      allValidTimes.push(t);
-    }
-    samplesByVariable[variable] = samples;
-  }
-
-  return { units, samplesByVariable, allValidTimes };
-}
+/** Longest sampling horizon (hours) the daily cards need for `maxDays`, with a
+ *  +1 day of slack so the final day isn't clipped by the local-hour offset. The
+ *  caller passes this to the worker so it only decodes the shown days. */
+export const forecastHorizonHours = (maxDays: number): number => (maxDays + 1) * 24;
 
 /** Mean/min/max of a value array; null when empty. */
 function stats(values: number[]): { mean: number; min: number; max: number } | null {
@@ -224,18 +175,13 @@ function stats(values: number[]): { mean: number; min: number; max: number } | n
  * horizon so only the shown days are decoded.
  */
 export async function buildForecastDays(
-  framesByVariable: Record<string, iWeatherForecastFrameModel[]>,
+  series: ForecastPointSeries,
   lat: number,
   lng: number,
   maxDays: number = DEFAULT_FORECAST_DAYS,
 ): Promise<ForecastSeries> {
-  // +1 day of slack so the final day's frames aren't clipped by the local offset.
-  const { units, samplesByVariable, allValidTimes } = await samplePointSeries(
-    framesByVariable,
-    lat,
-    lng,
-    (maxDays + 1) * 24,
-  );
+  // Pre-sampled by the worker (bounded to forecastHorizonHours(maxDays) at fetch).
+  const { units, samplesByVariable, allValidTimes } = series;
 
   const offset = localDayOffsetHours(lng);
   const dayKeys = bucketForecastDays(allValidTimes, lng, maxDays);
@@ -327,13 +273,13 @@ export interface ForecastStepSeries {
  * validTimes, each carrying its sampled values and a per-step condition/hazard.
  */
 export async function buildForecastSteps(
-  framesByVariable: Record<string, iWeatherForecastFrameModel[]>,
+  series: ForecastPointSeries,
   lat: number,
   lng: number,
 ): Promise<ForecastStepSeries> {
-  // Timeline stays the detailed 3-hourly track only (today..+72h); the coarse
-  // 12-hourly outlook tail beyond that is for the daily cards, not this series.
-  const { units, samplesByVariable } = await samplePointSeries(framesByVariable, lat, lng, 72);
+  // Timeline stays the detailed 3-hourly track only (today..+72h); the caller
+  // fetches with maxHours=72 so the 12-hourly outlook tail isn't included.
+  const { units, samplesByVariable } = series;
   const offset = localDayOffsetHours(lng);
 
   // Union every variable's samples by validTime into one row per step.
@@ -423,50 +369,20 @@ export interface AreaForecastSeries {
   days: AreaForecastDay[];
 }
 
-interface AreaVariableSample {
-  t: Date;
-  stats: AreaStats;
-}
-
 /**
- * Build daily card data over a bbox. Defaults to the detailed 3-day strip; pass
- * a larger `maxDays` for the extended daily outlook. Frames past the shown
- * horizon are skipped so the far-future tail isn't decoded needlessly.
+ * Build daily card data over a bbox from the worker's pre-sampled area series.
+ * Defaults to the detailed 3-day strip; pass a larger `maxDays` for the extended
+ * outlook (the caller fetches with forecastHorizonHours(maxDays)).
  */
 export async function buildAreaForecastDays(
-  framesByVariable: Record<string, iWeatherForecastFrameModel[]>,
+  series: ForecastAreaSeries,
   bbox: [number, number, number, number],
   maxDays: number = DEFAULT_FORECAST_DAYS,
 ): Promise<AreaForecastSeries> {
-  const centerLat = (bbox[1] + bbox[3]) / 2;
   let centerLng = (bbox[0] + bbox[2]) / 2;
   if (bbox[2] < bbox[0]) centerLng = (((bbox[0] + bbox[2] + 360) / 2 + 180) % 360) - 180;
 
-  const units: Record<string, string> = {};
-  const samplesByVariable: Record<string, AreaVariableSample[]> = {};
-  const allValidTimes: Date[] = [];
-  // +1 day of slack so the final day isn't clipped by the local offset.
-  const horizonMs = Date.now() + (maxDays + 1) * 24 * 3600 * 1000;
-
-  for (const [variable, frames] of Object.entries(framesByVariable)) {
-    const picked = pickFramesForPoint(frames as any, centerLat, centerLng);
-    const samples: AreaVariableSample[] = [];
-    for (const frame of picked) {
-      if (new Date(frame.validTime).getTime() > horizonMs) continue;
-      units[variable] = (frame as { units?: string }).units || units[variable] || "";
-      try {
-        const grid = await frameToSampleable(frame as any);
-        const areaStats = areaStatsFrame(grid, bbox);
-        if (!areaStats) continue;
-        const t = new Date(frame.validTime);
-        samples.push({ t, stats: areaStats });
-        allValidTimes.push(t);
-      } catch {
-        // undecodable frame reads as nodata for this variable/step
-      }
-    }
-    samplesByVariable[variable] = samples;
-  }
+  const { units, samplesByVariable, allValidTimes } = series;
 
   const offset = localDayOffsetHours(centerLng);
   const dayKeys = bucketForecastDays(allValidTimes, centerLng, maxDays);

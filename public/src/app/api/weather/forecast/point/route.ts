@@ -1,6 +1,11 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
-import { getAppDb } from "@photonsurge/shared/db/index";
-import { buildForecastDays, buildForecastSteps } from "../../../../../lib/weather-forecast";
+import {
+  buildForecastDays,
+  buildForecastSteps,
+  forecastHorizonHours,
+} from "../../../../../lib/weather-forecast";
+import { workerForecastPoint } from "../../../../../lib/worker-sample";
 import { withCache } from "../../../../../lib/focus/focus-cache";
 
 export const runtime = "nodejs";
@@ -20,7 +25,7 @@ const FCST_TTL_SEC = Number(process.env.WEATHER_PANEL_CACHE_TTL_SEC || 300);
  * up to 16 for the 12-hourly outlook). `shape=steps` returns the full 3-hourly
  * timeline (today..+72h). Both carry derived condition + hazard flags.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
@@ -34,20 +39,27 @@ export async function GET(req: Request) {
   const days = Math.min(16, Math.max(1, Math.floor(Number(url.searchParams.get("days"))) || 4));
 
   const key = `feed:v1:wfcst:pt:${lat}:${lng}:${shape}:${days}:${model ?? "-"}:${variables.join(",")}`;
+  // Public no longer decodes — the worker samples the forecast store; we only
+  // compose the day cards / timeline from the returned numbers.
   const { value, hit } = await withCache(key, FCST_TTL_SEC, async () => {
-    const db = await getAppDb();
-    const framesByVariable: Record<string, any[]> = {};
-    await Promise.all(
-      variables.map(async (variable) => {
-        framesByVariable[variable] = await db.weatherForecastFrames.getSeries({ variable, model });
-      }),
-    );
-    return shape === "steps"
-      ? buildForecastSteps(framesByVariable, lat, lng)
-      : buildForecastDays(framesByVariable, lat, lng, days);
+    if (shape === "steps") {
+      const series = await workerForecastPoint({ lat, lng, variables, model, maxHours: 72 });
+      return buildForecastSteps(series, lat, lng);
+    }
+    const series = await workerForecastPoint({
+      lat,
+      lng,
+      variables,
+      model,
+      maxHours: forecastHorizonHours(days),
+    });
+    return buildForecastDays(series, lat, lng, days);
   });
 
   return NextResponse.json(value, {
     headers: { "Cache-Control": "public, max-age=60", "X-Cache": hit ? "hit" : "miss" },
   });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

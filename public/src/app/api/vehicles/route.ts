@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import type { VehicleKind } from "@photonsurge/shared/db/vehicle-model";
@@ -15,7 +16,7 @@ const SORT_FIELDS = new Set(["name", "kind", "code", "country", "timesSeen", "fi
  * live feed. Reads Mongo only. No limit by default (show everything), recency-
  * sorted; `notable=1` returns just the curated catalog, `q` searches label/name/code.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const kindRaw = url.searchParams.get("kind");
   const kind = kindRaw === "aircraft" || kindRaw === "ship" ? (kindRaw as VehicleKind) : undefined;
@@ -82,3 +83,6 @@ export async function GET(req: Request) {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

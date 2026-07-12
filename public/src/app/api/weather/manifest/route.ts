@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { composeManifest } from "../../../../lib/manifest";
@@ -20,7 +21,7 @@ const NO_CACHE = { "Cache-Control": "no-store, no-cache, must-revalidate" };
  * source + the cold-start fetch). Runs are hours apart, so the short hold barely
  * lags a publish. Fail-open — a Redis outage degrades to a live compose.
  */
-export async function GET() {
+async function GET__impl() {
   const { value, hit } = await withCache("feed:v1:manifest", FEED_TTL_SEC, async () => {
     const db = await getAppDb();
     const runs = await db.latestPublishedRunsByModel();
@@ -31,3 +32,6 @@ export async function GET() {
     headers: { ...NO_CACHE, "X-Cache": hit ? "hit" : "miss" },
   });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

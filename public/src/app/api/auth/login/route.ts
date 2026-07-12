@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { verifyPassword } from "@photonsurge/shared/utill/password";
@@ -13,7 +14,7 @@ const dlog = (...args: unknown[]) => {
 };
 
 /** POST /api/auth/login { email, password } — sets the admin session cookie. */
-export async function POST(req: Request) {
+async function POST__impl(req: Request) {
   console.log("[login] POST", { url: req.url, method: req.method, headers: req.headers });
   let body: { email?: string; password?: string } = {};
   try {
@@ -54,3 +55,6 @@ export async function POST(req: Request) {
   });
   return res;
 }
+
+// --- request logging (lib/api-log) ---
+export const POST = withApiLog(POST__impl);

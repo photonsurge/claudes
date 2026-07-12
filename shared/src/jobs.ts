@@ -107,6 +107,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Weather maps",
   },
   {
+    id: "weather-reingest",
+    label: "Remake weather for maps (rebake GFS)",
+    description:
+      "Delete the stored GFS runs and re-bake the latest GFS cycle from scratch, so every weather map-type overlay (temp/wind/rain/cloud…) and the 3-day forecast refresh. Use after a pipeline change, or if the base map shows \"updated Nd ago\". One click = \"Clear GFS data\" + \"Check weather run\"; the other models (IFS/RTOFS/radar…) are left untouched.",
+    domain: "weather",
+    type: "weather",
+    event: "reingest",
+    group: "Weather maps",
+  },
+  {
     id: "forecast-backfill",
     label: "Backfill 3-day forecast",
     description:

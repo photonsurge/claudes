@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -11,7 +12,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * e.g. "gb"), its latest area-weather snapshot and the recent snapshot history
  * for the detail page's trend charts. Mirrors /api/cities/[id].
  */
-export async function GET(
+async function GET__impl(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -38,7 +39,7 @@ export async function GET(
  * (`roundupEnabled`). Body: `{ roundupEnabled: boolean }`. The round-up job's
  * work-list is exactly the enabled set.
  */
-export async function PATCH(
+async function PATCH__impl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -60,3 +61,7 @@ export async function PATCH(
     return NextResponse.json({ error: String(error) }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const PATCH = withApiLog(PATCH__impl);

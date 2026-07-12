@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { generateShortLivedJwt } from "@photonsurge/shared/utill/jwt";
@@ -18,7 +19,7 @@ export const dynamic = "force-dynamic";
  * client to emit control:state. Anonymous callers still get a receive-only
  * guest token, same as before.
  */
-export async function GET() {
+async function GET__impl() {
   const secret = process.env.SOCKET_TOKEN_SECRET;
   if (!secret) {
     return NextResponse.json({ error: "SOCKET_TOKEN_SECRET not set" }, { status: 500 });
@@ -38,3 +39,6 @@ export async function GET() {
     socketUrl: process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000",
   });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

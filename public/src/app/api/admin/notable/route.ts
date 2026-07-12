@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { getQueue } from "@photonsurge/shared/bull/bull";
@@ -16,7 +17,7 @@ const clean = (v: unknown): string | undefined =>
  * registry), newest first. The live aircraft/ship tables read this to mark which
  * rows are already catalogued.
  */
-export async function GET() {
+async function GET__impl() {
   try {
     const db = await getAppDb();
     const notable = await db.vehicles.list({ notable: true, limit: 0, sort: { updated: -1 } });
@@ -32,7 +33,7 @@ export async function GET() {
  * been seen) and enqueue a TARGETED enrichment so its photo/blurb fill within
  * seconds — the button on the live aircraft/ship tables. Re-posting edits it.
  */
-export async function POST(req: Request) {
+async function POST__impl(req: Request) {
   let body: Record<string, unknown> = {};
   try {
     body = (await req.json()) ?? {};
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
  * enabled). The registry doc + its sighting history are kept, just no longer
  * boosted on air.
  */
-export async function DELETE(req: Request) {
+async function DELETE__impl(req: Request) {
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "missing id" }, { status: 400, headers: NO_CACHE });
   try {
@@ -99,3 +100,8 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: String(err) }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const POST = withApiLog(POST__impl);
+export const DELETE = withApiLog(DELETE__impl);

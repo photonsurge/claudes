@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
  * sensitive. Callers append `?v=<updatedAt>` so a replaced image gets a fresh
  * URL, hence the long immutable cache. 404 until the image exists / has bytes.
  */
-export async function GET(
+async function GET__impl(
   _req: Request,
   { params }: { params: Promise<{ imageId: string }> },
 ) {
@@ -49,3 +50,6 @@ export async function GET(
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

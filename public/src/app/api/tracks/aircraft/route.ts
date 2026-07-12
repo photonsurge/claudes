@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import type { Aircraft } from "../../../../lib/tracks/types";
@@ -21,7 +22,7 @@ const STALE_MS = 5 * 60 * 1000;
  * `ids` scopes to a specific set of ICAO24s (the overlay sends notable + on-air
  * craft when zoomed out); a present-but-empty `ids` returns an empty frame.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
 
   let bbox: [number, number, number, number] | undefined;
@@ -90,3 +91,6 @@ export async function GET(req: Request) {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

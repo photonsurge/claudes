@@ -18,6 +18,15 @@ export interface iGetAllOptions<T> {
   sort?: Record<string, 1 | -1> | null;
   limit?: number;
   skip?: number;
+  /**
+   * Force a specific index (name or key spec), bypassing the query planner's
+   * multi-plan trials. For geo (`$geoWithin`/`$geoIntersects`) box queries the
+   * planner otherwise burns 100ms+ *per call* trial-executing candidate geo
+   * plans — and replans indefinitely when different box sizes thrash the one
+   * shared plan-cache slot (docExamined/nreturned stay tiny; it's all
+   * `planningTimeMicros`). A hint makes planning ~free and deterministic.
+   */
+  hint?: string | Record<string, 1 | -1>;
 }
 
 const strip = <T>(doc: any): T | undefined => {
@@ -61,6 +70,7 @@ export function mongoCrud<T extends { id?: string }>(model: Model<T>) {
     ): Promise<tGeneralResponse<T[]>> {
       try {
         let q = model.find(query);
+        if (opts.hint) q = q.hint(opts.hint as any);
         const sort = opts.sort === null ? null : (opts.sort ?? { created: -1 });
         if (sort) q = q.sort(sort as any);
         if (typeof opts.skip === "number") q = q.skip(opts.skip);

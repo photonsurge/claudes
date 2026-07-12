@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -13,7 +14,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * area-weather report (if the hourly job has run yet) inlined as `weather`,
  * so the admin table needs one fetch, not two.
  */
-export async function GET() {
+async function GET__impl() {
   try {
     const db = await getAppDb();
     const [countries, reports] = await Promise.all([
@@ -33,3 +34,6 @@ export async function GET() {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

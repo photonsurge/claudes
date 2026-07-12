@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { ALLOWED_ROLES } from "@photonsurge/shared/db/user-model";
@@ -10,7 +11,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** GET /api/admin/users — every admin account (never includes passwordHash). */
-export async function GET() {
+async function GET__impl() {
   const db = await getAppDb();
   const users = await db.users.list();
   return NextResponse.json({ users }, { status: 200, headers: NO_CACHE });
@@ -20,7 +21,7 @@ export async function GET() {
  * POST /api/admin/users { email, password, role? } — create an admin account.
  * `role` defaults to "admin" and must be one of ALLOWED_ROLES.
  */
-export async function POST(req: Request) {
+async function POST__impl(req: Request) {
   let body: { email?: string; password?: string; role?: string } = {};
   try {
     body = (await req.json()) ?? {};
@@ -55,3 +56,7 @@ export async function POST(req: Request) {
   const { passwordHash: _drop, ...safe } = created;
   return NextResponse.json({ user: safe }, { status: 201, headers: NO_CACHE });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const POST = withApiLog(POST__impl);

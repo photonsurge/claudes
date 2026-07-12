@@ -1,4 +1,3 @@
-import { PNG } from "pngjs";
 import {
   bucketForecastDays,
   dayLabels,
@@ -10,42 +9,46 @@ import {
   localDayOffsetHours,
   humanDayLabel,
 } from "./weather-forecast";
-import type { iWeatherForecastFrameModel } from "@photonsurge/shared/db/weather-forecast-frame-model";
+import type { ForecastPointSeries, ForecastAreaSeries } from "./worker-sample";
+import type { AreaStats } from "@photonsurge/shared/weather/sample";
 
-function scalarPng(width: number, height: number, byte: number): Buffer {
-  const png = new PNG({ width, height });
-  for (let i = 0; i < width * height; i++) {
-    const o = i * 4;
-    png.data[o] = byte;
-    png.data[o + 1] = byte;
-    png.data[o + 2] = byte;
-    png.data[o + 3] = 255;
+// The builders now COMPOSE day cards from the worker's pre-sampled series (no
+// PNG decode). These helpers build those series directly from (isoTime, value)
+// specs — decode/sample coverage lives in worker/src/weather/sampleService.test.
+
+function ptSeries(
+  byVar: Record<string, [string, number][]>,
+  units: Record<string, string> = { temp: "°C" },
+): ForecastPointSeries {
+  const samplesByVariable: Record<string, { t: Date; value: number }[]> = {};
+  const allValidTimes: Date[] = [];
+  for (const [v, rows] of Object.entries(byVar)) {
+    samplesByVariable[v] = rows.map(([iso, value]) => {
+      const t = new Date(iso);
+      allValidTimes.push(t);
+      return { t, value };
+    });
   }
-  return PNG.sync.write(png);
+  return { units, samplesByVariable, allValidTimes };
 }
 
-let nextId = 0;
-function frameOf(over: Partial<iWeatherForecastFrameModel> = {}): iWeatherForecastFrameModel {
-  const id = `frame-${nextId++}`;
-  return {
-    id,
-    _id: id,
-    model: "gfs",
-    variable: "temp",
-    validTime: new Date("2026-07-06T00:00:00Z"),
-    run: new Date("2026-07-06T00:00:00Z"),
-    fhr: 0,
-    encoding: "scalar",
-    units: "°C",
-    imageUnscale: [-90, 60],
-    bounds: [0, 0, 10, 10],
-    grid: { width: 2, height: 2, res: 10 },
-    contentType: "image/png",
-    data: scalarPng(2, 2, 153), // 0 °C
-    byteSize: 0,
-    ...over,
-  } as iWeatherForecastFrameModel;
+function areaSeries(
+  byVar: Record<string, [string, AreaStats][]>,
+  units: Record<string, string> = { temp: "°C" },
+): ForecastAreaSeries {
+  const samplesByVariable: Record<string, { t: Date; stats: AreaStats }[]> = {};
+  const allValidTimes: Date[] = [];
+  for (const [v, rows] of Object.entries(byVar)) {
+    samplesByVariable[v] = rows.map(([iso, stats]) => {
+      const t = new Date(iso);
+      allValidTimes.push(t);
+      return { t, stats };
+    });
+  }
+  return { units, samplesByVariable, allValidTimes };
 }
+
+const flat = (v: number): AreaStats => ({ mean: v, min: v, max: v, count: 4 });
 
 describe("localDayOffsetHours", () => {
   it("rounds longitude/15 to an hour offset", () => {
@@ -154,12 +157,11 @@ describe("buildForecastDays", () => {
   afterEach(() => jest.useRealTimers());
 
   it("aggregates hi/lo temp and flags a hazard for an extreme day", async () => {
-    const cold = frameOf({ validTime: new Date("2026-07-06T00:00:00Z"), data: scalarPng(2, 2, 153) }); // 0°C
-    const hot = frameOf({
-      validTime: new Date("2026-07-06T12:00:00Z"),
-      data: scalarPng(2, 2, 255), // top of [-90,60] range = 60°C
-    });
-    const out = await buildForecastDays({ temp: [cold, hot] }, 5, 5);
+    const out = await buildForecastDays(
+      ptSeries({ temp: [["2026-07-06T00:00:00Z", 0], ["2026-07-06T12:00:00Z", 60]] }),
+      5,
+      5,
+    );
     expect(out.days).toHaveLength(1);
     const [today] = out.days;
     expect(today.label).toBe("TODAY");
@@ -169,9 +171,8 @@ describe("buildForecastDays", () => {
     expect(today.condition).not.toBe("storm");
   });
 
-  it("returns an empty days array when nothing covers the point", async () => {
-    const frame = frameOf();
-    const out = await buildForecastDays({ temp: [frame] }, 50, 120);
+  it("returns an empty days array when the series is empty", async () => {
+    const out = await buildForecastDays(ptSeries({}), 50, 120);
     expect(out.days).toEqual([]);
   });
 });
@@ -201,9 +202,11 @@ describe("buildForecastSteps", () => {
   afterEach(() => jest.useRealTimers());
 
   it("keeps 3-hourly steps with per-step temp, labels, condition and hazards", async () => {
-    const s0 = frameOf({ validTime: new Date("2026-07-06T00:00:00Z"), data: scalarPng(2, 2, 153) }); // 0°C
-    const s3 = frameOf({ validTime: new Date("2026-07-06T03:00:00Z"), data: scalarPng(2, 2, 255) }); // 60°C
-    const out = await buildForecastSteps({ temp: [s0, s3] }, 5, 5);
+    const out = await buildForecastSteps(
+      ptSeries({ temp: [["2026-07-06T00:00:00Z", 0], ["2026-07-06T03:00:00Z", 60]] }),
+      5,
+      5,
+    );
 
     expect(out.steps).toHaveLength(2);
     expect(out.steps.map((s) => s.hourLabel)).toEqual(["00:00", "03:00"]);
@@ -215,18 +218,16 @@ describe("buildForecastSteps", () => {
   });
 
   it("applies the longitude local-hour offset to step labels", async () => {
-    const frame = frameOf({
-      validTime: new Date("2026-07-06T00:00:00Z"),
-      bounds: [40, 0, 50, 10], // cover lng 45
-      data: scalarPng(2, 2, 153),
-    });
-    const out = await buildForecastSteps({ temp: [frame] }, 5, 45); // round(45/15) = +3h offset
+    const out = await buildForecastSteps(
+      ptSeries({ temp: [["2026-07-06T00:00:00Z", 0]] }),
+      5,
+      45,
+    ); // round(45/15) = +3h offset
     expect(out.steps[0].hourLabel).toBe("03:00");
   });
 
-  it("returns no steps when nothing covers the point", async () => {
-    const frame = frameOf();
-    const out = await buildForecastSteps({ temp: [frame] }, 50, 120);
+  it("returns no steps when the series is empty", async () => {
+    const out = await buildForecastSteps(ptSeries({}), 50, 120);
     expect(out.steps).toEqual([]);
   });
 });
@@ -238,8 +239,10 @@ describe("buildAreaForecastDays", () => {
   afterEach(() => jest.useRealTimers());
 
   it("aggregates area mean/min/max per day", async () => {
-    const frame = frameOf({ validTime: new Date("2026-07-06T00:00:00Z"), data: scalarPng(2, 2, 153) });
-    const out = await buildAreaForecastDays({ temp: [frame] }, [0, 0, 10, 10]);
+    const out = await buildAreaForecastDays(
+      areaSeries({ temp: [["2026-07-06T00:00:00Z", flat(0)]] }),
+      [0, 0, 10, 10],
+    );
     expect(out.days).toHaveLength(1);
     expect(out.days[0].temp?.mean).toBeCloseTo(0, 5);
   });

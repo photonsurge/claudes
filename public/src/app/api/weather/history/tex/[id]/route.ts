@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { bufferOf } from "@photonsurge/shared/utill/buffer";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
  * /api/weather/tex but reads the WeatherFrame archive instead of the
  * retention-pruned run textures.
  */
-export async function GET(
+async function GET__impl(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -41,3 +42,6 @@ export async function GET(
     },
   });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

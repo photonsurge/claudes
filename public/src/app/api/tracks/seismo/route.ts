@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -20,7 +21,7 @@ const DEFAULT_LIMIT = 6;
  * worker snapshots only the stations near what's on air (see worker's
  * seismo/snapshot.ts).
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
@@ -59,3 +60,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: String(err), stations: [] }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

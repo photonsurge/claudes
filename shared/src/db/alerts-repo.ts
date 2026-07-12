@@ -214,15 +214,22 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
           },
         };
       }
-      const docs = await model
+      let query = model
         .find(q)
         // `raw` is the original feed payload kept for debugging/re-parsing; it can
         // dwarf the parsed doc and no list() consumer reads it.
         .select({ raw: 0 })
         .sort({ maxSeverityRank: -1, sent: -1 })
-        .limit(opts.limit ?? 0) // 0 = no cap; return all matching alerts
-        .lean()
-        .exec();
+        .limit(opts.limit ?? 0); // 0 = no cap; return all matching alerts
+      if (opts.bbox) {
+        // Force the geo index so the planner skips its multi-plan trial run — a
+        // $geoIntersects trial costs 100ms+ *per call* (all planningTimeMicros;
+        // the scan itself returns a handful of docs). active-scoped reads use the
+        // partial active+geo index (only valid when the query carries active:true,
+        // which `activeOnly` sets); unscoped reads the plain sparse geo index.
+        query = query.hint(opts.activeOnly ? "alert_active_geo_ix" : "alert_geo_ix");
+      }
+      const docs = await query.lean().exec();
       return docs.map(strip);
     },
   };

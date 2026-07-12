@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -5,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** GET /api/weather/tex/[id] — stream a baked texture's bytes, cached forever. */
-export async function GET(
+async function GET__impl(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -43,3 +44,6 @@ export async function GET(
     },
   });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

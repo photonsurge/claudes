@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue";
 
@@ -10,7 +11,7 @@ const DOMAIN = process.env.APP_DOMAIN || "default";
  * persists a record, and emits "ping:done" via the socket server, which the
  * browser receives over its live socket connection.
  */
-export async function POST(req: Request) {
+async function POST__impl(req: Request) {
   let message = "ping";
   try {
     const body = await req.json();
@@ -23,3 +24,6 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true, jobId: job.id, message });
 }
+
+// --- request logging (lib/api-log) ---
+export const POST = withApiLog(POST__impl);

@@ -200,7 +200,7 @@ describe("buildCandidates", () => {
     expect(eu.camera.zoom).toBeGreaterThan(0);
   });
 
-  it("tours a multi-country area's biggest cities, round-robined across its member countries", async () => {
+  it("tours a multi-country area's TOP COUNTRIES — one representative city each", async () => {
     const on = await buildCandidates(
       fakeDb({
         region: {
@@ -217,12 +217,12 @@ describe("buildCandidates", () => {
       cfg({ kinds: { region: true }, regions: ["europe"] }),
     );
     const eu = on.find((c) => c.segment.kind === "region")!.segment;
-    // Germany has the bigger in-region presence (Berlin+Hamburg), so it leads the
-    // round-robin: Berlin → Madrid → Hamburg. ISO upper-cased for the country glow.
+    // Germany has the bigger in-region presence (Berlin+Hamburg), so it leads —
+    // but only its BIGGEST city stands in for it: Berlin → Madrid. Hamburg is
+    // dropped (Germany's already represented). ISO upper-cased for the glow.
     expect(eu.tourStops).toEqual([
       { label: "Berlin", subtitle: "Germany", lng: 13.4, lat: 52.5, iso2: "DE" },
       { label: "Madrid", subtitle: "Spain", lng: -3.7, lat: 40.4, iso2: "ES" },
-      { label: "Hamburg", subtitle: "Germany", lng: 10.0, lat: 53.55, iso2: "DE" },
     ]);
     expect(eu.subtitle).toBe("Area tour · Regional weather");
   });

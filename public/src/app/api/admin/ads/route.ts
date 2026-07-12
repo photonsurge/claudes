@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { normaliseAdMeta } from "@photonsurge/shared/ads/normalise";
@@ -15,7 +16,7 @@ const STATUSES: AdStatus[] = ["active", "inactive"];
  * Lists the admin-managed ad catalog from Mongo (metadata only, no bytes).
  * No limit by default (show all).
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
 
   const statusRaw = url.searchParams.get("status");
@@ -43,7 +44,7 @@ export async function GET(req: Request) {
  * fields). The file is validated (type/size) and stored inline in Mongo; the
  * metadata is validated by `normaliseAdMeta` (title required). Generates the id.
  */
-export async function POST(req: Request) {
+async function POST__impl(req: Request) {
   let form: FormData;
   try {
     form = await req.formData();
@@ -70,3 +71,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: String(err) }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const POST = withApiLog(POST__impl);

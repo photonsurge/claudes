@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { groupAlerts } from "../../../lib/alertGroups";
@@ -14,7 +15,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * Query: ?active=1 (default all), ?source=nws, ?severityMin=2, ?limit=500,
  *        ?bbox=w,s,e,n (geo-intersect, polygon sources only).
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const q = url.searchParams;
 
@@ -71,3 +72,6 @@ export async function GET(req: Request) {
     headers: { ...NO_CACHE, "X-Cache": hit ? "hit" : "miss" },
   });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

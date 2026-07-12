@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
  * `&v=<updatedAt>` (from /api/satimg) so each baked frame gets a unique URL — hence
  * the long cache. 404 until the worker has baked that bird's first frame.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   try {
     const sat = new URL(req.url).searchParams.get("sat") || "himawari9";
     const db = await getAppDb();
@@ -36,3 +37,6 @@ export async function GET(req: Request) {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

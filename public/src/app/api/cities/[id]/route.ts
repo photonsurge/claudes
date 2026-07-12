@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { validateCity } from "../../../../lib/cities";
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 const NO_CACHE = { "Cache-Control": "no-store" };
 
 /** GET /api/cities/[id] — one complete city record, including enrichment. */
-export async function GET(
+async function GET__impl(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -26,7 +27,7 @@ export async function GET(
 }
 
 /** PATCH /api/cities/[id] — update a city (validated). */
-export async function PATCH(
+async function PATCH__impl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -55,7 +56,7 @@ export async function PATCH(
 }
 
 /** DELETE /api/cities/[id]. */
-export async function DELETE(
+async function DELETE__impl(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -67,3 +68,8 @@ export async function DELETE(
   }
   return NextResponse.json({ ok: true, id }, { status: 200, headers: NO_CACHE });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const PATCH = withApiLog(PATCH__impl);
+export const DELETE = withApiLog(DELETE__impl);

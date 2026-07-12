@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import PointHistoryPanel, { formatReading, sparkPoints } from "./PointHistoryPanel";
 import { orderHistoryVariables, bboxForCamera } from "../../lib/history-client";
 import type { HistorySeries } from "../../lib/weather-history";
@@ -113,32 +113,23 @@ afterEach(() => {
 });
 
 describe("PointHistoryPanel (point mode)", () => {
-  it("shows one chart at a time, advancing to the next dataset on a timer", async () => {
-    jest.useFakeTimers();
-    try {
-      stubFetch({
-        point: {
-          temp: seriesOf("temp", [10, 14, 12]),
-          pressure: seriesOf("pressure", [1010, 1008, 1013], "hPa"),
-        },
-      });
-      render(<PointHistoryPanel center={[-0.1, 51.5]} />);
-      await waitFor(() => expect(screen.getByText("POINT HISTORY")).toBeInTheDocument());
-      expect(screen.getByText("TEMPERATURE")).toBeInTheDocument();
-      expect(screen.getByText("12")).toBeInTheDocument(); // latest temp
-      expect(screen.getByText(/avg 12 · min 10 · max 14/)).toBeInTheDocument();
-      expect(screen.queryByText("PRESSURE")).toBeNull();
-      expect(screen.getByText(/1\/2/)).toBeInTheDocument();
-
-      act(() => {
-        jest.advanceTimersByTime(6000);
-      });
-      expect(screen.getByText("PRESSURE")).toBeInTheDocument();
-      expect(screen.queryByText("TEMPERATURE")).toBeNull();
-      expect(screen.getByText(/2\/2/)).toBeInTheDocument();
-    } finally {
-      jest.useRealTimers();
-    }
+  it("tiles every variable at once — no per-metric slideshow", async () => {
+    stubFetch({
+      point: {
+        temp: seriesOf("temp", [10, 14, 12]),
+        pressure: seriesOf("pressure", [1010, 1008, 1013], "hPa"),
+      },
+    });
+    render(<PointHistoryPanel center={[-0.1, 51.5]} />);
+    await waitFor(() => expect(screen.getByText("POINT HISTORY")).toBeInTheDocument());
+    // Both variables are tiled simultaneously — not paged one-per-timer.
+    await waitFor(() => expect(screen.getByText("PRESSURE")).toBeInTheDocument());
+    expect(screen.getByText("TEMPERATURE")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument(); // latest temp
+    expect(screen.getByText(/avg 12 · min 10 · max 14/)).toBeInTheDocument();
+    // No "1/2" slideshow counter; the tag carries the variable count instead.
+    expect(screen.queryByText(/1\/2/)).toBeNull();
+    expect(screen.getByText(/LAST \d+ H · 2/)).toBeInTheDocument();
   });
 
   it("hides entirely when archive and climate both have nothing", async () => {
@@ -169,25 +160,16 @@ describe("PointHistoryPanel (area mode)", () => {
 });
 
 describe("PointHistoryPanel (past year)", () => {
-  it("renders monthly ERA5 temp + humidity charts with year extremes, one at a time", async () => {
-    jest.useFakeTimers();
-    try {
-      stubFetch({ climate: monthlyClimate });
-      render(<PointHistoryPanel center={[-0.1, 51.5]} />);
-      await waitFor(() => expect(screen.getByText("PAST YEAR")).toBeInTheDocument());
-      expect(screen.getByText("TEMP · YEAR")).toBeInTheDocument();
-      expect(screen.getByText(/yr hi 31 · lo -6/)).toBeInTheDocument();
-      // tempMax/tempMin feed captions but never get their own chart.
-      expect(screen.queryByText(/TEMPMAX/i)).toBeNull();
-      expect(screen.queryByText("HUMIDITY · YEAR")).toBeNull();
-
-      act(() => {
-        jest.advanceTimersByTime(6000);
-      });
-      expect(screen.getByText("HUMIDITY · YEAR")).toBeInTheDocument();
-    } finally {
-      jest.useRealTimers();
-    }
+  it("tiles the monthly ERA5 temp + humidity charts at once, with year extremes", async () => {
+    stubFetch({ climate: monthlyClimate });
+    render(<PointHistoryPanel center={[-0.1, 51.5]} />);
+    await waitFor(() => expect(screen.getByText("PAST YEAR")).toBeInTheDocument());
+    expect(screen.getByText("TEMP · YEAR")).toBeInTheDocument();
+    expect(screen.getByText(/yr hi 31 · lo -6/)).toBeInTheDocument();
+    // tempMax/tempMin feed captions but never get their own chart.
+    expect(screen.queryByText(/TEMPMAX/i)).toBeNull();
+    // Humidity is tiled alongside temp, not held back for a timer.
+    expect(screen.getByText("HUMIDITY · YEAR")).toBeInTheDocument();
   });
 });
 

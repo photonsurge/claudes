@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import type { TrackSnapshotKind } from "@photonsurge/shared/db/track-snapshot-model";
@@ -18,7 +19,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * notable craft). A present-but-empty `ids` means "nothing to trail" — the
  * client only asks for the routes it will actually draw, not the whole planet.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const minRaw = Number(url.searchParams.get("minutes"));
   const minutes = Number.isFinite(minRaw) && minRaw > 0 ? Math.min(minRaw, 360) : 30;
@@ -49,3 +50,6 @@ export async function GET(req: Request) {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
  * WeatherLayers RasterLayer. The `.png` path matters — loaders.gl picks the decoder
  * by extension. Callers append `?v=<updatedAt>` so each bake gets a unique URL.
  */
-export async function GET() {
+async function GET__impl() {
   try {
     const db = await getAppDb();
     const frame = await db.geomag.latestPng();
@@ -34,3 +35,6 @@ export async function GET() {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

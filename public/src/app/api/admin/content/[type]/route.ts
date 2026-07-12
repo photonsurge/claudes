@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import type { AppDb } from "@photonsurge/shared/db/index";
@@ -74,7 +75,7 @@ function summarize(type: AdminEntityType, e: Record<string, any>): { name: strin
  * item with its (override-applied) name/subtitle plus an edited flag + image
  * count, so the browser can show what's been curated. Admin-gated by proxy.ts.
  */
-export async function GET(
+async function GET__impl(
   _req: Request,
   { params }: { params: Promise<{ type: string }> },
 ) {
@@ -102,3 +103,6 @@ export async function GET(
     return NextResponse.json({ error: String(err), items: [] }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

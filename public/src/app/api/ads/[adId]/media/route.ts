@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
  * When large-video/GridFS storage lands, this route grows a `storage === "gridfs"`
  * branch that streams from the bucket with range support; the URL shape is unchanged.
  */
-export async function GET(
+async function GET__impl(
   _req: Request,
   { params }: { params: Promise<{ adId: string }> },
 ) {
@@ -53,3 +54,6 @@ export async function GET(
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

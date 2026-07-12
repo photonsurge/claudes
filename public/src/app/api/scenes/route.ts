@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getAppDb } from "@photonsurge/shared/db/index";
@@ -20,7 +21,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * unauthenticated by /watch/:id (to resolve a display name), so `watchToken`
  * is only included for an admin session — never leaked to anonymous callers.
  */
-export async function GET() {
+async function GET__impl() {
   const db = await getAppDb();
   // Ensure the main scene exists so the list is never empty on a fresh db.
   await db.getOrInitBroadcastState();
@@ -38,7 +39,7 @@ export async function GET() {
  * from the name; new scenes seed from `copyFrom` (another scene's state) or the
  * current main scene. 409 if the slug already exists, 400 on bad/empty name.
  */
-export async function POST(req: Request) {
+async function POST__impl(req: Request) {
   let body: { name?: string; copyFrom?: string } = {};
   try {
     body = (await req.json()) ?? {};
@@ -77,3 +78,7 @@ export async function POST(req: Request) {
     { status: 201, headers: NO_CACHE },
   );
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const POST = withApiLog(POST__impl);

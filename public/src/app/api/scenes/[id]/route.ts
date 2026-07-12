@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getAppDb } from "@photonsurge/shared/db/index";
@@ -30,7 +31,7 @@ async function loadScene(db: Awaited<ReturnType<typeof getAppDb>>, id: string) {
  * /watch/:id (OBS, can't log in) authorizes via `token` matching the scene's
  * watchToken; the admin session cookie also works (e.g. previewing from /admin).
  */
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function GET__impl(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = await getAppDb();
   const doc = await loadScene(db, id);
@@ -50,7 +51,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 /** PATCH /api/scenes/:id — merge a control patch onto the scene, persist, return. */
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function PATCH__impl(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   let patch: Partial<ControlState> = {};
   try {
@@ -72,7 +73,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 /** DELETE /api/scenes/:id — remove a named scene (the main scene is protected). */
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function DELETE__impl(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (id === MAIN_SCENE_ID || id === BROADCAST_STATE_ID) {
     return NextResponse.json({ error: "the main scene cannot be deleted" }, { status: 400, headers: NO_CACHE });
@@ -84,3 +85,8 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   }
   return NextResponse.json({ ok: true, id }, { status: 200, headers: NO_CACHE });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const PATCH = withApiLog(PATCH__impl);
+export const DELETE = withApiLog(DELETE__impl);

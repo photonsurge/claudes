@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import type { TrackSnapshotKind } from "@photonsurge/shared/db/track-snapshot-model";
@@ -11,7 +12,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * GET /api/tracks/history?at=<ISO>&kind=aircraft|ship&bbox=w,s,e,n
  * The snapshots of one replay frame (batchAt = `at`).
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const atRaw = url.searchParams.get("at");
   const at = atRaw ? new Date(atRaw) : null;
@@ -34,3 +35,6 @@ export async function GET(req: Request) {
     { status: 200, headers: NO_CACHE },
   );
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

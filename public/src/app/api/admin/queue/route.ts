@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getQueue } from "@photonsurge/shared/bull/bull";
 import { PublicBackLogger } from "@photonsurge/shared/utill/BackLogger";
@@ -105,7 +106,7 @@ function serializeJob(job: any) {
  * counts, whether the queue is paused, the repeatable schedules, and the jobs
  * currently in the requested `state` (newest first, up to `limit`).
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   // `state` may be a single state (the queue dashboard) or a comma-separated
   // list (the jobs-page "active & queued" summary, which wants everything
@@ -152,7 +153,7 @@ export async function GET(req: Request) {
  *  - clean { type }            : purge a whole job-type (completed/failed/…)
  *  - pause | resume | drain    : queue-wide controls
  */
-export async function POST(req: Request) {
+async function POST__impl(req: Request) {
   let body: { action?: string; id?: string; type?: string; event?: string } = {};
   try {
     body = (await req.json()) ?? {};
@@ -228,3 +229,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, action, error: String(err) }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const POST = withApiLog(POST__impl);

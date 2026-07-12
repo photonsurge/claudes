@@ -16,6 +16,7 @@ import { join, extname, basename } from "path";
 import { QUEUE_NAME } from "@photonsurge/shared/utill/bull-utils";
 import { getQueue, getRedisOptions } from "@photonsurge/shared/bull/bull";
 import { getDb, closeDb } from "@photonsurge/shared/utill/mongoose";
+import { getAppDb } from "@photonsurge/shared/db/index";
 import { getSource } from "@photonsurge/shared/sources";
 import { log } from "@photonsurge/shared/utill/logger";
 import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
@@ -26,6 +27,12 @@ import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
 import { getEnabledSources } from "./alerts/registry";
 import { getEnabledCamSources } from "./cams/registry";
 import { summarizeForLog } from "./utils";
+import {
+  samplePointHistory,
+  sampleAreaHistory,
+  sampleForecastPoint,
+  sampleForecastArea,
+} from "./weather/sampleService";
 import packageJson from "../package.json";
 
 const TAG = "worker";
@@ -917,6 +924,115 @@ process.on("uncaughtException", (err) => {
   });
 
   app.get("/version", (_req, res) => res.json({ name: packageJson.name, version: packageJson.version, port: PORT }));
+
+  // ---- Internal frame-sampling API (public → worker) --------------------------
+  // The worker is the sole frame DECODER: public POSTs sampling requests here
+  // instead of sharp-decoding weather PNGs in the user-facing Next process. These
+  // read frame bytes from the shared blob store, decode + sample, and return small
+  // numeric series. Internal-only — reject anything that arrived via a proxy (same
+  // guard as /status), since only the compose `internal` network should reach it.
+  const internalOnly = (req: express.Request, res: express.Response): boolean => {
+    if (req.headers["x-forwarded-for"] || req.headers["x-forwarded-host"]) {
+      res.status(403).json({ error: "Forbidden" });
+      return false;
+    }
+    return true;
+  };
+  const asDate = (v: unknown): Date | undefined => {
+    if (v == null) return undefined;
+    const d = new Date(v as string | number);
+    return isNaN(d.getTime()) ? undefined : d;
+  };
+
+  app.post("/internal/weather/history/point", async (req, res) => {
+    if (!internalOnly(req, res)) return;
+    try {
+      const b = req.body ?? {};
+      if (!b.variable || !Number.isFinite(b.lat) || !Number.isFinite(b.lng)) {
+        return res.status(400).json({ error: "variable, lat, lng required" });
+      }
+      const db = await getAppDb();
+      const series = await samplePointHistory(db, {
+        variable: String(b.variable),
+        lat: Number(b.lat),
+        lng: Number(b.lng),
+        from: asDate(b.from),
+        to: asDate(b.to),
+        model: b.model ? String(b.model) : undefined,
+      });
+      res.json(series);
+    } catch (err) {
+      log(TAG, "sample point history failed", summarizeForLog(err));
+      res.status(500).json({ error: "sample failed" });
+    }
+  });
+
+  app.post("/internal/weather/history/area", async (req, res) => {
+    if (!internalOnly(req, res)) return;
+    try {
+      const b = req.body ?? {};
+      const bbox = b.bbox;
+      if (!b.variable || !Array.isArray(bbox) || bbox.length !== 4 || !bbox.every(Number.isFinite)) {
+        return res.status(400).json({ error: "variable, bbox[4] required" });
+      }
+      const db = await getAppDb();
+      const series = await sampleAreaHistory(db, {
+        variable: String(b.variable),
+        bbox: bbox as [number, number, number, number],
+        from: asDate(b.from),
+        to: asDate(b.to),
+        model: b.model ? String(b.model) : undefined,
+      });
+      res.json(series);
+    } catch (err) {
+      log(TAG, "sample area history failed", summarizeForLog(err));
+      res.status(500).json({ error: "sample failed" });
+    }
+  });
+
+  app.post("/internal/weather/forecast/point", async (req, res) => {
+    if (!internalOnly(req, res)) return;
+    try {
+      const b = req.body ?? {};
+      if (!Number.isFinite(b.lat) || !Number.isFinite(b.lng) || !Array.isArray(b.variables)) {
+        return res.status(400).json({ error: "lat, lng, variables[] required" });
+      }
+      const db = await getAppDb();
+      const series = await sampleForecastPoint(db, {
+        lat: Number(b.lat),
+        lng: Number(b.lng),
+        variables: b.variables.map(String),
+        model: b.model ? String(b.model) : undefined,
+        maxHours: Number.isFinite(b.maxHours) ? Number(b.maxHours) : undefined,
+      });
+      res.json(series);
+    } catch (err) {
+      log(TAG, "sample forecast point failed", summarizeForLog(err));
+      res.status(500).json({ error: "sample failed" });
+    }
+  });
+
+  app.post("/internal/weather/forecast/area", async (req, res) => {
+    if (!internalOnly(req, res)) return;
+    try {
+      const b = req.body ?? {};
+      const bbox = b.bbox;
+      if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every(Number.isFinite) || !Array.isArray(b.variables)) {
+        return res.status(400).json({ error: "bbox[4], variables[] required" });
+      }
+      const db = await getAppDb();
+      const series = await sampleForecastArea(db, {
+        bbox: bbox as [number, number, number, number],
+        variables: b.variables.map(String),
+        model: b.model ? String(b.model) : undefined,
+        maxHours: Number.isFinite(b.maxHours) ? Number(b.maxHours) : undefined,
+      });
+      res.json(series);
+    } catch (err) {
+      log(TAG, "sample forecast area failed", summarizeForLog(err));
+      res.status(500).json({ error: "sample failed" });
+    }
+  });
 
   app.get("/healthz", async (_req, res) => {
     try {

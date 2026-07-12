@@ -15,6 +15,7 @@
  *     Redis outage degrades to composing from Mongo, never an error.
  */
 import { getQueue } from "@photonsurge/shared/bull/bull";
+import { logDataFetch } from "../api-log";
 
 async function client() {
   // BullMQ Queue.client resolves to the shared ioredis instance.
@@ -68,7 +69,11 @@ export async function withCache<T>(
 ): Promise<{ value: T; hit: boolean }> {
   const cached = await get<T>(key);
   if (cached !== null) return { value: cached, hit: true };
+  // MISS → real work runs. Time the compute (the "time to do the request") and
+  // log it; hits stay silent (sub-ms Redis reads, nothing happened upstream).
+  const t0 = Date.now();
   const value = await compute();
+  logDataFetch(key, Date.now() - t0, false);
   await set(key, value, ttlSec);
   return { value, hit: false };
 }

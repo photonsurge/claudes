@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
  * GET /api/weather/history/variables — which variables the frame archive
  * holds, plus the total frame count. Discovery endpoint for history UIs.
  */
-export async function GET() {
+async function GET__impl() {
   const db = await getAppDb();
   const [variables, count] = await Promise.all([
     db.weatherFrames.variables(),
@@ -19,3 +20,6 @@ export async function GET() {
     { headers: { "Cache-Control": "public, max-age=60" } },
   );
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

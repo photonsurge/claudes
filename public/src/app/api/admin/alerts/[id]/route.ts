@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -15,7 +16,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * `:id` is normally the doc uuid, but the composite "source:identifier" dedup
  * key also resolves — run-timeline links only know the storm segment's key.
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function GET__impl(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = await getAppDb();
   let alert = await db.alerts.getById(id);
@@ -37,3 +38,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   ]);
   return NextResponse.json({ alert, chain, aired }, { status: 200, headers: NO_CACHE });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
  * so each baked frame gets a unique URL — hence the long cache. 404 until the
  * worker has baked the first frame.
  */
-export async function GET() {
+async function GET__impl() {
   try {
     const db = await getAppDb();
     const frame = await db.aurora.latestPng();
@@ -36,3 +37,6 @@ export async function GET() {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

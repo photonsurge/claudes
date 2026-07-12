@@ -278,7 +278,7 @@ export default function JobsPage() {
         </div>
 
         <div style={{ marginTop: 28 }}>
-          <LogTail limit={100} title="Recent activity" />
+          <LogTail limit={100} title="Recent activity" excludeType="request" />
         </div>
     </AdminPageShell>
   );

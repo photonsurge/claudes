@@ -16,16 +16,18 @@
  * scaled broadcast stage; pointer-inert (video output — no hover layer).
  * Self-hiding while the archive and climate source are both empty.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { HISTORY_WINDOW_HOURS, type ClimateBucketedDataset } from "../../lib/history-client";
 import { usePointHistorySeries, useAreaHistorySeries, useClimateFor } from "../../lib/focus/focus-client";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import BroadcastCard from "./BroadcastCard";
 
-/** How many charts a section shows at once before advancing — one at a time,
- *  each drawn large, so a section reads as a slideshow rather than a stack. */
+/** Compact side-note (EventOverlay) paging: how many charts show at once before
+ *  advancing — one at a time there, since the side-note is too narrow to tile.
+ *  The full bottom-left card instead tiles EVERY variable at once (see the
+ *  `tiled` path in the component) rather than slideshowing one-per-page. */
 const CHARTS_PER_SLIDE = 1;
-/** How long each slide holds before advancing to the next. */
+/** How long each slide holds before advancing to the next (compact paging). */
 const SLIDE_HOLD_MS = 6000;
 
 /**
@@ -100,6 +102,9 @@ const PANEL_PAD_X = 16;
  *  the same viewBox `sparkPoints` lays its x-coordinates out on. */
 export const CHART_W = PANEL_W - 2 * PANEL_PAD_X;
 const CHART_H = 108;
+/** Chart height for one tile in the tiled small-multiples grid — short, since a
+ *  dozen-plus variables share the fixed card at once instead of one-per-slide. */
+const TILE_CHART_H = 40;
 const PAD_Y = 6;
 
 /** A plottable moment: time + the number to draw. */
@@ -162,6 +167,7 @@ export function MiniChart({
   avg,
   caption,
   height = CHART_H,
+  dense = false,
 }: {
   label: string;
   color: string;
@@ -172,6 +178,9 @@ export function MiniChart({
   caption: string;
   /** Chart height in px — smaller for a compact embed (e.g. inside EventOverlay). */
   height?: number;
+  /** Tile styling for the small-multiples grid: smaller type, ellipsised label +
+   *  caption so every tile is a uniform, single-line-safe cell. */
+  dense?: boolean;
 }) {
   const spark = sparkPoints(points, height);
   if (!spark) return null;
@@ -179,17 +188,18 @@ export function MiniChart({
   const latestVal = [...points].reverse().find((p) => p.value != null)?.value ?? null;
   const first = spark.pts[0];
   const area = `${toPath(spark.pts)} L${last[0]},${height} L${first[0]},${height} Z`;
+  const ellipsis: CSSProperties = { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: 1.2, color: "#aebdd2" }}>
-          <span style={{ color, marginRight: 6 }}>▮</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: dense ? 2 : 4, width: "100%", minWidth: 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: dense ? 8 : 12 }}>
+        <span style={{ fontSize: dense ? 10 : 13, fontWeight: 800, letterSpacing: dense ? 0.8 : 1.2, color: "#aebdd2", ...ellipsis }}>
+          <span style={{ color, marginRight: dense ? 4 : 6 }}>▮</span>
           {label}
         </span>
-        <span style={{ fontSize: 20, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: dense ? 15 : 20, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap", flexShrink: 0 }}>
           {latestVal != null ? formatReading(latestVal) : "—"}
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#9db0ca", marginLeft: 4 }}>{units}</span>
+          <span style={{ fontSize: dense ? 9 : 12, fontWeight: 700, color: "#9db0ca", marginLeft: dense ? 3 : 4 }}>{units}</span>
         </span>
       </div>
       <svg
@@ -215,7 +225,7 @@ export function MiniChart({
         <path d={toPath(spark.pts)} fill="none" stroke={color} strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
         {last ? <circle cx={last[0]} cy={last[1]} r={4} fill={color} stroke="#040a14" strokeWidth={1.5} /> : null}
       </svg>
-      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, color: "#91a1b9" }}>{caption}</div>
+      <div style={{ fontSize: dense ? 9 : 10.5, fontWeight: 700, letterSpacing: 0.5, color: "#91a1b9", ...ellipsis }}>{caption}</div>
     </div>
   );
 }
@@ -337,8 +347,12 @@ export default function PointHistoryPanel({
    *  isTargetedEvent) instead of the full bottom-left card. */
   compact?: boolean;
 }) {
+  // Full bottom-left card: tile every variable at once as a small-multiples
+  // grid. Only the compact EventOverlay side-note keeps the one-at-a-time
+  // slideshow — it's too narrow to tile.
+  const tiled = !compact;
   const panelW = compact ? COMPACT_PANEL_W : PANEL_W;
-  const chartH = compact ? COMPACT_CHART_H : CHART_H;
+  const chartH = compact ? COMPACT_CHART_H : TILE_CHART_H;
   const panelPadX = compact ? 12 : PANEL_PAD_X;
   const point = usePointHistorySeries(center, bbox);
   const area = useAreaHistorySeries(bbox);
@@ -367,10 +381,20 @@ export default function PointHistoryPanel({
 
   const climateRows = buildClimateRows(climate.datasets);
 
-  const liveSlide = usePagedSlides(liveCharts, CHARTS_PER_SLIDE);
-  const climateSlide = usePagedSlides(climateRows, CHARTS_PER_SLIDE);
+  // When tiled, one page holds every chart (perPage = item count) so the grid
+  // shows them all at once with no timer and no page counter; compact mode keeps
+  // CHARTS_PER_SLIDE paging. Hooks stay unconditional (rules of hooks).
+  const liveSlide = usePagedSlides(liveCharts, tiled ? Math.max(1, liveCharts.length) : CHARTS_PER_SLIDE);
+  const climateSlide = usePagedSlides(climateRows, tiled ? Math.max(1, climateRows.length) : CHARTS_PER_SLIDE);
 
   if (!liveCharts.length && !climateRows.length) return null;
+
+  // Small-multiples layout: a 3-col grid of compact tiles when tiled (so a full
+  // ~13-variable area fits the fixed deck card at once, no scroll), else the
+  // single big chart stacked (compact side-note).
+  const chartsWrap: CSSProperties = tiled
+    ? { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px 10px" }
+    : { display: "flex", flexDirection: "column", gap: compact ? 8 : 10 };
 
   return (
     <BroadcastCard
@@ -382,23 +406,26 @@ export default function PointHistoryPanel({
         <>
           <SectionTitle
             title={bbox ? "AREA HISTORY" : "POINT HISTORY"}
-            tag={`LAST ${HISTORY_WINDOW_HOURS} H`}
+            tag={`LAST ${HISTORY_WINDOW_HOURS} H${tiled ? ` · ${liveCharts.length}` : ""}`}
             accent={theme.accent}
             page={liveSlide.page}
             pageCount={liveSlide.pageCount}
           />
-          {liveSlide.visible.map((c) => (
-            <MiniChart
-              key={c.variable}
-              label={VARIABLE_LABEL[c.variable] ?? c.variable.toUpperCase()}
-              color={VARIABLE_COLOR[c.variable] ?? FALLBACK_COLOR}
-              units={c.units}
-              points={c.points}
-              avg={c.avg}
-              caption={c.caption}
-              height={chartH}
-            />
-          ))}
+          <div style={chartsWrap}>
+            {liveSlide.visible.map((c) => (
+              <MiniChart
+                key={c.variable}
+                label={VARIABLE_LABEL[c.variable] ?? c.variable.toUpperCase()}
+                color={VARIABLE_COLOR[c.variable] ?? FALLBACK_COLOR}
+                units={c.units}
+                points={c.points}
+                avg={c.avg}
+                caption={c.caption}
+                height={chartH}
+                dense={tiled}
+              />
+            ))}
+          </div>
         </>
       ) : null}
 
@@ -411,18 +438,21 @@ export default function PointHistoryPanel({
             page={climateSlide.page}
             pageCount={climateSlide.pageCount}
           />
-          {climateSlide.visible.map((row) => (
-            <MiniChart
-              key={row.variable}
-              label={row.label}
-              color={row.color}
-              units={row.units}
-              points={row.points}
-              avg={row.avg}
-              caption={row.caption}
-              height={chartH}
-            />
-          ))}
+          <div style={chartsWrap}>
+            {climateSlide.visible.map((row) => (
+              <MiniChart
+                key={row.variable}
+                label={row.label}
+                color={row.color}
+                units={row.units}
+                points={row.points}
+                avg={row.avg}
+                caption={row.caption}
+                height={chartH}
+                dense={tiled}
+              />
+            ))}
+          </div>
         </>
       ) : null}
       </div>

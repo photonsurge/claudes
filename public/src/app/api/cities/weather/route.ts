@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -18,7 +19,7 @@ const MAX_LIMIT = 30;
  *     forecasts to the distance-ranked "nearest cities" of a quake / volcano.
  * Empty (not an error) without a valid selector — the slide just hides itself.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const sp = new URL(req.url).searchParams;
 
   const idsParam = sp.get("ids");
@@ -67,3 +68,6 @@ function toCityCondition(r: {
     updatedAt: r.updatedAt,
   };
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

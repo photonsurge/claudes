@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { DEFAULT_SATELLITE_GROUP, isValidGroup } from "../../../../lib/tracks/celestrak";
@@ -28,7 +29,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * `format=tle`: the raw parsed TLEs, so the map overlay can propagate them
  * client-side every tick for smooth motion.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const group = url.searchParams.get("group") || DEFAULT_SATELLITE_GROUP;
   const g = isValidGroup(group) ? group : DEFAULT_SATELLITE_GROUP;
@@ -59,3 +60,6 @@ export async function GET(req: Request) {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

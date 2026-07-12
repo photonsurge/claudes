@@ -1,6 +1,6 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
-import { getAppDb } from "@photonsurge/shared/db/index";
-import { buildAreaHistorySeries, parseTimeParam } from "../../../../../lib/weather-history";
+import { workerAreaHistory } from "../../../../../lib/worker-sample";
 import { withCache } from "../../../../../lib/focus/focus-cache";
 
 export const runtime = "nodejs";
@@ -18,7 +18,7 @@ const HIST_TTL_SEC = Number(process.env.WEATHER_PANEL_CACHE_TTL_SEC || 300);
  * anywhere in the shot this week"). A west > east window wraps the
  * antimeridian. Time params behave like /point.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const west = Number(url.searchParams.get("west"));
   const south = Number(url.searchParams.get("south"));
@@ -36,22 +36,21 @@ export async function GET(req: Request) {
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
   const key = `feed:v1:whist:area:${west},${south},${east},${north}:${variable}:${model ?? "-"}:${from ?? "-"}:${to ?? "-"}`;
-  const { value, hit } = await withCache(key, HIST_TTL_SEC, async () => {
-    const db = await getAppDb();
-    // listMeta (no bytes) + a by-id loader: the builder streams only the picked
-    // frames' bytes a few at a time instead of buffering the whole series.
-    const meta = await db.weatherFrames.listMeta({
+  // Public no longer decodes — the worker samples the archive and returns numbers.
+  const { value, hit } = await withCache(key, HIST_TTL_SEC, () =>
+    workerAreaHistory({
       variable,
+      bbox: [west, south, east, north],
+      from: from ?? undefined,
+      to: to ?? undefined,
       model: model ?? undefined,
-      from: parseTimeParam(from),
-      to: parseTimeParam(to),
-    });
-    return buildAreaHistorySeries(variable, meta, [west, south, east, north], (id) =>
-      db.weatherFrames.getByID(id),
-    );
-  });
+    }),
+  );
 
   return NextResponse.json(value, {
     headers: { "Cache-Control": "public, max-age=60", "X-Cache": hit ? "hit" : "miss" },
   });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

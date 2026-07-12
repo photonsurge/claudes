@@ -13,9 +13,10 @@ const fleetEvents = new Set(WEATHER_SOURCE_JOBS.map((j) => j.event));
 
 describe("weather-map trigger buttons vs the ingest fleet", () => {
   it("every weather button (besides check/clearGfs) is a real scheduled ingest event", () => {
-    // `check` polls for a newer run; `clearGfs` wipes stored runs — neither is a
-    // per-source ingest, so both are exempt from the fleet cross-check.
-    const NON_INGEST = new Set(["check", "clearGfs"]);
+    // `check` polls for a newer run; `clearGfs` wipes stored runs; `reingest`
+    // clears-then-checks to force a rebake — none is a per-source ingest, so all
+    // are exempt from the fleet cross-check.
+    const NON_INGEST = new Set(["check", "clearGfs", "reingest"]);
     const orphans = weatherButtons
       .filter((j) => !NON_INGEST.has(j.event))
       .filter((j) => !fleetEvents.has(j.event));

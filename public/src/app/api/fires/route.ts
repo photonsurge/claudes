@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { withCache, FEED_TTL_SEC } from "../../../lib/focus/focus-cache";
@@ -13,7 +14,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * public app NEVER calls FIRMS directly. Returns EVERYTHING by default (no cap).
  * Configure the source/cadence on the worker (FIRMS_SOURCE, FIRE_SNAPSHOT_MS).
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
 
   let bbox: [number, number, number, number] | undefined;
@@ -51,3 +52,6 @@ export async function GET(req: Request) {
     );
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getFocusBundle } from "../../../lib/focus/getFocusBundle";
 import { buildFocusKey } from "../../../lib/focus/focusKey";
@@ -37,7 +38,7 @@ async function composeAndCache(key: string, focusReq: FocusRequest): Promise<Foc
  * cuts are served without re-hitting Mongo. Mongo stays the source of truth;
  * Redis is a disposable, TTL-evicted copy (see focus-cache — fail-open).
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   // Note: parse via the raw string then Number() — `Number(null)` is 0 (finite),
   // so a missing param would otherwise slip past the guard as a valid 0.
@@ -86,3 +87,6 @@ export async function GET(req: Request) {
     headers: { ...headers, "X-Focus-Cache": coalesced ? "wait" : "miss" },
   });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

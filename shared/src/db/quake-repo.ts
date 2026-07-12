@@ -60,7 +60,12 @@ export function makeQuakeRepo(model: Model<iQuakeModel>) {
           $geoWithin: { $geometry: { type: "Polygon", coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] } },
         };
       }
-      const docs = await model.find(q).sort({ time: -1 }).limit(opts.limit ?? 2000).lean().exec();
+      let query = model.find(q).sort({ time: -1 }).limit(opts.limit ?? 2000);
+      // Force the geo index on bbox reads so the planner skips its multi-plan
+      // trial run — otherwise it may walk `quake_time_mag_ix` filtering by geo
+      // and burn 100ms+ of planningTimeMicros (and replan across box sizes).
+      if (opts.bbox) query = query.hint("quake_geo_ix");
+      const docs = await query.lean().exec();
       return docs.map(strip);
     },
 

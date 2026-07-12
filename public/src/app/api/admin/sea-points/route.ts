@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { normaliseSeaPoint } from "@photonsurge/shared/sea-points/normalise";
@@ -13,7 +14,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * candidates from (worker/src/director/candidates.ts) — admin sees disabled
  * points too, unlike the worker's own `.filter((p) => p.enabled)` read.
  */
-export async function GET() {
+async function GET__impl() {
   try {
     const db = await getAppDb();
     const seaPoints = await db.seaPoints.list();
@@ -32,7 +33,7 @@ export async function GET() {
  * unusable record (missing name or an out-of-range coordinate) is rejected
  * with 400. Upserts on `pointId`, so re-posting the same id edits it.
  */
-export async function POST(req: Request) {
+async function POST__impl(req: Request) {
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;
@@ -56,3 +57,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: String(err) }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const POST = withApiLog(POST__impl);

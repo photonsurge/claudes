@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -14,7 +15,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * replaces, which only saw cuts while the page was open. (The glance links out
  * to /admin/runs — the full list of sessions — for the complete history.)
  */
-export async function GET(req: Request, { params }: { params: Promise<{ scene: string }> }) {
+async function GET__impl(req: Request, { params }: { params: Promise<{ scene: string }> }) {
   const { scene } = await params;
   const url = new URL(req.url);
   const limitRaw = Number(url.searchParams.get("limit"));
@@ -24,3 +25,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ scene: s
   const entries = await db.airLog.recentEntries({ sceneId: scene, limit });
   return NextResponse.json({ entries }, { status: 200, headers: NO_CACHE });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

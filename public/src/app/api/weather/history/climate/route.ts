@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { bucketDaily, bucketValue } from "@photonsurge/shared/climate/buckets";
@@ -18,7 +19,7 @@ const NEAREST_KM = Number(process.env.CLIMATE_NEAREST_KM || 300);
  * buckets for the director-mode year charts; 404 when nothing is cached near
  * the point yet (the panel section hides until the worker's next snapshot).
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
@@ -60,3 +61,6 @@ export async function GET(req: Request) {
     { headers: { "Cache-Control": "public, max-age=3600" } },
   );
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

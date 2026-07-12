@@ -1,6 +1,6 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
-import { getAppDb } from "@photonsurge/shared/db/index";
-import { buildHistorySeries, parseTimeParam } from "../../../../../lib/weather-history";
+import { workerPointHistory } from "../../../../../lib/worker-sample";
 import { withCache } from "../../../../../lib/focus/focus-cache";
 
 export const runtime = "nodejs";
@@ -19,7 +19,7 @@ const HIST_TTL_SEC = Number(process.env.WEATHER_PANEL_CACHE_TTL_SEC || 300);
  * accept ISO strings or epoch ms and default to the whole archive. Scalars
  * return `value` per point; uv variables (wind) return `u`/`v`/`speed`.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
@@ -35,23 +35,24 @@ export async function GET(req: Request) {
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
   // Redis result-cache keyed by the full param set that determines the payload;
-  // fail-open (a Redis outage just recomputes). Repeat director/panel polls skip
-  // the sharp decode entirely.
+  // fail-open (a Redis outage just re-asks the worker). Public no longer decodes —
+  // the worker samples the archive (sole frame decoder) and returns the numbers.
   const key = `feed:v1:whist:pt:${lat}:${lng}:${variable}:${model ?? "-"}:${from ?? "-"}:${to ?? "-"}`;
-  const { value, hit } = await withCache(key, HIST_TTL_SEC, async () => {
-    const db = await getAppDb();
-    // listMeta (no bytes) + a by-id loader: the builder streams only the picked
-    // frames' bytes a few at a time instead of buffering the whole series.
-    const meta = await db.weatherFrames.listMeta({
+  const { value, hit } = await withCache(key, HIST_TTL_SEC, () =>
+    workerPointHistory({
       variable,
+      lat,
+      lng,
+      from: from ?? undefined,
+      to: to ?? undefined,
       model: model ?? undefined,
-      from: parseTimeParam(from),
-      to: parseTimeParam(to),
-    });
-    return buildHistorySeries(variable, meta, lat, lng, (id) => db.weatherFrames.getByID(id));
-  });
+    }),
+  );
 
   return NextResponse.json(value, {
     headers: { "Cache-Control": "public, max-age=60", "X-Cache": hit ? "hit" : "miss" },
   });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

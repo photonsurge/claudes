@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { normaliseCam } from "@photonsurge/shared/cams/normalise";
@@ -14,7 +15,7 @@ const STATUSES: CamStatus[] = ["active", "inactive", "unknown"];
  * Reads the worker/admin-managed webcam catalog from Mongo. The public app
  * never calls the upstream provider directly. No limit by default (show all).
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
 
   const statusRaw = url.searchParams.get("status");
@@ -53,7 +54,7 @@ export async function GET(req: Request) {
  * (missing id/title or bad coordinates) is rejected with 400. Upserts on
  * `camId`, so re-posting the same id edits it.
  */
-export async function POST(req: Request) {
+async function POST__impl(req: Request) {
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;
@@ -77,3 +78,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: String(err) }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const POST = withApiLog(POST__impl);

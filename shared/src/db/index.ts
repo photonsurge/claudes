@@ -187,6 +187,21 @@ export function createDb(conn: Connection) {
     },
 
     /**
+     * Latest published run for ONE model, or null. The GFS `check` job needs
+     * this (not `latestPublishedRun`): the multi-supplier fleet (ifs/rtofs/
+     * mrms…) publishes newer runs continuously, so the GLOBAL latest is almost
+     * always some other model — comparing GFS availability against it made the
+     * GFS ingest (and thus the forecast archive it feeds) never re-run.
+     */
+    async latestPublishedRunForModel(model: string) {
+      const res = await weatherRuns.getAll(
+        { published: true, model },
+        { sort: { run: -1 }, limit: 1 },
+      );
+      return res.success && res.data && res.data.length ? res.data[0] : null;
+    },
+
+    /**
      * Latest published run PER model — the multi-supplier portfolio. Walks all
      * published runs newest-first and keeps the first (newest) seen for each
      * model, so the manifest route can compose one manifest per variable across

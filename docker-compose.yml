@@ -106,6 +106,10 @@ services:
       - ${DATA_DIR:-./data}:/app/data:ro
       # Shared blob store (read-write) — the worker bakes textures/frames/etc here.
       # Host-bind so it's out of the Mongo dump and trivially rsync-able for backup.
+      # NOTE: both containers run as uid/gid 1001, but a bind-mount inherits the
+      # HOST dir's ownership (Docker auto-creates it root:root). Chown it ONCE on
+      # the host or the app gets EACCES on mkdir:
+      #   mkdir -p ./blobs && sudo chown -R 1001:1001 ./blobs
       - ${BLOB_DIR:-./blobs}:/app/blobs
     depends_on:
       mongodb:
@@ -156,7 +160,8 @@ services:
       # request time, so a bind-mount over the data subdir is served live).
       - ${DATA_DIR:-./data}:/app/public/public/data:ro
       # Shared blob store (read-write) — same host dir as the worker. Reads serve
-      # textures/media; writes persist ad + admin-image uploads.
+      # textures/media; writes persist ad + admin-image uploads. Same one-time host
+      # chown applies (uid/gid 1001): `sudo chown -R 1001:1001 ./blobs`.
       - ${BLOB_DIR:-./blobs}:/app/blobs
     depends_on:
       mongodb:

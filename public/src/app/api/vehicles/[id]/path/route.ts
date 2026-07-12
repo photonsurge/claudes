@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -12,7 +13,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * live feed's 6h window. Empty for craft that aren't flagged (only notable craft
  * accrue a trail). Returns a GeoJSON-ready line + the raw points.
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function GET__impl(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
     const db = await getAppDb();
@@ -30,3 +31,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: String(err) }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

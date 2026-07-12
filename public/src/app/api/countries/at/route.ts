@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { pointInPolygon, type SimpleGeometry } from "@photonsurge/shared/geo/pointInPolygon";
@@ -35,7 +36,7 @@ function stripGeometry(c: iCountryModel): Omit<iCountryModel, "geometry"> {
  * are bbox-prefiltered first so a point only tests the handful of countries
  * whose box spans it, and ties break to the smallest-area boundary.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const lng = Number(url.searchParams.get("lng"));
   const lat = Number(url.searchParams.get("lat"));
@@ -63,3 +64,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: String(error), country: null }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

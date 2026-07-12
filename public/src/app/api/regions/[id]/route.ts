@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { regionActivity } from "@photonsurge/shared/region-activity";
@@ -12,7 +13,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * latest bbox-averaged area-weather snapshot and the recent snapshot history
  * for the detail page's trend charts. Mirrors /api/countries/[id].
  */
-export async function GET(
+async function GET__impl(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -37,3 +38,6 @@ export async function GET(
     return NextResponse.json({ error: String(error) }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

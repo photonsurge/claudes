@@ -1,6 +1,11 @@
+import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
-import { getAppDb } from "@photonsurge/shared/db/index";
-import { buildAreaForecastDays } from "../../../../../lib/weather-forecast";
+import {
+  buildAreaForecastDays,
+  DEFAULT_FORECAST_DAYS,
+  forecastHorizonHours,
+} from "../../../../../lib/weather-forecast";
+import { workerForecastArea } from "../../../../../lib/worker-sample";
 import { withCache } from "../../../../../lib/focus/focus-cache";
 
 export const runtime = "nodejs";
@@ -20,7 +25,7 @@ const FCST_TTL_SEC = Number(process.env.WEATHER_PANEL_CACHE_TTL_SEC || 300);
  * area's daily max ("worst case in the shot"). A west > east window wraps
  * the antimeridian.
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const west = Number(url.searchParams.get("west"));
   const south = Number(url.searchParams.get("south"));
@@ -37,18 +42,22 @@ export async function GET(req: Request) {
   const model = url.searchParams.get("model") ?? undefined;
 
   const key = `feed:v1:wfcst:area:${west},${south},${east},${north}:${model ?? "-"}:${variables.join(",")}`;
+  const bbox: [number, number, number, number] = [west, south, east, north];
+  // Public no longer decodes — the worker samples the forecast store's area stats.
   const { value, hit } = await withCache(key, FCST_TTL_SEC, async () => {
-    const db = await getAppDb();
-    const framesByVariable: Record<string, any[]> = {};
-    await Promise.all(
-      variables.map(async (variable) => {
-        framesByVariable[variable] = await db.weatherForecastFrames.getSeries({ variable, model });
-      }),
-    );
-    return buildAreaForecastDays(framesByVariable, [west, south, east, north]);
+    const series = await workerForecastArea({
+      bbox,
+      variables,
+      model,
+      maxHours: forecastHorizonHours(DEFAULT_FORECAST_DAYS),
+    });
+    return buildAreaForecastDays(series, bbox);
   });
 
   return NextResponse.json(value, {
     headers: { "Cache-Control": "public, max-age=60", "X-Cache": hit ? "hit" : "miss" },
   });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

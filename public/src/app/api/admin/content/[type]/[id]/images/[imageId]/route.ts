@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 
@@ -12,7 +13,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * (clearing the flag on its siblings); the other keys patch metadata. Returns
  * the updated image.
  */
-export async function PATCH(
+async function PATCH__impl(
   req: Request,
   { params }: { params: Promise<{ type: string; id: string; imageId: string }> },
 ) {
@@ -48,7 +49,7 @@ export async function PATCH(
 }
 
 /** DELETE /api/admin/content/[type]/[id]/images/[imageId] — remove one image. */
-export async function DELETE(
+async function DELETE__impl(
   _req: Request,
   { params }: { params: Promise<{ type: string; id: string; imageId: string }> },
 ) {
@@ -62,3 +63,7 @@ export async function DELETE(
     return NextResponse.json({ error: String(err) }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const PATCH = withApiLog(PATCH__impl);
+export const DELETE = withApiLog(DELETE__impl);

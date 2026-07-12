@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { normalizeGeocode, type NominatimHit } from "./normalize";
 
@@ -5,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** GET /api/geocode?q= — proxy to the configured Nominatim-compatible service. */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q") ?? "").trim();
   if (!q) {
@@ -38,3 +39,6 @@ export async function GET(req: Request) {
   }
   return NextResponse.json(normalized, { status: 200 });
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

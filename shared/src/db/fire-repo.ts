@@ -69,7 +69,12 @@ export function makeFireRepo(model: Model<iFireModel>) {
         };
       }
       // limit(0) = no cap: show every fire by default.
-      const docs = await model.find(q).sort({ acqTime: -1 }).limit(opts.limit ?? 0).lean().exec();
+      let query = model.find(q).sort({ acqTime: -1 }).limit(opts.limit ?? 0);
+      // Force the geo index on bbox reads so the planner skips its multi-plan
+      // trial run (else it may walk `fire_time_frp_ix` geo-filtering and burn
+      // 100ms+ of planningTimeMicros, replanning across differing box sizes).
+      if (opts.bbox) query = query.hint("fire_geo_ix");
+      const docs = await query.lean().exec();
       return docs.map(strip);
     },
 

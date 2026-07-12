@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { withCache, FEED_TTL_SEC } from "../../../../lib/focus/focus-cache";
@@ -20,7 +21,7 @@ const DEFAULT_LIMIT = 4;
  * then hides — "not relevant"). The public app never calls IOC directly; the
  * worker caches only the gauges near what's on air (see worker jobs/tides.ts).
  */
-export async function GET(req: Request) {
+async function GET__impl(req: Request) {
   const url = new URL(req.url);
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
@@ -61,3 +62,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: String(err), stations: [] }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);

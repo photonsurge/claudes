@@ -1,3 +1,4 @@
+import { withApiLog } from "../../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { isAdminEntityType } from "@photonsurge/shared/admin-content/types";
@@ -15,7 +16,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * image (primary first). Powers the admin detail page + the on-air preview.
  * Admin-gated by proxy.ts.
  */
-export async function GET(
+async function GET__impl(
   _req: Request,
   { params }: { params: Promise<{ type: string; id: string }> },
 ) {
@@ -41,7 +42,7 @@ export async function GET(
  * kept, empties clear the override (falling back to the base value). Returns the
  * freshly re-resolved content.
  */
-export async function PATCH(
+async function PATCH__impl(
   req: Request,
   { params }: { params: Promise<{ type: string; id: string }> },
 ) {
@@ -79,3 +80,7 @@ export async function PATCH(
     return NextResponse.json({ error: String(err) }, { status: 502, headers: NO_CACHE });
   }
 }
+
+// --- request logging (lib/api-log) ---
+export const GET = withApiLog(GET__impl);
+export const PATCH = withApiLog(PATCH__impl);
