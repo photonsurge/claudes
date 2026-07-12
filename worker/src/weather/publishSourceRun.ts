@@ -18,6 +18,7 @@ import type {
 import { emitWorkerEvent } from "../socket";
 import { runRetention } from "./retention";
 import { archiveRun } from "./archive";
+import { bustManifestCache } from "./manifestCache";
 
 const TAG = "job:weather:source";
 
@@ -98,6 +99,8 @@ export async function publishSourceRun(args: PublishSourceRunArgs): Promise<{ ru
     });
 
     emitWorkerEvent({ type: "weather:run", targetType: "weather", data: { run: runDate.toISOString(), model } });
+    // Drop the manifest cache so the map picks up this run now, not in ≤10 min.
+    await bustManifestCache();
     await runRetention(db as any, retainRuns);
 
     // Long-term archive: copy the analysis-hour frames before this run ages

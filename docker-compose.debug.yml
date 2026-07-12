@@ -1,0 +1,37 @@
+# Heap-leak capture override for the `public` service.
+#
+# Runs `public` exactly as production, but:
+#   - caps the V8 old-space at a fixed ceiling, and
+#   - auto-writes ONE heap snapshot the instant the heap nears that ceiling
+#     (captures the leaked object graph at its peak), instead of a bare OOM.
+#   - disables the restart loop so we get a single clean capture.
+#
+# USAGE (run on whatever box reproduces the OOM — ideally NOT mid-broadcast):
+#   mkdir -p heapdumps && sudo chown 1001:1001 heapdumps   # container runs as uid 1001
+#   docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d public
+#   docker compose logs -f public
+#     # ...drive/leave it until you see: "Writing heap snapshot to ..."  then it exits.
+#     # (~26 min at 2048; lower LEAKCAP below to capture sooner / smaller.)
+#   ls -lh heapdumps/            # -> Heap.<ts>.<pid>.<seq>.heapsnapshot
+#
+# Then EITHER open the .heapsnapshot in Chrome DevTools -> Memory -> Load
+# (Summary view, sort by Retained Size) on a machine with plenty of RAM (your
+# laptop, NOT the 4GB box), OR run the analyzer for pasteable text:
+#   node --max-old-space-size=12288 scripts/analyze-heapsnapshot.mjs heapdumps/Heap.*.heapsnapshot
+#
+# The dominant constructor / biggest objects at the top ARE the leak — paste me that.
+#
+# Restore normal running with:  docker compose up -d public
+services:
+  public:
+    restart: "no"
+    working_dir: /app/heapdumps
+    command: ["node", "/app/public/server.js"]
+    environment:
+      # LEAKCAP: the ceiling to reproduce. 1024 dumps a ~1.5-2GB snapshot that
+      # opens in DevTools on a laptop and captures sooner (~13 min) — and for a
+      # REAL retained leak the dominant constructor is identical at any ceiling.
+      # Bump to 2048 only if 1024 looks ambiguous (dumped mid-legit-compose).
+      NODE_OPTIONS: "--max-old-space-size=1024 --heapsnapshot-near-heap-limit=1"
+    volumes:
+      - ./heapdumps:/app/heapdumps

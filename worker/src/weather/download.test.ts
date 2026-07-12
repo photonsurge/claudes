@@ -108,7 +108,44 @@ describe("downloadIdxSubset", () => {
     (global as any).fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 });
     await expect(
       downloadIdxSubset({ gribUrl, idxUrl, vars: ["TMP"], levels: ["2_m_above_ground"] }, "x.grib2"),
-    ).rejects.toThrow(/idx fetch failed 404/);
+    ).rejects.toThrow(/idx not posted \(404\)/);
+  });
+
+  it("negative-caches a 404 idx so a not-yet-posted tail hour fails fast without re-fetching", async () => {
+    // A 404 is deterministic: the same idx is requested once per GFS variable at
+    // that hour, so the first miss is remembered and later variables never re-hit S3.
+    const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 404 });
+    (global as any).fetch = fetchMock;
+
+    await expect(
+      downloadIdxSubset({ gribUrl, idxUrl, vars: ["TMP"], levels: ["2_m_above_ground"] }, "a.grib2"),
+    ).rejects.toThrow(/idx not posted \(404\)/);
+    await expect(
+      downloadIdxSubset({ gribUrl, idxUrl, vars: ["UGRD", "VGRD"], levels: ["10_m_above_ground"] }, "b.grib2"),
+    ).rejects.toThrow(/idx not posted \(404\)/);
+
+    // Only the FIRST call hit the network; the second short-circuited on the memo.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT negative-cache a transient 5xx (retriable — re-fetches next time)", async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => idxText })
+      .mockResolvedValue({ status: 206, arrayBuffer: async () => asAb(Buffer.from("R")) });
+    (global as any).fetch = fetchMock;
+
+    await expect(
+      downloadIdxSubset({ gribUrl, idxUrl, vars: ["TMP"], levels: ["2_m_above_ground"] }, "a.grib2"),
+    ).rejects.toThrow(/idx fetch failed 503/);
+    // A later attempt re-fetches (not cached) and succeeds.
+    const path = await downloadIdxSubset(
+      { gribUrl, idxUrl, vars: ["TMP"], levels: ["2_m_above_ground"] },
+      "b.grib2",
+    );
+    await rm(path, { force: true });
+    expect(fetchMock.mock.calls.filter(([u]) => u === idxUrl)).toHaveLength(2);
   });
 
   it("throws when no message matches, without fetching any range", async () => {

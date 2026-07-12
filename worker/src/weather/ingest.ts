@@ -23,6 +23,8 @@ import { cfg, bakeSteps, runDateFor } from "./config";
 import { bakeVariableStep } from "./bakeVariableStep";
 import { blogInfo, blogWarn, blogErr } from "../blog";
 import { dbg } from "./debug";
+import { bustManifestCache } from "./manifestCache";
+import { recentPendingRun } from "./inflight";
 
 const TAG = "job:weather";
 
@@ -38,21 +40,44 @@ export async function runIngest(job: Job) {
   const data = job.data?.data ?? {};
   const date: string = data.date;
   const cycle: string = data.cycle;
+  // `force` (the "Remake weather" button) rebakes even an already-published
+  // cycle: it bakes a FRESH run doc while the old one stays live, and the atomic
+  // publish + retention swap it in — so the map never blanks. A normal check-
+  // driven ingest keeps its idempotency skip (no needless double-bake).
+  const force: boolean = !!data.force;
   if (!date || !cycle) throw new Error("ingest: missing date/cycle");
 
   const db = await getAppDb();
   const runDate = runDateFor(date, cycle);
 
-  // Idempotency: skip if a complete published run already exists for model+run.
-  const existing = await db.weatherRuns.getByQuery({
-    model,
-    run: runDate,
-    status: "complete",
-    published: true,
-  });
-  if (existing.success && existing.data) {
-    log(TAG, "ingest: already published, skipping", { run: runDate.toISOString() });
-    return { skipped: true, run: runDate.toISOString() };
+  // Concurrency guard (applies even to force): never bake the same cycle twice at
+  // once. If another ingest for this exact model+cycle is already in flight (a
+  // recent pending run doc), skip — this is the hard backstop against duplicate
+  // `weather.ingest` jobs racing (the check-side guard is best-effort; two jobs
+  // can still slip through the enqueue window). A stale pending doc (crashed
+  // bake) is ignored by `recentPendingRun`, so a dead run can't wedge the queue.
+  const inFlight = await recentPendingRun(db, model, runDate);
+  if (inFlight) {
+    log(TAG, "ingest: another bake in flight for this cycle, skipping", {
+      run: runDate.toISOString(),
+      inFlightRunId: inFlight.id,
+    });
+    return { skipped: true, reason: "in-flight", run: runDate.toISOString() };
+  }
+
+  // Idempotency: skip if a complete published run already exists for model+run —
+  // unless forced, when we deliberately rebake it.
+  if (!force) {
+    const existing = await db.weatherRuns.getByQuery({
+      model,
+      run: runDate,
+      status: "complete",
+      published: true,
+    });
+    if (existing.success && existing.data) {
+      log(TAG, "ingest: already published, skipping", { run: runDate.toISOString() });
+      return { skipped: true, run: runDate.toISOString() };
+    }
   }
 
   // The 3-hourly detailed track (0..72h) unioned with the 12-hourly daily
@@ -222,6 +247,8 @@ export async function runIngest(job: Job) {
       targetType: "weather",
       data: { run: runDate.toISOString() },
     });
+    // Drop the manifest cache so the map picks up this run now, not in ≤10 min.
+    await bustManifestCache();
 
     // Lifecycle summary in /admin/logs: green when whole, warn when any variable
     // was dropped or came in with gaps (still published, just degraded).

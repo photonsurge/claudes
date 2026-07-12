@@ -42,7 +42,27 @@ export interface IdxSubsetArgs {
 const IDX_CACHE = new Map<string, IdxEntry[]>();
 const IDX_CACHE_MAX = 96;
 
-/** Fetch + parse an `.idx`, memoised by URL. */
+// Negative cache of `.idx` URLs that returned 404 — i.e. a forecast hour NOAA
+// has not posted yet (the far-out daily-outlook tail, f144…f384, of a fresh
+// cycle). A 404 is deterministic, but the SAME idx is requested once per GFS
+// variable (~14×) at that hour, so without this every variable re-hits S3 for
+// the same not-there file — hundreds of pointless round-trips that make the bake
+// crawl and look stuck. Remembering the miss lets every later variable fail-fast
+// instantly. URLs are cycle-specific (date/cycle/fhr baked in), so a later
+// cycle's tail never collides with a stale entry. Bounded like the positive
+// cache. Only 404 is cached — 5xx/network errors are transient and retriable.
+const IDX_MISSING = new Set<string>();
+const IDX_MISSING_MAX = 512;
+
+function rememberMissingIdx(idxUrl: string): void {
+  IDX_MISSING.add(idxUrl);
+  if (IDX_MISSING.size > IDX_MISSING_MAX) {
+    const oldest = IDX_MISSING.values().next().value as string;
+    IDX_MISSING.delete(oldest);
+  }
+}
+
+/** Fetch + parse an `.idx`, memoised by URL (positive) and 404-negative-cached. */
 async function loadIdx(idxUrl: string): Promise<IdxEntry[]> {
   const cached = IDX_CACHE.get(idxUrl);
   if (cached) {
@@ -51,7 +71,17 @@ async function loadIdx(idxUrl: string): Promise<IdxEntry[]> {
     dbg(TAG, `idx cache hit ${idxUrl}`, { entries: cached.length });
     return cached;
   }
+  // Fail-fast on an already-known-missing tail hour: no network round-trip.
+  if (IDX_MISSING.has(idxUrl)) {
+    dbg(TAG, `idx not posted (cached 404) ${idxUrl}`, {});
+    throw new Error(`idx not posted (404) for ${idxUrl}`);
+  }
   const res = await fetch(idxUrl);
+  if (res.status === 404) {
+    rememberMissingIdx(idxUrl);
+    dbg(TAG, `idx not posted (404) ${idxUrl}`, { cachedMisses: IDX_MISSING.size });
+    throw new Error(`idx not posted (404) for ${idxUrl}`);
+  }
   if (!res.ok) throw new Error(`idx fetch failed ${res.status} for ${idxUrl}`);
   const entries = parseGfsIdx(await res.text());
   IDX_CACHE.set(idxUrl, entries);
@@ -63,9 +93,10 @@ async function loadIdx(idxUrl: string): Promise<IdxEntry[]> {
   return entries;
 }
 
-/** Empty the `.idx` memo (tests; not needed in production — content is immutable). */
+/** Empty both `.idx` memos (tests; not needed in production — content is immutable). */
 export function clearIdxCache(): void {
   IDX_CACHE.clear();
+  IDX_MISSING.clear();
 }
 
 /**

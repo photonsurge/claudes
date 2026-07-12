@@ -1,6 +1,7 @@
 import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { MANIFEST_CACHE_KEY } from "@photonsurge/shared/manifest";
 import { composeManifest } from "../../../../lib/manifest";
 import { withCache, FEED_TTL_SEC } from "../../../../lib/focus/focus-cache";
 
@@ -22,7 +23,7 @@ const NO_CACHE = { "Cache-Control": "no-store, no-cache, must-revalidate" };
  * lags a publish. Fail-open — a Redis outage degrades to a live compose.
  */
 async function GET__impl() {
-  const { value, hit } = await withCache("feed:v1:manifest", FEED_TTL_SEC, async () => {
+  const { value, hit } = await withCache(MANIFEST_CACHE_KEY, FEED_TTL_SEC, async () => {
     const db = await getAppDb();
     const runs = await db.latestPublishedRunsByModel();
     return composeManifest(runs) ?? { run: null };

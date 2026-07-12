@@ -59,3 +59,12 @@ export interface WeatherManifest {
  * WeatherLayers) can select the PNG decoder by extension; the route strips it.
  */
 export const textureUrl = (id: string): string => `/api/weather/tex/${id}.png`;
+
+/**
+ * Redis key the `/api/weather/manifest` route caches the composed manifest under
+ * (a static key — the composition is identical for every client until a run
+ * publishes). Exported so the WORKER can DELETE it on publish, dropping the up-to
+ * FEED_CACHE_TTL_SEC lag between a bake finishing and the map showing it. Shared
+ * constant so the route and the buster can never drift.
+ */
+export const MANIFEST_CACHE_KEY = "feed:v1:manifest";
