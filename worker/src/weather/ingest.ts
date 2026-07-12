@@ -79,6 +79,10 @@ export async function runIngest(job: Job) {
 
   try {
     const variables: Record<string, iWeatherVariableEntry> = {};
+    // Per-variable failure reasons, so a total wipe-out surfaces WHY (the plain
+    // `log` below only reaches stdout, not the admin blog) — the thrown error
+    // then carries the real cause (e.g. "download failed 403", DNS error).
+    const skipped: Array<{ variable: string; err: string }> = [];
 
     for (const variable of Object.values(VARIABLE_REGISTRY)) {
       // GFS ingest only handles variables with a GFS binding. Ocean-only vars
@@ -129,12 +133,20 @@ export async function runIngest(job: Job) {
         if (Object.keys(entry.files).length > 0) variables[variable.id] = entry;
       } catch (varErr) {
         log(TAG, "ingest: variable skipped", { variable: variable.id, err: String(varErr) });
+        skipped.push({ variable: variable.id, err: String(varErr) });
         await db.weatherTextures.deleteMany({ runId, variable: variable.id }).catch(() => {});
       }
     }
 
     if (Object.keys(variables).length === 0) {
-      throw new Error("ingest: no variables baked (all fields failed)");
+      // Surface a representative sample of the underlying failures — almost
+      // always the same root cause across every variable (source unreachable,
+      // NOMADS rate-limit/403, wgrib2 missing), so the first few say it all.
+      const sample = skipped.slice(0, 3).map((s) => `${s.variable}: ${s.err}`).join(" | ");
+      throw new Error(
+        `ingest: no variables baked (all ${skipped.length} fields failed)` +
+          (sample ? ` — ${sample}` : ""),
+      );
     }
 
     // Atomic publish: published flips LAST, only after every texture exists.

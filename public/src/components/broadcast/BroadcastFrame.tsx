@@ -12,7 +12,7 @@
  * never intercepts the capture surface, and derives entirely from data the watch
  * surface already has (alerts, quakes, tracks, the active variable's legend).
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import type { Segment, SegmentKind } from "@photonsurge/shared/director";
@@ -179,6 +179,15 @@ export default function BroadcastFrame({
   // doesn't sit frozen on the old card (or flash the new one) mid-flight, then
   // fade it back once the new shot lands.
   const cutting = useSegmentTransition(onAirSegment?.id ?? null, state.cutTransitionMs);
+  // Opt-in diagnostic (append `?dbg` to the /watch URL): shows what actually
+  // flips between tour stops — the on-air segment id and the `cutting` (deck-fade)
+  // flag. If `cutting` blinks true as the camera flies between countries, the
+  // fade is a real cut; if it stays false, the fade is coming from elsewhere.
+  // Set client-side (post-mount) so it never causes an SSR hydration mismatch.
+  const [dbg, setDbg] = useState(false);
+  useEffect(() => {
+    setDbg(new URLSearchParams(window.location.search).has("dbg"));
+  }, []);
   const worldWatch = useWorldWatch(cities, assetsReady);
   // The alert crawl lines carry a per-alert nearest-city flag scan (the crawl's
   // one expensive step), so memoise them on JUST [alerts, cities] — otherwise the
@@ -436,6 +445,29 @@ export default function BroadcastFrame({
         zIndex: 5,
       }}
     >
+      {/* Opt-in diagnostic readout (see `dbg` above) — outside the scaled stage so
+          it stays legible; pointer-inert, high z so it sits above the chrome. */}
+      {dbg ? (
+        <div
+          style={{
+            position: "absolute",
+            top: 6,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 50,
+            background: "rgba(0,0,0,0.82)",
+            color: cutting ? "#ff5252" : "#39d353",
+            font: "12px ui-monospace, monospace",
+            padding: "4px 10px",
+            borderRadius: 6,
+            whiteSpace: "nowrap",
+          }}
+        >
+          id={onAirSegment?.id ?? "—"} · cutting={String(cutting)} · cam=
+          {state.camera.center.map((n) => n.toFixed(1)).join(",")}
+        </div>
+      ) : null}
+
       {/* 1080p design stage, uniformly scaled + centred to the output resolution. */}
       <div
         style={{

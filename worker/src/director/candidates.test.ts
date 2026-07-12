@@ -200,7 +200,7 @@ describe("buildCandidates", () => {
     expect(eu.camera.zoom).toBeGreaterThan(0);
   });
 
-  it("tours a multi-country area's TOP COUNTRIES — one representative city each", async () => {
+  it("tours a multi-country area's TOP COUNTRIES — captioned by country, never cities", async () => {
     const on = await buildCandidates(
       fakeDb({
         region: {
@@ -217,18 +217,19 @@ describe("buildCandidates", () => {
       cfg({ kinds: { region: true }, regions: ["europe"] }),
     );
     const eu = on.find((c) => c.segment.kind === "region")!.segment;
-    // Germany has the bigger in-region presence (Berlin+Hamburg), so it leads —
-    // but only its BIGGEST city stands in for it: Berlin → Madrid. Hamburg is
-    // dropped (Germany's already represented). ISO upper-cased for the glow.
+    // One stop per COUNTRY, labelled by the country (not the city). Germany leads
+    // (Berlin+Hamburg presence) and is framed on Berlin's coords; Spain on Madrid's.
+    // Hamburg never appears — Germany is a single stop. ISO upper-cased for the glow.
     expect(eu.tourStops).toEqual([
-      { label: "Berlin", subtitle: "Germany", lng: 13.4, lat: 52.5, iso2: "DE" },
-      { label: "Madrid", subtitle: "Spain", lng: -3.7, lat: 40.4, iso2: "ES" },
+      { label: "Germany", lng: 13.4, lat: 52.5, iso2: "DE" },
+      { label: "Spain", lng: -3.7, lat: 40.4, iso2: "ES" },
     ]);
     expect(eu.subtitle).toBe("Area tour · Regional weather");
   });
 
-  it("keeps a single-country area (UK) inside its own borders — no cross-bbox bleed", async () => {
-    // Regression: the UK bbox overlaps France, but the tour must stay in the UK.
+  it("airs a single-country area (UK) as one framed spotlight — no city tour", async () => {
+    // The UK is one country, so there are no "top countries" to fly round — it
+    // frames the whole area rather than zooming into a lone city.
     const on = await buildCandidates(
       fakeDb({
         region: {
@@ -243,9 +244,8 @@ describe("buildCandidates", () => {
       cfg({ kinds: { region: true }, regions: ["uk"] }),
     );
     const uk = on.find((c) => c.segment.kind === "region")!.segment;
-    // All three UK cities toured, in population order — and nothing foreign.
-    expect(uk.tourStops?.map((s) => s.label)).toEqual(["London", "Birmingham", "Glasgow"]);
-    expect(uk.tourStops?.every((s) => s.iso2 === "GB")).toBe(true);
+    expect(uk.tourStops).toBeUndefined();
+    expect(uk.subtitle).toBe("Region spotlight · Regional weather");
   });
 
   it("falls back to a single spotlight when the area has no cached cities", async () => {

@@ -238,42 +238,35 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
   return out;
 }
 
-/** How many camera stops an area tour visits at most — the top member COUNTRIES
- *  of a multi-country area (one representative city each), or the biggest cities
- *  of a single-country area. The region hold is sized to cover every stop (unlike
- *  a round-up, which caps toured stops at SUMMARY_MAX_TOUR_STOPS). */
+/** How many COUNTRIES an area tour visits at most. The region hold is sized to
+ *  cover every stop (unlike a round-up, which caps toured stops at
+ *  SUMMARY_MAX_TOUR_STOPS). */
 const REGION_TOUR_STOPS = 10;
 
 /**
- * The camera stops an area tour visits, derived from the CURATED `topCities`
- * dossier on the Region doc (regions.enrichPlaces). That dossier is scoped to the
- * region's MEMBER COUNTRIES (region-membership) — plus a bbox cut for sub-national
- * bands — which is the whole point: a UK area tours UK cities and never bleeds
- * across its bounding box into Paris/Dublin the way a raw lat/lng query does.
+ * The camera stops an area tour visits: the area's TOP COUNTRIES — never cities.
+ * Derived from the CURATED `topCities` dossier on the Region doc
+ * (regions.enrichPlaces), which is scoped to the region's MEMBER COUNTRIES
+ * (region-membership) so it never bleeds across the bounding box into neighbours
+ * the way a raw lat/lng query would. We group those cities by country, rank the
+ * countries by their in-region presence (summed city population), and emit ONE
+ * stop per country — captioned by the COUNTRY, framed on the country's main
+ * population centre (its biggest in-region city's coords, since the dossier
+ * carries no country centroid), and tagged with the ISO so the globe glows that
+ * exact country. Capped at REGION_TOUR_STOPS countries, biggest-presence first.
  *
- * A multi-country area tours its TOP COUNTRIES: one representative (biggest) city
- * per country, biggest-presence country first, capped at REGION_TOUR_STOPS — so
- * the tour reads as "the major countries of this area", one stop each, never
- * several cities of a single nation. A single-country area (the UK, a US band)
- * degenerates to just one country, so it falls back to touring that country's own
- * biggest cities in population order. Each stop carries its ISO so the globe glows
- * the exact country. Returns [] when the region has no cached cities (not yet
- * enriched) — the caller falls back to a single framed spotlight rather than an
- * out-of-region guess.
+ * A single-country area (the UK, a US band) has no "top countries" to fly, so it
+ * returns [] and the caller airs it as one framed whole-area spotlight rather than
+ * zooming into a lone city. Also [] when the region has no cached cities (not yet
+ * enriched).
  */
 async function regionTourStops(db: AppDb, regionId: string): Promise<SegmentSummaryStop[]> {
   const region = await db.regions.get(regionId);
   const cities = region?.topCities ?? [];
   if (!cities.length) return [];
-  const toStop = (c: iRegionCity): SegmentSummaryStop => ({
-    label: c.name,
-    subtitle: c.country || undefined,
-    lng: c.lng,
-    lat: c.lat,
-    iso2: c.cc ? c.cc.toUpperCase() : undefined,
-  });
   // Group the (already population-ranked) cities by country, preserving that
-  // order within each country so list[0] is the country's biggest city.
+  // order within each country so list[0] is the country's biggest city — the
+  // point we frame as that country's stop.
   const byCountry = new Map<string, iRegionCity[]>();
   for (const c of cities) {
     const key = (c.cc || c.country || "").toLowerCase();
@@ -284,13 +277,17 @@ async function regionTourStops(db: AppDb, regionId: string): Promise<SegmentSumm
   }
   const sumPop = (list: iRegionCity[]) => list.reduce((s, c) => s + (c.population ?? 0), 0);
   const countries = [...byCountry.values()].sort((a, b) => sumPop(b) - sumPop(a));
-  // Multi-country area → one representative (biggest) city per country, top
-  // REGION_TOUR_STOPS countries. Single-country area → tour that country's own
-  // biggest cities, since "top countries" would collapse to a single stop.
-  if (countries.length > 1) {
-    return countries.slice(0, REGION_TOUR_STOPS).map((list) => toStop(list[0]));
-  }
-  return cities.slice(0, REGION_TOUR_STOPS).map(toStop);
+  // Single-country area → no country tour to fly; air it as one framed spotlight.
+  if (countries.length <= 1) return [];
+  return countries.slice(0, REGION_TOUR_STOPS).map((list): SegmentSummaryStop => {
+    const c = list[0];
+    return {
+      label: c.country || (c.cc ? c.cc.toUpperCase() : c.name),
+      lng: c.lng,
+      lat: c.lat,
+      iso2: c.cc ? c.cc.toUpperCase() : undefined,
+    };
+  });
 }
 
 /**
