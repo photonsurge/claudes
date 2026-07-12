@@ -173,10 +173,28 @@ export default function WeatherRunsPage() {
 }
 
 function StatusBadge({ status, published }: { status: string; published: boolean }) {
+  // A "pending" run that is already published is BAKING LIVE — its maps are going
+  // on air field-by-field (progressive publish) while the rest still bake.
   const color =
-    status === "complete" ? (published ? "#34d399" : "#fbbf24") : status === "failed" ? "#f87171" : "#8b95a7";
+    status === "complete"
+      ? published
+        ? "#34d399"
+        : "#fbbf24"
+      : status === "failed"
+        ? "#f87171"
+        : published
+          ? "#38bdf8"
+          : "#8b95a7";
   const label =
-    status === "complete" ? (published ? "published" : "complete · unpublished") : status;
+    status === "complete"
+      ? published
+        ? "published"
+        : "complete · unpublished"
+      : status === "pending"
+        ? published
+          ? "baking · live"
+          : "baking…"
+        : status;
   return (
     <span
       style={{

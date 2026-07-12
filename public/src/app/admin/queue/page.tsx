@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import QueueJob, { type SerializedJob, type JobAction } from "../../../components/admin/QueueJob";
+import QueueEventLog from "../../../components/admin/QueueEventLog";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 
 const STATES = ["active", "waiting", "prioritized", "delayed", "failed", "completed", "paused"] as const;
@@ -156,6 +157,9 @@ export default function QueuePage() {
             Queue unreachable (worker / Redis down?) — {data.error}
           </div>
         )}
+
+        {/* Live event console — worker QueueEvents streamed over the socket. */}
+        <QueueEventLog />
 
         {/* State tabs */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18 }}>

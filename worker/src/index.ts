@@ -22,6 +22,9 @@ import { log } from "@photonsurge/shared/utill/logger";
 import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
 import { initSocket, closeSocket } from "./socket";
+import { startQueueEventBridge } from "./queueEventBridge";
+import { installJobConsoleTap, runInJobLogContext } from "./jobLog";
+import { beginJob, endJob, startCancelSubscriber } from "./jobCancel";
 import { startDirector, stopDirector } from "./director/loop";
 import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
 import { getEnabledSources } from "./alerts/registry";
@@ -87,6 +90,25 @@ process.on("uncaughtException", (err) => {
   const myQueue = getQueue();
   await initSocket();
 
+  // Relay BullMQ lifecycle events up to the socket server so /admin/queue can
+  // show a live console of jobs as they happen (see queueEventBridge.ts). These
+  // fan out to every connected browser, so allow silencing with an env flag.
+  const stopQueueEventBridge =
+    process.env.QUEUE_EVENT_STREAM_ENABLED !== "false" ? startQueueEventBridge() : () => {};
+
+  // Stream each job's own console output to /admin/queue (queue:log), scoped to
+  // the running job — so you can watch what a long-running job is doing. Patches
+  // global console.*, so it has its own opt-out.
+  const stopJobConsoleTap =
+    process.env.QUEUE_JOB_LOG_STREAM_ENABLED !== "false" ? installJobConsoleTap() : () => {};
+
+  // Listen for operator "cancel job" requests (published by /admin/queue) and
+  // cooperatively abort the matching active job (see jobCancel.ts).
+  const stopCancelSubscriber = await startCancelSubscriber().catch((err) => {
+    log(TAG, "cancel subscriber failed to start", summarizeForLog(err));
+    return () => {};
+  });
+
   // Auto-discover job handlers: handlers[type][event] -> fn(job)
   const handlers: Record<string, Record<string, any>> = {};
   const jobsDir = join(__dirname, "jobs");
@@ -134,9 +156,14 @@ process.on("uncaughtException", (err) => {
       if (!handler) throw new Error(`No handler for type: ${type}`);
       const fn = handler[event];
       if (!fn) throw new Error(`No handler for event: ${type}.${event}`);
+      const jobId = String(job.id ?? "");
       const startedAt = Date.now();
+      // Register the job so an operator cancel can cooperatively abort it.
+      beginJob(jobId, job);
       try {
-        const result = await fn(job);
+        // Run inside the job-log context so the handler's console output streams
+        // to /admin/queue tagged with this job (see jobLog.ts).
+        const result = await runInJobLogContext({ jobId, label: `${type}.${event}` }, () => fn(job));
         const ms = Date.now() - startedAt;
         log(TAG, `job:done  [${job.id}] ${type}.${event} (${ms}ms)`);
         const detail = result && typeof result === "object" ? { ...result, ms } : { result, ms };
@@ -147,6 +174,8 @@ process.on("uncaughtException", (err) => {
         log(TAG, `job:error [${job.id}] ${type}.${event} (${ms}ms)`, summarizeForLog(ex));
         WorkerBackLogger(TAG, "error", `job:${type}`, `${type}.${event} failed after ${ms}ms`, summarizeForLog(ex), type, String(job.id ?? ""));
         throw ex;
+      } finally {
+        endJob(jobId);
       }
     },
     // BullMQ requires maxRetriesPerRequest: null on the worker's blocking connection.
@@ -1131,6 +1160,9 @@ process.on("uncaughtException", (err) => {
       // shared handles (socket, Redis, Mongo pool) so nothing is left dangling
       // for process.exit to reap.
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      stopQueueEventBridge();
+      stopJobConsoleTap();
+      stopCancelSubscriber();
       closeSocket();
       await bullWorker.close();
       await myQueue.close();

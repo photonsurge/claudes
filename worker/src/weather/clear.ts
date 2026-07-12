@@ -46,6 +46,13 @@ export async function clearModelRuns(db: ClearDb, model: string): Promise<ClearR
   const all = await db.weatherRuns.getAll({ model }, { sort: { run: -1 } });
   const runs = all.data ?? [];
 
+  // Loud: this is a destructive wipe of a whole model's runs (Remake/Clear-GFS
+  // button, or a reset script). If GFS maps vanish, this line in the log is the
+  // culprit — it names exactly what was deleted and how many.
+  if (runs.length) {
+    log(TAG, `clear: DELETING ${runs.length} ${model} run(s)`, { model, runIds: runs.map((r) => r.id) });
+  }
+
   let deletedTextureCount = 0;
   const clearedRunIds: string[] = [];
   for (const r of runs) {

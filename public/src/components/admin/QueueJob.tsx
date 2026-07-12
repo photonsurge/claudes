@@ -24,7 +24,11 @@ export interface SerializedJob {
   repeatJobKey: string | null;
 }
 
-export type JobAction = "retry" | "remove" | "promote";
+export type JobAction = "retry" | "remove" | "promote" | "cancel";
+
+// States where a job hasn't finished — "Cancel" (stop it) is the right verb.
+// Terminal records (failed/completed) get "Remove" (delete the record) instead.
+const CANCELLABLE = new Set(["active", "waiting", "prioritized", "delayed", "paused"]);
 
 function relTime(ms: number | null, now: number): string {
   if (!ms) return "—";
@@ -171,9 +175,21 @@ export default function QueueJob({
                 Promote
               </button>
             )}
-            <button type="button" disabled={busy} onClick={() => onAction("remove", job.id)} style={btn("#3a1620")}>
-              Remove
-            </button>
+            {CANCELLABLE.has(state) ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onAction("cancel", job.id)}
+                style={btn("#7c2d12")}
+                title={state === "active" ? "Signal the worker to abort this running job (cooperative)" : "Remove this job before it runs"}
+              >
+                Cancel
+              </button>
+            ) : (
+              <button type="button" disabled={busy} onClick={() => onAction("remove", job.id)} style={btn("#3a1620")}>
+                Remove
+              </button>
+            )}
           </div>
         </div>
       )}

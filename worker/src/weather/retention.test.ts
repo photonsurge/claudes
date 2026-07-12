@@ -72,6 +72,16 @@ describe("runsToPrune", () => {
     const pruned = runsToPrune(runs, 2).map((r) => r.id).sort();
     expect(pruned).toEqual(["stale"]);
   });
+
+  it("does NOT prune unpublished runs when the group has NO published run (protects the in-flight first bake)", () => {
+    // The GFS-appears-then-vanishes bug: first bake after a clear has no published
+    // run, so cutoff was Infinity and the pending run being baked got pruned.
+    const runs = [
+      mk("baking", "2026-06-28T00:00:00Z", false),
+      mk("alsoUnpub", "2026-06-28T06:00:00Z", false),
+    ];
+    expect(runsToPrune(runs, 3)).toEqual([]);
+  });
 });
 
 describe("runRetention", () => {
@@ -95,5 +105,51 @@ describe("runRetention", () => {
     expect(res.deletedTextureCount).toBe(5);
     expect(deleteMany).toHaveBeenCalledWith({ runId: "c" });
     expect(deleteByID).toHaveBeenCalledWith("c");
+  });
+
+  const mkDb = (runs: any[]) => {
+    const deleteByID = jest.fn().mockResolvedValue({ success: true });
+    const deleteMany = jest.fn().mockResolvedValue({ success: true, data: { count: 0 } });
+    const db = {
+      weatherRuns: { getAll: jest.fn().mockResolvedValue({ success: true, data: runs }), deleteByID },
+      weatherTextures: { deleteMany },
+    };
+    return { db, deleteByID };
+  };
+
+  it("never prunes a recently-created pending run mid-bake, even below the cutoff", async () => {
+    const nowIso = new Date().toISOString();
+    const runs = [
+      { id: "pub1", model: "gfs", run: "2026-07-12T18:00:00Z", published: true, status: "complete" },
+      { id: "pub2", model: "gfs", run: "2026-07-12T12:00:00Z", published: true, status: "complete" },
+      // an in-flight bake of an older cycle: below the cutoff, but created just now
+      { id: "baking", model: "gfs", run: "2026-07-11T00:00:00Z", published: false, status: "pending", created: nowIso },
+    ];
+    const { db, deleteByID } = mkDb(runs);
+    const res = await runRetention(db as any, 2);
+    expect(res.prunedRunIds).not.toContain("baking");
+    expect(deleteByID).not.toHaveBeenCalledWith("baking");
+  });
+
+  it("still prunes a STALE pending run (crashed bake older than the in-flight window)", async () => {
+    const oldIso = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1h ago
+    const runs = [
+      { id: "pub1", model: "gfs", run: "2026-07-12T18:00:00Z", published: true, status: "complete" },
+      { id: "pub2", model: "gfs", run: "2026-07-12T12:00:00Z", published: true, status: "complete" },
+      { id: "crashed", model: "gfs", run: "2026-07-11T00:00:00Z", published: false, status: "pending", created: oldIso },
+    ];
+    const { db, deleteByID } = mkDb(runs);
+    const res = await runRetention(db as any, 2);
+    expect(res.prunedRunIds).toContain("crashed");
+    expect(deleteByID).toHaveBeenCalledWith("crashed");
+  });
+
+  it("does NOT prune the sole in-flight run when no published run exists yet (first bake)", async () => {
+    const nowIso = new Date().toISOString();
+    const runs = [{ id: "firstBake", model: "gfs", run: "2026-07-12T18:00:00Z", published: false, status: "pending", created: nowIso }];
+    const { db, deleteByID } = mkDb(runs);
+    const res = await runRetention(db as any, 3);
+    expect(res.prunedRunIds).toEqual([]);
+    expect(deleteByID).not.toHaveBeenCalled();
   });
 });

@@ -149,6 +149,8 @@ async function GET__impl(req: Request) {
 /**
  * POST /api/admin/queue { action, id?, type? } — mutate the queue.
  *  - retry | remove | promote : act on one job by id
+ *  - cancel                    : stop a job — remove it if not yet started, or
+ *                                signal a cooperative abort if it's active
  *  - retryAll                  : re-queue every failed job
  *  - clean { type }            : purge a whole job-type (completed/failed/…)
  *  - pause | resume | drain    : queue-wide controls
@@ -198,6 +200,26 @@ async function POST__impl(req: Request) {
         );
         await Promise.all(matches.map((j: any) => j.remove()));
         detail = { removed: matches.length };
+        break;
+      }
+      case "cancel": {
+        // Cancel = stop a job that shouldn't run/finish. A not-yet-started job
+        // (waiting/delayed/prioritized/paused) is removed outright. An ACTIVE job
+        // can't be force-killed — BullMQ has no preemption — so we publish a
+        // cancel to the worker, which cooperatively aborts it + discards it (no
+        // retry). That only interrupts handlers that honor the abort signal.
+        if (!id) return NextResponse.json({ error: "missing id" }, { status: 400, headers: NO_CACHE });
+        const job = await q.getJob(id);
+        if (!job) return NextResponse.json({ error: "job not found" }, { status: 404, headers: NO_CACHE });
+        const jobState = await job.getState();
+        if (jobState === "active") {
+          const client = await q.client;
+          await client.publish(`${q.name}:cancel`, id);
+          detail = { state: jobState, cancel: "signalled" };
+        } else {
+          await job.remove();
+          detail = { state: jobState, cancel: "removed" };
+        }
         break;
       }
       case "retry":

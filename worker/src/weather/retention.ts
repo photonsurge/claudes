@@ -1,7 +1,12 @@
 // weather/retention.ts
 // Pure selection logic for run retention, plus the IO-bound prune executor.
 
+import { log } from "@photonsurge/shared/utill/logger";
 import type { iWeatherRunModel } from "@photonsurge/shared/db/weather-run-model";
+
+import { INGEST_STALE_MS } from "./inflight";
+
+const TAG = "job:weather";
 
 export interface PrunableRun {
   id: string;
@@ -32,8 +37,14 @@ export function runsToPrune<T extends PrunableRun>(runs: T[], keep: number): T[]
   return runs.filter((r) => {
     if (keptIds.has(r.id)) return false;
     if (r.published) return true; // published but not in the kept set
-    // non-published: prune only if older than the cutoff (stale leftovers)
-    return time(r) < cutoff;
+    // Non-published: prune only if there IS a published run to anchor the cutoff
+    // (finite) AND this run is older than it. When a group has NO published run
+    // (cutoff = Infinity) EVERY non-published run would otherwise qualify — which
+    // deletes the run being baked RIGHT NOW during the first bake after a clear
+    // (retention fires on every publish, incl. mrms every 2 min). That is the bug
+    // where GFS "appeared then vanished". Keep them; the first successful publish
+    // establishes a finite cutoff that then cleans up genuine leftovers.
+    return Number.isFinite(cutoff) && time(r) < cutoff;
   });
 }
 
@@ -71,12 +82,39 @@ export async function runRetention(db: RetentionDb, keep: number): Promise<Reten
     const m = r.model ?? "gfs";
     (byModel.get(m) ?? byModel.set(m, []).get(m)!).push(r);
   }
-  const toPrune = [...byModel.values()].flatMap((group) =>
-    runsToPrune(
-      group.map((r) => ({ id: r.id, run: r.run, published: r.published, _doc: r })),
-      keep,
-    ),
-  );
+  const now = Date.now();
+  const toPrune = [...byModel.values()]
+    .flatMap((group) =>
+      runsToPrune(
+        group.map((r) => ({ id: r.id, run: r.run, published: r.published, _doc: r })),
+        keep,
+      ),
+    )
+    // Never prune an IN-FLIGHT bake: a recently-created `pending` run is actively
+    // baking (retention can fire from a 2-min mrms publish mid-bake). This guards
+    // the create→first-publish window that the finite-cutoff rule alone leaves
+    // open. A stale pending doc (older than INGEST_STALE_MS = a crashed bake) is
+    // still prunable, so nothing wedges.
+    .filter((r) => {
+      const doc = (r as any)._doc as iWeatherRunModel | undefined;
+      if (doc?.status === "pending" && doc.created) {
+        if (now - new Date(doc.created).getTime() < INGEST_STALE_MS) return false;
+      }
+      return true;
+    });
+
+  // Loud when a prune ever touches the base model — the GFS run vanishing after
+  // publish was blamed on retention, so make any GFS prune impossible to miss in
+  // the logs (with the run times, keep budget, and which model triggered it).
+  if (toPrune.length) {
+    const byModelPruned: Record<string, string[]> = {};
+    for (const r of toPrune) {
+      const doc = (r as any)._doc as iWeatherRunModel | undefined;
+      const m = doc?.model ?? "?";
+      (byModelPruned[m] ??= []).push(new Date(r.run as any).toISOString());
+    }
+    log(TAG, `retention: pruning ${toPrune.length} run(s) (keep=${keep})`, byModelPruned);
+  }
 
   let deletedTextureCount = 0;
   const prunedRunIds: string[] = [];

@@ -62,7 +62,13 @@ function rememberMissingIdx(idxUrl: string): void {
   }
 }
 
-/** Fetch + parse an `.idx`, memoised by URL (positive) and 404-negative-cached. */
+// In-flight fetches, so that when many variables bake the SAME forecast hour
+// concurrently (the parallel bake), they share ONE network fetch of that hour's
+// `.idx` instead of each racing its own (the cache is still empty until the first
+// resolves). This is what makes "download the idx once" hold under parallelism.
+const IDX_INFLIGHT = new Map<string, Promise<IdxEntry[]>>();
+
+/** Fetch + parse an `.idx`, memoised by URL (positive), 404-negative-cached, and in-flight-deduped. */
 async function loadIdx(idxUrl: string): Promise<IdxEntry[]> {
   const cached = IDX_CACHE.get(idxUrl);
   if (cached) {
@@ -76,27 +82,43 @@ async function loadIdx(idxUrl: string): Promise<IdxEntry[]> {
     dbg(TAG, `idx not posted (cached 404) ${idxUrl}`, {});
     throw new Error(`idx not posted (404) for ${idxUrl}`);
   }
-  const res = await fetch(idxUrl);
-  if (res.status === 404) {
-    rememberMissingIdx(idxUrl);
-    dbg(TAG, `idx not posted (404) ${idxUrl}`, { cachedMisses: IDX_MISSING.size });
-    throw new Error(`idx not posted (404) for ${idxUrl}`);
+  // Coalesce concurrent fetches of the same idx into one.
+  const inflight = IDX_INFLIGHT.get(idxUrl);
+  if (inflight) {
+    dbg(TAG, `idx fetch coalesced ${idxUrl}`, {});
+    return inflight;
   }
-  if (!res.ok) throw new Error(`idx fetch failed ${res.status} for ${idxUrl}`);
-  const entries = parseGfsIdx(await res.text());
-  IDX_CACHE.set(idxUrl, entries);
-  if (IDX_CACHE.size > IDX_CACHE_MAX) {
-    const oldest = IDX_CACHE.keys().next().value as string;
-    IDX_CACHE.delete(oldest);
+
+  const p = (async (): Promise<IdxEntry[]> => {
+    const res = await fetch(idxUrl);
+    if (res.status === 404) {
+      rememberMissingIdx(idxUrl);
+      dbg(TAG, `idx not posted (404) ${idxUrl}`, { cachedMisses: IDX_MISSING.size });
+      throw new Error(`idx not posted (404) for ${idxUrl}`);
+    }
+    if (!res.ok) throw new Error(`idx fetch failed ${res.status} for ${idxUrl}`);
+    const entries = parseGfsIdx(await res.text());
+    IDX_CACHE.set(idxUrl, entries);
+    if (IDX_CACHE.size > IDX_CACHE_MAX) {
+      const oldest = IDX_CACHE.keys().next().value as string;
+      IDX_CACHE.delete(oldest);
+    }
+    dbg(TAG, `idx fetched ${idxUrl}`, { entries: entries.length, cached: IDX_CACHE.size });
+    return entries;
+  })();
+  IDX_INFLIGHT.set(idxUrl, p);
+  try {
+    return await p;
+  } finally {
+    IDX_INFLIGHT.delete(idxUrl);
   }
-  dbg(TAG, `idx fetched ${idxUrl}`, { entries: entries.length, cached: IDX_CACHE.size });
-  return entries;
 }
 
 /** Empty both `.idx` memos (tests; not needed in production — content is immutable). */
 export function clearIdxCache(): void {
   IDX_CACHE.clear();
   IDX_MISSING.clear();
+  IDX_INFLIGHT.clear();
 }
 
 /**

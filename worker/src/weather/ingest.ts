@@ -1,13 +1,23 @@
 // weather/ingest.ts
-// `ingest` handler internals: bake a full GFS run into textures and atomically
-// publish it. Per-variable resilience, idempotency, atomic publish (published
-// flips LAST), retention and the `weather:run` emit all live here.
+// `ingest` handler internals: bake a full GFS run into textures and publish it.
+//
+// PROGRESSIVE, not all-or-nothing: the run doc is created BEFORE any baking so it
+// appears in /admin/weather from the start (status "pending"), and each variable
+// is PUBLISHED the moment its own maps finish baking — an atomic per-variable
+// `$set` into `variables.<id>` plus a manifest-cache bust — so the map fills in
+// field-by-field instead of waiting for the whole ~8-min run. Variables bake in
+// PARALLEL (bounded), reading each forecast hour's `.idx` once (download-once via
+// the shared idx cache + in-flight coalescing in download.ts). Per-forecast-hour
+// and per-variable resilience is preserved: a missing tail hour skips only that
+// hour, a dead field skips only that field, and the run still publishes whatever
+// baked. Idempotency + the concurrency guard gate the start.
 
 import type { Job } from "bullmq";
 
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { log } from "@photonsurge/shared/utill/logger";
 import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
+import type { iVariableMeta } from "@photonsurge/shared/variables";
 import type {
   iWeatherVariableEntry,
   iWeatherStep,
@@ -28,11 +38,28 @@ import { recentPendingRun } from "./inflight";
 
 const TAG = "job:weather";
 
+/** How many variables bake at once. wgrib2 runs as a subprocess, so parallel
+ *  variables genuinely use multiple cores; kept modest to leave headroom for the
+ *  worker's other jobs. Override with WEATHER_BAKE_CONCURRENCY. */
+const BAKE_CONCURRENCY = Math.max(1, Number(process.env.WEATHER_BAKE_CONCURRENCY) || 4);
+
+/** Run `fn` over `items` with at most `limit` in flight at once. */
+async function withConcurrency<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const idx = next++;
+      await fn(items[idx]);
+    }
+  });
+  await Promise.all(workers);
+}
+
 /**
- * Ingest a full run: create a pending WeatherRun, bake every variable at every
- * forecast step, persist textures, then atomically publish (published flips
- * LAST). Idempotent on model+run. If any bake fails the run is marked failed and
- * never published.
+ * Ingest a full run: create a pending WeatherRun (visible immediately), bake
+ * every variable at every forecast step in parallel, and publish each variable's
+ * maps as soon as they are baked. Idempotent on model+run (unless forced). If
+ * NOTHING bakes the run is marked failed; a partial run stays published.
  */
 export async function runIngest(job: Job) {
   const config = cfg();
@@ -41,9 +68,9 @@ export async function runIngest(job: Job) {
   const date: string = data.date;
   const cycle: string = data.cycle;
   // `force` (the "Remake weather" button) rebakes even an already-published
-  // cycle: it bakes a FRESH run doc while the old one stays live, and the atomic
-  // publish + retention swap it in — so the map never blanks. A normal check-
-  // driven ingest keeps its idempotency skip (no needless double-bake).
+  // cycle: it bakes a FRESH run doc while the old one stays live until the new
+  // one starts publishing its variables. A normal check-driven ingest keeps its
+  // idempotency skip (no needless double-bake).
   const force: boolean = !!data.force;
   if (!date || !cycle) throw new Error("ingest: missing date/cycle");
 
@@ -52,10 +79,9 @@ export async function runIngest(job: Job) {
 
   // Concurrency guard (applies even to force): never bake the same cycle twice at
   // once. If another ingest for this exact model+cycle is already in flight (a
-  // recent pending run doc), skip — this is the hard backstop against duplicate
-  // `weather.ingest` jobs racing (the check-side guard is best-effort; two jobs
-  // can still slip through the enqueue window). A stale pending doc (crashed
-  // bake) is ignored by `recentPendingRun`, so a dead run can't wedge the queue.
+  // recent pending run doc), skip — the hard backstop against duplicate
+  // `weather.ingest` jobs racing. A stale pending doc (crashed bake) is ignored
+  // by `recentPendingRun`, so a dead run can't wedge the queue.
   const inFlight = await recentPendingRun(db, model, runDate);
   if (inFlight) {
     log(TAG, "ingest: another bake in flight for this cycle, skipping", {
@@ -88,6 +114,8 @@ export async function runIngest(job: Job) {
     validTime: new Date(runDate.getTime() + fhr * 3600 * 1000).toISOString(),
   }));
 
+  // Create the run doc FIRST (pending, unpublished) so it appears in
+  // /admin/weather from the instant baking begins.
   const created = await db.weatherRuns.create({
     model,
     run: runDate,
@@ -110,115 +138,146 @@ export async function runIngest(job: Job) {
   const startedAt = Date.now();
   blogInfo(
     TAG,
-    `ingest start: gfs ${date}/${cycle}z — ${gfsVars.length} vars × ${steps.length} steps`,
+    `ingest start: gfs ${date}/${cycle}z — ${gfsVars.length} vars × ${steps.length} steps (parallel, progressive)`,
     { date, cycle, vars: gfsVars.length, steps: steps.length },
     "weather",
     "ingest",
   );
 
-  try {
-    const variables: Record<string, iWeatherVariableEntry> = {};
-    // A variable that produced NO usable hour, with why — so a total wipe-out
-    // surfaces its cause (the plain `log` below only reaches stdout, not the
-    // admin blog); the summary + thrown error then carry the real reason
-    // (e.g. "download failed 302" = NOMADS throttling, "404" = tail not posted).
-    const skipped: Array<{ variable: string; err: string }> = [];
-    // A variable that published but is missing some forecast hours.
-    const degraded: Array<{ variable: string; missing: number[] }> = [];
-
-    let vi = 0;
-    for (const variable of gfsVars) {
-      vi += 1;
-      const vStart = Date.now();
-      // Always-on progress so a slow ingest shows a live heartbeat in the logs
-      // (each variable is ~50 forecast-hour downloads + bakes).
-      log(TAG, `ingest: baking ${variable.id} (${vi}/${gfsVars.length})`, {
-        run: runDate.toISOString(),
-        steps: bakedFhrs.length,
-      });
-
-      const entry: iWeatherVariableEntry = {
-        encoding: variable.encoding,
-        units: variable.units,
-        domain: [variable.domain[0], variable.domain[1]],
-        palette: variable.palette,
-        files: {},
-      };
-
-      let prevAccumPath: string | undefined;
-      let prevFhr: number | undefined;
-      const fhrErrors: Array<{ fhr: number; err: string }> = [];
-
-      for (const fhr of bakedFhrs) {
-        // Each forecast hour is independent: a single missing/failed step (a
-        // not-yet-posted tail hour like f336, or one throttled download) skips
-        // ONLY that hour — it must NOT discard the whole variable and the good
-        // hours already baked (the bug that turned one f336 404 into a total
-        // "no variables baked" wipe-out).
-        try {
-          // Accumulated fields (precip) diff against the previous baked step, so
-          // the window is the actual gap between steps (3h in the detailed track,
-          // 12h across the daily-outlook tail) — widening correctly across any
-          // skipped hour since prevFhr only advances on success.
-          const windowHours = prevFhr === undefined ? stepHours : fhr - prevFhr;
-          const baked = await bakeVariableStep(variable, date, cycle, fhr, prevAccumPath, windowHours);
-          tempPaths.push(baked.gribPath);
-          if (variable.gfs!.accumulated) prevAccumPath = baked.gribPath;
-          prevFhr = fhr;
-
-          entry.imageUnscale = baked.imageUnscale;
-          if (baked.encoding === "scalar") entry.domain = baked.domain;
-
-          const tex = await db.weatherTextures.create({
-            runId,
-            variable: variable.id,
-            fhr,
-            contentType: "image/png",
-            encoding: baked.encoding,
-            data: baked.buffer,
-            byteSize: baked.buffer.byteLength,
-          });
-          if (!tex.success || !tex.data) {
-            throw new Error(`texture create failed for ${variable.id} f${fhr}`);
-          }
-          entry.files[String(fhr)] = tex.data.id;
-          dbg(TAG, `baked ${variable.id} f${fhr}`, { bytes: baked.buffer.byteLength });
-        } catch (fhrErr) {
-          fhrErrors.push({ fhr, err: String(fhrErr) });
-          dbg(TAG, `fhr skipped ${variable.id} f${fhr}`, { err: String(fhrErr) });
-        }
+  // Variables that produced NO usable hour, with why (a total wipe-out surfaces
+  // its cause), and variables published with gaps.
+  const skipped: Array<{ variable: string; err: string }> = [];
+  const degraded: Array<{ variable: string; missing: number[] }> = [];
+  // Entries actually published, kept for the archive/forecast copy at the end.
+  const publishedVars: Record<string, iWeatherVariableEntry> = {};
+  let firstPublished = false;
+  // Set if our run doc disappears mid-bake (a concurrent clear, or the
+  // retention-prunes-in-flight bug). We then stop baking into the void and fail
+  // the job loudly instead of logging phantom "published" lines.
+  let runVanished = false;
+  // Serialise the run-doc writes + cache busts so parallel variables never race
+  // on the publish step (the per-variable `$set` is atomic, but ordering the
+  // published/generatedAt flip and the cache bust keeps it clean).
+  let publishChain: Promise<void> = Promise.resolve();
+  const publishVariable = (variable: iVariableMeta, entry: iWeatherVariableEntry): Promise<void> => {
+    publishChain = publishChain.then(async () => {
+      const patch: Record<string, unknown> = { [`variables.${variable.id}`]: entry };
+      // The first baked variable flips the run published + stamps generatedAt, so
+      // it immediately outranks any prior run for this cycle and its maps show.
+      if (!firstPublished) {
+        patch.published = true;
+        patch.generatedAt = new Date();
+        firstPublished = true;
       }
+      const upd = await db.weatherRuns.updateByID(runId, patch as any);
+      // Doc gone → stop; don't record it as published or bust the cache for a
+      // run that no longer exists. The post-loop check turns this into a failure.
+      if (!upd.success) {
+        runVanished = true;
+        return;
+      }
+      publishedVars[variable.id] = entry;
+      // Map picks up the newly-published field now, not in ≤10 min.
+      await bustManifestCache();
+      if (!firstPublished) return;
+      emitWorkerEvent({ type: "weather:run", targetType: "weather", data: { run: runDate.toISOString() } });
+    });
+    return publishChain;
+  };
 
-      const bakedCount = Object.keys(entry.files).length;
-      const vms = Date.now() - vStart;
-      if (bakedCount > 0) {
-        variables[variable.id] = entry;
-        if (fhrErrors.length > 0) degraded.push({ variable: variable.id, missing: fhrErrors.map((f) => f.fhr) });
-        log(TAG, `ingest: ${variable.id} baked ${bakedCount}/${bakedFhrs.length} hrs in ${vms}ms`, {
+  /** Bake ALL forecast hours for one variable, then publish it. Never throws. */
+  const bakeOneVariable = async (variable: iVariableMeta): Promise<void> => {
+    if (runVanished) return; // run was deleted under us — don't keep baking
+    const vStart = Date.now();
+    log(TAG, `ingest: baking ${variable.id}`, { run: runDate.toISOString(), steps: bakedFhrs.length });
+
+    const entry: iWeatherVariableEntry = {
+      encoding: variable.encoding,
+      units: variable.units,
+      domain: [variable.domain[0], variable.domain[1]],
+      palette: variable.palette,
+      files: {},
+    };
+
+    let prevAccumPath: string | undefined;
+    let prevFhr: number | undefined;
+    const fhrErrors: Array<{ fhr: number; err: string }> = [];
+
+    for (const fhr of bakedFhrs) {
+      // Each forecast hour is independent: a missing/failed step (not-yet-posted
+      // tail hour, or one throttled download) skips ONLY that hour.
+      try {
+        // Accumulated fields (precip) diff against the previous baked step; the
+        // window widens correctly across any skipped hour since prevFhr only
+        // advances on success. Ordering within a variable is why each variable
+        // bakes its hours sequentially (parallelism is ACROSS variables).
+        const windowHours = prevFhr === undefined ? stepHours : fhr - prevFhr;
+        const baked = await bakeVariableStep(variable, date, cycle, fhr, prevAccumPath, windowHours);
+        tempPaths.push(baked.gribPath);
+        if (variable.gfs!.accumulated) prevAccumPath = baked.gribPath;
+        prevFhr = fhr;
+
+        entry.imageUnscale = baked.imageUnscale;
+        if (baked.encoding === "scalar") entry.domain = baked.domain;
+
+        const tex = await db.weatherTextures.create({
+          runId,
           variable: variable.id,
-          baked: bakedCount,
-          skippedHrs: fhrErrors.length,
-          ms: vms,
-          ...(fhrErrors.length > 0 ? { missing: fhrErrors.map((f) => f.fhr) } : {}),
+          fhr,
+          contentType: "image/png",
+          encoding: baked.encoding,
+          data: baked.buffer,
+          byteSize: baked.buffer.byteLength,
         });
-      } else {
-        const why = fhrErrors[0]?.err ?? "no hours produced";
-        log(TAG, `ingest: ${variable.id} FAILED (0/${bakedFhrs.length} hrs) in ${vms}ms — ${why}`, {
-          variable: variable.id,
-          err: why,
-          ms: vms,
-        });
-        skipped.push({ variable: variable.id, err: why });
-        await db.weatherTextures.deleteMany({ runId, variable: variable.id }).catch(() => {});
+        if (!tex.success || !tex.data) {
+          throw new Error(`texture create failed for ${variable.id} f${fhr}`);
+        }
+        entry.files[String(fhr)] = tex.data.id;
+        dbg(TAG, `baked ${variable.id} f${fhr}`, { bytes: baked.buffer.byteLength });
+      } catch (fhrErr) {
+        fhrErrors.push({ fhr, err: String(fhrErr) });
+        dbg(TAG, `fhr skipped ${variable.id} f${fhr}`, { err: String(fhrErr) });
       }
     }
 
-    if (Object.keys(variables).length === 0) {
-      // Surface a representative sample of the underlying failures — almost
-      // always the same root cause across every variable (source unreachable,
-      // NOMADS 302 throttle / 403 block, wgrib2 missing), so the first few say
-      // it all. Blogged (admin/logs) AND thrown (the thrown message reaches the
-      // job-failure log too, but the blog carries the structured breakdown).
+    const bakedCount = Object.keys(entry.files).length;
+    const vms = Date.now() - vStart;
+    if (bakedCount > 0) {
+      if (fhrErrors.length > 0) degraded.push({ variable: variable.id, missing: fhrErrors.map((f) => f.fhr) });
+      log(TAG, `ingest: ${variable.id} baked ${bakedCount}/${bakedFhrs.length} hrs in ${vms}ms — publishing`, {
+        variable: variable.id,
+        baked: bakedCount,
+        skippedHrs: fhrErrors.length,
+        ms: vms,
+        ...(fhrErrors.length > 0 ? { missing: fhrErrors.map((f) => f.fhr) } : {}),
+      });
+      // PUBLISH THIS MAP NOW — don't wait for the rest of the run.
+      await publishVariable(variable, entry);
+    } else {
+      const why = fhrErrors[0]?.err ?? "no hours produced";
+      log(TAG, `ingest: ${variable.id} FAILED (0/${bakedFhrs.length} hrs) in ${vms}ms — ${why}`, {
+        variable: variable.id,
+        err: why,
+        ms: vms,
+      });
+      skipped.push({ variable: variable.id, err: why });
+      await db.weatherTextures.deleteMany({ runId, variable: variable.id }).catch(() => {});
+    }
+  };
+
+  try {
+    await withConcurrency(gfsVars, BAKE_CONCURRENCY, bakeOneVariable);
+    await publishChain; // ensure every incremental publish has flushed
+
+    if (runVanished) {
+      throw new Error(
+        `ingest: run doc ${runId} vanished mid-bake (deleted by a concurrent clear/retention)`,
+      );
+    }
+
+    if (Object.keys(publishedVars).length === 0) {
+      // Nothing baked — almost always one root cause across every field (source
+      // unreachable, throttle/outage, wgrib2 missing), so the first few say it all.
       const sample = skipped.slice(0, 3).map((s) => `${s.variable}: ${s.err}`).join(" | ");
       blogErr(
         TAG,
@@ -229,30 +288,20 @@ export async function runIngest(job: Job) {
         "ingest",
       );
       throw new Error(
-        `ingest: no variables baked (all ${skipped.length} fields failed)` +
-          (sample ? ` — ${sample}` : ""),
+        `ingest: no variables baked (all ${skipped.length} fields failed)` + (sample ? ` — ${sample}` : ""),
       );
     }
 
-    // Atomic publish: published flips LAST, only after every texture exists.
+    // Finalise: mark complete and re-stamp generatedAt to the completion time
+    // (already published incrementally; this just closes the run out).
     await db.weatherRuns.updateByID(runId, {
-      variables,
-      generatedAt: new Date(),
       status: "complete",
+      generatedAt: new Date(),
       published: true,
     });
-
-    emitWorkerEvent({
-      type: "weather:run",
-      targetType: "weather",
-      data: { run: runDate.toISOString() },
-    });
-    // Drop the manifest cache so the map picks up this run now, not in ≤10 min.
     await bustManifestCache();
 
-    // Lifecycle summary in /admin/logs: green when whole, warn when any variable
-    // was dropped or came in with gaps (still published, just degraded).
-    const okCount = Object.keys(variables).length;
+    const okCount = Object.keys(publishedVars).length;
     const ms = Date.now() - startedAt;
     if (skipped.length > 0 || degraded.length > 0) {
       blogWarn(
@@ -283,38 +332,42 @@ export async function runIngest(job: Job) {
 
     await runRetention(db as any, retainRuns);
 
-    // Long-term archive: copy the analysis-hour frames before this run ages
-    // out of retention. Never fails the (already published) run.
-    await archiveRun(db as any, {
+    // Long-term + rolling-forecast archives. Never fail the (already published) run.
+    const archiveArgs = {
       id: runId,
       model,
       run: runDate,
       bounds: [...GFS_BOUNDS],
       grid: { ...GFS_GRID },
       steps,
-      variables,
-    }).catch((ex) => log(TAG, "ingest: archive failed", { err: String(ex) }));
+      variables: publishedVars,
+    };
+    await archiveRun(db as any, archiveArgs).catch((ex) => log(TAG, "ingest: archive failed", { err: String(ex) }));
+    await archiveForecastRun(db as any, archiveArgs).catch((ex) =>
+      log(TAG, "ingest: forecast archive failed", { err: String(ex) }),
+    );
 
-    // Rolling forecast store: copy every baked step so the next few days'
-    // predictions are durably queryable (unlike the run's own textures, which
-    // retention prunes after a few cycles). Never fails the published run.
-    await archiveForecastRun(db as any, {
-      id: runId,
-      model,
-      run: runDate,
-      bounds: [...GFS_BOUNDS],
-      grid: { ...GFS_GRID },
-      steps,
-      variables,
-    }).catch((ex) => log(TAG, "ingest: forecast archive failed", { err: String(ex) }));
-
-    log(TAG, "ingest: published", { run: runDate.toISOString(), runId });
-    return { published: true, run: runDate.toISOString(), runId };
+    log(TAG, "ingest: published", { run: runDate.toISOString(), runId, baked: okCount });
+    return { published: true, run: runDate.toISOString(), runId, baked: okCount };
   } catch (ex) {
-    log(TAG, "ingest: failed, marking run failed", { runId });
-    await db.weatherRuns.updateByID(runId, { status: "failed", published: false }).catch(() => {});
-    // Roll back partial textures so we never leave orphans.
-    await db.weatherTextures.deleteMany({ runId }).catch(() => {});
+    if (runVanished) {
+      // The run doc is already gone — just sweep the orphan textures we baked.
+      log(TAG, "ingest: run doc vanished mid-bake, cleaning orphan textures", { runId });
+      await db.weatherTextures.deleteMany({ runId }).catch(() => {});
+    } else if (Object.keys(publishedVars).length === 0) {
+      // Roll back when NOTHING good was published.
+      log(TAG, "ingest: failed with no published variables, marking run failed", { runId });
+      await db.weatherRuns.updateByID(runId, { status: "failed", published: false }).catch(() => {});
+      await db.weatherTextures.deleteMany({ runId }).catch(() => {});
+    } else {
+      // A partial run that already put maps on air must survive (progressive
+      // publish is the whole point).
+      log(TAG, "ingest: error after partial publish — keeping the published run", {
+        runId,
+        published: Object.keys(publishedVars).length,
+        err: String(ex),
+      });
+    }
     throw ex;
   } finally {
     for (const p of tempPaths) await cleanupTemp(p);

@@ -1,37 +1,46 @@
-# Heap-leak capture override for the `public` service.
+# Heap-leak capture override for the `public` service — LOW-FOOTPRINT variant.
 #
-# Runs `public` exactly as production, but:
-#   - caps the V8 old-space at a fixed ceiling, and
-#   - auto-writes ONE heap snapshot the instant the heap nears that ceiling
-#     (captures the leaked object graph at its peak), instead of a bare OOM.
-#   - disables the restart loop so we get a single clean capture.
+# Unlike an auto-dump-at-the-limit approach (which spikes RAM exactly when public
+# is already biggest and can OOM a small VM), this dumps ON DEMAND via a signal,
+# so YOU pick the moment — while RSS is still modest and the box has headroom.
 #
-# USAGE (run on whatever box reproduces the OOM — ideally NOT mid-broadcast):
-#   mkdir -p heapdumps && sudo chown 1001:1001 heapdumps   # container runs as uid 1001
+#   - --heapsnapshot-signal=SIGUSR2: a snapshot is written each time the process
+#     gets SIGUSR2, to the working dir (mounted out to ./heapdumps on the host).
+#   - --max-old-space-size=1024: a safety net only; the signal is the real trigger.
+#   - restart:"no": one clean run, no crash-loop.
+#
+# RECIPE (frees headroom first so the snapshot can't tip the VM):
+#   scp docker-compose.debug.yml miranda:weather/
+#   ssh miranda
+#   cd ~/weather
+#   mkdir -p heapdumps && chmod 777 heapdumps
+#   docker compose stop worker                       # frees ~1-1.5GB of headroom
 #   docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d public
-#   docker compose logs -f public
-#     # ...drive/leave it until you see: "Writing heap snapshot to ..."  then it exits.
-#     # (~26 min at 2048; lower LEAKCAP below to capture sooner / smaller.)
-#   ls -lh heapdumps/            # -> Heap.<ts>.<pid>.<seq>.heapsnapshot
 #
-# Then EITHER open the .heapsnapshot in Chrome DevTools -> Memory -> Load
-# (Summary view, sort by Retained Size) on a machine with plenty of RAM (your
-# laptop, NOT the 4GB box), OR run the analyzer for pasteable text:
+#   # drive the leak (worker/director is stopped, so hammer the changed hot path
+#   # ourselves — varied coords bust the 60s focus cache -> real composes):
+#   seq 1 100000 | xargs -P8 -I{} sh -c \
+#     'curl -s "http://127.0.0.1:10100/api/focus?kind=storm&lng=$((RANDOM%360-180))&lat=$((RANDOM%180-90))&zoom=5&detail=broadcast" -o /dev/null'
+#
+#   # in another shell, watch RSS climb; when it's ~800MB-1GB, dump (well below the box limit):
+#   docker stats --no-stream public
+#   docker compose kill -s SIGUSR2 public            # writes ./heapdumps/Heap.*.heapsnapshot (a few sec)
+#   ls -lh heapdumps/
+#
+#   # stop the load loop (Ctrl-C), then restore:
+#   docker compose start worker
+#   docker compose up -d public                      # back to normal (drops this override)
+#   exit
+#
+# Analyze locally (roomy machine, NOT the VM):
+#   scp 'miranda:weather/heapdumps/*.heapsnapshot' heapdumps/
 #   node --max-old-space-size=12288 scripts/analyze-heapsnapshot.mjs heapdumps/Heap.*.heapsnapshot
-#
-# The dominant constructor / biggest objects at the top ARE the leak — paste me that.
-#
-# Restore normal running with:  docker compose up -d public
 services:
   public:
     restart: "no"
     working_dir: /app/heapdumps
     command: ["node", "/app/public/server.js"]
     environment:
-      # LEAKCAP: the ceiling to reproduce. 1024 dumps a ~1.5-2GB snapshot that
-      # opens in DevTools on a laptop and captures sooner (~13 min) — and for a
-      # REAL retained leak the dominant constructor is identical at any ceiling.
-      # Bump to 2048 only if 1024 looks ambiguous (dumped mid-legit-compose).
-      NODE_OPTIONS: "--max-old-space-size=1024 --heapsnapshot-near-heap-limit=1"
+      NODE_OPTIONS: "--heapsnapshot-signal=SIGUSR2 --max-old-space-size=1024"
     volumes:
       - ./heapdumps:/app/heapdumps
