@@ -1,7 +1,10 @@
 import type { AppDb } from "@photonsurge/shared/db/index";
 import type { AlertSource } from "@photonsurge/shared/alerts/types";
+import type { iAlertModel } from "@photonsurge/shared/db/alert-model";
 import { referencedIdentifiers } from "@photonsurge/shared/alerts/normalise";
+import { diffAlert } from "@photonsurge/shared/alerts/diff";
 import { log } from "@photonsurge/shared/utill/logger";
+import { harvestGdacsExtras } from "./gdacs-extras";
 
 const TAG = "alerts:ingest";
 
@@ -22,12 +25,32 @@ function geoFailReason(err: unknown): string {
   return "other";
 }
 
+/**
+ * Did this update push the alert INTO "interesting" territory (severe+)? Used to
+ * flag alerts that just escalated so the P1 satellite-snapshot job can grab a
+ * frame at the moment they start mattering, not only on its hourly sweep.
+ */
+function crossesInteresting(
+  prev: { maxSeverityRank: number },
+  next: { maxSeverityRank: number },
+): boolean {
+  return next.maxSeverityRank >= 3 && prev.maxSeverityRank < 3;
+}
+
 export interface IngestResult {
   source: string;
   count: number;
   inserted: number;
   superseded: number;
   expired: number;
+  /** Revision rows appended this tick (a meaningful change was detected). */
+  revisions: number;
+  /** Alert ids that just escalated to severe+ (feeds the P1 onset snapshot). */
+  newlyInteresting: string[];
+  /** GDACS metric samples appended this tick (promote-from-raw). */
+  seriesSamples?: number;
+  /** GDACS resource links harvested this tick. */
+  resources?: number;
   /** Alerts stored without their geometry because the polygon was invalid. */
   geoDropped?: number;
   /** Count of geometry rejections bucketed by reason (self-intersecting, …). */
@@ -51,11 +74,17 @@ export async function ingestSource(
   let inserted = 0;
   let superseded = 0;
   let geoDropped = 0;
+  let revisions = 0;
+  const newlyInteresting: string[] = [];
   const geoReasons: Record<string, number> = {};
   for (const a of alerts) {
+    let prev: iAlertModel | null = null;
+    let persisted = false;
     try {
-      const { inserted: isNew } = await db.alerts.upsert(a);
-      if (isNew) inserted++;
+      const r = await db.alerts.upsert(a);
+      if (r.inserted) inserted++;
+      prev = r.prev;
+      persisted = true;
     } catch (err) {
       // Almost always an invalid polygon rejected by the 2dsphere index. Keep
       // the alert — re-upsert it with geometry stripped so it's never lost.
@@ -69,13 +98,46 @@ export async function ingestSource(
         info: a.info.map((i) => ({ ...i, area: i.area.map((ar) => ({ ...ar, geometry: null })) })),
       };
       try {
-        const { inserted: isNew } = await db.alerts.upsert(stripped);
-        if (isNew) inserted++;
+        const r = await db.alerts.upsert(stripped);
+        if (r.inserted) inserted++;
+        prev = r.prev;
+        persisted = true;
         geoDropped++;
       } catch (err2) {
         log(TAG, `upsert failed`, { source: source.id, id: a.identifier, err: String(err2) });
       }
     }
+
+    // Revision capture — ONCE, after the doc is persisted, diffed against the
+    // ORIGINAL `a` (geometry intact) not the geometry-stripped retry payload, so
+    // a stripped retry can't fake an AREA_CHANGED. Only a real in-place update
+    // arrives here with a non-null `prev` (a fresh insert and the unchanged
+    // fast path both return prev:null), so steady-state re-polls write nothing.
+    if (persisted && prev) {
+      try {
+        const { events, areaKm2, severity } = diffAlert(prev, a);
+        if (events.length) {
+          await db.alertRevisions.append({
+            source: a.source,
+            identifier: a.identifier,
+            alertId: prev.id,
+            at: now.toISOString(),
+            msgType: a.msgType,
+            status: a.status,
+            changes: events,
+            severityRank: severity,
+            areaKm2,
+            expiresAt: a.expiresAt,
+            onset: a.info?.[0]?.onset,
+          });
+          revisions++;
+          if (crossesInteresting(prev, a)) newlyInteresting.push(prev.id);
+        }
+      } catch (err) {
+        log(TAG, `revision capture failed`, { source: source.id, id: a.identifier, err: String(err) });
+      }
+    }
+
     if (a.references?.length) {
       superseded += await db.alerts.supersede(source.id, referencedIdentifiers(a.references));
     }
@@ -93,13 +155,34 @@ export async function ingestSource(
     );
   }
 
+  // GDACS extras — promote numeric metrics (alert score / severity / population)
+  // into alert_series and harvest report/icon links into alert_resources, off the
+  // feed's `raw` (no extra HTTP). A separate pass so the hot per-alert loop above
+  // stays untouched for every other source.
+  let seriesSamples = 0;
+  let resources = 0;
+  if (source.id === "gdacs") {
+    for (const a of alerts) {
+      try {
+        const h = await harvestGdacsExtras(a, db, now);
+        seriesSamples += h.samples;
+        resources += h.resources;
+      } catch (err) {
+        log(TAG, `gdacs harvest failed`, { id: a.identifier, err: String(err) });
+      }
+    }
+  }
+
   const result: IngestResult = {
     source: source.id,
     count: alerts.length,
     inserted,
     superseded,
     expired,
+    revisions,
+    newlyInteresting,
     geoDropped,
+    ...(source.id === "gdacs" ? { seriesSamples, resources } : {}),
     ...(geoDropped ? { geoReasons } : {}),
   };
   log(TAG, `ingested`, result);

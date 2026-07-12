@@ -21,6 +21,10 @@ import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 import { hasRealLocation } from "../../components/broadcast/kinds";
 import { buildFocusKey } from "./focusKey";
 import type { FocusBundle, FocusDetail, FocusNearbyCity, FocusRequest, FocusTarget } from "./types";
+import type { AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
+import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
+import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model";
+import type { AlertSnapshotMeta } from "@photonsurge/shared/db/alert-snapshot-repo";
 
 import { usePointHistory, useAreaHistory, useClimateYear } from "../history-client";
 import { usePointForecast, useAreaForecast } from "../forecast-client";
@@ -395,4 +399,28 @@ export function useNearbyCities(center: Center | null): FocusNearbyCity[] {
 export function useFocusTarget(): FocusTarget {
   const { bundle, covers } = useFocusContext();
   return covers() ? bundle!.target : null;
+}
+
+/** The on-air storm's change timeline (empty off a storm cut or before a bundle). */
+export function useAlertTimeline(): AlertTimelineBeat[] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.alertTimeline : [];
+}
+
+/** The on-air storm's metric series (GDACS score/severity/population). */
+export function useAlertSeries(): iAlertSeries[] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.alertSeries : [];
+}
+
+/** The on-air storm's harvested official resource links. */
+export function useAlertResources(): iAlertResource[] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.alertResources : [];
+}
+
+/** The on-air storm's captured snapshot metadata (bytes via /api/alerts/snapshot/:id). */
+export function useAlertSnapshots(): AlertSnapshotMeta[] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.alertSnapshots : [];
 }

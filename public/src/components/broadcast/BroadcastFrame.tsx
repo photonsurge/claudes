@@ -45,6 +45,10 @@ import {
   useCountryRoundup,
   useRegionRoundup,
   useAreaForecastDays,
+  useAlertTimeline,
+  useAlertSnapshots,
+  useAlertResources,
+  useAlertSeries,
 } from "../../lib/focus/focus-client";
 import { legendVariableFor } from "../../lib/legend";
 import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
@@ -303,6 +307,12 @@ export default function BroadcastFrame({
   // fall back to a live /api/roundup/place fetch keyed on the resolved place id.
   const regionRoundup = useRegionRoundup();
   const countryRoundup = useCountryRoundup();
+  // The on-air storm's change timeline + imagery/resources/series — all served on
+  // the same focus bundle (no extra per-cut requests).
+  const alertTimeline = useAlertTimeline();
+  const alertSnapshots = useAlertSnapshots();
+  const alertResources = useAlertResources();
+  const alertSeries = useAlertSeries();
   const placeRoundup =
     onAirSegment?.kind === "region"
       ? regionRoundup
@@ -405,6 +415,10 @@ export default function BroadcastFrame({
         cams,
         quakes,
         alerts,
+        alertTimeline,
+        alertSnapshots,
+        alertResources,
+        alertSeries,
         areaAlerts,
         areaQuakes,
         areaVolcanoes,

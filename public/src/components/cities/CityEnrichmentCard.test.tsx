@@ -73,7 +73,8 @@ it("shows the selected city's point forecast when available", async () => {
 
   render(<CityEnrichmentCard city={paris} onClose={() => {}} />);
 
-  expect(await screen.findByText("TODAY")).toBeInTheDocument();
+  // CityUpcomingForecast maps the API's "TODAY" label to a human "Today".
+  expect(await screen.findByText("Today")).toBeInTheDocument();
   expect(screen.getByText("partly cloudy")).toBeInTheDocument();
   expect(screen.getByText(/40% rain/)).toBeInTheDocument();
   expect(screen.getByText(/4.3 m\/s wind/)).toBeInTheDocument();

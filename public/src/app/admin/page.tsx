@@ -40,6 +40,7 @@ export const ADMIN_LINKS: AdminLink[] = [
   { group: "Catalogs", href: "/countries", title: "Countries", desc: "Full country catalog — boundaries, enrichment, area-weather and globe preview.", ready: true },
   { group: "Catalogs", href: "/regions", title: "Regions", desc: "Oceans, continents, EU blocs, UK nations — enrichment, area-weather and globe preview.", ready: true },
 
+  { group: "Operations", href: "/admin/weather", title: "Weather runs", desc: "Baked weather runs per model — which variables baked, forecast hours, texture thumbnails and age.", ready: true },
   { group: "Operations", href: "/admin/jobs", title: "Worker jobs", desc: "Trigger ingest/snapshot jobs; view the queue.", ready: true },
   { group: "Operations", href: "/admin/queue", title: "Queue", desc: "BullMQ dashboard — browse/retry jobs, schedules, pause.", ready: true },
   { group: "Operations", href: "/admin/logs", title: "Back log", desc: "Saved log of worker/job activity.", ready: true },

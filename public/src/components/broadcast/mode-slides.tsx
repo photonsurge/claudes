@@ -19,7 +19,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { iSummaryStats } from "@photonsurge/shared/db/event-summary-model";
-import type { AlertFeature } from "../../lib/alerts";
+import type { AlertFeature, AlertTimelineBeat, iAlertSeries, iAlertResource, AlertSnapshotMeta } from "../../lib/alerts";
 import type { Quake } from "../../lib/tracks/types";
 import type { City } from "../../lib/cities";
 import type { CountryAt } from "../../lib/countries";
@@ -39,6 +39,8 @@ import RoundupStatsPanel from "./RoundupStatsPanel";
 import PlaceRoundupPanel, { placeRoundupSlideHasContent } from "./PlaceRoundupPanel";
 import type { PlaceRoundup } from "../../lib/placeRoundups";
 import QuakeReport from "./QuakeReport";
+import AlertTimelinePanel, { alertTimelineSlideHasContent } from "./AlertTimelinePanel";
+import AlertMediaPanel, { alertMediaSlideHasContent } from "./AlertMediaPanel";
 import EventNearbyPanel, { eventNearbySlideHasContent } from "./EventNearbyPanel";
 import TrackInfoPanel from "./TrackInfoPanel";
 import VolcanoFactsPanel, { volcanoFactsSlideHasContent } from "./VolcanoFactsPanel";
@@ -67,6 +69,14 @@ export interface ModeSlideContext {
   /** Full global feeds — for the volcano "what else is nearby" content guard. */
   quakes: Quake[];
   alerts: AlertFeature[];
+  /** The on-air storm's derived change timeline (ISSUED → changes → ENDED) — the
+   *  alert-timeline slide's data, delivered on the focus bundle. Empty off a storm. */
+  alertTimeline: AlertTimelineBeat[];
+  /** The on-air storm's captured snapshots / harvested resources / metric series
+   *  (focus bundle) — the alert-media slide. Empty off a storm. */
+  alertSnapshots: AlertSnapshotMeta[];
+  alertResources: iAlertResource[];
+  alertSeries: iAlertSeries[];
   /** Feeds already scoped to the on-air area — for the OnAirCard rollup. */
   areaAlerts: AlertFeature[];
   areaQuakes: Quake[];
@@ -216,6 +226,26 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
             center={segment.camera.center}
             cities={ctx.cities}
             color={color}
+          />
+        ),
+      });
+    }
+    // The storm's live change timeline, right after the lede — reads the derived
+    // beats from the focus bundle. Self-guards on having more than a lone ISSUED.
+    if (segment.kind === "storm" && alertTimelineSlideHasContent(ctx.alertTimeline)) {
+      slides.push({ id: "alert-timeline", node: <AlertTimelinePanel beats={ctx.alertTimeline} color={color} theme={ctx.theme} /> });
+    }
+    // The storm's imagery (comparison / satellite still + score sparkline + links).
+    if (segment.kind === "storm" && alertMediaSlideHasContent(ctx.alertSnapshots)) {
+      slides.push({
+        id: "alert-media",
+        node: (
+          <AlertMediaPanel
+            snapshots={ctx.alertSnapshots}
+            resources={ctx.alertResources}
+            series={ctx.alertSeries}
+            color={color}
+            theme={ctx.theme}
           />
         ),
       });

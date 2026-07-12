@@ -1,7 +1,12 @@
 import { SEVERITY_COLORS, SEVERITY_LABELS } from "@photonsurge/shared/alerts/severity";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
+import type { AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
+import type { iAlertRevision } from "@photonsurge/shared/db/alert-revision-model";
+import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
+import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model";
+import type { AlertSnapshotMeta } from "@photonsurge/shared/db/alert-snapshot-repo";
 import { classifyHazard, type HazardType } from "./hazard";
-export type { HazardType };
+export type { HazardType, AlertTimelineBeat, iAlertSeries, iAlertResource, AlertSnapshotMeta };
 
 /** Trimmed alert shape the admin list / overlay consume (mirrors CanonicalAlert). */
 export interface AlertArea {
@@ -112,6 +117,16 @@ export interface AlertDetail {
   chain: AlertDoc[];
   /** Director as-run entries that aired this alert, newest-first. */
   aired: import("./airlog").AirEntry[];
+  /** Append-only change history (the raw material behind the timeline). */
+  revisions: iAlertRevision[];
+  /** Derived, presentation-ready beats (ISSUED → changes → ENDED), oldest-first. */
+  timeline: AlertTimelineBeat[];
+  /** GDACS metric series (score/severity/population) for graphs. */
+  series: iAlertSeries[];
+  /** Harvested official resource links. */
+  resources: iAlertResource[];
+  /** Captured satellite/camera snapshot metadata (bytes via /api/alerts/snapshot/:id). */
+  snapshots: AlertSnapshotMeta[];
 }
 
 /** One alert in full + its update chain + when it aired. `id` may be the doc

@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 import AlertInfoBlock from "../../../../components/admin/AlertInfoBlock";
+import Sparkline from "../../../../components/Sparkline";
 import {
   alertHazard,
   getAlertDetail,
@@ -26,6 +27,32 @@ const fmtTime = (iso?: string): string => {
   if (!iso) return "—";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+};
+
+/** A small glyph per timeline beat type. */
+const beatGlyph = (type: string): string => {
+  switch (type) {
+    case "ISSUED":
+      return "🟢";
+    case "SEVERITY_CHANGED":
+      return "⚠️";
+    case "AREA_CHANGED":
+      return "📐";
+    case "TEXT_CHANGED":
+      return "📝";
+    case "INSTRUCTION_CHANGED":
+      return "📋";
+    case "START_TIME_CHANGED":
+      return "🕒";
+    case "EXPIRY_CHANGED":
+      return "⏳";
+    case "CANCELLED":
+      return "🚫";
+    case "ENDED":
+      return "⚫";
+    default:
+      return "🔄";
+  }
 };
 
 export default function AlertDetailPage() {
@@ -52,7 +79,7 @@ export default function AlertDetailPage() {
     );
   }
 
-  const { alert, chain, aired } = detail;
+  const { alert, chain, aired, timeline, series, resources, snapshots } = detail;
   const info = primaryInfo(alert);
   const h = hazardMeta(alertHazard(alert));
   const rank = alert.maxSeverityRank;
@@ -90,6 +117,37 @@ export default function AlertDetailPage() {
       }
     >
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>
+        {/* Change timeline — derived from in-place revisions + the CAP chain. */}
+        <div style={card}>
+          <div style={cardLabel}>Timeline ({timeline.length})</div>
+          {timeline.length === 0 && (
+            <div style={{ color: "#5b6478", fontSize: 13, marginTop: 8 }}>
+              No changes recorded yet — just the initial bulletin.
+            </div>
+          )}
+          {timeline.map((b, i) => (
+            <div
+              key={`${b.at}-${b.type}-${i}`}
+              style={{ borderTop: "1px solid #121622", padding: "7px 0", fontSize: 13, display: "flex", gap: 8 }}
+            >
+              <span style={{ color: "#5b6478", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                {fmtTime(b.at)}
+              </span>
+              <span aria-hidden style={{ width: 16, textAlign: "center" }}>
+                {beatGlyph(b.type)}
+              </span>
+              <span style={{ color: "#e2e8f0" }}>
+                {b.label}
+                {typeof b.severityRank === "number" && (
+                  <span style={{ marginLeft: 6, color: severityColor(b.severityRank) }}>
+                    · {severityLabel(b.severityRank)}
+                  </span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+
         {/* Message lifecycle / identity */}
         <div style={card}>
           <div style={cardLabel}>Message</div>
@@ -166,6 +224,62 @@ export default function AlertDetailPage() {
             })}
         </div>
       </div>
+
+      {/* Imagery, resources & trends — the P1/P2 satellite/camera/GDACS harvest. */}
+      {(snapshots.length > 0 || resources.length > 0 || series.length > 0) && (
+        <div style={{ ...card, marginTop: 14 }}>
+          <div style={cardLabel}>Imagery, resources &amp; trends</div>
+
+          {snapshots.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
+              {snapshots.slice(0, 12).map((s) => {
+                const src = `/api/alerts/snapshot/${s.id}?v=${encodeURIComponent(s.capturedAt)}`;
+                return (
+                  <a key={s.id} href={src} target="_blank" rel="noreferrer" style={{ display: "block", width: 160 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={src}
+                      alt={s.kind}
+                      style={{ width: 160, height: 100, objectFit: "cover", borderRadius: 6, border: "1px solid #1b2030", background: "#070a11" }}
+                    />
+                    <div style={{ color: "#8b95a7", fontSize: 11, marginTop: 3 }}>
+                      {s.kind}
+                      {s.distanceKm != null ? ` · ${Math.round(s.distanceKm)} km` : ""} · {fmtTime(s.observationTime)}
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          )}
+
+          {series.length > 0 && (
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+              {series.map((m) => (
+                <div key={m.metric} style={{ borderTop: "1px solid #121622", paddingTop: 8 }}>
+                  <div style={{ color: "#cbd5e1", fontSize: 13 }}>
+                    {m.metric} <span style={{ color: "#8b95a7" }}>· {m.latest}</span>
+                  </div>
+                  <Sparkline samples={m.samples} width={200} height={30} />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {resources.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ color: "#5b6478", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 }}>Resources</div>
+              {resources.map((r) => (
+                <div key={r.id ?? r.url} style={{ fontSize: 13, marginTop: 4 }}>
+                  <span style={{ color: "#5b6478" }}>{r.kind}</span>{" "}
+                  <a href={r.url} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", wordBreak: "break-all" }}>
+                    {r.description || r.url}
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Full CAP content */}
       {alert.info.map((inf, i) => (

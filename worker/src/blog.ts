@@ -14,6 +14,14 @@ export const blogInfo = (
   targetID = "unknown",
 ) => WorkerBackLogger("worker", "info", tag, message, stuff, type, targetID);
 
+export const blogWarn = (
+  tag: string,
+  message: string,
+  stuff: unknown = {},
+  type = "unknown",
+  targetID = "unknown",
+) => WorkerBackLogger("worker", "warn", tag, message, stuff, type, targetID);
+
 export const blogErr = (
   tag: string,
   message: string,

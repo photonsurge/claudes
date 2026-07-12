@@ -6,12 +6,12 @@
 
 import type { iVariableMeta } from "@photonsurge/shared/variables";
 
-import { buildNomadsUrl, padFhr } from "../sources/gfs";
+import { buildGfsS3Paths, padFhr } from "../sources/gfs";
 import { extractField } from "../grib/wgrib2";
 import { GFS_GRID } from "../grib/bake";
 import { bakeWind } from "../grib/bakeWind";
 import { bakeScalar } from "../grib/bakeScalar";
-import { downloadToTemp } from "./download";
+import { downloadIdxSubset } from "./download";
 
 export interface BakeVariableStepResult {
   buffer: Buffer;
@@ -36,15 +36,16 @@ export async function bakeVariableStep(
   // Masked scalars (SST/snow) also pull the GFS land-sea mask (LAND:surface) in
   // the same subset so we can bake the off-side as transparent.
   const masked = variable.encoding === "scalar" && !!gfs.mask;
-  const url = buildNomadsUrl({
-    date,
-    cycle,
-    fhr,
-    vars: masked ? [...gfs.vars, "LAND"] : gfs.vars,
-    levels: masked ? [...gfs.levels, "surface"] : gfs.levels,
-    product: gfs.product,
-  });
-  const gribPath = await downloadToTemp(url, `${variable.id}.f${padFhr(fhr)}.grib2`);
+  const { gribUrl, idxUrl } = buildGfsS3Paths({ date, cycle, fhr, product: gfs.product });
+  const gribPath = await downloadIdxSubset(
+    {
+      gribUrl,
+      idxUrl,
+      vars: masked ? [...gfs.vars, "LAND"] : gfs.vars,
+      levels: masked ? [...gfs.levels, "surface"] : gfs.levels,
+    },
+    `${variable.id}.f${padFhr(fhr)}.grib2`,
+  );
 
   if (variable.encoding === "uv") {
     const u = await extractField({ gribPath, match: `:${gfs.vars[0]}:`, ...GFS_GRID });

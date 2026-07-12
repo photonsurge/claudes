@@ -113,6 +113,31 @@ export function makeCamRepo(model: Model<iCamModel>) {
       return docs.map((d) => toCam(strip(d)));
     },
 
+    /**
+     * The `limit` cams nearest `[lng,lat]` (within `maxKm` if given), each with
+     * its great-circle distance — for the worker's "nearest cameras to this
+     * alert" snapshot job. Uses the existing `cam_geo_ix` 2dsphere via $geoNear.
+     */
+    async nearMany(opts: {
+      lng: number;
+      lat: number;
+      maxKm?: number;
+      limit?: number;
+      status?: Cam["status"];
+    }): Promise<{ cam: Cam; distanceKm: number }[]> {
+      const geoNear: Record<string, unknown> = {
+        near: { type: "Point", coordinates: [opts.lng, opts.lat] },
+        distanceField: "distanceM",
+        spherical: true,
+      };
+      if (typeof opts.maxKm === "number") geoNear.maxDistance = opts.maxKm * 1000;
+      if (opts.status) geoNear.query = { status: opts.status };
+      const rows = await model
+        .aggregate([{ $geoNear: geoNear } as any, { $limit: opts.limit ?? 3 }])
+        .exec();
+      return rows.map((doc: any) => ({ cam: toCam(strip(doc)), distanceKm: (doc.distanceM ?? 0) / 1000 }));
+    },
+
     /** A single cam by provider id, or null. */
     async getByCamId(camId: string): Promise<Cam | null> {
       const doc = await model.findOne({ camId }).lean().exec();

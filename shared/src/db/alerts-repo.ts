@@ -39,7 +39,7 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
      * still matches — an unchanged bulletin keeps its cached translation, a
      * changed one is correctly left blank for the next translate tick.
      */
-    async upsert(alert: iAlert): Promise<{ inserted: boolean }> {
+    async upsert(alert: iAlert): Promise<{ inserted: boolean; prev: iAlertModel | null }> {
       const { id: _id, ...rest } = alert as iAlert & { id?: string };
 
       // Fast path: CAP messages are immutable per (source, identifier) — a real
@@ -56,15 +56,17 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
         .lean()
         .exec();
       if (head && head.sent === alert.sent && head.active) {
-        return { inserted: false };
+        return { inserted: false, prev: null };
       }
 
       // Writing (new / changed / reactivating a deactivated one): carry forward the
       // translate job's cached fields so a re-ingest doesn't wipe them ($set
-      // replaces the info[] array wholesale). Only fetched on the write path.
+      // replaces the info[] array wholesale). Only fetched on the write path. Read
+      // everything but `raw` so it can double as the `prev` the ingest loop diffs
+      // for revision capture (a real update always lands here, never the fast path).
       const existing = head
         ? await model
-            .findOne({ source: alert.source, identifier: alert.identifier }, { info: 1 })
+            .findOne({ source: alert.source, identifier: alert.identifier }, { raw: 0 })
             .lean()
             .exec()
         : null;
@@ -93,7 +95,7 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
           { upsert: true },
         )
         .exec();
-      return { inserted: (res.upsertedCount ?? 0) > 0 };
+      return { inserted: (res.upsertedCount ?? 0) > 0, prev: existing ? strip(existing) : null };
     },
 
     /** Mark referenced messages of a source inactive (supersede / cancel chain). */

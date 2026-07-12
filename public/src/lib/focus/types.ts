@@ -18,6 +18,10 @@
  * contract, the shared subset moves down then.
  */
 import type { SegmentKind } from "@photonsurge/shared/director";
+import type { AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
+import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
+import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model";
+import type { AlertSnapshotMeta } from "@photonsurge/shared/db/alert-snapshot-repo";
 import type { Quake } from "@photonsurge/shared/tracks/types";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { Cam } from "@photonsurge/shared/cams/types";
@@ -105,6 +109,14 @@ export interface FocusBundle {
 
   // the thing on air + area context
   target: FocusTarget;
+  /** Derived change timeline for the on-air storm's alert (empty for non-storm cuts). */
+  alertTimeline: AlertTimelineBeat[];
+  /** The storm alert's metric series (GDACS score/severity/population), for graphs. */
+  alertSeries: iAlertSeries[];
+  /** Harvested official resource links for the storm alert. */
+  alertResources: iAlertResource[];
+  /** Captured satellite/camera snapshot metadata for the storm alert (bytes via /api/alerts/snapshot/:id). */
+  alertSnapshots: AlertSnapshotMeta[];
   areaAlerts: AlertFeature[];
   areaQuakes: Quake[];
   areaVolcanoes: Volcano[];

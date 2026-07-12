@@ -36,6 +36,7 @@ import {
 } from "@photonsurge/shared/weather/panels";
 import { alertsToFeatures, type Alert, type AlertFeature } from "../alerts";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
+import { buildTimeline, type AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
 import { isTargetedEvent, hasRealLocation } from "../../components/broadcast/kinds";
 import { haversineKm } from "../geo";
 import { regionMinPop } from "../cities";
@@ -389,6 +390,30 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     }
   }
 
+  // On-air alert extras — timeline + metric series + resource links + snapshot
+  // metadata — all built once HERE (with the rest of the bundle, no extra per-cut
+  // request) for the storm target. All indexed reads on (source, identifier),
+  // storm cuts only, so /watch gets everything in the one focus call.
+  let alertTimeline: AlertTimelineBeat[] = [];
+  let alertSeries: FocusBundle["alertSeries"] = [];
+  let alertResources: FocusBundle["alertResources"] = [];
+  let alertSnapshots: FocusBundle["alertSnapshots"] = [];
+  if (target?.kind === "storm") {
+    const { source: alSource, identifier: alIdent, id: alId } = target.alert.properties;
+    const [chain, revisions, series, resources, snapshots] = await Promise.all([
+      db.alerts.chain(alSource, alIdent),
+      db.alertRevisions.listForAlert(alSource, alIdent),
+      db.alertSeries.listForAlert(alSource, alIdent),
+      db.alertResources.listForAlert(alSource, alIdent),
+      db.alertSnapshots.listForAlert(alSource, alIdent),
+    ]);
+    const focal = chain.find((c) => c.id === alId) ?? chain[chain.length - 1];
+    if (focal) alertTimeline = buildTimeline(focal, chain, revisions, new Date());
+    alertSeries = series;
+    alertResources = resources;
+    alertSnapshots = snapshots;
+  }
+
   return {
     key,
     kind,
@@ -410,6 +435,10 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     cityConditions: [], // TODO(phase-3): bake CityConditionsPanel's /api/cities/weather read
 
     target,
+    alertTimeline,
+    alertSeries,
+    alertResources,
+    alertSnapshots,
     areaAlerts,
     areaQuakes,
     areaVolcanoes,

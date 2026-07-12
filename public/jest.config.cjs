@@ -27,6 +27,10 @@ module.exports = {
     ],
   },
   moduleNameMapper: {
+    // Server-only logger; the real module loads mongoose (untransformed ESM
+    // bson), so stub it for the many pure-logic suites that reach it via
+    // lib/api-log (e.g. lib/focus/focus-cache).
+    "^@photonsurge/shared/utill/BackLogger$": "<rootDir>/src/test/mocks/backlogger.ts",
     "^maplibre-gl$": "<rootDir>/src/test/mocks/maplibre-gl.ts",
     "^@deck.gl/core$": "<rootDir>/src/test/mocks/deckgl.ts",
     "^@deck.gl/layers$": "<rootDir>/src/test/mocks/deckgl.ts",

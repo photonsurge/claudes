@@ -11,6 +11,10 @@ const ctx = (over: Partial<ModeSlideContext> = {}): ModeSlideContext => ({
   cams: [],
   quakes: [],
   alerts: [],
+  alertTimeline: [],
+  alertSnapshots: [],
+  alertResources: [],
+  alertSeries: [],
   areaAlerts: [],
   areaQuakes: [],
   areaVolcanoes: [],
@@ -94,6 +98,30 @@ describe("modeSlides", () => {
     // A storm (no quake payload) with a framed area but no forecast/near-event
     // content → just the lede + the close-cities pages.
     expect(ids(seg({ kind: "storm" }), ctx({ histBbox: bbox }))).toEqual(["onair", "topcities", "cityconditions"]);
+  });
+
+  it("a storm folds in the alert-timeline slide after the lede when it has beats", () => {
+    const beats = [
+      { at: "2026-07-12T14:00:00Z", type: "ISSUED", label: "Warning issued" },
+      { at: "2026-07-12T14:17:00Z", type: "SEVERITY_CHANGED", label: "Severity raised to Severe", severityRank: 3 },
+    ] as unknown as ModeSlideContext["alertTimeline"];
+    expect(ids(seg({ kind: "storm" }), ctx({ alertTimeline: beats }))).toEqual(["onair", "alert-timeline"]);
+    // A lone ISSUED beat doesn't earn a slide.
+    const one = [{ at: "2026-07-12T14:00:00Z", type: "ISSUED", label: "Warning issued" }] as unknown as ModeSlideContext["alertTimeline"];
+    expect(ids(seg({ kind: "storm" }), ctx({ alertTimeline: one }))).toEqual(["onair"]);
+    // Non-storm targeted events never show it.
+    expect(ids(seg({ kind: "quake", quake: { mag: 6, depthKm: 10 } }), ctx({ alertTimeline: beats }))).not.toContain(
+      "alert-timeline",
+    );
+  });
+
+  it("a storm folds in the alert-media slide when it has snapshots", () => {
+    const snaps = [
+      { id: "s1", kind: "satellite", capturedAt: "2026-07-12T15:00:00Z", observationTime: "2026-07-12T00:00:00Z", width: 1024, height: 768 },
+    ] as unknown as ModeSlideContext["alertSnapshots"];
+    expect(ids(seg({ kind: "storm" }), ctx({ alertSnapshots: snaps }))).toEqual(["onair", "alert-media"]);
+    // No snapshots → no slide.
+    expect(ids(seg({ kind: "storm" }), ctx())).toEqual(["onair"]);
   });
 
   it("drops the sparse near-event page when it would show a single bare city", () => {

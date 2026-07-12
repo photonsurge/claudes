@@ -48,6 +48,7 @@
     "refresh:faults": "ts-node src/scripts/refreshFaults.ts",
     "refresh:aurora": "ts-node src/scripts/refreshAurora.ts",
     "refresh:fires": "ts-node src/scripts/refreshFires.ts",
+    "refresh:alert-snapshots": "ts-node src/scripts/refreshAlertSnapshots.ts",
     "refresh:volcanoes": "ts-node src/scripts/refreshVolcanoes.ts",
     "refresh:area-weather": "ts-node src/scripts/refreshAreaWeather.ts",
     "refresh:geomag": "ts-node src/scripts/refreshGeomag.ts",

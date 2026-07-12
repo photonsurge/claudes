@@ -1,6 +1,7 @@
 import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { buildTimeline } from "@photonsurge/shared/alerts/timeline";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,12 +32,22 @@ async function GET__impl(_req: Request, { params }: { params: Promise<{ id: stri
   if (!alert) {
     return NextResponse.json({ error: "no such alert" }, { status: 404, headers: NO_CACHE });
   }
-  const [chain, aired] = await Promise.all([
+  const [chain, aired, revisions, series, resources, snapshots] = await Promise.all([
     db.alerts.chain(alert.source, alert.identifier),
     // Storm segments are keyed "storm:<source>:<identifier>" (see worker candidates).
     db.airLog.listEntriesForSegment(`storm:${alert.source}:${alert.identifier}`),
+    db.alertRevisions.listForAlert(alert.source, alert.identifier),
+    db.alertSeries.listForAlert(alert.source, alert.identifier),
+    db.alertResources.listForAlert(alert.source, alert.identifier),
+    db.alertSnapshots.listForAlert(alert.source, alert.identifier),
   ]);
-  return NextResponse.json({ alert, chain, aired }, { status: 200, headers: NO_CACHE });
+  // The derived timeline (ISSUED → changes → ENDED) merging the CAP chain +
+  // in-place revisions — the same builder the on-air slide uses.
+  const timeline = buildTimeline(alert, chain, revisions, new Date());
+  return NextResponse.json(
+    { alert, chain, aired, revisions, timeline, series, resources, snapshots },
+    { status: 200, headers: NO_CACHE },
+  );
 }
 
 // --- request logging (lib/api-log) ---

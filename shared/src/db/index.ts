@@ -18,6 +18,14 @@ import { makeClimateYearRepo } from "./climate-year-repo";
 import { getCityModel } from "./city-model";
 import { getAlertModel } from "./alert-model";
 import { makeAlertsRepo } from "./alerts-repo";
+import { getAlertRevisionModel } from "./alert-revision-model";
+import { makeAlertRevisionRepo } from "./alert-revision-repo";
+import { getAlertSeriesModel } from "./alert-series-model";
+import { makeAlertSeriesRepo } from "./alert-series-repo";
+import { getAlertResourceModel } from "./alert-resource-model";
+import { makeAlertResourceRepo } from "./alert-resource-repo";
+import { getAlertSnapshotModel } from "./alert-snapshot-model";
+import { makeAlertSnapshotRepo } from "./alert-snapshot-repo";
 import { getSatelliteTleModel } from "./satellite-tle-model";
 import { makeSatelliteTleRepo } from "./satellite-tle-repo";
 import { getTrackSnapshotModel } from "./track-snapshot-model";
@@ -120,6 +128,7 @@ export function createDb(conn: Connection) {
     aurora: makeInlineBlobStore("aurora", blobFs),
     geomag: makeInlineBlobStore("geomag", blobFs),
     satimg: makeInlineBlobStore("satimg", blobFs),
+    alertSnapshot: makeInlineBlobStore("alert-snapshot", blobFs),
   };
 
   return {
@@ -144,6 +153,10 @@ export function createDb(conn: Connection) {
     cities: mongoCrud(getCityModel(conn)),
     cityWeather: makeCityWeatherRepo(getCityWeatherModel(conn)),
     alerts: makeAlertsRepo(getAlertModel(conn)),
+    alertRevisions: makeAlertRevisionRepo(getAlertRevisionModel(conn)),
+    alertSeries: makeAlertSeriesRepo(getAlertSeriesModel(conn)),
+    alertResources: makeAlertResourceRepo(getAlertResourceModel(conn)),
+    alertSnapshots: makeAlertSnapshotRepo(getAlertSnapshotModel(conn), blobs.alertSnapshot),
     satelliteTles: makeSatelliteTleRepo(getSatelliteTleModel(conn)),
     trackSnapshots: makeTrackSnapshotRepo(getTrackSnapshotModel(conn)),
     quakes: makeQuakeRepo(getQuakeModel(conn)),

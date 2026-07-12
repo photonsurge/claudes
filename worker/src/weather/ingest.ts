@@ -21,6 +21,8 @@ import { archiveForecastRun } from "./archiveForecast";
 import { cleanupTemp } from "./download";
 import { cfg, bakeSteps, runDateFor } from "./config";
 import { bakeVariableStep } from "./bakeVariableStep";
+import { blogInfo, blogWarn, blogErr } from "../blog";
+import { dbg } from "./debug";
 
 const TAG = "job:weather";
 
@@ -77,39 +79,66 @@ export async function runIngest(job: Job) {
   const runId = created.data.id;
   const tempPaths: string[] = [];
 
+  // Only GFS-bound variables are baked here (ocean-only vars have their own
+  // source path). Counted up-front so the lifecycle logs report progress.
+  const gfsVars = Object.values(VARIABLE_REGISTRY).filter((v) => v.gfs);
+  const startedAt = Date.now();
+  blogInfo(
+    TAG,
+    `ingest start: gfs ${date}/${cycle}z — ${gfsVars.length} vars × ${steps.length} steps`,
+    { date, cycle, vars: gfsVars.length, steps: steps.length },
+    "weather",
+    "ingest",
+  );
+
   try {
     const variables: Record<string, iWeatherVariableEntry> = {};
-    // Per-variable failure reasons, so a total wipe-out surfaces WHY (the plain
-    // `log` below only reaches stdout, not the admin blog) — the thrown error
-    // then carries the real cause (e.g. "download failed 403", DNS error).
+    // A variable that produced NO usable hour, with why — so a total wipe-out
+    // surfaces its cause (the plain `log` below only reaches stdout, not the
+    // admin blog); the summary + thrown error then carry the real reason
+    // (e.g. "download failed 302" = NOMADS throttling, "404" = tail not posted).
     const skipped: Array<{ variable: string; err: string }> = [];
+    // A variable that published but is missing some forecast hours.
+    const degraded: Array<{ variable: string; missing: number[] }> = [];
 
-    for (const variable of Object.values(VARIABLE_REGISTRY)) {
-      // GFS ingest only handles variables with a GFS binding. Ocean-only vars
-      // (current/salinity, and RTOFS-preferred SST) are baked by their own
-      // source path; GFS still supplies masked SST here as the fallback.
-      if (!variable.gfs) continue;
-      // Each variable is independent: a missing field (e.g. APCP/rain has no
-      // record at f000) skips just that variable, it doesn't fail the whole run.
-      try {
-        const entry: iWeatherVariableEntry = {
-          encoding: variable.encoding,
-          units: variable.units,
-          domain: [variable.domain[0], variable.domain[1]],
-          palette: variable.palette,
-          files: {},
-        };
+    let vi = 0;
+    for (const variable of gfsVars) {
+      vi += 1;
+      const vStart = Date.now();
+      // Always-on progress so a slow ingest shows a live heartbeat in the logs
+      // (each variable is ~50 forecast-hour downloads + bakes).
+      log(TAG, `ingest: baking ${variable.id} (${vi}/${gfsVars.length})`, {
+        run: runDate.toISOString(),
+        steps: bakedFhrs.length,
+      });
 
-        let prevAccumPath: string | undefined;
-        let prevFhr: number | undefined;
-        for (const fhr of bakedFhrs) {
+      const entry: iWeatherVariableEntry = {
+        encoding: variable.encoding,
+        units: variable.units,
+        domain: [variable.domain[0], variable.domain[1]],
+        palette: variable.palette,
+        files: {},
+      };
+
+      let prevAccumPath: string | undefined;
+      let prevFhr: number | undefined;
+      const fhrErrors: Array<{ fhr: number; err: string }> = [];
+
+      for (const fhr of bakedFhrs) {
+        // Each forecast hour is independent: a single missing/failed step (a
+        // not-yet-posted tail hour like f336, or one throttled download) skips
+        // ONLY that hour — it must NOT discard the whole variable and the good
+        // hours already baked (the bug that turned one f336 404 into a total
+        // "no variables baked" wipe-out).
+        try {
           // Accumulated fields (precip) diff against the previous baked step, so
           // the window is the actual gap between steps (3h in the detailed track,
-          // 12h across the daily-outlook tail) — not a fixed stepHours.
+          // 12h across the daily-outlook tail) — widening correctly across any
+          // skipped hour since prevFhr only advances on success.
           const windowHours = prevFhr === undefined ? stepHours : fhr - prevFhr;
           const baked = await bakeVariableStep(variable, date, cycle, fhr, prevAccumPath, windowHours);
           tempPaths.push(baked.gribPath);
-          if (variable.gfs.accumulated) prevAccumPath = baked.gribPath;
+          if (variable.gfs!.accumulated) prevAccumPath = baked.gribPath;
           prevFhr = fhr;
 
           entry.imageUnscale = baked.imageUnscale;
@@ -125,15 +154,36 @@ export async function runIngest(job: Job) {
             byteSize: baked.buffer.byteLength,
           });
           if (!tex.success || !tex.data) {
-            throw new Error(`ingest: texture create failed for ${variable.id} f${fhr}`);
+            throw new Error(`texture create failed for ${variable.id} f${fhr}`);
           }
           entry.files[String(fhr)] = tex.data.id;
+          dbg(TAG, `baked ${variable.id} f${fhr}`, { bytes: baked.buffer.byteLength });
+        } catch (fhrErr) {
+          fhrErrors.push({ fhr, err: String(fhrErr) });
+          dbg(TAG, `fhr skipped ${variable.id} f${fhr}`, { err: String(fhrErr) });
         }
+      }
 
-        if (Object.keys(entry.files).length > 0) variables[variable.id] = entry;
-      } catch (varErr) {
-        log(TAG, "ingest: variable skipped", { variable: variable.id, err: String(varErr) });
-        skipped.push({ variable: variable.id, err: String(varErr) });
+      const bakedCount = Object.keys(entry.files).length;
+      const vms = Date.now() - vStart;
+      if (bakedCount > 0) {
+        variables[variable.id] = entry;
+        if (fhrErrors.length > 0) degraded.push({ variable: variable.id, missing: fhrErrors.map((f) => f.fhr) });
+        log(TAG, `ingest: ${variable.id} baked ${bakedCount}/${bakedFhrs.length} hrs in ${vms}ms`, {
+          variable: variable.id,
+          baked: bakedCount,
+          skippedHrs: fhrErrors.length,
+          ms: vms,
+          ...(fhrErrors.length > 0 ? { missing: fhrErrors.map((f) => f.fhr) } : {}),
+        });
+      } else {
+        const why = fhrErrors[0]?.err ?? "no hours produced";
+        log(TAG, `ingest: ${variable.id} FAILED (0/${bakedFhrs.length} hrs) in ${vms}ms — ${why}`, {
+          variable: variable.id,
+          err: why,
+          ms: vms,
+        });
+        skipped.push({ variable: variable.id, err: why });
         await db.weatherTextures.deleteMany({ runId, variable: variable.id }).catch(() => {});
       }
     }
@@ -141,8 +191,18 @@ export async function runIngest(job: Job) {
     if (Object.keys(variables).length === 0) {
       // Surface a representative sample of the underlying failures — almost
       // always the same root cause across every variable (source unreachable,
-      // NOMADS rate-limit/403, wgrib2 missing), so the first few say it all.
+      // NOMADS 302 throttle / 403 block, wgrib2 missing), so the first few say
+      // it all. Blogged (admin/logs) AND thrown (the thrown message reaches the
+      // job-failure log too, but the blog carries the structured breakdown).
       const sample = skipped.slice(0, 3).map((s) => `${s.variable}: ${s.err}`).join(" | ");
+      blogErr(
+        TAG,
+        `ingest failed: 0/${gfsVars.length} vars baked (every field failed) — ` +
+          `likely source throttling/outage. ${sample}`,
+        new Error(sample || "all fields failed"),
+        "weather",
+        "ingest",
+      );
       throw new Error(
         `ingest: no variables baked (all ${skipped.length} fields failed)` +
           (sample ? ` — ${sample}` : ""),
@@ -162,6 +222,37 @@ export async function runIngest(job: Job) {
       targetType: "weather",
       data: { run: runDate.toISOString() },
     });
+
+    // Lifecycle summary in /admin/logs: green when whole, warn when any variable
+    // was dropped or came in with gaps (still published, just degraded).
+    const okCount = Object.keys(variables).length;
+    const ms = Date.now() - startedAt;
+    if (skipped.length > 0 || degraded.length > 0) {
+      blogWarn(
+        TAG,
+        `ingest published gfs ${date}/${cycle}z: ${okCount}/${gfsVars.length} vars` +
+          (skipped.length ? `, ${skipped.length} dropped` : "") +
+          (degraded.length ? `, ${degraded.length} with gaps` : "") +
+          ` (${ms}ms)`,
+        {
+          run: runDate.toISOString(),
+          baked: okCount,
+          dropped: skipped.map((s) => s.variable),
+          degraded: degraded.map((d) => ({ variable: d.variable, missing: d.missing })),
+          ms,
+        },
+        "weather",
+        "ingest",
+      );
+    } else {
+      blogInfo(
+        TAG,
+        `ingest published gfs ${date}/${cycle}z: ${okCount} vars (${ms}ms)`,
+        { run: runDate.toISOString(), baked: okCount, ms },
+        "weather",
+        "ingest",
+      );
+    }
 
     await runRetention(db as any, retainRuns);
 

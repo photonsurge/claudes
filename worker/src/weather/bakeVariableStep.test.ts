@@ -2,19 +2,19 @@ import sharp from "sharp";
 
 // Mock the IO boundaries so no network / no wgrib2 CLI is touched.
 jest.mock("./download", () => ({
-  downloadToTemp: jest.fn(),
+  downloadIdxSubset: jest.fn(),
 }));
 jest.mock("../grib/wgrib2", () => ({
   extractField: jest.fn(),
 }));
 
 import { bakeVariableStep } from "./bakeVariableStep";
-import { downloadToTemp } from "./download";
+import { downloadIdxSubset } from "./download";
 import { extractField } from "../grib/wgrib2";
 import { GFS_GRID, WIND_IMAGE_UNSCALE } from "../grib/bake";
 import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
 
-const mockDownload = downloadToTemp as jest.Mock;
+const mockDownload = downloadIdxSubset as jest.Mock;
 const mockExtract = extractField as jest.Mock;
 
 const grid = (fill: number) => ({
@@ -36,13 +36,14 @@ describe("bakeVariableStep", () => {
     mockDownload.mockResolvedValue("/tmp/gfs-xyz/file.grib2");
   });
 
-  it("builds the NOMADS url from variable meta and downloads to a fhr-named temp file", async () => {
+  it("builds the S3 grib/idx paths + var/level selection and names the temp file by fhr", async () => {
     mockExtract.mockResolvedValue(grid(290));
     await bakeVariableStep(VARIABLE_REGISTRY.temp, "20260628", "06", 12, undefined, 3);
-    const [url, name] = mockDownload.mock.calls[0];
-    expect(url).toContain("file=gfs.t06z.pgrb2.0p25.f012");
-    expect(url).toContain("var_TMP=on");
-    expect(url).toContain("lev_2_m_above_ground=on");
+    const [args, name] = mockDownload.mock.calls[0];
+    expect(args.gribUrl).toContain("gfs.20260628/06/atmos/gfs.t06z.pgrb2.0p25.f012");
+    expect(args.idxUrl).toBe(`${args.gribUrl}.idx`);
+    expect(args.vars).toContain("TMP");
+    expect(args.levels).toContain("2_m_above_ground");
     expect(name).toBe("temp.f012.grib2");
   });
 
@@ -73,10 +74,9 @@ describe("bakeVariableStep", () => {
     mockExtract.mockResolvedValueOnce(grid(290)).mockResolvedValueOnce(grid(0));
     const res = await bakeVariableStep(VARIABLE_REGISTRY.sst, "20260628", "00", 6, undefined, 3);
     expect(res.encoding).toBe("scalar");
-    const [url] = mockDownload.mock.calls[0];
-    expect(url).toContain("var_TMP=on");
-    expect(url).toContain("var_LAND=on");
-    expect(url).toContain("lev_surface=on");
+    const [args] = mockDownload.mock.calls[0];
+    expect(args.vars).toEqual(expect.arrayContaining(["TMP", "LAND"]));
+    expect(args.levels).toContain("surface");
     expect(mockExtract).toHaveBeenCalledTimes(2);
     expect(mockExtract.mock.calls[0][0]).toMatchObject({ match: ":TMP:" });
     expect(mockExtract.mock.calls[1][0]).toMatchObject({ match: ":LAND:" });
@@ -85,9 +85,9 @@ describe("bakeVariableStep", () => {
   it("does NOT pull LAND for an unmasked scalar (cloud)", async () => {
     mockExtract.mockResolvedValue(grid(60));
     await bakeVariableStep(VARIABLE_REGISTRY.cloud, "20260628", "00", 6, undefined, 3);
-    const [url] = mockDownload.mock.calls[0];
-    expect(url).toContain("var_TCDC=on");
-    expect(url).not.toContain("var_LAND=on");
+    const [args] = mockDownload.mock.calls[0];
+    expect(args.vars).toContain("TCDC");
+    expect(args.vars).not.toContain("LAND");
     expect(mockExtract).toHaveBeenCalledTimes(1);
   });
 

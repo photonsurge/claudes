@@ -4,6 +4,12 @@ import {
   candidateCycles,
   latestAvailableRun,
   GFS_LATENCY_HOURS,
+  buildGfsS3Paths,
+  parseGfsIdx,
+  idxLevel,
+  selectIdxRanges,
+  matchIdxEntries,
+  GFS_S3_BASE,
 } from "./gfs";
 
 describe("padFhr", () => {
@@ -268,13 +274,116 @@ describe("latestAvailableRun", () => {
     expect(run.date).toBe("20260628");
   });
 
-  it("probes f000 PRMSL/mean_sea_level for the candidate cycle", async () => {
+  it("probes the f000 S3 .idx sidecar for the candidate cycle", async () => {
     const now = new Date(Date.UTC(2026, 5, 28, 11, 0, 0));
     const probe = jest.fn().mockResolvedValue(true);
     await latestAvailableRun(now, probe);
     const url = probe.mock.calls[0][0] as string;
-    expect(url).toContain("file=gfs.t06z.pgrb2.0p25.f000");
-    expect(url).toContain("var_PRMSL=on");
-    expect(url).toContain("lev_mean_sea_level=on");
+    expect(url).toBe(
+      `${GFS_S3_BASE}/gfs.20260628/06/atmos/gfs.t06z.pgrb2.0p25.f000.idx`,
+    );
+  });
+});
+
+describe("buildGfsS3Paths", () => {
+  it("builds the atmos grib + .idx object URLs (no CGI, no query params)", () => {
+    const { gribUrl, idxUrl } = buildGfsS3Paths({ date: "20260628", cycle: "6", fhr: 12 });
+    expect(gribUrl).toBe(`${GFS_S3_BASE}/gfs.20260628/06/atmos/gfs.t06z.pgrb2.0p25.f012`);
+    expect(idxUrl).toBe(`${gribUrl}.idx`);
+  });
+
+  it("builds the GFS-Wave gridded path with a .grib2 extension", () => {
+    const { gribUrl, idxUrl } = buildGfsS3Paths({ date: "20260628", cycle: "00", fhr: 0, product: "wave" });
+    expect(gribUrl).toBe(`${GFS_S3_BASE}/gfs.20260628/00/wave/gridded/gfswave.t00z.global.0p25.f000.grib2`);
+    expect(idxUrl).toBe(`${gribUrl}.idx`);
+  });
+});
+
+describe("parseGfsIdx", () => {
+  const idx = [
+    "1:0:d=2026071212:PRMSL:mean sea level:anl:",
+    "2:1002173:d=2026071212:CLMR:1 hybrid level:anl:",
+    "585:421256688:d=2026071212:UGRD:10 m above ground:anl:",
+    "586:422230608:d=2026071212:VGRD:10 m above ground:anl:",
+    "", // trailing blank line
+  ].join("\n");
+
+  it("parses msg/start/var/level and skips blank lines", () => {
+    const e = parseGfsIdx(idx);
+    expect(e).toHaveLength(4);
+    expect(e[0]).toEqual({ msg: 1, start: 0, varName: "PRMSL", level: "mean sea level" });
+    expect(e[2]).toEqual({ msg: 585, start: 421256688, varName: "UGRD", level: "10 m above ground" });
+  });
+
+  it("skips malformed lines (too few fields / non-numeric offset)", () => {
+    const e = parseGfsIdx("garbage\n3:300:d=x:TMP:surface:anl:");
+    expect(e).toEqual([{ msg: 3, start: 300, varName: "TMP", level: "surface" }]);
+  });
+});
+
+describe("idxLevel", () => {
+  it("converts NOMADS level tokens to their .idx spelling", () => {
+    expect(idxLevel("10_m_above_ground")).toBe("10 m above ground");
+    expect(idxLevel("mean_sea_level")).toBe("mean sea level");
+    expect(idxLevel("surface")).toBe("surface");
+    expect(idxLevel("0-0.1_m_below_ground")).toBe("0-0.1 m below ground");
+  });
+});
+
+describe("selectIdxRanges", () => {
+  const entries = parseGfsIdx(
+    [
+      "1:0:d=x:PRMSL:mean sea level:anl:",
+      "2:100:d=x:UGRD:10 m above ground:anl:",
+      "3:250:d=x:VGRD:10 m above ground:anl:",
+      "4:400:d=x:TMP:surface:anl:",
+      "5:500:d=x:TMP:2 m above ground:anl:",
+      "6:650:d=x:LAND:surface:anl:",
+    ].join("\n"),
+  );
+
+  it("merges the two contiguous wind messages into one Range", () => {
+    // UGRD (100..249) + VGRD (250..399) are adjacent -> one Range 100-399.
+    expect(selectIdxRanges(entries, ["UGRD", "VGRD"], ["10_m_above_ground"])).toEqual([
+      { start: 100, end: 399 },
+    ]);
+  });
+
+  it("disambiguates a repeated var by level (TMP@surface, not TMP@2m)", () => {
+    expect(selectIdxRanges(entries, ["TMP"], ["surface"])).toEqual([{ start: 400, end: 499 }]);
+  });
+
+  it("keeps a masked var + its LAND field as separate (non-adjacent) ranges, last open-ended", () => {
+    expect(selectIdxRanges(entries, ["TMP", "LAND"], ["surface"])).toEqual([
+      { start: 400, end: 499 },
+      { start: 650 }, // final message -> to EOF
+    ]);
+  });
+
+  it("returns nothing when no message matches", () => {
+    expect(selectIdxRanges(entries, ["ZZZZ"], ["surface"])).toEqual([]);
+  });
+
+  it("accepts a parenthesised idx level variant of the requested level", () => {
+    const e = parseGfsIdx(
+      "1:0:d=x:TCDC:entire atmosphere (considered as a single layer):anl:\n2:900:d=x:TMP:surface:anl:",
+    );
+    expect(selectIdxRanges(e, ["TCDC"], ["entire_atmosphere"])).toEqual([{ start: 0, end: 899 }]);
+  });
+
+  it("de-dupes an instant + time-average repeat of the same (var, level) to the FIRST message", () => {
+    // GFS emits e.g. PRATE:surface twice — instantaneous then 0-3h average. Baking
+    // both would hand wgrib2 two records for one field; keep only the first.
+    const e = parseGfsIdx(
+      [
+        "1:0:d=x:PRATE:surface:3 hour fcst:",
+        "2:500:d=x:PRATE:surface:0-3 hour ave fcst:",
+        "3:900:d=x:TMP:2 m above ground:3 hour fcst:",
+      ].join("\n"),
+    );
+    expect(matchIdxEntries(e, ["PRATE"], ["surface"])).toHaveLength(1);
+    // the two PRATE messages are contiguous, so a naive matcher would merge them
+    // into one range 0-899; the de-dupe keeps just the instantaneous 0-499.
+    expect(selectIdxRanges(e, ["PRATE"], ["surface"])).toEqual([{ start: 0, end: 499 }]);
   });
 });

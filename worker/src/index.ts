@@ -266,6 +266,63 @@ process.on("uncaughtException", (err) => {
     log(TAG, `failed to register alerts.translate`, { err: summarizeForLog(err) });
   }
 
+  // ---- Repeatable alerts.snapshotSatellite job (hourly) ----
+  // Bake a GIBS satellite still over each interesting active alert's bbox. Onset
+  // one-shots (an alert escalating to severe+) are enqueued from alerts.ingest;
+  // this is the steady hourly refresh. Opt-out via ALERT_SNAPSHOT_ENABLED=false
+  // (matches jobs/alerts.ts#alertSnapshotEnabled).
+  if (process.env.ALERT_SNAPSHOT_ENABLED !== "false") {
+    const ALERT_SNAPSHOT_MS = Number(process.env.ALERT_SNAPSHOT_MS || 60 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "alerts", type: "alerts", event: "snapshotSatellite", data: {} },
+        {
+          repeat: { every: ALERT_SNAPSHOT_MS, offset: staggerOffset("alerts-snapshot-satellite", ALERT_SNAPSHOT_MS) },
+          jobId: "alerts-snapshot-satellite",
+        },
+      );
+      log(TAG, `registered repeatable alerts.snapshotSatellite`, { every: ALERT_SNAPSHOT_MS });
+    } catch (err) {
+      log(TAG, `failed to register alerts.snapshotSatellite`, { err: summarizeForLog(err) });
+    }
+
+    // Side-by-side "then vs now" comparison, offset from the satellite bake so it
+    // runs once fresh frames exist.
+    const ALERT_COMPARE_MS = Number(process.env.ALERT_COMPARE_MS || 60 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "alerts", type: "alerts", event: "snapshotCompare", data: {} },
+        {
+          repeat: { every: ALERT_COMPARE_MS, offset: staggerOffset("alerts-snapshot-compare", ALERT_COMPARE_MS) },
+          jobId: "alerts-snapshot-compare",
+        },
+      );
+      log(TAG, `registered repeatable alerts.snapshotCompare`, { every: ALERT_COMPARE_MS });
+    } catch (err) {
+      log(TAG, `failed to register alerts.snapshotCompare`, { err: summarizeForLog(err) });
+    }
+
+    // Nearby-camera stills — opt-in (fetches + stores third-party images).
+    if (process.env.ALERT_CAMERA_SNAPSHOT_ENABLED === "true") {
+      const ALERT_CAMERA_MS = Number(process.env.ALERT_CAMERA_MS || 60 * 60 * 1000);
+      try {
+        await myQueue.add(
+          "do",
+          { domain: "alerts", type: "alerts", event: "snapshotCameras", data: {} },
+          {
+            repeat: { every: ALERT_CAMERA_MS, offset: staggerOffset("alerts-snapshot-cameras", ALERT_CAMERA_MS) },
+            jobId: "alerts-snapshot-cameras",
+          },
+        );
+        log(TAG, `registered repeatable alerts.snapshotCameras`, { every: ALERT_CAMERA_MS });
+      } catch (err) {
+        log(TAG, `failed to register alerts.snapshotCameras`, { err: summarizeForLog(err) });
+      }
+    }
+  }
+
   // ---- Repeatable cams.ingest jobs (one per enabled camera source) ----
   // Each source polls its provider on its own pollIntervalSec and upserts the
   // canonical catalog into Mongo; the public app reads only that cache. A fixed
