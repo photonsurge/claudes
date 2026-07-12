@@ -38,7 +38,9 @@ const WeatherTextureSchema = new mongoose.Schema<iWeatherTextureModel>(
     fhr: { type: Number, required: true },
     contentType: { type: String, required: true, enum: ["image/png", "image/tiff"] },
     encoding: { type: String, required: true, enum: ["uv", "scalar"] },
-    data: { type: Buffer, required: true },
+    // Optional: bytes live on the shared ${BLOB_DIR} folder when FS-backed, only
+    // inline here off-FS or before the migrate:blobs pass. See weather-texture-repo.
+    data: { type: Buffer, required: false },
     byteSize: { type: Number, required: true, default: 0 },
   },
   mongoTimestamps,

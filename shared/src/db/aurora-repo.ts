@@ -1,24 +1,10 @@
 import type { Model } from "mongoose";
 import type { AuroraBounds, AuroraMeta } from "../aurora/types";
 import type { iAuroraModel } from "./aurora-model";
+import type { InlineBlobStore } from "./inline-blob";
 
 /** The one singleton key — there is only ever a single cached aurora frame. */
 const LATEST = "latest";
-
-/**
- * Coerce whatever Mongo hands back for a stored Buffer field into real PNG bytes.
- * Depending on `.lean()` + the driver's `promoteBuffers` setting, `png` can come
- * back as a Node Buffer, a BSON `Binary` (subtype 0, bytes on `.buffer`), or a
- * plain Uint8Array. `Buffer.from(binary)` on a BSON Binary yields GARBAGE (the
- * browser then fails with "source image could not be decoded"), so normalise here.
- */
-function toPngBuffer(v: any): Buffer {
-  if (Buffer.isBuffer(v)) return v;
-  if (v && v._bsontype === "Binary") return Buffer.from(v.buffer ?? v.value?.() ?? []);
-  if (v && v.buffer instanceof Uint8Array) return Buffer.from(v.buffer);
-  if (v instanceof Uint8Array) return Buffer.from(v);
-  return Buffer.from(v ?? []);
-}
 
 /** Everything the worker hands the repo for one baked frame. */
 export interface AuroraBakeInput {
@@ -52,12 +38,15 @@ const toMeta = (doc: any): AuroraMeta => ({
  * in two so the metadata endpoint never ships the PNG bytes: `latest()` projects
  * the blob out; `latestPng()` fetches only the blob for the image route.
  */
-export function makeAuroraRepo(auroraModel: Model<iAuroraModel>) {
+export function makeAuroraRepo(auroraModel: Model<iAuroraModel>, blobs: InlineBlobStore) {
   return {
     auroraModel,
 
     /** Replace the single cached frame with a freshly baked one. */
     async replace(frame: AuroraBakeInput): Promise<{ maxProb: number }> {
+      // Bytes to disk first (when FS-backed), so a reader never sees fresh meta
+      // pointing at stale/absent pixels; the doc keeps them inline only off-FS.
+      await blobs.put(LATEST, frame.png);
       await auroraModel.updateOne(
         { frameId: LATEST },
         {
@@ -70,7 +59,7 @@ export function makeAuroraRepo(auroraModel: Model<iAuroraModel>) {
             maxProb: frame.maxProb,
             kp: frame.kp ?? null,
             kpTime: frame.kpTime ?? null,
-            png: frame.png,
+            png: blobs.inlineValue(frame.png),
             contentType: frame.contentType ?? "image/png",
             fetchedAt: new Date(),
           },
@@ -93,12 +82,12 @@ export function makeAuroraRepo(auroraModel: Model<iAuroraModel>) {
 
     /** The baked PNG bytes for the image route, or null if unbaked. */
     async latestPng(): Promise<{ data: Buffer; contentType: string; updatedAt: string } | null> {
-      // No `.lean()` so Mongoose casts `png` back to a real Buffer; `toPngBuffer`
-      // still guards the Binary/Uint8Array cases defensively.
+      // No `.lean()` so Mongoose casts an inline `png` back to a real Buffer; the
+      // blob store reads disk-first and only falls back to that inline value.
       const doc = await auroraModel.findOne({ frameId: LATEST }).exec();
-      if (!doc || !doc.png) return null;
-      const data = toPngBuffer(doc.png);
-      if (!data.length) return null;
+      if (!doc) return null;
+      const data = await blobs.get(LATEST, doc.png);
+      if (!data || !data.length) return null;
       return {
         data,
         contentType: doc.contentType ?? "image/png",

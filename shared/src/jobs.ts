@@ -141,6 +141,17 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     priority: 10,
   },
   {
+    id: "blobs-migrate",
+    label: "Migrate blobs → shared disk",
+    description:
+      "One-off: move EVERY Mongo-stored binary payload (baked textures, both frame archives + their sidecars, aurora/geomag/satimg caches, and ad + admin-image uploads) onto the shared ${BLOB_DIR} folder, taking the binary archive off the database server (lighter backups/replication/IO). Requires BLOB_DIR to be set + mounted into the worker (no-op without it). Copy-and-verify then drop, so it's safe on the irreplaceable ad/image uploads; idempotent — re-run any time. Run ONCE after deploying the shared-folder split. Same as `yarn migrate:blobs`.",
+    domain: "maintenance",
+    type: "maintenance",
+    event: "migrateBlobs",
+    group: "Maintenance",
+    priority: 10,
+  },
+  {
     id: "alerts-ingest",
     label: "Ingest alerts",
     description: "Pull active NWS alerts into Mongo.",

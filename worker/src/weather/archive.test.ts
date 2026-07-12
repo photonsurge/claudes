@@ -80,7 +80,7 @@ describe("archiveRun", () => {
     const upserts: any[] = [];
     const db: ArchiveDb = {
       weatherTextures: {
-        getByID: async (id: string) => ({ success: true, data: { data: Buffer.from(id) } }),
+        getBytes: async (id: string) => ({ data: Buffer.from(id), contentType: "image/png" }),
       },
       weatherFrames: {
         upsert: async (f: any) => {
@@ -108,10 +108,8 @@ describe("archiveRun", () => {
 
   it("skips empty/missing textures without failing the run", async () => {
     const { db, upserts } = makeDb();
-    db.weatherTextures.getByID = async (id: string) =>
-      id === "tex-t0"
-        ? { success: false }
-        : { success: true, data: { data: Buffer.from(id) } };
+    db.weatherTextures.getBytes = async (id: string) =>
+      id === "tex-t0" ? null : { data: Buffer.from(id), contentType: "image/png" };
     const res = await archiveRun(db, run);
     expect(res.written).toBe(2);
     expect(upserts.some((f) => f.variable === "temp" && f.fhr === 0)).toBe(false);

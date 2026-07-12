@@ -107,9 +107,15 @@ function serializeJob(job: any) {
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const state = (STATES as readonly string[]).includes(url.searchParams.get("state") || "")
-    ? (url.searchParams.get("state") as State)
-    : "active";
+  // `state` may be a single state (the queue dashboard) or a comma-separated
+  // list (the jobs-page "active & queued" summary, which wants everything
+  // in-flight in one call). Each returned job is tagged with the state it came
+  // from so a merged list stays sortable.
+  const requested = (url.searchParams.get("state") || "active")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s): s is State => (STATES as readonly string[]).includes(s));
+  const states: State[] = requested.length ? requested : ["active"];
   const limit = Math.min(Math.max(1, Number(url.searchParams.get("limit")) || 100), 1000);
 
   const q = getQueue();
@@ -119,16 +125,21 @@ export async function GET(req: Request) {
       q.isPaused(),
       getSchedules(q),
     ]);
-    const raw = await q.getJobs([state as any], 0, limit - 1, false);
-    const jobs = raw.filter(Boolean).map((j: any) => serializeJob(j));
+    const perState = await Promise.all(
+      states.map(async (s) => {
+        const raw = await q.getJobs([s as any], 0, limit - 1, false);
+        return raw.filter(Boolean).map((j: any) => ({ ...serializeJob(j), state: s }));
+      }),
+    );
+    const jobs = perState.flat();
     return NextResponse.json(
-      { queue: q.name, state, counts, paused, jobs, repeatables, limit },
+      { queue: q.name, state: states.length === 1 ? states[0] : states.join(","), counts, paused, jobs, repeatables, limit },
       { status: 200, headers: NO_CACHE },
     );
   } catch (err) {
     // Redis/worker down — return a shell so the page still renders the error.
     return NextResponse.json(
-      { queue: q.name, state, counts: null, paused: false, jobs: [], repeatables: [], error: String(err) },
+      { queue: q.name, state: states.join(","), counts: null, paused: false, jobs: [], repeatables: [], error: String(err) },
       { status: 200, headers: NO_CACHE },
     );
   }

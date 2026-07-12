@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { buildAreaHistorySeries, parseTimeParam } from "../../../../../lib/weather-history";
+import { withCache } from "../../../../../lib/focus/focus-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** Server-side Redis hold — see /history/point. */
+const HIST_TTL_SEC = Number(process.env.WEATHER_PANEL_CACHE_TTL_SEC || 300);
 
 /**
  * GET /api/weather/history/area?west=&south=&east=&north=&variable=temp[&from=][&to=][&model=]
@@ -28,20 +32,26 @@ export async function GET(req: Request) {
     );
   }
 
-  const db = await getAppDb();
-  // listMeta (no bytes) + a by-id loader: the builder streams only the picked
-  // frames' bytes a few at a time instead of buffering the whole series.
-  const meta = await db.weatherFrames.listMeta({
-    variable,
-    model: url.searchParams.get("model") ?? undefined,
-    from: parseTimeParam(url.searchParams.get("from")),
-    to: parseTimeParam(url.searchParams.get("to")),
+  const model = url.searchParams.get("model");
+  const from = url.searchParams.get("from");
+  const to = url.searchParams.get("to");
+  const key = `feed:v1:whist:area:${west},${south},${east},${north}:${variable}:${model ?? "-"}:${from ?? "-"}:${to ?? "-"}`;
+  const { value, hit } = await withCache(key, HIST_TTL_SEC, async () => {
+    const db = await getAppDb();
+    // listMeta (no bytes) + a by-id loader: the builder streams only the picked
+    // frames' bytes a few at a time instead of buffering the whole series.
+    const meta = await db.weatherFrames.listMeta({
+      variable,
+      model: model ?? undefined,
+      from: parseTimeParam(from),
+      to: parseTimeParam(to),
+    });
+    return buildAreaHistorySeries(variable, meta, [west, south, east, north], (id) =>
+      db.weatherFrames.getByID(id),
+    );
   });
 
-  const payload = await buildAreaHistorySeries(variable, meta, [west, south, east, north], (id) =>
-    db.weatherFrames.getByID(id),
-  );
-  return NextResponse.json(payload, {
-    headers: { "Cache-Control": "public, max-age=60" },
+  return NextResponse.json(value, {
+    headers: { "Cache-Control": "public, max-age=60", "X-Cache": hit ? "hit" : "miss" },
   });
 }

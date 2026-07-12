@@ -7,20 +7,36 @@
 // the same focus point across many variables/frames — so repeat views skip the
 // decode entirely. Sampling math lives in @photonsurge/shared/weather/sample.
 
+import "./sharp-config"; // caps libvips concurrency/cache BEFORE the first decode
 import sharp from "sharp";
 import { bufferOf } from "@photonsurge/shared/utill/buffer";
 import {
   sampleFrame,
   areaStatsFrame,
   seriesStats,
-  latLngToPixel,
   type AreaStats,
   type FrameLike,
   type FrameSample,
-  type SeriesStats,
 } from "@photonsurge/shared/weather/sample";
+import { pickFramesForPoint } from "@photonsurge/shared/weather/pick";
 import type { iWeatherFrameModel } from "@photonsurge/shared/db/weather-frame-model";
 import type { WeatherFrameMeta } from "@photonsurge/shared/db/weather-frame-repo";
+// Series shapes moved to shared so the worker's panel precompute produces the
+// exact same objects; re-exported here so existing `./weather-history` importers
+// (and pickFramesForPoint's callers) are unchanged.
+export { pickFramesForPoint };
+export type {
+  HistoryPoint,
+  HistorySeries,
+  AreaHistoryPoint,
+  AreaHistorySeries,
+} from "@photonsurge/shared/weather/history-types";
+import type {
+  HistoryPoint,
+  HistorySeries,
+  AreaHistoryPoint,
+  AreaHistorySeries,
+} from "@photonsurge/shared/weather/history-types";
 
 /**
  * A frame LOADER: fetch one archived frame's full bytes by id (db.weatherFrames
@@ -34,29 +50,6 @@ export type FrameLoader = (id: string) => Promise<iWeatherFrameModel | null>;
  *  killer was loading EVERY frame's PNG up front (all vars × 72h → GBs → public
  *  OOM); streaming this few at a time caps peak at ~this many decoded frames. */
 const STREAM_BATCH = Math.max(1, Number(process.env.HISTORY_STREAM_BATCH || 6));
-
-/** One sampled moment; scalar frames fill `value`, uv frames fill u/v/speed. */
-export interface HistoryPoint {
-  /** ISO valid time. */
-  t: string;
-  model: string;
-  fhr: number;
-  value?: number;
-  u?: number;
-  v?: number;
-  speed?: number;
-}
-
-export interface HistorySeries {
-  variable: string;
-  encoding: "scalar" | "uv";
-  units: string;
-  lat: number;
-  lng: number;
-  series: HistoryPoint[];
-  /** Over `value` for scalars, `speed` for vectors. Null when nothing sampled. */
-  stats: SeriesStats | null;
-}
 
 /** Decode an archived frame doc into a sampleable grid. */
 export async function frameToSampleable(frame: iWeatherFrameModel): Promise<FrameLike> {
@@ -164,30 +157,6 @@ async function streamSamples<T>(
   return out;
 }
 
-/**
- * When several models archived the same variable+validTime (global run vs a
- * regional nest), keep — per valid time — only the finest-resolution frame
- * that actually covers the point. Frames not covering the point drop out.
- */
-export function pickFramesForPoint<F extends WeatherFrameMeta>(
-  frames: F[],
-  lat: number,
-  lng: number,
-): F[] {
-  const byTime = new Map<string, F>();
-  for (const f of frames) {
-    if (!latLngToPixel(lat, lng, { bounds: f.bounds, res: f.grid.res, width: f.grid.width, height: f.grid.height })) {
-      continue;
-    }
-    const key = new Date(f.validTime).toISOString();
-    const kept = byTime.get(key);
-    if (!kept || f.grid.res < kept.grid.res) byTime.set(key, f);
-  }
-  return [...byTime.values()].sort(
-    (a, b) => new Date(a.validTime).getTime() - new Date(b.validTime).getTime(),
-  );
-}
-
 /** Sample every frame at lat/lng and assemble the series + stats payload.
  *  Takes frame METADATA + a loader; picked frames' bytes are streamed in (a few
  *  at a time) and freed — never the whole series in RAM at once. */
@@ -231,30 +200,6 @@ export async function buildHistorySeries(
 }
 
 // ── Area history ────────────────────────────────────────────────────────────
-
-/** One frame's spatial aggregate over the requested window. */
-export interface AreaHistoryPoint {
-  /** ISO valid time. */
-  t: string;
-  model: string;
-  fhr: number;
-  mean: number;
-  min: number;
-  max: number;
-}
-
-export interface AreaHistorySeries {
-  variable: string;
-  encoding: "scalar" | "uv";
-  units: string;
-  bbox: [number, number, number, number];
-  series: AreaHistoryPoint[];
-  /** Temporal stats over the per-frame AREA MEANS. */
-  stats: SeriesStats | null;
-  /** Spatial extremes across the whole window (min of mins / max of maxes). */
-  areaMin: number | null;
-  areaMax: number | null;
-}
 
 const areaCache = new Map<string, AreaStats | null>();
 

@@ -3,25 +3,12 @@ import { v4 as uuidv4 } from "uuid";
 import type { Ad, AdMediaType, AdMeta, AdStatus, AdStorage } from "../ads/types";
 import { pickAdForAir } from "../ads/select";
 import type { iAdModel } from "./ad-model";
+import type { InlineBlobStore } from "./inline-blob";
 
 const strip = (doc: any): iAdModel => {
   const { __v, _id, ...rest } = doc;
   return rest as iAdModel;
 };
-
-/**
- * Coerce whatever Mongo hands back for a stored Buffer field into real bytes.
- * With `.lean()` (or across bson versions) a Buffer can come back as a Node
- * Buffer, a BSON `Binary` (bytes on `.buffer`), or a plain Uint8Array; a naive
- * `Buffer.from` on a Binary yields garbage. (Shared shape with satimg-repo.)
- */
-function toBuffer(v: any): Buffer {
-  if (Buffer.isBuffer(v)) return v;
-  if (v && v._bsontype === "Binary") return Buffer.from(v.buffer ?? v.value?.() ?? []);
-  if (v && v.buffer instanceof Uint8Array) return Buffer.from(v.buffer);
-  if (v instanceof Uint8Array) return Buffer.from(v);
-  return Buffer.from(v ?? []);
-}
 
 /** Map a stored doc (blob projected out) to the wire `Ad`. */
 export function toAd(doc: iAdModel): Ad {
@@ -66,13 +53,14 @@ export type AdCreateInput = AdMeta & AdMediaInput & { adId?: string };
  * bytes (`.select("-data")`); `getMedia` fetches only the blob for the serve
  * route. Create generates a UUID `adId`; edits target that id.
  */
-export function makeAdRepo(model: Model<iAdModel>) {
+export function makeAdRepo(model: Model<iAdModel>, blobs: InlineBlobStore) {
   return {
     model,
 
     /** Create one ad with its media. Returns the canonical wire shape. */
     async create(input: AdCreateInput): Promise<Ad> {
       const adId = input.adId?.trim() || uuidv4();
+      await blobs.put(adId, input.data); // media to disk first when FS-backed
       await model.create({
         id: uuidv4(),
         adId,
@@ -89,7 +77,7 @@ export function makeAdRepo(model: Model<iAdModel>) {
         tags: input.tags,
         notes: input.notes,
         storage: input.storage ?? "inline",
-        data: input.data,
+        data: blobs.inlineValue(input.data),
       });
       const doc = await model.findOne({ adId }).select("-data").lean().exec();
       if (!doc) throw new Error("ad create: readback failed");
@@ -126,12 +114,12 @@ export function makeAdRepo(model: Model<iAdModel>) {
     async getMedia(
       adId: string,
     ): Promise<{ data: Buffer; contentType: string; updatedAt: string } | null> {
-      // No `.lean()` so Mongoose casts `data` back to a real Buffer; `toBuffer`
-      // still guards the Binary/Uint8Array cases defensively.
+      // No `.lean()` so Mongoose casts an inline `data` to a real Buffer; the blob
+      // store reads disk-first and only falls back to that inline value.
       const doc = await model.findOne({ adId }).exec();
-      if (!doc || !doc.data) return null;
-      const data = toBuffer(doc.data);
-      if (!data.length) return null;
+      if (!doc) return null;
+      const data = await blobs.get(adId, doc.data);
+      if (!data || !data.length) return null;
       const stamp = doc.updated ?? doc.created ?? new Date();
       return {
         data,
@@ -158,12 +146,13 @@ export function makeAdRepo(model: Model<iAdModel>) {
 
     /** Swap the media bytes on an existing ad (keeps metadata + adId). */
     async replaceMedia(adId: string, m: AdMediaInput): Promise<Ad | null> {
+      await blobs.put(adId, m.data); // new bytes to disk first when FS-backed
       const doc = await model
         .findOneAndUpdate(
           { adId },
           {
             $set: {
-              data: m.data,
+              data: blobs.inlineValue(m.data),
               contentType: m.contentType,
               mediaType: m.mediaType,
               byteSize: m.byteSize,
@@ -216,7 +205,9 @@ export function makeAdRepo(model: Model<iAdModel>) {
     /** Delete an ad by id. Returns true if one was removed. */
     async remove(adId: string): Promise<boolean> {
       const res = await model.deleteOne({ adId }).exec();
-      return (res.deletedCount ?? 0) > 0;
+      const removed = (res.deletedCount ?? 0) > 0;
+      if (removed) await blobs.delete([adId]); // drop the on-disk media too
+      return removed;
     },
 
     async count(): Promise<number> {

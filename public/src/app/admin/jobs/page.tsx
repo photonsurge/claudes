@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { TriggerableJob } from "@photonsurge/shared/jobs";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import LogTail from "../../../components/admin/LogTail";
+import QueueSummary from "../../../components/admin/QueueSummary";
 
 interface Result {
   ok: boolean;
@@ -271,6 +272,10 @@ export default function JobsPage() {
             </div>
           </section>
         ))}
+
+        <div style={{ marginTop: 28 }}>
+          <QueueSummary />
+        </div>
 
         <div style={{ marginTop: 28 }}>
           <LogTail limit={100} title="Recent activity" />

@@ -48,7 +48,7 @@ const SatImgSchema = new mongoose.Schema<iSatImgModel>(
     bounds: { type: [Number], required: true },
     width: { type: Number, required: true },
     height: { type: Number, required: true },
-    png: { type: Buffer, required: true },
+    png: { type: Buffer, required: false }, // may live on ${BLOB_DIR} when FS-backed
     contentType: { type: String, required: true, default: "image/png" },
     fetchedAt: { type: Date, required: true, default: () => new Date() },
   },

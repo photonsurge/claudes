@@ -2,23 +2,12 @@ import type { Model } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 import type { AdminEntityType, AdminImage } from "../admin-content/types";
 import type { iAdminImageModel } from "./admin-image-model";
+import type { InlineBlobStore } from "./inline-blob";
 
 const strip = (doc: any): iAdminImageModel => {
   const { __v, _id, ...rest } = doc;
   return rest as iAdminImageModel;
 };
-
-/**
- * Coerce whatever Mongo hands back for a stored Buffer into real bytes (Node
- * Buffer / BSON Binary / Uint8Array). Shared shape with ad-repo/satimg-repo.
- */
-function toBuffer(v: any): Buffer {
-  if (Buffer.isBuffer(v)) return v;
-  if (v && v._bsontype === "Binary") return Buffer.from(v.buffer ?? v.value?.() ?? []);
-  if (v && v.buffer instanceof Uint8Array) return Buffer.from(v.buffer);
-  if (v instanceof Uint8Array) return Buffer.from(v);
-  return Buffer.from(v ?? []);
-}
 
 /** Map a stored doc (blob projected out) to the wire `AdminImage`. */
 export function toAdminImage(doc: iAdminImageModel): AdminImage {
@@ -59,7 +48,7 @@ export interface AdminImagePatch {
  * The first image added to an entity becomes its primary; deleting the primary
  * promotes the next image so an entity is never left with a gallery and no hero.
  */
-export function makeAdminImageRepo(model: Model<iAdminImageModel>) {
+export function makeAdminImageRepo(model: Model<iAdminImageModel>, blobs: InlineBlobStore) {
   return {
     model,
 
@@ -123,6 +112,7 @@ export function makeAdminImageRepo(model: Model<iAdminImageModel>) {
         .lean()
         .exec();
       const id = uuidv4();
+      await blobs.put(id, m.data); // bytes to disk first when FS-backed
       await model.create({
         id,
         entityType,
@@ -133,7 +123,7 @@ export function makeAdminImageRepo(model: Model<iAdminImageModel>) {
         credit: m.credit,
         primary: existing === 0,
         sort: (last?.sort ?? -1) + 1,
-        data: m.data,
+        data: blobs.inlineValue(m.data),
       });
       const doc = await model.findOne({ id }).select("-data").lean().exec();
       if (!doc) throw new Error("admin image add: readback failed");
@@ -145,9 +135,9 @@ export function makeAdminImageRepo(model: Model<iAdminImageModel>) {
       id: string,
     ): Promise<{ data: Buffer; contentType: string; updatedAt: string } | null> {
       const doc = await model.findOne({ id }).exec();
-      if (!doc || !doc.data) return null;
-      const data = toBuffer(doc.data);
-      if (!data.length) return null;
+      if (!doc) return null;
+      const data = await blobs.get(id, doc.data);
+      if (!data || !data.length) return null;
       const stamp = doc.updated ?? doc.created ?? new Date();
       return { data, contentType: doc.contentType, updatedAt: new Date(stamp).toISOString() };
     },
@@ -193,6 +183,7 @@ export function makeAdminImageRepo(model: Model<iAdminImageModel>) {
       const target = await model.findOne({ id }).select("-data").lean().exec();
       if (!target) return false;
       await model.deleteOne({ id }).exec();
+      await blobs.delete([id]); // drop the on-disk bytes too
       if (target.primary) {
         const next = await model
           .findOne({ entityType: target.entityType, entityId: target.entityId })
@@ -207,6 +198,15 @@ export function makeAdminImageRepo(model: Model<iAdminImageModel>) {
 
     /** Remove every image for an entity (e.g. when the entity is deleted). */
     async removeForEntity(entityType: AdminEntityType, entityId: string): Promise<number> {
+      // When FS-backed, collect the ids first so their on-disk bytes are removed
+      // too; off-FS the bytes vanish with the doc, so skip the extra read.
+      if (blobs.fs) {
+        const doomed = await model
+          .find({ entityType, entityId })
+          .select({ id: 1, _id: 0 })
+          .lean<{ id: string }[]>();
+        await blobs.delete(doomed.map((d) => d.id));
+      }
       const res = await model.deleteMany({ entityType, entityId }).exec();
       return res.deletedCount ?? 0;
     },

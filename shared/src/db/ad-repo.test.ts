@@ -1,6 +1,7 @@
 import type { Model } from "mongoose";
 import { makeAdRepo, toAd, type AdMediaInput } from "./ad-repo";
 import type { iAdModel } from "./ad-model";
+import { makeInlineBlobStore } from "./inline-blob";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -36,7 +37,7 @@ const chainOf = (result: unknown) => {
 };
 
 const repoWith = (model: Record<string, unknown>) =>
-  makeAdRepo(model as unknown as Model<iAdModel>);
+  makeAdRepo(model as unknown as Model<iAdModel>, makeInlineBlobStore("ad", null));
 
 describe("toAd", () => {
   it("maps a stored doc to the wire shape, dates as epoch ms", () => {

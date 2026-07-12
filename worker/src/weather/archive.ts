@@ -58,7 +58,7 @@ export interface ArchivableRun {
 /** The db surface archiveRun touches (subset of getAppDb()). */
 export interface ArchiveDb {
   weatherTextures: {
-    getByID: (id: string) => Promise<{ success: boolean; data?: any }>;
+    getBytes: (id: string) => Promise<{ data: Buffer; contentType: string } | null>;
   };
   weatherFrames: {
     upsert: (frame: any) => Promise<{ written: boolean }>;
@@ -82,8 +82,8 @@ export async function archiveRun(db: ArchiveDb, run: ArchivableRun): Promise<{ w
       const texId = entry.files?.[String(step.fhr)];
       if (!texId) continue;
       try {
-        const tex = await db.weatherTextures.getByID(texId);
-        const data = tex.success && tex.data ? bufferOf(tex.data.data) : Buffer.alloc(0);
+        const tex = await db.weatherTextures.getBytes(texId);
+        const data = tex ? bufferOf(tex.data) : Buffer.alloc(0);
         if (data.byteLength === 0) {
           log(TAG, "empty texture, frame skipped", { variable: variableId, fhr: step.fhr });
           continue;

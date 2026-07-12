@@ -1,22 +1,7 @@
 import type { Model } from "mongoose";
 import type { SatImgBounds, SatImgMeta } from "../satimg/types";
 import type { iSatImgModel } from "./satimg-model";
-
-/**
- * Coerce whatever Mongo hands back for a stored Buffer field into real PNG bytes.
- * Depending on `.lean()` + the driver's `promoteBuffers` setting, `png` can come
- * back as a Node Buffer, a BSON `Binary` (subtype 0, bytes on `.buffer`), or a
- * plain Uint8Array. `Buffer.from(binary)` on a BSON Binary yields GARBAGE (the
- * browser then fails with "source image could not be decoded"), so normalise here.
- * (Shared shape with aurora-repo's toPngBuffer.)
- */
-function toPngBuffer(v: any): Buffer {
-  if (Buffer.isBuffer(v)) return v;
-  if (v && v._bsontype === "Binary") return Buffer.from(v.buffer ?? v.value?.() ?? []);
-  if (v && v.buffer instanceof Uint8Array) return Buffer.from(v.buffer);
-  if (v instanceof Uint8Array) return Buffer.from(v);
-  return Buffer.from(v ?? []);
-}
+import type { InlineBlobStore } from "./inline-blob";
 
 /** Everything the worker hands the repo for one baked frame. */
 export interface SatImgBakeInput {
@@ -52,12 +37,13 @@ const toMeta = (doc: any): SatImgMeta => ({
  * coexist — `all()` returns every satellite's frame so the overlay can drape them
  * together.
  */
-export function makeSatImgRepo(satImgModel: Model<iSatImgModel>) {
+export function makeSatImgRepo(satImgModel: Model<iSatImgModel>, blobs: InlineBlobStore) {
   return {
     satImgModel,
 
     /** Replace this bird's single cached frame with a freshly baked one. */
     async replace(frame: SatImgBakeInput): Promise<{ satId: string }> {
+      await blobs.put(frame.satId, frame.png); // bytes to disk first when FS-backed
       await satImgModel.updateOne(
         { satId: frame.satId },
         {
@@ -69,7 +55,7 @@ export function makeSatImgRepo(satImgModel: Model<iSatImgModel>) {
             bounds: frame.bounds,
             width: frame.width,
             height: frame.height,
-            png: frame.png,
+            png: blobs.inlineValue(frame.png),
             contentType: frame.contentType ?? "image/png",
             fetchedAt: new Date(),
           },
@@ -101,12 +87,12 @@ export function makeSatImgRepo(satImgModel: Model<iSatImgModel>) {
     async latestPng(
       satId: string,
     ): Promise<{ data: Buffer; contentType: string; updatedAt: string } | null> {
-      // No `.lean()` so Mongoose casts `png` back to a real Buffer; `toPngBuffer`
-      // still guards the Binary/Uint8Array cases defensively.
+      // No `.lean()` so Mongoose casts an inline `png` to a real Buffer; the blob
+      // store reads disk-first and only falls back to that inline value.
       const doc = await satImgModel.findOne({ satId }).exec();
-      if (!doc || !doc.png) return null;
-      const data = toPngBuffer(doc.png);
-      if (!data.length) return null;
+      if (!doc) return null;
+      const data = await blobs.get(satId, doc.png);
+      if (!data || !data.length) return null;
       return {
         data,
         contentType: doc.contentType ?? "image/png",
@@ -123,6 +109,15 @@ export function makeSatImgRepo(satImgModel: Model<iSatImgModel>) {
      */
     async pruneExcept(keep: string[]): Promise<{ removed: number }> {
       if (!keep.length) return { removed: 0 };
+      // When FS-backed, collect the doomed satIds first so their on-disk bytes are
+      // removed too; off-FS the bytes vanish with the doc, so skip the extra read.
+      if (blobs.fs) {
+        const doomed = await satImgModel
+          .find({ satId: { $nin: keep } })
+          .select({ satId: 1, _id: 0 })
+          .lean<{ satId: string }[]>();
+        await blobs.delete(doomed.map((d) => d.satId));
+      }
       const res = await satImgModel.deleteMany({ satId: { $nin: keep } });
       return { removed: res.deletedCount ?? 0 };
     },

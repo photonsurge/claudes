@@ -1,17 +1,9 @@
 import type { Model } from "mongoose";
 import type { GeomagBounds, GeomagMeta } from "../geomag/types";
 import type { iGeomagModel } from "./geomag-model";
+import type { InlineBlobStore } from "./inline-blob";
 
 const LATEST = "latest";
-
-/** Coerce a stored Buffer field (Node Buffer / BSON Binary / Uint8Array) to bytes. */
-function toPngBuffer(v: any): Buffer {
-  if (Buffer.isBuffer(v)) return v;
-  if (v && v._bsontype === "Binary") return Buffer.from(v.buffer ?? v.value?.() ?? []);
-  if (v && v.buffer instanceof Uint8Array) return Buffer.from(v.buffer);
-  if (v instanceof Uint8Array) return Buffer.from(v);
-  return Buffer.from(v ?? []);
-}
 
 export interface GeomagBakeInput {
   epoch: number;
@@ -43,11 +35,12 @@ const toMeta = (doc: any): GeomagMeta => ({
  * cached frame per bake. Reads split in two so the metadata endpoint never ships
  * the PNG bytes: `latest()` projects the blob out; `latestPng()` fetches only it.
  */
-export function makeGeomagRepo(geomagModel: Model<iGeomagModel>) {
+export function makeGeomagRepo(geomagModel: Model<iGeomagModel>, blobs: InlineBlobStore) {
   return {
     geomagModel,
 
     async replace(frame: GeomagBakeInput): Promise<{ minF: number; maxF: number }> {
+      await blobs.put(LATEST, frame.png); // bytes to disk first when FS-backed
       await geomagModel.updateOne(
         { frameId: LATEST },
         {
@@ -60,7 +53,7 @@ export function makeGeomagRepo(geomagModel: Model<iGeomagModel>) {
             height: frame.height,
             minF: frame.minF,
             maxF: frame.maxF,
-            png: frame.png,
+            png: blobs.inlineValue(frame.png),
             contentType: frame.contentType ?? "image/png",
             fetchedAt: new Date(),
           },
@@ -78,9 +71,9 @@ export function makeGeomagRepo(geomagModel: Model<iGeomagModel>) {
 
     async latestPng(): Promise<{ data: Buffer; contentType: string; updatedAt: string } | null> {
       const doc = await geomagModel.findOne({ frameId: LATEST }).exec();
-      if (!doc || !doc.png) return null;
-      const data = toPngBuffer(doc.png);
-      if (!data.length) return null;
+      if (!doc) return null;
+      const data = await blobs.get(LATEST, doc.png);
+      if (!data || !data.length) return null;
       return {
         data,
         contentType: doc.contentType ?? "image/png",

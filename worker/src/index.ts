@@ -839,6 +839,24 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable weatherPanels.refresh (hourly country/region panel cache) ----
+  // Precomputes point + area history for every catalog country/region into Redis
+  // so `public`'s focus composer reads numbers instead of sharp-decoding frames
+  // per request. Offset to :35 — after cityWeather (:20), off the top-of-hour
+  // ingest, so the frame archive is settled before this samples it.
+  if (process.env.WEATHER_PANELS_ENABLED !== "false") {
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "weatherPanels", type: "weatherPanels", event: "refresh", data: {} },
+        { repeat: { pattern: process.env.WEATHER_PANELS_CRON || "35 * * * *" }, jobId: "weather-panels-refresh" },
+      );
+      log(TAG, `registered repeatable weatherPanels.refresh`);
+    } catch (err) {
+      log(TAG, `failed to register weatherPanels.refresh`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable countries/regions.enrichWiki ----
   // Population/capital/currency + a photo/blurb barely change — a daily sweep
   // (staleness-gated at 30 days internally, so most days it's a no-op scan) is

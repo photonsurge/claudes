@@ -5,11 +5,14 @@ import { iEntity, makeCollection } from "./generic";
 import { mongoCrud } from "./mongoose-generic";
 import { getWeatherRunModel, iWeatherRunModel } from "./weather-run-model";
 import { getWeatherTextureModel } from "./weather-texture-model";
+import { makeWeatherTextureRepo } from "./weather-texture-repo";
 import { getWeatherFrameModel } from "./weather-frame-model";
 import { makeWeatherFrameRepo } from "./weather-frame-repo";
 import { getWeatherForecastFrameModel } from "./weather-forecast-frame-model";
 import { makeWeatherForecastFrameRepo } from "./weather-forecast-frame-repo";
 import { getBlobModel, makeBlobStore } from "./blob-store";
+import { BlobFs } from "./blob-fs";
+import { makeInlineBlobStore } from "./inline-blob";
 import { getClimateYearModel } from "./climate-year-model";
 import { makeClimateYearRepo } from "./climate-year-repo";
 import { getCityModel } from "./city-model";
@@ -97,18 +100,45 @@ export function createDb(conn: Connection) {
   const broadcastState = mongoCrud(getBroadcastStateModel(conn));
   const directorConfig = mongoCrud(getDirectorConfigModel(conn));
 
+  // Shared `${BLOB_DIR}` folder (both containers bind-mount it), or null → the
+  // legacy pure-Mongo storage. Threaded into every blob store below so a single
+  // env var flips the whole app between backings. See blob-fs.ts / inline-blob.ts.
+  const blobFs = BlobFs.fromEnv();
+
+  /**
+   * Externalised bytes for the collections that stored their payload INLINE on
+   * the doc. Read paths use `.get(id, doc.data)` (FS-first, inline fallback);
+   * write paths set the doc field to `.inlineValue(bytes)` then `.put(id, bytes)`.
+   * The `migrate:blobs` job copies existing inline bytes here and $unsets them.
+   * Owned by the repos below (aurora/geomag/satimg/ads/adminImages) except `tex`,
+   * which the texture serve route + worker bake use directly (no custom repo).
+   */
+  const blobs = {
+    tex: makeInlineBlobStore("tex", blobFs),
+    adminImage: makeInlineBlobStore("admin-image", blobFs),
+    ad: makeInlineBlobStore("ad", blobFs),
+    aurora: makeInlineBlobStore("aurora", blobFs),
+    geomag: makeInlineBlobStore("geomag", blobFs),
+    satimg: makeInlineBlobStore("satimg", blobFs),
+  };
+
   return {
     conn,
+    blobFs,
+    blobs,
     pings: makeCollection<iPing>(conn, "pings"),
     weatherRuns,
-    weatherTextures: mongoCrud(getWeatherTextureModel(conn)),
+    weatherTextures: makeWeatherTextureRepo(getWeatherTextureModel(conn), blobs.tex),
     weatherFrames: makeWeatherFrameRepo(
       getWeatherFrameModel(conn),
-      makeBlobStore(getBlobModel(conn, "WeatherFrameData")),
+      makeBlobStore(getBlobModel(conn, "WeatherFrameData"), { fs: blobFs, ns: "frame" }),
     ),
     weatherForecastFrames: makeWeatherForecastFrameRepo(
       getWeatherForecastFrameModel(conn),
-      makeBlobStore(getBlobModel(conn, "WeatherForecastFrameData")),
+      makeBlobStore(getBlobModel(conn, "WeatherForecastFrameData"), {
+        fs: blobFs,
+        ns: "forecast-frame",
+      }),
     ),
     climateYears: makeClimateYearRepo(getClimateYearModel(conn)),
     cities: mongoCrud(getCityModel(conn)),
@@ -126,18 +156,18 @@ export function createDb(conn: Connection) {
     regionRoundups: makePlaceRoundupRepo(getRegionRoundupModel(conn)),
     cables: makeCableRepo(getCableModel(conn), getCableLandingModel(conn)),
     faults: makeFaultRepo(getFaultModel(conn)),
-    aurora: makeAuroraRepo(getAuroraModel(conn)),
-    satimg: makeSatImgRepo(getSatImgModel(conn)),
+    aurora: makeAuroraRepo(getAuroraModel(conn), blobs.aurora),
+    satimg: makeSatImgRepo(getSatImgModel(conn), blobs.satimg),
     fires: makeFireRepo(getFireModel(conn)),
     volcanoes: makeVolcanoRepo(getVolcanoModel(conn)),
     countries: makeCountryRepo(getCountryModel(conn)),
     regions: makeRegionRepo(getRegionModel(conn)),
     areaWeatherReports: makeAreaWeatherReportRepo(getAreaWeatherReportModel(conn)),
-    geomag: makeGeomagRepo(getGeomagModel(conn)),
+    geomag: makeGeomagRepo(getGeomagModel(conn), blobs.geomag),
     cams: makeCamRepo(getCamModel(conn)),
     seaPoints: makeSeaPointRepo(getSeaPointModel(conn)),
-    ads: makeAdRepo(getAdModel(conn)),
-    adminImages: makeAdminImageRepo(getAdminImageModel(conn)),
+    ads: makeAdRepo(getAdModel(conn), blobs.ad),
+    adminImages: makeAdminImageRepo(getAdminImageModel(conn), blobs.adminImage),
     adminEdits: makeAdminEditRepo(getAdminEditModel(conn)),
     aircraftMeta: mongoCrud<iAircraftMetaModel>(getAircraftMetaModel(conn)),
     vehicles: makeVehicleRepo(getVehicleModel(conn)),

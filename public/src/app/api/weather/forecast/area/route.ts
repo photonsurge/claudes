@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { buildAreaForecastDays } from "../../../../../lib/weather-forecast";
+import { withCache } from "../../../../../lib/focus/focus-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Variables the daily card strip + hazard rules need; fetched by default. */
 const DEFAULT_VARIABLES = ["temp", "wind", "gust", "rain", "cloud", "storm"];
+
+/** Server-side Redis hold — see /forecast/point. */
+const FCST_TTL_SEC = Number(process.env.WEATHER_PANEL_CACHE_TTL_SEC || 300);
 
 /**
  * GET /api/weather/forecast/area?west=&south=&east=&north=[&variables=][&model=]
@@ -32,16 +36,19 @@ export async function GET(req: Request) {
   const variables = requested && requested.length ? requested : DEFAULT_VARIABLES;
   const model = url.searchParams.get("model") ?? undefined;
 
-  const db = await getAppDb();
-  const framesByVariable: Record<string, any[]> = {};
-  await Promise.all(
-    variables.map(async (variable) => {
-      framesByVariable[variable] = await db.weatherForecastFrames.getSeries({ variable, model });
-    }),
-  );
+  const key = `feed:v1:wfcst:area:${west},${south},${east},${north}:${model ?? "-"}:${variables.join(",")}`;
+  const { value, hit } = await withCache(key, FCST_TTL_SEC, async () => {
+    const db = await getAppDb();
+    const framesByVariable: Record<string, any[]> = {};
+    await Promise.all(
+      variables.map(async (variable) => {
+        framesByVariable[variable] = await db.weatherForecastFrames.getSeries({ variable, model });
+      }),
+    );
+    return buildAreaForecastDays(framesByVariable, [west, south, east, north]);
+  });
 
-  const payload = await buildAreaForecastDays(framesByVariable, [west, south, east, north]);
-  return NextResponse.json(payload, {
-    headers: { "Cache-Control": "public, max-age=60" },
+  return NextResponse.json(value, {
+    headers: { "Cache-Control": "public, max-age=60", "X-Cache": hit ? "hit" : "miss" },
   });
 }

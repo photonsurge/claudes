@@ -5,6 +5,8 @@
 // frameToSampleable (same sharp(...).ensureAlpha().raw() approach; sharp is
 // already a worker dependency via the grib bake pipeline).
 import sharp from "sharp";
+import "./sharp-config"; // side-effect: cap the libvips op cache (RSS)
+import { withDecodeGate } from "./decodeGate";
 import { bufferOf } from "@photonsurge/shared/utill/buffer";
 import type { FrameLike } from "@photonsurge/shared/weather/sample";
 
@@ -18,10 +20,12 @@ export interface DecodableFrame {
 }
 
 export async function decodeFrame(frame: DecodableFrame): Promise<FrameLike> {
-  const { data, info } = await sharp(bufferOf(frame.data))
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
+  // Gate the actual libvips decode: at most SHARP_DECODE_CONCURRENCY run at once
+  // process-wide, so the single BullMQ queue (concurrency 10) can't fan a dozen
+  // decodes × cores threads and ratchet RSS via glibc's per-thread arenas.
+  const { data, info } = await withDecodeGate(() =>
+    sharp(bufferOf(frame.data)).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
+  );
   return {
     rgba: new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
     width: info.width,

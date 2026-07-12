@@ -190,7 +190,7 @@ async function samplePointSeries(
     const samples: VariableSample[] = [];
     for (const frame of picked) {
       if (new Date(frame.validTime).getTime() > horizonMs) continue;
-      units[variable] = frame.units || units[variable] || "";
+      units[variable] = (frame as { units?: string }).units || units[variable] || "";
       const sample = await sampleFrameCached(frame as any, lat, lng);
       if (!sample) continue;
       const t = new Date(frame.validTime);
@@ -453,7 +453,7 @@ export async function buildAreaForecastDays(
     const samples: AreaVariableSample[] = [];
     for (const frame of picked) {
       if (new Date(frame.validTime).getTime() > horizonMs) continue;
-      units[variable] = frame.units || units[variable] || "";
+      units[variable] = (frame as { units?: string }).units || units[variable] || "";
       try {
         const grid = await frameToSampleable(frame as any);
         const areaStats = areaStatsFrame(grid, bbox);

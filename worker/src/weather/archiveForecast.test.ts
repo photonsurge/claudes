@@ -76,7 +76,7 @@ describe("archiveForecastRun", () => {
     const upserts: any[] = [];
     const db: ForecastArchiveDb = {
       weatherTextures: {
-        getByID: async (id: string) => ({ success: true, data: { data: Buffer.from(id) } }),
+        getBytes: async (id: string) => ({ data: Buffer.from(id), contentType: "image/png" }),
       },
       weatherForecastFrames: {
         upsert: async (f: any) => {
@@ -104,8 +104,8 @@ describe("archiveForecastRun", () => {
 
   it("skips empty/missing textures without failing the run", async () => {
     const { db, upserts } = makeDb();
-    db.weatherTextures.getByID = async (id: string) =>
-      id === "tex-t0" ? { success: false } : { success: true, data: { data: Buffer.from(id) } };
+    db.weatherTextures.getBytes = async (id: string) =>
+      id === "tex-t0" ? null : { data: Buffer.from(id), contentType: "image/png" };
     const res = await archiveForecastRun(db, run);
     expect(res.written).toBe(3);
     expect(upserts.some((f) => f.variable === "temp" && f.fhr === 0)).toBe(false);
@@ -152,7 +152,7 @@ describe("backfillForecastFromPublishedRuns", () => {
     const upserts: any[] = [];
     const db: ForecastBackfillDb = {
       weatherTextures: {
-        getByID: async (id: string) => ({ success: true, data: { data: Buffer.from(id) } }),
+        getBytes: async (id: string) => ({ data: Buffer.from(id), contentType: "image/png" }),
       },
       weatherForecastFrames: {
         upsert: async (f: any) => {

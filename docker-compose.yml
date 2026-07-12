@@ -92,6 +92,10 @@ services:
       # Natural Earth geojson (countries.seed mask) — read from the shared host
       # data dir mounted below, NOT baked into the image.
       WEATHER_DATA_DIR: /app/data
+      # Externalised blob store: baked textures / frame archives / aurora-etc
+      # caches are written here instead of into Mongo. Same host dir the public
+      # container reads (+ writes ad/admin-image uploads to). See shared/db/blob-fs.ts.
+      BLOB_DIR: /app/blobs
     # Worker HTTP (health/status) — proxied/health-checked via nginx.
     ports:
       - "${BIND_HOST:-127.0.0.1}:10102:10102"
@@ -100,6 +104,9 @@ services:
       # Shared basemap/geojson assets (./fetch-assets.sh output). Kept out of the
       # registry image; the deploy syncs them to the host's ${DATA_DIR:-./data}.
       - ${DATA_DIR:-./data}:/app/data:ro
+      # Shared blob store (read-write) — the worker bakes textures/frames/etc here.
+      # Host-bind so it's out of the Mongo dump and trivially rsync-able for backup.
+      - ${BLOB_DIR:-./blobs}:/app/blobs
     depends_on:
       mongodb:
         condition: service_healthy
@@ -136,6 +143,10 @@ services:
       # `internal` network by service name — not the host-published ports.
       SOCKET_INTERNAL_URL: http://socket:10101
       WORKER_INTERNAL_URL: http://worker:10102
+      # Shared blob store: the tex/media/aurora/etc API routes read bytes from
+      # here (Mongo I/O off the hot path), and the admin upload routes WRITE ad +
+      # admin-image bytes here — so this mount is read-write, not ro.
+      BLOB_DIR: /app/blobs
     # Next.js app — nginx proxies the public domain here.
     ports:
       - "${BIND_HOST:-127.0.0.1}:10100:10100"
@@ -144,6 +155,9 @@ services:
       # worker; kept out of the registry image (Next serves public/ from disk at
       # request time, so a bind-mount over the data subdir is served live).
       - ${DATA_DIR:-./data}:/app/public/public/data:ro
+      # Shared blob store (read-write) — same host dir as the worker. Reads serve
+      # textures/media; writes persist ad + admin-image uploads.
+      - ${BLOB_DIR:-./blobs}:/app/blobs
     depends_on:
       mongodb:
         condition: service_healthy

@@ -43,7 +43,7 @@ const GeomagSchema = new mongoose.Schema<iGeomagModel>(
     height: { type: Number, required: true },
     minF: { type: Number, required: true, default: 0 },
     maxF: { type: Number, required: true, default: 0 },
-    png: { type: Buffer, required: true },
+    png: { type: Buffer, required: false }, // may live on ${BLOB_DIR} when FS-backed
     contentType: { type: String, required: true, default: "image/png" },
     fetchedAt: { type: Date, required: true, default: () => new Date() },
   },

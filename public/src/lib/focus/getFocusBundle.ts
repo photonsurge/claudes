@@ -18,6 +18,11 @@ import { cityGeoWithinBox } from "@photonsurge/shared/db/city-model";
 
 import { buildHistorySeries, buildAreaHistorySeries, type FrameLoader } from "../weather-history";
 import { buildForecastDays, buildAreaForecastDays } from "../weather-forecast";
+import {
+  getWeatherPanel,
+  BROADCAST_HISTORY_VARS as SHARED_BROADCAST_HISTORY_VARS,
+  type WeatherPanel,
+} from "@photonsurge/shared/weather/panels";
 import { alertsToFeatures, type Alert, type AlertFeature } from "../alerts";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { isTargetedEvent, hasRealLocation } from "../../components/broadcast/kinds";
@@ -55,21 +60,7 @@ const FORECAST_VARIABLES = ["temp", "wind", "gust", "rain", "cloud", "storm"];
  *  history fan-out to these so a country/region compose doesn't pay for the ~8
  *  niche archive layers (sst-depths, cin, soil, dewpoint, visibility…) the deck
  *  never shows. Keep in sync with HISTORY_VARIABLE_ORDER. */
-const BROADCAST_HISTORY_VARS = new Set([
-  "temp",
-  "humidity",
-  "wind",
-  "gust",
-  "rain",
-  "storm",
-  "pressure",
-  "cloud",
-  "snow",
-  "sst",
-  "current",
-  "salinity",
-  "wave",
-]);
+const BROADCAST_HISTORY_VARS = new Set(SHARED_BROADCAST_HISTORY_VARS);
 
 /** Nearest cached climate → the monthly bucketed datasets the spark charts render. */
 async function climateFor(
@@ -250,6 +241,24 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     );
   }
 
+  // Resolve the country under the point ONCE — reused for both the bundle's
+  // `country` field and the country panel lookup (was an in-parallel
+  // resolveCountryAt below).
+  const resolvedCountry =
+    hasLoc && kind !== "ocean" && kind !== "orbital"
+      ? await resolveCountryAt(db, lng, lat)
+      : null;
+
+  // Precomputed point+area history (worker → Redis) for the on-air country/region.
+  // A HIT lets us skip buildHistories entirely — no request-time sharp decode.
+  // Only non-targeted land/region shots have panels (targeted events render POINT
+  // history live in the reticle); a miss falls through to the live builder.
+  let panel: WeatherPanel | null = null;
+  if (hasLoc && !targeted) {
+    if (isRegion && subject) panel = await getWeatherPanel("region", subject);
+    else if (resolvedCountry) panel = await getWeatherPanel("country", resolvedCountry.countryId);
+  }
+
   const [
     histories,
     pointForecastSeries,
@@ -265,9 +274,12 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     seismoStations,
     tideStations,
   ] = await Promise.all([
-    // point + area history — bounded-memory batched builder (peak = HISTORY_BATCH
-    // vars' frames, not all of them; see buildHistories above).
-    buildHistories(),
+    // point + area history — a precomputed panel (worker → Redis) when the on-air
+    // country/region has one, else the live bounded-memory builder (sharp decode;
+    // peak = HISTORY_BATCH vars' frames — see buildHistories above).
+    panel
+      ? Promise.resolve({ pointHistory: panel.pointHistory, areaHistory: panel.areaHistory })
+      : buildHistories(),
     // pointForecast
     hasLoc ? buildForecastDays(forecastFrames as never, lat, lng) : Promise.resolve(null),
     // areaForecast
@@ -294,10 +306,8 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
             vs.filter((v) => v.lng >= bbox[0] && v.lng <= bbox[2] && v.lat >= bbox[1] && v.lat <= bbox[3]),
           )
       : Promise.resolve([]),
-    // country (land shots)
-    hasLoc && kind !== "ocean" && kind !== "orbital"
-      ? resolveCountryAt(db, lng, lat)
-      : Promise.resolve(null),
+    // country (land shots) — resolved once above, reused for the panel lookup.
+    Promise.resolve(resolvedCountry),
     // region (by subject id)
     isRegion && subject ? db.regions.get(subject) : Promise.resolve(null),
     // seismoStations
