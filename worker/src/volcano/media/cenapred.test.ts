@@ -1,0 +1,2 @@
+import { parseCenapredCameras } from "./cenapred";
+test("CENAPRED discovers the three official Popocatepetl feeds", () => { const rows = parseCenapredCameras(`<img src="/imagenesWeb/monitoreoVolcanico/webcamsaltzomoni/1T.jpg"><img src="/imagenesWeb/monitoreoVolcanico/webcamstlamacas/1T.jpg"><img src="/imagenesWeb/monitoreoVolcanico/webcamstianguis/1T.jpg">`); expect(rows.map((r) => r.sourceCameraId)).toEqual(["popo-altzomoni", "popo-tlamacas", "popo-tianguismanalco"]); });

@@ -35,6 +35,9 @@ import { fetchMagmaCameras, MAGMA_CCTV_URL } from "../volcano/media/magma";
 import { fetchGvpImages } from "../volcano/media/gvpImages";
 import { fetchVolcatImages, VOLCAT_LIST_URL } from "../volcano/media/volcat";
 import { fetchNasaVolcanoImages, NASA_IMAGES_SEARCH } from "../volcano/media/nasaImages";
+import { fetchJmaCameras, JMA_VOLCAMS } from "../volcano/media/jma";
+import { fetchCenapredCameras, CENAPRED_POPO } from "../volcano/media/cenapred";
+import { fetchOvpfCameras, OVPF_CAMERAS } from "../volcano/media/ovpf";
 import type { VolcanoCameraMode, VolcanoMediaType } from "@photonsurge/shared/volcanoes/media";
 
 const TAG = "job:volcanoes";
@@ -731,23 +734,30 @@ export async function mediaRegistry(_job: Job) {
     });
     const phivolcsDiagnostics: Array<{ stage: string; url: string; status?: number; reason: string; volcano?: string }> = [];
     const providerErrors: Record<string, string> = {};
-    const [ingvFound, phivolcsFound, magmaFound] = await Promise.all([
+    const [ingvFound, phivolcsFound, magmaFound, jmaFound, cenapredFound, ovpfFound] = await Promise.all([
       fetchIngvCameras().catch((err) => { providerErrors.ingv = mediaDiagnosticError(err); return []; }),
       fetchPhivolcsCameras(fetch, (event) => { if (phivolcsDiagnostics.length < 20) phivolcsDiagnostics.push(event); })
         .catch((err) => { providerErrors.phivolcs = mediaDiagnosticError(err); return []; }),
       fetchMagmaCameras().catch((err) => { providerErrors.magma = mediaDiagnosticError(err); return []; }),
+      fetchJmaCameras().catch((err) => { providerErrors.jma = mediaDiagnosticError(err); return []; }),
+      fetchCenapredCameras().catch((err) => { providerErrors.cenapred = mediaDiagnosticError(err); return []; }),
+      fetchOvpfCameras().catch((err) => { providerErrors.ovpf = mediaDiagnosticError(err); return []; }),
     ]);
     const extraCameras: Parameters<typeof db.volcanoCameras.upsertMany>[0] = [];
     const extraGeneric: Cam[] = [];
     const extraStubWrites: Promise<unknown>[] = [];
-    const extraUnmatched: Record<"INGV" | "PHIVOLCS" | "MAGMA", string[]> = { INGV: [], PHIVOLCS: [], MAGMA: [] };
-    const addExtra = (source: "INGV" | "PHIVOLCS" | "MAGMA", found: {
+    type ExtraSource = "INGV" | "PHIVOLCS" | "MAGMA" | "JMA" | "CENAPRED" | "IPGP_OVPF";
+    const extraUnmatched: Record<ExtraSource, string[]> = { INGV: [], PHIVOLCS: [], MAGMA: [], JMA: [], CENAPRED: [], IPGP_OVPF: [] };
+    const addExtra = (source: ExtraSource, found: {
       sourceCameraId: string; volcanoName: string; name: string; imageUrl: string; detailUrl: string;
       mode?: VolcanoCameraMode; observedAt?: string;
     }, reusable: boolean) => {
       let volcano = findVolcano(found.volcanoName);
       if (!volcano && avoCatalog) {
-        const rawKey = normalizedVolcanoName(found.volcanoName);
+        const jmaName = source === "JMA" ? Object.entries({ "富士山": "Fuji", "箱根山": "Hakone", "伊豆大島": "Izu-Oshima",
+          "三宅島": "Miyakejima", "阿蘇山": "Aso", "雲仙岳": "Unzen", "霧島山": "Kirishimayama", "桜島": "Sakura-jima",
+          "薩摩硫黄島": "Satsuma-Iojima", "口永良部島": "Kuchinoerabujima" }).find(([jp]) => found.volcanoName.includes(jp))?.[1] : undefined;
+        const rawKey = normalizedVolcanoName(jmaName ?? found.volcanoName);
         const key = ({ bromo: "tengger caldera" } as Record<string, string>)[rawKey] ?? rawKey;
         const entry = avoCatalog.find((candidate) => {
           const candidateKey = normalizedVolcanoName(candidate.name);
@@ -763,18 +773,20 @@ export async function mediaRegistry(_job: Job) {
         }
       }
       if (!volcano) { if (extraUnmatched[source].length < 10) extraUnmatched[source].push(found.volcanoName); return; }
-      const provider = source === "INGV" ? "ingv" : source === "PHIVOLCS" ? "phivolcs" : "magma";
+      const provider = ({ INGV: "ingv", PHIVOLCS: "phivolcs", MAGMA: "magma", JMA: "jma", CENAPRED: "cenapred", IPGP_OVPF: "ipgp_ovpf" } as const)[source];
+      const sourceName = ({ INGV: "INGV Osservatorio Etneo", PHIVOLCS: "PHIVOLCS VOLCAN", MAGMA: "MAGMA Indonesia / PVMBG",
+        JMA: "Japan Meteorological Agency", CENAPRED: "CENAPRED", IPGP_OVPF: "IPGP OVPF" } as const)[source];
       extraCameras.push({
         volcanoId: volcano.id, source, sourceCameraId: found.sourceCameraId, name: found.name,
         mode: found.mode ?? "VISIBLE", latitude: volcano.lat, longitude: volcano.lng,
         currentImageUrl: found.imageUrl, detailUrl: found.detailUrl, upstreamTimestamp: found.observedAt,
-        attribution: source === "INGV" ? "INGV Osservatorio Etneo" : source === "PHIVOLCS" ? "PHIVOLCS VOLCAN" : "MAGMA Indonesia / PVMBG",
+        attribution: sourceName,
         licence: source === "MAGMA" ? "CC BY-NC-ND 4.0" : reusable ? "CC BY 4.0" : "VERIFY", reuseAllowed: reusable, enabled: true,
       });
       extraGeneric.push({
         camId: `${provider}:${found.sourceCameraId}`, provider, title: found.name, lat: volcano.lat, lng: volcano.lng,
         status: "active", country: volcano.country, imageUrl: found.imageUrl, playerUrl: found.detailUrl,
-        tags: ["volcano", volcano.id], attribution: { provider: source === "INGV" ? "INGV Osservatorio Etneo" : source === "PHIVOLCS" ? "PHIVOLCS VOLCAN" : "MAGMA Indonesia / PVMBG",
+        tags: ["volcano", volcano.id], attribution: { provider: sourceName,
           requiredText: source === "MAGMA" ? "CC BY-NC-ND 4.0 — do not rebroadcast" : reusable ? "CC BY 4.0" : "Reuse permission unverified", linkUrl: found.detailUrl }, fetchedAt: Date.now(),
       });
     };
@@ -782,8 +794,16 @@ export async function mediaRegistry(_job: Job) {
     ingvFound.forEach((camera) => addExtra("INGV", camera, true));
     phivolcsFound.forEach((camera) => addExtra("PHIVOLCS", camera, false));
     magmaFound.forEach((camera) => addExtra("MAGMA", camera, false));
+    jmaFound.forEach((camera) => addExtra("JMA", camera, false));
+    cenapredFound.forEach((camera) => addExtra("CENAPRED", camera, false));
+    ovpfFound.forEach((camera) => addExtra("IPGP_OVPF", camera, false));
     const [extraCameraResult, extraGenericResult] = await Promise.all([
       db.volcanoCameras.upsertMany(extraCameras), db.cams.upsertMany(extraGeneric), ...extraStubWrites,
+    ]);
+    const ingvCameraIds = extraCameras.filter((camera) => camera.source === "INGV").map((camera) => camera.sourceCameraId);
+    const ingvGenericIds = extraGeneric.filter((camera) => camera.provider === "ingv").map((camera) => camera.camId);
+    const [ingvDisabled, ingvOfflined] = await Promise.all([
+      db.volcanoCameras.disableMissing("INGV", ingvCameraIds), db.cams.offlineMissing("ingv", ingvGenericIds),
     ]);
     await Promise.all([
       db.volcanoMediaSources.upsert({ source: "INGV", name: "INGV Osservatorio Etneo", registryUrl: INGV_ETNA_PAGE,
@@ -795,6 +815,12 @@ export async function mediaRegistry(_job: Job) {
       db.volcanoMediaSources.upsert({ source: "MAGMA", name: "MAGMA Indonesia / PVMBG", registryUrl: MAGMA_CCTV_URL,
         enabled: true, registryPollSeconds: 6 * 60 * 60, mediaPollSeconds: 5 * 60, attribution: "MAGMA Indonesia / PVMBG",
         defaultLicence: "CC BY-NC-ND 4.0", defaultReuseAllowed: false, lastDiscoveredAt: new Date() }),
+      db.volcanoMediaSources.upsert({ source: "JMA", name: "Japan Meteorological Agency", registryUrl: JMA_VOLCAMS,
+        enabled: true, registryPollSeconds: 12 * 60 * 60, mediaPollSeconds: 60, attribution: "Japan Meteorological Agency", defaultLicence: "VERIFY", defaultReuseAllowed: false, lastDiscoveredAt: new Date() }),
+      db.volcanoMediaSources.upsert({ source: "CENAPRED", name: "CENAPRED", registryUrl: CENAPRED_POPO,
+        enabled: true, registryPollSeconds: 5 * 60, mediaPollSeconds: 60, attribution: "CENAPRED", defaultLicence: "VERIFY", defaultReuseAllowed: false, lastDiscoveredAt: new Date() }),
+      db.volcanoMediaSources.upsert({ source: "IPGP_OVPF", name: "IPGP OVPF", registryUrl: OVPF_CAMERAS,
+        enabled: true, registryPollSeconds: 24 * 60 * 60, mediaPollSeconds: 5 * 60, attribution: "IPGP OVPF", defaultLicence: "VERIFY", defaultReuseAllowed: false, lastDiscoveredAt: new Date() }),
     ]);
     const result = { avo: { discovered: discovered.length, cameras: cameras.length, unmatched, unmatchedNames: avoUnmatchedNames,
       upserted: cameraResult.upserted, genericUpserted: genericResult.upserted },
@@ -805,7 +831,11 @@ export async function mediaRegistry(_job: Job) {
       phivolcs: { discovered: phivolcsFound.length, unmatchedNames: extraUnmatched.PHIVOLCS,
         diagnostics: phivolcsDiagnostics, error: providerErrors.phivolcs },
       magma: { discovered: magmaFound.length, unmatchedNames: extraUnmatched.MAGMA, error: providerErrors.magma },
-      extra: { cameras: extraCameras.length, upserted: extraCameraResult.upserted, genericUpserted: extraGenericResult.upserted } };
+      jma: { discovered: jmaFound.length, unmatchedNames: extraUnmatched.JMA, error: providerErrors.jma },
+      cenapred: { discovered: cenapredFound.length, unmatchedNames: extraUnmatched.CENAPRED, error: providerErrors.cenapred },
+      ovpf: { discovered: ovpfFound.length, unmatchedNames: extraUnmatched.IPGP_OVPF, error: providerErrors.ovpf },
+      extra: { cameras: extraCameras.length, upserted: extraCameraResult.upserted, genericUpserted: extraGenericResult.upserted,
+        ingvDisabled, ingvOfflined } };
     log(TAG, "volcano media registry done", result);
     return result;
   } catch (err) {

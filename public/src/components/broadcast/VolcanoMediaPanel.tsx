@@ -18,7 +18,7 @@ export function volcanoMediaSlideHasContent(media: VolcanoMedia[]): boolean {
 
 export default function VolcanoMediaPanel({ media, color = "#38bdf8" }: { media: VolcanoMedia[]; color?: string }) {
   // Internal operator surface: show acquired products regardless of reuse flag.
-  const shown = media.filter((item) => item.type === "SATELLITE" && Boolean(src(item))).slice(0, 3);
+  const shown = media.filter((item) => item.type === "SATELLITE" && Boolean(src(item))).slice(0, 1);
   if (!shown.length) return null;
 
   return (
@@ -28,7 +28,7 @@ export default function VolcanoMediaPanel({ media, color = "#38bdf8" }: { media:
           <div key={item.id} style={{ marginBottom: 6 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={src(item)} alt={item.title ?? item.type}
-              style={{ width: "100%", height: 112, objectFit: "cover", borderRadius: 7, background: "#070a11", display: "block" }} />
+              style={{ width: "100%", height: 270, objectFit: "contain", borderRadius: 8, background: "#070a11", display: "block" }} />
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 2, fontSize: 10 }}>
               <span style={{ color: "#a9bad0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {item.title ?? item.caption ?? item.type}

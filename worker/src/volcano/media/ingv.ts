@@ -6,7 +6,7 @@ export const INGV_AEOLIAN_PAGE = "https://www.ct.ingv.it/index.php/monitoraggio-
 
 export interface IngvCamera {
   sourceCameraId: string; volcanoName: string; name: string; mode: VolcanoCameraMode;
-  imageUrl: string; detailUrl: string;
+  imageUrl: string; detailUrl: string; observedAt?: string;
 }
 
 const attr = (tag: string, name: string) => new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, "i").exec(tag)?.[1];
@@ -18,7 +18,7 @@ export function discoverIngvIframes(html: string, pageUrl: string): string[] {
 }
 
 export function parseIngvCameraDocument(html: string, detailUrl: string, defaultVolcano: string): IngvCamera[] {
-  const out: IngvCamera[] = [];
+  const byStation = new Map<string, IngvCamera>();
   for (const m of html.matchAll(/<(?:img|source|video)\b[^>]*(?:src|data-src)\s*=\s*["'][^"']+["'][^>]*>/gi)) {
     const tag = m[0];
     const src = attr(tag, "src") ?? attr(tag, "data-src");
@@ -26,14 +26,20 @@ export function parseIngvCameraDocument(html: string, detailUrl: string, default
     const context = `${attr(tag, "alt") ?? ""} ${attr(tag, "title") ?? ""} ${src}`;
     const volcanoName = /stromboli/i.test(context) ? "Stromboli" : /vulcano/i.test(context) ? "Vulcano" : defaultVolcano;
     const imageUrl = absolute(src, detailUrl);
-    out.push({
-      sourceCameraId: createHash("sha1").update(imageUrl).digest("hex").slice(0, 16),
-      volcanoName, name: context.trim() || `${volcanoName} camera`,
+    const station = /\/webcams\/([^/]+)/i.exec(src)?.[1] ?? /\/([A-Za-z]{2,8})\d{3,6}\.(?:jpe?g|png)/i.exec(src)?.[1];
+    const stableId = station?.toLowerCase() ?? createHash("sha1").update(imageUrl.split("?")[0]).digest("hex").slice(0, 16);
+    const stamp = /\/(20\d{6})\/(\d{4})\//.exec(src);
+    const observedAt = stamp ? `${stamp[1].slice(0, 4)}-${stamp[1].slice(4, 6)}-${stamp[1].slice(6, 8)}T${stamp[2].slice(0, 2)}:${stamp[2].slice(2, 4)}:00+02:00` : undefined;
+    const camera = {
+      sourceCameraId: stableId,
+      volcanoName, name: station ? `${volcanoName} · ${station}` : (context.trim() || `${volcanoName} camera`),
       mode: cameraModeFromText(context) === "UNKNOWN" && /\/[A-Za-z]*t\d*\.(?:jpe?g|png)/i.test(src) ? "THERMAL" : cameraModeFromText(context),
-      imageUrl, detailUrl,
-    });
+      imageUrl, detailUrl, observedAt,
+    };
+    const previous = byStation.get(stableId);
+    if (!previous || `${camera.observedAt ?? ""}|${camera.imageUrl}` > `${previous.observedAt ?? ""}|${previous.imageUrl}`) byStation.set(stableId, camera);
   }
-  return out;
+  return [...byStation.values()];
 }
 
 export async function fetchIngvCameras(fetchImpl: typeof fetch = fetch): Promise<IngvCamera[]> {

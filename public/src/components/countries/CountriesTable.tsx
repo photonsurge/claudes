@@ -8,10 +8,12 @@
  * rows, so it loads and filters client-side in one go).
  */
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { flagEmoji, countryEnrichmentStatus, type CountryWithWeather } from "../../lib/countries";
 import { th, thNum, td } from "../tracks/styles";
 
 const muted = "#8b95a7";
+type SortKey = "name" | "continent" | "subregion" | "updated" | "weather";
 
 function weatherSummary(c: CountryWithWeather): string {
   const temp = c.weather?.stats.find((s) => s.variable === "temp");
@@ -32,21 +34,36 @@ export default function CountriesTable({
   /** Flip a country's 12h AI round-up opt-in. */
   onToggleRoundup: (country: CountryWithWeather, enabled: boolean) => void;
 }) {
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [descending, setDescending] = useState(false);
+  const rows = useMemo(() => [...countries].sort((a, b) => {
+    const result = sortKey === "name" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+      : sortKey === "continent" ? (a.continent ?? "").localeCompare(b.continent ?? "")
+        : sortKey === "subregion" ? (a.subregion ?? "").localeCompare(b.subregion ?? "")
+          : sortKey === "updated" ? new Date(a.wikiFetchedAt ?? 0).getTime() - new Date(b.wikiFetchedAt ?? 0).getTime()
+            : Number(a.weather?.stats.find((s) => s.variable === "temp")?.mean ?? -Infinity)
+              - Number(b.weather?.stats.find((s) => s.variable === "temp")?.mean ?? -Infinity);
+    return descending ? -result : result;
+  }), [countries, descending, sortKey]);
+  const sort = (key: SortKey) => { if (key === sortKey) setDescending((value) => !value); else { setSortKey(key); setDescending(key === "updated"); } };
+  const header = (key: SortKey, label: string) => <button type="button" onClick={() => sort(key)} style={sortButton}>
+    {label} {sortKey === key ? (descending ? "↓" : "↑") : "↕"}
+  </button>;
   return (
     <div style={{ overflowX: "auto", border: "1px solid #1b2030", borderRadius: 8, marginTop: 14 }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ textAlign: "left", color: muted }}>
-            <th style={th}>Country</th>
-            <th style={th}>Continent</th>
-            <th style={th}>Subregion</th>
-            <th style={th}>Enrichment</th>
-            <th style={thNum}>Weather</th>
+            <th style={th}>{header("name", "Country")}</th>
+            <th style={th}>{header("continent", "Continent")}</th>
+            <th style={th}>{header("subregion", "Subregion")}</th>
+            <th style={th}>{header("updated", "Enrichment")}</th>
+            <th style={thNum}>{header("weather", "Weather")}</th>
             <th style={{ ...thNum, whiteSpace: "nowrap" }} title="12h AI round-up opt-in">Round-up</th>
           </tr>
         </thead>
         <tbody>
-          {countries.map((c) => {
+          {rows.map((c) => {
             const status = countryEnrichmentStatus(c);
             const isSel = selectedId === c.id;
             return (
@@ -95,3 +112,6 @@ export default function CountriesTable({
     </div>
   );
 }
+
+const sortButton = { appearance: "none", border: 0, padding: 0, background: "transparent", color: "inherit",
+  font: "inherit", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" } as const;

@@ -77,6 +77,7 @@ export default function VolcanoDetailPage() {
   const [detail, setDetail] = useState<VolcanoDetail | null>(null);
   const [missing, setMissing] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [externalPreview, setExternalPreview] = useState<{ src: string; title: string; meta?: string } | null>(null);
 
   const reload = useCallback(async () => {
     if (!volcanoId) return;
@@ -93,10 +94,10 @@ export default function VolcanoDetailPage() {
   }, [reload]);
 
   useEffect(() => {
-    if (lightboxIndex == null) return;
+    if (lightboxIndex == null && !externalPreview) return;
     const count = detail?.media?.filter((item) => item.type !== "VIDEO" && (item.assetRef || item.imageUrl)).length ?? 0;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setLightboxIndex(null);
+      if (event.key === "Escape") { setLightboxIndex(null); setExternalPreview(null); }
       if (event.key === "ArrowLeft" && count) setLightboxIndex((index) => index == null ? null : (index - 1 + count) % count);
       if (event.key === "ArrowRight" && count) setLightboxIndex((index) => index == null ? null : (index + 1) % count);
     };
@@ -106,7 +107,7 @@ export default function VolcanoDetailPage() {
       document.body.style.overflow = "";
       window.removeEventListener("keydown", onKey);
     };
-  }, [detail?.media?.length, lightboxIndex]);
+  }, [detail?.media?.length, lightboxIndex, externalPreview]);
 
   if (!detail) {
     return (
@@ -125,6 +126,10 @@ export default function VolcanoDetailPage() {
     ? `/api/volcanoes/media/${encodeURIComponent(item.assetRef)}?v=${encodeURIComponent(item.contentHash ?? item.acquiredAt.toString())}`
     : item.imageUrl;
   const lightboxMedia = media.filter((item) => item.type !== "VIDEO" && Boolean(mediaSrc(item)));
+  const mediaGroups = [...new Map(media.map((item) => {
+    const key = `${item.source}:${item.type}`;
+    return [key, media.filter((candidate) => candidate.source === item.source && candidate.type === item.type)] as const;
+  })).entries()];
   const volcanoCameras = detail.volcanoCameras ?? [];
   const usedSourceIds = new Set([
     ...media.map((item) => item.source),
@@ -273,12 +278,11 @@ export default function VolcanoDetailPage() {
           <div style={cardLabel}>Cameras ({cams.length})</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10 }}>
             {cams.map((c) => (
-              <a
+              <button
                 key={c.camId}
-                href={c.playerUrl || c.imageUrl}
-                target="_blank"
-                rel="noreferrer"
-                style={{ display: "block", width: 220, color: "inherit", textDecoration: "none" }}
+                type="button"
+                onClick={() => c.imageUrl && setExternalPreview({ src: c.imageUrl, title: c.title, meta: c.attribution?.provider })}
+                style={{ display: "block", width: 220, color: "inherit", textAlign: "left", padding: 0, border: 0, background: "transparent", cursor: c.imageUrl ? "zoom-in" : "default" }}
               >
                 {c.imageUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -292,7 +296,7 @@ export default function VolcanoDetailPage() {
                 {c.attribution?.provider && (
                   <div style={{ color: "#5b6478", fontSize: 11 }}>{c.attribution.provider}</div>
                 )}
-              </a>
+              </button>
             ))}
           </div>
         </div>
@@ -341,8 +345,12 @@ export default function VolcanoDetailPage() {
       {media.length > 0 && (
         <div style={{ ...card, marginTop: 14 }}>
           <div style={cardLabel}>Official media ({media.length})</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginTop: 10 }}>
-            {media.slice(0, 60).map((item) => {
+          {mediaGroups.map(([group, items]) => <section key={group} style={{ marginTop: 14 }}>
+            <div style={{ color: "#7f8da3", fontSize: 11, fontWeight: 700, letterSpacing: .5, marginBottom: 7 }}>
+              {items[0].source} · {items[0].type} ({items.length})
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+            {items.map((item) => {
               const src = mediaSrc(item);
               const lightboxItemIndex = lightboxMedia.findIndex((candidate) => candidate.id === item.id);
               return (
@@ -368,7 +376,8 @@ export default function VolcanoDetailPage() {
                 </figure>
               );
             })}
-          </div>
+            </div>
+          </section>)}
         </div>
       )}
 
@@ -431,11 +440,12 @@ export default function VolcanoDetailPage() {
           <div style={{ display: "flex", gap: 14, marginTop: 8, flexWrap: "wrap" }}>
             {(v.wikiPhoto || v.wikiThumb) && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={v.wikiPhoto || v.wikiThumb}
-                alt=""
-                style={{ width: 240, height: 150, objectFit: "cover", borderRadius: 6, background: "#070a11" }}
-              />
+              <button type="button" onClick={() => setExternalPreview({ src: v.wikiPhoto || v.wikiThumb!, title: `${v.name} reference image`, meta: "Wikipedia / Wikimedia" })}
+                style={{ padding: 0, border: 0, background: "transparent", cursor: "zoom-in" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={v.wikiPhoto || v.wikiThumb} alt=""
+                  style={{ width: 240, height: 150, objectFit: "cover", borderRadius: 6, background: "#070a11", display: "block" }} />
+              </button>
             )}
             {v.wikiExtract && (
               <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.5, margin: 0, flex: "1 1 260px" }}>{v.wikiExtract}</p>
@@ -512,6 +522,19 @@ export default function VolcanoDetailPage() {
           document.body,
         );
       })()}
+      {externalPreview && createPortal(
+        <div role="dialog" aria-modal="true" aria-label={externalPreview.title}
+          onMouseDown={(event) => { if (event.target === event.currentTarget) setExternalPreview(null); }}
+          style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(2,5,10,.94)", display: "grid",
+            gridTemplateRows: "auto minmax(0,1fr) auto", padding: 18, backdropFilter: "blur(8px)" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}><button type="button" onClick={() => setExternalPreview(null)}
+            aria-label="Close lightbox" style={{ ...lightboxButton, fontSize: 22, width: 42 }}>×</button></div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={externalPreview.src} alt={externalPreview.title}
+            style={{ display: "block", maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", margin: "auto", borderRadius: 8 }} />
+          <div style={{ color: "#f1f5f9", textAlign: "center", marginTop: 10 }}>{externalPreview.title}
+            {externalPreview.meta && <div style={{ color: "#778398", fontSize: 11, marginTop: 3 }}>{externalPreview.meta}</div>}</div>
+        </div>, document.body)}
     </AdminPageShell>
   );
 }

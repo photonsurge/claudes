@@ -7,6 +7,7 @@ import { countryNameFlag } from "@photonsurge/shared/tracks/flags";
 import { listNotable, keyFor } from "../../lib/tracks/notable";
 import NotableButton from "./NotableButton";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "./styles";
+import { useTableSort } from "../admin/useTableSort";
 
 // A few handy regions to scope the (heavy) global feed. [w, s, e, n].
 const REGIONS: { id: string; label: string; bbox?: [number, number, number, number] }[] = [
@@ -58,6 +59,9 @@ export default function AircraftTable() {
   useEffect(() => {
     reload();
   }, [reload]);
+  const sorted = useTableSort(rows, { callsign: (a) => a.callsign, icao: (a) => a.icao24, registration: (a) => a.registration,
+    type: (a) => a.acType, country: (a) => a.country, lat: (a) => a.lat, lng: (a) => a.lng, altitude: (a) => a.altM,
+    speed: (a) => a.velocityMS, track: (a) => a.headingDeg }, "callsign");
 
   return (
     <div>
@@ -86,21 +90,15 @@ export default function AircraftTable() {
       <table style={{ width: "100%", marginTop: 12, borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ textAlign: "left", color: "#8b95a7" }}>
-            <th style={th}>Callsign</th>
-            <th style={th}>ICAO24</th>
-            <th style={th}>Reg</th>
-            <th style={th}>Type</th>
-            <th style={th}>Country</th>
-            <th style={thNum}>Lat</th>
-            <th style={thNum}>Lon</th>
-            <th style={thNum}>Alt (m)</th>
-            <th style={thNum}>Speed (m/s)</th>
-            <th style={thNum}>Track</th>
+            <th style={th}>{sorted.header("callsign", "Callsign")}</th><th style={th}>{sorted.header("icao", "ICAO24")}</th>
+            <th style={th}>{sorted.header("registration", "Reg")}</th><th style={th}>{sorted.header("type", "Type")}</th><th style={th}>{sorted.header("country", "Country")}</th>
+            <th style={thNum}>{sorted.header("lat", "Lat")}</th><th style={thNum}>{sorted.header("lng", "Lon")}</th><th style={thNum}>{sorted.header("altitude", "Alt (m)")}</th>
+            <th style={thNum}>{sorted.header("speed", "Speed (m/s)")}</th><th style={thNum}>{sorted.header("track", "Track")}</th>
             <th style={th}>Notable</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((a) => (
+          {sorted.rows.map((a) => (
             <tr key={a.icao24} style={{ borderTop: "1px solid #1b2030" }}>
               <td style={td}>{a.callsign ?? "—"}</td>
               <td style={{ ...td, color: "#8b95a7" }}>{a.icao24}</td>

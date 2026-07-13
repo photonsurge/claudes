@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import { useTableSort } from "../../../components/admin/useTableSort";
 
 interface CollectionSummary {
   name: string;
@@ -64,6 +65,15 @@ export default function DbSummaryPage() {
   }, [refresh]);
 
   const maxSize = summary ? Math.max(1, ...summary.collections.map((c) => c.totalSize)) : 1;
+  const sorted = useTableSort(summary?.collections ?? [], {
+    collection: (c) => c.name,
+    docs: (c) => c.count,
+    average: (c) => c.avgObjSize,
+    data: (c) => c.dataSize,
+    storage: (c) => c.storageSize,
+    indexes: (c) => c.indexSize,
+    total: (c) => c.totalSize,
+  }, "total", true);
 
   return (
     <AdminPageShell
@@ -120,18 +130,18 @@ export default function DbSummaryPage() {
             <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 24, fontSize: 13 }}>
               <thead>
                 <tr style={{ textAlign: "left", color: "#8b95a7", borderBottom: "1px solid #1b2030" }}>
-                  <th style={{ padding: "6px 8px" }}>Collection</th>
-                  <th style={{ padding: "6px 8px", textAlign: "right" }}>Docs</th>
-                  <th style={{ padding: "6px 8px", textAlign: "right" }}>Avg doc</th>
-                  <th style={{ padding: "6px 8px", textAlign: "right" }}>Data</th>
-                  <th style={{ padding: "6px 8px", textAlign: "right" }}>Storage</th>
-                  <th style={{ padding: "6px 8px", textAlign: "right" }}>Indexes</th>
-                  <th style={{ padding: "6px 8px", textAlign: "right" }}>Total</th>
+                  <th style={{ padding: "6px 8px" }}>{sorted.header("collection", "Collection")}</th>
+                  <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("docs", "Docs")}</th>
+                  <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("average", "Avg doc")}</th>
+                  <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("data", "Data")}</th>
+                  <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("storage", "Storage")}</th>
+                  <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("indexes", "Indexes")}</th>
+                  <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("total", "Total")}</th>
                   <th style={{ padding: "6px 8px" }} />
                 </tr>
               </thead>
               <tbody>
-                {summary.collections.map((c) => (
+                {sorted.rows.map((c) => (
                   <tr key={c.name} style={{ borderBottom: "1px solid #12161f" }}>
                     <td style={{ padding: "8px" }}>{c.name}</td>
                     <td style={{ padding: "8px", textAlign: "right" }}>{formatCount(c.count)}</td>

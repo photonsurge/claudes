@@ -10,6 +10,7 @@
 import Link from "next/link";
 import { regionEnrichmentStatus, type RegionWithWeather } from "../../lib/regions";
 import { th, thNum, td } from "../tracks/styles";
+import { useTableSort } from "../admin/useTableSort";
 
 const muted = "#8b95a7";
 
@@ -29,19 +30,19 @@ export default function RegionsTable({
   selectedId: string | null;
   onSelect: (region: RegionWithWeather) => void;
 }) {
+  const sorted = useTableSort(regions, { name: (r) => r.name, group: (r) => r.group,
+    enrichment: (r) => r.wikiFetchedAt, weather: (r) => r.weather?.stats.find((s) => s.variable === "temp")?.mean }, "name");
   return (
     <div style={{ overflowX: "auto", border: "1px solid #1b2030", borderRadius: 8, marginTop: 14 }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ textAlign: "left", color: muted }}>
-            <th style={th}>Region</th>
-            <th style={th}>Group</th>
-            <th style={th}>Enrichment</th>
-            <th style={thNum}>Weather</th>
+            <th style={th}>{sorted.header("name", "Region")}</th><th style={th}>{sorted.header("group", "Group")}</th>
+            <th style={th}>{sorted.header("enrichment", "Enrichment")}</th><th style={thNum}>{sorted.header("weather", "Weather")}</th>
           </tr>
         </thead>
         <tbody>
-          {regions.map((r) => {
+          {sorted.rows.map((r) => {
             const status = regionEnrichmentStatus(r);
             const isSel = selectedId === r.id;
             return (

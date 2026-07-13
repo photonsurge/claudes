@@ -84,6 +84,10 @@ export function makeCamRepo(model: Model<iCamModel>) {
       const doc = await model.findOne({ camId: cam.camId }).lean().exec();
       return doc ? toCam(strip(doc)) : cam;
     },
+    async offlineMissing(provider: string, activeCamIds: string[]): Promise<number> {
+      const res = await model.updateMany({ provider, status: "active", camId: { $nin: activeCamIds } }, { $set: { status: "offline" } }).exec();
+      return res.modifiedCount ?? 0;
+    },
 
     /** Cams (newest first), optionally filtered by status / bbox / text. */
     async list(opts: {

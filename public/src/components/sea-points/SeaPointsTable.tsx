@@ -11,6 +11,7 @@ import { listSeaPoints, setSeaPointEnabled, deleteSeaPoint } from "../../lib/sea
 import type { SeaPoint } from "../../lib/sea-points/types";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "../tracks/styles";
 import AddSeaPointForm from "./AddSeaPointForm";
+import { useTableSort } from "../admin/useTableSort";
 
 export default function SeaPointsTable() {
   const [rows, setRows] = useState<SeaPoint[]>([]);
@@ -39,6 +40,8 @@ export default function SeaPointsTable() {
   }, [rows, selected]);
 
   const filtered = rows.filter((r) => (q.trim() ? r.name.toLowerCase().includes(q.trim().toLowerCase()) : true));
+  const sorted = useTableSort(filtered, { name: (p) => p.name, id: (p) => p.pointId, depth: (p) => p.depthCycle,
+    enabled: (p) => p.enabled, lat: (p) => p.lat, lng: (p) => p.lng }, "name");
 
   const onToggle = async (p: SeaPoint) => {
     const res = await setSeaPointEnabled(p.pointId, !p.enabled);
@@ -91,17 +94,14 @@ export default function SeaPointsTable() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "#8b95a7" }}>
-                <th style={th}>Name</th>
-                <th style={th}>Point id</th>
-                <th style={th}>Depth cycle</th>
-                <th style={th}>Enabled</th>
-                <th style={thNum}>Lat</th>
-                <th style={thNum}>Lng</th>
+                <th style={th}>{sorted.header("name", "Name")}</th><th style={th}>{sorted.header("id", "Point id")}</th>
+                <th style={th}>{sorted.header("depth", "Depth cycle")}</th><th style={th}>{sorted.header("enabled", "Enabled")}</th>
+                <th style={thNum}>{sorted.header("lat", "Lat")}</th><th style={thNum}>{sorted.header("lng", "Lng")}</th>
                 <th style={th}></th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p) => {
+              {sorted.rows.map((p) => {
                 const isSel = selected?.pointId === p.pointId;
                 return (
                   <tr

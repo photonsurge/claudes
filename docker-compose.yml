@@ -141,7 +141,7 @@ services:
     restart: unless-stopped
     # Hard container memory ceiling. Override per host in .env; exceeding it
     # causes Docker to OOM-kill/restart this service instead of exhausting the host.
-    mem_limit: ${PUBLIC_MEMORY_LIMIT:-2g}
+    mem_limit: ${PUBLIC_MEMORY_LIMIT:-3g}
     # Geocoding var (GEOCODER_URL) flows in via env_file — no change needed.
     env_file: .env
     environment:

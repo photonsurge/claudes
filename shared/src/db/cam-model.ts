@@ -62,7 +62,7 @@ const CamSchema = new mongoose.Schema<iCamModel>(
       type: String,
       enum: [
         "windy", "tfl", "national_highways", "youtube", "geonet", "usgs_vhp", "avo",
-        "ingv", "phivolcs", "imo", "magma", "volcat", "gvp", "manual", "other",
+        "ingv", "phivolcs", "imo", "magma", "jma", "cenapred", "ipgp_ovpf", "volcat", "gvp", "manual", "other",
       ],
       required: true,
       default: "manual",

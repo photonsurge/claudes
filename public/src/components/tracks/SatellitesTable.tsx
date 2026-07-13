@@ -5,6 +5,7 @@ import { SATELLITE_GROUPS, DEFAULT_SATELLITE_GROUP } from "../../lib/tracks/cele
 import { listSatellites } from "../../lib/tracks/client";
 import type { SatellitePosition } from "../../lib/tracks/types";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "./styles";
+import { useTableSort } from "../admin/useTableSort";
 
 export default function SatellitesTable() {
   const [group, setGroup] = useState(DEFAULT_SATELLITE_GROUP);
@@ -26,6 +27,9 @@ export default function SatellitesTable() {
   useEffect(() => {
     reload();
   }, [reload]);
+  const sorted = useTableSort(sats, { name: (s) => s.name, norad: (s) => s.noradId, owner: (s) => s.meta?.ownerName,
+    type: (s) => s.meta?.objectType, launched: (s) => s.meta?.launchDate, lat: (s) => s.lat, lng: (s) => s.lng,
+    altitude: (s) => s.altKm, speed: (s) => s.speedKmS }, "name");
 
   return (
     <div>
@@ -50,19 +54,14 @@ export default function SatellitesTable() {
       <table style={{ width: "100%", marginTop: 12, borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ textAlign: "left", color: "#8b95a7" }}>
-            <th style={th}>Name</th>
-            <th style={th}>NORAD</th>
-            <th style={th}>Owner</th>
-            <th style={th}>Type</th>
-            <th style={th}>Launched</th>
-            <th style={thNum}>Lat</th>
-            <th style={thNum}>Lon</th>
-            <th style={thNum}>Alt (km)</th>
-            <th style={thNum}>Speed (km/s)</th>
+            <th style={th}>{sorted.header("name", "Name")}</th><th style={th}>{sorted.header("norad", "NORAD")}</th>
+            <th style={th}>{sorted.header("owner", "Owner")}</th><th style={th}>{sorted.header("type", "Type")}</th><th style={th}>{sorted.header("launched", "Launched")}</th>
+            <th style={thNum}>{sorted.header("lat", "Lat")}</th><th style={thNum}>{sorted.header("lng", "Lon")}</th>
+            <th style={thNum}>{sorted.header("altitude", "Alt (km)")}</th><th style={thNum}>{sorted.header("speed", "Speed (km/s)")}</th>
           </tr>
         </thead>
         <tbody>
-          {sats.map((s) => (
+          {sorted.rows.map((s) => (
             <tr key={s.noradId} style={{ borderTop: "1px solid #1b2030" }}>
               <td style={td}>{s.name}</td>
               <td style={{ ...td, color: "#8b95a7" }}>{s.noradId}</td>

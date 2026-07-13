@@ -7,6 +7,7 @@ import { mmsiCountry } from "@photonsurge/shared/tracks/flags";
 import { listNotable, keyFor } from "../../lib/tracks/notable";
 import NotableButton from "./NotableButton";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "./styles";
+import { useTableSort } from "../admin/useTableSort";
 
 // [w, s, e, n] regions for the AIS bounding-box subscription. "World" (no bbox)
 // returns every vessel the worker cached.
@@ -58,6 +59,8 @@ export default function ShipsTable() {
   useEffect(() => {
     reload();
   }, [reload]);
+  const sorted = useTableSort(rows, { name: (s) => s.name, mmsi: (s) => s.mmsi, flag: (s) => mmsiCountry(s.mmsi)?.name,
+    lat: (s) => s.lat, lng: (s) => s.lng, speed: (s) => s.sogKn, course: (s) => s.cogDeg }, "name");
 
   if (!configured) {
     return (
@@ -97,18 +100,14 @@ export default function ShipsTable() {
       <table style={{ width: "100%", marginTop: 12, borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ textAlign: "left", color: "#8b95a7" }}>
-            <th style={th}>Name</th>
-            <th style={th}>MMSI</th>
-            <th style={th}>Flag</th>
-            <th style={thNum}>Lat</th>
-            <th style={thNum}>Lon</th>
-            <th style={thNum}>SOG (kn)</th>
-            <th style={thNum}>COG</th>
+            <th style={th}>{sorted.header("name", "Name")}</th><th style={th}>{sorted.header("mmsi", "MMSI")}</th><th style={th}>{sorted.header("flag", "Flag")}</th>
+            <th style={thNum}>{sorted.header("lat", "Lat")}</th><th style={thNum}>{sorted.header("lng", "Lon")}</th>
+            <th style={thNum}>{sorted.header("speed", "SOG (kn)")}</th><th style={thNum}>{sorted.header("course", "COG")}</th>
             <th style={th}>Notable</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((s) => {
+          {sorted.rows.map((s) => {
             const c = mmsiCountry(s.mmsi);
             return (
             <tr key={s.mmsi} style={{ borderTop: "1px solid #1b2030" }}>

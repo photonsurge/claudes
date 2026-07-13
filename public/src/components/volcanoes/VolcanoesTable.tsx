@@ -41,6 +41,9 @@ const STATUS_LABEL: Record<VolcanoStatus, string> = {
   unrest: "Unrest",
   dormant: "Dormant",
 };
+type SortKey = "name" | "status" | "lastDate";
+type SortDirection = "asc" | "desc";
+const STATUS_RANK: Record<VolcanoStatus, number> = { erupting: 0, unrest: 1, dormant: 2 };
 
 function wikiStatus(v: Volcano): { label: string; color: string } {
   if (v.wikiTitle || v.wikiThumb || v.wikiExtract) return { label: "Enriched", color: "#34d399" };
@@ -66,6 +69,8 @@ export default function VolcanoesTable() {
   const volcanoes = useVolcanoes(true);
   const [status, setStatus] = useState<"" | VolcanoStatus>("");
   const [q, setQ] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("lastDate");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [selected, setSelected] = useState<Volcano | null>(null);
   const [timeline, setTimeline] = useState<EventTimelineBeat[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -76,9 +81,20 @@ export default function VolcanoesTable() {
       volcanoes
         .filter((v) => (status ? v.status === status : true))
         .filter((v) => (q.trim() ? v.name.toLowerCase().includes(q.trim().toLowerCase()) : true))
-        .sort((a, b) => b.lastDate - a.lastDate),
-    [volcanoes, status, q],
+        .sort((a, b) => {
+          const result = sortKey === "name" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+            : sortKey === "status" ? STATUS_RANK[a.status] - STATUS_RANK[b.status]
+              : a.lastDate - b.lastDate;
+          return sortDirection === "asc" ? result : -result;
+        }),
+    [volcanoes, status, q, sortKey, sortDirection],
   );
+
+  const chooseSort = (key: SortKey) => {
+    if (key === sortKey) setSortDirection((direction) => direction === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDirection(key === "lastDate" ? "desc" : "asc"); }
+  };
+  const sortLabel = (key: SortKey, label: string) => `${label}${sortKey === key ? (sortDirection === "asc" ? " ▲" : " ▼") : ""}`;
 
   // Keep the open detail panel in sync as the feed refreshes (e.g. after enrichment lands).
   useEffect(() => {
@@ -157,6 +173,18 @@ export default function VolcanoesTable() {
               ))}
             </select>
           </label>
+          <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+            Order
+            <select value={sortKey} onChange={(e) => {
+              const key = e.target.value as SortKey; setSortKey(key); setSortDirection(key === "lastDate" ? "desc" : "asc");
+            }} style={select}>
+              <option value="name">Name</option><option value="status">Status</option><option value="lastDate">Last update</option>
+            </select>
+            <button type="button" onClick={() => setSortDirection((direction) => direction === "asc" ? "desc" : "asc")}
+              style={{ ...select, cursor: "pointer", minWidth: 44 }} title="Reverse order" aria-label="Reverse sort order">
+              {sortDirection === "asc" ? "↑" : "↓"}
+            </button>
+          </label>
         </div>
       </div>
 
@@ -177,10 +205,16 @@ export default function VolcanoesTable() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "#8b95a7" }}>
-                <th style={th}>Name</th>
+                <th style={th} aria-sort={sortKey === "name" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>
+                  <button type="button" onClick={() => chooseSort("name")} style={sortButton}>{sortLabel("name", "Name")}</button>
+                </th>
                 <th style={th}>Country</th>
-                <th style={th}>Status</th>
-                <th style={th}>Last update</th>
+                <th style={th} aria-sort={sortKey === "status" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>
+                  <button type="button" onClick={() => chooseSort("status")} style={sortButton}>{sortLabel("status", "Status")}</button>
+                </th>
+                <th style={th} aria-sort={sortKey === "lastDate" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>
+                  <button type="button" onClick={() => chooseSort("lastDate")} style={sortButton}>{sortLabel("lastDate", "Last update")}</button>
+                </th>
                 <th style={th}>Wiki</th>
                 <th style={th}>USGS alert</th>
                 <th style={thNum}>Lat</th>
@@ -370,3 +404,8 @@ export default function VolcanoesTable() {
     </div>
   );
 }
+
+const sortButton = {
+  appearance: "none", border: 0, padding: 0, background: "transparent", color: "inherit",
+  font: "inherit", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+} as const;

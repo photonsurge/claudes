@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import { useTableSort } from "../../../components/admin/useTableSort";
 import { getEventList, eventStatusColor } from "../../../lib/events";
 import type { iWatchedEvent } from "@photonsurge/shared/db/watched-event-model";
 
@@ -29,6 +30,14 @@ export default function EventsListPage() {
       .then((e) => setEvents(e))
       .finally(() => setLoading(false));
   }, []);
+  const sorted = useTableSort(events, {
+    event: (e) => e.title || e.primarySourceId,
+    type: (e) => e.type,
+    status: (e) => e.status,
+    primary: (e) => `${e.primarySource}:${e.primarySourceId}`,
+    started: (e) => e.startedAt,
+    checked: (e) => e.lastCheckedAt,
+  }, "checked", true);
 
   return (
     <AdminPageShell
@@ -48,16 +57,16 @@ export default function EventsListPage() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <th style={head}>Event</th>
-                <th style={head}>Type</th>
-                <th style={head}>Status</th>
-                <th style={head}>Primary</th>
-                <th style={head}>Started</th>
-                <th style={head}>Last checked</th>
+                <th style={head}>{sorted.header("event", "Event")}</th>
+                <th style={head}>{sorted.header("type", "Type")}</th>
+                <th style={head}>{sorted.header("status", "Status")}</th>
+                <th style={head}>{sorted.header("primary", "Primary")}</th>
+                <th style={head}>{sorted.header("started", "Started")}</th>
+                <th style={head}>{sorted.header("checked", "Last checked")}</th>
               </tr>
             </thead>
             <tbody>
-              {events.map((e) => (
+              {sorted.rows.map((e) => (
                 <tr key={e.id}>
                   <td style={cell}>
                     <Link href={`/admin/events/${e.id}`} style={{ color: "#60a5fa", textDecoration: "none" }}>

@@ -12,6 +12,7 @@ import type { Cam, CamStatus } from "../../lib/cams/types";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "../tracks/styles";
 import CamViewer from "./CamViewer";
 import AddCamForm from "./AddCamForm";
+import { useTableSort } from "../admin/useTableSort";
 
 const STATUS_FILTERS: { id: "" | CamStatus; label: string }[] = [
   { id: "", label: "All" },
@@ -85,6 +86,8 @@ export default function CamsTable() {
     });
     setSelected(cam);
   };
+  const sorted = useTableSort(rows, { title: (c) => c.title, place: (c) => c.place ?? c.country, status: (c) => c.status,
+    feed: (c) => c.live?.kind ?? (c.timelapseUrl ? "timelapse" : c.imageUrl ? "still" : ""), lat: (c) => c.lat, lng: (c) => c.lng }, "title");
 
   return (
     <div>
@@ -119,17 +122,14 @@ export default function CamsTable() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "#8b95a7" }}>
-                <th style={th}>Title</th>
-                <th style={th}>Place</th>
-                <th style={th}>Status</th>
-                <th style={th}>Feed</th>
-                <th style={thNum}>Lat</th>
-                <th style={thNum}>Lng</th>
+                <th style={th}>{sorted.header("title", "Title")}</th><th style={th}>{sorted.header("place", "Place")}</th>
+                <th style={th}>{sorted.header("status", "Status")}</th><th style={th}>{sorted.header("feed", "Feed")}</th>
+                <th style={thNum}>{sorted.header("lat", "Lat")}</th><th style={thNum}>{sorted.header("lng", "Lng")}</th>
                 <th style={th}></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((c) => {
+              {sorted.rows.map((c) => {
                 const feed = c.live ? `live·${c.live.kind}` : c.timelapseUrl ? "timelapse" : c.imageUrl ? "still" : "—";
                 const isSel = selected?.camId === c.camId;
                 return (

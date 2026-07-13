@@ -26,5 +26,9 @@ export function makeVolcanoCameraRepo(model: Model<iVolcanoCameraModel>) {
       const docs = await model.find({ enabled: true }).sort({ lastSeenAt: -1 }).lean().exec();
       return docs.map(clean);
     },
+    async disableMissing(source: VolcanoCamera["source"], activeSourceCameraIds: string[]): Promise<number> {
+      const res = await model.updateMany({ source, enabled: true, sourceCameraId: { $nin: activeSourceCameraIds } }, { $set: { enabled: false } }).exec();
+      return res.modifiedCount ?? 0;
+    },
   };
 }

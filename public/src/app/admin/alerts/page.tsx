@@ -27,6 +27,7 @@ import {
 import { HAZARDS, hazardMeta } from "../../../lib/hazard";
 import { bucketByGroupId } from "../../../lib/alertGroups";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import { useTableSort } from "../../../components/admin/useTableSort";
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -140,6 +141,16 @@ export default function AlertsPage() {
   // Cluster same-event rows by the server-assigned groupId (cheap O(n); the
   // heavy geometry clustering runs in /api/alerts, not the browser).
   const groups = bucketByGroupId(shown);
+  const sortedGroups = useTableSort(groups, {
+    severity: (g) => g.maxSeverityRank,
+    hazard: (g) => hazardMeta(g.hazard).label,
+    event: (g) => displayHeadline(primaryInfo(g.representative)) ?? primaryInfo(g.representative)?.event,
+    area: (g) => areaSummary(g.representative),
+    sources: (g) => g.sources.length,
+    message: (g) => g.representative.msgType,
+    translated: (g) => translationStatus(g.representative),
+    expires: (g) => g.representative.expiresAt,
+  }, "severity", true);
 
   // The group whose Debug view is open in the full-screen modal (if any).
   const debugGroup = debugId ? groups.find((g) => g.id === debugId) ?? null : null;
@@ -269,19 +280,19 @@ export default function AlertsPage() {
         <table style={{ width: "100%", marginTop: 20, borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ textAlign: "left", color: "#8b95a7" }}>
-              <th style={th}>Sev</th>
-              <th style={th}>Hazard</th>
-              <th style={th}>Event</th>
-              <th style={th}>Area</th>
-              <th style={th}>Sources</th>
-              <th style={th}>Msg</th>
-              <th style={th}>Translated</th>
-              <th style={th}>Expires</th>
+              <th style={th}>{sortedGroups.header("severity", "Sev")}</th>
+              <th style={th}>{sortedGroups.header("hazard", "Hazard")}</th>
+              <th style={th}>{sortedGroups.header("event", "Event")}</th>
+              <th style={th}>{sortedGroups.header("area", "Area")}</th>
+              <th style={th}>{sortedGroups.header("sources", "Sources")}</th>
+              <th style={th}>{sortedGroups.header("message", "Msg")}</th>
+              <th style={th}>{sortedGroups.header("translated", "Translated")}</th>
+              <th style={th}>{sortedGroups.header("expires", "Expires")}</th>
               <th style={th}></th>
             </tr>
           </thead>
           <tbody>
-            {groups.map((g) => {
+            {sortedGroups.rows.map((g) => {
               const rep = g.representative;
               const info = primaryInfo(rep);
               const multi = g.members.length > 1;

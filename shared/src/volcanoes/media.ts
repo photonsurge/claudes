@@ -11,6 +11,9 @@ export const VOLCANO_MEDIA_SOURCES = [
   "GVP",
   "WIKIMEDIA",
   "NASA_IMAGES",
+  "JMA",
+  "CENAPRED",
+  "IPGP_OVPF",
 ] as const;
 
 export type VolcanoMediaSource = (typeof VOLCANO_MEDIA_SOURCES)[number];

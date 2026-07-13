@@ -11,7 +11,7 @@
 import type { Cam } from "../../lib/cams/types";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 
-const MAX_CAMS = 3;
+const MAX_CAMS = 1;
 
 export function volcanoCamerasSlideHasContent(cams: Cam[]): boolean {
   return cams.some((c) => !!c.imageUrl);
@@ -38,7 +38,7 @@ export default function VolcanoCamerasPanel({
             <img
               src={c.imageUrl}
               alt={c.title}
-              style={{ width: "100%", height: 108, objectFit: "cover", borderRadius: 6, background: "#070a11", display: "block" }}
+              style={{ width: "100%", height: 270, objectFit: "contain", borderRadius: 8, background: "#070a11", display: "block" }}
             />
             <div
               style={{

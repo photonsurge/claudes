@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import { useTableSort } from "../../../components/admin/useTableSort";
 import {
   fmtDuration,
   kindColor,
@@ -48,6 +49,14 @@ export default function RunsPage() {
     const t = setInterval(reload, POLL_MS);
     return () => clearInterval(t);
   }, [anyLive, reload]);
+  const sorted = useTableSort(runs, {
+    status: (r) => runIsLive(r),
+    scene: (r) => sceneNames[r.sceneId] ?? r.sceneId,
+    started: (r) => r.startedAt,
+    duration: (r) => runDurationMs(r),
+    cuts: (r) => r.cuts,
+    mix: (r) => Object.keys(r.kindCounts ?? {}).length,
+  }, "started", true);
 
   return (
     <AdminPageShell
@@ -62,17 +71,17 @@ export default function RunsPage() {
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ textAlign: "left", color: "#8b95a7" }}>
-            <th style={th}>Status</th>
-            <th style={th}>Scene</th>
-            <th style={th}>Started</th>
-            <th style={th}>Duration</th>
-            <th style={th}>Cuts</th>
-            <th style={th}>Mix</th>
+            <th style={th}>{sorted.header("status", "Status")}</th>
+            <th style={th}>{sorted.header("scene", "Scene")}</th>
+            <th style={th}>{sorted.header("started", "Started")}</th>
+            <th style={th}>{sorted.header("duration", "Duration")}</th>
+            <th style={th}>{sorted.header("cuts", "Cuts")}</th>
+            <th style={th}>{sorted.header("mix", "Mix")}</th>
             <th style={th}></th>
           </tr>
         </thead>
         <tbody>
-          {runs.map((r) => {
+          {sorted.rows.map((r) => {
             const live = runIsLive(r);
             return (
               <tr key={r.id} style={{ borderTop: "1px solid #1b2030" }}>

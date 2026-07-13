@@ -13,6 +13,7 @@ import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "../tracks/
 import AdViewer from "./AdViewer";
 import AddAdForm from "./AddAdForm";
 import AdEditPanel from "./AdEditPanel";
+import { useTableSort } from "../admin/useTableSort";
 
 const STATUS_FILTERS: { id: "" | AdStatus; label: string }[] = [
   { id: "", label: "All" },
@@ -111,6 +112,8 @@ export default function AdsTable() {
       setNote(res.error ?? "delete failed");
     }
   };
+  const sorted = useTableSort(rows, { title: (a) => a.title, advertiser: (a) => a.advertiser, type: (a) => a.mediaType,
+    size: (a) => a.byteSize, weight: (a) => a.weight, shown: (a) => a.lastShownAt, screen: (a) => a.totalDisplayMs, status: (a) => a.status }, "title");
 
   return (
     <div>
@@ -145,19 +148,15 @@ export default function AdsTable() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "#8b95a7" }}>
-                <th style={th}>Title</th>
-                <th style={th}>Advertiser</th>
-                <th style={th}>Type</th>
-                <th style={thNum}>Size</th>
-                <th style={thNum}>Weight</th>
-                <th style={th}>Last shown</th>
-                <th style={th}>On screen</th>
-                <th style={th}>Status</th>
+                <th style={th}>{sorted.header("title", "Title")}</th><th style={th}>{sorted.header("advertiser", "Advertiser")}</th>
+                <th style={th}>{sorted.header("type", "Type")}</th><th style={thNum}>{sorted.header("size", "Size")}</th>
+                <th style={thNum}>{sorted.header("weight", "Weight")}</th><th style={th}>{sorted.header("shown", "Last shown")}</th>
+                <th style={th}>{sorted.header("screen", "On screen")}</th><th style={th}>{sorted.header("status", "Status")}</th>
                 <th style={th}></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((a) => {
+              {sorted.rows.map((a) => {
                 const isSel = selected?.adId === a.adId;
                 return (
                   <tr
