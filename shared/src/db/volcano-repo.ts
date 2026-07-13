@@ -224,6 +224,28 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
         )
         .exec();
     },
+
+    /**
+     * Patch USGS alert fields onto a volcano ONLY if we already track it — no
+     * upsert (so a NORMAL/GREEN US volcano we've never tracked doesn't mint a
+     * dormant stub) and no `fetchedAt` bump (so a downgraded volcano still ages
+     * out via the GVP-bulletin TTL). This is how a WARNING→NORMAL de-escalation
+     * lands a timeline beat without flooding the cache with ~150 quiet US cones.
+     * Returns whether a doc matched. See worker/src/jobs/volcanoes.ts#snapshotUsgs.
+     */
+    async updateUsgsAlertIfExists(
+      volcanoId: string,
+      patch: {
+        usgsAlertLevel?: string;
+        usgsColorCode?: string;
+        usgsNoticeSynopsis?: string;
+        usgsNoticeUrl?: string;
+        usgsUpdatedAt: Date;
+      },
+    ): Promise<boolean> {
+      const res = await model.updateOne({ volcanoId }, { $set: patch }).exec();
+      return (res.matchedCount ?? 0) > 0;
+    },
   };
 }
 

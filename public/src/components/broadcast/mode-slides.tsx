@@ -51,6 +51,9 @@ import EventNearbyPanel, { eventNearbySlideHasContent } from "./EventNearbyPanel
 import TrackInfoPanel from "./TrackInfoPanel";
 import VolcanoFactsPanel, { volcanoFactsSlideHasContent } from "./VolcanoFactsPanel";
 import VolcanoNearbyPanel, { volcanoNearbySlideHasContent } from "./VolcanoNearbyPanel";
+import RegionNearTermPanel from "./RegionNearTermPanel";
+import RegionCountriesPanel, { regionCountriesSlideHasContent } from "./RegionCountriesPanel";
+import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 
 const FALLBACK_ACCENT = "#38bdf8";
 
@@ -138,6 +141,11 @@ export interface ModeSlideContext {
    *  point, resolved in BroadcastFrame via /api/countries/at. Rendered as the
    *  uniform lede's area block on EVERY mode's first slide. */
   areaInfo?: AreaInfo | null;
+  /** The enriched Region doc under a region ("area") spotlight — its member
+   *  countries + biggest cities dossier (regions.enrichPlaces) drives the region-
+   *  only NEXT 24H and TOP COUNTRIES slides. Null off a region shot / before the
+   *  region has been enriched. */
+  region?: iRegionModel | null;
   theme: BroadcastTheme;
 }
 
@@ -201,6 +209,15 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     if (segment.kind === "volcano") {
       if (volcanoFactsSlideHasContent(segment.trackInfo)) {
         slides.push({ id: "volcano-facts", node: <VolcanoFactsPanel info={segment.trackInfo} color={color} /> });
+      }
+      // Official status timeline (level/aviation/VEI/plume changes) — reuses the
+      // unified event timeline panel; self-hides until the volcano was promoted
+      // and has stored beats (EVENTS_UNIFIED_ENABLED).
+      if (eventTimelineSlideHasContent(ctx.eventTimeline)) {
+        slides.push({
+          id: "volcano-timeline",
+          node: <EventTimelinePanel beats={ctx.eventTimeline} color={color} theme={ctx.theme} />,
+        });
       }
       if (volcanoNearbySlideHasContent(segment.camera.center, ctx.cities, ctx.quakes, ctx.alerts)) {
         slides.push({
@@ -342,14 +359,41 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     return slides;
   }
 
-  // Country OR region ("area") spotlight / wide framed shot — reads START →
-  // ROUND-UP → CITIES → WEATHER → CURRENT & RECENT: the "now viewing" area
-  // rollup, the framed place's own AI round-up (when it has one), the area's
-  // close cities, the area forecast (when it has data), then the AREA HISTORY
-  // trend charts. The round-up rides second so the "state of the place"
-  // narrative reads right after the lede, before the drill-down cards. Country
-  // and region spotlights share this branch (both set wideCitiesBbox) so the two
-  // modes play the identical deck.
+  // Region ("area") spotlight — a MULTI-COUNTRY area, so it gets its own deck
+  // rather than the country one: the country deck (START → ROUND-UP → CITIES →
+  // WEATHER → HISTORY) is kept, but with two region-specific slides slotted into
+  // the weather block — a NEXT 24H near-term card (split out of the 3-day area
+  // forecast) and a TOP COUNTRIES card that breaks the region into its biggest
+  // member countries, each with its own live weather + 72h graph. Both read the
+  // enriched Region dossier (ctx.region.countries / .topCities) and, like the
+  // area forecast, only appear when the forecast store has data for the area
+  // (wideCitiesHasForecast) so the deck never rotates onto an empty card.
+  if (segment.kind === "region" && ctx.wideCitiesBbox) {
+    if (placeRoundupSlideHasContent(ctx.placeRoundup)) {
+      slides.push({ id: "place-roundup", node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} theme={ctx.theme} /> });
+    }
+    if (ctx.region && ctx.wideCitiesHasForecast) {
+      slides.push({ id: "region-next24", node: <RegionNearTermPanel region={ctx.region} color={color} theme={ctx.theme} /> });
+    }
+    if (ctx.wideCitiesHasForecast && regionCountriesSlideHasContent(ctx.region)) {
+      slides.push({ id: "region-countries", node: <RegionCountriesPanel region={ctx.region!} color={color} theme={ctx.theme} /> });
+    }
+    slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
+    slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.wideCitiesBbox} color={color} /> });
+    if (ctx.wideCitiesHasForecast) {
+      slides.push({ id: "forecast", node: <ForecastPanel center={null} bbox={ctx.wideCitiesBbox} theme={ctx.theme} /> });
+    }
+    slides.push(...contextSlides(ctx));
+    return slides;
+  }
+
+  // Country spotlight / wide framed shot — reads START → ROUND-UP → CITIES →
+  // WEATHER → CURRENT & RECENT: the "now viewing" area rollup, the framed place's
+  // own AI round-up (when it has one), the area's close cities, the area forecast
+  // (when it has data), then the AREA HISTORY trend charts. The round-up rides
+  // second so the "state of the place" narrative reads right after the lede,
+  // before the drill-down cards. (A region spotlight also sets wideCitiesBbox but
+  // is handled by its own multi-country branch above.)
   if (ctx.wideCitiesBbox) {
     if (placeRoundupSlideHasContent(ctx.placeRoundup)) {
       slides.push({ id: "place-roundup", node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} theme={ctx.theme} /> });

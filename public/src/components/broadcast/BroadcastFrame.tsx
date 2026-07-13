@@ -461,6 +461,7 @@ export default function BroadcastFrame({
         summaryCountry: summaryCountryDoc,
         placeRoundup,
         areaInfo,
+        region: regionDoc,
         theme,
       })
     : [];
@@ -752,7 +753,6 @@ export default function BroadcastFrame({
             locationLabel={
               onAirSegment && segmentHasLocation ? onAirSegment.title : null
             }
-            segmentKey={onAirSegment?.id ?? null}
             theme={theme}
           />
           <div
@@ -767,7 +767,6 @@ export default function BroadcastFrame({
             <TsunamiMonitor
               stations={tideStations}
               active={tideActive}
-              segmentKey={onAirSegment?.id ?? null}
               theme={theme}
             />
           </div>

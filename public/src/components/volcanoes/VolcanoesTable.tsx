@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useVolcanoes } from "../../lib/volcanoes-overlay";
 import type { Volcano, VolcanoStatus } from "@photonsurge/shared/volcanoes/types";
+import type { EventTimelineBeat } from "@photonsurge/shared/events/event-timeline";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "../tracks/styles";
 
 const STATUS_FILTERS: { id: "" | VolcanoStatus; label: string }[] = [
@@ -64,6 +65,7 @@ export default function VolcanoesTable() {
   const [status, setStatus] = useState<"" | VolcanoStatus>("");
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<Volcano | null>(null);
+  const [timeline, setTimeline] = useState<EventTimelineBeat[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -82,6 +84,30 @@ export default function VolcanoesTable() {
     const fresh = volcanoes.find((v) => v.id === selected.id);
     if (fresh && fresh !== selected) setSelected(fresh);
   }, [volcanoes, selected]);
+
+  // Load the official status timeline for the open volcano (keyed on id so a feed
+  // refresh doesn't refetch). Empty/absent until the volcano was promoted to a
+  // WatchedEvent (EVENTS_UNIFIED_ENABLED) — the card then self-hides.
+  useEffect(() => {
+    const id = selected?.id;
+    if (!id) {
+      setTimeline(null);
+      return;
+    }
+    let cancelled = false;
+    setTimeline(null);
+    fetch(`/api/admin/volcanoes/${encodeURIComponent(id)}/timeline`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setTimeline(Array.isArray(d.timeline) ? d.timeline : []);
+      })
+      .catch(() => {
+        if (!cancelled) setTimeline([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id]);
 
   const trigger = async (id: string, label: string) => {
     setBusy(id);
@@ -262,6 +288,26 @@ export default function VolcanoesTable() {
                     USGS notice ↗
                   </a>
                 )}
+              </div>
+            )}
+            {timeline && timeline.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ ...asOf, textTransform: "uppercase", letterSpacing: 0.6, fontSize: 10 }}>
+                  Status timeline
+                </div>
+                <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {timeline
+                    .slice()
+                    .reverse()
+                    .map((b, i) => (
+                      <div key={`${b.at}-${i}`} style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "baseline" }}>
+                        <span style={{ color: "#8b95a7", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                          {formatDate(Date.parse(b.at))}
+                        </span>
+                        <span style={{ color: "#cbd5e1" }}>{b.label}</span>
+                      </div>
+                    ))}
+                </div>
               </div>
             )}
             {selected.latestReport && (

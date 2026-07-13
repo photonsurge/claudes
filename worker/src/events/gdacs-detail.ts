@@ -79,7 +79,8 @@ export function normalizeGdacsDetail(json: any): GdacsDetailNormalized {
   const resources: GdacsResourceRef[] = [];
   const seen = new Set<string>();
   const pushRes = (url: unknown, kind: EventResourceKind | null, title?: string) => {
-    if (typeof url !== "string" || !/^https?:\/\//.test(url) || seen.has(url)) return;
+    // Skip non-URLs and GDACS's unfilled template links (e.g. ".../{identifiers.val}...").
+    if (typeof url !== "string" || !/^https?:\/\//.test(url) || /[{}]/.test(url) || seen.has(url)) return;
     seen.add(url);
     resources.push({ url, kind: kind ?? kindOfUrl(url), title });
   };

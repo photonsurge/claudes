@@ -1,17 +1,72 @@
 import type { Job } from "bullmq";
+import type { AppDb } from "@photonsurge/shared/db/index";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { fetchVolcanoes } from "@photonsurge/shared/volcanoes/gvp";
-import { fetchUsgsVonaAlerts } from "@photonsurge/shared/volcanoes/usgs-vona";
+import { fetchUsgsVolcanoStatus } from "@photonsurge/shared/volcanoes/usgs-geojson";
+import type { Volcano } from "@photonsurge/shared/volcanoes/types";
+import { diffVolcanoStatus } from "@photonsurge/shared/volcanoes/diff";
+import { volcanoTimelineUpdatesFromChanges } from "@photonsurge/shared/events/promote";
+import type { NewEventTimelineUpdate } from "@photonsurge/shared/db/event-timeline-update-model";
 import { fetchWikiSummary, fetchWikiGallery } from "@photonsurge/shared/utill/wikipedia";
 import { fetchVolcanoFacts } from "@photonsurge/shared/utill/wikidata";
 import { log } from "@photonsurge/shared/utill/logger";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
+import { eventsUnifiedEnabled, shouldPromoteVolcano } from "../events/config";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
 import { parseReportFacts } from "../volcanoes/parseReport";
 
 const TAG = "job:volcanoes";
+
+/**
+ * Unified-event promotion for volcanoes — the analogue of the alert ingest
+ * bridge. For each SIGNIFICANT volcano, promote (idempotent upsert) to a
+ * WatchedEvent of type VOLCANO and append a stored timeline beat for every
+ * official status change since the previous poll. Store-on-change: a steady
+ * re-poll (no status move) writes zero beats. `prev` MUST be captured before the
+ * doc is overwritten, so the caller reads it first and hands both sides in here.
+ * Behind EVENTS_UNIFIED_ENABLED so the whole layer stays dark until switched on.
+ */
+async function promoteVolcanoStatus(
+  db: AppDb,
+  prev: Volcano[],
+  next: Volcano[],
+  source: string,
+): Promise<{ promoted: number; beats: number }> {
+  const prevById = new Map(prev.map((p) => [p.id, p]));
+  const now = new Date();
+  const nowIso = now.toISOString();
+  let promoted = 0;
+  let beats = 0;
+  for (const v of next) {
+    const prevV = prevById.get(v.id);
+    // Promote if it's significant now OR was (so a WARNING→NORMAL downgrade still
+    // updates the dossier and records the de-escalation beat), like the alert bridge.
+    if (!shouldPromoteVolcano(v) && !(prevV && shouldPromoteVolcano(prevV))) continue;
+    try {
+      const changes = diffVolcanoStatus(prevV, v);
+      const { eventId, created } = await db.watchedEvents.promoteFromVolcano(v, now);
+      promoted++;
+      const rows: NewEventTimelineUpdate[] = [];
+      if (created) {
+        rows.push({
+          eventId,
+          at: new Date(v.statusChangedAt || v.firstDate).toISOString(),
+          type: "ISSUED",
+          label: `Tracking started · ${v.status}`,
+          source,
+        });
+      }
+      rows.push(...volcanoTimelineUpdatesFromChanges(eventId, changes, nowIso, source));
+      if (rows.length) beats += (await db.eventTimeline.appendMany(rows)).inserted;
+    } catch (err) {
+      log(TAG, `volcano promotion failed`, { volcanoId: v.id, err: String(err) });
+    }
+  }
+  if (promoted || beats) log(TAG, `volcano promotion`, { source, promoted, beats });
+  return { promoted, beats };
+}
 
 /**
  * Dispatched as type "volcanoes", event "snapshot". Pulls the Smithsonian/USGS
@@ -24,7 +79,11 @@ export async function snapshot(_job: Job) {
   const db = await getAppDb();
   try {
     const { volcanoes } = await fetchVolcanoes();
+    // Capture the PREV docs BEFORE upsertMany overwrites them, so the timeline
+    // hook can diff prev-vs-persisted rather than prev-vs-prev.
+    const prev = eventsUnifiedEnabled() ? await db.volcanoes.listByIds(volcanoes.map((v) => v.id)) : [];
     const r = await db.volcanoes.upsertMany(volcanoes);
+    if (eventsUnifiedEnabled()) await promoteVolcanoStatus(db, prev, volcanoes, "gvp");
     const result = { volcanoes: volcanoes.length, upserted: r.upserted };
     log(TAG, `volcanoes snapshot done`, result);
     blogInfo(TAG, `volcanoes snapshot: ${volcanoes.length} active`, result, "volcanoes", "snapshot");
@@ -193,37 +252,54 @@ export async function parseReports(_job: Job) {
 // ── USGS VONA (near-real-time alert level, US-monitored volcanoes only) ─────
 
 /**
- * Pulls the USGS Volcano Notification Service "elevated" feed — much fresher
- * than the weekly GVP bulletin, but only covers US-monitored volcanoes
- * (Hawaii/Alaska/Cascades/etc.) and is an undocumented endpoint, so failures
- * here are logged and swallowed rather than thrown where reasonable per-item,
- * while a total fetch failure still surfaces (matches the GVP snapshot).
+ * Pulls the USGS VHP status GeoJSON — the full current alert state for every
+ * US-monitored volcano, much fresher than the weekly GVP bulletin. Because it
+ * reports NORMAL/GREEN too (not just elevated), a de-escalation is visible and
+ * lands a timeline beat. Elevated volcanoes upsert a tracking stub; NORMAL ones
+ * only patch a volcano we already track (no 150-dormant-stub flood); UNASSIGNED
+ * are skipped. Undocumented endpoint → per-item failures are swallowed while a
+ * total fetch failure still surfaces (matches the GVP snapshot).
  */
 export async function snapshotUsgs(_job: Job) {
   const db = await getAppDb();
   try {
-    const alerts = await fetchUsgsVonaAlerts();
-    for (const a of alerts) {
-      await db.volcanoes.updateUsgsAlert(
-        a.volcanoId,
-        { name: a.name, lat: a.lat, lng: a.lng },
-        {
-          usgsAlertLevel: a.alertLevel,
-          usgsColorCode: a.colorCode,
-          usgsNoticeSynopsis: a.noticeSynopsis,
-          usgsNoticeUrl: a.noticeUrl,
-          usgsUpdatedAt: new Date(a.updatedAtMs),
-        },
-      );
+    const statuses = await fetchUsgsVolcanoStatus();
+    const ids = statuses.map((s) => s.volcanoId);
+    // Prev snapshot before the USGS patches land, so a level move produces a beat.
+    const prev = eventsUnifiedEnabled() ? await db.volcanoes.listByIds(ids) : [];
+    let elevated = 0;
+    let patched = 0;
+    for (const s of statuses) {
+      if (s.unassigned) continue; // no monitoring assessment — record nothing.
+      const patch = {
+        usgsAlertLevel: s.alertLevel,
+        usgsColorCode: s.colorCode,
+        usgsNoticeSynopsis: s.noticeSynopsis,
+        usgsNoticeUrl: s.noticeUrl,
+        usgsUpdatedAt: new Date(s.updatedAtMs),
+      };
+      if (s.elevated) {
+        await db.volcanoes.updateUsgsAlert(s.volcanoId, { name: s.name, lat: s.lat, lng: s.lng }, patch);
+        elevated++;
+      } else if (await db.volcanoes.updateUsgsAlertIfExists(s.volcanoId, patch)) {
+        patched++; // NORMAL/GREEN on a volcano we already track — catches a downgrade.
+      }
     }
-    const result = { alerts: alerts.length };
-    log(TAG, `usgs vona snapshot done`, result);
-    blogInfo(TAG, `usgs vona snapshot: ${alerts.length} elevated`, result, "volcanoes", "snapshotUsgs");
-    if (alerts.length > 0) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: alerts.length } });
+    if (eventsUnifiedEnabled()) {
+      // Re-read the merged docs (stub-upserts + patched fields) as the NEXT side.
+      const next = await db.volcanoes.listByIds(ids);
+      await promoteVolcanoStatus(db, prev, next, "usgs");
+    }
+    const result = { volcanoes: statuses.length, elevated, patched };
+    log(TAG, `usgs status snapshot done`, result);
+    blogInfo(TAG, `usgs status snapshot: ${elevated} elevated, ${patched} tracked`, result, "volcanoes", "snapshotUsgs");
+    if (elevated + patched > 0) {
+      emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: elevated + patched } });
+    }
     return result;
   } catch (err) {
-    log(TAG, `usgs vona snapshot failed`, summarizeForLog(err));
-    blogErr(TAG, `usgs vona snapshot failed`, err, "volcanoes", "snapshotUsgs");
+    log(TAG, `usgs status snapshot failed`, summarizeForLog(err));
+    blogErr(TAG, `usgs status snapshot failed`, err, "volcanoes", "snapshotUsgs");
     throw err;
   }
 }

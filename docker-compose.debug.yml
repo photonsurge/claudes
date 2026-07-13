@@ -48,8 +48,9 @@ services:
       # (the 2048 cap left too little and the write OOM'd -> 0-byte file). 10GB box.
       NODE_OPTIONS: "--max-old-space-size=4096"
       HEAPDUMP_DIR: /app/heapdumps
-      # Dump EARLY — the runaway jumps ~84->357->700MB in ~1s, so catch it at the
-      # first elevated sample (~350MB, still ~80% leak) where serialising is trivial.
-      HEAPDUMP_HEAP_MB: "300,700"
+      # Carpet the climb with early dumps (each fires once) so we always catch the
+      # runaway and can diff any two — all kept well below where it SIGKILL'd (1321MB)
+      # so serialising a dump can't tip the box. Baseline is ~80MB.
+      HEAPDUMP_HEAP_MB: "130,200,300,450,650"
     volumes:
       - ./heapdumps:/app/heapdumps

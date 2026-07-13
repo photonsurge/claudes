@@ -44,6 +44,22 @@ export async function set(key: string, value: unknown, ttlSec: number): Promise<
 export const focusCache = { get, set };
 
 /**
+ * In-process single-flight for withCache computes. Concurrent callers that MISS
+ * the same key share ONE compute instead of each running their own.
+ *
+ * Without this, a cold/just-expired cache triggers a THUNDERING HERD: every
+ * overlay poll, world-watch, OBS source and tab hits the same heavy feed key at
+ * once, and each independently loads its full result into the heap — for
+ * `/api/alerts?active=1&limit=5000` that's every active alert's polygon geometry,
+ * ×N concurrent requests. A fresh `public` (cold Redis) made the whole fleet miss
+ * simultaneously → millions of coordinate arrays retained by the parked compute
+ * closures → OOM in seconds. Coalescing bounds it to ONE compute per key
+ * regardless of fan-in. Entries are deleted the instant the compute settles, so
+ * the map only ever holds the handful of keys computing right now.
+ */
+const inflight = new Map<string, Promise<unknown>>();
+
+/**
  * Default TTL (seconds) for the always-on global feed caches (alerts / quakes /
  * volcanoes). Short by design: those feeds refresh on worker-ingest socket beats
  * (minutes apart), so a ~10m Redis hold keeps staleness bounded while collapsing
@@ -69,11 +85,26 @@ export async function withCache<T>(
 ): Promise<{ value: T; hit: boolean }> {
   const cached = await get<T>(key);
   if (cached !== null) return { value: cached, hit: true };
-  // MISS → real work runs. Time the compute (the "time to do the request") and
+
+  // MISS. Coalesce onto an in-flight compute for this key if one exists, so a
+  // herd of simultaneous misses can't each load the full result into the heap.
+  const existing = inflight.get(key) as Promise<T> | undefined;
+  if (existing) return { value: await existing, hit: false };
+
+  // We're the leader: run the real work ONCE, cache it, and let the followers
+  // above ride our promise. Time the compute (the "time to do the request") and
   // log it; hits stay silent (sub-ms Redis reads, nothing happened upstream).
-  const t0 = Date.now();
-  const value = await compute();
-  logDataFetch(key, Date.now() - t0, false);
-  await set(key, value, ttlSec);
-  return { value, hit: false };
+  const p = (async (): Promise<T> => {
+    const t0 = Date.now();
+    const value = await compute();
+    logDataFetch(key, Date.now() - t0, false);
+    await set(key, value, ttlSec);
+    return value;
+  })();
+  inflight.set(key, p);
+  try {
+    return { value: await p, hit: false };
+  } finally {
+    inflight.delete(key); // settled (resolved OR rejected) → drop it, never leak keys
+  }
 }

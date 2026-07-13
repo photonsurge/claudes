@@ -78,6 +78,30 @@ describe("withCache (feed read-through)", () => {
     expect(hit).toBe(false);
   });
 
+  it("single-flights concurrent misses onto ONE compute (no thundering herd)", async () => {
+    mockRedis.get.mockResolvedValue(null);
+    mockRedis.set.mockResolvedValue("OK");
+    let running = 0;
+    let peak = 0;
+    let calls = 0;
+    const compute = async () => {
+      calls++;
+      running++;
+      peak = Math.max(peak, running);
+      await new Promise((r) => setTimeout(r, 10));
+      running--;
+      return { alerts: [], count: 0 };
+    };
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => withCache("feed:v1:alerts:herd", 30, compute)),
+    );
+    expect(calls).toBe(1); // six simultaneous misses → ONE compute, not six
+    expect(peak).toBe(1); // never two heavy composes (full geometry) resident at once
+    expect(results.every((r) => (r.value as { count: number }).count === 0)).toBe(true);
+    // Cached exactly once, and the in-flight key was released (next miss recomputes).
+    expect(mockRedis.set).toHaveBeenCalledTimes(1);
+  });
+
   it("propagates a compute error (route keeps its own error handling) and caches nothing", async () => {
     mockRedis.get.mockResolvedValue(null);
     await expect(

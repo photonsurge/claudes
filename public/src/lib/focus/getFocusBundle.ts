@@ -430,6 +430,25 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
       eventSnapshots = evSnaps;
       eventSeries = evSeries;
     }
+  } else if (target?.kind === "volcano") {
+    // Volcano observation dossier — the WatchedEvent (type VOLCANO) the volcano
+    // was promoted to, plus its stored status timeline and any captured
+    // media/plots (P2/P3). Keyed on ("gvp", volcanoId); same one-focus-call
+    // discipline. Empty until promoted (EVENTS_UNIFIED_ENABLED).
+    const evt = await db.watchedEvents.byPrimary("gvp", target.volcano.id);
+    if (evt?.id) {
+      watchedEvent = evt;
+      const [updates, evRes, evSnaps, evSeries] = await Promise.all([
+        db.eventTimeline.listForEvent(evt.id),
+        db.eventResources.listForEvent(evt.id),
+        db.eventSnapshots.listForEvent(evt.id),
+        db.eventSeries.listForEvent(evt.id),
+      ]);
+      eventTimeline = buildEventTimeline(evt, updates);
+      eventResources = evRes;
+      eventSnapshots = evSnaps;
+      eventSeries = evSeries;
+    }
   }
 
   return {

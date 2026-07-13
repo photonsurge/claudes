@@ -186,4 +186,35 @@ describe("WeatherMonitors", () => {
     rerender(<WeatherMonitors series={[]} locationLabel="Elsewhere" segmentKey="region:b" />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("with no shot on air, bridges a brief data gap but hides once the idle grace elapses", () => {
+    jest.useFakeTimers();
+    try {
+      const series: HistorySeries[] = [
+        {
+          variable: "wind",
+          encoding: "uv",
+          units: "m/s",
+          lat: 0,
+          lng: 0,
+          series: [{ t: "1", model: "gfs", fhr: 0, speed: 4 }, { t: "2", model: "gfs", fhr: 1, speed: 6 }],
+          stats: null,
+        },
+      ];
+      const { container, rerender } = render(<WeatherMonitors series={series} segmentKey={null} />);
+      expect(screen.getByText("WIND MONITOR")).toBeInTheDocument();
+
+      // No shot on air (segmentKey null), data drops → held for a beat, not blanked.
+      rerender(<WeatherMonitors series={[]} segmentKey={null} />);
+      expect(screen.getByText("WIND MONITOR")).toBeInTheDocument();
+
+      // ...but a sustained idle finally clears it.
+      act(() => {
+        jest.advanceTimersByTime(3000);
+      });
+      expect(container).toBeEmptyDOMElement();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
