@@ -8,6 +8,7 @@
  * pagination like the cities table needs.
  */
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useVolcanoes } from "../../lib/volcanoes-overlay";
 import type { Volcano, VolcanoStatus } from "@photonsurge/shared/volcanoes/types";
 import type { EventTimelineBeat } from "@photonsurge/shared/events/event-timeline";
@@ -195,7 +196,16 @@ export default function VolcanoesTable() {
                     onClick={() => setSelected(v)}
                     style={{ borderTop: "1px solid #1b2030", cursor: "pointer", background: isSel ? "#13192a" : undefined }}
                   >
-                    <td style={td}>{v.name}</td>
+                    <td style={td}>
+                      <Link
+                        href={`/admin/volcanoes/${encodeURIComponent(v.id)}`}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ color: "#e2e8f0", textDecoration: "none" }}
+                        title="Open volcano detail"
+                      >
+                        {v.name} <span style={{ color: "#60a5fa" }}>↗</span>
+                      </Link>
+                    </td>
                     <td style={{ ...td, color: "#8b95a7" }}>{v.country ?? "—"}</td>
                     <td style={{ ...td, color: STATUS_COLOR[v.status] }}>● {STATUS_LABEL[v.status]}</td>
                     <td style={{ ...td, color: "#8b95a7" }}>{formatDate(v.lastDate)}</td>

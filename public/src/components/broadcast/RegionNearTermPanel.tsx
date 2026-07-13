@@ -2,17 +2,13 @@
 
 /**
  * "NEXT 24H" — the region ("area") spotlight's near-term slide, split out of the
- * 3-day area forecast so the immediate outlook reads on its own page. Samples the
- * region's biggest city (`region.topCities[0]`, else the centre of its bbox as a
- * whole-region overview point) and reads the next ~24 hours off the 3-hourly
- * today..+72h forecast track (usePointForecastSteps): an hour-by-hour strip
- * (glyph · temp · wind per 3h step) above a temperature graph for the window.
- *
- * Self-hides until the forecast store has near-term steps for the sample point.
- * Pure presentation inside the scaled broadcast stage.
+ * 3-day area forecast so the immediate outlook reads on its own page. The steps
+ * are composed server-side onto the focus bundle (`regionNearTerm`, the 72h track
+ * at the region's biggest city), so this card just reads the next ~24 hours off
+ * them: an hour-by-hour strip (glyph · temp · wind per 3h step) above a
+ * temperature graph. Self-hides until the bundle carries near-term steps.
  */
-import type { iRegionModel } from "@photonsurge/shared/db/region-model";
-import { usePointForecastSteps, type ForecastStep } from "../../lib/forecast-client";
+import type { ForecastStep } from "../../lib/weather-forecast";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 import { MiniChart, formatReading, type SparkPoint } from "./PointHistoryPanel";
@@ -21,15 +17,6 @@ import { WeatherGlyph } from "./glyphs";
 /** How far ahead the near-term window reaches (hours). */
 const WINDOW_HOURS = 24;
 const HOUR_MS = 3_600_000;
-
-/** The region's near-term sample point [lng, lat] — its biggest city, else the
- *  centre of its bbox. */
-function sampleCenter(region: iRegionModel): [number, number] {
-  const top = (region.topCities ?? [])[0];
-  if (top) return [top.lng, top.lat];
-  const [w, s, e, n] = region.bbox;
-  return [(w + e) / 2, (s + n) / 2];
-}
 
 /** One 3-hourly column in the near-term strip. */
 function StepColumn({ step }: { step: ForecastStep }) {
@@ -59,19 +46,18 @@ function StepColumn({ step }: { step: ForecastStep }) {
 }
 
 export default function RegionNearTermPanel({
-  region,
+  steps,
+  sampleName,
   color = "#4a8f6f",
   theme = DEFAULT_THEME,
 }: {
-  region: iRegionModel;
+  steps: ForecastStep[];
+  /** The city the region near-term was sampled at, for the header chip. */
+  sampleName?: string;
   color?: string;
   theme?: BroadcastTheme;
 }) {
-  const center = sampleCenter(region);
-  const { steps } = usePointForecastSteps(center);
-
-  // The current 3h bucket through +24h: keep steps from ~now (one bucket back to
-  // catch the in-progress bucket) up to the window edge.
+  // The current 3h bucket through +24h.
   const now = Date.now();
   const near = steps
     .filter((s) => {
@@ -87,7 +73,6 @@ export default function RegionNearTermPanel({
   const hi = temps.length ? Math.max(...temps) : null;
   const lo = temps.length ? Math.min(...temps) : null;
   const avg = temps.length ? temps.reduce((a, b) => a + b, 0) / temps.length : null;
-  const sampleName = (region.topCities ?? [])[0]?.name;
 
   return (
     <BroadcastCard

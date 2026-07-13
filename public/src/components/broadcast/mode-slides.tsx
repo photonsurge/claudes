@@ -52,8 +52,10 @@ import TrackInfoPanel from "./TrackInfoPanel";
 import VolcanoFactsPanel, { volcanoFactsSlideHasContent } from "./VolcanoFactsPanel";
 import VolcanoNearbyPanel, { volcanoNearbySlideHasContent } from "./VolcanoNearbyPanel";
 import RegionNearTermPanel from "./RegionNearTermPanel";
-import RegionCountriesPanel, { regionCountriesSlideHasContent } from "./RegionCountriesPanel";
+import RegionCountryPanel from "./RegionCountryPanel";
 import type { iRegionModel } from "@photonsurge/shared/db/region-model";
+import type { FocusRegionCountry } from "../../lib/focus/types";
+import type { ForecastStep } from "../../lib/weather-forecast";
 
 const FALLBACK_ACCENT = "#38bdf8";
 
@@ -141,11 +143,16 @@ export interface ModeSlideContext {
    *  point, resolved in BroadcastFrame via /api/countries/at. Rendered as the
    *  uniform lede's area block on EVERY mode's first slide. */
   areaInfo?: AreaInfo | null;
-  /** The enriched Region doc under a region ("area") spotlight — its member
-   *  countries + biggest cities dossier (regions.enrichPlaces) drives the region-
-   *  only NEXT 24H and TOP COUNTRIES slides. Null off a region shot / before the
-   *  region has been enriched. */
+  /** The enriched Region doc under a region ("area") spotlight — used for the
+   *  NEXT 24H card's sample-city label. Null off a region shot. */
   region?: iRegionModel | null;
+  /** Region spotlight per-country forecasts (from the focus bundle — one worker
+   *  sample per top member country at its biggest in-region city). One deck slide
+   *  each. Empty off a region shot. */
+  regionCountries?: FocusRegionCountry[];
+  /** Region spotlight NEXT 24H near-term forecast steps (from the focus bundle —
+   *  the 72h track at the region's biggest city). Empty off a region shot. */
+  regionNearTerm?: ForecastStep[];
   theme: BroadcastTheme;
 }
 
@@ -361,23 +368,36 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
 
   // Region ("area") spotlight — a MULTI-COUNTRY area, so it gets its own deck
   // rather than the country one: the country deck (START → ROUND-UP → CITIES →
-  // WEATHER → HISTORY) is kept, but with two region-specific slides slotted into
-  // the weather block — a NEXT 24H near-term card (split out of the 3-day area
-  // forecast) and a TOP COUNTRIES card that breaks the region into its biggest
-  // member countries, each with its own live weather + 72h graph. Both read the
-  // enriched Region dossier (ctx.region.countries / .topCities) and, like the
-  // area forecast, only appear when the forecast store has data for the area
-  // (wideCitiesHasForecast) so the deck never rotates onto an empty card.
+  // WEATHER → HISTORY) is kept, but with region-specific slides slotted into the
+  // weather block — a NEXT 24H near-term card (split out of the 3-day area
+  // forecast) and ONE SLIDE PER top member country, each with that country's own
+  // weather + 72h graph. Both read forecasts composed onto the focus bundle
+  // (ctx.regionNearTerm / ctx.regionCountries — one worker sample per country at
+  // its biggest in-region city), so nothing fans out per country at cut time.
   if (segment.kind === "region" && ctx.wideCitiesBbox) {
     if (placeRoundupSlideHasContent(ctx.placeRoundup)) {
       slides.push({ id: "place-roundup", node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} theme={ctx.theme} /> });
     }
-    if (ctx.region && ctx.wideCitiesHasForecast) {
-      slides.push({ id: "region-next24", node: <RegionNearTermPanel region={ctx.region} color={color} theme={ctx.theme} /> });
+    if (ctx.regionNearTerm && ctx.regionNearTerm.length) {
+      slides.push({
+        id: "region-next24",
+        node: (
+          <RegionNearTermPanel
+            steps={ctx.regionNearTerm}
+            sampleName={ctx.region?.topCities?.[0]?.name}
+            color={color}
+            theme={ctx.theme}
+          />
+        ),
+      });
     }
-    if (ctx.wideCitiesHasForecast && regionCountriesSlideHasContent(ctx.region)) {
-      slides.push({ id: "region-countries", node: <RegionCountriesPanel region={ctx.region!} color={color} theme={ctx.theme} /> });
-    }
+    const countries = ctx.regionCountries ?? [];
+    countries.forEach((c, i) => {
+      slides.push({
+        id: `region-country-${c.cc}`,
+        node: <RegionCountryPanel country={c} rank={i + 1} total={countries.length} color={color} theme={ctx.theme} />,
+      });
+    });
     slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     if (ctx.wideCitiesHasForecast) {

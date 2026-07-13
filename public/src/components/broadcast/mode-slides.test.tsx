@@ -74,43 +74,46 @@ describe("modeSlides", () => {
     ).toEqual(["onair", "place-roundup", "topcities", "cityconditions", "forecast"]);
   });
 
-  const regionDossier = {
-    regionId: "europe",
-    name: "Europe",
-    bbox: [-25, 34, 45, 72],
-    countries: [
-      { cc: "de", name: "Germany", cityCount: 3, population: 30_000_000 },
-      { cc: "fr", name: "France", cityCount: 3, population: 20_000_000 },
-    ],
-    topCities: [
-      { cc: "de", name: "Berlin", lat: 52.5, lng: 13.4, population: 3_600_000 },
-      { cc: "fr", name: "Paris", lat: 48.8, lng: 2.3, population: 2_100_000 },
-    ],
-  } as unknown as ModeSlideContext["region"];
+  const regionSteps = [
+    { t: "2026-07-13T00:00:00Z", condition: "sunny", temp: 20, wind: 3 },
+    { t: "2026-07-13T03:00:00Z", condition: "sunny", temp: 21, wind: 4 },
+  ] as unknown as ModeSlideContext["regionNearTerm"];
 
-  it("a region spotlight with a dossier slots NEXT 24H + TOP COUNTRIES into the weather block", () => {
+  const regionCountriesData = [
+    { cc: "de", name: "Germany", sampleName: "Berlin", lat: 52.5, lng: 13.4, steps: regionSteps },
+    { cc: "fr", name: "France", sampleName: "Paris", lat: 48.8, lng: 2.3, steps: regionSteps },
+  ] as unknown as ModeSlideContext["regionCountries"];
+
+  it("a region spotlight adds NEXT 24H + ONE SLIDE PER top country from the bundle", () => {
     const bbox: [number, number, number, number] = [-1, -1, 1, 1];
     expect(
-      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, region: regionDossier, wideCitiesHasForecast: true })),
-    ).toEqual(["onair", "region-next24", "region-countries", "topcities", "cityconditions", "forecast"]);
+      ids(
+        seg({ kind: "region" }),
+        ctx({
+          wideCitiesBbox: bbox,
+          wideCitiesHasForecast: true,
+          regionNearTerm: regionSteps,
+          regionCountries: regionCountriesData,
+        }),
+      ),
+    ).toEqual([
+      "onair",
+      "region-next24",
+      "region-country-de",
+      "region-country-fr",
+      "topcities",
+      "cityconditions",
+      "forecast",
+    ]);
   });
 
-  it("a region spotlight gates the forecast-based region slides on forecast data", () => {
+  it("a region spotlight with no bundle forecasts degrades to the country spotlight deck", () => {
     const bbox: [number, number, number, number] = [-1, -1, 1, 1];
-    // No forecast data for the area → the NEXT 24H, TOP COUNTRIES and area forecast
-    // slides all drop, leaving just the cities pages.
+    // No regionCountries / regionNearTerm (bundle didn't cover the cut) → the
+    // region-only slides drop and it reads like a country spotlight.
     expect(
-      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, region: regionDossier, wideCitiesHasForecast: false })),
-    ).toEqual(["onair", "topcities", "cityconditions"]);
-  });
-
-  it("a region spotlight drops TOP COUNTRIES when no member country has a sample city", () => {
-    const bbox: [number, number, number, number] = [-1, -1, 1, 1];
-    const noCities = { ...regionDossier, topCities: [] } as unknown as ModeSlideContext["region"];
-    const ordered = ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, region: noCities, wideCitiesHasForecast: true }));
-    expect(ordered).not.toContain("region-countries");
-    // NEXT 24H still shows — it falls back to the region bbox centre for its sample.
-    expect(ordered).toEqual(["onair", "region-next24", "topcities", "cityconditions", "forecast"]);
+      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, wideCitiesHasForecast: true })),
+    ).toEqual(["onair", "topcities", "cityconditions", "forecast"]);
   });
 
   it("a country spotlight adds top-cities, and the area forecast only when it has data", () => {

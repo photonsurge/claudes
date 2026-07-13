@@ -20,7 +20,7 @@ import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 
 import { hasRealLocation } from "../../components/broadcast/kinds";
 import { buildFocusKey } from "./focusKey";
-import type { FocusBundle, FocusDetail, FocusNearbyCity, FocusRequest, FocusTarget } from "./types";
+import type { FocusBundle, FocusDetail, FocusNearbyCity, FocusRegionCountry, FocusRequest, FocusTarget } from "./types";
 import type { AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
 import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
 import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model";
@@ -40,7 +40,7 @@ import { useRegion } from "../regions";
 import { useLatestPlaceRoundup, type PlaceRoundup } from "../placeRoundups";
 import { listCities, type City } from "../cities";
 import type { HistorySeries, AreaHistorySeries } from "../weather-history";
-import type { ForecastDay, AreaForecastDay } from "../weather-forecast";
+import type { ForecastDay, AreaForecastDay, ForecastStep } from "../weather-forecast";
 import type { ClimateBucketedDataset } from "../history-client";
 import type { SeismoStationReading } from "../seismo/types";
 import type { TideStationReading } from "../tides/types";
@@ -363,6 +363,24 @@ export function useRegionRoundup(): PlaceRoundup | null {
   const { bundle, enabled, regionId, covers } = useFocusContext();
   const fb = useLatestPlaceRoundup("region", covers() || !enabled ? null : regionId);
   return covers() ? bundle!.regionRoundup : fb;
+}
+
+const EMPTY_REGION_COUNTRIES: FocusRegionCountry[] = [];
+const EMPTY_STEPS: ForecastStep[] = [];
+
+/** The region spotlight's per-country forecasts (biggest member countries, each
+ *  with its own 72h track). Bundle-only — composed server-side, so it's [] until
+ *  the region bundle covers this cut. */
+export function useRegionCountries(): FocusRegionCountry[] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.regionCountries : EMPTY_REGION_COUNTRIES;
+}
+
+/** The region spotlight's NEXT 24H near-term forecast track (at the region's
+ *  biggest city). Bundle-only, like useRegionCountries. */
+export function useRegionNearTerm(): ForecastStep[] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.regionNearTerm : EMPTY_STEPS;
 }
 
 const TOP_CITY_LIMIT = 8;

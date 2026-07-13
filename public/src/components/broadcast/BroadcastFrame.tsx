@@ -44,6 +44,8 @@ import {
   useFocusCountry,
   useCountryRoundup,
   useRegionRoundup,
+  useRegionCountries,
+  useRegionNearTerm,
   useAreaForecastDays,
   useAlertTimeline,
   useAlertSnapshots,
@@ -114,6 +116,16 @@ function nearestCityDetails(
     { label: "Nearest City", value: `${name} · ${formatKm(n.distanceKm)}` },
   ];
 }
+
+/** Readable condition label for the reticle weather line. */
+const CONDITION_LABEL: Record<string, string> = {
+  sunny: "Clear",
+  "partly-cloudy": "Partly cloudy",
+  cloudy: "Cloudy",
+  rain: "Rain",
+  snow: "Snow",
+  storm: "Storm",
+};
 
 export default function BroadcastFrame({
   state,
@@ -314,6 +326,11 @@ export default function BroadcastFrame({
   // fall back to a live /api/roundup/place fetch keyed on the resolved place id.
   const regionRoundup = useRegionRoundup();
   const countryRoundup = useCountryRoundup();
+  // Region spotlight per-country + near-term forecasts — composed onto the focus
+  // bundle (bundle-only; empty off a region shot), so the region deck's country
+  // slides + NEXT 24H card render without any per-country fetch at cut time.
+  const regionCountries = useRegionCountries();
+  const regionNearTerm = useRegionNearTerm();
   // The on-air storm's change timeline + imagery/resources/series — all served on
   // the same focus bundle (no extra per-cut requests).
   const alertTimeline = useAlertTimeline();
@@ -462,9 +479,36 @@ export default function BroadcastFrame({
         placeRoundup,
         areaInfo,
         region: regionDoc,
+        regionCountries,
+        regionNearTerm,
         theme,
       })
     : [];
+
+  // Areas (region) tour: the camera parks each stop on a country's biggest in-
+  // region city — the EXACT point regionCountries sampled its forecast at — so
+  // match the moving camera centre to a bundle country and surface that stop's
+  // CURRENT weather on the reticle. Fetch-free (the data's already on the focus
+  // bundle), so it respects the reticle's no-per-stop-fetch guardrail.
+  const tourStopWeather = useMemo(() => {
+    if (onAirSegment?.kind !== "region" || !regionCountries.length) return null;
+    const [clng, clat] = state.camera.center;
+    let best: (typeof regionCountries)[number] | null = null;
+    let bestD = Infinity;
+    for (const c of regionCountries) {
+      const d = Math.abs(c.lng - clng) + Math.abs(c.lat - clat);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    // Only when the camera is actually parked on a known stop (coords match the
+    // sample city). Beyond ~1° it's between stops / on an uncovered country.
+    if (!best || bestD > 1) return null;
+    const now = best.steps.find((s) => s.temp != null) ?? best.steps[0];
+    if (now?.temp == null) return null;
+    return { temp: now.temp, condition: now.condition as string };
+  }, [onAirSegment?.kind, regionCountries, state.camera.center]);
 
   return (
     <div
@@ -556,6 +600,18 @@ export default function BroadcastFrame({
               subtitle: focusCaption.subtitle,
               details: [],
             }}
+            extraDetails={
+              tourStopWeather
+                ? [
+                    {
+                      label: "Weather",
+                      value: `${Math.round(tourStopWeather.temp)}° · ${
+                        CONDITION_LABEL[tourStopWeather.condition] ?? tourStopWeather.condition
+                      }`,
+                    },
+                  ]
+                : []
+            }
             variant="place"
             theme={theme}
           />

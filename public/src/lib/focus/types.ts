@@ -34,7 +34,7 @@ import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 import type { iAreaWeatherReport } from "@photonsurge/shared/db/area-weather-report-model";
 
 import type { HistorySeries, AreaHistorySeries } from "../weather-history";
-import type { ForecastDay, AreaForecastDay } from "../weather-forecast";
+import type { ForecastDay, AreaForecastDay, ForecastStep } from "../weather-forecast";
 import type { ClimateBucketedDataset } from "../history-client";
 import type { City, CityCondition } from "../cities";
 import type { CountryAt } from "../countries";
@@ -80,6 +80,23 @@ export interface FocusNearbyCity {
   city: City;
   distanceKm: number;
   climate: ClimateBucketedDataset[];
+}
+
+/** One of a region's biggest member countries with its own 72-hour forecast,
+ *  sampled at its biggest in-region city — a region spotlight's per-country
+ *  slide. Composed server-side (one worker forecast sample per country) so /watch
+ *  never fans out per country at cut time. */
+export interface FocusRegionCountry {
+  /** ISO-3166 alpha-2, lowercase. */
+  cc: string;
+  name: string;
+  population?: number;
+  /** The city the forecast was sampled at (biggest in-region city of the country). */
+  sampleName: string;
+  lat: number;
+  lng: number;
+  /** 3-hourly today..+72h forecast track at the sample point (buildForecastSteps). */
+  steps: ForecastStep[];
 }
 
 /**
@@ -141,6 +158,12 @@ export interface FocusBundle {
   countryRoundup: PlaceRoundup | null;
   region: iRegionModel | null;
   regionRoundup: PlaceRoundup | null;
+  /** The region's biggest member countries, each with its own 72h forecast — the
+   *  region spotlight's per-country slides. Empty off a region shot. */
+  regionCountries: FocusRegionCountry[];
+  /** The region's 72h forecast at its single biggest city (else bbox centre) — the
+   *  region spotlight's NEXT 24H near-term slide. Empty off a region shot. */
+  regionNearTerm: ForecastStep[];
   areaWeather: iAreaWeatherReport | null;
 
   // geophysics / media

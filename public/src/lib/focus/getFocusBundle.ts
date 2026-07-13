@@ -25,6 +25,7 @@ import {
 } from "../worker-sample";
 import {
   buildForecastDays,
+  buildForecastSteps,
   buildAreaForecastDays,
   DEFAULT_FORECAST_DAYS,
   forecastHorizonHours,
@@ -48,7 +49,9 @@ import type {
   FocusTarget,
   FocusCity,
   FocusNearbyCity,
+  FocusRegionCountry,
 } from "./types";
+import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 import type { ClimateBucketedDataset } from "../history-client";
 import type { CountryAt } from "../countries";
 import type { Quake } from "@photonsurge/shared/tracks/types";
@@ -365,6 +368,15 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
       ? await db.areaWeatherReports.latest("country", country.countryId)
       : null;
 
+  // Region spotlight forecasts — one worker forecast sample per top member country
+  // (at its biggest in-region city) for the per-country slides, plus one at the
+  // region's overall biggest city for the NEXT 24H card. Composed HERE so the
+  // region deck never fans out per country at cut time (empty off a region shot).
+  const [regionCountries, regionNearTerm] = await Promise.all([
+    isRegion && region ? regionCountriesFor(region) : Promise.resolve([] as FocusRegionCountry[]),
+    isRegion && region ? regionNearTermFor(region) : Promise.resolve([] as FocusBundle["regionNearTerm"]),
+  ]);
+
   // The on-air target — loaded by subject id, the full doc.
   let target: FocusTarget = null;
   if (subject) {
@@ -489,6 +501,8 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     countryRoundup,
     region,
     regionRoundup,
+    regionCountries,
+    regionNearTerm,
     areaWeather: areaWeatherReport,
 
     seismoStations,
@@ -496,6 +510,63 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     nearbyCams: [], // TODO(phase-3): cams already load globally via useCams
     depthProfile: null, // TODO: ocean-kind depth profile
   };
+}
+
+/** How many of a region's biggest member countries get a per-country slide. */
+const REGION_COUNTRY_LIMIT = 5;
+/** Forecast track horizon for the region slides (the detailed 3-hourly window). */
+const REGION_STEP_HOURS = 72;
+
+/** The region's biggest member countries (population-ranked from the enriched
+ *  dossier), each with a 72h forecast sampled at its biggest in-region city.
+ *  Countries with no sampleable city in the dossier are dropped. */
+async function regionCountriesFor(region: iRegionModel): Promise<FocusRegionCountry[]> {
+  const cities = region.topCities ?? [];
+  const top = [...(region.countries ?? [])]
+    .sort((a, b) => (b.population ?? 0) - (a.population ?? 0))
+    .slice(0, REGION_COUNTRY_LIMIT);
+  const built = await Promise.all(
+    top.map(async (c): Promise<FocusRegionCountry | null> => {
+      const cc = c.cc?.toLowerCase();
+      const sample = cities
+        .filter((ci) => cc && ci.cc && ci.cc.toLowerCase() === cc)
+        .sort((a, b) => (b.population ?? 0) - (a.population ?? 0))[0];
+      if (!sample) return null;
+      const series = await workerForecastPoint({
+        lat: sample.lat,
+        lng: sample.lng,
+        variables: FORECAST_VARIABLES,
+        maxHours: REGION_STEP_HOURS,
+      });
+      const { steps } = await buildForecastSteps(series, sample.lat, sample.lng);
+      return {
+        cc: (c.cc ?? "").toLowerCase(),
+        name: c.name,
+        population: c.population,
+        sampleName: sample.name,
+        lat: sample.lat,
+        lng: sample.lng,
+        steps,
+      };
+    }),
+  );
+  return built.filter((x): x is FocusRegionCountry => x != null);
+}
+
+/** The region's 72h forecast at its single biggest city (else bbox centre) — the
+ *  NEXT 24H near-term card's data. */
+async function regionNearTermFor(region: iRegionModel): Promise<FocusBundle["regionNearTerm"]> {
+  const top = (region.topCities ?? [])[0];
+  const lat = top ? top.lat : (region.bbox[1] + region.bbox[3]) / 2;
+  const lng = top ? top.lng : (region.bbox[0] + region.bbox[2]) / 2;
+  const series = await workerForecastPoint({
+    lat,
+    lng,
+    variables: FORECAST_VARIABLES,
+    maxHours: REGION_STEP_HOURS,
+  });
+  const { steps } = await buildForecastSteps(series, lat, lng);
+  return steps;
 }
 
 /** Top cities in view (population-sorted) with climate baked in — kills the N+1. */
