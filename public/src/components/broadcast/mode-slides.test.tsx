@@ -11,6 +11,7 @@ const ctx = (over: Partial<ModeSlideContext> = {}): ModeSlideContext => ({
   cams: [],
   quakes: [],
   alerts: [],
+  volcanoCams: [],
   alertTimeline: [],
   alertSnapshots: [],
   alertResources: [],

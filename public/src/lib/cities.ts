@@ -3,6 +3,7 @@
  * The validator is PURE and shared by the API route and the CityEditor form.
  */
 import type { iCity } from "@photonsurge/shared/db/city-model";
+import { coalesce } from "./coalesce";
 
 export interface CityInput {
   name?: unknown;
@@ -234,14 +235,19 @@ export async function listCityConditions(
     bbox: bbox.map((n) => n.toFixed(4)).join(","),
     limit: String(limit),
   });
-  try {
-    const res = await fetch(`/api/cities/weather?${q.toString()}`, { cache: "no-store" });
-    if (!res.ok) return [];
-    const json = await res.json();
-    return (json?.cities ?? []) as CityCondition[];
-  } catch {
-    return [];
-  }
+  // Coalesce simultaneous identical pulls — CityForecastStrip + CityConditionsPanel
+  // frame the same bbox and both read on the same cut; share one round-trip.
+  const url = `/api/cities/weather?${q.toString()}`;
+  return coalesce(url, async () => {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) return [] as CityCondition[];
+      const json = await res.json();
+      return (json?.cities ?? []) as CityCondition[];
+    } catch {
+      return [] as CityCondition[];
+    }
+  });
 }
 
 /** Worker-cached now + 3-day forecast for a specific set of cities (by their
@@ -251,14 +257,17 @@ export async function listCityConditionsByIds(ids: string[]): Promise<CityCondit
   const clean = ids.filter(Boolean);
   if (!clean.length) return [];
   const q = new URLSearchParams({ ids: clean.join(",") });
-  try {
-    const res = await fetch(`/api/cities/weather?${q.toString()}`, { cache: "no-store" });
-    if (!res.ok) return [];
-    const json = await res.json();
-    return (json?.cities ?? []) as CityCondition[];
-  } catch {
-    return [];
-  }
+  const url = `/api/cities/weather?${q.toString()}`;
+  return coalesce(url, async () => {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) return [] as CityCondition[];
+      const json = await res.json();
+      return (json?.cities ?? []) as CityCondition[];
+    } catch {
+      return [] as CityCondition[];
+    }
+  });
 }
 
 /** Server-paged city registry for the operator table; globe callers keep using listCities. */

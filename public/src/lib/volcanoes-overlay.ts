@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import { useSocket } from "./socket-provider";
+import { coalesce } from "./coalesce";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 
 const EMPTY: Volcano[] = [];
@@ -14,9 +15,13 @@ const VOLCANO_FALLBACK_MS = 10 * 60 * 1000;
  *  Shared by the overlay hook below and by anything else that needs a
  *  one-shot read (e.g. the World Watch tally) without the polling machinery. */
 export async function listVolcanoes(): Promise<Volcano[]> {
-  const res = await fetch("/api/volcanoes", { cache: "no-store" });
-  const body = await res.json().catch(() => null);
-  return body?.volcanoes ?? [];
+  // Coalesce simultaneous pulls — the globe overlay and the World Watch tally both
+  // read this on mount / the same TRACKS_UPDATED beat; share one round-trip.
+  return coalesce("/api/volcanoes", async () => {
+    const res = await fetch("/api/volcanoes", { cache: "no-store" });
+    const body = await res.json().catch(() => null);
+    return (body?.volcanoes ?? []) as Volcano[];
+  });
 }
 
 /**

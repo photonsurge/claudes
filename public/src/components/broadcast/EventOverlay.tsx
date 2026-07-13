@@ -82,6 +82,7 @@ export default function EventOverlay({
   historyPanel,
   forecastPanel,
   variant = "event",
+  flag,
   theme = DEFAULT_THEME,
 }: {
   segment: Segment;
@@ -95,6 +96,9 @@ export default function EventOverlay({
   /** "event" (default) reads as a detection lock on a hazard; "place" softens the
    *  wording to NOW VIEWING / LOCATION for a calm Areas-tour city. */
   variant?: "event" | "place";
+  /** Flag emoji shown before the LOCATION name (place variant — an Areas tour
+   *  parked on a country). */
+  flag?: string;
   /** Active broadcast theme — the tracking label draws its glass from the same
    *  tokens as the rest of the on-air cards. */
   theme?: BroadcastTheme;
@@ -142,7 +146,7 @@ export default function EventOverlay({
 
       {/* Tracking-detail readout, hung onto the reticle's top-left corner. */}
       <div style={{ position: "absolute", ...LABEL_POS }}>
-        <EventTrackingLabel segment={segment} extraDetails={extraDetails} variant={variant} theme={theme} />
+        <EventTrackingLabel segment={segment} extraDetails={extraDetails} variant={variant} flag={flag} theme={theme} />
       </div>
 
       {/* Point-history trend, top-right of the frame (pushed out to the right). */}
@@ -251,6 +255,7 @@ function EventTrackingLabel({
   segment,
   extraDetails = [],
   variant = "event",
+  flag,
   theme = DEFAULT_THEME,
 }: {
   segment: Segment;
@@ -258,6 +263,7 @@ function EventTrackingLabel({
    *  place line for aircraft/ship, which the segment shape doesn't carry). */
   extraDetails?: { label: string; value: string }[];
   variant?: "event" | "place";
+  flag?: string;
   theme?: BroadcastTheme;
 }) {
   const color = KIND_COLOR[segment.kind] ?? "#38bdf8";
@@ -265,6 +271,7 @@ function EventTrackingLabel({
   const name = segment.title.toUpperCase();
   const details = [...(segment.details ?? []), ...extraDetails];
   const isPlace = variant === "place";
+  const locationValue = isPlace && flag ? `${flag} ${name}` : isPlace ? name : `${name} [ACTIVE]`;
   return (
     <div
       style={{
@@ -300,11 +307,7 @@ function EventTrackingLabel({
           ▸ {isPlace ? "NOW VIEWING" : "EVENT DETECTION OVERLAY"}
         </span>
       </div>
-      <Row
-        label={isPlace ? "LOCATION" : "EVENT TRACKING"}
-        value={isPlace ? name : `${name} [ACTIVE]`}
-        color={color}
-      />
+      <Row label={isPlace ? "LOCATION" : "EVENT TRACKING"} value={locationValue} color={color} />
       {details.map((d) => (
         <Row key={d.label} label={d.label.toUpperCase()} value={d.value} color={color} />
       ))}

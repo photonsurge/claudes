@@ -407,6 +407,9 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
   let eventResources: FocusBundle["eventResources"] = [];
   let eventSnapshots: FocusBundle["eventSnapshots"] = [];
   let eventSeries: FocusBundle["eventSeries"] = [];
+  // Cameras ride the ONE focus call (never a per-cut fetch) — populated for a
+  // volcano cut with that volcano's official monitoring cameras.
+  let nearbyCams: FocusBundle["nearbyCams"] = [];
   if (target?.kind === "storm") {
     const { source: alSource, identifier: alIdent, id: alId } = target.alert.properties;
     const [chain, revisions, series, resources, snapshots, evt] = await Promise.all([
@@ -445,9 +448,15 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
   } else if (target?.kind === "volcano") {
     // Volcano observation dossier — the WatchedEvent (type VOLCANO) the volcano
     // was promoted to, plus its stored status timeline and any captured
-    // media/plots (P2/P3). Keyed on ("gvp", volcanoId); same one-focus-call
-    // discipline. Empty until promoted (EVENTS_UNIFIED_ENABLED).
-    const evt = await db.watchedEvents.byPrimary("gvp", target.volcano.id);
+    // media/plots (P2/P3), AND its official monitoring cameras. All in the one
+    // focus call (no per-cut fetch). Keyed on ("gvp", volcanoId). The event
+    // dossier is empty until promoted (EVENTS_UNIFIED_ENABLED); cameras don't
+    // depend on promotion.
+    const [evt, volcanoCams] = await Promise.all([
+      db.watchedEvents.byPrimary("gvp", target.volcano.id),
+      db.cams.listForVolcano(target.volcano.id),
+    ]);
+    nearbyCams = volcanoCams;
     if (evt?.id) {
       watchedEvent = evt;
       const [updates, evRes, evSnaps, evSeries] = await Promise.all([
@@ -507,7 +516,7 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
 
     seismoStations,
     tideStations,
-    nearbyCams: [], // TODO(phase-3): cams already load globally via useCams
+    nearbyCams, // volcano cut: that volcano's official cameras (else empty)
     depthProfile: null, // TODO: ocean-kind depth profile
   };
 }

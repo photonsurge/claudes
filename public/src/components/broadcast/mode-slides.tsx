@@ -51,6 +51,7 @@ import EventNearbyPanel, { eventNearbySlideHasContent } from "./EventNearbyPanel
 import TrackInfoPanel from "./TrackInfoPanel";
 import VolcanoFactsPanel, { volcanoFactsSlideHasContent } from "./VolcanoFactsPanel";
 import VolcanoNearbyPanel, { volcanoNearbySlideHasContent } from "./VolcanoNearbyPanel";
+import VolcanoCamerasPanel, { volcanoCamerasSlideHasContent } from "./VolcanoCamerasPanel";
 import RegionNearTermPanel from "./RegionNearTermPanel";
 import RegionCountryPanel from "./RegionCountryPanel";
 import type { iRegionModel } from "@photonsurge/shared/db/region-model";
@@ -80,6 +81,8 @@ export interface ModeSlideContext {
   /** Full global feeds — for the volcano "what else is nearby" content guard. */
   quakes: Quake[];
   alerts: AlertFeature[];
+  /** The on-air volcano's official monitoring cameras — from the focus call. */
+  volcanoCams: Cam[];
   /** The on-air storm's derived change timeline (ISSUED → changes → ENDED) — the
    *  alert-timeline slide's data, delivered on the focus bundle. Empty off a storm. */
   alertTimeline: AlertTimelineBeat[];
@@ -225,6 +228,11 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
           id: "volcano-timeline",
           node: <EventTimelinePanel beats={ctx.eventTimeline} color={color} theme={ctx.theme} />,
         });
+      }
+      // Official monitoring cameras — the "what does it look like now" slide, fed
+      // from the focus call (never a per-cut fetch). Self-hides when none.
+      if (volcanoCamerasSlideHasContent(ctx.volcanoCams)) {
+        slides.push({ id: "volcano-cameras", node: <VolcanoCamerasPanel cams={ctx.volcanoCams} color={color} /> });
       }
       if (volcanoNearbySlideHasContent(segment.camera.center, ctx.cities, ctx.quakes, ctx.alerts)) {
         slides.push({

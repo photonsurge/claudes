@@ -55,6 +55,7 @@ import {
   useEventSnapshots,
   useEventResources,
   useEventSeries,
+  useNearbyCams,
 } from "../../lib/focus/focus-client";
 import { legendVariableFor } from "../../lib/legend";
 import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
@@ -81,6 +82,7 @@ import PointHistoryPanel from "./PointHistoryPanel";
 import ForecastPanel from "./ForecastPanel";
 import { mapFreshness } from "../../lib/manifest";
 import EventOverlay from "./EventOverlay";
+import { flagEmoji } from "./RegionCountryPanel";
 import SyslogFeed from "./SyslogFeed";
 import UpNextPanel from "./UpNextPanel";
 import BuildInfoTag from "./BuildInfoTag";
@@ -342,6 +344,8 @@ export default function BroadcastFrame({
   const eventSnapshots = useEventSnapshots();
   const eventResources = useEventResources();
   const eventSeries = useEventSeries();
+  // Volcano official cameras — from the same focus bundle (never a per-cut fetch).
+  const volcanoCams = useNearbyCams();
   const placeRoundup =
     onAirSegment?.kind === "region"
       ? regionRoundup
@@ -444,6 +448,7 @@ export default function BroadcastFrame({
         cams,
         quakes,
         alerts,
+        volcanoCams,
         alertTimeline,
         alertSnapshots,
         alertResources,
@@ -507,7 +512,14 @@ export default function BroadcastFrame({
     if (!best || bestD > 1) return null;
     const now = best.steps.find((s) => s.temp != null) ?? best.steps[0];
     if (now?.temp == null) return null;
-    return { temp: now.temp, condition: now.condition as string };
+    // Upcoming: hi/lo over the next 24h of the same 3-hourly track.
+    const soon = Date.now() + 24 * 3600_000;
+    const upcomingTemps = best.steps
+      .filter((s) => new Date(s.t).getTime() <= soon && s.temp != null)
+      .map((s) => s.temp as number);
+    const hi = upcomingTemps.length ? Math.max(...upcomingTemps) : null;
+    const lo = upcomingTemps.length ? Math.min(...upcomingTemps) : null;
+    return { temp: now.temp, condition: now.condition as string, cc: best.cc, hi, lo, days: best.days };
   }, [onAirSegment?.kind, regionCountries, state.camera.center]);
 
   return (
@@ -589,9 +601,10 @@ export default function BroadcastFrame({
 
         {/* Areas (region) tour: the camera frames each country's biggest city dead-
             centre, so a caption-only reticle names the CURRENT CITY there while the
-            left card keeps naming the area. Deliberately no history/forecast side-
-            panels — those fetch at the moving stop centre, which the area-centred
-            /api/focus bundle can't cover, so we keep this reticle fetch-free. */}
+            left card keeps naming the area. The current weather + a 3-day forecast
+            strip come from the tour stop's country on the focus bundle
+            (regionCountries, matched by coordinate) — NOT a per-stop fetch — so the
+            reticle stays fetch-free while still showing the stop's outlook. */}
         {onAirSegment?.kind === "region" && focusCaption ? (
           <EventOverlay
             segment={{
@@ -609,8 +622,22 @@ export default function BroadcastFrame({
                         CONDITION_LABEL[tourStopWeather.condition] ?? tourStopWeather.condition
                       }`,
                     },
+                    ...(tourStopWeather.hi != null && tourStopWeather.lo != null
+                      ? [
+                          {
+                            label: "Next 24h",
+                            value: `hi ${Math.round(tourStopWeather.hi)}° · lo ${Math.round(tourStopWeather.lo)}°`,
+                          },
+                        ]
+                      : []),
                   ]
                 : []
+            }
+            flag={tourStopWeather ? flagEmoji(tourStopWeather.cc) : undefined}
+            forecastPanel={
+              tourStopWeather?.days?.length ? (
+                <ForecastPanel center={null} daysOverride={tourStopWeather.days} compact theme={theme} />
+              ) : null
             }
             variant="place"
             theme={theme}

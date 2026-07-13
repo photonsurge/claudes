@@ -414,6 +414,15 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Volcanoes",
   },
   {
+    id: "volcanoes-geonet-cams",
+    label: "Refresh GeoNet volcano cameras",
+    description: "Re-pull GeoNet's official volcano camera catalogue and tag each with its volcano.",
+    domain: "volcanoes",
+    type: "volcanoes",
+    event: "ingestGeonetCams",
+    group: "Volcanoes",
+  },
+  {
     id: "countries-seed",
     label: "Reseed country catalog",
     description: "Rebuild the ~240-country catalog (name/iso codes/continent/boundary) from the bundled Natural Earth GeoJSON.",

@@ -579,3 +579,10 @@ export function useEventSeries(): iEventSeries[] {
   const { bundle, covers } = useFocusContext();
   return covers() ? bundle!.eventSeries : [];
 }
+
+/** Cameras for the on-air thing (a volcano's official monitoring cameras) — from
+ *  the one focus call, never a per-cut fetch. Empty when the cut has no cameras. */
+export function useNearbyCams(): FocusBundle["nearbyCams"] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.nearbyCams : [];
+}

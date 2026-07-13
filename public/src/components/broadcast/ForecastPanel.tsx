@@ -166,6 +166,7 @@ function ForecastSpinner({ accent }: { accent: string }) {
 export default function ForecastPanel({
   center,
   bbox = null,
+  daysOverride,
   theme = DEFAULT_THEME,
   compact = false,
   variant = "card",
@@ -174,6 +175,10 @@ export default function ForecastPanel({
   center: [number, number] | null;
   /** The framed area on wide shots — switches to area-aggregated cards. */
   bbox?: [number, number, number, number] | null;
+  /** Pre-fetched day cards to render INSTEAD of fetching — used where the forecast
+   *  is already on the focus bundle (e.g. an Areas-tour stop, whose moving centre
+   *  the area bundle can't cover). When set, center/bbox are ignored (no fetch). */
+  daysOverride?: (ForecastDay | AreaForecastDay)[];
   theme?: BroadcastTheme;
   compact?: boolean;
   /** "card" (own BroadcastCard shell) or "inline" (bare section for embedding in
@@ -181,10 +186,11 @@ export default function ForecastPanel({
    *  loading and fills the host card's width). */
   variant?: "card" | "inline";
 }) {
-  const point = usePointForecastDays(bbox ? null : center);
-  const area = useAreaForecastDays(bbox);
+  // Disable both fetches when caller supplies days directly (fetch-free embed).
+  const point = usePointForecastDays(daysOverride || bbox ? null : center);
+  const area = useAreaForecastDays(daysOverride ? null : bbox);
   const src = bbox ? area : point;
-  const days = src.days.map(normalizeDay);
+  const days = (daysOverride ?? src.days).map(normalizeDay);
   // Inside the on-air deck the fixed-size template owns the shell, so fill the
   // full card width with the day strip (like RoundupStatsPanel's tiles) rather
   // than the compact, left-clustered fixed-width cards used off-deck.

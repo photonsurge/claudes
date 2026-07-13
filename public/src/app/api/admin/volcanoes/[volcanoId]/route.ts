@@ -22,9 +22,12 @@ async function GET__impl(_req: Request, { params }: { params: Promise<{ volcanoI
   const db = await getAppDb();
   const volcano = await db.volcanoes.get(volcanoId);
   if (!volcano) return NextResponse.json({ error: "no such volcano" }, { status: 404, headers: NO_CACHE });
-  const event = await db.watchedEvents.byPrimary("gvp", volcanoId);
+  const [event, cams] = await Promise.all([
+    db.watchedEvents.byPrimary("gvp", volcanoId),
+    db.cams.listForVolcano(volcanoId),
+  ]);
   const timeline = event?.id ? buildEventTimeline(event, await db.eventTimeline.listForEvent(event.id)) : [];
-  return NextResponse.json({ volcano, event: event ?? null, timeline }, { status: 200, headers: NO_CACHE });
+  return NextResponse.json({ volcano, event: event ?? null, timeline, cams }, { status: 200, headers: NO_CACHE });
 }
 
 // --- request logging (lib/api-log) ---

@@ -11,12 +11,14 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { EventTimelineBeat } from "@photonsurge/shared/events/event-timeline";
+import type { Cam } from "@photonsurge/shared/cams/types";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 
 interface VolcanoDetail {
   volcano: Volcano;
   event: { id: string; status: string; startedAt: string } | null;
   timeline: EventTimelineBeat[];
+  cams: Cam[];
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -86,7 +88,7 @@ export default function VolcanoDetailPage() {
     );
   }
 
-  const { volcano: v, timeline } = detail;
+  const { volcano: v, timeline, cams } = detail;
 
   return (
     <AdminPageShell
@@ -220,6 +222,37 @@ export default function VolcanoDetailPage() {
                 .join(" · ")}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Official monitoring cameras (GeoNet) — live latest still. */}
+      {cams && cams.length > 0 && (
+        <div style={{ ...card, marginTop: 14 }}>
+          <div style={cardLabel}>Cameras ({cams.length})</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10 }}>
+            {cams.map((c) => (
+              <a
+                key={c.camId}
+                href={c.playerUrl || c.imageUrl}
+                target="_blank"
+                rel="noreferrer"
+                style={{ display: "block", width: 220, color: "inherit", textDecoration: "none" }}
+              >
+                {c.imageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={c.imageUrl}
+                    alt={c.title}
+                    style={{ width: 220, height: 138, objectFit: "cover", borderRadius: 6, border: "1px solid #1b2030", background: "#070a11" }}
+                  />
+                )}
+                <div style={{ color: "#cbd5e1", fontSize: 12, marginTop: 4 }}>{c.title}</div>
+                {c.attribution?.provider && (
+                  <div style={{ color: "#5b6478", fontSize: 11 }}>{c.attribution.provider}</div>
+                )}
+              </a>
+            ))}
+          </div>
         </div>
       )}
 
