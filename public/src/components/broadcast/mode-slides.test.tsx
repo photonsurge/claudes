@@ -12,6 +12,7 @@ const ctx = (over: Partial<ModeSlideContext> = {}): ModeSlideContext => ({
   quakes: [],
   alerts: [],
   volcanoCams: [],
+  volcanoMedia: [],
   alertTimeline: [],
   alertSnapshots: [],
   alertResources: [],
@@ -241,6 +242,16 @@ describe("modeSlides", () => {
     expect(ids(withFacts, ctx({ cities: [cityAt(0, 0)] }))).toEqual(["onair", "track", "volcano-facts", "volcano-nearby"]);
     // No facts and nothing nearby → just the lede + track card.
     expect(ids(seg({ kind: "volcano", trackInfo: { label: "V" } }), ctx())).toEqual(["onair", "track"]);
+  });
+
+  it("gives volcano cameras and satellite imagery separate slides", () => {
+    const volcano = seg({ kind: "volcano", trackInfo: { label: "V" } });
+    const volcanoCams = [{ camId: "cam-1", title: "Summit", imageUrl: "https://example.test/cam.jpg" }] as ModeSlideContext["volcanoCams"];
+    const volcanoMedia = [{ id: "sat-1", volcanoId: "gvp:1", source: "VOLCAT", type: "SATELLITE",
+      assetRef: "sat-1", sourceUrl: "https://example.test/source", acquiredAt: new Date() }] as ModeSlideContext["volcanoMedia"];
+    expect(ids(volcano, ctx({ volcanoCams, volcanoMedia }))).toEqual([
+      "onair", "track", "volcano-cameras", "volcano-satellite",
+    ]);
   });
 
   const bbox: [number, number, number, number] = [-1, -1, 1, 1];

@@ -30,6 +30,7 @@ import type { iEventSeries } from "@photonsurge/shared/db/event-series-model";
 import type { Quake } from "@photonsurge/shared/tracks/types";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { Cam } from "@photonsurge/shared/cams/types";
+import type { VolcanoMedia } from "@photonsurge/shared/volcanoes/media";
 import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 import type { iAreaWeatherReport } from "@photonsurge/shared/db/area-weather-report-model";
 
@@ -191,5 +192,7 @@ export interface FocusBundle {
   seismoStations: SeismoStationReading[];
   tideStations: TideStationReading[];
   nearbyCams: Cam[];
+  /** Latest stored camera, satellite and official imagery for the focused volcano. */
+  volcanoMedia: VolcanoMedia[];
   depthProfile: DepthProfilePoint[] | null;
 }

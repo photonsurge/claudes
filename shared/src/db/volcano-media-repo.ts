@@ -34,6 +34,10 @@ export function makeVolcanoMediaRepo(model: Model<iVolcanoMediaModel>, blobs: In
       const docs = await model.find({ volcanoId }).select("-data").sort({ observedAt: -1, acquiredAt: -1 }).lean().exec();
       return docs.map(meta);
     },
+    async listLatestForVolcano(volcanoId: string, limit = 24): Promise<VolcanoMedia[]> {
+      const docs = await model.find({ volcanoId }).select("-data").sort({ observedAt: -1, acquiredAt: -1 }).limit(limit).lean().exec();
+      return docs.map(meta);
+    },
     async getAsset(id: string): Promise<{ data: Buffer; contentType: string } | null> {
       const doc = await model.findOne({ id }).exec();
       if (!doc) return null;

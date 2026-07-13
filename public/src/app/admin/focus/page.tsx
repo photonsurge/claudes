@@ -43,7 +43,7 @@ const GROUPS: { title: string; arrays?: (keyof FocusBundle)[]; objects?: (keyof 
   { title: "Cities", arrays: ["topCities", "nearbyCities", "cityConditions"] },
   { title: "Event + area", objects: ["target"], arrays: ["areaAlerts", "areaQuakes", "areaVolcanoes"] },
   { title: "Place + roundup", objects: ["country", "countryRoundup", "region", "regionRoundup", "areaWeather"] },
-  { title: "Geophysics + media", arrays: ["seismoStations", "tideStations", "nearbyCams"], objects: ["depthProfile"] },
+  { title: "Geophysics + media", arrays: ["seismoStations", "tideStations", "nearbyCams", "volcanoMedia"], objects: ["depthProfile"] },
 ];
 
 // ── styles ────────────────────────────────────────────────────────────────

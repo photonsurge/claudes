@@ -56,6 +56,7 @@ import {
   useEventResources,
   useEventSeries,
   useNearbyCams,
+  useVolcanoMedia,
 } from "../../lib/focus/focus-client";
 import { legendVariableFor } from "../../lib/legend";
 import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
@@ -346,6 +347,7 @@ export default function BroadcastFrame({
   const eventSeries = useEventSeries();
   // Volcano official cameras — from the same focus bundle (never a per-cut fetch).
   const volcanoCams = useNearbyCams();
+  const volcanoMedia = useVolcanoMedia();
   const placeRoundup =
     onAirSegment?.kind === "region"
       ? regionRoundup
@@ -449,6 +451,7 @@ export default function BroadcastFrame({
         quakes,
         alerts,
         volcanoCams,
+        volcanoMedia,
         alertTimeline,
         alertSnapshots,
         alertResources,

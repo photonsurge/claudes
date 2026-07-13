@@ -29,6 +29,7 @@ import type { iWatchedEvent } from "@photonsurge/shared/db/watched-event-model";
 import type { EventTimelineBeat } from "@photonsurge/shared/events/event-timeline";
 import type { iEventResource } from "@photonsurge/shared/db/event-resource-model";
 import type { EventSnapshotMeta } from "@photonsurge/shared/db/event-snapshot-repo";
+import type { VolcanoMedia } from "@photonsurge/shared/volcanoes/media";
 import type { iEventSeries } from "@photonsurge/shared/db/event-series-model";
 
 import { usePointHistory, useAreaHistory, useClimateYear } from "../history-client";
@@ -585,4 +586,10 @@ export function useEventSeries(): iEventSeries[] {
 export function useNearbyCams(): FocusBundle["nearbyCams"] {
   const { bundle, covers } = useFocusContext();
   return covers() ? bundle!.nearbyCams : [];
+}
+
+/** Latest internally stored volcano imagery, delivered by the same focus request. */
+export function useVolcanoMedia(): VolcanoMedia[] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? (bundle!.volcanoMedia ?? []) : [];
 }

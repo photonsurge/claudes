@@ -410,6 +410,7 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
   // Cameras ride the ONE focus call (never a per-cut fetch) — populated for a
   // volcano cut with that volcano's official monitoring cameras.
   let nearbyCams: FocusBundle["nearbyCams"] = [];
+  let volcanoMedia: FocusBundle["volcanoMedia"] = [];
   if (target?.kind === "storm") {
     const { source: alSource, identifier: alIdent, id: alId } = target.alert.properties;
     const [chain, revisions, series, resources, snapshots, evt] = await Promise.all([
@@ -452,11 +453,13 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     // focus call (no per-cut fetch). Keyed on ("gvp", volcanoId). The event
     // dossier is empty until promoted (EVENTS_UNIFIED_ENABLED); cameras don't
     // depend on promotion.
-    const [evt, volcanoCams] = await Promise.all([
+    const [evt, volcanoCams, storedMedia] = await Promise.all([
       db.watchedEvents.byPrimary("gvp", target.volcano.id),
       db.cams.listForVolcano(target.volcano.id),
+      db.volcanoMedia.listLatestForVolcano(target.volcano.id, detail === "broadcast" ? 18 : 60),
     ]);
     nearbyCams = volcanoCams;
+    volcanoMedia = storedMedia;
     if (evt?.id) {
       watchedEvent = evt;
       const [updates, evRes, evSnaps, evSeries] = await Promise.all([
@@ -517,6 +520,7 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     seismoStations,
     tideStations,
     nearbyCams, // volcano cut: that volcano's official cameras (else empty)
+    volcanoMedia,
     depthProfile: null, // TODO: ocean-kind depth profile
   };
 }
