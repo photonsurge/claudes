@@ -15,6 +15,10 @@ const ctx = (over: Partial<ModeSlideContext> = {}): ModeSlideContext => ({
   alertSnapshots: [],
   alertResources: [],
   alertSeries: [],
+  eventTimeline: [],
+  eventSnapshots: [],
+  eventResources: [],
+  eventSeries: [],
   areaAlerts: [],
   areaQuakes: [],
   areaVolcanoes: [],
@@ -122,6 +126,37 @@ describe("modeSlides", () => {
     expect(ids(seg({ kind: "storm" }), ctx({ alertSnapshots: snaps }))).toEqual(["onair", "alert-media"]);
     // No snapshots → no slide.
     expect(ids(seg({ kind: "storm" }), ctx())).toEqual(["onair"]);
+  });
+
+  it("prefers the unified event-timeline over the alert timeline once the storm is promoted", () => {
+    const eventBeats = [
+      { at: "2026-07-12T14:00:00Z", type: "ISSUED", label: "Warning issued" },
+      { at: "2026-07-12T14:17:00Z", type: "PRODUCT_ADDED", label: "1 new Copernicus product", source: "copernicus" },
+    ] as unknown as ModeSlideContext["eventTimeline"];
+    const alertBeats = [
+      { at: "2026-07-12T14:00:00Z", type: "ISSUED", label: "Warning issued" },
+      { at: "2026-07-12T14:17:00Z", type: "SEVERITY_CHANGED", label: "Severity raised" },
+    ] as unknown as ModeSlideContext["alertTimeline"];
+    // Both present → the cross-source event timeline (superset) wins.
+    expect(ids(seg({ kind: "storm" }), ctx({ eventTimeline: eventBeats, alertTimeline: alertBeats }))).toEqual([
+      "onair",
+      "event-timeline",
+    ]);
+    // Not promoted (event empty) → falls back to the alert timeline.
+    expect(ids(seg({ kind: "storm" }), ctx({ alertTimeline: alertBeats }))).toEqual(["onair", "alert-timeline"]);
+  });
+
+  it("shows an event-media slide from cross-source products alone, else falls back to alert imagery", () => {
+    const resources = [
+      { id: "r1", eventId: "e1", source: "gdacs", url: "https://x/report", kind: "REPORT", rebroadcastSafe: false },
+    ] as unknown as ModeSlideContext["eventResources"];
+    // Resources with no snapshot still earn the event-media slide.
+    expect(ids(seg({ kind: "storm" }), ctx({ eventResources: resources }))).toEqual(["onair", "event-media"]);
+    // No event data but the alert has a snapshot → the alert-media slide.
+    const snaps = [
+      { id: "s1", kind: "satellite", capturedAt: "2026-07-12T15:00:00Z", observationTime: "2026-07-12T00:00:00Z", width: 10, height: 10 },
+    ] as unknown as ModeSlideContext["alertSnapshots"];
+    expect(ids(seg({ kind: "storm" }), ctx({ alertSnapshots: snaps }))).toEqual(["onair", "alert-media"]);
   });
 
   it("drops the sparse near-event page when it would show a single bare city", () => {

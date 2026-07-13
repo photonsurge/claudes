@@ -41,6 +41,12 @@ import type { PlaceRoundup } from "../../lib/placeRoundups";
 import QuakeReport from "./QuakeReport";
 import AlertTimelinePanel, { alertTimelineSlideHasContent } from "./AlertTimelinePanel";
 import AlertMediaPanel, { alertMediaSlideHasContent } from "./AlertMediaPanel";
+import EventTimelinePanel, { eventTimelineSlideHasContent } from "./EventTimelinePanel";
+import EventMediaPanel, { eventMediaSlideHasContent } from "./EventMediaPanel";
+import type { EventTimelineBeat } from "@photonsurge/shared/events/event-timeline";
+import type { EventSnapshotMeta } from "@photonsurge/shared/db/event-snapshot-repo";
+import type { iEventResource } from "@photonsurge/shared/db/event-resource-model";
+import type { iEventSeries } from "@photonsurge/shared/db/event-series-model";
 import EventNearbyPanel, { eventNearbySlideHasContent } from "./EventNearbyPanel";
 import TrackInfoPanel from "./TrackInfoPanel";
 import VolcanoFactsPanel, { volcanoFactsSlideHasContent } from "./VolcanoFactsPanel";
@@ -77,6 +83,13 @@ export interface ModeSlideContext {
   alertSnapshots: AlertSnapshotMeta[];
   alertResources: iAlertResource[];
   alertSeries: iAlertSeries[];
+  /** The unified cross-source event timeline/media (focus bundle) — the storm deck
+   *  prefers these over the alert equivalents once the storm was promoted to a
+   *  WatchedEvent (they're the superset); empty otherwise. */
+  eventTimeline: EventTimelineBeat[];
+  eventSnapshots: EventSnapshotMeta[];
+  eventResources: iEventResource[];
+  eventSeries: iEventSeries[];
   /** Feeds already scoped to the on-air area — for the OnAirCard rollup. */
   areaAlerts: AlertFeature[];
   areaQuakes: Quake[];
@@ -230,25 +243,48 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
         ),
       });
     }
-    // The storm's live change timeline, right after the lede — reads the derived
-    // beats from the focus bundle. Self-guards on having more than a lone ISSUED.
-    if (segment.kind === "storm" && alertTimelineSlideHasContent(ctx.alertTimeline)) {
-      slides.push({ id: "alert-timeline", node: <AlertTimelinePanel beats={ctx.alertTimeline} color={color} theme={ctx.theme} /> });
+    // The storm's live change timeline, right after the lede — reads the beats
+    // from the focus bundle. PREFER the unified cross-source event timeline (the
+    // superset: promoted alert changes + deep-GDACS/Copernicus/EONET beats) when
+    // the storm was promoted; fall back to the alert-only timeline otherwise.
+    if (segment.kind === "storm") {
+      if (eventTimelineSlideHasContent(ctx.eventTimeline)) {
+        slides.push({ id: "event-timeline", node: <EventTimelinePanel beats={ctx.eventTimeline} color={color} theme={ctx.theme} /> });
+      } else if (alertTimelineSlideHasContent(ctx.alertTimeline)) {
+        slides.push({ id: "alert-timeline", node: <AlertTimelinePanel beats={ctx.alertTimeline} color={color} theme={ctx.theme} /> });
+      }
     }
-    // The storm's imagery (comparison / satellite still + score sparkline + links).
-    if (segment.kind === "storm" && alertMediaSlideHasContent(ctx.alertSnapshots)) {
-      slides.push({
-        id: "alert-media",
-        node: (
-          <AlertMediaPanel
-            snapshots={ctx.alertSnapshots}
-            resources={ctx.alertResources}
-            series={ctx.alertSeries}
-            color={color}
-            theme={ctx.theme}
-          />
-        ),
-      });
+    // The storm's media — cross-source products/maps + snapshot + score sparkline,
+    // preferring the unified event media (resources alone earn the slide), else the
+    // alert imagery slide.
+    if (segment.kind === "storm") {
+      if (eventMediaSlideHasContent(ctx.eventSnapshots, ctx.eventResources)) {
+        slides.push({
+          id: "event-media",
+          node: (
+            <EventMediaPanel
+              snapshots={ctx.eventSnapshots}
+              resources={ctx.eventResources}
+              series={ctx.eventSeries}
+              color={color}
+              theme={ctx.theme}
+            />
+          ),
+        });
+      } else if (alertMediaSlideHasContent(ctx.alertSnapshots)) {
+        slides.push({
+          id: "alert-media",
+          node: (
+            <AlertMediaPanel
+              snapshots={ctx.alertSnapshots}
+              resources={ctx.alertResources}
+              series={ctx.alertSeries}
+              color={color}
+              theme={ctx.theme}
+            />
+          ),
+        });
+      }
     }
     if (ctx.histBbox) {
       slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.histBbox} color={color} /> });

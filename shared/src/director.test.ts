@@ -1,5 +1,6 @@
 import {
   DEFAULT_DIRECTOR_CONFIG,
+  DEFAULT_KIND_SLIDES,
   INITIAL_DIRECTOR_STATE,
   mergeDirectorConfig,
   DIRECTOR_STATE,
@@ -27,6 +28,32 @@ describe("director event + defaults", () => {
   it("has a flag for every segment kind", () => {
     for (const k of SEGMENT_KINDS) {
       expect(typeof DEFAULT_DIRECTOR_CONFIG.kinds[k]).toBe("boolean");
+    }
+  });
+
+  it("keeps magnetic-field options out of seeded seismic slides", () => {
+    const slides = DEFAULT_KIND_SLIDES.quake ?? [];
+    expect(slides.length).toBeGreaterThan(0);
+    expect(slides.some((slide) => slide.overlays.showMagneticField)).toBe(false);
+    expect(slides.some((slide) => /magnetic/i.test(`${slide.id} ${slide.name}`))).toBe(false);
+  });
+
+  it("seeds the newer land weather fields and keeps event context on geology weather slides", () => {
+    for (const kind of ["intro", "global", "country", "region"] as const) {
+      const variables = (DEFAULT_KIND_SLIDES[kind] ?? []).map((slide) => slide.look.activeVariable);
+      expect(variables).toEqual(expect.arrayContaining(["feelslike", "pwat", "uvindex"]));
+    }
+
+    const orbitalUv = DEFAULT_KIND_SLIDES.orbital?.find((slide) => slide.look.activeVariable === "uvindex");
+    expect(orbitalUv?.overlays).toMatchObject({ showSatellites: true, showOrbits: true });
+
+    for (const kind of ["quake", "volcano"] as const) {
+      const marker = kind === "quake" ? "showSeismic" : "showVolcanoes";
+      const weather = (DEFAULT_KIND_SLIDES[kind] ?? []).filter((slide) =>
+        ["temp", "rain", "cloud"].includes(slide.look.activeVariable ?? ""),
+      );
+      expect(weather.map((slide) => slide.look.activeVariable)).toEqual(["temp", "rain", "cloud"]);
+      for (const slide of weather) expect(slide.overlays[marker]).toBe(true);
     }
   });
 

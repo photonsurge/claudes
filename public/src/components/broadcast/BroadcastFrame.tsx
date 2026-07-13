@@ -49,6 +49,10 @@ import {
   useAlertSnapshots,
   useAlertResources,
   useAlertSeries,
+  useEventTimeline,
+  useEventSnapshots,
+  useEventResources,
+  useEventSeries,
 } from "../../lib/focus/focus-client";
 import { legendVariableFor } from "../../lib/legend";
 import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
@@ -313,6 +317,11 @@ export default function BroadcastFrame({
   const alertSnapshots = useAlertSnapshots();
   const alertResources = useAlertResources();
   const alertSeries = useAlertSeries();
+  // Unified cross-source event dossier (superset) — same focus bundle.
+  const eventTimeline = useEventTimeline();
+  const eventSnapshots = useEventSnapshots();
+  const eventResources = useEventResources();
+  const eventSeries = useEventSeries();
   const placeRoundup =
     onAirSegment?.kind === "region"
       ? regionRoundup
@@ -419,6 +428,10 @@ export default function BroadcastFrame({
         alertSnapshots,
         alertResources,
         alertSeries,
+        eventTimeline,
+        eventSnapshots,
+        eventResources,
+        eventSeries,
         areaAlerts,
         areaQuakes,
         areaVolcanoes,

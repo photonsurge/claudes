@@ -617,6 +617,9 @@ function landSpotlightSlides(prefix: string): KindSlide[] {
     s("storm-cap", "Storm Cap", p("cin"), FIELD_RADAR),
     s("visibility", "Visibility", p("visibility"), FIELD),
     s("soil-moisture", "Soil Moisture", p("soil"), FIELD),
+    s("feels-like", "Feels Like", p("feelslike"), FIELD),
+    s("precipitable-water", "Precipitable Water", p("pwat"), FIELD),
+    s("uv", "UV", p("uvindex"), FIELD),
     s("severe-alert", "Severe Alert", { windMode: "particles", wind: GUST_WIND, activeVariable: "gust" }, ["showWind", "showPressure", "showRadar", "showAlerts", "showCities"]),
     s("radar-focus", "Radar Focus", p("radar"), ["showWind", "showPressure", "showRadar", "showAlerts", "showCities"]),
     // ── Barbs render of the same wind field ──────────────────────────────────
@@ -671,6 +674,9 @@ function establishingSlides(prefix: string): KindSlide[] {
     s("storm-cap", "Storm Cap", p("cin"), FIELD),
     s("visibility", "Visibility", p("visibility"), FIELD),
     s("soil-moisture", "Soil Moisture", p("soil"), FIELD),
+    s("feels-like", "Feels Like", p("feelslike"), FIELD),
+    s("precipitable-water", "Precipitable Water", p("pwat"), FIELD),
+    s("uv", "UV", p("uvindex"), FIELD),
     s("severe-wind", "Severe Wind", { windMode: "particles", wind: GUST_WIND, activeVariable: "gust" }, FIELD),
   ];
 }
@@ -743,6 +749,12 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showAurora",
       "showCities",
     ]),
+    seedSlide(
+      "orbital-uv",
+      "UV",
+      { basemap: "dark", activeVariable: "uvindex" },
+      ["showSatellites", "showOrbits", "showTrackLabels", "showCities"],
+    ),
   ],
   country: landSpotlightSlides("country"),
   // Region ("area") spotlights share the country's land look library — same
@@ -813,14 +825,24 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showFaults",
       "showCities",
     ]),
-    seedSlide("quake-magnetic-signature", "Magnetic Signature", { basemap: "dark" }, [
-      "showElevation",
-      "showSeismic",
-      "showCables",
-      "showFaults",
-      "showMagneticField",
-      "showCities",
-    ]),
+    seedSlide(
+      "quake-temperature",
+      "Temperature",
+      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "temp" },
+      ["showWind", "showSeismic", "showCables", "showFaults", "showCities"],
+    ),
+    seedSlide(
+      "quake-rainfall",
+      "Rainfall",
+      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "rain" },
+      ["showWind", "showSeismic", "showCables", "showFaults", "showCities"],
+    ),
+    seedSlide(
+      "quake-cloud-cover",
+      "Cloud Cover",
+      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "cloud" },
+      ["showWind", "showSeismic", "showCables", "showFaults", "showCities"],
+    ),
   ],
   volcano: [
     seedSlide("volcano-terrain-contours", "Terrain Contours", { basemap: "dark" }, [
@@ -859,6 +881,24 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showMagneticField",
       "showCities",
     ]),
+    seedSlide(
+      "volcano-temperature",
+      "Temperature",
+      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "temp" },
+      ["showWind", "showVolcanoes", "showCables", "showFaults", "showCities"],
+    ),
+    seedSlide(
+      "volcano-rainfall",
+      "Rainfall",
+      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "rain" },
+      ["showWind", "showVolcanoes", "showCables", "showFaults", "showCities"],
+    ),
+    seedSlide(
+      "volcano-cloud-cover",
+      "Cloud Cover",
+      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "cloud" },
+      ["showWind", "showVolcanoes", "showCables", "showFaults", "showCities"],
+    ),
   ],
   flight: [
     seedSlide("flight-jet-stream", "Jet Stream", { windMode: "particles", wind: GUST_WIND }, [
