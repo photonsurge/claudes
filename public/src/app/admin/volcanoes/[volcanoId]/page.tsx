@@ -166,6 +166,23 @@ export default function VolcanoDetailPage() {
           </table>
         </div>
 
+        {/* Official (non-USGS) observatory status, e.g. GeoNet VAL. */}
+        {v.officialAlertLevelRaw && (
+          <div style={card}>
+            <div style={cardLabel}>Official status</div>
+            <div style={{ color: "#f59e0b", fontSize: 13, fontWeight: 600, marginTop: 8 }}>
+              {(v.officialSource ?? "").toUpperCase()} {v.officialAlertScheme} · level {v.officialAlertLevelRaw}
+              {v.officialAlertLevelNormalized ? ` (${v.officialAlertLevelNormalized})` : ""}
+            </div>
+            {v.officialActivity && (
+              <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.45, margin: "6px 0 0" }}>{v.officialActivity}</p>
+            )}
+            {v.officialUpdatedAt && (
+              <div style={{ color: "#5b6478", fontSize: 12, marginTop: 6 }}>Updated {fmtTime(v.officialUpdatedAt)}</div>
+            )}
+          </div>
+        )}
+
         {/* USGS notice, when present. */}
         {v.usgsColorCode && (
           <div style={card}>

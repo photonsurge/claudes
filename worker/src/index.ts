@@ -716,6 +716,28 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable volcanoes.ingestGeonetCams (official NZ volcano cameras) ----
+  // Disable with VOLCANO_GEONET_CAMS_ENABLED=false.
+  if (process.env.VOLCANO_GEONET_CAMS_ENABLED !== "false") {
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "volcanoes", type: "volcanoes", event: "ingestGeonetCams", data: {} },
+        {
+          repeat: {
+            every: Number(process.env.VOLCANO_GEONET_CAMS_MS || 30 * 60_000),
+            immediately: true,
+            offset: staggerOffset("volcanoes-geonet-cams", Number(process.env.VOLCANO_GEONET_CAMS_MS || 30 * 60_000)),
+          },
+          jobId: "volcanoes-geonet-cams",
+        },
+      );
+      log(TAG, `registered repeatable volcanoes.ingestGeonetCams`);
+    } catch (err) {
+      log(TAG, `failed to register volcanoes.ingestGeonetCams`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable geomag.refresh (IGRF total-intensity field → baked scalar PNG) ----
   // The geomagnetic field drifts only slowly (secular variation), so re-bake weekly
   // by default. A fixed jobId de-dups across restarts; `immediately` seeds the cache

@@ -6,6 +6,7 @@ import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
 import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model";
 import type { AlertSnapshotMeta } from "@photonsurge/shared/db/alert-snapshot-repo";
 import { classifyHazard, type HazardType } from "./hazard";
+import { coalesce } from "./coalesce";
 export type { HazardType, AlertTimelineBeat, iAlertSeries, iAlertResource, AlertSnapshotMeta };
 
 /** Trimmed alert shape the admin list / overlay consume (mirrors CanonicalAlert). */
@@ -97,10 +98,17 @@ export async function listAlerts(opts: ListAlertsOpts = {}): Promise<Alert[]> {
   if (opts.source) q.set("source", opts.source);
   if (typeof opts.severityMin === "number") q.set("severityMin", String(opts.severityMin));
   if (typeof opts.limit === "number") q.set("limit", String(opts.limit));
-  const res = await fetch(`/api/alerts?${q.toString()}`, { cache: "no-store" });
-  if (!res.ok) return [];
-  const body = await res.json();
-  return Array.isArray(body?.alerts) ? body.alerts : [];
+  const url = `/api/alerts?${q.toString()}`;
+  // Coalesce simultaneous identical pulls: the World Watch panel and the globe
+  // alerts overlay both request `active=1&limit=5000` and both re-fire on the
+  // same ALERTS_UPDATED beat — without this each pays the ~3s re-parse of every
+  // active alert. Shared in-flight only, so a later poll still refetches fresh.
+  return coalesce(url, async () => {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return [] as Alert[];
+    const body = await res.json();
+    return Array.isArray(body?.alerts) ? (body.alerts as Alert[]) : [];
+  });
 }
 
 /** Full alert doc as the detail page sees it (list shape + provenance extras). */

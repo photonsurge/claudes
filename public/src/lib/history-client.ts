@@ -37,6 +37,30 @@ export const HISTORY_VARIABLE_ORDER = [
   "radar",
 ];
 
+/**
+ * The charted on-air history variables — a client-safe mirror of shared
+ * BROADCAST_HISTORY_VARS (shared/src/weather/panels.ts, which can't be imported
+ * here: it pulls in ioredis via getQueue). The area-history FALLBACK clamps its
+ * per-variable fan-out to this set so a focus-bundle miss doesn't re-fetch the ~8
+ * niche archive layers the deck never charts (cin/dewpoint/pwat/sst100/feelslike…)
+ * — matching what the bundle bakes. Keep in sync with the shared source.
+ */
+export const BROADCAST_HISTORY_VARS: readonly string[] = [
+  "temp",
+  "humidity",
+  "wind",
+  "gust",
+  "rain",
+  "storm",
+  "pressure",
+  "cloud",
+  "snow",
+  "sst",
+  "current",
+  "salinity",
+  "wave",
+];
+
 /** Order archive variables for display: known ones first, leftovers A→Z. */
 export function orderHistoryVariables(variables: string[]): string[] {
   const known = HISTORY_VARIABLE_ORDER.filter((v) => variables.includes(v));
@@ -73,6 +97,7 @@ export function bboxForCamera(center: [number, number], zoom: number): [number, 
 function useArchiveSeries<T extends { series: unknown[] }>(
   key: string,
   urlFor: (variable: string) => string,
+  allow?: readonly string[],
 ): { byVar: Record<string, T>; loading: boolean } {
   const [state, setState] = useState<{ key: string; byVar: Record<string, T>; loading: boolean }>({
     key: "",
@@ -90,7 +115,10 @@ function useArchiveSeries<T extends { series: unknown[] }>(
 
     (async () => {
       const vres = await fetch("/api/weather/history/variables").then((r) => r.json()).catch(() => null);
-      const variables = orderHistoryVariables((vres?.variables as string[]) ?? []);
+      const discovered = orderHistoryVariables((vres?.variables as string[]) ?? []);
+      // Clamp the fan-out to the caller's allowlist (the broadcast charted set)
+      // when given, so a fallback doesn't sample niche layers the panel never shows.
+      const variables = allow ? discovered.filter((v) => allow.includes(v)) : discovered;
       if (cancelled || variables.length === 0) {
         if (!cancelled) setState({ key, byVar: {}, loading: false });
         return;
@@ -149,15 +177,20 @@ export function useAreaHistory(
 ): { series: AreaHistorySeries[]; loading: boolean } {
   const rounded = bbox ? bbox.map((v) => v.toFixed(1)) : null;
   const key = rounded ? `area|${rounded.join(",")}|${windowHours}` : "";
-  const { byVar, loading } = useArchiveSeries<AreaHistorySeries>(key, (variable) =>
-    `/api/weather/history/area?${new URLSearchParams({
-      west: rounded![0],
-      south: rounded![1],
-      east: rounded![2],
-      north: rounded![3],
-      variable,
-      from: fromParam(windowHours),
-    })}`,
+  const { byVar, loading } = useArchiveSeries<AreaHistorySeries>(
+    key,
+    (variable) =>
+      `/api/weather/history/area?${new URLSearchParams({
+        west: rounded![0],
+        south: rounded![1],
+        east: rounded![2],
+        north: rounded![3],
+        variable,
+        from: fromParam(windowHours),
+      })}`,
+    // Sole caller is the focus-bundle area-history FALLBACK; mirror the bundle's
+    // charted-var breadth so a miss doesn't fan out the full ~20-layer archive.
+    BROADCAST_HISTORY_VARS,
   );
   return { series: orderHistoryVariables(Object.keys(byVar)).map((v) => byVar[v]), loading };
 }

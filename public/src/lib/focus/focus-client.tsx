@@ -53,6 +53,16 @@ interface FocusContextValue {
   focusKey: string;
   enabled: boolean;
   loading: boolean;
+  /**
+   * True while the `/api/focus` call for the CURRENT focus key is still in flight
+   * (enabled, this key's fetch hasn't settled, and no bundle covers it yet).
+   * Selectors suppress their standalone fallback while this holds so a cut/page-
+   * load waits for the one consolidated call instead of racing the full per-panel
+   * fan-out. Cleared the instant the focus fetch settles — so a genuine
+   * miss/failure still falls back. Race-free: keyed on a settled-key, not the
+   * lagging `loading` flag, so it's already true on the enable-flip render.
+   */
+  awaitingFocus: boolean;
   // provider-derived, for the arg-less selectors
   regionId: string | null;
   ledeCenter: Center | null;
@@ -75,6 +85,7 @@ const NO_PROVIDER: FocusContextValue = {
   focusKey: "",
   enabled: true,
   loading: false,
+  awaitingFocus: false,
   regionId: null,
   ledeCenter: null,
   country: null,
@@ -87,6 +98,41 @@ const NO_PROVIDER: FocusContextValue = {
 
 const FocusContext = createContext<FocusContextValue>(NO_PROVIDER);
 export const useFocusContext = (): FocusContextValue => useContext(FocusContext);
+
+// ── Client-side bundle cache ────────────────────────────────────────────────
+// Hold the current + pre-warmed upcoming bundles in BROWSER memory so a director
+// cut is an instant covers() (zero network, zero flash), and so the first shot's
+// data is already resident before the globe finishes decoding. Bounded LRU (runs
+// 24/7): a few entries, oldest evicted. A stale entry still paints immediately
+// while a background refetch replaces it — never a blank cut.
+const BUNDLE_CACHE_MAX = 6;
+/** Under the server focus-cache TTL — a client hit fresher than this skips the
+ *  network entirely; older still paints instantly, then refetches to refresh. */
+const BUNDLE_FRESH_MS = 45_000;
+const bundleCache = new Map<string, FocusBundle>();
+
+function cacheGet(key: string): FocusBundle | undefined {
+  const b = bundleCache.get(key);
+  if (b) {
+    bundleCache.delete(key); // LRU bump to most-recent
+    bundleCache.set(key, b);
+  }
+  return b;
+}
+
+function cachePut(b: FocusBundle): void {
+  bundleCache.delete(b.key);
+  bundleCache.set(b.key, b);
+  while (bundleCache.size > BUNDLE_CACHE_MAX) {
+    const oldest = bundleCache.keys().next().value;
+    if (oldest === undefined) break;
+    bundleCache.delete(oldest);
+  }
+}
+
+function cacheFresh(b: FocusBundle | undefined): b is FocusBundle {
+  return b != null && Date.now() - b.generatedAt < BUNDLE_FRESH_MS;
+}
 
 // ── active-station cycling (the bundle carries only the station list) ─────────
 const EMPTY_SEISMO: SeismoStationReading[] = [];
@@ -148,11 +194,34 @@ export function FocusProvider({ onAirSegment, camera, enabled, upcoming, detail 
         ? (onAirSegment.camera.center ?? camera.center ?? null)
         : null;
 
-  const [bundle, setBundle] = useState<FocusBundle | null>(null);
+  // Seed from the client cache so a cut to an already-warmed shot covers() on the
+  // very first render (no loading tick, no fetch).
+  const [bundle, setBundle] = useState<FocusBundle | null>(() => cacheGet(focusKey) ?? null);
   const [loading, setLoading] = useState(false);
+  // The focus key whose /api/focus call has SETTLED (resolved or failed). Starts
+  // null so `awaitingFocus` is already true on the render the provider first
+  // enables — no one-render window for the fallback fan-out to escape.
+  const [settledKey, setSettledKey] = useState<string | null>(null);
+
+  // Fetch as soon as we know the on-air THING — do NOT wait for globe textures to
+  // decode (`enabled`/`ready`). The bundle is JSON every panel needs; gating it
+  // behind the multi-second texture warmup made /api/focus the LAST request of a
+  // page load, so panels sat empty until it finally ran. Firing on a concrete
+  // segment (and once ready for the null/global case) overlaps the compose with
+  // texture decode, so the bundle usually covers() by the time the globe reveals.
+  const canFetch = enabled || onAirSegment != null;
 
   useEffect(() => {
-    if (!enabled) {
+    if (!canFetch) {
+      setLoading(false);
+      return;
+    }
+    // Client-memory hit: paint the cached bundle immediately. If it's still fresh,
+    // skip the network entirely; if stale, keep painting it while we refetch.
+    const cached = cacheGet(focusKey);
+    if (cached) setBundle(cached);
+    if (cacheFresh(cached)) {
+      setSettledKey(focusKey);
       setLoading(false);
       return;
     }
@@ -171,12 +240,19 @@ export function FocusProvider({ onAirSegment, camera, enabled, upcoming, detail 
       .then((r) => (r.ok ? r.json() : null))
       .then((b: FocusBundle | null) => {
         if (alive) {
-          if (b) setBundle(b); // keep last bundle on a null/failed response
+          if (b) {
+            cachePut(b); // retain in client memory for instant re-cover on cut/reload
+            setBundle(b); // keep last bundle on a null/failed response
+          }
+          setSettledKey(focusKey); // this key's fetch is done — release the fallback gate
           setLoading(false);
         }
       })
       .catch((e) => {
-        if (alive && e?.name !== "AbortError") setLoading(false);
+        if (alive && e?.name !== "AbortError") {
+          setSettledKey(focusKey); // a failed fetch still releases the gate → live fallback
+          setLoading(false);
+        }
       });
     return () => {
       alive = false;
@@ -184,22 +260,30 @@ export function FocusProvider({ onAirSegment, camera, enabled, upcoming, detail 
     };
     // primitive deps only — sub-grid drift that rounds to the same key never refetches
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusKey, enabled]);
+  }, [focusKey, canFetch]);
 
   // ── Pre-warm the immediate-next cut ──────────────────────────────────────
-  // The (OBS) browser fires a background /api/focus for the director's next shot
-  // ~one hold before it airs, so the server composes + Redis-caches it and the
-  // post-cut fetch is a 6ms hit (zero-flash). O(1) memory: only the next shot,
-  // re-warmed whenever its key changes (well inside the 60s cache TTL). Best
-  // effort — a miss just falls back to a normal ~1.4s compose.
-  const next = enabled ? upcoming?.[0] : undefined;
+  // The (OBS) browser fetches the director's next shot ~one hold before it airs
+  // and STORES the bundle in the client cache — so when it airs the cut is an
+  // instant covers() with zero network (not just a 6ms server-Redis hit). Fires
+  // as soon as the shot is known (canFetch), overlapping the compose with texture
+  // decode. O(1) memory: only the next shot, re-warmed when its key changes.
+  // Best effort — a miss just falls back to a normal compose on air.
+  const next = canFetch ? upcoming?.[0] : undefined;
   const nextKey =
     next?.center && next.zoom != null
       ? buildFocusKey({ kind: next.kind, center: next.center, zoom: next.zoom, detail, subject: next.subject ?? null })
       : null;
+  // Serialize against the current compose: two focus composes at once thrash
+  // sharp/libvips decode on `public` (memory spike + ~3× wall-clock each — a
+  // concurrent pair once took 7.6s vs ~2.6s solo). Hold the pre-warm until THIS
+  // cut's bundle has settled, so at most one compose runs at a time.
+  const currentSettled = settledKey === focusKey;
   const warmedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!nextKey || nextKey === focusKey || nextKey === warmedRef.current) return;
+    if (!currentSettled) return; // current still composing — don't add a second
+    if (cacheFresh(cacheGet(nextKey))) return; // already resident + fresh — nothing to warm
     warmedRef.current = nextKey;
     const n = next!; // nextKey non-null ⇒ center + zoom present
     const ctrl = new AbortController();
@@ -211,12 +295,20 @@ export function FocusProvider({ onAirSegment, camera, enabled, upcoming, detail 
       detail,
     });
     if (n.subject) qs.set("subject", n.subject);
-    fetch(`/api/focus?${qs.toString()}`, { signal: ctrl.signal }).catch(() => {}); // fire-and-forget, fail-open
+    fetch(`/api/focus?${qs.toString()}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b: FocusBundle | null) => {
+        if (b) cachePut(b); // resident in browser memory before it airs
+      })
+      .catch(() => {}); // fail-open
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextKey]);
+  }, [nextKey, currentSettled]);
 
   const covers = () => bundle != null && bundle.key === focusKey;
+  // Hold every panel's standalone fallback while THIS focus key's consolidated
+  // call is still outstanding (enabled, not yet settled, not yet covered).
+  const awaitingFocus = enabled && !covers() && settledKey !== focusKey;
   const atFocus = (c: Center | null, dp = 2) =>
     covers() &&
     c != null &&
@@ -231,7 +323,7 @@ export function FocusProvider({ onAirSegment, camera, enabled, upcoming, detail 
   // Country resolution owned by the provider so the arg-less roundups have an id
   // and useCountryAt runs at most once (here).
   const bundleCountry = covers() ? bundle!.country : null;
-  const liveCountry = useCountryAt(!bundleCountry && enabled ? ledeCenter : null);
+  const liveCountry = useCountryAt(!bundleCountry && enabled && !awaitingFocus ? ledeCenter : null);
   const country = bundleCountry ?? liveCountry;
   const countryId = country?.countryId ?? null;
 
@@ -240,6 +332,7 @@ export function FocusProvider({ onAirSegment, camera, enabled, upcoming, detail 
     focusKey,
     enabled,
     loading,
+    awaitingFocus,
     regionId,
     ledeCenter,
     country,
@@ -261,40 +354,47 @@ export function usePointHistorySeries(
   center: Center | null,
   bbox?: Bbox | null,
 ): { series: HistorySeries[]; loading: boolean } {
-  const { bundle, enabled, atFocus } = useFocusContext();
+  const { bundle, enabled, awaitingFocus, atFocus } = useFocusContext();
   const wantPoint = !bbox; // point history is suppressed when a bbox is framed
   const cover = wantPoint && atFocus(center);
-  const skip = cover || !enabled || bbox ? null : center;
+  const skip = cover || !enabled || awaitingFocus || bbox ? null : center;
   const fb = usePointHistory(skip);
-  return cover ? { series: bundle!.pointHistory, loading: false } : fb;
+  if (cover) return { series: bundle!.pointHistory, loading: false };
+  if (bbox) return fb; // area mode: point history is intentionally empty here
+  // Hold the spinner until data is actually present — never drop to an empty
+  // not-loading state while the focus call or the fallback is still working.
+  return { series: fb.series, loading: awaitingFocus || fb.loading || (enabled && fb.series.length === 0) };
 }
 
 export function useAreaHistorySeries(bbox: Bbox | null): { series: AreaHistorySeries[]; loading: boolean } {
-  const { bundle, enabled, framesFocus } = useFocusContext();
+  const { bundle, enabled, awaitingFocus, framesFocus } = useFocusContext();
   const cover = framesFocus(bbox);
-  const fb = useAreaHistory(cover || !enabled ? null : bbox);
-  return cover ? { series: bundle!.areaHistory, loading: false } : fb;
+  const fb = useAreaHistory(cover || !enabled || awaitingFocus ? null : bbox);
+  if (cover) return { series: bundle!.areaHistory, loading: false };
+  return { series: fb.series, loading: awaitingFocus || fb.loading || (enabled && fb.series.length === 0) };
 }
 
 export function usePointForecastDays(center: Center | null): { days: ForecastDay[]; loading: boolean } {
-  const { bundle, enabled, atFocus } = useFocusContext();
+  const { bundle, enabled, awaitingFocus, atFocus } = useFocusContext();
   const cover = atFocus(center);
-  const fb = usePointForecast(cover || !enabled ? null : center);
-  return cover ? { days: bundle!.pointForecast, loading: false } : fb;
+  const fb = usePointForecast(cover || !enabled || awaitingFocus ? null : center);
+  if (cover) return { days: bundle!.pointForecast, loading: false };
+  return { days: fb.days, loading: awaitingFocus || fb.loading || (enabled && fb.days.length === 0) };
 }
 
 export function useAreaForecastDays(bbox: Bbox | null): { days: AreaForecastDay[]; loading: boolean } {
-  const { bundle, enabled, framesFocus } = useFocusContext();
+  const { bundle, enabled, awaitingFocus, framesFocus } = useFocusContext();
   const cover = framesFocus(bbox);
-  const fb = useAreaForecast(cover || !enabled ? null : bbox);
-  return cover ? { days: bundle!.areaForecast, loading: false } : fb;
+  const fb = useAreaForecast(cover || !enabled || awaitingFocus ? null : bbox);
+  if (cover) return { days: bundle!.areaForecast, loading: false };
+  return { days: fb.days, loading: awaitingFocus || fb.loading || (enabled && fb.days.length === 0) };
 }
 
 export function useClimateFor(
   center: Center | null,
   granularity: "weekly" | "monthly" = "monthly",
 ): { datasets: ClimateBucketedDataset[]; loading: boolean } {
-  const { bundle, enabled, atFocus, covers } = useFocusContext();
+  const { bundle, enabled, awaitingFocus, atFocus, covers } = useFocusContext();
   // bundle climate (focus point + baked cities) is MONTHLY only
   const focusHit = granularity === "monthly" && atFocus(center, 1);
   // baked city climate only from the CURRENT bundle (covers()) — a city sits off
@@ -304,10 +404,12 @@ export function useClimateFor(
       ? findCityClimate(bundle, center)
       : null;
   const cover = focusHit || cityHit != null;
-  const fb = useClimateYear(cover || !enabled ? null : center, granularity);
+  const fb = useClimateYear(cover || !enabled || awaitingFocus ? null : center, granularity);
   if (focusHit) return { datasets: bundle!.climate, loading: false };
   if (cityHit) return { datasets: cityHit, loading: false };
-  return fb;
+  // Climate is legitimately empty at remote points (no cached climate within
+  // range), so don't spin forever on empty — only while focus/fallback is working.
+  return { datasets: fb.datasets, loading: awaitingFocus || fb.loading };
 }
 
 function findCityClimate(bundle: FocusBundle, c: Center): ClimateBucketedDataset[] | null {
@@ -320,48 +422,48 @@ function findCityClimate(bundle: FocusBundle, c: Center): ClimateBucketedDataset
 }
 
 export function useSeismoStations(center: Center | null): SeismoGauge {
-  const { bundle, enabled, atFocus } = useFocusContext();
+  const { bundle, enabled, awaitingFocus, atFocus } = useFocusContext();
   const cover = atFocus(center);
-  const fb = useSeismoGauge(cover || !enabled ? null : center, enabled && !cover);
+  const fb = useSeismoGauge(cover || !enabled || awaitingFocus ? null : center, enabled && !cover && !awaitingFocus);
   const bundleActive = useCycledActive(cover ? bundle!.seismoStations : EMPTY_SEISMO);
   return cover ? { stations: bundle!.seismoStations, active: bundleActive } : fb;
 }
 
 export function useTideStations(center: Center | null): TideGauge {
-  const { bundle, enabled, atFocus } = useFocusContext();
+  const { bundle, enabled, awaitingFocus, atFocus } = useFocusContext();
   const cover = atFocus(center);
-  const fb = useTideGauge(cover || !enabled ? null : center, enabled && !cover);
+  const fb = useTideGauge(cover || !enabled || awaitingFocus ? null : center, enabled && !cover && !awaitingFocus);
   const bundleActive = useCycledActive(cover ? bundle!.tideStations : EMPTY_TIDE);
   return cover ? { stations: bundle!.tideStations, active: bundleActive } : fb;
 }
 
 export function useFocusCountry(center: Center | null): CountryAt | null {
-  const { country, ledeCenter, enabled } = useFocusContext();
+  const { country, ledeCenter, enabled, awaitingFocus } = useFocusContext();
   // areaInfo passes exactly ledeCenter → reuse the provider-resolved country.
   const sameAsLede =
     center != null &&
     ledeCenter != null &&
     center[0].toFixed(0) === ledeCenter[0].toFixed(0) &&
     center[1].toFixed(0) === ledeCenter[1].toFixed(0);
-  const fb = useCountryAt(sameAsLede || !enabled ? null : center);
+  const fb = useCountryAt(sameAsLede || !enabled || awaitingFocus ? null : center);
   return sameAsLede ? country : fb;
 }
 
 export function useFocusRegion(): iRegionModel | null {
-  const { bundle, enabled, regionId, covers } = useFocusContext();
-  const fb = useRegion(covers() || !enabled ? null : regionId);
+  const { bundle, enabled, awaitingFocus, regionId, covers } = useFocusContext();
+  const fb = useRegion(covers() || !enabled || awaitingFocus ? null : regionId);
   return covers() ? bundle!.region : fb;
 }
 
 export function useCountryRoundup(): PlaceRoundup | null {
-  const { bundle, enabled, countryId, covers } = useFocusContext();
-  const fb = useLatestPlaceRoundup("country", covers() || !enabled ? null : countryId);
+  const { bundle, enabled, awaitingFocus, countryId, covers } = useFocusContext();
+  const fb = useLatestPlaceRoundup("country", covers() || !enabled || awaitingFocus ? null : countryId);
   return covers() ? bundle!.countryRoundup : fb;
 }
 
 export function useRegionRoundup(): PlaceRoundup | null {
-  const { bundle, enabled, regionId, covers } = useFocusContext();
-  const fb = useLatestPlaceRoundup("region", covers() || !enabled ? null : regionId);
+  const { bundle, enabled, awaitingFocus, regionId, covers } = useFocusContext();
+  const fb = useLatestPlaceRoundup("region", covers() || !enabled || awaitingFocus ? null : regionId);
   return covers() ? bundle!.regionRoundup : fb;
 }
 
@@ -407,9 +509,9 @@ function useListCitiesInBbox(bbox: Bbox | null): City[] {
 }
 
 export function useTopCities(bbox: Bbox | null): City[] {
-  const { bundle, enabled, framesFocus } = useFocusContext();
+  const { bundle, enabled, awaitingFocus, framesFocus } = useFocusContext();
   const cover = framesFocus(bbox);
-  const fb = useListCitiesInBbox(cover || !enabled ? null : bbox);
+  const fb = useListCitiesInBbox(cover || !enabled || awaitingFocus ? null : bbox);
   return cover ? bundle!.topCities.map((c) => c.city) : fb;
 }
 

@@ -138,6 +138,12 @@ export function makeCamRepo(model: Model<iCamModel>) {
       return rows.map((doc: any) => ({ cam: toCam(strip(doc)), distanceKm: (doc.distanceM ?? 0) / 1000 }));
     },
 
+    /** Cams tagged with this volcano's `gvp:<vnum>` id (the volcano-detail read). */
+    async listForVolcano(volcanoId: string): Promise<Cam[]> {
+      const docs = await model.find({ tags: volcanoId }).sort({ fetchedAt: -1 }).lean().exec();
+      return docs.map((d) => toCam(strip(d)));
+    },
+
     /** A single cam by provider id, or null. */
     async getByCamId(camId: string): Promise<Cam | null> {
       const doc = await model.findOne({ camId }).lean().exec();

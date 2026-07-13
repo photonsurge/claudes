@@ -60,7 +60,7 @@ const CamSchema = new mongoose.Schema<iCamModel>(
     camId: { type: String, required: true, unique: true },
     provider: {
       type: String,
-      enum: ["windy", "tfl", "national_highways", "youtube", "manual", "other"],
+      enum: ["windy", "tfl", "national_highways", "youtube", "geonet", "manual", "other"],
       required: true,
       default: "manual",
     },
@@ -94,6 +94,8 @@ CamSchema.index({ camId: 1 }, { unique: true, name: "cam_id_ix" });
 // Admin list reads newest-first, filterable by status.
 CamSchema.index({ status: 1, fetchedAt: -1 }, { name: "cam_status_ix" });
 CamSchema.index({ loc: "2dsphere" }, { name: "cam_geo_ix", sparse: true });
+// "Cameras for this volcano" — tags carry the volcano's gvp:<vnum> id(s).
+CamSchema.index({ tags: 1 }, { name: "cam_tags_ix", sparse: true });
 
 export const getCamModel = (conn: Connection) =>
   getModel<iCamModel>(conn, "Cam", CamSchema);

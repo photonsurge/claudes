@@ -36,7 +36,7 @@ import type { iAreaWeatherReport } from "@photonsurge/shared/db/area-weather-rep
 import type { HistorySeries, AreaHistorySeries } from "../weather-history";
 import type { ForecastDay, AreaForecastDay, ForecastStep } from "../weather-forecast";
 import type { ClimateBucketedDataset } from "../history-client";
-import type { City, CityCondition } from "../cities";
+import type { City, CityCondition, CityConditionDay } from "../cities";
 import type { CountryAt } from "../countries";
 import type { SeismoStationReading } from "../seismo/types";
 import type { TideStationReading } from "../tides/types";
@@ -82,21 +82,42 @@ export interface FocusNearbyCity {
   climate: ClimateBucketedDataset[];
 }
 
-/** One of a region's biggest member countries with its own 72-hour forecast,
- *  sampled at its biggest in-region city — a region spotlight's per-country
- *  slide. Composed server-side (one worker forecast sample per country) so /watch
- *  never fans out per country at cut time. */
+/** One of a region's biggest cities (with its cached now + 3-day forecast) shown
+ *  on a country slide's city list. */
+export interface FocusRegionCity {
+  cityId: string;
+  name: string;
+  /** Current temperature (°C), from the CityWeather cache. */
+  temp?: number;
+  /** 3-day daily forecast (hi/lo/rain/gust), from the CityWeather cache. */
+  daily?: CityConditionDay[];
+}
+
+/** One of a region's biggest member countries with its own weather — a region
+ *  spotlight's per-country slide. Composed server-side (one worker forecast
+ *  sample per country + cache reads) so /watch never fans out per country at cut
+ *  time. */
 export interface FocusRegionCountry {
   /** ISO-3166 alpha-2, lowercase. */
   cc: string;
   name: string;
   population?: number;
-  /** The city the forecast was sampled at (biggest in-region city of the country). */
+  /** The city the point forecast was sampled at (biggest in-region city). */
   sampleName: string;
   lat: number;
   lng: number;
   /** 3-hourly today..+72h forecast track at the sample point (buildForecastSteps). */
   steps: ForecastStep[];
+  /** 3-day daily card strip at the sample point (buildForecastDays). */
+  days: ForecastDay[];
+  /** AI "state of the place right now" headline — the CountryRoundup's `summary`,
+   *  when the country has a round-up. Absent otherwise. */
+  summary?: string;
+  /** AI next-24h outlook — the CountryRoundup's per-city outlook for the sample
+   *  city (else its advice). Absent when the country has no round-up. */
+  outlook?: string;
+  /** The country's biggest in-region cities (up to ~4) with cached now + 3-day. */
+  cities: FocusRegionCity[];
 }
 
 /**

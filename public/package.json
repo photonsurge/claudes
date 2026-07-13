@@ -1,6 +1,6 @@
 {
   "name": "public",
-  "version": "0.1.52",
+  "version": "0.1.53",
   "private": true,
   "scripts": {
     "update-shared": "rm -rf .next/; yarn upgrade @photonsurge/shared",

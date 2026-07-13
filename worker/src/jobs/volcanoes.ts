@@ -4,6 +4,11 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import { fetchVolcanoes } from "@photonsurge/shared/volcanoes/gvp";
 import { fetchUsgsVolcanoStatus } from "@photonsurge/shared/volcanoes/usgs-geojson";
 import { fetchGeonetVal, type GeonetVolcano } from "@photonsurge/shared/volcanoes/geonet";
+import { fetchGvpCatalog, nearestGvp } from "@photonsurge/shared/volcanoes/gvp-catalog";
+import { fetchGeonetCams } from "@photonsurge/shared/volcanoes/geonet-cams";
+import type { NormalizedVolcanoLevel } from "@photonsurge/shared/volcanoes/diff";
+import type { VolcanoStatus } from "@photonsurge/shared/volcanoes/types";
+import type { Cam } from "@photonsurge/shared/cams/types";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import { diffVolcanoStatus } from "@photonsurge/shared/volcanoes/diff";
 import { volcanoTimelineUpdatesFromChanges } from "@photonsurge/shared/events/promote";
@@ -307,35 +312,14 @@ export async function snapshotUsgs(_job: Job) {
 
 // ── GeoNet (New Zealand) official Volcanic Alert Levels ─────────────────────
 
-/** Max distance for a GeoNet slug → cached GVP volcano coordinate crosswalk. */
+/** Max distance for a GeoNet slug → GVP catalog coordinate crosswalk. */
 const GEONET_MATCH_KM = 25;
 
-/**
- * Resolve a GeoNet volcano onto our canonical `gvp:<vnum>` id: first by a stored
- * source-link (never re-match), else — for an ELEVATED volcano only — by nearest
- * cached volcano within GEONET_MATCH_KM, persisting the link. Quiet, untracked
- * GeoNet volcanoes (no link, level 0) return null (nothing to record). Returns
- * null if it can't be resolved (e.g. a foreign volcano not in our GVP cache).
- */
-async function resolveGeonetVolcanoId(
-  db: AppDb,
-  g: GeonetVolcano,
-): Promise<string | null> {
-  const link = await db.volcanoSourceLinks.find("geonet", g.externalId);
-  if (link) return link.volcanoId;
-  if (!g.elevated) return null;
-  const near = await db.volcanoes.nearest({ lng: g.lng, lat: g.lat, maxKm: GEONET_MATCH_KM });
-  if (!near) return null;
-  await db.volcanoSourceLinks.upsert({
-    volcanoId: near.volcano.id,
-    source: "geonet",
-    externalId: g.externalId,
-    externalUrl: `https://www.geonet.org.nz/volcano/${g.externalId}`,
-    matchMethod: "coordinate",
-    matchScore: Math.max(0, 1 - near.distanceKm / GEONET_MATCH_KM),
-  });
-  log(TAG, `geonet crosswalk`, { slug: g.externalId, volcanoId: near.volcano.id, km: Math.round(near.distanceKm) });
-  return near.volcano.id;
+/** GeoNet normalized level → our coarse overlay status. */
+function statusForLevel(n: NormalizedVolcanoLevel): VolcanoStatus {
+  if (n === "eruption") return "erupting";
+  if (n === "watch" || n === "warning" || n === "unrest" || n === "advisory") return "unrest";
+  return "dormant";
 }
 
 /**
@@ -344,6 +328,12 @@ async function resolveGeonetVolcanoId(
  * (outranks the GVP weekly bulletin), kept in its own fields so the two schemes
  * don't overwrite each other. A level change lands a timeline beat via the shared
  * promote hook (behind EVENTS_UNIFIED_ENABLED).
+ *
+ * Crosswalk: a stored source-link resolves instantly (never re-match); a new
+ * ELEVATED volcano is matched against the WORLDWIDE GVP catalog (fetched once,
+ * only when needed) and a stub volcano doc is seeded — so an active NZ volcano
+ * that isn't in the weekly bulletin still gets tracked. Quiet, unlinked volcanoes
+ * (level 0) are ignored.
  */
 export async function snapshotGeonet(_job: Job) {
   const db = await getAppDb();
@@ -351,10 +341,48 @@ export async function snapshotGeonet(_job: Job) {
     const volcanoes = await fetchGeonetVal();
     const now = new Date();
     const resolved: { volcanoId: string; g: GeonetVolcano }[] = [];
+    const needCrosswalk: GeonetVolcano[] = [];
+
+    // Pass 1 — resolve by existing link; queue unlinked elevated ones for crosswalk.
     for (const g of volcanoes) {
-      const volcanoId = await resolveGeonetVolcanoId(db, g);
-      if (volcanoId) resolved.push({ volcanoId, g });
+      const link = await db.volcanoSourceLinks.find("geonet", g.externalId);
+      if (link) resolved.push({ volcanoId: link.volcanoId, g });
+      else if (g.elevated) needCrosswalk.push(g);
     }
+
+    // Pass 2 — crosswalk the unlinked elevated volcanoes against the GVP catalog
+    // (one fetch, only when there's something to resolve), seeding a stub + link.
+    if (needCrosswalk.length) {
+      const catalog = await fetchGvpCatalog();
+      for (const g of needCrosswalk) {
+        const match = nearestGvp(catalog, g.lng, g.lat, GEONET_MATCH_KM);
+        if (!match) {
+          log(TAG, `geonet crosswalk miss`, { slug: g.externalId });
+          continue;
+        }
+        const e = match.entry;
+        await db.volcanoes.upsertStub(e.volcanoId, {
+          name: e.name,
+          lat: e.lat,
+          lng: e.lng,
+          country: e.country,
+          status: statusForLevel(g.normalized),
+          sourceUrl: e.sourceUrl,
+          elevationM: e.elevationM,
+        });
+        await db.volcanoSourceLinks.upsert({
+          volcanoId: e.volcanoId,
+          source: "geonet",
+          externalId: g.externalId,
+          externalUrl: `https://www.geonet.org.nz/volcano/${g.externalId}`,
+          matchMethod: "coordinate",
+          matchScore: Math.max(0, 1 - match.distanceKm / GEONET_MATCH_KM),
+        });
+        log(TAG, `geonet crosswalk`, { slug: g.externalId, volcanoId: e.volcanoId, km: Math.round(match.distanceKm) });
+        resolved.push({ volcanoId: e.volcanoId, g });
+      }
+    }
+
     const ids = resolved.map((r) => r.volcanoId);
     const prev = eventsUnifiedEnabled() ? await db.volcanoes.listByIds(ids) : [];
     let updated = 0;
@@ -385,6 +413,81 @@ export async function snapshotGeonet(_job: Job) {
   } catch (err) {
     log(TAG, `geonet val snapshot failed`, summarizeForLog(err));
     blogErr(TAG, `geonet val snapshot failed`, err, "volcanoes", "snapshotGeonet");
+    throw err;
+  }
+}
+
+// ── GeoNet volcano cameras (official monitoring stills) ─────────────────────
+
+/** Max distance for a GeoNet camera → GVP catalog coordinate crosswalk. */
+const GEONET_CAM_MATCH_KM = 30;
+
+/**
+ * Dispatched as `volcanoes.ingestGeonetCams`. Pulls GeoNet's official volcano
+ * camera catalogue into the generic Cam collection (provider "geonet"), tagging
+ * each with the volcano's `gvp:<vnum>` id(s) so the detail page can list "cameras
+ * for this volcano". The slug→volcano crosswalk reuses the same source-links +
+ * GVP-catalog match as the status job. P2a stores the LIVE latest-image URL;
+ * on-disk frame capture + retention + timelapse is P2b.
+ */
+export async function ingestGeonetCams(_job: Job) {
+  const db = await getAppDb();
+  try {
+    const geonetCams = await fetchGeonetCams();
+    let catalog: Awaited<ReturnType<typeof fetchGvpCatalog>> | null = null;
+    const cams: Cam[] = [];
+    let associated = 0;
+    for (const gc of geonetCams) {
+      const gvpIds = new Set<string>();
+      for (const slug of gc.volcanoSlugs) {
+        const link = await db.volcanoSourceLinks.find("geonet", slug);
+        if (link) gvpIds.add(link.volcanoId);
+      }
+      // No existing link — catalog-match the camera's coords to the nearest
+      // volcano and seed the primary link so the camera associates immediately.
+      if (gvpIds.size === 0 && gc.volcanoSlugs.length) {
+        if (!catalog) catalog = await fetchGvpCatalog();
+        const match = nearestGvp(catalog, gc.lng, gc.lat, GEONET_CAM_MATCH_KM);
+        if (match) {
+          gvpIds.add(match.entry.volcanoId);
+          await db.volcanoSourceLinks.upsert({
+            volcanoId: match.entry.volcanoId,
+            source: "geonet",
+            externalId: gc.volcanoSlugs[0],
+            matchMethod: "coordinate",
+            matchScore: Math.max(0, 1 - match.distanceKm / GEONET_CAM_MATCH_KM),
+          });
+        }
+      }
+      if (gvpIds.size) associated++;
+      cams.push({
+        camId: `geonet-vol:${gc.cameraId}`,
+        provider: "geonet",
+        title: gc.title,
+        lat: gc.lat,
+        lng: gc.lng,
+        status: "active",
+        country: "New Zealand",
+        imageUrl: gc.imageUrl,
+        playerUrl: "https://www.geonet.org.nz/volcano/cameras",
+        tags: ["volcano", ...gc.volcanoSlugs.map((s) => `geonet:${s}`), ...gvpIds],
+        attribution: {
+          provider: "GeoNet / GNS Science",
+          requiredText: "GeoNet / GNS Science (CC BY 4.0)",
+          linkUrl: "https://www.geonet.org.nz/volcano/cameras",
+        },
+        fetchedAt: Date.now(),
+      });
+    }
+    const r = await db.cams.upsertMany(cams);
+    const result = { cameras: cams.length, associated, upserted: r.upserted };
+    log(TAG, `geonet cams ingest done`, result);
+    blogInfo(TAG, `geonet cams: ${cams.length} cameras, ${associated} volcano-linked`, result, "volcanoes", "ingestGeonetCams");
+    if (cams.length > 0) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: cams.length } });
+    return result;
+  } catch (err) {
+    log(TAG, `geonet cams ingest failed`, summarizeForLog(err));
+    blogErr(TAG, `geonet cams ingest failed`, err, "volcanoes", "ingestGeonetCams");
     throw err;
   }
 }

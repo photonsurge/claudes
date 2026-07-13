@@ -373,7 +373,7 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
   // region's overall biggest city for the NEXT 24H card. Composed HERE so the
   // region deck never fans out per country at cut time (empty off a region shot).
   const [regionCountries, regionNearTerm] = await Promise.all([
-    isRegion && region ? regionCountriesFor(region) : Promise.resolve([] as FocusRegionCountry[]),
+    isRegion && region ? regionCountriesFor(db, region) : Promise.resolve([] as FocusRegionCountry[]),
     isRegion && region ? regionNearTermFor(region) : Promise.resolve([] as FocusBundle["regionNearTerm"]),
   ]);
 
@@ -514,31 +514,84 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
 
 /** How many of a region's biggest member countries get a per-country slide. */
 const REGION_COUNTRY_LIMIT = 5;
+/** How many of each country's biggest cities show on its slide (with 3-day). */
+const REGION_COUNTRY_CITY_LIMIT = 4;
 /** Forecast track horizon for the region slides (the detailed 3-hourly window). */
 const REGION_STEP_HOURS = 72;
 
+/** The AI "day + hour" summaries for a country slide, pulled from its latest
+ *  CountryRoundup (opt-in; absent for most countries). `summary` = the "right
+ *  now" headline; `outlook` = the sampled city's next-24h line (else advice). */
+async function regionCountryRoundup(
+  db: Awaited<ReturnType<typeof getAppDb>>,
+  countryId: string | undefined,
+  sampleName: string,
+): Promise<{ summary?: string; outlook?: string }> {
+  if (!countryId) return {};
+  const ru = await db.countryRoundups.latestForPlace(countryId);
+  if (!ru) return {};
+  const outlook =
+    ru.cityOutlook?.find((o) => o.name === sampleName)?.outlook ??
+    ru.cityOutlook?.[0]?.outlook ??
+    ru.advice ??
+    undefined;
+  return { summary: ru.summary || undefined, outlook: outlook || undefined };
+}
+
 /** The region's biggest member countries (population-ranked from the enriched
- *  dossier), each with a 72h forecast sampled at its biggest in-region city.
- *  Countries with no sampleable city in the dossier are dropped. */
-async function regionCountriesFor(region: iRegionModel): Promise<FocusRegionCountry[]> {
+ *  dossier), each with its own weather: a 72h forecast + 3-day cards sampled at
+ *  its biggest in-region city, the AI round-up day/hour summaries when the
+ *  country has one, and its biggest cities' cached now + 3-day. Countries with no
+ *  sampleable city in the dossier are dropped. */
+async function regionCountriesFor(
+  db: Awaited<ReturnType<typeof getAppDb>>,
+  region: iRegionModel,
+): Promise<FocusRegionCountry[]> {
   const cities = region.topCities ?? [];
   const top = [...(region.countries ?? [])]
     .sort((a, b) => (b.population ?? 0) - (a.population ?? 0))
     .slice(0, REGION_COUNTRY_LIMIT);
+  // Resolve each member country's countryId (for its round-up) from the cached
+  // catalog, keyed by ISO-2.
+  const catalog = await getCachedCountries(db);
+  const countryIdByIso = new Map<string, string>();
+  for (const c of catalog) if (c.iso2) countryIdByIso.set(c.iso2.toLowerCase(), c.countryId);
+
   const built = await Promise.all(
     top.map(async (c): Promise<FocusRegionCountry | null> => {
       const cc = c.cc?.toLowerCase();
-      const sample = cities
+      const inCountry = cities
         .filter((ci) => cc && ci.cc && ci.cc.toLowerCase() === cc)
-        .sort((a, b) => (b.population ?? 0) - (a.population ?? 0))[0];
+        .sort((a, b) => (b.population ?? 0) - (a.population ?? 0));
+      const sample = inCountry[0];
       if (!sample) return null;
-      const series = await workerForecastPoint({
-        lat: sample.lat,
-        lng: sample.lng,
-        variables: FORECAST_VARIABLES,
-        maxHours: REGION_STEP_HOURS,
-      });
-      const { steps } = await buildForecastSteps(series, sample.lat, sample.lng);
+
+      const cityIds = inCountry
+        .slice(0, REGION_COUNTRY_CITY_LIMIT)
+        .map((ci) => ci.cityId)
+        .filter((id): id is string => !!id);
+
+      const [series, roundup, cityRows] = await Promise.all([
+        workerForecastPoint({
+          lat: sample.lat,
+          lng: sample.lng,
+          variables: FORECAST_VARIABLES,
+          maxHours: REGION_STEP_HOURS,
+        }),
+        regionCountryRoundup(db, cc ? countryIdByIso.get(cc) : undefined, sample.name),
+        cityIds.length ? db.cityWeather.manyByCityIds(cityIds) : Promise.resolve([]),
+      ]);
+      const [{ steps }, days] = await Promise.all([
+        buildForecastSteps(series, sample.lat, sample.lng),
+        buildForecastDays(series, sample.lat, sample.lng),
+      ]);
+      // Keep the city list in population order (manyByCityIds doesn't preserve it).
+      const byId = new Map(cityRows.map((r) => [r.cityId, r]));
+      const regionCities = cityIds
+        .map((id) => byId.get(id))
+        .filter((r): r is NonNullable<typeof r> => r != null)
+        .map((r) => ({ cityId: r.cityId, name: r.name, temp: r.current?.temp, daily: r.daily }));
+
       return {
         cc: (c.cc ?? "").toLowerCase(),
         name: c.name,
@@ -547,6 +600,10 @@ async function regionCountriesFor(region: iRegionModel): Promise<FocusRegionCoun
         lat: sample.lat,
         lng: sample.lng,
         steps,
+        days: days.days,
+        summary: roundup.summary,
+        outlook: roundup.outlook,
+        cities: regionCities,
       };
     }),
   );

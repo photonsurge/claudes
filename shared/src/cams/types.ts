@@ -16,6 +16,7 @@ export type CamProvider =
   | "tfl"
   | "national_highways"
   | "youtube"
+  | "geonet"
   | "manual"
   | "other";
 

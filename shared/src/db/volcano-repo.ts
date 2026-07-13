@@ -130,31 +130,6 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
     },
 
     /**
-     * The nearest cached volcano to a point within `maxKm`, or null — the
-     * coordinate crosswalk used to resolve an external source's volcano (e.g. a
-     * GeoNet slug) onto our canonical `gvp:` doc. Uses the 2dsphere `loc` index
-     * ($near returns nearest-first). Only matches volcanoes ALREADY cached (in a
-     * recent bulletin / elevated) — a fully-quiet foreign volcano won't resolve.
-     */
-    async nearest(opts: { lng: number; lat: number; maxKm: number }): Promise<{ volcano: Volcano; distanceKm: number } | null> {
-      const rows: any[] = await model
-        .aggregate([
-          {
-            $geoNear: {
-              near: { type: "Point", coordinates: [opts.lng, opts.lat] },
-              distanceField: "distanceM",
-              maxDistance: opts.maxKm * 1000,
-              spherical: true,
-            },
-          },
-          { $limit: 1 },
-        ])
-        .exec();
-      if (!rows.length) return null;
-      return { volcano: strip(rows[0]), distanceKm: (rows[0].distanceM ?? 0) / 1000 };
-    },
-
-    /**
      * The currently-stored docs for a set of source ids, in one `$in` read.
      * Used as the PREV capture before `upsertMany` overwrites them, so the
      * volcano-timeline hook can diff prev-vs-persisted (see
@@ -301,6 +276,44 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
       if (opts.keepAlive) set.fetchedAt = new Date();
       const res = await model.updateOne({ volcanoId }, { $set: set }).exec();
       return (res.matchedCount ?? 0) > 0;
+    },
+
+    /**
+     * Ensure a volcano doc exists for `volcanoId`, creating a bare stub from the
+     * GVP catalog if it isn't already tracked (a foreign volcano that an external
+     * source, e.g. GeoNet, reports as active but that isn't in the weekly GVP
+     * bulletin). Never clobbers an existing doc's GVP-owned fields — identity +
+     * initial status are `$setOnInsert` only; always bumps `fetchedAt` so it
+     * stays alive while the external source keeps it elevated.
+     */
+    async upsertStub(
+      volcanoId: string,
+      stub: { name: string; lat: number; lng: number; country?: string; status: VolcanoStatus; sourceUrl?: string; elevationM?: number },
+    ): Promise<void> {
+      const now = new Date();
+      await model
+        .updateOne(
+          { volcanoId },
+          {
+            $set: { fetchedAt: now },
+            $setOnInsert: {
+              id: uuidv4(),
+              name: stub.name,
+              country: stub.country,
+              lat: stub.lat,
+              lng: stub.lng,
+              status: stub.status,
+              firstDate: now,
+              lastDate: now,
+              statusChangedAt: now,
+              sourceUrl: stub.sourceUrl,
+              elevationM: stub.elevationM,
+              loc: { type: "Point" as const, coordinates: [stub.lng, stub.lat] as [number, number] },
+            },
+          },
+          { upsert: true },
+        )
+        .exec();
     },
   };
 }
