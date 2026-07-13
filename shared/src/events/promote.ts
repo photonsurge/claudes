@@ -115,7 +115,14 @@ export function volcanoLabelFor(c: VolcanoChange): string {
   const from = c.from ?? "";
   switch (c.type) {
     case "ALERT_LEVEL_CHANGED": {
-      const scheme = c.scheme === "USGS_VOLCANO_ALERT_LEVEL" ? "USGS alert" : "Activity level";
+      const scheme =
+        c.scheme === "USGS_VOLCANO_ALERT_LEVEL"
+          ? "USGS alert"
+          : c.scheme === "GEONET_VAL"
+            ? "GeoNet VAL"
+            : c.scheme === "GVP"
+              ? "Activity level"
+              : "Alert level";
       return from ? `${scheme}: ${from} → ${to}` : `${scheme}: ${to}`;
     }
     case "AVIATION_COLOR_CHANGED":

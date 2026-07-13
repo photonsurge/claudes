@@ -49,3 +49,28 @@ export function simplifyRing(ring: Point[], toleranceDeg: number): Point[] {
   const simplified = douglasPeucker(ring, toleranceDeg);
   return simplified.length >= 4 ? simplified : ring;
 }
+
+/**
+ * Simplify every ring of a Polygon/MultiPolygon to `toleranceDeg`; Point and
+ * other geometry types pass through untouched. Returns a NEW geometry (does not
+ * mutate the input). Used to shrink the alert map-overlay feed: whole-ocean
+ * WMO/marine warnings arrive as 40,000-vertex rings that the globe draws as a
+ * blob — keeping full precision made the cached `/api/alerts` payload hundreds of
+ * MB, and every poll re-parsed it into a fresh copy until public OOM'd. A coarse
+ * tolerance (~0.05° ≈ 5 km) is invisible at globe zoom and cuts vertices ~100×.
+ */
+export function simplifyGeometry<G extends { type?: string; coordinates?: unknown } | null | undefined>(
+  geometry: G,
+  toleranceDeg: number,
+): G {
+  if (!geometry || geometry.coordinates == null) return geometry;
+  if (geometry.type === "Polygon") {
+    const rings = geometry.coordinates as Point[][];
+    return { ...geometry, coordinates: rings.map((r) => simplifyRing(r, toleranceDeg)) };
+  }
+  if (geometry.type === "MultiPolygon") {
+    const polys = geometry.coordinates as Point[][][];
+    return { ...geometry, coordinates: polys.map((p) => p.map((r) => simplifyRing(r, toleranceDeg))) };
+  }
+  return geometry;
+}

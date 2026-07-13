@@ -47,6 +47,19 @@ export interface iVolcano extends iGeneralModel {
   usgsNoticeSynopsis?: string;
   usgsNoticeUrl?: string;
   usgsUpdatedAt?: Date;
+  /**
+   * Official observatory status from a source OTHER than USGS (e.g. GeoNet's
+   * Volcanic Alert Level) — kept separate from the GVP-derived `status` so the
+   * two schemes don't overwrite each other on alternating polls. Raw value is
+   * preserved (national schemes aren't equivalent); normalized is for scoring.
+   * Official > GVP-weekly by the source-priority rule.
+   */
+  officialSource?: string;
+  officialAlertScheme?: string;
+  officialAlertLevelRaw?: string;
+  officialAlertLevelNormalized?: string;
+  officialActivity?: string;
+  officialUpdatedAt?: Date;
   reportVei?: number;
   reportPlumeHeightM?: number;
   reportParsedAt?: Date;
@@ -91,6 +104,12 @@ const VolcanoSchema = new mongoose.Schema<iVolcanoModel>(
     usgsNoticeSynopsis: { type: String, required: false },
     usgsNoticeUrl: { type: String, required: false },
     usgsUpdatedAt: { type: Date, required: false },
+    officialSource: { type: String, required: false },
+    officialAlertScheme: { type: String, required: false },
+    officialAlertLevelRaw: { type: String, required: false },
+    officialAlertLevelNormalized: { type: String, required: false },
+    officialActivity: { type: String, required: false },
+    officialUpdatedAt: { type: Date, required: false },
     reportVei: { type: Number, required: false },
     reportPlumeHeightM: { type: Number, required: false },
     reportParsedAt: { type: Date, required: false },

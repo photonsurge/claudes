@@ -398,10 +398,19 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   {
     id: "volcanoes-snapshot-usgs",
     label: "Refresh USGS volcano alerts",
-    description: "Re-pull the USGS Volcano Notification Service elevated-status feed (US-monitored volcanoes only).",
+    description: "Re-pull the USGS VHP status GeoJSON (all US-monitored volcanoes; catches de-escalations to NORMAL).",
     domain: "volcanoes",
     type: "volcanoes",
     event: "snapshotUsgs",
+    group: "Volcanoes",
+  },
+  {
+    id: "volcanoes-snapshot-geonet",
+    label: "Refresh GeoNet volcano alerts",
+    description: "Re-pull GeoNet's official NZ Volcanic Alert Levels and crosswalk them onto our volcanoes.",
+    domain: "volcanoes",
+    type: "volcanoes",
+    event: "snapshotGeonet",
     group: "Volcanoes",
   },
   {

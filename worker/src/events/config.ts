@@ -39,10 +39,13 @@ const VOLCANO_AVIATION = new Set(["ORANGE", "RED"]);
  * ORANGE/RED. Dormant/cessation entries don't spawn a dossier.
  */
 export function shouldPromoteVolcano(
-  v: Pick<Volcano, "status" | "usgsAlertLevel" | "usgsColorCode">,
+  v: Pick<Volcano, "status" | "usgsAlertLevel" | "usgsColorCode" | "officialAlertLevelNormalized">,
 ): boolean {
   if (v.status === "erupting" || v.status === "unrest") return true;
   if (v.usgsAlertLevel && VOLCANO_ALERT_LEVELS.has(v.usgsAlertLevel.toUpperCase())) return true;
   if (v.usgsColorCode && VOLCANO_AVIATION.has(v.usgsColorCode.toUpperCase())) return true;
+  // Any official observatory level above background (e.g. GeoNet VAL ≥ 1).
+  const off = v.officialAlertLevelNormalized;
+  if (off && off !== "normal" && off !== "unknown") return true;
   return false;
 }

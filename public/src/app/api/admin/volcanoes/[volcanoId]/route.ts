@@ -2,27 +2,12 @@ import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { buildEventTimeline } from "@photonsurge/shared/events/event-timeline";
+import { normalizeVolcanoId } from "../../../../../lib/volcano-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const NO_CACHE = { "Cache-Control": "no-store" };
-
-/**
- * URL-safe volcano id: routes carry the bare VOTW number (`264180`) to keep the
- * `gvp:` colon out of the path (a `%3A`-encoded colon mis-round-trips through the
- * route param). Reconstruct `gvp:<vnum>`; also tolerate a full/encoded id so old
- * links still resolve.
- */
-export function normalizeVolcanoId(raw: string): string {
-  let s = raw;
-  try {
-    s = decodeURIComponent(raw);
-  } catch {
-    /* raw wasn't percent-encoded — use as-is */
-  }
-  return s.startsWith("gvp:") ? s : `gvp:${s}`;
-}
 
 /**
  * GET /api/admin/volcanoes/:volcanoId — the full dossier for one volcano: its

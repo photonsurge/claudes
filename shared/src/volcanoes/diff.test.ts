@@ -5,6 +5,8 @@ function make(o: Partial<DiffableVolcano> = {}): DiffableVolcano {
     status: o.status ?? "unrest",
     usgsAlertLevel: o.usgsAlertLevel,
     usgsColorCode: o.usgsColorCode,
+    officialAlertScheme: o.officialAlertScheme,
+    officialAlertLevelRaw: o.officialAlertLevelRaw,
     reportVei: o.reportVei,
     reportPlumeHeightM: o.reportPlumeHeightM,
     latestReport: o.latestReport ?? "Steady low-level activity continues.",
@@ -43,6 +45,14 @@ describe("diffVolcanoStatus", () => {
   it("detects an aviation colour-code change", () => {
     const d = diffVolcanoStatus(make({ usgsColorCode: "ORANGE" }), make({ usgsColorCode: "RED" }));
     expect(d).toEqual([{ type: "AVIATION_COLOR_CHANGED", scheme: "USGS_AVIATION", from: "ORANGE", to: "RED" }]);
+  });
+
+  it("detects an official (GeoNet) alert-level change carrying its scheme", () => {
+    const prev = make({ officialAlertScheme: "GEONET_VAL", officialAlertLevelRaw: "1" });
+    const next = make({ officialAlertScheme: "GEONET_VAL", officialAlertLevelRaw: "2" });
+    expect(diffVolcanoStatus(prev, next)).toEqual([
+      { type: "ALERT_LEVEL_CHANGED", scheme: "GEONET_VAL", from: "1", to: "2" },
+    ]);
   });
 
   it("detects an activity/bulletin-text change", () => {

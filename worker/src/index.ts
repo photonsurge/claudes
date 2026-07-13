@@ -694,6 +694,28 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable volcanoes.snapshotGeonet (official NZ Volcanic Alert Levels) ----
+  // Disable with VOLCANO_GEONET_ENABLED=false.
+  if (process.env.VOLCANO_GEONET_ENABLED !== "false") {
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "volcanoes", type: "volcanoes", event: "snapshotGeonet", data: {} },
+        {
+          repeat: {
+            every: Number(process.env.VOLCANO_GEONET_MS || 15 * 60_000),
+            immediately: true,
+            offset: staggerOffset("volcanoes-snapshot-geonet", Number(process.env.VOLCANO_GEONET_MS || 15 * 60_000)),
+          },
+          jobId: "volcanoes-snapshot-geonet",
+        },
+      );
+      log(TAG, `registered repeatable volcanoes.snapshotGeonet`);
+    } catch (err) {
+      log(TAG, `failed to register volcanoes.snapshotGeonet`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable geomag.refresh (IGRF total-intensity field → baked scalar PNG) ----
   // The geomagnetic field drifts only slowly (secular variation), so re-bake weekly
   // by default. A fixed jobId de-dups across restarts; `immediately` seeds the cache

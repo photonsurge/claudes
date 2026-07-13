@@ -65,6 +65,17 @@ export interface Volcano {
   usgsNoticeSynopsis?: string;
   usgsNoticeUrl?: string;
   usgsUpdatedAt?: number;
+  /**
+   * Official observatory status from a non-USGS source (e.g. GeoNet Volcanic
+   * Alert Level) — kept separate from GVP-derived `status`. Raw value preserved;
+   * normalized (`normal|advisory|watch|warning|unrest|eruption|unknown`) for scoring.
+   */
+  officialSource?: string;
+  officialAlertScheme?: string;
+  officialAlertLevelRaw?: string;
+  officialAlertLevelNormalized?: string;
+  officialActivity?: string;
+  officialUpdatedAt?: number;
   /** LLM-parsed facts from this week's `latestReport` text (see worker/src/volcanoes/parseReport.ts). */
   reportVei?: number;
   reportPlumeHeightM?: number;

@@ -1,4 +1,4 @@
-import { simplifyRing, type Point } from "./simplify";
+import { simplifyRing, simplifyGeometry, type Point } from "./simplify";
 
 describe("simplifyRing", () => {
   it("collapses near-collinear points on a straight edge", () => {
@@ -55,5 +55,35 @@ describe("simplifyRing", () => {
     const out = simplifyRing(ring, 0.5);
     expect(out).toContainEqual([10, 0]);
     expect(out).toContainEqual([10, 10]);
+  });
+});
+
+describe("simplifyGeometry", () => {
+  // A dense edge (11 near-collinear points) that Douglas–Peucker should collapse.
+  const denseRing: Point[] = Array.from({ length: 11 }, (_, i) => [i, i % 2 ? 0.0005 : -0.0005] as Point)
+    .concat([[10, 5], [0, 5], [0, -0.0005]]);
+
+  it("simplifies every ring of a Polygon (fewer vertices, new object)", () => {
+    const geom = { type: "Polygon", coordinates: [denseRing] };
+    const out = simplifyGeometry(geom, 0.01);
+    expect(out.coordinates[0].length).toBeLessThan(denseRing.length);
+    expect(out).not.toBe(geom); // new object, input not mutated
+    expect(geom.coordinates[0].length).toBe(denseRing.length);
+  });
+
+  it("simplifies every ring of a MultiPolygon", () => {
+    const geom = { type: "MultiPolygon", coordinates: [[denseRing], [denseRing]] };
+    const out = simplifyGeometry(geom, 0.01);
+    expect(out.coordinates[0][0].length).toBeLessThan(denseRing.length);
+    expect(out.coordinates[1][0].length).toBeLessThan(denseRing.length);
+  });
+
+  it("passes non-polygon / empty geometry through untouched", () => {
+    const pt = { type: "Point", coordinates: [1, 2] };
+    expect(simplifyGeometry(pt, 0.01)).toBe(pt);
+    expect(simplifyGeometry(null, 0.01)).toBeNull();
+    expect(simplifyGeometry({ type: "Polygon" } as { type: string; coordinates?: unknown }, 0.01)).toEqual({
+      type: "Polygon",
+    });
   });
 });

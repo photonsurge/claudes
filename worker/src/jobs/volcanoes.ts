@@ -3,6 +3,7 @@ import type { AppDb } from "@photonsurge/shared/db/index";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { fetchVolcanoes } from "@photonsurge/shared/volcanoes/gvp";
 import { fetchUsgsVolcanoStatus } from "@photonsurge/shared/volcanoes/usgs-geojson";
+import { fetchGeonetVal, type GeonetVolcano } from "@photonsurge/shared/volcanoes/geonet";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import { diffVolcanoStatus } from "@photonsurge/shared/volcanoes/diff";
 import { volcanoTimelineUpdatesFromChanges } from "@photonsurge/shared/events/promote";
@@ -300,6 +301,90 @@ export async function snapshotUsgs(_job: Job) {
   } catch (err) {
     log(TAG, `usgs status snapshot failed`, summarizeForLog(err));
     blogErr(TAG, `usgs status snapshot failed`, err, "volcanoes", "snapshotUsgs");
+    throw err;
+  }
+}
+
+// ── GeoNet (New Zealand) official Volcanic Alert Levels ─────────────────────
+
+/** Max distance for a GeoNet slug → cached GVP volcano coordinate crosswalk. */
+const GEONET_MATCH_KM = 25;
+
+/**
+ * Resolve a GeoNet volcano onto our canonical `gvp:<vnum>` id: first by a stored
+ * source-link (never re-match), else — for an ELEVATED volcano only — by nearest
+ * cached volcano within GEONET_MATCH_KM, persisting the link. Quiet, untracked
+ * GeoNet volcanoes (no link, level 0) return null (nothing to record). Returns
+ * null if it can't be resolved (e.g. a foreign volcano not in our GVP cache).
+ */
+async function resolveGeonetVolcanoId(
+  db: AppDb,
+  g: GeonetVolcano,
+): Promise<string | null> {
+  const link = await db.volcanoSourceLinks.find("geonet", g.externalId);
+  if (link) return link.volcanoId;
+  if (!g.elevated) return null;
+  const near = await db.volcanoes.nearest({ lng: g.lng, lat: g.lat, maxKm: GEONET_MATCH_KM });
+  if (!near) return null;
+  await db.volcanoSourceLinks.upsert({
+    volcanoId: near.volcano.id,
+    source: "geonet",
+    externalId: g.externalId,
+    externalUrl: `https://www.geonet.org.nz/volcano/${g.externalId}`,
+    matchMethod: "coordinate",
+    matchScore: Math.max(0, 1 - near.distanceKm / GEONET_MATCH_KM),
+  });
+  log(TAG, `geonet crosswalk`, { slug: g.externalId, volcanoId: near.volcano.id, km: Math.round(near.distanceKm) });
+  return near.volcano.id;
+}
+
+/**
+ * Dispatched as `volcanoes.snapshotGeonet`. Pulls GeoNet's official NZ Volcanic
+ * Alert Levels and writes them onto the crosswalked volcano as OFFICIAL status
+ * (outranks the GVP weekly bulletin), kept in its own fields so the two schemes
+ * don't overwrite each other. A level change lands a timeline beat via the shared
+ * promote hook (behind EVENTS_UNIFIED_ENABLED).
+ */
+export async function snapshotGeonet(_job: Job) {
+  const db = await getAppDb();
+  try {
+    const volcanoes = await fetchGeonetVal();
+    const now = new Date();
+    const resolved: { volcanoId: string; g: GeonetVolcano }[] = [];
+    for (const g of volcanoes) {
+      const volcanoId = await resolveGeonetVolcanoId(db, g);
+      if (volcanoId) resolved.push({ volcanoId, g });
+    }
+    const ids = resolved.map((r) => r.volcanoId);
+    const prev = eventsUnifiedEnabled() ? await db.volcanoes.listByIds(ids) : [];
+    let updated = 0;
+    for (const { volcanoId, g } of resolved) {
+      const ok = await db.volcanoes.updateOfficialStatus(
+        volcanoId,
+        {
+          officialSource: "geonet",
+          officialAlertScheme: "GEONET_VAL",
+          officialAlertLevelRaw: g.levelRaw,
+          officialAlertLevelNormalized: g.normalized,
+          officialActivity: g.activity || undefined,
+          officialUpdatedAt: now,
+        },
+        { keepAlive: g.elevated },
+      );
+      if (ok) updated++;
+    }
+    if (eventsUnifiedEnabled()) {
+      const next = await db.volcanoes.listByIds(ids);
+      await promoteVolcanoStatus(db, prev, next, "geonet");
+    }
+    const result = { volcanoes: volcanoes.length, resolved: resolved.length, updated };
+    log(TAG, `geonet val snapshot done`, result);
+    blogInfo(TAG, `geonet val snapshot: ${resolved.length} resolved, ${updated} updated`, result, "volcanoes", "snapshotGeonet");
+    if (updated > 0) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: updated } });
+    return result;
+  } catch (err) {
+    log(TAG, `geonet val snapshot failed`, summarizeForLog(err));
+    blogErr(TAG, `geonet val snapshot failed`, err, "volcanoes", "snapshotGeonet");
     throw err;
   }
 }

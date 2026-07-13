@@ -30,6 +30,12 @@ const strip = (doc: any): Volcano => ({
   usgsNoticeSynopsis: doc.usgsNoticeSynopsis || undefined,
   usgsNoticeUrl: doc.usgsNoticeUrl || undefined,
   usgsUpdatedAt: doc.usgsUpdatedAt ? new Date(doc.usgsUpdatedAt).getTime() : undefined,
+  officialSource: doc.officialSource || undefined,
+  officialAlertScheme: doc.officialAlertScheme || undefined,
+  officialAlertLevelRaw: doc.officialAlertLevelRaw || undefined,
+  officialAlertLevelNormalized: doc.officialAlertLevelNormalized || undefined,
+  officialActivity: doc.officialActivity || undefined,
+  officialUpdatedAt: doc.officialUpdatedAt ? new Date(doc.officialUpdatedAt).getTime() : undefined,
   reportVei: doc.reportVei ?? undefined,
   reportPlumeHeightM: doc.reportPlumeHeightM ?? undefined,
   reportParsedAt: doc.reportParsedAt ? new Date(doc.reportParsedAt).getTime() : undefined,
@@ -121,6 +127,31 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
     async get(volcanoId: string): Promise<Volcano | null> {
       const doc = await model.findOne({ volcanoId }).lean().exec();
       return doc ? strip(doc) : null;
+    },
+
+    /**
+     * The nearest cached volcano to a point within `maxKm`, or null — the
+     * coordinate crosswalk used to resolve an external source's volcano (e.g. a
+     * GeoNet slug) onto our canonical `gvp:` doc. Uses the 2dsphere `loc` index
+     * ($near returns nearest-first). Only matches volcanoes ALREADY cached (in a
+     * recent bulletin / elevated) — a fully-quiet foreign volcano won't resolve.
+     */
+    async nearest(opts: { lng: number; lat: number; maxKm: number }): Promise<{ volcano: Volcano; distanceKm: number } | null> {
+      const rows: any[] = await model
+        .aggregate([
+          {
+            $geoNear: {
+              near: { type: "Point", coordinates: [opts.lng, opts.lat] },
+              distanceField: "distanceM",
+              maxDistance: opts.maxKm * 1000,
+              spherical: true,
+            },
+          },
+          { $limit: 1 },
+        ])
+        .exec();
+      if (!rows.length) return null;
+      return { volcano: strip(rows[0]), distanceKm: (rows[0].distanceM ?? 0) / 1000 };
     },
 
     /**
@@ -244,6 +275,31 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
       },
     ): Promise<boolean> {
       const res = await model.updateOne({ volcanoId }, { $set: patch }).exec();
+      return (res.matchedCount ?? 0) > 0;
+    },
+
+    /**
+     * Patch official (non-USGS) observatory status onto a volcano we already
+     * track — no upsert (the crosswalk resolves against cached volcanoes, so it
+     * exists). `keepAlive` bumps `fetchedAt` for a currently-elevated volcano so
+     * it doesn't age out of the TTL; omit it for a downgrade so a quieting
+     * volcano lapses via the GVP-bulletin TTL. Returns whether a doc matched.
+     */
+    async updateOfficialStatus(
+      volcanoId: string,
+      patch: {
+        officialSource: string;
+        officialAlertScheme: string;
+        officialAlertLevelRaw: string;
+        officialAlertLevelNormalized: string;
+        officialActivity?: string;
+        officialUpdatedAt: Date;
+      },
+      opts: { keepAlive?: boolean } = {},
+    ): Promise<boolean> {
+      const set: Record<string, unknown> = { ...patch };
+      if (opts.keepAlive) set.fetchedAt = new Date();
+      const res = await model.updateOne({ volcanoId }, { $set: set }).exec();
       return (res.matchedCount ?? 0) > 0;
     },
   };

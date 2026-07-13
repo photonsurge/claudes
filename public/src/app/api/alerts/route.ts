@@ -3,7 +3,14 @@ import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { groupAlerts } from "../../../lib/alertGroups";
 import { withCache, FEED_TTL_SEC } from "../../../lib/focus/focus-cache";
+import { simplifyGeometry } from "@photonsurge/shared/geo/simplify";
 import type { Alert } from "../../../lib/alerts";
+
+/** Overlay polygons are drawn on a globe — a whole-ocean warning's 40k-vertex
+ *  ring is a blob at that zoom. Simplifying to ~0.05° (~5 km) cuts vertices ~100×,
+ *  shrinking the cached feed from hundreds of MB to a few, so every poll no longer
+ *  re-parses a giant payload (the public OOM). Tune with ALERT_SIMPLIFY_DEG. */
+const ALERT_SIMPLIFY_DEG = Number(process.env.ALERT_SIMPLIFY_DEG || 0.05);
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +58,22 @@ async function GET__impl(req: Request) {
   const { value, hit } = await withCache(key, FEED_TTL_SEC, async () => {
     const db = await getAppDb();
     const alerts = await db.alerts.list({ activeOnly, source, severityMin, limit, bbox });
+
+    // Shrink the payload BEFORE clustering + caching. Full geometry (whole-ocean
+    // 40k-vertex rings) made this feed hundreds of MB; every poll then re-parsed
+    // it into a fresh copy and, under continuous polling, those copies piled up
+    // faster than GC could reclaim → public OOM. Simplify to a globe-coarse
+    // tolerance once, here — the cached value (and every hit's parse of it) is
+    // then tiny, and groupAlerts walks far fewer vertices too.
+    for (const a of alerts) {
+      for (const info of a.info ?? []) {
+        for (const area of info.area ?? []) {
+          if (area?.geometry) {
+            area.geometry = simplifyGeometry(area.geometry, ALERT_SIMPLIFY_DEG);
+          }
+        }
+      }
+    }
 
     // Cross-source clustering (same hazard + overlapping footprint) runs HERE on
     // the server, not in the browser — it's O(n²) over geometry and would stutter

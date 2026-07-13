@@ -2,6 +2,7 @@ import { withApiLog } from "../../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { buildEventTimeline } from "@photonsurge/shared/events/event-timeline";
+import { normalizeVolcanoId } from "../../../../../../lib/volcano-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,8 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * self-hides.
  */
 async function GET__impl(_req: Request, { params }: { params: Promise<{ volcanoId: string }> }) {
-  const { volcanoId } = await params;
+  const { volcanoId: raw } = await params;
+  const volcanoId = normalizeVolcanoId(raw);
   const db = await getAppDb();
   const event = await db.watchedEvents.byPrimary("gvp", volcanoId);
   if (!event?.id) return NextResponse.json({ event: null, timeline: [] }, { status: 200, headers: NO_CACHE });

@@ -41,7 +41,14 @@ export interface VolcanoChange {
 /** The subset diffVolcanoStatus reads — satisfied by the domain Volcano shape and lean docs. */
 export type DiffableVolcano = Pick<
   Volcano,
-  "status" | "usgsAlertLevel" | "usgsColorCode" | "reportVei" | "reportPlumeHeightM" | "latestReport"
+  | "status"
+  | "usgsAlertLevel"
+  | "usgsColorCode"
+  | "officialAlertScheme"
+  | "officialAlertLevelRaw"
+  | "reportVei"
+  | "reportPlumeHeightM"
+  | "latestReport"
 >;
 
 /** Normalised level — for scoring/filtering ONLY; the raw value is what the UI shows. */
@@ -88,6 +95,17 @@ export function diffVolcanoStatus(prev: DiffableVolcano | undefined, next: Diffa
       scheme: "USGS_AVIATION",
       from: prev.usgsColorCode,
       to: next.usgsColorCode,
+    });
+  }
+
+  // Official (non-USGS) observatory alert level, e.g. GeoNet VAL — its own scheme,
+  // preserved raw. Official > GVP-weekly, so this is a first-class status beat.
+  if ((prev.officialAlertLevelRaw ?? "") !== (next.officialAlertLevelRaw ?? "") && next.officialAlertLevelRaw) {
+    events.push({
+      type: "ALERT_LEVEL_CHANGED",
+      scheme: next.officialAlertScheme ?? "OFFICIAL",
+      from: prev.officialAlertLevelRaw,
+      to: next.officialAlertLevelRaw,
     });
   }
 

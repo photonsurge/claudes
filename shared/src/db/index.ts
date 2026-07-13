@@ -75,6 +75,8 @@ import { getFireModel } from "./fire-model";
 import { makeFireRepo } from "./fire-repo";
 import { getVolcanoModel } from "./volcano-model";
 import { makeVolcanoRepo } from "./volcano-repo";
+import { getVolcanoSourceLinkModel } from "./volcano-source-link-model";
+import { makeVolcanoSourceLinkRepo } from "./volcano-source-link-repo";
 import { getCountryModel } from "./country-model";
 import { makeCountryRepo } from "./country-repo";
 import { getRegionModel } from "./region-model";
@@ -202,6 +204,7 @@ export function createDb(conn: Connection) {
     satimg: makeSatImgRepo(getSatImgModel(conn), blobs.satimg),
     fires: makeFireRepo(getFireModel(conn)),
     volcanoes: makeVolcanoRepo(getVolcanoModel(conn)),
+    volcanoSourceLinks: makeVolcanoSourceLinkRepo(getVolcanoSourceLinkModel(conn)),
     countries: makeCountryRepo(getCountryModel(conn)),
     regions: makeRegionRepo(getRegionModel(conn)),
     areaWeatherReports: makeAreaWeatherReportRepo(getAreaWeatherReportModel(conn)),

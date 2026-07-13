@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useVolcanoes } from "../../lib/volcanoes-overlay";
+import { volcanoUrlId } from "../../lib/volcano-id";
 import type { Volcano, VolcanoStatus } from "@photonsurge/shared/volcanoes/types";
 import type { EventTimelineBeat } from "@photonsurge/shared/events/event-timeline";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "../tracks/styles";
@@ -97,7 +98,7 @@ export default function VolcanoesTable() {
     }
     let cancelled = false;
     setTimeline(null);
-    fetch(`/api/admin/volcanoes/${encodeURIComponent(id)}/timeline`)
+    fetch(`/api/admin/volcanoes/${volcanoUrlId(id)}/timeline`)
       .then((r) => r.json())
       .then((d) => {
         if (!cancelled) setTimeline(Array.isArray(d.timeline) ? d.timeline : []);
@@ -198,7 +199,7 @@ export default function VolcanoesTable() {
                   >
                     <td style={td}>
                       <Link
-                        href={`/admin/volcanoes/${encodeURIComponent(v.id)}`}
+                        href={`/admin/volcanoes/${volcanoUrlId(v.id)}`}
                         onClick={(e) => e.stopPropagation()}
                         style={{ color: "#e2e8f0", textDecoration: "none" }}
                         title="Open volcano detail"
