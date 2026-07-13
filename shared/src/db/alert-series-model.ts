@@ -25,6 +25,8 @@ export interface iAlertSeries extends iGeneralModel {
   source: string;
   identifier: string;
   alertId?: string;
+  /** The unified WatchedEvent this alert was promoted to (back-filled by the bridge). */
+  eventId?: string;
   /** e.g. "alertscore" | "severity" | "population". */
   metric: string;
   samples: AlertSeriesSample[];
@@ -50,6 +52,7 @@ export const AlertSeriesSchema = new mongoose.Schema<iAlertSeriesModel>(
     source: { type: String, required: true },
     identifier: { type: String, required: true },
     alertId: { type: String, required: false },
+    eventId: { type: String, required: false },
     metric: { type: String, required: true },
     samples: { type: [SampleSchema], default: [] },
     latest: { type: Number, required: true, default: 0 },
@@ -64,6 +67,7 @@ export const AlertSeriesSchema = new mongoose.Schema<iAlertSeriesModel>(
 
 AlertSeriesSchema.index({ key: 1 }, { unique: true, name: "alert_series_key_ix" });
 AlertSeriesSchema.index({ source: 1, identifier: 1 }, { name: "alert_series_alert_ix" });
+AlertSeriesSchema.index({ eventId: 1 }, { name: "alert_series_event_ix", sparse: true });
 AlertSeriesSchema.index({ loc: "2dsphere" }, { name: "alert_series_geo_ix", sparse: true });
 AlertSeriesSchema.index({ updatedAt: 1 }, { name: "alert_series_ttl_ix", expireAfterSeconds: TTL_SEC });
 

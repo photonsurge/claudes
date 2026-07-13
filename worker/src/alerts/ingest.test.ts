@@ -63,9 +63,13 @@ function fakeSource(next: any): AlertSource {
   } as unknown as AlertSource;
 }
 
-/** Fake db whose upsert behaviour is scripted per test; records appended revisions. */
+/** Fake db whose upsert behaviour is scripted per test; records appended revisions
+ * and (for the unified layer) promotions / timeline beats / watch-schedule upserts. */
 function fakeDb(upsert: (a: any) => Promise<any>) {
   const revisions: any[] = [];
+  const timelineBeats: any[] = [];
+  const watchUpserts: any[] = [];
+  const promotions: string[] = [];
   const db = {
     alerts: {
       upsert,
@@ -85,8 +89,26 @@ function fakeDb(upsert: (a: any) => Promise<any>) {
         return rev;
       },
     },
+    watchedEvents: {
+      async promoteFromAlert(a: any) {
+        promotions.push(a.identifier);
+        // `created` true only the first time we see this identifier (idempotency).
+        return { eventId: `evt-${a.identifier}`, created: promotions.filter((x) => x === a.identifier).length === 1 };
+      },
+    },
+    eventTimeline: {
+      async appendMany(list: any[]) {
+        timelineBeats.push(...list);
+        return { inserted: list.length };
+      },
+    },
+    eventWatch: {
+      async upsert(s: any) {
+        watchUpserts.push(s);
+      },
+    },
   } as any;
-  return { db, revisions };
+  return { db, revisions, timelineBeats, watchUpserts, promotions };
 }
 
 describe("ingestSource — revision capture", () => {
@@ -137,5 +159,63 @@ describe("ingestSource — revision capture", () => {
     const res = await ingestSource(fakeSource(next), db, NOW);
     expect(revisions).toHaveLength(0);
     expect(res.revisions).toBe(0);
+  });
+});
+
+describe("ingestSource — event promotion (unified layer)", () => {
+  const prevEnv = process.env.EVENTS_UNIFIED_ENABLED;
+  beforeEach(() => {
+    process.env.EVENTS_UNIFIED_ENABLED = "true";
+  });
+  afterEach(() => {
+    if (prevEnv === undefined) delete process.env.EVENTS_UNIFIED_ENABLED;
+    else process.env.EVENTS_UNIFIED_ENABLED = prevEnv;
+  });
+
+  it("promotes a severe new alert to a WatchedEvent, seeding the opening beat + schedule", async () => {
+    const next = mkAlert({ sev: 3 });
+    const { db, timelineBeats, watchUpserts, promotions } = fakeDb(async () => ({ inserted: true, prev: null }));
+    const res = await ingestSource(fakeSource(next), db, NOW);
+    expect(res.promoted).toBe(1);
+    expect(promotions).toEqual(["cap-1"]);
+    expect(timelineBeats.some((b) => b.type === "ISSUED")).toBe(true);
+    expect(watchUpserts).toHaveLength(1);
+    expect(watchUpserts[0]).toMatchObject({ source: "wmo" });
+  });
+
+  it("does NOT promote a minor (sub-severe) alert", async () => {
+    const next = mkAlert({ sev: 2 });
+    const { db, timelineBeats, watchUpserts } = fakeDb(async () => ({ inserted: true, prev: null }));
+    const res = await ingestSource(fakeSource(next), db, NOW);
+    expect(res.promoted).toBe(0);
+    expect(timelineBeats).toHaveLength(0);
+    expect(watchUpserts).toHaveLength(0);
+  });
+
+  it("mirrors a severity change onto the event timeline and stamps the revision's eventId", async () => {
+    const prev = mkAlert({ sev: 2 });
+    const next = mkAlert({ sev: 3, sent: "2026-07-12T14:20:00Z" });
+    const { db, revisions, timelineBeats } = fakeDb(async () => ({ inserted: false, prev }));
+    await ingestSource(fakeSource(next), db, NOW);
+    expect(revisions[0].eventId).toBe("evt-cap-1");
+    expect(timelineBeats.some((b) => b.type === "SEVERITY_CHANGED")).toBe(true);
+  });
+
+  it("is idempotent: a second ingest of the same event does not re-seed the opening beat", async () => {
+    const next = mkAlert({ sev: 3 });
+    const { db, timelineBeats } = fakeDb(async () => ({ inserted: true, prev: null }));
+    await ingestSource(fakeSource(next), db, NOW);
+    await ingestSource(fakeSource(next), db, NOW);
+    expect(timelineBeats.filter((b) => b.type === "ISSUED")).toHaveLength(1);
+  });
+
+  it("does nothing when the flag is off", async () => {
+    delete process.env.EVENTS_UNIFIED_ENABLED;
+    const next = mkAlert({ sev: 4 });
+    const { db, promotions, timelineBeats } = fakeDb(async () => ({ inserted: true, prev: null }));
+    const res = await ingestSource(fakeSource(next), db, NOW);
+    expect(res.promoted).toBe(0);
+    expect(promotions).toHaveLength(0);
+    expect(timelineBeats).toHaveLength(0);
   });
 });

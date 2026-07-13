@@ -25,6 +25,11 @@ import type { AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
 import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
 import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model";
 import type { AlertSnapshotMeta } from "@photonsurge/shared/db/alert-snapshot-repo";
+import type { iWatchedEvent } from "@photonsurge/shared/db/watched-event-model";
+import type { EventTimelineBeat } from "@photonsurge/shared/events/event-timeline";
+import type { iEventResource } from "@photonsurge/shared/db/event-resource-model";
+import type { EventSnapshotMeta } from "@photonsurge/shared/db/event-snapshot-repo";
+import type { iEventSeries } from "@photonsurge/shared/db/event-series-model";
 
 import { usePointHistory, useAreaHistory, useClimateYear } from "../history-client";
 import { usePointForecast, useAreaForecast } from "../forecast-client";
@@ -423,4 +428,34 @@ export function useAlertResources(): iAlertResource[] {
 export function useAlertSnapshots(): AlertSnapshotMeta[] {
   const { bundle, covers } = useFocusContext();
   return covers() ? bundle!.alertSnapshots : [];
+}
+
+/** The unified WatchedEvent the on-air storm was promoted to (null when not promoted). */
+export function useWatchedEvent(): iWatchedEvent | null {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.watchedEvent : null;
+}
+
+/** The unified (cross-source) event timeline — superset of the alert timeline. */
+export function useEventTimeline(): EventTimelineBeat[] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.eventTimeline : [];
+}
+
+/** Official resources harvested across every contributing source. */
+export function useEventResources(): iEventResource[] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.eventResources : [];
+}
+
+/** Unified-event snapshot metadata (bytes via /api/events/snapshot/:id). */
+export function useEventSnapshots(): EventSnapshotMeta[] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.eventSnapshots : [];
+}
+
+/** Cross-source metric series for the event (deep-GDACS score/severity/population…). */
+export function useEventSeries(): iEventSeries[] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.eventSeries : [];
 }

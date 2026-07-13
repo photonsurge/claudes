@@ -1,46 +1,54 @@
-# Heap-leak capture override for the `public` service — LOW-FOOTPRINT variant.
+# Heap-leak capture override for `public` — PRELOAD HOOK (writes where we can see it).
 #
-# Unlike an auto-dump-at-the-limit approach (which spikes RAM exactly when public
-# is already biggest and can OOM a small VM), this dumps ON DEMAND via a signal,
-# so YOU pick the moment — while RSS is still modest and the box has headroom.
+# The --heapsnapshot-signal / --heapsnapshot-near-heap-limit flags kept failing:
+# they write to the process CWD (lost inside the container), fail silently, and
+# the near-limit one serialises a ~2GB heap and tips the VM. Instead we preload
+# scripts/heapdump-hook.cjs, which writes to a KNOWN mounted path, LOGS each step,
+# and AUTO-DUMPS early (heap still small -> little transient RAM -> VM-safe), no
+# external signal needed. Two early dumps -> diff them to see what grew.
 #
-#   - --heapsnapshot-signal=SIGUSR2: a snapshot is written each time the process
-#     gets SIGUSR2, to the working dir (mounted out to ./heapdumps on the host).
-#   - --max-old-space-size=1024: a safety net only; the signal is the real trigger.
-#   - restart:"no": one clean run, no crash-loop.
-#
-# RECIPE (frees headroom first so the snapshot can't tip the VM):
+# RECIPE (on miranda):
+#   scp docker-compose.debug.yml scripts/heapdump-hook.cjs miranda:weather/heapdumps/  # hook must sit in the mount
+#   # (put the override at ~/weather/, the hook inside ~/weather/heapdumps/)
 #   scp docker-compose.debug.yml miranda:weather/
 #   ssh miranda
 #   cd ~/weather
 #   mkdir -p heapdumps && chmod 777 heapdumps
-#   docker compose stop worker                       # frees ~1-1.5GB of headroom
 #   docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d public
+#   docker compose logs -f public              # "[heapdump] hook armed -> /app/heapdumps ..."
 #
-#   # drive the leak (worker/director is stopped, so hammer the changed hot path
-#   # ourselves — varied coords bust the 60s focus cache -> real composes):
-#   seq 1 100000 | xargs -P8 -I{} sh -c \
-#     'curl -s "http://127.0.0.1:10100/api/focus?kind=storm&lng=$((RANDOM%360-180))&lat=$((RANDOM%180-90))&zoom=5&detail=broadcast" -o /dev/null'
+#   # WATCH the periodic line — it tells us the leak CLASS before we even diff:
+#   #   [heapdump] mem MB  rss=... heapUsed=... external=... arrayBuffers=...
+#   # If external/arrayBuffers climbs fastest -> native Buffer/PNG leak, not JS objects.
+#   #
+#   # drive light /watch traffic (or a curl loop) for a couple of minutes. The hook
+#   # auto-dumps at HEAPDUMP_AT seconds; watch the log for "[heapdump] wrote ...".
+#   # (Box is ~10GB, so no need to stop other services; dumps have plenty of room.)
+#   ls -lh heapdumps/                          # -> dump-t45-*.heapsnapshot, dump-t90-*.heapsnapshot
 #
-#   # in another shell, watch RSS climb; when it's ~800MB-1GB, dump (well below the box limit):
-#   docker stats --no-stream public
-#   docker compose kill -s SIGUSR2 public            # writes ./heapdumps/Heap.*.heapsnapshot (a few sec)
-#   ls -lh heapdumps/
-#
-#   # stop the load loop (Ctrl-C), then restore:
-#   docker compose start worker
-#   docker compose up -d public                      # back to normal (drops this override)
+#   docker compose start worker                # restore worker
+#   docker compose up -d public                # restore public to normal (drops this override)
 #   exit
 #
-# Analyze locally (roomy machine, NOT the VM):
-#   scp 'miranda:weather/heapdumps/*.heapsnapshot' heapdumps/
-#   node --max-old-space-size=12288 scripts/analyze-heapsnapshot.mjs heapdumps/Heap.*.heapsnapshot
+# DIFF locally (roomy machine — the top grower is the leak):
+#   scp 'miranda:weather/heapdumps/dump-*.heapsnapshot' heapdumps/
+#   ls -tr heapdumps/dump-*.heapsnapshot        # earlier (t45) then later (t90)
+#   node --max-old-space-size=12288 scripts/analyze-heapsnapshot.mjs \
+#     heapdumps/dump-t45-*.heapsnapshot heapdumps/dump-t90-*.heapsnapshot
+#
+# Manual extra dump any time:  docker compose exec public kill -USR2 1
+# Tune dump timing:  add  HEAPDUMP_AT: "60,150"  under environment (default "45,90").
 services:
   public:
     restart: "no"
     working_dir: /app/heapdumps
-    command: ["node", "/app/public/server.js"]
+    command: ["node", "--require", "/app/heapdumps/heapdump-hook.cjs", "/app/public/server.js"]
     environment:
-      NODE_OPTIONS: "--heapsnapshot-signal=SIGUSR2 --max-old-space-size=1024"
+      # near-heap-limit=1 is V8's own dump, fired from inside GC -> catches even a
+      # SYNCHRONOUS runaway that starves the hook's poll. Safe now (10GB box). It
+      # writes to CWD, which working_dir pins to the mounted /app/heapdumps.
+      NODE_OPTIONS: "--max-old-space-size=2048 --heapsnapshot-near-heap-limit=1"
+      HEAPDUMP_DIR: /app/heapdumps
+      HEAPDUMP_HEAP_MB: "700,1400"   # hook thresholds (async path); each fires once
     volumes:
       - ./heapdumps:/app/heapdumps

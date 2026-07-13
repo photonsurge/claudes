@@ -18,6 +18,8 @@ export interface iAlertResource extends iGeneralModel {
   identifier: string;
   /** The Alert doc uuid, when known (may be absent on the first harvest). */
   alertId?: string;
+  /** The unified WatchedEvent this alert was promoted to (back-filled by the bridge). */
+  eventId?: string;
   url: string;
   mimeType?: string;
   kind: AlertResourceKind;
@@ -36,6 +38,7 @@ export const AlertResourceSchema = new mongoose.Schema<iAlertResourceModel>(
     source: { type: String, required: true },
     identifier: { type: String, required: true },
     alertId: { type: String, required: false },
+    eventId: { type: String, required: false },
     url: { type: String, required: true },
     mimeType: { type: String, required: false },
     kind: { type: String, required: true, default: "resource" },
@@ -47,6 +50,7 @@ export const AlertResourceSchema = new mongoose.Schema<iAlertResourceModel>(
 
 AlertResourceSchema.index({ source: 1, identifier: 1, url: 1 }, { unique: true, name: "alert_res_dedup_ix" });
 AlertResourceSchema.index({ source: 1, identifier: 1, harvestedAt: 1 }, { name: "alert_res_alert_ix" });
+AlertResourceSchema.index({ eventId: 1 }, { name: "alert_res_event_ix", sparse: true });
 
 export const getAlertResourceModel = (conn: Connection) =>
   getModel<iAlertResourceModel>(conn, "AlertResource", AlertResourceSchema);

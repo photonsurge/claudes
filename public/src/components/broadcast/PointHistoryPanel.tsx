@@ -389,11 +389,10 @@ export default function PointHistoryPanel({
 
   if (!liveCharts.length && !climateRows.length) return null;
 
-  // Small-multiples layout: a 3-col grid of compact tiles when tiled (so a full
-  // ~13-variable area fits the fixed deck card at once, no scroll), else the
-  // single big chart stacked (compact side-note).
+  // Small-multiples layout: two wider columns keep labels, readings, and chart
+  // captions legible on the full deck card. Compact side-notes remain stacked.
   const chartsWrap: CSSProperties = tiled
-    ? { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px 10px" }
+    ? { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px 10px" }
     : { display: "flex", flexDirection: "column", gap: compact ? 8 : 10 };
 
   return (

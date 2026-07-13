@@ -21,6 +21,8 @@ export interface iAlertRevision extends iGeneralModel {
   identifier: string;
   /** The Alert doc's stable uuid (`id`), for reverse lookup. */
   alertId: string;
+  /** The unified WatchedEvent this alert was promoted to (back-filled by the bridge). */
+  eventId?: string;
   /** 1-based revision number within `(source, identifier)`. */
   seq: number;
   /** When this version was observed — the alert's `sent`, or ingest time. */
@@ -56,6 +58,7 @@ export const AlertRevisionSchema = new mongoose.Schema<iAlertRevisionModel>(
     source: { type: String, required: true },
     identifier: { type: String, required: true },
     alertId: { type: String, required: true },
+    eventId: { type: String, required: false },
     seq: { type: Number, required: true },
     at: { type: String, required: true },
     msgType: { type: String, required: true, default: "Alert" },
@@ -73,6 +76,8 @@ export const AlertRevisionSchema = new mongoose.Schema<iAlertRevisionModel>(
 AlertRevisionSchema.index({ source: 1, identifier: 1, seq: 1 }, { name: "alert_rev_key_ix" });
 // Reverse lookup by the Alert doc id.
 AlertRevisionSchema.index({ alertId: 1, seq: 1 }, { name: "alert_rev_alertid_ix" });
+// Unified event roll-up (only promoted rows carry an eventId).
+AlertRevisionSchema.index({ eventId: 1, seq: 1 }, { name: "alert_rev_event_ix", sparse: true });
 
 export const getAlertRevisionModel = (conn: Connection) =>
   getModel<iAlertRevisionModel>(conn, "AlertRevision", AlertRevisionSchema);

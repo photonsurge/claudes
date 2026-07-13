@@ -35,8 +35,9 @@ type ChainMsg = Pick<iAlertModel, "id" | "sent" | "msgType" | "maxSeverityRank">
 
 const fmtKm2 = (n: number): string => `${Math.round(n).toLocaleString("en-US")} km²`;
 
-/** Human label for one change event. */
-function labelFor(change: AlertChange): string {
+/** Human label for one change event. Exported so the unified event timeline
+ * (events/promote.ts) labels promoted alert changes identically. */
+export function labelFor(change: AlertChange): string {
   switch (change.type) {
     case "SEVERITY_CHANGED": {
       const from = Number(change.from);

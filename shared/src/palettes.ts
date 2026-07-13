@@ -238,6 +238,25 @@ export const PALETTES: Record<string, Palette> = {
     [0.8, "#3f9b5f"],
     [1.0, "#2f6fb0"],
   ],
+  // Precipitable water: bone-dry desert brown → green → moist blue → deep
+  // violet where the column is loaded (tropics / atmospheric rivers), over 0..70 mm.
+  pwat: [
+    [0.0, "#6b4a2b"],
+    [0.25, "#b0894c"],
+    [0.45, "#8fae4c"],
+    [0.6, "#2f9bd6"],
+    [0.8, "#3257b0"],
+    [1.0, "#7a1f9b"],
+  ],
+  // UV: the WHO UV-Index colour scale — low green → moderate yellow → high orange
+  // → very-high red → extreme violet. The <minVisible night side bakes transparent.
+  uv: [
+    [0.0, "#2f9b4f"],
+    [0.27, "#e6e02e"],
+    [0.5, "#f2802e"],
+    [0.7, "#df2727"],
+    [1.0, "#8a1f9b"],
+  ],
 };
 
 export const getPalette = (id: string): Palette => PALETTES[id] ?? PALETTES.temp;

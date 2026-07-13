@@ -26,6 +26,24 @@ import { getAlertResourceModel } from "./alert-resource-model";
 import { makeAlertResourceRepo } from "./alert-resource-repo";
 import { getAlertSnapshotModel } from "./alert-snapshot-model";
 import { makeAlertSnapshotRepo } from "./alert-snapshot-repo";
+import { getWatchedEventModel } from "./watched-event-model";
+import { makeWatchedEventRepo } from "./watched-event-repo";
+import { getEventSourceModel } from "./event-source-model";
+import { makeEventSourceRepo } from "./event-source-repo";
+import { getEventSourceRevisionModel } from "./event-source-revision-model";
+import { makeEventSourceRevisionRepo } from "./event-source-revision-repo";
+import { getEventTimelineUpdateModel } from "./event-timeline-update-model";
+import { makeEventTimelineUpdateRepo } from "./event-timeline-update-repo";
+import { getEventExternalLinkModel } from "./event-external-link-model";
+import { makeEventExternalLinkRepo } from "./event-external-link-repo";
+import { getEventResourceModel } from "./event-resource-model";
+import { makeEventResourceRepo } from "./event-resource-repo";
+import { getEventSeriesModel } from "./event-series-model";
+import { makeEventSeriesRepo } from "./event-series-repo";
+import { getEventSnapshotModel } from "./event-snapshot-model";
+import { makeEventSnapshotRepo } from "./event-snapshot-repo";
+import { getEventWatchScheduleModel } from "./event-watch-schedule-model";
+import { makeEventWatchScheduleRepo } from "./event-watch-schedule-repo";
 import { getSatelliteTleModel } from "./satellite-tle-model";
 import { makeSatelliteTleRepo } from "./satellite-tle-repo";
 import { getTrackSnapshotModel } from "./track-snapshot-model";
@@ -129,6 +147,7 @@ export function createDb(conn: Connection) {
     geomag: makeInlineBlobStore("geomag", blobFs),
     satimg: makeInlineBlobStore("satimg", blobFs),
     alertSnapshot: makeInlineBlobStore("alert-snapshot", blobFs),
+    eventSnapshot: makeInlineBlobStore("event-snapshot", blobFs),
   };
 
   return {
@@ -157,6 +176,16 @@ export function createDb(conn: Connection) {
     alertSeries: makeAlertSeriesRepo(getAlertSeriesModel(conn)),
     alertResources: makeAlertResourceRepo(getAlertResourceModel(conn)),
     alertSnapshots: makeAlertSnapshotRepo(getAlertSnapshotModel(conn), blobs.alertSnapshot),
+    // Unified cross-source event layer (WatchedEvent dossier).
+    watchedEvents: makeWatchedEventRepo(getWatchedEventModel(conn)),
+    eventSources: makeEventSourceRepo(getEventSourceModel(conn)),
+    eventSourceRevisions: makeEventSourceRevisionRepo(getEventSourceRevisionModel(conn)),
+    eventTimeline: makeEventTimelineUpdateRepo(getEventTimelineUpdateModel(conn)),
+    eventLinks: makeEventExternalLinkRepo(getEventExternalLinkModel(conn)),
+    eventResources: makeEventResourceRepo(getEventResourceModel(conn)),
+    eventSeries: makeEventSeriesRepo(getEventSeriesModel(conn)),
+    eventSnapshots: makeEventSnapshotRepo(getEventSnapshotModel(conn), blobs.eventSnapshot),
+    eventWatch: makeEventWatchScheduleRepo(getEventWatchScheduleModel(conn)),
     satelliteTles: makeSatelliteTleRepo(getSatelliteTleModel(conn)),
     trackSnapshots: makeTrackSnapshotRepo(getTrackSnapshotModel(conn)),
     quakes: makeQuakeRepo(getQuakeModel(conn)),

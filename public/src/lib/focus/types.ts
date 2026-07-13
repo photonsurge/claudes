@@ -22,6 +22,11 @@ import type { AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
 import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
 import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model";
 import type { AlertSnapshotMeta } from "@photonsurge/shared/db/alert-snapshot-repo";
+import type { iWatchedEvent } from "@photonsurge/shared/db/watched-event-model";
+import type { EventTimelineBeat } from "@photonsurge/shared/events/event-timeline";
+import type { iEventResource } from "@photonsurge/shared/db/event-resource-model";
+import type { EventSnapshotMeta } from "@photonsurge/shared/db/event-snapshot-repo";
+import type { iEventSeries } from "@photonsurge/shared/db/event-series-model";
 import type { Quake } from "@photonsurge/shared/tracks/types";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { Cam } from "@photonsurge/shared/cams/types";
@@ -117,6 +122,16 @@ export interface FocusBundle {
   alertResources: iAlertResource[];
   /** Captured satellite/camera snapshot metadata for the storm alert (bytes via /api/alerts/snapshot/:id). */
   alertSnapshots: AlertSnapshotMeta[];
+  /** The unified WatchedEvent the storm was promoted to (null when not promoted / not a storm). */
+  watchedEvent: iWatchedEvent | null;
+  /** The unified (cross-source) event timeline — superset of alertTimeline once external sources contribute. */
+  eventTimeline: EventTimelineBeat[];
+  /** Official resources harvested from every contributing source (GDACS/ReliefWeb/Copernicus…). */
+  eventResources: iEventResource[];
+  /** Event snapshot metadata (bytes via /api/events/snapshot/:id). */
+  eventSnapshots: EventSnapshotMeta[];
+  /** Cross-source metric series for the event (deep-GDACS score/severity/population…). */
+  eventSeries: iEventSeries[];
   areaAlerts: AlertFeature[];
   areaQuakes: Quake[];
   areaVolcanoes: Volcano[];

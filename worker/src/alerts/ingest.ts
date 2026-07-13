@@ -3,8 +3,10 @@ import type { AlertSource } from "@photonsurge/shared/alerts/types";
 import type { iAlertModel } from "@photonsurge/shared/db/alert-model";
 import { referencedIdentifiers } from "@photonsurge/shared/alerts/normalise";
 import { diffAlert } from "@photonsurge/shared/alerts/diff";
+import { timelineUpdatesFromChanges } from "@photonsurge/shared/events/promote";
 import { log } from "@photonsurge/shared/utill/logger";
 import { harvestGdacsExtras } from "./gdacs-extras";
+import { eventsUnifiedEnabled, shouldPromoteAlert, cadenceForRank } from "../events/config";
 
 const TAG = "alerts:ingest";
 
@@ -45,6 +47,8 @@ export interface IngestResult {
   expired: number;
   /** Revision rows appended this tick (a meaningful change was detected). */
   revisions: number;
+  /** WatchedEvents promoted/refreshed this tick (unified layer; 0 when disabled). */
+  promoted: number;
   /** Alert ids that just escalated to severe+ (feeds the P1 onset snapshot). */
   newlyInteresting: string[];
   /** GDACS metric samples appended this tick (promote-from-raw). */
@@ -75,6 +79,7 @@ export async function ingestSource(
   let superseded = 0;
   let geoDropped = 0;
   let revisions = 0;
+  let promoted = 0;
   const newlyInteresting: string[] = [];
   const geoReasons: Record<string, number> = {};
   for (const a of alerts) {
@@ -108,6 +113,39 @@ export async function ingestSource(
       }
     }
 
+    // Unified event promotion — an idempotent upsert to a WatchedEvent for any
+    // SIGNIFICANT alert (or one that WAS significant, so a downgrade still updates
+    // the dossier). Bull-free: on first promotion the acquisition schedule's
+    // `nextCheckAt` defaults to now, so the watch sweeper picks it up next tick —
+    // no enqueue here. Behind EVENTS_UNIFIED_ENABLED so the whole layer lands dark.
+    let eventId: string | undefined;
+    if (persisted && eventsUnifiedEnabled() && (shouldPromoteAlert(a) || (prev ? shouldPromoteAlert(prev) : false))) {
+      try {
+        const p = await db.watchedEvents.promoteFromAlert(a, now);
+        eventId = p.eventId;
+        promoted++;
+        if (p.created) {
+          await db.eventTimeline.appendMany([
+            {
+              eventId,
+              at: a.info?.[0]?.onset || a.sent || now.toISOString(),
+              type: "ISSUED",
+              label: "Warning issued",
+              source: a.source,
+              severityRank: a.maxSeverityRank,
+            },
+          ]);
+          await db.eventWatch.upsert({
+            eventId,
+            source: a.source,
+            intervalSeconds: cadenceForRank(a.maxSeverityRank),
+          });
+        }
+      } catch (err) {
+        log(TAG, `event promotion failed`, { source: source.id, id: a.identifier, err: String(err) });
+      }
+    }
+
     // Revision capture — ONCE, after the doc is persisted, diffed against the
     // ORIGINAL `a` (geometry intact) not the geometry-stripped retry payload, so
     // a stripped retry can't fake an AREA_CHANGED. Only a real in-place update
@@ -121,6 +159,7 @@ export async function ingestSource(
             source: a.source,
             identifier: a.identifier,
             alertId: prev.id,
+            eventId,
             at: now.toISOString(),
             msgType: a.msgType,
             status: a.status,
@@ -132,6 +171,12 @@ export async function ingestSource(
           });
           revisions++;
           if (crossesInteresting(prev, a)) newlyInteresting.push(prev.id);
+          // Mirror the same changes onto the unified event's STORED timeline.
+          if (eventId) {
+            await db.eventTimeline.appendMany(
+              timelineUpdatesFromChanges(eventId, events, now.toISOString(), a.source),
+            );
+          }
         }
       } catch (err) {
         log(TAG, `revision capture failed`, { source: source.id, id: a.identifier, err: String(err) });
@@ -180,6 +225,7 @@ export async function ingestSource(
     superseded,
     expired,
     revisions,
+    promoted,
     newlyInteresting,
     geoDropped,
     ...(source.id === "gdacs" ? { seriesSamples, resources } : {}),

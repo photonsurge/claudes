@@ -352,6 +352,29 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable events.watch sweeper (unified event acquisition) ----
+  // ONE sweeper reads the per-event schedules whose nextCheckAt is due and fans
+  // out an `acquire` per event (deep-GDACS + later ReliefWeb/Copernicus/EONET).
+  // Per-event cadence lives in Mongo (event_watch_schedules), so a burst of events
+  // never spawns a repeatable each. Opt-IN via EVENTS_UNIFIED_ENABLED=true so the
+  // whole unified layer lands dark until switched on.
+  if (process.env.EVENTS_UNIFIED_ENABLED === "true") {
+    const EVENTS_WATCH_TICK_MS = Number(process.env.EVENTS_WATCH_TICK_MS || 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "events", type: "events", event: "watch", data: {} },
+        {
+          repeat: { every: EVENTS_WATCH_TICK_MS, offset: staggerOffset("events-watch", EVENTS_WATCH_TICK_MS) },
+          jobId: "events-watch",
+        },
+      );
+      log(TAG, `registered repeatable events.watch`, { every: EVENTS_WATCH_TICK_MS });
+    } catch (err) {
+      log(TAG, `failed to register events.watch`, { err: summarizeForLog(err) });
+    }
+  }
+
   // ---- Repeatable cams.ingest jobs (one per enabled camera source) ----
   // Each source polls its provider on its own pollIntervalSec and upserts the
   // canonical catalog into Mongo; the public app reads only that cache. A fixed

@@ -27,6 +27,7 @@ export const ADMIN_LINKS: AdminLink[] = [
   { group: "Broadcast", href: "/admin/runs", title: "Runs", desc: "As-run log — what the auto-director aired, shot by shot.", ready: true },
 
   { group: "Signals", href: "/admin/alerts", title: "Weather alerts", desc: "Ingested CAP alerts — filter by severity / active.", ready: true },
+  { group: "Signals", href: "/admin/events", title: "Watched events", desc: "Cross-source event dossiers — timeline, sources, resources, snapshots.", ready: true },
   { group: "Signals", href: "/admin/summaries", title: "Round-ups", desc: "Scheduled global weather-event summaries + narrative.", ready: true },
   { group: "Signals", href: "/admin/place-roundups", title: "Place round-ups", desc: "Per-country & per-region 12h AI round-ups, each written with the previous in view.", ready: true },
   { group: "Signals", href: "/admin/tracks", title: "Live tracks", desc: "Satellites (SGP4), aircraft (ADS-B), ships (AIS).", ready: true },

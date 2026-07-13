@@ -37,6 +37,7 @@ import {
 import { alertsToFeatures, type Alert, type AlertFeature } from "../alerts";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { buildTimeline, type AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
+import { buildEventTimeline } from "@photonsurge/shared/events/event-timeline";
 import { isTargetedEvent, hasRealLocation } from "../../components/broadcast/kinds";
 import { haversineKm } from "../geo";
 import { regionMinPop } from "../cities";
@@ -398,20 +399,43 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
   let alertSeries: FocusBundle["alertSeries"] = [];
   let alertResources: FocusBundle["alertResources"] = [];
   let alertSnapshots: FocusBundle["alertSnapshots"] = [];
+  let watchedEvent: FocusBundle["watchedEvent"] = null;
+  let eventTimeline: FocusBundle["eventTimeline"] = [];
+  let eventResources: FocusBundle["eventResources"] = [];
+  let eventSnapshots: FocusBundle["eventSnapshots"] = [];
+  let eventSeries: FocusBundle["eventSeries"] = [];
   if (target?.kind === "storm") {
     const { source: alSource, identifier: alIdent, id: alId } = target.alert.properties;
-    const [chain, revisions, series, resources, snapshots] = await Promise.all([
+    const [chain, revisions, series, resources, snapshots, evt] = await Promise.all([
       db.alerts.chain(alSource, alIdent),
       db.alertRevisions.listForAlert(alSource, alIdent),
       db.alertSeries.listForAlert(alSource, alIdent),
       db.alertResources.listForAlert(alSource, alIdent),
       db.alertSnapshots.listForAlert(alSource, alIdent),
+      db.watchedEvents.byPrimary(alSource, alIdent),
     ]);
     const focal = chain.find((c) => c.id === alId) ?? chain[chain.length - 1];
     if (focal) alertTimeline = buildTimeline(focal, chain, revisions, new Date());
     alertSeries = series;
     alertResources = resources;
     alertSnapshots = snapshots;
+
+    // Unified event dossier — the cross-source superset (deep-GDACS + later
+    // ReliefWeb/Copernicus…). Loaded in the SAME focus call so /watch never fans
+    // out per-cut. Empty until the alert was promoted (EVENTS_UNIFIED_ENABLED).
+    if (evt?.id) {
+      watchedEvent = evt;
+      const [updates, evRes, evSnaps, evSeries] = await Promise.all([
+        db.eventTimeline.listForEvent(evt.id),
+        db.eventResources.listForEvent(evt.id),
+        db.eventSnapshots.listForEvent(evt.id),
+        db.eventSeries.listForEvent(evt.id),
+      ]);
+      eventTimeline = buildEventTimeline(evt, updates);
+      eventResources = evRes;
+      eventSnapshots = evSnaps;
+      eventSeries = evSeries;
+    }
   }
 
   return {
@@ -439,6 +463,11 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     alertSeries,
     alertResources,
     alertSnapshots,
+    watchedEvent,
+    eventTimeline,
+    eventResources,
+    eventSnapshots,
+    eventSeries,
     areaAlerts,
     areaQuakes,
     areaVolcanoes,

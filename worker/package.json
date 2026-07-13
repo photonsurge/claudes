@@ -1,6 +1,6 @@
 {
   "name": "worker",
-  "version": "0.1.41",
+  "version": "0.1.42",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
@@ -49,6 +49,7 @@
     "refresh:aurora": "ts-node src/scripts/refreshAurora.ts",
     "refresh:fires": "ts-node src/scripts/refreshFires.ts",
     "refresh:alert-snapshots": "ts-node src/scripts/refreshAlertSnapshots.ts",
+    "refresh:events": "ts-node src/scripts/refreshEvents.ts",
     "refresh:volcanoes": "ts-node src/scripts/refreshVolcanoes.ts",
     "refresh:area-weather": "ts-node src/scripts/refreshAreaWeather.ts",
     "refresh:geomag": "ts-node src/scripts/refreshGeomag.ts",

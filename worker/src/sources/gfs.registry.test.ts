@@ -15,9 +15,11 @@ const entries = parseGfsIdx(
   readFileSync(join(__dirname, "__fixtures__", "gfs.t12z.pgrb2.0p25.f003.idx"), "utf8"),
 );
 
-// The variables the ATMOS ingest bakes (wave uses its own gfswave `.idx`).
+// The variables baked from the PRIMARY pgrb2 file (this fixture). "wave" uses its
+// own gfswave `.idx`; "pgrb2b" (e.g. DUVB UV) lives in the secondary parameter
+// file, which this primary-file fixture does not contain — both are excluded here.
 const atmosVars = Object.values(VARIABLE_REGISTRY).filter(
-  (v) => v.gfs && v.gfs.product !== "wave",
+  (v) => v.gfs && v.gfs.product !== "wave" && v.gfs.product !== "pgrb2b",
 );
 
 /** Mirror bakeVariableStep: a masked scalar also pulls LAND@surface. */

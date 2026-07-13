@@ -297,6 +297,12 @@ describe("buildGfsS3Paths", () => {
     expect(gribUrl).toBe(`${GFS_S3_BASE}/gfs.20260628/00/wave/gridded/gfswave.t00z.global.0p25.f000.grib2`);
     expect(idxUrl).toBe(`${gribUrl}.idx`);
   });
+
+  it("builds the SECONDARY pgrb2b path (same atmos dir, 'b' file) for DUVB/UV", () => {
+    const { gribUrl, idxUrl } = buildGfsS3Paths({ date: "20260628", cycle: "18", fhr: 24, product: "pgrb2b" });
+    expect(gribUrl).toBe(`${GFS_S3_BASE}/gfs.20260628/18/atmos/gfs.t18z.pgrb2b.0p25.f024`);
+    expect(idxUrl).toBe(`${gribUrl}.idx`);
+  });
 });
 
 describe("parseGfsIdx", () => {

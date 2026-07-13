@@ -20,6 +20,8 @@ export interface iAlertSnapshot extends iGeneralModel {
   source: string;
   identifier: string;
   alertId?: string;
+  /** The unified WatchedEvent this alert was promoted to (back-filled by the bridge). */
+  eventId?: string;
   kind: AlertSnapshotKind;
   /** Satellite layer ("geocolor" | "ir" …); undefined for camera/compare. */
   layer?: string;
@@ -54,6 +56,7 @@ export const AlertSnapshotSchema = new mongoose.Schema<iAlertSnapshotModel>(
     source: { type: String, required: true },
     identifier: { type: String, required: true },
     alertId: { type: String, required: false },
+    eventId: { type: String, required: false },
     kind: { type: String, required: true, default: "satellite" },
     layer: { type: String, required: false },
     slotKey: { type: String, required: true },
@@ -76,6 +79,7 @@ export const AlertSnapshotSchema = new mongoose.Schema<iAlertSnapshotModel>(
 AlertSnapshotSchema.index({ slotKey: 1 }, { unique: true, name: "alert_snap_slot_ix" });
 AlertSnapshotSchema.index({ source: 1, identifier: 1, capturedAt: -1 }, { name: "alert_snap_alert_ix" });
 AlertSnapshotSchema.index({ alertId: 1, kind: 1, capturedAt: -1 }, { name: "alert_snap_alertid_ix" });
+AlertSnapshotSchema.index({ eventId: 1, kind: 1, capturedAt: -1 }, { name: "alert_snap_event_ix", sparse: true });
 
 export const getAlertSnapshotModel = (conn: Connection) =>
   getModel<iAlertSnapshotModel>(conn, "AlertSnapshot", AlertSnapshotSchema);

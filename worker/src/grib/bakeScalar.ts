@@ -30,6 +30,7 @@ export function convertScalarUnits(variableId: string, values: Float32Array): Fl
     case "temp":
     case "sst":
     case "dewpoint":
+    case "feelslike":
       for (let i = 0; i < values.length; i++) out[i] = kelvinToCelsius(values[i]);
       return out;
     case "pressure":

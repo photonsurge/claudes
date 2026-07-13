@@ -19,11 +19,12 @@ export interface iGfsField {
   /** Accumulated field that must be de-accumulated into a rate (e.g. APCP). */
   accumulated?: boolean;
   /**
-   * Which NOMADS GFS product the field comes from. "atmos" (default) is the
-   * standard GFS 0.25° atmospheric filter; "wave" is the GFS-Wave global 0.25°
-   * filter (different endpoint, dir and file naming).
+   * Which GFS product the field comes from. "atmos" (default) is the primary
+   * GFS 0.25° `pgrb2` file; "pgrb2b" is the SECONDARY parameter file (same atmos
+   * dir) carrying fields absent from the primary (e.g. DUVB UV-B flux); "wave" is
+   * the GFS-Wave global product (different dir + file naming).
    */
-  product?: "atmos" | "wave";
+  product?: "atmos" | "pgrb2b" | "wave";
   /**
    * Restrict the field to ocean or land using the GFS land-sea mask, baking the
    * other side as transparent (alpha 0 = WeatherLayers "nodata"). `sea` for SST
@@ -334,6 +335,46 @@ export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
     // SOILW is a 0..1 volumetric fraction; baked ×100 for display. Land-only —
     // ocean cells are GRIB-undefined and drop out via the existing bitmap mask.
     gfs: { vars: ["SOILW"], levels: ["0-0.1_m_below_ground"] },
+  },
+  feelslike: {
+    id: "feelslike",
+    label: "Feels like",
+    encoding: "scalar",
+    kind: "raster",
+    units: "°C",
+    altUnit: "°F",
+    altConvert: (v) => (v * 9) / 5 + 32,
+    palette: "temp",
+    domain: [-40, 50],
+    // APTMP (apparent temperature) arrives in Kelvin, same K→°C bake as temp.
+    gfs: { vars: ["APTMP"], levels: ["2_m_above_ground"] },
+  },
+  pwat: {
+    id: "pwat",
+    label: "Precipitable water",
+    encoding: "scalar",
+    kind: "raster",
+    units: "mm",
+    palette: "pwat",
+    // Column-integrated water (kg/m² = mm) — the moisture-plume / atmospheric-river
+    // field. Whole-column "entire atmosphere (considered as a single layer)" level.
+    domain: [0, 70],
+    gfs: { vars: ["PWAT"], levels: ["entire_atmosphere_(considered_as_a_single_layer)"] },
+  },
+  uvindex: {
+    id: "uvindex",
+    label: "UV",
+    encoding: "scalar",
+    kind: "raster",
+    units: "W/m²",
+    palette: "uv",
+    // DUVB = surface UV-B downward solar flux (all-sky, so cloud-attenuated). It's
+    // a SOLAR flux → ~0 at night, so the map shows the sunlit hemisphere sweeping
+    // with the day; `minVisible` bakes the dark side transparent. Lives in the GFS
+    // SECONDARY parameter file (pgrb2b), not the primary pgrb2. Domain is a
+    // starting estimate for the W/m² range — tune once seen on air.
+    domain: [0, 0.35],
+    gfs: { vars: ["DUVB"], levels: ["surface"], product: "pgrb2b", minVisible: 0.005 },
   },
   // ── Static terrain (no forecast source) ─────────────────────────────────────
   elevation: {
