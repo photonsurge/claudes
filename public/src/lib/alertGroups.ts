@@ -36,7 +36,7 @@ function walkCoords(coords: unknown, fn: (x: number, y: number) => void): void {
 }
 
 /** Bounding box over every area geometry of an alert, or null if none. */
-function alertBbox(a: Alert): Bbox | null {
+export function alertBbox(a: Alert): Bbox | null {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;

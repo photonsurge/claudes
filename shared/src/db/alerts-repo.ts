@@ -11,6 +11,15 @@ export interface AlertListOpts {
   /** Only alerts whose geometry intersects this bbox [w,s,e,n] (skips geocode-only). */
   bbox?: [number, number, number, number];
   limit?: number;
+  /**
+   * Project the geometry COORDINATES out of the result (keeps `geometry.type`).
+   * For consumers that need only properties + a bbox match — panels, counts,
+   * target lookup. A whole-planet WMO/marine alert `$geoIntersects` every bbox,
+   * so its millions of vertices would otherwise be parsed into the app heap on
+   * every located cut (a hard OOM) just to be discarded. The 2dsphere index does
+   * the intersect server-side; the coordinates never need to leave Mongo.
+   */
+  omitCoordinates?: boolean;
 }
 
 const strip = (doc: any): iAlertModel => {
@@ -216,11 +225,14 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
           },
         };
       }
+      // `raw` is the original feed payload kept for debugging/re-parsing; it can
+      // dwarf the parsed doc and no list() consumer reads it. `omitCoordinates`
+      // additionally drops the (potentially enormous) polygon vertices.
+      const projection: Record<string, 0> = { raw: 0 };
+      if (opts.omitCoordinates) projection["info.area.geometry.coordinates"] = 0;
       let query = model
         .find(q)
-        // `raw` is the original feed payload kept for debugging/re-parsing; it can
-        // dwarf the parsed doc and no list() consumer reads it.
-        .select({ raw: 0 })
+        .select(projection)
         .sort({ maxSeverityRank: -1, sent: -1 })
         .limit(opts.limit ?? 0); // 0 = no cap; return all matching alerts
       if (opts.bbox) {

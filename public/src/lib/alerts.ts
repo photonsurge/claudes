@@ -173,6 +173,30 @@ export interface AlertFeature {
   };
 }
 
+/** The feature properties for one alert area — shared by the geometry and the
+ *  geometry-less builders so both carry identical fields. */
+function areaFeatureProps(a: Alert, info: AlertInfo, area: AlertArea): AlertFeature["properties"] {
+  return {
+    id: a.id,
+    source: a.source,
+    identifier: a.identifier,
+    event: info.event,
+    severityRank: a.maxSeverityRank,
+    hazard: classifyHazard({ event: info.event, parameters: info.parameters }),
+    areaDesc: area.areaDesc,
+    level: info.severity,
+    headline: info.headline,
+    instruction: info.instruction,
+    translatedHeadline: info.translatedHeadline,
+    translatedDescription: info.translatedDescription,
+    translatedInstruction: info.translatedInstruction,
+    sent: a.sent,
+    since: info.onset ?? info.effective ?? a.sent,
+    expires: a.expiresAt,
+    web: info.web,
+  };
+}
+
 /**
  * Flatten alerts to GeoJSON polygon features — one per area that actually has a
  * geometry (geocode-only areas are skipped; they have no polygon to draw).
@@ -187,25 +211,35 @@ export function alertsToFeatures(alerts: Alert[]): AlertFeature[] {
         out.push({
           type: "Feature",
           geometry: g as { type: string; coordinates: unknown },
-          properties: {
-            id: a.id,
-            source: a.source,
-            identifier: a.identifier,
-            event: info.event,
-            severityRank: a.maxSeverityRank,
-            hazard: classifyHazard({ event: info.event, parameters: info.parameters }),
-            areaDesc: area.areaDesc,
-            level: info.severity,
-            headline: info.headline,
-            instruction: info.instruction,
-            translatedHeadline: info.translatedHeadline,
-            translatedDescription: info.translatedDescription,
-            translatedInstruction: info.translatedInstruction,
-            sent: a.sent,
-            since: info.onset ?? info.effective ?? a.sent,
-            expires: a.expiresAt,
-            web: info.web,
-          },
+          properties: areaFeatureProps(a, info, area),
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Like {@link alertsToFeatures}, but emits a GEOMETRY-LESS feature per area — for
+ * panels/counts/target-match that read only `properties` and never draw the
+ * polygon. This lets the caller project the coordinates OUT of the Mongo read:
+ * a whole-planet WMO/marine alert's polygon `$geoIntersects` every bbox, so its
+ * millions of vertices were being parsed into the app heap on every located cut
+ * (a hard OOM) purely to be discarded. Callers pass rows read with the geometry
+ * coordinates projected away; here `area.geometry` is `{ type }` (no coords) for
+ * a real area and `null`/absent for a geocode-only area (skipped, as above).
+ */
+export function areaAlertFeatures(alerts: Alert[]): AlertFeature[] {
+  const out: AlertFeature[] = [];
+  for (const a of alerts) {
+    for (const info of a.info ?? []) {
+      for (const area of info.area ?? []) {
+        const g = area.geometry as { type?: string } | null | undefined;
+        if (!g) continue; // geocode-only area — no polygon, same as alertsToFeatures
+        out.push({
+          type: "Feature",
+          geometry: { type: g.type ?? "Point", coordinates: [] },
+          properties: areaFeatureProps(a, info, area),
         });
       }
     }

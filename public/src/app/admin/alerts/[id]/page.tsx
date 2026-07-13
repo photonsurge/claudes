@@ -7,20 +7,25 @@
  * the as-run log, linking into /admin/runs/:id), and the raw feed payload.
  */
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
+import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 import AlertInfoBlock from "../../../../components/admin/AlertInfoBlock";
 import ImageLightbox, { type LightboxImage } from "../../../../components/admin/ImageLightbox";
 import Sparkline from "../../../../components/Sparkline";
+import GlobeView, { type GlobeHandle } from "../../../../components/GlobeView";
 import {
   alertHazard,
+  alertsToFeatures,
   getAlertDetail,
   primaryInfo,
   severityColor,
   severityLabel,
   type AlertDetail,
 } from "../../../../lib/alerts";
+import { alertBbox } from "../../../../lib/alertGroups";
 import { hazardMeta } from "../../../../lib/hazard";
 import { fmtDuration } from "../../../../lib/airlog";
 
@@ -61,6 +66,7 @@ export default function AlertDetailPage() {
   const [detail, setDetail] = useState<AlertDetail | null>(null);
   const [missing, setMissing] = useState(false);
   const [lightbox, setLightbox] = useState<LightboxImage | null>(null);
+  const globe = useRef<GlobeHandle | null>(null);
 
   const reload = useCallback(async () => {
     if (!id) return;
@@ -72,6 +78,38 @@ export default function AlertDetailPage() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // Location preview — the alert's own CAP area polygon(s) on the shared globe,
+  // framed to their bounding box. Mirrors the country/city "Location preview".
+  const alertDoc = detail?.alert ?? null;
+  const features = useMemo(() => (alertDoc ? alertsToFeatures([alertDoc]) : []), [alertDoc]);
+  const bbox = useMemo(() => (alertDoc ? alertBbox(alertDoc) : null), [alertDoc]);
+  const previewState = useMemo(
+    () =>
+      bbox
+        ? {
+            ...DEFAULT_CONTROL_STATE,
+            activeVariable: null,
+            showWind: false,
+            showCities: false,
+            showAlerts: true, // alertsLayer clones with visible=showAlerts
+            camera: {
+              center: [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2] as [number, number],
+              zoom: 4,
+            },
+          }
+        : null,
+    [bbox],
+  );
+  const pulseAt = useMemo<[number, number] | null>(
+    () => alertRepPoint(features[0]?.geometry) ?? null,
+    [features],
+  );
+
+  // Frame the alert's footprint once its geometry lands.
+  useEffect(() => {
+    if (bbox) globe.current?.fitBounds(bbox);
+  }, [bbox]);
 
   if (!detail) {
     return (
@@ -227,6 +265,26 @@ export default function AlertDetailPage() {
             })}
         </div>
       </div>
+
+      {/* Location — the alert's own CAP area(s) drawn on the shared globe. */}
+      {previewState && features.length > 0 && (
+        <div style={{ ...card, marginTop: 14, padding: 0, overflow: "hidden" }}>
+          <div style={{ ...cardLabel, padding: "14px 14px 0" }}>
+            Location{features.length > 1 ? ` · ${features.length} areas` : ""}
+          </div>
+          <div style={{ position: "relative", height: 420, marginTop: 12 }}>
+            <GlobeView
+              ref={globe}
+              state={previewState}
+              manifest={null}
+              cities={[]}
+              alerts={features}
+              pulseAt={pulseAt}
+              interactive
+            />
+          </div>
+        </div>
+      )}
 
       {/* Imagery, resources & trends — the P1/P2 satellite/camera/GDACS harvest. */}
       {(snapshots.length > 0 || resources.length > 0 || series.length > 0) && (

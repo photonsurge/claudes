@@ -34,8 +34,7 @@ import {
   BROADCAST_HISTORY_VARS as SHARED_BROADCAST_HISTORY_VARS,
   type WeatherPanel,
 } from "@photonsurge/shared/weather/panels";
-import { alertsToFeatures, type Alert, type AlertFeature } from "../alerts";
-import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
+import { areaAlertFeatures, type Alert, type AlertFeature } from "../alerts";
 import { buildTimeline, type AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
 import { buildEventTimeline } from "@photonsurge/shared/events/event-timeline";
 import { isTargetedEvent, hasRealLocation } from "../../components/broadcast/kinds";
@@ -96,19 +95,6 @@ async function climateFor(
 
 function bboxArea(b: [number, number, number, number]): number {
   return Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
-}
-
-/**
- * The bundle's areaAlerts feed the on-air PANELS (headline/severity) and the
- * client bbox re-scope, which needs only a representative point — the globe draws
- * alert polygons from the separate overlay feed, not the bundle. So replace each
- * alert's full MultiPolygon with a single rep point: a busy region returned ~10MB
- * of coordinates per cut (into Redis + the client heap) for geometry nothing here
- * renders. Falls back to the original geometry if no point resolves.
- */
-function slimAlertGeometry(f: AlertFeature): AlertFeature {
-  const pt = alertRepPoint(f.geometry as Parameters<typeof alertRepPoint>[0]);
-  return pt ? { ...f, geometry: { type: "Point", coordinates: pt } } : f;
 }
 
 /** Smallest country whose real geometry contains the point (mirrors /api/countries/at). */
@@ -306,11 +292,15 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     wantAreaFrame ? topCitiesFor(db, bbox, zoom) : Promise.resolve([]),
     // nearbyCities (targeted events)
     targeted ? nearbyCitiesFor(db, lng, lat) : Promise.resolve([]),
-    // areaAlerts
+    // areaAlerts — panels/counts/target-match read only `properties`, never the
+    // polygon (the globe draws alert polygons from the SEPARATE overlay feed). So
+    // project the coordinates out of the read: a whole-planet WMO/marine alert
+    // intersects every bbox, and parsing its millions of vertices into the heap
+    // on every located cut was a hard OOM. See areaAlertFeatures / omitCoordinates.
     hasLoc
       ? db.alerts
-          .list({ activeOnly: true, bbox })
-          .then((rows) => alertsToFeatures(rows as unknown as Alert[]).map(slimAlertGeometry))
+          .list({ activeOnly: true, bbox, omitCoordinates: true })
+          .then((rows) => areaAlertFeatures(rows as unknown as Alert[]))
       : Promise.resolve([] as AlertFeature[]),
     // areaQuakes
     hasLoc ? db.quakes.list({ bbox, limit: 50 }).then((rows) => rows.map(mapQuake)) : Promise.resolve([]),
