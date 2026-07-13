@@ -17,6 +17,14 @@ export type CamProvider =
   | "national_highways"
   | "youtube"
   | "geonet"
+  | "usgs_vhp"
+  | "avo"
+  | "ingv"
+  | "phivolcs"
+  | "imo"
+  | "magma"
+  | "volcat"
+  | "gvp"
   | "manual"
   | "other";
 

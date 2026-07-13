@@ -22,15 +22,18 @@ async function GET__impl(_req: Request, { params }: { params: Promise<{ volcanoI
   const db = await getAppDb();
   const volcano = await db.volcanoes.get(volcanoId);
   if (!volcano) return NextResponse.json({ error: "no such volcano" }, { status: 404, headers: NO_CACHE });
-  const [event, cams] = await Promise.all([
+  const [event, cams, media, volcanoCameras, mediaSources] = await Promise.all([
     db.watchedEvents.byPrimary("gvp", volcanoId),
     db.cams.listForVolcano(volcanoId),
+    db.volcanoMedia.listForVolcano(volcanoId),
+    db.volcanoCameras.listForVolcano(volcanoId),
+    db.volcanoMediaSources.list(),
   ]);
   const [timeline, snapshots] = await Promise.all([
     event?.id ? db.eventTimeline.listForEvent(event.id).then((u) => buildEventTimeline(event, u)) : Promise.resolve([]),
     event?.id ? db.eventSnapshots.listForEvent(event.id) : Promise.resolve([]),
   ]);
-  return NextResponse.json({ volcano, event: event ?? null, timeline, cams, snapshots }, { status: 200, headers: NO_CACHE });
+  return NextResponse.json({ volcano, event: event ?? null, timeline, cams, snapshots, media, volcanoCameras, mediaSources }, { status: 200, headers: NO_CACHE });
 }
 
 // --- request logging (lib/api-log) ---

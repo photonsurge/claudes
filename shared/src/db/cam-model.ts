@@ -60,7 +60,10 @@ const CamSchema = new mongoose.Schema<iCamModel>(
     camId: { type: String, required: true, unique: true },
     provider: {
       type: String,
-      enum: ["windy", "tfl", "national_highways", "youtube", "geonet", "manual", "other"],
+      enum: [
+        "windy", "tfl", "national_highways", "youtube", "geonet", "usgs_vhp", "avo",
+        "ingv", "phivolcs", "imo", "magma", "volcat", "gvp", "manual", "other",
+      ],
       required: true,
       default: "manual",
     },

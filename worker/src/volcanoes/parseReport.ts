@@ -40,9 +40,10 @@ export async function parseReportFacts(
   if (!key) return { status: "skipped" };
   if (!reportText.trim()) return { status: "skipped" };
 
-  const model = process.env.OPENROUTER_VOLCANO_MODEL || process.env.OPENROUTER_MODEL || "google/gemini-flash-1.5";
+  const fallbackModel = "google/gemini-3.1-flash-lite";
+  const model = process.env.OPENROUTER_VOLCANO_MODEL || process.env.OPENROUTER_MODEL || fallbackModel;
 
-  const res = await callOpenRouter({
+  let res = await callOpenRouter({
     model,
     system: SYSTEM,
     user: buildPrompt(reportText),
@@ -50,6 +51,12 @@ export async function parseReportFacts(
     maxTokens: 100,
     fetchImpl,
   });
+  // OpenRouter removes old provider routes over time. An explicitly configured
+  // stale model should not turn every bulletin into a guaranteed failure.
+  if (res.status === "error" && model !== fallbackModel && /404|no endpoints found/i.test(res.error ?? "")) {
+    res = await callOpenRouter({ model: fallbackModel, system: SYSTEM, user: buildPrompt(reportText),
+      temperature: 0, maxTokens: 100, fetchImpl });
+  }
   if (res.status === "error") return { status: "error", error: res.error };
   const match = res.content.match(/\{[\s\S]*\}/);
   if (!match) return { status: "error", error: "no JSON in completion" };

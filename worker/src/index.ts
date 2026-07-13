@@ -738,6 +738,40 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // Volcano-specific media enrichment. Registry discovery is cheap and updates
+  // metadata; cameraRefresh downloads bytes into the shared blob filesystem.
+  if (process.env.VOLCANO_MEDIA_ENABLED !== "false") {
+    const REGISTRY_MS = Number(process.env.VOLCANO_MEDIA_REGISTRY_MS || 6 * 60 * 60 * 1000);
+    const CAMERA_MS = Number(process.env.VOLCANO_MEDIA_CAMERA_MS || 5 * 60 * 1000);
+    const OFFICIAL_MS = Number(process.env.VOLCANO_MEDIA_OFFICIAL_MS || 15 * 60 * 1000);
+    const SATELLITE_MS = Number(process.env.VOLCANO_MEDIA_SATELLITE_MS || 10 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "volcanoes", type: "volcanoes", event: "mediaRegistry", data: {} },
+        { repeat: { every: REGISTRY_MS, immediately: true, offset: staggerOffset("volcano-media-registry", REGISTRY_MS) }, jobId: "volcano-media-registry" },
+      );
+      await myQueue.add(
+        "do",
+        { domain: "volcanoes", type: "volcanoes", event: "cameraRefresh", data: {} },
+        { repeat: { every: CAMERA_MS, offset: staggerOffset("volcano-camera-refresh", CAMERA_MS) }, jobId: "volcano-camera-refresh" },
+      );
+      await myQueue.add(
+        "do",
+        { domain: "volcanoes", type: "volcanoes", event: "officialMedia", data: {} },
+        { repeat: { every: OFFICIAL_MS, offset: staggerOffset("volcano-official-media", OFFICIAL_MS) }, jobId: "volcano-official-media" },
+      );
+      await myQueue.add(
+        "do",
+        { domain: "volcanoes", type: "volcanoes", event: "satelliteMedia", data: {} },
+        { repeat: { every: SATELLITE_MS, offset: staggerOffset("volcano-satellite-media", SATELLITE_MS) }, jobId: "volcano-satellite-media" },
+      );
+      log(TAG, "registered volcano media registry + acquisition", { registryMs: REGISTRY_MS, cameraMs: CAMERA_MS, officialMs: OFFICIAL_MS, satelliteMs: SATELLITE_MS });
+    } catch (err) {
+      log(TAG, "failed to register volcano media jobs", summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable volcano camera frame capture / timelapse / prune (P2b) ----
   // Opt-IN (fetches + STORES third-party images): VOLCANO_CAM_SNAPSHOT_ENABLED=true
   // (also needs EVENTS_UNIFIED_ENABLED — frames key on a volcano's WatchedEvent).

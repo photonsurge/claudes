@@ -26,6 +26,16 @@ import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
 import { parseReportFacts } from "../volcanoes/parseReport";
+import { fetchAvoCameraRegistry } from "../volcano/media/avo";
+import { fetchUsgsAshcam, fetchUsgsVolcanoWebcams, USGS_ASHCAM_API, USGS_VHP_WEBCAMS } from "../volcano/media/usgs";
+import { fetchImoEruptionImages, IMO_EPOS_OPENAPI } from "../volcano/media/imo";
+import { fetchIngvCameras, INGV_ETNA_PAGE } from "../volcano/media/ingv";
+import { fetchPhivolcsCameras, PHIVOLCS_INSTRUMENTS } from "../volcano/media/phivolcs";
+import { fetchMagmaCameras, MAGMA_CCTV_URL } from "../volcano/media/magma";
+import { fetchGvpImages } from "../volcano/media/gvpImages";
+import { fetchVolcatImages, VOLCAT_LIST_URL } from "../volcano/media/volcat";
+import { fetchNasaVolcanoImages, NASA_IMAGES_SEARCH } from "../volcano/media/nasaImages";
+import type { VolcanoCameraMode, VolcanoMediaType } from "@photonsurge/shared/volcanoes/media";
 
 const TAG = "job:volcanoes";
 
@@ -440,6 +450,7 @@ export async function ingestGeonetCams(_job: Job) {
     const geonetCams = await fetchGeonetCams();
     let catalog: Awaited<ReturnType<typeof fetchGvpCatalog>> | null = null;
     const cams: Cam[] = [];
+    const mediaCameras: Parameters<typeof db.volcanoCameras.upsertMany>[0] = [];
     let associated = 0;
     for (const gc of geonetCams) {
       const gvpIds = new Set<string>();
@@ -464,6 +475,26 @@ export async function ingestGeonetCams(_job: Job) {
         }
       }
       if (gvpIds.size) associated++;
+      const primaryVolcanoId = gvpIds.values().next().value as string | undefined;
+      if (primaryVolcanoId) {
+        mediaCameras.push({
+          volcanoId: primaryVolcanoId,
+          source: "GEONET",
+          sourceCameraId: gc.cameraId,
+          name: gc.title,
+          mode: "VISIBLE",
+          latitude: gc.lat,
+          longitude: gc.lng,
+          bearing: gc.azimuthDeg,
+          currentImageUrl: gc.imageUrl,
+          detailUrl: "https://www.geonet.org.nz/volcano/cameras",
+          upstreamTimestamp: gc.timestampText,
+          attribution: "GeoNet / GNS Science (CC BY 4.0)",
+          licence: "CC BY 4.0",
+          reuseAllowed: true,
+          enabled: true,
+        });
+      }
       cams.push({
         camId: `geonet-vol:${gc.cameraId}`,
         provider: "geonet",
@@ -483,8 +514,24 @@ export async function ingestGeonetCams(_job: Job) {
         fetchedAt: Date.now(),
       });
     }
-    const r = await db.cams.upsertMany(cams);
-    const result = { cameras: cams.length, associated, upserted: r.upserted };
+    const [r, mediaResult] = await Promise.all([
+      db.cams.upsertMany(cams),
+      db.volcanoCameras.upsertMany(mediaCameras),
+    ]);
+    await db.volcanoMediaSources.upsert({
+      source: "GEONET",
+      name: "GeoNet / GNS Science",
+      registryUrl: "https://images.geonet.org.nz/volcano/cameras/all.json",
+      enabled: true,
+      registryPollSeconds: 30 * 60,
+      mediaPollSeconds: 60 * 60,
+      attribution: "GeoNet / GNS Science (CC BY 4.0)",
+      defaultLicence: "CC BY 4.0",
+      defaultReuseAllowed: true,
+      lastDiscoveredAt: new Date(),
+    });
+    const result = { cameras: cams.length, associated, upserted: r.upserted, mediaCameras: mediaCameras.length,
+      mediaUpserted: mediaResult.upserted };
     log(TAG, `geonet cams ingest done`, result);
     blogInfo(TAG, `geonet cams: ${cams.length} cameras, ${associated} volcano-linked`, result, "volcanoes", "ingestGeonetCams");
     if (cams.length > 0) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: cams.length } });
@@ -494,6 +541,477 @@ export async function ingestGeonetCams(_job: Job) {
     blogErr(TAG, `geonet cams ingest failed`, err, "volcanoes", "ingestGeonetCams");
     throw err;
   }
+}
+
+// ── Volcano-specific media registry + byte acquisition ──────────────────────
+
+const normalizedVolcanoName = (value: string) => value.toLowerCase().normalize("NFKD")
+  .replace(/[^a-z0-9]+/g, " ").trim().replace(/\b(?:volcano|mount|mt)\b/g, "").replace(/\s+/g, " ").trim();
+
+const mediaTypeForCamera = (mode: VolcanoCameraMode): VolcanoMediaType =>
+  mode === "THERMAL" ? "THERMAL" : mode === "IR" ? "IR" : "WEBCAM";
+const mediaDiagnosticError = (err: unknown): string => {
+  const summary = summarizeForLog(err);
+  return typeof summary === "string" ? summary : `${summary.name}: ${summary.message}`;
+};
+
+/**
+ * Discover source camera records without touching the existing GVP ingest.
+ * AVO is the first adapter; subsequent source adapters write the same registry.
+ */
+export async function mediaRegistry(_job: Job) {
+  const db = await getAppDb();
+  try {
+    const [discovered, volcanoes] = await Promise.all([
+      fetchAvoCameraRegistry().catch((err) => { log(TAG, "AVO registry unavailable", summarizeForLog(err)); return []; }),
+      db.volcanoes.list(),
+    ]);
+    const byName = new Map(volcanoes.map((v) => [normalizedVolcanoName(v.name), v]));
+    let avoCatalog: Awaited<ReturnType<typeof fetchGvpCatalog>> | null = null;
+    const findVolcano = (name: string) => {
+      const key = normalizedVolcanoName(name);
+      return byName.get(key) ?? volcanoes.find((v) => {
+        const candidate = normalizedVolcanoName(v.name);
+        return candidate.length >= 4 && (candidate.includes(key) || key.includes(candidate));
+      });
+    };
+    const cameras = [];
+    const generic: Cam[] = [];
+    let unmatched = 0;
+    const avoUnmatchedNames: string[] = [];
+    for (const camera of discovered) {
+      let volcano = byName.get(normalizedVolcanoName(camera.volcanoName));
+      if (!volcano) {
+        avoCatalog ??= await fetchGvpCatalog().catch(() => []);
+        const nameKey = normalizedVolcanoName(camera.volcanoName);
+        const entry = avoCatalog.find((candidate) => normalizedVolcanoName(candidate.name) === nameKey);
+        if (entry) {
+          await db.volcanoes.upsertStub(entry.volcanoId, {
+            name: entry.name, lat: entry.lat, lng: entry.lng, country: entry.country,
+            status: "dormant", sourceUrl: entry.sourceUrl, elevationM: entry.elevationM,
+          });
+          volcano = {
+            id: entry.volcanoId, name: entry.name, country: entry.country, lat: entry.lat, lng: entry.lng,
+            status: "dormant", firstDate: Date.now(), lastDate: Date.now(), statusChangedAt: Date.now(),
+            sourceUrl: entry.sourceUrl, elevationM: entry.elevationM,
+          };
+          byName.set(nameKey, volcano);
+        }
+      }
+      if (!volcano) { unmatched++; if (avoUnmatchedNames.length < 10) avoUnmatchedNames.push(camera.volcanoName); continue; }
+      const latitude = camera.latitude ?? volcano.lat;
+      const longitude = camera.longitude ?? volcano.lng;
+      cameras.push({
+        volcanoId: volcano.id,
+        source: "AVO" as const,
+        sourceCameraId: camera.sourceCameraId,
+        name: camera.name,
+        mode: camera.mode,
+        latitude,
+        longitude,
+        bearing: camera.bearing,
+        currentImageUrl: camera.currentImageUrl,
+        detailUrl: camera.detailUrl,
+        videoUrl: camera.video12hUrl,
+        upstreamTimestamp: camera.upstreamTimestamp,
+        attribution: "Alaska Volcano Observatory / USGS",
+        licence: "VERIFY",
+        reuseAllowed: false,
+        enabled: true,
+      });
+      generic.push({
+        camId: `avo:${camera.sourceCameraId}`,
+        provider: "avo",
+        title: camera.name,
+        lat: latitude,
+        lng: longitude,
+        status: "active",
+        country: "United States",
+        imageUrl: camera.currentImageUrl,
+        timelapseUrl: camera.video12hUrl,
+        playerUrl: camera.detailUrl,
+        tags: ["volcano", volcano.id, `avo:${camera.volcanoName}`],
+        attribution: { provider: "Alaska Volcano Observatory", linkUrl: camera.detailUrl },
+        fetchedAt: Date.now(),
+      });
+      await db.volcanoSourceLinks.upsert({
+        volcanoId: volcano.id, source: "avo", externalId: camera.volcanoName,
+        externalCode: camera.sourceCameraId, externalUrl: camera.detailUrl,
+        matchMethod: "name", matchScore: 1,
+      });
+    }
+    const [cameraResult, genericResult] = await Promise.all([
+      db.volcanoCameras.upsertMany(cameras), db.cams.upsertMany(generic),
+    ]);
+    await db.volcanoMediaSources.upsert({
+      source: "AVO",
+      name: "Alaska Volcano Observatory",
+      registryUrl: "https://avo.alaska.edu/webcam/",
+      enabled: true,
+      registryPollSeconds: 6 * 60 * 60,
+      mediaPollSeconds: 5 * 60,
+      attribution: "Alaska Volcano Observatory / USGS",
+      defaultLicence: "VERIFY",
+      defaultReuseAllowed: false,
+      lastDiscoveredAt: new Date(),
+    });
+    // Do not depend on snapshotUsgs having run first. Its live catalogue gives
+    // us stable GVP ids for elevated volcanoes; tracked NORMAL volcanoes remain
+    // eligible without creating a database full of dormant monitoring stubs.
+    let usgsDiscovered = 0;
+    let usgsPages = 0;
+    let usgsPageMisses = 0;
+    const usgsDiagnostics: Array<{ stage: string; url: string; status?: number; reason: string }> = [];
+    const usgsCameras: Parameters<typeof db.volcanoCameras.upsertMany>[0] = [];
+    const usgsGeneric: Cam[] = [];
+    const usgsStatuses = await fetchUsgsVolcanoStatus().catch((err) => {
+      log(TAG, "USGS status catalogue unavailable during media discovery", summarizeForLog(err)); return [];
+    });
+    const trackedById = new Map(volcanoes.map((v) => [v.id, v]));
+    const usgsAshcam = await fetchUsgsAshcam().catch((err) => {
+      if (usgsDiagnostics.length < 20) usgsDiagnostics.push({ stage: "api", url: USGS_ASHCAM_API, reason: mediaDiagnosticError(err) });
+      return [];
+    });
+    const usgsCandidates = usgsStatuses.flatMap((status) => {
+      const tracked = trackedById.get(status.volcanoId);
+      if (tracked) return [tracked];
+      if (!status.elevated || status.unassigned) return [];
+      return [{ id: status.volcanoId, name: status.name, lat: status.lat, lng: status.lng,
+        country: "United States", status: "unrest" as const, firstDate: Date.now(), lastDate: Date.now(),
+        statusChangedAt: Date.now(), usgsAlertLevel: status.alertLevel, usgsColorCode: status.colorCode }];
+    });
+    const addUsgsCamera = (volcano: (typeof usgsCandidates)[number], camera: Awaited<ReturnType<typeof fetchUsgsVolcanoWebcams>>[number]) => {
+      usgsCameras.push({ volcanoId: volcano.id, source: "USGS_VHP", sourceCameraId: camera.sourceCameraId,
+        name: camera.name, mode: camera.mode, latitude: (camera as any).latitude ?? volcano.lat,
+        longitude: (camera as any).longitude ?? volcano.lng, currentImageUrl: camera.currentImageUrl,
+        detailUrl: camera.detailUrl, videoUrl: camera.gif24hUrl, attribution: camera.attribution,
+        licence: camera.licence, reuseAllowed: camera.reuseAllowed, enabled: true });
+      usgsGeneric.push({ camId: `usgs-vhp:${camera.sourceCameraId}`, provider: "usgs_vhp", title: camera.name,
+        lat: (camera as any).latitude ?? volcano.lat, lng: (camera as any).longitude ?? volcano.lng, status: "active",
+        country: volcano.country, imageUrl: camera.currentImageUrl, timelapseUrl: camera.gif24hUrl,
+        playerUrl: camera.detailUrl, tags: ["volcano", volcano.id], attribution: { provider: "USGS Volcano Hazards Program",
+          requiredText: camera.licence, linkUrl: camera.detailUrl }, fetchedAt: Date.now() });
+    };
+    if (usgsAshcam.length) {
+      const candidateById = new Map(usgsCandidates.map((v) => [v.id, v]));
+      for (const camera of usgsAshcam) {
+        const volcano = camera.volcanoNumber ? candidateById.get(`gvp:${camera.volcanoNumber}`) :
+          usgsCandidates.find((v) => camera.volcanoName && normalizedVolcanoName(v.name) === normalizedVolcanoName(camera.volcanoName));
+        if (!volcano) continue;
+        addUsgsCamera(volcano, camera);
+      }
+      usgsDiscovered = usgsCameras.length;
+    }
+    for (const volcano of usgsAshcam.length ? [] : usgsCandidates) {
+      const slug = volcano.name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const pageUrl = `https://www.usgs.gov/volcanoes/${slug}/webcams`;
+      const found = await fetchUsgsVolcanoWebcams(pageUrl, fetch, (event) => {
+        if (usgsDiagnostics.length < 20) usgsDiagnostics.push(event);
+      }).catch((err) => {
+        if (usgsDiagnostics.length < 20) usgsDiagnostics.push({ stage: "page", url: pageUrl, reason: mediaDiagnosticError(err) });
+        log(TAG, "USGS webcam page unavailable", { volcanoId: volcano.id, pageUrl, err: summarizeForLog(err) });
+        return [];
+      });
+      usgsPages++;
+      if (!found.length) usgsPageMisses++;
+      usgsDiscovered += found.length;
+      for (const camera of found) {
+        addUsgsCamera(volcano, camera);
+      }
+    }
+    const [usgsCameraResult, usgsGenericResult] = await Promise.all([
+      db.volcanoCameras.upsertMany(usgsCameras), db.cams.upsertMany(usgsGeneric),
+    ]);
+    await db.volcanoMediaSources.upsert({
+      source: "USGS_VHP", name: "USGS Volcano Hazards Program", registryUrl: USGS_VHP_WEBCAMS,
+      enabled: true, registryPollSeconds: 24 * 60 * 60, mediaPollSeconds: 5 * 60,
+      attribution: "U.S. Geological Survey Volcano Hazards Program", defaultLicence: "VERIFY",
+      defaultReuseAllowed: false, lastDiscoveredAt: new Date(),
+    });
+    const phivolcsDiagnostics: Array<{ stage: string; url: string; status?: number; reason: string; volcano?: string }> = [];
+    const providerErrors: Record<string, string> = {};
+    const [ingvFound, phivolcsFound, magmaFound] = await Promise.all([
+      fetchIngvCameras().catch((err) => { providerErrors.ingv = mediaDiagnosticError(err); return []; }),
+      fetchPhivolcsCameras(fetch, (event) => { if (phivolcsDiagnostics.length < 20) phivolcsDiagnostics.push(event); })
+        .catch((err) => { providerErrors.phivolcs = mediaDiagnosticError(err); return []; }),
+      fetchMagmaCameras().catch((err) => { providerErrors.magma = mediaDiagnosticError(err); return []; }),
+    ]);
+    const extraCameras: Parameters<typeof db.volcanoCameras.upsertMany>[0] = [];
+    const extraGeneric: Cam[] = [];
+    const extraStubWrites: Promise<unknown>[] = [];
+    const extraUnmatched: Record<"INGV" | "PHIVOLCS" | "MAGMA", string[]> = { INGV: [], PHIVOLCS: [], MAGMA: [] };
+    const addExtra = (source: "INGV" | "PHIVOLCS" | "MAGMA", found: {
+      sourceCameraId: string; volcanoName: string; name: string; imageUrl: string; detailUrl: string;
+      mode?: VolcanoCameraMode; observedAt?: string;
+    }, reusable: boolean) => {
+      let volcano = findVolcano(found.volcanoName);
+      if (!volcano && avoCatalog) {
+        const rawKey = normalizedVolcanoName(found.volcanoName);
+        const key = ({ bromo: "tengger caldera" } as Record<string, string>)[rawKey] ?? rawKey;
+        const entry = avoCatalog.find((candidate) => {
+          const candidateKey = normalizedVolcanoName(candidate.name);
+          return candidateKey === key || (key.length >= 4 && (candidateKey.includes(key) || key.includes(candidateKey)));
+        });
+        if (entry) {
+          volcano = { id: entry.volcanoId, name: entry.name, country: entry.country, lat: entry.lat, lng: entry.lng,
+            status: "dormant", firstDate: Date.now(), lastDate: Date.now(), statusChangedAt: Date.now(),
+            sourceUrl: entry.sourceUrl, elevationM: entry.elevationM };
+          byName.set(normalizedVolcanoName(entry.name), volcano);
+          extraStubWrites.push(db.volcanoes.upsertStub(entry.volcanoId, { name: entry.name, lat: entry.lat, lng: entry.lng,
+            country: entry.country, status: "dormant", sourceUrl: entry.sourceUrl, elevationM: entry.elevationM }));
+        }
+      }
+      if (!volcano) { if (extraUnmatched[source].length < 10) extraUnmatched[source].push(found.volcanoName); return; }
+      const provider = source === "INGV" ? "ingv" : source === "PHIVOLCS" ? "phivolcs" : "magma";
+      extraCameras.push({
+        volcanoId: volcano.id, source, sourceCameraId: found.sourceCameraId, name: found.name,
+        mode: found.mode ?? "VISIBLE", latitude: volcano.lat, longitude: volcano.lng,
+        currentImageUrl: found.imageUrl, detailUrl: found.detailUrl, upstreamTimestamp: found.observedAt,
+        attribution: source === "INGV" ? "INGV Osservatorio Etneo" : source === "PHIVOLCS" ? "PHIVOLCS VOLCAN" : "MAGMA Indonesia / PVMBG",
+        licence: source === "MAGMA" ? "CC BY-NC-ND 4.0" : reusable ? "CC BY 4.0" : "VERIFY", reuseAllowed: reusable, enabled: true,
+      });
+      extraGeneric.push({
+        camId: `${provider}:${found.sourceCameraId}`, provider, title: found.name, lat: volcano.lat, lng: volcano.lng,
+        status: "active", country: volcano.country, imageUrl: found.imageUrl, playerUrl: found.detailUrl,
+        tags: ["volcano", volcano.id], attribution: { provider: source === "INGV" ? "INGV Osservatorio Etneo" : source === "PHIVOLCS" ? "PHIVOLCS VOLCAN" : "MAGMA Indonesia / PVMBG",
+          requiredText: source === "MAGMA" ? "CC BY-NC-ND 4.0 — do not rebroadcast" : reusable ? "CC BY 4.0" : "Reuse permission unverified", linkUrl: found.detailUrl }, fetchedAt: Date.now(),
+      });
+    };
+    avoCatalog ??= await fetchGvpCatalog().catch(() => []);
+    ingvFound.forEach((camera) => addExtra("INGV", camera, true));
+    phivolcsFound.forEach((camera) => addExtra("PHIVOLCS", camera, false));
+    magmaFound.forEach((camera) => addExtra("MAGMA", camera, false));
+    const [extraCameraResult, extraGenericResult] = await Promise.all([
+      db.volcanoCameras.upsertMany(extraCameras), db.cams.upsertMany(extraGeneric), ...extraStubWrites,
+    ]);
+    await Promise.all([
+      db.volcanoMediaSources.upsert({ source: "INGV", name: "INGV Osservatorio Etneo", registryUrl: INGV_ETNA_PAGE,
+        enabled: true, registryPollSeconds: 6 * 60 * 60, mediaPollSeconds: 3 * 60, attribution: "INGV Osservatorio Etneo",
+        defaultLicence: "CC BY 4.0", defaultReuseAllowed: true, lastDiscoveredAt: new Date() }),
+      db.volcanoMediaSources.upsert({ source: "PHIVOLCS", name: "PHIVOLCS VOLCAN", registryUrl: PHIVOLCS_INSTRUMENTS,
+        enabled: true, registryPollSeconds: 6 * 60 * 60, mediaPollSeconds: 15 * 60, attribution: "PHIVOLCS VOLCAN",
+        defaultLicence: "VERIFY", defaultReuseAllowed: false, lastDiscoveredAt: new Date() }),
+      db.volcanoMediaSources.upsert({ source: "MAGMA", name: "MAGMA Indonesia / PVMBG", registryUrl: MAGMA_CCTV_URL,
+        enabled: true, registryPollSeconds: 6 * 60 * 60, mediaPollSeconds: 5 * 60, attribution: "MAGMA Indonesia / PVMBG",
+        defaultLicence: "CC BY-NC-ND 4.0", defaultReuseAllowed: false, lastDiscoveredAt: new Date() }),
+    ]);
+    const result = { avo: { discovered: discovered.length, cameras: cameras.length, unmatched, unmatchedNames: avoUnmatchedNames,
+      upserted: cameraResult.upserted, genericUpserted: genericResult.upserted },
+      usgs: { catalogue: usgsStatuses.length, ashcam: usgsAshcam.length, candidates: usgsCandidates.length, pages: usgsPages,
+        pageMisses: usgsPageMisses, diagnostics: usgsDiagnostics, discovered: usgsDiscovered, cameras: usgsCameras.length,
+        upserted: usgsCameraResult.upserted, genericUpserted: usgsGenericResult.upserted },
+      ingv: { discovered: ingvFound.length, unmatchedNames: extraUnmatched.INGV, error: providerErrors.ingv },
+      phivolcs: { discovered: phivolcsFound.length, unmatchedNames: extraUnmatched.PHIVOLCS,
+        diagnostics: phivolcsDiagnostics, error: providerErrors.phivolcs },
+      magma: { discovered: magmaFound.length, unmatchedNames: extraUnmatched.MAGMA, error: providerErrors.magma },
+      extra: { cameras: extraCameras.length, upserted: extraCameraResult.upserted, genericUpserted: extraGenericResult.upserted } };
+    log(TAG, "volcano media registry done", result);
+    return result;
+  } catch (err) {
+    log(TAG, "volcano media registry failed", summarizeForLog(err));
+    blogErr(TAG, "volcano media registry failed", err, "volcanoes", "mediaRegistry");
+    throw err;
+  }
+}
+
+/** Acquire official non-camera media. IMO EPOS is the first API adapter. */
+export async function officialMedia(_job: Job) {
+  const db = await getAppDb();
+  const [images, volcanoes] = await Promise.all([
+    fetchImoEruptionImages().catch((err) => { log(TAG, "IMO official media unavailable", summarizeForLog(err)); return []; }),
+    db.volcanoes.list(),
+  ]);
+  const byName = new Map(volcanoes.map((v) => [normalizedVolcanoName(v.name), v]));
+  let stored = 0;
+  let unchanged = 0;
+  let unmatched = 0;
+  let failed = 0;
+  let wikimediaDiscovered = 0;
+  for (const image of images) {
+    const volcano = image.volcanoName ? byName.get(normalizedVolcanoName(String(image.volcanoName))) : undefined;
+    if (!volcano) { unmatched++; continue; }
+    try {
+      const res = await fetch(image.imageUrl);
+      if (!res.ok) { failed++; continue; }
+      const bytes = Buffer.from(await res.arrayBuffer());
+      const result = await db.volcanoMedia.put({
+        volcanoId: volcano.id, source: "IMO", type: image.type, sourceMediaId: image.sourceMediaId,
+        title: image.title ?? image.eruption, caption: image.caption, observedAt: image.observedAt,
+        imageUrl: image.imageUrl, sourceUrl: image.sourceUrl, attribution: image.attribution,
+        licence: image.licence, reuseAllowed: image.reuseAllowed,
+        contentType: res.headers.get("content-type") ?? "application/octet-stream", bytes,
+      });
+      if (result.inserted) stored++; else unchanged++;
+    } catch { failed++; }
+  }
+  let gvpDiscovered = 0;
+  for (const volcano of volcanoes) {
+    if (!volcano.sourceUrl) continue;
+    const gvpImages = await fetchGvpImages(volcano.sourceUrl).catch(() => []);
+    gvpDiscovered += gvpImages.length;
+    for (const image of gvpImages) {
+      try {
+        const res = await fetch(image.imageUrl);
+        if (!res.ok) { failed++; continue; }
+        const result = await db.volcanoMedia.put({
+          volcanoId: volcano.id, source: "GVP", type: image.type, sourceMediaId: image.sourceMediaId,
+          title: image.title, caption: image.caption, imageUrl: image.imageUrl, sourceUrl: image.sourceUrl,
+          attribution: image.attribution, licence: image.licence, reuseAllowed: image.reuseAllowed,
+          contentType: res.headers.get("content-type") ?? "application/octet-stream",
+          bytes: Buffer.from(await res.arrayBuffer()),
+        });
+        if (result.inserted) stored++; else unchanged++;
+      } catch { failed++; }
+    }
+  }
+  // Wikipedia enrichment already resolves the canonical lead/gallery URLs. Feed
+  // those files through the same byte store so they receive deduplication,
+  // provenance and rights review instead of remaining loose external URLs.
+  for (const volcano of volcanoes) {
+    const urls = [...new Set([volcano.wikiPhoto, ...(volcano.wikiGallery ?? [])].filter((url): url is string => Boolean(url)))];
+    wikimediaDiscovered += urls.length;
+    for (const imageUrl of urls) {
+      try {
+        const res = await fetch(imageUrl); if (!res.ok) { failed++; continue; }
+        const result = await db.volcanoMedia.put({ volcanoId: volcano.id, source: "WIKIMEDIA", type: "PHOTO",
+          sourceMediaId: imageUrl, title: `${volcano.name} reference image`, imageUrl,
+          sourceUrl: volcano.wikiTitle ? `https://en.wikipedia.org/wiki/${encodeURIComponent(volcano.wikiTitle.replace(/ /g, "_"))}` : imageUrl,
+          attribution: "Wikimedia contributors", licence: "VERIFY ON FILE PAGE", reuseAllowed: false,
+          contentType: res.headers.get("content-type") ?? "application/octet-stream", bytes: Buffer.from(await res.arrayBuffer()) });
+        if (result.inserted) stored++; else unchanged++;
+      } catch { failed++; }
+    }
+  }
+  const nasaImages = await fetchNasaVolcanoImages(volcanoes.map((v) => v.name)).catch(() => []);
+  for (const image of nasaImages) {
+    const volcano = image.volcanoName ? byName.get(normalizedVolcanoName(image.volcanoName)) : undefined;
+    if (!volcano) { unmatched++; continue; }
+    try {
+      const res = await fetch(image.imageUrl); if (!res.ok) { failed++; continue; }
+      const result = await db.volcanoMedia.put({ volcanoId: volcano.id, source: "NASA_IMAGES", type: image.type,
+        sourceMediaId: image.sourceMediaId, title: image.title, caption: image.caption, observedAt: image.observedAt,
+        imageUrl: image.imageUrl, sourceUrl: image.sourceUrl, attribution: "NASA Image and Video Library",
+        licence: "NASA Media Usage Guidelines", reuseAllowed: false,
+        contentType: res.headers.get("content-type") ?? "application/octet-stream", bytes: Buffer.from(await res.arrayBuffer()) });
+      if (result.inserted) stored++; else unchanged++;
+    } catch { failed++; }
+  }
+  await db.volcanoMediaSources.upsert({
+    source: "IMO", name: "Icelandic Meteorological Office", registryUrl: IMO_EPOS_OPENAPI,
+    enabled: true, registryPollSeconds: 24 * 60 * 60, mediaPollSeconds: 15 * 60,
+    attribution: "Icelandic Meteorological Office", defaultLicence: "CC BY-SA 4.0",
+    defaultReuseAllowed: true, lastDiscoveredAt: new Date(),
+  });
+  await db.volcanoMediaSources.upsert({
+    source: "GVP", name: "Smithsonian Global Volcanism Program", registryUrl: "https://volcano.si.edu/gallery/ImageCollection.cfm",
+    enabled: true, registryPollSeconds: 24 * 60 * 60, attribution: "Smithsonian Global Volcanism Program",
+    defaultLicence: "VERIFY", defaultReuseAllowed: false, lastDiscoveredAt: new Date(),
+  });
+  await Promise.all([
+    db.volcanoMediaSources.upsert({ source: "WIKIMEDIA", name: "Wikimedia Commons / Wikipedia", registryUrl: "https://commons.wikimedia.org/wiki/Category:Volcanoes",
+      enabled: true, registryPollSeconds: 7 * 24 * 60 * 60, attribution: "Wikimedia contributors",
+      defaultLicence: "VERIFY ON FILE PAGE", defaultReuseAllowed: false, lastDiscoveredAt: new Date() }),
+    db.volcanoMediaSources.upsert({ source: "NASA_IMAGES", name: "NASA Image and Video Library", registryUrl: NASA_IMAGES_SEARCH,
+      enabled: true, registryPollSeconds: 24 * 60 * 60, attribution: "NASA Image and Video Library",
+      defaultLicence: "NASA Media Usage Guidelines", defaultReuseAllowed: false, lastDiscoveredAt: new Date() }),
+  ]);
+  const result = { imoDiscovered: images.length, gvpDiscovered, wikimediaDiscovered, nasaDiscovered: nasaImages.length,
+    stored, unchanged, unmatched, failed };
+  log(TAG, "official volcano media done", result);
+  if (stored) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: stored } });
+  return result;
+}
+
+/** Acquire latest VOLCAT products only for volcanoes in the active cache. */
+export async function satelliteMedia(_job: Job) {
+  const db = await getAppDb();
+  const volcanoes = await db.volcanoes.list();
+  const images = await fetchVolcatImages(volcanoes.map((v) => v.name));
+  let stored = 0; let unchanged = 0; let unmatched = 0; let failed = 0;
+  for (const image of images) {
+    const sector = normalizedVolcanoName(image.sectorId);
+    const volcano = volcanoes.find((v) => {
+      const name = normalizedVolcanoName(v.name); return name.length >= 4 && (sector.includes(name) || name.includes(sector));
+    });
+    if (!volcano) { unmatched++; continue; }
+    try {
+      const res = await fetch(image.imageUrl); if (!res.ok) { failed++; continue; }
+      const result = await db.volcanoMedia.put({
+        volcanoId: volcano.id, source: "VOLCAT", type: image.type,
+        sourceMediaId: `${image.sectorId}:${image.product ?? "unknown"}:${image.observedAt?.toISOString() ?? image.imageUrl}`,
+        title: [image.satellite, image.instrument, image.product].filter(Boolean).join(" · "), observedAt: image.observedAt,
+        imageUrl: image.imageUrl, sourceUrl: image.sourceUrl, attribution: "NOAA/CIMSS VOLCAT · UW-SSEC",
+        licence: "VERIFY", reuseAllowed: false, contentType: res.headers.get("content-type") ?? "application/octet-stream",
+        bytes: Buffer.from(await res.arrayBuffer()),
+      });
+      if (result.inserted) stored++; else unchanged++;
+    } catch { failed++; }
+  }
+  await db.volcanoMediaSources.upsert({ source: "VOLCAT", name: "NOAA/CIMSS VOLCAT", registryUrl: VOLCAT_LIST_URL,
+    enabled: true, registryPollSeconds: 24 * 60 * 60, mediaPollSeconds: 10 * 60,
+    attribution: "NOAA/CIMSS VOLCAT · UW-SSEC", defaultLicence: "VERIFY", defaultReuseAllowed: false,
+    lastDiscoveredAt: new Date() });
+  const result = { discovered: images.length, stored, unchanged, unmatched, failed };
+  log(TAG, "volcano satellite media done", result);
+  return result;
+}
+
+export async function mediaRights(_job: Job) {
+  const summary = await (await getAppDb()).volcanoMedia.rightsSummary();
+  const blocked = summary.filter((row) => row.reuseAllowed !== true).reduce((sum, row) => sum + row.count, 0);
+  const result = { summary, blocked };
+  log(TAG, "volcano media rights audit", result);
+  return result;
+}
+
+/** Download enabled registry cameras and persist changed bytes in volcano-media blobs. */
+export async function cameraRefresh(_job: Job) {
+  const db = await getAppDb();
+  const [cameras, sources] = await Promise.all([
+    db.volcanoCameras.listEnabled(),
+    db.volcanoMediaSources.list(),
+  ]);
+  const sourceMeta = new Map(sources.map((source) => [source.source, source]));
+  let stored = 0;
+  let unchanged = 0;
+  let failed = 0;
+  for (const camera of cameras) {
+    if (!camera.currentImageUrl) continue;
+    try {
+      const res = await fetch(camera.currentImageUrl);
+      if (!res.ok) { failed++; continue; }
+      const bytes = Buffer.from(await res.arrayBuffer());
+      if (!bytes.length) { failed++; continue; }
+      const observedAt = camera.upstreamTimestamp ? new Date(camera.upstreamTimestamp) : new Date();
+      const rights = sourceMeta.get(camera.source);
+      const result = await db.volcanoMedia.put({
+        volcanoId: camera.volcanoId,
+        source: camera.source,
+        type: mediaTypeForCamera(camera.mode),
+        cameraId: camera.id,
+        title: camera.name,
+        observedAt: Number.isNaN(+observedAt) ? new Date() : observedAt,
+        imageUrl: camera.currentImageUrl,
+        sourceUrl: camera.detailUrl,
+        latitude: camera.latitude,
+        longitude: camera.longitude,
+        bearing: camera.bearing,
+        attribution: camera.attribution ?? rights?.attribution ?? camera.source,
+        licence: camera.licence ?? rights?.defaultLicence ?? "VERIFY",
+        reuseAllowed: camera.reuseAllowed ?? rights?.defaultReuseAllowed ?? false,
+        contentType: res.headers.get("content-type") ?? "application/octet-stream",
+        bytes,
+      });
+      if (result.inserted) stored++; else unchanged++;
+    } catch {
+      failed++;
+    }
+  }
+  const result = { cameras: cameras.length, stored, unchanged, failed };
+  log(TAG, "volcano camera media refresh done", result);
+  if (stored) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: stored } });
+  return result;
 }
 
 // ── P2b: worker-captured camera frames on disk (observation history) ─────────
@@ -586,7 +1104,7 @@ export async function snapshotCams(_job: Job) {
           : undefined;
         await db.eventSnapshots.put({
           eventId: ev.id,
-          source: "geonet",
+          source: cam.provider,
           kind: "camera",
           layer: cam.camId, // per-cam hourly slot
           hourSlot,
@@ -655,7 +1173,7 @@ export async function timelapseCams(_job: Job) {
         const { webp, width, height, frames: n } = await buildTimelapseWebp(pngs);
         await db.eventSnapshots.put({
           eventId: ev.id,
-          source: "geonet",
+          source: frames[0].source,
           kind: "render",
           layer: `timelapse:${camId}`,
           hourSlot: daySlot,

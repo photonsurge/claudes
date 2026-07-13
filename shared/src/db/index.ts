@@ -77,6 +77,12 @@ import { getVolcanoModel } from "./volcano-model";
 import { makeVolcanoRepo } from "./volcano-repo";
 import { getVolcanoSourceLinkModel } from "./volcano-source-link-model";
 import { makeVolcanoSourceLinkRepo } from "./volcano-source-link-repo";
+import { getVolcanoCameraModel } from "./volcano-camera-model";
+import { makeVolcanoCameraRepo } from "./volcano-camera-repo";
+import { getVolcanoMediaModel } from "./volcano-media-model";
+import { makeVolcanoMediaRepo } from "./volcano-media-repo";
+import { getVolcanoMediaSourceModel } from "./volcano-media-source-model";
+import { makeVolcanoMediaSourceRepo } from "./volcano-media-source-repo";
 import { getCountryModel } from "./country-model";
 import { makeCountryRepo } from "./country-repo";
 import { getRegionModel } from "./region-model";
@@ -150,6 +156,7 @@ export function createDb(conn: Connection) {
     satimg: makeInlineBlobStore("satimg", blobFs),
     alertSnapshot: makeInlineBlobStore("alert-snapshot", blobFs),
     eventSnapshot: makeInlineBlobStore("event-snapshot", blobFs),
+    volcanoMedia: makeInlineBlobStore("volcano-media", blobFs),
   };
 
   return {
@@ -205,6 +212,9 @@ export function createDb(conn: Connection) {
     fires: makeFireRepo(getFireModel(conn)),
     volcanoes: makeVolcanoRepo(getVolcanoModel(conn)),
     volcanoSourceLinks: makeVolcanoSourceLinkRepo(getVolcanoSourceLinkModel(conn)),
+    volcanoCameras: makeVolcanoCameraRepo(getVolcanoCameraModel(conn)),
+    volcanoMedia: makeVolcanoMediaRepo(getVolcanoMediaModel(conn), blobs.volcanoMedia),
+    volcanoMediaSources: makeVolcanoMediaSourceRepo(getVolcanoMediaSourceModel(conn)),
     countries: makeCountryRepo(getCountryModel(conn)),
     regions: makeRegionRepo(getRegionModel(conn)),
     areaWeatherReports: makeAreaWeatherReportRepo(getAreaWeatherReportModel(conn)),

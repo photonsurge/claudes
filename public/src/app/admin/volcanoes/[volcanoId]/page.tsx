@@ -8,11 +8,15 @@
  */
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useParams } from "next/navigation";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { EventTimelineBeat } from "@photonsurge/shared/events/event-timeline";
 import type { Cam } from "@photonsurge/shared/cams/types";
 import type { EventSnapshotMeta } from "@photonsurge/shared/db/event-snapshot-repo";
+import type { VolcanoMedia } from "@photonsurge/shared/volcanoes/media";
+import type { VolcanoCamera } from "@photonsurge/shared/volcanoes/media";
+import type { iVolcanoMediaSource } from "@photonsurge/shared/db/volcano-media-source-model";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 
 interface VolcanoDetail {
@@ -21,6 +25,9 @@ interface VolcanoDetail {
   timeline: EventTimelineBeat[];
   cams: Cam[];
   snapshots: EventSnapshotMeta[];
+  media: VolcanoMedia[];
+  volcanoCameras: VolcanoCamera[];
+  mediaSources: iVolcanoMediaSource[];
 }
 
 const snapSrc = (s: EventSnapshotMeta) => `/api/events/snapshot/${s.id}?v=${encodeURIComponent(s.capturedAt)}`;
@@ -69,6 +76,7 @@ export default function VolcanoDetailPage() {
   const { volcanoId } = useParams<{ volcanoId: string }>();
   const [detail, setDetail] = useState<VolcanoDetail | null>(null);
   const [missing, setMissing] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const reload = useCallback(async () => {
     if (!volcanoId) return;
@@ -84,6 +92,22 @@ export default function VolcanoDetailPage() {
     reload();
   }, [reload]);
 
+  useEffect(() => {
+    if (lightboxIndex == null) return;
+    const count = detail?.media?.filter((item) => item.type !== "VIDEO" && (item.assetRef || item.imageUrl)).length ?? 0;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLightboxIndex(null);
+      if (event.key === "ArrowLeft" && count) setLightboxIndex((index) => index == null ? null : (index - 1 + count) % count);
+      if (event.key === "ArrowRight" && count) setLightboxIndex((index) => index == null ? null : (index + 1) % count);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [detail?.media?.length, lightboxIndex]);
+
   if (!detail) {
     return (
       <AdminPageShell title="Volcano" crumbs={[{ href: "/admin/volcanoes", label: "Volcanoes" }, { label: "…" }]}>
@@ -96,6 +120,17 @@ export default function VolcanoDetailPage() {
   const snapshots = detail.snapshots ?? [];
   const timelapses = snapshots.filter((s) => s.kind === "render");
   const capturedFrames = snapshots.filter((s) => s.kind === "camera").slice(0, 24);
+  const media = detail.media ?? [];
+  const mediaSrc = (item: VolcanoMedia) => item.assetRef
+    ? `/api/volcanoes/media/${encodeURIComponent(item.assetRef)}?v=${encodeURIComponent(item.contentHash ?? item.acquiredAt.toString())}`
+    : item.imageUrl;
+  const lightboxMedia = media.filter((item) => item.type !== "VIDEO" && Boolean(mediaSrc(item)));
+  const volcanoCameras = detail.volcanoCameras ?? [];
+  const usedSourceIds = new Set([
+    ...media.map((item) => item.source),
+    ...volcanoCameras.map((camera) => camera.source),
+  ]);
+  const mediaSources = (detail.mediaSources ?? []).filter((source) => usedSourceIds.has(source.source));
 
   return (
     <AdminPageShell
@@ -303,6 +338,92 @@ export default function VolcanoDetailPage() {
         </div>
       )}
 
+      {media.length > 0 && (
+        <div style={{ ...card, marginTop: 14 }}>
+          <div style={cardLabel}>Official media ({media.length})</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginTop: 10 }}>
+            {media.slice(0, 60).map((item) => {
+              const src = mediaSrc(item);
+              const lightboxItemIndex = lightboxMedia.findIndex((candidate) => candidate.id === item.id);
+              return (
+                <figure key={item.id} style={{ margin: 0, minWidth: 0 }}>
+                  {src && item.type !== "VIDEO" && (
+                    <button type="button" onClick={() => { if (lightboxItemIndex >= 0) setLightboxIndex(lightboxItemIndex); }} aria-label={`Open ${item.title ?? item.caption ?? item.type}`}
+                      style={{ display: "block", width: "100%", padding: 0, border: 0, background: "transparent", cursor: "zoom-in" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={src} alt={item.title ?? item.caption ?? item.type}
+                        style={{ width: "100%", height: 145, objectFit: "cover", borderRadius: 6, border: "1px solid #1b2030", background: "#070a11", display: "block" }} />
+                    </button>
+                  )}
+                  <figcaption style={{ marginTop: 5 }}>
+                    <div style={{ color: "#cbd5e1", fontSize: 12 }}>{item.title ?? item.caption ?? item.type}</div>
+                    <div style={{ color: "#5b6478", fontSize: 11 }}>
+                      {item.source} · {item.type} · {fmtTime(item.observedAt?.toString() ?? item.acquiredAt.toString())}
+                    </div>
+                    <div style={{ color: item.reuseAllowed ? "#34d399" : "#f59e0b", fontSize: 10 }}>
+                      {item.licence ?? "VERIFY"}{item.reuseAllowed ? " · reusable" : " · internal review only"}
+                    </div>
+                    <a href={item.sourceUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", fontSize: 11 }}>Source ↗</a>
+                  </figcaption>
+                </figure>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {(mediaSources.length > 0 || volcanoCameras.length > 0) && (
+        <div style={{ ...card, marginTop: 14 }}>
+          <div style={cardLabel}>Monitoring sources ({mediaSources.length})</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 10, marginTop: 10 }}>
+            {mediaSources.map((source) => {
+              const sourceMedia = media.filter((item) => item.source === source.source);
+              const sourceCameras = volcanoCameras.filter((camera) => camera.source === source.source);
+              return (
+                <div key={source.source} style={{ padding: 11, border: "1px solid #1b2030", borderRadius: 7, background: "#090e18" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <strong style={{ color: "#dbe5f3", fontSize: 13 }}>{source.name}</strong>
+                    <span style={{ color: source.enabled ? "#34d399" : "#64748b", fontSize: 10 }}>{source.enabled ? "ENABLED" : "DISABLED"}</span>
+                  </div>
+                  <div style={{ color: "#7f8a9d", fontSize: 11, marginTop: 5 }}>
+                    {sourceCameras.length} camera{sourceCameras.length === 1 ? "" : "s"} · {sourceMedia.length} archived item{sourceMedia.length === 1 ? "" : "s"}
+                  </div>
+                  <div style={{ color: source.defaultReuseAllowed ? "#34d399" : "#f59e0b", fontSize: 11, marginTop: 3 }}>
+                    {source.defaultLicence ?? "VERIFY"} · {source.defaultReuseAllowed ? "default reusable" : "review before reuse"}
+                  </div>
+                  {source.attribution && <div style={{ color: "#667085", fontSize: 10, marginTop: 3 }}>{source.attribution}</div>}
+                  {source.lastDiscoveredAt && <div style={{ color: "#566174", fontSize: 10, marginTop: 3 }}>Registry checked {fmtTime(source.lastDiscoveredAt.toString())}</div>}
+                  {source.lastError && <div style={{ color: "#ef8f8f", fontSize: 10, marginTop: 3 }}>Last error: {source.lastError}</div>}
+                  <a href={source.registryUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", fontSize: 11, display: "inline-block", marginTop: 5 }}>Source registry ↗</a>
+                </div>
+              );
+            })}
+          </div>
+          {volcanoCameras.length > 0 && (
+            <details style={{ marginTop: 12 }}>
+              <summary style={{ color: "#93a4ba", fontSize: 12, cursor: "pointer" }}>Camera registry details ({volcanoCameras.length})</summary>
+              <div style={{ overflowX: "auto", marginTop: 8 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                  <thead><tr>{["Source", "Camera", "Mode", "Coordinates", "Bearing", "Upstream time", "Rights"].map((label) =>
+                    <th key={label} style={{ textAlign: "left", color: "#64748b", padding: "5px 8px", borderBottom: "1px solid #1b2030" }}>{label}</th>)}</tr></thead>
+                  <tbody>{volcanoCameras.map((camera) => (
+                    <tr key={camera.id}>
+                      <td style={sourceCell}>{camera.source}</td>
+                      <td style={sourceCell}><a href={camera.detailUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa" }}>{camera.name}</a><div style={{ color: "#4f5b6d" }}>{camera.sourceCameraId}</div></td>
+                      <td style={sourceCell}>{camera.mode}</td>
+                      <td style={sourceCell}>{camera.latitude != null && camera.longitude != null ? `${camera.latitude.toFixed(4)}, ${camera.longitude.toFixed(4)}` : "—"}</td>
+                      <td style={sourceCell}>{camera.bearing != null ? `${camera.bearing}°` : "—"}</td>
+                      <td style={sourceCell}>{camera.upstreamTimestamp ?? "—"}</td>
+                      <td style={sourceCell}>{camera.licence ?? "VERIFY"}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
       {/* Wikipedia enrichment. */}
       {(v.wikiPhoto || v.wikiThumb || v.wikiExtract) && (
         <div style={{ ...card, marginTop: 14 }}>
@@ -345,17 +466,76 @@ export default function VolcanoDetailPage() {
           ← All volcanoes
         </Link>
       </div>
+
+      {lightboxIndex != null && lightboxMedia[lightboxIndex] && (() => {
+        const item = lightboxMedia[lightboxIndex];
+        const src = mediaSrc(item);
+        return createPortal(
+          <div role="dialog" aria-modal="true" aria-label={item.title ?? item.caption ?? "Volcano media"}
+            onMouseDown={(event) => { if (event.target === event.currentTarget) setLightboxIndex(null); }}
+            style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(2,5,10,.94)", display: "grid",
+              gridTemplateRows: "auto minmax(0, 1fr) auto", padding: 18, backdropFilter: "blur(8px)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <div style={{ color: "#8b95a7", fontSize: 12 }}>{lightboxIndex + 1} / {lightboxMedia.length} · {item.source} · {item.type}</div>
+              <button type="button" onClick={() => setLightboxIndex(null)} aria-label="Close lightbox"
+                style={{ ...lightboxButton, fontSize: 22, width: 42 }}>×</button>
+            </div>
+            <div style={{ minHeight: 0, display: "grid", gridTemplateColumns: "52px minmax(0, 1fr) 52px", alignItems: "center", gap: 12 }}>
+              <button type="button" onClick={() => setLightboxIndex((lightboxIndex - 1 + lightboxMedia.length) % lightboxMedia.length)} aria-label="Previous image"
+                style={lightboxButton}>‹</button>
+              {src && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={src} alt={item.title ?? item.caption ?? item.type}
+                  style={{ display: "block", maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", margin: "auto",
+                    objectFit: "contain", borderRadius: 8, boxShadow: "0 18px 70px rgba(0,0,0,.65)" }} />
+              )}
+              <button type="button" onClick={() => setLightboxIndex((lightboxIndex + 1) % lightboxMedia.length)} aria-label="Next image"
+                style={lightboxButton}>›</button>
+            </div>
+            <div style={{ width: "min(900px, 100%)", margin: "12px auto 0", textAlign: "center" }}>
+              <div style={{ color: "#f1f5f9", fontSize: 15, fontWeight: 600 }}>{item.title ?? item.caption ?? item.type}</div>
+              {item.title && item.caption && <div style={{ color: "#aab3c2", fontSize: 13, marginTop: 4 }}>{item.caption}</div>}
+              <div style={{ color: "#6f7a8d", fontSize: 11, marginTop: 6 }}>
+                {fmtTime(item.observedAt?.toString() ?? item.acquiredAt.toString())} · {item.attribution ?? item.source} · {item.licence ?? "VERIFY"}
+                {item.reuseAllowed ? " · reusable" : " · internal review only"}
+              </div>
+              <div style={{ color: "#556174", fontSize: 10, marginTop: 5, overflowWrap: "anywhere" }}>
+                {item.sourceMediaId && <>Upstream ID: {item.sourceMediaId} · </>}
+                {item.cameraId && <>Camera: {item.cameraId} · </>}
+                {item.latitude != null && item.longitude != null && <>Position: {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)} · </>}
+                {item.bearing != null && <>Bearing: {item.bearing}° · </>}
+                {item.contentHash && <>SHA-256: {item.contentHash}</>}
+              </div>
+              <a href={item.sourceUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", fontSize: 12, display: "inline-block", marginTop: 6 }}>Open official source ↗</a>
+            </div>
+          </div>,
+          document.body,
+        );
+      })()}
     </AdminPageShell>
   );
 }
 
 const card: React.CSSProperties = { padding: 14, borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c" };
 const cardLabel: React.CSSProperties = { color: "#8b95a7", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 };
+const sourceCell: React.CSSProperties = { color: "#9aa7b9", padding: "6px 8px", borderBottom: "1px solid #121824", verticalAlign: "top" };
 const primary: React.CSSProperties = {
   padding: "8px 14px",
   borderRadius: 6,
   border: "1px solid #333",
   background: "#2563eb",
   color: "#fff",
+  cursor: "pointer",
+};
+const lightboxButton: React.CSSProperties = {
+  width: 48,
+  height: 48,
+  padding: 0,
+  borderRadius: 999,
+  border: "1px solid #344054",
+  background: "rgba(12,17,28,.82)",
+  color: "#f8fafc",
+  fontSize: 34,
+  lineHeight: 1,
   cursor: "pointer",
 };
