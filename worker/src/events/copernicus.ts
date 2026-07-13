@@ -25,6 +25,13 @@ const detailUrl = (code: string) => `${BASE}/public-activations/?code=${encodeUR
 const MATCH_RADIUS_KM = Number(process.env.EVENT_COPERNICUS_RADIUS_KM || 400);
 const MIN_SCORE = Number(process.env.EVENT_COPERNICUS_MIN_SCORE || 0.5);
 const URL_CAP = 60;
+/** The activation list is the SAME for every event, so cache it: without this the
+ *  list is re-fetched once per event per sweep (~20/min), which rate-limits the public
+ *  endpoint into 502s. One fetch per TTL, shared across all events' acquires. */
+const LIST_TTL_MS = Number(process.env.EVENT_COPERNICUS_LIST_TTL_MS || 10 * 60 * 1000);
+
+/** Transient upstream statuses — a retry-next-cadence hiccup, not a hard error. */
+const isTransientStatus = (status: number) => status === 429 || status >= 500;
 
 /** A pared-down activation from the LIST feed — enough to match on. */
 export interface ActivationListItem {
@@ -161,6 +168,39 @@ function resourceKind(url: string): EventResourceKind {
 const isClosed = (status?: string) => !!status && /clos|complet|terminat|ended/i.test(status);
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
+/** Process-wide cache of the (identical-for-every-event) activation list. */
+let listCache: { items: ActivationListItem[]; atMs: number } | null = null;
+
+/** Test hook — clear the module cache between cases. */
+export function _resetCopernicusCache(): void {
+  listCache = null;
+}
+
+/**
+ * Load the activation list, shared across events via a TTL cache. Returns null on a
+ * transient outage with no cached list to fall back on (the caller then soft-skips and
+ * retries next cadence — no thrown error, no log spam). A non-transient 4xx (a genuine
+ * contract break, e.g. the endpoint moved) still throws so it surfaces loudly.
+ */
+async function loadActivationList(f: typeof fetch, now: Date): Promise<ActivationListItem[] | null> {
+  if (listCache && now.getTime() - listCache.atMs < LIST_TTL_MS) return listCache.items;
+  let res: Response;
+  try {
+    res = await f(LIST_URL, { headers: { Accept: "application/json" } });
+  } catch (err) {
+    if (listCache) return listCache.items; // network blip → serve stale
+    throw err;
+  }
+  if (!res.ok) {
+    if (listCache) return listCache.items; // any error → prefer a stale list over none
+    if (isTransientStatus(res.status)) return null; // transient + cold cache → soft skip
+    throw new Error(`copernicus list ${res.status}`);
+  }
+  const items = parseActivationList(await res.json());
+  listCache = { items, atMs: now.getTime() };
+  return items;
+}
+
 export const copernicusSource: ExternalSource = {
   id: SOURCE_ID,
 
@@ -182,9 +222,8 @@ export const copernicusSource: ExternalSource = {
     if (linked) {
       code = linked.externalId;
     } else {
-      const res = await f(LIST_URL, { headers: { Accept: "application/json" } });
-      if (!res.ok) throw new Error(`copernicus list ${res.status}`);
-      const items = parseActivationList(await res.json());
+      const items = await loadActivationList(f, now);
+      if (!items) return empty; // transient list outage — retry next cadence, quietly
       const match = matchActivation(event, items);
       if (!match) return empty;
       code = match.code;
@@ -198,8 +237,16 @@ export const copernicusSource: ExternalSource = {
       });
     }
 
-    const dRes = await f(detailUrl(code), { headers: { Accept: "application/json" } });
-    if (!dRes.ok) throw new Error(`copernicus detail ${dRes.status}`);
+    let dRes: Response;
+    try {
+      dRes = await f(detailUrl(code), { headers: { Accept: "application/json" } });
+    } catch {
+      return empty; // network blip on the per-event detail — retry next cadence
+    }
+    if (!dRes.ok) {
+      if (isTransientStatus(dRes.status)) return empty; // transient → soft skip
+      throw new Error(`copernicus detail ${dRes.status}`);
+    }
     const norm = normalizeCopernicusDetail(await dRes.json(), code);
     const payloadHash = sha256(norm.hashBasis);
 

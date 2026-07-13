@@ -5,6 +5,7 @@ import {
   harvestUrls,
   normalizeCopernicusDetail,
   copernicusSource,
+  _resetCopernicusCache,
 } from "./copernicus";
 
 const listPayload = {
@@ -95,6 +96,8 @@ describe("harvestUrls / normalizeCopernicusDetail", () => {
 describe("copernicusSource.acquire", () => {
   const event = { id: "evt-1", primarySource: "gdacs", primarySourceId: "TC1000123", repPoint: { type: "Point", coordinates: [120, 14] }, title: "TC Alpha" } as any;
 
+  beforeEach(() => _resetCopernicusCache());
+
   function fakeDb() {
     const calls = { links: [] as any[], revisions: 0, resources: 0, beats: [] as any[] };
     const db = {
@@ -128,5 +131,41 @@ describe("copernicusSource.acquire", () => {
     expect(calls.revisions).toBe(1);
     expect(calls.resources).toBe(3);
     expect(calls.beats.map((b) => b.type)).toEqual(expect.arrayContaining(["SOURCE_LINKED", "PRODUCT_ADDED"]));
+  });
+
+  it("fetches the activation list ONCE and shares it across events (no per-event hammering)", async () => {
+    let listCalls = 0;
+    const countingFetch = (async (url: string) => {
+      if (url.includes("public-activations-info")) listCalls++;
+      const body = url.includes("public-activations-info") ? listPayload : detailPayload;
+      return { ok: true, json: async () => body } as unknown as Response;
+    }) as any;
+    const now = new Date("2026-07-12T15:00:00Z");
+    await copernicusSource.acquire({ db: fakeDb().db, event, now, fetchImpl: countingFetch });
+    await copernicusSource.acquire({ db: fakeDb().db, event: { ...event, id: "evt-2" }, now, fetchImpl: countingFetch });
+    expect(listCalls).toBe(1); // the second acquire reused the cached list
+  });
+
+  it("soft-skips (no throw, no change) when the list is transiently 502 and the cache is cold", async () => {
+    const dead = (async () => ({ ok: false, status: 502, json: async () => ({}) })) as any;
+    const res = await copernicusSource.acquire({ db: fakeDb().db, event, now: new Date("2026-07-12T15:00:00Z"), fetchImpl: dead });
+    expect(res).toEqual({ changed: false, timeline: 0, resources: 0, series: 0 });
+  });
+
+  it("serves the stale cached list when a later refresh hits a transient error", async () => {
+    let listCalls = 0;
+    const flaky = (async (url: string) => {
+      if (url.includes("public-activations-info")) {
+        listCalls++;
+        if (listCalls > 1) return { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+        return { ok: true, json: async () => listPayload } as unknown as Response;
+      }
+      return { ok: true, json: async () => detailPayload } as unknown as Response;
+    }) as any;
+    // Warm the cache, then jump past the TTL so the next acquire re-fetches (and 503s).
+    await copernicusSource.acquire({ db: fakeDb().db, event, now: new Date("2026-07-12T15:00:00Z"), fetchImpl: flaky });
+    const res = await copernicusSource.acquire({ db: fakeDb().db, event: { ...event, id: "evt-2" }, now: new Date("2026-07-12T15:20:00Z"), fetchImpl: flaky });
+    expect(listCalls).toBe(2); // it did attempt a refresh
+    expect(res.changed).toBe(true); // …but fell back to the stale list and still matched
   });
 });

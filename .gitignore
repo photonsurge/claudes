@@ -6,7 +6,8 @@ dist/
 .env
 .env.*
 !.env.sample
-
+heapdump/
+*.heap*
 logs/
 *.log
 

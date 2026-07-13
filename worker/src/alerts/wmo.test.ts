@@ -35,6 +35,30 @@ describe("featuresToCapMessages", () => {
     expect(us.info[0].severityRank).toBe(2); // s=2 → Moderate
   });
 
+  it("falls back to a representative Point when no polygon survives", () => {
+    // A degenerate 2-point 'polygon' (a line) is unsalvageable as an area, but its
+    // vertices still pin a location — the alert becomes point-only, not location-less.
+    const degenerate = [
+      {
+        geometry: { type: "Polygon", coordinates: [[[100, 20], [102, 24]]] },
+        properties: { capurl: "cn-cma-xx/2026/hot.xml", event: "high temperature", s: 3, sent: "x", expires: "2026-06-29T20:00:00Z" },
+      },
+    ];
+    const geom = featuresToCapMessages(degenerate as any, new Set())[0].info[0].area[0].geometry!;
+    expect(geom.type).toBe("Point");
+    expect(geom.coordinates).toEqual([101, 22]); // mean of the two vertices
+  });
+
+  it("yields null geometry when a capurl truly has no coordinates", () => {
+    const none = [
+      {
+        geometry: null,
+        properties: { capurl: "cn-cma-xx/2026/none.xml", event: "high temperature", s: 3, sent: "x", expires: "2026-06-29T20:00:00Z" },
+      },
+    ];
+    expect(featuresToCapMessages(none as any, new Set())[0].info[0].area[0].geometry).toBeNull();
+  });
+
   it("excludes countries by ISO-2 prefix", () => {
     const msgs = featuresToCapMessages(features as any, new Set(["us"]));
     expect(msgs).toHaveLength(1);

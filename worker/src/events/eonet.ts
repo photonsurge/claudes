@@ -32,6 +32,12 @@ const EONET_CATEGORY: Partial<Record<WatchedEventType, string>> = {
 /** Max distance (km) for a proximity match, and the minimum score to auto-link. */
 const MATCH_RADIUS_KM = Number(process.env.EVENT_EONET_RADIUS_KM || 500);
 const MIN_SCORE = Number(process.env.EVENT_EONET_MIN_SCORE || 0.6);
+/** The open-events list per category is the same for every event in that category, so
+ *  cache it (keyed by category) — otherwise it's re-fetched once per event per sweep. */
+const LIST_TTL_MS = Number(process.env.EVENT_EONET_LIST_TTL_MS || 10 * 60 * 1000);
+
+/** Transient upstream statuses — a retry-next-cadence hiccup, not a hard error. */
+const isTransientStatus = (status: number) => status === 429 || status >= 500;
 
 export interface EonetNormalized {
   eonetId: string;
@@ -90,6 +96,42 @@ export function bestEonetMatch(
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
+/** Per-category cache of the normalised open-events list. */
+const listCache = new Map<string, { items: EonetNormalized[]; atMs: number }>();
+
+/** Test hook — clear the module cache between cases. */
+export function _resetEonetCache(): void {
+  listCache.clear();
+}
+
+/**
+ * Load the open-events candidate list for a category, shared across events via a TTL
+ * cache. Returns null on a transient outage with no cached list (the caller soft-skips
+ * and retries next cadence — no thrown error, no log spam). A non-transient failure
+ * still throws so a real contract break surfaces.
+ */
+async function loadCategoryEvents(f: typeof fetch, cat: string | undefined, now: Date): Promise<EonetNormalized[] | null> {
+  const key = cat ?? "*";
+  const cached = listCache.get(key);
+  if (cached && now.getTime() - cached.atMs < LIST_TTL_MS) return cached.items;
+  let res: Response;
+  try {
+    res = await f(`${EONET_EVENTS}?status=open${cat ? `&category=${cat}` : ""}`);
+  } catch (err) {
+    if (cached) return cached.items; // network blip → serve stale
+    throw err;
+  }
+  if (!res.ok) {
+    if (cached) return cached.items;
+    if (isTransientStatus(res.status)) return null;
+    throw new Error(`eonet events ${res.status}`);
+  }
+  const json = await res.json();
+  const items: EonetNormalized[] = (Array.isArray(json?.events) ? json.events : []).map(normalizeEonetEvent);
+  listCache.set(key, { items, atMs: now.getTime() });
+  return items;
+}
+
 export const eonetSource: ExternalSource = {
   id: SOURCE_ID,
 
@@ -109,15 +151,21 @@ export const eonetSource: ExternalSource = {
     let firstMatch = false;
 
     if (linked) {
-      const res = await f(`${EONET_EVENTS}/${linked.externalId}`);
-      if (!res.ok) throw new Error(`eonet event ${res.status}`);
+      let res: Response;
+      try {
+        res = await f(`${EONET_EVENTS}/${linked.externalId}`);
+      } catch {
+        return empty; // network blip on the per-event detail — retry next cadence
+      }
+      if (!res.ok) {
+        if (isTransientStatus(res.status)) return empty; // transient → soft skip
+        throw new Error(`eonet event ${res.status}`);
+      }
       norm = normalizeEonetEvent(await res.json());
     } else {
       const cat = EONET_CATEGORY[event.type];
-      const res = await f(`${EONET_EVENTS}?status=open${cat ? `&category=${cat}` : ""}`);
-      if (!res.ok) throw new Error(`eonet events ${res.status}`);
-      const json = await res.json();
-      const candidates = (Array.isArray(json?.events) ? json.events : []).map(normalizeEonetEvent);
+      const candidates = await loadCategoryEvents(f, cat, now);
+      if (!candidates) return empty; // transient list outage — retry next cadence, quietly
       const best = bestEonetMatch(event, candidates);
       if (!best) return empty; // no confident cross-reference
       norm = best.norm;

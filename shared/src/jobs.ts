@@ -181,6 +181,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Alerts & events",
   },
   {
+    id: "alerts-snapshot-refresh",
+    label: "Refresh alert imagery",
+    description:
+      "Re-bake the alert before/after imagery for every interesting active alert: a fresh GIBS satellite frame → the side-by-side before/after comparison → nearby-camera stills (only when ALERT_CAMERA_SNAPSHOT_ENABLED=true). GIBS daytime no-data regions (polar night / off-swath) now return NO frame instead of a black box, and newest-first means a good re-bake supersedes a stale one on the alert detail card. Same as `yarn refresh:alert-snapshots`.",
+    domain: "alerts",
+    type: "alerts",
+    event: "snapshotRefresh",
+    group: "Alerts & events",
+  },
+  {
     id: "tles",
     label: "Refresh satellite TLEs",
     description: "Fetch the configured Celestrak groups into Mongo.",

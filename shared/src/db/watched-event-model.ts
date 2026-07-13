@@ -57,6 +57,23 @@ export interface iWatchedEventModel extends iWatchedEvent {
   _id: string;
 }
 
+/**
+ * GeoJSON Point sub-schema for `repPoint`. Declared with `default: undefined` (below)
+ * so a geometry-less event (many WMO/CMA alerts are area-name only, no polygon) does
+ * NOT get an empty `{ type: "Point", coordinates: [] }` materialised on insert — an
+ * empty Point is invalid for the 2dsphere index ("Point must only contain numeric
+ * elements") and would fail the whole upsert. An inline `type`/`coordinates` object
+ * with a default on `type` auto-creates exactly that empty subdoc, so use a real
+ * sub-schema and omit it entirely when there's no point.
+ */
+const PointSchema = new mongoose.Schema(
+  {
+    type: { type: String, enum: ["Point"], default: "Point" },
+    coordinates: { type: [Number], required: true },
+  },
+  { _id: false },
+);
+
 export const WatchedEventSchema = new mongoose.Schema<iWatchedEventModel>(
   {
     id: { type: String, required: true, unique: true, default: () => uuidv4() },
@@ -65,11 +82,8 @@ export const WatchedEventSchema = new mongoose.Schema<iWatchedEventModel>(
     title: { type: String, required: true, default: "" },
     startedAt: { type: String, required: true, default: () => new Date().toISOString() },
     endedAt: { type: String, required: false },
-    repPoint: {
-      type: { type: String, enum: ["Point"], default: "Point" },
-      coordinates: { type: [Number] },
-    },
-    bbox: { type: [Number], required: false },
+    repPoint: { type: PointSchema, required: false, default: undefined },
+    bbox: { type: [Number], required: false, default: undefined },
     primarySource: { type: String, required: true },
     primarySourceId: { type: String, required: true },
     lastSourceUpdateAt: { type: String, required: false },

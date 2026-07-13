@@ -57,7 +57,7 @@ setInterval(() => {
       dump(`h${t}`);
     }
   }
-}, 500).unref();
+}, 250).unref();
 
 // Manual + optional time-based fallback.
 process.on("SIGUSR2", () => dump("sig"));

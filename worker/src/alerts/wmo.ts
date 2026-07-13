@@ -145,7 +145,42 @@ function toPolygons(g: unknown): number[][][][] {
   return [];
 }
 
-/** Merge a capurl's polygon rows into one wound Polygon/MultiPolygon (or null). */
+/**
+ * Fallback representative point: the mean of every finite, in-range [lon,lat] vertex
+ * across a capurl's raw geometries. Rescues a location for alerts whose polygon is
+ * absent or too degenerate to survive `sanitizePolygon` (many CMA warnings — "high
+ * temperature", "Typhoon" — arrive area-name-only or as unsalvageable rings). Such an
+ * alert becomes a *point-only* alert (a hazard badge at the point, which the overlay
+ * already supports) and, once promoted, a LOCATED WatchedEvent instead of one with no
+ * geometry at all (which used to leave repPoint empty → a failed 2dsphere upsert).
+ */
+function verticesCentroid(geoms: unknown[]): AlertGeometry | null {
+  let sx = 0;
+  let sy = 0;
+  let n = 0;
+  const visit = (c: unknown): void => {
+    if (!Array.isArray(c)) return;
+    if (typeof c[0] === "number" && typeof c[1] === "number") {
+      const [x, y] = c as number[];
+      if (Number.isFinite(x) && Number.isFinite(y) && x >= -180 && x <= 180 && y >= -90 && y <= 90) {
+        sx += x;
+        sy += y;
+        n++;
+      }
+      return;
+    }
+    for (const e of c) visit(e);
+  };
+  for (const g of geoms) {
+    const geom = g as { coordinates?: unknown } | null;
+    if (geom?.coordinates != null) visit(geom.coordinates);
+  }
+  return n ? { type: "Point", coordinates: [sx / n, sy / n] } : null;
+}
+
+/** Merge a capurl's polygon rows into one wound Polygon/MultiPolygon; when no polygon
+ *  survives, fall back to a representative Point (see `verticesCentroid`) so the alert
+ *  keeps a location, else null. */
 function mergeGeometry(geoms: unknown[]): AlertGeometry | null {
   const polys: number[][][][] = [];
   for (const g of geoms) {
@@ -154,7 +189,7 @@ function mergeGeometry(geoms: unknown[]): AlertGeometry | null {
       if (s) polys.push(s);
     }
   }
-  if (!polys.length) return null;
+  if (!polys.length) return verticesCentroid(geoms);
   if (polys.length === 1) return { type: "Polygon", coordinates: polys[0] };
   return { type: "MultiPolygon", coordinates: polys };
 }

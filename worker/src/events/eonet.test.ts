@@ -1,4 +1,4 @@
-import { normalizeEonetEvent, scoreEonetMatch, bestEonetMatch, eonetSource } from "./eonet";
+import { normalizeEonetEvent, scoreEonetMatch, bestEonetMatch, eonetSource, _resetEonetCache } from "./eonet";
 
 const eonetEvent = (over: Record<string, unknown> = {}) => ({
   id: "EONET_6789",
@@ -67,6 +67,8 @@ describe("eonetSource.appliesTo", () => {
 describe("eonetSource.acquire", () => {
   const event = { id: "evt-1", type: "CYCLONE", repPoint: { type: "Point", coordinates: [120, 14] }, title: "TC Alpha" } as any;
 
+  beforeEach(() => _resetEonetCache());
+
   function fakeDb(existingLink: boolean, observeChanged: boolean) {
     const calls = { links: 0, revisions: 0, resources: 0, beats: [] as any[] };
     const db = {
@@ -108,5 +110,23 @@ describe("eonetSource.acquire", () => {
     expect(res.changed).toBe(false);
     expect(calls.links).toBe(0);
     expect(calls.beats).toHaveLength(0);
+  });
+
+  it("caches the category list across events (one fetch, not one per event)", async () => {
+    let listCalls = 0;
+    const counting = (async () => {
+      listCalls++;
+      return { ok: true, json: async () => ({ events: [eonetEvent()] }) } as unknown as Response;
+    }) as any;
+    const now = new Date("2026-07-12T15:00:00Z");
+    await eonetSource.acquire({ db: fakeDb(false, true).db, event, now, fetchImpl: counting });
+    await eonetSource.acquire({ db: fakeDb(false, true).db, event: { ...event, id: "evt-2" }, now, fetchImpl: counting });
+    expect(listCalls).toBe(1);
+  });
+
+  it("soft-skips (no throw, no change) on a transient 502 with a cold cache", async () => {
+    const dead = (async () => ({ ok: false, status: 502, json: async () => ({}) })) as any;
+    const res = await eonetSource.acquire({ db: fakeDb(false, true).db, event, now: new Date("2026-07-12T15:00:00Z"), fetchImpl: dead });
+    expect(res).toEqual({ changed: false, timeline: 0, resources: 0, series: 0 });
   });
 });

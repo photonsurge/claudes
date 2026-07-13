@@ -1,4 +1,9 @@
-import { fetchSatelliteFrame } from "./frame";
+import sharp from "sharp";
+import { fetchSatelliteFrame, frameDataFraction } from "./frame";
+
+/** A real, decodable solid-colour PNG (so the no-data pixel check actually runs). */
+const solidPng = (r: number, g: number, b: number, w = 64, h = 64) =>
+  sharp({ create: { width: w, height: h, channels: 3, background: { r, g, b } } }).png().toBuffer();
 
 /** Minimal `fetch`-shaped Response over a body + content-type. */
 const resp = (body: Buffer, { ok = true, contentType = "image/png" } = {}) =>
@@ -73,6 +78,37 @@ describe("fetchSatelliteFrame", () => {
 
     const frame = await fetchSatelliteFrame(BOUNDS, { date: "2026-07-11", fetchImpl });
     expect(frame!.observationTime.toISOString()).toBe("2026-07-10T00:00:00.000Z");
+  });
+
+  it("treats a valid-but-all-black no-data frame as empty and walks back", async () => {
+    const black = await solidPng(0, 0, 0);
+    const real = await solidPng(20, 80, 60); // daytime imagery carries real, non-zero pixels
+    const days: string[] = [];
+    const fetchImpl = (async (u: string) => {
+      const day = new URL(u).searchParams.get("TIME")!;
+      days.push(day);
+      // Newest day is a solid-black GIBS no-data response; the day before has imagery.
+      return resp(day === "2026-07-11" ? black : real);
+    }) as unknown as typeof fetch;
+
+    // minBytes:0 so the tiny solid PNGs reach the no-data pixel check.
+    const frame = await fetchSatelliteFrame(BOUNDS, { date: "2026-07-11", minBytes: 0, fetchImpl });
+    expect(days).toEqual(["2026-07-11", "2026-07-10"]);
+    expect(frame!.observationTime.toISOString()).toBe("2026-07-10T00:00:00.000Z");
+  });
+
+  it("gives up as null when every day in the window is all-black no-data", async () => {
+    const black = await solidPng(0, 0, 0);
+    const fetchImpl = (async () => resp(black)) as unknown as typeof fetch;
+    const frame = await fetchSatelliteFrame(BOUNDS, { date: "2026-07-11", lookbackDays: 2, minBytes: 0, fetchImpl });
+    expect(frame).toBeNull();
+  });
+
+  it("frameDataFraction: ~0 for black, ~1 for real imagery, fails open on garbage", async () => {
+    expect(await frameDataFraction(await solidPng(0, 0, 0))).toBeLessThan(0.02);
+    expect(await frameDataFraction(await solidPng(20, 80, 60))).toBeGreaterThan(0.99);
+    // An undecodable buffer can't be judged → fail open (don't drop a frame we can't read).
+    expect(await frameDataFraction(Buffer.alloc(500, 0x7f))).toBe(1);
   });
 
   it("skips non-ok responses and thrown fetches, then gives up as null within lookback", async () => {

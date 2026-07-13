@@ -44,11 +44,12 @@ services:
     working_dir: /app/heapdumps
     command: ["node", "--require", "/app/heapdumps/heapdump-hook.cjs", "/app/public/server.js"]
     environment:
-      # near-heap-limit=1 is V8's own dump, fired from inside GC -> catches even a
-      # SYNCHRONOUS runaway that starves the hook's poll. Safe now (10GB box). It
-      # writes to CWD, which working_dir pins to the mounted /app/heapdumps.
-      NODE_OPTIONS: "--max-old-space-size=2048 --heapsnapshot-near-heap-limit=1"
+      # Big cap so a snapshot taken mid-runaway has MASSIVE headroom to serialise
+      # (the 2048 cap left too little and the write OOM'd -> 0-byte file). 10GB box.
+      NODE_OPTIONS: "--max-old-space-size=4096"
       HEAPDUMP_DIR: /app/heapdumps
-      HEAPDUMP_HEAP_MB: "700,1400"   # hook thresholds (async path); each fires once
+      # Dump EARLY — the runaway jumps ~84->357->700MB in ~1s, so catch it at the
+      # first elevated sample (~350MB, still ~80% leak) where serialising is trivial.
+      HEAPDUMP_HEAP_MB: "300,700"
     volumes:
       - ./heapdumps:/app/heapdumps

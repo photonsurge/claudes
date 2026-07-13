@@ -1,6 +1,21 @@
+import mongoose from "mongoose";
 import { WatchedEventSchema, type iWatchedEvent } from "./watched-event-model";
 
 describe("WatchedEventSchema", () => {
+  // Regression: a geometry-less alert (many WMO/CMA warnings) must NOT materialise an
+  // empty `{ type: "Point", coordinates: [] }` — that fails the 2dsphere index
+  // ("Point must only contain numeric elements") and aborts the whole promotion upsert.
+  it("does not materialise an empty repPoint when none is provided", () => {
+    const Model = mongoose.model("WatchedEventDefaultsProbe", WatchedEventSchema);
+    const doc = new Model({ primarySource: "wmo", primarySourceId: "cn-cma-xx/x.xml", title: "high temperature" });
+    const obj = doc.toObject();
+    expect(obj.repPoint).toBeUndefined();
+    expect(obj.bbox).toBeUndefined();
+    // A real point still round-trips.
+    const located = new Model({ primarySource: "gdacs", primarySourceId: "TC1", repPoint: { type: "Point", coordinates: [120.5, 14.2] } });
+    expect(located.toObject().repPoint!.coordinates).toEqual([120.5, 14.2]);
+  });
+
   // Strict-mode parity guard: any interface field missing from the schema is
   // silently dropped on write.
   it("persists every iWatchedEvent field", () => {

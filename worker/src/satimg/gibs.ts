@@ -56,8 +56,9 @@ export interface FetchGibsOptions {
 /** A GIBS true-colour pixel is "no data" (unfilled/half-ingested granule, off-swath)
  *  when it's essentially pure black. Real daytime imagery — even the darkest ocean —
  *  carries a bluish, clearly non-zero value, so this threshold separates genuine gaps
- *  from sea without ever filling (and thus cloud-ghosting) real ocean. */
-const NODATA_MAX = 12;
+ *  from sea without ever filling (and thus cloud-ghosting) real ocean. Exported so the
+ *  single-bbox `fetchSatelliteFrame` uses the same "is this pixel real?" definition. */
+export const NODATA_MAX = 12;
 
 const hasData = (buf: Buffer, o: number) =>
   buf[o + 3] > 0 && Math.max(buf[o], buf[o + 1], buf[o + 2]) > NODATA_MAX;

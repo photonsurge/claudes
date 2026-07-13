@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 import AlertInfoBlock from "../../../../components/admin/AlertInfoBlock";
+import ImageLightbox, { type LightboxImage } from "../../../../components/admin/ImageLightbox";
 import Sparkline from "../../../../components/Sparkline";
 import {
   alertHazard,
@@ -59,6 +60,7 @@ export default function AlertDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [detail, setDetail] = useState<AlertDetail | null>(null);
   const [missing, setMissing] = useState(false);
+  const [lightbox, setLightbox] = useState<LightboxImage | null>(null);
 
   const reload = useCallback(async () => {
     if (!id) return;
@@ -116,6 +118,7 @@ export default function AlertDetailPage() {
         </button>
       }
     >
+      {lightbox && <ImageLightbox image={lightbox} onClose={() => setLightbox(null)} />}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>
         {/* Change timeline — derived from in-place revisions + the CAP chain. */}
         <div style={card}>
@@ -234,8 +237,15 @@ export default function AlertDetailPage() {
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
               {snapshots.slice(0, 12).map((s) => {
                 const src = `/api/alerts/snapshot/${s.id}?v=${encodeURIComponent(s.capturedAt)}`;
+                const caption = `${s.kind}${s.distanceKm != null ? ` · ${Math.round(s.distanceKm)} km` : ""} · ${fmtTime(s.observationTime)}`;
                 return (
-                  <a key={s.id} href={src} target="_blank" rel="noreferrer" style={{ display: "block", width: 160 }}>
+                  <button
+                    key={s.id}
+                    type="button"
+                    aria-label={`Open ${s.kind} image full screen`}
+                    onClick={() => setLightbox({ src, alt: s.kind, caption })}
+                    style={{ display: "block", width: 160, padding: 0, border: 0, color: "inherit", background: "none", textAlign: "left", cursor: "zoom-in" }}
+                  >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={src}
@@ -243,10 +253,9 @@ export default function AlertDetailPage() {
                       style={{ width: 160, height: 100, objectFit: "cover", borderRadius: 6, border: "1px solid #1b2030", background: "#070a11" }}
                     />
                     <div style={{ color: "#8b95a7", fontSize: 11, marginTop: 3 }}>
-                      {s.kind}
-                      {s.distanceKm != null ? ` · ${Math.round(s.distanceKm)} km` : ""} · {fmtTime(s.observationTime)}
+                      {caption}
                     </div>
-                  </a>
+                  </button>
                 );
               })}
             </div>

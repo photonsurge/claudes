@@ -153,6 +153,27 @@ export async function snapshotSatellite(job: Job) {
 }
 
 /**
+ * Re-bake the whole alert-imagery pipeline in one shot: satellite frames → the
+ * side-by-side before/after comparison → nearby-camera stills (only when enabled).
+ * This is the `/admin/jobs` "Refresh alert imagery" button — the same sequence as
+ * the `refresh:alert-snapshots` CLI one-shot — so an operator can force a fresh
+ * capture (e.g. after the no-data/blank-frame fix) without shelling into the worker.
+ * Dispatched as type "alerts", event "snapshotRefresh".
+ */
+export async function snapshotRefresh(job: Job) {
+  if (!alertSnapshotEnabled()) {
+    log(TAG, `snapshotRefresh skipped (ALERT_SNAPSHOT_ENABLED=false)`);
+    return { skipped: true };
+  }
+  const satellite = await snapshotSatellite(job);
+  const compare = await snapshotCompare(job);
+  const cameras = cameraSnapshotsEnabled() ? await snapshotCameras(job) : { skipped: true };
+  const result = { satellite, compare, cameras };
+  log(TAG, `snapshotRefresh done`, result);
+  return result;
+}
+
+/**
  * Bake a side-by-side "then vs now" comparison from an alert's earliest and
  * latest satellite snapshots (needs ≥2). Stored as a `kind:"compare"` snapshot on
  * disk; the sharp compositing lives in satimg/compare.ts (worker-only). Dispatched
