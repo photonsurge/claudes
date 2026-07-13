@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import { isDarkFrame, pickEvenly, buildTimelapseWebp, frameLuma } from "./camFrames";
+import { isDarkFrame, pickEvenly, buildTimelapseWebp, frameLuma, planCamThinning } from "./camFrames";
 import sharp from "sharp";
 
 const OPTS = { nightMean: 26, glowMax: 90 };
@@ -45,6 +45,45 @@ describe("frameLuma", () => {
     expect(dark.mean).toBeLessThan(10);
     const bright = await frameLuma(await solid(250, 250, 250));
     expect(bright.mean).toBeGreaterThan(240);
+  });
+});
+
+describe("planCamThinning", () => {
+  const FULLRES = Date.parse("2026-07-10T00:00:00Z"); // frames before this are thinnable
+  const opts = { fullResUntilMs: FULLRES, nightMean: 26 };
+
+  it("keeps a day + a night representative per camera per UTC day, deletes the rest", () => {
+    const frames = [
+      // old day (2026-07-08) for cam A: three day frames + two night frames
+      { id: "a-day1", camId: "A", capturedAt: "2026-07-08T10:00:00Z", meanLuma: 120, kind: "camera" },
+      { id: "a-day2", camId: "A", capturedAt: "2026-07-08T12:00:00Z", meanLuma: 180, kind: "camera" }, // brightest day → keep
+      { id: "a-day3", camId: "A", capturedAt: "2026-07-08T14:00:00Z", meanLuma: 90, kind: "camera" },
+      { id: "a-nite1", camId: "A", capturedAt: "2026-07-08T22:00:00Z", meanLuma: 4, kind: "camera" },
+      { id: "a-nite2", camId: "A", capturedAt: "2026-07-08T23:00:00Z", meanLuma: 15, kind: "camera" }, // brightest night (glow) → keep
+    ];
+    const del = planCamThinning(frames, opts);
+    expect(del.sort()).toEqual(["a-day1", "a-day3", "a-nite1"].sort());
+  });
+
+  it("never thins recent (full-res) frames", () => {
+    const frames = [
+      { id: "r1", camId: "A", capturedAt: "2026-07-11T10:00:00Z", meanLuma: 120, kind: "camera" },
+      { id: "r2", camId: "A", capturedAt: "2026-07-11T12:00:00Z", meanLuma: 180, kind: "camera" },
+    ];
+    expect(planCamThinning(frames, opts)).toEqual([]);
+  });
+
+  it("leaves render timelapses alone", () => {
+    const frames = [
+      { id: "t1", camId: "A", capturedAt: "2026-07-08T10:00:00Z", meanLuma: 0, kind: "render" },
+      { id: "t2", camId: "A", capturedAt: "2026-07-08T12:00:00Z", meanLuma: 0, kind: "render" },
+    ];
+    expect(planCamThinning(frames, opts)).toEqual([]);
+  });
+
+  it("keeps the single frame when a day/cam has only one", () => {
+    const frames = [{ id: "solo", camId: "A", capturedAt: "2026-07-08T10:00:00Z", meanLuma: 100, kind: "camera" }];
+    expect(planCamThinning(frames, opts)).toEqual([]);
   });
 });
 

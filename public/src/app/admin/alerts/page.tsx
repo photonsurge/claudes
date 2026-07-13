@@ -6,10 +6,11 @@
  * Read-only for now (ingest is the worker's job); live Socket.IO deltas + the
  * map overlay are a later milestone.
  */
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   listAlerts,
+  getAlertDetail,
   severityColor,
   severityLabel,
   primaryInfo,
@@ -39,11 +40,21 @@ export default function AlertsPage() {
   const [hazardFilter, setHazardFilter] = useState("all");
   const [query, setQuery] = useState("");
 
+  // Full (non-lean) docs for whichever group's Debug modal is open — the list
+  // itself is fetched lean (no raw description / geocodes) to keep the whole-
+  // world load small, so the Debug view lazy-fetches the full doc per member on
+  // demand. Keyed by alert id; falls back to the lean row until it arrives.
+  const [fullById, setFullById] = useState<Record<string, Alert>>({});
+  const fullRef = useRef(fullById);
+  fullRef.current = fullById;
+
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      // limit 0 = no cap: fetch every matching alert (the whole world).
-      setAlerts(await listAlerts({ activeOnly, severityMin, limit: 0 }));
+      // limit 0 = no cap: fetch every matching alert (the whole world). lean =
+      // drop the raw description + per-area geocodes the table never shows (the
+      // Debug modal lazy-loads the full doc); keeps this world-wide pull light.
+      setAlerts(await listAlerts({ activeOnly, severityMin, limit: 0, lean: true }));
     } finally {
       setLoading(false);
     }
@@ -142,6 +153,29 @@ export default function AlertsPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [debugGroup]);
+
+  // When a Debug modal opens, lazy-load the full (non-lean) doc for each of the
+  // group's members so the modal can show the raw description + full JSON that
+  // the lean list omits. Fetched once per id (cached in fullById), via the
+  // per-alert detail route. Read the cache through a ref so this only re-runs on
+  // debugId change, not on every fill-in.
+  useEffect(() => {
+    if (!debugGroup) return;
+    let cancelled = false;
+    const need = debugGroup.members.map((m) => m.id).filter((id) => !fullRef.current[id]);
+    if (need.length === 0) return;
+    Promise.all(need.map((id) => getAlertDetail(id).then((d) => [id, d?.alert] as const))).then((pairs) => {
+      if (cancelled) return;
+      setFullById((cur) => {
+        const next = { ...cur };
+        for (const [id, doc] of pairs) if (doc) next[id] = doc as Alert;
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [debugId]); // eslint-disable-line react-hooks/exhaustive-deps -- debugGroup derives from debugId; fullById read via ref
 
   return (
     <AdminPageShell
@@ -380,9 +414,14 @@ export default function AlertsPage() {
 
 
       {debugGroup && (() => {
-        const rep = debugGroup.representative;
+        // Prefer the lazily-loaded full doc (raw description + geocodes); fall
+        // back to the lean list row so the modal renders instantly, then fills
+        // in when the fetch lands.
+        const rep = fullById[debugGroup.representative.id] ?? debugGroup.representative;
+        const membersFull = debugGroup.members.map((m) => fullById[m.id] ?? m);
         const info = primaryInfo(rep);
         const multi = debugGroup.members.length > 1;
+        const loadingFull = debugGroup.members.some((m) => !fullById[m.id]);
         const h = hazardMeta(debugGroup.hazard);
         return (
           <div
@@ -421,7 +460,12 @@ export default function AlertsPage() {
                 </div>
               )}
               {info && <TranslationDebugPanel info={info} />}
-              <pre style={modalPre}>{JSON.stringify(multi ? debugGroup.members : rep, null, 2)}</pre>
+              {loadingFull && (
+                <div style={{ padding: "6px 18px", color: "#5b6478", fontSize: 11, fontStyle: "italic", flexShrink: 0 }}>
+                  loading full doc…
+                </div>
+              )}
+              <pre style={modalPre}>{JSON.stringify(multi ? membersFull : rep, null, 2)}</pre>
             </div>
           </div>
         );

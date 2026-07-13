@@ -684,18 +684,40 @@ export async function timelapseCams(_job: Job) {
 }
 
 /**
- * Dispatched as `volcanoes.pruneCamSnapshots`. Drops captured camera frames +
- * timelapses (source "geonet") older than the retention window — scoped by source
- * so alert-event snapshots keep their own retention. Bytes + metadata both go.
+ * Dispatched as `volcanoes.pruneCamSnapshots`. Two stages, both scoped to source
+ * "geonet" (so alert-event snapshots keep their own retention):
+ *  1. THIN — for each active volcano, keep every recent frame full-resolution but
+ *     thin frames older than CAM_FULLRES_DAYS to a DAY + a NIGHT representative per
+ *     camera per UTC day (so history stays browsable + the diurnal cycle survives).
+ *  2. AGE-PRUNE — drop everything past the retention window entirely.
+ * Bytes + metadata both go.
  */
 export async function pruneCamSnapshots(_job: Job) {
   const db = await getAppDb();
   try {
+    // Stage 1 — day/night thinning of the older frames.
+    const events = await db.watchedEvents.list({ type: "VOLCANO", status: "ACTIVE" });
+    const fullResUntilMs = Date.now() - CAM_FULLRES_DAYS * 86_400_000;
+    let thinned = 0;
+    for (const ev of events) {
+      if (!ev.id) continue;
+      const snaps = await db.eventSnapshots.listForEvent(ev.id);
+      const doomed = planCamThinning(
+        snaps.map((s) => ({ id: s.id, camId: s.camId, capturedAt: s.capturedAt, meanLuma: s.meanLuma, kind: s.kind })),
+        { fullResUntilMs, nightMean: CAM_NIGHT_LUMA },
+      );
+      if (doomed.length) thinned += (await db.eventSnapshots.deleteMany(doomed)).removed;
+    }
+
+    // Stage 2 — hard age-prune past the retention window.
     const cutoff = new Date(Date.now() - CAM_RETENTION_DAYS * 86_400_000);
     const { removed } = await db.eventSnapshots.pruneOlderThanForSource(cutoff, "geonet");
-    const result = { removed, retentionDays: CAM_RETENTION_DAYS };
+
+    const result = { thinned, removed, fullResDays: CAM_FULLRES_DAYS, retentionDays: CAM_RETENTION_DAYS };
     log(TAG, `volcano cam prune done`, result);
-    if (removed) blogInfo(TAG, `volcano cam prune: ${removed} old frames dropped`, result, "volcanoes", "pruneCamSnapshots");
+    if (thinned || removed) {
+      blogInfo(TAG, `volcano cam prune: ${thinned} thinned, ${removed} aged out`, result, "volcanoes", "pruneCamSnapshots");
+    }
     return result;
   } catch (err) {
     log(TAG, `volcano cam prune failed`, summarizeForLog(err));

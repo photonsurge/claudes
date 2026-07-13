@@ -27,6 +27,23 @@ import { summarizeForLog } from "../utils";
 
 const TAG = "job:director";
 
+/**
+ * Replace the retired seeded quake magnetic slide without disturbing slides an
+ * operator created. Older scenes keep their saved library forever, so merely
+ * removing this slide from DEFAULT_KIND_SLIDES was not enough.
+ */
+export function migrateLegacyQuakeSlides(slides: KindSlide[]): KindSlide[] {
+  const legacyId = "quake-magnetic-signature";
+  if (!slides.some((slide) => slide.id === legacyId)) return slides;
+
+  const retained = slides.filter((slide) => slide.id !== legacyId);
+  const ids = new Set(retained.map((slide) => slide.id));
+  for (const slide of DEFAULT_KIND_SLIDES.quake ?? []) {
+    if (!ids.has(slide.id)) retained.push(slide);
+  }
+  return retained;
+}
+
 /** Backfill DEFAULT_KIND_SLIDES onto every scene missing a kind's slide list. */
 export async function seedKindSlides() {
   const db = await getAppDb();
@@ -41,8 +58,23 @@ export async function seedKindSlides() {
       if (!seed || (cfg.kindSlides[kind] ?? []).length > 0) continue;
       patch[kind] = seed;
     }
-    if (Object.keys(patch).length === 0) continue;
-    await db.saveDirectorConfig(scene.id, { kindSlides: patch });
+    const quakeSlides = cfg.kindSlides.quake ?? [];
+    const migratedQuakeSlides = migrateLegacyQuakeSlides(quakeSlides);
+    const retiredQuakeSlideSelected = cfg.activeSlideId.quake === "quake-magnetic-signature";
+    if (migratedQuakeSlides !== quakeSlides) patch.quake = migratedQuakeSlides;
+
+    if (Object.keys(patch).length === 0 && !retiredQuakeSlideSelected) continue;
+    await db.saveDirectorConfig(scene.id, {
+      kindSlides: patch,
+      ...(retiredQuakeSlideSelected
+        ? {
+            activeSlideId: { quake: null },
+            overlayOverrides: {
+              quake: { ...cfg.overlayOverrides.quake, showMagneticField: false },
+            },
+          }
+        : {}),
+    });
     seeded[scene.id] = Object.keys(patch);
   }
 
