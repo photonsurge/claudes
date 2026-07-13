@@ -738,6 +738,49 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable volcano camera frame capture / timelapse / prune (P2b) ----
+  // Opt-IN (fetches + STORES third-party images): VOLCANO_CAM_SNAPSHOT_ENABLED=true
+  // (also needs EVENTS_UNIFIED_ENABLED — frames key on a volcano's WatchedEvent).
+  // Capture hourly, rebuild the timelapse + prune once a day.
+  if (process.env.VOLCANO_CAM_SNAPSHOT_ENABLED === "true") {
+    const CAM_SNAP_MS = Number(process.env.VOLCANO_CAM_SNAPSHOT_MS || 60 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "volcanoes", type: "volcanoes", event: "snapshotCams", data: {} },
+        {
+          repeat: { every: CAM_SNAP_MS, offset: staggerOffset("volcanoes-snapshot-cams", CAM_SNAP_MS) },
+          jobId: "volcanoes-snapshot-cams",
+        },
+      );
+      log(TAG, `registered repeatable volcanoes.snapshotCams`, { everyMs: CAM_SNAP_MS });
+    } catch (err) {
+      log(TAG, `failed to register volcanoes.snapshotCams`, summarizeForLog(err));
+    }
+    const CAM_DAILY_MS = 24 * 60 * 60 * 1000;
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "volcanoes", type: "volcanoes", event: "timelapseCams", data: {} },
+        {
+          repeat: { every: CAM_DAILY_MS, offset: staggerOffset("volcanoes-timelapse-cams", CAM_DAILY_MS) },
+          jobId: "volcanoes-timelapse-cams",
+        },
+      );
+      await myQueue.add(
+        "do",
+        { domain: "volcanoes", type: "volcanoes", event: "pruneCamSnapshots", data: {} },
+        {
+          repeat: { every: CAM_DAILY_MS, offset: staggerOffset("volcanoes-prune-cams", CAM_DAILY_MS) },
+          jobId: "volcanoes-prune-cams",
+        },
+      );
+      log(TAG, `registered repeatable volcanoes.timelapseCams + pruneCamSnapshots`);
+    } catch (err) {
+      log(TAG, `failed to register volcano timelapse/prune`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable geomag.refresh (IGRF total-intensity field → baked scalar PNG) ----
   // The geomagnetic field drifts only slowly (secular variation), so re-bake weekly
   // by default. A fixed jobId de-dups across restarts; `immediately` seeds the cache

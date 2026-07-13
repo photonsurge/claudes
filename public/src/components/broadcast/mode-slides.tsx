@@ -36,7 +36,11 @@ import ForecastPanel from "./ForecastPanel";
 import PointHistoryPanel from "./PointHistoryPanel";
 import DepthProfilePanel from "./DepthProfilePanel";
 import RoundupStatsPanel from "./RoundupStatsPanel";
-import PlaceRoundupPanel, { placeRoundupSlideHasContent } from "./PlaceRoundupPanel";
+import PlaceRoundupPanel, {
+  placeRoundupSlideHasContent,
+  placeRoundupMainHasContent,
+  placeRoundupNext24HasContent,
+} from "./PlaceRoundupPanel";
 import type { PlaceRoundup } from "../../lib/placeRoundups";
 import QuakeReport from "./QuakeReport";
 import AlertTimelinePanel, { alertTimelineSlideHasContent } from "./AlertTimelinePanel";
@@ -234,6 +238,15 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
       if (volcanoCamerasSlideHasContent(ctx.volcanoCams)) {
         slides.push({ id: "volcano-cameras", node: <VolcanoCamerasPanel cams={ctx.volcanoCams} color={color} /> });
       }
+      // Captured camera history — the worker-archived "earlier today / this week"
+      // frames + timelapse render (EventSnapshots on the focus call). Self-hides
+      // until the capture job has stored something. Same panel the storm cut uses.
+      if (eventMediaSlideHasContent(ctx.eventSnapshots, ctx.eventResources)) {
+        slides.push({
+          id: "volcano-media",
+          node: <EventMediaPanel snapshots={ctx.eventSnapshots} resources={ctx.eventResources} color={color} />,
+        });
+      }
       if (volcanoNearbySlideHasContent(segment.camera.center, ctx.cities, ctx.quakes, ctx.alerts)) {
         slides.push({
           id: "volcano-nearby",
@@ -383,8 +396,20 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
   // (ctx.regionNearTerm / ctx.regionCountries — one worker sample per country at
   // its biggest in-region city), so nothing fans out per country at cut time.
   if (segment.kind === "region" && ctx.wideCitiesBbox) {
-    if (placeRoundupSlideHasContent(ctx.placeRoundup)) {
-      slides.push({ id: "place-roundup", node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} theme={ctx.theme} /> });
+    // The round-up is split in two: the "state of the region" text/tally, then a
+    // separate slide for the per-city NEXT 24 HOURS outlook (the "24h events"), so
+    // the narrative doesn't run off one overlong card.
+    if (placeRoundupMainHasContent(ctx.placeRoundup)) {
+      slides.push({
+        id: "place-roundup",
+        node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} section="main" theme={ctx.theme} />,
+      });
+    }
+    if (placeRoundupNext24HasContent(ctx.placeRoundup)) {
+      slides.push({
+        id: "place-roundup-24h",
+        node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} section="next24" theme={ctx.theme} />,
+      });
     }
     if (ctx.regionNearTerm && ctx.regionNearTerm.length) {
       slides.push({

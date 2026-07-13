@@ -117,6 +117,23 @@ describe("modeSlides", () => {
     ).toEqual(["onair", "topcities", "cityconditions", "forecast"]);
   });
 
+  it("a region spotlight splits the round-up: state text, then a NEXT 24H outlook slide", () => {
+    const bbox: [number, number, number, number] = [-1, -1, 1, 1];
+    const roundup = {
+      summary: "Unsettled across the region.",
+      cityOutlook: [{ name: "Berlin", outlook: "Showers easing overnight." }],
+      inputs: { topCities: [], alerts: [], volcanoes: [] },
+    } as unknown as ModeSlideContext["placeRoundup"];
+    expect(
+      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: roundup, wideCitiesHasForecast: true })),
+    ).toEqual(["onair", "place-roundup", "place-roundup-24h", "topcities", "cityconditions", "forecast"]);
+    // No per-city outlook → only the state slide, no split.
+    const noOutlook = { summary: "Settled." , inputs: { topCities: [], alerts: [], volcanoes: [] } } as unknown as ModeSlideContext["placeRoundup"];
+    expect(
+      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: noOutlook, wideCitiesHasForecast: true })),
+    ).toEqual(["onair", "place-roundup", "topcities", "cityconditions", "forecast"]);
+  });
+
   it("a country spotlight adds top-cities, and the area forecast only when it has data", () => {
     const bbox: [number, number, number, number] = [-1, -1, 1, 1];
     expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities", "cityconditions"]);

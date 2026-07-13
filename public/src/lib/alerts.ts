@@ -90,6 +90,14 @@ export interface ListAlertsOpts {
   source?: string;
   severityMin?: number;
   limit?: number;
+  /**
+   * Ask the API to strip the fields no map/world-watch consumer reads (raw
+   * `description`, per-area `geocodes`) — see alerts-repo `lean`. The overlay
+   * and World Watch both request the whole-planet `active=1&limit=5000` feed;
+   * lean shrinks it ~10× so the repeated poll+parse stops piling up in the
+   * public heap. Admin (which shows the raw description) omits it.
+   */
+  lean?: boolean;
 }
 
 export async function listAlerts(opts: ListAlertsOpts = {}): Promise<Alert[]> {
@@ -98,6 +106,7 @@ export async function listAlerts(opts: ListAlertsOpts = {}): Promise<Alert[]> {
   if (opts.source) q.set("source", opts.source);
   if (typeof opts.severityMin === "number") q.set("severityMin", String(opts.severityMin));
   if (typeof opts.limit === "number") q.set("limit", String(opts.limit));
+  if (opts.lean) q.set("lean", "1");
   const url = `/api/alerts?${q.toString()}`;
   // Coalesce simultaneous identical pulls: the World Watch panel and the globe
   // alerts overlay both request `active=1&limit=5000` and both re-fire on the

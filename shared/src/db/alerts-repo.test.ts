@@ -174,6 +174,55 @@ describe("alerts-repo upsert — unchanged-alert fast path", () => {
   });
 });
 
+describe("alerts-repo list — projection", () => {
+  // The list() chain is find().select().sort().limit()[.hint()].lean().exec();
+  // capture what select() receives.
+  const modelCapturing = (spy: { projection?: unknown }) =>
+    ({
+      find: () => ({
+        select: (p: unknown) => {
+          spy.projection = p;
+          const tail = {
+            sort: () => tail,
+            limit: () => tail,
+            hint: () => tail,
+            lean: () => ({ exec: async () => [] as unknown[] }),
+          };
+          return tail;
+        },
+      }),
+    }) as any;
+
+  it("always drops raw; keeps geometry by default", async () => {
+    const spy: { projection?: any } = {};
+    await makeAlertsRepo(modelCapturing(spy)).list({ activeOnly: true });
+    expect(spy.projection).toEqual({ raw: 0 });
+  });
+
+  it("lean also drops the unread description + geocodes (geometry KEPT)", async () => {
+    const spy: { projection?: any } = {};
+    await makeAlertsRepo(modelCapturing(spy)).list({ activeOnly: true, lean: true });
+    expect(spy.projection).toEqual({
+      raw: 0,
+      "info.description": 0,
+      "info.area.geocodes": 0,
+    });
+    // Lean must NOT strip coordinates — the overlay draws the polygon.
+    expect(spy.projection["info.area.geometry.coordinates"]).toBeUndefined();
+  });
+
+  it("lean composes with omitCoordinates (all pure exclusions)", async () => {
+    const spy: { projection?: any } = {};
+    await makeAlertsRepo(modelCapturing(spy)).list({ lean: true, omitCoordinates: true });
+    expect(spy.projection).toEqual({
+      raw: 0,
+      "info.area.geometry.coordinates": 0,
+      "info.description": 0,
+      "info.area.geocodes": 0,
+    });
+  });
+});
+
 describe("alerts-repo chain — CAP lifecycle walk", () => {
   const focal = {
     source: "nws",

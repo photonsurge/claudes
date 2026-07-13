@@ -12,6 +12,7 @@ import { useParams } from "next/navigation";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { EventTimelineBeat } from "@photonsurge/shared/events/event-timeline";
 import type { Cam } from "@photonsurge/shared/cams/types";
+import type { EventSnapshotMeta } from "@photonsurge/shared/db/event-snapshot-repo";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 
 interface VolcanoDetail {
@@ -19,7 +20,10 @@ interface VolcanoDetail {
   event: { id: string; status: string; startedAt: string } | null;
   timeline: EventTimelineBeat[];
   cams: Cam[];
+  snapshots: EventSnapshotMeta[];
 }
+
+const snapSrc = (s: EventSnapshotMeta) => `/api/events/snapshot/${s.id}?v=${encodeURIComponent(s.capturedAt)}`;
 
 const STATUS_COLOR: Record<string, string> = {
   erupting: "#ef4444",
@@ -89,6 +93,9 @@ export default function VolcanoDetailPage() {
   }
 
   const { volcano: v, timeline, cams } = detail;
+  const snapshots = detail.snapshots ?? [];
+  const timelapses = snapshots.filter((s) => s.kind === "render");
+  const capturedFrames = snapshots.filter((s) => s.kind === "camera").slice(0, 24);
 
   return (
     <AdminPageShell
@@ -253,6 +260,46 @@ export default function VolcanoDetailPage() {
               </a>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Worker-captured camera history — timelapse loops + recent archived frames
+          (the "earlier today / this week" observation record). Needs the capture
+          job (VOLCANO_CAM_SNAPSHOT_ENABLED) to have run. */}
+      {(timelapses.length > 0 || capturedFrames.length > 0) && (
+        <div style={{ ...card, marginTop: 14 }}>
+          <div style={cardLabel}>Camera history ({snapshots.length})</div>
+          {timelapses.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10 }}>
+              {timelapses.map((s) => (
+                <figure key={s.id} style={{ margin: 0, width: 320 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={snapSrc(s)}
+                    alt="timelapse"
+                    style={{ width: 320, height: 180, objectFit: "cover", borderRadius: 6, border: "1px solid #1b2030", background: "#070a11" }}
+                  />
+                  <figcaption style={{ color: "#5b6478", fontSize: 11, marginTop: 3 }}>
+                    ▶ timelapse · {fmtTime(s.observationTime)}
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          )}
+          {capturedFrames.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+              {capturedFrames.map((s) => (
+                <a key={s.id} href={snapSrc(s)} target="_blank" rel="noreferrer" title={fmtTime(s.observationTime)}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={snapSrc(s)}
+                    alt="frame"
+                    style={{ width: 128, height: 80, objectFit: "cover", borderRadius: 4, border: "1px solid #1b2030", background: "#070a11" }}
+                  />
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

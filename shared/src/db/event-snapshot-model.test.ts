@@ -16,6 +16,7 @@ describe("EventSnapshotSchema", () => {
       capturedAt: new Date("2026-07-12T15:00:00Z"),
       contentType: "image/png",
       pHash: "ffee00aa",
+      meanLuma: 42,
       camId: "cam-9",
       distanceKm: 18,
       attribution: "NASA GIBS",

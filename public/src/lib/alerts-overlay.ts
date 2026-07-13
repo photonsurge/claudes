@@ -59,7 +59,7 @@ export function useAlertFeatures(
       // 7s alerts fetches becomes a 6ms hit. The operator's severity floor is
       // applied client-side (like hazardsOff below), so raising it also filters
       // instantly instead of refetching.
-      const alerts = await listAlerts({ activeOnly: true, limit: 5000 });
+      const alerts = await listAlerts({ activeOnly: true, limit: 5000, lean: true });
       // A transient empty/failed FETCH must not blank an on-air overlay; keep the
       // last good features. (A legit filter-to-empty below still clears it.)
       if (cancelled || alerts.length === 0) return;

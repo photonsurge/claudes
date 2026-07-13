@@ -271,7 +271,11 @@ function EventTrackingLabel({
   const name = segment.title.toUpperCase();
   const details = [...(segment.details ?? []), ...extraDetails];
   const isPlace = variant === "place";
-  const locationValue = isPlace && flag ? `${flag} ${name}` : isPlace ? name : `${name} [ACTIVE]`;
+  // A future-onset alert carries a "Begins in" row (see alertSegmentContent) — it
+  // hasn't started, so don't badge it as active.
+  const pending = details.some((d) => d.label === "Begins in");
+  const statusTag = pending ? "[UPCOMING]" : "[ACTIVE]";
+  const locationValue = isPlace && flag ? `${flag} ${name}` : isPlace ? name : `${name} ${statusTag}`;
   return (
     <div
       style={{

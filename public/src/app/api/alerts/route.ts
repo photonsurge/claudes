@@ -46,6 +46,10 @@ async function GET__impl(req: Request) {
   const source = q.get("source") || undefined;
   const severityMin = num("severityMin");
   const limit = num("limit");
+  // Lean = drop the fields the map/world-watch overlay never reads (raw
+  // description + per-area geocodes). Only the broadcast consumers pass it;
+  // admin omits it so its detail view keeps the full untranslated text.
+  const lean = q.get("lean") === "1";
 
   // Redis result-cache keyed by the full param set that determines the response —
   // so the overlay + world-watch DUPLICATE fetches, the 60s re-polls, and every
@@ -53,11 +57,11 @@ async function GET__impl(req: Request) {
   // (up-to-5000-row) Mongo query + O(n²) clustering each time. Fail-open.
   const key = `feed:v1:alerts:${activeOnly ? 1 : 0}:${source ?? "-"}:${severityMin ?? "-"}:${limit ?? "-"}:${
     bbox ? bbox.map((n) => n.toFixed(2)).join(",") : "-"
-  }`;
+  }:${lean ? "lean1" : "-"}`;
 
   const { value, hit } = await withCache(key, FEED_TTL_SEC, async () => {
     const db = await getAppDb();
-    const alerts = await db.alerts.list({ activeOnly, source, severityMin, limit, bbox });
+    const alerts = await db.alerts.list({ activeOnly, source, severityMin, limit, bbox, lean });
 
     // Shrink the payload BEFORE clustering + caching. Full geometry (whole-ocean
     // 40k-vertex rings) made this feed hundreds of MB; every poll then re-parsed

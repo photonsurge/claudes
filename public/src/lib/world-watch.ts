@@ -89,7 +89,7 @@ export function useWorldWatch(cities: City[] = [], enabled = true): WorldWatchSt
     if (!enabled) return;
     let cancelled = false;
     const load = () =>
-      listAlerts({ activeOnly: true, limit: 5000 }).then((a) => {
+      listAlerts({ activeOnly: true, limit: 5000, lean: true }).then((a) => {
         if (!cancelled) setAlerts(a);
       });
     load();

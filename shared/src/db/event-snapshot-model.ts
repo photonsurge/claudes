@@ -31,6 +31,9 @@ export interface iEventSnapshot extends iGeneralModel {
   capturedAt: Date;
   contentType: string;
   pHash?: string;
+  /** Mean brightness 0-255 (camera frames) — lets day/night be told apart for
+   *  timelapse spanning + day+night retention thinning. */
+  meanLuma?: number;
   camId?: string;
   distanceKm?: number;
   attribution?: string;
@@ -59,6 +62,7 @@ export const EventSnapshotSchema = new mongoose.Schema<iEventSnapshotModel>(
     capturedAt: { type: Date, required: true, default: () => new Date() },
     contentType: { type: String, required: true, default: "image/png" },
     pHash: { type: String, required: false },
+    meanLuma: { type: Number, required: false },
     camId: { type: String, required: false },
     distanceKm: { type: Number, required: false },
     attribution: { type: String, required: false },

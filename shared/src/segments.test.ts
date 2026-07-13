@@ -73,6 +73,23 @@ describe("alertSegmentContent — translated title/Type", () => {
     expect(c.title).toBe("Weather Warning");
     expect(c.details.find((d) => d.label === "Type")).toBeUndefined();
   });
+
+  it("shows 'Active for' once the onset has passed", () => {
+    const now = Date.UTC(2026, 6, 13, 8, 0);
+    const c = alertSegmentContent({ ...base, sinceMs: now - 90 * 60_000, nowMs: now });
+    expect(c.details.find((d) => d.label === "Active since")?.value).toBe("2026-07-13 06:30 UTC");
+    expect(c.details.find((d) => d.label === "Active for")?.value).toBe("1h 30m");
+    expect(c.details.find((d) => d.label === "Begins in")).toBeUndefined();
+  });
+
+  it("shows 'Begins in' instead of a bogus 0m active for a future onset", () => {
+    const now = Date.UTC(2026, 6, 13, 4, 30);
+    const c = alertSegmentContent({ ...base, sinceMs: Date.UTC(2026, 6, 13, 7, 0), nowMs: now });
+    expect(c.details.find((d) => d.label === "Begins")?.value).toBe("2026-07-13 07:00 UTC");
+    expect(c.details.find((d) => d.label === "Begins in")?.value).toBe("2h 30m");
+    expect(c.details.find((d) => d.label === "Active for")).toBeUndefined();
+    expect(c.details.find((d) => d.label === "Active since")).toBeUndefined();
+  });
 });
 
 describe("volcanoTrackInfo", () => {

@@ -20,6 +20,16 @@ export interface AlertListOpts {
    * the intersect server-side; the coordinates never need to leave Mongo.
    */
   omitCoordinates?: boolean;
+  /**
+   * Drop the heavy fields no map/broadcast consumer reads: the raw untranslated
+   * `info.description` paragraph (feature popups carry `translatedDescription`)
+   * and the per-area `geocodes` arrays (a single MeteoAlarm heat alert repeats
+   * ~30 NUTS3 codes per language). On the whole-planet `?active=1&limit=5000`
+   * feed these dominate the payload; stripping them shrinks it ~10× so every
+   * poll re-parses far less (a contributor to the public heap blow-up). Geometry
+   * is KEPT (the overlay draws it) — pair with route-side simplification.
+   */
+  lean?: boolean;
 }
 
 const strip = (doc: any): iAlertModel => {
@@ -240,6 +250,12 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       // additionally drops the (potentially enormous) polygon vertices.
       const projection: Record<string, 0> = { raw: 0 };
       if (opts.omitCoordinates) projection["info.area.geometry.coordinates"] = 0;
+      if (opts.lean) {
+        // Unread on the map/world-watch feed — see AlertListOpts.lean. Pure
+        // exclusions, so they compose with the ones above.
+        projection["info.description"] = 0;
+        projection["info.area.geocodes"] = 0;
+      }
       let query = model
         .find(q)
         .select(projection)

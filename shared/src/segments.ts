@@ -107,9 +107,17 @@ export function alertSegmentContent(a: AlertContentInput): SegmentContent {
   if (area) details.push({ label: "Area", value: area });
   details.push({ label: "Source", value: a.source.toUpperCase() });
   if (a.sinceMs != null && Number.isFinite(a.sinceMs)) {
-    details.push({ label: "Active since", value: `${new Date(a.sinceMs).toISOString().slice(0, 16).replace("T", " ")} UTC` });
     const now = a.nowMs ?? Date.now();
-    details.push({ label: "Active for", value: activeForLabel(Math.max(0, Math.round((now - a.sinceMs) / 60000))) });
+    const mins = Math.round((now - a.sinceMs) / 60000);
+    const tsRow = `${new Date(a.sinceMs).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+    if (mins < 0) {
+      // Onset is still in the future — don't pretend it's been active for 0m.
+      details.push({ label: "Begins", value: tsRow });
+      details.push({ label: "Begins in", value: activeForLabel(-mins) });
+    } else {
+      details.push({ label: "Active since", value: tsRow });
+      details.push({ label: "Active for", value: activeForLabel(mins) });
+    }
   }
   return { title: event || "Weather Warning", subtitle, icon: hazardMeta(a.hazard).icon, details };
 }

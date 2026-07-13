@@ -1,4 +1,5 @@
 import type { Job } from "bullmq";
+import sharp from "sharp";
 import type { AppDb } from "@photonsurge/shared/db/index";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { fetchVolcanoes } from "@photonsurge/shared/volcanoes/gvp";
@@ -18,6 +19,9 @@ import { fetchVolcanoFacts } from "@photonsurge/shared/utill/wikidata";
 import { log } from "@photonsurge/shared/utill/logger";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 import { eventsUnifiedEnabled, shouldPromoteVolcano } from "../events/config";
+import { hourSlotOf } from "../alerts/snapshot-select";
+import { pHash, hamming } from "../satimg/phash";
+import { frameLuma, isDarkFrame, pickEvenly, buildTimelapseWebp, planCamThinning } from "../volcanoes/camFrames";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
@@ -488,6 +492,214 @@ export async function ingestGeonetCams(_job: Job) {
   } catch (err) {
     log(TAG, `geonet cams ingest failed`, summarizeForLog(err));
     blogErr(TAG, `geonet cams ingest failed`, err, "volcanoes", "ingestGeonetCams");
+    throw err;
+  }
+}
+
+// ── P2b: worker-captured camera frames on disk (observation history) ─────────
+
+/** Below this dHash distance a new still is "the same picture" → skip storing. */
+const CAM_PHASH_THRESHOLD = Number(process.env.VOLCANO_CAM_PHASH_THRESHOLD || 4);
+/** Mean brightness (0-255) below which a scene counts as night. */
+const CAM_NIGHT_LUMA = Number(process.env.VOLCANO_CAM_NIGHT_LUMA || 26);
+/** A bright region (0-255) at/above this in a dark frame = incandescence → keep. */
+const CAM_GLOW_LUMA = Number(process.env.VOLCANO_CAM_GLOW_LUMA || 90);
+/** Keep at most one flat-dark NIGHT frame per camera per this gap (ms), so a
+ *  timelapse still spans the day→night→day cycle without hoarding black stills. */
+const CAM_NIGHT_GAP_MS = Number(process.env.VOLCANO_CAM_NIGHT_GAP_MS || 3 * 60 * 60 * 1000);
+/** Retention window for captured camera frames (days). */
+const CAM_RETENTION_DAYS = Number(process.env.VOLCANO_CAM_RETENTION_DAYS || 30);
+/** Frames older than this (days) get thinned to a day+night representative/day. */
+const CAM_FULLRES_DAYS = Number(process.env.VOLCANO_CAM_FULLRES_DAYS || 3);
+/** Max frames folded into one timelapse (thinned evenly, first+last kept). */
+const CAM_TIMELAPSE_MAX = Number(process.env.VOLCANO_CAM_TIMELAPSE_MAX || 120);
+
+/**
+ * Opt-IN (it fetches + STORES third-party images) and only meaningful when the
+ * unified layer is on (frames key on a volcano's WatchedEvent). Env:
+ * VOLCANO_CAM_SNAPSHOT_ENABLED=true + EVENTS_UNIFIED_ENABLED=true.
+ */
+export function volcanoCamSnapshotsEnabled(): boolean {
+  return eventsUnifiedEnabled() && process.env.VOLCANO_CAM_SNAPSHOT_ENABLED === "true";
+}
+
+/**
+ * Dispatched as `volcanoes.snapshotCams`. For every ACTIVE volcano WatchedEvent,
+ * grab its official monitoring cameras' current stills and archive one frame per
+ * camera per hour to disk (as an EventSnapshot, kind "camera") — building the
+ * "earlier today / this week" history the live latest-image can't give.
+ *
+ * NIGHT HANDLING ("do we need night ones?"): a flat dark night frame with nothing
+ * to see is skipped so we don't hoard identical black stills; but a night frame
+ * carrying volcanic incandescence has a bright region and is KEPT (the money
+ * shot). Unchanged day frames are dropped by perceptual-hash dedup. Bytes on the
+ * shared blob FS; the metadata doc is byte-free. Worker-only sharp.
+ */
+export async function snapshotCams(_job: Job) {
+  if (!volcanoCamSnapshotsEnabled()) return { skipped: true };
+  const db = await getAppDb();
+  try {
+    const events = await db.watchedEvents.list({ type: "VOLCANO", status: "ACTIVE" });
+    const hourSlot = hourSlotOf(new Date());
+    let stored = 0;
+    let deduped = 0;
+    let darkSkipped = 0;
+    let failed = 0;
+    for (const ev of events) {
+      if (!ev.id) continue;
+      const cams = await db.cams.listForVolcano(ev.primarySourceId);
+      if (!cams.length) continue;
+      const existing = await db.eventSnapshots.listForEvent(ev.id); // desc by capturedAt
+      for (const cam of cams) {
+        if (!cam.imageUrl) continue;
+        let png: Buffer;
+        let meta: sharp.Metadata;
+        try {
+          const res = await fetch(cam.imageUrl);
+          if (!res.ok) {
+            failed++;
+            continue;
+          }
+          png = await sharp(Buffer.from(await res.arrayBuffer())).png().toBuffer();
+          meta = await sharp(png).metadata();
+        } catch {
+          failed++;
+          continue; // unreachable / not a decodable image
+        }
+        const luma = await frameLuma(png);
+        const ph = await pHash(png);
+        // `existing` is capturedAt-desc, so the first match is this cam's most recent frame.
+        const prior = existing.find((s) => s.kind === "camera" && s.camId === cam.camId);
+        if (isDarkFrame(luma, { nightMean: CAM_NIGHT_LUMA, glowMax: CAM_GLOW_LUMA })) {
+          // Flat dark night frame (no glow): keep a SPARSE night track so the
+          // timelapse spans day→night→day, but don't hoard black — one per gap.
+          if (prior && Date.now() - +new Date(prior.capturedAt) < CAM_NIGHT_GAP_MS) {
+            darkSkipped++;
+            continue;
+          }
+        } else if (prior?.pHash && hamming(prior.pHash, ph) <= CAM_PHASH_THRESHOLD) {
+          deduped++;
+          continue; // day/glow frame unchanged since last time
+        }
+        const attribution = cam.attribution
+          ? [cam.attribution.provider, cam.attribution.requiredText].filter(Boolean).join(" · ")
+          : undefined;
+        await db.eventSnapshots.put({
+          eventId: ev.id,
+          source: "geonet",
+          kind: "camera",
+          layer: cam.camId, // per-cam hourly slot
+          hourSlot,
+          width: meta.width ?? 0,
+          height: meta.height ?? 0,
+          observationTime: new Date(),
+          png,
+          pHash: ph,
+          meanLuma: Math.round(luma.mean),
+          camId: cam.camId,
+          attribution,
+        });
+        stored++;
+      }
+    }
+    const result = { volcanoes: events.length, stored, deduped, darkSkipped, failed };
+    log(TAG, `volcano cam snapshots done`, result);
+    blogInfo(TAG, `volcano cam frames: ${stored} stored (${deduped} unchanged, ${darkSkipped} dark)`, result, "volcanoes", "snapshotCams");
+    if (stored) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: stored } });
+    return result;
+  } catch (err) {
+    log(TAG, `volcano cam snapshots failed`, summarizeForLog(err));
+    blogErr(TAG, `volcano cam snapshot failed`, err, "volcanoes", "snapshotCams");
+    throw err;
+  }
+}
+
+/**
+ * Dispatched as `volcanoes.timelapseCams`. Stitch each active volcano camera's
+ * archived hourly frames into a short looping WebP and store it as a `render`
+ * EventSnapshot (layer `timelapse:<camId>`), refreshed once per day. It rides the
+ * same FocusBundle.eventSnapshots + /api/events/snapshot plumbing as everything
+ * else — the on-air EventMediaPanel already prefers a `render` hero.
+ */
+export async function timelapseCams(_job: Job) {
+  if (!volcanoCamSnapshotsEnabled()) return { skipped: true };
+  const db = await getAppDb();
+  try {
+    const events = await db.watchedEvents.list({ type: "VOLCANO", status: "ACTIVE" });
+    const daySlot = hourSlotOf(new Date()).slice(0, 10); // YYYY-MM-DD, one build/day
+    let built = 0;
+    let skipped = 0;
+    for (const ev of events) {
+      if (!ev.id) continue;
+      const snaps = await db.eventSnapshots.listForEvent(ev.id);
+      const camIds = [...new Set(snaps.filter((s) => s.kind === "camera" && s.camId).map((s) => s.camId!))];
+      for (const camId of camIds) {
+        // Chronological camera frames for this cam (listForEvent is capturedAt desc).
+        const frames = snaps
+          .filter((s) => s.kind === "camera" && s.camId === camId)
+          .sort((a, b) => +new Date(a.capturedAt) - +new Date(b.capturedAt));
+        if (frames.length < 2) {
+          skipped++;
+          continue;
+        }
+        const picked = pickEvenly(frames, CAM_TIMELAPSE_MAX);
+        const pngs: Buffer[] = [];
+        for (const f of picked) {
+          const got = await db.eventSnapshots.getPng(f.id);
+          if (got) pngs.push(got.data);
+        }
+        if (pngs.length < 2) {
+          skipped++;
+          continue;
+        }
+        const { webp, width, height, frames: n } = await buildTimelapseWebp(pngs);
+        await db.eventSnapshots.put({
+          eventId: ev.id,
+          source: "geonet",
+          kind: "render",
+          layer: `timelapse:${camId}`,
+          hourSlot: daySlot,
+          width,
+          height,
+          observationTime: new Date(frames[frames.length - 1].capturedAt),
+          png: webp,
+          contentType: "image/webp",
+          camId,
+          attribution: frames[0].attribution,
+        });
+        built++;
+        log(TAG, `volcano timelapse built`, { volcanoId: ev.primarySourceId, camId, frames: n });
+      }
+    }
+    const result = { volcanoes: events.length, built, skipped };
+    log(TAG, `volcano timelapses done`, result);
+    blogInfo(TAG, `volcano timelapses: ${built} built`, result, "volcanoes", "timelapseCams");
+    if (built) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: built } });
+    return result;
+  } catch (err) {
+    log(TAG, `volcano timelapses failed`, summarizeForLog(err));
+    blogErr(TAG, `volcano timelapse failed`, err, "volcanoes", "timelapseCams");
+    throw err;
+  }
+}
+
+/**
+ * Dispatched as `volcanoes.pruneCamSnapshots`. Drops captured camera frames +
+ * timelapses (source "geonet") older than the retention window — scoped by source
+ * so alert-event snapshots keep their own retention. Bytes + metadata both go.
+ */
+export async function pruneCamSnapshots(_job: Job) {
+  const db = await getAppDb();
+  try {
+    const cutoff = new Date(Date.now() - CAM_RETENTION_DAYS * 86_400_000);
+    const { removed } = await db.eventSnapshots.pruneOlderThanForSource(cutoff, "geonet");
+    const result = { removed, retentionDays: CAM_RETENTION_DAYS };
+    log(TAG, `volcano cam prune done`, result);
+    if (removed) blogInfo(TAG, `volcano cam prune: ${removed} old frames dropped`, result, "volcanoes", "pruneCamSnapshots");
+    return result;
+  } catch (err) {
+    log(TAG, `volcano cam prune failed`, summarizeForLog(err));
+    blogErr(TAG, `volcano cam prune failed`, err, "volcanoes", "pruneCamSnapshots");
     throw err;
   }
 }

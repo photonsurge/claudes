@@ -23,6 +23,22 @@ export function placeRoundupSlideHasContent(roundup: PlaceRoundup | null | undef
   return Boolean(i && (i.alerts.length || i.volcanoes.length || i.topCities.length));
 }
 
+/** The "state of the place" text/tally half of a round-up (everything EXCEPT the
+ *  per-city next-24h outlook) — the `section="main"` slide. */
+export function placeRoundupMainHasContent(roundup: PlaceRoundup | null | undefined): boolean {
+  if (!roundup) return false;
+  if (roundup.summary?.trim() || roundup.stateOfPlay?.trim() || roundup.advice?.trim() || roundup.narrative?.trim())
+    return true;
+  const i = roundup.inputs;
+  return Boolean(i && (i.alerts.length || i.volcanoes.length || i.topCities.length));
+}
+
+/** The per-city NEXT 24 HOURS outlook half of a round-up — the `section="next24"`
+ *  slide (split off so the 24h events read on their own page). */
+export function placeRoundupNext24HasContent(roundup: PlaceRoundup | null | undefined): boolean {
+  return Boolean(roundup?.cityOutlook?.some((c) => c.name && c.outlook));
+}
+
 function Stat({ label, value, sub }: { label: string; value: number; sub?: string }) {
   if (!value) return null;
   return (
@@ -38,11 +54,18 @@ function Stat({ label, value, sub }: { label: string; value: number; sub?: strin
 
 export default function PlaceRoundupPanel({
   roundup,
+  section = "all",
   theme = DEFAULT_THEME,
 }: {
   roundup: PlaceRoundup;
+  /** Which half of the round-up to render — the region deck splits it so the
+   *  per-city NEXT 24 HOURS outlook reads on its own slide after the state text.
+   *  "all" (default, used by the country deck) keeps everything on one card. */
+  section?: "all" | "main" | "next24";
   theme?: BroadcastTheme;
 }) {
+  const showMain = section !== "next24";
+  const showNext24 = section !== "main";
   const { narrative, summary, stateOfPlay, cityOutlook, advice, inputs } = roundup;
   const summaryText = summary?.trim();
   const stateText = stateOfPlay?.trim();
@@ -69,14 +92,18 @@ export default function PlaceRoundupPanel({
     },
   ].filter((t) => t.value > 0 && t.label);
 
-  if (!hasSections && !narrativeText && !tiles.length) return null;
+  // Section-aware self-hide: the "main" (state text/tally) half needs prose or
+  // tiles; the "next24" half needs the per-city outlook.
+  const renderMain = showMain && (hasSections || narrativeText || tiles.length > 0);
+  const renderNext24 = showNext24 && cities.length > 0;
+  if (!renderMain && !renderNext24) return null;
 
   // Advice reads louder when there's something to warn about.
   const adviceUrgent = activeAlerts > 0 || inputs.volcanoes.length > 0;
 
   return (
     <BroadcastCard theme={theme}>
-      {hasSections ? (
+      {showMain && hasSections ? (
         <>
           {summaryText ? (
             <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.4, color: "#fff", marginBottom: stateText ? 10 : 0 }}>
@@ -98,7 +125,7 @@ export default function PlaceRoundupPanel({
             </div>
           ) : null}
         </>
-      ) : narrativeText ? (
+      ) : showMain && narrativeText ? (
         <div
           style={{
             fontSize: 15,
@@ -113,21 +140,21 @@ export default function PlaceRoundupPanel({
         </div>
       ) : null}
 
-      {tiles.length ? (
+      {showMain && tiles.length ? (
         <div style={{ display: "flex", gap: 18 }}>
           {tiles.map((t) => (
             <Stat key={t.label} label={t.label} value={t.value} sub={t.sub} />
           ))}
         </div>
       ) : null}
-      {topHazard ? (
+      {showMain && topHazard ? (
         <CardSection eyebrow="Top hazard">
           <span style={{ fontSize: 14, fontWeight: 700, color: "#e8eef7" }}>{topHazard.label}</span>
         </CardSection>
       ) : null}
 
-      {cities.length ? (
-        <CardSection eyebrow="Next 24 hours">
+      {showNext24 && cities.length ? (
+        <CardSection eyebrow="Next 24 hours" first={section === "next24"}>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {cities.map((c) => (
               <div key={c.name} style={{ fontSize: 13.5, lineHeight: 1.4, color: "#e8eef7" }}>
@@ -139,7 +166,7 @@ export default function PlaceRoundupPanel({
         </CardSection>
       ) : null}
 
-      {adviceText ? (
+      {showMain && adviceText ? (
         <CardSection eyebrow={adviceUrgent ? "Advice · alerts active" : "Advice"}>
           <div
             style={{
@@ -155,7 +182,7 @@ export default function PlaceRoundupPanel({
         </CardSection>
       ) : null}
 
-      {!hasSections && !narrativeText ? (
+      {showMain && !hasSections && !narrativeText ? (
         <div style={{ marginTop: 12, fontSize: 11, color: MUTED, letterSpacing: 0.3 }}>
           Round-up narrative pending.
         </div>
