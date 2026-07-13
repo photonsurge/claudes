@@ -77,6 +77,7 @@ import SeismicStationRow from "./SeismicStationRow";
 import TideStationRow from "./TideStationRow";
 import PointHistoryPanel from "./PointHistoryPanel";
 import ForecastPanel from "./ForecastPanel";
+import { mapFreshness } from "../../lib/manifest";
 import EventOverlay from "./EventOverlay";
 import SyslogFeed from "./SyslogFeed";
 import UpNextPanel from "./UpNextPanel";
@@ -222,6 +223,8 @@ export default function BroadcastFrame({
   const worldRoundupDoc = useLatestRoundup("hourly");
   const bottomTickerTitle = theme.tickerTitle;
   const bottomTickerItems = ticker;
+  const legendVariable = legendVariableFor(state);
+  const mapMeta = mapFreshness(manifest, legendVariable, Date.now());
   const eventTargeted = onAirSegment
     ? isTargetedEvent(onAirSegment.kind)
     : false;
@@ -650,11 +653,12 @@ export default function BroadcastFrame({
         >
           <LiveAlertPanel alerts={alerts} cities={cities} theme={theme} />
           <IntensityMeter
-            variable={legendVariableFor(state)}
+            variable={legendVariable}
             units={state.units}
             theme={theme}
             showSatImg={state.showSatImg}
             satImgFeeds={state.satImgFeeds}
+            freshness={mapMeta}
           />
           {spaceWeatherShown ? (
             <SpaceWeatherMeter aurora={aurora} geomag={geomag} theme={theme} />
@@ -748,6 +752,7 @@ export default function BroadcastFrame({
             locationLabel={
               onAirSegment && segmentHasLocation ? onAirSegment.title : null
             }
+            segmentKey={onAirSegment?.id ?? null}
             theme={theme}
           />
           <div
@@ -762,6 +767,7 @@ export default function BroadcastFrame({
             <TsunamiMonitor
               stations={tideStations}
               active={tideActive}
+              segmentKey={onAirSegment?.id ?? null}
               theme={theme}
             />
           </div>

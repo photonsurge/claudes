@@ -15,7 +15,8 @@ export type WatchedEventType =
   | "FLOOD"
   | "WILDFIRE"
   | "DROUGHT"
-  | "EARTHQUAKE";
+  | "EARTHQUAKE"
+  | "VOLCANO";
 
 export type WatchedEventStatus = "ACTIVE" | "ENDED" | "CANCELLED";
 
@@ -41,6 +42,12 @@ export type EventTimelineUpdateType =
   | "SNAPSHOT_CAPTURED"
   | "IMPACT_UPDATE"
   | "SEISMIC_REVISION"
+  // Volcano status beats (see shared/src/volcanoes/diff.ts VolcanoChangeType).
+  | "ALERT_LEVEL_CHANGED"
+  | "AVIATION_COLOR_CHANGED"
+  | "ACTIVITY_CHANGED"
+  | "VEI_CHANGED"
+  | "PLUME_CHANGED"
   | "CLOSED"
   | "ENDED"
   | AlertChangeType; // SEVERITY_CHANGED | AREA_CHANGED | TEXT_CHANGED | INSTRUCTION_CHANGED | START_TIME_CHANGED | EXPIRY_CHANGED | CANCELLED

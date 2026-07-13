@@ -42,6 +42,24 @@ describe("SeismicMonitor relevance", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("holds the card up for the rest of the shot after a poll briefly drops every quake, then re-decides on the next cut", () => {
+    const nearOrigin: Quake = { id: "qn", mag: 5, place: "Near origin", time: 0, lng: 1, lat: 1, depthKm: 10 };
+    // A focused land shot with a relevant quake nearby → shown.
+    const { container, rerender } = render(
+      <SeismicMonitor quakes={[nearOrigin]} onAirSegment={stormAtOrigin} />,
+    );
+    expect(screen.getByText("SEISMIC MONITOR")).toBeInTheDocument();
+
+    // Same shot, a poll momentarily returns no quakes → must NOT blink out.
+    rerender(<SeismicMonitor quakes={[]} onAirSegment={stormAtOrigin} />);
+    expect(screen.getByText("SEISMIC MONITOR")).toBeInTheDocument();
+
+    // The mode cuts to a new focused shot with nothing seismic → now it hides.
+    const nextShot: Segment = { ...stormAtOrigin, id: "storm:y" };
+    rerender(<SeismicMonitor quakes={[]} onAirSegment={nextShot} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it("shows the active real seismograph station's name + a position-in-set caption when in range", () => {
     const stationA: SeismoStationReading = {
       net: "IU",
@@ -88,6 +106,21 @@ describe("TsunamiMonitor relevance", () => {
     const { container } = render(<TsunamiMonitor stations={[abashiri, other]} active={abashiri} />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("holds the gauge up across a beat with no active sample, then re-decides on the next cut", () => {
+    const { container, rerender } = render(
+      <TsunamiMonitor stations={[abashiri]} active={abashiri} segmentKey="quake:a" />,
+    );
+    expect(screen.getByText("TSUNAMI GAUGE")).toBeInTheDocument();
+
+    // Same shot, the cycle briefly has no active gauge → keep showing the last.
+    rerender(<TsunamiMonitor stations={[abashiri]} active={null} segmentKey="quake:a" />);
+    expect(screen.getByText("TSUNAMI GAUGE")).toBeInTheDocument();
+
+    // New shot with nothing on air → hides.
+    rerender(<TsunamiMonitor stations={[abashiri]} active={null} segmentKey="quake:b" />);
+    expect(container).toBeEmptyDOMElement();
+  });
 });
 
 describe("WeatherMonitors", () => {
@@ -125,5 +158,32 @@ describe("WeatherMonitors", () => {
     expect(screen.getByText("6 m/s")).toBeInTheDocument();
     expect(screen.queryByText("PRESSURE MONITOR")).not.toBeInTheDocument();
     expect(screen.queryByText("WAVE MONITOR")).not.toBeInTheDocument();
+  });
+
+  it("keeps the strip up when the archive poll briefly empties mid-shot, and only drops it on the next cut", () => {
+    const series: HistorySeries[] = [
+      {
+        variable: "wind",
+        encoding: "uv",
+        units: "m/s",
+        lat: 0,
+        lng: 0,
+        series: [{ t: "1", model: "gfs", fhr: 0, speed: 4 }, { t: "2", model: "gfs", fhr: 1, speed: 6 }],
+        stats: null,
+      },
+    ];
+    const { container, rerender } = render(
+      <WeatherMonitors series={series} locationLabel="Chiayi City" segmentKey="city:a" />,
+    );
+    expect(screen.getByText("WIND MONITOR")).toBeInTheDocument();
+
+    // Same shot, a poll returns no archive → the strip must hold, not blink out.
+    rerender(<WeatherMonitors series={[]} locationLabel="Chiayi City" segmentKey="city:a" />);
+    expect(screen.getByText("WIND MONITOR")).toBeInTheDocument();
+    expect(screen.getByText("Chiayi City")).toBeInTheDocument();
+
+    // The mode cuts and the new shot has no archive → now it hides.
+    rerender(<WeatherMonitors series={[]} locationLabel="Elsewhere" segmentKey="region:b" />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

@@ -256,6 +256,7 @@ describe("mapFreshness / ageLabel", () => {
     const f = mapFreshness(composeManifest([base, ocean])!, "sst", now)!; // sst → rtofs
     expect(f.source).toBe("RTOFS");
     expect(f.runLabel).toContain("UTC");
+    expect(f.generatedLabel).toBe("30 Jun 05:00 UTC");
     expect(f.updatedLabel).toBe("1h ago"); // rtofs generatedAt 05:00 vs now 06:00
   });
 

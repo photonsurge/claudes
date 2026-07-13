@@ -186,8 +186,18 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
      * identifier substring. Sorted oldest-first by `sent` — a ready-made
      * timeline. `raw` is dropped (chain rows are summary rows).
      */
-    async chain(source: string, identifier: string): Promise<iAlertModel[]> {
-      const focal = await model.findOne({ source, identifier }).select({ raw: 0 }).lean().exec();
+    async chain(
+      source: string,
+      identifier: string,
+      opts: { omitCoordinates?: boolean } = {},
+    ): Promise<iAlertModel[]> {
+      // Chain rows are summary rows (`raw` dropped). Callers that only need the
+      // lifecycle metadata — the focus bundle's buildTimeline reads id/sent/
+      // msgType/severity, never the polygon — pass omitCoordinates to keep the
+      // (potentially huge, per-message-duplicated) geometry out of the heap.
+      const projection: Record<string, 0> = { raw: 0 };
+      if (opts.omitCoordinates) projection["info.area.geometry.coordinates"] = 0;
+      const focal = await model.findOne({ source, identifier }).select(projection).lean().exec();
       if (!focal) return [];
       // Identifiers this message points back at (middle CSV field of each ref).
       const backIds = (focal.references ?? [])
@@ -202,7 +212,7 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
             { references: { $regex: escaped } },
           ],
         })
-        .select({ raw: 0 })
+        .select(projection)
         .sort({ sent: 1 })
         .lean()
         .exec();

@@ -123,6 +123,19 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
       return doc ? strip(doc) : null;
     },
 
+    /**
+     * The currently-stored docs for a set of source ids, in one `$in` read.
+     * Used as the PREV capture before `upsertMany` overwrites them, so the
+     * volcano-timeline hook can diff prev-vs-persisted (see
+     * worker/src/jobs/volcanoes.ts + shared/src/volcanoes/diff.ts). Returns only
+     * the volcanoes it actually has — a first-seen id is simply absent.
+     */
+    async listByIds(volcanoIds: string[]): Promise<Volcano[]> {
+      if (!volcanoIds.length) return [];
+      const docs = await model.find({ volcanoId: { $in: volcanoIds } }).lean().exec();
+      return docs.map(strip);
+    },
+
     async count(): Promise<number> {
       return model.estimatedDocumentCount();
     },

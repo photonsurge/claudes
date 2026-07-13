@@ -30,7 +30,7 @@ const H = 440;
  */
 const LABEL_POS = { top: -52, left: -48 };
 const HISTORY_POS = { top: -44, right: -150 };
-const FORECAST_POS = { bottom: -18, right: -48 };
+const FORECAST_POS = { bottom: -108, right: -80 };
 
 /**
  * The reticle's targeting marks, drawn in one SVG (viewBox = design pixels) so

@@ -1,6 +1,8 @@
 import { normalizeGdacsDetail, parseGdacsPrimaryId, gdacsDetailSource } from "./gdacs-detail";
 
-/** A representative GDACS geteventdata payload (Feature with properties). */
+/** A representative GDACS geteventdata payload — the REAL shape verified live against
+ *  geteventdata (single Feature; maps/images keyed by name under `images`; impact export
+ *  links under `impacts[].resource`; a `shakemap[]` list), plus legacy fields for coverage. */
 const fixture = {
   type: "Feature",
   properties: {
@@ -16,7 +18,19 @@ const fixture = {
       report: "https://www.gdacs.org/report.aspx?eventid=1000123",
       details: "https://www.gdacs.org/gdacsapi/details/1000123",
       geometry: "https://www.gdacs.org/contentdata/1000123/geometry.geojson",
+      media: "https://www.gdacs.org/gdacsapi/api/emm/getemmnews?eventid=1000123",
+      eventnews: "https://www.gdacs.org/gdacsapi/api/news/getnews?eventid=1000123",
     },
+    images: {
+      overviewmap: "https://www.gdacs.org/contentdata/TC/1000123/tc_2.png",
+      populationmap_cached: "https://www.gdacs.org/contentdata/TC/1000123/tc_4.png",
+      neic: "https://example.gov/shake/intensity.jpg", // no 'map' in name → IMAGE
+      meteoimages: "https://www.gdacs.org/contentdata/TC/1000123/meteo/", // directory → skipped
+    },
+    impacts: [
+      { source: "JRC", resource: { impact: "https://www.gdacs.org/gdacsapi/api/export/getimpact?id=766095" } },
+    ],
+    shakemap: [{ shakeid: 2, url: "https://www.gdacs.org/gdacsapi/api/shakemap/getdetails?id=30887", last: true }],
     mapimage: "https://www.gdacs.org/contentdata/1000123/map.png",
     resources: [{ url: "https://www.gdacs.org/contentdata/1000123/track.kml", title: "Storm track" }],
   },
@@ -40,8 +54,16 @@ describe("normalizeGdacsDetail", () => {
     expect(n.eventName).toBe("Tropical Cyclone Alpha");
     expect(n.series.map((s) => s.metric).sort()).toEqual(["alertscore", "episodealertscore", "population", "severity"]);
     expect(n.series.find((s) => s.metric === "population")?.value).toBe(4_800_000);
-    // report + details + geometry + map + track = 5 resources, kinds inferred.
-    expect(n.resources.map((r) => r.kind).sort()).toEqual(["GEOJSON", "KML", "LINK", "MAP", "REPORT"]);
+    // Harvests the REAL maps/images (name-keyed under `images`) + impact export links.
+    const urls = n.resources.map((r) => r.url);
+    expect(urls).toContain("https://www.gdacs.org/contentdata/TC/1000123/tc_2.png"); // overviewmap
+    expect(urls).toContain("https://www.gdacs.org/gdacsapi/api/export/getimpact?id=766095"); // impact link
+    expect(urls).toContain("https://www.gdacs.org/gdacsapi/api/shakemap/getdetails?id=30887"); // shakemap
+    expect(urls).not.toContain("https://www.gdacs.org/contentdata/TC/1000123/meteo/"); // directory skipped
+    expect(n.resources.find((r) => r.url.endsWith("tc_2.png"))?.kind).toBe("MAP");
+    expect(n.resources.find((r) => r.url.endsWith("intensity.jpg"))?.kind).toBe("IMAGE");
+    // The full spread of kinds is represented.
+    expect(new Set(n.resources.map((r) => r.kind))).toEqual(new Set(["REPORT", "LINK", "GEOJSON", "MAP", "IMAGE", "KML"]));
   });
 
   it("is stable: the hash basis only changes when a meaningful value moves", () => {
@@ -94,7 +116,7 @@ describe("gdacsDetailSource.acquire", () => {
     expect(calls.revisions).toBe(1);
     expect(calls.links).toBe(1);
     expect(calls.series.length).toBe(4);
-    expect(calls.resources).toBe(5);
+    expect(calls.resources).toBeGreaterThanOrEqual(10); // richer real-shape harvest (images + impacts + …)
     // First-seen → SOURCE_LINKED beat present; alert level → IMPACT_UPDATE; products → PRODUCT_ADDED.
     expect(calls.beats.map((b) => b.type)).toEqual(
       expect.arrayContaining(["SOURCE_LINKED", "IMPACT_UPDATE", "PRODUCT_ADDED"]),

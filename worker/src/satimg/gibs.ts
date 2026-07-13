@@ -64,6 +64,103 @@ const hasData = (buf: Buffer, o: number) =>
   buf[o + 3] > 0 && Math.max(buf[o], buf[o + 1], buf[o + 2]) > NODATA_MAX;
 
 /**
+ * Fraction of pixels carrying real imagery (max channel > NODATA_MAX), measured on a
+ * cheap thumbnail. Fails OPEN (returns 1) when the buffer can't be decoded — the
+ * content-type guards already reject the common error shapes, so an undecodable body
+ * here means "can't tell — don't drop it" rather than silently discarding a frame.
+ * Shared by the single-bbox alert frame and the globe mosaic to judge "is this blank?".
+ */
+export async function dataFraction(png: Buffer): Promise<number> {
+  try {
+    const { data, info } = await sharp(png)
+      .resize(128, 128, { fit: "inside" })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const px = info.width * info.height;
+    if (!px) return 1;
+    let withData = 0;
+    for (let i = 0; i < data.length; i += 3) {
+      if (Math.max(data[i], data[i + 1], data[i + 2]) > NODATA_MAX) withData++;
+    }
+    return withData / px;
+  } catch {
+    return 1;
+  }
+}
+
+/** One single-layer GetMap URL over an arbitrary bbox ([w,s,e,n]). */
+function truecolorLayerUrl(
+  layer: string,
+  bbox: [number, number, number, number],
+  width: number,
+  height: number,
+  date: string,
+): string {
+  const [w, s, e, n] = bbox;
+  const p = new URLSearchParams({
+    version: "1.3.0",
+    service: "WMS",
+    request: "GetMap",
+    format: "image/png",
+    STYLE: "default",
+    TRANSPARENT: "false",
+    CRS: "EPSG:4326",
+    // WMS 1.3.0 EPSG:4326 axis order is lat,lon → bbox = south,west,north,east.
+    bbox: `${s},${w},${n},${e}`,
+    WIDTH: String(width),
+    HEIGHT: String(height),
+    TIME: date,
+    layers: layer,
+  });
+  return `${WMS}?${p.toString()}`;
+}
+
+/**
+ * Fetch a true-colour frame for one DAY by compositing the instrument layers
+ * CLIENT-SIDE. This replaces a single stacked `LAYERS=a,b,c` GetMap, which does NOT
+ * gap-fill: GIBS renders no-data as OPAQUE BLACK, so a WMS stack shows only the TOP
+ * layer and goes fully black whenever that layer has a data gap (e.g. VIIRS_SNPP went
+ * dark in 2026 → the whole planet blanked). Instead we fetch each layer alone and
+ * `holeFill` them in priority order (first layer with real data per pixel wins), so a
+ * dead or gappy instrument simply contributes nothing. Short-circuits once the frame is
+ * essentially complete, so a small fully-covered bbox costs a single request. Returns
+ * the merged PNG, or null when every layer was blank (an unpublished day, or a genuine
+ * no-data extent like polar night) — the caller then walks back a day.
+ */
+export async function fetchMergedTrueColor(
+  f: typeof fetch,
+  layers: string[],
+  bbox: [number, number, number, number],
+  width: number,
+  height: number,
+  date: string,
+): Promise<Buffer | null> {
+  const collected: Buffer[] = [];
+  let merged: Buffer | null = null;
+  let frac = 0;
+  for (const layer of layers) {
+    let buf: Buffer | null = null;
+    try {
+      const res = await f(truecolorLayerUrl(layer, bbox, width, height, date));
+      if (res.ok) {
+        const ct = res.headers.get("content-type") || "";
+        const b = Buffer.from(await res.arrayBuffer());
+        if (!ct.includes("xml") && b.length) buf = b;
+      }
+    } catch {
+      /* try the next layer */
+    }
+    if (!buf) continue;
+    collected.push(buf);
+    merged = collected.length === 1 ? buf : await holeFill(collected);
+    frac = await dataFraction(merged);
+    if (frac >= 0.999) return merged; // complete — no need to fetch the rest
+  }
+  return merged && frac > 0 ? merged : null;
+}
+
+/**
  * Composite `days` (newest first, all the same dimensions) into one gap-filled frame:
  * for each pixel keep the newest day that has SOLID data there, else fall through to an
  * older day. The freshest daily mosaic's latest orbit is often only half-processed,
@@ -112,7 +209,8 @@ export async function holeFill(days: Buffer[]): Promise<Buffer> {
     .toBuffer();
 }
 
-/** One day's mosaic, or null if that day isn't published yet (xml/near-empty body). */
+/** One day's global mosaic, layer-composited (see `fetchMergedTrueColor`), or null if
+ *  that day isn't published yet / has no data anywhere. */
 async function fetchOneDay(
   f: typeof fetch,
   layers: string[],
@@ -120,14 +218,7 @@ async function fetchOneDay(
   width: number,
   height: number,
 ): Promise<Buffer | null> {
-  const res = await f(buildUrl(layers, date, width, height));
-  if (!res.ok) return null;
-  const ct = res.headers.get("content-type") || "";
-  const buf = Buffer.from(await res.arrayBuffer());
-  // A no-data day returns an XML ServiceException or a near-empty PNG; a real global
-  // mosaic is multi-MB. 50 KB comfortably separates them.
-  if (ct.includes("xml") || buf.length < 50_000) return null;
-  return buf;
+  return fetchMergedTrueColor(f, layers, [-180, -90, 180, 90], width, height, date);
 }
 
 /** YYYY-MM-DD (UTC) shifted by `days`. */
@@ -135,24 +226,6 @@ export function shiftDate(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
-}
-
-function buildUrl(layers: string[], date: string, width: number, height: number): string {
-  const p = new URLSearchParams({
-    version: "1.3.0",
-    service: "WMS",
-    request: "GetMap",
-    format: "image/png",
-    STYLE: "default",
-    CRS: "EPSG:4326",
-    // WMS 1.3.0 EPSG:4326 axis order is lat,lon → bbox = south,west,north,east.
-    bbox: "-90,-180,90,180",
-    WIDTH: String(width),
-    HEIGHT: String(height),
-    TIME: date,
-    layers: layers.join(","),
-  });
-  return `${WMS}?${p.toString()}`;
 }
 
 /**

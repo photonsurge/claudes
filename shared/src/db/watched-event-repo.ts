@@ -1,8 +1,10 @@
 import type { Model } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 import type { iAlert } from "./alert-model";
+import type { Volcano } from "../volcanoes/types";
 import type { iWatchedEvent, iWatchedEventModel } from "./watched-event-model";
-import { alertToWatchedEvent } from "../events/promote";
+import type { WatchedEventCore } from "./watched-event-model";
+import { alertToWatchedEvent, volcanoToWatchedEvent } from "../events/promote";
 
 const strip = (doc: any): iWatchedEvent => {
   const { __v, _id, ...rest } = doc;
@@ -24,49 +26,59 @@ export interface WatchedEventListOpts {
  * lifecycle needed to drive the timeline and camera.
  */
 export function makeWatchedEventRepo(model: Model<iWatchedEventModel>) {
+  /**
+   * Idempotent upsert of a WatchedEvent from its derived core, on the primary key
+   * `(primarySource, primarySourceId)`. `created` is true only on first insert (so
+   * the caller emits an ISSUED beat exactly once). The full geometry is NOT copied
+   * — only repPoint + bbox. Shared by every event type's promotion path.
+   */
+  async function upsertFromCore(core: WatchedEventCore, now: Date): Promise<{ eventId: string; created: boolean }> {
+    const existing = await model
+      .findOne({ primarySource: core.primarySource, primarySourceId: core.primarySourceId }, { id: 1, _id: 0 })
+      .lean<{ id: string }>()
+      .exec();
+    const id = existing?.id ?? uuidv4();
+
+    const set: Record<string, unknown> = {
+      type: core.type,
+      status: core.status,
+      title: core.title,
+      lastSourceUpdateAt: now.toISOString(),
+    };
+    if (core.repPoint) set.repPoint = core.repPoint;
+    if (core.bbox) set.bbox = core.bbox;
+    if (core.endedAt) set.endedAt = core.endedAt;
+
+    await model
+      .updateOne(
+        { primarySource: core.primarySource, primarySourceId: core.primarySourceId },
+        {
+          $set: set,
+          $setOnInsert: {
+            id,
+            startedAt: core.startedAt || now.toISOString(),
+            primarySource: core.primarySource,
+            primarySourceId: core.primarySourceId,
+          },
+        },
+        { upsert: true },
+      )
+      .exec();
+
+    return { eventId: id, created: !existing };
+  }
+
   return {
     model,
 
-    /**
-     * Promote (or refresh) a WatchedEvent from its primary alert. Idempotent:
-     * `created` is true only on first insert (so the caller emits an ISSUED beat
-     * exactly once). The full geometry is NOT copied — only repPoint + bbox.
-     */
+    /** Promote (or refresh) a WatchedEvent from its primary alert. */
     async promoteFromAlert(alert: iAlert, now: Date): Promise<{ eventId: string; created: boolean }> {
-      const core = alertToWatchedEvent(alert);
-      const existing = await model
-        .findOne({ primarySource: core.primarySource, primarySourceId: core.primarySourceId }, { id: 1, _id: 0 })
-        .lean<{ id: string }>()
-        .exec();
-      const id = existing?.id ?? uuidv4();
+      return upsertFromCore(alertToWatchedEvent(alert), now);
+    },
 
-      const set: Record<string, unknown> = {
-        type: core.type,
-        status: core.status,
-        title: core.title,
-        lastSourceUpdateAt: now.toISOString(),
-      };
-      if (core.repPoint) set.repPoint = core.repPoint;
-      if (core.bbox) set.bbox = core.bbox;
-      if (core.endedAt) set.endedAt = core.endedAt;
-
-      await model
-        .updateOne(
-          { primarySource: core.primarySource, primarySourceId: core.primarySourceId },
-          {
-            $set: set,
-            $setOnInsert: {
-              id,
-              startedAt: core.startedAt || now.toISOString(),
-              primarySource: core.primarySource,
-              primarySourceId: core.primarySourceId,
-            },
-          },
-          { upsert: true },
-        )
-        .exec();
-
-      return { eventId: id, created: !existing };
+    /** Promote (or refresh) a WatchedEvent from a volcano observation (type VOLCANO). */
+    async promoteFromVolcano(v: Volcano, now: Date): Promise<{ eventId: string; created: boolean }> {
+      return upsertFromCore(volcanoToWatchedEvent(v), now);
     },
 
     async getById(id: string): Promise<iWatchedEvent | null> {

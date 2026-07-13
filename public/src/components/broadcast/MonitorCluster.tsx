@@ -15,6 +15,7 @@
  * globe itself (layers/seismograph-stations.ts, layers/tide-stations.ts,
  * lib/weather-point.ts) — so the map and these cards always agree.
  */
+import { useRef } from "react";
 import type { Segment } from "@photonsurge/shared/director";
 import type { TideSample } from "@photonsurge/shared/tides/types";
 import { nearby } from "../../lib/geo";
@@ -29,6 +30,35 @@ import { HeartbeatIcon, WaveIcon, WindIcon, GaugeIcon } from "./icons";
 /** Radius (km) of quakes counted as "relevant" to a focused quake vs a region. */
 const QUAKE_FOCUS_KM = 800;
 const REGION_FOCUS_KM = 1500;
+
+/**
+ * Hold a monitor's "what to show right now" payload for the lifetime of ONE
+ * on-air segment, so a card only ever appears/disappears when the mode actually
+ * cuts — never mid-shot. These cards read live-polled props (point-history,
+ * quakes, tide gauges); a single poll that momentarily comes back empty would
+ * otherwise blank the card for a beat and pop it back — a visible flicker.
+ *
+ * `segmentKey` is the on-air shot's identity (`Segment.id`); `value` is the
+ * render payload, or `null` when there's nothing to show this instant. While
+ * the same shot stays on air we return the last non-null payload (fresh data
+ * replaces it, an empty gap does NOT); the moment the shot cuts to a new id we
+ * re-decide from the current value (adopting `null` → hidden). With no segment
+ * on air (`segmentKey == null`, e.g. an ambient wide shot) we pass the live
+ * value straight through — there's no discrete mode to latch to.
+ */
+function useHeldForSegment<T>(segmentKey: string | null, value: T | null): T | null {
+  const ref = useRef<{ key: string | null; held: T | null }>({ key: segmentKey, held: value });
+  if (segmentKey == null) {
+    ref.current = { key: null, held: value };
+    return value;
+  }
+  if (ref.current.key !== segmentKey) {
+    ref.current = { key: segmentKey, held: value }; // shot cut — re-decide from scratch
+  } else if (value != null) {
+    ref.current.held = value; // same shot, fresh data — update
+  } // same shot, momentary empty poll — keep the last good value (no flicker)
+  return ref.current.held;
+}
 
 /** Deterministic pseudo-noise in [-1,1] from an integer — stable across SSR. */
 function noise(i: number): number {
@@ -263,7 +293,11 @@ export function SeismicMonitor({
   const amp = Math.min(1, Math.max(0.2, maxMag / 7));
   // Show the seismo on a wide shot (ambient), on any quake shot, or whenever a
   // relevant quake is nearby; hide on a focused land shot with nothing seismic.
-  const showSeismic = !focus || isQuakeSeg || relevantQuakes.length > 0;
+  // Latch the DECISION to the shot: once the card is up for a segment it stays
+  // up until the mode cuts, so a poll that briefly drops all quakes can't blink
+  // it out mid-shot. Content (the cycled station/quake) stays live below.
+  const showSeismicNow = !focus || isQuakeSeg || relevantQuakes.length > 0;
+  const showSeismic = useHeldForSegment(onAirSegment?.id ?? null, showSeismicNow || null) ?? false;
   const seismicPlace = topQuake?.place;
 
   // A real live station in range draws the genuine waveform instead of the
@@ -327,6 +361,7 @@ export function SeismicMonitor({
 export function TsunamiMonitor({
   stations,
   active,
+  segmentKey = null,
   theme = DEFAULT_THEME,
 }: {
   /** Nearby cached tide gauges — lifted once in WatchSurface so this panel and
@@ -334,19 +369,22 @@ export function TsunamiMonitor({
   stations: TideStationReading[];
   /** Which of `stations` is currently "on air" here (cycled by the caller). */
   active: TideStationReading | null;
+  /** On-air shot id — latches the card's visibility to the mode (see
+   *  {@link useHeldForSegment}) so a momentary gap can't blink it out mid-shot. */
+  segmentKey?: string | null;
   theme?: BroadcastTheme;
 }) {
   // A coastal gauge being in range IS the relevance signal — draw its real
   // series. Hide entirely when nothing's cached near the shot. The caller
   // cycles `active` through `stations` on a timer, same as the seismic feed,
-  // so a stretch of coast shows more than one gauge.
-  const tideActive = active;
-  const samples = tideActive?.samples?.length ? tideActive.samples : null;
-  const tideIdx = tideActive ? stations.indexOf(tideActive) : -1;
-  const tideTag =
-    tideActive && tideIdx >= 0
-      ? `${truncate(tideActive.name, 14)}${stations.length > 1 ? ` · ${tideIdx + 1}/${stations.length}` : ""}`
-      : "SEA LEVEL";
+  // so a stretch of coast shows more than one gauge. Hold the last active gauge
+  // with data for the lifetime of the shot: the cycle briefly having no samples
+  // shouldn't blink the whole card out (called before the early returns below
+  // to keep hook order stable).
+  const held = useHeldForSegment(
+    segmentKey,
+    active && active.samples?.length ? { active, samples: active.samples } : null,
+  );
 
   // TideStationRow already shows every nearby gauge (including this one) once
   // 2+ are cached — showing this single-gauge card on top of that row is a
@@ -354,7 +392,14 @@ export function TsunamiMonitor({
   const withData = stations.filter((s) => s.samples?.length);
   if (withData.length >= 2) return null;
 
-  if (!samples) return null;
+  if (!held) return null;
+  const tideActive = held.active;
+  const samples = held.samples;
+  const tideIdx = stations.indexOf(tideActive);
+  const tideTag =
+    tideIdx >= 0
+      ? `${truncate(tideActive.name, 14)}${stations.length > 1 ? ` · ${tideIdx + 1}/${stations.length}` : ""}`
+      : "SEA LEVEL";
 
   const tr = trend(samples);
 
@@ -515,6 +560,7 @@ function WeatherMonitorBox({
 export function WeatherMonitors({
   series,
   locationLabel = null,
+  segmentKey = null,
   theme = DEFAULT_THEME,
 }: {
   /** Archived point-history at the on-air focus — lifted once in WatchSurface
@@ -523,10 +569,14 @@ export function WeatherMonitors({
   series: HistorySeries[];
   /** Human-readable on-air place name for the shared local monitor focus. */
   locationLabel?: string | null;
+  /** On-air shot id — latches the strip's visibility + traces to the mode (see
+   *  {@link useHeldForSegment}) so a poll that briefly returns no archive for
+   *  the focus can't blink the LOCAL MONITORS out mid-shot. */
+  segmentKey?: string | null;
   theme?: BroadcastTheme;
 }) {
   const location = formatMonitorLocation(series, locationLabel);
-  const visible = WEATHER_MONITORS.map((spec) => {
+  const computed = WEATHER_MONITORS.map((spec) => {
     const samples = historySamples(series, spec.variable);
     if (!samples) return null;
     const units = series.find((s) => s.variable === spec.variable)?.units ?? "";
@@ -534,7 +584,11 @@ export function WeatherMonitors({
     return { spec, samples, latestLabel: `${formatReading(latest)}${units ? ` ${units}` : ""}` };
   }).filter((item): item is { spec: (typeof WEATHER_MONITORS)[number]; samples: { v: number }[]; latestLabel: string } => item != null);
 
-  if (visible.length === 0) return null;
+  // Hold the last shot with real traces so an empty archive poll mid-shot keeps
+  // the strip up (with its last-good readings) instead of blanking it.
+  const held = useHeldForSegment(segmentKey, computed.length > 0 ? { visible: computed, location } : null);
+  if (!held) return null;
+  const { visible, location: heldLocation } = held;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center", pointerEvents: "none" }}>
@@ -550,7 +604,7 @@ export function WeatherMonitors({
             spec={item.spec}
             samples={item.samples}
             latestLabel={item.latestLabel}
-            locationLabel={location}
+            locationLabel={heldLocation}
             theme={theme}
           />
         ))}

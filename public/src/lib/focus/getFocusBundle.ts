@@ -40,6 +40,7 @@ import { buildEventTimeline } from "@photonsurge/shared/events/event-timeline";
 import { isTargetedEvent, hasRealLocation } from "../../components/broadcast/kinds";
 import { haversineKm } from "../geo";
 import { regionMinPop } from "../cities";
+import { getCachedCountries } from "../countries-cache";
 import { normalizeFocus, buildFocusKey } from "./focusKey";
 import type {
   FocusBundle,
@@ -103,7 +104,7 @@ async function resolveCountryAt(
   lng: number,
   lat: number,
 ): Promise<CountryAt | null> {
-  const countries = await db.countries.list();
+  const countries = await getCachedCountries(db);
   const candidates = countries
     .filter(
       (c) =>
@@ -397,7 +398,10 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
   if (target?.kind === "storm") {
     const { source: alSource, identifier: alIdent, id: alId } = target.alert.properties;
     const [chain, revisions, series, resources, snapshots, evt] = await Promise.all([
-      db.alerts.chain(alSource, alIdent),
+      // buildTimeline reads only chain metadata (id/sent/msgType/severity) — never
+      // the polygon — so keep the storm's per-message-duplicated geometry (a huge
+      // whole-ocean multipolygon ×N chain messages) out of the heap.
+      db.alerts.chain(alSource, alIdent, { omitCoordinates: true }),
       db.alertRevisions.listForAlert(alSource, alIdent),
       db.alertSeries.listForAlert(alSource, alIdent),
       db.alertResources.listForAlert(alSource, alIdent),

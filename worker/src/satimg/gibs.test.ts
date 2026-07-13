@@ -1,5 +1,18 @@
 import sharp from "sharp";
-import { shiftDate, fetchGibs, fetchGibsFeed, fetchDiscLook, looksFor, dimsFor, holeFill, GIBS_TRUECOLOR_LAYERS } from "./gibs";
+import { shiftDate, fetchGibs, fetchGibsFeed, fetchDiscLook, looksFor, dimsFor, holeFill, dataFraction, GIBS_TRUECOLOR_LAYERS } from "./gibs";
+
+/** A real, decodable solid-colour PNG (so the per-layer merge / no-data check runs). */
+const solid = (r: number, g: number, b: number, w = 8, h = 8) =>
+  sharp({ create: { width: w, height: h, channels: 3, background: { r, g, b } } }).png().toBuffer();
+
+/** Minimal Response stand-in over a real PNG buffer. */
+const resp = (body: Buffer, ct = "image/png", ok = true) =>
+  ({ ok, headers: { get: () => ct }, arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) }) as unknown as Response;
+
+/** Byte-count-only Response stand-in (for the live-WMS URL-builder tests, which never decode). */
+function fakeRes(bytes: number, ct = "image/png", ok = true) {
+  return { ok, headers: { get: () => ct }, arrayBuffer: async () => new Uint8Array(bytes).buffer } as unknown as Response;
+}
 
 describe("shiftDate", () => {
   it("shifts UTC days and rolls over month boundaries", () => {
@@ -9,51 +22,69 @@ describe("shiftDate", () => {
   });
 });
 
-/** Minimal Response stand-in for the injected fetch. */
-function fakeRes(bytes: number, ct = "image/png", ok = true) {
-  return {
-    ok,
-    headers: { get: () => ct },
-    arrayBuffer: async () => new Uint8Array(bytes).buffer,
-  } as unknown as Response;
-}
-
 describe("fetchGibs", () => {
-  it("requests the true-color layer stack + date and returns a real image", async () => {
+  it("composites a day's layers as SINGLE-layer requests and returns the mosaic + date/bounds", async () => {
+    const data = await solid(20, 80, 60);
     const urls: string[] = [];
     const res = await fetchGibs({
       date: "2026-07-03",
-      fillDays: 1, // single-day path: byte-identical passthrough (no compositing)
+      fillDays: 1,
+      width: 8,
+      height: 8,
       fetchImpl: (async (u: string) => {
         urls.push(u);
-        return fakeRes(120_000); // a real multi-KB mosaic
+        return resp(data);
       }) as unknown as typeof fetch,
     });
     expect(res.date).toBe("2026-07-03");
     expect(res.bounds).toEqual([-180, -90, 180, 90]);
-    expect(res.png.length).toBe(120_000);
+    expect(await dataFraction(res.png)).toBeGreaterThan(0.99);
     expect(urls[0]).toContain("TIME=2026-07-03");
-    expect(urls[0]).toContain(encodeURIComponent(GIBS_TRUECOLOR_LAYERS.join(",")));
+    // ONE layer per request now (client-side merge), not the old stacked LAYERS=a,b,c.
+    expect(urls[0]).toContain(GIBS_TRUECOLOR_LAYERS[0]);
+    expect(new URL(urls[0]).searchParams.get("layers")).not.toContain(",");
   });
 
-  it("walks back a day when the newest is unpublished (empty body)", async () => {
+  it("recovers a mostly-dead day: a blank top instrument no longer blanks the mosaic", async () => {
+    const black = await solid(0, 0, 0);
+    const data = await solid(20, 80, 60);
+    let layerCalls = 0;
     const res = await fetchGibs({
       date: "2026-07-03",
       fillDays: 1,
-      fetchImpl: (async (u: string) => {
-        // Newest day not ready → tiny body; the day before is full.
-        return u.includes("TIME=2026-07-03") ? fakeRes(2_000) : fakeRes(200_000);
+      width: 8,
+      height: 8,
+      fetchImpl: (async () => {
+        layerCalls++;
+        // First two instruments dark, the rest have data — the merge must fill through.
+        return resp(layerCalls >= 3 ? data : black);
       }) as unknown as typeof fetch,
+    });
+    expect(await dataFraction(res.png)).toBeGreaterThan(0.99);
+  });
+
+  it("walks back a day when the newest day has no data anywhere", async () => {
+    const black = await solid(0, 0, 0);
+    const data = await solid(20, 80, 60);
+    const res = await fetchGibs({
+      date: "2026-07-03",
+      fillDays: 1,
+      width: 8,
+      height: 8,
+      fetchImpl: (async (u: string) => resp(u.includes("TIME=2026-07-03") ? black : data)) as unknown as typeof fetch,
     });
     expect(res.date).toBe("2026-07-02");
   });
 
   it("throws when nothing is available within lookback", async () => {
+    const black = await solid(0, 0, 0);
     await expect(
       fetchGibs({
         date: "2026-07-03",
         lookbackDays: 1,
-        fetchImpl: (async () => fakeRes(1_000)) as unknown as typeof fetch,
+        width: 8,
+        height: 8,
+        fetchImpl: (async () => resp(black)) as unknown as typeof fetch,
       }),
     ).rejects.toThrow(/GIBS fetch failed/);
   });

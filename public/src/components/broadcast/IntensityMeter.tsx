@@ -10,15 +10,16 @@ import { getVariable } from "@photonsurge/shared/variables";
 import { getPalette } from "@photonsurge/shared/palettes";
 import { satImgCaptionFor } from "@photonsurge/shared/satimg/types";
 import { buildLegend } from "../../lib/legend";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import type { MapFreshness } from "../../lib/manifest";
+import type { BroadcastTheme } from "./config";
 
 export default function IntensityMeter({
   variable,
   units,
-  theme = DEFAULT_THEME,
   compact = false,
   showSatImg,
   satImgFeeds,
+  freshness,
 }: {
   variable: string | null;
   units: ControlState["units"];
@@ -28,6 +29,8 @@ export default function IntensityMeter({
    *  so when `variable` is null this renders a feed/look caption instead. */
   showSatImg?: boolean;
   satImgFeeds?: ControlState["satImgFeeds"];
+  /** Supplier and timestamps for the active map variable. */
+  freshness?: MapFreshness | null;
 }) {
   const sat = satImgCaptionFor(showSatImg, satImgFeeds);
 
@@ -100,22 +103,30 @@ export default function IntensityMeter({
         pointerEvents: "none",
         fontFamily: "system-ui, sans-serif",
         color: "#dfe7f5",
+        transform: "translateY(-22px)",
       }}
     >
       {/* Hero: the ACTIVE MAP TYPE, big and unmissable — this is what viewers
-          need to read first. The meter title becomes a small eyebrow above it. */}
+          need to read first, followed by the active source/timing metadata. */}
       <div style={{ textAlign: "center" }}>
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 800,
-            letterSpacing: 1.8,
-            opacity: 0.7,
-            textShadow: "0 1px 4px rgba(0,0,0,0.8)",
-          }}
-        >
-          {theme.meterTitle}
-        </div>
+        {freshness ? (
+          <div
+            style={{
+              marginTop: 2,
+              fontSize: compact ? 10.5 : 12,
+              fontWeight: 800,
+              letterSpacing: 0.9,
+              color: "#dfe7f5",
+              opacity: 0.82,
+              textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+            }}
+          >
+            SOURCE {freshness.source}
+            {freshness.generatedLabel ? ` · CREATED ${freshness.generatedLabel}` : ""}
+            {freshness.updatedLabel ? ` (${freshness.updatedLabel})` : ""}
+            {freshness.runLabel ? ` · RUN ${freshness.runLabel}` : ""}
+          </div>
+        ) : null}
         <div
           style={{
             fontSize: compact ? 19 : 24,

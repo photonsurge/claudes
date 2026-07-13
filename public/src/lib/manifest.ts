@@ -229,6 +229,8 @@ export interface MapFreshness {
   updatedLabel: string;
   /** Absolute UTC run time, e.g. "30 Jun 00:00 UTC". */
   runLabel: string;
+  /** Absolute UTC time the selected map source finished creating the field. */
+  generatedLabel: string;
 }
 
 /** Format a ms age as a compact "just now / 5m / 3h / 2d ago". */
@@ -275,6 +277,7 @@ export function mapFreshness(
     runTimeUtc,
     updatedLabel: ageLabel(stamp, nowMs),
     runLabel: utcLabel(runTimeUtc),
+    generatedLabel: utcLabel(stamp),
   };
 }
 

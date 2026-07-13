@@ -1,6 +1,7 @@
 import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { getCachedCountries } from "../../../../lib/countries-cache";
 import { pointInPolygon, type SimpleGeometry } from "@photonsurge/shared/geo/pointInPolygon";
 import type { iCountryModel } from "@photonsurge/shared/db/country-model";
 
@@ -45,7 +46,7 @@ async function GET__impl(req: Request) {
   }
   try {
     const db = await getAppDb();
-    const countries = await db.countries.list();
+    const countries = await getCachedCountries(db);
     const hits = countries
       .filter(
         (c) =>

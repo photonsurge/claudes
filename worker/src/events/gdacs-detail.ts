@@ -86,8 +86,36 @@ export function normalizeGdacsDetail(json: any): GdacsDetailNormalized {
   pushRes(p.url?.report, "REPORT", "GDACS event report");
   pushRes(p.url?.details, "LINK", "GDACS event details");
   pushRes(p.url?.geometry, "GEOJSON", "GDACS geometry");
-  pushRes(p.mapimage, "MAP", "GDACS map");
+  pushRes(p.url?.media, "LINK", "GDACS media");
+  pushRes(p.url?.eventnews, "LINK", "GDACS news");
   pushRes(p.iconoverall ?? p.icon, "IMAGE", "GDACS icon");
+  // Official maps/images: the live payload keys them by NAME under `images` (a dict), not
+  // a single `mapimage` (verified against geteventdata) — e.g. overviewmap, populationmap,
+  // shakemap_* . Harvest each; a *map* name → MAP, else IMAGE. Skip directory listings.
+  if (p.images && typeof p.images === "object" && !Array.isArray(p.images)) {
+    for (const [name, u] of Object.entries(p.images as Record<string, unknown>)) {
+      if (typeof u !== "string" || u.endsWith("/")) continue;
+      pushRes(u, /map/i.test(name) ? "MAP" : "IMAGE", `GDACS ${name}`);
+    }
+  }
+  // Impact export links live under `impacts[].resource` (per-source dict of URLs).
+  if (Array.isArray(p.impacts)) {
+    for (const im of p.impacts) {
+      const rr = im?.resource;
+      if (rr && typeof rr === "object") {
+        for (const [name, u] of Object.entries(rr as Record<string, unknown>)) {
+          pushRes(u, "REPORT", `GDACS ${[im?.source, name].filter(Boolean).join(" ")}`);
+        }
+      }
+    }
+  }
+  // The most recent shakemap's detail link.
+  if (Array.isArray(p.shakemap) && p.shakemap.length) {
+    const latest = p.shakemap.find((s: any) => s?.last) ?? p.shakemap[0];
+    pushRes(latest?.url, "LINK", "GDACS shakemap");
+  }
+  // Legacy / other-event-type fallbacks (harmless when absent).
+  pushRes(p.mapimage, "MAP", "GDACS map");
   if (Array.isArray(p.resources)) {
     for (const r of p.resources) pushRes(r?.url ?? r?.uri, null, r?.title ?? r?.name);
   }

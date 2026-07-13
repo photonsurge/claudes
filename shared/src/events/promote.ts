@@ -1,5 +1,7 @@
 import type { iAlert } from "../db/alert-model";
 import type { AlertChange } from "../alerts/diff";
+import type { VolcanoChange } from "../volcanoes/diff";
+import type { Volcano } from "../volcanoes/types";
 import { labelFor } from "../alerts/timeline";
 import { unionBboxOfAlert } from "../geo/polygon";
 import { alertRepPoint } from "../alerts/geo";
@@ -86,4 +88,53 @@ export function timelineUpdatesFromChanges(
     if (c.type === "AREA_CHANGED" && c.to != null) beat.areaKm2 = Number(c.to);
     return beat;
   });
+}
+
+// ── Volcano promotion (same shape as alerts — one system for all event types) ──
+
+/** Derive the lean WatchedEvent core from a volcano. A volcano is an ongoing
+ *  observation object: it stays ACTIVE while we track it and only lapses (ENDED)
+ *  when it drops out of the bulletin TTL — not from any single poll. */
+export function volcanoToWatchedEvent(v: Volcano): WatchedEventCore {
+  const core: WatchedEventCore = {
+    type: "VOLCANO",
+    status: "ACTIVE",
+    title: v.name,
+    // "since when has activity been at this level" is the best available start signal.
+    startedAt: new Date(v.statusChangedAt || v.firstDate).toISOString(),
+    primarySource: "gvp",
+    primarySourceId: v.id, // gvp:<vnum> — the canonical volcano join key
+    repPoint: { type: "Point", coordinates: [v.lng, v.lat] },
+  };
+  return core;
+}
+
+/** Presentation-ready label for a volcano status change (admin + on-air read this). */
+export function volcanoLabelFor(c: VolcanoChange): string {
+  const to = c.to ?? "";
+  const from = c.from ?? "";
+  switch (c.type) {
+    case "ALERT_LEVEL_CHANGED": {
+      const scheme = c.scheme === "USGS_VOLCANO_ALERT_LEVEL" ? "USGS alert" : "Activity level";
+      return from ? `${scheme}: ${from} → ${to}` : `${scheme}: ${to}`;
+    }
+    case "AVIATION_COLOR_CHANGED":
+      return from ? `Aviation code ${from} → ${to}` : `Aviation code ${to}`;
+    case "ACTIVITY_CHANGED":
+      return "Bulletin updated";
+    case "VEI_CHANGED":
+      return from ? `VEI ${from} → ${to}` : `VEI ${to}`;
+    case "PLUME_CHANGED":
+      return from ? `Plume height ${from} → ${to} m` : `Plume height ${to} m`;
+  }
+}
+
+/** Convert volcano status changes into stored timeline beats. */
+export function volcanoTimelineUpdatesFromChanges(
+  eventId: string,
+  changes: VolcanoChange[],
+  at: string,
+  source = "gvp",
+): NewEventTimelineUpdate[] {
+  return changes.map((c) => ({ eventId, at, type: c.type, label: volcanoLabelFor(c), source }));
 }
