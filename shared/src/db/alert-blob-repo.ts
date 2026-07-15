@@ -1,13 +1,15 @@
 import type { Model } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 import type { AlertGeometry, SeverityRank } from "./alert-model";
-import type { iAlertBlobModel } from "./alert-blob-model";
+import type { iAlertBlobModel, iBlobCity } from "./alert-blob-model";
 
 export interface AlertBlobInput {
   hazard: string;
   severityRank: SeverityRank;
   geometry: AlertGeometry;
   memberIds: string[];
+  /** Cities inside the shape, resolved once at rebuild — biggest first. */
+  cities?: iBlobCity[];
 }
 
 /**

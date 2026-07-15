@@ -57,6 +57,9 @@ import {
   useEventSeries,
   useNearbyCams,
   useVolcanoMedia,
+  useVolcanoCams,
+  useVolcanoEruptions,
+  useFocusTarget,
 } from "../../lib/focus/focus-client";
 import { legendVariableFor } from "../../lib/legend";
 import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
@@ -345,9 +348,13 @@ export default function BroadcastFrame({
   const eventSnapshots = useEventSnapshots();
   const eventResources = useEventResources();
   const eventSeries = useEventSeries();
-  // Volcano official cameras — from the same focus bundle (never a per-cut fetch).
-  const volcanoCams = useNearbyCams();
+  // Volcano dossier — all from the same focus bundle (never a per-cut fetch).
+  // `volcanoCams` is ACTIVE-only and already joined to our locally-stored frame,
+  // so air serves our own bytes rather than hot-linking the provider.
+  const volcanoCams = useVolcanoCams();
   const volcanoMedia = useVolcanoMedia();
+  const volcanoEruptions = useVolcanoEruptions();
+  const focusTarget = useFocusTarget();
   const placeRoundup =
     onAirSegment?.kind === "region"
       ? regionRoundup
@@ -452,6 +459,8 @@ export default function BroadcastFrame({
         alerts,
         volcanoCams,
         volcanoMedia,
+        volcanoEruptions,
+        volcano: focusTarget?.kind === "volcano" ? focusTarget.volcano : undefined,
         alertTimeline,
         alertSnapshots,
         alertResources,

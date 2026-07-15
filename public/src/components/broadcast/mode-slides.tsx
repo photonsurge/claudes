@@ -55,7 +55,12 @@ import EventNearbyPanel, { eventNearbySlideHasContent } from "./EventNearbyPanel
 import TrackInfoPanel from "./TrackInfoPanel";
 import VolcanoFactsPanel, { volcanoFactsSlideHasContent } from "./VolcanoFactsPanel";
 import VolcanoNearbyPanel, { volcanoNearbySlideHasContent } from "./VolcanoNearbyPanel";
-import VolcanoCamerasPanel, { volcanoCamerasSlideHasContent } from "./VolcanoCamerasPanel";
+import VolcanoCamerasPanel, { airableVolcanoCams } from "./VolcanoCamerasPanel";
+import VolcanoCamGridPanel, { volcanoCamGridSlideHasContent } from "./VolcanoCamGridPanel";
+import VolcanoGeologyPanel, { volcanoGeologySlideHasContent } from "./VolcanoGeologyPanel";
+import VolcanoEruptionsPanel, { volcanoEruptionsSlideHasContent } from "./VolcanoEruptionsPanel";
+import type { FocusVolcanoCam } from "../../lib/focus/types";
+import type { VolcanoEruption } from "@photonsurge/shared/db/volcano-eruption-repo";
 import VolcanoMediaPanel, { volcanoMediaSlideHasContent } from "./VolcanoMediaPanel";
 import type { VolcanoMedia } from "@photonsurge/shared/volcanoes/media";
 import RegionNearTermPanel from "./RegionNearTermPanel";
@@ -88,7 +93,13 @@ export interface ModeSlideContext {
   quakes: Quake[];
   alerts: AlertFeature[];
   /** The on-air volcano's official monitoring cameras — from the focus call. */
-  volcanoCams: Cam[];
+  /** ACTIVE cameras for the on-air volcano, already joined to our locally-stored
+   *  latest frame — composed on the focus call, never fetched per cut. */
+  volcanoCams: FocusVolcanoCam[];
+  /** The on-air volcano's GVP eruption history (a catalog fact — no event needed). */
+  volcanoEruptions: VolcanoEruption[];
+  /** The on-air volcano itself, for its GVP catalog/geology facts. */
+  volcano?: Volcano;
   /** Latest stored camera/satellite/official imagery from the focus bundle. */
   volcanoMedia: VolcanoMedia[];
   /** The on-air storm's derived change timeline (ISSUED → changes → ENDED) — the
@@ -228,6 +239,21 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
       if (volcanoFactsSlideHasContent(segment.trackInfo)) {
         slides.push({ id: "volcano-facts", node: <VolcanoFactsPanel info={segment.trackInfo} color={color} /> });
       }
+      // GVP catalog geology — type, tectonic setting, rock, and the Smithsonian's
+      // own write-up. A catalog fact, so it's there for a dormant volcano too;
+      // self-hides until the catalog seed has run.
+      if (volcanoGeologySlideHasContent(ctx.volcano)) {
+        slides.push({ id: "volcano-geology", node: <VolcanoGeologyPanel volcano={ctx.volcano} color={color} /> });
+      }
+      // Eruption history (Band 2 of the per-volcano timeline) — centuries, kept on
+      // its own card rather than sharing an axis with the days-long observation
+      // record. Self-hides until `seedEruptions` has run.
+      if (volcanoEruptionsSlideHasContent(ctx.volcanoEruptions)) {
+        slides.push({
+          id: "volcano-eruptions",
+          node: <VolcanoEruptionsPanel eruptions={ctx.volcanoEruptions} color={color} />,
+        });
+      }
       // Official status timeline (level/aviation/VEI/plume changes) — reuses the
       // unified event timeline panel; self-hides until the volcano was promoted
       // and has stored beats (EVENTS_UNIFIED_ENABLED).
@@ -237,10 +263,19 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
           node: <EventTimelinePanel beats={ctx.eventTimeline} color={color} theme={ctx.theme} />,
         });
       }
-      // Official monitoring cameras — the "what does it look like now" slide, fed
-      // from the focus call (never a per-cut fetch). Self-hides when none.
-      if (volcanoCamerasSlideHasContent(ctx.volcanoCams)) {
-        slides.push({ id: "volcano-cameras", node: <VolcanoCamerasPanel cams={ctx.volcanoCams} color={color} /> });
+      // Official monitoring cameras, HYBRID: a 2×2 overview establishes the volcano
+      // from every angle at once, then EACH camera gets its own full-size page so
+      // no angle is stuck off-air (Etna alone has ~8). Fed from the focus call,
+      // already ACTIVE-only and ours-first; no cap — the deck rotates them all.
+      // Both self-hide: the grid needs 2+ cameras, the pages need 1+.
+      if (volcanoCamGridSlideHasContent(ctx.volcanoCams)) {
+        slides.push({ id: "volcano-cams", node: <VolcanoCamGridPanel cams={ctx.volcanoCams} color={color} /> });
+      }
+      for (const cam of airableVolcanoCams(ctx.volcanoCams)) {
+        slides.push({
+          id: `volcano-cam:${cam.camId}`,
+          node: <VolcanoCamerasPanel cam={cam} color={color} />,
+        });
       }
       if (volcanoMediaSlideHasContent(ctx.volcanoMedia)) {
         slides.push({ id: "volcano-satellite", node: <VolcanoMediaPanel media={ctx.volcanoMedia} color={color} /> });

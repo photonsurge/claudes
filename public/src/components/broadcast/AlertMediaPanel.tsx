@@ -11,6 +11,7 @@
 import type { AlertSnapshotMeta } from "@photonsurge/shared/db/alert-snapshot-repo";
 import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model";
 import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
+import { snapshotLabel } from "../../lib/satellite-view";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import BroadcastCard, { CardSection, DIM } from "./BroadcastCard";
 import Sparkline from "../Sparkline";
@@ -47,7 +48,7 @@ export default function AlertMediaPanel({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={snapSrc(hero)} alt={hero.kind} style={{ width: "100%", borderRadius: 8, display: "block" }} />
         <div style={{ color: DIM, fontSize: 12, marginTop: 4 }}>
-          {hero.kind === "compare" ? "Then → now" : "Latest pass"} · {utc(hero.observationTime)}
+          {snapshotLabel(hero.kind, hero.layer)} · {utc(hero.observationTime)}
         </div>
       </CardSection>
 

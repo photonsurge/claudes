@@ -17,6 +17,25 @@ import type { AlertGeometry, SeverityRank } from "./alert-model";
  * whole set is REPLACED on each rebuild rather than updated in place, because a
  * blob's identity is its geometry and that changes as alerts come and go.
  */
+/**
+ * A city standing inside a blob, denormalised onto it.
+ *
+ * Deliberately a copy, not a reference: the whole point is that a reader asking
+ * "who is under this warning" gets an answer with no second query and no
+ * point-in-polygon of its own. The fields are the ones a caption needs — - name,
+ * where, and how big — and nothing else, because this array rides along with a
+ * geometry that already dwarfs it.
+ */
+export interface iBlobCity {
+  id: string;
+  name: string;
+  /** ISO-3166 alpha-2, for "Kraków, PL" style captions. */
+  cc?: string;
+  lat: number;
+  lng: number;
+  population?: number;
+}
+
 export interface iAlertBlob extends iGeneralModel {
   /** Hazard bucket the members share ("Thunderstorm"). */
   hazard: string;
@@ -24,6 +43,17 @@ export interface iAlertBlob extends iGeneralModel {
   geometry: AlertGeometry;
   /** Alert ids that went into this shape — panels still list them individually. */
   memberIds: string[];
+  /**
+   * Every city inside `geometry`, biggest first — resolved by the worker at
+   * rebuild time so nothing downstream repeats the work.
+   *
+   * This is the question every consumer of a blob actually asks ("which places
+   * is this warning over?"), and it's the expensive one: a point-in-polygon
+   * against a dissolved multi-country shape, per cut, on the broadcast surface.
+   * The blob is already a rebuilt-from-scratch cache, so the answer costs one
+   * indexed query per shape here and zero everywhere else.
+   */
+  cities: iBlobCity[];
   builtAt: Date;
 }
 
@@ -32,6 +62,18 @@ export interface iAlertBlobModel extends iAlertBlob {
   _id: string;
 }
 
+const BlobCitySchema = new mongoose.Schema<iBlobCity>(
+  {
+    id: { type: String, required: true },
+    name: { type: String, required: true },
+    cc: { type: String, required: false },
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
+    population: { type: Number, required: false },
+  },
+  { _id: false }, // pure embedded copies — an ObjectId each would be dead weight
+);
+
 const AlertBlobSchema = new mongoose.Schema<iAlertBlobModel>(
   {
     id: { type: String, required: true, unique: true, default: () => uuidv4() },
@@ -39,6 +81,7 @@ const AlertBlobSchema = new mongoose.Schema<iAlertBlobModel>(
     severityRank: { type: Number, required: true, default: 0 },
     geometry: { type: mongoose.Schema.Types.Mixed, required: true },
     memberIds: { type: [String], default: [] },
+    cities: { type: [BlobCitySchema], default: [] },
     builtAt: { type: Date, required: true, default: () => new Date() },
   },
   { timestamps: false },
@@ -48,6 +91,9 @@ const AlertBlobSchema = new mongoose.Schema<iAlertBlobModel>(
 AlertBlobSchema.index({ severityRank: -1 }, { name: "alert_blob_sev_ix" });
 // Members → blob, for the panel's "which shape is this alert in".
 AlertBlobSchema.index({ memberIds: 1 }, { name: "alert_blob_members_ix" });
+// The reverse of `cities`: "is this city under a warning right now", answered
+// without touching a polygon at all.
+AlertBlobSchema.index({ "cities.id": 1 }, { name: "alert_blob_city_ix" });
 
 export const getAlertBlobModel = (conn: Connection) =>
   getModel<iAlertBlobModel>(conn, "AlertBlob", AlertBlobSchema);

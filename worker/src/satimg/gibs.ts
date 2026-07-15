@@ -28,6 +28,22 @@ export const GIBS_TRUECOLOR_LAYERS = [
   "VIIRS_SNPP_CorrectedReflectance_TrueColor",
 ];
 
+/**
+ * MODIS land-surface-temperature (day) — a server-colourised daily HEAT raster. A
+ * true-colour still of a heatwave is a photo of clear sky; this actually shows the land
+ * baking. Terra + Aqua are merged client-side (same as true-colour) to fill each
+ * instrument's swath gaps — verified live, the merge lifts a Sahara bbox .87 → .97.
+ *
+ * Two properties shape how it's used (see frame.ts VIEW_MIN_DATA_FRAC): it is LAND-only
+ * (ocean = no-data) and, being an IR product, CLOUD-MASKED. That suits heat events (a
+ * heatwave is clear sky by definition) but means a cloudy/coastal bbox comes back patchy —
+ * which is why the caller falls back to true-colour below a coverage floor.
+ */
+export const GIBS_LANDTEMP_LAYERS = [
+  "MODIS_Terra_Land_Surface_Temp_Day",
+  "MODIS_Aqua_Land_Surface_Temp_Day",
+];
+
 export interface GibsFetchResult {
   png: Buffer;
   /** The date (YYYY-MM-DD, UTC) actually served. */
@@ -90,7 +106,7 @@ export async function dataFraction(png: Buffer): Promise<number> {
 }
 
 /** One single-layer GetMap URL over an arbitrary bbox ([w,s,e,n]). */
-function truecolorLayerUrl(
+function layerGetMapUrl(
   layer: string,
   bbox: [number, number, number, number],
   width: number,
@@ -128,7 +144,7 @@ function truecolorLayerUrl(
  * the merged PNG, or null when every layer was blank (an unpublished day, or a genuine
  * no-data extent like polar night) — the caller then walks back a day.
  */
-export async function fetchMergedTrueColor(
+export async function fetchMergedLayers(
   f: typeof fetch,
   layers: string[],
   bbox: [number, number, number, number],
@@ -142,7 +158,7 @@ export async function fetchMergedTrueColor(
   for (const layer of layers) {
     let buf: Buffer | null = null;
     try {
-      const res = await f(truecolorLayerUrl(layer, bbox, width, height, date));
+      const res = await f(layerGetMapUrl(layer, bbox, width, height, date));
       if (res.ok) {
         const ct = res.headers.get("content-type") || "";
         const b = Buffer.from(await res.arrayBuffer());
@@ -209,7 +225,7 @@ export async function holeFill(days: Buffer[]): Promise<Buffer> {
     .toBuffer();
 }
 
-/** One day's global mosaic, layer-composited (see `fetchMergedTrueColor`), or null if
+/** One day's global mosaic, layer-composited (see `fetchMergedLayers`), or null if
  *  that day isn't published yet / has no data anywhere. */
 async function fetchOneDay(
   f: typeof fetch,
@@ -218,7 +234,7 @@ async function fetchOneDay(
   width: number,
   height: number,
 ): Promise<Buffer | null> {
-  return fetchMergedTrueColor(f, layers, [-180, -90, 180, 90], width, height, date);
+  return fetchMergedLayers(f, layers, [-180, -90, 180, 90], width, height, date);
 }
 
 /** YYYY-MM-DD (UTC) shifted by `days`. */

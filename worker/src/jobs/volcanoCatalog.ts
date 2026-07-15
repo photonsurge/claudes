@@ -219,3 +219,40 @@ export async function seedEruptions(_job: Job) {
     throw err;
   }
 }
+
+/**
+ * Collapse the camera-frame archive down to the latest frame per camera.
+ *
+ * `cameraRefresh` used to append a row + blob for every novel frame, with a
+ * dedup window that never expired — so ~300 cameras polled every 5 minutes grew
+ * `volcano_media` (and its blob folder) forever. It now overwrites a single
+ * latest frame per camera, but the backlog it already wrote needs clearing once.
+ *
+ * Idempotent, and wired to a daily schedule as a backstop for any writer that
+ * appends camera frames in future.
+ *
+ * Run `pruneMediaDryRun` first: it reports what WOULD go without deleting.
+ */
+async function pruneLatest(dryRun: boolean) {
+  const db = await getAppDb();
+  try {
+    const res = await db.volcanoMedia.pruneToLatestPerCamera({ dryRun });
+    const result = { ...res, dryRun };
+    log(TAG, `volcano media prune${dryRun ? " (dry run)" : ""} done`, result);
+    blogInfo(
+      TAG,
+      `volcano media prune${dryRun ? " (dry run)" : ""}: ${res.removed} superseded frames, ${res.kept} cameras kept`,
+      result,
+      "volcanoes",
+      "pruneMedia",
+    );
+    return result;
+  } catch (err) {
+    log(TAG, `volcano media prune failed`, summarizeForLog(err));
+    blogErr(TAG, `volcano media prune failed`, err, "volcanoes", "pruneMedia");
+    throw err;
+  }
+}
+
+export const pruneMediaDryRun = (_job: Job) => pruneLatest(true);
+export const pruneMedia = (_job: Job) => pruneLatest(false);

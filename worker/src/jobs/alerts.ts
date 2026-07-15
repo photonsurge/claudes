@@ -114,14 +114,38 @@ export async function snapshotSatellite(job: Job) {
     let stored = 0;
     let empty = 0;
     let tooBig = 0;
-    for (const { alert, bbox } of targets) {
-      const frame = await fetchSatelliteFrame(bbox, { view: "truecolor", maxPx: SNAP_MAX_PX });
+    let unchanged = 0;
+    // `selectSnapshotTargets` already dropped the hazards satellite can't show and resolved
+    // each survivor's view (heat → land-surface temperature, else true-colour).
+    for (const { alert, bbox, view } of targets) {
+      let frame = await fetchSatelliteFrame(bbox, { view, maxPx: SNAP_MAX_PX });
+      // LST is land-only + cloud-masked: a cloudy/coastal heat bbox yields nothing usable,
+      // and a true-colour still is better than no imagery at all.
+      if (!frame && view !== "truecolor") {
+        frame = await fetchSatelliteFrame(bbox, { view: "truecolor", maxPx: SNAP_MAX_PX });
+      }
       if (!frame) {
         empty++;
         continue;
       }
       if (frame.png.length > SNAP_MAX_BYTES) {
         tooBig++;
+        continue;
+      }
+      // Only keep a frame whose OBSERVATION time actually moved (spec §6). GIBS daily
+      // products (the true-colour mosaic, MODIS LST) only change once a day, so the hourly
+      // sweep would otherwise store ~24 byte-identical frames per alert per day.
+      const prior = await db.alertSnapshots.listForAlert(alert.source, alert.identifier);
+      const obsMs = frame.observationTime.getTime();
+      if (
+        prior.some(
+          (s) =>
+            s.kind === "satellite" &&
+            s.layer === frame!.view &&
+            new Date(s.observationTime).getTime() === obsMs,
+        )
+      ) {
+        unchanged++;
         continue;
       }
       await db.alertSnapshots.put({
@@ -140,9 +164,15 @@ export async function snapshotSatellite(job: Job) {
       stored++;
     }
 
-    const result = { targets: targets.length, stored, empty, tooBig, oneShot: !!alertId };
+    const result = { targets: targets.length, stored, empty, tooBig, unchanged, oneShot: !!alertId };
     log(TAG, `snapshotSatellite done`, result);
-    blogInfo(TAG, `alert satellite snapshots: ${stored}/${targets.length}`, result, "alerts", "snapshotSatellite");
+    blogInfo(
+      TAG,
+      `alert satellite snapshots: ${stored}/${targets.length} (${unchanged} unchanged)`,
+      result,
+      "alerts",
+      "snapshotSatellite",
+    );
     if (stored) emitWorkerEvent({ type: ALERTS_UPDATED, data: { snapshots: stored } });
     return result;
   } catch (err) {

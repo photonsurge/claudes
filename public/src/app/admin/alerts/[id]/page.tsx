@@ -29,6 +29,7 @@ import {
 import { alertBbox } from "../../../../lib/alertGroups";
 import { hazardMeta } from "../../../../lib/hazard";
 import { fmtDuration } from "../../../../lib/airlog";
+import { satelliteViewLabel } from "../../../../lib/satellite-view";
 
 const fmtTime = (iso?: string): string => {
   if (!iso) return "—";
@@ -308,7 +309,7 @@ export default function AlertDetailPage() {
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
               {snapshots.slice(0, 12).map((s) => {
                 const src = `/api/alerts/snapshot/${s.id}?v=${encodeURIComponent(s.capturedAt)}`;
-                const caption = `${s.kind}${s.distanceKm != null ? ` · ${Math.round(s.distanceKm)} km` : ""} · ${fmtTime(s.observationTime)}`;
+                const caption = `${s.kind === "satellite" ? satelliteViewLabel(s.layer) : s.kind}${s.distanceKm != null ? ` · ${Math.round(s.distanceKm)} km` : ""} · ${fmtTime(s.observationTime)}`;
                 return (
                   <button
                     key={s.id}

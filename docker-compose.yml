@@ -141,11 +141,15 @@ services:
     restart: unless-stopped
     # Hard container memory ceiling. Override per host in .env; exceeding it
     # causes Docker to OOM-kill/restart this service instead of exhausting the host.
-    mem_limit: ${PUBLIC_MEMORY_LIMIT:-3g}
+    mem_limit: ${PUBLIC_MEMORY_LIMIT:-4g}
     # Geocoding var (GEOCODER_URL) flows in via env_file — no change needed.
     env_file: .env
     environment:
       PORT: 10100
+      # V8 heap cap. Deliberately BELOW mem_limit: the gap is non-heap RSS
+      # (sharp/glibc arenas, buffers), so heap == mem_limit would let Docker
+      # OOM-kill the container before V8 ever felt pressure and ran a full GC.
+      NODE_OPTIONS: "--max-old-space-size=${PUBLIC_NODE_HEAP_MB:-3072}"
       # Server-side status checks (/api/status) hit these over the compose
       # `internal` network by service name — not the host-published ports.
       SOCKET_INTERNAL_URL: http://socket:10101

@@ -587,6 +587,26 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Volcanoes",
   },
   {
+    id: "volcanoes-prune-media-dry",
+    label: "Check volcano camera frame backlog (dry run)",
+    description:
+      "Count the superseded camera frames stacked up in volcano media WITHOUT deleting anything. Camera refresh used to keep every distinct frame forever (~300 cameras × a poll every 5 minutes, nothing ever pruned); it now keeps only the latest frame per camera. This reports the backlog that built up before that. Look here first.",
+    domain: "volcanoes",
+    type: "volcanoCatalog",
+    event: "pruneMediaDryRun",
+    group: "Volcanoes",
+  },
+  {
+    id: "volcanoes-prune-media",
+    label: "Prune volcano camera frames to latest only",
+    description:
+      "Delete every camera frame except the newest per camera, and their blobs on disk. Cameras show what a volcano looks like RIGHT NOW, so older frames are dead weight. Published photos (GVP/Wikimedia/NASA/IMO eruption stills) are NOT touched — only camera frames. Safe to re-run; runs daily as a backstop.",
+    domain: "volcanoes",
+    type: "volcanoCatalog",
+    event: "pruneMedia",
+    group: "Volcanoes",
+  },
+  {
     id: "countries-seed",
     label: "Reseed country catalog",
     description: "Rebuild the ~240-country catalog (name/iso codes/continent/boundary) from the bundled Natural Earth GeoJSON.",

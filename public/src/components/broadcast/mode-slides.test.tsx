@@ -13,6 +13,7 @@ const ctx = (over: Partial<ModeSlideContext> = {}): ModeSlideContext => ({
   alerts: [],
   volcanoCams: [],
   volcanoMedia: [],
+  volcanoEruptions: [],
   alertTimeline: [],
   alertSnapshots: [],
   alertResources: [],
@@ -244,14 +245,63 @@ describe("modeSlides", () => {
     expect(ids(seg({ kind: "volcano", trackInfo: { label: "V" } }), ctx())).toEqual(["onair", "track"]);
   });
 
-  it("gives volcano cameras and satellite imagery separate slides", () => {
+  it("gives EACH volcano camera its own slide, plus satellite imagery", () => {
     const volcano = seg({ kind: "volcano", trackInfo: { label: "V" } });
-    const volcanoCams = [{ camId: "cam-1", title: "Summit", imageUrl: "https://example.test/cam.jpg" }] as ModeSlideContext["volcanoCams"];
+    // On air we serve OUR stored copy, not the provider's URL.
+    const volcanoCams = [
+      { camId: "cam-1", title: "Summit", localImageUrl: "/api/volcanoes/media/m1", upstreamImageUrl: "https://example.test/cam.jpg" },
+      { camId: "cam-2", title: "Thermal", localImageUrl: "/api/volcanoes/media/m2" },
+    ] as ModeSlideContext["volcanoCams"];
     const volcanoMedia = [{ id: "sat-1", volcanoId: "gvp:1", source: "VOLCAT", type: "SATELLITE",
       assetRef: "sat-1", sourceUrl: "https://example.test/source", acquiredAt: new Date() }] as ModeSlideContext["volcanoMedia"];
+    // Hybrid: a 2×2 overview first, then one full-size page per camera.
     expect(ids(volcano, ctx({ volcanoCams, volcanoMedia }))).toEqual([
-      "onair", "track", "volcano-cameras", "volcano-satellite",
+      "onair", "track", "volcano-cams", "volcano-cam:cam-1", "volcano-cam:cam-2", "volcano-satellite",
     ]);
+  });
+
+  it("volcano cameras we hold locally lead the rotation; unrenderable ones get no slide", () => {
+    const volcano = seg({ kind: "volcano", trackInfo: { label: "V" } });
+    const volcanoCams = [
+      { camId: "upstream-only", title: "Hot-linked", upstreamImageUrl: "https://example.test/cam.jpg" },
+      { camId: "no-image", title: "Dead" }, // nothing to render → no slide at all
+      { camId: "stored", title: "Ours", localImageUrl: "/api/volcanoes/media/m1" },
+    ] as ModeSlideContext["volcanoCams"];
+    expect(ids(volcano, ctx({ volcanoCams }))).toEqual([
+      "onair", "track", "volcano-cams", "volcano-cam:stored", "volcano-cam:upstream-only",
+    ]);
+  });
+
+  it("a lone volcano camera skips the overview grid (it would just duplicate the page)", () => {
+    const volcano = seg({ kind: "volcano", trackInfo: { label: "V" } });
+    const volcanoCams = [
+      { camId: "only", title: "Summit", localImageUrl: "/api/volcanoes/media/m1" },
+    ] as ModeSlideContext["volcanoCams"];
+    expect(ids(volcano, ctx({ volcanoCams }))).toEqual(["onair", "track", "volcano-cam:only"]);
+  });
+
+  it("a volcano gets geology + eruption-history slides from the catalog, with no event needed", () => {
+    const volcano = seg({ kind: "volcano", trackInfo: { label: "V" } });
+    // Catalog facts + eruption history are present for ANY volcano — dormant,
+    // never promoted, absent from this week's bulletin.
+    const v = {
+      id: "gvp:211060",
+      name: "Etna",
+      volcanoType: "Stratovolcano",
+      tectonicSetting: "Subduction zone / Continental crust (> 25 km)",
+      geologicalSummary: "Mount Etna, towering above Catania…",
+    } as ModeSlideContext["volcano"];
+    const volcanoEruptions = [
+      { volcanoId: "gvp:211060", eruptionNumber: 1, confirmed: true, vei: 3, startYear: 2022, startPrecision: "year" },
+    ] as ModeSlideContext["volcanoEruptions"];
+    expect(ids(volcano, ctx({ volcano: v, volcanoEruptions }))).toEqual([
+      "onair", "track", "volcano-geology", "volcano-eruptions",
+    ]);
+  });
+
+  it("volcano geology/eruption slides self-hide before the catalog seed has run", () => {
+    const volcano = seg({ kind: "volcano", trackInfo: { label: "V" } });
+    expect(ids(volcano, ctx({}))).toEqual(["onair", "track"]);
   });
 
   const bbox: [number, number, number, number] = [-1, -1, 1, 1];

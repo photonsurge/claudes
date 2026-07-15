@@ -112,6 +112,35 @@ describe("fetchSatelliteFrame", () => {
     expect(frame).toBeNull();
   });
 
+  it("landtemp view fetches the MODIS land-surface-temp layers, not true-colour", async () => {
+    const data = await solidPng(200, 60, 20);
+    const layers: string[] = [];
+    const fetchImpl = (async (u: string) => {
+      layers.push(layerOf(u));
+      return resp(data);
+    }) as unknown as typeof fetch;
+
+    const frame = await fetchSatelliteFrame(BOUNDS, { view: "landtemp", date: "2026-07-11", fetchImpl });
+    expect(frame!.view).toBe("landtemp");
+    expect(layers[0]).toMatch(/Land_Surface_Temp/);
+  });
+
+  it("landtemp demands solid coverage where true-colour only needs to not be black", async () => {
+    // ~25% data: fine as a cloud photo, but a heat raster that patchy reads as a mess on
+    // air (LST is land-only + cloud-masked), so the caller can fall back to true-colour.
+    const patch = await solidPng(200, 60, 20, 32, 32);
+    const patchy = await sharp({ create: { width: 64, height: 64, channels: 3, background: { r: 0, g: 0, b: 0 } } })
+      .composite([{ input: patch, top: 0, left: 0 }])
+      .png()
+      .toBuffer();
+    const fetchImpl = (async () => resp(patchy)) as unknown as typeof fetch;
+
+    const asCloud = await fetchSatelliteFrame(BOUNDS, { view: "truecolor", date: "2026-07-11", lookbackDays: 0, fetchImpl });
+    expect(asCloud).not.toBeNull(); // 25% clears the 0.02 blank-guard
+    const asHeat = await fetchSatelliteFrame(BOUNDS, { view: "landtemp", date: "2026-07-11", lookbackDays: 0, fetchImpl });
+    expect(asHeat).toBeNull(); // 25% is under the landtemp coverage floor
+  });
+
   it("frameDataFraction: ~0 for black, ~1 for real imagery, fails open on garbage", async () => {
     expect(await frameDataFraction(await solidPng(0, 0, 0))).toBeLessThan(0.02);
     expect(await frameDataFraction(await solidPng(20, 80, 60))).toBeGreaterThan(0.99);

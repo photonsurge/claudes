@@ -12,6 +12,7 @@
 import type { EventSnapshotMeta } from "@photonsurge/shared/db/event-snapshot-repo";
 import type { iEventResource } from "@photonsurge/shared/db/event-resource-model";
 import type { iEventSeries } from "@photonsurge/shared/db/event-series-model";
+import { snapshotLabel } from "../../lib/satellite-view";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import BroadcastCard, { CardSection, DIM } from "./BroadcastCard";
 import Sparkline from "../Sparkline";
@@ -54,7 +55,7 @@ export default function EventMediaPanel({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={snapSrc(hero)} alt={hero.kind} style={{ width: "100%", borderRadius: 8, display: "block" }} />
           <div style={{ color: DIM, fontSize: 12, marginTop: 4 }}>
-            {hero.kind === "compare" ? "Then → now" : hero.kind} · {utc(hero.observationTime)}
+            {snapshotLabel(hero.kind, hero.layer)} · {utc(hero.observationTime)}
           </div>
         </CardSection>
       ) : null}

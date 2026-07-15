@@ -811,7 +811,12 @@ process.on("uncaughtException", (err) => {
   if (process.env.VOLCANO_MEDIA_ENABLED !== "false") {
     const REGISTRY_MS = Number(process.env.VOLCANO_MEDIA_REGISTRY_MS || 6 * 60 * 60 * 1000);
     const CAMERA_MS = Number(process.env.VOLCANO_MEDIA_CAMERA_MS || 5 * 60 * 1000);
-    const OFFICIAL_MS = Number(process.env.VOLCANO_MEDIA_OFFICIAL_MS || 15 * 60 * 1000);
+    // Published stills, not live frames: a new eruption photo appears a few times
+    // a year, so polling this hard buys nothing. It also walks EVERY volcano
+    // (scraping a GVP gallery page each) — cheap at the ~30 volcanoes the weekly
+    // bulletin used to hold, ~1,196 page fetches a pass now the full catalog is
+    // seeded. Six-hourly keeps us a good citizen of the Smithsonian's server.
+    const OFFICIAL_MS = Number(process.env.VOLCANO_MEDIA_OFFICIAL_MS || 6 * 60 * 60 * 1000);
     const SATELLITE_MS = Number(process.env.VOLCANO_MEDIA_SATELLITE_MS || 10 * 60 * 1000);
     try {
       await myQueue.add(
@@ -833,6 +838,15 @@ process.on("uncaughtException", (err) => {
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "satelliteMedia", data: {} },
         { repeat: { every: SATELLITE_MS, offset: staggerOffset("volcano-satellite-media", SATELLITE_MS) }, jobId: "volcano-satellite-media" },
+      );
+      // Backstop for the latest-only camera policy: `cameraRefresh` overwrites in
+      // place, so this normally finds nothing. It exists so any future writer that
+      // appends camera frames can't quietly regrow the archive.
+      const MEDIA_PRUNE_MS = 24 * 60 * 60 * 1000;
+      await myQueue.add(
+        "do",
+        { domain: "volcanoes", type: "volcanoCatalog", event: "pruneMedia", data: {} },
+        { repeat: { every: MEDIA_PRUNE_MS, offset: staggerOffset("volcano-media-prune", MEDIA_PRUNE_MS) }, jobId: "volcano-media-prune" },
       );
       log(TAG, "registered volcano media registry + acquisition", { registryMs: REGISTRY_MS, cameraMs: CAMERA_MS, officialMs: OFFICIAL_MS, satelliteMs: SATELLITE_MS });
     } catch (err) {

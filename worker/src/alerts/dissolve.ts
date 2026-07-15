@@ -1,5 +1,6 @@
 import polygonClipping, { type MultiPolygon } from "polygon-clipping";
 import type { AlertGeometry, iAlert, SeverityRank } from "@photonsurge/shared/db/alert-model";
+import { windGeometry } from "@photonsurge/shared/alerts/rings";
 
 /**
  * Dissolve neighbouring warning areas of the same hazard into one shape.
@@ -63,11 +64,23 @@ function toGeom(g: AlertGeometry | null | undefined): MultiPolygon | null {
   return null; // Points can't be dissolved — they pass through untouched.
 }
 
-/** polygon-clipping's MultiPolygon → GeoJSON, collapsing a single part to Polygon. */
+/**
+ * polygon-clipping's MultiPolygon → GeoJSON, collapsing a single part to Polygon.
+ *
+ * Wound on the way out, because the union's ring order is the library's business,
+ * not RFC 7946's, and Mongo reads a clockwise outer ring as the region's
+ * COMPLEMENT. That is not a subtle failure: "cities in this blob" would answer
+ * with every city on Earth except Poland, and the 2dsphere would reject the shape
+ * for being bigger than a hemisphere. Winding here means every stored blob is
+ * queryable and drawable by construction.
+ */
 function toGeoJson(geom: MultiPolygon): AlertGeometry | null {
   if (!geom?.length) return null;
-  if (geom.length === 1) return { type: "Polygon", coordinates: geom[0] };
-  return { type: "MultiPolygon", coordinates: geom };
+  const g: AlertGeometry =
+    geom.length === 1
+      ? { type: "Polygon", coordinates: geom[0] }
+      : { type: "MultiPolygon", coordinates: geom };
+  return windGeometry(g);
 }
 
 /** Axis-aligned bounds, for the cheap adjacency pre-filter. */

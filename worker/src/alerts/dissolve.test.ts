@@ -1,4 +1,5 @@
 import type { iAlert } from "@photonsurge/shared/db/alert-model";
+import { signedArea, type Ring } from "@photonsurge/shared/alerts/rings";
 import { dissolveAlerts } from "./dissolve";
 
 /** An alert covering one square — the shape of a MeteoAlarm county warning. */
@@ -102,5 +103,52 @@ describe("dissolveAlerts", () => {
 
   it("handles an empty input", () => {
     expect(run([])).toEqual([]);
+  });
+
+  /**
+   * Winding is not cosmetic here. Mongo reads a clockwise outer ring as the
+   * region's COMPLEMENT, so a reversed blob would both fail to index and answer
+   * "which cities are inside this warning" with every city on Earth except the
+   * ones actually under it — wrong, and silently so.
+   */
+  describe("winding", () => {
+    const outerRings = (g: { type: string; coordinates: unknown }): Ring[] =>
+      g.type === "Polygon"
+        ? [(g.coordinates as Ring[])[0]]
+        : (g.coordinates as Ring[][]).map((poly) => poly[0]);
+
+    it("winds a dissolved shape's outer ring counter-clockwise", () => {
+      const out = run([
+        county("a", "Thunderstorm", 3, [0, 0, 1, 1]),
+        county("b", "Thunderstorm", 3, [1, 0, 2, 1]),
+      ]);
+
+      for (const ring of outerRings(out[0].geometry)) expect(signedArea(ring)).toBeGreaterThan(0);
+    });
+
+    it("winds every part of a MultiPolygon, not just the first", () => {
+      const out = run([
+        county("a", "Thunderstorm", 3, [0, 0, 1, 1]),
+        county("b", "Thunderstorm", 3, [1.01, 0, 2, 1]),
+      ]);
+
+      const rings = outerRings(out[0].geometry);
+      expect(rings).toHaveLength(2);
+      for (const ring of rings) expect(signedArea(ring)).toBeGreaterThan(0);
+    });
+
+    it("winds correctly even when the source counties were clockwise", () => {
+      // Sources disagree on winding; a blob must come out right regardless.
+      const a = county("a", "Thunderstorm", 3, [0, 0, 1, 1]);
+      const b = county("b", "Thunderstorm", 3, [1, 0, 2, 1]);
+      for (const c of [a, b]) {
+        c.info[0].area[0].geometry!.coordinates[0].reverse();
+      }
+
+      const out = run([a, b]);
+
+      expect(out).toHaveLength(1);
+      for (const ring of outerRings(out[0].geometry)) expect(signedArea(ring)).toBeGreaterThan(0);
+    });
   });
 });

@@ -6,6 +6,7 @@ import type { iAlert } from "@photonsurge/shared/db/alert-model";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { dissolveAlerts } from "../alerts/dissolve";
+import { attachCities } from "../alerts/blob-cities";
 
 const TAG = "job:alert-blobs";
 
@@ -30,6 +31,11 @@ export async function refresh(_job: Job) {
         classifyHazard({ event: a.info?.[0]?.event, parameters: a.info?.[0]?.parameters }),
     });
 
+    // Now that the shapes are final, record who's inside them. Doing it here —
+    // once, against the geo index — is what stops every downstream reader
+    // running its own point-in-polygon against a multi-country polygon.
+    const cityStats = await attachCities(db.cities.model, blobs);
+
     const r = await db.alertBlobs.replace(blobs);
     const before = blobs.reduce((n, b) => n + b.verticesBefore, 0);
     const after = blobs.reduce((n, b) => n + b.verticesAfter, 0);
@@ -42,11 +48,17 @@ export async function refresh(_job: Job) {
       // polygon-clipping refuses some real-world borders; those areas simply
       // stayed separate rather than taking the rebuild down.
       unionFailures,
+      cities: cityStats.cities,
+      // Blobs over open sea or empty ground legitimately hold nobody; a spike
+      // here would mean the shapes stopped matching the city index.
+      blobsWithNoCities: cityStats.empty,
+      cityFailures: cityStats.failures,
     };
     log(TAG, `alert blobs rebuilt`, result);
     blogInfo(
       TAG,
-      `alert blobs: ${alerts.length} alerts → ${r.blobs} shapes (${result.saved} fewer vertices to draw)`,
+      `alert blobs: ${alerts.length} alerts → ${r.blobs} shapes ` +
+        `(${result.saved} fewer vertices to draw, ${cityStats.cities} cities covered)`,
       result,
       "alertBlobs",
       "refresh",
