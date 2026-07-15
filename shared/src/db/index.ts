@@ -70,6 +70,8 @@ import { makeFaultRepo } from "./fault-repo";
 import { getAlertAreaGeomModel } from "./alert-area-geom-model";
 import { getAlertGeomSeenModel } from "./alert-geom-seen-model";
 import { makeAlertAreaGeomRepo } from "./alert-area-geom-repo";
+import { getCapIdModel } from "./cap-id-model";
+import { makeCapIdRepo } from "./cap-id-repo";
 import { getAuroraModel } from "./aurora-model";
 import { makeAuroraRepo } from "./aurora-repo";
 import { getSatImgModel } from "./satimg-model";
@@ -80,6 +82,8 @@ import { getVolcanoModel } from "./volcano-model";
 import { makeVolcanoRepo } from "./volcano-repo";
 import { getVolcanoSourceLinkModel } from "./volcano-source-link-model";
 import { makeVolcanoSourceLinkRepo } from "./volcano-source-link-repo";
+import { getVolcanoEruptionModel } from "./volcano-eruption-model";
+import { makeVolcanoEruptionRepo } from "./volcano-eruption-repo";
 import { getVolcanoCameraModel } from "./volcano-camera-model";
 import { makeVolcanoCameraRepo } from "./volcano-camera-repo";
 import { getVolcanoMediaModel } from "./volcano-media-model";
@@ -211,11 +215,13 @@ export function createDb(conn: Connection) {
     cables: makeCableRepo(getCableModel(conn), getCableLandingModel(conn)),
     faults: makeFaultRepo(getFaultModel(conn)),
     alertAreaGeom: makeAlertAreaGeomRepo(getAlertAreaGeomModel(conn), getAlertGeomSeenModel(conn)),
+    capIds: makeCapIdRepo(getCapIdModel(conn)),
     aurora: makeAuroraRepo(getAuroraModel(conn), blobs.aurora),
     satimg: makeSatImgRepo(getSatImgModel(conn), blobs.satimg),
     fires: makeFireRepo(getFireModel(conn)),
     volcanoes: makeVolcanoRepo(getVolcanoModel(conn)),
     volcanoSourceLinks: makeVolcanoSourceLinkRepo(getVolcanoSourceLinkModel(conn)),
+    volcanoEruptions: makeVolcanoEruptionRepo(getVolcanoEruptionModel(conn)),
     volcanoCameras: makeVolcanoCameraRepo(getVolcanoCameraModel(conn)),
     volcanoMedia: makeVolcanoMediaRepo(getVolcanoMediaModel(conn), blobs.volcanoMedia),
     volcanoMediaSources: makeVolcanoMediaSourceRepo(getVolcanoMediaSourceModel(conn)),

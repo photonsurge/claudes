@@ -1,0 +1,167 @@
+import type { Job } from "bullmq";
+import { getAppDb } from "@photonsurge/shared/db/index";
+import {
+  fetchGvpHoloceneVolcanoes,
+  fetchGvpPleistoceneVolcanoes,
+  fetchGvpEruptions,
+} from "@photonsurge/shared/volcanoes/gvp-wfs";
+import { log } from "@photonsurge/shared/utill/logger";
+import { TRACKS_UPDATED } from "@photonsurge/shared/control";
+import { summarizeForLog } from "../utils";
+import { blogInfo, blogErr } from "../blog";
+import { emitWorkerEvent } from "../socket";
+
+const TAG = "job:volcanoCatalog";
+
+/**
+ * P7 — the COMPLETE volcano catalog (docs/volcano-observation-plan.md).
+ *
+ * Lives in its own job file (type `volcanoCatalog`) rather than jobs/volcanoes.ts:
+ * these are catalog-seeding concerns, not weekly-bulletin ingest, and keeping them
+ * apart avoids entangling the two.
+ *
+ * The core idea: `Volcano` is a PERMANENT catalog entity. Seeding every volcano
+ * only works once the 14-day TTL is gone — otherwise all ~2,600 rows silently
+ * expire. Run `migrate` once before `seed` on any existing database.
+ */
+
+/** Pleistocene volcanoes are numerous and almost entirely inert — opt-in. */
+const includePleistocene = () => process.env.VOLCANO_INCLUDE_PLEISTOCENE === "true";
+
+/**
+ * Dispatched as `volcanoCatalog.migrate`. ONE-SHOT database migration for the
+ * "Volcano is a permanent catalog entity" change:
+ *
+ *  1. Drops `volcano_ttl_ix`. Removing the index declaration from the schema does
+ *     NOT drop an index that already exists — Mongo keeps expiring documents until
+ *     the index is explicitly dropped. Without this, seeding the catalog quietly
+ *     deletes it 14 days later.
+ *  2. Backfills `bulletinAt` from `fetchedAt`. Every row present today got there
+ *     via the weekly bulletin, so `fetchedAt` is a faithful "last listed" value —
+ *     and after this, "in the current bulletin" reads `bulletinAt`, never row
+ *     existence.
+ *
+ * Idempotent: a second run finds no TTL and nothing left to backfill.
+ */
+export async function migrate(_job: Job) {
+  const db = await getAppDb();
+  try {
+    const coll = db.volcanoes.model.collection;
+    let ttlDropped = false;
+    try {
+      const indexes = await coll.indexes();
+      const ttl = indexes.find((i: any) => i.name === "volcano_ttl_ix" || i.expireAfterSeconds !== undefined);
+      if (ttl?.name) {
+        await coll.dropIndex(ttl.name);
+        ttlDropped = true;
+        log(TAG, `dropped TTL index`, { name: ttl.name });
+      }
+    } catch (err) {
+      // An index that isn't there is success, not failure.
+      log(TAG, `TTL drop skipped`, summarizeForLog(err));
+    }
+
+    const res = await db.volcanoes.model
+      .updateMany({ bulletinAt: { $exists: false }, fetchedAt: { $exists: true } }, [
+        { $set: { bulletinAt: "$fetchedAt" } },
+      ])
+      .exec();
+
+    const result = { ttlDropped, bulletinBackfilled: res.modifiedCount ?? 0 };
+    log(TAG, `catalog migration done`, result);
+    blogInfo(
+      TAG,
+      `volcano catalog migration: TTL ${ttlDropped ? "dropped" : "already absent"}, ${result.bulletinBackfilled} bulletinAt backfilled`,
+      result,
+      "volcanoes",
+      "migrate",
+    );
+    return result;
+  } catch (err) {
+    log(TAG, `catalog migration failed`, summarizeForLog(err));
+    blogErr(TAG, `volcano catalog migration failed`, err, "volcanoes", "migrate");
+    throw err;
+  }
+}
+
+/**
+ * Dispatched as `volcanoCatalog.seed`. Upserts EVERY volcano from the Smithsonian
+ * GVP VOTW WFS (~1,196 Holocene; +~1,451 Pleistocene when opted in) with the full
+ * catalog dossier — type, landform, tectonic setting, epoch, rock types, region,
+ * GVP's geology prose and its primary photo.
+ *
+ * Idempotent and non-destructive: `upsertCatalogMany` writes only catalog fields,
+ * so a reseed never resets a volcano's live status or wipes its enrichment.
+ * `data.pleistocene: true` forces the Pleistocene set for a one-off run.
+ */
+export async function seed(job: Job) {
+  const db = await getAppDb();
+  const wantPleistocene = job?.data?.data?.pleistocene === true || includePleistocene();
+  try {
+    const holocene = await fetchGvpHoloceneVolcanoes();
+    const pleistocene = wantPleistocene ? await fetchGvpPleistoceneVolcanoes() : [];
+    const all = [...holocene, ...pleistocene];
+    if (!all.length) throw new Error("GVP catalog returned no volcanoes");
+
+    const r = await db.volcanoes.upsertCatalogMany(all);
+    const result = {
+      holocene: holocene.length,
+      pleistocene: pleistocene.length,
+      total: all.length,
+      inserted: r.upserted,
+      updated: r.matched,
+    };
+    log(TAG, `catalog seed done`, result);
+    blogInfo(
+      TAG,
+      `volcano catalog: ${all.length} volcanoes (${r.upserted} new, ${r.matched} refreshed)`,
+      result,
+      "volcanoes",
+      "seed",
+    );
+    emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: all.length } });
+    return result;
+  } catch (err) {
+    log(TAG, `catalog seed failed`, summarizeForLog(err));
+    blogErr(TAG, `volcano catalog seed failed`, err, "volcanoes", "seed");
+    throw err;
+  }
+}
+
+/**
+ * Dispatched as `volcanoCatalog.seedEruptions`. Upserts the full GVP eruption
+ * history (~11,089 rows) on the stable `eruptionNumber` — permanent catalog facts
+ * that power "last erupted 1707" and the eruption band of the per-volcano timeline.
+ * Dates stay fuzzy (year/month/day + precision): GVP years reach 55,500 BCE and use
+ * 0 as an "unknown" month/day sentinel, so they are never forced into a JS Date.
+ */
+export async function seedEruptions(_job: Job) {
+  const db = await getAppDb();
+  try {
+    const eruptions = await fetchGvpEruptions();
+    if (!eruptions.length) throw new Error("GVP eruptions returned no rows");
+    const r = await db.volcanoEruptions.upsertMany(eruptions);
+    const withVei = eruptions.filter((e) => e.vei !== undefined).length;
+    const result = {
+      eruptions: eruptions.length,
+      inserted: r.upserted,
+      updated: r.matched,
+      withVei,
+      confirmed: eruptions.filter((e) => e.confirmed).length,
+    };
+    log(TAG, `eruption history seed done`, result);
+    blogInfo(
+      TAG,
+      `volcano eruption history: ${eruptions.length} eruptions (${r.upserted} new)`,
+      result,
+      "volcanoes",
+      "seedEruptions",
+    );
+    emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: eruptions.length } });
+    return result;
+  } catch (err) {
+    log(TAG, `eruption history seed failed`, summarizeForLog(err));
+    blogErr(TAG, `volcano eruption seed failed`, err, "volcanoes", "seedEruptions");
+    throw err;
+  }
+}

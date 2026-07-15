@@ -41,6 +41,32 @@ export interface Volcano {
   latestReport?: string;
   /** The report's own date range label, e.g. "25 June-1 July 2026". */
   reportDateRange?: string;
+  /**
+   * Epoch ms the GVP WEEKLY bulletin last listed this volcano. The catalog row is
+   * permanent (no TTL), so "is it currently reported?" is THIS field being recent
+   * — never row existence. Absent for a catalog volcano the bulletin has never
+   * mentioned (most of them).
+   */
+  bulletinAt?: number;
+  /** Operator opt-in for a historical camera archive + timelapse (P7 §7.11). */
+  archiveEnabled?: boolean;
+  // ── GVP VOTW catalog facts (permanent) ──────────────────────────────────────
+  catalogSource?: string;
+  catalogFetchedAt?: number;
+  volcanicLandform?: string;
+  region?: string;
+  subregion?: string;
+  tectonicSetting?: string;
+  /** "Holocene" | "Pleistocene". */
+  geologicEpoch?: string;
+  evidenceCategory?: string;
+  majorRockTypes?: string[];
+  /** GVP's authoritative geology prose. */
+  geologicalSummary?: string;
+  /** GVP's own primary photo — a catalog fact fetched once, not a media stream. */
+  primaryPhotoUrl?: string;
+  primaryPhotoCaption?: string;
+  primaryPhotoCredit?: string;
   /** Wikipedia enrichment (see worker/src/jobs/volcanoes.ts#enrichWiki) — absent until the enrich job has run. */
   wikiTitle?: string;
   wikiThumb?: string;

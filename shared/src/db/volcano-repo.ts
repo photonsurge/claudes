@@ -16,6 +16,21 @@ const strip = (doc: any): Volcano => ({
   sourceUrl: doc.sourceUrl || undefined,
   latestReport: doc.latestReport || undefined,
   reportDateRange: doc.reportDateRange || undefined,
+  bulletinAt: doc.bulletinAt ? new Date(doc.bulletinAt).getTime() : undefined,
+  archiveEnabled: doc.archiveEnabled ?? undefined,
+  catalogSource: doc.catalogSource || undefined,
+  catalogFetchedAt: doc.catalogFetchedAt ? new Date(doc.catalogFetchedAt).getTime() : undefined,
+  volcanicLandform: doc.volcanicLandform || undefined,
+  region: doc.region || undefined,
+  subregion: doc.subregion || undefined,
+  tectonicSetting: doc.tectonicSetting || undefined,
+  geologicEpoch: doc.geologicEpoch || undefined,
+  evidenceCategory: doc.evidenceCategory || undefined,
+  majorRockTypes: doc.majorRockTypes?.length ? doc.majorRockTypes : undefined,
+  geologicalSummary: doc.geologicalSummary || undefined,
+  primaryPhotoUrl: doc.primaryPhotoUrl || undefined,
+  primaryPhotoCaption: doc.primaryPhotoCaption || undefined,
+  primaryPhotoCredit: doc.primaryPhotoCredit || undefined,
   wikiTitle: doc.wikiTitle || undefined,
   wikiThumb: doc.wikiThumb || undefined,
   wikiPhoto: doc.wikiPhoto || undefined,
@@ -314,6 +329,110 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
           { upsert: true },
         )
         .exec();
+    },
+
+    /**
+     * Seed/refresh the PERMANENT GVP catalog facts for a batch of volcanoes.
+     *
+     * Deliberately surgical about what it writes: `$set` touches ONLY catalog
+     * fields (identity, geography, geology, GVP's own photo), and every activity
+     * or enrichment field — `status`, `latestReport`, `bulletinAt`, `archiveEnabled`,
+     * `official*`, `usgs*`, `wiki*` — is either `$setOnInsert` or untouched. A
+     * reseed must never wipe enrichment or reset a volcano's live status: that is
+     * exactly the trap the cities reseed fell into.
+     *
+     * The catalog is authoritative for name/coords/elevation/type/lastEruptionYear
+     * (Wikidata only fills gaps), so those ARE refreshed — but undefined values are
+     * stripped first, so a sparse Pleistocene row can't blank a Holocene field.
+     */
+    async upsertCatalogMany(
+      records: {
+        volcanoId: string;
+        name: string;
+        lat: number;
+        lng: number;
+        country?: string;
+        elevationM?: number;
+        volcanoType?: string;
+        volcanicLandform?: string;
+        region?: string;
+        subregion?: string;
+        tectonicSetting?: string;
+        geologicEpoch?: string;
+        evidenceCategory?: string;
+        majorRockTypes?: string[];
+        lastEruptionYear?: number;
+        geologicalSummary?: string;
+        primaryPhotoUrl?: string;
+        primaryPhotoCaption?: string;
+        primaryPhotoCredit?: string;
+        sourceUrl?: string;
+      }[],
+      catalogSource = "gvp-wfs",
+    ): Promise<{ upserted: number; matched: number }> {
+      if (!records.length) return { upserted: 0, matched: 0 };
+      const now = new Date();
+      const ops = records.map((r) => {
+        // Strip undefined so a sparse row never blanks an existing value.
+        const set: Record<string, unknown> = { catalogSource, catalogFetchedAt: now };
+        const catalogFields: Record<string, unknown> = {
+          name: r.name,
+          lat: r.lat,
+          lng: r.lng,
+          country: r.country,
+          elevationM: r.elevationM,
+          volcanoType: r.volcanoType,
+          volcanicLandform: r.volcanicLandform,
+          region: r.region,
+          subregion: r.subregion,
+          tectonicSetting: r.tectonicSetting,
+          geologicEpoch: r.geologicEpoch,
+          evidenceCategory: r.evidenceCategory,
+          majorRockTypes: r.majorRockTypes,
+          lastEruptionYear: r.lastEruptionYear,
+          geologicalSummary: r.geologicalSummary,
+          primaryPhotoUrl: r.primaryPhotoUrl,
+          primaryPhotoCaption: r.primaryPhotoCaption,
+          primaryPhotoCredit: r.primaryPhotoCredit,
+          sourceUrl: r.sourceUrl,
+          loc: { type: "Point" as const, coordinates: [r.lng, r.lat] as [number, number] },
+        };
+        for (const [k, v] of Object.entries(catalogFields)) if (v !== undefined) set[k] = v;
+        return {
+          updateOne: {
+            filter: { volcanoId: r.volcanoId },
+            update: {
+              $set: set,
+              // Activity state belongs to the ingest jobs — only seeded on FIRST insert,
+              // never reset by a later reseed. `fetchedAt` no longer governs lifetime.
+              $setOnInsert: {
+                id: uuidv4(),
+                volcanoId: r.volcanoId,
+                status: "dormant" as VolcanoStatus,
+                firstDate: now,
+                lastDate: now,
+                statusChangedAt: now,
+                fetchedAt: now,
+              },
+            },
+            upsert: true,
+          },
+        };
+      });
+      const res = await model.bulkWrite(ops, { ordered: false });
+      return { upserted: res.upsertedCount ?? 0, matched: res.matchedCount ?? 0 };
+    },
+
+    /** Operator opt-in for the historical camera archive (P7 §7.11). */
+    async setArchiveEnabled(volcanoId: string, enabled: boolean): Promise<boolean> {
+      const res = await model.updateOne({ volcanoId }, { $set: { archiveEnabled: enabled } }).exec();
+      return (res.matchedCount ?? 0) > 0;
+    },
+
+    /** The volcanoes the operator chose to keep a historical archive for. */
+    async listArchiveEnabled(): Promise<Volcano[]> {
+      const docs = await model.find({ archiveEnabled: true }).lean().exec();
+      return docs.map(strip);
     },
   };
 }

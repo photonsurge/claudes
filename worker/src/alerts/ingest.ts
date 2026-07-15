@@ -7,6 +7,7 @@ import { timelineUpdatesFromChanges } from "@photonsurge/shared/events/promote";
 import { log } from "@photonsurge/shared/utill/logger";
 import { harvestGdacsExtras } from "./gdacs-extras";
 import { enrichAreaGeometry } from "./enrich-geometry";
+import { enrichCapIds } from "./enrich-capid";
 import { eventsUnifiedEnabled, shouldPromoteAlert, cadenceForRank } from "../events/config";
 
 const TAG = "alerts:ingest";
@@ -62,6 +63,8 @@ export interface IngestResult {
   geoReasons?: Record<string, number>;
   /** Geocode-only areas given a footprint from the EMMA boundary cache. */
   geoFilled?: number;
+  /** Alerts stamped with their canonical national CAP id (cross-source key). */
+  capIdFilled?: number;
 }
 
 /**
@@ -89,6 +92,16 @@ export async function ingestSource(
   } catch (err) {
     // Enrichment is an enhancement, never a reason to lose a tick of alerts.
     log(TAG, `geometry enrich failed`, { source: source.id, err: String(err) });
+  }
+
+  // Stamp the canonical national CAP id, so the same warning arriving from two
+  // sources shares an exact key. Additive: nothing merges on it yet.
+  let capIdFilled = 0;
+  try {
+    const c = await enrichCapIds(alerts, db);
+    capIdFilled = c.filled;
+  } catch (err) {
+    log(TAG, `capId enrich failed`, { source: source.id, err: String(err) });
   }
 
   let inserted = 0;
@@ -247,6 +260,7 @@ export async function ingestSource(
     ...(source.id === "gdacs" ? { seriesSamples, resources } : {}),
     ...(geoDropped ? { geoReasons } : {}),
     ...(geoFilled ? { geoFilled } : {}),
+    ...(capIdFilled ? { capIdFilled } : {}),
   };
   log(TAG, `ingested`, result);
   return result;

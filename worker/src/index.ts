@@ -579,6 +579,28 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable alertCapId.refresh (WMO capurl → national CAP id → Mongo) ----
+  // WMO leaves `identifier` empty, so its alerts can't be matched to the same
+  // warning arriving via MeteoAlarm/NWS until each capurl is resolved. A capurl is
+  // content-addressed, so a resolved one is permanent — this only ever pays for
+  // newly published WMO alerts. Hourly, budgeted, and paced (see capid-sync).
+  if (process.env.ALERT_CAPID_REFRESH_ENABLED !== "false") {
+    const ALERT_CAPID_MS = Number(process.env.ALERT_CAPID_REFRESH_MS || 60 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "alertCapId", type: "alertCapId", event: "refresh", data: {} },
+        {
+          repeat: { every: ALERT_CAPID_MS, immediately: true, offset: staggerOffset("alert-capid-refresh", ALERT_CAPID_MS) },
+          jobId: "alert-capid-refresh",
+        },
+      );
+      log(TAG, `registered repeatable alertCapId.refresh`, { everyMs: ALERT_CAPID_MS });
+    } catch (err) {
+      log(TAG, `failed to register alertCapId.refresh`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable aurora.refresh (SWPC OVATION oval → baked glow PNG → Mongo) ----
   // The auroral oval moves with geomagnetic activity; SWPC republishes every few
   // minutes, so refresh on a fast cron (5 min by default). A fixed jobId de-dups

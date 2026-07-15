@@ -377,6 +377,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Static datasets",
   },
   {
+    id: "alert-capid-sync",
+    label: "Resolve alert CAP ids",
+    description:
+      "Look up the original CAP identifier behind each WMO alert. WMO leaves that id blank, so the same storm arriving from both WMO and MeteoAlarm can't be recognised as one warning — this resolves it and caches it permanently, which is what lets the two sources be merged. Safe to re-run: it only fetches alerts it hasn't already resolved.",
+    domain: "alertCapId",
+    type: "alertCapId",
+    event: "refresh",
+    group: "Static datasets",
+  },
+  {
     id: "elevation-bake",
     label: "Bake elevation relief",
     description:
@@ -513,6 +523,36 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "volcanoes",
     type: "volcanoes",
     event: "pruneCamSnapshots",
+    group: "Volcanoes",
+  },
+  {
+    id: "volcanoes-migrate-catalog",
+    label: "1. Migrate volcanoes → permanent catalog (run once)",
+    description:
+      "ONE-OFF: drop the 14-day TTL so volcanoes stop auto-deleting when they leave the weekly bulletin, and backfill `bulletinAt`. Inactive volcanoes keep their stats forever. MUST be run before seeding the full catalog — otherwise every seeded volcano silently expires 14 days later. Safe to re-run.",
+    domain: "volcanoes",
+    type: "volcanoCatalog",
+    event: "migrate",
+    group: "Volcanoes",
+  },
+  {
+    id: "volcanoes-seed-catalog",
+    label: "2. Seed ALL volcanoes (GVP catalog)",
+    description:
+      "Add every Smithsonian GVP volcano (~1,196 Holocene) with its full dossier: volcano type, landform, tectonic setting, epoch, rock types, region, GVP's geology write-up and primary photo. Set VOLCANO_INCLUDE_PLEISTOCENE=true to also add the ~1,451 Pleistocene ones. Never resets live status or wipes enrichment — safe to re-run. Run the migration first.",
+    domain: "volcanoes",
+    type: "volcanoCatalog",
+    event: "seed",
+    group: "Volcanoes",
+  },
+  {
+    id: "volcanoes-seed-eruptions",
+    label: "3. Seed eruption history (GVP)",
+    description:
+      "Add the full GVP eruption history (~11,089 eruptions with VEI + dates back to 55,500 BCE) for every volcano — powers \"last erupted\" and the eruption timeline. Safe to re-run.",
+    domain: "volcanoes",
+    type: "volcanoCatalog",
+    event: "seedEruptions",
     group: "Volcanoes",
   },
   {

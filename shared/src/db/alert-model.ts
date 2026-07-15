@@ -73,6 +73,20 @@ export interface iAlert extends iGeneralModel {
   identifier: string;
   sender: string;
   sent: string;
+  /**
+   * The CANONICAL national CAP identifier this alert reports
+   * ("2.49.0.0.616.0.PL.Sk20260715120207440.PL3202").
+   *
+   * `identifier` is per-source and can never merge — WMO keys by its `capurl`,
+   * MeteoAlarm by the CAP id. But both are republishing the SAME national CAP
+   * message, and this is the id that message carries, so two sources reporting
+   * one warning share a `capId`. That makes cross-source dedup EXACT rather than
+   * fuzzy (see docs/alert-dedup-merge-plan.md).
+   *
+   * Absent when a source has no national CAP behind it (GDACS) or when WMO's
+   * capurl hasn't been resolved yet — so always treat it as optional.
+   */
+  capId?: string;
 
   // message-level
   msgType: AlertMsgType;
@@ -149,6 +163,7 @@ const AlertSchema = new mongoose.Schema<iAlertModel>(
     id: { type: String, required: true, unique: true, default: () => uuidv4() },
     source: { type: String, required: true, trim: true, maxlength: 64 },
     identifier: { type: String, required: true, trim: true, maxlength: 512 },
+    capId: { type: String, required: false, trim: true, maxlength: 512 },
     sender: { type: String, required: false, default: "", maxlength: 512 },
     sent: { type: String, required: false, default: "" },
 
@@ -180,6 +195,9 @@ AlertSchema.index({ source: 1, identifier: 1, sent: 1, active: 1 }, { name: "ale
 AlertSchema.index({ active: 1, maxSeverityRank: -1, sent: -1 }, { name: "alert_active_sev_sent_ix" });
 // Per-source sweeps (expiry, supersede, deactivate-missing).
 AlertSchema.index({ source: 1, active: 1 }, { name: "alert_source_active_ix" });
+// Cross-source merge: find every source reporting one national CAP message.
+// Sparse — GDACS has no capId, and WMO's is null until its capurl is resolved.
+AlertSchema.index({ capId: 1, active: 1 }, { name: "alert_capid_ix", sparse: true });
 // Point/region lookups ($geoIntersects). Sparse: geocode-only feeds have no geometry.
 AlertSchema.index({ "info.area.geometry": "2dsphere" }, { name: "alert_geo_ix", sparse: true });
 // Area-scoped ACTIVE-alert intersect — the focus bundle's areaAlerts + /api/alerts?bbox
