@@ -584,17 +584,25 @@ process.on("uncaughtException", (err) => {
   // little squares; unioning the touching ones cuts ~79% of the vertices public
   // has to read and draw.
   //
-  // HOURLY, and don't put it back to 15 minutes. The rebuild is ~5.5 minutes of
-  // near-solid CPU (polygon-clipping is sync; the `heat|2` bucket alone is ~2,150
-  // alerts and 216s), and this worker is ONE process — so at 15 minutes it ate
-  // ~37% of the worker's entire wall-clock and starved every other job, which is
-  // how the queue reached a 4h backlog. An hour costs ~9% instead.
+  // Every 15 minutes, matching ingest — and the cadence is a REAL decision, not a
+  // default. A blob is drawn on air, and it's derived purely from the active
+  // alert set, so the gap between rebuilds is how long a finished warning keeps
+  // glowing and a newly-extended one stays invisible. 15 minutes is as fresh as
+  // it can meaningfully be: `alerts.ingest` only polls that often, so the shapes
+  // can't lead their own source.
   //
-  // Nothing needs it fresher: a blob is derived from the active alert set, and a
-  // warning's footprint doesn't move minute to minute — it's issued, then it
-  // expires. Ingest itself only polls every ~15 minutes.
+  // This was HOURLY for a while because the rebuild took ~5.5 minutes of solid
+  // CPU on a ONE-process worker — 37% of its wall-clock at this cadence, which
+  // starved every other job and helped build a 4h queue backlog. What changed is
+  // the dedupe (see dissolve.ts `distinctAreas`): the job had been unioning every
+  // polygon TWICE (MeteoAlarm ships one info block per language, and a region
+  // usually has an original + an update carrying the identical shape). Measured
+  // after: 1m42s, ~11% of the worker.
+  //
+  // So: if this ever creeps back toward ~5 minutes, drop the cadence rather than
+  // letting it eat the queue again.
   if (process.env.ALERT_BLOBS_REFRESH_ENABLED !== "false") {
-    const ALERT_BLOBS_MS = Number(process.env.ALERT_BLOBS_REFRESH_MS || 60 * 60 * 1000);
+    const ALERT_BLOBS_MS = Number(process.env.ALERT_BLOBS_REFRESH_MS || 15 * 60 * 1000);
     try {
       await myQueue.add(
         "do",

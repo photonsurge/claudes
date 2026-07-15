@@ -35,8 +35,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Link href="/" style={{ color: "#8b95a7", textDecoration: "none" }}>
-            ← Home
+          {/* The logo is the way home — it reads better than "← Home" and brands the console. */}
+          <Link href="/" style={{ display: "flex", alignItems: "center" }} aria-label="Home">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/gods_banner_transparent.png"
+              alt="G.O.D.S. — Global Orbital Detection System"
+              height={28}
+              style={{ height: 28, width: "auto", display: "block" }}
+            />
           </Link>
           <span style={{ color: "#3a4152" }}>/</span>
           <Link href="/admin" style={{ color: "#cdd4e0", textDecoration: "none" }}>

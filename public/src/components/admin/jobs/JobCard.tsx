@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * One triggerable job on /admin/jobs. Cards sit in a responsive grid, so the
- * long descriptions clamp to a few lines and expand on click rather than
- * setting the row height for everything beside them.
+ * One triggerable job on /admin/jobs. Cards sit in a responsive grid; the
+ * description is shown in full (several of these carry real operating caveats —
+ * "run the dry run first", "run the migration first" — so they must not be
+ * truncated), and the actions are pinned to the card's foot so a row's buttons
+ * line up.
  */
-import { useState } from "react";
 import type { TriggerableJob } from "@photonsurge/shared/jobs";
 
 export interface Result {
@@ -75,9 +76,6 @@ interface JobCardProps {
 }
 
 export default function JobCard({ job, result, stopResult, running, stopping, onRun, onStop }: JobCardProps) {
-  const [expanded, setExpanded] = useState(false);
-  // Long blurbs are the norm here; only the wordy ones need a toggle.
-  const clampable = job.description.length > 150;
   const active = result?.state === "active";
 
   return (
@@ -88,30 +86,17 @@ export default function JobCard({ job, result, stopResult, running, stopping, on
         gap: 8,
         padding: 14,
         borderRadius: 8,
-        border: `1px solid ${active ? "#3b4a6b" : "#1b2030"}`,
-        background: "#0c111c",
+        // A card must read against the panel it sits in, not blend into it.
+        border: `1px solid ${active ? "#4c6098" : "#333e54"}`,
+        background: "#0e1420",
       }}
     >
-      <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3 }}>{job.label}</div>
+      <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.3, color: "#f1f5fb" }}>{job.label}</div>
 
-      <div
-        onClick={clampable ? () => setExpanded((e) => !e) : undefined}
-        style={{
-          color: "#8b95a7",
-          fontSize: 12.5,
-          lineHeight: 1.45,
-          cursor: clampable ? "pointer" : "default",
-          ...(clampable && !expanded
-            ? { display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }
-            : null),
-        }}
-        title={clampable ? (expanded ? "Click to collapse" : "Click to read all") : undefined}
-      >
-        {job.description}
-      </div>
+      <div style={{ color: "#98a3b6", fontSize: 13.5, lineHeight: 1.5 }}>{job.description}</div>
 
       {/* Push the actions to the card's foot so a grid row's buttons line up. */}
-      <div style={{ flex: 1 }} />
+      <div style={{ flex: 1, minHeight: 4 }} />
 
       {result && (() => {
         const line = resultLine(result);

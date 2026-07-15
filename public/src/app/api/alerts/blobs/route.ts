@@ -47,15 +47,18 @@ function pickRepresentative(members: { id: string; sent?: string | Date | null }
   return best?.id ?? null;
 }
 
-async function GET__impl(req: Request) {
-  const url = new URL(req.url);
-  const severityMin = Number(url.searchParams.get("severityMin") || 0);
-
+/**
+ * No query parameters, deliberately. The operator's severity floor and hazard
+ * chips filter client-side from warm data, so every caller shares ONE canonical
+ * Redis entry — taking a `severityMin` here would fragment the cache per filter
+ * combination and make each toggle a fresh compose.
+ */
+async function GET__impl(_req: Request) {
   try {
-    const body = await withCache(`feed:v1:alert-blobs:${severityMin}`, FEED_TTL_SEC, async () => {
+    const body = await withCache(`feed:v1:alert-blobs`, FEED_TTL_SEC, async () => {
       const db = await getAppDb();
       const { blobs } = await db.alertBlobs.list();
-      const wanted = blobs.filter((b) => (b.severityRank ?? 0) >= severityMin);
+      const wanted = blobs;
 
       // One read for every member we might quote. `omitCoordinates` matters: a
       // blob's members carry the polygons we just spent the worker's CPU fusing,

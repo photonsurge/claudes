@@ -12,7 +12,8 @@ import AdminPageShell from "../../../components/admin/AdminPageShell";
 import LogTail from "../../../components/admin/LogTail";
 import QueueSummary from "../../../components/admin/QueueSummary";
 import ClearQueueMenu from "../../../components/admin/ClearQueueMenu";
-import JobCard, { type Result, type StopResult } from "../../../components/admin/jobs/JobCard";
+import type { Result, StopResult } from "../../../components/admin/jobs/JobCard";
+import JobGroupPanel from "../../../components/admin/jobs/JobGroupPanel";
 import JobsToolbar from "../../../components/admin/jobs/JobsToolbar";
 
 /** Group jobs by their `group`, preserving first-seen (catalog) order. */
@@ -180,42 +181,36 @@ export default function JobsPage() {
         <div style={{ color: "#5b6577", fontSize: 13, padding: "28px 0" }}>No jobs match that search.</div>
       )}
 
-      {groupJobs(visible).map(([groupName, groupJobsList]) => (
-        <section key={groupName} style={{ marginTop: 22 }}>
-          <h3
-            style={{
-              margin: "0 0 10px",
-              fontSize: 12,
-              letterSpacing: 1,
-              textTransform: "uppercase",
-              color: "#8b95a7",
-            }}
-          >
-            {groupName} <span style={{ color: "#3f4859" }}>{groupJobsList.length}</span>
-          </h3>
-          <div
-            style={{
-              display: "grid",
-              gap: 12,
-              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-              alignItems: "stretch",
-            }}
-          >
-            {groupJobsList.map((j) => (
-              <JobCard
-                key={j.id}
-                job={j}
-                result={results[j.id]}
-                stopResult={stopResults[j.id]}
-                running={busy === j.id}
-                stopping={stopping === j.id}
-                onRun={() => run(j.id)}
-                onStop={() => stop(j)}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+      {/*
+        Panel spans need a media query (inline styles can't express one): below a
+        ~4-column viewport a wide span would push implicit columns off-screen, so
+        every panel drops to full width instead.
+      */}
+      <style>
+        {`.job-grid{display:grid;gap:14px;grid-auto-flow:dense;grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+          .job-span-2{grid-column:span 2}
+          .job-span-3{grid-column:span 3}
+          .job-span-4{grid-column:span 4}
+          @media (max-width:1500px){.job-span-4{grid-column:span 3}}
+          @media (max-width:1180px){.job-span-3,.job-span-4{grid-column:span 2}}
+          @media (max-width:860px){.job-panel{grid-column:span 1}}`}
+      </style>
+
+      <div className="job-grid">
+        {groupJobs(visible).map(([groupName, groupJobsList]) => (
+          <JobGroupPanel
+            key={groupName}
+            group={groupName}
+            jobs={groupJobsList}
+            results={results}
+            stopResults={stopResults}
+            busy={busy}
+            stopping={stopping}
+            onRun={run}
+            onStop={stop}
+          />
+        ))}
+      </div>
 
       <div style={{ marginTop: 28 }}>
         <QueueSummary />

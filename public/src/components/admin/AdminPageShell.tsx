@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import AdminTextSize, { useAdminTextScale } from "./AdminTextSize";
 
 interface AdminPageShellProps {
   title: string;
@@ -25,6 +26,7 @@ export default function AdminPageShell({
   children,
   crumbs = [],
 }: AdminPageShellProps) {
+  const [scale, setScale] = useAdminTextScale();
   const allCrumbs = [{ href: "/", label: "Home" }, { href: "/admin", label: "Admin" }, ...crumbs];
   const terminalCrumbs =
     title === "Admin" && crumbs.length === 0
@@ -35,7 +37,8 @@ export default function AdminPageShell({
 
   return (
     <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      <section style={{ maxWidth, margin: "0 auto", padding: "22px 24px 32px" }}>
+      {/* `zoom` (not transform) so the page still reflows to the viewport width. */}
+      <section style={{ maxWidth, margin: "0 auto", padding: "22px 24px 32px", zoom: scale }}>
         <nav
           aria-label="Breadcrumb"
           style={{
@@ -47,6 +50,10 @@ export default function AdminPageShell({
             fontSize: 12,
           }}
         >
+          {/* Text size lives here so it's on every admin page, not just one. */}
+          <span style={{ marginLeft: "auto", order: 99 }}>
+            <AdminTextSize scale={scale} onScale={setScale} />
+          </span>
           {terminalCrumbs.map((crumb, i) => (
             <span key={`${crumb.label}.${i}`} style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
               {i > 0 && <span style={{ color: "#323a4b" }}>/</span>}

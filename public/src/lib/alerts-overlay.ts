@@ -1,31 +1,52 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { listAlerts, alertsToFeatures, type AlertFeature } from "./alerts";
+import type { AlertFeature } from "./alerts";
 import { useSocket } from "./socket-provider";
 import { ALERTS_UPDATED } from "@photonsurge/shared/control";
 
 /**
- * Poll active alerts and expose them as GeoJSON polygon features for the globe
- * overlay. The worker emits ALERTS_UPDATED after each ingest, so we refetch the
- * instant new/expired alerts land (the interval is a fallback). Same-event-
- * across-sources are clustered server-side (the API tags each alert with a
- * groupId; the representative has id === groupId), so we draw each event ONCE —
- * a warning carried by both WMO and MeteoAlarm doesn't double-draw.
+ * The globe overlay's warning shapes: the worker's DISSOLVED blobs, where every
+ * touching area of the same hazard+severity has already been fused into one.
  *
- * `enabled` only *arms* the fetch — once alerts have been wanted, polling stays
+ * It used to draw `/api/alerts` — one polygon per alert area — and MeteoAlarm
+ * issues ONE ALERT PER COUNTY, so the globe showed hundreds of little squares
+ * where a viewer should read one weather system. That feed also simplifies each
+ * area INDEPENDENTLY (~0.05°, to keep the payload off public's heap), which walks
+ * two neighbours' shared border apart and leaves a white seam between provinces
+ * that genuinely touch. Dissolving first removes the internal borders, so there
+ * is nothing left to mismatch.
+ *
+ * Cheaper too: this reads ~550 finished shapes instead of parsing a 5,000-row
+ * alert feed (~3s of JSON even on a cache hit) and throwing most of it away.
+ * World Watch still reads `/api/alerts` — it counts WARNINGS, which is a
+ * different question from what to draw.
+ *
+ * The worker emits ALERTS_UPDATED after each ingest, so we refetch the instant
+ * things change (the interval is a socket-down fallback).
+ *
+ * `enabled` only *arms* the fetch — once shapes have been wanted, polling stays
  * on and the last features are kept, even when `enabled` flips back to false.
  * The auto-director toggles showAlerts on every cut; if we cleared + refetched
- * each time, the overlay would blank out and reload (5000-row fetch + full
- * re-tessellation) on every shot. Instead the data stays warm and the globe
- * just toggles layer *visibility* (see alertsLayer's `visible`).
+ * each time, the overlay would blank out and re-tessellate on every shot.
+ * Instead the data stays warm and the globe toggles layer *visibility* (see
+ * alertsLayer's `visible`).
  *
- * `hazardsOff` (operator's per-hazard-type toggles) is applied AFTER the fetch,
- * so flipping a hazard chip filters instantly from the warm data — no refetch.
+ * `severityMin` / `hazardsOff` (operator's toggles) are applied AFTER the fetch,
+ * so a chip filters instantly from warm data — and, just as importantly, every
+ * caller shares ONE canonical Redis entry instead of fragmenting the cache per
+ * filter combination.
  */
+
 /** Socket-down fallback re-poll cadence — the ALERTS_UPDATED beat is the primary
  *  trigger, so this stays long (alerts ingest minutes apart); NOT the old 60s. */
 const ALERT_FALLBACK_MS = 10 * 60 * 1000;
+
+async function fetchBlobFeatures(): Promise<AlertFeature[]> {
+  const res = await fetch("/api/alerts/blobs", { cache: "no-store" });
+  const body = (await res.json().catch(() => null)) as { features?: AlertFeature[] } | null;
+  return Array.isArray(body?.features) ? body.features : [];
+}
 
 export function useAlertFeatures(
   enabled: boolean,
@@ -54,39 +75,31 @@ export function useAlertFeatures(
     if (!armed) return;
     let cancelled = false;
     const poll = async () => {
-      // Drop severityMin from the QUERY so this shares world-watch's canonical
-      // `/api/alerts?active=1&limit=5000` Redis entry — one of the two heavy
-      // 7s alerts fetches becomes a 6ms hit. The operator's severity floor is
-      // applied client-side (like hazardsOff below), so raising it also filters
-      // instantly instead of refetching.
-      const alerts = await listAlerts({ activeOnly: true, limit: 5000, lean: true });
+      const next = await fetchBlobFeatures().catch(() => [] as AlertFeature[]);
       // A transient empty/failed FETCH must not blank an on-air overlay; keep the
       // last good features. (A legit filter-to-empty below still clears it.)
-      if (cancelled || alerts.length === 0) return;
-      // One polygon per event: keep only each cluster's representative (id ===
-      // groupId; grouping done server-side), at or above the operator's floor.
-      const oncePerEvent = alerts.filter(
-        (a) => (!a.groupId || a.id === a.groupId) && a.maxSeverityRank >= severityMin,
-      );
-      setFeatures(alertsToFeatures(oncePerEvent));
+      if (cancelled || next.length === 0) return;
+      setFeatures(next);
     };
     poll();
     // io-driven: ALERTS_UPDATED (above) refetches the instant alerts change, so
-    // this is only a socket-down fallback — long, not the old 60s re-poll of the
-    // 5000-row feed (which fired even when nothing changed).
+    // this is only a socket-down fallback.
     const iv = setInterval(poll, ALERT_FALLBACK_MS);
     return () => {
       cancelled = true;
       clearInterval(iv);
     };
-  }, [armed, severityMin, liveTick]);
+  }, [armed, liveTick]);
 
   // Key on the joined list, not the array identity — socket state updates hand
   // us a fresh array each render even when the selection hasn't changed.
   const offKey = [...hazardsOff].sort().join(",");
   return useMemo(() => {
-    if (!offKey) return features;
-    const off = new Set(offKey.split(","));
-    return features.filter((f) => !off.has(f.properties.hazard));
-  }, [features, offKey]);
+    const off = offKey ? new Set(offKey.split(",")) : null;
+    if (!off && !severityMin) return features;
+    return features.filter(
+      (f) =>
+        f.properties.severityRank >= severityMin && !(off && off.has(f.properties.hazard)),
+    );
+  }, [features, offKey, severityMin]);
 }
