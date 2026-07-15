@@ -90,7 +90,10 @@ function mockDb() {
 
 const run = () => refresh({} as Job);
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  ALERTS = twoHazards();
+});
 
 describe("alert blobs rebuild", () => {
   it("writes each hazard's shapes before loading the next one", async () => {

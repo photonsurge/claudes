@@ -2,11 +2,34 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { spanForCount } from "../../../components/admin/jobs/JobGroupPanel";
 import JobsPage from "./page";
 
+const job = (id: string, label: string, group: string, description: string, extra = {}) => ({
+  id,
+  label,
+  description,
+  group,
+  domain: "d",
+  type: "t",
+  event: "e",
+  ...extra,
+});
+
+/**
+ * Shaped like the real catalog in the way that matters: a small group sits
+ * FIRST in catalog order and a big one after it, so panel ordering is a real
+ * assertion rather than a coincidence.
+ */
 const JOBS = [
-  { id: "weather-check", label: "Check weather run", description: "Look for a newer GFS run and bake it.", domain: "weather", type: "weather", event: "check", group: "Weather maps" },
-  { id: "weather-hrrr", label: "HRRR (US 3 km)", description: "Re-ingest the NOAA HRRR CONUS nest.", domain: "weather", type: "weather", event: "refreshHrrr", group: "Weather maps" },
-  { id: "volcanoes-snapshot", label: "Refresh active volcanoes", description: "Re-pull the Smithsonian report.", domain: "volcanoes", type: "volcanoes", event: "snapshot", group: "Volcanoes" },
-  { id: "cities-enrich-all", label: "Enrich all cities", description: "Restartable batches. Use Stop to halt a run in progress.", domain: "cities", type: "cities", event: "enrichWikiAll", group: "Cities", stoppable: true },
+  job("weather-check", "Check weather run", "Weather maps", "Look for a newer GFS run and bake it."),
+  job("weather-hrrr", "HRRR (US 3 km)", "Weather maps", "Re-ingest the NOAA HRRR CONUS nest."),
+  job("volcanoes-snapshot", "Refresh active volcanoes", "Volcanoes", "Re-pull the Smithsonian report."),
+  job("volcanoes-enrich", "Enrich volcanoes", "Volcanoes", "Fetch a Wikipedia photo."),
+  job("volcanoes-usgs", "Refresh USGS volcano alerts", "Volcanoes", "Re-pull the USGS VHP status."),
+  job("volcanoes-geonet", "Refresh GeoNet volcano alerts", "Volcanoes", "Re-pull GeoNet alert levels."),
+  job("volcanoes-cams", "Capture volcano camera frames", "Volcanoes", "Archive one still per camera."),
+  job("volcanoes-prune", "Prune old volcano camera frames", "Volcanoes", "Drop frames past retention."),
+  job("cities-enrich-all", "Enrich all cities", "Cities", "Restartable batches. Use Stop to halt a run in progress.", {
+    stoppable: true,
+  }),
 ];
 
 const COUNTS = { active: 3, waiting: 0, completed: 1160, failed: 4 };
@@ -30,8 +53,8 @@ describe("JobsPage", () => {
 
     expect(await screen.findByText("Check weather run")).toBeInTheDocument();
     expect(screen.getByText("Refresh active volcanoes")).toBeInTheDocument();
-    expect(screen.getByText("4 jobs")).toBeInTheDocument();
-    // Group headings, so a 60-job catalog stays navigable.
+    expect(screen.getByText("9 jobs")).toBeInTheDocument();
+    // Group headings, so an 80-job catalog stays navigable.
     expect(screen.getByRole("heading", { name: /Weather maps/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Volcanoes/ })).toBeInTheDocument();
   });
@@ -41,14 +64,14 @@ describe("JobsPage", () => {
     render(<JobsPage />);
     await screen.findByText("Check weather run");
 
-    fireEvent.click(screen.getByRole("button", { name: /Volcanoes 1/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Volcanoes 6/ }));
 
     expect(screen.getByText("Refresh active volcanoes")).toBeInTheDocument();
     expect(screen.queryByText("Check weather run")).not.toBeInTheDocument();
-    expect(screen.getByText("1 of 4 jobs")).toBeInTheDocument();
+    expect(screen.getByText("6 of 9 jobs")).toBeInTheDocument();
 
     // Clicking the active chip clears the filter.
-    fireEvent.click(screen.getByRole("button", { name: /Volcanoes 1/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Volcanoes 6/ }));
     expect(screen.getByText("Check weather run")).toBeInTheDocument();
   });
 
@@ -71,8 +94,7 @@ describe("JobsPage", () => {
     const { container } = render(<JobsPage />);
     await screen.findByText("Check weather run");
 
-    // A 2-job group claims a narrow panel; the 1-job groups claim a single
-    // column rather than an empty full-width band.
+    // A 1-job group claims a single column rather than an empty full-width band.
     expect(container.querySelector(".job-panel.job-span-1")).toBeTruthy();
     expect(spanForCount(1)).toBe(1);
     expect(spanForCount(2)).toBe(1);
@@ -80,12 +102,33 @@ describe("JobsPage", () => {
     expect(spanForCount(21)).toBe(4);
   });
 
+  it("lays the widest panels out first so narrow ones backfill the row", async () => {
+    mockApi();
+    const { container } = render(<JobsPage />);
+    await screen.findByText("Check weather run");
+
+    // Volcanoes (6 jobs → span 3) jumps ahead of Weather maps (2 → span 1),
+    // which the catalog lists first.
+    const panels = [...container.querySelectorAll(".job-panel")];
+    expect(panels.map((el) => el.querySelector("h3")?.textContent)).toEqual([
+      "Volcanoes6",
+      "Weather maps2",
+      "Cities1",
+    ]);
+    const spans = panels.map((el) => Number(/job-span-(\d)/.exec(el.className)?.[1]));
+    expect(spans).toEqual([3, 1, 1]);
+
+    // The chips keep catalog order regardless of how the panels are packed.
+    const chips = [...container.querySelectorAll(".MuiChip-label")].map((el) => el.textContent);
+    expect(chips).toEqual(["All 9", "Weather maps 2", "Volcanoes 6", "Cities 1"]);
+  });
+
   it("only offers Stop on stoppable jobs", async () => {
     mockApi();
     render(<JobsPage />);
     await screen.findByText("Enrich all cities");
 
-    expect(screen.getAllByRole("button", { name: "Run now" })).toHaveLength(4);
+    expect(screen.getAllByRole("button", { name: "Run now" })).toHaveLength(9);
     expect(screen.getAllByRole("button", { name: "Stop" })).toHaveLength(1);
   });
 

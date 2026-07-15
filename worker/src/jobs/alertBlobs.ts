@@ -32,19 +32,39 @@ const hazardOf = (a: iAlert) =>
 const breathe = () => new Promise<void>((r) => setImmediate(r));
 
 /**
- * Thin each area to ~1km before clipping.
+ * Thin each area to ~200m before clipping.
  *
  * The source boundaries are survey-grade — the worst hazard alone is ~1.15M
  * vertices — and clipping at that precision is where the time and the memory go,
  * to produce a shape `/api/alerts/blobs` then simplifies to ~0.05° (~5km) before
- * drawing it. The detail was being clipped and thrown away. Measured on that
- * bucket: 91% fewer vertices, dissolve 40s -> 3s, peak heap 711MB -> 289MB.
+ * drawing it anyway. The detail was being clipped and thrown away.
  *
- * 1km is well under what the overlay draws, and comfortably under the precision
- * "which cities are inside this warning" needs — a city within 1km of a warning
- * boundary is a genuinely marginal call either way.
+ * The VALUE is measured, not guessed, and there is a cliff. Whole job, same live
+ * data, back to back:
+ *
+ *     tolerance | blobs | union failures | wall
+ *     ----------|-------|----------------|------
+ *     0 (exact) |  588  |       34       | 108s
+ *     0.002     |  599  |       14       |  37s   <- here
+ *     0.005     |  612  |      122       |  27s
+ *     0.01      |  604  |      123       |  20s
+ *
+ * 200m has FEWER union failures than full precision: the near-coincident edges
+ * polygon-clipping chokes on get cleaned up rather than mangled. Past that the
+ * cliff is sharp — at 500m+ each area thins along its OWN shape, so neighbours'
+ * shared borders drift apart, they stop fusing, and failures jump 9×. That is
+ * the same mechanism that leaves white seams between provinces in the raw
+ * overlay, so don't "optimise" this number upward: it buys seconds and costs
+ * correctness.
+ *
+ * Grid-SNAPPING was tried as the topology-safe alternative (snap.ts) and
+ * measured worse on every axis — it introduces its own degenerate rings (blobs
+ * 68 -> 81, failures 33 -> 41 on the worst bucket). Kept for reference; not used.
+ *
+ * 200m is well under the ~5km the globe draws, and under what "which cities are
+ * inside this warning" can meaningfully resolve.
  */
-const DISSOLVE_SIMPLIFY_DEG = Number(process.env.ALERT_DISSOLVE_SIMPLIFY_DEG || 0.01);
+const DISSOLVE_SIMPLIFY_DEG = Number(process.env.ALERT_DISSOLVE_SIMPLIFY_DEG || 0.002);
 
 export async function refresh(_job: Job) {
   const db = await getAppDb();

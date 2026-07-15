@@ -2,6 +2,7 @@ import polygonClipping, { type MultiPolygon } from "polygon-clipping";
 import type { AlertGeometry, iAlert, SeverityRank } from "@photonsurge/shared/db/alert-model";
 import { windGeometry } from "@photonsurge/shared/alerts/rings";
 import { simplifyGeometry } from "@photonsurge/shared/geo/simplify";
+import { snapGeometry } from "./snap";
 
 /**
  * Dissolve neighbouring warning areas of the same hazard into one shape.
@@ -207,6 +208,15 @@ export interface DissolveOpts {
    * -edge pathology for polygon-clipping to choke on).
    */
   simplifyDeg?: number;
+  /**
+   * Round every coordinate onto a shared grid (degrees) before clipping. 0 off.
+   *
+   * The topology-safe way to cheapen the input, and the one to prefer: unlike
+   * `simplifyDeg`, snapping is a function of the coordinate rather than the ring,
+   * so two neighbours' shared border rounds to identical points and still fuses.
+   * See snap.ts.
+   */
+  snapDeg?: number;
 }
 
 /**
@@ -241,6 +251,7 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
   const breathe = opts.yield ?? (() => new Promise<void>((r) => setImmediate(r)));
   const yieldEvery = opts.yieldEvery ?? 25;
   const simplifyDeg = opts.simplifyDeg ?? 0;
+  const snapDeg = opts.snapDeg ?? 0;
   let sinceYield = 0;
   let unionFailures = 0;
 
@@ -268,8 +279,11 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
         // Counted from the SOURCE, before thinning, so the run's reported saving
         // stays honest end-to-end: raw boundary → what the globe finally draws.
         const before = countVertices(g.coordinates);
-        const thinned = simplifyDeg ? simplifyGeometry(g as never, simplifyDeg) : g;
-        const geom = toGeom((thinned ?? g) as AlertGeometry);
+        // Snap first (topology-safe), then optionally thin. A shape that collapses
+        // entirely falls back to the original rather than vanishing off the globe.
+        const snapped = snapDeg ? (snapGeometry(g, snapDeg) ?? g) : g;
+        const thinned = simplifyDeg ? (simplifyGeometry(snapped as never, simplifyDeg) ?? snapped) : snapped;
+        const geom = toGeom(thinned as AlertGeometry);
         if (!geom) continue;
         if (++sinceYield >= yieldEvery) {
           sinceYield = 0;

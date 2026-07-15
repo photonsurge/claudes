@@ -16,7 +16,7 @@ import LogTail from "../../../components/admin/LogTail";
 import QueueSummary from "../../../components/admin/QueueSummary";
 import ClearQueueMenu from "../../../components/admin/ClearQueueMenu";
 import type { Result, StopResult } from "../../../components/admin/jobs/JobCard";
-import JobGroupPanel from "../../../components/admin/jobs/JobGroupPanel";
+import JobGroupPanel, { spanForCount } from "../../../components/admin/jobs/JobGroupPanel";
 import JobsToolbar from "../../../components/admin/jobs/JobsToolbar";
 
 /** Group jobs by their `group`, preserving first-seen (catalog) order. */
@@ -32,6 +32,19 @@ function groupJobs(jobs: TriggerableJob[]): Array<[string, TriggerableJob[]]> {
     byGroup.get(g)!.push(j);
   }
   return order.map((g) => [g, byGroup.get(g)!]);
+}
+
+/**
+ * Widest panel first. The outer grid packs by row, so leading with the big
+ * groups lets `dense` backfill the narrow ones alongside them instead of
+ * stranding a wide panel on a row of its own — worth ~900px of scroll on a
+ * laptop. Ties keep catalog order.
+ */
+function byWidestFirst(groups: Array<[string, TriggerableJob[]]>): Array<[string, TriggerableJob[]]> {
+  return groups
+    .map((entry, i) => ({ entry, i }))
+    .sort((a, b) => spanForCount(b.entry[1].length) - spanForCount(a.entry[1].length) || a.i - b.i)
+    .map(({ entry }) => entry);
 }
 
 /** Free-text match over the fields an operator would search by. */
@@ -211,7 +224,7 @@ export default function JobsPage() {
           "@media (max-width:860px)": { "& .job-panel": { gridColumn: "span 1" } },
         }}
       >
-        {groupJobs(visible).map(([groupName, groupJobsList]) => (
+        {byWidestFirst(groupJobs(visible)).map(([groupName, groupJobsList]) => (
           <JobGroupPanel
             key={groupName}
             group={groupName}
