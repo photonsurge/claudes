@@ -164,6 +164,19 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
       return docs.map(strip);
     },
 
+    /**
+     * The volcanoes actually worth spending work on — erupting, in unrest, under
+     * an official alert, or recently in the weekly bulletin.
+     *
+     * The catalog is ~1,196 volcanoes and all but a few dozen are dormant, so any
+     * per-volcano job that walks `list()` does ~1,196 units of work to produce a
+     * few dozen useful results. Media acquisition uses this instead.
+     */
+    async listSignificant(now: Date = new Date()): Promise<Volcano[]> {
+      const docs = await model.find(significantVolcanoFilter(now)).sort({ lastDate: -1 }).lean().exec();
+      return docs.map(strip);
+    },
+
     /** A single volcano by its source id (the admin detail read), or null. */
     async get(volcanoId: string): Promise<Volcano | null> {
       const doc = await model.findOne({ volcanoId }).lean().exec();

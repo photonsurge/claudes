@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import QueueJob, { type SerializedJob, type JobAction } from "../../../components/admin/QueueJob";
 import QueueEventLog from "../../../components/admin/QueueEventLog";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import ClearQueueMenu from "../../../components/admin/ClearQueueMenu";
 
 const STATES = ["active", "waiting", "prioritized", "delayed", "failed", "completed", "paused"] as const;
 type State = (typeof STATES)[number];
@@ -140,6 +141,7 @@ export default function QueuePage() {
           >
             {data?.paused ? "Resume queue" : "Pause queue"}
           </button>
+          <ClearQueueMenu counts={counts} disabled={busy} onDone={refresh} />
           <button
             type="button"
             onClick={() => setLive((v) => !v)}

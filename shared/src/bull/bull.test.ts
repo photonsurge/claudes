@@ -1,6 +1,8 @@
 /**
  * clearQueue() unit tests — the BullMQ Queue is stubbed via the getQueue()
- * global singleton cache, so nothing here touches a real Redis.
+ * global singleton cache, so nothing here touches a real Redis. The end-to-end
+ * behaviour these stubs stand in for (BullMQ silently refusing to clean a job
+ * its schedule has armed) is verified against a live Redis separately.
  */
 import { clearQueue } from "./bull";
 
@@ -14,8 +16,7 @@ function stubQueue(over: Partial<Record<string, any>> = {}) {
       calls.push({ grace, limit, state });
       return [];
     },
-    getJobSchedulers: async () => [],
-    getRepeatableJobs: async () => [],
+    getJobs: async () => [],
     removeJobScheduler: async () => true,
     removeRepeatableByKey: async () => true,
     ...over,
@@ -67,54 +68,137 @@ describe("clearQueue", () => {
     expect(res.removed.wait).toBe(10_001);
   });
 
-  it("leaves repeatable schedules alone by default", async () => {
-    const removed: string[] = [];
-    stubQueue({
-      getJobSchedulers: async () => [{ key: "summaries-daily" }],
-      removeJobScheduler: async (key: string) => {
-        removed.push(key);
-        return true;
-      },
-    });
+  it("cleans only the states asked for, folding waiting onto wait", async () => {
+    const { calls } = stubQueue();
 
-    const res = await clearQueue();
+    const res = await clearQueue({ states: ["failed", "waiting"] });
 
-    expect(removed).toEqual([]);
-    expect(res.schedulers).toBe(0);
+    expect(calls.map((c) => c.state)).toEqual(["wait", "failed"]);
+    expect(Object.keys(res.removed)).toEqual(["wait", "failed"]);
   });
 
-  it("removes schedulers when asked", async () => {
-    const removed: string[] = [];
+  it("ignores unknown state names rather than passing them to clean()", async () => {
+    const { calls } = stubQueue();
+
+    await clearQueue({ states: ["failed", "bogus"] });
+
+    expect(calls.map((c) => c.state)).toEqual(["failed"]);
+  });
+});
+
+describe("clearQueue unarming", () => {
+  // BullMQ guards a schedule's armed job: clean() skips it until the schedule is
+  // gone. So the schedules must be dropped BEFORE the clean pass, or the clean
+  // silently removes nothing.
+  it("drops the schedules owning target jobs, before cleaning", async () => {
+    const order: string[] = [];
     stubQueue({
-      getJobSchedulers: async () => [{ key: "summaries-daily" }, { key: "alerts-ingest" }],
+      getJobs: async () => [{ id: "repeat:abc:1", repeatJobKey: "abc" }, { id: "plain:1" }],
       removeJobScheduler: async (key: string) => {
-        removed.push(key);
+        order.push(`unarm:${key}`);
+        return true;
+      },
+      clean: async (_g: number, _l: number, state: string) => {
+        order.push(`clean:${state}`);
+        return [];
+      },
+    });
+
+    const res = await clearQueue({ states: ["waiting"] });
+
+    expect(order).toEqual(["unarm:abc", "clean:wait"]);
+    expect(res.schedulers).toBe(1);
+  });
+
+  it("de-dupes schedules shared by several armed jobs", async () => {
+    const unarmed: string[] = [];
+    stubQueue({
+      getJobs: async () => [
+        { repeatJobKey: "abc" },
+        { repeatJobKey: "abc" },
+        { repeatJobKey: "def" },
+      ],
+      removeJobScheduler: async (key: string) => {
+        unarmed.push(key);
         return true;
       },
     });
 
-    const res = await clearQueue({ schedulers: true });
+    const res = await clearQueue({ states: ["waiting"] });
 
-    expect(removed).toEqual(["summaries-daily", "alerts-ingest"]);
+    expect(unarmed).toEqual(["abc", "def"]);
     expect(res.schedulers).toBe(2);
   });
 
-  it("falls back to the legacy repeatable API when the scheduler API throws", async () => {
-    const removed: string[] = [];
+  it("falls back to the legacy repeatable API when removeJobScheduler throws", async () => {
+    const unarmed: string[] = [];
     stubQueue({
-      getJobSchedulers: async () => {
-        throw new Error("not supported");
+      getJobs: async () => [{ repeatJobKey: "abc" }],
+      removeJobScheduler: async () => {
+        throw new Error("not a job scheduler");
       },
-      getRepeatableJobs: async () => [{ key: "legacy:do:::60000" }],
       removeRepeatableByKey: async (key: string) => {
-        removed.push(key);
+        unarmed.push(key);
         return true;
       },
     });
 
-    const res = await clearQueue({ schedulers: true });
+    const res = await clearQueue({ states: ["waiting"] });
 
-    expect(removed).toEqual(["legacy:do:::60000"]);
+    expect(unarmed).toEqual(["abc"]);
     expect(res.schedulers).toBe(1);
+  });
+
+  it("never unarms a schedule for a merely completed or failed run", async () => {
+    // Those states aren't guarded by BullMQ, so dropping their schedule would
+    // kill a live schedule for no reason. Don't even scan them.
+    const unarmed: string[] = [];
+    let scanned: unknown = null;
+    stubQueue({
+      getJobs: async (states: string[]) => {
+        scanned = states;
+        return [{ repeatJobKey: "abc" }];
+      },
+      removeJobScheduler: async (key: string) => {
+        unarmed.push(key);
+        return true;
+      },
+    });
+
+    const res = await clearQueue({ states: ["completed", "failed"] });
+
+    expect(scanned).toBeNull();
+    expect(unarmed).toEqual([]);
+    expect(res.schedulers).toBe(0);
+  });
+
+  it("scans only the guarded states when the target mixes both", async () => {
+    let scanned: unknown = null;
+    stubQueue({
+      getJobs: async (states: string[]) => {
+        scanned = states;
+        return [];
+      },
+    });
+
+    await clearQueue({ states: ["completed", "waiting", "delayed"] });
+
+    expect(scanned).toEqual(["waiting", "delayed"]);
+  });
+
+  it("leaves schedules alone when force is off", async () => {
+    const unarmed: string[] = [];
+    stubQueue({
+      getJobs: async () => [{ repeatJobKey: "abc" }],
+      removeJobScheduler: async (key: string) => {
+        unarmed.push(key);
+        return true;
+      },
+    });
+
+    const res = await clearQueue({ force: false });
+
+    expect(unarmed).toEqual([]);
+    expect(res.schedulers).toBe(0);
   });
 });

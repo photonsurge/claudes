@@ -22,12 +22,17 @@ async function GET__impl(req: Request) {
 
   let counts: Record<string, number> | null = null;
   try {
+    // All seven states, not just the four shown in the header: the Clear queue
+    // button totals these, and sendToQueue's default priority means most queued
+    // work sits in `prioritized` rather than `waiting`.
     counts = await getQueue().getJobCounts(
       "waiting",
+      "prioritized",
       "active",
       "delayed",
       "completed",
       "failed",
+      "paused",
     );
   } catch {
     /* Redis down — still return the job list so the UI renders */

@@ -1,3 +1,4 @@
+import { timeoutFetch } from "../../http";
 import { cameraModeFromText, type VolcanoCameraMode } from "@photonsurge/shared/volcanoes/media";
 export const JMA_VOLCAMS = "https://www.data.jma.go.jp/vois/data/obs/volcam/volcam.php";
 export interface JmaCamera { sourceCameraId: string; volcanoName: string; name: string; mode: VolcanoCameraMode; imageUrl: string; detailUrl: string }
@@ -10,5 +11,5 @@ export function parseJmaCameraPage(html: string, camera: { id: string; name: str
   const image = images.find((url) => /\/vois\/data\/obs\/camera\/.*\.(?:jpe?g|png)(?:[?#]|$)/i.test(url)); if (!image) return null;
   const volcanoName = camera.name.replace(/[（(].*?[）)]/g, " ").replace(/(?:監視カメラ|camera|ライブ|live)/gi, " ").trim();
   return { sourceCameraId: camera.id, volcanoName, name: camera.name, mode: cameraModeFromText(camera.name), imageUrl: new URL(image, camera.detailUrl).toString(), detailUrl: camera.detailUrl }; }
-export async function fetchJmaCameras(fetchImpl: typeof fetch = fetch): Promise<JmaCamera[]> { const root = await fetchImpl(JMA_VOLCAMS); if (!root.ok) throw new Error(`JMA registry ${root.status}`); const pages = discoverJmaCameraPages(await root.text()); const out: JmaCamera[] = [];
+export async function fetchJmaCameras(fetchImpl: typeof fetch = timeoutFetch()): Promise<JmaCamera[]> { const root = await fetchImpl(JMA_VOLCAMS); if (!root.ok) throw new Error(`JMA registry ${root.status}`); const pages = discoverJmaCameraPages(await root.text()); const out: JmaCamera[] = [];
   for (let i = 0; i < pages.length; i += 8) await Promise.all(pages.slice(i, i + 8).map(async (camera) => { const res = await fetchImpl(camera.detailUrl); if (!res.ok) return; const parsed = parseJmaCameraPage(await res.text(), camera); if (parsed) out.push(parsed); })); return out; }

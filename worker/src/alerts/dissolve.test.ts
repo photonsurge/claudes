@@ -82,17 +82,47 @@ describe("dissolveAlerts", () => {
     expect(out).toHaveLength(2);
   });
 
-  it("tolerates a hair of rounding between two sources' borders", async () => {
-    // b starts a whisker past a's edge; without tolerance they'd stay separate.
+  it("leaves a hairline gap unbridged rather than inventing a join", async () => {
+    // b starts a whisker past a's edge. This used to assert ONE blob — but the
+    // bbox tolerance never bridged anything: it only widened the candidate net,
+    // and the union then returned both shapes as separate parts of a single blob.
+    // That WAS the bug (disjoint weather drawn as one thing), not a feature.
     const out = await run([county("a", "Thunderstorm", 3, [0, 0, 1, 1]), county("b", "Thunderstorm", 3, [1.001, 0, 2, 1])]);
 
-    expect(out).toHaveLength(1);
+    expect(out).toHaveLength(2);
   });
 
-  it("emits a MultiPolygon when a cluster genuinely has separate parts", async () => {
-    // Two islands close enough to share a bucket but not to touch.
-    const out = await run([county("a", "Thunderstorm", 3, [0, 0, 1, 1]), county("b", "Thunderstorm", 3, [1.01, 0, 2, 1])]);
-    expect(out[0].geometry.type).toBe("MultiPolygon");
+  /**
+   * The rule, in the operator's words: only collapse areas that are next to each
+   * other or joined. A bounding box can't decide that — Sicily's box overlaps the
+   * Italian mainland's across 150km of sea — and unioning two disjoint shapes
+   * still "succeeds", it just hands back both parts. So separate weather was
+   * being collapsed into one blob and drawn as one thing.
+   */
+  describe("only fuses what actually touches", () => {
+    it("keeps an island separate from the mainland it overlaps the box of", async () => {
+      // Sicily-ish and Puglia-ish: boxes overlap in latitude, land never meets.
+      const sicily = county("sicily", "Heat", 4, [12.4, 36.6, 15.6, 38.3]);
+      const puglia = county("puglia", "Heat", 4, [14.9, 39.8, 18.5, 41.9]);
+
+      const out = await run([sicily, puglia]);
+
+      expect(out).toHaveLength(2);
+      expect(out.map((b) => b.memberIds).flat().sort()).toEqual(["puglia", "sicily"]);
+    });
+
+    it("still fuses two areas that share a border", async () => {
+      const out = await run([county("a", "Heat", 4, [0, 0, 1, 1]), county("b", "Heat", 4, [1, 0, 2, 1])]);
+
+      expect(out).toHaveLength(1);
+      expect(out[0].geometry.type).toBe("Polygon");
+    });
+
+    it("does not let a gap be bridged just because the boxes are close", async () => {
+      const out = await run([county("a", "Heat", 4, [0, 0, 1, 1]), county("b", "Heat", 4, [1.01, 0, 2, 1])]);
+
+      expect(out).toHaveLength(2);
+    });
   });
 
   it("ignores areas with no geometry instead of throwing", async () => {
@@ -104,6 +134,101 @@ describe("dissolveAlerts", () => {
 
   it("handles an empty input", async () => {
     expect(await run([])).toEqual([]);
+  });
+
+  /**
+   * MeteoAlarm ships one `info` block per LANGUAGE, each repeating the same areas
+   * with identical polygons. Processing both did every union twice and handed
+   * polygon-clipping a polygon plus an exact copy of itself — coincident edges,
+   * which it throws on. The swallowed throw turned the duplicate into its own
+   * blob, so one Italian region sat in two overlapping blobs at once.
+   */
+  describe("an alert repeated per language", () => {
+    /** The same area, emitted once per language, exactly as MeteoAlarm does it. */
+    const bilingual = (id: string, [w, s, e, n]: number[]): iAlert => {
+      const area = () => ({
+        areaDesc: "Puglia",
+        geometry: { type: "Polygon", coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] },
+        geocodes: [{ valueName: "EMMA_ID", value: "IT015" }],
+      });
+      return {
+        id,
+        maxSeverityRank: 4,
+        info: [
+          { event: "Heat", severityRank: 4, area: [area()] },
+          { event: "Heat", severityRank: 4, area: [area()] },
+        ],
+      } as unknown as iAlert;
+    };
+
+    it("makes ONE blob, not two overlapping ones", async () => {
+      const out = await run([bilingual("puglia", [14.9, 39.8, 18.5, 41.9])]);
+
+      expect(out).toHaveLength(1);
+      expect(out[0].memberIds).toEqual(["puglia"]);
+    });
+
+    it("does not count the duplicate as a union failure", async () => {
+      const { unionFailures } = await dissolveAlerts([bilingual("puglia", [14.9, 39.8, 18.5, 41.9])], NO_WAIT);
+
+      expect(unionFailures).toBe(0);
+    });
+
+    it("counts the area's vertices once, so the saving isn't inflated", async () => {
+      const out = await run([bilingual("puglia", [14.9, 39.8, 18.5, 41.9])]);
+
+      expect(out[0].verticesBefore).toBe(5);
+    });
+
+    /**
+     * The same trap one level up, and the one that actually bit: a region
+     * routinely has TWO live warnings for one hazard (an original and its
+     * update), and both resolve their polygon from the same EMMA cache — so the
+     * shapes are byte identical. Unioning a polygon with its own copy throws, the
+     * throw was swallowed, and the copy became a second blob over the same
+     * ground. Live, 33 alerts sat in more than one blob and Puglia was drawn
+     * twice.
+     */
+    it("makes ONE blob when two alerts cover the identical area", async () => {
+      const a = county("first", "Heat", 4, [14.9, 39.8, 18.5, 41.9]);
+      const b = county("update", "Heat", 4, [14.9, 39.8, 18.5, 41.9]);
+      for (const c of [a, b]) c.info[0].area[0].geocodes = [{ valueName: "EMMA_ID", value: "IT015" }];
+
+      const out = await run([a, b]);
+
+      expect(out).toHaveLength(1);
+      // Both warnings still ride along — the panel lists them individually.
+      expect(out[0].memberIds.sort()).toEqual(["first", "update"]);
+    });
+
+    it("does not count an identical twin as a union failure", async () => {
+      const a = county("first", "Heat", 4, [14.9, 39.8, 18.5, 41.9]);
+      const b = county("update", "Heat", 4, [14.9, 39.8, 18.5, 41.9]);
+      for (const c of [a, b]) c.info[0].area[0].geocodes = [{ valueName: "EMMA_ID", value: "IT015" }];
+
+      const { unionFailures } = await dissolveAlerts([a, b], NO_WAIT);
+
+      expect(unionFailures).toBe(0);
+    });
+
+    it("still keeps two genuinely different areas of one alert", async () => {
+      const two = {
+        id: "x",
+        maxSeverityRank: 4,
+        info: [
+          {
+            event: "Heat",
+            severityRank: 4,
+            area: [
+              { areaDesc: "A", geocodes: [{ valueName: "EMMA_ID", value: "IT001" }], geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] } },
+              { areaDesc: "B", geocodes: [{ valueName: "EMMA_ID", value: "IT002" }], geometry: { type: "Polygon", coordinates: [[[9, 9], [10, 9], [10, 10], [9, 10], [9, 9]]] } },
+            ],
+          },
+        ],
+      } as unknown as iAlert;
+
+      expect(await run([two])).toHaveLength(2);
+    });
   });
 
   /**
@@ -175,10 +300,33 @@ describe("dissolveAlerts", () => {
     });
 
     it("winds every part of a MultiPolygon, not just the first", async () => {
-      const out = await run([
-        county("a", "Thunderstorm", 3, [0, 0, 1, 1]),
-        county("b", "Thunderstorm", 3, [1.01, 0, 2, 1]),
-      ]);
+      // A blob is a connected component now, so a MultiPolygon only arrives when
+      // a single AREA is one — an archipelago like Croatia's South Dalmatia.
+      const islands = {
+        id: "hr806",
+        maxSeverityRank: 3,
+        info: [
+          {
+            event: "Thunderstorm",
+            severityRank: 3,
+            area: [
+              {
+                areaDesc: "South Dalmatia region",
+                geocodes: [{ valueName: "EMMA_ID", value: "HR806" }],
+                geometry: {
+                  type: "MultiPolygon",
+                  coordinates: [
+                    [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+                    [[[5, 5], [6, 5], [6, 6], [5, 6], [5, 5]]],
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      } as unknown as iAlert;
+
+      const out = await run([islands]);
 
       const rings = outerRings(out[0].geometry);
       expect(rings).toHaveLength(2);

@@ -1,3 +1,4 @@
+import { timeoutFetch } from "../../http";
 import { cameraModeFromText, type VolcanoCameraMode } from "@photonsurge/shared/volcanoes/media";
 
 export const AVO_WEBCAM_INDEX = "https://avo.alaska.edu/webcam/";
@@ -81,7 +82,7 @@ export function parseAvoCameraDetail(entry: AvoCameraIndexEntry, html: string): 
   };
 }
 
-export async function fetchAvoCameraRegistry(fetchImpl: typeof fetch = fetch): Promise<AvoCameraDetail[]> {
+export async function fetchAvoCameraRegistry(fetchImpl: typeof fetch = timeoutFetch()): Promise<AvoCameraDetail[]> {
   const indexRes = await fetchImpl(AVO_WEBCAM_INDEX);
   if (!indexRes.ok) throw new Error(`AVO webcam index ${indexRes.status}`);
   const entries = parseAvoCameraIndex(await indexRes.text());

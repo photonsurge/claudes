@@ -1,3 +1,4 @@
+import { timeoutFetch } from "../../http";
 import { createHash } from "node:crypto";
 
 export const PHIVOLCS_INSTRUMENTS = "https://wovodat.phivolcs.dost.gov.ph/monitor/instruments";
@@ -31,7 +32,7 @@ export function parsePhivolcsCameras(html: string, volcano: PhivolcsVolcano, det
   return out;
 }
 
-export async function fetchPhivolcsCameras(fetchImpl: typeof fetch = fetch,
+export async function fetchPhivolcsCameras(fetchImpl: typeof fetch = timeoutFetch(),
   diagnostic?: (event: PhivolcsDiagnostic) => void): Promise<PhivolcsCamera[]> {
   let root: Response;
   try { root = await fetchImpl(PHIVOLCS_INSTRUMENTS); }

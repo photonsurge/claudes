@@ -1,5 +1,6 @@
+import { timeoutFetch } from "../../http";
 import { cameraModeFromText, type VolcanoCameraMode } from "@photonsurge/shared/volcanoes/media";
 export const OVPF_CAMERAS = "https://www.ipgp.fr/volcanoweb/reunion/html_static_webcam/cameras-ovpf.html";
 export interface OvpfCamera { sourceCameraId: string; volcanoName: string; name: string; mode: VolcanoCameraMode; imageUrl: string; detailUrl: string }
 export function parseOvpfCameras(html: string): OvpfCamera[] { const seen = new Set<string>(); const out: OvpfCamera[] = []; for (const m of html.matchAll(/(?:src|href)\s*=\s*["']([^"']*\/Cameras\/Camera([^/"']+)\.jpg[^"']*)["']/gi)) { const code = m[2].replace(/[^a-z0-9]/gi, ""); if (!code || seen.has(code.toLowerCase())) continue; seen.add(code.toLowerCase()); out.push({ sourceCameraId: code.toLowerCase(), volcanoName: "Piton de la Fournaise", name: `Piton de la Fournaise · ${code}`, mode: cameraModeFromText(code), imageUrl: new URL(m[1], OVPF_CAMERAS).toString(), detailUrl: OVPF_CAMERAS }); } return out; }
-export async function fetchOvpfCameras(fetchImpl: typeof fetch = fetch) { const res = await fetchImpl(OVPF_CAMERAS); if (!res.ok) throw new Error(`OVPF camera index ${res.status}`); return parseOvpfCameras(await res.text()); }
+export async function fetchOvpfCameras(fetchImpl: typeof fetch = timeoutFetch()) { const res = await fetchImpl(OVPF_CAMERAS); if (!res.ok) throw new Error(`OVPF camera index ${res.status}`); return parseOvpfCameras(await res.text()); }

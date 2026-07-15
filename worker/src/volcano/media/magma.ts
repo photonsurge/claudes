@@ -1,3 +1,4 @@
+import { timeoutFetch } from "../../http";
 import { createHash } from "node:crypto";
 import { cameraModeFromText, type VolcanoCameraMode } from "@photonsurge/shared/volcanoes/media";
 
@@ -22,7 +23,7 @@ export function parseMagmaCameras(html: string, pageUrl = MAGMA_CCTV_URL): Magma
   return out;
 }
 
-export async function fetchMagmaCameras(fetchImpl: typeof fetch = fetch): Promise<MagmaCamera[]> {
+export async function fetchMagmaCameras(fetchImpl: typeof fetch = timeoutFetch()): Promise<MagmaCamera[]> {
   const res = await fetchImpl(MAGMA_CCTV_URL); if (!res.ok) throw new Error(`MAGMA CCTV ${res.status}`);
   return parseMagmaCameras(await res.text());
 }

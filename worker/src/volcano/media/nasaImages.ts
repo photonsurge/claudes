@@ -1,3 +1,4 @@
+import { timeoutFetch } from "../../http";
 import type { VolcanoMediaType } from "@photonsurge/shared/volcanoes/media";
 
 export const NASA_IMAGES_SEARCH = "https://images-api.nasa.gov/search?q=volcano%20eruption&media_type=image&page_size=100";
@@ -33,7 +34,7 @@ export function parseNasaVolcanoImages(payload: unknown, volcanoNames: string[])
   });
 }
 
-export async function fetchNasaVolcanoImages(volcanoNames: string[], fetchImpl: typeof fetch = fetch): Promise<NasaVolcanoImage[]> {
+export async function fetchNasaVolcanoImages(volcanoNames: string[], fetchImpl: typeof fetch = timeoutFetch()): Promise<NasaVolcanoImage[]> {
   const response = await fetchImpl(NASA_IMAGES_SEARCH, { headers: { Accept: "application/json", "User-Agent": "WeatherChannel volcano media registry" } });
   if (!response.ok) return [];
   return parseNasaVolcanoImages(await response.json(), volcanoNames);

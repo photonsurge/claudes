@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BlobFs } from "./blob-fs";
@@ -69,6 +70,42 @@ describe("BlobFs", () => {
 
   it("rejects traversal-y key components", () => {
     expect(() => fs.filePath("tex", "..")).toThrow(/unsafe/);
+  });
+
+  it("usage measures each namespace it finds on disk", async () => {
+    await fs.put("tex", "a", Buffer.alloc(100));
+    await fs.put("tex", "b", Buffer.alloc(300));
+    await fs.put("ad", "c", Buffer.alloc(50));
+
+    const usage = await fs.usage();
+    expect(usage.root).toBe(root);
+    expect(usage.files).toBe(3);
+    expect(usage.bytes).toBe(450);
+    // Sorted biggest-first.
+    expect(usage.namespaces.map((n) => n.ns)).toEqual(["tex", "ad"]);
+    const tex = usage.namespaces[0];
+    expect(tex).toMatchObject({ files: 2, bytes: 400, largestBytes: 300, tmpFiles: 0 });
+    expect(tex.newestMs).toBeGreaterThanOrEqual(tex.oldestMs!);
+  });
+
+  it("usage counts abandoned .tmp- writes separately from real blobs", async () => {
+    await fs.put("tex", "a", Buffer.alloc(10));
+    const orphan = `${fs.filePath("tex", "a")}.tmp-123-${randomUUID()}`;
+    await writeFile(orphan, Buffer.alloc(999));
+
+    const [tex] = (await fs.usage()).namespaces;
+    expect(tex).toMatchObject({ files: 1, bytes: 10, tmpFiles: 1, tmpBytes: 999 });
+  });
+
+  it("usage of an empty (or absent) root is zero, not an error", async () => {
+    expect(await fs.usage()).toMatchObject({ files: 0, bytes: 0, namespaces: [] });
+    expect(await new BlobFs(join(root, "never-created")).usage()).toMatchObject({ files: 0, namespaces: [] });
+  });
+
+  it("usage reports the capacity of the filesystem under the root", async () => {
+    const { disk } = await fs.usage();
+    expect(disk!.totalBytes).toBeGreaterThan(0);
+    expect(disk!.usedBytes).toBe(disk!.totalBytes - disk!.freeBytes);
   });
 
   it("fromEnv returns null without BLOB_DIR, an instance with it", () => {

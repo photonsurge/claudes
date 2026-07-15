@@ -138,6 +138,26 @@ export interface iPing extends iEntity {
  * `mongoCrud`. Both share the one connection (single-domain) and the same
  * `{ success, data?, errors? }` response shape.
  */
+/**
+ * What each `${BLOB_DIR}` namespace directory holds, for the humans reading
+ * /admin/files. Keep this in step with the `blobs` object and the two `*Data`
+ * sidecar stores in `createDb` below — a directory with no entry here is
+ * reported as unknown, which is the honest answer for one nothing writes.
+ */
+export const BLOB_NAMESPACES: Record<string, { label: string; desc: string }> = {
+  tex: { label: "Weather textures", desc: "Baked GFS/model variable textures served to the globe." },
+  frame: { label: "Weather frames", desc: "Archived hourly weather frames (never pruned)." },
+  "forecast-frame": { label: "Forecast frames", desc: "Daily forecast frames; pruned as runs age out." },
+  "admin-image": { label: "Admin images", desc: "Operator-uploaded on-air imagery from /admin/content." },
+  ad: { label: "Ads", desc: "Sponsor images and video." },
+  aurora: { label: "Aurora", desc: "SWPC OVATION oval glow PNGs." },
+  geomag: { label: "Geomagnetic", desc: "Magnetic-field overlay PNGs." },
+  satimg: { label: "Satellite imagery", desc: "GIBS true-colour cloud overlays." },
+  "alert-snapshot": { label: "Alert snapshots", desc: "Satellite/compare/camera stills per alert." },
+  "event-snapshot": { label: "Event snapshots", desc: "Stills attached to unified watched events." },
+  "volcano-media": { label: "Volcano media", desc: "Photos enriched onto the volcano catalog." },
+};
+
 export function createDb(conn: Connection) {
   const weatherRuns = mongoCrud<iWeatherRunModel>(getWeatherRunModel(conn));
   const broadcastState = mongoCrud(getBroadcastStateModel(conn));

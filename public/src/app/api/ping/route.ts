@@ -20,7 +20,12 @@ async function POST__impl(req: Request) {
     // empty body is fine
   }
 
-  const job = await sendToQueue(DOMAIN, "ping", "create", { message }, undefined, QUEUE_PRIORITY.HIGH);
+  // `dedupe: false`: every ping APPENDS a row, so it isn't idempotent — sending
+  // the same message twice must record it twice. Dedup (the sendToQueue default)
+  // would silently collapse the second one into the first's job.
+  const job = await sendToQueue(DOMAIN, "ping", "create", { message }, undefined, QUEUE_PRIORITY.HIGH, {
+    dedupe: false,
+  });
 
   return NextResponse.json({ ok: true, jobId: job.id, message });
 }

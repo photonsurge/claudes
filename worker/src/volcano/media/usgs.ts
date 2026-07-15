@@ -1,3 +1,4 @@
+import { timeoutFetch } from "../../http";
 import { cameraModeFromText, type VolcanoCameraMode } from "@photonsurge/shared/volcanoes/media";
 
 export const USGS_VHP_WEBCAMS = "https://www.usgs.gov/programs/VHP/multimedia/webcams";
@@ -43,7 +44,7 @@ export function parseUsgsAshcam(payload: unknown): Array<UsgsCameraRecord & { vo
   });
 }
 
-export async function fetchUsgsAshcam(fetchImpl: typeof fetch = fetch) {
+export async function fetchUsgsAshcam(fetchImpl: typeof fetch = timeoutFetch()) {
   const response = await fetchImpl(USGS_ASHCAM_API, { headers: { accept: "application/json", "user-agent": "WeatherChannel volcano media registry" } });
   if (!response.ok) throw new Error(`USGS Ashcam API ${response.status}`);
   return parseUsgsAshcam(await response.json());
@@ -99,7 +100,7 @@ export function parseUsgsCameraDetail(camera: UsgsCameraRecord, html: string): U
   };
 }
 
-export async function fetchUsgsVolcanoWebcams(pageUrl: string, fetchImpl: typeof fetch = fetch,
+export async function fetchUsgsVolcanoWebcams(pageUrl: string, fetchImpl: typeof fetch = timeoutFetch(),
   diagnostic?: (event: UsgsDiagnostic) => void): Promise<UsgsCameraRecord[]> {
   const init = { headers: { "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
     accept: "text/html,application/xhtml+xml", "accept-language": "en-US,en;q=0.9" } };

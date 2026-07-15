@@ -1,3 +1,4 @@
+import { timeoutFetch, mapPool } from "../../http";
 import type { VolcanoMediaType } from "@photonsurge/shared/volcanoes/media";
 
 export interface GvpImage { sourceMediaId: string; title?: string; caption?: string; imageUrl: string; sourceUrl: string; attribution?: string; licence: string; reuseAllowed: boolean; type: VolcanoMediaType }
@@ -25,9 +26,22 @@ export function parseGvpImageDetail(html: string, sourceUrl: string): GvpImage |
     reuseAllowed: rights === "Public Domain" || rights === "CC BY-SA 4.0", type: "PHOTO" };
 }
 
-export async function fetchGvpImages(volcanoUrl: string, fetchImpl: typeof fetch = fetch): Promise<GvpImage[]> {
+/** Detail pages per volcano, fetched a few at a time — polite to the Smithsonian. */
+const GVP_DETAIL_CONCURRENCY = 4;
+
+export async function fetchGvpImages(volcanoUrl: string, fetchImpl: typeof fetch = timeoutFetch()): Promise<GvpImage[]> {
   const page = await fetchImpl(volcanoUrl); if (!page.ok) return [];
-  const details = discoverGvpImageDetails(await page.text(), volcanoUrl); const out: GvpImage[] = [];
-  for (const url of details) { const res = await fetchImpl(url); if (!res.ok) continue; const image = parseGvpImageDetail(await res.text(), url); if (image) out.push(image); }
-  return out;
+  const details = discoverGvpImageDetails(await page.text(), volcanoUrl);
+  // Serially, a volcano's gallery costs (number of images × round trip); a
+  // volcano with 30 photos dominated the whole job on its own.
+  const images = await mapPool(details, GVP_DETAIL_CONCURRENCY, async (url) => {
+    try {
+      const res = await fetchImpl(url);
+      if (!res.ok) return null;
+      return parseGvpImageDetail(await res.text(), url);
+    } catch {
+      return null; // one bad detail page must not abandon the rest of the gallery
+    }
+  });
+  return images.filter((image): image is GvpImage => image !== null);
 }

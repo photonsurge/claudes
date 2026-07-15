@@ -39,8 +39,24 @@ import { fetchJmaCameras, JMA_VOLCAMS } from "../volcano/media/jma";
 import { fetchCenapredCameras, CENAPRED_POPO } from "../volcano/media/cenapred";
 import { fetchOvpfCameras, OVPF_CAMERAS } from "../volcano/media/ovpf";
 import type { VolcanoCameraMode, VolcanoMediaType } from "@photonsurge/shared/volcanoes/media";
+import { runExclusive } from "../jobLock";
+import { fetchWithTimeout, mapPool } from "../http";
 
 const TAG = "job:volcanoes";
+
+/**
+ * Stop the media schedules stacking up (three `officialMedia` runs at once was
+ * the observed symptom): each takes longer than its own interval, so the next
+ * tick starts before the last finished and copies pile up, hammering the same
+ * providers concurrently. A skipped run is harmless — the next tick picks it up.
+ *
+ * TWO locks, not one. The catalog walkers (official stills + satellite products)
+ * are slow and share providers, so they serialise against each other. Camera
+ * refresh gets its own: it's the live "what does it look like right now" imagery
+ * the deck airs every 5 minutes, and it must never sit behind a photo sweep.
+ */
+const VOLCANO_MEDIA_LOCK = "volcano-media";
+const VOLCANO_CAMERA_LOCK = "volcano-cameras";
 
 /**
  * Unified-event promotion for volcanoes — the analogue of the alert ingest
@@ -861,15 +877,21 @@ export async function mediaRegistry(_job: Job) {
  * Every block is gated on the operator's chosen sources, and skips media we
  * already hold BEFORE fetching it.
  */
-export async function officialMedia(_job: Job) {
+export const officialMedia = (job: Job) => runExclusive(VOLCANO_MEDIA_LOCK, TAG, () => officialMediaRun(job));
+
+async function officialMediaRun(_job: Job) {
   const db = await getAppDb();
-  const [images, volcanoes, sources] = await Promise.all([
+  const [images, volcanoes, active, sources] = await Promise.all([
     fetchImoEruptionImages().catch((err) => { log(TAG, "IMO official media unavailable", summarizeForLog(err)); return []; }),
     db.volcanoes.list(),
+    db.volcanoes.listSignificant(),
     db.volcanoMediaSources.list(),
   ]);
   const enabled = new Set(sources.filter((source) => source.enabled).map((source) => source.source));
+  // Match names against the FULL catalog (so a picture is still correctly
+  // identified), but only acquire media for the active few — see `activeIds`.
   const byName = new Map(volcanoes.map((v) => [normalizedVolcanoName(v.name), v]));
+  const activeIds = new Set(active.map((v) => v.id));
   let stored = 0;
   let unchanged = 0;
   let unmatched = 0;
@@ -880,9 +902,10 @@ export async function officialMedia(_job: Job) {
     if (!enabled.has("IMO")) { skipped++; break; }
     const volcano = image.volcanoName ? byName.get(normalizedVolcanoName(String(image.volcanoName))) : undefined;
     if (!volcano) { unmatched++; continue; }
+    if (!activeIds.has(volcano.id)) { skipped++; continue; }
     if (image.sourceMediaId && await db.volcanoMedia.hasSourceMedia("IMO", image.sourceMediaId)) { unchanged++; continue; }
     try {
-      const res = await fetch(image.imageUrl);
+      const res = await fetchWithTimeout(image.imageUrl);
       if (!res.ok) { failed++; continue; }
       const bytes = Buffer.from(await res.arrayBuffer());
       const result = await db.volcanoMedia.put({
@@ -896,14 +919,14 @@ export async function officialMedia(_job: Job) {
     } catch { failed++; }
   }
   let gvpDiscovered = 0;
-  for (const volcano of enabled.has("GVP") ? volcanoes : []) {
+  for (const volcano of enabled.has("GVP") ? active : []) {
     if (!volcano.sourceUrl) continue;
     const gvpImages = await fetchGvpImages(volcano.sourceUrl).catch(() => []);
     gvpDiscovered += gvpImages.length;
     for (const image of gvpImages) {
       if (await db.volcanoMedia.hasSourceMedia("GVP", image.sourceMediaId)) { unchanged++; continue; }
       try {
-        const res = await fetch(image.imageUrl);
+        const res = await fetchWithTimeout(image.imageUrl);
         if (!res.ok) { failed++; continue; }
         const result = await db.volcanoMedia.put({
           volcanoId: volcano.id, source: "GVP", type: image.type, sourceMediaId: image.sourceMediaId,
@@ -919,13 +942,13 @@ export async function officialMedia(_job: Job) {
   // Wikipedia enrichment already resolves the canonical lead/gallery URLs. Feed
   // those files through the same byte store so they receive deduplication,
   // provenance and rights review instead of remaining loose external URLs.
-  for (const volcano of enabled.has("WIKIMEDIA") ? volcanoes : []) {
+  for (const volcano of enabled.has("WIKIMEDIA") ? active : []) {
     const urls = [...new Set([volcano.wikiPhoto, ...(volcano.wikiGallery ?? [])].filter((url): url is string => Boolean(url)))];
     wikimediaDiscovered += urls.length;
     for (const imageUrl of urls) {
       if (await db.volcanoMedia.hasSourceMedia("WIKIMEDIA", imageUrl)) { unchanged++; continue; }
       try {
-        const res = await fetch(imageUrl); if (!res.ok) { failed++; continue; }
+        const res = await fetchWithTimeout(imageUrl); if (!res.ok) { failed++; continue; }
         const result = await db.volcanoMedia.put({ volcanoId: volcano.id, source: "WIKIMEDIA", type: "PHOTO",
           sourceMediaId: imageUrl, title: `${volcano.name} reference image`, imageUrl,
           sourceUrl: volcano.wikiTitle ? `https://en.wikipedia.org/wiki/${encodeURIComponent(volcano.wikiTitle.replace(/ /g, "_"))}` : imageUrl,
@@ -936,14 +959,15 @@ export async function officialMedia(_job: Job) {
     }
   }
   const nasaImages = enabled.has("NASA_IMAGES")
-    ? await fetchNasaVolcanoImages(volcanoes.map((v) => v.name)).catch(() => [])
+    ? await fetchNasaVolcanoImages(active.map((v) => v.name)).catch(() => [])
     : [];
   for (const image of nasaImages) {
     const volcano = image.volcanoName ? byName.get(normalizedVolcanoName(image.volcanoName)) : undefined;
     if (!volcano) { unmatched++; continue; }
+    if (!activeIds.has(volcano.id)) { skipped++; continue; }
     if (await db.volcanoMedia.hasSourceMedia("NASA_IMAGES", image.sourceMediaId)) { unchanged++; continue; }
     try {
-      const res = await fetch(image.imageUrl); if (!res.ok) { failed++; continue; }
+      const res = await fetchWithTimeout(image.imageUrl); if (!res.ok) { failed++; continue; }
       const result = await db.volcanoMedia.put({ volcanoId: volcano.id, source: "NASA_IMAGES", type: image.type,
         sourceMediaId: image.sourceMediaId, title: image.title, caption: image.caption, observedAt: image.observedAt,
         imageUrl: image.imageUrl, sourceUrl: image.sourceUrl, attribution: "NASA Image and Video Library",
@@ -973,15 +997,19 @@ export async function officialMedia(_job: Job) {
   ]);
   const result = { imoDiscovered: images.length, gvpDiscovered, wikimediaDiscovered, nasaDiscovered: nasaImages.length,
     stored, unchanged, unmatched, failed, skipped };
-  log(TAG, "official volcano media done", result);
+  if (stored || failed) log(TAG, "official volcano media done", result);
   if (stored) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: stored } });
   return result;
 }
 
 /** Acquire latest VOLCAT products only for volcanoes in the active cache. */
-export async function satelliteMedia(_job: Job) {
+export const satelliteMedia = (job: Job) => runExclusive(VOLCANO_MEDIA_LOCK, TAG, () => satelliteMediaRun(job));
+
+async function satelliteMediaRun(_job: Job) {
   const db = await getAppDb();
-  const [volcanoes, sources] = await Promise.all([db.volcanoes.list(), db.volcanoMediaSources.list()]);
+  // ACTIVE only: a satellite product for a volcano that has done nothing for
+  // centuries is a picture of a quiet mountain — nothing to broadcast.
+  const [volcanoes, sources] = await Promise.all([db.volcanoes.listSignificant(), db.volcanoMediaSources.list()]);
   const volcatEnabled = sources.some((source) => source.source === "VOLCAT" && source.enabled);
   // The registry row still gets refreshed below, so the source stays visible (and
   // re-enablable) in the admin UI even while it's switched off.
@@ -993,11 +1021,12 @@ export async function satelliteMedia(_job: Job) {
       const name = normalizedVolcanoName(v.name); return name.length >= 4 && (sector.includes(name) || name.includes(sector));
     });
     if (!volcano) { unmatched++; continue; }
+    const sourceMediaId = `${image.sectorId}:${image.product ?? "unknown"}:${image.observedAt?.toISOString() ?? image.imageUrl}`;
+    if (await db.volcanoMedia.hasSourceMedia("VOLCAT", sourceMediaId)) { unchanged++; continue; }
     try {
-      const res = await fetch(image.imageUrl); if (!res.ok) { failed++; continue; }
+      const res = await fetchWithTimeout(image.imageUrl); if (!res.ok) { failed++; continue; }
       const result = await db.volcanoMedia.put({
-        volcanoId: volcano.id, source: "VOLCAT", type: image.type,
-        sourceMediaId: `${image.sectorId}:${image.product ?? "unknown"}:${image.observedAt?.toISOString() ?? image.imageUrl}`,
+        volcanoId: volcano.id, source: "VOLCAT", type: image.type, sourceMediaId,
         title: [image.satellite, image.instrument, image.product].filter(Boolean).join(" · "), observedAt: image.observedAt,
         imageUrl: image.imageUrl, sourceUrl: image.sourceUrl, attribution: "NOAA/CIMSS VOLCAT · UW-SSEC",
         licence: "VERIFY", reuseAllowed: false, contentType: res.headers.get("content-type") ?? "application/octet-stream",
@@ -1011,7 +1040,8 @@ export async function satelliteMedia(_job: Job) {
     attribution: "NOAA/CIMSS VOLCAT · UW-SSEC", defaultLicence: "VERIFY", defaultReuseAllowed: false,
     lastDiscoveredAt: new Date() });
   const result = { discovered: images.length, stored, unchanged, unmatched, failed, enabled: volcatEnabled };
-  log(TAG, "volcano satellite media done", result);
+  // Every 10 minutes, and usually a no-op — only worth a line when it did something.
+  if (stored || failed) log(TAG, "volcano satellite media done", result);
   return result;
 }
 
@@ -1035,8 +1065,18 @@ export async function mediaRights(_job: Job) {
  *    overwrite it. The old `put` appended a row + blob per novel frame with a
  *    permanent dedup window, so ~300 cameras polled every 5 min grew the
  *    collection forever with imagery no one would ever look at again.
+ *
+ * Runs the cameras through a bounded pool with per-request timeouts. Serially
+ * and without timeouts, a handful of dead camera URLs set the runtime of the
+ * whole job — this is the 5-minute schedule, so it has to finish in well under
+ * five minutes or it stacks.
  */
-export async function cameraRefresh(_job: Job) {
+export const cameraRefresh = (job: Job) => runExclusive(VOLCANO_CAMERA_LOCK, TAG, () => cameraRefreshRun(job));
+
+/** Kept modest: these are observatory servers, not a CDN. */
+const CAMERA_CONCURRENCY = Number(process.env.VOLCANO_CAMERA_CONCURRENCY || 8);
+
+async function cameraRefreshRun(_job: Job) {
   const db = await getAppDb();
   const [cameras, sources] = await Promise.all([
     db.volcanoCameras.listEnabled(),
@@ -1048,16 +1088,22 @@ export async function cameraRefresh(_job: Job) {
   let unchanged = 0;
   let failed = 0;
   let skipped = 0;
-  for (const camera of cameras) {
-    if (!camera.currentImageUrl) continue;
-    // Check BEFORE the fetch: a switched-off source should cost us no bandwidth
-    // and no request against the provider.
-    if (!enabledSources.has(camera.source)) { skipped++; continue; }
+  const started = Date.now();
+
+  // Check BEFORE fetching: a switched-off source should cost us no bandwidth and
+  // no request against the provider.
+  const due = cameras.filter((camera) => {
+    if (!camera.currentImageUrl) return false;
+    if (!enabledSources.has(camera.source)) { skipped++; return false; }
+    return true;
+  });
+
+  await mapPool(due, CAMERA_CONCURRENCY, async (camera) => {
     try {
-      const res = await fetch(camera.currentImageUrl);
-      if (!res.ok) { failed++; continue; }
+      const res = await fetchWithTimeout(camera.currentImageUrl!);
+      if (!res.ok) { failed++; return; }
       const bytes = Buffer.from(await res.arrayBuffer());
-      if (!bytes.length) { failed++; continue; }
+      if (!bytes.length) { failed++; return; }
       const observedAt = camera.upstreamTimestamp ? new Date(camera.upstreamTimestamp) : new Date();
       const rights = sourceMeta.get(camera.source);
       const result = await db.volcanoMedia.putLatest({
@@ -1082,9 +1128,12 @@ export async function cameraRefresh(_job: Job) {
     } catch {
       failed++;
     }
-  }
-  const result = { cameras: cameras.length, stored, unchanged, failed, skipped };
-  log(TAG, "volcano camera media refresh done", result);
+  });
+
+  const result = { cameras: cameras.length, fetched: due.length, stored, unchanged, failed, skipped, ms: Date.now() - started };
+  // Quiet by default: this runs every 5 minutes and "nothing changed" is the
+  // normal outcome, so only speak up when something actually happened or broke.
+  if (stored || failed) log(TAG, "volcano camera media refresh done", result);
   if (stored) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: stored } });
   return result;
 }
@@ -1151,7 +1200,7 @@ export async function snapshotCams(_job: Job) {
         let png: Buffer;
         let meta: sharp.Metadata;
         try {
-          const res = await fetch(cam.imageUrl);
+          const res = await fetchWithTimeout(cam.imageUrl);
           if (!res.ok) {
             failed++;
             continue;

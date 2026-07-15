@@ -111,10 +111,10 @@ function bounds(geom: MultiPolygon): [number, number, number, number] {
 }
 
 /**
- * Do two areas touch (or nearly)? County polygons that share a border have
- * coincident edges, but sources round coordinates differently, so a hair of
- * tolerance stops two halves of one border failing to merge. Bounds-only — the
- * real test is whether the union actually fuses, which `union` decides.
+ * Could two areas touch? A CANDIDATE filter only — bounding boxes overlap across
+ * open sea (Sicily's box overlaps the mainland's), so this can only rule pairs
+ * OUT cheaply. Whether they actually join is decided by the union, which is the
+ * only thing that really knows.
  */
 const near = (
   a: [number, number, number, number],
@@ -123,9 +123,62 @@ const near = (
 ): boolean =>
   !(a[2] + tol < b[0] || b[2] + tol < a[0] || a[3] + tol < b[1] || b[3] + tol < a[1]);
 
-/** Every area geometry an alert carries. */
-const geomsOf = (a: iAlert): AlertGeometry[] =>
-  (a.info ?? []).flatMap((i) => (i.area ?? []).map((ar) => ar.geometry).filter(Boolean) as AlertGeometry[]);
+/** Cheap identity for an area, without stringifying a 40k-vertex polygon. */
+function areaKey(ar: { areaDesc?: string; geocodes?: { valueName: string; value: string }[]; geometry?: AlertGeometry | null }): string {
+  const emma = ar.geocodes?.find((g) => g.valueName?.toUpperCase() === "EMMA_ID")?.value;
+  if (emma) return `emma:${emma}`;
+  if (ar.areaDesc) return `desc:${ar.areaDesc}`;
+  // No code, no name: fall back to the shape itself — type, size and first point
+  // are enough to tell two areas of one alert apart.
+  const c = ar.geometry?.coordinates as unknown[] | undefined;
+  return `geom:${ar.geometry?.type}:${countVertices(c)}:${JSON.stringify((c?.[0] as unknown[])?.[0] ?? null)}`;
+}
+
+/**
+ * The distinct areas an alert covers, each with a stable identity.
+ *
+ * MeteoAlarm emits one `info` block per LANGUAGE — Italy ships en-GB and it-IT,
+ * each repeating the same areas with byte-identical polygons — so an alert hands
+ * us the same geography twice. The languages are content, not geography.
+ */
+const areasOf = (a: iAlert): { key: string; geometry: AlertGeometry }[] => {
+  const seen = new Map<string, AlertGeometry>();
+  for (const i of a.info ?? []) {
+    for (const ar of i.area ?? []) {
+      if (!ar?.geometry) continue;
+      const key = areaKey(ar);
+      if (!seen.has(key)) seen.set(key, ar.geometry);
+    }
+  }
+  return [...seen.entries()].map(([key, geometry]) => ({ key, geometry }));
+};
+
+/**
+ * Every distinct area in a bucket, each remembering which alerts cover it.
+ *
+ * The duplication is not just per-language, it's per-ALERT: a region routinely
+ * has two live warnings for the same hazard (an original and its update), and
+ * both resolve their polygon from the same EMMA cache — so they are byte
+ * identical. Handing both to the union asks polygon-clipping to fuse a polygon
+ * with an exact copy of itself, which is coincident edges everywhere and exactly
+ * what it throws "Loop is not valid" on. That throw was swallowed as a union
+ * failure and the copy then became its OWN blob: Puglia sat in two blobs with an
+ * identical bbox, drawn twice on the globe, 33 alerts double-counted.
+ *
+ * Identical geography is ONE area covered by several alerts, so collapse it here
+ * and let the members ride along. Fewer areas is also less clipping.
+ */
+function distinctAreas(members: iAlert[]): { geometry: AlertGeometry; ids: Set<string> }[] {
+  const byArea = new Map<string, { geometry: AlertGeometry; ids: Set<string> }>();
+  for (const a of members) {
+    for (const { key, geometry } of areasOf(a)) {
+      const hit = byArea.get(key);
+      if (hit) hit.ids.add(a.id!);
+      else byArea.set(key, { geometry, ids: new Set([a.id!]) });
+    }
+  }
+  return [...byArea.values()];
+}
 
 export interface DissolveOpts {
   /** Degrees of slack when deciding two areas touch. */
@@ -191,8 +244,11 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
     type Blob = { geom: MultiPolygon; box: [number, number, number, number]; ids: Set<string>; before: number };
     const blobs: Blob[] = [];
 
-    for (const a of members) {
-      for (const g of geomsOf(a)) {
+    // Distinct GEOGRAPHY, not distinct alerts: two warnings for the same region
+    // are one area with two members, never two identical shapes to union.
+    for (const area of distinctAreas(members)) {
+      {
+        const g = area.geometry;
         const geom = toGeom(g);
         if (!geom) continue;
         if (++sinceYield >= yieldEvery) {
@@ -206,20 +262,28 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
         // separate blobs is normal (an area can bridge them).
         const hits = blobs.filter((b) => near(b.box, box, tol));
         if (!hits.length) {
-          blobs.push({ geom, box, ids: new Set([a.id!]), before });
+          blobs.push({ geom, box, ids: new Set(area.ids), before });
           continue;
         }
         let merged = geom;
-        const ids = new Set<string>([a.id!]);
+        const ids = new Set<string>(area.ids);
         let beforeSum = before;
         const fused: Blob[] = [];
         for (const b of hits) {
+          // `near` is only a bbox test, and a bbox is a terrible proxy for "these
+          // two touch": Sicily's box overlaps mainland Italy's across 150km of
+          // sea. Unioning disjoint shapes still "succeeds" — it just returns both
+          // parts — so bbox alone silently collapsed separate weather into one
+          // blob. The union itself is the honest test: if the parts didn't drop,
+          // nothing actually joined, so leave them apart.
+          const partsApart = merged.length + b.geom.length;
           const u = tryUnion(merged, b.geom);
           if (!u) {
             // This pair won't fuse — leave that blob alone and carry on.
             unionFailures++;
             continue;
           }
+          if (u.length >= partsApart) continue; // adjacent-looking, but not touching
           merged = u;
           for (const id of b.ids) ids.add(id);
           beforeSum += b.before;

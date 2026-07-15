@@ -11,6 +11,7 @@ import type { TriggerableJob } from "@photonsurge/shared/jobs";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import LogTail from "../../../components/admin/LogTail";
 import QueueSummary from "../../../components/admin/QueueSummary";
+import ClearQueueMenu from "../../../components/admin/ClearQueueMenu";
 
 interface Result {
   ok: boolean;
@@ -175,14 +176,17 @@ export default function JobsPage() {
       description="Manual triggers for worker ingest, snapshot and enrichment jobs."
       maxWidth={760}
       actions={
-        counts ? (
-          <div style={{ color: "#8b95a7", fontSize: 12 }}>
-            queue · active {counts.active ?? 0} · waiting {counts.waiting ?? 0} · done{" "}
-            {counts.completed ?? 0} · failed {counts.failed ?? 0}
-          </div>
-        ) : (
-          <div style={{ color: "#fca5a5", fontSize: 12 }}>queue unreachable (worker/Redis down?)</div>
-        )
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {counts ? (
+            <span style={{ color: "#8b95a7", fontSize: 12 }}>
+              queue · active {counts.active ?? 0} · waiting {counts.waiting ?? 0} · done{" "}
+              {counts.completed ?? 0} · failed {counts.failed ?? 0}
+            </span>
+          ) : (
+            <span style={{ color: "#fca5a5", fontSize: 12 }}>queue unreachable (worker/Redis down?)</span>
+          )}
+          <ClearQueueMenu counts={counts} onDone={refresh} />
+        </div>
       }
     >
 

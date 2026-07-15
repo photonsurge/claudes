@@ -818,34 +818,64 @@ process.on("uncaughtException", (err) => {
   // metadata; cameraRefresh downloads bytes into the shared blob filesystem.
   if (process.env.VOLCANO_MEDIA_ENABLED !== "false") {
     const REGISTRY_MS = Number(process.env.VOLCANO_MEDIA_REGISTRY_MS || 6 * 60 * 60 * 1000);
-    const CAMERA_MS = Number(process.env.VOLCANO_MEDIA_CAMERA_MS || 5 * 60 * 1000);
+    // Hourly, not every 5 minutes. Most observatory cameras only publish a new
+    // frame every 10-15 minutes anyway, so the extra polls mostly re-fetched
+    // bytes we already had. Lower this if a volcano goes on air and the picture
+    // feels stale — it's the ONLY thing setting how fresh the camera slide is.
+    const CAMERA_MS = Number(process.env.VOLCANO_MEDIA_CAMERA_MS || 60 * 60 * 1000);
     // Published stills, not live frames: a new eruption photo appears a few times
     // a year, so polling this hard buys nothing. It also walks EVERY volcano
     // (scraping a GVP gallery page each) — cheap at the ~30 volcanoes the weekly
     // bulletin used to hold, ~1,196 page fetches a pass now the full catalog is
     // seeded. Six-hourly keeps us a good citizen of the Smithsonian's server.
     const OFFICIAL_MS = Number(process.env.VOLCANO_MEDIA_OFFICIAL_MS || 6 * 60 * 60 * 1000);
-    const SATELLITE_MS = Number(process.env.VOLCANO_MEDIA_SATELLITE_MS || 10 * 60 * 1000);
+    // Six-hourly, not every 10 minutes. We only ever keep each product's LATEST
+    // frame, and the sectors publish every 10-15 min at best — so the frequent
+    // polls were re-walking VOLCAT's whole sector/product menu tree to rediscover
+    // frames we already had.
+    const SATELLITE_MS = Number(process.env.VOLCANO_MEDIA_SATELLITE_MS || 6 * 60 * 60 * 1000);
+
+    /**
+     * EXPLICIT offsets, not `staggerOffset`, for the three six-hourly media jobs.
+     *
+     * `staggerOffset` spreads jobs over at most JOB_STAGGER_MS (4 min), which
+     * de-synchronises a boot stampede but can't separate jobs on a 6h cycle: it
+     * put satellite at +0.09min and official at +0.87min — 47 seconds apart.
+     * That's not merely a load spike. `officialMedia` and `satelliteMedia` share
+     * the `volcano-media` lock, so the second to arrive finds it held and SKIPS
+     * — meaning official media would never run at all, every cycle, forever.
+     *
+     * Two hours apart is far longer than any of them takes, so each has the lock
+     * to itself and the volcano work is spread evenly through the day rather
+     * than landing in one lump.
+     */
+    const HOUR_MS = 60 * 60 * 1000;
+    const SATELLITE_OFFSET_MS = 0;
+    const OFFICIAL_OFFSET_MS = 2 * HOUR_MS;
+    const REGISTRY_OFFSET_MS = 4 * HOUR_MS;
+
     try {
       await myQueue.add(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "mediaRegistry", data: {} },
-        { repeat: { every: REGISTRY_MS, immediately: true, offset: staggerOffset("volcano-media-registry", REGISTRY_MS) }, jobId: "volcano-media-registry" },
+        { repeat: { every: REGISTRY_MS, immediately: true, offset: REGISTRY_OFFSET_MS }, jobId: "volcano-media-registry" },
       );
       await myQueue.add(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "cameraRefresh", data: {} },
+        // Hourly and on its OWN lock, so it can't be starved by the six-hourly
+        // sweeps — the hash stagger is all it needs.
         { repeat: { every: CAMERA_MS, offset: staggerOffset("volcano-camera-refresh", CAMERA_MS) }, jobId: "volcano-camera-refresh" },
       );
       await myQueue.add(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "officialMedia", data: {} },
-        { repeat: { every: OFFICIAL_MS, offset: staggerOffset("volcano-official-media", OFFICIAL_MS) }, jobId: "volcano-official-media" },
+        { repeat: { every: OFFICIAL_MS, offset: OFFICIAL_OFFSET_MS }, jobId: "volcano-official-media" },
       );
       await myQueue.add(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "satelliteMedia", data: {} },
-        { repeat: { every: SATELLITE_MS, offset: staggerOffset("volcano-satellite-media", SATELLITE_MS) }, jobId: "volcano-satellite-media" },
+        { repeat: { every: SATELLITE_MS, offset: SATELLITE_OFFSET_MS }, jobId: "volcano-satellite-media" },
       );
       // Backstop for the latest-only camera policy: `cameraRefresh` overwrites in
       // place, so this normally finds nothing. It exists so any future writer that
@@ -856,7 +886,10 @@ process.on("uncaughtException", (err) => {
         { domain: "volcanoes", type: "volcanoCatalog", event: "pruneMedia", data: {} },
         { repeat: { every: MEDIA_PRUNE_MS, offset: staggerOffset("volcano-media-prune", MEDIA_PRUNE_MS) }, jobId: "volcano-media-prune" },
       );
-      log(TAG, "registered volcano media registry + acquisition", { registryMs: REGISTRY_MS, cameraMs: CAMERA_MS, officialMs: OFFICIAL_MS, satelliteMs: SATELLITE_MS });
+      log(TAG, "registered volcano media registry + acquisition", {
+        registryMs: REGISTRY_MS, cameraMs: CAMERA_MS, officialMs: OFFICIAL_MS, satelliteMs: SATELLITE_MS,
+        offsetsHours: { satellite: SATELLITE_OFFSET_MS / HOUR_MS, official: OFFICIAL_OFFSET_MS / HOUR_MS, registry: REGISTRY_OFFSET_MS / HOUR_MS },
+      });
     } catch (err) {
       log(TAG, "failed to register volcano media jobs", summarizeForLog(err));
     }

@@ -1,6 +1,31 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile, access } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, stat, statfs, unlink, writeFile, access } from "node:fs/promises";
 import { dirname, join } from "node:path";
+
+/** What one namespace directory holds, as measured by walking it. */
+export interface BlobNamespaceUsage {
+  ns: string;
+  files: number;
+  bytes: number;
+  /** Abandoned `.tmp-*` writes — reclaimable garbage, excluded from `files`/`bytes`. */
+  tmpFiles: number;
+  tmpBytes: number;
+  largestBytes: number;
+  newestMs: number | null;
+  oldestMs: number | null;
+}
+
+/** The whole blob root, plus the filesystem it sits on. */
+export interface BlobUsage {
+  root: string;
+  namespaces: BlobNamespaceUsage[];
+  files: number;
+  bytes: number;
+  tmpFiles: number;
+  tmpBytes: number;
+  /** Filesystem capacity for `root`, or null if it could not be read. */
+  disk: { totalBytes: number; freeBytes: number; usedBytes: number } | null;
+}
 
 /**
  * A filesystem-backed blob store rooted at a host directory that BOTH the worker
@@ -100,6 +125,116 @@ export class BlobFs {
         }
       }),
     );
+  }
+
+  /**
+   * Walk the whole root and measure it: file count and bytes per namespace, plus
+   * the capacity of the filesystem underneath. This is the only read path that
+   * discovers rather than addresses — it reports whatever directories are really
+   * there, so a namespace no code writes any more still shows up as the disk it
+   * is still eating. A namespace that has never been written has no directory at
+   * all (`put` mkdirs lazily) and is simply absent.
+   *
+   * Shards are walked one at a time so a namespace with tens of thousands of
+   * blobs costs a bounded number of concurrent stats rather than all of them.
+   */
+  async usage(): Promise<BlobUsage> {
+    const namespaces: BlobNamespaceUsage[] = [];
+    for (const ns of await listDirs(this.root)) {
+      namespaces.push(await this.namespaceUsage(ns));
+    }
+    namespaces.sort((a, b) => b.bytes - a.bytes);
+
+    const sum = (pick: (n: BlobNamespaceUsage) => number) =>
+      namespaces.reduce((total, n) => total + pick(n), 0);
+
+    return {
+      root: this.root,
+      namespaces,
+      files: sum((n) => n.files),
+      bytes: sum((n) => n.bytes),
+      tmpFiles: sum((n) => n.tmpFiles),
+      tmpBytes: sum((n) => n.tmpBytes),
+      disk: await this.diskUsage(),
+    };
+  }
+
+  private async namespaceUsage(ns: string): Promise<BlobNamespaceUsage> {
+    const dir = join(this.root, ns);
+    const usage: BlobNamespaceUsage = {
+      ns,
+      files: 0,
+      bytes: 0,
+      tmpFiles: 0,
+      tmpBytes: 0,
+      largestBytes: 0,
+      newestMs: null,
+      oldestMs: null,
+    };
+
+    for (const shard of await listDirs(dir)) {
+      const shardDir = join(dir, shard);
+      const entries = await listFiles(shardDir);
+      const sizes = await Promise.all(
+        entries.map(async (name) => {
+          try {
+            const s = await stat(join(shardDir, name));
+            return { name, bytes: s.size, mtimeMs: s.mtimeMs };
+          } catch (err) {
+            // Raced with a delete, or unreadable — it is not there to count.
+            if (isNotFound(err)) return null;
+            throw err;
+          }
+        }),
+      );
+
+      for (const entry of sizes) {
+        if (!entry) continue;
+        if (TMP_FILE.test(entry.name)) {
+          usage.tmpFiles += 1;
+          usage.tmpBytes += entry.bytes;
+          continue;
+        }
+        usage.files += 1;
+        usage.bytes += entry.bytes;
+        usage.largestBytes = Math.max(usage.largestBytes, entry.bytes);
+        usage.newestMs = Math.max(usage.newestMs ?? entry.mtimeMs, entry.mtimeMs);
+        usage.oldestMs = Math.min(usage.oldestMs ?? entry.mtimeMs, entry.mtimeMs);
+      }
+    }
+
+    return usage;
+  }
+
+  private async diskUsage(): Promise<BlobUsage["disk"]> {
+    try {
+      const s = await statfs(this.root);
+      const totalBytes = s.blocks * s.bsize;
+      const freeBytes = s.bavail * s.bsize;
+      return { totalBytes, freeBytes, usedBytes: totalBytes - freeBytes };
+    } catch {
+      return null;
+    }
+  }
+}
+
+/** `put` writes `<file>.tmp-<pid>-<uuid>` then renames; leftovers are dead bytes. */
+const TMP_FILE = /\.tmp-\d+-[0-9a-f-]+$/i;
+
+async function listDirs(dir: string): Promise<string[]> {
+  return (await listEntries(dir)).filter((e) => e.isDirectory()).map((e) => e.name);
+}
+
+async function listFiles(dir: string): Promise<string[]> {
+  return (await listEntries(dir)).filter((e) => e.isFile()).map((e) => e.name);
+}
+
+async function listEntries(dir: string) {
+  try {
+    return await readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if (isNotFound(err)) return [];
+    throw err;
   }
 }
 

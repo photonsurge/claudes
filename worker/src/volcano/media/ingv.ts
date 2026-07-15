@@ -1,3 +1,4 @@
+import { timeoutFetch } from "../../http";
 import { createHash } from "node:crypto";
 import { cameraModeFromText, type VolcanoCameraMode } from "@photonsurge/shared/volcanoes/media";
 
@@ -42,7 +43,7 @@ export function parseIngvCameraDocument(html: string, detailUrl: string, default
   return [...byStation.values()];
 }
 
-export async function fetchIngvCameras(fetchImpl: typeof fetch = fetch): Promise<IngvCamera[]> {
+export async function fetchIngvCameras(fetchImpl: typeof fetch = timeoutFetch()): Promise<IngvCamera[]> {
   const pages = [[INGV_ETNA_PAGE, "Etna"], [INGV_AEOLIAN_PAGE, "Stromboli"]] as const;
   const out: IngvCamera[] = [];
   for (const [pageUrl, fallback] of pages) {

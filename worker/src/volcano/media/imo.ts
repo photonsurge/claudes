@@ -1,3 +1,4 @@
+import { timeoutFetch } from "../../http";
 import type { VolcanoMediaType } from "@photonsurge/shared/volcanoes/media";
 
 export const IMO_EPOS_OPENAPI = "https://api.vedur.is/epos/openapi.json";
@@ -66,7 +67,7 @@ export function parseImoEruptionImages(value: unknown, sourceUrl: string): ImoEr
   return out;
 }
 
-export async function fetchImoEruptionImages(fetchImpl: typeof fetch = fetch): Promise<ImoEruptionImage[]> {
+export async function fetchImoEruptionImages(fetchImpl: typeof fetch = timeoutFetch()): Promise<ImoEruptionImage[]> {
   const schemaRes = await fetchImpl(IMO_EPOS_OPENAPI);
   if (!schemaRes.ok) throw new Error(`IMO EPOS OpenAPI ${schemaRes.status}`);
   const operations = resolveImoEruptionImageOperations(await schemaRes.json());

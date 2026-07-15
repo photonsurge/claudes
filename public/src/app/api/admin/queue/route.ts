@@ -153,11 +153,18 @@ async function GET__impl(req: Request) {
  *                                signal a cooperative abort if it's active
  *  - retryAll                  : re-queue every failed job
  *  - clean { type }            : purge a whole job-type (completed/failed/…)
- *  - clear { schedulers? }     : purge every job in every state
+ *  - clear { states?, force? } : purge whole states (default: all of them)
  *  - pause | resume | drain    : queue-wide controls
  */
 async function POST__impl(req: Request) {
-  let body: { action?: string; id?: string; type?: string; event?: string; schedulers?: boolean } = {};
+  let body: {
+    action?: string;
+    id?: string;
+    type?: string;
+    event?: string;
+    states?: string[];
+    force?: boolean;
+  } = {};
   try {
     body = (await req.json()) ?? {};
   } catch {
@@ -189,9 +196,14 @@ async function POST__impl(req: Request) {
         break;
       }
       case "clear": {
-        // The big hammer: every job in every state. Repeatable schedules survive
-        // unless `schedulers` is set, and an already-running job still finishes.
-        detail = await clearQueue({ schedulers: body.schedulers === true });
+        // Purge whole states — `states` omitted means the big hammer, every job
+        // in every state. Unarms any schedule holding a job in those states,
+        // otherwise BullMQ refuses to remove them (see clearQueue); the worker
+        // re-registers schedules at boot. An already-running job still finishes.
+        detail = await clearQueue({
+          states: Array.isArray(body.states) ? body.states : undefined,
+          force: body.force !== false,
+        });
         break;
       }
       case "stopChain": {
