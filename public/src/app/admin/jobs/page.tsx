@@ -6,59 +6,14 @@
  * work (fetch → Mongo). This page is the manual "run now" surface alongside the
  * worker's own schedules.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TriggerableJob } from "@photonsurge/shared/jobs";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import LogTail from "../../../components/admin/LogTail";
 import QueueSummary from "../../../components/admin/QueueSummary";
 import ClearQueueMenu from "../../../components/admin/ClearQueueMenu";
-
-interface Result {
-  ok: boolean;
-  jobId?: string;
-  error?: string;
-  at: string;
-  /** Live BullMQ state once we start polling the enqueued job. */
-  state?: string;
-  /** How long the handler has run / ran, in ms. */
-  durationMs?: number | null;
-  failedReason?: string | null;
-}
-
-/** ms → "840ms" / "3.2s" / "1m4s". */
-function fmtDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  const m = Math.floor(ms / 60_000);
-  const s = Math.round((ms % 60_000) / 1000);
-  return `${m}m${s}s`;
-}
-
-/** The one-line status + colour for a triggered job's result row. */
-function resultLine(r: Result): { text: string; color: string } {
-  if (!r.ok) return { text: `failed: ${r.error}`, color: "#fca5a5" };
-  const d = typeof r.durationMs === "number" ? fmtDuration(r.durationMs) : null;
-  switch (r.state) {
-    case "completed":
-      return { text: d ? `done in ${d}` : "done", color: "#4ade80" };
-    case "failed":
-      return { text: `failed after ${d ?? "?"}${r.failedReason ? `: ${r.failedReason}` : ""}`, color: "#fca5a5" };
-    case "active":
-      return { text: d ? `running… ${d}` : "running…", color: "#fbbf24" };
-    case "unknown":
-      // Reaped after completion (admin jobs kept 1h) or never landed — best-effort.
-      return { text: `queued (#${r.jobId})`, color: "#8b95a7" };
-    default:
-      return { text: `queued (#${r.jobId})`, color: "#8b95a7" };
-  }
-}
-
-interface StopResult {
-  ok: boolean;
-  removed?: number;
-  error?: string;
-  at: string;
-}
+import JobCard, { type Result, type StopResult } from "../../../components/admin/jobs/JobCard";
+import JobsToolbar from "../../../components/admin/jobs/JobsToolbar";
 
 /** Group jobs by their `group`, preserving first-seen (catalog) order. */
 function groupJobs(jobs: TriggerableJob[]): Array<[string, TriggerableJob[]]> {
@@ -75,6 +30,16 @@ function groupJobs(jobs: TriggerableJob[]): Array<[string, TriggerableJob[]]> {
   return order.map((g) => [g, byGroup.get(g)!]);
 }
 
+/** Free-text match over the fields an operator would search by. */
+function matches(j: TriggerableJob, q: string): boolean {
+  const hay = `${j.label} ${j.description} ${j.group} ${j.id}`.toLowerCase();
+  return q
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((term) => hay.includes(term));
+}
+
 export default function JobsPage() {
   const [jobs, setJobs] = useState<TriggerableJob[]>([]);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
@@ -82,6 +47,8 @@ export default function JobsPage() {
   const [stopResults, setStopResults] = useState<Record<string, StopResult>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [stopping, setStopping] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [group, setGroup] = useState<string | null>(null);
   // Latest enqueued jobId per row, so an in-flight poll knows if it's been superseded.
   const latestJob = useRef<Record<string, string>>({});
 
@@ -170,11 +137,21 @@ export default function JobsPage() {
     }
   };
 
+  // Chips always show the whole catalog's shape; only the grid narrows.
+  const allGroups = useMemo<Array<[string, number]>>(
+    () => groupJobs(jobs).map(([g, list]) => [g, list.length]),
+    [jobs],
+  );
+  const visible = useMemo(
+    () => jobs.filter((j) => (group === null || j.group === group) && (!query.trim() || matches(j, query))),
+    [jobs, group, query],
+  );
+
   return (
     <AdminPageShell
       title="Worker jobs"
       description="Manual triggers for worker ingest, snapshot and enrichment jobs."
-      maxWidth={760}
+      maxWidth="none"
       actions={
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {counts ? (
@@ -189,101 +166,64 @@ export default function JobsPage() {
         </div>
       }
     >
+      <JobsToolbar
+        query={query}
+        onQuery={setQuery}
+        groups={allGroups}
+        active={group}
+        onGroup={setGroup}
+        total={jobs.length}
+        shown={visible.length}
+      />
 
-        {groupJobs(jobs).map(([group, groupJobsList]) => (
-          <section key={group} style={{ marginTop: 22 }}>
-            <h3
-              style={{
-                margin: "0 0 10px",
-                fontSize: 12,
-                letterSpacing: 1,
-                textTransform: "uppercase",
-                color: "#8b95a7",
-              }}
-            >
-              {group}
-            </h3>
-            <div style={{ display: "grid", gap: 12 }}>
-              {groupJobsList.map((j) => {
-                const r = results[j.id];
-                const sr = stopResults[j.id];
-                return (
-                  <div
-                    key={j.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 14,
-                      padding: 14,
-                      borderRadius: 8,
-                      border: "1px solid #1b2030",
-                      background: "#0c111c",
-                    }}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600 }}>{j.label}</div>
-                      <div style={{ color: "#8b95a7", fontSize: 13 }}>{j.description}</div>
-                      {r && (() => {
-                        const line = resultLine(r);
-                        return (
-                          <div style={{ fontSize: 12, marginTop: 4, color: line.color }}>
-                            {line.text} · {new Date(r.at).toLocaleTimeString()}
-                          </div>
-                        );
-                      })()}
-                      {sr && (
-                        <div style={{ fontSize: 12, marginTop: 4, color: sr.ok ? "#4ade80" : "#fca5a5" }}>
-                          {sr.ok ? `stopped — ${sr.removed ?? 0} queued batch(es) removed` : `failed: ${sr.error}`} ·{" "}
-                          {new Date(sr.at).toLocaleTimeString()}
-                        </div>
-                      )}
-                    </div>
-                    {j.stoppable && (
-                      <button
-                        type="button"
-                        onClick={() => stop(j)}
-                        disabled={stopping === j.id}
-                        style={{
-                          padding: "8px 16px",
-                          borderRadius: 6,
-                          border: "1px solid #333",
-                          background: stopping === j.id ? "#1a1f2b" : "#7f1d1d",
-                          color: "#fff",
-                          cursor: "pointer",
-                        }}
-                      >
-                        {stopping === j.id ? "…" : "Stop"}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => run(j.id)}
-                      disabled={busy === j.id}
-                      style={{
-                        padding: "8px 16px",
-                        borderRadius: 6,
-                        border: "1px solid #333",
-                        background: busy === j.id ? "#1a1f2b" : "#2563eb",
-                        color: "#fff",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {busy === j.id ? "…" : "Run now"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        ))}
+      {visible.length === 0 && jobs.length > 0 && (
+        <div style={{ color: "#5b6577", fontSize: 13, padding: "28px 0" }}>No jobs match that search.</div>
+      )}
 
-        <div style={{ marginTop: 28 }}>
-          <QueueSummary />
-        </div>
+      {groupJobs(visible).map(([groupName, groupJobsList]) => (
+        <section key={groupName} style={{ marginTop: 22 }}>
+          <h3
+            style={{
+              margin: "0 0 10px",
+              fontSize: 12,
+              letterSpacing: 1,
+              textTransform: "uppercase",
+              color: "#8b95a7",
+            }}
+          >
+            {groupName} <span style={{ color: "#3f4859" }}>{groupJobsList.length}</span>
+          </h3>
+          <div
+            style={{
+              display: "grid",
+              gap: 12,
+              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+              alignItems: "stretch",
+            }}
+          >
+            {groupJobsList.map((j) => (
+              <JobCard
+                key={j.id}
+                job={j}
+                result={results[j.id]}
+                stopResult={stopResults[j.id]}
+                running={busy === j.id}
+                stopping={stopping === j.id}
+                onRun={() => run(j.id)}
+                onStop={() => stop(j)}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
 
-        <div style={{ marginTop: 28 }}>
-          <LogTail limit={100} title="Recent activity" excludeType="request" />
-        </div>
+      <div style={{ marginTop: 28 }}>
+        <QueueSummary />
+      </div>
+
+      <div style={{ marginTop: 28 }}>
+        <LogTail limit={100} title="Recent activity" excludeType="request" />
+      </div>
     </AdminPageShell>
   );
 }

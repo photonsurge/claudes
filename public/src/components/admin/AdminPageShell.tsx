@@ -5,7 +5,8 @@ import Link from "next/link";
 interface AdminPageShellProps {
   title: string;
   description?: React.ReactNode;
-  maxWidth?: number;
+  /** Column cap; `"none"` lets the page use the full viewport. */
+  maxWidth?: number | string;
   actions?: React.ReactNode;
   children: React.ReactNode;
   crumbs?: Array<{ href?: string; label: string }>;
