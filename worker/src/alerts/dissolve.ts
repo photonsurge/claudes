@@ -20,6 +20,14 @@ export interface AlertBlobInput {
   hazard: string;
   severityRank: SeverityRank;
   geometry: AlertGeometry;
+  /**
+   * `[w, s, e, n]` bounds of the shape.
+   *
+   * Kept because readers ask "which shapes are in this camera view", and the
+   * answer must not require loading the geometry to find out — the polygons are
+   * the one thing we're trying not to hand out.
+   */
+  bbox: [number, number, number, number];
   /** Alerts whose areas went into this shape — the panel still lists them all. */
   memberIds: string[];
   /** Rings before and after, so the saving is visible in the job log. */
@@ -124,7 +132,26 @@ export interface DissolveOpts {
   tolerance?: number;
   /** Hazard classifier — injected so this stays pure and testable. */
   hazardOf: (a: iAlert) => string;
+  /**
+   * Hand the event loop back every N areas. Injected so tests run synchronously
+   * instead of waiting on real timers.
+   */
+  yield?: () => Promise<void>;
+  /** Areas to union between yields. */
+  yieldEvery?: number;
 }
+
+/**
+ * The bucket an alert dissolves within: same hazard AND same severity.
+ *
+ * Exported so a caller can group WITHOUT the geometry loaded and then pull one
+ * bucket's shapes at a time. Only the id/event/severity fields are touched, so
+ * it works on a projection that leaves the polygons in the database — which is
+ * the whole point: holding every active alert's geometry at once is ~5M vertices
+ * and it OOMs the worker.
+ */
+export const bucketKeyOf = (a: iAlert, hazardOf: (a: iAlert) => string): string =>
+  `${hazardOf(a)}|${a.maxSeverityRank}`;
 
 /**
  * Cluster alerts by (hazard, severity) and union each cluster's touching areas.
@@ -133,16 +160,26 @@ export interface DissolveOpts {
  * which is the whole point. We union greedily into open blobs rather than doing a
  * full pairwise pass — with hundreds of areas per hazard, all-pairs polygon
  * clipping is the cost we're trying to avoid.
+ *
+ * ASYNC for one reason: polygon-clipping is synchronous, and a big hazard (750
+ * heat warnings across Europe) is minutes of unbroken CPU. Held in one go, that
+ * starves BullMQ's lock-renewal timer and the worker drops the locks on every
+ * OTHER job it's running ("could not renew lock for job repeat:…") — the shared
+ * worker can't tell a busy job from a dead one. So we surface between areas and
+ * let the timers fire. It's the same total CPU, just interruptible.
  */
-export function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): DissolveStats {
+export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Promise<DissolveStats> {
   const tol = opts.tolerance ?? 0.02;
+  const breathe = opts.yield ?? (() => new Promise<void>((r) => setImmediate(r)));
+  const yieldEvery = opts.yieldEvery ?? 25;
+  let sinceYield = 0;
   let unionFailures = 0;
 
   // Same hazard AND same severity: a red and an amber warning must never fuse
   // into one shape, or the globe would paint the milder area at the worse colour.
   const buckets = new Map<string, iAlert[]>();
   for (const a of alerts) {
-    const key = `${opts.hazardOf(a)}|${a.maxSeverityRank}`;
+    const key = bucketKeyOf(a, opts.hazardOf);
     const arr = buckets.get(key);
     if (arr) arr.push(a);
     else buckets.set(key, [a]);
@@ -158,6 +195,10 @@ export function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): DissolveSt
       for (const g of geomsOf(a)) {
         const geom = toGeom(g);
         if (!geom) continue;
+        if (++sinceYield >= yieldEvery) {
+          sinceYield = 0;
+          await breathe();
+        }
         const before = countVertices(g.coordinates);
         const box = bounds(geom);
 
@@ -196,6 +237,9 @@ export function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): DissolveSt
         hazard,
         severityRank: Number(rank) as SeverityRank,
         geometry,
+        // Re-measured from the wound output rather than reusing `b.box`, so the
+        // stored bounds always describe the stored shape.
+        bbox: bounds(toGeom(geometry)!),
         memberIds: [...b.ids],
         verticesBefore: b.before,
         verticesAfter: countVertices(geometry.coordinates),

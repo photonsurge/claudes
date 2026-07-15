@@ -47,6 +47,26 @@ export function makeCityWeatherRepo(model: Model<iCityWeatherModel>) {
     },
 
     /**
+     * Just "what's it doing there now, and next" for a set of cities.
+     *
+     * `manyByCityIds` also carries `hourly` — 24 points per city, for a trend
+     * sparkline. That's the right read for a dossier about ONE place, and the
+     * wrong one for a caller asking about every city under a warning, which can
+     * be a thousand at once. Only the cities the worker caches (population ≥
+     * CITY_POP_FLOOR) come back, so callers must treat a miss as normal.
+     */
+    async conditionsByCityIds(
+      cityIds: string[],
+    ): Promise<Pick<iCityWeather, "cityId" | "current" | "daily">[]> {
+      if (!cityIds.length) return [];
+      const docs = await model
+        .find({ cityId: { $in: cityIds } }, { _id: 0, cityId: 1, current: 1, daily: 1 })
+        .lean()
+        .exec();
+      return docs as unknown as Pick<iCityWeather, "cityId" | "current" | "daily">[];
+    },
+
+    /**
      * The `limit` biggest cities inside `bbox` (`[west, south, east, north]`),
      * population-ranked, each with its cached `current` + `daily` — the read
      * behind the on-air country/round-up "CITY CONDITIONS" slide. The cache

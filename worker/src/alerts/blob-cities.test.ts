@@ -1,7 +1,7 @@
 import type { Model } from "mongoose";
 import type { iCityModel } from "@photonsurge/shared/db/city-model";
 import { attachCities, citiesIn } from "./blob-cities";
-import type { AlertGeometry } from "@photonsurge/shared/db/alert-model";
+import type { AlertGeometry, iAlertModel } from "@photonsurge/shared/db/alert-model";
 
 /**
  * A stand-in for the City model that records what it was asked, so these can
@@ -46,6 +46,29 @@ const city = (id: string, name: string, population?: number): Partial<iCityModel
   lng: 21,
   population,
 });
+
+/** An alerts collection the fallback should never need to reach for. */
+const noAlerts = () =>
+  ({
+    find: () => {
+      throw new Error("the member-area fallback should not have run");
+    },
+  }) as unknown as Model<iAlertModel>;
+
+/** An alerts collection serving one county polygon per member id. */
+const alertsWithAreas = (byId: Record<string, AlertGeometry[]>) =>
+  ({
+    find: (filter: { id: { $in: string[] } }) => {
+      const chain = {
+        lean: () => chain,
+        exec: async () =>
+          filter.id.$in.map((id) => ({
+            info: [{ area: (byId[id] ?? []).map((geometry) => ({ geometry })) }],
+          })),
+      };
+      return chain;
+    },
+  }) as unknown as Model<iAlertModel>;
 
 describe("citiesIn", () => {
   it("asks Mongo for the cities within the shape", async () => {
@@ -107,9 +130,12 @@ describe("citiesIn", () => {
 describe("attachCities", () => {
   it("annotates every blob and counts the placements", async () => {
     const { model } = mockCities([city("1", "Warsaw", 1_790_658), city("2", "Radom", 211_371)]);
-    const blobs = [{ geometry: box(14, 49, 24, 55) }, { geometry: box(0, 0, 1, 1) }];
+    const blobs = [
+      { geometry: box(14, 49, 24, 55), memberIds: ["a1"] },
+      { geometry: box(0, 0, 1, 1), memberIds: ["a2"] },
+    ];
 
-    const stats = await attachCities(model, blobs);
+    const stats = await attachCities({ cities: model, alerts: noAlerts() }, blobs);
 
     expect(stats.cities).toBe(4); // two blobs, two cities each from the stub
     expect(blobs[0].cities?.map((c) => c.name)).toEqual(["Warsaw", "Radom"]);
@@ -117,39 +143,126 @@ describe("attachCities", () => {
 
   it("counts blobs that cover nobody — open sea is normal, a spike is not", async () => {
     const { model } = mockCities([]);
-    const blobs = [{ geometry: box(-40, 40, -30, 50) }];
+    const blobs = [{ geometry: box(-40, 40, -30, 50), memberIds: ["a1"] }];
 
-    const stats = await attachCities(model, blobs);
+    const stats = await attachCities({ cities: model, alerts: noAlerts() }, blobs);
 
     expect(stats).toMatchObject({ cities: 0, empty: 1, failures: 0 });
     expect(blobs[0].cities).toEqual([]);
   });
 
-  it("a shape Mongo refuses costs that blob its cities, not the whole rebuild", async () => {
-    const model = {
-      find: (filter: { loc: { $geoWithin: { $geometry: AlertGeometry } } }) => {
-        const bad = filter.loc.$geoWithin.$geometry.coordinates === ("bad" as never);
-        const chain = {
-          hint: () => chain,
-          lean: () => chain,
-          exec: async () => {
-            if (bad) throw new Error("Can't extract geo keys");
-            return [city("1", "Warsaw", 1_790_658)];
-          },
-        };
-        return chain;
-      },
-    } as unknown as Model<iCityModel>;
+  /**
+   * S2 rejects the shapes that matter most: the more counties fuse, the likelier
+   * polygon-clipping leaves a self-intersecting ring, so the biggest blobs in the
+   * system were the ones listing nobody. The union's shape is the only broken
+   * part — its member counties are polygons Mongo already indexes — so the
+   * fallback goes back to those.
+   */
+  describe("when the dissolved shape is one Mongo refuses", () => {
+    const BAD = { type: "Polygon", coordinates: "bad" } as unknown as AlertGeometry;
 
-    const blobs = [
-      { geometry: { type: "Polygon", coordinates: "bad" } as unknown as AlertGeometry },
-      { geometry: box(14, 49, 24, 55) },
-    ];
+    /** Cities keyed by which county polygon encloses them. */
+    const cityModelPerArea = (byArea: Map<string, Partial<iCityModel>[]>) =>
+      ({
+        find: (filter: { loc: { $geoWithin: { $geometry: AlertGeometry } } }) => {
+          const g = filter.loc.$geoWithin.$geometry;
+          const chain = {
+            hint: () => chain,
+            lean: () => chain,
+            exec: async () => {
+              if (g.coordinates === ("bad" as never)) throw new Error("Loop is not valid");
+              return byArea.get(JSON.stringify(g.coordinates)) ?? [];
+            },
+          };
+          return chain;
+        },
+      }) as unknown as Model<iCityModel>;
 
-    const stats = await attachCities(model, blobs);
+    const areaA = box(14, 49, 19, 55);
+    const areaB = box(19, 49, 24, 55);
 
-    expect(stats).toMatchObject({ failures: 1, cities: 1 });
-    expect(blobs[0].cities).toEqual([]);
-    expect(blobs[1].cities?.[0].name).toBe("Warsaw"); // the run carried on
+    it("answers from the member counties instead of giving up", async () => {
+      const model = cityModelPerArea(
+        new Map([
+          [JSON.stringify(areaA.coordinates), [city("1", "Warsaw", 1_790_658)]],
+          [JSON.stringify(areaB.coordinates), [city("2", "Radom", 211_371)]],
+        ]),
+      );
+      const blobs = [{ geometry: BAD, memberIds: ["a1", "a2"] }];
+
+      const stats = await attachCities(
+        { cities: model, alerts: alertsWithAreas({ a1: [areaA], a2: [areaB] }) },
+        blobs,
+      );
+
+      expect(stats).toMatchObject({ repaired: 1, failures: 0, cities: 2 });
+      // Biggest first, exactly as the fast path returns them.
+      expect(blobs[0].cities?.map((c) => c.name)).toEqual(["Warsaw", "Radom"]);
+    });
+
+    it("counts a city under two of its counties once", async () => {
+      const model = cityModelPerArea(
+        new Map([
+          [JSON.stringify(areaA.coordinates), [city("1", "Warsaw", 1_790_658)]],
+          [JSON.stringify(areaB.coordinates), [city("1", "Warsaw", 1_790_658)]],
+        ]),
+      );
+      const blobs = [{ geometry: BAD, memberIds: ["a1", "a2"] }];
+
+      await attachCities(
+        { cities: model, alerts: alertsWithAreas({ a1: [areaA], a2: [areaB] }) },
+        blobs,
+      );
+
+      expect(blobs[0].cities).toHaveLength(1);
+    });
+
+    it("one bad county does not cost the blob the others", async () => {
+      const model = cityModelPerArea(
+        new Map([[JSON.stringify(areaB.coordinates), [city("2", "Radom", 211_371)]]]),
+      );
+      const blobs = [{ geometry: BAD, memberIds: ["a1", "a2"] }];
+
+      const stats = await attachCities(
+        { cities: model, alerts: alertsWithAreas({ a1: [BAD], a2: [areaB] }) },
+        blobs,
+      );
+
+      expect(stats).toMatchObject({ repaired: 1, failures: 0 });
+      expect(blobs[0].cities?.map((c) => c.name)).toEqual(["Radom"]);
+    });
+
+    it("falls back per blob — the rebuild carries on", async () => {
+      const model = cityModelPerArea(
+        new Map([[JSON.stringify(areaA.coordinates), [city("1", "Warsaw", 1_790_658)]]]),
+      );
+      const blobs = [
+        { geometry: BAD, memberIds: ["a1"] },
+        { geometry: areaA, memberIds: ["a2"] },
+      ];
+
+      const stats = await attachCities(
+        { cities: model, alerts: alertsWithAreas({ a1: [areaA] }) },
+        blobs,
+      );
+
+      expect(stats).toMatchObject({ repaired: 1, failures: 0, cities: 2 });
+      expect(blobs[1].cities?.[0].name).toBe("Warsaw"); // the fast path still ran
+    });
+
+    it("gives up cleanly when even the members can't be read", async () => {
+      const model = cityModelPerArea(new Map());
+      const alerts = {
+        find: () => ({
+          lean: () => ({ exec: async () => { throw new Error("collection gone"); } }),
+        }),
+      } as unknown as Model<iAlertModel>;
+
+      const stats = await attachCities({ cities: model, alerts }, [
+        { geometry: BAD, memberIds: ["a1"] },
+      ]);
+
+      expect(stats).toMatchObject({ failures: 1, repaired: 0 });
+    });
   });
 });

@@ -41,6 +41,14 @@ export interface iAlertBlob extends iGeneralModel {
   hazard: string;
   severityRank: SeverityRank;
   geometry: AlertGeometry;
+  /**
+   * `[w, s, e, n]` bounds of `geometry`.
+   *
+   * The camera asks "which shapes are in view", and this lets it ask WITHOUT the
+   * geometry — a plain numeric compare instead of loading a million vertices to
+   * discover the shape was off-screen anyway.
+   */
+  bbox: [number, number, number, number];
   /** Alert ids that went into this shape — panels still list them individually. */
   memberIds: string[];
   /**
@@ -80,6 +88,7 @@ const AlertBlobSchema = new mongoose.Schema<iAlertBlobModel>(
     hazard: { type: String, required: true },
     severityRank: { type: Number, required: true, default: 0 },
     geometry: { type: mongoose.Schema.Types.Mixed, required: true },
+    bbox: { type: [Number], required: true, default: undefined },
     memberIds: { type: [String], default: [] },
     cities: { type: [BlobCitySchema], default: [] },
     builtAt: { type: Date, required: true, default: () => new Date() },

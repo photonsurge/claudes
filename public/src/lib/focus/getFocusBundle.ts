@@ -43,6 +43,7 @@ import { haversineKm } from "../geo";
 import { regionMinPop } from "../cities";
 import { getCachedCountries } from "../countries-cache";
 import { normalizeFocus, buildFocusKey } from "./focusKey";
+import { blobsFor } from "./blobs";
 import type {
   FocusBundle,
   FocusRequest,
@@ -50,6 +51,7 @@ import type {
   FocusCity,
   FocusNearbyCity,
   FocusRegionCountry,
+  FocusAlertBlob,
 } from "./types";
 import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 import type { ClimateBucketedDataset } from "../history-client";
@@ -265,6 +267,7 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     topCities,
     nearbyCities,
     areaAlerts,
+    areaBlobs,
     areaQuakes,
     areaVolcanoes,
     country,
@@ -306,6 +309,11 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
           .list({ activeOnly: true, bbox, omitCoordinates: true })
           .then((rows) => areaAlertFeatures(rows as unknown as Alert[]))
       : Promise.resolve([] as AlertFeature[]),
+    // areaBlobs — the worker's dissolved shapes for this view. Pre-computed at
+    // rebuild (shapes AND the cities inside them), so this is a bbox read of a
+    // few hundred small docs, not clipping or point-in-polygon at cut time. The
+    // repo drops the geometry for the same reason areaAlerts drops coordinates.
+    hasLoc ? blobsFor(db, bbox) : Promise.resolve([] as FocusAlertBlob[]),
     // areaQuakes
     hasLoc ? db.quakes.list({ bbox, limit: 50 }).then((rows) => rows.map(mapQuake)) : Promise.resolve([]),
     // areaVolcanoes
@@ -540,6 +548,7 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     eventSnapshots,
     eventSeries,
     areaAlerts,
+    areaBlobs,
     areaQuakes,
     areaVolcanoes,
 

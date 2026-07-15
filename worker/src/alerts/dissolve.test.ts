@@ -25,12 +25,13 @@ const county = (id: string, event: string, rank: number, [w, s, e, n]: number[])
   }) as unknown as iAlert;
 
 const hazardOf = (a: iAlert) => a.info[0].event;
-const run = (alerts: iAlert[]) => dissolveAlerts(alerts, { hazardOf }).blobs;
+const NO_WAIT = { hazardOf, yield: async () => {}, yieldEvery: 1 };
+const run = async (alerts: iAlert[]) => (await dissolveAlerts(alerts, NO_WAIT)).blobs;
 
 describe("dissolveAlerts", () => {
-  it("fuses two touching counties into one shape", () => {
+  it("fuses two touching counties into one shape", async () => {
     // Share the edge at x=1 — exactly how neighbouring EMMA counties meet.
-    const out = run([county("a", "Thunderstorm", 3, [0, 0, 1, 1]), county("b", "Thunderstorm", 3, [1, 0, 2, 1])]);
+    const out = await run([county("a", "Thunderstorm", 3, [0, 0, 1, 1]), county("b", "Thunderstorm", 3, [1, 0, 2, 1])]);
 
     expect(out).toHaveLength(1);
     expect(out[0].memberIds.sort()).toEqual(["a", "b"]);
@@ -39,8 +40,8 @@ describe("dissolveAlerts", () => {
     expect(out[0].verticesAfter).toBeLessThan(out[0].verticesBefore);
   });
 
-  it("chains a run of counties into ONE blob (adjacency is transitive)", () => {
-    const out = run([
+  it("chains a run of counties into ONE blob (adjacency is transitive)", async () => {
+    const out = await run([
       county("a", "Thunderstorm", 3, [0, 0, 1, 1]),
       county("b", "Thunderstorm", 3, [1, 0, 2, 1]),
       county("c", "Thunderstorm", 3, [2, 0, 3, 1]),
@@ -50,9 +51,9 @@ describe("dissolveAlerts", () => {
     expect(out[0].memberIds.sort()).toEqual(["a", "b", "c"]);
   });
 
-  it("fuses two blobs when a later area bridges them", () => {
+  it("fuses two blobs when a later area bridges them", async () => {
     // c arrives last and joins a and b, which were separate until then.
-    const out = run([
+    const out = await run([
       county("a", "Thunderstorm", 3, [0, 0, 1, 1]),
       county("b", "Thunderstorm", 3, [2, 0, 3, 1]),
       county("c", "Thunderstorm", 3, [1, 0, 2, 1]),
@@ -62,47 +63,94 @@ describe("dissolveAlerts", () => {
     expect(out[0].memberIds.sort()).toEqual(["a", "b", "c"]);
   });
 
-  it("keeps distant counties apart", () => {
-    const out = run([county("a", "Thunderstorm", 3, [0, 0, 1, 1]), county("b", "Thunderstorm", 3, [50, 50, 51, 51])]);
+  it("keeps distant counties apart", async () => {
+    const out = await run([county("a", "Thunderstorm", 3, [0, 0, 1, 1]), county("b", "Thunderstorm", 3, [50, 50, 51, 51])]);
 
     expect(out).toHaveLength(2);
   });
 
-  it("NEVER fuses different severities — a red area must not be painted amber", () => {
-    const out = run([county("a", "Thunderstorm", 4, [0, 0, 1, 1]), county("b", "Thunderstorm", 2, [1, 0, 2, 1])]);
+  it("NEVER fuses different severities — a red area must not be painted amber", async () => {
+    const out = await run([county("a", "Thunderstorm", 4, [0, 0, 1, 1]), county("b", "Thunderstorm", 2, [1, 0, 2, 1])]);
 
     expect(out).toHaveLength(2);
     expect(out.map((b) => b.severityRank).sort()).toEqual([2, 4]);
   });
 
-  it("never fuses different hazards", () => {
-    const out = run([county("a", "Thunderstorm", 3, [0, 0, 1, 1]), county("b", "Flood", 3, [1, 0, 2, 1])]);
+  it("never fuses different hazards", async () => {
+    const out = await run([county("a", "Thunderstorm", 3, [0, 0, 1, 1]), county("b", "Flood", 3, [1, 0, 2, 1])]);
 
     expect(out).toHaveLength(2);
   });
 
-  it("tolerates a hair of rounding between two sources' borders", () => {
+  it("tolerates a hair of rounding between two sources' borders", async () => {
     // b starts a whisker past a's edge; without tolerance they'd stay separate.
-    const out = run([county("a", "Thunderstorm", 3, [0, 0, 1, 1]), county("b", "Thunderstorm", 3, [1.001, 0, 2, 1])]);
+    const out = await run([county("a", "Thunderstorm", 3, [0, 0, 1, 1]), county("b", "Thunderstorm", 3, [1.001, 0, 2, 1])]);
 
     expect(out).toHaveLength(1);
   });
 
-  it("emits a MultiPolygon when a cluster genuinely has separate parts", () => {
+  it("emits a MultiPolygon when a cluster genuinely has separate parts", async () => {
     // Two islands close enough to share a bucket but not to touch.
-    const out = run([county("a", "Thunderstorm", 3, [0, 0, 1, 1]), county("b", "Thunderstorm", 3, [1.01, 0, 2, 1])]);
+    const out = await run([county("a", "Thunderstorm", 3, [0, 0, 1, 1]), county("b", "Thunderstorm", 3, [1.01, 0, 2, 1])]);
     expect(out[0].geometry.type).toBe("MultiPolygon");
   });
 
-  it("ignores areas with no geometry instead of throwing", () => {
+  it("ignores areas with no geometry instead of throwing", async () => {
     const bare = county("x", "Thunderstorm", 3, [0, 0, 1, 1]);
     bare.info[0].area[0].geometry = null;
 
-    expect(run([bare])).toEqual([]);
+    expect(await run([bare])).toEqual([]);
   });
 
-  it("handles an empty input", () => {
-    expect(run([])).toEqual([]);
+  it("handles an empty input", async () => {
+    expect(await run([])).toEqual([]);
+  });
+
+  /**
+   * polygon-clipping is synchronous, so a big hazard is minutes of unbroken CPU
+   * in a worker that runs ten other jobs. Holding the loop that long starves
+   * BullMQ's lock-renewal timer and it drops the locks on all of them — a busy
+   * job is indistinguishable from a dead one. So the dissolve must surface.
+   */
+  describe("yielding", () => {
+    const counties = (n: number) =>
+      Array.from({ length: n }, (_, i) => county(`c${i}`, "Thunderstorm", 3, [i * 10, 0, i * 10 + 1, 1]));
+
+    it("hands the event loop back as it works", async () => {
+      let yields = 0;
+      await dissolveAlerts(counties(50), {
+        hazardOf,
+        yield: async () => void yields++,
+        yieldEvery: 10,
+      });
+
+      expect(yields).toBe(5);
+    });
+
+    it("does not yield mid-union — only between areas", async () => {
+      // A yield inside a union would leave a half-built shape visible.
+      let yields = 0;
+      const out = await dissolveAlerts(counties(4), {
+        hazardOf,
+        yield: async () => void yields++,
+        yieldEvery: 100,
+      });
+
+      expect(yields).toBe(0);
+      expect(out.blobs).toHaveLength(4);
+    });
+
+    it("yields on a schedule that spans buckets, not per bucket", async () => {
+      // Ten one-alert hazards must still breathe; per-bucket yields alone left
+      // the 750-alert hazards blocking for minutes.
+      let yields = 0;
+      await dissolveAlerts(
+        Array.from({ length: 10 }, (_, i) => county(`c${i}`, `Hazard${i}`, 3, [i * 10, 0, i * 10 + 1, 1])),
+        { hazardOf, yield: async () => void yields++, yieldEvery: 2 },
+      );
+
+      expect(yields).toBe(5);
+    });
   });
 
   /**
@@ -117,8 +165,8 @@ describe("dissolveAlerts", () => {
         ? [(g.coordinates as Ring[])[0]]
         : (g.coordinates as Ring[][]).map((poly) => poly[0]);
 
-    it("winds a dissolved shape's outer ring counter-clockwise", () => {
-      const out = run([
+    it("winds a dissolved shape's outer ring counter-clockwise", async () => {
+      const out = await run([
         county("a", "Thunderstorm", 3, [0, 0, 1, 1]),
         county("b", "Thunderstorm", 3, [1, 0, 2, 1]),
       ]);
@@ -126,8 +174,8 @@ describe("dissolveAlerts", () => {
       for (const ring of outerRings(out[0].geometry)) expect(signedArea(ring)).toBeGreaterThan(0);
     });
 
-    it("winds every part of a MultiPolygon, not just the first", () => {
-      const out = run([
+    it("winds every part of a MultiPolygon, not just the first", async () => {
+      const out = await run([
         county("a", "Thunderstorm", 3, [0, 0, 1, 1]),
         county("b", "Thunderstorm", 3, [1.01, 0, 2, 1]),
       ]);
@@ -137,7 +185,7 @@ describe("dissolveAlerts", () => {
       for (const ring of rings) expect(signedArea(ring)).toBeGreaterThan(0);
     });
 
-    it("winds correctly even when the source counties were clockwise", () => {
+    it("winds correctly even when the source counties were clockwise", async () => {
       // Sources disagree on winding; a blob must come out right regardless.
       const a = county("a", "Thunderstorm", 3, [0, 0, 1, 1]);
       const b = county("b", "Thunderstorm", 3, [1, 0, 2, 1]);
@@ -145,7 +193,7 @@ describe("dissolveAlerts", () => {
         c.info[0].area[0].geometry!.coordinates[0].reverse();
       }
 
-      const out = run([a, b]);
+      const out = await run([a, b]);
 
       expect(out).toHaveLength(1);
       for (const ring of outerRings(out[0].geometry)) expect(signedArea(ring)).toBeGreaterThan(0);

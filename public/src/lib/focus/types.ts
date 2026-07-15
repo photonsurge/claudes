@@ -44,6 +44,9 @@ import type { SeismoStationReading } from "../seismo/types";
 import type { TideStationReading } from "../tides/types";
 import type { DepthProfilePoint } from "../depthProfile";
 import type { AlertFeature } from "../alerts";
+import type { AlertBlobSummary } from "@photonsurge/shared/db/alert-blob-repo";
+import type { iBlobCity } from "@photonsurge/shared/db/alert-blob-model";
+import type { iCityWeatherDay, iCityWeatherNow } from "@photonsurge/shared/db/city-weather-model";
 import type { PlaceRoundup } from "../placeRoundups";
 
 /** How much depth to compose. `broadcast` = the lean slice the on-air panels
@@ -72,6 +75,31 @@ export type FocusTarget =
   | null;
 
 /** A city with its climate baked in — kills the per-row `useClimateYear` N+1. */
+/**
+ * A city under a dissolved warning shape, with what the weather is doing there.
+ *
+ * The geography is baked by the worker onto the blob; the conditions are joined
+ * at compose time from the hourly `cityWeather` cache — a blob is rebuilt on its
+ * own schedule, so anything weather-shaped baked into it would go stale.
+ *
+ * `current`/`daily` are absent for cities below the cache's population floor
+ * (100k), which is most of them. A caption must handle a nameless-number city:
+ * missing conditions is the normal case, not an error.
+ */
+export interface FocusBlobCity extends iBlobCity {
+  current?: iCityWeatherNow;
+  /** Next 3 days, hi/lo/rain/gust. */
+  daily?: iCityWeatherDay[];
+}
+
+/** A dissolved warning shape for this view — hazard, extent, and who's under it. */
+export interface FocusAlertBlob extends Omit<AlertBlobSummary, "cities"> {
+  /** Cities inside BOTH the shape and the view, biggest first. */
+  cities: FocusBlobCity[];
+  /** How many of `cities` came back with cached conditions. */
+  citiesWithConditions: number;
+}
+
 export interface FocusCity {
   city: City;
   climate: ClimateBucketedDataset[];
@@ -173,6 +201,18 @@ export interface FocusBundle {
   /** Cross-source metric series for the event (deep-GDACS score/severity/population…). */
   eventSeries: iEventSeries[];
   areaAlerts: AlertFeature[];
+  /**
+   * The dissolved warning shapes over this view — one per hazard+severity rather
+   * than one per county — each naming the cities under it.
+   *
+   * The companion to `areaAlerts`, not a replacement: `areaAlerts` is still the
+   * per-warning truth a panel lists, while a blob answers "what weather is over
+   * this place, and who's in it" without the caller unioning 550 Polish counties
+   * or running a point-in-polygon to find the towns. Carries NO geometry, for the
+   * same reason `areaAlerts` drops its coordinates — the globe draws shapes from
+   * its own overlay feed.
+   */
+  areaBlobs: FocusAlertBlob[];
   areaQuakes: Quake[];
   areaVolcanoes: Volcano[];
 
