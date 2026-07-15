@@ -121,14 +121,25 @@ MeteoAlarm issues **one alert per county** (546 live for Poland), each a small
 polygon. On a globe that reads as confetti; it should read as a few weather
 blobs. Dissolve neighbouring areas sharing (hazard, severity) into one geometry.
 
-- Needs a polygon-union library — **none is installed today**. `polygon-clipping`
-  is the tight choice (union/dissolve only, small); turf is heavier than needed.
-- **Worker-side, precomputed and cached** — unioning hundreds of polygons per
-  request is exactly the class of work `alertGroups` avoids by using bbox overlap
-  ("too heavy for thousands of alerts in the browser").
+- **The union library goes in `worker/package.json` ONLY — never in `public`.**
+  All the work happens in the worker: it dissolves the polygons, writes the
+  merged shape to Mongo, and `public` just draws the cached geometry. Public
+  gains no dependency and does no clipping, exactly as sharp is worker-only and
+  public merely `<img>`s the media route. `polygon-clipping` is the tight choice
+  (union/dissolve only, small); turf is heavier than needed.
+- Precomputed and cached, never per-request — unioning hundreds of polygons on
+  read is exactly the class of work `alertGroups` avoids by using bbox overlap
+  ("too heavy for thousands of alerts in the browser"). Nothing about this
+  belongs on the read path.
 - Natural key: the Phase-1 group + (hazard, severity). Store the dissolved shape
   alongside the group; the overlay draws the dissolved shape and keeps the member
   alerts for the panel/timeline.
+- **This is a memory win, not a cost.** Done in the worker, it replaces 546 Polish
+  county polygons with a handful of blobs, so `public` reads, parses and draws far
+  fewer vertices per cut. That is the same lever as projecting coordinates out of
+  the Mongo read (`alertsToFeaturesNoGeom`, added after a whole-planet WMO polygon
+  OOM'd the app) — fewer vertices on the read path. Judge Phase 3 on that, not
+  just on looks.
 - Open question to settle with a spike: whether to dissolve only *touching*
   polygons (true adjacency) or any same-hazard cluster within a distance. County
   polygons from EMMA share edges, so a plain union should snap cleanly — verify
