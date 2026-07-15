@@ -220,21 +220,29 @@ export async function fetchCountryPage(cc: string, page: number, now = new Date(
 }
 
 /**
- * Every feature for a country, following pagination.
+ * Every feature for a country, newest pages FIRST.
  *
- * Page walks are quota too: 39 countries deep-paginating would spend the hour
- * before a single boundary is resolved. Cap the depth — a page is 100 features
- * and they collapse to a handful of distinct EMMA areas anyway, so the tail
- * pages buy almost nothing. Stops early once the quota runs low.
+ * Page walks cost quota too — 39 countries deep-paginating would spend the hour
+ * before a single boundary is resolved — so we only read a few pages per country.
+ * That makes the DIRECTION critical: the feed is sorted OLDEST-FIRST (verified —
+ * Poland's page 1 was 22:01 yesterday, page 7 was 12:04 today), so reading from
+ * the front returns the same ancient alerts every run, which the ledger has long
+ * since resolved. The cache stalls and never sees a new area again.
+ *
+ * So walk BACKWARDS from the last page: that's where newly issued alerts land,
+ * and new alerts are the only source of EMMA areas we don't already have.
  */
 export async function fetchCountryFeatures(cc: string, now = new Date()): Promise<EdrFeature[]> {
+  // Page 1 is the cheapest way to learn how many there are; keep its features
+  // (usually all seen, but the ledger skips them for free).
   const first = await fetchCountryPage(cc, 1, now);
   const out = [...first.features];
-  const maxPages = Number(process.env.METEOGATE_MAX_PAGES || 2);
-  for (let p = 2; p <= Math.min(first.totalPages, maxPages); p++) {
+  const maxPages = Number(process.env.METEOGATE_MAX_PAGES || 3);
+
+  for (let p = first.totalPages, read = 1; p > 1 && read < maxPages; p--, read++) {
     if (quotaLow()) break;
-    const next = await fetchCountryPage(cc, p, now);
-    out.push(...next.features);
+    const page = await fetchCountryPage(cc, p, now);
+    out.push(...page.features);
   }
   return out;
 }

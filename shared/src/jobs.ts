@@ -374,7 +374,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "alertGeom",
     type: "alertGeom",
     event: "refresh",
-    group: "Static datasets",
+    group: "Alerts & events",
   },
   {
     id: "alert-blobs-rebuild",
@@ -384,7 +384,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "alertBlobs",
     type: "alertBlobs",
     event: "refresh",
-    group: "Alerts",
+    group: "Alerts & events",
   },
   {
     id: "alert-capid-sync",
@@ -394,7 +394,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "alertCapId",
     type: "alertCapId",
     event: "refresh",
-    group: "Static datasets",
+    group: "Alerts & events",
   },
   {
     id: "elevation-bake",

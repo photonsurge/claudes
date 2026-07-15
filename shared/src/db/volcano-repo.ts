@@ -56,6 +56,7 @@ const strip = (doc: any): Volcano => ({
   primaryPhotoUrl: doc.primaryPhotoUrl || undefined,
   primaryPhotoCaption: doc.primaryPhotoCaption || undefined,
   primaryPhotoCredit: doc.primaryPhotoCredit || undefined,
+  searchOverride: doc.searchOverride || undefined,
   wikiTitle: doc.wikiTitle || undefined,
   wikiThumb: doc.wikiThumb || undefined,
   wikiPhoto: doc.wikiPhoto || undefined,
@@ -474,6 +475,26 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
     /** Operator opt-in for the historical camera archive (P7 §7.11). */
     async setArchiveEnabled(volcanoId: string, enabled: boolean): Promise<boolean> {
       const res = await model.updateOne({ volcanoId }, { $set: { archiveEnabled: enabled } }).exec();
+      return (res.matchedCount ?? 0) > 0;
+    },
+
+    /**
+     * Operator-set Wikipedia search term for one volcano (empty/undefined clears
+     * it, restoring the name-derived guesses). Clears `wikiFetchedAt` so the next
+     * enrich pass re-queries with the new term instead of waiting out the 30-day
+     * staleness gate — otherwise setting an override would look like it did
+     * nothing for a month. Returns false when there's no such volcano.
+     */
+    async setSearchOverride(volcanoId: string, term: string | undefined): Promise<boolean> {
+      const trimmed = term?.trim();
+      const res = await model
+        .updateOne(
+          { volcanoId },
+          trimmed
+            ? { $set: { searchOverride: trimmed }, $unset: { wikiFetchedAt: "" } }
+            : { $unset: { searchOverride: "", wikiFetchedAt: "" } },
+        )
+        .exec();
       return (res.matchedCount ?? 0) > 0;
     },
 

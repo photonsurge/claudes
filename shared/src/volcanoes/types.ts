@@ -67,6 +67,12 @@ export interface Volcano {
   primaryPhotoUrl?: string;
   primaryPhotoCaption?: string;
   primaryPhotoCredit?: string;
+  /**
+   * Operator-set Wikipedia search term, used INSTEAD of the name-derived guesses
+   * when enriching. Set on /admin/volcanoes/:id for the volcanoes whose GVP name
+   * doesn't resolve to the right article.
+   */
+  searchOverride?: string;
   /** Wikipedia enrichment (see worker/src/jobs/volcanoes.ts#enrichWiki) — absent until the enrich job has run. */
   wikiTitle?: string;
   wikiThumb?: string;

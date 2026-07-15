@@ -75,6 +75,14 @@ export interface iVolcano extends iGeneralModel {
   primaryPhotoUrl?: string;
   primaryPhotoCaption?: string;
   primaryPhotoCredit?: string;
+  /**
+   * Operator-set Wikipedia search term, used INSTEAD of the name-derived
+   * candidates when enriching (see worker/src/jobs/volcanoes.ts#titleCandidates).
+   * For the volcanoes whose GVP name doesn't resolve to the right article — a
+   * name shared with a town, an article filed under a local spelling. Set it on
+   * /admin/volcanoes/:id; clearing it restores the derived guesses.
+   */
+  searchOverride?: string;
   /** Wikipedia enrichment (see worker/src/jobs/volcanoes.ts#enrichWiki). */
   wikiTitle?: string;
   wikiThumb?: string;
@@ -148,6 +156,7 @@ export const VolcanoSchema = new mongoose.Schema<iVolcanoModel>(
     primaryPhotoUrl: { type: String, required: false },
     primaryPhotoCaption: { type: String, required: false },
     primaryPhotoCredit: { type: String, required: false },
+    searchOverride: { type: String, required: false },
     wikiTitle: { type: String, required: false },
     wikiThumb: { type: String, required: false },
     wikiPhoto: { type: String, required: false },
