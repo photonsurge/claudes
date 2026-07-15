@@ -6,11 +6,18 @@ import type { HazardType } from "./hazard";
 /**
  * Multi-source grouping: cluster alerts that describe the SAME event across
  * different sources, so the list shows one row that references every source that
- * reported it (e.g. "WMO + MeteoAlarm"). Match rule (operator-chosen): same
- * hazard category AND overlapping footprint. True polygon intersection is too
- * heavy for thousands of alerts in the browser, so we use bounding-box overlap
- * as the proxy — cheap and a good approximation for "same area". Alerts without
- * geometry can't be geo-matched, so each becomes its own group.
+ * reported it (e.g. "WMO + MeteoAlarm").
+ *
+ * Two match rules, strongest first:
+ *
+ * 1. **Same `capId` — exact.** WMO republishes the very national CAP message
+ *    MeteoAlarm/NWS publish, so a shared canonical CAP identifier means it is
+ *    literally one warning. No geometry or hazard reasoning can beat that.
+ * 2. **Same hazard + overlapping footprint** — the fallback for everything with
+ *    no capId (GDACS; WMO alerts not yet resolved; ~20% of WMO alerts whose CAP
+ *    XML carries no identifier at all). True polygon intersection is too heavy
+ *    for thousands of alerts, so bbox overlap is the proxy. Alerts without
+ *    geometry can't be geo-matched, so each becomes its own group.
  */
 export interface AlertGroup {
   id: string;
@@ -67,6 +74,95 @@ const sentMs = (a: Alert): number => {
   return Number.isFinite(t) ? t : 0;
 };
 
+/** Does this alert have anything to draw? */
+const hasGeom = (a: Alert): boolean =>
+  (a.info ?? []).some((i) =>
+    (i.area ?? []).some((ar) => !!(ar.geometry as { coordinates?: unknown } | null)?.coordinates),
+  );
+
+/**
+ * Order members so `members[0]` is the right representative.
+ *
+ * **Geometry first, and that is load-bearing.** The overlay draws ONLY
+ * representatives (`!a.groupId || a.id === a.groupId`), so electing a
+ * geometry-less member would erase the whole group from the globe. That could
+ * never happen while grouping was bbox-only — a null-bbox alert was always a
+ * singleton — but exact capId merging puts a shapeless MeteoAlarm alert and a
+ * WMO one with a polygon in the SAME group, so the guard is now essential.
+ * Severity then recency decide among members that can all be drawn.
+ */
+const byRepresentative = (x: Alert, y: Alert): number =>
+  Number(hasGeom(y)) - Number(hasGeom(x)) || sevOf(y) - sevOf(x) || sentMs(y) - sentMs(x);
+
+/**
+ * Merge groups whose members share a canonical CAP id.
+ *
+ * Runs AFTER the hazard/bbox pass rather than inside it, because a capId match
+ * outranks both: the two copies can land in different hazard buckets (each source
+ * words the event its own way) and one may have no footprint to overlap at all.
+ * Union-find over group indices keeps a three-way pile-up (WMO + MeteoAlarm + NWS)
+ * in one group.
+ */
+function mergeByCapId(groups: AlertGroup[]): AlertGroup[] {
+  const byCapId = new Map<string, number[]>();
+  groups.forEach((g, i) => {
+    for (const m of g.members) {
+      if (!m.capId) continue;
+      const arr = byCapId.get(m.capId);
+      if (arr) arr.push(i);
+      else byCapId.set(m.capId, [i]);
+    }
+  });
+  if (!byCapId.size) return groups;
+
+  const parent = groups.map((_, i) => i);
+  const find = (i: number): number => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]];
+      i = parent[i];
+    }
+    return i;
+  };
+  let merged = false;
+  for (const idxs of byCapId.values()) {
+    for (let k = 1; k < idxs.length; k++) {
+      const ri = find(idxs[0]);
+      const rj = find(idxs[k]);
+      if (ri !== rj) {
+        parent[ri] = rj;
+        merged = true;
+      }
+    }
+  }
+  if (!merged) return groups;
+
+  const out = new Map<number, Alert[]>();
+  groups.forEach((g, i) => {
+    const root = find(i);
+    const arr = out.get(root);
+    if (arr) arr.push(...g.members);
+    else out.set(root, [...g.members]);
+  });
+  return [...out.values()].map(toGroup);
+}
+
+/** Build a group from its members, electing the representative. */
+function toGroup(members: Alert[]): AlertGroup {
+  members.sort(byRepresentative);
+  const representative = members[0];
+  return {
+    id: representative.id,
+    hazard: alertHazard(representative),
+    members,
+    sources: Array.from(new Set(members.map((m) => m.source))).sort(),
+    maxSeverityRank: members.reduce<SeverityRank>(
+      (m, x) => (x.maxSeverityRank > m ? x.maxSeverityRank : m),
+      0 as SeverityRank,
+    ),
+    representative,
+  };
+}
+
 /**
  * Group alerts by (hazard + overlapping footprint). Within each hazard bucket we
  * union members whose bboxes overlap (union-find). Returns groups sorted by max
@@ -116,24 +212,14 @@ export function groupAlerts(alerts: Alert[]): AlertGroup[] {
     });
 
     for (const [, members] of clusters) {
-      members.sort((x, y) => sevOf(y) - sevOf(x) || sentMs(y) - sentMs(x));
-      const representative = members[0];
-      groups.push({
-        id: representative.id,
-        hazard,
-        members,
-        sources: Array.from(new Set(members.map((m) => m.source))).sort(),
-        maxSeverityRank: members.reduce<SeverityRank>(
-          (m, x) => (x.maxSeverityRank > m ? x.maxSeverityRank : m),
-          0 as SeverityRank,
-        ),
-        representative,
-      });
+      groups.push({ ...toGroup(members), hazard });
     }
   }
 
-  groups.sort((a, b) => b.maxSeverityRank - a.maxSeverityRank || sentMs(b.representative) - sentMs(a.representative));
-  return groups;
+  // Exact capId matches override everything the geometry pass decided.
+  const out = mergeByCapId(groups);
+  out.sort((a, b) => b.maxSeverityRank - a.maxSeverityRank || sentMs(b.representative) - sentMs(a.representative));
+  return out;
 }
 
 /**
@@ -151,16 +237,12 @@ export function bucketByGroupId(alerts: Alert[]): AlertGroup[] {
   }
   const groups: AlertGroup[] = [];
   for (const [, members] of buckets) {
-    members.sort((x, y) => sevOf(y) - sevOf(x) || sentMs(y) - sentMs(x));
-    const representative = members[0];
+    const g = toGroup(members);
     groups.push({
-      id: representative.groupId ?? representative.id,
-      hazard: alertHazard(representative),
-      members,
+      ...g,
+      id: g.representative.groupId ?? g.representative.id,
       // Prefer the server's full source set (survives client-side filtering).
       sources: Array.from(new Set(members.flatMap((m) => m.groupSources ?? [m.source]))).sort(),
-      maxSeverityRank: members.reduce<SeverityRank>((m, x) => (x.maxSeverityRank > m ? x.maxSeverityRank : m), 0 as SeverityRank),
-      representative,
     });
   }
   groups.sort((a, b) => b.maxSeverityRank - a.maxSeverityRank || sentMs(b.representative) - sentMs(a.representative));

@@ -79,9 +79,16 @@ export interface Alert {
   expiresAt?: string;
   info: AlertInfo[];
   /**
-   * Cross-source cluster id (server-assigned: same hazard + overlapping
-   * footprint). The cluster's representative has `id === groupId`. Absent when
-   * the API didn't group.
+   * The canonical national CAP identifier this alert reports — the EXACT key that
+   * links the same warning arriving from two sources (WMO republishes the very
+   * message MeteoAlarm/NWS publish). Absent for GDACS, and for WMO alerts whose
+   * capurl isn't resolved yet. See docs/alert-dedup-merge-plan.md.
+   */
+  capId?: string;
+  /**
+   * Cross-source cluster id (server-assigned). Exact when members share a
+   * `capId`; otherwise same hazard + overlapping footprint. The cluster's
+   * representative has `id === groupId`. Absent when the API didn't group.
    */
   groupId?: string;
   /** All sources that reported this clustered event (server-assigned). */
