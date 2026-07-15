@@ -114,7 +114,14 @@ export interface iAlertModel extends iAlert {
 const AlertAreaSchema = new mongoose.Schema<iAlertArea>(
   {
     areaDesc: { type: String, required: true, default: "" },
-    geometry: { type: mongoose.Schema.Types.Mixed, required: false, default: null },
+    // NO `default: null`. The 2dsphere index below is sparse per DOC, not per array
+    // element: the moment ONE area has a geometry, Mongo indexes the doc and reads
+    // every element, and an explicit `geometry: null` sibling rejects the whole
+    // write ("geo element must be an array or object"). A MISSING field is skipped
+    // happily. Partly-resolved alerts are now the norm (a Spanish alert has ~100
+    // areas and the boundary cache fills a few at a time), so unresolved areas must
+    // carry no geometry key at all rather than a null one.
+    geometry: { type: mongoose.Schema.Types.Mixed, required: false },
     geocodes: {
       type: [
         new mongoose.Schema(

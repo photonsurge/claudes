@@ -64,7 +64,9 @@ describe("enrichAreaGeometry", () => {
 
     const res = await enrichAreaGeometry([alert], db);
 
-    expect(alert.info[0].area[0].geometry).toBeNull();
+    // Left undrawable, and the null is dropped rather than kept (see the
+    // "partial alerts must stay indexable" cases below).
+    expect(alert.info[0].area[0].geometry).toBeUndefined();
     expect(res).toMatchObject({ filled: 0, unresolved: 1 });
   });
 
@@ -97,5 +99,38 @@ describe("enrichAreaGeometry", () => {
 
     await enrichAreaGeometry([alert], db);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("enrichAreaGeometry — partial alerts must stay indexable", () => {
+  it("drops the null geometry of areas it could not resolve", async () => {
+    // A Spanish alert has ~100 areas and the cache fills a few at a time. Mongo's
+    // 2dsphere is sparse per DOC: once ONE area has a geometry the doc is indexed
+    // and every element is read, so a sibling `geometry: null` rejects the write —
+    // ingest then strips ALL geometry and we lose the one we just resolved.
+    const { db } = fakeDb({ PL1: { geometry: POLY, precision: "exact" } });
+    const alert = alertWith([
+      { areaDesc: "resolved", geometry: null, geocodes: [{ valueName: "EMMA_ID", value: "PL1" }] },
+      { areaDesc: "not yet", geometry: null, geocodes: [{ valueName: "EMMA_ID", value: "PL2" }] },
+    ]);
+
+    await enrichAreaGeometry([alert], db);
+
+    expect(alert.info[0].area[0].geometry).toEqual(POLY);
+    // Absent, NOT null — that's the whole point.
+    expect("geometry" in alert.info[0].area[1]).toBe(false);
+  });
+
+  it("leaves a source's own geometry alone while dropping nulls beside it", async () => {
+    const { db } = fakeDb({});
+    const alert = alertWith([
+      { areaDesc: "has its own", geometry: OWN, geocodes: [] },
+      { areaDesc: "none", geometry: null, geocodes: [{ valueName: "EMMA_ID", value: "PL9" }] },
+    ]);
+
+    await enrichAreaGeometry([alert], db);
+
+    expect(alert.info[0].area[0].geometry).toEqual(OWN);
+    expect("geometry" in alert.info[0].area[1]).toBe(false);
   });
 });

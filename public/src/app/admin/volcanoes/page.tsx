@@ -13,7 +13,7 @@ export default function VolcanoesPage() {
   return (
     <AdminPageShell
       title="Volcanoes"
-      description="Active volcanoes (Smithsonian/USGS weekly report) — status, alerts, timeline and Wikipedia enrichment."
+      description="The full Smithsonian GVP volcano catalog — status, alerts, eruption history, timeline and enrichment. Only a few dozen are erupting or in unrest at any time; the rest are dormant and kept for their stats."
     >
       <VolcanoesTable />
     </AdminPageShell>

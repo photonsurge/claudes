@@ -58,11 +58,68 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
      * Only ever fills an EMPTY area (`geometry: null` in the arrayFilter): a
      * source that shipped its own polygon keeps it.
      */
+    /**
+     * Delete `geometry: null` from every area of every active alert.
+     *
+     * Mongo's 2dsphere index is sparse per DOC, not per array element: while ALL of
+     * an alert's areas are null it has no geo keys and is skipped, but the moment
+     * ONE area gets a polygon the doc is indexed, every element is read, and a
+     * sibling null rejects the whole write ("geo element must be an array or
+     * object"). A MISSING field is skipped happily — so the nulls must go before
+     * any area can be filled. Partly-resolved alerts are the norm: a Spanish alert
+     * carries ~100 areas and the boundary cache fills a few at a time.
+     *
+     * Rebuilds each area explicitly rather than `$mergeObjects`-ing a `$$REMOVE`
+     * over it — inside `$mergeObjects` a `$$REMOVE` field collapses the literal to
+     * `{}`, which merges to nothing and silently KEEPS the null.
+     */
+    async dropNullGeometries(): Promise<number> {
+      const r = await model.updateMany({ active: true, "info.area.geometry": null }, [
+        {
+          $set: {
+            info: {
+              $map: {
+                input: "$info",
+                as: "i",
+                in: {
+                  $mergeObjects: [
+                    "$$i",
+                    {
+                      area: {
+                        $map: {
+                          input: "$$i.area",
+                          as: "a",
+                          in: {
+                            areaDesc: "$$a.areaDesc",
+                            geocodes: "$$a.geocodes",
+                            geometry: {
+                              $cond: [
+                                { $eq: [{ $ifNull: ["$$a.geometry", null] }, null] },
+                                "$$REMOVE",
+                                "$$a.geometry",
+                              ],
+                            },
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      ]);
+      return r.modifiedCount ?? 0;
+    },
+
     async backfillAreaGeometry(emmaId: string, geometry: unknown): Promise<number> {
       const match = { $elemMatch: { valueName: "EMMA_ID", value: emmaId } };
       const r = await model.updateMany(
         { active: true, "info.area.geocodes": match },
         { $set: { "info.$[].area.$[a].geometry": geometry } },
+        // `"a.geometry": null` matches a MISSING field too, so this fills only the
+        // areas that have nothing yet — a source's own polygon is never touched.
         { arrayFilters: [{ "a.geocodes": match, "a.geometry": null }] },
       );
       return r.modifiedCount ?? 0;
@@ -97,7 +154,9 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       const r = await model.bulkWrite(
         rows.map(({ capurl, capId }) => ({
           updateOne: {
-            filter: { source: "wmo", identifier: capurl, capId: { $in: [null, undefined] } },
+            // Active only — an expired alert will never go on air, so stamping it
+            // is pure write cost.
+            filter: { source: "wmo", active: true, identifier: capurl, capId: { $in: [null, undefined] } },
             update: { $set: { capId } },
           },
         })),

@@ -45,11 +45,10 @@ export async function enrichAreaGeometry(alerts: iAlert[], db: AppDb): Promise<G
   }
   if (!wanted.length) return res;
 
+  // No early-out on an empty cache: even with nothing to fill we must still drop
+  // null geometries, because an area that came WITH a polygon makes the doc
+  // indexable and a null sibling would then reject the write.
   const cache = await db.alertAreaGeom.byEmmaIds(wanted);
-  if (!cache.size) {
-    res.unresolved = wanted.length;
-    return res;
-  }
 
   for (const a of alerts) {
     for (const info of a.info ?? []) {
@@ -59,6 +58,13 @@ export async function enrichAreaGeometry(alerts: iAlert[], db: AppDb): Promise<G
         const hit = emma ? cache.get(emma) : undefined;
         if (!hit) {
           if (emma) res.unresolved++;
+          // Drop the null rather than leave it: Mongo's sparse 2dsphere is sparse
+          // per DOC, so once a SIBLING area gets a geometry the whole doc is
+          // indexed and an explicit null here rejects the write — which would send
+          // ingest down the strip-everything fallback and lose the geometry we DID
+          // resolve. A missing field indexes fine. Partly-resolved alerts are the
+          // norm: a Spanish alert has ~100 areas and the cache fills a few at a time.
+          delete area.geometry;
           continue;
         }
         area.geometry = hit.geometry;

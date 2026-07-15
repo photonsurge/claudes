@@ -1095,7 +1095,10 @@ export async function snapshotCams(_job: Job) {
     let failed = 0;
     for (const ev of events) {
       if (!ev.id) continue;
-      const cams = await db.cams.listForVolcano(ev.primarySourceId);
+      // ACTIVE only: a camera an operator switched off (or one the registry lost —
+      // e.g. the orphaned INGV archive-frame rows) must never be fetched. Without
+      // this the job hammers dozens of dead URLs per volcano every hour.
+      const cams = (await db.cams.listForVolcano(ev.primarySourceId)).filter((c) => c.status === "active");
       if (!cams.length) continue;
       const existing = await db.eventSnapshots.listForEvent(ev.id); // desc by capturedAt
       for (const cam of cams) {

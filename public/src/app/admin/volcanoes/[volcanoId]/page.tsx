@@ -17,7 +17,39 @@ import type { EventSnapshotMeta } from "@photonsurge/shared/db/event-snapshot-re
 import type { VolcanoMedia } from "@photonsurge/shared/volcanoes/media";
 import type { VolcanoCamera } from "@photonsurge/shared/volcanoes/media";
 import type { iVolcanoMediaSource } from "@photonsurge/shared/db/volcano-media-source-model";
+import type { VolcanoEruption } from "@photonsurge/shared/db/volcano-eruption-repo";
+import { formatGvpDate } from "@photonsurge/shared/volcanoes/gvp-wfs";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
+
+/** Render a stored eruption's fuzzy start/end for humans (BCE, "?", unknown month/day). */
+const eruptionDate = (e: VolcanoEruption, side: "start" | "end"): string => {
+  const year = side === "start" ? e.startYear : e.endYear;
+  if (year === undefined) return "—";
+  return formatGvpDate({
+    year,
+    month: side === "start" ? e.startMonth : e.endMonth,
+    day: side === "start" ? e.startDay : e.endDay,
+    precision: (side === "start" ? e.startPrecision : e.endPrecision) ?? "year",
+    modifier: side === "start" ? e.startModifier : e.endModifier,
+  });
+};
+
+/** VEI 0-7 → a colour ramp (green → red), mirroring the alert palette. */
+const VEI_COLOR = ["#64748b", "#34d399", "#a3e635", "#eab308", "#f59e0b", "#f97316", "#ef4444", "#b91c1c"];
+
+/**
+ * GVP's `StartEvidenceMethod` = HOW the eruption's start date was established, and
+ * it's only interesting for prehistoric eruptions (radiocarbon, tephrochronology,
+ * ice cores, varve counts). 6,468 of 11,089 rows — and 86% of eruptions since 1900
+ * — are just "Observations: Reported", i.e. someone watched it happen. So strip the
+ * category prefix and dim the boring case rather than repeating it down the column.
+ */
+const datedBy = (evidence?: string): { text: string; dim: boolean } => {
+  if (!evidence || evidence === "Uncertain") return { text: "—", dim: true };
+  const [category, method] = evidence.split(":").map((s) => s.trim());
+  if (category === "Observations") return { text: method === "Reported" ? "observed" : method.toLowerCase(), dim: true };
+  return { text: method ?? category, dim: false };
+};
 
 interface VolcanoDetail {
   volcano: Volcano;
@@ -28,6 +60,7 @@ interface VolcanoDetail {
   media: VolcanoMedia[];
   volcanoCameras: VolcanoCamera[];
   mediaSources: iVolcanoMediaSource[];
+  eruptions: VolcanoEruption[];
 }
 
 const snapSrc = (s: EventSnapshotMeta) => `/api/events/snapshot/${s.id}?v=${encodeURIComponent(s.capturedAt)}`;
@@ -78,6 +111,7 @@ export default function VolcanoDetailPage() {
   const [missing, setMissing] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [externalPreview, setExternalPreview] = useState<{ src: string; title: string; meta?: string } | null>(null);
+  const [busyCam, setBusyCam] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     if (!volcanoId) return;
@@ -92,6 +126,25 @@ export default function VolcanoDetailPage() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  /** Switch one camera on/off. Reuses the existing admin cam route; reloads so the
+   *  on/off counts and ordering reflect the change. */
+  const toggleCam = useCallback(
+    async (camId: string, status: "active" | "inactive") => {
+      setBusyCam(camId);
+      try {
+        await fetch(`/api/admin/cams/${encodeURIComponent(camId)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status }),
+        });
+        await reload();
+      } finally {
+        setBusyCam(null);
+      }
+    },
+    [reload],
+  );
 
   useEffect(() => {
     if (lightboxIndex == null && !externalPreview) return;
@@ -119,6 +172,12 @@ export default function VolcanoDetailPage() {
 
   const { volcano: v, timeline, cams } = detail;
   const snapshots = detail.snapshots ?? [];
+  const eruptions = detail.eruptions ?? [];
+  const camsOn = (cams ?? []).filter((c) => c.status === "active");
+  const camsOff = (cams ?? []).filter((c) => c.status !== "active");
+  const veiKnown = eruptions.filter((e) => e.vei !== undefined);
+  const largestVei = veiKnown.length ? Math.max(...veiKnown.map((e) => e.vei!)) : undefined;
+  const since1900 = eruptions.filter((e) => e.startYear >= 1900).length;
   const timelapses = snapshots.filter((s) => s.kind === "render");
   const capturedFrames = snapshots.filter((s) => s.kind === "camera").slice(0, 24);
   const media = detail.media ?? [];
@@ -272,32 +331,69 @@ export default function VolcanoDetailPage() {
         </div>
       )}
 
-      {/* Official monitoring cameras (GeoNet) — live latest still. */}
+      {/* Official monitoring cameras — live latest still, each with an ON/OFF
+          switch. "Some aren't great": a bad angle is a per-CAMERA judgement, so the
+          toggle lives here. Switching one off stops it being captured, put on air,
+          or counted — nothing auto-disables it back on, and nothing auto-decides
+          quality for you. Active cameras sort first; anything the registry lost
+          (the orphaned INGV archive rows) shows as OFF and can be purged wholesale
+          from /admin/jobs → "Purge orphaned volcano cameras". */}
       {cams && cams.length > 0 && (
         <div style={{ ...card, marginTop: 14 }}>
-          <div style={cardLabel}>Cameras ({cams.length})</div>
+          <div style={cardLabel}>
+            Cameras ({camsOn.length} on{camsOff.length > 0 && <span style={{ color: "#5b6478" }}> · {camsOff.length} off</span>})
+          </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10 }}>
-            {cams.map((c) => (
-              <button
-                key={c.camId}
-                type="button"
-                onClick={() => c.imageUrl && setExternalPreview({ src: c.imageUrl, title: c.title, meta: c.attribution?.provider })}
-                style={{ display: "block", width: 220, color: "inherit", textAlign: "left", padding: 0, border: 0, background: "transparent", cursor: c.imageUrl ? "zoom-in" : "default" }}
-              >
-                {c.imageUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={c.imageUrl}
-                    alt={c.title}
-                    style={{ width: 220, height: 138, objectFit: "cover", borderRadius: 6, border: "1px solid #1b2030", background: "#070a11" }}
-                  />
-                )}
-                <div style={{ color: "#cbd5e1", fontSize: 12, marginTop: 4 }}>{c.title}</div>
-                {c.attribution?.provider && (
-                  <div style={{ color: "#5b6478", fontSize: 11 }}>{c.attribution.provider}</div>
-                )}
-              </button>
-            ))}
+            {[...camsOn, ...camsOff].map((c) => {
+              const on = c.status === "active";
+              return (
+                <div key={c.camId} style={{ width: 220, opacity: on ? 1 : 0.42 }}>
+                  <button
+                    type="button"
+                    onClick={() => c.imageUrl && setExternalPreview({ src: c.imageUrl, title: c.title, meta: c.attribution?.provider })}
+                    style={{ display: "block", width: 220, color: "inherit", textAlign: "left", padding: 0, border: 0, background: "transparent", cursor: c.imageUrl ? "zoom-in" : "default" }}
+                  >
+                    {c.imageUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={c.imageUrl}
+                        alt={c.title}
+                        style={{
+                          width: 220,
+                          height: 138,
+                          objectFit: "cover",
+                          borderRadius: 6,
+                          border: `1px solid ${on ? "#1b2030" : "#3a2020"}`,
+                          background: "#070a11",
+                          filter: on ? undefined : "grayscale(1)",
+                        }}
+                      />
+                    )}
+                    <div style={{ color: "#cbd5e1", fontSize: 12, marginTop: 4, wordBreak: "break-all" }}>{c.title}</div>
+                    {c.attribution?.provider && (
+                      <div style={{ color: "#5b6478", fontSize: 11 }}>{c.attribution.provider}</div>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyCam === c.camId}
+                    onClick={() => toggleCam(c.camId, on ? "inactive" : "active")}
+                    style={{
+                      marginTop: 5,
+                      padding: "3px 10px",
+                      borderRadius: 5,
+                      fontSize: 11,
+                      cursor: busyCam === c.camId ? "wait" : "pointer",
+                      border: `1px solid ${on ? "#1f6f43" : "#4b5563"}`,
+                      background: on ? "#0f2d1e" : "#1a1f2b",
+                      color: on ? "#34d399" : "#8b95a7",
+                    }}
+                  >
+                    {busyCam === c.camId ? "…" : on ? "● On" : "○ Off"}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -430,6 +526,75 @@ export default function VolcanoDetailPage() {
               </div>
             </details>
           )}
+        </div>
+      )}
+
+      {/* Eruption history — a CATALOG fact, so it renders for every volcano
+          (dormant included), independent of any WatchedEvent. This is Band 2 of
+          the planned per-volcano timeline. Empty until `seedEruptions` has run. */}
+      {eruptions.length > 0 && (
+        <div style={{ ...card, marginTop: 14 }}>
+          <div style={cardLabel}>
+            Eruption history ({eruptions.length})
+          </div>
+          <div style={{ color: "#8b95a7", fontSize: 12, margin: "6px 0 10px" }}>
+            {since1900} since 1900
+            {largestVei !== undefined && <> · largest VEI {largestVei}</>}
+            {" · oldest "}
+            {eruptionDate(eruptions[eruptions.length - 1], "start")}
+          </div>
+          <div style={{ maxHeight: 420, overflowY: "auto" }}>
+            <table style={{ fontSize: 13, borderCollapse: "collapse", width: "100%" }}>
+              <thead>
+                <tr style={{ color: "#5b6478", textAlign: "left" }}>
+                  <th style={{ padding: "4px 10px 4px 0", fontWeight: 500 }}>Start</th>
+                  <th style={{ padding: "4px 10px 4px 0", fontWeight: 500 }}>End</th>
+                  <th style={{ padding: "4px 10px 4px 0", fontWeight: 500 }}>VEI</th>
+                  <th
+                    style={{ padding: "4px 10px 4px 0", fontWeight: 500 }}
+                    title="How GVP established the start date — only really meaningful for prehistoric eruptions"
+                  >
+                    Dated by
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {eruptions.map((e) => (
+                  <tr key={e.eruptionNumber} style={{ borderTop: "1px solid #121622" }}>
+                    <td style={{ padding: "5px 10px 5px 0", color: "#e2e8f0", whiteSpace: "nowrap" }}>
+                      {eruptionDate(e, "start")}
+                      {!e.confirmed && <span style={{ color: "#5b6478" }} title="Uncertain eruption"> ?</span>}
+                    </td>
+                    <td style={{ padding: "5px 10px 5px 0", color: "#8b95a7", whiteSpace: "nowrap" }}>
+                      {eruptionDate(e, "end")}
+                    </td>
+                    <td style={{ padding: "5px 10px 5px 0" }}>
+                      {e.vei !== undefined ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <span
+                            aria-hidden
+                            style={{
+                              display: "inline-block",
+                              width: Math.max(6, (e.vei + 1) * 7),
+                              height: 8,
+                              borderRadius: 2,
+                              background: VEI_COLOR[e.vei] ?? "#64748b",
+                            }}
+                          />
+                          <span style={{ color: "#cbd5e1" }}>{e.vei}</span>
+                        </span>
+                      ) : (
+                        <span style={{ color: "#5b6478" }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "5px 0", color: datedBy(e.startEvidence).dim ? "#3f4757" : "#8b95a7" }}>
+                      {datedBy(e.startEvidence).text}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

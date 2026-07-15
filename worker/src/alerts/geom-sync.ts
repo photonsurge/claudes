@@ -142,6 +142,14 @@ export async function syncAreaGeometry(
     const r = await db.alertAreaGeom.upsertAreas(areas);
     res.cached = r.upserted;
 
+    // Clear stored `geometry: null`s first, or filling ONE area of a multi-area
+    // alert makes the doc indexable and its null siblings reject the write.
+    try {
+      await db.alerts.dropNullGeometries();
+    } catch (err) {
+      res.failures.push(`drop-nulls: ${String((err as Error)?.message ?? err)}`);
+    }
+
     // Apply each boundary to alerts ALREADY stored for that area. Ingest enrich
     // only ever sees new alerts — `upsert` skips unchanged active ones — so
     // without this a live alert stays shapeless until it expires, however full

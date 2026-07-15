@@ -29,11 +29,15 @@ async function GET__impl(_req: Request, { params }: { params: Promise<{ volcanoI
     db.volcanoCameras.listForVolcano(volcanoId),
     db.volcanoMediaSources.list(),
   ]);
-  const [timeline, snapshots] = await Promise.all([
+  const [timeline, snapshots, eruptions] = await Promise.all([
     event?.id ? db.eventTimeline.listForEvent(event.id).then((u) => buildEventTimeline(event, u)) : Promise.resolve([]),
     event?.id ? db.eventSnapshots.listForEvent(event.id) : Promise.resolve([]),
+    // Eruption history is a CATALOG fact — present for EVERY volcano, promoted or
+    // not, dormant or not (unlike the timeline/snapshots, which need an event).
+    // Empty until `volcanoCatalog.seedEruptions` has run.
+    db.volcanoEruptions.listForVolcano(volcanoId),
   ]);
-  return NextResponse.json({ volcano, event: event ?? null, timeline, cams, snapshots, media, volcanoCameras, mediaSources }, { status: 200, headers: NO_CACHE });
+  return NextResponse.json({ volcano, event: event ?? null, timeline, cams, snapshots, media, volcanoCameras, mediaSources, eruptions }, { status: 200, headers: NO_CACHE });
 }
 
 // --- request logging (lib/api-log) ---
