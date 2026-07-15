@@ -46,16 +46,37 @@ export function makeAlertBlobRepo(model: Model<iAlertBlobModel>) {
     /** Swap in a freshly dissolved set. */
     async replace(blobs: AlertBlobInput[]): Promise<{ blobs: number }> {
       const builtAt = new Date();
-      // Insert first, then drop the previous generation, so a reader polling
-      // mid-rebuild sees the old shapes rather than an empty globe.
-      const inserted = blobs.length
-        ? await model.insertMany(
-            blobs.map((b) => ({ ...b, id: uuidv4(), builtAt })),
-            { ordered: false },
-          )
-        : [];
-      await model.deleteMany({ builtAt: { $lt: builtAt } });
-      return { blobs: inserted.length };
+      const n = await this.addGeneration(blobs, builtAt);
+      await this.dropOlderThan(builtAt);
+      return { blobs: n };
+    },
+
+    /**
+     * Write one instalment of a rebuild, tagged with the generation it belongs to.
+     *
+     * The rebuild streams: holding every dissolved shape until the end meant
+     * ~1.9M vertices of finished output sitting in the heap ON TOP of whatever
+     * hazard was mid-clip, and this worker shares a 4GB heap with ten other jobs
+     * — it OOM'd. Writing each hazard's shapes as they're finished keeps the
+     * job's footprint to the bucket it's actually working on.
+     */
+    async addGeneration(blobs: AlertBlobInput[], builtAt: Date): Promise<number> {
+      if (!blobs.length) return 0;
+      const docs = await model.insertMany(
+        blobs.map((b) => ({ ...b, id: uuidv4(), builtAt })),
+        { ordered: false },
+      );
+      return docs.length;
+    },
+
+    /**
+     * Retire every shape older than this rebuild. Called LAST, so a reader polling
+     * mid-rebuild always sees a complete previous generation rather than a globe
+     * that's half-empty while the new one lands.
+     */
+    async dropOlderThan(builtAt: Date): Promise<{ removed: number }> {
+      const r = await model.deleteMany({ builtAt: { $lt: builtAt } });
+      return { removed: r.deletedCount ?? 0 };
     },
 
     /** Every blob, worst hazard first — the overlay's read. */

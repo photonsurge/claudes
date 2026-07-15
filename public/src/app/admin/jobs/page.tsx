@@ -7,6 +7,9 @@
  * worker's own schedules.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Box from "@mui/material/Box";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import type { TriggerableJob } from "@photonsurge/shared/jobs";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import LogTail from "../../../components/admin/LogTail";
@@ -154,17 +157,19 @@ export default function JobsPage() {
       description="Manual triggers for worker ingest, snapshot and enrichment jobs."
       maxWidth="none"
       actions={
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
           {counts ? (
-            <span style={{ color: "#8b95a7", fontSize: 12 }}>
+            <Typography variant="caption" color="text.secondary">
               queue · active {counts.active ?? 0} · waiting {counts.waiting ?? 0} · done{" "}
               {counts.completed ?? 0} · failed {counts.failed ?? 0}
-            </span>
+            </Typography>
           ) : (
-            <span style={{ color: "#fca5a5", fontSize: 12 }}>queue unreachable (worker/Redis down?)</span>
+            <Typography variant="caption" color="error.main">
+              queue unreachable (worker/Redis down?)
+            </Typography>
           )}
           <ClearQueueMenu counts={counts} onDone={refresh} />
-        </div>
+        </Stack>
       }
     >
       <JobsToolbar
@@ -178,25 +183,34 @@ export default function JobsPage() {
       />
 
       {visible.length === 0 && jobs.length > 0 && (
-        <div style={{ color: "#5b6577", fontSize: 13, padding: "28px 0" }}>No jobs match that search.</div>
+        <Typography variant="body2" color="text.disabled" sx={{ py: 3.5 }}>
+          No jobs match that search.
+        </Typography>
       )}
 
       {/*
-        Panel spans need a media query (inline styles can't express one): below a
-        ~4-column viewport a wide span would push implicit columns off-screen, so
-        every panel drops to full width instead.
-      */}
-      <style>
-        {`.job-grid{display:grid;gap:14px;grid-auto-flow:dense;grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
-          .job-span-2{grid-column:span 2}
-          .job-span-3{grid-column:span 3}
-          .job-span-4{grid-column:span 4}
-          @media (max-width:1500px){.job-span-4{grid-column:span 3}}
-          @media (max-width:1180px){.job-span-3,.job-span-4{grid-column:span 2}}
-          @media (max-width:860px){.job-panel{grid-column:span 1}}`}
-      </style>
+        `align-items: start` so a one-job panel keeps its own height instead of
+        stretching to the tallest panel in its row, and `dense` so those small
+        panels backfill the gaps the wide ones leave.
 
-      <div className="job-grid">
+        Spans step down with the viewport: a panel spanning more columns than the
+        grid has would add implicit columns and push the page sideways.
+      */}
+      <Box
+        sx={{
+          display: "grid",
+          gap: 1.75,
+          gridAutoFlow: "dense",
+          alignItems: "start",
+          gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))",
+          "& .job-span-2": { gridColumn: "span 2" },
+          "& .job-span-3": { gridColumn: "span 3" },
+          "& .job-span-4": { gridColumn: "span 4" },
+          "@media (max-width:1500px)": { "& .job-span-4": { gridColumn: "span 3" } },
+          "@media (max-width:1180px)": { "& .job-span-3, & .job-span-4": { gridColumn: "span 2" } },
+          "@media (max-width:860px)": { "& .job-panel": { gridColumn: "span 1" } },
+        }}
+      >
         {groupJobs(visible).map(([groupName, groupJobsList]) => (
           <JobGroupPanel
             key={groupName}
@@ -210,15 +224,15 @@ export default function JobsPage() {
             onStop={stop}
           />
         ))}
-      </div>
+      </Box>
 
-      <div style={{ marginTop: 28 }}>
+      <Box sx={{ mt: 3.5 }}>
         <QueueSummary />
-      </div>
+      </Box>
 
-      <div style={{ marginTop: 28 }}>
+      <Box sx={{ mt: 3.5 }}>
         <LogTail limit={100} title="Recent activity" excludeType="request" />
-      </div>
+      </Box>
     </AdminPageShell>
   );
 }

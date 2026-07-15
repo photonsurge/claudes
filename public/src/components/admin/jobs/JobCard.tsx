@@ -1,13 +1,22 @@
 "use client";
 
 /**
- * One triggerable job on /admin/jobs. Cards sit in a responsive grid; the
- * description is shown in full (several of these carry real operating caveats —
- * "run the dry run first", "run the migration first" — so they must not be
- * truncated), and the actions are pinned to the card's foot so a row's buttons
- * line up.
+ * One triggerable job on /admin/jobs. Cards sit in a grid inside their group's
+ * panel, so they take the `raised` step of the surface ramp — page → panel →
+ * card — which is what makes a card read as an object rather than a region of
+ * the panel behind it.
+ *
+ * The description is shown in full: several of these carry real operating
+ * caveats ("run the dry run first", "run the migration first", "needs X_API_KEY")
+ * and an operator about to reseed a collection must see them without a hover.
  */
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import type { TriggerableJob } from "@photonsurge/shared/jobs";
+import { surface } from "../../../theme/tokens";
 
 export interface Result {
   ok: boolean;
@@ -37,33 +46,24 @@ export function fmtDuration(ms: number): string {
   return `${m}m${s}s`;
 }
 
-/** The one-line status + colour for a triggered job's result row. */
+/** The one-line status + palette colour for a triggered job's result row. */
 export function resultLine(r: Result): { text: string; color: string } {
-  if (!r.ok) return { text: `failed: ${r.error}`, color: "#fca5a5" };
+  if (!r.ok) return { text: `failed: ${r.error}`, color: "error.main" };
   const d = typeof r.durationMs === "number" ? fmtDuration(r.durationMs) : null;
   switch (r.state) {
     case "completed":
-      return { text: d ? `done in ${d}` : "done", color: "#4ade80" };
+      return { text: d ? `done in ${d}` : "done", color: "success.main" };
     case "failed":
-      return { text: `failed after ${d ?? "?"}${r.failedReason ? `: ${r.failedReason}` : ""}`, color: "#fca5a5" };
+      return { text: `failed after ${d ?? "?"}${r.failedReason ? `: ${r.failedReason}` : ""}`, color: "error.main" };
     case "active":
-      return { text: d ? `running… ${d}` : "running…", color: "#fbbf24" };
+      return { text: d ? `running… ${d}` : "running…", color: "warning.main" };
     case "unknown":
       // Reaped after completion (admin jobs kept 1h) or never landed — best-effort.
-      return { text: `queued (#${r.jobId})`, color: "#8b95a7" };
+      return { text: `queued (#${r.jobId})`, color: "text.secondary" };
     default:
-      return { text: `queued (#${r.jobId})`, color: "#8b95a7" };
+      return { text: `queued (#${r.jobId})`, color: "text.secondary" };
   }
 }
-
-const btn: React.CSSProperties = {
-  padding: "7px 14px",
-  borderRadius: 6,
-  border: "1px solid #333",
-  color: "#fff",
-  cursor: "pointer",
-  fontSize: 13,
-};
 
 interface JobCardProps {
   job: TriggerableJob;
@@ -79,60 +79,52 @@ export default function JobCard({ job, result, stopResult, running, stopping, on
   const active = result?.state === "active";
 
   return (
-    <div
-      style={{
+    <Paper
+      sx={{
         display: "flex",
         flexDirection: "column",
-        gap: 8,
-        padding: 14,
-        borderRadius: 8,
-        // A card must read against the panel it sits in, not blend into it.
-        border: `1px solid ${active ? "#4c6098" : "#333e54"}`,
-        background: "#0e1420",
+        gap: 1,
+        p: 1.75,
+        bgcolor: surface.raised,
+        // A running job is the one thing on this page worth spotting from across
+        // the room, so it gets the accent edge.
+        borderColor: active ? "primary.main" : "divider",
       }}
     >
-      <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.3, color: "#f1f5fb" }}>{job.label}</div>
+      <Typography variant="h3">{job.label}</Typography>
 
-      <div style={{ color: "#98a3b6", fontSize: 13.5, lineHeight: 1.5 }}>{job.description}</div>
+      <Typography variant="body2" color="text.secondary">
+        {job.description}
+      </Typography>
 
       {/* Push the actions to the card's foot so a grid row's buttons line up. */}
-      <div style={{ flex: 1, minHeight: 4 }} />
+      <Box sx={{ flex: 1, minHeight: 4 }} />
 
       {result && (() => {
         const line = resultLine(result);
         return (
-          <div style={{ fontSize: 12, color: line.color }}>
+          <Typography variant="caption" color={line.color}>
             {line.text} · {new Date(result.at).toLocaleTimeString()}
-          </div>
+          </Typography>
         );
       })()}
       {stopResult && (
-        <div style={{ fontSize: 12, color: stopResult.ok ? "#4ade80" : "#fca5a5" }}>
+        <Typography variant="caption" color={stopResult.ok ? "success.main" : "error.main"}>
           {stopResult.ok ? `stopped — ${stopResult.removed ?? 0} queued batch(es) removed` : `failed: ${stopResult.error}`} ·{" "}
           {new Date(stopResult.at).toLocaleTimeString()}
-        </div>
+        </Typography>
       )}
 
-      <div style={{ display: "flex", gap: 8 }}>
-        <button
-          type="button"
-          onClick={onRun}
-          disabled={running}
-          style={{ ...btn, flex: 1, background: running ? "#1a1f2b" : "#2563eb" }}
-        >
+      <Stack direction="row" spacing={1}>
+        <Button variant="contained" onClick={onRun} disabled={running} sx={{ flex: 1 }}>
           {running ? "…" : "Run now"}
-        </button>
+        </Button>
         {job.stoppable && (
-          <button
-            type="button"
-            onClick={onStop}
-            disabled={stopping}
-            style={{ ...btn, background: stopping ? "#1a1f2b" : "#7f1d1d" }}
-          >
+          <Button variant="outlined" color="error" onClick={onStop} disabled={stopping}>
             {stopping ? "…" : "Stop"}
-          </button>
+          </Button>
         )}
-      </div>
-    </div>
+      </Stack>
+    </Paper>
   );
 }

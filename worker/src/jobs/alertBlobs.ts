@@ -31,6 +31,21 @@ const hazardOf = (a: iAlert) =>
  */
 const breathe = () => new Promise<void>((r) => setImmediate(r));
 
+/**
+ * Thin each area to ~1km before clipping.
+ *
+ * The source boundaries are survey-grade — the worst hazard alone is ~1.15M
+ * vertices — and clipping at that precision is where the time and the memory go,
+ * to produce a shape `/api/alerts/blobs` then simplifies to ~0.05° (~5km) before
+ * drawing it. The detail was being clipped and thrown away. Measured on that
+ * bucket: 91% fewer vertices, dissolve 40s -> 3s, peak heap 711MB -> 289MB.
+ *
+ * 1km is well under what the overlay draws, and comfortably under the precision
+ * "which cities are inside this warning" needs — a city within 1km of a warning
+ * boundary is a genuinely marginal call either way.
+ */
+const DISSOLVE_SIMPLIFY_DEG = Number(process.env.ALERT_DISSOLVE_SIMPLIFY_DEG || 0.01);
+
 export async function refresh(_job: Job) {
   const db = await getAppDb();
   try {
@@ -55,14 +70,24 @@ export async function refresh(_job: Job) {
     const alertCount = index.length;
     index.length = 0; // the ids are all we still need
 
-    // Pass 2: one hazard at a time. Peak memory is now the BIGGEST bucket, not
-    // the planet, and each bucket's geometry is released before the next loads.
-    const blobs: AlertBlobInput[] = [];
+    // Pass 2: one hazard at a time, WRITTEN as we go.
+    //
+    // Peak memory is the bucket being clipped and nothing else. Accumulating the
+    // finished shapes instead (~1.9M vertices) meant carrying the whole output on
+    // top of the live clip, and this worker shares a 4GB heap with ten other
+    // jobs — it OOM'd mid-rebuild alongside a weather refresh. Each hazard's
+    // shapes go to Mongo tagged with this generation; the previous generation is
+    // retired only at the very end, so a reader mid-rebuild still sees a complete
+    // globe.
+    const builtAt = new Date();
     const cityStats: BlobCityStats = { cities: 0, empty: 0, repaired: 0, failures: 0 };
     let unionFailures = 0;
+    let written = 0;
+    let verticesBefore = 0;
+    let verticesAfter = 0;
 
     for (const [key, ids] of buckets) {
-      const members = (await db.alerts.model
+      let members: iAlert[] | null = (await db.alerts.model
         .find(
           { id: { $in: ids } },
           { _id: 0, id: 1, maxSeverityRank: 1, "info.event": 1, "info.parameters": 1, "info.area.geometry": 1 },
@@ -70,7 +95,11 @@ export async function refresh(_job: Job) {
         .lean()
         .exec()) as unknown as iAlert[];
 
-      const r = await dissolveAlerts(members, { hazardOf });
+      const r = await dissolveAlerts(members, { hazardOf, simplifyDeg: DISSOLVE_SIMPLIFY_DEG });
+      // The source geometry is the biggest thing here (~240MB for the worst
+      // hazard) and the dissolve has taken what it needs — let it go before the
+      // city lookups, rather than holding it to the end of the iteration.
+      members = null;
       unionFailures += r.unionFailures;
 
       // Record who's inside the shapes while this bucket is still the only one
@@ -82,17 +111,24 @@ export async function refresh(_job: Job) {
       cityStats.repaired += cs.repaired;
       cityStats.failures += cs.failures;
 
-      blobs.push(...r.blobs);
+      for (const b of r.blobs) {
+        verticesBefore += b.verticesBefore;
+        verticesAfter += b.verticesAfter;
+      }
+      written += await db.alertBlobs.addGeneration(r.blobs, builtAt);
+
       log(TAG, `dissolved ${key}`, { alerts: ids.length, blobs: r.blobs.length, cities: cs.cities });
       await breathe();
     }
 
-    const r = await db.alertBlobs.replace(blobs);
-    const before = blobs.reduce((n, b) => n + b.verticesBefore, 0);
-    const after = blobs.reduce((n, b) => n + b.verticesAfter, 0);
+    // Only now retire the old generation — never before the new one is complete.
+    await db.alertBlobs.dropOlderThan(builtAt);
+
+    const before = verticesBefore;
+    const after = verticesAfter;
     const result = {
       alerts: alertCount,
-      blobs: r.blobs,
+      blobs: written,
       verticesBefore: before,
       verticesAfter: after,
       saved: before ? `${Math.round((1 - after / before) * 100)}%` : "0%",
@@ -112,7 +148,7 @@ export async function refresh(_job: Job) {
     log(TAG, `alert blobs rebuilt`, result);
     blogInfo(
       TAG,
-      `alert blobs: ${alertCount} alerts → ${r.blobs} shapes ` +
+      `alert blobs: ${alertCount} alerts → ${written} shapes ` +
         `(${result.saved} fewer vertices to draw, ${cityStats.cities} cities covered)`,
       result,
       "alertBlobs",

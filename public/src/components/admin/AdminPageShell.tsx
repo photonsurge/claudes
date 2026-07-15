@@ -1,6 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import Box from "@mui/material/Box";
+import Breadcrumbs from "@mui/material/Breadcrumbs";
+import MuiLink from "@mui/material/Link";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import AdminTextSize, { useAdminTextScale } from "./AdminTextSize";
 
 interface AdminPageShellProps {
@@ -12,11 +17,6 @@ interface AdminPageShellProps {
   children: React.ReactNode;
   crumbs?: Array<{ href?: string; label: string }>;
 }
-
-const linkStyle: React.CSSProperties = {
-  color: "#8b95a7",
-  textDecoration: "none",
-};
 
 export default function AdminPageShell({
   title,
@@ -36,57 +36,59 @@ export default function AdminPageShell({
         : [...allCrumbs, { label: title }];
 
   return (
-    <main style={{ minHeight: "100vh", background: "#0a0e16", color: "#fff", fontFamily: "system-ui, sans-serif" }}>
-      {/* `zoom` (not transform) so the page still reflows to the viewport width. */}
-      <section style={{ maxWidth, margin: "0 auto", padding: "22px 24px 32px", zoom: scale }}>
-        <nav
-          aria-label="Breadcrumb"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 7,
-            marginBottom: 18,
-            color: "#5b6577",
-            fontSize: 12,
-          }}
-        >
-          {/* Text size lives here so it's on every admin page, not just one. */}
-          <span style={{ marginLeft: "auto", order: 99 }}>
-            <AdminTextSize scale={scale} onScale={setScale} />
-          </span>
-          {terminalCrumbs.map((crumb, i) => (
-            <span key={`${crumb.label}.${i}`} style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-              {i > 0 && <span style={{ color: "#323a4b" }}>/</span>}
-              {crumb.href ? (
-                <Link href={crumb.href} style={linkStyle}>
+    <Box component="main" sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
+      {/*
+        `zoom` (not transform) so the page still reflows to the viewport width.
+        It stays an inline style rather than going in `sx`: it changes per
+        render, and `sx` would mint a fresh emotion class for every zoom level.
+      */}
+      <Box component="section" style={{ zoom: scale }} sx={{ maxWidth, mx: "auto", px: 3, pt: 2.75, pb: 4 }}>
+        <Stack direction="row" sx={{ alignItems: "center", mb: 2.25 }}>
+          <Breadcrumbs
+            aria-label="Breadcrumb"
+            separator="/"
+            sx={{ fontSize: 12, "& .MuiBreadcrumbs-separator": { color: "text.disabled", mx: 0.875 } }}
+          >
+            {terminalCrumbs.map((crumb, i) =>
+              crumb.href ? (
+                <MuiLink key={`${crumb.label}.${i}`} component={Link} href={crumb.href} variant="caption" color="text.secondary">
                   {crumb.label}
-                </Link>
+                </MuiLink>
               ) : (
-                <span style={{ color: "#dfe7f5", fontWeight: 700 }}>{crumb.label}</span>
-              )}
-            </span>
-          ))}
-        </nav>
+                <Typography key={`${crumb.label}.${i}`} variant="caption" color="text.primary" sx={{ fontWeight: 700 }}>
+                  {crumb.label}
+                </Typography>
+              ),
+            )}
+          </Breadcrumbs>
+          {/* Text size lives here so it's on every admin page, not just one. */}
+          <Box sx={{ ml: "auto" }}>
+            <AdminTextSize scale={scale} onScale={setScale} />
+          </Box>
+        </Stack>
 
-        <header
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 18,
-            flexWrap: "wrap",
-            marginBottom: 18,
-          }}
+        <Stack
+          direction="row"
+          spacing={2.25}
+          sx={{ justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", mb: 2.25 }}
         >
-          <div style={{ minWidth: 240, flex: "1 1 360px" }}>
-            <h1 style={{ margin: 0, fontSize: 24, lineHeight: 1.15, letterSpacing: 0, color: "#f8fafc" }}>{title}</h1>
-            {description ? <div style={{ color: "#8b95a7", marginTop: 7, fontSize: 14, lineHeight: 1.45 }}>{description}</div> : null}
-          </div>
-          {actions ? <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>{actions}</div> : null}
-        </header>
+          <Box sx={{ minWidth: 240, flex: "1 1 360px" }}>
+            <Typography variant="h1">{title}</Typography>
+            {description ? (
+              <Typography variant="body1" color="text.secondary" sx={{ mt: 0.875 }}>
+                {description}
+              </Typography>
+            ) : null}
+          </Box>
+          {actions ? (
+            <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+              {actions}
+            </Stack>
+          ) : null}
+        </Stack>
 
         {children}
-      </section>
-    </main>
+      </Box>
+    </Box>
   );
 }

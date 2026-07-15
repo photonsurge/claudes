@@ -10,6 +10,8 @@
  * "this screen is across the room" setting.
  */
 import { useCallback, useEffect, useState } from "react";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 
 const KEY = "admin.textScale";
 
@@ -58,35 +60,18 @@ interface AdminTextSizeProps {
 
 export default function AdminTextSize({ scale, onScale }: AdminTextSizeProps) {
   return (
-    <div
-      role="group"
+    <ToggleButtonGroup
+      exclusive
+      size="small"
+      value={scale}
       aria-label="Text size"
-      style={{ display: "flex", alignItems: "center", gap: 2, border: "1px solid #242b3d", borderRadius: 6, padding: 2 }}
+      onChange={(_, v) => v !== null && onScale(v as number)}
     >
-      {TEXT_SCALES.map((t) => {
-        const on = t.scale === scale;
-        return (
-          <button
-            key={t.label}
-            type="button"
-            onClick={() => onScale(t.scale)}
-            title={t.title}
-            aria-pressed={on}
-            style={{
-              padding: "3px 8px",
-              borderRadius: 4,
-              border: "none",
-              background: on ? "#2563eb" : "transparent",
-              color: on ? "#fff" : "#8b95a7",
-              fontSize: 11,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            {t.label}
-          </button>
-        );
-      })}
-    </div>
+      {TEXT_SCALES.map((t) => (
+        <ToggleButton key={t.label} value={t.scale} title={t.title} sx={{ px: 1, py: 0.25, fontSize: 11, minHeight: 0 }}>
+          {t.label}
+        </ToggleButton>
+      ))}
+    </ToggleButtonGroup>
   );
 }

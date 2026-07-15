@@ -7,6 +7,9 @@
  * takes a single column instead of an empty full-width band, and the outer
  * grid's dense flow packs those small panels into the gaps.
  */
+import Box from "@mui/material/Box";
+import Paper from "@mui/material/Paper";
+import Typography from "@mui/material/Typography";
 import type { TriggerableJob } from "@photonsurge/shared/jobs";
 import JobCard, { type Result, type StopResult } from "./JobCard";
 
@@ -40,38 +43,30 @@ export default function JobGroupPanel({
   onStop,
 }: JobGroupPanelProps) {
   return (
-    <section
-      className={`job-panel job-span-${spanForCount(jobs.length)}`}
-      style={{
-        padding: 16,
-        borderRadius: 10,
-        // Panels sit side by side now, so each needs a visible edge of its own.
-        border: "1px solid #2a3446",
-        background: "#070b12",
-      }}
-    >
-      <h3
-        style={{
+    <Paper className={`job-panel job-span-${spanForCount(jobs.length)}`} sx={{ p: 2 }}>
+      <Typography
+        variant="h2"
+        component="h3"
+        sx={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
-          margin: "0 0 14px",
-          paddingBottom: 10,
-          borderBottom: "1px solid #2a3446",
-          fontSize: 17,
-          fontWeight: 600,
-          letterSpacing: 0.2,
-          color: "#dfe7f5",
+          gap: 1.25,
+          mb: 1.75,
+          pb: 1.25,
+          borderBottom: 1,
+          borderColor: "divider",
         }}
       >
         {group}
-        <span style={{ color: "#5b6577", fontSize: 13, fontWeight: 400 }}>{jobs.length}</span>
-      </h3>
+        <Typography component="span" variant="caption" color="text.disabled">
+          {jobs.length}
+        </Typography>
+      </Typography>
 
-      <div
-        style={{
+      <Box
+        sx={{
           display: "grid",
-          gap: 12,
+          gap: 1.5,
           gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))",
           alignItems: "stretch",
         }}
@@ -88,7 +83,7 @@ export default function JobGroupPanel({
             onStop={() => onStop(j)}
           />
         ))}
-      </div>
-    </section>
+      </Box>
+    </Paper>
   );
 }

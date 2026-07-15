@@ -1,4 +1,9 @@
 import Link from "next/link";
+import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import AdminPageShell from "../../components/admin/AdminPageShell";
 import ServiceStatusPanel from "../../components/ServiceStatusPanel";
 
@@ -53,67 +58,56 @@ export const ADMIN_LINKS: AdminLink[] = [
 export default function AdminPage() {
   return (
     <AdminPageShell title="Admin" description="Lists and consoles for the weather globe." maxWidth={1180}>
-      <div style={{ marginBottom: 16 }}>
+      <Box sx={{ mb: 3 }}>
         <ServiceStatusPanel />
-      </div>
+      </Box>
 
-      <div style={{ display: "grid", gap: 22, marginTop: 16 }}>
+      <Stack spacing={3}>
         {GROUPS.map((group) => (
-          <section key={group}>
-            <h2
-              style={{
-                margin: "0 0 10px",
-                color: "#8b95a7",
-                fontSize: 12,
-                fontWeight: 800,
-                letterSpacing: 1,
-                textTransform: "uppercase",
-              }}
-            >
+          <Box component="section" key={group}>
+            <Typography variant="overline" color="text.secondary" component="h2" sx={{ display: "block", mb: 1.25 }}>
               {group}
-            </h2>
-            <div
-              style={{
+            </Typography>
+            <Box
+              sx={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-                gap: 12,
+                gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
+                gap: 1.5,
               }}
             >
-              {ADMIN_LINKS.filter((l) => l.group === group).map((l) => {
-                const card = (
-                  <div
-                    style={{
-                      padding: 16,
-                      borderRadius: 8,
-                      border: "1px solid #1b2030",
-                      background: "#0c111c",
-                      height: "100%",
-                      opacity: l.ready ? 1 : 0.55,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <h3 style={{ margin: 0, fontSize: 15 }}>{l.title}</h3>
-                      {!l.ready && (
-                        <span style={{ fontSize: 11, color: "#8b95a7", border: "1px solid #2a3344", borderRadius: 4, padding: "1px 5px" }}>
-                          soon
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ color: "#8b95a7", fontSize: 13, marginTop: 6 }}>{l.desc}</div>
-                  </div>
-                );
-                return l.ready ? (
-                  <Link key={l.href} href={l.href} style={{ textDecoration: "none", color: "inherit" }}>
-                    {card}
-                  </Link>
-                ) : (
-                  <div key={l.href}>{card}</div>
-                );
-              })}
-            </div>
-          </section>
+              {ADMIN_LINKS.filter((l) => l.group === group).map((l) => (
+                <Paper
+                  key={l.href}
+                  {...(l.ready ? { component: Link, href: l.href } : {})}
+                  sx={{
+                    p: 2,
+                    height: "100%",
+                    display: "block",
+                    textDecoration: "none",
+                    opacity: l.ready ? 1 : 0.55,
+                    // The one affordance the flat palette allows: the hairline
+                    // picks up the accent on hover so the card reads as a target.
+                    transition: "border-color 120ms, background-color 120ms",
+                    ...(l.ready && {
+                      "&:hover": { borderColor: "primary.main", bgcolor: "action.hover" },
+                    }),
+                  }}
+                >
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                    <Typography variant="h3" color="text.primary">
+                      {l.title}
+                    </Typography>
+                    {!l.ready && <Chip label="soon" />}
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                    {l.desc}
+                  </Typography>
+                </Paper>
+              ))}
+            </Box>
+          </Box>
         ))}
-      </div>
+      </Stack>
     </AdminPageShell>
   );
 }

@@ -137,6 +137,65 @@ describe("dissolveAlerts", () => {
   });
 
   /**
+   * Thinning before the clip is what makes this job fit on the server. Source
+   * boundaries are survey-grade (the worst hazard alone is ~1.15M vertices) and
+   * clipping at that precision is where the time and memory go — to produce a
+   * shape the overlay then simplifies to ~5km anyway before drawing it. Measured:
+   * 91% fewer vertices, dissolve 40s -> 3s, peak heap 711MB -> 289MB.
+   */
+  describe("simplifyDeg", () => {
+    /** A ragged coastline: a box with many near-collinear points along one edge. */
+    const ragged = (id: string): iAlert => {
+      const ring: number[][] = [];
+      for (let i = 0; i <= 200; i++) ring.push([i * 0.001, (i % 2) * 0.00001]);
+      ring.push([0.2, 1], [0, 1], [0, 0]);
+      return {
+        id,
+        maxSeverityRank: 3,
+        info: [{ event: "Heat", severityRank: 3, area: [{ areaDesc: id, geometry: { type: "Polygon", coordinates: [ring] } }] }],
+      } as unknown as iAlert;
+    };
+
+    it("thins the source before clipping it", async () => {
+      const out = await dissolveAlerts([ragged("a")], { ...NO_WAIT, simplifyDeg: 0.01 });
+
+      expect(out.blobs[0].verticesAfter).toBeLessThan(20);
+    });
+
+    it("keeps the source exactly when thinning is off", async () => {
+      const out = await dissolveAlerts([ragged("a")], { ...NO_WAIT, simplifyDeg: 0 });
+
+      expect(out.blobs[0].verticesAfter).toBeGreaterThan(100);
+    });
+
+    it("reports the saving against the RAW source, not the thinned copy", async () => {
+      // Otherwise the run's headline number quietly measures the wrong thing.
+      const out = await dissolveAlerts([ragged("a")], { ...NO_WAIT, simplifyDeg: 0.01 });
+
+      expect(out.blobs[0].verticesBefore).toBeGreaterThan(200);
+    });
+
+    it("still fuses two thinned neighbours", async () => {
+      const out = await dissolveAlerts(
+        [county("a", "Heat", 3, [0, 0, 1, 1]), county("b", "Heat", 3, [1, 0, 2, 1])],
+        { ...NO_WAIT, simplifyDeg: 0.01 },
+      );
+
+      expect(out.blobs).toHaveLength(1);
+    });
+
+    it("does not drop an area whose shape thinning would destroy", async () => {
+      // A county smaller than the tolerance must still be drawn, not vanish.
+      const tiny = county("t", "Heat", 3, [0, 0, 0.002, 0.002]);
+
+      const out = await dissolveAlerts([tiny], { ...NO_WAIT, simplifyDeg: 0.01 });
+
+      expect(out.blobs).toHaveLength(1);
+      expect(out.blobs[0].memberIds).toEqual(["t"]);
+    });
+  });
+
+  /**
    * MeteoAlarm ships one `info` block per LANGUAGE, each repeating the same areas
    * with identical polygons. Processing both did every union twice and handed
    * polygon-clipping a polygon plus an exact copy of itself — coincident edges,

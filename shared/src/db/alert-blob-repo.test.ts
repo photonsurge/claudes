@@ -1,5 +1,5 @@
 import type { Model } from "mongoose";
-import { makeAlertBlobRepo } from "./alert-blob-repo";
+import { makeAlertBlobRepo, type AlertBlobInput } from "./alert-blob-repo";
 import type { iAlertBlobModel, iBlobCity } from "./alert-blob-model";
 
 /**
@@ -18,8 +18,10 @@ const city = (id: string, name: string, lng: number, lat: number, population = 1
   population,
 });
 
-function mockModel(docs: Partial<iAlertBlobModel>[]) {
+function mockModel(docs: Partial<iAlertBlobModel>[] = []) {
   const calls: { filter: any; projection: any }[] = [];
+  /** Every write, in the order it happened — the ordering is the safety property. */
+  const writes: ({ op: "insertMany"; docs: any[] } | { op: "deleteMany"; filter: any })[] = [];
   const model = {
     find: (filter: any, projection: any) => {
       calls.push({ filter, projection });
@@ -30,9 +32,93 @@ function mockModel(docs: Partial<iAlertBlobModel>[]) {
       };
       return chain;
     },
+    insertMany: async (batch: any[]) => {
+      writes.push({ op: "insertMany", docs: batch });
+      return batch;
+    },
+    deleteMany: async (filter: any) => {
+      writes.push({ op: "deleteMany", filter });
+      return { deletedCount: 7 };
+    },
   } as unknown as Model<iAlertBlobModel>;
-  return { repo: makeAlertBlobRepo(model), calls };
+  return { repo: makeAlertBlobRepo(model), calls, writes };
 }
+
+const blob = (hazard: string): AlertBlobInput => ({
+  hazard,
+  severityRank: 3 as never,
+  geometry: { type: "Polygon", coordinates: [] } as never,
+  bbox: [0, 0, 1, 1],
+  memberIds: ["a1"],
+});
+
+/**
+ * A rebuild writes each hazard's shapes as it finishes them and retires the
+ * previous generation only at the very end. Both halves matter: streaming is what
+ * keeps the job inside its share of the heap, and the late drop is what stops a
+ * reader polling mid-rebuild seeing a half-empty globe.
+ */
+describe("generations", () => {
+  it("tags every shape in an instalment with the rebuild it belongs to", async () => {
+    const { repo, writes } = mockModel();
+    const builtAt = new Date("2026-07-16T09:00:00Z");
+
+    const n = await repo.addGeneration([blob("heat"), blob("wind")], builtAt);
+
+    expect(n).toBe(2);
+    const w = writes[0] as { op: "insertMany"; docs: any[] };
+    expect(w.docs.map((d) => d.builtAt)).toEqual([builtAt, builtAt]);
+    expect(w.docs.map((d) => d.hazard)).toEqual(["heat", "wind"]);
+  });
+
+  it("gives every shape its own id", async () => {
+    // A blob IS its geometry and has no stable identity across rebuilds, so ids
+    // are minted here rather than carried in.
+    const { repo, writes } = mockModel();
+
+    await repo.addGeneration([blob("heat"), blob("heat")], new Date());
+
+    const ids = (writes[0] as { docs: any[] }).docs.map((d) => d.id);
+    expect(new Set(ids).size).toBe(2);
+    expect(ids[0]).toEqual(expect.any(String));
+  });
+
+  it("writes nothing for a hazard that dissolved to no shapes", async () => {
+    const { repo, writes } = mockModel();
+
+    expect(await repo.addGeneration([], new Date())).toBe(0);
+    expect(writes).toEqual([]);
+  });
+
+  it("retires only shapes older than this rebuild", async () => {
+    // `$lt`, never `$lte` — the instalments already written carry this exact
+    // builtAt, and a drop that included them would wipe the new generation.
+    const { repo, writes } = mockModel();
+    const builtAt = new Date("2026-07-16T09:00:00Z");
+
+    const r = await repo.dropOlderThan(builtAt);
+
+    expect(r).toEqual({ removed: 7 });
+    expect(writes[0]).toEqual({ op: "deleteMany", filter: { builtAt: { $lt: builtAt } } });
+  });
+
+  it("adds the new generation BEFORE dropping the old one", async () => {
+    // Reversed, the globe empties for the length of a rebuild.
+    const { repo, writes } = mockModel();
+
+    await repo.replace([blob("heat")]);
+
+    expect(writes.map((w) => w.op)).toEqual(["insertMany", "deleteMany"]);
+  });
+
+  it("still clears the old generation when a rebuild finds no alerts at all", async () => {
+    // Nothing to insert, but the shapes on screen have genuinely expired.
+    const { repo, writes } = mockModel();
+
+    expect(await repo.replace([])).toEqual({ blobs: 0 });
+    expect(writes.map((w) => w.op)).toEqual(["deleteMany"]);
+  });
+});
 
 describe("summariesForBbox", () => {
   it("never asks Mongo for the geometry", async () => {

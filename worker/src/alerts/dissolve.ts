@@ -1,6 +1,7 @@
 import polygonClipping, { type MultiPolygon } from "polygon-clipping";
 import type { AlertGeometry, iAlert, SeverityRank } from "@photonsurge/shared/db/alert-model";
 import { windGeometry } from "@photonsurge/shared/alerts/rings";
+import { simplifyGeometry } from "@photonsurge/shared/geo/simplify";
 
 /**
  * Dissolve neighbouring warning areas of the same hazard into one shape.
@@ -192,6 +193,20 @@ export interface DissolveOpts {
   yield?: () => Promise<void>;
   /** Areas to union between yields. */
   yieldEvery?: number;
+  /**
+   * Thin each area to this tolerance (degrees) BEFORE clipping. 0 keeps the
+   * source exactly.
+   *
+   * This is the difference between a job that fits on the server and one that
+   * doesn't. Source boundaries carry survey-grade detail — the worst hazard alone
+   * is ~1.15M vertices — and clipping at that precision is where both the time
+   * and the memory go, to produce a shape the overlay then simplifies to ~0.05°
+   * (~5km) anyway before drawing it. So the detail was being clipped and thrown
+   * away. Measured on that bucket at 0.01° (~1km): 91% fewer vertices, dissolve
+   * 40s → 3s, peak heap 711MB → 289MB, and FEWER union failures (less coincident
+   * -edge pathology for polygon-clipping to choke on).
+   */
+  simplifyDeg?: number;
 }
 
 /**
@@ -225,6 +240,7 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
   const tol = opts.tolerance ?? 0.02;
   const breathe = opts.yield ?? (() => new Promise<void>((r) => setImmediate(r)));
   const yieldEvery = opts.yieldEvery ?? 25;
+  const simplifyDeg = opts.simplifyDeg ?? 0;
   let sinceYield = 0;
   let unionFailures = 0;
 
@@ -249,13 +265,16 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
     for (const area of distinctAreas(members)) {
       {
         const g = area.geometry;
-        const geom = toGeom(g);
+        // Counted from the SOURCE, before thinning, so the run's reported saving
+        // stays honest end-to-end: raw boundary → what the globe finally draws.
+        const before = countVertices(g.coordinates);
+        const thinned = simplifyDeg ? simplifyGeometry(g as never, simplifyDeg) : g;
+        const geom = toGeom((thinned ?? g) as AlertGeometry);
         if (!geom) continue;
         if (++sinceYield >= yieldEvery) {
           sinceYield = 0;
           await breathe();
         }
-        const before = countVertices(g.coordinates);
         const box = bounds(geom);
 
         // Fuse into every blob this area touches — joining two previously
