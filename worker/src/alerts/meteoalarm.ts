@@ -1,5 +1,6 @@
 import { rankFromCapSeverity } from "@photonsurge/shared/alerts/severity";
 import { canonicaliseCapMessages } from "@photonsurge/shared/alerts/normalise";
+import { windRing } from "@photonsurge/shared/alerts/rings";
 import type {
   AlertSource,
   CapMessage,
@@ -13,8 +14,13 @@ import type { AlertGeometry, AlertMsgType, AlertStatus } from "@photonsurge/shar
  * country at `/api/v1/warnings/feeds-<country>`; the payload is already CAP-
  * shaped (`{ warnings: [{ alert }] }`), so parsing is a field map like NWS — no
  * XML. There is no single Europe feed, so we fan out across countries and
- * tolerate per-country failures (one bad country must not kill the tick). Areas
- * carry CAP `polygon`s (array of "lat,lon …" rings) which we convert to GeoJSON.
+ * tolerate per-country failures (one bad country must not kill the tick).
+ *
+ * Geometry: in practice this feed does NOT include CAP `polygon`s — an area is a
+ * name plus an `EMMA_ID` geocode, so `geometry` parses to null and the alert has
+ * no shape to draw. `polygonToGeometry` stays because the CAP field is legal and
+ * a member may yet send it. The footprint is filled in at ingest by joining the
+ * EMMA boundary cache (see `enrich-geometry.ts` / `meteogate.ts`).
  */
 const BASE = "https://feeds.meteoalarm.org/api/v1/warnings/feeds-";
 
@@ -50,34 +56,18 @@ function flattenParameters(params: unknown): Record<string, string> | undefined 
 }
 
 /**
- * CAP polygon "lat,lon lat,lon …" → a closed GeoJSON ring [lon,lat][] (or null).
- * CAP gives lat,lon; GeoJSON wants lon,lat. Drops adjacent duplicate vertices and
- * closes the ring (both required by Mongo's 2dsphere index).
+ * CAP polygon "lat,lon lat,lon …" → a closed, CCW-wound GeoJSON ring [lon,lat][]
+ * (or null). CAP gives lat,lon; GeoJSON wants lon,lat. Closure and winding are
+ * both required by Mongo's 2dsphere index — see `windRing`.
  */
 function parseRing(s: string): [number, number][] | null {
   const ring: [number, number][] = [];
   for (const pair of s.trim().split(/\s+/)) {
     const [lat, lon] = pair.split(",").map(Number);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-    const prev = ring[ring.length - 1];
-    if (!prev || prev[0] !== lon || prev[1] !== lat) ring.push([lon, lat]);
+    ring.push([lon, lat]);
   }
-  if (ring.length < 3) return null;
-  const first = ring[0];
-  const last = ring[ring.length - 1];
-  if (first[0] !== last[0] || first[1] !== last[1]) ring.push(first);
-  // Mongo's 2dsphere reads a clockwise small-region ring as its complement
-  // ("bigger than a hemisphere" → rejected). Force CCW so it stores correctly.
-  return signedArea(ring) < 0 ? ring.reverse() : ring;
-}
-
-/** Shoelace signed area of a closed [lon,lat] ring; >0 == counter-clockwise. */
-function signedArea(ring: [number, number][]): number {
-  let a = 0;
-  for (let i = 0; i < ring.length - 1; i++) {
-    a += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
-  }
-  return a / 2;
+  return windRing(ring, true);
 }
 
 /** MeteoAlarm `area.polygon` (string | string[]) → GeoJSON Polygon/MultiPolygon. */

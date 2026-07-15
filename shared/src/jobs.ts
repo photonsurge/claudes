@@ -367,6 +367,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Director",
   },
   {
+    id: "alert-geom-sync",
+    label: "Resolve alert area boundaries",
+    description:
+      "Look up the real map shape for European warning areas. MeteoAlarm names an alert's area and gives it an EMMA code but no outline, so those alerts can't be drawn — this resolves each code to its boundary via MeteoGate and caches it for good. Needs METROGATE_API_KEY. Safe to re-run: it only fetches areas it hasn't already resolved.",
+    domain: "alertGeom",
+    type: "alertGeom",
+    event: "refresh",
+    group: "Static datasets",
+  },
+  {
     id: "elevation-bake",
     label: "Bake elevation relief",
     description:

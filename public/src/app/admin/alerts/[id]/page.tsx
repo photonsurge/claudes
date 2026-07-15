@@ -18,6 +18,7 @@ import Sparkline from "../../../../components/Sparkline";
 import GlobeView, { type GlobeHandle } from "../../../../components/GlobeView";
 import {
   alertHazard,
+  alertLocationLabels,
   alertsToFeatures,
   getAlertDetail,
   primaryInfo,
@@ -123,6 +124,7 @@ export default function AlertDetailPage() {
   const info = primaryInfo(alert);
   const h = hazardMeta(alertHazard(alert));
   const rank = alert.maxSeverityRank;
+  const location = alertLocationLabels(alert);
 
   return (
     <AdminPageShell
@@ -130,24 +132,35 @@ export default function AlertDetailPage() {
       maxWidth={1100}
       crumbs={[{ href: "/admin/alerts", label: "Weather alerts" }, { label: alert.identifier }]}
       description={
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span
-            title={severityLabel(rank)}
-            style={{
-              padding: "1px 9px",
-              borderRadius: 10,
-              fontWeight: 700,
-              fontSize: 12,
-              color: "#0a0e16",
-              background: severityColor(rank),
-            }}
-          >
-            {rank} · {severityLabel(rank)}
+        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 7 }}>
+          <span aria-label="Alert location" style={locationLine}>
+            <span>
+              <span style={locationLabel}>Region</span> {location.region ?? "Unknown"}
+            </span>
+            <span aria-hidden style={{ color: "#323a4b" }}>·</span>
+            <span>
+              <span style={locationLabel}>Country</span> {location.country ?? "Unknown"}
+            </span>
           </span>
-          <span style={{ color: h.color }}>{h.label}</span>
-          <span style={sourceChip}>{alert.source}</span>
-          <span>{alert.msgType}</span>
-          <span style={{ color: alert.active ? "#86efac" : "#8b95a7" }}>{alert.active ? "active" : "inactive"}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span
+              title={severityLabel(rank)}
+              style={{
+                padding: "1px 9px",
+                borderRadius: 10,
+                fontWeight: 700,
+                fontSize: 12,
+                color: "#0a0e16",
+                background: severityColor(rank),
+              }}
+            >
+              {rank} · {severityLabel(rank)}
+            </span>
+            <span style={{ color: h.color }}>{h.label}</span>
+            <span style={sourceChip}>{alert.source}</span>
+            <span>{alert.msgType}</span>
+            <span style={{ color: alert.active ? "#86efac" : "#8b95a7" }}>{alert.active ? "active" : "inactive"}</span>
+          </span>
         </span>
       }
       actions={
@@ -381,6 +394,22 @@ const sourceChip: React.CSSProperties = {
   fontWeight: 700,
   background: "#1b2030",
   color: "#cbd5e1",
+};
+const locationLine: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 9,
+  flexWrap: "wrap",
+  color: "#e2e8f0",
+  fontSize: 14,
+  fontWeight: 600,
+};
+const locationLabel: React.CSSProperties = {
+  color: "#64748b",
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: 0.5,
+  textTransform: "uppercase",
 };
 const msgChip: React.CSSProperties = {
   display: "inline-block",

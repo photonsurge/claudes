@@ -556,6 +556,29 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable alertGeom.refresh (EMMA area boundaries → Mongo) ----
+  // MeteoAlarm ships geocode-only areas, so their alerts have no shape to draw
+  // until each EMMA code is resolved via MeteoGate. Boundaries are administrative
+  // and permanent, so a run only pays for codes it has never seen — hourly by
+  // default just to catch newly-warned areas promptly. Skips itself when no
+  // METROGATE_API_KEY is set, so it's inert on installs without a token.
+  if (process.env.ALERT_GEOM_REFRESH_ENABLED !== "false") {
+    const ALERT_GEOM_MS = Number(process.env.ALERT_GEOM_REFRESH_MS || 60 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "alertGeom", type: "alertGeom", event: "refresh", data: {} },
+        {
+          repeat: { every: ALERT_GEOM_MS, immediately: true, offset: staggerOffset("alert-geom-refresh", ALERT_GEOM_MS) },
+          jobId: "alert-geom-refresh",
+        },
+      );
+      log(TAG, `registered repeatable alertGeom.refresh`, { everyMs: ALERT_GEOM_MS });
+    } catch (err) {
+      log(TAG, `failed to register alertGeom.refresh`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable aurora.refresh (SWPC OVATION oval → baked glow PNG → Mongo) ----
   // The auroral oval moves with geomagnetic activity; SWPC republishes every few
   // minutes, so refresh on a fast cron (5 min by default). A fixed jobId de-dups

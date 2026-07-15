@@ -67,6 +67,9 @@ import { getCableLandingModel } from "./cable-landing-model";
 import { makeCableRepo } from "./cable-repo";
 import { getFaultModel } from "./fault-model";
 import { makeFaultRepo } from "./fault-repo";
+import { getAlertAreaGeomModel } from "./alert-area-geom-model";
+import { getAlertGeomSeenModel } from "./alert-geom-seen-model";
+import { makeAlertAreaGeomRepo } from "./alert-area-geom-repo";
 import { getAuroraModel } from "./aurora-model";
 import { makeAuroraRepo } from "./aurora-repo";
 import { getSatImgModel } from "./satimg-model";
@@ -207,6 +210,7 @@ export function createDb(conn: Connection) {
     regionRoundups: makePlaceRoundupRepo(getRegionRoundupModel(conn)),
     cables: makeCableRepo(getCableModel(conn), getCableLandingModel(conn)),
     faults: makeFaultRepo(getFaultModel(conn)),
+    alertAreaGeom: makeAlertAreaGeomRepo(getAlertAreaGeomModel(conn), getAlertGeomSeenModel(conn)),
     aurora: makeAuroraRepo(getAuroraModel(conn), blobs.aurora),
     satimg: makeSatImgRepo(getSatImgModel(conn), blobs.satimg),
     fires: makeFireRepo(getFireModel(conn)),

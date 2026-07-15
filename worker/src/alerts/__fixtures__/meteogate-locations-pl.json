@@ -1,0 +1,239 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "1c4da9b6-3f66-4f89-b542-c23311f7ee42",
+   "links": [
+    {
+     "type": "application/xml",
+     "rel": "canonical",
+     "href": "https://meteo.fra1.digitaloceanspaces.com/api/archive/warnings/784f7be3-319c-46a3-9e3b-cd4ba643804f.xml?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=24bup229s5ni6M0%2Fq8v2nGt6A0c%3D"
+    },
+    {
+     "type": "application/json",
+     "rel": "json",
+     "href": "https://meteo.fra1.digitaloceanspaces.com/api/archive/warnings/784f7be3-319c-46a3-9e3b-cd4ba643804f.json?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=LsSZNLV1Yl3dy1Llge%2BD6BcHBJw%3D"
+    },
+    {
+     "type": "application/xml",
+     "rel": "xml",
+     "href": "https://meteo.fra1.digitaloceanspaces.com/api/archive/warnings/784f7be3-319c-46a3-9e3b-cd4ba643804f.xml?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=24bup229s5ni6M0%2Fq8v2nGt6A0c%3D"
+    },
+    {
+     "type": "application/geo+json",
+     "rel": "geometry",
+     "href": "https://meteo.fra1.digitaloceanspaces.com/api/archive/features/1c4da9b6-3f66-4f89-b542-c23311f7ee42.geojson?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=QAaz9cbZHk3spPR4R6tEfRfdIlc%3D"
+    }
+   ],
+   "type": "Feature",
+   "properties": {
+    "supersededByAlertId": null,
+    "supersededAt": null,
+    "supersedeType": null,
+    "geometryDescription": "geometry is bbox only, link (member of the feature's links array) with type application/geo+json points to geojson describing the exact shape",
+    "geometryType": "bbox",
+    "OBJECTID": "1c4da9b6-3f66-4f89-b542-c23311f7ee42",
+    "alertId": "784f7be3-319c-46a3-9e3b-cd4ba643804f",
+    "countryCode": "PL",
+    "featureType": "geocode",
+    "hubLanguage": "en-GB",
+    "indexArea": 0,
+    "indexFeature": 0,
+    "indexInfo": 1,
+    "hubTime": "2026-07-14T22:01:17Z",
+    "hubLink": "https://meteo.fra1.digitaloceanspaces.com/api/archive/warnings/784f7be3-319c-46a3-9e3b-cd4ba643804f.xml?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=24bup229s5ni6M0%2Fq8v2nGt6A0c%3D"
+   },
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       20.415373443755946,
+       51.23158098362442
+      ],
+      [
+       20.415373443755946,
+       51.61368807662459
+      ],
+      [
+       20.872422362318673,
+       51.61368807662459
+      ],
+      [
+       20.872422362318673,
+       51.23158098362442
+      ],
+      [
+       20.415373443755946,
+       51.23158098362442
+      ]
+     ]
+    ],
+    "crs": {
+     "properties": {
+      "name": "EPSG:4326"
+     },
+     "type": "name"
+    },
+    "type": "Polygon"
+   }
+  },
+  {
+   "id": "1c4da9b6-3f66-4f89-b542-c23311f7ee42",
+   "links": [
+    {
+     "type": "application/xml",
+     "rel": "canonical",
+     "href": "https://meteo.fra1.digitaloceanspaces.com/api/archive/warnings/784f7be3-319c-46a3-9e3b-cd4ba643804f.xml?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=24bup229s5ni6M0%2Fq8v2nGt6A0c%3D"
+    },
+    {
+     "type": "application/json",
+     "rel": "json",
+     "href": "https://meteo.fra1.digitaloceanspaces.com/api/archive/warnings/784f7be3-319c-46a3-9e3b-cd4ba643804f.json?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=LsSZNLV1Yl3dy1Llge%2BD6BcHBJw%3D"
+    },
+    {
+     "type": "application/xml",
+     "rel": "xml",
+     "href": "https://meteo.fra1.digitaloceanspaces.com/api/archive/warnings/784f7be3-319c-46a3-9e3b-cd4ba643804f.xml?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=24bup229s5ni6M0%2Fq8v2nGt6A0c%3D"
+    },
+    {
+     "type": "application/geo+json",
+     "rel": "geometry",
+     "href": "https://meteo.fra1.digitaloceanspaces.com/api/archive/features/1c4da9b6-3f66-4f89-b542-c23311f7ee42.geojson?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=QAaz9cbZHk3spPR4R6tEfRfdIlc%3D"
+    }
+   ],
+   "type": "Feature",
+   "properties": {
+    "supersededByAlertId": null,
+    "supersededAt": null,
+    "supersedeType": null,
+    "geometryDescription": "geometry is bbox only, link (member of the feature's links array) with type application/geo+json points to geojson describing the exact shape",
+    "geometryType": "bbox",
+    "OBJECTID": "1c4da9b6-3f66-4f89-b542-c23311f7ee42",
+    "alertId": "784f7be3-319c-46a3-9e3b-cd4ba643804f",
+    "countryCode": "PL",
+    "featureType": "geocode",
+    "hubLanguage": "pl-PL",
+    "indexArea": 0,
+    "indexFeature": 0,
+    "indexInfo": 0,
+    "hubTime": "2026-07-14T22:01:17Z",
+    "hubLink": "https://meteo.fra1.digitaloceanspaces.com/api/archive/warnings/784f7be3-319c-46a3-9e3b-cd4ba643804f.xml?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=24bup229s5ni6M0%2Fq8v2nGt6A0c%3D"
+   },
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       20.415373443755946,
+       51.23158098362442
+      ],
+      [
+       20.415373443755946,
+       51.61368807662459
+      ],
+      [
+       20.872422362318673,
+       51.61368807662459
+      ],
+      [
+       20.872422362318673,
+       51.23158098362442
+      ],
+      [
+       20.415373443755946,
+       51.23158098362442
+      ]
+     ]
+    ],
+    "crs": {
+     "properties": {
+      "name": "EPSG:4326"
+     },
+     "type": "name"
+    },
+    "type": "Polygon"
+   }
+  },
+  {
+   "id": "8c08bd91-ca9b-4af3-a7e0-2e49a2566940",
+   "links": [
+    {
+     "type": "application/xml",
+     "rel": "canonical",
+     "href": "https://meteo.fra1.digitaloceanspaces.com/api/archive/warnings/95dd3d25-f40a-4ca3-8433-c6051849eb5d.xml?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=z9qmfHhuUO6Hr1r5ASw%2FatPnLQ0%3D"
+    },
+    {
+     "type": "application/json",
+     "rel": "json",
+     "href": "https://meteo.fra1.digitaloceanspaces.com/api/archive/warnings/95dd3d25-f40a-4ca3-8433-c6051849eb5d.json?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=OjfmbBwZ0FRsPP%2BY%2BOOT0YwLPMg%3D"
+    },
+    {
+     "type": "application/xml",
+     "rel": "xml",
+     "href": "https://meteo.fra1.digitaloceanspaces.com/api/archive/warnings/95dd3d25-f40a-4ca3-8433-c6051849eb5d.xml?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=z9qmfHhuUO6Hr1r5ASw%2FatPnLQ0%3D"
+    },
+    {
+     "type": "application/geo+json",
+     "rel": "geometry",
+     "href": "https://meteo.fra1.digitaloceanspaces.com/api/archive/features/8c08bd91-ca9b-4af3-a7e0-2e49a2566940.geojson?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=ys9IqekZEWHN9pkrOR9Hxll8P7U%3D"
+    }
+   ],
+   "type": "Feature",
+   "properties": {
+    "supersededByAlertId": null,
+    "supersededAt": null,
+    "supersedeType": null,
+    "geometryDescription": "geometry is bbox only, link (member of the feature's links array) with type application/geo+json points to geojson describing the exact shape",
+    "geometryType": "bbox",
+    "OBJECTID": "8c08bd91-ca9b-4af3-a7e0-2e49a2566940",
+    "alertId": "95dd3d25-f40a-4ca3-8433-c6051849eb5d",
+    "countryCode": "PL",
+    "featureType": "geocode",
+    "hubLanguage": "en-GB",
+    "indexArea": 0,
+    "indexFeature": 0,
+    "indexInfo": 1,
+    "hubTime": "2026-07-14T22:01:47Z",
+    "hubLink": "https://meteo.fra1.digitaloceanspaces.com/api/archive/warnings/95dd3d25-f40a-4ca3-8433-c6051849eb5d.xml?AWSAccessKeyId=DO00LYPLJBWUUWC6D6NU&Expires=1784128694&Signature=z9qmfHhuUO6Hr1r5ASw%2FatPnLQ0%3D"
+   },
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       21.84050232101047,
+       50.35230866701166
+      ],
+      [
+       21.84050232101047,
+       50.818421325319086
+      ],
+      [
+       22.248158041070987,
+       50.818421325319086
+      ],
+      [
+       22.248158041070987,
+       50.35230866701166
+      ],
+      [
+       21.84050232101047,
+       50.35230866701166
+      ]
+     ]
+    ],
+    "crs": {
+     "properties": {
+      "name": "EPSG:4326"
+     },
+     "type": "name"
+    },
+    "type": "Polygon"
+   }
+  }
+ ],
+ "metadata": {
+  "page": 1,
+  "page_size": 100,
+  "total_count": 674,
+  "total_pages": 7
+ }
+}

@@ -46,6 +46,7 @@
     "enrich:wiki": "ts-node src/scripts/enrichWikipedia.ts",
     "refresh:cables": "ts-node src/scripts/refreshCables.ts",
     "refresh:faults": "ts-node src/scripts/refreshFaults.ts",
+    "refresh:alert-geom": "ts-node src/scripts/refreshAlertGeom.ts",
     "refresh:aurora": "ts-node src/scripts/refreshAurora.ts",
     "refresh:fires": "ts-node src/scripts/refreshFires.ts",
     "refresh:alert-snapshots": "ts-node src/scripts/refreshAlertSnapshots.ts",

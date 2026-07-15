@@ -5,6 +5,9 @@ import type { iAlertRevision } from "@photonsurge/shared/db/alert-revision-model
 import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
 import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model";
 import type { AlertSnapshotMeta } from "@photonsurge/shared/db/alert-snapshot-repo";
+import { alertRepPoint, continentOf } from "@photonsurge/shared/alerts/geo";
+import { alertCountryCode, alertCountryLabel } from "@photonsurge/shared/alerts/country";
+import { getCountry } from "@photonsurge/shared/countries";
 import { classifyHazard, type HazardType } from "./hazard";
 import { coalesce } from "./coalesce";
 export type { HazardType, AlertTimelineBeat, iAlertSeries, iAlertResource, AlertSnapshotMeta };
@@ -266,6 +269,35 @@ export function areaAlertFeatures(alerts: Alert[]): AlertFeature[] {
 
 /** The first info block, or undefined. */
 export const primaryInfo = (a: Alert): AlertInfo | undefined => a.info?.[0];
+
+/** Best-effort location labels for an alert-admin header. The country comes
+ * from the feed's source-specific CAP identifier; the broad region comes from
+ * the alert footprint, falling back to the decoded country's catalog bbox for
+ * geometry-less bulletins. */
+export function alertLocationLabels(a: Alert): { region?: string; country?: string } {
+  let point: [number, number] | null = null;
+  for (const info of a.info ?? []) {
+    for (const area of info.area ?? []) {
+      point = alertRepPoint(area.geometry);
+      if (point) break;
+    }
+    if (point) break;
+  }
+
+  const countryCode = alertCountryCode(a);
+  if (!point && countryCode) {
+    const catalogCountry = getCountry(countryCode.toLowerCase());
+    if (catalogCountry) {
+      const [west, south, east, north] = catalogCountry.bbox;
+      point = [(west + east) / 2, (south + north) / 2];
+    }
+  }
+
+  return {
+    region: point ? continentOf(point[0], point[1]) : undefined,
+    country: alertCountryLabel(a),
+  };
+}
 
 /** A compact "Cook County, IL +2 more" area summary for a row. */
 export function areaSummary(a: Alert): string {

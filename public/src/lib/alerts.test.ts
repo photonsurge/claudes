@@ -1,6 +1,7 @@
 import {
   areaAlertFeatures,
   areaSummary,
+  alertLocationLabels,
   expiresLabel,
   severityColor,
   severityLabel,
@@ -54,6 +55,36 @@ describe("areaSummary", () => {
   });
   it("returns an em dash when there are no areas", () => {
     expect(areaSummary(alert({ info: [{ event: "x", severityRank: 0, area: [] }] }))).toBe("—");
+  });
+});
+
+describe("alertLocationLabels", () => {
+  it("shows a geometry-derived region and flag country for a MeteoAlarm alert", () => {
+    const location = alertLocationLabels(alert({
+      source: "meteoalarm",
+      identifier: "2.49.0.0.250.0.FR.20260714232857.660046",
+      info: [{
+        event: "Heat warning",
+        severityRank: 4,
+        area: [{
+          areaDesc: "Paris",
+          geocodes: [],
+          geometry: {
+            type: "Polygon",
+            coordinates: [[[2.2, 48.8], [2.5, 48.8], [2.5, 49], [2.2, 48.8]]],
+          },
+        }],
+      }],
+    }));
+
+    expect(location).toEqual({ region: "Europe", country: "🇫🇷 France" });
+  });
+
+  it("uses the country catalog to supply a region when geometry is absent", () => {
+    expect(alertLocationLabels(alert())).toEqual({
+      region: "North America",
+      country: "🇺🇸 United States",
+    });
   });
 });
 

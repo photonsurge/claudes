@@ -6,6 +6,7 @@ import { diffAlert } from "@photonsurge/shared/alerts/diff";
 import { timelineUpdatesFromChanges } from "@photonsurge/shared/events/promote";
 import { log } from "@photonsurge/shared/utill/logger";
 import { harvestGdacsExtras } from "./gdacs-extras";
+import { enrichAreaGeometry } from "./enrich-geometry";
 import { eventsUnifiedEnabled, shouldPromoteAlert, cadenceForRank } from "../events/config";
 
 const TAG = "alerts:ingest";
@@ -59,6 +60,8 @@ export interface IngestResult {
   geoDropped?: number;
   /** Count of geometry rejections bucketed by reason (self-intersecting, …). */
   geoReasons?: Record<string, number>;
+  /** Geocode-only areas given a footprint from the EMMA boundary cache. */
+  geoFilled?: number;
 }
 
 /**
@@ -74,6 +77,19 @@ export async function ingestSource(
   const raw = await source.fetch();
   const msgs = source.parse(raw);
   const alerts = source.normalise(msgs, now);
+
+  // Geocode-only feeds (MeteoAlarm) name their area but ship no polygon. Join the
+  // EMMA boundary cache BEFORE upsert so the geometry is indexed and every reader
+  // — globe, director framing, bbox panels — sees it like any other alert. A cache
+  // miss is normal (the area isn't resolved yet) and simply leaves geometry null.
+  let geoFilled = 0;
+  try {
+    const e = await enrichAreaGeometry(alerts, db);
+    geoFilled = e.filled;
+  } catch (err) {
+    // Enrichment is an enhancement, never a reason to lose a tick of alerts.
+    log(TAG, `geometry enrich failed`, { source: source.id, err: String(err) });
+  }
 
   let inserted = 0;
   let superseded = 0;
@@ -230,6 +246,7 @@ export async function ingestSource(
     geoDropped,
     ...(source.id === "gdacs" ? { seriesSamples, resources } : {}),
     ...(geoDropped ? { geoReasons } : {}),
+    ...(geoFilled ? { geoFilled } : {}),
   };
   log(TAG, `ingested`, result);
   return result;
