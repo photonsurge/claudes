@@ -35,6 +35,12 @@ const etna: Volcano = {
 describe("VolcanoesTable", () => {
   beforeEach(() => {
     (useVolcanoes as jest.Mock).mockReturnValue([etna]);
+    // Selecting a volcano fetches its status timeline; jsdom has no fetch.
+    global.fetch = jest.fn().mockResolvedValue({ json: async () => ({ timeline: [] }) }) as never;
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it("shows the USGS colour code in the table and prefers wikiPhoto + gallery + facts in the detail panel", () => {
@@ -42,7 +48,9 @@ describe("VolcanoesTable", () => {
 
     expect(screen.getByText("● ORANGE")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Etna"));
+    // The name cell is a Link to the volcano's own page and stops propagation,
+    // so open the side panel from the row itself.
+    fireEvent.click(screen.getByText("Etna").closest("tr")!);
 
     const [mainPhoto] = screen.getAllByAltText("") as HTMLImageElement[];
     expect(mainPhoto.src).toContain("full.jpg");

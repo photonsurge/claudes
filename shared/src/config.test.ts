@@ -34,9 +34,9 @@ describe("REGION_PRESETS", () => {
     expect(favs.length).toBeGreaterThan(0);
     expect(favs.every((r) => r.favorite)).toBe(true);
   });
-  it("includes western_europe and conus and looks them up", () => {
-    expect(getRegion("western_europe")).toBeDefined();
-    expect(getRegion("conus")).toBeDefined();
+  it("looks up a known preset by id and rejects an unknown one", () => {
+    expect(getRegion("europe")).toBeDefined();
+    expect(getRegion("north_america")).toBeDefined();
     expect(getRegion("nope")).toBeUndefined();
   });
 });
