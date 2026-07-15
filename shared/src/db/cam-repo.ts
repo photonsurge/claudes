@@ -89,6 +89,35 @@ export function makeCamRepo(model: Model<iCamModel>) {
       return res.modifiedCount ?? 0;
     },
 
+    /**
+     * Delete cams a registry-driven provider no longer discovers.
+     *
+     * `offlineMissing` only MARKS undiscovered cams offline — nothing ever removed
+     * them, so any adapter that changed its id scheme left its old rows behind
+     * forever. (The INGV adapter originally minted a sha1 id per ARCHIVED FRAME,
+     * producing hundreds of dead rows named after a relative archive path; the
+     * adapter was fixed, but the orphans stayed.)
+     *
+     * For a registry-driven provider, "offline" means "not in the last discovery
+     * sweep" — i.e. an orphan — and deleting is self-healing: a camera that comes
+     * back is simply re-upserted by the next sweep. Deliberately MANUAL (an admin
+     * button, never scheduled): a transient registry outage marks everything
+     * offline, and an automatic purge would then delete a live catalog.
+     * Pass `dryRun` to count + sample without deleting.
+     */
+    async purgeOffline(
+      providers: string[],
+      opts: { dryRun?: boolean } = {},
+    ): Promise<{ removed: number; matched: number; sample: string[] }> {
+      if (!providers.length) return { removed: 0, matched: 0, sample: [] };
+      const q = { provider: { $in: providers }, status: "offline" };
+      const doomed = await model.find(q).select({ camId: 1, title: 1, _id: 0 }).lean<{ camId: string; title?: string }[]>();
+      const sample = doomed.slice(0, 10).map((d) => `${d.camId} — ${d.title ?? ""}`.trim());
+      if (opts.dryRun) return { removed: 0, matched: doomed.length, sample };
+      const res = await model.deleteMany(q);
+      return { removed: res.deletedCount ?? 0, matched: doomed.length, sample };
+    },
+
     /** Cams (newest first), optionally filtered by status / bbox / text. */
     async list(opts: {
       status?: Cam["status"];

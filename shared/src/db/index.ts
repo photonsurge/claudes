@@ -72,6 +72,8 @@ import { getAlertGeomSeenModel } from "./alert-geom-seen-model";
 import { makeAlertAreaGeomRepo } from "./alert-area-geom-repo";
 import { getCapIdModel } from "./cap-id-model";
 import { makeCapIdRepo } from "./cap-id-repo";
+import { getAlertBlobModel } from "./alert-blob-model";
+import { makeAlertBlobRepo } from "./alert-blob-repo";
 import { getAuroraModel } from "./aurora-model";
 import { makeAuroraRepo } from "./aurora-repo";
 import { getSatImgModel } from "./satimg-model";
@@ -216,6 +218,7 @@ export function createDb(conn: Connection) {
     faults: makeFaultRepo(getFaultModel(conn)),
     alertAreaGeom: makeAlertAreaGeomRepo(getAlertAreaGeomModel(conn), getAlertGeomSeenModel(conn)),
     capIds: makeCapIdRepo(getCapIdModel(conn)),
+    alertBlobs: makeAlertBlobRepo(getAlertBlobModel(conn)),
     aurora: makeAuroraRepo(getAuroraModel(conn), blobs.aurora),
     satimg: makeSatImgRepo(getSatImgModel(conn), blobs.satimg),
     fires: makeFireRepo(getFireModel(conn)),

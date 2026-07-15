@@ -28,6 +28,60 @@ const TAG = "job:volcanoCatalog";
 /** Pleistocene volcanoes are numerous and almost entirely inert — opt-in. */
 const includePleistocene = () => process.env.VOLCANO_INCLUDE_PLEISTOCENE === "true";
 
+/** Registry-driven volcano camera providers — discovery decides what exists. */
+const VOLCANO_CAM_PROVIDERS = [
+  "geonet",
+  "usgs_vhp",
+  "avo",
+  "ingv",
+  "phivolcs",
+  "imo",
+  "magma",
+  "jma",
+  "cenapred",
+  "ipgp_ovpf",
+];
+
+/**
+ * Dispatched as `volcanoCatalog.purgeOrphanCams`. Deletes volcano cameras that the
+ * registries no longer discover (status "offline").
+ *
+ * Why this exists: `offlineMissing` only MARKS undiscovered cams offline, and
+ * nothing ever deleted them. The INGV adapter originally minted a sha1 id per
+ * ARCHIVED FRAME (`.../webcams/Emct/20260713/0500/Emct0118.jpg`), so a single sweep
+ * created hundreds of "cameras" named after a relative archive path. The adapter was
+ * fixed to dedup per station, but every orphan it had already written stayed in the
+ * catalog forever, offline and useless.
+ *
+ * MANUAL ONLY — deliberately not scheduled. A transient registry outage marks a
+ * provider's whole catalog offline, and an automatic purge would then delete live
+ * cameras. Run `data.dryRun: true` to see what would go without deleting.
+ */
+export async function purgeOrphanCams(job: Job) {
+  const db = await getAppDb();
+  const dryRun = job?.data?.data?.dryRun === true;
+  try {
+    const r = await db.cams.purgeOffline(VOLCANO_CAM_PROVIDERS, { dryRun });
+    const result = { dryRun, matched: r.matched, removed: r.removed, sample: r.sample };
+    log(TAG, `orphan cam purge ${dryRun ? "(dry run) " : ""}done`, result);
+    blogInfo(
+      TAG,
+      dryRun
+        ? `orphan volcano cameras: ${r.matched} would be removed (dry run)`
+        : `orphan volcano cameras: ${r.removed} removed`,
+      result,
+      "volcanoes",
+      "purgeOrphanCams",
+    );
+    if (r.removed) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "volcanoes", count: r.removed } });
+    return result;
+  } catch (err) {
+    log(TAG, `orphan cam purge failed`, summarizeForLog(err));
+    blogErr(TAG, `orphan volcano camera purge failed`, err, "volcanoes", "purgeOrphanCams");
+    throw err;
+  }
+}
+
 /**
  * Dispatched as `volcanoCatalog.migrate`. ONE-SHOT database migration for the
  * "Volcano is a permanent catalog entity" change:

@@ -12,6 +12,7 @@
     "fflate": "^0.8.2",
     "geotiff": "^2.1.3",
     "node-cron": "^4.2.1",
+    "polygon-clipping": "^0.15.7",
     "sharp": "^0.34.4",
     "socket.io-client": "^4.8.3"
   },
@@ -49,6 +50,7 @@
     "refresh:faults": "ts-node src/scripts/refreshFaults.ts",
     "refresh:alert-geom": "ts-node src/scripts/refreshAlertGeom.ts",
     "refresh:alert-capids": "ts-node src/scripts/refreshAlertCapIds.ts",
+    "refresh:alert-blobs": "ts-node src/scripts/refreshAlertBlobs.ts",
     "refresh:aurora": "ts-node src/scripts/refreshAurora.ts",
     "refresh:fires": "ts-node src/scripts/refreshFires.ts",
     "refresh:alert-snapshots": "ts-node src/scripts/refreshAlertSnapshots.ts",

@@ -3,6 +3,31 @@ import { v4 as uuidv4 } from "uuid";
 import type { Volcano, VolcanoStatus } from "../volcanoes/types";
 import type { iVolcanoModel } from "./volcano-model";
 
+/**
+ * Mongo predicate for "this volcano is worth spending per-volcano effort on" —
+ * erupting/unrest, an elevated USGS alert or aviation colour, an elevated official
+ * (e.g. GeoNet) level, or currently listed in the GVP weekly bulletin (the bulletin
+ * only lists volcanoes with something happening).
+ *
+ * This is the FLOOR that keeps per-volcano jobs from scaling with the catalog. The
+ * catalog is ~2,647 volcanoes but only tens are ever active, and the vast majority
+ * are dormant forever — sweeping all of them on a schedule is exactly the
+ * unbounded "enrich everything" mistake the cities enrich-all made.
+ *
+ * Note this is a QUERY twin of worker `shouldPromoteVolcano`; keep them in step.
+ */
+export function significantVolcanoFilter(now: Date = new Date(), bulletinWindowSec = 14 * 24 * 60 * 60) {
+  return {
+    $or: [
+      { status: { $in: ["erupting", "unrest"] } },
+      { usgsAlertLevel: { $in: ["WATCH", "WARNING"] } },
+      { usgsColorCode: { $in: ["ORANGE", "RED"] } },
+      { officialAlertLevelNormalized: { $in: ["advisory", "watch", "warning", "unrest", "eruption"] } },
+      { bulletinAt: { $gt: new Date(now.getTime() - bulletinWindowSec * 1000) } },
+    ],
+  };
+}
+
 const strip = (doc: any): Volcano => ({
   id: doc.volcanoId,
   name: doc.name,
@@ -162,9 +187,32 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
     },
 
     /** Volcanoes whose Wikipedia enrichment is missing or older than `staleBefore` (unless `force`). */
-    async listNeedingEnrichment(staleBefore: Date, force = false): Promise<iVolcanoModel[]> {
-      const q = force ? {} : { wikiFetchedAt: { $not: { $gt: staleBefore } } };
-      return model.find(q).lean().exec();
+    /**
+     * Volcanoes due a Wikipedia/Wikidata enrichment pass.
+     *
+     * SIGNIFICANT-ONLY BY DEFAULT. This is the one job whose cost scales with the
+     * CATALOG rather than with a fixed number of feeds, so with ~2,647 volcanoes an
+     * ungated sweep would hammer Wikipedia with thousands of requests on a 6-hour
+     * schedule, forever, for volcanoes that have been dormant for millennia.
+     *
+     * Dormant volcanoes lose nothing: the GVP catalog seed already gives every
+     * volcano a geology write-up (100% coverage) and a photo (~94%), fetched ONCE.
+     * Wikipedia only adds a nicer gallery/extract, which matters just for volcanoes
+     * heading on air.
+     *
+     * `force` ignores the staleness gate but KEEPS the significance floor.
+     * `includeDormant` is the deliberate escape hatch for a one-off full sweep —
+     * never a default (that's precisely how the cities enrich-all went OTT).
+     */
+    async listNeedingEnrichment(
+      staleBefore: Date,
+      force = false,
+      opts: { includeDormant?: boolean } = {},
+    ): Promise<iVolcanoModel[]> {
+      const and: Record<string, unknown>[] = [];
+      if (!force) and.push({ wikiFetchedAt: { $not: { $gt: staleBefore } } });
+      if (!opts.includeDormant) and.push(significantVolcanoFilter());
+      return model.find(and.length ? { $and: and } : {}).lean().exec();
     },
 
     /**

@@ -1,5 +1,5 @@
 import type { Model } from "mongoose";
-import { makeVolcanoRepo } from "./volcano-repo";
+import { makeVolcanoRepo, significantVolcanoFilter } from "./volcano-repo";
 import type { iVolcanoModel } from "./volcano-model";
 import type { Volcano } from "../volcanoes/types";
 
@@ -104,5 +104,83 @@ describe("makeVolcanoRepo", () => {
     const repo = makeVolcanoRepo({ find } as unknown as Model<iVolcanoModel>);
     const [v] = await repo.list();
     expect(v).toMatchObject({ id: "gvp:211060", status: "erupting", statusChangedAt: 1_700_000_000_000 });
+  });
+});
+
+/**
+ * The significance floor is what stops per-volcano jobs scaling with the ~2,647
+ * volcano catalog. Pin the shape so a later edit can't quietly widen it back to
+ * "every volcano, on a schedule" (the cities enrich-all mistake).
+ */
+describe("significantVolcanoFilter", () => {
+  const NOW = new Date("2026-07-15T00:00:00Z");
+
+  /** Tiny evaluator for the $or/$in/$gt subset this filter uses. */
+  const matches = (doc: Record<string, any>): boolean =>
+    significantVolcanoFilter(NOW).$or.some((clause: any) => {
+      const [field, cond] = Object.entries(clause)[0] as [string, any];
+      const v = doc[field];
+      if (cond?.$in) return v !== undefined && cond.$in.includes(v);
+      if (cond?.$gt) return v !== undefined && v > cond.$gt;
+      return false;
+    });
+
+  it("includes erupting and unrest volcanoes", () => {
+    expect(matches({ status: "erupting" })).toBe(true);
+    expect(matches({ status: "unrest" })).toBe(true);
+  });
+
+  it("includes elevated USGS alert levels and aviation colours", () => {
+    expect(matches({ status: "dormant", usgsAlertLevel: "WARNING" })).toBe(true);
+    expect(matches({ status: "dormant", usgsAlertLevel: "WATCH" })).toBe(true);
+    expect(matches({ status: "dormant", usgsColorCode: "RED" })).toBe(true);
+    expect(matches({ status: "dormant", usgsColorCode: "ORANGE" })).toBe(true);
+  });
+
+  it("includes an elevated official (e.g. GeoNet) level", () => {
+    expect(matches({ status: "dormant", officialAlertLevelNormalized: "unrest" })).toBe(true);
+    expect(matches({ status: "dormant", officialAlertLevelNormalized: "eruption" })).toBe(true);
+  });
+
+  it("includes a volcano listed in the current weekly bulletin", () => {
+    expect(matches({ status: "dormant", bulletinAt: new Date("2026-07-14T00:00:00Z") })).toBe(true);
+  });
+
+  it("EXCLUDES a quiet catalog volcano — the whole point", () => {
+    expect(matches({ status: "dormant" })).toBe(false);
+    expect(matches({ status: "dormant", usgsAlertLevel: "NORMAL", usgsColorCode: "GREEN" })).toBe(false);
+    expect(matches({ status: "dormant", officialAlertLevelNormalized: "normal" })).toBe(false);
+  });
+
+  it("EXCLUDES a volcano that dropped out of the bulletin long ago", () => {
+    expect(matches({ status: "dormant", bulletinAt: new Date("2026-05-01T00:00:00Z") })).toBe(false);
+  });
+});
+
+describe("listNeedingEnrichment — the catalog-scaling guard", () => {
+  const repoWith = (find: jest.Mock) => makeVolcanoRepo({ find } as unknown as Model<iVolcanoModel>);
+  const findMock = () => jest.fn(() => ({ lean: () => ({ exec: async () => [] }) })) as unknown as jest.Mock;
+
+  it("applies the significance floor by DEFAULT (never sweeps dormant volcanoes)", async () => {
+    const find = findMock();
+    await repoWith(find).listNeedingEnrichment(new Date("2026-06-15T00:00:00Z"));
+    const q = (find.mock.calls[0] as any[])[0];
+    expect(q.$and).toHaveLength(2); // staleness + significance
+    expect(JSON.stringify(q)).toContain("erupting");
+  });
+
+  it("force keeps the significance floor (drops only the staleness gate)", async () => {
+    const find = findMock();
+    await repoWith(find).listNeedingEnrichment(new Date(), true);
+    const q = (find.mock.calls[0] as any[])[0];
+    expect(q.$and).toHaveLength(1);
+    expect(JSON.stringify(q)).toContain("erupting");
+    expect(JSON.stringify(q)).not.toContain("wikiFetchedAt");
+  });
+
+  it("includeDormant is the explicit escape hatch — the only way to sweep everything", async () => {
+    const find = findMock();
+    await repoWith(find).listNeedingEnrichment(new Date(), true, { includeDormant: true });
+    expect((find.mock.calls[0] as any[])[0]).toEqual({});
   });
 });

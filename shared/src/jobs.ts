@@ -377,6 +377,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Static datasets",
   },
   {
+    id: "alert-blobs-rebuild",
+    label: "Merge neighbouring alert areas",
+    description:
+      "Join up touching warning areas that share a hazard and severity into single shapes, so the globe shows a few weather blobs instead of one square per county (MeteoAlarm issues one alert per county). Rebuilds the whole set; the alerts themselves are untouched and panels still list them individually.",
+    domain: "alertBlobs",
+    type: "alertBlobs",
+    event: "refresh",
+    group: "Alerts",
+  },
+  {
     id: "alert-capid-sync",
     label: "Resolve alert CAP ids",
     description:
@@ -523,6 +533,27 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "volcanoes",
     type: "volcanoes",
     event: "pruneCamSnapshots",
+    group: "Volcanoes",
+  },
+  {
+    id: "volcanoes-purge-orphan-cams-dry",
+    label: "Check orphaned volcano cameras (dry run)",
+    description:
+      "Count the volcano cameras the registries no longer discover (status offline) WITHOUT deleting anything — e.g. the hundreds of dead INGV rows named after a relative archive path (`../../Dati/webcams/...`), left behind when that adapter minted an id per archived frame before it was fixed. Look here first, then run the purge.",
+    domain: "volcanoes",
+    type: "volcanoCatalog",
+    event: "purgeOrphanCams",
+    group: "Volcanoes",
+    data: { dryRun: true },
+  },
+  {
+    id: "volcanoes-purge-orphan-cams",
+    label: "Purge orphaned volcano cameras",
+    description:
+      "Delete volcano cameras the registries no longer discover (status offline). Self-healing: a camera that comes back is re-added by the next discovery sweep. Run the dry run first — a registry outage marks a provider's whole catalog offline, and purging then would drop live cameras.",
+    domain: "volcanoes",
+    type: "volcanoCatalog",
+    event: "purgeOrphanCams",
     group: "Volcanoes",
   },
   {

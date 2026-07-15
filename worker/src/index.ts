@@ -579,6 +579,29 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable alertBlobs.refresh (dissolve touching alert areas → Mongo) ----
+  // MeteoAlarm issues one alert per county, so the globe would draw hundreds of
+  // little squares; unioning the touching ones cuts ~72% of the vertices public
+  // has to read and draw. Derived purely from the active alert set, so it only
+  // needs to keep pace with ingest — the rebuild is a few minutes of worker CPU,
+  // which is the whole point of it living here and not on the read path.
+  if (process.env.ALERT_BLOBS_REFRESH_ENABLED !== "false") {
+    const ALERT_BLOBS_MS = Number(process.env.ALERT_BLOBS_REFRESH_MS || 15 * 60 * 1000);
+    try {
+      await myQueue.add(
+        "do",
+        { domain: "alertBlobs", type: "alertBlobs", event: "refresh", data: {} },
+        {
+          repeat: { every: ALERT_BLOBS_MS, immediately: true, offset: staggerOffset("alert-blobs-refresh", ALERT_BLOBS_MS) },
+          jobId: "alert-blobs-refresh",
+        },
+      );
+      log(TAG, `registered repeatable alertBlobs.refresh`, { everyMs: ALERT_BLOBS_MS });
+    } catch (err) {
+      log(TAG, `failed to register alertBlobs.refresh`, summarizeForLog(err));
+    }
+  }
+
   // ---- Repeatable alertCapId.refresh (WMO capurl → national CAP id → Mongo) ----
   // WMO leaves `identifier` empty, so its alerts can't be matched to the same
   // warning arriving via MeteoAlarm/NWS until each capurl is resolved. A capurl is
