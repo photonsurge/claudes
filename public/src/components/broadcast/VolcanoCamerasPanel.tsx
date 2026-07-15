@@ -1,33 +1,47 @@
 "use client";
 
 /**
- * On-air card for an active volcano's OFFICIAL monitoring cameras (GeoNet et al.)
- * — the "what does it look like right now" slide. Cameras arrive on the ONE focus
- * call (FocusBundle.nearbyCams), never a per-cut fetch. P2a shows the live latest
- * still hot-linked from the provider; the worker-captured on-disk frame + media
- * route is P2b. Returns null when the volcano has no cameras, so callers check
- * `volcanoCamerasSlideHasContent` before adding this as a page.
+ * On-air card for an active volcano's OFFICIAL monitoring cameras (GeoNet, INGV,
+ * MAGMA…) — the "what does it look like right now" slide.
+ *
+ * Cameras arrive on the ONE focus call (FocusBundle.volcanoCams), never a per-cut
+ * fetch. They're already filtered to ACTIVE server-side (a camera an operator
+ * switched off, or one a registry lost, never reaches air) and joined to our own
+ * stored frame.
+ *
+ * Serves `localImageUrl` (OUR copy, via /api/volcanoes/media/:id) in preference to
+ * the provider's URL. The worker already downloads every camera (`cameraRefresh`),
+ * so hot-linking would blank the slide whenever the provider is down/slow/blocking
+ * us, and would hit their server from every viewer's browser. `upstreamImageUrl`
+ * is only a fallback for a camera we haven't stored yet.
  */
-import type { Cam } from "../../lib/cams/types";
+import type { FocusVolcanoCam } from "../../lib/focus/types";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 
 const MAX_CAMS = 1;
 
-export function volcanoCamerasSlideHasContent(cams: Cam[]): boolean {
-  return cams.some((c) => !!c.imageUrl);
+/** Our stored copy first; the provider's URL only if we haven't got one yet. */
+export const volcanoCamSrc = (c: FocusVolcanoCam): string | undefined => c.localImageUrl ?? c.upstreamImageUrl;
+
+export function volcanoCamerasSlideHasContent(cams: FocusVolcanoCam[]): boolean {
+  return cams.some((c) => !!volcanoCamSrc(c));
 }
 
 export default function VolcanoCamerasPanel({
   cams,
   color = "#38bdf8",
 }: {
-  cams: Cam[];
+  cams: FocusVolcanoCam[];
   color?: string;
 }) {
-  const shown = cams.filter((c) => !!c.imageUrl).slice(0, MAX_CAMS);
+  // Prefer cameras we hold locally — those always render.
+  const shown = cams
+    .filter((c) => !!volcanoCamSrc(c))
+    .sort((a, b) => Number(Boolean(b.localImageUrl)) - Number(Boolean(a.localImageUrl)))
+    .slice(0, MAX_CAMS);
   if (!shown.length) return null;
 
-  const attribution = shown[0]?.attribution?.provider;
+  const attribution = shown[0]?.attribution;
 
   return (
     <BroadcastCard accent={color} eyebrow="Cameras">
@@ -36,7 +50,7 @@ export default function VolcanoCamerasPanel({
           <div key={c.camId} style={{ padding: "3px 0" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={c.imageUrl}
+              src={volcanoCamSrc(c)}
               alt={c.title}
               style={{ width: "100%", height: 270, objectFit: "contain", borderRadius: 8, background: "#070a11", display: "block" }}
             />

@@ -593,3 +593,20 @@ export function useVolcanoMedia(): VolcanoMedia[] {
   const { bundle, covers } = useFocusContext();
   return covers() ? (bundle!.volcanoMedia ?? []) : [];
 }
+
+/**
+ * The on-air volcano's ACTIVE cameras, each already joined to OUR stored copy of
+ * its latest frame (`localImageUrl`). Composed server-side on the one focus call —
+ * no join, no per-cut fetch, and no hot-linking the provider from air.
+ */
+export function useVolcanoCams(): FocusBundle["volcanoCams"] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? (bundle!.volcanoCams ?? []) : [];
+}
+
+/** The on-air volcano's full GVP eruption history (newest first) — a catalog fact,
+ *  so it's present even for a dormant volcano that was never promoted. */
+export function useVolcanoEruptions(): FocusBundle["volcanoEruptions"] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? (bundle!.volcanoEruptions ?? []) : [];
+}

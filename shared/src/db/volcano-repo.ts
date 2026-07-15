@@ -204,6 +204,13 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
      * `force` ignores the staleness gate but KEEPS the significance floor.
      * `includeDormant` is the deliberate escape hatch for a one-off full sweep —
      * never a default (that's precisely how the cities enrich-all went OTT).
+     *
+     * A volcano carrying an operator-set `searchOverride` clears the significance
+     * floor: the operator typed that term by hand for this exact volcano, and most
+     * of the ones needing a nudge are dormant (fixed while prepping them for air),
+     * so gating them out would make the override silently do nothing. This doesn't
+     * reopen the enrich-all door — the set is bounded by what a human typed, and
+     * `setSearchOverride` clears `wikiFetchedAt` so each override costs one pass.
      */
     async listNeedingEnrichment(
       staleBefore: Date,
@@ -212,7 +219,9 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
     ): Promise<iVolcanoModel[]> {
       const and: Record<string, unknown>[] = [];
       if (!force) and.push({ wikiFetchedAt: { $not: { $gt: staleBefore } } });
-      if (!opts.includeDormant) and.push(significantVolcanoFilter());
+      if (!opts.includeDormant) {
+        and.push({ $or: [significantVolcanoFilter(), { searchOverride: { $exists: true, $ne: "" } }] });
+      }
       return model.find(and.length ? { $and: and } : {}).lean().exec();
     },
 

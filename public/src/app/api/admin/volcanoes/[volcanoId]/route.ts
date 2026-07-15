@@ -40,5 +40,30 @@ async function GET__impl(_req: Request, { params }: { params: Promise<{ volcanoI
   return NextResponse.json({ volcano, event: event ?? null, timeline, cams, snapshots, media, volcanoCameras, mediaSources, eruptions }, { status: 200, headers: NO_CACHE });
 }
 
+/**
+ * PATCH /api/admin/volcanoes/:volcanoId — set (or clear, with "") the operator's
+ * Wikipedia `searchOverride` for this volcano. The write also clears
+ * `wikiFetchedAt`, so the next `volcanoes.enrichWiki` pass re-queries with the
+ * new term; nothing is fetched here (all enrichment work is the worker's).
+ */
+async function PATCH__impl(req: Request, { params }: { params: Promise<{ volcanoId: string }> }) {
+  const { volcanoId: raw } = await params;
+  const volcanoId = normalizeVolcanoId(raw);
+  let body: { searchOverride?: unknown } = {};
+  try {
+    body = (await req.json()) as { searchOverride?: unknown };
+  } catch {
+    /* empty */
+  }
+  if (body.searchOverride !== undefined && typeof body.searchOverride !== "string") {
+    return NextResponse.json({ error: "searchOverride must be a string" }, { status: 400, headers: NO_CACHE });
+  }
+  const db = await getAppDb();
+  const found = await db.volcanoes.setSearchOverride(volcanoId, body.searchOverride as string | undefined);
+  if (!found) return NextResponse.json({ error: "no such volcano" }, { status: 404, headers: NO_CACHE });
+  return NextResponse.json({ volcano: await db.volcanoes.get(volcanoId) }, { status: 200, headers: NO_CACHE });
+}
+
 // --- request logging (lib/api-log) ---
 export const GET = withApiLog(GET__impl);
+export const PATCH = withApiLog(PATCH__impl);

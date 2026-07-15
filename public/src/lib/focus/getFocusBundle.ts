@@ -411,6 +411,8 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
   // volcano cut with that volcano's official monitoring cameras.
   let nearbyCams: FocusBundle["nearbyCams"] = [];
   let volcanoMedia: FocusBundle["volcanoMedia"] = [];
+  let volcanoCams: FocusBundle["volcanoCams"] = [];
+  let volcanoEruptions: FocusBundle["volcanoEruptions"] = [];
   if (target?.kind === "storm") {
     const { source: alSource, identifier: alIdent, id: alId } = target.alert.properties;
     const [chain, revisions, series, resources, snapshots, evt] = await Promise.all([
@@ -453,13 +455,45 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     // focus call (no per-cut fetch). Keyed on ("gvp", volcanoId). The event
     // dossier is empty until promoted (EVENTS_UNIFIED_ENABLED); cameras don't
     // depend on promotion.
-    const [evt, volcanoCams, storedMedia] = await Promise.all([
+    const [evt, allCams, storedMedia, eruptionHistory] = await Promise.all([
       db.watchedEvents.byPrimary("gvp", target.volcano.id),
       db.cams.listForVolcano(target.volcano.id),
       db.volcanoMedia.listLatestForVolcano(target.volcano.id, detail === "broadcast" ? 18 : 60),
+      db.volcanoEruptions.listForVolcano(target.volcano.id),
     ]);
-    nearbyCams = volcanoCams;
+    // ACTIVE only — a camera an operator switched off, or one a registry lost
+    // (the orphaned INGV archive rows), must never reach air.
+    nearbyCams = allCams.filter((c) => c.status === "active");
     volcanoMedia = storedMedia;
+    volcanoEruptions = eruptionHistory;
+
+    // Join each active camera to OUR stored copy of its latest frame. The worker
+    // already downloads every camera (`cameraRefresh` → volcano_media), so on air
+    // we serve our own bytes instead of hot-linking the provider — a blocked or
+    // down upstream would otherwise blank the slide. The two sides share the
+    // upstream URL, which is the only key they have in common (volcano_media is
+    // keyed by the media-stack camera uuid, generic cams by `provider:id`).
+    const localByUrl = new Map<string, (typeof storedMedia)[number]>();
+    for (const m of storedMedia) {
+      if (!m.imageUrl || !m.assetRef) continue;
+      const prev = localByUrl.get(m.imageUrl);
+      // Keep the freshest stored frame per upstream URL.
+      if (!prev || +new Date(m.observedAt ?? m.acquiredAt) > +new Date(prev.observedAt ?? prev.acquiredAt)) {
+        localByUrl.set(m.imageUrl, m);
+      }
+    }
+    volcanoCams = nearbyCams.map((c) => {
+      const local = c.imageUrl ? localByUrl.get(c.imageUrl) : undefined;
+      return {
+        camId: c.camId,
+        title: c.title,
+        provider: c.provider,
+        attribution: c.attribution?.provider,
+        localImageUrl: local ? `/api/volcanoes/media/${local.id}` : undefined,
+        upstreamImageUrl: c.imageUrl,
+        observedAt: local?.observedAt ? new Date(local.observedAt).toISOString() : undefined,
+      };
+    });
     if (evt?.id) {
       watchedEvent = evt;
       const [updates, evRes, evSnaps, evSeries] = await Promise.all([
@@ -521,6 +555,8 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     tideStations,
     nearbyCams, // volcano cut: that volcano's official cameras (else empty)
     volcanoMedia,
+    volcanoCams, // volcano cut: ACTIVE cameras joined to our locally-stored latest frame
+    volcanoEruptions, // volcano cut: full GVP eruption history (a catalog fact — no event needed)
     depthProfile: null, // TODO: ocean-kind depth profile
   };
 }

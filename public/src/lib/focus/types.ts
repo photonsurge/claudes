@@ -31,6 +31,7 @@ import type { Quake } from "@photonsurge/shared/tracks/types";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { Cam } from "@photonsurge/shared/cams/types";
 import type { VolcanoMedia } from "@photonsurge/shared/volcanoes/media";
+import type { VolcanoEruption } from "@photonsurge/shared/db/volcano-eruption-repo";
 import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 import type { iAreaWeatherReport } from "@photonsurge/shared/db/area-weather-report-model";
 
@@ -194,5 +195,33 @@ export interface FocusBundle {
   nearbyCams: Cam[];
   /** Latest stored camera, satellite and official imagery for the focused volcano. */
   volcanoMedia: VolcanoMedia[];
+  /**
+   * The focused volcano's ACTIVE cameras, already joined to OUR stored copy of
+   * each one's latest frame — composed here so no panel has to do the join or
+   * fetch anything per cut.
+   */
+  volcanoCams: FocusVolcanoCam[];
+  /** The focused volcano's full GVP eruption history, newest first. */
+  volcanoEruptions: VolcanoEruption[];
   depthProfile: DepthProfilePoint[] | null;
+}
+
+/**
+ * One on-air volcano camera. `localImageUrl` is OUR OWN stored copy of the frame
+ * (the worker already downloads every camera into `volcano_media` — see
+ * `cameraRefresh`), served from `/api/volcanoes/media/:id`. Prefer it on air:
+ * hot-linking the provider means a slide goes blank whenever they're down, slow,
+ * or blocking us — and it re-fetches their server on every viewer's browser.
+ * `upstreamImageUrl` is the fallback for a camera we haven't stored yet.
+ * Cameras an operator switched off never appear here.
+ */
+export interface FocusVolcanoCam {
+  camId: string;
+  title: string;
+  provider?: string;
+  attribution?: string;
+  localImageUrl?: string;
+  upstreamImageUrl?: string;
+  /** When the stored frame was actually observed (not when we fetched it). */
+  observedAt?: string;
 }

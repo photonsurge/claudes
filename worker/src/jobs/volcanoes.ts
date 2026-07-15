@@ -132,8 +132,16 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * article title (e.g. "Nevados de Chillan"), but sometimes needs a nudge — try
  * the bare name, then without a trailing "Volcano"/"Volcanic Complex" suffix
  * some entries carry — first non-missing/disambiguation hit wins.
+ *
+ * `searchOverride` (operator-set, on /admin/volcanoes/:id) wins OUTRIGHT rather
+ * than joining the list: it exists for the volcanoes whose name derives the
+ * WRONG article, so falling back to the derived guesses would just re-fetch the
+ * wrong one the operator was correcting. A bad override shows as "no match",
+ * which is the honest, fixable outcome.
  */
-export function titleCandidates(name: string): string[] {
+export function titleCandidates(name: string, searchOverride?: string): string[] {
+  const override = searchOverride?.trim();
+  if (override) return [override];
   const out = [name];
   const noPlace = name.replace(/,\s*[^,]+$/, "").trim();
   if (noPlace && !out.includes(noPlace)) out.push(noPlace);
@@ -162,7 +170,7 @@ export async function runVolcanoWikiEnrich(opts: VolcanoWikiEnrichOpts = {}) {
   for (const v of volcanoes) {
     try {
       let r: Awaited<ReturnType<typeof fetchWikiSummary>> = "missing";
-      for (const title of titleCandidates(v.name)) {
+      for (const title of titleCandidates(v.name, v.searchOverride)) {
         r = await fetchWikiSummary(title);
         if (r !== "missing" && r !== "disambig") break;
         await sleep(GAP_MS);

@@ -112,6 +112,9 @@ export default function VolcanoDetailPage() {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [externalPreview, setExternalPreview] = useState<{ src: string; title: string; meta?: string } | null>(null);
   const [busyCam, setBusyCam] = useState<string | null>(null);
+  const [searchOverride, setSearchOverride] = useState("");
+  const [savingOverride, setSavingOverride] = useState(false);
+  const [overrideSaved, setOverrideSaved] = useState(false);
 
   const reload = useCallback(async () => {
     if (!volcanoId) return;
@@ -120,12 +123,34 @@ export default function VolcanoDetailPage() {
       setMissing(true);
       return;
     }
-    setDetail(await res.json());
+    const next: VolcanoDetail = await res.json();
+    setDetail(next);
+    setSearchOverride(next.volcano.searchOverride ?? "");
   }, [volcanoId]);
 
   useEffect(() => {
     reload();
   }, [reload]);
+
+  /** Save (or clear, when blank) the operator's Wikipedia search term. The worker
+   *  re-queries on its next enrich pass — nothing is fetched from here. */
+  const saveSearchOverride = useCallback(async () => {
+    setSavingOverride(true);
+    setOverrideSaved(false);
+    try {
+      const res = await fetch(`/api/admin/volcanoes/${encodeURIComponent(volcanoId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ searchOverride: searchOverride.trim() }),
+      });
+      if (res.ok) {
+        setOverrideSaved(true);
+        await reload();
+      }
+    } finally {
+      setSavingOverride(false);
+    }
+  }, [volcanoId, searchOverride, reload]);
 
   /** Switch one camera on/off. Reuses the existing admin cam route; reloads so the
    *  on/off counts and ordering reflect the change. */
@@ -597,6 +622,58 @@ export default function VolcanoDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Wikipedia search term. Renders ALWAYS — unlike the About card below, which
+          needs enrichment to have landed. The override exists precisely for the
+          volcanoes that never matched an article, so hiding it on a miss would
+          hide it exactly when it's needed. */}
+      <div style={{ ...card, marginTop: 14 }}>
+        <div style={cardLabel}>Wikipedia search</div>
+        <p style={{ color: "#8b95a7", fontSize: 12, lineHeight: 1.5, margin: "8px 0 10px" }}>
+          Enrichment searches Wikipedia by the volcano&apos;s name (<span style={{ color: "#cbd5e1" }}>{v.name}</span>).
+          Set a term here when that finds the wrong article or nothing at all — it replaces the guesses entirely.
+          Leave blank to go back to searching by name. Saving re-queues this volcano for the next enrich pass.
+        </p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <input
+            value={searchOverride}
+            onChange={(e) => { setSearchOverride(e.target.value); setOverrideSaved(false); }}
+            onKeyDown={(e) => { if (e.key === "Enter") saveSearchOverride(); }}
+            placeholder={`Search by name (${v.name})`}
+            aria-label="Wikipedia search term"
+            style={{
+              flex: "1 1 260px",
+              padding: "7px 10px",
+              borderRadius: 6,
+              border: "1px solid #1b2030",
+              background: "#070a11",
+              color: "#e2e8f0",
+              fontSize: 13,
+            }}
+          />
+          <button
+            type="button"
+            onClick={saveSearchOverride}
+            disabled={savingOverride || searchOverride.trim() === (v.searchOverride ?? "")}
+            style={{
+              ...primary,
+              padding: "7px 14px",
+              fontSize: 13,
+              opacity: savingOverride || searchOverride.trim() === (v.searchOverride ?? "") ? 0.5 : 1,
+              cursor: savingOverride ? "wait" : "pointer",
+            }}
+          >
+            {savingOverride ? "Saving…" : "Save"}
+          </button>
+        </div>
+        <div style={{ color: overrideSaved ? "#34d399" : "#5b6478", fontSize: 12, marginTop: 8 }}>
+          {overrideSaved
+            ? "Saved — will re-query on the next Wikipedia enrich run."
+            : v.searchOverride
+              ? `Overridden${v.wikiFetchedAt ? "" : " · awaiting the next enrich run"}. Last checked ${fmtTime(v.wikiFetchedAt)}.`
+              : `Searching by name. Last checked ${fmtTime(v.wikiFetchedAt)}${v.wikiTitle ? ` · matched "${v.wikiTitle}"` : v.wikiFetchedAt ? " · no match" : ""}.`}
+        </div>
+      </div>
 
       {/* Wikipedia enrichment. */}
       {(v.wikiPhoto || v.wikiThumb || v.wikiExtract) && (

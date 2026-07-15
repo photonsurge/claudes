@@ -183,4 +183,43 @@ describe("listNeedingEnrichment — the catalog-scaling guard", () => {
     await repoWith(find).listNeedingEnrichment(new Date(), true, { includeDormant: true });
     expect((find.mock.calls[0] as any[])[0]).toEqual({});
   });
+
+  it("a hand-set searchOverride clears the significance floor, so the override isn't a silent no-op", async () => {
+    const find = findMock();
+    await repoWith(find).listNeedingEnrichment(new Date("2026-06-15T00:00:00Z"));
+    const q = (find.mock.calls[0] as any[])[0];
+    const floor = q.$and[1];
+    // The floor is now "significant OR operator-overridden" — a dormant volcano
+    // the operator typed a search term for still gets enriched.
+    expect(floor.$or).toHaveLength(2);
+    expect(floor.$or[1]).toEqual({ searchOverride: { $exists: true, $ne: "" } });
+  });
+});
+
+describe("setSearchOverride", () => {
+  const repoWith = (updateOne: jest.Mock) => makeVolcanoRepo({ updateOne } as unknown as Model<iVolcanoModel>);
+  const updateMock = (matchedCount = 1) =>
+    jest.fn(() => ({ exec: async () => ({ matchedCount }) })) as unknown as jest.Mock;
+
+  it("stores a trimmed term and clears wikiFetchedAt so the next pass re-queries", async () => {
+    const updateOne = updateMock();
+    await repoWith(updateOne).setSearchOverride("gvp:211060", "  Mount Etna  ");
+    const [filter, update] = updateOne.mock.calls[0] as any[];
+    expect(filter).toEqual({ volcanoId: "gvp:211060" });
+    expect(update.$set).toEqual({ searchOverride: "Mount Etna" });
+    expect(update.$unset).toEqual({ wikiFetchedAt: "" });
+  });
+
+  it("a blank term clears the override entirely rather than storing an empty string", async () => {
+    const updateOne = updateMock();
+    await repoWith(updateOne).setSearchOverride("gvp:211060", "   ");
+    const [, update] = updateOne.mock.calls[0] as any[];
+    expect(update.$set).toBeUndefined();
+    expect(update.$unset).toEqual({ searchOverride: "", wikiFetchedAt: "" });
+  });
+
+  it("reports a miss when there's no such volcano", async () => {
+    expect(await repoWith(updateMock(0)).setSearchOverride("gvp:nope", "Etna")).toBe(false);
+    expect(await repoWith(updateMock(1)).setSearchOverride("gvp:211060", "Etna")).toBe(true);
+  });
 });
