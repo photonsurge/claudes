@@ -516,8 +516,28 @@ everything expensive only for what's on air**:
 | Tier | Scope | Work |
 | --- | --- | --- |
 | 1 | all ~1,470 | catalog fields + eruption history — one fetch each, effectively free |
-| 2 | all ~1,470 | Wikipedia/Wikidata summary + photo — ~1,470 × 150ms ≈ 4 min, 30-day staleness gate, stoppable |
-| 3 | significant only (`shouldPromoteVolcano`) | cameras, media, status adapters, frame capture, timelapse — byte-heavy, stays gated |
+| 2 | all ~1,470 | Wikipedia/Wikidata summary + **one** photo — ~1,470 × 150ms ≈ 4 min, 30-day staleness gate, stoppable |
+| 3 | significant only (`shouldPromoteVolcano`) | cameras, media refresh, status adapters, frame capture, timelapse — byte-heavy, stays gated |
+
+### 7.5.1 RULE — dormancy affects the MEDIA, never the RECORD
+
+> *"we need to not delete old volcanoes even tho they're inactive, they have stats — we don't need
+> constant effect photos n shit"*
+
+The two halves must not be conflated (conflating them is exactly what the TTL does today):
+
+- **The record is permanent.** An inactive volcano keeps its row and all its **stats** forever —
+  type, elevation, rock types, tectonic setting, region, eruption history, wiki prose, and **its
+  photo**. A dormant volcano is still interesting and still has a dossier. Nothing is ever deleted
+  for going quiet (§7.1).
+- **Live imagery is not.** Camera frame capture, timelapse and media refresh are Tier 3 — they run
+  **only while a volcano is significant** and stop when it goes quiet. We do not fetch pictures for
+  ~1,400 dormant volcanoes on a loop.
+- **A photo is a catalog fact, not a media stream.** The GVP primary photo + wiki photo are fetched
+  **once** and staleness-gated (30d) — they are Tier 2, not Tier 3. So a dormant volcano keeps a
+  picture on its page; it just doesn't accumulate a camera archive.
+
+Net: *stats + one photo forever; live imagery only when it matters.*
 
 ### 7.6 Read path — show them all
 
@@ -563,15 +583,59 @@ Two archives, two blob stores, two routes, two panels. Proposed split:
 remain unimplemented; §1.2's backfill programme is still the plan, and **VAAC** should be added to
 §1.2 (not P6 — it is a primary aviation-authoritative status source, not discovery enrichment).
 
+### 7.10 Operator control — turn the pictures on/off (per source + per camera)
+
+> *"option to turn on / off doing all these pictures, some aren't great"*
+
+**The flags already exist — but they are decorative AND self-resetting.** Three separate defects:
+
+1. **Nothing reads the source flag.** `volcano_media_sources.enabled` (default `true`) is in the
+   schema, but `mediaRegistry` / `officialMedia` / `satelliteMedia` fetch every source
+   unconditionally. Only `cameraRefresh` honours the *camera* flag (via `volcanoCameras.listEnabled()`).
+2. **Every registry run clobbers it back ON.** Each call site passes a hardcoded `enabled: true` into
+   `volcanoMediaSources.upsert`, which `$set`s the whole object — so an operator's "off" survives at
+   most until the next poll (6–24h). Same class of bug as reseed-drops-enrichment.
+3. **No setter, no UI.** Neither repo exposes a `setEnabled`; there is no `/admin` surface at all.
+
+Work, in order:
+
+1. **Make the flag authoritative** — `enabled` becomes `$setOnInsert`, never `$set`, in
+   `volcanoMediaSources.upsert` (and for camera `enabled` in `volcanoCameras.upsertMany`). Discovery
+   may refresh metadata; it must **never** re-enable something an operator switched off. Cover with a
+   test: upsert an existing disabled source → stays disabled.
+2. **Honour it everywhere** — a disabled source fetches nothing and stores nothing:
+   `mediaRegistry`, `officialMedia`, `satelliteMedia`, `cameraRefresh`, and P2b `snapshotCams` /
+   `timelapseCams`.
+3. **Setters** — `volcanoMediaSources.setEnabled(source, bool)`, `volcanoCameras.setEnabled(id, bool)`.
+4. **Admin UI — `/admin/volcanoes/media`** (linked from `/admin/volcanoes`):
+   - a row per source (12): name, licence, reuse-allowed, poll cadence, camera count, last
+     discovered, **on/off toggle**;
+   - a per-camera list with **thumbnail + on/off** — "some aren't great" is a *per-camera* judgement
+     (one bad angle on an otherwise good source), so the camera toggle is the one that actually
+     matters; the source toggle is the blunt instrument.
+   - Reuse the existing admin toggle patterns (`/admin/cams`, countries' `roundupEnabled`).
+5. **Env kill-switch** for headless/deploy control (mirrors `PUBLIC_REQUEST_LOG` / `SATIMG_SOURCE`),
+   e.g. `VOLCANO_MEDIA_SOURCES=GEONET,USGS_VHP,INGV`. The **DB flag is the operator-facing truth**;
+   env is the blunt override.
+6. **Quality signals, not auto-disable (later).** `satimg/grade.ts` already exists and could score
+   frames, and P2b already computes `meanLuma`/`pHash`. Surface a quality hint next to the toggle —
+   but **never auto-disable a camera**: "some aren't great" is a taste call, not a metric. The
+   operator decides.
+
+**Default stays everything-ON**, so this lands dark and changes no behaviour until someone flips a
+switch.
+
 ### P7 build order
 
 1. **TTL migration** (blocker — user presses the button) → `bulletinAt` split.
 2. Catalog adapter **(verify live first)** + `seedCatalog` + model fields + parity test.
 3. Eruption history (`volcano_eruptions` + `seedEruptions`).
-4. Overlay + admin "show them all".
-5. Derived facts (§7.7 — free wins).
-6. Converge camera archives (§7.8).
-7. Status adapters + VAAC (§7.9 — the real gap).
+4. **Media on/off control** (§7.10) — small, self-contained, and it's the thing that stops the
+   not-great pictures; the `$setOnInsert` fix should land before anyone relies on a toggle.
+5. Overlay + admin "show them all".
+6. Derived facts (§7.7 — free wins).
+7. Converge camera archives (§7.8).
+8. Status adapters + VAAC (§7.9 — the real gap).
 
 **Sequencing note:** a concurrent agent is editing `worker/src/jobs/volcanoes.ts`. Steps 2–3 are new
 files and safe; steps 4–6 touch contested ground — coordinate before starting.
