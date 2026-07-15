@@ -16,13 +16,19 @@
 // derived from each so the subset grid EXACTLY matches the descriptor dims.
 
 import { getSource } from "@photonsurge/shared/sources";
+import { GFS_S3_BASE } from "./gfs";
 import { WAVE_MATCH, padWaveFhr } from "./gfswave";
-
-/** Direct NOMADS production dir for GFS-Wave gridded GRIB2 (same as the mosaic). */
-const NOMADS_PROD = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod";
 
 // Re-export the shared HTSGW match + fhr padder so the ingest imports from one place.
 export { WAVE_MATCH, padWaveFhr };
+
+/**
+ * The `.idx` var/level pair naming the significant-wave-height message — the
+ * byte-range equivalent of {@link WAVE_MATCH} (`:HTSGW:surface:`), which still
+ * selects the field inside the downloaded subset. Keep the two in step.
+ */
+export const WAVE_NEST_VARS = ["HTSGW"];
+export const WAVE_NEST_LEVELS = ["surface"];
 
 /** Per-basin ingest spec: descriptor id → NOMADS grid token → bbox/dims/newgrid. */
 export interface WaveNestTile {
@@ -104,22 +110,37 @@ export function waveNestTiles(): WaveNestTile[] {
   return Object.keys(WAVE_NEST_TOKENS).map(waveNestTile);
 }
 
+/** A basin GRIB2 on S3 plus its `.idx` sidecar (byte offsets of every message). */
+export interface WaveNestS3Paths {
+  /** Full basin GRIB2 URL (Range-requested per message). */
+  gribUrl: string;
+  /** Its `.idx` index sidecar URL. */
+  idxUrl: string;
+}
+
 /**
- * Direct NOMADS production URL for a GFS-Wave regional basin GRIB2 file. Mirrors
- * `buildWaveTileUrl` from gfswave.ts (same `wave/gridded/` dir + filename shape)
- * but with a basin grid token.
+ * S3 grib + `.idx` URLs for one GFS-Wave regional basin forecast hour.
+ *
+ * The basins live in the same `wave/gridded/` dir, under the same filename shape,
+ * as the global wave product `buildGfsS3Paths` already reads — only the grid token
+ * differs (`atlocn.0p16` vs `global.0p25`). NOMADS is deliberately NOT used here:
+ * it soft-bans server IPs that fetch faster than ~10s apart (see politeness.ts),
+ * which surfaced as connection-level `TypeError: fetch failed` on every basin hour.
+ * The same data sits in the public bucket with no rate limit, and the `.idx` lets
+ * us pull only the HTSGW message (~28 KB of a ~670 KB basin file).
  *
  * Example (atlocn.0p16, 00z, f024):
- *   https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/gfs.20260628/00/
+ *   https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.20260628/00/
  *     wave/gridded/gfswave.t00z.atlocn.0p16.f024.grib2
  */
-export function buildWaveNestUrl(args: {
+export function buildWaveNestS3Paths(args: {
   date: string;
   cycle: string;
   fhr: number;
   grid: string;
-}): string {
+}): WaveNestS3Paths {
   const cyc = String(args.cycle).padStart(2, "0");
   const fff = padWaveFhr(args.fhr);
-  return `${NOMADS_PROD}/gfs.${args.date}/${cyc}/wave/gridded/gfswave.t${cyc}z.${args.grid}.f${fff}.grib2`;
+  const gribUrl = `${GFS_S3_BASE}/gfs.${args.date}/${cyc}/wave/gridded/gfswave.t${cyc}z.${args.grid}.f${fff}.grib2`;
+  return { gribUrl, idxUrl: `${gribUrl}.idx` };
 }

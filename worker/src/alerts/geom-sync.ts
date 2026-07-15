@@ -9,6 +9,7 @@ import {
   RateLimitError,
   type EdrFeature,
 } from "./meteogate";
+import { repairCachedGeometry } from "./repair";
 
 const TAG = "alerts:geom-sync";
 
@@ -25,6 +26,8 @@ export interface GeomSyncResult {
   skipped: number;
   /** Already-stored alerts retro-fitted with a boundary this run. */
   backfilled: number;
+  /** Cached boundaries Mongo would have refused, fixed in place (no re-fetch). */
+  repaired: number;
   /** True when the run ended early on the quota rather than finishing. */
   quotaStopped: boolean;
   /** Gateway requests left in the window, as the server last reported them. */
@@ -77,10 +80,23 @@ export async function syncAreaGeometry(
     cached: 0,
     skipped: 0,
     backfilled: 0,
+    repaired: 0,
     quotaStopped: false,
     quotaRemaining: null,
     failures: [],
   };
+
+  // Heal boundaries cached before geometry was repaired on the way in. Done
+  // FIRST and unconditionally: it costs no network and no MeteoGate quota (the
+  // shapes are already here — they need fixing, not re-fetching), and a run that
+  // stops on the quota below must still have healed. Self-terminating.
+  try {
+    const r = await repairCachedGeometry(db.alertAreaGeom);
+    res.repaired = r.repaired;
+    if (r.repaired || r.unfixable) log(TAG, `repaired cached boundaries Mongo would refuse`, r);
+  } catch (err) {
+    res.failures.push(`repair-cached: ${String((err as Error)?.message ?? err)}`);
+  }
 
   // One feature per alert per country: the feed repeats each alert per language
   // and per area, and they all resolve through the same linked CAP document.

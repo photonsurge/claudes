@@ -3,12 +3,12 @@
 // wcoast / ecg at 0.16°, published as zoom-gated overlays on top of the global
 // `gfswave-mosaic` base. Mirrors `ingestWaveMosaic` in multiSource.ts but keeps
 // each basin on its OWN native regional grid + bbox (NO regrid-to-global): per
-// basin, per fhr, download the basin GRIB2 → subset to the descriptor bbox/dims
-// with wgrib2 -new_grid → regional scalar bake → publishSourceRun tagged with the
-// basin's sourceId/resolutionDeg/bbox/priority.
+// basin, per fhr, pull the basin's HTSGW message from S3 by byte range → subset to
+// the descriptor bbox/dims with wgrib2 -new_grid → regional scalar bake →
+// publishSourceRun tagged with the basin's sourceId/resolutionDeg/bbox/priority.
 //
-// Idempotent (alreadyPublished guard per basin+run), nomadsGate-throttled, temp
-// cleaned up in finally. Kept free of process.exit/loadEnv so callers own runtime.
+// Idempotent (alreadyPublished guard per basin+run), temp cleaned up in finally.
+// Kept free of process.exit/loadEnv so callers own runtime.
 
 import { getSource } from "@photonsurge/shared/sources";
 import { log } from "@photonsurge/shared/utill/logger";
@@ -18,12 +18,13 @@ import { regridTileToGlobal } from "../merge/mosaic";
 import { latestAvailableRun } from "../sources/gfs";
 import {
   waveNestTiles,
-  buildWaveNestUrl,
+  buildWaveNestS3Paths,
   WAVE_MATCH,
+  WAVE_NEST_VARS,
+  WAVE_NEST_LEVELS,
   type WaveNestTile,
 } from "../sources/waveNests";
-import { downloadToTemp, cleanupTemp, headOk } from "./download";
-import { nomadsGate } from "./politeness";
+import { downloadIdxSubset, cleanupTemp, headOk } from "./download";
 import { forecastSteps, cfg } from "./config";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { publishSourceRun, type BakedVariable } from "./publishSourceRun";
@@ -83,9 +84,9 @@ async function ingestOneNest(tile: WaveNestTile, run: { date: string; cycle: str
     for (const fhr of steps) {
       let path: string;
       try {
-        await nomadsGate();
-        path = await downloadToTemp(
-          buildWaveNestUrl({ date: run.date, cycle: run.cycle, fhr, grid: tile.grid }),
+        const { gribUrl, idxUrl } = buildWaveNestS3Paths({ date: run.date, cycle: run.cycle, fhr, grid: tile.grid });
+        path = await downloadIdxSubset(
+          { gribUrl, idxUrl, vars: WAVE_NEST_VARS, levels: WAVE_NEST_LEVELS },
           `wave.${tile.grid}.f${fhr}.grib2`,
         );
       } catch (err) {

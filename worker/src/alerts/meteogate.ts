@@ -1,5 +1,6 @@
 import type { AlertGeometry } from "@photonsurge/shared/db/alert-model";
 import { windGeometry } from "@photonsurge/shared/alerts/rings";
+import { storableGeometry } from "./repair";
 import type { AreaGeomInput } from "@photonsurge/shared/db/alert-area-geom-repo";
 
 /**
@@ -141,7 +142,15 @@ export function emmaFromCapJson(
   return { identifier };
 }
 
-/** The true area polygon from a rel=geometry document. */
+/**
+ * The true area polygon from a rel=geometry document.
+ *
+ * Repaired on the way in, not on the way out: an EMMA boundary is resolved once
+ * and cached forever, so a shape Mongo won't accept would be a permanent hole —
+ * the area never gets a footprint and every alert over it stays undrawable, run
+ * after run, with nothing to re-fetch. A few real coastlines pinch themselves
+ * (see repair.ts); fix them here, once.
+ */
 export function geometryFromFeatureDoc(body: string): AlertGeometry | null {
   let doc: any;
   try {
@@ -149,7 +158,7 @@ export function geometryFromFeatureDoc(body: string): AlertGeometry | null {
   } catch {
     return null;
   }
-  return windGeometry((doc?.geometry ?? doc) as AlertGeometry | null);
+  return storableGeometry(windGeometry((doc?.geometry ?? doc) as AlertGeometry | null));
 }
 
 const withKey = (url: string): string =>

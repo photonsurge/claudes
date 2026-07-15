@@ -1,35 +1,47 @@
 import {
-  buildWaveNestUrl,
+  buildWaveNestS3Paths,
   buildWaveNestNewGrid,
   waveNestTile,
   waveNestTiles,
   WAVE_NEST_TOKENS,
+  WAVE_NEST_VARS,
+  WAVE_NEST_LEVELS,
   WAVE_MATCH,
   padWaveFhr,
 } from "./waveNests";
+import { GFS_S3_BASE } from "./gfs";
 import { getSource } from "@photonsurge/shared/sources";
 
 const NEST_IDS = Object.keys(WAVE_NEST_TOKENS);
 
-describe("buildWaveNestUrl", () => {
-  it("builds the direct NOMADS production URL for a basin (atlocn.0p16)", () => {
-    const url = buildWaveNestUrl({ date: "20260628", cycle: "00", fhr: 24, grid: "atlocn.0p16" });
-    expect(url).toBe(
-      "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/gfs.20260628/00/wave/gridded/gfswave.t00z.atlocn.0p16.f024.grib2",
-    );
+describe("buildWaveNestS3Paths", () => {
+  it("builds the S3 grib + .idx URLs for a basin (atlocn.0p16)", () => {
+    const { gribUrl, idxUrl } = buildWaveNestS3Paths({ date: "20260628", cycle: "00", fhr: 24, grid: "atlocn.0p16" });
+    expect(gribUrl).toBe(`${GFS_S3_BASE}/gfs.20260628/00/wave/gridded/gfswave.t00z.atlocn.0p16.f024.grib2`);
+    expect(idxUrl).toBe(`${gribUrl}.idx`);
+  });
+
+  // NOMADS soft-bans server IPs that fetch faster than ~10s apart, which showed up
+  // as connection-level `fetch failed` on every basin hour. The bake must stay on S3.
+  it("never points at NOMADS", () => {
+    for (const grid of Object.values(WAVE_NEST_TOKENS)) {
+      const { gribUrl } = buildWaveNestS3Paths({ date: "20260628", cycle: "00", fhr: 0, grid });
+      expect(gribUrl).not.toContain("nomads");
+      expect(gribUrl.startsWith(GFS_S3_BASE)).toBe(true);
+    }
   });
 
   it("zero-pads the cycle and the 3-digit forecast hour", () => {
-    const url = buildWaveNestUrl({ date: "20260628", cycle: "6", fhr: 6, grid: "epacif.0p16" });
-    expect(url).toContain("/gfs.20260628/06/wave/gridded/");
-    expect(url).toContain("gfswave.t06z.epacif.0p16.f006.grib2");
+    const { gribUrl } = buildWaveNestS3Paths({ date: "20260628", cycle: "6", fhr: 6, grid: "epacif.0p16" });
+    expect(gribUrl).toContain("/gfs.20260628/06/wave/gridded/");
+    expect(gribUrl).toContain("gfswave.t06z.epacif.0p16.f006.grib2");
   });
 
   it("lives under the same wave/gridded dir as the mosaic tiles", () => {
     for (const grid of Object.values(WAVE_NEST_TOKENS)) {
-      const url = buildWaveNestUrl({ date: "20260628", cycle: "12", fhr: 0, grid });
-      expect(url).toContain("/wave/gridded/");
-      expect(url).toContain(`gfswave.t12z.${grid}.f000.grib2`);
+      const { gribUrl } = buildWaveNestS3Paths({ date: "20260628", cycle: "12", fhr: 0, grid });
+      expect(gribUrl).toContain("/wave/gridded/");
+      expect(gribUrl).toContain(`gfswave.t12z.${grid}.f000.grib2`);
     }
   });
 });
@@ -37,6 +49,12 @@ describe("buildWaveNestUrl", () => {
 describe("shared helpers re-exported", () => {
   it("uses the HTSGW surface match", () => {
     expect(WAVE_MATCH).toBe(":HTSGW:surface:");
+  });
+
+  // The idx var/level pair must keep selecting the same message as WAVE_MATCH:
+  // the range download picks the message, WAVE_MATCH then finds it in the subset.
+  it("selects the same field by idx var/level as WAVE_MATCH does by wgrib2 match", () => {
+    expect(WAVE_MATCH).toBe(`:${WAVE_NEST_VARS[0]}:${WAVE_NEST_LEVELS[0]}:`);
   });
   it("pads forecast hours to 3 digits", () => {
     expect(padWaveFhr(0)).toBe("000");

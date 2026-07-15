@@ -85,6 +85,37 @@ export function makeAlertAreaGeomRepo(
       );
     },
 
+    /**
+     * Cached boundaries nobody has checked are storable yet, oldest first.
+     *
+     * The backlog from before geometry was repaired on the way in. Bounded, and
+     * the marker makes it terminate: once swept, this returns nothing forever.
+     * Costs no MeteoGate quota — the shapes are already here, they just need
+     * fixing, not re-fetching.
+     */
+    async uncheckedAreas(limit: number): Promise<{ emmaId: string; geometry: AlertGeometry }[]> {
+      if (limit <= 0) return [];
+      const docs = await geomModel
+        .find({ checkedAt: { $exists: false } }, { _id: 0, emmaId: 1, geometry: 1 })
+        .limit(Math.floor(limit))
+        .lean()
+        .exec();
+      return docs as unknown as { emmaId: string; geometry: AlertGeometry }[];
+    },
+
+    /**
+     * Record that a boundary was checked, replacing its geometry when it needed
+     * repairing. Marked either way, so a shape is never re-examined.
+     */
+    async markChecked(emmaId: string, geometry?: AlertGeometry | null): Promise<void> {
+      await geomModel
+        .updateOne(
+          { emmaId },
+          { $set: geometry ? { geometry, checkedAt: new Date() } : { checkedAt: new Date() } },
+        )
+        .exec();
+    },
+
     /** EMMA_IDs already cached — lets the sync skip resolving a known area. */
     async knownEmmaIds(): Promise<Set<string>> {
       const docs = await geomModel.find({}, { emmaId: 1 }).lean().exec();

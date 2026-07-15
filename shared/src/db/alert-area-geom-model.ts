@@ -35,6 +35,17 @@ export interface iAlertAreaGeom extends iGeneralModel {
   /** Feed that resolved it ("meteogate"). */
   source: string;
   fetchedAt: Date;
+  /**
+   * When the worker last checked this boundary is one Mongo will actually store.
+   *
+   * A handful of real coastlines pinch themselves (a ring revisiting a vertex),
+   * which the 2dsphere refuses — and because a boundary is resolved ONCE and kept
+   * forever, a bad one is a permanent hole: the area never gets a footprint and
+   * there's nothing left to re-fetch. New rows are repaired on the way in, so
+   * this only marks the backlog as it gets swept — absent means "not looked at
+   * yet", not "broken".
+   */
+  checkedAt?: Date;
 }
 
 export interface iAlertAreaGeomModel extends iAlertAreaGeom {
@@ -52,11 +63,14 @@ const AlertAreaGeomSchema = new mongoose.Schema<iAlertAreaGeomModel>(
     precision: { type: String, required: true, enum: ["exact", "bbox"], default: "exact" },
     source: { type: String, required: true, default: "meteogate" },
     fetchedAt: { type: Date, required: true, default: () => new Date() },
+    checkedAt: { type: Date, required: false },
   },
   { timestamps: false },
 );
 
 AlertAreaGeomSchema.index({ emmaId: 1 }, { unique: true, name: "alert_area_geom_emma_ix" });
+// "What's left to sweep" — sparse, so it shrinks to nothing as the backlog clears.
+AlertAreaGeomSchema.index({ checkedAt: 1 }, { name: "alert_area_geom_checked_ix", sparse: true });
 
 export const getAlertAreaGeomModel = (conn: Connection) =>
   getModel<iAlertAreaGeomModel>(conn, "AlertAreaGeom", AlertAreaGeomSchema);
