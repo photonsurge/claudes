@@ -101,10 +101,47 @@ function serializeJob(job: any) {
   };
 }
 
+/** The states holding work that hasn't started — what "backlog" means here. */
+const QUEUED_STATES = ["waiting", "delayed", "prioritized", "paused"] as const;
+
 /**
- * GET /api/admin/queue?state=&limit= — a BullMQ dashboard snapshot: per-state
- * counts, whether the queue is paused, the repeatable schedules, and the jobs
- * currently in the requested `state` (newest first, up to `limit`).
+ * The backlog broken down by job kind, biggest first.
+ *
+ * The dashboard lists jobs newest-first up to `limit`, which answers "what's
+ * queued" but not "what is the backlog MADE of" — and those differ wildly: a
+ * 500-job pile is usually a handful of schedules re-firing work that's already
+ * stale, not 500 distinct problems. You can't choose a type to cancel without
+ * seeing the shape first, and a truncated page can't show it.
+ *
+ * Counts across every queued state, `prioritized` included — sendToQueue sets a
+ * priority, so BullMQ files those separately from `waiting` and they'd otherwise
+ * be invisible here.
+ */
+async function getBacklog(q: any): Promise<{ type: string; event: string; count: number; oldest: number | null }[]> {
+  const jobs = await q.getJobs([...QUEUED_STATES] as any, 0, -1, false);
+  const by = new Map<string, { type: string; event: string; count: number; oldest: number | null }>();
+  for (const j of jobs) {
+    const d = (j?.data ?? {}) as { type?: string; event?: string };
+    if (!d.type) continue;
+    const key = `${d.type}.${d.event ?? ""}`;
+    const hit = by.get(key);
+    if (hit) {
+      hit.count++;
+      if (j?.timestamp && (!hit.oldest || j.timestamp < hit.oldest)) hit.oldest = j.timestamp;
+    } else {
+      by.set(key, { type: d.type, event: d.event ?? "", count: 1, oldest: j?.timestamp ?? null });
+    }
+  }
+  return [...by.values()].sort((a, b) => b.count - a.count);
+}
+
+/**
+ * GET /api/admin/queue?state=&limit=&backlog= — a BullMQ dashboard snapshot:
+ * per-state counts, whether the queue is paused, the repeatable schedules, and
+ * the jobs currently in the requested `state` (newest first, up to `limit`).
+ *
+ * `backlog=1` adds the queued-work breakdown by kind. Opt-in because it reads
+ * every queued job's data, and the dashboard polls on a timer.
  */
 async function GET__impl(req: Request) {
   const url = new URL(req.url);
@@ -119,12 +156,15 @@ async function GET__impl(req: Request) {
   const states: State[] = requested.length ? requested : ["active"];
   const limit = Math.min(Math.max(1, Number(url.searchParams.get("limit")) || 100), 1000);
 
+  const wantBacklog = url.searchParams.get("backlog") === "1";
+
   const q = getQueue();
   try {
-    const [counts, paused, repeatables] = await Promise.all([
+    const [counts, paused, repeatables, backlog] = await Promise.all([
       q.getJobCounts(...STATES),
       q.isPaused(),
       getSchedules(q),
+      wantBacklog ? getBacklog(q) : Promise.resolve([]),
     ]);
     const perState = await Promise.all(
       states.map(async (s) => {
@@ -134,13 +174,13 @@ async function GET__impl(req: Request) {
     );
     const jobs = perState.flat();
     return NextResponse.json(
-      { queue: q.name, state: states.length === 1 ? states[0] : states.join(","), counts, paused, jobs, repeatables, limit },
+      { queue: q.name, state: states.length === 1 ? states[0] : states.join(","), counts, paused, jobs, repeatables, backlog, limit },
       { status: 200, headers: NO_CACHE },
     );
   } catch (err) {
     // Redis/worker down — return a shell so the page still renders the error.
     return NextResponse.json(
-      { queue: q.name, state: states.join(","), counts: null, paused: false, jobs: [], repeatables: [], error: String(err) },
+      { queue: q.name, state: states.join(","), counts: null, paused: false, jobs: [], repeatables: [], backlog: [], error: String(err) },
       { status: 200, headers: NO_CACHE },
     );
   }
@@ -151,6 +191,7 @@ async function GET__impl(req: Request) {
  *  - retry | remove | promote : act on one job by id
  *  - cancel                    : stop a job — remove it if not yet started, or
  *                                signal a cooperative abort if it's active
+ *  - cancelType { type, event? } : bin every not-yet-started job of one kind
  *  - retryAll                  : re-queue every failed job
  *  - clean { type }            : purge a whole job-type (completed/failed/…)
  *  - clear { states?, force? } : purge whole states (default: all of them)
@@ -219,6 +260,34 @@ async function POST__impl(req: Request) {
         );
         await Promise.all(matches.map((j: any) => j.remove()));
         detail = { removed: matches.length };
+        break;
+      }
+      case "cancelType": {
+        // Bin every not-yet-started job of one kind. The backlog arrives by TYPE,
+        // not one bad job at a time — ~200 stacked `weather.refresh*` re-runs of
+        // work that's already stale — and cancelling those one by one isn't a
+        // realistic thing to ask of an operator.
+        //
+        // `event` is optional: omit it to clear a whole domain ("weather"), pass
+        // it to clear one job ("weather.refreshMrms").
+        //
+        // Sweeps `prioritized` as well, which `stopChain` above does NOT —
+        // sendToQueue gives jobs a priority, so BullMQ files them in a separate
+        // set from plain `waiting` and a backlog can sit there unseen (69 of them,
+        // last time this was measured).
+        if (!body.type) {
+          return NextResponse.json({ error: "missing type" }, { status: 400, headers: NO_CACHE });
+        }
+        const pending = await q.getJobs(["waiting", "delayed", "prioritized", "paused"], 0, -1, false);
+        const doomed = pending.filter(
+          (j: any) =>
+            j?.data?.type === body.type && (!body.event || j?.data?.event === body.event),
+        );
+        // A job that vanishes mid-sweep (picked up, or removed by another
+        // operator) is the outcome we wanted anyway — don't fail the whole call.
+        const results = await Promise.allSettled(doomed.map((j: any) => j.remove()));
+        const removed = results.filter((r) => r.status === "fulfilled").length;
+        detail = { removed, matched: doomed.length };
         break;
       }
       case "cancel": {

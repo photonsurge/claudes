@@ -11,6 +11,7 @@ import QueueJob, { type SerializedJob, type JobAction } from "../../../component
 import QueueEventLog from "../../../components/admin/QueueEventLog";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import ClearQueueMenu from "../../../components/admin/ClearQueueMenu";
+import QueueBacklog, { type BacklogRow } from "../../../components/admin/QueueBacklog";
 
 const STATES = ["active", "waiting", "prioritized", "delayed", "failed", "completed", "paused"] as const;
 type State = (typeof STATES)[number];
@@ -32,6 +33,8 @@ interface QueueData {
   paused: boolean;
   jobs: SerializedJob[];
   repeatables: Repeatable[];
+  /** Queued work grouped by kind — only present when asked for (backlog=1). */
+  backlog: BacklogRow[];
   limit: number;
   error?: string;
 }
@@ -83,12 +86,17 @@ export default function QueuePage() {
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.parse("2026-01-01T00:00:00Z"));
   // Keep the latest state/limit for the polling loop without re-arming it.
-  const params = useRef({ state, limit });
-  params.current = { state, limit };
+  const [showBacklog, setShowBacklog] = useState(false);
+  const params = useRef({ state, limit, backlog: showBacklog });
+  params.current = { state, limit, backlog: showBacklog };
 
   const refresh = useCallback(async () => {
     const { state: s, limit: l } = params.current;
-    const res = await fetch(`/api/admin/queue?state=${s}&limit=${l}`, { cache: "no-store" });
+    // backlog=1 reads every queued job's data, so only ask when the panel is open.
+    const res = await fetch(
+      `/api/admin/queue?state=${s}&limit=${l}${params.current.backlog ? "&backlog=1" : ""}`,
+      { cache: "no-store" },
+    );
     const body = (await res.json().catch(() => null)) as QueueData | null;
     if (body) setData(body);
     setNow(Date.now());
@@ -99,7 +107,7 @@ export default function QueuePage() {
     if (!live) return;
     const iv = setInterval(refresh, 4000);
     return () => clearInterval(iv);
-  }, [refresh, live, state, limit]);
+  }, [refresh, live, state, limit, showBacklog]);
 
   const post = async (payload: Record<string, unknown>) => {
     setBusy(true);
@@ -141,6 +149,14 @@ export default function QueuePage() {
           >
             {data?.paused ? "Resume queue" : "Pause queue"}
           </button>
+          <button
+            type="button"
+            onClick={() => setShowBacklog((v) => !v)}
+            style={toolBtn(showBacklog ? "#14532d" : "#1a1f2b")}
+            title="What the queued work is actually made of, by job kind"
+          >
+            Backlog by kind
+          </button>
           <ClearQueueMenu counts={counts} disabled={busy} onDone={refresh} />
           <button
             type="button"
@@ -157,6 +173,19 @@ export default function QueuePage() {
         {data?.error && (
           <div style={{ marginTop: 14, padding: 12, borderRadius: 8, border: "1px solid #3a1620", background: "#1a0d12", color: "#fca5a5", fontSize: 13 }}>
             Queue unreachable (worker / Redis down?) — {data.error}
+          </div>
+        )}
+
+        {/* What the queued work is MADE of — the view that makes a backlog
+            actionable, since the job list below is newest-first and truncated. */}
+        {showBacklog && (
+          <div style={{ marginTop: 14, padding: 12, borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c" }}>
+            <QueueBacklog
+              rows={data?.backlog ?? []}
+              now={now}
+              busy={busy}
+              onCancel={(type, event) => post({ action: "cancelType", type, event: event || undefined })}
+            />
           </div>
         )}
 
