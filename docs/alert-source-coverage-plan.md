@@ -20,12 +20,18 @@ Neither half of that holds today:
   MeteoAlarm fans out to all 37 countries; `WMO_EXCLUDE_CC` is unset and defaults
   to empty, so WMO ingests the whole planet including Europe.
 
-Measured against WMO's live feed (9,377 active alerts, 52 countries):
+Measured against WMO's live feed (9,377 rows, 52 countries):
 
 | | countries |
 |---|---|
-| Carried by BOTH (duplicated) | **29** — incl. PL 103, FR 513, ES 332, FI 2906 |
-| WMO has nothing (MeteoAlarm is the only source) | **8** — `bg is il lv lu mt pt gb` |
+| Carried by BOTH (duplicated) | **29** — incl. PL, FR, ES, DE, NL, FI |
+| WMO has nothing | **8** — `bg is il lv lu mt pt gb` |
+
+**Count WMO by `capurl`, never by row.** WMO's rows are one per (alert × area):
+1,315 US rows are 179 alerts (one covers 41 areas); 2,906 Finnish rows are 124
+alerts. Comparing raw row counts to MeteoAlarm's per-alert counts is meaningless
+and inverts the answer — it made France look WMO-favoured (513 rows) when WMO
+actually has **9** French alerts to MeteoAlarm's 133.
 
 The Poland alert that started this work is `source: meteoalarm`, and WMO
 independently carries 103 Polish alerts of the same national origin (WMO's
@@ -48,21 +54,33 @@ for a country does not mean it has *all* of them (WMO shows 16 for Germany;
 DWD issues far more). Dropping DE from MeteoAlarm on that basis would lose
 warnings, trading a duplication bug for a coverage bug.
 
-### 3. UK is already covered — and was just fixed
+### 3. Per ALERT, MeteoAlarm is richer nearly everywhere — except Finland
 
-WMO carries **zero** UK alerts (`gb`/`uk` both 0), so MeteoAlarm is the UK's only
-source. Until now those alerts had no geometry at all (MeteoAlarm ships
-geocode-only areas), so UK warnings could not be drawn. The EMMA boundary cache
-landed 2026-07-15 fixes exactly that: UK alerts now resolve to real shapes.
+| country | MeteoAlarm | WMO (unique alerts) |
+|---|---|---|
+| Germany | **611** | 11 |
+| Netherlands | **787** | 100 |
+| Spain | **665** | 302 |
+| Poland | **546** | 103 |
+| France | **133** | 9 |
+| Finland | 19 | **124** |
 
-So "we need UK" is largely **already done** — verify before building anything.
+So "MeteoAlarm owns Europe" is *nearly* right — but it would drop Finland from
+124 alerts to 19. One outlier is enough to make a blanket country rule wrong,
+which is the whole reason P0 below is "measure", not "configure".
 
-### 4. Better US is a config change, not a build
+UK is **0 in both** feeds right now, so its coverage is untested — do not assume
+either source carries it until UK weather is actually warning.
 
-The NWS adapter exists, is complete, polls at 60s and ships polygons — but
-`ALERTS_NWS_ENABLED` is unset, so it is **off**, and the US is served by WMO
-alone (1,315 alerts). `.env` already sets `NWS_POLL_SEC=900`, suggesting someone
-intended to enable it and stopped short.
+### 4. Better US is NOT a switch — NWS trades shapes for alerts
+
+NWS has **315 active alerts** vs WMO's **179** US alerts, and polls 60s vs 600s.
+But only **13% of NWS alerts carry a polygon** — the other 87% are UGC/SAME zone
+codes with no geometry, i.e. exactly the disease we just cured for MeteoAlarm.
+WMO's US alerts *do* have geometry.
+
+So flipping NWS on today would gain alerts and lose shapes. It only becomes a
+clean win once zone codes resolve to boundaries — see P1.
 
 ## Plan
 
@@ -86,15 +104,24 @@ solves it if coverage permits, and matching on (areaDesc, event, time) across
 translations and feed conventions is its own project. Revisit only if step 2
 shows both sources are each partial and neither can own a country.
 
-### P1 — Better US (cheap, high value)
+### P1 — Generalise the geocode→boundary cache (the actual win)
 
-Set `ALERTS_NWS_ENABLED=true` and `WMO_EXCLUDE_CC=us`. Gains richer US data:
-NWS CAP has real polygons, UGC/SAME geocodes, urgency/certainty/instruction, and
-a 60s poll vs WMO's 600s. `NWS_POLL_SEC=900` in `.env` should drop to the 60s
-default (or ~120s) or the point of switching is lost.
+The EMMA cache built on 2026-07-15 is a special case of a general problem: **feeds
+name an area by code and ship no shape.** MeteoAlarm does it with `EMMA_ID`; NWS
+does it with `UGC`/`SAME` on 87% of its alerts.
 
-Verify after: US alert count should be comparable-or-higher, and none should be
-double-counted (WMO `us` prefix must vanish).
+Generalise `AlertAreaGeom` from "EMMA_ID → polygon" to "(valueName, value) →
+polygon", with a resolver per code type:
+
+- `EMMA_ID` → MeteoGate (built).
+- `UGC` → `api.weather.gov/zones/{type}/{id}` (free, no key, returns geometry).
+
+`enrich-geometry.ts` already joins on the area's geocodes and needs almost no
+change. Then NWS can simply be **on in code** — 315 alerts *with* shapes beats
+WMO's 179 — and the US question answers itself with no env var.
+
+This is the no-config path: one mechanism, one cache, each new geocode-only feed
+is a resolver rather than a knob.
 
 ### P2 — Richer per-alert info
 

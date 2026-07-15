@@ -381,3 +381,197 @@ ingest hook → focus/admin surfacing). Then **P1** official multi-source status
 GeoNet, GVP notices, GDACS resolver), **P2** cameras + retention, **P3** official plots + series,
 **P4** seismic waveforms, **P5** retention sweeps + timelapse, **P6** discovery/enrichment. Each
 phase is independently shippable and flag-gated.
+
+---
+
+# TREE AUDIT — 2026-07-15 (read before planning further)
+
+What the code actually contains, which diverges from the assumptions above.
+
+**Shipped:** P0 status timeline (diff → promote → beats → FocusBundle → admin detail page +
+on-air slide). P1a USGS VHP geojson status. P1b GeoNet VAL official NZ levels + `volcano_source_links`
+crosswalk vs the worldwide GVP catalog. P2a GeoNet camera registry (generic `Cam`, `tags:[gvp:<vnum>]`).
+P2b camera frame capture → `event_snapshots` (pHash dedup, day/night-aware, `meanLuma`), animated-WebP
+timelapse (`render` kind), day+night retention thinning + scoped prune.
+
+**A parallel media stack already exists** (`worker/src/volcano/media/`, commit `cf0fe29`, wired into
+`jobs/volcanoes.ts` while P2b was being written — the file went 493 → 1275 lines mid-session; a
+concurrent agent is editing this tree, see [[auto-commit-background]]). It is **12 adapters** across
+5 jobs with admin buttons, on its own `volcano_cameras` / `volcano_media` / `volcano_media_sources`
+models + `blobs.volcanoMedia` + `/api/volcanoes/media/:id` + `VolcanoMediaPanel`:
+
+| Job | Sources |
+| --- | --- |
+| `mediaRegistry` | AVO · USGS (ashcam + webcams) · INGV · PHIVOLCS · MAGMA (Indonesia) · JMA (Japan) · CENAPRED (Mexico) · OVPF (Réunion) → `volcano_cameras` + `cams` |
+| `officialMedia` | IMO (Iceland) eruption images · GVP images · NASA images → `volcano_media` |
+| `satelliteMedia` | VOLCAT (satellite ash/thermal) → `volcano_media` |
+| `cameraRefresh` | fetches each registered camera's current image → `volcano_media` bytes |
+| `mediaRights` | per-source licence/attribution defaults |
+
+**Consequences to absorb:**
+1. **The "regional observatories are missing" line in §1.2 is wrong for MEDIA** — AVO/USGS/INGV/
+   PHIVOLCS/MAGMA/JMA/CENAPRED/OVPF/IMO all have imagery adapters. VOLCAT already covers satellite
+   ash/thermal (P6 lists it as future work — it exists).
+2. **It is still right for STATUS.** Every one of those adapters is imagery-only: MAGMA scrapes CCTV
+   not Indonesia's alert levels; JMA scrapes cams not volcanic warnings; IMO fetches eruption photos
+   not aviation colour codes. **Real-time official status remains US (USGS VHP) + NZ (GeoNet) only** —
+   every other volcano on Earth runs on the Thursday-only GVP bulletin. This is the single biggest
+   correctness gap in the whole feature.
+3. **Two camera-frame archives now exist** — see §7.8. This is exactly the parallel-stack outcome
+   the "Deviations" section set out to avoid; it arrived from the other direction.
+4. **VAAC is absent from this document entirely** — 9 Volcanic Ash Advisory Centres, global,
+   real-time, aviation-authoritative, plume height + flight levels. Best coverage-per-adapter left.
+
+---
+
+# PHASE 7 (P7) — Every volcano, maximal dossier
+
+**Ask:** "add all the volcanoes and as much info as possible."
+
+Today `volcanoes` holds only what the GVP weekly bulletin reported in the last 14 days (tens of
+volcanoes) plus a few crosswalk stubs. Every other volcano on Earth is invisible. This phase makes
+the collection the **complete catalog** and builds the richest per-volcano dossier the free sources
+allow. Consistent with the standing no-arbitrary-caps rule ([[no-arbitrary-caps]]).
+
+### 7.1 THE BLOCKER — the TTL must go first
+
+`volcano-model.ts` carries `VolcanoSchema.index({ fetchedAt: 1 }, { expireAfterSeconds: 14d })`
+(`volcano_ttl_ix`). The collection is modelled as a **weekly-bulletin cache**: a volcano that stops
+being re-reported is *deleted*. Seed 1,470 volcanoes into that and they all evaporate in 14 days —
+unless every job lies by bumping `fetchedAt` forever, which makes the field meaningless.
+
+**The model has to change meaning: `Volcano` becomes a permanent catalog entity.** A volcano is a
+permanent geographic feature, not a cache row. The TTL was correct when this was "the bulletin
+cache"; it is wrong for a catalog.
+
+- **Drop `volcano_ttl_ix`.** Nothing expires. `Volcano` rows are created once and kept.
+- **Split identity from activity.** New `bulletinAt?: Date`, written *only* by the GVP weekly
+  snapshot. "Is it in the current bulletin?" = `bulletinAt` within 14d — an explicit derived flag,
+  not row existence. Any code that today infers *gone from bulletin ⇒ gone* must read `bulletinAt`.
+- `fetchedAt` keeps "last touched by any writer" but stops governing lifetime.
+- **Risk #3 above ("TTL expiry of tracked volcanoes") is RESOLVED by this, not mitigated** — and the
+  `keepAlive` hacks in `updateOfficialStatus` / `updateUsgsAlertIfExists` become unnecessary.
+- **OPS — the user runs this, not me.** Mongo will not change/remove a TTL by re-declaring the index
+  in Mongoose; it needs an explicit `dropIndex`. Ship it as an `/admin/jobs` button
+  (`volcanoes-migrate-catalog`) that drops `volcano_ttl_ix` and backfills `bulletinAt` from
+  `fetchedAt`. **Until that button is pressed, seeded volcanoes still expire** — so the migration
+  gates the whole phase.
+
+### 7.2 Catalog source — GVP VOTW is far richer than what we read
+
+`gvp-catalog.ts` currently uses the USGS VSC proxy (`volcanoApi/volcanoesGVP`) and keeps only
+vnum/name/country/lat/lng/elevation/webpage. Thin, undocumented, US-proxied.
+
+Prefer **GVP's own GeoServer WFS** (`webservices.volcano.si.edu/geoserver/GVP-VOTW/wfs`) — the same
+reverse-engineered GeoServer-WFS pattern already proven for the WMO SWIC feed ([[wmo-swic-endpoint]]):
+
+- `Smithsonian_VOTW_Holocene_Volcanoes` — number, name, **primary volcano type**, last eruption year,
+  country, **region + subregion**, lat/lng, elevation, **tectonic setting**, **geologic epoch**,
+  **evidence category**, **major rock types**, **primary photo** (link + caption + credit).
+- `Smithsonian_VOTW_Pleistocene_Volcanoes` — the pre-Holocene set. Opt-in (`VOLCANO_INCLUDE_PLEISTOCENE`):
+  large and almost entirely inert, so default OFF and let the operator switch it on.
+- `Smithsonian_VOTW_Eruptions` — **per-eruption history rows** (see §7.4).
+
+**VERIFY LIVE BEFORE WRITING THE ADAPTER.** The layer names/field names above are from memory and
+*must* be captured from a live response first — the same discipline that paid off for USGS geojson,
+GeoNet VAL and the GeoNet cams `[lat,lng]` reversal. Keep USGS VSC as the fallback adapter.
+
+### 7.3 Model — permanent catalog fields vs volatile activity
+
+Add to `Volcano` (all optional; strict-schema parity test must be extended — [[controlstate-persist-schema]]
+lesson applies: a field missing from the schema literal is silently dropped):
+
+`volcanoType · tectonicSetting · geologicEpoch · evidenceCategory · majorRockTypes[] · region ·
+subregion · primaryPhotoUrl/Caption/Credit · catalogSource · catalogFetchedAt · bulletinAt`
+
+Activity fields (`status`, `official*`, `usgs*`, `latestReport`, `reportVei/Plume`) stay exactly as
+they are. `elevationM` / `lastEruptionYear` already exist but are wiki/Wikidata-sourced — **the
+catalog becomes the authoritative writer and Wikidata only fills gaps** (precedence: catalog >
+Wikidata > wiki prose).
+
+### 7.4 Eruption history (new — `volcano_eruptions`)
+
+One permanent row per GVP eruption: `{ volcanoId, eruptionNumber (upsert key), startDate, endDate?,
+vei?, evidence, area? }`.
+
+Powers "last erupted 1707", "12 eruptions since 1900", an eruption timeline/sparkline on air and in
+admin — the deepest single info win available, and it's one feed.
+
+*Not* `event_series`: that models per-`WatchedEvent` numeric observations (§3.2). Eruptions are
+catalog facts about a volcano independent of any watched event, so they get their own collection.
+
+### 7.5 Seeding + enrichment at scale — tier the cost honestly
+
+- **`volcanoes.seedCatalog`** — idempotent full upsert (~1,470). **Must not clobber activity fields**:
+  `$set` only catalog fields, `$setOnInsert` the activity defaults. This is precisely the
+  [[cities-dataset-admin]] trap (reseed dropped wiki enrichment) — do not repeat it.
+- **`volcanoes.seedEruptions`** — eruption history.
+- **Every enrich-all job is incremental + STOPPABLE** — reuse the `stoppable` job flag + `stopChain`
+  queue action from [[cities-enrich-all-fix]], whose root cause was an unbounded "enrich everything"
+  with no floor. Do not hardcode a no-floor sweep here.
+
+"As much info as possible" is only honest if the cost is tiered — **everything cheap for everyone,
+everything expensive only for what's on air**:
+
+| Tier | Scope | Work |
+| --- | --- | --- |
+| 1 | all ~1,470 | catalog fields + eruption history — one fetch each, effectively free |
+| 2 | all ~1,470 | Wikipedia/Wikidata summary + photo — ~1,470 × 150ms ≈ 4 min, 30-day staleness gate, stoppable |
+| 3 | significant only (`shouldPromoteVolcano`) | cameras, media, status adapters, frame capture, timelapse — byte-heavy, stays gated |
+
+### 7.6 Read path — show them all
+
+- `/api/volcanoes` already returns everything (no cap) and rides `withCache`; 1,470 docs is trivial.
+- **Globe overlay must render all of them**, styled by status (erupting/unrest hot + labelled,
+  dormant de-emphasised) and ideally by type/epoch. Per the standing rule: **no limit selector, no
+  page-size default** — if 1,470 markers cost too much, thin by *zoom* (the `DENSE_ZOOM` precedent
+  in [[trails-scoped-onair-notable]]), never by an arbitrary cap.
+- Admin table: all volcanoes, filter/sort by status/country/type/region. Detail page already exists.
+- FocusBundle is per-volcano and needs no change.
+
+### 7.7 Derived facts — free wins from data we already hold
+
+No new ingest; composition only (a `volcanoes.deriveFacts` job and/or focus composition):
+
+- **Nearest cities + population at risk** — cities `$geoWithin` 2dsphere ([[cities-geo-index]]).
+- **Tectonic plate boundary + distance** — the faults overlay (Bird 2003) is already cached
+  ([[faults-feature]]); real geology context, zero new sources.
+- **Country / Region link** — the Country + Region catalogs exist ([[countries-regions-area-weather]])
+  → flags, spotlights, round-up reuse.
+- **Nearby seismicity** — quake cache (already used by `VolcanoNearbyPanel`).
+- **Nearby thermal anomalies** — the **FIRMS fire cache we already ingest** ([[wildfires-feature]])
+  contains volcanic hot-spots; a "thermal anomaly near vent" signal for free.
+- **Elevation/topography** — the ETOPO elevation overlay ([[elevation-overlay]]).
+
+### 7.8 Converge the two camera archives (decide before more media work)
+
+`cameraRefresh` → `volcano_media` (12 sources, rights/licence) vs P2b `snapshotCams` →
+`event_snapshots` (GeoNet only, pHash + day/night + thinning + timelapse + on the FocusBundle).
+Two archives, two blob stores, two routes, two panels. Proposed split:
+
+- **`event_snapshots` = camera FRAME TIME-SERIES + timelapse.** Repoint `snapshotCams` at
+  `db.volcanoCameras.listEnabled()` instead of `db.cams.listForVolcano` — one change of intent and
+  the night-aware capture + timelapse covers **all 12 sources** instead of GeoNet alone.
+- **`volcano_media` = official PUBLISHED media** (GVP/NASA/IMO photos, VOLCAT satellite) + rights.
+  This is content P2b does not cover at all, so it keeps a real job.
+- **Retire `cameraRefresh`'s byte-storing role** (the redundant half); keep `mediaRights`.
+- **Add GeoNet to `mediaRegistry`** — it's the only source living outside it.
+
+### 7.9 The status gap stays the priority
+
+12 media adapters ≠ status. Official **alert levels** for MAGMA/PVMBG, JMA, PHIVOLCS, IMO, INGV
+remain unimplemented; §1.2's backfill programme is still the plan, and **VAAC** should be added to
+§1.2 (not P6 — it is a primary aviation-authoritative status source, not discovery enrichment).
+
+### P7 build order
+
+1. **TTL migration** (blocker — user presses the button) → `bulletinAt` split.
+2. Catalog adapter **(verify live first)** + `seedCatalog` + model fields + parity test.
+3. Eruption history (`volcano_eruptions` + `seedEruptions`).
+4. Overlay + admin "show them all".
+5. Derived facts (§7.7 — free wins).
+6. Converge camera archives (§7.8).
+7. Status adapters + VAAC (§7.9 — the real gap).
+
+**Sequencing note:** a concurrent agent is editing `worker/src/jobs/volcanoes.ts`. Steps 2–3 are new
+files and safe; steps 4–6 touch contested ground — coordinate before starting.
