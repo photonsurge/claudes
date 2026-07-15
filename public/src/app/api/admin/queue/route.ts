@@ -1,6 +1,6 @@
 import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
-import { getQueue } from "@photonsurge/shared/bull/bull";
+import { clearQueue, getQueue } from "@photonsurge/shared/bull/bull";
 import { PublicBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
 export const runtime = "nodejs";
@@ -153,10 +153,11 @@ async function GET__impl(req: Request) {
  *                                signal a cooperative abort if it's active
  *  - retryAll                  : re-queue every failed job
  *  - clean { type }            : purge a whole job-type (completed/failed/…)
+ *  - clear { schedulers? }     : purge every job in every state
  *  - pause | resume | drain    : queue-wide controls
  */
 async function POST__impl(req: Request) {
-  let body: { action?: string; id?: string; type?: string; event?: string } = {};
+  let body: { action?: string; id?: string; type?: string; event?: string; schedulers?: boolean } = {};
   try {
     body = (await req.json()) ?? {};
   } catch {
@@ -185,6 +186,12 @@ async function POST__impl(req: Request) {
         const type = body.type && CLEANABLE.has(body.type) ? body.type : "completed";
         // grace = 0 → purge every job of this type regardless of age.
         detail = await q.clean(0, 10_000, type as any);
+        break;
+      }
+      case "clear": {
+        // The big hammer: every job in every state. Repeatable schedules survive
+        // unless `schedulers` is set, and an already-running job still finishes.
+        detail = await clearQueue({ schedulers: body.schedulers === true });
         break;
       }
       case "stopChain": {

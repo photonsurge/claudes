@@ -581,12 +581,20 @@ process.on("uncaughtException", (err) => {
 
   // ---- Repeatable alertBlobs.refresh (dissolve touching alert areas → Mongo) ----
   // MeteoAlarm issues one alert per county, so the globe would draw hundreds of
-  // little squares; unioning the touching ones cuts ~72% of the vertices public
-  // has to read and draw. Derived purely from the active alert set, so it only
-  // needs to keep pace with ingest — the rebuild is a few minutes of worker CPU,
-  // which is the whole point of it living here and not on the read path.
+  // little squares; unioning the touching ones cuts ~79% of the vertices public
+  // has to read and draw.
+  //
+  // HOURLY, and don't put it back to 15 minutes. The rebuild is ~5.5 minutes of
+  // near-solid CPU (polygon-clipping is sync; the `heat|2` bucket alone is ~2,150
+  // alerts and 216s), and this worker is ONE process — so at 15 minutes it ate
+  // ~37% of the worker's entire wall-clock and starved every other job, which is
+  // how the queue reached a 4h backlog. An hour costs ~9% instead.
+  //
+  // Nothing needs it fresher: a blob is derived from the active alert set, and a
+  // warning's footprint doesn't move minute to minute — it's issued, then it
+  // expires. Ingest itself only polls every ~15 minutes.
   if (process.env.ALERT_BLOBS_REFRESH_ENABLED !== "false") {
-    const ALERT_BLOBS_MS = Number(process.env.ALERT_BLOBS_REFRESH_MS || 15 * 60 * 1000);
+    const ALERT_BLOBS_MS = Number(process.env.ALERT_BLOBS_REFRESH_MS || 60 * 60 * 1000);
     try {
       await myQueue.add(
         "do",
