@@ -563,19 +563,67 @@ No new ingest; composition only (a `volcanoes.deriveFacts` job and/or focus comp
   contains volcanic hot-spots; a "thermal anomaly near vent" signal for free.
 - **Elevation/topography** — the ETOPO elevation overlay ([[elevation-overlay]]).
 
-### 7.8 Converge the two camera archives (decide before more media work)
+### 7.8 The two camera archives are NOT redundant — they have different keys
 
-`cameraRefresh` → `volcano_media` (12 sources, rights/licence) vs P2b `snapshotCams` →
-`event_snapshots` (GeoNet only, pHash + day/night + thinning + timelapse + on the FocusBundle).
-Two archives, two blob stores, two routes, two panels. Proposed split:
+First read said "duplication, retire one". Closer reading says otherwise, and §7.11 is why:
 
-- **`event_snapshots` = camera FRAME TIME-SERIES + timelapse.** Repoint `snapshotCams` at
-  `db.volcanoCameras.listEnabled()` instead of `db.cams.listForVolcano` — one change of intent and
-  the night-aware capture + timelapse covers **all 12 sources** instead of GeoNet alone.
-- **`volcano_media` = official PUBLISHED media** (GVP/NASA/IMO photos, VOLCAT satellite) + rights.
-  This is content P2b does not cover at all, so it keeps a real job.
-- **Retire `cameraRefresh`'s byte-storing role** (the redundant half); keep `mediaRights`.
+- **`volcano_media` is keyed by `volcanoId`.** It works for a volcano with **no `WatchedEvent`** —
+  i.e. every dormant volcano.
+- **`event_snapshots` is keyed by `eventId`.** It only exists for *promoted* (significant) volcanoes.
+
+That difference is exactly the "latest for all / history for chosen" split the operator asked for, so
+each store keeps a real job:
+
+- **`volcano_media` = per-VOLCANO latest-per-camera + published media** (GVP/NASA/IMO photos, VOLCAT
+  satellite) + rights/licence. Reaches all ~1,470 volcanoes, needs no event.
+- **`event_snapshots` = per-EVENT history series + timelapse** (pHash, day/night, thinning). Only for
+  chosen/active volcanoes, which by definition have an event.
+
+So the work is **not** retirement, it's semantics:
+- **`cameraRefresh` changes from "insert every changed frame" to "overwrite the latest"** (§7.11) —
+  that's the actual fix.
+- **`snapshotCams` repoints at `db.volcanoCameras.listEnabled()`** instead of `db.cams.listForVolcano`,
+  so the night-aware capture + timelapse covers **all 12 sources** rather than GeoNet alone — but
+  only for archive-enabled volcanoes.
 - **Add GeoNet to `mediaRegistry`** — it's the only source living outside it.
+- Keep `mediaRights`.
+
+### 7.11 Retention policy — latest for all, history only for chosen
+
+> *"keep latest of all but only keep like historical of ones we choose"*
+
+**This is urgent, not cosmetic: `volcano_media` currently grows without bound and has no prune at
+all.** `volcanoMedia.put` only dedups on an *identical* `contentHash` — every *changed* frame
+`create()`s a new row, `cameraRefresh` runs on `mediaPollSeconds` (60–300s), and the repo has no
+`pruneOlderThan` method. Order of magnitude: ~300 registry cameras × 288 polls/day × ~200 KB ≈ **up
+to ~17 GB/day**, nothing ever deleted. The operator's rule is the fix.
+
+Two storage classes:
+
+| Class | Scope | Store | Lifetime |
+| --- | --- | --- | --- |
+| **LATEST** | every enabled camera | `volcano_media`, keyed `(cameraId, "latest")` | overwritten in place — **flat**, never grows |
+| **HISTORY** | only `archiveEnabled` volcanoes | `event_snapshots` hourly series + timelapse | day/night thinned (§7.5/§7.4), 30d retention |
+
+- **Latest = one row per camera, overwritten every poll.** ~300 × 200 KB ≈ **60 MB flat**, vs GB/day
+  today. Every volcano — dormant included — gets a current picture, and it's a *local* byte source,
+  so on-air no longer depends on the upstream hot-link staying up (P2a hot-links `cam.imageUrl`
+  today; a provider outage or hotlink block blanks the slide).
+  - Implementation: `volcanoMedia.put` gains an explicit **latest** mode — query on `(cameraId,
+    kind:"latest")` and **update in place** (replacing bytes) rather than `create`. Delete the old
+    blob on overwrite or it leaks on disk.
+- **History = opt-in.** New `Volcano.archiveEnabled` toggle, mirroring countries' `roundupEnabled`
+  ([[place-roundups-feature]]): the operator picks which volcanoes are worth a historical record.
+  Default **OFF**. `snapshotCams` / `timelapseCams` skip anything not archive-enabled.
+  - **Never auto-enable.** Suggest it in admin when a volcano goes erupting (a hint next to the
+    toggle), but the operator chooses — same principle as never auto-disabling a camera (§7.10).
+  - UI: toggle on `/admin/volcanoes` rows + the detail page, next to the media toggles.
+- **`volcano_media` needs a prune regardless** — published media (GVP/NASA/IMO/VOLCAT) still
+  accumulates. Add `pruneOlderThan` + a retention job, mirroring `pruneOlderThanForSource`.
+
+**Net:** every volcano shows a current picture forever; only the chosen few accumulate a timeline.
+This is the same shape as §7.5.1 (stats + one photo for all, live imagery only where it matters) —
+§7.11 is that rule applied to camera bytes.
 
 ### 7.9 The status gap stays the priority
 
@@ -625,17 +673,57 @@ Work, in order:
 **Default stays everything-ON**, so this lands dark and changes no behaviour until someone flips a
 switch.
 
+### 7.12 Per-volcano timeline — the payoff for the chosen ones
+
+> *"a timeline per the ones we chosen be cool"*
+
+The reward for opting a volcano into the archive (§7.11): **one chronological view of everything we
+hold about it.**
+
+**Two time scales → two bands. Do NOT merge them onto one axis.** Camera frames span *days*;
+eruption history spans *centuries*. Six orders of magnitude apart — one linear axis makes one of them
+invisible.
+
+**Band 1 — Observation timeline (archive-enabled only), hours → days.** Window default 7d
+(24h / 7d / 30d selectable):
+- **Frame filmstrip** — `event_snapshots` camera thumbnails laid on the time axis.
+- **Status beats** — the existing `buildEventTimeline` beats as markers (level / aviation / VEI /
+  plume), reusing the glyph + label vocabulary the admin detail page already renders.
+- **Day/night band — free from work already done.** P2b persists `meanLuma` per frame, which *is* a
+  diurnal curve: shade the nights, and highlight **glow frames** (low mean + bright max =
+  incandescence) as markers. This turns the night-handling into something you can actually see —
+  you can pick out the nights, and the nights that glowed.
+- **Timelapse** — the `render` snapshot as the play control for the window.
+
+**Band 2 — Eruption history (ALL volcanoes), years → centuries.**
+- `volcano_eruptions` (§7.4) as VEI-scaled bars: *"12 eruptions since 1900, largest VEI 5 in 1902."*
+- **Not** archive-gated — it's a Tier-1 catalog fact, so every volcano gets it, per §7.5.1
+  (stats for all, imagery only for the chosen).
+
+**Both surfaces are already fed — this is a rendering job, not an ingest one:**
+- **On air:** `FocusBundle` already carries `eventTimeline` + `eventSnapshots`; add
+  `volcano_eruptions` to the volcano branch and render a new `VolcanoTimelinePanel` slide.
+  **No new fetch** — the one-focus-call rule holds.
+- **Admin:** `/api/admin/volcanoes/:id` already returns `{volcano, event, timeline, cams, snapshots}`
+  — the detail page needs the component and eruptions, nothing more.
+- Reuse `EventTimelinePanel`'s glyphs/labels and the Sparkline from the alert-timeline work.
+
+**Self-hiding:** no archive → no observation band; the eruption band still renders (every volcano has
+a history). Same discipline as every other slide.
+
 ### P7 build order
 
 1. **TTL migration** (blocker — user presses the button) → `bulletinAt` split.
 2. Catalog adapter **(verify live first)** + `seedCatalog` + model fields + parity test.
-3. Eruption history (`volcano_eruptions` + `seedEruptions`).
-4. **Media on/off control** (§7.10) — small, self-contained, and it's the thing that stops the
-   not-great pictures; the `$setOnInsert` fix should land before anyone relies on a toggle.
-5. Overlay + admin "show them all".
-6. Derived facts (§7.7 — free wins).
-7. Converge camera archives (§7.8).
-8. Status adapters + VAAC (§7.9 — the real gap).
+3. Eruption history (`volcano_eruptions` + `seedEruptions`) — also Band 2 of §7.12.
+4. **Retention policy** (§7.11) — latest-for-all / history-for-chosen + `archiveEnabled` +
+   a `volcano_media` prune. **Do this early: `volcano_media` is unbounded and unpruned today.**
+5. **Media on/off control** (§7.10) — the `$setOnInsert` fix must land before anyone relies on a toggle.
+6. **Per-volcano timeline** (§7.12) — pure rendering, both surfaces already carry the data.
+7. Overlay + admin "show them all".
+8. Derived facts (§7.7 — free wins).
+9. Camera-archive semantics (§7.8 — falls out of 4).
+10. Status adapters + VAAC (§7.9 — the real gap).
 
 **Sequencing note:** a concurrent agent is editing `worker/src/jobs/volcanoes.ts`. Steps 2–3 are new
 files and safe; steps 4–6 touch contested ground — coordinate before starting.

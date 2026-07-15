@@ -155,10 +155,53 @@ export function geometryFromFeatureDoc(body: string): AlertGeometry | null {
 const withKey = (url: string): string =>
   url.includes("apikey=") ? url : `${url}${url.includes("?") ? "&" : "?"}apikey=${apiKey()}`;
 
+/**
+ * MeteoGate allows 500 gateway requests per hour, and says so on every response
+ * (`X-RateLimit-Remaining`/`-Reset`). Blow it and EVERY country 429s for the rest
+ * of the window, which is exactly what a naive sweep does: resolving one alert
+ * costs two requests, so a few hundred alerts exhausts the hour instantly.
+ *
+ * We track the quota the server reports rather than guessing a rate, and stop
+ * while there's headroom left. Nothing here is urgent — an EMMA boundary is
+ * permanent, so the cache can fill over days.
+ */
+export class RateLimitError extends Error {
+  constructor(public resetSec: number) {
+    super(`meteogate rate limited — resets in ${resetSec}s`);
+    this.name = "RateLimitError";
+  }
+}
+
+/** Stop this far above zero so a concurrent run/cron isn't left stranded. */
+const RESERVE = Number(process.env.METEOGATE_RESERVE || 25);
+
+let quotaState: { remaining: number | null; resetSec: number | null } = {
+  remaining: null,
+  resetSec: null,
+};
+
+export const quota = () => ({ ...quotaState });
+
+/** True when we're close enough to the cap that we should stop the sweep. */
+export const quotaLow = (): boolean =>
+  quotaState.remaining !== null && quotaState.remaining <= RESERVE;
+
+/** Gateway calls count against the quota; the pre-signed links do not. */
 async function getText(url: string, signed = false): Promise<string> {
   // The rel=* links are pre-signed object-store URLs — appending our gateway key
   // would break their signature, so only the gateway itself gets one.
   const res = await fetch(signed ? url : withKey(url), { headers: { Accept: "application/json" } });
+
+  if (!signed) {
+    const rem = Number(res.headers.get("x-ratelimit-remaining"));
+    const reset = Number(res.headers.get("x-ratelimit-reset"));
+    if (Number.isFinite(rem)) quotaState.remaining = rem;
+    if (Number.isFinite(reset)) quotaState.resetSec = reset;
+  }
+
+  // Never retry a 429: the window is hourly, so retrying just burns the next
+  // quota too. Surface it and let the caller end the run.
+  if (res.status === 429) throw new RateLimitError(quotaState.resetSec ?? 0);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.text();
 }
@@ -176,12 +219,20 @@ export async function fetchCountryPage(cc: string, page: number, now = new Date(
   return parseLocationsPage(await getText(url));
 }
 
-/** Every feature for a country, following pagination. */
+/**
+ * Every feature for a country, following pagination.
+ *
+ * Page walks are quota too: 39 countries deep-paginating would spend the hour
+ * before a single boundary is resolved. Cap the depth — a page is 100 features
+ * and they collapse to a handful of distinct EMMA areas anyway, so the tail
+ * pages buy almost nothing. Stops early once the quota runs low.
+ */
 export async function fetchCountryFeatures(cc: string, now = new Date()): Promise<EdrFeature[]> {
   const first = await fetchCountryPage(cc, 1, now);
   const out = [...first.features];
-  const maxPages = Number(process.env.METEOGATE_MAX_PAGES || 50);
+  const maxPages = Number(process.env.METEOGATE_MAX_PAGES || 2);
   for (let p = 2; p <= Math.min(first.totalPages, maxPages); p++) {
+    if (quotaLow()) break;
     const next = await fetchCountryPage(cc, p, now);
     out.push(...next.features);
   }
