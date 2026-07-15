@@ -23,6 +23,8 @@ export interface GeomSyncResult {
   cached: number;
   /** Alerts skipped because the ledger had already resolved them. */
   skipped: number;
+  /** Already-stored alerts retro-fitted with a boundary this run. */
+  backfilled: number;
   /** True when the run ended early on the quota rather than finishing. */
   quotaStopped: boolean;
   /** Gateway requests left in the window, as the server last reported them. */
@@ -74,6 +76,7 @@ export async function syncAreaGeometry(
     resolved: 0,
     cached: 0,
     skipped: 0,
+    backfilled: 0,
     quotaStopped: false,
     quotaRemaining: null,
     failures: [],
@@ -138,6 +141,20 @@ export async function syncAreaGeometry(
   if (areas.length) {
     const r = await db.alertAreaGeom.upsertAreas(areas);
     res.cached = r.upserted;
+
+    // Apply each boundary to alerts ALREADY stored for that area. Ingest enrich
+    // only ever sees new alerts — `upsert` skips unchanged active ones — so
+    // without this a live alert stays shapeless until it expires, however full
+    // the cache gets. Newly-resolved areas only, so this stays cheap.
+    for (const emmaId of new Set(areas.map((a) => a.emmaId))) {
+      const geometry = areas.find((a) => a.emmaId === emmaId)!.geometry;
+      try {
+        res.backfilled += await db.alerts.backfillAreaGeometry(emmaId, geometry);
+      } catch (err) {
+        // A polygon Mongo's 2dsphere rejects must not lose the rest of the run.
+        res.failures.push(`backfill ${emmaId}: ${String((err as Error)?.message ?? err)}`);
+      }
+    }
   }
   await db.alertAreaGeom.markSeen(marks);
 

@@ -47,6 +47,66 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
     model,
 
     /**
+     * Retro-fit a resolved boundary onto alerts already stored for that EMMA area.
+     *
+     * Needed because enrichment happens at INGEST, but `upsert` deliberately skips
+     * an unchanged, still-active alert — so an alert stored before its EMMA_ID was
+     * resolved would stay shapeless for its whole life, no matter how full the
+     * boundary cache got. The caches fill asynchronously, so without this they'd
+     * only ever help FUTURE alerts.
+     *
+     * Only ever fills an EMPTY area (`geometry: null` in the arrayFilter): a
+     * source that shipped its own polygon keeps it.
+     */
+    async backfillAreaGeometry(emmaId: string, geometry: unknown): Promise<number> {
+      const match = { $elemMatch: { valueName: "EMMA_ID", value: emmaId } };
+      const r = await model.updateMany(
+        { active: true, "info.area.geocodes": match },
+        { $set: { "info.$[].area.$[a].geometry": geometry } },
+        { arrayFilters: [{ "a.geocodes": match, "a.geometry": null }] },
+      );
+      return r.modifiedCount ?? 0;
+    },
+
+    /**
+     * Stamp `capId` on stored alerts whose identifier ALREADY is the canonical CAP
+     * id (MeteoAlarm, NWS) — no lookup, no fetch, just a field they were never
+     * given because they were ingested before `capId` existed (or on a tick where
+     * the unchanged-alert fast path skipped the write).
+     *
+     * Both sides of a duplicate must be stamped before a match can be seen, so
+     * without this the WMO side resolves and still pairs with nothing.
+     */
+    async backfillDirectCapIds(sources: string[]): Promise<number> {
+      const r = await model.updateMany(
+        { source: { $in: sources }, active: true, capId: { $in: [null, undefined] } },
+        // Pipeline update: copy identifier → capId in the server, no round-trip.
+        [{ $set: { capId: "$identifier" } }],
+      );
+      return r.modifiedCount ?? 0;
+    },
+
+    /**
+     * Retro-fit a resolved canonical CAP id onto the WMO alert for that capurl.
+     * Same reason as `backfillAreaGeometry`: the capurl cache fills long after the
+     * alert was ingested, and the unchanged-alert fast path means it is never
+     * rewritten — so without this, existing WMO alerts never become mergeable.
+     */
+    async backfillCapIds(rows: { capurl: string; capId: string }[]): Promise<number> {
+      if (!rows.length) return 0;
+      const r = await model.bulkWrite(
+        rows.map(({ capurl, capId }) => ({
+          updateOne: {
+            filter: { source: "wmo", identifier: capurl, capId: { $in: [null, undefined] } },
+            update: { $set: { capId } },
+          },
+        })),
+        { ordered: false },
+      );
+      return r.modifiedCount ?? 0;
+    },
+
+    /**
      * Insert-or-update by the dedup key. Returns true if a new doc was inserted.
      *
      * `rest.info` is the WHOLE freshly re-parsed info array from this poll — a

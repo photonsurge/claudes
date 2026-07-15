@@ -13,6 +13,8 @@ export interface CapIdSyncResult {
   resolved: number;
   /** Of those, how many yielded a real CAP identifier. */
   withId: number;
+  /** Already-stored WMO alerts stamped with their capId this run. */
+  backfilled: number;
   failures: string[];
 }
 
@@ -35,7 +37,12 @@ export async function syncCapIds(
 ): Promise<CapIdSyncResult> {
   const budget = opts.budget ?? Number(process.env.WMO_CAPID_BUDGET || 250);
   const delayMs = opts.delayMs ?? Number(process.env.WMO_CAPID_DELAY_MS || 150);
-  const res: CapIdSyncResult = { candidates: 0, skipped: 0, resolved: 0, withId: 0, failures: [] };
+  const res: CapIdSyncResult = { candidates: 0, skipped: 0, resolved: 0, withId: 0, backfilled: 0, failures: [] };
+
+  // MeteoAlarm/NWS publish the canonical id AS their identifier, so stamping them
+  // is free — but ingest only ever stamps NEW alerts, and both sides of a pair
+  // must carry a capId before a duplicate can be seen. Do it first, every run.
+  res.backfilled += await db.alerts.backfillDirectCapIds(["meteoalarm", "nws"]);
 
   // Only ACTIVE WMO alerts that haven't been stamped yet — a capId, once set,
   // never changes, and an expired alert isn't worth a request.
@@ -65,7 +72,15 @@ export async function syncCapIds(
     if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
   }
 
-  if (rows.length) await db.capIds.upsertMany(rows);
+  if (rows.length) {
+    await db.capIds.upsertMany(rows);
+    // Stamp the alerts we just resolved. Ingest enrich can't do it: `upsert`
+    // skips an unchanged active alert, so an already-stored WMO alert would
+    // never become mergeable no matter how full the cache got.
+    res.backfilled = await db.alerts.backfillCapIds(
+      rows.flatMap((r) => (r.capId ? [{ capurl: r.capurl, capId: r.capId }] : [])),
+    );
+  }
   if (todo.length > budget) {
     log(TAG, `budget reached — ${todo.length - budget} capurls deferred to the next run`, {
       budget,
