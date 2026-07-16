@@ -174,7 +174,8 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   {
     id: "alerts-ingest",
     label: "Ingest alerts",
-    description: "Pull active NWS alerts into Mongo.",
+    description:
+      "Pull active warnings into Mongo from WMO SWIC (global), MeteoAlarm (the European authorities WMO doesn't carry — UK, DE, NL, IE, DK) and GDACS. NWS is off unless ALERTS_NWS_ENABLED=true, since WMO already carries the US. Unchanged alerts are skipped, so re-running is cheap.",
     domain: "alerts",
     type: "alerts",
     event: "ingest",
@@ -370,7 +371,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     id: "alert-geom-sync",
     label: "Resolve alert area boundaries",
     description:
-      "Look up the real map shape for European warning areas. MeteoAlarm names an alert's area and gives it an EMMA code but no outline, so those alerts can't be drawn — this resolves each code to its boundary via MeteoGate and caches it for good. Needs METROGATE_API_KEY. Safe to re-run: it only fetches areas it hasn't already resolved.",
+      "Look up the real map shape for European warning areas. MeteoAlarm names an alert's area and gives it an EMMA code but no outline, so those alerts can't be drawn — this resolves each code to its boundary via MeteoGate and caches it for good. Also repairs cached shapes Mongo has rejected (a ring that touches itself can't be indexed, so \"which cities are under this\" comes back empty for it). Needs METROGATE_API_KEY. Safe to re-run: it only fetches areas it hasn't already resolved.",
     domain: "alertGeom",
     type: "alertGeom",
     event: "refresh",
@@ -380,7 +381,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     id: "alert-blobs-rebuild",
     label: "Merge neighbouring alert areas",
     description:
-      "Join up touching warning areas that share a hazard and severity into single shapes, so the globe shows a few weather blobs instead of one square per county (MeteoAlarm issues one alert per county). Rebuilds the whole set; the alerts themselves are untouched and panels still list them individually.",
+      "Join up touching warning areas that share a hazard, a severity AND a country into single shapes, so the globe shows a few weather blobs instead of one square per county (MeteoAlarm issues one alert per county). A shape never crosses a national border — warnings are issued per country, and without that seam the merge chained clean across the continent. Also strips the hairline gaps left where two counties' borders don't quite meet, which the globe would otherwise draw as streaks. Rebuilds the whole set; the alerts themselves are untouched and panels still list them individually. Safe to re-run, and safe while the globe is live: the new set is only swapped in once it's complete.",
     domain: "alertBlobs",
     type: "alertBlobs",
     event: "refresh",
