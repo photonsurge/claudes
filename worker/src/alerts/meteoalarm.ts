@@ -1,4 +1,4 @@
-import { rankFromCapSeverity } from "@photonsurge/shared/alerts/severity";
+import { rankFromCapSeverity, rankFromMeteoalarmLevel } from "@photonsurge/shared/alerts/severity";
 import { canonicaliseCapMessages } from "@photonsurge/shared/alerts/normalise";
 import { windRing } from "@photonsurge/shared/alerts/rings";
 import type {
@@ -95,6 +95,7 @@ function asArray(v: unknown): string[] {
 }
 
 function toCapInfo(info: any): CapInfo {
+  const parameters = flattenParameters(info.parameter);
   return {
     language: info.language || "en",
     category: asArray(info.category),
@@ -102,7 +103,12 @@ function toCapInfo(info: any): CapInfo {
     urgency: info.urgency,
     severity: info.severity,
     certainty: info.certainty,
-    severityRank: rankFromCapSeverity(info.severity),
+    // MeteoAlarm's OWN awareness level, not its CAP `severity` field — they
+    // disagree, and the level is the one it means. 58% of the live feed
+    // contradicted the CAP-derived rank, almost all of it green ("nothing
+    // expected") arriving as Minor warnings. CAP severity is only the fallback,
+    // for an alert that ships no level. See rankFromMeteoalarmLevel.
+    severityRank: rankFromMeteoalarmLevel(parameters?.awareness_level) ?? rankFromCapSeverity(info.severity),
     onset: info.onset ?? undefined,
     effective: info.effective ?? undefined,
     expires: info.expires ?? undefined,
@@ -111,7 +117,7 @@ function toCapInfo(info: any): CapInfo {
     instruction: info.instruction ?? undefined,
     web: info.web ?? undefined,
     sourceSeverity: info.severity ?? undefined,
-    parameters: flattenParameters(info.parameter),
+    parameters,
     area: (Array.isArray(info.area) ? info.area : []).map((ar: any) => ({
       areaDesc: ar?.areaDesc ?? "",
       geometry: polygonToGeometry(ar?.polygon),

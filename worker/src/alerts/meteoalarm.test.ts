@@ -44,9 +44,21 @@ describe("meteoalarmSource.parse", () => {
     expect(msgs[0].msgType).toBe("Update");
   });
 
-  it("ranks CAP severity while keeping the native value", () => {
-    expect(msgs[0].info[0].severityRank).toBe(1); // Minor
-    expect(msgs[0].info[0].sourceSeverity).toBe("Minor");
+  /**
+   * This fixture's awareness_level is "1; green; Minor" — green, MeteoAlarm for
+   * "nothing expected". It is NOT a warning, and this asserted rank 1 (Minor),
+   * i.e. it encoded the bug: CAP `severity` and the awareness level disagree, the
+   * ingest trusted `severity`, and 58% of the live feed came in at the wrong rank
+   * — 1,540 green non-warnings drawn on the globe as Minor warnings, seven deep
+   * over the same ground, their polygons clipped by the dissolve for nothing.
+   *
+   * The awareness level is what MeteoAlarm means and what its own site colours by.
+   * The CAP field stays on the doc as `sourceSeverity` — it's still what the feed
+   * said, it's just not what we rank on.
+   */
+  it("ranks on the awareness level, not the CAP severity they contradict", () => {
+    expect(msgs[0].info[0].severityRank).toBe(0); // green => info, NOT a warning
+    expect(msgs[0].info[0].sourceSeverity).toBe("Minor"); // what the feed claimed
   });
 
   it("flattens the parameter array and geocodes; geometry is null", () => {
@@ -63,5 +75,59 @@ describe("meteoalarmSource.parse", () => {
   it("returns null for a malformed alert", () => {
     expect(alertToCapMessage(null)).toBeNull();
     expect(alertToCapMessage({ identifier: "no-info" })).toBeNull();
+  });
+});
+
+/**
+ * The rank a MeteoAlarm alert lands on decides its colour AND its dissolve bucket,
+ * so getting it from the wrong field doesn't just mis-paint a shape — it stops it
+ * fusing with its true neighbours and draws it stacked on them instead.
+ */
+describe("severity comes from the awareness level", () => {
+  const build = (params: { value: string; valueName: string }[], severity = "Minor") => {
+    const alert = {
+      identifier: "2.49.0.0.ES.x",
+      sent: "2026-07-16T02:00:00Z",
+      info: [
+        { language: "en", event: "Test", severity, parameter: params, area: [{ areaDesc: "Somewhere" }] },
+      ],
+    };
+    return meteoalarmSource.parse([
+      {
+        contentType: "application/json",
+        body: JSON.stringify({ warnings: [{ alert }] }),
+        fetchedAt: "2026-07-16T02:00:00Z",
+      },
+    ] as RawPayload[]);
+  };
+
+  const lvl = (v: string) => [{ value: v, valueName: "awareness_level" }];
+
+  it("green is NOT a warning", () => {
+    // The whole point: 1,540 of these were on the globe as Minor warnings.
+    expect(build(lvl("1; green; Minor"))[0].info[0].severityRank).toBe(0);
+  });
+
+  it("maps yellow, orange and red", () => {
+    expect(build(lvl("2; yellow; Moderate"))[0].info[0].severityRank).toBe(2);
+    expect(build(lvl("3; orange; Severe"))[0].info[0].severityRank).toBe(3);
+    expect(build(lvl("4; red; Extreme"))[0].info[0].severityRank).toBe(4);
+  });
+
+  it("believes the level over a CAP severity that contradicts it", () => {
+    // A real one: event BÖEN, severity "Minor", awareness_level "2; yellow".
+    // Ranked 1 by CAP, it missed the yellow bucket and never fused with the
+    // yellow warnings it was touching.
+    expect(build(lvl("2; yellow; Moderate"), "Minor")[0].info[0].severityRank).toBe(2);
+  });
+
+  it("falls back to CAP severity when there is no level at all", () => {
+    // Must not silently mark a real warning as info.
+    expect(build([], "Severe")[0].info[0].severityRank).toBe(3);
+    expect(build([{ value: "3; Thunderstorm", valueName: "awareness_type" }], "Extreme")[0].info[0].severityRank).toBe(4);
+  });
+
+  it("falls back when the level is unparseable rather than zeroing it", () => {
+    expect(build(lvl("nonsense"), "Severe")[0].info[0].severityRank).toBe(3);
   });
 });
