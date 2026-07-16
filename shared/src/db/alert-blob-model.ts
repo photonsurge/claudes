@@ -73,6 +73,22 @@ export interface iAlertBlob extends iGeneralModel {
    */
   cities: iBlobCity[];
   builtAt: Date;
+  /**
+   * This shape belongs to the generation currently ON AIR.
+   *
+   * A rebuild streams its shapes out over ~2 minutes and can't be atomic, so
+   * there are always two generations in flight. Readers must see exactly one of
+   * them — every read filters on this — because the alternative is what happened
+   * live: the job died before its final cleanup, the previous generation was
+   * never retired, and the globe drew EVERY shape twice, stacked on itself. It
+   * showed up as pairs of "identical overlapping warnings" with matching member
+   * counts (66 + 66), which looks like a geometry bug and isn't.
+   *
+   * Written false, flipped true only when the whole generation has landed. A
+   * rebuild that dies half-way therefore leaves shapes nobody can see, rather
+   * than a doubled globe — and the next complete rebuild sweeps them.
+   */
+  live: boolean;
 }
 
 export interface iAlertBlobModel extends iAlertBlob {
@@ -103,12 +119,16 @@ const AlertBlobSchema = new mongoose.Schema<iAlertBlobModel>(
     memberIds: { type: [String], default: [] },
     cities: { type: [BlobCitySchema], default: [] },
     builtAt: { type: Date, required: true, default: () => new Date() },
+    live: { type: Boolean, required: true, default: false },
   },
   { timestamps: false },
 );
 
-// Read path: "every blob, worst first" — the overlay's only query.
-AlertBlobSchema.index({ severityRank: -1 }, { name: "alert_blob_sev_ix" });
+// Read path: "every LIVE blob, worst first" — the overlay's only query. `live`
+// leads because every read filters on it (see the field).
+AlertBlobSchema.index({ live: 1, severityRank: -1 }, { name: "alert_blob_sev_ix" });
+// Commit/sweep a generation at the end of a rebuild.
+AlertBlobSchema.index({ builtAt: 1 }, { name: "alert_blob_built_ix" });
 // Members → blob, for the panel's "which shape is this alert in".
 AlertBlobSchema.index({ memberIds: 1 }, { name: "alert_blob_members_ix" });
 // The reverse of `cities`: "is this city under a warning right now", answered

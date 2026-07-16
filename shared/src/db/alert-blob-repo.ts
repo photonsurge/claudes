@@ -51,7 +51,7 @@ export function makeAlertBlobRepo(model: Model<iAlertBlobModel>) {
     async replace(blobs: AlertBlobInput[]): Promise<{ blobs: number }> {
       const builtAt = new Date();
       const n = await this.addGeneration(blobs, builtAt);
-      await this.dropOlderThan(builtAt);
+      await this.commitGeneration(builtAt);
       return { blobs: n };
     },
 
@@ -67,10 +67,35 @@ export function makeAlertBlobRepo(model: Model<iAlertBlobModel>) {
     async addGeneration(blobs: AlertBlobInput[], builtAt: Date): Promise<number> {
       if (!blobs.length) return 0;
       const docs = await model.insertMany(
-        blobs.map((b) => ({ ...b, id: uuidv4(), builtAt })),
+        // `live: false` — invisible until the whole generation has landed. See
+        // `commitGeneration`; this is what stops a half-written rebuild reaching
+        // the globe, and what stops a DEAD one doubling it.
+        blobs.map((b) => ({ ...b, id: uuidv4(), builtAt, live: false })),
         { ordered: false },
       );
       return docs.length;
+    },
+
+    /**
+     * Put a finished generation on air and retire every older one. The commit.
+     *
+     * Two steps, in this order, and the order is the whole point: flip the new
+     * generation live, THEN drop the old. Readers filter on `live`, so the swap
+     * is atomic from where they stand — they see the previous generation whole
+     * right up until they see the new one whole, and never a mixture.
+     *
+     * Nothing calls this until every instalment has landed, which is what makes a
+     * dead rebuild harmless. Before `live` existed, the old generation was retired
+     * at the end of the job and a job that died before that line left BOTH sets in
+     * the collection forever: the globe drew every shape twice, stacked, and it
+     * read as pairs of identical overlapping warnings.
+     */
+    async commitGeneration(builtAt: Date): Promise<{ live: number; removed: number }> {
+      const up = await model.updateMany({ builtAt }, { $set: { live: true } });
+      // `$lt`, never `$lte` — the generation we just put on air carries this exact
+      // builtAt, and `$lte` would delete it.
+      const del = await model.deleteMany({ builtAt: { $lt: builtAt } });
+      return { live: up.modifiedCount ?? 0, removed: del.deletedCount ?? 0 };
     },
 
     /**
@@ -83,9 +108,11 @@ export function makeAlertBlobRepo(model: Model<iAlertBlobModel>) {
       return { removed: r.deletedCount ?? 0 };
     },
 
-    /** Every blob, worst hazard first — the overlay's read. */
+    /** Every LIVE blob, worst hazard first — the overlay's read. */
     async list(): Promise<{ blobs: iAlertBlobModel[] }> {
-      const docs = await model.find({}).sort({ severityRank: -1 }).lean().exec();
+      // `live` is not optional: without it this returns every generation in the
+      // collection at once and the globe draws each shape once per generation.
+      const docs = await model.find({ live: true }).sort({ severityRank: -1 }).lean().exec();
       return { blobs: docs as unknown as iAlertBlobModel[] };
     },
 
@@ -117,6 +144,10 @@ export function makeAlertBlobRepo(model: Model<iAlertBlobModel>) {
       const docs = await model
         .find(
           {
+            // Same rule as `list()`: only the generation that's on air. Without
+            // it a rebuild's worth of stale shapes lands in the focus bundle and
+            // every warning gets counted once per generation.
+            live: true,
             $and: [
               { $or: overlapsLng },
               { $expr: { $and: [{ $lte: [el(1), n] }, { $gte: [el(3), s] }] } },

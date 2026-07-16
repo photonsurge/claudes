@@ -21,7 +21,11 @@ const city = (id: string, name: string, lng: number, lat: number, population = 1
 function mockModel(docs: Partial<iAlertBlobModel>[] = []) {
   const calls: { filter: any; projection: any }[] = [];
   /** Every write, in the order it happened — the ordering is the safety property. */
-  const writes: ({ op: "insertMany"; docs: any[] } | { op: "deleteMany"; filter: any })[] = [];
+  const writes: (
+    | { op: "insertMany"; docs: any[] }
+    | { op: "deleteMany"; filter: any }
+    | { op: "updateMany"; filter: any; update: any }
+  )[] = [];
   const model = {
     find: (filter: any, projection: any) => {
       calls.push({ filter, projection });
@@ -35,6 +39,10 @@ function mockModel(docs: Partial<iAlertBlobModel>[] = []) {
     insertMany: async (batch: any[]) => {
       writes.push({ op: "insertMany", docs: batch });
       return batch;
+    },
+    updateMany: async (filter: any, update: any) => {
+      writes.push({ op: "updateMany", filter, update });
+      return { modifiedCount: 3 };
     },
     deleteMany: async (filter: any) => {
       writes.push({ op: "deleteMany", filter });
@@ -102,21 +110,92 @@ describe("generations", () => {
     expect(writes[0]).toEqual({ op: "deleteMany", filter: { builtAt: { $lt: builtAt } } });
   });
 
-  it("adds the new generation BEFORE dropping the old one", async () => {
-    // Reversed, the globe empties for the length of a rebuild.
+  it("writes, then puts live, then drops the old — in that order", async () => {
+    // Reversed, the globe empties for the length of a rebuild. And the flip has
+    // to come BEFORE the drop, or there's an instant with no live generation at
+    // all.
     const { repo, writes } = mockModel();
 
     await repo.replace([blob("heat")]);
 
-    expect(writes.map((w) => w.op)).toEqual(["insertMany", "deleteMany"]);
+    expect(writes.map((w) => w.op)).toEqual(["insertMany", "updateMany", "deleteMany"]);
+  });
+
+  /**
+   * A rebuild takes ~2 minutes and can't be atomic, so two generations exist at
+   * once and a reader must see exactly one of them. Everything lands `live:
+   * false` and is flipped only once the whole set has arrived.
+   *
+   * Before this, shapes went on air as they landed and the previous generation
+   * was retired at the very end — so a job killed mid-rebuild left BOTH sets live
+   * forever and the globe drew every shape twice, stacked on itself. Live: 3,871
+   * stale shapes under 602 new ones, showing up as pairs of identical
+   * overlapping warnings with matching member counts (66 + 66). It looks exactly
+   * like a geometry bug.
+   */
+  describe("a generation is invisible until it is complete", () => {
+    it("writes every shape dark", async () => {
+      const { repo, writes } = mockModel();
+
+      await repo.addGeneration([blob("heat"), blob("wind")], new Date());
+
+      const w = writes[0] as { docs: any[] };
+      expect(w.docs.every((d) => d.live === false)).toBe(true);
+    });
+
+    it("puts exactly the committed generation on air", async () => {
+      const { repo, writes } = mockModel();
+      const builtAt = new Date("2026-07-16T09:00:00Z");
+
+      await repo.commitGeneration(builtAt);
+
+      const up = writes.find((w) => w.op === "updateMany") as any;
+      expect(up.filter).toEqual({ builtAt });
+      expect(up.update).toEqual({ $set: { live: true } });
+    });
+
+    it("flips live BEFORE sweeping, so the globe is never empty", async () => {
+      const { repo, writes } = mockModel();
+
+      await repo.commitGeneration(new Date());
+
+      expect(writes.map((w) => w.op)).toEqual(["updateMany", "deleteMany"]);
+    });
+
+    it("reports what it swept, so a dead previous rebuild is visible", async () => {
+      // Steady state is 0. A spike means the last rebuild never committed.
+      const { repo } = mockModel();
+
+      expect(await repo.commitGeneration(new Date())).toEqual({ live: 3, removed: 7 });
+    });
+
+    it("reads ONLY the live generation", async () => {
+      // Without this filter every read returns every generation in the
+      // collection and the globe draws each shape once per generation.
+      const { repo, calls } = mockModel([]);
+
+      await repo.list();
+
+      expect(calls[0].filter).toEqual({ live: true });
+    });
+
+    it("scopes the camera read to the live generation too", async () => {
+      const { repo, calls } = mockModel([]);
+
+      await repo.summariesForBbox([14, 49, 24, 55]);
+
+      expect(calls[0].filter).toMatchObject({ live: true });
+    });
   });
 
   it("still clears the old generation when a rebuild finds no alerts at all", async () => {
-    // Nothing to insert, but the shapes on screen have genuinely expired.
+    // Nothing to insert, but the shapes on screen have genuinely expired — so the
+    // commit still runs and sweeps them. (The flip matches nothing; the drop is
+    // what empties the globe, correctly.)
     const { repo, writes } = mockModel();
 
     expect(await repo.replace([])).toEqual({ blobs: 0 });
-    expect(writes.map((w) => w.op)).toEqual(["deleteMany"]);
+    expect(writes.map((w) => w.op)).toEqual(["updateMany", "deleteMany"]);
   });
 });
 

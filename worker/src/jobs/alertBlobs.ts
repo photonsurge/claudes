@@ -166,8 +166,18 @@ export async function refresh(_job: Job) {
       await breathe();
     }
 
-    // Only now retire the old generation — never before the new one is complete.
-    await db.alertBlobs.dropOlderThan(builtAt);
+    // THE COMMIT. Everything written above is `live: false` and invisible until
+    // this line: it flips the new generation on air and retires every older one,
+    // in that order, so a reader sees the previous globe whole right up until it
+    // sees the new one whole.
+    //
+    // A rebuild that dies before here therefore changes nothing on air. It used to
+    // be the opposite: the shapes went straight to the globe as they landed and
+    // the OLD ones were only dropped on this line, so a job killed mid-rebuild
+    // left both sets live forever and every shape drew twice, stacked on itself.
+    // Live, that was 3,871 stale shapes under 602 new ones — and it read as pairs
+    // of identical overlapping warnings, which looks like a geometry bug.
+    const committed = await db.alertBlobs.commitGeneration(builtAt);
 
     const before = verticesBefore;
     const after = verticesAfter;
@@ -180,6 +190,9 @@ export async function refresh(_job: Job) {
       // polygon-clipping refuses some real-world borders; those areas simply
       // stayed separate rather than taking the rebuild down.
       unionFailures,
+      // Stale shapes swept by the commit. Steady state is 0 — a spike means the
+      // previous rebuild died before committing.
+      staleRemoved: committed.removed,
       // Hairline gaps left where two counties' borders don't match to the micron.
       // They're interior to the fused shape, so they come back as holes and the
       // globe draws a line round each one — the streaks across Poland. ~90% of all

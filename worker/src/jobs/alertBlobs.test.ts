@@ -100,9 +100,9 @@ function mockDb() {
         trace.push(`write ${blobs.length}@${builtAt.toISOString()}`);
         return blobs.length;
       }),
-      dropOlderThan: jest.fn(async (builtAt: Date) => {
-        trace.push(`drop <${builtAt.toISOString()}`);
-        return { removed: 9 };
+      commitGeneration: jest.fn(async (builtAt: Date) => {
+        trace.push(`commit ${builtAt.toISOString()}`);
+        return { live: 2, removed: 9 };
       }),
     },
   };
@@ -171,29 +171,35 @@ describe("alert blobs rebuild", () => {
       expect.stringMatching(/^write 1@/),
       "load b1",
       expect.stringMatching(/^write 1@/),
-      expect.stringMatching(/^drop </),
+      expect.stringMatching(/^commit /),
     ]);
   });
 
-  it("retires the old generation only after the last bucket has landed", async () => {
+  it("commits only after the last bucket has landed", async () => {
+    // Everything written before this is `live: false` and invisible, so the
+    // commit IS the moment the globe changes. A rebuild that dies before it
+    // changes nothing on air — which is the whole point: when the old code put
+    // shapes live as they landed and only retired the previous set on this line,
+    // a killed job left both generations live forever and the globe drew every
+    // shape twice.
     const { trace } = mockDb();
 
     await run();
 
-    expect(trace[trace.length - 1]).toMatch(/^drop </);
+    expect(trace[trace.length - 1]).toMatch(/^commit /);
   });
 
-  it("stamps every instalment and the drop with ONE generation", async () => {
-    // A second `new Date()` anywhere in the loop and the drop would cut away
-    // instalments from the rebuild that's still running.
+  it("stamps every instalment and the commit with ONE generation", async () => {
+    // A second `new Date()` anywhere in the loop and the commit would put only
+    // part of the rebuild on air and sweep the rest away.
     const { db } = mockDb();
 
     await run();
 
     const stamps = db.alertBlobs.addGeneration.mock.calls.map(([, at]) => at);
-    const dropped = db.alertBlobs.dropOlderThan.mock.calls[0][0];
+    const committed = db.alertBlobs.commitGeneration.mock.calls[0][0];
     expect(new Set(stamps.map((d) => d.getTime())).size).toBe(1);
-    expect(dropped).toEqual(stamps[0]);
+    expect(committed).toEqual(stamps[0]);
   });
 
   it("counts the shapes it actually wrote", async () => {
@@ -228,14 +234,14 @@ describe("alert blobs rebuild", () => {
 
   it("clears the old shapes even when nothing is active", async () => {
     // No buckets, no writes — but the globe must not keep drawing expired
-    // warnings, so the drop still has to run.
+    // warnings, so the commit still has to run and sweep the old generation.
     const { db, trace } = mockDb();
     ALERTS.length = 0;
 
     const r = await run();
 
     expect(r).toMatchObject({ alerts: 0, blobs: 0, saved: "0%" });
-    expect(db.alertBlobs.dropOlderThan).toHaveBeenCalledTimes(1);
-    expect(trace).toEqual([expect.stringMatching(/^drop </)]);
+    expect(db.alertBlobs.commitGeneration).toHaveBeenCalledTimes(1);
+    expect(trace).toEqual([expect.stringMatching(/^commit /)]);
   });
 });
