@@ -101,13 +101,29 @@ export interface ListAlertsOpts {
   severityMin?: number;
   limit?: number;
   /**
-   * Ask the API to strip the fields no map/world-watch consumer reads (raw
-   * `description`, per-area `geocodes`) — see alerts-repo `lean`. The overlay
-   * and World Watch both request the whole-planet `active=1&limit=5000` feed;
-   * lean shrinks it ~10× so the repeated poll+parse stops piling up in the
-   * public heap. Admin (which shows the raw description) omits it.
+   * Ask the API to strip the fields no consumer reads (raw `description`,
+   * per-area `geocodes`) — see alerts-repo `lean`. On the whole-planet
+   * `active=1&limit=5000` feed these dominate the payload; lean shrinks it ~10×
+   * so the repeated poll+parse stops piling up in the public heap. Admin (which
+   * shows the raw description) omits it.
    */
   lean?: boolean;
+  /**
+   * Ask the API to leave the polygon COORDINATES out (`geometry.type` stays, so a
+   * caller can still tell an area from a point).
+   *
+   * `lean` kept the geometry because the globe overlay drew this feed. It doesn't
+   * any more — it draws the worker's dissolved shapes (/api/alerts/blobs) — so
+   * the only callers left are World Watch and the admin table.
+   *
+   * NOT usable by World Watch, despite it reading only `maxSeverityRank`
+   * directly: worldWatchSummary derives a continent per alert and worldWatchFeed
+   * a "near <city>" label, both via a REP POINT taken off the polygon (see
+   * broadcast.ts alertRepPointOf). Passing this there doesn't fail — it silently
+   * empties the continent breakdown and the place names. The admin table reads no
+   * geometry at all and does pass it.
+   */
+  omitCoordinates?: boolean;
 }
 
 export async function listAlerts(opts: ListAlertsOpts = {}): Promise<Alert[]> {
@@ -117,11 +133,12 @@ export async function listAlerts(opts: ListAlertsOpts = {}): Promise<Alert[]> {
   if (typeof opts.severityMin === "number") q.set("severityMin", String(opts.severityMin));
   if (typeof opts.limit === "number") q.set("limit", String(opts.limit));
   if (opts.lean) q.set("lean", "1");
+  if (opts.omitCoordinates) q.set("omitCoordinates", "1");
   const url = `/api/alerts?${q.toString()}`;
-  // Coalesce simultaneous identical pulls: the World Watch panel and the globe
-  // alerts overlay both request `active=1&limit=5000` and both re-fire on the
-  // same ALERTS_UPDATED beat — without this each pays the ~3s re-parse of every
-  // active alert. Shared in-flight only, so a later poll still refetches fresh.
+  // Coalesce simultaneous identical pulls on the same ALERTS_UPDATED beat, so a
+  // second caller rides the first's request instead of paying its own re-parse of
+  // every active alert. Shared in-flight only, so a later poll still refetches
+  // fresh.
   return coalesce(url, async () => {
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return [] as Alert[];

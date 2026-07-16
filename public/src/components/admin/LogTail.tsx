@@ -52,11 +52,14 @@ export default function LogTail({
   limit = 200,
   title = "Logs",
   excludeType,
+  maxHeight = 520,
 }: {
   limit?: number;
   title?: string;
   /** Comma-separated log `type`s to omit server-side (e.g. "request" to hide API-request lines). */
   excludeType?: string;
+  /** Cap on the scrolling tail — a rail passes a vh so the panel stays on-screen. */
+  maxHeight?: number | string;
 }) {
   const [logs, setLogs] = useState<iLogModel[]>([]);
   const [active, setActive] = useState<Set<Level>>(new Set());
@@ -174,7 +177,7 @@ export default function LogTail({
           borderColor: "divider",
           borderRadius: 1,
           bgcolor: surface.sunken,
-          maxHeight: 520,
+          maxHeight,
           overflowY: "auto",
           fontFamily: font.mono,
           fontVariantNumeric: "tabular-nums",

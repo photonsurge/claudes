@@ -55,7 +55,14 @@ function stamp(job: SummaryJob, now: number): string {
   return job.timestamp ? `queued ${secs(now - job.timestamp)} ago` : "queued";
 }
 
-export default function QueueSummary({ pollMs = 4000 }: { pollMs?: number }) {
+export default function QueueSummary({
+  pollMs = 4000,
+  maxHeight = 520,
+}: {
+  pollMs?: number;
+  /** Cap on the scrolling list — a rail passes a vh so the panel stays on-screen. */
+  maxHeight?: number | string;
+}) {
   const [jobs, setJobs] = useState<SummaryJob[]>([]);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [err, setErr] = useState(false);
@@ -108,7 +115,9 @@ export default function QueueSummary({ pollMs = 4000 }: { pollMs?: number }) {
         </Link>
       </Stack>
 
-      <Paper sx={{ mt: 1.25, overflow: "hidden" }}>
+      {/* Capped: this sits in a sticky rail, and a 40-deep backlog shouldn't
+          push the queue's own header off screen. */}
+      <Paper sx={{ mt: 1.25, overflow: "hidden auto", maxHeight }}>
         {jobs.map((j) => {
           const label = j.type && j.event ? `${j.type}.${j.event}` : j.name || "job";
           const color = STATE_COLOR[j.state] ?? ink.secondary;
@@ -130,11 +139,15 @@ export default function QueueSummary({ pollMs = 4000 }: { pollMs?: number }) {
                 title={j.state}
                 sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: color, flexShrink: 0 }}
               />
-              <Typography variant="body2" sx={{ minWidth: 0, fontWeight: 600, wordBreak: "break-word" }}>
+              {/* The id is a repeat key long enough to wrap the whole rail, so
+                  it's a tooltip here; /admin/queue is where you'd act on it. */}
+              <Typography
+                variant="body2"
+                noWrap
+                title={`#${j.id}`}
+                sx={{ flex: 1, minWidth: 0, fontWeight: 600, fontFamily: font.mono }}
+              >
                 {label}
-              </Typography>
-              <Typography variant="caption" color="text.disabled" sx={{ fontFamily: font.mono }}>
-                #{j.id}
               </Typography>
               {j.state === "active" && j.progress > 0 && (
                 <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>

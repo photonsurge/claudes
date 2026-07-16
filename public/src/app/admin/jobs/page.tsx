@@ -195,56 +195,89 @@ export default function JobsPage() {
         shown={visible.length}
       />
 
-      {visible.length === 0 && jobs.length > 0 && (
-        <Typography variant="body2" color="text.disabled" sx={{ py: 3.5 }}>
-          No jobs match that search.
-        </Typography>
-      )}
-
       {/*
-        `align-items: start` so a one-job panel keeps its own height instead of
-        stretching to the tallest panel in its row, and `dense` so those small
-        panels backfill the gaps the wide ones leave.
-
-        Spans step down with the viewport: a panel spanning more columns than the
-        grid has would add implicit columns and push the page sideways.
+        Triggers left, the queue they feed right — so an operator can watch what
+        a "Run now" actually did without leaving the row they clicked.
       */}
       <Box
         sx={{
           display: "grid",
-          gap: 1.75,
-          gridAutoFlow: "dense",
+          gap: 2.5,
           alignItems: "start",
-          gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))",
-          "& .job-span-2": { gridColumn: "span 2" },
-          "& .job-span-3": { gridColumn: "span 3" },
-          "& .job-span-4": { gridColumn: "span 4" },
-          "@media (max-width:1500px)": { "& .job-span-4": { gridColumn: "span 3" } },
-          "@media (max-width:1180px)": { "& .job-span-3, & .job-span-4": { gridColumn: "span 2" } },
-          "@media (max-width:860px)": { "& .job-panel": { gridColumn: "span 1" } },
+          gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)",
+          "@media (max-width:1000px)": { gridTemplateColumns: "minmax(0, 1fr)" },
         }}
       >
-        {byWidestFirst(groupJobs(visible)).map(([groupName, groupJobsList]) => (
-          <JobGroupPanel
-            key={groupName}
-            group={groupName}
-            jobs={groupJobsList}
-            results={results}
-            stopResults={stopResults}
-            busy={busy}
-            stopping={stopping}
-            onRun={run}
-            onStop={stop}
-          />
-        ))}
-      </Box>
+        {/*
+          A container, so the panel spans below size to THIS column rather than
+          to the viewport — the rail's width is theirs to account for.
+        */}
+        <Box sx={{ minWidth: 0, containerType: "inline-size" }}>
+          {visible.length === 0 && jobs.length > 0 && (
+            <Typography variant="body2" color="text.disabled" sx={{ py: 3.5 }}>
+              No jobs match that search.
+            </Typography>
+          )}
 
-      <Box sx={{ mt: 3.5 }}>
-        <QueueSummary />
-      </Box>
+          {/*
+            `align-items: start` so a one-job panel keeps its own height instead
+            of stretching to the tallest panel in its row, and `dense` so those
+            small panels backfill the gaps the wide ones leave.
 
-      <Box sx={{ mt: 3.5 }}>
-        <LogTail limit={100} title="Recent activity" excludeType="request" />
+            Spans step down with the column: a panel spanning more columns than
+            the grid has would add implicit columns and push the page sideways.
+          */}
+          <Box
+            sx={{
+              display: "grid",
+              gap: 1.75,
+              gridAutoFlow: "dense",
+              alignItems: "start",
+              gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))",
+              "& .job-span-2": { gridColumn: "span 2" },
+              "& .job-span-3": { gridColumn: "span 3" },
+              "& .job-span-4": { gridColumn: "span 4" },
+              "@container (max-width:1450px)": { "& .job-span-4": { gridColumn: "span 3" } },
+              "@container (max-width:1130px)": { "& .job-span-3, & .job-span-4": { gridColumn: "span 2" } },
+              "@container (max-width:810px)": { "& .job-panel": { gridColumn: "span 1" } },
+            }}
+          >
+            {byWidestFirst(groupJobs(visible)).map(([groupName, groupJobsList]) => (
+              <JobGroupPanel
+                key={groupName}
+                group={groupName}
+                jobs={groupJobsList}
+                results={results}
+                stopResults={stopResults}
+                busy={busy}
+                stopping={stopping}
+                onRun={run}
+                onStop={stop}
+              />
+            ))}
+          </Box>
+        </Box>
+
+        {/*
+          Sticky: the job grid is long, and the queue + its log are what you
+          watch while scrolling it. The vh caps are what earn the sticky — two
+          uncapped panels would run past the fold, and everything below the
+          first screen would be unreachable while pinned.
+        */}
+        <Box
+          component="aside"
+          sx={{
+            minWidth: 0,
+            display: "grid",
+            gap: 2.5,
+            position: "sticky",
+            top: 16,
+            "@media (max-width:1000px)": { position: "static" },
+          }}
+        >
+          <QueueSummary maxHeight="30vh" />
+          <LogTail limit={100} title="Recent activity" excludeType="request" maxHeight="38vh" />
+        </Box>
       </Box>
     </AdminPageShell>
   );

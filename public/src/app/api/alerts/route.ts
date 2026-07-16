@@ -50,6 +50,22 @@ async function GET__impl(req: Request) {
   // description + per-area geocodes). Only the broadcast consumers pass it;
   // admin omits it so its detail view keeps the full untranslated text.
   const lean = q.get("lean") === "1";
+  /**
+   * Ship the alerts WITHOUT their polygon coordinates.
+   *
+   * This feed used to be the globe's overlay, which is why it carries geometry at
+   * all. The overlay now draws the worker's dissolved shapes (/api/alerts/blobs),
+   * and the two callers left — World Watch and the admin table — read no geometry
+   * whatsoever: World Watch touches exactly one field per alert
+   * (`maxSeverityRank`) and the admin list none. So the whole-planet
+   * `active=1&limit=5000` feed was shipping every active alert's full boundary to
+   * produce a COUNT.
+   *
+   * Stripped AFTER the clustering below, never at the query: the grouping is O(n²)
+   * over the footprints and genuinely needs them server-side. The server still
+   * does the work; it just stops posting the evidence.
+   */
+  const omitCoordinates = q.get("omitCoordinates") === "1";
 
   // Redis result-cache keyed by the full param set that determines the response —
   // so the overlay + world-watch DUPLICATE fetches, the 60s re-polls, and every
@@ -57,7 +73,7 @@ async function GET__impl(req: Request) {
   // (up-to-5000-row) Mongo query + O(n²) clustering each time. Fail-open.
   const key = `feed:v1:alerts:${activeOnly ? 1 : 0}:${source ?? "-"}:${severityMin ?? "-"}:${limit ?? "-"}:${
     bbox ? bbox.map((n) => n.toFixed(2)).join(",") : "-"
-  }:${lean ? "lean1" : "-"}`;
+  }:${lean ? "lean1" : "-"}:${omitCoordinates ? "nogeo" : "-"}`;
 
   const { value, hit } = await withCache(key, FEED_TTL_SEC, async () => {
     const db = await getAppDb();
@@ -89,6 +105,19 @@ async function GET__impl(req: Request) {
       for (const m of g.members) {
         m.groupId = g.id;
         m.groupSources = g.sources;
+      }
+    }
+    // NOW drop the coordinates — after grouping, which needed them.
+    if (omitCoordinates) {
+      for (const a of list) {
+        for (const info of a.info ?? []) {
+          for (const area of info.area ?? []) {
+            // Keep `geometry.type`: a caller can still tell "this alert has an
+            // area" from "this is a point", which is the only thing the shape is
+            // asked here.
+            if (area?.geometry) area.geometry = { type: area.geometry.type } as typeof area.geometry;
+          }
+        }
       }
     }
     return { alerts: list, count: list.length };

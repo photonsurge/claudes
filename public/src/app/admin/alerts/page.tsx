@@ -77,7 +77,7 @@ export default function AlertsPage() {
       // limit 0 = no cap: fetch every matching alert (the whole world). lean =
       // drop the raw description + per-area geocodes the table never shows (the
       // Debug modal lazy-loads the full doc); keeps this world-wide pull light.
-      setAlerts(await listAlerts({ activeOnly, severityMin, limit: 0, lean: true }));
+      setAlerts(await listAlerts({ activeOnly, severityMin, limit: 0, lean: true, omitCoordinates: true }));
     } finally {
       setLoading(false);
     }
@@ -445,7 +445,7 @@ export default function AlertsPage() {
                         >
                           {debugId === g.id ? "Hide" : multi ? `Debug (${g.members.length})` : "Debug"}
                         </Button>
-                        <Button component={Link} href={`/admin/alerts/${rep.id}`} variant="contained">
+                        <Button component={Link} href={`/admin/alerts/${rep.id}`} variant="outlined">
                           Details →
                         </Button>
                         {info?.web && (
@@ -461,7 +461,7 @@ export default function AlertsPage() {
             })}
             {groups.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9}>
+                <TableCell colSpan={10}>
                   {loading
                     ? "Loading…"
                     : alerts.length

@@ -312,6 +312,34 @@ describe("worldWatchSummary", () => {
     });
   });
 
+  /**
+   * The panel reads `maxSeverityRank` off an alert and nothing else, which makes
+   * it look like it could take the whole-planet feed with the polygons stripped —
+   * that feed is ~20MB and the geometry is 60% of it. It CAN'T: the continent
+   * here, and the "near <city>" label in worldWatchFeed, are both derived from a
+   * rep point taken off the polygon. Strip the coordinates and nothing throws —
+   * the breakdown just quietly empties.
+   */
+  it("needs the polygon COORDINATES, not just geometry.type, to place an alert", () => {
+    // Exactly what ?omitCoordinates=1 returns: the type, no coordinates.
+    const stripped = raw(4, {
+      id: "eu1",
+      info: [
+        {
+          event: "Storm",
+          severityRank: 4,
+          area: [{ areaDesc: "Spain", geometry: { type: "Polygon" } as never, geocodes: [] }],
+        },
+      ],
+    });
+
+    const s = worldWatchSummary([stripped], []);
+
+    // No rep point => no continent => the alert vanishes from the breakdown it
+    // is supposed to appear in. Silent, which is what makes it dangerous.
+    expect(s.byContinent).toEqual([]);
+  });
+
   it("buckets alerts and quakes by continent, busiest first", () => {
     const spain = raw(4, {
       id: "eu1",
