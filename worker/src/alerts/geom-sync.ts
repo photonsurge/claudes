@@ -1,17 +1,46 @@
 import type { AppDb } from "@photonsurge/shared/db/index";
 import { log } from "@photonsurge/shared/utill/logger";
 import {
-  fetchCountryFeatures,
+  fetchCountryPage,
+  fetchPages,
+  freshPages,
+  windowFor,
   meteogateCountries,
   resolveFeature,
   quota,
   quotaLow,
   RateLimitError,
   type EdrFeature,
+  type EdrWindow,
 } from "./meteogate";
+import type { CrawlCursor } from "@photonsurge/shared/db/alert-area-geom-repo";
 import { repairCachedGeometry } from "./repair";
 
 const TAG = "alerts:geom-sync";
+
+/**
+ * Gateway requests one run may spend on pages.
+ *
+ * Pages are the ONLY thing that costs quota. Resolving a feature does not: the
+ * rel=json and rel=geometry links are pre-signed object-store URLs, and measured
+ * live, 80 features (160 link fetches) moved the counter by zero while 42 page
+ * fetches moved it 42. The old code's "resolving one alert costs two requests"
+ * was simply wrong, and it was why the page walk was rationed to nothing.
+ *
+ * The sweep is hourly and the quota is 500/hour, so 400 leaves a comfortable
+ * reserve for a concurrent `yarn refresh:alert-geom`.
+ */
+const PAGE_BUDGET = () => Number(process.env.METEOGATE_PAGE_BUDGET || 400);
+
+/**
+ * How long a completed crawl stands before the middle is walked again.
+ *
+ * A finished crawl has seen every page of its window, so re-walking it buys
+ * nothing until enough time has passed for warnings to have appeared over areas
+ * that had none. Areas are permanent; this only has to be faster than Europe
+ * gains new EMMA codes.
+ */
+const RECRAWL_MS = () => Number(process.env.METEOGATE_RECRAWL_MS || 7 * 24 * 60 * 60 * 1000);
 
 export interface GeomSyncResult {
   /** Countries swept without error. */
@@ -24,6 +53,10 @@ export interface GeomSyncResult {
   cached: number;
   /** Alerts skipped because the ledger had already resolved them. */
   skipped: number;
+  /** Pages read by the deep crawl — the middle of the feed nothing used to read. */
+  crawlPages: number;
+  /** Countries whose crawl finished this run (every page of its window seen). */
+  crawlsCompleted: number;
   /** Already-stored alerts retro-fitted with a boundary this run. */
   backfilled: number;
   /**
@@ -37,6 +70,17 @@ export interface GeomSyncResult {
   quotaStopped: boolean;
   /** Gateway requests left in the window, as the server last reported them. */
   quotaRemaining: number | null;
+  /**
+   * What we can actually DRAW once the run is done — the only number that says
+   * whether any of this is working. See alerts-repo#geometryCoverage.
+   */
+  coverage: {
+    alerts: number;
+    alertsNoShape: number;
+    alertsPartial: number;
+    areas: number;
+    areasNoGeom: number;
+  } | null;
   failures: string[];
 }
 
@@ -108,14 +152,82 @@ export function interleaveByCountry(byCountry: Map<string, EdrFeature[]>): EdrFe
 }
 
 /**
+ * Round-robin the deep-crawl pages so a page budget spreads across Europe.
+ *
+ * Same lesson as {@link interleaveByCountry}, and it matters more here: Germany
+ * has 281 unread pages to Austria's 40, and the countries are swept
+ * alphabetically. Drained in order, DE would eat an entire run's budget and
+ * everything after it in the alphabet would wait for the German crawl to finish.
+ */
+export function interleavePages(byCountry: Map<string, number[]>): { cc: string; page: number }[] {
+  const entries = [...byCountry.entries()];
+  const out: { cc: string; page: number }[] = [];
+  for (let i = 0; entries.some(([, q]) => i < q.length); i++) {
+    for (const [cc, q] of entries) if (i < q.length) out.push({ cc, page: q[i] });
+  }
+  return out;
+}
+
+/**
+ * Decide what a country's deep crawl should do this run.
+ *
+ * Pure so the awkward cases are testable without a gateway: the page numbers only
+ * mean anything relative to a pinned window, and every branch here is about
+ * keeping that pin honest.
+ *
+ * - no cursor / crawl finished long enough ago  → open a fresh crawl over `now`
+ * - totalPages moved under an open crawl        → the pin isn't holding, restart
+ * - crawl finished recently                     → nothing; the middle is known
+ * - otherwise                                   → resume from nextPage, same window
+ */
+export function planCrawl(
+  cc: string,
+  liveTotalPages: number,
+  cursor: CrawlCursor | undefined,
+  now: Date,
+  recrawlMs = RECRAWL_MS(),
+): { action: "start" | "resume" | "skip"; window: EdrWindow; pages: number[] } {
+  const fresh = { action: "start" as const, window: windowFor(now), pages: [] as number[] };
+  const pagesFrom = (n: number, total: number) => {
+    const out: number[] = [];
+    for (let p = Math.max(2, n); p <= total; p++) out.push(p);
+    return out;
+  };
+
+  if (!cursor) return { ...fresh, pages: pagesFrom(2, liveTotalPages) };
+
+  if (cursor.completedAt) {
+    const age = now.getTime() - new Date(cursor.completedAt).getTime();
+    if (age < recrawlMs) return { action: "skip", window: windowFor(now), pages: [] };
+    return { ...fresh, pages: pagesFrom(2, liveTotalPages) };
+  }
+
+  // An open crawl's window is pinned, so its totalPages must not move. If it has,
+  // the pin is not being honoured (or the feed changed shape) and the remembered
+  // page numbers point at the wrong rows — which is the exact failure a naive
+  // cursor over the rolling window would have had. Throw it away and re-pin.
+  const w: EdrWindow = { from: new Date(cursor.windowFrom), to: new Date(cursor.windowTo) };
+  if (cursor.nextPage > cursor.totalPages) {
+    return { ...fresh, pages: pagesFrom(2, liveTotalPages) };
+  }
+  return { action: "resume", window: w, pages: pagesFrom(cursor.nextPage, cursor.totalPages) };
+}
+
+/**
  * Fill the EMMA_ID → boundary cache from MeteoGate.
  *
- * Cost control IS the design. MeteoGate allows **500 gateway requests per hour**
- * and resolving one alert costs two, so a run can only ever resolve ~150–200
- * alerts. That's fine — an EMMA boundary is permanent, so the cache fills over
- * days and then costs almost nothing. What matters is that each run spends its
- * small budget WIDELY (round-robin) and stops before it blows the window, since
- * exhausting the quota 429s every country until the hour rolls over.
+ * Cost control IS the design, but it used to be aimed at the wrong thing. The old
+ * comment here read "resolving one alert costs two requests, so a run can only
+ * ever resolve ~150–200 alerts" — and that is false. **Only page fetches spend
+ * quota.** The rel=json/rel=geometry links are pre-signed object-store URLs;
+ * measured live, 160 of them moved the counter by zero while 42 page fetches
+ * moved it 42. Rationing resolves while starving the page walk was exactly
+ * backwards, and it is why half of Europe had no boundary.
+ *
+ * So: MeteoGate allows 500 gateway requests per hour, the sweep is hourly, and
+ * every one of those requests is a PAGE. Spend them widely (round-robin, both
+ * passes) and stop before the window blows, since a 429 locks out every country
+ * until the hour rolls over. Resolving is free, so the only limit on it is time.
  *
  * Tolerant by design: one country's failure must not lose the rest of Europe.
  */
@@ -124,8 +236,8 @@ export async function syncAreaGeometry(
   opts: { now?: Date; budget?: number } = {},
 ): Promise<GeomSyncResult> {
   const now = opts.now ?? new Date();
-  // ~100 alerts = ~200 requests + the page walk (~80), so a run uses a bit over
-  // half the 500/hour window and leaves room for a manual `yarn refresh:alert-geom`.
+  // Alerts to resolve per run. Costs no quota (see above) — this bounds the run's
+  // WALL CLOCK, nothing else, since each resolve is two round-trips to the store.
   const budget = opts.budget ?? Number(process.env.METEOGATE_BUDGET || 100);
   const res: GeomSyncResult = {
     countries: 0,
@@ -133,11 +245,14 @@ export async function syncAreaGeometry(
     resolved: 0,
     cached: 0,
     skipped: 0,
+    crawlPages: 0,
+    crawlsCompleted: 0,
     backfilled: 0,
     reconciled: 0,
     repaired: 0,
     quotaStopped: false,
     quotaRemaining: null,
+    coverage: null,
     failures: [],
   };
 
@@ -166,24 +281,107 @@ export async function syncAreaGeometry(
   // One feature per alert per country: the feed repeats each alert per language
   // and per area, and they all resolve through the same linked CAP document.
   const byCountry = new Map<string, Map<string, EdrFeature>>();
+  const keep = (cc: string, feats: EdrFeature[]) => {
+    res.features += feats.length;
+    const seenHere = byCountry.get(cc) ?? new Map<string, EdrFeature>();
+    for (const f of feats) if (!seenHere.has(f.alertId)) seenHere.set(f.alertId, f);
+    byCountry.set(cc, seenHere);
+  };
+
+  let pagesLeft = PAGE_BUDGET();
+  const outOfPages = () => pagesLeft <= 0 || quotaLow();
+
+  // ---- Pass 1: freshness. Page 1 (which also reports the page count) and the
+  // last couple, where new alerts land. Every country, every run — this is the
+  // read that keeps up with the feed, and it's what the sweep used to do ALONE.
+  const cursors = await db.alertAreaGeom.crawlCursors();
+  const totals = new Map<string, number>();
   for (const cc of meteogateCountries()) {
-    if (quotaLow()) {
+    if (outOfPages()) {
       res.quotaStopped = true;
       break;
     }
     try {
-      const feats = await fetchCountryFeatures(cc, now);
-      res.features += feats.length;
+      const p1 = await fetchCountryPage(cc, 1, now);
+      pagesLeft--;
+      totals.set(cc, p1.totalPages);
+      keep(cc, p1.features);
       res.countries++;
-      const seenHere = new Map<string, EdrFeature>();
-      for (const f of feats) if (!seenHere.has(f.alertId)) seenHere.set(f.alertId, f);
-      byCountry.set(cc, seenHere);
+
+      const tail = freshPages(p1.totalPages).filter((p) => p !== 1);
+      const got = await fetchPages(cc, tail, windowFor(now), outOfPages);
+      pagesLeft -= got.read.length;
+      keep(cc, got.features);
     } catch (err) {
       if (err instanceof RateLimitError) {
         res.quotaStopped = true;
         break;
       }
       res.failures.push(`${cc}: ${String((err as Error)?.message ?? err)}`);
+    }
+  }
+
+  // ---- Pass 2: the deep crawl. Everything pass 1 doesn't reach — 87% of the
+  // feed, and where the missing boundaries actually are. Round-robin so one
+  // 281-page country can't spend the budget alone, and resumable so the 565
+  // pages Europe adds up to can cross runs instead of needing an impossible one.
+  const plans = new Map<string, ReturnType<typeof planCrawl>>();
+  const queues = new Map<string, number[]>();
+  for (const [cc, totalPages] of totals) {
+    const plan = planCrawl(cc, totalPages, cursors.get(cc), now);
+    if (plan.action === "skip" || !plan.pages.length) continue;
+    plans.set(cc, plan);
+    queues.set(cc, plan.pages);
+    if (plan.action === "start") {
+      try {
+        await db.alertAreaGeom.startCrawl({
+          countryCode: cc,
+          windowFrom: plan.window.from,
+          windowTo: plan.window.to,
+          totalPages,
+        });
+      } catch (err) {
+        res.failures.push(`crawl-start ${cc}: ${String((err as Error)?.message ?? err)}`);
+        queues.delete(cc);
+      }
+    }
+  }
+
+  const reached = new Map<string, number>();
+  for (const { cc, page } of interleavePages(queues)) {
+    if (outOfPages()) {
+      res.quotaStopped = true;
+      break;
+    }
+    try {
+      const p = await fetchCountryPage(cc, page, plans.get(cc)!.window);
+      pagesLeft--;
+      res.crawlPages++;
+      keep(cc, p.features);
+      reached.set(cc, Math.max(reached.get(cc) ?? 0, page));
+    } catch (err) {
+      if (err instanceof RateLimitError) {
+        res.quotaStopped = true;
+        break;
+      }
+      // A single bad page must not abandon the country's crawl — but do NOT
+      // advance past it, or the boundaries it carries are lost until the next
+      // full re-crawl. Leaving nextPage put means the next run retries it.
+      res.failures.push(`${cc} p${page}: ${String((err as Error)?.message ?? err)}`);
+      break;
+    }
+  }
+
+  // Record how far each crawl actually got. `reached` is the highest page that
+  // came back, and advanceCrawl only moves nextPage forward, so a run that dies
+  // mid-country resumes rather than restarts.
+  for (const [cc, page] of reached) {
+    const done = page >= (plans.get(cc)?.pages.at(-1) ?? page);
+    if (done) res.crawlsCompleted++;
+    try {
+      await db.alertAreaGeom.advanceCrawl(cc, page + 1, done);
+    } catch (err) {
+      res.failures.push(`crawl-advance ${cc}: ${String((err as Error)?.message ?? err)}`);
     }
   }
 
@@ -246,6 +444,21 @@ export async function syncAreaGeometry(
     }
   }
   await db.alertAreaGeom.markSeen(marks);
+
+  // Measured AFTER the writes, so it reflects this run rather than the last one.
+  // Costs no quota — it's a Mongo scan of what we already hold.
+  try {
+    res.coverage = await db.alerts.geometryCoverage();
+    const c = res.coverage;
+    log(TAG, `drawable coverage`, {
+      ...c,
+      areasDrawnPct: c.areas ? +(((c.areas - c.areasNoGeom) / c.areas) * 100).toFixed(1) : 0,
+      // The silent one: these are ON AIR right now, missing pieces, looking fine.
+      partialPct: c.alerts ? +((c.alertsPartial / c.alerts) * 100).toFixed(1) : 0,
+    });
+  } catch (err) {
+    res.failures.push(`coverage: ${String((err as Error)?.message ?? err)}`);
+  }
 
   res.quotaRemaining = quota().remaining;
   if (res.quotaStopped) {

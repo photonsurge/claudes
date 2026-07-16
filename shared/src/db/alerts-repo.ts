@@ -151,6 +151,55 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       return [...want];
     },
 
+    /**
+     * How much of the live picture we can actually draw. The scoreboard.
+     *
+     * This is the number the whole EMMA geometry effort is judged on, and nothing
+     * used to report it — the sweep printed how many areas it resolved, which
+     * says how hard it worked, not whether the map is right. Live it was 10,187
+     * of 20,568 areas (49.5%) shapeless and 632 MeteoAlarm alerts undrawable,
+     * and the sweep cheerfully logged `resolved: 3` on top of that.
+     *
+     * `alertsNoShape` counts alerts where NOT ONE area has a shape — those are
+     * invisible. `alertsPartial` counts alerts drawing with pieces missing, which
+     * is the silent half: they look fine on air and aren't.
+     */
+    async geometryCoverage(): Promise<{
+      alerts: number;
+      alertsNoShape: number;
+      alertsPartial: number;
+      areas: number;
+      areasNoGeom: number;
+    }> {
+      const docs = (await model
+        .find({ active: true }, { _id: 0, "info.area.geometry.type": 1 })
+        .lean()
+        .exec()) as any[];
+
+      let alerts = 0;
+      let alertsNoShape = 0;
+      let alertsPartial = 0;
+      let areas = 0;
+      let areasNoGeom = 0;
+      for (const d of docs) {
+        let mine = 0;
+        let drawn = 0;
+        for (const info of d.info ?? []) {
+          for (const area of info.area ?? []) {
+            mine++;
+            if (area?.geometry?.type) drawn++;
+          }
+        }
+        if (!mine) continue; // no areas at all — not a geometry gap, a feed shape
+        alerts++;
+        areas += mine;
+        areasNoGeom += mine - drawn;
+        if (drawn === 0) alertsNoShape++;
+        else if (drawn < mine) alertsPartial++;
+      }
+      return { alerts, alertsNoShape, alertsPartial, areas, areasNoGeom };
+    },
+
     async backfillAreaGeometry(emmaId: string, geometry: unknown): Promise<number> {
       const match = { $elemMatch: { valueName: "EMMA_ID", value: emmaId } };
       const r = await model.updateMany(

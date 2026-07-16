@@ -29,9 +29,18 @@ export async function refresh(job: Job) {
     const totals = await db.alertAreaGeom.count();
     const result = { ...r, failures: r.failures.length, totals };
     log(TAG, `alert geometry sync done`, result);
+
+    // Lead with what we still CAN'T draw, not with how much the run resolved.
+    // The old line reported `+N cached / N resolved` — effort, not outcome — and
+    // read as success while half of Europe's areas had no shape at all.
+    const c = r.coverage;
+    const gap = c
+      ? `${c.alertsNoShape} alerts with NO location, ${c.alertsPartial} drawing partial ` +
+        `(${c.areasNoGeom}/${c.areas} areas still shapeless)`
+      : `coverage unknown`;
     blogInfo(
       TAG,
-      `alert geometry: +${r.cached} areas cached (${totals.exact}/${totals.areas} exact), ` +
+      `alert geometry: ${gap} — +${r.cached} areas cached, ${r.crawlPages} crawl pages, ` +
         `${r.resolved} resolved, ${r.skipped} skipped`,
       result,
       "alertGeom",

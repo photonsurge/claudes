@@ -69,6 +69,7 @@ import { getFaultModel } from "./fault-model";
 import { makeFaultRepo } from "./fault-repo";
 import { getAlertAreaGeomModel } from "./alert-area-geom-model";
 import { getAlertGeomSeenModel } from "./alert-geom-seen-model";
+import { getAlertGeomCrawlModel } from "./alert-geom-crawl-model";
 import { makeAlertAreaGeomRepo } from "./alert-area-geom-repo";
 import { getCapIdModel } from "./cap-id-model";
 import { makeCapIdRepo } from "./cap-id-repo";
@@ -236,7 +237,11 @@ export function createDb(conn: Connection) {
     regionRoundups: makePlaceRoundupRepo(getRegionRoundupModel(conn)),
     cables: makeCableRepo(getCableModel(conn), getCableLandingModel(conn)),
     faults: makeFaultRepo(getFaultModel(conn)),
-    alertAreaGeom: makeAlertAreaGeomRepo(getAlertAreaGeomModel(conn), getAlertGeomSeenModel(conn)),
+    alertAreaGeom: makeAlertAreaGeomRepo(
+      getAlertAreaGeomModel(conn),
+      getAlertGeomSeenModel(conn),
+      getAlertGeomCrawlModel(conn),
+    ),
     capIds: makeCapIdRepo(getCapIdModel(conn)),
     alertBlobs: makeAlertBlobRepo(getAlertBlobModel(conn)),
     aurora: makeAuroraRepo(getAuroraModel(conn), blobs.aurora),

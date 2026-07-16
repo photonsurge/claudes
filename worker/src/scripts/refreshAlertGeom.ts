@@ -5,7 +5,10 @@
  * cache without waiting out the worker cron.
  *
  * Needs METROGATE_API_KEY. Pass a budget to cap how many alerts it resolves in
- * one go (each costs two small fetches): `yarn refresh:alert-geom 50`.
+ * one go: `yarn refresh:alert-geom 50`. That bounds the run's WALL CLOCK only —
+ * resolving spends no gateway quota (the rel=* links are pre-signed). Pages are
+ * the only thing the 500/hour budget buys, so back-to-back runs will stop early
+ * on the quota; that's the crawl pausing, not failing, and it resumes next run.
  */
 import { loadWorkerEnv } from "../loadEnv";
 loadWorkerEnv();

@@ -218,42 +218,80 @@ async function getText(url: string, signed = false): Promise<string> {
 /** ISO instant, seconds precision — EDR rejects millis. */
 const iso = (d: Date): string => `${d.toISOString().slice(0, 19)}Z`;
 
-/** Fetch one page of a country's active warnings. */
-export async function fetchCountryPage(cc: string, page: number, now = new Date()): Promise<EdrPage> {
-  const to = iso(now);
-  const from = iso(new Date(now.getTime() - WINDOW_HOURS * 60 * 60 * 1000));
+/** A datetime interval to query. Frozen for the length of a crawl — see below. */
+export interface EdrWindow {
+  from: Date;
+  to: Date;
+}
+
+/** The default rolling window: the last WINDOW_HOURS, ending now. */
+export const windowFor = (now = new Date()): EdrWindow => ({
+  from: new Date(now.getTime() - WINDOW_HOURS * 60 * 60 * 1000),
+  to: now,
+});
+
+/**
+ * Fetch one page of a country's warnings.
+ *
+ * Takes an explicit window because the deep crawl MUST pin one: the feed's
+ * default interval is "the last 23 hours", which moves between runs, so page 5
+ * of one run is not page 5 of the next. A `Date` is accepted as shorthand for
+ * "the rolling window ending then".
+ */
+export async function fetchCountryPage(
+  cc: string,
+  page: number,
+  when: EdrWindow | Date = new Date(),
+): Promise<EdrPage> {
+  const w = when instanceof Date ? windowFor(when) : when;
   const url =
     `${BASE()}/collections/warnings/locations/${encodeURIComponent(cc)}` +
-    `?datetime=${encodeURIComponent(`${from}/${to}`)}&page=${page}`;
+    `?datetime=${encodeURIComponent(`${iso(w.from)}/${iso(w.to)}`)}&page=${page}`;
   return parseLocationsPage(await getText(url));
 }
 
-/**
- * Every feature for a country, newest pages FIRST.
- *
- * Page walks cost quota too — 39 countries deep-paginating would spend the hour
- * before a single boundary is resolved — so we only read a few pages per country.
- * That makes the DIRECTION critical: the feed is sorted OLDEST-FIRST (verified —
- * Poland's page 1 was 22:01 yesterday, page 7 was 12:04 today), so reading from
- * the front returns the same ancient alerts every run, which the ledger has long
- * since resolved. The cache stalls and never sees a new area again.
- *
- * So walk BACKWARDS from the last page: that's where newly issued alerts land,
- * and new alerts are the only source of EMMA areas we don't already have.
- */
-export async function fetchCountryFeatures(cc: string, now = new Date()): Promise<EdrFeature[]> {
-  // Page 1 is the cheapest way to learn how many there are; keep its features
-  // (usually all seen, but the ledger skips them for free).
-  const first = await fetchCountryPage(cc, 1, now);
-  const out = [...first.features];
-  const maxPages = Number(process.env.METEOGATE_MAX_PAGES || 3);
+/** How many pages off the back count as "new alerts land here". */
+const TAIL_PAGES = () => Number(process.env.METEOGATE_TAIL_PAGES || 2);
 
-  for (let p = first.totalPages, read = 1; p > 1 && read < maxPages; p--, read++) {
-    if (quotaLow()) break;
-    const page = await fetchCountryPage(cc, p, now);
-    out.push(...page.features);
+/**
+ * The pages a freshness read should cover, newest LAST-first.
+ *
+ * The feed is sorted OLDEST-FIRST (verified — Poland's page 1 was 22:01
+ * yesterday, page 7 was 12:04 today), so newly issued alerts land at the BACK.
+ * Page 1 comes free with the page count, and the last few are where anything new
+ * is, which is why this shape was chosen. Nothing wrong with it — the bug was
+ * that it was the ONLY read.
+ */
+export function freshPages(totalPages: number, tail = TAIL_PAGES()): number[] {
+  const pages = new Set<number>([1]);
+  for (let p = totalPages, n = 0; p > 1 && n < tail; p--, n++) pages.add(p);
+  return [...pages].sort((a, b) => a - b);
+}
+
+/**
+ * Read a specific list of pages of a country, under one pinned window.
+ *
+ * `stop` is polled between pages so a caller can bail on a page budget or the
+ * quota without this needing to know about either. Returns which pages actually
+ * came back, so a crawl can record how far it truly got rather than assume.
+ */
+export async function fetchPages(
+  cc: string,
+  pages: number[],
+  w: EdrWindow,
+  stop: () => boolean = quotaLow,
+): Promise<{ features: EdrFeature[]; read: number[]; totalPages: number }> {
+  const features: EdrFeature[] = [];
+  const read: number[] = [];
+  let totalPages = 0;
+  for (const p of pages) {
+    if (stop()) break;
+    const page = await fetchCountryPage(cc, p, w);
+    features.push(...page.features);
+    read.push(p);
+    totalPages = page.totalPages || totalPages;
   }
-  return out;
+  return { features, read, totalPages };
 }
 
 /**

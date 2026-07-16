@@ -426,3 +426,61 @@ describe("alerts-repo deactivateMeteoalarmGreens", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The scoreboard. Nothing used to report this: the sweep logged how many areas it
+ * resolved — effort — while 10,187 of 20,568 areas (49.5%) had no shape and 632
+ * MeteoAlarm alerts couldn't be drawn at all. A run could log `resolved: 3` and
+ * look like a success on top of a half-blank map.
+ */
+describe("alerts-repo geometryCoverage", () => {
+  const area = (drawn: boolean) => ({ geometry: drawn ? { type: "Polygon" } : undefined });
+  const modelOf = (docs: unknown[]) =>
+    ({ find: () => ({ lean: () => ({ exec: async () => docs }) }) }) as any;
+
+  it("counts an alert with no drawable area at all as invisible", async () => {
+    const m = modelOf([{ info: [{ area: [area(false), area(false)] }] }]);
+
+    const c = await makeAlertsRepo(m).geometryCoverage();
+
+    expect(c).toMatchObject({ alerts: 1, alertsNoShape: 1, alertsPartial: 0, areasNoGeom: 2 });
+  });
+
+  it("counts an alert drawing with PIECES MISSING as partial, not fine", async () => {
+    // The silent half — it renders, it looks correct on air, and it is wrong.
+    const m = modelOf([{ info: [{ area: [area(true), area(false)] }] }]);
+
+    const c = await makeAlertsRepo(m).geometryCoverage();
+
+    expect(c).toMatchObject({ alertsNoShape: 0, alertsPartial: 1, areas: 2, areasNoGeom: 1 });
+  });
+
+  it("a fully drawn alert scores clean", async () => {
+    const m = modelOf([{ info: [{ area: [area(true), area(true)] }] }]);
+
+    const c = await makeAlertsRepo(m).geometryCoverage();
+
+    expect(c).toMatchObject({ alerts: 1, alertsNoShape: 0, alertsPartial: 0, areasNoGeom: 0 });
+  });
+
+  it("ignores an alert with no areas — that's a feed shape, not a geometry gap", async () => {
+    // GDACS point alerts carry no area block; counting them as "no location"
+    // would bury the MeteoAlarm signal this number exists to expose.
+    const m = modelOf([{ info: [{ area: [] }] }, { info: [] }]);
+
+    const c = await makeAlertsRepo(m).geometryCoverage();
+
+    expect(c).toMatchObject({ alerts: 0, alertsNoShape: 0, areas: 0 });
+  });
+
+  it("totals across many alerts and info blocks", async () => {
+    const m = modelOf([
+      { info: [{ area: [area(true)] }, { area: [area(false)] }] },
+      { info: [{ area: [area(false)] }] },
+    ]);
+
+    const c = await makeAlertsRepo(m).geometryCoverage();
+
+    expect(c).toEqual({ alerts: 2, alertsNoShape: 1, alertsPartial: 1, areas: 3, areasNoGeom: 2 });
+  });
+});

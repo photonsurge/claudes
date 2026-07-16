@@ -3,6 +3,17 @@ import { v4 as uuidv4 } from "uuid";
 import type { AlertGeometry } from "./alert-model";
 import type { iAlertAreaGeomModel } from "./alert-area-geom-model";
 import type { iAlertGeomSeenModel } from "./alert-geom-seen-model";
+import type { iAlertGeomCrawlModel } from "./alert-geom-crawl-model";
+
+/** One country's resumable deep-crawl position. See {@link iAlertGeomCrawl}. */
+export interface CrawlCursor {
+  countryCode: string;
+  windowFrom: Date;
+  windowTo: Date;
+  nextPage: number;
+  totalPages: number;
+  completedAt?: Date;
+}
 
 /** One resolved EMMA area, as the sync job hands it over. */
 export interface AreaGeomInput {
@@ -27,14 +38,19 @@ export interface CachedAreaGeom {
  *
  * Reads are the hot path — the alerts ingest looks up every area's EMMA_ID on
  * each tick — so `byEmmaIds` is a single batched query, never a loop.
+ *
+ * Three collections now: the crawl cursors joined them for the same reason, being
+ * written on the same tick by the same job and meaningless on their own.
  */
 export function makeAlertAreaGeomRepo(
   geomModel: Model<iAlertAreaGeomModel>,
   seenModel: Model<iAlertGeomSeenModel>,
+  crawlModel: Model<iAlertGeomCrawlModel>,
 ) {
   return {
     geomModel,
     seenModel,
+    crawlModel,
 
     /**
      * Cache resolved boundaries. Upserts on `emmaId` so a re-resolve refreshes
@@ -149,13 +165,74 @@ export function makeAlertAreaGeomRepo(
       );
     },
 
-    async count(): Promise<{ areas: number; exact: number; seen: number }> {
-      const [areas, exact, seen] = await Promise.all([
+    /**
+     * Every country's crawl cursor, by country code. One query — the sweep needs
+     * all of them to plan a round-robin, and 39 point reads would be silly.
+     */
+    async crawlCursors(): Promise<Map<string, CrawlCursor>> {
+      const docs = await crawlModel.find({}, { _id: 0, __v: 0 }).lean().exec();
+      return new Map((docs as unknown as CrawlCursor[]).map((d) => [d.countryCode, d]));
+    },
+
+    /**
+     * Open a crawl over a frozen window, discarding any previous one for that
+     * country. Called when there's no cursor, when the old crawl finished long
+     * enough ago to be worth redoing, or when `totalPages` moved under a crawl
+     * (which means the window is no longer being honoured and the page numbers
+     * are meaningless — start again rather than walk a shifting list).
+     */
+    async startCrawl(c: {
+      countryCode: string;
+      windowFrom: Date;
+      windowTo: Date;
+      totalPages: number;
+    }): Promise<void> {
+      const now = new Date();
+      await crawlModel
+        .updateOne(
+          { countryCode: c.countryCode },
+          {
+            $set: {
+              windowFrom: c.windowFrom,
+              windowTo: c.windowTo,
+              totalPages: c.totalPages,
+              nextPage: 2, // page 1 is read every run for freshness
+              startedAt: now,
+              updatedAt: now,
+            },
+            $unset: { completedAt: "" },
+            $setOnInsert: { id: uuidv4() },
+          },
+          { upsert: true },
+        )
+        .exec();
+    },
+
+    /**
+     * Record how far the crawl got. `nextPage` only ever moves forward, so a run
+     * that dies mid-country resumes rather than restarts; passing `totalPages`
+     * closes the crawl and the middle is skipped until it's due again.
+     */
+    async advanceCrawl(countryCode: string, nextPage: number, done: boolean): Promise<void> {
+      await crawlModel
+        .updateOne(
+          { countryCode },
+          {
+            $max: { nextPage },
+            $set: { updatedAt: new Date(), ...(done ? { completedAt: new Date() } : {}) },
+          },
+        )
+        .exec();
+    },
+
+    async count(): Promise<{ areas: number; exact: number; seen: number; crawlsDone: number }> {
+      const [areas, exact, seen, crawlsDone] = await Promise.all([
         geomModel.estimatedDocumentCount(),
         geomModel.countDocuments({ precision: "exact" }),
         seenModel.estimatedDocumentCount(),
+        crawlModel.countDocuments({ completedAt: { $exists: true } }),
       ]);
-      return { areas, exact, seen };
+      return { areas, exact, seen, crawlsDone };
     },
   };
 }
