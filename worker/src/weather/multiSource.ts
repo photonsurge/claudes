@@ -13,9 +13,9 @@ import { log } from "@photonsurge/shared/utill/logger";
 
 import { GFS_GRID, GFS_BOUNDS } from "../grib/bake";
 import { extractField, runWgrib2 } from "../grib/wgrib2";
-import { bakeScalar } from "../grib/bakeScalar";
+import { bakeScalar } from "../grib/bakePool";
 import { bakeWind } from "../grib/bakeWind";
-import { bakeVector } from "../grib/bakeVector";
+import { bakeVector } from "../grib/bakePool";
 import { downloadToTemp, cleanupTemp, headOk } from "./download";
 import { nomadsGate } from "./politeness";
 import { forecastSteps, cfg } from "./config";

@@ -13,8 +13,8 @@ import { getSource, type SourceDescriptor } from "@photonsurge/shared/sources";
 import { log } from "@photonsurge/shared/utill/logger";
 
 import { extractField, runWgrib2 } from "../grib/wgrib2";
-import { bakeScalar } from "../grib/bakeScalar";
-import { bakeVector } from "../grib/bakeVector";
+import { bakeScalar } from "../grib/bakePool";
+import { bakeVector } from "../grib/bakePool";
 import { downloadToTemp, cleanupTemp, headOk } from "./download";
 import { nomadsGate } from "./politeness";
 import { getAppDb } from "@photonsurge/shared/db/index";

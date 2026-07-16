@@ -20,8 +20,8 @@ import { getSource } from "@photonsurge/shared/sources";
 import { log } from "@photonsurge/shared/utill/logger";
 
 import { extractField, probeGridGeometry } from "../grib/wgrib2";
-import { bakeScalar } from "../grib/bakeScalar";
-import { bakeVector } from "../grib/bakeVector";
+import { bakeScalar } from "../grib/bakePool";
+import { bakeVector } from "../grib/bakePool";
 import { wrapLon } from "../regrid/curvilinear";
 import { downloadToTemp, cleanupTemp, headOk } from "./download";
 import { nomadsGate } from "./politeness";

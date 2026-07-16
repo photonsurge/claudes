@@ -17,8 +17,8 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import { getSource } from "@photonsurge/shared/sources";
 import { log } from "@photonsurge/shared/utill/logger";
 
-import { bakeScalar } from "../grib/bakeScalar";
-import { bakeVector } from "../grib/bakeVector";
+import { bakeScalar } from "../grib/bakePool";
+import { bakeVector } from "../grib/bakePool";
 import { regridTileToGlobal, regridWindPair } from "../merge/mosaic";
 import { downloadToTemp, cleanupTemp, headOk } from "./download";
 import { nomadsGate } from "./politeness";

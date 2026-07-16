@@ -13,7 +13,7 @@
 import { getSource } from "@photonsurge/shared/sources";
 import { log } from "@photonsurge/shared/utill/logger";
 
-import { bakeScalar } from "../grib/bakeScalar";
+import { bakeScalar } from "../grib/bakePool";
 import { regridTileToGlobal } from "../merge/mosaic";
 import { latestAvailableRun } from "../sources/gfs";
 import {

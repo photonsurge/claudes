@@ -292,6 +292,18 @@ export const bucketKeyOf = (a: iAlert, hazardOf: (a: iAlert) => string): string 
  * OTHER job it's running ("could not renew lock for job repeat:…") — the shared
  * worker can't tell a busy job from a dead one. So we surface between areas and
  * let the timers fire. It's the same total CPU, just interruptible.
+ *
+ * NOT offloaded to a worker thread (unlike the GRIB bake — see grib/bakePool).
+ * This function's input is the raw source geometry, ~240MB for the worst hazard
+ * (alertBlobs.ts). A worker boundary structured-CLONES that — it isn't a
+ * transferable ArrayBuffer like a Float32Array grid — so the copy alone would
+ * transiently DOUBLE the memory on the one job whose defining constraint is
+ * already OOM (alertBlobs.ts pass 2 holds one bucket and nothing else on purpose).
+ * That trades a lock miss for a crash. The `breathe()` yields below plus the
+ * raised WORKER_LOCK_DURATION_MS (index.ts) cover this without moving the data.
+ * The only case they don't cover is a SINGLE union exceeding the lock window, and
+ * a thread copy would make that case's memory worse, not its CPU better. If that
+ * case ever bites, the fix is to bound the per-union size, not to offload.
  */
 export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Promise<DissolveStats> {
   const tol = opts.tolerance ?? 0.02;

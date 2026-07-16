@@ -10,7 +10,7 @@ import { buildGfsS3Paths, padFhr } from "../sources/gfs";
 import { extractField } from "../grib/wgrib2";
 import { GFS_GRID } from "../grib/bake";
 import { bakeWind } from "../grib/bakeWind";
-import { bakeScalar } from "../grib/bakeScalar";
+import { bakeScalar } from "../grib/bakePool";
 import { downloadIdxSubset } from "./download";
 
 export interface BakeVariableStepResult {

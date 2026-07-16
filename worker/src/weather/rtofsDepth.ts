@@ -9,7 +9,7 @@ import { getSource } from "@photonsurge/shared/sources";
 import { log } from "@photonsurge/shared/utill/logger";
 
 import { extractField } from "../grib/wgrib2";
-import { bakeScalar } from "../grib/bakeScalar";
+import { bakeScalar } from "../grib/bakePool";
 import { downloadToTemp, cleanupTemp, headOk } from "./download";
 import { nomadsGate } from "./politeness";
 import { publishSourceRun, type BakedVariable } from "./publishSourceRun";
