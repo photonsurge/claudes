@@ -32,9 +32,20 @@ export function alertCountryCode(a: { source?: string; identifier?: string }): s
   return undefined;
 }
 
+/** "Switzerland" from an ISO-3166 alpha-2, falling back to the code itself. */
+export const countryNameOf = (iso2: string): string => regionNames?.of(iso2.toUpperCase()) ?? iso2.toUpperCase();
+
+/** "Switzerland" from a CAP alert, or undefined when the country is unknown.
+ *  The name alone — sort keys want this, not the flag-prefixed label, since the
+ *  leading flag emoji orders by ISO code rather than alphabetically. */
+export function alertCountryName(a: { source?: string; identifier?: string }): string | undefined {
+  const iso2 = alertCountryCode(a);
+  return iso2 ? countryNameOf(iso2) : undefined;
+}
+
 /** "🇨🇭 Switzerland" from a CAP alert, or undefined when the country is unknown. */
 export function alertCountryLabel(a: { source?: string; identifier?: string }): string | undefined {
   const iso2 = alertCountryCode(a);
   if (!iso2) return undefined;
-  return `${flagOf(iso2)} ${regionNames?.of(iso2) ?? iso2}`;
+  return `${flagOf(iso2)} ${countryNameOf(iso2)}`;
 }

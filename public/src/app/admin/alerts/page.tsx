@@ -44,6 +44,7 @@ import {
   type Alert as AlertDoc,
   type AlertInfo,
 } from "../../../lib/alerts";
+import { alertCountryCode, alertCountryName, flagOf } from "@photonsurge/shared/alerts/country";
 import { HAZARDS, hazardMeta } from "../../../lib/hazard";
 import { bucketByGroupId } from "../../../lib/alertGroups";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
@@ -166,6 +167,9 @@ export default function AlertsPage() {
     severity: (g) => g.maxSeverityRank,
     hazard: (g) => hazardMeta(g.hazard).label,
     event: (g) => displayHeadline(primaryInfo(g.representative)) ?? primaryInfo(g.representative)?.event,
+    // Unknown countries sort to the end in both directions rather than heading
+    // the ascending list as a block of blanks.
+    country: (g) => alertCountryName(g.representative) ?? "￿",
     area: (g) => areaSummary(g.representative),
     sources: (g) => g.sources.length,
     message: (g) => g.representative.msgType,
@@ -306,6 +310,7 @@ export default function AlertsPage() {
               <TableCell>{sortedGroups.header("severity", "Sev")}</TableCell>
               <TableCell>{sortedGroups.header("hazard", "Hazard")}</TableCell>
               <TableCell>{sortedGroups.header("event", "Event")}</TableCell>
+              <TableCell>{sortedGroups.header("country", "Country")}</TableCell>
               <TableCell>{sortedGroups.header("area", "Area")}</TableCell>
               <TableCell>{sortedGroups.header("sources", "Sources")}</TableCell>
               <TableCell>{sortedGroups.header("message", "Msg")}</TableCell>
@@ -377,9 +382,18 @@ export default function AlertsPage() {
                         return (
                           <>
                             <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
-                              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                              {/* The headline IS the way into the alert's detail
+                                  page — the row's obvious target, per the events
+                                  table. The trailing Details button stays for the
+                                  rows whose headline reads as plain text. */}
+                              <MuiLink
+                                component={Link}
+                                href={`/admin/alerts/${rep.id}`}
+                                variant="body2"
+                                sx={{ fontWeight: 600 }}
+                              >
                                 {headline}
-                              </Typography>
+                              </MuiLink>
                               {isTranslated && lang && <LangTag lang={lang} title={`Machine-translated from "${lang}"`} />}
                             </Stack>
                             {info?.event && info.event !== headline && (
@@ -393,6 +407,20 @@ export default function AlertsPage() {
                               </Typography>
                             )}
                           </>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap", verticalAlign: "top" }}>
+                      {(() => {
+                        const iso2 = alertCountryCode(rep);
+                        if (!iso2) return <Typography variant="body2" color="text.disabled">—</Typography>;
+                        return (
+                          <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
+                            <Box component="span" aria-hidden>
+                              {flagOf(iso2)}
+                            </Box>
+                            <Typography variant="body2">{alertCountryName(rep)}</Typography>
+                          </Stack>
                         );
                       })()}
                     </TableCell>
@@ -417,9 +445,9 @@ export default function AlertsPage() {
                         >
                           {debugId === g.id ? "Hide" : multi ? `Debug (${g.members.length})` : "Debug"}
                         </Button>
-                        <MuiLink component={Link} href={`/admin/alerts/${rep.id}`} variant="body2">
-                          Details
-                        </MuiLink>
+                        <Button component={Link} href={`/admin/alerts/${rep.id}`} variant="contained">
+                          Details →
+                        </Button>
                         {info?.web && (
                           <MuiLink href={info.web} target="_blank" rel="noreferrer" variant="body2">
                             link

@@ -511,7 +511,18 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     if (!canvasRef.current || deckRef.current) return;
     const deck = new Deck<GlobeView[]>({
       canvas: canvasRef.current,
-      views: [new GlobeView({ id: "globe" })],
+      // `resolution` is the degree grid deck cuts flat polygons on before
+      // projecting them onto the sphere — it defaults to 10°, whose chords sag
+      // ~24km BELOW the surface at cell centre. The depth sphere basemap.ts
+      // writes is a hand-rolled 6° grid, sagging only ~8.7km, so every polygon
+      // fill (alert areas above all, now that the worker dissolves them into
+      // country-sized shapes) sat UNDER the depth sphere and the globe occluded
+      // its own overlay — reading as a flat sheet clipping through the planet.
+      // At 2° the sag is ~1km: a polygon cut on a grid at least as fine as the
+      // depth sphere's is always ABOVE it, so the fill drapes instead of sinks.
+      // Same 2° that cables.ts great-circle-densifies its paths to, for the
+      // same reason.
+      views: [new GlobeView({ id: "globe", resolution: 2 })],
       controller: interactive,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       viewState: viewStateRef.current as any,

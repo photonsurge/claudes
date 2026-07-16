@@ -110,6 +110,7 @@ export async function refresh(_job: Job) {
     const builtAt = new Date();
     const cityStats: BlobCityStats = { cities: 0, empty: 0, repaired: 0, failures: 0 };
     let unionFailures = 0;
+    const slivers = { dropped: 0, vertices: 0 };
     let written = 0;
     let verticesBefore = 0;
     let verticesAfter = 0;
@@ -129,6 +130,8 @@ export async function refresh(_job: Job) {
       // city lookups, rather than holding it to the end of the iteration.
       members = null;
       unionFailures += r.unionFailures;
+      slivers.dropped += r.slivers.dropped;
+      slivers.vertices += r.slivers.vertices;
 
       // Record who's inside the shapes while this bucket is still the only one
       // in memory. Doing it here — once, against the geo index — is what stops
@@ -163,6 +166,13 @@ export async function refresh(_job: Job) {
       // polygon-clipping refuses some real-world borders; those areas simply
       // stayed separate rather than taking the rebuild down.
       unionFailures,
+      // Hairline gaps left where two counties' borders don't match to the micron.
+      // They're interior to the fused shape, so they come back as holes and the
+      // globe draws a line round each one — the streaks across Poland. ~90% of all
+      // holes, and 11% of every vertex we'd otherwise store. Real voids (a place
+      // with no warning over it) are never dropped — see slivers.ts.
+      sliverHolesDropped: slivers.dropped,
+      sliverVerticesFreed: slivers.vertices,
       cities: cityStats.cities,
       // Blobs over open sea or empty ground legitimately hold nobody; a spike
       // here would mean the shapes stopped matching the city index.

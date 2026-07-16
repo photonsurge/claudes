@@ -4,6 +4,7 @@ import { windGeometry } from "@photonsurge/shared/alerts/rings";
 import { alertCountryCode } from "@photonsurge/shared/alerts/country";
 import { simplifyGeometry } from "@photonsurge/shared/geo/simplify";
 import { snapGeometry } from "./snap";
+import { dropSliverHoles, MIN_HOLE_AREA_DEG2, type SliverStats } from "./slivers";
 
 /**
  * Dissolve neighbouring warning areas of the same hazard into one shape.
@@ -48,6 +49,8 @@ export interface DissolveStats {
   blobs: AlertBlobInput[];
   /** Unions polygon-clipping refused; those areas stayed separate. */
   unionFailures: number;
+  /** Sliver holes stripped from the fused shapes, and the vertices they cost. */
+  slivers: SliverStats;
 }
 
 /**
@@ -227,8 +230,22 @@ export interface DissolveOpts {
    * function of the coordinate rather than the ring, so both sides of a shared
    * border round to identical points. Measured WORSE on live data — it introduces
    * its own degenerate rings — so it's off. See snap.ts before trying again.
+   *
+   * Re-measured cleanly after the input-thinning bug was fixed (the first
+   * benchmark was confounded by it) and it is still worse, monotonically: blobs
+   * 563 with no snapping, 599 at 0.0005°, 648 at 0.001°, 727 at 0.002°. It makes
+   * the failure COUNT look good while fusing less — the wrong metric.
    */
   snapDeg?: number;
+  /**
+   * Drop interior holes smaller than this (deg²). 0 keeps every hole.
+   *
+   * The hairline gaps left where two counties' borders don't match to the micron.
+   * They are interior to the fused shape, so they come back as holes and the
+   * globe draws an outline round each one — the streaks across Poland and Texas.
+   * See slivers.ts: 18% of every vertex we stored was inside one.
+   */
+  minHoleAreaDeg2?: number;
 }
 
 /** No country in the identifier (GDACS' global feed) — bucket them together. */
@@ -282,6 +299,8 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
   const yieldEvery = opts.yieldEvery ?? 25;
   const simplifyDeg = opts.simplifyDeg ?? 0;
   const snapDeg = opts.snapDeg ?? 0;
+  const minHoleArea = opts.minHoleAreaDeg2 ?? MIN_HOLE_AREA_DEG2;
+  const slivers: SliverStats = { dropped: 0, vertices: 0 };
   let sinceYield = 0;
   let unionFailures = 0;
 
@@ -365,9 +384,13 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
       // NOW thin: every shared border in here is already interior to the fused
       // shape, so there's nothing left to pull apart. A blob that thins away to
       // nothing keeps its exact outline rather than vanishing off the globe.
-      const geometry = simplifyDeg
+      const thinned = simplifyDeg
         ? ((simplifyGeometry(merged as never, simplifyDeg) as AlertGeometry) ?? merged)
         : merged;
+      // Strip the seams the union couldn't close. LAST, so it also catches holes
+      // that thinning degenerated, and so the threshold is applied to the exact
+      // rings we're about to store.
+      const geometry = (dropSliverHoles(thinned, minHoleArea, slivers) ?? thinned) as AlertGeometry;
       out.push({
         hazard,
         severityRank: Number(rank) as SeverityRank,
@@ -382,5 +405,5 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
       });
     }
   }
-  return { blobs: out, unionFailures };
+  return { blobs: out, unionFailures, slivers };
 }
