@@ -396,11 +396,14 @@ export async function syncAreaGeometry(
 
   const areas = [];
   const marks: { alertId: string; emmaId?: string }[] = [];
+  // NO quota check here, deliberately. resolveFeature only touches pre-signed
+  // rel=* links, which cost nothing — measured, 160 of them moved the counter by
+  // zero. This loop used to bail on quotaLow(), which meant a run spent its whole
+  // hourly quota reading pages and then refused to resolve the features those
+  // pages had just bought: live, 18 countries fully crawled produced ONE new
+  // boundary. Same wrong belief as the page cap it was paired with. A link that
+  // does 429 still ends the run via RateLimitError below.
   for (const f of todo.slice(0, budget)) {
-    if (quotaLow()) {
-      res.quotaStopped = true;
-      break;
-    }
     try {
       const { area, emmaId } = await resolveFeature(f);
       res.resolved++;

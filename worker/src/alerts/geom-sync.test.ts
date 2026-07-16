@@ -275,3 +275,83 @@ describe("reconcileCachedGeometry", () => {
     expect(res.failures[0]).toContain("reconcile BAD");
   });
 });
+
+/**
+ * The resolve loop must NOT be gated on the gateway quota.
+ *
+ * resolveFeature only touches pre-signed rel=* links, which cost nothing —
+ * measured, 160 of them moved the counter by zero while 42 page fetches moved it
+ * 42. The loop used to bail on quotaLow(), so a run spent its whole hourly quota
+ * reading pages and then refused to resolve the features those pages had just
+ * bought. Live: 18 countries fully crawled, ONE new boundary cached. It is the
+ * same wrong belief ("resolving costs two requests") that caused the page cap.
+ */
+const mockQuotaLow = jest.fn(() => false);
+
+jest.mock("./meteogate", () => {
+  const actual = jest.requireActual("./meteogate");
+  return {
+    ...actual,
+    quota: () => ({ remaining: 1, resetSec: 900 }),
+    quotaLow: () => mockQuotaLow(),
+    fetchCountryPage: jest.fn(async () => ({ features: [], page: 1, totalPages: 1 })),
+    fetchPages: jest.fn(async () => ({ features: [], read: [], totalPages: 1 })),
+    meteogateCountries: () => ["AT"],
+    resolveFeature: jest.fn(async (f: { alertId: string }) => ({
+      emmaId: `E-${f.alertId}`,
+      area: {
+        emmaId: `E-${f.alertId}`,
+        geometry: { type: "Polygon", coordinates: [] },
+        precision: "exact" as const,
+      },
+    })),
+  };
+});
+
+describe("syncAreaGeometry — resolving is free, so a spent quota must not stop it", () => {
+  it("resolves the features the pages already bought, after the quota runs out", async () => {
+    const meteogate = jest.requireMock("./meteogate");
+    const { syncAreaGeometry } = jest.requireActual("./geom-sync") as typeof import("./geom-sync");
+
+    // Exactly what happened live: the page walk runs, collects a feature, and the
+    // gateway quota is spent by the time the resolve loop is reached. The pages
+    // are already paid for — refusing to resolve them wastes the entire run.
+    let checks = 0;
+    mockQuotaLow.mockImplementation(() => ++checks > 1);
+
+    meteogate.fetchCountryPage.mockResolvedValue({
+      features: [{ alertId: "a1", bbox: null, indexInfo: 0, indexArea: 0 }],
+      page: 1,
+      totalPages: 1,
+    });
+
+    const upsertAreas = jest.fn(async () => ({ upserted: 1 }));
+    const db = {
+      alerts: {
+        emmaIdsMissingGeometry: async () => [],
+        dropNullGeometries: async () => {},
+        backfillAreaGeometry: async () => 0,
+        geometryCoverage: async () => ({
+          alerts: 0, alertsNoShape: 0, alertsPartial: 0, areas: 0, areasNoGeom: 0,
+        }),
+      },
+      alertAreaGeom: {
+        crawlCursors: async () => new Map(),
+        startCrawl: async () => {},
+        advanceCrawl: async () => {},
+        seenAlertIds: async () => new Set<string>(),
+        markSeen: async () => {},
+        upsertAreas,
+        uncheckedAreas: async () => [],
+        markChecked: async () => {},
+      },
+    } as never;
+
+    const res = await syncAreaGeometry(db, { now: new Date("2026-07-16T12:00:00Z") });
+
+    // The whole point: the page walk stopped on the quota, the resolve did not.
+    expect(res.resolved).toBe(1);
+    expect(upsertAreas).toHaveBeenCalled();
+    expect(res.cached).toBe(1);
+  });
+});
