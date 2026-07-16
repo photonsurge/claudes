@@ -66,6 +66,17 @@ export interface AlertContentInput {
   /** Source-specific severity label (e.g. "Orange", "Extreme"), if any. */
   level?: string;
   areaDesc?: string;
+  /**
+   * How many warnings this one shape stands for.
+   *
+   * The globe draws DISSOLVED shapes: touching warnings of the same hazard,
+   * severity and country are fused into one weather system, so a shape spanning
+   * Galicia to the Basque Country can be a dozen separate yellow rain warnings.
+   * `areaDesc` is only the representative member's — naming that shape "Central y
+   * Valles Mineros" tells the viewer it's one county when it's the whole north
+   * coast. 1 or unset renders exactly as before.
+   */
+  warningCount?: number;
   hazard: HazardType;
   /** Framing point [lng, lat] — supplies the continental "Area" label. */
   center: [number, number];
@@ -99,9 +110,13 @@ export function alertSegmentContent(a: AlertContentInput): SegmentContent {
   const event = a.translatedEvent || a.event;
   const country = alertCountryLabel(a);
   const area = continentOf(a.center[0], a.center[1]);
-  const subtitle = [a.areaDesc, country].filter(Boolean).join(" · ") || undefined;
+  // A fused shape must not pass itself off as its representative member's county.
+  const more = (a.warningCount ?? 1) - 1;
+  const place = a.areaDesc && more > 0 ? `${a.areaDesc} +${more} more` : a.areaDesc;
+  const subtitle = [place, country].filter(Boolean).join(" · ") || undefined;
   const details: SegmentContent["details"] = [{ label: "Severity", value: `${a.severityRank}/4` }];
   if (event) details.push({ label: "Type", value: event });
+  if (more > 0) details.push({ label: "Warnings", value: String(a.warningCount) });
   if (a.level) details.push({ label: "Level", value: String(a.level) });
   if (country) details.push({ label: "Country", value: country });
   if (area) details.push({ label: "Area", value: area });

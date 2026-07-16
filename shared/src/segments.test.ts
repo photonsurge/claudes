@@ -162,3 +162,52 @@ describe("volcanoTrackInfo", () => {
     expect(info?.reportFacts).toBe("VEI 2 · plume 3,000 m");
   });
 });
+
+/**
+ * The globe draws DISSOLVED shapes — touching warnings of the same hazard,
+ * severity and country fused into one weather system. A shape spanning Galicia to
+ * the Basque Country is a dozen separate Spanish yellow rain warnings, and
+ * `areaDesc` is only the representative member's. Naming that shape "Central y
+ * Valles Mineros" tells a viewer it's one Asturian valley.
+ */
+describe("alertSegmentContent — a fused shape must not pose as one county", () => {
+  const spain = {
+    source: "meteoalarm",
+    identifier: "2.49.0.0.ES.20260716",
+    event: "Aviso de lluvias de nivel amarillo",
+    severityRank: 2,
+    areaDesc: "Central y Valles Mineros",
+    hazard: "rain" as const,
+    center: [-6, 42.9] as [number, number],
+  };
+
+  it("says how many warnings the shape stands for", () => {
+    const c = alertSegmentContent({ ...spain, warningCount: 12 });
+
+    expect(c.subtitle).toContain("Central y Valles Mineros +11 more");
+    expect(c.details).toContainEqual({ label: "Warnings", value: "12" });
+  });
+
+  it("reads exactly as before for a shape that really is one warning", () => {
+    const one = alertSegmentContent({ ...spain, warningCount: 1 });
+    const bare = alertSegmentContent(spain);
+
+    expect(one.subtitle).toBe(bare.subtitle);
+    expect(one.subtitle).not.toContain("more");
+    expect(one.details.find((d) => d.label === "Warnings")).toBeUndefined();
+  });
+
+  it("keeps the country on the subtitle alongside the count", () => {
+    const c = alertSegmentContent({ ...spain, warningCount: 12 });
+
+    expect(c.subtitle).toContain("Spain");
+  });
+
+  it("does not invent a count when the shape has no area name", () => {
+    const c = alertSegmentContent({ ...spain, areaDesc: undefined, warningCount: 12 });
+
+    expect(c.subtitle).not.toContain("more");
+    // ...but the row still tells the truth about the fusion.
+    expect(c.details).toContainEqual({ label: "Warnings", value: "12" });
+  });
+});

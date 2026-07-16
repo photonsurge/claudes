@@ -80,6 +80,9 @@ export function alertFeatureToSegment(f: AlertFeature): Segment | null {
     severityRank: p.severityRank,
     level: p.level,
     areaDesc: p.areaDesc,
+    // The shape is a dissolved weather system, not one county — see
+    // alertSegmentContent.warningCount.
+    warningCount: p.memberCount,
     hazard: p.hazard,
     center,
     sinceMs: Number.isNaN(sinceMs) ? undefined : sinceMs,

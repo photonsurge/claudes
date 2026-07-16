@@ -199,6 +199,17 @@ export interface AlertFeature {
     hazard: HazardType;
     /** This area's description ("Brest Region") — the select-card subtitle lead. */
     areaDesc?: string;
+    /**
+     * How many warnings this one shape stands for.
+     *
+     * The overlay draws the worker's DISSOLVED shapes, so a feature is a weather
+     * system, not a county: touching warnings of the same hazard, severity and
+     * country are fused. `areaDesc` above is only the representative member's, so
+     * without this the card names a shape spanning Galicia to the Basque Country
+     * after a single Asturian valley. /api/alerts/blobs has always sent this — it
+     * just wasn't on this type, so nothing could read it and nothing complained.
+     */
+    memberCount?: number;
     /** Source-specific severity label ("Orange"/"Extreme"), if the feed gives one. */
     level?: string;
     headline?: string;
