@@ -130,20 +130,47 @@ describe("alertsLayer — hazard hue + severity intensity", () => {
 
   it("fills with the hazard colour; opacity climbs with severity", () => {
     const fill = byId(alertsLayer([rank0]), "alerts-fill").props;
-    expect(fill.getFillColor(rank0)).toEqual([...FLOOD, 45]); // 45 + 0·16
-    expect(fill.getFillColor(rank4)).toEqual([...FLOOD, 109]); // 45 + 4·16
+    expect(fill.getFillColor(rank0)).toEqual([...FLOOD, 22]); // 22 + 0·10
+    expect(fill.getFillColor(rank4)).toEqual([...FLOOD, 62]); // 22 + 4·10
     const fire = square({ hazard: "fire" });
-    expect(fill.getFillColor(fire)).toEqual([...FIRE, 45 + 3 * 16]);
+    expect(fill.getFillColor(fire)).toEqual([...FIRE, 22 + 3 * 10]);
   });
 
-  it("glow width scales with severity (wide halo 6+3r, crisp edge 1.3+0.25r)", () => {
+  /**
+   * The fill has to stay light enough to see the weather THROUGH it.
+   *
+   * These numbers were tuned when an alert area was a single county. The worker
+   * now dissolves touching areas, so one shape is the whole of France — and at the
+   * old 45+rank*16 (36% for an amber warning) it stopped reading as a warning over
+   * a temperature map and became a grey slab that hid the map underneath. The fill
+   * is also only one of FOUR passes over the same shape, and they stack.
+   */
+  it("keeps the fill translucent enough to read the map through, even at rank 4", () => {
+    const fill = byId(alertsLayer([rank0]), "alerts-fill").props;
+
+    // The outline carries the shape; the fill only has to say "inside".
+    expect(fill.getFillColor(rank4)[3]).toBeLessThan(64); // < 25% of 255
+    // ...but it must still be visible, or the area reads as an empty outline.
+    expect(fill.getFillColor(rank0)[3]).toBeGreaterThan(12);
+  });
+
+  it("glow width scales with severity (wide halo 6+3r, crisp edge 1.6+0.35r)", () => {
     const layers = alertsLayer([rank0]);
     const wide = byId(layers, "alerts-glow-wide").props;
     expect(wide.getLineWidth(rank0)).toBe(6);
     expect(wide.getLineWidth(rank4)).toBe(18);
     const edge = byId(layers, "alerts-edge").props;
-    expect(edge.getLineWidth(rank0)).toBeCloseTo(1.3);
-    expect(edge.getLineWidth(rank4)).toBeCloseTo(2.3);
+    expect(edge.getLineWidth(rank0)).toBeCloseTo(1.6);
+    expect(edge.getLineWidth(rank4)).toBeCloseTo(3.0);
+  });
+
+  it("the outline stays stronger than the fill — it is what carries the shape", () => {
+    // Lightening the fill without this is how a big blob becomes invisible.
+    const layers = alertsLayer([rank4]);
+    const edgeAlpha = byId(layers, "alerts-edge").props.getLineColor(rank4)[3];
+    const fillAlpha = byId(layers, "alerts-fill").props.getFillColor(rank4)[3];
+
+    expect(edgeAlpha).toBeGreaterThan(fillAlpha * 3);
   });
 
   it("glow strokes are the hazard colour lightened toward white, faint outside, bright edge", () => {

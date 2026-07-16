@@ -22,6 +22,22 @@ function lighten(c: [number, number, number], t: number): [number, number, numbe
 
 const rank = (f: AlertFeature): SeverityRank => f.properties.severityRank;
 
+/**
+ * Fill alpha, by severity: `FILL_BASE + rank * FILL_PER_RANK`.
+ *
+ * Deliberately light, because the fill is only ONE of four passes over the same
+ * shape (wide halo, mid glow, fill, lit edge) and they stack. These were tuned
+ * when an alert area meant a single county; once the worker started dissolving
+ * touching areas, one shape became the whole of France, and at the old
+ * 45 + rank*16 (36% for an amber warning) a country-sized blob stopped reading as
+ * a warning over a temperature map and became a grey slab that hid the map.
+ *
+ * The outline carries the shape — it's crisp, lit and severity-scaled — so the
+ * fill only has to say "inside", not "opaque". Keep it under ~25% at rank 4.
+ */
+const FILL_BASE = 22;
+const FILL_PER_RANK = 10;
+
 /** One full breath of the on-air pulse, in ms. */
 const PULSE_PERIOD_MS = 1500;
 
@@ -140,7 +156,7 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
       pointType: "circle",
       getPointRadius: 0,
       pointRadiusMaxPixels: 0,
-      getFillColor: (f: any) => withA(base(f), 45 + rank(f) * 16),
+      getFillColor: (f: any) => withA(base(f), FILL_BASE + rank(f) * FILL_PER_RANK),
       // Pickable so click-to-select works anywhere inside the alert area, not
       // just on the ~1px edge stroke (which is the only other pickable layer).
       pickable: true,
@@ -157,8 +173,12 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
       pointType: "circle",
       getPointRadius: 0,
       pointRadiusMaxPixels: 0,
+      // The outline now carries the shape (the fill was lightened so a
+      // country-sized blob doesn't hide the weather under it), so it's a touch
+      // wider — the boundary has to stay legible on a wide shot without the fill
+      // helping.
       getLineColor: (f: any) => withA(lighten(base(f), 0.55), 240),
-      getLineWidth: (f: any) => 1.3 + rank(f) * 0.25,
+      getLineWidth: (f: any) => 1.6 + rank(f) * 0.35,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 1,
       pickable: true,

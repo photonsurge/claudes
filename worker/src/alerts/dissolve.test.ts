@@ -185,6 +185,102 @@ describe("dissolveAlerts", () => {
   });
 
   /**
+   * Adjacency is transitive and weather doesn't stop at borders, so without a
+   * national seam the chain ran clean across the continent. Live: ONE thunderstorm
+   * blob of 206 alerts spanning thirteen countries from Spain to Kosovo, one heat
+   * blob from Spain to the Netherlands, one storm blob across 100° of longitude
+   * from Kazakhstan to the Pacific.
+   *
+   * Those shapes aren't wrong so much as useless — a blob carries ONE
+   * representative alert card, so clicking a third of Europe quoted one country's
+   * headline for all of it. A warning is issued BY a country, so that's where the
+   * editorial actually changes, and that's the seam.
+   */
+  describe("a blob never crosses a national border", () => {
+    /** A county warning that knows where it is, the way a real CAP alert does. */
+    const ccCounty = (id: string, cc: string, box: number[], event = "Heat"): iAlert => {
+      const a = county(id, event, 3, box);
+      (a as unknown as { source: string }).source = "meteoalarm";
+      (a as unknown as { identifier: string }).identifier = `2.49.0.0.${cc}.20260716`;
+      return a;
+    };
+
+    it("keeps two touching counties apart when they're in different countries", async () => {
+      // Physically adjacent, same hazard, same severity — everything the dissolve
+      // used to need to fuse them. Different met services, so: two shapes.
+      const out = await run([ccCounty("fr", "FR", [0, 0, 1, 1]), ccCounty("es", "ES", [1, 0, 2, 1])]);
+
+      expect(out).toHaveLength(2);
+      expect(out.map((b) => b.country).sort()).toEqual(["ES", "FR"]);
+    });
+
+    it("still fuses touching counties WITHIN a country", async () => {
+      // The whole point survives: Poland's ~550 county alerts must not come back
+      // as confetti just because we added a border rule.
+      const out = await run([ccCounty("pl1", "PL", [0, 0, 1, 1]), ccCounty("pl2", "PL", [1, 0, 2, 1])]);
+
+      expect(out).toHaveLength(1);
+      expect(out[0].country).toBe("PL");
+      expect(out[0].memberIds.sort()).toEqual(["pl1", "pl2"]);
+    });
+
+    it("does not chain a run of counties across three countries", async () => {
+      // The Spain->Kosovo shape, in miniature.
+      const out = await run([
+        ccCounty("a", "FR", [0, 0, 1, 1]),
+        ccCounty("b", "DE", [1, 0, 2, 1]),
+        ccCounty("c", "PL", [2, 0, 3, 1]),
+      ]);
+
+      expect(out).toHaveLength(3);
+    });
+
+    it("labels the blob with the country its members share", async () => {
+      const out = await run([ccCounty("es1", "ES", [0, 0, 1, 1]), ccCounty("es2", "ES", [1, 0, 2, 1])]);
+
+      // So a card can say "Spain: amber heat" and be telling the truth.
+      expect(out[0].country).toBe("ES");
+    });
+
+    it("still splits by hazard and severity inside one country", async () => {
+      const out = await run([
+        ccCounty("a", "FR", [0, 0, 1, 1], "Heat"),
+        ccCounty("b", "FR", [1, 0, 2, 1], "Flood"),
+      ]);
+
+      expect(out).toHaveLength(2);
+    });
+
+    it("leaves the country off a feed that doesn't carry one", async () => {
+      // GDACS is a global feed with no country in the identifier; it must still
+      // dissolve, just without claiming a nationality it doesn't know.
+      const g = county("gdacs-1", "Flood", 3, [0, 0, 1, 1]);
+      (g as unknown as { source: string }).source = "gdacs";
+      (g as unknown as { identifier: string }).identifier = "GDACS-FL-12345";
+
+      const out = await run([g]);
+
+      expect(out).toHaveLength(1);
+      expect(out[0].country).toBeUndefined();
+    });
+
+    it("decodes the country for every feed shape, not just meteoalarm", async () => {
+      // WMO puts it in the capurl lead, NWS is US by definition. If any of these
+      // regress to undefined they all bucket together and Europe re-fuses.
+      const wmo = county("ru", "Wind", 2, [30, 50, 31, 51]);
+      (wmo as unknown as { source: string }).source = "wmo";
+      (wmo as unknown as { identifier: string }).identifier = "ru-meteo-en/2026/07/16/x.xml";
+      const nws = county("us", "Wind", 2, [-80, 40, -79, 41]);
+      (nws as unknown as { source: string }).source = "nws";
+      (nws as unknown as { identifier: string }).identifier = "urn:oid:2.49.0.1.840.0.abc";
+
+      const out = await run([wmo, nws]);
+
+      expect(out.map((b) => b.country).sort()).toEqual(["RU", "US"]);
+    });
+  });
+
+  /**
    * REAL geometry, because nothing else reproduces this.
    *
    * Thinning used to happen to the INPUTS, before the clip, on the theory that the

@@ -32,34 +32,34 @@ const hazardOf = (a: iAlert) =>
 const breathe = () => new Promise<void>((r) => setImmediate(r));
 
 /**
- * Thin each area to ~200m before clipping.
+ * Thin each finished blob to ~200m. AFTER the clip — see `DissolveOpts.simplifyDeg`.
  *
- * The source boundaries are survey-grade — the worst hazard alone is ~1.15M
- * vertices — and clipping at that precision is where the time and the memory go,
- * to produce a shape `/api/alerts/blobs` then simplifies to ~0.05° (~5km) before
- * drawing it anyway. The detail was being clipped and thrown away.
+ * This used to thin the INPUTS, to keep the clipping cheap: source boundaries are
+ * survey-grade (the worst hazard alone is ~1.15M vertices) to produce a shape the
+ * overlay coarsens to ~5km before drawing it anyway, so the detail looked like
+ * pure waste. It wasn't. Douglas-Peucker thins each ring along its OWN shape, so
+ * two neighbours' shared border stopped matching and they stopped fusing — the
+ * exact seam this job exists to remove.
  *
- * The VALUE is measured, not guessed, and there is a cliff. Whole job, same live
- * data, back to back:
+ * Measured properly: both variants, ONE snapshot of live alerts, bucket by bucket
+ * (every earlier comparison here was runs minutes apart against a feed that was
+ * still ingesting, which is why the numbers kept moving):
  *
- *     tolerance | blobs | union failures | wall
- *     ----------|-------|----------------|------
- *     0 (exact) |  588  |       34       | 108s
- *     0.002     |  599  |       14       |  37s   <- here
- *     0.005     |  612  |      122       |  27s
- *     0.01      |  604  |      123       |  20s
+ *     variant       | blobs | union failures | stored verts | wall
+ *     --------------|-------|----------------|--------------|------
+ *     thin inputs   |  574  |       20       |    294,828   |  33s
+ *     thin output   |  565  |      113       |    305,089   | 137s   <- here
  *
- * 200m has FEWER union failures than full precision: the near-coincident edges
- * polygon-clipping chokes on get cleaned up rather than mangled. Past that the
- * cliff is sharp — at 500m+ each area thins along its OWN shape, so neighbours'
- * shared borders drift apart, they stop fusing, and failures jump 9×. That is
- * the same mechanism that leaves white seams between provinces in the raw
- * overlay, so don't "optimise" this number upward: it buys seconds and costs
- * correctness.
+ * FEWER BLOBS is the goal — it means more areas fused, which is fewer seams on
+ * the globe. Thinning the output wins on the only metric that matters, and the
+ * stored size is within 3.5%. It is honestly a narrow win: throws rise, because
+ * clipping at full precision meets more coincident-edge pathology, and it costs
+ * 4x the CPU. Both are worth it — a throw leaves two areas separate, which is
+ * what thinning the inputs was silently doing to 63 pairs of genuinely-touching
+ * regions anyway.
  *
- * Grid-SNAPPING was tried as the topology-safe alternative (snap.ts) and
- * measured worse on every axis — it introduces its own degenerate rings (blobs
- * 68 -> 81, failures 33 -> 41 on the worst bucket). Kept for reference; not used.
+ * Peak heap: 257MB. The 711MB this job was designed around was measured BEFORE
+ * the two-pass streaming rewrite; RAM is no longer the binding constraint here.
  *
  * 200m is well under the ~5km the globe draws, and under what "which cities are
  * inside this warning" can meaningfully resolve.
