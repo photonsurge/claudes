@@ -8,9 +8,19 @@
  */
 import Link from "next/link";
 import { useState } from "react";
+import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
+import MuiLink from "@mui/material/Link";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import { fmtDuration, kindColor, type AirEntry } from "../../lib/airlog";
+import { font } from "../../theme/tokens";
 
 const timeOf = (iso: string): string => new Date(iso).toISOString().slice(11, 19);
+
+/** DESIGN_BIBLE §3: air times, holds and coordinates are readings. */
+const reading = { fontFamily: font.mono, fontVariantNumeric: "tabular-nums" } as const;
 
 /** The subject part of "kind:subject" ids; storm ids link to the alert page. */
 function subjectOf(e: AirEntry): { label: string; href?: string } {
@@ -27,108 +37,115 @@ export default function RunTimelineEntry({ entry, isLast }: { entry: AirEntry; i
   const onAirNow = !entry.endedAt && !entry.endReason;
 
   return (
-    <div style={{ display: "flex", gap: 14 }}>
+    <Stack direction="row" spacing={1.75}>
       {/* Rail: air time, kind-coloured dot, connector down to the next cut. */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 74, flexShrink: 0 }}>
-        <div style={{ color: "#8b95a7", fontSize: 11, fontVariantNumeric: "tabular-nums" }}>{timeOf(entry.startedAt)}</div>
-        <div style={{ width: 11, height: 11, borderRadius: "50%", background: color, marginTop: 4, flexShrink: 0 }} />
-        {!isLast && <div style={{ width: 2, flex: 1, background: "#1b2030", marginTop: 4 }} />}
-      </div>
+      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", width: 74, flexShrink: 0 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ ...reading, fontSize: 11 }}>
+          {timeOf(entry.startedAt)}
+        </Typography>
+        {/* The dot's colour is lib/airlog's shared per-kind scale — the same
+            data the kind chips above the timeline read. */}
+        <Box sx={{ width: 11, height: 11, borderRadius: "50%", bgcolor: color, mt: 0.5, flexShrink: 0 }} />
+        {!isLast && <Box sx={{ width: 2, flex: 1, bgcolor: "divider", mt: 0.5 }} />}
+      </Box>
 
-      <div
-        style={{
+      <Paper
+        sx={{
           flex: 1,
           minWidth: 0,
-          marginBottom: 14,
-          padding: "10px 14px",
-          borderRadius: 8,
-          border: `1px solid ${onAirNow ? "#7f1d1d" : "#1b2030"}`,
-          background: "#0c111c",
+          mb: 1.75,
+          px: 1.75,
+          py: 1.25,
+          // The one cut still on air is the one worth spotting from across the
+          // room, so it takes the alarm edge.
+          borderColor: onAirNow ? "error.main" : "divider",
           cursor: entry.details?.length ? "pointer" : "default",
         }}
         onClick={() => entry.details?.length && setOpen(!open)}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ padding: "1px 8px", borderRadius: 10, fontSize: 11, fontWeight: 700, color, border: `1px solid ${color}55` }}>
-            #{entry.seq} {entry.kind}
-          </span>
-          <span style={{ fontWeight: 600 }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
+          <Chip label={`#${entry.seq} ${entry.kind}`} sx={{ color, borderColor: `${color}55` }} />
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
             {entry.icon ? `${entry.icon} ` : ""}
             {entry.title}
-          </span>
+          </Typography>
           {entry.breaking && (
-            <span title="Aired via the breaking-news priority tier" style={{ ...miniBadge, color: "#fbbf24", borderColor: "#fbbf2455" }}>
-              ⚡ breaking
-            </span>
+            <Chip title="Aired via the breaking-news priority tier" label="⚡ breaking" color="warning" />
           )}
           {entry.timesShown > 1 && (
-            <span title="Nth airing of this segment in the session" style={miniBadge}>
-              ×{entry.timesShown}
-            </span>
+            <Chip title="Nth airing of this segment in the session" label={`×${entry.timesShown}`} />
           )}
-          {onAirNow && <span style={{ ...miniBadge, color: "#f87171", borderColor: "#f8717155" }}>● on air</span>}
-        </div>
+          {onAirNow && <Chip label="● on air" color="error" />}
+        </Stack>
 
-        {entry.subtitle && <div style={{ color: "#8b95a7", fontSize: 12, marginTop: 3 }}>{entry.subtitle}</div>}
+        {entry.subtitle && (
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.375 }}>
+            {entry.subtitle}
+          </Typography>
+        )}
 
-        <div style={{ display: "flex", gap: 14, marginTop: 6, color: "#5b6478", fontSize: 12, flexWrap: "wrap" }}>
-          <span>
+        <Stack direction="row" spacing={1.75} useFlexGap sx={{ mt: 0.75, flexWrap: "wrap" }}>
+          <Typography variant="caption" color="text.disabled" sx={reading}>
             {entry.actualMs != null ? fmtDuration(entry.actualMs) : "…"} of {fmtDuration(entry.holdMs)}
-            {cutShort && <span style={{ color: "#fca5a5" }}> · skipped early</span>}
-          </span>
-          <span>
+            {cutShort && (
+              <Box component="span" sx={{ color: "error.main" }}>
+                {" "}
+                · skipped early
+              </Box>
+            )}
+          </Typography>
+          <Typography variant="caption" color="text.disabled" sx={reading}>
             @ {entry.center[1].toFixed(1)}, {entry.center[0].toFixed(1)} · z{entry.zoom.toFixed(1)}
-          </span>
-          <span>
+          </Typography>
+          <Typography variant="caption" color="text.disabled" sx={reading}>
             {subject.href ? (
-              <Link href={subject.href} style={{ color: "#60a5fa" }} onClick={(ev) => ev.stopPropagation()}>
+              <MuiLink component={Link} href={subject.href} onClick={(ev: React.MouseEvent) => ev.stopPropagation()}>
                 {subject.label}
-              </Link>
+              </MuiLink>
             ) : (
               subject.label
             )}
-          </span>
-          {entry.adId && <span>ad {entry.adId}</span>}
-        </div>
+          </Typography>
+          {entry.adId && (
+            <Typography variant="caption" color="text.disabled" sx={reading}>
+              ad {entry.adId}
+            </Typography>
+          )}
+        </Stack>
 
         {/* Sub-views: the camera stops this shot toured through, in order. */}
         {!!entry.stops?.length && (
-          <div style={{ marginTop: 8, borderLeft: "2px solid #1b2030", paddingLeft: 10 }}>
+          <Box sx={{ mt: 1, borderLeft: 2, borderColor: "divider", pl: 1.25 }}>
             {entry.stops.map((s, i) => (
-              <div key={i} style={{ color: "#8b95a7", fontSize: 12, padding: "2px 0" }}>
+              <Typography key={i} variant="caption" color="text.secondary" component="div" sx={{ py: 0.25 }}>
                 ↳ {s.label}
-                {s.subtitle ? <span style={{ color: "#5b6478" }}> · {s.subtitle}</span> : null}
-                <span style={{ color: "#3a4152" }}>
+                {s.subtitle ? <Box component="span" sx={{ color: "text.disabled" }}> · {s.subtitle}</Box> : null}
+                <Box component="span" sx={{ ...reading, color: "text.disabled", opacity: 0.7 }}>
                   {" "}
                   ({s.lat.toFixed(1)}, {s.lng.toFixed(1)})
-                </span>
-              </div>
+                </Box>
+              </Typography>
             ))}
-          </div>
+          </Box>
         )}
 
         {open && !!entry.details?.length && (
-          <table style={{ marginTop: 8, fontSize: 12, borderCollapse: "collapse" }}>
+          <Box component="table" sx={{ mt: 1, fontSize: 12, borderCollapse: "collapse" }}>
             <tbody>
               {entry.details.map((d, i) => (
                 <tr key={i}>
-                  <td style={{ color: "#5b6478", padding: "2px 14px 2px 0", whiteSpace: "nowrap" }}>{d.label}</td>
-                  <td style={{ color: "#cbd5e1", padding: "2px 0" }}>{d.value}</td>
+                  <Box component="td" sx={{ color: "text.disabled", pr: 1.75, py: 0.25, whiteSpace: "nowrap" }}>
+                    {d.label}
+                  </Box>
+                  <Box component="td" sx={{ ...reading, color: "text.primary", py: 0.25 }}>
+                    {d.value}
+                  </Box>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Box>
         )}
-      </div>
-    </div>
+      </Paper>
+    </Stack>
   );
 }
-
-const miniBadge: React.CSSProperties = {
-  padding: "1px 7px",
-  borderRadius: 10,
-  fontSize: 11,
-  fontWeight: 600,
-  color: "#8b95a7",
-  border: "1px solid #2a3344",
-};

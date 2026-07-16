@@ -10,7 +10,14 @@
  * here we subscribe, `console.log` each to devtools, and render them inline.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import { useSocket } from "../../lib/socket-provider";
+import { accent, font, ink, status, surface } from "../../theme/tokens";
 
 const QUEUE_EVENT = "queue:event";
 const QUEUE_LOG = "queue:log";
@@ -63,27 +70,32 @@ type FeedRow =
   | ({ kind: "event"; key: string; at: number } & QueueEventData)
   | ({ kind: "log"; key: string; at: number } & QueueLogData);
 
+/**
+ * Resolved token values rather than theme keys ("warning.main"): these colour
+ * the devtools `console.log` CSS below as well as the rendered rows, and a %c
+ * format string needs a real colour.
+ */
 const PHASE_COLOR: Record<Phase, string> = {
-  added: "#64748b",
-  waiting: "#fbbf24",
-  active: "#60a5fa",
-  progress: "#38bdf8",
-  completed: "#4ade80",
-  failed: "#f87171",
-  "retries-exhausted": "#ef4444",
-  delayed: "#a78bfa",
-  stalled: "#fb923c",
-  removed: "#6b7280",
-  drained: "#475569",
-  cleaned: "#475569",
-  paused: "#fbbf24",
-  resumed: "#4ade80",
+  added: ink.secondary,
+  waiting: status.warning,
+  active: accent.main,
+  progress: accent.main,
+  completed: status.success,
+  failed: status.error,
+  "retries-exhausted": status.error,
+  delayed: ink.secondary,
+  stalled: status.severe,
+  removed: ink.disabled,
+  drained: ink.disabled,
+  cleaned: ink.disabled,
+  paused: status.warning,
+  resumed: status.success,
 };
 
 const LEVEL_COLOR: Record<QueueLogData["level"], string> = {
-  info: "#93a4bd",
-  warn: "#fbbf24",
-  error: "#f87171",
+  info: ink.secondary,
+  warn: status.warning,
+  error: status.error,
 };
 
 const MAX_ROWS = 500;
@@ -138,7 +150,7 @@ export default function QueueEventLog() {
     const onEvent = (msg: Msg<QueueEventData>) => {
       const d = msg?.data;
       if (!d?.phase) return;
-      const color = PHASE_COLOR[d.phase] ?? "#8b95a7";
+      const color = PHASE_COLOR[d.phase] ?? ink.secondary;
       // eslint-disable-next-line no-console
       console.log(
         `%c[queue] ${d.phase}%c ${d.label ?? (d.jobId ? `#${d.jobId}` : "")}`,
@@ -175,103 +187,118 @@ export default function QueueEventLog() {
     });
   }, [rows, showLogs, jobFilter]);
 
-  const toggleBtn = (on: boolean, onColor = "#14532d"): React.CSSProperties => ({
-    padding: "4px 10px",
-    borderRadius: 6,
-    border: "1px solid #2a3344",
-    background: on ? onColor : "#1a1f2b",
-    color: on ? "#fff" : "#8b95a7",
-    cursor: "pointer",
-    fontSize: 12,
+  /** A toggle reads "on" through the accent edge, never a filled background. */
+  const toggleSx = (on: boolean) => ({
+    borderColor: on ? "primary.main" : undefined,
+    color: on ? "primary.main" : "text.secondary",
   });
 
+  const rowSx = {
+    alignItems: "baseline",
+    px: 1.75,
+    py: 0.5,
+    borderTop: "1px solid",
+    borderColor: "divider",
+  } as const;
+
   return (
-    <div style={{ marginTop: 18, border: "1px solid #1b2030", borderRadius: 8, overflow: "hidden" }}>
-      <div
-        style={{
-          display: "flex",
+    <Paper sx={{ mt: 2.25, overflow: "hidden" }}>
+      <Stack
+        direction="row"
+        spacing={1.25}
+        useFlexGap
+        sx={{
           alignItems: "center",
-          gap: 10,
-          padding: "9px 14px",
-          background: "#0c111c",
-          borderBottom: open ? "1px solid #121826" : "none",
           flexWrap: "wrap",
+          px: 1.75,
+          py: 1.125,
+          bgcolor: surface.raised,
+          borderBottom: open ? "1px solid" : "none",
+          borderColor: "divider",
         }}
       >
-        <button
+        <Box
+          component="button"
           type="button"
           onClick={() => setOpen((v) => !v)}
-          style={{ background: "none", border: "none", color: "#dfe7f5", cursor: "pointer", fontSize: 13, fontWeight: 600, padding: 0 }}
+          sx={{
+            background: "none",
+            border: "none",
+            p: 0,
+            font: "inherit",
+            fontSize: 13,
+            fontWeight: 600,
+            color: "text.primary",
+            cursor: "pointer",
+          }}
         >
           {open ? "▾" : "▸"} Live events
-        </button>
-        <span
+        </Box>
+        <Box
           title={connected ? "socket connected" : "socket disconnected"}
-          style={{ width: 8, height: 8, borderRadius: "50%", background: connected ? "#4ade80" : "#f87171" }}
+          sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: connected ? "success.main" : "error.main" }}
         />
-        <span style={{ color: "#5b6577", fontSize: 12 }}>
+        <Typography variant="caption" color="text.disabled">
           {connected ? "streaming" : "offline"} · {visible.length}
-        </span>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input
+        </Typography>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ ml: "auto", alignItems: "center", flexWrap: "wrap" }}>
+          <TextField
             value={jobFilter}
             onChange={(e) => setJobFilter(e.target.value)}
             placeholder="filter job…"
-            style={{
-              padding: "4px 8px",
-              borderRadius: 6,
-              border: "1px solid #2a3344",
-              background: "#0a0e16",
-              color: "#c9d4e6",
-              fontSize: 12,
-              width: 120,
-            }}
+            sx={{ width: 120 }}
           />
-          <button type="button" onClick={() => setShowLogs((v) => !v)} style={toggleBtn(showLogs, "#1e3a5f")} title="Show job console output">
+          <Button variant="outlined" onClick={() => setShowLogs((v) => !v)} sx={toggleSx(showLogs)} title="Show job console output">
             logs
-          </button>
-          <button type="button" onClick={() => setPaused((v) => !v)} style={toggleBtn(!paused)}>
+          </Button>
+          <Button variant="outlined" onClick={() => setPaused((v) => !v)} sx={toggleSx(!paused)}>
             {paused ? "paused" : "● live"}
-          </button>
-          <button type="button" onClick={() => setRows([])} style={toggleBtn(false)}>
+          </Button>
+          <Button variant="outlined" onClick={() => setRows([])} sx={toggleSx(false)}>
             clear
-          </button>
-        </div>
-      </div>
+          </Button>
+        </Stack>
+      </Stack>
 
       {open && (
-        <div style={{ maxHeight: 320, overflowY: "auto", fontFamily: "ui-monospace, monospace", fontSize: 12 }}>
+        <Box sx={{ maxHeight: 320, overflowY: "auto", fontFamily: font.mono, fontSize: 12 }}>
           {visible.length === 0 && (
-            <div style={{ padding: 16, color: "#5b6577" }}>
+            <Typography variant="caption" color="text.disabled" sx={{ display: "block", p: 2 }}>
               {connected ? "Waiting for queue activity…" : "Socket offline — no live events."}
-            </div>
+            </Typography>
           )}
           {visible.map((r) =>
             r.kind === "event" ? (
-              <div
-                key={r.key}
-                style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "4px 14px", borderTop: "1px solid #10151f", whiteSpace: "nowrap" }}
-              >
-                <span style={{ color: "#4b5568", flexShrink: 0 }}>{hhmmss(r.at)}</span>
-                <span style={{ color: PHASE_COLOR[r.phase] ?? "#8b95a7", fontWeight: 600, width: 132, flexShrink: 0 }}>{r.phase}</span>
-                <span style={{ color: "#c9d4e6", flexShrink: 0 }}>{r.label ?? (r.jobId ? `#${r.jobId}` : "—")}</span>
-                <span style={{ color: "#6b7688", overflow: "hidden", textOverflow: "ellipsis" }}>{detailOf(r)}</span>
-              </div>
+              <Stack key={r.key} direction="row" spacing={1.25} sx={{ ...rowSx, whiteSpace: "nowrap" }}>
+                <Box component="span" sx={{ color: "text.disabled", flexShrink: 0 }}>
+                  {hhmmss(r.at)}
+                </Box>
+                <Box component="span" sx={{ color: PHASE_COLOR[r.phase] ?? ink.secondary, fontWeight: 600, width: 132, flexShrink: 0 }}>
+                  {r.phase}
+                </Box>
+                <Box component="span" sx={{ color: "text.primary", flexShrink: 0 }}>
+                  {r.label ?? (r.jobId ? `#${r.jobId}` : "—")}
+                </Box>
+                <Box component="span" sx={{ color: "text.secondary", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {detailOf(r)}
+                </Box>
+              </Stack>
             ) : (
-              <div
-                key={r.key}
-                style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "4px 14px", borderTop: "1px solid #10151f" }}
-              >
-                <span style={{ color: "#4b5568", flexShrink: 0 }}>{hhmmss(r.at)}</span>
-                <span style={{ color: LEVEL_COLOR[r.level], width: 132, flexShrink: 0, opacity: 0.85 }}>
+              <Stack key={r.key} direction="row" spacing={1.25} sx={rowSx}>
+                <Box component="span" sx={{ color: "text.disabled", flexShrink: 0 }}>
+                  {hhmmss(r.at)}
+                </Box>
+                <Box component="span" sx={{ color: LEVEL_COLOR[r.level], width: 132, flexShrink: 0, opacity: 0.85 }}>
                   ⤷ {r.label ?? (r.jobId ? `#${r.jobId}` : "log")}
-                </span>
-                <span style={{ color: LEVEL_COLOR[r.level], whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1 }}>{r.line}</span>
-              </div>
+                </Box>
+                <Box component="span" sx={{ color: LEVEL_COLOR[r.level], whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1 }}>
+                  {r.line}
+                </Box>
+              </Stack>
             ),
           )}
-        </div>
+        </Box>
       )}
-    </div>
+    </Paper>
   );
 }

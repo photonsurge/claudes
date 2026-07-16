@@ -7,6 +7,17 @@
  */
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import MuiLink from "@mui/material/Link";
+import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
+import Typography from "@mui/material/Typography";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import { useTableSort } from "../../../components/admin/useTableSort";
 import {
@@ -17,8 +28,12 @@ import {
   runIsLive,
   type AirRun,
 } from "../../../lib/airlog";
+import { font } from "../../../theme/tokens";
 
 const POLL_MS = 10_000;
+
+/** DESIGN_BIBLE §3: start stamps, durations and cut counts are readings. */
+const reading = { fontFamily: font.mono, fontVariantNumeric: "tabular-nums" } as const;
 
 const fmtTime = (iso?: string): string => {
   if (!iso) return "—";
@@ -63,96 +78,83 @@ export default function RunsPage() {
       title="Runs"
       description="What the auto-director actually aired — one session per scene, with the full shot-by-shot timeline inside."
       actions={
-        <button type="button" onClick={reload} style={primary}>
+        <Button variant="outlined" onClick={reload}>
           Refresh
-        </button>
+        </Button>
       }
     >
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-        <thead>
-          <tr style={{ textAlign: "left", color: "#8b95a7" }}>
-            <th style={th}>{sorted.header("status", "Status")}</th>
-            <th style={th}>{sorted.header("scene", "Scene")}</th>
-            <th style={th}>{sorted.header("started", "Started")}</th>
-            <th style={th}>{sorted.header("duration", "Duration")}</th>
-            <th style={th}>{sorted.header("cuts", "Cuts")}</th>
-            <th style={th}>{sorted.header("mix", "Mix")}</th>
-            <th style={th}></th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table>
+        <TableHead>
+          <TableRow>
+            <TableCell>{sorted.header("status", "Status")}</TableCell>
+            <TableCell>{sorted.header("scene", "Scene")}</TableCell>
+            <TableCell>{sorted.header("started", "Started")}</TableCell>
+            <TableCell>{sorted.header("duration", "Duration")}</TableCell>
+            <TableCell>{sorted.header("cuts", "Cuts")}</TableCell>
+            <TableCell>{sorted.header("mix", "Mix")}</TableCell>
+            <TableCell />
+          </TableRow>
+        </TableHead>
+        <TableBody>
           {sorted.rows.map((r) => {
             const live = runIsLive(r);
             return (
-              <tr key={r.id} style={{ borderTop: "1px solid #1b2030" }}>
-                <td style={td}>
+              <TableRow key={r.id}>
+                <TableCell sx={{ verticalAlign: "top" }}>
                   {live ? (
-                    <span style={liveBadge}>● LIVE</span>
+                    <Typography variant="caption" sx={{ color: "error.main", fontWeight: 700, letterSpacing: 0.5 }}>
+                      ● LIVE
+                    </Typography>
                   ) : (
-                    <span style={{ color: "#5b6478", fontSize: 12 }}>
+                    <Typography variant="caption" color="text.disabled">
                       {r.endReason === "stale" ? "orphaned" : r.endedAt ? "ended" : "stalled"}
-                    </span>
+                    </Typography>
                   )}
-                </td>
-                <td style={{ ...td, fontWeight: 600 }}>{sceneNames[r.sceneId] ?? r.sceneId}</td>
-                <td style={{ ...td, whiteSpace: "nowrap" }}>{fmtTime(r.startedAt)}</td>
-                <td style={{ ...td, whiteSpace: "nowrap" }}>{fmtDuration(runDurationMs(r))}</td>
-                <td style={td}>{r.cuts}</td>
-                <td style={td}>
-                  <span style={{ display: "inline-flex", gap: 5, flexWrap: "wrap" }}>
+                </TableCell>
+                <TableCell sx={{ verticalAlign: "top", fontWeight: 600 }}>{sceneNames[r.sceneId] ?? r.sceneId}</TableCell>
+                <TableCell sx={{ ...reading, verticalAlign: "top", whiteSpace: "nowrap" }}>{fmtTime(r.startedAt)}</TableCell>
+                <TableCell sx={{ ...reading, verticalAlign: "top", whiteSpace: "nowrap" }}>{fmtDuration(runDurationMs(r))}</TableCell>
+                <TableCell sx={{ ...reading, verticalAlign: "top" }}>{r.cuts}</TableCell>
+                <TableCell sx={{ verticalAlign: "top" }}>
+                  {/*
+                    The kind colours come from lib/airlog's shared KIND_COLORS —
+                    a categorical scale the timeline rail also reads, so the chip
+                    and the dot on /admin/runs/:id agree on what "quake" looks
+                    like. That's data, not a per-page palette.
+                  */}
+                  <Stack direction="row" spacing={0.625} useFlexGap sx={{ flexWrap: "wrap" }}>
                     {Object.entries(r.kindCounts ?? {})
                       .sort((a, b) => b[1] - a[1])
                       .map(([kind, n]) => (
-                        <span key={kind} style={{ ...kindChip, color: kindColor(kind), borderColor: `${kindColor(kind)}55` }}>
-                          {kind} · {n}
-                        </span>
+                        <Chip
+                          key={kind}
+                          label={`${kind} · ${n}`}
+                          sx={{ color: kindColor(kind), borderColor: `${kindColor(kind)}55` }}
+                        />
                       ))}
-                  </span>
-                </td>
-                <td style={{ ...td, whiteSpace: "nowrap" }}>
-                  <Link href={`/admin/runs/${r.id}`} style={{ color: "#60a5fa" }}>
+                  </Stack>
+                </TableCell>
+                <TableCell sx={{ verticalAlign: "top", whiteSpace: "nowrap" }}>
+                  <MuiLink component={Link} href={`/admin/runs/${r.id}`} variant="body2">
                     Timeline →
-                  </Link>
-                </td>
-              </tr>
+                  </MuiLink>
+                </TableCell>
+              </TableRow>
             );
           })}
           {runs.length === 0 && (
-            <tr>
-              <td style={td} colSpan={7}>
-                {loading
-                  ? "Loading…"
-                  : "No runs recorded yet. Put the director into auto on /control — the first cut opens a run."}
-              </td>
-            </tr>
+            <TableRow>
+              <TableCell colSpan={7}>
+                <Box component="span" sx={{ color: "text.secondary" }}>
+                  {loading
+                    ? "Loading…"
+                    : "No runs recorded yet. Put the director into auto on /control — the first cut opens a run."}
+                </Box>
+              </TableCell>
+            </TableRow>
           )}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </AdminPageShell>
   );
 }
-
-const th: React.CSSProperties = { padding: "8px 10px 8px 0", fontWeight: 600, fontSize: 12 };
-const td: React.CSSProperties = { padding: "9px 10px 9px 0", verticalAlign: "top" };
-const primary: React.CSSProperties = {
-  padding: "8px 14px",
-  borderRadius: 6,
-  border: "1px solid #333",
-  background: "#2563eb",
-  color: "#fff",
-  cursor: "pointer",
-};
-const liveBadge: React.CSSProperties = {
-  color: "#f87171",
-  fontWeight: 700,
-  fontSize: 12,
-  letterSpacing: 0.5,
-};
-const kindChip: React.CSSProperties = {
-  padding: "1px 7px",
-  borderRadius: 10,
-  fontSize: 11,
-  fontWeight: 600,
-  border: "1px solid",
-  background: "#0c111c",
-};

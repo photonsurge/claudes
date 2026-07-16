@@ -8,6 +8,11 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 import RunTimelineEntry from "../../../../components/admin/RunTimelineEntry";
 import {
@@ -65,7 +70,11 @@ export default function RunDetailPage() {
       description={
         run ? (
           <>
-            {live ? <span style={{ color: "#f87171", fontWeight: 700 }}>● LIVE · </span> : null}
+            {live ? (
+              <Box component="span" sx={{ color: "error.main", fontWeight: 700 }}>
+                ● LIVE ·{" "}
+              </Box>
+            ) : null}
             {fmtTime(run.startedAt)} → {run.endedAt ? fmtTime(run.endedAt) : "now"} ·{" "}
             {fmtDuration(runDurationMs(run))} · {run.cuts} cuts
             {run.endReason === "stale" ? " · orphaned (worker restarted mid-session)" : ""}
@@ -77,51 +86,37 @@ export default function RunDetailPage() {
         )
       }
       actions={
-        <button type="button" onClick={reload} style={primary}>
+        <Button variant="outlined" onClick={reload}>
           Refresh
-        </button>
+        </Button>
       }
     >
       {run && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
+        // Kind colours are lib/airlog's shared categorical scale, matched to the
+        // dots on the timeline rail below — data, not a per-page palette.
+        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 2.25 }}>
           {Object.entries(run.kindCounts ?? {})
             .sort((a, b) => b[1] - a[1])
             .map(([kind, n]) => (
-              <span
+              <Chip
                 key={kind}
-                style={{
-                  padding: "2px 9px",
-                  borderRadius: 11,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: kindColor(kind),
-                  border: `1px solid ${kindColor(kind)}55`,
-                  background: "#0c111c",
-                }}
-              >
-                {kind} · {n}
-              </span>
+                label={`${kind} · ${n}`}
+                sx={{ height: 22, fontSize: 12, color: kindColor(kind), borderColor: `${kindColor(kind)}55` }}
+              />
             ))}
-        </div>
+        </Stack>
       )}
 
-      <div>
+      <Box>
         {entries.map((e, i) => (
           <RunTimelineEntry key={e.id} entry={e} isLast={i === entries.length - 1} />
         ))}
         {run && entries.length === 0 && (
-          <div style={{ color: "#8b95a7", fontSize: 13 }}>No cuts recorded in this run yet.</div>
+          <Typography variant="body2" color="text.secondary">
+            No cuts recorded in this run yet.
+          </Typography>
         )}
-      </div>
+      </Box>
     </AdminPageShell>
   );
 }
-
-const primary: React.CSSProperties = {
-  padding: "8px 14px",
-  borderRadius: 6,
-  border: "1px solid #333",
-  background: "#2563eb",
-  color: "#fff",
-  cursor: "pointer",
-};

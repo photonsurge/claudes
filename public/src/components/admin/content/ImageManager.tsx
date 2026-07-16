@@ -8,6 +8,13 @@
  * any change so the on-air preview + list thumbnails refresh.
  */
 import { useRef, useState } from "react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import type { AdminEntityType } from "@photonsurge/shared/admin-content/types";
 import {
   adminMediaPath,
@@ -19,16 +26,6 @@ import {
 } from "../../../lib/admin-content/client";
 
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/avif";
-
-const btn: React.CSSProperties = {
-  background: "#1a1f2b",
-  border: "1px solid #2a3344",
-  color: "#cdd4e0",
-  borderRadius: 5,
-  padding: "4px 8px",
-  fontSize: 11,
-  cursor: "pointer",
-};
 
 export default function ImageManager({
   type,
@@ -93,93 +90,95 @@ export default function ImageManager({
   };
 
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <label style={{ ...btn, background: "#2563eb", color: "#fff", borderColor: "#2563eb", cursor: busy ? "wait" : "pointer" }}>
+    <Box>
+      <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", mb: 1.25 }}>
+        {/* Upload is what this panel exists for, so it's the one filled button. */}
+        <Button variant="contained" component="label" sx={{ cursor: busy ? "wait" : "pointer" }}>
           {busy ? "Uploading…" : "＋ Upload image"}
-          <input ref={fileRef} type="file" accept={ACCEPT} multiple onChange={onUpload} style={{ display: "none" }} disabled={busy} />
-        </label>
-        <span style={{ fontSize: 11, color: "#5b6577" }}>PNG/JPEG/WebP/GIF/AVIF · up to 12 MB</span>
-        {note ? <span style={{ fontSize: 11, color: "#fca5a5" }}>{note}</span> : null}
-      </div>
+          <Box
+            component="input"
+            ref={fileRef}
+            type="file"
+            accept={ACCEPT}
+            multiple
+            onChange={onUpload}
+            disabled={busy}
+            sx={{ display: "none" }}
+          />
+        </Button>
+        <Typography variant="caption" color="text.disabled">
+          PNG/JPEG/WebP/GIF/AVIF · up to 12 MB
+        </Typography>
+        {note ? (
+          <Typography variant="caption" color="error.main">
+            {note}
+          </Typography>
+        ) : null}
+      </Stack>
 
       {images.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: "#5b6577", padding: "10px 0" }}>
+        <Typography variant="body2" color="text.disabled" sx={{ py: 1.25 }}>
           No images yet. The first you upload becomes the primary (on-air) image.
-        </div>
+        </Typography>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 1.25 }}>
           {images.map((im) => (
-            <div
+            <Paper
               key={im.id}
-              style={{
-                border: `1px solid ${im.primary ? "#eab308" : "#1b2030"}`,
-                borderRadius: 8,
+              sx={{
                 overflow: "hidden",
-                background: "#0a0e16",
+                bgcolor: "background.default",
+                // The hero going to air earns the only coloured edge here.
+                borderColor: im.primary ? "warning.main" : "divider",
               }}
             >
-              <div style={{ position: "relative" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+              <Box sx={{ position: "relative" }}>
+                <Box
+                  component="img"
                   src={adminMediaPath(im.id, im.updatedAt)}
                   alt={im.caption ?? ""}
-                  style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }}
+                  sx={{ width: "100%", height: 100, objectFit: "cover", display: "block" }}
                 />
                 {im.primary ? (
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: 6,
-                      left: 6,
-                      background: "#eab308",
-                      color: "#0a0e16",
-                      fontSize: 9,
-                      fontWeight: 800,
-                      letterSpacing: 0.6,
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                    }}
-                  >
-                    ★ PRIMARY
-                  </span>
+                  <Chip
+                    variant="filled"
+                    color="warning"
+                    label="★ PRIMARY"
+                    sx={{ position: "absolute", top: 6, left: 6, color: "background.default" }}
+                  />
                 ) : null}
-              </div>
-              <div style={{ padding: 8, display: "grid", gap: 6 }}>
-                <input
+              </Box>
+              <Stack spacing={0.75} sx={{ p: 1 }}>
+                <TextField
                   defaultValue={im.caption ?? ""}
                   placeholder="Caption"
                   onBlur={(e) => e.target.value !== (im.caption ?? "") && saveMeta(im.id, { caption: e.target.value })}
-                  style={{ ...btn, cursor: "text", width: "100%", background: "#0c111c" }}
+                  fullWidth
                 />
-                <input
+                <TextField
                   defaultValue={im.credit ?? ""}
                   placeholder="Credit"
                   onBlur={(e) => e.target.value !== (im.credit ?? "") && saveMeta(im.id, { credit: e.target.value })}
-                  style={{ ...btn, cursor: "text", width: "100%", background: "#0c111c" }}
+                  fullWidth
                 />
-                <div style={{ display: "flex", gap: 6 }}>
-                  {!im.primary ? (
-                    <button type="button" style={{ ...btn, flex: 1 }} onClick={() => makePrimary(im.id)} disabled={busy}>
-                      Set primary
-                    </button>
-                  ) : (
-                    <span style={{ ...btn, flex: 1, textAlign: "center", opacity: 0.6, cursor: "default" }}>Primary</span>
-                  )}
-                  <button
-                    type="button"
-                    style={{ ...btn, color: "#fca5a5", borderColor: "#4a2530" }}
-                    onClick={() => remove(im.id)}
-                    disabled={busy}
+                <Stack direction="row" spacing={0.75}>
+                  <Button
+                    variant="outlined"
+                    onClick={() => makePrimary(im.id)}
+                    disabled={busy || im.primary}
+                    sx={{ flex: 1 }}
                   >
+                    {im.primary ? "Primary" : "Set primary"}
+                  </Button>
+                  <Button variant="outlined" color="error" onClick={() => remove(im.id)} disabled={busy}>
                     Delete
-                  </button>
-                </div>
-              </div>
-            </div>
+                  </Button>
+                </Stack>
+              </Stack>
+            </Paper>
           ))}
-        </div>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }

@@ -9,6 +9,18 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import ButtonBase from "@mui/material/ButtonBase";
+import Chip from "@mui/material/Chip";
+import MuiLink from "@mui/material/Link";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableRow from "@mui/material/TableRow";
+import Typography from "@mui/material/Typography";
 import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
@@ -30,6 +42,7 @@ import { alertBbox } from "../../../../lib/alertGroups";
 import { hazardMeta } from "../../../../lib/hazard";
 import { fmtDuration } from "../../../../lib/airlog";
 import { satelliteViewLabel } from "../../../../lib/satellite-view";
+import { surface } from "../../../../theme/tokens";
 
 const fmtTime = (iso?: string): string => {
   if (!iso) return "—";
@@ -62,6 +75,15 @@ const beatGlyph = (type: string): string => {
       return "🔄";
   }
 };
+
+/** The uppercase eyebrow every card on this page leads with. */
+function CardLabel({ children, sx }: { children: React.ReactNode; sx?: object }) {
+  return (
+    <Typography variant="overline" color="text.secondary" component="div" sx={sx}>
+      {children}
+    </Typography>
+  );
+}
 
 export default function AlertDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -116,7 +138,9 @@ export default function AlertDetailPage() {
   if (!detail) {
     return (
       <AdminPageShell title="Alert" crumbs={[{ href: "/admin/alerts", label: "Weather alerts" }, { label: "…" }]}>
-        <div style={{ color: "#8b95a7" }}>{missing ? "No such alert." : "Loading…"}</div>
+        <Typography variant="body2" color="text.secondary">
+          {missing ? "No such alert." : "Loading…"}
+        </Typography>
       </AdminPageShell>
     );
   }
@@ -133,81 +157,104 @@ export default function AlertDetailPage() {
       maxWidth={1100}
       crumbs={[{ href: "/admin/alerts", label: "Weather alerts" }, { label: alert.identifier }]}
       description={
-        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 7 }}>
-          <span aria-label="Alert location" style={locationLine}>
-            <span>
-              <span style={locationLabel}>Region</span> {location.region ?? "Unknown"}
-            </span>
-            <span aria-hidden style={{ color: "#323a4b" }}>·</span>
-            <span>
-              <span style={locationLabel}>Country</span> {location.country ?? "Unknown"}
-            </span>
-          </span>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span
+        <Box component="span" sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 0.875 }}>
+          <Box
+            component="span"
+            aria-label="Alert location"
+            sx={{ display: "inline-flex", alignItems: "center", gap: 1.125, flexWrap: "wrap", color: "text.primary", fontWeight: 600 }}
+          >
+            <Box component="span">
+              <Box component="span" sx={locationLabelSx}>
+                Region
+              </Box>{" "}
+              {location.region ?? "Unknown"}
+            </Box>
+            <Box component="span" aria-hidden sx={{ color: "text.disabled" }}>
+              ·
+            </Box>
+            <Box component="span">
+              <Box component="span" sx={locationLabelSx}>
+                Country
+              </Box>{" "}
+              {location.country ?? "Unknown"}
+            </Box>
+          </Box>
+          <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+            {/*
+              Filled with the rank's own ramp colour (DESIGN_BIBLE §4.4) rather
+              than a theme semantic: the rank IS the meaning here.
+            */}
+            <Box
+              component="span"
               title={severityLabel(rank)}
-              style={{
-                padding: "1px 9px",
-                borderRadius: 10,
+              sx={{
+                px: 1.125,
+                borderRadius: 1,
                 fontWeight: 700,
                 fontSize: 12,
-                color: "#0a0e16",
-                background: severityColor(rank),
+                color: surface.page,
+                bgcolor: severityColor(rank),
               }}
             >
               {rank} · {severityLabel(rank)}
-            </span>
-            <span style={{ color: h.color }}>{h.label}</span>
-            <span style={sourceChip}>{alert.source}</span>
-            <span>{alert.msgType}</span>
-            <span style={{ color: alert.active ? "#86efac" : "#8b95a7" }}>{alert.active ? "active" : "inactive"}</span>
-          </span>
-        </span>
+            </Box>
+            <Box component="span" sx={{ color: h.color }}>
+              {h.label}
+            </Box>
+            <Chip label={alert.source} />
+            <Box component="span">{alert.msgType}</Box>
+            <Box component="span" sx={{ color: alert.active ? "success.main" : "text.secondary" }}>
+              {alert.active ? "active" : "inactive"}
+            </Box>
+          </Box>
+        </Box>
       }
       actions={
-        <button type="button" onClick={reload} style={primary}>
+        <Button variant="outlined" onClick={reload}>
           Refresh
-        </button>
+        </Button>
       }
     >
       {lightbox && <ImageLightbox image={lightbox} onClose={() => setLightbox(null)} />}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 1.75 }}>
         {/* Change timeline — derived from in-place revisions + the CAP chain. */}
-        <div style={card}>
-          <div style={cardLabel}>Timeline ({timeline.length})</div>
+        <Paper sx={{ p: 1.75 }}>
+          <CardLabel>Timeline ({timeline.length})</CardLabel>
           {timeline.length === 0 && (
-            <div style={{ color: "#5b6478", fontSize: 13, marginTop: 8 }}>
+            <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>
               No changes recorded yet — just the initial bulletin.
-            </div>
+            </Typography>
           )}
           {timeline.map((b, i) => (
-            <div
+            <Stack
               key={`${b.at}-${b.type}-${i}`}
-              style={{ borderTop: "1px solid #121622", padding: "7px 0", fontSize: 13, display: "flex", gap: 8 }}
+              direction="row"
+              spacing={1}
+              sx={{ borderTop: 1, borderColor: "divider", py: 0.875 }}
             >
-              <span style={{ color: "#5b6478", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
-                {fmtTime(b.at)}
-              </span>
-              <span aria-hidden style={{ width: 16, textAlign: "center" }}>
+              <Typography variant="body2" color="text.disabled" sx={{ whiteSpace: "nowrap" }}>
+                <code>{fmtTime(b.at)}</code>
+              </Typography>
+              <Box component="span" aria-hidden sx={{ width: 16, textAlign: "center" }}>
                 {beatGlyph(b.type)}
-              </span>
-              <span style={{ color: "#e2e8f0" }}>
+              </Box>
+              <Typography variant="body2">
                 {b.label}
                 {typeof b.severityRank === "number" && (
-                  <span style={{ marginLeft: 6, color: severityColor(b.severityRank) }}>
+                  <Box component="span" sx={{ ml: 0.75, color: severityColor(b.severityRank) }}>
                     · {severityLabel(b.severityRank)}
-                  </span>
+                  </Box>
                 )}
-              </span>
-            </div>
+              </Typography>
+            </Stack>
           ))}
-        </div>
+        </Paper>
 
         {/* Message lifecycle / identity */}
-        <div style={card}>
-          <div style={cardLabel}>Message</div>
-          <table style={{ fontSize: 13, borderCollapse: "collapse", marginTop: 8, width: "100%" }}>
-            <tbody>
+        <Paper sx={{ p: 1.75 }}>
+          <CardLabel>Message</CardLabel>
+          <Table sx={{ mt: 1 }}>
+            <TableBody>
               {[
                 ["Identifier", alert.identifier],
                 ["Sender", alert.sender || "—"],
@@ -217,76 +264,85 @@ export default function AlertDetailPage() {
                 ["Expires", fmtTime(alert.expiresAt)],
                 ["References", alert.references?.length ? `${alert.references.length} message(s)` : "none"],
               ].map(([k, v]) => (
-                <tr key={k}>
-                  <td style={{ color: "#5b6478", padding: "3px 14px 3px 0", whiteSpace: "nowrap", verticalAlign: "top" }}>{k}</td>
-                  <td style={{ color: "#cbd5e1", padding: "3px 0", wordBreak: "break-all" }}>{v}</td>
-                </tr>
+                <TableRow key={k}>
+                  <TableCell sx={{ color: "text.disabled", border: 0, py: 0.375, pl: 0, pr: 1.75, whiteSpace: "nowrap", verticalAlign: "top" }}>
+                    {k}
+                  </TableCell>
+                  <TableCell sx={{ border: 0, py: 0.375, px: 0, wordBreak: "break-all" }}>
+                    <code>{v}</code>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </Paper>
 
         {/* As-run history: every director cut that aired this alert. */}
-        <div style={card}>
-          <div style={cardLabel}>On air ({aired.length})</div>
+        <Paper sx={{ p: 1.75 }}>
+          <CardLabel>On air ({aired.length})</CardLabel>
           {aired.length === 0 && (
-            <div style={{ color: "#5b6478", fontSize: 13, marginTop: 8 }}>
+            <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>
               The director hasn&apos;t aired this alert (or it aired before as-run logging).
-            </div>
+            </Typography>
           )}
           {aired.map((e) => (
-            <div key={e.id} style={{ borderTop: "1px solid #121622", padding: "7px 0", fontSize: 13 }}>
-              <Link href={`/admin/runs/${e.runId}`} style={{ color: "#60a5fa" }}>
-                {fmtTime(e.startedAt)}
-              </Link>
-              <span style={{ color: "#8b95a7" }}>
+            <Box key={e.id} sx={{ borderTop: 1, borderColor: "divider", py: 0.875 }}>
+              <MuiLink component={Link} href={`/admin/runs/${e.runId}`} variant="body2">
+                <code>{fmtTime(e.startedAt)}</code>
+              </MuiLink>
+              <Typography component="span" variant="body2" color="text.secondary">
                 {" "}
                 · shot #{e.seq}
                 {e.actualMs != null ? ` · ${fmtDuration(e.actualMs)} on screen` : " · on air"}
                 {e.breaking ? " · ⚡ breaking" : ""}
                 {e.endReason === "skipped" ? " · skipped early" : ""}
-              </span>
-            </div>
+              </Typography>
+            </Box>
           ))}
-        </div>
+        </Paper>
 
         {/* CAP lifecycle chain */}
-        <div style={card}>
-          <div style={cardLabel}>Update chain ({chain.length})</div>
+        <Paper sx={{ p: 1.75 }}>
+          <CardLabel>Update chain ({chain.length})</CardLabel>
           {chain.length <= 1 && (
-            <div style={{ color: "#5b6478", fontSize: 13, marginTop: 8 }}>No related updates — a single message so far.</div>
+            <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>
+              No related updates — a single message so far.
+            </Typography>
           )}
           {chain.length > 1 &&
             chain.map((c) => {
               const current = c.id === alert.id;
               return (
-                <div key={c.id} style={{ borderTop: "1px solid #121622", padding: "7px 0", fontSize: 13 }}>
-                  <span style={{ ...msgChip, ...(current ? { borderColor: "#2563eb", color: "#93c5fd" } : {}) }}>{c.msgType}</span>{" "}
+                <Box key={c.id} sx={{ borderTop: 1, borderColor: "divider", py: 0.875 }}>
+                  {/* The message you're looking at gets the accent chip. */}
+                  <Chip label={c.msgType} color={current ? "primary" : "default"} sx={{ mr: 0.75 }} />
                   {current ? (
-                    <span style={{ color: "#e2e8f0" }}>{fmtTime(c.sent)} (this message)</span>
+                    <Typography component="span" variant="body2">
+                      <code>{fmtTime(c.sent)}</code> (this message)
+                    </Typography>
                   ) : (
-                    <Link href={`/admin/alerts/${c.id}`} style={{ color: "#60a5fa" }}>
-                      {fmtTime(c.sent)}
-                    </Link>
+                    <MuiLink component={Link} href={`/admin/alerts/${c.id}`} variant="body2">
+                      <code>{fmtTime(c.sent)}</code>
+                    </MuiLink>
                   )}
-                  <span style={{ color: "#8b95a7" }}>
+                  <Typography component="span" variant="body2" color="text.secondary">
                     {" "}
                     · sev {c.maxSeverityRank}
                     {c.active ? " · active" : ""}
-                  </span>
-                </div>
+                  </Typography>
+                </Box>
               );
             })}
-        </div>
-      </div>
+        </Paper>
+      </Box>
 
       {/* Location — the alert's own CAP area(s) drawn on the shared globe. */}
       {previewState && features.length > 0 && (
-        <div style={{ ...card, marginTop: 14, padding: 0, overflow: "hidden" }}>
-          <div style={{ ...cardLabel, padding: "14px 14px 0" }}>
+        <Paper sx={{ mt: 1.75, overflow: "hidden" }}>
+          <CardLabel sx={{ pt: 1.75, px: 1.75 }}>
             Location{features.length > 1 ? ` · ${features.length} areas` : ""}
-          </div>
-          <div style={{ position: "relative", height: 420, marginTop: 12 }}>
+          </CardLabel>
+          <Box sx={{ position: "relative", height: 420, mt: 1.5 }}>
             <GlobeView
               ref={globe}
               state={previewState}
@@ -296,70 +352,83 @@ export default function AlertDetailPage() {
               pulseAt={pulseAt}
               interactive
             />
-          </div>
-        </div>
+          </Box>
+        </Paper>
       )}
 
       {/* Imagery, resources & trends — the P1/P2 satellite/camera/GDACS harvest. */}
       {(snapshots.length > 0 || resources.length > 0 || series.length > 0) && (
-        <div style={{ ...card, marginTop: 14 }}>
-          <div style={cardLabel}>Imagery, resources &amp; trends</div>
+        <Paper sx={{ p: 1.75, mt: 1.75 }}>
+          <CardLabel>Imagery, resources &amp; trends</CardLabel>
 
           {snapshots.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
+            <Stack direction="row" spacing={1.25} sx={{ flexWrap: "wrap", gap: 1.25, mt: 1.25 }}>
               {snapshots.slice(0, 12).map((s) => {
                 const src = `/api/alerts/snapshot/${s.id}?v=${encodeURIComponent(s.capturedAt)}`;
                 const caption = `${s.kind === "satellite" ? satelliteViewLabel(s.layer) : s.kind}${s.distanceKm != null ? ` · ${Math.round(s.distanceKm)} km` : ""} · ${fmtTime(s.observationTime)}`;
                 return (
-                  <button
+                  <ButtonBase
                     key={s.id}
-                    type="button"
                     aria-label={`Open ${s.kind} image full screen`}
                     onClick={() => setLightbox({ src, alt: s.kind, caption })}
-                    style={{ display: "block", width: 160, padding: 0, border: 0, color: "inherit", background: "none", textAlign: "left", cursor: "zoom-in" }}
+                    sx={{ display: "block", width: 160, textAlign: "left", cursor: "zoom-in" }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <Box
+                      component="img"
                       src={src}
                       alt={s.kind}
-                      style={{ width: 160, height: 100, objectFit: "cover", borderRadius: 6, border: "1px solid #1b2030", background: "#070a11" }}
+                      sx={{
+                        width: 160,
+                        height: 100,
+                        objectFit: "cover",
+                        borderRadius: 1,
+                        border: 1,
+                        borderColor: "divider",
+                        bgcolor: surface.sunken,
+                      }}
                     />
-                    <div style={{ color: "#8b95a7", fontSize: 11, marginTop: 3 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.375 }}>
                       {caption}
-                    </div>
-                  </button>
+                    </Typography>
+                  </ButtonBase>
                 );
               })}
-            </div>
+            </Stack>
           )}
 
           {series.length > 0 && (
-            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+            <Box sx={{ mt: 1.75, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 1.5 }}>
               {series.map((m) => (
-                <div key={m.metric} style={{ borderTop: "1px solid #121622", paddingTop: 8 }}>
-                  <div style={{ color: "#cbd5e1", fontSize: 13 }}>
-                    {m.metric} <span style={{ color: "#8b95a7" }}>· {m.latest}</span>
-                  </div>
+                <Box key={m.metric} sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}>
+                  <Typography variant="body2">
+                    {m.metric}{" "}
+                    <Typography component="span" variant="body2" color="text.secondary">
+                      · <code>{m.latest}</code>
+                    </Typography>
+                  </Typography>
                   <Sparkline samples={m.samples} width={200} height={30} />
-                </div>
+                </Box>
               ))}
-            </div>
+            </Box>
           )}
 
           {resources.length > 0 && (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ color: "#5b6478", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 }}>Resources</div>
+            <Box sx={{ mt: 1.75 }}>
+              <CardLabel>Resources</CardLabel>
               {resources.map((r) => (
-                <div key={r.id ?? r.url} style={{ fontSize: 13, marginTop: 4 }}>
-                  <span style={{ color: "#5b6478" }}>{r.kind}</span>{" "}
-                  <a href={r.url} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", wordBreak: "break-all" }}>
+                <Box key={r.id ?? r.url} sx={{ mt: 0.5 }}>
+                  <Typography component="span" variant="body2" color="text.disabled">
+                    {r.kind}
+                  </Typography>{" "}
+                  <MuiLink href={r.url} target="_blank" rel="noreferrer" variant="body2" sx={{ wordBreak: "break-all" }}>
                     {r.description || r.url}
-                  </a>
-                </div>
+                  </MuiLink>
+                </Box>
               ))}
-            </div>
+            </Box>
           )}
-        </div>
+        </Paper>
       )}
 
       {/* Full CAP content */}
@@ -368,74 +437,35 @@ export default function AlertDetailPage() {
       ))}
 
       {/* Raw feed payload, for debugging adapters. */}
-      <details style={{ marginTop: 16 }}>
-        <summary style={{ color: "#8b95a7", cursor: "pointer", fontSize: 13 }}>Raw document</summary>
-        <pre style={rawPre}>{JSON.stringify(alert, null, 2)}</pre>
-      </details>
+      <Box component="details" sx={{ mt: 2 }}>
+        <Box component="summary" sx={{ color: "text.secondary", cursor: "pointer", fontSize: 13 }}>
+          Raw document
+        </Box>
+        <Box
+          component="pre"
+          sx={{
+            mt: 1,
+            px: 1.75,
+            py: 1.5,
+            bgcolor: surface.sunken,
+            color: "text.secondary",
+            fontSize: 12,
+            lineHeight: 1.5,
+            borderRadius: 1,
+            overflowX: "auto",
+          }}
+        >
+          {JSON.stringify(alert, null, 2)}
+        </Box>
+      </Box>
     </AdminPageShell>
   );
 }
 
-const card: React.CSSProperties = {
-  padding: 14,
-  borderRadius: 8,
-  border: "1px solid #1b2030",
-  background: "#0c111c",
-};
-const cardLabel: React.CSSProperties = {
-  color: "#8b95a7",
-  fontSize: 12,
-  textTransform: "uppercase",
-  letterSpacing: 0.5,
-};
-const sourceChip: React.CSSProperties = {
-  padding: "1px 8px",
-  borderRadius: 10,
-  fontSize: 11,
-  fontWeight: 700,
-  background: "#1b2030",
-  color: "#cbd5e1",
-};
-const locationLine: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 9,
-  flexWrap: "wrap",
-  color: "#e2e8f0",
-  fontSize: 14,
-  fontWeight: 600,
-};
-const locationLabel: React.CSSProperties = {
-  color: "#64748b",
+const locationLabelSx = {
+  color: "text.secondary",
   fontSize: 11,
   fontWeight: 700,
   letterSpacing: 0.5,
   textTransform: "uppercase",
-};
-const msgChip: React.CSSProperties = {
-  display: "inline-block",
-  padding: "0 7px",
-  borderRadius: 9,
-  fontSize: 11,
-  fontWeight: 700,
-  border: "1px solid #2a3344",
-  color: "#8b95a7",
-};
-const primary: React.CSSProperties = {
-  padding: "8px 14px",
-  borderRadius: 6,
-  border: "1px solid #333",
-  background: "#2563eb",
-  color: "#fff",
-  cursor: "pointer",
-};
-const rawPre: React.CSSProperties = {
-  marginTop: 8,
-  padding: "12px 14px",
-  background: "#070a11",
-  color: "#9aa7bd",
-  fontSize: 12,
-  lineHeight: 1.5,
-  borderRadius: 6,
-  overflowX: "auto",
-};
+} as const;

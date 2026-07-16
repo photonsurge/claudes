@@ -9,9 +9,20 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import MuiLink from "@mui/material/Link";
+import MenuItem from "@mui/material/MenuItem";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
 import { listScenes, createScene, deleteScene } from "../../../lib/scenes";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import { font } from "../../../theme/tokens";
 
 export default function ScenesPage() {
   const [scenes, setScenes] = useState<SceneMeta[]>([]);
@@ -56,96 +67,90 @@ export default function ScenesPage() {
       description={
         <>
           Each scene renders at <code>/watch/&lt;id&gt;</code> — use that URL as an OBS browser
-          source or overlay window. Drive a scene live from the <Link href="/control" style={{ color: "#60a5fa" }}>operator console</Link>.
-          Tokened OBS URLs live in <Link href="/admin/access" style={{ color: "#60a5fa" }}>Access</Link>.
+          source or overlay window. Drive a scene live from the{" "}
+          <MuiLink component={Link} href="/control">operator console</MuiLink>.
+          Tokened OBS URLs live in <MuiLink component={Link} href="/admin/access">Access</MuiLink>.
         </>
       }
       maxWidth={760}
     >
-
       {/* Create */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap",
-          alignItems: "center",
-          padding: 14,
-          borderRadius: 8,
-          border: "1px solid #1b2030",
-          background: "#0c111c",
-          marginTop: 14,
-        }}
-      >
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="New scene name (e.g. Atlantic Wind)"
-          onKeyDown={(e) => e.key === "Enter" && name.trim() && add()}
-          style={{ flex: 1, minWidth: 200, background: "#0a0e16", color: "#fff", border: "1px solid #2a3344", borderRadius: 6, padding: "8px 10px" }}
-        />
-        <label style={{ color: "#8b95a7", fontSize: 13 }}>
-          copy from{" "}
-          <select
-            value={copyFrom}
+      <Paper sx={{ p: 1.75, mt: 1.75 }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+          <TextField
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="New scene name (e.g. Atlantic Wind)"
+            onKeyDown={(e) => e.key === "Enter" && name.trim() && add()}
+            slotProps={{ htmlInput: { "aria-label": "New scene name" } }}
+            sx={{ flex: 1, minWidth: 200 }}
+          />
+          <TextField
+            select
+            label="copy from"
+            // `scenes` loads async, so on first render the default `copyFrom`
+            // names an option that doesn't exist yet and MUI warns about an
+            // out-of-range value. Fall back to empty until its option is real.
+            value={scenes.some((s) => s.id === copyFrom) ? copyFrom : ""}
             onChange={(e) => setCopyFrom(e.target.value)}
-            style={{ background: "#0a0e16", color: "#fff", border: "1px solid #2a3344", borderRadius: 6, padding: "6px 8px" }}
+            sx={{ minWidth: 150 }}
           >
             {scenes.map((s) => (
-              <option key={s.id} value={s.id}>
+              <MenuItem key={s.id} value={s.id}>
                 {s.name}
-              </option>
+              </MenuItem>
             ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          onClick={add}
-          disabled={busy || !name.trim()}
-          style={{ padding: "8px 16px", borderRadius: 6, border: "1px solid #333", background: busy || !name.trim() ? "#1a1f2b" : "#2563eb", color: "#fff", cursor: "pointer" }}
-        >
-          {busy ? "…" : "Create"}
-        </button>
-      </div>
-      {error && <div style={{ color: "#fca5a5", fontSize: 13, marginTop: 8 }}>{error}</div>}
+          </TextField>
+          {/* The page's one genuinely primary action, so the one filled button. */}
+          <Button variant="contained" onClick={add} disabled={busy || !name.trim()}>
+            {busy ? "…" : "Create"}
+          </Button>
+        </Stack>
+      </Paper>
+      {error && (
+        <Alert severity="error" sx={{ mt: 1 }}>
+          {error}
+        </Alert>
+      )}
 
       {/* List */}
-      <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+      <Box sx={{ display: "grid", gap: 1.25, mt: 2.25 }}>
         {scenes.map((s) => {
           const watch = `/watch/${s.id}`;
           return (
-            <div
-              key={s.id}
-              style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c" }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>
-                  {s.name}
-                  {s.id === MAIN_SCENE_ID && (
-                    <span style={{ fontSize: 11, color: "#8b95a7", border: "1px solid #2a3344", borderRadius: 4, padding: "1px 5px", marginLeft: 8 }}>main</span>
-                  )}
-                </div>
-                <div style={{ color: "#8b95a7", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {origin}
-                  {watch}
-                </div>
-              </div>
-              <Link href={watch} target="_blank" style={{ color: "#60a5fa", fontSize: 13, textDecoration: "none" }}>
-                Open ↗
-              </Link>
-              {s.id !== MAIN_SCENE_ID && (
-                <button
-                  type="button"
-                  onClick={() => remove(s.id)}
-                  style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #5b2330", background: "#1a1014", color: "#fca5a5", cursor: "pointer", fontSize: 13 }}
-                >
-                  Delete
-                </button>
-              )}
-            </div>
+            <Paper key={s.id} sx={{ p: 1.75 }}>
+              <Stack direction="row" spacing={1.75} sx={{ alignItems: "center" }}>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {s.name}
+                    </Typography>
+                    {s.id === MAIN_SCENE_ID && <Chip label="main" />}
+                  </Stack>
+                  {/* The URL is what gets pasted into OBS — a reading, in mono. */}
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    component="div"
+                    sx={{ fontFamily: font.mono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  >
+                    {origin}
+                    {watch}
+                  </Typography>
+                </Box>
+                <MuiLink component={Link} href={watch} target="_blank" variant="body2" sx={{ whiteSpace: "nowrap" }}>
+                  Open ↗
+                </MuiLink>
+                {s.id !== MAIN_SCENE_ID && (
+                  <Button variant="outlined" color="error" onClick={() => remove(s.id)}>
+                    Delete
+                  </Button>
+                )}
+              </Stack>
+            </Paper>
           );
         })}
-      </div>
+      </Box>
     </AdminPageShell>
   );
 }

@@ -8,13 +8,17 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import { isAdminEntityType } from "@photonsurge/shared/admin-content/types";
 import { ENTITY_SCHEMAS } from "@photonsurge/shared/admin-content/schema";
 import AdminPageShell from "../../../../../components/admin/AdminPageShell";
 import ContentEditorModal from "../../../../../components/admin/content/ContentEditorModal";
 import OnAirPreview from "../../../../../components/admin/content/OnAirPreview";
 import { adminMediaPath, getContent, type ResolvedContent } from "../../../../../lib/admin-content/client";
-import { primary } from "../../../../../components/tracks/styles";
 
 export default function AdminContentDetailPage() {
   const { type, id } = useParams<{ type: string; id: string }>();
@@ -40,7 +44,7 @@ export default function AdminContentDetailPage() {
   if (!valid) {
     return (
       <AdminPageShell title="Content">
-        <div style={{ color: "#fca5a5" }}>No such content type.</div>
+        <Alert severity="error">No such content type.</Alert>
       </AdminPageShell>
     );
   }
@@ -57,74 +61,103 @@ export default function AdminContentDetailPage() {
       ]}
       actions={
         content ? (
-          <button type="button" style={primary} onClick={() => setEditing(true)}>
+          // The one genuinely primary action on this page, so it earns the fill
+          // (DESIGN_BIBLE §5.6 — everything else here stays quiet).
+          <Button variant="contained" onClick={() => setEditing(true)}>
             ✎ Edit
-          </button>
+          </Button>
         ) : null
       }
     >
       {missing ? (
-        <div style={{ color: "#fca5a5" }}>This item no longer exists.</div>
+        <Alert severity="error">This item no longer exists.</Alert>
       ) : !content ? (
-        <div style={{ color: "#8b95a7" }}>Loading…</div>
+        <Typography color="text.secondary">Loading…</Typography>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 470px", gap: 24, alignItems: "start" }}>
-          <div style={{ display: "grid", gap: 20 }}>
-            <section>
+        <Box sx={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 470px", gap: 3, alignItems: "start" }}>
+          <Stack spacing={2.5}>
+            <Box component="section">
               <SectionLabel>Text</SectionLabel>
-              <div style={{ display: "grid", gap: 10 }}>
+              <Stack spacing={1.25}>
                 {schema.fields.map((f) => {
                   const value = fieldValue(type, content.entity, f.field);
                   const overridden = !!content.text[f.field];
                   return (
-                    <div key={f.field}>
-                      <div style={{ fontSize: 11, color: "#5b6577", display: "flex", gap: 6, alignItems: "center" }}>
-                        {f.label}
-                        {overridden ? <span style={{ color: "#eab308", fontWeight: 800 }}>● edited</span> : null}
-                      </div>
-                      <div style={{ fontSize: 14, color: value ? "#e6edf7" : "#3a4152", whiteSpace: "pre-wrap" }}>
+                    <Box key={f.field}>
+                      <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                        <Typography variant="caption" color="text.disabled">
+                          {f.label}
+                        </Typography>
+                        {overridden ? (
+                          <Typography variant="caption" color="warning.main" sx={{ fontWeight: 800 }}>
+                            ● edited
+                          </Typography>
+                        ) : null}
+                      </Stack>
+                      <Typography color={value ? "text.primary" : "text.disabled"} sx={{ whiteSpace: "pre-wrap" }}>
                         {value || "—"}
-                      </div>
-                    </div>
+                      </Typography>
+                    </Box>
                   );
                 })}
-              </div>
-            </section>
+              </Stack>
+            </Box>
 
-            <section>
+            <Box component="section">
               <SectionLabel>Images ({content.images.length})</SectionLabel>
               {content.images.length === 0 ? (
-                <div style={{ fontSize: 13, color: "#5b6577" }}>No images. Use Edit to upload.</div>
+                <Typography variant="body2" color="text.disabled">
+                  No images. Use Edit to upload.
+                </Typography>
               ) : (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }} useFlexGap>
                   {content.images.map((im) => (
-                    <div key={im.id} style={{ position: "relative" }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                    <Box key={im.id} sx={{ position: "relative" }}>
+                      <Box
+                        component="img"
                         src={adminMediaPath(im.id, im.updatedAt)}
                         alt={im.caption ?? ""}
-                        style={{
+                        sx={{
                           width: 130,
                           height: 90,
                           objectFit: "cover",
-                          borderRadius: 6,
-                          border: im.primary ? "2px solid #eab308" : "1px solid #1b2030",
+                          borderRadius: 1,
+                          // The hero going to air is the one thing worth spotting
+                          // in a wall of thumbnails.
+                          border: im.primary ? 2 : 1,
+                          borderColor: im.primary ? "warning.main" : "divider",
                         }}
                       />
                       {im.primary ? (
-                        <span style={{ position: "absolute", top: 4, left: 4, background: "#eab308", color: "#0a0e16", fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 4 }}>★</span>
+                        <Box
+                          component="span"
+                          sx={{
+                            position: "absolute",
+                            top: 4,
+                            left: 4,
+                            bgcolor: "warning.main",
+                            color: "background.default",
+                            fontSize: 9,
+                            fontWeight: 800,
+                            px: 0.625,
+                            py: "1px",
+                            borderRadius: 0.5,
+                          }}
+                        >
+                          ★
+                        </Box>
                       ) : null}
-                    </div>
+                    </Box>
                   ))}
-                </div>
+                </Stack>
               )}
-            </section>
-          </div>
+            </Box>
+          </Stack>
 
-          <div style={{ position: "sticky", top: 16 }}>
+          <Box sx={{ position: "sticky", top: 16 }}>
             <OnAirPreview type={type} entity={content.entity ?? {}} images={content.images} />
-          </div>
-        </div>
+          </Box>
+        </Box>
       )}
 
       {editing && content ? (
@@ -142,9 +175,9 @@ export default function AdminContentDetailPage() {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: "#5b6577", marginBottom: 10 }}>
+    <Typography variant="overline" color="text.secondary" component="div" sx={{ mb: 1.25 }}>
       {children}
-    </div>
+    </Typography>
   );
 }
 

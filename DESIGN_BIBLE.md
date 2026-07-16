@@ -23,6 +23,11 @@ inventing a new brand:
 |---|---|---|---|---|
 | `aurora` (default) | LIVE WEATHER GLOBE | GLOBAL WEATHER & FLIGHT OPS | `#38bdf8` (sky blue) | Calm, blue-chip global news |
 | `command` | G.O.D.S. COMMAND | GLOBAL OBSERVATION & DEFENSE SYSTEM | `#f5b301` (amber) | Militaristic ops-room / "situation room" |
+<!-- NOTE: the shipped G.O.D.S. banner (public/public/gods_banner_transparent.png,
+     used in the /admin top bar) reads "GLOBAL ORBITAL DETECTION SYSTEM" and is
+     cyan, not amber. The asset and this row disagree — the asset is what users
+     actually see. Reconcile before treating this row as authoritative. -->
+
 | `storm` | STORM WATCH LIVE | SEVERE WEATHER OPERATIONS | `#f43f5e` (rose red) | Urgent severe-weather special coverage |
 
 Regardless of theme, the **LIVE badge is always broadcast-red `#ff3b3b`** —
@@ -248,20 +253,44 @@ magenta at the very top to stay visually distinct from "severe weather" red.)
 
 ### 4.6 Admin / operator-tooling palette (flat, utilitarian — deliberately NOT glassy)
 
+**The admin surface is MUI.** `/admin` is built on MUI v9 with a theme generated
+from `public/src/theme/tokens.ts` → `adminTheme.ts`, mounted for the `/admin`
+subtree only (`AdminThemeProvider`). Don't hardcode these hexes in a component —
+import the token or read the theme. They're listed here for off-repo consumers.
+
 ```
-page background:     #0a0e16
-header/topbar:        #0c111c
-card/row background:  #0c111c (active) / transparent (inactive)
-borders/dividers:     #1b2030, #2a3344, #3a4152
-primary text:         #ffffff / #cdd4e0
-muted/secondary text: #8b95a7
-dim/tertiary text:    #5b6577
-error banner bg/border/text: #1a0d12 / #3a1620 / #fca5a5
-border-radius:        6–8px (flat, small radius — NOT the 10–14px glass-card radius)
+page background (default):  #070a10
+panel/card (paper):         #0f151f
+raised (nested, hover, th): #161e2c
+sunken (log/code wells):    #05070c
+hairline / divider:         #232c3d      (strong: #33415a)
+primary text:               #e6edf7
+secondary text:             #94a3b8
+disabled/tertiary text:     #5b6577
+accent (primary):           #38bdf8      (the product's own sky blue, §1)
+border-radius:              6  (flat, small — NOT the 10–14px glass-card radius)
+box-shadow:                 none, at every elevation
 ```
 
+Superseded the original ramp (page `#0a0e16` / card `#0c111c` / border `#1b2030`),
+which put page and card within ~2% luminance of each other behind a hairline you
+couldn't see — nothing read as an object. Depth now comes from the
+page→panel→raised surface ramp plus a hairline that's actually visible, never
+from a shadow.
+
+Semantic colours are **not** a separate admin scheme: MUI's
+`success`/`warning`/`error` are wired straight to the product severity ramp
+(§4.4), so an admin "healthy/failed" chip and an on-air severity badge agree on
+what green and red mean.
+
+**Accent discipline.** The accent is for *one* thing per view — the primary
+action, or the one row worth spotting from across the room. Buttons are
+`variant="outlined"` by default (§5.6). A grid of filled accent buttons turns
+the accent into the background and leaves the eye nowhere to land.
+
 No blur, no gradients, no glass here — this is the "engine room," and it
-should look like one.
+should look like one. MUI's dark mode paints an elevation gradient onto every
+`Paper` by default; the theme explicitly turns that off.
 
 ---
 

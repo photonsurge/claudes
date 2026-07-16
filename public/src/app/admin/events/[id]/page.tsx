@@ -9,6 +9,11 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Box from "@mui/material/Box";
+import Link from "@mui/material/Link";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 import Sparkline from "../../../../components/Sparkline";
 import { getEventDetail, eventStatusColor, type EventDetail } from "../../../../lib/events";
@@ -51,16 +56,17 @@ const beatGlyph = (type: string): string => {
   }
 };
 
-const card: React.CSSProperties = {
-  background: "#0f1420",
-  border: "1px solid #1c2333",
-  borderRadius: 10,
-  padding: "14px 16px",
-  marginBottom: 16,
-};
-const cardTitle: React.CSSProperties = { margin: "0 0 10px", fontSize: 14, color: "#c9d1e0", fontWeight: 600 };
-const dim: React.CSSProperties = { color: "#8b95a7", fontSize: 12 };
-const link: React.CSSProperties = { color: "#60a5fa", textDecoration: "none", wordBreak: "break-all" };
+/** Section card — the dossier is a stack of these, one per acquisition surface. */
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <Paper sx={{ p: 2, mb: 2 }}>
+      <Typography variant="h3" component="h3" sx={{ mb: 1.25 }}>
+        {title}
+      </Typography>
+      {children}
+    </Paper>
+  );
+}
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -81,14 +87,18 @@ export default function EventDetailPage() {
   if (missing) {
     return (
       <AdminPageShell title="Event" crumbs={[{ href: "/admin/events", label: "Watched Events" }, { label: "—" }]}>
-        <p style={{ color: "#f85149" }}>No such event.</p>
+        <Typography variant="body2" color="error.main">
+          No such event.
+        </Typography>
       </AdminPageShell>
     );
   }
   if (!d) {
     return (
       <AdminPageShell title="Event" crumbs={[{ href: "/admin/events", label: "Watched Events" }, { label: "…" }]}>
-        <p style={dim}>Loading…</p>
+        <Typography variant="body2" color="text.secondary">
+          Loading…
+        </Typography>
       </AdminPageShell>
     );
   }
@@ -98,125 +108,168 @@ export default function EventDetailPage() {
     <AdminPageShell
       title={e.title || e.primarySourceId}
       description={
-        <span>
-          <span style={{ color: eventStatusColor(e.status), fontWeight: 600 }}>{e.status}</span> · {e.type} ·{" "}
-          {e.primarySource}:{e.primarySourceId}
-        </span>
+        <Box component="span">
+          <Box component="span" sx={{ color: eventStatusColor(e.status), fontWeight: 600 }}>
+            {e.status}
+          </Box>{" "}
+          · {e.type} · <code>{e.primarySource}:{e.primarySourceId}</code>
+        </Box>
       }
       crumbs={[{ href: "/admin/events", label: "Watched Events" }, { label: e.title || e.primarySourceId }]}
     >
       {/* Timeline */}
-      <div style={card}>
-        <h3 style={cardTitle}>Timeline ({d.timeline.length})</h3>
+      <Card title={`Timeline (${d.timeline.length})`}>
         {d.timeline.length === 0 ? (
-          <p style={dim}>No beats yet.</p>
+          <Typography variant="body2" color="text.secondary">
+            No beats yet.
+          </Typography>
         ) : (
-          <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          <Box component="ol" sx={{ listStyle: "none", m: 0, p: 0 }}>
             {d.timeline.map((b, i) => (
-              <li key={i} style={{ display: "flex", gap: 10, padding: "5px 0", borderBottom: "1px solid #161c2b" }}>
-                <span style={{ width: 22 }}>{beatGlyph(b.type)}</span>
-                <span style={{ width: 130, ...dim }}>{fmtTime(b.at)}</span>
-                <span style={{ flex: 1, fontSize: 13 }}>{b.label}</span>
-                {b.source ? <span style={dim}>{b.source}</span> : null}
-              </li>
+              <Stack
+                key={i}
+                component="li"
+                direction="row"
+                spacing={1.25}
+                sx={{ py: 0.625, borderBottom: 1, borderColor: "divider" }}
+              >
+                <Box component="span" sx={{ width: 22 }}>
+                  {beatGlyph(b.type)}
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ width: 130 }}>
+                  <code>{fmtTime(b.at)}</code>
+                </Typography>
+                <Typography variant="body2" sx={{ flex: 1 }}>
+                  {b.label}
+                </Typography>
+                {b.source ? (
+                  <Typography variant="caption" color="text.secondary">
+                    {b.source}
+                  </Typography>
+                ) : null}
+              </Stack>
             ))}
-          </ol>
+          </Box>
         )}
-      </div>
+      </Card>
 
       {/* Snapshots */}
       {d.snapshots.length > 0 && (
-        <div style={card}>
-          <h3 style={cardTitle}>Snapshots ({d.snapshots.length})</h3>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        <Card title={`Snapshots (${d.snapshots.length})`}>
+          <Stack direction="row" spacing={1.25} sx={{ flexWrap: "wrap", gap: 1.25 }}>
             {d.snapshots.map((s) => (
-              <a key={s.id} href={`/api/events/snapshot/${s.id}?v=${encodeURIComponent(s.capturedAt)}`} target="_blank" rel="noreferrer">
+              <Link
+                key={s.id}
+                href={`/api/events/snapshot/${s.id}?v=${encodeURIComponent(s.capturedAt)}`}
+                target="_blank"
+                rel="noreferrer"
+                underline="none"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <Box
+                  component="img"
                   src={`/api/events/snapshot/${s.id}?v=${encodeURIComponent(s.capturedAt)}`}
                   alt={s.kind}
-                  style={{ width: 200, height: "auto", borderRadius: 6, border: "1px solid #1c2333", display: "block" }}
+                  sx={{ width: 200, height: "auto", borderRadius: 1, border: 1, borderColor: "divider", display: "block" }}
                 />
-                <span style={dim}>
+                <Typography variant="caption" color="text.secondary">
                   {s.kind}
-                  {s.layer ? ` · ${s.layer}` : ""} · {fmtTime(s.capturedAt)}
-                </span>
-              </a>
+                  {s.layer ? ` · ${s.layer}` : ""} · <code>{fmtTime(s.capturedAt)}</code>
+                </Typography>
+              </Link>
             ))}
-          </div>
-        </div>
+          </Stack>
+        </Card>
       )}
 
       {/* Series */}
       {d.series.length > 0 && (
-        <div style={card}>
-          <h3 style={cardTitle}>Metric series</h3>
+        <Card title="Metric series">
           {d.series.map((s) => (
-            <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 0" }}>
-              <span style={{ width: 160, fontSize: 13 }}>
+            <Stack key={s.key} direction="row" spacing={1.5} sx={{ alignItems: "center", py: 0.5 }}>
+              <Typography variant="body2" sx={{ width: 160 }}>
                 {s.source}:{s.metric}
-              </span>
+              </Typography>
               <Sparkline samples={s.samples} />
-              <span style={dim}>latest {s.latest}</span>
-            </div>
+              <Typography variant="caption" color="text.secondary">
+                latest <code>{s.latest}</code>
+              </Typography>
+            </Stack>
           ))}
-        </div>
+        </Card>
       )}
 
       {/* Resources */}
       {d.resources.length > 0 && (
-        <div style={card}>
-          <h3 style={cardTitle}>Resources ({d.resources.length})</h3>
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
+        <Card title={`Resources (${d.resources.length})`}>
+          <Box component="ul" sx={{ m: 0, pl: 2.25 }}>
             {d.resources.map((r) => (
-              <li key={r.id} style={{ padding: "3px 0", fontSize: 13 }}>
-                <span style={{ ...dim, marginRight: 6 }}>[{r.kind}]</span>
-                <a href={r.url} target="_blank" rel="noreferrer" style={link}>
+              <Box component="li" key={r.id} sx={{ py: 0.375 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ mr: 0.75 }}>
+                  [{r.kind}]
+                </Typography>
+                <Link href={r.url} target="_blank" rel="noreferrer" variant="body2" sx={{ wordBreak: "break-all" }}>
                   {r.title || r.url}
-                </a>
-                {r.attribution ? <span style={{ ...dim, marginLeft: 6 }}>— {r.attribution}</span> : null}
-                {!r.rebroadcastSafe ? <span style={{ color: "#d29922", marginLeft: 6, fontSize: 11 }}>ref-only</span> : null}
-              </li>
+                </Link>
+                {r.attribution ? (
+                  <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.75 }}>
+                    — {r.attribution}
+                  </Typography>
+                ) : null}
+                {/* Licence-critical: a ref-only resource must never be rebroadcast. */}
+                {!r.rebroadcastSafe ? (
+                  <Typography component="span" variant="caption" sx={{ color: "warning.main", ml: 0.75 }}>
+                    ref-only
+                  </Typography>
+                ) : null}
+              </Box>
             ))}
-          </ul>
-        </div>
+          </Box>
+        </Card>
       )}
 
       {/* Sources + links */}
-      <div style={card}>
-        <h3 style={cardTitle}>Sources ({d.sources.length})</h3>
+      <Card title={`Sources (${d.sources.length})`}>
         {d.sources.length === 0 ? (
-          <p style={dim}>No contributing sources acquired yet.</p>
+          <Typography variant="body2" color="text.secondary">
+            No contributing sources acquired yet.
+          </Typography>
         ) : (
           d.sources.map((s) => (
-            <div key={s.id} style={{ padding: "4px 0", fontSize: 13, borderBottom: "1px solid #161c2b" }}>
-              <strong>{s.source}</strong> <span style={dim}>#{s.sourceEventId}</span> · changed {fmtTime(s.lastChangedAt)}{" "}
-              <span style={dim}>hash {s.currentPayloadHash?.slice(0, 10)}</span>
-            </div>
+            <Typography key={s.id} variant="body2" component="div" sx={{ py: 0.5, borderBottom: 1, borderColor: "divider" }}>
+              <strong>{s.source}</strong>{" "}
+              <Typography component="span" variant="caption" color="text.secondary">
+                #<code>{s.sourceEventId}</code>
+              </Typography>{" "}
+              · changed <code>{fmtTime(s.lastChangedAt)}</code>{" "}
+              <Typography component="span" variant="caption" color="text.secondary">
+                hash <code>{s.currentPayloadHash?.slice(0, 10)}</code>
+              </Typography>
+            </Typography>
           ))
         )}
         {d.links.length > 0 && (
-          <div style={{ marginTop: 8 }}>
+          <Box sx={{ mt: 1 }}>
             {d.links.map((l) => (
-              <div key={l.id} style={{ ...dim, padding: "2px 0" }}>
-                🔗 {l.source}:{l.externalId} · {l.matchMethod}
+              <Typography key={l.id} variant="caption" color="text.secondary" sx={{ display: "block", py: 0.25 }}>
+                🔗 {l.source}:<code>{l.externalId}</code> · {l.matchMethod}
                 {l.matchScore != null ? ` (${l.matchScore})` : ""}
-              </div>
+              </Typography>
             ))}
-          </div>
+          </Box>
         )}
-      </div>
+      </Card>
 
       {/* Schedule */}
       {d.schedules.length > 0 && (
-        <div style={card}>
-          <h3 style={cardTitle}>Acquisition schedule</h3>
+        <Card title="Acquisition schedule">
           {d.schedules.map((s) => (
-            <div key={s.id} style={{ ...dim, padding: "2px 0" }}>
-              {s.source} · every {s.intervalSeconds}s · next {fmtTime(String(s.nextCheckAt))} · failures {s.failureCount}
-            </div>
+            <Typography key={s.id} variant="caption" color="text.secondary" sx={{ display: "block", py: 0.25 }}>
+              {s.source} · every <code>{s.intervalSeconds}</code>s · next <code>{fmtTime(String(s.nextCheckAt))}</code> ·
+              failures <code>{s.failureCount}</code>
+            </Typography>
           ))}
-        </div>
+        </Card>
       )}
     </AdminPageShell>
   );

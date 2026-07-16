@@ -10,6 +10,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
+import MuiLink from "@mui/material/Link";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import { isAdminEntityType } from "@photonsurge/shared/admin-content/types";
 import { ENTITY_SCHEMAS } from "@photonsurge/shared/admin-content/schema";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
@@ -45,7 +53,7 @@ export default function AdminContentListPage() {
   if (!valid) {
     return (
       <AdminPageShell title="Content" description="Unknown entity type.">
-        <div style={{ color: "#fca5a5" }}>No such content type.</div>
+        <Alert severity="error">No such content type.</Alert>
       </AdminPageShell>
     );
   }
@@ -60,102 +68,90 @@ export default function AdminContentListPage() {
       description={`Edit on-air text and images for ${schema.plural.toLowerCase()}${activeOnly ? " (active only)" : ""}. ${editedCount} curated.`}
       crumbs={[{ label: schema.plural }]}
       actions={
-        <input
+        <TextField
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={`Search ${schema.plural.toLowerCase()}…`}
-          style={{
-            background: "#0c111c",
-            color: "#fff",
-            border: "1px solid #1b2030",
-            borderRadius: 6,
-            padding: "7px 10px",
-            fontSize: 13,
-            minWidth: 240,
-          }}
+          sx={{ minWidth: 240 }}
         />
       }
     >
       {loading ? (
-        <div style={{ color: "#8b95a7" }}>Loading…</div>
+        <Typography color="text.secondary">Loading…</Typography>
       ) : filtered.length === 0 ? (
-        <div style={{ color: "#8b95a7" }}>{items.length ? "No matches." : "Nothing here yet."}</div>
+        <Typography color="text.secondary">{items.length ? "No matches." : "Nothing here yet."}</Typography>
       ) : (
-        <div style={{ display: "grid", gap: 8 }}>
-          <div style={{ color: "#5b6577", fontSize: 12 }}>{filtered.length.toLocaleString()} items</div>
+        <Stack spacing={1}>
+          <Typography variant="caption" color="text.disabled">
+            {filtered.length.toLocaleString()} items
+          </Typography>
           {filtered.map((i) => (
-            <Link
+            <MuiLink
               key={i.id}
+              component={Link}
               href={`/admin/content/${type}/${encodeURIComponent(i.id)}`}
-              style={{ textDecoration: "none", color: "inherit" }}
+              underline="none"
+              color="inherit"
             >
-              <div
-                style={{
+              <Paper
+                sx={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 12,
-                  padding: "8px 12px",
-                  border: "1px solid #1b2030",
-                  borderRadius: 8,
-                  background: "#0c111c",
+                  gap: 1.5,
+                  px: 1.5,
+                  py: 1,
+                  transition: "border-color 120ms, background-color 120ms",
+                  "&:hover": { borderColor: "primary.main", bgcolor: "action.hover" },
                 }}
               >
-                <div
-                  style={{
+                <Box
+                  sx={{
                     width: 52,
                     height: 40,
-                    borderRadius: 5,
-                    background: "#0a0e16",
+                    borderRadius: 1,
+                    bgcolor: "background.default",
                     flexShrink: 0,
                     overflow: "hidden",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    color: "#3a4152",
+                    color: "text.disabled",
                     fontSize: 18,
                   }}
                 >
                   {i.primaryImageId ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={adminMediaPath(i.primaryImageId)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <Box
+                      component="img"
+                      src={adminMediaPath(i.primaryImageId)}
+                      alt=""
+                      sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
                   ) : (
                     "▦"
                   )}
-                </div>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                </Box>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography sx={{ fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {i.name || i.id}
-                  </div>
-                  {i.subtitle ? <div style={{ fontSize: 12, color: "#8b95a7" }}>{i.subtitle}</div> : null}
-                </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-                  {i.edited ? <Tag color="#eab308" label="edited" /> : null}
-                  {i.imageCount > 0 ? <Tag color="#38bdf8" label={`${i.imageCount} img`} /> : null}
-                  <span style={{ color: "#3a4152" }}>›</span>
-                </div>
-              </div>
-            </Link>
+                  </Typography>
+                  {i.subtitle ? (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      {i.subtitle}
+                    </Typography>
+                  ) : null}
+                </Box>
+                <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", flexShrink: 0 }}>
+                  {i.edited ? <Chip color="warning" label="edited" /> : null}
+                  {i.imageCount > 0 ? <Chip color="primary" label={`${i.imageCount} img`} /> : null}
+                  <Box component="span" aria-hidden sx={{ color: "text.disabled" }}>
+                    ›
+                  </Box>
+                </Stack>
+              </Paper>
+            </MuiLink>
           ))}
-        </div>
+        </Stack>
       )}
     </AdminPageShell>
-  );
-}
-
-function Tag({ color, label }: { color: string; label: string }) {
-  return (
-    <span
-      style={{
-        fontSize: 10,
-        fontWeight: 800,
-        letterSpacing: 0.5,
-        color,
-        border: `1px solid ${color}55`,
-        borderRadius: 4,
-        padding: "1px 6px",
-      }}
-    >
-      {label}
-    </span>
   );
 }

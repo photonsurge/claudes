@@ -11,6 +11,11 @@
  * thing anyone will actually do.
  */
 import { useState } from "react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+import { font, surface } from "../../theme/tokens";
 
 export interface BacklogRow {
   type: string;
@@ -44,93 +49,83 @@ export default function QueueBacklog({
   const [confirming, setConfirming] = useState<string | null>(null);
 
   if (!rows.length) {
-    return <div style={{ color: "#8b95a7", fontSize: 12, padding: "8px 0" }}>Nothing queued.</div>;
+    return (
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", py: 1 }}>
+        Nothing queued.
+      </Typography>
+    );
   }
 
   const total = rows.reduce((n, r) => n + r.count, 0);
 
   return (
-    <div>
-      <div style={{ color: "#8b95a7", fontSize: 12, marginBottom: 8 }}>
+    <Box>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
         {total} queued across {rows.length} job {rows.length === 1 ? "kind" : "kinds"} — biggest first.
         Cancelling removes every one that hasn&apos;t started; a running job finishes, and the
         schedule re-arms as normal.
-      </div>
+      </Typography>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <Stack spacing={0.5}>
         {rows.map((r) => {
           const key = `${r.type}.${r.event}`;
           const isConfirming = confirming === key;
           return (
-            <div
+            <Stack
               key={key}
-              style={{
-                display: "flex",
+              direction="row"
+              spacing={1.25}
+              sx={{
                 alignItems: "center",
-                gap: 10,
-                padding: "6px 10px",
-                borderRadius: 6,
-                background: "#131a26",
-                border: "1px solid #2a3344",
+                px: 1.25,
+                py: 0.75,
+                borderRadius: 1,
+                bgcolor: surface.raised,
+                border: "1px solid",
+                borderColor: "divider",
               }}
             >
-              <span
-                style={{
-                  minWidth: 34,
-                  textAlign: "right",
-                  color: r.count >= 20 ? "#fbbf24" : "#e6edf7",
-                  fontWeight: 600,
-                  fontSize: 13,
-                }}
+              {/* A pile ≥20 deep is the one worth looking at, so the count carries it. */}
+              <Typography
+                variant="body2"
+                color={r.count >= 20 ? "warning.main" : "text.primary"}
+                sx={{ minWidth: 34, textAlign: "right", fontWeight: 600, fontFamily: font.mono, fontVariantNumeric: "tabular-nums" }}
               >
                 {r.count}
-              </span>
-              <span style={{ flex: 1, fontSize: 13, color: "#e6edf7" }}>{key}</span>
-              <span style={{ color: "#8b95a7", fontSize: 11 }} title="age of the oldest one waiting">
+              </Typography>
+              <Typography variant="body2" sx={{ flex: 1, fontFamily: font.mono }}>
+                {key}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" title="age of the oldest one waiting" sx={{ fontVariantNumeric: "tabular-nums" }}>
                 oldest {age(r.oldest, now)}
-              </span>
+              </Typography>
 
               {isConfirming ? (
                 <>
-                  <button
-                    type="button"
+                  <Button
+                    variant="outlined"
+                    color="error"
                     disabled={busy}
                     onClick={() => {
                       onCancel(r.type, r.event);
                       setConfirming(null);
                     }}
-                    style={btn("#7f1d1d")}
                   >
                     Cancel {r.count}?
-                  </button>
-                  <button type="button" onClick={() => setConfirming(null)} style={btn("#1b2436")}>
+                  </Button>
+                  <Button variant="outlined" onClick={() => setConfirming(null)}>
                     No
-                  </button>
+                  </Button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setConfirming(key)}
-                  style={btn("#1b2436")}
-                >
+                <Button variant="outlined" disabled={busy} onClick={() => setConfirming(key)}>
                   Cancel
-                </button>
+                </Button>
               )}
-            </div>
+            </Stack>
           );
         })}
-      </div>
-    </div>
+      </Stack>
+    </Box>
   );
 }
-
-const btn = (bg: string): React.CSSProperties => ({
-  padding: "3px 10px",
-  borderRadius: 5,
-  border: "1px solid #2a3344",
-  background: bg,
-  color: "#fff",
-  cursor: "pointer",
-  fontSize: 11,
-});

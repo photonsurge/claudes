@@ -1,17 +1,32 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import Typography from "@mui/material/Typography";
 import type { iLogModel } from "@photonsurge/shared/db/log-model";
+import { font, surface } from "../../theme/tokens";
 
 const LEVELS = ["error", "warn", "info", "event", "log"] as const;
 type Level = (typeof LEVELS)[number];
 
-const LEVEL_STYLE: Record<string, { fg: string; bg: string }> = {
-  error: { fg: "#fecaca", bg: "#7f1d1d" },
-  warn: { fg: "#fde68a", bg: "#78350f" },
-  info: { fg: "#bfdbfe", bg: "#1e3a5f" },
-  event: { fg: "#bbf7d0", bg: "#14532d" },
-  log: { fg: "#d1d5db", bg: "#374151" },
+/**
+ * Levels map onto the theme's status ramp rather than carrying their own
+ * palette, so an `error` line here reads the same red as an error anywhere else
+ * in the product. `log`/`info` have no severity to signal, hence the neutrals.
+ */
+type LevelColor = "error" | "warning" | "info" | "success" | "default";
+const LEVEL_COLOR: Record<string, LevelColor> = {
+  error: "error",
+  warn: "warning",
+  info: "info",
+  event: "success",
+  log: "default",
 };
 
 function relTime(iso: string, now: number): string {
@@ -22,24 +37,13 @@ function relTime(iso: string, now: number): string {
 }
 
 function Pill({ level }: { level: string }) {
-  const s = LEVEL_STYLE[level] ?? LEVEL_STYLE.log;
   return (
-    <span
-      style={{
-        color: s.fg,
-        background: s.bg,
-        borderRadius: 4,
-        padding: "1px 6px",
-        fontSize: 10,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: 0.3,
-        minWidth: 38,
-        textAlign: "center",
-      }}
-    >
-      {level}
-    </span>
+    <Chip
+      label={level}
+      variant="filled"
+      color={LEVEL_COLOR[level] ?? "default"}
+      sx={{ minWidth: 46, height: 16, fontSize: 10, flexShrink: 0 }}
+    />
   );
 }
 
@@ -93,124 +97,140 @@ export default function LogTail({
   }, [logs, active, search]);
 
   return (
-    <div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <h3 style={{ margin: 0, fontSize: 14 }}>
-          {title} <span style={{ color: "#5b6577", fontWeight: 400 }}>{shown.length}</span>
-        </h3>
-        <div style={{ display: "flex", gap: 5 }}>
+    <Box>
+      <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+        <Typography variant="h3" component="h3">
+          {title}{" "}
+          <Box component="span" sx={{ color: "text.disabled", fontWeight: 400, fontFamily: font.mono, fontVariantNumeric: "tabular-nums" }}>
+            {shown.length}
+          </Box>
+        </Typography>
+        {/*
+          A ToggleButtonGroup rather than filter chips: the levels are a
+          multi-select of pressed/unpressed states, and `aria-pressed` is what
+          actually tells a screen reader which filters are on.
+        */}
+        <ToggleButtonGroup
+          value={[...active]}
+          onChange={(_e, next: Level[]) => setActive(new Set(next))}
+          size="small"
+          aria-label="Filter by level"
+          sx={{
+            "& .MuiToggleButton-root": {
+              px: 0.875,
+              py: 0.25,
+              fontSize: 10,
+              fontWeight: 700,
+              lineHeight: 1.4,
+              letterSpacing: 0.3,
+              color: "text.disabled",
+              borderColor: "divider",
+            },
+          }}
+        >
           {LEVELS.map((l) => {
-            const on = active.has(l);
-            const s = LEVEL_STYLE[l];
+            const tone = LEVEL_COLOR[l];
             return (
-              <button
+              <ToggleButton
                 key={l}
-                type="button"
-                onClick={() => toggleLevel(l)}
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  padding: "2px 7px",
-                  borderRadius: 4,
-                  cursor: "pointer",
-                  border: `1px solid ${on ? s.bg : "#2a3344"}`,
-                  background: on ? s.bg : "transparent",
-                  color: on ? s.fg : "#5b6577",
+                value={l}
+                aria-label={l}
+                sx={{
+                  // Selected takes the level's own status colour, so which
+                  // filter is on is legible without reading the labels.
+                  "&.Mui-selected": {
+                    color: tone === "default" ? "text.primary" : `${tone}.main`,
+                    borderColor: tone === "default" ? "divider" : `${tone}.main`,
+                  },
                 }}
               >
                 {l}
-              </button>
+              </ToggleButton>
             );
           })}
-        </div>
-        <input
+        </ToggleButtonGroup>
+        <TextField
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="filter…"
-          style={{
-            flex: 1,
-            minWidth: 120,
-            background: "#0a0e16",
-            color: "#fff",
-            border: "1px solid #2a3344",
-            borderRadius: 5,
-            padding: "4px 8px",
-            fontSize: 12,
-          }}
+          slotProps={{ htmlInput: { "aria-label": "Filter log entries" } }}
+          sx={{ flex: 1, minWidth: 120 }}
         />
-        <button
-          type="button"
+        <Button
+          variant="outlined"
           onClick={() => setLive((v) => !v)}
           title={live ? "Pause auto-refresh" : "Resume"}
-          style={{
-            fontSize: 11,
-            padding: "4px 9px",
-            borderRadius: 5,
-            border: "1px solid #2a3344",
-            background: live ? "#14532d" : "#1a1f2b",
-            color: live ? "#bbf7d0" : "#8b95a7",
-            cursor: "pointer",
-          }}
+          sx={{ minHeight: 28, whiteSpace: "nowrap", ...(live && { color: "success.main", borderColor: "success.main" }) }}
         >
           {live ? "● live" : "paused"}
-        </button>
-      </div>
+        </Button>
+      </Stack>
 
-      <div
-        style={{
-          marginTop: 10,
-          border: "1px solid #1b2030",
-          borderRadius: 8,
-          background: "#0a0e16",
+      {/* A log tail is a reading, end to end: sunken well, mono, tabular. */}
+      <Box
+        sx={{
+          mt: 1.25,
+          border: 1,
+          borderColor: "divider",
+          borderRadius: 1,
+          bgcolor: surface.sunken,
           maxHeight: 520,
           overflowY: "auto",
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontFamily: font.mono,
+          fontVariantNumeric: "tabular-nums",
           fontSize: 12,
         }}
       >
         {shown.map((l) => {
           const hasStuff = l.stuff != null && Object.keys(l.stuff as object).length > 0;
           return (
-            <div key={l.id} style={{ borderTop: "1px solid #121826" }}>
-              <div
+            <Box key={l.id} sx={{ borderTop: 1, borderColor: "divider" }}>
+              <Box
                 onClick={() => hasStuff && setOpen(open === l.id ? null : l.id)}
-                style={{
+                sx={{
                   display: "flex",
-                  gap: 9,
+                  gap: 1.125,
                   alignItems: "baseline",
-                  padding: "5px 10px",
+                  px: 1.25,
+                  py: 0.625,
                   cursor: hasStuff ? "pointer" : "default",
                 }}
               >
-                <span style={{ color: "#475569", width: 30, textAlign: "right" }} title={new Date(l.timestamp).toLocaleString()}>
+                <Box component="span" sx={{ color: "text.disabled", width: 30, textAlign: "right", flexShrink: 0 }} title={new Date(l.timestamp).toLocaleString()}>
                   {relTime(l.timestamp, now)}
-                </span>
+                </Box>
                 <Pill level={l.level} />
-                <span style={{ color: "#64748b", whiteSpace: "nowrap" }}>
+                <Box component="span" sx={{ color: "text.secondary", whiteSpace: "nowrap" }}>
                   {l.instance}:{l.tag}
-                </span>
-                <span style={{ color: "#e5e7eb", flex: 1, wordBreak: "break-word" }}>{l.message}</span>
-                {hasStuff && <span style={{ color: "#475569" }}>{open === l.id ? "▾" : "▸"}</span>}
-              </div>
+                </Box>
+                <Box component="span" sx={{ color: "text.primary", flex: 1, wordBreak: "break-word" }}>
+                  {l.message}
+                </Box>
+                {hasStuff && <Box component="span" sx={{ color: "text.disabled" }}>{open === l.id ? "▾" : "▸"}</Box>}
+              </Box>
               {open === l.id && hasStuff && (
-                <pre
-                  style={{
-                    margin: 0,
-                    padding: "0 10px 8px 49px",
-                    color: "#94a3b8",
+                <Box
+                  component="pre"
+                  sx={{
+                    m: 0,
+                    pl: "49px",
+                    pr: 1.25,
+                    pb: 1,
+                    color: "text.secondary",
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",
                   }}
                 >
                   {JSON.stringify(l.stuff, null, 2)}
-                </pre>
+                </Box>
               )}
-            </div>
+            </Box>
           );
         })}
-        {shown.length === 0 && <div style={{ padding: 14, color: "#5b6577" }}>No matching log entries.</div>}
-      </div>
-    </div>
+        {shown.length === 0 && (
+          <Box sx={{ p: 1.75, color: "text.disabled" }}>No matching log entries.</Box>
+        )}
+      </Box>
+    </Box>
   );
 }

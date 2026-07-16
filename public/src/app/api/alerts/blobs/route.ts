@@ -55,7 +55,11 @@ function pickRepresentative(members: { id: string; sent?: string | Date | null }
  */
 async function GET__impl(_req: Request) {
   try {
-    const body = await withCache(`feed:v1:alert-blobs`, FEED_TTL_SEC, async () => {
+    // `withCache` hands back an ENVELOPE — { value, hit } — not the body. Sending
+    // it straight to the client wrapped the whole feed in `.value`, the overlay
+    // read `.features` off the wrapper, got undefined, and drew nothing: a 2.8MB
+    // 200 OK and an empty globe. Every other feed route destructures this.
+    const { value, hit } = await withCache(`feed:v1:alert-blobs`, FEED_TTL_SEC, async () => {
       const db = await getAppDb();
       const { blobs } = await db.alertBlobs.list();
       const wanted = blobs;
@@ -121,7 +125,10 @@ async function GET__impl(_req: Request) {
       return { features, count: features.length };
     });
 
-    return NextResponse.json(body, { status: 200, headers: NO_CACHE });
+    return NextResponse.json(value, {
+      status: 200,
+      headers: { ...NO_CACHE, "X-Cache": hit ? "hit" : "miss" },
+    });
   } catch (err) {
     // The overlay keeps its last good features, so an empty list here just means
     // "nothing new to draw" rather than blanking the globe mid-broadcast.

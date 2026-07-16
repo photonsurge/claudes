@@ -8,6 +8,18 @@
  * Socket.IO `summaries:updated` event live-refreshes the view.
  */
 import { useCallback, useEffect, useState } from "react";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableRow from "@mui/material/TableRow";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
 import { SUMMARIES_UPDATED } from "@photonsurge/shared/control";
 import { useSocket } from "../../../lib/socket-provider";
 import { severityColor, severityLabel } from "../../../lib/alerts";
@@ -19,6 +31,7 @@ import {
   type EventSummary,
 } from "../../../lib/summaries";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import { surface } from "../../../theme/tokens";
 
 const fmtTime = (iso?: string | Date): string => {
   if (!iso) return "—";
@@ -95,296 +108,267 @@ export default function SummariesPage() {
       title="Round-ups"
       description="Scheduled global weather-event summaries and broadcast narrative."
       actions={
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 2, background: "#0c111c", border: "1px solid #1b2030", borderRadius: 8, padding: 3 }}>
+        <>
+          <Stack direction="row" spacing={0.875} useFlexGap sx={{ flexWrap: "wrap" }}>
             {SUMMARY_PERIODS.map((p) => (
-              <button
+              <Chip
                 key={p.id}
-                type="button"
+                label={p.label}
                 onClick={() => setPeriod(p.id)}
-                style={{
-                  ...tabBtn,
-                  ...(period === p.id ? { background: "#2563eb", color: "#fff" } : null),
-                }}
-              >
-                {p.label}
-              </button>
+                color={period === p.id ? "primary" : "default"}
+                variant={period === p.id ? "filled" : "outlined"}
+              />
             ))}
-          </div>
-          <button type="button" onClick={reload} style={primary} disabled={loading}>
+          </Stack>
+          <Button variant="outlined" onClick={reload} disabled={loading}>
             {loading ? "…" : "Refresh"}
-          </button>
-          <button type="button" onClick={generateNow} style={genBtn} disabled={!!genMsg}>
+          </Button>
+          {/* The one genuinely primary action here — everything else is a view switch. */}
+          <Button variant="contained" onClick={generateNow} disabled={!!genMsg}>
             Generate now
-          </button>
-        </div>
+          </Button>
+        </>
       }
     >
-        {genMsg && (
-          <div style={{ marginTop: 8, fontSize: 13, color: genMsg.startsWith("Failed") ? "#fca5a5" : "#86efac" }}>
-            {genMsg}
-          </div>
-        )}
+      {genMsg && (
+        <Alert severity={genMsg.startsWith("Failed") ? "error" : "info"} sx={{ mb: 2 }}>
+          {genMsg}
+        </Alert>
+      )}
 
-        {!shown ? (
-          <div style={{ marginTop: 24, color: "#8b95a7" }}>
-            {loading
-              ? "Loading…"
-              : "No round-up yet for this cadence. Click “Generate now” or wait for the worker's cron."}
-          </div>
-        ) : (
-          <>
-            <div style={{ marginTop: 10, color: "#8b95a7", fontSize: 13 }}>
-              Generated {fmtTime(shown.generatedAt)} · window {fmtTime(shown.windowStart)} → {fmtTime(shown.windowEnd)}
-              {shown.sources.length ? ` · sources: ${shown.sources.join(", ")}` : ""}
-            </div>
+      {!shown ? (
+        <Typography color="text.secondary" sx={{ mt: 3 }}>
+          {loading
+            ? "Loading…"
+            : "No round-up yet for this cadence. Click “Generate now” or wait for the worker's cron."}
+        </Typography>
+      ) : (
+        <>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.25 }}>
+            Generated {fmtTime(shown.generatedAt)} · window {fmtTime(shown.windowStart)} → {fmtTime(shown.windowEnd)}
+            {shown.sources.length ? ` · sources: ${shown.sources.join(", ")}` : ""}
+          </Typography>
 
-            {/* Stats cards */}
-            <div style={cardRow}>
-              <StatCard label="Active alerts" value={shown.stats.alertsActive} />
-              <StatCard label="Cyclones" value={shown.stats.cyclones} />
-              <StatCard
-                label="Earthquakes"
-                value={shown.stats.quakeCount}
-                sub={shown.stats.quakeMaxMag ? `max M${shown.stats.quakeMaxMag.toFixed(1)}` : undefined}
-              />
-              <StatCard
-                label="Volcanoes"
-                value={shown.stats.volcanoCount}
-                sub={shown.stats.volcanoErupting ? `${shown.stats.volcanoErupting} erupting` : undefined}
-              />
-              <StatCard label="Notable tracks" value={shown.stats.tracksNotable} />
-              <div style={{ ...card, flex: "1 1 260px" }}>
-                <div style={cardLabel}>Alerts by severity</div>
-                <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                  {[4, 3, 2, 1, 0].map((r) => {
-                    const n = shown.stats.alertsBySeverity[String(r)] ?? 0;
-                    if (!n) return null;
-                    return (
-                      <span
-                        key={r}
-                        title={severityLabel(r as 0)}
-                        style={{
-                          display: "inline-flex",
-                          gap: 4,
-                          padding: "2px 8px",
-                          borderRadius: 11,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: "#0a0e16",
-                          background: severityColor(r as 0),
-                        }}
-                      >
+          {/* Stats cards */}
+          <Stack direction="row" spacing={1.75} useFlexGap sx={{ flexWrap: "wrap", mt: 2 }}>
+            <StatCard label="Active alerts" value={shown.stats.alertsActive} />
+            <StatCard label="Cyclones" value={shown.stats.cyclones} />
+            <StatCard
+              label="Earthquakes"
+              value={shown.stats.quakeCount}
+              sub={shown.stats.quakeMaxMag ? `max M${shown.stats.quakeMaxMag.toFixed(1)}` : undefined}
+            />
+            <StatCard
+              label="Volcanoes"
+              value={shown.stats.volcanoCount}
+              sub={shown.stats.volcanoErupting ? `${shown.stats.volcanoErupting} erupting` : undefined}
+            />
+            <StatCard label="Notable tracks" value={shown.stats.tracksNotable} />
+            <Paper sx={{ p: 1.75, flex: "1 1 260px" }}>
+              <Typography variant="overline" color="text.secondary" sx={{ display: "block" }}>
+                Alerts by severity
+              </Typography>
+              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
+                {[4, 3, 2, 1, 0].map((r) => {
+                  const n = shown.stats.alertsBySeverity[String(r)] ?? 0;
+                  if (!n) return null;
+                  return (
+                    <Tooltip key={r} title={severityLabel(r as 0)}>
+                      <Box component="span" sx={{ ...severityBadge, px: 1, bgcolor: severityColor(r as 0) }}>
                         {r} · {n}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+                      </Box>
+                    </Tooltip>
+                  );
+                })}
+              </Stack>
+            </Paper>
+          </Stack>
 
-            {/* Narrative */}
-            <div style={{ ...card, marginTop: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={cardLabel}>Broadcast round-up</div>
-                <div style={{ fontSize: 11, color: "#6b7280" }}>
-                  {shown.narrativeStatus === "ok"
-                    ? `narrative by ${shown.llm?.model ?? "LLM"}${shown.llm?.completionTokens ? ` · ${shown.llm.completionTokens} tok` : ""}`
-                    : shown.narrativeStatus === "skipped"
-                      ? "narrative skipped (no OPENROUTER_API_KEY)"
-                      : `narrative error: ${shown.llm?.error ?? "unknown"}`}
-                </div>
-              </div>
-              {shown.narrative ? (
-                <pre style={narrativePre}>{shown.narrative}</pre>
-              ) : (
-                <div style={{ color: "#6b7280", fontSize: 13, marginTop: 10, fontStyle: "italic" }}>
-                  No narrative — the deterministic stats, hotspots and top events below are still available.
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 16, marginTop: 16 }}>
-              {/* Hotspots */}
-              <div style={card}>
-                <div style={cardLabel}>Hotspots ({shown.hotspots.length})</div>
-                <div style={{ marginTop: 8 }}>
-                  {shown.hotspots.slice(0, 12).map((hs, i) => (
-                    <div key={i} style={hotspotRow}>
-                      <span
-                        title={severityLabel(hs.maxSeverity)}
-                        style={{
-                          display: "inline-block",
-                          width: 22,
-                          textAlign: "center",
-                          borderRadius: 5,
-                          padding: "2px 0",
-                          fontWeight: 700,
-                          color: "#0a0e16",
-                          background: severityColor(hs.maxSeverity),
-                          flexShrink: 0,
-                        }}
-                      >
-                        {hs.maxSeverity}
-                      </span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600 }}>{hs.label}</div>
-                        <div style={{ color: "#8b95a7", fontSize: 12 }}>
-                          {hs.count} event{hs.count === 1 ? "" : "s"}
-                          {hs.hazards.length ? ` · ${hs.hazards.map((h) => hazardMeta(h as "other").icon).join(" ")}` : ""}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {!shown.hotspots.length && <div style={{ color: "#6b7280", fontSize: 13 }}>No hotspots.</div>}
-                </div>
-              </div>
-
-              {/* Top events */}
-              <div style={card}>
-                <div style={cardLabel}>Top events ({shown.topEvents.length})</div>
-                <table style={{ width: "100%", marginTop: 8, borderCollapse: "collapse", fontSize: 13 }}>
-                  <tbody>
-                    {shown.topEvents.map((ev, i) => (
-                      <tr key={i} style={{ borderTop: i ? "1px solid #1b2030" : undefined }}>
-                        <td style={{ padding: "6px 6px 6px 0", verticalAlign: "top", width: 26 }}>
-                          <span
-                            style={{
-                              display: "inline-block",
-                              width: 22,
-                              textAlign: "center",
-                              borderRadius: 5,
-                              padding: "2px 0",
-                              fontWeight: 700,
-                              color: "#0a0e16",
-                              background: severityColor(ev.severity),
-                            }}
-                          >
-                            {ev.severity}
-                          </span>
-                        </td>
-                        <td style={{ padding: "6px 0", verticalAlign: "top" }}>
-                          <div style={{ fontWeight: 600 }}>{ev.title}</div>
-                          <div style={{ color: "#8b95a7", fontSize: 12 }}>
-                            {ev.kind}
-                            {ev.source ? ` · ${ev.source}` : ""}
-                            {ev.at ? ` · ${fmtTime(ev.at)}` : ""}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {!shown.topEvents.length && (
-                      <tr>
-                        <td style={{ color: "#6b7280", fontSize: 13, padding: 6 }}>No events.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* History */}
-            {history.length > 1 && (
-              <div style={{ ...card, marginTop: 16 }}>
-                <div style={cardLabel}>History</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-                  {history.map((h) => (
-                    <button
-                      key={h.id}
-                      type="button"
-                      onClick={() => setSelectedId(h.id)}
-                      style={{
-                        ...historyChip,
-                        ...(h.id === selectedId ? { borderColor: "#2563eb", color: "#fff" } : null),
-                      }}
-                    >
-                      {fmtTime(h.generatedAt)} · {h.hotspots.length} hs
-                    </button>
-                  ))}
-                </div>
-              </div>
+          {/* Narrative */}
+          <Paper sx={{ p: 1.75, mt: 2 }}>
+            <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
+              <Typography variant="overline" color="text.secondary">
+                Broadcast round-up
+              </Typography>
+              <Typography variant="caption" color="text.disabled">
+                {shown.narrativeStatus === "ok"
+                  ? `narrative by ${shown.llm?.model ?? "LLM"}${shown.llm?.completionTokens ? ` · ${shown.llm.completionTokens} tok` : ""}`
+                  : shown.narrativeStatus === "skipped"
+                    ? "narrative skipped (no OPENROUTER_API_KEY)"
+                    : `narrative error: ${shown.llm?.error ?? "unknown"}`}
+              </Typography>
+            </Stack>
+            {shown.narrative ? (
+              <Narrative text={shown.narrative} />
+            ) : (
+              <Typography variant="body2" color="text.disabled" sx={{ mt: 1.25, fontStyle: "italic" }}>
+                No narrative — the deterministic stats, hotspots and top events below are still available.
+              </Typography>
             )}
-          </>
-        )}
+          </Paper>
+
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 2, mt: 2 }}>
+            {/* Hotspots */}
+            <Paper sx={{ p: 1.75 }}>
+              <Typography variant="overline" color="text.secondary" sx={{ display: "block" }}>
+                Hotspots ({shown.hotspots.length})
+              </Typography>
+              <Box sx={{ mt: 1 }}>
+                {shown.hotspots.slice(0, 12).map((hs, i) => (
+                  <Stack
+                    key={i}
+                    direction="row"
+                    spacing={1.25}
+                    sx={{ alignItems: "flex-start", py: 0.75, borderTop: "1px solid", borderColor: "divider" }}
+                  >
+                    <Tooltip title={severityLabel(hs.maxSeverity)}>
+                      <Box component="span" sx={{ ...severityBadge, bgcolor: severityColor(hs.maxSeverity) }}>
+                        {hs.maxSeverity}
+                      </Box>
+                    </Tooltip>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {hs.label}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {hs.count} event{hs.count === 1 ? "" : "s"}
+                        {hs.hazards.length ? ` · ${hs.hazards.map((h) => hazardMeta(h as "other").icon).join(" ")}` : ""}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                ))}
+                {!shown.hotspots.length && (
+                  <Typography variant="body2" color="text.disabled">
+                    No hotspots.
+                  </Typography>
+                )}
+              </Box>
+            </Paper>
+
+            {/* Top events */}
+            <Paper sx={{ p: 1.75 }}>
+              <Typography variant="overline" color="text.secondary" sx={{ display: "block" }}>
+                Top events ({shown.topEvents.length})
+              </Typography>
+              <Table sx={{ mt: 1 }}>
+                <TableBody>
+                  {shown.topEvents.map((ev, i) => (
+                    <TableRow key={i}>
+                      <TableCell sx={{ verticalAlign: "top", width: 34, pl: 0 }}>
+                        <Box component="span" sx={{ ...severityBadge, bgcolor: severityColor(ev.severity) }}>
+                          {ev.severity}
+                        </Box>
+                      </TableCell>
+                      <TableCell sx={{ verticalAlign: "top", px: 0 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {ev.title}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {ev.kind}
+                          {ev.source ? ` · ${ev.source}` : ""}
+                          {ev.at ? ` · ${fmtTime(ev.at)}` : ""}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!shown.topEvents.length && (
+                    <TableRow>
+                      <TableCell colSpan={2} sx={{ color: "text.disabled", pl: 0 }}>
+                        No events.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </Paper>
+          </Box>
+
+          {/* History */}
+          {history.length > 1 && (
+            <Paper sx={{ p: 1.75, mt: 2 }}>
+              <Typography variant="overline" color="text.secondary" sx={{ display: "block" }}>
+                History
+              </Typography>
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
+                {history.map((h) => (
+                  <Chip
+                    key={h.id}
+                    label={`${fmtTime(h.generatedAt)} · ${h.hotspots.length} hs`}
+                    onClick={() => setSelectedId(h.id)}
+                    color={h.id === selectedId ? "primary" : "default"}
+                    variant={h.id === selectedId ? "filled" : "outlined"}
+                  />
+                ))}
+              </Stack>
+            </Paper>
+          )}
+        </>
+      )}
     </AdminPageShell>
   );
 }
 
 function StatCard({ label, value, sub }: { label: string; value: number; sub?: string }) {
   return (
-    <div style={card}>
-      <div style={cardLabel}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4 }}>{value}</div>
-      {sub && <div style={{ color: "#8b95a7", fontSize: 12 }}>{sub}</div>}
-    </div>
+    <Paper sx={{ p: 1.75, flex: "1 1 150px" }}>
+      <Typography variant="overline" color="text.secondary" sx={{ display: "block" }}>
+        {label}
+      </Typography>
+      {/* A count is a reading — mono, tabular (DESIGN_BIBLE §3). */}
+      <Typography component="code" sx={{ display: "block", fontSize: 28, fontWeight: 700, mt: 0.5 }}>
+        {value}
+      </Typography>
+      {sub && (
+        <Typography variant="caption" color="text.secondary">
+          {sub}
+        </Typography>
+      )}
+    </Paper>
   );
 }
 
-const primary: React.CSSProperties = {
-  padding: "8px 14px",
-  borderRadius: 6,
-  border: "1px solid #333",
-  background: "#2563eb",
-  color: "#fff",
-  cursor: "pointer",
-};
-const genBtn: React.CSSProperties = {
-  padding: "8px 14px",
-  borderRadius: 6,
-  border: "1px solid #2a3344",
-  background: "#14532d",
-  color: "#bbf7d0",
-  cursor: "pointer",
-};
-const tabBtn: React.CSSProperties = {
-  padding: "6px 14px",
-  borderRadius: 6,
-  border: "none",
-  background: "transparent",
-  color: "#8b95a7",
-  cursor: "pointer",
-  fontSize: 13,
-  fontWeight: 600,
-};
-const card: React.CSSProperties = {
-  flex: "1 1 150px",
-  padding: 14,
-  borderRadius: 8,
-  border: "1px solid #1b2030",
-  background: "#0c111c",
-};
-const cardRow: React.CSSProperties = {
-  display: "flex",
-  gap: 14,
-  marginTop: 16,
-  flexWrap: "wrap",
-};
-const cardLabel: React.CSSProperties = { color: "#8b95a7", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 };
-const hotspotRow: React.CSSProperties = {
-  display: "flex",
-  gap: 10,
-  alignItems: "flex-start",
-  padding: "6px 0",
-  borderTop: "1px solid #121622",
-};
-const historyChip: React.CSSProperties = {
-  padding: "4px 9px",
-  borderRadius: 6,
-  border: "1px solid #2a3344",
-  background: "#0a0e16",
-  color: "#8b95a7",
-  cursor: "pointer",
+/**
+ * The narrative is prose written for an anchor to read, not a reading — so it
+ * stays in the sans face despite sitting in a `<pre>` (which is only there to
+ * honour the LLM's own line breaks).
+ */
+function Narrative({ text }: { text: string }) {
+  return (
+    <Typography
+      component="pre"
+      sx={{
+        m: 0,
+        mt: 1.25,
+        p: "12px 14px",
+        bgcolor: surface.sunken,
+        color: "text.primary",
+        fontFamily: "inherit",
+        fontSize: 14,
+        lineHeight: 1.6,
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+        borderRadius: 1,
+      }}
+    >
+      {text}
+    </Typography>
+  );
+}
+
+/**
+ * The severity swatch. The background is spread in per-rank at each use site
+ * from the §4.4 ramp — the ink is `page` rather than a light tone because every
+ * rank on that ramp is a saturated fill.
+ */
+const severityBadge = {
+  display: "inline-block",
+  minWidth: 22,
+  textAlign: "center",
+  borderRadius: 0.75,
+  py: 0.25,
   fontSize: 12,
-};
-const narrativePre: React.CSSProperties = {
-  margin: "10px 0 0",
-  padding: "12px 14px",
-  background: "#070a11",
-  color: "#e2e8f0",
-  fontSize: 14,
-  lineHeight: 1.6,
-  fontFamily: "system-ui, sans-serif",
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-  borderRadius: 6,
-};
+  fontWeight: 700,
+  fontVariantNumeric: "tabular-nums",
+  color: surface.page,
+  flexShrink: 0,
+} as const;

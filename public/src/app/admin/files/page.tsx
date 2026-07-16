@@ -7,8 +7,22 @@
  */
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import MuiLink from "@mui/material/Link";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
+import Typography from "@mui/material/Typography";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import { useTableSort } from "../../../components/admin/useTableSort";
+import { font, surface } from "../../../theme/tokens";
 
 interface NamespaceUsage {
   ns: string;
@@ -37,6 +51,9 @@ interface FilesSummary {
   tookMs?: number;
   at: string;
 }
+
+/** DESIGN_BIBLE §3: sizes, counts and ages are readings — mono, tabular. */
+const reading = { fontFamily: font.mono, fontVariantNumeric: "tabular-nums" } as const;
 
 function formatBytes(bytes: number): string {
   if (!bytes) return "0 B";
@@ -94,6 +111,8 @@ export default function FilesPage() {
   }, "size", true);
 
   const diskPct = summary?.disk ? (summary.disk.usedBytes / Math.max(1, summary.disk.totalBytes)) * 100 : 0;
+  // The bar earns the alarm colours only where a full disk is a real prospect.
+  const diskColor = diskPct > 90 ? "error.main" : diskPct > 75 ? "warning.main" : "primary.main";
 
   return (
     <AdminPageShell
@@ -101,51 +120,40 @@ export default function FilesPage() {
       description={
         <>
           Disk usage of the shared blob folder — baked textures, frames, snapshots and uploads. Mongo&apos;s own
-          sizes are on the <Link href="/admin/db" style={{ color: "#60a5fa" }}>Database</Link> page.
+          sizes are on the <MuiLink component={Link} href="/admin/db">Database</MuiLink> page.
         </>
       }
       maxWidth={980}
       actions={
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={loading}
-          style={{
-            padding: "6px 12px",
-            borderRadius: 6,
-            border: "1px solid #333",
-            background: "#151b28",
-            color: "#cdd4e0",
-            cursor: loading ? "default" : "pointer",
-            opacity: loading ? 0.6 : 1,
-            fontSize: 12,
-          }}
-        >
+        <Button variant="outlined" onClick={refresh} disabled={loading}>
           {loading ? "Walking…" : "Refresh"}
-        </button>
+        </Button>
       }
     >
       {error && (
-        <div style={{ marginTop: 16, padding: 12, borderRadius: 8, border: "1px solid #7f1d1d", background: "#1a0f0f", color: "#fca5a5", fontSize: 13 }}>
+        <Alert severity="error" sx={{ mt: 2 }}>
           {error}
-        </div>
+        </Alert>
       )}
 
       {summary && !summary.enabled && (
-        <div style={{ marginTop: 16, padding: 14, borderRadius: 8, border: "1px solid #2a3344", background: "#0c111c", color: "#8b95a7", fontSize: 13, lineHeight: 1.5 }}>
-          <strong style={{ color: "#fbbf24" }}>Blob folder disabled.</strong> <code>BLOB_DIR</code> is unset, so bytes
-          are still being stored in Mongo rather than on disk. This is normal running outside docker-compose; there is
-          nothing on the filesystem to measure.
-        </div>
+        <Alert severity="warning" sx={{ mt: 2 }}>
+          <Typography variant="body2" component="span" sx={{ fontWeight: 700, color: "warning.main" }}>
+            Blob folder disabled.
+          </Typography>{" "}
+          <code>BLOB_DIR</code> is unset, so bytes are still being stored in Mongo rather than on disk. This is normal
+          running outside docker-compose; there is nothing on the filesystem to measure.
+        </Alert>
       )}
 
       {summary?.enabled && (
         <>
-          <div style={{ color: "#8b95a7", fontSize: 13, marginTop: 4 }}>
-            <code>{summary.root}</code> · walked in {summary.tookMs}ms · as of {new Date(summary.at).toLocaleTimeString()}
-          </div>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            <code>{summary.root}</code> · walked in <Box component="span" sx={reading}>{summary.tookMs}ms</Box> · as of{" "}
+            <Box component="span" sx={reading}>{new Date(summary.at).toLocaleTimeString()}</Box>
+          </Typography>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginTop: 16 }}>
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 1.5, mt: 2 }}>
             {[
               ["Namespaces", formatCount(namespaces.length)],
               ["Files", formatCount(summary.files ?? 0)],
@@ -154,109 +162,115 @@ export default function FilesPage() {
               ["Disk free", summary.disk ? formatBytes(summary.disk.freeBytes) : "—"],
               ["Disk total", summary.disk ? formatBytes(summary.disk.totalBytes) : "—"],
             ].map(([label, value]) => (
-              <div key={label} style={{ padding: 14, borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c" }}>
-                <div style={{ color: "#8b95a7", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-                <div style={{ fontSize: 18, fontWeight: 600, marginTop: 4 }}>{value}</div>
-              </div>
+              <Paper key={label} sx={{ p: 1.75 }}>
+                <Typography variant="overline" color="text.secondary" component="div">
+                  {label}
+                </Typography>
+                <Typography sx={{ ...reading, fontSize: 18, fontWeight: 600, mt: 0.5 }}>{value}</Typography>
+              </Paper>
             ))}
-          </div>
+          </Box>
 
           {summary.disk && (
-            <div style={{ marginTop: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", color: "#8b95a7", fontSize: 12, marginBottom: 6 }}>
-                <span>
+            <Box sx={{ mt: 2 }}>
+              <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", mb: 0.75 }}>
+                <Typography variant="caption" color="text.secondary">
                   Filesystem holding the blob folder — blobs are {formatBytes(summary.bytes ?? 0)} of the{" "}
                   {formatBytes(summary.disk.usedBytes)} used
-                </span>
-                <span style={{ color: diskPct > 90 ? "#fca5a5" : diskPct > 75 ? "#fbbf24" : "#8b95a7" }}>
+                </Typography>
+                <Typography variant="caption" sx={{ ...reading, color: diskColor, whiteSpace: "nowrap" }}>
                   {diskPct.toFixed(1)}% full
-                </span>
-              </div>
-              <div style={{ height: 8, borderRadius: 4, background: "#151b28", overflow: "hidden" }}>
-                <div
-                  style={{
+                </Typography>
+              </Stack>
+              <Box sx={{ height: 8, borderRadius: 1, bgcolor: surface.raised, overflow: "hidden" }}>
+                <Box
+                  sx={{
                     height: "100%",
                     width: `${Math.min(100, Math.max(1, diskPct))}%`,
-                    background: diskPct > 90 ? "#dc2626" : diskPct > 75 ? "#d97706" : "#2563eb",
+                    bgcolor: diskColor,
                   }}
                 />
-              </div>
-            </div>
+              </Box>
+            </Box>
           )}
 
           {!!summary.tmpFiles && (
-            <div style={{ marginTop: 16, padding: 12, borderRadius: 8, border: "1px solid #78350f", background: "#170f05", color: "#fbbf24", fontSize: 13 }}>
+            <Alert severity="warning" sx={{ mt: 2 }}>
               {formatCount(summary.tmpFiles)} abandoned temp {summary.tmpFiles === 1 ? "write" : "writes"} holding{" "}
               {formatBytes(summary.tmpBytes ?? 0)} — left behind by writes that crashed mid-flight. Safe to delete;
               they are not counted in the sizes below.
-            </div>
+            </Alert>
           )}
 
-          <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 24, fontSize: 13 }}>
-            <thead>
-              <tr style={{ textAlign: "left", color: "#8b95a7", borderBottom: "1px solid #1b2030" }}>
-                <th style={{ padding: "6px 8px" }}>{sorted.header("namespace", "Namespace")}</th>
-                <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("files", "Files")}</th>
-                <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("largest", "Largest")}</th>
-                <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("oldest", "Oldest")}</th>
-                <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("newest", "Newest")}</th>
-                <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("size", "Size")}</th>
-                <th style={{ padding: "6px 8px" }} />
-              </tr>
-            </thead>
-            <tbody>
+          <Table sx={{ mt: 3 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>{sorted.header("namespace", "Namespace")}</TableCell>
+                <TableCell align="right">{sorted.header("files", "Files")}</TableCell>
+                <TableCell align="right">{sorted.header("largest", "Largest")}</TableCell>
+                <TableCell align="right">{sorted.header("oldest", "Oldest")}</TableCell>
+                <TableCell align="right">{sorted.header("newest", "Newest")}</TableCell>
+                <TableCell align="right">{sorted.header("size", "Size")}</TableCell>
+                <TableCell />
+              </TableRow>
+            </TableHead>
+            <TableBody>
               {sorted.rows.map((n) => (
-                <tr key={n.ns} style={{ borderBottom: "1px solid #12161f" }}>
-                  <td style={{ padding: "8px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontWeight: 600 }}>{n.label}</span>
-                      {!n.known && (
-                        <span style={{ fontSize: 11, color: "#fbbf24", border: "1px solid #78350f", borderRadius: 4, padding: "1px 5px" }}>
-                          unknown
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ color: "#5b6577", fontSize: 12, marginTop: 2 }}>
+                <TableRow key={n.ns}>
+                  <TableCell>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {n.label}
+                      </Typography>
+                      {/* A directory nothing in BLOB_NAMESPACES claims is a
+                          reclaim candidate — call it out rather than hide it. */}
+                      {!n.known && <Chip label="unknown" color="warning" />}
+                    </Stack>
+                    <Typography variant="caption" color="text.disabled" component="div" sx={{ mt: 0.25 }}>
                       <code>{n.ns}/</code> · {n.desc}
-                    </div>
-                  </td>
-                  <td style={{ padding: "8px", textAlign: "right" }}>{formatCount(n.files)}</td>
-                  <td style={{ padding: "8px", textAlign: "right", color: "#8b95a7" }}>{formatBytes(n.largestBytes)}</td>
-                  <td style={{ padding: "8px", textAlign: "right", color: "#8b95a7" }}>{formatAge(n.oldestMs)}</td>
-                  <td style={{ padding: "8px", textAlign: "right", color: "#8b95a7" }}>{formatAge(n.newestMs)}</td>
-                  <td style={{ padding: "8px", textAlign: "right", fontWeight: 600 }}>{formatBytes(n.bytes)}</td>
-                  <td style={{ padding: "8px", width: 100 }}>
-                    <div style={{ height: 6, borderRadius: 3, background: "#151b28" }}>
-                      <div
-                        style={{
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right" sx={reading}>{formatCount(n.files)}</TableCell>
+                  <TableCell align="right" sx={{ ...reading, color: "text.secondary" }}>{formatBytes(n.largestBytes)}</TableCell>
+                  <TableCell align="right" sx={{ ...reading, color: "text.secondary" }}>{formatAge(n.oldestMs)}</TableCell>
+                  <TableCell align="right" sx={{ ...reading, color: "text.secondary" }}>{formatAge(n.newestMs)}</TableCell>
+                  <TableCell align="right" sx={{ ...reading, fontWeight: 600 }}>{formatBytes(n.bytes)}</TableCell>
+                  <TableCell sx={{ width: 100 }}>
+                    <Box sx={{ height: 6, borderRadius: 0.75, bgcolor: surface.raised }}>
+                      <Box
+                        sx={{
                           height: "100%",
                           width: `${Math.max(2, (n.bytes / maxSize) * 100)}%`,
-                          borderRadius: 3,
-                          background: "#2563eb",
+                          borderRadius: 0.75,
+                          bgcolor: "primary.main",
                         }}
                       />
-                    </div>
-                  </td>
-                </tr>
+                    </Box>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
 
           {!namespaces.length && (
-            <div style={{ color: "#8b95a7", marginTop: 16, fontSize: 13 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
               The blob folder is empty — nothing has been written to it yet.
-            </div>
+            </Typography>
           )}
 
           {!!summary.emptyNamespaces?.length && (
-            <div style={{ color: "#5b6577", fontSize: 12, marginTop: 14, lineHeight: 1.5 }}>
+            <Typography variant="caption" color="text.disabled" component="p" sx={{ mt: 1.75 }}>
               Never written: {summary.emptyNamespaces.join(", ")} — these stores have no folder yet.
-            </div>
+            </Typography>
           )}
         </>
       )}
 
-      {!summary && !error && <div style={{ color: "#8b95a7", marginTop: 16 }}>Loading…</div>}
+      {!summary && !error && (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          Loading…
+        </Typography>
+      )}
     </AdminPageShell>
   );
 }

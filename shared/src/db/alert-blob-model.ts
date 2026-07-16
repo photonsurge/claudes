@@ -40,6 +40,16 @@ export interface iAlertBlob extends iGeneralModel {
   /** Hazard bucket the members share ("Thunderstorm"). */
   hazard: string;
   severityRank: SeverityRank;
+  /**
+   * ISO-3166 alpha-2 every member shares — part of the bucket key, so a blob
+   * never crosses a national border. Undefined only for feeds that carry no
+   * country in their identifier (GDACS).
+   *
+   * Warnings are issued BY a country and a blob gets ONE representative card, so
+   * without this seam the card lied: a single thunderstorm shape once spanned
+   * thirteen countries from Spain to Kosovo and quoted one of them for all of it.
+   */
+  country?: string;
   geometry: AlertGeometry;
   /**
    * `[w, s, e, n]` bounds of `geometry`.
@@ -87,6 +97,7 @@ const AlertBlobSchema = new mongoose.Schema<iAlertBlobModel>(
     id: { type: String, required: true, unique: true, default: () => uuidv4() },
     hazard: { type: String, required: true },
     severityRank: { type: Number, required: true, default: 0 },
+    country: { type: String, required: false },
     geometry: { type: mongoose.Schema.Types.Mixed, required: true },
     bbox: { type: [Number], required: true, default: undefined },
     memberIds: { type: [String], default: [] },

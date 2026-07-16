@@ -37,16 +37,21 @@ export async function getEventDetail(id: string): Promise<EventDetail | null> {
   return (await res.json()) as EventDetail;
 }
 
-/** Colour per event status, for admin chips. */
+/**
+ * Theme colour key per event status, for admin chips. Returns MUI palette
+ * semantics (resolved via `sx`), not hexes: /admin owns one palette and this is
+ * the only caller surface, so a live/cancelled event agrees with every other
+ * healthy/failed chip in the engine room.
+ */
 export function eventStatusColor(status: string): string {
   switch (status) {
     case "ACTIVE":
-      return "#3fb950";
+      return "success.main";
     case "CANCELLED":
-      return "#f85149";
+      return "error.main";
     case "ENDED":
-      return "#8b95a7";
+      return "text.secondary";
     default:
-      return "#8b95a7";
+      return "text.secondary";
   }
 }

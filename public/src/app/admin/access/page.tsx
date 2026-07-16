@@ -10,9 +10,18 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import MuiLink from "@mui/material/Link";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
 import { listScenes, rotateSceneToken } from "../../../lib/scenes";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import { font } from "../../../theme/tokens";
 
 export default function AccessPage() {
   const [scenes, setScenes] = useState<SceneMeta[]>([]);
@@ -53,54 +62,55 @@ export default function AccessPage() {
           Tokened OBS/YouTube URLs for each scene. Paste the copied URL into your OBS browser
           source instead of the bare <code>/watch/&lt;id&gt;</code> address — anyone with the
           token can view the output, so rotate it if a URL ever leaks. Manage scene content in{" "}
-          <Link href="/admin/scenes" style={{ color: "#60a5fa" }}>Scenes</Link>.
+          <MuiLink component={Link} href="/admin/scenes">Scenes</MuiLink>.
         </>
       }
       maxWidth={760}
     >
-      {error && <div style={{ color: "#fca5a5", fontSize: 13, marginTop: 8 }}>{error}</div>}
+      {error && (
+        <Alert severity="error" sx={{ mt: 1 }}>
+          {error}
+        </Alert>
+      )}
 
-      <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+      <Box sx={{ display: "grid", gap: 1.25, mt: 2.25 }}>
         {scenes.map((s) => {
           const watch = `/watch/${s.id}`;
           const tokenedUrl = s.watchToken ? `${origin}${watch}?token=${s.watchToken}` : null;
           return (
-            <div
-              key={s.id}
-              style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c" }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>
-                  {s.name}
-                  {s.id === MAIN_SCENE_ID && (
-                    <span style={{ fontSize: 11, color: "#8b95a7", border: "1px solid #2a3344", borderRadius: 4, padding: "1px 5px", marginLeft: 8 }}>main</span>
-                  )}
-                </div>
-                <div style={{ color: "#8b95a7", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {tokenedUrl ?? "no token yet — generate one"}
-                </div>
-              </div>
-              {tokenedUrl && (
-                <button
-                  type="button"
-                  onClick={() => copy(s.id, tokenedUrl)}
-                  style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #2a3344", background: "#0a0e16", color: "#cdd4e0", cursor: "pointer", fontSize: 13 }}
-                >
-                  {copiedId === s.id ? "Copied" : "Copy"}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => rotate(s.id)}
-                disabled={rotatingId === s.id}
-                style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #2a3344", background: "#0a0e16", color: "#cdd4e0", cursor: "pointer", fontSize: 13 }}
-              >
-                {rotatingId === s.id ? "…" : s.watchToken ? "Rotate token" : "Generate token"}
-              </button>
-            </div>
+            <Paper key={s.id} sx={{ p: 1.75 }}>
+              <Stack direction="row" spacing={1.75} sx={{ alignItems: "center" }}>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {s.name}
+                    </Typography>
+                    {s.id === MAIN_SCENE_ID && <Chip label="main" />}
+                  </Stack>
+                  {/* The tokened URL is what gets pasted into OBS — mono, so a
+                      token can actually be read character by character. */}
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    component="div"
+                    sx={{ fontFamily: font.mono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  >
+                    {tokenedUrl ?? "no token yet — generate one"}
+                  </Typography>
+                </Box>
+                {tokenedUrl && (
+                  <Button variant="outlined" onClick={() => copy(s.id, tokenedUrl)}>
+                    {copiedId === s.id ? "Copied" : "Copy"}
+                  </Button>
+                )}
+                <Button variant="outlined" onClick={() => rotate(s.id)} disabled={rotatingId === s.id} sx={{ whiteSpace: "nowrap" }}>
+                  {rotatingId === s.id ? "…" : s.watchToken ? "Rotate token" : "Generate token"}
+                </Button>
+              </Stack>
+            </Paper>
           );
         })}
-      </div>
+      </Box>
     </AdminPageShell>
   );
 }

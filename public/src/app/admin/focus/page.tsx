@@ -11,9 +11,19 @@
  * size — so you can watch the 80→1 collapse and confirm Redis hits. (The "render
  * the real slide deck" view lands with FocusProvider in Phase 1.)
  */
-import { useCallback, useState, Fragment, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useState, Fragment, type ReactNode } from "react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import MenuItem from "@mui/material/MenuItem";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import { SEGMENT_KINDS, type SegmentKind } from "@photonsurge/shared/director";
 import type { FocusBundle, FocusDetail } from "../../../lib/focus/types";
+import AdminPageShell from "../../../components/admin/AdminPageShell";
+import { surface } from "../../../theme/tokens";
 
 const DETAILS: FocusDetail[] = ["broadcast", "admin", "full"];
 
@@ -45,22 +55,6 @@ const GROUPS: { title: string; arrays?: (keyof FocusBundle)[]; objects?: (keyof 
   { title: "Place + roundup", objects: ["country", "countryRoundup", "region", "regionRoundup", "areaWeather"] },
   { title: "Geophysics + media", arrays: ["seismoStations", "tideStations", "nearbyCams", "volcanoMedia"], objects: ["depthProfile"] },
 ];
-
-// ── styles ────────────────────────────────────────────────────────────────
-const C = {
-  bg: "#0a0f18",
-  card: "#0f1826",
-  border: "#1e2b42",
-  ink: "#e6edf6",
-  muted: "#8ba0bd",
-  accent: "#5b9dff",
-  ok: "#4ade80",
-  warn: "#fbbf24",
-  bad: "#f87171",
-};
-const card: CSSProperties = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12 };
-const legend: CSSProperties = { fontSize: 10, fontWeight: 800, letterSpacing: 1, color: C.muted, textTransform: "uppercase" };
-const ctrl: CSSProperties = { background: "#0b1220", color: C.ink, border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 8px", fontSize: 13 };
 
 export default function FocusDebugPage() {
   const [kind, setKind] = useState<SegmentKind>("country");
@@ -110,123 +104,143 @@ export default function FocusDebugPage() {
   }, [kind, detail, lng, lat, zoom, subject]);
 
   return (
-    <main style={{ position: "relative", minHeight: "100vh", background: C.bg, color: C.ink, fontFamily: "system-ui, sans-serif", colorScheme: "dark" }}>
-      {/* full-viewport dark backdrop so the white body never bleeds around/below the content */}
-      <div aria-hidden style={{ position: "fixed", inset: 0, background: C.bg, zIndex: 0 }} />
-      <div style={{ position: "relative", zIndex: 1, maxWidth: 1180, margin: "0 auto", padding: "20px 20px 60px" }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Focus bundle debug</h1>
-        <p style={{ color: C.muted, fontSize: 13, margin: "4px 0 16px" }}>
-          One <code style={{ color: C.accent }}>/api/focus</code> request per on-air “thing” — replaces the 30–80 a cut used to fire.
-        </p>
+    <AdminPageShell
+      title="Focus bundle debug"
+      maxWidth={1180}
+      description={
+        <>
+          One <code>/api/focus</code> request per on-air “thing” — replaces the 30–80 a cut used to fire.
+        </>
+      }
+    >
+      {/* presets */}
+      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1.75 }}>
+        {PRESETS.map((p) => {
+          const active = p.kind === kind && p.lng === lng && p.lat === lat;
+          return (
+            <Chip
+              key={p.label}
+              label={p.label}
+              onClick={() => applyPreset(p)}
+              color={active ? "primary" : "default"}
+              variant={active ? "filled" : "outlined"}
+            />
+          );
+        })}
+      </Stack>
 
-        {/* presets */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-          {PRESETS.map((p) => {
-            const active = p.kind === kind && p.lng === lng && p.lat === lat;
-            return (
-              <button
-                key={p.label}
-                onClick={() => applyPreset(p)}
-                style={{
-                  ...ctrl,
-                  cursor: "pointer",
-                  fontSize: 12,
-                  borderColor: active ? C.accent : C.border,
-                  color: active ? C.accent : C.ink,
-                }}
+      {/* controls */}
+      <Paper sx={{ display: "flex", gap: 1.75, flexWrap: "wrap", alignItems: "flex-end", p: 1.5, mb: 2 }}>
+        <TextField select label="Kind" value={kind} onChange={(e) => setKind(e.target.value as SegmentKind)} sx={{ minWidth: 130 }}>
+          {SEGMENT_KINDS.map((k) => (
+            <MenuItem key={k} value={k}>
+              {k}
+            </MenuItem>
+          ))}
+          <MenuItem value="point">point</MenuItem>
+        </TextField>
+        <TextField select label="Detail" value={detail} onChange={(e) => setDetail(e.target.value as FocusDetail)} sx={{ minWidth: 130 }}>
+          {DETAILS.map((d) => (
+            <MenuItem key={d} value={d}>
+              {d}
+            </MenuItem>
+          ))}
+        </TextField>
+        <NumInput label="Lng" value={lng} onChange={setLng} />
+        <NumInput label="Lat" value={lat} onChange={setLat} />
+        <NumInput label="Zoom" value={zoom} onChange={setZoom} />
+        <TextField
+          label="Subject (id)"
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+          placeholder="us7000abcd / sahel"
+          sx={{ width: 190 }}
+        />
+        {/* The whole page exists to fire this — the one contained button here. */}
+        <Button variant="contained" onClick={run} disabled={loading} sx={{ minWidth: 96 }}>
+          {loading ? "Fetching…" : "Fetch"}
+        </Button>
+      </Paper>
+
+      {/* status pills */}
+      {meta && (
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mb: 2 }}>
+          <Pill label="cache" value={meta.cache} color={meta.cache === "hit" ? "success.main" : "warning.main"} />
+          <Pill label="time" value={`${meta.ms} ms`} />
+          <Pill label="size" value={`${(meta.bytes / 1024).toFixed(1)} KB`} />
+          {bundle && <Pill label="key" value={bundle.key} />}
+        </Stack>
+      )}
+
+      {error && (
+        <Paper sx={{ p: 1.5, mb: 2 }}>
+          <Typography component="pre" variant="caption" color="error.main" sx={{ m: 0, whiteSpace: "pre-wrap" }}>
+            {error}
+          </Typography>
+        </Paper>
+      )}
+
+      {bundle && (
+        <>
+          {/* contract, grouped */}
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 1.5, mb: 2 }}>
+            {GROUPS.map((g) => (
+              <Paper key={g.title} sx={{ p: 1.5 }}>
+                <Typography variant="overline" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                  {g.title}
+                </Typography>
+                {(g.arrays ?? []).map((f) => {
+                  const v = bundle[f];
+                  const ok = Array.isArray(v);
+                  const n = ok ? (v as unknown[]).length : 0;
+                  return (
+                    <Row key={f as string} name={f as string} tone={!ok ? "error.main" : n ? "text.primary" : "text.secondary"}>
+                      {ok ? String(n) : "NOT ARRAY"}
+                    </Row>
+                  );
+                })}
+                {(g.objects ?? []).map((f) => {
+                  const present = bundle[f] != null;
+                  return (
+                    <Row
+                      key={f as string}
+                      name={f as string}
+                      tone={present ? "success.main" : "text.secondary"}
+                      dot={present ? "●" : "○"}
+                    >
+                      {present ? "resolved" : "null"}
+                    </Row>
+                  );
+                })}
+              </Paper>
+            ))}
+          </Box>
+
+          {/* highlights — eyeball correctness without reading JSON */}
+          <Paper sx={{ p: 1.5, mb: 2 }}>
+            <Typography variant="overline" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+              Highlights
+            </Typography>
+            <Highlights bundle={bundle} />
+          </Paper>
+
+          {/* raw json (collapsible) */}
+          <Button variant="outlined" onClick={() => setShowRaw((s) => !s)} sx={{ mb: 1 }}>
+            {showRaw ? "▾ Hide raw bundle" : "▸ Show raw bundle"}
+          </Button>
+          {showRaw && (
+            <Paper sx={{ p: 1.5, bgcolor: surface.sunken }}>
+              <Typography
+                component="pre"
+                sx={{ m: 0, fontSize: 11, lineHeight: 1.5, maxHeight: 560, overflow: "auto", whiteSpace: "pre-wrap" }}
               >
-                {p.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* controls */}
-        <div style={{ ...card, display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 16 }}>
-          <Field name="Kind">
-            <select value={kind} onChange={(e) => setKind(e.target.value as SegmentKind)} style={ctrl}>
-              {SEGMENT_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-              <option value="point">point</option>
-            </select>
-          </Field>
-          <Field name="Detail">
-            <select value={detail} onChange={(e) => setDetail(e.target.value as FocusDetail)} style={ctrl}>
-              {DETAILS.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </Field>
-          <Field name="Lng"><NumInput value={lng} onChange={setLng} /></Field>
-          <Field name="Lat"><NumInput value={lat} onChange={setLat} /></Field>
-          <Field name="Zoom"><NumInput value={zoom} onChange={setZoom} /></Field>
-          <Field name="Subject (id)">
-            <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="us7000abcd / sahel" style={{ ...ctrl, width: 190 }} />
-          </Field>
-          <button onClick={run} disabled={loading} style={{ ...ctrl, cursor: "pointer", fontWeight: 800, background: C.accent, color: "#04101f", borderColor: C.accent, minWidth: 96 }}>
-            {loading ? "Fetching…" : "Fetch"}
-          </button>
-        </div>
-
-        {/* status pills */}
-        {meta && (
-          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-            <Pill label="cache" value={meta.cache} color={meta.cache === "hit" ? C.ok : C.warn} />
-            <Pill label="time" value={`${meta.ms} ms`} />
-            <Pill label="size" value={`${(meta.bytes / 1024).toFixed(1)} KB`} />
-            {bundle && <Pill label="key" value={bundle.key} mono />}
-          </div>
-        )}
-
-        {error && (
-          <pre style={{ ...card, color: C.bad, whiteSpace: "pre-wrap", fontSize: 12, marginBottom: 16 }}>{error}</pre>
-        )}
-
-        {bundle && (
-          <>
-            {/* contract, grouped */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12, marginBottom: 16 }}>
-              {GROUPS.map((g) => (
-                <div key={g.title} style={card}>
-                  <div style={{ ...legend, marginBottom: 8 }}>{g.title}</div>
-                  {(g.arrays ?? []).map((f) => {
-                    const v = bundle[f];
-                    const ok = Array.isArray(v);
-                    const n = ok ? (v as unknown[]).length : 0;
-                    return (
-                      <Row key={f as string} name={f as string} tone={!ok ? C.bad : n ? C.ink : C.muted}>
-                        {ok ? String(n) : "NOT ARRAY"}
-                      </Row>
-                    );
-                  })}
-                  {(g.objects ?? []).map((f) => {
-                    const present = bundle[f] != null;
-                    return (
-                      <Row key={f as string} name={f as string} tone={present ? C.ok : C.muted} dot={present ? "●" : "○"}>
-                        {present ? "resolved" : "null"}
-                      </Row>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-
-            {/* highlights — eyeball correctness without reading JSON */}
-            <div style={{ ...card, marginBottom: 16 }}>
-              <div style={{ ...legend, marginBottom: 8 }}>Highlights</div>
-              <Highlights bundle={bundle} />
-            </div>
-
-            {/* raw json (collapsible) */}
-            <button onClick={() => setShowRaw((s) => !s)} style={{ ...ctrl, cursor: "pointer", fontSize: 12, marginBottom: 8 }}>
-              {showRaw ? "▾ Hide raw bundle" : "▸ Show raw bundle"}
-            </button>
-            {showRaw && (
-              <pre style={{ ...card, fontSize: 11, lineHeight: 1.5, maxHeight: 560, overflow: "auto", whiteSpace: "pre-wrap", fontFamily: "ui-monospace, monospace" }}>
                 {JSON.stringify(bundle, null, 2)}
-              </pre>
-            )}
-          </>
-        )}
-      </div>
-    </main>
+              </Typography>
+            </Paper>
+          )}
+        </>
+      )}
+    </AdminPageShell>
   );
 }
 
@@ -249,47 +263,61 @@ function Highlights({ bundle }: { bundle: FocusBundle }) {
   items.push({ k: "forecast days", v: String(bundle.pointForecast.length || bundle.areaForecast.length) });
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", rowGap: 6, columnGap: 12, fontSize: 13 }}>
+    <Box sx={{ display: "grid", gridTemplateColumns: "110px 1fr", rowGap: 0.75, columnGap: 1.5, fontSize: 13 }}>
       {items.map((it) => (
         <Fragment key={it.k}>
-          <div style={{ color: C.muted }}>{it.k}</div>
-          <div>{it.v}</div>
+          <Box sx={{ color: "text.secondary" }}>{it.k}</Box>
+          <Box>{it.v}</Box>
         </Fragment>
       ))}
-    </div>
+    </Box>
   );
 }
 
 function Row({ name, children, tone, dot }: { name: string; children: ReactNode; tone: string; dot?: string }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12.5, padding: "2px 0" }}>
-      <span style={{ color: C.muted }}>
-        {dot ? <span style={{ color: tone, marginRight: 4 }}>{dot}</span> : null}
+    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12.5, py: 0.25 }}>
+      <Box component="span" sx={{ color: "text.secondary" }}>
+        {dot ? (
+          <Box component="span" sx={{ color: tone, mr: 0.5 }}>
+            {dot}
+          </Box>
+        ) : null}
         {name}
-      </span>
-      <b style={{ color: tone, fontVariantNumeric: "tabular-nums" }}>{children}</b>
-    </div>
+      </Box>
+      {/* A field's count/state is the reading you scan the column for. */}
+      <Box component="code" sx={{ color: tone, fontWeight: 700 }}>
+        {children}
+      </Box>
+    </Box>
   );
 }
 
-function Pill({ label, value, color, mono }: { label: string; value: string; color?: string; mono?: boolean }) {
+function Pill({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <span style={{ ...card, padding: "5px 10px", fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center", maxWidth: "100%" }}>
-      <span style={{ color: C.muted }}>{label}</span>
-      <b style={{ color: color ?? C.ink, fontFamily: mono ? "ui-monospace, monospace" : undefined, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</b>
-    </span>
+    <Paper sx={{ px: 1.25, py: 0.625, display: "inline-flex", gap: 0.75, alignItems: "center", maxWidth: "100%" }}>
+      <Typography variant="caption" color="text.secondary">
+        {label}
+      </Typography>
+      <Box
+        component="code"
+        sx={{ fontSize: 12, fontWeight: 700, color: color ?? "text.primary", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+      >
+        {value}
+      </Box>
+    </Paper>
   );
 }
 
-function Field({ name, children }: { name: string; children: ReactNode }) {
+function NumInput({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={legend}>{name}</span>
-      {children}
-    </label>
+    <TextField
+      label={label}
+      type="number"
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      slotProps={{ htmlInput: { step: 0.1 } }}
+      sx={{ width: 100 }}
+    />
   );
-}
-
-function NumInput({ value, onChange }: { value: number; onChange: (n: number) => void }) {
-  return <input type="number" step="0.1" value={value} onChange={(e) => onChange(Number(e.target.value))} style={{ ...ctrl, width: 90 }} />;
 }

@@ -1,4 +1,4 @@
-import type { iAlert } from "@photonsurge/shared/db/alert-model";
+import type { AlertGeometry, iAlert } from "@photonsurge/shared/db/alert-model";
 import { signedArea, type Ring } from "@photonsurge/shared/alerts/rings";
 import { dissolveAlerts } from "./dissolve";
 
@@ -137,11 +137,9 @@ describe("dissolveAlerts", () => {
   });
 
   /**
-   * Thinning before the clip is what makes this job fit on the server. Source
-   * boundaries are survey-grade (the worst hazard alone is ~1.15M vertices) and
-   * clipping at that precision is where the time and memory go — to produce a
-   * shape the overlay then simplifies to ~5km anyway before drawing it. Measured:
-   * 91% fewer vertices, dissolve 40s -> 3s, peak heap 711MB -> 289MB.
+   * Thinning cheapens the shape the globe finally draws — but it happens AFTER
+   * the clip, and the order is the whole point. See the regression block below
+   * for what thinning the INPUTS did to real borders.
    */
   describe("simplifyDeg", () => {
     /** A ragged coastline: a box with many near-collinear points along one edge. */
@@ -156,7 +154,7 @@ describe("dissolveAlerts", () => {
       } as unknown as iAlert;
     };
 
-    it("thins the source before clipping it", async () => {
+    it("thins the shape it stores", async () => {
       const out = await dissolveAlerts([ragged("a")], { ...NO_WAIT, simplifyDeg: 0.01 });
 
       expect(out.blobs[0].verticesAfter).toBeLessThan(20);
@@ -175,15 +173,6 @@ describe("dissolveAlerts", () => {
       expect(out.blobs[0].verticesBefore).toBeGreaterThan(200);
     });
 
-    it("still fuses two thinned neighbours", async () => {
-      const out = await dissolveAlerts(
-        [county("a", "Heat", 3, [0, 0, 1, 1]), county("b", "Heat", 3, [1, 0, 2, 1])],
-        { ...NO_WAIT, simplifyDeg: 0.01 },
-      );
-
-      expect(out.blobs).toHaveLength(1);
-    });
-
     it("does not drop an area whose shape thinning would destroy", async () => {
       // A county smaller than the tolerance must still be drawn, not vanish.
       const tiny = county("t", "Heat", 3, [0, 0, 0.002, 0.002]);
@@ -192,6 +181,91 @@ describe("dissolveAlerts", () => {
 
       expect(out.blobs).toHaveLength(1);
       expect(out.blobs[0].memberIds).toEqual(["t"]);
+    });
+  });
+
+  /**
+   * REAL geometry, because nothing else reproduces this.
+   *
+   * Thinning used to happen to the INPUTS, before the clip, on the theory that the
+   * overlay coarsens the result to ~5km anyway so the detail was being clipped and
+   * thrown away. It bought a lot: 91% fewer vertices, 40s -> 3s, peak heap 711MB
+   * -> 289MB. It also quietly broke the thing this whole function exists to do.
+   *
+   * Douglas-Peucker chooses which points to keep from each ring's OWN shape, so
+   * two neighbours thin their SHARED border differently and it stops being shared.
+   * polygon-clipping then answers the union of Flevoland and Friesland with FIVE
+   * disjoint parts instead of one merged shape; the part-count test reads that as
+   * "these don't touch" and leaves them apart, and the globe draws a seam down a
+   * border that doesn't exist. Live, 63 pairs of genuinely-touching regions —
+   * Dutch provinces, Veneto/Friuli, the Graz districts — stopped fusing.
+   *
+   * The unit test that was supposed to cover this fused two perfect SQUARES, and a
+   * 5-point square survives Douglas-Peucker untouched: it asserted fusing on
+   * geometry that was never thinned, and passed all the way through the bug. Hence
+   * real provinces here — the shapes have the ragged shared borders that squares
+   * don't.
+   */
+  describe("thinning must not break a shared border", () => {
+    const provinces = require("./__fixtures__/nl-touching-provinces.json") as Record<string, AlertGeometry>;
+
+    const province = (name: string, rank = 3): iAlert =>
+      ({
+        id: name,
+        maxSeverityRank: rank,
+        info: [{ event: "Heat", severityRank: rank, area: [{ areaDesc: name, geometry: provinces[name] }] }],
+      }) as unknown as iAlert;
+
+    it("fuses two provinces that really share a border", async () => {
+      const out = await dissolveAlerts([province("Flevoland"), province("Friesland")], {
+        ...NO_WAIT,
+        simplifyDeg: 0.002,
+      });
+
+      expect(out.blobs).toHaveLength(1);
+      expect(out.blobs[0].memberIds.sort()).toEqual(["Flevoland", "Friesland"]);
+    });
+
+    it("fuses a chain of three provinces into one shape", async () => {
+      const out = await dissolveAlerts(
+        [province("Flevoland"), province("Friesland"), province("Overijssel")],
+        { ...NO_WAIT, simplifyDeg: 0.002 },
+      );
+
+      expect(out.blobs).toHaveLength(1);
+      expect(out.blobs[0].memberIds.sort()).toEqual(["Flevoland", "Friesland", "Overijssel"]);
+    });
+
+    it("reports no union failure fusing them", async () => {
+      const out = await dissolveAlerts([province("Flevoland"), province("Friesland")], {
+        ...NO_WAIT,
+        simplifyDeg: 0.002,
+      });
+
+      expect(out.unionFailures).toBe(0);
+    });
+
+    it("still thins the fused outline it stores", async () => {
+      // The saving has to survive the fix, or we've traded the seam for the RAM.
+      const out = await dissolveAlerts([province("Flevoland"), province("Friesland")], {
+        ...NO_WAIT,
+        simplifyDeg: 0.002,
+      });
+
+      expect(out.blobs[0].verticesAfter).toBeLessThan(out.blobs[0].verticesBefore);
+    });
+
+    it("fuses them at every tolerance the job might be run at", async () => {
+      // The old code fused these at 0 and broke somewhere under 0.002. Pin the
+      // whole range so a future tuning of the number can't quietly reintroduce it.
+      for (const simplifyDeg of [0, 0.002, 0.01, 0.05]) {
+        const out = await dissolveAlerts([province("Flevoland"), province("Friesland")], {
+          ...NO_WAIT,
+          simplifyDeg,
+        });
+
+        expect([simplifyDeg, out.blobs.length]).toEqual([simplifyDeg, 1]);
+      }
     });
   });
 

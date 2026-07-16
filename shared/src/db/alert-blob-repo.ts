@@ -6,6 +6,8 @@ import type { iAlertBlobModel, iBlobCity } from "./alert-blob-model";
 export interface AlertBlobInput {
   hazard: string;
   severityRank: SeverityRank;
+  /** ISO-3166 alpha-2 the members share; a blob never crosses a border. */
+  country?: string;
   geometry: AlertGeometry;
   bbox: [number, number, number, number];
   memberIds: string[];
@@ -26,6 +28,8 @@ export interface AlertBlobSummary {
   id: string;
   hazard: string;
   severityRank: SeverityRank;
+  /** Whose warning this is — every member shares it (part of the bucket key). */
+  country?: string;
   bbox: [number, number, number, number];
   /** How many alerts fused into the shape. */
   alertCount: number;
@@ -118,7 +122,7 @@ export function makeAlertBlobRepo(model: Model<iAlertBlobModel>) {
               { $expr: { $and: [{ $lte: [el(1), n] }, { $gte: [el(3), s] }] } },
             ],
           },
-          { _id: 0, id: 1, hazard: 1, severityRank: 1, bbox: 1, memberIds: 1, cities: 1 },
+          { _id: 0, id: 1, hazard: 1, severityRank: 1, country: 1, bbox: 1, memberIds: 1, cities: 1 },
         )
         .sort({ severityRank: -1 })
         .lean()
@@ -131,6 +135,7 @@ export function makeAlertBlobRepo(model: Model<iAlertBlobModel>) {
         id: d.id,
         hazard: d.hazard,
         severityRank: d.severityRank,
+        country: d.country,
         bbox: d.bbox,
         alertCount: d.memberIds?.length ?? 0,
         cityCount: d.cities?.length ?? 0,

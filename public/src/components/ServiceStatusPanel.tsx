@@ -70,7 +70,13 @@ export default function ServiceStatusPanel({ compact = false }: { compact?: bool
           <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: DOT_COLOR[s.status], flexShrink: 0 }} />
             <span style={{ color: "#fff" }}>{s.name}</span>
-            <span style={{ color: "#5b6577", fontFamily: "ui-monospace, monospace", marginLeft: "auto" }}>
+            {/*
+              Version sits with its own name, NOT `marginLeft: auto`. Right-aligning
+              it inside an auto-fill grid cell parked it against the *next*
+              service's dot, so every version read as belonging to the wrong
+              service ("public  v0.1.62 ● socket").
+            */}
+            <span style={{ color: "#5b6577", fontFamily: "ui-monospace, monospace", fontVariantNumeric: "tabular-nums" }}>
               {s.version ? `v${s.version}` : s.detail || "down"}
             </span>
           </div>

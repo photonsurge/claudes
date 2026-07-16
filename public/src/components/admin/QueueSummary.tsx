@@ -7,18 +7,23 @@
  * /admin/queue; this is just the at-a-glance summary above Recent activity.
  */
 import { useCallback, useEffect, useState } from "react";
+import Box from "@mui/material/Box";
+import Link from "@mui/material/Link";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+import { accent, font, ink, status } from "../../theme/tokens";
 
 // The states we treat as "in-flight": the running job + everything queued
 // (plain waiting, priority-queued, and delayed). One combined request.
 const STATES = ["active", "waiting", "prioritized", "delayed"] as const;
 type State = (typeof STATES)[number];
-const QUEUED = new Set<State>(["waiting", "prioritized", "delayed"]);
 
 const STATE_COLOR: Record<State, string> = {
-  active: "#60a5fa",
-  waiting: "#fbbf24",
-  prioritized: "#fbbf24",
-  delayed: "#a78bfa",
+  active: accent.main,
+  waiting: status.warning,
+  prioritized: status.warning,
+  delayed: ink.secondary,
 };
 
 interface SummaryJob {
@@ -84,71 +89,73 @@ export default function QueueSummary({ pollMs = 4000 }: { pollMs?: number }) {
   const queuedN = (counts?.waiting ?? 0) + (counts?.prioritized ?? 0) + (counts?.delayed ?? 0);
 
   return (
-    <div>
-      <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
-        <h3 style={{ margin: 0, fontSize: 14 }}>Active &amp; queued</h3>
+    <Box>
+      <Stack direction="row" spacing={1.25} sx={{ alignItems: "baseline", flexWrap: "wrap" }}>
+        <Typography variant="h3" component="h3">
+          Active &amp; queued
+        </Typography>
         {err ? (
-          <span style={{ color: "#fca5a5", fontSize: 12 }}>queue unreachable</span>
+          <Typography variant="caption" color="error.main">
+            queue unreachable
+          </Typography>
         ) : (
-          <span style={{ color: "#5b6577", fontSize: 12 }}>
+          <Typography variant="caption" color="text.disabled" sx={{ fontVariantNumeric: "tabular-nums" }}>
             {activeN} active · {queuedN} queued
-          </span>
+          </Typography>
         )}
-        <a
-          href="/admin/queue"
-          style={{ marginLeft: "auto", fontSize: 12, color: "#60a5fa", textDecoration: "none" }}
-        >
+        <Link href="/admin/queue" variant="caption" sx={{ ml: "auto" }}>
           full queue →
-        </a>
-      </div>
+        </Link>
+      </Stack>
 
-      <div
-        style={{
-          marginTop: 10,
-          border: "1px solid #1b2030",
-          borderRadius: 8,
-          background: "#0a0e16",
-          overflow: "hidden",
-        }}
-      >
+      <Paper sx={{ mt: 1.25, overflow: "hidden" }}>
         {jobs.map((j) => {
           const label = j.type && j.event ? `${j.type}.${j.event}` : j.name || "job";
-          const color = STATE_COLOR[j.state] ?? "#8b95a7";
+          const color = STATE_COLOR[j.state] ?? ink.secondary;
           return (
-            <div
+            <Stack
               key={`${j.state}:${j.id}`}
-              style={{
-                display: "flex",
+              direction="row"
+              spacing={1.25}
+              sx={{
                 alignItems: "center",
-                gap: 10,
-                padding: "8px 12px",
-                borderTop: "1px solid #121826",
-                fontSize: 13,
+                px: 1.5,
+                py: 1,
+                borderTop: "1px solid",
+                borderColor: "divider",
+                "&:first-of-type": { borderTop: "none" },
               }}
             >
-              <span
-                style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }}
+              <Box
                 title={j.state}
+                sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: color, flexShrink: 0 }}
               />
-              <span style={{ fontWeight: 600, minWidth: 0, wordBreak: "break-word" }}>{label}</span>
-              <span style={{ fontSize: 11, color: "#5b6577", fontFamily: "ui-monospace, monospace" }}>
+              <Typography variant="body2" sx={{ minWidth: 0, fontWeight: 600, wordBreak: "break-word" }}>
+                {label}
+              </Typography>
+              <Typography variant="caption" color="text.disabled" sx={{ fontFamily: font.mono }}>
                 #{j.id}
-              </span>
+              </Typography>
               {j.state === "active" && j.progress > 0 && (
-                <span style={{ fontSize: 11, color: "#8b95a7" }}>{Math.min(100, Math.round(j.progress))}%</span>
+                <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                  {Math.min(100, Math.round(j.progress))}%
+                </Typography>
               )}
-              <span style={{ marginLeft: "auto", fontSize: 12, color, whiteSpace: "nowrap" }}>
+              <Typography
+                variant="caption"
+                sx={{ ml: "auto", color, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}
+              >
                 {stamp(j, now)}
-              </span>
-            </div>
+              </Typography>
+            </Stack>
           );
         })}
         {jobs.length === 0 && (
-          <div style={{ padding: 14, color: "#5b6577", fontSize: 13 }}>
+          <Typography variant="body2" color="text.disabled" sx={{ p: 1.75 }}>
             {err ? "Worker / Redis unreachable." : "Nothing running or queued."}
-          </div>
+          </Typography>
         )}
-      </div>
-    </div>
+      </Paper>
+    </Box>
   );
 }

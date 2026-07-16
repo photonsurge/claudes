@@ -5,6 +5,14 @@
  * `role` is a free select so a second role can be added later without UI churn.
  */
 import { useCallback, useEffect, useState } from "react";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 
 interface AdminUser {
@@ -59,77 +67,57 @@ export default function UsersPage() {
   return (
     <AdminPageShell title="Users" description="Admin accounts for /admin and /control." maxWidth={760}>
       {/* Create */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap",
-          alignItems: "center",
-          padding: 14,
-          borderRadius: 8,
-          border: "1px solid #1b2030",
-          background: "#0c111c",
-          marginTop: 14,
-        }}
-      >
-        <input
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="email@example.com"
-          style={{ flex: 1, minWidth: 200, background: "#0a0e16", color: "#fff", border: "1px solid #2a3344", borderRadius: 6, padding: "8px 10px" }}
-        />
-        <input
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          type="password"
-          placeholder="password (min 8 chars)"
-          onKeyDown={(e) => e.key === "Enter" && email.trim() && password && add()}
-          style={{ flex: 1, minWidth: 200, background: "#0a0e16", color: "#fff", border: "1px solid #2a3344", borderRadius: 6, padding: "8px 10px" }}
-        />
-        <button
-          type="button"
-          onClick={add}
-          disabled={busy || !email.trim() || password.length < 8}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 6,
-            border: "1px solid #333",
-            background: busy || !email.trim() || password.length < 8 ? "#1a1f2b" : "#2563eb",
-            color: "#fff",
-            cursor: "pointer",
-          }}
-        >
-          {busy ? "…" : "Create"}
-        </button>
-      </div>
-      {error && <div style={{ color: "#fca5a5", fontSize: 13, marginTop: 8 }}>{error}</div>}
+      <Paper sx={{ p: 1.75, mt: 1.75 }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+          <TextField
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="email@example.com"
+            slotProps={{ htmlInput: { "aria-label": "Email" } }}
+            sx={{ flex: 1, minWidth: 200 }}
+          />
+          <TextField
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            placeholder="password (min 8 chars)"
+            onKeyDown={(e) => e.key === "Enter" && email.trim() && password && add()}
+            slotProps={{ htmlInput: { "aria-label": "Password" } }}
+            sx={{ flex: 1, minWidth: 200 }}
+          />
+          {/* The page's one genuinely primary action, so the one filled button. */}
+          <Button variant="contained" onClick={add} disabled={busy || !email.trim() || password.length < 8}>
+            {busy ? "…" : "Create"}
+          </Button>
+        </Stack>
+      </Paper>
+      {error && (
+        <Alert severity="error" sx={{ mt: 1 }}>
+          {error}
+        </Alert>
+      )}
 
       {/* List */}
-      <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+      <Box sx={{ display: "grid", gap: 1.25, mt: 2.25 }}>
         {users.map((u) => (
-          <div
-            key={u.id}
-            style={{ display: "flex", alignItems: "center", gap: 14, padding: 14, borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c" }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600 }}>
-                {u.email}
-                <span style={{ fontSize: 11, color: "#8b95a7", border: "1px solid #2a3344", borderRadius: 4, padding: "1px 5px", marginLeft: 8 }}>
-                  {u.role}
-                </span>
-                {!u.active && (
-                  <span style={{ fontSize: 11, color: "#fca5a5", border: "1px solid #5b2330", borderRadius: 4, padding: "1px 5px", marginLeft: 8 }}>
-                    disabled
-                  </span>
-                )}
-              </div>
-              <div style={{ color: "#8b95a7", fontSize: 12 }}>
-                {u.lastLoginAt ? `Last login ${new Date(u.lastLoginAt).toLocaleString()}` : "Never logged in"}
-              </div>
-            </div>
-          </div>
+          <Paper key={u.id} sx={{ p: 1.75 }}>
+            <Stack direction="row" spacing={1.75} sx={{ alignItems: "center" }}>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {u.email}
+                  </Typography>
+                  <Chip label={u.role} />
+                  {!u.active && <Chip label="disabled" color="error" />}
+                </Stack>
+                <Typography variant="caption" color="text.secondary" component="div">
+                  {u.lastLoginAt ? `Last login ${new Date(u.lastLoginAt).toLocaleString()}` : "Never logged in"}
+                </Typography>
+              </Box>
+            </Stack>
+          </Paper>
         ))}
-      </div>
+      </Box>
     </AdminPageShell>
   );
 }

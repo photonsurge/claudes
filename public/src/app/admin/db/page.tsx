@@ -5,8 +5,19 @@
  * and storage/index sizes. Read-only info page, no operator actions.
  */
 import { useCallback, useEffect, useState } from "react";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Paper from "@mui/material/Paper";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
+import Typography from "@mui/material/Typography";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import { useTableSort } from "../../../components/admin/useTableSort";
+import { font, surface } from "../../../theme/tokens";
 
 interface CollectionSummary {
   name: string;
@@ -32,6 +43,9 @@ interface DbSummary {
   collections: CollectionSummary[];
   at: string;
 }
+
+/** DESIGN_BIBLE §3: byte sizes and doc counts are readings — mono, tabular. */
+const reading = { fontFamily: font.mono, fontVariantNumeric: "tabular-nums" } as const;
 
 function formatBytes(bytes: number): string {
   if (!bytes) return "0 B";
@@ -81,97 +95,90 @@ export default function DbSummaryPage() {
       description="Mongo collection sizes, document counts and storage summary."
       maxWidth={980}
       actions={
-        <button
-          type="button"
-          onClick={refresh}
-          style={{
-            padding: "6px 12px",
-            borderRadius: 6,
-            border: "1px solid #333",
-            background: "#151b28",
-            color: "#cdd4e0",
-            cursor: "pointer",
-            fontSize: 12,
-          }}
-        >
+        <Button variant="outlined" onClick={refresh}>
           Refresh
-        </button>
+        </Button>
       }
     >
-
       {error && (
-        <div style={{ marginTop: 16, padding: 12, borderRadius: 8, border: "1px solid #7f1d1d", background: "#1a0f0f", color: "#fca5a5", fontSize: 13 }}>
+        <Alert severity="error" sx={{ mt: 2 }}>
           {error}
-        </div>
+        </Alert>
       )}
 
       {summary && (
         <>
-          <div style={{ color: "#8b95a7", fontSize: 13, marginTop: 4 }}>
-            {summary.db} · as of {new Date(summary.at).toLocaleTimeString()}
-          </div>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            {summary.db} · as of <Box component="span" sx={reading}>{new Date(summary.at).toLocaleTimeString()}</Box>
+          </Typography>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginTop: 16 }}>
-              {[
-                ["Collections", formatCount(summary.dbStats.collections)],
-                ["Documents", formatCount(summary.dbStats.objects)],
-                ["Data size", formatBytes(summary.dbStats.dataSize)],
-                ["Storage size", formatBytes(summary.dbStats.storageSize)],
-                ["Index size", formatBytes(summary.dbStats.indexSize)],
-                ["Total on disk", formatBytes(summary.dbStats.totalSize)],
-              ].map(([label, value]) => (
-                <div key={label} style={{ padding: 14, borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c" }}>
-                  <div style={{ color: "#8b95a7", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-                  <div style={{ fontSize: 18, fontWeight: 600, marginTop: 4 }}>{value}</div>
-                </div>
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 1.5, mt: 2 }}>
+            {[
+              ["Collections", formatCount(summary.dbStats.collections)],
+              ["Documents", formatCount(summary.dbStats.objects)],
+              ["Data size", formatBytes(summary.dbStats.dataSize)],
+              ["Storage size", formatBytes(summary.dbStats.storageSize)],
+              ["Index size", formatBytes(summary.dbStats.indexSize)],
+              ["Total on disk", formatBytes(summary.dbStats.totalSize)],
+            ].map(([label, value]) => (
+              <Paper key={label} sx={{ p: 1.75 }}>
+                <Typography variant="overline" color="text.secondary" component="div">
+                  {label}
+                </Typography>
+                <Typography sx={{ ...reading, fontSize: 18, fontWeight: 600, mt: 0.5 }}>{value}</Typography>
+              </Paper>
+            ))}
+          </Box>
+
+          <Table sx={{ mt: 3 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>{sorted.header("collection", "Collection")}</TableCell>
+                <TableCell align="right">{sorted.header("docs", "Docs")}</TableCell>
+                <TableCell align="right">{sorted.header("average", "Avg doc")}</TableCell>
+                <TableCell align="right">{sorted.header("data", "Data")}</TableCell>
+                <TableCell align="right">{sorted.header("storage", "Storage")}</TableCell>
+                <TableCell align="right">{sorted.header("indexes", "Indexes")}</TableCell>
+                <TableCell align="right">{sorted.header("total", "Total")}</TableCell>
+                <TableCell />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {sorted.rows.map((c) => (
+                <TableRow key={c.name}>
+                  <TableCell>{c.name}</TableCell>
+                  <TableCell align="right" sx={reading}>{formatCount(c.count)}</TableCell>
+                  <TableCell align="right" sx={{ ...reading, color: "text.secondary" }}>{formatBytes(c.avgObjSize)}</TableCell>
+                  <TableCell align="right" sx={reading}>{formatBytes(c.dataSize)}</TableCell>
+                  <TableCell align="right" sx={reading}>{formatBytes(c.storageSize)}</TableCell>
+                  <TableCell align="right" sx={{ ...reading, color: "text.secondary" }}>
+                    {formatBytes(c.indexSize)} ({c.indexCount})
+                  </TableCell>
+                  <TableCell align="right" sx={{ ...reading, fontWeight: 600 }}>{formatBytes(c.totalSize)}</TableCell>
+                  <TableCell sx={{ width: 100 }}>
+                    <Box sx={{ height: 6, borderRadius: 0.75, bgcolor: surface.raised }}>
+                      <Box
+                        sx={{
+                          height: "100%",
+                          width: `${Math.max(2, (c.totalSize / maxSize) * 100)}%`,
+                          borderRadius: 0.75,
+                          bgcolor: "primary.main",
+                        }}
+                      />
+                    </Box>
+                  </TableCell>
+                </TableRow>
               ))}
-            </div>
-
-            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 24, fontSize: 13 }}>
-              <thead>
-                <tr style={{ textAlign: "left", color: "#8b95a7", borderBottom: "1px solid #1b2030" }}>
-                  <th style={{ padding: "6px 8px" }}>{sorted.header("collection", "Collection")}</th>
-                  <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("docs", "Docs")}</th>
-                  <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("average", "Avg doc")}</th>
-                  <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("data", "Data")}</th>
-                  <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("storage", "Storage")}</th>
-                  <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("indexes", "Indexes")}</th>
-                  <th style={{ padding: "6px 8px", textAlign: "right" }}>{sorted.header("total", "Total")}</th>
-                  <th style={{ padding: "6px 8px" }} />
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.rows.map((c) => (
-                  <tr key={c.name} style={{ borderBottom: "1px solid #12161f" }}>
-                    <td style={{ padding: "8px" }}>{c.name}</td>
-                    <td style={{ padding: "8px", textAlign: "right" }}>{formatCount(c.count)}</td>
-                    <td style={{ padding: "8px", textAlign: "right", color: "#8b95a7" }}>{formatBytes(c.avgObjSize)}</td>
-                    <td style={{ padding: "8px", textAlign: "right" }}>{formatBytes(c.dataSize)}</td>
-                    <td style={{ padding: "8px", textAlign: "right" }}>{formatBytes(c.storageSize)}</td>
-                    <td style={{ padding: "8px", textAlign: "right", color: "#8b95a7" }}>
-                      {formatBytes(c.indexSize)} ({c.indexCount})
-                    </td>
-                    <td style={{ padding: "8px", textAlign: "right", fontWeight: 600 }}>{formatBytes(c.totalSize)}</td>
-                    <td style={{ padding: "8px", width: 100 }}>
-                      <div style={{ height: 6, borderRadius: 3, background: "#151b28" }}>
-                        <div
-                          style={{
-                            height: "100%",
-                            width: `${Math.max(2, (c.totalSize / maxSize) * 100)}%`,
-                            borderRadius: 3,
-                            background: "#2563eb",
-                          }}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            </TableBody>
+          </Table>
         </>
       )}
 
-      {!summary && !error && <div style={{ color: "#8b95a7", marginTop: 16 }}>Loading…</div>}
+      {!summary && !error && (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          Loading…
+        </Typography>
+      )}
     </AdminPageShell>
   );
 }

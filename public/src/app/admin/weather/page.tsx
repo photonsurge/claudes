@@ -1,6 +1,5 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
 /**
  * /admin/weather — diagnostic view of the baked weather runs per model. Shows
  * which variables actually baked, how many forecast hours, and WHEN (so a
@@ -9,7 +8,14 @@
  * thumbnails; older runs collapse to a one-line summary.
  */
 import { useCallback, useEffect, useState } from "react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import { font, surface } from "../../../theme/tokens";
 
 interface VarInfo {
   id: string;
@@ -36,6 +42,9 @@ interface RunInfo {
 
 const POLL_MS = 20_000;
 const texUrl = (id: string) => `/api/weather/tex/${id}.png`;
+
+/** DESIGN_BIBLE §3: run stamps, ages, grid sizes and fhr counts are readings. */
+const reading = { fontFamily: font.mono, fontVariantNumeric: "tabular-nums" } as const;
 
 const fmtTime = (iso?: string | null): string => {
   if (!iso) return "—";
@@ -94,78 +103,107 @@ export default function WeatherRunsPage() {
       title="Weather runs"
       description="Every baked weather run per model — which variables actually baked, how many forecast hours, and when. The newest run per model shows raw-data texture thumbnails (not palette-coloured — just to confirm a field baked)."
       actions={
-        <button type="button" onClick={reload} style={primary}>
+        <Button variant="outlined" onClick={reload}>
           Refresh
-        </button>
+        </Button>
       }
       maxWidth={1280}
     >
-      {err && <div style={{ color: "#f87171", marginBottom: 12 }}>Failed to load: {err}</div>}
+      {err && (
+        <Typography variant="body2" color="error.main" sx={{ mb: 1.5 }}>
+          Failed to load: {err}
+        </Typography>
+      )}
       {runs.length === 0 && (
-        <div style={{ color: "#8b95a7" }}>{loading ? "Loading…" : "No weather runs in the database yet."}</div>
+        <Typography variant="body2" color="text.secondary">
+          {loading ? "Loading…" : "No weather runs in the database yet."}
+        </Typography>
       )}
 
       {models.map((model) => {
         const list = byModel.get(model)!;
         return (
-          <section key={model} style={{ marginBottom: 28 }}>
-            <h2 style={{ fontSize: 15, margin: "0 0 10px" }}>
-              {model} <span style={{ color: "#5b6478", fontWeight: 400 }}>· {list.length} run(s)</span>
-            </h2>
+          <Box component="section" key={model} sx={{ mb: 3.5 }}>
+            <Typography variant="h2" component="h2" sx={{ mb: 1.25 }}>
+              {model}{" "}
+              <Box component="span" sx={{ color: "text.disabled", fontWeight: 400 }}>
+                · {list.length} run(s)
+              </Box>
+            </Typography>
 
             {list.map((r, i) => (
-              <div key={r.id} style={card}>
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}>
-                  <span style={{ fontWeight: 700 }}>{fmtTime(r.run)}</span>
+              <Paper key={r.id} sx={{ px: 1.75, py: 1.5, mb: 1.25 }}>
+                <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap", alignItems: "baseline" }}>
+                  <Typography variant="body2" sx={{ ...reading, fontWeight: 700 }}>
+                    {fmtTime(r.run)}
+                  </Typography>
                   <StatusBadge status={r.status} published={r.published} />
-                  <span style={meta}>baked {fmtAge(r.ageMs)}</span>
-                  {r.generatedAt && <span style={meta}>({fmtTime(r.generatedAt)})</span>}
-                  {r.grid && (
-                    <span style={meta}>
-                      {r.grid.width}×{r.grid.height}
-                    </span>
+                  <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
+                    baked <Box component="span" sx={reading}>{fmtAge(r.ageMs)}</Box>
+                  </Typography>
+                  {r.generatedAt && (
+                    <Typography variant="caption" color="text.secondary" sx={{ ...reading, whiteSpace: "nowrap" }}>
+                      ({fmtTime(r.generatedAt)})
+                    </Typography>
                   )}
-                  <span style={{ ...meta, color: r.variableCount ? "#8b95a7" : "#f87171" }}>
+                  {r.grid && (
+                    <Typography variant="caption" color="text.secondary" sx={{ ...reading, whiteSpace: "nowrap" }}>
+                      {r.grid.width}×{r.grid.height}
+                    </Typography>
+                  )}
+                  {/* A run with zero variables baked nothing — that's a failure
+                      to spot at a glance, not a neutral count. */}
+                  <Typography
+                    variant="caption"
+                    sx={{ ...reading, whiteSpace: "nowrap", color: r.variableCount ? "text.secondary" : "error.main" }}
+                  >
                     {r.variableCount} vars · {r.textureCount} textures
-                  </span>
-                </div>
+                  </Typography>
+                </Stack>
 
                 {/* Only the newest run per model renders thumbnails (keeps it fast). */}
                 {i === 0 ? (
-                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+                  <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap", mt: 1.5 }}>
                     {r.variables.map((v) => (
-                      <div key={v.id} style={{ width: 122 }}>
+                      <Box key={v.id} sx={{ width: 122 }}>
                         {v.thumbTexId ? (
-                          <img
+                          <Box
+                            component="img"
                             src={texUrl(v.thumbTexId)}
                             alt={`${r.model} ${v.id}`}
                             width={122}
                             height={61}
-                            style={thumb}
                             loading="lazy"
+                            sx={thumbSx}
                           />
                         ) : (
-                          <div style={{ ...thumb, ...thumbEmpty }}>no texture</div>
+                          <Box sx={{ ...thumbSx, display: "flex", alignItems: "center", justifyContent: "center", color: "text.disabled", fontSize: 10 }}>
+                            no texture
+                          </Box>
                         )}
-                        <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4 }}>{v.id}</div>
-                        <div style={{ fontSize: 11, color: "#8b95a7" }}>
+                        <Typography variant="caption" component="div" sx={{ fontWeight: 600, mt: 0.5 }}>
+                          {v.id}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" component="div" sx={{ ...reading, fontSize: 11 }}>
                           {v.encoding} · {v.fhrCount} fhr
                           {v.firstFhr != null && v.lastFhr != null ? ` (f${v.firstFhr}–f${v.lastFhr})` : ""}
-                        </div>
-                      </div>
+                        </Typography>
+                      </Box>
                     ))}
                     {r.variables.length === 0 && (
-                      <span style={{ color: "#f87171", fontSize: 13 }}>no variables baked in this run</span>
+                      <Typography variant="body2" color="error.main">
+                        no variables baked in this run
+                      </Typography>
                     )}
-                  </div>
+                  </Stack>
                 ) : (
-                  <div style={{ marginTop: 6, fontSize: 12, color: "#8b95a7" }}>
+                  <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.75 }}>
                     {r.variables.map((v) => v.id).join(", ") || "—"}
-                  </div>
+                  </Typography>
                 )}
-              </div>
+              </Paper>
             ))}
-          </section>
+          </Box>
         );
       })}
     </AdminPageShell>
@@ -178,13 +216,13 @@ function StatusBadge({ status, published }: { status: string; published: boolean
   const color =
     status === "complete"
       ? published
-        ? "#34d399"
-        : "#fbbf24"
+        ? "success"
+        : "warning"
       : status === "failed"
-        ? "#f87171"
+        ? "error"
         : published
-          ? "#38bdf8"
-          : "#8b95a7";
+          ? "primary"
+          : "default";
   const label =
     status === "complete"
       ? published
@@ -195,52 +233,16 @@ function StatusBadge({ status, published }: { status: string; published: boolean
           ? "baking · live"
           : "baking…"
         : status;
-  return (
-    <span
-      style={{
-        color,
-        border: `1px solid ${color}55`,
-        borderRadius: 10,
-        padding: "1px 8px",
-        fontSize: 11,
-        fontWeight: 700,
-        background: "#0c111c",
-      }}
-    >
-      {label}
-    </span>
-  );
+  return <Chip label={label} color={color} />;
 }
 
-const primary: React.CSSProperties = {
-  padding: "8px 14px",
-  borderRadius: 6,
-  border: "1px solid #333",
-  background: "#2563eb",
-  color: "#fff",
-  cursor: "pointer",
-};
-const card: React.CSSProperties = {
-  border: "1px solid #1b2030",
-  borderRadius: 8,
-  padding: "12px 14px",
-  marginBottom: 10,
-  background: "#0c111c",
-};
-const meta: React.CSSProperties = { fontSize: 12, color: "#8b95a7", whiteSpace: "nowrap" };
-const thumb: React.CSSProperties = {
+const thumbSx = {
   width: 122,
   height: 61,
   objectFit: "cover",
-  borderRadius: 4,
-  border: "1px solid #1b2030",
-  background: "#060910",
+  borderRadius: 1,
+  border: 1,
+  borderColor: "divider",
+  bgcolor: surface.sunken,
   display: "block",
-};
-const thumbEmpty: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  color: "#5b6478",
-  fontSize: 10,
-};
+} as const;

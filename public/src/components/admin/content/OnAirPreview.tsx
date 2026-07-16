@@ -8,6 +8,8 @@
  * Data-driven deck panels (top cities / forecast / history) are intentionally
  * omitted — they fetch live feeds, not the operator's edits.
  */
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
 import type { Segment, SegmentKind, TrackInfo } from "@photonsurge/shared/director";
 import type { AdminEntityType } from "@photonsurge/shared/admin-content/types";
 import { adminMediaPath, type AdminImage } from "../../../lib/admin-content/client";
@@ -165,19 +167,27 @@ export default function OnAirPreview({
   const { chrome, segment, areaInfo, signature } = build(type, entity, images);
 
   return (
-    <div>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: "#5b6577", marginBottom: 10 }}>
+    <Box>
+      <Typography variant="overline" color="text.disabled" component="div" sx={{ mb: 1.25 }}>
         ON-AIR PREVIEW
-      </div>
-      <div
-        style={{
+      </Typography>
+      {/*
+        The stage deliberately keeps the broadcast surface's gradient rather than
+        the flat admin panel: the point of this box is to show what actually goes
+        to air, and the cards inside are the real /watch components. DESIGN_BIBLE
+        §2 keeps the two languages apart — this is the seam, so the frame is
+        admin (hairline) and everything inside it is broadcast.
+      */}
+      <Box
+        sx={{
           background: "radial-gradient(120% 120% at 30% 10%, #12203a 0%, #060b14 60%)",
-          border: "1px solid #1b2030",
-          borderRadius: 10,
-          padding: 18,
+          border: 1,
+          borderColor: "divider",
+          borderRadius: 1.5,
+          p: 2.25,
           display: "flex",
           flexDirection: "column",
-          gap: 14,
+          gap: 1.75,
           alignItems: "flex-start",
         }}
       >
@@ -187,10 +197,10 @@ export default function OnAirPreview({
           <OnAirCard segment={segment} areaInfo={areaInfo} />
           {signature}
         </DeckChromeContext.Provider>
-      </div>
-      <div style={{ fontSize: 11, color: "#5b6577", marginTop: 8 }}>
+      </Box>
+      <Typography variant="caption" color="text.disabled" component="div" sx={{ mt: 1 }}>
         The uniform lede plus this kind&apos;s signature card, with the on-air header. Live-data cards (nearby cities, forecast, history) aren&apos;t shown.
-      </div>
-    </div>
+      </Typography>
+    </Box>
   );
 }

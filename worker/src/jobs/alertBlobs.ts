@@ -75,8 +75,16 @@ export async function refresh(_job: Job) {
     // blocking the loop long enough to drop job locks. The bucket an alert lands
     // in depends only on its hazard + severity, so work that out cheaply first
     // and let each bucket fetch its own shapes.
+    //
+    // `source` and `identifier` are here because the country is decoded from them
+    // and the country is part of the bucket key. Drop them from this projection
+    // and every alert quietly buckets as "unknown", which is not an error anyone
+    // sees — it's just Europe fusing into one shape again.
     const index = (await db.alerts.model
-      .find({ active: true }, { _id: 0, id: 1, maxSeverityRank: 1, "info.event": 1, "info.parameters": 1 })
+      .find(
+        { active: true },
+        { _id: 0, id: 1, source: 1, identifier: 1, maxSeverityRank: 1, "info.event": 1, "info.parameters": 1 },
+      )
       .lean()
       .exec()) as unknown as iAlert[];
 

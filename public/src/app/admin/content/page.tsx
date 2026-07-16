@@ -7,6 +7,11 @@
  * on-air preview.
  */
 import Link from "next/link";
+import Box from "@mui/material/Box";
+import MuiLink from "@mui/material/Link";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import { ADMIN_ENTITY_TYPES } from "@photonsurge/shared/admin-content/types";
 import { ENTITY_SCHEMAS } from "@photonsurge/shared/admin-content/schema";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
@@ -38,19 +43,41 @@ export default function AdminContentHub() {
       description="Edit the on-air text and images for any catalog or signal item — with a live preview of how it looks on air. Edits survive feed refreshes."
       crumbs={[{ label: "Content" }]}
     >
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 1.5 }}>
         {ADMIN_ENTITY_TYPES.map((type) => (
-          <Link key={type} href={`/admin/content/${type}`} style={{ textDecoration: "none", color: "inherit" }}>
-            <div style={{ padding: 16, borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c", height: "100%" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 18 }}>{ICON[type]}</span>
-                <h3 style={{ margin: 0, fontSize: 15 }}>{ENTITY_SCHEMAS[type].plural}</h3>
-              </div>
-              <div style={{ color: "#8b95a7", fontSize: 13, marginTop: 6 }}>{DESC[type]}</div>
-            </div>
-          </Link>
+          <MuiLink
+            key={type}
+            component={Link}
+            href={`/admin/content/${type}`}
+            underline="none"
+            color="inherit"
+            sx={{ display: "block", height: "100%" }}
+          >
+            <Paper
+              sx={{
+                p: 2,
+                height: "100%",
+                // The one affordance the flat palette allows — the hairline picks
+                // up the accent so the card reads as a target.
+                transition: "border-color 120ms, background-color 120ms",
+                "&:hover": { borderColor: "primary.main", bgcolor: "action.hover" },
+              }}
+            >
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <Box component="span" aria-hidden sx={{ fontSize: 18 }}>
+                  {ICON[type]}
+                </Box>
+                <Typography variant="h3" component="h3">
+                  {ENTITY_SCHEMAS[type].plural}
+                </Typography>
+              </Stack>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                {DESC[type]}
+              </Typography>
+            </Paper>
+          </MuiLink>
         ))}
-      </div>
+      </Box>
     </AdminPageShell>
   );
 }

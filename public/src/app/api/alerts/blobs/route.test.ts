@@ -18,12 +18,19 @@ jest.mock("@photonsurge/shared/db/index", () => ({
   }),
 }));
 // Pass-through cache: exercise the composer, but record the key it was given.
+//
+// It MUST return the real `{ value, hit }` envelope. This mock used to hand back
+// the composer's result bare, which is not what withCache does — so the route
+// could serialise the envelope itself, ship {value:{features}} to a client
+// reading `.features`, and draw an empty globe off a 2.8MB 200 OK, while every
+// test here passed. A mock that's wrong in the same way as the code doesn't test
+// the code, it agrees with it.
 const cacheKeys: string[] = [];
 jest.mock("../../../../lib/focus/focus-cache", () => ({
   FEED_TTL_SEC: 60,
-  withCache: (key: string, _ttl: number, fn: () => Promise<unknown>) => {
+  withCache: async (key: string, _ttl: number, fn: () => Promise<unknown>) => {
     cacheKeys.push(key);
-    return fn();
+    return { value: await fn(), hit: false };
   },
 }));
 jest.mock("@photonsurge/shared/geo/simplify", () => ({
@@ -63,6 +70,28 @@ beforeEach(() => {
 });
 
 describe("GET /api/alerts/blobs", () => {
+  /**
+   * The client reads `body.features`. Nothing else in the response contract
+   * matters as much, and it's the piece that broke: a wrapper object round the
+   * feed is a 200 OK with a plausible byte count and an empty globe, which is
+   * indistinguishable from "no warnings anywhere" at a glance.
+   */
+  it("serves the feed at the TOP level, not wrapped in the cache envelope", async () => {
+    mockList.mockResolvedValue({ blobs: [blob()] });
+
+    const body = await (await get()).json();
+
+    expect(Object.keys(body).sort()).toEqual(["count", "features"]);
+    expect(body).not.toHaveProperty("value");
+    expect(Array.isArray(body.features)).toBe(true);
+  });
+
+  it("reports whether the feed came from cache", async () => {
+    mockList.mockResolvedValue({ blobs: [] });
+
+    expect((await get()).headers.get("X-Cache")).toBe("miss");
+  });
+
   it("returns the dissolved shape as a drawable feature", async () => {
     mockList.mockResolvedValue({ blobs: [blob()] });
     mockAlertFind.mockReturnValue(chain([member("a1", "2026-07-15T10:00:00Z")]));

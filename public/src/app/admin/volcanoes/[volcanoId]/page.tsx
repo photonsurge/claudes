@@ -10,6 +10,20 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "next/navigation";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import ButtonBase from "@mui/material/ButtonBase";
+import MuiLink from "@mui/material/Link";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
+import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { EventTimelineBeat } from "@photonsurge/shared/events/event-timeline";
 import type { Cam } from "@photonsurge/shared/cams/types";
@@ -18,8 +32,11 @@ import type { VolcanoMedia } from "@photonsurge/shared/volcanoes/media";
 import type { VolcanoCamera } from "@photonsurge/shared/volcanoes/media";
 import type { iVolcanoMediaSource } from "@photonsurge/shared/db/volcano-media-source-model";
 import type { VolcanoEruption } from "@photonsurge/shared/db/volcano-eruption-repo";
+import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
 import { formatGvpDate } from "@photonsurge/shared/volcanoes/gvp-wfs";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
+import { severityColor } from "../../../../lib/alerts";
+import { font, surface } from "../../../../theme/tokens";
 
 /** Render a stored eruption's fuzzy start/end for humans (BCE, "?", unknown month/day). */
 const eruptionDate = (e: VolcanoEruption, side: "start" | "end"): string => {
@@ -34,8 +51,16 @@ const eruptionDate = (e: VolcanoEruption, side: "start" | "end"): string => {
   });
 };
 
-/** VEI 0-7 → a colour ramp (green → red), mirroring the alert palette. */
-const VEI_COLOR = ["#64748b", "#34d399", "#a3e635", "#eab308", "#f59e0b", "#f97316", "#ef4444", "#b91c1c"];
+/**
+ * Every threat level on this page — GVP status, USGS colour code, VEI — is
+ * expressed on the product's own severity ramp (DESIGN_BIBLE §4.4) rather than
+ * a private green/orange/red, so a volcano's "unrest" and a storm warning's
+ * "severe" are the same orange everywhere.
+ */
+const STATUS_RANK: Record<string, SeverityRank> = { erupting: 4, unrest: 3, dormant: 0 };
+const USGS_RANK: Record<string, SeverityRank> = { RED: 4, ORANGE: 3, YELLOW: 2, GREEN: 1 };
+/** VEI 0-7 onto the ramp's five ranks; the bar's width still carries the exact VEI. */
+const VEI_RANK: SeverityRank[] = [0, 1, 1, 2, 2, 3, 4, 4];
 
 /**
  * GVP's `StartEvidenceMethod` = HOW the eruption's start date was established, and
@@ -65,18 +90,6 @@ interface VolcanoDetail {
 
 const snapSrc = (s: EventSnapshotMeta) => `/api/events/snapshot/${s.id}?v=${encodeURIComponent(s.capturedAt)}`;
 
-const STATUS_COLOR: Record<string, string> = {
-  erupting: "#ef4444",
-  unrest: "#f97316",
-  dormant: "#94a3b8",
-};
-const USGS_COLOR: Record<string, string> = {
-  RED: "#ef4444",
-  ORANGE: "#f97316",
-  YELLOW: "#eab308",
-  GREEN: "#34d399",
-};
-
 const fmtTime = (ms?: number | string): string => {
   if (ms == null || ms === "") return "—";
   const d = new Date(ms);
@@ -104,6 +117,15 @@ const beatGlyph = (type: string): string => {
       return "🔄";
   }
 };
+
+/** Section heading — the HUD "chrome" voice shared by every card on the page. */
+function CardLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Typography variant="overline" color="text.secondary" sx={{ display: "block" }}>
+      {children}
+    </Typography>
+  );
+}
 
 export default function VolcanoDetailPage() {
   const { volcanoId } = useParams<{ volcanoId: string }>();
@@ -190,7 +212,7 @@ export default function VolcanoDetailPage() {
   if (!detail) {
     return (
       <AdminPageShell title="Volcano" crumbs={[{ href: "/admin/volcanoes", label: "Volcanoes" }, { label: "…" }]}>
-        <div style={{ color: "#8b95a7" }}>{missing ? "No such volcano." : "Loading…"}</div>
+        <Typography color="text.secondary">{missing ? "No such volcano." : "Loading…"}</Typography>
       </AdminPageShell>
     );
   }
@@ -220,6 +242,8 @@ export default function VolcanoDetailPage() {
     ...volcanoCameras.map((camera) => camera.source),
   ]);
   const mediaSources = (detail.mediaSources ?? []).filter((source) => usedSourceIds.has(source.source));
+  const statusRank = STATUS_RANK[v.status];
+  const usgsRank = v.usgsColorCode ? USGS_RANK[v.usgsColorCode] : undefined;
 
   return (
     <AdminPageShell
@@ -227,56 +251,64 @@ export default function VolcanoDetailPage() {
       maxWidth={1100}
       crumbs={[{ href: "/admin/volcanoes", label: "Volcanoes" }, { label: v.name }]}
       description={
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ color: STATUS_COLOR[v.status] ?? "#cbd5e1", fontWeight: 700 }}>● {v.status}</span>
-          {v.country && <span style={{ color: "#8b95a7" }}>{v.country}</span>}
+        <Stack component="span" direction="row" spacing={1} useFlexGap sx={{ display: "inline-flex", alignItems: "center", flexWrap: "wrap" }}>
+          <Box component="span" sx={{ fontWeight: 700, color: statusRank != null ? severityColor(statusRank) : "text.primary" }}>
+            ● {v.status}
+          </Box>
+          {v.country && (
+            <Box component="span" sx={{ color: "text.secondary" }}>
+              {v.country}
+            </Box>
+          )}
           {v.usgsColorCode && (
-            <span style={{ color: USGS_COLOR[v.usgsColorCode] ?? "#cbd5e1" }}>
+            <Box component="span" sx={{ color: usgsRank != null ? severityColor(usgsRank) : "text.primary" }}>
               ● USGS {v.usgsColorCode}
               {v.usgsAlertLevel ? ` / ${v.usgsAlertLevel}` : ""}
-            </span>
+            </Box>
           )}
-        </span>
+        </Stack>
       }
       actions={
-        <button type="button" onClick={reload} style={primary}>
+        <Button variant="outlined" onClick={reload}>
           Refresh
-        </button>
+        </Button>
       }
     >
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 1.75 }}>
         {/* Official status timeline (the promoted WatchedEvent's beats). */}
-        <div style={card}>
-          <div style={cardLabel}>Status timeline ({timeline.length})</div>
+        <Paper sx={{ p: 1.75 }}>
+          <CardLabel>Status timeline ({timeline.length})</CardLabel>
           {timeline.length === 0 && (
-            <div style={{ color: "#5b6478", fontSize: 13, marginTop: 8 }}>
+            <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>
               No status changes recorded yet{detail.event ? "" : " — not promoted (needs EVENTS_UNIFIED_ENABLED)"}.
-            </div>
+            </Typography>
           )}
           {timeline
             .slice()
             .reverse()
             .map((b, i) => (
-              <div
+              <Stack
                 key={`${b.at}-${b.type}-${i}`}
-                style={{ borderTop: "1px solid #121622", padding: "7px 0", fontSize: 13, display: "flex", gap: 8 }}
+                direction="row"
+                spacing={1}
+                sx={{ borderTop: "1px solid", borderColor: "divider", py: 0.875 }}
               >
-                <span style={{ color: "#5b6478", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                <Typography component="code" variant="body2" color="text.disabled" sx={{ whiteSpace: "nowrap" }}>
                   {fmtTime(b.at)}
-                </span>
-                <span aria-hidden style={{ width: 16, textAlign: "center" }}>
+                </Typography>
+                <Box component="span" aria-hidden sx={{ width: 16, textAlign: "center" }}>
                   {beatGlyph(b.type)}
-                </span>
-                <span style={{ color: "#e2e8f0" }}>{b.label}</span>
-              </div>
+                </Box>
+                <Typography variant="body2">{b.label}</Typography>
+              </Stack>
             ))}
-        </div>
+        </Paper>
 
         {/* Identity / facts. */}
-        <div style={card}>
-          <div style={cardLabel}>Volcano</div>
-          <table style={{ fontSize: 13, borderCollapse: "collapse", marginTop: 8, width: "100%" }}>
-            <tbody>
+        <Paper sx={{ p: 1.75 }}>
+          <CardLabel>Volcano</CardLabel>
+          <Table sx={{ mt: 1 }}>
+            <TableBody>
               {(
                 [
                   ["GVP id", v.id],
@@ -288,62 +320,83 @@ export default function VolcanoDetailPage() {
                   ["Coordinates", `${v.lat.toFixed(3)}, ${v.lng.toFixed(3)}`],
                 ] as [string, string][]
               ).map(([k, val]) => (
-                <tr key={k}>
-                  <td style={{ color: "#5b6478", padding: "3px 14px 3px 0", whiteSpace: "nowrap", verticalAlign: "top" }}>
+                <TableRow key={k}>
+                  <TableCell sx={{ color: "text.disabled", pl: 0, pr: 1.75, whiteSpace: "nowrap", verticalAlign: "top", border: 0 }}>
                     {k}
-                  </td>
-                  <td style={{ color: "#cbd5e1", padding: "3px 0", wordBreak: "break-all" }}>{val}</td>
-                </tr>
+                  </TableCell>
+                  {/*
+                    IDs, elevations, coordinates and timestamps are all readings,
+                    so this cell is mono — but the mono comes from `fontFamily`,
+                    NOT `component="code"`. That rendered a <code> as a direct
+                    child of <tr>, which only accepts <td>/<th>, and the browser
+                    re-parented it into a hydration error.
+                  */}
+                  <TableCell sx={{ px: 0, wordBreak: "break-all", border: 0, fontFamily: font.mono, fontVariantNumeric: "tabular-nums" }}>
+                    {val}
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </Paper>
 
         {/* Official (non-USGS) observatory status, e.g. GeoNet VAL. */}
         {v.officialAlertLevelRaw && (
-          <div style={card}>
-            <div style={cardLabel}>Official status</div>
-            <div style={{ color: "#f59e0b", fontSize: 13, fontWeight: 600, marginTop: 8 }}>
+          <Paper sx={{ p: 1.75 }}>
+            <CardLabel>Official status</CardLabel>
+            <Typography variant="body2" color="warning.main" sx={{ fontWeight: 600, mt: 1 }}>
               {(v.officialSource ?? "").toUpperCase()} {v.officialAlertScheme} · level {v.officialAlertLevelRaw}
               {v.officialAlertLevelNormalized ? ` (${v.officialAlertLevelNormalized})` : ""}
-            </div>
+            </Typography>
             {v.officialActivity && (
-              <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.45, margin: "6px 0 0" }}>{v.officialActivity}</p>
+              <Typography variant="body2" sx={{ mt: 0.75 }}>
+                {v.officialActivity}
+              </Typography>
             )}
             {v.officialUpdatedAt && (
-              <div style={{ color: "#5b6478", fontSize: 12, marginTop: 6 }}>Updated {fmtTime(v.officialUpdatedAt)}</div>
+              <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 0.75 }}>
+                Updated {fmtTime(v.officialUpdatedAt)}
+              </Typography>
             )}
-          </div>
+          </Paper>
         )}
 
         {/* USGS notice, when present. */}
         {v.usgsColorCode && (
-          <div style={card}>
-            <div style={cardLabel}>USGS notice</div>
-            <div style={{ color: USGS_COLOR[v.usgsColorCode] ?? "#cbd5e1", fontSize: 13, fontWeight: 600, marginTop: 8 }}>
+          <Paper sx={{ p: 1.75 }}>
+            <CardLabel>USGS notice</CardLabel>
+            <Typography variant="body2" sx={{ fontWeight: 600, mt: 1, color: usgsRank != null ? severityColor(usgsRank) : "text.primary" }}>
               ● {v.usgsColorCode}
               {v.usgsAlertLevel ? ` / ${v.usgsAlertLevel}` : ""}
-            </div>
+            </Typography>
             {v.usgsNoticeSynopsis && (
-              <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.45, margin: "6px 0 0" }}>{v.usgsNoticeSynopsis}</p>
+              <Typography variant="body2" sx={{ mt: 0.75 }}>
+                {v.usgsNoticeSynopsis}
+              </Typography>
             )}
-            {v.usgsUpdatedAt && <div style={{ color: "#5b6478", fontSize: 12, marginTop: 6 }}>Updated {fmtTime(v.usgsUpdatedAt)}</div>}
+            {v.usgsUpdatedAt && (
+              <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 0.75 }}>
+                Updated {fmtTime(v.usgsUpdatedAt)}
+              </Typography>
+            )}
             {v.usgsNoticeUrl && (
-              <a href={v.usgsNoticeUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", fontSize: 13, display: "inline-block", marginTop: 6 }}>
+              <MuiLink href={v.usgsNoticeUrl} target="_blank" rel="noreferrer" variant="body2" sx={{ display: "inline-block", mt: 0.75 }}>
                 USGS notice ↗
-              </a>
+              </MuiLink>
             )}
-          </div>
+          </Paper>
         )}
-      </div>
+      </Box>
 
       {/* This week's bulletin + parsed facts. */}
       {v.latestReport && (
-        <div style={{ ...card, marginTop: 14 }}>
-          <div style={cardLabel}>Latest bulletin</div>
-          <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.5, margin: "8px 0 0" }}>{v.latestReport}</p>
+        <Paper sx={{ p: 1.75, mt: 1.75 }}>
+          <CardLabel>Latest bulletin</CardLabel>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            {v.latestReport}
+          </Typography>
           {(v.reportVei != null || v.reportPlumeHeightM != null) && (
-            <div style={{ color: "#5b6478", fontSize: 12, marginTop: 6 }}>
+            <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 0.75 }}>
               Parsed:{" "}
               {[
                 v.reportVei != null ? `VEI ${v.reportVei}` : undefined,
@@ -351,9 +404,9 @@ export default function VolcanoDetailPage() {
               ]
                 .filter(Boolean)
                 .join(" · ")}
-            </div>
+            </Typography>
           )}
-        </div>
+        </Paper>
       )}
 
       {/* Official monitoring cameras — live latest still, each with an ON/OFF
@@ -364,443 +417,549 @@ export default function VolcanoDetailPage() {
           (the orphaned INGV archive rows) shows as OFF and can be purged wholesale
           from /admin/jobs → "Purge orphaned volcano cameras". */}
       {cams && cams.length > 0 && (
-        <div style={{ ...card, marginTop: 14 }}>
-          <div style={cardLabel}>
-            Cameras ({camsOn.length} on{camsOff.length > 0 && <span style={{ color: "#5b6478" }}> · {camsOff.length} off</span>})
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10 }}>
+        <Paper sx={{ p: 1.75, mt: 1.75 }}>
+          <CardLabel>
+            Cameras ({camsOn.length} on
+            {camsOff.length > 0 && (
+              <Box component="span" sx={{ color: "text.disabled" }}>
+                {" "}
+                · {camsOff.length} off
+              </Box>
+            )}
+            )
+          </CardLabel>
+          <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap", mt: 1.25 }}>
             {[...camsOn, ...camsOff].map((c) => {
               const on = c.status === "active";
               return (
-                <div key={c.camId} style={{ width: 220, opacity: on ? 1 : 0.42 }}>
-                  <button
-                    type="button"
+                <Box key={c.camId} sx={{ width: 220, opacity: on ? 1 : 0.42 }}>
+                  <ButtonBase
                     onClick={() => c.imageUrl && setExternalPreview({ src: c.imageUrl, title: c.title, meta: c.attribution?.provider })}
-                    style={{ display: "block", width: 220, color: "inherit", textAlign: "left", padding: 0, border: 0, background: "transparent", cursor: c.imageUrl ? "zoom-in" : "default" }}
+                    sx={{
+                      display: "block",
+                      width: 220,
+                      textAlign: "left",
+                      cursor: c.imageUrl ? "zoom-in" : "default",
+                    }}
                   >
                     {c.imageUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Box
+                        component="img"
                         src={c.imageUrl}
                         alt={c.title}
-                        style={{
+                        sx={{
                           width: 220,
                           height: 138,
                           objectFit: "cover",
-                          borderRadius: 6,
-                          border: `1px solid ${on ? "#1b2030" : "#3a2020"}`,
-                          background: "#070a11",
+                          borderRadius: 1,
+                          border: "1px solid",
+                          // A camera that's switched off is greyed and edged in the
+                          // "off" tone so a wall of thumbnails reads at a glance.
+                          borderColor: on ? "divider" : "error.main",
+                          bgcolor: surface.sunken,
                           filter: on ? undefined : "grayscale(1)",
                         }}
                       />
                     )}
-                    <div style={{ color: "#cbd5e1", fontSize: 12, marginTop: 4, wordBreak: "break-all" }}>{c.title}</div>
+                    <Typography variant="caption" sx={{ display: "block", mt: 0.5, wordBreak: "break-all" }}>
+                      {c.title}
+                    </Typography>
                     {c.attribution?.provider && (
-                      <div style={{ color: "#5b6478", fontSize: 11 }}>{c.attribution.provider}</div>
+                      <Typography variant="caption" color="text.disabled" sx={{ display: "block" }}>
+                        {c.attribution.provider}
+                      </Typography>
                     )}
-                  </button>
-                  <button
-                    type="button"
+                  </ButtonBase>
+                  <Button
+                    variant="outlined"
+                    color={on ? "success" : "inherit"}
                     disabled={busyCam === c.camId}
                     onClick={() => toggleCam(c.camId, on ? "inactive" : "active")}
-                    style={{
-                      marginTop: 5,
-                      padding: "3px 10px",
-                      borderRadius: 5,
-                      fontSize: 11,
-                      cursor: busyCam === c.camId ? "wait" : "pointer",
-                      border: `1px solid ${on ? "#1f6f43" : "#4b5563"}`,
-                      background: on ? "#0f2d1e" : "#1a1f2b",
-                      color: on ? "#34d399" : "#8b95a7",
-                    }}
+                    sx={{ mt: 0.625, minHeight: 24, py: 0.25, px: 1.25, fontSize: 11 }}
                   >
                     {busyCam === c.camId ? "…" : on ? "● On" : "○ Off"}
-                  </button>
-                </div>
+                  </Button>
+                </Box>
               );
             })}
-          </div>
-        </div>
+          </Stack>
+        </Paper>
       )}
 
       {/* Worker-captured camera history — timelapse loops + recent archived frames
           (the "earlier today / this week" observation record). Needs the capture
           job (VOLCANO_CAM_SNAPSHOT_ENABLED) to have run. */}
       {(timelapses.length > 0 || capturedFrames.length > 0) && (
-        <div style={{ ...card, marginTop: 14 }}>
-          <div style={cardLabel}>Camera history ({snapshots.length})</div>
+        <Paper sx={{ p: 1.75, mt: 1.75 }}>
+          <CardLabel>Camera history ({snapshots.length})</CardLabel>
           {timelapses.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10 }}>
+            <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap", mt: 1.25 }}>
               {timelapses.map((s) => (
-                <figure key={s.id} style={{ margin: 0, width: 320 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                <Box component="figure" key={s.id} sx={{ m: 0, width: 320 }}>
+                  <Box
+                    component="img"
                     src={snapSrc(s)}
                     alt="timelapse"
-                    style={{ width: 320, height: 180, objectFit: "cover", borderRadius: 6, border: "1px solid #1b2030", background: "#070a11" }}
+                    sx={{ width: 320, height: 180, objectFit: "cover", borderRadius: 1, border: "1px solid", borderColor: "divider", bgcolor: surface.sunken }}
                   />
-                  <figcaption style={{ color: "#5b6478", fontSize: 11, marginTop: 3 }}>
+                  <Typography component="figcaption" variant="caption" color="text.disabled" sx={{ display: "block", mt: 0.375 }}>
                     ▶ timelapse · {fmtTime(s.observationTime)}
-                  </figcaption>
-                </figure>
+                  </Typography>
+                </Box>
               ))}
-            </div>
+            </Stack>
           )}
           {capturedFrames.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mt: 1.5 }}>
               {capturedFrames.map((s) => (
-                <a key={s.id} href={snapSrc(s)} target="_blank" rel="noreferrer" title={fmtTime(s.observationTime)}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={snapSrc(s)}
-                    alt="frame"
-                    style={{ width: 128, height: 80, objectFit: "cover", borderRadius: 4, border: "1px solid #1b2030", background: "#070a11" }}
-                  />
-                </a>
+                <Tooltip key={s.id} title={fmtTime(s.observationTime)}>
+                  <Box component="a" href={snapSrc(s)} target="_blank" rel="noreferrer">
+                    <Box
+                      component="img"
+                      src={snapSrc(s)}
+                      alt="frame"
+                      sx={{ width: 128, height: 80, objectFit: "cover", borderRadius: 0.5, border: "1px solid", borderColor: "divider", bgcolor: surface.sunken, display: "block" }}
+                    />
+                  </Box>
+                </Tooltip>
               ))}
-            </div>
+            </Stack>
           )}
-        </div>
+        </Paper>
       )}
 
       {media.length > 0 && (
-        <div style={{ ...card, marginTop: 14 }}>
-          <div style={cardLabel}>Official media ({media.length})</div>
-          {mediaGroups.map(([group, items]) => <section key={group} style={{ marginTop: 14 }}>
-            <div style={{ color: "#7f8da3", fontSize: 11, fontWeight: 700, letterSpacing: .5, marginBottom: 7 }}>
-              {items[0].source} · {items[0].type} ({items.length})
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-            {items.map((item) => {
-              const src = mediaSrc(item);
-              const lightboxItemIndex = lightboxMedia.findIndex((candidate) => candidate.id === item.id);
-              return (
-                <figure key={item.id} style={{ margin: 0, minWidth: 0 }}>
-                  {src && item.type !== "VIDEO" && (
-                    <button type="button" onClick={() => { if (lightboxItemIndex >= 0) setLightboxIndex(lightboxItemIndex); }} aria-label={`Open ${item.title ?? item.caption ?? item.type}`}
-                      style={{ display: "block", width: "100%", padding: 0, border: 0, background: "transparent", cursor: "zoom-in" }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={src} alt={item.title ?? item.caption ?? item.type}
-                        style={{ width: "100%", height: 145, objectFit: "cover", borderRadius: 6, border: "1px solid #1b2030", background: "#070a11", display: "block" }} />
-                    </button>
-                  )}
-                  <figcaption style={{ marginTop: 5 }}>
-                    <div style={{ color: "#cbd5e1", fontSize: 12 }}>{item.title ?? item.caption ?? item.type}</div>
-                    <div style={{ color: "#5b6478", fontSize: 11 }}>
-                      {item.source} · {item.type} · {fmtTime(item.observedAt?.toString() ?? item.acquiredAt.toString())}
-                    </div>
-                    <div style={{ color: item.reuseAllowed ? "#34d399" : "#f59e0b", fontSize: 10 }}>
-                      {item.licence ?? "VERIFY"}{item.reuseAllowed ? " · reusable" : " · internal review only"}
-                    </div>
-                    <a href={item.sourceUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", fontSize: 11 }}>Source ↗</a>
-                  </figcaption>
-                </figure>
-              );
-            })}
-            </div>
-          </section>)}
-        </div>
+        <Paper sx={{ p: 1.75, mt: 1.75 }}>
+          <CardLabel>Official media ({media.length})</CardLabel>
+          {mediaGroups.map(([group, items]) => (
+            <Box component="section" key={group} sx={{ mt: 1.75 }}>
+              <Typography variant="overline" color="text.secondary" sx={{ display: "block", mb: 0.875 }}>
+                {items[0].source} · {items[0].type} ({items.length})
+              </Typography>
+              <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 1.5 }}>
+                {items.map((item) => {
+                  const src = mediaSrc(item);
+                  const lightboxItemIndex = lightboxMedia.findIndex((candidate) => candidate.id === item.id);
+                  return (
+                    <Box component="figure" key={item.id} sx={{ m: 0, minWidth: 0 }}>
+                      {src && item.type !== "VIDEO" && (
+                        <ButtonBase
+                          onClick={() => { if (lightboxItemIndex >= 0) setLightboxIndex(lightboxItemIndex); }}
+                          aria-label={`Open ${item.title ?? item.caption ?? item.type}`}
+                          sx={{ display: "block", width: "100%", cursor: "zoom-in" }}
+                        >
+                          <Box
+                            component="img"
+                            src={src}
+                            alt={item.title ?? item.caption ?? item.type}
+                            sx={{ width: "100%", height: 145, objectFit: "cover", borderRadius: 1, border: "1px solid", borderColor: "divider", bgcolor: surface.sunken, display: "block" }}
+                          />
+                        </ButtonBase>
+                      )}
+                      <Box component="figcaption" sx={{ mt: 0.625 }}>
+                        <Typography variant="caption" sx={{ display: "block" }}>
+                          {item.title ?? item.caption ?? item.type}
+                        </Typography>
+                        <Typography variant="caption" color="text.disabled" sx={{ display: "block" }}>
+                          {item.source} · {item.type} · {fmtTime(item.observedAt?.toString() ?? item.acquiredAt.toString())}
+                        </Typography>
+                        {/* Licence is the thing that decides whether this can go on
+                            air, so it gets the go/no-go colour rather than a caption grey. */}
+                        <Typography variant="caption" color={item.reuseAllowed ? "success.main" : "warning.main"} sx={{ display: "block", fontSize: 10 }}>
+                          {item.licence ?? "VERIFY"}
+                          {item.reuseAllowed ? " · reusable" : " · internal review only"}
+                        </Typography>
+                        <MuiLink href={item.sourceUrl} target="_blank" rel="noreferrer" variant="caption" sx={{ fontSize: 11 }}>
+                          Source ↗
+                        </MuiLink>
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Box>
+          ))}
+        </Paper>
       )}
 
       {(mediaSources.length > 0 || volcanoCameras.length > 0) && (
-        <div style={{ ...card, marginTop: 14 }}>
-          <div style={cardLabel}>Monitoring sources ({mediaSources.length})</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 10, marginTop: 10 }}>
+        <Paper sx={{ p: 1.75, mt: 1.75 }}>
+          <CardLabel>Monitoring sources ({mediaSources.length})</CardLabel>
+          <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 1.25, mt: 1.25 }}>
             {mediaSources.map((source) => {
               const sourceMedia = media.filter((item) => item.source === source.source);
               const sourceCameras = volcanoCameras.filter((camera) => camera.source === source.source);
               return (
-                <div key={source.source} style={{ padding: 11, border: "1px solid #1b2030", borderRadius: 7, background: "#090e18" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <strong style={{ color: "#dbe5f3", fontSize: 13 }}>{source.name}</strong>
-                    <span style={{ color: source.enabled ? "#34d399" : "#64748b", fontSize: 10 }}>{source.enabled ? "ENABLED" : "DISABLED"}</span>
-                  </div>
-                  <div style={{ color: "#7f8a9d", fontSize: 11, marginTop: 5 }}>
-                    {sourceCameras.length} camera{sourceCameras.length === 1 ? "" : "s"} · {sourceMedia.length} archived item{sourceMedia.length === 1 ? "" : "s"}
-                  </div>
-                  <div style={{ color: source.defaultReuseAllowed ? "#34d399" : "#f59e0b", fontSize: 11, marginTop: 3 }}>
+                <Paper key={source.source} sx={{ p: 1.375, bgcolor: surface.raised }}>
+                  <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between" }}>
+                    <Typography variant="body2" component="strong" sx={{ fontWeight: 700 }}>
+                      {source.name}
+                    </Typography>
+                    <Typography variant="caption" color={source.enabled ? "success.main" : "text.disabled"} sx={{ fontSize: 10 }}>
+                      {source.enabled ? "ENABLED" : "DISABLED"}
+                    </Typography>
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.625 }}>
+                    {sourceCameras.length} camera{sourceCameras.length === 1 ? "" : "s"} · {sourceMedia.length} archived item
+                    {sourceMedia.length === 1 ? "" : "s"}
+                  </Typography>
+                  <Typography variant="caption" color={source.defaultReuseAllowed ? "success.main" : "warning.main"} sx={{ display: "block", mt: 0.375 }}>
                     {source.defaultLicence ?? "VERIFY"} · {source.defaultReuseAllowed ? "default reusable" : "review before reuse"}
-                  </div>
-                  {source.attribution && <div style={{ color: "#667085", fontSize: 10, marginTop: 3 }}>{source.attribution}</div>}
-                  {source.lastDiscoveredAt && <div style={{ color: "#566174", fontSize: 10, marginTop: 3 }}>Registry checked {fmtTime(source.lastDiscoveredAt.toString())}</div>}
-                  {source.lastError && <div style={{ color: "#ef8f8f", fontSize: 10, marginTop: 3 }}>Last error: {source.lastError}</div>}
-                  <a href={source.registryUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", fontSize: 11, display: "inline-block", marginTop: 5 }}>Source registry ↗</a>
-                </div>
+                  </Typography>
+                  {source.attribution && (
+                    <Typography variant="caption" color="text.disabled" sx={{ display: "block", fontSize: 10, mt: 0.375 }}>
+                      {source.attribution}
+                    </Typography>
+                  )}
+                  {source.lastDiscoveredAt && (
+                    <Typography variant="caption" color="text.disabled" sx={{ display: "block", fontSize: 10, mt: 0.375 }}>
+                      Registry checked {fmtTime(source.lastDiscoveredAt.toString())}
+                    </Typography>
+                  )}
+                  {source.lastError && (
+                    <Typography variant="caption" color="error.main" sx={{ display: "block", fontSize: 10, mt: 0.375 }}>
+                      Last error: {source.lastError}
+                    </Typography>
+                  )}
+                  <MuiLink href={source.registryUrl} target="_blank" rel="noreferrer" variant="caption" sx={{ display: "inline-block", fontSize: 11, mt: 0.625 }}>
+                    Source registry ↗
+                  </MuiLink>
+                </Paper>
               );
             })}
-          </div>
+          </Box>
           {volcanoCameras.length > 0 && (
-            <details style={{ marginTop: 12 }}>
-              <summary style={{ color: "#93a4ba", fontSize: 12, cursor: "pointer" }}>Camera registry details ({volcanoCameras.length})</summary>
-              <div style={{ overflowX: "auto", marginTop: 8 }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                  <thead><tr>{["Source", "Camera", "Mode", "Coordinates", "Bearing", "Upstream time", "Rights"].map((label) =>
-                    <th key={label} style={{ textAlign: "left", color: "#64748b", padding: "5px 8px", borderBottom: "1px solid #1b2030" }}>{label}</th>)}</tr></thead>
-                  <tbody>{volcanoCameras.map((camera) => (
-                    <tr key={camera.id}>
-                      <td style={sourceCell}>{camera.source}</td>
-                      <td style={sourceCell}><a href={camera.detailUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa" }}>{camera.name}</a><div style={{ color: "#4f5b6d" }}>{camera.sourceCameraId}</div></td>
-                      <td style={sourceCell}>{camera.mode}</td>
-                      <td style={sourceCell}>{camera.latitude != null && camera.longitude != null ? `${camera.latitude.toFixed(4)}, ${camera.longitude.toFixed(4)}` : "—"}</td>
-                      <td style={sourceCell}>{camera.bearing != null ? `${camera.bearing}°` : "—"}</td>
-                      <td style={sourceCell}>{camera.upstreamTimestamp ?? "—"}</td>
-                      <td style={sourceCell}>{camera.licence ?? "VERIFY"}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-            </details>
+            <Box component="details" sx={{ mt: 1.5 }}>
+              <Box component="summary" sx={{ color: "text.secondary", fontSize: 12, cursor: "pointer" }}>
+                Camera registry details ({volcanoCameras.length})
+              </Box>
+              <Box sx={{ overflowX: "auto", mt: 1 }}>
+                <Table sx={{ "& .MuiTableCell-root": { fontSize: 11 } }}>
+                  <TableHead>
+                    <TableRow>
+                      {["Source", "Camera", "Mode", "Coordinates", "Bearing", "Upstream time", "Rights"].map((label) => (
+                        <TableCell key={label}>{label}</TableCell>
+                      ))}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {volcanoCameras.map((camera) => (
+                      <TableRow key={camera.id}>
+                        <TableCell sx={sourceCell}>{camera.source}</TableCell>
+                        <TableCell sx={sourceCell}>
+                          <MuiLink href={camera.detailUrl} target="_blank" rel="noreferrer">
+                            {camera.name}
+                          </MuiLink>
+                          <Box component="code" sx={{ display: "block", color: "text.disabled" }}>
+                            {camera.sourceCameraId}
+                          </Box>
+                        </TableCell>
+                        <TableCell sx={sourceCell}>{camera.mode}</TableCell>
+                        <TableCell sx={{ ...sourceCell, fontFamily: "monospace" }}>
+                          {camera.latitude != null && camera.longitude != null
+                            ? `${camera.latitude.toFixed(4)}, ${camera.longitude.toFixed(4)}`
+                            : "—"}
+                        </TableCell>
+                        <TableCell sx={{ ...sourceCell, fontFamily: "monospace" }}>{camera.bearing != null ? `${camera.bearing}°` : "—"}</TableCell>
+                        <TableCell sx={{ ...sourceCell, fontFamily: "monospace" }}>{camera.upstreamTimestamp ?? "—"}</TableCell>
+                        <TableCell sx={sourceCell}>{camera.licence ?? "VERIFY"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Box>
+            </Box>
           )}
-        </div>
+        </Paper>
       )}
 
       {/* Eruption history — a CATALOG fact, so it renders for every volcano
           (dormant included), independent of any WatchedEvent. This is Band 2 of
           the planned per-volcano timeline. Empty until `seedEruptions` has run. */}
       {eruptions.length > 0 && (
-        <div style={{ ...card, marginTop: 14 }}>
-          <div style={cardLabel}>
-            Eruption history ({eruptions.length})
-          </div>
-          <div style={{ color: "#8b95a7", fontSize: 12, margin: "6px 0 10px" }}>
+        <Paper sx={{ p: 1.75, mt: 1.75 }}>
+          <CardLabel>Eruption history ({eruptions.length})</CardLabel>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", my: 0.75, mb: 1.25 }}>
             {since1900} since 1900
             {largestVei !== undefined && <> · largest VEI {largestVei}</>}
             {" · oldest "}
             {eruptionDate(eruptions[eruptions.length - 1], "start")}
-          </div>
-          <div style={{ maxHeight: 420, overflowY: "auto" }}>
-            <table style={{ fontSize: 13, borderCollapse: "collapse", width: "100%" }}>
-              <thead>
-                <tr style={{ color: "#5b6478", textAlign: "left" }}>
-                  <th style={{ padding: "4px 10px 4px 0", fontWeight: 500 }}>Start</th>
-                  <th style={{ padding: "4px 10px 4px 0", fontWeight: 500 }}>End</th>
-                  <th style={{ padding: "4px 10px 4px 0", fontWeight: 500 }}>VEI</th>
-                  <th
-                    style={{ padding: "4px 10px 4px 0", fontWeight: 500 }}
-                    title="How GVP established the start date — only really meaningful for prehistoric eruptions"
-                  >
-                    Dated by
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+          </Typography>
+          <Box sx={{ maxHeight: 420, overflowY: "auto" }}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Start</TableCell>
+                  <TableCell>End</TableCell>
+                  <TableCell>VEI</TableCell>
+                  <Tooltip title="How GVP established the start date — only really meaningful for prehistoric eruptions">
+                    <TableCell>Dated by</TableCell>
+                  </Tooltip>
+                </TableRow>
+              </TableHead>
+              <TableBody>
                 {eruptions.map((e) => (
-                  <tr key={e.eruptionNumber} style={{ borderTop: "1px solid #121622" }}>
-                    <td style={{ padding: "5px 10px 5px 0", color: "#e2e8f0", whiteSpace: "nowrap" }}>
+                  <TableRow key={e.eruptionNumber}>
+                    {/* Dates are readings — mono keeps the fuzzy BCE/"?" forms aligned. */}
+                    <TableCell sx={{ pl: 0, whiteSpace: "nowrap", fontFamily: font.mono, fontVariantNumeric: "tabular-nums" }}>
                       {eruptionDate(e, "start")}
-                      {!e.confirmed && <span style={{ color: "#5b6478" }} title="Uncertain eruption"> ?</span>}
-                    </td>
-                    <td style={{ padding: "5px 10px 5px 0", color: "#8b95a7", whiteSpace: "nowrap" }}>
+                      {!e.confirmed && (
+                        <Tooltip title="Uncertain eruption">
+                          <Box component="span" sx={{ color: "text.disabled" }}>
+                            {" "}
+                            ?
+                          </Box>
+                        </Tooltip>
+                      )}
+                    </TableCell>
+                    <TableCell sx={{ color: "text.secondary", whiteSpace: "nowrap", fontFamily: font.mono, fontVariantNumeric: "tabular-nums" }}>
                       {eruptionDate(e, "end")}
-                    </td>
-                    <td style={{ padding: "5px 10px 5px 0" }}>
+                    </TableCell>
+                    <TableCell>
                       {e.vei !== undefined ? (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          <span
+                        <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                          <Box
                             aria-hidden
-                            style={{
+                            sx={{
                               display: "inline-block",
-                              width: Math.max(6, (e.vei + 1) * 7),
                               height: 8,
-                              borderRadius: 2,
-                              background: VEI_COLOR[e.vei] ?? "#64748b",
+                              borderRadius: 0.25,
+                              width: Math.max(6, (e.vei + 1) * 7),
+                              bgcolor: severityColor(VEI_RANK[e.vei] ?? 0),
                             }}
                           />
-                          <span style={{ color: "#cbd5e1" }}>{e.vei}</span>
-                        </span>
+                          <Box component="code">{e.vei}</Box>
+                        </Stack>
                       ) : (
-                        <span style={{ color: "#5b6478" }}>—</span>
+                        <Box component="span" sx={{ color: "text.disabled" }}>
+                          —
+                        </Box>
                       )}
-                    </td>
-                    <td style={{ padding: "5px 0", color: datedBy(e.startEvidence).dim ? "#3f4757" : "#8b95a7" }}>
+                    </TableCell>
+                    <TableCell sx={{ px: 0, color: datedBy(e.startEvidence).dim ? "text.disabled" : "text.secondary" }}>
                       {datedBy(e.startEvidence).text}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              </TableBody>
+            </Table>
+          </Box>
+        </Paper>
       )}
 
       {/* Wikipedia search term. Renders ALWAYS — unlike the About card below, which
           needs enrichment to have landed. The override exists precisely for the
           volcanoes that never matched an article, so hiding it on a miss would
           hide it exactly when it's needed. */}
-      <div style={{ ...card, marginTop: 14 }}>
-        <div style={cardLabel}>Wikipedia search</div>
-        <p style={{ color: "#8b95a7", fontSize: 12, lineHeight: 1.5, margin: "8px 0 10px" }}>
-          Enrichment searches Wikipedia by the volcano&apos;s name (<span style={{ color: "#cbd5e1" }}>{v.name}</span>).
+      <Paper sx={{ p: 1.75, mt: 1.75 }}>
+        <CardLabel>Wikipedia search</CardLabel>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1, mb: 1.25, lineHeight: 1.5 }}>
+          Enrichment searches Wikipedia by the volcano&apos;s name (<Box component="span" sx={{ color: "text.primary" }}>{v.name}</Box>).
           Set a term here when that finds the wrong article or nothing at all — it replaces the guesses entirely.
           Leave blank to go back to searching by name. Saving re-queues this volcano for the next enrich pass.
-        </p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <input
+        </Typography>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+          <TextField
             value={searchOverride}
             onChange={(e) => { setSearchOverride(e.target.value); setOverrideSaved(false); }}
             onKeyDown={(e) => { if (e.key === "Enter") saveSearchOverride(); }}
             placeholder={`Search by name (${v.name})`}
-            aria-label="Wikipedia search term"
-            style={{
-              flex: "1 1 260px",
-              padding: "7px 10px",
-              borderRadius: 6,
-              border: "1px solid #1b2030",
-              background: "#070a11",
-              color: "#e2e8f0",
-              fontSize: 13,
-            }}
+            slotProps={{ htmlInput: { "aria-label": "Wikipedia search term" } }}
+            sx={{ flex: "1 1 260px" }}
           />
-          <button
-            type="button"
+          {/* The page's one real mutation, so it's the one contained button (§5.6). */}
+          <Button
+            variant="contained"
             onClick={saveSearchOverride}
             disabled={savingOverride || searchOverride.trim() === (v.searchOverride ?? "")}
-            style={{
-              ...primary,
-              padding: "7px 14px",
-              fontSize: 13,
-              opacity: savingOverride || searchOverride.trim() === (v.searchOverride ?? "") ? 0.5 : 1,
-              cursor: savingOverride ? "wait" : "pointer",
-            }}
           >
             {savingOverride ? "Saving…" : "Save"}
-          </button>
-        </div>
-        <div style={{ color: overrideSaved ? "#34d399" : "#5b6478", fontSize: 12, marginTop: 8 }}>
+          </Button>
+        </Stack>
+        <Typography variant="caption" color={overrideSaved ? "success.main" : "text.disabled"} sx={{ display: "block", mt: 1 }}>
           {overrideSaved
             ? "Saved — will re-query on the next Wikipedia enrich run."
             : v.searchOverride
               ? `Overridden${v.wikiFetchedAt ? "" : " · awaiting the next enrich run"}. Last checked ${fmtTime(v.wikiFetchedAt)}.`
               : `Searching by name. Last checked ${fmtTime(v.wikiFetchedAt)}${v.wikiTitle ? ` · matched "${v.wikiTitle}"` : v.wikiFetchedAt ? " · no match" : ""}.`}
-        </div>
-      </div>
+        </Typography>
+      </Paper>
 
       {/* Wikipedia enrichment. */}
       {(v.wikiPhoto || v.wikiThumb || v.wikiExtract) && (
-        <div style={{ ...card, marginTop: 14 }}>
-          <div style={cardLabel}>About</div>
-          <div style={{ display: "flex", gap: 14, marginTop: 8, flexWrap: "wrap" }}>
+        <Paper sx={{ p: 1.75, mt: 1.75 }}>
+          <CardLabel>About</CardLabel>
+          <Stack direction="row" spacing={1.75} useFlexGap sx={{ mt: 1, flexWrap: "wrap" }}>
             {(v.wikiPhoto || v.wikiThumb) && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <button type="button" onClick={() => setExternalPreview({ src: v.wikiPhoto || v.wikiThumb!, title: `${v.name} reference image`, meta: "Wikipedia / Wikimedia" })}
-                style={{ padding: 0, border: 0, background: "transparent", cursor: "zoom-in" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={v.wikiPhoto || v.wikiThumb} alt=""
-                  style={{ width: 240, height: 150, objectFit: "cover", borderRadius: 6, background: "#070a11", display: "block" }} />
-              </button>
+              <ButtonBase
+                onClick={() => setExternalPreview({ src: v.wikiPhoto || v.wikiThumb!, title: `${v.name} reference image`, meta: "Wikipedia / Wikimedia" })}
+                sx={{ cursor: "zoom-in" }}
+              >
+                <Box
+                  component="img"
+                  src={v.wikiPhoto || v.wikiThumb}
+                  alt=""
+                  sx={{ width: 240, height: 150, objectFit: "cover", borderRadius: 1, bgcolor: surface.sunken, display: "block" }}
+                />
+              </ButtonBase>
             )}
             {v.wikiExtract && (
-              <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.5, margin: 0, flex: "1 1 260px" }}>{v.wikiExtract}</p>
+              <Typography variant="body2" sx={{ flex: "1 1 260px" }}>
+                {v.wikiExtract}
+              </Typography>
             )}
-          </div>
-          <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
+          </Stack>
+          <Stack direction="row" spacing={1.75} sx={{ mt: 1 }}>
             {v.wikiTitle && (
-              <a
+              <MuiLink
                 href={`https://en.wikipedia.org/wiki/${encodeURIComponent(v.wikiTitle.replace(/ /g, "_"))}`}
                 target="_blank"
                 rel="noreferrer"
-                style={{ color: "#60a5fa", fontSize: 13 }}
+                variant="body2"
               >
                 Wikipedia ↗
-              </a>
+              </MuiLink>
             )}
             {v.sourceUrl && (
-              <a href={v.sourceUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", fontSize: 13 }}>
+              <MuiLink href={v.sourceUrl} target="_blank" rel="noreferrer" variant="body2">
                 GVP report ↗
-              </a>
+              </MuiLink>
             )}
-          </div>
-        </div>
+          </Stack>
+        </Paper>
       )}
 
-      <div style={{ marginTop: 16 }}>
-        <Link href="/admin/volcanoes" style={{ color: "#60a5fa", fontSize: 13 }}>
+      <Box sx={{ mt: 2 }}>
+        <MuiLink component={Link} href="/admin/volcanoes" variant="body2">
           ← All volcanoes
-        </Link>
-      </div>
+        </MuiLink>
+      </Box>
 
       {lightboxIndex != null && lightboxMedia[lightboxIndex] && (() => {
         const item = lightboxMedia[lightboxIndex];
         const src = mediaSrc(item);
         return createPortal(
-          <div role="dialog" aria-modal="true" aria-label={item.title ?? item.caption ?? "Volcano media"}
-            onMouseDown={(event) => { if (event.target === event.currentTarget) setLightboxIndex(null); }}
-            style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(2,5,10,.94)", display: "grid",
-              gridTemplateRows: "auto minmax(0, 1fr) auto", padding: 18, backdropFilter: "blur(8px)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-              <div style={{ color: "#8b95a7", fontSize: 12 }}>{lightboxIndex + 1} / {lightboxMedia.length} · {item.source} · {item.type}</div>
-              <button type="button" onClick={() => setLightboxIndex(null)} aria-label="Close lightbox"
-                style={{ ...lightboxButton, fontSize: 22, width: 42 }}>×</button>
-            </div>
-            <div style={{ minHeight: 0, display: "grid", gridTemplateColumns: "52px minmax(0, 1fr) 52px", alignItems: "center", gap: 12 }}>
-              <button type="button" onClick={() => setLightboxIndex((lightboxIndex - 1 + lightboxMedia.length) % lightboxMedia.length)} aria-label="Previous image"
-                style={lightboxButton}>‹</button>
+          <Box
+            role="dialog"
+            aria-modal="true"
+            aria-label={item.title ?? item.caption ?? "Volcano media"}
+            onMouseDown={(event: React.MouseEvent) => { if (event.target === event.currentTarget) setLightboxIndex(null); }}
+            sx={lightboxScrim}
+          >
+            <Stack direction="row" spacing={1.5} sx={{ justifyContent: "space-between", alignItems: "center" }}>
+              <Typography variant="caption" color="text.secondary">
+                {lightboxIndex + 1} / {lightboxMedia.length} · {item.source} · {item.type}
+              </Typography>
+              <Button onClick={() => setLightboxIndex(null)} aria-label="Close lightbox" sx={{ ...lightboxButton, fontSize: 22, minWidth: 42 }}>
+                ×
+              </Button>
+            </Stack>
+            <Box sx={{ minHeight: 0, display: "grid", gridTemplateColumns: "52px minmax(0, 1fr) 52px", alignItems: "center", gap: 1.5 }}>
+              <Button
+                onClick={() => setLightboxIndex((lightboxIndex - 1 + lightboxMedia.length) % lightboxMedia.length)}
+                aria-label="Previous image"
+                sx={lightboxButton}
+              >
+                ‹
+              </Button>
               {src && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={src} alt={item.title ?? item.caption ?? item.type}
-                  style={{ display: "block", maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", margin: "auto",
-                    objectFit: "contain", borderRadius: 8, boxShadow: "0 18px 70px rgba(0,0,0,.65)" }} />
+                <Box
+                  component="img"
+                  src={src}
+                  alt={item.title ?? item.caption ?? item.type}
+                  sx={{ display: "block", maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", m: "auto", objectFit: "contain", borderRadius: 1 }}
+                />
               )}
-              <button type="button" onClick={() => setLightboxIndex((lightboxIndex + 1) % lightboxMedia.length)} aria-label="Next image"
-                style={lightboxButton}>›</button>
-            </div>
-            <div style={{ width: "min(900px, 100%)", margin: "12px auto 0", textAlign: "center" }}>
-              <div style={{ color: "#f1f5f9", fontSize: 15, fontWeight: 600 }}>{item.title ?? item.caption ?? item.type}</div>
-              {item.title && item.caption && <div style={{ color: "#aab3c2", fontSize: 13, marginTop: 4 }}>{item.caption}</div>}
-              <div style={{ color: "#6f7a8d", fontSize: 11, marginTop: 6 }}>
+              <Button onClick={() => setLightboxIndex((lightboxIndex + 1) % lightboxMedia.length)} aria-label="Next image" sx={lightboxButton}>
+                ›
+              </Button>
+            </Box>
+            <Box sx={{ width: "min(900px, 100%)", mx: "auto", mt: 1.5, textAlign: "center" }}>
+              <Typography sx={{ fontSize: 15, fontWeight: 600 }}>{item.title ?? item.caption ?? item.type}</Typography>
+              {item.title && item.caption && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  {item.caption}
+                </Typography>
+              )}
+              <Typography variant="caption" color="text.disabled" sx={{ display: "block", fontSize: 11, mt: 0.75 }}>
                 {fmtTime(item.observedAt?.toString() ?? item.acquiredAt.toString())} · {item.attribution ?? item.source} · {item.licence ?? "VERIFY"}
                 {item.reuseAllowed ? " · reusable" : " · internal review only"}
-              </div>
-              <div style={{ color: "#556174", fontSize: 10, marginTop: 5, overflowWrap: "anywhere" }}>
+              </Typography>
+              <Typography component="code" color="text.disabled" sx={{ display: "block", fontSize: 10, mt: 0.625, overflowWrap: "anywhere" }}>
                 {item.sourceMediaId && <>Upstream ID: {item.sourceMediaId} · </>}
                 {item.cameraId && <>Camera: {item.cameraId} · </>}
                 {item.latitude != null && item.longitude != null && <>Position: {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)} · </>}
                 {item.bearing != null && <>Bearing: {item.bearing}° · </>}
                 {item.contentHash && <>SHA-256: {item.contentHash}</>}
-              </div>
-              <a href={item.sourceUrl} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", fontSize: 12, display: "inline-block", marginTop: 6 }}>Open official source ↗</a>
-            </div>
-          </div>,
+              </Typography>
+              <MuiLink href={item.sourceUrl} target="_blank" rel="noreferrer" variant="caption" sx={{ display: "inline-block", mt: 0.75 }}>
+                Open official source ↗
+              </MuiLink>
+            </Box>
+          </Box>,
           document.body,
         );
       })()}
       {externalPreview && createPortal(
-        <div role="dialog" aria-modal="true" aria-label={externalPreview.title}
-          onMouseDown={(event) => { if (event.target === event.currentTarget) setExternalPreview(null); }}
-          style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(2,5,10,.94)", display: "grid",
-            gridTemplateRows: "auto minmax(0,1fr) auto", padding: 18, backdropFilter: "blur(8px)" }}>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}><button type="button" onClick={() => setExternalPreview(null)}
-            aria-label="Close lightbox" style={{ ...lightboxButton, fontSize: 22, width: 42 }}>×</button></div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={externalPreview.src} alt={externalPreview.title}
-            style={{ display: "block", maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", margin: "auto", borderRadius: 8 }} />
-          <div style={{ color: "#f1f5f9", textAlign: "center", marginTop: 10 }}>{externalPreview.title}
-            {externalPreview.meta && <div style={{ color: "#778398", fontSize: 11, marginTop: 3 }}>{externalPreview.meta}</div>}</div>
-        </div>, document.body)}
+        <Box
+          role="dialog"
+          aria-modal="true"
+          aria-label={externalPreview.title}
+          onMouseDown={(event: React.MouseEvent) => { if (event.target === event.currentTarget) setExternalPreview(null); }}
+          sx={lightboxScrim}
+        >
+          <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button onClick={() => setExternalPreview(null)} aria-label="Close lightbox" sx={{ ...lightboxButton, fontSize: 22, minWidth: 42 }}>
+              ×
+            </Button>
+          </Box>
+          <Box
+            component="img"
+            src={externalPreview.src}
+            alt={externalPreview.title}
+            sx={{ display: "block", maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", m: "auto", borderRadius: 1 }}
+          />
+          <Box sx={{ textAlign: "center", mt: 1.25 }}>
+            {externalPreview.title}
+            {externalPreview.meta && (
+              <Typography variant="caption" color="text.disabled" sx={{ display: "block", fontSize: 11, mt: 0.375 }}>
+                {externalPreview.meta}
+              </Typography>
+            )}
+          </Box>
+        </Box>,
+        document.body,
+      )}
     </AdminPageShell>
   );
 }
 
-const card: React.CSSProperties = { padding: 14, borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c" };
-const cardLabel: React.CSSProperties = { color: "#8b95a7", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 };
-const sourceCell: React.CSSProperties = { color: "#9aa7b9", padding: "6px 8px", borderBottom: "1px solid #121824", verticalAlign: "top" };
-const primary: React.CSSProperties = {
-  padding: "8px 14px",
-  borderRadius: 6,
-  border: "1px solid #333",
-  background: "#2563eb",
-  color: "#fff",
-  cursor: "pointer",
-};
-const lightboxButton: React.CSSProperties = {
+const sourceCell = { color: "text.secondary", verticalAlign: "top" } as const;
+
+/**
+ * The lightbox scrim. Flat and near-opaque rather than the broadcast layer's
+ * blurred glass — §4.6 keeps that language out of the engine room.
+ */
+const lightboxScrim = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 1000,
+  bgcolor: surface.page,
+  display: "grid",
+  gridTemplateRows: "auto minmax(0, 1fr) auto",
+  p: 2.25,
+} as const;
+
+const lightboxButton = {
   width: 48,
+  minWidth: 48,
   height: 48,
-  padding: 0,
-  borderRadius: 999,
-  border: "1px solid #344054",
-  background: "rgba(12,17,28,.82)",
-  color: "#f8fafc",
+  p: 0,
+  borderRadius: "999px",
+  border: "1px solid",
+  borderColor: "divider",
+  bgcolor: surface.raised,
+  color: "text.primary",
   fontSize: 34,
   lineHeight: 1,
-  cursor: "pointer",
-};
+} as const;

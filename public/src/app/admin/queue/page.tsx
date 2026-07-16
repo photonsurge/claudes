@@ -7,11 +7,19 @@
  * All queue access is server-side via /api/admin/queue (getQueue → Redis).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import QueueJob, { type SerializedJob, type JobAction } from "../../../components/admin/QueueJob";
 import QueueEventLog from "../../../components/admin/QueueEventLog";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import ClearQueueMenu from "../../../components/admin/ClearQueueMenu";
 import QueueBacklog, { type BacklogRow } from "../../../components/admin/QueueBacklog";
+import { accent, font, ink, status } from "../../../theme/tokens";
 
 const STATES = ["active", "waiting", "prioritized", "delayed", "failed", "completed", "paused"] as const;
 type State = (typeof STATES)[number];
@@ -40,13 +48,13 @@ interface QueueData {
 }
 
 const STATE_COLOR: Record<State, string> = {
-  active: "#60a5fa",
-  waiting: "#fbbf24",
-  prioritized: "#fbbf24",
-  delayed: "#a78bfa",
-  failed: "#f87171",
-  completed: "#4ade80",
-  paused: "#8b95a7",
+  active: accent.main,
+  waiting: status.warning,
+  prioritized: status.warning,
+  delayed: ink.secondary,
+  failed: status.error,
+  completed: status.success,
+  paused: ink.disabled,
 };
 
 function fmtEvery(r: Repeatable): string {
@@ -68,14 +76,10 @@ function fmtNext(next: number | null, now: number): string {
   return `in ${Math.round(s / 3600)}h`;
 }
 
-const toolBtn = (bg: string): React.CSSProperties => ({
-  padding: "6px 12px",
-  borderRadius: 6,
-  border: "1px solid #2a3344",
-  background: bg,
-  color: "#fff",
-  cursor: "pointer",
-  fontSize: 12,
+/** A tool that's currently "on" reads through the accent edge, not a fill. */
+const onSx = (on: boolean) => ({
+  borderColor: on ? "primary.main" : undefined,
+  color: on ? "primary.main" : "text.primary",
 });
 
 export default function QueuePage() {
@@ -135,175 +139,184 @@ export default function QueuePage() {
       description={
         <>
           {data?.queue ?? "…"}
-          {data?.paused && <span style={{ color: "#fbbf24", marginLeft: 8 }}>paused</span>}
+          {data?.paused && (
+            <Typography component="span" variant="body1" color="warning.main" sx={{ ml: 1 }}>
+              paused
+            </Typography>
+          )}
         </>
       }
       maxWidth={860}
       actions={
         <>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => post({ action: data?.paused ? "resume" : "pause" })}
-            style={toolBtn(data?.paused ? "#14532d" : "#3a2a10")}
-          >
+          <Button variant="outlined" disabled={busy} onClick={() => post({ action: data?.paused ? "resume" : "pause" })}>
             {data?.paused ? "Resume queue" : "Pause queue"}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="outlined"
             onClick={() => setShowBacklog((v) => !v)}
-            style={toolBtn(showBacklog ? "#14532d" : "#1a1f2b")}
+            sx={onSx(showBacklog)}
             title="What the queued work is actually made of, by job kind"
           >
             Backlog by kind
-          </button>
+          </Button>
           <ClearQueueMenu counts={counts} disabled={busy} onDone={refresh} />
-          <button
-            type="button"
-            onClick={() => setLive((v) => !v)}
-            style={toolBtn(live ? "#14532d" : "#1a1f2b")}
-            title="Auto-refresh every 4s"
-          >
+          <Button variant="outlined" onClick={() => setLive((v) => !v)} sx={onSx(live)} title="Auto-refresh every 4s">
             {live ? "● live" : "paused"}
-          </button>
+          </Button>
         </>
       }
     >
 
         {data?.error && (
-          <div style={{ marginTop: 14, padding: 12, borderRadius: 8, border: "1px solid #3a1620", background: "#1a0d12", color: "#fca5a5", fontSize: 13 }}>
+          <Alert severity="error" sx={{ mt: 1.75 }}>
             Queue unreachable (worker / Redis down?) — {data.error}
-          </div>
+          </Alert>
         )}
 
         {/* What the queued work is MADE of — the view that makes a backlog
             actionable, since the job list below is newest-first and truncated. */}
         {showBacklog && (
-          <div style={{ marginTop: 14, padding: 12, borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c" }}>
+          <Paper sx={{ mt: 1.75, p: 1.5 }}>
             <QueueBacklog
               rows={data?.backlog ?? []}
               now={now}
               busy={busy}
               onCancel={(type, event) => post({ action: "cancelType", type, event: event || undefined })}
             />
-          </div>
+          </Paper>
         )}
 
         {/* Live event console — worker QueueEvents streamed over the socket. */}
         <QueueEventLog />
 
-        {/* State tabs */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18 }}>
+        {/* State tabs — filters, so they speak the same chip language as /admin/jobs. */}
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mt: 2.25 }}>
           {STATES.map((s) => {
             const on = s === state;
             const c = counts?.[s] ?? 0;
             return (
-              <button
+              <Chip
                 key={s}
-                type="button"
                 onClick={() => {
                   setState(s);
                   setLimit(100);
                 }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 7,
-                  padding: "6px 12px",
-                  borderRadius: 7,
-                  cursor: "pointer",
-                  border: `1px solid ${on ? STATE_COLOR[s] : "#1b2030"}`,
-                  background: on ? "#0c111c" : "transparent",
-                  color: on ? "#fff" : "#8b95a7",
-                  fontSize: 13,
-                }}
-              >
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: STATE_COLOR[s] }} />
-                {s}
-                <span style={{ color: on ? STATE_COLOR[s] : "#5b6577", fontWeight: 600 }}>{c}</span>
-              </button>
+                variant={on ? "filled" : "outlined"}
+                color={on ? "primary" : "default"}
+                label={
+                  <Stack direction="row" spacing={0.875} sx={{ alignItems: "center" }}>
+                    <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: STATE_COLOR[s], flexShrink: 0 }} />
+                    <Box component="span">{s}</Box>
+                    <Box component="span" sx={{ fontFamily: font.mono, fontVariantNumeric: "tabular-nums" }}>
+                      {c}
+                    </Box>
+                  </Stack>
+                }
+              />
             );
           })}
-        </div>
+        </Stack>
 
         {/* Per-state bulk actions */}
-        <div style={{ display: "flex", gap: 8, marginTop: 14, minHeight: 30, alignItems: "center", flexWrap: "wrap" }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 1.75, minHeight: 30, alignItems: "center", flexWrap: "wrap" }}>
           {state === "failed" && total > 0 && (
             <>
-              <button type="button" disabled={busy} onClick={() => post({ action: "retryAll" })} style={toolBtn("#2563eb")}>
+              <Button variant="outlined" disabled={busy} onClick={() => post({ action: "retryAll" })}>
                 Retry all ({total})
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="outlined"
+                color="error"
                 disabled={busy}
                 onClick={() => confirm(`Delete all ${total} failed jobs?`) && post({ action: "clean", type: "failed" })}
-                style={toolBtn("#3a1620")}
               >
                 Clean failed
-              </button>
+              </Button>
             </>
           )}
           {state === "completed" && total > 0 && (
-            <button
-              type="button"
+            <Button
+              variant="outlined"
+              color="error"
               disabled={busy}
               onClick={() => confirm(`Delete all ${total} completed jobs?`) && post({ action: "clean", type: "completed" })}
-              style={toolBtn("#3a1620")}
             >
               Clean completed
-            </button>
+            </Button>
           )}
-          <span style={{ color: "#5b6577", fontSize: 12, marginLeft: "auto" }}>
+          <Typography variant="caption" color="text.disabled" sx={{ ml: "auto", fontVariantNumeric: "tabular-nums" }}>
             showing {jobs.length} of {total}
-          </span>
-        </div>
+          </Typography>
+        </Stack>
 
         {/* Jobs */}
-        <div style={{ display: "grid", gap: 8, marginTop: 4 }}>
+        <Box sx={{ display: "grid", gap: 1, mt: 0.5 }}>
           {jobs.map((j) => (
             <QueueJob key={j.id} job={j} state={state} now={now} busy={busy} onAction={jobAction} />
           ))}
           {jobs.length === 0 && (
-            <div style={{ padding: 24, textAlign: "center", color: "#5b6577", border: "1px dashed #1b2030", borderRadius: 8 }}>
+            <Box
+              sx={{ p: 3, textAlign: "center", color: "text.disabled", border: "1px dashed", borderColor: "divider", borderRadius: 1 }}
+            >
               No {state} jobs.
-            </div>
+            </Box>
           )}
-        </div>
+        </Box>
 
         {jobs.length < total && (
-          <button
-            type="button"
-            onClick={() => setLimit((l) => l + 200)}
-            style={{ ...toolBtn("#1a1f2b"), width: "100%", marginTop: 10, padding: 10 }}
-          >
+          <Button variant="outlined" fullWidth onClick={() => setLimit((l) => l + 200)} sx={{ mt: 1.25, py: 1.25 }}>
             Load more ({total - jobs.length} more)
-          </button>
+          </Button>
         )}
 
         {/* Repeatable schedules */}
-        <h3 style={{ margin: "32px 0 10px", fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: "#8b95a7" }}>
+        <Typography variant="overline" component="h3" color="text.secondary" sx={{ display: "block", mt: 4, mb: 1.25 }}>
           Repeatable schedules {data?.repeatables?.length ? `(${data.repeatables.length})` : ""}
-        </h3>
-        <div style={{ border: "1px solid #1b2030", borderRadius: 8, overflow: "hidden" }}>
+        </Typography>
+        <Paper sx={{ overflow: "hidden" }}>
           {(data?.repeatables ?? []).map((r) => (
-            <div
+            <Stack
               key={r.key}
-              style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 14px", borderTop: "1px solid #121826", fontSize: 13 }}
+              direction="row"
+              spacing={1.5}
+              sx={{
+                alignItems: "center",
+                px: 1.75,
+                py: 1.125,
+                borderTop: "1px solid",
+                borderColor: "divider",
+                "&:first-of-type": { borderTop: "none" },
+              }}
             >
-              <span style={{ flex: 1, minWidth: 0, wordBreak: "break-word" }}>
-                <span style={{ fontWeight: 600 }}>{r.label}</span>
+              <Box sx={{ flex: 1, minWidth: 0, wordBreak: "break-word" }}>
+                <Typography component="span" variant="body2" sx={{ fontWeight: 600 }}>
+                  {r.label}
+                </Typography>
                 {r.id && r.id !== r.label && (
-                  <span style={{ color: "#5b6577", fontSize: 11, marginLeft: 8, fontFamily: "ui-monospace, monospace" }}>{r.id}</span>
+                  <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1, fontFamily: font.mono }}>
+                    {r.id}
+                  </Typography>
                 )}
-              </span>
-              <span style={{ color: "#8b95a7", whiteSpace: "nowrap" }}>{fmtEvery(r)}</span>
-              <span style={{ color: "#64748b", whiteSpace: "nowrap", width: 60, textAlign: "right" }}>{fmtNext(r.next, now)}</span>
-            </div>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                {fmtEvery(r)}
+              </Typography>
+              <Typography
+                variant="body2"
+                color="text.disabled"
+                sx={{ whiteSpace: "nowrap", width: 60, textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+              >
+                {fmtNext(r.next, now)}
+              </Typography>
+            </Stack>
           ))}
           {(data?.repeatables?.length ?? 0) === 0 && (
-            <div style={{ padding: 14, color: "#5b6577", fontSize: 13 }}>No repeatable schedules registered.</div>
+            <Typography variant="body2" color="text.disabled" sx={{ p: 1.75 }}>
+              No repeatable schedules registered.
+            </Typography>
           )}
-        </div>
+        </Paper>
     </AdminPageShell>
   );
 }

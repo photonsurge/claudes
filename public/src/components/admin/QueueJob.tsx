@@ -1,6 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import LinearProgress from "@mui/material/LinearProgress";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+import { font, surface } from "../../theme/tokens";
 
 /** One BullMQ job flattened by /api/admin/queue. */
 export interface SerializedJob {
@@ -51,35 +58,29 @@ function stamp(job: SerializedJob, state: string, now: number): string {
   return relTime(job.timestamp, now);
 }
 
-const btn = (bg: string): React.CSSProperties => ({
-  padding: "5px 11px",
-  borderRadius: 6,
-  border: "1px solid #2a3344",
-  background: bg,
-  color: "#fff",
-  cursor: "pointer",
-  fontSize: 12,
-});
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginTop: 8 }}>
-      <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, color: "#5b6577", marginBottom: 3 }}>{label}</div>
+    <Box sx={{ mt: 1 }}>
+      <Typography variant="overline" color="text.disabled" sx={{ display: "block", fontSize: 10, letterSpacing: 0.5, mb: 0.375 }}>
+        {label}
+      </Typography>
       {children}
-    </div>
+    </Box>
   );
 }
 
 function Json({ value }: { value: unknown }) {
   return (
-    <pre
-      style={{
-        margin: 0,
-        padding: 10,
-        borderRadius: 6,
-        background: "#070a11",
-        border: "1px solid #161c2a",
-        color: "#94a3b8",
+    <Box
+      component="pre"
+      sx={{
+        m: 0,
+        p: 1.25,
+        borderRadius: 1,
+        bgcolor: surface.sunken,
+        border: "1px solid",
+        borderColor: "divider",
+        color: "text.secondary",
         fontSize: 11.5,
         whiteSpace: "pre-wrap",
         wordBreak: "break-word",
@@ -88,7 +89,7 @@ function Json({ value }: { value: unknown }) {
       }}
     >
       {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
-    </pre>
+    </Box>
   );
 }
 
@@ -110,42 +111,64 @@ export default function QueueJob({
   const hasBody = job.payload != null && Object.keys(job.payload as object).length > 0;
 
   return (
-    <div style={{ borderRadius: 8, border: "1px solid #1b2030", background: "#0c111c" }}>
-      <div
+    <Paper>
+      <Stack
+        direction="row"
+        spacing={1.5}
         onClick={() => setOpen((v) => !v)}
-        style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", cursor: "pointer" }}
+        sx={{ alignItems: "center", px: 1.75, py: 1.375, cursor: "pointer" }}
       >
-        <span style={{ color: "#475569", width: 14 }}>{open ? "▾" : "▸"}</span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ fontWeight: 600 }}>{label}</span>
-            <span style={{ fontSize: 11, color: "#5b6577", fontFamily: "ui-monospace, monospace" }}>#{job.id}</span>
+        <Box component="span" sx={{ color: "text.disabled", width: 14 }}>
+          {open ? "▾" : "▸"}
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              {label}
+            </Typography>
+            <Typography variant="caption" color="text.disabled" sx={{ fontFamily: font.mono }}>
+              #{job.id}
+            </Typography>
             {job.attemptsMade > 0 && (
-              <span style={{ fontSize: 11, color: job.failedReason ? "#fca5a5" : "#8b95a7" }}>
+              <Typography variant="caption" color={job.failedReason ? "error.main" : "text.secondary"}>
                 attempt {job.attemptsMade}/{job.maxAttempts}
-              </span>
+              </Typography>
             )}
-            {job.priority ? <span style={{ fontSize: 11, color: "#8b95a7" }}>prio {job.priority}</span> : null}
-          </div>
+            {job.priority ? (
+              <Typography variant="caption" color="text.secondary">
+                prio {job.priority}
+              </Typography>
+            ) : null}
+          </Stack>
           {job.failedReason && (
-            <div style={{ fontSize: 12, color: "#fca5a5", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <Typography
+              variant="caption"
+              color="error.main"
+              sx={{ display: "block", mt: 0.25, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            >
               {job.failedReason}
-            </div>
+            </Typography>
           )}
           {state === "active" && job.progress > 0 && (
-            <div style={{ height: 3, borderRadius: 2, background: "#1b2030", marginTop: 6, overflow: "hidden" }}>
-              <div style={{ width: `${Math.min(100, job.progress)}%`, height: "100%", background: "#2563eb" }} />
-            </div>
+            <LinearProgress
+              variant="determinate"
+              value={Math.min(100, job.progress)}
+              sx={{ height: 3, borderRadius: 1, mt: 0.75, bgcolor: surface.raised }}
+            />
           )}
-        </div>
-        <span style={{ fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>{stamp(job, state, now)}</span>
-      </div>
+        </Box>
+        <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+          {stamp(job, state, now)}
+        </Typography>
+      </Stack>
 
       {open && (
-        <div style={{ padding: "0 14px 14px 40px", borderTop: "1px solid #121826" }}>
+        <Box sx={{ pt: 0, pr: 1.75, pb: 1.75, pl: 5, borderTop: "1px solid", borderColor: "divider" }}>
           {job.repeatJobKey && (
             <Field label="repeatable">
-              <span style={{ fontSize: 12, color: "#8b95a7", fontFamily: "ui-monospace, monospace" }}>{job.repeatJobKey}</span>
+              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: font.mono }}>
+                {job.repeatJobKey}
+              </Typography>
             </Field>
           )}
           {hasBody && (
@@ -164,35 +187,35 @@ export default function QueueJob({
             </Field>
           )}
 
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
             {state === "failed" && (
-              <button type="button" disabled={busy} onClick={() => onAction("retry", job.id)} style={btn("#2563eb")}>
+              <Button variant="outlined" disabled={busy} onClick={() => onAction("retry", job.id)}>
                 Retry
-              </button>
+              </Button>
             )}
             {state === "delayed" && (
-              <button type="button" disabled={busy} onClick={() => onAction("promote", job.id)} style={btn("#2563eb")}>
+              <Button variant="outlined" disabled={busy} onClick={() => onAction("promote", job.id)}>
                 Promote
-              </button>
+              </Button>
             )}
             {CANCELLABLE.has(state) ? (
-              <button
-                type="button"
+              <Button
+                variant="outlined"
+                color="error"
                 disabled={busy}
                 onClick={() => onAction("cancel", job.id)}
-                style={btn("#7c2d12")}
                 title={state === "active" ? "Signal the worker to abort this running job (cooperative)" : "Remove this job before it runs"}
               >
                 Cancel
-              </button>
+              </Button>
             ) : (
-              <button type="button" disabled={busy} onClick={() => onAction("remove", job.id)} style={btn("#3a1620")}>
+              <Button variant="outlined" color="error" disabled={busy} onClick={() => onAction("remove", job.id)}>
                 Remove
-              </button>
+              </Button>
             )}
-          </div>
-        </div>
+          </Stack>
+        </Box>
       )}
-    </div>
+    </Paper>
   );
 }

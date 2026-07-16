@@ -8,6 +8,11 @@
  * Notifies the parent via `onChanged` so the detail page/list refreshes.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import type { AdminEntityType } from "@photonsurge/shared/admin-content/types";
 import { ENTITY_SCHEMAS } from "@photonsurge/shared/admin-content/schema";
 import { applyTextOverrides } from "@photonsurge/shared/admin-content/resolve";
@@ -17,17 +22,10 @@ import {
   type AdminImage,
   type ResolvedContent,
 } from "../../../lib/admin-content/client";
-import { primary } from "../../tracks/styles";
 import EditModal from "./EditModal";
 import EntityEditor from "./EntityEditor";
 import ImageManager from "./ImageManager";
 import OnAirPreview from "./OnAirPreview";
-
-const cancelBtn: React.CSSProperties = {
-  ...primary,
-  background: "#1a1f2b",
-  borderColor: "#2a3344",
-};
 
 export default function ContentEditorModal({
   type,
@@ -122,39 +120,38 @@ export default function ContentEditorModal({
       footer={
         <>
           {note ? (
-            <span style={{ fontSize: 12, color: note === "Saved" ? "#8b95a7" : "#fca5a5", marginRight: "auto" }}>
+            <Typography variant="caption" color={note === "Saved" ? "text.secondary" : "error.main"} sx={{ mr: "auto" }}>
               {note}
-            </span>
+            </Typography>
           ) : null}
-          <button type="button" style={cancelBtn} onClick={onClose}>Close</button>
-          <button type="button" style={primary} onClick={onSave} disabled={busy || !dirty}>
+          <Button variant="outlined" onClick={onClose}>
+            Close
+          </Button>
+          {/* The modal's single primary action — the one place §5.6 spends a fill. */}
+          <Button variant="contained" onClick={onSave} disabled={busy || !dirty}>
             {busy ? "Saving…" : dirty ? "Save text" : "Saved"}
-          </button>
+          </Button>
         </>
       }
     >
       {missing ? (
-        <div style={{ color: "#fca5a5" }}>This item no longer exists.</div>
+        <Alert severity="error">This item no longer exists.</Alert>
       ) : !content ? (
-        <div style={{ color: "#8b95a7" }}>Loading…</div>
+        <Typography color="text.secondary">Loading…</Typography>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 470px", gap: 22, alignItems: "start" }}>
-          <div style={{ display: "grid", gap: 20 }}>
-            <section>
-              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: "#5b6577", marginBottom: 10 }}>
-                TEXT
-              </div>
+        <Box sx={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 470px", gap: 2.75, alignItems: "start" }}>
+          <Stack spacing={2.5}>
+            <Box component="section">
+              <SectionLabel>TEXT</SectionLabel>
               <EntityEditor
                 fields={schema.fields}
                 values={values}
                 baseText={content.baseText}
                 onChange={(field, value) => setValues((prev) => ({ ...prev, [field]: value }))}
               />
-            </section>
-            <section>
-              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: "#5b6577", marginBottom: 10 }}>
-                IMAGES
-              </div>
+            </Box>
+            <Box component="section">
+              <SectionLabel>IMAGES</SectionLabel>
               <ImageManager
                 type={type}
                 entityId={content.entityId}
@@ -164,13 +161,21 @@ export default function ContentEditorModal({
                   onChanged?.();
                 }}
               />
-            </section>
-          </div>
-          <div style={{ position: "sticky", top: 0 }}>
+            </Box>
+          </Stack>
+          <Box sx={{ position: "sticky", top: 0 }}>
             {previewEntity ? <OnAirPreview type={type} entity={previewEntity} images={images} /> : null}
-          </div>
-        </div>
+          </Box>
+        </Box>
       )}
     </EditModal>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Typography variant="overline" color="text.secondary" component="div" sx={{ mb: 1.25 }}>
+      {children}
+    </Typography>
   );
 }

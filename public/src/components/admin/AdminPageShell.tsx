@@ -75,7 +75,11 @@ export default function AdminPageShell({
           <Box sx={{ minWidth: 240, flex: "1 1 360px" }}>
             <Typography variant="h1">{title}</Typography>
             {description ? (
-              <Typography variant="body1" color="text.secondary" sx={{ mt: 0.875 }}>
+              // `component="div"`, not the default <p>: `description` is a
+              // ReactNode and pages pass block content into it (Chips, Boxes,
+              // stat rows). A <div> inside a <p> is invalid HTML and the
+              // browser re-parents it, which breaks hydration.
+              <Typography component="div" variant="body1" color="text.secondary" sx={{ mt: 0.875 }}>
                 {description}
               </Typography>
             ) : null}

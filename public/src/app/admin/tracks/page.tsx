@@ -6,6 +6,8 @@
  * own fetch + table; the globe overlay (shared `Track` shape) comes later.
  */
 import { useState } from "react";
+import MuiTab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
 import SatellitesTable from "../../../components/tracks/SatellitesTable";
 import AircraftTable from "../../../components/tracks/AircraftTable";
 import ShipsTable from "../../../components/tracks/ShipsTable";
@@ -25,28 +27,19 @@ export default function TracksPage() {
 
   return (
     <AdminPageShell title="Live tracks" description="Satellites, aircraft, ships and replay tools." maxWidth={1000}>
-      <div role="tablist" style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+      {/*
+        The hairline baseline is what the selected-tab indicator reads against;
+        without it the indicator floats and the row stops looking like tabs.
+      */}
+      <Tabs
+        value={tab}
+        onChange={(_, next: Tab) => setTab(next)}
+        sx={{ mb: 2, borderBottom: 1, borderColor: "divider" }}
+      >
         {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => setTab(t.id)}
-            style={{
-              padding: "6px 14px",
-              borderRadius: 6,
-              border: "1px solid #333",
-              background: tab === t.id ? "#2563eb" : "#1a1f2b",
-              color: "#fff",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            {t.label}
-          </button>
+          <MuiTab key={t.id} value={t.id} label={t.label} />
         ))}
-      </div>
+      </Tabs>
 
       {tab === "satellites" && <SatellitesTable />}
       {tab === "aircraft" && <AircraftTable />}

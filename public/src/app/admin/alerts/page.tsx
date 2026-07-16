@@ -8,6 +8,26 @@
  */
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
+import Chip from "@mui/material/Chip";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import IconButton from "@mui/material/IconButton";
+import MuiLink from "@mui/material/Link";
+import MenuItem from "@mui/material/MenuItem";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
+import { alpha } from "@mui/material/styles";
 import {
   listAlerts,
   getAlertDetail,
@@ -21,16 +41,17 @@ import {
   displayHeadline,
   displayDescription,
   displayInstruction,
-  type Alert,
+  type Alert as AlertDoc,
   type AlertInfo,
 } from "../../../lib/alerts";
 import { HAZARDS, hazardMeta } from "../../../lib/hazard";
 import { bucketByGroupId } from "../../../lib/alertGroups";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import { useTableSort } from "../../../components/admin/useTableSort";
+import { surface } from "../../../theme/tokens";
 
 export default function AlertsPage() {
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alerts, setAlerts] = useState<AlertDoc[]>([]);
   const [activeOnly, setActiveOnly] = useState(true);
   const [severityMin, setSeverityMin] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -45,7 +66,7 @@ export default function AlertsPage() {
   // itself is fetched lean (no raw description / geocodes) to keep the whole-
   // world load small, so the Debug view lazy-fetches the full doc per member on
   // demand. Keyed by alert id; falls back to the lean row until it arrives.
-  const [fullById, setFullById] = useState<Record<string, Alert>>({});
+  const [fullById, setFullById] = useState<Record<string, AlertDoc>>({});
   const fullRef = useRef(fullById);
   fullRef.current = fullById;
 
@@ -179,7 +200,7 @@ export default function AlertsPage() {
       if (cancelled) return;
       setFullById((cur) => {
         const next = { ...cur };
-        for (const [id, doc] of pairs) if (doc) next[id] = doc as Alert;
+        for (const [id, doc] of pairs) if (doc) next[id] = doc as AlertDoc;
         return next;
       });
     });
@@ -191,6 +212,9 @@ export default function AlertsPage() {
   return (
     <AdminPageShell
       title="Weather alerts"
+      // 11 columns of live alert data — the shell's 1100px default clipped the
+      // Debug column off the right edge entirely. This table wants the viewport.
+      maxWidth="none"
       description={
         <>
           {groups.length} event{groups.length === 1 ? "" : "s"}
@@ -199,99 +223,98 @@ export default function AlertsPage() {
         </>
       }
       actions={
-        <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-          <label style={controlLabel}>
-            Source
-            <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} style={select}>
-              <option value="all">all adapters</option>
-              {sources.map((s) => (
-                <option key={s} value={s}>
-                  {s} ({bySource[s]})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label style={controlLabel}>
-            Hazard
-            <select value={hazardFilter} onChange={(e) => setHazardFilter(e.target.value)} style={select}>
-              <option value="all">all types</option>
-              {HAZARDS.filter((h) => byHazard[h.id]).map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.icon} {h.label} ({byHazard[h.id]})
-                </option>
-              ))}
-            </select>
-          </label>
-          <input
+        <Stack direction="row" spacing={1.75} sx={{ alignItems: "center", flexWrap: "wrap", gap: 1.75 }}>
+          <TextField
+            select
+            label="Source"
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value)}
+            sx={{ minWidth: 150 }}
+          >
+            <MenuItem value="all">all adapters</MenuItem>
+            {sources.map((s) => (
+              <MenuItem key={s} value={s}>
+                {s} ({bySource[s]})
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            select
+            label="Hazard"
+            value={hazardFilter}
+            onChange={(e) => setHazardFilter(e.target.value)}
+            sx={{ minWidth: 160 }}
+          >
+            <MenuItem value="all">all types</MenuItem>
+            {HAZARDS.filter((h) => byHazard[h.id]).map((h) => (
+              <MenuItem key={h.id} value={h.id}>
+                {h.icon} {h.label} ({byHazard[h.id]})
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="type / area…"
-            style={{
-              background: "#0a0e16",
-              color: "#fff",
-              border: "1px solid #2a3344",
-              borderRadius: 5,
-              padding: "5px 8px",
-              fontSize: 13,
-              minWidth: 130,
-            }}
+            sx={{ minWidth: 130 }}
           />
-          <label style={controlLabel}>
-            <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />
-            Active only
-          </label>
-          <label style={controlLabel}>
-            Min severity
-            <select
-              value={severityMin}
-              onChange={(e) => setSeverityMin(Number(e.target.value))}
-              style={select}
-            >
-              {[0, 1, 2, 3, 4].map((r) => (
-                <option key={r} value={r}>
-                  {r} — {severityLabel(r as 0)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="button" onClick={reload} style={primary} disabled={loading}>
+          <FormControlLabel
+            control={<Checkbox size="small" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />}
+            label={<Typography variant="body2">Active only</Typography>}
+          />
+          <TextField
+            select
+            label="Min severity"
+            value={String(severityMin)}
+            onChange={(e) => setSeverityMin(Number(e.target.value))}
+            sx={{ minWidth: 150 }}
+          >
+            {[0, 1, 2, 3, 4].map((r) => (
+              <MenuItem key={r} value={String(r)}>
+                {r} — {severityLabel(r as 0)}
+              </MenuItem>
+            ))}
+          </TextField>
+          {/* Refresh is this view's one primary action; the job triggers stay quiet. */}
+          <Button variant="contained" onClick={reload} disabled={loading}>
             {loading ? "…" : "Refresh"}
-          </button>
-          <button type="button" onClick={ingestNow} style={ingestBtn} disabled={!!ingestMsg}>
+          </Button>
+          <Button variant="outlined" onClick={ingestNow} disabled={!!ingestMsg}>
             Ingest now
-          </button>
-          <button type="button" onClick={translateNow} style={ingestBtn} disabled={!!translateMsg}>
+          </Button>
+          <Button variant="outlined" onClick={translateNow} disabled={!!translateMsg}>
             Translate now
-          </button>
-        </div>
+          </Button>
+        </Stack>
       }
     >
-        {ingestMsg && (
-          <div style={{ marginTop: 8, fontSize: 13, color: ingestMsg.startsWith("Failed") ? "#fca5a5" : "#86efac" }}>
-            {ingestMsg}
-          </div>
-        )}
-        {translateMsg && (
-          <div style={{ marginTop: 8, fontSize: 13, color: translateMsg.startsWith("Failed") ? "#fca5a5" : "#86efac" }}>
-            {translateMsg}
-          </div>
-        )}
+      {ingestMsg && (
+        <Alert severity={ingestMsg.startsWith("Failed") ? "error" : "success"} sx={{ mt: 1 }}>
+          {ingestMsg}
+        </Alert>
+      )}
+      {translateMsg && (
+        <Alert severity={translateMsg.startsWith("Failed") ? "error" : "success"} sx={{ mt: 1 }}>
+          {translateMsg}
+        </Alert>
+      )}
 
-        <table style={{ width: "100%", marginTop: 20, borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ textAlign: "left", color: "#8b95a7" }}>
-              <th style={th}>{sortedGroups.header("severity", "Sev")}</th>
-              <th style={th}>{sortedGroups.header("hazard", "Hazard")}</th>
-              <th style={th}>{sortedGroups.header("event", "Event")}</th>
-              <th style={th}>{sortedGroups.header("area", "Area")}</th>
-              <th style={th}>{sortedGroups.header("sources", "Sources")}</th>
-              <th style={th}>{sortedGroups.header("message", "Msg")}</th>
-              <th style={th}>{sortedGroups.header("translated", "Translated")}</th>
-              <th style={th}>{sortedGroups.header("expires", "Expires")}</th>
-              <th style={th}></th>
-            </tr>
-          </thead>
-          <tbody>
+      <TableContainer component={Paper} sx={{ mt: 2.5 }}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>{sortedGroups.header("severity", "Sev")}</TableCell>
+              <TableCell>{sortedGroups.header("hazard", "Hazard")}</TableCell>
+              <TableCell>{sortedGroups.header("event", "Event")}</TableCell>
+              <TableCell>{sortedGroups.header("area", "Area")}</TableCell>
+              <TableCell>{sortedGroups.header("sources", "Sources")}</TableCell>
+              <TableCell>{sortedGroups.header("message", "Msg")}</TableCell>
+              <TableCell>{sortedGroups.header("translated", "Translated")}</TableCell>
+              <TableCell>{sortedGroups.header("expires", "Expires")}</TableCell>
+              <TableCell />
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {sortedGroups.rows.map((g) => {
               const rep = g.representative;
               const info = primaryInfo(rep);
@@ -301,128 +324,127 @@ export default function AlertsPage() {
               const hx = (n: number) => Math.min(255, Math.max(0, n)).toString(16).padStart(2, "0");
               return (
                 <Fragment key={g.id}>
-                <tr style={{ borderTop: "1px solid #1b2030", opacity: rep.active ? 1 : 0.5 }}>
-                  <td style={td}>
-                    <span
-                      title={severityLabel(rank)}
-                      style={{
-                        display: "inline-block",
-                        width: 26,
-                        textAlign: "center",
-                        borderRadius: 5,
-                        padding: "2px 0",
-                        fontWeight: 700,
-                        color: "#0a0e16",
-                        background: severityColor(rank),
-                      }}
-                    >
-                      {rank}
-                    </span>
-                  </td>
-                  <td style={{ ...td, whiteSpace: "nowrap" }}>
-                    {/* Chip intensity scales with severityRank (0–4). */}
-                    <span
-                      title={`${h.label} · ${severityLabel(rank)}`}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 4,
-                        padding: "2px 8px",
-                        borderRadius: 11,
-                        fontSize: 12,
-                        fontWeight: rank >= 3 ? 700 : 500,
-                        background: `${h.color}${hx(0x12 + rank * 0x18)}`,
-                        color: h.color,
-                        border: `1px solid ${h.color}${hx(0x3a + rank * 0x32)}`,
-                      }}
-                    >
-                      {h.icon} {h.label}
-                    </span>
-                  </td>
-                  <td style={td}>
-                    {(() => {
-                      const headline = displayHeadline(info) ?? info?.event ?? "—";
-                      const isTranslated = !!info?.translatedHeadline;
-                      const lang = info?.detectedLanguage;
-                      return (
-                        <>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
-                            <span>{headline}</span>
-                            {isTranslated && lang && (
-                              <span title={`Machine-translated from "${lang}"`} style={langTag}>
-                                {lang.toUpperCase()}→EN
-                              </span>
+                  <TableRow sx={{ opacity: rep.active ? 1 : 0.5 }}>
+                    <TableCell sx={{ verticalAlign: "top" }}>
+                      {/*
+                        Filled with the rank's own ramp colour (DESIGN_BIBLE §4.4)
+                        rather than a theme semantic: the rank IS the meaning.
+                      */}
+                      <Box
+                        component="span"
+                        title={severityLabel(rank)}
+                        sx={{
+                          display: "inline-block",
+                          width: 26,
+                          textAlign: "center",
+                          borderRadius: 1,
+                          py: 0.25,
+                          fontWeight: 700,
+                          color: surface.page,
+                          bgcolor: severityColor(rank),
+                        }}
+                      >
+                        {rank}
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap", verticalAlign: "top" }}>
+                      {/* Chip intensity scales with severityRank (0–4). */}
+                      <Box
+                        component="span"
+                        title={`${h.label} · ${severityLabel(rank)}`}
+                        sx={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 0.5,
+                          px: 1,
+                          py: 0.25,
+                          borderRadius: 1,
+                          fontSize: 12,
+                          fontWeight: rank >= 3 ? 700 : 500,
+                          bgcolor: `${h.color}${hx(0x12 + rank * 0x18)}`,
+                          color: h.color,
+                          border: `1px solid ${h.color}${hx(0x3a + rank * 0x32)}`,
+                        }}
+                      >
+                        {h.icon} {h.label}
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ verticalAlign: "top" }}>
+                      {(() => {
+                        const headline = displayHeadline(info) ?? info?.event ?? "—";
+                        const isTranslated = !!info?.translatedHeadline;
+                        const lang = info?.detectedLanguage;
+                        return (
+                          <>
+                            <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                {headline}
+                              </Typography>
+                              {isTranslated && lang && <LangTag lang={lang} title={`Machine-translated from "${lang}"`} />}
+                            </Stack>
+                            {info?.event && info.event !== headline && (
+                              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                                {info.event}
+                              </Typography>
                             )}
-                          </div>
-                          {info?.event && info.event !== headline && (
-                            <div style={{ color: "#8b95a7", fontSize: 12 }}>{info.event}</div>
-                          )}
-                          {isTranslated && info?.headline && info.headline !== headline && (
-                            <div style={{ color: "#5b6478", fontSize: 11, fontStyle: "italic" }}>
-                              orig: {info.headline}
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </td>
-                  <td style={td}>{areaSummary(rep)}</td>
-                  <td style={{ ...td, whiteSpace: "nowrap" }}>
-                    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
-                      {g.sources.map((s) => (
-                        <span
-                          key={s}
-                          style={{
-                            ...sourceChip,
-                            ...(g.sources.length > 1
-                              ? { background: "#1e3a5f", color: "#93c5fd", borderColor: "#2c5a8f" }
-                              : null),
-                          }}
+                            {isTranslated && info?.headline && info.headline !== headline && (
+                              <Typography variant="caption" color="text.disabled" sx={{ display: "block", fontStyle: "italic" }}>
+                                orig: {info.headline}
+                              </Typography>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell sx={{ verticalAlign: "top" }}>{areaSummary(rep)}</TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap", verticalAlign: "top" }}>
+                      <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap", gap: 0.5 }}>
+                        {/* A multi-source group is the interesting case — accent it. */}
+                        {g.sources.map((s) => (
+                          <Chip key={s} label={s} color={g.sources.length > 1 ? "primary" : "default"} />
+                        ))}
+                      </Stack>
+                    </TableCell>
+                    <TableCell sx={{ verticalAlign: "top" }}>{rep.msgType}</TableCell>
+                    <TableCell sx={{ verticalAlign: "top" }}>{translatedBadge(translationStatus(rep))}</TableCell>
+                    <TableCell sx={{ verticalAlign: "top" }}>{expiresLabel(rep)}</TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap", verticalAlign: "top" }}>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                        <Button
+                          variant="outlined"
+                          onClick={() => setDebugId(debugId === g.id ? null : g.id)}
+                          aria-expanded={debugId === g.id}
                         >
-                          {s}
-                        </span>
-                      ))}
-                    </span>
-                  </td>
-                  <td style={td}>{rep.msgType}</td>
-                  <td style={td}>{translatedBadge(translationStatus(rep))}</td>
-                  <td style={td}>{expiresLabel(rep)}</td>
-                  <td style={{ ...td, whiteSpace: "nowrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => setDebugId(debugId === g.id ? null : g.id)}
-                      style={debugBtn}
-                      aria-expanded={debugId === g.id}
-                    >
-                      {debugId === g.id ? "Hide" : multi ? `Debug (${g.members.length})` : "Debug"}
-                    </button>
-                    <Link href={`/admin/alerts/${rep.id}`} style={{ color: "#60a5fa", marginLeft: 8 }}>
-                      Details
-                    </Link>
-                    {info?.web && (
-                      <a href={info.web} target="_blank" rel="noreferrer" style={{ color: "#60a5fa", marginLeft: 8 }}>
-                        link
-                      </a>
-                    )}
-                  </td>
-                </tr>
+                          {debugId === g.id ? "Hide" : multi ? `Debug (${g.members.length})` : "Debug"}
+                        </Button>
+                        <MuiLink component={Link} href={`/admin/alerts/${rep.id}`} variant="body2">
+                          Details
+                        </MuiLink>
+                        {info?.web && (
+                          <MuiLink href={info.web} target="_blank" rel="noreferrer" variant="body2">
+                            link
+                          </MuiLink>
+                        )}
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
                 </Fragment>
               );
             })}
             {groups.length === 0 && (
-              <tr>
-                <td style={td} colSpan={9}>
+              <TableRow>
+                <TableCell colSpan={9}>
                   {loading
                     ? "Loading…"
                     : alerts.length
                       ? "No alerts match the current filters."
                       : "No alerts. Trigger an ingest or wait for the worker's tick."}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
-
+          </TableBody>
+        </Table>
+      </TableContainer>
 
       {debugGroup && (() => {
         // Prefer the lazily-loaded full doc (raw description + geocodes); fall
@@ -435,53 +457,121 @@ export default function AlertsPage() {
         const loadingFull = debugGroup.members.some((m) => !fullById[m.id]);
         const h = hazardMeta(debugGroup.hazard);
         return (
-          <div
+          <Box
             role="dialog"
             aria-modal="true"
             onClick={() => setDebugId(null)}
-            style={modalOverlay}
+            sx={{
+              position: "fixed",
+              inset: 0,
+              bgcolor: alpha(surface.page, 0.8),
+              display: "flex",
+              alignItems: "stretch",
+              justifyContent: "center",
+              p: 3,
+              zIndex: 1000,
+            }}
           >
-            <div onClick={(e) => e.stopPropagation()} style={modalPanel}>
-              <header style={modalHeader}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                  <span style={{ color: h.color, fontSize: 15 }}>
+            <Paper
+              onClick={(e) => e.stopPropagation()}
+              sx={{ display: "flex", flexDirection: "column", width: "100%", maxWidth: 1100, overflow: "hidden" }}
+            >
+              <Stack
+                component="header"
+                direction="row"
+                spacing={1.5}
+                sx={{
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  px: 2.25,
+                  py: 1.5,
+                  borderBottom: 1,
+                  borderColor: "divider",
+                  flexShrink: 0,
+                }}
+              >
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
+                  <Typography variant="h3" sx={{ color: h.color }}>
                     {h.icon} {h.label}
-                  </span>
-                  <span style={{ color: "#e5e7eb", fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  </Typography>
+                  <Typography variant="h3" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {info?.event ?? "—"}
-                  </span>
-                </div>
-                <button type="button" onClick={() => setDebugId(null)} style={modalClose} aria-label="Close">
+                  </Typography>
+                </Stack>
+                <IconButton onClick={() => setDebugId(null)} aria-label="Close" size="small" sx={{ flexShrink: 0 }}>
                   ✕
-                </button>
-              </header>
+                </IconButton>
+              </Stack>
               {multi && (
-                <div style={{ padding: "10px 18px", color: "#8b95a7", fontSize: 13, borderBottom: "1px solid #1b2030", flexShrink: 0 }}>
-                  {debugGroup.members.length} alerts from {debugGroup.sources.length} source
-                  {debugGroup.sources.length === 1 ? "" : "s"} matched by overlapping area + hazard:
+                <Box sx={{ px: 2.25, py: 1.25, borderBottom: 1, borderColor: "divider", flexShrink: 0 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    {debugGroup.members.length} alerts from {debugGroup.sources.length} source
+                    {debugGroup.sources.length === 1 ? "" : "s"} matched by overlapping area + hazard:
+                  </Typography>
                   {debugGroup.members.map((m) => (
-                    <div key={m.id} style={{ color: "#cbd5e1", marginTop: 4 }}>
-                      <span style={{ ...sourceChip, marginRight: 6 }}>{m.source}</span>
-                      {primaryInfo(m)?.event} — {areaSummary(m)}
-                      <Link href={`/admin/alerts/${m.id}`} style={{ color: "#60a5fa", marginLeft: 8 }}>
+                    <Stack key={m.id} direction="row" spacing={0.75} sx={{ alignItems: "center", mt: 0.5, flexWrap: "wrap" }}>
+                      <Chip label={m.source} />
+                      <Typography variant="body2">
+                        {primaryInfo(m)?.event} — {areaSummary(m)}
+                      </Typography>
+                      <MuiLink component={Link} href={`/admin/alerts/${m.id}`} variant="body2">
                         details
-                      </Link>
-                    </div>
+                      </MuiLink>
+                    </Stack>
                   ))}
-                </div>
+                </Box>
               )}
               {info && <TranslationDebugPanel info={info} />}
               {loadingFull && (
-                <div style={{ padding: "6px 18px", color: "#5b6478", fontSize: 11, fontStyle: "italic", flexShrink: 0 }}>
+                <Typography variant="caption" color="text.disabled" sx={{ px: 2.25, py: 0.75, fontStyle: "italic", flexShrink: 0 }}>
                   loading full doc…
-                </div>
+                </Typography>
               )}
-              <pre style={modalPre}>{JSON.stringify(multi ? membersFull : rep, null, 2)}</pre>
-            </div>
-          </div>
+              <Box
+                component="pre"
+                sx={{
+                  m: 0,
+                  px: 2.25,
+                  py: 1.75,
+                  bgcolor: surface.sunken,
+                  color: "text.secondary",
+                  fontSize: 12,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  flex: 1,
+                  overflow: "auto",
+                }}
+              >
+                {JSON.stringify(multi ? membersFull : rep, null, 2)}
+              </Box>
+            </Paper>
+          </Box>
         );
       })()}
     </AdminPageShell>
+  );
+}
+
+/** The "XX→EN" machine-translation tag shown beside a translated headline. */
+function LangTag({ lang, title }: { lang: string; title?: string }) {
+  return (
+    <Box
+      component="span"
+      title={title}
+      sx={{
+        display: "inline-block",
+        px: 0.625,
+        borderRadius: 0.5,
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: 0.3,
+        color: "primary.main",
+        border: 1,
+        borderColor: "primary.main",
+      }}
+    >
+      {lang.toUpperCase()}→EN
+    </Box>
   );
 }
 
@@ -490,11 +580,15 @@ export default function AlertsPage() {
 function translatedBadge(status: "translated" | "english" | "pending") {
   const meta =
     status === "translated"
-      ? { label: "Translated", color: "#34d399" }
+      ? { label: "Translated", color: "success.main" }
       : status === "english"
-        ? { label: "English source", color: "#8b95a7" }
-        : { label: "Pending", color: "#fbbf24" };
-  return <span style={{ color: meta.color }}>{meta.label}</span>;
+        ? { label: "English source", color: "text.secondary" }
+        : { label: "Pending", color: "warning.main" };
+  return (
+    <Typography variant="body2" sx={{ color: meta.color }}>
+      {meta.label}
+    </Typography>
+  );
 }
 
 /** Original-vs-translated debug view (Debug modal) — one row per field, blank rows
@@ -510,147 +604,43 @@ function TranslationDebugPanel({ info }: { info: AlertInfo }) {
   if (!rows.length) return null;
 
   return (
-    <div style={{ padding: "12px 18px", borderBottom: "1px solid #1b2030", flexShrink: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span style={{ color: "#8b95a7", fontSize: 11, fontWeight: 700, letterSpacing: 1 }}>TRANSLATION</span>
+    <Box sx={{ px: 2.25, py: 1.5, borderBottom: 1, borderColor: "divider", flexShrink: 0 }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1 }}>
+        <Typography variant="overline" color="text.secondary">
+          Translation
+        </Typography>
         {info.detectedLanguage ? (
-          <span style={langTag}>{info.detectedLanguage.toUpperCase()}→EN</span>
+          <LangTag lang={info.detectedLanguage} />
         ) : (
-          <span style={{ color: "#5b6478", fontSize: 11, fontStyle: "italic" }}>not yet processed</span>
+          <Typography variant="caption" color="text.disabled" sx={{ fontStyle: "italic" }}>
+            not yet processed
+          </Typography>
         )}
         {info.translatedAt && (
-          <span style={{ color: "#5b6478", fontSize: 11 }}>{new Date(info.translatedAt).toLocaleString()}</span>
+          <Typography variant="caption" color="text.disabled">
+            <code>{new Date(info.translatedAt).toLocaleString()}</code>
+          </Typography>
         )}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "90px 1fr", rowGap: 8, columnGap: 10, fontSize: 12.5 }}>
+      </Stack>
+      <Box sx={{ display: "grid", gridTemplateColumns: "90px 1fr", rowGap: 1, columnGap: 1.25 }}>
         {rows.map((r) => (
           <Fragment key={r.label}>
-            <div style={{ color: "#8b95a7" }}>{r.label}</div>
-            <div>
-              <div style={{ color: "#cbd5e1" }}>{r.translated || r.original || "—"}</div>
+            <Typography variant="caption" color="text.secondary">
+              {r.label}
+            </Typography>
+            <Box>
+              <Typography variant="caption" sx={{ display: "block" }}>
+                {r.translated || r.original || "—"}
+              </Typography>
               {r.translated && r.original && r.translated !== r.original && (
-                <div style={{ color: "#5b6478", fontStyle: "italic", marginTop: 2 }}>orig: {r.original}</div>
+                <Typography variant="caption" color="text.disabled" sx={{ display: "block", fontStyle: "italic", mt: 0.25 }}>
+                  orig: {r.original}
+                </Typography>
               )}
-            </div>
+            </Box>
           </Fragment>
         ))}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }
-
-const primary: React.CSSProperties = {
-  padding: "8px 14px",
-  borderRadius: 6,
-  border: "1px solid #333",
-  background: "#2563eb",
-  color: "#fff",
-  cursor: "pointer",
-};
-const controlLabel: React.CSSProperties = {
-  display: "flex",
-  gap: 6,
-  alignItems: "center",
-  color: "#fff",
-  fontSize: 13,
-};
-const select: React.CSSProperties = {
-  background: "#1a1f2b",
-  color: "#fff",
-  border: "1px solid #333",
-  borderRadius: 5,
-  padding: "4px 6px",
-};
-const th: React.CSSProperties = { padding: "6px 8px", fontWeight: 600 };
-const td: React.CSSProperties = { padding: "8px 8px", verticalAlign: "top" };
-const ingestBtn: React.CSSProperties = {
-  padding: "8px 14px",
-  borderRadius: 6,
-  border: "1px solid #2a3344",
-  background: "#14532d",
-  color: "#bbf7d0",
-  cursor: "pointer",
-};
-const langTag: React.CSSProperties = {
-  display: "inline-block",
-  padding: "0px 5px",
-  borderRadius: 4,
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: 0.3,
-  background: "#1e3a5f",
-  color: "#93c5fd",
-  border: "1px solid #2c5a8f",
-};
-const sourceChip: React.CSSProperties = {
-  display: "inline-block",
-  padding: "1px 7px",
-  borderRadius: 9,
-  fontSize: 11,
-  background: "#1a1f2b",
-  color: "#8b95a7",
-  border: "1px solid #2a3344",
-};
-const debugBtn: React.CSSProperties = {
-  padding: "3px 9px",
-  borderRadius: 5,
-  border: "1px solid #2a3344",
-  background: "#1a1f2b",
-  color: "#8b95a7",
-  cursor: "pointer",
-  fontSize: 12,
-};
-const modalOverlay: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(3, 6, 12, 0.8)",
-  backdropFilter: "blur(2px)",
-  display: "flex",
-  alignItems: "stretch",
-  justifyContent: "center",
-  padding: 24,
-  zIndex: 1000,
-};
-const modalPanel: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  width: "100%",
-  maxWidth: 1100,
-  background: "#0a0e16",
-  border: "1px solid #2a3344",
-  borderRadius: 10,
-  overflow: "hidden",
-  boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
-};
-const modalHeader: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-  padding: "12px 18px",
-  borderBottom: "1px solid #1b2030",
-  flexShrink: 0,
-};
-const modalClose: React.CSSProperties = {
-  border: "1px solid #2a3344",
-  background: "#1a1f2b",
-  color: "#cbd5e1",
-  borderRadius: 6,
-  width: 30,
-  height: 30,
-  cursor: "pointer",
-  fontSize: 14,
-  flexShrink: 0,
-};
-const modalPre: React.CSSProperties = {
-  margin: 0,
-  padding: "14px 18px",
-  background: "#070a11",
-  color: "#9ca3af",
-  fontSize: 12,
-  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-  flex: 1,
-  overflow: "auto",
-};

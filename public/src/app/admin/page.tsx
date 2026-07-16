@@ -75,35 +75,44 @@ export default function AdminPage() {
                 gap: 1.5,
               }}
             >
-              {ADMIN_LINKS.filter((l) => l.group === group).map((l) => (
-                <Paper
-                  key={l.href}
-                  {...(l.ready ? { component: Link, href: l.href } : {})}
-                  sx={{
-                    p: 2,
-                    height: "100%",
-                    display: "block",
-                    textDecoration: "none",
-                    opacity: l.ready ? 1 : 0.55,
-                    // The one affordance the flat palette allows: the hairline
-                    // picks up the accent on hover so the card reads as a target.
-                    transition: "border-color 120ms, background-color 120ms",
-                    ...(l.ready && {
-                      "&:hover": { borderColor: "primary.main", bgcolor: "action.hover" },
-                    }),
-                  }}
-                >
-                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                    <Typography variant="h3" color="text.primary">
-                      {l.title}
+              {ADMIN_LINKS.filter((l) => l.group === group).map((l) => {
+                const card = (
+                  <Paper
+                    sx={{
+                      p: 2,
+                      height: "100%",
+                      opacity: l.ready ? 1 : 0.55,
+                      // The one affordance the flat palette allows: the hairline
+                      // picks up the accent on hover so the card reads as a target.
+                      transition: "border-color 120ms, background-color 120ms",
+                      ...(l.ready && {
+                        "&:hover": { borderColor: "primary.main", bgcolor: "action.hover" },
+                      }),
+                    }}
+                  >
+                    <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                      <Typography variant="h3" color="text.primary">
+                        {l.title}
+                      </Typography>
+                      {!l.ready && <Chip label="soon" />}
+                    </Stack>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                      {l.desc}
                     </Typography>
-                    {!l.ready && <Chip label="soon" />}
-                  </Stack>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                    {l.desc}
-                  </Typography>
-                </Paper>
-              ))}
+                  </Paper>
+                );
+                // Plain <Link> wrapping the card, rather than MUI's
+                // `component={Link}` polymorphism: this page is a server
+                // component, and passing Link as a prop would send a function
+                // across the server→client boundary. (Same trap as AdminTopBar.)
+                return l.ready ? (
+                  <Link key={l.href} href={l.href} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+                    {card}
+                  </Link>
+                ) : (
+                  <div key={l.href}>{card}</div>
+                );
+              })}
             </Box>
           </Box>
         ))}

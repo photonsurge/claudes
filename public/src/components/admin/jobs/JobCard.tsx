@@ -37,13 +37,20 @@ export interface StopResult {
   at: string;
 }
 
-/** ms → "840ms" / "3.2s" / "1m4s". */
+/**
+ * ms → "840ms" / "3.2s" / "1m4s".
+ *
+ * Both thresholds are the ROUNDED value, not the raw one, so the seconds can
+ * never read as 60: 59_999ms is "1m0s" rather than a "60.0s" that never rolls,
+ * and the minutes are taken from whole rounded seconds so a 119_500ms remainder
+ * carries into the minute instead of printing "1m60s".
+ */
 export function fmtDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  const m = Math.floor(ms / 60_000);
-  const s = Math.round((ms % 60_000) / 1000);
-  return `${m}m${s}s`;
+  // 59_950ms+ rounds to 60.0s — past here it's a minute, not a second count.
+  if (ms < 59_950) return `${(ms / 1000).toFixed(1)}s`;
+  const secs = Math.round(ms / 1000);
+  return `${Math.floor(secs / 60)}m${secs % 60}s`;
 }
 
 /** The one-line status + palette colour for a triggered job's result row. */
@@ -116,7 +123,14 @@ export default function JobCard({ job, result, stopResult, running, stopping, on
       )}
 
       <Stack direction="row" spacing={1}>
-        <Button variant="contained" onClick={onRun} disabled={running} sx={{ flex: 1 }}>
+        {/*
+          Outlined, not contained. There are ~78 of these on the page: a filled
+          accent on every one turns the accent into the background and leaves the
+          eye nowhere to land. Quiet by default (DESIGN_BIBLE §5.6) — the accent
+          is spent on the running card's border instead, which is the thing worth
+          spotting from across the room.
+        */}
+        <Button variant="outlined" onClick={onRun} disabled={running} sx={{ flex: 1 }}>
           {running ? "…" : "Run now"}
         </Button>
         {job.stoppable && (

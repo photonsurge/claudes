@@ -1,6 +1,7 @@
 import polygonClipping, { type MultiPolygon } from "polygon-clipping";
 import type { AlertGeometry, iAlert, SeverityRank } from "@photonsurge/shared/db/alert-model";
 import { windGeometry } from "@photonsurge/shared/alerts/rings";
+import { alertCountryCode } from "@photonsurge/shared/alerts/country";
 import { simplifyGeometry } from "@photonsurge/shared/geo/simplify";
 import { snapGeometry } from "./snap";
 
@@ -21,6 +22,12 @@ import { snapGeometry } from "./snap";
 export interface AlertBlobInput {
   hazard: string;
   severityRank: SeverityRank;
+  /**
+   * ISO-3166 alpha-2 the members share; undefined for feeds with no country in
+   * the identifier (GDACS). Every member has it by construction — it's part of
+   * the bucket key — so a card can say "Spain: amber heat" and be right.
+   */
+  country?: string;
   geometry: AlertGeometry;
   /**
    * `[w, s, e, n]` bounds of the shape.
@@ -195,41 +202,64 @@ export interface DissolveOpts {
   /** Areas to union between yields. */
   yieldEvery?: number;
   /**
-   * Thin each area to this tolerance (degrees) BEFORE clipping. 0 keeps the
-   * source exactly.
+   * Thin each finished blob to this tolerance (degrees). 0 stores the union
+   * exactly.
    *
-   * This is the difference between a job that fits on the server and one that
-   * doesn't. Source boundaries carry survey-grade detail — the worst hazard alone
-   * is ~1.15M vertices — and clipping at that precision is where both the time
-   * and the memory go, to produce a shape the overlay then simplifies to ~0.05°
-   * (~5km) anyway before drawing it. So the detail was being clipped and thrown
-   * away. Measured on that bucket at 0.01° (~1km): 91% fewer vertices, dissolve
-   * 40s → 3s, peak heap 711MB → 289MB, and FEWER union failures (less coincident
-   * -edge pathology for polygon-clipping to choke on).
+   * AFTER the clip, never before — the order is the whole point and it was wrong
+   * once. Douglas-Peucker picks which points to keep from each ring's OWN shape,
+   * so two neighbours thin their shared border DIFFERENTLY and it stops being a
+   * shared border at all. Thinning the inputs at 0.002° pulled real borders apart
+   * by up to 200m and polygon-clipping then answered the union of Flevoland and
+   * Friesland with FIVE disjoint parts instead of one merged shape — the pair
+   * fuses perfectly at full precision. Measured: 63 pairs of genuinely-touching
+   * regions (Dutch provinces, Veneto/Friuli, the Graz districts) silently stopped
+   * fusing and drew with a seam between them.
+   *
+   * By the time a blob is built the shared borders are gone — they're interior to
+   * one fused shape — so thinning here can only cheapen the OUTLINE, and the
+   * saving is the same. It's the safe half of the trade.
    */
   simplifyDeg?: number;
   /**
    * Round every coordinate onto a shared grid (degrees) before clipping. 0 off.
    *
-   * The topology-safe way to cheapen the input, and the one to prefer: unlike
-   * `simplifyDeg`, snapping is a function of the coordinate rather than the ring,
-   * so two neighbours' shared border rounds to identical points and still fuses.
-   * See snap.ts.
+   * The topology-safe answer to the problem above IN THEORY: snapping is a
+   * function of the coordinate rather than the ring, so both sides of a shared
+   * border round to identical points. Measured WORSE on live data — it introduces
+   * its own degenerate rings — so it's off. See snap.ts before trying again.
    */
   snapDeg?: number;
 }
 
+/** No country in the identifier (GDACS' global feed) — bucket them together. */
+export const UNKNOWN_COUNTRY = "??";
+
 /**
- * The bucket an alert dissolves within: same hazard AND same severity.
+ * The bucket an alert dissolves within: same hazard, same severity, same COUNTRY.
+ *
+ * The country is not cosmetic. Adjacency is transitive, warnings don't stop at
+ * borders, and a continent's worth of met services issue the same hazard on the
+ * same day — so without it the chain ran clean across Europe: one thunderstorm
+ * blob of 206 alerts spanning THIRTEEN countries from Spain to Kosovo, one heat
+ * blob from Spain to the Netherlands, one storm blob across 100° of longitude
+ * from Kazakhstan to the Pacific. Those shapes are technically correct and
+ * useless: a blob gets ONE representative alert card, so clicking a third of
+ * Europe showed one country's headline for all of it.
+ *
+ * A warning is issued BY a country, so the country is the honest seam — it's
+ * where the underlying editorial actually changes. Within one, the dissolve still
+ * does its job and Poland's ~550 county alerts still become a few shapes.
  *
  * Exported so a caller can group WITHOUT the geometry loaded and then pull one
- * bucket's shapes at a time. Only the id/event/severity fields are touched, so
- * it works on a projection that leaves the polygons in the database — which is
- * the whole point: holding every active alert's geometry at once is ~5M vertices
- * and it OOMs the worker.
+ * bucket's shapes at a time. Only the small fields are touched, so it works on a
+ * projection that leaves the polygons in the database — which is the whole point:
+ * holding every active alert's geometry at once is ~5M vertices and it OOMs the
+ * worker. `source`/`identifier` must be in that projection for the country to
+ * resolve; miss them and every alert silently buckets as UNKNOWN_COUNTRY and the
+ * continent-wide blobs come straight back.
  */
 export const bucketKeyOf = (a: iAlert, hazardOf: (a: iAlert) => string): string =>
-  `${hazardOf(a)}|${a.maxSeverityRank}`;
+  `${hazardOf(a)}|${a.maxSeverityRank}|${alertCountryCode(a) ?? UNKNOWN_COUNTRY}`;
 
 /**
  * Cluster alerts by (hazard, severity) and union each cluster's touching areas.
@@ -255,8 +285,10 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
   let sinceYield = 0;
   let unionFailures = 0;
 
-  // Same hazard AND same severity: a red and an amber warning must never fuse
-  // into one shape, or the globe would paint the milder area at the worse colour.
+  // Same hazard, same severity, same country — see `bucketKeyOf`. A red and an
+  // amber warning must never fuse into one shape, or the globe paints the milder
+  // area at the worse colour; and a blob must not cross a national border, or its
+  // card speaks for countries it has never heard of.
   const buckets = new Map<string, iAlert[]>();
   for (const a of alerts) {
     const key = bucketKeyOf(a, opts.hazardOf);
@@ -267,7 +299,7 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
 
   const out: AlertBlobInput[] = [];
   for (const [key, members] of buckets) {
-    const [hazard, rank] = key.split("|");
+    const [hazard, rank, country] = key.split("|");
     type Blob = { geom: MultiPolygon; box: [number, number, number, number]; ids: Set<string>; before: number };
     const blobs: Blob[] = [];
 
@@ -276,14 +308,14 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
     for (const area of distinctAreas(members)) {
       {
         const g = area.geometry;
-        // Counted from the SOURCE, before thinning, so the run's reported saving
-        // stays honest end-to-end: raw boundary → what the globe finally draws.
+        // Counted from the SOURCE, so the run's reported saving stays honest
+        // end-to-end: raw boundary → what the globe finally draws.
         const before = countVertices(g.coordinates);
-        // Snap first (topology-safe), then optionally thin. A shape that collapses
-        // entirely falls back to the original rather than vanishing off the globe.
+        // Clip the boundary AS ISSUED. Cheapening it here is what breaks the
+        // shared borders this whole function exists to dissolve (see
+        // `simplifyDeg`); the thinning happens to the finished blob instead.
         const snapped = snapDeg ? (snapGeometry(g, snapDeg) ?? g) : g;
-        const thinned = simplifyDeg ? (simplifyGeometry(snapped as never, simplifyDeg) ?? snapped) : snapped;
-        const geom = toGeom(thinned as AlertGeometry);
+        const geom = toGeom(snapped as AlertGeometry);
         if (!geom) continue;
         if (++sinceYield >= yieldEvery) {
           sinceYield = 0;
@@ -328,11 +360,18 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
     }
 
     for (const b of blobs) {
-      const geometry = toGeoJson(b.geom);
-      if (!geometry) continue;
+      const merged = toGeoJson(b.geom);
+      if (!merged) continue;
+      // NOW thin: every shared border in here is already interior to the fused
+      // shape, so there's nothing left to pull apart. A blob that thins away to
+      // nothing keeps its exact outline rather than vanishing off the globe.
+      const geometry = simplifyDeg
+        ? ((simplifyGeometry(merged as never, simplifyDeg) as AlertGeometry) ?? merged)
+        : merged;
       out.push({
         hazard,
         severityRank: Number(rank) as SeverityRank,
+        country: country === UNKNOWN_COUNTRY ? undefined : country,
         geometry,
         // Re-measured from the wound output rather than reusing `b.box`, so the
         // stored bounds always describe the stored shape.

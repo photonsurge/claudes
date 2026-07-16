@@ -14,6 +14,11 @@
  * only its record goes.
  */
 import { useEffect, useRef, useState } from "react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Paper from "@mui/material/Paper";
+import Typography from "@mui/material/Typography";
+import { font, surface } from "../../theme/tokens";
 
 // The selectable states, named as getJobCounts reports them (clearQueue folds
 // "waiting" onto BullMQ's internal "wait"). Order matches the queue dashboard's
@@ -38,16 +43,6 @@ interface ClearQueueMenuProps {
   /** Disable while a sibling control is mid-flight. */
   disabled?: boolean;
 }
-
-const btn: React.CSSProperties = {
-  padding: "6px 12px",
-  borderRadius: 6,
-  border: "1px solid #3a1620",
-  background: "#3a1620",
-  color: "#fff",
-  cursor: "pointer",
-  fontSize: 12,
-};
 
 function total(counts: Record<string, number> | null): number {
   if (!counts) return 0;
@@ -123,88 +118,91 @@ export default function ClearQueueMenu({ counts, onDone, disabled }: ClearQueueM
   };
 
   return (
-    <span ref={wrap} style={{ display: "inline-flex", alignItems: "center", gap: 8, position: "relative" }}>
-      {note && <span style={{ fontSize: 11, color: note.startsWith("failed") ? "#fca5a5" : "#8b95a7" }}>{note}</span>}
+    <Box ref={wrap} component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 1, position: "relative" }}>
+      {note && (
+        <Typography variant="caption" color={note.startsWith("failed") ? "error.main" : "text.secondary"}>
+          {note}
+        </Typography>
+      )}
 
-      <span style={{ display: "inline-flex" }}>
-        <button
-          type="button"
+      {/* Split button: the pair reads as one control, so the shared edge is squared off. */}
+      <Box sx={{ display: "inline-flex" }}>
+        <Button
+          variant="outlined"
+          color="error"
           disabled={off || all === 0}
           onClick={() => clear()}
           title="Remove every job in every state. Schedules survive; a running job finishes."
-          style={{
-            ...btn,
-            borderRadius: "6px 0 0 6px",
-            borderRight: "none",
-            opacity: off || all === 0 ? 0.5 : 1,
-          }}
+          sx={{ borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: "none" }}
         >
           {busy ? "Clearing…" : `Clear queue${all ? ` (${all})` : ""}`}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="outlined"
+          color="error"
           disabled={off}
           aria-label="Clear one state"
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          style={{ ...btn, borderRadius: "0 6px 6px 0", padding: "6px 8px", opacity: off ? 0.5 : 1 }}
+          sx={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0, minWidth: 0, px: 1 }}
         >
           ▾
-        </button>
-      </span>
+        </Button>
+      </Box>
 
+      {/*
+        A hand-rolled popover rather than MUI's Menu: this closes on a
+        document-level Escape/outside-click (see the effect above), which the
+        Modal-based Menu doesn't fire, and the items must stay native <button>s
+        so `disabled` is the real attribute and not just aria-disabled.
+      */}
       {open && (
-        <div
+        <Paper
           role="menu"
-          style={{
-            position: "absolute",
-            top: "calc(100% + 6px)",
-            right: 0,
-            zIndex: 20,
-            minWidth: 180,
-            padding: 4,
-            borderRadius: 8,
-            border: "1px solid #2a3344",
-            background: "#0c111c",
-            boxShadow: "0 8px 24px rgba(0,0,0,.5)",
-          }}
+          sx={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 20, minWidth: 180, p: 0.5 }}
         >
-          <div style={{ padding: "6px 10px 4px", fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: "#5b6577" }}>
+          <Typography variant="overline" color="text.disabled" sx={{ display: "block", px: 1.25, pt: 0.75, pb: 0.5 }}>
             Clear one state
-          </div>
+          </Typography>
           {CLEARABLE_STATES.map((s) => {
             const n = counts?.[s] ?? 0;
             return (
-              <button
+              <Box
                 key={s}
+                component="button"
                 type="button"
                 role="menuitem"
                 disabled={n === 0}
                 onClick={() => clear([s])}
-                style={{
+                sx={{
                   display: "flex",
                   width: "100%",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  gap: 12,
-                  padding: "7px 10px",
-                  borderRadius: 6,
+                  gap: 1.5,
+                  px: 1.25,
+                  py: 0.875,
+                  borderRadius: 1,
                   border: "none",
-                  background: "transparent",
-                  color: n === 0 ? "#5b6577" : "#dfe7f5",
-                  cursor: n === 0 ? "default" : "pointer",
+                  bgcolor: "transparent",
+                  font: "inherit",
                   fontSize: 13,
                   textAlign: "left",
+                  color: n === 0 ? "text.disabled" : "text.primary",
+                  cursor: n === 0 ? "default" : "pointer",
+                  "&:not(:disabled):hover": { bgcolor: surface.raised },
                 }}
               >
-                <span>{s}</span>
-                <span style={{ color: "#5b6577", fontWeight: 600 }}>{n}</span>
-              </button>
+                <Box component="span">{s}</Box>
+                <Box component="span" sx={{ color: "text.disabled", fontWeight: 600, fontFamily: font.mono, fontVariantNumeric: "tabular-nums" }}>
+                  {n}
+                </Box>
+              </Box>
             );
           })}
-        </div>
+        </Paper>
       )}
-    </span>
+    </Box>
   );
 }

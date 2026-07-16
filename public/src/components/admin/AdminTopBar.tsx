@@ -22,17 +22,21 @@ export default function AdminTopBar({ email }: { email?: string }) {
     <AppBar
       position="sticky"
       elevation={0}
-      sx={{ bgcolor: "background.paper", borderBottom: 1, borderColor: "divider", backgroundImage: "none" }}
+      // Page-coloured, not `background.paper`: admin_logo.png is NOT transparent
+      // (solid #080a15), and on a lighter bar it reads as a pasted-on rectangle.
+      // #080a15 and the page tone are within a few values of each other, so the
+      // logo's edges disappear and the hairline alone carries the bar.
+      sx={{ bgcolor: "background.default", borderBottom: 1, borderColor: "divider", backgroundImage: "none" }}
     >
-      <Toolbar variant="dense" disableGutters sx={{ minHeight: 44, px: 2, gap: 1.5 }}>
+      <Toolbar variant="dense" disableGutters sx={{ minHeight: 52, px: 2, gap: 1.5 }}>
         {/* The logo is the way home — it reads better than "← Home" and brands the console. */}
         <Link href="/" style={{ display: "flex", alignItems: "center" }} aria-label="Home">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/gods_banner_transparent.png"
+            src="/admin_logo.png"
             alt="G.O.D.S. — Global Orbital Detection System"
-            height={28}
-            style={{ height: 28, width: "auto", display: "block" }}
+            height={36}
+            style={{ height: 36, width: "auto", display: "block" }}
           />
         </Link>
         <Typography variant="body2" color="text.disabled">
