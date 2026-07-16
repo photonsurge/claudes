@@ -324,26 +324,51 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
 
     // Distinct GEOGRAPHY, not distinct alerts: two warnings for the same region
     // are one area with two members, never two identical shapes to union.
+    //
+    // Then EXPLODED into parts, which is load-bearing: this used to iterate areas
+    // and hand each area's whole geometry to the union as one lump. That merges
+    // areas against each other and is a complete NO-OP when there's only one —
+    // and WMO routinely ships an entire country as a SINGLE area carrying one
+    // multi-part geometry. Moldova arrived as 1 alert / 1 area / 36 county
+    // polygons; a US heat advisory as ~30. Nothing to union against, so the parts
+    // passed through untouched and the globe drew every county border inside a
+    // shape that was supposed to be one place. Every part is its own candidate, so
+    // touching counties fuse whether they arrived as separate areas or as parts of
+    // one.
     for (const area of distinctAreas(members)) {
-      {
-        const g = area.geometry;
-        // Counted from the SOURCE, so the run's reported saving stays honest
-        // end-to-end: raw boundary → what the globe finally draws.
-        const before = countVertices(g.coordinates);
-        // Clip the boundary AS ISSUED. Cheapening it here is what breaks the
-        // shared borders this whole function exists to dissolve (see
-        // `simplifyDeg`); the thinning happens to the finished blob instead.
-        const snapped = snapDeg ? (snapGeometry(g, snapDeg) ?? g) : g;
-        const geom = toGeom(snapped as AlertGeometry);
-        if (!geom) continue;
+      const g = area.geometry;
+      // Clip the boundary AS ISSUED. Cheapening it here is what breaks the
+      // shared borders this whole function exists to dissolve (see
+      // `simplifyDeg`); the thinning happens to the finished blob instead.
+      const snapped = snapDeg ? (snapGeometry(g, snapDeg) ?? g) : g;
+      const whole = toGeom(snapped as AlertGeometry);
+      if (!whole) continue;
+
+      // Vertices are counted from the RAW source, per part, so the run's reported
+      // saving stays honest end-to-end: raw boundary → what the globe finally
+      // draws. Per part matters now that parts can land in different blobs —
+      // charging a 36-part area's whole count to whichever blob got part 0 would
+      // make one blob's saving nonsense and the rest's zero. If snapping dropped a
+      // part the indices no longer line up, so fall back to charging part 0.
+      const src = toGeom(g);
+      const aligned = src?.length === whole.length;
+      const areaBefore = countVertices(g.coordinates);
+
+      for (let partIdx = 0; partIdx < whole.length; partIdx++) {
+        const geom: MultiPolygon = [whole[partIdx]];
+        const before = aligned
+          ? countVertices(src![partIdx])
+          : partIdx === 0
+            ? areaBefore
+            : 0;
         if (++sinceYield >= yieldEvery) {
           sinceYield = 0;
           await breathe();
         }
         const box = bounds(geom);
 
-        // Fuse into every blob this area touches — joining two previously
-        // separate blobs is normal (an area can bridge them).
+        // Fuse into every blob this part touches — joining two previously
+        // separate blobs is normal (a part can bridge them).
         const hits = blobs.filter((b) => near(b.box, box, tol));
         if (!hits.length) {
           blobs.push({ geom, box, ids: new Set(area.ids), before });

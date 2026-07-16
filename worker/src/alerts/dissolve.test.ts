@@ -281,6 +281,85 @@ describe("dissolveAlerts", () => {
   });
 
   /**
+   * The dissolve only ever merged areas AGAINST EACH OTHER, which is a complete
+   * no-op when a bucket holds one area — and WMO routinely ships an entire country
+   * as exactly that: ONE alert, ONE area, one multi-part geometry. Moldova arrived
+   * as 1 alert / 1 area / 36 county polygons; a US heat advisory as ~30, its
+   * areaDesc a semicolon-joined list of every county. Nothing to union against, so
+   * every part passed through untouched and the globe drew a county lattice across
+   * a shape that was supposed to be one place. The merge simply never ran for them.
+   */
+  describe("a country shipped as ONE multi-part area", () => {
+    /** One alert, one area, `parts` separate county polygons — the WMO shape. */
+    const multiPartCountry = (boxes: number[][]): iAlert =>
+      ({
+        id: "wmo-1",
+        source: "wmo",
+        identifier: "md-meteo-en/2026/07/16/x.xml",
+        maxSeverityRank: 2,
+        info: [
+          {
+            event: "Forest Fire",
+            severityRank: 2,
+            area: [
+              {
+                areaDesc: boxes.map((_, i) => `County ${i}`).join("; "),
+                geometry: {
+                  type: "MultiPolygon",
+                  coordinates: boxes.map(([w, s, e, n]) => [[[w, s], [e, s], [e, n], [w, n], [w, s]]]),
+                },
+              },
+            ],
+          },
+        ],
+      }) as unknown as iAlert;
+
+    it("fuses the counties inside a single area into one shape", async () => {
+      // Three touching counties in ONE area. Before: three outlines drawn, no
+      // union attempted at all.
+      const out = await run([multiPartCountry([[0, 0, 1, 1], [1, 0, 2, 1], [2, 0, 3, 1]])]);
+
+      expect(out).toHaveLength(1);
+      expect(out[0].geometry.type).toBe("Polygon"); // one part, not three
+    });
+
+    it("leaves no internal borders — that is what the lines were", async () => {
+      const out = await run([multiPartCountry([[0, 0, 1, 1], [1, 0, 2, 1]])]);
+
+      // Two squares fused across x=1 => a single 5-point ring, not two rings.
+      const coords = out[0].geometry.coordinates as unknown as number[][][];
+      expect(coords).toHaveLength(1);
+      expect(coords[0].length).toBeLessThanOrEqual(5);
+    });
+
+    it("still keeps genuinely separate parts apart (the Sicily rule)", async () => {
+      // An island in the same area must not fuse to the mainland just because it
+      // arrived in the same geometry.
+      const out = await run([multiPartCountry([[0, 0, 1, 1], [1, 0, 2, 1], [50, 50, 51, 51]])]);
+
+      expect(out).toHaveLength(2);
+    });
+
+    it("keeps the member alert on every shape it produced", async () => {
+      // The parts share one alert; splitting the geography must not lose it.
+      const out = await run([multiPartCountry([[0, 0, 1, 1], [50, 50, 51, 51]])]);
+
+      for (const b of out) expect(b.memberIds).toEqual(["wmo-1"]);
+    });
+
+    it("counts the source vertices once, not once per part", async () => {
+      // `before` is charged per part from the raw source. Summed across the
+      // blobs it must equal the area's real vertex count, or the run's headline
+      // saving is inflated by however many parts the source happened to use.
+      const boxes = [[0, 0, 1, 1], [50, 50, 51, 51]];
+      const out = await run([multiPartCountry(boxes)]);
+
+      const total = out.reduce((n, b) => n + b.verticesBefore, 0);
+      expect(total).toBe(10); // two 5-point rings
+    });
+  });
+
+  /**
    * REAL geometry, because nothing else reproduces this.
    *
    * Thinning used to happen to the INPUTS, before the clip, on the theory that the
@@ -557,7 +636,11 @@ describe("dissolveAlerts", () => {
 
       const out = await run([islands]);
 
-      const rings = outerRings(out[0].geometry);
+      // Two islands 5° apart, so they are two SHAPES — the parts of one area are
+      // dissolved like any other geography, and disjoint things never fuse (the
+      // Sicily rule). What matters here is that every ring came out wound right,
+      // whichever blob it landed in.
+      const rings = out.flatMap((b) => outerRings(b.geometry));
       expect(rings).toHaveLength(2);
       for (const ring of rings) expect(signedArea(ring)).toBeGreaterThan(0);
     });
