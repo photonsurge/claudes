@@ -116,10 +116,24 @@ export async function refresh(_job: Job) {
     let verticesAfter = 0;
 
     for (const [key, ids] of buckets) {
+      // `source`/`identifier` again, and they are NOT redundant with pass 1:
+      // `dissolveAlerts` re-buckets what it's handed, so it decodes the country
+      // from THESE documents. Without them every blob came back stamped
+      // "unknown" while the log line above still printed pass 1's `heat|2|CN`,
+      // so the split looked right on the globe and the label was silently empty.
       let members: iAlert[] | null = (await db.alerts.model
         .find(
           { id: { $in: ids } },
-          { _id: 0, id: 1, maxSeverityRank: 1, "info.event": 1, "info.parameters": 1, "info.area.geometry": 1 },
+          {
+            _id: 0,
+            id: 1,
+            source: 1,
+            identifier: 1,
+            maxSeverityRank: 1,
+            "info.event": 1,
+            "info.parameters": 1,
+            "info.area.geometry": 1,
+          },
         )
         .lean()
         .exec()) as unknown as iAlert[];

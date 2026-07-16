@@ -21,9 +21,14 @@ jest.mock("../alerts/blob-cities", () => ({
 }));
 
 /** An alert covering one square — the shape of a MeteoAlarm county warning. */
-const county = (id: string, rank: number, [w, s, e, n]: number[]): iAlert =>
+const county = (id: string, rank: number, [w, s, e, n]: number[], cc = "PL"): iAlert =>
   ({
     id,
+    // A real CAP alert knows where it came from, and the dissolve decodes the
+    // country out of these two to bucket on it. A fixture without them can't
+    // notice a projection that forgets to ask for them.
+    source: "meteoalarm",
+    identifier: `2.49.0.0.${cc}.20260716`,
     maxSeverityRank: rank,
     info: [
       {
@@ -60,12 +65,29 @@ function mockDb() {
       const wantsGeometry = "info.area.geometry" in projection;
       if (ids) trace.push(`load ${ids.join("+")}`);
       const docs = ids ? ALERTS.filter((a) => ids.includes(a.id!)) : ALERTS;
+      /**
+       * HONOUR THE PROJECTION — Mongo does, and a mock that doesn't cannot see a
+       * field the job forgot to ask for.
+       *
+       * This mock used to hand back whole documents, so both passes got `source`
+       * and `identifier` whether they'd asked or not. Pass 2 hadn't, every blob
+       * came back stamped "unknown country", and these tests stayed green through
+       * all of it while the live globe lost every country label.
+       */
+      const project = (a: any) => {
+        const out: any = {};
+        for (const k of Object.keys(a)) {
+          if (k === "info") continue;
+          if (projection[k]) out[k] = a[k];
+        }
+        out.info = wantsGeometry ? a.info : [{ ...a.info[0], area: undefined }];
+        return out;
+      };
       const chain = {
         lean: () => chain,
-        exec: async () =>
-          // Pass 1 asks WITHOUT the geometry — the whole point of the two-pass
-          // read, so hand back what Mongo would and let the job cope.
-          wantsGeometry ? docs : docs.map((a) => ({ ...a, info: [{ ...a.info[0], area: undefined }] })),
+        // Pass 1 asks WITHOUT the geometry — the whole point of the two-pass
+        // read, so hand back what Mongo would and let the job cope.
+        exec: async () => docs.map(project),
       };
       return chain;
     },
@@ -96,6 +118,46 @@ beforeEach(() => {
 });
 
 describe("alert blobs rebuild", () => {
+  /**
+   * Both passes must ask for `source`/`identifier`. The country is decoded from
+   * them and it's part of the bucket key, so a projection that omits them doesn't
+   * fail — it silently buckets the whole planet as "unknown". Pass 2 forgot, and
+   * nothing complained: the job's own log line prints PASS 1's key, so the console
+   * cheerfully read `heat|2|PL` while every blob written was stamped with no
+   * country at all.
+   */
+  it("stamps each shape with its country", async () => {
+    const { db } = mockDb();
+
+    await run();
+
+    const written = (db.alertBlobs.addGeneration as jest.Mock).mock.calls.flatMap((c) => c[0]);
+    expect(written.length).toBeGreaterThan(0);
+    for (const b of written) expect(b.country).toBe("PL");
+  });
+
+  it("asks for the country fields in EVERY pass, not just the first", async () => {
+    const { db } = mockDb();
+    const find = jest.spyOn(db.alerts.model, "find");
+
+    await run();
+
+    expect(find.mock.calls.length).toBeGreaterThan(1);
+    for (const [, projection] of find.mock.calls) {
+      expect(projection).toMatchObject({ source: 1, identifier: 1 });
+    }
+  });
+
+  it("keeps two countries' touching counties in separate shapes", async () => {
+    ALERTS = [county("pl", 3, [0, 0, 1, 1], "PL"), county("de", 3, [1, 0, 2, 1], "DE")];
+    const { db } = mockDb();
+
+    await run();
+
+    const written = (db.alertBlobs.addGeneration as jest.Mock).mock.calls.flatMap((c) => c[0]);
+    expect(written.map((b: any) => b.country).sort()).toEqual(["DE", "PL"]);
+  });
+
   it("writes each hazard's shapes before loading the next one", async () => {
     // Accumulating instead meant carrying ~1.9M vertices of finished output on
     // top of whatever bucket was mid-clip. Any write drifting to the end of the
