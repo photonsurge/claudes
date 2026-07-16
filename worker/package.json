@@ -1,6 +1,6 @@
 {
   "name": "worker",
-  "version": "0.1.61",
+  "version": "0.3.0",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
@@ -92,7 +92,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "prove:bakepool": "ts-node src/scripts/proveBakePool.ts",
-    "refresh:nuts": "ts-node src/scripts/refreshNuts.ts"
+    "refresh:nuts": "ts-node src/scripts/refreshNuts.ts",
+    "refresh:gadm": "ts-node src/scripts/refreshGadm.ts"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

@@ -125,8 +125,38 @@ invisible alerts with areas but NO EMMA_ID:
 
 1. **~306 — EMMA codes we never fetched.** The page cap. Fixed below.
 2. **171 — WMO / China (CMA).** Chinese county names, no polygon, no EMMA. Outside
-   the European registry entirely. Unsolved, unexamined.
+   the European registry entirely. **SHIPPED — GADM name-resolver (see below).**
 3. **88 — MeteoAlarm members that don't use EMMA.** See below. Solvable, cheaply.
+
+## China (CMA) — a NAME join, not a code join (SHIPPED)
+
+The "171 undrawable" snapshot understated the story. MEASURED across the live feed:
+**42% of CMA areas already arrive WITH a polygon (4,383/10,423) via WMO** — that's
+the coverage already on the globe. The gap is the polygon-less rest, which carry
+*neither* a geocode *nor* a polygon — only an English county name ("Jinghe County"),
+some machine-mistranslated ("Three gate County" = Sanmen, "Surabaya County"). The
+only join key is that name, and it's fuzzy.
+
+Measured name-match to **GADM CHN ADM3** (2,421 county polygons, `NAME_3`), folding
+off the admin-type suffix: **78% of polygon-less instances match a UNIQUE county**
+(→ CMA 42%→78% drawable), **84% with disambiguation**. The risk is homonyms: 69
+distinct names (662 instances) share a `NAME_3` across ≥2 provinces (Pingxiang ×3).
+
+Built on the NUTS `admin_area_geom` rails but as a **name join**: rows carry a
+normalised `nameKey` + a `centroid`, `byNameKeys` returns candidate *arrays*, and
+the pure resolver (`worker/src/alerts/nameResolve.ts`) fills a unique name outright
+but only draws a shared name when the alert's OTHER polygons (feed, or a unique
+sibling filled the same pass) anchor a province — **never guesses without an
+anchor** (the same "plausible but wrong" trap NUTS taught). Wired as a third
+sender-gated pass in `enrich-geometry` (`ALERT_NAME_SCHEMES=cn-cma-xx:GADM3`) plus a
+per-alert `reconcileGadmGeometry`. Admin button "Import China area boundaries"
+(`adminGeom.refreshGadm`) / `yarn refresh:gadm`.
+
+**LICENSE:** GADM 4.1 is non-commercial / no-redistribute (unlike GISCO/NUTS CC-BY).
+It is fetched at operator request and only resolved shapes are kept — never
+committed, never re-served. `parseGadmFeatures` is source-agnostic: point
+`GADM_FILE`/`GADM_URL` at an OSM/ODbL county export of the same shape before any
+commercial use.
 
 ## France and Hungary ship NUTS codes — and GISCO is the right answer for them
 

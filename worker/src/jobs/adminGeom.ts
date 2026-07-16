@@ -4,6 +4,7 @@ import { log } from "@photonsurge/shared/utill/logger";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { importNutsBoundaries } from "../alerts/nutsBoundaries";
+import { importGadmBoundaries } from "../alerts/gadmBoundaries";
 
 const TAG = "job:admin-geom";
 
@@ -39,6 +40,42 @@ export async function refresh(job: Job) {
   } catch (err) {
     log(TAG, `NUTS import failed`, summarizeForLog(err));
     blogErr(TAG, `NUTS import failed`, err, "adminGeom", "refresh");
+    throw err;
+  }
+}
+
+/**
+ * Dispatched as type "adminGeom", event "refreshGadm". Imports GADM county polygons
+ * so China's CMA warnings — which ship an English county NAME and no polygon — can
+ * be drawn, then retro-fits stored CMA alerts (unique names, plus shared names a
+ * sibling polygon can disambiguate). Operator-triggered, no cron.
+ *
+ * GADM is non-commercial / no-redistribute: it is fetched on request and only its
+ * resolved boundaries are copied onto alerts, never re-served — see gadmBoundaries.
+ */
+export async function refreshGadm(job: Job) {
+  const db = await getAppDb();
+  try {
+    const r = await importGadmBoundaries(db);
+    const cache = await db.adminAreaGeom.count();
+    const coverage = await db.alerts.geometryCoverage();
+    const result = { ...r, failures: r.failures.length, cache, coverage };
+    log(TAG, `GADM import done`, result);
+    blogInfo(
+      TAG,
+      `GADM boundaries: ${r.stored} stored, ${r.backfilled} CMA alerts retro-fitted ` +
+        `(${r.disambiguated} disambiguated; ${coverage.alertsNoShape} alerts still invisible)`,
+      result,
+      "adminGeom",
+      "refreshGadm",
+    );
+    if (r.failures.length) {
+      log(TAG, `partial failures`, { count: r.failures.length, sample: r.failures.slice(0, 5) });
+    }
+    return result;
+  } catch (err) {
+    log(TAG, `GADM import failed`, summarizeForLog(err));
+    blogErr(TAG, `GADM import failed`, err, "adminGeom", "refreshGadm");
     throw err;
   }
 }

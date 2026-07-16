@@ -420,6 +420,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Alerts & events",
   },
   {
+    id: "admin-geom-gadm",
+    label: "Import China area boundaries",
+    description:
+      "Fetch county map shapes for China's CMA warnings, which name their area (\"Jinghe County\") but ship no outline. 42% of CMA alerts already arrive with a polygon; this fills most of the rest by matching the English county name to a GADM boundary — only when the name is unambiguous, or a neighbouring warning pins which province it's in, so it never draws the wrong county. Downloads the boundaries once, caches them, and retro-fits stored alerts. NOTE: GADM is non-commercial and must not be redistributed — the data is fetched at import and only the shapes it resolves are kept; swap the source for an OSM county export before any commercial use. Safe to re-run.",
+    domain: "adminGeom",
+    type: "adminGeom",
+    event: "refreshGadm",
+    group: "Alerts & events",
+  },
+  {
     id: "alert-blobs-rebuild",
     label: "Merge neighbouring alert areas",
     description:

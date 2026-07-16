@@ -12,6 +12,7 @@ import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import type { iAlertModel } from "@photonsurge/shared/db/alert-model";
 import { alertContentHash } from "@photonsurge/shared/alerts/content-hash";
+import { isEnglishLang, wmoAuthorityIsEnglish } from "@photonsurge/shared/alerts/language";
 import { log } from "@photonsurge/shared/utill/logger";
 import { ALERTS_UPDATED } from "@photonsurge/shared/control";
 import { summarizeForLog } from "../utils";
@@ -94,6 +95,23 @@ export async function runAlertsTranslate(opts: AlertsTranslateOpts = {}): Promis
 
       const hash = alertContentHash(headline, description, instruction);
       if (!force && info.translationHash === hash) continue;
+
+      // Already English — the CAP block declares `en`, or it's a WMO SWIC
+      // English edition (`kz-kazhydromet-en/…`). Stamp it as English without
+      // spending an LLM call; display falls back to the raw (English) text.
+      if (isEnglishLang(info.language) || wmoAuthorityIsEnglish(alert.identifier)) {
+        await db.alerts.updateTranslation(alert.id, idx, {
+          detectedLanguage: "en",
+          translatedHeadline: "",
+          translatedDescription: "",
+          translatedInstruction: "",
+          translatedAt: new Date().toISOString(),
+          translationHash: hash,
+        });
+        englishSource++;
+        continue;
+      }
+
       candidates++;
 
       const res = await callOpenRouter({

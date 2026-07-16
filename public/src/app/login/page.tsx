@@ -13,6 +13,7 @@ function LoginForm() {
   const next = params.get("next") || "/admin";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -83,11 +84,26 @@ function LoginForm() {
           style={inputStyle}
         />
 
-        <label style={{ display: "block", fontSize: 12, color: "#8b95a7", margin: "14px 0 4px" }}>
-          Password
-        </label>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", margin: "14px 0 4px" }}>
+          <label style={{ fontSize: 12, color: "#8b95a7" }}>Password</label>
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              fontSize: 12,
+              color: "#6b93e0",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {showPassword ? "Hide" : "Show"}
+          </button>
+        </div>
         <input
-          type="password"
+          type={showPassword ? "text" : "password"}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"

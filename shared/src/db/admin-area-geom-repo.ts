@@ -9,8 +9,21 @@ export interface AdminAreaInput {
   code: string;
   countryCode?: string;
   name?: string;
+  /** Normalised join key for NAME-matched schemes (GADM/China); omit for code schemes. */
+  nameKey?: string;
+  /** [lng, lat] representative point, for disambiguating a shared nameKey. */
+  centroid?: [number, number];
   geometry: AlertGeometry;
   source?: string;
+}
+
+/** One candidate a name-join resolves to. A nameKey may return several. */
+export interface AdminAreaCandidate {
+  code: string;
+  name?: string;
+  countryCode?: string;
+  centroid?: [number, number];
+  geometry: AlertGeometry;
 }
 
 /** The key a (scheme, code) pair joins on — kept identical on read and write. */
@@ -48,6 +61,30 @@ export function makeAdminAreaGeomRepo(model: Model<iAdminAreaGeomModel>) {
     },
 
     /**
+     * Candidates for a set of normalised names within one scheme, as a Map keyed by
+     * `nameKey`. Each key maps to an ARRAY — a county name can belong to several
+     * counties, and the caller disambiguates by centroid. One batched `$in` query.
+     */
+    async byNameKeys(scheme: string, keys: string[]): Promise<Map<string, AdminAreaCandidate[]>> {
+      const uniq = [...new Set(keys.filter(Boolean))];
+      if (!uniq.length) return new Map();
+      const docs = (await model
+        .find(
+          { scheme: scheme.toUpperCase(), nameKey: { $in: uniq } },
+          { _id: 0, code: 1, name: 1, countryCode: 1, nameKey: 1, centroid: 1, geometry: 1 },
+        )
+        .lean()
+        .exec()) as unknown as (AdminAreaCandidate & { nameKey: string })[];
+      const out = new Map<string, AdminAreaCandidate[]>();
+      for (const d of docs) {
+        const list = out.get(d.nameKey) ?? [];
+        list.push({ code: d.code, name: d.name, countryCode: d.countryCode, centroid: d.centroid, geometry: d.geometry });
+        out.set(d.nameKey, list);
+      }
+      return out;
+    },
+
+    /**
      * Bulk-upsert an import. Keyed on (scheme, code) so a re-import refreshes each
      * area in place — the table is rewritten wholesale without duplicating rows.
      * Codes are stored upper-cased so the join is case-insensitive.
@@ -63,6 +100,8 @@ export function makeAdminAreaGeomRepo(model: Model<iAdminAreaGeomModel>) {
               $set: {
                 countryCode: a.countryCode,
                 name: a.name,
+                nameKey: a.nameKey,
+                centroid: a.centroid,
                 geometry: a.geometry,
                 source: a.source ?? "gisco",
                 fetchedAt,

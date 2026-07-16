@@ -27,9 +27,19 @@ export function makeUserRepo(model: Model<iUserModel>) {
       return doc.toObject() as iUserModel;
     },
 
-    /** Includes `passwordHash` — for login verification only. */
+    /**
+     * Includes `passwordHash` — for login verification only. Matches
+     * case-insensitively (collation strength 2): the schema lowercases emails
+     * written through Mongoose, but a doc inserted straight into Mongo can be
+     * stored mixed-case, and an exact lowercased match would then miss a user
+     * that is plainly "there".
+     */
     async findByEmail(email: string): Promise<iUserModel | null> {
-      return model.findOne({ email: email.toLowerCase().trim() }).lean().exec();
+      return model
+        .findOne({ email: email.trim() })
+        .collation({ locale: "en", strength: 2 })
+        .lean()
+        .exec();
     },
 
     async findById(id: string): Promise<Omit<iUserModel, "passwordHash"> | null> {

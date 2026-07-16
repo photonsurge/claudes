@@ -80,7 +80,10 @@ export async function publishSourceRun(args: PublishSourceRunArgs): Promise<{ ru
           byteSize: buffer.byteLength,
         });
         if (!tex.success || !tex.data) {
-          throw new Error(`publishSourceRun: texture create failed for ${variableId} f${fhr}`);
+          throw new Error(
+            `publishSourceRun: texture create failed for ${variableId} f${fhr} ` +
+              `(model=${model}, ${buffer.byteLength} bytes): ${JSON.stringify(tex.errors)}`,
+          );
         }
         entry.files[String(fhr)] = tex.data.id;
       }

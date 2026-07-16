@@ -19,6 +19,11 @@ const PAGE = 50; // v3 hard max per request
 const POLL_SEC = Number(process.env.WINDY_INGEST_SEC || 24 * 60 * 60); // daily
 const MAX = Number(process.env.WINDY_MAX_WEBCAMS || 0); // 0 = all
 const PAGE_DELAY_MS = Number(process.env.WINDY_PAGE_DELAY_MS || 250); // respect ~1 req/s
+// The free tier rejects any request past offset 1000 with a 400
+// ("Offset is over API tier limit 1000!"). Stop paging there rather than
+// walking off the ceiling and throwing away the whole batch. The soft-stop on
+// the 400 below is the real backstop — this just avoids the wasted request.
+const MAX_OFFSET = 1000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -102,7 +107,7 @@ export const windySource: CamSource = {
     let offset = 0;
     let total = Infinity;
 
-    while (offset < total && (MAX === 0 || out.length < MAX)) {
+    while (offset < total && (MAX === 0 || out.length < MAX) && offset <= MAX_OFFSET) {
       const url = new URL(BASE);
       url.searchParams.set("limit", String(PAGE));
       url.searchParams.set("offset", String(offset));
@@ -110,6 +115,9 @@ export const windySource: CamSource = {
       url.searchParams.set("lang", "en");
 
       const res = await fetch(url.toString(), { headers: { "x-windy-api-key": key } });
+      // Soft-stop on the tier offset ceiling: keep whatever we've collected
+      // rather than discarding the batch if the limit shifts under us.
+      if (res.status === 400 && /offset is over api tier limit/i.test(await res.clone().text())) break;
       if (!res.ok) throw new Error(`Windy webcams ${res.status} ${res.statusText}`);
       const body = (await res.json()) as WindyResponse;
       const webcams = body.webcams ?? [];

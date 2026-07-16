@@ -71,6 +71,18 @@ const queue: Task[] = [];
 const stats = { worker: 0, inline: 0 };
 export const bakePoolStats = () => ({ ...stats });
 
+/**
+ * `worker_threads` structured-clone downgrades the result's `Buffer` to a plain
+ * `Uint8Array`. Restore the Buffer (a zero-copy view over the same bytes) so the
+ * pooled path returns exactly what the inline bake does — the DB layer casts a
+ * Buffer, not a Uint8Array.
+ */
+function asBufferResult(result: BakeResult): BakeResult {
+  const b = result.buffer as unknown as Uint8Array;
+  if (Buffer.isBuffer(b)) return result;
+  return { ...result, buffer: Buffer.from(b.buffer, b.byteOffset, b.byteLength) };
+}
+
 function spawn(): Slot {
   const worker = new Worker(workerFile, { execArgv: workerExecArgv });
   const slot: Slot = { worker, busy: false };
@@ -82,7 +94,11 @@ function spawn(): Slot {
     slot.busy = false;
     if (msg.ok && msg.result) {
       stats.worker++;
-      entry.pending.resolve(msg.result);
+      // Crossing the worker-thread boundary strips the Buffer subclass: the PNG
+      // comes back as a plain Uint8Array, which Mongoose's SchemaBuffer.cast
+      // rejects at texture-write time. Re-wrap it as a Buffer (zero-copy view)
+      // so a pooled bake is byte-for-byte interchangeable with the inline one.
+      entry.pending.resolve(asBufferResult(msg.result));
     } else entry.pending.reject(new Error(msg.error || "bake worker error"));
     pump();
   });

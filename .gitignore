@@ -10,7 +10,7 @@ heapdump/
 *.heap*
 logs/
 *.log
-
+blobs/
 .DS_Store
 scratchpad/
 # Downloaded basemap assets (run ./fetch-assets.sh to populate)

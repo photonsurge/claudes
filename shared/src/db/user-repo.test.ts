@@ -7,6 +7,7 @@ const query = (result: unknown) => {
   const q: Record<string, unknown> = {};
   const chain = () => q;
   q.sort = jest.fn(chain);
+  q.collation = jest.fn(chain);
   q.lean = jest.fn(chain);
   q.exec = jest.fn(async () => result);
   return q;
@@ -35,14 +36,18 @@ describe("makeUserRepo", () => {
     expect(out.email).toBe("a@b.com");
   });
 
-  it("findByEmail() lowercases the lookup and includes passwordHash", async () => {
+  it("findByEmail() matches case-insensitively and includes passwordHash", async () => {
     const doc = { id: "u1", email: "a@b.com", passwordHash: "hash", role: "admin", active: true };
-    const findOne = jest.fn(() => query(doc));
+    const q = query(doc);
+    const findOne = jest.fn(() => q);
     const model = { findOne } as unknown as Model<iUserModel>;
 
     const repo = makeUserRepo(model);
-    const out = await repo.findByEmail("A@B.com");
-    expect(findOne).toHaveBeenCalledWith({ email: "a@b.com" });
+    const out = await repo.findByEmail("  A@B.com ");
+    // Trimmed, but NOT lowercased in the query — a case-insensitive collation
+    // does the matching so a mixed-case stored email is still found.
+    expect(findOne).toHaveBeenCalledWith({ email: "A@B.com" });
+    expect(q.collation).toHaveBeenCalledWith({ locale: "en", strength: 2 });
     expect(out?.passwordHash).toBe("hash");
   });
 

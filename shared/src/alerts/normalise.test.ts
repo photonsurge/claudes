@@ -72,6 +72,31 @@ describe("canonicaliseCapMessage", () => {
     expect(c.active).toBe(false);
     expect(c.identifier).toBe("URN:oid:2.49.0.1.840.0.abc");
   });
+
+  it("collapses a bilingual alert to its English block only", () => {
+    const c = canonicaliseCapMessage(
+      msg({
+        info: [
+          { language: "de", event: "Sturm", severity: "Severe", severityRank: 3, category: ["Met"], area: [] },
+          { language: "en", event: "Storm", severity: "Severe", severityRank: 3, category: ["Met"], area: [] },
+        ],
+      }),
+      NOW,
+    );
+    expect(c.info).toHaveLength(1);
+    expect(c.info[0].language).toBe("en");
+    expect(c.info[0].event).toBe("Storm");
+    expect(c.maxSeverityRank).toBe(3);
+  });
+
+  it("keeps a national-only alert (no English edition) untouched", () => {
+    const c = canonicaliseCapMessage(
+      msg({ info: [{ language: "de", event: "Sturm", severityRank: 3, category: ["Met"], area: [] }] }),
+      NOW,
+    );
+    expect(c.info).toHaveLength(1);
+    expect(c.info[0].language).toBe("de");
+  });
 });
 
 describe("referencedIdentifiers", () => {

@@ -484,3 +484,65 @@ describe("alerts-repo geometryCoverage", () => {
     expect(c).toEqual({ alerts: 2, alertsNoShape: 1, alertsPartial: 1, areas: 3, areasNoGeom: 2 });
   });
 });
+
+describe("alerts-repo — name-matched (China/GADM) backfill", () => {
+  it("activeAlertsBySender flattens each alert's areas (name + geometry) for the resolver", async () => {
+    let filter: any;
+    let projection: any;
+    const model = {
+      find: (f: any, p: any) => {
+        filter = f;
+        projection = p;
+        return {
+          lean: () => ({
+            exec: async () => [
+              {
+                identifier: "cma-1",
+                info: [
+                  { area: [{ areaDesc: "Nanchang", geometry: { type: "Polygon" } }] },
+                  { area: [{ areaDesc: "Pingxiang", geometry: null }] },
+                ],
+              },
+            ],
+          }),
+        };
+      },
+    } as any;
+
+    const out = await makeAlertsRepo(model).activeAlertsBySender(["cn-cma-xx"]);
+
+    expect(filter).toEqual({ sender: { $in: ["cn-cma-xx"] }, active: true });
+    expect(projection).toMatchObject({ identifier: 1, "info.area.areaDesc": 1, "info.area.geometry": 1 });
+    expect(out).toEqual([
+      {
+        identifier: "cma-1",
+        areas: [
+          { areaDesc: "Nanchang", geometry: { type: "Polygon" } },
+          { areaDesc: "Pingxiang", geometry: null },
+        ],
+      },
+    ]);
+  });
+
+  it("backfillAreaGeometryByName writes each (identifier, areaDesc) only where geometry is still empty", async () => {
+    const bulkWrite = jest.fn(async () => ({ modifiedCount: 1 })) as jest.Mock;
+    const model = { bulkWrite } as any;
+
+    const n = await makeAlertsRepo(model).backfillAreaGeometryByName([
+      { identifier: "cma-1", areaDesc: "Pingxiang", geometry: { type: "Polygon", coordinates: [] } },
+    ]);
+
+    expect(n).toBe(1);
+    const { filter, update, arrayFilters } = (bulkWrite.mock.calls[0][0] as any[])[0].updateOne;
+    expect(filter).toEqual({ identifier: "cma-1", active: true });
+    expect(update.$set["info.$[].area.$[a].geometry"]).toEqual({ type: "Polygon", coordinates: [] });
+    // Only the still-empty area of that name — never overwrite one that already draws.
+    expect(arrayFilters).toEqual([{ "a.areaDesc": "Pingxiang", "a.geometry": null }]);
+  });
+
+  it("backfillAreaGeometryByName is a no-op for no rows", async () => {
+    const bulkWrite = jest.fn();
+    expect(await makeAlertsRepo({ bulkWrite } as any).backfillAreaGeometryByName([])).toBe(0);
+    expect(bulkWrite).not.toHaveBeenCalled();
+  });
+});

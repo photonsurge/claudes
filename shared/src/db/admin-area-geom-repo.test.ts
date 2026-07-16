@@ -43,6 +43,38 @@ describe("adminAreaGeom repo", () => {
     expect(model.find).not.toHaveBeenCalled();
   });
 
+  it("byNameKeys groups candidates by nameKey (a name can repeat)", async () => {
+    let filter: any;
+    const model = {
+      find(f: any) {
+        filter = f;
+        return {
+          lean: () => ({
+            exec: async () => [
+              { code: "CHN.JX", nameKey: "pingxiang", centroid: [113.8, 27.6], geometry: POLY },
+              { code: "CHN.GX", nameKey: "pingxiang", centroid: [106.6, 22.1], geometry: POLY },
+              { code: "CHN.NC", nameKey: "nanchang", centroid: [115, 28], geometry: POLY },
+            ],
+          }),
+        };
+      },
+    } as any;
+
+    const map = await makeAdminAreaGeomRepo(model).byNameKeys("gadm3", ["pingxiang", "pingxiang", "nanchang"]);
+
+    // Deduped keys, scheme upper-cased.
+    expect(filter).toEqual({ scheme: "GADM3", nameKey: { $in: ["pingxiang", "nanchang"] } });
+    expect(map.get("pingxiang")).toHaveLength(2);
+    expect(map.get("pingxiang")!.map((c) => c.code)).toEqual(["CHN.JX", "CHN.GX"]);
+    expect(map.get("nanchang")).toHaveLength(1);
+  });
+
+  it("byNameKeys returns an empty map (and no query) for no keys", async () => {
+    const model = { find: jest.fn() } as any;
+    expect((await makeAdminAreaGeomRepo(model).byNameKeys("GADM3", [])).size).toBe(0);
+    expect(model.find).not.toHaveBeenCalled();
+  });
+
   it("upsertMany keys the upsert on (scheme,code), upper-cased", async () => {
     let ops: any[] = [];
     const model = {

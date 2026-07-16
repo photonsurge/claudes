@@ -41,7 +41,7 @@ import { fetchCenapredCameras, CENAPRED_POPO } from "../volcano/media/cenapred";
 import { fetchOvpfCameras, OVPF_CAMERAS } from "../volcano/media/ovpf";
 import type { VolcanoCameraMode, VolcanoMediaType } from "@photonsurge/shared/volcanoes/media";
 import { runExclusive } from "../jobLock";
-import { fetchWithTimeout, mapPool } from "../http";
+import { fetchWithTimeout, timeoutFetch, mapPool } from "../http";
 
 const TAG = "job:volcanoes";
 
@@ -326,10 +326,23 @@ export async function parseReports(_job: Job) {
  * are skipped. Undocumented endpoint → per-item failures are swallowed while a
  * total fetch failure still surfaces (matches the GVP snapshot).
  */
+/**
+ * A transport-level fetch failure (DNS/TLS/reset — undici's `TypeError: fetch
+ * failed`) or our own timeout: an upstream blip, not a contract break. USGS's
+ * undocumented VSC endpoint goes dark intermittently, so — per the eonet/
+ * copernicus convention — such a miss soft-skips and retries next cadence rather
+ * than failing the BullMQ job and spamming the error log.
+ */
+function isTransientFetchError(err: unknown): boolean {
+  const name = (err as { name?: string })?.name;
+  if (name === "TimeoutError" || name === "AbortError") return true;
+  return err instanceof TypeError && /fetch failed/i.test(String(err.message));
+}
+
 export async function snapshotUsgs(_job: Job) {
   const db = await getAppDb();
   try {
-    const statuses = await fetchUsgsVolcanoStatus();
+    const statuses = await fetchUsgsVolcanoStatus(timeoutFetch());
     const ids = statuses.map((s) => s.volcanoId);
     // Prev snapshot before the USGS patches land, so a level move produces a beat.
     const prev = eventsUnifiedEnabled() ? await db.volcanoes.listByIds(ids) : [];
@@ -364,6 +377,11 @@ export async function snapshotUsgs(_job: Job) {
     }
     return result;
   } catch (err) {
+    // Transient upstream outage: log quietly, retry next cadence, don't fail the job.
+    if (isTransientFetchError(err)) {
+      log(TAG, `usgs status snapshot skipped — transient upstream`, summarizeForLog(err));
+      return { volcanoes: 0, elevated: 0, patched: 0, skipped: "transient" as const };
+    }
     log(TAG, `usgs status snapshot failed`, summarizeForLog(err));
     blogErr(TAG, `usgs status snapshot failed`, err, "volcanoes", "snapshotUsgs");
     throw err;
@@ -710,7 +728,7 @@ export async function mediaRegistry(_job: Job) {
     const usgsDiagnostics: Array<{ stage: string; url: string; status?: number; reason: string }> = [];
     const usgsCameras: Parameters<typeof db.volcanoCameras.upsertMany>[0] = [];
     const usgsGeneric: Cam[] = [];
-    const usgsStatuses = await fetchUsgsVolcanoStatus().catch((err) => {
+    const usgsStatuses = await fetchUsgsVolcanoStatus(timeoutFetch()).catch((err) => {
       log(TAG, "USGS status catalogue unavailable during media discovery", summarizeForLog(err)); return [];
     });
     const trackedById = new Map(volcanoes.map((v) => [v.id, v]));

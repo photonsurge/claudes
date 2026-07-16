@@ -12,9 +12,11 @@ const alertWith = (areas: any[]): iAlert =>
 const fakeDb = (
   cache: Record<string, { geometry: any; precision: "exact" | "bbox" }>,
   admin: Record<string, any> = {},
+  names: Record<string, { code: string; geometry: any; centroid?: [number, number] }[]> = {},
 ) => {
   const calls: string[][] = [];
   const adminCalls: { scheme: string; code: string }[][] = [];
+  const nameCalls: { scheme: string; keys: string[] }[] = [];
   const db = {
     alertAreaGeom: {
       async byEmmaIds(ids: string[]) {
@@ -29,10 +31,23 @@ const fakeDb = (
         const want = new Set(pairs.map((p) => `${p.scheme.toUpperCase()}:${p.code.toUpperCase()}`));
         return new Map(Object.entries(admin).filter(([k]) => want.has(k)));
       },
+      // Keyed by normalised nameKey; a key can map to several candidates.
+      async byNameKeys(scheme: string, keys: string[]) {
+        nameCalls.push({ scheme, keys });
+        return new Map(Object.entries(names).filter(([k]) => keys.includes(k)));
+      },
     },
   } as unknown as AppDb;
-  return { db, calls, adminCalls };
+  return { db, calls, adminCalls, nameCalls };
 };
+
+/** A CMA-shaped alert: named areas, no code, no polygon. */
+const cmaAlert = (areas: any[]): iAlert =>
+  ({ identifier: "cma-1", sender: "cn-cma-xx", info: [{ area: areas }] }) as unknown as iAlert;
+const sq = (x: number, y: number): any => ({
+  type: "Polygon",
+  coordinates: [[[x - 1, y - 1], [x + 1, y - 1], [x + 1, y + 1], [x - 1, y + 1], [x - 1, y - 1]]],
+});
 
 describe("enrichAreaGeometry", () => {
   it("gives a geocode-only area the cached boundary for its EMMA_ID", async () => {
@@ -219,5 +234,65 @@ describe("enrichAreaGeometry — partial alerts must stay indexable", () => {
 
     expect(alert.info[0].area[0].geometry).toEqual(OWN);
     expect("geometry" in alert.info[0].area[1]).toBe(false);
+  });
+});
+
+describe("enrichAreaGeometry — name-matched (China/GADM) areas", () => {
+  it("fills a CMA county area from a unique name match", async () => {
+    const { db, nameCalls } = fakeDb({}, {}, { nanchang: [{ code: "CHN.JX.NC", geometry: sq(115, 28) }] });
+    const alert = cmaAlert([{ areaDesc: "Nanchang City", geometry: null }]);
+
+    const res = await enrichAreaGeometry([alert], db);
+
+    expect(alert.info[0].area[0].geometry).toEqual(sq(115, 28));
+    expect(res).toMatchObject({ filled: 1, exact: 1, named: 1, namedAmbiguous: 0 });
+    // Queried once, on the folded name key.
+    expect(nameCalls).toEqual([{ scheme: "GADM3", keys: ["nanchang"] }]);
+  });
+
+  it("does NOT run the name path for a non-CMA sender", async () => {
+    const { db, nameCalls } = fakeDb({}, {}, { nanchang: [{ code: "X", geometry: sq(115, 28) }] });
+    const alert = alertWith([{ areaDesc: "Nanchang City", geometry: null, geocodes: [] }]); // no sender
+
+    await enrichAreaGeometry([alert], db);
+    expect(nameCalls).toHaveLength(0);
+  });
+
+  it("disambiguates a shared county name toward a sibling's own polygon", async () => {
+    const { db } = fakeDb(
+      {},
+      {},
+      { pingxiang: [
+        { code: "CHN.JX", geometry: sq(113.8, 27.6), centroid: [113.8, 27.6] }, // Jiangxi
+        { code: "CHN.GX", geometry: sq(106.6, 22.1), centroid: [106.6, 22.1] }, // Guangxi
+      ] },
+    );
+    // The alert carries a Jiangxi sibling with its own polygon (from the feed).
+    const alert = cmaAlert([
+      { areaDesc: "Nanchang", geometry: sq(115.9, 28.7) },
+      { areaDesc: "Pingxiang City", geometry: null },
+    ]);
+
+    const res = await enrichAreaGeometry([alert], db);
+
+    expect(alert.info[0].area[1].geometry).toEqual(sq(113.8, 27.6)); // the Jiangxi Pingxiang
+    expect(res).toMatchObject({ named: 1, namedAmbiguous: 1 });
+  });
+
+  it("leaves a shared name undrawn when nothing anchors it", async () => {
+    const { db } = fakeDb(
+      {},
+      {},
+      { pingxiang: [
+        { code: "CHN.JX", geometry: sq(113.8, 27.6), centroid: [113.8, 27.6] },
+        { code: "CHN.GX", geometry: sq(106.6, 22.1), centroid: [106.6, 22.1] },
+      ] },
+    );
+    const alert = cmaAlert([{ areaDesc: "Pingxiang City", geometry: null }]);
+
+    const res = await enrichAreaGeometry([alert], db);
+
+    expect("geometry" in alert.info[0].area[0]).toBe(false); // never guessed
+    expect(res.named).toBe(0);
   });
 });

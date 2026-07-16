@@ -23,10 +23,13 @@ import { bakeVector as inlineVector } from "../grib/bakeVector";
   let identical = 0;
   for (let i=0;i<ids.length;i++) if (Buffer.compare(pooled[i].buffer, inline[i].buffer)===0) identical++;
   const vecOk = Buffer.compare(vPool.buffer, vInline.buffer)===0;
+  // Crossing the thread boundary must NOT downgrade the Buffer to a plain
+  // Uint8Array — Mongoose's SchemaBuffer.cast rejects that at texture-write time.
+  const allBuffers = [...pooled, vPool].every((r) => Buffer.isBuffer(r.buffer));
   const st = bakePoolStats();
   console.log("STATS:", JSON.stringify(st));
-  console.log(`scalar identical: ${identical}/${ids.length}   vector identical: ${vecOk}`);
-  const pass = st.worker >= ids.length + 1 && st.inline === 0 && identical === ids.length && vecOk;
+  console.log(`scalar identical: ${identical}/${ids.length}   vector identical: ${vecOk}   all Buffers: ${allBuffers}`);
+  const pass = st.worker >= ids.length + 1 && st.inline === 0 && identical === ids.length && vecOk && allBuffers;
   console.log(pass ? "PROOF PASS: worker thread served ALL bakes, output byte-identical to inline" : "PROOF FAIL");
   await shutdownBakePool();
   process.exit(pass ? 0 : 1);

@@ -1,5 +1,6 @@
 import type { SeverityRank, iAlert, iAlertInfo } from "../db/alert-model";
 import type { CapMessage } from "./types";
+import { collapseToEnglish } from "./language";
 
 /**
  * The lifecycle/derived layer shared by every adapter (spec §5). Given parsed
@@ -44,11 +45,15 @@ export function earliestExpiry(info: iAlertInfo[] | CapMessage["info"]): string 
 
 /** One parsed CAP message → one canonical alert. */
 export function canonicaliseCapMessage(msg: CapMessage, now: Date): iAlert {
-  const maxSeverityRank = msg.info.reduce<SeverityRank>(
+  // Drop national-language duplicates when an English edition is present — the
+  // display is positional (info[0]) and English-only, so the dupes are never
+  // shown and would only cost an LLM translation. No-op for single-block alerts.
+  const info = collapseToEnglish(msg.info);
+  const maxSeverityRank = info.reduce<SeverityRank>(
     (m, i) => (i.severityRank > m ? i.severityRank : m),
     0,
   );
-  const expiresAt = earliestExpiry(msg.info);
+  const expiresAt = earliestExpiry(info);
 
   return {
     source: msg.source,
@@ -59,7 +64,7 @@ export function canonicaliseCapMessage(msg: CapMessage, now: Date): iAlert {
     status: msg.status,
     scope: msg.scope,
     references: msg.references ?? [],
-    info: msg.info.map((i) => ({
+    info: info.map((i) => ({
       ...i,
       category: i.category ?? [],
       area: i.area ?? [],

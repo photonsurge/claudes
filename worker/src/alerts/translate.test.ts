@@ -130,6 +130,52 @@ describe("runAlertsTranslate", () => {
     );
   });
 
+  it("skips the LLM for a WMO -en edition, stamping it English locally", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    // A WMO English-edition capurl — English even without a CAP `language` tag.
+    const a = alert({ headline: "Heat warning", description: "Very hot", instruction: "Stay indoors" });
+    (a as { identifier: string }).identifier = "kz-kazhydromet-en/2026/07/16/x.xml";
+    listMock.mockResolvedValue([a]);
+    const res = await runAlertsTranslate();
+    expect(res).toMatchObject({ candidates: 0, translated: 0, englishSource: 1, failed: 0 });
+    expect(callOpenRouterMock).not.toHaveBeenCalled();
+    expect(updateTranslationMock).toHaveBeenCalledWith(
+      "a1",
+      0,
+      expect.objectContaining({ detectedLanguage: "en", translatedHeadline: "", translationHash: expect.any(String) }),
+    );
+  });
+
+  it("skips the LLM for a CAP block that declares language=en", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    listMock.mockResolvedValue([
+      alert({ language: "en-GB", headline: "Storm Warning", description: "Wind", instruction: "" }),
+    ]);
+    const res = await runAlertsTranslate();
+    expect(res).toMatchObject({ candidates: 0, englishSource: 1, failed: 0 });
+    expect(callOpenRouterMock).not.toHaveBeenCalled();
+    expect(updateTranslationMock).toHaveBeenCalledWith(
+      "a1",
+      0,
+      expect.objectContaining({ detectedLanguage: "en" }),
+    );
+  });
+
+  it("still LLM-translates a native-language WMO edition (-ru)", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    const a = alert();
+    (a as { identifier: string }).identifier = "ru-meteo-ru/2026/07/16/x.xml";
+    listMock.mockResolvedValue([a]);
+    callOpenRouterMock.mockResolvedValue({
+      status: "ok",
+      content: '{"language":"ru","headline":"Storm","description":"Wind","instruction":"Shelter"}',
+      latencyMs: 10,
+    });
+    const res = await runAlertsTranslate();
+    expect(res).toMatchObject({ candidates: 1, translated: 1, englishSource: 0 });
+    expect(callOpenRouterMock).toHaveBeenCalledTimes(1);
+  });
+
   it("counts a failed LLM call without writing back", async () => {
     process.env.OPENROUTER_API_KEY = "test-key";
     listMock.mockResolvedValue([alert()]);

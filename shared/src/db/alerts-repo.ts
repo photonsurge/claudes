@@ -263,6 +263,55 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
     },
 
     /**
+     * Active alerts from name-matched feeds (China's CMA), as flat area lists, for
+     * the GADM reconcile. It joins on the area NAME, not a code, and disambiguates a
+     * shared name against the alert's OTHER polygons — so unlike the code backfill
+     * this returns per-alert context (every area's name + geometry) and the worker
+     * decides. Geometry is read so a sibling polygon can anchor an ambiguous name.
+     */
+    async activeAlertsBySender(
+      senders: string[],
+    ): Promise<{ identifier: string; areas: { areaDesc?: string; geometry?: unknown }[] }[]> {
+      const docs = (await model
+        .find(
+          { sender: { $in: senders }, active: true },
+          { _id: 0, identifier: 1, "info.area.areaDesc": 1, "info.area.geometry": 1 },
+        )
+        .lean()
+        .exec()) as any[];
+      return docs.map((d) => ({
+        identifier: d.identifier,
+        areas: (d.info ?? []).flatMap((info: any) =>
+          (info.area ?? []).map((a: any) => ({ areaDesc: a.areaDesc, geometry: a.geometry })),
+        ),
+      }));
+    },
+
+    /**
+     * Apply resolved boundaries to stored alert areas keyed by (identifier, name).
+     * The name-join analogue of `backfillAdminGeometry`: each row names one alert
+     * and one areaDesc; only areas that are still shapeless are written (the
+     * `a.geometry: null` arrayFilter also matches a missing field, so an area the
+     * ingest resolver already emptied is filled, and one that already draws is left).
+     */
+    async backfillAreaGeometryByName(
+      rows: { identifier: string; areaDesc: string; geometry: unknown }[],
+    ): Promise<number> {
+      if (!rows.length) return 0;
+      const r = await model.bulkWrite(
+        rows.map(({ identifier, areaDesc, geometry }) => ({
+          updateOne: {
+            filter: { identifier, active: true },
+            update: { $set: { "info.$[].area.$[a].geometry": geometry } },
+            arrayFilters: [{ "a.areaDesc": areaDesc, "a.geometry": null }],
+          },
+        })),
+        { ordered: false },
+      );
+      return r.modifiedCount ?? 0;
+    },
+
+    /**
      * Stamp `capId` on stored alerts whose identifier ALREADY is the canonical CAP
      * id (MeteoAlarm, NWS) — no lookup, no fetch, just a field they were never
      * given because they were ingested before `capId` existed (or on a tick where
