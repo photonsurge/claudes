@@ -46,14 +46,56 @@ export function makeEventWatchScheduleRepo(model: Model<iEventWatchScheduleModel
     },
 
     /** Rows due for a check (nextCheckAt ≤ now), soonest first. */
+    /**
+     * The next events to acquire: never-looked-at ones FIRST, then whatever is
+     * most overdue.
+     *
+     * Ordering by `nextCheckAt` alone is the obvious scheduler and it is subtly
+     * backwards under load. Promotion starts a new event at `nextCheckAt = now`,
+     * while a backlog item is overdue from hours or days ago — so ascending order
+     * puts "overdue since last Tuesday" AHEAD of a red warning issued sixty
+     * seconds ago, and a new event waits out the entire queue for its first look.
+     * Measured with a 3,758-deep backlog: 103 events had never been checked at all.
+     *
+     * That is exactly the wrong way round. A brand-new severe warning is the most
+     * interesting thing this system sees; a week-old one going unpolled for another
+     * ten minutes costs nothing.
+     *
+     * Two phases rather than a combined sort, because they answer different
+     * questions: "has this ever been seen" is a boolean, and mixing it into the
+     * ordering (sort by lastCheckedAt) would break interval-respect — a red on a
+     * 5-minute cadence checked recently would sort behind an orange on 30 minutes
+     * checked slightly less recently, which is the wrong priority for both.
+     *
+     * Both phases are covered: phase 1 by the sparse-ish `lastCheckedAt` scan over
+     * a handful of new rows, phase 2 by `event_watch_due_ix`.
+     */
     async due(now: Date, limit: number): Promise<iEventWatchSchedule[]> {
-      const docs = await model
-        .find({ nextCheckAt: { $lte: now } })
+      if (limit <= 0) limit = 0;
+
+      // Phase 1: anything we have never acquired, oldest event first. Normally a
+      // handful — the ones promoted since the last tick.
+      const fresh = await model
+        .find({ lastCheckedAt: { $in: [null, undefined] }, nextCheckAt: { $lte: now } })
         .sort({ nextCheckAt: 1 })
-        .limit(limit > 0 ? limit : 0)
+        .limit(limit)
         .lean()
         .exec();
-      return docs.map(strip);
+
+      const remaining = limit ? limit - fresh.length : 0;
+      if (limit && remaining <= 0) return fresh.map(strip);
+
+      // Phase 2: the established rotation — most overdue first. This is the fair
+      // round-robin: `reschedule` pushes a checked event to the back, so nothing
+      // starves once it has been seen once.
+      const docs = await model
+        .find({ lastCheckedAt: { $nin: [null, undefined] }, nextCheckAt: { $lte: now } })
+        .sort({ nextCheckAt: 1 })
+        .limit(remaining)
+        .lean()
+        .exec();
+
+      return [...fresh, ...docs].map(strip);
     },
 
     /** Advance the schedule after an acquire. `ok=false` backs off exponentially. */

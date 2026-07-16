@@ -17,6 +17,7 @@ import type { NewEventTimelineUpdate } from "@photonsurge/shared/db/event-timeli
 import { fetchWikiSummary, fetchWikiGallery } from "@photonsurge/shared/utill/wikipedia";
 import { fetchVolcanoFacts } from "@photonsurge/shared/utill/wikidata";
 import { log } from "@photonsurge/shared/utill/logger";
+import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 import { eventsUnifiedEnabled, shouldPromoteVolcano } from "../events/config";
 import { hourSlotOf } from "../alerts/snapshot-select";
