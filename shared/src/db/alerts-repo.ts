@@ -213,6 +213,56 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
     },
 
     /**
+     * The (scheme, code) admin codes that active alerts reference but can't draw.
+     *
+     * The static-admin (NUTS) equivalent of `emmaIdsMissingGeometry`: the alerts
+     * ingest enrich only ever sees NEW alerts, so a France/Hungary warning stored
+     * before the NUTS cache was loaded stays shapeless until it expires. This
+     * lists what a backfill needs to retro-fit — the same "derived record with no
+     * path back" gap the EMMA reconcile closes.
+     */
+    async adminCodesMissingGeometry(schemes: string[]): Promise<{ scheme: string; code: string }[]> {
+      const up = schemes.map((s) => s.toUpperCase());
+      const docs = (await model
+        .find(
+          { active: true, "info.area.geocodes.valueName": { $in: up } },
+          { _id: 0, "info.area.geocodes": 1, "info.area.geometry.type": 1 },
+        )
+        .lean()
+        .exec()) as any[];
+
+      const seen = new Set<string>();
+      const out: { scheme: string; code: string }[] = [];
+      for (const d of docs) {
+        for (const info of d.info ?? []) {
+          for (const area of info.area ?? []) {
+            if (area?.geometry?.type) continue; // already drawable
+            for (const g of area?.geocodes ?? []) {
+              const scheme = g?.valueName?.toUpperCase?.();
+              if (!scheme || !up.includes(scheme) || !g.value) continue;
+              const key = `${scheme}:${g.value}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              out.push({ scheme, code: String(g.value) });
+            }
+          }
+        }
+      }
+      return out;
+    },
+
+    /** Apply a resolved admin boundary to every stored active alert area on it. */
+    async backfillAdminGeometry(scheme: string, code: string, geometry: unknown): Promise<number> {
+      const match = { $elemMatch: { valueName: scheme, value: code } };
+      const r = await model.updateMany(
+        { active: true, "info.area.geocodes": match },
+        { $set: { "info.$[].area.$[a].geometry": geometry } },
+        { arrayFilters: [{ "a.geocodes": match, "a.geometry": null }] },
+      );
+      return r.modifiedCount ?? 0;
+    },
+
+    /**
      * Stamp `capId` on stored alerts whose identifier ALREADY is the canonical CAP
      * id (MeteoAlarm, NWS) — no lookup, no fetch, just a field they were never
      * given because they were ingested before `capId` existed (or on a tick where

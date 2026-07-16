@@ -85,13 +85,14 @@
     "forecast:backfill": "ts-node src/scripts/forecastBackfill.ts",
     "refresh:climate": "ts-node src/scripts/refreshClimate.ts",
     "backfill:climate": "ts-node src/scripts/backfillClimate.ts",
-    "refresh:all": "for j in gfs icon-global rtofs rtofs-depth waves elevation icon-eu icon-d2 ukv hrrr hrdps mrms openmeteo rtofs-regional wave-nests; do echo \"\\n== refresh:$j ==\"; yarn --silent refresh:$j || echo \"(refresh:$j failed \u2014 continuing)\"; done",
+    "refresh:all": "for j in gfs icon-global rtofs rtofs-depth waves elevation icon-eu icon-d2 ukv hrrr hrdps mrms openmeteo rtofs-regional wave-nests; do echo \"\\n== refresh:$j ==\"; yarn --silent refresh:$j || echo \"(refresh:$j failed — continuing)\"; done",
     "pull": "ts-node src/scripts/check.ts",
     "reingest": "ts-node src/scripts/reingest.ts",
     "reset:weather": "ts-node src/scripts/resetWeather.ts",
     "test": "jest",
     "test:watch": "jest --watch",
-    "prove:bakepool": "ts-node src/scripts/proveBakePool.ts"
+    "prove:bakepool": "ts-node src/scripts/proveBakePool.ts",
+    "refresh:nuts": "ts-node src/scripts/refreshNuts.ts"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

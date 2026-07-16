@@ -410,6 +410,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Alerts & events",
   },
   {
+    id: "admin-geom-nuts",
+    label: "Import NUTS area boundaries",
+    description:
+      "Fetch the map shapes for France (NUTS3) and Hungary (NUTS2) warnings, which name their area by a standard NUTS code and ship no outline — so those alerts can't be drawn. Downloads the boundaries once from Eurostat GISCO (NUTS 2013, the vintage the feed actually uses), caches them for good, and retro-fits any stored alerts still missing a shape. Complements \"Resolve alert area boundaries\" (which does MeteoAlarm's EMMA codes). Safe to re-run; refreshes in place.",
+    domain: "adminGeom",
+    type: "adminGeom",
+    event: "refresh",
+    group: "Alerts & events",
+  },
+  {
     id: "alert-blobs-rebuild",
     label: "Merge neighbouring alert areas",
     description:

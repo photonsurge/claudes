@@ -68,6 +68,8 @@ import { makeCableRepo } from "./cable-repo";
 import { getFaultModel } from "./fault-model";
 import { makeFaultRepo } from "./fault-repo";
 import { getAlertAreaGeomModel } from "./alert-area-geom-model";
+import { getAdminAreaGeomModel } from "./admin-area-geom-model";
+import { makeAdminAreaGeomRepo } from "./admin-area-geom-repo";
 import { getAlertGeomSeenModel } from "./alert-geom-seen-model";
 import { getAlertGeomCrawlModel } from "./alert-geom-crawl-model";
 import { makeAlertAreaGeomRepo } from "./alert-area-geom-repo";
@@ -242,6 +244,7 @@ export function createDb(conn: Connection) {
       getAlertGeomSeenModel(conn),
       getAlertGeomCrawlModel(conn),
     ),
+    adminAreaGeom: makeAdminAreaGeomRepo(getAdminAreaGeomModel(conn)),
     capIds: makeCapIdRepo(getCapIdModel(conn)),
     alertBlobs: makeAlertBlobRepo(getAlertBlobModel(conn)),
     aurora: makeAuroraRepo(getAuroraModel(conn), blobs.aurora),

@@ -9,8 +9,12 @@ const OWN = { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0
 const alertWith = (areas: any[]): iAlert =>
   ({ identifier: "id-1", info: [{ area: areas }] }) as unknown as iAlert;
 
-const fakeDb = (cache: Record<string, { geometry: any; precision: "exact" | "bbox" }>) => {
+const fakeDb = (
+  cache: Record<string, { geometry: any; precision: "exact" | "bbox" }>,
+  admin: Record<string, any> = {},
+) => {
   const calls: string[][] = [];
+  const adminCalls: { scheme: string; code: string }[][] = [];
   const db = {
     alertAreaGeom: {
       async byEmmaIds(ids: string[]) {
@@ -18,8 +22,16 @@ const fakeDb = (cache: Record<string, { geometry: any; precision: "exact" | "bbo
         return new Map(Object.entries(cache).filter(([k]) => ids.includes(k)));
       },
     },
+    adminAreaGeom: {
+      // Keyed "SCHEME:CODE" (upper-cased) exactly like the real adminKey.
+      async byCodes(pairs: { scheme: string; code: string }[]) {
+        adminCalls.push(pairs);
+        const want = new Set(pairs.map((p) => `${p.scheme.toUpperCase()}:${p.code.toUpperCase()}`));
+        return new Map(Object.entries(admin).filter(([k]) => want.has(k)));
+      },
+    },
   } as unknown as AppDb;
-  return { db, calls };
+  return { db, calls, adminCalls };
 };
 
 describe("enrichAreaGeometry", () => {
@@ -99,6 +111,81 @@ describe("enrichAreaGeometry", () => {
 
     await enrichAreaGeometry([alert], db);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("enrichAreaGeometry — static admin (NUTS) codes", () => {
+  it("fills a NUTS3 area from the admin cache when it has no EMMA_ID", async () => {
+    const { db } = fakeDb({}, { "NUTS3:FR715": POLY });
+    const alert = alertWith([
+      { areaDesc: "Loire", geometry: null, geocodes: [{ valueName: "NUTS3", value: "FR715" }] },
+    ]);
+
+    const res = await enrichAreaGeometry([alert], db);
+
+    expect(alert.info[0].area[0].geometry).toEqual(POLY);
+    // GISCO boundaries are the real admin shape: counted exact AND admin.
+    expect(res).toMatchObject({ filled: 1, exact: 1, admin: 1, unresolved: 0 });
+  });
+
+  it("resolves NUTS2 too (Hungary, Belgium)", async () => {
+    const { db } = fakeDb({}, { "NUTS2:HU33": POLY });
+    const alert = alertWith([
+      { areaDesc: "Dél-Alföld", geometry: null, geocodes: [{ valueName: "NUTS2", value: "HU33" }] },
+    ]);
+
+    expect(await enrichAreaGeometry([alert], db)).toMatchObject({ filled: 1, admin: 1 });
+  });
+
+  it("prefers EMMA over a NUTS code on the same area", async () => {
+    // EMMA is the true warning-area boundary; NUTS is the admin fallback.
+    const { db } = fakeDb({ PL1: { geometry: POLY, precision: "exact" } }, { "NUTS3:FR715": OWN });
+    const alert = alertWith([
+      {
+        areaDesc: "both",
+        geometry: null,
+        geocodes: [{ valueName: "EMMA_ID", value: "PL1" }, { valueName: "NUTS3", value: "FR715" }],
+      },
+    ]);
+
+    const res = await enrichAreaGeometry([alert], db);
+
+    expect(alert.info[0].area[0].geometry).toEqual(POLY); // EMMA, not the NUTS OWN
+    expect(res).toMatchObject({ filled: 1, admin: 0 });
+  });
+
+  it("joins case-insensitively (feed casing must not miss the cache)", async () => {
+    const { db } = fakeDb({}, { "NUTS3:FR715": POLY });
+    const alert = alertWith([
+      { areaDesc: "Loire", geometry: null, geocodes: [{ valueName: "nuts3", value: "fr715" }] },
+    ]);
+
+    expect(await enrichAreaGeometry([alert], db)).toMatchObject({ filled: 1, admin: 1 });
+  });
+
+  it("reports an unresolved NUTS code and drops its null", async () => {
+    const { db } = fakeDb({}, {});
+    const alert = alertWith([
+      { areaDesc: "x", geometry: null, geocodes: [{ valueName: "NUTS3", value: "FR999" }] },
+    ]);
+
+    const res = await enrichAreaGeometry([alert], db);
+
+    expect("geometry" in alert.info[0].area[0]).toBe(false);
+    expect(res).toMatchObject({ filled: 0, admin: 0, unresolved: 1 });
+  });
+
+  it("only queries the admin cache for the codes it actually needs", async () => {
+    const { db, adminCalls } = fakeDb({}, { "NUTS3:FR715": POLY });
+    const alerts = [
+      alertWith([{ areaDesc: "a", geometry: null, geocodes: [{ valueName: "NUTS3", value: "FR715" }] }]),
+      alertWith([{ areaDesc: "b", geometry: OWN, geocodes: [{ valueName: "NUTS3", value: "FR716" }] }]), // has own geom
+    ];
+
+    await enrichAreaGeometry(alerts, db);
+
+    expect(adminCalls).toHaveLength(1);
+    expect(adminCalls[0]).toEqual([{ scheme: "NUTS3", code: "FR715" }]); // FR716 skipped — already drawable
   });
 });
 
