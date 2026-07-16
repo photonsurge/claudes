@@ -4,6 +4,7 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import { groupAlerts } from "../../../lib/alertGroups";
 import { withCache, FEED_TTL_SEC } from "../../../lib/focus/focus-cache";
 import { simplifyGeometry } from "@photonsurge/shared/geo/simplify";
+import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import type { Alert } from "../../../lib/alerts";
 
 /** Overlay polygons are drawn on a globe — a whole-ocean warning's 40k-vertex
@@ -16,6 +17,25 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const NO_CACHE = { "Cache-Control": "no-store" };
+
+/**
+ * The first usable [lng,lat] across an alert's areas — the same rule the client's
+ * alertRepPointOf uses, applied here while the geometry still exists.
+ *
+ * Mirrors public/src/lib/broadcast.ts#alertRepPointOf deliberately: the client
+ * keeps its version for the full-geometry feed, and falls back to this one's
+ * answer when the coordinates have been stripped. Both must pick the same point
+ * or an alert would change continent depending on which feed asked.
+ */
+function alertRepPointOfDoc(a: { info?: { area?: { geometry?: unknown }[] }[] }): [number, number] | null {
+  for (const info of a.info ?? []) {
+    for (const area of info.area ?? []) {
+      const pt = alertRepPoint((area?.geometry ?? null) as never);
+      if (pt) return pt;
+    }
+  }
+  return null;
+}
 
 /**
  * GET /api/alerts — list alerts for the admin page / map overlay.
@@ -55,11 +75,16 @@ async function GET__impl(req: Request) {
    *
    * This feed used to be the globe's overlay, which is why it carries geometry at
    * all. The overlay now draws the worker's dissolved shapes (/api/alerts/blobs),
-   * and the two callers left — World Watch and the admin table — read no geometry
-   * whatsoever: World Watch touches exactly one field per alert
-   * (`maxSeverityRank`) and the admin list none. So the whole-planet
-   * `active=1&limit=5000` feed was shipping every active alert's full boundary to
-   * produce a COUNT.
+   * and the two callers left — World Watch and the admin table — never draw a
+   * polygon. The whole-planet `active=1&limit=5000` feed was shipping every active
+   * alert's full boundary to produce a tally: 19.9MB, ~60% of it coordinates.
+   *
+   * They are not, however, geometry-FREE, and an earlier version of this comment
+   * claimed they were. World Watch asks the shape exactly one question — "which
+   * continent is this alert in" — via alertRepPointOf. Strip the coordinates
+   * without answering it first and the continent breakdown silently empties. So
+   * `repPoint` is computed below and rides along: two numbers instead of a
+   * 40k-vertex ring, same answer.
    *
    * Stripped AFTER the clustering below, never at the query: the grouping is O(n²)
    * over the footprints and genuinely needs them server-side. The server still
@@ -110,6 +135,17 @@ async function GET__impl(req: Request) {
     // NOW drop the coordinates — after grouping, which needed them.
     if (omitCoordinates) {
       for (const a of list) {
+        // Answer "where is this alert" BEFORE throwing the shape away. It's the
+        // only question the whole-planet caller asks of the geometry — World Watch
+        // wants a continent per alert, which is a point lookup — and the polygon is
+        // 60% of a 19.9MB payload. Computing it here costs the server nothing (the
+        // rings are already in hand and about to be discarded) and turns a
+        // 40k-vertex ring into two numbers.
+        //
+        // Without this the flag is unusable for World Watch: alertRepPointOf walks
+        // area.geometry, so stripping coordinates silently emptied the continent
+        // breakdown and the feed's "near city" labels. That nearly shipped.
+        (a as { repPoint?: [number, number] }).repPoint = alertRepPointOfDoc(a) ?? undefined;
         for (const info of a.info ?? []) {
           for (const area of info.area ?? []) {
             // Keep `geometry.type`: a caller can still tell "this alert has an

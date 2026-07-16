@@ -313,31 +313,62 @@ describe("worldWatchSummary", () => {
   });
 
   /**
-   * The panel reads `maxSeverityRank` off an alert and nothing else, which makes
-   * it look like it could take the whole-planet feed with the polygons stripped —
-   * that feed is ~20MB and the geometry is 60% of it. It CAN'T: the continent
-   * here, and the "near <city>" label in worldWatchFeed, are both derived from a
-   * rep point taken off the polygon. Strip the coordinates and nothing throws —
-   * the breakdown just quietly empties.
+   * Placing an alert needs a POINT, and the panel gets one of two ways: off the
+   * polygon, or from the server's precomputed `repPoint`.
+   *
+   * This used to be a hard blocker on the whole-planet feed — ~20MB, 60% of it
+   * coordinates, carried so the client could take one point off each ring. The
+   * route now answers that question before it strips the rings, so `omitCoordinates`
+   * is usable here. These two tests are the before and after, and the first still
+   * matters: a stripped alert with NO repPoint doesn't throw, it silently vanishes
+   * from the breakdown it belongs in.
    */
-  it("needs the polygon COORDINATES, not just geometry.type, to place an alert", () => {
-    // Exactly what ?omitCoordinates=1 returns: the type, no coordinates.
-    const stripped = raw(4, {
+  const strippedAlert = (over: Record<string, unknown> = {}) =>
+    raw(4, {
       id: "eu1",
       info: [
         {
           event: "Storm",
           severityRank: 4,
+          // Exactly what ?omitCoordinates=1 returns: the type, no coordinates.
           area: [{ areaDesc: "Spain", geometry: { type: "Polygon" } as never, geocodes: [] }],
+        },
+      ],
+      ...over,
+    });
+
+  it("silently drops an alert that has neither coordinates nor a repPoint", () => {
+    const s = worldWatchSummary([strippedAlert()], []);
+
+    // Silent, which is what makes it dangerous — no throw, just a missing bar.
+    expect(s.byContinent).toEqual([]);
+  });
+
+  it("places a stripped alert from the server's repPoint — the 60% payload cut", () => {
+    const s = worldWatchSummary([strippedAlert({ repPoint: [-3, 40] })], []);
+
+    expect(s.byContinent.map((c) => c.continent)).toEqual(["Europe"]);
+    expect(s.byContinent[0].alertCount).toBe(1);
+  });
+
+  it("prefers the real polygon when it's there — the two feeds must agree", () => {
+    // The full-geometry feed sends no repPoint; the stripped one sends no rings.
+    // If both ever arrived, the shape is the source of truth.
+    const both = raw(4, {
+      id: "eu2",
+      repPoint: [-3, 40], // Spain
+      info: [
+        {
+          event: "Storm",
+          severityRank: 4,
+          area: [{ areaDesc: "Japan", geometry: { type: "Point", coordinates: [139, 35] }, geocodes: [] }],
         },
       ],
     });
 
-    const s = worldWatchSummary([stripped], []);
+    const s = worldWatchSummary([both], []);
 
-    // No rep point => no continent => the alert vanishes from the breakdown it
-    // is supposed to appear in. Silent, which is what makes it dangerous.
-    expect(s.byContinent).toEqual([]);
+    expect(s.byContinent.map((c) => c.continent)).toEqual(["Asia"]);
   });
 
   it("buckets alerts and quakes by continent, busiest first", () => {

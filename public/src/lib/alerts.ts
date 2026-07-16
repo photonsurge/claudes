@@ -79,6 +79,17 @@ export interface Alert {
   expiresAt?: string;
   info: AlertInfo[];
   /**
+   * `[lng, lat]` standing in for this alert's shape, computed server-side when
+   * `omitCoordinates` stripped the polygons.
+   *
+   * The one question the whole-planet feed asks the geometry is "which continent
+   * is this in", and the polygons are ~60% of a 19.9MB payload. The server answers
+   * it before discarding the rings, so the caller gets two numbers rather than
+   * every boundary on the planet. Absent on the full-geometry feed, where
+   * alertRepPointOf reads the shape directly.
+   */
+  repPoint?: [number, number];
+  /**
    * The canonical national CAP identifier this alert reports — the EXACT key that
    * links the same warning arriving from two sources (WMO republishes the very
    * message MeteoAlarm/NWS publish). Absent for GDACS, and for WMO alerts whose
@@ -116,12 +127,15 @@ export interface ListAlertsOpts {
    * any more — it draws the worker's dissolved shapes (/api/alerts/blobs) — so
    * the only callers left are World Watch and the admin table.
    *
-   * NOT usable by World Watch, despite it reading only `maxSeverityRank`
-   * directly: worldWatchSummary derives a continent per alert and worldWatchFeed
-   * a "near <city>" label, both via a REP POINT taken off the polygon (see
-   * broadcast.ts alertRepPointOf). Passing this there doesn't fail — it silently
-   * empties the continent breakdown and the place names. The admin table reads no
-   * geometry at all and does pass it.
+   * Safe for World Watch NOW, and it was not before. worldWatchSummary derives a
+   * continent per alert and worldWatchFeed a "near <city>" label, both from a REP
+   * POINT taken off the polygon — so stripping the coordinates didn't fail, it
+   * silently emptied the continent breakdown and the place names. The route now
+   * computes that point server-side and ships it as `repPoint`, which is the whole
+   * reason this flag became usable on the whole-planet feed: ~60% of 19.9MB was
+   * boundaries, carried to answer one point lookup.
+   *
+   * Anything else reading the geometry off this feed still must not pass it.
    */
   omitCoordinates?: boolean;
 }

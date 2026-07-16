@@ -328,7 +328,16 @@ function alertContinent(a: Alert): string | undefined {
   return c ?? (a.source === "nws" ? "North America" : undefined);
 }
 
-/** The first usable [lng,lat] across an alert's areas (first geometry wins). */
+/**
+ * The first usable [lng,lat] across an alert's areas (first geometry wins), or
+ * the server's precomputed `repPoint` when the coordinates were stripped.
+ *
+ * The fallback is what lets World Watch run on the `omitCoordinates` feed at all:
+ * this is the ONLY thing it asks the geometry, so answering it server-side turns
+ * every active alert's boundary into two numbers and takes ~60% off a 19.9MB
+ * payload. The route uses the same first-geometry-wins rule, so an alert lands on
+ * the same continent whichever feed asked.
+ */
 function alertRepPointOf(a: Alert): [number, number] | null {
   for (const info of a.info ?? []) {
     for (const ar of info.area ?? []) {
@@ -336,7 +345,7 @@ function alertRepPointOf(a: Alert): [number, number] | null {
       if (pt) return pt;
     }
   }
-  return null;
+  return a.repPoint ?? null;
 }
 
 /** Notable cities within range, nearest first — the flag/name/photo source for a
