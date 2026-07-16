@@ -14,6 +14,8 @@ import { blogInfo, blogErr } from "../blog";
 import { ALERTS_UPDATED } from "@photonsurge/shared/control";
 import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue";
 import { emitWorkerEvent } from "../socket";
+import { closeEndedAlertEvents } from "../events/close";
+import { eventsUnifiedEnabled } from "../events/config";
 
 export { translate } from "../alerts/translate";
 
@@ -75,6 +77,18 @@ export async function ingest(job: Job) {
   // geometry-free projection and writes nothing. See resyncMeteoalarmRanks.
   const reranked = await db.alerts.resyncMeteoalarmRanks();
   if (reranked.changed) log(TAG, `re-ranked stored meteoalarm alerts`, reranked);
+
+  // Close events whose warning has lapsed and stop watching anything that's over.
+  // The expire/deactivate sweeps above flip `active` in bulk and nothing tells the
+  // event, so without this a dossier stays ACTIVE forever and its schedule polls a
+  // finished warning every five minutes. See closeEndedAlertEvents.
+  if (eventsUnifiedEnabled()) {
+    try {
+      await closeEndedAlertEvents(db);
+    } catch (err) {
+      log(TAG, `closing lapsed events failed`, summarizeForLog(err));
+    }
+  }
 
   // Live push: tell browsers to refetch the overlay/list the instant ingest
   // finishes, instead of waiting out their 60s poll (mirrors TRACKS_UPDATED).

@@ -82,6 +82,25 @@ export function makeEventWatchScheduleRepo(model: Model<iEventWatchScheduleModel
         .exec();
     },
 
+    /**
+     * Stop watching these events for good.
+     *
+     * A schedule outlives its event: nothing retired them, so 1,348 of 3,858 live
+     * schedules were polling events that had already ENDED, on top of ~1,359 more
+     * whose event was still marked ACTIVE only because nothing closed it. That was
+     * ~70% of a queue running 25x beyond its own throughput, every acquire
+     * answering `changed: false`.
+     *
+     * Deleted, not flagged: a schedule is pure "when to look next" — it carries no
+     * history worth keeping, and the event it points at holds the whole story. If
+     * the event ever reopens, promotion re-upserts the schedule from scratch.
+     */
+    async removeForEvents(eventIds: string[]): Promise<number> {
+      if (!eventIds.length) return 0;
+      const res = await model.deleteMany({ eventId: { $in: eventIds } }).exec();
+      return res.deletedCount ?? 0;
+    },
+
     async listForEvent(eventId: string): Promise<iEventWatchSchedule[]> {
       const docs = await model.find({ eventId }).lean().exec();
       return docs.map(strip);

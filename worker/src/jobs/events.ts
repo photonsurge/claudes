@@ -10,7 +10,15 @@ import { enabledEventSources } from "../events/registry";
 const TAG = "job:events";
 
 /** How many due schedules a single watch tick dispatches. */
-const WATCH_BATCH = Number(process.env.EVENT_WATCH_BATCH || 20);
+/**
+ * Events dispatched per tick. THIS is the throughput knob, not the tick interval.
+ *
+ * Capacity is tick x batch and nothing else: at a 60s tick, 20 was 1,200
+ * acquires/hour against 13,812 of demand, so the queue sat 3,758 deep and never
+ * drained. 50 lifts the ceiling to 3,000/hour, which covers ~1,151 events on a
+ * 30-minute cadence with room to spare.
+ */
+const WATCH_BATCH = Number(process.env.EVENT_WATCH_BATCH || 50);
 
 /**
  * The unified-event watch SWEEPER. Dispatched as type "events", event "watch"

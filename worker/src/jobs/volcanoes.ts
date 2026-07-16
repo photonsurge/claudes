@@ -119,11 +119,26 @@ export async function snapshot(_job: Job) {
   try {
     const { volcanoes } = await fetchVolcanoes();
     // Capture the PREV docs BEFORE upsertMany overwrites them, so the timeline
-    // hook can diff prev-vs-persisted rather than prev-vs-prev.
-    const prev = eventsUnifiedEnabled() ? await db.volcanoes.listByIds(volcanoes.map((v) => v.id)) : [];
+    // hook can diff prev-vs-persisted rather than prev-vs-prev. Doubles as the
+    // first-seen check below, so it's one read serving both.
+    const prev = await db.volcanoes.listByIds(volcanoes.map((v) => v.id));
+    const known = new Set(prev.map((v) => v.id));
     const r = await db.volcanoes.upsertMany(volcanoes);
     if (eventsUnifiedEnabled()) await promoteVolcanoStatus(db, prev, volcanoes, "gvp");
-    const result = { volcanoes: volcanoes.length, upserted: r.upserted };
+
+    // A volcano appearing in the bulletin for the first time is the one moment
+    // its wiki enrichment is both missing and worth having — it's active by
+    // definition, and it may be on air within the half-hour. Enrichment is
+    // otherwise operator-triggered ONLY (no cron, no boot sweep — see
+    // worker/src/index.ts), so this hook is deliberately narrow: just the
+    // first-seen ids, on the low-priority lane, never a catalog sweep.
+    const newIds = volcanoes.map((v) => v.id).filter((id) => !known.has(id));
+    if (newIds.length) {
+      await sendToQueue("volcanoes", "volcanoes", "enrichWiki", { ids: newIds }, undefined, QUEUE_PRIORITY.LOW);
+      log(TAG, `queued enrichWiki for ${newIds.length} first-seen volcanoes`, { ids: newIds });
+    }
+
+    const result = { volcanoes: volcanoes.length, upserted: r.upserted, firstSeen: newIds.length };
     log(TAG, `volcanoes snapshot done`, result);
     blogInfo(TAG, `volcanoes snapshot: ${volcanoes.length} active`, result, "volcanoes", "snapshot");
     // Live push so the overlay refetches the instant a snapshot lands.
@@ -169,6 +184,8 @@ export function titleCandidates(name: string, searchOverride?: string): string[]
 export interface VolcanoWikiEnrichOpts {
   /** Re-fetch even volcanoes enriched within STALE_DAYS. */
   force?: boolean;
+  /** Narrow the sweep to these source ids (the first-seen hook). Never widens. */
+  ids?: string[];
 }
 
 /** Cache Wikipedia title/thumb/extract onto active volcano docs. Incremental
@@ -177,8 +194,8 @@ export async function runVolcanoWikiEnrich(opts: VolcanoWikiEnrichOpts = {}) {
   const force = Boolean(opts.force);
   const db = await getAppDb();
   const staleBefore = new Date(Date.now() - STALE_DAYS * 86_400_000);
-  const volcanoes = await db.volcanoes.listNeedingEnrichment(staleBefore, force);
-  log(TAG, `enrichWiki ${volcanoes.length} volcanoes`, { force });
+  const volcanoes = await db.volcanoes.listNeedingEnrichment(staleBefore, force, { ids: opts.ids });
+  log(TAG, `enrichWiki ${volcanoes.length} volcanoes`, { force, ids: opts.ids?.length });
 
   let enriched = 0;
   let withPhoto = 0;
@@ -234,8 +251,9 @@ export async function runVolcanoWikiEnrich(opts: VolcanoWikiEnrichOpts = {}) {
 /** Job handler: `volcanoes.enrichWiki`. */
 export async function enrichWiki(job: Job) {
   const d = job.data?.data ?? {};
+  const ids = Array.isArray(d.ids) && d.ids.length ? (d.ids as string[]) : undefined;
   try {
-    return await runVolcanoWikiEnrich({ force: d.force });
+    return await runVolcanoWikiEnrich({ force: d.force, ids });
   } catch (err) {
     log(TAG, `enrichWiki failed`, summarizeForLog(err));
     blogErr(TAG, `volcano wiki enrichment failed`, err, "volcanoes", "enrich");

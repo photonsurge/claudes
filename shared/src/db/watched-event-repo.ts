@@ -109,6 +109,38 @@ export function makeWatchedEventRepo(model: Model<iWatchedEventModel>) {
       return docs.map(strip);
     },
 
+    /**
+     * Close events whose warning is over.
+     *
+     * Promotion derives ENDED from `alert.active === false`, but it only ever runs
+     * for alerts in a freshly parsed feed — and an alert that lapses never comes
+     * through that path. `expire()` and `deactivateMissing()` flip `active` in a
+     * bulk updateMany and nothing tells the event, so it stays ACTIVE forever and
+     * its watch schedule keeps polling a warning that ended days ago. Live: 2,510
+     * ACTIVE schedules against 1,151 alerts that actually qualify, every acquire
+     * reporting `changed: false`.
+     *
+     * Third instance of the same bug in this ingest — a derived record with no path
+     * back when its source changes. See resyncMeteoalarmRanks and
+     * reconcileCachedGeometry.
+     */
+    async closeMany(rows: { id: string; endedAt?: string }[]): Promise<number> {
+      if (!rows.length) return 0;
+      const res = await model.bulkWrite(
+        rows.map((r) => ({
+          updateOne: {
+            // Guard on ACTIVE so a CANCELLED event is never quietly rewritten to
+            // ENDED: the issuer withdrawing a warning and the warning lapsing are
+            // different stories, and the timeline renders them differently.
+            filter: { id: r.id, status: "ACTIVE" },
+            update: { $set: { status: "ENDED", ...(r.endedAt ? { endedAt: r.endedAt } : {}) } },
+          },
+        })),
+        { ordered: false },
+      );
+      return res.modifiedCount ?? 0;
+    },
+
     /** Mark the last acquisition sweep instant (called by the watcher). */
     async touchChecked(id: string, now: Date): Promise<void> {
       await model.updateOne({ id }, { $set: { lastCheckedAt: now.toISOString() } }).exec();

@@ -20,13 +20,30 @@ export function shouldPromoteAlert(a: Pick<iAlert, "maxSeverityRank">): boolean 
 }
 
 /**
- * Acquisition cadence (seconds) by severity rank — RED tighter than ORANGE, per
- * the spec's aggressive active-event polling. The watcher can decay this by age.
+ * Acquisition cadence (seconds) by severity rank — RED tighter than ORANGE.
+ *
+ * These have to be affordable, and the originals (2/5/15 min) were not. The
+ * sweeper's ceiling is tick x batch — 60 ticks/hour x 20 events = 1,200 acquires
+ * an hour, full stop — and 1,151 live events at a 5-minute cadence demand 13,812.
+ * Being 11x underwater doesn't poll aggressively, it polls the 20 oldest of a
+ * 3,758-deep queue and never reaches the rest, so an event's REAL cadence was
+ * however long the backlog took: hours, unbounded, and worst for the newest
+ * events. Slower numbers that fit are strictly faster than fast numbers that
+ * don't.
+ *
+ * At 30 minutes, ~1,151 mostly-orange events demand ~2,302/hour against a
+ * capacity of 3,000 (batch 50) — it drains, with headroom, and RED stays tight
+ * because there are only a handful of them.
+ *
+ * The knob to reach for when this is short is the BATCH, not the tick: a longer
+ * tick lowers the ceiling, and nothing else here does.
  */
 export function cadenceForRank(rank: number): number {
-  if (rank >= 4) return Number(process.env.EVENT_CADENCE_RED_SEC || 120);
-  if (rank >= 3) return Number(process.env.EVENT_CADENCE_ORANGE_SEC || 300);
-  return Number(process.env.EVENT_CADENCE_GREEN_SEC || 900);
+  if (rank >= 4) return Number(process.env.EVENT_CADENCE_RED_SEC || 300);
+  if (rank >= 3) return Number(process.env.EVENT_CADENCE_ORANGE_SEC || 1800);
+  // Sub-orange never promotes (see shouldPromoteAlert), so this only applies to an
+  // event that has since been downgraded — check it rarely, it's on its way out.
+  return Number(process.env.EVENT_CADENCE_GREEN_SEC || 3600);
 }
 
 const VOLCANO_ALERT_LEVELS = new Set(["WATCH", "WARNING"]);

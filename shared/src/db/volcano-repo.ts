@@ -224,13 +224,21 @@ export function makeVolcanoRepo(model: Model<iVolcanoModel>) {
      * so gating them out would make the override silently do nothing. This doesn't
      * reopen the enrich-all door — the set is bounded by what a human typed, and
      * `setSearchOverride` clears `wikiFetchedAt` so each override costs one pass.
+     *
+     * `ids` NARROWS the sweep to specific source ids — used by the first-seen hook
+     * (worker/src/jobs/volcanoes.ts#snapshot) to enrich just the volcanoes that
+     * appeared in this bulletin. It narrows and never widens: the staleness gate
+     * and significance floor still apply, so it can only ever enrich a subset of
+     * what a full pass would.
      */
     async listNeedingEnrichment(
       staleBefore: Date,
       force = false,
-      opts: { includeDormant?: boolean } = {},
+      opts: { includeDormant?: boolean; ids?: string[] } = {},
     ): Promise<iVolcanoModel[]> {
+      if (opts.ids && !opts.ids.length) return [];
       const and: Record<string, unknown>[] = [];
+      if (opts.ids) and.push({ volcanoId: { $in: opts.ids } });
       if (!force) and.push({ wikiFetchedAt: { $not: { $gt: staleBefore } } });
       if (!opts.includeDormant) {
         and.push({ $or: [significantVolcanoFilter(), { searchOverride: { $exists: true, $ne: "" } }] });
