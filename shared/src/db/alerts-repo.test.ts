@@ -353,3 +353,76 @@ describe("alerts-repo resyncMeteoalarmRanks", () => {
     expect(update.$set.maxSeverityRank).toBe(3);
   });
 });
+
+/**
+ * Green is MeteoAlarm for "no awareness required" — 57% of its feed, each one
+ * carrying full EMMA boundary geometry. The parse now drops them on the way in,
+ * but MeteoAlarm is NOT a reconcile source (fan-out of ~37 country feeds, any of
+ * which can fail transiently), so nothing else would ever retire the 1,546
+ * already stored — they'd sit on the globe until they each expired.
+ */
+describe("alerts-repo deactivateMeteoalarmGreens", () => {
+  const mkRepo = (docs: any[]) => {
+    const updateMany = jest.fn(() => ({ exec: async () => ({ modifiedCount: 99 }) })) as jest.Mock;
+    const model = {
+      find: () => ({ lean: () => ({ exec: async () => docs }) }),
+      updateMany,
+    } as any;
+    return { repo: makeAlertsRepo(model), updateMany };
+  };
+
+  const info = (level?: string) => ({ parameters: level == null ? {} : { awareness_level: level } });
+
+  it("retires an all-green alert", async () => {
+    const { repo, updateMany } = mkRepo([{ id: "g1", info: [info("1; green; Minor"), info("1; green; Minor")] }]);
+
+    const r = await repo.deactivateMeteoalarmGreens();
+
+    expect(r).toEqual({ scanned: 1, deactivated: 99 });
+    expect(updateMany.mock.calls[0][0]).toEqual({ id: { $in: ["g1"] } });
+    expect(updateMany.mock.calls[0][1]).toEqual({ $set: { active: false } });
+  });
+
+  it("keeps a yellow alert", async () => {
+    const { repo, updateMany } = mkRepo([{ id: "y1", info: [info("2; yellow; Moderate")] }]);
+
+    expect(await repo.deactivateMeteoalarmGreens()).toEqual({ scanned: 1, deactivated: 0 });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps an alert with ANY non-green block — dropping it would bin a real warning", async () => {
+    // Doesn't occur live (0 mixed of 2,708), which is exactly why it's pinned:
+    // the day it does, this must not quietly delete an orange warning.
+    const { repo, updateMany } = mkRepo([{ id: "m1", info: [info("1; green; Minor"), info("3; orange; Severe")] }]);
+
+    expect(await repo.deactivateMeteoalarmGreens()).toEqual({ scanned: 1, deactivated: 0 });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps an alert with no awareness level — absence of evidence isn't 'nothing expected'", async () => {
+    const { repo, updateMany } = mkRepo([{ id: "n1", info: [info()] }]);
+
+    expect(await repo.deactivateMeteoalarmGreens()).toEqual({ scanned: 1, deactivated: 0 });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("retires only the greens out of a mixed batch", async () => {
+    const { repo, updateMany } = mkRepo([
+      { id: "g1", info: [info("1; green; Minor")] },
+      { id: "y1", info: [info("2; yellow; Moderate")] },
+      { id: "g2", info: [info("1; green; Minor")] },
+      { id: "r1", info: [info("4; red; Extreme")] },
+    ]);
+
+    await repo.deactivateMeteoalarmGreens();
+
+    expect(updateMany.mock.calls[0][0]).toEqual({ id: { $in: ["g1", "g2"] } });
+  });
+
+  it("writes nothing when there are no greens left (so it can run every tick)", async () => {
+    const { repo, updateMany } = mkRepo([{ id: "y1", info: [info("2; yellow; Moderate")] }]);
+
+    expect((await repo.deactivateMeteoalarmGreens()).deactivated).toBe(0);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+});

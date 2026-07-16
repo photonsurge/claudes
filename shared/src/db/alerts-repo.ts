@@ -2,7 +2,7 @@ import type { Model } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 import type { iAlert, iAlertModel, SeverityRank } from "./alert-model";
 import { alertContentHash } from "../alerts/content-hash";
-import { meteoalarmRank } from "../alerts/severity";
+import { meteoalarmRank, isMeteoalarmGreen } from "../alerts/severity";
 
 export interface AlertListOpts {
   activeOnly?: boolean;
@@ -266,6 +266,50 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
 
       if (ops.length) await model.bulkWrite(ops, { ordered: false });
       return { scanned: docs.length, changed: ops.length };
+    },
+
+    /**
+     * Retire stored MeteoAlarm alerts that are green — "nothing expected".
+     *
+     * The parse now drops green before it ever reaches Mongo, but that alone frees
+     * nothing already here: MeteoAlarm is a fan-out of ~37 per-country feeds and
+     * any one can fail transiently, so it is deliberately NOT a `reconcile` source
+     * (see AlertSource.reconcile) — an alert missing from a tick is treated as a
+     * gap, not a withdrawal. So the 1,546 greens already stored would sit active,
+     * on the globe and in the whole-planet feed, until each expired on its own.
+     *
+     * Deactivates rather than deletes, which is this collection's whole convention:
+     * supersede and expire flip `active` and keep the document, because history is
+     * the point of the DB. `active: false` is enough to take them off the globe,
+     * out of `/api/alerts`, out of the dissolve and out of the World Watch tally —
+     * everything that reads warnings reads active ones.
+     *
+     * Safe against flip-flop precisely BECAUSE the parse drops them: were they
+     * still ingested, `upsert`'s fast path would see `active: false`, fall through
+     * to the write, and reactivate every one on the next tick — the two halves only
+     * work together.
+     *
+     * Idempotent: `active: true` excludes what it already retired, so the second
+     * run finds nothing.
+     */
+    async deactivateMeteoalarmGreens(): Promise<{ scanned: number; deactivated: number }> {
+      const docs = (await model
+        .find({ source: "meteoalarm", active: true }, { _id: 0, id: 1, "info.parameters": 1 })
+        .lean()
+        .exec()) as any[];
+
+      const ids: string[] = [];
+      for (const d of docs) {
+        const infos: any[] = Array.isArray(d.info) ? d.info : [];
+        // ALL green, never some — the same rule as the parse. One real block among
+        // green ones must keep the alert alive.
+        if (!infos.length) continue;
+        if (infos.every((i) => isMeteoalarmGreen(i?.parameters?.awareness_level))) ids.push(d.id);
+      }
+      if (!ids.length) return { scanned: docs.length, deactivated: 0 };
+
+      const res = await model.updateMany({ id: { $in: ids } }, { $set: { active: false } }).exec();
+      return { scanned: docs.length, deactivated: res.modifiedCount ?? 0 };
     },
 
     /**

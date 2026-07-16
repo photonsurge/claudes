@@ -65,6 +65,25 @@ export function rankFromMeteoalarmLevel(level?: number | string | null): Severit
 }
 
 /**
+ * Is this awareness level MeteoAlarm's green — "no awareness required"?
+ *
+ * Green is not a mild warning, it's the ABSENCE of one, and every national
+ * service publishes one per hazard per region permanently. Measured: 1,546 of
+ * 2,708 active MeteoAlarm alerts (57%) were green, each carrying full EMMA
+ * boundary geometry, all of it clipped by the dissolve and drawn on the globe.
+ *
+ * Deliberately NOT `severityRank === 0`. Rank 0 also means "severity unknown" —
+ * 114 live WMO alerts sit there, including Air Quality and Riverine Flood
+ * warnings that are entirely real and simply ship `severity: Unknown`. Filtering
+ * on the rank would silently bin those; filtering on the level bins only what the
+ * source itself says is nothing.
+ */
+export function isMeteoalarmGreen(level?: number | string | null): boolean {
+  const n = typeof level === "string" ? parseInt(level, 10) : level;
+  return n === 1;
+}
+
+/**
  * THE MeteoAlarm rank rule: its own awareness level, falling back to CAP
  * `severity` only when it ships no level.
  *

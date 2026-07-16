@@ -707,28 +707,6 @@ process.on("uncaughtException", (err) => {
     }
   }
 
-  // Cache a Wikipedia photo/gallery + Wikidata facts onto each active volcano.
-  // LOW PRIORITY (>0 so it never competes with the live snapshots) and slow
-  // (staleness-gated + a tiny catalog), so it barely touches Wikipedia/Wikidata.
-  try {
-    await myQueue.add(
-      "do",
-      { domain: "volcanoes", type: "volcanoes", event: "enrichWiki", data: {} },
-      {
-        repeat: {
-          every: Number(process.env.VOLCANO_ENRICH_MS || 6 * 3_600_000),
-          immediately: true,
-          offset: staggerOffset("volcanoes-enrich", Number(process.env.VOLCANO_ENRICH_MS || 6 * 3_600_000)),
-        },
-        jobId: "volcanoes-enrich",
-        priority: 10,
-      },
-    );
-    log(TAG, `registered repeatable volcanoes.enrichWiki`);
-  } catch (err) {
-    log(TAG, `failed to register volcanoes.enrichWiki`, summarizeForLog(err));
-  }
-
   // LLM-parse each volcano's weekly bulletin text into a couple of structured
   // facts (plume height, VEI) — re-checks every time a fresh bulletin lands
   // (see volcano-repo.ts#listNeedingReportParse), not on a fixed staleness gate,
@@ -1225,46 +1203,10 @@ process.on("uncaughtException", (err) => {
     }
   }
 
-  // ---- Repeatable countries/regions.enrichWiki ----
-  // Population/capital/currency + a photo/blurb barely change — a daily sweep
-  // (staleness-gated at 30 days internally, so most days it's a no-op scan) is
-  // plenty. LOW PRIORITY so it never competes with live data jobs.
-  try {
-    await myQueue.add(
-      "do",
-      { domain: "countries", type: "countries", event: "enrichWiki", data: {} },
-      {
-        repeat: {
-          every: Number(process.env.COUNTRY_ENRICH_MS || 24 * 3_600_000),
-          immediately: true,
-          offset: staggerOffset("countries-enrich", Number(process.env.COUNTRY_ENRICH_MS || 24 * 3_600_000)),
-        },
-        jobId: "countries-enrich",
-        priority: 10,
-      },
-    );
-    log(TAG, `registered repeatable countries.enrichWiki`);
-  } catch (err) {
-    log(TAG, `failed to register countries.enrichWiki`, summarizeForLog(err));
-  }
-  try {
-    await myQueue.add(
-      "do",
-      { domain: "regions", type: "regions", event: "enrichWiki", data: {} },
-      {
-        repeat: {
-          every: Number(process.env.REGION_ENRICH_MS || 24 * 3_600_000),
-          immediately: true,
-          offset: staggerOffset("regions-enrich", Number(process.env.REGION_ENRICH_MS || 24 * 3_600_000)),
-        },
-        jobId: "regions-enrich",
-        priority: 10,
-      },
-    );
-    log(TAG, `registered repeatable regions.enrichWiki`);
-  } catch (err) {
-    log(TAG, `failed to register regions.enrichWiki`, summarizeForLog(err));
-  }
+  // Catalog enrichment (countries/regions/volcanoes/cities) is deliberately NOT
+  // scheduled and does not run at boot. These catalogs are near-permanent, so a
+  // sweep is an operator decision, not a clock's — trigger it from /admin or the
+  // enrich:* CLI scripts.
 
   // ---- Express HTTP server (health/status probes) ----
   const app = express();

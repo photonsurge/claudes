@@ -1,4 +1,4 @@
-import { meteoalarmRank } from "@photonsurge/shared/alerts/severity";
+import { meteoalarmRank, isMeteoalarmGreen } from "@photonsurge/shared/alerts/severity";
 import { canonicaliseCapMessages } from "@photonsurge/shared/alerts/normalise";
 import { windRing } from "@photonsurge/shared/alerts/rings";
 import type {
@@ -127,6 +127,20 @@ function toCapInfo(info: any): CapInfo {
   };
 }
 
+/**
+ * Every info block says green — i.e. the whole alert is "nothing expected".
+ *
+ * ALL, not some: an alert is dropped entirely, so one real block among green
+ * ones would take a genuine warning with it. Measured across 2,708 live alerts,
+ * mixed green/non-green does not occur (1,546 all-green, 1,162 all-real, 0
+ * mixed) — the `every` is here so that staying true isn't load-bearing.
+ *
+ * A block with NO level is not green: it falls back to CAP severity and keeps
+ * the alert. Absence of evidence isn't "nothing expected".
+ */
+export const isGreenAlert = (msg: CapMessage): boolean =>
+  msg.info.length > 0 && msg.info.every((i) => isMeteoalarmGreen(i.parameters?.awareness_level));
+
 export function alertToCapMessage(alert: any): CapMessage | null {
   if (!alert?.identifier) return null;
   const infos = Array.isArray(alert.info) ? alert.info : [];
@@ -191,7 +205,13 @@ export const meteoalarmSource: AlertSource = {
       const warnings = Array.isArray(doc?.warnings) ? doc.warnings : [];
       for (const w of warnings) {
         const m = alertToCapMessage(w?.alert);
-        if (m) msgs.push(m);
+        // Green never enters the system. It's 57% of this feed, it carries full
+        // EMMA boundary geometry, and it means "nothing expected" — so it was
+        // costing a Mongo write, a 2dsphere index, a dissolve clip, a slot in the
+        // whole-planet /api/alerts payload and a translucent shape on the globe,
+        // to say that nothing is happening. Dropped at the parse boundary so
+        // nothing downstream has to know about it.
+        if (m && !isGreenAlert(m)) msgs.push(m);
       }
     }
     return msgs;

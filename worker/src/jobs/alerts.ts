@@ -62,6 +62,12 @@ export async function ingest(job: Job) {
     }
   }
 
+  // Retire the greens already stored. The parse drops them on the way in now, but
+  // MeteoAlarm doesn't reconcile (fan-out feed, transient gaps), so nothing else
+  // would ever take the existing ones off the globe. Idempotent — see the repo.
+  const greens = await db.alerts.deactivateMeteoalarmGreens();
+  if (greens.deactivated) log(TAG, `retired green meteoalarm alerts (nothing expected)`, greens);
+
   // Re-rank stored MeteoAlarm alerts from their own awareness level. Ingest only
   // ranks alerts it WRITES, and its fast path skips an unchanged active alert —
   // so a change to the rank rule reaches new alerts and nothing else. Runs every
