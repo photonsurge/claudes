@@ -93,15 +93,68 @@ resolving a single boundary" was wrong on both halves. Reading **all 565 pages
 costs 565 gateway requests** against 500/hour — roughly **one to two hours of
 quota, once** — and every boundary behind them then resolves for free.
 
-## A second cause remains — the page cap does NOT explain Serbia
+## The gap is THREE problems, not one — measured by country
 
-The gap was measured as concentrated in **Austria, Germany and Serbia**. AT (42
-pages) and DE (281) are explained outright. **RS has 1 page and we read it.**
+An earlier draft said the gap was "concentrated in Austria, Germany and Serbia".
+**Serbia is fine** (all 11 codes cached, 0 shapeless) and **Spain was missed
+entirely**. Re-measured properly, current state:
 
-So Serbia's missing areas have a *different* cause and are not fixed by any of
-this. Do not close this doc when the page cap is fixed. Candidates: Serbia's
-alerts fall outside the 23h window, carry no EMMA_ID, or are stranded in the seen
-ledger (below).
+```
+coverage: alerts 5,002 · alertsNoShape 565 · alertsPartial 2
+          areas  7,895 · areasNoGeom  2,458  (31%)
+
+cc   alerts  noShape  partial  uncachedEMMA
+AT      438      172        0    45
+ES      168       87        0    50      ← ES has 31 pages, reads 3. Same bug.
+DE       23       21        1    35
+PL      188       16        0    16
+SK       92        5        0     5
+CZ       11        3        0     9
+FI/MD/LT  —        2        1    36
+fully drawable: IT RS BA HR NL BE CY GR ME DK
+```
+
+Those sum to ~306 of the 565 invisible alerts. **The other ~259 are not an EMMA
+problem at all**, and no amount of crawling touches them:
+
+```
+invisible alerts with areas but NO EMMA_ID:
+  wmo         171   cn-cma-xx/…  "jiulongpo district", "Wuyi County"
+  meteoalarm   88   FR/HU        "Loire", "Yvelines", "Dél-Alföld"
+```
+
+1. **~306 — EMMA codes we never fetched.** The page cap. Fixed below.
+2. **171 — WMO / China (CMA).** Chinese county names, no polygon, no EMMA. Outside
+   the European registry entirely. Unsolved, unexamined.
+3. **88 — MeteoAlarm members that don't use EMMA.** See below. Solvable, cheaply.
+
+## France and Hungary ship NUTS codes — and GISCO is the right answer for them
+
+The invisible MeteoAlarm alerts that carry no EMMA_ID carry this instead:
+
+```
+NUTS3   n=1080  meteoalarm   FR715 (Loire) | FR821 (Alpes-de-Haute-Pro)
+NUTS2   n= 118  meteoalarm   HU33 (Dél-Alföld) | HU22 (Nyugat-Dunántúl)
+```
+
+This doc previously argued a static admin-boundary source "will NOT work". That
+is **right about EMMA and wrong as a blanket rule**, and the two got conflated.
+
+- **EMMA_ID → NUTS is false.** Austria's codes are Bezirke, Spain's are met zones
+  (`ES075 Campiña gaditana`), Serbia's are met zones (`RS001 Banat`,
+  `RS010 Šumadija`). A generic admin dataset would be right for Austria and
+  silently wrong for Spain. The operator caught this before it was built.
+- **But France and Hungary don't use EMMA at all — they ship literal NUTS codes.**
+  For those, Eurostat GISCO is not a guess at the boundary, it IS the boundary.
+  Free, static, downloadable once, no gateway, no quota, no crawl.
+
+The general shape is a **`(valueName, value) → polygon` cache** — which is what
+`alert_area_geom` nearly is already, keyed on `emmaId` instead of the pair. NWS
+does the same trick with `UGC` on 87% of its alerts.
+
+**Unverified:** `FR715` is Loire in NUTS **2013**; the 2021 code is `FRK25`. So the
+vintage matters and must be pinned. GISCO publishes every vintage — check which one
+Météo-France actually emits before downloading anything.
 
 ## Hypotheses tested and refuted
 
@@ -201,25 +254,21 @@ below for free.
 "metadata about regions" — that may or may not include polygons. Do not build on
 it until one authenticated call is made.
 
-## Why a static admin-boundary source will NOT work
-
-The obvious fix — "fetch NUTS regions from Eurostat GISCO once, cache forever" —
-**is wrong, and the operator caught it before it was built.**
+## Why a static admin-boundary source will not work FOR EMMA
 
 ```
 AT101  Eisenstadt (Stadt)     ← Austrian Bezirk — administrative
 AT106  Mattersburg            ← administrative
-ES075  Campiña gaditana       ← an agricultural/meteorological zone. NOT a NUTS region.
+ES075  Campiña gaditana       ← agricultural/meteorological zone. NOT a NUTS region.
+RS001  Banat                  ← met zone
 ```
-
-Austria uses political districts; Spain uses met-service forecast zones that follow
-no administrative boundary. A generic admin dataset would be **correct for Austria
-and silently wrong for Spain** — the exact failure mode that produced four separate
-bugs in this pipeline.
 
 I had asserted "EMMA_IDs map to NUTS regions" as fact. **It is not verified and
 looks false** (NUTS3 for Austria is `AT111`, `AT112`…; MeteoAlarm ships `AT101`,
 `AT901`). Do not build on that claim.
+
+This applies to **EMMA codes only** — see the NUTS section above for the members
+that don't use EMMA, where GISCO is exactly right.
 
 ## The deeper design smell
 
@@ -330,9 +379,12 @@ areasNoGeom     — the raw gap (was 10,187 / 20,568)
 1. **Ask MeteoAlarm for Metadata API access** (operator action —
    `meteoalarm@geosphere.at`). One authenticated `GET /metadata/v1/regions` could
    make the whole crawl a fallback. Highest leverage, zero code.
-2. **Find Serbia's cause** — 1 page, fully read, still missing areas. The fix above
-   does nothing for it.
-3. **Fix the seen ledger** with typed, retryable outcomes rather than a boolean:
+2. **A NUTS resolver for FR/HU** — 88 invisible alerts, a free static download,
+   no quota, no crawl. Generalise `alert_area_geom` from `emmaId` to
+   `(valueName, value)`. Pin the NUTS vintage first (see above).
+3. **The 171 Chinese WMO alerts** — county names, no polygon, no code. Not looked
+   at at all yet; nothing above helps them.
+4. **Fix the seen ledger** with typed, retryable outcomes rather than a boolean:
 
    ```
    resolved | confirmed_no_emma_id     ← terminal
@@ -347,7 +399,10 @@ areasNoGeom     — the raw gap (was 10,187 / 20,568)
 
 - Does `/metadata/v1/regions` actually return polygons, and are they keyed to
   `EMMA_ID`? **Blocks the strategic decision.** Needs a credential.
-- Serbia: 1 page, fully read, still missing areas. **Unexplained.**
+- Which NUTS vintage does Météo-France emit? `FR715` is Loire in NUTS 2013;
+  NUTS 2021 calls it `FRK25`. Pin it before downloading GISCO.
+- The 171 Chinese CMA alerts (`cn-cma-xx/…`, "jiulongpo district") — is there any
+  boundary source at all? **Not investigated.**
 - Do the 550 stranded ledger alerts genuinely lack an EMMA_ID, or is a transient
   failure cached as a fact? MeteoGate keys features by its own UUID, not the CAP
   identifier, so there is nothing to join against our alerts — needs a probe of one
