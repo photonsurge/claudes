@@ -186,11 +186,25 @@ process.on("uncaughtException", (err) => {
     },
     // BullMQ requires maxRetriesPerRequest: null on the worker's blocking connection.
     // Process up to WORKER_CONCURRENCY jobs at once (default 10). Downloads are still
-    // throttled process-wide by nomadsGate() and CPU bakes by bakePool, so raising
-    // this mostly lets independent ingests/snapshots overlap instead of queueing.
+    // throttled process-wide by nomadsGate(), so raising this mostly lets independent
+    // ingests/snapshots overlap instead of queueing.
+    //
+    // lockDuration is the crux of the "could not renew lock for job repeat:…" +
+    // "Missing lock … moveToFinished code: -2" fan-out. BullMQ renews a job's lock
+    // every lockDuration/2 on THIS event loop, and several handlers run long
+    // SYNCHRONOUS CPU inline on that same loop — a single polygon-clipping union in
+    // the alert dissolve (dissolve.ts, which can't be broken up by its own yields),
+    // and the full-grid passes in bakeScalar (grib/bakeScalar.ts, whose worker-thread
+    // pool was never actually constructed — see BAKE-POOL note below). With the
+    // default 30s lock, any block past ~15s misses the renewal and EVERY in-flight
+    // job loses its lock at once, then can't finalize. 300s renews at 150s, which
+    // covers those blocks. The real fix is to move the CPU off the loop; this stops
+    // the bleeding. Trade: a genuinely dead job now takes up to lockDuration to be
+    // reclaimed — fine here, because the jobs aren't dead, they're busy.
     {
       connection: { ...getRedisOptions(), maxRetriesPerRequest: null },
       concurrency: Number(process.env.WORKER_CONCURRENCY || 10),
+      lockDuration: Number(process.env.WORKER_LOCK_DURATION_MS || 300_000),
       stalledInterval: 30_000,
       maxStalledCount: 2,
     },

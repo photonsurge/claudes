@@ -3,9 +3,17 @@
 // (unit-convert, longitude roll, nodata mask, RGBA pack, sharp PNG) OFF the main
 // event loop so the process stays responsive — signals, health probes and the
 // director loop keep running while grids crunch. One task at a time per thread;
-// bakePool.ts spins up N of these so several bakes run at once.
+// a pool would spin up N of these so several bakes run at once.
 //
-// Loaded by bakePool via `new Worker(...)`. Under ts-node (dev) the pool passes
+// !! CURRENTLY UNWIRED. The `bakePool.ts` this file was written for was never
+// built — nothing does `new Worker(<this file>)`, so every bakeScalar/bakeVector
+// runs INLINE on the main event loop (see the ~12 call sites), which is one of
+// the two synchronous CPU paths that starve BullMQ's lock renewal. index.ts's
+// raised lockDuration currently absorbs that; building the pool and routing the
+// call sites through it is the structural fix. This entry is kept because it's
+// correct and ready: a pool need only `new Worker(...)` it and post BakeMessages.
+//
+// When that pool exists: under ts-node (dev) it must pass
 // `-r ts-node/register/transpile-only` so this .ts loads directly; the compiled
 // build loads the emitted .js. Kept dependency-light: it only pulls the two pure
 // compute modules (which pull sharp + the variable registry).
