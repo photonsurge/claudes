@@ -72,7 +72,16 @@ async function GET__impl(_req: Request) {
         ? ((await db.alerts.model
             .find(
               { id: { $in: memberIds } },
-              { _id: 0, id: 1, source: 1, identifier: 1, sent: 1, "info.event": 1, "info.severity": 1, "info.headline": 1, "info.instruction": 1, "info.translatedHeadline": 1, "info.translatedInstruction": 1, "info.area.areaDesc": 1 },
+              // `onset`/`effective` are here for `since` — the moment the hazard
+              // starts, which is NOT `sent` (when the bulletin was written). The
+              // card's "Active for" row reads it, so without them a clicked blob
+              // silently lost that row while a clicked alert kept it.
+              //
+              // `description` is deliberately absent: it's rendered only in /admin
+              // (AlertInfoBlock), which reads the full alert anyway. On air it is
+              // pure payload — a paragraph per shape, on a feed polled for every
+              // active shape at once, that no pixel would ever show.
+              { _id: 0, id: 1, source: 1, identifier: 1, sent: 1, expiresAt: 1, "info.event": 1, "info.severity": 1, "info.headline": 1, "info.instruction": 1, "info.onset": 1, "info.effective": 1, "info.translatedHeadline": 1, "info.translatedInstruction": 1, "info.area.areaDesc": 1 },
             )
             .lean()
             .exec()) as unknown as any[])
@@ -109,6 +118,12 @@ async function GET__impl(_req: Request) {
             translatedHeadline: info.translatedHeadline,
             translatedInstruction: info.translatedInstruction,
             sent: rep?.sent ? new Date(rep.sent).toISOString() : undefined,
+            // When the HAZARD starts, not when the bulletin was written — mirrors
+            // /api/alerts' `since`. alertFeatureToSegment reads this and nothing
+            // else for the "Active for" row, so emitting only `sent` meant a blob's
+            // card quietly dropped it.
+            since: info.onset ?? info.effective ?? (rep?.sent ? new Date(rep.sent).toISOString() : undefined),
+            expires: rep?.expiresAt,
             // How many warnings this one shape stands for, so a card can say "37
             // warnings" instead of implying it's a single county's.
             //

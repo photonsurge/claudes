@@ -205,3 +205,100 @@ describe("GET /api/alerts/blobs", () => {
     expect((await res.json()).features).toEqual([]);
   });
 });
+
+/**
+ * The card's text comes from this feed and nothing else, so a field missing here
+ * doesn't error — it just quietly stops rendering. `since` did exactly that:
+ * alertFeatureToSegment reads `properties.since` for the "Active for" row and
+ * this route only ever emitted `sent`, so clicking a blob dropped the row while
+ * clicking an alert kept it. Nothing failed; the row simply wasn't there.
+ */
+describe("GET /api/alerts/blobs — display meta the card actually reads", () => {
+  beforeEach(() => {
+    mockList.mockReset();
+    mockAlertFind.mockReset();
+    cacheKeys.length = 0;
+  });
+
+  const run = async () => {
+    const res = await GET(new Request("http://x/api/alerts/blobs") as never);
+    return (await res.json()).features[0].properties;
+  };
+
+  it("emits `since` from the hazard's onset, not the bulletin's sent time", async () => {
+    mockList.mockResolvedValue({ blobs: [blob({ memberIds: ["a1"] })] });
+    mockAlertFind.mockReturnValue({
+      lean: () => ({
+        exec: async () => [
+          member("a1", "2026-07-16T02:00:00Z", {
+            info: [{ event: "Heat", onset: "2026-07-16T06:00:00Z", area: [{ areaDesc: "Puglia" }] }],
+          }),
+        ],
+      }),
+    });
+
+    const p = await run();
+
+    expect(p.since).toBe("2026-07-16T06:00:00Z"); // when the heat starts
+    expect(p.sent).toBe("2026-07-16T02:00:00.000Z"); // when it was written
+  });
+
+  it("falls back onset -> effective -> sent, so the row always has something", async () => {
+    mockList.mockResolvedValue({ blobs: [blob({ memberIds: ["a1"] })] });
+    mockAlertFind.mockReturnValue({
+      lean: () => ({
+        exec: async () => [
+          member("a1", "2026-07-16T02:00:00Z", {
+            info: [{ event: "Heat", effective: "2026-07-16T04:00:00Z", area: [{ areaDesc: "Puglia" }] }],
+          }),
+        ],
+      }),
+    });
+
+    expect((await run()).since).toBe("2026-07-16T04:00:00Z");
+  });
+
+  it("carries the translated title and the hazard the icon is drawn from", async () => {
+    mockList.mockResolvedValue({ blobs: [blob({ memberIds: ["a1"], hazard: "heat", severityRank: 4 })] });
+    mockAlertFind.mockReturnValue({
+      lean: () => ({
+        exec: async () => [
+          member("a1", "2026-07-16T02:00:00Z", {
+            info: [
+              {
+                event: "Ola de calor",
+                severity: "Extreme",
+                translatedHeadline: "Heatwave warning",
+                area: [{ areaDesc: "Sevilla" }],
+              },
+            ],
+          }),
+        ],
+      }),
+    });
+
+    const p = await run();
+
+    expect(p.translatedHeadline).toBe("Heatwave warning");
+    expect(p.hazard).toBe("heat");
+    expect(p.severityRank).toBe(4);
+    expect(p.level).toBe("Extreme");
+  });
+
+  it("never ships the description — it's admin-only, and this feed carries every active shape", async () => {
+    // A paragraph per shape that no pixel on air would ever render.
+    mockList.mockResolvedValue({ blobs: [blob({ memberIds: ["a1"] })] });
+    mockAlertFind.mockReturnValue({
+      lean: () => ({ exec: async () => [member("a1", "2026-07-16T02:00:00Z")] }),
+    });
+
+    const p = await run();
+
+    expect(p.description).toBeUndefined();
+    expect(p.translatedDescription).toBeUndefined();
+    // And it must not even be READ back from Mongo.
+    const projection = mockAlertFind.mock.calls[0][1];
+    expect(projection["info.description"]).toBeUndefined();
+    expect(projection["info.translatedDescription"]).toBeUndefined();
+  });
+});
