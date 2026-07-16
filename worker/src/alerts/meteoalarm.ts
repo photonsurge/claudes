@@ -1,4 +1,4 @@
-import { rankFromCapSeverity, rankFromMeteoalarmLevel } from "@photonsurge/shared/alerts/severity";
+import { meteoalarmRank } from "@photonsurge/shared/alerts/severity";
 import { canonicaliseCapMessages } from "@photonsurge/shared/alerts/normalise";
 import { windRing } from "@photonsurge/shared/alerts/rings";
 import type {
@@ -107,8 +107,9 @@ function toCapInfo(info: any): CapInfo {
     // disagree, and the level is the one it means. 58% of the live feed
     // contradicted the CAP-derived rank, almost all of it green ("nothing
     // expected") arriving as Minor warnings. CAP severity is only the fallback,
-    // for an alert that ships no level. See rankFromMeteoalarmLevel.
-    severityRank: rankFromMeteoalarmLevel(parameters?.awareness_level) ?? rankFromCapSeverity(info.severity),
+    // for an alert that ships no level. `resyncMeteoalarmRanks` applies this
+    // SAME rule to already-stored alerts — see meteoalarmRank.
+    severityRank: meteoalarmRank(parameters?.awareness_level, info.severity),
     onset: info.onset ?? undefined,
     effective: info.effective ?? undefined,
     expires: info.expires ?? undefined,

@@ -64,6 +64,29 @@ export function rankFromMeteoalarmLevel(level?: number | string | null): Severit
   }
 }
 
+/**
+ * THE MeteoAlarm rank rule: its own awareness level, falling back to CAP
+ * `severity` only when it ships no level.
+ *
+ * One function because there are two callers and they must never disagree — the
+ * adapter, which ranks alerts as they arrive, and `resyncMeteoalarmRanks`, which
+ * re-ranks the ones already stored. The stored ones matter: `upsert` skips an
+ * unchanged, still-active alert, so fixing this rule did NOTHING to the 2,687
+ * alerts already on the globe. 58% of them kept a rank derived from the field
+ * we'd just decided not to trust, the oldest sitting on a `sent` from 16 days
+ * back that will never be re-issued.
+ *
+ * If these two ever drift, the globe shows a mix of both rules and the seam is
+ * invisible — a shape ranked by one rule sits in a different dissolve bucket
+ * from its neighbour ranked by the other, and simply never fuses with it.
+ */
+export function meteoalarmRank(
+  awarenessLevel?: number | string | null,
+  capSeverity?: string | null,
+): SeverityRank {
+  return rankFromMeteoalarmLevel(awarenessLevel) ?? rankFromCapSeverity(capSeverity);
+}
+
 /** Met Office colour (yellow/amber/red) → rank. */
 export function rankFromMetOfficeColour(colour?: string | null): SeverityRank {
   switch ((colour ?? "").trim().toLowerCase()) {

@@ -262,3 +262,94 @@ describe("alerts-repo chain — CAP lifecycle walk", () => {
     expect(model.find).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * `resyncMeteoalarmRanks` exists because fixing the rank RULE fixed nothing that
+ * was already stored: `upsert` skips an unchanged, still-active alert, and CAP
+ * messages are immutable, so 58% of the live feed kept a rank derived from the
+ * very field we'd decided not to trust — indefinitely.
+ */
+describe("alerts-repo resyncMeteoalarmRanks", () => {
+  const mkRepo = (docs: any[]) => {
+    const bulkWrite = jest.fn(async () => ({ modifiedCount: docs.length })) as jest.Mock;
+    const model = {
+      find: () => ({ lean: () => ({ exec: async () => docs }) }),
+      bulkWrite,
+    } as any;
+    return { repo: makeAlertsRepo(model), bulkWrite };
+  };
+
+  const doc = (id: string, level: string | null, storedRank: number, sourceSeverity = "Minor") => ({
+    id,
+    maxSeverityRank: storedRank,
+    info: [
+      {
+        severityRank: storedRank,
+        sourceSeverity,
+        parameters: level == null ? {} : { awareness_level: level },
+      },
+    ],
+  });
+
+  it("re-ranks a stored green alert down to 0 — the 1,466 that stayed on the globe as Minor", async () => {
+    const { repo, bulkWrite } = mkRepo([doc("a", "1; green; Minor", 1)]);
+    const r = await repo.resyncMeteoalarmRanks();
+
+    expect(r).toEqual({ scanned: 1, changed: 1 });
+    const { filter, update } = (bulkWrite.mock.calls[0][0] as any[])[0].updateOne;
+    expect(filter).toEqual({ id: "a" });
+    // BOTH ranks: readers sort and bucket on the denormalised one.
+    expect(update.$set["info.0.severityRank"]).toBe(0);
+    expect(update.$set.maxSeverityRank).toBe(0);
+  });
+
+  it("promotes a yellow that CAP called Minor — the rank that never fused with its neighbours", async () => {
+    const { repo, bulkWrite } = mkRepo([doc("b", "2; yellow; Moderate", 1)]);
+    await repo.resyncMeteoalarmRanks();
+    const { update } = (bulkWrite.mock.calls[0][0] as any[])[0].updateOne;
+    expect(update.$set["info.0.severityRank"]).toBe(2);
+    expect(update.$set.maxSeverityRank).toBe(2);
+  });
+
+  it("writes NOTHING when every rank already agrees (so it can run every tick)", async () => {
+    const { repo, bulkWrite } = mkRepo([doc("c", "2; yellow; Moderate", 2), doc("d", "1; green; Minor", 0)]);
+    const r = await repo.resyncMeteoalarmRanks();
+    expect(r).toEqual({ scanned: 2, changed: 0 });
+    expect(bulkWrite).not.toHaveBeenCalled();
+  });
+
+  it("is idempotent — re-running over its own output changes nothing", async () => {
+    const { repo, bulkWrite } = mkRepo([doc("e", "1; green; Minor", 0)]);
+    expect((await repo.resyncMeteoalarmRanks()).changed).toBe(0);
+    expect(bulkWrite).not.toHaveBeenCalled();
+  });
+
+  it("leaves an alert with no awareness level alone rather than demoting it to 0", async () => {
+    // The guard that matters: falling back to `sourceSeverity` on a doc that
+    // hasn't got one reads as rank 0 — a real warning silently becoming
+    // "nothing expected".
+    const { repo, bulkWrite } = mkRepo([{ id: "f", maxSeverityRank: 3, info: [{ severityRank: 3, parameters: {} }] }]);
+    const r = await repo.resyncMeteoalarmRanks();
+    expect(r).toEqual({ scanned: 1, changed: 0 });
+    expect(bulkWrite).not.toHaveBeenCalled();
+  });
+
+  it("ranks each info entry from its OWN level and maxes across them", async () => {
+    const { repo, bulkWrite } = mkRepo([
+      {
+        id: "g",
+        maxSeverityRank: 1,
+        info: [
+          { severityRank: 1, sourceSeverity: "Minor", parameters: { awareness_level: "1; green; Minor" } },
+          { severityRank: 1, sourceSeverity: "Minor", parameters: { awareness_level: "3; orange; Severe" } },
+        ],
+      },
+    ]);
+    await repo.resyncMeteoalarmRanks();
+    const { update } = (bulkWrite.mock.calls[0][0] as any[])[0].updateOne;
+    // Positional, NOT `info.$[]` — that would stamp one rank onto both entries.
+    expect(update.$set["info.0.severityRank"]).toBe(0);
+    expect(update.$set["info.1.severityRank"]).toBe(3);
+    expect(update.$set.maxSeverityRank).toBe(3);
+  });
+});

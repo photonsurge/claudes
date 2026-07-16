@@ -62,6 +62,14 @@ export async function ingest(job: Job) {
     }
   }
 
+  // Re-rank stored MeteoAlarm alerts from their own awareness level. Ingest only
+  // ranks alerts it WRITES, and its fast path skips an unchanged active alert —
+  // so a change to the rank rule reaches new alerts and nothing else. Runs every
+  // tick because it's self-healing and idempotent: steady state scans a
+  // geometry-free projection and writes nothing. See resyncMeteoalarmRanks.
+  const reranked = await db.alerts.resyncMeteoalarmRanks();
+  if (reranked.changed) log(TAG, `re-ranked stored meteoalarm alerts`, reranked);
+
   // Live push: tell browsers to refetch the overlay/list the instant ingest
   // finishes, instead of waiting out their 60s poll (mirrors TRACKS_UPDATED).
   const changed = results.reduce((n, r) => n + ("inserted" in r ? r.inserted + (r.expired ?? 0) : 0), 0);

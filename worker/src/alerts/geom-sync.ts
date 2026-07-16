@@ -26,6 +26,11 @@ export interface GeomSyncResult {
   skipped: number;
   /** Already-stored alerts retro-fitted with a boundary this run. */
   backfilled: number;
+  /**
+   * Alerts fixed by the reconcile — cached boundary, no shape, missed first time.
+   * Steady state is 0; anything else is a backfill that didn't take.
+   */
+  reconciled: number;
   /** Cached boundaries Mongo would have refused, fixed in place (no re-fetch). */
   repaired: number;
   /** True when the run ended early on the quota rather than finishing. */
@@ -33,6 +38,55 @@ export interface GeomSyncResult {
   /** Gateway requests left in the window, as the server last reported them. */
   quotaRemaining: number | null;
   failures: string[];
+}
+
+/**
+ * Apply cached boundaries to any active alert still missing one — not just the
+ * areas resolved on this run.
+ *
+ * The backfill below is fired exactly once per area, on the run that resolves it.
+ * If that single attempt doesn't take — a restart mid-run, a sibling polygon that
+ * makes Mongo reject the `updateMany`, a transient error caught and logged — the
+ * area is never revisited: ingest won't rewrite an unchanged active alert, and a
+ * CAP message's `sent` never moves, so the alert stays shapeless until it expires.
+ *
+ * Measured live, that was not theoretical: 254 areas across 34 EMMA_IDs had an
+ * EXACT boundary sitting in the cache and no shape on the alert. ES075's boundary
+ * was cached at 17:19, its alerts had been stored at 15:58, and the retro-fit that
+ * should have joined them ran and left them empty. Calling the same backfill by
+ * hand three days later fixed all 22 first time — nothing was wrong with it except
+ * that it only ever got one go.
+ *
+ * So: one lean scan for who still needs a shape, intersected with what we already
+ * hold. Costs no MeteoGate quota (the boundaries are here), and in the steady
+ * state the intersection is empty and it writes nothing — the alerts that need
+ * something are the ones we haven't fetched yet, and those aren't in the cache to
+ * apply.
+ */
+export async function reconcileCachedGeometry(
+  db: AppDb,
+  res: Pick<GeomSyncResult, "reconciled" | "failures">,
+): Promise<void> {
+  const wanted = await db.alerts.emmaIdsMissingGeometry();
+  if (!wanted.length) return;
+
+  const cached = await db.alertAreaGeom.byEmmaIds(wanted);
+  if (!cached.size) return; // everything outstanding is still un-fetched — quota's problem, not ours
+
+  for (const [emmaId, hit] of cached) {
+    try {
+      res.reconciled += await db.alerts.backfillAreaGeometry(emmaId, hit.geometry);
+    } catch (err) {
+      // Same reason as the backfill loop: one bad polygon must not cost the rest.
+      res.failures.push(`reconcile ${emmaId}: ${String((err as Error)?.message ?? err)}`);
+    }
+  }
+  if (res.reconciled) {
+    log(TAG, `reconciled cached boundaries onto stored alerts`, {
+      areas: cached.size,
+      alerts: res.reconciled,
+    });
+  }
 }
 
 /**
@@ -80,6 +134,7 @@ export async function syncAreaGeometry(
     cached: 0,
     skipped: 0,
     backfilled: 0,
+    reconciled: 0,
     repaired: 0,
     quotaStopped: false,
     quotaRemaining: null,
@@ -96,6 +151,16 @@ export async function syncAreaGeometry(
     if (r.repaired || r.unfixable) log(TAG, `repaired cached boundaries Mongo would refuse`, r);
   } catch (err) {
     res.failures.push(`repair-cached: ${String((err as Error)?.message ?? err)}`);
+  }
+
+  // Then join what we already hold onto the alerts that still have no shape.
+  // AFTER the repair, so a boundary that was only just made storable gets applied
+  // on this run rather than the next, and — like the repair — before the quota can
+  // stop us: this is the half of the work that owes MeteoGate nothing.
+  try {
+    await reconcileCachedGeometry(db, res);
+  } catch (err) {
+    res.failures.push(`reconcile: ${String((err as Error)?.message ?? err)}`);
   }
 
   // One feature per alert per country: the feed repeats each alert per language

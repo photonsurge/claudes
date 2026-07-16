@@ -1,7 +1,8 @@
 import type { Model } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
-import type { iAlert, iAlertModel } from "./alert-model";
+import type { iAlert, iAlertModel, SeverityRank } from "./alert-model";
 import { alertContentHash } from "../alerts/content-hash";
+import { meteoalarmRank } from "../alerts/severity";
 
 export interface AlertListOpts {
   activeOnly?: boolean;
@@ -113,6 +114,43 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       return r.modifiedCount ?? 0;
     },
 
+    /**
+     * EMMA_IDs that some ACTIVE alert still needs a shape for.
+     *
+     * The reconcile's worklist (see `reconcileCachedGeometry`). Deliberately one
+     * lean scan rather than an `updateMany` per cached area: there is no index on
+     * `info.area.geocodes`, so asking "does anyone need ES075?" 420 times is 420
+     * collection scans, while asking "who needs anything?" once is one.
+     *
+     * The projection is what makes that affordable — `info.area.geometry.type`
+     * pulls the discriminator and leaves the coordinates in Mongo. Fetching whole
+     * documents here would drag millions of vertices through the heap to answer a
+     * question about presence.
+     */
+    async emmaIdsMissingGeometry(): Promise<string[]> {
+      const docs = (await model
+        .find(
+          { active: true, "info.area.geocodes.valueName": "EMMA_ID" },
+          { _id: 0, "info.area.geocodes": 1, "info.area.geometry.type": 1 },
+        )
+        .lean()
+        .exec()) as any[];
+
+      const want = new Set<string>();
+      for (const d of docs) {
+        for (const info of d.info ?? []) {
+          for (const area of info.area ?? []) {
+            if (area?.geometry?.type) continue; // already drawable
+            const emma = (area?.geocodes ?? []).find(
+              (g: any) => g?.valueName?.toUpperCase?.() === "EMMA_ID",
+            )?.value;
+            if (emma) want.add(emma);
+          }
+        }
+      }
+      return [...want];
+    },
+
     async backfillAreaGeometry(emmaId: string, geometry: unknown): Promise<number> {
       const match = { $elemMatch: { valueName: "EMMA_ID", value: emmaId } };
       const r = await model.updateMany(
@@ -163,6 +201,71 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
         { ordered: false },
       );
       return r.modifiedCount ?? 0;
+    },
+
+    /**
+     * Re-rank already-stored MeteoAlarm alerts from their own awareness level.
+     *
+     * The rank rule changed; the alerts did not. `upsert`'s fast path skips any
+     * unchanged, still-active alert, so the fix reached every NEW alert and none
+     * of the 2,687 already on the globe — measured after the change shipped, 58%
+     * still carried the old CAP-derived rank, and the oldest of them was sent 16
+     * days earlier. CAP messages are immutable, so those would never be rewritten
+     * and never re-ranked: without this, the fix only arrives as Europe's warnings
+     * happen to age out, over weeks, silently.
+     *
+     * Idempotent and cheap in the steady state: it recomputes in JS (the level
+     * arrives as "2; yellow; Moderate" — not something a Mongo pipeline should
+     * parse), then writes ONLY the alerts whose rank actually moved, so the second
+     * run and every run after modifies nothing. The projection carries no
+     * geometry, which is what makes scanning every active MeteoAlarm alert per
+     * tick affordable.
+     *
+     * Both ranks are stored and both must move together: `info[].severityRank` and
+     * the denormalised `maxSeverityRank` that every reader sorts and buckets on.
+     */
+    async resyncMeteoalarmRanks(): Promise<{ scanned: number; changed: number }> {
+      const docs = (await model
+        .find(
+          { source: "meteoalarm", active: true },
+          { _id: 0, id: 1, maxSeverityRank: 1, "info.severityRank": 1, "info.sourceSeverity": 1, "info.parameters": 1 },
+        )
+        .lean()
+        .exec()) as any[];
+
+      const ops = [];
+      for (const d of docs) {
+        const infos: any[] = Array.isArray(d.info) ? d.info : [];
+        const set: Record<string, number> = {};
+        let max: SeverityRank = 0;
+        let moved = false;
+
+        for (let i = 0; i < infos.length; i++) {
+          const level = infos[i]?.parameters?.awareness_level;
+          // No level → leave this entry exactly as ingest ranked it. Recomputing
+          // would fall back to `sourceSeverity`, a field older docs may not carry
+          // at all, and "absent" reads as rank 0 — quietly demoting a real warning
+          // to "nothing expected". Every live MeteoAlarm alert has a level, so
+          // this branch protects against the feed changing, not today's data.
+          const want: SeverityRank =
+            level == null ? ((infos[i]?.severityRank ?? 0) as SeverityRank) : meteoalarmRank(level, infos[i]?.sourceSeverity);
+          if (want > max) max = want;
+          if (infos[i]?.severityRank !== want) {
+            // Positional $set — each info entry has its own level, so `info.$[]`
+            // (which writes one value to all of them) would be wrong here.
+            set[`info.${i}.severityRank`] = want;
+            moved = true;
+          }
+        }
+        if (d.maxSeverityRank !== max) {
+          set.maxSeverityRank = max;
+          moved = true;
+        }
+        if (moved) ops.push({ updateOne: { filter: { id: d.id }, update: { $set: set } } });
+      }
+
+      if (ops.length) await model.bulkWrite(ops, { ordered: false });
+      return { scanned: docs.length, changed: ops.length };
     },
 
     /**
