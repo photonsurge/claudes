@@ -53,9 +53,11 @@ async function main() {
   }
   index.length = 0;
 
+  const SNAP = Number(process.env.CMP_SNAP || 0.001);
   const tally = {
     thinInputs: { blobs: 0, fail: 0, verts: 0, ms: 0 },
     thinOutput: { blobs: 0, fail: 0, verts: 0, ms: 0 },
+    snapped: { blobs: 0, fail: 0, verts: 0, ms: 0 },
   };
 
   for (const [key, ids] of buckets) {
@@ -83,9 +85,20 @@ async function main() {
     tally.thinOutput.fail += b.unionFailures;
     for (const x of b.blobs) tally.thinOutput.verts += x.verticesAfter;
 
+    // NEW+PAD: snap onto a shared grid first, so borders that line up at some
+    // vertices and drift by microns between them become EXACTLY coincident —
+    // which is the case polygon-clipping handles, instead of the hairline-sliver
+    // case it answers with separate parts.
+    t0 = Date.now();
+    const c = await dissolveAlerts(members, { hazardOf, simplifyDeg: DEG, snapDeg: SNAP });
+    tally.snapped.ms += Date.now() - t0;
+    tally.snapped.blobs += c.blobs.length;
+    tally.snapped.fail += c.unionFailures;
+    for (const x of c.blobs) tally.snapped.verts += x.verticesAfter;
+
     members = null;
     console.log(
-      `  ${key.padEnd(22)} inputs=${String(a.blobs.length).padStart(4)} output=${String(b.blobs.length).padStart(4)}`,
+      `  ${key.padEnd(24)} inputs=${String(a.blobs.length).padStart(4)} output=${String(b.blobs.length).padStart(4)} snapped=${String(c.blobs.length).padStart(4)}`,
     );
   }
 
