@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import type { iWatchedEvent } from "@photonsurge/shared/db/watched-event-model";
+import type { WatchedEventType } from "@photonsurge/shared/events/types";
 import type { EventResourceKind } from "@photonsurge/shared/db/event-resource-model";
 import type { NewEventTimelineUpdate } from "@photonsurge/shared/db/event-timeline-update-model";
 import type { AcquireContext, AcquireResult, ExternalSource } from "./source-types";
@@ -18,6 +19,20 @@ import { haversineKm } from "./geo";
  */
 
 const SOURCE_ID = "copernicus";
+
+/**
+ * Event types Copernicus EMS plausibly maps. WEATHER_ALERT — the ordinary
+ * warning, and 927 of our 1,148 scheduled events — is deliberately absent: EMS
+ * responds to disasters, not to advisories.
+ */
+const EMS_TYPES = new Set<WatchedEventType>([
+  "FLOOD",
+  "WILDFIRE",
+  "CYCLONE",
+  "EARTHQUAKE",
+  "DROUGHT",
+  "VOLCANO",
+]);
 const BASE = process.env.COPERNICUS_EMS_API || "https://rapidmapping.emergency.copernicus.eu/backend/dashboard-api";
 const LIST_URL = `${BASE}/public-activations-info/`;
 const detailUrl = (code: string) => `${BASE}/public-activations/?code=${encodeURIComponent(code)}`;
@@ -206,7 +221,26 @@ export const copernicusSource: ExternalSource = {
 
   enabled: () => process.env.EVENT_COPERNICUS_ENABLED !== "false",
 
-  appliesTo: (event: iWatchedEvent) => !!event.repPoint || event.primarySource === "gdacs",
+  /**
+   * Disasters only — never a routine weather warning.
+   *
+   * This was `!!event.repPoint`, i.e. "any event that has a location", which is
+   * every alert we hold. Copernicus EMS activates a few hundred times a YEAR, for
+   * major disasters a national authority has escalated; it is never going to hold
+   * a rapid-mapping product for a regional yellow wind advisory. Asking anyway
+   * cost 927 of 1,148 scheduled events — 81% of the acquisition queue — each
+   * re-asking every few minutes, forever.
+   *
+   * The yield of that, measured across the whole layer's lifetime: ZERO. Not "few"
+   * — no Copernicus link has ever been made, while EONET made 18 and GDACS 3.
+   *
+   * A WEATHER_ALERT is the ordinary case (927 of them) and is exactly what EMS
+   * does not cover. The typed events are the ones that can plausibly hit: a flood,
+   * a wildfire, a cyclone, an earthquake — or anything GDACS itself raised, which
+   * is disaster-scale by definition.
+   */
+  appliesTo: (event: iWatchedEvent) =>
+    event.primarySource === "gdacs" || (!!event.repPoint && EMS_TYPES.has(event.type)),
 
   async acquire(ctx: AcquireContext): Promise<AcquireResult> {
     const { db, event, now } = ctx;

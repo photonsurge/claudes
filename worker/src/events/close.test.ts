@@ -1,4 +1,4 @@
-import { closeEndedAlertEvents } from "./close";
+import { closeEndedAlertEvents, retireUnservableSchedules } from "./close";
 
 /**
  * Promotion derives ENDED from `alert.active === false`, but only ever runs for
@@ -132,6 +132,72 @@ describe("closeEndedAlertEvents", () => {
 
     expect(r).toEqual({ candidates: 0, closed: 0, schedulesRetired: 0 });
     expect(closeMany).not.toHaveBeenCalled();
+    expect(removeForEvents).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * "What do we even get from these gets?" — nothing, for 81% of them. A schedule
+ * with no adapter behind it wakes, matches nothing, reports `changed: false` and
+ * sleeps, forever. 927 of 1,148 scheduled events were plain WEATHER_ALERTs whose
+ * only matching adapter was Copernicus, lifetime yield ZERO links.
+ */
+describe("retireUnservableSchedules", () => {
+  const mk = (events: any[]) => {
+    const removeForEvents = jest.fn(async (ids: string[]) => ids.length) as jest.Mock;
+    const db = {
+      eventWatch: {
+        model: { find: () => ({ lean: () => ({ exec: async () => events.map((e) => ({ eventId: e.id })) }) }) },
+        removeForEvents,
+      },
+      watchedEvents: {
+        model: { find: () => ({ lean: () => ({ exec: async () => events }) }) },
+      },
+    } as any;
+    return { db, removeForEvents };
+  };
+
+  const pt = { type: "Point", coordinates: [1, 2] };
+
+  it("retires a plain weather alert — no adapter can fetch anything for it", async () => {
+    const { db, removeForEvents } = mk([{ id: "w1", type: "WEATHER_ALERT", primarySource: "wmo", repPoint: pt }]);
+
+    expect(await retireUnservableSchedules(db)).toBe(1);
+    expect(removeForEvents).toHaveBeenCalledWith(["w1"]);
+  });
+
+  it("keeps a wildfire — EONET serves it", async () => {
+    const { db, removeForEvents } = mk([{ id: "f1", type: "WILDFIRE", primarySource: "wmo", repPoint: pt }]);
+
+    expect(await retireUnservableSchedules(db)).toBe(0);
+    expect(removeForEvents).not.toHaveBeenCalled();
+  });
+
+  it("keeps a GDACS event — gdacs-detail serves it whatever the type", async () => {
+    const { db, removeForEvents } = mk([
+      { id: "g1", type: "WEATHER_ALERT", primarySource: "gdacs", primarySourceId: "gdacs:TC:1000123", repPoint: pt },
+    ]);
+
+    expect(await retireUnservableSchedules(db)).toBe(0);
+    expect(removeForEvents).not.toHaveBeenCalled();
+  });
+
+  it("retires only the unservable ones out of a mixed queue", async () => {
+    const { db, removeForEvents } = mk([
+      { id: "w1", type: "WEATHER_ALERT", primarySource: "wmo", repPoint: pt },
+      { id: "f1", type: "FLOOD", primarySource: "wmo", repPoint: pt },
+      { id: "w2", type: "WEATHER_ALERT", primarySource: "meteoalarm", repPoint: pt },
+    ]);
+
+    await retireUnservableSchedules(db);
+
+    expect(removeForEvents).toHaveBeenCalledWith(["w1", "w2"]);
+  });
+
+  it("does nothing when every schedule is servable (so it can run every tick)", async () => {
+    const { db, removeForEvents } = mk([{ id: "f1", type: "FLOOD", primarySource: "wmo", repPoint: pt }]);
+
+    expect(await retireUnservableSchedules(db)).toBe(0);
     expect(removeForEvents).not.toHaveBeenCalled();
   });
 });

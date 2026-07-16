@@ -1,7 +1,41 @@
 import type { AppDb } from "@photonsurge/shared/db/index";
 import { log } from "@photonsurge/shared/utill/logger";
+import { isServable } from "./registry";
 
 const TAG = "events:close";
+
+/**
+ * Drop schedules for events no adapter can fetch anything for.
+ *
+ * "What do we even get from these gets?" — nothing, for most of them. A schedule
+ * with no adapter behind it wakes up, matches nothing, reports `changed: false`
+ * and goes back to sleep, forever. Measured: 927 of 1,148 scheduled events (81%)
+ * were plain WEATHER_ALERTs whose only matching adapter was Copernicus, whose
+ * lifetime yield across the entire layer was ZERO links — while EONET made 18 and
+ * GDACS 3.
+ *
+ * Companion to the `isServable` gate at promotion: that stops new ones being
+ * created, this clears the ones already here. Both derive the answer from the
+ * registry, so adding an adapter that serves weather alerts brings them back
+ * automatically — the dossier is still promoted either way, it just isn't
+ * re-asked about.
+ */
+export async function retireUnservableSchedules(db: AppDb): Promise<number> {
+  const scheds = (await db.eventWatch.model.find({}, { _id: 0, eventId: 1 }).lean().exec()) as any[];
+  if (!scheds.length) return 0;
+
+  const events = await db.watchedEvents.model
+    .find({ id: { $in: scheds.map((s) => s.eventId) } }, { _id: 0, id: 1, type: 1, primarySource: 1, primarySourceId: 1, repPoint: 1 })
+    .lean()
+    .exec();
+
+  const dead = (events as any[]).filter((e) => !isServable(e)).map((e) => e.id);
+  if (!dead.length) return 0;
+
+  const n = await db.eventWatch.removeForEvents(dead);
+  if (n) log(TAG, `retired schedules no adapter can serve`, { events: dead.length, schedules: n });
+  return n;
+}
 
 export interface CloseEventsResult {
   /** ACTIVE events inspected. */

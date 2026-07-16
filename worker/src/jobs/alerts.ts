@@ -14,7 +14,7 @@ import { blogInfo, blogErr } from "../blog";
 import { ALERTS_UPDATED } from "@photonsurge/shared/control";
 import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue";
 import { emitWorkerEvent } from "../socket";
-import { closeEndedAlertEvents } from "../events/close";
+import { closeEndedAlertEvents, retireUnservableSchedules } from "../events/close";
 import { eventsUnifiedEnabled } from "../events/config";
 
 export { translate } from "../alerts/translate";
@@ -85,6 +85,9 @@ export async function ingest(job: Job) {
   if (eventsUnifiedEnabled()) {
     try {
       await closeEndedAlertEvents(db);
+      // And drop schedules nothing can serve — 81% of the queue was polling an
+      // adapter that had never matched a single event. See retireUnservableSchedules.
+      await retireUnservableSchedules(db);
     } catch (err) {
       log(TAG, `closing lapsed events failed`, summarizeForLog(err));
     }

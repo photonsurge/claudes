@@ -3,12 +3,13 @@ import type { AlertSource } from "@photonsurge/shared/alerts/types";
 import type { iAlertModel } from "@photonsurge/shared/db/alert-model";
 import { referencedIdentifiers } from "@photonsurge/shared/alerts/normalise";
 import { diffAlert } from "@photonsurge/shared/alerts/diff";
-import { timelineUpdatesFromChanges } from "@photonsurge/shared/events/promote";
+import { timelineUpdatesFromChanges, alertToWatchedEvent } from "@photonsurge/shared/events/promote";
 import { log } from "@photonsurge/shared/utill/logger";
 import { harvestGdacsExtras } from "./gdacs-extras";
 import { enrichAreaGeometry } from "./enrich-geometry";
 import { enrichCapIds } from "./enrich-capid";
 import { eventsUnifiedEnabled, shouldPromoteAlert, cadenceForRank } from "../events/config";
+import { isServable } from "../events/registry";
 
 const TAG = "alerts:ingest";
 
@@ -164,11 +165,17 @@ export async function ingestSource(
               severityRank: a.maxSeverityRank,
             },
           ]);
-          await db.eventWatch.upsert({
-            eventId,
-            source: a.source,
-            intervalSeconds: cadenceForRank(a.maxSeverityRank),
-          });
+          // Only schedule acquisition if some adapter can actually fetch for it.
+          // A schedule with nothing behind it polls forever and reports
+          // `changed: false` forever — which is what 81% of the queue was. The
+          // dossier itself is still promoted; it just isn't re-asked about.
+          if (isServable(alertToWatchedEvent(a) as never)) {
+            await db.eventWatch.upsert({
+              eventId,
+              source: a.source,
+              intervalSeconds: cadenceForRank(a.maxSeverityRank),
+            });
+          }
         }
       } catch (err) {
         log(TAG, `event promotion failed`, { source: source.id, id: a.identifier, err: String(err) });

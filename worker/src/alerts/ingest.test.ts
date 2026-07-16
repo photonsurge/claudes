@@ -18,6 +18,7 @@ interface AlertOpt {
   instruction?: string;
   geometry?: AlertGeometry | null;
   translatedHeadline?: string;
+  event?: string;
 }
 
 function mkAlert(o: AlertOpt = {}): any {
@@ -37,7 +38,7 @@ function mkAlert(o: AlertOpt = {}): any {
     info: [
       {
         category: [],
-        event: "Storm",
+        event: o.event ?? "Storm",
         severityRank: o.sev ?? 2,
         headline: o.headline ?? "Storm warning",
         description: "A storm is coming",
@@ -172,13 +173,47 @@ describe("ingestSource — event promotion (unified layer)", () => {
     else process.env.EVENTS_UNIFIED_ENABLED = prevEnv;
   });
 
-  it("promotes a severe new alert to a WatchedEvent, seeding the opening beat + schedule", async () => {
+  it("promotes a severe new alert to a WatchedEvent, seeding the opening beat", async () => {
     const next = mkAlert({ sev: 3 });
-    const { db, timelineBeats, watchUpserts, promotions } = fakeDb(async () => ({ inserted: true, prev: null }));
+    const { db, timelineBeats, promotions } = fakeDb(async () => ({ inserted: true, prev: null }));
     const res = await ingestSource(fakeSource(next), db, NOW);
     expect(res.promoted).toBe(1);
     expect(promotions).toEqual(["cap-1"]);
     expect(timelineBeats.some((b) => b.type === "ISSUED")).toBe(true);
+  });
+
+  /**
+   * The dossier is always promoted; the ACQUISITION SCHEDULE is not. A schedule
+   * with no adapter behind it wakes, matches nothing, reports `changed: false`
+   * and sleeps, forever — that was 927 of 1,148 scheduled events (81%), all plain
+   * weather alerts whose only candidate adapter was Copernicus, whose lifetime
+   * yield was zero links.
+   *
+   * This test previously asserted the opposite (every promotion gets a schedule),
+   * which is exactly how the queue filled with no-ops.
+   */
+  it("does NOT schedule acquisition for a plain weather alert — nothing can fetch for it", async () => {
+    // A storm warning with no geometry: WEATHER_ALERT, no repPoint. GDACS doesn't
+    // apply, EONET needs a point and a disaster type, Copernicus needs both.
+    const next = mkAlert({ sev: 3 });
+    const { db, watchUpserts, promotions } = fakeDb(async () => ({ inserted: true, prev: null }));
+
+    await ingestSource(fakeSource(next), db, NOW);
+
+    expect(promotions).toEqual(["cap-1"]); // still a dossier
+    expect(watchUpserts).toHaveLength(0); // just nothing to re-ask
+  });
+
+  it("DOES schedule acquisition for a flood with a location — EONET serves it", async () => {
+    const next = mkAlert({
+      sev: 3,
+      event: "Riverine Flood",
+      geometry: { type: "Point", coordinates: [12.5, 41.9] },
+    });
+    const { db, watchUpserts } = fakeDb(async () => ({ inserted: true, prev: null }));
+
+    await ingestSource(fakeSource(next), db, NOW);
+
     expect(watchUpserts).toHaveLength(1);
     expect(watchUpserts[0]).toMatchObject({ source: "wmo" });
   });
