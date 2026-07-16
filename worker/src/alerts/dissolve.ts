@@ -403,7 +403,31 @@ export async function dissolveAlerts(alerts: iAlert[], opts: DissolveOpts): Prom
       }
     }
 
+    // Parts of the SAME warning go back together as one multi-part shape.
+    //
+    // Exploding areas into parts is what makes the dissolve work at all (a
+    // country shipped as one 36-part area has nothing to union otherwise), but
+    // left alone it also turns one warning into 36 blobs — and every one of them
+    // carries a full copy of the card text. Measured: blobs 582 -> 3,871 and the
+    // feed's properties 0.3MB -> 1.76MB, more than the geometry, almost all of it
+    // the same `areaDesc` ("Ungheni; Floresti; Sangerei; …") stamped 36 times.
+    //
+    // Identical member set == the same warning, so those shapes are one feature.
+    // Shapes whose members DIFFER stay apart, which is the Sicily rule intact:
+    // Sicily and Puglia are different alerts and never share a blob.
+    const byMembers = new Map<string, Blob>();
     for (const b of blobs) {
+      const sig = [...b.ids].sort().join(",");
+      const hit = byMembers.get(sig);
+      if (hit) {
+        hit.geom = [...hit.geom, ...b.geom];
+        hit.before += b.before;
+      } else {
+        byMembers.set(sig, b);
+      }
+    }
+
+    for (const b of byMembers.values()) {
       const merged = toGeoJson(b.geom);
       if (!merged) continue;
       // NOW thin: every shared border in here is already interior to the fused

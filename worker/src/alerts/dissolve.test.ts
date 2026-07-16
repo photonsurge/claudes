@@ -291,9 +291,9 @@ describe("dissolveAlerts", () => {
    */
   describe("a country shipped as ONE multi-part area", () => {
     /** One alert, one area, `parts` separate county polygons — the WMO shape. */
-    const multiPartCountry = (boxes: number[][]): iAlert =>
+    const multiPartCountry = (boxes: number[][], id = "wmo-1"): iAlert =>
       ({
-        id: "wmo-1",
+        id,
         source: "wmo",
         identifier: "md-meteo-en/2026/07/16/x.xml",
         maxSeverityRank: 2,
@@ -303,7 +303,11 @@ describe("dissolveAlerts", () => {
             severityRank: 2,
             area: [
               {
-                areaDesc: boxes.map((_, i) => `County ${i}`).join("; "),
+                // Named after `id` too: two alerts over DIFFERENT ground have
+                // different area names, and `distinctAreas` keys on the name —
+                // give them the same one and it correctly treats them as the same
+                // region reported twice, which is not what this is testing.
+                areaDesc: boxes.map((_, i) => `${id} County ${i}`).join("; "),
                 geometry: {
                   type: "MultiPolygon",
                   coordinates: boxes.map(([w, s, e, n]) => [[[w, s], [e, s], [e, n], [w, n], [w, s]]]),
@@ -333,11 +337,45 @@ describe("dissolveAlerts", () => {
     });
 
     it("still keeps genuinely separate parts apart (the Sicily rule)", async () => {
-      // An island in the same area must not fuse to the mainland just because it
-      // arrived in the same geometry.
+      // An island in the same area must not FUSE to the mainland just because it
+      // arrived in the same geometry — and that's a question about the geometry,
+      // not the blob count. This asserted `toHaveLength(2)` and was wrong: the two
+      // touching counties fuse, the island doesn't, and all of it is ONE warning,
+      // so it's one card and one shape with two parts. Splitting it into two blobs
+      // bought nothing and made every part carry its own copy of the card text —
+      // Moldova's 34-county areaDesc, stamped 36 times.
       const out = await run([multiPartCountry([[0, 0, 1, 1], [1, 0, 2, 1], [50, 50, 51, 51]])]);
 
+      expect(out).toHaveLength(1);
+      const parts = out[0].geometry.coordinates as unknown as number[][][][];
+      expect(out[0].geometry.type).toBe("MultiPolygon");
+      expect(parts).toHaveLength(2); // mainland (2 counties fused) + island, NOT fused
+    });
+
+    it("does not repeat one warning's card text across its parts", async () => {
+      // The parts explosion made every scattered county its own blob, and a blob
+      // carries a full copy of the card text. Live: 582 -> 3,871 features and the
+      // feed's properties 0.3MB -> 1.76MB — MORE than the geometry — almost all of
+      // it Moldova's 34-county areaDesc stamped once per part. Same warning => one
+      // shape => one copy.
+      const scattered = multiPartCountry([[0, 0, 1, 1], [20, 20, 21, 21], [40, 40, 41, 41]]);
+
+      const out = await run([scattered]);
+
+      expect(out).toHaveLength(1);
+      expect(out[0].geometry.coordinates).toHaveLength(3); // still three shapes, unfused
+    });
+
+    it("keeps two DIFFERENT warnings apart even when their parts interleave", async () => {
+      // The regroup keys on the member set, so it can only ever merge shapes that
+      // are the same warning. Different alerts never collapse into one card.
+      const a = multiPartCountry([[0, 0, 1, 1], [40, 40, 41, 41]], "wmo-1");
+      const b = multiPartCountry([[20, 20, 21, 21], [60, 60, 61, 61]], "wmo-2");
+
+      const out = await run([a, b]);
+
       expect(out).toHaveLength(2);
+      expect(out.map((x) => x.memberIds).sort()).toEqual([["wmo-1"], ["wmo-2"]]);
     });
 
     it("keeps the member alert on every shape it produced", async () => {
@@ -519,7 +557,7 @@ describe("dissolveAlerts", () => {
       expect(unionFailures).toBe(0);
     });
 
-    it("still keeps two genuinely different areas of one alert", async () => {
+    it("keeps two genuinely different areas of one alert UNFUSED", async () => {
       const two = {
         id: "x",
         maxSeverityRank: 4,
@@ -535,7 +573,15 @@ describe("dissolveAlerts", () => {
         ],
       } as unknown as iAlert;
 
-      expect(await run([two])).toHaveLength(2);
+      // Two distant areas of ONE alert: one warning, so one card and one shape —
+      // but the geography must not be fused into a single polygon spanning the
+      // 9° of nothing between them. The invariant is the PARTS, not the count.
+      const out = await run([two]);
+
+      expect(out).toHaveLength(1);
+      expect(out[0].geometry.type).toBe("MultiPolygon");
+      expect(out[0].geometry.coordinates).toHaveLength(2);
+      expect(out[0].memberIds).toEqual(["x"]);
     });
   });
 
