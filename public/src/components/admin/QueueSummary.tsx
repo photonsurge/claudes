@@ -29,6 +29,7 @@ const STATE_COLOR: Record<State, string> = {
 interface SummaryJob {
   id: string;
   name: string;
+  displayName?: string | null;
   type: string | null;
   event: string | null;
   timestamp: number | null;
@@ -119,7 +120,7 @@ export default function QueueSummary({
           push the queue's own header off screen. */}
       <Paper sx={{ mt: 1.25, overflow: "hidden auto", maxHeight }}>
         {jobs.map((j) => {
-          const label = j.type && j.event ? `${j.type}.${j.event}` : j.name || "job";
+          const label = j.displayName || (j.type && j.event ? `${j.type}.${j.event}` : j.name || "job");
           const color = STATE_COLOR[j.state] ?? ink.secondary;
           return (
             <Stack

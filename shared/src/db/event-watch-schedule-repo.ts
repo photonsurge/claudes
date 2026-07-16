@@ -10,6 +10,50 @@ const strip = (doc: any): iEventWatchSchedule => {
 /** Cap the exponential backoff so a persistently-failing source still gets retried. */
 const MAX_BACKOFF_MULT = 8;
 
+/**
+ * The aggregation stages `reschedule` writes with — extracted and pure because
+ * this is where the actual risk lives: it is arithmetic expressed as data, and a
+ * wrong `$pow` or a missing `$ifNull` doesn't throw, it just schedules the next
+ * check at the wrong time and nothing ever says so.
+ *
+ * Two stages, and the order matters: stage 2 reads `intervalSeconds` and
+ * `failureCount` as stage 1 just set them, so the backoff is computed from the
+ * NEW failure count rather than the stale one.
+ *
+ * `$ifNull` throughout because this upserts: on insert every `$field` reference
+ * is null, and a null interval would silently become a null nextCheckAt — a
+ * schedule that is never due again.
+ */
+export function rescheduleStages(
+  opts: { intervalSeconds?: number; ok: boolean },
+  now: Date,
+  newId: string,
+): Record<string, unknown>[] {
+  // Success resets to the plain cadence; failure doubles per consecutive failure,
+  // capped so a permanently broken source still gets retried rather than receding
+  // to the heat death of the universe.
+  const mult = opts.ok ? 1 : { $min: [{ $pow: [2, "$failureCount"] }, MAX_BACKOFF_MULT] };
+
+  return [
+    {
+      $set: {
+        // Keep the existing id; mint one only on insert (a pipeline update has no
+        // $setOnInsert, so this is how "insert-only" is expressed).
+        id: { $ifNull: ["$id", newId] },
+        intervalSeconds: opts.intervalSeconds ?? { $ifNull: ["$intervalSeconds", 900] },
+        failureCount: opts.ok ? 0 : { $add: [{ $ifNull: ["$failureCount", 0] }, 1] },
+        lastCheckedAt: now,
+        ...(opts.ok ? { lastSuccessAt: now } : {}),
+      },
+    },
+    {
+      $set: {
+        nextCheckAt: { $add: [now, { $multiply: ["$intervalSeconds", 1000, mult] }] },
+      },
+    },
+  ];
+}
+
 export interface UpsertScheduleInput {
   eventId: string;
   source: string;
@@ -98,29 +142,29 @@ export function makeEventWatchScheduleRepo(model: Model<iEventWatchScheduleModel
       return [...fresh, ...docs].map(strip);
     },
 
-    /** Advance the schedule after an acquire. `ok=false` backs off exponentially. */
+    /**
+     * Advance the schedule after an acquire. `ok=false` backs off exponentially.
+     *
+     * ONE round-trip. This was a `findOne` followed by an `updateOne` — two trips
+     * per event, and the sweeper does this for every event it dispatches (50 a
+     * tick). It was also a read-then-write on `failureCount`: the value is read in
+     * the app and written back, so a concurrent reschedule for the same event
+     * (`watch` advances optimistically, `acquire` backs off on failure) can read
+     * the same count twice and lose an increment — a persistently failing source
+     * then never reaches its backoff cap.
+     *
+     * A pipeline update computes both server-side from the document's own current
+     * value, so the increment is atomic and the read disappears. See
+     * `rescheduleStages` for the arithmetic, which is where the risk actually is.
+     */
     async reschedule(
       eventId: string,
       source: string,
       opts: { intervalSeconds?: number; ok: boolean; now?: Date },
     ): Promise<void> {
       const now = opts.now ?? new Date();
-      const cur = await model.findOne({ eventId, source }).lean<iEventWatchSchedule>().exec();
-      const baseInterval = opts.intervalSeconds ?? cur?.intervalSeconds ?? 900;
-      const failureCount = opts.ok ? 0 : (cur?.failureCount ?? 0) + 1;
-      const mult = opts.ok ? 1 : Math.min(2 ** failureCount, MAX_BACKOFF_MULT);
-      const nextCheckAt = new Date(now.getTime() + baseInterval * mult * 1000);
-
-      const set: Record<string, unknown> = {
-        intervalSeconds: baseInterval,
-        failureCount,
-        nextCheckAt,
-        lastCheckedAt: now,
-      };
-      if (opts.ok) set.lastSuccessAt = now;
-
       await model
-        .updateOne({ eventId, source }, { $set: set, $setOnInsert: { id: uuidv4() } }, { upsert: true })
+        .updateOne({ eventId, source }, rescheduleStages(opts, now, uuidv4()) as never, { upsert: true })
         .exec();
     },
 

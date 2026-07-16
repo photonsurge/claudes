@@ -19,6 +19,7 @@ import { getDb, closeDb } from "@photonsurge/shared/utill/mongoose";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { getSource } from "@photonsurge/shared/sources";
 import { log } from "@photonsurge/shared/utill/logger";
+import { jobLabel } from "@photonsurge/shared/jobs";
 import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
 import { initSocket, closeSocket } from "./socket";
@@ -151,7 +152,12 @@ process.on("uncaughtException", (err) => {
     async (job: Job) => {
       const type = typeof job.data?.type === "string" ? job.data.type : "unknown";
       const event = typeof job.data?.event === "string" ? job.data.event : "unknown";
-      log(TAG, `job:start [${job.id}] ${type}.${event}`);
+      // Qualified with the source where there is one ("alerts.ingest:wmo"): alerts
+      // registers a repeatable PER SOURCE, so the log showed four identical
+      // `alerts.ingest` lines interleaved and you couldn't tell which feed was
+      // slow — or whether one job was looping. See jobLabel.
+      const label = jobLabel(job.data) ?? `${type}.${event}`;
+      log(TAG, `job:start [${job.id}] ${label}`);
       const handler = handlers[type];
       if (!handler) throw new Error(`No handler for type: ${type}`);
       const fn = handler[event];
@@ -163,11 +169,11 @@ process.on("uncaughtException", (err) => {
       try {
         // Run inside the job-log context so the handler's console output streams
         // to /admin/queue tagged with this job (see jobLog.ts).
-        const result = await runInJobLogContext({ jobId, label: `${type}.${event}` }, () => fn(job));
+        const result = await runInJobLogContext({ jobId, label }, () => fn(job));
         const ms = Date.now() - startedAt;
-        log(TAG, `job:done  [${job.id}] ${type}.${event} (${ms}ms)`);
+        log(TAG, `job:done  [${job.id}] ${label} (${ms}ms)`);
         const detail = result && typeof result === "object" ? { ...result, ms } : { result, ms };
-        WorkerBackLogger(TAG, "event", `job:${type}`, `${type}.${event} done in ${ms}ms`, detail, type, String(job.id ?? ""));
+        WorkerBackLogger(TAG, "event", `job:${type}`, `${label} done in ${ms}ms`, detail, type, String(job.id ?? ""));
         return result;
       } catch (ex) {
         const ms = Date.now() - startedAt;
@@ -275,6 +281,28 @@ process.on("uncaughtException", (err) => {
     } catch (err) {
       log(TAG, `failed to register alerts.ingest`, { source: source.id, err: summarizeForLog(err) });
     }
+  }
+
+  // ---- Repeatable alerts.reconcile job ----
+  // The stored-data sweeps (green retirement, rank resync, event lifecycle).
+  // ONCE, not per source: these are global, and living inside the per-source
+  // `alerts.ingest` meant every one ran three times over, concurrently, with the
+  // GDACS tick re-ranking MeteoAlarm's awareness levels. Idempotent and cheap in
+  // the steady state, so the cadence only bounds how long a stale record can
+  // linger, not how much work happens.
+  const ALERTS_RECONCILE_MS = Number(process.env.ALERTS_RECONCILE_MS || 5 * 60 * 1000);
+  try {
+    await myQueue.add(
+      "do",
+      { domain: "alerts", type: "alerts", event: "reconcile", data: {} },
+      {
+        repeat: { every: ALERTS_RECONCILE_MS, offset: staggerOffset("alerts-reconcile", ALERTS_RECONCILE_MS) },
+        jobId: "alerts-reconcile",
+      },
+    );
+    log(TAG, `registered repeatable alerts.reconcile`, { every: ALERTS_RECONCILE_MS });
+  } catch (err) {
+    log(TAG, `failed to register alerts.reconcile`, { err: summarizeForLog(err) });
   }
 
   // ---- Repeatable alerts.translate job ----

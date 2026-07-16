@@ -4,6 +4,28 @@
  * routed to `worker/src/jobs/<type>.ts#<event>`. Keep this an allowlist so the
  * admin can only enqueue known, safe jobs.
  */
+/**
+ * The human label for a queued job: "alerts.ingest:wmo".
+ *
+ * The qualifier matters because some jobs are registered ONE PER SOURCE — alerts
+ * has a repeatable each for WMO, MeteoAlarm and GDACS — so /admin/queue showed
+ * four identical `alerts.ingest` rows running at once with no way to tell which
+ * was which, or whether one job was stuck in a loop. (It wasn't: that fan-out is
+ * deliberate, so a slow WMO fetch can't block MeteoAlarm.)
+ *
+ * `source` only, not every data key: this is a queue row, not a debugger. The
+ * source is the one thing that makes two rows of the same job different.
+ */
+export function jobLabel(data?: {
+  type?: string;
+  event?: string;
+  data?: { source?: string } | null;
+}): string | null {
+  if (!data?.type || !data?.event) return null;
+  const source = data.data?.source;
+  return source ? `${data.type}.${data.event}:${source}` : `${data.type}.${data.event}`;
+}
+
 export interface TriggerableJob {
   id: string;
   label: string;
@@ -179,6 +201,16 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "alerts",
     type: "alerts",
     event: "ingest",
+    group: "Alerts & events",
+  },
+  {
+    id: "alerts-reconcile",
+    label: "Reconcile stored alerts & events",
+    description:
+      "Fix what's already in the database, regardless of what the feeds just said. Retires MeteoAlarm's green \"nothing expected\" advisories (57% of that feed — not warnings, and they were drawn as such), re-ranks stored alerts from their own awareness level rather than the CAP severity that contradicts it, closes watched events whose warning has lapsed, and drops acquisition schedules nothing can fetch for. Needed because an unchanged alert is never rewritten, so fixing a RULE only ever reaches NEW alerts — the live ones keep the old answer until they expire. Idempotent: re-running when everything is already correct writes nothing.",
+    domain: "alerts",
+    type: "alerts",
+    event: "reconcile",
     group: "Alerts & events",
   },
   {

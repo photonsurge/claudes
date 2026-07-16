@@ -2,6 +2,7 @@ import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { clearQueue, getQueue } from "@photonsurge/shared/bull/bull";
 import { PublicBackLogger } from "@photonsurge/shared/utill/BackLogger";
+import { jobLabel } from "@photonsurge/shared/jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,8 +24,7 @@ const CLEANABLE = new Set(["completed", "failed", "delayed", "paused", "wait", "
  * into a `type.event` label; legacy `getRepeatableJobs()` only gives name "do".
  */
 function serializeScheduler(s: any) {
-  const t = (s?.template?.data ?? {}) as { type?: string; event?: string };
-  const label = t.type && t.event ? `${t.type}.${t.event}` : s?.id || s?.name || "repeat";
+  const label = jobLabel(s?.template?.data) ?? s?.id ?? s?.name ?? "repeat";
   return {
     key: String(s?.key ?? s?.id ?? ""),
     id: s?.id ?? null,
@@ -66,8 +66,8 @@ async function getSchedules(q: any): Promise<any[]> {
       if (!s.key || !s.next) return;
       try {
         const nextJob = await q.getJob(`repeat:${s.key}:${s.next}`);
-        const d = nextJob?.data as { type?: string; event?: string } | undefined;
-        if (d?.type && d?.event) s.label = `${d.type}.${d.event}`;
+        const l = jobLabel(nextJob?.data as never);
+        if (l) s.label = l;
       } catch {
         /* leave the fallback label */
       }
@@ -78,10 +78,18 @@ async function getSchedules(q: any): Promise<any[]> {
 
 /** Flatten a BullMQ Job instance into a plain, JSON-safe row for the UI. */
 function serializeJob(job: any) {
-  const d = (job?.data ?? {}) as { domain?: string; type?: string; event?: string; data?: unknown };
+  const d = (job?.data ?? {}) as { domain?: string; type?: string; event?: string; data?: { source?: string } | null };
   return {
     id: String(job?.id ?? ""),
     name: job?.name ?? "",
+    // "alerts.ingest:wmo" — the row's display name. Alerts registers a repeatable
+    // PER SOURCE, so the Active list showed four identical `alerts.ingest` rows at
+    // once with nothing to tell them apart. See jobLabel.
+    //
+    // NOT `label`: TriggerableJob.label already means the operator-facing NAME
+    // ("Check weather run"), and these two ride the same admin page. A test caught
+    // them being confused within an hour of the field existing.
+    displayName: jobLabel(d) ?? null,
     domain: d.domain ?? null,
     type: d.type ?? null,
     event: d.event ?? null,

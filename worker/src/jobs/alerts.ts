@@ -64,35 +64,6 @@ export async function ingest(job: Job) {
     }
   }
 
-  // Retire the greens already stored. The parse drops them on the way in now, but
-  // MeteoAlarm doesn't reconcile (fan-out feed, transient gaps), so nothing else
-  // would ever take the existing ones off the globe. Idempotent — see the repo.
-  const greens = await db.alerts.deactivateMeteoalarmGreens();
-  if (greens.deactivated) log(TAG, `retired green meteoalarm alerts (nothing expected)`, greens);
-
-  // Re-rank stored MeteoAlarm alerts from their own awareness level. Ingest only
-  // ranks alerts it WRITES, and its fast path skips an unchanged active alert —
-  // so a change to the rank rule reaches new alerts and nothing else. Runs every
-  // tick because it's self-healing and idempotent: steady state scans a
-  // geometry-free projection and writes nothing. See resyncMeteoalarmRanks.
-  const reranked = await db.alerts.resyncMeteoalarmRanks();
-  if (reranked.changed) log(TAG, `re-ranked stored meteoalarm alerts`, reranked);
-
-  // Close events whose warning has lapsed and stop watching anything that's over.
-  // The expire/deactivate sweeps above flip `active` in bulk and nothing tells the
-  // event, so without this a dossier stays ACTIVE forever and its schedule polls a
-  // finished warning every five minutes. See closeEndedAlertEvents.
-  if (eventsUnifiedEnabled()) {
-    try {
-      await closeEndedAlertEvents(db);
-      // And drop schedules nothing can serve — 81% of the queue was polling an
-      // adapter that had never matched a single event. See retireUnservableSchedules.
-      await retireUnservableSchedules(db);
-    } catch (err) {
-      log(TAG, `closing lapsed events failed`, summarizeForLog(err));
-    }
-  }
-
   // Live push: tell browsers to refetch the overlay/list the instant ingest
   // finishes, instead of waiting out their 60s poll (mirrors TRACKS_UPDATED).
   const changed = results.reduce((n, r) => n + ("inserted" in r ? r.inserted + (r.expired ?? 0) : 0), 0);
@@ -117,6 +88,65 @@ export async function ingest(job: Job) {
 
   log(TAG, `done`, { jobId: job.id, sources: results.length });
   return { results };
+}
+
+/**
+ * Dispatched as type "alerts", event "reconcile". The stored-data sweeps: things
+ * that must be true of what's ALREADY in Mongo, regardless of what any feed just
+ * said.
+ *
+ * Its own job, and that is the point. These are GLOBAL sweeps and they were
+ * originally bolted onto `ingest`, which is registered ONCE PER SOURCE — so with
+ * WMO, MeteoAlarm and GDACS each polling on their own interval, every sweep ran
+ * three times over, concurrently, racing itself. The GDACS tick was re-ranking
+ * MeteoAlarm's awareness levels. Nothing corrupted (they're all idempotent) but
+ * it was three times the scans for one tick's worth of work, on a job that
+ * already runs for minutes.
+ *
+ * Every step here is idempotent and self-healing by design: they exist because a
+ * derived record has no path back when its source changes — `upsert` skips an
+ * unchanged, still-active alert and a CAP message's `sent` never moves, so a fix
+ * to a RULE reaches new alerts and silently leaves the live ones alone. That bug
+ * appeared four separate times in this pipeline (severity ranks, green
+ * non-warnings, area geometry, event lifecycle), which is why this is now a
+ * standing sweep rather than four one-off migrations.
+ *
+ * Steady state writes nothing: each step scans a geometry-free projection, finds
+ * everything already correct, and returns zero.
+ */
+export async function reconcile(_job: Job) {
+  const db = await getAppDb();
+  const result: Record<string, unknown> = {};
+
+  // Retire the greens already stored. The parse drops them on the way in now, but
+  // MeteoAlarm doesn't reconcile (fan-out feed, transient gaps), so nothing else
+  // would ever take the existing ones off the globe.
+  const greens = await db.alerts.deactivateMeteoalarmGreens();
+  result.greensRetired = greens.deactivated;
+  if (greens.deactivated) log(TAG, `retired green meteoalarm alerts (nothing expected)`, greens);
+
+  // Re-rank stored MeteoAlarm alerts from their own awareness level, not the CAP
+  // severity that contradicts it.
+  const reranked = await db.alerts.resyncMeteoalarmRanks();
+  result.reranked = reranked.changed;
+  if (reranked.changed) log(TAG, `re-ranked stored meteoalarm alerts`, reranked);
+
+  // Close events whose warning has lapsed, and stop watching anything that's over
+  // or that no adapter can fetch for.
+  if (eventsUnifiedEnabled()) {
+    try {
+      const closed = await closeEndedAlertEvents(db);
+      result.eventsClosed = closed.closed;
+      result.schedulesRetired = closed.schedulesRetired;
+      result.unservableRetired = await retireUnservableSchedules(db);
+    } catch (err) {
+      log(TAG, `closing lapsed events failed`, summarizeForLog(err));
+      result.eventsError = String(err);
+    }
+  }
+
+  log(TAG, `reconcile done`, result);
+  return result;
 }
 
 /**

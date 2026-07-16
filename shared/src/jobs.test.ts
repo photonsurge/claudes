@@ -1,4 +1,4 @@
-import { TRIGGERABLE_JOBS, getTriggerableJob } from "./jobs";
+import { TRIGGERABLE_JOBS, getTriggerableJob, jobLabel } from "./jobs";
 
 describe("TRIGGERABLE_JOBS — allowlist integrity", () => {
   it("every job id is unique (the id is the enqueue key)", () => {
@@ -102,5 +102,36 @@ describe("cities-enrich-all", () => {
       stoppable: true,
       data: { minPopulation: 100_000 },
     });
+  });
+});
+
+/**
+ * Alerts registers a repeatable PER SOURCE, so /admin/queue showed four identical
+ * `alerts.ingest` rows running at once — impossible to tell which feed was slow,
+ * or whether one job was stuck in a loop. (It wasn't: the fan-out is deliberate,
+ * so a slow WMO fetch can't block MeteoAlarm.) The source was in the job data all
+ * along, just not in the label.
+ */
+describe("jobLabel", () => {
+  it("qualifies a per-source job so two rows of it are distinguishable", () => {
+    expect(jobLabel({ type: "alerts", event: "ingest", data: { source: "wmo" } })).toBe("alerts.ingest:wmo");
+    expect(jobLabel({ type: "alerts", event: "ingest", data: { source: "meteoalarm" } })).toBe(
+      "alerts.ingest:meteoalarm",
+    );
+  });
+
+  it("leaves a job with no source alone", () => {
+    expect(jobLabel({ type: "alerts", event: "reconcile", data: {} })).toBe("alerts.reconcile");
+    expect(jobLabel({ type: "weather", event: "refreshMrms" })).toBe("weather.refreshMrms");
+    expect(jobLabel({ type: "events", event: "watch", data: null })).toBe("events.watch");
+  });
+
+  it("returns null when it can't name the job, so callers keep their own fallback", () => {
+    // BullMQ stores hashed repeatables with name "do" and no template — the caller
+    // falls back to the scheduler id, which beats "unknown.unknown".
+    expect(jobLabel(undefined)).toBeNull();
+    expect(jobLabel({})).toBeNull();
+    expect(jobLabel({ type: "alerts" })).toBeNull();
+    expect(jobLabel({ event: "ingest" })).toBeNull();
   });
 });

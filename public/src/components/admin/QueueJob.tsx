@@ -14,6 +14,10 @@ export interface SerializedJob {
   id: string;
   name: string;
   domain: string | null;
+  /** Server-built name, source-qualified where relevant ("alerts.ingest:wmo").
+   *  Distinct from TriggerableJob.label, which is the operator-facing "Check
+   *  weather run" — same admin page, different meaning, so different key. */
+  displayName?: string | null;
   type: string | null;
   event: string | null;
   payload: unknown;
@@ -107,7 +111,9 @@ export default function QueueJob({
   onAction: (action: JobAction, id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const label = job.type && job.event ? `${job.type}.${job.event}` : job.name || "job";
+  // Prefer the server's qualified label ("alerts.ingest:wmo") — alerts runs one
+  // repeatable per source, so an unqualified name shows four identical rows.
+  const label = job.displayName || (job.type && job.event ? `${job.type}.${job.event}` : job.name || "job");
   const hasBody = job.payload != null && Object.keys(job.payload as object).length > 0;
 
   return (
