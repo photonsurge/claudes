@@ -308,7 +308,33 @@ jest.mock("./meteogate", () => {
   };
 });
 
+const mkSyncDb = (over: { alertAreaGeom?: object; alerts?: object } = {}) =>
+  ({
+    alerts: {
+      emmaIdsMissingGeometry: async () => [],
+      dropNullGeometries: async () => {},
+      backfillAreaGeometry: async () => 0,
+      geometryCoverage: async () => ({
+        alerts: 0, alertsNoShape: 0, alertsPartial: 0, areas: 0, areasNoGeom: 0,
+      }),
+      ...over.alerts,
+    },
+    alertAreaGeom: {
+      crawlCursors: async () => new Map(),
+      startCrawl: async () => {},
+      advanceCrawl: async () => {},
+      seenAlertIds: async () => new Set<string>(),
+      markSeen: async () => {},
+      upsertAreas: async () => ({ upserted: 0 }),
+      uncheckedAreas: async () => [],
+      markChecked: async () => {},
+      ...over.alertAreaGeom,
+    },
+  }) as never;
+
 describe("syncAreaGeometry — resolving is free, so a spent quota must not stop it", () => {
+  beforeEach(() => mockQuotaLow.mockReturnValue(false));
+
   it("resolves the features the pages already bought, after the quota runs out", async () => {
     const meteogate = jest.requireMock("./meteogate");
     const { syncAreaGeometry } = jest.requireActual("./geom-sync") as typeof import("./geom-sync");
@@ -326,32 +352,54 @@ describe("syncAreaGeometry — resolving is free, so a spent quota must not stop
     });
 
     const upsertAreas = jest.fn(async () => ({ upserted: 1 }));
-    const db = {
-      alerts: {
-        emmaIdsMissingGeometry: async () => [],
-        dropNullGeometries: async () => {},
-        backfillAreaGeometry: async () => 0,
-        geometryCoverage: async () => ({
-          alerts: 0, alertsNoShape: 0, alertsPartial: 0, areas: 0, areasNoGeom: 0,
-        }),
-      },
-      alertAreaGeom: {
-        crawlCursors: async () => new Map(),
-        startCrawl: async () => {},
-        advanceCrawl: async () => {},
-        seenAlertIds: async () => new Set<string>(),
-        markSeen: async () => {},
-        upsertAreas,
-        uncheckedAreas: async () => [],
-        markChecked: async () => {},
-      },
-    } as never;
-
-    const res = await syncAreaGeometry(db, { now: new Date("2026-07-16T12:00:00Z") });
+    const res = await syncAreaGeometry(mkSyncDb({ alertAreaGeom: { upsertAreas } }), {
+      now: new Date("2026-07-16T12:00:00Z"),
+    });
 
     // The whole point: the page walk stopped on the quota, the resolve did not.
     expect(res.resolved).toBe(1);
     expect(upsertAreas).toHaveBeenCalled();
     expect(res.cached).toBe(1);
+  });
+});
+
+/**
+ * quotaStopped and pageBudgetSpent must not blur. Live, a run that spent its own
+ * 400-page budget with 100 gateway requests still in hand logged "stopped on the
+ * MeteoGate quota — resumes next run" — sending the reader to chase a quota
+ * problem that wasn't there. One means ask MeteoGate for more; the other means
+ * raise METEOGATE_PAGE_BUDGET.
+ */
+describe("syncAreaGeometry — why it stopped", () => {
+  const meteogate = jest.requireMock("./meteogate");
+  const { syncAreaGeometry } = jest.requireActual("./geom-sync") as typeof import("./geom-sync");
+  const OLD = { ...process.env };
+  beforeEach(() => {
+    mockQuotaLow.mockReturnValue(false);
+    meteogate.fetchCountryPage.mockResolvedValue({ features: [], page: 1, totalPages: 50 });
+    meteogate.fetchPages.mockResolvedValue({ features: [], read: [], totalPages: 50 });
+  });
+  afterEach(() => {
+    process.env = { ...OLD };
+  });
+
+  it("blames the page budget, not the quota, when the quota is fine", async () => {
+    process.env.METEOGATE_PAGE_BUDGET = "3"; // spent within the first country
+    mockQuotaLow.mockReturnValue(false); // ...and the gateway has plenty left
+
+    const res = await syncAreaGeometry(mkSyncDb(), { now: new Date("2026-07-16T12:00:00Z") });
+
+    expect(res.pageBudgetSpent).toBe(true);
+    expect(res.quotaStopped).toBe(false);
+  });
+
+  it("blames the quota when the gateway is genuinely spent", async () => {
+    process.env.METEOGATE_PAGE_BUDGET = "400"; // budget to spare
+    mockQuotaLow.mockReturnValue(true); // but the API is out
+
+    const res = await syncAreaGeometry(mkSyncDb(), { now: new Date("2026-07-16T12:00:00Z") });
+
+    expect(res.quotaStopped).toBe(true);
+    expect(res.pageBudgetSpent).toBe(false);
   });
 });

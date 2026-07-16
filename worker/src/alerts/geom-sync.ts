@@ -66,8 +66,18 @@ export interface GeomSyncResult {
   reconciled: number;
   /** Cached boundaries Mongo would have refused, fixed in place (no re-fetch). */
   repaired: number;
-  /** True when the run ended early on the quota rather than finishing. */
+  /**
+   * True when the run ended early on the GATEWAY QUOTA rather than finishing.
+   *
+   * Distinct from `pageBudgetSpent` on purpose. Folding the two together made the
+   * log claim "stopped on the MeteoGate quota — resumes next run" on a run that
+   * stopped on our own page budget with 100 requests still in hand, which would
+   * send the next person chasing a quota problem that isn't there. One means ask
+   * MeteoGate for more; the other means raise METEOGATE_PAGE_BUDGET.
+   */
   quotaStopped: boolean;
+  /** True when the run used its whole page allowance. Self-imposed, not the API. */
+  pageBudgetSpent: boolean;
   /** Gateway requests left in the window, as the server last reported them. */
   quotaRemaining: number | null;
   /**
@@ -251,6 +261,7 @@ export async function syncAreaGeometry(
     reconciled: 0,
     repaired: 0,
     quotaStopped: false,
+    pageBudgetSpent: false,
     quotaRemaining: null,
     coverage: null,
     failures: [],
@@ -289,7 +300,19 @@ export async function syncAreaGeometry(
   };
 
   let pagesLeft = PAGE_BUDGET();
-  const outOfPages = () => pagesLeft <= 0 || quotaLow();
+  // Record WHICH limit ended the page reads, because they mean opposite things:
+  // quotaLow → ask MeteoGate for more; pagesLeft → raise METEOGATE_PAGE_BUDGET.
+  const markStop = () => {
+    if (quotaLow()) res.quotaStopped = true;
+    else res.pageBudgetSpent = true;
+  };
+  const outOfPages = () => {
+    if (quotaLow() || pagesLeft <= 0) {
+      markStop();
+      return true;
+    }
+    return false;
+  };
 
   // ---- Pass 1: freshness. Page 1 (which also reports the page count) and the
   // last couple, where new alerts land. Every country, every run — this is the
@@ -297,10 +320,7 @@ export async function syncAreaGeometry(
   const cursors = await db.alertAreaGeom.crawlCursors();
   const totals = new Map<string, number>();
   for (const cc of meteogateCountries()) {
-    if (outOfPages()) {
-      res.quotaStopped = true;
-      break;
-    }
+    if (outOfPages()) break; // reason already recorded by markStop
     try {
       const p1 = await fetchCountryPage(cc, 1, now);
       pagesLeft--;
@@ -349,10 +369,7 @@ export async function syncAreaGeometry(
 
   const reached = new Map<string, number>();
   for (const { cc, page } of interleavePages(queues)) {
-    if (outOfPages()) {
-      res.quotaStopped = true;
-      break;
-    }
+    if (outOfPages()) break; // reason already recorded by markStop
     try {
       const p = await fetchCountryPage(cc, page, plans.get(cc)!.window);
       pagesLeft--;
@@ -469,6 +486,15 @@ export async function syncAreaGeometry(
       remaining: res.quotaRemaining,
       resetSec: quota().resetSec,
       resolved: res.resolved,
+    });
+  } else if (res.pageBudgetSpent) {
+    // Our own cap, not the API's. The crawl just needs more runs — or a higher
+    // METEOGATE_PAGE_BUDGET if there's quota to spare (this run stopped here with
+    // 100 gateway requests still in hand).
+    log(TAG, `page budget spent — crawl continues next run`, {
+      pageBudget: PAGE_BUDGET(),
+      crawlPages: res.crawlPages,
+      quotaRemaining: res.quotaRemaining,
     });
   } else if (todo.length > budget) {
     log(TAG, `budget reached — ${todo.length - budget} alerts deferred to the next run`, {
