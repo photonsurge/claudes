@@ -555,6 +555,26 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
     },
 
     /**
+     * Source-agnostic expiry sweep — the global twin of {@link expire}.
+     *
+     * `expire()` only ever fires for the source currently being ingested, so any
+     * source that is later disabled, renamed, or whose fetch keeps failing leaves
+     * its expired alerts `active: true` forever — and every consumer reads `active`
+     * alone, so those stale alerts stay on the globe and drag the coverage metric
+     * down. This drops the `source` predicate so the reconcile cron can retire ALL
+     * expired alerts regardless of which feed (if any) still lists them.
+     */
+    async deactivateExpired(nowIso: string): Promise<number> {
+      const res = await model
+        .updateMany(
+          { active: true, expiresAt: { $ne: null, $lt: nowIso } },
+          { $set: { active: false } },
+        )
+        .exec();
+      return res.modifiedCount ?? 0;
+    },
+
+    /**
      * Reconcile: deactivate this source's active alerts whose identifier is NOT
      * in `seenIdentifiers` (the latest full-snapshot batch) — i.e. withdrawn from
      * the feed before expiry. No-op on an empty batch (a dead fetch must not wipe

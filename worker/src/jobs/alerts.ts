@@ -118,6 +118,15 @@ export async function reconcile(_job: Job) {
   const db = await getAppDb();
   const result: Record<string, unknown> = {};
 
+  // Retire expired alerts regardless of source. Per-source `expire()` only fires
+  // while a source is actively polled, so a disabled/renamed/failing source leaves
+  // its expired alerts active forever — on the globe and in the coverage tally,
+  // because every reader trusts `active` alone. This global sweep is the only thing
+  // that reaches those orphans.
+  const expired = await db.alerts.deactivateExpired(new Date().toISOString());
+  result.expiredRetired = expired;
+  if (expired) log(TAG, `retired expired alerts (source-agnostic sweep)`, { expired });
+
   // Retire the greens already stored. The parse drops them on the way in now, but
   // MeteoAlarm doesn't reconcile (fan-out feed, transient gaps), so nothing else
   // would ever take the existing ones off the globe.

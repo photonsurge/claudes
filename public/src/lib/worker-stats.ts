@@ -47,6 +47,24 @@ export interface WorkerBakePoolStats {
   queued?: number;
 }
 
+/**
+ * /api/public-stats — the PUBLIC app's own memory readout (that route runs in
+ * this very process). A small steady heap under a fat nativeGap = the glibc/
+ * sharp plateau, not a leak; a steadily climbing heapUsedMB is the real thing.
+ */
+export interface PublicStats {
+  status: "ok" | "down";
+  rssMB?: number;
+  heapUsedMB?: number;
+  heapTotalMB?: number;
+  heapLimitMB?: number;
+  externalMB?: number;
+  arrayBuffersMB?: number;
+  /** rss minus everything V8 accounts for ≈ native (sharp/glibc arenas). */
+  nativeGapMB?: number;
+  uptimeSec?: number;
+}
+
 export interface WorkerStats {
   status: "ok" | "down" | "error";
   error?: string;

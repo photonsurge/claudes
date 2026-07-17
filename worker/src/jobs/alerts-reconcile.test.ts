@@ -10,6 +10,7 @@
  *
  * These tests pin the split: reconcile does the sweeps, ingest does not.
  */
+const mockDeactivateExpired = jest.fn();
 const mockDeactivateGreens = jest.fn();
 const mockResync = jest.fn();
 const mockClose = jest.fn();
@@ -18,6 +19,7 @@ const mockRetire = jest.fn();
 jest.mock("@photonsurge/shared/db/index", () => ({
   getAppDb: async () => ({
     alerts: {
+      deactivateExpired: (...a: unknown[]) => mockDeactivateExpired(...a),
       deactivateMeteoalarmGreens: () => mockDeactivateGreens(),
       resyncMeteoalarmRanks: () => mockResync(),
     },
@@ -36,6 +38,7 @@ import { reconcile } from "./alerts";
 describe("alerts.reconcile", () => {
   const prevEnv = process.env.EVENTS_UNIFIED_ENABLED;
   beforeEach(() => {
+    mockDeactivateExpired.mockReset().mockResolvedValue(656);
     mockDeactivateGreens.mockReset().mockResolvedValue({ scanned: 10, deactivated: 3 });
     mockResync.mockReset().mockResolvedValue({ scanned: 10, changed: 2 });
     mockClose.mockReset().mockResolvedValue({ candidates: 5, closed: 1, schedulesRetired: 4 });
@@ -50,11 +53,13 @@ describe("alerts.reconcile", () => {
   it("runs every stored-data sweep exactly once", async () => {
     const r = await reconcile({} as never);
 
+    expect(mockDeactivateExpired).toHaveBeenCalledTimes(1);
     expect(mockDeactivateGreens).toHaveBeenCalledTimes(1);
     expect(mockResync).toHaveBeenCalledTimes(1);
     expect(mockClose).toHaveBeenCalledTimes(1);
     expect(mockRetire).toHaveBeenCalledTimes(1);
     expect(r).toMatchObject({
+      expiredRetired: 656,
       greensRetired: 3,
       reranked: 2,
       eventsClosed: 1,
@@ -79,7 +84,7 @@ describe("alerts.reconcile", () => {
 
     const r = await reconcile({} as never);
 
-    expect(r).toMatchObject({ greensRetired: 3, reranked: 2 });
+    expect(r).toMatchObject({ expiredRetired: 656, greensRetired: 3, reranked: 2 });
     expect(r.eventsError).toContain("mongo went away");
   });
 });

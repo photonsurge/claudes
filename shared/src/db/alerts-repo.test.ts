@@ -546,3 +546,24 @@ describe("alerts-repo — name-matched (China/GADM) backfill", () => {
     expect(bulkWrite).not.toHaveBeenCalled();
   });
 });
+
+describe("alerts-repo deactivateExpired — global expiry sweep", () => {
+  it("deactivates expired active alerts with NO source predicate (reaches orphaned sources)", async () => {
+    let filter: any;
+    const updateMany = jest.fn((f: any, _u: any) => {
+      filter = f;
+      return { exec: async () => ({ modifiedCount: 656 }) };
+    });
+    const repo = makeAlertsRepo({ updateMany } as any);
+
+    const n = await repo.deactivateExpired("2026-07-17T12:00:00.000Z");
+
+    expect(n).toBe(656);
+    // The whole point vs. expire(): no `source` key, so a disabled/renamed source's
+    // expired alerts are still retired.
+    expect(filter.source).toBeUndefined();
+    expect(filter.active).toBe(true);
+    expect(filter.expiresAt).toEqual({ $ne: null, $lt: "2026-07-17T12:00:00.000Z" });
+    expect(updateMany.mock.calls[0][1]).toEqual({ $set: { active: false } });
+  });
+});

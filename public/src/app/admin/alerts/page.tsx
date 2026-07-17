@@ -63,6 +63,7 @@ export default function AlertsPage() {
   const [sourceFilter, setSourceFilter] = useState("all");
   const [hazardFilter, setHazardFilter] = useState("all");
   const [positionFilter, setPositionFilter] = useState("all");
+  const [shapelessOnly, setShapelessOnly] = useState(false);
   const [query, setQuery] = useState("");
 
   // Full (non-lean) docs for whichever group's Debug modal is open — the list
@@ -163,6 +164,9 @@ export default function AlertsPage() {
     if (hazardFilter !== "all" && alertHazard(a) !== hazardFilter) return false;
     if (positionFilter === "has" && !a.repPoint) return false;
     if (positionFilter === "none" && a.repPoint) return false;
+    // Shapeless-only: keep just the alerts that ship no drawable geometry (no
+    // server-computed repPoint) — the ones failing to draw on the globe.
+    if (shapelessOnly && a.repPoint) return false;
     const q = query.trim().toLowerCase();
     if (q) {
       const info = primaryInfo(a);
@@ -288,6 +292,10 @@ export default function AlertsPage() {
           <FormControlLabel
             control={<Checkbox size="small" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />}
             label={<Typography variant="body2">Active only</Typography>}
+          />
+          <FormControlLabel
+            control={<Checkbox size="small" checked={shapelessOnly} onChange={(e) => setShapelessOnly(e.target.checked)} />}
+            label={<Typography variant="body2">Shapeless only ({noPos})</Typography>}
           />
           <TextField
             select

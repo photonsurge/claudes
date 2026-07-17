@@ -24,7 +24,7 @@ import MemoryGauge from "../../../components/admin/MemoryGauge";
 import BakePoolStrip from "../../../components/admin/BakePoolStrip";
 import LanePill from "../../../components/admin/LanePill";
 import EventUsageTable from "../../../components/admin/EventUsageTable";
-import type { WorkerStats } from "../../../lib/worker-stats";
+import type { WorkerStats, PublicStats } from "../../../lib/worker-stats";
 import { accent, font, ink, status } from "../../../theme/tokens";
 
 const STATES = ["active", "waiting", "prioritized", "delayed", "failed", "completed", "paused"] as const;
@@ -110,6 +110,10 @@ export default function QueuePage() {
   // fetch (that's a proxy to the worker; /api/admin/queue is Redis-only) but folded
   // into the same poll so it's one page, not a spun-off dashboard.
   const [stats, setStats] = useState<WorkerStats | null>(null);
+  // This app's own memory (from /api/public-stats) + a client-tracked rss
+  // high-water so its gauge has a peak tick like the worker's.
+  const [pubStats, setPubStats] = useState<PublicStats | null>(null);
+  const pubPeak = useRef(0);
   const [live, setLive] = useState(true);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.parse("2026-01-01T00:00:00Z"));
@@ -131,6 +135,14 @@ export default function QueuePage() {
     fetch("/api/admin/worker-stats", { cache: "no-store" })
       .then((r) => r.json())
       .then((s: WorkerStats) => setStats(s))
+      .catch(() => {});
+    // This app's own memory — session-guarded; card simply hides on 401.
+    fetch("/api/public-stats", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s: PublicStats | null) => {
+        if (s?.rssMB != null && s.rssMB > pubPeak.current) pubPeak.current = s.rssMB;
+        setPubStats(s);
+      })
       .catch(() => {});
     setNow(Date.now());
   }, []);
@@ -280,6 +292,53 @@ export default function QueuePage() {
             <BakePoolStrip pool={stats.bakePool} />
           </Paper>
         ) : null}
+
+        {/* This app's own memory — the same two gauges for the PUBLIC process.
+            A fat native readout over a small steady heap is the glibc/sharp
+            plateau (contained by mem_limit), not a leak; watch heap instead. */}
+        {pubStats?.rssMB != null && (
+          <Paper sx={{ mt: 1.75, p: 2 }}>
+            <Stack direction="row" sx={{ alignItems: "baseline", mb: 1.5 }}>
+              <Typography variant="overline" color="text.secondary">
+                Public memory (this app)
+              </Typography>
+              {pubStats.uptimeSec != null && (
+                <Typography variant="caption" color="text.disabled" sx={{ ml: 1.5, fontFamily: font.mono }}>
+                  up {fmtUptime(pubStats.uptimeSec)}
+                </Typography>
+              )}
+              {pubStats.nativeGapMB != null && (
+                <Typography
+                  variant="caption"
+                  color="text.disabled"
+                  sx={{ ml: "auto", fontFamily: font.mono }}
+                  title="rss minus everything V8 accounts for — sharp/glibc native memory (the burst plateau)"
+                >
+                  native {pubStats.nativeGapMB}MB
+                </Typography>
+              )}
+            </Stack>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={4}>
+              <Box sx={{ flex: 1 }}>
+                <MemoryGauge
+                  label="RSS (process)"
+                  value={pubStats.rssMB}
+                  max={Math.max(pubPeak.current * 1.15, pubStats.rssMB * 1.15, 512)}
+                  peak={pubPeak.current}
+                  hint="OS footprint — what an OOM-kill measures"
+                />
+              </Box>
+              <Box sx={{ flex: 1 }}>
+                <MemoryGauge
+                  label="JS heap"
+                  value={pubStats.heapUsedMB ?? 0}
+                  max={pubStats.heapLimitMB || 1}
+                  hint={pubStats.heapLimitMB ? `V8 ceiling ${(pubStats.heapLimitMB / 1024).toFixed(1)}GB` : "ceiling unknown"}
+                />
+              </Box>
+            </Stack>
+          </Paper>
+        )}
 
         {/* What the queued work is MADE of — the view that makes a backlog
             actionable, since the job list below is newest-first and truncated. */}
