@@ -62,6 +62,20 @@ export interface iAlertBlob extends iGeneralModel {
   /** Alert ids that went into this shape — panels still list them individually. */
   memberIds: string[];
   /**
+   * The dissolve bucket this shape came from ("heat|3|ES") plus a fingerprint of
+   * the exact member alerts (sorted `id@sent`) that produced it.
+   *
+   * These two exist so the 15-minute rebuild can SKIP work: the active alert set
+   * barely changes between ticks, and re-clipping ~200 buckets of unchanged
+   * geometry was ~2 minutes of solid CPU per run on a box that couldn't spare it.
+   * A bucket whose fingerprint still matches gets its shapes carried into the new
+   * generation with a builtAt bump; only changed buckets are re-dissolved.
+   * Optional because pre-fingerprint generations lack them — those never match,
+   * which safely forces one full rebuild after deploy.
+   */
+  bucketKey?: string;
+  fingerprint?: string;
+  /**
    * Every city inside `geometry`, biggest first — resolved by the worker at
    * rebuild time so nothing downstream repeats the work.
    *
@@ -117,6 +131,8 @@ const AlertBlobSchema = new mongoose.Schema<iAlertBlobModel>(
     geometry: { type: mongoose.Schema.Types.Mixed, required: true },
     bbox: { type: [Number], required: true, default: undefined },
     memberIds: { type: [String], default: [] },
+    bucketKey: { type: String, required: false },
+    fingerprint: { type: String, required: false },
     cities: { type: [BlobCitySchema], default: [] },
     builtAt: { type: Date, required: true, default: () => new Date() },
     live: { type: Boolean, required: true, default: false },

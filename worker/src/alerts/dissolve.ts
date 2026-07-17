@@ -43,6 +43,13 @@ export interface AlertBlobInput {
   /** Rings before and after, so the saving is visible in the job log. */
   verticesBefore: number;
   verticesAfter: number;
+  /**
+   * Stamped by the REBUILD, not here: which bucket produced this shape and the
+   * fingerprint of the member set it saw — what lets the next run skip the
+   * bucket when nothing in it changed.
+   */
+  bucketKey?: string;
+  fingerprint?: string;
 }
 
 export interface DissolveStats {

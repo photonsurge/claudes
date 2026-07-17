@@ -433,10 +433,11 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     id: "alert-blobs-rebuild",
     label: "Merge neighbouring alert areas",
     description:
-      "Join up touching warning areas that share a hazard, a severity AND a country into single shapes, so the globe shows a few weather blobs instead of one square per county (MeteoAlarm issues one alert per county). A shape never crosses a national border — warnings are issued per country, and without that seam the merge chained clean across the continent. Also strips the hairline gaps left where two counties' borders don't quite meet, which the globe would otherwise draw as streaks. Rebuilds the whole set; the alerts themselves are untouched and panels still list them individually. Safe to re-run, and safe while the globe is live: the new set is only swapped in once it's complete.",
+      "Join up touching warning areas that share a hazard, a severity AND a country into single shapes, so the globe shows a few weather blobs instead of one square per county (MeteoAlarm issues one alert per county). A shape never crosses a national border — warnings are issued per country, and without that seam the merge chained clean across the continent. Also strips the hairline gaps left where two counties' borders don't quite meet, which the globe would otherwise draw as streaks. This button re-dissolves EVERYTHING from scratch (the scheduled job only re-merges buckets whose alerts actually changed) — use it after a code/config change to the dissolve, or when a shape looks wrong. The alerts themselves are untouched and panels still list them individually. Safe to re-run, and safe while the globe is live: the new set is only swapped in once it's complete.",
     domain: "alertBlobs",
     type: "alertBlobs",
     event: "refresh",
+    data: { force: true },
     group: "Alerts & events",
   },
   {

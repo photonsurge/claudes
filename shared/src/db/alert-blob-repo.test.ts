@@ -301,3 +301,62 @@ describe("summariesForBbox", () => {
     expect(out).toMatchObject({ alertCount: 0, cityCount: 0, cities: [] });
   });
 });
+
+/**
+ * The two hooks the incremental rebuild stands on: `liveIndex` answers "what can
+ * this run skip" without touching a polygon, and `carryForward` adopts a clean
+ * bucket into the new generation with nothing but a builtAt bump — which is what
+ * saves the ~2 minutes of clipping CPU when the alert set hasn't changed.
+ */
+describe("incremental rebuild support", () => {
+  it("indexes the live generation as bucket → fingerprint, without geometry", async () => {
+    const { repo, calls } = mockModel([
+      { bucketKey: "heat|3|ES", fingerprint: "f-es" },
+      { bucketKey: "heat|3|ES", fingerprint: "f-es" }, // several shapes, one bucket
+      { bucketKey: "wind|2|FR", fingerprint: "f-fr" },
+      { fingerprint: "orphan" }, // pre-fingerprint generation — not indexable
+    ]);
+
+    const idx = await repo.liveIndex();
+
+    expect(idx.get("heat|3|ES")).toBe("f-es");
+    expect(idx.get("wind|2|FR")).toBe("f-fr");
+    expect(idx.size).toBe(2);
+    // Only the on-air generation, and only the two small fields — reading the
+    // geometry to answer "can I skip" would defeat the point.
+    expect(calls[0].filter).toEqual({ live: true });
+    expect(calls[0].projection).toMatchObject({ bucketKey: 1, fingerprint: 1 });
+  });
+
+  it("maps a bucket whose shapes disagree to undefined, so it can never match", async () => {
+    // Two generations tangled (should not happen; has to be safe when it does):
+    // an undefined fingerprint fails every comparison and the bucket re-dissolves.
+    const { repo } = mockModel([
+      { bucketKey: "heat|3|ES", fingerprint: "old" },
+      { bucketKey: "heat|3|ES", fingerprint: "new" },
+    ]);
+
+    const idx = await repo.liveIndex();
+
+    expect(idx.has("heat|3|ES")).toBe(true);
+    expect(idx.get("heat|3|ES")).toBeUndefined();
+  });
+
+  it("carries a clean bucket forward with a builtAt bump on its LIVE shapes only", async () => {
+    const { repo, writes } = mockModel();
+    const builtAt = new Date("2026-07-17T22:15:00Z");
+
+    const n = await repo.carryForward("heat|3|ES", builtAt);
+
+    expect(n).toBe(3); // the mock's modifiedCount — carried shapes are reported up
+    expect(writes).toEqual([
+      {
+        op: "updateMany",
+        // `live: true` matters: half-written dark shapes from a dead rebuild
+        // must not be adopted into a generation that's about to go on air.
+        filter: { live: true, bucketKey: "heat|3|ES" },
+        update: { $set: { builtAt } },
+      },
+    ]);
+  });
+});

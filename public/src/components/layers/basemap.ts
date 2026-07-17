@@ -8,6 +8,7 @@
  */
 import { BitmapLayer, GeoJsonLayer, SolidPolygonLayer } from "@deck.gl/layers";
 import { TileLayer } from "@deck.gl/geo-layers";
+import { COORDINATE_SYSTEM } from "@deck.gl/core";
 import { DEFAULT_BASEMAP_COLORS, type ControlState } from "@photonsurge/shared/control";
 import { TILE_TEMPLATES, NIGHT_TILE_MAX_ZOOM } from "@photonsurge/shared/basemaps";
 import { DEPTH_OCCLUDE, DEPTH_TEST, DEPTH_PAINT } from "./depth";
@@ -90,6 +91,13 @@ function tileBasemapLayer(id: string, template: string, maxZoom = 19) {
         data: undefined,
         image: props.data,
         bounds: [west, south, east, north],
+        // XYZ tiles are Web-Mercator-encoded: their pixels are linear in Mercator
+        // Y, NOT in latitude. Draping them across a lng/lat quad (the BitmapLayer
+        // default) stretches each tile nonuniformly, so on the _GlobeView the tiles
+        // warp and slide off the equirect base image + coastlines (visible seams).
+        // CARTESIAN tells deck.gl the image is Mercator-encoded and to reproject it
+        // into the globe's lnglat space (bitmap-layer's "Mercator in LNGLAT" path).
+        _imageCoordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
         parameters: DEPTH_OCCLUDE,
       });
     },

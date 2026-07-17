@@ -11,6 +11,9 @@ export interface AlertBlobInput {
   geometry: AlertGeometry;
   bbox: [number, number, number, number];
   memberIds: string[];
+  /** Dissolve bucket + member fingerprint — see the model; lets rebuilds skip clean buckets. */
+  bucketKey?: string;
+  fingerprint?: string;
   /** Cities inside the shape, resolved once at rebuild — biggest first. */
   cities?: iBlobCity[];
 }
@@ -96,6 +99,43 @@ export function makeAlertBlobRepo(model: Model<iAlertBlobModel>) {
       // builtAt, and `$lte` would delete it.
       const del = await model.deleteMany({ builtAt: { $lt: builtAt } });
       return { live: up.modifiedCount ?? 0, removed: del.deletedCount ?? 0 };
+    },
+
+    /**
+     * What's on air right now, as bucket → fingerprint — the rebuild's "what can
+     * I skip" question, answered without touching a single polygon.
+     *
+     * A bucket's shapes all share one fingerprint by construction; if the data
+     * ever disagrees with that (two generations tangled), the bucket maps to
+     * undefined so it can never match and gets honestly re-dissolved.
+     */
+    async liveIndex(): Promise<Map<string, string | undefined>> {
+      const docs = (await model
+        .find({ live: true }, { _id: 0, bucketKey: 1, fingerprint: 1 })
+        .lean()
+        .exec()) as unknown as Array<{ bucketKey?: string; fingerprint?: string }>;
+      const out = new Map<string, string | undefined>();
+      for (const d of docs) {
+        if (!d.bucketKey) continue; // pre-fingerprint generation — nothing to match
+        if (out.has(d.bucketKey) && out.get(d.bucketKey) !== d.fingerprint) {
+          out.set(d.bucketKey, undefined);
+        } else if (!out.has(d.bucketKey)) {
+          out.set(d.bucketKey, d.fingerprint);
+        }
+      }
+      return out;
+    },
+
+    /**
+     * Adopt a clean bucket's live shapes into the generation being built — the
+     * skip that makes the rebuild incremental. Just a builtAt bump: the shapes
+     * stay live (their geometry is unchanged, readers should keep seeing them)
+     * and the new stamp is what stops `commitGeneration`'s sweep deleting them
+     * with the rest of the old generation.
+     */
+    async carryForward(bucketKey: string, builtAt: Date): Promise<number> {
+      const r = await model.updateMany({ live: true, bucketKey }, { $set: { builtAt } });
+      return r.modifiedCount ?? 0;
     },
 
     /**

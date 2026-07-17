@@ -30,7 +30,9 @@ const send = (msg: { ok: true; result: unknown } | { ok: false; error: string })
 (async () => {
   const db = await getAppDb();
   try {
-    const result = await rebuildAlertBlobs(db);
+    // Set by the parent when the job carried the admin button's `force` flag —
+    // re-dissolve everything, ignoring the per-bucket fingerprints.
+    const result = await rebuildAlertBlobs(db, { force: process.env.ALERT_DISSOLVE_FORCE === "1" });
     send({ ok: true, result });
     await db.conn.close();
     process.exit(0);

@@ -11,6 +11,7 @@
 import type { iAlert } from "@photonsurge/shared/db/alert-model";
 import { attachCities } from "../alerts/blob-cities";
 import { rebuildAlertBlobs } from "../alerts/rebuildBlobs";
+import { relayChildLines } from "./alertBlobs";
 
 // The rebuild moved into its own module so it can run in a child process; the job
 // handler (alertBlobs.ts) now only forks it. These tests drive the rebuild
@@ -29,6 +30,9 @@ const county = (id: string, rank: number, [w, s, e, n]: number[], cc = "PL"): iA
     // notice a projection that forgets to ask for them.
     source: "meteoalarm",
     identifier: `2.49.0.0.${cc}.20260716`,
+    // Feeds the bucket fingerprint: ingest bumps it when an alert is genuinely
+    // updated, which is what tells the incremental rebuild a bucket is dirty.
+    sent: "2026-07-16T06:00:00Z",
     maxSeverityRank: rank,
     info: [
       {
@@ -103,6 +107,13 @@ function mockDb() {
       commitGeneration: jest.fn(async (builtAt: Date) => {
         trace.push(`commit ${builtAt.toISOString()}`);
         return { live: 2, removed: 9 };
+      }),
+      // Empty by default = a first run: nothing on air matches, everything
+      // dissolves. Incremental tests override this with a previous run's index.
+      liveIndex: jest.fn(async () => new Map<string, string | undefined>()),
+      carryForward: jest.fn(async (bucketKey: string, builtAt: Date) => {
+        trace.push(`carry ${bucketKey}@${builtAt.toISOString()}`);
+        return 2;
       }),
     },
   };
@@ -234,13 +245,133 @@ describe("alert blobs rebuild", () => {
   it("clears the old shapes even when nothing is active", async () => {
     // No buckets, no writes — but the globe must not keep drawing expired
     // warnings, so the commit still has to run and sweep the old generation.
+    // The live index says shapes ARE on air, which is what makes this run a
+    // change (0 buckets vs 1) rather than an unchanged skip.
     const { db, trace } = mockDb();
     ALERTS.length = 0;
+    (db.alertBlobs.liveIndex as jest.Mock).mockResolvedValue(new Map([["thunderstorm|3|PL", "stale"]]));
 
     const r = await run(db);
 
     expect(r).toMatchObject({ alerts: 0, blobs: 0, saved: "0%" });
     expect(db.alertBlobs.commitGeneration).toHaveBeenCalledTimes(1);
     expect(trace).toEqual([expect.stringMatching(/^commit /)]);
+  });
+});
+
+/**
+ * The incremental rebuild: the active set barely changes between 15-minute
+ * ticks, and re-clipping ~200 unchanged buckets was ~2 minutes of solid CPU per
+ * run. A bucket whose member `id@sent` fingerprint still matches the live
+ * generation is adopted with a builtAt bump; only dirty buckets load geometry.
+ */
+describe("incremental rebuild", () => {
+  /** Run a full rebuild and return the live index it would leave on air. */
+  async function liveIndexAfterFullRun(): Promise<Map<string, string | undefined>> {
+    const { db } = mockDb();
+    await run(db);
+    const written = (db.alertBlobs.addGeneration as jest.Mock).mock.calls.flatMap((c) => c[0]);
+    const idx = new Map<string, string | undefined>();
+    for (const b of written) idx.set(b.bucketKey, b.fingerprint);
+    return idx;
+  }
+
+  it("stamps every shape with its bucket and a member fingerprint", async () => {
+    const { db } = mockDb();
+
+    await run(db);
+
+    const written = (db.alertBlobs.addGeneration as jest.Mock).mock.calls.flatMap((c) => c[0]);
+    expect(written.length).toBeGreaterThan(0);
+    for (const b of written) {
+      expect(b.bucketKey).toMatch(/\|/);
+      expect(b.fingerprint).toMatch(/^[0-9a-f]{40}$/);
+    }
+  });
+
+  it("does nothing at all when the active set matches what's on air", async () => {
+    const idx = await liveIndexAfterFullRun();
+    const { db, trace } = mockDb();
+    (db.alertBlobs.liveIndex as jest.Mock).mockResolvedValue(idx);
+
+    const r = await run(db);
+
+    expect(r.unchanged).toBe(true);
+    expect(r).toMatchObject({ alerts: 3, blobs: 0, bucketsCarried: 2, bucketsDissolved: 0 });
+    // Not "did little" — NOTHING: no geometry read, no write, no carry, and no
+    // commit (a commit with no new stamp would sweep the live generation away).
+    expect(trace).toEqual([]);
+    expect(db.alertBlobs.carryForward).not.toHaveBeenCalled();
+    expect(db.alertBlobs.commitGeneration).not.toHaveBeenCalled();
+  });
+
+  it("re-dissolves only the bucket whose alert changed and carries the rest", async () => {
+    const idx = await liveIndexAfterFullRun();
+    // b1 re-issued: same alert id, new `sent` — exactly what ingest writes when
+    // a warning is genuinely updated. Its bucket goes dirty; the other doesn't.
+    (ALERTS[2] as any).sent = "2026-07-17T09:00:00Z";
+    const { db, trace } = mockDb();
+    (db.alertBlobs.liveIndex as jest.Mock).mockResolvedValue(idx);
+
+    const r = await run(db);
+
+    expect(r).toMatchObject({ unchanged: false, bucketsDissolved: 1, bucketsCarried: 1, blobsCarried: 2 });
+    // Only the dirty bucket's geometry was ever loaded.
+    expect(trace.filter((t) => t.startsWith("load"))).toEqual(["load b1"]);
+    expect(db.alertBlobs.carryForward).toHaveBeenCalledTimes(1);
+    // The commit still runs: the carried bucket survives the sweep because the
+    // carry stamped it with THIS generation's builtAt.
+    const carriedAt = (db.alertBlobs.carryForward as jest.Mock).mock.calls[0][1];
+    const committedAt = (db.alertBlobs.commitGeneration as jest.Mock).mock.calls[0][0];
+    expect(carriedAt).toEqual(committedAt);
+  });
+
+  it("force re-dissolves everything without even consulting the live index", async () => {
+    const idx = await liveIndexAfterFullRun();
+    const { db } = mockDb();
+    (db.alertBlobs.liveIndex as jest.Mock).mockResolvedValue(idx);
+
+    const r = await rebuildAlertBlobs(db as never, { force: true });
+
+    expect(r).toMatchObject({ unchanged: false, bucketsDissolved: 2, bucketsCarried: 0 });
+    expect(db.alertBlobs.liveIndex).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The child's stdout is relayed line-by-line through the worker's console so the
+ * per-job log capture (jobLog.ts) can see the rebuild's progress — an inherited
+ * stdio bypassed it and /admin/queue showed one line for a 15-minute job.
+ */
+describe("relayChildLines", () => {
+  const { PassThrough } = jest.requireActual<typeof import("stream")>("stream");
+  const flush = () => new Promise<void>((r) => setImmediate(r));
+
+  it("reassembles chunks into whole lines and flushes the unterminated tail", async () => {
+    const stream = new PassThrough();
+    const lines: string[] = [];
+    relayChildLines(stream, (l) => lines.push(l));
+
+    stream.write('{"msg":"dissolved hea');
+    stream.write('t|3|ES"}\n{"msg":"dissolved wind|2|FR"}\ntail without newline');
+    stream.end();
+    await flush();
+
+    expect(lines).toEqual(['{"msg":"dissolved heat|3|ES"}', '{"msg":"dissolved wind|2|FR"}', "tail without newline"]);
+  });
+
+  it("drops blank lines and copes with a missing stream", async () => {
+    const stream = new PassThrough();
+    const lines: string[] = [];
+    relayChildLines(stream, (l) => lines.push(l));
+    relayChildLines(null, () => {
+      throw new Error("never called");
+    });
+
+    stream.write("\n\n  \nreal line\n");
+    stream.end();
+    await flush();
+
+    expect(lines).toEqual(["real line"]);
   });
 });

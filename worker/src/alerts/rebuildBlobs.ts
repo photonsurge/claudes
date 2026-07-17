@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import type { AppDb } from "@photonsurge/shared/db/index";
 import { log } from "@photonsurge/shared/utill/logger";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
@@ -47,9 +48,29 @@ const breathe = () => new Promise<void>((r) => setImmediate(r));
  */
 const DISSOLVE_SIMPLIFY_DEG = Number(process.env.ALERT_DISSOLVE_SIMPLIFY_DEG || 0.002);
 
+/**
+ * A bucket's fingerprint: the sorted `id@sent` of every member alert, hashed.
+ *
+ * `sent` is the load-bearing half — ingest bumps it whenever an alert is
+ * genuinely updated (and skips the write when it isn't), so a re-issued warning
+ * with new geometry changes its bucket's fingerprint while an untouched one
+ * can't. Salted with the simplify tolerance so a config change re-dissolves
+ * everything rather than carrying forward shapes thinned to the old setting.
+ */
+const FINGERPRINT_SALT = `v1|${DISSOLVE_SIMPLIFY_DEG}`;
+const fingerprintOf = (members: string[]): string =>
+  createHash("sha1").update(FINGERPRINT_SALT).update(members.sort().join("\n")).digest("hex");
+
 export interface AlertBlobRebuildResult {
   alerts: number;
   blobs: number;
+  /** Buckets actually re-clipped this run vs adopted unchanged from the live set. */
+  bucketsDissolved: number;
+  bucketsCarried: number;
+  /** Shapes that rode through on a builtAt bump instead of being re-dissolved. */
+  blobsCarried: number;
+  /** True when the whole active set matched the live generation and NOTHING ran. */
+  unchanged: boolean;
   verticesBefore: number;
   verticesAfter: number;
   saved: string;
@@ -63,7 +84,10 @@ export interface AlertBlobRebuildResult {
   cityFailures: number;
 }
 
-export async function rebuildAlertBlobs(db: AppDb): Promise<AlertBlobRebuildResult> {
+export async function rebuildAlertBlobs(
+  db: AppDb,
+  opts: { force?: boolean } = {},
+): Promise<AlertBlobRebuildResult> {
   try {
     // Pass 1: group WITHOUT the geometry. Loading every active alert's polygons
     // at once was ~5M vertices in one array — several GB of JS objects before
@@ -73,24 +97,63 @@ export async function rebuildAlertBlobs(db: AppDb): Promise<AlertBlobRebuildResu
     //
     // `source` and `identifier` are here because the country is decoded from them
     // and the country is part of the bucket key. Drop them and every alert quietly
-    // buckets as "unknown" — Europe fusing into one shape again.
+    // buckets as "unknown" — Europe fusing into one shape again. `sent` feeds the
+    // bucket fingerprint (an updated alert re-dissolves its bucket).
     const index = (await db.alerts.model
       .find(
         { active: true },
-        { _id: 0, id: 1, source: 1, identifier: 1, maxSeverityRank: 1, "info.event": 1, "info.parameters": 1 },
+        { _id: 0, id: 1, sent: 1, source: 1, identifier: 1, maxSeverityRank: 1, "info.event": 1, "info.parameters": 1 },
       )
       .lean()
       .exec()) as unknown as iAlert[];
 
-    const buckets = new Map<string, string[]>();
+    const buckets = new Map<string, { ids: string[]; members: string[] }>();
     for (const a of index) {
       const key = bucketKeyOf(a, hazardOf);
-      const ids = buckets.get(key);
-      if (ids) ids.push(a.id!);
-      else buckets.set(key, [a.id!]);
+      const member = `${a.id}@${a.sent ?? ""}`;
+      const b = buckets.get(key);
+      if (b) {
+        b.ids.push(a.id!);
+        b.members.push(member);
+      } else buckets.set(key, { ids: [a.id!], members: [member] });
     }
     const alertCount = index.length;
     index.length = 0; // the ids are all we still need
+
+    // What's on air, as bucket → fingerprint. The active set barely changes
+    // between 15-minute ticks, so most buckets — usually ALL of them — still
+    // match and never touch a polygon. `force` (the admin button) pretends
+    // nothing matches, for code/config changes the fingerprint can't see.
+    const fingerprints = new Map<string, string>();
+    for (const [key, b] of buckets) fingerprints.set(key, fingerprintOf(b.members));
+    const previous = opts.force ? new Map<string, string | undefined>() : await db.alertBlobs.liveIndex();
+    const isClean = (key: string) => previous.get(key) === fingerprints.get(key);
+
+    // The whole set unchanged → the answer on air is already right; do nothing.
+    // (Bucket COUNT must match too, or a vanished bucket's shapes would linger.)
+    if (!opts.force && previous.size === buckets.size && [...buckets.keys()].every(isClean)) {
+      const result: AlertBlobRebuildResult = {
+        alerts: alertCount,
+        blobs: 0,
+        bucketsDissolved: 0,
+        bucketsCarried: buckets.size,
+        blobsCarried: 0,
+        unchanged: true,
+        verticesBefore: 0,
+        verticesAfter: 0,
+        saved: "0%",
+        unionFailures: 0,
+        staleRemoved: 0,
+        sliverHolesDropped: 0,
+        sliverVerticesFreed: 0,
+        cities: 0,
+        blobsWithNoCities: 0,
+        citiesRepaired: 0,
+        cityFailures: 0,
+      };
+      log(TAG, `alert set unchanged (${alertCount} alerts, ${buckets.size} buckets) — skipped rebuild`);
+      return result;
+    }
 
     // Pass 2: one hazard at a time, WRITTEN as we go. Peak memory is the bucket
     // being clipped and nothing else; the previous generation is retired only at
@@ -102,8 +165,21 @@ export async function rebuildAlertBlobs(db: AppDb): Promise<AlertBlobRebuildResu
     let written = 0;
     let verticesBefore = 0;
     let verticesAfter = 0;
+    let bucketsDissolved = 0;
+    let bucketsCarried = 0;
+    let blobsCarried = 0;
 
-    for (const [key, ids] of buckets) {
+    for (const [key, { ids }] of buckets) {
+      // Bucket unchanged since the live generation → adopt its shapes with a
+      // builtAt bump and skip the clip, the city lookups, everything. This is
+      // where the run's CPU actually goes, so this branch is the saving.
+      if (isClean(key)) {
+        blobsCarried += await db.alertBlobs.carryForward(key, builtAt);
+        bucketsCarried++;
+        continue;
+      }
+      bucketsDissolved++;
+
       // `source`/`identifier` again, NOT redundant with pass 1: `dissolveAlerts`
       // re-buckets what it's handed and decodes the country from THESE documents.
       let members: iAlert[] | null = (await db.alerts.model
@@ -144,6 +220,10 @@ export async function rebuildAlertBlobs(db: AppDb): Promise<AlertBlobRebuildResu
       for (const b of r.blobs) {
         verticesBefore += b.verticesBefore;
         verticesAfter += b.verticesAfter;
+        // Stamped here, not in the dissolve: the fingerprint describes the
+        // MEMBER SET this run saw, which only this loop knows.
+        b.bucketKey = key;
+        b.fingerprint = fingerprints.get(key);
       }
       written += await db.alertBlobs.addGeneration(r.blobs, builtAt);
 
@@ -162,6 +242,10 @@ export async function rebuildAlertBlobs(db: AppDb): Promise<AlertBlobRebuildResu
     const result: AlertBlobRebuildResult = {
       alerts: alertCount,
       blobs: written,
+      bucketsDissolved,
+      bucketsCarried,
+      blobsCarried,
+      unchanged: false,
       verticesBefore: before,
       verticesAfter: after,
       saved: before ? `${Math.round((1 - after / before) * 100)}%` : "0%",
@@ -177,8 +261,9 @@ export async function rebuildAlertBlobs(db: AppDb): Promise<AlertBlobRebuildResu
     log(TAG, `alert blobs rebuilt`, result);
     blogInfo(
       TAG,
-      `alert blobs: ${alertCount} alerts → ${written} shapes ` +
-        `(${result.saved} fewer vertices to draw, ${cityStats.cities} cities covered)`,
+      `alert blobs: ${alertCount} alerts → ${written} shapes re-dissolved ` +
+        `(${bucketsDissolved} buckets changed, ${bucketsCarried} carried with ${blobsCarried} shapes; ` +
+        `${result.saved} fewer vertices to draw, ${cityStats.cities} cities covered)`,
       result,
       "alertBlobs",
       "refresh",
