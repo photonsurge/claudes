@@ -15,6 +15,13 @@ export const FEED_VISIBLE = 7;
 export const FEED_ROW_H = 42;
 
 function FeedRow({ item }: { item: WorldWatchItem }) {
+  // Alerts drop the severity *text* chip ("EXTREME"/"SEVERE") — sorted
+  // most-severe-first, the visible window becomes a monotonous wall of
+  // identical red chips. A slim severity-coloured bar keeps the rank readable
+  // while freeing width for the headline. Quakes ("M6.3") and volcanoes
+  // ("ERUPTING") keep their chips — those carry real information per row.
+  const chip = item.kind !== "alert";
+  const textMax = chip ? 210 : 262;
   return (
     <div
       style={{
@@ -26,6 +33,16 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
         background: `${item.color}14`,
       }}
     >
+      <span
+        style={{
+          flex: "0 0 auto",
+          width: 4,
+          height: FEED_ROW_H - 12,
+          borderRadius: 2,
+          background: item.color,
+          boxShadow: `0 0 6px ${item.color}66`,
+        }}
+      />
       {item.photo ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -41,23 +58,25 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
           {item.icon}
         </span>
       )}
-      <span
-        style={{
-          flex: "0 0 auto",
-          minWidth: 46,
-          textAlign: "center",
-          fontSize: 12,
-          fontWeight: 800,
-          letterSpacing: 0.4,
-          color: item.color,
-          padding: "3px 7px",
-          borderRadius: 5,
-          background: `${item.color}26`,
-          border: `1px solid ${item.color}66`,
-        }}
-      >
-        {item.tag}
-      </span>
+      {chip ? (
+        <span
+          style={{
+            flex: "0 0 auto",
+            minWidth: 46,
+            textAlign: "center",
+            fontSize: 12,
+            fontWeight: 800,
+            letterSpacing: 0.4,
+            color: item.color,
+            padding: "3px 7px",
+            borderRadius: 5,
+            background: `${item.color}26`,
+            border: `1px solid ${item.color}66`,
+          }}
+        >
+          {item.tag}
+        </span>
+      ) : null}
       <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
         <span
           style={{
@@ -67,7 +86,7 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            maxWidth: 210,
+            maxWidth: textMax,
           }}
         >
           {item.flag ? `${item.flag} ` : ""}
@@ -82,7 +101,7 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
-              maxWidth: 210,
+              maxWidth: textMax,
               letterSpacing: 0.3,
             }}
           >

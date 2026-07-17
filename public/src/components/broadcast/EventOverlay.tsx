@@ -26,11 +26,12 @@ const H = 440;
  * pinning to a screen corner. These are the knobs for where the readouts sit:
  *   • LABEL    — tracking detail, tucked onto the top-left corner
  *   • HISTORY  — point-history, top-right, pushed out to the right
- *   • FORECAST — 3-day forecast, on the bottom-right corner
+ * (The 3-day forecast used to hang off the bottom-right corner too, but it
+ * crowded the focus point and clipped the subtitle — it now docks bottom-left
+ * in BroadcastFrame instead.)
  */
 const LABEL_POS = { top: -52, left: -48 };
 const HISTORY_POS = { top: -44, right: -150 };
-const FORECAST_POS = { bottom: -108, right: -80 };
 
 /**
  * The reticle's targeting marks, drawn in one SVG (viewBox = design pixels) so
@@ -80,7 +81,6 @@ export default function EventOverlay({
   segment,
   extraDetails = [],
   historyPanel,
-  forecastPanel,
   variant = "event",
   flag,
   theme = DEFAULT_THEME,
@@ -91,8 +91,6 @@ export default function EventOverlay({
   extraDetails?: { label: string; value: string }[];
   /** Point-history trend, hung off the reticle's top-right (HISTORY_POS). */
   historyPanel?: React.ReactNode;
-  /** 3-day forecast strip, hung off the reticle's bottom-right (FORECAST_POS). */
-  forecastPanel?: React.ReactNode;
   /** "event" (default) reads as a detection lock on a hazard; "place" softens the
    *  wording to NOW VIEWING / LOCATION for a calm Areas-tour city. */
   variant?: "event" | "place";
@@ -154,11 +152,6 @@ export default function EventOverlay({
         <div style={{ position: "absolute", ...HISTORY_POS }}>{historyPanel}</div>
       ) : null}
 
-      {/* 3-day forecast, bottom-right of the frame. */}
-      {forecastPanel ? (
-        <div style={{ position: "absolute", ...FORECAST_POS }}>{forecastPanel}</div>
-      ) : null}
-
       {/* Event name, lower-centre of the frame. A kind-tinted vector mark (never
           an emoji) sits beside the name; a hairline accent rule + a small-caps
           status line under it give it a designed lower-third feel. Width-capped
@@ -177,6 +170,14 @@ export default function EventOverlay({
           alignItems: "center",
           fontFamily: "system-ui, sans-serif",
           textShadow: "0 2px 12px rgba(0,0,0,0.85)",
+          // Scrim: the name + location render straight over the basemap, which
+          // can be near-white — a soft dark backing keeps the lower-third
+          // readable on any map type (and through stream compression).
+          padding: "10px 18px 12px",
+          borderRadius: 12,
+          background: "rgba(4,10,20,0.55)",
+          backdropFilter: "blur(5px)",
+          WebkitBackdropFilter: "blur(5px)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10, maxWidth: "100%" }}>

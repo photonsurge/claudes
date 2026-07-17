@@ -12,6 +12,7 @@ import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { AlertFeature } from "../../lib/alerts";
 import type { Quake } from "../../lib/tracks/types";
 import { alertSummary } from "../../lib/broadcast";
+import { clampSentences } from "../../lib/text";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import BroadcastCard, { CardSection, DIM } from "./BroadcastCard";
 import { KIND_COLOR, KIND_LABEL } from "./kinds";
@@ -90,7 +91,9 @@ export default function OnAirCard({
                 overflow: "hidden",
               }}
             >
-              {areaInfo!.blurb}
+              {/* Pre-trim to whole sentences (~3 lines' worth) so the clamp
+                  above almost never cuts mid-sentence on air. */}
+              {clampSentences(areaInfo!.blurb, 170)}
             </div>
           ) : null}
         </CardSection>

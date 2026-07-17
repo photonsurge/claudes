@@ -4,10 +4,24 @@
 #   build:  docker compose build
 #   push:   docker compose push          (after: docker login titan.photonsurge.uk:5050)
 #   deploy: docker compose pull && docker compose up -d
+#
+# TOTAL RAM: Compose has no native "whole-project" ceiling, so we bound each
+# service with `mem_limit` and the SUM of the caps is the effective total.
+# Defaults below sum to ~14GB, sized for the 16GB test VM (leaves ~2GB for the
+# host OS, page cache, and the worker's top-of-hour bake to spike into). Every
+# cap is env-overridable per host.
+#   mongo 2.5 + redis 0.5 + socket 0.5 + worker 6 + public 4.5 = 14GB
+# NOTE: a mem_limit is a HARD wall — Docker OOM-kills the container the instant
+# it's exceeded. So each cap must sit ABOVE that service's real footprint. In
+# particular the worker/public NODE_OPTIONS heap ceilings must leave headroom
+# UNDER their mem_limit (heap == mem_limit ⇒ Docker kills before V8 ever GCs).
 services:
   mongodb:
     image: mongo:8
     restart: unless-stopped
+    # ~1.5GB WiredTiger cache + ~0.5-1GB connections/sorts/index-builds. Keep
+    # this comfortably above MONGO_CACHE_GB or Docker kills mongod mid-query.
+    mem_limit: ${MONGO_MEMORY_LIMIT:-2500m}
     # --quiet drops the per-connection "accepted/ended" NETWORK log spam the pools
     # + healthcheck otherwise flood the log with. Errors/warnings still log.
     #
@@ -41,6 +55,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # Small keyspace (BullMQ queues + short-TTL focus cache); 512m is generous.
+    mem_limit: ${REDIS_MEMORY_LIMIT:-512m}
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
     environment:
       # Referenced ($$-escaped) by the healthcheck below, not by the server.
@@ -62,6 +78,8 @@ services:
       context: .
       dockerfile: socket/Dockerfile
     restart: "no"   # TEMP: don't auto-restart on crash — require a human restart so failures are visible. Revert to `unless-stopped`.
+    # Thin Socket.IO relay — no heavy buffers; 512m covers it.
+    mem_limit: ${SOCKET_MEMORY_LIMIT:-512m}
     env_file: .env
     environment:
       PORT: 10101
@@ -91,6 +109,11 @@ services:
       context: .
       dockerfile: worker/Dockerfile
     restart: "no"   # TEMP: don't auto-restart on crash — require a human restart so failures are visible. Revert to `unless-stopped`.
+    # Heaviest service: 4GB V8 heap (NODE_OPTIONS below) + bake threads/sharp
+    # native on top ≈ ~5GB worst case. 6g gives the top-of-hour bake ~2GB of
+    # native headroom above the heap. Cap MUST stay above the heap ceiling —
+    # if you lower this, lower WORKER_NODE_HEAP_MB with it (leave ~1GB headroom).
+    mem_limit: ${WORKER_MEMORY_LIMIT:-6g}
     # Weather pipeline vars (MODEL, FORECAST_HOURS, STEP_HOURS, RUN_CHECK_CRON,
     # RETAIN_RUNS) flow in via env_file — no structural change needed here.
     # The Dockerfile provides wgrib2 at runtime.
@@ -161,7 +184,7 @@ services:
     restart: "no"   # TEMP: don't auto-restart on crash — require a human restart so failures are visible. Revert to `unless-stopped`.
     # Hard container memory ceiling. Override per host in .env; exceeding it
     # causes Docker to OOM-kill/restart this service instead of exhausting the host.
-    mem_limit: ${PUBLIC_MEMORY_LIMIT:-4g}
+    mem_limit: ${PUBLIC_MEMORY_LIMIT:-4608m}
     # Geocoding var (GEOCODER_URL) flows in via env_file — no change needed.
     env_file: .env
     environment:

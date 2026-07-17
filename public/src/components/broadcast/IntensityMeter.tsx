@@ -92,6 +92,22 @@ export default function IntensityMeter({
     }
     return best;
   };
+  // Tick text sits on the dark scale pill — lift too-dark palette colours
+  // (deep blues at the low end of wind/rain ramps) toward white so every stop
+  // stays legible.
+  const tickColor = (t: number) => {
+    const hex = hexAt(t);
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+    const n = parseInt(hex.slice(1), 16);
+    const r = (n >> 16) & 255;
+    const g = (n >> 8) & 255;
+    const b = n & 255;
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (lum >= 110) return hex;
+    const k = (110 - lum) / 110;
+    const up = (c: number) => Math.round(c + (235 - c) * k);
+    return `rgb(${up(r)}, ${up(g)}, ${up(b)})`;
+  };
 
   return (
     <div
@@ -110,15 +126,20 @@ export default function IntensityMeter({
           need to read first, followed by the active source/timing metadata. */}
       <div style={{ textAlign: "center" }}>
         {freshness ? (
+          // Dark chip behind the metadata line — raw text over a bright basemap
+          // washes out on air (and worse after stream compression).
           <div
             style={{
+              display: "inline-block",
               marginTop: 2,
+              padding: "3px 12px",
+              borderRadius: 999,
+              background: "rgba(4,10,20,0.68)",
+              border: "1px solid rgba(255,255,255,0.09)",
               fontSize: compact ? 10.5 : 12,
               fontWeight: 800,
               letterSpacing: 0.9,
               color: "#dfe7f5",
-              opacity: 0.82,
-              textShadow: "0 1px 4px rgba(0,0,0,0.8)",
             }}
           >
             SOURCE {freshness.source}
@@ -146,39 +167,56 @@ export default function IntensityMeter({
           ) : null}
         </div>
       </div>
+      {/* Scale pill: bar + tick labels on their own dark panel, matching the
+          card chrome — the palette-coloured tick text is unreadable straight
+          over a light basemap. */}
       <div
         style={{
-          width: barW,
-          height: compact ? 14 : 19,
-          borderRadius: 5,
-          background: gradient,
-          border: "1px solid rgba(0,0,0,0.6)",
-          boxShadow: "0 4px 14px rgba(0,0,0,0.5), inset 0 0 6px rgba(0,0,0,0.4)",
-        }}
-      />
-      <div
-        style={{
-          width: barW,
           display: "flex",
-          justifyContent: "space-between",
-          fontSize: compact ? 10.5 : 12,
-          fontWeight: 700,
-          fontVariantNumeric: "tabular-nums",
+          flexDirection: "column",
+          gap: 5,
+          padding: "9px 12px 7px",
+          borderRadius: 11,
+          background: "rgba(4,10,20,0.68)",
+          border: "1px solid rgba(255,255,255,0.09)",
+          boxShadow: "0 6px 18px rgba(0,0,0,0.4)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
         }}
       >
-        {legend.stops.map((s, i) => (
-          <span
-            key={i}
-            style={{
-              color: hexAt(s.t),
-              opacity: 0.95,
-              whiteSpace: "nowrap",
-              textShadow: "0 1px 4px rgba(0,0,0,0.9)",
-            }}
-          >
-            {s.label}
-          </span>
-        ))}
+        <div
+          style={{
+            width: barW,
+            height: compact ? 14 : 19,
+            borderRadius: 5,
+            background: gradient,
+            border: "1px solid rgba(0,0,0,0.6)",
+            boxShadow: "inset 0 0 6px rgba(0,0,0,0.4)",
+          }}
+        />
+        <div
+          style={{
+            width: barW,
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: compact ? 10.5 : 12,
+            fontWeight: 700,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {legend.stops.map((s, i) => (
+            <span
+              key={i}
+              style={{
+                color: tickColor(s.t),
+                whiteSpace: "nowrap",
+                textShadow: "0 1px 3px rgba(0,0,0,0.9)",
+              }}
+            >
+              {s.label}
+            </span>
+          ))}
+        </div>
       </div>
       {/* The `global` satellite feed drapes over whatever variable is on air
           (see satimg-feature memory), so the meter above is showing the

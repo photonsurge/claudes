@@ -252,12 +252,21 @@ export default function GlobeLabels({
                 if (el) detailRefs.current.set(l.id, el);
                 else detailRefs.current.delete(l.id);
               }}
+              // Backing chip: the detail line ("Country · 1.5M · capital") is
+              // small and sits straight on the basemap — a text shadow alone
+              // isn't enough over light terrain, especially after stream
+              // compression.
               style={{
                 display: "none",
+                width: "fit-content",
+                marginTop: 2,
+                padding: "1px 6px",
+                borderRadius: 4,
+                background: "rgba(2,8,18,0.62)",
                 fontSize: 10,
                 fontWeight: 500,
-                color: "rgba(226,232,240,0.82)",
-                textShadow: "0 0 3px #000, 0 1px 2px #000",
+                color: "rgba(226,232,240,0.92)",
+                textShadow: "0 1px 2px #000",
               }}
             >
               {l.detail}
