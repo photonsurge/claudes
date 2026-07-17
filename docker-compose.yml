@@ -131,6 +131,14 @@ services:
       # arenas keeps contention fine for a Node process and gives most of that
       # plateau back to the OS.
       MALLOC_ARENA_MAX: "2"
+      # Alert-blob dissolve child kill switch. The rebuild is ~2min of solid CPU
+      # on an idle dev box, but on a loaded 4-core VPS (GFS ingest + bake thread
+      # + Mongo all contending) it can legitimately run far longer — staging hit
+      # the old 15min default and got SIGKILLed mid-rebuild. 35min keeps the
+      # wedged-child protection while giving a starved-but-progressing rebuild
+      # room to finish; the job repeats every 15min regardless, so a slow cycle
+      # just means the next tick's shapes land late, not never.
+      ALERT_DISSOLVE_TIMEOUT_MS: ${ALERT_DISSOLVE_TIMEOUT_MS:-2100000}
       ELEVATION_CACHE_DIR: /app/dem-cache
       # Natural Earth geojson (countries.seed mask) — read from the shared host
       # data dir mounted below, NOT baked into the image.
