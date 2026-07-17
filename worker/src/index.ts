@@ -13,8 +13,8 @@ import { Worker, Job } from "bullmq";
 import { readdirSync } from "fs";
 import { join, extname, basename } from "path";
 
-import { QUEUE_NAME } from "@photonsurge/shared/utill/bull-utils";
-import { getQueue, getRedisOptions } from "@photonsurge/shared/bull/bull";
+import { QUEUE_NAMES, QUEUE_TIERS, TIER_CONCURRENCY, queueForType } from "@photonsurge/shared/utill/bull-utils";
+import { getQueue, getAllQueues, getRedisOptions } from "@photonsurge/shared/bull/bull";
 import { getDb, closeDb } from "@photonsurge/shared/utill/mongoose";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { getSource } from "@photonsurge/shared/sources";
@@ -88,7 +88,13 @@ process.on("uncaughtException", (err) => {
 });
 
 (async () => {
-  const myQueue = getQueue();
+  // Producing side: every tier's queue, plus a router that sends each job to the
+  // queue its TYPE belongs to. `addJob` mirrors `queue.add(name, payload, opts)`
+  // exactly — only the target queue changes — so the registrations below read as
+  // before while tiering themselves (bull-utils#queueForType).
+  const queues = getAllQueues().map((q) => q.queue);
+  const addJob = (name: string, payload: { type: string; [k: string]: any }, opts?: any) =>
+    getQueue(queueForType(payload.type)).add(name, payload, opts);
   await initSocket();
 
   // Relay BullMQ lifecycle events up to the socket server so /admin/queue can
@@ -147,77 +153,123 @@ process.on("uncaughtException", (err) => {
   // mode. Runs in-process (not a BullMQ job) — reads Mongo + emits director:state.
   startDirector();
 
-  const bullWorker = new Worker(
-    QUEUE_NAME,
-    async (job: Job) => {
-      const type = typeof job.data?.type === "string" ? job.data.type : "unknown";
-      const event = typeof job.data?.event === "string" ? job.data.event : "unknown";
-      // Qualified with the source where there is one ("alerts.ingest:wmo"): alerts
-      // registers a repeatable PER SOURCE, so the log showed four identical
-      // `alerts.ingest` lines interleaved and you couldn't tell which feed was
-      // slow — or whether one job was looping. See jobLabel.
-      const label = jobLabel(job.data) ?? `${type}.${event}`;
-      log(TAG, `job:start [${job.id}] ${label}`);
-      const handler = handlers[type];
-      if (!handler) throw new Error(`No handler for type: ${type}`);
-      const fn = handler[event];
-      if (!fn) throw new Error(`No handler for event: ${type}.${event}`);
-      const jobId = String(job.id ?? "");
-      const startedAt = Date.now();
-      // Register the job so an operator cancel can cooperatively abort it.
-      beginJob(jobId, job);
-      try {
-        // Run inside the job-log context so the handler's console output streams
-        // to /admin/queue tagged with this job (see jobLog.ts).
-        const result = await runInJobLogContext({ jobId, label }, () => fn(job));
-        const ms = Date.now() - startedAt;
-        log(TAG, `job:done  [${job.id}] ${label} (${ms}ms)`);
-        const detail = result && typeof result === "object" ? { ...result, ms } : { result, ms };
-        WorkerBackLogger(TAG, "event", `job:${type}`, `${label} done in ${ms}ms`, detail, type, String(job.id ?? ""));
-        return result;
-      } catch (ex) {
-        const ms = Date.now() - startedAt;
-        log(TAG, `job:error [${job.id}] ${type}.${event} (${ms}ms)`, summarizeForLog(ex));
-        WorkerBackLogger(TAG, "error", `job:${type}`, `${type}.${event} failed after ${ms}ms`, summarizeForLog(ex), type, String(job.id ?? ""));
-        throw ex;
-      } finally {
-        endJob(jobId);
-      }
-    },
-    // BullMQ requires maxRetriesPerRequest: null on the worker's blocking connection.
-    // Process up to WORKER_CONCURRENCY jobs at once (default 10). Downloads are still
-    // throttled process-wide by nomadsGate(), so raising this mostly lets independent
-    // ingests/snapshots overlap instead of queueing.
-    //
-    // lockDuration is the crux of the "could not renew lock for job repeat:…" +
-    // "Missing lock … moveToFinished code: -2" fan-out. BullMQ renews a job's lock
-    // every lockDuration/2 on THIS event loop, and several handlers run long
-    // SYNCHRONOUS CPU inline on that same loop — a single polygon-clipping union in
-    // the alert dissolve (dissolve.ts, which can't be broken up by its own yields),
-    // and the full-grid passes in bakeScalar (grib/bakeScalar.ts, whose worker-thread
-    // pool was never actually constructed — see BAKE-POOL note below). With the
-    // default 30s lock, any block past ~15s misses the renewal and EVERY in-flight
-    // job loses its lock at once, then can't finalize. 300s renews at 150s, which
-    // covers those blocks. The real fix is to move the CPU off the loop; this stops
-    // the bleeding. Trade: a genuinely dead job now takes up to lockDuration to be
-    // reclaimed — fine here, because the jobs aren't dead, they're busy.
-    {
-      connection: { ...getRedisOptions(), maxRetriesPerRequest: null },
-      concurrency: Number(process.env.WORKER_CONCURRENCY || 10),
-      lockDuration: Number(process.env.WORKER_LOCK_DURATION_MS || 300_000),
-      stalledInterval: 30_000,
-      maxStalledCount: 2,
-    },
-  );
+  // Per-job memory instrumentation. A slow OOM used to only announce itself as a
+  // 4GB heap-limit crash mid weather-refresh; logging heap/rss around every job —
+  // plus the process rss high-water — turns the next spike into "job X left rss at
+  // Y" instead of a core dump. Cheap (a memoryUsage() read per job).
+  const mb = (b: number) => Math.round(b / 1048576);
+  let rssHighWater = 0;
+
+  // Per-event usage ledger — so "which job type eats memory / runs long" is a table
+  // you can read (via /status), not something you reconstruct from a crash. Keyed by
+  // the job label (type.event, or type.event:source), tracking run/error counts,
+  // timing and the peak heap-delta + rss each event has ever been seen with.
+  type EventStat = {
+    runs: number;
+    errors: number;
+    totalMs: number;
+    peakMs: number;
+    lastMs: number;
+    peakHeapDeltaMB: number;
+    peakRssMB: number;
+  };
+  const eventStats = new Map<string, EventStat>();
+  const bumpStat = (label: string, ms: number, heapDeltaMB: number, rssMB: number, ok: boolean) => {
+    const s = eventStats.get(label) ?? {
+      runs: 0,
+      errors: 0,
+      totalMs: 0,
+      peakMs: 0,
+      lastMs: 0,
+      peakHeapDeltaMB: 0,
+      peakRssMB: 0,
+    };
+    s.runs++;
+    if (!ok) s.errors++;
+    s.totalMs += ms;
+    s.lastMs = ms;
+    if (ms > s.peakMs) s.peakMs = ms;
+    if (heapDeltaMB > s.peakHeapDeltaMB) s.peakHeapDeltaMB = heapDeltaMB;
+    if (rssMB > s.peakRssMB) s.peakRssMB = rssMB;
+    eventStats.set(label, s);
+  };
+
+  const processJob = async (job: Job) => {
+    const type = typeof job.data?.type === "string" ? job.data.type : "unknown";
+    const event = typeof job.data?.event === "string" ? job.data.event : "unknown";
+    // Qualified with the source where there is one ("alerts.ingest:wmo"): alerts
+    // registers a repeatable PER SOURCE, so the log showed four identical
+    // `alerts.ingest` lines interleaved and you couldn't tell which feed was
+    // slow — or whether one job was looping. See jobLabel.
+    const label = jobLabel(job.data) ?? `${type}.${event}`;
+    log(TAG, `job:start [${job.id}] ${label}`);
+    const handler = handlers[type];
+    if (!handler) throw new Error(`No handler for type: ${type}`);
+    const fn = handler[event];
+    if (!fn) throw new Error(`No handler for event: ${type}.${event}`);
+    const jobId = String(job.id ?? "");
+    const startedAt = Date.now();
+    const heapBefore = process.memoryUsage().heapUsed;
+    // Register the job so an operator cancel can cooperatively abort it.
+    beginJob(jobId, job);
+    try {
+      // Run inside the job-log context so the handler's console output streams
+      // to /admin/queue tagged with this job (see jobLog.ts).
+      const result = await runInJobLogContext({ jobId, label }, () => fn(job));
+      const ms = Date.now() - startedAt;
+      const m = process.memoryUsage();
+      if (m.rss > rssHighWater) rssHighWater = m.rss;
+      const mem = { heapDeltaMB: mb(m.heapUsed - heapBefore), heapMB: mb(m.heapUsed), rssMB: mb(m.rss), rssPeakMB: mb(rssHighWater) };
+      bumpStat(label, ms, mem.heapDeltaMB, mem.rssMB, true);
+      log(TAG, `job:done  [${job.id}] ${label} (${ms}ms)`, mem);
+      const detail = result && typeof result === "object" ? { ...result, ms, ...mem } : { result, ms, ...mem };
+      WorkerBackLogger(TAG, "event", `job:${type}`, `${label} done in ${ms}ms`, detail, type, String(job.id ?? ""));
+      return result;
+    } catch (ex) {
+      const ms = Date.now() - startedAt;
+      bumpStat(label, ms, mb(process.memoryUsage().heapUsed - heapBefore), mb(process.memoryUsage().rss), false);
+      log(TAG, `job:error [${job.id}] ${type}.${event} (${ms}ms)`, summarizeForLog(ex));
+      WorkerBackLogger(TAG, "error", `job:${type}`, `${type}.${event} failed after ${ms}ms`, summarizeForLog(ex), type, String(job.id ?? ""));
+      throw ex;
+    } finally {
+      endJob(jobId);
+    }
+  };
+
+  // THREE queues, THREE workers — split by resource weight (bull-utils). The
+  // background lane's low concurrency is the cap that bounds peak heap: heavy
+  // weather bakes + reproject can no longer stack ten-deep in one 4GB heap and OOM.
+  // Foreground (director, health) never queues behind a bake.
+  //
+  // lockDuration is the crux of the old "could not renew lock for job repeat:…" +
+  // "Missing lock … moveToFinished code: -2" fan-out. BullMQ renews a job's lock
+  // every lockDuration/2 on THIS event loop; a handler that blocks it past ~15s
+  // (the alert dissolve's polygon union, full-grid bakes) missed the 30s-default
+  // renewal and EVERY in-flight job dropped its lock at once. 300s renews at 150s.
+  // The real fix is keeping CPU off the loop (dissolve → child process, bakes →
+  // worker-thread pool); this stops the bleeding for whatever's left.
+  const workerOptsFor = (tier: (typeof QUEUE_TIERS)[number]) => ({
+    connection: { ...getRedisOptions(), maxRetriesPerRequest: null },
+    concurrency: Number(process.env[`WORKER_CONCURRENCY_${tier.toUpperCase()}`] || TIER_CONCURRENCY[tier]),
+    lockDuration: Number(process.env.WORKER_LOCK_DURATION_MS || 300_000),
+    stalledInterval: 30_000,
+    maxStalledCount: 2,
+  });
+  const workers = QUEUE_TIERS.map((tier) => new Worker(QUEUE_NAMES[tier], processJob, workerOptsFor(tier)));
+  log(TAG, `workers started`, Object.fromEntries(QUEUE_TIERS.map((t) => [t, workerOptsFor(t).concurrency])));
 
   // Clear stale repeatable schedules before re-registering. BullMQ keys a
   // repeatable by its options, so changing an interval (e.g. SHIP_SNAPSHOT_MS)
   // with the same jobId leaves the OLD schedule firing alongside the new one.
   // Wiping them here means the registrations below are always authoritative.
   try {
-    const repeatables = await myQueue.getRepeatableJobs();
-    for (const r of repeatables) await myQueue.removeRepeatableByKey(r.key);
-    if (repeatables.length) log(TAG, `cleared ${repeatables.length} stale repeatable(s)`);
+    let cleared = 0;
+    for (const q of queues) {
+      const repeatables = await q.getRepeatableJobs();
+      for (const r of repeatables) await q.removeRepeatableByKey(r.key);
+      cleared += repeatables.length;
+    }
+    if (cleared) log(TAG, `cleared ${cleared} stale repeatable(s)`);
   } catch (err) {
     log(TAG, `failed to clear stale repeatables`, summarizeForLog(err));
   }
@@ -227,7 +279,7 @@ process.on("uncaughtException", (err) => {
   // jobId de-duplicates the repeat scheduler across restarts.
   const RUN_CHECK_CRON = process.env.RUN_CHECK_CRON || "*/30 * * * *";
   try {
-    await myQueue.add(
+    await addJob(
       "do",
       { domain: "weather", type: "weather", event: "check", data: {} },
       { repeat: { pattern: RUN_CHECK_CRON }, jobId: "weather-check" },
@@ -251,7 +303,7 @@ process.on("uncaughtException", (err) => {
       const { event } = job;
       const every = jobEveryMs(job);
       try {
-        await myQueue.add(
+        await addJob(
           "do",
           { domain: "weather", type: "weather", event, data: {} },
           { repeat: { every, offset: staggerOffset(`weather-${event}`, every) }, jobId: `weather-${event}` },
@@ -262,7 +314,7 @@ process.on("uncaughtException", (err) => {
         // takes over). Idempotent (alreadyPublished skips) + nomadsGate-throttled,
         // so it just re-checks availability. Disable with WEATHER_INGEST_ON_BOOT=false.
         if (process.env.WEATHER_INGEST_ON_BOOT !== "false") {
-          await myQueue.add(
+          await addJob(
             "do",
             { domain: "weather", type: "weather", event, data: {} },
             { removeOnComplete: true, removeOnFail: true },
@@ -280,7 +332,7 @@ process.on("uncaughtException", (err) => {
   // de-duplicates the repeat scheduler across restarts (spec §6).
   for (const source of getEnabledSources()) {
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "alerts", type: "alerts", event: "ingest", data: { source: source.id } },
         {
@@ -306,7 +358,7 @@ process.on("uncaughtException", (err) => {
   // linger, not how much work happens.
   const ALERTS_RECONCILE_MS = Number(process.env.ALERTS_RECONCILE_MS || 5 * 60 * 1000);
   try {
-    await myQueue.add(
+    await addJob(
       "do",
       { domain: "alerts", type: "alerts", event: "reconcile", data: {} },
       {
@@ -324,7 +376,7 @@ process.on("uncaughtException", (err) => {
   // tick. No-ops (never touches Mongo) when OPENROUTER_API_KEY is unset.
   const ALERTS_TRANSLATE_MS = Number(process.env.ALERTS_TRANSLATE_MS || 15 * 60 * 1000);
   try {
-    await myQueue.add(
+    await addJob(
       "do",
       { domain: "alerts", type: "alerts", event: "translate", data: {} },
       {
@@ -345,7 +397,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.ALERT_SNAPSHOT_ENABLED !== "false") {
     const ALERT_SNAPSHOT_MS = Number(process.env.ALERT_SNAPSHOT_MS || 60 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "alerts", type: "alerts", event: "snapshotSatellite", data: {} },
         {
@@ -362,7 +414,7 @@ process.on("uncaughtException", (err) => {
     // runs once fresh frames exist.
     const ALERT_COMPARE_MS = Number(process.env.ALERT_COMPARE_MS || 60 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "alerts", type: "alerts", event: "snapshotCompare", data: {} },
         {
@@ -379,7 +431,7 @@ process.on("uncaughtException", (err) => {
     if (process.env.ALERT_CAMERA_SNAPSHOT_ENABLED === "true") {
       const ALERT_CAMERA_MS = Number(process.env.ALERT_CAMERA_MS || 60 * 60 * 1000);
       try {
-        await myQueue.add(
+        await addJob(
           "do",
           { domain: "alerts", type: "alerts", event: "snapshotCameras", data: {} },
           {
@@ -403,7 +455,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.EVENTS_UNIFIED_ENABLED === "true") {
     const EVENTS_WATCH_TICK_MS = Number(process.env.EVENTS_WATCH_TICK_MS || 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "events", type: "events", event: "watch", data: {} },
         {
@@ -426,7 +478,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.CAMS_INGEST_ENABLED !== "false") {
     for (const source of getEnabledCamSources()) {
       try {
-        await myQueue.add(
+        await addJob(
           "do",
           { domain: "cams", type: "cams", event: "ingest", data: { source: source.id } },
           {
@@ -451,7 +503,7 @@ process.on("uncaughtException", (err) => {
   // without this a fresh worker leaves satellite groups empty for up to TLE_INGEST_MS.
   const TLE_INGEST_MS = Number(process.env.TLE_INGEST_MS || 12 * 60 * 60 * 1000);
   try {
-    await myQueue.add(
+    await addJob(
       "do",
       { domain: "tracks", type: "tracks", event: "ingestTles", data: {} },
       {
@@ -477,7 +529,7 @@ process.on("uncaughtException", (err) => {
     try {
       // immediately: run one snapshot at boot so a restart shows fresh data
       // without waiting out a full interval (esp. the 6min ship cadence).
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "tracks", type: "tracks", event: "snapshotAircraft", data: {} },
         {
@@ -489,7 +541,7 @@ process.on("uncaughtException", (err) => {
           jobId: "tracks-snapshot-aircraft",
         },
       );
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "tracks", type: "tracks", event: "snapshotShips", data: {} },
         {
@@ -502,7 +554,7 @@ process.on("uncaughtException", (err) => {
         },
       );
       // Progressively fill the keyless hexdb aircraft-metadata cache.
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "tracks", type: "tracks", event: "enrichAircraft", data: {} },
         {
@@ -517,7 +569,7 @@ process.on("uncaughtException", (err) => {
       // Cache photo + blurb onto the notable-tracks catalog. LOW PRIORITY (>0 so
       // it never competes with the live snapshots) and slow (staleness-gated +
       // a tiny catalog), so it barely touches the keyless services.
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "notable", type: "notable", event: "enrichNotable", data: {} },
         {
@@ -542,7 +594,7 @@ process.on("uncaughtException", (err) => {
     // minutes. Poll every 5 min by default (SEISMIC_SNAPSHOT_MS to tune).
     const SEISMIC_SNAPSHOT_MS = Number(process.env.SEISMIC_SNAPSHOT_MS || 5 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "tracks", type: "tracks", event: "snapshotSeismic", data: {} },
         {
@@ -563,7 +615,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.CABLE_REFRESH_ENABLED !== "false") {
     const CABLE_REFRESH_MS = Number(process.env.CABLE_REFRESH_MS || 7 * 24 * 60 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "cables", type: "cables", event: "refresh", data: {} },
         {
@@ -584,7 +636,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.FAULT_REFRESH_ENABLED !== "false") {
     const FAULT_REFRESH_MS = Number(process.env.FAULT_REFRESH_MS || 30 * 24 * 60 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "faults", type: "faults", event: "refresh", data: {} },
         {
@@ -607,7 +659,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.ALERT_GEOM_REFRESH_ENABLED !== "false") {
     const ALERT_GEOM_MS = Number(process.env.ALERT_GEOM_REFRESH_MS || 60 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "alertGeom", type: "alertGeom", event: "refresh", data: {} },
         {
@@ -646,7 +698,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.ALERT_BLOBS_REFRESH_ENABLED !== "false") {
     const ALERT_BLOBS_MS = Number(process.env.ALERT_BLOBS_REFRESH_MS || 15 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "alertBlobs", type: "alertBlobs", event: "refresh", data: {} },
         {
@@ -668,7 +720,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.ALERT_CAPID_REFRESH_ENABLED !== "false") {
     const ALERT_CAPID_MS = Number(process.env.ALERT_CAPID_REFRESH_MS || 60 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "alertCapId", type: "alertCapId", event: "refresh", data: {} },
         {
@@ -690,7 +742,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.AURORA_REFRESH_ENABLED !== "false") {
     const AURORA_REFRESH_MS = Number(process.env.AURORA_REFRESH_MS || 5 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "aurora", type: "aurora", event: "refresh", data: {} },
         {
@@ -712,7 +764,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.FIRE_SNAPSHOT_ENABLED !== "false" && (process.env.FIRMS_MAP_KEY || "").trim()) {
     const FIRE_SNAPSHOT_MS = Number(process.env.FIRE_SNAPSHOT_MS || 30 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "fires", type: "fires", event: "snapshot", data: {} },
         {
@@ -735,7 +787,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.VOLCANO_SNAPSHOT_ENABLED !== "false") {
     const VOLCANO_SNAPSHOT_MS = Number(process.env.VOLCANO_SNAPSHOT_MS || 30 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "snapshot", data: {} },
         {
@@ -755,7 +807,7 @@ process.on("uncaughtException", (err) => {
   // so this can poll fairly often; it's a no-op re-scan when nothing's new.
   // Fully skips (no Mongo writes) when OPENROUTER_API_KEY is unset.
   try {
-    await myQueue.add(
+    await addJob(
       "do",
       { domain: "volcanoes", type: "volcanoes", event: "parseReports", data: {} },
       {
@@ -780,7 +832,7 @@ process.on("uncaughtException", (err) => {
   // Disable with VOLCANO_USGS_ENABLED=false.
   if (process.env.VOLCANO_USGS_ENABLED !== "false") {
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "snapshotUsgs", data: {} },
         {
@@ -802,7 +854,7 @@ process.on("uncaughtException", (err) => {
   // Disable with VOLCANO_GEONET_ENABLED=false.
   if (process.env.VOLCANO_GEONET_ENABLED !== "false") {
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "snapshotGeonet", data: {} },
         {
@@ -824,7 +876,7 @@ process.on("uncaughtException", (err) => {
   // Disable with VOLCANO_GEONET_CAMS_ENABLED=false.
   if (process.env.VOLCANO_GEONET_CAMS_ENABLED !== "false") {
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "ingestGeonetCams", data: {} },
         {
@@ -883,24 +935,24 @@ process.on("uncaughtException", (err) => {
     const REGISTRY_OFFSET_MS = 4 * HOUR_MS;
 
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "mediaRegistry", data: {} },
         { repeat: { every: REGISTRY_MS, immediately: true, offset: REGISTRY_OFFSET_MS }, jobId: "volcano-media-registry" },
       );
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "cameraRefresh", data: {} },
         // Hourly and on its OWN lock, so it can't be starved by the six-hourly
         // sweeps — the hash stagger is all it needs.
         { repeat: { every: CAMERA_MS, offset: staggerOffset("volcano-camera-refresh", CAMERA_MS) }, jobId: "volcano-camera-refresh" },
       );
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "officialMedia", data: {} },
         { repeat: { every: OFFICIAL_MS, offset: OFFICIAL_OFFSET_MS }, jobId: "volcano-official-media" },
       );
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "satelliteMedia", data: {} },
         { repeat: { every: SATELLITE_MS, offset: SATELLITE_OFFSET_MS }, jobId: "volcano-satellite-media" },
@@ -909,7 +961,7 @@ process.on("uncaughtException", (err) => {
       // place, so this normally finds nothing. It exists so any future writer that
       // appends camera frames can't quietly regrow the archive.
       const MEDIA_PRUNE_MS = 24 * 60 * 60 * 1000;
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "volcanoes", type: "volcanoCatalog", event: "pruneMedia", data: {} },
         { repeat: { every: MEDIA_PRUNE_MS, offset: staggerOffset("volcano-media-prune", MEDIA_PRUNE_MS) }, jobId: "volcano-media-prune" },
@@ -930,7 +982,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.VOLCANO_CAM_SNAPSHOT_ENABLED === "true") {
     const CAM_SNAP_MS = Number(process.env.VOLCANO_CAM_SNAPSHOT_MS || 60 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "snapshotCams", data: {} },
         {
@@ -944,7 +996,7 @@ process.on("uncaughtException", (err) => {
     }
     const CAM_DAILY_MS = 24 * 60 * 60 * 1000;
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "timelapseCams", data: {} },
         {
@@ -952,7 +1004,7 @@ process.on("uncaughtException", (err) => {
           jobId: "volcanoes-timelapse-cams",
         },
       );
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "volcanoes", type: "volcanoes", event: "pruneCamSnapshots", data: {} },
         {
@@ -973,7 +1025,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.GEOMAG_REFRESH_ENABLED !== "false") {
     const GEOMAG_REFRESH_MS = Number(process.env.GEOMAG_REFRESH_MS || 7 * 24 * 60 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "geomag", type: "geomag", event: "refresh", data: {} },
         {
@@ -998,7 +1050,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.SATIMG_REFRESH_ENABLED !== "false") {
     const SATIMG_REFRESH_MS = Number(process.env.SATIMG_REFRESH_MS || 30 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "satimg", type: "satimg", event: "refresh", data: {} },
         {
@@ -1025,7 +1077,7 @@ process.on("uncaughtException", (err) => {
     const TIDE_STATIONS_MS = Number(process.env.TIDE_STATIONS_MS || 24 * 60 * 60 * 1000);
     const TIDE_SNAPSHOT_MS = Number(process.env.TIDE_SNAPSHOT_MS || 10 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "tides", type: "tides", event: "refreshStations", data: {} },
         {
@@ -1033,7 +1085,7 @@ process.on("uncaughtException", (err) => {
           jobId: "tides-refresh-stations",
         },
       );
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "tides", type: "tides", event: "snapshotTides", data: {} },
         {
@@ -1054,7 +1106,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.SEISMO_ENABLED !== "false") {
     const SEISMO_STATIONS_MS = Number(process.env.SEISMO_STATIONS_MS || 24 * 60 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "seismo", type: "seismo", event: "refreshStations", data: {} },
         {
@@ -1075,7 +1127,7 @@ process.on("uncaughtException", (err) => {
     // SEISMO_SNAPSHOT_WINDOW_SEC.
     const SEISMO_SNAPSHOT_MS = Number(process.env.SEISMO_SNAPSHOT_MS || 5 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "seismo", type: "seismo", event: "snapshot", data: {} },
         {
@@ -1097,7 +1149,7 @@ process.on("uncaughtException", (err) => {
   if (process.env.CLIMATE_ENABLED !== "false") {
     const CLIMATE_SNAPSHOT_MS = Number(process.env.CLIMATE_SNAPSHOT_MS || 10 * 60 * 1000);
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "climate", type: "climate", event: "snapshotClimate", data: {} },
         {
@@ -1121,7 +1173,7 @@ process.on("uncaughtException", (err) => {
   // CLIMATE_BACKFILL_ENABLED=false; force now from the /admin/jobs button.
   if (process.env.CLIMATE_BACKFILL_ENABLED !== "false") {
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "climate", type: "climate", event: "backfillClimate", data: {} },
         {
@@ -1148,7 +1200,7 @@ process.on("uncaughtException", (err) => {
     ];
     for (const { event, cron, id } of summaryCrons) {
       try {
-        await myQueue.add(
+        await addJob(
           "do",
           { domain: "summaries", type: "summaries", event, data: {} },
           { repeat: { pattern: cron }, jobId: id },
@@ -1178,7 +1230,7 @@ process.on("uncaughtException", (err) => {
     ];
     for (const { event, cron, id } of placeRoundupCrons) {
       try {
-        await myQueue.add(
+        await addJob(
           "do",
           { domain: "placeRoundups", type: "placeRoundups", event, data: {} },
           // Normal priority (5): heavier than a live tick shouldn't wait on, but
@@ -1200,7 +1252,7 @@ process.on("uncaughtException", (err) => {
   // matching /admin/jobs buttons) if the source data is ever refreshed.
   if (process.env.AREA_WEATHER_ENABLED !== "false") {
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "areaWeather", type: "areaWeather", event: "run", data: {} },
         { repeat: { pattern: process.env.AREA_WEATHER_CRON || "10 * * * *" }, jobId: "area-weather-run" },
@@ -1216,7 +1268,7 @@ process.on("uncaughtException", (err) => {
   // the top-of-hour ingest before this samples them.
   if (process.env.CITY_WEATHER_ENABLED !== "false") {
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "cityWeather", type: "cityWeather", event: "refresh", data: {} },
         { repeat: { pattern: process.env.CITY_WEATHER_CRON || "20 * * * *" }, jobId: "city-weather-refresh" },
@@ -1234,7 +1286,7 @@ process.on("uncaughtException", (err) => {
   // ingest, so the frame archive is settled before this samples it.
   if (process.env.WEATHER_PANELS_ENABLED !== "false") {
     try {
-      await myQueue.add(
+      await addJob(
         "do",
         { domain: "weatherPanels", type: "weatherPanels", event: "refresh", data: {} },
         { repeat: { pattern: process.env.WEATHER_PANELS_CRON || "35 * * * *" }, jobId: "weather-panels-refresh" },
@@ -1261,8 +1313,30 @@ process.on("uncaughtException", (err) => {
       return res.status(403).json({ error: "Forbidden" });
     }
     try {
-      const counts = await myQueue.getJobCounts("waiting", "active", "delayed", "completed", "failed", "paused");
-      res.json({ status: "ok", queue: QUEUE_NAME, counts, time: new Date().toISOString() });
+      // Counts per tier + a summed total, so /status shows the fg/mid/bg split.
+      const states = ["waiting", "active", "delayed", "completed", "failed", "paused"] as const;
+      const perTier = await Promise.all(
+        QUEUE_TIERS.map(async (tier) => [tier, await getQueue(tier).getJobCounts(...states)] as const),
+      );
+      const byTier = Object.fromEntries(perTier);
+      const counts = states.reduce<Record<string, number>>((acc, s) => {
+        acc[s] = perTier.reduce((sum, [, c]) => sum + (c[s] ?? 0), 0);
+        return acc;
+      }, {});
+      // Per-event usage table (runs/errors/timing/peak mem), heaviest by peak rss first.
+      const events = [...eventStats.entries()]
+        .map(([label, s]) => ({ label, ...s, avgMs: Math.round(s.totalMs / Math.max(1, s.runs)) }))
+        .sort((a, b) => b.peakRssMB - a.peakRssMB);
+      res.json({
+        status: "ok",
+        queues: QUEUE_NAMES,
+        counts,
+        byTier,
+        rssMB: mb(process.memoryUsage().rss),
+        rssPeakMB: mb(rssHighWater),
+        events,
+        time: new Date().toISOString(),
+      });
     } catch (err: any) {
       res.status(500).json({ status: "error", error: err?.message || String(err) });
     }
@@ -1381,7 +1455,8 @@ process.on("uncaughtException", (err) => {
 
   app.get("/healthz", async (_req, res) => {
     try {
-      await myQueue.getWaitingCount();
+      // Any tier's queue shares the Redis connection — this is just a liveness ping.
+      await getQueue().getWaitingCount();
       res.status(200).send("ok");
     } catch {
       res.status(503).send("unhealthy");
@@ -1423,8 +1498,8 @@ process.on("uncaughtException", (err) => {
       stopJobConsoleTap();
       stopCancelSubscriber();
       closeSocket();
-      await bullWorker.close();
-      await myQueue.close();
+      await Promise.all(workers.map((w) => w.close()));
+      await Promise.all(queues.map((q) => q.close()));
       await closeDb();
     } catch (err) {
       log(TAG, `shutdown failed`, summarizeForLog(err));

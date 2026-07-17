@@ -12,18 +12,30 @@ const mockGetJobs = jest.fn();
 const mockGetJobCounts = jest.fn();
 const mockIsPaused = jest.fn();
 const mockGetJobSchedulers = jest.fn();
+const mockGetJob = jest.fn();
 
-jest.mock("@photonsurge/shared/bull/bull", () => ({
-  getQueue: () => ({
+jest.mock("@photonsurge/shared/bull/bull", () => {
+  const q = {
     name: "weather",
     getJobs: (...a: unknown[]) => mockGetJobs(...a),
     getJobCounts: (...a: unknown[]) => mockGetJobCounts(...a),
     isPaused: () => mockIsPaused(),
     getJobSchedulers: (...a: unknown[]) => mockGetJobSchedulers(...a),
     getRepeatableJobs: async () => [],
-  }),
-  clearQueue: jest.fn(),
-}));
+    getJob: (...a: unknown[]) => mockGetJob(...a),
+  };
+  return {
+    getQueue: () => q,
+    // One tier in tests — the tiered helpers delegate to the same mock queue so
+    // the single-queue expectations below carry over unchanged.
+    getAllQueues: () => [{ tier: "mid", queue: q }],
+    aggregateJobCounts: (states: string[]) => mockGetJobCounts(...states),
+    findJobAcrossTiers: (id: string) => mockGetJob(id),
+    // Mirrors the real helper: it passes `false` (no data) through to queue.getJobs.
+    getJobsAcrossTiers: (states: unknown, start = 0, end = 100) => mockGetJobs(states, start, end, false),
+    clearQueue: jest.fn(),
+  };
+});
 jest.mock("@photonsurge/shared/utill/BackLogger", () => ({ PublicBackLogger: jest.fn() }));
 jest.mock("../../../../lib/api-log", () => ({ withApiLog: (h: unknown) => h }));
 

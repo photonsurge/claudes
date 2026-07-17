@@ -13,6 +13,7 @@
  */
 import { createHash } from "crypto";
 import { getQueue, getQueueEvents } from "./bull";
+import { queueForType, type QueueTier } from "../utill/bull-utils";
 
 // Lower number = higher priority. Use QUEUE_PRIORITY constants.
 export const QUEUE_PRIORITY = {
@@ -86,7 +87,13 @@ export const dedupIdFor = (domain: string, type: string, event: string, data: un
  * finishes, the next identical call enqueues normally. Opt out with
  * `{ dedupe: false }` — see `SendToQueueOpts`.
  */
-export const sendToQueue = async (
+/**
+ * Enqueue onto a specific tier's queue. The tier decides which Worker (and which
+ * concurrency lane) runs the job — see bull-utils. Everything else (dedup, delay,
+ * priority, retention) is identical across tiers.
+ */
+export const enqueueTo = async (
+  tier: QueueTier,
   domain: string,
   type: string,
   event: string,
@@ -95,7 +102,7 @@ export const sendToQueue = async (
   priority: QueuePriority = QUEUE_PRIORITY.NORMAL,
   opts: SendToQueueOpts = {},
 ) => {
-  const q = getQueue();
+  const q = getQueue(tier);
   await q.waitUntilReady();
 
   const { dedupe = true } = opts;
@@ -119,9 +126,59 @@ export const sendToQueue = async (
 };
 
 /**
+ * Enqueue a job, auto-routed to the tier its TYPE belongs to (`queueForType`).
+ * The default producer — existing callers keep their signature and now tier
+ * themselves. Reach for `sendToFore/Mid/Back` when the call site knows better than
+ * the type map (e.g. a normally-mid job that a live path needs run ahead).
+ */
+export const sendToQueue = (
+  domain: string,
+  type: string,
+  event: string,
+  data: any,
+  delayUntil?: Date,
+  priority: QueuePriority = QUEUE_PRIORITY.NORMAL,
+  opts: SendToQueueOpts = {},
+) => enqueueTo(queueForType(type), domain, type, event, data, delayUntil, priority, opts);
+
+/** Enqueue onto the FOREGROUND lane (latency-sensitive / broadcast-facing). */
+export const sendToFore = (
+  domain: string,
+  type: string,
+  event: string,
+  data: any,
+  delayUntil?: Date,
+  priority: QueuePriority = QUEUE_PRIORITY.HIGH,
+  opts: SendToQueueOpts = {},
+) => enqueueTo("foreground", domain, type, event, data, delayUntil, priority, opts);
+
+/** Enqueue onto the MID lane (normal ingest — the default weight). */
+export const sendToMid = (
+  domain: string,
+  type: string,
+  event: string,
+  data: any,
+  delayUntil?: Date,
+  priority: QueuePriority = QUEUE_PRIORITY.NORMAL,
+  opts: SendToQueueOpts = {},
+) => enqueueTo("mid", domain, type, event, data, delayUntil, priority, opts);
+
+/** Enqueue onto the BACKGROUND lane (heavy CPU/memory — the capped concurrency). */
+export const sendToBack = (
+  domain: string,
+  type: string,
+  event: string,
+  data: any,
+  delayUntil?: Date,
+  priority: QueuePriority = QUEUE_PRIORITY.LOW,
+  opts: SendToQueueOpts = {},
+) => enqueueTo("background", domain, type, event, data, delayUntil, priority, opts);
+
+/**
  * Enqueue and block until the job finishes (or times out). When an identical job
  * is already pending this attaches to THAT job rather than starting a second one,
- * so concurrent callers asking the same question share one answer.
+ * so concurrent callers asking the same question share one answer. Routes by type
+ * and waits on the MATCHING tier's QueueEvents.
  */
 export const sendToQueueAndWait = async <T = unknown>(
   domain: string,
@@ -132,7 +189,8 @@ export const sendToQueueAndWait = async <T = unknown>(
   priority: QueuePriority = QUEUE_PRIORITY.HIGH,
   opts: SendToQueueOpts = {},
 ): Promise<T> => {
-  const job = await sendToQueue(domain, type, event, data, undefined, priority, opts);
-  const result = await job.waitUntilFinished(getQueueEvents(), timeoutMs);
+  const tier = queueForType(type);
+  const job = await enqueueTo(tier, domain, type, event, data, undefined, priority, opts);
+  const result = await job.waitUntilFinished(getQueueEvents(tier), timeoutMs);
   return result as T;
 };

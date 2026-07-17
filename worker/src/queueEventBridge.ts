@@ -7,7 +7,7 @@
 // ticks. The worker is the natural observer here: it already holds the
 // QueueEvents/Redis connection and the socket client.
 import type { Queue } from "bullmq";
-import { getQueue, getQueueEvents } from "@photonsurge/shared/bull/bull";
+import { getAllQueues, getQueueEvents } from "@photonsurge/shared/bull/bull";
 import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "./socket";
 
@@ -128,38 +128,48 @@ async function resolveLabel(q: Queue, jobId: string | null): Promise<string | nu
  * fn that detaches them (used on graceful shutdown). Safe to call once at boot.
  */
 export function startQueueEventBridge(): () => void {
-  const q = getQueue();
-  const qe = getQueueEvents();
+  // One relay per tier — work is spread across three queues now, so listening to
+  // only one would drop every foreground/background job from the /admin console.
+  // Each relay resolves labels against ITS OWN queue (jobIds aren't unique across
+  // queues, and getJob must hit the right one).
+  const detachers: (() => void)[] = [];
 
-  const relay = (payload: QueueEventPayload) => {
-    // Terminal phases free the label cache entry after use.
-    const terminal = payload.phase === "completed" || payload.phase === "failed" || payload.phase === "removed";
-    resolveLabel(q, payload.jobId)
-      .then((label) => {
-        emitWorkerEvent({
-          type: QUEUE_EVENT_TYPE,
-          jobId: payload.jobId ?? undefined,
-          source: "queue",
-          data: { phase: payload.phase, jobId: payload.jobId, label, ...payload.extra },
-        });
-        if (terminal && payload.jobId) labelCache.delete(payload.jobId);
-      })
-      .catch((err) => log(TAG, "relay failed", err));
-  };
+  for (const { tier, queue: q } of getAllQueues()) {
+    const qe = getQueueEvents(tier);
 
-  const handlers = RELAYED_EVENTS.map((event) => {
-    const handler = (args: any) => {
-      const payload = queueEventToPayload(event, args);
-      if (payload) relay(payload);
+    const relay = (payload: QueueEventPayload) => {
+      // Terminal phases free the label cache entry after use.
+      const terminal = payload.phase === "completed" || payload.phase === "failed" || payload.phase === "removed";
+      resolveLabel(q, payload.jobId)
+        .then((label) => {
+          emitWorkerEvent({
+            type: QUEUE_EVENT_TYPE,
+            jobId: payload.jobId ?? undefined,
+            source: "queue",
+            data: { phase: payload.phase, jobId: payload.jobId, label, tier, ...payload.extra },
+          });
+          if (terminal && payload.jobId) labelCache.delete(payload.jobId);
+        })
+        .catch((err) => log(TAG, "relay failed", err));
     };
-    qe.on(event as any, handler);
-    return [event, handler] as const;
-  });
 
-  log(TAG, "queue event bridge started", { events: [...RELAYED_EVENTS] });
+    const handlers = RELAYED_EVENTS.map((event) => {
+      const handler = (args: any) => {
+        const payload = queueEventToPayload(event, args);
+        if (payload) relay(payload);
+      };
+      qe.on(event as any, handler);
+      return [event, handler] as const;
+    });
+    detachers.push(() => {
+      for (const [event, handler] of handlers) qe.off(event as any, handler);
+    });
+  }
+
+  log(TAG, "queue event bridge started", { events: [...RELAYED_EVENTS], tiers: getAllQueues().length });
 
   return function stop() {
-    for (const [event, handler] of handlers) qe.off(event as any, handler);
+    for (const detach of detachers) detach();
     labelCache.clear();
     log(TAG, "queue event bridge stopped");
   };

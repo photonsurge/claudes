@@ -2,7 +2,7 @@ import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { TRIGGERABLE_JOBS, getTriggerableJob } from "@photonsurge/shared/jobs";
 import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue";
-import { getQueue } from "@photonsurge/shared/bull/bull";
+import { aggregateJobCounts, findJobAcrossTiers, getJobsAcrossTiers } from "@photonsurge/shared/bull/bull";
 import { PublicBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
 export const runtime = "nodejs";
@@ -25,7 +25,7 @@ async function GET__impl(req: Request) {
     // All seven states, not just the four shown in the header: the Clear queue
     // button totals these, and sendToQueue's default priority means most queued
     // work sits in `prioritized` rather than `waiting`.
-    counts = await getQueue().getJobCounts(
+    counts = await aggregateJobCounts([
       "waiting",
       "prioritized",
       "active",
@@ -33,7 +33,7 @@ async function GET__impl(req: Request) {
       "completed",
       "failed",
       "paused",
-    );
+    ]);
   } catch {
     /* Redis down — still return the job list so the UI renders */
   }
@@ -43,7 +43,7 @@ async function GET__impl(req: Request) {
 /** One job's live state + run duration, for the jobs page to poll. */
 async function jobStatus(jobId: string) {
   try {
-    const job = await getQueue().getJob(jobId);
+    const job = await findJobAcrossTiers(jobId);
     if (!job) {
       // Either never existed or completed >1h ago and was reaped. Treat as gone.
       return NextResponse.json({ jobId, state: "unknown" }, { status: 200, headers: NO_CACHE });
@@ -82,8 +82,7 @@ async function POST__impl(req: Request) {
     // bounded continuations. Reuse an existing active/waiting chain so an
     // impatient double-click cannot start two parallel sweeps of the same work.
     if (job.stoppable) {
-      const queue = getQueue();
-      const existing = (await queue.getJobs(["active", "waiting", "delayed", "prioritized"], 0, 100))
+      const existing = (await getJobsAcrossTiers(["active", "waiting", "delayed", "prioritized"], 0, 100))
         .find((candidate) => candidate.data?.type === job.type && candidate.data?.event === job.event);
       if (existing) {
         return NextResponse.json(

@@ -126,6 +126,78 @@ export async function encodeVectorPng(
   return sharp(raw, { raw: { width, height, channels: 4 } }).png().toBuffer();
 }
 
+/** wgrib2 -bin writes UNDEFINED (bitmap-masked) points as ~9.999e20. */
+const GRIB_UNDEFINED = 1e20;
+
+export interface FusedVectorOpts {
+  /** Columns to rotate each row by (0 for already-rolled grids; floor(width/2) otherwise). */
+  shift?: number;
+  /** Restrict opacity to sea/land — needs `land`. */
+  maskSide?: "sea" | "land";
+  /** Land-sea mask (1 = land), in the SAME orientation as u/v (rolled by `shift` here, not beforehand). */
+  land?: Float32Array;
+}
+
+/**
+ * Vector RGBA in ONE pass — the fused replacement for
+ * `rollLongitude ×3 → vectorKeepMask → vectorRgba`.
+ *
+ * Instead of allocating rolled copies of u, v and the land mask plus a keep array
+ * (four full-grid buffers — ~120MB for a 4320×2160 field, times every concurrent
+ * bake), it reads each source component at the ROLLED index, decides keep inline,
+ * and writes the pixel. The only allocation is the RGBA buffer, which we need
+ * anyway. Byte-for-byte identical to the old chain (proven in encode.test); the
+ * pieces are kept for the scalar path and the golden tests.
+ */
+export function vectorRgbaFused(
+  u: Float32Array,
+  v: Float32Array,
+  width: number,
+  height: number,
+  imageUnscale: [number, number],
+  opts: FusedVectorOpts = {},
+): Buffer {
+  const { shift = 0, maskSide, land } = opts;
+  const useMask = !!(maskSide && land);
+  const buf = Buffer.allocUnsafe(width * height * 4);
+  for (let row = 0; row < height; row++) {
+    const base = row * width;
+    for (let col = 0; col < width; col++) {
+      const src = base + (shift ? (col + shift) % width : col);
+      const o = (base + col) * 4;
+      const uu = u[src];
+      const vv = v[src];
+      let ok =
+        Number.isFinite(uu) &&
+        Number.isFinite(vv) &&
+        Math.abs(uu) < GRIB_UNDEFINED &&
+        Math.abs(vv) < GRIB_UNDEFINED;
+      if (ok && useMask) {
+        const isLand = land![src] >= 0.5;
+        ok = maskSide === "land" ? isLand : !isLand;
+      }
+      buf[o] = scaleToByte(uu, imageUnscale);
+      buf[o + 1] = scaleToByte(vv, imageUnscale);
+      buf[o + 2] = 0;
+      buf[o + 3] = ok ? 255 : 0;
+    }
+  }
+  return buf;
+}
+
+/** Encode a vector PNG in one fused pass (roll + mask + scale + RGBA). See `vectorRgbaFused`. */
+export async function encodeVectorPngFused(
+  u: Float32Array,
+  v: Float32Array,
+  width: number,
+  height: number,
+  imageUnscale: [number, number],
+  opts: FusedVectorOpts = {},
+): Promise<Buffer> {
+  const raw = vectorRgbaFused(u, v, width, height, imageUnscale, opts);
+  return sharp(raw, { raw: { width, height, channels: 4 } }).png().toBuffer();
+}
+
 /**
  * Build raw RGBA bytes for a scalar (grayscale) texture. When `keep` is given,
  * pixels where `keep[i]` is falsy are baked as nodata (alpha 0) — WeatherLayers

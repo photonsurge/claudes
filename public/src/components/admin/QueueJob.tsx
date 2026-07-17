@@ -33,6 +33,8 @@ export interface SerializedJob {
   stacktrace: string[];
   returnvalue: unknown;
   repeatJobKey: string | null;
+  /** Which queue tier this job ran on (foreground/mid/background). */
+  tier?: string | null;
 }
 
 export type JobAction = "retry" | "remove" | "promote" | "cancel";
@@ -135,6 +137,21 @@ export default function QueueJob({
             <Typography variant="caption" color="text.disabled" sx={{ fontFamily: font.mono }}>
               #{job.id}
             </Typography>
+            {job.tier && (
+              // Which lane it ran on — background is the memory-capped one, flagged.
+              <Typography
+                variant="caption"
+                sx={{
+                  px: 0.6,
+                  borderRadius: 0.5,
+                  fontWeight: 600,
+                  bgcolor: job.tier === "background" ? "warning.dark" : job.tier === "foreground" ? "info.dark" : "action.selected",
+                  color: job.tier === "mid" ? "text.secondary" : "common.white",
+                }}
+              >
+                {job.tier}
+              </Typography>
+            )}
             {job.attemptsMade > 0 && (
               <Typography variant="caption" color={job.failedReason ? "error.main" : "text.secondary"}>
                 attempt {job.attemptsMade}/{job.maxAttempts}

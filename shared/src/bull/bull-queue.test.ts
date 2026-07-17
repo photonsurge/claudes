@@ -17,12 +17,14 @@ function stubQueue() {
       return { id: "1" };
     },
   };
-  (global as any).__queue__ = q;
+  // All three tiers point at one stub — sendToQueue routes by type, but every route
+  // lands on the same capture here regardless of which tier the payload's type maps to.
+  (global as any).__queues__ = { foreground: q, mid: q, background: q };
   return calls;
 }
 
 afterEach(() => {
-  delete (global as any).__queue__;
+  delete (global as any).__queues__;
 });
 
 describe("stableStringify", () => {

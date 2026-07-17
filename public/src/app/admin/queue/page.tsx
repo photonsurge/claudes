@@ -34,8 +34,16 @@ interface Repeatable {
   tz: string | null;
 }
 
+interface TierSummary {
+  tier: string;
+  name: string;
+  counts: Record<string, number>;
+}
+
 interface QueueData {
-  queue: string;
+  queues: { tier: string; name: string }[];
+  /** Per-tier job counts — the fg/mid/bg split, background being the memory cap. */
+  byTier: TierSummary[];
   state: State;
   counts: Record<string, number> | null;
   paused: boolean;
@@ -138,7 +146,27 @@ export default function QueuePage() {
       title="Queue"
       description={
         <>
-          {data?.queue ?? "…"}
+          {/* The three lanes and their load — active/(waiting+prioritized+delayed).
+              background is the capped lane that bounds worker memory. */}
+          {data?.byTier?.length ? (
+            <Stack component="span" direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+              {data.byTier.map((t) => {
+                const active = t.counts.active ?? 0;
+                const pending = (t.counts.waiting ?? 0) + (t.counts.prioritized ?? 0) + (t.counts.delayed ?? 0);
+                return (
+                  <Chip
+                    key={t.tier}
+                    size="small"
+                    variant="outlined"
+                    label={`${t.tier} ${active}▸${pending}`}
+                    title={`${t.name}: ${active} active, ${pending} pending`}
+                  />
+                );
+              })}
+            </Stack>
+          ) : (
+            "…"
+          )}
           {data?.paused && (
             <Typography component="span" variant="body1" color="warning.main" sx={{ ml: 1 }}>
               paused

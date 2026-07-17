@@ -1,16 +1,18 @@
 /**
- * clearQueue() unit tests — the BullMQ Queue is stubbed via the getQueue()
- * global singleton cache, so nothing here touches a real Redis. The end-to-end
- * behaviour these stubs stand in for (BullMQ silently refusing to clean a job
- * its schedule has armed) is verified against a live Redis separately.
+ * clearOneQueue() unit tests — the per-queue purge logic (BullMQ silently refusing
+ * to clean a job its schedule has armed, so schedules are dropped first). The
+ * BullMQ Queue is a stub passed in directly; nothing here touches a real Redis.
+ * clearQueue() itself just loops this over the three tiers — covered by one
+ * aggregation test at the end.
  */
-import { clearQueue } from "./bull";
+import { clearOneQueue, clearQueue, normalizeStates, type ClearableState } from "./bull";
 
 type CleanCall = { grace: number; limit: number; state: string };
 
 function stubQueue(over: Partial<Record<string, any>> = {}) {
   const calls: CleanCall[] = [];
   const q: any = {
+    name: "worker-app",
     waitUntilReady: async () => undefined,
     clean: async (grace: number, limit: number, state: string) => {
       calls.push({ grace, limit, state });
@@ -21,19 +23,18 @@ function stubQueue(over: Partial<Record<string, any>> = {}) {
     removeRepeatableByKey: async () => true,
     ...over,
   };
-  (global as any).__queue__ = q;
   return { q, calls };
 }
 
-afterEach(() => {
-  delete (global as any).__queue__;
-});
+/** Run clearOneQueue with the same state-normalisation clearQueue applies. */
+const clearOne = (q: any, states?: readonly string[], force = true) =>
+  clearOneQueue(q, normalizeStates(states) as ClearableState[], force);
 
-describe("clearQueue", () => {
+describe("clearOneQueue", () => {
   it("purges every job state with no age grace", async () => {
-    const { calls } = stubQueue();
+    const { q, calls } = stubQueue();
 
-    const res = await clearQueue();
+    const res = await clearOne(q);
 
     expect(calls.map((c) => c.state)).toEqual([
       "active",
@@ -54,7 +55,7 @@ describe("clearQueue", () => {
     const batches = [5_000, 5_000, 1];
     let i = 0;
     const seen: CleanCall[] = [];
-    stubQueue({
+    const { q } = stubQueue({
       clean: async (grace: number, limit: number, state: string) => {
         seen.push({ grace, limit, state });
         if (state !== "wait") return [];
@@ -62,37 +63,37 @@ describe("clearQueue", () => {
       },
     });
 
-    const res = await clearQueue();
+    const res = await clearOne(q);
 
     expect(seen.filter((c) => c.state === "wait")).toHaveLength(3);
     expect(res.removed.wait).toBe(10_001);
   });
 
   it("cleans only the states asked for, folding waiting onto wait", async () => {
-    const { calls } = stubQueue();
+    const { q, calls } = stubQueue();
 
-    const res = await clearQueue({ states: ["failed", "waiting"] });
+    const res = await clearOne(q, ["failed", "waiting"]);
 
     expect(calls.map((c) => c.state)).toEqual(["wait", "failed"]);
     expect(Object.keys(res.removed)).toEqual(["wait", "failed"]);
   });
 
   it("ignores unknown state names rather than passing them to clean()", async () => {
-    const { calls } = stubQueue();
+    const { q, calls } = stubQueue();
 
-    await clearQueue({ states: ["failed", "bogus"] });
+    await clearOne(q, ["failed", "bogus"]);
 
     expect(calls.map((c) => c.state)).toEqual(["failed"]);
   });
 });
 
-describe("clearQueue unarming", () => {
+describe("clearOneQueue unarming", () => {
   // BullMQ guards a schedule's armed job: clean() skips it until the schedule is
   // gone. So the schedules must be dropped BEFORE the clean pass, or the clean
   // silently removes nothing.
   it("drops the schedules owning target jobs, before cleaning", async () => {
     const order: string[] = [];
-    stubQueue({
+    const { q } = stubQueue({
       getJobs: async () => [{ id: "repeat:abc:1", repeatJobKey: "abc" }, { id: "plain:1" }],
       removeJobScheduler: async (key: string) => {
         order.push(`unarm:${key}`);
@@ -104,7 +105,7 @@ describe("clearQueue unarming", () => {
       },
     });
 
-    const res = await clearQueue({ states: ["waiting"] });
+    const res = await clearOne(q, ["waiting"]);
 
     expect(order).toEqual(["unarm:abc", "clean:wait"]);
     expect(res.schedulers).toBe(1);
@@ -112,7 +113,7 @@ describe("clearQueue unarming", () => {
 
   it("de-dupes schedules shared by several armed jobs", async () => {
     const unarmed: string[] = [];
-    stubQueue({
+    const { q } = stubQueue({
       getJobs: async () => [
         { repeatJobKey: "abc" },
         { repeatJobKey: "abc" },
@@ -124,7 +125,7 @@ describe("clearQueue unarming", () => {
       },
     });
 
-    const res = await clearQueue({ states: ["waiting"] });
+    const res = await clearOne(q, ["waiting"]);
 
     expect(unarmed).toEqual(["abc", "def"]);
     expect(res.schedulers).toBe(2);
@@ -132,7 +133,7 @@ describe("clearQueue unarming", () => {
 
   it("falls back to the legacy repeatable API when removeJobScheduler throws", async () => {
     const unarmed: string[] = [];
-    stubQueue({
+    const { q } = stubQueue({
       getJobs: async () => [{ repeatJobKey: "abc" }],
       removeJobScheduler: async () => {
         throw new Error("not a job scheduler");
@@ -143,7 +144,7 @@ describe("clearQueue unarming", () => {
       },
     });
 
-    const res = await clearQueue({ states: ["waiting"] });
+    const res = await clearOne(q, ["waiting"]);
 
     expect(unarmed).toEqual(["abc"]);
     expect(res.schedulers).toBe(1);
@@ -154,7 +155,7 @@ describe("clearQueue unarming", () => {
     // kill a live schedule for no reason. Don't even scan them.
     const unarmed: string[] = [];
     let scanned: unknown = null;
-    stubQueue({
+    const { q } = stubQueue({
       getJobs: async (states: string[]) => {
         scanned = states;
         return [{ repeatJobKey: "abc" }];
@@ -165,7 +166,7 @@ describe("clearQueue unarming", () => {
       },
     });
 
-    const res = await clearQueue({ states: ["completed", "failed"] });
+    const res = await clearOne(q, ["completed", "failed"]);
 
     expect(scanned).toBeNull();
     expect(unarmed).toEqual([]);
@@ -174,21 +175,21 @@ describe("clearQueue unarming", () => {
 
   it("scans only the guarded states when the target mixes both", async () => {
     let scanned: unknown = null;
-    stubQueue({
+    const { q } = stubQueue({
       getJobs: async (states: string[]) => {
         scanned = states;
         return [];
       },
     });
 
-    await clearQueue({ states: ["completed", "waiting", "delayed"] });
+    await clearOne(q, ["completed", "waiting", "delayed"]);
 
     expect(scanned).toEqual(["waiting", "delayed"]);
   });
 
   it("leaves schedules alone when force is off", async () => {
     const unarmed: string[] = [];
-    stubQueue({
+    const { q } = stubQueue({
       getJobs: async () => [{ repeatJobKey: "abc" }],
       removeJobScheduler: async (key: string) => {
         unarmed.push(key);
@@ -196,9 +197,33 @@ describe("clearQueue unarming", () => {
       },
     });
 
-    const res = await clearQueue({ force: false });
+    const res = await clearOne(q, undefined, false);
 
     expect(unarmed).toEqual([]);
     expect(res.schedulers).toBe(0);
+  });
+});
+
+describe("clearQueue (tier aggregation)", () => {
+  afterEach(() => {
+    delete (global as any).__queues__;
+  });
+
+  it("sweeps all three tiers and sums what each removed", async () => {
+    // Each tier's stub removes 2 'wait' jobs and unarms 1 schedule.
+    const make = () => ({
+      name: "q",
+      waitUntilReady: async () => undefined,
+      getJobs: async () => [{ repeatJobKey: "k" }],
+      removeJobScheduler: async () => true,
+      removeRepeatableByKey: async () => true,
+      clean: async (_g: number, _l: number, state: string) => (state === "wait" ? ["a", "b"] : []),
+    });
+    (global as any).__queues__ = { foreground: make(), mid: make(), background: make() };
+
+    const res = await clearQueue({ states: ["waiting"] });
+
+    expect(res.removed.wait).toBe(6); // 2 per tier × 3 tiers
+    expect(res.schedulers).toBe(3); // 1 per tier × 3 tiers
   });
 });

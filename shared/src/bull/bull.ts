@@ -4,15 +4,15 @@
  * and lazily-built, globally-cached `getQueue` / `getQueueEvents` singletons so a
  * single Queue/QueueEvents pair is reused across hot reloads and modules.
  */
-import { Queue, QueueEvents } from "bullmq";
+import { Job, Queue, QueueEvents } from "bullmq";
 import { getEnvVar } from "../utill/env";
-import { QUEUE_NAME } from "../utill/bull-utils";
+import { DEFAULT_TIER, QUEUE_NAMES, QUEUE_TIERS, type QueueTier } from "../utill/bull-utils";
 
 declare global {
   // eslint-disable-next-line no-var
-  var __queue__: Queue | undefined;
+  var __queues__: Partial<Record<QueueTier, Queue>> | undefined;
   // eslint-disable-next-line no-var
-  var __queueEvents__: QueueEvents | undefined;
+  var __queueEventsByTier__: Partial<Record<QueueTier, QueueEvents>> | undefined;
 }
 
 // Single place for the Redis connection options.
@@ -28,18 +28,55 @@ export function getRedisOptions() {
   } as const;
 }
 
-export function getQueue() {
-  if (global.__queue__) return global.__queue__;
-  const q = new Queue(QUEUE_NAME, { connection: getRedisOptions() });
-  global.__queue__ = q;
+/**
+ * The Queue for a tier (default MID — its name is the historical "worker-app", so
+ * every `getQueue().client` reader and existing Redis schedule carries on). One
+ * cached singleton per tier, reused across hot reloads.
+ */
+export function getQueue(tier: QueueTier = DEFAULT_TIER): Queue {
+  const cache = (global.__queues__ ??= {});
+  const hit = cache[tier];
+  if (hit) return hit;
+  const q = new Queue(QUEUE_NAMES[tier], { connection: getRedisOptions() });
+  cache[tier] = q;
   return q;
 }
 
-export function getQueueEvents() {
-  if (global.__queueEvents__) return global.__queueEvents__;
-  const qe = new QueueEvents(QUEUE_NAME, { connection: getRedisOptions() });
-  global.__queueEvents__ = qe;
+/** Every tier's Queue, for the admin/cancel/clear paths that must sweep all three. */
+export function getAllQueues(): { tier: QueueTier; queue: Queue }[] {
+  return QUEUE_TIERS.map((tier) => ({ tier, queue: getQueue(tier) }));
+}
+
+export function getQueueEvents(tier: QueueTier = DEFAULT_TIER): QueueEvents {
+  const cache = (global.__queueEventsByTier__ ??= {});
+  const hit = cache[tier];
+  if (hit) return hit;
+  const qe = new QueueEvents(QUEUE_NAMES[tier], { connection: getRedisOptions() });
+  cache[tier] = qe;
   return qe;
+}
+
+/** Job counts summed across every tier's queue (the admin header total). */
+export async function aggregateJobCounts(states: string[]): Promise<Record<string, number>> {
+  const per = await Promise.all(getAllQueues().map(({ queue }) => queue.getJobCounts(...(states as any[]))));
+  const out: Record<string, number> = {};
+  for (const c of per) for (const s of states) out[s] = (out[s] ?? 0) + ((c as Record<string, number>)[s] ?? 0);
+  return out;
+}
+
+/** Find a job by id across all tiers — a jobId lives on exactly one queue, unknown which. */
+export async function findJobAcrossTiers(jobId: string): Promise<Job | null> {
+  for (const { queue } of getAllQueues()) {
+    const job = await queue.getJob(jobId);
+    if (job) return job;
+  }
+  return null;
+}
+
+/** Jobs in the given states across all tiers (for the "already queued?" scans). */
+export async function getJobsAcrossTiers(states: any[], start = 0, end = 100): Promise<Job[]> {
+  const per = await Promise.all(getAllQueues().map(({ queue }) => queue.getJobs(states, start, end, false)));
+  return per.flat();
 }
 
 // Every job state `clean()` accepts, i.e. the whole queue. Note BullMQ names the
@@ -124,10 +161,32 @@ export async function clearQueue({
   states,
   force = true,
 }: { states?: readonly string[]; force?: boolean } = {}): Promise<ClearQueueResult> {
-  const q = getQueue();
-  await q.waitUntilReady();
   const targets = normalizeStates(states);
+  const removed: Record<string, number> = {};
+  let schedulers = 0;
 
+  // Sweep every tier — the work is spread across three queues now, so clearing
+  // just one would silently leave the others armed.
+  for (const { queue } of getAllQueues()) {
+    const r = await clearOneQueue(queue, targets, force);
+    schedulers += r.schedulers;
+    for (const state of targets) removed[state] = (removed[state] ?? 0) + (r.removed[state] ?? 0);
+  }
+
+  return { removed, schedulers };
+}
+
+/**
+ * Purge one queue's given states (unarming any schedule that would otherwise guard
+ * a target job). The per-queue half of `clearQueue`, split out so it's unit-testable
+ * against a stub queue without three-tier bookkeeping.
+ */
+export async function clearOneQueue(
+  q: Queue,
+  targets: ClearableState[],
+  force: boolean,
+): Promise<ClearQueueResult> {
+  await q.waitUntilReady();
   const schedulers = force ? await unarmSchedulers(q, targets) : 0;
 
   const removed: Record<string, number> = {};
@@ -141,7 +200,6 @@ export async function clearQueue({
     }
     removed[state] = total;
   }
-
   return { removed, schedulers };
 }
 

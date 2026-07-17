@@ -2,6 +2,7 @@ import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { getQueue } from "@photonsurge/shared/bull/bull";
+import { queueForType } from "@photonsurge/shared/utill/bull-utils";
 import { vehicleId, type VehicleKind } from "@photonsurge/shared/db/vehicle-model";
 
 export const runtime = "nodejs";
@@ -70,7 +71,7 @@ async function POST__impl(req: Request) {
       enabled: true,
     });
     try {
-      await getQueue().add(
+      await getQueue(queueForType("notable")).add(
         "do",
         { domain: "notable", type: "notable", event: "enrichNotable", data: { ids: [id] } },
         { removeOnComplete: true, removeOnFail: true, priority: 5 },

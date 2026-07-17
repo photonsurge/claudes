@@ -1,6 +1,13 @@
 import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
-import { clearQueue, getQueue } from "@photonsurge/shared/bull/bull";
+import {
+  clearQueue,
+  getQueue,
+  getAllQueues,
+  aggregateJobCounts,
+  findJobAcrossTiers,
+  getJobsAcrossTiers,
+} from "@photonsurge/shared/bull/bull";
 import { PublicBackLogger } from "@photonsurge/shared/utill/BackLogger";
 import { jobLabel } from "@photonsurge/shared/jobs";
 
@@ -166,29 +173,41 @@ async function GET__impl(req: Request) {
 
   const wantBacklog = url.searchParams.get("backlog") === "1";
 
-  const q = getQueue();
+  // Every tier's queue — the dashboard shows the whole system, so counts, jobs and
+  // schedules are aggregated across all three and each job is tagged with its tier.
+  const tiers = getAllQueues();
   try {
-    const [counts, paused, repeatables, backlog] = await Promise.all([
-      q.getJobCounts(...STATES),
-      q.isPaused(),
-      getSchedules(q),
-      wantBacklog ? getBacklog(q) : Promise.resolve([]),
+    const [counts, perTierCounts, pausedFlags, schedulesPerQ, backlogPerQ] = await Promise.all([
+      aggregateJobCounts([...STATES]),
+      Promise.all(tiers.map(({ queue }) => queue.getJobCounts(...([...STATES] as any[])))),
+      Promise.all(tiers.map(({ queue }) => queue.isPaused())),
+      Promise.all(tiers.map(({ queue }) => getSchedules(queue))),
+      wantBacklog ? Promise.all(tiers.map(({ queue }) => getBacklog(queue))) : Promise.resolve([]),
     ]);
+    const byTier = tiers.map((t, i) => ({ tier: t.tier, name: t.queue.name, counts: perTierCounts[i] }));
+    const paused = pausedFlags.some(Boolean);
+    const repeatables = schedulesPerQ.flat();
+    const backlog = (backlogPerQ as any[]).flat();
     const perState = await Promise.all(
       states.map(async (s) => {
-        const raw = await q.getJobs([s as any], 0, limit - 1, false);
-        return raw.filter(Boolean).map((j: any) => ({ ...serializeJob(j), state: s }));
+        const raw = await Promise.all(
+          tiers.map(async ({ tier, queue }) => {
+            const list = await queue.getJobs([s as any], 0, limit - 1, false);
+            return list.filter(Boolean).map((j: any) => ({ ...serializeJob(j), state: s, tier }));
+          }),
+        );
+        return raw.flat();
       }),
     );
     const jobs = perState.flat();
     return NextResponse.json(
-      { queue: q.name, state: states.length === 1 ? states[0] : states.join(","), counts, paused, jobs, repeatables, backlog, limit },
+      { queues: byTier.map((t) => ({ tier: t.tier, name: t.name })), byTier, state: states.length === 1 ? states[0] : states.join(","), counts, paused, jobs, repeatables, backlog, limit },
       { status: 200, headers: NO_CACHE },
     );
   } catch (err) {
     // Redis/worker down — return a shell so the page still renders the error.
     return NextResponse.json(
-      { queue: q.name, state: states.join(","), counts: null, paused: false, jobs: [], repeatables: [], backlog: [], error: String(err) },
+      { queues: [], state: states.join(","), counts: null, paused: false, jobs: [], repeatables: [], backlog: [], error: String(err) },
       { status: 200, headers: NO_CACHE },
     );
   }
@@ -220,28 +239,30 @@ async function POST__impl(req: Request) {
     /* empty body → unknown action below */
   }
   const { action, id } = body;
-  const q = getQueue();
+  // Queue-wide actions apply to every tier; by-id actions find the job's tier.
+  const allQueues = getAllQueues().map((t) => t.queue);
 
   try {
     let detail: unknown = null;
     switch (action) {
       case "pause":
-        await q.pause();
+        await Promise.all(allQueues.map((q) => q.pause()));
         break;
       case "resume":
-        await q.resume();
+        await Promise.all(allQueues.map((q) => q.resume()));
         break;
       case "drain":
         // Removes waiting + delayed. Repeatable meta survives, so schedules re-arm.
-        await q.drain(true);
+        await Promise.all(allQueues.map((q) => q.drain(true)));
         break;
       case "retryAll":
-        await q.retryJobs({ state: "failed", count: 1000 });
+        await Promise.all(allQueues.map((q) => q.retryJobs({ state: "failed", count: 1000 })));
         break;
       case "clean": {
         const type = body.type && CLEANABLE.has(body.type) ? body.type : "completed";
-        // grace = 0 → purge every job of this type regardless of age.
-        detail = await q.clean(0, 10_000, type as any);
+        // grace = 0 → purge every job of this type regardless of age, across tiers.
+        const cleaned = await Promise.all(allQueues.map((q) => q.clean(0, 10_000, type as any)));
+        detail = { removed: cleaned.reduce((n, ids) => n + ids.length, 0) };
         break;
       }
       case "clear": {
@@ -262,7 +283,7 @@ async function POST__impl(req: Request) {
         if (!body.type || !body.event) {
           return NextResponse.json({ error: "missing type/event" }, { status: 400, headers: NO_CACHE });
         }
-        const pending = await q.getJobs(["waiting", "delayed"], 0, -1, false);
+        const pending = await getJobsAcrossTiers(["waiting", "delayed"], 0, -1);
         const matches = pending.filter(
           (j: any) => j?.data?.type === body.type && j?.data?.event === body.event,
         );
@@ -286,7 +307,7 @@ async function POST__impl(req: Request) {
         if (!body.type) {
           return NextResponse.json({ error: "missing type" }, { status: 400, headers: NO_CACHE });
         }
-        const pending = await q.getJobs(["waiting", "delayed", "prioritized", "paused"], 0, -1, false);
+        const pending = await getJobsAcrossTiers(["waiting", "delayed", "prioritized", "paused"], 0, -1);
         const doomed = pending.filter(
           (j: any) =>
             j?.data?.type === body.type && (!body.event || j?.data?.event === body.event),
@@ -305,12 +326,16 @@ async function POST__impl(req: Request) {
         // cancel to the worker, which cooperatively aborts it + discards it (no
         // retry). That only interrupts handlers that honor the abort signal.
         if (!id) return NextResponse.json({ error: "missing id" }, { status: 400, headers: NO_CACHE });
-        const job = await q.getJob(id);
+        const job = await findJobAcrossTiers(id);
         if (!job) return NextResponse.json({ error: "job not found" }, { status: 404, headers: NO_CACHE });
         const jobState = await job.getState();
         if (jobState === "active") {
-          const client = await q.client;
-          await client.publish(`${q.name}:cancel`, id);
+          // The worker subscribes to ONE cancel channel (the mid/canonical queue
+          // name) and cancels by jobId from its cross-tier active registry, so the
+          // publish target is fixed regardless of which tier the job runs on.
+          const cancelQ = getQueue();
+          const client = await cancelQ.client;
+          await client.publish(`${cancelQ.name}:cancel`, id);
           detail = { state: jobState, cancel: "signalled" };
         } else {
           await job.remove();
@@ -322,7 +347,7 @@ async function POST__impl(req: Request) {
       case "remove":
       case "promote": {
         if (!id) return NextResponse.json({ error: "missing id" }, { status: 400, headers: NO_CACHE });
-        const job = await q.getJob(id);
+        const job = await findJobAcrossTiers(id);
         if (!job) return NextResponse.json({ error: "job not found" }, { status: 404, headers: NO_CACHE });
         if (action === "retry") await job.retry();
         else if (action === "remove") await job.remove();
