@@ -7,7 +7,8 @@ import LinearProgress from "@mui/material/LinearProgress";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { font, surface } from "../../theme/tokens";
+import { font, status, surface } from "../../theme/tokens";
+import { useJobLog, type JobLogLine } from "../../lib/queue-log-store";
 
 /** One BullMQ job flattened by /api/admin/queue. */
 export interface SerializedJob {
@@ -64,6 +65,53 @@ function stamp(job: SerializedJob, state: string, now: number): string {
   return relTime(job.timestamp, now);
 }
 
+function hhmmss(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+const LOG_COLOR = { info: "text.secondary", warn: status.warning, error: status.error } as const;
+
+/** This job instance's own streamed console output, live while expanded. */
+function JobLog({ lines }: { lines: JobLogLine[] }) {
+  if (lines.length === 0) {
+    return (
+      <Typography variant="caption" color="text.disabled" sx={{ fontStyle: "italic" }}>
+        No log lines captured yet — output streams here live while the job runs.
+      </Typography>
+    );
+  }
+  return (
+    <Box
+      sx={{
+        m: 0,
+        p: 1.25,
+        borderRadius: 1,
+        bgcolor: surface.sunken,
+        border: "1px solid",
+        borderColor: "divider",
+        fontFamily: font.mono,
+        fontSize: 11.5,
+        lineHeight: 1.6,
+        maxHeight: 260,
+        overflow: "auto",
+      }}
+    >
+      {lines.map((l, i) => (
+        <Box key={i} sx={{ display: "flex", gap: 1, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          <Box component="span" sx={{ color: "text.disabled", flexShrink: 0 }}>
+            {hhmmss(l.at)}
+          </Box>
+          <Box component="span" sx={{ color: LOG_COLOR[l.level], flex: 1 }}>
+            {l.line}
+          </Box>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <Box sx={{ mt: 1 }}>
@@ -116,6 +164,10 @@ export default function QueueJob({
   stalled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // This exact instance's streamed console output (keyed by BullMQ jobId). Only
+  // active jobs emit; captured live from the socket while the page is open.
+  const logLines = useJobLog(job.id);
+  const showLog = state === "active" || logLines.length > 0;
   // Prefer the server's qualified label ("alerts.ingest:wmo") — alerts runs one
   // repeatable per source, so an unqualified name shows four identical rows.
   const label = job.displayName || (job.type && job.event ? `${job.type}.${job.event}` : job.name || "job");
@@ -206,6 +258,11 @@ export default function QueueJob({
               <Typography variant="caption" color="text.secondary" sx={{ fontFamily: font.mono }}>
                 {job.repeatJobKey}
               </Typography>
+            </Field>
+          )}
+          {showLog && (
+            <Field label={`live log${logLines.length ? ` (${logLines.length})` : ""}`}>
+              <JobLog lines={logLines} />
             </Field>
           )}
           {hasBody && (

@@ -16,6 +16,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import QueueJob, { type SerializedJob, type JobAction } from "../../../components/admin/QueueJob";
 import QueueEventLog from "../../../components/admin/QueueEventLog";
+import QueueLogCollector from "../../../components/admin/QueueLogCollector";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import ClearQueueMenu from "../../../components/admin/ClearQueueMenu";
 import QueueBacklog, { type BacklogRow } from "../../../components/admin/QueueBacklog";
@@ -222,6 +223,9 @@ export default function QueuePage() {
         </>
       }
     >
+        {/* One socket subscription feeding the per-job log store; each QueueJob
+            card reads its own instance's lines when expanded. Renders nothing. */}
+        <QueueLogCollector />
 
         {data?.error && (
           <Alert severity="error" sx={{ mt: 1.75 }}>

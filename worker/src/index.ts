@@ -55,16 +55,27 @@ const PORT = Number(process.env.PORT || 8080);
 // window is min(interval, cap). Deterministic (FNV-1a on the jobId) so a job
 // keeps the same phase across restarts and BullMQ doesn't churn the schedule.
 const MAX_STAGGER_MS = Number(process.env.JOB_STAGGER_MS || 4 * 60 * 1000);
-function staggerOffset(jobId: string, everyMs: number): number {
-  const span = Math.min(everyMs, MAX_STAGGER_MS);
-  if (span <= 0) return 0;
+function fnv(jobId: string): number {
   let h = 2166136261;
   for (let i = 0; i < jobId.length; i++) {
     h ^= jobId.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return (h >>> 0) % span;
+  return h >>> 0;
 }
+function staggerOffset(jobId: string, everyMs: number): number {
+  const span = Math.min(everyMs, MAX_STAGGER_MS);
+  if (span <= 0) return 0;
+  return fnv(jobId) % span;
+}
+/**
+ * Deterministic minute in [lo, hi] for OUR default cron patterns, so the cron
+ * registrations don't all sit on :00 alongside each other (the every-based jobs
+ * are phase-staggered via startDate; the crons were the remaining top-of-hour
+ * pack). Only shifts in-code defaults — an env-supplied cron passes through
+ * verbatim.
+ */
+const staggerMinute = (jobId: string, lo: number, hi: number): number => lo + (fnv(jobId) % (hi - lo + 1));
 
 const waitForMongo = async () => {
   const MAX_ATTEMPTS = 30;
@@ -98,13 +109,45 @@ process.on("uncaughtException", (err) => {
   // Every scheduler-registered job retries transient failures. Without this a
   // repeatable runs attempts 1/0 — one Docker-DNS blip (EAI_AGAIN mongodb, seen
   // at staging boot) fails the whole tick outright instead of retrying 5s later.
-  // Callers can still override; `repeat` templates carry this onto every iteration.
-  const addJob = (name: string, payload: { type: string; [k: string]: any }, opts?: any) =>
-    getQueue(queueForType(payload.type)).add(name, payload, {
-      attempts: 3,
-      backoff: { type: "exponential", delay: 5_000 },
-      ...opts,
-    });
+  const JOB_DEFAULTS = { attempts: 3, backoff: { type: "exponential", delay: 5_000 } } as const;
+
+  /**
+   * Register work on the tier its type belongs to. One-shots go straight to the
+   * queue; repeatables become BullMQ v5 JOB SCHEDULERS, not legacy `repeat` jobs.
+   *
+   * Why: the legacy path DROPS a caller `offset` the first time an iteration
+   * re-arms — its persisted config is only {name,endDate,tz,pattern,every} — so
+   * every short-cadence job collapsed back onto the wall-clock grid within one
+   * cycle and the whole fleet detonated together at :00 (the top-of-hour heap
+   * OOM on the 8GB staging host; verified live: re-armed jobs all showed
+   * storedOffset null / slot+0). A job scheduler persists its phase, so we
+   * anchor `startDate` at the next grid slot + the job's deterministic stagger
+   * and BullMQ keeps that phase for every iteration thereafter.
+   *
+   * `immediately` (forbidden alongside startDate) becomes an explicit one-shot
+   * kick — the same idempotent-seed semantic the weather fleet already uses.
+   */
+  const addJob = async (name: string, payload: { type: string; [k: string]: any }, opts?: any) => {
+    const q = getQueue(queueForType(payload.type));
+    const { repeat, jobId, ...rest } = opts ?? {};
+    if (!repeat) return q.add(name, payload, { ...JOB_DEFAULTS, ...rest });
+
+    const schedulerId = jobId ?? `${payload.type}-${payload.event}`;
+    const template = { name, data: payload, opts: { ...JOB_DEFAULTS, ...rest } };
+    if (repeat.pattern) {
+      await q.upsertJobScheduler(schedulerId, { pattern: repeat.pattern, tz: repeat.tz }, template);
+    } else {
+      const every = Number(repeat.every);
+      const phase = Number(repeat.offset) || 0; // staggerOffset / explicit spacing
+      const now = Date.now();
+      const slot = Math.floor(now / every) * every + phase;
+      const startDate = slot > now ? slot : slot + every;
+      await q.upsertJobScheduler(schedulerId, { every, startDate }, template);
+      if (repeat.immediately) {
+        await q.add(name, payload, { ...JOB_DEFAULTS, ...rest, removeOnComplete: true, removeOnFail: true });
+      }
+    }
+  };
   await initSocket();
 
   // Relay BullMQ lifecycle events up to the socket server so /admin/queue can
@@ -273,20 +316,32 @@ process.on("uncaughtException", (err) => {
   const workers = QUEUE_TIERS.map((tier) => new Worker(QUEUE_NAMES[tier], processJob, workerOptsFor(tier)));
   log(TAG, `workers started`, Object.fromEntries(QUEUE_TIERS.map((t) => [t, workerOptsFor(t).concurrency])));
 
-  // Clear stale repeatable schedules before re-registering. BullMQ keys a
-  // repeatable by its options, so changing an interval (e.g. SHIP_SNAPSHOT_MS)
-  // with the same jobId leaves the OLD schedule firing alongside the new one.
-  // Wiping them here means the registrations below are always authoritative.
+  // Clear stale schedules before re-registering, so the registrations below are
+  // always authoritative — a job type removed from code must stop firing, and a
+  // changed interval must not leave the old cadence running alongside the new.
+  // Two generations coexist here: JOB SCHEDULERS (what addJob registers now) and
+  // any LEGACY repeatables left by an older build (keyed by options, removed by
+  // key). getRepeatableJobs() lists both, so remove schedulers first and only
+  // legacy-remove what wasn't already a scheduler. Phases are deterministic
+  // (staggerOffset hashes the jobId), so re-registering restores each job to
+  // the SAME slot phase — clearing costs nothing but the re-upsert.
   try {
     let cleared = 0;
     for (const q of queues) {
+      const schedulers = await q.getJobSchedulers(0, 5000);
+      const schedKeys = new Set(schedulers.map((s) => String(s.key)));
+      for (const key of schedKeys) await q.removeJobScheduler(key);
       const repeatables = await q.getRepeatableJobs();
-      for (const r of repeatables) await q.removeRepeatableByKey(r.key);
-      cleared += repeatables.length;
+      for (const r of repeatables) {
+        if (schedKeys.has(String(r.key))) continue; // removed above with its scheduler
+        await q.removeRepeatableByKey(r.key);
+        cleared++;
+      }
+      cleared += schedKeys.size;
     }
-    if (cleared) log(TAG, `cleared ${cleared} stale repeatable(s)`);
+    if (cleared) log(TAG, `cleared ${cleared} stale schedule(s)`);
   } catch (err) {
-    log(TAG, `failed to clear stale repeatables`, summarizeForLog(err));
+    log(TAG, `failed to clear stale schedules`, summarizeForLog(err));
   }
 
   // ALSO drop the not-yet-run jobs those old schedules had already promoted.
@@ -328,8 +383,13 @@ process.on("uncaughtException", (err) => {
 
   // ---- Repeatable weather.check job (BullMQ, not node-cron) ----
   // Enqueues `{ type:"weather", event:"check" }` on RUN_CHECK_CRON. A fixed
-  // jobId de-duplicates the repeat scheduler across restarts.
-  const RUN_CHECK_CRON = process.env.RUN_CHECK_CRON || "*/30 * * * *";
+  // jobId de-duplicates the repeat scheduler across restarts. The default is a
+  // staggered half-hourly (:m and :m+30, m hashed 2-14) rather than :00/:30 —
+  // it's an availability POLL, so nothing about it needs the top of the hour,
+  // and :00 is exactly where the rest of the fleet used to pile up. The +443MB
+  // it costs on real data now lands on a quiet minute.
+  const RUN_CHECK_CRON =
+    process.env.RUN_CHECK_CRON || `${staggerMinute("weather-check", 2, 14)}-59/30 * * * *`;
   try {
     await addJob(
       "do",
@@ -1245,10 +1305,13 @@ process.on("uncaughtException", (err) => {
   // active events into a stored round-up (+ optional LLM narrative) that the admin
   // screen reads. Fixed jobIds de-dup across restarts; crons are env-overridable.
   if (process.env.SUMMARIES_ENABLED !== "false") {
+    // Staggered default minutes (hashed 2-14), not :00 — an hourly round-up a
+    // few minutes into the hour is editorially identical, and :00 was the
+    // minute the whole fleet used to detonate on together.
     const summaryCrons = [
-      { event: "generateHourly", cron: process.env.SUMMARY_HOURLY_CRON || "0 * * * *", id: "summaries-hourly" },
-      { event: "generate12h", cron: process.env.SUMMARY_12H_CRON || "0 0,12 * * *", id: "summaries-12h" },
-      { event: "generateDaily", cron: process.env.SUMMARY_DAILY_CRON || "0 0 * * *", id: "summaries-daily" },
+      { event: "generateHourly", cron: process.env.SUMMARY_HOURLY_CRON || `${staggerMinute("summaries-hourly", 2, 14)} * * * *`, id: "summaries-hourly" },
+      { event: "generate12h", cron: process.env.SUMMARY_12H_CRON || `${staggerMinute("summaries-12h", 2, 14)} 0,12 * * *`, id: "summaries-12h" },
+      { event: "generateDaily", cron: process.env.SUMMARY_DAILY_CRON || `${staggerMinute("summaries-daily", 2, 14)} 0 * * *`, id: "summaries-daily" },
     ];
     for (const { event, cron, id } of summaryCrons) {
       try {

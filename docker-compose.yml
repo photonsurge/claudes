@@ -95,6 +95,11 @@ services:
     env_file: .env
     environment:
       PORT: 10102
+      # V8 heap ceiling. Without this the worker gets V8's DEFAULT (2GB on an
+      # 8-16GB host) — which is what the staging top-of-hour OOMs crashed into
+      # while the box had 5GB+ free. 4096 heap + bake threads/sharp native on
+      # top ≈ a ~5GB worst-case container. Override per host in .env.
+      NODE_OPTIONS: "--max-old-space-size=${WORKER_NODE_HEAP_MB:-4096}"
       ELEVATION_CACHE_DIR: /app/dem-cache
       # Natural Earth geojson (countries.seed mask) — read from the shared host
       # data dir mounted below, NOT baked into the image.
