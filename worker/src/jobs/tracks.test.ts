@@ -70,6 +70,7 @@ function fakeDb(over: Partial<Record<string, unknown>> = {}) {
     satelliteTles: {
       upsertMany: jest.fn(async (tles: unknown[]) => ({ upserted: tles.length })),
       upsertSatcatMany: jest.fn(async (meta: unknown[]) => ({ matched: meta.length })),
+      countMissingMeta: jest.fn(async () => (over.missingMeta as number) ?? 1),
     },
     quakes: {
       upsertMany: jest.fn(async (quakes: unknown[]) => ({ upserted: quakes.length })),
@@ -168,6 +169,18 @@ describe("ingestTles", () => {
       expect.objectContaining({ noradId: "25544", meta: expect.objectContaining({ objectId: "1998-067A" }) }),
     ]);
     expect(results).toEqual([{ group: "stations", parsed: 1, upserted: 1, enriched: 1 }]);
+  });
+
+  it("skips the SATCAT catalog pull once a group is fully enriched", async () => {
+    db = fakeDb({ missingMeta: 0 });
+    (getAppDb as jest.Mock).mockResolvedValue(db as unknown as AppDb);
+    (fetchGroupTle as jest.Mock).mockResolvedValue(TLE_TEXT);
+
+    const { results } = await tracks.ingestTles(job({ groups: ["stations"] }));
+
+    expect(fetchGroupSatcat).not.toHaveBeenCalled();
+    expect(db.satelliteTles.upsertSatcatMany).not.toHaveBeenCalled();
+    expect(results).toEqual([{ group: "stations", parsed: 1, upserted: 1, enriched: 0 }]);
   });
 
   it("never lets a SATCAT failure sink the TLE ingest", async () => {

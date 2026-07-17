@@ -158,10 +158,16 @@ export async function ingestTles(job: Job) {
       const r = await db.satelliteTles.upsertMany(tles, group);
 
       // Best-effort SATCAT join — own try/catch so it never sinks the TLE ingest.
+      // SATCAT metadata is static per object, so we only pull the catalog for a
+      // group that still has un-enriched TLEs. Once enriched, every later run (and
+      // every boot seed) skips records.php entirely — Celestrak blocks the IP for
+      // over-querying that endpoint, and re-fetching changes nothing anyway.
       let enriched = 0;
       try {
-        const meta = (await fetchGroupSatcat(group)).map(satcatToMeta);
-        ({ matched: enriched } = await db.satelliteTles.upsertSatcatMany(meta));
+        if ((await db.satelliteTles.countMissingMeta(group)) > 0) {
+          const meta = (await fetchGroupSatcat(group)).map(satcatToMeta);
+          ({ matched: enriched } = await db.satelliteTles.upsertSatcatMany(meta));
+        }
       } catch (metaErr) {
         log(TAG, `satcat enrich failed`, { group, err: summarizeForLog(metaErr) });
       }

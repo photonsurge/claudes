@@ -54,6 +54,7 @@ export default function SlideDeck({
   holdMs = HOLD_MS,
   dotColor = MUTED,
   chrome = null,
+  resetKey,
 }: {
   slides: DeckSlide[];
   width?: number;
@@ -63,9 +64,18 @@ export default function SlideDeck({
   /** Shared template (event-type badge + title, fixed size) applied to every
    *  slide via context, so the whole deck reads as one card. */
   chrome?: DeckChrome | null;
+  /** Rewinds the deck to the first slide whenever this changes. Pass the on-air
+   *  segment id so cutting to a new thing/place always opens on slide 0 instead
+   *  of wherever the previous segment's rotation had landed. */
+  resetKey?: string;
 }) {
   const count = slides.length;
   const [idx, setIdx] = useState(0);
+
+  // New segment/place → back to the top of the deck.
+  useEffect(() => {
+    setIdx(0);
+  }, [resetKey]);
 
   useEffect(() => {
     if (count <= 1) return;

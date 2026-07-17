@@ -17,7 +17,7 @@ services:
     # waiting to happen (and it muddies any memory observation of the apps).
     # 1GB is plenty here: the bulky payloads live on the ${BLOB_DIR} disk store,
     # not in Mongo. Raise via env on a bigger/dedicated host.
-    command: ["mongod", "--quiet", "--wiredTigerCacheSizeGB", "${MONGO_CACHE_GB:-2}"]
+    command: ["mongod", "--quiet"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}

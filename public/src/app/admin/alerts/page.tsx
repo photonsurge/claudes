@@ -48,6 +48,7 @@ import { alertCountryCode, alertCountryName, flagOf } from "@photonsurge/shared/
 import { HAZARDS, hazardMeta } from "../../../lib/hazard";
 import { bucketByGroupId } from "../../../lib/alertGroups";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import AlertCoverageStrip from "../../../components/admin/AlertCoverageStrip";
 import { useTableSort } from "../../../components/admin/useTableSort";
 import { surface } from "../../../theme/tokens";
 
@@ -324,6 +325,9 @@ export default function AlertsPage() {
           {translateMsg}
         </Alert>
       )}
+
+      {/* Drawable-geometry health of active alerts — "how many are failing to draw". */}
+      <AlertCoverageStrip />
 
       <TableContainer component={Paper} sx={{ mt: 2.5 }}>
         <Table>

@@ -689,6 +689,7 @@ export default function BroadcastFrame({
             {onAirSegment ? (
               <SlideDeck
                 slides={leftDeck}
+                resetKey={onAirSegment.id}
                 dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
                 chrome={{
                   badge: KIND_BADGE[onAirSegment.kind] ?? onAirSegment.kind,

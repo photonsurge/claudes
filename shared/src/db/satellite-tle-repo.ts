@@ -61,6 +61,16 @@ export function makeSatelliteTleRepo(model: Model<iSatelliteTleModel>) {
       }));
     },
 
+    /**
+     * How many of a group's stored objects still lack SATCAT `meta`. Callers use
+     * this to skip the (heavily rate-limited) records.php catalog pull once a group
+     * is fully enriched — the metadata is static per object, so re-fetching only
+     * risks Celestrak's per-IP block without changing anything.
+     */
+    async countMissingMeta(group: string): Promise<number> {
+      return model.countDocuments({ groups: group, meta: { $exists: false } });
+    },
+
     async count(): Promise<number> {
       return model.estimatedDocumentCount();
     },
