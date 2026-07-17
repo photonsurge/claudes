@@ -61,6 +61,7 @@ export default function AlertsPage() {
   const [translateMsg, setTranslateMsg] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState("all");
   const [hazardFilter, setHazardFilter] = useState("all");
+  const [positionFilter, setPositionFilter] = useState("all");
   const [query, setQuery] = useState("");
 
   // Full (non-lean) docs for whichever group's Debug modal is open — the list
@@ -148,9 +149,19 @@ export default function AlertsPage() {
     byHazard[h] = (byHazard[h] ?? 0) + 1;
   }
 
+  // The list is fetched with omitCoordinates, so the server computes repPoint — the
+  // first usable [lng,lat] across the alert's areas — and leaves it absent when no
+  // area carried geometry (a geocode-only alert: it names a region but ships no
+  // shape). That absence IS "no position info". Count both buckets for the dropdown.
+  let withPos = 0;
+  for (const a of alerts) if (a.repPoint) withPos++;
+  const noPos = alerts.length - withPos;
+
   const shown = alerts.filter((a) => {
     if (sourceFilter !== "all" && a.source !== sourceFilter) return false;
     if (hazardFilter !== "all" && alertHazard(a) !== hazardFilter) return false;
+    if (positionFilter === "has" && !a.repPoint) return false;
+    if (positionFilter === "none" && a.repPoint) return false;
     const q = query.trim().toLowerCase();
     if (q) {
       const info = primaryInfo(a);
@@ -255,6 +266,17 @@ export default function AlertsPage() {
                 {h.icon} {h.label} ({byHazard[h.id]})
               </MenuItem>
             ))}
+          </TextField>
+          <TextField
+            select
+            label="Position"
+            value={positionFilter}
+            onChange={(e) => setPositionFilter(e.target.value)}
+            sx={{ minWidth: 160 }}
+          >
+            <MenuItem value="all">any position</MenuItem>
+            <MenuItem value="has">has position ({withPos})</MenuItem>
+            <MenuItem value="none">no position ({noPos})</MenuItem>
           </TextField>
           <TextField
             value={query}
@@ -424,7 +446,33 @@ export default function AlertsPage() {
                         );
                       })()}
                     </TableCell>
-                    <TableCell sx={{ verticalAlign: "top" }}>{areaSummary(rep)}</TableCell>
+                    <TableCell sx={{ verticalAlign: "top" }}>
+                      <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+                        <span>{areaSummary(rep)}</span>
+                        {/* Geocode-only alert: it names a region but carries no shape
+                            (server-computed repPoint is absent). Flag it so the rows
+                            with nothing to draw on the globe stand out. */}
+                        {!rep.repPoint && (
+                          <Box
+                            component="span"
+                            title="No position info — this alert ships no geometry (geocode-only)"
+                            sx={{
+                              px: 0.625,
+                              borderRadius: 0.5,
+                              fontSize: 10,
+                              fontWeight: 700,
+                              letterSpacing: 0.3,
+                              color: "warning.main",
+                              border: 1,
+                              borderColor: "warning.main",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            NO GEO
+                          </Box>
+                        )}
+                      </Stack>
+                    </TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap", verticalAlign: "top" }}>
                       <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap", gap: 0.5 }}>
                         {/* A multi-source group is the interesting case — accent it. */}

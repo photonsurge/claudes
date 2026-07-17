@@ -8,13 +8,13 @@
  * globe that empties for the length of a rebuild — so they're pinned here rather
  * than left to the repo tests, which can't see the loop.
  */
-import type { Job } from "bullmq";
 import type { iAlert } from "@photonsurge/shared/db/alert-model";
-import { getAppDb } from "@photonsurge/shared/db/index";
 import { attachCities } from "../alerts/blob-cities";
-import { refresh } from "./alertBlobs";
+import { rebuildAlertBlobs } from "../alerts/rebuildBlobs";
 
-jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: jest.fn() }));
+// The rebuild moved into its own module so it can run in a child process; the job
+// handler (alertBlobs.ts) now only forks it. These tests drive the rebuild
+// directly — that's where the loop's memory-shape invariants live.
 jest.mock("../blog", () => ({ blogInfo: jest.fn(), blogErr: jest.fn() }));
 jest.mock("../alerts/blob-cities", () => ({
   attachCities: jest.fn(async () => ({ cities: 4, empty: 0, repaired: 0, failures: 0 })),
@@ -106,11 +106,10 @@ function mockDb() {
       }),
     },
   };
-  (getAppDb as jest.Mock).mockResolvedValue(db);
   return { db, trace };
 }
 
-const run = () => refresh({} as Job);
+const run = (db: any) => rebuildAlertBlobs(db);
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -129,7 +128,7 @@ describe("alert blobs rebuild", () => {
   it("stamps each shape with its country", async () => {
     const { db } = mockDb();
 
-    await run();
+    await run(db);
 
     const written = (db.alertBlobs.addGeneration as jest.Mock).mock.calls.flatMap((c) => c[0]);
     expect(written.length).toBeGreaterThan(0);
@@ -140,7 +139,7 @@ describe("alert blobs rebuild", () => {
     const { db } = mockDb();
     const find = jest.spyOn(db.alerts.model, "find");
 
-    await run();
+    await run(db);
 
     expect(find.mock.calls.length).toBeGreaterThan(1);
     for (const [, projection] of find.mock.calls) {
@@ -152,7 +151,7 @@ describe("alert blobs rebuild", () => {
     ALERTS = [county("pl", 3, [0, 0, 1, 1], "PL"), county("de", 3, [1, 0, 2, 1], "DE")];
     const { db } = mockDb();
 
-    await run();
+    await run(db);
 
     const written = (db.alertBlobs.addGeneration as jest.Mock).mock.calls.flatMap((c) => c[0]);
     expect(written.map((b: any) => b.country).sort()).toEqual(["DE", "PL"]);
@@ -162,9 +161,9 @@ describe("alert blobs rebuild", () => {
     // Accumulating instead meant carrying ~1.9M vertices of finished output on
     // top of whatever bucket was mid-clip. Any write drifting to the end of the
     // loop puts the OOM back.
-    const { trace } = mockDb();
+    const { db, trace } = mockDb();
 
-    await run();
+    await run(db);
 
     expect(trace).toEqual([
       "load a1+a2",
@@ -182,9 +181,9 @@ describe("alert blobs rebuild", () => {
     // shapes live as they landed and only retired the previous set on this line,
     // a killed job left both generations live forever and the globe drew every
     // shape twice.
-    const { trace } = mockDb();
+    const { db, trace } = mockDb();
 
-    await run();
+    await run(db);
 
     expect(trace[trace.length - 1]).toMatch(/^commit /);
   });
@@ -194,7 +193,7 @@ describe("alert blobs rebuild", () => {
     // part of the rebuild on air and sweep the rest away.
     const { db } = mockDb();
 
-    await run();
+    await run(db);
 
     const stamps = db.alertBlobs.addGeneration.mock.calls.map(([, at]) => at);
     const committed = db.alertBlobs.commitGeneration.mock.calls[0][0];
@@ -203,18 +202,18 @@ describe("alert blobs rebuild", () => {
   });
 
   it("counts the shapes it actually wrote", async () => {
-    const { trace } = mockDb();
+    const { db, trace } = mockDb();
 
-    const r = await run();
+    const r = await run(db);
 
     expect(r).toMatchObject({ alerts: 3, blobs: 2 });
     expect(trace.filter((t) => t.startsWith("write"))).toHaveLength(2);
   });
 
   it("reports the vertex saving across all hazards, not just the last", async () => {
-    mockDb();
+    const { db } = mockDb();
 
-    const r = await run();
+    const r = await run(db);
 
     expect(r.verticesBefore).toBeGreaterThan(0);
     expect(r.verticesAfter).toBeGreaterThan(0);
@@ -224,9 +223,9 @@ describe("alert blobs rebuild", () => {
   it("resolves cities while the bucket is the only geometry in memory", async () => {
     // Once per bucket, before the next load — deferring it to the end would need
     // every shape held, which is the thing the streaming write avoids.
-    const { trace } = mockDb();
+    const { db, trace } = mockDb();
 
-    await run();
+    await run(db);
 
     expect(attachCities).toHaveBeenCalledTimes(2);
     expect(trace.filter((t) => t.startsWith("load"))).toHaveLength(2);
@@ -238,7 +237,7 @@ describe("alert blobs rebuild", () => {
     const { db, trace } = mockDb();
     ALERTS.length = 0;
 
-    const r = await run();
+    const r = await run(db);
 
     expect(r).toMatchObject({ alerts: 0, blobs: 0, saved: "0%" });
     expect(db.alertBlobs.commitGeneration).toHaveBeenCalledTimes(1);
