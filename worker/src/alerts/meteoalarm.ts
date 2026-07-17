@@ -1,4 +1,5 @@
 import { meteoalarmRank, isMeteoalarmGreen } from "@photonsurge/shared/alerts/severity";
+import { fetchWithTimeout, discardBody, mapPool } from "../http";
 import { canonicaliseCapMessages } from "@photonsurge/shared/alerts/normalise";
 import { windRing } from "@photonsurge/shared/alerts/rings";
 import type {
@@ -177,10 +178,14 @@ export const meteoalarmSource: AlertSource = {
   async fetch(): Promise<RawPayload[]> {
     const results = await Promise.allSettled(
       countries().map(async (c) => {
-        const res = await fetch(`${BASE}${c}`, {
+        const res = await fetchWithTimeout(`${BASE}${c}`, {
+          timeoutMs: Number(process.env.METEOALARM_FETCH_TIMEOUT_MS || 30_000),
           headers: { "User-Agent": userAgent(), Accept: "application/json" },
         });
-        if (!res.ok) throw new Error(`${c}: ${res.status} ${res.statusText}`);
+        if (!res.ok) {
+          discardBody(res);
+          throw new Error(`${c}: ${res.status} ${res.statusText}`);
+        }
         return {
           contentType: res.headers.get("content-type") ?? "application/json",
           body: await res.text(),
@@ -191,6 +196,38 @@ export const meteoalarmSource: AlertSource = {
     return results
       .filter((r): r is PromiseFulfilledResult<RawPayload> => r.status === "fulfilled")
       .map((r) => r.value);
+  },
+
+  /**
+   * The parse-and-release path ingest prefers: each country's body is parsed and
+   * dropped before the next is fetched (bounded concurrency), instead of
+   * `fetch()`'s allSettled holding every country's raw JSON in memory at once.
+   * Per-country failures skip silently exactly as in fetch() — reconcile is off
+   * for this source, so a missing country is a transient gap, not a withdrawal.
+   */
+  async fetchParsed(): Promise<CapMessage[]> {
+    const limit = Number(process.env.METEOALARM_FETCH_CONCURRENCY || 6);
+    const perCountry = await mapPool(countries(), limit, async (c) => {
+      try {
+        const res = await fetchWithTimeout(`${BASE}${c}`, {
+          timeoutMs: Number(process.env.METEOALARM_FETCH_TIMEOUT_MS || 30_000),
+          headers: { "User-Agent": userAgent(), Accept: "application/json" },
+        });
+        if (!res.ok) {
+          discardBody(res);
+          return [];
+        }
+        const payload: RawPayload = {
+          contentType: res.headers.get("content-type") ?? "application/json",
+          body: await res.text(),
+          fetchedAt: new Date().toISOString(),
+        };
+        return meteoalarmSource.parse([payload]);
+      } catch {
+        return []; // transient per-country gap — same silent skip as fetch()
+      }
+    });
+    return perCountry.flat();
   },
 
   parse(raw: RawPayload[]): CapMessage[] {

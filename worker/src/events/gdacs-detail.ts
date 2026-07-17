@@ -3,6 +3,7 @@ import type { iWatchedEvent } from "@photonsurge/shared/db/watched-event-model";
 import type { EventResourceKind } from "@photonsurge/shared/db/event-resource-model";
 import type { NewEventTimelineUpdate } from "@photonsurge/shared/db/event-timeline-update-model";
 import type { AcquireContext, AcquireResult, ExternalSource } from "./source-types";
+import { discardBody } from "../http";
 
 /**
  * deep-GDACS — the first external adapter. GDACS is our primary global feed, so
@@ -151,7 +152,10 @@ export const gdacsDetailSource: ExternalSource = {
 
     const detailUrl = `${GDACS_DETAIL}?eventtype=${parsed.eventType}&eventid=${parsed.eventid}`;
     const res = await f(detailUrl, { headers: { "User-Agent": userAgent(), Accept: "application/json" } });
-    if (!res.ok) throw new Error(`gdacs geteventdata ${res.status} for ${event.primarySourceId}`);
+    if (!res.ok) {
+      discardBody(res);
+      throw new Error(`gdacs geteventdata ${res.status} for ${event.primarySourceId}`);
+    }
     const json = await res.json();
     const norm = normalizeGdacsDetail(json);
     const payloadHash = sha256(norm.hashBasis);

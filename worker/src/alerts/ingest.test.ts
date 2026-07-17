@@ -254,3 +254,34 @@ describe("ingestSource — event promotion (unified layer)", () => {
     expect(timelineBeats).toHaveLength(0);
   });
 });
+
+describe("fetchParsed preference", () => {
+  it("uses a source's fetchParsed and never touches fetch()/parse()", async () => {
+    const next = mkAlert();
+    const calls: string[] = [];
+    const src = {
+      ...fakeSource(next),
+      fetch: async () => {
+        calls.push("fetch");
+        return [];
+      },
+      parse: () => {
+        calls.push("parse");
+        return [];
+      },
+      fetchParsed: async () => {
+        calls.push("fetchParsed");
+        return [{ marker: true }];
+      },
+      normalise: (msgs: any[]) => {
+        expect(msgs).toEqual([{ marker: true }]); // fed the fused path's output
+        return [next];
+      },
+    } as unknown as AlertSource;
+    const { db } = fakeDb(async () => ({ inserted: true, prev: null }));
+    const res = await ingestSource(src, db, NOW);
+    expect(calls).toEqual(["fetchParsed"]);
+    expect(res.count).toBe(1);
+    expect(res.inserted).toBe(1);
+  });
+});

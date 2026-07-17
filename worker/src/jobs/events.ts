@@ -4,6 +4,7 @@ import { log } from "@photonsurge/shared/utill/logger";
 import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
+import { timeoutFetch } from "../http";
 import { eventsUnifiedEnabled } from "../events/config";
 import { enabledEventSources } from "../events/registry";
 
@@ -81,6 +82,12 @@ export async function acquire(job: Job) {
 
   const now = new Date();
   const adapters = enabledEventSources().filter((s) => s.appliesTo(event));
+  // Every adapter fetch gives up eventually. Without this they fall back to raw
+  // global fetch — and this lane fans out up to WATCH_BATCH acquires a minute, so
+  // one slow-drip upstream (Copernicus 502-storms, GDACS wobbles) parks acquire
+  // frames + their loaded event docs in memory indefinitely. BullMQ can't kill an
+  // in-process handler; the timeout is what bounds the lane.
+  const fetchImpl = timeoutFetch();
   let changed = false;
   let timeline = 0;
   let resources = 0;
@@ -88,7 +95,7 @@ export async function acquire(job: Job) {
   let ok = true;
   for (const adapter of adapters) {
     try {
-      const r = await adapter.acquire({ db, event, now });
+      const r = await adapter.acquire({ db, event, now, fetchImpl });
       changed = changed || r.changed;
       timeline += r.timeline;
       resources += r.resources;

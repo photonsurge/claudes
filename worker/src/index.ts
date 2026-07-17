@@ -12,9 +12,11 @@ import http from "http";
 import { Worker, Job } from "bullmq";
 import { readdirSync } from "fs";
 import { join, extname, basename } from "path";
+import v8 from "v8";
 
 import { QUEUE_NAMES, QUEUE_TIERS, TIER_CONCURRENCY, queueForType } from "@photonsurge/shared/utill/bull-utils";
 import { getQueue, getAllQueues, getRedisOptions } from "@photonsurge/shared/bull/bull";
+import { bakePoolStats } from "./grib/bakePool";
 import { getDb, closeDb } from "@photonsurge/shared/utill/mongoose";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { getSource } from "@photonsurge/shared/sources";
@@ -25,7 +27,7 @@ import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 import { initSocket, closeSocket } from "./socket";
 import { startQueueEventBridge } from "./queueEventBridge";
 import { installJobConsoleTap, runInJobLogContext } from "./jobLog";
-import { beginJob, endJob, startCancelSubscriber } from "./jobCancel";
+import { beginJob, endJob, startCancelSubscriber, activeJobLabels } from "./jobCancel";
 import { startDirector, stopDirector } from "./director/loop";
 import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
 import { getEnabledSources } from "./alerts/registry";
@@ -248,9 +250,14 @@ process.on("uncaughtException", (err) => {
   // renewal and EVERY in-flight job dropped its lock at once. 300s renews at 150s.
   // The real fix is keeping CPU off the loop (dissolve → child process, bakes →
   // worker-thread pool); this stops the bleeding for whatever's left.
+  // Effective per-tier concurrency (env override wins over the tuned default).
+  // Exposed on /status too, so the health dashboard shows the REAL cap that's
+  // bounding heap, not just the compiled-in default.
+  const concurrencyFor = (tier: (typeof QUEUE_TIERS)[number]) =>
+    Number(process.env[`WORKER_CONCURRENCY_${tier.toUpperCase()}`] || TIER_CONCURRENCY[tier]);
   const workerOptsFor = (tier: (typeof QUEUE_TIERS)[number]) => ({
     connection: { ...getRedisOptions(), maxRetriesPerRequest: null },
-    concurrency: Number(process.env[`WORKER_CONCURRENCY_${tier.toUpperCase()}`] || TIER_CONCURRENCY[tier]),
+    concurrency: concurrencyFor(tier),
     lockDuration: Number(process.env.WORKER_LOCK_DURATION_MS || 300_000),
     stalledInterval: 30_000,
     maxStalledCount: 2,
@@ -1314,26 +1321,48 @@ process.on("uncaughtException", (err) => {
     }
     try {
       // Counts per tier + a summed total, so /status shows the fg/mid/bg split.
+      // Each tier carries its effective concurrency — the cap the health UI draws
+      // the "N of M lanes busy" gauge against (background's cap is the heap bound).
       const states = ["waiting", "active", "delayed", "completed", "failed", "paused"] as const;
       const perTier = await Promise.all(
-        QUEUE_TIERS.map(async (tier) => [tier, await getQueue(tier).getJobCounts(...states)] as const),
+        QUEUE_TIERS.map(async (tier) => {
+          const c = await getQueue(tier).getJobCounts(...states);
+          return { tier, name: QUEUE_NAMES[tier], concurrency: concurrencyFor(tier), counts: c };
+        }),
       );
-      const byTier = Object.fromEntries(perTier);
       const counts = states.reduce<Record<string, number>>((acc, s) => {
-        acc[s] = perTier.reduce((sum, [, c]) => sum + (c[s] ?? 0), 0);
+        acc[s] = perTier.reduce((sum, t) => sum + (t.counts[s] ?? 0), 0);
         return acc;
       }, {});
-      // Per-event usage table (runs/errors/timing/peak mem), heaviest by peak rss first.
+      // Per-event usage table (runs/errors/timing/peak mem), heaviest by peak heap
+      // delta first — "which event type grows the heap most" is the OOM question.
       const events = [...eventStats.entries()]
         .map(([label, s]) => ({ label, ...s, avgMs: Math.round(s.totalMs / Math.max(1, s.runs)) }))
-        .sort((a, b) => b.peakRssMB - a.peakRssMB);
+        .sort((a, b) => b.peakHeapDeltaMB - a.peakHeapDeltaMB);
+      const m = process.memoryUsage();
       res.json({
         status: "ok",
         queues: QUEUE_NAMES,
         counts,
-        byTier,
-        rssMB: mb(process.memoryUsage().rss),
+        byTier: perTier,
+        // Memory snapshot: rss (the OS-visible footprint, what OOM-kills), the JS
+        // heap in use vs the V8 old-space ceiling (the 4GB limit we crashed into),
+        // and the rss high-water since boot.
+        rssMB: mb(m.rss),
         rssPeakMB: mb(rssHighWater),
+        heapUsedMB: mb(m.heapUsed),
+        heapTotalMB: mb(m.heapTotal),
+        heapLimitMB: mb(v8.getHeapStatistics().heap_size_limit),
+        externalMB: mb(m.external),
+        // Bake-thread lifecycle: each worker thread is a V8 isolate whose memory
+        // shows only in rss, so spawned/recycled/crashed says how much of the
+        // rss-vs-heap gap is pool churn (recycled climbing = memory being handed
+        // back; crashed>0 = check logs; worker=0 with inline>0 = pool broken).
+        bakePool: bakePoolStats(),
+        uptimeSec: Math.round(process.uptime()),
+        // Labels of jobs running RIGHT NOW — the ledger only has finished runs, so
+        // this is how the UI flags which event types are in flight.
+        active: activeJobLabels(),
         events,
         time: new Date().toISOString(),
       });

@@ -1,4 +1,5 @@
 import { canonicaliseCapMessages } from "@photonsurge/shared/alerts/normalise";
+import { fetchWithTimeout, discardBody } from "../http";
 import type {
   AlertSource,
   CapMessage,
@@ -145,10 +146,14 @@ export const gdacsSource: AlertSource = {
   reconcile: true, // single fetch = reliable full snapshot
 
   async fetch(): Promise<RawPayload[]> {
-    const res = await fetch(FEED, {
+    const res = await fetchWithTimeout(FEED, {
+      timeoutMs: Number(process.env.GDACS_FETCH_TIMEOUT_MS || 30_000),
       headers: { "User-Agent": userAgent(), Accept: "application/json" },
     });
-    if (!res.ok) throw new Error(`gdacs fetch failed: ${res.status} ${res.statusText}`);
+    if (!res.ok) {
+      discardBody(res);
+      throw new Error(`gdacs fetch failed: ${res.status} ${res.statusText}`);
+    }
     return [
       {
         contentType: res.headers.get("content-type") ?? "application/json",

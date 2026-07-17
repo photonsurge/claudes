@@ -78,8 +78,9 @@ export async function ingestSource(
   db: AppDb,
   now: Date = new Date(),
 ): Promise<IngestResult> {
-  const raw = await source.fetch();
-  const msgs = source.parse(raw);
+  // Prefer the fused streaming path where a source offers one — same messages,
+  // without holding the whole raw snapshot (string + parsed tree) in memory.
+  const msgs = source.fetchParsed ? await source.fetchParsed() : source.parse(await source.fetch());
   const alerts = source.normalise(msgs, now);
 
   // Geocode-only feeds (MeteoAlarm) name their area but ship no polygon. Join the

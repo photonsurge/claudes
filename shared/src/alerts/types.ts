@@ -81,6 +81,17 @@ export interface AlertSource {
   fetch(): Promise<RawPayload[]>;
   /** Format-specific parse into intermediate CAP messages. */
   parse(raw: RawPayload[]): CapMessage[];
+  /**
+   * OPTIONAL fused fetch+parse that never materialises the raw payloads —
+   * for feeds big enough that buffering the whole snapshot as a string (plus
+   * its parsed tree) dominates the worker's heap (WMO streams features off the
+   * socket; MeteoAlarm parses per country and releases). When present, ingest
+   * uses this and skips fetch()/parse(), which remain for tests and probes.
+   * May THROW on a malformed body where parse() would return [] — on a
+   * reconcile source, "zero messages" from a bad response would deactivate
+   * every live alert, so failing the tick is the safe behaviour.
+   */
+  fetchParsed?(): Promise<CapMessage[]>;
   /** CAP → canonical (fills lifecycle/derived). Usually delegates to the shared helper. */
   normalise(msgs: CapMessage[], now?: Date): iAlert[];
 }

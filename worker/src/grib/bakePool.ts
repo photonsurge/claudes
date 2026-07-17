@@ -12,10 +12,19 @@
 // ones, so a call site only changes its import path. Every result is identical to
 // the inline bake — this moves WHERE the CPU runs, not WHAT it computes.
 //
-// Fail-safe: if the pool can't start (worker file missing, ts-node hiccup) or a
-// worker dies mid-task, that task falls back to an INLINE bake. The pool is a
-// performance change that can never produce a wrong or missing texture, and never
-// does worse than the pre-pool behaviour.
+// Fail-safe: if a worker can't start or dies mid-task, that task falls back to an
+// INLINE bake. The pool is a performance change that can never produce a wrong or
+// missing texture, and never does worse than the pre-pool behaviour.
+//
+// LIFECYCLE (the memory half of the design): a worker thread is a whole V8
+// isolate whose heap ratchets up to its biggest-ever bake and, being a separate
+// isolate, never shows in the main thread's heapUsed — only in process RSS. So
+// threads are spawned ON DEMAND (not eagerly), and an idle thread is RETIRED
+// after BAKE_POOL_IDLE_MS, returning its memory to the OS; the next bake simply
+// spawns a fresh one. A crashing worker no longer bricks the pool permanently
+// either: each crash refunds its task inline and the pool respawns on demand,
+// until BAKE_POOL_MAX_CRASHES in one process life — THEN it goes inline-forever
+// (a repeatedly crashing worker must not become a spawn loop).
 
 import { Worker } from "worker_threads";
 import os from "os";
@@ -36,6 +45,21 @@ const POOL_SIZE = Math.max(
 /** Escape hatch: BAKE_POOL=off bakes inline everywhere (the pre-pool behaviour). */
 const DISABLED = process.env.BAKE_POOL === "off";
 
+/** Retire a worker idle this long, so its isolate's memory goes back to the OS. */
+const IDLE_MS = Number(process.env.BAKE_POOL_IDLE_MS || 60_000);
+const SWEEP_MS = Math.max(5_000, Math.min(IDLE_MS, 30_000));
+
+/** Crashes tolerated (each respawned through) before the pool goes inline-forever. */
+const MAX_CRASHES = Number(process.env.BAKE_POOL_MAX_CRASHES || 3);
+
+/**
+ * OPT-IN per-thread V8 heap cap (MB). Unset = no limit, exactly as before — a
+ * cap turns "one huge bake used a lot of RAM and finished" into a thread OOM
+ * (refunded inline, counted against the crash budget), so only set it once the
+ * biggest real bake's headroom is known.
+ */
+const WORKER_HEAP_MB = Number(process.env.BAKE_WORKER_HEAP_MB) || 0;
+
 /** Under ts-node (dev) this file is .ts; the compiled build runs .js. */
 const IS_TS = __filename.endsWith(".ts");
 const workerFile = path.join(__dirname, IS_TS ? "bakeWorker.ts" : "bakeWorker.js");
@@ -52,6 +76,10 @@ interface Pending {
 interface Slot {
   worker: Worker;
   busy: boolean;
+  /** When the slot last became idle — the recycle clock. */
+  idleSince: number;
+  /** Set when the sweeper terminates it on purpose, so exit≠crash. */
+  retiring: boolean;
 }
 
 interface Task {
@@ -60,16 +88,19 @@ interface Task {
   pending: Pending;
 }
 
-let slots: Slot[] | null = null;
+let slots: Slot[] = [];
 let poolBroken = false;
 let shuttingDown = false;
+let crashes = 0;
+let sweeper: NodeJS.Timeout | null = null;
 let nextId = 1;
 const inFlight = new Map<number, { slot: Slot; pending: Pending }>();
 const queue: Task[] = [];
 
-/** Where bakes actually ran. `worker` proves the offload; `inline` is the fallback. */
-const stats = { worker: 0, inline: 0 };
-export const bakePoolStats = () => ({ ...stats });
+/** Where bakes ran (`worker` proves the offload) + thread lifecycle counters,
+ *  plus the live picture: threads alive right now and tasks waiting for one. */
+const stats = { worker: 0, inline: 0, spawned: 0, recycled: 0, crashed: 0 };
+export const bakePoolStats = () => ({ ...stats, threads: slots.length, queued: queue.length });
 
 /**
  * `worker_threads` structured-clone downgrades the result's `Buffer` to a plain
@@ -84,14 +115,19 @@ function asBufferResult(result: BakeResult): BakeResult {
 }
 
 function spawn(): Slot {
-  const worker = new Worker(workerFile, { execArgv: workerExecArgv });
-  const slot: Slot = { worker, busy: false };
+  const worker = new Worker(workerFile, {
+    execArgv: workerExecArgv,
+    ...(WORKER_HEAP_MB > 0 ? { resourceLimits: { maxOldGenerationSizeMb: WORKER_HEAP_MB } } : {}),
+  });
+  const slot: Slot = { worker, busy: false, idleSince: Date.now(), retiring: false };
+  stats.spawned++;
 
   worker.on("message", (msg: { id: number; ok: boolean; result?: BakeResult; error?: string }) => {
     const entry = inFlight.get(msg.id);
     if (!entry) return;
     inFlight.delete(msg.id);
     slot.busy = false;
+    slot.idleSince = Date.now();
     if (msg.ok && msg.result) {
       stats.worker++;
       // Crossing the worker-thread boundary strips the Buffer subclass: the PNG
@@ -103,25 +139,37 @@ function spawn(): Slot {
     pump();
   });
 
-  // A worker that errors or exits takes its in-flight task down with it. Re-run
-  // that ONE task inline so nothing is lost, mark the pool broken so subsequent
-  // bakes go straight inline, and don't respawn — a repeatedly crashing worker
-  // must not become a spawn loop. A terminate() during shutdown is not a crash
-  // (a terminated worker always exits 1), so ignore exits once we're tearing down.
+  // A worker that errors or exits takes its in-flight task down with it: re-run
+  // that ONE task inline so nothing is lost, drop the slot, and count the crash.
+  // The pool keeps respawning on demand until the crash budget is spent — only
+  // THEN does it go inline-forever (no spawn loop). A terminate() during
+  // shutdown or an idle-retire is not a crash (a terminated worker always exits
+  // 1), so those are ignored via the flags.
   const die = (why: string) => (err?: Error) => {
-    if (shuttingDown) return;
+    if (shuttingDown || slot.retiring) return;
+    slot.retiring = true; // one crash = one budget hit, even if error AND exit both fire
+    const at = slots.indexOf(slot);
+    if (at >= 0) slots.splice(at, 1);
     for (const [id, entry] of [...inFlight]) {
       if (entry.slot !== slot) continue;
       inFlight.delete(id);
       entry.pending.fallback().then(entry.pending.resolve, entry.pending.reject);
     }
-    if (!poolBroken) {
+    crashes++;
+    stats.crashed++;
+    if (crashes >= MAX_CRASHES && !poolBroken) {
       poolBroken = true;
-      log(TAG, `bake worker ${why} — falling back to inline bakes`, {
+      log(TAG, `bake worker ${why} — crash budget spent (${crashes}), falling back to inline bakes`, {
         error: err ? String(err?.message ?? err) : undefined,
       });
       drainQueueInline();
+      return;
     }
+    log(TAG, `bake worker ${why} — task refunded inline, will respawn on demand`, {
+      error: err ? String(err?.message ?? err) : undefined,
+      crashes,
+    });
+    pump(); // queued work may need a fresh worker right away
   };
   worker.on("error", die("errored"));
   worker.on("exit", (code) => {
@@ -139,25 +187,45 @@ function drainQueueInline() {
   }
 }
 
-function ensurePool(): Slot[] | null {
-  if (DISABLED || poolBroken) return null;
-  if (slots) return slots;
-  try {
-    slots = Array.from({ length: POOL_SIZE }, spawn);
-    log(TAG, `bake pool started`, { size: POOL_SIZE, worker: path.basename(workerFile) });
-    return slots;
-  } catch (err) {
-    poolBroken = true;
-    log(TAG, `bake pool failed to start — inline bakes`, { error: String((err as Error)?.message ?? err) });
-    return null;
+/** Retire workers that have sat idle past IDLE_MS — their isolate's memory
+ *  (ratcheted to the biggest bake they ever served) goes back to the OS. */
+function sweep() {
+  const now = Date.now();
+  for (const slot of [...slots]) {
+    if (slot.busy || now - slot.idleSince < IDLE_MS) continue;
+    slot.retiring = true;
+    const at = slots.indexOf(slot);
+    if (at >= 0) slots.splice(at, 1);
+    stats.recycled++;
+    slot.worker.terminate().catch(() => {});
   }
 }
 
-/** Hand queued tasks to idle workers. */
+function ensureSweeper() {
+  if (sweeper) return;
+  sweeper = setInterval(sweep, SWEEP_MS);
+  sweeper.unref?.(); // never the reason the process stays alive
+}
+
+/** Hand queued tasks to idle workers, spawning up to POOL_SIZE on demand. */
 function pump() {
-  if (!slots) return;
-  for (const slot of slots) {
-    if (slot.busy || !queue.length) continue;
+  if (poolBroken || shuttingDown) return;
+  while (queue.length) {
+    let slot = slots.find((s) => !s.busy);
+    if (!slot) {
+      if (slots.length >= POOL_SIZE) return; // all busy — a completion will re-pump
+      try {
+        slot = spawn();
+        slots.push(slot);
+        ensureSweeper();
+      } catch (err) {
+        // Can't host a worker at all (module runtime, file missing) — permanent.
+        poolBroken = true;
+        log(TAG, `bake pool failed to start — inline bakes`, { error: String((err as Error)?.message ?? err) });
+        drainQueueInline();
+        return;
+      }
+    }
     const task = queue.shift()!;
     const id = nextId++;
     slot.busy = true;
@@ -171,8 +239,7 @@ function run(
   args: BakeScalarArgs | BakeVectorArgs,
   fallback: () => Promise<BakeResult>,
 ): Promise<BakeResult> {
-  const pool = ensurePool();
-  if (!pool) {
+  if (DISABLED || poolBroken) {
     stats.inline++;
     return fallback();
   }
@@ -199,7 +266,11 @@ export function bakeVector(args: BakeVectorArgs): Promise<BakeResult> {
 /** Tear the pool down (tests, shutdown). Safe to call when it never started. */
 export async function shutdownBakePool(): Promise<void> {
   shuttingDown = true;
+  if (sweeper) {
+    clearInterval(sweeper);
+    sweeper = null;
+  }
   const s = slots;
-  slots = null;
-  if (s) await Promise.all(s.map((slot) => slot.worker.terminate()));
+  slots = [];
+  await Promise.all(s.map((slot) => slot.worker.terminate()));
 }

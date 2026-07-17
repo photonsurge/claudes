@@ -7,6 +7,13 @@ const isProd = () => process.env.NODE_ENV === "production";
 
 type LogLevel = "info" | "warn" | "error" | "debug";
 
+// Human-readable local time for dev lines, e.g. "14:03:27.481".
+const devTs = () => {
+  const d = new Date();
+  const p = (n: number, w = 2) => String(n).padStart(w, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+};
+
 const prodLine = (level: LogLevel, args: unknown[]) =>
   JSON.stringify({
     level,
@@ -18,19 +25,19 @@ const prodLine = (level: LogLevel, args: unknown[]) =>
 export const logger = {
   info(...args: unknown[]) {
     if (isProd()) console.log(prodLine("info", args));
-    else console.log("[info]", ...args);
+    else console.log(devTs(), "[info]", ...args);
   },
   warn(...args: unknown[]) {
     if (isProd()) console.warn(prodLine("warn", args));
-    else console.warn("[warn]", ...args);
+    else console.warn(devTs(), "[warn]", ...args);
   },
   error(...args: unknown[]) {
     if (isProd()) console.error(prodLine("error", args));
-    else console.error("[error]", ...args);
+    else console.error(devTs(), "[error]", ...args);
   },
   debug(...args: unknown[]) {
     if (isProd()) console.log(prodLine("debug", args));
-    else console.debug("[debug]", ...args);
+    else console.debug(devTs(), "[debug]", ...args);
   },
 };
 

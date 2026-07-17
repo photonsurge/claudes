@@ -4,6 +4,7 @@ import type { WatchedEventType } from "@photonsurge/shared/events/types";
 import type { NewEventTimelineUpdate } from "@photonsurge/shared/db/event-timeline-update-model";
 import type { AcquireContext, AcquireResult, ExternalSource } from "./source-types";
 import { haversineKm, representativePoint } from "./geo";
+import { discardBody } from "../http";
 
 /**
  * EONET — NASA's Earth Observatory Natural Event Tracker. A CHEAP keyless
@@ -122,6 +123,7 @@ async function loadCategoryEvents(f: typeof fetch, cat: string | undefined, now:
     throw err;
   }
   if (!res.ok) {
+    discardBody(res);
     if (cached) return cached.items;
     if (isTransientStatus(res.status)) return null;
     throw new Error(`eonet events ${res.status}`);
@@ -158,6 +160,7 @@ export const eonetSource: ExternalSource = {
         return empty; // network blip on the per-event detail — retry next cadence
       }
       if (!res.ok) {
+        discardBody(res);
         if (isTransientStatus(res.status)) return empty; // transient → soft skip
         throw new Error(`eonet event ${res.status}`);
       }

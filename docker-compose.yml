@@ -10,7 +10,14 @@ services:
     restart: unless-stopped
     # --quiet drops the per-connection "accepted/ended" NETWORK log spam the pools
     # + healthcheck otherwise flood the log with. Errors/warnings still log.
-    command: ["mongod", "--quiet"]
+    #
+    # --wiredTigerCacheSizeGB caps Mongo's storage cache. UNCAPPED, WiredTiger
+    # targets ~50% of (host RAM − 1GB) — ≈3.9GB on an 8GB VPS — and grows into it
+    # by design, which on a box shared with the worker + public is an OOM-kill
+    # waiting to happen (and it muddies any memory observation of the apps).
+    # 1GB is plenty here: the bulky payloads live on the ${BLOB_DIR} disk store,
+    # not in Mongo. Raise via env on a bigger/dedicated host.
+    command: ["mongod", "--quiet", "--wiredTigerCacheSizeGB", "${MONGO_CACHE_GB:-1}"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
@@ -52,7 +59,7 @@ services:
     build:
       context: .
       dockerfile: socket/Dockerfile
-    restart: unless-stopped
+    restart: "no"   # TEMP: don't auto-restart on crash — require a human restart so failures are visible. Revert to `unless-stopped`.
     env_file: .env
     environment:
       PORT: 10101
@@ -81,7 +88,7 @@ services:
     build:
       context: .
       dockerfile: worker/Dockerfile
-    restart: unless-stopped
+    restart: "no"   # TEMP: don't auto-restart on crash — require a human restart so failures are visible. Revert to `unless-stopped`.
     # Weather pipeline vars (MODEL, FORECAST_HOURS, STEP_HOURS, RUN_CHECK_CRON,
     # RETAIN_RUNS) flow in via env_file — no structural change needed here.
     # The Dockerfile provides wgrib2 at runtime.
@@ -138,7 +145,7 @@ services:
       dockerfile: public/Dockerfile
       args:
         NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL}
-    restart: unless-stopped
+    restart: "no"   # TEMP: don't auto-restart on crash — require a human restart so failures are visible. Revert to `unless-stopped`.
     # Hard container memory ceiling. Override per host in .env; exceeding it
     # causes Docker to OOM-kill/restart this service instead of exhausting the host.
     mem_limit: ${PUBLIC_MEMORY_LIMIT:-4g}

@@ -11,6 +11,7 @@
 // jobId. `job.discard()` is in-memory only in BullMQ, so it MUST run here on the
 // worker's own job instance — hence the round trip.
 import { getQueue } from "@photonsurge/shared/bull/bull";
+import { jobLabel } from "@photonsurge/shared/jobs";
 import { QUEUE_NAME } from "@photonsurge/shared/utill/bull-utils";
 import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "./socket";
@@ -44,6 +45,17 @@ export function beginJob(jobId: string, job: CancellableJob): AbortSignal {
 /** Deregister a job once it has settled. */
 export function endJob(jobId: string): void {
   active.delete(jobId);
+}
+
+/**
+ * Labels of the jobs running RIGHT NOW (type.event, or type.event:source) — the
+ * live counterpart to the eventStats ledger, which only records FINISHED runs.
+ * Surfaced on /status so the queue page can flag which event types are in flight.
+ */
+export function activeJobLabels(): string[] {
+  return [...active.values()].map(
+    (e) => jobLabel(e.job.data) ?? `${e.job.data?.type ?? "unknown"}.${e.job.data?.event ?? "unknown"}`,
+  );
 }
 
 /**

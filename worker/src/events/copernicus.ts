@@ -6,6 +6,7 @@ import type { NewEventTimelineUpdate } from "@photonsurge/shared/db/event-timeli
 import type { AcquireContext, AcquireResult, ExternalSource } from "./source-types";
 import { parseGdacsPrimaryId } from "./gdacs-detail";
 import { haversineKm } from "./geo";
+import { discardBody } from "../http";
 
 /**
  * Copernicus EMS — Rapid Mapping activations (spec §11). Public, keyless. The
@@ -207,6 +208,7 @@ async function loadActivationList(f: typeof fetch, now: Date): Promise<Activatio
     throw err;
   }
   if (!res.ok) {
+    discardBody(res);
     if (listCache) return listCache.items; // any error → prefer a stale list over none
     if (isTransientStatus(res.status)) return null; // transient + cold cache → soft skip
     throw new Error(`copernicus list ${res.status}`);
@@ -278,6 +280,7 @@ export const copernicusSource: ExternalSource = {
       return empty; // network blip on the per-event detail — retry next cadence
     }
     if (!dRes.ok) {
+      discardBody(dRes);
       if (isTransientStatus(dRes.status)) return empty; // transient → soft skip
       throw new Error(`copernicus detail ${dRes.status}`);
     }

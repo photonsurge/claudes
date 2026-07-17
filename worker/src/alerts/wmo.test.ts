@@ -1,4 +1,4 @@
-import { featuresToCapMessages } from "./wmo";
+import { featuresToCapMessages, wmoSource } from "./wmo";
 
 /** Two polygon rows sharing a capurl + one excluded-country row. */
 const features = [
@@ -95,5 +95,45 @@ describe("featuresToCapMessages", () => {
     let a = 0;
     for (let i = 0; i < ring.length - 1; i++) a += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
     expect(a / 2).toBeGreaterThan(0);
+  });
+});
+
+describe("wmoSource.fetchParsed (streaming)", () => {
+  const doc = JSON.stringify({
+    type: "FeatureCollection",
+    totalFeatures: features.length,
+    features,
+    crs: { type: "name", properties: { name: "urn:ogc:def:crs:EPSG::4326" } },
+  });
+
+  /** A Response whose body arrives in tiny chunks, like a real socket. */
+  const chunkedResponse = (text: string, size = 7): Response => {
+    const enc = new TextEncoder();
+    let at = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (at >= text.length) return controller.close();
+        controller.enqueue(enc.encode(text.slice(at, at + size)));
+        at += size;
+      },
+    });
+    return new Response(stream, { headers: { "content-type": "application/json" } });
+  };
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it("yields exactly what the buffered fetch()+parse() path yields", async () => {
+    jest.spyOn(globalThis, "fetch").mockResolvedValue(chunkedResponse(doc));
+    const streamed = await wmoSource.fetchParsed!();
+    const buffered = wmoSource.parse([{ contentType: "application/json", body: doc, fetchedAt: "x" }]);
+    expect(streamed).toEqual(buffered);
+    expect(streamed).toHaveLength(2);
+  });
+
+  it("throws on a featureless response instead of parsing it as zero alerts", async () => {
+    // parse() returning [] on garbage would let one bad response deactivate every
+    // live WMO alert (reconcile source) — the streaming path must fail the tick.
+    jest.spyOn(globalThis, "fetch").mockResolvedValue(chunkedResponse(JSON.stringify({ exception: "boom" })));
+    await expect(wmoSource.fetchParsed!()).rejects.toThrow(/no top-level "features"/);
   });
 });

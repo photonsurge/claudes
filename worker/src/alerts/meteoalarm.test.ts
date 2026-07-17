@@ -209,3 +209,29 @@ describe("meteoalarmSource.parse drops green (nothing expected)", () => {
     expect(msgs.map((m) => m.identifier)).toEqual(["y1"]);
   });
 });
+
+describe("meteoalarmSource.fetchParsed", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    delete process.env.METEOALARM_COUNTRIES;
+  });
+
+  it("matches fetch()+parse() output, skipping failed countries silently", async () => {
+    process.env.METEOALARM_COUNTRIES = "austria,france,germany";
+    const de = { ...ALERT, identifier: "de-alert-1" };
+    const bodies: Record<string, string> = {
+      austria: JSON.stringify({ warnings: [{ alert: ALERT }] }),
+      germany: JSON.stringify({ warnings: [{ alert: de }] }),
+    };
+    jest.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const c = String(url).split("feeds-")[1];
+      if (c === "france") return new Response("gateway timeout", { status: 504 });
+      return new Response(bodies[c], { headers: { "content-type": "application/json" } });
+    });
+
+    const streamed = await meteoalarmSource.fetchParsed!();
+    const buffered = meteoalarmSource.parse(await meteoalarmSource.fetch());
+    expect(streamed).toEqual(buffered);
+    expect(streamed.map((m) => m.identifier)).toEqual([ALERT.identifier, "de-alert-1"]);
+  });
+});

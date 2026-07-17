@@ -105,12 +105,15 @@ export default function QueueJob({
   now,
   busy,
   onAction,
+  stalled,
 }: {
   job: SerializedJob;
   state: string;
   now: number;
   busy: boolean;
   onAction: (action: JobAction, id: string) => void;
+  /** Redis says active, but the worker isn't running it — a dead/orphaned lock. */
+  stalled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   // Prefer the server's qualified label ("alerts.ingest:wmo") — alerts runs one
@@ -150,6 +153,17 @@ export default function QueueJob({
                 }}
               >
                 {job.tier}
+              </Typography>
+            )}
+            {stalled && (
+              // Marked active in Redis, but the live worker isn't running it — a
+              // dead lock. It'll sit "active" until BullMQ's stalled-check reclaims it.
+              <Typography
+                variant="caption"
+                title="Marked active, but the worker isn't running it — a stalled/orphaned lock. Cancel it, or wait for the stalled-check to requeue it."
+                sx={{ px: 0.6, borderRadius: 0.5, fontWeight: 700, bgcolor: "error.dark", color: "common.white" }}
+              >
+                stalled
               </Typography>
             )}
             {job.attemptsMade > 0 && (

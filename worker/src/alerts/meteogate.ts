@@ -1,6 +1,7 @@
 import type { AlertGeometry } from "@photonsurge/shared/db/alert-model";
 import { windGeometry } from "@photonsurge/shared/alerts/rings";
 import { storableGeometry } from "./repair";
+import { fetchWithTimeout, discardBody } from "../http";
 import type { AreaGeomInput } from "@photonsurge/shared/db/alert-area-geom-repo";
 
 /**
@@ -199,7 +200,10 @@ export const quotaLow = (): boolean =>
 async function getText(url: string, signed = false): Promise<string> {
   // The rel=* links are pre-signed object-store URLs — appending our gateway key
   // would break their signature, so only the gateway itself gets one.
-  const res = await fetch(signed ? url : withKey(url), { headers: { Accept: "application/json" } });
+  const res = await fetchWithTimeout(signed ? url : withKey(url), {
+    timeoutMs: Number(process.env.METEOGATE_FETCH_TIMEOUT_MS || 30_000),
+    headers: { Accept: "application/json" },
+  });
 
   if (!signed) {
     const rem = Number(res.headers.get("x-ratelimit-remaining"));
@@ -210,8 +214,14 @@ async function getText(url: string, signed = false): Promise<string> {
 
   // Never retry a 429: the window is hourly, so retrying just burns the next
   // quota too. Surface it and let the caller end the run.
-  if (res.status === 429) throw new RateLimitError(quotaState.resetSec ?? 0);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (res.status === 429) {
+    discardBody(res);
+    throw new RateLimitError(quotaState.resetSec ?? 0);
+  }
+  if (!res.ok) {
+    discardBody(res);
+    throw new Error(`${res.status} ${res.statusText}`);
+  }
   return res.text();
 }
 

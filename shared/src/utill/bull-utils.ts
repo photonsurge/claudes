@@ -25,24 +25,34 @@ export const QUEUE_NAMES: Record<QueueTier, string> = {
 
 /**
  * Per-tier Worker concurrency. Tuned off the live /status per-event memory table:
- * the biggest heap-deltas were MID-tier ingests (cams ~171MB, tracks ~136MB), not
- * the background bakes (sampled ~80MB), so MID is the tighter cap. Both are
- * env-overridable per tier (WORKER_CONCURRENCY_{FG,MID,BG}); watch rssPeakMB on
- * /status after changing background — a big ICON-D2 grid can spike well past the
- * sample.
+ * MID runs the many light cron ingests — mostly network-I/O-bound, so it runs
+ * widest (4) to keep the backlog moving; BACKGROUND is the heap-heavy bakes, held
+ * low (3) since its cap is what bounds peak memory; FOREGROUND stays tightest (2),
+ * latency-work that should never fan out. All env-overridable per tier
+ * (WORKER_CONCURRENCY_FOREGROUND / _MID / _BACKGROUND); watch rssPeakMB on /status after raising any —
+ * a big ICON-D2 grid can spike well past the sample.
  */
 export const TIER_CONCURRENCY: Record<QueueTier, number> = {
   foreground: 2,
-  mid: 2,
-  background: 4,
+  mid: 4,
+  background: 3,
 };
 
 export const DEFAULT_TIER: QueueTier = "mid";
 
 // Job TYPES that are NOT the default (mid) tier. Anything absent falls to mid.
+//
+// Classified off the LIVE /status per-event peak-heap table, not by guesswork: the
+// real hogs were `alerts` (ingest:wmo +765MB, snapshotSatellite +256MB) and
+// `tracks` (enrichAircraft +743MB, snapshotShips +254MB) — both defaulting into
+// mid, where four could co-run and spike rss to ~3.4GB. The weather BAKES, by
+// contrast, are ~30MB each. So heaviness ≠ "is a bake"; it's whatever the ledger
+// says. Keep this list honest against /status.
 const BACKGROUND_TYPES = new Set<string>([
-  "weather", // GFS/ICON/HRDPS/HRRR/RTOFS/waves — decode + reproject + bake, the memory hog
+  "weather", // GFS/ICON/HRDPS/HRRR/RTOFS/waves — decode + reproject + bake
   "alertBlobs", // the polygon dissolve
+  "alerts", // ingest + satellite/camera snapshots — the single biggest heap hog (+765MB)
+  "tracks", // aircraft enrichment + position snapshots (+743MB); not latency-critical
   "satimg", // satellite imagery (sharp)
   "aurora", // OVATION raster bake
   "geomag", // magnetic-field raster bake

@@ -1,4 +1,6 @@
 import { canonicaliseCapMessages } from "@photonsurge/shared/alerts/normalise";
+import { fetchWithTimeout, discardBody } from "../http";
+import { streamTopLevelArray } from "./geojson-stream";
 import type {
   AlertSource,
   CapMessage,
@@ -145,55 +147,6 @@ function toPolygons(g: unknown): number[][][][] {
   return [];
 }
 
-/**
- * Fallback representative point: the mean of every finite, in-range [lon,lat] vertex
- * across a capurl's raw geometries. Rescues a location for alerts whose polygon is
- * absent or too degenerate to survive `sanitizePolygon` (many CMA warnings — "high
- * temperature", "Typhoon" — arrive area-name-only or as unsalvageable rings). Such an
- * alert becomes a *point-only* alert (a hazard badge at the point, which the overlay
- * already supports) and, once promoted, a LOCATED WatchedEvent instead of one with no
- * geometry at all (which used to leave repPoint empty → a failed 2dsphere upsert).
- */
-function verticesCentroid(geoms: unknown[]): AlertGeometry | null {
-  let sx = 0;
-  let sy = 0;
-  let n = 0;
-  const visit = (c: unknown): void => {
-    if (!Array.isArray(c)) return;
-    if (typeof c[0] === "number" && typeof c[1] === "number") {
-      const [x, y] = c as number[];
-      if (Number.isFinite(x) && Number.isFinite(y) && x >= -180 && x <= 180 && y >= -90 && y <= 90) {
-        sx += x;
-        sy += y;
-        n++;
-      }
-      return;
-    }
-    for (const e of c) visit(e);
-  };
-  for (const g of geoms) {
-    const geom = g as { coordinates?: unknown } | null;
-    if (geom?.coordinates != null) visit(geom.coordinates);
-  }
-  return n ? { type: "Point", coordinates: [sx / n, sy / n] } : null;
-}
-
-/** Merge a capurl's polygon rows into one wound Polygon/MultiPolygon; when no polygon
- *  survives, fall back to a representative Point (see `verticesCentroid`) so the alert
- *  keeps a location, else null. */
-function mergeGeometry(geoms: unknown[]): AlertGeometry | null {
-  const polys: number[][][][] = [];
-  for (const g of geoms) {
-    for (const p of toPolygons(g)) {
-      const s = sanitizePolygon(p);
-      if (s) polys.push(s);
-    }
-  }
-  if (!polys.length) return verticesCentroid(geoms);
-  if (polys.length === 1) return { type: "Polygon", coordinates: polys[0] };
-  return { type: "MultiPolygon", coordinates: polys };
-}
-
 interface WmoFeature {
   geometry?: unknown;
   properties?: Record<string, any>;
@@ -202,24 +155,89 @@ interface WmoFeature {
 /** authority "cn-cma-xx/2026/…" → "cn"; "" if unparseable. */
 const ccOf = (capurl: string): string => (capurl.split("/")[0] || "").split("-")[0].toLowerCase();
 
-/** Group WFS features by capurl, drop excluded countries, build one CapMessage each. */
-export function featuresToCapMessages(features: WmoFeature[], exclude: Set<string>): CapMessage[] {
-  const groups = new Map<string, { props: Record<string, any>; geoms: unknown[] }>();
-  for (const f of features) {
+/** Per-capurl accumulation state: sanitized polygons + the running vertex mean. */
+interface WmoGroup {
+  props: Record<string, any>;
+  polys: number[][][][];
+  sx: number;
+  sy: number;
+  n: number;
+}
+
+/**
+ * Groups WFS features by capurl INCREMENTALLY — `add()` one feature at a time,
+ * `finish()` for the CapMessages. Each feature's raw geometry is sanitized and
+ * reduced the moment it arrives, so a streaming caller never holds the raw
+ * feature list (or its coordinate arrays) — only what the output needs anyway:
+ * the kept polygons plus three numbers for the centroid fallback. Byte-for-byte
+ * the same messages as the old buffer-everything path (the tests hold it to
+ * that): first-seen props win, polygons keep arrival order, and the centroid is
+ * the mean of every finite in-range vertex across ALL of a capurl's raw
+ * geometries — salvageable or not.
+ */
+export class WmoAccumulator {
+  private groups = new Map<string, WmoGroup>();
+
+  constructor(private exclude: Set<string>) {}
+
+  add(f: WmoFeature): void {
     const p = f?.properties;
     const capurl = typeof p?.capurl === "string" ? p.capurl : "";
-    if (!capurl) continue;
-    if (exclude.has(ccOf(capurl))) continue;
-    const g = groups.get(capurl);
-    if (g) {
-      g.geoms.push(f.geometry);
-    } else {
-      groups.set(capurl, { props: p as Record<string, any>, geoms: [f.geometry] });
+    if (!capurl) return;
+    if (this.exclude.has(ccOf(capurl))) return;
+    let g = this.groups.get(capurl);
+    if (!g) {
+      g = { props: p as Record<string, any>, polys: [], sx: 0, sy: 0, n: 0 };
+      this.groups.set(capurl, g);
+    }
+    for (const poly of toPolygons(f.geometry)) {
+      const s = sanitizePolygon(poly);
+      if (s) g.polys.push(s);
+    }
+    // Centroid accumulation over the RAW vertices (matches verticesCentroid).
+    const geom = f?.geometry as { coordinates?: unknown } | null;
+    if (geom?.coordinates != null) {
+      const visit = (c: unknown): void => {
+        if (!Array.isArray(c)) return;
+        if (typeof c[0] === "number" && typeof c[1] === "number") {
+          const [x, y] = c as number[];
+          if (Number.isFinite(x) && Number.isFinite(y) && x >= -180 && x <= 180 && y >= -90 && y <= 90) {
+            g!.sx += x;
+            g!.sy += y;
+            g!.n++;
+          }
+          return;
+        }
+        for (const e of c) visit(e);
+      };
+      visit(geom.coordinates);
     }
   }
 
-  const msgs: CapMessage[] = [];
-  for (const [capurl, { props: p, geoms }] of groups) {
+  /**
+   * One wound Polygon/MultiPolygon per group. When no polygon survives
+   * sanitisation, fall back to the mean of the raw vertices — it rescues a
+   * location for alerts whose polygon is absent or too degenerate to keep (many
+   * CMA warnings arrive area-name-only or as unsalvageable rings), so they stay
+   * a point-only alert / a LOCATED WatchedEvent rather than geometry-less.
+   */
+  private static geometryOf(g: WmoGroup): AlertGeometry | null {
+    if (!g.polys.length) return g.n ? { type: "Point", coordinates: [g.sx / g.n, g.sy / g.n] } : null;
+    if (g.polys.length === 1) return { type: "Polygon", coordinates: g.polys[0] };
+    return { type: "MultiPolygon", coordinates: g.polys };
+  }
+
+  finish(): CapMessage[] {
+    const msgs: CapMessage[] = [];
+    for (const [capurl, group] of this.groups) {
+      msgs.push(WmoAccumulator.toMessage(capurl, group));
+    }
+    this.groups.clear();
+    return msgs;
+  }
+
+  private static toMessage(capurl: string, group: WmoGroup): CapMessage {
+    const p = group.props;
     const { rank, severity } = severityFromS(p.s);
     const authority = capurl.split("/")[0] || "";
     const cc = ccOf(capurl).toUpperCase();
@@ -245,10 +263,10 @@ export function featuresToCapMessages(features: WmoFeature[], exclude: Set<strin
       web: `https://severeweather.wmo.int/v2/cap-alerts/${capurl}`,
       sourceSeverity: severity,
       parameters,
-      area: [{ areaDesc, geometry: mergeGeometry(geoms), geocodes: [] }],
+      area: [{ areaDesc, geometry: WmoAccumulator.geometryOf(group), geocodes: [] }],
     };
 
-    msgs.push({
+    return {
       source: "wmo",
       identifier: capurl,
       sender: authority || "WMO",
@@ -259,9 +277,46 @@ export function featuresToCapMessages(features: WmoFeature[], exclude: Set<strin
       references: [],
       info: [info],
       raw: p,
-    });
+    };
   }
-  return msgs;
+}
+
+/** Group WFS features by capurl, drop excluded countries, build one CapMessage each. */
+export function featuresToCapMessages(features: WmoFeature[], exclude: Set<string>): CapMessage[] {
+  const acc = new WmoAccumulator(exclude);
+  for (const f of features) acc.add(f);
+  return acc.finish();
+}
+
+/** Issue the WFS GetFeature snapshot request (shared by fetch and fetchParsed). */
+async function wfsSnapshot(): Promise<Response> {
+  const now = new Date().toISOString();
+  const params = new URLSearchParams({
+    service: "WFS",
+    version: "1.1.0",
+    request: "GetFeature",
+    typeName: TYPENAME,
+    outputFormat: "application/json",
+    maxFeatures: String(process.env.WMO_MAX_FEATURES || 30000),
+    // Currently-in-effect only: the layer holds the full archive (millions).
+    CQL_FILTER: `expires >= ${now} AND sent <= ${now}`,
+  });
+  // Generous: the full in-effect snapshot is a multi-MB WFS response on a slow
+  // GeoServer. But it must still END — a raw fetch waits forever, and a hung
+  // ingest pins the whole parsed feed in a suspended frame until restart.
+  const res = await fetchWithTimeout(`${OWS}?${params.toString()}`, {
+    timeoutMs: Number(process.env.WMO_FETCH_TIMEOUT_MS || 120_000),
+    headers: {
+      "User-Agent": userAgent(),
+      Referer: "https://severeweather.wmo.int/",
+      Accept: "application/json",
+    },
+  });
+  if (!res.ok) {
+    discardBody(res);
+    throw new Error(`wmo fetch failed: ${res.status} ${res.statusText}`);
+  }
+  return res;
 }
 
 export const wmoSource: AlertSource = {
@@ -272,25 +327,7 @@ export const wmoSource: AlertSource = {
   reconcile: true, // single WFS fetch = reliable full snapshot
 
   async fetch(): Promise<RawPayload[]> {
-    const now = new Date().toISOString();
-    const params = new URLSearchParams({
-      service: "WFS",
-      version: "1.1.0",
-      request: "GetFeature",
-      typeName: TYPENAME,
-      outputFormat: "application/json",
-      maxFeatures: String(process.env.WMO_MAX_FEATURES || 30000),
-      // Currently-in-effect only: the layer holds the full archive (millions).
-      CQL_FILTER: `expires >= ${now} AND sent <= ${now}`,
-    });
-    const res = await fetch(`${OWS}?${params.toString()}`, {
-      headers: {
-        "User-Agent": userAgent(),
-        Referer: "https://severeweather.wmo.int/",
-        Accept: "application/json",
-      },
-    });
-    if (!res.ok) throw new Error(`wmo fetch failed: ${res.status} ${res.statusText}`);
+    const res = await wfsSnapshot();
     return [
       {
         contentType: res.headers.get("content-type") ?? "application/json",
@@ -298,6 +335,28 @@ export const wmoSource: AlertSource = {
         fetchedAt: new Date().toISOString(),
       },
     ];
+  },
+
+  /**
+   * The streaming path ingest actually uses: features are accumulated one at a
+   * time straight off the socket, so the multi-MB body string / 30k-feature
+   * parsed tree / feature array never exist — peak heap is just the grouped
+   * output. One deliberate behaviour change vs `parse()`: a malformed or
+   * truncated snapshot THROWS (failing the tick, alerts untouched) instead of
+   * parsing as zero messages — which, on a reconcile source, would deactivate
+   * every live WMO alert on the strength of one bad response.
+   */
+  async fetchParsed(): Promise<CapMessage[]> {
+    const res = await wfsSnapshot();
+    const acc = new WmoAccumulator(excludeCC());
+    if (!res.body) {
+      // No stream on this Response (test double / exotic runtime) — buffered
+      // fallback through the same accumulator, same output.
+      const fc = JSON.parse(await res.text());
+      return featuresToCapMessages(Array.isArray(fc?.features) ? fc.features : [], excludeCC());
+    }
+    for await (const f of streamTopLevelArray(res.body, "features")) acc.add(f as WmoFeature);
+    return acc.finish();
   },
 
   parse(raw: RawPayload[]): CapMessage[] {

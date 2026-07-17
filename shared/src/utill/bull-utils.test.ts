@@ -13,17 +13,20 @@ describe("queue tiers", () => {
     expect(QUEUE_NAMES.mid).toBe("worker-app"); // unchanged → existing schedules/readers survive
   });
 
-  it("caps concurrency per tier (mid tightest — that's where the heavy ingests landed)", () => {
-    // The live /status memory table showed cams/tracks (MID) as the heap hogs, not
-    // the background bakes — so MID is the tighter lane.
-    expect(TIER_CONCURRENCY).toEqual({ foreground: 2, mid: 2, background: 4 });
-    expect(TIER_CONCURRENCY.mid).toBeLessThanOrEqual(TIER_CONCURRENCY.background);
+  it("caps concurrency per tier (mid widest for light I/O ingests, background held low for heap)", () => {
+    // MID = many network-bound cron ingests → runs widest; BACKGROUND = heap-heavy
+    // bakes → held low (its cap bounds memory); FOREGROUND tightest for latency.
+    expect(TIER_CONCURRENCY).toEqual({ foreground: 2, mid: 4, background: 3 });
+    expect(TIER_CONCURRENCY.foreground).toBeLessThanOrEqual(TIER_CONCURRENCY.background);
+    expect(TIER_CONCURRENCY.background).toBeLessThanOrEqual(TIER_CONCURRENCY.mid);
   });
 });
 
 describe("queueForType", () => {
   it("routes heavy CPU/memory jobs to background", () => {
-    for (const t of ["weather", "alertBlobs", "satimg", "aurora", "geomag", "areaWeather", "climate"]) {
+    // alerts + tracks are here off the live /status ledger (ingest +765MB, aircraft
+    // enrich +743MB) — the biggest heap hogs, previously defaulting into mid.
+    for (const t of ["weather", "alertBlobs", "alerts", "tracks", "satimg", "aurora", "geomag", "areaWeather", "climate"]) {
       expect(queueForType(t)).toBe("background");
     }
   });
@@ -35,7 +38,7 @@ describe("queueForType", () => {
 
   it("falls back to mid (the default) for everything else", () => {
     expect(DEFAULT_TIER).toBe("mid");
-    for (const t of ["alerts", "tracks", "cams", "tides", "notable", "seismo", "unknownType"]) {
+    for (const t of ["cams", "tides", "notable", "seismo", "faults", "cables", "unknownType"]) {
       expect(queueForType(t)).toBe("mid");
     }
   });

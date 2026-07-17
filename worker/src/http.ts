@@ -37,6 +37,17 @@ export const timeoutFetch = (timeoutMs = DEFAULT_TIMEOUT_MS): typeof fetch =>
   ((url: any, init?: any) => fetchWithTimeout(url, { ...init, timeoutMs })) as typeof fetch;
 
 /**
+ * Release an unread response's socket + buffered body NOW, instead of leaving
+ * undici to hold them until GC (or a timeout signal) gets around to it. Call on
+ * every branch that returns/throws without consuming `res.body` — a non-ok
+ * status still has a body. Fire-and-forget by design: cancelling can't fail in
+ * a way the caller should care about.
+ */
+export function discardBody(res: Response): void {
+  res.body?.cancel().catch(() => {});
+}
+
+/**
  * Map over `items` with at most `limit` running at once, preserving input order.
  *
  * Deliberately modest limits: these are other people's servers, and the point is
