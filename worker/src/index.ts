@@ -26,7 +26,7 @@ import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
 import { initSocket, closeSocket } from "./socket";
 import { startQueueEventBridge } from "./queueEventBridge";
-import { installJobConsoleTap, runInJobLogContext } from "./jobLog";
+import { installJobConsoleTap, runInJobLogContext, getJobLog, listJobLogs } from "./jobLog";
 import { beginJob, endJob, startCancelSubscriber, activeJobLabels } from "./jobCancel";
 import { startDirector, stopDirector } from "./director/loop";
 import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
@@ -1499,6 +1499,22 @@ process.on("uncaughtException", (err) => {
     const d = new Date(v as string | number);
     return isNaN(d.getTime()) ? undefined : d;
   };
+
+  // Retained per-job console output — the /admin/queue card pulls this on expand
+  // to backfill lines it missed (job started before the page was open, or the run
+  // already finished). Bounded ring in jobLog.ts; empty once a job ages out.
+  app.get("/internal/job-log/:jobId", (req, res) => {
+    if (!internalOnly(req, res)) return;
+    const jobId = String(req.params.jobId || "");
+    if (!jobId) return res.status(400).json({ error: "jobId required" });
+    res.json({ jobId, lines: getJobLog(jobId) });
+  });
+
+  // Index of jobs with retained logs (which jobIds you can pull), newest first.
+  app.get("/internal/job-logs", (req, res) => {
+    if (!internalOnly(req, res)) return;
+    res.json({ jobs: listJobLogs() });
+  });
 
   app.post("/internal/weather/history/point", async (req, res) => {
     if (!internalOnly(req, res)) return;

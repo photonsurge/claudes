@@ -13,6 +13,8 @@ import { pushJobLog } from "../../lib/queue-log-store";
 interface QueueLogData {
   jobId: string | null;
   label: string | null;
+  seq?: number;
+  ts?: number;
   level: "info" | "warn" | "error";
   line: string;
 }
@@ -29,7 +31,14 @@ export default function QueueLogCollector() {
     const onLog = (msg: Msg) => {
       const d = msg?.data;
       if (!d || !d.jobId || typeof d.line !== "string") return;
-      pushJobLog(d.jobId, { at: Date.now(), level: d.level ?? "info", line: d.line });
+      // Fall back to a client seq/ts for older workers that don't send them; the
+      // negative seq keeps these ordered before any server-numbered lines.
+      pushJobLog(d.jobId, {
+        seq: typeof d.seq === "number" ? d.seq : -Date.now(),
+        ts: typeof d.ts === "number" ? d.ts : Date.now(),
+        level: d.level ?? "info",
+        line: d.line,
+      });
     };
     socket.on("queue:log", onLog);
     return () => {

@@ -191,14 +191,16 @@ export default function QueuePage() {
                   cap={stats?.byTier?.find((s) => s.tier === t.tier)?.concurrency}
                 />
               ))}
+              {/* Inline with the pills (not a sibling below them) so "paused"
+                  shares the same row and height as the lanes. */}
+              {data?.paused && (
+                <Typography component="span" variant="body1" color="warning.main">
+                  paused
+                </Typography>
+              )}
             </Stack>
           ) : (
             "…"
-          )}
-          {data?.paused && (
-            <Typography component="span" variant="body1" color="warning.main" sx={{ ml: 1 }}>
-              paused
-            </Typography>
           )}
         </>
       }

@@ -28,6 +28,76 @@ const RATE_WINDOW_MS = 1000;
 const RATE_MAX = 40; // lines per job per window before we drop + warn
 const MAX_LINE = 2000;
 
+// ---- Per-job ring buffer -----------------------------------------------------
+// Streaming reaches only browsers that were connected while the job ran. To let
+// /admin/queue *pull* a job's log (on expand, even after it finished), we also
+// retain recent lines here, keyed by jobId. Bounded both ways so a chatty run or
+// a long uptime can't grow this without limit; oldest job evicted first (Map
+// keeps insertion order). Each line carries a process-global `seq` so the client
+// can merge this history with the live socket stream without duplicates.
+const RING_MAX_LINES = 100; // per job
+const RING_MAX_JOBS = 200;
+
+export interface JobLogEntry {
+  seq: number;
+  ts: number;
+  level: "info" | "warn" | "error";
+  line: string;
+}
+
+interface JobLogRecord {
+  label: string;
+  lines: JobLogEntry[];
+}
+
+/** One row of the retained-logs index — enough to pick a job to pull. */
+export interface JobLogSummary {
+  jobId: string;
+  label: string;
+  count: number;
+  lastTs: number;
+  lastLine: string;
+}
+
+let seqCounter = 0;
+const ring = new Map<string, JobLogRecord>();
+
+function retain(jobId: string, label: string, entry: JobLogEntry): void {
+  const prev = ring.get(jobId);
+  const rec = prev ?? { label, lines: [] };
+  rec.label = label;
+  rec.lines.push(entry);
+  if (rec.lines.length > RING_MAX_LINES) rec.lines.splice(0, rec.lines.length - RING_MAX_LINES);
+  // Re-insert to mark this job most-recently-active for eviction ordering.
+  if (prev) ring.delete(jobId);
+  ring.set(jobId, rec);
+  if (ring.size > RING_MAX_JOBS) {
+    const oldest = ring.keys().next().value as string | undefined;
+    if (oldest && oldest !== jobId) ring.delete(oldest);
+  }
+}
+
+/** Retained log lines for one job instance, oldest first (empty if none/aged out). */
+export function getJobLog(jobId: string): JobLogEntry[] {
+  return ring.get(jobId)?.lines ?? [];
+}
+
+/** Index of jobs that currently have retained logs, most-recently-active first. */
+export function listJobLogs(): JobLogSummary[] {
+  const out: JobLogSummary[] = [];
+  for (const [jobId, rec] of ring) {
+    const last = rec.lines[rec.lines.length - 1];
+    out.push({
+      jobId,
+      label: rec.label,
+      count: rec.lines.length,
+      lastTs: last?.ts ?? 0,
+      lastLine: last?.line ?? "",
+    });
+  }
+  return out.reverse(); // Map is oldest-first; callers want most-recent first.
+}
+
 const LEVELS = ["log", "info", "warn", "error", "debug"] as const;
 type ConsoleMethod = (typeof LEVELS)[number];
 
@@ -59,20 +129,22 @@ function emitLine(ctx: JobLogCtx, level: "info" | "warn" | "error", args: unknow
   if (ctx.count > RATE_MAX) {
     // Emit the "dropping" notice exactly once per window, then stay silent.
     if (ctx.count === RATE_MAX + 1) {
-      emitWorkerEvent({
-        type: QUEUE_LOG_TYPE,
-        jobId: ctx.jobId,
-        source: "queue",
-        data: { jobId: ctx.jobId, label: ctx.label, level: "warn", line: "… log rate-limited (too many lines/s)" },
-      });
+      publish(ctx, "warn", "… log rate-limited (too many lines/s)");
     }
     return;
   }
+  publish(ctx, level, formatLogLine(args));
+}
+
+/** Retain a line in the ring and fan it out over the socket, sharing one seq/ts. */
+function publish(ctx: JobLogCtx, level: "info" | "warn" | "error", line: string) {
+  const entry: JobLogEntry = { seq: ++seqCounter, ts: Date.now(), level, line };
+  retain(ctx.jobId, ctx.label, entry);
   emitWorkerEvent({
     type: QUEUE_LOG_TYPE,
     jobId: ctx.jobId,
     source: "queue",
-    data: { jobId: ctx.jobId, label: ctx.label, level, line: formatLogLine(args) },
+    data: { jobId: ctx.jobId, label: ctx.label, seq: entry.seq, ts: entry.ts, level, line },
   });
 }
 

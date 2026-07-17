@@ -15,9 +15,11 @@ services:
     # targets ~50% of (host RAM − 1GB) — ≈3.9GB on an 8GB VPS — and grows into it
     # by design, which on a box shared with the worker + public is an OOM-kill
     # waiting to happen (and it muddies any memory observation of the apps).
-    # 1GB is plenty here: the bulky payloads live on the ${BLOB_DIR} disk store,
-    # not in Mongo. Raise via env on a bigger/dedicated host.
-    command: ["mongod", "--quiet"]
+    # 1.5GB is plenty here: the bulky payloads live on the ${BLOB_DIR} disk
+    # store, not in Mongo — the cache only needs the metadata working set. Total
+    # mongod RSS runs ~0.5-1GB above the cache (connections, sorts, index
+    # builds), so 1.5 ≈ a ~2-2.5GB container. Tune per host via MONGO_CACHE_GB.
+    command: ["mongod", "--quiet", "--wiredTigerCacheSizeGB", "${MONGO_CACHE_GB:-1.5}"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
@@ -100,6 +102,12 @@ services:
       # while the box had 5GB+ free. 4096 heap + bake threads/sharp native on
       # top ≈ a ~5GB worst-case container. Override per host in .env.
       NODE_OPTIONS: "--max-old-space-size=${WORKER_NODE_HEAP_MB:-4096}"
+      # glibc defaults to 8 malloc arenas PER CORE; under bursty Buffer/sharp
+      # traffic the arenas ratchet to the burst's high-water and never return it
+      # — the "hundreds of MB, then boom, then flat forever" RSS plateau. Two
+      # arenas keeps contention fine for a Node process and gives most of that
+      # plateau back to the OS.
+      MALLOC_ARENA_MAX: "2"
       ELEVATION_CACHE_DIR: /app/dem-cache
       # Natural Earth geojson (countries.seed mask) — read from the shared host
       # data dir mounted below, NOT baked into the image.
@@ -162,10 +170,17 @@ services:
       # (sharp/glibc arenas, buffers), so heap == mem_limit would let Docker
       # OOM-kill the container before V8 ever felt pressure and ran a full GC.
       NODE_OPTIONS: "--max-old-space-size=${PUBLIC_NODE_HEAP_MB:-3072}"
+      # See worker: caps glibc arena ratchet — the first big texture/media burst
+      # otherwise sets a permanent ~1GB RSS floor out of free-but-unreturned arenas.
+      MALLOC_ARENA_MAX: "2"
       # Server-side status checks (/api/status) hit these over the compose
       # `internal` network by service name — not the host-published ports.
       SOCKET_INTERNAL_URL: http://socket:10101
       WORKER_INTERNAL_URL: http://worker:10102
+      # Optional key for /api/queue-logs (pull retained per-job worker logs via
+      # curl/tooling, e.g. `?key=…`). Unset ⇒ that endpoint is admin-session-only;
+      # the /admin/queue card doesn't need it (it uses the operator's login).
+      QUEUE_LOG_KEY: ${QUEUE_LOG_KEY:-}
       # Shared blob store: the tex/media/aurora/etc API routes read bytes from
       # here (Mongo I/O off the hot path), and the admin upload routes WRITE ad +
       # admin-image bytes here — so this mount is read-write, not ro.

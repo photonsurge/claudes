@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import LinearProgress from "@mui/material/LinearProgress";
@@ -8,7 +8,7 @@ import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { font, status, surface } from "../../theme/tokens";
-import { useJobLog, type JobLogLine } from "../../lib/queue-log-store";
+import { useJobLog, mergeJobLog, type JobLogLine } from "../../lib/queue-log-store";
 
 /** One BullMQ job flattened by /api/admin/queue. */
 export interface SerializedJob {
@@ -98,10 +98,10 @@ function JobLog({ lines }: { lines: JobLogLine[] }) {
         overflow: "auto",
       }}
     >
-      {lines.map((l, i) => (
-        <Box key={i} sx={{ display: "flex", gap: 1, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+      {lines.map((l) => (
+        <Box key={l.seq} sx={{ display: "flex", gap: 1, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
           <Box component="span" sx={{ color: "text.disabled", flexShrink: 0 }}>
-            {hhmmss(l.at)}
+            {hhmmss(l.ts)}
           </Box>
           <Box component="span" sx={{ color: LOG_COLOR[l.level], flex: 1 }}>
             {l.line}
@@ -168,6 +168,23 @@ export default function QueueJob({
   // active jobs emit; captured live from the socket while the page is open.
   const logLines = useJobLog(job.id);
   const showLog = state === "active" || logLines.length > 0;
+
+  // On expand, pull the worker's retained ring for this job — backfills lines
+  // emitted before the page was open, or after the run finished. Merges by seq,
+  // so it never duplicates lines the live socket already delivered.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetch(`/api/queue-logs?jobId=${encodeURIComponent(job.id)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        if (!cancelled && Array.isArray(body?.lines)) mergeJobLog(job.id, body.lines);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open, job.id]);
   // Prefer the server's qualified label ("alerts.ingest:wmo") — alerts runs one
   // repeatable per source, so an unqualified name shows four identical rows.
   const label = job.displayName || (job.type && job.event ? `${job.type}.${job.event}` : job.name || "job");

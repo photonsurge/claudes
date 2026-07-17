@@ -63,7 +63,7 @@ async function redisStatus(): Promise<ServiceStatus> {
   }
 }
 
-async function GET__impl() {
+async function GET__impl(req: Request) {
   const { value } = await withCache("status:v1", STATUS_TTL_SEC, async () => {
     const SOCKET_URL = process.env.SOCKET_INTERNAL_URL || "http://localhost:10101";
     const WORKER_URL = process.env.WORKER_INTERNAL_URL || "http://localhost:10102";
@@ -85,7 +85,29 @@ async function GET__impl() {
     return { services, time: new Date().toISOString() };
   });
 
-  return NextResponse.json(value, { headers: { "Cache-Control": "no-store" } });
+  // THIS process's memory split — rss vs JS heap, the "is 1.2GB a leak or a
+  // native plateau?" question, answerable without an inspector. Computed fresh
+  // per request (the cached aggregate above may have been built seconds ago),
+  // and only for requests that did NOT arrive via a proxy — same internal-only
+  // idiom as the worker's /status — so the public home panel never carries it:
+  //   curl -s localhost:10100/api/status | jq .memory     (on the box)
+  const internal = !req.headers.get("x-forwarded-for") && !req.headers.get("x-forwarded-host");
+  const mb = (b: number) => Math.round(b / 1048576);
+  const m = internal ? process.memoryUsage() : null;
+  const memory = m
+    ? {
+        rssMB: mb(m.rss),
+        heapUsedMB: mb(m.heapUsed),
+        heapTotalMB: mb(m.heapTotal),
+        externalMB: mb(m.external),
+        arrayBuffersMB: mb(m.arrayBuffers),
+        // rss minus everything V8 accounts for ≈ native (sharp/glibc arenas).
+        nativeGapMB: mb(m.rss - m.heapTotal - m.external),
+        uptimeSec: Math.round(process.uptime()),
+      }
+    : undefined;
+
+  return NextResponse.json({ ...value, ...(memory ? { memory } : {}) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 // --- request logging (lib/api-log) ---
