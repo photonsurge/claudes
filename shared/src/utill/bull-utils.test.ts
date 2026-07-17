@@ -13,12 +13,12 @@ describe("queue tiers", () => {
     expect(QUEUE_NAMES.mid).toBe("worker-app"); // unchanged → existing schedules/readers survive
   });
 
-  it("caps concurrency per tier (mid widest for light I/O ingests, background held low for heap)", () => {
-    // MID = many network-bound cron ingests → runs widest; BACKGROUND = heap-heavy
-    // bakes → held low (its cap bounds memory); FOREGROUND tightest for latency.
-    expect(TIER_CONCURRENCY).toEqual({ foreground: 2, mid: 4, background: 3 });
-    expect(TIER_CONCURRENCY.foreground).toBeLessThanOrEqual(TIER_CONCURRENCY.background);
-    expect(TIER_CONCURRENCY.background).toBeLessThanOrEqual(TIER_CONCURRENCY.mid);
+  it("caps concurrency per tier (background widest given host headroom, foreground tightest)", () => {
+    // With Mongo's cache capped there's RAM to run BACKGROUND wider (the heavy
+    // hogs + throughput lane); MID runs the light ingests; FOREGROUND stays lowest.
+    expect(TIER_CONCURRENCY).toEqual({ foreground: 2, mid: 3, background: 4 });
+    expect(TIER_CONCURRENCY.foreground).toBeLessThanOrEqual(TIER_CONCURRENCY.mid);
+    expect(TIER_CONCURRENCY.mid).toBeLessThanOrEqual(TIER_CONCURRENCY.background);
   });
 });
 

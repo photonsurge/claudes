@@ -14,6 +14,7 @@ import type { TriggerableJob } from "@photonsurge/shared/jobs";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import LogTail from "../../../components/admin/LogTail";
 import QueueSummary from "../../../components/admin/QueueSummary";
+import WorkerHealthCard from "../../../components/admin/WorkerHealthCard";
 import ClearQueueMenu from "../../../components/admin/ClearQueueMenu";
 import type { Result, StopResult } from "../../../components/admin/jobs/JobCard";
 import JobGroupPanel, { spanForCount } from "../../../components/admin/jobs/JobGroupPanel";
@@ -275,6 +276,7 @@ export default function JobsPage() {
             "@media (max-width:1000px)": { position: "static" },
           }}
         >
+          <WorkerHealthCard />
           <QueueSummary maxHeight="30vh" />
           <LogTail limit={100} title="Recent activity" excludeType="request" maxHeight="38vh" />
         </Box>

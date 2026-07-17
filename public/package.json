@@ -1,10 +1,11 @@
 {
   "name": "public",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "scripts": {
     "update-shared": "rm -rf .next/; yarn upgrade @photonsurge/shared",
     "dev": "rm -rf .next && next dev -p 10100",
+    "dev:inspect": "rm -rf .next && NODE_OPTIONS='--inspect=127.0.0.1:9230' next dev -p 10100",
     "build": "next build",
     "start": "next start -p 10100",
     "lint": "eslint .",

@@ -24,18 +24,19 @@ export const QUEUE_NAMES: Record<QueueTier, string> = {
 };
 
 /**
- * Per-tier Worker concurrency. Tuned off the live /status per-event memory table:
- * MID runs the many light cron ingests — mostly network-I/O-bound, so it runs
- * widest (4) to keep the backlog moving; BACKGROUND is the heap-heavy bakes, held
- * low (3) since its cap is what bounds peak memory; FOREGROUND stays tightest (2),
- * latency-work that should never fan out. All env-overridable per tier
- * (WORKER_CONCURRENCY_FOREGROUND / _MID / _BACKGROUND); watch rssPeakMB on /status after raising any —
- * a big ICON-D2 grid can spike well past the sample.
+ * Per-tier Worker concurrency. Tuned off the live /status per-event memory table
+ * + host headroom: with Mongo's WiredTiger cache capped to 1GB (docker-compose),
+ * there's RAM to run BACKGROUND wider (4) — that's where the heavy hogs (alerts,
+ * tracks, bakes) now live and where throughput matters. MID (3) runs the light
+ * cron ingests; FOREGROUND (2) stays tightest, latency-work that mustn't fan out.
+ * All env-overridable per tier (WORKER_CONCURRENCY_FOREGROUND / _MID / _BACKGROUND);
+ * watch rssPeakMB on /status after raising background — a big ICON-D2 grid + an
+ * alerts.ingest can spike well past the sample.
  */
 export const TIER_CONCURRENCY: Record<QueueTier, number> = {
   foreground: 2,
-  mid: 4,
-  background: 3,
+  mid: 3,
+  background: 4,
 };
 
 export const DEFAULT_TIER: QueueTier = "mid";

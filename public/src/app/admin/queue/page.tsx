@@ -21,6 +21,7 @@ import ClearQueueMenu from "../../../components/admin/ClearQueueMenu";
 import QueueBacklog, { type BacklogRow } from "../../../components/admin/QueueBacklog";
 import MemoryGauge from "../../../components/admin/MemoryGauge";
 import BakePoolStrip from "../../../components/admin/BakePoolStrip";
+import LanePill from "../../../components/admin/LanePill";
 import EventUsageTable from "../../../components/admin/EventUsageTable";
 import type { WorkerStats } from "../../../lib/worker-stats";
 import { accent, font, ink, status } from "../../../theme/tokens";
@@ -92,44 +93,6 @@ function fmtNext(next: number | null, now: number): string {
   if (s < 60) return `in ${s}s`;
   if (s < 3600) return `in ${Math.round(s / 60)}m`;
   return `in ${Math.round(s / 3600)}h`;
-}
-
-const TIER_DOT: Record<string, string> = {
-  foreground: accent.main,
-  mid: ink.secondary,
-  background: status.warning,
-};
-
-/** One queue lane as a readable pill: ● name  active/cap  +pending. The fraction
- *  goes amber when the lane is saturated (active == cap → everything else waits). */
-function LanePill({ tier, name, active, pending, cap }: { tier: string; name: string; active: number; pending: number; cap?: number }) {
-  const full = cap != null && active >= cap && active > 0;
-  return (
-    <Stack
-      component="span"
-      direction="row"
-      spacing={0.875}
-      sx={{ alignItems: "center", px: 1, py: 0.375, borderRadius: 1, border: "1px solid", borderColor: "divider", bgcolor: "background.paper" }}
-      title={`${name}: ${active} active${cap != null ? ` of ${cap} lanes` : ""}, ${pending} queued${full ? " — saturated" : ""}`}
-    >
-      <Box component="span" sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: TIER_DOT[tier] ?? ink.secondary }} />
-      <Box component="span" sx={{ fontSize: 13, color: "text.secondary", textTransform: "capitalize" }}>
-        {tier}
-      </Box>
-      <Box
-        component="span"
-        sx={{ fontSize: 13, fontFamily: font.mono, fontWeight: 600, color: full ? "warning.main" : "text.primary" }}
-      >
-        {active}
-        {cap != null && <Box component="span" sx={{ color: "text.disabled", fontWeight: 400 }}>/{cap}</Box>}
-      </Box>
-      {pending > 0 && (
-        <Box component="span" sx={{ fontSize: 12.5, fontFamily: font.mono, color: "text.disabled" }} title={`${pending} queued`}>
-          +{pending}
-        </Box>
-      )}
-    </Stack>
-  );
 }
 
 /** A tool that's currently "on" reads through the accent edge, not a fill. */
@@ -275,18 +238,19 @@ export default function QueuePage() {
           </Alert>
         ) : stats?.rssMB != null ? (
           <Paper sx={{ mt: 1.75, p: 2 }}>
-            <Stack direction="row" sx={{ alignItems: "baseline", mb: 1.5 }}>
-              <Typography variant="overline" color="text.secondary">
-                Worker memory
-              </Typography>
-              {stats.uptimeSec != null && (
-                <Typography variant="caption" color="text.disabled" sx={{ ml: 1.5, fontFamily: font.mono }}>
-                  up {fmtUptime(stats.uptimeSec)}
+            {/* One line: label + both gauges side by side (stacks only on narrow). */}
+            <Stack direction={{ xs: "column", md: "row" }} spacing={{ xs: 2, md: 4 }} sx={{ alignItems: { md: "center" } }}>
+              <Box sx={{ minWidth: 116 }}>
+                <Typography variant="overline" color="text.secondary" sx={{ display: "block", lineHeight: 1.3 }}>
+                  Worker memory
                 </Typography>
-              )}
-            </Stack>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={4}>
-              <Box sx={{ flex: 1 }}>
+                {stats.uptimeSec != null && (
+                  <Typography variant="caption" color="text.disabled" sx={{ fontFamily: font.mono }}>
+                    up {fmtUptime(stats.uptimeSec)}
+                  </Typography>
+                )}
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 190 }}>
                 <MemoryGauge
                   label="RSS (process)"
                   value={stats.rssMB}
@@ -295,7 +259,7 @@ export default function QueuePage() {
                   hint="OS footprint — what an OOM-kill measures"
                 />
               </Box>
-              <Box sx={{ flex: 1 }}>
+              <Box sx={{ flex: 1, minWidth: 190 }}>
                 <MemoryGauge
                   label="JS heap"
                   value={stats.heapUsedMB ?? 0}

@@ -1,6 +1,6 @@
 {
   "name": "worker",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
@@ -19,6 +19,7 @@
   "scripts": {
     "update-shared": "yarn upgrade @photonsurge/shared",
     "dev": "PORT=10102 ts-node src/index.ts",
+    "dev:inspect": "PORT=10102 NODE_OPTIONS='--inspect=127.0.0.1:9240' ts-node src/index.ts",
     "build": "rm -rf dist/; tsc",
     "start": "PORT=10102 node dist/index.js",
     "seed": "ts-node src/scripts/seed.ts",

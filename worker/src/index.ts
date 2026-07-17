@@ -95,8 +95,16 @@ process.on("uncaughtException", (err) => {
   // exactly — only the target queue changes — so the registrations below read as
   // before while tiering themselves (bull-utils#queueForType).
   const queues = getAllQueues().map((q) => q.queue);
+  // Every scheduler-registered job retries transient failures. Without this a
+  // repeatable runs attempts 1/0 — one Docker-DNS blip (EAI_AGAIN mongodb, seen
+  // at staging boot) fails the whole tick outright instead of retrying 5s later.
+  // Callers can still override; `repeat` templates carry this onto every iteration.
   const addJob = (name: string, payload: { type: string; [k: string]: any }, opts?: any) =>
-    getQueue(queueForType(payload.type)).add(name, payload, opts);
+    getQueue(queueForType(payload.type)).add(name, payload, {
+      attempts: 3,
+      backoff: { type: "exponential", delay: 5_000 },
+      ...opts,
+    });
   await initSocket();
 
   // Relay BullMQ lifecycle events up to the socket server so /admin/queue can
@@ -279,6 +287,43 @@ process.on("uncaughtException", (err) => {
     if (cleared) log(TAG, `cleared ${cleared} stale repeatable(s)`);
   } catch (err) {
     log(TAG, `failed to clear stale repeatables`, summarizeForLog(err));
+  }
+
+  // ALSO drop the not-yet-run jobs those old schedules had already promoted.
+  // Removing a schedule leaves its pending iterations behind — and on a Redis
+  // with downtime history, BullMQ then REPLAYS every missed slot back-to-back
+  // (staging boot: three ~16-day-old summaries.generateHourly starts within
+  // 70ms took the 2GB heap down in minutes). The registrations below re-arm
+  // every schedule fresh, so a pending repeat-owned job is never real work —
+  // only history about to be replayed. Regular one-shot jobs are untouched.
+  // Paged, ids-first: a restored Redis can hold TENS OF THOUSANDS of pending
+  // jobs, so a single getJobs(0,-1) would materialise every payload at once —
+  // at boot, in the same heap the flood itself is about to attack. Scan a page
+  // at a time, keep only the (tiny) ids of repeat-owned jobs, remove after.
+  try {
+    const PAGE = 500;
+    let dropped = 0;
+    for (const q of queues) {
+      const ids: string[] = [];
+      for (let start = 0; ; start += PAGE) {
+        const page = await q.getJobs(["delayed", "waiting", "prioritized"] as any, start, start + PAGE - 1, false);
+        for (const j of page) {
+          if (String(j.id ?? "").startsWith("repeat:") || (j as any).repeatJobKey != null) ids.push(String(j.id));
+        }
+        if (page.length < PAGE) break;
+      }
+      for (const id of ids) {
+        try {
+          await q.remove(id);
+          dropped++;
+        } catch {
+          /* already gone or just went active — the replay flood is bounded either way */
+        }
+      }
+    }
+    if (dropped) log(TAG, `dropped ${dropped} stale repeat iteration(s) (replay guard)`);
+  } catch (err) {
+    log(TAG, `failed to drop stale repeat iterations`, summarizeForLog(err));
   }
 
   // ---- Repeatable weather.check job (BullMQ, not node-cron) ----

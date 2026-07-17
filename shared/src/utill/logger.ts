@@ -7,11 +7,11 @@ const isProd = () => process.env.NODE_ENV === "production";
 
 type LogLevel = "info" | "warn" | "error" | "debug";
 
-// Human-readable local time for dev lines, e.g. "14:03:27.481".
+// Human-readable local time for dev lines, e.g. "17/07 14:03:27.481".
 const devTs = () => {
   const d = new Date();
   const p = (n: number, w = 2) => String(n).padStart(w, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
 };
 
 const prodLine = (level: LogLevel, args: unknown[]) =>
