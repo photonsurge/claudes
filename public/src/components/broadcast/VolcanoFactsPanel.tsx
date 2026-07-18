@@ -14,6 +14,7 @@
  * nothing this panel would add (no gallery/facts/alert/reportFacts) — callers
  * should check that before alternating slides at all.
  */
+import type { CSSProperties } from "react";
 import type { TrackInfo } from "@photonsurge/shared/director";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 
@@ -29,23 +30,66 @@ export function volcanoFactsSlideHasContent(info: TrackInfo | undefined): boolea
   return Boolean((info.gallery && info.gallery.length) || info.facts || info.alert || info.reportFacts);
 }
 
+const imgStyle = (height: number): CSSProperties => ({
+  width: "100%",
+  height,
+  objectFit: "cover",
+  borderRadius: 6,
+  display: "block",
+});
+
+/**
+ * The volcano's photos (up to 4), sized to actually read on air rather than the
+ * old 60px-tall thumbnail strip. Layout adapts to how many we have: a lone photo
+ * goes full-bleed, a pair sits two-up at the sibling TrackInfoPanel's own 150px
+ * height, three leads with a hero over two thumbs, and four fills a 2×2 grid — so
+ * every photo stays large instead of collapsing into a wall of tiny squares.
+ */
+function VolcanoGallery({ urls }: { urls: string[] }) {
+  const pics = urls.slice(0, 4);
+  /* eslint-disable @next/next/no-img-element */
+  if (pics.length === 1) {
+    return <img src={pics[0]} alt="" style={{ ...imgStyle(180), marginBottom: 10 }} />;
+  }
+  if (pics.length === 2) {
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
+        {pics.map((url) => (
+          <img key={url} src={url} alt="" style={imgStyle(150)} />
+        ))}
+      </div>
+    );
+  }
+  if (pics.length === 4) {
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
+        {pics.map((url) => (
+          <img key={url} src={url} alt="" style={imgStyle(122)} />
+        ))}
+      </div>
+    );
+  }
+  // Three: a hero over a two-up thumb row.
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <img src={pics[0]} alt="" style={{ ...imgStyle(150), marginBottom: 6 }} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        {pics.slice(1).map((url) => (
+          <img key={url} src={url} alt="" style={imgStyle(100)} />
+        ))}
+      </div>
+    </div>
+  );
+  /* eslint-enable @next/next/no-img-element */
+}
+
 export default function VolcanoFactsPanel({ info, color = "#38bdf8" }: { info: TrackInfo; color?: string }) {
   if (!volcanoFactsSlideHasContent(info)) return null;
 
   return (
     <BroadcastCard accent={color} eyebrow="Volcano Facts">
       {info.gallery && info.gallery.length ? (
-        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-          {info.gallery.slice(0, 4).map((url) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={url}
-              src={url}
-              alt=""
-              style={{ flex: 1, height: 60, objectFit: "cover", borderRadius: 4, display: "block" }}
-            />
-          ))}
-        </div>
+        <VolcanoGallery urls={info.gallery} />
       ) : null}
 
       {info.facts ? (

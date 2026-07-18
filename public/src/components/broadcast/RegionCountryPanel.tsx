@@ -15,7 +15,7 @@
  */
 import type { FocusRegionCountry, FocusRegionCity } from "../../lib/focus/types";
 import type { ForecastDay } from "../../lib/weather-forecast";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 import { MiniChart, formatReading, type SparkPoint } from "./PointHistoryPanel";
 import { WeatherGlyph } from "./glyphs";
@@ -53,7 +53,7 @@ function DayCell({ day }: { day: ForecastDay }) {
         minWidth: 0,
         padding: "6px 3px",
         borderRadius: 7,
-        background: "rgba(4,10,20,0.55)",
+        background: TILE_BG,
       }}
     >
       <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.6, color: "#aebdd2" }}>{day.label}</span>

@@ -16,6 +16,7 @@ import { sendToQueue, QUEUE_PRIORITY } from "@photonsurge/shared/bull/bull-queue
 import { emitWorkerEvent } from "../socket";
 import { closeEndedAlertEvents, retireUnservableSchedules } from "../events/close";
 import { eventsUnifiedEnabled } from "../events/config";
+import { resyncAlertPopulations } from "../alerts/population";
 
 export { translate } from "../alerts/translate";
 
@@ -139,6 +140,21 @@ export async function reconcile(_job: Job) {
   const reranked = await db.alerts.resyncMeteoalarmRanks();
   result.reranked = reranked.changed;
   if (reranked.changed) log(TAG, `re-ranked stored meteoalarm alerts`, reranked);
+
+  // Refresh the cities-based "people under this warning" estimate. Belongs here,
+  // not at ingest: an alert's polygon is often backfilled a few ticks after it
+  // lands (MeteoAlarm ships EMMA codes, boundaries follow), so an ingest-time
+  // count would read zero for exactly those and never recover. Signature-gated,
+  // so a steady-state pass over thousands of alerts does no geo work; guarded so
+  // a city-index hiccup can't take down the rest of the sweep.
+  try {
+    const pop = await resyncAlertPopulations(db);
+    result.populationRecomputed = pop.recomputed;
+    result.populationCleared = pop.cleared;
+  } catch (err) {
+    log(TAG, `population resync failed`, summarizeForLog(err));
+    result.populationError = String(err);
+  }
 
   // Close events whose warning has lapsed, and stop watching anything that's over
   // or that no adapter can fetch for.

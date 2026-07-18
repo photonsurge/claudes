@@ -8,31 +8,62 @@
  */
 import type { AreaSummary } from "../../lib/broadcast";
 
-export default function AreaStatus({ summary }: { summary: AreaSummary }) {
+/** One area's tally for the by-area breakdown — a continent on a world spin, so
+ *  the whole-globe rollup reads "which parts of the planet are lit up" instead of
+ *  one flat, meaningless "N alerts in view". */
+export interface AreaBreakdown {
+  name: string;
+  count: number;
+  /** This area's severity mix — proportional mini-bar, most severe first. */
+  bySeverity: { rank: number; color: string; count: number }[];
+}
+
+export default function AreaStatus({
+  summary,
+  label = "IN VIEW",
+  byArea,
+}: {
+  summary: AreaSummary;
+  /** Eyebrow over the count — "IN VIEW" for a framed area (country/region/global),
+   *  "NEARBY" for a single tracked event whose rollup is a great-circle radius,
+   *  "WORLDWIDE" for a whole-globe spin (paired with `byArea`). */
+  label?: string;
+  /** Present only on a whole-globe spin: the alert count broken down by continent.
+   *  When set, the per-area rows replace the (redundant) hazard-type breakdown —
+   *  each area's own severity mini-bar already reads the "how much red" at a glance. */
+  byArea?: AreaBreakdown[];
+}) {
   const { total, quakeCount, volcanoCount, bySeverity, byHazard } = summary;
+  // Lead with whatever is actually present rather than a hard-coded "N alerts",
+  // which read a jarring "0 alerts" on a volcano/quake shot (where alerts are the
+  // sideshow, not the subject). Fixed precedence: alerts → seismic → volcanic; the
+  // first non-zero becomes the big headline number, the rest trail as chips.
+  const parts: { count: number; noun: string; color: string }[] = [];
+  if (total) parts.push({ count: total, noun: `alert${total === 1 ? "" : "s"}`, color: "#fff" });
+  if (quakeCount) parts.push({ count: quakeCount, noun: "seismic", color: "#e08a1e" });
+  if (volcanoCount) parts.push({ count: volcanoCount, noun: "volcanic", color: "#ef4444" });
+  const [lead, ...rest] = parts;
+  // Caller only renders this when something is present, so `lead` is always set;
+  // guard anyway rather than assume.
+  if (!lead) return null;
   return (
     <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(120,140,170,0.18)" }}>
       {/* Headline counts */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 11 }}>
         <span style={{ fontSize: 13.2, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc" }}>
-          IN VIEW
+          {label}
         </span>
         <span style={{ fontSize: 30.8, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
-          {total}
+          {lead.count}
         </span>
-        <span style={{ fontSize: 16.5, fontWeight: 700, color: "#9fb3cc" }}>
-          alert{total === 1 ? "" : "s"}
+        <span style={{ fontSize: 16.5, fontWeight: 700, color: lead.color === "#fff" ? "#9fb3cc" : lead.color }}>
+          {lead.noun}
         </span>
-        {quakeCount ? (
-          <span style={{ fontSize: 16.5, fontWeight: 700, color: "#e08a1e" }}>
-            · {quakeCount} seismic
+        {rest.map((p) => (
+          <span key={p.noun} style={{ fontSize: 16.5, fontWeight: 700, color: p.color }}>
+            · {p.count} {p.noun}
           </span>
-        ) : null}
-        {volcanoCount ? (
-          <span style={{ fontSize: 16.5, fontWeight: 700, color: "#ef4444" }}>
-            · {volcanoCount} volcanic
-          </span>
-        ) : null}
+        ))}
       </div>
 
       {/* Severity strip — proportional bar + labelled counts. */}
@@ -62,8 +93,55 @@ export default function AreaStatus({ summary }: { summary: AreaSummary }) {
         </div>
       ) : null}
 
+      {/* By-area breakdown (world spins) — one row per continent, busiest first,
+          with a proportional severity mini-bar. Shown INSTEAD of the hazard-type
+          breakdown: on a whole-globe shot "where" beats "what". */}
+      {byArea && byArea.length ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          {byArea.map((a) => {
+            const barTotal = a.bySeverity.reduce((n, s) => n + s.count, 0) || 1;
+            return (
+              <div key={a.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span
+                  style={{
+                    width: 96,
+                    flex: "none",
+                    fontSize: 15.4,
+                    fontWeight: 700,
+                    color: "#dfe7f5",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {a.name}
+                </span>
+                <span
+                  style={{
+                    width: 34,
+                    flex: "none",
+                    textAlign: "right",
+                    fontSize: 16.5,
+                    fontWeight: 800,
+                    color: "#fff",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {a.count}
+                </span>
+                <div style={{ display: "flex", flex: 1, height: 9, borderRadius: 4, overflow: "hidden", gap: 1 }}>
+                  {a.bySeverity.map((s) => (
+                    <div key={s.rank} style={{ flex: s.count / barTotal, background: s.color, minWidth: 3 }} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
       {/* Hazard-type breakdown — top types with icon + count. */}
-      {byHazard.length ? (
+      {!byArea && byHazard.length ? (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "7px 14px" }}>
           {byHazard.slice(0, 8).map((h) => (
             <span

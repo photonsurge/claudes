@@ -21,6 +21,7 @@ import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { iSummaryStats } from "@photonsurge/shared/db/event-summary-model";
 import type { AlertFeature, AlertTimelineBeat, iAlertSeries, iAlertResource, AlertSnapshotMeta } from "../../lib/alerts";
 import type { Quake } from "../../lib/tracks/types";
+import type { WorldSummary } from "../../lib/broadcast";
 import type { City } from "../../lib/cities";
 import type { CountryAt } from "../../lib/countries";
 import type { Cam } from "../../lib/cams/types";
@@ -122,6 +123,11 @@ export interface ModeSlideContext {
   areaAlerts: AlertFeature[];
   areaQuakes: Quake[];
   areaVolcanoes: Volcano[];
+  /** Set ONLY on a whole-globe spin (no framed area): the authoritative world
+   *  alert tally, so the OnAirCard lede reads "WORLDWIDE" with a per-continent
+   *  breakdown instead of a meaningless whole-planet "IN VIEW" count. Null on any
+   *  framed shot (country/region/event/summary), where the scoped rollup stands. */
+  world?: WorldSummary | null;
   /** Set for a country spotlight (or other wide framed shot) — enables the TOP
    *  CITIES + top-5 city-forecast slides (bbox the framed area was scoped to). */
   wideCitiesBbox?: [number, number, number, number];
@@ -224,6 +230,7 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
         quakes={ctx.areaQuakes}
         volcanoes={ctx.areaVolcanoes}
         areaInfo={ctx.areaInfo}
+        world={ctx.world}
         theme={ctx.theme}
       />
     ),

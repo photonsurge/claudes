@@ -38,4 +38,13 @@ describe("VolcanoFactsPanel", () => {
     const { container } = render(<VolcanoFactsPanel info={{ label: "Etna" }} />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("shows up to 4 gallery photos, capping extras", () => {
+    const many: TrackInfo = {
+      label: "Etna",
+      gallery: ["a.jpg", "b.jpg", "c.jpg", "d.jpg", "e.jpg"],
+    };
+    render(<VolcanoFactsPanel info={many} />);
+    expect(screen.getAllByAltText("")).toHaveLength(4);
+  });
 });

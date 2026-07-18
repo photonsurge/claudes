@@ -9,7 +9,7 @@
  */
 import type { TideStationReading } from "../../lib/tides/types";
 import { realWavePath } from "./MonitorCluster";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
 import { WaveIcon } from "./icons";
 
 /** How many nearby gauges to show at once — more than this and the row would
@@ -41,7 +41,7 @@ function GaugeBox({ station, primary, theme }: { station: TideStationReading; pr
         style={{
           height: BOX_H,
           borderRadius: 6,
-          background: "rgba(4,10,20,0.72)",
+          background: TILE_BG,
           border: `1px solid ${primary ? "rgba(67,217,255,0.5)" : "rgba(90,120,160,0.25)"}`,
           overflow: "hidden",
           position: "relative",

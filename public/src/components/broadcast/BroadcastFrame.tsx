@@ -392,6 +392,13 @@ export default function BroadcastFrame({
   // keep their real bbox below (the country's / area's own extent).
   const eventCenter: [number, number] | null =
     eventTargeted && onAirSegment ? onAirSegment.camera.center : null;
+  // On a targeted-event shot the framed subject IS the headline (its own card
+  // above), so it must NOT re-count itself in the "NEARBY" rollup — a lone erupting
+  // volcano was tallying "1 volcanic", a quake shot "1 seismic". Segment ids are
+  // `${kind}:${subject}` (worker's make()), and that bare subject equals the feed's
+  // own id: a volcano's `v.id`, a quake's USGS `q.id`, a storm's `${source}:${identifier}`.
+  const eventSubjectId =
+    eventCenter && onAirSegment ? onAirSegment.id.slice(onAirSegment.kind.length + 1) : null;
   // Scope the on-air feeds to the framed area for the lede rollup. A country /
   // region / summary shot uses its own bbox; any other located wide shot (a
   // weather check) uses the camera framing.
@@ -407,20 +414,31 @@ export default function BroadcastFrame({
           ? bboxForCamera(onAirSegment.camera.center, onAirSegment.camera.zoom)
           : undefined;
   const areaAlerts = eventCenter
-    ? scopeAlertsToRadius(alerts, eventCenter)
+    ? scopeAlertsToRadius(alerts, eventCenter).filter(
+        (a) => `${a.properties.source}:${a.properties.identifier}` !== eventSubjectId,
+      )
     : areaBbox
       ? scopeAlertsToBbox(alerts, areaBbox)
       : alerts;
   const areaQuakes = eventCenter
-    ? scopeQuakesToRadius(quakes, eventCenter)
+    ? scopeQuakesToRadius(quakes, eventCenter).filter((q) => q.id !== eventSubjectId)
     : areaBbox
       ? scopeQuakesToBbox(quakes, areaBbox)
       : quakes;
   const areaVolcanoes = eventCenter
-    ? scopeVolcanoesToRadius(volcanoes, eventCenter)
+    ? scopeVolcanoesToRadius(volcanoes, eventCenter).filter((v) => v.id !== eventSubjectId)
     : areaBbox
       ? scopeVolcanoesToBbox(volcanoes, areaBbox)
       : volcanoes;
+
+  // A plain world/ocean/global spin has NO framed area (not a country/region/
+  // summary, not a targeted event), so `areaBbox` above is undefined and the
+  // "IN VIEW" rollup fell through to the ENTIRE global feed — a meaningless flat
+  // count ("545 alerts") slapped with "IN VIEW" on a shot where everything is in
+  // view. On those shots hand OnAirCard the authoritative world tally so the lede
+  // reads "WORLDWIDE" and breaks the count down by continent instead. Framed shots
+  // (their own bbox) and targeted events (radius) keep their scoped rollup.
+  const worldwide = !!onAirSegment && !areaBbox && !eventCenter;
 
   // A country spotlight scopes the "IN VIEW" roundup + "TOP CITIES" info to this
   // framed area — set here so mode-slides can turn them into the wide-shot deck
@@ -487,6 +505,7 @@ export default function BroadcastFrame({
         areaAlerts,
         areaQuakes,
         areaVolcanoes,
+        world: worldwide ? worldWatch : null,
         wideCitiesBbox,
         histCenter,
         histBbox,

@@ -18,6 +18,7 @@
 import type { City } from "../../lib/cities";
 import { useClimateFor } from "../../lib/focus/focus-client";
 import { buildClimateRows, sparkPoints, toPath, CHART_W, formatReading, type SparkPoint } from "./PointHistoryPanel";
+import { TILE_BG } from "./config";
 import { CardSection, CardEyebrow } from "./BroadcastCard";
 
 /** Inline per-row sparkline size — small enough to sit beside a row's
@@ -87,7 +88,7 @@ function ClimateCell({
         height={height}
         viewBox={`0 0 ${CHART_W} ${height}`}
         preserveAspectRatio="none"
-        style={{ display: "block", borderRadius: 5, background: "rgba(4,10,20,0.78)" }}
+        style={{ display: "block", borderRadius: 5, background: TILE_BG }}
       >
         <path d={area} fill={color} opacity={0.18} />
         <path d={toPath(spark.pts)} fill="none" stroke={color} strokeWidth={4.5} strokeLinejoin="round" strokeLinecap="round" />

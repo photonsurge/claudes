@@ -104,6 +104,29 @@ export interface iAlert extends iGeneralModel {
   /** Earliest `info.expires` across the message — for the expiry sweep. */
   expiresAt?: string;
   raw?: unknown;
+
+  /**
+   * Rough count of people under this warning: the summed population of every
+   * catalogued city inside the alert's drawable footprint (see
+   * worker/src/alerts/population.ts). A cities-based ESTIMATE, not a census —
+   * it misses rural population, counts a whole city even when the polygon only
+   * clips its edge, and only sees towns above the seeded GeoNames tier.
+   *
+   * Derived, not from the feed: resolved by the worker's reconcile sweep with a
+   * `$geoWithin` against the cities' 2dsphere `loc`, so it stays fresh as an
+   * alert's geometry is backfilled (MeteoAlarm ships EMMA codes; polygons land
+   * later). Absent for a geocode-only alert that never resolves to a shape.
+   */
+  population?: number;
+  /** How many catalogued cities `population` was summed over. */
+  cityCount?: number;
+  /**
+   * Signature of the drawable footprint the last `population` was computed from
+   * — `sent` plus which areas carry a geometry. The reconcile sweep recomputes
+   * only when this changes (a new CAP version, or an area's polygon backfilled),
+   * so a steady-state re-poll of thousands of alerts does no geo work.
+   */
+  populationSig?: string;
 }
 
 export interface iAlertModel extends iAlert {
@@ -186,6 +209,13 @@ const AlertSchema = new mongoose.Schema<iAlertModel>(
     maxSeverityRank: { type: Number, required: true, min: 0, max: 4, default: 0 },
     expiresAt: { type: String, required: false },
     raw: { type: mongoose.Schema.Types.Mixed, required: false },
+
+    // Derived by the reconcile sweep (worker/src/alerts/population.ts), not the
+    // feed — the cities-based "people under this warning" estimate + its
+    // freshness signature. All optional: a geocode-only alert never gets one.
+    population: { type: Number, required: false },
+    cityCount: { type: Number, required: false },
+    populationSig: { type: String, required: false },
   },
   mongoTimestamps,
 );

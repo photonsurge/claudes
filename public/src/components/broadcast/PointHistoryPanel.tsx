@@ -19,7 +19,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { HISTORY_WINDOW_HOURS, type ClimateBucketedDataset } from "../../lib/history-client";
 import { usePointHistorySeries, useAreaHistorySeries, useClimateFor } from "../../lib/focus/focus-client";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
 import BroadcastCard from "./BroadcastCard";
 
 /** Compact side-note (EventOverlay) paging: how many charts show at once before
@@ -214,7 +214,7 @@ export function MiniChart({
         height={height}
         viewBox={`0 0 ${CHART_W} ${height}`}
         preserveAspectRatio="none"
-        style={{ display: "block", borderRadius: 6, background: "rgba(4,10,20,0.78)" }}
+        style={{ display: "block", borderRadius: 6, background: TILE_BG }}
       >
         <path d={area} fill={color} opacity={0.18} />
         {avg != null ? (

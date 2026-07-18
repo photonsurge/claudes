@@ -16,7 +16,7 @@ import { type ForecastDay, type AreaForecastDay } from "../../lib/forecast-clien
 import { usePointForecastDays, useAreaForecastDays } from "../../lib/focus/focus-client";
 import { formatReading } from "./PointHistoryPanel";
 import { SectionTitle } from "./PointHistoryPanel";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
 import BroadcastCard, { DeckChromeContext } from "./BroadcastCard";
 import { WeatherGlyph, WarnTriangle } from "./glyphs";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
@@ -91,7 +91,7 @@ function DayCard({
         gap: 4,
         padding: fill ? "8px 3px" : "8px 6px",
         borderRadius: 8,
-        background: "rgba(4,10,20,0.55)",
+        background: TILE_BG,
       }}
     >
       {topHazard ? (

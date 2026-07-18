@@ -99,7 +99,7 @@ export default function StartCountdown({
           </span>
         </div>
         <span style={{ fontSize: 13.2, color: "rgba(255,255,255,0.45)", letterSpacing: 1 }}>
-          A production by Thronix &amp; PhotonSurge
+          by Thronix, powered by PhotonSurge
         </span>
       </div>
     </div>

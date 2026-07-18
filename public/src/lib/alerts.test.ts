@@ -3,6 +3,7 @@ import {
   areaSummary,
   alertLocationLabels,
   expiresLabel,
+  formatPeople,
   severityColor,
   severityLabel,
   type Alert,
@@ -139,5 +140,24 @@ describe("severity presentation", () => {
   it("maps ranks to a hex colour and label", () => {
     expect(severityColor(4)).toMatch(/^#[0-9a-f]{6}$/i);
     expect(severityLabel(4)).toBe("Extreme");
+  });
+});
+
+describe("formatPeople", () => {
+  it("renders a compact label per magnitude", () => {
+    expect(formatPeople(2_300_000_000)).toBe("2.3B");
+    expect(formatPeople(1_200_000)).toBe("1.2M");
+    expect(formatPeople(2_000_000)).toBe("2M"); // trailing .0 trimmed
+    expect(formatPeople(410_000)).toBe("410k");
+    expect(formatPeople(8_300)).toBe("8,300"); // below 10k stays exact
+  });
+
+  it("returns null for a missing or zero count so the field can hide", () => {
+    // A geocode-only alert has no shape to count — rendering "0 people" over a
+    // real warning reads as broken, so callers hide it instead.
+    expect(formatPeople(undefined)).toBeNull();
+    expect(formatPeople(null)).toBeNull();
+    expect(formatPeople(0)).toBeNull();
+    expect(formatPeople(NaN)).toBeNull();
   });
 });

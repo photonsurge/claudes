@@ -24,7 +24,7 @@ import { historySamples, type HistorySeries } from "../../lib/history-client";
 import { formatReading } from "./PointHistoryPanel";
 import type { Quake } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
 import { HeartbeatIcon, WaveIcon, WindIcon, GaugeIcon } from "./icons";
 
 /** Radius (km) of quakes counted as "relevant" to a focused quake vs a region. */
@@ -179,7 +179,7 @@ function Panel({
         style={{
           height: TRACE_H,
           borderRadius: 5,
-          background: "rgba(4,10,20,0.72)",
+          background: TILE_BG,
           border: "1px solid rgba(90,120,160,0.25)",
           overflow: "hidden",
           position: "relative",
@@ -477,7 +477,7 @@ function WeatherMonitorBox({
         style={{
           height: ROW_BOX_H,
           borderRadius: 6,
-          background: "rgba(4,10,20,0.72)",
+          background: TILE_BG,
           border: "1px solid rgba(90,120,160,0.25)",
           overflow: "hidden",
           position: "relative",

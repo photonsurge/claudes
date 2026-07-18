@@ -12,7 +12,7 @@
 import type { Segment } from "@photonsurge/shared/director";
 import type { SeismoStationReading } from "../../lib/seismo/types";
 import { realLinePath } from "./MonitorCluster";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
 import { HeartbeatIcon } from "./icons";
 
 /** How many nearby stations to show at once — more than this and the row
@@ -53,7 +53,7 @@ function StationBox({
         style={{
           height: BOX_H,
           borderRadius: 6,
-          background: "rgba(4,10,20,0.72)",
+          background: TILE_BG,
           border: `1px solid ${primary ? "rgba(67,217,255,0.5)" : "rgba(90,120,160,0.25)"}`,
           overflow: "hidden",
           position: "relative",

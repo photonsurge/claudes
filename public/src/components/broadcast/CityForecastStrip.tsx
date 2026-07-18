@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 import { listCityConditionsByIds, type CityCondition, type CityConditionDay } from "../../lib/cities";
 import { formatReading } from "./PointHistoryPanel";
+import { TILE_BG } from "./config";
 
 /** Fetch worker-cached now + 3-day forecast for `cityIds`, keyed by id for a
  *  per-row lookup. Re-fetches when the id set changes (order-independent). */
@@ -64,7 +65,7 @@ export function DayChip({ day, color }: { day: CityConditionDay; color: string }
         minWidth: 40,
         padding: "3px 4px",
         borderRadius: 6,
-        background: "rgba(4,10,20,0.5)",
+        background: TILE_BG,
       }}
     >
       <span style={{ fontSize: 9.4, fontWeight: 800, letterSpacing: 0.6, color: "#8ea3bf" }}>{dayLabel(day.date)}</span>

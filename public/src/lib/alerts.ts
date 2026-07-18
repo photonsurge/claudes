@@ -79,6 +79,15 @@ export interface Alert {
   expiresAt?: string;
   info: AlertInfo[];
   /**
+   * Rough count of people under this warning — the summed population of every
+   * catalogued city inside its footprint, resolved by the worker (see
+   * shared alert-model). A cities-based ESTIMATE, absent for a geocode-only
+   * alert that never resolved to a shape. Rendered via {@link formatPeople}.
+   */
+  population?: number;
+  /** How many catalogued cities `population` was summed over. */
+  cityCount?: number;
+  /**
    * `[lng, lat]` standing in for this alert's shape, computed server-side when
    * `omitCoordinates` stripped the polygons.
    *
@@ -198,6 +207,21 @@ export async function getAlertDetail(id: string): Promise<AlertDetail | null> {
 export const severityColor = (rank: SeverityRank): string => SEVERITY_COLORS[rank];
 export const severityLabel = (rank: SeverityRank): string => SEVERITY_LABELS[rank];
 
+/**
+ * A compact "people" label for a population estimate — "1.2M", "410k", "8,300".
+ * Returns null for a missing/zero count so a caller can hide the field entirely
+ * (a geocode-only alert has no shape to count, and rendering "0 people" over a
+ * real warning reads as broken). It's an ESTIMATE — callers should say so
+ * ("~1.2M", "in affected cities"), never "1.2M people affected".
+ */
+export function formatPeople(n?: number | null): string | null {
+  if (n == null || !Number.isFinite(n) || n <= 0) return null;
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1).replace(/\.0$/, "")}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1).replace(/\.0$/, "")}M`;
+  if (n >= 1e4) return `${Math.round(n / 1e3)}k`;
+  return n.toLocaleString("en-US");
+}
+
 /** A GeoJSON polygon feature for the map overlay, carrying display props. */
 export interface AlertFeature {
   type: "Feature";
@@ -239,6 +263,11 @@ export interface AlertFeature {
     since?: string;
     expires?: string;
     web?: string;
+    /** Cities-based estimate of people under the warning; absent when the alert
+     *  has no drawable shape. See {@link formatPeople}. */
+    population?: number;
+    /** How many catalogued cities `population` was summed over. */
+    cityCount?: number;
   };
 }
 
@@ -263,6 +292,8 @@ function areaFeatureProps(a: Alert, info: AlertInfo, area: AlertArea): AlertFeat
     since: info.onset ?? info.effective ?? a.sent,
     expires: a.expiresAt,
     web: info.web,
+    population: a.population,
+    cityCount: a.cityCount,
   };
 }
 

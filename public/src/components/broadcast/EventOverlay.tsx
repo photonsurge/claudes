@@ -14,7 +14,7 @@
 import type { Segment } from "@photonsurge/shared/director";
 import { STAGE_W, STAGE_H } from "./useStageScale";
 import { KIND_COLOR, KIND_LABEL } from "./kinds";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
 import { KindGlyph } from "./glyphs";
 
 const W = 660;
@@ -187,7 +187,7 @@ export default function EventOverlay({
           // readable on any map type (and through stream compression).
           padding: "10px 18px 12px",
           borderRadius: 12,
-          background: "rgba(4,10,20,0.55)",
+          background: TILE_BG,
           backdropFilter: "blur(5px)",
           WebkitBackdropFilter: "blur(5px)",
         }}

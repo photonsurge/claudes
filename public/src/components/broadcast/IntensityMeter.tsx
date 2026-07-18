@@ -11,7 +11,7 @@ import { getPalette } from "@photonsurge/shared/palettes";
 import { satImgCaptionFor } from "@photonsurge/shared/satimg/types";
 import { buildLegend } from "../../lib/legend";
 import type { MapFreshness } from "../../lib/manifest";
-import type { BroadcastTheme } from "./config";
+import { TILE_BG, type BroadcastTheme } from "./config";
 
 export default function IntensityMeter({
   variable,
@@ -134,7 +134,7 @@ export default function IntensityMeter({
               marginTop: 2,
               padding: "4px 26px",
               borderRadius: 999,
-              background: "rgba(4,10,20,0.68)",
+              background: TILE_BG,
               border: "1px solid rgba(255,255,255,0.09)",
               fontSize: compact ? 12.1 : 13.8,
               fontWeight: 800,
@@ -177,7 +177,7 @@ export default function IntensityMeter({
           gap: 5,
           padding: "9px 12px 7px",
           borderRadius: 11,
-          background: "rgba(4,10,20,0.68)",
+          background: TILE_BG,
           border: "1px solid rgba(255,255,255,0.09)",
           boxShadow: "0 6px 18px rgba(0,0,0,0.4)",
           backdropFilter: "blur(6px)",

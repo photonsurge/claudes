@@ -13,7 +13,7 @@ import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { WorldWatchItem } from "../../lib/broadcast";
 import type { AreaForecastDay } from "../../lib/forecast-client";
 import { formatReading } from "./PointHistoryPanel";
-import { accentBorderRight, GLASS_BG, type BroadcastTheme } from "./config";
+import { accentBorderRight, GLASS_BG, TILE_BG, type BroadcastTheme } from "./config";
 import { hazardMeta } from "../../lib/hazard";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
 import { BreakdownChip } from "./worldStat";
@@ -71,7 +71,7 @@ function DayCell({ day }: { day: AreaForecastDay }) {
         gap: 3,
         padding: "8px 4px",
         borderRadius: 8,
-        background: "rgba(4,10,20,0.55)",
+        background: TILE_BG,
       }}
     >
       {topHazard ? (

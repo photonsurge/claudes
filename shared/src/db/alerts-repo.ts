@@ -1,6 +1,6 @@
 import type { Model } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
-import type { iAlert, iAlertModel, SeverityRank } from "./alert-model";
+import type { AlertGeometry, iAlert, iAlertModel, SeverityRank } from "./alert-model";
 import { alertContentHash } from "../alerts/content-hash";
 import { meteoalarmRank, isMeteoalarmGreen } from "../alerts/severity";
 
@@ -705,6 +705,76 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       }
       const docs = await query.lean().exec();
       return docs.map(strip);
+    },
+
+    /**
+     * Every active alert as the population sweep needs it — enough to fingerprint
+     * its footprint WITHOUT loading a single polygon. The projection keeps
+     * `info.area.geometry.type` (a few bytes each) but never the coordinates, so
+     * it scans thousands of alerts for pennies, exactly like the other reconcile
+     * sweeps ({@link geometryCoverage}).
+     */
+    async populationCandidates(): Promise<
+      Array<
+        Pick<iAlertModel, "id" | "sent" | "population" | "cityCount" | "populationSig"> & {
+          info: { area: { areaDesc: string; geometry?: { type?: string } | null }[] }[];
+        }
+      >
+    > {
+      const docs = await model
+        .find(
+          { active: true },
+          {
+            _id: 0,
+            id: 1,
+            sent: 1,
+            population: 1,
+            cityCount: 1,
+            populationSig: 1,
+            "info.area.areaDesc": 1,
+            "info.area.geometry.type": 1,
+          },
+        )
+        .lean()
+        .exec();
+      return docs as never;
+    },
+
+    /**
+     * Every drawable area geometry (WITH coordinates) of one alert — one small
+     * doc, loaded only for the alerts the sweep found dirty, so the expensive
+     * read is scoped to what actually changed.
+     */
+    async areaGeometries(id: string): Promise<AlertGeometry[]> {
+      const doc = (await model
+        .findOne({ id }, { _id: 0, "info.area.geometry": 1 })
+        .lean()
+        .exec()) as { info?: { area?: { geometry?: AlertGeometry | null }[] }[] } | null;
+      if (!doc) return [];
+      return (doc.info ?? []).flatMap((i) =>
+        (i.area ?? []).map((a) => a.geometry).filter(Boolean),
+      ) as AlertGeometry[];
+    },
+
+    /**
+     * Write the computed people-estimate onto an alert. `population` is `$unset`
+     * (not stored as 0) when the alert has no drawable shape, so a reader can tell
+     * "nobody catalogued inside" (0) from "we can't say" (absent). The signature
+     * is always set, so a shapeless alert isn't rescanned every tick.
+     */
+    async setPopulation(
+      id: string,
+      {
+        population,
+        cityCount,
+        populationSig,
+      }: { population: number | null; cityCount: number; populationSig: string },
+    ): Promise<void> {
+      const set: Record<string, unknown> = { cityCount, populationSig };
+      const update: Record<string, unknown> = { $set: set };
+      if (population == null) update.$unset = { population: "" };
+      else set.population = population;
+      await model.updateOne({ id }, update).exec();
     },
   };
 }

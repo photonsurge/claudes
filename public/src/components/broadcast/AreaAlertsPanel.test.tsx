@@ -45,4 +45,24 @@ describe("AreaAlertsPanel", () => {
     expect(screen.getByText("Warning 0")).toBeInTheDocument();
     expect(screen.getByText("+2 more")).toBeInTheDocument(); // 8 - 6 shown
   });
+
+  it("shows the per-alert people estimate and a rolled-up total", () => {
+    render(
+      <AreaAlertsPanel
+        alerts={[
+          alert({ id: "1", areaDesc: "Kraków", hazard: "wind", population: 1_200_000 }),
+          alert({ id: "2", areaDesc: "Brest", hazard: "flood", population: 410_000 }),
+        ]}
+      />,
+    );
+    // Per-row estimate, on the subtitle line.
+    expect(screen.getByText(/~1\.2M people/)).toBeInTheDocument();
+    // Rolled-up total across the distinct areas.
+    expect(screen.getByText(/≈ 1\.6M people in affected areas/)).toBeInTheDocument();
+  });
+
+  it("omits the people line for geocode-only alerts with no count", () => {
+    render(<AreaAlertsPanel alerts={[alert({ id: "1", areaDesc: "Somewhere" })]} />);
+    expect(screen.queryByText(/people/)).not.toBeInTheDocument();
+  });
 });

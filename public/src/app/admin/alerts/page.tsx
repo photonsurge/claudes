@@ -41,6 +41,7 @@ import {
   displayHeadline,
   displayDescription,
   displayInstruction,
+  formatPeople,
   type Alert as AlertDoc,
   type AlertInfo,
 } from "../../../lib/alerts";
@@ -51,6 +52,21 @@ import AdminPageShell from "../../../components/admin/AdminPageShell";
 import AlertCoverageStrip from "../../../components/admin/AlertCoverageStrip";
 import { useTableSort } from "../../../components/admin/useTableSort";
 import { surface } from "../../../theme/tokens";
+
+/**
+ * The biggest people-estimate across a clustered event's members. The same
+ * warning reported by several sources shares one footprint, but the member that
+ * actually resolved to a drawable shape (and so carries the count) may not be
+ * the group representative — take the max so a shapeless representative doesn't
+ * blank a count a sibling has.
+ */
+function groupPeople(g: { members: AlertDoc[] }): number | undefined {
+  let max: number | undefined;
+  for (const m of g.members) {
+    if (typeof m.population === "number" && (max == null || m.population > max)) max = m.population;
+  }
+  return max;
+}
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<AlertDoc[]>([]);
@@ -187,6 +203,9 @@ export default function AlertsPage() {
     // the ascending list as a block of blanks.
     country: (g) => alertCountryName(g.representative) ?? "￿",
     area: (g) => areaSummary(g.representative),
+    // Absent counts (geocode-only, no shape) sort below every real one in both
+    // directions rather than leading the ascending list as a block of dashes.
+    people: (g) => groupPeople(g) ?? -1,
     sources: (g) => g.sources.length,
     message: (g) => g.representative.msgType,
     translated: (g) => translationStatus(g.representative),
@@ -346,6 +365,7 @@ export default function AlertsPage() {
               <TableCell>{sortedGroups.header("event", "Event")}</TableCell>
               <TableCell>{sortedGroups.header("country", "Country")}</TableCell>
               <TableCell>{sortedGroups.header("area", "Area")}</TableCell>
+              <TableCell align="right">{sortedGroups.header("people", "People")}</TableCell>
               <TableCell>{sortedGroups.header("sources", "Sources")}</TableCell>
               <TableCell>{sortedGroups.header("message", "Msg")}</TableCell>
               <TableCell>{sortedGroups.header("translated", "Translated")}</TableCell>
@@ -485,6 +505,23 @@ export default function AlertsPage() {
                         )}
                       </Stack>
                     </TableCell>
+                    <TableCell align="right" sx={{ whiteSpace: "nowrap", verticalAlign: "top" }}>
+                      {(() => {
+                        const people = groupPeople(g);
+                        const label = formatPeople(people);
+                        if (!label) return <Typography variant="body2" color="text.disabled">—</Typography>;
+                        const cities = Math.max(...g.members.map((m) => m.cityCount ?? 0));
+                        return (
+                          <Box
+                            component="span"
+                            title={`≈ ${people!.toLocaleString("en-US")} people in ${cities} catalogued cit${cities === 1 ? "y" : "ies"} — a cities-based estimate`}
+                            sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}
+                          >
+                            {label}
+                          </Box>
+                        );
+                      })()}
+                    </TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap", verticalAlign: "top" }}>
                       <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap", gap: 0.5 }}>
                         {/* A multi-source group is the interesting case — accent it. */}
@@ -521,7 +558,7 @@ export default function AlertsPage() {
             })}
             {groups.length === 0 && (
               <TableRow>
-                <TableCell colSpan={10}>
+                <TableCell colSpan={11}>
                   {loading
                     ? "Loading…"
                     : alerts.length

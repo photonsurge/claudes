@@ -32,6 +32,7 @@ import {
   alertHazard,
   alertLocationLabels,
   alertsToFeatures,
+  formatPeople,
   getAlertDetail,
   primaryInfo,
   severityColor,
@@ -206,6 +207,21 @@ export default function AlertDetailPage() {
             <Box component="span" sx={{ color: alert.active ? "success.main" : "text.secondary" }}>
               {alert.active ? "active" : "inactive"}
             </Box>
+            {(() => {
+              // Cities-based estimate of people under the footprint — labelled as
+              // an estimate ("≈", "in cities"), never presented as a headcount.
+              const people = formatPeople(alert.population);
+              if (!people) return null;
+              return (
+                <Box
+                  component="span"
+                  title={`≈ ${alert.population!.toLocaleString("en-US")} people across ${alert.cityCount ?? 0} catalogued cities — a cities-based estimate, not a census`}
+                  sx={{ color: "text.secondary" }}
+                >
+                  ≈ {people} in {alert.cityCount ?? 0} cit{(alert.cityCount ?? 0) === 1 ? "y" : "ies"}
+                </Box>
+              );
+            })()}
           </Box>
         </Box>
       }

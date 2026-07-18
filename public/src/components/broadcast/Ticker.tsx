@@ -41,7 +41,7 @@ export default function Ticker({
         height,
         display: "flex",
         alignItems: "center",
-        background: "linear-gradient(180deg, rgba(6,10,18,0.94), rgba(4,7,13,0.9))",
+        background: "linear-gradient(180deg, rgba(6,10,18,0.74), rgba(4,7,13,0.7))",
         borderBottom: edge === "top" ? "1px solid rgba(120,140,170,0.2)" : undefined,
         borderTop: edge === "bottom" ? "1px solid rgba(120,140,170,0.2)" : undefined,
         overflow: "hidden",
