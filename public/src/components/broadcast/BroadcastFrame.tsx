@@ -449,8 +449,9 @@ export default function BroadcastFrame({
       )
     : null;
   // A plain (non-country) wide shot's framed-area forecast, gated on real data so
-  // the deck never rotates onto an empty weather slide — country shots use
-  // wideCitiesForecast instead. Keyed on the bbox, so it only refetches on a cut.
+  // the deck never rotates onto an empty weather slide — country/region/summary
+  // shots use the per-city CityForecastPanel slide instead. Keyed on the bbox, so
+  // it only refetches on a cut.
   const framedForecast = useAreaForecastDays(!wideCitiesBbox ? histBbox : null);
   const hasFramedForecast = framedForecast.days.length > 0;
   // Sea-temp-by-depth rides ocean scenes only; same null-on-no-location rule as
@@ -487,7 +488,6 @@ export default function BroadcastFrame({
         areaQuakes,
         areaVolcanoes,
         wideCitiesBbox,
-        wideCitiesHasForecast,
         histCenter,
         histBbox,
         segmentHasLocation,

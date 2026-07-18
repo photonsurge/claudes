@@ -123,11 +123,8 @@ export interface ModeSlideContext {
   areaQuakes: Quake[];
   areaVolcanoes: Volcano[];
   /** Set for a country spotlight (or other wide framed shot) — enables the TOP
-   *  CITIES + area-forecast slides (bbox the framed area was scoped to). */
+   *  CITIES + top-5 city-forecast slides (bbox the framed area was scoped to). */
   wideCitiesBbox?: [number, number, number, number];
-  /** Whether the area forecast has data — decides if the forecast slide shows
-   *  (computed in BroadcastFrame since it needs a hook). */
-  wideCitiesHasForecast: boolean;
   /** Focus point / framed bbox for the WEATHER (forecast) + CURRENT & RECENT
    *  (AREA HISTORY) + ocean-depth slides. Folded into the deck so the left
    *  column is ONE rotating card per mode instead of a tall stack. */
@@ -137,7 +134,7 @@ export interface ModeSlideContext {
    *  HISTORY slide (global/orbital/intro shots have nothing to sample). */
   segmentHasLocation: boolean;
   /** A plain (non-region) wide shot's framed-area forecast has data — gates its
-   *  weather slide (region/tour use wideCitiesHasForecast instead). */
+   *  weather slide (country/region/summary use the per-city forecast slide). */
   hasFramedForecast: boolean;
   /** Ocean scene — offers the sea-temp-by-depth slide. */
   showDepth: boolean;

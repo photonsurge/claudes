@@ -25,7 +25,6 @@ const ctx = (over: Partial<ModeSlideContext> = {}): ModeSlideContext => ({
   areaAlerts: [],
   areaQuakes: [],
   areaVolcanoes: [],
-  wideCitiesHasForecast: false,
   histCenter: null,
   histBbox: null,
   segmentHasLocation: false,
@@ -73,7 +72,7 @@ describe("modeSlides", () => {
     // No `region` dossier passed → the region-only NEXT 24H / TOP COUNTRIES slides
     // are skipped and it reads exactly like a country spotlight.
     expect(
-      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: roundup, wideCitiesHasForecast: true })),
+      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: roundup })),
     ).toEqual(["onair", "place-roundup", "topcities", "forecast"]);
   });
 
@@ -94,7 +93,6 @@ describe("modeSlides", () => {
         seg({ kind: "region" }),
         ctx({
           wideCitiesBbox: bbox,
-          wideCitiesHasForecast: true,
           regionNearTerm: regionSteps,
           regionCountries: regionCountriesData,
         }),
@@ -114,7 +112,7 @@ describe("modeSlides", () => {
     // No regionCountries / regionNearTerm (bundle didn't cover the cut) → the
     // region-only slides drop and it reads like a country spotlight.
     expect(
-      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, wideCitiesHasForecast: true })),
+      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox })),
     ).toEqual(["onair", "topcities", "forecast"]);
   });
 
@@ -126,12 +124,12 @@ describe("modeSlides", () => {
       inputs: { topCities: [], alerts: [], volcanoes: [] },
     } as unknown as ModeSlideContext["placeRoundup"];
     expect(
-      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: roundup, wideCitiesHasForecast: true })),
+      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: roundup })),
     ).toEqual(["onair", "place-roundup", "place-roundup-24h", "topcities", "forecast"]);
     // No per-city outlook → only the state slide, no split.
     const noOutlook = { summary: "Settled." , inputs: { topCities: [], alerts: [], volcanoes: [] } } as unknown as ModeSlideContext["placeRoundup"];
     expect(
-      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: noOutlook, wideCitiesHasForecast: true })),
+      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: noOutlook })),
     ).toEqual(["onair", "place-roundup", "topcities", "forecast"]);
   });
 
@@ -141,11 +139,6 @@ describe("modeSlides", () => {
     // country-wide aggregate; it rides unconditionally and self-hides at render
     // when the per-city cache is empty, so it no longer keys off the area forecast.
     expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities", "forecast"]);
-    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, wideCitiesHasForecast: true }))).toEqual([
-      "onair",
-      "topcities",
-      "forecast",
-    ]);
   });
 
   it("every mode leads with the uniform on-air lede", () => {
@@ -328,7 +321,6 @@ describe("modeSlides", () => {
         seg({ kind: "country" }),
         ctx({
           wideCitiesBbox: bbox,
-          wideCitiesHasForecast: true,
           segmentHasLocation: true,
           histCenter: [0, 0],
           histBbox: bbox,
@@ -358,7 +350,6 @@ describe("modeSlides", () => {
         ctx({
           summaryCountry: country,
           wideCitiesBbox: bbox,
-          wideCitiesHasForecast: true,
           areaAlerts: [alert],
           roundup: { sources: [] },
         }),
