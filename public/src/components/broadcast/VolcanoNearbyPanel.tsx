@@ -97,7 +97,7 @@ export default function VolcanoNearbyPanel({
         <CardSection first eyebrow="Nearest Cities">
           {near.map((n) => (
             <div key={n.item.id} style={{ padding: "3px 0" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, fontSize: 11 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, fontSize: 12.1 }}>
                 <span style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   <span style={{ fontWeight: 700, color: "#e6eefb" }}>{n.item.name}</span>
                   {n.item.cc ? <span style={{ color: "#7d8da5" }}>{` ${n.item.cc}`}</span> : null}
@@ -118,10 +118,10 @@ export default function VolcanoNearbyPanel({
       {nearQ.length ? (
         <CardSection first={!near.length} eyebrow="Nearby Seismic Activity">
           {nearQ.map((n) => (
-            <div key={n.item.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, padding: "2px 0" }}>
+            <div key={n.item.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.1, padding: "2px 0" }}>
               <span
                 style={{
-                  fontSize: 9,
+                  fontSize: 9.9,
                   fontWeight: 800,
                   color: "#0a0e16",
                   background: quakeMagnitudeColor(n.item.mag),
@@ -146,7 +146,7 @@ export default function VolcanoNearbyPanel({
       {nearA.length ? (
         <CardSection first={!near.length && !nearQ.length} eyebrow="Nearby Alerts">
           {nearA.map((n) => (
-            <div key={n.item.properties.id} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 11, padding: "2px 0" }}>
+            <div key={n.item.properties.id} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12.1, padding: "2px 0" }}>
               <span
                 aria-hidden
                 style={{

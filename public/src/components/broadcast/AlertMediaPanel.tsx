@@ -13,7 +13,8 @@ import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model
 import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
 import { snapshotLabel } from "../../lib/satellite-view";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
-import BroadcastCard, { CardSection, DIM } from "./BroadcastCard";
+import BroadcastCard, { CardSection } from "./BroadcastCard";
+import MediaTileGrid from "./MediaTileGrid";
 import Sparkline from "../Sparkline";
 
 export function alertMediaSlideHasContent(snaps: AlertSnapshotMeta[] | undefined): boolean {
@@ -37,20 +38,19 @@ export default function AlertMediaPanel({
   theme?: BroadcastTheme;
 }) {
   if (!alertMediaSlideHasContent(snapshots)) return null;
-  // Prefer a comparison (most storytelling), else the newest satellite pass, else anything.
-  const hero =
-    snapshots.find((s) => s.kind === "compare") ?? snapshots.find((s) => s.kind === "satellite") ?? snapshots[0];
+  // Every snapshot rides as a webcam-style tile so the whole imagery set is on air
+  // at once, rather than a single hero still.
+  const tiles = snapshots.map((s) => ({
+    key: s.id,
+    src: snapSrc(s),
+    title: snapshotLabel(s.kind, s.layer),
+    caption: utc(s.observationTime),
+  }));
   const scoreSeries = series.find((s) => s.metric === "alertscore") ?? series[0];
 
   return (
     <BroadcastCard accent={color} eyebrow="Satellite" theme={theme}>
-      <CardSection first>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={snapSrc(hero)} alt={hero.kind} style={{ width: "100%", borderRadius: 8, display: "block" }} />
-        <div style={{ color: DIM, fontSize: 12, marginTop: 4 }}>
-          {snapshotLabel(hero.kind, hero.layer)} · {utc(hero.observationTime)}
-        </div>
-      </CardSection>
+      <MediaTileGrid first tiles={tiles} />
 
       {scoreSeries && scoreSeries.samples.length > 1 ? (
         <CardSection eyebrow={scoreSeries.metric}>
@@ -63,7 +63,7 @@ export default function AlertMediaPanel({
           {resources.slice(0, 3).map((r) => (
             <div
               key={r.id ?? r.url}
-              style={{ color: "#cbd5e1", fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+              style={{ color: "#cbd5e1", fontSize: 14.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
             >
               {r.description || r.url}
             </div>

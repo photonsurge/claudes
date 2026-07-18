@@ -18,7 +18,7 @@
  * Pure presentation inside the scaled broadcast stage; pointer-inert.
  */
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
-import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { accentBorder, GLASS_BG, DEFAULT_THEME, type BroadcastTheme } from "./config";
 import AutoScroll from "./AutoScroll";
 
 /** One column width so the stacked cards share clean left/right edges. */
@@ -63,7 +63,7 @@ export const ON_AIR_RED = "#ff3b3b";
 /** Standard `▸ SECTION` micro-label used for card + sub-section headers. */
 export function CardEyebrow({ children, color = MUTED }: { children: ReactNode; color?: string }) {
   return (
-    <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.4, textTransform: "uppercase", color }}>
+    <div style={{ fontSize: 9.9, fontWeight: 800, letterSpacing: 1.4, textTransform: "uppercase", color }}>
       {children}
     </div>
   );
@@ -107,6 +107,7 @@ export default function BroadcastCard({
   headerRight,
   width = CARD_W,
   theme = DEFAULT_THEME,
+  glass = false,
   children,
   style,
 }: {
@@ -126,6 +127,10 @@ export default function BroadcastCard({
   headerRight?: ReactNode;
   width?: number;
   theme?: BroadcastTheme;
+  /** Off-deck only: drop the coloured accent stripe and use a see-through glass
+   *  fill (GLASS_BG) with a stronger blur — for panels that hang off the reticle
+   *  and should read as light glass over the map rather than a solid card. */
+  glass?: boolean;
   children: ReactNode;
   style?: CSSProperties;
 }) {
@@ -146,12 +151,15 @@ export default function BroadcastCard({
           height: chrome.height ?? CARD_H,
           display: "flex",
           flexDirection: "column",
-          background: theme.panelBg,
+          // See-through glass (lighter than the theme's near-solid panelBg) so the
+          // map reads behind the on-air deck card; a stronger blur keeps the body
+          // legible over it.
+          background: "rgba(8,14,24,0.32)",
           ...accentBorder(theme.panelBorder, `4px solid ${stripe}`),
           borderRadius: 14,
           boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
+          backdropFilter: "blur(11px)",
+          WebkitBackdropFilter: "blur(11px)",
           pointerEvents: "none",
           fontFamily: "system-ui, sans-serif",
           color: INK,
@@ -167,7 +175,7 @@ export default function BroadcastCard({
           <span
             style={{
               flexShrink: 0,
-              fontSize: 12,
+              fontSize: 13.2,
               fontWeight: 800,
               letterSpacing: 1,
               textTransform: "uppercase",
@@ -184,7 +192,7 @@ export default function BroadcastCard({
               style={{
                 flex: 1,
                 minWidth: 0,
-                fontSize: 18,
+                fontSize: 19.8,
                 fontWeight: 800,
                 lineHeight: 1.1,
                 whiteSpace: "nowrap",
@@ -215,12 +223,14 @@ export default function BroadcastCard({
       style={{
         width,
         padding: "14px 20px",
-        background: theme.panelBg,
-        ...accentBorder(theme.panelBorder, `4px solid ${stripe}`),
+        background: glass ? GLASS_BG : theme.panelBg,
+        ...(glass
+          ? { border: theme.panelBorder }
+          : accentBorder(theme.panelBorder, `4px solid ${stripe}`)),
         borderRadius: 14,
         boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
+        backdropFilter: glass ? "blur(11px)" : "blur(8px)",
+        WebkitBackdropFilter: glass ? "blur(11px)" : "blur(8px)",
         pointerEvents: "none",
         fontFamily: "system-ui, sans-serif",
         color: INK,
@@ -234,7 +244,7 @@ export default function BroadcastCard({
           {badge != null ? (
             <span
               style={{
-                fontSize: 12,
+                fontSize: 13.2,
                 fontWeight: 800,
                 letterSpacing: 1,
                 textTransform: "uppercase",
@@ -248,7 +258,7 @@ export default function BroadcastCard({
             </span>
           ) : null}
           {live ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, color: MUTED }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.2, fontWeight: 800, letterSpacing: 1.2, color: MUTED }}>
               <span style={{ width: 9, height: 9, borderRadius: "50%", background: ON_AIR_RED, animation: "bcast-onair 1.4s ease-in-out infinite" }} />
               ON AIR
             </span>

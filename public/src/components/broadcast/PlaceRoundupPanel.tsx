@@ -43,8 +43,8 @@ function Stat({ label, value, sub }: { label: string; value: number; sub?: strin
   if (!value) return null;
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", lineHeight: 1 }}>{value.toLocaleString()}</div>
-      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.8, color: "#9fb3cc", marginTop: 3 }}>
+      <div style={{ fontSize: 24.2, fontWeight: 800, color: "#fff", lineHeight: 1 }}>{value.toLocaleString()}</div>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: "#9fb3cc", marginTop: 3 }}>
         {label}
         {sub ? <span style={{ color: "#6b7a94" }}> · {sub}</span> : null}
       </div>
@@ -106,14 +106,14 @@ export default function PlaceRoundupPanel({
       {showMain && hasSections ? (
         <>
           {summaryText ? (
-            <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.4, color: "#fff", marginBottom: stateText ? 10 : 0 }}>
+            <div style={{ fontSize: 17.6, fontWeight: 700, lineHeight: 1.4, color: "#fff", marginBottom: stateText ? 10 : 0 }}>
               {summaryText}
             </div>
           ) : null}
           {stateText ? (
             <div
               style={{
-                fontSize: 14.5,
+                fontSize: 16,
                 lineHeight: 1.5,
                 color: "#e8eef7",
                 marginBottom: tiles.length || topHazard ? 12 : 0,
@@ -128,7 +128,7 @@ export default function PlaceRoundupPanel({
       ) : showMain && narrativeText ? (
         <div
           style={{
-            fontSize: 15,
+            fontSize: 16.5,
             lineHeight: 1.5,
             color: "#e8eef7",
             marginBottom: tiles.length || topHazard ? 12 : 0,
@@ -149,7 +149,7 @@ export default function PlaceRoundupPanel({
       ) : null}
       {showMain && topHazard ? (
         <CardSection eyebrow="Top hazard">
-          <span style={{ fontSize: 14, fontWeight: 700, color: "#e8eef7" }}>{topHazard.label}</span>
+          <span style={{ fontSize: 15.4, fontWeight: 700, color: "#e8eef7" }}>{topHazard.label}</span>
         </CardSection>
       ) : null}
 
@@ -157,7 +157,7 @@ export default function PlaceRoundupPanel({
         <CardSection eyebrow="Next 24 hours" first={section === "next24"}>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             {cities.map((c) => (
-              <div key={c.name} style={{ fontSize: 13.5, lineHeight: 1.4, color: "#e8eef7" }}>
+              <div key={c.name} style={{ fontSize: 14.9, lineHeight: 1.4, color: "#e8eef7" }}>
                 <span style={{ fontWeight: 800, color: "#fff" }}>{c.name}</span>
                 <span style={{ color: "#c4d0e0" }}> — {c.outlook}</span>
               </div>
@@ -170,7 +170,7 @@ export default function PlaceRoundupPanel({
         <CardSection eyebrow={adviceUrgent ? "Advice · alerts active" : "Advice"}>
           <div
             style={{
-              fontSize: 13.5,
+              fontSize: 14.9,
               lineHeight: 1.5,
               color: "#eef3fa",
               paddingLeft: 10,
@@ -183,7 +183,7 @@ export default function PlaceRoundupPanel({
       ) : null}
 
       {showMain && !hasSections && !narrativeText ? (
-        <div style={{ marginTop: 12, fontSize: 11, color: MUTED, letterSpacing: 0.3 }}>
+        <div style={{ marginTop: 12, fontSize: 12.1, color: MUTED, letterSpacing: 0.3 }}>
           Round-up narrative pending.
         </div>
       ) : null}

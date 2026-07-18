@@ -77,18 +77,18 @@ export default function StartCountdown({
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: 4, color: "#dfe7f5" }}>{theme.name}</span>
-          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 2, color: theme.accent }}>
+          <span style={{ fontSize: 16.5, fontWeight: 800, letterSpacing: 4, color: "#dfe7f5" }}>{theme.name}</span>
+          <span style={{ fontSize: 13.2, fontWeight: 700, letterSpacing: 2, color: theme.accent }}>
             {theme.tagline}
           </span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 3, color: "rgba(255,255,255,0.55)" }}>
+          <span style={{ fontSize: 12.1, fontWeight: 700, letterSpacing: 3, color: "rgba(255,255,255,0.55)" }}>
             BROADCAST STARTING IN
           </span>
           <span
             style={{
-              fontSize: 64,
+              fontSize: 70.4,
               fontWeight: 800,
               color: "#fff",
               fontVariantNumeric: "tabular-nums",
@@ -98,7 +98,7 @@ export default function StartCountdown({
             {formatRemaining(startAt - now)}
           </span>
         </div>
-        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", letterSpacing: 1 }}>
+        <span style={{ fontSize: 13.2, color: "rgba(255,255,255,0.45)", letterSpacing: 1 }}>
           A production by Thronix &amp; PhotonSurge
         </span>
       </div>

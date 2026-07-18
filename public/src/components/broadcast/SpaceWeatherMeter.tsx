@@ -29,9 +29,9 @@ function Ramp({
     .join(", ")})`;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      <span style={{ fontSize: 10.5, fontWeight: 700 }}>{label}</span>
+      <span style={{ fontSize: 11.6, fontWeight: 700 }}>{label}</span>
       <div style={{ height: 7, borderRadius: 4, background: gradient, border: "1px solid rgba(0,0,0,0.5)" }} />
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, opacity: 0.75 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9.9, opacity: 0.75 }}>
         <span>{loLabel}</span>
         <span>{hiLabel}</span>
       </div>

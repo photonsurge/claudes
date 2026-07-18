@@ -60,7 +60,7 @@ export default function VolcanoEruptionsPanel({
         {shown.map((e) => (
           <div
             key={e.eruptionNumber}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 12 }}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 13.2 }}
           >
             <span style={{ color: "#e2e8f0", minWidth: 92, fontVariantNumeric: "tabular-nums" }}>{startLabel(e)}</span>
             {e.vei !== undefined ? (
@@ -80,11 +80,11 @@ export default function VolcanoEruptionsPanel({
             ) : (
               <span style={{ color: "#5b6478" }}>—</span>
             )}
-            {!e.confirmed && <span style={{ color: "#5b6478", fontSize: 10 }}>uncertain</span>}
+            {!e.confirmed && <span style={{ color: "#5b6478", fontSize: 11 }}>uncertain</span>}
           </div>
         ))}
         {oldest && eruptions.length > MAX_ROWS && (
-          <div style={{ color: "#5b6478", fontSize: 10, marginTop: 4 }}>
+          <div style={{ color: "#5b6478", fontSize: 11, marginTop: 4 }}>
             earliest recorded {startLabel(oldest)}
           </div>
         )}

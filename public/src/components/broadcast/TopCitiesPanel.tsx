@@ -78,18 +78,18 @@ export default function TopCitiesPanel({
           />
         ) : null}
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-          <span style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{featured.name}</span>
+          <span style={{ fontSize: 24.2, fontWeight: 800, color: "#fff" }}>{featured.name}</span>
           {formatPopulation(featured.population) ? (
-            <span style={{ fontSize: 14, fontWeight: 700, color }}>{formatPopulation(featured.population)}</span>
+            <span style={{ fontSize: 15.4, fontWeight: 700, color }}>{formatPopulation(featured.population)}</span>
           ) : null}
         </div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "#aebfd6", marginTop: 2 }}>
+        <div style={{ fontSize: 15.4, fontWeight: 600, color: "#aebfd6", marginTop: 2 }}>
           {[featured.country, featured.isCapital ? "capital" : null].filter(Boolean).join(" · ")}
         </div>
         {featured.wikiExtract ? (
           <div
             style={{
-              fontSize: 13,
+              fontSize: 14.3,
               lineHeight: 1.5,
               color: "#cdd9ec",
               marginTop: 7,
@@ -112,7 +112,7 @@ export default function TopCitiesPanel({
       {/* The rest of the area's cities — a clean name/population list, each with
           its own past-year temperature sparkline. */}
       {rest.length ? (
-        <CardSection style={{ fontSize: 13 }}>
+        <CardSection style={{ fontSize: 14.3 }}>
           {rest.map((c) => (
             <TopCityRow key={c.id} city={c} />
           ))}

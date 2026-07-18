@@ -45,18 +45,18 @@ export default function CountryPanel({
       ) : null}
 
       <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-        <span style={{ fontSize: 30, lineHeight: 1 }}>{flagEmoji(country.iso2)}</span>
-        <span style={{ fontSize: 26, fontWeight: 800, color: "#fff", lineHeight: 1.05 }}>{country.name}</span>
+        <span style={{ fontSize: 33, lineHeight: 1 }}>{flagEmoji(country.iso2)}</span>
+        <span style={{ fontSize: 28.6, fontWeight: 800, color: "#fff", lineHeight: 1.05 }}>{country.name}</span>
       </div>
 
       {meta ? (
-        <div style={{ fontSize: 14, fontWeight: 600, color: "#aebfd6", marginTop: 5 }}>{meta}</div>
+        <div style={{ fontSize: 15.4, fontWeight: 600, color: "#aebfd6", marginTop: 5 }}>{meta}</div>
       ) : null}
 
       {country.wikiExtract ? (
         <div
           style={{
-            fontSize: 13,
+            fontSize: 14.3,
             lineHeight: 1.5,
             color: "#cdd9ec",
             marginTop: 9,

@@ -64,7 +64,13 @@ export default function WorldReportDeck({
   let content: React.ReactNode;
   if (slide === "hourly") {
     content = (
-      <WorldReportPanel days={worldReport.days} loading={worldReport.loading} manifest={manifest} theme={theme} />
+      <WorldReportPanel
+        days={worldReport.days}
+        loading={worldReport.loading}
+        manifest={manifest}
+        feed={s.feed}
+        theme={theme}
+      />
     );
   } else if (slide === "alerts") {
     content = (
@@ -124,18 +130,23 @@ export default function WorldReportDeck({
   } else if (slide === "about") {
     content = <AboutPanel theme={theme} />;
   } else {
-    // "detection" — the original DETECTION GRID + ACTIVE FEED stack.
-    content = (
-      <div style={{ display: "flex", flexDirection: "column", gap: 14, alignItems: "flex-end" }}>
-        <WorldSituationPanel worldWatch={s} theme={theme} />
-        <WorldWatchPanel worldWatch={s} theme={theme} />
-      </div>
-    );
+    // "detection" — the DETECTION GRID. The ACTIVE FEED that used to stack here
+    // is now appended below every non-category slide (see globalFeed), so it's
+    // consistent across the deck instead of living only on this slide.
+    content = <WorldSituationPanel worldWatch={s} theme={theme} />;
   }
+
+  // The category slides (alerts/seismic/volcanoes) carry their OWN kind-filtered
+  // ACTIVE FEED inside HazardScreen, and the WORLD REPORT slide now integrates
+  // the full global feed into its own card too — so only detection / about get
+  // the separate ACTIVE FEED card appended below.
+  const ownsFeed =
+    slide === "alerts" || slide === "seismic" || slide === "volcanoes" || slide === "hourly";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end" }}>
       {content}
+      {!ownsFeed ? <WorldWatchPanel worldWatch={s} theme={theme} /> : null}
       {/* Slide position — a dot per slide so the rotation reads as deliberate. */}
       <div style={{ display: "flex", gap: 6, paddingRight: 4 }}>
         {DECK_SLIDES.map((id, i) => (

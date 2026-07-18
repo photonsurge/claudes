@@ -31,14 +31,14 @@ function CityRow({ city, color }: { city: CityCondition; color: string }) {
           {city.name}
         </div>
         {formatPopulation(city.population) ? (
-          <div style={{ fontSize: 11, color: "#8ea3bf", whiteSpace: "nowrap" }}>{formatPopulation(city.population)}</div>
+          <div style={{ fontSize: 12.1, color: "#8ea3bf", whiteSpace: "nowrap" }}>{formatPopulation(city.population)}</div>
         ) : null}
       </div>
       <div style={{ textAlign: "right", minWidth: 46 }}>
-        <div style={{ fontSize: 22, fontWeight: 850, color: "#fff", lineHeight: 1, whiteSpace: "nowrap" }}>
+        <div style={{ fontSize: 24.2, fontWeight: 850, color: "#fff", lineHeight: 1, whiteSpace: "nowrap" }}>
           {now != null ? `${formatReading(now)}°` : "—"}
         </div>
-        <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: 0.5, color }}>NOW</div>
+        <div style={{ fontSize: 9.4, fontWeight: 700, letterSpacing: 0.5, color }}>NOW</div>
       </div>
       {days.length ? (
         <div style={{ display: "flex", gap: 4, flex: "0 0 auto" }}>
@@ -82,7 +82,7 @@ export default function CityConditionsPanel({
 
   return (
     <BroadcastCard accent={color} eyebrow="City Conditions">
-      <CardSection first style={{ fontSize: 13 }}>
+      <CardSection first style={{ fontSize: 14.3 }}>
         {withData.map((c) => (
           <CityRow key={c.cityId} city={c} color={color} />
         ))}

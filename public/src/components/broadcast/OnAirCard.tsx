@@ -50,7 +50,7 @@ export default function OnAirCard({
       {segment.subtitle ? (
         <div
           style={{
-            fontSize: 17,
+            fontSize: 18.7,
             opacity: 0.82,
             marginTop: 4,
             display: "-webkit-box",
@@ -77,11 +77,11 @@ export default function OnAirCard({
               style={{ width: "100%", height: 118, objectFit: "cover", borderRadius: 7, display: "block", marginBottom: 8 }}
             />
           ) : null}
-          <div style={{ fontSize: 14, fontWeight: 800, color: "#e6eefb", lineHeight: 1.15 }}>{areaInfo!.name}</div>
+          <div style={{ fontSize: 15.4, fontWeight: 800, color: "#e6eefb", lineHeight: 1.15 }}>{areaInfo!.name}</div>
           {areaInfo!.blurb ? (
             <div
               style={{
-                fontSize: 12.5,
+                fontSize: 13.8,
                 lineHeight: 1.45,
                 color: DIM,
                 marginTop: 4,
@@ -109,7 +109,7 @@ export default function OnAirCard({
             gridTemplateColumns: "auto 1fr",
             rowGap: 5,
             columnGap: 16,
-            fontSize: 16,
+            fontSize: 17.6,
           }}
         >
           {details.map((d) => (
@@ -128,7 +128,7 @@ export default function OnAirCard({
         <AreaStatus summary={summary} />
       ) : segment.kind === "country" ? (
         <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(120,140,170,0.18)" }}>
-          <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.2, color: "#7f8ea6" }}>
+          <span style={{ fontSize: 13.2, fontWeight: 800, letterSpacing: 1.2, color: "#7f8ea6" }}>
             NO ACTIVE ALERTS
           </span>
         </div>

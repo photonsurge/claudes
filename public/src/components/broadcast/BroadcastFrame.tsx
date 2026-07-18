@@ -581,10 +581,10 @@ export default function BroadcastFrame({
       >
         {/* Targeted point events (storm/quake/aircraft/ship/volcano) get the
             centred reticle + lower-third, with the tracking detail on its
-            top-left corner and point-history on its top-right. The 3-day
-            forecast docks in the bottom-left column (below) rather than
-            hanging off the reticle. Wide shots (global/ocean/region/…) keep
-            their lower-left card stack. */}
+            top-left corner, point-history on its top-right and the 3-day
+            forecast strip hung below its bottom edge — all travelling with the
+            reticle. Wide shots (global/ocean/region/…) keep their lower-left
+            card stack. */}
         {onAirSegment && isTargetedEvent(onAirSegment.kind) ? (
           <EventOverlay
             segment={onAirSegment}
@@ -596,7 +596,13 @@ export default function BroadcastFrame({
                   center={onAirSegment.camera.center}
                   theme={theme}
                   compact
+                  glass
                 />
+              ) : null
+            }
+            forecastPanel={
+              segmentHasLocation ? (
+                <ForecastPanel center={onAirSegment.camera.center} theme={theme} compact glass />
               ) : null
             }
           />
@@ -639,6 +645,11 @@ export default function BroadcastFrame({
             flag={tourStopWeather ? flagEmoji(tourStopWeather.cc) : undefined}
             variant="place"
             theme={theme}
+            forecastPanel={
+              tourStopWeather?.days?.length ? (
+                <ForecastPanel center={null} daysOverride={tourStopWeather.days} compact theme={theme} glass />
+              ) : null
+            }
           />
         ) : null}
 
@@ -654,7 +665,7 @@ export default function BroadcastFrame({
         <div
           style={{
             position: "absolute",
-            left: INSET,
+            left: INSET - 16,
             bottom: TICKER_H + INSET,
             display: "flex",
             flexDirection: "column-reverse",
@@ -662,20 +673,10 @@ export default function BroadcastFrame({
             gap: 10,
           }}
         >
-          {/* Docked 3-day forecast: pinned to the bottom-left foot of the card
-              column (first child of the column-reverse stack). It used to hang
-              off the reticle's bottom-right corner, where it crowded the focus
-              point and clipped the location subtitle — the bottom-left band
-              under the deck was empty anyway. */}
-          {onAirSegment && isTargetedEvent(onAirSegment.kind) && segmentHasLocation ? (
-            <FadeSwap hidden={cutting} style={{ display: "flex" }}>
-              <ForecastPanel center={onAirSegment.camera.center} theme={theme} compact />
-            </FadeSwap>
-          ) : onAirSegment?.kind === "region" && tourStopWeather?.days?.length ? (
-            <FadeSwap hidden={cutting} style={{ display: "flex" }}>
-              <ForecastPanel center={null} daysOverride={tourStopWeather.days} compact theme={theme} />
-            </FadeSwap>
-          ) : null}
+          {/* The 3-day forecast for a targeted event / region tour stop now hangs
+              off the reticle itself (EventOverlay's forecastPanel) rather than
+              docking here — so the bottom-left column is just the rotating mode
+              deck below. */}
 
           {/* One rotating card per mode: the mode cards plus the weather /
               area-history / depth / round-up context slides all live in this
@@ -772,7 +773,7 @@ export default function BroadcastFrame({
           style={{
             position: "absolute",
             top: TICKER_H + INSET,
-            right: INSET - 12,
+            right: INSET - 26,
           }}
         >
           <WorldReportDeck

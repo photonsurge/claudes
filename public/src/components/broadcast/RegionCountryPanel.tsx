@@ -34,8 +34,8 @@ function SummaryBlock({ label, text, color }: { label: string; text?: string; co
   if (!text) return null;
   return (
     <div style={{ marginTop: 10 }}>
-      <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.2, color, marginBottom: 3 }}>{label}</div>
-      <div style={{ fontSize: 13, lineHeight: 1.5, color: "#cdd9ec" }}>{text}</div>
+      <div style={{ fontSize: 9.9, fontWeight: 800, letterSpacing: 1.2, color, marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 14.3, lineHeight: 1.5, color: "#cdd9ec" }}>{text}</div>
     </div>
   );
 }
@@ -56,11 +56,11 @@ function DayCell({ day }: { day: ForecastDay }) {
         background: "rgba(4,10,20,0.55)",
       }}
     >
-      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.6, color: "#aebdd2" }}>{day.label}</span>
+      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.6, color: "#aebdd2" }}>{day.label}</span>
       <WeatherGlyph condition={day.condition} size={22} />
-      <span style={{ fontSize: 15, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
+      <span style={{ fontSize: 16.5, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
         {day.hiTemp != null ? `${formatReading(day.hiTemp)}°` : "—"}
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#9db0ca", marginLeft: 3 }}>
+        <span style={{ fontSize: 12.1, fontWeight: 700, color: "#9db0ca", marginLeft: 3 }}>
           {day.loTemp != null ? `${formatReading(day.loTemp)}°` : ""}
         </span>
       </span>
@@ -79,10 +79,10 @@ function CityRow({ city, color }: { city: FocusRegionCity; color: string }) {
         </div>
       </div>
       <div style={{ textAlign: "right", minWidth: 42 }}>
-        <div style={{ fontSize: 20, fontWeight: 850, color: "#fff", lineHeight: 1, whiteSpace: "nowrap" }}>
+        <div style={{ fontSize: 22, fontWeight: 850, color: "#fff", lineHeight: 1, whiteSpace: "nowrap" }}>
           {city.temp != null ? `${formatReading(city.temp)}°` : "—"}
         </div>
-        <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 0.5, color }}>NOW</div>
+        <div style={{ fontSize: 8.8, fontWeight: 700, letterSpacing: 0.5, color }}>NOW</div>
       </div>
       {days.length ? (
         <div style={{ display: "flex", gap: 4, flex: "0 0 auto" }}>
@@ -134,17 +134,17 @@ export default function RegionCountryPanel({
       eyebrow="Country"
       headerRight={
         rank && total ? (
-          <span style={{ fontSize: 10, fontWeight: 750, letterSpacing: 1, color }}>{`${rank}/${total}`}</span>
+          <span style={{ fontSize: 11, fontWeight: 750, letterSpacing: 1, color }}>{`${rank}/${total}`}</span>
         ) : null
       }
       theme={theme}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={{ fontSize: 34, lineHeight: 1 }}>{flagEmoji(country.cc)}</span>
+        <span style={{ fontSize: 37.4, lineHeight: 1 }}>{flagEmoji(country.cc)}</span>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div
             style={{
-              fontSize: 24,
+              fontSize: 26.4,
               fontWeight: 850,
               color: "#fff",
               whiteSpace: "nowrap",
@@ -154,12 +154,12 @@ export default function RegionCountryPanel({
           >
             {country.name}
           </div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#9fb3cc" }}>at {country.sampleName}</div>
+          <div style={{ fontSize: 13.2, fontWeight: 600, color: "#9fb3cc" }}>at {country.sampleName}</div>
         </div>
         {now?.temp != null ? (
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <WeatherGlyph condition={now.condition} size={32} />
-            <span style={{ fontSize: 32, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
+            <span style={{ fontSize: 35.2, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
               {formatReading(now.temp)}°
             </span>
           </div>

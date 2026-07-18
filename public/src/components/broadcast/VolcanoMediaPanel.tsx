@@ -1,7 +1,8 @@
 "use client";
 
 import type { VolcanoMedia } from "@photonsurge/shared/volcanoes/media";
-import BroadcastCard, { CardSection, DIM } from "./BroadcastCard";
+import BroadcastCard from "./BroadcastCard";
+import MediaTileGrid from "./MediaTileGrid";
 
 const src = (item: VolcanoMedia) => item.assetRef
   ? `/api/volcanoes/media/${encodeURIComponent(item.assetRef)}?v=${encodeURIComponent(item.contentHash ?? String(item.acquiredAt))}`
@@ -18,38 +19,21 @@ export function volcanoMediaSlideHasContent(media: VolcanoMedia[]): boolean {
 
 export default function VolcanoMediaPanel({ media, color = "#38bdf8" }: { media: VolcanoMedia[]; color?: string }) {
   // Internal operator surface: show acquired products regardless of reuse flag.
-  const shown = media.filter((item) => item.type === "SATELLITE" && Boolean(src(item))).slice(0, 1);
+  // Every satellite product rides as a tile (webcam-grid layout) rather than a
+  // single hero, so the deck shows the whole product set at a glance.
+  const shown = media.filter((item) => item.type === "SATELLITE" && Boolean(src(item)));
   if (!shown.length) return null;
+
+  const tiles = shown.map((item) => ({
+    key: item.id,
+    src: src(item),
+    title: item.title ?? item.caption ?? item.type,
+    caption: `${item.source} · ${utc(item.observedAt ?? item.acquiredAt)}`,
+  }));
 
   return (
     <BroadcastCard accent={color} eyebrow="Satellite imagery">
-      <CardSection first eyebrow="Latest volcano products">
-        {shown.map((item) => (
-          <div key={item.id} style={{ marginBottom: 6 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={src(item)} alt={item.title ?? item.type}
-              style={{ width: "100%", height: 270, objectFit: "contain", borderRadius: 8, background: "#070a11", display: "block" }} />
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 2, fontSize: 10 }}>
-              <span style={{ color: "#a9bad0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {item.title ?? item.caption ?? item.type}
-              </span>
-              <span style={{ color: DIM, flex: "0 0 auto" }}>{item.source} · {item.type}</span>
-            </div>
-            <div style={{ color: DIM, fontSize: 9, marginTop: 1, lineHeight: 1.25 }}>
-              {utc(item.observedAt ?? item.acquiredAt)}
-              {item.attribution ? ` · ${item.attribution}` : ""}
-              {item.cameraId ? ` · camera ${item.cameraId}` : ""}
-              {item.sourceMediaId ? ` · upstream ${item.sourceMediaId}` : ""}
-            </div>
-            {(item.latitude != null || item.longitude != null || item.bearing != null) && (
-              <div style={{ color: DIM, fontSize: 9, lineHeight: 1.25 }}>
-                {item.latitude != null && item.longitude != null ? `${item.latitude.toFixed(4)}, ${item.longitude.toFixed(4)}` : "position unknown"}
-                {item.bearing != null ? ` · bearing ${item.bearing}°` : ""}
-              </div>
-            )}
-          </div>
-        ))}
-      </CardSection>
+      <MediaTileGrid first eyebrow={`Latest volcano products (${shown.length})`} tiles={tiles} />
     </BroadcastCard>
   );
 }

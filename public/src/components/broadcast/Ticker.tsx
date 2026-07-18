@@ -60,7 +60,7 @@ export default function Ticker({
           display: "flex",
           alignItems: "center",
           padding: compact ? "0 8px" : "0 12px",
-          fontSize: compact ? 9 : 11,
+          fontSize: compact ? 9.9 : 12.1,
           fontWeight: 800,
           letterSpacing: 1.4,
           color: "#fff",

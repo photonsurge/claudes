@@ -133,12 +133,12 @@ export default function EventNearbyPanel({
             />
           ) : null}
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-            <span style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{featured.name}</span>
+            <span style={{ fontSize: 24.2, fontWeight: 800, color: "#fff" }}>{featured.name}</span>
             {featuredDist != null ? (
-              <span style={{ fontSize: 14, fontWeight: 700, color }}>{formatKm(featuredDist)}</span>
+              <span style={{ fontSize: 15.4, fontWeight: 700, color }}>{formatKm(featuredDist)}</span>
             ) : null}
           </div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#aebfd6", marginTop: 2 }}>
+          <div style={{ fontSize: 15.4, fontWeight: 600, color: "#aebfd6", marginTop: 2 }}>
             {[featured.country, formatPopulation(featured.population), featured.isCapital ? "capital" : null]
               .filter(Boolean)
               .join(" · ")}
@@ -146,7 +146,7 @@ export default function EventNearbyPanel({
           {featured.wikiExtract ? (
             <div
               style={{
-                fontSize: 13,
+                fontSize: 14.3,
                 lineHeight: 1.5,
                 color: "#cdd9ec",
                 marginTop: 7,
@@ -169,12 +169,12 @@ export default function EventNearbyPanel({
       {/* Other nearby cities — name/pop/distance plus each city's own past-year
           temperature sparkline (NearbyCityRow), fetched per row. */}
       {shownRows.length ? (
-        <CardSection style={{ fontSize: 13 }}>
+        <CardSection style={{ fontSize: 14.3 }}>
           {shownRows.map((n) => (
             <NearbyCityRow key={n.item.id} city={n.item} distanceKm={n.distanceKm} />
           ))}
           {moreCities > 0 ? (
-            <div style={{ fontSize: 11, color: "#7d8da5", marginTop: 4, opacity: 0.75 }}>
+            <div style={{ fontSize: 12.1, color: "#7d8da5", marginTop: 4, opacity: 0.75 }}>
               +{moreCities} more within {CITY_RADIUS_KM} km
             </div>
           ) : null}
@@ -197,15 +197,15 @@ export default function EventNearbyPanel({
                 ) : (
                   <div style={{ width: "100%", height: 72, borderRadius: 5, background: "#141b28" }} />
                 )}
-                <div style={{ fontSize: 11, color: "#aebfd6", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div style={{ fontSize: 12.1, color: "#aebfd6", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {n.item.title}
                 </div>
-                <div style={{ fontSize: 11, color: "#7d8da5" }}>{formatKm(n.distanceKm)}</div>
+                <div style={{ fontSize: 12.1, color: "#7d8da5" }}>{formatKm(n.distanceKm)}</div>
               </div>
             ))}
           </div>
           {moreCams > 0 ? (
-            <div style={{ fontSize: 11, color: "#7d8da5", marginTop: 5, opacity: 0.75 }}>
+            <div style={{ fontSize: 12.1, color: "#7d8da5", marginTop: 5, opacity: 0.75 }}>
               +{moreCams} more within {CAM_RADIUS_KM} km
             </div>
           ) : null}

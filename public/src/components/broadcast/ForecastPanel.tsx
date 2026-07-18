@@ -114,20 +114,20 @@ function DayCard({
           <WarnTriangle size={11} />
         </div>
       ) : null}
-      <span style={{ fontSize: fill ? 10 : 11, fontWeight: 800, letterSpacing: 1, color: "#aebdd2" }}>{day.label}</span>
+      <span style={{ fontSize: fill ? 11 : 12.1, fontWeight: 800, letterSpacing: 1, color: "#aebdd2" }}>{day.label}</span>
       <div style={{ height: fill ? 22 : compact ? 24 : 30, display: "flex", alignItems: "center" }}>
         <WeatherGlyph condition={day.condition} size={fill ? 22 : compact ? 24 : 30} />
       </div>
-      <span style={{ fontSize: fill ? 14 : compact ? 15 : 18, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
+      <span style={{ fontSize: fill ? 15.4 : compact ? 16.5 : 19.8, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
         {day.hi != null ? formatReading(day.hi) : "—"}°
-        <span style={{ fontSize: fill ? 10.5 : 12, fontWeight: 700, color: "#9db0ca", marginLeft: fill ? 3 : 4 }}>
+        <span style={{ fontSize: fill ? 11.6 : 13.2, fontWeight: 700, color: "#9db0ca", marginLeft: fill ? 3 : 4 }}>
           {day.lo != null ? `${formatReading(day.lo)}°` : ""}
         </span>
       </span>
-      <span style={{ fontSize: fill ? 9 : 10, fontWeight: 700, color: "#91a1b9" }}>
+      <span style={{ fontSize: fill ? 9.9 : 11, fontWeight: 700, color: "#91a1b9" }}>
         {day.wind != null ? `${formatReading(day.wind)} m/s` : "—"}
       </span>
-      <span style={{ fontSize: fill ? 9 : 10, fontWeight: 700, color: "#5fb0e6" }}>
+      <span style={{ fontSize: fill ? 9.9 : 11, fontWeight: 700, color: "#5fb0e6" }}>
         {day.precipChance != null ? `${day.precipChance}%` : ""}
       </span>
     </div>
@@ -158,7 +158,7 @@ function ForecastSpinner({ accent }: { accent: string }) {
           strokeDasharray="80 200"
         />
       </svg>
-      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, color: "#aebdd2" }}>Loading forecast…</span>
+      <span style={{ fontSize: 12.1, fontWeight: 700, letterSpacing: 0.4, color: "#aebdd2" }}>Loading forecast…</span>
     </div>
   );
 }
@@ -170,6 +170,7 @@ export default function ForecastPanel({
   theme = DEFAULT_THEME,
   compact = false,
   variant = "card",
+  glass = false,
 }: {
   /** Focus point [lng, lat] — the on-air segment's centre (or camera fallback). */
   center: [number, number] | null;
@@ -185,6 +186,9 @@ export default function ForecastPanel({
    *  another card, e.g. the sandbox "SELECTED" overlay — shows a spinner while
    *  loading and fills the host card's width). */
   variant?: "card" | "inline";
+  /** No-accent see-through glass shell (reticle-attached instances) — see
+   *  BroadcastCard's `glass`. */
+  glass?: boolean;
 }) {
   // Disable both fetches when caller supplies days directly (fetch-free embed).
   const point = usePointForecastDays(daysOverride || bbox ? null : center);
@@ -204,8 +208,8 @@ export default function ForecastPanel({
     return (
       <div style={{ marginTop: 11, paddingTop: 11, borderTop: "1px solid rgba(120,140,170,0.15)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
-          <span style={{ fontSize: 9, letterSpacing: 1, opacity: 0.55, fontWeight: 700 }}>3-DAY FORECAST</span>
-          <span style={{ fontSize: 10, opacity: 0.7 }}>{bbox ? "AREA" : "POINT"}</span>
+          <span style={{ fontSize: 9.9, letterSpacing: 1, opacity: 0.55, fontWeight: 700 }}>3-DAY FORECAST</span>
+          <span style={{ fontSize: 11, opacity: 0.7 }}>{bbox ? "AREA" : "POINT"}</span>
         </div>
         {days.length ? (
           <div style={{ display: "flex", flexDirection: "row", gap: 5 }}>
@@ -225,6 +229,7 @@ export default function ForecastPanel({
   return (
     <BroadcastCard
       theme={theme}
+      glass={glass}
       style={inDeck ? undefined : { width: "auto", boxSizing: "border-box", padding: `${compact ? 10 : 14}px 16px` }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 10 }}>

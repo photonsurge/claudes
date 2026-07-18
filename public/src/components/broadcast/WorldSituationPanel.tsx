@@ -16,7 +16,7 @@
  * WorldWatchPanel, so the (potentially 5000-row) global fetch never doubles up.
  */
 import type { WorldWatchState } from "../../lib/world-watch";
-import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { accentBorderRight, GLASS_BG, DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { StatTile, BreakdownChip, MiniBar } from "./worldStat";
 
 /** One "Asia [alerts bar] 129  [quakes bar] 63  [volcanoes bar] 2" row — three
@@ -50,7 +50,7 @@ function ContinentRow({
       <span
         style={{
           flex: "0 0 66px",
-          fontSize: 11,
+          fontSize: 12.1,
           fontWeight: 700,
           color: "#c3cee0",
           whiteSpace: "nowrap",
@@ -69,7 +69,7 @@ function ContinentRow({
         style={{
           flex: "0 0 18px",
           textAlign: "right",
-          fontSize: 11,
+          fontSize: 12.1,
           fontWeight: 700,
           color: "#9fb0c8",
           fontVariantNumeric: "tabular-nums",
@@ -86,7 +86,7 @@ function ContinentRow({
         style={{
           flex: "0 0 18px",
           textAlign: "right",
-          fontSize: 11,
+          fontSize: 12.1,
           fontWeight: 700,
           color: "#9fb0c8",
           fontVariantNumeric: "tabular-nums",
@@ -103,7 +103,7 @@ function ContinentRow({
         style={{
           flex: "0 0 18px",
           textAlign: "right",
-          fontSize: 11,
+          fontSize: 12.1,
           fontWeight: 700,
           color: "#9fb0c8",
           fontVariantNumeric: "tabular-nums",
@@ -138,12 +138,12 @@ export default function WorldSituationPanel({
         position: "relative",
         width: 400,
         padding: "20px 24px",
-        background: theme.panelBg,
-        ...accentBorder(theme.panelBorder, `5px solid ${topColor}`),
+        background: GLASS_BG,
+        ...accentBorderRight(theme.panelBorder, `5px solid ${topColor}`),
         borderRadius: 16,
         boxShadow: `0 12px 36px rgba(0,0,0,0.5), 0 0 20px ${topColor}28`,
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
+        backdropFilter: "blur(11px)",
+        WebkitBackdropFilter: "blur(11px)",
         pointerEvents: "none",
         fontFamily: "system-ui, sans-serif",
         display: "flex",
@@ -156,14 +156,14 @@ export default function WorldSituationPanel({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          fontSize: 13,
+          fontSize: 14.3,
           fontWeight: 800,
           letterSpacing: 1.8,
           color: "#dfe7f5",
         }}
       >
         <span>DETECTION GRID</span>
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: theme.accent }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: theme.accent }}>
           LAST 24H
         </span>
       </div>
@@ -204,7 +204,7 @@ export default function WorldSituationPanel({
               graphs below are ALERTS, SEISMIC, then VOLCANIC, not one blended bar. */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ flex: "0 0 66px" }} />
-            <span style={{ flex: 1, fontSize: 9, fontWeight: 800, letterSpacing: 1, color: topColor }}>
+            <span style={{ flex: 1, fontSize: 9.9, fontWeight: 800, letterSpacing: 1, color: topColor }}>
               ALERTS
             </span>
             <span style={{ flex: "0 0 18px" }} />
@@ -212,7 +212,7 @@ export default function WorldSituationPanel({
               style={{
                 flex: 1,
                 textAlign: "right",
-                fontSize: 9,
+                fontSize: 9.9,
                 fontWeight: 800,
                 letterSpacing: 1,
                 color: theme.accent,
@@ -225,7 +225,7 @@ export default function WorldSituationPanel({
               style={{
                 flex: 1,
                 textAlign: "right",
-                fontSize: 9,
+                fontSize: 9.9,
                 fontWeight: 800,
                 letterSpacing: 1,
                 color: volcanoColor,

@@ -88,3 +88,19 @@ export function accentBorder(base: string, left: string): {
 } {
   return { borderTop: base, borderRight: base, borderBottom: base, borderLeft: left };
 }
+
+/** Mirror of accentBorder with the accent stripe on the RIGHT edge — for panels
+ *  pinned to the screen's right (top-right deck), where the stripe reads better
+ *  on the outer edge. */
+export function accentBorderRight(base: string, right: string): {
+  borderTop: string;
+  borderRight: string;
+  borderBottom: string;
+  borderLeft: string;
+} {
+  return { borderTop: base, borderRight: right, borderBottom: base, borderLeft: base };
+}
+
+/** Shared see-through glass fill for panels that let the map read behind them
+ *  (lighter than the near-solid theme `panelBg`). */
+export const GLASS_BG = "rgba(8,14,24,0.32)";

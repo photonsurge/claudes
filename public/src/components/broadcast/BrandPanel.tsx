@@ -76,7 +76,7 @@ function StatusReadout({
         >
           <span
             style={{
-              fontSize: 8.5,
+              fontSize: 9.4,
               fontWeight: 800,
               letterSpacing: 0.9,
               color: theme.accent,
@@ -88,7 +88,7 @@ function StatusReadout({
           </span>
           <span
             style={{
-              fontSize: 11,
+              fontSize: 12.1,
               fontWeight: 700,
               letterSpacing: 0.3,
               color: "#dce9fb",
@@ -298,7 +298,7 @@ export default function BrandPanel({
           >
             <span
               style={{
-                fontSize: compact ? 15 : 19,
+                fontSize: compact ? 16.5 : 20.9,
                 fontWeight: 800,
                 letterSpacing: 1.3,
                 color: "#fff",
@@ -309,7 +309,7 @@ export default function BrandPanel({
             </span>
             <span
               style={{
-                fontSize: compact ? 8.5 : 10,
+                fontSize: compact ? 9.4 : 11,
                 fontWeight: 700,
                 letterSpacing: 1.2,
                 color: "#8fb6e6",
@@ -322,7 +322,7 @@ export default function BrandPanel({
             {theme.strapline && !compact && (
               <span
                 style={{
-                  fontSize: 8,
+                  fontSize: 8.8,
                   fontWeight: 600,
                   letterSpacing: 1.4,
                   color: "#5f87ad",
@@ -362,7 +362,7 @@ export default function BrandPanel({
                 "linear-gradient(180deg, rgba(40,6,6,0.95), rgba(20,3,3,0.95))",
               border: `1px solid ${LIVE_RED}8c`,
               fontFamily: "system-ui, sans-serif",
-              fontSize: 11,
+              fontSize: 12.1,
               fontWeight: 800,
               letterSpacing: 1.5,
               color: "#fff",
@@ -421,7 +421,7 @@ export default function BrandPanel({
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
                     fontFamily: "system-ui, sans-serif",
-                    fontSize: primary ? 8 : 6.5,
+                    fontSize: primary ? 8.8 : 7.2,
                     fontWeight: 800,
                     letterSpacing: 0.7,
                     color: theme.accent,
@@ -436,11 +436,11 @@ export default function BrandPanel({
                       "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
                     fontSize: primary
                       ? compact
-                        ? 10.5
-                        : 12.5
+                        ? 11.6
+                        : 13.8
                       : compact
-                        ? 8.5
-                        : 10,
+                        ? 9.4
+                        : 11,
                     fontWeight: 700,
                     letterSpacing: 0,
                     color: "#dce9fb",

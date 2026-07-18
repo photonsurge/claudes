@@ -65,7 +65,7 @@ function BeatRow({ beat }: { beat: EventTimelineBeat }) {
         ) : null}
       </div>
       {beat.source ? (
-        <span style={{ flex: "0 0 auto", color: DIM, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4 }}>
+        <span style={{ flex: "0 0 auto", color: DIM, fontSize: 12.1, textTransform: "uppercase", letterSpacing: 0.4 }}>
           {beat.source}
         </span>
       ) : null}
@@ -88,7 +88,7 @@ export default function EventTimelinePanel({
 
   return (
     <BroadcastCard accent={color} eyebrow="Timeline" theme={theme}>
-      <CardSection first style={{ fontSize: 13 }}>
+      <CardSection first style={{ fontSize: 14.3 }}>
         {hidden > 0 ? <div style={{ color: DIM, fontWeight: 700, marginBottom: 4 }}>+{hidden} earlier</div> : null}
         {shown.map((b, i) => (
           <BeatRow key={`${b.at}-${b.type}-${i}`} beat={b} />

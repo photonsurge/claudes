@@ -76,7 +76,7 @@ export default function AlertTimelinePanel({
 
   return (
     <BroadcastCard accent={color} eyebrow="Timeline" theme={theme}>
-      <CardSection first style={{ fontSize: 13 }}>
+      <CardSection first style={{ fontSize: 14.3 }}>
         {hidden > 0 ? <div style={{ color: DIM, fontWeight: 700, marginBottom: 4 }}>+{hidden} earlier</div> : null}
         {shown.map((b, i) => (
           <BeatRow key={`${b.at}-${b.type}-${i}`} beat={b} />

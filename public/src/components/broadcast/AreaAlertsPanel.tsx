@@ -76,13 +76,13 @@ export default function AreaAlertsPanel({
       accent={color}
       eyebrow="Active Alerts"
       headerRight={
-        <span style={{ fontSize: 20, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontSize: 22, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
           {distinct.length}
         </span>
       }
       theme={theme}
     >
-      <CardSection first style={{ fontSize: 13 }}>
+      <CardSection first style={{ fontSize: 14.3 }}>
         {shown.map((a) => (
           <AlertRow key={a.properties.id + a.properties.areaDesc} alert={a} />
         ))}

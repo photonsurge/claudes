@@ -76,7 +76,7 @@ export default function AdBreak({ segment }: { segment: Segment | null }) {
             position: "absolute",
             top: 10,
             left: 12,
-            fontSize: 11,
+            fontSize: 12.1,
             letterSpacing: "0.08em",
             textTransform: "uppercase",
             color: "rgba(255,255,255,0.65)",

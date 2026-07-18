@@ -49,14 +49,14 @@ export default function VolcanoFactsPanel({ info, color = "#38bdf8" }: { info: T
       ) : null}
 
       {info.facts ? (
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#e6eefb" }}>{info.facts}</div>
+        <div style={{ fontSize: 13.2, fontWeight: 700, color: "#e6eefb" }}>{info.facts}</div>
       ) : null}
 
       {info.alert ? (
         <CardSection>
           <div
             style={{
-              fontSize: 11,
+              fontSize: 12.1,
               fontWeight: 800,
               color: (info.alert.colorCode && USGS_COLOR[info.alert.colorCode]) || "#e6eefb",
             }}
@@ -65,14 +65,14 @@ export default function VolcanoFactsPanel({ info, color = "#38bdf8" }: { info: T
             {info.alert.level ? ` / ${info.alert.level}` : ""}
           </div>
           {info.alert.synopsis ? (
-            <div style={{ fontSize: 11, lineHeight: 1.4, color: "#cdd9ec", marginTop: 3 }}>{info.alert.synopsis}</div>
+            <div style={{ fontSize: 12.1, lineHeight: 1.4, color: "#cdd9ec", marginTop: 3 }}>{info.alert.synopsis}</div>
           ) : null}
         </CardSection>
       ) : null}
 
       {info.reportFacts ? (
         <CardSection eyebrow="This week's bulletin, parsed">
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#e6eefb" }}>{info.reportFacts}</div>
+          <div style={{ fontSize: 13.2, fontWeight: 700, color: "#e6eefb" }}>{info.reportFacts}</div>
         </CardSection>
       ) : null}
     </BroadcastCard>

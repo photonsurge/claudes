@@ -151,6 +151,13 @@ export function sparkPoints(
   return { pts, yOf };
 }
 
+/** Would this series actually draw a line? Mirrors `sparkPoints`' guard (needs
+ *  ≥2 finite readings) so we can drop a variable BEFORE it becomes a paged
+ *  slide — otherwise a series that's all gaps pages onto an empty slide showing
+ *  only the section title (see the compact EventOverlay slideshow). */
+export const hasSpark = (points: SparkPoint[]) =>
+  points.filter((p) => p.value != null && Number.isFinite(p.value)).length >= 2;
+
 /** Exported so a compact embed (e.g. EventNearbyPanel's per-city sparkline)
  *  can draw a trace from `sparkPoints` output without its own copy. */
 export const toPath = (pts: [number, number][]) =>
@@ -193,13 +200,13 @@ export function MiniChart({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: dense ? 2 : 4, width: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: dense ? 8 : 12 }}>
-        <span style={{ fontSize: dense ? 10 : 13, fontWeight: 800, letterSpacing: dense ? 0.8 : 1.2, color: "#aebdd2", ...ellipsis }}>
+        <span style={{ fontSize: dense ? 11 : 14.3, fontWeight: 800, letterSpacing: dense ? 0.8 : 1.2, color: "#aebdd2", ...ellipsis }}>
           <span style={{ color, marginRight: dense ? 4 : 6 }}>▮</span>
           {label}
         </span>
-        <span style={{ fontSize: dense ? 15 : 20, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap", flexShrink: 0 }}>
+        <span style={{ fontSize: dense ? 16.5 : 22, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap", flexShrink: 0 }}>
           {latestVal != null ? formatReading(latestVal) : "—"}
-          <span style={{ fontSize: dense ? 9 : 12, fontWeight: 700, color: "#9db0ca", marginLeft: dense ? 3 : 4 }}>{units}</span>
+          <span style={{ fontSize: dense ? 9.9 : 13.2, fontWeight: 700, color: "#9db0ca", marginLeft: dense ? 3 : 4 }}>{units}</span>
         </span>
       </div>
       <svg
@@ -225,7 +232,7 @@ export function MiniChart({
         <path d={toPath(spark.pts)} fill="none" stroke={color} strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
         {last ? <circle cx={last[0]} cy={last[1]} r={4} fill={color} stroke="#040a14" strokeWidth={1.5} /> : null}
       </svg>
-      <div style={{ fontSize: dense ? 9 : 10.5, fontWeight: 700, letterSpacing: 0.5, color: "#91a1b9", ...ellipsis }}>{caption}</div>
+      <div style={{ fontSize: dense ? 9.9 : 11.6, fontWeight: 700, letterSpacing: 0.5, color: "#91a1b9", ...ellipsis }}>{caption}</div>
     </div>
   );
 }
@@ -248,8 +255,8 @@ export function SectionTitle({
 }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-      <span style={{ fontSize: 12, fontWeight: 850, letterSpacing: 1.5, color: "#eef4ff" }}>{title}</span>
-      <span style={{ fontSize: 9, fontWeight: 750, letterSpacing: 1.05, color: accent }}>
+      <span style={{ fontSize: 13.2, fontWeight: 850, letterSpacing: 1.5, color: "#eef4ff" }}>{title}</span>
+      <span style={{ fontSize: 9.9, fontWeight: 750, letterSpacing: 1.05, color: accent }}>
         {tag}
         {pageCount != null && pageCount > 1 ? ` · ${(page ?? 0) + 1}/${pageCount}` : ""}
       </span>
@@ -337,6 +344,7 @@ export default function PointHistoryPanel({
   bbox = null,
   theme = DEFAULT_THEME,
   compact = false,
+  glass = false,
 }: {
   /** Focus point [lng, lat] — the on-air segment's centre (or camera fallback). */
   center: [number, number] | null;
@@ -346,6 +354,9 @@ export default function PointHistoryPanel({
   /** Small side-note sizing for embedding inside EventOverlay (see kinds.ts
    *  isTargetedEvent) instead of the full bottom-left card. */
   compact?: boolean;
+  /** No-accent see-through glass shell (reticle-attached instances) — see
+   *  BroadcastCard's `glass`. */
+  glass?: boolean;
 }) {
   // Full bottom-left card: tile every variable at once as a small-multiples
   // grid. Only the compact EventOverlay side-note keeps the one-at-a-time
@@ -358,7 +369,7 @@ export default function PointHistoryPanel({
   const area = useAreaHistorySeries(bbox);
   const climate = useClimateFor(center);
 
-  const liveCharts = bbox
+  const liveCharts = (bbox
     ? area.series.map((s) => ({
         variable: s.variable,
         units: s.units,
@@ -377,9 +388,10 @@ export default function PointHistoryPanel({
         caption: s.stats
           ? `avg ${formatReading(s.stats.avg)} · min ${formatReading(s.stats.min)} · max ${formatReading(s.stats.max)}`
           : "",
-      }));
+      }))
+  ).filter((c) => hasSpark(c.points));
 
-  const climateRows = buildClimateRows(climate.datasets);
+  const climateRows = buildClimateRows(climate.datasets).filter((r) => hasSpark(r.points));
 
   // When tiled, one page holds every chart (perPage = item count) so the grid
   // shows them all at once with no timer and no page counter; compact mode keeps
@@ -398,6 +410,7 @@ export default function PointHistoryPanel({
   return (
     <BroadcastCard
       theme={theme}
+      glass={glass}
       style={{ width: panelW, boxSizing: "border-box", padding: `${compact ? 10 : 14}px ${panelPadX}px` }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 10 }}>

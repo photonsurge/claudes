@@ -16,8 +16,8 @@ function Stat({ label, value, sub }: { label: string; value: number; sub?: strin
   if (!value) return null;
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", lineHeight: 1 }}>{value.toLocaleString()}</div>
-      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.8, color: "#9fb3cc", marginTop: 3 }}>
+      <div style={{ fontSize: 24.2, fontWeight: 800, color: "#fff", lineHeight: 1 }}>{value.toLocaleString()}</div>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: "#9fb3cc", marginTop: 3 }}>
         {label}
         {sub ? <span style={{ color: "#6b7a94" }}> · {sub}</span> : null}
       </div>
@@ -53,7 +53,7 @@ export default function RoundupStatsPanel({
       {narrativeText ? (
         <div
           style={{
-            fontSize: 15,
+            fontSize: 16.5,
             lineHeight: 1.5,
             color: "#e8eef7",
             marginBottom: tiles.length || sources?.length ? 12 : 0,
@@ -77,7 +77,7 @@ export default function RoundupStatsPanel({
             marginTop: tiles.length ? 10 : 0,
             paddingTop: tiles.length ? 8 : 0,
             borderTop: tiles.length ? DIVIDER : undefined,
-            fontSize: 11,
+            fontSize: 12.1,
             color: "#8b98ae",
             letterSpacing: 0.3,
           }}

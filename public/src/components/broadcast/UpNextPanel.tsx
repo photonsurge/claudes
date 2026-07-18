@@ -14,7 +14,7 @@ export default function UpNextPanel({ items }: { items: { kind: SegmentKind; tit
     <div
       style={{
         fontFamily: "system-ui, sans-serif",
-        fontSize: 11,
+        fontSize: 12.1,
         fontWeight: 700,
         letterSpacing: 0.4,
         color: "#9fb0c8",

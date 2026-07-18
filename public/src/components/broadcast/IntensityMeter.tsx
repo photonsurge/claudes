@@ -40,7 +40,7 @@ export default function IntensityMeter({
       <div style={{ textAlign: "center", pointerEvents: "none", fontFamily: "system-ui, sans-serif" }}>
         <div
           style={{
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 800,
             letterSpacing: 1.8,
             opacity: 0.7,
@@ -52,7 +52,7 @@ export default function IntensityMeter({
         </div>
         <div
           style={{
-            fontSize: compact ? 19 : 24,
+            fontSize: compact ? 20.9 : 26.4,
             fontWeight: 800,
             letterSpacing: 0.3,
             lineHeight: 1.05,
@@ -63,7 +63,7 @@ export default function IntensityMeter({
         >
           {sat.title}
         </div>
-        <div style={{ fontSize: compact ? 11 : 12.5, opacity: 0.85, color: "#dfe7f5", marginTop: 2 }}>
+        <div style={{ fontSize: compact ? 12.1 : 13.8, opacity: 0.85, color: "#dfe7f5", marginTop: 2 }}>
           {sat.subtitle}
         </div>
       </div>
@@ -119,7 +119,7 @@ export default function IntensityMeter({
         pointerEvents: "none",
         fontFamily: "system-ui, sans-serif",
         color: "#dfe7f5",
-        transform: "translateY(-22px)",
+        transform: "translateY(-48px)",
       }}
     >
       {/* Hero: the ACTIVE MAP TYPE, big and unmissable — this is what viewers
@@ -132,13 +132,13 @@ export default function IntensityMeter({
             style={{
               display: "inline-block",
               marginTop: 2,
-              padding: "3px 12px",
+              padding: "4px 26px",
               borderRadius: 999,
               background: "rgba(4,10,20,0.68)",
               border: "1px solid rgba(255,255,255,0.09)",
-              fontSize: compact ? 10.5 : 12,
+              fontSize: compact ? 12.1 : 13.8,
               fontWeight: 800,
-              letterSpacing: 0.9,
+              letterSpacing: 1.1,
               color: "#dfe7f5",
             }}
           >
@@ -150,7 +150,7 @@ export default function IntensityMeter({
         ) : null}
         <div
           style={{
-            fontSize: compact ? 19 : 24,
+            fontSize: compact ? 20.9 : 26.4,
             fontWeight: 800,
             letterSpacing: 0.3,
             lineHeight: 1.05,
@@ -161,7 +161,7 @@ export default function IntensityMeter({
         >
           {meta.label}
           {legend.unit ? (
-            <span style={{ fontSize: compact ? 13 : 15, fontWeight: 700, color: hexAt(1), marginLeft: 6 }}>
+            <span style={{ fontSize: compact ? 14.3 : 16.5, fontWeight: 700, color: hexAt(1), marginLeft: 6 }}>
               {legend.unit}
             </span>
           ) : null}
@@ -199,7 +199,7 @@ export default function IntensityMeter({
             width: barW,
             display: "flex",
             justifyContent: "space-between",
-            fontSize: compact ? 10.5 : 12,
+            fontSize: compact ? 11.6 : 13.2,
             fontWeight: 700,
             fontVariantNumeric: "tabular-nums",
           }}
@@ -225,7 +225,7 @@ export default function IntensityMeter({
       {sat ? (
         <div
           style={{
-            fontSize: compact ? 10 : 11,
+            fontSize: compact ? 11 : 12.1,
             fontWeight: 700,
             opacity: 0.8,
             color: "#dfe7f5",

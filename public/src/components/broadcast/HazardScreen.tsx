@@ -11,7 +11,7 @@
  * Pointer-inert like the rest of the chrome.
  */
 import type { WorldWatchItem } from "../../lib/broadcast";
-import { accentBorder, type BroadcastTheme } from "./config";
+import { accentBorderRight, GLASS_BG, type BroadcastTheme } from "./config";
 import { StatTile, BreakdownChip, MiniBar } from "./worldStat";
 import WorldFeed from "./WorldFeed";
 
@@ -53,12 +53,12 @@ export default function HazardScreen({
         position: "relative",
         width: 400,
         padding: "20px 24px",
-        background: theme.panelBg,
-        ...accentBorder(theme.panelBorder, `5px solid ${heroColor}`),
+        background: GLASS_BG,
+        ...accentBorderRight(theme.panelBorder, `5px solid ${heroColor}`),
         borderRadius: 16,
         boxShadow: `0 12px 36px rgba(0,0,0,0.5), 0 0 20px ${heroColor}28`,
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
+        backdropFilter: "blur(11px)",
+        WebkitBackdropFilter: "blur(11px)",
         pointerEvents: "none",
         fontFamily: "system-ui, sans-serif",
         display: "flex",
@@ -71,14 +71,14 @@ export default function HazardScreen({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          fontSize: 13,
+          fontSize: 14.3,
           fontWeight: 800,
           letterSpacing: 1.8,
           color: "#dfe7f5",
         }}
       >
         <span>{title}</span>
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: theme.accent }}>LAST 24H</span>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: theme.accent }}>LAST 24H</span>
       </div>
 
       <div style={{ display: "flex", alignItems: "flex-end", gap: 14 }}>
@@ -88,7 +88,7 @@ export default function HazardScreen({
             style={{
               flex: 2,
               minWidth: 0,
-              fontSize: 12,
+              fontSize: 13.2,
               fontWeight: 700,
               color: "#c3cee0",
               lineHeight: 1.3,
@@ -115,7 +115,7 @@ export default function HazardScreen({
               <span
                 style={{
                   flex: "0 0 66px",
-                  fontSize: 11,
+                  fontSize: 12.1,
                   fontWeight: 700,
                   color: "#c3cee0",
                   whiteSpace: "nowrap",
@@ -130,7 +130,7 @@ export default function HazardScreen({
                 style={{
                   flex: "0 0 24px",
                   textAlign: "right",
-                  fontSize: 11,
+                  fontSize: 12.1,
                   fontWeight: 700,
                   color: "#9fb0c8",
                   fontVariantNumeric: "tabular-nums",
@@ -145,7 +145,7 @@ export default function HazardScreen({
 
       <div
         style={{
-          fontSize: 11,
+          fontSize: 12.1,
           fontWeight: 800,
           letterSpacing: 1.6,
           color: theme.accent,

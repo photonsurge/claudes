@@ -67,10 +67,10 @@ export function DayChip({ day, color }: { day: CityConditionDay; color: string }
         background: "rgba(4,10,20,0.5)",
       }}
     >
-      <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: 0.6, color: "#8ea3bf" }}>{dayLabel(day.date)}</span>
-      <span style={{ fontSize: 13, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
+      <span style={{ fontSize: 9.4, fontWeight: 800, letterSpacing: 0.6, color: "#8ea3bf" }}>{dayLabel(day.date)}</span>
+      <span style={{ fontSize: 14.3, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
         {day.hi != null ? `${formatReading(day.hi)}°` : "—"}
-        <span style={{ fontSize: 9.5, fontWeight: 700, color, marginLeft: 3 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 700, color, marginLeft: 3 }}>
           {day.lo != null ? `${formatReading(day.lo)}°` : ""}
         </span>
       </span>
@@ -95,10 +95,10 @@ export function CityForecastStrip({ city, color }: { city?: CityCondition | null
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 4, minWidth: 44 }}>
-        <span style={{ fontSize: 18, fontWeight: 850, color: "#fff", lineHeight: 1, whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 19.8, fontWeight: 850, color: "#fff", lineHeight: 1, whiteSpace: "nowrap" }}>
           {now != null ? `${formatReading(now)}°` : "—"}
         </span>
-        <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: 0.5, color }}>NOW</span>
+        <span style={{ fontSize: 8.8, fontWeight: 700, letterSpacing: 0.5, color }}>NOW</span>
       </div>
       {days.length ? (
         <div style={{ display: "flex", gap: 4, flex: "0 0 auto" }}>

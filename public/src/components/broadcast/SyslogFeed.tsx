@@ -20,7 +20,7 @@ export default function SyslogFeed() {
         flexDirection: "column-reverse",
         gap: 3,
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-        fontSize: 11,
+        fontSize: 12.1,
         letterSpacing: 0.2,
         pointerEvents: "none",
       }}

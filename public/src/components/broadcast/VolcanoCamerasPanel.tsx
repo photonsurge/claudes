@@ -52,7 +52,7 @@ export default function VolcanoCamerasPanel({ cam, color = "#38bdf8" }: { cam: F
         />
         <div
           style={{
-            fontSize: 10,
+            fontSize: 11,
             color: "#8ea3bf",
             marginTop: 2,
             whiteSpace: "nowrap",

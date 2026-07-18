@@ -18,7 +18,7 @@
  * doubles up.
  */
 import type { WorldWatchState } from "../../lib/world-watch";
-import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, GLASS_BG, type BroadcastTheme } from "./config";
 import WorldFeed from "./WorldFeed";
 
 export default function WorldWatchPanel({
@@ -34,12 +34,12 @@ export default function WorldWatchPanel({
         position: "relative",
         width: 400,
         padding: "14px 20px 18px",
-        background: theme.panelBg,
+        background: GLASS_BG,
         border: theme.panelBorder,
         borderRadius: 14,
         boxShadow: "0 10px 32px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
+        backdropFilter: "blur(11px)",
+        WebkitBackdropFilter: "blur(11px)",
         pointerEvents: "none",
         fontFamily: "system-ui, sans-serif",
         display: "flex",
@@ -49,7 +49,7 @@ export default function WorldWatchPanel({
     >
       <div
         style={{
-          fontSize: 11,
+          fontSize: 12.1,
           fontWeight: 800,
           letterSpacing: 1.6,
           color: theme.accent,

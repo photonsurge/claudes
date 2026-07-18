@@ -31,14 +31,14 @@ function StepColumn({ step }: { step: ForecastStep }) {
         minWidth: 0,
       }}
     >
-      <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.3, color: "#9fb3cc", whiteSpace: "nowrap" }}>
+      <span style={{ fontSize: 9.9, fontWeight: 800, letterSpacing: 0.3, color: "#9fb3cc", whiteSpace: "nowrap" }}>
         {step.hourLabel}
       </span>
       <WeatherGlyph condition={step.condition} size={20} />
-      <span style={{ fontSize: 14, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
+      <span style={{ fontSize: 15.4, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
         {step.temp != null ? `${formatReading(step.temp)}°` : "—"}
       </span>
-      <span style={{ fontSize: 9, fontWeight: 700, color: "#8ea3bf", whiteSpace: "nowrap" }}>
+      <span style={{ fontSize: 9.9, fontWeight: 700, color: "#8ea3bf", whiteSpace: "nowrap" }}>
         {step.wind != null ? `${formatReading(step.wind)}` : ""}
       </span>
     </div>
@@ -80,7 +80,7 @@ export default function RegionNearTermPanel({
       eyebrow="Next 24h"
       headerRight={
         sampleName ? (
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.6, color: "#9fb3cc" }}>{sampleName}</span>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.6, color: "#9fb3cc" }}>{sampleName}</span>
         ) : null
       }
       theme={theme}

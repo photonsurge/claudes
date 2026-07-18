@@ -48,7 +48,7 @@ export default function BuildInfoTag() {
         display: "flex",
         gap: 10,
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-        fontSize: 10,
+        fontSize: 11,
         letterSpacing: 0.2,
         color: "#5c7a94",
         textShadow: "0 1px 3px rgba(0,0,0,0.9)",

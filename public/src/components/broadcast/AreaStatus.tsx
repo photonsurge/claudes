@@ -14,22 +14,22 @@ export default function AreaStatus({ summary }: { summary: AreaSummary }) {
     <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(120,140,170,0.18)" }}>
       {/* Headline counts */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 11 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc" }}>
+        <span style={{ fontSize: 13.2, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc" }}>
           IN VIEW
         </span>
-        <span style={{ fontSize: 28, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontSize: 30.8, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
           {total}
         </span>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "#9fb3cc" }}>
+        <span style={{ fontSize: 16.5, fontWeight: 700, color: "#9fb3cc" }}>
           alert{total === 1 ? "" : "s"}
         </span>
         {quakeCount ? (
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#e08a1e" }}>
+          <span style={{ fontSize: 16.5, fontWeight: 700, color: "#e08a1e" }}>
             · {quakeCount} seismic
           </span>
         ) : null}
         {volcanoCount ? (
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#ef4444" }}>
+          <span style={{ fontSize: 16.5, fontWeight: 700, color: "#ef4444" }}>
             · {volcanoCount} volcanic
           </span>
         ) : null}
@@ -51,7 +51,7 @@ export default function AreaStatus({ summary }: { summary: AreaSummary }) {
             {bySeverity.map((s) => (
               <span
                 key={s.rank}
-                style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 15, fontWeight: 700 }}
+                style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 16.5, fontWeight: 700 }}
               >
                 <span style={{ width: 11, height: 11, borderRadius: 3, background: s.color }} />
                 <span style={{ fontVariantNumeric: "tabular-nums", color: "#fff" }}>{s.count}</span>
@@ -72,12 +72,12 @@ export default function AreaStatus({ summary }: { summary: AreaSummary }) {
                 display: "flex",
                 alignItems: "center",
                 gap: 7,
-                fontSize: 15.5,
+                fontSize: 17.1,
                 fontWeight: 700,
                 color: "#dfe7f5",
               }}
             >
-              <span style={{ fontSize: 17 }}>{h.icon}</span>
+              <span style={{ fontSize: 18.7 }}>{h.icon}</span>
               <span style={{ color: h.color, fontVariantNumeric: "tabular-nums" }}>{h.count}</span>
               <span style={{ opacity: 0.75, fontWeight: 600 }}>{h.label}</span>
             </span>

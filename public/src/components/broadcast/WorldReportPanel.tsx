@@ -10,12 +10,14 @@
  * rest of the chrome.
  */
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
+import type { WorldWatchItem } from "../../lib/broadcast";
 import type { AreaForecastDay } from "../../lib/forecast-client";
 import { formatReading } from "./PointHistoryPanel";
-import { accentBorder, type BroadcastTheme } from "./config";
+import { accentBorderRight, GLASS_BG, type BroadcastTheme } from "./config";
 import { hazardMeta } from "../../lib/hazard";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
 import { BreakdownChip } from "./worldStat";
+import WorldFeed from "./WorldFeed";
 
 const CONDITION_GLYPH: Record<AreaForecastDay["condition"], string> = {
   sunny: "☀️",
@@ -42,10 +44,10 @@ function runLabel(manifest: WeatherManifest | null): string {
 function Extreme({ icon, label, value, color }: { icon: string; label: string; value: string; color: string }) {
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.8, color: "#8fa0b8" }}>{label}</div>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: "#8fa0b8" }}>{label}</div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginTop: 3 }}>
-        <span style={{ fontSize: 14 }}>{icon}</span>
-        <span style={{ fontSize: 20, fontWeight: 800, color, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontSize: 15.4 }}>{icon}</span>
+        <span style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
           {value}
         </span>
       </div>
@@ -79,7 +81,7 @@ function DayCell({ day }: { day: AreaForecastDay }) {
             position: "absolute",
             top: -6,
             right: -4,
-            fontSize: 11,
+            fontSize: 12.1,
             lineHeight: 1,
             padding: "3px 4px",
             borderRadius: 999,
@@ -89,11 +91,11 @@ function DayCell({ day }: { day: AreaForecastDay }) {
           {hazardMeta(topHazard.hazard).icon}
         </div>
       ) : null}
-      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.8, color: "#aebdd2" }}>{day.label}</span>
-      <span style={{ fontSize: 22, lineHeight: 1 }}>{CONDITION_GLYPH[day.condition]}</span>
-      <span style={{ fontSize: 14, fontWeight: 850, color: "#f3f7ff" }}>
+      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: "#aebdd2" }}>{day.label}</span>
+      <span style={{ fontSize: 24.2, lineHeight: 1 }}>{CONDITION_GLYPH[day.condition]}</span>
+      <span style={{ fontSize: 15.4, fontWeight: 850, color: "#f3f7ff" }}>
         {hi != null ? formatReading(hi) : "—"}°
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#9db0ca", marginLeft: 3 }}>
+        <span style={{ fontSize: 12.1, fontWeight: 700, color: "#9db0ca", marginLeft: 3 }}>
           {lo != null ? `${formatReading(lo)}°` : ""}
         </span>
       </span>
@@ -105,11 +107,15 @@ export default function WorldReportPanel({
   days,
   loading,
   manifest,
+  feed,
   theme,
 }: {
   days: AreaForecastDay[];
   loading: boolean;
   manifest: WeatherManifest | null;
+  /** The global ACTIVE FEED, integrated into the card (like the drill-down
+   *  slides) rather than stacked as a separate panel below it. */
+  feed: WorldWatchItem[];
   theme: BroadcastTheme;
 }) {
   const today = days[0] ?? null;
@@ -121,12 +127,12 @@ export default function WorldReportPanel({
         position: "relative",
         width: 400,
         padding: "20px 24px",
-        background: theme.panelBg,
-        ...accentBorder(theme.panelBorder, `5px solid ${accent}`),
+        background: GLASS_BG,
+        ...accentBorderRight(theme.panelBorder, `5px solid ${accent}`),
         borderRadius: 16,
         boxShadow: `0 12px 36px rgba(0,0,0,0.5), 0 0 20px ${accent}28`,
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
+        backdropFilter: "blur(11px)",
+        WebkitBackdropFilter: "blur(11px)",
         pointerEvents: "none",
         fontFamily: "system-ui, sans-serif",
         display: "flex",
@@ -139,14 +145,14 @@ export default function WorldReportPanel({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          fontSize: 13,
+          fontSize: 14.3,
           fontWeight: 800,
           letterSpacing: 1.8,
           color: "#dfe7f5",
         }}
       >
         <span>WORLD REPORT</span>
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: accent }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.8, color: accent }}>
           {runLabel(manifest)}
         </span>
       </div>
@@ -200,10 +206,24 @@ export default function WorldReportPanel({
           </div>
         </>
       ) : (
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#7f8ea6", padding: "8px 0" }}>
+        <div style={{ fontSize: 14.3, fontWeight: 700, color: "#7f8ea6", padding: "8px 0" }}>
           {loading ? "Building latest world report…" : "No world report available."}
         </div>
       )}
+
+      <div
+        style={{
+          fontSize: 12.1,
+          fontWeight: 800,
+          letterSpacing: 1.6,
+          color: accent,
+          borderBottom: `2px solid ${accent}55`,
+          paddingBottom: 4,
+        }}
+      >
+        ACTIVE FEED
+      </div>
+      <WorldFeed items={feed} visible={5} />
     </div>
   );
 }

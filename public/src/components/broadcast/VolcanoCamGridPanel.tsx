@@ -50,7 +50,7 @@ export default function VolcanoCamGridPanel({
               />
               <div
                 style={{
-                  fontSize: 9,
+                  fontSize: 9.9,
                   color: "#8ea3bf",
                   marginTop: 1,
                   whiteSpace: "nowrap",

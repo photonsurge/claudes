@@ -44,10 +44,10 @@ export default function KpIndexPanel({
     >
       {/* Hero Kp value in the level colour. */}
       <div style={{ lineHeight: 1, textAlign: "center" }}>
-        <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: 1.4, opacity: 0.55 }}>Kp</div>
+        <div style={{ fontSize: 8.8, fontWeight: 800, letterSpacing: 1.4, opacity: 0.55 }}>Kp</div>
         <div
           style={{
-            fontSize: 26,
+            fontSize: 28.6,
             fontWeight: 900,
             color: level.color,
             fontVariantNumeric: "tabular-nums",
@@ -59,10 +59,10 @@ export default function KpIndexPanel({
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: 1.4, opacity: 0.55 }}>
+        <div style={{ fontSize: 8.8, fontWeight: 800, letterSpacing: 1.4, opacity: 0.55 }}>
           GEOMAGNETIC
         </div>
-        <div style={{ fontSize: 12, fontWeight: 800, color: "#fff", marginTop: 1 }}>
+        <div style={{ fontSize: 13.2, fontWeight: 800, color: "#fff", marginTop: 1 }}>
           <span style={{ color: level.color }}>{level.code}</span>
           <span style={{ opacity: 0.85 }}> · {level.name}</span>
         </div>

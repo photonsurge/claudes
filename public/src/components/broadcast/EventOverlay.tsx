@@ -14,7 +14,7 @@
 import type { Segment } from "@photonsurge/shared/director";
 import { STAGE_W, STAGE_H } from "./useStageScale";
 import { KIND_COLOR, KIND_LABEL } from "./kinds";
-import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { KindGlyph } from "./glyphs";
 
 const W = 660;
@@ -26,12 +26,15 @@ const H = 440;
  * pinning to a screen corner. These are the knobs for where the readouts sit:
  *   • LABEL    — tracking detail, tucked onto the top-left corner
  *   • HISTORY  — point-history, top-right, pushed out to the right
- * (The 3-day forecast used to hang off the bottom-right corner too, but it
- * crowded the focus point and clipped the subtitle — it now docks bottom-left
- * in BroadcastFrame instead.)
+ *   • FORECAST — 3-day forecast strip, hung BELOW the frame's bottom edge and
+ *                right-aligned to it. Below the frame (not on the bottom-right
+ *                corner, where it used to crowd the focus point and clip the
+ *                centred lower-third) it clears the name/subtitle entirely while
+ *                still reading as "the outlook for this locked target".
  */
-const LABEL_POS = { top: -52, left: -48 };
+const LABEL_POS = { top: -52, left: -170 };
 const HISTORY_POS = { top: -44, right: -150 };
+const FORECAST_POS = { top: H + 10, right: -60 };
 
 /**
  * The reticle's targeting marks, drawn in one SVG (viewBox = design pixels) so
@@ -81,6 +84,7 @@ export default function EventOverlay({
   segment,
   extraDetails = [],
   historyPanel,
+  forecastPanel,
   variant = "event",
   flag,
   theme = DEFAULT_THEME,
@@ -91,6 +95,8 @@ export default function EventOverlay({
   extraDetails?: { label: string; value: string }[];
   /** Point-history trend, hung off the reticle's top-right (HISTORY_POS). */
   historyPanel?: React.ReactNode;
+  /** 3-day forecast strip, hung below the reticle's bottom edge (FORECAST_POS). */
+  forecastPanel?: React.ReactNode;
   /** "event" (default) reads as a detection lock on a hazard; "place" softens the
    *  wording to NOW VIEWING / LOCATION for a calm Areas-tour city. */
   variant?: "event" | "place";
@@ -152,6 +158,12 @@ export default function EventOverlay({
         <div style={{ position: "absolute", ...HISTORY_POS }}>{historyPanel}</div>
       ) : null}
 
+      {/* 3-day forecast strip, hung below the frame's bottom edge (right-aligned),
+          so it travels with the reticle without touching the centred lower-third. */}
+      {forecastPanel ? (
+        <div style={{ position: "absolute", ...FORECAST_POS }}>{forecastPanel}</div>
+      ) : null}
+
       {/* Event name, lower-centre of the frame. A kind-tinted vector mark (never
           an emoji) sits beside the name; a hairline accent rule + a small-caps
           status line under it give it a designed lower-third feel. Width-capped
@@ -184,7 +196,7 @@ export default function EventOverlay({
           <KindGlyph kind={segment.kind} color={color} size={24} />
           <div
             style={{
-              fontSize: 23,
+              fontSize: 25.3,
               fontWeight: 800,
               letterSpacing: 1.5,
               color: "#fff",
@@ -227,7 +239,7 @@ export default function EventOverlay({
             />
             <span
               style={{
-                fontSize: 11,
+                fontSize: 12.1,
                 fontWeight: 800,
                 letterSpacing: 1.5,
                 textTransform: "uppercase",
@@ -282,12 +294,16 @@ function EventTrackingLabel({
       style={{
         minWidth: 250,
         padding: "10px 14px",
-        background: theme.panelBg,
-        ...accentBorder(theme.panelBorder, `3px solid ${color}`),
+        // Coloured see-through glass: a faint wash of the segment's kind colour
+        // over a barely-there dark base, so the panel reads as tinted glass with
+        // the map showing behind it. The blur + a soft inner colour glow keep it
+        // legible and give it depth.
+        background: `linear-gradient(180deg, ${color}26, ${color}10), rgba(8,14,24,0.1)`,
+        border: theme.panelBorder,
         borderRadius: 10,
-        boxShadow: "0 10px 26px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
+        boxShadow: `inset 0 0 32px ${color}1f, 0 10px 26px rgba(0,0,0,0.45)`,
+        backdropFilter: "blur(10px)",
+        WebkitBackdropFilter: "blur(10px)",
         fontFamily: "system-ui, sans-serif",
         pointerEvents: "none",
       }}
@@ -296,7 +312,7 @@ function EventTrackingLabel({
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
         <span
           style={{
-            fontSize: 9,
+            fontSize: 9.9,
             fontWeight: 800,
             letterSpacing: 1,
             textTransform: "uppercase",
@@ -308,7 +324,7 @@ function EventTrackingLabel({
         >
           {kindLabel}
         </span>
-        <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.4, color: "#9fb3cc" }}>
+        <span style={{ fontSize: 9.9, fontWeight: 800, letterSpacing: 1.4, color: "#9fb3cc" }}>
           ▸ {isPlace ? "NOW VIEWING" : "EVENT DETECTION OVERLAY"}
         </span>
       </div>
@@ -327,12 +343,12 @@ function Row({ label, value, color }: { label: string; value: string; color: str
         display: "flex",
         gap: 8,
         alignItems: "baseline",
-        fontSize: 12,
+        fontSize: 13.2,
         padding: "2px 0",
         borderTop: "1px solid rgba(120,140,170,0.12)",
       }}
     >
-      <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.8, color: "#8ea3bf", minWidth: 92 }}>
+      <span style={{ fontSize: 9.9, fontWeight: 700, letterSpacing: 0.8, color: "#8ea3bf", minWidth: 92 }}>
         {label}
       </span>
       <span style={{ fontWeight: 700, color }}>{value}</span>

@@ -66,7 +66,7 @@ function ClimateCell({
     <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
       <span
         style={{
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: 800,
           letterSpacing: 0.6,
           color: "#aebdd2",
@@ -78,9 +78,9 @@ function ClimateCell({
         <span style={{ color, marginRight: 3 }}>▮</span>
         {label}
       </span>
-      <span style={{ fontSize: 16, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
+      <span style={{ fontSize: 17.6, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
         {latest != null ? formatReading(latest) : "—"}
-        <span style={{ fontSize: 9, fontWeight: 700, color: "#9db0ca", marginLeft: 2 }}>{units}</span>
+        <span style={{ fontSize: 9.9, fontWeight: 700, color: "#9db0ca", marginLeft: 2 }}>{units}</span>
       </span>
       <svg
         width="100%"
@@ -93,7 +93,7 @@ function ClimateCell({
         <path d={toPath(spark.pts)} fill="none" stroke={color} strokeWidth={4.5} strokeLinejoin="round" strokeLinecap="round" />
         {last ? <circle cx={last[0]} cy={last[1]} r={4} fill={color} stroke="#040a14" strokeWidth={2} /> : null}
       </svg>
-      <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.3, color: "#91a1b9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <span style={{ fontSize: 9.9, fontWeight: 700, letterSpacing: 0.3, color: "#91a1b9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
         {caption}
       </span>
     </div>
@@ -158,7 +158,7 @@ export function CityTempSpark({ city }: { city: City }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
       {latest != null ? (
-        <span style={{ fontSize: 12, fontWeight: 800, color: tempRow.color }}>{formatReading(latest)}°</span>
+        <span style={{ fontSize: 13.2, fontWeight: 800, color: tempRow.color }}>{formatReading(latest)}°</span>
       ) : null}
       <svg width={ROW_SPARK_W} height={ROW_SPARK_H} viewBox={`0 0 ${CHART_W} ${ROW_SPARK_H}`} preserveAspectRatio="none">
         <path

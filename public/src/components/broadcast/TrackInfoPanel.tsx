@@ -58,7 +58,7 @@ export default function TrackInfoPanel({
         info.category ? (
           <span
             style={{
-              fontSize: 8,
+              fontSize: 8.8,
               fontWeight: 700,
               letterSpacing: 0.6,
               color: "#9fb3cc",
@@ -88,7 +88,7 @@ export default function TrackInfoPanel({
                   position: "absolute",
                   right: 4,
                   bottom: 4,
-                  fontSize: 8,
+                  fontSize: 8.8,
                   color: "#dbe6f6",
                   background: "rgba(0,0,0,0.5)",
                   padding: "1px 4px",
@@ -101,15 +101,15 @@ export default function TrackInfoPanel({
           </div>
         ) : null}
 
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", lineHeight: 1.15 }}>{title}</div>
+        <div style={{ fontSize: 17.6, fontWeight: 800, color: "#fff", lineHeight: 1.15 }}>{title}</div>
         {typeLine ? (
-          <div style={{ fontSize: 11, fontWeight: 700, color, marginTop: 2 }}>{typeLine}</div>
+          <div style={{ fontSize: 12.1, fontWeight: 700, color, marginTop: 2 }}>{typeLine}</div>
         ) : null}
         {idLine ? (
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#aebfd6", marginTop: 1 }}>{idLine}</div>
+          <div style={{ fontSize: 12.1, fontWeight: 600, color: "#aebfd6", marginTop: 1 }}>{idLine}</div>
         ) : null}
         {info.statusLine ? (
-          <div style={{ fontSize: 10.5, fontWeight: 600, color: "#8ea3bf", marginTop: 1 }}>{info.statusLine}</div>
+          <div style={{ fontSize: 11.6, fontWeight: 600, color: "#8ea3bf", marginTop: 1 }}>{info.statusLine}</div>
         ) : null}
 
         {info.extract ? (
@@ -121,7 +121,7 @@ export default function TrackInfoPanel({
           // pathologically long Wikipedia lead when there's no bulletin.
           <div
             style={{
-              fontSize: 11,
+              fontSize: 12.1,
               lineHeight: 1.45,
               color: "#cdd9ec",
               marginTop: 6,
@@ -135,7 +135,7 @@ export default function TrackInfoPanel({
           </div>
         ) : null}
         {info.sourceUrl ? (
-          <div style={{ fontSize: 9.5, color: "#63748e", marginTop: 5 }}>Source: Smithsonian GVP</div>
+          <div style={{ fontSize: 10.5, color: "#63748e", marginTop: 5 }}>Source: Smithsonian GVP</div>
         ) : null}
       </div>
 
@@ -151,7 +151,7 @@ export default function TrackInfoPanel({
           }}
         >
           {liveStats.map((d) => (
-            <div key={d.label} style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+            <div key={d.label} style={{ fontSize: 12.1, whiteSpace: "nowrap" }}>
               <span style={{ color: "#8ea3bf" }}>{d.label} </span>
               <span style={{ fontWeight: 700, color: "#e6eefb" }}>{d.value}</span>
             </div>

@@ -77,8 +77,8 @@ export default function LoadingScreen({
           />
         </svg>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: 3, color: "#dfe7f5" }}>{theme.name}</span>
-          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: theme.accent }}>
+          <span style={{ fontSize: 14.3, fontWeight: 800, letterSpacing: 3, color: "#dfe7f5" }}>{theme.name}</span>
+          <span style={{ fontSize: 12.1, fontWeight: 700, letterSpacing: 2, color: theme.accent }}>
             ACQUIRING SIGNAL…
           </span>
         </div>

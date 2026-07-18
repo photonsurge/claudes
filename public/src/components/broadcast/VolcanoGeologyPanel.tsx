@@ -40,7 +40,7 @@ export default function VolcanoGeologyPanel({ volcano: v, color = "#f97316" }: {
     <BroadcastCard accent={color} eyebrow="Geology">
       <CardSection first eyebrow={vol.subregion || vol.region || "Smithsonian GVP"}>
         {facts.length > 0 && (
-          <table style={{ fontSize: 12, borderCollapse: "collapse", width: "100%" }}>
+          <table style={{ fontSize: 13.2, borderCollapse: "collapse", width: "100%" }}>
             <tbody>
               {facts.map(([k, val]) => (
                 <tr key={k}>
@@ -52,7 +52,7 @@ export default function VolcanoGeologyPanel({ volcano: v, color = "#f97316" }: {
           </table>
         )}
         {vol.geologicalSummary && (
-          <p style={{ color: "#8ea3bf", fontSize: 11, lineHeight: 1.5, margin: "7px 0 0" }}>{clip(vol.geologicalSummary)}</p>
+          <p style={{ color: "#8ea3bf", fontSize: 12.1, lineHeight: 1.5, margin: "7px 0 0" }}>{clip(vol.geologicalSummary)}</p>
         )}
       </CardSection>
     </BroadcastCard>

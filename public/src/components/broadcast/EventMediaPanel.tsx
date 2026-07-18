@@ -15,6 +15,7 @@ import type { iEventSeries } from "@photonsurge/shared/db/event-series-model";
 import { snapshotLabel } from "../../lib/satellite-view";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import BroadcastCard, { CardSection, DIM } from "./BroadcastCard";
+import MediaTileGrid from "./MediaTileGrid";
 import Sparkline from "../Sparkline";
 
 export function eventMediaSlideHasContent(
@@ -41,43 +42,40 @@ export default function EventMediaPanel({
   theme?: BroadcastTheme;
 }) {
   if (!eventMediaSlideHasContent(snapshots, resources)) return null;
-  const hero =
-    snapshots.find((s) => s.kind === "compare") ??
-    snapshots.find((s) => s.kind === "satellite") ??
-    snapshots.find((s) => s.kind === "render" || s.kind === "map") ??
-    snapshots[0];
+  // The captured products ride as webcam-style tiles so the whole set (compare /
+  // satellite / render / map) is on air at once, not just a single hero still.
+  const tiles = snapshots.map((s) => ({
+    key: s.id,
+    src: snapSrc(s),
+    title: snapshotLabel(s.kind, s.layer),
+    caption: utc(s.observationTime),
+  }));
+  const hasTiles = tiles.length > 0;
   const scoreSeries = series.find((s) => s.metric === "alertscore") ?? series[0];
+  const hasSpark = !!scoreSeries && scoreSeries.samples.length > 1;
 
   return (
     <BroadcastCard accent={color} eyebrow="Products" theme={theme}>
-      {hero ? (
-        <CardSection first>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={snapSrc(hero)} alt={hero.kind} style={{ width: "100%", borderRadius: 8, display: "block" }} />
-          <div style={{ color: DIM, fontSize: 12, marginTop: 4 }}>
-            {snapshotLabel(hero.kind, hero.layer)} · {utc(hero.observationTime)}
-          </div>
-        </CardSection>
-      ) : null}
+      <MediaTileGrid first tiles={tiles} />
 
-      {scoreSeries && scoreSeries.samples.length > 1 ? (
-        <CardSection first={!hero} eyebrow={scoreSeries.metric}>
+      {hasSpark ? (
+        <CardSection first={!hasTiles} eyebrow={scoreSeries.metric}>
           <Sparkline samples={scoreSeries.samples} width={360} height={40} color={color} strokeWidth={2} />
         </CardSection>
       ) : null}
 
       {resources.length ? (
-        <CardSection first={!hero && !(scoreSeries && scoreSeries.samples.length > 1)} eyebrow="Official products">
+        <CardSection first={!hasTiles && !hasSpark} eyebrow="Official products">
           {resources.slice(0, 4).map((r) => (
             <div
               key={r.id ?? r.url}
-              style={{ display: "flex", gap: 8, alignItems: "baseline", color: "#cbd5e1", fontSize: 13, padding: "1px 0" }}
+              style={{ display: "flex", gap: 8, alignItems: "baseline", color: "#cbd5e1", fontSize: 14.3, padding: "1px 0" }}
             >
-              <span style={{ flex: "0 0 auto", color: DIM, fontSize: 11 }}>[{r.kind}]</span>
+              <span style={{ flex: "0 0 auto", color: DIM, fontSize: 12.1 }}>[{r.kind}]</span>
               <span style={{ minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {r.title || r.description || r.url}
               </span>
-              {r.sourceName ? <span style={{ flex: "0 0 auto", color: DIM, fontSize: 11 }}>{r.sourceName}</span> : null}
+              {r.sourceName ? <span style={{ flex: "0 0 auto", color: DIM, fontSize: 12.1 }}>{r.sourceName}</span> : null}
             </div>
           ))}
         </CardSection>

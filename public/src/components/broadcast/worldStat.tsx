@@ -14,7 +14,7 @@ export function StatTile({ label, value, color }: { label: string; value: number
     <div style={{ flex: 1, minWidth: 0 }}>
       <div
         style={{
-          fontSize: 36,
+          fontSize: 39.6,
           fontWeight: 800,
           color: "#fff",
           lineHeight: 1,
@@ -23,7 +23,7 @@ export function StatTile({ label, value, color }: { label: string; value: number
       >
         {value.toLocaleString()}
       </div>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color, marginTop: 5 }}>{label}</div>
+      <div style={{ fontSize: 12.1, fontWeight: 800, letterSpacing: 1, color, marginTop: 5 }}>{label}</div>
     </div>
   );
 }
@@ -44,10 +44,10 @@ export function BreakdownChip({ label, count, color }: { label: string; count: n
           flex: "0 0 auto",
         }}
       />
-      <span style={{ fontSize: 12, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
+      <span style={{ fontSize: 13.2, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
         {count}
       </span>
-      <span style={{ fontSize: 11, fontWeight: 700, color: "#c3cee0", letterSpacing: 0.3 }}>{label}</span>
+      <span style={{ fontSize: 12.1, fontWeight: 700, color: "#c3cee0", letterSpacing: 0.3 }}>{label}</span>
     </span>
   );
 }

@@ -52,7 +52,7 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
         />
       ) : (
         <span
-          style={{ flex: "0 0 auto", width: 30, textAlign: "center", fontSize: 17, lineHeight: 1 }}
+          style={{ flex: "0 0 auto", width: 30, textAlign: "center", fontSize: 18.7, lineHeight: 1 }}
           title={item.kind === "quake" ? "Seismic" : undefined}
         >
           {item.icon}
@@ -64,7 +64,7 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
             flex: "0 0 auto",
             minWidth: 46,
             textAlign: "center",
-            fontSize: 12,
+            fontSize: 13.2,
             fontWeight: 800,
             letterSpacing: 0.4,
             color: item.color,
@@ -80,7 +80,7 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
       <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
         <span
           style={{
-            fontSize: 14,
+            fontSize: 15.4,
             fontWeight: 700,
             color: "#e6edf7",
             whiteSpace: "nowrap",
@@ -95,7 +95,7 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
         {item.sub ? (
           <span
             style={{
-              fontSize: 11,
+              fontSize: 12.1,
               fontWeight: 600,
               color: item.kind === "quake" && item.sub.startsWith("TSUNAMI") ? "#f97316" : "#8fa0b8",
               whiteSpace: "nowrap",
@@ -113,7 +113,7 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
         <span
           style={{
             flex: "0 0 auto",
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 700,
             letterSpacing: 0.3,
             color: item.expiresIn === "expired" ? "#6b7688" : "#7f8ea6",
@@ -140,7 +140,7 @@ export default function WorldFeed({
     return (
       <div
         style={{
-          fontSize: 13,
+          fontSize: 14.3,
           fontWeight: 700,
           color: "#7f8ea6",
           textAlign: "right",

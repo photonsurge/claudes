@@ -98,7 +98,15 @@ function tileBasemapLayer(id: string, template: string, maxZoom = 19) {
         // CARTESIAN tells deck.gl the image is Mercator-encoded and to reproject it
         // into the globe's lnglat space (bitmap-layer's "Mercator in LNGLAT" path).
         _imageCoordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
-        parameters: DEPTH_OCCLUDE,
+        // PAINT, not OCCLUDE: the tiles must NOT write depth. Exactly one mesh seals
+        // the depth sphere — the background grid (no weather) or the weather raster
+        // (hasGlobalRaster). These per-tile quads are a THIRD tessellation of the same
+        // sphere; letting them write depth too makes them z-fight whichever sealer is
+        // active — the background grid (basemap looks "sketchy") or, worse, the global
+        // weather raster (a radial lattice of wedges where alternate triangles win the
+        // depth test). Paint over the base image instead, far side culled by cullMode
+        // back, mirroring globalImageLayer above. See ./depth.ts.
+        parameters: { ...DEPTH_PAINT, cullMode: "back" },
       });
     },
   });

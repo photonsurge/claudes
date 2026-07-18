@@ -49,7 +49,7 @@ function Chip({ text, color }: { text: string; color: string }) {
   return (
     <span
       style={{
-        fontSize: 9,
+        fontSize: 9.9,
         fontWeight: 800,
         letterSpacing: 1,
         textTransform: "uppercase",
@@ -80,15 +80,15 @@ function Reading({
   return (
     <div style={{ padding: "6px 0" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc", width: 62 }}>
+        <span style={{ fontSize: 9.9, fontWeight: 800, letterSpacing: 1.2, color: "#9fb3cc", width: 62 }}>
           {label}
         </span>
-        <span style={{ fontSize: 17, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontSize: 18.7, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
           {value}
         </span>
         <Chip text={chip} color={chipColor} />
       </div>
-      <div style={{ fontSize: 10.5, lineHeight: 1.4, color: "#aebfd6", marginTop: 3 }}>{blurb}</div>
+      <div style={{ fontSize: 11.6, lineHeight: 1.4, color: "#aebfd6", marginTop: 3 }}>{blurb}</div>
     </div>
   );
 }
@@ -140,7 +140,7 @@ export default function QuakeReport({
         <CardSection eyebrow="Nearest Cities">
           {near.map((n) => (
             <div key={n.item.id} style={{ padding: "3px 0" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, fontSize: 11 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, fontSize: 12.1 }}>
                 <span style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   <span style={{ fontWeight: 700, color: "#e6eefb" }}>{n.item.name}</span>
                   {n.item.cc ? <span style={{ color: "#7d8da5" }}>{` ${n.item.cc}`}</span> : null}

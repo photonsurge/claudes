@@ -152,10 +152,10 @@ export default function DepthProfilePanel({
                   : "inset 0 0 0 1px rgba(0,0,0,0.15)",
               }}
             >
-              <span style={{ fontSize: compact ? 9.5 : 11, fontWeight: 800, letterSpacing: 0.8, color: fg }}>
+              <span style={{ fontSize: compact ? 10.5 : 12.1, fontWeight: 800, letterSpacing: 0.8, color: fg }}>
                 {DEPTH_LABEL[p.depth] ?? `${p.depth}m`}
               </span>
-              <span style={{ fontSize: compact ? 11 : 13, fontWeight: 850, color: fg }}>
+              <span style={{ fontSize: compact ? 12.1 : 14.3, fontWeight: 850, color: fg }}>
                 {formatReading(p.tempC)}°
               </span>
             </div>
