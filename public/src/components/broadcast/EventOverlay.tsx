@@ -294,11 +294,10 @@ function EventTrackingLabel({
       style={{
         minWidth: 250,
         padding: "10px 14px",
-        // Coloured see-through glass: a faint wash of the segment's kind colour
-        // over a barely-there dark base, so the panel reads as tinted glass with
-        // the map showing behind it. The blur + a soft inner colour glow keep it
-        // legible and give it depth.
-        background: `linear-gradient(180deg, ${color}26, ${color}10), rgba(8,14,24,0.1)`,
+        // Coloured tinted glass: a wash of the segment's kind colour over a solid
+        // dark base, so the panel stays legible over any basemap (and through
+        // stream compression). The blur + a soft inner colour glow give it depth.
+        background: `linear-gradient(180deg, ${color}26, ${color}10), rgba(8,14,24,0.72)`,
         border: theme.panelBorder,
         borderRadius: 10,
         boxShadow: `inset 0 0 32px ${color}1f, 0 10px 26px rgba(0,0,0,0.45)`,

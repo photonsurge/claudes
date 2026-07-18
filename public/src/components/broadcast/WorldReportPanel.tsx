@@ -17,7 +17,7 @@ import { accentBorderRight, GLASS_BG, type BroadcastTheme } from "./config";
 import { hazardMeta } from "../../lib/hazard";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
 import { BreakdownChip } from "./worldStat";
-import WorldFeed from "./WorldFeed";
+import FeedSection from "./FeedSection";
 
 const CONDITION_GLYPH: Record<AreaForecastDay["condition"], string> = {
   sunny: "☀️",
@@ -211,19 +211,7 @@ export default function WorldReportPanel({
         </div>
       )}
 
-      <div
-        style={{
-          fontSize: 12.1,
-          fontWeight: 800,
-          letterSpacing: 1.6,
-          color: accent,
-          borderBottom: `2px solid ${accent}55`,
-          paddingBottom: 4,
-        }}
-      >
-        ACTIVE FEED
-      </div>
-      <WorldFeed items={feed} visible={5} />
+      <FeedSection feed={feed} theme={theme} />
     </div>
   );
 }

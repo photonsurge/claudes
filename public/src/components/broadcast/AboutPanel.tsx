@@ -1,18 +1,21 @@
 "use client";
 
 /**
- * About G.O.D.S. - the deck's closing slide. Pointer-inert like the rest of the
- * chrome.
+ * About G.O.D.S. - the deck's closing slide. Carries the shared ACTIVE FEED at
+ * its foot like every other slide, so the rolling state-of-the-world readout
+ * stays on screen through the whole rotation instead of vanishing here.
+ * Pointer-inert like the rest of the chrome.
  */
+import type { WorldWatchItem } from "../../lib/broadcast";
 import { accentBorderRight, GLASS_BG, type BroadcastTheme } from "./config";
+import FeedSection from "./FeedSection";
 
-export default function AboutPanel({ theme }: { theme: BroadcastTheme }) {
+export default function AboutPanel({ theme, feed }: { theme: BroadcastTheme; feed: WorldWatchItem[] }) {
   return (
     <div
       style={{
         position: "relative",
         width: 400,
-        minHeight: 420,
         padding: "20px 24px 22px",
         background: GLASS_BG,
         ...accentBorderRight(theme.panelBorder, `5px solid ${theme.accent}`),
@@ -78,6 +81,8 @@ export default function AboutPanel({ theme }: { theme: BroadcastTheme }) {
           It is not an official warning service, but a visual awareness and exploration tool for global conditions.
         </p>
       </div>
+
+      <FeedSection feed={feed} theme={theme} visible={4} />
     </div>
   );
 }

@@ -36,6 +36,9 @@ import {
   scopeAlertsToBbox,
   scopeQuakesToBbox,
   scopeVolcanoesToBbox,
+  scopeAlertsToRadius,
+  scopeQuakesToRadius,
+  scopeVolcanoesToRadius,
 } from "../../lib/broadcast";
 import { bboxForCamera, type HistorySeries } from "../../lib/history-client";
 import { useLatestRoundup } from "../../lib/summaries";
@@ -381,9 +384,17 @@ export default function BroadcastFrame({
             iso2: ledeCountryDoc.iso2,
           }
         : null;
-  // Scope the on-air feeds to the framed area for the lede rollup — including
-  // targeted events (a small box around the epicentre/storm), so a quake's lede
-  // tallies nearby activity rather than the whole planet.
+  // A single tracked event (quake / volcano / storm / aircraft / vessel) has no
+  // meaningful area, so its "IN VIEW" rollup scopes by a fixed great-circle
+  // radius (EVENT_SCOPE_RADIUS_KM) around the framed point — NOT the camera box,
+  // which grew with the zoom and let a tight shot of one volcano still tally
+  // every other volcano across the country. Country / region / summary shots
+  // keep their real bbox below (the country's / area's own extent).
+  const eventCenter: [number, number] | null =
+    eventTargeted && onAirSegment ? onAirSegment.camera.center : null;
+  // Scope the on-air feeds to the framed area for the lede rollup. A country /
+  // region / summary shot uses its own bbox; any other located wide shot (a
+  // weather check) uses the camera framing.
   const areaBbox = countryOnAir
     ? countryOnAir.bbox
     : regionOnAir
@@ -392,14 +403,24 @@ export default function BroadcastFrame({
       ? summaryCountry.bbox
       : onAirSegment?.summary
         ? bboxForCamera(state.camera.center, state.camera.zoom)
-        : onAirSegment && segmentHasLocation
+        : onAirSegment && segmentHasLocation && !eventCenter
           ? bboxForCamera(onAirSegment.camera.center, onAirSegment.camera.zoom)
           : undefined;
-  const areaAlerts = areaBbox ? scopeAlertsToBbox(alerts, areaBbox) : alerts;
-  const areaQuakes = areaBbox ? scopeQuakesToBbox(quakes, areaBbox) : quakes;
-  const areaVolcanoes = areaBbox
-    ? scopeVolcanoesToBbox(volcanoes, areaBbox)
-    : volcanoes;
+  const areaAlerts = eventCenter
+    ? scopeAlertsToRadius(alerts, eventCenter)
+    : areaBbox
+      ? scopeAlertsToBbox(alerts, areaBbox)
+      : alerts;
+  const areaQuakes = eventCenter
+    ? scopeQuakesToRadius(quakes, eventCenter)
+    : areaBbox
+      ? scopeQuakesToBbox(quakes, areaBbox)
+      : quakes;
+  const areaVolcanoes = eventCenter
+    ? scopeVolcanoesToRadius(volcanoes, eventCenter)
+    : areaBbox
+      ? scopeVolcanoesToBbox(volcanoes, areaBbox)
+      : volcanoes;
 
   // A country spotlight scopes the "IN VIEW" roundup + "TOP CITIES" info to this
   // framed area — set here so mode-slides can turn them into the wide-shot deck
@@ -415,13 +436,6 @@ export default function BroadcastFrame({
       onAirSegment.summary != null)
       ? areaBbox
       : undefined;
-  // Whether the country area forecast has data — decides if it earns its
-  // own slide in the deck (see mode-slides). ForecastPanel re-fetches the same
-  // (rounded, Cache-Control: max-age=60) URL when it mounts as that slide; the
-  // duplicate call is cheap and one-time per bbox change.
-  const wideCitiesForecast = useAreaForecastDays(wideCitiesBbox ?? null);
-  const wideCitiesHasForecast = wideCitiesForecast.days.length > 0;
-
   // Focus point + framed bbox for the WEATHER (forecast) and CURRENT & RECENT
   // (AREA HISTORY) context slides — the on-air centre, or the operator camera
   // when the segment carries none; null on shots with no real ground location.
@@ -750,7 +764,6 @@ export default function BroadcastFrame({
             gap: 10,
           }}
         >
-          <LiveAlertPanel alerts={alerts} cities={cities} theme={theme} />
           <IntensityMeter
             variable={legendVariable}
             units={state.units}
@@ -774,6 +787,10 @@ export default function BroadcastFrame({
             position: "absolute",
             top: TICKER_H + INSET,
             right: INSET - 26,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: 10,
           }}
         >
           <WorldReportDeck
@@ -781,6 +798,9 @@ export default function BroadcastFrame({
             manifest={manifest}
             theme={theme}
           />
+          {/* NEW ALERTS — the just-issued warnings ride below the always-on
+              WORLD WATCH summary here, out of the top-centre map legend's way. */}
+          <LiveAlertPanel alerts={alerts} cities={cities} theme={theme} />
         </div>
 
         {/* Bottom-right column: UP NEXT hint, the SYSLOG feed, and the build

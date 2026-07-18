@@ -77,9 +77,14 @@ describe("HazardScreen", () => {
 
 describe("AboutPanel", () => {
   it("renders the G.O.D.S. about copy and warning-service disclaimer", () => {
-    render(<AboutPanel theme={DEFAULT_THEME} />);
+    render(<AboutPanel theme={DEFAULT_THEME} feed={[]} />);
     expect(screen.getByText("About G.O.D.S.")).toBeInTheDocument();
     expect(screen.getByText(/live visual monitoring platform created by Thronix/)).toBeInTheDocument();
     expect(screen.getByText(/not an official warning service/)).toBeInTheDocument();
+  });
+
+  it("carries the integrated ACTIVE FEED at its foot", () => {
+    render(<AboutPanel theme={DEFAULT_THEME} feed={[]} />);
+    expect(screen.getByText("ACTIVE FEED")).toBeInTheDocument();
   });
 });

@@ -18,7 +18,6 @@ import { useAreaForecast } from "../../lib/forecast-client";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { usePagedSlides } from "./PointHistoryPanel";
 import WorldSituationPanel from "./WorldSituationPanel";
-import WorldWatchPanel from "./WorldWatchPanel";
 import WorldReportPanel from "./WorldReportPanel";
 import HazardScreen, { type HazardContinent } from "./HazardScreen";
 import AboutPanel from "./AboutPanel";
@@ -128,25 +127,20 @@ export default function WorldReportDeck({
       />
     );
   } else if (slide === "about") {
-    content = <AboutPanel theme={theme} />;
+    content = <AboutPanel theme={theme} feed={s.feed} />;
   } else {
-    // "detection" — the DETECTION GRID. The ACTIVE FEED that used to stack here
-    // is now appended below every non-category slide (see globalFeed), so it's
-    // consistent across the deck instead of living only on this slide.
+    // "detection" — the DETECTION GRID, with the full global ACTIVE FEED
+    // integrated into its own card (like every other slide).
     content = <WorldSituationPanel worldWatch={s} theme={theme} />;
   }
 
-  // The category slides (alerts/seismic/volcanoes) carry their OWN kind-filtered
-  // ACTIVE FEED inside HazardScreen, and the WORLD REPORT slide now integrates
-  // the full global feed into its own card too — so only detection / about get
-  // the separate ACTIVE FEED card appended below.
-  const ownsFeed =
-    slide === "alerts" || slide === "seismic" || slide === "volcanoes" || slide === "hourly";
+  // Every slide now carries its ACTIVE FEED *inside* its own card — the category
+  // slides a kind-filtered slice (HazardScreen), the rest the full global feed —
+  // so nothing stacks a separate feed card below any more.
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end" }}>
       {content}
-      {!ownsFeed ? <WorldWatchPanel worldWatch={s} theme={theme} /> : null}
       {/* Slide position — a dot per slide so the rotation reads as deliberate. */}
       <div style={{ display: "flex", gap: 6, paddingRight: 4 }}>
         {DECK_SLIDES.map((id, i) => (

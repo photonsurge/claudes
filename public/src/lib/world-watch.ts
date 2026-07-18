@@ -63,8 +63,8 @@ const VOLCANO_FALLBACK_MS = 10 * 60 * 1000;
  * nearest-city flag — kept out of the network-polling effect's deps so passing
  * a fresh array reference each render doesn't trigger a refetch.
  *
- * Called ONCE by BroadcastFrame and threaded down as a prop to both
- * WorldSituationPanel and WorldWatchPanel — they render the same tally from two
+ * Called ONCE by BroadcastFrame and threaded down as a prop to the WORLD REPORT
+ * deck (WorldReportDeck) that renders the tally and its ACTIVE FEED from several
  * angles, so a second independent hook instance would double the (potentially
  * 5000-row) fetch on every mount for no reason. `enabled` defers the cold-start
  * fetch until the globe's own textures are ready (see useGlobeReadyOnce), so it

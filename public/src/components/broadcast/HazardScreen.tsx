@@ -13,7 +13,7 @@
 import type { WorldWatchItem } from "../../lib/broadcast";
 import { accentBorderRight, GLASS_BG, type BroadcastTheme } from "./config";
 import { StatTile, BreakdownChip, MiniBar } from "./worldStat";
-import WorldFeed from "./WorldFeed";
+import FeedSection from "./FeedSection";
 
 export interface HazardContinent {
   name: string;
@@ -143,19 +143,7 @@ export default function HazardScreen({
         </div>
       ) : null}
 
-      <div
-        style={{
-          fontSize: 12.1,
-          fontWeight: 800,
-          letterSpacing: 1.6,
-          color: theme.accent,
-          borderBottom: `2px solid ${theme.accent}55`,
-          paddingBottom: 4,
-        }}
-      >
-        ACTIVE FEED
-      </div>
-      <WorldFeed items={feed} visible={5} emptyLabel={emptyFeedLabel} />
+      <FeedSection feed={feed} theme={theme} emptyLabel={emptyFeedLabel} />
     </div>
   );
 }

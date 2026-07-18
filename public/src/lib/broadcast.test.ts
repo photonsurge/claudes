@@ -14,6 +14,10 @@ import {
   scopeAlertsToBbox,
   scopeQuakesToBbox,
   scopeVolcanoesToBbox,
+  scopeAlertsToRadius,
+  scopeQuakesToRadius,
+  scopeVolcanoesToRadius,
+  EVENT_SCOPE_RADIUS_KM,
   worldWatchSummary,
   worldWatchFeed,
 } from "./broadcast";
@@ -252,6 +256,40 @@ describe("scopeAlertsToBbox / scopeQuakesToBbox", () => {
     const inside = volcano({ id: "in", lng: -9.14, lat: 38.72 });
     const outside = volcano({ id: "out", lng: 2.35, lat: 48.86 });
     expect(scopeVolcanoesToBbox([inside, outside], portugal)).toEqual([inside]);
+  });
+});
+
+describe("scopeAlertsToRadius / scopeQuakesToRadius / scopeVolcanoesToRadius", () => {
+  // Etna (Sicily). ~500km reaches Naples/Tunis but not Rome (~550km) or Athens.
+  const center: [number, number] = [15.0, 37.75];
+
+  it("keeps a quake within the radius and drops one beyond it", () => {
+    const near = quake({ id: "near", lng: 15.6, lat: 38.1 }); // ~60km
+    const far = quake({ id: "far", lng: 23.7, lat: 37.98 }); // Athens, ~765km
+    expect(scopeQuakesToRadius([near, far], center)).toEqual([near]);
+  });
+
+  it("keeps a volcano within the radius and drops one beyond it", () => {
+    const near = volcano({ id: "near", lng: 14.43, lat: 40.82 }); // Vesuvius, ~340km
+    const far = volcano({ id: "far", lng: 25.4, lat: 36.4 }); // Santorini, ~930km
+    expect(scopeVolcanoesToRadius([near, far], center)).toEqual([near]);
+  });
+
+  it("keeps an alert whose rep point is inside and drops geometry-less ones", () => {
+    const near = { ...alert(3), geometry: { type: "Point", coordinates: [15.6, 38.1] } };
+    const far = { ...alert(3), geometry: { type: "Point", coordinates: [23.7, 37.98] } };
+    const noGeo = { ...alert(2), geometry: { type: "Point", coordinates: [] } } as AlertFeature;
+    expect(scopeAlertsToRadius([near, far, noGeo], center)).toEqual([near]);
+  });
+
+  it("honours a custom radius argument", () => {
+    const q = quake({ id: "q", lng: 23.7, lat: 37.98 }); // ~765km away
+    expect(scopeQuakesToRadius([q], center, 100)).toEqual([]);
+    expect(scopeQuakesToRadius([q], center, 1000)).toEqual([q]);
+  });
+
+  it("defaults to the 500km event scope", () => {
+    expect(EVENT_SCOPE_RADIUS_KM).toBe(500);
   });
 });
 

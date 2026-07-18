@@ -222,6 +222,49 @@ export function scopeVolcanoesToBbox(
   return volcanoes.filter((v) => withinBbox(v.lng, v.lat, bbox));
 }
 
+/**
+ * How near a hazard has to be to a framed event to count as "IN VIEW". A single
+ * tracked event (a quake epicentre, an erupting volcano, a storm/aircraft/ship)
+ * has no meaningful area, so its rollup uses a fixed great-circle radius around
+ * the point rather than the camera's rectangular framing — that box grew and
+ * shrank with the zoom, so a tight shot of one volcano still tallied every other
+ * volcano across the whole country. 500km keeps "nearby" honest at broadcast
+ * scale (roughly the local region around the event).
+ */
+export const EVENT_SCOPE_RADIUS_KM = 500;
+
+/** Alerts whose representative point is within `radiusKm` of `center` ([lng,lat]).
+ *  The point-focus cousin of scopeAlertsToBbox — geocode-only alerts with no
+ *  derivable point are dropped (can't be distance-scoped rather than assumed near). */
+export function scopeAlertsToRadius(
+  alerts: AlertFeature[],
+  center: [number, number],
+  radiusKm: number = EVENT_SCOPE_RADIUS_KM,
+): AlertFeature[] {
+  return alerts.filter((a) => {
+    const pt = alertRepPoint(a.geometry);
+    return pt ? haversineKm(center, pt) <= radiusKm : false;
+  });
+}
+
+/** Quakes within `radiusKm` of `center` ([lng,lat]) — see scopeAlertsToRadius. */
+export function scopeQuakesToRadius(
+  quakes: Quake[],
+  center: [number, number],
+  radiusKm: number = EVENT_SCOPE_RADIUS_KM,
+): Quake[] {
+  return quakes.filter((q) => haversineKm(center, [q.lng, q.lat]) <= radiusKm);
+}
+
+/** Volcanoes within `radiusKm` of `center` ([lng,lat]) — see scopeAlertsToRadius. */
+export function scopeVolcanoesToRadius(
+  volcanoes: Volcano[],
+  center: [number, number],
+  radiusKm: number = EVENT_SCOPE_RADIUS_KM,
+): Volcano[] {
+  return volcanoes.filter((v) => haversineKm(center, [v.lng, v.lat]) <= radiusKm);
+}
+
 export interface AreaSummary {
   /** Distinct active alerts in view (de-duped by area + hazard). */
   total: number;

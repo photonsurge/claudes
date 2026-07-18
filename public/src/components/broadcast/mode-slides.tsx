@@ -32,6 +32,7 @@ import CountryPanel from "./CountryPanel";
 import AreaAlertsPanel from "./AreaAlertsPanel";
 import TopCitiesPanel from "./TopCitiesPanel";
 import CityConditionsPanel from "./CityConditionsPanel";
+import CityForecastPanel from "./CityForecastPanel";
 import ForecastPanel from "./ForecastPanel";
 import PointHistoryPanel from "./PointHistoryPanel";
 import DepthProfilePanel from "./DepthProfilePanel";
@@ -403,15 +404,14 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     if (ctx.summaryCountry) {
       slides.push({ id: "nation", node: <CountryPanel country={ctx.summaryCountry} color={color} theme={ctx.theme} /> });
     }
-    if (ctx.wideCitiesBbox && ctx.wideCitiesHasForecast) {
-      slides.push({ id: "forecast", node: <ForecastPanel center={null} bbox={ctx.wideCitiesBbox} theme={ctx.theme} /> });
-    }
     if (ctx.areaAlerts.length) {
       slides.push({ id: "alerts", node: <AreaAlertsPanel alerts={ctx.areaAlerts} color={color} theme={ctx.theme} /> });
     }
     if (ctx.wideCitiesBbox) {
       slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
-      slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.wideCitiesBbox} color={color} /> });
+      // The area weather slide: the framed nation's top-5 cities, each with its
+      // live NOW temp + 3-day strip (replaces the old single country-wide aggregate).
+      slides.push({ id: "forecast", node: <CityForecastPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     }
     if (ctx.roundup) {
       slides.push({
@@ -474,10 +474,8 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
       });
     });
     slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
-    slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.wideCitiesBbox} color={color} /> });
-    if (ctx.wideCitiesHasForecast) {
-      slides.push({ id: "forecast", node: <ForecastPanel center={null} bbox={ctx.wideCitiesBbox} theme={ctx.theme} /> });
-    }
+    // Area weather: the region's top-5 cities, each with NOW temp + 3-day strip.
+    slides.push({ id: "forecast", node: <CityForecastPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     slides.push(...contextSlides(ctx));
     return slides;
   }
@@ -494,10 +492,9 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
       slides.push({ id: "place-roundup", node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} theme={ctx.theme} /> });
     }
     slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
-    slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.wideCitiesBbox} color={color} /> });
-    if (ctx.wideCitiesHasForecast) {
-      slides.push({ id: "forecast", node: <ForecastPanel center={null} bbox={ctx.wideCitiesBbox} theme={ctx.theme} /> });
-    }
+    // Area weather: the framed nation's top-5 cities, each with NOW temp + 3-day
+    // strip — replaces the meaningless single country-wide aggregate forecast.
+    slides.push({ id: "forecast", node: <CityForecastPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     slides.push(...contextSlides(ctx));
     return slides;
   }

@@ -1,23 +1,23 @@
 "use client";
 
 /**
- * Top-right "WORLD WATCH" situation summary — the always-on, whole-planet
- * tally: hero ALERTS/QUAKES totals, the severity/magnitude breakdown behind
- * each, and a per-continent composition graph (alerts | quakes side by side,
- * each its own colour ramp and scale). A separate, bigger card from the
- * scrolling ACTIVE FEED (see WorldWatchPanel) that sits below it — the tally
- * is the "how much/how bad" headline, the feed is the "which ones" detail, and
- * they read better as two distinct blocks than one crowded card. Deliberately
+ * DETECTION GRID situation summary — the always-on, whole-planet tally: hero
+ * ALERTS/QUAKES/VOLCANIC totals, the severity/magnitude breakdown behind each,
+ * and a per-continent composition graph (alerts | quakes | volcanoes side by
+ * side, each its own colour ramp and scale). The scrolling ACTIVE FEED rides
+ * integrated at the card's foot (see FeedSection) — the tally is the "how
+ * much/how bad" headline, the feed the "which ones" detail. Deliberately
  * independent of the operator's show-alerts/seismic toggles and the camera
  * bbox (see useWorldWatch). Pointer-inert like the rest of the chrome.
  *
  * Takes the shared tally as a prop rather than calling useWorldWatch itself —
- * BroadcastFrame fetches it once and hands the same result to this AND
- * WorldWatchPanel, so the (potentially 5000-row) global fetch never doubles up.
+ * BroadcastFrame fetches it once so the (potentially 5000-row) global fetch
+ * never doubles up.
  */
 import type { WorldWatchState } from "../../lib/world-watch";
 import { accentBorderRight, GLASS_BG, DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { StatTile, BreakdownChip, MiniBar } from "./worldStat";
+import FeedSection from "./FeedSection";
 
 /** One "Asia [alerts bar] 129  [quakes bar] 63  [volcanoes bar] 2" row — three
  *  side-by-side mini graphs (alerts | quakes | volcanoes), each its own colour
@@ -252,6 +252,8 @@ export default function WorldSituationPanel({
           ))}
         </div>
       ) : null}
+
+      <FeedSection feed={s.feed} theme={theme} visible={4} />
     </div>
   );
 }
