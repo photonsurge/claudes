@@ -15,6 +15,9 @@ const MAX_LIMIT = 30;
  * query shapes, both feeding the on-air weather slides:
  *   • `?bbox=west,south,east,north&limit=10` — the biggest cities inside the
  *     framed area, population-ranked (the "CITY CONDITIONS" spotlight slide).
+ *   • `?cc=GB&limit=8` — the biggest cities in a COUNTRY (by ISO code), the
+ *     country-spotlight read that scopes by country instead of a bbox (so a
+ *     nation's own cities show, not a neighbour's that fell in the frame).
  *   • `?ids=cityId,cityId,…` — weather for a specific set of cities, used to add
  *     forecasts to the distance-ranked "nearest cities" of a quake / volcano.
  * Empty (not an error) without a valid selector — the slide just hides itself.
@@ -30,6 +33,18 @@ async function GET__impl(req: Request) {
     }
     const db = await getAppDb();
     const rows = await db.cityWeather.manyByCityIds(ids);
+    return NextResponse.json({ cities: rows.map(toCityCondition), count: rows.length }, { status: 200, headers: NO_CACHE });
+  }
+
+  const cc = sp.get("cc");
+  if (cc != null) {
+    const code = cc.trim();
+    if (!code) {
+      return NextResponse.json({ cities: [] }, { status: 200, headers: NO_CACHE });
+    }
+    const limit = Math.min(Math.max(Number(sp.get("limit")) || DEFAULT_LIMIT, 1), MAX_LIMIT);
+    const db = await getAppDb();
+    const rows = await db.cityWeather.topByCc(code, limit);
     return NextResponse.json({ cities: rows.map(toCityCondition), count: rows.length }, { status: 200, headers: NO_CACHE });
   }
 

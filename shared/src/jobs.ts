@@ -4,6 +4,7 @@
  * routed to `worker/src/jobs/<type>.ts#<event>`. Keep this an allowlist so the
  * admin can only enqueue known, safe jobs.
  */
+import { BASEMAP_TEXTURES } from "./basemaps";
 /**
  * The human label for a queued job: "alerts.ingest:wmo".
  *
@@ -107,6 +108,37 @@ const WEATHER_MAP_JOBS: TriggerableJob[] = (
   group: "Weather maps",
 }));
 
+/**
+ * Basemap base-image refreshes — one button per full-globe texture plus an "all".
+ * Each downloads the texture, validates it FULLY decodes (the guard that would
+ * have caught the truncated satellite.jpg), and writes it to the shared ${BLOB_DIR}
+ * store, which /api/basemap/[id] serves in place of the read-only /data file. So a
+ * corrupt or stale base image is now fixable from /admin/jobs without a redeploy.
+ */
+const BASEMAP_JOBS: TriggerableJob[] = [
+  ...BASEMAP_TEXTURES.map((t) => ({
+    id: `basemap-refresh-${t.id}`,
+    label: `Refresh basemap: ${t.label}`,
+    description: `Download the ${t.label} full-globe base image (${t.source}), verify it decodes, and store it in the shared blob store served under the raster basemap. Fixes a corrupt/stale zoomed-out globe without a redeploy.`,
+    domain: "basemap",
+    type: "basemap",
+    event: "refresh",
+    group: "Basemap textures",
+    data: { texture: t.id },
+  })),
+  {
+    id: "basemap-refresh-all",
+    label: "Refresh ALL basemap textures",
+    description:
+      "Re-download and validate every full-globe base image (Satellite, Terrain, Night) into the shared blob store. Each is fetched independently — one bad upstream doesn't sink the rest.",
+    domain: "basemap",
+    type: "basemap",
+    event: "refresh",
+    group: "Basemap textures",
+    data: { texture: "all" },
+  },
+];
+
 export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   {
     id: "weather-check",
@@ -158,6 +190,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     event: "refresh",
     group: "Satellite imagery",
   },
+  ...BASEMAP_JOBS,
   {
     id: "climate-backfill",
     label: "Backfill city climate (past year, all ≥100k)",
@@ -430,6 +463,17 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Alerts & events",
   },
   {
+    id: "alerts-population",
+    label: "Recount people under alerts",
+    description:
+      "Recompute the \"people under this warning\" estimate for every active alert from scratch — the summed population of the catalogued cities inside each one's footprint. The scheduled reconcile already refreshes this incrementally whenever an alert's shape changes (a new bulletin, or a polygon backfilled), so this button is for the case that can't notice: the CITIES dataset changing underneath — a reseed, a denser tier, or the one-time city geo-index (loc) backfill (until that runs, every count reads zero). Cities-based ESTIMATE, not a census. Idempotent; safe to re-run. Heavy first pass (one indexed lookup per alert).",
+    domain: "alerts",
+    type: "alerts",
+    event: "population",
+    data: { force: true },
+    group: "Alerts & events",
+  },
+  {
     id: "alert-blobs-rebuild",
     label: "Merge neighbouring alert areas",
     description:
@@ -676,6 +720,15 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "countries",
     type: "countries",
     event: "enrichWiki",
+    group: "Countries & Regions",
+  },
+  {
+    id: "countries-tours",
+    label: "Compute country tours",
+    description: "Recompute each country's spotlight camera tour (population-weighted centre + biggest city per compass sector) from its own cities. Run after seeding countries & cities.",
+    domain: "countries",
+    type: "countries",
+    event: "computeTours",
     group: "Countries & Regions",
   },
   {

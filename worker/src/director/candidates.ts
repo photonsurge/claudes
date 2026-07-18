@@ -33,8 +33,9 @@ import {
   ORBITAL_VIEW_ZOOM,
   ORBITAL_VIEWS,
 } from "@photonsurge/shared/director-rois";
-import { countryShot } from "@photonsurge/shared/director-countries";
+import { countryShot, type CountryShot } from "@photonsurge/shared/director-countries";
 import { regionShot } from "@photonsurge/shared/director-regions";
+import type { iCountryModel } from "@photonsurge/shared/db/country-model";
 import { adMediaPath } from "@photonsurge/shared/ads/types";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
@@ -221,20 +222,87 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
       });
     }
   }
-  if (cfg.kinds.country) {
-    // The operator's favourite countries (DirectorConfig.countries) — one
-    // spotlight candidate each; unknown ids (stale config) are just skipped.
-    for (const id of cfg.countries) {
-      const c = countryShot(id);
-      if (!c) continue;
-      const seg = make("country", c.id, c.name, "Country spotlight · National weather", c.center, c.zoom, kindHoldMs(cfg, "country"), cfg);
-      seg.icon = c.flag;
-      out.push({ score: 6, segment: seg });
-    }
+  // Country ("national") + Region ("area") spotlights both need a DB read now —
+  // their tour stops come from the precomputed city dossiers — so they're built
+  // in the async countryCandidates / regionCandidates below, not here.
+  return out;
+}
+
+/** How many stops a country spotlight tours at most (the establishing centre
+ *  shot + one city per compass sector). Sized so the hold stays a few minutes. */
+const COUNTRY_TOUR_STOPS = 8;
+
+/**
+ * The camera stops a `country` spotlight tours — the country's OWN cities, from
+ * the precomputed `tourCities` dossier (worker `countries.computeTours`, scoped
+ * by `cc`, spread one-per-compass-sector). The tour OPENS on a wide establishing
+ * "middle of the country" stop (the population-weighted centroid at the frame
+ * zoom) so it reads as "here's the nation" before sweeping its cities. Empty when
+ * the country hasn't been computed yet — the caller then airs one framed
+ * spotlight instead. The whole country glows throughout (activeCountryIso keys
+ * `country` shots off the curated ISO), so stops don't need per-stop glow.
+ */
+function countryTourStops(doc: iCountryModel, shot: CountryShot): SegmentSummaryStop[] {
+  const cities = doc.tourCities ?? [];
+  if (!cities.length) return [];
+  const iso2 = shot.iso2 || doc.iso2 || undefined;
+  const stops: SegmentSummaryStop[] = [];
+  // Establishing wide shot the tour starts on — "start in the middle".
+  if (doc.tourCentroid && doc.tourFrame) {
+    stops.push({
+      label: shot.name,
+      subtitle: "National weather",
+      lng: doc.tourCentroid[0],
+      lat: doc.tourCentroid[1],
+      zoom: doc.tourFrame.zoom,
+      iso2,
+    });
   }
-  // Region ("area") candidates need a DB read (their tour stops come from the
-  // cities inside the bbox), so they're built in the async regionCandidates
-  // below rather than here.
+  for (const c of cities.slice(0, COUNTRY_TOUR_STOPS - stops.length)) {
+    stops.push({ label: c.name, subtitle: shot.name, lng: c.lng, lat: c.lat, iso2 });
+  }
+  return stops;
+}
+
+/**
+ * Operator-favourite country spotlights. Each airs as a "go round the nation"
+ * tour when its precomputed `tourCities` dossier exists (the client flies the
+ * camera to each city, showing its weather), else falls back to the curated
+ * single framed shot — so a country the tour job hasn't reached yet still airs,
+ * exactly as before. Unknown ids (stale config) are skipped. Mirrors
+ * regionCandidates.
+ */
+async function countryCandidates(db: AppDb, cfg: DirectorConfig): Promise<Candidate[]> {
+  if (!cfg.kinds.country) return [];
+  const out: Candidate[] = [];
+  const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
+  for (const id of cfg.countries) {
+    const shot = countryShot(id);
+    if (!shot) continue;
+    // The computed dossier lives on the Country doc keyed by iso2-lowercased.
+    // A missing/erroring catalog just means the curated fallback shot — fillers
+    // must never throw the show off the air.
+    let doc: iCountryModel | null = null;
+    try {
+      doc = await db.countries.get(shot.iso2.toLowerCase());
+    } catch {
+      doc = null;
+    }
+    const stops = doc ? countryTourStops(doc, shot) : [];
+    // Frame on the computed tour frame when we have one, else the curated shot.
+    const center = doc?.tourFrame?.center ?? shot.center;
+    const zoom = doc?.tourFrame?.zoom ?? shot.zoom;
+    // Size the hold to fly every stop (flight + dwell), floored by the operator's
+    // per-kind minimum — no cap, or the tour cuts away mid-way (as region does).
+    const holdMs = stops.length
+      ? Math.max(kindHoldMs(cfg, "country"), stops.length * (transitionMs + SUMMARY_STOP_DWELL_MS))
+      : kindHoldMs(cfg, "country");
+    const subtitle = stops.length ? "Country tour · National weather" : "Country spotlight · National weather";
+    const seg = make("country", shot.id, shot.name, subtitle, center, zoom, holdMs, cfg);
+    seg.icon = shot.flag;
+    if (stops.length) seg.tourStops = stops;
+    out.push({ score: 6, segment: seg });
+  }
   return out;
 }
 
@@ -485,7 +553,9 @@ export async function buildCandidates(
   // `global` kind is airing at all.
   if (cfg.kinds.global) pool.push(...(await summaryCandidates(db, cfg, seenCounts)));
 
-  // Areas (region tours) — each favourite region flies round its biggest cities.
+  // Country spotlights (national tours) + Areas (region tours) — each favourite
+  // flies round its precomputed biggest cities.
+  pool.push(...(await countryCandidates(db, cfg)));
   pool.push(...(await regionCandidates(db, cfg)));
 
   // Notable-tracks catalog (enabled) — matched by `${kind}:${code}` to boost the

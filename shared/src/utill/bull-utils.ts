@@ -59,6 +59,7 @@ const BACKGROUND_TYPES = new Set<string>([
   "geomag", // magnetic-field raster bake
   "areaWeather", // polygon-masked area weather
   "climate", // all-city climate backfill
+  "basemap", // full-globe basemap texture download + full-decode validation (sharp)
 ]);
 
 const FOREGROUND_TYPES = new Set<string>([

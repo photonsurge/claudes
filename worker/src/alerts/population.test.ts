@@ -177,6 +177,23 @@ describe("resyncAlertPopulations", () => {
     expect(writes).toEqual([]);
   });
 
+  it("force recounts everything even when the signature still matches", async () => {
+    const candidates: PopulationCandidate[] = [
+      { id: "a", sent: "T1", info: [{ area: [{ areaDesc: "Kraków", geometry: { type: "Polygon" } }] }] },
+    ];
+    const { deps, writes } = makeDeps(candidates, [city("1", 500_000)]);
+
+    await resyncAlertPopulations(deps); // seeds the signature
+    writes.length = 0;
+
+    // No footprint change → incremental is a no-op, but force ignores the gate
+    // (the cities dataset may have changed underneath the unchanged signature).
+    expect((await resyncAlertPopulations(deps)).recomputed).toBe(0);
+    const forced = await resyncAlertPopulations(deps, { force: true });
+    expect(forced).toEqual({ scanned: 1, recomputed: 1, cleared: 0, unchanged: 0 });
+    expect(writes).toEqual([{ id: "a", population: 500_000, cityCount: 1 }]);
+  });
+
   it("recomputes an alert once its geometry is backfilled", async () => {
     const candidates: PopulationCandidate[] = [
       { id: "a", sent: "T1", info: [{ area: [{ areaDesc: "Kraków", geometry: null }] }] },

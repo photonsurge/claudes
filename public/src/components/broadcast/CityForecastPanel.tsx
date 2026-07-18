@@ -14,7 +14,7 @@
  * stage; self-hides when the cache has no readings for the area yet.
  */
 import { useEffect, useState } from "react";
-import { listCityConditions, formatPopulation, type CityCondition } from "../../lib/cities";
+import { listCityConditions, listCityConditionsByCc, formatPopulation, type CityCondition } from "../../lib/cities";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 import { formatReading } from "./PointHistoryPanel";
 import { DayChip } from "./CityForecastStrip";
@@ -55,9 +55,13 @@ function CityRow({ city, color }: { city: CityCondition; color: string }) {
 
 export default function CityForecastPanel({
   bbox,
+  cc,
   color = "#3f8f8f",
 }: {
   bbox: [number, number, number, number];
+  /** A country spotlight passes its ISO code so the five cities are the
+   *  country's OWN biggest (by `cc`), not whatever fell inside the bbox. */
+  cc?: string;
   color?: string;
 }) {
   const [cities, setCities] = useState<CityCondition[]>([]);
@@ -67,14 +71,15 @@ export default function CityForecastPanel({
 
   useEffect(() => {
     let cancelled = false;
-    listCityConditions(bbox, CITY_LIMIT).then((res) => {
+    const p = cc ? listCityConditionsByCc(cc, CITY_LIMIT) : listCityConditions(bbox, CITY_LIMIT);
+    p.then((res) => {
       if (!cancelled) setCities(res);
     });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roundedBbox]);
+  }, [roundedBbox, cc]);
 
   // Only cities that actually carry a live reading earn a row; hide the whole
   // slide when the per-city cache has nothing yet for this area.

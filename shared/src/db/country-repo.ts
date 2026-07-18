@@ -1,6 +1,6 @@
 import type { Model } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
-import type { iCountry, iCountryModel } from "./country-model";
+import type { iCountry, iCountryModel, iCountryTourCity } from "./country-model";
 
 const strip = (doc: any): iCountryModel => {
   const { __v, _id, ...rest } = doc;
@@ -85,6 +85,20 @@ export function makeCountryRepo(model: Model<iCountryModel>) {
         population?: number;
         capital?: string;
         currency?: string;
+      },
+    ): Promise<void> {
+      await model.updateOne({ countryId }, { $set: patch }).exec();
+    },
+
+    /** Patch the precomputed spotlight-tour dossier onto one country by
+     *  `countryId` (worker: `countries.computeTours`). */
+    async updateTour(
+      countryId: string,
+      patch: {
+        tourCentroid?: [number, number];
+        tourCities?: iCountryTourCity[];
+        tourFrame?: { center: [number, number]; zoom: number };
+        tourComputedAt?: Date;
       },
     ): Promise<void> {
       await model.updateOne({ countryId }, { $set: patch }).exec();

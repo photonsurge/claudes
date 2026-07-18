@@ -87,6 +87,25 @@ export function makeCityWeatherRepo(model: Model<iCityWeatherModel>) {
       return docs.map(strip);
     },
 
+    /**
+     * The `limit` biggest cities in a country (ISO-3166 alpha-2 `cc`),
+     * population-ranked, each with its cached `current` + `daily` — the country
+     * spotlight's "CITY CONDITIONS" / "3-DAY FORECAST" read. Scoping by `cc`
+     * (not the framed bbox) is what keeps a country's own cities in and its
+     * neighbours out. Matches either catalog casing of the code.
+     */
+    async topByCc(cc: string, limit: number): Promise<iCityWeatherModel[]> {
+      const code = cc.trim();
+      if (!code || limit <= 0) return [];
+      const docs = await model
+        .find({ cc: { $in: [code.toLowerCase(), code.toUpperCase()] } })
+        .sort({ population: -1 })
+        .limit(Math.floor(limit))
+        .lean()
+        .exec();
+      return docs.map(strip);
+    },
+
     async get(cityId: string): Promise<iCityWeatherModel | null> {
       const doc = await model.findOne({ cityId }).lean().exec();
       return doc ? strip(doc) : null;

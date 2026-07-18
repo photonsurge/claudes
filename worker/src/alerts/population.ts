@@ -136,8 +136,17 @@ export async function populationOfGeometries(
  * every signature already current, and returns all-`unchanged`. The cost only
  * lands on new alerts and on ones whose polygons were just backfilled — which is
  * exactly when the count is wrong and worth paying for.
+ *
+ * `force` recomputes EVERY alert regardless of signature — the admin "recount"
+ * button. The signature tracks an alert's own footprint, not the cities dataset
+ * underneath it, so a city reseed / a late `loc` backfill leaves every count
+ * stale with no signature change to notice. Force is the only way to pick that
+ * up (mirrors the alert-blobs full-rebuild button).
  */
-export async function resyncAlertPopulations(deps: PopulationDeps): Promise<PopulationSyncResult> {
+export async function resyncAlertPopulations(
+  deps: PopulationDeps,
+  opts: { force?: boolean } = {},
+): Promise<PopulationSyncResult> {
   const candidates = await deps.alerts.populationCandidates();
   const result: PopulationSyncResult = {
     scanned: candidates.length,
@@ -148,7 +157,7 @@ export async function resyncAlertPopulations(deps: PopulationDeps): Promise<Popu
 
   for (const a of candidates) {
     const sig = populationSig(a);
-    if (a.populationSig === sig) {
+    if (!opts.force && a.populationSig === sig) {
       result.unchanged++;
       continue;
     }

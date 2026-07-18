@@ -2,9 +2,10 @@
 
 /**
  * Basemap layer builders for the deck.gl GlobeView. Kept out of Globe.tsx so the
- * component stays a thin orchestrator. Assets are served locally from /data (see
- * ./fetch-assets.sh): a 4k plate-carrée image base for raster basemaps, plus
- * Natural Earth land/borders GeoJSON for the dark vector basemap.
+ * component stays a thin orchestrator. The full-globe raster base images come from
+ * /api/basemap/<id> (the shared blob store, refreshable from /admin/jobs, with a
+ * static /data fallback); Natural Earth land/borders GeoJSON for the dark vector
+ * basemap is still served locally from /data (see ./fetch-assets.sh).
  */
 import { BitmapLayer, GeoJsonLayer, SolidPolygonLayer } from "@deck.gl/layers";
 import { TileLayer } from "@deck.gl/geo-layers";
@@ -15,9 +16,13 @@ import { DEPTH_OCCLUDE, DEPTH_TEST, DEPTH_PAINT } from "./depth";
 
 export const LAND_URL = "/data/land.geojson";
 export const COUNTRIES_URL = "/data/countries.geojson";
-export const SATELLITE_IMG = "/data/satellite.jpg";
-export const TERRAIN_IMG = "/data/terrain.jpg";
-export const NIGHT_IMG = "/data/night.jpg";
+// Full-globe base images served from the shared blob store, refreshable from
+// /admin/jobs (worker `basemap.refresh`). The route falls back to the static
+// /data/<id>.jpg deploy-time file until the first bake — see
+// public/src/app/api/basemap/[id]/route.ts and shared/src/basemaps.ts.
+export const SATELLITE_IMG = "/api/basemap/satellite";
+export const TERRAIN_IMG = "/api/basemap/terrain";
+export const NIGHT_IMG = "/api/basemap/night";
 
 /** View zoom at/above which sharp XYZ tiles overlay the base image. Below this
  *  the tiles would be large flat quads chording the sphere (black artifacts). */

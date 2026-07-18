@@ -131,6 +131,10 @@ export interface ModeSlideContext {
   /** Set for a country spotlight (or other wide framed shot) — enables the TOP
    *  CITIES + top-5 city-forecast slides (bbox the framed area was scoped to). */
   wideCitiesBbox?: [number, number, number, number];
+  /** A country spotlight's ISO code — scopes the CITIES / FORECAST slides to the
+   *  nation's own cities (by `cc`), not whatever fell inside `wideCitiesBbox`.
+   *  Absent on region / round-up shots, which span countries and keep the bbox. */
+  wideCitiesCc?: string;
   /** Focus point / framed bbox for the WEATHER (forecast) + CURRENT & RECENT
    *  (AREA HISTORY) + ocean-depth slides. Folded into the deck so the left
    *  column is ONE rotating card per mode instead of a tall stack. */
@@ -498,7 +502,9 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
     // Area weather: the framed nation's top-5 cities, each with NOW temp + 3-day
     // strip — replaces the meaningless single country-wide aggregate forecast.
-    slides.push({ id: "forecast", node: <CityForecastPanel bbox={ctx.wideCitiesBbox} color={color} /> });
+    // `wideCitiesCc` (country shots) scopes to the nation's own cities by ISO
+    // code; TopCitiesPanel gets the same scoping server-side via the focus bundle.
+    slides.push({ id: "forecast", node: <CityForecastPanel bbox={ctx.wideCitiesBbox} cc={ctx.wideCitiesCc} color={color} /> });
     slides.push(...contextSlides(ctx));
     return slides;
   }

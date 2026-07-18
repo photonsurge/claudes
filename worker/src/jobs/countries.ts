@@ -4,6 +4,7 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import { simplifyRing, type Point } from "@photonsurge/shared/geo/simplify";
 import { fetchWikiSummary, fetchWikiGallery } from "@photonsurge/shared/utill/wikipedia";
 import { fetchCountryFacts } from "@photonsurge/shared/utill/wikidata";
+import { computeCountryTour, type TourCityInput } from "@photonsurge/shared/director-country-tour";
 import { log } from "@photonsurge/shared/utill/logger";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 import { summarizeForLog } from "../utils";
@@ -228,6 +229,92 @@ export async function enrichWiki(job: Job) {
   } catch (err) {
     log(TAG, "enrichWiki failed", summarizeForLog(err));
     blogErr(TAG, "country wiki enrichment failed", err, "countries", "enrich");
+    throw err;
+  }
+}
+
+// ── Spotlight tour dossier: centre + spread-out waypoint cities ─────────────
+// Precompute each country's `country`-spotlight camera tour from its OWN cities
+// (queried by `cc`, never a coarse bbox) — the population-weighted centre plus
+// the biggest city per compass sector. Pure local Mongo maths (no external
+// calls); the director reads the stored dossier so no per-cut geo query runs.
+// Like the other catalog work it's operator-triggered (yarn tours:countries or
+// the /admin button), not a cron — a country's cities barely move.
+
+/** Cap on cities pulled per country before the sector-picking maths (biggest
+ *  first) — keeps a dense country (China/India) from loading tens of thousands
+ *  of rows just to pick ~6. Well above any sector count. */
+const TOUR_CITY_QUERY_LIMIT = 500;
+
+/** Recompute the spotlight tour dossier for every country that has cities. */
+export async function runCountryTours(): Promise<{ countries: number; withTour: number; noCities: number }> {
+  const db = await getAppDb();
+  const countries = await db.countries.list();
+  log(TAG, `computeTours ${countries.length} countries`);
+
+  let withTour = 0;
+  let noCities = 0;
+  for (const c of countries) {
+    const cc = (c.iso2 || c.countryId || "").toLowerCase();
+    if (!cc) {
+      noCities++;
+      continue;
+    }
+    // Cities in this country, either catalog casing, biggest first.
+    const ccVariants = [cc, cc.toUpperCase()];
+    const cityDocs = await db.cities.model
+      .find({ cc: { $in: ccVariants } }, { id: 1, name: 1, cc: 1, lat: 1, lng: 1, population: 1, _id: 0 })
+      .sort({ population: -1 })
+      .limit(TOUR_CITY_QUERY_LIMIT)
+      .lean()
+      .exec();
+
+    const input: TourCityInput[] = cityDocs.map((d: any) => ({
+      cityId: d.id,
+      name: d.name,
+      cc: d.cc,
+      lat: d.lat,
+      lng: d.lng,
+      population: d.population ?? 0,
+    }));
+
+    const tour = computeCountryTour(input);
+    if (!tour) {
+      noCities++;
+      // Clear any stale dossier so a country that lost its cities stops touring.
+      await db.countries.updateTour(c.countryId, { tourCentroid: undefined, tourCities: [], tourFrame: undefined, tourComputedAt: new Date() });
+      continue;
+    }
+
+    await db.countries.updateTour(c.countryId, {
+      tourCentroid: tour.centroid,
+      tourCities: tour.cities,
+      tourFrame: tour.frame,
+      tourComputedAt: new Date(),
+    });
+    withTour++;
+  }
+
+  const result = { countries: countries.length, withTour, noCities };
+  log(TAG, "computeTours done", result);
+  blogInfo(
+    TAG,
+    `country tours: ${withTour}/${countries.length} with a tour (${noCities} no cities)`,
+    result,
+    "countries",
+    "tours",
+  );
+  if (withTour > 0) emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "countries", count: withTour } });
+  return result;
+}
+
+/** Job handler: `countries.computeTours`. */
+export async function computeTours(_job: Job) {
+  try {
+    return await runCountryTours();
+  } catch (err) {
+    log(TAG, "computeTours failed", summarizeForLog(err));
+    blogErr(TAG, "country tours failed", err, "countries", "tours");
     throw err;
   }
 }

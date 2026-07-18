@@ -175,6 +175,25 @@ export async function reconcile(_job: Job) {
 }
 
 /**
+ * Dispatched as type "alerts", event "population". Recompute the cities-based
+ * "people under this warning" estimate for the whole active set.
+ *
+ * The scheduled reconcile already does this incrementally (only alerts whose
+ * footprint changed), so the admin button carries `force: true` and recounts
+ * EVERYTHING — the one thing the signature-gate can't do on its own, because the
+ * signature tracks an alert's polygon, not the cities dataset beneath it. Use it
+ * after a city reseed / denser tier, or the one-time `loc` geo-index backfill
+ * (until that lands, every count reads zero — see the cities geo-index note).
+ */
+export async function population(job: Job) {
+  const db = await getAppDb();
+  const force = job?.data?.data?.force === true;
+  const result = await resyncAlertPopulations(db, { force });
+  log(TAG, `population resync done`, { force, ...result });
+  return result;
+}
+
+/**
  * Capture a GIBS satellite still over the bbox of interesting active alerts
  * (severe+, with drawable geometry, capped). Dispatched as type "alerts", event
  * "snapshotSatellite": with `data.alertId` it snapshots just that alert (the

@@ -454,6 +454,12 @@ export default function BroadcastFrame({
       onAirSegment.summary != null)
       ? areaBbox
       : undefined;
+  // A COUNTRY spotlight additionally scopes its cities by ISO code, so the CITIES
+  // / FORECAST slides show the nation's own biggest cities rather than whatever
+  // fell inside the (mainland-only, unscoped) bbox — the neighbour-bleed fix.
+  // Region + round-up shots span countries, so they keep the bbox scoping.
+  const wideCitiesCc =
+    wideCitiesBbox && onAirSegment?.kind === "country" ? countryOnAir?.iso2 : undefined;
   // Focus point + framed bbox for the WEATHER (forecast) and CURRENT & RECENT
   // (AREA HISTORY) context slides — the on-air centre, or the operator camera
   // when the segment carries none; null on shots with no real ground location.
@@ -507,6 +513,7 @@ export default function BroadcastFrame({
         areaVolcanoes,
         world: worldwide ? worldWatch : null,
         wideCitiesBbox,
+        wideCitiesCc,
         histCenter,
         histBbox,
         segmentHasLocation,

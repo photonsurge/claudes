@@ -270,6 +270,27 @@ export async function listCityConditionsByIds(ids: string[]): Promise<CityCondit
   });
 }
 
+/** The biggest cities in a COUNTRY (ISO-3166 alpha-2 `cc`) with their now +
+ *  3-day forecast — the country-spotlight variant of listCityConditions that
+ *  scopes by country code instead of a bbox, so neighbours that fall in the
+ *  frame don't leak in. Empty on any error — the slide degrades to hidden. */
+export async function listCityConditionsByCc(cc: string, limit = 10): Promise<CityCondition[]> {
+  const code = cc.trim();
+  if (!code) return [];
+  const q = new URLSearchParams({ cc: code, limit: String(limit) });
+  const url = `/api/cities/weather?${q.toString()}`;
+  return coalesce(url, async () => {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) return [] as CityCondition[];
+      const json = await res.json();
+      return (json?.cities ?? []) as CityCondition[];
+    } catch {
+      return [] as CityCondition[];
+    }
+  });
+}
+
 /** Server-paged city registry for the operator table; globe callers keep using listCities. */
 export async function listCitiesPage(opts: ListCitiesPageOptions): Promise<CitiesPageResult> {
   const q = new URLSearchParams({

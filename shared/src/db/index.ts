@@ -159,6 +159,7 @@ export const BLOB_NAMESPACES: Record<string, { label: string; desc: string }> = 
   "alert-snapshot": { label: "Alert snapshots", desc: "Satellite/compare/camera stills per alert." },
   "event-snapshot": { label: "Event snapshots", desc: "Stills attached to unified watched events." },
   "volcano-media": { label: "Volcano media", desc: "Photos enriched onto the volcano catalog." },
+  basemap: { label: "Basemap textures", desc: "Full-globe base images (Blue Marble / topo / night) refreshed from /admin/jobs." },
 };
 
 export function createDb(conn: Connection) {
@@ -209,6 +210,13 @@ export function createDb(conn: Connection) {
         ns: "forecast-frame",
       }),
     ),
+    // Full-globe basemap base images (Blue Marble / topo / night). No metadata
+    // collection — a bare key→bytes store keyed by texture id ("satellite" …),
+    // written by the worker `basemap.refresh` job and read by /api/basemap/[id].
+    basemapTextures: makeBlobStore(getBlobModel(conn, "BasemapTextureData"), {
+      fs: blobFs,
+      ns: "basemap",
+    }),
     climateYears: makeClimateYearRepo(getClimateYearModel(conn)),
     cities: mongoCrud(getCityModel(conn)),
     cityWeather: makeCityWeatherRepo(getCityWeatherModel(conn)),

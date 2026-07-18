@@ -81,6 +81,13 @@ function fakeDb(over: Partial<Record<string, any>> = {}): AppDb {
           ],
         },
     },
+    countries: {
+      // Country spotlights read the precomputed tour dossier off the Country doc,
+      // keyed by iso2-lowercased. Default: no dossier (null) so a favourite airs
+      // as the curated single framed shot — pass `over.countries` (a map keyed by
+      // countryId) to give a country a computed tour.
+      get: async (countryId: string) => (over.countries ?? {})[countryId] ?? null,
+    },
   } as unknown as AppDb;
 }
 
@@ -182,6 +189,46 @@ describe("buildCandidates", () => {
     const pool = await buildCandidates(fakeDb(), cfg({ countries: ["france", "atlantis"] }));
     const ids = pool.filter((c) => c.segment.kind === "country").map((c) => c.segment.id);
     expect(ids).toEqual(["country:france"]);
+  });
+
+  it("flies a country's precomputed city tour — opening on a wide establishing centre", async () => {
+    const pool = await buildCandidates(
+      fakeDb({
+        countries: {
+          // Keyed by countryId (iso2-lowercased); UK's curated shot has iso2 "GB".
+          gb: {
+            countryId: "gb",
+            iso2: "GB",
+            tourCentroid: [-2.0, 53.5],
+            tourFrame: { center: [-2.0, 54.0], zoom: 4.4 },
+            tourCities: [
+              { name: "London", cc: "gb", lng: -0.13, lat: 51.5, population: 8_900_000, sector: 4 },
+              { name: "Glasgow", cc: "gb", lng: -4.25, lat: 55.86, population: 600_000, sector: 0 },
+            ],
+          },
+        },
+      }),
+      cfg({ countries: ["uk"] }),
+    );
+    const uk = pool.find((c) => c.segment.id === "country:uk")!.segment;
+    expect(uk.subtitle).toBe("Country tour · National weather");
+    // Establishing centre stop first (wide, carries the frame zoom), then cities.
+    expect(uk.tourStops?.[0]).toMatchObject({ label: "United Kingdom", lng: -2.0, lat: 53.5, zoom: 4.4, iso2: "GB" });
+    expect(uk.tourStops?.slice(1).map((s) => s.label)).toEqual(["London", "Glasgow"]);
+    // City stops carry no per-stop zoom (default flyer zoom applies).
+    expect(uk.tourStops?.[1].zoom).toBeUndefined();
+    // The segment frames on the computed tour frame, and holds long enough to fly
+    // every stop rather than the bare per-kind minimum.
+    expect(uk.camera).toEqual({ center: [-2.0, 54.0], zoom: 4.4 });
+    expect(uk.holdMs).toBeGreaterThan(uk.tourStops!.length * 40_000);
+  });
+
+  it("falls back to a single framed spotlight when a favourite has no computed tour", async () => {
+    // No dossier for Japan → the curated framed shot, no tour stops.
+    const pool = await buildCandidates(fakeDb(), cfg({ countries: ["japan"] }));
+    const jp = pool.find((c) => c.segment.id === "country:japan")!.segment;
+    expect(jp.tourStops).toBeUndefined();
+    expect(jp.subtitle).toBe("Country spotlight · National weather");
   });
 
   it("adds no region tours until the kind is enabled with favourites", async () => {

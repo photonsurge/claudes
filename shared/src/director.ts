@@ -225,6 +225,13 @@ export interface SegmentSummaryStop {
    * catalog. Absent on round-up hotspots (which glow via the curated lookup).
    */
   iso2?: string;
+  /**
+   * Zoom the camera flies to for this stop, overriding the default tour stop
+   * zoom (`SUMMARY_STOP_ZOOM`). A `country` tour uses it to open on a WIDE
+   * establishing "middle of the country" stop before zooming into the city
+   * stops (see worker `countryTourStops`); region/round-up stops leave it unset.
+   */
+  zoom?: number;
 }
 
 /**

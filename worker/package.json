@@ -1,6 +1,6 @@
 {
   "name": "worker",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
@@ -38,6 +38,7 @@
     "enrich:countries": "ts-node src/scripts/enrichCountries.ts",
     "enrich:regions": "ts-node src/scripts/enrichRegions.ts",
     "enrich:region-places": "ts-node src/scripts/enrichRegionPlaces.ts",
+    "tours:countries": "ts-node src/scripts/computeCountryTours.ts",
     "refresh:city-weather": "ts-node src/scripts/refreshCityWeather.ts",
     "status:enrich": "ts-node src/scripts/enrichStatus.ts",
     "ingest:alerts": "ts-node src/scripts/ingestAlerts.ts",

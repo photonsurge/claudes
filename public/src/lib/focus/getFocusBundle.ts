@@ -15,6 +15,7 @@ import { pointInPolygon, type SimpleGeometry } from "@photonsurge/shared/geo/poi
 import { bucketDaily, bucketValue } from "@photonsurge/shared/climate/buckets";
 import type { iCountryModel } from "@photonsurge/shared/db/country-model";
 import { cityGeoWithinBox } from "@photonsurge/shared/db/city-model";
+import { countryShot } from "@photonsurge/shared/director-countries";
 
 import type { HistorySeries, AreaHistorySeries } from "@photonsurge/shared/weather/history-types";
 import {
@@ -295,8 +296,12 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
       : Promise.resolve(null),
     // climate (focus point)
     hasLoc ? climateFor(db, lng, lat) : Promise.resolve([]),
-    // topCities (located shots — incl. targeted CLOSE CITIES)
-    wantAreaFrame ? topCitiesFor(db, bbox, zoom) : Promise.resolve([]),
+    // topCities (located shots — incl. targeted CLOSE CITIES). A country
+    // spotlight scopes to its OWN cities by ISO code (from the curated catalog),
+    // so a neighbour that falls in the frame doesn't crowd the list.
+    wantAreaFrame
+      ? topCitiesFor(db, bbox, zoom, kind === "country" && subject ? countryShot(subject)?.iso2 : undefined)
+      : Promise.resolve([]),
     // nearbyCities (targeted events)
     targeted ? nearbyCitiesFor(db, lng, lat) : Promise.resolve([]),
     // areaAlerts — panels/counts/target-match read only `properties`, never the
@@ -684,15 +689,24 @@ async function regionNearTermFor(region: iRegionModel): Promise<FocusBundle["reg
   return steps;
 }
 
-/** Top cities in view (population-sorted) with climate baked in — kills the N+1. */
+/** Top cities in view (population-sorted) with climate baked in — kills the N+1.
+ *  When `cc` is given (a country spotlight), scope to that country's OWN cities
+ *  by ISO code instead of the framed bbox, so the list is the nation's biggest
+ *  cities rather than whatever fell inside the rectangle (neighbours in,
+ *  territory out). Both catalog casings of the code are matched. */
 async function topCitiesFor(
   db: Awaited<ReturnType<typeof getAppDb>>,
   bbox: [number, number, number, number],
   zoom: number,
+  cc?: string,
 ): Promise<FocusCity[]> {
-  const [w, s, e, nth] = bbox;
-  const query: Record<string, unknown> = { population: { $gte: regionMinPop(zoom) } };
-  query.loc = cityGeoWithinBox(w, s, e, nth);
+  let query: Record<string, unknown>;
+  if (cc) {
+    query = { cc: { $in: [cc.toLowerCase(), cc.toUpperCase()] } };
+  } else {
+    const [w, s, e, nth] = bbox;
+    query = { population: { $gte: regionMinPop(zoom) }, loc: cityGeoWithinBox(w, s, e, nth) };
+  }
   const res = await db.cities.getAll(query, { sort: { population: -1 }, limit: 8 });
   const cities = (res?.data ?? []) as FocusCity["city"][];
   return Promise.all(

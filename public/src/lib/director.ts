@@ -206,7 +206,9 @@ export function cutSteps(
         // A stop FRAMES a specific hotspot, so hold it like a country spotlight —
         // override the global spin's autoSpin. Spinning a framed, zoomed-in stop
         // just drifts it off-screen (the "framed shots HOLD" rule in director-rois).
-        patch: { camera: { center: [s.lng, s.lat], zoom: SUMMARY_STOP_ZOOM }, autoSpin: false, spinSpeed: 0 },
+        // A stop may carry its own zoom (a country tour's wide establishing
+        // "middle" stop) — otherwise the default per-stop zoom.
+        patch: { camera: { center: [s.lng, s.lat], zoom: s.zoom ?? SUMMARY_STOP_ZOOM }, autoSpin: false, spinSpeed: 0 },
         // The stop caption (city + its country, or an event stop's severity) rides
         // the centre reticle as `focus`, NOT the shot title — the card keeps naming
         // the AREA while the reticle names the current place. See useDirectorCut.

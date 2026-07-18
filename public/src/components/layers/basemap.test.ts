@@ -112,6 +112,15 @@ describe("basemapLayers", () => {
     expect(bgParams(state("night"), false).depthWriteEnabled).toBe(true);
   });
 
+  it("the base image is served from /api/basemap/<id> (shared store, admin-refreshable)", () => {
+    for (const id of ["satellite", "terrain", "night"]) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const layers = basemapLayers(state(id), false, false) as any[];
+      const image = layers.find((l) => l.props.id === `basemap-image-${id}`);
+      expect(image.props.image).toBe(`/api/basemap/${id}`);
+    }
+  });
+
   it("the base image never depth-tests/writes and culls its own far hemisphere", () => {
     for (const id of ["satellite", "terrain", "night"]) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

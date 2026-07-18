@@ -136,3 +136,65 @@ export const DEFAULT_BASEMAP_ID = "dark";
 
 export const getBasemap = (id: string): iBasemap =>
   BASEMAPS.find((b) => b.id === id) ?? BASEMAPS[0];
+
+/**
+ * The full-globe base IMAGES the raster basemaps drape on the sphere (under the
+ * zoom-gated XYZ tiles). Historically these were fetched ONCE by ./fetch-assets.sh
+ * into the read-only /data mount and could only be refreshed by a redeploy — so a
+ * truncated download (the corrupt satellite.jpg bug) left the zoomed-out globe
+ * black with no runtime fix. This registry is the single source of truth for those
+ * downloads, shared by the worker `basemap.refresh` job (which fetches + validates
+ * + writes them to the shared ${BLOB_DIR} store) and the public `/api/basemap/[id]`
+ * serve route. Keep the URLs in step with ./fetch-assets.sh (the deploy bootstrap).
+ */
+export interface BasemapTexture {
+  /** Stable id — the blob key, the /api/basemap/<id> path, and the /data/<id>.jpg fallback. */
+  id: string;
+  /** Human label for the admin Jobs button. */
+  label: string;
+  /** Keyless upstream to fetch. */
+  url: string;
+  contentType: string;
+  /** Static file the serve route redirects to until the first bake (in /data). */
+  fallback: string;
+  /** Extra request headers some hosts need (solarsystemscope 403s without a UA). */
+  headers?: Record<string, string>;
+  /** One-line provenance, surfaced in the admin button description. */
+  source: string;
+}
+
+const UA = { "User-Agent": "Mozilla/5.0" };
+
+export const BASEMAP_TEXTURES: readonly BasemapTexture[] = [
+  {
+    id: "satellite",
+    label: "Satellite (Blue Marble 8k)",
+    url: "https://www.solarsystemscope.com/textures/download/8k_earth_daymap.jpg",
+    contentType: "image/jpeg",
+    fallback: "/data/satellite.jpg",
+    headers: UA,
+    source: "Solar System Scope 8k Earth daymap",
+  },
+  {
+    id: "terrain",
+    label: "Terrain (topo + bathymetry)",
+    url: "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg",
+    contentType: "image/jpeg",
+    fallback: "/data/terrain.jpg",
+    headers: UA,
+    source: "NASA Blue Marble topography + bathymetry (5400×2700)",
+  },
+  {
+    id: "night",
+    label: "Night lights (Black Marble)",
+    url: "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?version=1.3.0&service=WMS&request=GetMap&format=image/jpeg&STYLE=default&CRS=EPSG:4326&bbox=-90,-180,90,180&WIDTH=8192&HEIGHT=4096&layers=VIIRS_Black_Marble",
+    contentType: "image/jpeg",
+    fallback: "/data/night.jpg",
+    source: "NASA VIIRS Black Marble city lights via keyless GIBS WMS",
+  },
+];
+
+export const BASEMAP_TEXTURE_IDS = BASEMAP_TEXTURES.map((t) => t.id);
+
+export const getBasemapTexture = (id: string): BasemapTexture | undefined =>
+  BASEMAP_TEXTURES.find((t) => t.id === id);

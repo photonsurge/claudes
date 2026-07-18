@@ -40,6 +40,35 @@ export interface iCountry extends iGeneralModel {
   /** Opt-in flag: generate a 12h AI round-up for this country (default off —
    *  toggled from the /countries admin table). Regions always generate. */
   roundupEnabled?: boolean;
+  /**
+   * Precomputed camera-tour dossier for the `country` spotlight, built by the
+   * worker (`countries.computeTours`) from this country's OWN cities (queried by
+   * `cc`, never a coarse bbox). The director flies a real spread-out tour instead
+   * of holding one hand-tuned frame — see shared/src/director-country-tour.ts.
+   * `tourCentroid` is the population-weighted "middle" (the establishing shot the
+   * tour starts on); `tourCities` are the biggest city per compass sector, ordered
+   * clockwise from north; `tourFrame` frames the whole set. Absent until computed.
+   */
+  tourCentroid?: [number, number];
+  tourCities?: iCountryTourCity[];
+  tourFrame?: { center: [number, number]; zoom: number };
+  /** When `countries.computeTours` last recomputed the tour dossier. */
+  tourComputedAt?: Date;
+}
+
+/** One city on a country's precomputed spotlight tour (director-country-tour.ts). */
+export interface iCountryTourCity {
+  /** City.id — join key into the CityWeather cache / focus bundle. */
+  cityId?: string;
+  name: string;
+  /** ISO-3166 alpha-2 (as stored on the City). */
+  cc?: string;
+  lat: number;
+  lng: number;
+  population?: number;
+  /** The compass sector (0=N, 1=NE … 7=NW around the centroid) this city
+   *  represents — kept for debugging/inspection, not read on air. */
+  sector?: number;
 }
 
 export interface iCountryModel extends iCountry {
@@ -68,6 +97,37 @@ const CountrySchema = new mongoose.Schema<iCountryModel>(
     capital: { type: String, required: false },
     currency: { type: String, required: false },
     roundupEnabled: { type: Boolean, required: false, default: false },
+    // Precomputed spotlight tour (countries.computeTours). Fixed-length coord
+    // pairs stored as plain [Number]; the city list is a typed subdoc array.
+    tourCentroid: { type: [Number], required: false },
+    tourCities: {
+      type: [
+        new mongoose.Schema<iCountryTourCity>(
+          {
+            cityId: { type: String, required: false },
+            name: { type: String, required: true },
+            cc: { type: String, required: false },
+            lat: { type: Number, required: true },
+            lng: { type: Number, required: true },
+            population: { type: Number, required: false },
+            sector: { type: Number, required: false },
+          },
+          { _id: false },
+        ),
+      ],
+      required: false,
+    },
+    tourFrame: {
+      type: new mongoose.Schema<{ center: [number, number]; zoom: number }>(
+        {
+          center: { type: [Number], required: true },
+          zoom: { type: Number, required: true },
+        },
+        { _id: false },
+      ),
+      required: false,
+    },
+    tourComputedAt: { type: Date, required: false },
   },
   { timestamps: false },
 );
