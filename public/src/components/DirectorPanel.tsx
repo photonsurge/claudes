@@ -104,7 +104,12 @@ export default function DirectorPanel({
         onToggleSettings={onToggleSettings}
       />
 
-      <DirectorCountdown liveState={liveState} applyLive={applyLive} />
+      <DirectorCountdown
+        liveState={liveState}
+        applyLive={applyLive}
+        auto={auto}
+        startDirector={() => applyNow({ mode: "auto" })}
+      />
 
       <DirectorOnAirReadout auto={auto} live={live} />
       <DirectorRecentlyAired sceneId={sceneId} live={live} visible={auto && !showSettings} />

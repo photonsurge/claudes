@@ -1,18 +1,24 @@
 "use client";
 
 /** The "starting in…" pre-broadcast countdown box on /control — a splash
- *  screen timer on /watch, independent of auto-director mode. Owns its own
- *  input + tick state since nothing outside this box needs it. */
-import { useEffect, useState } from "react";
+ *  screen timer on /watch. Starting a countdown arms the show: the moment it
+ *  reaches zero (or the operator hits "Go live now") the auto-director is
+ *  switched on so it takes over the instant the broadcast goes live. Owns its
+ *  own input + tick state since nothing outside this box needs it. */
+import { useEffect, useRef, useState } from "react";
 import { mergeControlState, type ControlState } from "@photonsurge/shared/control";
 import { box } from "./panelBox";
 
 export default function DirectorCountdown({
   liveState,
   applyLive,
+  auto,
+  startDirector,
 }: {
   liveState: ControlState;
   applyLive: (next: ControlState) => void;
+  auto: boolean;
+  startDirector: () => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -24,6 +30,28 @@ export default function DirectorCountdown({
   const countdownRemaining = liveState.startAt ? Math.max(0, Math.ceil((liveState.startAt - now) / 1000)) : 0;
   const countdownActive = liveState.startAt != null && countdownRemaining > 0;
 
+  // When the countdown crosses zero, hand the show to the auto-director — once
+  // per countdown, and only if it isn't already running. The wall-clock target
+  // itself keys the fire-guard so a fresh countdown re-arms cleanly.
+  const firedFor = useRef<number | null>(null);
+  useEffect(() => {
+    const target = liveState.startAt;
+    if (target == null) {
+      firedFor.current = null;
+      return;
+    }
+    if (now >= target && firedFor.current !== target) {
+      firedFor.current = target;
+      if (!auto) startDirector();
+    }
+  }, [now, liveState.startAt, auto, startDirector]);
+
+  // "Go live now" ends the countdown early and starts the director immediately.
+  const goLiveNow = () => {
+    applyLive(mergeControlState(liveState, { startAt: null }));
+    if (!auto) startDirector();
+  };
+
   return (
     <div style={{ ...box, marginBottom: 12, padding: 10 }}>
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, opacity: 0.7, marginBottom: 8 }}>
@@ -32,10 +60,7 @@ export default function DirectorCountdown({
       {countdownActive ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 20, fontWeight: 800 }}>{countdownRemaining}s</span>
-          <button
-            onClick={() => applyLive(mergeControlState(liveState, { startAt: null }))}
-            style={{ ...box, cursor: "pointer" }}
-          >
+          <button onClick={goLiveNow} style={{ ...box, cursor: "pointer" }}>
             Go live now
           </button>
         </div>
