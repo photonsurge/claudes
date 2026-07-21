@@ -16,10 +16,25 @@ import {
 } from "@photonsurge/shared/seismic";
 import { alertRepPoint, continentOf } from "@photonsurge/shared/alerts/geo";
 import { hazardMeta, classifyHazard, type HazardType } from "./hazard";
+import { broadcastEventLabel } from "@photonsurge/shared/alerts/phrasebook";
 import { isoToFlag } from "@photonsurge/shared/tracks/flags";
 import { nearby, haversineKm, withinBbox, type Nearby } from "./geo";
 import type { City } from "./cities";
 import type { Volcano, VolcanoStatus } from "@photonsurge/shared/volcanoes/types";
+
+/**
+ * The on-air name for an alert feature — "Severe Thunderstorms", never the
+ * source's own `event` ("Strong convection", "Thunderstormwarning", "BÖEN"…).
+ * Thin adapter onto the shared phrasebook, which takes `translatedEvent` where
+ * the overlay feature carries `translatedHeadline`.
+ */
+export const alertLabel = (p: AlertFeature["properties"]): string =>
+  broadcastEventLabel({
+    hazard: p.hazard,
+    severityRank: p.severityRank,
+    event: p.event,
+    translatedEvent: p.translatedHeadline,
+  });
 
 /** "SEISMIC M5.9 · 12km SSW of … · TSUNAMI POTENTIAL" */
 export function quakeTicker(q: Quake): string {
@@ -69,13 +84,13 @@ function nearestFlag(point: [number, number] | null, candidates: City[]): string
 /** "🇫🇯 TSUNAMI WATCH: Fiji Region" (nearest-city flag + severity-prefixed hazard
  *  + area). The flag is omitted when no notable city is close enough to trust (or
  *  no cities were supplied). Pass the notableCities() subset for the flag lookup.
- *  Prefers the English translation of the event/headline when the source isn't
- *  English. */
+ *  The hazard name is the broadcast phrasebook's, not the source's bulletin
+ *  wording (see shared/alerts/phrasebook.ts). */
 export function alertTicker(a: AlertFeature, candidateCities: City[] = []): string {
   const p = a.properties;
   const sev = SEVERITY_LABELS[p.severityRank];
   const area = p.areaDesc ? ` · ${p.areaDesc}` : "";
-  const event = p.translatedHeadline || p.event;
+  const event = alertLabel(p);
   const flag = nearestFlag(alertRepPoint(a.geometry), candidateCities);
   return `${flag ? `${flag} ` : ""}${sev ? `${sev.toUpperCase()}: ` : ""}${event}${area}`;
 }
@@ -661,7 +676,7 @@ export function worldWatchFeed(
     const rank = a.maxSeverityRank;
     const info = primaryInfo(a);
     const area = areaSummary(a);
-    const hazard = classifyHazard({ event: info?.event, parameters: info?.parameters });
+    const hazard = classifyHazard({ event: info?.event, translatedEvent: info?.translatedHeadline, parameters: info?.parameters });
     const places = nearbyPlaces(alertRepPointOf(a), cities);
     const sub = [area === "—" ? "" : area, nearNamesLabel(places)].filter(Boolean).join(" · ");
     items.push({
@@ -672,7 +687,12 @@ export function worldWatchFeed(
       icon: hazardMeta(hazard).icon,
       flag: places[0] ? isoToFlag(places[0].item.cc) : "",
       photo: nearbyPhoto(places),
-      title: info?.translatedHeadline || info?.event || "Alert",
+      title: broadcastEventLabel({
+        hazard,
+        severityRank: rank,
+        event: info?.event,
+        translatedEvent: info?.translatedHeadline,
+      }),
       sub,
       expiresIn: a.expiresAt ? expiresLabel(a) : undefined,
       weight: rank,
@@ -753,13 +773,13 @@ function clampLabel(s: string, max: number): string {
   return `${(sp > max * 0.6 ? cut.slice(0, sp) : cut).trimEnd()}…`;
 }
 
-/** "Tsunami Watch: Fiji Region — YELLOW" for the live-alert panel body. Prefers
- *  the English translation of the headline when the source alert isn't English.
+/** "Tsunami Watch: Fiji Region — YELLOW" for the live-alert panel body. The
+ *  hazard name comes from the broadcast phrasebook, not the source bulletin.
  *  Event + area are each length-capped so the panel never overflows on alerts
  *  with sprawling areaDesc lists; the severity suffix is always kept intact. */
 export function alertBannerText(a: AlertFeature, cities: City[] = []): string {
   const p = a.properties;
-  const event = clampLabel(p.translatedHeadline || p.event, 48);
+  const event = clampLabel(alertLabel(p), 48);
   const areaText = clampLabel(alertAreaLabel(a, cities), 40);
   const area = areaText ? `: ${areaText}` : "";
   const level = p.level ?? SEVERITY_LABELS[p.severityRank];

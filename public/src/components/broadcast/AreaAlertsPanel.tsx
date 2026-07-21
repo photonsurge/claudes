@@ -10,6 +10,7 @@
  */
 import type { AlertFeature } from "../../lib/alerts";
 import { severityColor, severityLabel, formatPeople } from "../../lib/alerts";
+import { alertLabel } from "../../lib/broadcast";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import BroadcastCard, { CardSection, DIM } from "./BroadcastCard";
 
@@ -32,7 +33,7 @@ function distinctAlerts(alerts: AlertFeature[]): AlertFeature[] {
 function AlertRow({ alert }: { alert: AlertFeature }) {
   const p = alert.properties;
   const color = severityColor(p.severityRank);
-  const label = p.translatedHeadline || p.headline || p.event;
+  const label = alertLabel(p);
   // Cities-based estimate of people under this specific warning's footprint —
   // "~1.2M people". Absent for a geocode-only alert (no shape to count).
   const people = formatPeople(p.population);

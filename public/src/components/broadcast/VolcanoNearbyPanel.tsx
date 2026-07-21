@@ -18,6 +18,7 @@ import { SEVERITY_LABELS, SEVERITY_COLORS } from "@photonsurge/shared/alerts/sev
 import { quakeMagnitudeLabel, quakeMagnitudeColor } from "@photonsurge/shared/seismic";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { nearby, formatKm, bearingLabel } from "../../lib/geo";
+import { alertLabel } from "../../lib/broadcast";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 import { CityForecastStrip, useCityWeatherByIds } from "./CityForecastStrip";
 
@@ -158,7 +159,7 @@ export default function VolcanoNearbyPanel({
                 }}
               />
               <span style={{ minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#cdd9ec" }}>
-                {n.item.properties.translatedHeadline || n.item.properties.event}
+                {alertLabel(n.item.properties)}
                 {n.item.properties.areaDesc ? (
                   <span style={{ color: "#7d8da5" }}>{` · ${n.item.properties.areaDesc}`}</span>
                 ) : null}

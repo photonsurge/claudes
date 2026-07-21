@@ -11,6 +11,7 @@
 import { quakeDepthLabel, quakeMagnitudeLabel } from "./seismic";
 import { continentOf } from "./alerts/geo";
 import { hazardMeta, type HazardType } from "./alerts/hazard";
+import { broadcastEventLabel } from "./alerts/phrasebook";
 import { alertCountryLabel } from "./alerts/country";
 import type { Volcano, VolcanoStatus } from "./volcanoes/types";
 import type { TrackInfo } from "./director";
@@ -104,10 +105,12 @@ function agoLabel(mins: number): string {
 }
 
 /** Severe-weather card: place + country subtitle, severity/type/source rows.
- *  Title/Type prefer the English translation over the source-language event
- *  name when one exists. */
+ *  Both the TITLE and the "Type" row are ours (phrasebook.ts + the hazard
+ *  vocabulary) — the source's own `event` string is bulletin jargon in 40
+ *  languages and never reaches air. It stays raw in /admin, where provenance
+ *  is the point. */
 export function alertSegmentContent(a: AlertContentInput): SegmentContent {
-  const event = a.translatedEvent || a.event;
+  const title = broadcastEventLabel(a);
   const country = alertCountryLabel(a);
   const area = continentOf(a.center[0], a.center[1]);
   // A fused shape must not pass itself off as its representative member's county.
@@ -115,7 +118,7 @@ export function alertSegmentContent(a: AlertContentInput): SegmentContent {
   const place = a.areaDesc && more > 0 ? `${a.areaDesc} +${more} more` : a.areaDesc;
   const subtitle = [place, country].filter(Boolean).join(" · ") || undefined;
   const details: SegmentContent["details"] = [{ label: "Severity", value: `${a.severityRank}/4` }];
-  if (event) details.push({ label: "Type", value: event });
+  details.push({ label: "Type", value: hazardMeta(a.hazard).label });
   if (more > 0) details.push({ label: "Warnings", value: String(a.warningCount) });
   if (a.level) details.push({ label: "Level", value: String(a.level) });
   if (country) details.push({ label: "Country", value: country });
@@ -134,7 +137,7 @@ export function alertSegmentContent(a: AlertContentInput): SegmentContent {
       details.push({ label: "Active for", value: activeForLabel(mins) });
     }
   }
-  return { title: event || "Weather Warning", subtitle, icon: hazardMeta(a.hazard).icon, details };
+  return { title, subtitle, icon: hazardMeta(a.hazard).icon, details };
 }
 
 export interface VolcanoContentInput {

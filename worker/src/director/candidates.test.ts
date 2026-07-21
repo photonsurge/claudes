@@ -536,7 +536,9 @@ describe("buildCandidates", () => {
     const storm = pool.find((c) => c.segment.kind === "storm");
     expect(storm).toBeTruthy();
     expect(storm!.segment.id).toBe("storm:nws:a1");
-    expect(storm!.segment.title).toBe("Hurricane Warning");
+    // Title is the broadcast phrasebook's, not the source event ("Hurricane
+    // Warning" at rank 4) — see shared/alerts/phrasebook.ts.
+    expect(storm!.segment.title).toBe("Major Hurricane");
     const [lng, lat] = storm!.segment.camera.center;
     expect(lng).toBeCloseTo(-89.2, 1);
     expect(lat).toBeCloseTo(25.8, 1);

@@ -58,7 +58,8 @@ describe("VolcanoNearbyPanel", () => {
     expect(screen.getByText("Catania")).toBeInTheDocument();
     expect(screen.getByText("M3.2")).toBeInTheDocument();
     expect(screen.getByText(/5km SW of Etna/)).toBeInTheDocument();
-    expect(screen.getByText(/Ashfall Advisory/)).toBeInTheDocument();
+    // "Ashfall Advisory" is the source's wording; air gets the phrasebook's.
+    expect(screen.getByText(/Volcanic Ash/)).toBeInTheDocument();
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
   });
 

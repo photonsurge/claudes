@@ -200,7 +200,7 @@ export async function aggregate(
 
   for (const a of alerts) {
     const info = a.info?.[0];
-    const hazard = classifyHazard({ event: info?.event, parameters: info?.parameters });
+    const hazard = classifyHazard({ event: info?.event, translatedEvent: info?.translatedHeadline, parameters: info?.parameters });
     const sev = (a.maxSeverityRank ?? 0) as SeverityRank;
     bySeverity[String(sev)] = (bySeverity[String(sev)] ?? 0) + 1;
     byHazard[hazard] = (byHazard[hazard] ?? 0) + 1;

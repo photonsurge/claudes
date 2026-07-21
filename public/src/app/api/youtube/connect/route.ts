@@ -20,11 +20,18 @@ async function GET__impl(req: Request) {
   if (!(await requireAdmin())) {
     return NextResponse.json({ error: "admin only" }, { status: 401 });
   }
-  const clientId = process.env.YOUTUBE_CLIENT_ID;
+  // Generic GOOGLE_OAUTH_* names (client shared with the other photonsurge apps),
+  // falling back to the YOUTUBE_* names.
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID;
   if (!clientId) {
     return NextResponse.redirect(new URL("/admin/streams?error=notconfigured", req.url));
   }
-  const redirectUri = process.env.YOUTUBE_REDIRECT_URI || new URL("/api/youtube/callback", req.url).toString();
+  // Must exactly match a redirect URI registered on the Google OAuth client. The
+  // app's callback lives at /google/redirect (see app/google/redirect/route.ts).
+  const redirectUri =
+    process.env.GOOGLE_OAUTH_REDIRECT_URI ||
+    process.env.YOUTUBE_REDIRECT_URI ||
+    new URL("/google/redirect", req.url).toString();
   const state = randomUUID();
 
   const params = new URLSearchParams({

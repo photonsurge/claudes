@@ -1,5 +1,5 @@
 /**
- * YouTube OAuth token exchange, on behalf of the public /api/youtube/callback
+ * YouTube OAuth token exchange, on behalf of the public /google/redirect
  * route. Dispatched as `youtube.exchangeCode { code, connectedBy }` and awaited by
  * the callback (sendToQueueAndWait). The exchange + refresh-token encryption happen
  * HERE, in the worker, so the client secret and the AES key never enter `public`.

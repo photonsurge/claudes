@@ -1,8 +1,8 @@
-import { withApiLog } from "../../../../lib/api-log";
+import { withApiLog } from "../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { sendToQueueAndWait } from "@photonsurge/shared/bull/bull-queue";
-import { requireAdmin } from "../../../../lib/require-admin";
+import { requireAdmin } from "../../../lib/require-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,10 +10,15 @@ export const dynamic = "force-dynamic";
 const STATE_COOKIE = "yt_oauth_state";
 
 /**
- * GET /api/youtube/callback — Google redirects back here with `code` + `state`.
- * We verify the CSRF `state` against the cookie, then delegate the code→token
- * exchange to the WORKER (`youtube.exchangeCode`), so the client secret + refresh
- * token + encryption key never enter this process. Redirects to /admin/streams.
+ * GET /google/redirect — the Google OAuth callback. Google redirects back here with
+ * `code` + `state`. We verify the CSRF `state` against the cookie, then delegate the
+ * code→token exchange to the WORKER (`youtube.exchangeCode`), so the client secret +
+ * refresh token + encryption key never enter this process. Redirects to /admin/streams.
+ *
+ * Path note: this deliberately sits at `/google/redirect` (not under /api) to match the
+ * redirect URI already registered on the Google OAuth client — Google validates the
+ * callback URL exactly, so the app moved to fit the registration rather than the other
+ * way round. Keep this path and `YOUTUBE_REDIRECT_URI` in step.
  */
 async function GET__impl(req: Request) {
   const session = await requireAdmin();
@@ -28,9 +33,6 @@ async function GET__impl(req: Request) {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const cookieState = (await cookies()).get(STATE_COOKIE)?.value;
-
-  const res = back("connected=1");
-  res.cookies.delete(STATE_COOKIE);
 
   if (!code || !state || !cookieState || state !== cookieState) {
     return back("error=state");

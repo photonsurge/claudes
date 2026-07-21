@@ -14,8 +14,10 @@ const PRIVACIES: YoutubePrivacy[] = ["public", "unlisted", "private"];
 
 /** Platform-config status the operator UI needs to render its controls. */
 function platformStatus() {
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_OAUTH_SECRET || process.env.YOUTUBE_CLIENT_SECRET;
   return {
-    youtubeConfigured: !!(process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_CLIENT_SECRET),
+    youtubeConfigured: !!(clientId && clientSecret),
     obsConfigured: !!process.env.OBS_WEBSOCKET_URL,
   };
 }

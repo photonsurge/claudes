@@ -89,9 +89,9 @@ describe("ticker line builders", () => {
     const far = { id: "c", name: "Sydney", lat: -33.87, lng: 151.21, cc: "AU", population: 5_000_000 } as City;
     expect(alertTicker(alert(3), [far])).toBe("SEVERE: Tsunami Watch · Fiji Region");
   });
-  it("prefers the translated headline over the raw event when present", () => {
+  it("names the hazard itself rather than echoing the source bulletin", () => {
     expect(alertTicker(alert(3, { event: "台风红色预警", translatedHeadline: "Typhoon Red Alert" }))).toBe(
-      "SEVERE: Typhoon Red Alert · Fiji Region",
+      "SEVERE: Tsunami Warning · Fiji Region",
     );
   });
   it("formats a track with flag + kind", () => {
@@ -491,19 +491,21 @@ describe("worldWatchFeed", () => {
     );
     expect(feed.map((f) => f.kind)).toEqual(["alert", "quake", "alert", "quake"]);
     // Extreme alert (rank 4) and M7.2 both weight 4 — alert wins the tie, quake next.
-    expect(feed[0]).toMatchObject({ kind: "alert", title: "Tornado Warning", sub: "Kansas" });
+    expect(feed[0]).toMatchObject({ kind: "alert", title: "Tornado Emergency", sub: "Kansas" });
     expect(feed[1]).toMatchObject({ kind: "quake", tag: "M7.2", title: "off Chile" });
     // Then the rank-1 advisory, then the M3.1 minnow.
-    expect(feed[2].title).toBe("Frost Advisory");
+    expect(feed[2].title).toBe("Frost");
     expect(feed[3].tag).toBe("M3.1");
   });
 
-  it("prefers a translated headline over the raw event for the feed title", () => {
+  it("classifies a non-English alert through its translation, then names it itself", () => {
     const translated = raw(4, "台风红色预警", "Guangdong", {
       info: [{ event: "台风红色预警", severityRank: 4, area: [{ areaDesc: "Guangdong", geocodes: [] }], translatedHeadline: "Typhoon Red Alert" }] as Alert["info"],
     });
     const feed = worldWatchFeed([translated], []);
-    expect(feed[0].title).toBe("Typhoon Red Alert");
+    // Chinese event text alone classifies as `other`; the translation makes it a
+    // cyclone, and the phrasebook — not the bulletin — supplies the on-air name.
+    expect(feed[0].title).toBe("Super Typhoon");
   });
 
   it("orders same-tier quakes by exact magnitude, not arrival order", () => {
@@ -609,8 +611,8 @@ describe("worldWatchFeed", () => {
     });
     const withoutExpiry = raw(2, "Frost Advisory", "Alps");
     const feed = worldWatchFeed([withExpiry, withoutExpiry], []);
-    expect(feed.find((f) => f.title === "Forest Fire Warning")?.expiresIn).toMatch(/^(in \d+[mh]|expired)$/);
-    expect(feed.find((f) => f.title === "Frost Advisory")?.expiresIn).toBeUndefined();
+    expect(feed.find((f) => f.title === "Extreme Fire Danger")?.expiresIn).toMatch(/^(in \d+[mh]|expired)$/);
+    expect(feed.find((f) => f.title === "Frost")?.expiresIn).toBeUndefined();
   });
 
   it("includes erupting/unrest volcanoes, ranked above minor alerts, but drops dormant ones", () => {

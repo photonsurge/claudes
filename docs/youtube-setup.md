@@ -5,7 +5,7 @@ What you're producing by the end of this doc:
 ```bash
 YOUTUBE_CLIENT_ID=1234567890-abcdefg.apps.googleusercontent.com
 YOUTUBE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxxxxxxx
-YOUTUBE_REDIRECT_URI=http://localhost:10100/api/youtube/callback
+YOUTUBE_REDIRECT_URI=http://localhost:10100/google/redirect
 APP_SECRET=some-long-random-string
 ```
 
@@ -95,21 +95,38 @@ For a single-owner broadcast rig, publish + click through the warning.
 
 **APIs & Services → Credentials** → **+ Create Credentials** → **OAuth client ID**.
 
+> **These URLs are not something you "get" from Google — you invent them.** They are
+> *your* app's own addresses; Google just needs a whitelist of where it's allowed to
+> send the browser back to after consent. Copy the two lines below verbatim.
+
 - **Application type: Web application** ← must be "Web application", not "Desktop"
 - **Name**: anything, e.g. `weatherchannel-web`
-- **Authorized redirect URIs** → **+ Add URI**. Add one line per environment:
+- **Authorised JavaScript origins**: **leave empty** — delete any rows (use the row's
+  ✕ / trash icon; blanking a required field can block the Create button). This app
+  does a *server-side* redirect, never a browser-JS call to Google, so origins are
+  unused.
+- **Authorised redirect URIs** → **+ Add URI**, one line per environment:
 
   | Environment | URI |
   |---|---|
-  | Local dev | `http://localhost:10100/api/youtube/callback` |
-  | Production | `https://YOUR-DOMAIN/api/youtube/callback` |
+  | Local dev | `http://localhost:10100/google/redirect` |
+  | Production | `https://io.photonsurge.uk/google/redirect` |
 
-  This must match `YOUTUBE_REDIRECT_URI` in `.env` **character for character** —
-  trailing slashes and http-vs-https count. Google only permits plain `http` for
-  `localhost`.
+  The path `/google/redirect` is served by `public/src/app/google/redirect/route.ts`.
+  It sits outside `/api` on purpose — it matches the redirect URI already registered
+  on the existing photonsurge OAuth client, so the app was moved to fit the
+  registration rather than the other way round. The production host comes from
+  `APP_DOMAIN` in `.env.deploy` (`io.photonsurge.uk`).
 
-  *(You can leave "Authorized JavaScript origins" empty — the app does a server-side
-  redirect, not a browser JS flow.)*
+  **Local dev note:** if you only registered the two `https://…photonsurge.uk` URIs,
+  the Connect flow works on the deployed site but *not* from `localhost`. To connect
+  from local dev too, add `http://localhost:10100/google/redirect` as a third URI.
+
+  Each must match `YOUTUBE_REDIRECT_URI` **character for character** — trailing
+  slashes and http-vs-https count. Google only permits plain `http` for `localhost`.
+
+  *(One OAuth client can hold many redirect URIs, so it's fine to reuse an existing
+  client — but a dedicated one keeps the consent-screen name honest.)*
 
 - Click **Create**.
 
@@ -126,7 +143,7 @@ Edit `/home/rich/code/thronix/WeatherChannel/.env` (the root one — all service
 ```bash
 YOUTUBE_CLIENT_ID=<the Client ID from step 4>
 YOUTUBE_CLIENT_SECRET=<the Client secret from step 4>
-YOUTUBE_REDIRECT_URI=http://localhost:10100/api/youtube/callback
+YOUTUBE_REDIRECT_URI=http://localhost:10100/google/redirect
 
 # Encrypts the stored YouTube refresh token at rest (AES-256-GCM).
 # Any long random string. Generate one with:  openssl rand -base64 32

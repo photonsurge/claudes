@@ -20,7 +20,7 @@ import { log } from "@photonsurge/shared/utill/logger";
 const TAG = "youtube";
 
 export class YoutubeNotConfiguredError extends Error {
-  constructor(message = "YouTube OAuth is not configured (set YOUTUBE_CLIENT_ID/SECRET/REDIRECT_URI)") {
+  constructor(message = "YouTube OAuth is not configured (set GOOGLE_OAUTH_CLIENT_ID/GOOGLE_OAUTH_SECRET/GOOGLE_OAUTH_REDIRECT_URI)") {
     super(message);
     this.name = "YoutubeNotConfiguredError";
   }
@@ -32,8 +32,22 @@ export class YoutubeNotConnectedError extends Error {
   }
 }
 
+/**
+ * OAuth app credentials. Primary names are the generic `GOOGLE_OAUTH_*` (the client
+ * is shared with the other photonsurge apps on the same consent screen); the
+ * `YOUTUBE_*` names are accepted as a fallback.
+ */
+export function googleOauthConfig() {
+  return {
+    clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID || "",
+    clientSecret: process.env.GOOGLE_OAUTH_SECRET || process.env.YOUTUBE_CLIENT_SECRET || "",
+    redirectUri: process.env.GOOGLE_OAUTH_REDIRECT_URI || process.env.YOUTUBE_REDIRECT_URI || "",
+  };
+}
+
 export function youtubeConfigured(): boolean {
-  return !!(process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_CLIENT_SECRET);
+  const { clientId, clientSecret } = googleOauthConfig();
+  return !!(clientId && clientSecret);
 }
 
 // Use googleapis' bundled google-auth-library type (google.youtube expects that
@@ -41,9 +55,7 @@ export function youtubeConfigured(): boolean {
 type OAuth2 = InstanceType<typeof google.auth.OAuth2>;
 
 function newOAuthClient(): OAuth2 {
-  const clientId = process.env.YOUTUBE_CLIENT_ID;
-  const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
-  const redirectUri = process.env.YOUTUBE_REDIRECT_URI;
+  const { clientId, clientSecret, redirectUri } = googleOauthConfig();
   if (!clientId || !clientSecret) throw new YoutubeNotConfiguredError();
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
@@ -100,7 +112,7 @@ export function clearYoutubeClient(accountId: string): void {
 /**
  * Exchange an OAuth authorization code for tokens, identify the channel, and
  * persist the (encrypted) refresh token. Called by the `youtube.exchangeCode`
- * job on behalf of the public /api/youtube/callback route.
+ * job on behalf of the public /google/redirect route.
  */
 export async function exchangeAuthCode(
   code: string,

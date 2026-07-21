@@ -132,7 +132,7 @@ async function scopedAlerts(
       event: info?.event || a.identifier,
       headline: info?.headline || undefined,
       severityRank: (a.maxSeverityRank ?? 0) as number,
-      hazard: classifyHazard({ event: info?.event, parameters: info?.parameters }),
+      hazard: classifyHazard({ event: info?.event, translatedEvent: info?.translatedHeadline, parameters: info?.parameters }),
       onset: info?.onset || a.sent || undefined,
       source: a.source,
       lng: c.lng,

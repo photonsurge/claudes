@@ -42,7 +42,10 @@ describe("AreaAlertsPanel", () => {
     );
     render(<AreaAlertsPanel alerts={alerts} />);
     expect(screen.getByText("8")).toBeInTheDocument(); // header count
-    expect(screen.getByText("Warning 0")).toBeInTheDocument();
+    // Rows are named by the broadcast phrasebook (hazard + severity), not by the
+    // source's own event string — all 8 fixtures are rank-2 wind.
+    expect(screen.getAllByText("Strong Winds")).toHaveLength(6);
+    expect(screen.getByText(/Zone 0/)).toBeInTheDocument();
     expect(screen.getByText("+2 more")).toBeInTheDocument(); // 8 - 6 shown
   });
 

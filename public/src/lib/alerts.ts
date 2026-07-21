@@ -64,7 +64,7 @@ export const displayInstruction = (info?: AlertInfo): string | undefined =>
 /** The cross-source hazard category for an alert (heat/flood/wind/…). */
 export function alertHazard(a: Alert): HazardType {
   const info = a.info?.[0];
-  return classifyHazard({ event: info?.event, parameters: info?.parameters });
+  return classifyHazard({ event: info?.event, translatedEvent: info?.translatedHeadline, parameters: info?.parameters });
 }
 export interface Alert {
   id: string;
@@ -280,7 +280,7 @@ function areaFeatureProps(a: Alert, info: AlertInfo, area: AlertArea): AlertFeat
     identifier: a.identifier,
     event: info.event,
     severityRank: a.maxSeverityRank,
-    hazard: classifyHazard({ event: info.event, parameters: info.parameters }),
+    hazard: classifyHazard({ event: info.event, translatedEvent: info.translatedHeadline, parameters: info.parameters }),
     areaDesc: area.areaDesc,
     level: info.severity,
     headline: info.headline,

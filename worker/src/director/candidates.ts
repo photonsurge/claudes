@@ -661,7 +661,7 @@ export async function buildCandidates(
         // alert look permanently brand-new and camp the priority tier forever
         // (it kept winning selectPriority's "highest-scored breaking" pick).
         const firstSeenMs = a.created ? new Date(a.created).getTime() : NaN;
-        const hazard = classifyHazard({ event: info?.event, parameters: info?.parameters });
+        const hazard = classifyHazard({ event: info?.event, translatedEvent: info?.translatedHeadline, parameters: info?.parameters });
         // The hazard drives which maps the shot cycles — open on the plan's
         // first field. How LONG it holds is the severity's call: the operator
         // tunes each level (stormHoldSeconds), Extreme lingering the longest.

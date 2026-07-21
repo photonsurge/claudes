@@ -24,7 +24,7 @@ const TAG = "job:alert-blobs";
  */
 
 const hazardOf = (a: iAlert) =>
-  classifyHazard({ event: a.info?.[0]?.event, parameters: a.info?.[0]?.parameters });
+  classifyHazard({ event: a.info?.[0]?.event, translatedEvent: a.info?.[0]?.translatedHeadline, parameters: a.info?.[0]?.parameters });
 
 /**
  * Hand the event loop back between hazards.

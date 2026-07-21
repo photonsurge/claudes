@@ -96,6 +96,12 @@ const GDACS_CODE: Record<string, HazardType> = {
 
 export interface ClassifyInput {
   event?: string;
+  /**
+   * English translation of the event/headline (worker/src/alerts/translate.ts).
+   * Matched alongside `event`, because most of the keyword table is English and
+   * a Chinese or Arabic event string can only be classified through it.
+   */
+  translatedEvent?: string;
   parameters?: Record<string, string> | undefined;
 }
 
@@ -103,8 +109,10 @@ export interface ClassifyInput {
 export function classifyHazard(input: ClassifyInput): HazardType {
   const params = input.parameters ?? {};
 
-  // MeteoAlarm: "5; high-temperature" → code 5.
-  const aw = params.awareness_type;
+  // MeteoAlarm: "5; high-temperature" → code 5. Some feeds leak the parameter
+  // block into the event string itself ("awareness_type=3, awareness_level=2"),
+  // so read it from either place rather than dumping the code on air.
+  const aw = params.awareness_type ?? /awareness_type=(\d+)/.exec(input.event ?? "")?.[1];
   if (aw) {
     const code = aw.split(";")[0].trim();
     if (MA_CODE[code]) return MA_CODE[code];
@@ -118,27 +126,35 @@ export function classifyHazard(input: ClassifyInput): HazardType {
   // specific hazard wins before the generic one (tornado before thunderstorm,
   // dust before wind, marine before coastal/wind, etc.).
   // Matches NWS/WMO English wording plus the common ES/FR terms the WMO global
-  // feed carries natively (viento, pluie, orage, nevada, inundación, canicule…).
-  const e = (input.event ?? "").toLowerCase();
+  // feed carries natively (viento, pluie, orage, nevada, inundación, canicule…),
+  // plus the DE/SL/HR/PL/ET/RU/TR/AR tokens MeteoAlarm passes through untranslated
+  // and the run-together forms some services emit ("Thunderstormwarning").
+  const e = `${input.translatedEvent ?? ""} ${input.event ?? ""}`.toLowerCase();
   if (/tsunami/.test(e)) return "tsunami";
   if (/avalanche/.test(e)) return "avalanche";
   if (/volcan|ash ?fall/.test(e)) return "volcano";
-  if (/drought/.test(e)) return "drought";
+  if (/drought|low water/.test(e)) return "drought"; // "Low water" = hydrological low flow, not a flood
   if (/hurricane|tropical|cyclone|typhoon|typhon|storm surge/.test(e)) return "cyclone";
   if (/tornado/.test(e)) return "tornado";
-  if (/landslide|mudslide|rockfall|geologic/.test(e)) return "landslide";
-  if (/thunderstorm|t-?storm|thunder|lightning|convection|\bhail\b|orage|tormenta|severe weather/.test(e)) return "thunderstorm";
-  if (/excessive heat|heat ?wave|heat|hot weather|high[\s-]?temp|canicule|altas? temperatur/.test(e)) return "heat";
-  if (/wind chill|extreme cold|cold ?wave|hard freeze|freeze|frost|low[\s-]?temp|sheep grazier/.test(e)) return "cold";
+  if (/landslide|mudslide|mudflow|rockfall|geologic/.test(e)) return "landslide";
+  if (/thunder ?storm|t-?storm|thunder|lightning|convection|\bhail\b|orage|tormenta|gewitter|nevihte|severe weather/.test(e)) return "thunderstorm";
+  if (/excessive heat|heat ?wave|heat|hot weather|\bhot\b|high[\s-]?temp|canicule|altas? temperatur|calor|hitze|vrućin|vrucin/.test(e)) return "heat";
+  if (/wind chill|extreme cold|cold ?wave|hard freeze|freeze|frost|helada|low[\s-]?temp|bajas? temperatura|sheep grazier/.test(e)) return "cold";
   if (/dust|sand ?storm|haboob|sable|poussiere/.test(e)) return "dust";
   if (/air quality|air stagnation|smog|ozone|dense smoke/.test(e)) return "air";
-  if (/red flag|wildfire|forest ?fire|bush ?fire|fire weather|\bfires?\b|danger of fire/.test(e)) return "fire";
+  if (/red flag|wildfire|forest ?fire|bush ?fire|fire weather|\bfires?\b|danger of fire|požar|pozar|yangın/.test(e)) return "fire";
   if (/flash flood|flood|inundaci|hydrolog|high water/.test(e)) return "flood";
   if (/blizzard|snow|nevada|neige|ice storm|freezing rain|sleet|winter (storm|weather)|\bice\b/.test(e)) return "snow-ice";
   if (/dense fog|freezing fog|\bfog\b|brouillard|low visibility/.test(e)) return "fog";
-  if (/small craft|gale|hazardous seas|high seas|special marine|\bmarine\b|storm warning|ashore/.test(e)) return "marine";
-  if (/beach|high surf|rip current|\bsurf\b|swell|high wave|coastal/.test(e)) return "coastal";
-  if (/high wind|wind advisory|\bwinds?\b|\bvent\b|viento|gust|squall/.test(e)) return "wind";
+  if (/small craft|hazardous seas|high seas|special marine|\bmarine\b|storm warning|ashore/.test(e)) return "marine";
+  // "Gale" is a Beaufort wind band, not inherently a sea state — WMO members use
+  // it for LAND warnings too ("Near gale 14-17 m/s"), which used to come out as
+  // "Hazardous Seas" over inland China. Marine only for the NWS product name or
+  // an explicitly maritime context; everything else falls through to `wind`.
+  if (/gale warning|gale watch/.test(e) || (/gale/.test(e) && /\bsea|marine|coast|craft|offshore|shipping/.test(e)))
+    return "marine";
+  if (/beach|high surf|rip current|\bsurf\b|swell|high wave|wave height|rissaga|meteotsunami|seiche|coastal/.test(e)) return "coastal";
+  if (/high wind|wind advisory|\bwinds?\b|\bvent\b|viento|gust|gale|squall|stormwarning|sturm|starkwind|böen|boeen|wiatr|rüzgar|ruzgar|ветер|tuul|\bvind\b|رياح|ريّاح|باد/.test(e)) return "wind";
   if (/rain|precip|shower|downpour|pluie|lluvia/.test(e)) return "rain";
   return "other";
 }

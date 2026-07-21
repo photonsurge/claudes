@@ -47,7 +47,7 @@ describe("quakeSegmentContent — magnitude & depth bands", () => {
   });
 });
 
-describe("alertSegmentContent — translated title/Type", () => {
+describe("alertSegmentContent — broadcast title/Type", () => {
   const base = {
     source: "wmo",
     identifier: "cn-cma-xx/2026/1",
@@ -56,22 +56,30 @@ describe("alertSegmentContent — translated title/Type", () => {
     center: [104, 35] as [number, number],
   };
 
-  it("falls back to the raw event when there's no translation", () => {
+  it("names the hazard itself — the source's event string never reaches air", () => {
     const c = alertSegmentContent({ ...base, event: "台风红色预警" });
-    expect(c.title).toBe("台风红色预警");
-    expect(c.details.find((d) => d.label === "Type")?.value).toBe("台风红色预警");
+    expect(c.title).toBe("Destructive Winds");
+    expect(c.details.find((d) => d.label === "Type")?.value).toBe("Wind");
+    expect(JSON.stringify(c)).not.toContain("台风红色预警");
   });
 
-  it("prefers translatedEvent for both the title and the Type row", () => {
+  it("ignores the translation too — it's the same bulletin jargon in English", () => {
     const c = alertSegmentContent({ ...base, event: "台风红色预警", translatedEvent: "Typhoon Red Alert" });
-    expect(c.title).toBe("Typhoon Red Alert");
-    expect(c.details.find((d) => d.label === "Type")?.value).toBe("Typhoon Red Alert");
+    expect(c.title).toBe("Destructive Winds");
+    expect(JSON.stringify(c)).not.toContain("Typhoon Red Alert");
   });
 
-  it("defaults to 'Weather Warning' when neither event nor translatedEvent is set", () => {
+  it("still has a title when the source sends no event at all", () => {
     const c = alertSegmentContent({ ...base });
-    expect(c.title).toBe("Weather Warning");
-    expect(c.details.find((d) => d.label === "Type")).toBeUndefined();
+    expect(c.title).toBe("Destructive Winds");
+    expect(c.details.find((d) => d.label === "Type")?.value).toBe("Wind");
+  });
+
+  it("scales the wording with severity", () => {
+    const rank = (severityRank: number) => alertSegmentContent({ ...base, severityRank }).title;
+    expect(rank(1)).toBe("Strong Winds");
+    expect(rank(3)).toBe("Damaging Winds");
+    expect(rank(4)).toBe("Destructive Winds");
   });
 
   it("shows 'Active for' once the onset has passed", () => {
