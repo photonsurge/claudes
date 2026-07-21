@@ -125,8 +125,11 @@ import { getUserModel } from "./user-model";
 import { makeUserRepo } from "./user-repo";
 import { getBroadcastStateModel, BROADCAST_STATE_ID } from "./broadcast-state-model";
 import { getDirectorConfigModel } from "./director-config-model";
+import { getRunModel, iRunModel } from "./run-model";
+import { getYoutubeAccountModel, iYoutubeAccountModel } from "./youtube-account-model";
 import { DEFAULT_CONTROL_STATE, MAIN_SCENE_ID } from "../control";
 import { DEFAULT_DIRECTOR_CONFIG, mergeDirectorConfig } from "../director";
+import { runIsActive, type Run } from "../runs";
 
 /** Sample entity for the ping demo feature. Replace/extend with real models. */
 export interface iPing extends iEntity {
@@ -166,6 +169,8 @@ export function createDb(conn: Connection) {
   const weatherRuns = mongoCrud<iWeatherRunModel>(getWeatherRunModel(conn));
   const broadcastState = mongoCrud(getBroadcastStateModel(conn));
   const directorConfig = mongoCrud(getDirectorConfigModel(conn));
+  const streamRuns = mongoCrud<iRunModel>(getRunModel(conn));
+  const youtubeAccounts = mongoCrud<iYoutubeAccountModel>(getYoutubeAccountModel(conn));
 
   // Shared `${BLOB_DIR}` folder (both containers bind-mount it), or null → the
   // legacy pure-Mongo storage. Threaded into every blob store below so a single
@@ -280,6 +285,8 @@ export function createDb(conn: Connection) {
     users: makeUserRepo(getUserModel(conn)),
     broadcastState,
     directorConfig,
+    streamRuns,
+    youtubeAccounts,
 
     /** Latest published run (the one the browser should render), or null. */
     async latestPublishedRun() {
@@ -425,6 +432,77 @@ export function createDb(conn: Connection) {
     async deleteScene(id: string) {
       if (id === MAIN_SCENE_ID) return false;
       const res = await broadcastState.deleteByID(id);
+      return !!res.success;
+    },
+
+    // ---- Streaming runs (bounded live broadcasts bound to a scene) ----
+
+    /** Create a run (status seeded by the schema default `scheduled`). Returns the doc. */
+    async createRun(input: Partial<Run>) {
+      const res = await streamRuns.create(input as any);
+      return res.data ?? null;
+    },
+
+    /** A run by id, or null. */
+    async getRun(id: string) {
+      const res = await streamRuns.getByID(id);
+      return res.success && res.data ? (res.data as Run) : null;
+    },
+
+    /** Patch a run by id; returns the updated doc. */
+    async updateRun(id: string, patch: Partial<Run>) {
+      const res = await streamRuns.updateByID(id, patch as any);
+      return res.data ? (res.data as Run) : null;
+    },
+
+    /**
+     * Runs, newest-first. Filter by `sceneId` and/or `status` (array = $in). Used by
+     * the /admin/streams fleet list and the worker boot reconciler.
+     */
+    async listRuns(filter: { sceneId?: string; status?: Run["status"] | Run["status"][] } = {}) {
+      const q: Record<string, unknown> = {};
+      if (filter.sceneId) q.sceneId = filter.sceneId;
+      if (filter.status) q.status = Array.isArray(filter.status) ? { $in: filter.status } : filter.status;
+      const res = await streamRuns.getAll(q as any, { sort: { created: -1 } });
+      return (res.success && res.data ? res.data : []) as Run[];
+    },
+
+    /** The run that currently OWNS a scene (still in a running status), or null. */
+    async activeRunForScene(sceneId: string) {
+      const rows = await this.listRuns({ sceneId });
+      return rows.find((r) => runIsActive(r.status)) ?? null;
+    },
+
+    // ---- Connected YouTube channels (OAuth) ----
+
+    /**
+     * A connected YouTube account. With an id → that channel; without → the most
+     * recently connected one (the de-facto default for single-channel setups).
+     */
+    async getYoutubeAccount(id?: string) {
+      if (id) {
+        const res = await youtubeAccounts.getByID(id);
+        return res.success && res.data ? (res.data as iYoutubeAccountModel) : null;
+      }
+      const res = await youtubeAccounts.getAll({}, { sort: { connectedAt: -1 }, limit: 1 });
+      return res.success && res.data && res.data.length ? (res.data[0] as iYoutubeAccountModel) : null;
+    },
+
+    /** All connected YouTube channels (admin list). */
+    async listYoutubeAccounts() {
+      const res = await youtubeAccounts.getAll({}, { sort: { connectedAt: -1 } });
+      return (res.success && res.data ? res.data : []) as iYoutubeAccountModel[];
+    },
+
+    /** Insert-or-update a connected channel by channelId. */
+    async saveYoutubeAccount(patch: Partial<iYoutubeAccountModel> & { id: string }) {
+      const res = await youtubeAccounts.upsertByID(patch.id, patch as any);
+      return res.data ? (res.data as iYoutubeAccountModel) : null;
+    },
+
+    /** Disconnect a channel (removes its stored refresh token). */
+    async deleteYoutubeAccount(id: string) {
+      const res = await youtubeAccounts.deleteByID(id);
       return !!res.success;
     },
   };

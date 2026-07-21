@@ -7,6 +7,13 @@ jest.mock("../lib/director", () => ({ useDirector: jest.fn() }));
 const mockUseDirector = useDirector as jest.Mock;
 
 describe("StreamStatusBadge", () => {
+  // The badge cold-starts its live-run state from /api/streams/live
+  // (usePublicLiveRun); jsdom has no fetch. Nothing here asserts on the run, so
+  // an empty list is enough — the socket RUN_STATE path is tested in stream.ts.
+  beforeEach(() => {
+    global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ runs: [] }) })) as any;
+  });
+
   it("shows OFF AIR when the director isn't driving the main scene", () => {
     mockUseDirector.mockReturnValue(null);
     render(<StreamStatusBadge />);

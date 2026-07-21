@@ -27,6 +27,7 @@ export const ADMIN_LINKS: AdminLink[] = [
   { group: "Broadcast", href: "/control", title: "Operator console", desc: "Live broadcast control — variables, basemap, camera.", ready: true },
   { group: "Broadcast", href: "/watch", title: "Watch", desc: "The output view that goes to stream.", ready: true },
   { group: "Broadcast", href: "/admin/scenes", title: "Scenes", desc: "Named /watch/:id globes for OBS sources and overlays.", ready: true },
+  { group: "Broadcast", href: "/admin/streams", title: "Live streams", desc: "Start/stop time-boxed YouTube+OBS runs per scene; connect YouTube.", ready: true },
   { group: "Broadcast", href: "/admin/access", title: "Access", desc: "Tokened OBS/YouTube URLs per scene — copy, rotate.", ready: true },
   { group: "Broadcast", href: "/admin/ads", title: "Ads", desc: "Sponsor images/video shown on the broadcast.", ready: true },
   { group: "Broadcast", href: "/admin/runs", title: "Runs", desc: "As-run log — what the auto-director aired, shot by shot.", ready: true },

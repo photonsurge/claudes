@@ -65,6 +65,7 @@ const BACKGROUND_TYPES = new Set<string>([
 const FOREGROUND_TYPES = new Set<string>([
   "director", // broadcast sequencer — must never wait behind a bake
   "ping", // health / liveness
+  "run-lifecycle", // live-stream go-live/stop/confirm/heartbeat — operator-facing, latency-sensitive
 ]);
 
 /** Which tier a job type runs on. Explicit `sendToFore/Mid/Back` override this. */

@@ -38,6 +38,7 @@ import { useGeomag } from "../../lib/geomag-overlay";
 import GlobeView, { type GlobeHandle } from "../../components/GlobeView";
 import ControlPanel from "../../components/ControlPanel";
 import DirectorPanel, { type TabId as DirectorTabId } from "../../components/DirectorPanel";
+import StreamPanel from "../../components/StreamPanel";
 import ViewingOverlay from "../../components/ViewingOverlay";
 import QuakeReport from "../../components/broadcast/QuakeReport";
 import TrackInfoPanel from "../../components/broadcast/TrackInfoPanel";
@@ -347,6 +348,7 @@ export default function ControlPage() {
           showSettings={directorShowSettings}
           onToggleSettings={() => setDirectorShowSettings((s) => !s)}
         />
+        <StreamPanel sceneId={sceneId} />
         {showControlPanel ? (
           <ControlPanel
             state={state}

@@ -15,7 +15,8 @@ import { join, extname, basename } from "path";
 import v8 from "v8";
 
 import { QUEUE_NAMES, QUEUE_TIERS, TIER_CONCURRENCY, queueForType } from "@photonsurge/shared/utill/bull-utils";
-import { getQueue, getAllQueues, getRedisOptions } from "@photonsurge/shared/bull/bull";
+import { getQueue, getAllQueues, getRedisOptions, attachConnectionLogging } from "@photonsurge/shared/bull/bull";
+import { startRedisWatchdog } from "./redisWatchdog";
 import { bakePoolStats } from "./grib/bakePool";
 import { getDb, closeDb } from "@photonsurge/shared/utill/mongoose";
 import { getAppDb } from "@photonsurge/shared/db/index";
@@ -25,6 +26,8 @@ import { jobLabel } from "@photonsurge/shared/jobs";
 import { WorkerBackLogger } from "@photonsurge/shared/utill/BackLogger";
 
 import { initSocket, closeSocket } from "./socket";
+import { rearmLiveRuns, stopAllMonitors } from "./stream/lifecycle";
+import { closeObs } from "./obs/client";
 import { startQueueEventBridge } from "./queueEventBridge";
 import { installJobConsoleTap, runInJobLogContext, getJobLog, listJobLogs } from "./jobLog";
 import { beginJob, endJob, startCancelSubscriber, activeJobLabels } from "./jobCancel";
@@ -206,6 +209,11 @@ process.on("uncaughtException", (err) => {
   // mode. Runs in-process (not a BullMQ job) — reads Mongo + emits director:state.
   startDirector();
 
+  // Restore streaming-run monitors + re-arm auto-end for runs that were live when
+  // the worker last stopped (health/confirm loops are in-process, so a restart
+  // otherwise drops them). Best-effort — a failure here must not block boot.
+  rearmLiveRuns().catch((err) => log(TAG, `rearmLiveRuns failed`, summarizeForLog(err)));
+
   // Per-job memory instrumentation. A slow OOM used to only announce itself as a
   // 4GB heap-limit crash mid weather-refresh; logging heap/rss around every job —
   // plus the process rss high-water — turns the next spike into "job X left rss at
@@ -313,7 +321,18 @@ process.on("uncaughtException", (err) => {
     stalledInterval: 30_000,
     maxStalledCount: 2,
   });
-  const workers = QUEUE_TIERS.map((tier) => new Worker(QUEUE_NAMES[tier], processJob, workerOptsFor(tier)));
+  // Each Worker owns TWO redis connections (main + blocking) and forwards both
+  // their errors here. Without a listener BullMQ bare-console.errors every single
+  // reconnect attempt — see attachConnectionLogging.
+  const workers = QUEUE_TIERS.map((tier) => {
+    const w = new Worker(QUEUE_NAMES[tier], processJob, workerOptsFor(tier));
+    attachConnectionLogging(w, `worker:${tier}`);
+    return w;
+  });
+
+  // A worker that can't reach redis can't do anything — don't linger as a zombie
+  // spamming reconnect errors; die after a sustained outage so it's visible.
+  const stopRedisWatchdog = startRedisWatchdog();
   log(TAG, `workers started`, Object.fromEntries(QUEUE_TIERS.map((t) => [t, workerOptsFor(t).concurrency])));
 
   // Clear stale schedules before re-registering, so the registrations below are
@@ -1634,6 +1653,9 @@ process.on("uncaughtException", (err) => {
     // carries on cutting shots the whole time bullWorker.close() drains jobs.
     stopDirector();
 
+    // Stop the streaming-run monitors (in-process health/confirm loops) too.
+    stopAllMonitors();
+
     // Backstop: if the graceful drain wedges (e.g. a stuck job holding its
     // lock), force-exit so quit always actually quits.
     const forceTimer = setTimeout(() => {
@@ -1647,9 +1669,11 @@ process.on("uncaughtException", (err) => {
       // shared handles (socket, Redis, Mongo pool) so nothing is left dangling
       // for process.exit to reap.
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      stopRedisWatchdog();
       stopQueueEventBridge();
       stopJobConsoleTap();
       stopCancelSubscriber();
+      closeObs();
       closeSocket();
       await Promise.all(workers.map((w) => w.close()));
       await Promise.all(queues.map((q) => q.close()));

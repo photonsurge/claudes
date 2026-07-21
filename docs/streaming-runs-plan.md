@@ -1,13 +1,56 @@
 # Plan: multi-run live streaming (bounded-duration runs + chat monitoring)
 
-> Status: **planned, not started.** Goal: let an operator start/stop N concurrent,
-> time-boxed broadcast **runs** (each bound to an existing scene, each optionally
-> publishing to YouTube, each optionally monitoring platform chat) instead of the
-> single always-on `/watch` capture we have today. Generalizes and folds in
-> `YOUTUBE.md`'s single-rotating-stream design rather than replacing it — see that
-> file for the YouTube broadcast create/bind/transition mechanics, which still
-> apply per-run. LLM-based chat moderation/narration is explicitly out of scope
-> here (parked separately, see `presenter-llm-plan` memory).
+> Status: **v1 IMPLEMENTED** (with OBS automation pulled in — see "As built" below).
+> Goal: let an operator start/stop N concurrent, time-boxed broadcast **runs** (each
+> bound to an existing scene, each optionally publishing to YouTube, each optionally
+> monitoring platform chat) instead of the single always-on `/watch` capture we had.
+> Generalizes and folds in `YOUTUBE.md`'s single-rotating-stream design rather than
+> replacing it — see that file for the YouTube broadcast create/bind/transition
+> mechanics, which still apply per-run. LLM-based chat moderation/narration is
+> explicitly out of scope here (parked separately, see `presenter-llm-plan` memory).
+
+## As built (v1 — deviations from the original plan below)
+
+Shipped this build; the phased design below is the historical plan. Key changes:
+
+1. **OBS automation is IN v1** (the plan deferred it to manual key-paste). The worker
+   drives OBS over `obs-websocket-js` (`worker/src/obs/client.ts`), endpoint
+   configurable via `OBS_WEBSOCKET_URL`/`OBS_WEBSOCKET_PASSWORD`. If OBS is
+   unreachable the run parks in a new **`awaiting-ingest`** status and surfaces the
+   stream key for a manual paste — a graceful fallback, not a failure.
+2. **Routes are `/admin/streams` + `/api/streams`**, NOT `/admin/runs` — that path is
+   already the director's as-run log (`AirRun`). The Mongo model is `Run` (collection
+   `runs`, no clash with `airruns`); socket events are `run:state` / `run:status` /
+   `chat:message`.
+3. **Confirm-ingest + health + chat run as IN-PROCESS monitors** (one per run, keyed
+   in `worker/src/stream/monitor.ts`), mirroring the auto-director's in-process loop —
+   this avoids BullMQ's self-reschedule jobId collision. **Auto-END stays a durable
+   BullMQ delayed job** (`run-end-<id>`), cancelled on manual stop with
+   `queue.getJob(id).remove()` (NOT `removeJobScheduler` — that's for repeatables).
+   The boot reconciler `rearmLiveRuns()` restores monitors + re-arms auto-end after a
+   worker restart.
+4. **`goLive` is `attempts:1` + resumable** (guards each step on persisted
+   `broadcastId`/`phase`) — no blind BullMQ retry against the non-idempotent
+   `liveBroadcasts.insert`.
+5. **No `socket/` relay change** — worker-emitted `run:*` / `chat:message` already pass
+   `canRelayWorkerEvent`. The socket projection is **secret-free** (`toRunState` strips
+   the RTMP key, which the admin-only `GET /api/streams/:id/key` serves instead).
+6. **OAuth code→token exchange happens in the WORKER** (`youtube.exchangeCode` job); the
+   public routes only build the consent URL + delegate, so the client secret + the
+   AES-GCM token key never enter `public`. Refresh token stored encrypted
+   (`shared/src/utill/secretbox.ts`) in `youtube-account-model`.
+7. **Chat = mirror only (display in /control).** The worker chat poller
+   (`worker/src/stream/chat.ts`) → `chat:message` → `LiveChatPanel`. **Promote-to-ticker
+   is DEFERRED**: the on-air ticker is computed from quakes/tracks/alerts, so promoting
+   needs a new operator-promoted-lines path through the broadcast render — its own
+   follow-up, not built here. Twitch/Kick still deferred.
+
+As-built files: shared — `runs.ts`, `db/run-model.ts`, `db/youtube-account-model.ts`,
+`utill/secretbox.ts`, `+chat` on ControlState. worker — `obs/client.ts`,
+`youtube/client.ts`, `stream/{lifecycle,monitor,chat}.ts`, `jobs/{run-lifecycle,youtube}.ts`.
+public — `lib/{stream,chat,require-admin}.ts`, `components/StreamPanel.tsx`,
+`components/control/LiveChatPanel.tsx`, `app/admin/streams/`, `app/api/streams/*`,
+`app/api/youtube/*`, real `StreamStatusBadge`.
 
 ## Where we are today
 

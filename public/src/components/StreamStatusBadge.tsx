@@ -1,16 +1,21 @@
 "use client";
 
 /**
- * Home-page "is the broadcast live" indicator. Reuses the same on-air signal
- * as /watch's brand-block LIVE badge: the main scene's auto-director is
- * actively driving a segment (DIRECTOR_STATE heartbeat over the socket).
+ * Home-page "is the broadcast live" indicator. Prefers the REAL stream signal —
+ * a live streaming run on the main scene (usePublicLiveRun, secret-free public
+ * feed) — and falls back to the auto-director heartbeat (director.active) when
+ * no platform run is publishing, so a director-only broadcast still reads ON AIR.
  */
 import { useDirector } from "../lib/director";
+import { usePublicLiveRun } from "../lib/stream";
 import { MAIN_SCENE_ID } from "@photonsurge/shared/control";
 
 export default function StreamStatusBadge() {
   const director = useDirector(MAIN_SCENE_ID);
-  const live = !!director?.active;
+  const liveRun = usePublicLiveRun(MAIN_SCENE_ID);
+
+  const live = !!liveRun || !!director?.active;
+  const label = liveRun?.title || director?.segment?.title;
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
@@ -28,8 +33,11 @@ export default function StreamStatusBadge() {
       <span style={{ fontWeight: 700, letterSpacing: 1, color: live ? "#fff" : "#8b95a7" }}>
         {live ? "ON AIR" : "OFF AIR"}
       </span>
-      {live && director?.segment?.title ? (
-        <span style={{ color: "#8b95a7" }}>· {director.segment.title}</span>
+      {live && label ? <span style={{ color: "#8b95a7" }}>· {label}</span> : null}
+      {liveRun?.watchUrl ? (
+        <a href={liveRun.watchUrl} target="_blank" rel="noreferrer" style={{ color: "#7dd3fc" }}>
+          ↗
+        </a>
       ) : null}
     </div>
   );

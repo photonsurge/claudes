@@ -159,6 +159,24 @@ export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   muted: false,
 };
 
+/**
+ * Operator preferences for live-platform chat monitoring on this scene. Chat is
+ * OPERATOR-ONLY (a /control panel) and never rendered on /watch by default — see
+ * docs/streaming-runs-plan.md decision 4. Persisted per-scene so the preference
+ * survives across the streaming runs that scene hosts.
+ */
+export interface ChatSettings {
+  /** Poll + surface this scene's live-run chat in the operator LiveChatPanel. */
+  enabled: boolean;
+  /** Allow the operator to promote a chat message into the on-air summary ticker. */
+  promoteToTicker: boolean;
+}
+
+export const DEFAULT_CHAT_SETTINGS: ChatSettings = {
+  enabled: false,
+  promoteToTicker: false,
+};
+
 /** How elevation contour lines are coloured. */
 export type ElevationLineColor = "default" | "elevation" | "custom";
 
@@ -433,6 +451,8 @@ export interface ControlState {
   broadcastTheme: string;
   /** Generative music bed played on /watch (mode/volume/mute, operator-driven). */
   audio: AudioSettings;
+  /** Live-platform chat monitoring preference for this scene (operator-only). */
+  chat: ChatSettings;
   /**
    * Wall-clock ms target for the pre-broadcast countdown reveal. While set and
    * in the future, /watch covers the globe with a "starting in…" countdown +
@@ -501,6 +521,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showBroadcastChrome: true,
   broadcastTheme: "command",
   audio: { ...DEFAULT_AUDIO_SETTINGS },
+  chat: { ...DEFAULT_CHAT_SETTINGS },
   startAt: null,
 };
 
@@ -661,6 +682,16 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
         typeof patch.audio?.muted === "boolean"
           ? patch.audio.muted
           : base.audio?.muted ?? DEFAULT_AUDIO_SETTINGS.muted,
+    },
+    chat: {
+      enabled:
+        typeof patch.chat?.enabled === "boolean"
+          ? patch.chat.enabled
+          : base.chat?.enabled ?? DEFAULT_CHAT_SETTINGS.enabled,
+      promoteToTicker:
+        typeof patch.chat?.promoteToTicker === "boolean"
+          ? patch.chat.promoteToTicker
+          : base.chat?.promoteToTicker ?? DEFAULT_CHAT_SETTINGS.promoteToTicker,
     },
     startAt:
       patch.startAt === null ? null : typeof patch.startAt === "number" ? patch.startAt : base.startAt ?? null,

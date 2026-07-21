@@ -6,6 +6,7 @@
  */
 import { Job, Queue, QueueEvents } from "bullmq";
 import { getEnvVar } from "../utill/env";
+import { log, logError } from "../utill/logger";
 import { DEFAULT_TIER, QUEUE_NAMES, QUEUE_TIERS, type QueueTier } from "../utill/bull-utils";
 
 declare global {
@@ -28,6 +29,85 @@ export function getRedisOptions() {
   } as const;
 }
 
+const TAG = "[bull]";
+
+// How often a CONTINUING outage re-logs. One line per source per minute.
+const OUTAGE_LOG_INTERVAL_MS = 60_000;
+
+type Outage = { since: number; lastLogAt: number; count: number; msg: string };
+const outages = new Map<string, Outage>();
+
+/**
+ * Attach a de-duplicating `error` listener to a BullMQ Queue / QueueEvents / Worker.
+ *
+ * MUST be called on every one we create. BullMQ forwards each ioredis connection
+ * error to an `error` event on the owning object; with NO listener attached its own
+ * last-ditch handler (queue-base.ts `emit` → re-emit → catch) falls through to a bare
+ * `console.error(err)` — no tag, no context, once per reconnect attempt per client.
+ * A Redis outage therefore buries the log under thousands of identical
+ *
+ *     Error: connect ECONNREFUSED 172.18.0.2:6379
+ *         at TCPConnectWrap.afterConnect [as oncomplete] ...
+ *
+ * dumps — three Queues + three QueueEvents + three Workers (each with a second,
+ * blocking connection), every one retrying on ioredis' backoff — and whatever
+ * actually broke scrolls off the top. Docker's 50MB×5 log rotation then eats the
+ * evidence.
+ *
+ * So: collapse a storm into ONE tagged line per source, then a rolled-up line at
+ * most once a minute carrying the suppressed count and how long the outage has
+ * lasted. A CHANGED message logs immediately — a new failure mode is news, not
+ * more of the same — and reconnecting logs the recovery with the outage duration.
+ */
+export function attachConnectionLogging(emitter: Queue | QueueEvents | any, label: string): void {
+  emitter.on("error", (err: any) => {
+    const msg = `${err?.code ? `${err.code}: ` : ""}${err?.message ?? String(err)}`;
+    const now = Date.now();
+    const prev = outages.get(label);
+    if (!prev || prev.msg !== msg) {
+      outages.set(label, { since: now, lastLogAt: now, count: 1, msg });
+      logError(TAG, `${label}: ${msg}`);
+      return;
+    }
+    prev.count++;
+    if (now - prev.lastLogAt < OUTAGE_LOG_INTERVAL_MS) return;
+    prev.lastLogAt = now;
+    const secs = Math.round((now - prev.since) / 1000);
+    logError(TAG, `${label}: ${msg} — still failing after ${secs}s (${prev.count} attempts)`);
+  });
+
+  // Recovery. The ioredis client is only reachable through the connection's
+  // `client` promise — a SINGLE promise that resolves the first time the client
+  // goes ready. So resolution IS the first recovery (subscribing to "ready" here
+  // would miss it, having arrived one tick late); the listener then catches every
+  // reconnect after that.
+  const recovered = () => {
+    const outage = outages.get(label);
+    if (!outage) return;
+    outages.delete(label);
+    const secs = Math.round((Date.now() - outage.since) / 1000);
+    log(TAG, `${label}: redis reconnected after ${secs}s (${outage.count} failed attempts)`);
+  };
+  void Promise.resolve(emitter.client)
+    .then((client: any) => {
+      recovered();
+      client?.on?.("ready", recovered);
+    })
+    .catch(() => {});
+}
+
+/**
+ * When the OLDEST currently-unresolved connection outage started (ms epoch), or
+ * null if every connection is healthy. Lets a long-running process decide that
+ * Redis has been gone long enough to stop pretending it's working — see the
+ * worker's redis watchdog.
+ */
+export function redisOutageSince(): number | null {
+  let oldest: number | null = null;
+  for (const { since } of outages.values()) if (oldest === null || since < oldest) oldest = since;
+  return oldest;
+}
+
 /**
  * The Queue for a tier (default MID — its name is the historical "worker-app", so
  * every `getQueue().client` reader and existing Redis schedule carries on). One
@@ -38,6 +118,7 @@ export function getQueue(tier: QueueTier = DEFAULT_TIER): Queue {
   const hit = cache[tier];
   if (hit) return hit;
   const q = new Queue(QUEUE_NAMES[tier], { connection: getRedisOptions() });
+  attachConnectionLogging(q, `queue:${tier}`);
   cache[tier] = q;
   return q;
 }
@@ -52,6 +133,7 @@ export function getQueueEvents(tier: QueueTier = DEFAULT_TIER): QueueEvents {
   const hit = cache[tier];
   if (hit) return hit;
   const qe = new QueueEvents(QUEUE_NAMES[tier], { connection: getRedisOptions() });
+  attachConnectionLogging(qe, `queue-events:${tier}`);
   cache[tier] = qe;
   return qe;
 }

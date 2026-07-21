@@ -102,6 +102,7 @@ describe("mergeControlState", () => {
       broadcastTheme: "command",
       showMapSource: true,
       audio: { enabled: true, mode: "deep", volume: 0.45, muted: true },
+      chat: { enabled: true, promoteToTicker: true },
       startAt: 1732000000000,
     };
     // Deep-equal proves no key was dropped or altered by the merge.
@@ -178,6 +179,14 @@ describe("mergeControlState", () => {
     const legacy = { ...DEFAULT_CONTROL_STATE, audio: undefined as any };
     const next = mergeControlState(legacy, {});
     expect(next.audio).toEqual(DEFAULT_AUDIO_SETTINGS);
+  });
+
+  it("merges chat partially and backfills when the base predates the field", () => {
+    const next = mergeControlState(base, { chat: { enabled: true } as any });
+    expect(next.chat.enabled).toBe(true);
+    expect(next.chat.promoteToTicker).toBe(base.chat.promoteToTicker);
+    const legacy = { ...DEFAULT_CONTROL_STATE, chat: undefined as any };
+    expect(mergeControlState(legacy, {}).chat).toEqual({ enabled: false, promoteToTicker: false });
   });
 
   it("sets, clears, and preserves the pre-broadcast countdown target", () => {
