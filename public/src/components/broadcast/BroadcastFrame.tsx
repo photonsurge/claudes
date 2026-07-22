@@ -19,6 +19,7 @@ import type { Segment, SegmentKind } from "@photonsurge/shared/director";
 import type { AuroraOverlay } from "../../lib/aurora-overlay";
 import type { GeomagOverlay } from "../../lib/geomag-overlay";
 import type { AlertFeature } from "../../lib/alerts";
+import type { HazardType } from "../../lib/hazard";
 import type { Quake, Track } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
 import type { TideStationReading } from "../../lib/tides/types";
@@ -140,6 +141,7 @@ export default function BroadcastFrame({
   state,
   manifest,
   alerts = [],
+  activeHazard = null,
   quakes = [],
   volcanoes = [],
   seismoStations = [],
@@ -162,6 +164,9 @@ export default function BroadcastFrame({
   state: ControlState;
   manifest: WeatherManifest | null;
   alerts?: AlertFeature[];
+  /** The hazard type the globe is lighting right now (lib/alert-cycle) — the
+   *  IN VIEW rollup marks it so the card names what the map is showing. */
+  activeHazard?: HazardType | null;
   quakes?: Quake[];
   /** Worker-cached active-volcano feed — for the country/region "IN VIEW" rollup. */
   volcanoes?: Volcano[];
@@ -496,6 +501,7 @@ export default function BroadcastFrame({
         cams,
         quakes,
         alerts,
+        activeHazard,
         volcanoCams,
         volcanoMedia,
         volcanoEruptions,

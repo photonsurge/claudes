@@ -111,6 +111,24 @@ describe("goLive", () => {
     expect(run.error).toMatchObject({ step: "goLive" });
   });
 
+  it("refuses a second publishing run instead of hijacking the shared OBS encoder", async () => {
+    // Run A already owns the single OBS streaming output.
+    setRun({ id: "live-a", sceneId: "atlantic", status: "live", platforms: { youtube: { broadcastId: "b-a" } } });
+    setRun({ id: "r7", sceneId: "default", status: "scheduled", platforms: { youtube: {} }, durationMs: null });
+
+    await goLive("r7");
+
+    const run = runs.get("r7");
+    expect(run.status).toBe("failed");
+    expect(run.error.message).toMatch(/only one concurrent stream/i);
+    // Critically: no YouTube resources created and OBS never touched.
+    expect(yt.createBroadcast).not.toHaveBeenCalled();
+    expect(obs.setStreamKey).not.toHaveBeenCalled();
+    expect(obs.startStream).not.toHaveBeenCalled();
+    // Run A is untouched.
+    expect(runs.get("live-a").status).toBe("live");
+  });
+
   it("resumes without recreating a broadcast that already exists", async () => {
     setRun({
       id: "r4",

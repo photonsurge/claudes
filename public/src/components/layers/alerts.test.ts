@@ -215,6 +215,75 @@ describe("alertsLayer — visibility cloning", () => {
   });
 });
 
+describe("alertsLayer — hazard cycle ghosting", () => {
+  const FOCUS = { hazard: "flood" as HazardType, prevHazard: null, fade: 1, pinned: null };
+  const lit = square({ hazard: "flood" });
+  const ghost = square({ hazard: "fire" });
+
+  it("keeps the data array reference so a step never re-tessellates", () => {
+    const features = [lit, ghost];
+    for (const l of alertsLayer(features, true, FOCUS)) {
+      if (Array.isArray(l.props.data) && l.props.id.startsWith("alerts-badge")) continue;
+      expect(l.props.data).toBe(features);
+    }
+  });
+
+  it("drops the bloom + fill of an off-step hazard, keeping a dim hairline edge", () => {
+    const layers = alertsLayer([lit, ghost], true, FOCUS);
+    const wide = byId(layers, "alerts-glow-wide").props;
+    const fill = byId(layers, "alerts-fill").props;
+    const edge = byId(layers, "alerts-edge").props;
+
+    expect(wide.getLineColor(ghost)[3]).toBe(0);
+    expect(fill.getFillColor(ghost)[3]).toBe(0);
+    // The one surviving pass: dim, and hairline rather than severity-scaled.
+    expect(edge.getLineColor(ghost)[3]).toBe(38);
+    expect(edge.getLineWidth(ghost)).toBe(1);
+  });
+
+  it("leaves the lit hazard exactly as it draws with no cycle at all", () => {
+    const withCycle = alertsLayer([lit, ghost], true, FOCUS);
+    const without = alertsLayer([lit, ghost], true, null);
+    for (const id of AREA_IDS) {
+      const a = byId(withCycle, id).props;
+      const b = byId(without, id).props;
+      const get = a.getFillColor ?? a.getLineColor;
+      const getB = b.getFillColor ?? b.getLineColor;
+      expect(get(lit)).toEqual(getB(lit));
+    }
+  });
+
+  it("cross-fades: mid-step both types are half lit", () => {
+    const mid = { ...FOCUS, prevHazard: "fire" as HazardType, fade: 0.5 };
+    const fill = byId(alertsLayer([lit, ghost], true, mid), "alerts-fill").props;
+    const full = byId(alertsLayer([lit, ghost], true, FOCUS), "alerts-fill").props;
+    expect(fill.getFillColor(lit)[3]).toBeCloseTo(full.getFillColor(lit)[3] / 2);
+    expect(fill.getFillColor(ghost)[3]).toBeCloseTo(full.getFillColor(lit)[3] / 2);
+  });
+
+  it("never ghosts the pinned on-air subject", () => {
+    const pinned = { ...FOCUS, pinned: "fire" as HazardType };
+    const fill = byId(alertsLayer([lit, ghost], true, pinned), "alerts-fill").props;
+    expect(fill.getFillColor(ghost)[3]).toBeGreaterThan(0);
+  });
+
+  it("fades out a ghosted point-only badge entirely (it has no outline to keep)", () => {
+    const layers = alertsLayer([point([30, 40], { hazard: "fire" })], true, FOCUS);
+    const badge = byId(layers, "alerts-badge-core").props.data[0];
+    expect(badge.lit).toBe(0);
+    expect(byId(layers, "alerts-badge-core").props.getFillColor(badge)[3]).toBe(0);
+  });
+
+  it("keys every colour accessor on the focus so deck re-uploads on a step", () => {
+    const a = byId(alertsLayer([lit, ghost], true, FOCUS), "alerts-fill").props;
+    const b = byId(
+      alertsLayer([lit, ghost], true, { ...FOCUS, hazard: "fire" as HazardType }),
+      "alerts-fill",
+    ).props;
+    expect(a.updateTriggers.getFillColor).not.toEqual(b.updateTriggers.getFillColor);
+  });
+});
+
 describe("onAirPulseLayers — matching tolerance", () => {
   // NB: alertRepPoint averages EVERY outer-ring vertex, including the repeated
   // closing point — so the square's rep point is [9.8, 19.8], not [10, 20].

@@ -71,6 +71,19 @@ export default function DirectorTuning({
           style={{ width: "100%", marginTop: 4 }}
         />
       </label>
+      <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>
+        Hazard cycle: <strong>{config.alertCycleSeconds}s</strong>
+        <InfoTip text="How long the globe lights each hazard type before moving to the next — wind, then rain, then snow — instead of stacking every warning at once. Turn the cycle itself off under Alerts on the map panel." />
+        <input
+          type="range"
+          min={2}
+          max={20}
+          step={1}
+          value={config.alertCycleSeconds}
+          onChange={(e) => update({ alertCycleSeconds: Number(e.target.value) })}
+          style={{ width: "100%", marginTop: 4 }}
+        />
+      </label>
     </>
   );
 }

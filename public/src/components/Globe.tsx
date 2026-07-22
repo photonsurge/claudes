@@ -67,6 +67,7 @@ import type { TrackPath } from "../lib/tracks/client";
 import type { OrbitSegment } from "../lib/tracks/orbit";
 import { orbitAmpCap } from "../lib/orbit-frame";
 import type { AlertFeature } from "../lib/alerts";
+import { alertFocusKey, type AlertFocus } from "../lib/alert-cycle";
 import type { Segment } from "@photonsurge/shared/director";
 import { quakeToSegment, alertFeatureToSegment, volcanoToSegment } from "../lib/select-segment";
 import type { CableOverlay } from "../lib/cables-overlay";
@@ -95,6 +96,9 @@ export interface GlobeProps {
   trails?: TrackPath[];
   /** Active weather-alert polygons. */
   alerts?: AlertFeature[];
+  /** The hazard cycle's current step — lights one hazard type and ghosts the
+   *  rest (see lib/alert-cycle). Null draws every warning lit, as before. */
+  alertFocus?: AlertFocus | null;
   /** Recent earthquakes (USGS). */
   quakes?: Quake[];
   /** Worker-cached live seismograph stations near what's on air. */
@@ -222,7 +226,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], quakes = [], seismoStations = [], seismoActive = null, tideStations = [], tideActive = null, weatherPointCenter = null, weatherPointLabel = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, glowRegionBbox, highlightTrack, onSelect, onPickPoint },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], alertFocus = null, quakes = [], seismoStations = [], seismoActive = null, tideStations = [], tideActive = null, weatherPointCenter = null, weatherPointLabel = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, glowRegionBbox, highlightTrack, onSelect, onPickPoint },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -930,7 +934,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // Weather-alert polygons above borders, below cities/tracks. Kept mounted
     // (visibility toggled, not added/removed) so a director cut flipping
     // showAlerts doesn't force a cold re-tessellation of every polygon.
-    if (alerts.length) layers.push(...alertsLayer(alerts, state.showAlerts));
+    if (alerts.length) layers.push(...alertsLayer(alerts, state.showAlerts, alertFocus));
 
     // Earthquakes above alerts, below cities/tracks.
     if (state.showSeismic && quakes.length) layers.push(...seismicLayer(quakes));
@@ -1050,6 +1054,10 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     orbits,
     trails,
     alerts,
+    // Key on the focus VALUE, not the object identity: the cycle hands us a
+    // fresh object every tick, and only the ~6 fade increments per step should
+    // rebuild the layers (a colour re-upload each — never a re-tessellation).
+    alertFocusKey(alertFocus),
     quakes,
     seismoStations,
     seismoActive,

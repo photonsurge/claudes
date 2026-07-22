@@ -74,6 +74,7 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
     regions: { type: [String], default: [] },
     minQuakeMag: { type: Number, required: true, default: 4.5 },
     minAlertSeverity: { type: Number, required: true, default: 3 },
+    alertCycleSeconds: { type: Number, required: true, default: 6 },
     adEveryNShots: { type: Number, required: true, default: 6 },
     skipNonce: { type: Number, required: true, default: 0 },
     // Dynamic per-kind keys (SegmentKind → string[] / bool map) — Mixed, same

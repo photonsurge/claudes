@@ -10,6 +10,7 @@
 import type { Segment } from "@photonsurge/shared/director";
 import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { AlertFeature } from "../../lib/alerts";
+import type { HazardType } from "../../lib/hazard";
 import type { Quake } from "../../lib/tracks/types";
 import { alertSummary, type AreaSummary, type WorldSummary } from "../../lib/broadcast";
 import { clampSentences } from "../../lib/text";
@@ -22,6 +23,7 @@ import type { AreaInfo } from "./mode-slides";
 export default function OnAirCard({
   segment,
   alerts = [],
+  activeHazard = null,
   quakes = [],
   volcanoes = [],
   areaInfo = null,
@@ -30,6 +32,9 @@ export default function OnAirCard({
 }: {
   segment: Segment;
   alerts?: AlertFeature[];
+  /** The hazard type the globe is lighting right now (lib/alert-cycle) — its row
+   *  in the IN VIEW breakdown is marked, so the card names what the map shows. */
+  activeHazard?: HazardType | null;
   quakes?: Quake[];
   volcanoes?: Volcano[];
   /** "Where we are" — enriched photo + blurb for the on-air area, shown as the
@@ -164,6 +169,7 @@ export default function OnAirCard({
         <AreaStatus
           summary={summary}
           byArea={byArea}
+          activeHazard={activeHazard}
           label={worldMode ? "WORLDWIDE" : isEvent ? "NEARBY" : "IN VIEW"}
         />
       ) : emptyLabel ? (

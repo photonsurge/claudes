@@ -108,6 +108,23 @@ async function cancelAutoEnd(runId: string): Promise<void> {
   if (state !== "active") await job.remove().catch(() => {});
 }
 
+/**
+ * Another run that already owns the shared OBS encoder, or null.
+ *
+ * HARD CONSTRAINT: one OBS instance has exactly ONE streaming output, and we hold a
+ * single connection to one OBS_WEBSOCKET_URL. So only one run can be publishing at a
+ * time — a second would overwrite the first's stream key via SetStreamServiceSettings
+ * and then no-op on StartStream (output already active), silently pushing run A's
+ * feed while reporting run B live. Concurrency across scenes needs one OBS instance
+ * per scene (or a per-scene ffmpeg renderer); until then this guard refuses instead
+ * of corrupting a live broadcast.
+ */
+async function encoderBusyWith(runId: string): Promise<Run | null> {
+  const db = await getAppDb();
+  const active = await db.listRuns({ status: ["scheduled", "awaiting-ingest", "live", "ending"] });
+  return active.find((r) => r.id !== runId && !!r.platforms?.youtube) ?? null;
+}
+
 async function failRun(runId: string, step: string, err: unknown): Promise<void> {
   const message = String((err as Error)?.message ?? err);
   log(TAG, `run ${runId} failed at ${step}: ${message}`);
@@ -134,6 +151,15 @@ export async function goLive(runId: string): Promise<void> {
   const wantsYoutube = !!run.platforms?.youtube;
   try {
     if (wantsYoutube) {
+      // Checked BEFORE creating any YouTube resources, so a refused run leaves no
+      // orphaned broadcast behind. (The API pre-checks too; this catches the race.)
+      const busy = await encoderBusyWith(runId);
+      if (busy) {
+        throw new Error(
+          `the OBS encoder is already streaming run ${busy.id} (scene "${busy.sceneId}") — ` +
+            `only one concurrent stream is supported by a single OBS instance. Stop that run first.`,
+        );
+      }
       const ctx = await getYoutubeClient(run.platforms.youtube?.accountId);
       let yt: NonNullable<Run["platforms"]["youtube"]> = {
         ...run.platforms.youtube,

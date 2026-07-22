@@ -15,6 +15,7 @@ import { mapFreshness } from "../lib/manifest";
 import type { Segment, SegmentKind, DirectorState } from "@photonsurge/shared/director";
 import { useTracks } from "../lib/tracks/useTracks";
 import { useAlertFeatures } from "../lib/alerts-overlay";
+import { useAlertHazardStep, ALERT_CYCLE_MS } from "../lib/alert-cycle";
 import { useQuakes } from "../lib/seismic-overlay";
 import {
   FocusProvider,
@@ -64,6 +65,8 @@ interface WatchSurfaceProps {
   upNext?: DirectorState["upNext"];
   /** Name of the on-air segment kind's active saved "slide" look, if any. */
   slideName?: string;
+  /** Dwell per step of the alert hazard cycle (DirectorConfig.alertCycleSeconds). */
+  alertCycleSeconds?: number;
   /** Whether the auto-director is actively driving this scene — gates the
    *  brand block's LIVE badge (an idle/off director isn't on air). */
   directorOn?: boolean;
@@ -81,6 +84,7 @@ function WatchSurfaceBody({
   focusCaption,
   upNext = [],
   slideName,
+  alertCycleSeconds,
   directorOn = false,
   ready,
 }: WatchSurfaceProps & { ready: boolean }) {
@@ -118,6 +122,18 @@ function WatchSurfaceBody({
     zoom: state.camera.zoom,
   });
   const alerts = useAlertFeatures(state.showAlerts && ready, state.alertSeverityMin, state.alertHazardsOff);
+  // Light one hazard type at a time while the shot holds, so four kinds of
+  // warning over the same ground stop stacking into a slab. Null (and every
+  // shape drawn lit, as before) when the operator switches it off or there's
+  // only one type in frame — see lib/alert-cycle.
+  const alertStep = useAlertHazardStep({
+    alerts,
+    enabled: state.showAlerts && state.alertCycle,
+    camera: state.camera,
+    spinning: state.autoSpin,
+    cut: onAirSegment,
+    dwellMs: alertCycleSeconds ? alertCycleSeconds * 1000 : ALERT_CYCLE_MS,
+  });
   const quakes = useQuakes(state.showSeismic && ready, state.seismicMinMag);
   // Same focus point SeismicMonitor uses for the fake-vs-real trace decision:
   // the on-air segment's location if there is one, else the current camera.
@@ -165,6 +181,7 @@ function WatchSurfaceBody({
         orbits={orbits}
         trails={trails}
         alerts={alerts}
+        alertFocus={alertStep}
         quakes={quakes}
         seismoStations={state.showSeismic ? seismoStations : []}
         seismoActive={state.showSeismic ? seismoActive : null}
@@ -190,6 +207,7 @@ function WatchSurfaceBody({
       {!state.showBroadcastChrome ? (
         <AlertLegend
           alerts={state.showAlerts ? alerts : []}
+          activeHazard={alertStep?.hazard ?? null}
           quakes={state.showSeismic ? quakes : []}
           aurora={aurora}
           geomag={geomag}
@@ -200,6 +218,7 @@ function WatchSurfaceBody({
           state={broadcastState}
           manifest={manifest}
           alerts={state.showAlerts ? alerts : []}
+          activeHazard={alertStep?.hazard ?? null}
           quakes={state.showSeismic ? quakes : []}
           volcanoes={state.showVolcanoes ? volcanoes : []}
           seismoStations={state.showSeismic ? seismoStations : []}

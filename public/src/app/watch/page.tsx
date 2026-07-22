@@ -150,6 +150,7 @@ function WatchPageInner() {
         focusCaption={director?.active ? focus : null}
         upNext={director?.active ? director.upNext : []}
         slideName={director?.active ? slideName : undefined}
+        alertCycleSeconds={directorConfig.alertCycleSeconds}
         directorOn={!!director?.active}
       />
       {/* When the broadcast chrome is on, the on-air detail lives inside the event

@@ -407,6 +407,12 @@ export interface DirectorConfig {
   /** Only schedule storms at/above this normalised severity (0–4). */
   minAlertSeverity: number;
   /**
+   * Dwell per step of the on-globe alert cycle (`ControlState.alertCycle`), in
+   * seconds — how long one hazard type stays lit before the next takes over.
+   * A beat, like the map-type tour's own per-look dwell. Min 2.
+   */
+  alertCycleSeconds: number;
+  /**
    * When the `ad` kind is enabled, force a full-frame ad interstitial every this
    * many shots (a "commercial break" cadence). Min 1. Ignored when `kinds.ad`
    * is off. A random ACTIVE ad is picked (weighted by its `weight`) each time.
@@ -1010,6 +1016,7 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   regions: DEFAULT_DIRECTOR_REGIONS,
   minQuakeMag: 4.5,
   minAlertSeverity: 3,
+  alertCycleSeconds: 6,
   adEveryNShots: 6,
   skipNonce: 0,
   mapTypes: {},
@@ -1280,6 +1287,8 @@ export function mergeDirectorConfig(
     regions: sanitizeDirectorRegions(patch.regions) ?? base.regions,
     minQuakeMag: num(patch.minQuakeMag, base.minQuakeMag),
     minAlertSeverity: num(patch.minAlertSeverity, base.minAlertSeverity),
+    // Floor at 2s: below that the cycle strobes rather than reads.
+    alertCycleSeconds: Math.max(2, num(patch.alertCycleSeconds, base.alertCycleSeconds)),
     adEveryNShots: Math.max(1, Math.round(num(patch.adEveryNShots, base.adEveryNShots))),
     skipNonce: num(patch.skipNonce, base.skipNonce),
     mapTypes: mergeStringArrayMap(base.mapTypes, patch.mapTypes),

@@ -1658,10 +1658,14 @@ process.on("uncaughtException", (err) => {
 
     // Backstop: if the graceful drain wedges (e.g. a stuck job holding its
     // lock), force-exit so quit always actually quits.
+    // Kept deliberately BELOW docker-compose's stop_grace_period for this
+    // service: whichever deadline fires first decides how we die, and we want
+    // it to be this one (clean-ish exit) rather than Docker's SIGKILL, which
+    // severs the Mongo connection mid-write.
     const forceTimer = setTimeout(() => {
       log(TAG, `shutdown timed out — forcing exit`);
       process.exit(1);
-    }, 10_000);
+    }, 30_000);
     forceTimer.unref();
 
     try {

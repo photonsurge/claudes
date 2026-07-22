@@ -27,6 +27,7 @@
  */
 import type { AlertFeature } from "../lib/alerts";
 import { hazardMeta, type HazardType } from "../lib/hazard";
+import { hazardsInView } from "../lib/alert-cycle";
 import { QUAKE_DEPTH_COLORS } from "./layers/seismic";
 import type { Quake } from "../lib/tracks/types";
 import { getPalette } from "@photonsurge/shared/palettes";
@@ -101,11 +102,16 @@ function GradientRow({
 
 export default function AlertLegend({
   alerts,
+  activeHazard = null,
   quakes = [],
   aurora = null,
   geomag = null,
 }: {
   alerts: AlertFeature[];
+  /** The hazard type the globe is currently lighting (see lib/alert-cycle) — its
+   *  row leads the key while the others dim, so the map and the key agree about
+   *  what's on screen right now. Null when the cycle is off/inert. */
+  activeHazard?: HazardType | null;
   quakes?: Quake[];
   /** Aurora overlay hook result — present (non-null meta) only when the toggle is on and a frame has loaded. */
   aurora?: AuroraOverlay | null;
@@ -119,14 +125,9 @@ export default function AlertLegend({
   const hasSpaceWeather = hasAurora || hasGeomag;
   if (!hasAlerts && !hasQuakes && !hasSpaceWeather) return null;
 
-  // Hazard types actually drawn, each at the worst severity it appears at, so
-  // the most serious hazards lead the key.
-  const worst = new Map<HazardType, number>();
-  for (const f of alerts) {
-    const h = f.properties.hazard;
-    worst.set(h, Math.max(worst.get(h) ?? 0, f.properties.severityRank));
-  }
-  const types = Array.from(worst.keys()).sort((a, b) => (worst.get(b) ?? 0) - (worst.get(a) ?? 0));
+  // Hazard types actually drawn, worst severity first — the same ordering the
+  // globe's hazard cycle steps through, so the key can't drift from the map.
+  const types = hazardsInView(alerts);
 
   return (
     <div
@@ -171,8 +172,20 @@ export default function AlertLegend({
             <span style={sectionLabel}>EVENTS</span>
             {types.map((id) => {
               const h = hazardMeta(id);
+              // While the globe cycles hazard types, the key follows it: the type
+              // currently lit on the map stands up, the ghosted ones stand down.
+              const dim = activeHazard != null && id !== activeHazard;
               return (
-                <div key={id} style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <div
+                  key={id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                    opacity: dim ? 0.42 : 1,
+                    transition: "opacity 400ms ease",
+                  }}
+                >
                   <span
                     style={{
                       width: 13,
@@ -180,11 +193,11 @@ export default function AlertLegend({
                       borderRadius: 4,
                       flexShrink: 0,
                       background: h.color,
-                      boxShadow: `0 0 7px ${h.color}`,
+                      boxShadow: dim ? "none" : `0 0 7px ${h.color}`,
                       border: "1px solid rgba(255,255,255,0.35)",
                     }}
                   />
-                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: dim ? 600 : 700 }}>
                     {h.icon} {h.label}
                   </span>
                 </div>

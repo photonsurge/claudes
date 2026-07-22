@@ -406,6 +406,21 @@ export interface ControlState {
    * Stored as an off-list so newly added hazard types default to visible.
    */
   alertHazardsOff: HazardType[];
+  /**
+   * Light ONE hazard type at a time while a shot holds, cycling through the
+   * types actually in frame (wind → rain → snow …) instead of drawing every
+   * warning at once.
+   *
+   * The worker dissolves blobs per hazard+severity, so a country under four
+   * kinds of warning gets four shapes over the same ground — and each is painted
+   * in four passes (halo, glow, fill, edge). Stacked, they mix into a slab that
+   * hides the weather underneath. Cycling gives each type a beat of its own; the
+   * rest stay as ghost outlines, so the whole picture is still readable.
+   *
+   * Off = the old draw-everything-at-once behaviour (the operator's escape
+   * hatch). Inert either way when fewer than two hazard types are in frame.
+   */
+  alertCycle: boolean;
   /** Overlay recent earthquakes (USGS) on the globe. */
   showSeismic: boolean;
   /** Only show quakes at/above this magnitude. */
@@ -499,6 +514,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showAlerts: false,
   alertSeverityMin: 0,
   alertHazardsOff: [],
+  alertCycle: true,
   showSeismic: false,
   seismicMinMag: 2.5,
   showCables: false,
@@ -630,6 +646,9 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     alertHazardsOff: Array.isArray(patch.alertHazardsOff)
       ? [...new Set(patch.alertHazardsOff.filter(isHazardType))]
       : base.alertHazardsOff ?? [],
+    // Defaults ON for states persisted before the cycle existed — the stacked
+    // draw it replaces is the bug, not the baseline.
+    alertCycle: typeof patch.alertCycle === "boolean" ? patch.alertCycle : base.alertCycle ?? true,
     showSeismic: typeof patch.showSeismic === "boolean" ? patch.showSeismic : base.showSeismic ?? false,
     seismicMinMag:
       typeof patch.seismicMinMag === "number" ? patch.seismicMinMag : base.seismicMinMag ?? 2.5,

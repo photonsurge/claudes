@@ -83,6 +83,22 @@ async function POST__impl(req: Request) {
 
   const publishYoutube = body.platforms?.youtube === true;
   if (publishYoutube) {
+    // One OBS instance = one streaming output, so only one publishing run at a time.
+    // Without this a second run would silently hijack the first one's encoder (it
+    // overwrites the stream key, then StartStream no-ops on an already-active output).
+    // Lifting this needs one OBS per scene, or a per-scene ffmpeg renderer.
+    const encoderBusy = (await db.listRuns({ status: ["scheduled", "awaiting-ingest", "live", "ending"] })).find(
+      (r) => !!r.platforms?.youtube,
+    );
+    if (encoderBusy) {
+      return NextResponse.json(
+        {
+          error: `Already streaming run on scene "${encoderBusy.sceneId}". Only one concurrent stream is supported (single OBS encoder) — stop it first.`,
+          runId: encoderBusy.id,
+        },
+        { status: 409, headers: NO_CACHE },
+      );
+    }
     if (!platformStatus().youtubeConfigured) {
       return NextResponse.json({ error: "YouTube is not configured on the server" }, { status: 400, headers: NO_CACHE });
     }

@@ -20,6 +20,7 @@ import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { iSummaryStats } from "@photonsurge/shared/db/event-summary-model";
 import type { AlertFeature, AlertTimelineBeat, iAlertSeries, iAlertResource, AlertSnapshotMeta } from "../../lib/alerts";
+import type { HazardType } from "../../lib/hazard";
 import type { Quake } from "../../lib/tracks/types";
 import type { WorldSummary } from "../../lib/broadcast";
 import type { City } from "../../lib/cities";
@@ -94,6 +95,9 @@ export interface ModeSlideContext {
   /** Full global feeds — for the volcano "what else is nearby" content guard. */
   quakes: Quake[];
   alerts: AlertFeature[];
+  /** The hazard type the globe is currently lighting (lib/alert-cycle), or null
+   *  when the cycle is off/inert — marks the matching row of the IN VIEW rollup. */
+  activeHazard?: HazardType | null;
   /** The on-air volcano's official monitoring cameras — from the focus call. */
   /** ACTIVE cameras for the on-air volcano, already joined to our locally-stored
    *  latest frame — composed on the focus call, never fetched per cut. */
@@ -231,6 +235,7 @@ export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
       <OnAirCard
         segment={segment}
         alerts={ctx.areaAlerts}
+        activeHazard={ctx.activeHazard ?? null}
         quakes={ctx.areaQuakes}
         volcanoes={ctx.areaVolcanoes}
         areaInfo={ctx.areaInfo}

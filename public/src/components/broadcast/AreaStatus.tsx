@@ -7,6 +7,7 @@
  * icons + counts. Pure presentation off a precomputed AreaSummary.
  */
 import type { AreaSummary } from "../../lib/broadcast";
+import type { HazardType } from "../../lib/hazard";
 
 /** One area's tally for the by-area breakdown — a continent on a world spin, so
  *  the whole-globe rollup reads "which parts of the planet are lit up" instead of
@@ -22,8 +23,14 @@ export default function AreaStatus({
   summary,
   label = "IN VIEW",
   byArea,
+  activeHazard = null,
 }: {
   summary: AreaSummary;
+  /** The hazard type the globe is lighting right now (see lib/alert-cycle). Its
+   *  row steps forward while the others recede, so the breakdown reads as a
+   *  caption for what the map is currently showing rather than a static tally.
+   *  Null when the cycle is off/inert — every row then reads equally, as before. */
+  activeHazard?: HazardType | null;
   /** Eyebrow over the count — "IN VIEW" for a framed area (country/region/global),
    *  "NEARBY" for a single tracked event whose rollup is a great-circle radius,
    *  "WORLDWIDE" for a whole-globe spin (paired with `byArea`). */
@@ -143,23 +150,36 @@ export default function AreaStatus({
       {/* Hazard-type breakdown — top types with icon + count. */}
       {!byArea && byHazard.length ? (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "7px 14px" }}>
-          {byHazard.slice(0, 8).map((h) => (
-            <span
-              key={h.hazard}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 7,
-                fontSize: 17.1,
-                fontWeight: 700,
-                color: "#dfe7f5",
-              }}
-            >
-              <span style={{ fontSize: 18.7 }}>{h.icon}</span>
-              <span style={{ color: h.color, fontVariantNumeric: "tabular-nums" }}>{h.count}</span>
-              <span style={{ opacity: 0.75, fontWeight: 600 }}>{h.label}</span>
-            </span>
-          ))}
+          {byHazard.slice(0, 8).map((h) => {
+            // Follow the globe's hazard cycle: the type lit on the map right now
+            // stands up (its own colour, a soft glow), the rest recede.
+            const on = activeHazard != null && h.hazard === activeHazard;
+            const off = activeHazard != null && !on;
+            return (
+              <span
+                key={h.hazard}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  fontSize: 17.1,
+                  fontWeight: 700,
+                  color: on ? "#fff" : "#dfe7f5",
+                  opacity: off ? 0.45 : 1,
+                  padding: on ? "1px 8px 1px 6px" : undefined,
+                  marginLeft: on ? -6 : undefined,
+                  borderRadius: 7,
+                  background: on ? `${h.color}26` : undefined,
+                  boxShadow: on ? `inset 0 0 0 1px ${h.color}66` : undefined,
+                  transition: "opacity 400ms ease, background 400ms ease",
+                }}
+              >
+                <span style={{ fontSize: 18.7 }}>{h.icon}</span>
+                <span style={{ color: h.color, fontVariantNumeric: "tabular-nums" }}>{h.count}</span>
+                <span style={{ opacity: on ? 0.95 : 0.75, fontWeight: 600 }}>{h.label}</span>
+              </span>
+            );
+          })}
         </div>
       ) : null}
     </div>

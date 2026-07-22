@@ -134,6 +134,7 @@ function SceneWatchPageInner() {
         focusCaption={director?.active ? focus : null}
         upNext={director?.active ? director.upNext : []}
         slideName={director?.active ? slideName : undefined}
+        alertCycleSeconds={directorConfig.alertCycleSeconds}
         directorOn={!!director?.active}
       />
       {/* Chrome-on: the on-air detail lives in the event reticle, so the separate

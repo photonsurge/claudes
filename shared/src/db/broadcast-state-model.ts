@@ -115,6 +115,7 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     showAlerts: { type: Boolean, required: true, default: false },
     alertSeverityMin: { type: Number, required: true, default: 0 },
     alertHazardsOff: { type: [String], required: true, default: [] },
+    alertCycle: { type: Boolean, required: true, default: true },
     showSeismic: { type: Boolean, required: true, default: false },
     seismicMinMag: { type: Number, required: true, default: 2.5 },
     showCables: { type: Boolean, required: true, default: false },

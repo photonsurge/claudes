@@ -3,6 +3,7 @@ import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
 import type { AlertFeature } from "../../lib/alerts";
 import { hazardMeta } from "../../lib/hazard";
+import { alertFocusKey, litWeight, type AlertFocus } from "../../lib/alert-cycle";
 import { DEPTH_TEST } from "./depth";
 
 /** "#rrggbb" → [r,g,b]. */
@@ -42,6 +43,16 @@ const FILL_PER_RANK = 10;
 const PULSE_PERIOD_MS = 1500;
 
 /**
+ * What a shape that ISN'T the currently-lit hazard keeps (see lib/alert-cycle):
+ * a thin, dim outline and nothing else. The bloom passes and the fill are what
+ * stack into mush when four hazards overlap the same ground, so those go to zero
+ * — but the boundary stays, so the viewer keeps the whole warning picture and
+ * only the current type glows.
+ */
+const GHOST_EDGE_ALPHA = 38;
+const GHOST_EDGE_WIDTH = 1;
+
+/**
  * Area hue comes from the hazard *type* (flood = blue, fire = red…), matching
  * the badge dot and the on-screen legend, so a viewer reads *what* a warning is
  * from its colour. Severity is kept for intensity (glow width + fill opacity),
@@ -76,6 +87,8 @@ interface Badge {
   rank: SeverityRank;
   color: [number, number, number];
   icon: string;
+  /** 0 (ghosted by the hazard cycle) → 1 (lit). */
+  lit: number;
 }
 
 /**
@@ -86,9 +99,19 @@ interface Badge {
  * point-source hazard) sits a hazard badge: a glowing dot tinted by hazard type
  * with the hazard glyph, so an operator reads *what* the warning is at a glance.
  * Severity (0 info … 4 extreme) scales the glow, the fill opacity and the badge.
+ *
+ * `focus` (optional) is the hazard cycle: when set, only the hazard type it names
+ * is drawn in full, and every other type drops to a ghost outline. See
+ * lib/alert-cycle for why, and `litWeight` for the cross-fade.
  */
-export function alertsLayer(features: AlertFeature[], visible = true) {
+export function alertsLayer(features: AlertFeature[], visible = true, focus: AlertFocus | null = null) {
   const n = features.length;
+  // Every accessor below is keyed on this alongside `n`, so a step change
+  // re-uploads colours only. The `data` array reference is deliberately left
+  // alone (see below) — splitting it per hazard would re-tessellate thousands of
+  // polygons every few seconds.
+  const focusKey = alertFocusKey(focus);
+  const lit = (f: AlertFeature): number => litWeight(focus, f.properties.hazard);
 
   // Badge anchor + hazard styling, computed once per feature.
   const badges: Badge[] = [];
@@ -100,7 +123,7 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
     const pos = repPoint(f);
     if (!pos) continue;
     const meta = hazardMeta(f.properties.hazard);
-    badges.push({ pos, rank: rank(f), color: rgb(meta.color), icon: meta.icon });
+    badges.push({ pos, rank: rank(f), color: rgb(meta.color), icon: meta.icon, lit: lit(f) });
   }
 
   // Shared GeoJSON config — passed array reference is stable between polls, so
@@ -122,13 +145,13 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
       pointType: "circle",
       getPointRadius: 0,
       pointRadiusMaxPixels: 0,
-      getLineColor: (f: any) => withA(lighten(base(f), 0.35), 26),
+      getLineColor: (f: any) => withA(lighten(base(f), 0.35), 26 * lit(f)),
       getLineWidth: (f: any) => 6 + rank(f) * 3,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 5,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       parameters: params,
-      updateTriggers: { getLineColor: n, getLineWidth: n },
+      updateTriggers: { getLineColor: [n, focusKey], getLineWidth: n },
     }),
     // 2 ─ Mid glow.
     new GeoJsonLayer({
@@ -139,13 +162,13 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
       pointType: "circle",
       getPointRadius: 0,
       pointRadiusMaxPixels: 0,
-      getLineColor: (f: any) => withA(lighten(base(f), 0.2), 70),
+      getLineColor: (f: any) => withA(lighten(base(f), 0.2), 70 * lit(f)),
       getLineWidth: (f: any) => 3 + rank(f) * 1.4,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 2.5,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       parameters: params,
-      updateTriggers: { getLineColor: n, getLineWidth: n },
+      updateTriggers: { getLineColor: [n, focusKey], getLineWidth: n },
     }),
     // 3 ─ Translucent fill (opacity climbs with severity).
     new GeoJsonLayer({
@@ -156,13 +179,13 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
       pointType: "circle",
       getPointRadius: 0,
       pointRadiusMaxPixels: 0,
-      getFillColor: (f: any) => withA(base(f), FILL_BASE + rank(f) * FILL_PER_RANK),
+      getFillColor: (f: any) => withA(base(f), (FILL_BASE + rank(f) * FILL_PER_RANK) * lit(f)),
       // Pickable so click-to-select works anywhere inside the alert area, not
       // just on the ~1px edge stroke (which is the only other pickable layer).
       pickable: true,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       parameters: params,
-      updateTriggers: { getFillColor: n },
+      updateTriggers: { getFillColor: [n, focusKey] },
     }),
     // 4 ─ Crisp lit edge on top.
     new GeoJsonLayer({
@@ -177,20 +200,29 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
       // country-sized blob doesn't hide the weather under it), so it's a touch
       // wider — the boundary has to stay legible on a wide shot without the fill
       // helping.
-      getLineColor: (f: any) => withA(lighten(base(f), 0.55), 240),
-      getLineWidth: (f: any) => 1.6 + rank(f) * 0.35,
+      // The one pass a ghosted shape keeps: dimmed and hairline, so the warning
+      // picture stays whole while only the cycle's current hazard glows.
+      getLineColor: (f: any) =>
+        withA(lighten(base(f), 0.55), GHOST_EDGE_ALPHA + (240 - GHOST_EDGE_ALPHA) * lit(f)),
+      getLineWidth: (f: any) => {
+        const full = 1.6 + rank(f) * 0.35;
+        return GHOST_EDGE_WIDTH + (full - GHOST_EDGE_WIDTH) * lit(f);
+      },
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 1,
       pickable: true,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       parameters: params,
-      updateTriggers: { getLineColor: n, getLineWidth: n },
+      updateTriggers: { getLineColor: [n, focusKey], getLineWidth: [n, focusKey] },
     }),
   ];
 
   if (badges.length) {
     // Badge radius (px), core grows with severity.
     const coreR = (b: Badge) => 6 + b.rank * 1.6;
+    // A ghosted point-only alert has no outline to fall back on, so it fades out
+    // entirely rather than leaving a dot competing with the lit hazard.
+    const badgeKey = [badges.length, focusKey];
 
     layers.push(
       // 5 ─ Badge halo — the "shine" behind the hazard dot.
@@ -199,13 +231,13 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
         data: badges,
         getPosition: (b) => [b.pos[0], b.pos[1], 0],
         getRadius: (b) => coreR(b) * 2.6,
-        getFillColor: (b) => withA(lighten(b.color, 0.25), 38 + b.rank * 8),
+        getFillColor: (b) => withA(lighten(b.color, 0.25), (38 + b.rank * 8) * b.lit),
         radiusUnits: "pixels",
         radiusMaxPixels: 60,
         stroked: false,
         pickable: false,
         parameters: DEPTH_TEST,
-        updateTriggers: { getFillColor: badges.length, getRadius: badges.length },
+        updateTriggers: { getFillColor: badgeKey, getRadius: badges.length },
       }),
       // 6 ─ Badge core — hazard-tinted dot with a bright rim.
       new ScatterplotLayer<Badge>({
@@ -213,8 +245,9 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
         data: badges,
         getPosition: (b) => [b.pos[0], b.pos[1], 0],
         getRadius: (b) => coreR(b),
-        getFillColor: (b) => withA(b.color, 235),
-        getLineColor: (b) => [...lighten(b.color, 0.7), 255] as [number, number, number, number],
+        getFillColor: (b) => withA(b.color, 235 * b.lit),
+        getLineColor: (b) =>
+          [...lighten(b.color, 0.7), 255 * b.lit] as [number, number, number, number],
         getLineWidth: 1.4,
         lineWidthUnits: "pixels",
         lineWidthMinPixels: 1,
@@ -225,8 +258,8 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
         pickable: false,
         parameters: DEPTH_TEST,
         updateTriggers: {
-          getFillColor: badges.length,
-          getLineColor: badges.length,
+          getFillColor: badgeKey,
+          getLineColor: badgeKey,
           getRadius: badges.length,
         },
       }),
@@ -237,7 +270,7 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
         data: badges,
         getPosition: (b) => [b.pos[0], b.pos[1], 0],
         getText: (b) => b.icon,
-        getColor: [255, 255, 255, 255],
+        getColor: (b) => [255, 255, 255, 255 * b.lit],
         getSize: (b) => 11 + b.rank * 1.5,
         sizeUnits: "pixels",
         sizeMinPixels: 10,
@@ -250,7 +283,7 @@ export function alertsLayer(features: AlertFeature[], visible = true) {
         characterSet: "auto",
         pickable: false,
         parameters: DEPTH_TEST,
-        updateTriggers: { getText: badges.length, getSize: badges.length },
+        updateTriggers: { getText: badges.length, getSize: badges.length, getColor: badgeKey },
       }),
     );
   }

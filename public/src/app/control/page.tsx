@@ -26,6 +26,7 @@ import { listCities, type City } from "../../lib/cities";
 import { useRegionCities } from "../../lib/useRegionCities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
+import { useAlertHazardStep } from "../../lib/alert-cycle";
 import { useQuakes } from "../../lib/seismic-overlay";
 import { useSeismoGauge } from "../../lib/seismo-gauge";
 import { useCables } from "../../lib/cables-overlay";
@@ -132,6 +133,16 @@ export default function ControlPage() {
     zoom: shown.camera.zoom,
   });
   const alerts = useAlertFeatures(shown.showAlerts, shown.alertSeverityMin, shown.alertHazardsOff);
+  // Same hazard cycle the broadcast surface runs, off the same epoch clock — the
+  // operator preview has to show what's actually going out.
+  const alertStep = useAlertHazardStep({
+    alerts,
+    enabled: shown.showAlerts && shown.alertCycle,
+    camera: shown.camera,
+    spinning: shown.autoSpin,
+    cut: director?.active ? onAir : null,
+    dwellMs: directorConfig.alertCycleSeconds * 1000,
+  });
   const quakes = useQuakes(shown.showSeismic, shown.seismicMinMag);
   const { stations: seismoStations, active: seismoActive } = useSeismoGauge(shown.camera.center, shown.showSeismic);
   const cables = useCables(shown.showCables);
@@ -198,6 +209,7 @@ export default function ControlPage() {
           orbits={orbits}
           trails={trails}
           alerts={alerts}
+          alertFocus={alertStep}
           quakes={quakes}
           seismoStations={seismoStations}
           seismoActive={seismoActive}
@@ -223,7 +235,7 @@ export default function ControlPage() {
           }}
         />
         {shown.showAlerts || shown.showSeismic || shown.showAurora || shown.showMagneticField ? (
-          <AlertLegend alerts={alerts} quakes={quakes} aurora={aurora} geomag={geomag} />
+          <AlertLegend alerts={alerts} activeHazard={alertStep?.hazard ?? null} quakes={quakes} aurora={aurora} geomag={geomag} />
         ) : null}
         {director?.active && onAir ? (
           <ViewingOverlay

@@ -72,6 +72,7 @@ describe("mergeControlState", () => {
       showAlerts: true,
       alertSeverityMin: 3,
       alertHazardsOff: ["marine", "fog"],
+      alertCycle: false,
       showSeismic: true,
       seismicMinMag: 4.5,
       showCables: true,

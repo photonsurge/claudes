@@ -93,7 +93,12 @@ services:
     build:
       context: .
       dockerfile: socket/Dockerfile
-    restart: "no"   # TEMP: don't auto-restart on crash — require a human restart so failures are visible. Revert to `unless-stopped`.
+    # Was `no` ("require a human restart so failures are visible"), but the host
+    # is power-cycled daily by the hypervisor — that policy turned every reboot
+    # into an outage lasting until someone SSH'd in. Failures stay visible via
+    # infra/watch-containers.sh, which logs every die/restart to
+    # ~/weather-incidents.log; that's the right place for it, not a dead stack.
+    restart: unless-stopped
     # Thin Socket.IO relay — no heavy buffers; 512m covers it.
     mem_limit: ${SOCKET_MEMORY_LIMIT:-512m}
     env_file: .env
@@ -125,7 +130,13 @@ services:
     build:
       context: .
       dockerfile: worker/Dockerfile
-    restart: "no"   # TEMP: don't auto-restart on crash — require a human restart so failures are visible. Revert to `unless-stopped`.
+    restart: unless-stopped   # see socket
+    # MUST stay above the worker's own force-exit backstop (worker/src/index.ts,
+    # shutdown()). They were both 10s, so Docker SIGKILLed the container 7ms
+    # before the app's own timer fired — every stop truncated the drain
+    # mid-flush ("MongoServerError: interrupted at shutdown"). Docker's deadline
+    # now sits 15s clear of the app's, so a graceful drain always wins the race.
+    stop_grace_period: 45s
     # Heaviest service: 4GB V8 heap (NODE_OPTIONS below) + bake threads/sharp
     # native on top ≈ ~5GB worst case. 6g gives the top-of-hour bake ~2GB of
     # native headroom above the heap. Cap MUST stay above the heap ceiling —
@@ -207,7 +218,7 @@ services:
       dockerfile: public/Dockerfile
       args:
         NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL}
-    restart: "no"   # TEMP: don't auto-restart on crash — require a human restart so failures are visible. Revert to `unless-stopped`.
+    restart: unless-stopped   # see socket
     # Hard container memory ceiling. Override per host in .env; exceeding it
     # causes Docker to OOM-kill/restart this service instead of exhausting the host.
     mem_limit: ${PUBLIC_MEMORY_LIMIT:-4608m}

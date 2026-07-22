@@ -319,6 +319,16 @@ export default function ControlPanel({
             onChange={(showAlerts) => patch({ showAlerts })}
           />
           {state.showAlerts && (
+            // Light one hazard type at a time instead of stacking every warning
+            // over the same ground (see lib/alert-cycle). Off = draw them all at
+            // once, the old behaviour — the escape hatch if it misbehaves live.
+            <Toggle
+              label="Cycle hazards"
+              checked={state.alertCycle}
+              onChange={(alertCycle) => patch({ alertCycle })}
+            />
+          )}
+          {state.showAlerts && (
             <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#8b95a7", fontSize: 12 }}>
               Min severity
               <select

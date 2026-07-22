@@ -29,6 +29,7 @@ import { pointToSegment } from "../../lib/select-segment";
 import { useRegionCities } from "../../lib/useRegionCities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
+import { useAlertHazardStep } from "../../lib/alert-cycle";
 import { useQuakes } from "../../lib/seismic-overlay";
 import { useSeismoGauge } from "../../lib/seismo-gauge";
 import { useCables } from "../../lib/cables-overlay";
@@ -72,6 +73,16 @@ export default function SandboxPage() {
     zoom: state.camera.zoom,
   });
   const alerts = useAlertFeatures(state.showAlerts, state.alertSeverityMin, state.alertHazardsOff);
+  // The hazard cycle honours the same operator flag here as on air (the sandbox
+  // carries the full ControlPanel), so what you tune is what you'd broadcast.
+  // No director drives this surface, so there's no cut to pin or epoch to follow.
+  const alertStep = useAlertHazardStep({
+    alerts,
+    enabled: state.showAlerts && state.alertCycle,
+    camera: state.camera,
+    spinning: state.autoSpin,
+    cut: null,
+  });
   const quakes = useQuakes(state.showSeismic, state.seismicMinMag);
   const { stations: seismoStations, active: seismoActive } = useSeismoGauge(state.camera.center, state.showSeismic);
   const cables = useCables(state.showCables);
@@ -150,6 +161,7 @@ export default function SandboxPage() {
           orbits={orbits}
           trails={trails}
           alerts={alerts}
+          alertFocus={alertStep}
           quakes={quakes}
           seismoStations={seismoStations}
           seismoActive={seismoActive}
@@ -170,7 +182,7 @@ export default function SandboxPage() {
           onCameraChange={(center, zoom) => apply({ ...state, camera: { center, zoom } })}
         />
         {state.showAlerts || state.showSeismic || state.showAurora || state.showMagneticField ? (
-          <AlertLegend alerts={alerts} quakes={quakes} aurora={aurora} geomag={geomag} />
+          <AlertLegend alerts={alerts} activeHazard={alertStep?.hazard ?? null} quakes={quakes} aurora={aurora} geomag={geomag} />
         ) : null}
         {/* No director/segment on this page — feed the operator's own live
             camera position directly. Self-hides over land or wherever the
