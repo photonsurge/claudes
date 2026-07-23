@@ -8,8 +8,8 @@
  * All credentialed work happens in the worker; this panel only calls the
  * /api/streams + /api/youtube routes and subscribes to run:state / run:status.
  */
-import { useMemo, useState } from "react";
-import type { RunState, StreamHealth } from "@photonsurge/shared/runs";
+import { useEffect, useRef, useState } from "react";
+import type { RunState, StreamHealth, CreateRunRequest } from "@photonsurge/shared/runs";
 import {
   useStreams,
   startStream,
@@ -18,6 +18,7 @@ import {
   connectYoutube,
   type StreamAccount,
 } from "../lib/stream";
+import { useDirector } from "../lib/director";
 import { box } from "./panelBox";
 import LiveChatPanel from "./control/LiveChatPanel";
 
@@ -34,6 +35,32 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
 export default function StreamPanel({ sceneId }: { sceneId: string }) {
   const { snapshot, health, error, refetch, activeRunFor } = useStreams();
   const run = activeRunFor(sceneId);
+  const director = useDirector(sceneId);
+  const { armed, config: armedConfig, arm, disarm } = useArmedStream(sceneId);
+  const [autoErr, setAutoErr] = useState<string | null>(null);
+
+  // Streamline: when armed, the stream starts automatically the moment the
+  // broadcast goes live (the director becomes active — via the countdown, "Go live
+  // now", or Auto). Fires once per activation; re-arms when the show ends.
+  const firedRef = useRef(false);
+  useEffect(() => {
+    const live = !!director?.active;
+    if (!live) {
+      firedRef.current = false;
+      return;
+    }
+    if (!armed || !armedConfig || run || firedRef.current) return;
+    firedRef.current = true;
+    startStream(armedConfig)
+      .then(() => {
+        disarm();
+        refetch();
+      })
+      .catch((e) => {
+        firedRef.current = false;
+        setAutoErr(String((e as Error)?.message ?? e));
+      });
+  }, [director?.active, armed, armedConfig, run, disarm, refetch]);
 
   if (error === "admin only") return null; // panel is operator-only
 
@@ -48,15 +75,113 @@ export default function StreamPanel({ sceneId }: { sceneId: string }) {
 
       {run ? (
         <ActiveRun run={run} health={health[run.id]} onEnded={refetch} />
+      ) : armed ? (
+        <ArmedBanner
+          config={armedConfig}
+          broadcastLive={!!director?.active}
+          error={autoErr}
+          onDisarm={() => {
+            disarm();
+            setAutoErr(null);
+          }}
+          onGoNow={() => {
+            firedRef.current = true;
+            startStream(armedConfig!)
+              .then(() => {
+                disarm();
+                refetch();
+              })
+              .catch((e) => {
+                firedRef.current = false;
+                setAutoErr(String((e as Error)?.message ?? e));
+              });
+          }}
+        />
       ) : (
         <GoLiveForm
           sceneId={sceneId}
           canPublish={!!snapshot?.youtubeConfigured && (snapshot?.accounts.length ?? 0) > 0}
           obsConfigured={!!snapshot?.obsConfigured}
           onStarted={refetch}
+          onArm={arm}
         />
       )}
     </section>
+  );
+}
+
+/**
+ * Persist the "start with broadcast" arming per scene (localStorage) so it survives
+ * a /control reload during a pre-broadcast countdown. Cleared once it fires.
+ */
+function useArmedStream(sceneId: string) {
+  const key = `streamArm:${sceneId}`;
+  const [state, setState] = useState<{ armed: boolean; config: CreateRunRequest | null }>({ armed: false, config: null });
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      setState(raw ? JSON.parse(raw) : { armed: false, config: null });
+    } catch {
+      setState({ armed: false, config: null });
+    }
+  }, [key]);
+
+  const arm = (config: CreateRunRequest) => {
+    const next = { armed: true, config };
+    setState(next);
+    try {
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      /* private mode / quota — arming just won't survive reload */
+    }
+  };
+  const disarm = () => {
+    setState({ armed: false, config: null });
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  };
+  return { armed: state.armed, config: state.config, arm, disarm };
+}
+
+function ArmedBanner({
+  config,
+  broadcastLive,
+  error,
+  onDisarm,
+  onGoNow,
+}: {
+  config: CreateRunRequest | null;
+  broadcastLive: boolean;
+  error: string | null;
+  onDisarm: () => void;
+  onGoNow: () => void;
+}) {
+  return (
+    <div style={{ ...box, borderColor: "#3a7bd5", padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 16 }}>⏻</span>
+        <b style={{ color: "#7dd3fc" }}>Armed — stream starts when the broadcast goes live</b>
+      </div>
+      <span style={{ fontSize: 12, opacity: 0.75 }}>
+        {config?.platforms?.youtube ? `YouTube · ${config?.privacy ?? "unlisted"}` : "OBS only"}
+        {config?.title ? ` · "${config.title}"` : ""}
+        {config?.durationMs ? ` · auto-end ${Math.round(config.durationMs / 60000)}m` : ""}
+        {broadcastLive ? " · waiting…" : " · broadcast is off air"}
+      </span>
+      {error ? <span style={{ fontSize: 12, color: "#ff6b6b" }}>{error}</span> : null}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={onGoNow} style={{ ...box, cursor: "pointer", fontWeight: 600 }}>
+          Go live now
+        </button>
+        <button onClick={onDisarm} style={{ ...box, cursor: "pointer" }}>
+          Disarm
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -92,11 +217,13 @@ function GoLiveForm({
   canPublish,
   obsConfigured,
   onStarted,
+  onArm,
 }: {
   sceneId: string;
   canPublish: boolean;
   obsConfigured: boolean;
   onStarted: () => void;
+  onArm: (config: CreateRunRequest) => void;
 }) {
   const [title, setTitle] = useState("");
   const [privacy, setPrivacy] = useState<"unlisted" | "public" | "private">("unlisted");
@@ -104,22 +231,31 @@ function GoLiveForm({
   const [durationMin, setDurationMin] = useState(0);
   const [monitorStream, setMonitorStream] = useState(false);
   const [chatEnabled, setChatEnabled] = useState(false);
+  const [withBroadcast, setWithBroadcast] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const buildConfig = (): CreateRunRequest => ({
+    sceneId,
+    title: title || undefined,
+    privacy,
+    durationMs: durationMin > 0 ? durationMin * 60_000 : null,
+    platforms: { youtube: publishYoutube },
+    monitorStream,
+    chat: { enabled: chatEnabled },
+  });
+
   const go = async () => {
+    // "Start with broadcast" arms the config and hands off — the panel fires it the
+    // moment the director goes live, instead of starting the stream right now.
+    if (withBroadcast) {
+      onArm(buildConfig());
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
-      await startStream({
-        sceneId,
-        title: title || undefined,
-        privacy,
-        durationMs: durationMin > 0 ? durationMin * 60_000 : null,
-        platforms: { youtube: publishYoutube },
-        monitorStream,
-        chat: { enabled: chatEnabled },
-      });
+      await startStream(buildConfig());
       onStarted();
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
@@ -178,6 +314,13 @@ function GoLiveForm({
           Monitor chat
         </label>
       </div>
+      <label
+        style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, paddingTop: 4, borderTop: "1px solid #1b2030" }}
+        title="Don't start now — start automatically the moment the broadcast (director) goes live."
+      >
+        <input type="checkbox" checked={withBroadcast} onChange={(e) => setWithBroadcast(e.target.checked)} />
+        Start with the broadcast <span style={{ opacity: 0.6 }}>(go live on countdown / director start)</span>
+      </label>
       {!obsConfigured ? (
         <span style={{ fontSize: 11, opacity: 0.7 }}>
           OBS not reachable — after go-live you&apos;ll get a stream key to paste into OBS by hand.
@@ -192,12 +335,12 @@ function GoLiveForm({
           cursor: busy ? "default" : "pointer",
           fontWeight: 700,
           padding: "8px 12px",
-          background: "#b91c1c",
-          borderColor: "#ef4444",
+          background: withBroadcast ? "#1e3a5f" : "#b91c1c",
+          borderColor: withBroadcast ? "#3a7bd5" : "#ef4444",
           opacity: busy ? 0.6 : 1,
         }}
       >
-        {busy ? "Starting…" : "● Go Live"}
+        {busy ? "Starting…" : withBroadcast ? "⏻ Arm for broadcast" : "● Go Live"}
       </button>
     </div>
   );

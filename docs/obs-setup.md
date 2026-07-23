@@ -63,18 +63,61 @@ Then **restart the `worker`** (it's the only service that talks to OBS).
 
 ### If OBS is NOT on the same machine as the worker
 
-Only the URL changes:
+This is fully supported. **obs-websocket is a server that lives inside OBS**, and the
+worker is the client that dials out to it — so OBS can run anywhere the worker can
+reach. Only the URL changes:
 
 ```bash
 OBS_WEBSOCKET_URL=ws://192.168.1.50:4455   # the machine running OBS
 ```
 
-and you must:
-- allow TCP **4455** through that machine's firewall
-- make sure the two boxes can actually reach each other
+**The video path does not go through the worker's host.** OBS loads `/watch` over
+HTTPS in its browser source and pushes RTMP straight to YouTube itself. The worker
+only sends control messages (set key / start / stop / status). So the OBS box needs
+the GPU and the upstream bandwidth; the "mother" needs neither.
 
-Note this is an **unencrypted** websocket — keep it on a trusted LAN, or tunnel it
-(e.g. `ssh -L 4455:127.0.0.1:4455 user@obsbox`, then keep the URL as `127.0.0.1`).
+Requirements:
+- TCP **4455** open on the OBS host's firewall
+- the connection direction is **worker → OBS**, so the OBS host must be reachable
+  *inbound* from the worker
+
+#### If the OBS box is behind NAT (worker can't reach in)
+
+Common case: OBS on a home/office machine, worker on a cloud VM. Two fixes, both run
+**from the OBS box** (it dials out, so NAT is no obstacle):
+
+**Reverse SSH tunnel** — OBS box connects to the mother and publishes its 4455 there:
+
+```bash
+# run ON the OBS machine; keep it up with autossh/systemd for production
+ssh -N -R 4455:127.0.0.1:4455 user@mother-host
+```
+
+Then on the mother, leave the URL as loopback — it's now the tunnel mouth:
+
+```bash
+OBS_WEBSOCKET_URL=ws://127.0.0.1:4455
+```
+
+**Or a mesh VPN** (Tailscale / WireGuard) — join both boxes, then use the OBS box's
+mesh IP directly: `OBS_WEBSOCKET_URL=ws://100.x.y.z:4455`. Nicer for a permanent rig.
+
+#### Security
+
+The websocket is **plaintext `ws://`** with a single static password (obs-websocket
+has no TLS, no per-client tokens). **Never expose 4455 to the public internet** — the
+handshake is challenge-response, but everything after it is sniffable and a static
+password is all that stands in front of "start/stop my broadcast". Keep it on a LAN,
+a mesh VPN, or an SSH tunnel. Every option above satisfies that.
+
+#### Multi-host, multi-stream (later)
+
+One OBS instance = one streaming output, and the worker currently holds ONE
+`OBS_WEBSOCKET_URL`, so only one run can publish at a time (enforced — a second gets a
+409). Putting OBS on its own host actually makes concurrency *easier* later: one OBS
+host per simultaneous stream, with the endpoint chosen per scene. That needs a small
+change (per-scene OBS endpoint config instead of the single global env var) — not
+built yet.
 
 ---
 

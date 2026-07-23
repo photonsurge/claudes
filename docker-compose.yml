@@ -226,6 +226,15 @@ services:
     env_file: .env
     environment:
       PORT: 10100
+      # Bind the Next.js standalone server to all interfaces. `node server.js`
+      # binds to $HOSTNAME (falling back to 0.0.0.0 only when UNSET), and Docker
+      # sets HOSTNAME=<container-id> — which resolves to the container's bridge
+      # IP, NOT loopback. Without this override the server listens only on the
+      # bridge IP: nginx-proxied traffic (DNAT'd to that IP) works, but the
+      # container healthcheck hitting 127.0.0.1:10100 gets ECONNREFUSED and the
+      # service sits permanently "unhealthy" despite serving fine. Only affects
+      # the listen address; DNS/service discovery still uses the `public` name.
+      HOSTNAME: "0.0.0.0"
       # V8 heap cap. Deliberately BELOW mem_limit: the gap is non-heap RSS
       # (sharp/glibc arenas, buffers), so heap == mem_limit would let Docker
       # OOM-kill the container before V8 ever felt pressure and ran a full GC.

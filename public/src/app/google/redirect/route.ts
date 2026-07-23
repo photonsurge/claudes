@@ -23,7 +23,7 @@ const STATE_COOKIE = "yt_oauth_state";
 async function GET__impl(req: Request) {
   const session = await requireAdmin();
   const url = new URL(req.url);
-  const back = (q: string) => NextResponse.redirect(new URL(`/admin/streams?${q}`, req.url));
+  const back = (q: string) => NextResponse.redirect(new URL(`/admin/youtube?${q}`, req.url));
 
   if (!session) return back("error=admin");
 
