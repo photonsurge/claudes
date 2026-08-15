@@ -277,6 +277,9 @@ export default function BroadcastFrame({
   // Colour-key ramp for the aurora oval / magnetic field — both hooks already
   // return null when their toggle is off, so presence alone gates this.
   const spaceWeatherShown = aurora?.meta != null || geomag?.meta != null;
+  // Per-channel chrome-widget off-list (see shared/broadcast-widgets). Each
+  // optional widget below is wrapped in `!off.has("<id>")`; empty = show all.
+  const off = new Set<string>(state.widgetsOff);
   // A country spotlight scopes the global alerts/quakes feeds down to its own
   // bbox (`shared/director-countries`); a weather-check segment has no fixed
   // bbox but does sit on a real ground location, so it gets the
@@ -708,6 +711,7 @@ export default function BroadcastFrame({
             (self-hiding, variable-height) content. Only shown for wide (non-
             targeted) shots — targeted events carry their own compact copy in
             the EventOverlay reticle above instead. */}
+        {!off.has("leftDeck") && (
         <div
           style={{
             position: "absolute",
@@ -749,6 +753,7 @@ export default function BroadcastFrame({
             ) : null}
           </FadeSwap>
         </div>
+        )}
 
         <Ticker
           title={theme.tickerTitle}
@@ -758,15 +763,17 @@ export default function BroadcastFrame({
           theme={theme}
         />
 
-        <div
-          style={{ position: "absolute", top: TICKER_H + 12, left: -4 }}
-        >
-          <BrandPanel theme={theme} live={directorOn} status={brandStatus} />
-        </div>
+        {!off.has("brand") && (
+          <div
+            style={{ position: "absolute", top: TICKER_H + 12, left: -4 }}
+          >
+            <BrandPanel theme={theme} live={directorOn} status={brandStatus} />
+          </div>
+        )}
 
         {/* Geomagnetic Kp readout, tucked under the brand block when the aurora
             overlay is on; pushes the intensity meter down so they don't overlap. */}
-        {kpShown ? (
+        {kpShown && !off.has("kpIndex") ? (
           <div
             style={{
               position: "absolute",
@@ -796,15 +803,17 @@ export default function BroadcastFrame({
             gap: 10,
           }}
         >
-          <IntensityMeter
-            variable={legendVariable}
-            units={state.units}
-            theme={theme}
-            showSatImg={state.showSatImg}
-            satImgFeeds={state.satImgFeeds}
-            freshness={mapMeta}
-          />
-          {spaceWeatherShown ? (
+          {!off.has("intensityMeter") && (
+            <IntensityMeter
+              variable={legendVariable}
+              units={state.units}
+              theme={theme}
+              showSatImg={state.showSatImg}
+              satImgFeeds={state.satImgFeeds}
+              freshness={mapMeta}
+            />
+          )}
+          {spaceWeatherShown && !off.has("spaceWeather") ? (
             <SpaceWeatherMeter aurora={aurora} geomag={geomag} theme={theme} />
           ) : null}
         </div>
@@ -825,14 +834,18 @@ export default function BroadcastFrame({
             gap: 10,
           }}
         >
-          <WorldReportDeck
-            worldWatch={worldWatch}
-            manifest={manifest}
-            theme={theme}
-          />
+          {!off.has("worldReport") && (
+            <WorldReportDeck
+              worldWatch={worldWatch}
+              manifest={manifest}
+              theme={theme}
+            />
+          )}
           {/* NEW ALERTS — the just-issued warnings ride below the always-on
               WORLD WATCH summary here, out of the top-centre map legend's way. */}
-          <LiveAlertPanel alerts={alerts} cities={cities} theme={theme} />
+          {!off.has("liveAlerts") && (
+            <LiveAlertPanel alerts={alerts} cities={cities} theme={theme} />
+          )}
         </div>
 
         {/* Bottom-right column: UP NEXT hint, the SYSLOG feed, and the build
@@ -850,9 +863,9 @@ export default function BroadcastFrame({
             gap: 10,
           }}
         >
-          <BuildInfoTag />
-          <SyslogFeed />
-          <UpNextPanel items={upNext} />
+          {!off.has("buildInfo") && <BuildInfoTag />}
+          {!off.has("syslog") && <SyslogFeed />}
+          {!off.has("upNext") && <UpNextPanel items={upNext} />}
         </div>
 
         {/* Bottom-centre row: seismic monitor column, the extra weather-
@@ -876,50 +889,56 @@ export default function BroadcastFrame({
             gap: 16,
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column-reverse",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <SeismicMonitor
-              quakes={quakes}
-              seismoStations={seismoStations}
-              seismoActive={seismoActive}
-              onAirSegment={onAirSegment}
-              regionCenter={state.camera.center}
+          {!off.has("seismic") && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column-reverse",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <SeismicMonitor
+                quakes={quakes}
+                seismoStations={seismoStations}
+                seismoActive={seismoActive}
+                onAirSegment={onAirSegment}
+                regionCenter={state.camera.center}
+                theme={theme}
+              />
+              <SeismicStationRow
+                stations={seismoStations}
+                onAirSegment={onAirSegment}
+                theme={theme}
+              />
+            </div>
+          )}
+          {!off.has("weatherMonitors") && (
+            <WeatherMonitors
+              series={pointHistorySeries}
+              locationLabel={
+                onAirSegment && segmentHasLocation ? onAirSegment.title : null
+              }
               theme={theme}
             />
-            <SeismicStationRow
-              stations={seismoStations}
-              onAirSegment={onAirSegment}
-              theme={theme}
-            />
-          </div>
-          <WeatherMonitors
-            series={pointHistorySeries}
-            locationLabel={
-              onAirSegment && segmentHasLocation ? onAirSegment.title : null
-            }
-            theme={theme}
-          />
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column-reverse",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <TideStationRow stations={tideStations} theme={theme} />
-            <TsunamiMonitor
-              stations={tideStations}
-              active={tideActive}
-              theme={theme}
-            />
-          </div>
+          )}
+          {!off.has("tsunami") && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column-reverse",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <TideStationRow stations={tideStations} theme={theme} />
+              <TsunamiMonitor
+                stations={tideStations}
+                active={tideActive}
+                theme={theme}
+              />
+            </div>
+          )}
         </div>
 
         <Ticker

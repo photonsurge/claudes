@@ -1,9 +1,11 @@
 import Link from "next/link";
 import ServiceStatusPanel from "../components/ServiceStatusPanel";
 import StreamStatusBadge from "../components/StreamStatusBadge";
+import ChannelLauncher from "../components/ChannelLauncher";
 
-/** Launcher / home. The ping demo (PingPanel + /api/ping) stays on disk but is
- * no longer linked from here. */
+/** Launcher / home (login-gated — see proxy.ts). Leads with the per-channel
+ * launcher; the ping demo (PingPanel + /api/ping) stays on disk but is no longer
+ * linked from here. */
 export default function Home() {
   return (
     <main
@@ -12,12 +14,11 @@ export default function Home() {
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        justifyContent: "center",
         gap: 10,
         background: "#0a0e16",
         color: "#fff",
         fontFamily: "system-ui, sans-serif",
-        padding: 24,
+        padding: 40,
       }}
     >
       <h1 style={{ margin: 0, fontSize: 34 }}>Live Weather Globe</h1>
@@ -29,18 +30,22 @@ export default function Home() {
         <StreamStatusBadge />
       </div>
 
+      <div style={{ marginTop: 22, width: "100%", display: "flex", justifyContent: "center" }}>
+        <ChannelLauncher />
+      </div>
+
       <nav
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
           gap: 16,
-          marginTop: 22,
+          marginTop: 26,
           width: "100%",
           maxWidth: 820,
         }}
       >
-        <Launch href="/watch" label="Watch" sub="Full-screen broadcast globe" accent="#2563eb" blank />
-        <Launch href="/control" label="Control" sub="Operator console" accent="#2563eb" blank />
+        <Launch href="/admin/scenes" label="Channels" sub="Create & manage broadcast channels" accent="#2563eb" />
+        <Launch href="/admin/streams" label="Streams" sub="Constant streams, encoders & runs" accent="#2563eb" />
         <Launch href="/sandbox" label="Sandbox" sub="Detached globe — off-air, yours to play with" accent="#2563eb" blank />
         <Launch href="/admin" label="Admin" sub="Alerts, tracks, cities & tools" />
         <Launch href="/music" label="Music" sub="Generative broadcast audio bed" accent="#54e6a6" />

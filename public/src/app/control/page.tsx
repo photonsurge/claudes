@@ -337,6 +337,15 @@ export default function ControlPage() {
                 </option>
               ))}
             </select>
+            <a
+              href={`/watch/${sceneId}`}
+              target="_blank"
+              rel="noreferrer"
+              title="Open this channel's broadcast output in a new tab"
+              style={{ color: "#6b93e0", fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}
+            >
+              Watch ↗
+            </a>
           </div>
           <DebugButton
             title="State"

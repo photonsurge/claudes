@@ -13,6 +13,12 @@ import type {
   AudioMode,
 } from "@photonsurge/shared/control";
 import { AUDIO_MODES } from "@photonsurge/shared/control";
+import {
+  BROADCAST_WIDGETS,
+  WIDGET_ZONE_LABELS,
+  WIDGET_ZONE_ORDER,
+  type WidgetId,
+} from "@photonsurge/shared/broadcast-widgets";
 import { SATIMG_FEEDS, SATIMG_LOOKS } from "@photonsurge/shared/satimg/types";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { legendVariableFor } from "../lib/legend";
@@ -132,6 +138,46 @@ export default function ControlPanel({
                 ))}
               </select>
             </Field>
+            {/* Per-channel on-air widget visibility — same off-list the admin
+                page (/admin/scenes/:id) edits, surfaced here so the operator can
+                hide/show individual furniture (top-right stack, gauges, …). */}
+            {(() => {
+              const off = new Set<string>(state.widgetsOff);
+              const setWidget = (id: WidgetId, visible: boolean) => {
+                const next = new Set(state.widgetsOff);
+                if (visible) next.delete(id);
+                else next.add(id);
+                patch({ widgetsOff: [...next] as WidgetId[] });
+              };
+              return (
+                <div style={{ marginTop: 10 }} aria-label="Widgets">
+                  <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, color: "#8b95a7", marginBottom: 6 }}>
+                    Widgets
+                  </div>
+                  {WIDGET_ZONE_ORDER.map((zone) => {
+                    const widgets = BROADCAST_WIDGETS.filter((w) => w.zone === zone);
+                    if (widgets.length === 0) return null;
+                    return (
+                      <div key={zone} style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, color: "#5b6577", marginBottom: 3 }}>
+                          {WIDGET_ZONE_LABELS[zone]}
+                        </div>
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                          {widgets.map((w) => (
+                            <Toggle
+                              key={w.id}
+                              label={w.label}
+                              checked={!off.has(w.id)}
+                              onChange={(visible) => setWidget(w.id, visible)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
       </Section>

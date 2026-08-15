@@ -3,8 +3,9 @@ import {
   SCENE_STATE,
   MAIN_SCENE_ID,
   DEFAULT_CONTROL_STATE,
+  type ControlState,
 } from "@photonsurge/shared/control";
-import { emitSceneState, listScenes, createScene, deleteScene, fetchSceneState, rotateSceneToken } from "./scenes";
+import { emitSceneState, emitScenePatch, listScenes, createScene, deleteScene, fetchSceneState, rotateSceneToken } from "./scenes";
 
 describe("emitSceneState", () => {
   it("emits a scene envelope and persists for a named scene", () => {
@@ -28,6 +29,34 @@ describe("emitSceneState", () => {
     const persist = jest.fn();
     emitSceneState(null, "x", DEFAULT_CONTROL_STATE, persist);
     expect(persist).toHaveBeenCalled();
+  });
+});
+
+describe("emitScenePatch", () => {
+  it("sends ONLY the delta (never a full state) and persists it", () => {
+    const emit = jest.fn();
+    const persist = jest.fn();
+    const patch: Partial<ControlState> = { widgetsOff: ["seismic"] };
+    emitScenePatch({ emit }, "atlantic", patch, persist);
+    // The SCENE_STATE envelope's `state` is the partial patch, not a full state.
+    expect(emit).toHaveBeenCalledWith(SCENE_STATE, { id: "atlantic", state: patch });
+    // A named scene must NOT fan the legacy CONTROL_STATE.
+    expect(emit).not.toHaveBeenCalledWith(CONTROL_STATE, expect.anything());
+    expect(persist).toHaveBeenCalledWith("atlantic", patch);
+  });
+
+  it("also fans the legacy CONTROL_STATE delta for the main scene", () => {
+    const emit = jest.fn();
+    const patch: Partial<ControlState> = { widgetsOff: ["leftDeck"] };
+    emitScenePatch({ emit }, MAIN_SCENE_ID, patch, jest.fn());
+    expect(emit).toHaveBeenCalledWith(SCENE_STATE, { id: MAIN_SCENE_ID, state: patch });
+    expect(emit).toHaveBeenCalledWith(CONTROL_STATE, patch);
+  });
+
+  it("still persists the delta when there is no socket", () => {
+    const persist = jest.fn();
+    emitScenePatch(null, "x", { widgetsOff: [] }, persist);
+    expect(persist).toHaveBeenCalledWith("x", { widgetsOff: [] });
   });
 });
 

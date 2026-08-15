@@ -138,6 +138,9 @@ export default function ScenesPage() {
                     {watch}
                   </Typography>
                 </Box>
+                <MuiLink component={Link} href={`/admin/scenes/${s.id}`} variant="body2" sx={{ whiteSpace: "nowrap" }}>
+                  Settings
+                </MuiLink>
                 <MuiLink component={Link} href={control} variant="body2" sx={{ whiteSpace: "nowrap" }}>
                   Control
                 </MuiLink>

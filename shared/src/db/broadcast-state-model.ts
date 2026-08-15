@@ -137,6 +137,7 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     showDayNight: { type: Boolean, required: true, default: false },
     showBroadcastChrome: { type: Boolean, required: true, default: true },
     broadcastTheme: { type: String, required: true, default: "command" },
+    widgetsOff: { type: [String], required: true, default: [] },
     audio: {
       enabled: { type: Boolean, required: true, default: false },
       mode: { type: String, required: true, enum: AUDIO_MODES, default: "auto" },

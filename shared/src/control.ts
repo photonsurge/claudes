@@ -15,6 +15,7 @@ import {
   type SatImgFeedState,
 } from "./satimg/types";
 import { isHazardType, type HazardType } from "./alerts/hazard";
+import { isWidgetId, type WidgetId } from "./broadcast-widgets";
 
 /** Socket event names (also the worker→browser weather event). */
 export const CONTROL_STATE = "control:state" as const;
@@ -464,6 +465,12 @@ export interface ControlState {
   showBroadcastChrome: boolean;
   /** Broadcast chrome theme/brand preset id (see broadcast/config). */
   broadcastTheme: string;
+  /**
+   * Chrome widgets HIDDEN on this channel (empty = show everything). An off-list
+   * keyed by BROADCAST_WIDGETS ids — newly added widgets default to visible on
+   * every existing channel. Only meaningful while `showBroadcastChrome` is on.
+   */
+  widgetsOff: WidgetId[];
   /** Generative music bed played on /watch (mode/volume/mute, operator-driven). */
   audio: AudioSettings;
   /** Live-platform chat monitoring preference for this scene (operator-only). */
@@ -536,6 +543,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showDayNight: false,
   showBroadcastChrome: true,
   broadcastTheme: "command",
+  widgetsOff: [],
   audio: { ...DEFAULT_AUDIO_SETTINGS },
   chat: { ...DEFAULT_CHAT_SETTINGS },
   startAt: null,
@@ -688,6 +696,9 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
         : base.showBroadcastChrome ?? true,
     broadcastTheme:
       typeof patch.broadcastTheme === "string" ? patch.broadcastTheme : base.broadcastTheme ?? "command",
+    widgetsOff: Array.isArray(patch.widgetsOff)
+      ? [...new Set(patch.widgetsOff.filter(isWidgetId))]
+      : base.widgetsOff ?? [],
     audio: {
       enabled:
         typeof patch.audio?.enabled === "boolean"

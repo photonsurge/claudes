@@ -101,6 +101,7 @@ describe("mergeControlState", () => {
       showDayNight: true,
       showBroadcastChrome: true,
       broadcastTheme: "command",
+      widgetsOff: ["seismic", "syslog"],
       showMapSource: true,
       audio: { enabled: true, mode: "deep", volume: 0.45, muted: true },
       chat: { enabled: true, promoteToTicker: true },

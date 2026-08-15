@@ -106,6 +106,24 @@ export async function persistScene(id: string, state: ControlState): Promise<voi
 }
 
 /**
+ * Persist only a partial scene patch (merged server-side via mergeControlState).
+ * Used by config forms — e.g. the per-channel widget layout on /admin/scenes/:id
+ * — that must NOT clobber the operator's live full state (camera, layers) the
+ * way persisting a stale whole snapshot would.
+ */
+export async function patchScene(id: string, patch: Partial<ControlState>): Promise<void> {
+  try {
+    await fetch(`/api/scenes/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
  * Subscribe to a scene's live ControlState for a `/watch/:id` page: cold-start
  * from the API, then apply SCENE_STATE patches whose id matches. Returns the
  * live state + a `ready` flag.
@@ -191,6 +209,54 @@ export function useSceneEmitter(): (sceneId: string, state: ControlState) => voi
       }, PERSIST_DEBOUNCE_MS);
     };
     emitSceneState(socket, sceneId, state, debouncedPersist);
+  };
+}
+
+/**
+ * Pure delta-emit for scenes: push a PARTIAL patch over SCENE_STATE (its `state`
+ * field carries only the changed keys, which /watch merges via mergeControlState)
+ * and, for the main scene, the legacy CONTROL_STATE. Then persist the same delta.
+ * `persist` is injectable for tests. Mirrors `emitSceneState`, but never sends a
+ * full state — so a config form can't overwrite what the operator drives live.
+ */
+export function emitScenePatch(
+  socket: { emit: (e: string, ...a: unknown[]) => void } | null,
+  sceneId: string,
+  patch: Partial<ControlState>,
+  persist: (id: string, p: Partial<ControlState>) => void,
+): void {
+  socket?.emit(SCENE_STATE, { id: sceneId, state: patch } as SceneStatePayload);
+  if (sceneId === MAIN_SCENE_ID) socket?.emit(CONTROL_STATE, patch);
+  persist(sceneId, patch);
+}
+
+/**
+ * Hook wiring a live socket + debounced persist for PARTIAL scene patches.
+ * Returns a stable `(sceneId, patch)` fn that emits the delta instantly and
+ * debounce-persists it to `/api/scenes/:id` (last write per scene wins). Unlike
+ * `useSceneEmitter` it never sends a full state — see `emitScenePatch`.
+ */
+export function useScenePatcher(): (sceneId: string, patch: Partial<ControlState>) => void {
+  const { socket } = useSocket();
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useRef<{ id: string; patch: Partial<ControlState> } | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  return (sceneId: string, patch: Partial<ControlState>) => {
+    latest.current = { id: sceneId, patch };
+    const debouncedPersist = (id: string) => {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        if (latest.current && latest.current.id === id) patchScene(id, latest.current.patch);
+      }, PERSIST_DEBOUNCE_MS);
+    };
+    emitScenePatch(socket, sceneId, patch, debouncedPersist);
   };
 }
 
