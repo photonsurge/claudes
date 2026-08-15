@@ -156,13 +156,17 @@ export default function ControlPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Deep-link to a channel: /control?scene=<id> drives that scene directly, so
+      // each channel has its own operator URL. Absent/invalid ⇒ the main scene.
+      const requested = new URLSearchParams(window.location.search).get("scene") || MAIN_SCENE_ID;
       const [{ state: s }, m, c, sc] = await Promise.all([
-        fetchSceneState(MAIN_SCENE_ID),
+        fetchSceneState(requested),
         fetchManifest(),
         listCities(),
         listScenes(),
       ]);
       if (cancelled) return;
+      setSceneId(requested);
       setState(s);
       setManifest(m);
       setCities(c);
@@ -191,8 +195,13 @@ export default function ControlPage() {
   };
 
   // Switch the scene the operator is driving; load that scene's persisted state.
+  // Reflect the channel in the URL so this control view stays shareable/bookmarkable.
   const switchScene = async (id: string) => {
     setSceneId(id);
+    const url = new URL(window.location.href);
+    if (id === MAIN_SCENE_ID) url.searchParams.delete("scene");
+    else url.searchParams.set("scene", id);
+    window.history.replaceState(null, "", url);
     const { state: next } = await fetchSceneState(id);
     setState(next);
   };
@@ -309,7 +318,7 @@ export default function ControlPage() {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <h2 style={{ margin: 0, fontSize: 18 }}>Operator</h2>
             <select
-              aria-label="Scene"
+              aria-label="Channel"
               value={sceneId}
               onChange={(e) => switchScene(e.target.value)}
               style={{

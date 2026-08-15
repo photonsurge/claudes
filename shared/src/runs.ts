@@ -46,6 +46,102 @@ export type StreamPlatform = "youtube" | "twitch" | "kick";
 export type YoutubePrivacy = "public" | "unlisted" | "private";
 
 /**
+ * The implicit encoder id for the single OBS instance configured by
+ * `OBS_WEBSOCKET_URL` — the pre-registry behaviour. Runs with no `encoderId`
+ * resolve here, so one env-configured OBS keeps working with zero setup.
+ */
+export const ENV_ENCODER_ID = "env";
+
+/**
+ * An OBS instance the worker can drive. Each instance has exactly ONE streaming
+ * output, so concurrent runs need one encoder each — the registry is what makes
+ * multi-view (N constant streams) possible. `sceneId` records which scene this
+ * instance's browser source captures, letting run-creation auto-pick it.
+ */
+export interface StreamEncoder {
+  id: string;
+  name?: string;
+  /** obs-websocket v5 endpoint, e.g. ws://127.0.0.1:4455. */
+  url: string;
+  /** AES-GCM secretbox blob of the websocket password — never sent to clients. */
+  passwordEnc?: string;
+  /** Scene this OBS instance is pointed at (browser source); auto-picked per run. */
+  sceneId?: string;
+  enabled: boolean;
+  created?: Date;
+  updated?: Date;
+}
+
+/** Client-safe projection of an encoder (no password material). */
+export interface StreamEncoderInfo {
+  id: string;
+  name?: string;
+  url: string;
+  sceneId?: string;
+  enabled: boolean;
+  hasPassword: boolean;
+}
+
+export function toEncoderInfo(e: StreamEncoder): StreamEncoderInfo {
+  return {
+    id: e.id,
+    name: e.name,
+    url: e.url,
+    sceneId: e.sceneId,
+    enabled: !!e.enabled,
+    hasPassword: !!e.passwordEnc,
+  };
+}
+
+/**
+ * The encoder a run occupies, for the one-publishing-run-per-encoder guard.
+ * Legacy runs (created before the registry) carry no encoderId — they used the
+ * env-configured OBS, so they collapse onto ENV_ENCODER_ID.
+ */
+export function encoderKeyForRun(run: Pick<Run, "encoderId">): string {
+  return run.encoderId || ENV_ENCODER_ID;
+}
+
+/**
+ * Desired-state config for a persistent ("constant") stream: while enabled, the
+ * worker reconciler keeps an unbounded run live on this scene/encoder, restarting
+ * with backoff whenever the current run dies. Stopping a slot-owned run from the
+ * UI disables its slot — otherwise the reconciler would resurrect it.
+ */
+export interface StreamSlot {
+  id: string;
+  name?: string;
+  sceneId: string;
+  /** Pin to an encoder; empty = auto (scene-bound encoder, else the env default). */
+  encoderId?: string;
+  /** YouTube channel to publish on; empty = the default connected account. */
+  accountId?: string;
+  title?: string;
+  privacy?: YoutubePrivacy;
+  enabled: boolean;
+  monitorStream?: boolean;
+  chat?: { enabled: boolean; promoteToTicker: boolean };
+  /** The run currently serving this slot (may be finished — reconciler replaces it). */
+  runId?: string | null;
+  /** Consecutive unhealthy attempts, drives the retry backoff. */
+  failCount?: number;
+  lastAttemptAt?: number | null;
+  created?: Date;
+  updated?: Date;
+}
+
+/** Minimum gap between slot (re)start attempts; doubles per consecutive failure. */
+export const SLOT_RETRY_BASE_MS = 30_000;
+export const SLOT_RETRY_MAX_MS = 15 * 60_000;
+/** A run live this long proves the slot healthy — the backoff counter resets. */
+export const SLOT_HEALTHY_AFTER_MS = 5 * 60_000;
+
+export function slotRetryDelayMs(failCount: number): number {
+  const n = Math.max(0, Math.floor(failCount));
+  return Math.min(SLOT_RETRY_BASE_MS * 2 ** n, SLOT_RETRY_MAX_MS);
+}
+
+/**
  * OAuth scopes required to create/bind/transition live broadcasts and read+post
  * live chat. Shared so `public` (builds the consent URL) and `worker` (exchanges
  * the code) agree — `public` can't import from `worker`.
@@ -106,6 +202,10 @@ export interface RunError {
 export interface Run {
   id: string;
   sceneId: string;
+  /** Encoder this run publishes through (registry id, or ENV_ENCODER_ID / unset = env OBS). */
+  encoderId?: string;
+  /** Set when a persistent StreamSlot started this run (reconciler-owned). */
+  slotId?: string;
   status: RunStatus;
   phase?: RunPhase;
   /** Broadcast title (templated from ControlState at go-live time). */
@@ -134,6 +234,8 @@ export interface Run {
 export interface RunState {
   id: string;
   sceneId: string;
+  encoderId?: string;
+  slotId?: string;
   status: RunStatus;
   phase?: RunPhase;
   title?: string;
@@ -196,6 +298,10 @@ export interface ChatMessage {
 /** Body accepted by POST /api/streams to create + start a run. */
 export interface CreateRunRequest {
   sceneId: string;
+  /** Explicit encoder pick; omitted = auto (scene-bound encoder, else env OBS). */
+  encoderId?: string;
+  /** YouTube channel to publish on; omitted = the default connected account. */
+  accountId?: string;
   /** null / omitted = unbounded (manual stop only). */
   durationMs?: number | null;
   title?: string;
@@ -230,6 +336,8 @@ export function toRunState(run: Run): RunState {
   return {
     id: run.id,
     sceneId: run.sceneId,
+    encoderId: run.encoderId,
+    slotId: run.slotId,
     status: run.status,
     phase: run.phase,
     title: run.title,

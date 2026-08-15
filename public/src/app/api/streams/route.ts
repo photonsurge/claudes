@@ -3,7 +3,14 @@ import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { sendToFore } from "@photonsurge/shared/bull/bull-queue";
 import { MAIN_SCENE_ID } from "@photonsurge/shared/control";
-import { toRunState, type CreateRunRequest, type Run, type YoutubePrivacy } from "@photonsurge/shared/runs";
+import {
+  ENV_ENCODER_ID,
+  toEncoderInfo,
+  toRunState,
+  type CreateRunRequest,
+  type Run,
+  type YoutubePrivacy,
+} from "@photonsurge/shared/runs";
 import { requireAdmin } from "../../../lib/require-admin";
 
 export const runtime = "nodejs";
@@ -24,19 +31,30 @@ function platformStatus() {
 
 /**
  * GET /api/streams — cold-start snapshot for /admin/streams + the /control panel:
- * every run (secret-free projection), connected YouTube channels, and whether OBS
- * / YouTube are configured. Live updates thereafter arrive over the socket (run:state).
+ * every run (secret-free projection), connected YouTube channels, the encoder
+ * registry (no password material), persistent slots, and whether OBS / YouTube
+ * are configured. Live updates thereafter arrive over the socket (run:state).
  */
 async function GET__impl() {
   if (!(await requireAdmin())) {
     return NextResponse.json({ error: "admin only" }, { status: 401, headers: NO_CACHE });
   }
   const db = await getAppDb();
-  const [runs, accounts] = await Promise.all([db.listRuns(), db.listYoutubeAccounts()]);
+  const [runs, accounts, encoders, slots] = await Promise.all([
+    db.listRuns(),
+    db.listYoutubeAccounts(),
+    db.listStreamEncoders(),
+    db.listStreamSlots(),
+  ]);
+  const status = platformStatus();
   return NextResponse.json(
     {
-      ...platformStatus(),
+      ...status,
+      // "Configured" now means EITHER the legacy env OBS or a registered encoder.
+      obsConfigured: status.obsConfigured || encoders.some((e) => e.enabled),
       accounts: accounts.map((a) => ({ channelId: a.id, channelTitle: a.channelTitle, connectedAt: a.connectedAt })),
+      encoders: encoders.map(toEncoderInfo),
+      slots,
       runs: runs.map((r) => toRunState(r as Run)),
     },
     { status: 200, headers: NO_CACHE },
@@ -81,19 +99,38 @@ async function POST__impl(req: Request) {
     );
   }
 
+  // Encoder pick: explicit request → validated registry entry; otherwise the
+  // encoder whose OBS instance captures this scene; otherwise unset, which the
+  // worker resolves to the legacy env OBS (or a manual key handoff).
+  let encoderId = body.encoderId ? String(body.encoderId).trim() : undefined;
+  if (encoderId && encoderId !== ENV_ENCODER_ID) {
+    const enc = await db.getStreamEncoder(encoderId);
+    if (!enc) {
+      return NextResponse.json({ error: `no such encoder "${encoderId}"` }, { status: 400, headers: NO_CACHE });
+    }
+    if (!enc.enabled) {
+      return NextResponse.json({ error: `encoder "${encoderId}" is disabled` }, { status: 400, headers: NO_CACHE });
+    }
+  } else if (!encoderId) {
+    encoderId = (await db.encoderForScene(sceneId))?.id;
+  }
+
+  // YouTube channel pick: explicit request → that connected account; otherwise the
+  // default (most-recently-connected) account. Resolved once and reused below.
+  const requestedAccountId = body.accountId ? String(body.accountId).trim() : undefined;
   const publishYoutube = body.platforms?.youtube === true;
+  let publishAccountId: string | undefined;
   if (publishYoutube) {
-    // One OBS instance = one streaming output, so only one publishing run at a time.
-    // Without this a second run would silently hijack the first one's encoder (it
-    // overwrites the stream key, then StartStream no-ops on an already-active output).
-    // Lifting this needs one OBS per scene, or a per-scene ffmpeg renderer.
-    const encoderBusy = (await db.listRuns({ status: ["scheduled", "awaiting-ingest", "live", "ending"] })).find(
-      (r) => !!r.platforms?.youtube,
-    );
+    // One OBS instance = one streaming output. Concurrency comes from publishing
+    // through DIFFERENT encoders (the registry) — a second run on the same one
+    // would silently hijack its stream key, so it is refused per encoder.
+    const encoderBusy = await db.activeRunForEncoder(encoderId ?? ENV_ENCODER_ID);
     if (encoderBusy) {
       return NextResponse.json(
         {
-          error: `Already streaming run on scene "${encoderBusy.sceneId}". Only one concurrent stream is supported (single OBS encoder) — stop it first.`,
+          error:
+            `Encoder "${encoderId ?? ENV_ENCODER_ID}" is already streaming scene "${encoderBusy.sceneId}" — ` +
+            `one OBS instance supports one concurrent stream. Stop that run or pick another encoder.`,
           runId: encoderBusy.id,
         },
         { status: 409, headers: NO_CACHE },
@@ -102,10 +139,18 @@ async function POST__impl(req: Request) {
     if (!platformStatus().youtubeConfigured) {
       return NextResponse.json({ error: "YouTube is not configured on the server" }, { status: 400, headers: NO_CACHE });
     }
-    const account = await db.getYoutubeAccount();
+    const account = await db.getYoutubeAccount(requestedAccountId);
     if (!account) {
-      return NextResponse.json({ error: "connect a YouTube channel first" }, { status: 400, headers: NO_CACHE });
+      return NextResponse.json(
+        {
+          error: requestedAccountId
+            ? `YouTube channel "${requestedAccountId}" is not connected`
+            : "connect a YouTube channel first",
+        },
+        { status: 400, headers: NO_CACHE },
+      );
     }
+    publishAccountId = account.id;
   }
 
   const durationMs =
@@ -116,14 +161,14 @@ async function POST__impl(req: Request) {
 
   const platforms: Run["platforms"] = {};
   if (publishYoutube) {
-    const account = await db.getYoutubeAccount();
-    platforms.youtube = { accountId: account?.id, monitorStream: !!body.monitorStream };
+    platforms.youtube = { accountId: publishAccountId, monitorStream: !!body.monitorStream };
   }
   if (body.platforms?.twitch) platforms.twitch = { channelLogin: String(body.platforms.twitch), chatOnly: true };
   if (body.platforms?.kick) platforms.kick = { channelSlug: String(body.platforms.kick), chatOnly: true };
 
   const run = await db.createRun({
     sceneId,
+    encoderId,
     status: "scheduled",
     phase: "created",
     title: body.title ? String(body.title).slice(0, 100) : undefined,

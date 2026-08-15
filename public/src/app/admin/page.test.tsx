@@ -22,7 +22,7 @@ describe("AdminPage", () => {
     expect(screen.getByText("Cities").closest("a")).toHaveAttribute("href", "/cities");
     expect(screen.getByText("Live tracks").closest("a")).toHaveAttribute("href", "/admin/tracks");
     expect(screen.getByText("Vehicles").closest("a")).toHaveAttribute("href", "/admin/vehicles");
-    expect(screen.getByText("Scenes").closest("a")).toHaveAttribute("href", "/admin/scenes");
+    expect(screen.getByText("Channels").closest("a")).toHaveAttribute("href", "/admin/scenes");
   });
 
   it("only links to existing static pages", () => {

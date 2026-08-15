@@ -110,14 +110,38 @@ handshake is challenge-response, but everything after it is sniffable and a stat
 password is all that stands in front of "start/stop my broadcast". Keep it on a LAN,
 a mesh VPN, or an SSH tunnel. Every option above satisfies that.
 
-#### Multi-host, multi-stream (later)
+#### Multi-stream (the encoder registry)
 
-One OBS instance = one streaming output, and the worker currently holds ONE
-`OBS_WEBSOCKET_URL`, so only one run can publish at a time (enforced — a second gets a
-409). Putting OBS on its own host actually makes concurrency *easier* later: one OBS
-host per simultaneous stream, with the endpoint chosen per scene. That needs a small
-change (per-scene OBS endpoint config instead of the single global env var) — not
-built yet.
+One OBS instance = one streaming output — that hasn't changed. What has: the worker
+is no longer limited to the single `OBS_WEBSOCKET_URL`. **`/admin/streams` now has an
+"OBS encoders" registry** — one row per OBS instance (url, password, and which scene
+that instance's browser source captures). N registered encoders = N concurrent
+streams; a second run on the *same* encoder still gets a 409.
+
+To run 3 constant streams you therefore run **3 OBS instances**, each with its own
+websocket port and its own browser source pointed at a different `/watch/<scene-id>`.
+On one Linux box, separate profiles + portable mode keep them apart:
+
+```bash
+# one launcher per stream — different profile, scene collection, and WS port
+obs --multi --profile "wind"  --collection "wind"  --scene "Globe" &
+obs --multi --profile "temp"  --collection "temp"  --scene "Globe" &
+obs --multi --profile "storm" --collection "storm" --scene "Globe" &
+```
+
+In each instance: **Tools → WebSocket Server Settings** → a DIFFERENT port
+(`4455` / `4456` / `4457`) and its own password, then build that instance's capture
+scene per Step 4 with its scene's watch URL. Register each in
+`/admin/streams → OBS encoders` (`ws://127.0.0.1:4455` etc.) and bind it to its
+scene — run-creation then auto-picks the right instance, and the "Constant streams"
+slots keep them live 24/7.
+
+`OBS_WEBSOCKET_URL` still works and appears as the implicit `env` encoder, so a
+single-OBS setup needs no registry at all.
+
+Encoding load: three 1080p30 NVENC sessions are fine on any recent NVIDIA card
+(consumer cards allow 5+ concurrent sessions); on CPU-only x264 budget ~3–4 cores
+per 1080p30 stream, or drop the extra streams to 720p.
 
 ---
 

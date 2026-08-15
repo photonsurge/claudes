@@ -62,7 +62,7 @@ export default function AccessPage() {
           Tokened OBS/YouTube URLs for each scene. Paste the copied URL into your OBS browser
           source instead of the bare <code>/watch/&lt;id&gt;</code> address — anyone with the
           token can view the output, so rotate it if a URL ever leaks. Manage scene content in{" "}
-          <MuiLink component={Link} href="/admin/scenes">Scenes</MuiLink>.
+          <MuiLink component={Link} href="/admin/scenes">Channels</MuiLink>.
         </>
       }
       maxWidth={760}

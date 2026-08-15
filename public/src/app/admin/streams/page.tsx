@@ -21,10 +21,23 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 import Checkbox from "@mui/material/Checkbox";
 import Typography from "@mui/material/Typography";
 import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
-import { runIsActive, type RunState } from "@photonsurge/shared/runs";
+import { runIsActive, type RunState, type StreamEncoderInfo, type YoutubePrivacy } from "@photonsurge/shared/runs";
 import { listScenes } from "../../../lib/scenes";
-import { useStreams, startStream, stopStream, connectYoutube, disconnectYoutube } from "../../../lib/stream";
+import {
+  useStreams,
+  startStream,
+  stopStream,
+  connectYoutube,
+  disconnectYoutube,
+  saveEncoder,
+  deleteEncoder,
+  saveSlot,
+  deleteSlot,
+  type StreamAccount,
+} from "../../../lib/stream";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import EncodersCard from "../../../components/admin/streams/EncodersCard";
+import SlotsCard from "../../../components/admin/streams/SlotsCard";
 
 const STATUS_COLOR: Record<string, "default" | "error" | "warning" | "success"> = {
   scheduled: "warning",
@@ -50,7 +63,8 @@ export default function StreamsPage() {
     setNotice({ connected: q.get("connected") ?? undefined, oauthError: q.get("error") ?? undefined });
   }, []);
 
-  const account = snapshot?.accounts?.[0];
+  const accounts = snapshot?.accounts ?? [];
+  const encoders = snapshot?.encoders ?? [];
   const runs = snapshot?.runs ?? [];
 
   return (
@@ -58,8 +72,9 @@ export default function StreamsPage() {
       title="Streams"
       description={
         <>
-          Start time-boxed live runs on any scene, publishing to YouTube via OBS. Per-scene quick
-          controls also live in the <MuiLink component={Link} href="/control">operator console</MuiLink>.
+          Multi-channel streaming: register one OBS encoder per concurrent stream, keep constant streams
+          alive via slots, or start one-off runs. Per-channel quick controls also live in the{" "}
+          <MuiLink component={Link} href="/control">operator console</MuiLink>.
         </>
       }
       maxWidth={860}
@@ -82,47 +97,89 @@ export default function StreamsPage() {
 
       {/* Platform connections */}
       <Paper sx={{ p: 1.75, mt: 1.75 }}>
-        <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1 }}>
           <Typography variant="body2" sx={{ fontWeight: 600 }}>
-            YouTube
+            YouTube channels
           </Typography>
-          {account ? (
-            <>
-              <Chip color="success" label={account.channelTitle || account.channelId} />
-              <Button
-                variant="outlined"
-                color="error"
-                size="small"
-                onClick={async () => {
-                  if (confirm("Disconnect this YouTube channel?")) {
-                    await disconnectYoutube(account.channelId);
-                    refetch();
-                  }
-                }}
-              >
-                Disconnect
-              </Button>
-            </>
-          ) : snapshot?.youtubeConfigured ? (
-            <Button variant="contained" onClick={connectYoutube}>
-              Connect YouTube
-            </Button>
-          ) : (
-            <Typography variant="caption" color="text.secondary">
-              Not configured — set YOUTUBE_CLIENT_ID/SECRET/REDIRECT_URI in .env
-            </Typography>
-          )}
           <Chip
+            size="small"
             variant="outlined"
             color={snapshot?.obsConfigured ? "success" : "default"}
             label={snapshot?.obsConfigured ? "OBS configured" : "OBS: manual handoff"}
           />
         </Stack>
+
+        {snapshot && !snapshot.youtubeConfigured && (
+          <Typography variant="caption" color="text.secondary">
+            Not configured — set GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI in .env
+          </Typography>
+        )}
+
+        {accounts.length > 0 && (
+          <Box sx={{ display: "grid", gap: 0.75, mb: 1 }}>
+            {accounts.map((acct) => (
+              <Stack key={acct.channelId} direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+                <Chip size="small" color="success" label={acct.channelTitle || acct.channelId} />
+                <Box sx={{ flex: 1 }} />
+                <Button
+                  variant="text"
+                  color="error"
+                  size="small"
+                  onClick={async () => {
+                    if (confirm(`Disconnect "${acct.channelTitle || acct.channelId}"?`)) {
+                      await disconnectYoutube(acct.channelId);
+                      refetch();
+                    }
+                  }}
+                >
+                  Disconnect
+                </Button>
+              </Stack>
+            ))}
+          </Box>
+        )}
+
+        {snapshot?.youtubeConfigured && (
+          <Button variant={accounts.length ? "outlined" : "contained"} size="small" onClick={connectYoutube}>
+            {accounts.length ? "Connect another channel" : "Connect YouTube"}
+          </Button>
+        )}
       </Paper>
+
+      <EncodersCard
+        encoders={snapshot?.encoders ?? []}
+        scenes={scenes}
+        onSave={async (body) => {
+          await saveEncoder(body);
+          refetch();
+        }}
+        onDelete={async (id) => {
+          await deleteEncoder(id);
+          refetch();
+        }}
+      />
+
+      <SlotsCard
+        slots={snapshot?.slots ?? []}
+        scenes={scenes}
+        encoders={encoders}
+        accounts={accounts}
+        runs={runs}
+        onSave={async (body) => {
+          await saveSlot(body);
+          refetch();
+        }}
+        onDelete={async (id) => {
+          await deleteSlot(id);
+          refetch();
+        }}
+      />
 
       <StartRunForm
         scenes={scenes}
-        canPublish={!!snapshot?.youtubeConfigured && !!account}
+        encoders={encoders}
+        accounts={accounts}
+        canPublish={!!snapshot?.youtubeConfigured && accounts.length > 0}
         activeRunFor={activeRunFor}
         onStarted={refetch}
       />
@@ -144,23 +201,31 @@ export default function StreamsPage() {
 
 function StartRunForm({
   scenes,
+  encoders,
+  accounts,
   canPublish,
   activeRunFor,
   onStarted,
 }: {
   scenes: SceneMeta[];
+  encoders: StreamEncoderInfo[];
+  accounts: StreamAccount[];
   canPublish: boolean;
   activeRunFor: (sceneId: string) => RunState | null;
   onStarted: () => void;
 }) {
   const [sceneId, setSceneId] = useState<string>(MAIN_SCENE_ID);
+  const [encoderId, setEncoderId] = useState("");
+  const [accountId, setAccountId] = useState("");
   const [title, setTitle] = useState("");
+  const [privacy, setPrivacy] = useState<YoutubePrivacy>("unlisted");
   const [publishYoutube, setPublishYoutube] = useState(true);
   const [durationMin, setDurationMin] = useState(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const sceneBusy = !!activeRunFor(sceneId);
+  const publishing = publishYoutube && canPublish;
 
   const go = async () => {
     setBusy(true);
@@ -168,9 +233,12 @@ function StartRunForm({
     try {
       await startStream({
         sceneId,
+        encoderId: encoderId || undefined,
+        accountId: publishing && accountId ? accountId : undefined,
         title: title || undefined,
+        privacy,
         durationMs: durationMin > 0 ? durationMin * 60_000 : null,
-        platforms: { youtube: publishYoutube && canPublish },
+        platforms: { youtube: publishing },
       });
       setTitle("");
       onStarted();
@@ -183,10 +251,13 @@ function StartRunForm({
 
   return (
     <Paper sx={{ p: 1.75, mt: 1.75 }}>
+      <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+        One-off run
+      </Typography>
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
         <TextField
           select
-          label="scene"
+          label="channel"
           value={scenes.some((s) => s.id === sceneId) || sceneId === MAIN_SCENE_ID ? sceneId : ""}
           onChange={(e) => setSceneId(e.target.value)}
           sx={{ minWidth: 160 }}
@@ -199,11 +270,54 @@ function StartRunForm({
           ))}
         </TextField>
         <TextField
+          select
+          label="encoder"
+          value={encoderId}
+          onChange={(e) => setEncoderId(e.target.value)}
+          sx={{ minWidth: 130 }}
+        >
+          <MenuItem value="">auto</MenuItem>
+          {encoders.map((enc) => (
+            <MenuItem key={enc.id} value={enc.id}>
+              {enc.name || enc.id}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Title (optional)"
-          sx={{ flex: 1, minWidth: 180 }}
+          sx={{ flex: 1, minWidth: 160 }}
         />
+        {canPublish && (
+          <TextField
+            select
+            label="YouTube"
+            value={accounts.some((a) => a.channelId === accountId) ? accountId : ""}
+            onChange={(e) => setAccountId(e.target.value)}
+            disabled={!publishing}
+            sx={{ minWidth: 150 }}
+          >
+            <MenuItem value="">Default channel</MenuItem>
+            {accounts.map((a) => (
+              <MenuItem key={a.channelId} value={a.channelId}>
+                {a.channelTitle || a.channelId}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+        <TextField
+          select
+          label="privacy"
+          value={privacy}
+          onChange={(e) => setPrivacy(e.target.value as YoutubePrivacy)}
+          disabled={!publishing}
+          sx={{ minWidth: 110 }}
+        >
+          <MenuItem value="public">Public</MenuItem>
+          <MenuItem value="unlisted">Unlisted</MenuItem>
+          <MenuItem value="private">Private</MenuItem>
+        </TextField>
         <TextField
           type="number"
           label="auto-end (min, 0=∞)"
@@ -214,7 +328,7 @@ function StartRunForm({
         <FormControlLabel
           control={
             <Checkbox
-              checked={publishYoutube && canPublish}
+              checked={publishing}
               disabled={!canPublish}
               onChange={(e) => setPublishYoutube(e.target.checked)}
             />
@@ -222,7 +336,7 @@ function StartRunForm({
           label="YouTube"
         />
         <Button variant="contained" color="error" onClick={go} disabled={busy || sceneBusy}>
-          {busy ? "…" : sceneBusy ? "Scene busy" : "● Go Live"}
+          {busy ? "…" : sceneBusy ? "Channel busy" : "● Go Live"}
         </Button>
       </Stack>
       {err && (
@@ -258,6 +372,8 @@ function RunRow({ run, onStopped }: { run: RunState; onStopped: () => void }) {
           </Typography>
           <Typography variant="caption" color="text.secondary">
             scene {run.sceneId}
+            {run.encoderId ? ` · encoder ${run.encoderId}` : ""}
+            {run.slotId ? " · constant" : ""}
             {run.needsManualObs ? " · OBS manual handoff needed" : ""}
             {run.error ? ` · ${run.error.step}: ${run.error.message}` : ""}
           </Typography>

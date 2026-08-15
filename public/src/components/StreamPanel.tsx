@@ -364,6 +364,11 @@ function ActiveRun({ run, health, onEnded }: { run: RunState; health?: StreamHea
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <span style={{ ...box, color: status.color, fontWeight: 800, letterSpacing: 1 }}>{status.label}</span>
+        {run.slotId ? (
+          <span style={{ ...box, fontSize: 11, color: "#7dd3fc" }} title="Kept alive by a persistent slot — ending it also switches the slot off.">
+            CONSTANT
+          </span>
+        ) : null}
         {run.title ? <span style={{ fontSize: 13, opacity: 0.85 }}>{run.title}</span> : null}
         {run.youtube?.watchUrl ? (
           <a href={run.youtube.watchUrl} target="_blank" rel="noreferrer" style={{ ...box, color: "#7dd3fc" }}>

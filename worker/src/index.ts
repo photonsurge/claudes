@@ -502,6 +502,25 @@ process.on("uncaughtException", (err) => {
     log(TAG, `failed to register alerts.reconcile`, { err: summarizeForLog(err) });
   }
 
+  // ---- Repeatable stream reconcile (persistent slots) ----
+  // Keeps every enabled StreamSlot's constant stream alive: restarts dead runs
+  // (with backoff owned by the sweep, not the schedule) and ends runs whose slot
+  // was disabled. Cheap no-op when no slots exist.
+  const STREAM_RECONCILE_MS = Number(process.env.STREAM_RECONCILE_MS || 60 * 1000);
+  try {
+    await addJob(
+      "do",
+      { domain: "stream", type: "run-lifecycle", event: "reconcile", data: {} },
+      {
+        repeat: { every: STREAM_RECONCILE_MS, offset: staggerOffset("stream-reconcile", STREAM_RECONCILE_MS) },
+        jobId: "stream-reconcile",
+      },
+    );
+    log(TAG, `registered repeatable stream.reconcile`, { every: STREAM_RECONCILE_MS });
+  } catch (err) {
+    log(TAG, `failed to register stream.reconcile`, { err: summarizeForLog(err) });
+  }
+
   // ---- Repeatable alerts.translate job ----
   // Own cadence, decoupled from ingest, so a slow LLM call never blocks the poll
   // tick. No-ops (never touches Mongo) when OPENROUTER_API_KEY is unset.

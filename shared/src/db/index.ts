@@ -126,10 +126,12 @@ import { makeUserRepo } from "./user-repo";
 import { getBroadcastStateModel, BROADCAST_STATE_ID } from "./broadcast-state-model";
 import { getDirectorConfigModel } from "./director-config-model";
 import { getRunModel, iRunModel } from "./run-model";
+import { getStreamEncoderModel, iStreamEncoderModel } from "./stream-encoder-model";
+import { getStreamSlotModel, iStreamSlotModel } from "./stream-slot-model";
 import { getYoutubeAccountModel, iYoutubeAccountModel } from "./youtube-account-model";
 import { DEFAULT_CONTROL_STATE, MAIN_SCENE_ID } from "../control";
 import { DEFAULT_DIRECTOR_CONFIG, mergeDirectorConfig } from "../director";
-import { runIsActive, type Run } from "../runs";
+import { encoderKeyForRun, runIsActive, type Run, type StreamEncoder, type StreamSlot } from "../runs";
 
 /** Sample entity for the ping demo feature. Replace/extend with real models. */
 export interface iPing extends iEntity {
@@ -170,6 +172,8 @@ export function createDb(conn: Connection) {
   const broadcastState = mongoCrud(getBroadcastStateModel(conn));
   const directorConfig = mongoCrud(getDirectorConfigModel(conn));
   const streamRuns = mongoCrud<iRunModel>(getRunModel(conn));
+  const streamEncoders = mongoCrud<iStreamEncoderModel>(getStreamEncoderModel(conn));
+  const streamSlots = mongoCrud<iStreamSlotModel>(getStreamSlotModel(conn));
   const youtubeAccounts = mongoCrud<iYoutubeAccountModel>(getYoutubeAccountModel(conn));
 
   // Shared `${BLOB_DIR}` folder (both containers bind-mount it), or null → the
@@ -471,6 +475,85 @@ export function createDb(conn: Connection) {
     async activeRunForScene(sceneId: string) {
       const rows = await this.listRuns({ sceneId });
       return rows.find((r) => runIsActive(r.status)) ?? null;
+    },
+
+    /**
+     * The active PUBLISHING run occupying an encoder, or null. Legacy runs with
+     * no encoderId collapse onto the env encoder key (see encoderKeyForRun) —
+     * this is the one-output-per-OBS-instance guard, now scoped per encoder.
+     */
+    async activeRunForEncoder(encoderId: string, excludeRunId?: string) {
+      const rows = await this.listRuns({ status: ["scheduled", "awaiting-ingest", "live", "ending"] });
+      return (
+        rows.find(
+          (r) =>
+            r.id !== excludeRunId && !!r.platforms?.youtube && encoderKeyForRun(r) === (encoderId || "env"),
+        ) ?? null
+      );
+    },
+
+    // ---- Stream encoders (registered OBS instances — one output each) ----
+
+    /** All registered encoders (admin list; pass onlyEnabled for pickers). */
+    async listStreamEncoders(onlyEnabled = false) {
+      const res = await streamEncoders.getAll(onlyEnabled ? { enabled: true } : {}, { sort: { id: 1 } });
+      return (res.success && res.data ? res.data : []) as StreamEncoder[];
+    },
+
+    /** An encoder by id, or null. */
+    async getStreamEncoder(id: string) {
+      const res = await streamEncoders.getByID(id);
+      return res.success && res.data ? (res.data as StreamEncoder) : null;
+    },
+
+    /** The enabled encoder whose OBS instance captures this scene, or null. */
+    async encoderForScene(sceneId: string) {
+      const res = await streamEncoders.getAll({ sceneId, enabled: true }, { sort: { id: 1 }, limit: 1 });
+      return res.success && res.data && res.data.length ? (res.data[0] as StreamEncoder) : null;
+    },
+
+    /** Insert-or-update an encoder by id. */
+    async saveStreamEncoder(patch: Partial<StreamEncoder> & { id: string }) {
+      const res = await streamEncoders.upsertByID(patch.id, patch as any);
+      return res.data ? (res.data as StreamEncoder) : null;
+    },
+
+    /** Remove an encoder registration (does not touch the OBS instance itself). */
+    async deleteStreamEncoder(id: string) {
+      const res = await streamEncoders.deleteByID(id);
+      return !!res.success;
+    },
+
+    // ---- Stream slots (desired-state persistent streams) ----
+
+    /** All persistent-stream slots (admin list + the worker reconciler sweep). */
+    async listStreamSlots() {
+      const res = await streamSlots.getAll({}, { sort: { id: 1 } });
+      return (res.success && res.data ? res.data : []) as StreamSlot[];
+    },
+
+    /** A slot by id, or null. */
+    async getStreamSlot(id: string) {
+      const res = await streamSlots.getByID(id);
+      return res.success && res.data ? (res.data as StreamSlot) : null;
+    },
+
+    /** The slot a run is serving (by the slot's runId pointer), or null. */
+    async slotForRun(runId: string) {
+      const res = await streamSlots.getAll({ runId }, { limit: 1 });
+      return res.success && res.data && res.data.length ? (res.data[0] as StreamSlot) : null;
+    },
+
+    /** Insert-or-update a slot by id. */
+    async saveStreamSlot(patch: Partial<StreamSlot> & { id: string }) {
+      const res = await streamSlots.upsertByID(patch.id, patch as any);
+      return res.data ? (res.data as StreamSlot) : null;
+    },
+
+    /** Remove a slot (any run it started keeps running until stopped). */
+    async deleteStreamSlot(id: string) {
+      const res = await streamSlots.deleteByID(id);
+      return !!res.success;
     },
 
     // ---- Connected YouTube channels (OAuth) ----

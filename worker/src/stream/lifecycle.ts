@@ -18,12 +18,21 @@
  */
 import { getQueue } from "@photonsurge/shared/bull/bull";
 import { getAppDb } from "@photonsurge/shared/db/index";
-import { RUN_STATE, RUN_STATUS, toRunState, runIsFinished, type Run, type StreamHealth } from "@photonsurge/shared/runs";
+import {
+  RUN_STATE,
+  RUN_STATUS,
+  encoderKeyForRun,
+  toRunState,
+  runIsFinished,
+  type Run,
+  type StreamHealth,
+} from "@photonsurge/shared/runs";
 import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "../socket";
 import { startMonitor, stopMonitor, stopAllMonitors } from "./monitor";
 import { startChatPoll, stopChatPoll } from "./chat";
 import { ObsUnavailableError, setStreamKey, startStream, stopStream, getStatus, type ObsStreamStatus } from "../obs/client";
+import { endpointForRun } from "./encoders";
 import {
   getYoutubeClient,
   createBroadcast,
@@ -40,6 +49,9 @@ const TAG = "stream";
 const HEARTBEAT_MS = 5_000; // health cadence while live
 const CONFIRM_POLL_MS = 3_000; // ingest-confirm cadence while awaiting
 const YT_HEALTH_EVERY = 6; // refresh YouTube health ~every 30s (spare API quota)
+// Unbounded (persistent) runs poll YouTube health ~every 2 min instead — three
+// always-on streams at 30s would eat ~8.6k of the 10k/day default quota alone.
+const YT_HEALTH_EVERY_UNBOUNDED = 24;
 
 const autoEndJobId = (runId: string) => `run-end-${runId}`;
 
@@ -109,31 +121,35 @@ async function cancelAutoEnd(runId: string): Promise<void> {
 }
 
 /**
- * Another run that already owns the shared OBS encoder, or null.
+ * Another run already publishing through the SAME encoder, or null.
  *
- * HARD CONSTRAINT: one OBS instance has exactly ONE streaming output, and we hold a
- * single connection to one OBS_WEBSOCKET_URL. So only one run can be publishing at a
- * time — a second would overwrite the first's stream key via SetStreamServiceSettings
- * and then no-op on StartStream (output already active), silently pushing run A's
- * feed while reporting run B live. Concurrency across scenes needs one OBS instance
- * per scene (or a per-scene ffmpeg renderer); until then this guard refuses instead
- * of corrupting a live broadcast.
+ * HARD CONSTRAINT: one OBS instance has exactly ONE streaming output. A second run
+ * on the same instance would overwrite the first's stream key via
+ * SetStreamServiceSettings and then no-op on StartStream (output already active),
+ * silently pushing run A's feed while reporting run B live. Concurrency comes from
+ * the StreamEncoder registry — one OBS instance per scene — so the guard is scoped
+ * per encoder (legacy no-encoderId runs collapse onto the env instance).
  */
-async function encoderBusyWith(runId: string): Promise<Run | null> {
+async function encoderBusyWith(run: Run): Promise<Run | null> {
   const db = await getAppDb();
-  const active = await db.listRuns({ status: ["scheduled", "awaiting-ingest", "live", "ending"] });
-  return active.find((r) => r.id !== runId && !!r.platforms?.youtube) ?? null;
+  return db.activeRunForEncoder(encoderKeyForRun(run), run.id);
+}
+
+/** Best-effort stop of the run's OBS output (rollback/finish paths). */
+async function stopRunObs(run: Run): Promise<void> {
+  try {
+    await stopStream(await endpointForRun(run));
+  } catch {
+    /* best-effort — unreachable/unconfigured OBS is fine here */
+  }
 }
 
 async function failRun(runId: string, step: string, err: unknown): Promise<void> {
   const message = String((err as Error)?.message ?? err);
   log(TAG, `run ${runId} failed at ${step}: ${message}`);
-  try {
-    await stopStream();
-  } catch {
-    /* best-effort rollback */
-  }
   const db = await getAppDb();
+  const before = await db.getRun(runId);
+  if (before) await stopRunObs(before);
   await db.updateRun(runId, { status: "failed", error: { step, message, at: Date.now() } });
   const run = await db.getRun(runId);
   if (run) emitRunState(run);
@@ -153,11 +169,11 @@ export async function goLive(runId: string): Promise<void> {
     if (wantsYoutube) {
       // Checked BEFORE creating any YouTube resources, so a refused run leaves no
       // orphaned broadcast behind. (The API pre-checks too; this catches the race.)
-      const busy = await encoderBusyWith(runId);
+      const busy = await encoderBusyWith(run);
       if (busy) {
         throw new Error(
-          `the OBS encoder is already streaming run ${busy.id} (scene "${busy.sceneId}") — ` +
-            `only one concurrent stream is supported by a single OBS instance. Stop that run first.`,
+          `encoder "${encoderKeyForRun(run)}" is already streaming run ${busy.id} (scene "${busy.sceneId}") — ` +
+            `one OBS instance supports one concurrent stream. Stop that run or use another encoder.`,
         );
       }
       const ctx = await getYoutubeClient(run.platforms.youtube?.accountId);
@@ -211,9 +227,12 @@ export async function goLive(runId: string): Promise<void> {
 
 async function configureAndStartObs(run: Run, server: string, key: string): Promise<void> {
   try {
-    await setStreamKey(server, key);
+    // Resolving the endpoint throws ObsUnavailableError when the encoder is
+    // missing/disabled/unconfigured — same manual-handoff branch as unreachable.
+    const ep = await endpointForRun(run);
+    await setStreamKey(ep, server, key);
     await persistPhase(run.id, "obs-config", { obs: { ...(run.obs ?? {}), configured: true, streaming: false } });
-    await startStream();
+    await startStream(ep);
     await persistPhase(run.id, "obs-start", { obs: { configured: true, streaming: true } });
   } catch (err) {
     if (err instanceof ObsUnavailableError) {
@@ -245,7 +264,7 @@ async function confirmTick(run: Run): Promise<number> {
 
   let obs: ObsStreamStatus | undefined;
   try {
-    obs = await getStatus();
+    obs = await getStatus(await endpointForRun(run));
   } catch {
     /* OBS may be unreachable during manual handoff — keep polling YouTube */
   }
@@ -315,7 +334,7 @@ async function healthTick(run: Run): Promise<number> {
   let obs: ObsStreamStatus | undefined;
   let kbps: number | undefined;
   try {
-    obs = await getStatus();
+    obs = await getStatus(await endpointForRun(run));
     const prevBytes = run.obs?.lastBytes;
     const prevAt = run.obs?.lastBytesAt;
     const now = Date.now();
@@ -331,7 +350,8 @@ async function healthTick(run: Run): Promise<number> {
 
   let ytHealth: { health?: "good" | "ok" | "bad" | "noData"; streamStatus?: string } | undefined;
   const yt = run.platforms?.youtube;
-  if (yt?.streamId && ticks % YT_HEALTH_EVERY === 0) {
+  const ytEvery = run.durationMs ? YT_HEALTH_EVERY : YT_HEALTH_EVERY_UNBOUNDED;
+  if (yt?.streamId && ticks % ytEvery === 0) {
     try {
       const ctx = await getYoutubeClient(yt.accountId);
       ytHealth = await getStreamStatus(ctx, yt.streamId);
@@ -373,11 +393,7 @@ export async function finishRun(runId: string, reason: "manual" | "auto"): Promi
       log(TAG, `finish: youtube complete failed ${runId}`, String((err as Error)?.message ?? err));
     }
   }
-  try {
-    await stopStream();
-  } catch {
-    /* best-effort */
-  }
+  await stopRunObs(run);
 
   await db.updateRun(runId, {
     status: reason === "manual" ? "stopped" : "ended",

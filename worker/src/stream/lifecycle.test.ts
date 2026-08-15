@@ -30,6 +30,12 @@ jest.mock("../obs/client", () => {
   };
 });
 
+// Encoder resolution is exercised in its own unit; here every run resolves to a
+// reachable test endpoint so the OBS-call mocks above see it as the first arg.
+jest.mock("./encoders", () => ({
+  endpointForRun: jest.fn(async () => ({ url: "ws://obs-test:4455" })),
+}));
+
 jest.mock("../youtube/client", () => ({
   getYoutubeClient: jest.fn(async () => ({ youtube: {}, accountId: "acc", channelId: "acc" })),
   createBroadcast: jest.fn(async () => ({ broadcastId: "bcast", watchUrl: "https://youtu.be/bcast" })),
@@ -46,6 +52,7 @@ jest.mock("@photonsurge/shared/bull/bull", () => ({ getQueue: jest.fn(() => fake
 
 // In-memory run store standing in for the Mongo data-access layer.
 const runs = new Map<string, any>();
+const ACTIVE = new Set(["scheduled", "awaiting-ingest", "live", "ending"]);
 const db = {
   getRun: jest.fn(async (id: string) => (runs.has(id) ? { ...runs.get(id) } : null)),
   updateRun: jest.fn(async (id: string, patch: any) => {
@@ -54,6 +61,16 @@ const db = {
     return { ...next };
   }),
   listRuns: jest.fn(async () => [...runs.values()]),
+  // Mirrors the real accessor: same-encoder publishing runs conflict ("" → env).
+  activeRunForEncoder: jest.fn(async (encoderId: string, excludeRunId?: string) =>
+    [...runs.values()].find(
+      (r) =>
+        r.id !== excludeRunId &&
+        ACTIVE.has(r.status) &&
+        !!r.platforms?.youtube &&
+        (r.encoderId || "env") === (encoderId || "env"),
+    ) ?? null,
+  ),
 };
 jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: jest.fn(async () => db) }));
 
@@ -78,7 +95,7 @@ describe("goLive", () => {
     expect(yt.createStream).toHaveBeenCalledTimes(1);
     expect(yt.bindBroadcast).toHaveBeenCalledWith(expect.anything(), "bcast", "strm");
     // OBS pointed at the YouTube ingestion address + key, then started.
-    expect(obs.setStreamKey).toHaveBeenCalledWith("rtmp://ingest", "secret-key");
+    expect(obs.setStreamKey).toHaveBeenCalledWith(expect.objectContaining({ url: expect.any(String) }), "rtmp://ingest", "secret-key");
     expect(obs.startStream).toHaveBeenCalledTimes(1);
 
     const run = runs.get("r1");
@@ -111,8 +128,9 @@ describe("goLive", () => {
     expect(run.error).toMatchObject({ step: "goLive" });
   });
 
-  it("refuses a second publishing run instead of hijacking the shared OBS encoder", async () => {
-    // Run A already owns the single OBS streaming output.
+  it("refuses a second publishing run on the SAME encoder instead of hijacking it", async () => {
+    // Run A already owns this OBS instance's single streaming output (both runs
+    // have no encoderId, so both collapse onto the env encoder).
     setRun({ id: "live-a", sceneId: "atlantic", status: "live", platforms: { youtube: { broadcastId: "b-a" } } });
     setRun({ id: "r7", sceneId: "default", status: "scheduled", platforms: { youtube: {} }, durationMs: null });
 
@@ -120,12 +138,32 @@ describe("goLive", () => {
 
     const run = runs.get("r7");
     expect(run.status).toBe("failed");
-    expect(run.error.message).toMatch(/only one concurrent stream/i);
+    expect(run.error.message).toMatch(/one OBS instance supports one concurrent stream/i);
     // Critically: no YouTube resources created and OBS never touched.
     expect(yt.createBroadcast).not.toHaveBeenCalled();
     expect(obs.setStreamKey).not.toHaveBeenCalled();
     expect(obs.startStream).not.toHaveBeenCalled();
     // Run A is untouched.
+    expect(runs.get("live-a").status).toBe("live");
+  });
+
+  it("allows concurrent publishing runs on DIFFERENT encoders (the multi-view case)", async () => {
+    setRun({ id: "live-a", sceneId: "atlantic", status: "live", platforms: { youtube: { broadcastId: "b-a" } } });
+    setRun({
+      id: "r8",
+      sceneId: "pacific",
+      encoderId: "obs-2",
+      status: "scheduled",
+      platforms: { youtube: {} },
+      durationMs: null,
+    });
+
+    await goLive("r8");
+
+    const run = runs.get("r8");
+    expect(run.status).toBe("awaiting-ingest"); // NOT refused
+    expect(yt.createBroadcast).toHaveBeenCalledTimes(1);
+    expect(obs.startStream).toHaveBeenCalledTimes(1);
     expect(runs.get("live-a").status).toBe("live");
   });
 

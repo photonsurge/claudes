@@ -23,7 +23,9 @@ async function GET__impl(req: Request) {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID || null;
   const clientSecret = process.env.GOOGLE_OAUTH_SECRET || process.env.YOUTUBE_CLIENT_SECRET || null;
   const redirectFromEnv = process.env.GOOGLE_OAUTH_REDIRECT_URI || process.env.YOUTUBE_REDIRECT_URI || null;
-  const redirectUri = redirectFromEnv || new URL("/google/redirect", req.url).toString();
+  const derived = new URL("/google/redirect", req.url);
+  if (derived.hostname === "0.0.0.0") derived.hostname = "localhost"; // never surface the bind host
+  const redirectUri = redirectFromEnv || derived.toString();
 
   const db = await getAppDb();
   const accounts = await db.listYoutubeAccounts();

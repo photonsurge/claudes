@@ -1,6 +1,7 @@
 # Plan: multi-run live streaming (bounded-duration runs + chat monitoring)
 
-> Status: **v1 IMPLEMENTED** (with OBS automation pulled in — see "As built" below).
+> Status: **v2 IMPLEMENTED** — multi-view / constant streams (see the v2 section
+> directly below). v1 (single-encoder bounded runs) as-built notes follow it.
 > Goal: let an operator start/stop N concurrent, time-boxed broadcast **runs** (each
 > bound to an existing scene, each optionally publishing to YouTube, each optionally
 > monitoring platform chat) instead of the single always-on `/watch` capture we had.
@@ -8,6 +9,54 @@
 > replacing it — see that file for the YouTube broadcast create/bind/transition
 > mechanics, which still apply per-run. LLM-based chat moderation/narration is
 > explicitly out of scope here (parked separately, see `presenter-llm-plan` memory).
+
+## As built (v2 — multi-view / constant streams)
+
+Goal: **N concurrent, always-on ("constant") streams** — e.g. three simple map
+scenes each live on YouTube 24/7 — instead of v1's single at-a-time bounded run.
+
+1. **Encoder registry (`StreamEncoder`, collection `streamencoders`).** One OBS
+   instance still has exactly ONE streaming output, so concurrency = one
+   registered instance per stream. Each doc holds the obs-websocket url, an
+   optional secretbox-encrypted password (`passwordEnc`, same scheme as the
+   YouTube tokens — public writes it, only the worker decrypts), and the
+   `sceneId` its browser source captures (run-creation auto-picks by scene).
+   `worker/src/obs/client.ts` is now per-endpoint (connection cache keyed by
+   url); `worker/src/stream/encoders.ts` resolves run→endpoint. The legacy
+   `OBS_WEBSOCKET_URL` pair lives on as the implicit `env` encoder — a run with
+   no `encoderId` collapses onto it (`encoderKeyForRun`), so single-OBS setups
+   need no registry. The one-publishing-run guard is now **per encoder**
+   (`activeRunForEncoder`), both in the POST /api/streams pre-check and the
+   goLive race-check.
+2. **Persistent slots (`StreamSlot`, collection `streamslots`).** Desired-state
+   layer: while a slot is enabled, the worker keeps an UNBOUNDED run live on its
+   scene/encoder/account. A repeatable `run-lifecycle.reconcile` job (60s,
+   `STREAM_RECONCILE_MS`) restarts dead runs with exponential backoff
+   (`slotRetryDelayMs`: 30s→15min, `failCount` forgiven after 5 healthy live
+   minutes) and ends the run of a disabled slot. Manual stop of a slot-owned run
+   **auto-disables the slot** (stop route) so the reconciler doesn't resurrect
+   it; deleting a slot ends its run. All external work goes through the existing
+   run-lifecycle jobs — the sweep only reads + enqueues.
+3. **Quota guard:** unbounded runs poll YouTube-side health every ~2 min
+   (`YT_HEALTH_EVERY_UNBOUNDED`) instead of 30s — three 24/7 streams at 30s
+   would burn ~8.6k of the 10k/day API quota on health alone. OBS-side health
+   stays at 5s (free).
+4. **No broadcast rotation.** YouTube's ~12h limit only affects VOD archiving;
+   the live stream itself runs indefinitely, so constant streams skip rotation
+   entirely. Revisit only if per-stream VODs become a requirement.
+5. **UI:** `/admin/streams` gains an *OBS encoders* card and a *Constant
+   streams* card (the slot enable switch IS the go-live/off control; new slots
+   are created off). Run rows show encoder + a "constant" marker; the /control
+   StreamPanel badges slot-owned runs `CONSTANT`.
+
+v2 files: shared — `runs.ts` (+encoder/slot types + helpers),
+`db/{stream-encoder,stream-slot}-model.ts`, `db/index.ts` accessors,
+`db/run-model.ts` (+`encoderId`/`slotId`). worker — `obs/client.ts` (per-endpoint),
+`stream/{encoders,slots}.ts`, `jobs/run-lifecycle.ts` (+reconcile), `index.ts`
+(repeatable). public — `api/streams/{route,encoders/*,slots/*,[id]/stop}`,
+`lib/stream.ts`, `components/admin/streams/{EncodersCard,SlotsCard}.tsx`,
+`admin/streams/page.tsx`, `StreamPanel.tsx`. OBS multi-instance recipe:
+[obs-setup.md](obs-setup.md) § "Multi-stream (the encoder registry)".
 
 ## As built (v1 — deviations from the original plan below)
 

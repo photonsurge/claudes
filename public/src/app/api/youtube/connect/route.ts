@@ -28,10 +28,19 @@ async function GET__impl(req: Request) {
   }
   // Must exactly match a redirect URI registered on the Google OAuth client. The
   // app's callback lives at /google/redirect (see app/google/redirect/route.ts).
+  // Prefer the pinned env var — it's the ONLY thing the worker's token exchange
+  // reads, and Google requires the auth-request and token-request redirect_uri to
+  // agree. The derived fallback exists only for a not-yet-configured dev box; guard
+  // the 0.0.0.0 bind host (from the standalone HOSTNAME fix) so it never leaks a URI
+  // Google will reject — swap it for localhost, which Google accepts over http.
   const redirectUri =
     process.env.GOOGLE_OAUTH_REDIRECT_URI ||
     process.env.YOUTUBE_REDIRECT_URI ||
-    new URL("/google/redirect", req.url).toString();
+    (() => {
+      const u = new URL("/google/redirect", req.url);
+      if (u.hostname === "0.0.0.0") u.hostname = "localhost";
+      return u.toString();
+    })();
   const state = randomUUID();
 
   const params = new URLSearchParams({

@@ -43,6 +43,8 @@ const RunSchema = new mongoose.Schema<iRunModel>(
   {
     id: { type: String, required: true, unique: true },
     sceneId: { type: String, required: true, index: true },
+    encoderId: { type: String, required: false },
+    slotId: { type: String, required: false },
     status: { type: String, required: true, enum: RUN_STATUSES, default: "scheduled", index: true },
     phase: { type: String, required: false, enum: RUN_PHASES, default: "created" },
     title: { type: String, required: false },

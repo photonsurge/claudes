@@ -1,6 +1,6 @@
 {
   "name": "worker",
-  "version": "0.3.15",
+  "version": "0.3.16",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
@@ -35,6 +35,7 @@
     "seed:countries": "ts-node src/scripts/seedCountries.ts",
     "seed:regions": "ts-node src/scripts/seedRegions.ts",
     "seed:volcano-catalog": "ts-node src/scripts/seedVolcanoCatalog.ts",
+    "seed:simple-scenes": "ts-node src/scripts/seedSimpleScenes.ts",
     "clear:director-slides": "ts-node src/scripts/clearDirectorSlides.ts",
     "enrich:notable": "ts-node src/scripts/enrichNotable.ts",
     "enrich:volcanoes": "ts-node src/scripts/enrichVolcanoes.ts",

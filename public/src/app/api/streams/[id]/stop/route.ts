@@ -28,8 +28,18 @@ async function POST__impl(_req: Request, { params }: { params: Promise<{ id: str
   if (runIsFinished(run.status)) {
     return NextResponse.json(toRunState(run as Run), { status: 200, headers: NO_CACHE });
   }
+  // A slot-owned run: stopping it manually must ALSO disable the slot, or the
+  // reconciler would treat the standing order as unmet and restart the stream.
+  let slotDisabled: string | undefined;
+  if (run.slotId) {
+    const slot = await db.getStreamSlot(run.slotId);
+    if (slot?.enabled) {
+      await db.saveStreamSlot({ id: slot.id, enabled: false });
+      slotDisabled = slot.id;
+    }
+  }
   await sendToFore("stream", "run-lifecycle", "stop", { runId: id });
-  return NextResponse.json({ ok: true, id }, { status: 202, headers: NO_CACHE });
+  return NextResponse.json({ ok: true, id, slotDisabled }, { status: 202, headers: NO_CACHE });
 }
 
 export const POST = withApiLog(POST__impl);

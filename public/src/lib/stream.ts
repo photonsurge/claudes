@@ -17,6 +17,8 @@ import {
   type RunState,
   type StreamHealth,
   type CreateRunRequest,
+  type StreamEncoderInfo,
+  type StreamSlot,
 } from "@photonsurge/shared/runs";
 import { useSocket } from "./socket-provider";
 
@@ -30,6 +32,8 @@ export interface StreamSnapshot {
   youtubeConfigured: boolean;
   obsConfigured: boolean;
   accounts: StreamAccount[];
+  encoders: StreamEncoderInfo[];
+  slots: StreamSlot[];
   runs: RunState[];
 }
 
@@ -73,7 +77,7 @@ export function useStreams() {
         else runs.unshift(rs);
         return prev
           ? { ...prev, runs }
-          : { youtubeConfigured: false, obsConfigured: false, accounts: [], runs };
+          : { youtubeConfigured: false, obsConfigured: false, accounts: [], encoders: [], slots: [], runs };
       });
     };
     const onHealth = (payload: { data?: StreamHealth } & Partial<StreamHealth>) => {
@@ -121,6 +125,42 @@ export async function fetchStreamKey(runId: string): Promise<{ ingestionAddress:
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
   return data as { ingestionAddress: string; streamName: string };
+}
+
+/** Create/update an OBS encoder registration. `password` is write-only (see the route). */
+export async function saveEncoder(
+  body: Partial<StreamEncoderInfo> & { url: string; password?: string; clearPassword?: boolean },
+): Promise<StreamEncoderInfo> {
+  const res = await fetch("/api/streams/encoders", { method: "POST", headers: jsonHeaders, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+  return data as StreamEncoderInfo;
+}
+
+/** Remove an encoder registration (refused while a run publishes through it). */
+export async function deleteEncoder(id: string): Promise<void> {
+  const res = await fetch(`/api/streams/encoders/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error ?? `HTTP ${res.status}`);
+  }
+}
+
+/** Create/update a persistent-stream slot. Toggling `enabled` starts/stops the constant stream. */
+export async function saveSlot(body: Partial<StreamSlot> & { sceneId: string }): Promise<StreamSlot> {
+  const res = await fetch("/api/streams/slots", { method: "POST", headers: jsonHeaders, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+  return data as StreamSlot;
+}
+
+/** Delete a slot (also ends the run it started, if still live). */
+export async function deleteSlot(id: string): Promise<void> {
+  const res = await fetch(`/api/streams/slots/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error ?? `HTTP ${res.status}`);
+  }
 }
 
 /** Begin the YouTube OAuth flow (full-page redirect to Google). */

@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * /admin/scenes — CRUD for broadcast scenes. Each scene is a named ControlState
- * rendered full-bleed at `/watch/:id` (an OBS browser source / overlay window).
- * Create seeds from the main scene (or a chosen one); the operator then drives
- * it live from /control by selecting it in the scene picker. The main scene is
+ * /admin/scenes — CRUD for broadcast channels. Each channel is a named ControlState
+ * (a "scene" in the data model) rendered full-bleed at `/watch/:id` (an OBS browser
+ * source / overlay window) with its own operator console at `/control?scene=:id`.
+ * Create seeds from the main channel (or a chosen one). The main channel is
  * protected (no delete).
  */
 import { useCallback, useEffect, useState } from "react";
@@ -53,7 +53,7 @@ export default function ScenesPage() {
   };
 
   const remove = async (id: string) => {
-    if (!confirm(`Delete scene "${id}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete channel "${id}"? This cannot be undone.`)) return;
     const { error: err } = await deleteScene(id);
     if (err) setError(err);
     refresh();
@@ -63,12 +63,11 @@ export default function ScenesPage() {
 
   return (
     <AdminPageShell
-      title="Scenes"
+      title="Channels"
       description={
         <>
-          Each scene renders at <code>/watch/&lt;id&gt;</code> — use that URL as an OBS browser
-          source or overlay window. Drive a scene live from the{" "}
-          <MuiLink component={Link} href="/control">operator console</MuiLink>.
+          Each channel renders at <code>/watch/&lt;id&gt;</code> (use that URL as an OBS browser
+          source) and has its own operator console at <code>/control?scene=&lt;id&gt;</code>.
           Tokened OBS URLs live in <MuiLink component={Link} href="/admin/access">Access</MuiLink>.
         </>
       }
@@ -80,9 +79,9 @@ export default function ScenesPage() {
           <TextField
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="New scene name (e.g. Atlantic Wind)"
+            placeholder="New channel name (e.g. Atlantic Wind)"
             onKeyDown={(e) => e.key === "Enter" && name.trim() && add()}
-            slotProps={{ htmlInput: { "aria-label": "New scene name" } }}
+            slotProps={{ htmlInput: { "aria-label": "New channel name" } }}
             sx={{ flex: 1, minWidth: 200 }}
           />
           <TextField
@@ -117,6 +116,7 @@ export default function ScenesPage() {
       <Box sx={{ display: "grid", gap: 1.25, mt: 2.25 }}>
         {scenes.map((s) => {
           const watch = `/watch/${s.id}`;
+          const control = s.id === MAIN_SCENE_ID ? "/control" : `/control?scene=${s.id}`;
           return (
             <Paper key={s.id} sx={{ p: 1.75 }}>
               <Stack direction="row" spacing={1.75} sx={{ alignItems: "center" }}>
@@ -138,8 +138,11 @@ export default function ScenesPage() {
                     {watch}
                   </Typography>
                 </Box>
+                <MuiLink component={Link} href={control} variant="body2" sx={{ whiteSpace: "nowrap" }}>
+                  Control
+                </MuiLink>
                 <MuiLink component={Link} href={watch} target="_blank" variant="body2" sx={{ whiteSpace: "nowrap" }}>
-                  Open ↗
+                  Watch ↗
                 </MuiLink>
                 {s.id !== MAIN_SCENE_ID && (
                   <Button variant="outlined" color="error" onClick={() => remove(s.id)}>

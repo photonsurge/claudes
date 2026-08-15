@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Start the local dev stack (socket, worker, public) on the 1010x ports — no Docker.
+# Output is prefixed per package; Ctrl-C (or any package dying) stops everything.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+[ -f .env ] || { echo "No .env found — copy .env.sample to .env and fill in secrets."; exit 1; }
+
+# Warn (don't fail) if Mongo/Redis aren't reachable locally.
+for svc in "Mongo:27017" "Redis:6379"; do
+  name="${svc%%:*}" port="${svc##*:}"
+  if ! (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+    echo "WARNING: $name not reachable on 127.0.0.1:$port — start it first."
+  fi
+done
+
+packages=(socket worker public)
+
+cleanup() {
+  trap - INT TERM EXIT
+  echo
+  echo "==> Stopping dev processes"
+  kill -- -$$ 2>/dev/null || true
+}
+trap cleanup INT TERM EXIT
+
+for pkg in "${packages[@]}"; do
+  echo "==> Starting $pkg"
+  ( cd "$pkg" && exec yarn dev 2>&1 | sed -u "s/^/[$pkg] /" ) &
+done
+
+# First package to exit tears the rest down via the EXIT trap.
+wait -n || true
+echo "==> A dev process exited"
