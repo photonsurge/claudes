@@ -51,3 +51,45 @@ describe("ControlPanel widget toggles", () => {
     expect(screen.queryByLabelText("Widgets")).not.toBeInTheDocument();
   });
 });
+
+describe("ControlPanel slide toggles", () => {
+  it("hides a deck slide by unchecking it (reports slidesOff on full state)", () => {
+    const onChange = renderPanel();
+    const group = screen.getByLabelText("Slides");
+    const forecast = within(group).getByRole("checkbox", { name: "Forecast" });
+    expect(forecast).toBeChecked();
+
+    fireEvent.click(forecast);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ slidesOff: ["forecast"] }));
+  });
+
+  it("does not offer the pinned on-air lede as a toggle", () => {
+    renderPanel();
+    const group = screen.getByLabelText("Slides");
+    expect(within(group).queryByRole("checkbox", { name: "On-air lede" })).not.toBeInTheDocument();
+  });
+
+  it("changes the rotation dwell", () => {
+    const onChange = renderPanel();
+    fireEvent.change(screen.getByLabelText("Slide dwell"), { target: { value: "24000" } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ slideHoldMs: 24000 }));
+  });
+});
+
+describe("ControlPanel world-report toggles", () => {
+  it("a focus preset sets reportOff on the full state", () => {
+    const onChange = renderPanel();
+    const group = screen.getByLabelText("World report deck");
+    fireEvent.click(within(group).getByRole("button", { name: "Weather focus" }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ reportOff: ["seismic", "volcanoes"] }),
+    );
+  });
+
+  it("hides a report slide via its checkbox", () => {
+    const onChange = renderPanel();
+    const group = screen.getByLabelText("World report deck");
+    fireEvent.click(within(group).getByRole("checkbox", { name: "Volcanic activity" }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ reportOff: ["volcanoes"] }));
+  });
+});

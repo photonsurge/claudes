@@ -4,6 +4,8 @@
  * one re-skins the whole frame. Selected via ControlState.broadcastTheme and
  * resolved with getBroadcastTheme(), so /control and /watch stay in sync.
  */
+import { THEME_OVERRIDE_KEYS, type ThemeOverrides } from "@photonsurge/shared/control";
+
 export interface BroadcastTheme {
   /** Big brand name in the top-left panel. */
   name: string;
@@ -67,9 +69,21 @@ export const THEME_OPTIONS: { id: string; label: string }[] = [
 
 export const DEFAULT_THEME: BroadcastTheme = BROADCAST_THEMES.command;
 
-/** Resolve a theme id to its preset, falling back to the default. */
-export function getBroadcastTheme(id?: string): BroadcastTheme {
-  return (id && BROADCAST_THEMES[id]) || DEFAULT_THEME;
+/**
+ * Resolve a theme id to its preset (falling back to the default), then layer the
+ * channel's per-brand overrides on top: any non-empty override field replaces
+ * the preset's, an empty/absent one keeps the preset. Keeps /control and /watch
+ * in sync — both resolve from ControlState.broadcastTheme + themeOverrides.
+ */
+export function getBroadcastTheme(id?: string, overrides?: ThemeOverrides): BroadcastTheme {
+  const base = (id && BROADCAST_THEMES[id]) || DEFAULT_THEME;
+  if (!overrides) return base;
+  const merged: BroadcastTheme = { ...base };
+  for (const key of THEME_OVERRIDE_KEYS) {
+    const v = overrides[key];
+    if (typeof v === "string" && v.trim() !== "") merged[key] = v;
+  }
+  return merged;
 }
 
 /** The LIVE badge stays broadcast-red regardless of theme accent. */

@@ -1,4 +1,25 @@
-import { accentBorder } from "./config";
+import { accentBorder, getBroadcastTheme, BROADCAST_THEMES } from "./config";
+
+describe("getBroadcastTheme", () => {
+  it("resolves a preset id, falling back to the default", () => {
+    expect(getBroadcastTheme("storm").name).toBe(BROADCAST_THEMES.storm.name);
+    expect(getBroadcastTheme("nope")).toEqual(getBroadcastTheme("command"));
+  });
+
+  it("layers non-empty overrides over the base preset", () => {
+    const t = getBroadcastTheme("command", { name: "ATLANTIC WIND", accent: "#00d0ff" });
+    expect(t.name).toBe("ATLANTIC WIND");
+    expect(t.accent).toBe("#00d0ff");
+    // Untouched fields still come from the base preset.
+    expect(t.tickerTitle).toBe(BROADCAST_THEMES.command.tickerTitle);
+  });
+
+  it("treats empty/whitespace override fields as 'use the preset'", () => {
+    const t = getBroadcastTheme("command", { name: "", tagline: "   " });
+    expect(t.name).toBe(BROADCAST_THEMES.command.name);
+    expect(t.tagline).toBe(BROADCAST_THEMES.command.tagline);
+  });
+});
 
 describe("accentBorder", () => {
   it("expands to per-side props with the accent stripe on the left", () => {

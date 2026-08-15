@@ -1,9 +1,15 @@
 import { render, screen } from "@testing-library/react";
 import HazardScreen from "./HazardScreen";
 import AboutPanel from "./AboutPanel";
+import WorldReportDeck from "./WorldReportDeck";
 import { filterFeedByKind } from "../../lib/broadcast";
 import type { WorldWatchItem } from "../../lib/broadcast";
+import type { WorldWatchState } from "../../lib/world-watch";
 import { DEFAULT_THEME } from "./config";
+
+// The WORLD REPORT slide pulls a global area forecast; stub it so the deck can
+// mount without a fetch (only the "hourly" slide reads it anyway).
+jest.mock("../../lib/forecast-client", () => ({ useAreaForecast: () => ({ days: [], loading: false }) }));
 
 function feedItem(kind: WorldWatchItem["kind"], key: string): WorldWatchItem {
   return {
@@ -86,5 +92,43 @@ describe("AboutPanel", () => {
   it("carries the integrated ACTIVE FEED at its foot", () => {
     render(<AboutPanel theme={DEFAULT_THEME} feed={[]} />);
     expect(screen.getByText("ACTIVE FEED")).toBeInTheDocument();
+  });
+});
+
+describe("WorldReportDeck per-channel curation", () => {
+  const emptyWatch = {
+    bySeverity: [],
+    byContinent: [],
+    byMagClass: [],
+    byVolcanoStatus: [],
+    feed: [],
+    alertTotal: 0,
+    quakeCount: 0,
+    volcanoCount: 0,
+    maxQuake: null,
+  } as unknown as WorldWatchState;
+
+  it("a seismic-focused channel opens on the SEISMIC slide, not the weather ones", () => {
+    // Everything hidden except seismic → the deck has one slide and opens on it.
+    render(
+      <WorldReportDeck
+        worldWatch={emptyWatch}
+        manifest={null}
+        reportOff={["detection", "hourly", "alerts", "volcanoes", "about"]}
+      />,
+    );
+    expect(screen.getByText("SEISMIC ACTIVITY")).toBeInTheDocument();
+    expect(screen.queryByText("GLOBAL ALERTS")).not.toBeInTheDocument();
+  });
+
+  it("renders nothing when every report slide is hidden", () => {
+    const { container } = render(
+      <WorldReportDeck
+        worldWatch={emptyWatch}
+        manifest={null}
+        reportOff={["detection", "hourly", "alerts", "seismic", "volcanoes", "about"]}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 });

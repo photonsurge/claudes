@@ -16,6 +16,8 @@ import {
 } from "./satimg/types";
 import { isHazardType, type HazardType } from "./alerts/hazard";
 import { isWidgetId, type WidgetId } from "./broadcast-widgets";
+import { isSlideId, DEFAULT_SLIDE_HOLD_MS, type SlideId } from "./broadcast-slides";
+import { isReportSlideId, type ReportSlideId } from "./broadcast-report";
 
 /** Socket event names (also the worker→browser weather event). */
 export const CONTROL_STATE = "control:state" as const;
@@ -312,6 +314,34 @@ export function mergeTrackStyle(base: TrackStyle, patch: Partial<TrackStyle> | u
  * The full operator state rendered by /watch. Kept intentionally flat and
  * JSON-serialisable so it round-trips cleanly over the socket and through Mongo.
  */
+/**
+ * Per-channel brand overrides layered over a base BroadcastTheme preset. Each
+ * field is optional; a set (non-empty) value replaces the preset's, an empty or
+ * absent one falls back to the preset. Persisted on ControlState.themeOverrides.
+ */
+export interface ThemeOverrides {
+  name?: string;
+  tagline?: string;
+  strapline?: string;
+  tickerTitle?: string;
+  meterTitle?: string;
+  accent?: string;
+  panelBg?: string;
+  panelBorder?: string;
+}
+
+/** The keys sanitised through mergeControlState / persisted for a theme override. */
+export const THEME_OVERRIDE_KEYS = [
+  "name",
+  "tagline",
+  "strapline",
+  "tickerTitle",
+  "meterTitle",
+  "accent",
+  "panelBg",
+  "panelBorder",
+] as const;
+
 export interface ControlState {
   /** Active scalar variable id (temp/humidity/rain/storm/gust), or null. */
   activeVariable: string | null;
@@ -471,6 +501,35 @@ export interface ControlState {
    * every existing channel. Only meaningful while `showBroadcastChrome` is on.
    */
   widgetsOff: WidgetId[];
+  /**
+   * Bottom-left deck slides HIDDEN on this channel (empty = show all). An
+   * off-list keyed by BROADCAST_SLIDES ids; the pinned `onair` lede is never
+   * dropped even if listed.
+   */
+  slidesOff: SlideId[];
+  /**
+   * Per-channel ranking for the bottom-left deck slides — a stable-sort key
+   * applied over the mode's natural order (pinned `onair` always first, listed
+   * ids next in this order, everything else keeps its natural position). Empty =
+   * natural order.
+   */
+  slideOrder: SlideId[];
+  /** Bottom-left deck rotation dwell in ms (how long each slide holds). */
+  slideHoldMs: number;
+  /**
+   * Top-right WORLD REPORT deck slides HIDDEN on this channel (empty = show all).
+   * Off-list keyed by BROADCAST_REPORT_SLIDES ids — this is how one globe is
+   * pared into themed channels (a seismic channel hides the weather slides, etc.).
+   */
+  reportOff: ReportSlideId[];
+  /** Per-channel ranking for the WORLD REPORT deck slides (stable-sort key). */
+  reportOrder: ReportSlideId[];
+  /**
+   * Per-channel brand overrides layered over the `broadcastTheme` preset — any
+   * non-empty field replaces the preset's (name, tagline, accent, …). Empty {} =
+   * use the preset unchanged. Resolved by getBroadcastTheme().
+   */
+  themeOverrides: ThemeOverrides;
   /** Generative music bed played on /watch (mode/volume/mute, operator-driven). */
   audio: AudioSettings;
   /** Live-platform chat monitoring preference for this scene (operator-only). */
@@ -544,10 +603,33 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   showBroadcastChrome: true,
   broadcastTheme: "command",
   widgetsOff: [],
+  slidesOff: [],
+  slideOrder: [],
+  slideHoldMs: DEFAULT_SLIDE_HOLD_MS,
+  reportOff: [],
+  reportOrder: [],
+  themeOverrides: {},
   audio: { ...DEFAULT_AUDIO_SETTINGS },
   chat: { ...DEFAULT_CHAT_SETTINGS },
   startAt: null,
 };
+
+/**
+ * Pick only the known string-valued theme-override keys off an untrusted object.
+ * Returns undefined when the patch carries no themeOverrides at all (so the merge
+ * keeps the base), or a fresh sanitised object (empty strings allowed — they
+ * clear a field back to the preset at resolve time).
+ */
+function sanitizeThemeOverrides(v: Partial<ThemeOverrides> | undefined): ThemeOverrides | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const src = v as Record<string, unknown>;
+  const out: ThemeOverrides = {};
+  for (const k of THEME_OVERRIDE_KEYS) {
+    const val = src[k];
+    if (typeof val === "string") out[k] = val;
+  }
+  return out;
+}
 
 /**
  * Merge a partial (possibly untrusted, from socket/HTTP) control patch onto a
@@ -699,6 +781,23 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     widgetsOff: Array.isArray(patch.widgetsOff)
       ? [...new Set(patch.widgetsOff.filter(isWidgetId))]
       : base.widgetsOff ?? [],
+    slidesOff: Array.isArray(patch.slidesOff)
+      ? [...new Set(patch.slidesOff.filter(isSlideId))]
+      : base.slidesOff ?? [],
+    slideOrder: Array.isArray(patch.slideOrder)
+      ? [...new Set(patch.slideOrder.filter(isSlideId))]
+      : base.slideOrder ?? [],
+    slideHoldMs:
+      typeof patch.slideHoldMs === "number" && patch.slideHoldMs > 0
+        ? patch.slideHoldMs
+        : base.slideHoldMs ?? DEFAULT_SLIDE_HOLD_MS,
+    reportOff: Array.isArray(patch.reportOff)
+      ? [...new Set(patch.reportOff.filter(isReportSlideId))]
+      : base.reportOff ?? [],
+    reportOrder: Array.isArray(patch.reportOrder)
+      ? [...new Set(patch.reportOrder.filter(isReportSlideId))]
+      : base.reportOrder ?? [],
+    themeOverrides: sanitizeThemeOverrides(patch.themeOverrides) ?? base.themeOverrides ?? {},
     audio: {
       enabled:
         typeof patch.audio?.enabled === "boolean"

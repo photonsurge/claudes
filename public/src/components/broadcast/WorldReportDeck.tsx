@@ -12,6 +12,7 @@
  * Pointer-inert like the rest of the chrome.
  */
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
+import { applyReportPrefs, type ReportSlideId } from "@photonsurge/shared/broadcast-report";
 import type { WorldWatchState } from "../../lib/world-watch";
 import { filterFeedByKind } from "../../lib/broadcast";
 import { useAreaForecast } from "../../lib/forecast-client";
@@ -45,17 +46,34 @@ export default function WorldReportDeck({
   worldWatch,
   manifest,
   theme = DEFAULT_THEME,
+  reportOff,
+  reportOrder,
 }: {
   worldWatch: WorldWatchState;
   manifest: WeatherManifest | null;
   theme?: BroadcastTheme;
+  /** Per-channel hidden report slides (ControlState.reportOff). */
+  reportOff?: ReportSlideId[];
+  /** Per-channel report slide ranking (ControlState.reportOrder). */
+  reportOrder?: ReportSlideId[];
 }) {
   const s = worldWatch;
+  // The channel's curated rotation: the natural DECK_SLIDES order with this
+  // channel's hidden slides dropped and its ranking applied (a seismic channel
+  // keeps seismic + volcanoes, a weather channel the report + alerts, …).
+  const active = applyReportPrefs(
+    DECK_SLIDES.map((id) => ({ id })),
+    reportOff ?? [],
+    reportOrder ?? [],
+  ).map((x) => x.id);
   // Lifted here (not inside the slide) so rotating away and back doesn't
   // re-trigger the global-bbox fetch each cycle.
   const worldReport = useAreaForecast(WORLD_BBOX);
-  const { page } = usePagedSlides(DECK_SLIDES as unknown as string[], 1);
-  const slide = DECK_SLIDES[page] ?? "detection";
+  const { page } = usePagedSlides(active, 1);
+  const slide = active[page] ?? active[0];
+  // A channel can pare the report to nothing — then render nothing (the whole
+  // widget can also be hidden via widgetsOff "worldReport").
+  if (active.length === 0) return null;
 
   const alertColor = s.bySeverity[0]?.color ?? theme.accent;
   const volcanoColor = s.byVolcanoStatus[0]?.color ?? "#f97316";
@@ -141,21 +159,24 @@ export default function WorldReportDeck({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end" }}>
       {content}
-      {/* Slide position — a dot per slide so the rotation reads as deliberate. */}
-      <div style={{ display: "flex", gap: 6, paddingRight: 4 }}>
-        {DECK_SLIDES.map((id, i) => (
-          <span
-            key={id}
-            style={{
-              width: i === page ? 16 : 6,
-              height: 6,
-              borderRadius: 3,
-              background: i === page ? theme.accent : "rgba(255,255,255,0.25)",
-              transition: "width 0.3s, background 0.3s",
-            }}
-          />
-        ))}
-      </div>
+      {/* Slide position — a dot per ACTIVE slide so the rotation reads as
+          deliberate (and a single-category channel shows a single dot). */}
+      {active.length > 1 && (
+        <div style={{ display: "flex", gap: 6, paddingRight: 4 }}>
+          {active.map((id, i) => (
+            <span
+              key={id}
+              style={{
+                width: i === page ? 16 : 6,
+                height: 6,
+                borderRadius: 3,
+                background: i === page ? theme.accent : "rgba(255,255,255,0.25)",
+                transition: "width 0.3s, background 0.3s",
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -19,6 +19,19 @@ import {
   WIDGET_ZONE_ORDER,
   type WidgetId,
 } from "@photonsurge/shared/broadcast-widgets";
+import {
+  BROADCAST_SLIDES,
+  SLIDE_GROUP_LABELS,
+  SLIDE_GROUP_ORDER,
+  DEFAULT_SLIDE_HOLD_MS,
+  isPinnedSlide,
+  type SlideId,
+} from "@photonsurge/shared/broadcast-slides";
+import {
+  BROADCAST_REPORT_SLIDES,
+  REPORT_PRESETS,
+  type ReportSlideId,
+} from "@photonsurge/shared/broadcast-report";
 import { SATIMG_FEEDS, SATIMG_LOOKS } from "@photonsurge/shared/satimg/types";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { legendVariableFor } from "../lib/legend";
@@ -175,6 +188,114 @@ export default function ControlPanel({
                       </div>
                     );
                   })}
+                </div>
+              );
+            })()}
+            {/* Bottom-left deck: hide/show slide types + rotation dwell. Reorder
+                and per-channel brand overrides live on /admin/scenes/:id. */}
+            {(() => {
+              const off = new Set<string>(state.slidesOff);
+              const setSlide = (id: SlideId, visible: boolean) => {
+                const next = new Set(state.slidesOff);
+                if (visible) next.delete(id);
+                else next.add(id);
+                patch({ slidesOff: [...next] as SlideId[] });
+              };
+              const presets = [8000, 12000, 16000, 24000, 32000, 40000];
+              const holdMs = state.slideHoldMs ?? DEFAULT_SLIDE_HOLD_MS;
+              const holdOpts = presets.includes(holdMs) ? presets : [...presets, holdMs].sort((a, b) => a - b);
+              return (
+                <div style={{ marginTop: 12 }} aria-label="Slides">
+                  <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, color: "#8b95a7", marginBottom: 6 }}>
+                    Bottom-left slides
+                  </div>
+                  <Field label="Dwell">
+                    <select
+                      value={holdMs}
+                      onChange={(e) => patch({ slideHoldMs: Number(e.target.value) })}
+                      aria-label="Slide dwell"
+                      style={miniSelect}
+                    >
+                      {holdOpts.map((ms) => (
+                        <option key={ms} value={ms}>
+                          {Math.round(ms / 1000)}s
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  {SLIDE_GROUP_ORDER.map((group) => {
+                    const slides = BROADCAST_SLIDES.filter((s) => s.group === group && !isPinnedSlide(s.id));
+                    if (slides.length === 0) return null;
+                    return (
+                      <div key={group} style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 10, color: "#5b6577", marginBottom: 3 }}>
+                          {SLIDE_GROUP_LABELS[group]}
+                        </div>
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                          {slides.map((s) => (
+                            <Toggle
+                              key={s.id}
+                              label={s.label}
+                              checked={!off.has(s.id)}
+                              onChange={(visible) => setSlide(s.id, visible)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+            {/* Top-right WORLD REPORT: which whole-planet slides show. Focus
+                presets curate one globe into themed channels. Reorder lives on
+                /admin/scenes/:id. */}
+            {(() => {
+              const off = new Set<string>(state.reportOff);
+              const setReport = (id: ReportSlideId, visible: boolean) => {
+                const next = new Set(state.reportOff);
+                if (visible) next.delete(id);
+                else next.add(id);
+                patch({ reportOff: [...next] as ReportSlideId[] });
+              };
+              const activePreset = REPORT_PRESETS.find(
+                (p) => p.off.length === off.size && p.off.every((id) => off.has(id)),
+              );
+              return (
+                <div style={{ marginTop: 12 }} aria-label="World report deck">
+                  <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, color: "#8b95a7", marginBottom: 6 }}>
+                    World report
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                    {REPORT_PRESETS.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => patch({ reportOff: [...p.off] })}
+                        style={{
+                          fontSize: 12,
+                          padding: "3px 8px",
+                          borderRadius: 6,
+                          cursor: "pointer",
+                          border: `1px solid ${activePreset?.id === p.id ? "#4dc8ff" : "#2a3344"}`,
+                          background: activePreset?.id === p.id ? "#123043" : "#0a0e16",
+                          color: "#fff",
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    {BROADCAST_REPORT_SLIDES.map((s) => (
+                      <Toggle
+                        key={s.id}
+                        label={s.label}
+                        checked={!off.has(s.id)}
+                        onChange={(visible) => setReport(s.id, visible)}
+                      />
+                    ))}
+                  </div>
                 </div>
               );
             })()}

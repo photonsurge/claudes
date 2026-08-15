@@ -548,6 +548,8 @@ export default function BroadcastFrame({
         regionCountries,
         regionNearTerm,
         theme,
+        slidesOff: state.slidesOff,
+        slideOrder: state.slideOrder,
       })
     : [];
 
@@ -741,6 +743,7 @@ export default function BroadcastFrame({
             {onAirSegment ? (
               <SlideDeck
                 slides={leftDeck}
+                holdMs={state.slideHoldMs}
                 resetKey={onAirSegment.id}
                 dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
                 chrome={{
@@ -839,6 +842,8 @@ export default function BroadcastFrame({
               worldWatch={worldWatch}
               manifest={manifest}
               theme={theme}
+              reportOff={state.reportOff}
+              reportOrder={state.reportOrder}
             />
           )}
           {/* NEW ALERTS — the just-issued warnings ride below the always-on

@@ -11,10 +11,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import Button from "@mui/material/Button";
 import MuiLink from "@mui/material/Link";
+import Stack from "@mui/material/Stack";
 import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
 import { listScenes } from "../../../../lib/scenes";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 import ChannelSettings from "../../../../components/admin/scenes/ChannelSettings";
+import SlidesSettings from "../../../../components/admin/scenes/SlidesSettings";
+import ReportSettings from "../../../../components/admin/scenes/ReportSettings";
+import ThemeSettings from "../../../../components/admin/scenes/ThemeSettings";
 
 export default function ChannelSettingsPage() {
   const params = useParams<{ id: string }>();
@@ -33,7 +37,7 @@ export default function ChannelSettingsPage() {
     <AdminPageShell
       title={`Channel: ${name}`}
       crumbs={[{ href: "/admin/scenes", label: "Channels" }, { label: name }]}
-      description="Pick which on-air widgets show on this channel. Changes apply live to its /watch output."
+      description="On-air widgets, the bottom-left slide deck and the channel's brand. Changes apply live to its /watch output."
       maxWidth={760}
       actions={
         <>
@@ -46,7 +50,12 @@ export default function ChannelSettingsPage() {
         </>
       }
     >
-      <ChannelSettings sceneId={sceneId} />
+      <Stack spacing={2}>
+        <ChannelSettings sceneId={sceneId} />
+        <ReportSettings sceneId={sceneId} />
+        <SlidesSettings sceneId={sceneId} />
+        <ThemeSettings sceneId={sceneId} />
+      </Stack>
     </AdminPageShell>
   );
 }

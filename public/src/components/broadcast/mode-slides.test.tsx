@@ -364,3 +364,29 @@ describe("modeSlides", () => {
     ).toEqual(["onair", "nation", "topcities", "forecast", "roundup"]);
   });
 });
+
+describe("modeSlides — per-channel slide prefs", () => {
+  const bbox: [number, number, number, number] = [-1, -1, 1, 1];
+  const spotlight = () => ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }));
+
+  it("the country spotlight's natural deck (baseline)", () => {
+    expect(spotlight()).toEqual(["onair", "topcities", "forecast"]);
+  });
+
+  it("slidesOff hides the listed slide", () => {
+    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, slidesOff: ["topcities"] }))).toEqual([
+      "onair",
+      "forecast",
+    ]);
+  });
+
+  it("never drops the pinned on-air lede, even when listed", () => {
+    expect(ids(seg({ kind: "point" }), ctx({ slidesOff: ["onair"] }))).toEqual(["onair"]);
+  });
+
+  it("slideOrder reranks the deck after the pinned lede", () => {
+    expect(
+      ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, slideOrder: ["forecast", "topcities"] })),
+    ).toEqual(["onair", "forecast", "topcities"]);
+  });
+});

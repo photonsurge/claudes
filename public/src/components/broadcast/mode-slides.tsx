@@ -27,6 +27,7 @@ import type { City } from "../../lib/cities";
 import type { CountryAt } from "../../lib/countries";
 import type { Cam } from "../../lib/cams/types";
 import type { BroadcastTheme } from "./config";
+import { applySlidePrefs, type SlideId } from "@photonsurge/shared/broadcast-slides";
 import type { DeckSlide } from "./SlideDeck";
 import { KIND_COLOR, isTargetedEvent } from "./kinds";
 import OnAirCard from "./OnAirCard";
@@ -188,6 +189,10 @@ export interface ModeSlideContext {
    *  the 72h track at the region's biggest city). Empty off a region shot. */
   regionNearTerm?: ForecastStep[];
   theme: BroadcastTheme;
+  /** Per-channel deck slide off-list (ControlState.slidesOff) — hidden ids. */
+  slidesOff?: SlideId[];
+  /** Per-channel deck slide ranking (ControlState.slideOrder). */
+  slideOrder?: SlideId[];
 }
 
 /**
@@ -218,8 +223,18 @@ function contextSlides(ctx: ModeSlideContext): DeckSlide[] {
   return out;
 }
 
-/** The mode's ordered, content-filtered deck. Caller guards `segment` non-null. */
+/**
+ * The mode's ordered, content-filtered deck, with the channel's per-slide
+ * preferences applied on top: hidden ids dropped (never the pinned `onair`
+ * lede) and the remainder stable-sorted by `slideOrder`. Caller guards
+ * `segment` non-null.
+ */
 export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[] {
+  return applySlidePrefs(composeModeSlides(segment, ctx), ctx.slidesOff ?? [], ctx.slideOrder ?? []);
+}
+
+/** Builds the mode's natural, content-filtered deck (before channel prefs). */
+function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[] {
   const color = KIND_COLOR[segment.kind] ?? FALLBACK_ACCENT;
   const slides: DeckSlide[] = [];
 

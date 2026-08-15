@@ -5,6 +5,7 @@ import { getModel } from "../utill/getModel";
 import type { ControlState } from "../control";
 import { AUDIO_MODES } from "../control";
 import { defaultSatImgFeeds } from "../satimg/types";
+import { DEFAULT_SLIDE_HOLD_MS } from "../broadcast-slides";
 
 /** The id of the single broadcast-state document (single-domain → one row). */
 export const BROADCAST_STATE_ID = "default" as const;
@@ -138,6 +139,12 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     showBroadcastChrome: { type: Boolean, required: true, default: true },
     broadcastTheme: { type: String, required: true, default: "command" },
     widgetsOff: { type: [String], required: true, default: [] },
+    slidesOff: { type: [String], required: true, default: [] },
+    slideOrder: { type: [String], required: true, default: [] },
+    slideHoldMs: { type: Number, required: true, default: DEFAULT_SLIDE_HOLD_MS },
+    reportOff: { type: [String], required: true, default: [] },
+    reportOrder: { type: [String], required: true, default: [] },
+    themeOverrides: { type: mongoose.Schema.Types.Mixed, required: true, default: () => ({}) },
     audio: {
       enabled: { type: Boolean, required: true, default: false },
       mode: { type: String, required: true, enum: AUDIO_MODES, default: "auto" },

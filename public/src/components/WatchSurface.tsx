@@ -157,7 +157,7 @@ function WatchSurfaceBody({
   // Webcams feed the "near this event" broadcast panel; only load them when the
   // chrome is on (the plain surface doesn't show the panel).
   const cams = useCams(state.showBroadcastChrome && ready);
-  const theme = getBroadcastTheme(state.broadcastTheme);
+  const theme = getBroadcastTheme(state.broadcastTheme, state.themeOverrides);
 
   // Broadcast rule: the /watch output only ever shows the clean global cloud mosaic
   // (plus the lightning overlay) — every regional geostationary disc (GOES / Himawari /

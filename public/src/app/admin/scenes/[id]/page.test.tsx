@@ -20,6 +20,18 @@ jest.mock("../../../../components/admin/scenes/ChannelSettings", () => ({
   __esModule: true,
   default: ({ sceneId }: { sceneId: string }) => <div data-testid="settings">settings:{sceneId}</div>,
 }));
+jest.mock("../../../../components/admin/scenes/SlidesSettings", () => ({
+  __esModule: true,
+  default: ({ sceneId }: { sceneId: string }) => <div data-testid="slides">slides:{sceneId}</div>,
+}));
+jest.mock("../../../../components/admin/scenes/ReportSettings", () => ({
+  __esModule: true,
+  default: ({ sceneId }: { sceneId: string }) => <div data-testid="report">report:{sceneId}</div>,
+}));
+jest.mock("../../../../components/admin/scenes/ThemeSettings", () => ({
+  __esModule: true,
+  default: ({ sceneId }: { sceneId: string }) => <div data-testid="theme">theme:{sceneId}</div>,
+}));
 
 describe("ChannelSettingsPage", () => {
   it("renders the form for a named channel with ?scene= links", async () => {
@@ -27,6 +39,9 @@ describe("ChannelSettingsPage", () => {
     render(<ChannelSettingsPage />);
 
     expect(await screen.findByText("settings:wind")).toBeInTheDocument();
+    // All three per-channel editors mount for this scene.
+    expect(screen.getByText("slides:wind")).toBeInTheDocument();
+    expect(screen.getByText("theme:wind")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Control" })).toHaveAttribute("href", "/control?scene=wind");
     expect(screen.getByRole("link", { name: "Watch ↗" })).toHaveAttribute("href", "/watch/wind");
     // Title resolves to the channel's display name once listScenes loads.
