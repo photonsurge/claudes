@@ -3,7 +3,12 @@ import { randomBytes } from "node:crypto";
 import { iGeneralModel, mongoTimestamps } from "../interfaces/iGeneralModel";
 import { getModel } from "../utill/getModel";
 import type { ControlState } from "../control";
-import { AUDIO_MODES } from "../control";
+import {
+  AUDIO_MODES,
+  DEFAULT_IDLE_ORBIT_DEG,
+  DEFAULT_IDLE_BREATHE,
+  DEFAULT_IDLE_PERIOD_S,
+} from "../control";
 import { defaultSatImgFeeds } from "../satimg/types";
 import { DEFAULT_SLIDE_HOLD_MS } from "../broadcast-slides";
 
@@ -93,6 +98,10 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     spinSpeed: { type: Number, required: true, default: 8 },
     zoomDrift: { type: Number, required: true, default: 0 },
     orbitDrift: { type: Number, required: true, default: 0 },
+    idleMotion: { type: Boolean, required: true, default: false },
+    idleOrbit: { type: Number, required: true, default: DEFAULT_IDLE_ORBIT_DEG },
+    idleBreathe: { type: Number, required: true, default: DEFAULT_IDLE_BREATHE },
+    idlePeriodS: { type: Number, required: true, default: DEFAULT_IDLE_PERIOD_S },
     spinEpoch: { type: Number, required: true, default: 0 },
     cutTransitionMs: { type: Number, required: true, default: 0 },
     showTrackLabels: { type: Boolean, required: true, default: false },
@@ -144,6 +153,9 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     slideHoldMs: { type: Number, required: true, default: DEFAULT_SLIDE_HOLD_MS },
     reportOff: { type: [String], required: true, default: [] },
     reportOrder: { type: [String], required: true, default: [] },
+    reportKindsOff: { type: [String], required: true, default: [] },
+    reportHazardsOff: { type: [String], required: true, default: [] },
+    pointVarsOff: { type: [String], required: true, default: [] },
     themeOverrides: { type: mongoose.Schema.Types.Mixed, required: true, default: () => ({}) },
     audio: {
       enabled: { type: Boolean, required: true, default: false },

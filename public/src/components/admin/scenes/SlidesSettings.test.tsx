@@ -58,4 +58,13 @@ describe("SlidesSettings", () => {
 
     expect(patch).toHaveBeenCalledWith("wind", { slideHoldMs: 24000 });
   });
+
+  it("hides a point-history variable via its checkbox", async () => {
+    render(<SlidesSettings sceneId="wind" />);
+    const cape = await screen.findByRole("checkbox", { name: "CAPE (storm energy)" });
+    expect(cape).toBeChecked();
+
+    fireEvent.click(cape);
+    expect(patch).toHaveBeenCalledWith("wind", { pointVarsOff: ["storm"] });
+  });
 });

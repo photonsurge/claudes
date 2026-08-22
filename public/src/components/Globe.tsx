@@ -66,6 +66,7 @@ import { stationMarkerLayers } from "./layers/monitor-stations";
 import type { TrackPath } from "../lib/tracks/client";
 import type { OrbitSegment } from "../lib/tracks/orbit";
 import { orbitAmpCap } from "../lib/orbit-frame";
+import { idleMotionActive, idleMotionOffsets } from "../lib/idle-motion";
 import type { AlertFeature } from "../lib/alerts";
 import { alertFocusKey, type AlertFocus } from "../lib/alert-cycle";
 import type { Segment } from "@photonsurge/shared/director";
@@ -343,11 +344,15 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   });
 
   // Live flag read inside the once-created deck callback below: true whenever a
-  // deterministic camera motion (orbit spin or push-in zoom drift) owns the
-  // camera, so onViewStateChange doesn't feed those frames back into React.
-  const motionRef = useRef(state.autoSpin || !!state.zoomDrift || !!state.orbitDrift);
+  // deterministic camera motion (orbit spin, push-in zoom drift or the channel's
+  // idle drift) owns the camera, so onViewStateChange doesn't feed those frames
+  // back into React.
+  const motionRef = useRef(
+    state.autoSpin || !!state.zoomDrift || !!state.orbitDrift || idleMotionActive(state),
+  );
   useEffect(() => {
-    motionRef.current = state.autoSpin || !!state.zoomDrift || !!state.orbitDrift;
+    motionRef.current =
+      state.autoSpin || !!state.zoomDrift || !!state.orbitDrift || idleMotionActive(state);
   });
 
   // Re-filter the (already-built) city dots in place as the live zoom changes,
@@ -661,7 +666,12 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     const spinSpeed = state.autoSpin ? state.spinSpeed : 0;
     const zoomDrift = state.zoomDrift || 0;
     const orbitDrift = state.orbitDrift || 0;
-    if (spinSpeed === 0 && zoomDrift === 0 && orbitDrift === 0) return;
+    // Channel idle drift: only when NO other motion owns the camera (the gate
+    // inside idleMotionActive), so the branches below are mutually exclusive.
+    const idle = idleMotionActive(state)
+      ? { idleOrbit: state.idleOrbit, idleBreathe: state.idleBreathe, idlePeriodS: state.idlePeriodS }
+      : null;
+    if (spinSpeed === 0 && zoomDrift === 0 && orbitDrift === 0 && !idle) return;
     // Anchor to the cut so motion is deterministic (same on /control and /watch).
     // WIDE shots spin (spinSpeed>0) around the anchor longitude; FRAMED AREA shots
     // orbit (orbitDrift>0) in a slow circle round the anchor; DETAIL shots push in
@@ -685,9 +695,19 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       }
       const dt = (Date.now() - epoch) / 1000;
       // Creep closer, capped so a long hold doesn't bore through the surface.
-      const zoom = anchorZoom + Math.min(zoomDrift * dt, MAX_PUSH_IN);
+      let zoom = anchorZoom + Math.min(zoomDrift * dt, MAX_PUSH_IN);
       let longitude = anchorLng + spinSpeed * dt;
       let latitude = anchorLat;
+      if (idle) {
+        // Parked-camera idle drift (per-channel): slow orbit round the anchor
+        // and/or a raised-cosine zoom breathe, both deterministic in dt so
+        // /control and /watch drift in phase. Same fly-in grace as the orbit.
+        const ot = Math.max(0, dt - flightSec);
+        const o = idleMotionOffsets(idle, ot, { zoom: anchorZoom, lat: anchorLat });
+        longitude += o.dLng;
+        latitude = Math.max(-85, Math.min(85, latitude + o.dLat));
+        zoom = anchorZoom + o.dZoom;
+      }
       if (orbitDrift > 0) {
         const ot = Math.max(0, dt - flightSec); // time since the fly-in settled
         // Bound the pan to a safe slice of what's on screen at the LIVE zoom so the
@@ -713,6 +733,10 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.spinSpeed,
     state.zoomDrift,
     state.orbitDrift,
+    state.idleMotion,
+    state.idleOrbit,
+    state.idleBreathe,
+    state.idlePeriodS,
     state.cutTransitionMs,
     state.spinEpoch,
     state.camera,

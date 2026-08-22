@@ -59,6 +59,10 @@ describe("mergeControlState", () => {
       spinSpeed: 17,
       zoomDrift: 0,
       orbitDrift: 4,
+      idleMotion: true,
+      idleOrbit: 5,
+      idleBreathe: 0.4,
+      idlePeriodS: 45,
       spinEpoch: 123456789,
       cutTransitionMs: 4200,
       showTrackLabels: true,
@@ -107,6 +111,9 @@ describe("mergeControlState", () => {
       slideHoldMs: 12000,
       reportOff: ["hourly", "alerts"],
       reportOrder: ["seismic", "volcanoes"],
+      reportKindsOff: ["alert"],
+      reportHazardsOff: ["fire", "fog"],
+      pointVarsOff: ["humidity", "pressure"],
       themeOverrides: { name: "ATLANTIC WIND", accent: "#00d0ff" },
       showMapSource: true,
       audio: { enabled: true, mode: "deep", volume: 0.45, muted: true },
@@ -195,6 +202,25 @@ describe("mergeControlState", () => {
     expect(next.chat.promoteToTicker).toBe(base.chat.promoteToTicker);
     const legacy = { ...DEFAULT_CONTROL_STATE, chat: undefined as any };
     expect(mergeControlState(legacy, {}).chat).toEqual({ enabled: false, promoteToTicker: false });
+  });
+
+  it("clamps idle-motion amounts and backfills when the base predates them", () => {
+    const next = mergeControlState(base, { idleOrbit: 999, idleBreathe: -1, idlePeriodS: 2 } as never);
+    expect(next.idleOrbit).toBe(30);
+    expect(next.idleBreathe).toBe(0);
+    expect(next.idlePeriodS).toBe(10);
+    const legacy = {
+      ...DEFAULT_CONTROL_STATE,
+      idleMotion: undefined,
+      idleOrbit: undefined,
+      idleBreathe: undefined,
+      idlePeriodS: undefined,
+    } as never as ControlState;
+    const filled = mergeControlState(legacy, {});
+    expect(filled.idleMotion).toBe(false);
+    expect(filled.idleOrbit).toBe(DEFAULT_CONTROL_STATE.idleOrbit);
+    expect(filled.idleBreathe).toBe(DEFAULT_CONTROL_STATE.idleBreathe);
+    expect(filled.idlePeriodS).toBe(DEFAULT_CONTROL_STATE.idlePeriodS);
   });
 
   it("sets, clears, and preserves the pre-broadcast countdown target", () => {

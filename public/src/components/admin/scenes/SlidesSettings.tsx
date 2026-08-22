@@ -27,7 +27,9 @@ import {
   isPinnedSlide,
   type SlideId,
 } from "@photonsurge/shared/broadcast-slides";
+import { POINT_VARS, type PointVar } from "@photonsurge/shared/point-vars";
 import { type ControlState } from "@photonsurge/shared/control";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import { fetchSceneState, useScenePatcher } from "../../../lib/scenes";
 
 const SLIDE_BY_ID = new Map(BROADCAST_SLIDES.map((s) => [s.id, s]));
@@ -79,6 +81,14 @@ export default function SlidesSettings({ sceneId }: { sceneId: string }) {
     if (visible) next.delete(id);
     else next.add(id);
     apply({ slidesOff: [...next] as SlideId[] });
+  };
+
+  const varsOff = new Set<string>(state?.pointVarsOff ?? []);
+  const setVar = (id: PointVar, on: boolean) => {
+    const next = new Set(varsOff);
+    if (on) next.delete(id);
+    else next.add(id);
+    apply({ pointVarsOff: [...next] as PointVar[] });
   };
 
   const move = (id: SlideId, dir: -1 | 1) => {
@@ -163,6 +173,43 @@ export default function SlidesSettings({ sceneId }: { sceneId: string }) {
             />
           );
         })}
+      </Box>
+
+      {/* Point-history variables — which weather charts the POINT / AREA HISTORY
+          card (the "history" slide above) cycles on this channel. */}
+      <Box sx={{ mt: 2, pt: 1.5, borderTop: 1, borderColor: "divider" }}>
+        <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+          Point history variables
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+          The weather charts on the POINT / AREA HISTORY card. Each self-hides with no data too.
+        </Typography>
+        <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
+          {POINT_VARS.map((v) => (
+            <FormControlLabel
+              key={v.id}
+              control={
+                <Checkbox
+                  size="small"
+                  checked={!varsOff.has(v.id)}
+                  onChange={(e) => setVar(v.id, e.target.checked)}
+                  slotProps={{ input: { "aria-label": v.label } }}
+                  sx={{ p: 0.5 }}
+                />
+              }
+              label={
+                <Typography variant="body2">
+                  {v.label}
+                  {v.ocean && (
+                    <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                      (ocean)
+                    </Typography>
+                  )}
+                </Typography>
+              }
+            />
+          ))}
+        </Box>
       </Box>
     </Paper>
   );

@@ -15,6 +15,7 @@ import Stack from "@mui/material/Stack";
 import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
 import { listScenes } from "../../../../lib/scenes";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
+import CameraSettings from "../../../../components/admin/scenes/CameraSettings";
 import ChannelSettings from "../../../../components/admin/scenes/ChannelSettings";
 import SlidesSettings from "../../../../components/admin/scenes/SlidesSettings";
 import ReportSettings from "../../../../components/admin/scenes/ReportSettings";
@@ -37,7 +38,7 @@ export default function ChannelSettingsPage() {
     <AdminPageShell
       title={`Channel: ${name}`}
       crumbs={[{ href: "/admin/scenes", label: "Channels" }, { label: name }]}
-      description="On-air widgets, the bottom-left slide deck and the channel's brand. Changes apply live to its /watch output."
+      description="On-air widgets, camera motion, the bottom-left slide deck and the channel's brand. Changes apply live to its /watch output."
       maxWidth={760}
       actions={
         <>
@@ -52,6 +53,7 @@ export default function ChannelSettingsPage() {
     >
       <Stack spacing={2}>
         <ChannelSettings sceneId={sceneId} />
+        <CameraSettings sceneId={sceneId} />
         <ReportSettings sceneId={sceneId} />
         <SlidesSettings sceneId={sceneId} />
         <ThemeSettings sceneId={sceneId} />

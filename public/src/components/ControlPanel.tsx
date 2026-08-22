@@ -258,8 +258,13 @@ export default function ControlPanel({
                 else next.add(id);
                 patch({ reportOff: [...next] as ReportSlideId[] });
               };
+              const kindsOff = new Set<string>(state.reportKindsOff);
               const activePreset = REPORT_PRESETS.find(
-                (p) => p.off.length === off.size && p.off.every((id) => off.has(id)),
+                (p) =>
+                  p.off.length === off.size &&
+                  p.off.every((id) => off.has(id)) &&
+                  p.kindsOff.length === kindsOff.size &&
+                  p.kindsOff.every((id) => kindsOff.has(id)),
               );
               return (
                 <div style={{ marginTop: 12 }} aria-label="World report deck">
@@ -271,7 +276,7 @@ export default function ControlPanel({
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => patch({ reportOff: [...p.off] })}
+                        onClick={() => patch({ reportOff: [...p.off], reportKindsOff: [...p.kindsOff] })}
                         style={{
                           fontSize: 12,
                           padding: "3px 8px",
@@ -899,29 +904,46 @@ export default function ControlPanel({
               <span style={{ color: "#fff", width: 44, textAlign: "right" }}>{state.spinSpeed}°/s</span>
             </label>
           ) : (
-            // Auto-spin off: hold the globe at a chosen longitude (rotate by hand).
-            <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#8b95a7", fontSize: 12 }}>
-              Position
-              <input
-                type="range"
-                min={-180}
-                max={180}
-                step={1}
-                value={normaliseLng(state.camera.center[0])}
-                onChange={(e) =>
-                  patch({
-                    camera: {
-                      center: [Number(e.target.value), state.camera.center[1]],
-                      zoom: state.camera.zoom,
-                    },
-                  })
+            <>
+              {/* Idle drift for a parked camera (per-channel): slight orbit +
+                  zoom breathe, amounts on /admin/scenes/:id. Stamp the epoch on
+                  enable so the drift eases out from the anchor — unless a
+                  director push-in/orbit owns the epoch right now. */}
+              <Toggle
+                label="Keep moving"
+                checked={state.idleMotion}
+                onChange={(idleMotion) =>
+                  patch(
+                    idleMotion && !state.zoomDrift && !state.orbitDrift
+                      ? { idleMotion, spinEpoch: Date.now() }
+                      : { idleMotion },
+                  )
                 }
-                aria-label="Globe longitude"
               />
-              <span style={{ color: "#fff", width: 44, textAlign: "right" }}>
-                {Math.round(normaliseLng(state.camera.center[0]))}°
-              </span>
-            </label>
+              {/* Auto-spin off: hold the globe at a chosen longitude (rotate by hand). */}
+              <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#8b95a7", fontSize: 12 }}>
+                Position
+                <input
+                  type="range"
+                  min={-180}
+                  max={180}
+                  step={1}
+                  value={normaliseLng(state.camera.center[0])}
+                  onChange={(e) =>
+                    patch({
+                      camera: {
+                        center: [Number(e.target.value), state.camera.center[1]],
+                        zoom: state.camera.zoom,
+                      },
+                    })
+                  }
+                  aria-label="Globe longitude"
+                />
+                <span style={{ color: "#fff", width: 44, textAlign: "right" }}>
+                  {Math.round(normaliseLng(state.camera.center[0]))}°
+                </span>
+              </label>
+            </>
           )}
         </div>
       </Section>

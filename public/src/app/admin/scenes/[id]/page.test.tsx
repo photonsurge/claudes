@@ -20,6 +20,10 @@ jest.mock("../../../../components/admin/scenes/ChannelSettings", () => ({
   __esModule: true,
   default: ({ sceneId }: { sceneId: string }) => <div data-testid="settings">settings:{sceneId}</div>,
 }));
+jest.mock("../../../../components/admin/scenes/CameraSettings", () => ({
+  __esModule: true,
+  default: ({ sceneId }: { sceneId: string }) => <div data-testid="camera">camera:{sceneId}</div>,
+}));
 jest.mock("../../../../components/admin/scenes/SlidesSettings", () => ({
   __esModule: true,
   default: ({ sceneId }: { sceneId: string }) => <div data-testid="slides">slides:{sceneId}</div>,
@@ -39,7 +43,8 @@ describe("ChannelSettingsPage", () => {
     render(<ChannelSettingsPage />);
 
     expect(await screen.findByText("settings:wind")).toBeInTheDocument();
-    // All three per-channel editors mount for this scene.
+    // All the per-channel editors mount for this scene.
+    expect(screen.getByText("camera:wind")).toBeInTheDocument();
     expect(screen.getByText("slides:wind")).toBeInTheDocument();
     expect(screen.getByText("theme:wind")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Control" })).toHaveAttribute("href", "/control?scene=wind");

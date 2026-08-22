@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Checkbox from "@mui/material/Checkbox";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
@@ -18,10 +19,14 @@ import {
   BROADCAST_REPORT_SLIDES,
   REPORT_SLIDE_IDS,
   REPORT_PRESETS,
+  REPORT_KINDS,
   type ReportSlideId,
+  type ReportKind,
 } from "@photonsurge/shared/broadcast-report";
+import type { HazardType } from "@photonsurge/shared/alerts/hazard";
 import { type ControlState } from "@photonsurge/shared/control";
 import { fetchSceneState, useScenePatcher } from "../../../lib/scenes";
+import AlertHazardChips from "../../AlertHazardChips";
 
 const REPORT_BY_ID = new Map(BROADCAST_REPORT_SLIDES.map((s) => [s.id, s]));
 
@@ -79,9 +84,21 @@ export default function ReportSettings({ sceneId }: { sceneId: string }) {
   }
 
   const shownCount = REPORT_SLIDE_IDS.length - off.size;
+  const kindsOff = new Set<string>(state.reportKindsOff ?? []);
   const activePreset = REPORT_PRESETS.find(
-    (p) => p.off.length === off.size && p.off.every((id) => off.has(id)),
+    (p) =>
+      p.off.length === off.size &&
+      p.off.every((id) => off.has(id)) &&
+      p.kindsOff.length === kindsOff.size &&
+      p.kindsOff.every((id) => kindsOff.has(id)),
   );
+
+  const setKind = (id: ReportKind, on: boolean) => {
+    const next = new Set(kindsOff);
+    if (on) next.delete(id);
+    else next.add(id);
+    apply({ reportKindsOff: [...next] as ReportKind[] });
+  };
 
   return (
     <Paper sx={{ p: 1.75 }}>
@@ -100,7 +117,7 @@ export default function ReportSettings({ sceneId }: { sceneId: string }) {
             key={p.id}
             size="small"
             variant={activePreset?.id === p.id ? "contained" : "outlined"}
-            onClick={() => apply({ reportOff: [...p.off] })}
+            onClick={() => apply({ reportOff: [...p.off], reportKindsOff: [...p.kindsOff] })}
           >
             {p.label}
           </Button>
@@ -154,6 +171,46 @@ export default function ReportSettings({ sceneId }: { sceneId: string }) {
           ? "Nothing shown — the world report is hidden on this channel."
           : `${shownCount} of ${REPORT_SLIDE_IDS.length} slides shown.`}
       </Typography>
+
+      {/* Feed & grid CONTENT — which event kinds/hazards are counted and fed,
+          independent of which slides show. This is what makes a "seismic" or
+          "weather" channel's data actually differ. */}
+      <Box sx={{ mt: 2, pt: 1.5, borderTop: 1, borderColor: "divider" }}>
+        <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+          Feed &amp; grid content
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+          Which events are counted in the detection grid and listed in the active feed.
+        </Typography>
+        <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+          {REPORT_KINDS.map((k) => (
+            <FormControlLabel
+              key={k.id}
+              control={
+                <Checkbox
+                  size="small"
+                  checked={!kindsOff.has(k.id)}
+                  onChange={(e) => setKind(k.id, e.target.checked)}
+                  slotProps={{ input: { "aria-label": k.label } }}
+                  sx={{ p: 0.5 }}
+                />
+              }
+              label={<Typography variant="body2">{k.label}</Typography>}
+            />
+          ))}
+        </Stack>
+        {!kindsOff.has("alert") && (
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+              Alert hazards
+            </Typography>
+            <AlertHazardChips
+              hazardsOff={state.reportHazardsOff ?? []}
+              onChange={(next: HazardType[]) => apply({ reportHazardsOff: next })}
+            />
+          </Box>
+        )}
+      </Box>
     </Paper>
   );
 }

@@ -17,7 +17,8 @@ import {
 import { isHazardType, type HazardType } from "./alerts/hazard";
 import { isWidgetId, type WidgetId } from "./broadcast-widgets";
 import { isSlideId, DEFAULT_SLIDE_HOLD_MS, type SlideId } from "./broadcast-slides";
-import { isReportSlideId, type ReportSlideId } from "./broadcast-report";
+import { isReportSlideId, isReportKind, type ReportSlideId, type ReportKind } from "./broadcast-report";
+import { isPointVar, type PointVar } from "./point-vars";
 
 /** Socket event names (also the worker→browser weather event). */
 export const CONTROL_STATE = "control:state" as const;
@@ -342,6 +343,13 @@ export const THEME_OVERRIDE_KEYS = [
   "panelBorder",
 ] as const;
 
+/** Idle-motion defaults: a gentle 3° orbit + quarter-level breathe over a minute
+ *  reads as "alive" at country zoom without ever pulling the subject off frame
+ *  (the client additionally caps the orbit pan by zoom — see orbitAmpCap). */
+export const DEFAULT_IDLE_ORBIT_DEG = 3;
+export const DEFAULT_IDLE_BREATHE = 0.25;
+export const DEFAULT_IDLE_PERIOD_S = 60;
+
 export interface ControlState {
   /** Active scalar variable id (temp/humidity/rain/storm/gust), or null. */
   activeVariable: string | null;
@@ -398,6 +406,23 @@ export interface ControlState {
    * trace the same circle and there's no pop when the cut lands. 0 = off.
    */
   orbitDrift: number;
+  /**
+   * Per-channel IDLE camera motion: keep a shot that is holding still on a
+   * point alive with a slight drift — a slow orbit round the anchor and/or a
+   * gentle zoom "breathe" in and back out. Unlike zoomDrift/orbitDrift (which
+   * the auto-director stamps per cut), this is a standing channel preference
+   * for cameras parked on a location. Inert while any other motion owns the
+   * camera (autoSpin, a director push-in or orbit). Deterministic off
+   * spinEpoch like the rest, so /control and /watch drift in phase.
+   */
+  idleMotion: boolean;
+  /** Idle-motion orbit pan radius in degrees round the anchor (0 = no orbit). */
+  idleOrbit: number;
+  /** Idle-motion zoom breathe amplitude in zoom levels — the camera eases in by
+   *  this much and back out each cycle, never wider than the anchor (0 = off). */
+  idleBreathe: number;
+  /** Seconds for one full idle orbit circle / breathe cycle. */
+  idlePeriodS: number;
   /**
    * Wall-clock ms when the current spin/push anchor was set. Both /control and
    * /watch compute longitude = camera.center[0] + spinSpeed*(now-spinEpoch)/1000
@@ -525,6 +550,24 @@ export interface ControlState {
   /** Per-channel ranking for the WORLD REPORT deck slides (stable-sort key). */
   reportOrder: ReportSlideId[];
   /**
+   * Event KINDS excluded from the WORLD REPORT (empty = all). Drops the kind from
+   * BOTH the detection grid and the active feed — how a themed channel's whole
+   * report is scoped (a seismic channel hides "alert"; a weather channel hides
+   * "quake" + "volcano").
+   */
+  reportKindsOff: ReportKind[];
+  /**
+   * Alert HAZARD types excluded from the WORLD REPORT feed + grid (empty = all).
+   * Report-specific (independent of the globe overlay's `alertHazardsOff`) — a
+   * fire channel keeps only "fire", a flood channel drops "fire"/"heat", etc.
+   */
+  reportHazardsOff: HazardType[];
+  /**
+   * Weather variables HIDDEN from the POINT / AREA HISTORY card (empty = show
+   * all). Off-list keyed by POINT_VARS ids.
+   */
+  pointVarsOff: PointVar[];
+  /**
    * Per-channel brand overrides layered over the `broadcastTheme` preset — any
    * non-empty field replaces the preset's (name, tagline, accent, …). Empty {} =
    * use the preset unchanged. Resolved by getBroadcastTheme().
@@ -567,6 +610,10 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   spinSpeed: 8,
   zoomDrift: 0,
   orbitDrift: 0,
+  idleMotion: false,
+  idleOrbit: DEFAULT_IDLE_ORBIT_DEG,
+  idleBreathe: DEFAULT_IDLE_BREATHE,
+  idlePeriodS: DEFAULT_IDLE_PERIOD_S,
   spinEpoch: 0,
   cutTransitionMs: 0,
   showTrackLabels: false,
@@ -608,6 +655,9 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   slideHoldMs: DEFAULT_SLIDE_HOLD_MS,
   reportOff: [],
   reportOrder: [],
+  reportKindsOff: [],
+  reportHazardsOff: [],
+  pointVarsOff: [],
   themeOverrides: {},
   audio: { ...DEFAULT_AUDIO_SETTINGS },
   chat: { ...DEFAULT_CHAT_SETTINGS },
@@ -712,6 +762,11 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     spinSpeed: typeof patch.spinSpeed === "number" ? patch.spinSpeed : base.spinSpeed ?? 8,
     zoomDrift: typeof patch.zoomDrift === "number" ? patch.zoomDrift : base.zoomDrift ?? 0,
     orbitDrift: typeof patch.orbitDrift === "number" ? patch.orbitDrift : base.orbitDrift ?? 0,
+    idleMotion:
+      typeof patch.idleMotion === "boolean" ? patch.idleMotion : base.idleMotion ?? false,
+    idleOrbit: clampNum(patch.idleOrbit ?? base.idleOrbit, 0, 30, DEFAULT_IDLE_ORBIT_DEG),
+    idleBreathe: clampNum(patch.idleBreathe ?? base.idleBreathe, 0, 2, DEFAULT_IDLE_BREATHE),
+    idlePeriodS: clampNum(patch.idlePeriodS ?? base.idlePeriodS, 10, 600, DEFAULT_IDLE_PERIOD_S),
     spinEpoch: typeof patch.spinEpoch === "number" ? patch.spinEpoch : base.spinEpoch ?? 0,
     cutTransitionMs:
       typeof patch.cutTransitionMs === "number" ? patch.cutTransitionMs : base.cutTransitionMs ?? 0,
@@ -797,6 +852,15 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     reportOrder: Array.isArray(patch.reportOrder)
       ? [...new Set(patch.reportOrder.filter(isReportSlideId))]
       : base.reportOrder ?? [],
+    reportKindsOff: Array.isArray(patch.reportKindsOff)
+      ? [...new Set(patch.reportKindsOff.filter(isReportKind))]
+      : base.reportKindsOff ?? [],
+    reportHazardsOff: Array.isArray(patch.reportHazardsOff)
+      ? [...new Set(patch.reportHazardsOff.filter(isHazardType))]
+      : base.reportHazardsOff ?? [],
+    pointVarsOff: Array.isArray(patch.pointVarsOff)
+      ? [...new Set(patch.pointVarsOff.filter(isPointVar))]
+      : base.pointVarsOff ?? [],
     themeOverrides: sanitizeThemeOverrides(patch.themeOverrides) ?? base.themeOverrides ?? {},
     audio: {
       enabled:

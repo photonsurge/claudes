@@ -15,6 +15,7 @@ import { getVariable } from "@photonsurge/shared/variables";
 import { getPalette } from "@photonsurge/shared/palettes";
 import { buildLegend } from "../lib/legend";
 import { mapFreshness } from "../lib/manifest";
+import { idleBreatheZoom, idleMotionActive } from "../lib/idle-motion";
 
 /** Max zoom a push-in adds over a hold — keep in sync with Globe's MAX_PUSH_IN. */
 const MAX_PUSH_IN = 1.2;
@@ -160,6 +161,11 @@ export default function ViewingOverlay({
   const baseZoom = state.camera.zoom;
   const spinSpeed = state.autoSpin ? state.spinSpeed : 0;
   const zoomDrift = state.zoomDrift || 0;
+  // Channel idle drift: the readout tracks its zoom breathe (the small lat/lng
+  // orbit is omitted here, same as the director orbit above).
+  const idleBreathe = idleMotionActive(state) ? state.idleBreathe : 0;
+  const idlePeriodS = state.idlePeriodS;
+  const flightSec = (state.cutTransitionMs || 0) / 1000;
   const epoch = state.spinEpoch || 0;
   const [live, setLive] = useState({ lng: lng0, lat: lat0, zoom: baseZoom });
   useEffect(() => {
@@ -167,13 +173,17 @@ export default function ViewingOverlay({
       const dt = Math.max(0, (Date.now() - epoch) / 1000);
       let lng = lng0 + spinSpeed * dt;
       lng = ((((lng + 180) % 360) + 360) % 360) - 180;
-      setLive({ lng, lat: lat0, zoom: baseZoom + Math.min(zoomDrift * dt, MAX_PUSH_IN) });
+      let zoom = baseZoom + Math.min(zoomDrift * dt, MAX_PUSH_IN);
+      if (idleBreathe > 0) {
+        zoom = baseZoom + idleBreatheZoom(idleBreathe, idlePeriodS, Math.max(0, dt - flightSec));
+      }
+      setLive({ lng, lat: lat0, zoom });
     };
     tick();
-    if (spinSpeed === 0 && zoomDrift === 0) return; // static shot — no timer
+    if (spinSpeed === 0 && zoomDrift === 0 && idleBreathe === 0) return; // static shot — no timer
     const t = setInterval(tick, 250);
     return () => clearInterval(t);
-  }, [lng0, lat0, baseZoom, spinSpeed, zoomDrift, epoch]);
+  }, [lng0, lat0, baseZoom, spinSpeed, zoomDrift, idleBreathe, idlePeriodS, flightSec, epoch]);
 
   // Restore a saved position (operator only).
   useEffect(() => {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Alert } from "./alerts";
-import { listAlerts } from "./alerts";
+import { listAlerts, alertHazard } from "./alerts";
 import { listQuakes } from "./tracks/client";
 import type { Quake } from "./tracks/types";
 import { listVolcanoes } from "./volcanoes-overlay";
@@ -71,7 +71,46 @@ const VOLCANO_FALLBACK_MS = 10 * 60 * 1000;
  * doesn't compete with those for bandwidth right when the loading screen is
  * racing to dismiss.
  */
-export function useWorldWatch(cities: City[] = [], enabled = true): WorldWatchState {
+/** Per-channel report content filter — which event kinds / alert hazards feed the
+ *  whole report (grid + feed). Empty/absent = everything (the old behaviour). */
+export interface WorldWatchFilter {
+  kindsOff?: readonly string[];
+  hazardsOff?: readonly string[];
+}
+
+/**
+ * Scope the report's source data to a channel: drop excluded KINDS wholesale
+ * (alert/quake/volcano) and, for alerts, drop excluded HAZARDS. Pure and generic
+ * (the alert hazard classifier is injected) so it's unit-tested without the
+ * fetch/socket hook. Applied BEFORE both the grid summary and the feed so they
+ * always agree.
+ */
+export function scopeReportInputs<A, Q, V>(
+  alerts: A[],
+  quakes: Q[],
+  volcanoes: V[],
+  opts: {
+    kindsOff?: readonly string[];
+    hazardsOff?: readonly string[];
+    hazardOf?: (a: A) => string;
+  } = {},
+): { alerts: A[]; quakes: Q[]; volcanoes: V[] } {
+  const kindsOff = new Set(opts.kindsOff ?? []);
+  const hazOff = new Set(opts.hazardsOff ?? []);
+  let a = kindsOff.has("alert") ? [] : alerts;
+  if (hazOff.size && a.length && opts.hazardOf) a = a.filter((x) => !hazOff.has(opts.hazardOf!(x)));
+  return {
+    alerts: a,
+    quakes: kindsOff.has("quake") ? [] : quakes,
+    volcanoes: kindsOff.has("volcano") ? [] : volcanoes,
+  };
+}
+
+export function useWorldWatch(
+  cities: City[] = [],
+  enabled = true,
+  filter?: WorldWatchFilter,
+): WorldWatchState {
   const [alerts, setAlerts] = useState<Alert[]>(EMPTY_ALERTS);
   const [quakes, setQuakes] = useState<Quake[]>(EMPTY_QUAKES);
   const [volcanoes, setVolcanoes] = useState<Volcano[]>(EMPTY_VOLCANOES);
@@ -143,12 +182,22 @@ export function useWorldWatch(cities: City[] = [], enabled = true): WorldWatchSt
     };
   }, [enabled, socket]);
 
+  // Stable primitive keys so the memo only recomputes when the filter actually
+  // changes (arrays are fresh each render).
+  const kindsKey = (filter?.kindsOff ?? []).join(",");
+  const hazKey = (filter?.hazardsOff ?? []).join(",");
+
   return useMemo(() => {
-    const feedAlerts = alerts.filter((a) => a.maxSeverityRank >= MIN_ALERT_SEVERITY);
-    const feedQuakes = quakes.filter((q) => q.mag >= MIN_QUAKE_MAG);
+    const scoped = scopeReportInputs(alerts, quakes, volcanoes, {
+      kindsOff: kindsKey ? kindsKey.split(",") : [],
+      hazardsOff: hazKey ? hazKey.split(",") : [],
+      hazardOf: alertHazard,
+    });
+    const feedAlerts = scoped.alerts.filter((a) => a.maxSeverityRank >= MIN_ALERT_SEVERITY);
+    const feedQuakes = scoped.quakes.filter((q) => q.mag >= MIN_QUAKE_MAG);
     return {
-      ...worldWatchSummary(alerts, quakes, volcanoes),
-      feed: worldWatchFeed(feedAlerts, feedQuakes, cities, volcanoes),
+      ...worldWatchSummary(scoped.alerts, scoped.quakes, scoped.volcanoes),
+      feed: worldWatchFeed(feedAlerts, feedQuakes, cities, scoped.volcanoes),
     };
-  }, [alerts, quakes, volcanoes, cities]);
+  }, [alerts, quakes, volcanoes, cities, kindsKey, hazKey]);
 }

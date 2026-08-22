@@ -76,13 +76,39 @@ describe("ControlPanel slide toggles", () => {
   });
 });
 
+describe("ControlPanel camera idle motion", () => {
+  it("enables the parked-camera drift with a fresh epoch", () => {
+    const onChange = renderPanel();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Keep moving" }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ idleMotion: true, spinEpoch: expect.any(Number) }),
+    );
+  });
+
+  it("does not restamp the epoch while a director push-in owns it", () => {
+    const onChange = renderPanel({ zoomDrift: 0.04, spinEpoch: 123 });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Keep moving" }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ idleMotion: true, spinEpoch: 123 }),
+    );
+  });
+
+  it("hides the toggle while auto-spin is on (the spin already moves the camera)", () => {
+    renderPanel({ autoSpin: true });
+    expect(screen.queryByRole("checkbox", { name: "Keep moving" })).not.toBeInTheDocument();
+  });
+});
+
 describe("ControlPanel world-report toggles", () => {
   it("a focus preset sets reportOff on the full state", () => {
     const onChange = renderPanel();
     const group = screen.getByLabelText("World report deck");
     fireEvent.click(within(group).getByRole("button", { name: "Weather focus" }));
     expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ reportOff: ["seismic", "volcanoes"] }),
+      expect.objectContaining({
+        reportOff: ["seismic", "volcanoes"],
+        reportKindsOff: ["quake", "volcano"],
+      }),
     );
   });
 

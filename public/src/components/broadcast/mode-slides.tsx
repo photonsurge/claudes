@@ -193,6 +193,8 @@ export interface ModeSlideContext {
   slidesOff?: SlideId[];
   /** Per-channel deck slide ranking (ControlState.slideOrder). */
   slideOrder?: SlideId[];
+  /** Per-channel hidden POINT/AREA HISTORY variables (ControlState.pointVarsOff). */
+  pointVarsOff?: string[];
 }
 
 /**
@@ -205,7 +207,7 @@ export interface ModeSlideContext {
 function contextSlides(ctx: ModeSlideContext): DeckSlide[] {
   const out: DeckSlide[] = [];
   if (ctx.segmentHasLocation && (ctx.histCenter || ctx.histBbox)) {
-    out.push({ id: "history", node: <PointHistoryPanel center={ctx.histCenter} bbox={ctx.histBbox} theme={ctx.theme} /> });
+    out.push({ id: "history", node: <PointHistoryPanel center={ctx.histCenter} bbox={ctx.histBbox} theme={ctx.theme} varsOff={ctx.pointVarsOff} /> });
   }
   if (ctx.showDepth && ctx.depthCenter) {
     out.push({

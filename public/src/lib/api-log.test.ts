@@ -20,7 +20,7 @@ beforeEach(() => publicBackLogger.mockClear());
 describe("withApiLog", () => {
   it("logs method / path / status / duration and returns the response untouched", async () => {
     const out = res(200, "miss");
-    const wrapped = withApiLog(async () => out);
+    const wrapped = withApiLog(async (_req: Request) => out);
 
     const returned = await wrapped(req("http://x/api/status?foo=1"));
 
@@ -46,7 +46,7 @@ describe("withApiLog", () => {
 
   it("logs at error level and rethrows when the handler throws", async () => {
     const boom = new Error("kaboom");
-    const wrapped = withApiLog(async () => {
+    const wrapped = withApiLog(async (_req: Request) => {
       throw boom;
     });
     await expect(wrapped(req("http://x/api/volcanoes"))).rejects.toBe(boom);
@@ -56,13 +56,13 @@ describe("withApiLog", () => {
   });
 
   it("uses error level for a 5xx response", async () => {
-    await withApiLog(async () => res(502))(req("http://x/api/alerts"));
+    await withApiLog(async (_req: Request) => res(502))(req("http://x/api/alerts"));
     expect(publicBackLogger.mock.calls[0][1]).toBe("error");
   });
 
   it("skips byte-serving / health routes by default", async () => {
     for (const p of ["/api/weather/tex/abc", "/api/media/xyz", "/api/aurora/frame.png", "/api/ping"]) {
-      await withApiLog(async () => res(200))(req(`http://x${p}`));
+      await withApiLog(async (_req: Request) => res(200))(req(`http://x${p}`));
     }
     expect(publicBackLogger).not.toHaveBeenCalled();
   });

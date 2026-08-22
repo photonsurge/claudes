@@ -14,6 +14,26 @@
 /** Stable id for one World Report deck slide (persisted in reportOff/order). */
 export type ReportSlideId = "detection" | "hourly" | "alerts" | "seismic" | "volcanoes" | "about";
 
+/**
+ * The event categories the report is built from. Hiding a kind (reportKindsOff)
+ * drops it from BOTH the detection grid and the active feed — so a seismic
+ * channel's whole report reflects only quakes + volcanoes, not just its slides.
+ */
+export type ReportKind = "alert" | "quake" | "volcano";
+
+export const REPORT_KINDS: { id: ReportKind; label: string }[] = [
+  { id: "alert", label: "Weather alerts" },
+  { id: "quake", label: "Earthquakes" },
+  { id: "volcano", label: "Volcanoes" },
+];
+
+const REPORT_KIND_SET: ReadonlySet<string> = new Set(REPORT_KINDS.map((k) => k.id));
+
+/** Narrow an untrusted value to a known report kind. */
+export function isReportKind(value: unknown): value is ReportKind {
+  return typeof value === "string" && REPORT_KIND_SET.has(value);
+}
+
 export interface ReportSlide {
   id: ReportSlideId;
   label: string;
@@ -42,14 +62,15 @@ export function isReportSlideId(value: unknown): value is ReportSlideId {
 }
 
 /**
- * One-click focuses for spinning up a themed channel — each names the slides it
- * HIDES (an off-list), so "Everything" is empty. Surfaced as quick buttons in
- * the admin editor.
+ * One-click focuses for spinning up a themed channel — each curates BOTH layers:
+ * `off` hides slides, `kindsOff` drops whole categories from the grid + feed. So
+ * "Weather focus" hides the seismic/volcano slides AND strips quakes/volcanoes
+ * out of the detection grid and active feed. "Everything" clears both.
  */
-export const REPORT_PRESETS: { id: string; label: string; off: ReportSlideId[] }[] = [
-  { id: "all", label: "Everything", off: [] },
-  { id: "weather", label: "Weather focus", off: ["seismic", "volcanoes"] },
-  { id: "geo", label: "Quakes & volcanoes", off: ["hourly", "alerts"] },
+export const REPORT_PRESETS: { id: string; label: string; off: ReportSlideId[]; kindsOff: ReportKind[] }[] = [
+  { id: "all", label: "Everything", off: [], kindsOff: [] },
+  { id: "weather", label: "Weather focus", off: ["seismic", "volcanoes"], kindsOff: ["quake", "volcano"] },
+  { id: "geo", label: "Quakes & volcanoes", off: ["hourly", "alerts"], kindsOff: ["alert"] },
 ];
 
 /**

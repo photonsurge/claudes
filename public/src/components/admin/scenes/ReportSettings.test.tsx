@@ -20,18 +20,30 @@ beforeEach(() => {
 });
 
 describe("ReportSettings", () => {
-  it("the 'Weather focus' preset hides the geo slides in one click", async () => {
+  it("the 'Weather focus' preset curates BOTH slides and feed content in one click", async () => {
     render(<ReportSettings sceneId="wx" />);
     const preset = await screen.findByRole("button", { name: "Weather focus" });
 
     fireEvent.click(preset);
-    expect(patch).toHaveBeenCalledWith("wx", { reportOff: ["seismic", "volcanoes"] });
+    expect(patch).toHaveBeenCalledWith("wx", {
+      reportOff: ["seismic", "volcanoes"],
+      reportKindsOff: ["quake", "volcano"],
+    });
   });
 
-  it("the 'Quakes & volcanoes' preset hides the weather slides", async () => {
+  it("the 'Quakes & volcanoes' preset drops the weather slides + alert kind", async () => {
     render(<ReportSettings sceneId="geo" />);
     fireEvent.click(await screen.findByRole("button", { name: "Quakes & volcanoes" }));
-    expect(patch).toHaveBeenCalledWith("geo", { reportOff: ["hourly", "alerts"] });
+    expect(patch).toHaveBeenCalledWith("geo", { reportOff: ["hourly", "alerts"], reportKindsOff: ["alert"] });
+  });
+
+  it("hides a whole event KIND from the feed + grid via its checkbox", async () => {
+    render(<ReportSettings sceneId="wx" />);
+    const quakes = await screen.findByRole("checkbox", { name: "Earthquakes" });
+    expect(quakes).toBeChecked();
+
+    fireEvent.click(quakes);
+    expect(patch).toHaveBeenCalledWith("wx", { reportKindsOff: ["quake"] });
   });
 
   it("hides a single slide via its checkbox", async () => {
@@ -41,6 +53,23 @@ describe("ReportSettings", () => {
 
     fireEvent.click(seismic);
     expect(patch).toHaveBeenCalledWith("wx", { reportOff: ["seismic"] });
+  });
+
+  it("shows the alert-hazard filter only while the alert kind is on", async () => {
+    render(<ReportSettings sceneId="wx" />);
+    expect(await screen.findByText("Alert hazards")).toBeInTheDocument();
+  });
+
+  it("hides the alert-hazard filter when the alert kind is off", async () => {
+    mockFetch.mockResolvedValue({
+      state: { ...DEFAULT_CONTROL_STATE, reportKindsOff: ["alert"] },
+      tokenError: false,
+    });
+    render(<ReportSettings sceneId="geo" />);
+    // The kind checkboxes render, so the component is mounted…
+    expect(await screen.findByRole("checkbox", { name: "Earthquakes" })).toBeInTheDocument();
+    // …but with alerts off, the hazard sub-filter is gone.
+    expect(screen.queryByText("Alert hazards")).not.toBeInTheDocument();
   });
 
   it("reorders a slide up (delta patch carries the new order)", async () => {

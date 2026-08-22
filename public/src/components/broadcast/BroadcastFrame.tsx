@@ -223,7 +223,10 @@ export default function BroadcastFrame({
   useEffect(() => {
     setDbg(new URLSearchParams(window.location.search).has("dbg"));
   }, []);
-  const worldWatch = useWorldWatch(cities, assetsReady);
+  const worldWatch = useWorldWatch(cities, assetsReady, {
+    kindsOff: state.reportKindsOff,
+    hazardsOff: state.reportHazardsOff,
+  });
   // The alert crawl lines carry a per-alert nearest-city flag scan (the crawl's
   // one expensive step), so memoise them on JUST [alerts, cities] — otherwise the
   // dead-reckoned track feed (new array ~1×/s) would rerun the whole scan every
@@ -550,6 +553,7 @@ export default function BroadcastFrame({
         theme,
         slidesOff: state.slidesOff,
         slideOrder: state.slideOrder,
+        pointVarsOff: state.pointVarsOff,
       })
     : [];
 

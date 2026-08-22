@@ -10,7 +10,7 @@ const manifest = (files: Record<string, Record<string, string>>): WeatherManifes
   grid: { width: 1, height: 1, res: 1 },
   steps: [],
   variables: Object.fromEntries(
-    Object.entries(files).map(([id, f]) => [id, { encoding: "u8", units: "", files: f }]),
+    Object.entries(files).map(([id, f]) => [id, { encoding: "scalar", units: "", files: f }]),
   ),
 });
 

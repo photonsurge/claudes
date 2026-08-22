@@ -19,8 +19,10 @@ import {
   type DirectorConfig,
   type SegmentKind,
 } from "@photonsurge/shared/director";
+import { useRef, useState } from "react";
 import { QUAKE_MAGNITUDE_BANDS } from "@photonsurge/shared/seismic";
 import InfoTip from "./InfoTip";
+import { box } from "./panelBox";
 
 export const KIND_LABEL: Record<SegmentKind, string> = {
   intro: "Intro spin (opener)",
@@ -40,6 +42,58 @@ export const KIND_LABEL: Record<SegmentKind, string> = {
 
 /** Kinds whose hold comes from a per-level map, not the kind slider. */
 const LEVELLED_KINDS = new Set<SegmentKind>(["quake", "storm", "volcano"]);
+
+/**
+ * Editable seconds readout beside each hold slider. Type any value (min 4,
+ * no ceiling) to override the slider's 300s drag range — the draft only
+ * commits on blur/Enter so half-typed numbers never reach the live director.
+ */
+function HoldSeconds({
+  seconds,
+  onChange,
+}: {
+  seconds: number;
+  onChange: (s: number) => void;
+}) {
+  const [draft, setDraftState] = useState<string | null>(null);
+  // Mirrored in a ref so Enter's commit-then-blur can't double-fire onChange
+  // (the blur handler still sees the pre-setState closure in the same tick).
+  const draftRef = useRef<string | null>(null);
+  const setDraft = (v: string | null) => {
+    draftRef.current = v;
+    setDraftState(v);
+  };
+  const commit = () => {
+    const d = draftRef.current;
+    if (d == null) return;
+    setDraft(null);
+    const n = Math.round(Number(d));
+    if (Number.isFinite(n) && n >= 4 && n !== seconds) onChange(n);
+  };
+  return (
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 2 }}>
+      <input
+        type="number"
+        min={4}
+        step={1}
+        value={draft ?? seconds}
+        onFocus={(e) => {
+          setDraft(String(seconds));
+          e.target.select();
+        }}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          commit();
+          e.currentTarget.blur();
+        }}
+        style={{ ...box, width: 56, padding: "1px 4px", fontSize: 13, fontWeight: 700, textAlign: "right" }}
+      />
+      <span style={{ fontSize: 12, opacity: 0.7 }}>s</span>
+    </span>
+  );
+}
 
 function Slider({
   seconds,
@@ -75,9 +129,9 @@ function LevelRow({
 }) {
   return (
     <div style={{ marginBottom: 4 }}>
-      <span style={{ display: "flex", justifyContent: "space-between", fontSize: 12, opacity: 0.85 }}>
+      <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, opacity: 0.85 }}>
         <span>{label}</span>
-        <strong style={{ fontSize: 14 }}>{seconds}s</strong>
+        <HoldSeconds seconds={seconds} onChange={onChange} />
       </span>
       <Slider seconds={seconds} onChange={onChange} max={300} />
     </div>
@@ -104,7 +158,7 @@ export default function DirectorHolds({
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4, display: "flex", alignItems: "center" }}>
         Show · hold per shot:
-        <InfoTip text="Tick a shot type to make it eligible to air, and drag its slider for how long it holds each time. Quakes/storms/volcanoes hold per severity tier instead of one slider." />
+        <InfoTip text="Tick a shot type to make it eligible to air, and drag its slider for how long it holds each time — or type a number in the seconds box for holds beyond the slider's range. Quakes/storms/volcanoes hold per severity tier instead of one slider." />
       </div>
       {SEGMENT_KINDS.map((k) => {
         const on = !!config.kinds[k];
@@ -119,7 +173,12 @@ export default function DirectorHolds({
               />
               <span style={{ flex: 1 }}>{KIND_LABEL[k]}</span>
               {on && !levelled ? (
-                <strong style={{ fontSize: 14 }}>{config.kindHoldSeconds[k]}s</strong>
+                <HoldSeconds
+                  seconds={config.kindHoldSeconds[k]}
+                  onChange={(s) =>
+                    update({ kindHoldSeconds: { [k]: s } as DirectorConfig["kindHoldSeconds"] })
+                  }
+                />
               ) : null}
             </label>
 

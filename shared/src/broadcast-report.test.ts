@@ -2,7 +2,9 @@ import {
   BROADCAST_REPORT_SLIDES,
   REPORT_SLIDE_IDS,
   REPORT_PRESETS,
+  REPORT_KINDS,
   isReportSlideId,
+  isReportKind,
   applyReportPrefs,
 } from "./broadcast-report";
 import { DEFAULT_CONTROL_STATE, mergeControlState } from "./control";
@@ -22,11 +24,25 @@ describe("broadcast-report catalog", () => {
     expect(isReportSlideId(3)).toBe(false);
   });
 
-  it("presets only reference real ids; 'Everything' hides nothing", () => {
-    for (const p of REPORT_PRESETS) for (const id of p.off) expect(isReportSlideId(id)).toBe(true);
-    expect(REPORT_PRESETS.find((p) => p.id === "all")?.off).toEqual([]);
-    expect(REPORT_PRESETS.find((p) => p.id === "weather")?.off).toEqual(["seismic", "volcanoes"]);
-    expect(REPORT_PRESETS.find((p) => p.id === "geo")?.off).toEqual(["hourly", "alerts"]);
+  it("presets curate both layers with real ids; 'Everything' clears both", () => {
+    for (const p of REPORT_PRESETS) {
+      for (const id of p.off) expect(isReportSlideId(id)).toBe(true);
+      for (const id of p.kindsOff) expect(isReportKind(id)).toBe(true);
+    }
+    const all = REPORT_PRESETS.find((p) => p.id === "all");
+    expect(all?.off).toEqual([]);
+    expect(all?.kindsOff).toEqual([]);
+    const weather = REPORT_PRESETS.find((p) => p.id === "weather");
+    expect(weather?.off).toEqual(["seismic", "volcanoes"]);
+    expect(weather?.kindsOff).toEqual(["quake", "volcano"]);
+    const geo = REPORT_PRESETS.find((p) => p.id === "geo");
+    expect(geo?.kindsOff).toEqual(["alert"]);
+  });
+
+  it("recognises report kinds", () => {
+    expect(REPORT_KINDS.map((k) => k.id)).toEqual(["alert", "quake", "volcano"]);
+    expect(isReportKind("quake")).toBe(true);
+    expect(isReportKind("weather")).toBe(false);
   });
 });
 
@@ -58,8 +74,14 @@ describe("mergeControlState report fields", () => {
     const merged = mergeControlState(DEFAULT_CONTROL_STATE, {
       reportOff: ["seismic", "seismic", "bogus"] as never,
       reportOrder: ["hourly", "nope"] as never,
+      reportKindsOff: ["quake", "quake", "nope"] as never,
+      reportHazardsOff: ["fire", "bogus"] as never,
+      pointVarsOff: ["storm", "storm", "nope"] as never,
     });
     expect(merged.reportOff).toEqual(["seismic"]);
     expect(merged.reportOrder).toEqual(["hourly"]);
+    expect(merged.reportKindsOff).toEqual(["quake"]);
+    expect(merged.reportHazardsOff).toEqual(["fire"]);
+    expect(merged.pointVarsOff).toEqual(["storm"]);
   });
 });

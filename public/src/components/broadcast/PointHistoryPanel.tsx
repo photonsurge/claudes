@@ -345,6 +345,7 @@ export default function PointHistoryPanel({
   theme = DEFAULT_THEME,
   compact = false,
   glass = false,
+  varsOff,
 }: {
   /** Focus point [lng, lat] — the on-air segment's centre (or camera fallback). */
   center: [number, number] | null;
@@ -357,7 +358,11 @@ export default function PointHistoryPanel({
   /** No-accent see-through glass shell (reticle-attached instances) — see
    *  BroadcastCard's `glass`. */
   glass?: boolean;
+  /** Per-channel hidden point variables (ControlState.pointVarsOff) — filters
+   *  which variable charts this card shows. */
+  varsOff?: readonly string[];
 }) {
+  const off = new Set(varsOff ?? []);
   // Full bottom-left card: tile every variable at once as a small-multiples
   // grid. Only the compact EventOverlay side-note keeps the one-at-a-time
   // slideshow — it's too narrow to tile.
@@ -389,9 +394,11 @@ export default function PointHistoryPanel({
           ? `avg ${formatReading(s.stats.avg)} · min ${formatReading(s.stats.min)} · max ${formatReading(s.stats.max)}`
           : "",
       }))
-  ).filter((c) => hasSpark(c.points));
+  ).filter((c) => hasSpark(c.points) && !off.has(c.variable));
 
-  const climateRows = buildClimateRows(climate.datasets).filter((r) => hasSpark(r.points));
+  const climateRows = buildClimateRows(climate.datasets).filter(
+    (r) => hasSpark(r.points) && !off.has(r.variable),
+  );
 
   // When tiled, one page holds every chart (perPage = item count) so the grid
   // shows them all at once with no timer and no page counter; compact mode keeps
