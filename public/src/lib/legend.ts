@@ -29,6 +29,23 @@ export function legendVariableFor(
   return elevationShown ? "elevation" : null;
 }
 
+/**
+ * Which palette id the legend's gradient bar should paint — the ramp that is
+ * ACTUALLY colouring the screen, not always the variable's default. Elevation
+ * has two ramps: the hypsometric `elevation` fill (the Relief basemap) and the
+ * brighter `elevation_line` variant the contour LINES are drawn with on a dark
+ * basemap — showing the fill ramp over height-coloured lines advertises
+ * colours that never appear on screen.
+ */
+export function legendPaletteFor(
+  state: Pick<ControlState, "activeVariable" | "basemap" | "showElevation" | "elevation">,
+): string | null {
+  const variable = legendVariableFor(state);
+  if (!variable) return null;
+  if (variable === "elevation" && state.basemap !== "relief") return "elevation_line";
+  return getVariable(variable)?.palette ?? null;
+}
+
 export interface LegendStop {
   /** Value in the displayed unit. */
   value: number;

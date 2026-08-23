@@ -36,6 +36,7 @@ import type { City } from "../lib/cities";
 import { useGlobeReadyOnce } from "../lib/globe-ready";
 import GlobeView from "./GlobeView";
 import AlertLegend from "./AlertLegend";
+import DebugOverlay from "./DebugOverlay";
 import FullscreenButton from "./FullscreenButton";
 import BroadcastBed from "./audio/BroadcastBed";
 import BroadcastFrame from "./broadcast/BroadcastFrame";
@@ -316,6 +317,51 @@ function WatchSurfaceBody({
       {/* Tap-to-fullscreen — Android phone viewers only; self-hides on OBS/iOS/
           desktop (see FullscreenButton). */}
       <FullscreenButton />
+
+      {/* Ctrl+D diagnostic console — live JSON dump of everything driving this
+          surface. Hidden until toggled, so it never leaks into a capture. */}
+      <DebugOverlay
+        data={{
+          "control (as rendered)": broadcastState,
+          director: {
+            directorOn,
+            onAirSegment,
+            focusCaption,
+            upNext,
+            slideName,
+            alertCycleSeconds,
+            pulseAt,
+            glowCountryIso,
+            glowRegionBbox,
+          },
+          overlays: {
+            ready,
+            sceneName: sceneName ?? "(main)",
+            cities: cities.length,
+            tracks: tracks.length,
+            orbits: orbits.length,
+            trails: trails.length,
+            alerts: alerts.length,
+            alertFocus: alertStep,
+            quakes: quakes.length,
+            seismoStations: seismoStations.length,
+            seismoActive,
+            tideStations: tideStations.length,
+            tideActive,
+            weatherPoint,
+            cables: cables.cables.length,
+            cableLandings: cables.landings.length,
+            faults: faults.length,
+            fires: fires.length,
+            volcanoes: volcanoes.length,
+            cams: cams.length,
+            aurora,
+            satimg,
+            geomag,
+          },
+          manifest,
+        }}
+      />
     </main>
     </BroadcastThemeContext.Provider>
   );

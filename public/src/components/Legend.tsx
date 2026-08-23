@@ -18,9 +18,13 @@ export interface LegendProps {
   onUnitsChange?: (units: { wind: WindUnit; temp: TempUnit }) => void;
   /** When supplied, shows the source + data age under the colour ramp. */
   manifest?: WeatherManifest | null;
+  /** Palette actually painting the screen when it differs from the variable's
+   *  default — e.g. height-coloured elevation contour LINES use the brighter
+   *  `elevation_line` ramp, not the relief fill ramp (see legendPaletteFor). */
+  paletteId?: string | null;
 }
 
-export default function Legend({ variableId, units, onUnitsChange, manifest }: LegendProps) {
+export default function Legend({ variableId, units, onUnitsChange, manifest, paletteId }: LegendProps) {
   if (!variableId) return null;
   const meta = getVariable(variableId);
   const legend = buildLegend(variableId, units);
@@ -28,7 +32,7 @@ export default function Legend({ variableId, units, onUnitsChange, manifest }: L
 
   const freshness = manifest ? mapFreshness(manifest, variableId, Date.now()) : null;
 
-  const palette = getPalette(meta.palette);
+  const palette = getPalette(paletteId ?? meta.palette);
   const gradient = `linear-gradient(to right, ${palette
     .map(([stop, hex]) => `${hex} ${Math.round(stop * 100)}%`)
     .join(", ")})`;

@@ -35,6 +35,7 @@ export default function IntensityMeter({
   showSatImg,
   satImgFeeds,
   freshness,
+  paletteId,
   part = "all",
   clocks,
 }: {
@@ -42,6 +43,10 @@ export default function IntensityMeter({
   units: ControlState["units"];
   theme?: BroadcastTheme;
   compact?: boolean;
+  /** Palette actually painting the screen when it differs from the variable's
+   *  default — e.g. height-coloured elevation contour LINES use the brighter
+   *  `elevation_line` ramp, not the relief fill ramp (see legendPaletteFor). */
+  paletteId?: string | null;
   /** Satellite-imagery state — there's no scalar legend for photographic feeds,
    *  so when `variable` is null this renders a feed/look caption instead. */
   showSatImg?: boolean;
@@ -65,7 +70,7 @@ export default function IntensityMeter({
   const legend = variable ? buildLegend(variable, units) : null;
   const hasScale = Boolean(meta && legend);
 
-  const palette = hasScale ? getPalette(meta!.palette) : null;
+  const palette = hasScale ? getPalette(paletteId ?? meta!.palette) : null;
   // Horizontal gradient: low value on the LEFT, so stops run low%→high% left to right.
   const gradient = palette
     ? `linear-gradient(to right, ${palette

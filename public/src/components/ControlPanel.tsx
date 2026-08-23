@@ -32,7 +32,7 @@ import {
 } from "@photonsurge/shared/broadcast-report";
 import { SATIMG_FEEDS, SATIMG_LOOKS } from "@photonsurge/shared/satimg/types";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
-import { legendVariableFor } from "../lib/legend";
+import { legendVariableFor, legendPaletteFor } from "../lib/legend";
 import { SATELLITE_GROUPS } from "../lib/tracks/celestrak";
 import { severityLabel } from "../lib/alerts";
 import VariablePicker from "./VariablePicker";
@@ -889,6 +889,7 @@ export default function ControlPanel({
         <Section title="Legend">
           <Legend
             variableId={legendVariableFor(state)}
+            paletteId={legendPaletteFor(state)}
             units={state.units}
             onUnitsChange={(units) => patch({ units })}
             manifest={manifest}

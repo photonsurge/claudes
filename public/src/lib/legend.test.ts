@@ -1,4 +1,5 @@
-import { convertValue, buildLegend } from "./legend";
+import { DEFAULT_ELEVATION_SETTINGS } from "@photonsurge/shared/control";
+import { convertValue, buildLegend, legendVariableFor, legendPaletteFor } from "./legend";
 
 describe("convertValue", () => {
   it("converts °C ↔ °F for temperature", () => {
@@ -43,5 +44,44 @@ describe("buildLegend", () => {
 
   it("returns null for unknown variable", () => {
     expect(buildLegend("nope", { wind: "kt", temp: "C" })).toBeNull();
+  });
+});
+
+describe("legendPaletteFor", () => {
+  const base = {
+    activeVariable: null,
+    basemap: "dark",
+    showElevation: false,
+    elevation: DEFAULT_ELEVATION_SETTINGS,
+  } as Parameters<typeof legendPaletteFor>[0];
+
+  it("uses the active variable's own palette", () => {
+    const state = { ...base, activeVariable: "temp" };
+    expect(legendVariableFor(state)).toBe("temp");
+    expect(legendPaletteFor(state)).toBe("temp");
+  });
+
+  it("uses the hypsometric fill ramp for the Relief basemap", () => {
+    const state = { ...base, basemap: "relief" as const };
+    expect(legendVariableFor(state)).toBe("elevation");
+    expect(legendPaletteFor(state)).toBe("elevation");
+  });
+
+  it("uses the line ramp for height-coloured contours on a dark basemap", () => {
+    // The screen's colours come from elevation_line (the ramp the contour
+    // LINES are drawn with), not the relief fill ramp — the legend must match.
+    const state = { ...base, showElevation: true };
+    expect(legendVariableFor(state)).toBe("elevation");
+    expect(legendPaletteFor(state)).toBe("elevation_line");
+  });
+
+  it("returns null when nothing legendable is on screen", () => {
+    const state = {
+      ...base,
+      showElevation: true,
+      elevation: { ...DEFAULT_ELEVATION_SETTINGS, colorMode: "custom" as const },
+    };
+    expect(legendVariableFor(state)).toBeNull();
+    expect(legendPaletteFor(state)).toBeNull();
   });
 });

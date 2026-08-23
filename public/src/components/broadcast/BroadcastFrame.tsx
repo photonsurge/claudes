@@ -65,7 +65,7 @@ import {
   useVolcanoEruptions,
   useFocusTarget,
 } from "../../lib/focus/focus-client";
-import { legendVariableFor } from "../../lib/legend";
+import { legendVariableFor, legendPaletteFor } from "../../lib/legend";
 import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
 import { KIND_LABEL } from "../../lib/kind-labels";
 import { nearest, formatKm } from "../../lib/geo";
@@ -271,6 +271,7 @@ export default function BroadcastFrame({
   const bottomTickerTitle = theme.tickerTitle;
   const bottomTickerItems = ticker;
   const legendVariable = legendVariableFor(state);
+  const legendPalette = legendPaletteFor(state);
   const mapMeta = mapFreshness(manifest, legendVariable, Date.now());
   const eventTargeted = onAirSegment
     ? isTargetedEvent(onAirSegment.kind)
@@ -719,9 +720,9 @@ export default function BroadcastFrame({
             edge (the stage clips overflow), so the planet peeks up from
             behind the ticker instead of sitting ON the chrome. */}
         {!off.has("subglobe") && (
-          <div style={{ position: "absolute", bottom: -36, right: INSET, opacity: 0.7 }}>
+          <div style={{ position: "absolute", bottom: -36, right: -10, opacity: 0.7 }}>
             <SubGlobeWidget
-              size={210}
+              size={240}
               center={state.camera.center}
               zoom={state.camera.zoom}
               autoSpin={state.autoSpin}
@@ -889,6 +890,7 @@ export default function BroadcastFrame({
               showSatImg={off.has("intensityMeter") ? false : state.showSatImg}
               satImgFeeds={state.satImgFeeds}
               freshness={mapMeta}
+              paletteId={legendPalette}
               clocks={<WorldClockStrip theme={theme} framed={false} scale={1.3} />}
             />
           </div>
@@ -935,6 +937,7 @@ export default function BroadcastFrame({
               showSatImg={state.showSatImg}
               satImgFeeds={state.satImgFeeds}
               freshness={mapMeta}
+              paletteId={legendPalette}
             />
           )}
           {spaceWeatherShown && !off.has("spaceWeather") ? (
@@ -950,7 +953,9 @@ export default function BroadcastFrame({
         <div
           style={{
             position: "absolute",
-            top: chromeTop,
+            // Rides a touch higher than the shared chrome line so the stack
+            // clears the sub-globe corner below it.
+            top: chromeTop - 20,
             right: INSET - 26,
             display: "flex",
             flexDirection: "column",

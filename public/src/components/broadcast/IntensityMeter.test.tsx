@@ -36,6 +36,24 @@ describe("IntensityMeter — masthead plate", () => {
     expect(screen.getByTestId("clock-slot")).toBeInTheDocument();
   });
 
+  it("paints the paletteId override's ramp, not the variable's default", () => {
+    // Height-coloured elevation contour LINES draw with the bright
+    // `elevation_line` ramp — the scale must show it, not the relief fill ramp
+    // (whose near-black abyss blue would be lifted for legibility here).
+    render(
+      <IntensityMeter
+        part="masthead"
+        variable="elevation"
+        units={UNITS}
+        theme={BROADCAST_THEMES.command}
+        freshness={FRESHNESS}
+        paletteId="elevation_line"
+      />,
+    );
+    // Tick text takes the ramp colour at its stop: elevation_line starts #6f8cff.
+    expect(screen.getByText("-11000 m")).toHaveStyle({ color: "#6f8cff" });
+  });
+
   it("still shows a clocks-only plate when no scalar map is on air", () => {
     render(
       <IntensityMeter
