@@ -22,13 +22,10 @@ describe("BrandPanel", () => {
     expect(banner).toHaveStyle({ width: "620px" });
   });
 
-  it("renders the global city clock strip", () => {
+  it("no longer carries the world clocks (they ride the masthead map plate)", () => {
     render(<BrandPanel theme={BROADCAST_THEMES.command} />);
-    expect(screen.getByText("LONDON")).toBeInTheDocument();
-    expect(screen.getByText("NEW YORK")).toBeInTheDocument();
-    expect(screen.getByText("BEIJING")).toBeInTheDocument();
-    expect(screen.getByText("TOKYO")).toBeInTheDocument();
-    expect(screen.getByText("MOSCOW")).toBeInTheDocument();
+    expect(screen.queryByText("LONDON")).not.toBeInTheDocument();
+    expect(screen.queryByText("MOSCOW")).not.toBeInTheDocument();
   });
 
   it("renders theme text for non-G.O.D.S. themes", () => {

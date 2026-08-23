@@ -75,6 +75,7 @@ import { useStageScale, STAGE_W, STAGE_H } from "./useStageScale";
 import Ticker from "./Ticker";
 import BrandPanel from "./BrandPanel";
 import IntensityMeter from "./IntensityMeter";
+import WorldClockStrip from "./WorldClockStrip";
 import LiveAlertPanel from "./LiveAlertPanel";
 import WorldReportDeck from "./WorldReportDeck";
 import KpIndexPanel from "./KpIndexPanel";
@@ -104,7 +105,9 @@ import { hasRealLocation, isTargetedEvent, KIND_COLOR, KIND_LABEL as KIND_BADGE 
 /** Design-stage layout constants (in 1080p reference pixels). */
 const TICKER_H = 34;
 const INSET = 30;
-const BRAND_STACK_H = 150;
+/** Design height of the brand block (banner + the LIVE/status strip) — the
+ *  clocks that used to pad this out now ride the masthead map plate. */
+const BRAND_STACK_H = 136;
 /** The masthead brand block sits at the very top-left, scaled up for
  *  legibility. There is no top crawl any more — the map title/details row
  *  rides the full masthead strip to the right of the logo. */
@@ -841,11 +844,13 @@ export default function BroadcastFrame({
           </div>
         )}
 
-        {/* Masthead title widget: the ACTIVE MAP TYPE + its source/timing
-            metadata on one plate (see IntensityMeter part="title"), hugging the
-            TOP of the strip to the right of the logo rather than floating
-            mid-band. */}
-        {brandOn && !off.has("intensityMeter") && (
+        {/* Masthead map widget: the ACTIVE MAP TYPE + its source/timing
+            metadata with the colour scale and the world clocks docked beneath,
+            all ONE plate (see IntensityMeter part="masthead") hugging the TOP
+            of the strip to the right of the logo. The clocks ride the brand
+            identity, so turning the intensityMeter widget off blanks only the
+            map half and leaves a clocks-only plate. */}
+        {brandOn && (
           <div
             style={{
               position: "absolute",
@@ -858,13 +863,14 @@ export default function BroadcastFrame({
             }}
           >
             <IntensityMeter
-              part="title"
-              variable={legendVariable}
+              part="masthead"
+              variable={off.has("intensityMeter") ? null : legendVariable}
               units={state.units}
               theme={theme}
-              showSatImg={state.showSatImg}
+              showSatImg={off.has("intensityMeter") ? false : state.showSatImg}
               satImgFeeds={state.satImgFeeds}
               freshness={mapMeta}
+              clocks={<WorldClockStrip theme={theme} framed={false} scale={1.3} />}
             />
           </div>
         )}
@@ -883,12 +889,12 @@ export default function BroadcastFrame({
           </div>
         ) : null}
 
-        {/* Top-centre column: the active variable's colour scale (its hero title
-            lives up in the masthead band when the brand block is on), then the
-            space-weather colour key (aurora oval / magnetic field) — the on-air
-            colour legends live together here, horizontal, so the prime
-            top-right slot can carry the always-on WORLD WATCH summary instead.
-            Each hides independently when it has nothing to show. */}
+        {/* Top-centre column: with the brand block on, the whole variable
+            legend (hero + scale + clocks) lives up in the masthead plate, so
+            only the space-weather colour key (aurora oval / magnetic field)
+            renders here; with the brand off the stacked hero+scale legend
+            falls back to this slot. Each hides independently when it has
+            nothing to show. */}
         <div
           style={{
             position: "absolute",
@@ -901,9 +907,9 @@ export default function BroadcastFrame({
             gap: 10,
           }}
         >
-          {!off.has("intensityMeter") && (
+          {!brandOn && !off.has("intensityMeter") && (
             <IntensityMeter
-              part={brandOn ? "scale" : "all"}
+              part="all"
               variable={legendVariable}
               units={state.units}
               theme={theme}

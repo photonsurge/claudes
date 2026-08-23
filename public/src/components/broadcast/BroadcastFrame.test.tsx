@@ -127,9 +127,9 @@ function renderFrame(widgetsOff: WidgetId[]) {
 }
 
 describe("BroadcastFrame — per-channel widgetsOff gating", () => {
-  // intensityMeter legitimately renders twice with the brand on (the masthead
-  // map-title band + the top-centre scale pill are both the same component,
-  // split by its `part` prop) — so "shown" is a count check, not getByTestId.
+  // intensityMeter renders in one of two slots depending on the brand widget
+  // (the masthead plate with the brand on, the top-centre stack with it off)
+  // — so "shown" is a count check, not getByTestId.
   it("shows every catalog widget when the off-list is empty", () => {
     renderFrame([]);
     for (const id of WIDGET_IDS) {
