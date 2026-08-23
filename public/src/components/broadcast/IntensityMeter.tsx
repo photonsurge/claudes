@@ -132,9 +132,19 @@ export default function IntensityMeter({
       }}
     >
       {/* Hero: the ACTIVE MAP TYPE, big and unmissable — this is what viewers
-          need to read first, with the source/timing metadata beneath it. */}
+          need to read first, with the source/timing metadata riding beside it
+          on the same row. */}
       {part !== "scale" ? (
-      <div style={{ textAlign: "center" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexWrap: "wrap",
+          gap: 14,
+          textAlign: "center",
+        }}
+      >
         <div
           style={{
             fontSize: compact ? 24.2 : 30.8,
@@ -142,6 +152,7 @@ export default function IntensityMeter({
             letterSpacing: 0.3,
             lineHeight: 1.05,
             color: "#fff",
+            whiteSpace: "nowrap",
             textShadow: "0 1px 8px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.5)",
           }}
         >
@@ -157,8 +168,6 @@ export default function IntensityMeter({
           // washes out on air (and worse after stream compression).
           <div
             style={{
-              display: "inline-block",
-              marginTop: 5,
               padding: "4px 26px",
               borderRadius: 999,
               background: TILE_BG,
@@ -167,6 +176,7 @@ export default function IntensityMeter({
               fontWeight: 800,
               letterSpacing: 1.1,
               color: theme.titleColor,
+              whiteSpace: "nowrap",
             }}
           >
             SOURCE {freshness.source}

@@ -102,6 +102,10 @@ import { hasRealLocation, isTargetedEvent, KIND_COLOR, KIND_LABEL as KIND_BADGE 
 
 /** Design-stage layout constants (in 1080p reference pixels). */
 const TICKER_H = 34;
+/** With the masthead banner on, the top crawl band rides this far below the
+ *  very top edge — tucking it down into the banner plate rather than kissing
+ *  the screen edge. */
+const TICKER_DROP = 5;
 const INSET = 30;
 const BRAND_STACK_H = 150;
 /** The masthead brand block sits at the very top-left, scaled up for
@@ -806,6 +810,7 @@ export default function BroadcastFrame({
           items={ticker}
           edge="top"
           height={TICKER_H}
+          offset={brandOn ? TICKER_DROP : 0}
           contentInset={brandOn ? BANNER_EDGE : 0}
           theme={theme}
         />
@@ -832,10 +837,10 @@ export default function BroadcastFrame({
           <div
             style={{
               position: "absolute",
-              top: TICKER_H,
+              top: TICKER_DROP + TICKER_H,
               left: BRAND_INSET,
               right: 0,
-              height: BANNER_BOTTOM - TICKER_H,
+              height: BANNER_BOTTOM - TICKER_DROP - TICKER_H,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
