@@ -17,13 +17,28 @@ const ENCODERS: StreamEncoderInfo[] = [
 ];
 
 describe("EncodersCard", () => {
-  it("lists registered encoders with their endpoint and channel binding", () => {
+  it("lists encoders with endpoint, password state, and the bound channel's watch URL", () => {
     render(<EncodersCard encoders={ENCODERS} scenes={SCENES} onSave={jest.fn()} onDelete={jest.fn()} onTest={jest.fn()} onProvision={jest.fn()} onRefresh={jest.fn()} />);
 
     expect(screen.getByText("Wind rig")).toBeInTheDocument();
     expect(screen.getByText("ws://127.0.0.1:4455")).toBeInTheDocument();
-    expect(screen.getByText(/channel wind · password set/)).toBeInTheDocument();
-    expect(screen.getByText(/any channel/)).toBeInTheDocument();
+    expect(screen.getByText("password set")).toBeInTheDocument();
+    // The bound channel resolves to a shown /watch URL; the unbound encoder prompts to bind one.
+    expect(screen.getByText(/\/watch\/wind/)).toBeInTheDocument();
+    expect(screen.getByText(/bind a channel/)).toBeInTheDocument();
+  });
+
+  it("changing a row's channel re-binds the encoder", async () => {
+    const onSave = jest.fn(async () => ({}));
+    render(<EncodersCard encoders={ENCODERS} scenes={SCENES} onSave={onSave} onDelete={jest.fn()} onTest={jest.fn()} onProvision={jest.fn()} onRefresh={jest.fn()} />);
+
+    // Open the second encoder's channel select (currently unbound) and pick Temp.
+    fireEvent.mouseDown(screen.getAllByRole("combobox")[1]);
+    fireEvent.click(screen.getByRole("option", { name: "Temp" }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({ id: "obs-2", url: "ws://127.0.0.1:4456", sceneId: "temp" }),
+    );
   });
 
   it("explains the fallback when nothing is registered", () => {
@@ -31,13 +46,15 @@ describe("EncodersCard", () => {
     expect(screen.getByText(/OBS_WEBSOCKET_URL instance \(one stream at a time\)/)).toBeInTheDocument();
   });
 
-  it("toggling a row saves the enabled flag", () => {
+  it("toggling a row saves the enabled flag", async () => {
     const onSave = jest.fn(async () => ({}));
     render(<EncodersCard encoders={ENCODERS} scenes={SCENES} onSave={onSave} onDelete={jest.fn()} onTest={jest.fn()} onProvision={jest.fn()} onRefresh={jest.fn()} />);
 
     fireEvent.click(screen.getByRole("switch", { name: "enable Wind rig" }));
 
-    expect(onSave).toHaveBeenCalledWith({ id: "obs-1", url: "ws://127.0.0.1:4455", enabled: false });
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({ id: "obs-1", url: "ws://127.0.0.1:4455", enabled: false }),
+    );
   });
 
   it("won't add an encoder without a websocket url", () => {

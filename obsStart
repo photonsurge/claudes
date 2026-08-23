@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
+
 flatpak run --command=obs com.obsproject.Studio --multi \
   --profile "Earthquakes" \
   --collection "Earthquakes" \
   --websocket_port 4456 \
-  --websocket_password "secret"
+  --websocket_password "secret" &
 
-  flatpak run --command=obs com.obsproject.Studio --multi \
+flatpak run --command=obs com.obsproject.Studio --multi \
   --profile "Weather" \
   --collection "Weather" \
   --websocket_port 4457 \
-  --websocket_password "secret"
+  --websocket_password "secret" &
+
+wait

@@ -1,13 +1,14 @@
 "use client";
 
 /**
- * OBS encoder registry card for /admin/streams. One OBS instance = one
- * concurrent stream, so multi-view needs one row here per constant stream.
- * Each row records the obs-websocket endpoint and (optionally) which scene that
- * instance's browser source captures — run-creation auto-picks by scene. The
- * websocket password is write-only (stored encrypted server-side).
+ * OBS encoder registry card for /admin/streams. One OBS instance = one concurrent
+ * stream, so multi-view needs one card here per constant stream. Each encoder is its
+ * own bordered block: the obs-websocket endpoint, the bound channel (with the exact
+ * tokened /watch URL that channel resolves to), the diagnostic/provision actions, and
+ * their results tied to that encoder. The websocket password is write-only (stored
+ * encrypted server-side).
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -31,29 +32,26 @@ export interface EncoderSave {
   enabled?: boolean;
 }
 
-export default function EncodersCard({
-  encoders,
-  scenes,
-  onSave,
-  onDelete,
-  onTest,
-  onProvision,
-  onRefresh,
-}: {
-  encoders: StreamEncoderInfo[];
-  scenes: SceneMeta[];
+interface EncoderActions {
   onSave: (body: EncoderSave) => Promise<unknown>;
   onDelete: (id: string) => Promise<unknown>;
   onTest: (id: string) => Promise<ObsTestResult>;
   onProvision: (id: string) => Promise<ProvisionResult>;
   onRefresh: (id: string) => Promise<{ ok: boolean; error?: string }>;
-}) {
-  const [err, setErr] = useState<string | null>(null);
+}
 
-  const run = async (fn: () => Promise<unknown>) => {
+export default function EncodersCard({
+  encoders,
+  scenes,
+  ...actions
+}: { encoders: StreamEncoderInfo[]; scenes: SceneMeta[] } & EncoderActions) {
+  const [err, setErr] = useState<string | null>(null);
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+  const runAdd = async (body: EncoderSave) => {
     setErr(null);
     try {
-      await fn();
+      await actions.onSave(body);
     } catch (e) {
       setErr(String((e as Error)?.message ?? e));
     }
@@ -65,44 +63,22 @@ export default function EncodersCard({
         OBS encoders
       </Typography>
       <Typography variant="caption" color="text.secondary">
-        One OBS instance per concurrent stream. Point each instance&apos;s browser source at a channel, then
-        register its websocket endpoint here.
+        One OBS instance per concurrent stream. Bind each to a channel, then{" "}
+        <b>Set up in OBS</b> pushes that channel&apos;s tokened /watch URL into it as a full-canvas browser source.
       </Typography>
 
-      <Box sx={{ display: "grid", gap: 1, mt: 1.25 }}>
+      <Box sx={{ display: "grid", gap: 1.25, mt: 1.25 }}>
         {encoders.length === 0 && (
           <Typography variant="body2" color="text.secondary">
             No encoders registered — runs use the OBS_WEBSOCKET_URL instance (one stream at a time).
           </Typography>
         )}
         {encoders.map((enc) => (
-          <Stack key={enc.id} direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
-            <Chip size="small" variant="outlined" label={enc.name || enc.id} />
-            <Typography variant="caption" sx={{ fontFamily: "monospace" }}>
-              {enc.url}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {enc.sceneId ? `channel ${enc.sceneId}` : "any channel"}
-              {enc.hasPassword ? " · password set" : ""}
-            </Typography>
-            <Box sx={{ flex: 1 }} />
-            <TestButton id={enc.id} onTest={onTest} />
-            <ProvisionButton id={enc.id} onProvision={onProvision} />
-            <RefreshButton id={enc.id} onRefresh={onRefresh} />
-            <Switch
-              size="small"
-              checked={enc.enabled}
-              onChange={(e) => run(() => onSave({ id: enc.id, url: enc.url, enabled: e.target.checked }))}
-              slotProps={{ input: { "aria-label": `enable ${enc.name || enc.id}` } }}
-            />
-            <Button size="small" color="error" onClick={() => run(() => onDelete(enc.id))}>
-              Remove
-            </Button>
-          </Stack>
+          <EncoderRow key={enc.id} enc={enc} scenes={scenes} origin={origin} {...actions} />
         ))}
       </Box>
 
-      <AddEncoderForm scenes={scenes} onSave={(body) => run(() => onSave(body))} />
+      <AddEncoderForm scenes={scenes} onSave={runAdd} />
       {err && (
         <Alert severity="error" sx={{ mt: 1 }}>
           {err}
@@ -112,111 +88,180 @@ export default function EncodersCard({
   );
 }
 
-/**
- * Read-only OBS reachability probe. Confirms the WORKER can reach this encoder's
- * obs-websocket (with the stored password) before you commit to a live broadcast —
- * it's the counterpart to the YouTube connect check. The result wraps onto its own
- * line (width: 100% inside the flex-wrap row).
- */
-function TestButton({ id, onTest }: { id: string; onTest: (id: string) => Promise<ObsTestResult> }) {
-  const [busy, setBusy] = useState(false);
-  const [res, setRes] = useState<ObsTestResult | null>(null);
+/** One registered encoder: identity, channel + its watch URL, actions, and results. */
+function EncoderRow({
+  enc,
+  scenes,
+  origin,
+  onSave,
+  onDelete,
+  onTest,
+  onProvision,
+  onRefresh,
+}: { enc: StreamEncoderInfo; scenes: SceneMeta[]; origin: string } & EncoderActions) {
+  const [busy, setBusy] = useState<null | "test" | "prov" | "refresh" | "save" | "delete">(null);
+  const [test, setTest] = useState<ObsTestResult | null>(null);
+  const [prov, setProv] = useState<ProvisionResult | null>(null);
+  const [refreshErr, setRefreshErr] = useState<string | null>(null);
+  const [actionErr, setActionErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const test = async () => {
-    setBusy(true);
+  const scene = scenes.find((s) => s.id === enc.sceneId);
+  const watchUrl = enc.sceneId
+    ? `${origin}/watch/${enc.sceneId}${scene?.watchToken ? `?token=${scene.watchToken}` : ""}`
+    : null;
+
+  const guard = (which: typeof busy, fn: () => Promise<void>) => async () => {
+    setBusy(which);
+    setActionErr(null);
     try {
-      setRes(await onTest(id));
+      await fn();
     } catch (e) {
-      setRes({ reachable: false, error: String((e as Error)?.message ?? e) });
+      setActionErr(String((e as Error)?.message ?? e));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
+  const doTest = guard("test", async () => setTest(await onTest(enc.id)));
+  const doProv = guard("prov", async () => setProv(await onProvision(enc.id)));
+  const doRefresh = guard("refresh", async () => {
+    const r = await onRefresh(enc.id);
+    setRefreshErr(r.ok ? null : (r.error ?? "refresh failed"));
+  });
+  const changeChannel = (sceneId: string) =>
+    guard("save", async () => {
+      await onSave({ id: enc.id, url: enc.url, sceneId });
+      setProv(null); // the URL changed — the old provision line no longer applies
+    })();
+  const toggle = (enabled: boolean) => guard("save", () => onSave({ id: enc.id, url: enc.url, enabled }).then(() => {}))();
+  const remove = guard("delete", () => onDelete(enc.id).then(() => {}));
+
+  const copy = () => {
+    if (!watchUrl) return;
+    navigator.clipboard?.writeText(watchUrl).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+
   return (
-    <>
-      <Button size="small" onClick={test} disabled={busy}>
-        {busy ? "Testing…" : "Test"}
-      </Button>
-      {res && (
-        <Typography variant="caption" sx={{ width: "100%", color: res.reachable ? "success.main" : "error.main" }}>
-          {res.reachable
-            ? `✓ reached ${res.url} — OBS ${res.obsVersion} (ws ${res.websocketVersion}) · ${res.streaming ? "streaming now" : "idle"}`
-            : `✗ ${res.error}`}
-        </Typography>
-      )}
-    </>
+    <Paper variant="outlined" sx={{ p: 1.5 }}>
+      <Stack spacing={1}>
+        {/* Identity + enable/remove */}
+        <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
+          <Chip size="small" variant="outlined" label={enc.name || enc.id} />
+          <Typography variant="caption" sx={{ fontFamily: "monospace" }}>
+            {enc.url}
+          </Typography>
+          <Typography variant="caption" color={enc.hasPassword ? "text.secondary" : "warning.main"}>
+            {enc.hasPassword ? "password set" : "no password"}
+          </Typography>
+          <Box sx={{ flex: 1 }} />
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
+            <Typography variant="caption" color="text.secondary">
+              {enc.enabled ? "on" : "off"}
+            </Typography>
+            <Switch
+              size="small"
+              checked={enc.enabled}
+              disabled={busy === "save"}
+              onChange={(e) => toggle(e.target.checked)}
+              slotProps={{ input: { "aria-label": `enable ${enc.name || enc.id}` } }}
+            />
+          </Stack>
+          <Button size="small" color="error" disabled={busy === "delete"} onClick={remove}>
+            Remove
+          </Button>
+        </Stack>
+
+        {/* Channel binding + its tokened watch URL */}
+        <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
+          <TextField
+            select
+            size="small"
+            label="channel"
+            value={scenes.some((s) => s.id === enc.sceneId) ? enc.sceneId : ""}
+            disabled={busy === "save"}
+            onChange={(e) => changeChannel(e.target.value)}
+            sx={{ minWidth: 150 }}
+          >
+            <MenuItem value="">any (unbound)</MenuItem>
+            {scenes.map((s) => (
+              <MenuItem key={s.id} value={s.id}>
+                {s.name}
+              </MenuItem>
+            ))}
+          </TextField>
+          {watchUrl ? (
+            <>
+              <Box
+                component="code"
+                sx={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontFamily: "monospace",
+                  fontSize: 12,
+                  color: "text.secondary",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+                title={watchUrl}
+              >
+                {watchUrl}
+              </Box>
+              <Button size="small" onClick={copy}>
+                {copied ? "Copied" : "Copy URL"}
+              </Button>
+            </>
+          ) : (
+            <Typography variant="caption" color="warning.main">
+              bind a channel to set this instance&apos;s watch URL
+            </Typography>
+          )}
+        </Stack>
+
+        {/* Actions */}
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+          <Button size="small" onClick={doTest} disabled={busy === "test"}>
+            {busy === "test" ? "Testing…" : "Test"}
+          </Button>
+          <Button size="small" variant="outlined" onClick={doProv} disabled={busy === "prov" || !enc.sceneId}>
+            {busy === "prov" ? "Setting up…" : "Set up in OBS"}
+          </Button>
+          <Button size="small" onClick={doRefresh} disabled={busy === "refresh"}>
+            {busy === "refresh" ? "Refreshing…" : "Refresh"}
+          </Button>
+        </Stack>
+
+        {/* Results — each tied to THIS encoder */}
+        {test && (
+          <ResultLine ok={test.reachable}>
+            {test.reachable
+              ? `reached ${test.url} — OBS ${test.obsVersion} (ws ${test.websocketVersion}) · ${test.streaming ? "streaming now" : "idle"}`
+              : test.error}
+          </ResultLine>
+        )}
+        {prov && (
+          <ResultLine ok={prov.ok}>
+            {prov.ok
+              ? `${prov.created ? "created" : "updated"} “${prov.sceneName}” (${prov.width}×${prov.height})${prov.switched ? " · switched OBS to it" : ""}${prov.refreshed ? " · refreshed" : ""}`
+              : prov.error}
+          </ResultLine>
+        )}
+        {refreshErr && <ResultLine ok={false}>{refreshErr}</ResultLine>}
+        {actionErr && <ResultLine ok={false}>{actionErr}</ResultLine>}
+      </Stack>
+    </Paper>
   );
 }
 
-/**
- * Full auto-provision: push a full-canvas browser source (the channel's tokened
- * /watch URL) into this encoder's OBS and switch to it. The worker generates the
- * scene token if the channel has none, so one click makes the OBS instance show the
- * globe. Re-run after rotating a token to re-push the fresh URL.
- */
-function ProvisionButton({ id, onProvision }: { id: string; onProvision: (id: string) => Promise<ProvisionResult> }) {
-  const [busy, setBusy] = useState(false);
-  const [res, setRes] = useState<ProvisionResult | null>(null);
-
-  const go = async () => {
-    setBusy(true);
-    try {
-      setRes(await onProvision(id));
-    } catch (e) {
-      setRes({ ok: false, error: String((e as Error)?.message ?? e) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
+function ResultLine({ ok, children }: { ok: boolean; children: ReactNode }) {
   return (
-    <>
-      <Button size="small" variant="outlined" onClick={go} disabled={busy}>
-        {busy ? "Setting up…" : "Set up in OBS"}
-      </Button>
-      {res && (
-        <Typography variant="caption" sx={{ width: "100%", color: res.ok ? "success.main" : "error.main" }}>
-          {res.ok
-            ? `✓ ${res.created ? "created" : "updated"} “${res.sceneName}” (${res.width}×${res.height})${res.switched ? " · switched OBS to it" : ""}${res.refreshed ? " · refreshed" : ""} — ${res.url}`
-            : `✗ ${res.error}`}
-        </Typography>
-      )}
-    </>
-  );
-}
-
-/**
- * Force a no-cache reload of the encoder's globe browser source — picks up a new
- * /watch bundle after a deploy without re-switching scenes. No-op friendly: errors
- * if the source hasn't been provisioned yet.
- */
-function RefreshButton({ id, onRefresh }: { id: string; onRefresh: (id: string) => Promise<{ ok: boolean; error?: string }> }) {
-  const [busy, setBusy] = useState(false);
-  const [res, setRes] = useState<{ ok: boolean; error?: string } | null>(null);
-
-  const go = async () => {
-    setBusy(true);
-    try {
-      setRes(await onRefresh(id));
-    } catch (e) {
-      setRes({ ok: false, error: String((e as Error)?.message ?? e) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <>
-      <Button size="small" onClick={go} disabled={busy}>
-        {busy ? "Refreshing…" : "Refresh"}
-      </Button>
-      {res && !res.ok && (
-        <Typography variant="caption" sx={{ width: "100%", color: "error.main" }}>
-          ✗ {res.error}
-        </Typography>
-      )}
-    </>
+    <Typography variant="caption" sx={{ color: ok ? "success.main" : "error.main" }}>
+      {ok ? "✓ " : "✗ "}
+      {children}
+    </Typography>
   );
 }
 
