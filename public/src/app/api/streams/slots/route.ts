@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { MAIN_SCENE_ID } from "@photonsurge/shared/control";
-import { ENV_ENCODER_ID, type StreamSlot, type YoutubePrivacy } from "@photonsurge/shared/runs";
+import { ENV_ENCODER_ID, SLOT_RESTART_MIN_MS, type StreamSlot, type YoutubePrivacy } from "@photonsurge/shared/runs";
 import { requireAdmin } from "../../../../lib/require-admin";
 
 export const runtime = "nodejs";
@@ -53,6 +53,12 @@ async function POST__impl(req: Request) {
     return NextResponse.json({ error: `no such encoder "${encoderId}"` }, { status: 400, headers: NO_CACHE });
   }
 
+  // Scheduled recycle cadence; 0 / absent = never. Clamped to the floor so a
+  // tiny interval can't outrun the reconciler's health/backoff bookkeeping.
+  const restartRaw = Number(body.restartEveryMs ?? 0);
+  const restartEveryMs =
+    Number.isFinite(restartRaw) && restartRaw > 0 ? Math.max(restartRaw, SLOT_RESTART_MIN_MS) : null;
+
   const saved = await db.saveStreamSlot({
     id: String(body.id ?? "").trim() || randomUUID(),
     name: body.name ? String(body.name).slice(0, 80) : undefined,
@@ -64,6 +70,7 @@ async function POST__impl(req: Request) {
     enabled: body.enabled === true,
     monitorStream: !!body.monitorStream,
     chat: { enabled: body.chat?.enabled !== false, promoteToTicker: !!body.chat?.promoteToTicker },
+    restartEveryMs,
   });
   if (!saved) {
     return NextResponse.json({ error: "failed to save slot" }, { status: 500, headers: NO_CACHE });

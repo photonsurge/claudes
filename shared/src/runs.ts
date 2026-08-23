@@ -121,6 +121,8 @@ export interface StreamSlot {
   enabled: boolean;
   monitorStream?: boolean;
   chat?: { enabled: boolean; promoteToTicker: boolean };
+  /** Recycle cadence: end + relaunch the run every this-many ms; null/0 = never. */
+  restartEveryMs?: number | null;
   /** The run currently serving this slot (may be finished — reconciler replaces it). */
   runId?: string | null;
   /** Consecutive unhealthy attempts, drives the retry backoff. */
@@ -135,6 +137,11 @@ export const SLOT_RETRY_BASE_MS = 30_000;
 export const SLOT_RETRY_MAX_MS = 15 * 60_000;
 /** A run live this long proves the slot healthy — the backoff counter resets. */
 export const SLOT_HEALTHY_AFTER_MS = 5 * 60_000;
+/**
+ * Floor for a slot's scheduled-restart interval — must clear the healthy window
+ * above, or the restart's attempt bookkeeping would ratchet the backoff forever.
+ */
+export const SLOT_RESTART_MIN_MS = 15 * 60_000;
 
 export function slotRetryDelayMs(failCount: number): number {
   const n = Math.max(0, Math.floor(failCount));

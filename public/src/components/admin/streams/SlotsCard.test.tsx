@@ -121,6 +121,8 @@ describe("SlotsCard", () => {
     fireEvent.click(screen.getByRole("option", { name: "Wind" }));
     fireEvent.mouseDown(within(form).getByLabelText("YouTube"));
     fireEvent.click(screen.getByRole("option", { name: "Weather HD" }));
+    fireEvent.mouseDown(within(form).getByLabelText("restart"));
+    fireEvent.click(screen.getByRole("option", { name: "24h" }));
     fireEvent.click(within(form).getByRole("checkbox", { name: "monitor" }));
     // chat is already checked by default; only opt into ticker promotion
     fireEvent.click(within(form).getByRole("checkbox", { name: "→ ticker" }));
@@ -130,11 +132,32 @@ describe("SlotsCard", () => {
       expect.objectContaining({
         sceneId: "wind",
         accountId: "chan-1",
+        restartEveryMs: 24 * 3_600_000,
         monitorStream: true,
         chat: { enabled: true, promoteToTicker: true },
         enabled: false,
       }),
     );
+  });
+
+  it("changing a row's restart interval saves restartEveryMs on the slot", () => {
+    const onSave = jest.fn(async () => ({}));
+    render(
+      <SlotsCard
+        slots={[slot({ runId: "r1" })]}
+        scenes={SCENES}
+        encoders={ENCODERS}
+        runs={[liveRun()]}
+        onSave={onSave}
+        onDelete={jest.fn()}
+      />,
+    );
+
+    // First "restart" select is the row's (the add form renders after the rows).
+    fireEvent.mouseDown(screen.getAllByLabelText("restart")[0]);
+    fireEvent.click(screen.getByRole("option", { name: "12h" }));
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: "s1", restartEveryMs: 12 * 3_600_000 }));
   });
 
   it("shows a slot's chosen channel title in its summary", () => {

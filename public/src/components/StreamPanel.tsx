@@ -231,6 +231,7 @@ function GoLiveForm({
   const [durationMin, setDurationMin] = useState(0);
   const [monitorStream, setMonitorStream] = useState(false);
   const [chatEnabled, setChatEnabled] = useState(true);
+  const [promoteToTicker, setPromoteToTicker] = useState(false);
   const [withBroadcast, setWithBroadcast] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -242,7 +243,7 @@ function GoLiveForm({
     durationMs: durationMin > 0 ? durationMin * 60_000 : null,
     platforms: { youtube: publishYoutube },
     monitorStream,
-    chat: { enabled: chatEnabled },
+    chat: { enabled: chatEnabled, promoteToTicker: chatEnabled && promoteToTicker },
   });
 
   const go = async () => {
@@ -313,6 +314,12 @@ function GoLiveForm({
           <input type="checkbox" checked={chatEnabled} onChange={(e) => setChatEnabled(e.target.checked)} />
           Monitor chat
         </label>
+        {chatEnabled ? (
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+            <input type="checkbox" checked={promoteToTicker} onChange={(e) => setPromoteToTicker(e.target.checked)} />
+            → ticker
+          </label>
+        ) : null}
       </div>
       <label
         style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, paddingTop: 4, borderTop: "1px solid #1b2030" }}

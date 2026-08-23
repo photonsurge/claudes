@@ -32,6 +32,7 @@ const StreamSlotSchema = new mongoose.Schema<iStreamSlotModel>(
       enabled: { type: Boolean, required: false, default: true },
       promoteToTicker: { type: Boolean, required: false, default: false },
     },
+    restartEveryMs: { type: Number, required: false, default: null },
     runId: { type: String, required: false, default: null },
     failCount: { type: Number, required: false, default: 0 },
     lastAttemptAt: { type: Number, required: false, default: null },

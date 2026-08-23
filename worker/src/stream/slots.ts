@@ -8,6 +8,9 @@
  *    exponential backoff (slotRetryDelayMs) so a broken encoder/account doesn't
  *    get hammered every sweep;
  *  - enabled + run live ≥ SLOT_HEALTHY_AFTER_MS → reset the backoff counter;
+ *  - enabled + run live longer than the slot's restart interval (if set) → end
+ *    it; the next sweep relaunches it (a scheduled recycle onto a fresh
+ *    broadcast, e.g. every 12h);
  *  - disabled + its run still active → enqueue end (the slot toggle is the
  *    on/off switch; the /api stop route auto-disables the slot for the same
  *    reason in reverse — otherwise this sweep would resurrect the stream).
@@ -19,6 +22,7 @@ import { getQueue } from "@photonsurge/shared/bull/bull";
 import { getAppDb, type AppDb } from "@photonsurge/shared/db/index";
 import {
   SLOT_HEALTHY_AFTER_MS,
+  SLOT_RESTART_MIN_MS,
   runIsActive,
   slotRetryDelayMs,
   type StreamSlot,
@@ -69,6 +73,15 @@ async function reconcileSlot(db: AppDb, slot: StreamSlot, now: number): Promise<
       now - run!.startAt >= SLOT_HEALTHY_AFTER_MS
     ) {
       await db.saveStreamSlot({ id: slot.id, failCount: 0 });
+    }
+    // Scheduled recycle: a run that has outlived the slot's restart interval is
+    // ended here and relaunched by the next sweep through the normal restart
+    // path below (which also keeps the per-encoder guard honest). Gated on
+    // status "live" so a run already winding down isn't re-ended every sweep.
+    const restartMs = slot.restartEveryMs ? Math.max(slot.restartEveryMs, SLOT_RESTART_MIN_MS) : 0;
+    if (restartMs && run!.status === "live" && run!.startAt && now - run!.startAt >= restartMs) {
+      log(TAG, `slot ${slot.id}: run ${run!.id} hit its ${Math.round(restartMs / 60_000)}min restart interval — recycling`);
+      await enqueueLifecycle("end", { runId: run!.id, reason: "auto" });
     }
     return;
   }

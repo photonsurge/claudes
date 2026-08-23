@@ -228,6 +228,8 @@ function StartRunForm({
   const [privacy, setPrivacy] = useState<YoutubePrivacy>("unlisted");
   const [publishYoutube, setPublishYoutube] = useState(true);
   const [durationMin, setDurationMin] = useState(0);
+  const [chatEnabled, setChatEnabled] = useState(true);
+  const [promoteToTicker, setPromoteToTicker] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -246,6 +248,7 @@ function StartRunForm({
         privacy,
         durationMs: durationMin > 0 ? durationMin * 60_000 : null,
         platforms: { youtube: publishing },
+        chat: { enabled: chatEnabled, promoteToTicker: chatEnabled && promoteToTicker },
       });
       setTitle("");
       onStarted();
@@ -342,6 +345,16 @@ function StartRunForm({
           }
           label="YouTube"
         />
+        <FormControlLabel
+          control={<Checkbox checked={chatEnabled} onChange={(e) => setChatEnabled(e.target.checked)} />}
+          label="chat"
+        />
+        {chatEnabled && (
+          <FormControlLabel
+            control={<Checkbox checked={promoteToTicker} onChange={(e) => setPromoteToTicker(e.target.checked)} />}
+            label="→ ticker"
+          />
+        )}
         <Button variant="contained" color="error" onClick={go} disabled={busy || sceneBusy}>
           {busy ? "…" : sceneBusy ? "Channel busy" : "● Go Live"}
         </Button>
@@ -382,6 +395,7 @@ function RunRow({ run, onStopped }: { run: RunState; onStopped: () => void }) {
             scene {run.sceneId}
             {run.encoderId ? ` · encoder ${run.encoderId}` : ""}
             {run.slotId ? " · constant" : ""}
+            {run.chat?.enabled ? (run.chat.promoteToTicker ? " · chat→ticker" : " · chat") : ""}
             {run.needsManualObs ? " · OBS manual handoff needed" : ""}
             {run.error ? ` · ${run.error.step}: ${run.error.message}` : ""}
           </Typography>

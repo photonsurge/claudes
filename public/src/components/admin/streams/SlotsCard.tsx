@@ -29,6 +29,10 @@ export interface SlotAccount {
   channelTitle?: string;
 }
 
+/** Selectable scheduled-restart cadences (hours; 0 = never recycle). */
+const RESTART_HOURS = [0, 1, 2, 4, 6, 8, 12, 24];
+const HOUR_MS = 3_600_000;
+
 /** Colour for a slot's derived status label (canonical run statuses + off/starting/retrying/…). */
 function slotStatusColor(status: string): "default" | "error" | "warning" | "success" {
   if (status === "live" || status === "failed") return "error";
@@ -78,7 +82,8 @@ export default function SlotsCard({
       </Typography>
       <Typography variant="caption" color="text.secondary">
         Always-on YouTube streams the worker keeps alive (restarted with backoff if they die). Switch a
-        slot on to go live; switching it off ends its stream.
+        slot on to go live; switching it off ends its stream. A restart interval recycles the stream on
+        that cadence — the run is ended and relaunched onto a fresh broadcast.
       </Typography>
 
       <Box sx={{ display: "grid", gap: 1, mt: 1.25 }}>
@@ -94,6 +99,7 @@ export default function SlotsCard({
             accounts={accounts}
             run={runs.find((r) => r.id === slot.runId) ?? null}
             onToggle={(enabled) => run(() => onSave({ ...slot, enabled }))}
+            onRestartChange={(restartEveryMs) => run(() => onSave({ ...slot, restartEveryMs }))}
             onDelete={() => run(() => onDelete(slot.id))}
           />
         ))}
@@ -119,12 +125,14 @@ function SlotRow({
   accounts,
   run,
   onToggle,
+  onRestartChange,
   onDelete,
 }: {
   slot: StreamSlot;
   accounts: SlotAccount[];
   run: RunState | null;
   onToggle: (enabled: boolean) => void;
+  onRestartChange: (restartEveryMs: number | null) => void;
   onDelete: () => void;
 }) {
   const active = !!run && runIsActive(run.status);
@@ -161,6 +169,20 @@ function SlotRow({
         </Typography>
       )}
       <Box sx={{ flex: 1 }} />
+      <TextField
+        select
+        size="small"
+        label="restart"
+        value={String(slot.restartEveryMs ?? 0)}
+        onChange={(e) => onRestartChange(Number(e.target.value) || null)}
+        sx={{ width: 100 }}
+      >
+        {RESTART_HOURS.map((h) => (
+          <MenuItem key={h} value={String(h * HOUR_MS)}>
+            {h ? `${h}h` : "never"}
+          </MenuItem>
+        ))}
+      </TextField>
       <Switch
         size="small"
         checked={slot.enabled}
@@ -191,6 +213,7 @@ function AddSlotForm({
   const [accountId, setAccountId] = useState("");
   const [title, setTitle] = useState("");
   const [privacy, setPrivacy] = useState<"public" | "unlisted" | "private">("public");
+  const [restartHours, setRestartHours] = useState(0);
   const [monitorStream, setMonitorStream] = useState(false);
   const [chatEnabled, setChatEnabled] = useState(true);
   const [promoteToTicker, setPromoteToTicker] = useState(false);
@@ -203,6 +226,7 @@ function AddSlotForm({
       accountId: accountId || undefined,
       title: title || undefined,
       privacy,
+      restartEveryMs: restartHours ? restartHours * HOUR_MS : null,
       monitorStream,
       chat: { enabled: chatEnabled, promoteToTicker: chatEnabled && promoteToTicker },
       enabled: false, // created off — the switch is the go-live control
@@ -212,6 +236,7 @@ function AddSlotForm({
     setEncoderId("");
     setAccountId("");
     setTitle("");
+    setRestartHours(0);
     setMonitorStream(false);
     setChatEnabled(true);
     setPromoteToTicker(false);
@@ -266,6 +291,19 @@ function AddSlotForm({
         <MenuItem value="public">Public</MenuItem>
         <MenuItem value="unlisted">Unlisted</MenuItem>
         <MenuItem value="private">Private</MenuItem>
+      </TextField>
+      <TextField
+        select
+        label="restart"
+        value={String(restartHours)}
+        onChange={(e) => setRestartHours(Number(e.target.value) || 0)}
+        sx={{ minWidth: 100 }}
+      >
+        {RESTART_HOURS.map((h) => (
+          <MenuItem key={h} value={String(h)}>
+            {h ? `${h}h` : "never"}
+          </MenuItem>
+        ))}
       </TextField>
       <FormControlLabel
         control={<Checkbox checked={monitorStream} onChange={(e) => setMonitorStream(e.target.checked)} />}

@@ -27,7 +27,7 @@ const db = {
 };
 jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: jest.fn(async () => db) }));
 
-import { SLOT_HEALTHY_AFTER_MS, SLOT_RETRY_BASE_MS } from "@photonsurge/shared/runs";
+import { SLOT_HEALTHY_AFTER_MS, SLOT_RESTART_MIN_MS, SLOT_RETRY_BASE_MS } from "@photonsurge/shared/runs";
 import { reconcileSlots } from "./slots";
 
 const NOW = 1_700_000_000_000;
@@ -111,6 +111,47 @@ describe("reconcileSlots", () => {
     await reconcileSlots(NOW);
 
     expect(slots.get("s1").failCount).toBe(0);
+  });
+
+  it("recycles a live run past the slot's restart interval, relaunching next sweep", async () => {
+    const HOUR = 3_600_000;
+    runs.set("r1", { id: "r1", status: "live", startAt: NOW - 12 * HOUR - 1 });
+    slots.set("s1", { id: "s1", sceneId: "wind", enabled: true, runId: "r1", restartEveryMs: 12 * HOUR });
+
+    await reconcileSlots(NOW);
+
+    // Ended, not replaced yet — the relaunch waits for the end to drain.
+    expect(enqueued("end")).toEqual([{ runId: "r1", reason: "auto" }]);
+    expect(db.createRun).not.toHaveBeenCalled();
+
+    // Once the run is dead the next sweep starts the replacement immediately.
+    runs.set("r1", { id: "r1", status: "ended", startAt: NOW - 12 * HOUR - 1 });
+    await reconcileSlots(NOW + 60_000);
+    expect(db.createRun).toHaveBeenCalledTimes(1);
+    expect(enqueued("goLive")).toHaveLength(1);
+  });
+
+  it("leaves live runs alone before the interval — and always without one", async () => {
+    const HOUR = 3_600_000;
+    slots.set("s1", { id: "s1", sceneId: "wind", enabled: true, runId: "r1", restartEveryMs: 12 * HOUR });
+    runs.set("r1", { id: "r1", status: "live", startAt: NOW - HOUR });
+    slots.set("s2", { id: "s2", sceneId: "temp", enabled: true, runId: "r2" }); // no interval set
+    runs.set("r2", { id: "r2", status: "live", startAt: NOW - 400 * HOUR });
+
+    await reconcileSlots(NOW);
+
+    expect(queueAdd).not.toHaveBeenCalled();
+  });
+
+  it("clamps a too-small restart interval to the floor", async () => {
+    runs.set("r1", { id: "r1", status: "live", startAt: NOW - 60_000 });
+    slots.set("s1", { id: "s1", sceneId: "wind", enabled: true, runId: "r1", restartEveryMs: 30_000 });
+
+    await reconcileSlots(NOW); // only a minute old — under the floor, kept alive
+    expect(enqueued("end")).toEqual([]);
+
+    await reconcileSlots(NOW + SLOT_RESTART_MIN_MS);
+    expect(enqueued("end")).toEqual([{ runId: "r1", reason: "auto" }]);
   });
 
   it("ends the run of a slot that was disabled", async () => {
