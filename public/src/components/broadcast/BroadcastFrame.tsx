@@ -105,10 +105,11 @@ const TICKER_H = 34;
 const INSET = 30;
 const BRAND_STACK_H = 150;
 /** The masthead brand block sits at the very top-left, scaled up for
- *  legibility; the top crawl band tucks UP INTO the banner row (bottom-aligned
- *  with the banner's bottom edge) and runs full width BEHIND the banner PNG —
- *  chip-less, with the crawl text clipped at the graphic's tapered right end
- *  (see BANNER_EDGE) so it slides out from behind the artwork. */
+ *  legibility; the top crawl band hugs the VERY TOP edge, full width, running
+ *  BEHIND the banner PNG — chip-less, with the crawl text clipped at the
+ *  graphic's right end (see BANNER_EDGE) so it slides out from behind the
+ *  artwork. The map title/details row sits on the next row down, beneath the
+ *  crawl, in the strip right of the logo. */
 const BRAND_TOP = 4;
 const BRAND_SCALE = 1.25;
 /** Left edge of the masthead title band (the active-map hero + source chip):
@@ -116,12 +117,13 @@ const BRAND_SCALE = 1.25;
  *  left -4 → ~771 scaled). */
 const BRAND_INSET = 780;
 /** Scaled bottom edge of the masthead banner PNG (1951×294 source at 620
- *  design px wide → ~93 px tall, ×1.25, +BRAND_TOP ≈ 121) — the top crawl's
- *  band bottom-aligns to this edge. */
+ *  design px wide → ~93 px tall, ×1.25, +BRAND_TOP ≈ 121) — the masthead
+ *  title row ends at this edge, so the chrome below hangs off it. */
 const BANNER_BOTTOM = 120;
-/** Where the banner artwork's tapered right end crosses the crawl band (design
- *  px): the lozenge is opaque out to ~757–760 at the band's top slice, so the
- *  crawl text clips here and reads as emerging from behind the graphic. */
+/** Where the banner artwork's right end crosses the crawl band (design px):
+ *  the lozenge plate is at its widest along its top rows, opaque out to
+ *  ~757–760, so the crawl text clips here and reads as emerging from behind
+ *  the graphic. */
 const BANNER_EDGE = 760;
 
 /**
@@ -302,13 +304,13 @@ export default function BroadcastFrame({
   // Per-channel chrome-widget off-list (see shared/broadcast-widgets). Each
   // optional widget below is wrapped in `!off.has("<id>")`; empty = show all.
   const off = new Set<string>(state.widgetsOff);
-  // The top crawl hugs the very top edge on brand-less channels (chip + band,
-  // the classic look). With the masthead banner on it instead tucks UP into the
-  // banner row — bottom-aligned with the banner's bottom edge, running behind
-  // the graphic — and everything hung off the masthead (centre legends, WORLD
-  // WATCH) anchors to that shared bottom edge.
+  // The top crawl always hugs the very top edge. Brand off: the classic chip +
+  // band. Brand on: chip-less, running full width BEHIND the banner's top row,
+  // with the map title/details on the row beneath it — so the chrome below
+  // (centre legends, WORLD WATCH) hangs off the banner's bottom edge instead
+  // of the crawl's.
   const brandOn = !off.has("brand");
-  const tickerTop = brandOn ? BANNER_BOTTOM - TICKER_H : 0;
+  const chromeTop = (brandOn ? BANNER_BOTTOM : TICKER_H) + INSET;
   // A country spotlight scopes the global alerts/quakes feeds down to its own
   // bbox (`shared/director-countries`); a weather-check segment has no fixed
   // bbox but does sit on a real ground location, so it gets the
@@ -794,17 +796,16 @@ export default function BroadcastFrame({
         </div>
         )}
 
-        {/* Top crawl. Brand on: a chip-less band running full width BEHIND the
-            masthead banner (which renders after it, so the artwork paints on
-            top), with the crawl text clipped at the graphic's tapered right end
-            so it slides out from behind it. Brand off: the classic chip + band
-            hugging the very top edge. */}
+        {/* Top crawl: pinned to the very top edge, full width. Brand on: chip-
+            less, running BEHIND the masthead banner (which renders after it, so
+            the artwork paints on top), with the crawl text clipped at the
+            graphic's right end so it slides out from behind it. Brand off: the
+            classic chip + band. */}
         <Ticker
           title={brandOn ? null : theme.tickerTitle}
           items={ticker}
           edge="top"
           height={TICKER_H}
-          offset={tickerTop}
           contentInset={brandOn ? BANNER_EDGE : 0}
           theme={theme}
         />
@@ -823,15 +824,15 @@ export default function BroadcastFrame({
           </div>
         )}
 
-        {/* Masthead title band: the ACTIVE MAP TYPE + its source/timing chip,
-            centred in the strip to the right of the logo — the band stops at the
-            crawl's top edge now that the crawl rides inside the banner row, so
-            the title centres in the clear space above it. */}
+        {/* Masthead title row: the ACTIVE MAP TYPE + its source/timing chip on
+            the row BELOW the crawl, centred in the strip to the right of the
+            logo — the row runs from the crawl's bottom edge down to the
+            banner's bottom edge. */}
         {brandOn && !off.has("intensityMeter") && (
           <div
             style={{
               position: "absolute",
-              top: 0,
+              top: TICKER_H,
               left: BRAND_INSET,
               right: 0,
               height: BANNER_BOTTOM - TICKER_H,
@@ -875,7 +876,7 @@ export default function BroadcastFrame({
         <div
           style={{
             position: "absolute",
-            top: tickerTop + TICKER_H + INSET,
+            top: chromeTop,
             left: "50%",
             transform: "translateX(-50%)",
             display: "flex",
@@ -908,7 +909,7 @@ export default function BroadcastFrame({
         <div
           style={{
             position: "absolute",
-            top: tickerTop + TICKER_H + INSET,
+            top: chromeTop,
             right: INSET - 26,
             display: "flex",
             flexDirection: "column",

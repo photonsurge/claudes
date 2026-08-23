@@ -12,6 +12,8 @@
 import type { Job } from "bullmq";
 import { goLive as doGoLive, finishRun } from "../stream/lifecycle";
 import { reconcileSlots } from "../stream/slots";
+import { endpointForEncoderId } from "../stream/encoders";
+import { probe } from "../obs/client";
 
 export async function goLive(job: Job) {
   const runId = String(job.data?.data?.runId ?? job.data?.runId ?? "");
@@ -39,4 +41,21 @@ export async function end(job: Job) {
 export async function reconcile(_job: Job) {
   await reconcileSlots();
   return {};
+}
+
+/**
+ * Admin diagnostic (POST /api/streams/encoders/:id/test): connect to an encoder's
+ * OBS and report reachability + version. Read-only — never starts a stream. Resolves
+ * (never rejects) so the caller gets a structured pass/fail with the reason, e.g.
+ * "cannot reach OBS at ws://… : connect timeout" or "encoder is disabled".
+ */
+export async function testEncoder(job: Job) {
+  const encoderId = job.data?.data?.encoderId ? String(job.data.data.encoderId) : undefined;
+  try {
+    const ep = await endpointForEncoderId(encoderId);
+    const info = await probe(ep);
+    return { reachable: true, url: ep.url, ...info };
+  } catch (err) {
+    return { reachable: false, error: String((err as Error)?.message ?? err) };
+  }
 }

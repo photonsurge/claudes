@@ -137,6 +137,25 @@ export async function saveEncoder(
   return data as StreamEncoderInfo;
 }
 
+/** Outcome of a read-only OBS reachability probe (see testEncoder). */
+export interface ObsTestResult {
+  reachable: boolean;
+  url?: string;
+  obsVersion?: string;
+  websocketVersion?: string;
+  streaming?: boolean;
+  outputBytes?: number;
+  error?: string;
+}
+
+/** Probe an encoder's OBS (worker connects + reads version/status). Never starts a stream. */
+export async function testEncoder(id: string): Promise<ObsTestResult> {
+  const res = await fetch(`/api/streams/encoders/${encodeURIComponent(id)}/test`, { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+  return data as ObsTestResult;
+}
+
 /** Remove an encoder registration (refused while a run publishes through it). */
 export async function deleteEncoder(id: string): Promise<void> {
   const res = await fetch(`/api/streams/encoders/${encodeURIComponent(id)}`, { method: "DELETE" });

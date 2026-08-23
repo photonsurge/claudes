@@ -20,6 +20,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import type { SceneMeta } from "@photonsurge/shared/control";
 import type { StreamEncoderInfo } from "@photonsurge/shared/runs";
+import type { ObsTestResult } from "../../../lib/stream";
 
 export interface EncoderSave {
   id?: string;
@@ -35,11 +36,13 @@ export default function EncodersCard({
   scenes,
   onSave,
   onDelete,
+  onTest,
 }: {
   encoders: StreamEncoderInfo[];
   scenes: SceneMeta[];
   onSave: (body: EncoderSave) => Promise<unknown>;
   onDelete: (id: string) => Promise<unknown>;
+  onTest: (id: string) => Promise<ObsTestResult>;
 }) {
   const [err, setErr] = useState<string | null>(null);
 
@@ -79,6 +82,7 @@ export default function EncodersCard({
               {enc.hasPassword ? " · password set" : ""}
             </Typography>
             <Box sx={{ flex: 1 }} />
+            <TestButton id={enc.id} onTest={onTest} />
             <Switch
               size="small"
               checked={enc.enabled}
@@ -99,6 +103,43 @@ export default function EncodersCard({
         </Alert>
       )}
     </Paper>
+  );
+}
+
+/**
+ * Read-only OBS reachability probe. Confirms the WORKER can reach this encoder's
+ * obs-websocket (with the stored password) before you commit to a live broadcast —
+ * it's the counterpart to the YouTube connect check. The result wraps onto its own
+ * line (width: 100% inside the flex-wrap row).
+ */
+function TestButton({ id, onTest }: { id: string; onTest: (id: string) => Promise<ObsTestResult> }) {
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<ObsTestResult | null>(null);
+
+  const test = async () => {
+    setBusy(true);
+    try {
+      setRes(await onTest(id));
+    } catch (e) {
+      setRes({ reachable: false, error: String((e as Error)?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Button size="small" onClick={test} disabled={busy}>
+        {busy ? "Testing…" : "Test"}
+      </Button>
+      {res && (
+        <Typography variant="caption" sx={{ width: "100%", color: res.reachable ? "success.main" : "error.main" }}>
+          {res.reachable
+            ? `✓ reached ${res.url} — OBS ${res.obsVersion} (ws ${res.websocketVersion}) · ${res.streaming ? "streaming now" : "idle"}`
+            : `✗ ${res.error}`}
+        </Typography>
+      )}
+    </>
   );
 }
 

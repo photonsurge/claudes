@@ -174,6 +174,32 @@ export async function getStatus(ep: ObsEndpoint): Promise<ObsStreamStatus> {
   });
 }
 
+/** Result of a read-only reachability probe (admin "Test connection"). */
+export interface ObsProbe {
+  obsVersion: string;
+  websocketVersion: string;
+  streaming: boolean;
+  outputBytes: number;
+}
+
+/**
+ * Connect + read version/status — the read-only reachability probe behind the admin
+ * "Test connection" button. GetVersion + GetStreamStatus only; NO StartStream, so
+ * it's safe to run against an encoder that's already live.
+ */
+export async function probe(ep: ObsEndpoint): Promise<ObsProbe> {
+  return withObs(ep, async (obs) => {
+    const v = await obs.call("GetVersion");
+    const s = await obs.call("GetStreamStatus");
+    return {
+      obsVersion: String(v.obsVersion ?? "?"),
+      websocketVersion: String(v.obsWebSocketVersion ?? "?"),
+      streaming: !!s.outputActive,
+      outputBytes: Number(s.outputBytes ?? 0),
+    };
+  });
+}
+
 /** Tear down every cached connection (worker shutdown). */
 export function closeObs(): void {
   for (const url of [...conns.keys()]) reset(url);

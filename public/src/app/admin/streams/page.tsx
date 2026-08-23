@@ -31,6 +31,7 @@ import {
   disconnectYoutube,
   saveEncoder,
   deleteEncoder,
+  testEncoder,
   saveSlot,
   deleteSlot,
   type StreamAccount,
@@ -157,6 +158,7 @@ export default function StreamsPage() {
           await deleteEncoder(id);
           refetch();
         }}
+        onTest={testEncoder}
       />
 
       <SlotsCard
