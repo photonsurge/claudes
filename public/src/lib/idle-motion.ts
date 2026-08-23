@@ -36,11 +36,13 @@ export type IdleMotionState = Pick<
  *  - ORBIT runs whenever nothing else moves the camera laterally — only the
  *    world spin and the director's own orbit suppress it, a push-in does not,
  *    so a settled detail shot keeps circling its subject.
- *  - BREATHE composes with a push-in instead of yielding to it: while the
- *    push-in is still creeping, the push-in IS the zoom motion; the moment it
- *    saturates at MAX_PUSH_IN the breathe takes over, swaying back OUT from
- *    the cap and in again (see idleZoomOffset) so the zoom never goes dead
- *    for the rest of the hold. Only the spin/director-orbit suppress it.
+ *  - BREATHE, when set, OWNS the zoom on a settled shot: the caller SKIPS the
+ *    director push-in entirely (Globe zeroes zoomDrift when this gate is open)
+ *    and the in-and-back sway runs from the moment the cut lands. Waiting to
+ *    hand off from a saturated push-in was tried first and looked dead on
+ *    air — the push-in needs ~MAX_PUSH_IN/zoomDrift ≈ 27s to top out, longer
+ *    than many director holds, so the breathe never became visible. Only the
+ *    spin/director-orbit suppress it.
  */
 export function idleOrbitActive(state: IdleMotionState): boolean {
   return !!state.idleMotion && !state.autoSpin && !state.orbitDrift && state.idleOrbit > 0;
@@ -66,31 +68,6 @@ export function idleBreatheZoom(breathe: number, periodS: number, ot: number): n
   return breathe * 0.5 * (1 - Math.cos((2 * Math.PI * ot) / periodS));
 }
 
-/**
- * The breathe's SIGNED zoom offset, aware of a director push-in owning the
- * zoom. With no push-in it breathes IN from the anchor and back (never wider
- * than the operator's framing). With a push-in (`zoomDrift` > 0) it stays
- * silent while the push-in creeps, then — from the deterministic instant the
- * push-in saturates (dt = MAX_PUSH_IN / zoomDrift) — sways back OUT from the
- * cap and in again, amplitude clamped to the push-in itself so it can never
- * pull wider than the anchor framing. The raised cosine starts at zero with
- * zero slope, so the handoff from the capped push-in is seamless.
- *
- * `dt` is seconds since spinEpoch (the push-in's clock); `ot` is dt minus the
- * fly-in grace (the idle clock, same as the orbit's).
- */
-export function idleZoomOffset(
-  breathe: number,
-  periodS: number,
-  t: { dt: number; ot: number; zoomDrift: number },
-): number {
-  if (breathe <= 0) return 0;
-  if (t.zoomDrift > 0) {
-    const satT = MAX_PUSH_IN / t.zoomDrift;
-    return -idleBreatheZoom(Math.min(breathe, MAX_PUSH_IN), periodS, t.dt - satT);
-  }
-  return idleBreatheZoom(breathe, periodS, t.ot);
-}
 
 /**
  * The full idle offsets to add to the anchor at `ot` seconds into the hold.
@@ -103,15 +80,9 @@ export function idleMotionOffsets(
   state: Pick<IdleMotionState, "idleOrbit" | "idleBreathe" | "idlePeriodS">,
   ot: number,
   anchor: { zoom: number; lat: number },
-  /** Set when a director push-in owns the zoom — hands the breathe off to it. */
-  push?: { zoomDrift: number; dt: number },
 ): { dLng: number; dLat: number; dZoom: number } {
   const periodS = state.idlePeriodS > 0 ? state.idlePeriodS : 60;
-  const dZoom = idleZoomOffset(state.idleBreathe, periodS, {
-    dt: push?.dt ?? ot,
-    ot,
-    zoomDrift: push?.zoomDrift ?? 0,
-  });
+  const dZoom = idleBreatheZoom(state.idleBreathe, periodS, ot);
   if (state.idleOrbit <= 0 || ot <= 0) return { dLng: 0, dLat: 0, dZoom };
   const amp =
     Math.min(state.idleOrbit, orbitAmpCap(anchor.zoom + dZoom)) *

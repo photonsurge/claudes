@@ -105,9 +105,10 @@ const TICKER_H = 34;
 const INSET = 30;
 const BRAND_STACK_H = 150;
 /** The masthead brand block sits at the very top-left, scaled up for
- *  legibility; the top crawl band runs FULL WIDTH just beneath the banner
- *  image (see BANNER_BOTTOM), with the brand block's readout/clock strip
- *  dropped below the band (see STRIP_DROP) so nothing collides. */
+ *  legibility; the top crawl band tucks UP INTO the banner row (bottom-aligned
+ *  with the banner's bottom edge) and runs full width BEHIND the banner PNG —
+ *  chip-less, with the crawl text clipped at the graphic's tapered right end
+ *  (see BANNER_EDGE) so it slides out from behind the artwork. */
 const BRAND_TOP = 4;
 const BRAND_SCALE = 1.25;
 /** Left edge of the masthead title band (the active-map hero + source chip):
@@ -115,13 +116,13 @@ const BRAND_SCALE = 1.25;
  *  left -4 → ~771 scaled). */
 const BRAND_INSET = 780;
 /** Scaled bottom edge of the masthead banner PNG (1951×294 source at 620
- *  design px wide → ~93 px tall, ×1.25, +BRAND_TOP ≈ 121) — the top crawl
- *  tucks in right here, just under the banner's drop shadow. */
+ *  design px wide → ~93 px tall, ×1.25, +BRAND_TOP ≈ 121) — the top crawl's
+ *  band bottom-aligns to this edge. */
 const BANNER_BOTTOM = 120;
-/** Extra pre-scale gap BrandPanel opens between the banner and its readout/
- *  clock strip, so the crawl band threads between them (band height +
- *  breathing room, undone for the block's own 1.25 scale). */
-const STRIP_DROP = (TICKER_H + 14) / BRAND_SCALE;
+/** Where the banner artwork's tapered right end crosses the crawl band (design
+ *  px): the lozenge is opaque out to ~757–760 at the band's top slice, so the
+ *  crawl text clips here and reads as emerging from behind the graphic. */
+const BANNER_EDGE = 760;
 
 /**
  * A "Nearest City" reticle row for a moving target (aircraft / ship) — the
@@ -301,11 +302,13 @@ export default function BroadcastFrame({
   // Per-channel chrome-widget off-list (see shared/broadcast-widgets). Each
   // optional widget below is wrapped in `!off.has("<id>")`; empty = show all.
   const off = new Set<string>(state.widgetsOff);
-  // The top crawl hugs the very top edge on brand-less channels; with the
-  // masthead banner on, it slides down to run full-width UNDER the logo, and
-  // everything that hangs off the top band (centre legends, WORLD WATCH)
-  // follows it down.
-  const tickerTop = off.has("brand") ? 0 : BANNER_BOTTOM;
+  // The top crawl hugs the very top edge on brand-less channels (chip + band,
+  // the classic look). With the masthead banner on it instead tucks UP into the
+  // banner row — bottom-aligned with the banner's bottom edge, running behind
+  // the graphic — and everything hung off the masthead (centre legends, WORLD
+  // WATCH) anchors to that shared bottom edge.
+  const brandOn = !off.has("brand");
+  const tickerTop = brandOn ? BANNER_BOTTOM - TICKER_H : 0;
   // A country spotlight scopes the global alerts/quakes feeds down to its own
   // bbox (`shared/director-countries`); a weather-check segment has no fixed
   // bbox but does sit on a real ground location, so it gets the
@@ -791,18 +794,22 @@ export default function BroadcastFrame({
         </div>
         )}
 
-        {/* Top crawl: full width, tucked under the masthead banner (or at the
-            very top edge when the brand block is off). */}
+        {/* Top crawl. Brand on: a chip-less band running full width BEHIND the
+            masthead banner (which renders after it, so the artwork paints on
+            top), with the crawl text clipped at the graphic's tapered right end
+            so it slides out from behind it. Brand off: the classic chip + band
+            hugging the very top edge. */}
         <Ticker
-          title={theme.tickerTitle}
+          title={brandOn ? null : theme.tickerTitle}
           items={ticker}
           edge="top"
           height={TICKER_H}
           offset={tickerTop}
+          contentInset={brandOn ? BANNER_EDGE : 0}
           theme={theme}
         />
 
-        {!off.has("brand") && (
+        {brandOn && (
           <div
             style={{
               position: "absolute",
@@ -812,26 +819,22 @@ export default function BroadcastFrame({
               transformOrigin: "left top",
             }}
           >
-            <BrandPanel
-              theme={theme}
-              live={directorOn}
-              status={brandStatus}
-              stripDrop={STRIP_DROP}
-            />
+            <BrandPanel theme={theme} live={directorOn} status={brandStatus} />
           </div>
         )}
 
         {/* Masthead title band: the ACTIVE MAP TYPE + its source/timing chip,
-            centred in the strip to the right of the logo, above the crawl —
-            the map description's new home, clear of both banner and band. */}
-        {!off.has("brand") && !off.has("intensityMeter") && (
+            centred in the strip to the right of the logo — the band stops at the
+            crawl's top edge now that the crawl rides inside the banner row, so
+            the title centres in the clear space above it. */}
+        {brandOn && !off.has("intensityMeter") && (
           <div
             style={{
               position: "absolute",
               top: 0,
               left: BRAND_INSET,
               right: 0,
-              height: BANNER_BOTTOM,
+              height: BANNER_BOTTOM - TICKER_H,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -855,7 +858,7 @@ export default function BroadcastFrame({
           <div
             style={{
               position: "absolute",
-              top: BRAND_TOP + (BRAND_STACK_H + STRIP_DROP) * BRAND_SCALE + 10,
+              top: BRAND_TOP + BRAND_STACK_H * BRAND_SCALE + 10,
               left: -4,
             }}
           >
@@ -883,7 +886,7 @@ export default function BroadcastFrame({
         >
           {!off.has("intensityMeter") && (
             <IntensityMeter
-              part={off.has("brand") ? "all" : "scale"}
+              part={brandOn ? "scale" : "all"}
               variable={legendVariable}
               units={state.units}
               theme={theme}

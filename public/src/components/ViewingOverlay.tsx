@@ -15,7 +15,7 @@ import { getVariable } from "@photonsurge/shared/variables";
 import { getPalette } from "@photonsurge/shared/palettes";
 import { buildLegend } from "../lib/legend";
 import { mapFreshness } from "../lib/manifest";
-import { idleBreatheActive, idleZoomOffset, MAX_PUSH_IN } from "../lib/idle-motion";
+import { idleBreatheActive, idleBreatheZoom, MAX_PUSH_IN } from "../lib/idle-motion";
 
 
 const KIND: Record<SegmentKind, { label: string; color: string }> = {
@@ -171,14 +171,11 @@ export default function ViewingOverlay({
       const dt = Math.max(0, (Date.now() - epoch) / 1000);
       let lng = lng0 + spinSpeed * dt;
       lng = ((((lng + 180) % 360) + 360) % 360) - 180;
-      let zoom = baseZoom + Math.min(zoomDrift * dt, MAX_PUSH_IN);
-      // Signed breathe offset: in-and-back on a still hold, out-from-the-cap
-      // once a push-in saturates (same handoff the globe computes).
-      zoom += idleZoomOffset(idleBreathe, idlePeriodS, {
-        dt,
-        ot: Math.max(0, dt - flightSec),
-        zoomDrift,
-      });
+      // A channel breathe OWNS the zoom (the globe skips the push-in for it —
+      // in-and-back from the anchor, visible from the first hold second).
+      const pushIn = idleBreathe > 0 ? 0 : zoomDrift;
+      let zoom = baseZoom + Math.min(pushIn * dt, MAX_PUSH_IN);
+      zoom += idleBreatheZoom(idleBreathe, idlePeriodS, Math.max(0, dt - flightSec));
       setLive({ lng, lat: lat0, zoom });
     };
     tick();

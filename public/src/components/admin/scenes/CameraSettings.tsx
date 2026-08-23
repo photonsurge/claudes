@@ -159,9 +159,9 @@ export default function CameraSettings({ sceneId }: { sceneId: string }) {
 
       <Alert severity="info">
         Adds a slight drift whenever this channel&apos;s camera settles on a location —
-        slowly circling the point and gently zooming in and back out. On the director&apos;s
-        push-in shots the orbit rides along and the breathe takes over the zoom once the
-        push-in tops out; only the world spin and the director&apos;s own orbits mute it.
+        slowly circling the point and gently zooming in and back out. The orbit rides
+        along with the director&apos;s push-in shots; a zoom breathe replaces the push-in
+        outright. Only the world spin and the director&apos;s own orbits mute it.
       </Alert>
     </Paper>
   );

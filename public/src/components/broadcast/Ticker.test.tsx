@@ -28,4 +28,19 @@ describe("Ticker", () => {
     render(<Ticker title="FEED" items={[]} edge="bottom" />);
     expect(screen.getAllByText(/STANDING BY · AWAITING LIVE FEED/).length).toBeGreaterThan(0);
   });
+
+  // The top crawl's behind-the-masthead mode: no chip, and the crawl viewport
+  // starts contentInset px into the band (the band still spans full width) so
+  // the text clips at the banner artwork's right edge.
+  it("renders chip-less with the crawl clipped at contentInset", () => {
+    render(<Ticker title={null} items={["ONE"]} edge="top" contentInset={760} theme={themed} />);
+
+    const band = screen.getAllByText(/ONE/)[0].closest("div")!
+      .parentElement!.parentElement as HTMLElement;
+    expect(band).toHaveStyle({ background: "rgb(1, 2, 3)" });
+    // No accent chip in the band — just the keyframes <style> and the viewport.
+    expect(band.children).toHaveLength(2);
+    const viewport = screen.getAllByText(/ONE/)[0].closest("div")!.parentElement as HTMLElement;
+    expect(viewport).toHaveStyle({ marginLeft: "760px" });
+  });
 });

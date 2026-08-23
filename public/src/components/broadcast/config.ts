@@ -16,7 +16,9 @@ export interface BroadcastTheme {
   /** Monogram style for the top-left mark. "orbit" draws a globe+satellite-ring
    *  glyph; omitted falls back to the classic circle+swoosh monogram. */
   iconVariant?: "orbit";
-  /** Header chip on the top ticker. */
+  /** Header chip on the bottom crawl (and the top crawl on brand-less
+   *  channels — with the masthead banner on, the top crawl runs chip-less
+   *  behind the banner artwork). */
   tickerTitle: string;
   /** Title over the left colour scale. */
   meterTitle: string;

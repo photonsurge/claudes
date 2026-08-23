@@ -207,7 +207,6 @@ export default function BrandPanel({
   compact = false,
   live = false,
   status = null,
-  stripDrop = 0,
 }: {
   theme?: BroadcastTheme;
   compact?: boolean;
@@ -217,10 +216,6 @@ export default function BrandPanel({
   /** Operator readout (on-air shot + active attribute) shown under the mark.
    *  Null hides the strip. */
   status?: BrandStatus | null;
-  /** Extra space (pre-scale px) between the banner and the readout/clock strip —
-   *  BroadcastFrame threads the top crawl band through this gap, so the strip
-   *  lands BELOW the crawl instead of colliding with it. */
-  stripDrop?: number;
 }) {
   const clocks = useWorldClocks();
   const usesGodsBanner = theme.name === "G.O.D.S.";
@@ -344,15 +339,14 @@ export default function BrandPanel({
       )}
 
       {/* Operator readout + world clocks on one left-aligned strip beneath the
-          banner — small, single line, hugging the screen's left edge. stripDrop
-          opens a gap for the top crawl band to run between banner and strip. */}
+          banner — small, single line, hugging the screen's left edge. */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
           gap: 8,
           flexWrap: "nowrap",
-          marginTop: -6 + stripDrop,
+          marginTop: -6,
         }}
       >
         {live && (

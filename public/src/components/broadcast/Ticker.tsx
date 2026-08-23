@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * A broadcast crawl: a title chip pinned to the left and the live feed scrolling
- * seamlessly beside it. The content is rendered twice and the track slides by
- * exactly half its width, so the loop is gapless; speed is derived from content
- * length so a short feed doesn't whip past. Pure CSS animation — no rAF.
+ * A broadcast crawl: an optional title chip pinned to the left and the live feed
+ * scrolling seamlessly beside it. The content is rendered twice and the track
+ * slides by exactly half its width, so the loop is gapless; speed is derived
+ * from content length so a short feed doesn't whip past. Pure CSS animation —
+ * no rAF.
  */
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
@@ -16,9 +17,11 @@ export default function Ticker({
   compact = false,
   insetLeft = 0,
   offset = 0,
+  contentInset = 0,
   theme = DEFAULT_THEME,
 }: {
-  title: string;
+  /** Title chip text; null/empty renders no chip (a bare band). */
+  title?: string | null;
   items: string[];
   /** Which edge to pin to. */
   edge: "top" | "bottom";
@@ -30,6 +33,12 @@ export default function Ticker({
   /** Push the band this far in from its pinned edge — the top crawl uses it to
    *  slide down beneath the masthead banner instead of hugging the very top. */
   offset?: number;
+  /** Clip the crawl TEXT to start this far into the band while the band itself
+   *  still spans full width — the top crawl uses it (chip-less) to run behind
+   *  the masthead banner, with the text sliding out from behind the graphic's
+   *  right edge instead of a hard chip terminus. Measured from the band's own
+   *  left edge; meant for the chip-less mode. */
+  contentInset?: number;
   theme?: BroadcastTheme;
 }) {
   const line = items.length
@@ -64,30 +73,40 @@ export default function Ticker({
       }}
     >
       <style>{"@keyframes bcast-crawl{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
-      {/* Title chip */}
+      {/* Title chip (optional) */}
+      {title ? (
+        <div
+          style={{
+            flex: "0 0 auto",
+            zIndex: 2,
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            padding: compact ? "0 8px" : "0 12px",
+            fontSize: compact ? 9.9 : 12.1,
+            fontWeight: 800,
+            letterSpacing: 1.4,
+            color: "#fff",
+            background: theme.accent,
+            clipPath: "polygon(0 0, 100% 0, calc(100% - 10px) 100%, 0 100%)",
+            paddingRight: compact ? 16 : 20,
+            textTransform: "uppercase",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {title}
+        </div>
+      ) : null}
+      {/* Crawl */}
       <div
         style={{
-          flex: "0 0 auto",
-          zIndex: 2,
+          position: "relative",
+          flex: 1,
+          overflow: "hidden",
           height: "100%",
-          display: "flex",
-          alignItems: "center",
-          padding: compact ? "0 8px" : "0 12px",
-          fontSize: compact ? 9.9 : 12.1,
-          fontWeight: 800,
-          letterSpacing: 1.4,
-          color: "#fff",
-          background: theme.accent,
-          clipPath: "polygon(0 0, 100% 0, calc(100% - 10px) 100%, 0 100%)",
-          paddingRight: compact ? 16 : 20,
-          textTransform: "uppercase",
-          whiteSpace: "nowrap",
+          marginLeft: contentInset,
         }}
       >
-        {title}
-      </div>
-      {/* Crawl */}
-      <div style={{ position: "relative", flex: 1, overflow: "hidden", height: "100%" }}>
         <div
           style={{
             position: "absolute",

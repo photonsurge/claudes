@@ -708,7 +708,11 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       }
       const dt = (Date.now() - epoch) / 1000;
       // Creep closer, capped so a long hold doesn't bore through the surface.
-      let zoom = anchorZoom + Math.min(zoomDrift * dt, MAX_PUSH_IN);
+      // A channel breathe OWNS the zoom instead: the push-in is skipped so the
+      // in-and-back sway is visible from the first second of the hold (a
+      // push-in needs ~27s to top out — longer than many director holds).
+      const pushIn = idle && idle.idleBreathe > 0 ? 0 : zoomDrift;
+      let zoom = anchorZoom + Math.min(pushIn * dt, MAX_PUSH_IN);
       let longitude = anchorLng + spinSpeed * dt;
       let latitude = anchorLat;
       if (idle) {
@@ -716,10 +720,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         // raised-cosine zoom breathe, deterministic in dt so /control and
         // /watch drift in phase. Pass the LIVE zoom (incl. any push-in) so the
         // orbit pan cap tightens as a detail shot creeps closer, exactly like
-        // the director orbit below. The push clock lets the breathe hand off
-        // from a saturated push-in. Same fly-in grace, additive on both axes.
+        // the director orbit below. Same fly-in grace, additive on both axes.
         const ot = Math.max(0, dt - flightSec);
-        const o = idleMotionOffsets(idle, ot, { zoom, lat: anchorLat }, { zoomDrift, dt });
+        const o = idleMotionOffsets(idle, ot, { zoom, lat: anchorLat });
         longitude += o.dLng;
         latitude = Math.max(-85, Math.min(85, latitude + o.dLat));
         zoom += o.dZoom;
