@@ -3,9 +3,10 @@
 /**
  * Per-channel brand editor: a base theme preset (broadcastTheme) plus overrides
  * (themeOverrides) for the identity fields — name, tagline, accent, panel glass,
- * ticker/meter titles. Any field left blank inherits the preset. DELTA-patched
- * so it applies live on /watch/:id. A live preview mirrors getBroadcastTheme() so
- * the operator sees the resolved brand as they type.
+ * ticker/meter titles. Any field left blank inherits the preset. STAGED as a
+ * DELTA patch (useSceneDraft) — the page's Save bar applies it to /watch/:id. A
+ * live preview mirrors getBroadcastTheme() so the operator sees the resolved
+ * brand as they type, before saving.
  */
 import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
@@ -23,7 +24,8 @@ import {
   THEME_OPTIONS,
   getBroadcastTheme,
 } from "../../broadcast/config";
-import { fetchSceneState, useScenePatcher } from "../../../lib/scenes";
+import { fetchSceneState } from "../../../lib/scenes";
+import { useSceneDraft } from "./SceneDraft";
 
 const FIELDS: { key: (typeof THEME_OVERRIDE_KEYS)[number]; label: string; color?: boolean; advanced?: boolean }[] = [
   { key: "name", label: "Brand name" },
@@ -37,7 +39,7 @@ const FIELDS: { key: (typeof THEME_OVERRIDE_KEYS)[number]; label: string; color?
 ];
 
 export default function ThemeSettings({ sceneId }: { sceneId: string }) {
-  const patch = useScenePatcher();
+  const { stage: patch, epoch } = useSceneDraft();
   const [state, setState] = useState<ControlState | null>(null);
 
   useEffect(() => {
@@ -48,7 +50,7 @@ export default function ThemeSettings({ sceneId }: { sceneId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [sceneId]);
+  }, [sceneId, epoch]);
 
   if (!state) {
     return (

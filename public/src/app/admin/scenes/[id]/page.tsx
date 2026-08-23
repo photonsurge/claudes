@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * /admin/scenes/:id — per-channel settings. Today this is the on-air layout
- * (which chrome widgets show), edited live via a DELTA patch so it reflects on
- * /watch/:id without clobbering the operator's live state. Room to grow into
- * other per-channel config (theme, destination) alongside the widget form.
+ * /admin/scenes/:id — per-channel settings. The cards STAGE their edits into a
+ * shared SceneDraftProvider; nothing reaches the channel until the sticky Save
+ * bar applies the accumulated DELTA patch — which still can't clobber the
+ * operator's live state. Room to grow into other per-channel config
+ * (destination, …) alongside the current cards.
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -17,6 +18,7 @@ import { listScenes } from "../../../../lib/scenes";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 import CameraSettings from "../../../../components/admin/scenes/CameraSettings";
 import ChannelSettings from "../../../../components/admin/scenes/ChannelSettings";
+import SceneDraftProvider from "../../../../components/admin/scenes/SceneDraft";
 import SlidesSettings from "../../../../components/admin/scenes/SlidesSettings";
 import ReportSettings from "../../../../components/admin/scenes/ReportSettings";
 import ThemeSettings from "../../../../components/admin/scenes/ThemeSettings";
@@ -38,7 +40,7 @@ export default function ChannelSettingsPage() {
     <AdminPageShell
       title={`Channel: ${name}`}
       crumbs={[{ href: "/admin/scenes", label: "Channels" }, { label: name }]}
-      description="On-air widgets, camera motion, the bottom-left slide deck and the channel's brand. Changes apply live to its /watch output."
+      description="On-air widgets, camera motion, the bottom-left slide deck and the channel's brand. Changes stay staged here until you press Save, then apply live to its /watch output."
       maxWidth={760}
       actions={
         <>
@@ -51,13 +53,15 @@ export default function ChannelSettingsPage() {
         </>
       }
     >
-      <Stack spacing={2}>
-        <ChannelSettings sceneId={sceneId} />
-        <CameraSettings sceneId={sceneId} />
-        <ReportSettings sceneId={sceneId} />
-        <SlidesSettings sceneId={sceneId} />
-        <ThemeSettings sceneId={sceneId} />
-      </Stack>
+      <SceneDraftProvider sceneId={sceneId}>
+        <Stack spacing={2}>
+          <ChannelSettings sceneId={sceneId} />
+          <CameraSettings sceneId={sceneId} />
+          <ReportSettings sceneId={sceneId} />
+          <SlidesSettings sceneId={sceneId} />
+          <ThemeSettings sceneId={sceneId} />
+        </Stack>
+      </SceneDraftProvider>
     </AdminPageShell>
   );
 }

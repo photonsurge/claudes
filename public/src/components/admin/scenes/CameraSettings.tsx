@@ -4,10 +4,10 @@
  * Per-channel camera-motion editor: the idle drift that keeps a camera parked
  * on a location alive — a slow orbit round the point and/or a gentle zoom
  * breathe — with how far and how fast it moves. All of it rides ControlState
- * (idleMotion / idleOrbit / idleBreathe / idlePeriodS) and is DELTA-patched
- * (useScenePatcher) so it applies live on /watch/:id without clobbering the
- * operator's full state. Every change restamps spinEpoch (when no other motion
- * reads it) so the drift restarts smoothly from the anchor.
+ * (idleMotion / idleOrbit / idleBreathe / idlePeriodS) and is STAGED as a DELTA
+ * patch (useSceneDraft) — the page's Save bar applies it to /watch/:id without
+ * clobbering the operator's full state. Changes restamp spinEpoch (when no other
+ * motion reads it; re-restamped at Save) so the drift restarts from the anchor.
  */
 import { useEffect, useState } from "react";
 import Alert from "@mui/material/Alert";
@@ -19,7 +19,8 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { type ControlState } from "@photonsurge/shared/control";
-import { fetchSceneState, useScenePatcher } from "../../../lib/scenes";
+import { fetchSceneState } from "../../../lib/scenes";
+import { useSceneDraft } from "./SceneDraft";
 
 /** Orbit pan radius presets (degrees round the anchor; 0 = no orbit). The live
  *  pan is additionally capped by zoom so the subject can never leave frame. */
@@ -53,7 +54,7 @@ const withCurrent = (presets: { v: number; label: string }[], v: number, unit: s
   presets.some((p) => p.v === v) ? presets : [...presets, { v, label: `${v}${unit}` }];
 
 export default function CameraSettings({ sceneId }: { sceneId: string }) {
-  const patch = useScenePatcher();
+  const { stage: patch, epoch } = useSceneDraft();
   const [state, setState] = useState<ControlState | null>(null);
 
   useEffect(() => {
@@ -64,7 +65,7 @@ export default function CameraSettings({ sceneId }: { sceneId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [sceneId]);
+  }, [sceneId, epoch]);
 
   const apply = (over: Partial<ControlState>) => {
     if (!state) return;

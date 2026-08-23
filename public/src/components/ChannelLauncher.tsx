@@ -13,6 +13,7 @@ import { listScenes } from "../lib/scenes";
 
 const controlHref = (id: string) => (id === MAIN_SCENE_ID ? "/control" : `/control?scene=${id}`);
 const watchHref = (id: string) => `/watch/${id}`;
+const settingsHref = (id: string) => `/admin/scenes/${id}`;
 
 export default function ChannelLauncher() {
   const [scenes, setScenes] = useState<SceneMeta[] | null>(null);
@@ -70,6 +71,9 @@ export default function ChannelLauncher() {
                 </Link>
                 <Link href={watchHref(s.id)} target="_blank" rel="noreferrer" style={{ color: "#6b93e0", textDecoration: "none" }}>
                   Watch ↗
+                </Link>
+                <Link href={settingsHref(s.id)} style={{ color: "#6b93e0", textDecoration: "none" }}>
+                  Settings
                 </Link>
               </div>
             </div>

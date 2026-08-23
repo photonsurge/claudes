@@ -4,7 +4,8 @@
  * Per-channel WORLD REPORT editor — which top-right report slides show, in what
  * order. This is how one globe becomes several themed channels: the focus
  * presets ("Weather focus", "Quakes & volcanoes") set the off-list in one click.
- * DELTA-patched (reportOff / reportOrder) so it applies live on /watch/:id.
+ * STAGED as a DELTA patch (reportOff / reportOrder) — the page's Save bar
+ * applies it to /watch/:id.
  */
 import { useEffect, useMemo, useState } from "react";
 import Box from "@mui/material/Box";
@@ -25,13 +26,14 @@ import {
 } from "@photonsurge/shared/broadcast-report";
 import type { HazardType } from "@photonsurge/shared/alerts/hazard";
 import { type ControlState } from "@photonsurge/shared/control";
-import { fetchSceneState, useScenePatcher } from "../../../lib/scenes";
+import { fetchSceneState } from "../../../lib/scenes";
+import { useSceneDraft } from "./SceneDraft";
 import AlertHazardChips from "../../AlertHazardChips";
 
 const REPORT_BY_ID = new Map(BROADCAST_REPORT_SLIDES.map((s) => [s.id, s]));
 
 export default function ReportSettings({ sceneId }: { sceneId: string }) {
-  const patch = useScenePatcher();
+  const { stage: patch, epoch } = useSceneDraft();
   const [state, setState] = useState<ControlState | null>(null);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export default function ReportSettings({ sceneId }: { sceneId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [sceneId]);
+  }, [sceneId, epoch]);
 
   const off = useMemo(() => new Set<string>(state?.reportOff ?? []), [state]);
 

@@ -14,6 +14,8 @@ jest.mock("../../../../lib/scenes", () => ({
     { id: "default", name: "Main" },
     { id: "wind", name: "Atlantic Wind" },
   ]),
+  // The SceneDraftProvider wrapping the cards needs a patcher for its Save bar.
+  useScenePatcher: () => jest.fn(),
 }));
 
 jest.mock("../../../../components/admin/scenes/ChannelSettings", () => ({

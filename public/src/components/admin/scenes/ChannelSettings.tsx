@@ -3,9 +3,9 @@
 /**
  * Per-channel on-air layout form: a grouped checklist of the optional broadcast
  * chrome widgets (top-right stack, gauges, legends, …). Each toggle adds/removes
- * a widget id from this channel's `ControlState.widgetsOff` off-list and emits a
- * DELTA patch (via useScenePatcher) so the change shows live on /watch/:id and
- * persists — without clobbering whatever the operator is driving live.
+ * a widget id from this channel's `ControlState.widgetsOff` off-list and STAGES
+ * a DELTA patch (via useSceneDraft) — the page's Save bar applies it to
+ * /watch/:id, without clobbering whatever the operator is driving live.
  */
 import { useEffect, useMemo, useState } from "react";
 import Alert from "@mui/material/Alert";
@@ -25,10 +25,11 @@ import {
   type WidgetId,
 } from "@photonsurge/shared/broadcast-widgets";
 import { type ControlState } from "@photonsurge/shared/control";
-import { fetchSceneState, useScenePatcher } from "../../../lib/scenes";
+import { fetchSceneState } from "../../../lib/scenes";
+import { useSceneDraft } from "./SceneDraft";
 
 export default function ChannelSettings({ sceneId }: { sceneId: string }) {
-  const patch = useScenePatcher();
+  const { stage: patch, epoch } = useSceneDraft();
   const [state, setState] = useState<ControlState | null>(null);
 
   useEffect(() => {
@@ -39,7 +40,7 @@ export default function ChannelSettings({ sceneId }: { sceneId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [sceneId]);
+  }, [sceneId, epoch]);
 
   const off = useMemo(() => new Set<string>(state?.widgetsOff ?? []), [state]);
 

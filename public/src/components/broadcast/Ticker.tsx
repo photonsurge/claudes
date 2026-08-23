@@ -14,6 +14,7 @@ export default function Ticker({
   edge,
   height = 30,
   compact = false,
+  insetLeft = 0,
   theme = DEFAULT_THEME,
 }: {
   title: string;
@@ -22,6 +23,9 @@ export default function Ticker({
   edge: "top" | "bottom";
   height?: number;
   compact?: boolean;
+  /** Start the band this far from the left edge — the top crawl uses it to
+   *  begin AFTER the masthead brand block instead of running underneath it. */
+  insetLeft?: number;
   theme?: BroadcastTheme;
 }) {
   const line = items.length
@@ -35,7 +39,7 @@ export default function Ticker({
     <div
       style={{
         position: "absolute",
-        left: 0,
+        left: insetLeft,
         right: 0,
         [edge]: 0,
         height,

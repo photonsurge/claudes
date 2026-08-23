@@ -3,9 +3,9 @@
 /**
  * Per-channel bottom-left deck editor: which mode-deck slides show, their order,
  * and the rotation dwell. All three ride ControlState (slidesOff / slideOrder /
- * slideHoldMs) and are DELTA-patched (useScenePatcher) so they apply live on
- * /watch/:id without clobbering the operator's full state. The pinned `onair`
- * lede is shown locked — it can't be hidden or moved.
+ * slideHoldMs) and are STAGED as DELTA patches (useSceneDraft) — the page's
+ * Save bar applies them to /watch/:id without clobbering the operator's full
+ * state. The pinned `onair` lede is shown locked — it can't be hidden or moved.
  */
 import { useEffect, useMemo, useState } from "react";
 import Alert from "@mui/material/Alert";
@@ -30,7 +30,8 @@ import {
 import { POINT_VARS, type PointVar } from "@photonsurge/shared/point-vars";
 import { type ControlState } from "@photonsurge/shared/control";
 import FormControlLabel from "@mui/material/FormControlLabel";
-import { fetchSceneState, useScenePatcher } from "../../../lib/scenes";
+import { fetchSceneState } from "../../../lib/scenes";
+import { useSceneDraft } from "./SceneDraft";
 
 const SLIDE_BY_ID = new Map(BROADCAST_SLIDES.map((s) => [s.id, s]));
 
@@ -45,7 +46,7 @@ const HOLD_PRESETS: { ms: number; label: string }[] = [
 ];
 
 export default function SlidesSettings({ sceneId }: { sceneId: string }) {
-  const patch = useScenePatcher();
+  const { stage: patch, epoch } = useSceneDraft();
   const [state, setState] = useState<ControlState | null>(null);
 
   useEffect(() => {
@@ -56,7 +57,7 @@ export default function SlidesSettings({ sceneId }: { sceneId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [sceneId]);
+  }, [sceneId, epoch]);
 
   const off = useMemo(() => new Set<string>(state?.slidesOff ?? []), [state]);
 

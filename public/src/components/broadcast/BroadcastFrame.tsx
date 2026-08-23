@@ -104,6 +104,14 @@ import { hasRealLocation, isTargetedEvent, KIND_COLOR, KIND_LABEL as KIND_BADGE 
 const TICKER_H = 34;
 const INSET = 30;
 const BRAND_STACK_H = 150;
+/** The masthead brand block sits at the very top-left, ABOVE the crawl, scaled
+ *  up for legibility; the top ticker starts to its right (see BRAND_INSET) so
+ *  the crawl never runs underneath the banner. */
+const BRAND_TOP = 4;
+const BRAND_SCALE = 1.25;
+/** Where the top crawl begins: just past the scaled banner's right edge
+ *  (banner is 620 design px wide at left -4 → ~771 scaled). */
+const BRAND_INSET = 780;
 
 /**
  * A "Nearest City" reticle row for a moving target (aircraft / ship) — the
@@ -773,12 +781,19 @@ export default function BroadcastFrame({
           items={ticker}
           edge="top"
           height={TICKER_H}
+          insetLeft={off.has("brand") ? 0 : BRAND_INSET}
           theme={theme}
         />
 
         {!off.has("brand") && (
           <div
-            style={{ position: "absolute", top: TICKER_H + 12, left: -4 }}
+            style={{
+              position: "absolute",
+              top: BRAND_TOP,
+              left: -4,
+              transform: `scale(${BRAND_SCALE})`,
+              transformOrigin: "left top",
+            }}
           >
             <BrandPanel theme={theme} live={directorOn} status={brandStatus} />
           </div>
@@ -790,7 +805,7 @@ export default function BroadcastFrame({
           <div
             style={{
               position: "absolute",
-              top: TICKER_H + 12 + BRAND_STACK_H,
+              top: BRAND_TOP + BRAND_STACK_H * BRAND_SCALE + 10,
               left: -4,
             }}
           >
