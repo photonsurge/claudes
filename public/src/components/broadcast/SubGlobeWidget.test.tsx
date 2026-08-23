@@ -1,5 +1,5 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
-import SubGlobePanel from "./SubGlobePanel";
+import SubGlobeWidget from "./SubGlobeWidget";
 
 // One little square continent — enough to exercise the land path end-to-end
 // without the 2MB Natural Earth fetch.
@@ -17,7 +17,7 @@ jest.mock("./subglobe-land", () => ({
   ),
 }));
 
-// jsdom has no canvas — hand the panel a recording 2d stub.
+// jsdom has no canvas — hand the widget a recording 2d stub.
 const ctxStub = () => ({
   clearRect: jest.fn(),
   createRadialGradient: jest.fn(() => ({ addColorStop: jest.fn() })),
@@ -33,7 +33,7 @@ const ctxStub = () => ({
   stroke: jest.fn(),
 });
 
-describe("SubGlobePanel", () => {
+describe("SubGlobeWidget", () => {
   let getContext: jest.SpyInstance;
   let stub: ReturnType<typeof ctxStub>;
 
@@ -48,8 +48,8 @@ describe("SubGlobePanel", () => {
     getContext.mockRestore();
   });
 
-  it("renders the locator card, paints once the land loads, and shows the readout", async () => {
-    const { unmount } = render(<SubGlobePanel center={[-149.9, -17.5]} zoom={3} color="#38bdf8" />);
+  it("renders the locator planet, paints once the land loads, and shows the readout", async () => {
+    const { unmount } = render(<SubGlobeWidget center={[-149.9, -17.5]} zoom={3} accent="#38bdf8" />);
     // Anchor readout — southern/western hemispheres formatted.
     expect(screen.getByText("17.5°S · 149.9°W")).toBeInTheDocument();
     // The land promise resolves → a real frame is painted.
@@ -60,7 +60,7 @@ describe("SubGlobePanel", () => {
 
   it("survives a lost/absent 2d context (jsdom default) without crashing", async () => {
     getContext.mockReturnValue(null as unknown as RenderingContext);
-    render(<SubGlobePanel center={[0, 20]} zoom={2.5} />);
+    render(<SubGlobeWidget center={[0, 20]} zoom={2.5} />);
     expect(screen.getByText("20.0°N · 0.0°E")).toBeInTheDocument();
     // Flush the mocked land promise inside act so its setState is covered.
     await act(async () => {});

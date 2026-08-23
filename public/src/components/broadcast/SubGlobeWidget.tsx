@@ -1,29 +1,28 @@
 "use client";
 
 /**
- * "SUB-GLOBE" — the little locator planet in the left-column deck: a true
- * orthographic hemisphere centred on where the main globe is parked, with a
- * kind-accent reticle whose ring tightens as the shot pushes in.
+ * "SUB-GLOBE" — the little always-on locator planet in the BOTTOM-RIGHT
+ * corner: a true orthographic hemisphere centred on where the main globe is
+ * parked, with a kind-accent reticle whose ring tightens as the shot pushes
+ * in. BroadcastFrame paints it UNDER the bottom-right telemetry column (DOM
+ * order, no z-index games), so the syslog lines drift across its face — the
+ * planet doubles as the dark backing that makes that bare text read.
  *
  * It deliberately does NOT track the live per-frame camera (that never leaves
- * Globe.tsx's rAF loop). It follows the camera ANCHOR (`ControlState.camera`) —
- * the one field that moves exactly when the director cuts / a tour parks on a
- * new stop — and swings there along the great circle with an exponential
+ * Globe.tsx's rAF loop). It follows the camera ANCHOR (`ControlState.camera`)
+ * — the one field that moves exactly when the director cuts / a tour parks on
+ * a new stop — and swings there along the great circle with an exponential
  * chase, so a cut reads as a smooth little swing and a hold sits still. A
  * world spin is reproduced deterministically from spinSpeed/spinEpoch (the
  * same arithmetic Globe.tsx runs), so the planet slowly turns in phase with
  * the broadcast without any camera feed.
  *
  * All motion is imperative (refs + canvas + textContent) on a ~12fps interval
- * that only runs while this is the deck's active slide (DeckSlideActiveContext
- * — every slide stays mounted), so an off-screen slide costs nothing and
- * nothing here ever re-renders React per tick.
+ * — nothing here re-renders React per tick.
  */
-import { useContext, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Point } from "@photonsurge/shared/geo/simplify";
-import BroadcastCard, { DeckSlideActiveContext } from "./BroadcastCard";
-import { useBroadcastTheme } from "./theme-context";
-import type { BroadcastTheme } from "./config";
+import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { loadSubGlobeLand } from "./subglobe-land";
 import {
   angularDistanceDeg,
@@ -36,10 +35,6 @@ import {
   type SubGlobeCamera,
 } from "./subglobe-render";
 
-/** CSS square the planet paints into (card body is CARD_W − 2×20 = 380). */
-const VIEW_PX = 360;
-/** Fixed 2× backing store — crisp through the 1080p stage scale on a 4K out. */
-const CANVAS_PX = VIEW_PX * 2;
 /** ~12fps: a locator, not a game — invisible at this size, negligible CPU. */
 const TICK_MS = 80;
 /** Exponential-chase time constant: ~95% of a swing lands in ~1.3s, matching
@@ -48,14 +43,15 @@ const CHASE_TAU_MS = 450;
 /** Below this the chase snaps — avoids an endless asymptotic dribble. */
 const SETTLE_DEG = 0.05;
 
-export default function SubGlobePanel({
+export default function SubGlobeWidget({
   center,
   zoom,
   autoSpin = false,
   spinSpeed = 0,
   spinEpoch = 0,
-  color,
-  theme: propTheme,
+  accent,
+  theme = DEFAULT_THEME,
+  size = 300,
 }: {
   /** Camera anchor (ControlState.camera.center) — [lng, lat]. */
   center: [number, number];
@@ -63,22 +59,24 @@ export default function SubGlobePanel({
   autoSpin?: boolean;
   spinSpeed?: number;
   spinEpoch?: number;
-  /** On-air kind accent — the reticle colour. */
-  color?: string;
+  /** On-air kind accent — the reticle colour (defaults to the theme accent). */
+  accent?: string;
   theme?: BroadcastTheme;
+  /** Planet diameter in 1080p design px. */
+  size?: number;
 }) {
-  const theme = useBroadcastTheme(propTheme);
-  const active = useContext(DeckSlideActiveContext);
-  const accent = color ?? theme.accent;
+  const reticle = accent ?? theme.accent;
+  // Fixed 2× backing store — crisp through the 1080p stage scale on a 4K out.
+  const canvasPx = size * 2;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const readoutRef = useRef<HTMLDivElement | null>(null);
   const [land, setLand] = useState<readonly Point[][] | null>(null);
 
-  // Where the sub-globe is currently pointed (imperative — never React state).
+  // Where the planet is currently pointed (imperative — never React state).
   const shownRef = useRef<SubGlobeCamera>({ lng: wrapLng(center[0]), lat: center[1], zoom });
   // Fresh props for the tick without re-subscribing the interval.
-  const propsRef = useRef({ center, zoom, autoSpin, spinSpeed, spinEpoch, accent, land });
-  propsRef.current = { center, zoom, autoSpin, spinSpeed, spinEpoch, accent, land };
+  const propsRef = useRef({ center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land });
+  propsRef.current = { center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land };
 
   useEffect(() => {
     let alive = true;
@@ -90,26 +88,25 @@ export default function SubGlobePanel({
     };
   }, []);
 
-  // One immediate paint per (land, accent) so the slide is never blank while it
-  // fades in — the tick loop below only runs while the slide is on air.
+  // One immediate paint per (land, accent) so the corner is never blank
+  // between the mount and the first tick.
   useEffect(() => {
     paint();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [land, accent]);
+  }, [land, reticle]);
 
   function paint() {
     const canvas = canvasRef.current;
     const g = canvas?.getContext("2d");
-    if (!canvas || !g) return; // jsdom / lost context — card still renders
+    if (!canvas || !g) return; // jsdom / lost context — the readout still renders
     const p = propsRef.current;
-    drawSubGlobe(g, CANVAS_PX, shownRef.current, p.land ?? [], p.accent);
+    drawSubGlobe(g, canvasPx, shownRef.current, p.land ?? [], p.reticle);
     if (readoutRef.current) {
       readoutRef.current.textContent = formatLonLat(shownRef.current.lng, shownRef.current.lat);
     }
   }
 
   useEffect(() => {
-    if (!active) return;
     let last = Date.now();
     const tick = () => {
       const now = Date.now();
@@ -142,30 +139,30 @@ export default function SubGlobePanel({
     tick();
     return () => clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
+  }, []);
 
   return (
-    <BroadcastCard eyebrow="SUB-GLOBE" accent={accent} theme={theme}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-        <canvas
-          ref={canvasRef}
-          width={CANVAS_PX}
-          height={CANVAS_PX}
-          style={{ width: VIEW_PX, height: VIEW_PX, display: "block" }}
-        />
-        <div
-          ref={readoutRef}
-          style={{
-            fontSize: 13.5,
-            fontWeight: 700,
-            letterSpacing: 1.6,
-            color: theme.mutedColor,
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {formatLonLat(shownRef.current.lng, shownRef.current.lat)}
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, pointerEvents: "none" }}>
+      <div
+        ref={readoutRef}
+        style={{
+          fontSize: 12.5,
+          fontWeight: 700,
+          letterSpacing: 1.6,
+          color: theme.mutedColor,
+          fontVariantNumeric: "tabular-nums",
+          // Bare text over the map, like the syslog lines beneath it.
+          textShadow: "0 1px 3px rgba(0,0,0,0.9)",
+        }}
+      >
+        {formatLonLat(shownRef.current.lng, shownRef.current.lat)}
       </div>
-    </BroadcastCard>
+      <canvas
+        ref={canvasRef}
+        width={canvasPx}
+        height={canvasPx}
+        style={{ width: size, height: size, display: "block" }}
+      />
+    </div>
   );
 }

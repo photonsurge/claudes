@@ -47,22 +47,6 @@ describe("modeSlides", () => {
     expect(ids(seg({ kind: "point" }), ctx())).toEqual(["onair"]);
   });
 
-  it("the SUB-GLOBE locator closes every deck when the live camera is passed", () => {
-    const camera = { center: [10, 20] as [number, number], zoom: 3 };
-    // Rides last on a plain shot AND a framed spotlight — same anchor feed.
-    expect(ids(seg({ kind: "point" }), ctx({ camera }))).toEqual(["onair", "subglobe"]);
-    const bbox: [number, number, number, number] = [-1, -1, 1, 1];
-    expect(ids(seg({ kind: "country" }), ctx({ camera, wideCitiesBbox: bbox }))).toEqual([
-      "onair",
-      "topcities",
-      "forecast",
-      "subglobe",
-    ]);
-    // A channel hides it like any slide; no camera (previews/tests) → self-hides.
-    expect(ids(seg({ kind: "point" }), ctx({ camera, slidesOff: ["subglobe"] }))).toEqual(["onair"]);
-    expect(ids(seg({ kind: "point" }), ctx())).toEqual(["onair"]);
-  });
-
   it("a country spotlight folds its place round-up in as the second slide when it has one", () => {
     const bbox: [number, number, number, number] = [-1, -1, 1, 1];
     const roundup = {

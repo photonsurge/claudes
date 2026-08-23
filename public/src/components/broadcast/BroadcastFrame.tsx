@@ -94,6 +94,7 @@ import EventOverlay, { EventTrackingLabel, trackingBlockHeight } from "./EventOv
 import { CARD_H } from "./BroadcastCard";
 import { flagEmoji } from "./RegionCountryPanel";
 import SyslogFeed from "./SyslogFeed";
+import SubGlobeWidget from "./SubGlobeWidget";
 import UpNextPanel from "./UpNextPanel";
 import BuildInfoTag from "./BuildInfoTag";
 import SlideDeck from "./SlideDeck";
@@ -573,14 +574,6 @@ export default function BroadcastFrame({
         regionCountries,
         regionNearTerm,
         theme,
-        // The locator sub-globe follows the anchor every cut/tour stop patches
-        // (state.camera — "the one place that actually tracks the live stop")
-        // and re-derives a world spin from the same deterministic params
-        // Globe.tsx uses, so it needs no per-frame camera feed.
-        camera: state.camera,
-        autoSpin: state.autoSpin,
-        spinSpeed: state.spinSpeed,
-        spinEpoch: state.spinEpoch,
         slidesOff: state.slidesOff,
         slideOrder: state.slideOrder,
         pointVarsOff: state.pointVarsOff,
@@ -961,6 +954,28 @@ export default function BroadcastFrame({
             <LiveAlertPanel alerts={alerts} cities={cities} theme={theme} />
           )}
         </div>
+
+        {/* The little locator sub-globe — rendered BEFORE the bottom-right
+            telemetry column so it paints UNDER it (DOM order, same stacking
+            context): the syslog lines drift across the planet's face. It
+            follows the camera anchor every cut/tour stop patches
+            (state.camera — "the one place that actually tracks the live
+            stop") and re-derives a world spin from the same deterministic
+            spinSpeed/spinEpoch params Globe.tsx uses, so it needs no
+            per-frame camera feed. */}
+        {!off.has("subglobe") && (
+          <div style={{ position: "absolute", bottom: TICKER_H + INSET + 24, right: INSET }}>
+            <SubGlobeWidget
+              center={state.camera.center}
+              zoom={state.camera.zoom}
+              autoSpin={state.autoSpin}
+              spinSpeed={state.spinSpeed}
+              spinEpoch={state.spinEpoch}
+              accent={onAirSegment ? (KIND_COLOR[onAirSegment.kind] ?? theme.accent) : theme.accent}
+              theme={theme}
+            />
+          </div>
+        )}
 
         {/* Bottom-right column: UP NEXT hint, the SYSLOG feed, and the build
             stamp anchored beneath both. column-reverse anchors the first child

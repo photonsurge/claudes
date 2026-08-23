@@ -27,7 +27,6 @@ describe("broadcast-slides catalog", () => {
 
   it("recognises catalog ids and rejects anything else", () => {
     expect(isSlideId("forecast")).toBe(true);
-    expect(isSlideId("subglobe")).toBe(true);
     expect(isSlideId("nope")).toBe(false);
     expect(isSlideId(7)).toBe(false);
   });

@@ -31,6 +31,7 @@ export type WidgetId =
   | "kpIndex"
   | "upNext"
   | "syslog"
+  | "subglobe"
   | "buildInfo";
 
 export interface BroadcastWidget {
@@ -63,7 +64,8 @@ export const BROADCAST_WIDGETS: readonly BroadcastWidget[] = [
   // Top-left — identity + geomagnetic readout.
   { id: "brand", zone: "top-left", label: "Brand / LIVE", hint: "Channel identity + on-air light" },
   { id: "kpIndex", zone: "top-left", label: "Kp index", hint: "Geomagnetic activity readout (with aurora)" },
-  // Bottom-right — operator / telemetry feeds.
+  // Bottom-right — operator / telemetry feeds over the locator planet.
+  { id: "subglobe", zone: "bottom-right", label: "Sub-globe locator", hint: "Little planet tracking the on-air camera" },
   { id: "upNext", zone: "bottom-right", label: "Up next", hint: "Director's next-shot hint" },
   { id: "syslog", zone: "bottom-right", label: "Syslog", hint: "Live system-event ticker" },
   { id: "buildInfo", zone: "bottom-right", label: "Build stamp", hint: "Version / build tag" },
