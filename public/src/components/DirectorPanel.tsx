@@ -6,9 +6,10 @@
  * visible at the top regardless of setup state. Below that, the setup form is
  * split into two tabs over ONE shared draft:
  *  - "Director settings": how the show runs — pacing/threshold knobs
- *    (DirectorTuning), which kinds air and their hold durations (DirectorHolds),
- *    the country/area spotlight catalogs (DirectorSpotlights), and the saved-look
- *    slide library per kind (DirectorSlides).
+ *    (DirectorTuning), hold durations for the enabled kinds (DirectorHolds),
+ *    and the saved-look slide library per kind (DirectorSlides). WHICH kinds
+ *    air and the country/area spotlight favourites moved to the channel's
+ *    admin page (/admin/scenes/:id, DirectorSettings card).
  *  - "Map/View settings": the basemap looks each touring kind cycles through
  *    (DirectorMapTypes).
  *
@@ -37,7 +38,6 @@ import DirectorRecentlyAired from "./DirectorRecentlyAired";
 import DirectorHolds from "./DirectorHolds";
 import DirectorTuning from "./DirectorTuning";
 import DirectorMapTypes from "./DirectorMapTypes";
-import DirectorSpotlights from "./DirectorSpotlights";
 import DirectorSlides from "./DirectorSlides";
 import { box } from "./panelBox";
 
@@ -139,8 +139,7 @@ export default function DirectorPanel({
           {activeTab === "director" ? (
             <>
               <DirectorTuning config={config} update={edit} />
-              <DirectorHolds config={config} update={edit} />
-              <DirectorSpotlights config={config} update={edit} />
+              <DirectorHolds sceneId={sceneId} config={config} update={edit} />
               <DirectorSlides config={config} update={edit} liveState={liveState} applyLive={applyLive} />
             </>
           ) : (

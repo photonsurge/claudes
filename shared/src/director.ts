@@ -403,6 +403,12 @@ export interface DirectorConfig {
   /** Which kinds are eligible to be scheduled. */
   kinds: Record<SegmentKind, boolean>;
   /**
+   * How often each enabled kind airs relative to the others — a multiplier on
+   * the director's random kind pick (absent kind = 1). Clamped to 0.1–10 so a
+   * weight can bias the rotation but never starve or monopolise it.
+   */
+  kindWeights: Partial<Record<SegmentKind, number>>;
+  /**
    * Favourite country ids (see COUNTRY_SHOTS) the `country` kind rotates
    * through — the operator's "channels we cover" list. Catalog-ordered.
    */
@@ -1023,6 +1029,7 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
     // uploaded some). Opt-in, like a paid feature should be.
     ad: false,
   },
+  kindWeights: {},
   countries: DEFAULT_DIRECTOR_COUNTRIES,
   regions: DEFAULT_DIRECTOR_REGIONS,
   minQuakeMag: 4.5,
@@ -1265,6 +1272,29 @@ function mergeActiveSlideId(
 }
 
 /**
+ * Merge a partial (untrusted) kind-weight map onto a base — unknown kinds
+ * dropped, non-finite values ignored, weights clamped to 0.1–10. A weight of
+ * exactly 1 is elided back to "absent" so the stored map stays sparse.
+ */
+function mergeKindWeights(
+  base: Partial<Record<SegmentKind, number>>,
+  patch: Partial<Record<SegmentKind, number>> | undefined,
+): Partial<Record<SegmentKind, number>> {
+  const src = patch && typeof patch === "object" ? patch : undefined;
+  const out = { ...(base ?? {}) };
+  if (src) {
+    for (const k of SEGMENT_KINDS) {
+      const v = src[k];
+      if (typeof v !== "number" || !Number.isFinite(v)) continue;
+      const clamped = Math.min(10, Math.max(0.1, v));
+      if (clamped === 1) delete out[k];
+      else out[k] = clamped;
+    }
+  }
+  return out;
+}
+
+/**
  * Merge a partial (possibly untrusted, from HTTP) director-config patch onto a
  * base. Pure — used by the API route and unit-tested. Mirrors mergeControlState.
  */
@@ -1294,6 +1324,7 @@ export function mergeDirectorConfig(
     ),
     transitionSeconds: Math.max(0.5, num(patch.transitionSeconds, base.transitionSeconds)),
     kinds,
+    kindWeights: mergeKindWeights(base.kindWeights, patch.kindWeights),
     countries: sanitizeDirectorCountries(patch.countries) ?? base.countries,
     regions: sanitizeDirectorRegions(patch.regions) ?? base.regions,
     minQuakeMag: num(patch.minQuakeMag, base.minQuakeMag),

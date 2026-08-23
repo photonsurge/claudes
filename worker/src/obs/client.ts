@@ -228,7 +228,9 @@ export async function provisionBrowserScene(
     const video = await obs.call("GetVideoSettings");
     const width = Number(video.baseWidth) || 1920;
     const height = Number(video.baseHeight) || 1080;
-    const inputSettings = { url, width, height };
+    // reroute_audio = the "Control audio via OBS" checkbox, so the page's audio
+    // bed reaches the stream mix instead of playing on the encoder host.
+    const inputSettings = { url, width, height, reroute_audio: true };
 
     const { scenes } = await obs.call("GetSceneList");
     if (!(scenes as { sceneName: string }[]).some((s) => s.sceneName === sceneName)) {

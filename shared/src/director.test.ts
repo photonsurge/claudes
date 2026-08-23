@@ -215,6 +215,20 @@ describe("mergeDirectorConfig", () => {
     expect(mergeDirectorConfig(base, {}).countries).toEqual(base.countries);
   });
 
+  it("sanitizes kindWeights: clamps to 0.1–10, drops unknown kinds, elides ×1 back to sparse", () => {
+    const merged = mergeDirectorConfig(base, {
+      kindWeights: { country: 50, ship: 0.01, storm: 2, bogus: 3, quake: "x" } as any,
+    });
+    expect(merged.kindWeights).toEqual({ country: 10, ship: 0.1, storm: 2 });
+    // Setting a kind back to 1 removes it from the sparse map.
+    expect(mergeDirectorConfig(merged, { kindWeights: { storm: 1 } }).kindWeights).toEqual({
+      country: 10,
+      ship: 0.1,
+    });
+    // Absent patch keeps the base map.
+    expect(mergeDirectorConfig(merged, {}).kindWeights).toEqual(merged.kindWeights);
+  });
+
   it("clamps the ad cadence to a floor of 1 and rounds it", () => {
     expect(mergeDirectorConfig(base, { adEveryNShots: 0 }).adEveryNShots).toBe(1);
     expect(mergeDirectorConfig(base, { adEveryNShots: -3 }).adEveryNShots).toBe(1);

@@ -100,6 +100,7 @@ export default function SlotsCard({
             run={runs.find((r) => r.id === slot.runId) ?? null}
             onToggle={(enabled) => run(() => onSave({ ...slot, enabled }))}
             onRestartChange={(restartEveryMs) => run(() => onSave({ ...slot, restartEveryMs }))}
+            onAnnounceChange={(announce) => run(() => onSave({ ...slot, announce }))}
             onDelete={() => run(() => onDelete(slot.id))}
           />
         ))}
@@ -126,6 +127,7 @@ function SlotRow({
   run,
   onToggle,
   onRestartChange,
+  onAnnounceChange,
   onDelete,
 }: {
   slot: StreamSlot;
@@ -133,6 +135,7 @@ function SlotRow({
   run: RunState | null;
   onToggle: (enabled: boolean) => void;
   onRestartChange: (restartEveryMs: number | null) => void;
+  onAnnounceChange: (announce: boolean) => void;
   onDelete: () => void;
 }) {
   const active = !!run && runIsActive(run.status);
@@ -169,6 +172,12 @@ function SlotRow({
         </Typography>
       )}
       <Box sx={{ flex: 1 }} />
+      <FormControlLabel
+        control={<Checkbox size="small" checked={!!slot.announce} onChange={(e) => onAnnounceChange(e.target.checked)} />}
+        label="📣"
+        title="Notify the world each time this stream (re)launches: hydra blog post + social fan-out with the watch URL"
+        sx={{ mr: 0 }}
+      />
       <TextField
         select
         size="small"
@@ -217,6 +226,7 @@ function AddSlotForm({
   const [monitorStream, setMonitorStream] = useState(false);
   const [chatEnabled, setChatEnabled] = useState(true);
   const [promoteToTicker, setPromoteToTicker] = useState(false);
+  const [announce, setAnnounce] = useState(false);
 
   const add = () => {
     onSave({
@@ -229,6 +239,7 @@ function AddSlotForm({
       restartEveryMs: restartHours ? restartHours * HOUR_MS : null,
       monitorStream,
       chat: { enabled: chatEnabled, promoteToTicker: chatEnabled && promoteToTicker },
+      announce,
       enabled: false, // created off — the switch is the go-live control
     });
     setName("");
@@ -240,6 +251,7 @@ function AddSlotForm({
     setMonitorStream(false);
     setChatEnabled(true);
     setPromoteToTicker(false);
+    setAnnounce(false);
   };
 
   return (
@@ -319,6 +331,11 @@ function AddSlotForm({
           label="→ ticker"
         />
       )}
+      <FormControlLabel
+        control={<Checkbox checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />}
+        label="📣 notify"
+        title="Notify the world each time this stream (re)launches: hydra blog post + social fan-out with the watch URL"
+      />
       <Button variant="outlined" onClick={add} disabled={!sceneId}>
         Add stream
       </Button>

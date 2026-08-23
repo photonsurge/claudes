@@ -124,6 +124,7 @@ describe("SlotsCard", () => {
     fireEvent.mouseDown(within(form).getByLabelText("restart"));
     fireEvent.click(screen.getByRole("option", { name: "24h" }));
     fireEvent.click(within(form).getByRole("checkbox", { name: "monitor" }));
+    fireEvent.click(within(form).getByRole("checkbox", { name: "📣 notify" }));
     // chat is already checked by default; only opt into ticker promotion
     fireEvent.click(within(form).getByRole("checkbox", { name: "→ ticker" }));
     fireEvent.click(screen.getByRole("button", { name: "Add stream" }));
@@ -135,6 +136,7 @@ describe("SlotsCard", () => {
         restartEveryMs: 24 * 3_600_000,
         monitorStream: true,
         chat: { enabled: true, promoteToTicker: true },
+        announce: true,
         enabled: false,
       }),
     );
@@ -158,6 +160,25 @@ describe("SlotsCard", () => {
     fireEvent.click(screen.getByRole("option", { name: "12h" }));
 
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: "s1", restartEveryMs: 12 * 3_600_000 }));
+  });
+
+  it("toggling a row's 📣 saves the announce flag on the slot", () => {
+    const onSave = jest.fn(async () => ({}));
+    render(
+      <SlotsCard
+        slots={[slot({ runId: "r1" })]}
+        scenes={SCENES}
+        encoders={ENCODERS}
+        runs={[liveRun()]}
+        onSave={onSave}
+        onDelete={jest.fn()}
+      />,
+    );
+
+    // Exact-name match: the row checkbox is "📣", the add form's is "📣 notify".
+    fireEvent.click(screen.getByRole("checkbox", { name: "📣" }));
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: "s1", announce: true }));
   });
 
   it("shows a slot's chosen channel title in its summary", () => {

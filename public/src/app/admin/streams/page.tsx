@@ -230,6 +230,7 @@ function StartRunForm({
   const [durationMin, setDurationMin] = useState(0);
   const [chatEnabled, setChatEnabled] = useState(true);
   const [promoteToTicker, setPromoteToTicker] = useState(false);
+  const [announce, setAnnounce] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -249,6 +250,7 @@ function StartRunForm({
         durationMs: durationMin > 0 ? durationMin * 60_000 : null,
         platforms: { youtube: publishing },
         chat: { enabled: chatEnabled, promoteToTicker: chatEnabled && promoteToTicker },
+        announce,
       });
       setTitle("");
       onStarted();
@@ -355,6 +357,11 @@ function StartRunForm({
             label="→ ticker"
           />
         )}
+        <FormControlLabel
+          control={<Checkbox checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />}
+          label="📣 notify"
+          title="Notify the world at go-live: publish a hydra blog post + social fan-out with the watch URL"
+        />
         <Button variant="contained" color="error" onClick={go} disabled={busy || sceneBusy}>
           {busy ? "…" : sceneBusy ? "Channel busy" : "● Go Live"}
         </Button>
@@ -396,6 +403,7 @@ function RunRow({ run, onStopped }: { run: RunState; onStopped: () => void }) {
             {run.encoderId ? ` · encoder ${run.encoderId}` : ""}
             {run.slotId ? " · constant" : ""}
             {run.chat?.enabled ? (run.chat.promoteToTicker ? " · chat→ticker" : " · chat") : ""}
+            {run.announce ? (run.announcedAt ? " · 📣 announced" : " · 📣") : ""}
             {run.needsManualObs ? " · OBS manual handoff needed" : ""}
             {run.error ? ` · ${run.error.step}: ${run.error.message}` : ""}
           </Typography>

@@ -23,12 +23,16 @@ const mockGetOrInit = jest.fn();
 const mockListScenes = jest.fn();
 const mockGetScene = jest.fn();
 const mockCreateScene = jest.fn();
+const mockGetDirectorConfig = jest.fn();
+const mockSaveDirectorConfig = jest.fn();
 jest.mock("@photonsurge/shared/db/index", () => ({
   getAppDb: async () => ({
     getOrInitBroadcastState: (...a: unknown[]) => mockGetOrInit(...a),
     listScenes: (...a: unknown[]) => mockListScenes(...a),
     getScene: (...a: unknown[]) => mockGetScene(...a),
     createScene: (...a: unknown[]) => mockCreateScene(...a),
+    getOrInitDirectorConfig: (...a: unknown[]) => mockGetDirectorConfig(...a),
+    saveDirectorConfig: (...a: unknown[]) => mockSaveDirectorConfig(...a),
   }),
 }));
 
@@ -44,6 +48,10 @@ beforeEach(() => {
   mockListScenes.mockReset().mockResolvedValue([{ id: "default", name: "Main", watchToken: "secret-token" }]);
   mockGetScene.mockReset().mockResolvedValue(null);
   mockCreateScene.mockReset();
+  mockGetDirectorConfig
+    .mockReset()
+    .mockResolvedValue({ mode: "auto", skipNonce: 7, countries: ["uk"], kinds: { storm: true } });
+  mockSaveDirectorConfig.mockReset();
 });
 
 describe("GET /api/scenes", () => {
@@ -101,5 +109,33 @@ describe("POST /api/scenes", () => {
     expect(mockGetScene).toHaveBeenCalledWith("pacific-storm");
     // copyFrom set → the main scene is never fetched as the seed source.
     expect(mockGetOrInit).not.toHaveBeenCalled();
+  });
+
+  it("clones the source's director config with mode off and skipNonce reset", async () => {
+    mockGetScene.mockImplementation(async (id: string) =>
+      id === "pacific-storm" ? { id: "pacific-storm" } : null,
+    );
+    mockCreateScene.mockResolvedValue({ id: "atlantic-wind" });
+    await post({ name: "Atlantic Wind", copyFrom: "pacific-storm" });
+
+    expect(mockGetDirectorConfig).toHaveBeenCalledWith("pacific-storm");
+    expect(mockSaveDirectorConfig).toHaveBeenCalledWith("atlantic-wind", {
+      // Content survives the clone…
+      countries: ["uk"],
+      kinds: { storm: true },
+      // …runtime fields don't: a fresh channel must never start auto-piloting.
+      mode: "off",
+      skipNonce: 0,
+    });
+  });
+
+  it("copies the main scene's director config by default", async () => {
+    mockCreateScene.mockResolvedValue({ id: "atlantic-wind" });
+    await post({ name: "Atlantic Wind" });
+    expect(mockGetDirectorConfig).toHaveBeenCalledWith("default");
+    expect(mockSaveDirectorConfig).toHaveBeenCalledWith(
+      "atlantic-wind",
+      expect.objectContaining({ mode: "off", skipNonce: 0 }),
+    );
   });
 });

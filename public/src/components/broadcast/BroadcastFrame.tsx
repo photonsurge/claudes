@@ -67,7 +67,7 @@ import {
 } from "../../lib/focus/focus-client";
 import { legendVariableFor } from "../../lib/legend";
 import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
-import { KIND_LABEL } from "../DirectorHolds";
+import { KIND_LABEL } from "../../lib/kind-labels";
 import { nearest, formatKm } from "../../lib/geo";
 import { useWorldWatch } from "../../lib/world-watch";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
@@ -707,6 +707,32 @@ export default function BroadcastFrame({
           transformOrigin: "center center",
         }}
       >
+        {/* The little locator sub-globe — the stage's FIRST child, so every
+            other piece of chrome (the top-right situation stack, the syslog /
+            UP NEXT column, the ticker) paints OVER it (DOM order, same
+            stacking context): pure backdrop, with the syslog lines drifting
+            across the planet's face. It follows the camera anchor every
+            cut/tour stop patches (state.camera — "the one place that actually
+            tracks the live stop") and re-derives a world spin from the same
+            deterministic spinSpeed/spinEpoch params Globe.tsx uses, so it
+            needs no per-frame camera feed. Ghosted and sunk past the stage
+            edge (the stage clips overflow), so the planet peeks up from
+            behind the ticker instead of sitting ON the chrome. */}
+        {!off.has("subglobe") && (
+          <div style={{ position: "absolute", bottom: -36, right: INSET, opacity: 0.7 }}>
+            <SubGlobeWidget
+              size={210}
+              center={state.camera.center}
+              zoom={state.camera.zoom}
+              autoSpin={state.autoSpin}
+              spinSpeed={state.spinSpeed}
+              spinEpoch={state.spinEpoch}
+              accent={onAirSegment ? (KIND_COLOR[onAirSegment.kind] ?? theme.accent) : theme.accent}
+              theme={theme}
+            />
+          </div>
+        )}
+
         {/* Targeted point events (storm/quake/aircraft/ship/volcano) get the
             centred reticle + lower-third, with point-history on its top-right
             and the 3-day forecast strip hung below its bottom edge — both
@@ -954,28 +980,6 @@ export default function BroadcastFrame({
             <LiveAlertPanel alerts={alerts} cities={cities} theme={theme} />
           )}
         </div>
-
-        {/* The little locator sub-globe — rendered BEFORE the bottom-right
-            telemetry column so it paints UNDER it (DOM order, same stacking
-            context): the syslog lines drift across the planet's face. It
-            follows the camera anchor every cut/tour stop patches
-            (state.camera — "the one place that actually tracks the live
-            stop") and re-derives a world spin from the same deterministic
-            spinSpeed/spinEpoch params Globe.tsx uses, so it needs no
-            per-frame camera feed. */}
-        {!off.has("subglobe") && (
-          <div style={{ position: "absolute", bottom: TICKER_H + INSET + 24, right: INSET }}>
-            <SubGlobeWidget
-              center={state.camera.center}
-              zoom={state.camera.zoom}
-              autoSpin={state.autoSpin}
-              spinSpeed={state.spinSpeed}
-              spinEpoch={state.spinEpoch}
-              accent={onAirSegment ? (KIND_COLOR[onAirSegment.kind] ?? theme.accent) : theme.accent}
-              theme={theme}
-            />
-          </div>
-        )}
 
         {/* Bottom-right column: UP NEXT hint, the SYSLOG feed, and the build
             stamp anchored beneath both. column-reverse anchors the first child

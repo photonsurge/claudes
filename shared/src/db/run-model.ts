@@ -83,6 +83,8 @@ const RunSchema = new mongoose.Schema<iRunModel>(
       enabled: { type: Boolean, required: false, default: false },
       promoteToTicker: { type: Boolean, required: false, default: false },
     },
+    announce: { type: Boolean, required: false, default: false },
+    announcedAt: { type: Number, required: false, default: null },
     error: {
       step: { type: String, required: false },
       message: { type: String, required: false },

@@ -46,6 +46,10 @@ jest.mock("../../../../components/admin/scenes/AboutCardSettings", () => ({
   __esModule: true,
   default: ({ sceneId }: { sceneId: string }) => <div data-testid="about">about:{sceneId}</div>,
 }));
+jest.mock("../../../../components/admin/scenes/DirectorSettings", () => ({
+  __esModule: true,
+  default: ({ sceneId }: { sceneId: string }) => <div data-testid="director">director:{sceneId}</div>,
+}));
 
 describe("ChannelSettingsPage", () => {
   it("renders the form for a named channel with ?scene= links", async () => {
@@ -59,6 +63,7 @@ describe("ChannelSettingsPage", () => {
     expect(screen.getByText("about:wind")).toBeInTheDocument();
     expect(screen.getByText("audio:wind")).toBeInTheDocument();
     expect(screen.getByText("theme:wind")).toBeInTheDocument();
+    expect(screen.getByText("director:wind")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Control" })).toHaveAttribute("href", "/control?scene=wind");
     expect(screen.getByRole("link", { name: "Watch ↗" })).toHaveAttribute("href", "/watch/wind");
     // Title resolves to the channel's display name once listScenes loads.

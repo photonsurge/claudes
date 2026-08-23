@@ -24,12 +24,14 @@ jest.mock("@photonsurge/shared/utill/session", () => ({
 const mockGetOrInit = jest.fn();
 const mockGetScene = jest.fn();
 const mockDeleteScene = jest.fn();
+const mockDeleteDirectorConfig = jest.fn();
 const mockUpsertByID = jest.fn();
 jest.mock("@photonsurge/shared/db/index", () => ({
   getAppDb: async () => ({
     getOrInitBroadcastState: (...a: unknown[]) => mockGetOrInit(...a),
     getScene: (...a: unknown[]) => mockGetScene(...a),
     deleteScene: (...a: unknown[]) => mockDeleteScene(...a),
+    deleteDirectorConfig: (...a: unknown[]) => mockDeleteDirectorConfig(...a),
     broadcastState: { upsertByID: (...a: unknown[]) => mockUpsertByID(...a) },
   }),
 }));
@@ -49,6 +51,7 @@ beforeEach(() => {
   mockGetOrInit.mockReset().mockResolvedValue(null);
   mockGetScene.mockReset().mockResolvedValue(null);
   mockDeleteScene.mockReset();
+  mockDeleteDirectorConfig.mockReset();
   mockUpsertByID.mockReset();
 });
 
@@ -130,17 +133,20 @@ describe("DELETE /api/scenes/:id", () => {
     const res = await deleteReq("default");
     expect(res.status).toBe(400);
     expect(mockDeleteScene).not.toHaveBeenCalled();
+    expect(mockDeleteDirectorConfig).not.toHaveBeenCalled();
   });
 
-  it("404s a scene that doesn't exist", async () => {
+  it("404s a scene that doesn't exist — no director-config cleanup either", async () => {
     mockDeleteScene.mockResolvedValue(false);
     expect((await deleteReq("nope")).status).toBe(404);
+    expect(mockDeleteDirectorConfig).not.toHaveBeenCalled();
   });
 
-  it("200s and reports the deleted id", async () => {
+  it("200s, reports the deleted id and drops the scene's director config", async () => {
     mockDeleteScene.mockResolvedValue(true);
     const res = await deleteReq("atlantic-wind");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, id: "atlantic-wind" });
+    expect(mockDeleteDirectorConfig).toHaveBeenCalledWith("atlantic-wind");
   });
 });

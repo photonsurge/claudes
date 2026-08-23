@@ -71,6 +71,7 @@ async function POST__impl(req: Request) {
     monitorStream: !!body.monitorStream,
     chat: { enabled: body.chat?.enabled !== false, promoteToTicker: !!body.chat?.promoteToTicker },
     restartEveryMs,
+    announce: body.announce === true,
   });
   if (!saved) {
     return NextResponse.json({ error: "failed to save slot" }, { status: 500, headers: NO_CACHE });

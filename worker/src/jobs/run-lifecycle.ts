@@ -6,10 +6,12 @@
  *   run-lifecycle.stop      { runId }           (operator stop)
  *   run-lifecycle.end       { runId, reason }   (auto-end delayed job, or a stop alias)
  *   run-lifecycle.reconcile {}                  (repeatable persistent-slot sweep)
+ *   run-lifecycle.announce  { runId }           ("notify the world" hydra post, retried)
  * Routed to the FOREGROUND tier (see bull-utils FOREGROUND_TYPES) so go-live/stop
  * never wait behind a bake.
  */
 import type { Job } from "bullmq";
+import { announceRun } from "../stream/announce";
 import { goLive as doGoLive, finishRun } from "../stream/lifecycle";
 import { reconcileSlots } from "../stream/slots";
 import { endpointForEncoderId, provisionEncoderScene, refreshEncoderScene } from "../stream/encoders";
@@ -35,6 +37,14 @@ export async function end(job: Job) {
   const reason = job.data?.data?.reason === "manual" ? "manual" : "auto";
   await finishRun(runId, reason);
   return { runId, reason };
+}
+
+/** "Notify the world" hydra blog+social post for a live run. Throws so BullMQ retries. */
+export async function announce(job: Job) {
+  const runId = String(job.data?.data?.runId ?? job.data?.runId ?? "");
+  if (!runId) throw new Error("run-lifecycle.announce: missing runId");
+  await announceRun(runId);
+  return { runId };
 }
 
 /** Repeatable sweep keeping every enabled persistent slot's stream alive. */

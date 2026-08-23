@@ -30,6 +30,7 @@ import {
 import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "../socket";
 import { startMonitor, stopMonitor, stopAllMonitors } from "./monitor";
+import { queueAnnounce } from "./announce";
 import { startChatPoll, stopChatPoll } from "./chat";
 import { ObsUnavailableError, setStreamKey, startStream, stopStream, getStatus, type ObsStreamStatus } from "../obs/client";
 import { endpointForRun, provisionEncoderScene } from "./encoders";
@@ -328,6 +329,13 @@ async function transitionToLive(run: Run, ctx: YoutubeCtx): Promise<boolean> {
   if (updated) emitRunState(updated);
   if (run.durationMs && run.durationMs > 0) await armAutoEnd(run.id, run.durationMs);
   if (run.chat?.enabled && liveChatId) startChatPoll(run.id);
+  // "Notify the world": fan the announcement out as its own retried job — a down
+  // hydra must never affect the live commit.
+  if (updated?.announce && !updated.announcedAt) {
+    await queueAnnounce(run.id).catch((err) =>
+      log(TAG, `announce enqueue failed ${run.id}`, String((err as Error)?.message ?? err)),
+    );
+  }
   log(TAG, `run live ${run.id}`);
   return true;
 }

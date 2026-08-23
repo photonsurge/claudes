@@ -123,6 +123,8 @@ export interface StreamSlot {
   chat?: { enabled: boolean; promoteToTicker: boolean };
   /** Recycle cadence: end + relaunch the run every this-many ms; null/0 = never. */
   restartEveryMs?: number | null;
+  /** "Notify the world": publish a hydra blog + social fan-out each time a run goes live. */
+  announce?: boolean;
   /** The run currently serving this slot (may be finished — reconciler replaces it). */
   runId?: string | null;
   /** Consecutive unhealthy attempts, drives the retry backoff. */
@@ -226,6 +228,10 @@ export interface Run {
   platforms: RunPlatforms;
   obs?: RunObsState;
   chat?: { enabled: boolean; promoteToTicker: boolean };
+  /** "Notify the world" at go-live: hydra blog post + social fan-out with the watch URL. */
+  announce?: boolean;
+  /** Set once the hydra announcement has been posted (idempotency for retries). */
+  announcedAt?: number | null;
   error?: RunError | null;
   createdBy?: string;
   /** Managed by Mongo timestamps (Date at rest); present on persisted docs. */
@@ -263,6 +269,8 @@ export interface RunState {
   /** True when OBS is unreachable/unstarted and the operator must paste the key manually. */
   needsManualObs: boolean;
   chat?: { enabled: boolean; promoteToTicker: boolean };
+  announce?: boolean;
+  announcedAt?: number | null;
   error?: RunError | null;
   updated?: string;
 }
@@ -318,6 +326,8 @@ export interface CreateRunRequest {
   /** Keep YouTube's monitor stream (preview) — forces the testing→live path. */
   monitorStream?: boolean;
   chat?: { enabled?: boolean; promoteToTicker?: boolean };
+  /** "Notify the world" at go-live (hydra blog + social fan-out with the watch URL). */
+  announce?: boolean;
 }
 
 const RUNNING_STATUSES: RunStatus[] = ["scheduled", "awaiting-ingest", "live", "ending"];
@@ -365,6 +375,8 @@ export function toRunState(run: Run): RunState {
     obs: obs ? { configured: !!obs.configured, streaming: !!obs.streaming } : undefined,
     needsManualObs,
     chat: run.chat,
+    announce: run.announce,
+    announcedAt: run.announcedAt ?? null,
     error: run.error ?? null,
     updated: run.updated ? new Date(run.updated).toISOString() : undefined,
   };

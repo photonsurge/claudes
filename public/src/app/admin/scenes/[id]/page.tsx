@@ -20,6 +20,7 @@ import AboutCardSettings from "../../../../components/admin/scenes/AboutCardSett
 import AudioSettings from "../../../../components/admin/scenes/AudioSettings";
 import CameraSettings from "../../../../components/admin/scenes/CameraSettings";
 import ChannelSettings from "../../../../components/admin/scenes/ChannelSettings";
+import DirectorSettings from "../../../../components/admin/scenes/DirectorSettings";
 import SceneDraftProvider from "../../../../components/admin/scenes/SceneDraft";
 import SlidesSettings from "../../../../components/admin/scenes/SlidesSettings";
 import ReportSettings from "../../../../components/admin/scenes/ReportSettings";
@@ -42,7 +43,7 @@ export default function ChannelSettingsPage() {
     <AdminPageShell
       title={`Channel: ${name}`}
       crumbs={[{ href: "/admin/scenes", label: "Channels" }, { label: name }]}
-      description="On-air widgets, camera motion, the About card, the bottom-left slide deck, the music bed and the channel's brand. Changes stay staged here until you press Save, then apply live to its /watch output."
+      description="On-air widgets, camera motion, the About card, the bottom-left slide deck, the auto-director's content (slide types, countries, areas), the music bed and the channel's brand. Changes stay staged here until you press Save, then apply live to its /watch output."
       maxWidth={760}
       actions={
         <>
@@ -62,6 +63,7 @@ export default function ChannelSettingsPage() {
           <ReportSettings sceneId={sceneId} />
           <AboutCardSettings sceneId={sceneId} />
           <SlidesSettings sceneId={sceneId} />
+          <DirectorSettings sceneId={sceneId} />
           <AudioSettings sceneId={sceneId} />
           <ThemeSettings sceneId={sceneId} />
         </Stack>

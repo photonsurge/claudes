@@ -69,6 +69,28 @@ describe("selectNext", () => {
       selectNext(pool, { history: [], recentCenters: [[10, 47]], rng: () => 0 })?.id,
     ).toBe("storm:b");
   });
+
+  it("kind weights bias the kind draw — a heavy kind claims more of the rng range", () => {
+    const pool = [cand("country:a", "country"), cand("ship:s", "ship")];
+    // Unweighted, the kinds split the [0,1) roll evenly: 0.6 lands on ship.
+    expect(selectNext(pool, { history: [], rng: () => 0.6 })?.kind).toBe("ship");
+    // country ×4 → country owns 4/5 of the roll; the same 0.6 now lands on it.
+    expect(
+      selectNext(pool, { history: [], rng: () => 0.6, kindWeights: { country: 4 } })?.kind,
+    ).toBe("country");
+    // But even a heavy weight never monopolises: a roll in ship's tail still picks ship.
+    expect(
+      selectNext(pool, { history: [], rng: () => 0.95, kindWeights: { country: 4 } })?.kind,
+    ).toBe("ship");
+  });
+
+  it("absent or invalid weights fall back to uniform — existing behaviour unchanged", () => {
+    const pool = [cand("country:a", "country"), cand("ship:s", "ship")];
+    for (const kindWeights of [undefined, {}, { country: NaN, ship: -2 }] as const) {
+      expect(selectNext(pool, { history: [], rng: () => 0.1, kindWeights })?.kind).toBe("country");
+      expect(selectNext(pool, { history: [], rng: () => 0.9, kindWeights })?.kind).toBe("ship");
+    }
+  });
 });
 
 describe("selectPriority", () => {

@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * The auto-director's "what airs, and for how long" list (rendered inside
- * DirectorPanel). One row per segment KIND: the enable checkbox inline with the
- * kind's hold slider — untick a kind and its slider disappears with it. The
- * event kinds split into their LEVELS — earthquakes by magnitude class
- * (Minor … Great) and storms by severity (None … Extreme) — so an Extreme
- * warning can dwell far longer than a routine shot.
+ * The auto-director's "how long each shot holds" list (rendered inside
+ * DirectorPanel). One row per ENABLED segment kind — which kinds air at all is
+ * a channel content choice, edited on the channel's admin page
+ * (/admin/scenes/:id, DirectorSettings card), so this component only paces
+ * them. The event kinds split into their LEVELS — earthquakes by magnitude
+ * class (Minor … Great) and storms by severity (None … Extreme) — so an
+ * Extreme warning can dwell far longer than a routine shot.
  *
  * Level rows are filtered to what can actually air under the current
  * minQuakeMag / minAlertSeverity thresholds, so the list never shows a tier
@@ -23,22 +24,7 @@ import { useRef, useState } from "react";
 import { QUAKE_MAGNITUDE_BANDS } from "@photonsurge/shared/seismic";
 import InfoTip from "./InfoTip";
 import { box } from "./panelBox";
-
-export const KIND_LABEL: Record<SegmentKind, string> = {
-  intro: "Intro spin (opener)",
-  global: "Global spin",
-  ocean: "Ocean (world)",
-  orbital: "Orbital (satellites)",
-  country: "Countries",
-  region: "Regions (areas)",
-  point: "Point (sandbox)", // not director-scheduled; DirectorHolds iterates SEGMENT_KINDS so this never renders
-  storm: "Severe storms",
-  volcano: "Volcanoes",
-  quake: "Earthquakes",
-  flight: "Aircraft",
-  ship: "Ships",
-  ad: "Sponsor ads",
-};
+import { KIND_LABEL } from "../lib/kind-labels";
 
 /** Kinds whose hold comes from a per-level map, not the kind slider. */
 const LEVELLED_KINDS = new Set<SegmentKind>(["quake", "storm", "volcano"]);
@@ -139,9 +125,11 @@ function LevelRow({
 }
 
 export default function DirectorHolds({
+  sceneId,
   config,
   update,
 }: {
+  sceneId: string;
   config: DirectorConfig;
   update: (patch: Partial<DirectorConfig>) => void;
 }) {
@@ -154,25 +142,28 @@ export default function DirectorHolds({
   // Likewise only severity levels at/above the storm threshold.
   const stormLevels = STORM_LEVELS.filter((l) => l.rank >= config.minAlertSeverity);
 
+  const enabled = SEGMENT_KINDS.filter((k) => !!config.kinds[k]);
+
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4, display: "flex", alignItems: "center" }}>
-        Show · hold per shot:
-        <InfoTip text="Tick a shot type to make it eligible to air, and drag its slider for how long it holds each time — or type a number in the seconds box for holds beyond the slider's range. Quakes/storms/volcanoes hold per severity tier instead of one slider." />
+        Hold per shot:
+        <InfoTip text="Drag a slider for how long each enabled shot type holds when it airs — or type a number in the seconds box for holds beyond the slider's range. Quakes/storms/volcanoes hold per severity tier instead of one slider." />
       </div>
-      {SEGMENT_KINDS.map((k) => {
-        const on = !!config.kinds[k];
+      <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 6 }}>
+        Only slide types enabled for this channel appear here — manage them in{" "}
+        <a href={`/admin/scenes/${encodeURIComponent(sceneId)}`} style={{ color: "#7fb3ff" }}>
+          Channel settings
+        </a>
+        .
+      </div>
+      {enabled.map((k) => {
         const levelled = LEVELLED_KINDS.has(k);
         return (
-          <div key={k} style={{ marginBottom: on ? 8 : 2 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-              <input
-                type="checkbox"
-                checked={on}
-                onChange={(e) => update({ kinds: { [k]: e.target.checked } as Record<SegmentKind, boolean> })}
-              />
+          <div key={k} style={{ marginBottom: 8 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
               <span style={{ flex: 1 }}>{KIND_LABEL[k]}</span>
-              {on && !levelled ? (
+              {!levelled ? (
                 <HoldSeconds
                   seconds={config.kindHoldSeconds[k]}
                   onChange={(s) =>
@@ -180,10 +171,10 @@ export default function DirectorHolds({
                   }
                 />
               ) : null}
-            </label>
+            </span>
 
-            {/* Plain kinds: one slider, shown only while the kind is on air-eligible. */}
-            {on && !levelled ? (
+            {/* Plain kinds: one slider. */}
+            {!levelled ? (
               <div style={{ paddingLeft: 22 }}>
                 <Slider
                   seconds={config.kindHoldSeconds[k]}
@@ -195,7 +186,7 @@ export default function DirectorHolds({
             ) : null}
 
             {/* Earthquakes: one hold per magnitude class instead of a kind slider. */}
-            {on && k === "quake" ? (
+            {k === "quake" ? (
               <div style={{ paddingLeft: 22, marginTop: 4 }}>
                 {quakeBands.map((b, i) => {
                   const upper = i === 0 ? null : QUAKE_MAGNITUDE_BANDS[i - 1].min;
@@ -215,7 +206,7 @@ export default function DirectorHolds({
             ) : null}
 
             {/* Storms: one hold per severity level instead of a kind slider. */}
-            {on && k === "storm" ? (
+            {k === "storm" ? (
               <div style={{ paddingLeft: 22, marginTop: 4 }}>
                 {stormLevels.map((l) => (
                   <LevelRow
@@ -231,7 +222,7 @@ export default function DirectorHolds({
             ) : null}
 
             {/* Volcanoes: one hold per status level instead of a kind slider. */}
-            {on && k === "volcano" ? (
+            {k === "volcano" ? (
               <div style={{ paddingLeft: 22, marginTop: 4 }}>
                 {VOLCANO_LEVELS.map((l) => (
                   <LevelRow
@@ -248,6 +239,9 @@ export default function DirectorHolds({
           </div>
         );
       })}
+      {enabled.length === 0 ? (
+        <div style={{ fontSize: 12, opacity: 0.7 }}>No slide types are enabled for this channel yet.</div>
+      ) : null}
     </div>
   );
 }

@@ -288,6 +288,7 @@ async function tick(): Promise<void> {
               recentCenters: r.recentCenters,
               counts,
               isFirst: r.seq === 0,
+              kindWeights: cfg.kindWeights,
             });
           }
         }

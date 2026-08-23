@@ -66,6 +66,14 @@ describe("reconcileSlots", () => {
     expect(bySlot.s2.chat).toEqual({ enabled: false, promoteToTicker: false });
   });
 
+  it("passes the slot's notify-the-world flag onto the runs it creates", async () => {
+    slots.set("s1", { id: "s1", sceneId: "wind", enabled: true, announce: true });
+
+    await reconcileSlots(NOW);
+
+    expect([...runs.values()][0].announce).toBe(true);
+  });
+
   it("falls back to the scene-bound encoder when the slot doesn't pin one", async () => {
     db.encoderForScene.mockResolvedValueOnce({ id: "obs-temp" } as any);
     slots.set("s1", { id: "s1", sceneId: "temp", enabled: true });

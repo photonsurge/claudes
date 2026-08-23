@@ -14,7 +14,7 @@ import { mergeControlState, type ControlState } from "@photonsurge/shared/contro
 import type { DirectorConfig } from "@photonsurge/shared/director";
 import { slideFromLive, controlPatchFromSlide, slideIsLive } from "../lib/director-slides";
 import { box } from "./panelBox";
-import { KIND_LABEL } from "./DirectorHolds";
+import { KIND_LABEL } from "../lib/kind-labels";
 import InfoTip from "./InfoTip";
 
 export default function DirectorSlides({

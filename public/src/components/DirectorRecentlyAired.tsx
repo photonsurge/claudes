@@ -12,7 +12,7 @@
  *  a refetch that races the persist is caught by the next tick. */
 import { useCallback, useEffect, useState } from "react";
 import type { DirectorState, SegmentKind } from "@photonsurge/shared/director";
-import { KIND_LABEL } from "./DirectorHolds";
+import { KIND_LABEL } from "../lib/kind-labels";
 
 /** One aired shot from the as-run log (the subset this glance renders). */
 interface RecentEntry {

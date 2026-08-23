@@ -5,6 +5,7 @@ import {
   type DirectorConfig,
   type SegmentKind,
 } from "@photonsurge/shared/director";
+import { KIND_LABEL } from "../lib/kind-labels";
 import DirectorHolds from "./DirectorHolds";
 
 // A config with exactly one kind enabled, so the row (and its single seconds
@@ -17,7 +18,7 @@ const onlyKind = (kind: SegmentKind): DirectorConfig => ({
 describe("DirectorHolds typed seconds override", () => {
   it("commits a typed hold far beyond the slider range on blur", () => {
     const update = jest.fn();
-    render(<DirectorHolds config={onlyKind("global")} update={update} />);
+    render(<DirectorHolds sceneId="default" config={onlyKind("global")} update={update} />);
 
     const input = screen.getByRole("spinbutton");
     fireEvent.focus(input);
@@ -32,7 +33,7 @@ describe("DirectorHolds typed seconds override", () => {
 
   it("commits once on Enter", () => {
     const update = jest.fn();
-    render(<DirectorHolds config={onlyKind("global")} update={update} />);
+    render(<DirectorHolds sceneId="default" config={onlyKind("global")} update={update} />);
 
     const input = screen.getByRole("spinbutton");
     fireEvent.focus(input);
@@ -46,7 +47,7 @@ describe("DirectorHolds typed seconds override", () => {
 
   it("discards empty or below-floor entries", () => {
     const update = jest.fn();
-    render(<DirectorHolds config={onlyKind("global")} update={update} />);
+    render(<DirectorHolds sceneId="default" config={onlyKind("global")} update={update} />);
 
     const input = screen.getByRole("spinbutton");
     fireEvent.focus(input);
@@ -64,7 +65,7 @@ describe("DirectorHolds typed seconds override", () => {
 
   it("per-level rows commit typed overrides too", () => {
     const update = jest.fn();
-    render(<DirectorHolds config={onlyKind("quake")} update={update} />);
+    render(<DirectorHolds sceneId="default" config={onlyKind("quake")} update={update} />);
 
     // Strongest band first — the top spinbutton is the Great (M8+) hold.
     const input = screen.getAllByRole("spinbutton")[0];
@@ -73,5 +74,34 @@ describe("DirectorHolds typed seconds override", () => {
     fireEvent.blur(input);
 
     expect(update).toHaveBeenCalledWith({ quakeHoldSeconds: { great: 900 } });
+  });
+});
+
+describe("DirectorHolds holds-only rows", () => {
+  it("renders rows only for enabled kinds — no enable checkboxes", () => {
+    render(<DirectorHolds sceneId="default" config={onlyKind("global")} update={jest.fn()} />);
+
+    expect(screen.getByText(KIND_LABEL.global)).toBeInTheDocument();
+    expect(screen.queryByText(KIND_LABEL.country)).not.toBeInTheDocument();
+    expect(screen.queryByText(KIND_LABEL.ship)).not.toBeInTheDocument();
+    // Which kinds air moved to the channel admin page — no checkboxes here.
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("links the hint to the channel's admin settings page", () => {
+    render(<DirectorHolds sceneId="my-scene" config={onlyKind("global")} update={jest.fn()} />);
+
+    const link = screen.getByRole("link", { name: "Channel settings" });
+    expect(link).toHaveAttribute("href", "/admin/scenes/my-scene");
+  });
+
+  it("shows an empty note when no kinds are enabled", () => {
+    const none: DirectorConfig = {
+      ...DEFAULT_DIRECTOR_CONFIG,
+      kinds: Object.fromEntries(SEGMENT_KINDS.map((k) => [k, false])) as DirectorConfig["kinds"],
+    };
+    render(<DirectorHolds sceneId="default" config={none} update={jest.fn()} />);
+
+    expect(screen.getByText(/No slide types are enabled/)).toBeInTheDocument();
   });
 });

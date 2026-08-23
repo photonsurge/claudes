@@ -2,7 +2,7 @@
 
 /**
  * proxy.ts (Next's renamed `middleware`) is the ONLY gate in front of the
- * operator surface — /, /control, /admin/**, and the mutating halves of
+ * operator surface — /, /control, /sandbox, /admin/**, and the mutating halves of
  * /api/admin, /api/broadcast/state, /api/scenes/**. It had no test at all;
  * a wrong `needsAdmin`/`isPage` condition here silently exposes a page (no
  * redirect, no 401) or breaks the /login redirect for a legitimate gate.
@@ -34,7 +34,7 @@ beforeEach(() => {
 });
 
 describe("proxy — anonymous requests", () => {
-  it.each([["/"], ["/control"], ["/admin"], ["/admin/scenes"]])(
+  it.each([["/"], ["/control"], ["/sandbox"], ["/admin"], ["/admin/scenes"]])(
     "redirects the gated page %s to /login with ?next=",
     (pathname) => {
       const res = proxy(req(pathname));
@@ -57,6 +57,11 @@ describe("proxy — anonymous requests", () => {
     expect(proxy(req("/api/broadcast/state", { method: "POST" })).status).toBe(401);
   });
 
+  it("401s a director-config MUTATION but passes its GET — /watch reads the config anonymously", () => {
+    expect(proxy(req("/api/director/atlantic/config", { method: "PATCH" })).status).toBe(401);
+    expect(proxy(req("/api/director/atlantic/config")).status).toBe(200);
+  });
+
   it("passes through a scenes/broadcast-state READ (GET/HEAD) ungated — dual-auth lives in the route", () => {
     expect(proxy(req("/api/scenes")).status).toBe(200);
     expect(proxy(req("/api/scenes/atlantic")).status).toBe(200);
@@ -67,9 +72,8 @@ describe("proxy — anonymous requests", () => {
     expect(proxy(req("/watch/atlantic")).status).toBe(200);
   });
 
-  it("leaves an ungated page alone (e.g. /login itself, /sandbox)", () => {
+  it("leaves an ungated page alone (e.g. /login itself)", () => {
     expect(proxy(req("/login")).status).toBe(200);
-    expect(proxy(req("/sandbox")).status).toBe(200);
   });
 });
 
@@ -81,6 +85,7 @@ describe("proxy — sessioned requests", () => {
     expect(proxy(req("/", { cookie: "tok" })).status).toBe(200);
     expect(proxy(req("/api/admin/worker-stats", { cookie: "tok" })).status).toBe(200);
     expect(proxy(req("/api/scenes", { method: "POST", cookie: "tok" })).status).toBe(200);
+    expect(proxy(req("/api/director/atlantic/config", { method: "PATCH", cookie: "tok" })).status).toBe(200);
   });
 
   it("still redirects a non-admin session (cookie present, isAdmin false)", () => {

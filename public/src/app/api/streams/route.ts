@@ -178,6 +178,7 @@ async function POST__impl(req: Request) {
     // Chat defaults ON (poll + log + operator panel) unless explicitly opted out —
     // the chat log is only written while a run's poller is running.
     chat: { enabled: body.chat?.enabled !== false, promoteToTicker: !!body.chat?.promoteToTicker },
+    announce: body.announce === true,
     createdBy: session.email,
   });
   if (!run) {

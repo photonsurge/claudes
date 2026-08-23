@@ -22,7 +22,8 @@
  *     the same map types (temp → cloud → aurora → satellite) and airs as
  *     ordinary recurring global filler like any other kind.
  *  2. Random kind — each subsequent cut picks a KIND at random from those present
- *     in the pool, avoiding an immediate repeat of the just-aired kind.
+ *     in the pool (biased by the operator's per-kind weights, absent = 1),
+ *     avoiding an immediate repeat of the just-aired kind.
  *  3. Fair rotation — within that kind, pick at random among the LEAST-aired
  *     items (by session count). So every region / alert / quake of a kind is
  *     shown once before any repeats; when all are level the whole set is open
@@ -65,6 +66,12 @@ export interface SelectOpts {
   /** [lng,lat] centers of recently-aired located shots, for the geo cooldown. */
   recentCenters?: [number, number][];
   geoCooldownDeg?: number;
+  /**
+   * Relative airtime multiplier per kind (DirectorConfig.kindWeights); absent
+   * kind = 1. Biases the random KIND pick — fair rotation within a kind is
+   * unchanged.
+   */
+  kindWeights?: Partial<Record<SegmentKind, number>>;
 }
 
 /** Great-circle-ish degree gap with longitude wrap (good enough for cooldown). */
@@ -76,6 +83,29 @@ function degApart(a: [number, number], b: [number, number]): number {
 
 const pickRandom = <T>(arr: T[], rng: () => number): T =>
   arr[Math.min(arr.length - 1, Math.floor(rng() * arr.length))];
+
+/**
+ * Weighted cousin of pickRandom for the kind draw: one cumulative-weight roll,
+ * weight `weights[k] ?? 1`. With no weights map (or all-equal weights) this is
+ * exactly uniform, so existing stubbed-rng tests keep their outcomes.
+ */
+function pickKindWeighted(
+  kinds: SegmentKind[],
+  weights: Partial<Record<SegmentKind, number>> | undefined,
+  rng: () => number,
+): SegmentKind {
+  const w = kinds.map((k) => {
+    const v = weights?.[k];
+    return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 1;
+  });
+  const total = w.reduce((a, b) => a + b, 0);
+  let roll = rng() * total;
+  for (let i = 0; i < kinds.length; i++) {
+    roll -= w[i];
+    if (roll < 0) return kinds[i];
+  }
+  return kinds[kinds.length - 1];
+}
 
 /** Kinds eligible for the priority tier, most urgent first. Exported so the
  *  "up next" preview (worker/src/director/loop.ts) can mirror this same
@@ -144,7 +174,7 @@ export function selectNext(pool: Candidate[], opts: SelectOpts): Segment | null 
   const kinds = [...new Set(eligible.map((c) => c.segment.kind))];
   let kindChoices = kinds.length > 1 ? kinds.filter((k) => k !== lastKind) : kinds;
   if (kindChoices.length === 0) kindChoices = kinds;
-  const kind = pickRandom(kindChoices, rng);
+  const kind = pickKindWeighted(kindChoices, opts.kindWeights, rng);
 
   // 3. Within the kind: spread regions out (geo cooldown), then pick at random
   //    among the least-aired so we cycle the whole set before repeating any.

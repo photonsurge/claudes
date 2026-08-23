@@ -10,21 +10,33 @@ import { SESSION_COOKIE, readSession, isAdmin } from "@photonsurge/shared/utill/
  * `/watch/**` is deliberately NOT gated here — it's the OBS/YouTube output and
  * can't do interactive login. It's protected separately by a per-scene
  * `?token=` check inside the scene/broadcast-state API routes. The home page `/`
- * IS gated: it's the operator channel launcher, admin-only like /control.
+ * IS gated: it's the operator channel launcher, admin-only like /control —
+ * and so is /sandbox, the detached operator console.
  */
 export const config = {
-  matcher: ["/", "/admin/:path*", "/control", "/api/admin/:path*", "/api/broadcast/state", "/api/scenes/:path*"],
+  matcher: [
+    "/",
+    "/admin/:path*",
+    "/control",
+    "/sandbox",
+    "/api/admin/:path*",
+    "/api/broadcast/state",
+    "/api/scenes/:path*",
+    "/api/director/:path*",
+  ],
 };
 
 const GET_LIKE = new Set(["GET", "HEAD"]);
 
 function needsAdmin(pathname: string, method: string): boolean {
-  if (pathname === "/" || pathname === "/control" || pathname.startsWith("/admin")) return true;
+  if (pathname === "/" || pathname === "/control" || pathname === "/sandbox" || pathname.startsWith("/admin")) return true;
   if (pathname.startsWith("/api/admin")) return true;
-  // /api/broadcast/state and /api/scenes/** allow anonymous GET (dual-auth via
-  // watch token, checked inside the route); only mutations require admin here.
+  // /api/broadcast/state, /api/scenes/** and /api/director/** allow anonymous
+  // GET (/watch — the OBS output — reads scene state and director config
+  // without a session); only mutations require admin here.
   if (pathname === "/api/broadcast/state") return !GET_LIKE.has(method);
   if (pathname.startsWith("/api/scenes")) return !GET_LIKE.has(method);
+  if (pathname.startsWith("/api/director")) return !GET_LIKE.has(method);
   return false;
 }
 
@@ -36,7 +48,7 @@ export function proxy(req: NextRequest) {
   const session = token ? readSession(token) : null;
   if (isAdmin(session)) return NextResponse.next();
 
-  const isPage = pathname === "/" || pathname === "/control" || pathname.startsWith("/admin");
+  const isPage = pathname === "/" || pathname === "/control" || pathname === "/sandbox" || pathname.startsWith("/admin");
   if (isPage) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";

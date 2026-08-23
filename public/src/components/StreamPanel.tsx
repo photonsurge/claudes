@@ -232,6 +232,7 @@ function GoLiveForm({
   const [monitorStream, setMonitorStream] = useState(false);
   const [chatEnabled, setChatEnabled] = useState(true);
   const [promoteToTicker, setPromoteToTicker] = useState(false);
+  const [announce, setAnnounce] = useState(false);
   const [withBroadcast, setWithBroadcast] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -244,6 +245,7 @@ function GoLiveForm({
     platforms: { youtube: publishYoutube },
     monitorStream,
     chat: { enabled: chatEnabled, promoteToTicker: chatEnabled && promoteToTicker },
+    announce,
   });
 
   const go = async () => {
@@ -320,6 +322,13 @@ function GoLiveForm({
             → ticker
           </label>
         ) : null}
+        <label
+          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}
+          title="Notify the world at go-live: publish a hydra blog post + social fan-out with the watch URL"
+        >
+          <input type="checkbox" checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />
+          📣 Notify the world
+        </label>
       </div>
       <label
         style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, paddingTop: 4, borderTop: "1px solid #1b2030" }}

@@ -379,6 +379,16 @@ export function createDb(conn: Connection) {
       return merged;
     },
 
+    /**
+     * Remove a scene's director-config doc (scene-deletion cleanup). The main
+     * scene's config is protected like the scene doc itself.
+     */
+    async deleteDirectorConfig(sceneId: string) {
+      if (sceneId === MAIN_SCENE_ID) return false;
+      const res = await directorConfig.deleteByID(sceneId);
+      return !!res.success;
+    },
+
     /** Scene ids that currently have the director set to "auto". */
     async autoDirectorScenes(): Promise<string[]> {
       const res = await directorConfig.getAll({ mode: "auto" }, { limit: 0 });

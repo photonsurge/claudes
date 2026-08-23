@@ -83,6 +83,10 @@ async function DELETE__impl(_req: Request, { params }: { params: Promise<{ id: s
   if (!ok) {
     return NextResponse.json({ error: "no such scene" }, { status: 404, headers: NO_CACHE });
   }
+  // Drop the scene's director-config doc too — also removes it from
+  // autoDirectorScenes(), so a deleted-while-auto scene's worker runner stands
+  // down on the next tick.
+  await db.deleteDirectorConfig(id);
   return NextResponse.json({ ok: true, id }, { status: 200, headers: NO_CACHE });
 }
 

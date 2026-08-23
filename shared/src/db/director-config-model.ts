@@ -3,7 +3,11 @@ import { iGeneralModel, mongoTimestamps } from "../interfaces/iGeneralModel";
 import { getModel } from "../utill/getModel";
 import type { DirectorConfig } from "../director";
 
-/** Single-domain → one director-config document. */
+/**
+ * One director-config document PER SCENE, keyed by the scene id (see
+ * getOrInitDirectorConfig in db/index.ts). This constant is only the main
+ * scene's id (= MAIN_SCENE_ID) and the schema fallback default.
+ */
 export const DIRECTOR_CONFIG_ID = "default" as const;
 
 export interface iDirectorConfig extends iGeneralModel, DirectorConfig {}
@@ -70,6 +74,8 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
       ship: { type: Boolean, default: true },
       ad: { type: Boolean, default: false },
     },
+    // Sparse SegmentKind → multiplier map (absent = 1) — Mixed like mapTypes.
+    kindWeights: { type: mongoose.Schema.Types.Mixed, default: {} },
     countries: { type: [String], default: ["uk", "japan"] },
     regions: { type: [String], default: [] },
     minQuakeMag: { type: Number, required: true, default: 4.5 },
