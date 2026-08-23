@@ -8,16 +8,18 @@
  * scaled design stage.
  *
  * The tracking-detail readout (STATUS / TYPE / COUNTRY …) no longer hangs off
- * the frame at all — it's the exported EventTrackingLabel, a slim strip
- * BroadcastFrame pins ON TOP of the bottom-left mode deck, so the readout stays
- * on screen for the whole segment no matter which slide rotates beneath it.
+ * the frame at all — it's the exported EventTrackingLabel, a block BroadcastFrame
+ * passes into the mode deck's chrome (DeckChrome.tracking) so it renders INSIDE
+ * the bottom-left deck card, pinned under the badge + title bar. Part of the
+ * card's fixed header, it stays on screen for the whole segment no matter which
+ * slide rotates beneath it.
  */
 import type { Segment } from "@photonsurge/shared/director";
 import { STAGE_W, STAGE_H } from "./useStageScale";
 import { KIND_COLOR } from "./kinds";
-import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
+import { TILE_BG } from "./config";
 import { KindGlyph } from "./glyphs";
-import { CARD_W } from "./BroadcastCard";
+import { DIVIDER } from "./BroadcastCard";
 
 const W = 660;
 const H = 440;
@@ -243,20 +245,30 @@ export default function EventOverlay({
 }
 
 /**
- * The tracking-detail readout — a slim EVENT DETECTION OVERLAY strip of the
- * segment's detail rows. BroadcastFrame renders it directly ON TOP of the
- * bottom-left mode deck (same width, so the two read as one unit), where it
- * stays put for the whole segment while the slides rotate beneath it. Slimmed
- * for that slot: the deck's own header right below already carries the kind
- * badge + event name, so this strip skips both and keeps just the overlay
- * eyebrow, the [ACTIVE]/[UPCOMING] status tag and the data rows.
+ * How much taller the deck card gets for an embedded EventTrackingLabel of
+ * `rows` data rows — BroadcastFrame adds this to CARD_H when it passes the
+ * readout into the deck chrome, so the slide bodies keep their full height
+ * under it. (Block padding + eyebrow row + ~21 design px per data row.)
+ */
+export function trackingBlockHeight(rows: number): number {
+  return 40 + 21 * rows;
+}
+
+/**
+ * The tracking-detail readout — the EVENT DETECTION OVERLAY data rows.
+ * BroadcastFrame passes it into the mode deck's chrome (DeckChrome.tracking),
+ * so it renders INSIDE the deck card directly under the badge + title bar —
+ * part of the card's persistent header, on screen for the whole segment while
+ * only the slide bodies rotate beneath. Slimmed for that slot: the title bar
+ * right above already carries the kind badge + event name, so this block skips
+ * both and keeps just the overlay eyebrow, the [ACTIVE]/[UPCOMING] status tag
+ * and the data rows.
  */
 export function EventTrackingLabel({
   segment,
   extraDetails = [],
   variant = "event",
   flag,
-  theme = DEFAULT_THEME,
 }: {
   segment: Segment;
   /** Extra rows appended after the segment's own details (e.g. a nearest-city
@@ -268,7 +280,6 @@ export function EventTrackingLabel({
   /** Flag emoji shown before the LOCATION name (place variant — an Areas tour
    *  parked on a country). */
   flag?: string;
-  theme?: BroadcastTheme;
 }) {
   const color = KIND_COLOR[segment.kind] ?? "#38bdf8";
   const name = segment.title.toUpperCase();
@@ -281,18 +292,11 @@ export function EventTrackingLabel({
   return (
     <div
       style={{
-        width: CARD_W,
-        boxSizing: "border-box",
-        padding: "8px 16px 9px",
-        // Coloured tinted glass: a wash of the segment's kind colour over a solid
-        // dark base, so the panel stays legible over any basemap (and through
-        // stream compression). The blur + a soft inner colour glow give it depth.
-        background: `linear-gradient(180deg, ${color}26, ${color}10), rgba(8,14,24,0.82)`,
-        border: theme.panelBorder,
-        borderRadius: 10,
-        boxShadow: `inset 0 0 24px ${color}1f, 0 8px 20px rgba(0,0,0,0.45)`,
-        backdropFilter: "blur(10px)",
-        WebkitBackdropFilter: "blur(10px)",
+        // Horizontal padding matches the card template's title bar / body inset,
+        // so the rows line up with the rest of the card; the hairline separates
+        // the readout from the title bar above without breaking the one-plate look.
+        padding: "8px 20px 10px",
+        borderTop: DIVIDER,
         fontFamily: "system-ui, sans-serif",
         pointerEvents: "none",
       }}

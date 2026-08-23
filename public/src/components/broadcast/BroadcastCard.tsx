@@ -45,6 +45,11 @@ export interface DeckChrome {
   title?: string;
   accent?: string;
   height?: number;
+  /** Persistent readout rendered INSIDE the card, between the title bar and the
+   *  rotating body — the EVENT DETECTION OVERLAY rows ride here so they're part
+   *  of the deck card itself (not a second floating plate) and stay on screen
+   *  while the slides rotate beneath. Constant per deck, like badge/title. */
+  tracking?: ReactNode;
 }
 export const DeckChromeContext = createContext<DeckChrome | null>(null);
 
@@ -220,6 +225,9 @@ export default function BroadcastCard({
             </div>
           ) : null}
         </div>
+        {/* The persistent tracking readout (EVENT DETECTION OVERLAY rows) — part
+            of the card's fixed header, so only the slide body rotates below. */}
+        {chrome.tracking ? <div style={{ flexShrink: 0 }}>{chrome.tracking}</div> : null}
         {/* Pointer-inert on air, so overlong bodies can't be hand-scrolled —
             AutoScroll walks them top→bottom→top; content that fits sits still.
             `active` resets it to the top when this slide airs (and holds it there

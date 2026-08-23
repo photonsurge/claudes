@@ -48,7 +48,7 @@ export const BROADCAST_REPORT_SLIDES: readonly ReportSlide[] = [
   { id: "alerts", label: "Global alerts", note: "Active weather alerts by severity & continent" },
   { id: "seismic", label: "Seismic activity", note: "24h quakes by magnitude & continent" },
   { id: "volcanoes", label: "Volcanic activity", note: "Active volcanoes by status & continent" },
-  { id: "about", label: "About card", note: "Reserved channel / about slide" },
+  { id: "about", label: "About card", note: "Channel description + data sources (copy editable per channel)" },
 ];
 
 /** All report slide ids, in catalog order. */

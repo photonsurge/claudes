@@ -68,6 +68,7 @@ import type { VolcanoEruption } from "@photonsurge/shared/db/volcano-eruption-re
 import VolcanoMediaPanel, { volcanoMediaSlideHasContent } from "./VolcanoMediaPanel";
 import type { VolcanoMedia } from "@photonsurge/shared/volcanoes/media";
 import RegionNearTermPanel from "./RegionNearTermPanel";
+import SubGlobePanel from "./SubGlobePanel";
 import RegionCountryPanel from "./RegionCountryPanel";
 import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 import type { FocusRegionCountry } from "../../lib/focus/types";
@@ -189,6 +190,16 @@ export interface ModeSlideContext {
    *  the 72h track at the region's biggest city). Empty off a region shot. */
   regionNearTerm?: ForecastStep[];
   theme: BroadcastTheme;
+  /** The live camera anchor (ControlState.camera — the field every director
+   *  cut / tour stop patches, i.e. where the main globe is parked) — enables
+   *  the SUB-GLOBE locator slide that closes every mode's deck. Absent
+   *  (tests / previews with no live camera) → the slide self-hides. */
+  camera?: { center: [number, number]; zoom: number };
+  /** World-spin params (ControlState) — the locator reproduces the spin
+   *  deterministically from these, exactly like Globe.tsx's motion loop. */
+  autoSpin?: boolean;
+  spinSpeed?: number;
+  spinEpoch?: number;
   /** Per-channel deck slide off-list (ControlState.slidesOff) — hidden ids. */
   slidesOff?: SlideId[];
   /** Per-channel deck slide ranking (ControlState.slideOrder). */
@@ -232,7 +243,28 @@ function contextSlides(ctx: ModeSlideContext): DeckSlide[] {
  * `segment` non-null.
  */
 export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[] {
-  return applySlidePrefs(composeModeSlides(segment, ctx), ctx.slidesOff ?? [], ctx.slideOrder ?? []);
+  const slides = composeModeSlides(segment, ctx);
+  // WHERE WE ARE — the locator sub-globe closes EVERY mode's deck (a natural
+  // sign-off beat), swinging to each new anchor as the director cuts. Gated on
+  // the caller passing the live camera so previews/tests without one are
+  // untouched; channels hide/reorder it like any slide.
+  if (ctx.camera) {
+    slides.push({
+      id: "subglobe",
+      node: (
+        <SubGlobePanel
+          center={ctx.camera.center}
+          zoom={ctx.camera.zoom}
+          autoSpin={ctx.autoSpin}
+          spinSpeed={ctx.spinSpeed}
+          spinEpoch={ctx.spinEpoch}
+          color={KIND_COLOR[segment.kind] ?? FALLBACK_ACCENT}
+          theme={ctx.theme}
+        />
+      ),
+    });
+  }
+  return applySlidePrefs(slides, ctx.slidesOff ?? [], ctx.slideOrder ?? []);
 }
 
 /** Builds the mode's natural, content-filtered deck (before channel prefs). */

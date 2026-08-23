@@ -121,6 +121,12 @@ describe("mergeControlState", () => {
         tickerBg: "linear-gradient(#000, #111)",
       },
       showMapSource: true,
+      about: {
+        title: "About Atlantic Wind",
+        body: "First paragraph.\n\nSecond paragraph.",
+        sources: "NOAA GFS, USGS, GDACS",
+        footer: "Custom small print.",
+      },
       audio: { enabled: true, mode: "deep", volume: 0.45, muted: true },
       chat: { enabled: true, promoteToTicker: true },
       startAt: 1732000000000,
@@ -150,6 +156,18 @@ describe("mergeControlState", () => {
     });
     // Known string keys pass; unknown keys and non-strings are dropped.
     expect(next.themeOverrides).toEqual({ titleColor: "#123456" });
+  });
+
+  it("merges about partially, dropping non-string values", () => {
+    const next = mergeControlState(base, {
+      about: { sources: "NOAA GFS, USGS", title: 7 } as never,
+    });
+    // The set string lands, the non-string is ignored, siblings keep base values.
+    expect(next.about.sources).toBe("NOAA GFS, USGS");
+    expect(next.about.title).toBe(base.about.title);
+    expect(next.about.body).toBe(base.about.body);
+    // Missing from the patch → keeps the base value.
+    expect(mergeControlState(next, {}).about.sources).toBe("NOAA GFS, USGS");
   });
 
   it("sanitises alertHazardsOff to known hazard types and dedupes", () => {

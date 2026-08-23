@@ -181,6 +181,34 @@ export const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   promoteToTicker: false,
 };
 
+/**
+ * Per-channel copy for the ABOUT slide of the top-right WORLD REPORT deck —
+ * the channel's own description card (what it is, the data sources it uses).
+ * Every field falls back PER-FIELD to the built-in G.O.D.S. copy when left
+ * empty, so existing channels render exactly as before until an operator
+ * writes their own text. Edited on /admin/scenes/:id.
+ */
+export interface AboutSettings {
+  /** Card heading. Empty = the built-in "About G.O.D.S.". */
+  title: string;
+  /** Body copy — a blank line starts a new paragraph. Empty = built-in copy. */
+  body: string;
+  /**
+   * Data-source credits shown as their own DATA SOURCES line — one per line or
+   * comma-separated ("NOAA GFS, USGS, GDACS"). Empty = no sources line.
+   */
+  sources: string;
+  /** Small print under the divider. Empty = the built-in "not an official warning service" disclaimer. */
+  footer: string;
+}
+
+export const DEFAULT_ABOUT_SETTINGS: AboutSettings = {
+  title: "",
+  body: "",
+  sources: "",
+  footer: "",
+};
+
 /** How elevation contour lines are coloured. */
 export type ElevationLineColor = "default" | "elevation" | "custom";
 
@@ -598,6 +626,11 @@ export interface ControlState {
    * use the preset unchanged. Resolved by getBroadcastTheme().
    */
   themeOverrides: ThemeOverrides;
+  /**
+   * Per-channel copy for the top-right ABOUT card (description + data-source
+   * credits). Empty fields fall back to the built-in G.O.D.S. copy.
+   */
+  about: AboutSettings;
   /** Generative music bed played on /watch (mode/volume/mute, operator-driven). */
   audio: AudioSettings;
   /** Live-platform chat monitoring preference for this scene (operator-only). */
@@ -684,6 +717,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   reportHazardsOff: [],
   pointVarsOff: [],
   themeOverrides: {},
+  about: { ...DEFAULT_ABOUT_SETTINGS },
   audio: { ...DEFAULT_AUDIO_SETTINGS },
   chat: { ...DEFAULT_CHAT_SETTINGS },
   startAt: null,
@@ -887,6 +921,24 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
       ? [...new Set(patch.pointVarsOff.filter(isPointVar))]
       : base.pointVarsOff ?? [],
     themeOverrides: sanitizeThemeOverrides(patch.themeOverrides) ?? base.themeOverrides ?? {},
+    about: {
+      title:
+        typeof patch.about?.title === "string"
+          ? patch.about.title
+          : base.about?.title ?? DEFAULT_ABOUT_SETTINGS.title,
+      body:
+        typeof patch.about?.body === "string"
+          ? patch.about.body
+          : base.about?.body ?? DEFAULT_ABOUT_SETTINGS.body,
+      sources:
+        typeof patch.about?.sources === "string"
+          ? patch.about.sources
+          : base.about?.sources ?? DEFAULT_ABOUT_SETTINGS.sources,
+      footer:
+        typeof patch.about?.footer === "string"
+          ? patch.about.footer
+          : base.about?.footer ?? DEFAULT_ABOUT_SETTINGS.footer,
+    },
     audio: {
       enabled:
         typeof patch.audio?.enabled === "boolean"

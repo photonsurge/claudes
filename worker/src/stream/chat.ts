@@ -3,10 +3,12 @@
  * monitor registry the health loop uses) so it starts/stops with the run and
  * needs no self-rescheduling BullMQ job. Polls liveChatMessages.list at the
  * server-suggested interval, LOGS every message to Mongo (db.chatLog — idempotent
- * on the platform message id, so restarts/re-polls never duplicate), and emits
- * each new message as CHAT_MESSAGE over the worker→browser relay. The first
- * (backlog) page is logged but not emitted — the live panel only shows messages
- * arriving after we start streaming, while the log keeps the full history.
+ * on the platform message id, so restarts/re-polls never duplicate), emits
+ * each new message as CHAT_MESSAGE over the worker→browser relay, and ANSWERS
+ * viewer commands (":modes" etc. — see chat-commands.ts) by posting back into the
+ * chat as the connected channel. The first (backlog) page is logged but neither
+ * emitted nor answered — the live panel only shows messages arriving after we
+ * start streaming, and a restart must not reply to stale commands.
  *
  * Chat is OPERATOR-ONLY (a /control panel), never rendered on /watch by default
  * (docs/streaming-runs-plan.md decision 4).
@@ -16,7 +18,8 @@ import { CHAT_MESSAGE, type ChatMessage } from "@photonsurge/shared/runs";
 import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "../socket";
 import { startMonitor, stopMonitor } from "./monitor";
-import { getYoutubeClient, listChat } from "../youtube/client";
+import { commandReplies } from "./chat-commands";
+import { getYoutubeClient, listChat, sendChatMessage } from "../youtube/client";
 
 const TAG = "stream-chat";
 const chatKey = (runId: string) => `chat:${runId}`;
@@ -73,6 +76,14 @@ async function chatTick(runId: string): Promise<number> {
 
     if (!first) {
       for (const msg of msgs) emitWorkerEvent({ type: CHAT_MESSAGE, data: msg });
+      // Command replies (":modes" etc.) — best-effort; never breaks the poll.
+      try {
+        for (const text of await commandReplies(run, msgs)) {
+          await sendChatMessage(ctx, yt.liveChatId, text);
+        }
+      } catch (err) {
+        log(TAG, `command reply failed ${runId}`, String((err as Error)?.message ?? err));
+      }
     }
     return Math.max(2_000, page.pollingIntervalMillis);
   } catch (err) {

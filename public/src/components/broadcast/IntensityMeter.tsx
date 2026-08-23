@@ -47,7 +47,21 @@ export default function IntensityMeter({
     // Photographic feed only: all the meter has is a caption — a "title".
     if (!sat || part === "scale") return null;
     return (
-      <div style={{ textAlign: "center", pointerEvents: "none", fontFamily: "system-ui, sans-serif" }}>
+      <div
+        style={{
+          textAlign: "center",
+          pointerEvents: "none",
+          fontFamily: "system-ui, sans-serif",
+          // Same one-plate treatment as the map-type hero below.
+          padding: "8px 24px",
+          borderRadius: 14,
+          background: TILE_BG,
+          border: "1px solid rgba(255,255,255,0.09)",
+          boxShadow: "0 6px 18px rgba(0,0,0,0.4)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+        }}
+      >
         <div
           style={{
             fontSize: 12.7,
@@ -131,18 +145,24 @@ export default function IntensityMeter({
         color: theme.titleColor,
       }}
     >
-      {/* Hero: the ACTIVE MAP TYPE, big and unmissable — this is what viewers
-          need to read first, with the source/timing metadata riding beside it
-          on the same row. */}
+      {/* Hero: the ACTIVE MAP TYPE + its source/timing metadata on ONE dark
+          plate — a single widget rather than bare hero text floating over a
+          bright basemap with a separate chip beside it. */}
       {part !== "scale" ? (
       <div
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          flexWrap: "wrap",
-          gap: 14,
+          gap: 16,
           textAlign: "center",
+          padding: "8px 24px",
+          borderRadius: 14,
+          background: TILE_BG,
+          border: "1px solid rgba(255,255,255,0.09)",
+          boxShadow: "0 6px 18px rgba(0,0,0,0.4)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
         }}
       >
         <div
@@ -164,14 +184,10 @@ export default function IntensityMeter({
           ) : null}
         </div>
         {freshness ? (
-          // Dark chip behind the metadata line — raw text over a bright basemap
-          // washes out on air (and worse after stream compression).
           <div
             style={{
-              padding: "4px 26px",
-              borderRadius: 999,
-              background: TILE_BG,
-              border: "1px solid rgba(255,255,255,0.09)",
+              borderLeft: "1px solid rgba(255,255,255,0.14)",
+              paddingLeft: 16,
               fontSize: compact ? 13.2 : 15.4,
               fontWeight: 800,
               letterSpacing: 1.1,

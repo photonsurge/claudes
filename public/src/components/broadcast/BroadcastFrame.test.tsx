@@ -74,6 +74,7 @@ jest.mock("./EventOverlay", () => ({
   __esModule: true,
   default: () => null,
   EventTrackingLabel: () => null,
+  trackingBlockHeight: () => 0,
 }));
 jest.mock("./SyslogFeed", () => ({ __esModule: true, default: () => <div data-testid="w-syslog" /> }));
 jest.mock("./UpNextPanel", () => ({ __esModule: true, default: () => <div data-testid="w-upNext" /> }));

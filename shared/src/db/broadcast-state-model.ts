@@ -157,6 +157,12 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     reportHazardsOff: { type: [String], required: true, default: [] },
     pointVarsOff: { type: [String], required: true, default: [] },
     themeOverrides: { type: mongoose.Schema.Types.Mixed, required: true, default: () => ({}) },
+    about: {
+      title: { type: String, required: false, default: "" },
+      body: { type: String, required: false, default: "" },
+      sources: { type: String, required: false, default: "" },
+      footer: { type: String, required: false, default: "" },
+    },
     audio: {
       enabled: { type: Boolean, required: true, default: false },
       mode: { type: String, required: true, enum: AUDIO_MODES, default: "auto" },

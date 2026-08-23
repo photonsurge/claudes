@@ -12,6 +12,7 @@
  * Pointer-inert like the rest of the chrome.
  */
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
+import type { AboutSettings } from "@photonsurge/shared/control";
 import { applyReportPrefs, type ReportKind, type ReportSlideId } from "@photonsurge/shared/broadcast-report";
 import type { WorldWatchState } from "../../lib/world-watch";
 import { filterFeedByKind } from "../../lib/broadcast";
@@ -49,6 +50,7 @@ export default function WorldReportDeck({
   reportOff,
   reportOrder,
   reportKindsOff,
+  about,
 }: {
   worldWatch: WorldWatchState;
   manifest: WeatherManifest | null;
@@ -61,6 +63,8 @@ export default function WorldReportDeck({
    *  already scoped upstream (useWorldWatch); the DETECTION GRID also needs it
    *  to prune the hidden kind's column/tile from its layout. */
   reportKindsOff?: ReportKind[];
+  /** Per-channel ABOUT card copy (ControlState.about) — empty fields fall back to the built-in text. */
+  about?: AboutSettings;
 }) {
   const s = worldWatch;
   // The channel's curated rotation: the natural DECK_SLIDES order with this
@@ -150,7 +154,7 @@ export default function WorldReportDeck({
       />
     );
   } else if (slide === "about") {
-    content = <AboutPanel theme={theme} feed={s.feed} />;
+    content = <AboutPanel theme={theme} feed={s.feed} about={about} />;
   } else {
     // "detection" — the DETECTION GRID, with the full global ACTIVE FEED
     // integrated into its own card (like every other slide).

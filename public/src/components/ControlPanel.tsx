@@ -10,9 +10,7 @@ import type {
   TrackColorMode,
   TrackIconMode,
   ElevationLineColor,
-  AudioMode,
 } from "@photonsurge/shared/control";
-import { AUDIO_MODES } from "@photonsurge/shared/control";
 import {
   BROADCAST_WIDGETS,
   WIDGET_ZONE_LABELS,
@@ -67,16 +65,6 @@ const spinSpeedToPos = (speed: number): number => {
 };
 /** Wrap any longitude into the -180..180 range for the position slider. */
 const normaliseLng = (lng: number): number => (((lng + 180) % 360) + 360) % 360 - 180;
-
-/** Operator-facing labels for the audio bed's modes (see shared AUDIO_MODES). */
-const AUDIO_MODE_LABELS: Record<AudioMode, string> = {
-  auto: "Auto — follows broadcast",
-  chill: "Chill Out",
-  lounge: "Lounge House",
-  deep: "Deep House",
-  minimal: "Minimal Techno",
-  breaks: "Breaks · Severe",
-};
 
 export interface ControlPanelProps {
   state: ControlState;
@@ -306,57 +294,6 @@ export default function ControlPanel({
             })()}
           </div>
         )}
-      </Section>
-
-      <Section title="Audio bed">
-        {(() => {
-          const audio = state.audio;
-          const setAudio = (p: Partial<typeof audio>) => patch({ audio: { ...audio, ...p } });
-          return (
-            <>
-              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
-                <Toggle label="Music" checked={audio.enabled} onChange={(enabled) => setAudio({ enabled })} />
-                {audio.enabled && (
-                  <>
-                    <Field label="Mode">
-                      <select
-                        value={audio.mode}
-                        onChange={(e) => setAudio({ mode: e.target.value as AudioMode })}
-                        aria-label="Audio mode"
-                        style={miniSelect}
-                      >
-                        {AUDIO_MODES.map((m) => (
-                          <option key={m} value={m}>
-                            {AUDIO_MODE_LABELS[m]}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <PillToggle label="🔇 Mute" checked={audio.muted} onChange={(muted) => setAudio({ muted })} />
-                    <Field label="Volume">
-                      <input
-                        type="range"
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        value={audio.volume}
-                        onChange={(e) => setAudio({ volume: Number(e.target.value) })}
-                        aria-label="Audio volume"
-                      />
-                      <span style={{ color: "#fff", width: 34, textAlign: "right" }}>
-                        {Math.round(audio.volume * 100)}%
-                      </span>
-                    </Field>
-                  </>
-                )}
-              </div>
-              <div style={{ marginTop: 6, fontSize: 11, color: "#8b95a7" }}>
-                Generative music on <b>/watch</b> — Auto follows the on-air segment; browsers need one
-                click on the watch page before audio can start (OBS plays immediately).
-              </div>
-            </>
-          );
-        })()}
       </Section>
 
       {state.showWind && (

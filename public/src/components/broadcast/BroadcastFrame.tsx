@@ -12,7 +12,7 @@
  * never intercepts the capture surface, and derives entirely from data the watch
  * surface already has (alerts, quakes, tracks, the active variable's legend).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import type { Segment, UpNextItem } from "@photonsurge/shared/director";
@@ -89,7 +89,8 @@ import TideStationRow from "./TideStationRow";
 import PointHistoryPanel from "./PointHistoryPanel";
 import ForecastPanel from "./ForecastPanel";
 import { mapFreshness } from "../../lib/manifest";
-import EventOverlay, { EventTrackingLabel } from "./EventOverlay";
+import EventOverlay, { EventTrackingLabel, trackingBlockHeight } from "./EventOverlay";
+import { CARD_H } from "./BroadcastCard";
 import { flagEmoji } from "./RegionCountryPanel";
 import SyslogFeed from "./SyslogFeed";
 import UpNextPanel from "./UpNextPanel";
@@ -569,6 +570,14 @@ export default function BroadcastFrame({
         regionCountries,
         regionNearTerm,
         theme,
+        // The locator sub-globe follows the anchor every cut/tour stop patches
+        // (state.camera — "the one place that actually tracks the live stop")
+        // and re-derives a world spin from the same deterministic params
+        // Globe.tsx uses, so it needs no per-frame camera feed.
+        camera: state.camera,
+        autoSpin: state.autoSpin,
+        spinSpeed: state.spinSpeed,
+        spinEpoch: state.spinEpoch,
         slidesOff: state.slidesOff,
         slideOrder: state.slideOrder,
         pointVarsOff: state.pointVarsOff,
@@ -606,6 +615,56 @@ export default function BroadcastFrame({
     const lo = upcomingTemps.length ? Math.min(...upcomingTemps) : null;
     return { temp: now.temp, condition: now.condition as string, cc: best.cc, hi, lo, days: best.days };
   }, [onAirSegment?.kind, regionCountries, state.camera.center]);
+
+  // The reticle's tracking readout — folded INTO the deck card: handed to
+  // SlideDeck as DeckChrome.tracking, so it renders inside the card under the
+  // badge + title bar (the container with the slide-dot indicator) and stays
+  // put for the whole segment while only the slide bodies rotate. A targeted
+  // event shows its detail rows; an Areas tour shows the current stop's city +
+  // live weather (fetch-free, off the focus bundle's regionCountries). The row
+  // count sizes the deck (CARD_H + trackingBlockHeight) so slide bodies keep
+  // their full height under the readout.
+  let deckTracking: ReactNode = null;
+  let deckTrackingRows = 0;
+  if (onAirSegment && eventTargeted) {
+    const extras = nearestCityDetails(onAirSegment, cities);
+    deckTrackingRows = (onAirSegment.details?.length ?? 0) + extras.length;
+    deckTracking = <EventTrackingLabel segment={onAirSegment} extraDetails={extras} />;
+  } else if (onAirSegment?.kind === "region" && focusCaption) {
+    const extras = tourStopWeather
+      ? [
+          {
+            label: "Weather",
+            value: `${Math.round(tourStopWeather.temp)}° · ${
+              CONDITION_LABEL[tourStopWeather.condition] ?? tourStopWeather.condition
+            }`,
+          },
+          ...(tourStopWeather.hi != null && tourStopWeather.lo != null
+            ? [
+                {
+                  label: "Next 24h",
+                  value: `hi ${Math.round(tourStopWeather.hi)}° · lo ${Math.round(tourStopWeather.lo)}°`,
+                },
+              ]
+            : []),
+        ]
+      : [];
+    // +1: the place variant leads with its LOCATION row (the tour stop's city).
+    deckTrackingRows = 1 + extras.length;
+    deckTracking = (
+      <EventTrackingLabel
+        segment={{
+          ...onAirSegment,
+          title: focusCaption.title,
+          subtitle: focusCaption.subtitle,
+          details: [],
+        }}
+        extraDetails={extras}
+        flag={tourStopWeather ? flagEmoji(tourStopWeather.cc) : undefined}
+        variant="place"
+      />
+    );
+  }
 
   return (
     <div
@@ -709,9 +768,10 @@ export default function BroadcastFrame({
             mutually exclusive on segment kind). column-reverse anchors the
             context card to the bottom edge regardless of the history panel's
             (self-hiding, variable-height) content. On a targeted event / Areas
-            tour the reticle's tracking readout (EventTrackingLabel) sits pinned
-            on top of the deck, outside the slide rotation, so the event detail
-            rows stay on screen no matter which slide is airing. */}
+            tour the reticle's tracking readout (EventTrackingLabel) rides the
+            deck card's own fixed header via DeckChrome.tracking, outside the
+            slide rotation, so the event detail rows stay on screen no matter
+            which slide is airing. */}
         {!off.has("leftDeck") && (
         <div
           style={{
@@ -745,65 +805,23 @@ export default function BroadcastFrame({
               the black) and fades it back once the globe settles. */}
           <FadeSwap hidden={cutting} style={{ display: "flex" }}>
             {onAirSegment ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 10 }}>
-                {/* The reticle's tracking readout, pinned on TOP of the deck —
-                    always on screen for the whole segment (it lives outside the
-                    SlideDeck, so the rotating slides never take it away). A
-                    targeted event shows its detail rows; an Areas tour shows the
-                    current stop's city + live weather (fetch-free, off the focus
-                    bundle's regionCountries). */}
-                {eventTargeted ? (
-                  <EventTrackingLabel
-                    segment={onAirSegment}
-                    extraDetails={nearestCityDetails(onAirSegment, cities)}
-                    theme={theme}
-                  />
-                ) : onAirSegment.kind === "region" && focusCaption ? (
-                  <EventTrackingLabel
-                    segment={{
-                      ...onAirSegment,
-                      title: focusCaption.title,
-                      subtitle: focusCaption.subtitle,
-                      details: [],
-                    }}
-                    extraDetails={
-                      tourStopWeather
-                        ? [
-                            {
-                              label: "Weather",
-                              value: `${Math.round(tourStopWeather.temp)}° · ${
-                                CONDITION_LABEL[tourStopWeather.condition] ?? tourStopWeather.condition
-                              }`,
-                            },
-                            ...(tourStopWeather.hi != null && tourStopWeather.lo != null
-                              ? [
-                                  {
-                                    label: "Next 24h",
-                                    value: `hi ${Math.round(tourStopWeather.hi)}° · lo ${Math.round(tourStopWeather.lo)}°`,
-                                  },
-                                ]
-                              : []),
-                          ]
-                        : []
-                    }
-                    flag={tourStopWeather ? flagEmoji(tourStopWeather.cc) : undefined}
-                    variant="place"
-                    theme={theme}
-                  />
-                ) : null}
-                <SlideDeck
-                  slides={leftDeck}
-                  holdMs={state.slideHoldMs}
-                  resetKey={onAirSegment.id}
-                  dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
-                  chrome={{
-                    badge: KIND_BADGE[onAirSegment.kind] ?? onAirSegment.kind,
-                    badgeColor: KIND_COLOR[onAirSegment.kind],
-                    title: onAirSegment.title,
-                    accent: KIND_COLOR[onAirSegment.kind],
-                  }}
-                />
-              </div>
+              <SlideDeck
+                slides={leftDeck}
+                holdMs={state.slideHoldMs}
+                resetKey={onAirSegment.id}
+                dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
+                chrome={{
+                  badge: KIND_BADGE[onAirSegment.kind] ?? onAirSegment.kind,
+                  badgeColor: KIND_COLOR[onAirSegment.kind],
+                  title: onAirSegment.title,
+                  accent: KIND_COLOR[onAirSegment.kind],
+                  // The tracking readout rides the card's fixed header (see
+                  // deckTracking above); the card grows by its height so the
+                  // slide bodies keep their full CARD_H room beneath it.
+                  tracking: deckTracking ?? undefined,
+                  height: deckTracking ? CARD_H + trackingBlockHeight(deckTrackingRows) : undefined,
+                }}
+              />
             ) : null}
           </FadeSwap>
         </div>
@@ -823,19 +841,19 @@ export default function BroadcastFrame({
           </div>
         )}
 
-        {/* Masthead title row: the ACTIVE MAP TYPE + its source/timing chip,
-            centred in the full-height strip to the right of the logo — the row
-            spans the whole masthead band, top edge to the banner's bottom. */}
+        {/* Masthead title widget: the ACTIVE MAP TYPE + its source/timing
+            metadata on one plate (see IntensityMeter part="title"), hugging the
+            TOP of the strip to the right of the logo rather than floating
+            mid-band. */}
         {brandOn && !off.has("intensityMeter") && (
           <div
             style={{
               position: "absolute",
-              top: 0,
+              top: BRAND_TOP + 4,
               left: BRAND_INSET,
               right: 0,
-              height: BANNER_BOTTOM,
               display: "flex",
-              alignItems: "center",
+              alignItems: "flex-start",
               justifyContent: "center",
             }}
           >
@@ -928,6 +946,7 @@ export default function BroadcastFrame({
               reportOff={state.reportOff}
               reportOrder={state.reportOrder}
               reportKindsOff={state.reportKindsOff}
+              about={state.about}
             />
           )}
           {/* NEW ALERTS — the just-issued warnings ride below the always-on

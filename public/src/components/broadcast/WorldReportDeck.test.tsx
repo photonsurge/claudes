@@ -93,6 +93,45 @@ describe("AboutPanel", () => {
     render(<AboutPanel theme={DEFAULT_THEME} feed={[]} />);
     expect(screen.getByText("ACTIVE FEED")).toBeInTheDocument();
   });
+
+  it("renders per-channel custom copy — title, paragraphs, sources and footnote", () => {
+    render(
+      <AboutPanel
+        theme={DEFAULT_THEME}
+        feed={[]}
+        about={{
+          title: "About Storm Watch",
+          body: "First paragraph.\n\nSecond paragraph.",
+          sources: "NOAA GFS\nUSGS, GDACS",
+          footer: "Custom small print.",
+        }}
+      />,
+    );
+    expect(screen.getByText("About Storm Watch")).toBeInTheDocument();
+    expect(screen.getByText("First paragraph.")).toBeInTheDocument();
+    expect(screen.getByText("Second paragraph.")).toBeInTheDocument();
+    // Sources accept newlines OR commas and render as one dotted credit line.
+    expect(screen.getByText("DATA SOURCES")).toBeInTheDocument();
+    expect(screen.getByText("NOAA GFS · USGS · GDACS")).toBeInTheDocument();
+    expect(screen.getByText("Custom small print.")).toBeInTheDocument();
+    // The built-in copy is fully replaced.
+    expect(screen.queryByText(/live visual monitoring platform/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/not an official warning service/)).not.toBeInTheDocument();
+  });
+
+  it("falls back per-field: sources alone keep the built-in copy + disclaimer", () => {
+    render(
+      <AboutPanel
+        theme={DEFAULT_THEME}
+        feed={[]}
+        about={{ title: "", body: "", sources: "NOAA GFS", footer: "" }}
+      />,
+    );
+    expect(screen.getByText("About G.O.D.S.")).toBeInTheDocument();
+    expect(screen.getByText(/live visual monitoring platform created by Thronix/)).toBeInTheDocument();
+    expect(screen.getByText("NOAA GFS")).toBeInTheDocument();
+    expect(screen.getByText(/not an official warning service/)).toBeInTheDocument();
+  });
 });
 
 describe("WorldReportDeck per-channel curation", () => {
@@ -133,6 +172,19 @@ describe("WorldReportDeck per-channel curation", () => {
     expect(screen.getByText("DETECTION GRID")).toBeInTheDocument();
     expect(screen.queryByText("ALERTS")).not.toBeInTheDocument();
     expect(screen.getByText("SEISMIC")).toBeInTheDocument();
+  });
+
+  it("threads the channel's about copy to the ABOUT slide", () => {
+    render(
+      <WorldReportDeck
+        worldWatch={emptyWatch}
+        manifest={null}
+        reportOff={["detection", "hourly", "alerts", "seismic", "volcanoes"]}
+        about={{ title: "About Storm Watch", body: "", sources: "NOAA GFS", footer: "" }}
+      />,
+    );
+    expect(screen.getByText("About Storm Watch")).toBeInTheDocument();
+    expect(screen.getByText("NOAA GFS")).toBeInTheDocument();
   });
 
   it("renders nothing when every report slide is hidden", () => {

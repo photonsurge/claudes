@@ -44,6 +44,18 @@ describe("BroadcastCard", () => {
     expect(screen.queryByText("ON AIR")).not.toBeInTheDocument();
   });
 
+  it("inside a deck, the template renders the chrome's tracking readout above the body", () => {
+    render(
+      <DeckChromeContext.Provider
+        value={{ badge: "Volcano", title: "Tokachidake", tracking: <div>MAGNITUDE rows</div> }}
+      >
+        <BroadcastCard>body content</BroadcastCard>
+      </DeckChromeContext.Provider>,
+    );
+    expect(screen.getByText("MAGNITUDE rows")).toBeInTheDocument();
+    expect(screen.getByText("body content")).toBeInTheDocument();
+  });
+
   it("CardSection renders its eyebrow and children", () => {
     render(
       <BroadcastCard>

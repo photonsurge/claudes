@@ -305,3 +305,24 @@ export async function listChat(ctx: YoutubeCtx, liveChatId: string, pageToken?: 
     pollingIntervalMillis: Number(res.data.pollingIntervalMillis ?? 5000),
   };
 }
+
+/** YouTube's hard cap on a live-chat text message. */
+export const CHAT_MESSAGE_MAX_LEN = 200;
+
+/**
+ * Post a message into a live chat AS the connected channel (the stream owner) —
+ * the chat responder's write path. Costs ~50 quota units per insert, so callers
+ * rate-limit (see stream/chat-commands.ts).
+ */
+export async function sendChatMessage(ctx: YoutubeCtx, liveChatId: string, text: string): Promise<void> {
+  await ctx.youtube.liveChatMessages.insert({
+    part: ["snippet"],
+    requestBody: {
+      snippet: {
+        liveChatId,
+        type: "textMessageEvent",
+        textMessageDetails: { messageText: text.slice(0, CHAT_MESSAGE_MAX_LEN) },
+      },
+    },
+  });
+}

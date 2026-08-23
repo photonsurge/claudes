@@ -40,13 +40,13 @@ describe("SlidesSettings", () => {
   it("reorders a slide down (delta patch carries the full new order)", async () => {
     render(<SlidesSettings sceneId="wind" />);
     // 'Track info' is the first non-pinned slide → moving it down swaps it with
-    // the next catalog slide ('Area history').
+    // the next catalog slide ('Sub-globe locator').
     const moveDown = await screen.findByRole("button", { name: "Move Track info down" });
     fireEvent.click(moveDown);
 
     expect(patch).toHaveBeenCalledTimes(1);
     const [, sent] = patch.mock.calls[0];
-    expect(sent.slideOrder.slice(0, 2)).toEqual(["history", "track"]);
+    expect(sent.slideOrder.slice(0, 2)).toEqual(["subglobe", "track"]);
   });
 
   it("changes the rotation dwell", async () => {

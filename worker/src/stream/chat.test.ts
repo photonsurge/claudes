@@ -15,9 +15,16 @@ jest.mock("../socket", () => ({ emitWorkerEvent: (e: never) => emitted.push(e) }
 jest.mock("@photonsurge/shared/utill/logger", () => ({ log: jest.fn() }));
 
 const mockListChat = jest.fn();
+const mockSendChat = jest.fn();
 jest.mock("../youtube/client", () => ({
   getYoutubeClient: jest.fn(async () => ({})),
   listChat: (...a: unknown[]) => mockListChat(...a),
+  sendChatMessage: (...a: unknown[]) => mockSendChat(...a),
+}));
+
+const mockCommandReplies = jest.fn();
+jest.mock("./chat-commands", () => ({
+  commandReplies: (...a: unknown[]) => mockCommandReplies(...a),
 }));
 
 const mockGetRun = jest.fn();
@@ -53,6 +60,8 @@ beforeEach(() => {
   mockGetRun.mockReset().mockResolvedValue(liveRun);
   mockAppend.mockReset().mockResolvedValue(1);
   mockListChat.mockReset();
+  mockSendChat.mockReset().mockResolvedValue(undefined);
+  mockCommandReplies.mockReset().mockResolvedValue([]);
   stopChatPoll("r1"); // clear any page token left by a previous test
   startChatPoll("r1");
 });
@@ -102,6 +111,32 @@ it("still emits when the log append fails", async () => {
   expect(await tick()).toBe(4_000); // not the 5s error backoff
   expect(emitted).toHaveLength(1);
   expect(emitted[0].data.id).toBe("m4");
+});
+
+it("posts command replies for fresh pages — but never answers the backlog", async () => {
+  mockCommandReplies.mockResolvedValue(["Map modes: …"]);
+  mockListChat.mockResolvedValueOnce(page(["m1"], "tok-2"));
+  await tick(); // backlog page
+  expect(mockCommandReplies).not.toHaveBeenCalled();
+  expect(mockSendChat).not.toHaveBeenCalled();
+
+  mockListChat.mockResolvedValueOnce(page(["m2"], "tok-3"));
+  await tick();
+  expect(mockCommandReplies).toHaveBeenCalledTimes(1);
+  const [runArg, msgsArg] = mockCommandReplies.mock.calls[0];
+  expect(runArg.id).toBe("r1");
+  expect(msgsArg.map((m: { id: string }) => m.id)).toEqual(["m2"]);
+  expect(mockSendChat).toHaveBeenCalledWith({}, "chat-1", "Map modes: …");
+});
+
+it("a failed reply send doesn't break the poll", async () => {
+  mockListChat.mockResolvedValueOnce(page([], "tok-2"));
+  await tick();
+  mockCommandReplies.mockResolvedValue(["hi"]);
+  mockSendChat.mockRejectedValue(new Error("insufficient scope"));
+  mockListChat.mockResolvedValueOnce(page(["m2"], "tok-3"));
+  expect(await tick()).toBe(4_000); // not the 5s error backoff
+  expect(emitted).toHaveLength(1); // relay already happened
 });
 
 it("clamps the poll interval to at least 2s and backs off 5s on API errors", async () => {

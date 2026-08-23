@@ -21,6 +21,7 @@ export type SlideGroup = "core" | "context" | "place" | "event" | "quake" | "vol
 export type SlideId =
   | "onair"
   | "track"
+  | "subglobe"
   | "history"
   | "depth"
   | "forecast"
@@ -58,9 +59,11 @@ export interface BroadcastSlide {
 /** Every catalog slide, in a sensible default order (this doubles as the natural
  *  ranking when a channel hasn't set its own `slideOrder`). */
 export const BROADCAST_SLIDES: readonly BroadcastSlide[] = [
-  // Core — the identity lede (pinned) + the rich notable-track card.
+  // Core — the identity lede (pinned) + the rich notable-track card + the
+  // "where we are" locator sub-globe every mode's deck closes on.
   { id: "onair", group: "core", label: "On-air lede", pinned: true },
   { id: "track", group: "core", label: "Track info" },
+  { id: "subglobe", group: "core", label: "Sub-globe locator" },
   // Context — the shared located-shot cards.
   { id: "history", group: "context", label: "Area history" },
   { id: "depth", group: "context", label: "Ocean depth profile" },
