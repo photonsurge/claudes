@@ -104,14 +104,24 @@ import { hasRealLocation, isTargetedEvent, KIND_COLOR, KIND_LABEL as KIND_BADGE 
 const TICKER_H = 34;
 const INSET = 30;
 const BRAND_STACK_H = 150;
-/** The masthead brand block sits at the very top-left, ABOVE the crawl, scaled
- *  up for legibility; the top ticker starts to its right (see BRAND_INSET) so
- *  the crawl never runs underneath the banner. */
+/** The masthead brand block sits at the very top-left, scaled up for
+ *  legibility; the top crawl band runs FULL WIDTH just beneath the banner
+ *  image (see BANNER_BOTTOM), with the brand block's readout/clock strip
+ *  dropped below the band (see STRIP_DROP) so nothing collides. */
 const BRAND_TOP = 4;
 const BRAND_SCALE = 1.25;
-/** Where the top crawl begins: just past the scaled banner's right edge
- *  (banner is 620 design px wide at left -4 → ~771 scaled). */
+/** Left edge of the masthead title band (the active-map hero + source chip):
+ *  just past the scaled banner's right edge (banner is 620 design px wide at
+ *  left -4 → ~771 scaled). */
 const BRAND_INSET = 780;
+/** Scaled bottom edge of the masthead banner PNG (1951×294 source at 620
+ *  design px wide → ~93 px tall, ×1.25, +BRAND_TOP ≈ 121) — the top crawl
+ *  tucks in right here, just under the banner's drop shadow. */
+const BANNER_BOTTOM = 120;
+/** Extra pre-scale gap BrandPanel opens between the banner and its readout/
+ *  clock strip, so the crawl band threads between them (band height +
+ *  breathing room, undone for the block's own 1.25 scale). */
+const STRIP_DROP = (TICKER_H + 14) / BRAND_SCALE;
 
 /**
  * A "Nearest City" reticle row for a moving target (aircraft / ship) — the
@@ -291,6 +301,11 @@ export default function BroadcastFrame({
   // Per-channel chrome-widget off-list (see shared/broadcast-widgets). Each
   // optional widget below is wrapped in `!off.has("<id>")`; empty = show all.
   const off = new Set<string>(state.widgetsOff);
+  // The top crawl hugs the very top edge on brand-less channels; with the
+  // masthead banner on, it slides down to run full-width UNDER the logo, and
+  // everything that hangs off the top band (centre legends, WORLD WATCH)
+  // follows it down.
+  const tickerTop = off.has("brand") ? 0 : BANNER_BOTTOM;
   // A country spotlight scopes the global alerts/quakes feeds down to its own
   // bbox (`shared/director-countries`); a weather-check segment has no fixed
   // bbox but does sit on a real ground location, so it gets the
@@ -776,12 +791,14 @@ export default function BroadcastFrame({
         </div>
         )}
 
+        {/* Top crawl: full width, tucked under the masthead banner (or at the
+            very top edge when the brand block is off). */}
         <Ticker
           title={theme.tickerTitle}
           items={ticker}
           edge="top"
           height={TICKER_H}
-          insetLeft={off.has("brand") ? 0 : BRAND_INSET}
+          offset={tickerTop}
           theme={theme}
         />
 
@@ -795,7 +812,40 @@ export default function BroadcastFrame({
               transformOrigin: "left top",
             }}
           >
-            <BrandPanel theme={theme} live={directorOn} status={brandStatus} />
+            <BrandPanel
+              theme={theme}
+              live={directorOn}
+              status={brandStatus}
+              stripDrop={STRIP_DROP}
+            />
+          </div>
+        )}
+
+        {/* Masthead title band: the ACTIVE MAP TYPE + its source/timing chip,
+            centred in the strip to the right of the logo, above the crawl —
+            the map description's new home, clear of both banner and band. */}
+        {!off.has("brand") && !off.has("intensityMeter") && (
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: BRAND_INSET,
+              right: 0,
+              height: BANNER_BOTTOM,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <IntensityMeter
+              part="title"
+              variable={legendVariable}
+              units={state.units}
+              theme={theme}
+              showSatImg={state.showSatImg}
+              satImgFeeds={state.satImgFeeds}
+              freshness={mapMeta}
+            />
           </div>
         )}
 
@@ -805,7 +855,7 @@ export default function BroadcastFrame({
           <div
             style={{
               position: "absolute",
-              top: BRAND_TOP + BRAND_STACK_H * BRAND_SCALE + 10,
+              top: BRAND_TOP + (BRAND_STACK_H + STRIP_DROP) * BRAND_SCALE + 10,
               left: -4,
             }}
           >
@@ -813,16 +863,16 @@ export default function BroadcastFrame({
           </div>
         ) : null}
 
-        {/* Top-centre column: single most-severe active alert, stacked above the
-            active variable's intensity meter/legend, then the space-weather
-            colour key (aurora oval / magnetic field) — all the on-air colour
-            legends live together here, horizontal, so the prime top-right slot
-            can carry the always-on WORLD WATCH summary instead. Each hides
-            independently when it has nothing to show. */}
+        {/* Top-centre column: the active variable's colour scale (its hero title
+            lives up in the masthead band when the brand block is on), then the
+            space-weather colour key (aurora oval / magnetic field) — the on-air
+            colour legends live together here, horizontal, so the prime
+            top-right slot can carry the always-on WORLD WATCH summary instead.
+            Each hides independently when it has nothing to show. */}
         <div
           style={{
             position: "absolute",
-            top: TICKER_H + INSET,
+            top: tickerTop + TICKER_H + INSET,
             left: "50%",
             transform: "translateX(-50%)",
             display: "flex",
@@ -833,6 +883,7 @@ export default function BroadcastFrame({
         >
           {!off.has("intensityMeter") && (
             <IntensityMeter
+              part={off.has("brand") ? "all" : "scale"}
               variable={legendVariable}
               units={state.units}
               theme={theme}
@@ -854,7 +905,7 @@ export default function BroadcastFrame({
         <div
           style={{
             position: "absolute",
-            top: TICKER_H + INSET,
+            top: tickerTop + TICKER_H + INSET,
             right: INSET - 26,
             display: "flex",
             flexDirection: "column",
@@ -917,11 +968,15 @@ export default function BroadcastFrame({
             position: "absolute",
             bottom: TICKER_H + INSET,
             left: "50%",
-            transform: "translateX(-50%)",
             display: "flex",
             flexDirection: "row",
             alignItems: "flex-end",
             gap: 16,
+            // Legibility: enlarge the whole monitor cluster as a unit (same
+            // treatment as the left deck's scale(1.2)) — anchored bottom-centre
+            // so it grows upward while staying centred over the ticker.
+            transform: "translateX(-50%) scale(1.35)",
+            transformOrigin: "bottom center",
           }}
         >
           {!off.has("seismic") && (

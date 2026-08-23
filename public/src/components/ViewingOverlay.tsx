@@ -15,10 +15,8 @@ import { getVariable } from "@photonsurge/shared/variables";
 import { getPalette } from "@photonsurge/shared/palettes";
 import { buildLegend } from "../lib/legend";
 import { mapFreshness } from "../lib/manifest";
-import { idleBreatheActive, idleBreatheZoom } from "../lib/idle-motion";
+import { idleBreatheActive, idleZoomOffset, MAX_PUSH_IN } from "../lib/idle-motion";
 
-/** Max zoom a push-in adds over a hold — keep in sync with Globe's MAX_PUSH_IN. */
-const MAX_PUSH_IN = 1.2;
 
 const KIND: Record<SegmentKind, { label: string; color: string }> = {
   intro: { label: "Live", color: "#1f9d72" },
@@ -162,8 +160,7 @@ export default function ViewingOverlay({
   const spinSpeed = state.autoSpin ? state.spinSpeed : 0;
   const zoomDrift = state.zoomDrift || 0;
   // Channel idle drift: the readout tracks its zoom breathe (the small lat/lng
-  // orbit is omitted here, same as the director orbit above). Breathe-gated —
-  // during a push-in shot the push-in stays the zoom readout.
+  // orbit is omitted here, same as the director orbit above).
   const idleBreathe = idleBreatheActive(state) ? state.idleBreathe : 0;
   const idlePeriodS = state.idlePeriodS;
   const flightSec = (state.cutTransitionMs || 0) / 1000;
@@ -175,9 +172,13 @@ export default function ViewingOverlay({
       let lng = lng0 + spinSpeed * dt;
       lng = ((((lng + 180) % 360) + 360) % 360) - 180;
       let zoom = baseZoom + Math.min(zoomDrift * dt, MAX_PUSH_IN);
-      if (idleBreathe > 0) {
-        zoom = baseZoom + idleBreatheZoom(idleBreathe, idlePeriodS, Math.max(0, dt - flightSec));
-      }
+      // Signed breathe offset: in-and-back on a still hold, out-from-the-cap
+      // once a push-in saturates (same handoff the globe computes).
+      zoom += idleZoomOffset(idleBreathe, idlePeriodS, {
+        dt,
+        ot: Math.max(0, dt - flightSec),
+        zoomDrift,
+      });
       setLive({ lng, lat: lat0, zoom });
     };
     tick();

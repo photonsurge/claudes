@@ -71,6 +71,7 @@ import {
   idleMotionActive,
   idleMotionOffsets,
   idleOrbitActive,
+  MAX_PUSH_IN,
 } from "../lib/idle-motion";
 import type { AlertFeature } from "../lib/alerts";
 import { alertFocusKey, type AlertFocus } from "../lib/alert-cycle";
@@ -169,8 +170,8 @@ type ViewState = { longitude: number; latitude: number; zoom: number } & Record<
 const FLY_MIN = 2600;
 const FLY_MAX = 7000;
 
-/** Max extra zoom a detail-shot push-in may add over its hold (zoom levels). */
-const MAX_PUSH_IN = 1.2;
+// MAX_PUSH_IN (max extra zoom a detail-shot push-in may add) lives in
+// idle-motion.ts — the idle breathe hands off from the push-in at that cap.
 
 /** Seconds for one full slow orbit of a framed "area" shot (orbitDrift). */
 const ORBIT_PERIOD_S = 48;
@@ -715,9 +716,10 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         // raised-cosine zoom breathe, deterministic in dt so /control and
         // /watch drift in phase. Pass the LIVE zoom (incl. any push-in) so the
         // orbit pan cap tightens as a detail shot creeps closer, exactly like
-        // the director orbit below. Same fly-in grace, additive on both axes.
+        // the director orbit below. The push clock lets the breathe hand off
+        // from a saturated push-in. Same fly-in grace, additive on both axes.
         const ot = Math.max(0, dt - flightSec);
-        const o = idleMotionOffsets(idle, ot, { zoom, lat: anchorLat });
+        const o = idleMotionOffsets(idle, ot, { zoom, lat: anchorLat }, { zoomDrift, dt });
         longitude += o.dLng;
         latitude = Math.max(-85, Math.min(85, latitude + o.dLat));
         zoom += o.dZoom;

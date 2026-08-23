@@ -20,6 +20,7 @@ export default function IntensityMeter({
   showSatImg,
   satImgFeeds,
   freshness,
+  part = "all",
 }: {
   variable: string | null;
   units: ControlState["units"];
@@ -31,11 +32,17 @@ export default function IntensityMeter({
   satImgFeeds?: ControlState["satImgFeeds"];
   /** Supplier and timestamps for the active map variable. */
   freshness?: MapFreshness | null;
+  /** Which half to render: "title" is the map-type hero + source/timing chip
+   *  (the masthead band next to the logo), "scale" is the colour-scale pill
+   *  (top-centre, under the crawl). "all" stacks both — the pre-split layout,
+   *  used when the brand block (and its masthead band) is off. */
+  part?: "title" | "scale" | "all";
 }) {
   const sat = satImgCaptionFor(showSatImg, satImgFeeds);
 
   if (!variable) {
-    if (!sat) return null;
+    // Photographic feed only: all the meter has is a caption — a "title".
+    if (!sat || part === "scale") return null;
     return (
       <div style={{ textAlign: "center", pointerEvents: "none", fontFamily: "system-ui, sans-serif" }}>
         <div
@@ -119,19 +126,36 @@ export default function IntensityMeter({
         pointerEvents: "none",
         fontFamily: "system-ui, sans-serif",
         color: "#dfe7f5",
-        transform: "translateY(-48px)",
       }}
     >
       {/* Hero: the ACTIVE MAP TYPE, big and unmissable — this is what viewers
-          need to read first, followed by the active source/timing metadata. */}
+          need to read first, with the source/timing metadata beneath it. */}
+      {part !== "scale" ? (
       <div style={{ textAlign: "center" }}>
+        <div
+          style={{
+            fontSize: compact ? 24.2 : 30.8,
+            fontWeight: 800,
+            letterSpacing: 0.3,
+            lineHeight: 1.05,
+            color: "#fff",
+            textShadow: "0 1px 8px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.5)",
+          }}
+        >
+          {meta.label}
+          {legend.unit ? (
+            <span style={{ fontSize: compact ? 16 : 18.7, fontWeight: 700, color: hexAt(1), marginLeft: 6 }}>
+              {legend.unit}
+            </span>
+          ) : null}
+        </div>
         {freshness ? (
           // Dark chip behind the metadata line — raw text over a bright basemap
           // washes out on air (and worse after stream compression).
           <div
             style={{
               display: "inline-block",
-              marginTop: 2,
+              marginTop: 5,
               padding: "4px 26px",
               borderRadius: 999,
               background: TILE_BG,
@@ -148,25 +172,10 @@ export default function IntensityMeter({
             {freshness.runLabel ? ` · RUN ${freshness.runLabel}` : ""}
           </div>
         ) : null}
-        <div
-          style={{
-            fontSize: compact ? 24.2 : 30.8,
-            fontWeight: 800,
-            letterSpacing: 0.3,
-            lineHeight: 1.05,
-            color: "#fff",
-            marginTop: 2,
-            textShadow: "0 1px 8px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.5)",
-          }}
-        >
-          {meta.label}
-          {legend.unit ? (
-            <span style={{ fontSize: compact ? 16 : 18.7, fontWeight: 700, color: hexAt(1), marginLeft: 6 }}>
-              {legend.unit}
-            </span>
-          ) : null}
-        </div>
       </div>
+      ) : null}
+      {part === "title" ? null : (
+      <>
       {/* Scale pill: bar + tick labels on their own dark panel, matching the
           card chrome — the palette-coloured tick text is unreadable straight
           over a light basemap. */}
@@ -236,6 +245,8 @@ export default function IntensityMeter({
           🛰 {sat.subtitle}
         </div>
       ) : null}
+      </>
+      )}
     </div>
   );
 }

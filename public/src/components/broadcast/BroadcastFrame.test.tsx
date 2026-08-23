@@ -122,10 +122,13 @@ function renderFrame(widgetsOff: WidgetId[]) {
 }
 
 describe("BroadcastFrame — per-channel widgetsOff gating", () => {
+  // intensityMeter legitimately renders twice with the brand on (the masthead
+  // map-title band + the top-centre scale pill are both the same component,
+  // split by its `part` prop) — so "shown" is a count check, not getByTestId.
   it("shows every catalog widget when the off-list is empty", () => {
     renderFrame([]);
     for (const id of WIDGET_IDS) {
-      expect(screen.getByTestId(TESTID[id])).toBeInTheDocument();
+      expect(screen.getAllByTestId(TESTID[id]).length).toBeGreaterThan(0);
     }
   });
 
@@ -135,7 +138,7 @@ describe("BroadcastFrame — per-channel widgetsOff gating", () => {
     expect(screen.queryByTestId(TESTID.syslog)).not.toBeInTheDocument();
     for (const id of WIDGET_IDS) {
       if (id === "seismic" || id === "syslog") continue;
-      expect(screen.getByTestId(TESTID[id])).toBeInTheDocument();
+      expect(screen.getAllByTestId(TESTID[id]).length).toBeGreaterThan(0);
     }
   });
 

@@ -16,6 +16,11 @@ import { orbitAmpCap } from "./orbit-frame";
  *  toggling it on (or landing a flight) never pops the camera sideways. */
 export const IDLE_EASE_S = 8;
 
+/** Max extra zoom a detail-shot push-in may add over its hold (zoom levels).
+ *  Lives here (not Globe.tsx) because the idle breathe hands off from the
+ *  push-in at exactly this cap; Globe and ViewingOverlay import it. */
+export const MAX_PUSH_IN = 1.2;
+
 /** The state slice the idle-motion decision + math read. */
 export type IdleMotionState = Pick<
   ControlState,
@@ -31,21 +36,18 @@ export type IdleMotionState = Pick<
  *  - ORBIT runs whenever nothing else moves the camera laterally — only the
  *    world spin and the director's own orbit suppress it, a push-in does not,
  *    so a settled detail shot keeps circling its subject.
- *  - BREATHE runs only when nothing else owns the zoom — a push-in is already
- *    the zoom motion, and layering a second one would fight it.
+ *  - BREATHE composes with a push-in instead of yielding to it: while the
+ *    push-in is still creeping, the push-in IS the zoom motion; the moment it
+ *    saturates at MAX_PUSH_IN the breathe takes over, swaying back OUT from
+ *    the cap and in again (see idleZoomOffset) so the zoom never goes dead
+ *    for the rest of the hold. Only the spin/director-orbit suppress it.
  */
 export function idleOrbitActive(state: IdleMotionState): boolean {
   return !!state.idleMotion && !state.autoSpin && !state.orbitDrift && state.idleOrbit > 0;
 }
 
 export function idleBreatheActive(state: IdleMotionState): boolean {
-  return (
-    !!state.idleMotion &&
-    !state.autoSpin &&
-    !state.zoomDrift &&
-    !state.orbitDrift &&
-    state.idleBreathe > 0
-  );
+  return !!state.idleMotion && !state.autoSpin && !state.orbitDrift && state.idleBreathe > 0;
 }
 
 /** True when idle motion contributes ANY movement (either gate open). */
@@ -65,6 +67,32 @@ export function idleBreatheZoom(breathe: number, periodS: number, ot: number): n
 }
 
 /**
+ * The breathe's SIGNED zoom offset, aware of a director push-in owning the
+ * zoom. With no push-in it breathes IN from the anchor and back (never wider
+ * than the operator's framing). With a push-in (`zoomDrift` > 0) it stays
+ * silent while the push-in creeps, then — from the deterministic instant the
+ * push-in saturates (dt = MAX_PUSH_IN / zoomDrift) — sways back OUT from the
+ * cap and in again, amplitude clamped to the push-in itself so it can never
+ * pull wider than the anchor framing. The raised cosine starts at zero with
+ * zero slope, so the handoff from the capped push-in is seamless.
+ *
+ * `dt` is seconds since spinEpoch (the push-in's clock); `ot` is dt minus the
+ * fly-in grace (the idle clock, same as the orbit's).
+ */
+export function idleZoomOffset(
+  breathe: number,
+  periodS: number,
+  t: { dt: number; ot: number; zoomDrift: number },
+): number {
+  if (breathe <= 0) return 0;
+  if (t.zoomDrift > 0) {
+    const satT = MAX_PUSH_IN / t.zoomDrift;
+    return -idleBreatheZoom(Math.min(breathe, MAX_PUSH_IN), periodS, t.dt - satT);
+  }
+  return idleBreatheZoom(breathe, periodS, t.ot);
+}
+
+/**
  * The full idle offsets to add to the anchor at `ot` seconds into the hold.
  * The orbit reuses the director-orbit rules: pan radius capped by what stays on
  * screen at the LIVE zoom (orbitAmpCap of the breathed zoom), amplitude eased
@@ -75,9 +103,15 @@ export function idleMotionOffsets(
   state: Pick<IdleMotionState, "idleOrbit" | "idleBreathe" | "idlePeriodS">,
   ot: number,
   anchor: { zoom: number; lat: number },
+  /** Set when a director push-in owns the zoom — hands the breathe off to it. */
+  push?: { zoomDrift: number; dt: number },
 ): { dLng: number; dLat: number; dZoom: number } {
   const periodS = state.idlePeriodS > 0 ? state.idlePeriodS : 60;
-  const dZoom = idleBreatheZoom(state.idleBreathe, periodS, ot);
+  const dZoom = idleZoomOffset(state.idleBreathe, periodS, {
+    dt: push?.dt ?? ot,
+    ot,
+    zoomDrift: push?.zoomDrift ?? 0,
+  });
   if (state.idleOrbit <= 0 || ot <= 0) return { dLng: 0, dLat: 0, dZoom };
   const amp =
     Math.min(state.idleOrbit, orbitAmpCap(anchor.zoom + dZoom)) *

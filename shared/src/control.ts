@@ -412,9 +412,10 @@ export interface ControlState {
    * "breathe" in and back out. Unlike zoomDrift/orbitDrift (which the
    * auto-director stamps per cut), this is a standing channel preference that
    * COMPOSES with a hold: the orbit rides along with a director push-in (so a
-   * detail shot keeps circling its subject after the push-in saturates), the
-   * breathe only runs when nothing else owns the zoom, and both yield to
-   * autoSpin and the director's own orbit (see idle-motion.ts gates).
+   * detail shot keeps circling its subject), the breathe takes the zoom over
+   * the moment a push-in tops out — swaying back out from the cap and in
+   * again — and both yield to autoSpin and the director's own orbit (see
+   * idle-motion.ts gates).
    * Deterministic off spinEpoch like the rest, so /control and /watch drift
    * in phase.
    */

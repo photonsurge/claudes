@@ -15,6 +15,7 @@ export default function Ticker({
   height = 30,
   compact = false,
   insetLeft = 0,
+  offset = 0,
   theme = DEFAULT_THEME,
 }: {
   title: string;
@@ -26,6 +27,9 @@ export default function Ticker({
   /** Start the band this far from the left edge — the top crawl uses it to
    *  begin AFTER the masthead brand block instead of running underneath it. */
   insetLeft?: number;
+  /** Push the band this far in from its pinned edge — the top crawl uses it to
+   *  slide down beneath the masthead banner instead of hugging the very top. */
+  offset?: number;
   theme?: BroadcastTheme;
 }) {
   const line = items.length
@@ -41,13 +45,18 @@ export default function Ticker({
         position: "absolute",
         left: insetLeft,
         right: 0,
-        [edge]: 0,
+        [edge]: offset,
         height,
         display: "flex",
         alignItems: "center",
         background: "linear-gradient(180deg, rgba(6,10,18,0.74), rgba(4,7,13,0.7))",
         borderBottom: edge === "top" ? "1px solid rgba(120,140,170,0.2)" : undefined,
-        borderTop: edge === "bottom" ? "1px solid rgba(120,140,170,0.2)" : undefined,
+        // A band floating below the masthead (offset top crawl) is framed on
+        // both edges; one pinned to the screen edge only needs the inner line.
+        borderTop:
+          edge === "bottom" || offset > 0
+            ? "1px solid rgba(120,140,170,0.2)"
+            : undefined,
         overflow: "hidden",
         color: "#dfe7f5",
         fontFamily: "system-ui, sans-serif",
