@@ -4,7 +4,7 @@
  *  Ticks its own countdown; renders nothing while auto is off or the director
  *  hasn't cut to a first shot yet. */
 import { useEffect, useState } from "react";
-import type { DirectorState } from "@photonsurge/shared/director";
+import { upNextLabel, type DirectorState } from "@photonsurge/shared/director";
 import { box } from "./panelBox";
 
 export default function DirectorOnAirReadout({ auto, live }: { auto: boolean; live: DirectorState | null }) {
@@ -25,7 +25,12 @@ export default function DirectorOnAirReadout({ auto, live }: { auto: boolean; li
       {live.segment.subtitle ? <div style={{ fontSize: 12, opacity: 0.8 }}>{live.segment.subtitle}</div> : null}
       {live.upNext.length ? (
         <div style={{ fontSize: 11, opacity: 0.6, marginTop: 6 }}>
-          Up next: {live.upNext.map((u) => u.title).join(" · ")}
+          {live.upNext.map((u, i) => (
+            <div key={i}>
+              {i === 0 ? "Up next: " : ""}
+              {upNextLabel(u)}
+            </div>
+          ))}
         </div>
       ) : null}
     </div>

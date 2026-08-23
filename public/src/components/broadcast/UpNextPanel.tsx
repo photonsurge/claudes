@@ -4,12 +4,14 @@
  * Small "coming up" hint stacked with the SYSLOG feed, bottom-right — the
  * director's best-guess preview of what plays after the current segment
  * (score-ranked at the last cut, not a committed pick, so it's a hint rather
- * than a promise of exactly what airs next).
+ * than a promise of exactly what airs next). One line per upcoming shot so
+ * each can carry its locating detail ("Earthquake — M5.6 · Southern Sumatra")
+ * instead of a bare kind name.
  */
-import type { SegmentKind } from "@photonsurge/shared/director";
+import { upNextLabel, type UpNextItem } from "@photonsurge/shared/director";
 import { useBroadcastTheme } from "./theme-context";
 
-export default function UpNextPanel({ items }: { items: { kind: SegmentKind; title: string }[] }) {
+export default function UpNextPanel({ items }: { items: UpNextItem[] }) {
   const theme = useBroadcastTheme();
   if (!items.length) return null;
   return (
@@ -25,7 +27,12 @@ export default function UpNextPanel({ items }: { items: { kind: SegmentKind; tit
         pointerEvents: "none",
       }}
     >
-      UP NEXT · {items.map((u) => u.title).join("  ·  ")}
+      {items.map((u, i) => (
+        <div key={i}>
+          {i === 0 ? "UP NEXT · " : ""}
+          {upNextLabel(u)}
+        </div>
+      ))}
     </div>
   );
 }

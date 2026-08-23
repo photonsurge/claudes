@@ -157,7 +157,7 @@ function previewNext(
     const breaking = eligible
       .filter((c) => PRIORITY_KINDS.includes(c.segment.kind) && c.breaking !== false && !counts.has(c.segment.id))
       .sort((a, b) => b.score - a.score)[0];
-    if (breaking) out.push({ kind: breaking.segment.kind, title: breaking.segment.title, ...focusOf(breaking.segment) });
+    if (breaking) out.push({ kind: breaking.segment.kind, title: breaking.segment.title, subtitle: breaking.segment.subtitle, ...focusOf(breaking.segment) });
   }
 
   const seenKinds = new Set(out.map((o) => o.kind));
@@ -167,7 +167,7 @@ function previewNext(
   for (const kind of shuffled(remainingKinds)) {
     const cands = eligible.filter((c) => c.segment.kind === kind);
     const pick = pickLeastAired(cands, counts).segment;
-    out.push({ kind, title: pick.title, ...focusOf(pick) });
+    out.push({ kind, title: pick.title, subtitle: pick.subtitle, ...focusOf(pick) });
     if (out.length >= 3) break;
   }
   return out;

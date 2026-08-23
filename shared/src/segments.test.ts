@@ -1,4 +1,4 @@
-import { quakeSegmentContent, alertSegmentContent, volcanoTrackInfo } from "./segments";
+import { quakeSegmentContent, alertSegmentContent, volcanoSegmentContent, volcanoTrackInfo } from "./segments";
 import type { Volcano } from "./volcanoes/types";
 
 /** 2026-07-02T12:00:00Z as epoch ms — a fixed "now" so "Ago" is deterministic. */
@@ -97,6 +97,20 @@ describe("alertSegmentContent — broadcast title/Type", () => {
     expect(c.details.find((d) => d.label === "Begins in")?.value).toBe("2h 30m");
     expect(c.details.find((d) => d.label === "Active for")).toBeUndefined();
     expect(c.details.find((d) => d.label === "Active since")).toBeUndefined();
+  });
+});
+
+describe("volcanoSegmentContent — subtitle places the volcano", () => {
+  const base = { name: "Etna", status: "unrest" as const, lat: 37.75, lng: 14.99, lastDate: NOW };
+
+  it("appends the country so the name isn't the only locator", () => {
+    const c = volcanoSegmentContent({ ...base, country: "Italy" });
+    expect(c.subtitle).toBe("Volcanic unrest · Italy");
+  });
+
+  it("falls back to the bare status line when the country is unknown", () => {
+    const c = volcanoSegmentContent(base);
+    expect(c.subtitle).toBe("Volcanic unrest");
   });
 });
 

@@ -11,6 +11,7 @@ import {
   kindHoldMs,
   quakeHoldMs,
   stormHoldMs,
+  upNextLabel,
   type DirectorConfig,
 } from "./director";
 
@@ -129,6 +130,18 @@ describe("hold resolvers", () => {
     expect(kindHoldMs(legacy, "country")).toBe(12_000);
     expect(quakeHoldMs(legacy, 8.2)).toBe(30_000);
     expect(stormHoldMs(legacy, 4)).toBe(24_000);
+  });
+});
+
+describe("upNextLabel", () => {
+  it("carries the locating subtitle so the rail says where, not just what", () => {
+    expect(upNextLabel({ kind: "quake", title: "Earthquake", subtitle: "M5.6 · Southern Sumatra" })).toBe(
+      "Earthquake — M5.6 · Southern Sumatra",
+    );
+  });
+
+  it("degrades to the bare title when a segment has no subtitle", () => {
+    expect(upNextLabel({ kind: "global", title: "World View" })).toBe("World View");
   });
 });
 

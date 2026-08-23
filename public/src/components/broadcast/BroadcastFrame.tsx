@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The on-air chrome overlaying the globe/map: top + bottom crawls, the brand
+ * The on-air chrome overlaying the globe/map: the bottom crawl, the brand
  * block + LIVE badge, a top-centre live-alert panel + intensity meter, a
  * top-right world-watch summary and bottom seismic/tsunami global monitors.
  *
@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
-import type { Segment, SegmentKind } from "@photonsurge/shared/director";
+import type { Segment, UpNextItem } from "@photonsurge/shared/director";
 import type { AuroraOverlay } from "../../lib/aurora-overlay";
 import type { GeomagOverlay } from "../../lib/geomag-overlay";
 import type { AlertFeature } from "../../lib/alerts";
@@ -89,7 +89,7 @@ import TideStationRow from "./TideStationRow";
 import PointHistoryPanel from "./PointHistoryPanel";
 import ForecastPanel from "./ForecastPanel";
 import { mapFreshness } from "../../lib/manifest";
-import EventOverlay from "./EventOverlay";
+import EventOverlay, { EventTrackingLabel } from "./EventOverlay";
 import { flagEmoji } from "./RegionCountryPanel";
 import SyslogFeed from "./SyslogFeed";
 import UpNextPanel from "./UpNextPanel";
@@ -102,33 +102,21 @@ import { hasRealLocation, isTargetedEvent, KIND_COLOR, KIND_LABEL as KIND_BADGE 
 
 /** Design-stage layout constants (in 1080p reference pixels). */
 const TICKER_H = 34;
-/** With the masthead banner on, the top crawl band rides this far below the
- *  very top edge — tucking it down into the banner plate rather than kissing
- *  the screen edge. */
-const TICKER_DROP = 10;
 const INSET = 30;
 const BRAND_STACK_H = 150;
 /** The masthead brand block sits at the very top-left, scaled up for
- *  legibility; the top crawl band hugs the VERY TOP edge, full width, running
- *  BEHIND the banner PNG — chip-less, with the crawl text clipped at the
- *  graphic's right end (see BANNER_EDGE) so it slides out from behind the
- *  artwork. The map title/details row sits on the next row down, beneath the
- *  crawl, in the strip right of the logo. */
+ *  legibility. There is no top crawl any more — the map title/details row
+ *  rides the full masthead strip to the right of the logo. */
 const BRAND_TOP = 4;
-const BRAND_SCALE = 1.25;
+const BRAND_SCALE = 1.5;
 /** Left edge of the masthead title band (the active-map hero + source chip):
  *  just past the scaled banner's right edge (banner is 620 design px wide at
- *  left -4 → ~771 scaled). */
-const BRAND_INSET = 780;
+ *  left -4 → ~926 scaled). */
+const BRAND_INSET = 940;
 /** Scaled bottom edge of the masthead banner PNG (1951×294 source at 620
- *  design px wide → ~93 px tall, ×1.25, +BRAND_TOP ≈ 121) — the masthead
+ *  design px wide → ~93 px tall, ×1.5, +BRAND_TOP ≈ 144) — the masthead
  *  title row ends at this edge, so the chrome below hangs off it. */
-const BANNER_BOTTOM = 120;
-/** Where the banner artwork's right end crosses the crawl band (design px):
- *  the lozenge plate is at its widest along its top rows, opaque out to
- *  ~757–760, so the crawl text clips here and reads as emerging from behind
- *  the graphic. */
-const BANNER_EDGE = 760;
+const BANNER_BOTTOM = 144;
 
 /**
  * A "Nearest City" reticle row for a moving target (aircraft / ship) — the
@@ -224,7 +212,7 @@ export default function BroadcastFrame({
   focusCaption?: { title: string; subtitle: string } | null;
   /** Director's best-guess "coming up" preview (score-ranked at the last cut,
    *  not a committed pick) — drives the small UP NEXT line by the SYSLOG feed. */
-  upNext?: { kind: SegmentKind; title: string }[];
+  upNext?: UpNextItem[];
   /** True once the globe's own textures are ready (see useGlobeReadyOnce) —
    *  defers the WORLD WATCH panels' cold-start fetch so it doesn't compete with
    *  those for bandwidth while the loading screen is still up. */
@@ -266,7 +254,7 @@ export default function BroadcastFrame({
   );
   // The round-up narrative rides on a `global` spin (see director.ts's
   // `Segment.summary`) — surfaced as on-air graphics (the round-up deck card),
-  // NOT by hijacking the bottom crawl. Both crawls keep the standing global feed
+  // NOT by hijacking the bottom crawl. The crawl keeps the standing global feed
   // throughout, so the day's live alerts/quakes/tracks stay on screen even while
   // a round-up airs.
   const summaryOnAir = onAirSegment?.summary ?? null;
@@ -308,13 +296,11 @@ export default function BroadcastFrame({
   // Per-channel chrome-widget off-list (see shared/broadcast-widgets). Each
   // optional widget below is wrapped in `!off.has("<id>")`; empty = show all.
   const off = new Set<string>(state.widgetsOff);
-  // The top crawl always hugs the very top edge. Brand off: the classic chip +
-  // band. Brand on: chip-less, running full width BEHIND the banner's top row,
-  // with the map title/details on the row beneath it — so the chrome below
-  // (centre legends, WORLD WATCH) hangs off the banner's bottom edge instead
-  // of the crawl's.
+  // Brand on: the chrome below (centre legends, WORLD WATCH) hangs off the
+  // masthead banner's bottom edge. Brand off: nothing rides the top edge (the
+  // top crawl is gone), so it hangs off the screen edge itself.
   const brandOn = !off.has("brand");
-  const chromeTop = (brandOn ? BANNER_BOTTOM : TICKER_H) + INSET;
+  const chromeTop = (brandOn ? BANNER_BOTTOM : 0) + INSET;
   // A country spotlight scopes the global alerts/quakes feeds down to its own
   // bbox (`shared/director-countries`); a weather-check segment has no fixed
   // bbox but does sit on a real ground location, so it gets the
@@ -667,16 +653,14 @@ export default function BroadcastFrame({
         }}
       >
         {/* Targeted point events (storm/quake/aircraft/ship/volcano) get the
-            centred reticle + lower-third, with the tracking detail on its
-            top-left corner, point-history on its top-right and the 3-day
-            forecast strip hung below its bottom edge — all travelling with the
-            reticle. Wide shots (global/ocean/region/…) keep their lower-left
-            card stack. */}
+            centred reticle + lower-third, with point-history on its top-right
+            and the 3-day forecast strip hung below its bottom edge — both
+            travelling with the reticle. The tracking-detail readout no longer
+            hangs off the frame: it rides on top of the bottom-left deck
+            instead (see EventTrackingLabel below). */}
         {onAirSegment && isTargetedEvent(onAirSegment.kind) ? (
           <EventOverlay
             segment={onAirSegment}
-            extraDetails={nearestCityDetails(onAirSegment, cities)}
-            theme={theme}
             historyPanel={
               segmentHasLocation ? (
                 <PointHistoryPanel
@@ -697,10 +681,11 @@ export default function BroadcastFrame({
 
         {/* Areas (region) tour: the camera frames each country's biggest city dead-
             centre, so a caption-only reticle names the CURRENT CITY there while the
-            left card keeps naming the area. The current weather + a 3-day forecast
-            strip come from the tour stop's country on the focus bundle
-            (regionCountries, matched by coordinate) — NOT a per-stop fetch — so the
-            reticle stays fetch-free while still showing the stop's outlook. */}
+            left card keeps naming the area. The 3-day forecast strip comes from the
+            tour stop's country on the focus bundle (regionCountries, matched by
+            coordinate) — NOT a per-stop fetch — so the reticle stays fetch-free
+            while still showing the stop's outlook. (The stop's current weather rows
+            ride the deck-top tracking strip below.) */}
         {onAirSegment?.kind === "region" && focusCaption ? (
           <EventOverlay
             segment={{
@@ -709,29 +694,6 @@ export default function BroadcastFrame({
               subtitle: focusCaption.subtitle,
               details: [],
             }}
-            extraDetails={
-              tourStopWeather
-                ? [
-                    {
-                      label: "Weather",
-                      value: `${Math.round(tourStopWeather.temp)}° · ${
-                        CONDITION_LABEL[tourStopWeather.condition] ?? tourStopWeather.condition
-                      }`,
-                    },
-                    ...(tourStopWeather.hi != null && tourStopWeather.lo != null
-                      ? [
-                          {
-                            label: "Next 24h",
-                            value: `hi ${Math.round(tourStopWeather.hi)}° · lo ${Math.round(tourStopWeather.lo)}°`,
-                          },
-                        ]
-                      : []),
-                  ]
-                : []
-            }
-            flag={tourStopWeather ? flagEmoji(tourStopWeather.cc) : undefined}
-            variant="place"
-            theme={theme}
             forecastPanel={
               tourStopWeather?.days?.length ? (
                 <ForecastPanel center={null} daysOverride={tourStopWeather.days} compact theme={theme} glass />
@@ -746,9 +708,10 @@ export default function BroadcastFrame({
             aircraft/ship, or the targeted-event quake/nearby-cities report — all
             mutually exclusive on segment kind). column-reverse anchors the
             context card to the bottom edge regardless of the history panel's
-            (self-hiding, variable-height) content. Only shown for wide (non-
-            targeted) shots — targeted events carry their own compact copy in
-            the EventOverlay reticle above instead. */}
+            (self-hiding, variable-height) content. On a targeted event / Areas
+            tour the reticle's tracking readout (EventTrackingLabel) sits pinned
+            on top of the deck, outside the slide rotation, so the event detail
+            rows stay on screen no matter which slide is airing. */}
         {!off.has("leftDeck") && (
         <div
           style={{
@@ -762,7 +725,6 @@ export default function BroadcastFrame({
             // Legibility: enlarge the whole deck as a unit (anchored to its
             // bottom-left corner) rather than re-sizing every slide's fonts —
             // keeps the fixed-card layout intact while reading bigger on air.
-            // (EventOverlay's LABEL_POS budgets for the scaled right edge.)
             transform: "scale(1.2)",
             transformOrigin: "left bottom",
           }}
@@ -783,37 +745,69 @@ export default function BroadcastFrame({
               the black) and fades it back once the globe settles. */}
           <FadeSwap hidden={cutting} style={{ display: "flex" }}>
             {onAirSegment ? (
-              <SlideDeck
-                slides={leftDeck}
-                holdMs={state.slideHoldMs}
-                resetKey={onAirSegment.id}
-                dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
-                chrome={{
-                  badge: KIND_BADGE[onAirSegment.kind] ?? onAirSegment.kind,
-                  badgeColor: KIND_COLOR[onAirSegment.kind],
-                  title: onAirSegment.title,
-                  accent: KIND_COLOR[onAirSegment.kind],
-                }}
-              />
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 10 }}>
+                {/* The reticle's tracking readout, pinned on TOP of the deck —
+                    always on screen for the whole segment (it lives outside the
+                    SlideDeck, so the rotating slides never take it away). A
+                    targeted event shows its detail rows; an Areas tour shows the
+                    current stop's city + live weather (fetch-free, off the focus
+                    bundle's regionCountries). */}
+                {eventTargeted ? (
+                  <EventTrackingLabel
+                    segment={onAirSegment}
+                    extraDetails={nearestCityDetails(onAirSegment, cities)}
+                    theme={theme}
+                  />
+                ) : onAirSegment.kind === "region" && focusCaption ? (
+                  <EventTrackingLabel
+                    segment={{
+                      ...onAirSegment,
+                      title: focusCaption.title,
+                      subtitle: focusCaption.subtitle,
+                      details: [],
+                    }}
+                    extraDetails={
+                      tourStopWeather
+                        ? [
+                            {
+                              label: "Weather",
+                              value: `${Math.round(tourStopWeather.temp)}° · ${
+                                CONDITION_LABEL[tourStopWeather.condition] ?? tourStopWeather.condition
+                              }`,
+                            },
+                            ...(tourStopWeather.hi != null && tourStopWeather.lo != null
+                              ? [
+                                  {
+                                    label: "Next 24h",
+                                    value: `hi ${Math.round(tourStopWeather.hi)}° · lo ${Math.round(tourStopWeather.lo)}°`,
+                                  },
+                                ]
+                              : []),
+                          ]
+                        : []
+                    }
+                    flag={tourStopWeather ? flagEmoji(tourStopWeather.cc) : undefined}
+                    variant="place"
+                    theme={theme}
+                  />
+                ) : null}
+                <SlideDeck
+                  slides={leftDeck}
+                  holdMs={state.slideHoldMs}
+                  resetKey={onAirSegment.id}
+                  dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
+                  chrome={{
+                    badge: KIND_BADGE[onAirSegment.kind] ?? onAirSegment.kind,
+                    badgeColor: KIND_COLOR[onAirSegment.kind],
+                    title: onAirSegment.title,
+                    accent: KIND_COLOR[onAirSegment.kind],
+                  }}
+                />
+              </div>
             ) : null}
           </FadeSwap>
         </div>
         )}
-
-        {/* Top crawl: pinned to the very top edge, full width. Brand on: chip-
-            less, running BEHIND the masthead banner (which renders after it, so
-            the artwork paints on top), with the crawl text clipped at the
-            graphic's right end so it slides out from behind it. Brand off: the
-            classic chip + band. */}
-        <Ticker
-          title={brandOn ? null : theme.tickerTitle}
-          items={ticker}
-          edge="top"
-          height={TICKER_H}
-          offset={brandOn ? TICKER_DROP : 0}
-          contentInset={brandOn ? BANNER_EDGE : 0}
-          theme={theme}
-        />
 
         {brandOn && (
           <div
@@ -829,18 +823,17 @@ export default function BroadcastFrame({
           </div>
         )}
 
-        {/* Masthead title row: the ACTIVE MAP TYPE + its source/timing chip on
-            the row BELOW the crawl, centred in the strip to the right of the
-            logo — the row runs from the crawl's bottom edge down to the
-            banner's bottom edge. */}
+        {/* Masthead title row: the ACTIVE MAP TYPE + its source/timing chip,
+            centred in the full-height strip to the right of the logo — the row
+            spans the whole masthead band, top edge to the banner's bottom. */}
         {brandOn && !off.has("intensityMeter") && (
           <div
             style={{
               position: "absolute",
-              top: TICKER_DROP + TICKER_H,
+              top: 0,
               left: BRAND_INSET,
               right: 0,
-              height: BANNER_BOTTOM - TICKER_DROP - TICKER_H,
+              height: BANNER_BOTTOM,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",

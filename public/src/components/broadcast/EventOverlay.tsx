@@ -7,15 +7,17 @@
  * reference broadcast. Colour tracks the segment kind. Pure CSS, inside the
  * scaled design stage.
  *
- * The tracking-detail readout (SEVERITY / TYPE / COUNTRY …) is a separate export
- * (EventTrackingLabel) the frame anchors into the top-left column, rather than
- * floating it off the reticle corner where it collided with the brand block.
+ * The tracking-detail readout (STATUS / TYPE / COUNTRY …) no longer hangs off
+ * the frame at all — it's the exported EventTrackingLabel, a slim strip
+ * BroadcastFrame pins ON TOP of the bottom-left mode deck, so the readout stays
+ * on screen for the whole segment no matter which slide rotates beneath it.
  */
 import type { Segment } from "@photonsurge/shared/director";
 import { STAGE_W, STAGE_H } from "./useStageScale";
-import { KIND_COLOR, KIND_LABEL } from "./kinds";
+import { KIND_COLOR } from "./kinds";
 import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
 import { KindGlyph } from "./glyphs";
+import { CARD_W } from "./BroadcastCard";
 
 const W = 660;
 const H = 440;
@@ -24,7 +26,6 @@ const H = 440;
  * Reticle-bound readout anchors — offsets (design px) from the frame's own edges,
  * so each data panel hangs off the target frame and travels with it rather than
  * pinning to a screen corner. These are the knobs for where the readouts sit:
- *   • LABEL    — tracking detail, tucked onto the top-left corner
  *   • HISTORY  — point-history, top-right, pushed out to the right
  *   • FORECAST — 3-day forecast strip, hung BELOW the frame's bottom edge and
  *                right-aligned to it. Below the frame (not on the bottom-right
@@ -33,12 +34,8 @@ const H = 440;
  *                still reading as "the outlook for this locked target".
  */
 // NB: the hung readouts render at scale 1.15 (see below), so these anchors also
-// keep them CLEAR of the enlarged corner panels: the LABEL's left edge must stay
-// right of the bottom-left deck (which now reaches ~518 design px, see
-// BroadcastFrame's scaled leftDeck) so a tall volcano readout's last rows don't
-// slide under the card; HISTORY must stop short of the top-right WORLD WATCH
-// column (left edge ~1452) so the two don't touch.
-const LABEL_POS = { top: -56, left: -100 };
+// keep them CLEAR of the enlarged corner panels: HISTORY must stop short of the
+// top-right WORLD WATCH column (left edge ~1452) so the two don't touch.
 const HISTORY_POS = { top: -44, right: -96 };
 const FORECAST_POS = { top: H + 10, right: -60 };
 
@@ -88,30 +85,14 @@ function ReticleMarks({ color }: { color: string }) {
 
 export default function EventOverlay({
   segment,
-  extraDetails = [],
   historyPanel,
   forecastPanel,
-  variant = "event",
-  flag,
-  theme = DEFAULT_THEME,
 }: {
   segment: Segment;
-  /** Extra tracking-label rows appended after the segment's own details (e.g. a
-   *  nearest-city place line for aircraft/ship). */
-  extraDetails?: { label: string; value: string }[];
   /** Point-history trend, hung off the reticle's top-right (HISTORY_POS). */
   historyPanel?: React.ReactNode;
   /** 3-day forecast strip, hung below the reticle's bottom edge (FORECAST_POS). */
   forecastPanel?: React.ReactNode;
-  /** "event" (default) reads as a detection lock on a hazard; "place" softens the
-   *  wording to NOW VIEWING / LOCATION for a calm Areas-tour city. */
-  variant?: "event" | "place";
-  /** Flag emoji shown before the LOCATION name (place variant — an Areas tour
-   *  parked on a country). */
-  flag?: string;
-  /** Active broadcast theme — the tracking label draws its glass from the same
-   *  tokens as the rest of the on-air cards. */
-  theme?: BroadcastTheme;
 }) {
   const color = KIND_COLOR[segment.kind] ?? "#38bdf8";
   const name = segment.title.toUpperCase();
@@ -154,14 +135,9 @@ export default function EventOverlay({
         <ReticleMarks color={color} />
       </div>
 
-      {/* Tracking-detail readout, hung onto the reticle's top-left corner.
+      {/* Point-history trend, top-right of the frame (pushed out to the right).
           Each hung readout is scaled up as a unit (anchored to the corner it
           hangs from) so it reads bigger on air without re-sizing its layout. */}
-      <div style={{ position: "absolute", ...LABEL_POS, transform: "scale(1.15)", transformOrigin: "left top" }}>
-        <EventTrackingLabel segment={segment} extraDetails={extraDetails} variant={variant} flag={flag} theme={theme} />
-      </div>
-
-      {/* Point-history trend, top-right of the frame (pushed out to the right). */}
       {historyPanel ? (
         <div style={{ position: "absolute", ...HISTORY_POS, transform: "scale(1.15)", transformOrigin: "right top" }}>{historyPanel}</div>
       ) : null}
@@ -267,12 +243,15 @@ export default function EventOverlay({
 }
 
 /**
- * The tracking-detail readout (kind badge + EVENT DETECTION OVERLAY header +
- * the segment's detail rows). Rendered as a self-contained glass panel with no
- * positioning of its own — the frame anchors it into the top-left column so it
- * sits cleanly under the brand block instead of over the reticle/clocks.
+ * The tracking-detail readout — a slim EVENT DETECTION OVERLAY strip of the
+ * segment's detail rows. BroadcastFrame renders it directly ON TOP of the
+ * bottom-left mode deck (same width, so the two read as one unit), where it
+ * stays put for the whole segment while the slides rotate beneath it. Slimmed
+ * for that slot: the deck's own header right below already carries the kind
+ * badge + event name, so this strip skips both and keeps just the overlay
+ * eyebrow, the [ACTIVE]/[UPCOMING] status tag and the data rows.
  */
-function EventTrackingLabel({
+export function EventTrackingLabel({
   segment,
   extraDetails = [],
   variant = "event",
@@ -283,12 +262,15 @@ function EventTrackingLabel({
   /** Extra rows appended after the segment's own details (e.g. a nearest-city
    *  place line for aircraft/ship, which the segment shape doesn't carry). */
   extraDetails?: { label: string; value: string }[];
+  /** "event" (default) reads as a detection lock on a hazard; "place" softens
+   *  the wording to NOW VIEWING / LOCATION for a calm Areas-tour city. */
   variant?: "event" | "place";
+  /** Flag emoji shown before the LOCATION name (place variant — an Areas tour
+   *  parked on a country). */
   flag?: string;
   theme?: BroadcastTheme;
 }) {
   const color = KIND_COLOR[segment.kind] ?? "#38bdf8";
-  const kindLabel = KIND_LABEL[segment.kind] ?? segment.kind;
   const name = segment.title.toUpperCase();
   const details = [...(segment.details ?? []), ...extraDetails];
   const isPlace = variant === "place";
@@ -296,46 +278,40 @@ function EventTrackingLabel({
   // hasn't started, so don't badge it as active.
   const pending = details.some((d) => d.label === "Begins in");
   const statusTag = pending ? "[UPCOMING]" : "[ACTIVE]";
-  const locationValue = isPlace && flag ? `${flag} ${name}` : isPlace ? name : `${name} ${statusTag}`;
   return (
     <div
       style={{
-        minWidth: 250,
-        padding: "10px 14px",
+        width: CARD_W,
+        boxSizing: "border-box",
+        padding: "8px 16px 9px",
         // Coloured tinted glass: a wash of the segment's kind colour over a solid
         // dark base, so the panel stays legible over any basemap (and through
         // stream compression). The blur + a soft inner colour glow give it depth.
         background: `linear-gradient(180deg, ${color}26, ${color}10), rgba(8,14,24,0.82)`,
         border: theme.panelBorder,
         borderRadius: 10,
-        boxShadow: `inset 0 0 32px ${color}1f, 0 10px 26px rgba(0,0,0,0.45)`,
+        boxShadow: `inset 0 0 24px ${color}1f, 0 8px 20px rgba(0,0,0,0.45)`,
         backdropFilter: "blur(10px)",
         WebkitBackdropFilter: "blur(10px)",
         fontFamily: "system-ui, sans-serif",
         pointerEvents: "none",
       }}
     >
-      {/* Kind badge + overlay header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            letterSpacing: 1,
-            textTransform: "uppercase",
-            padding: "2px 6px",
-            borderRadius: 4,
-            background: color,
-            color: "#fff",
-          }}
-        >
-          {kindLabel}
-        </span>
-        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.4, color: "#b7c8de" }}>
+      {/* Overlay eyebrow + status tag (the deck header below owns badge + name). */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 1.4, color: "#b7c8de" }}>
           ▸ {isPlace ? "NOW VIEWING" : "EVENT DETECTION OVERLAY"}
         </span>
+        {!isPlace ? (
+          <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 800, letterSpacing: 1, color }}>
+            {statusTag}
+          </span>
+        ) : null}
       </div>
-      <Row label={isPlace ? "LOCATION" : "EVENT TRACKING"} value={locationValue} color={color} />
+      {/* A tour stop names its CITY here (the deck header stays on the area), so
+          the place variant keeps a LOCATION row; an event's name would just
+          repeat the deck header directly beneath, so it doesn't. */}
+      {isPlace ? <Row label="LOCATION" value={flag ? `${flag} ${name}` : name} color={color} /> : null}
       {details.map((d) => (
         <Row key={d.label} label={d.label.toUpperCase()} value={d.value} color={color} />
       ))}
@@ -350,15 +326,17 @@ function Row({ label, value, color }: { label: string; value: string; color: str
         display: "flex",
         gap: 8,
         alignItems: "baseline",
-        fontSize: 14.3,
-        padding: "2px 0",
+        fontSize: 12.5,
+        padding: "1.5px 0",
         borderTop: "1px solid rgba(120,140,170,0.12)",
       }}
     >
-      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.8, color: "#9db1cb", minWidth: 100 }}>
+      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: "#9db1cb", minWidth: 92 }}>
         {label}
       </span>
-      <span style={{ fontWeight: 700, color }}>{value}</span>
+      <span style={{ fontWeight: 700, color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {value}
+      </span>
     </div>
   );
 }

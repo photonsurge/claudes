@@ -55,6 +55,17 @@ describe("reconcileSlots", () => {
     expect(slots.get("s1")).toMatchObject({ runId: created.id, failCount: 1, lastAttemptAt: NOW });
   });
 
+  it("defaults chat ON for slot runs — only an explicit opt-out disables it", async () => {
+    slots.set("s1", { id: "s1", sceneId: "wind", enabled: true }); // no chat sub-doc at all
+    slots.set("s2", { id: "s2", sceneId: "temp", enabled: true, chat: { enabled: false } });
+
+    await reconcileSlots(NOW);
+
+    const bySlot = Object.fromEntries([...runs.values()].map((r) => [r.slotId, r]));
+    expect(bySlot.s1.chat).toEqual({ enabled: true, promoteToTicker: false });
+    expect(bySlot.s2.chat).toEqual({ enabled: false, promoteToTicker: false });
+  });
+
   it("falls back to the scene-bound encoder when the slot doesn't pin one", async () => {
     db.encoderForScene.mockResolvedValueOnce({ id: "obs-temp" } as any);
     slots.set("s1", { id: "s1", sceneId: "temp", enabled: true });

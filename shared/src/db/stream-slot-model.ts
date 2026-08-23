@@ -29,7 +29,7 @@ const StreamSlotSchema = new mongoose.Schema<iStreamSlotModel>(
     enabled: { type: Boolean, required: false, default: false, index: true },
     monitorStream: { type: Boolean, required: false, default: false },
     chat: {
-      enabled: { type: Boolean, required: false, default: false },
+      enabled: { type: Boolean, required: false, default: true },
       promoteToTicker: { type: Boolean, required: false, default: false },
     },
     runId: { type: String, required: false, default: null },

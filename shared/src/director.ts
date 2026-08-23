@@ -303,6 +303,9 @@ export interface DirectorState {
   upNext: {
     kind: SegmentKind;
     title: string;
+    /** The segment's locating detail ("M5.6 · Southern Sumatra") so the rail
+     *  says WHERE, not just what kind of thing, is coming up. */
+    subtitle?: string;
     center?: [number, number];
     zoom?: number;
     subject?: string | null;
@@ -315,6 +318,14 @@ export interface DirectorState {
   lastShownAt?: number;
   /** How many times this exact segment has aired this session (incl. now). */
   timesShown?: number;
+}
+
+export type UpNextItem = DirectorState["upNext"][number];
+
+/** One "coming up" line — kind titles alone ("Earthquake") say nothing about
+ *  where, so append the locating subtitle whenever the segment carries one. */
+export function upNextLabel(u: UpNextItem): string {
+  return u.subtitle ? `${u.title} — ${u.subtitle}` : u.title;
 }
 
 export type DirectorMode = "off" | "auto";

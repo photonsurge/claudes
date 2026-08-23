@@ -63,7 +63,7 @@ async function POST__impl(req: Request) {
     privacy: PRIVACIES.includes(body.privacy as YoutubePrivacy) ? (body.privacy as YoutubePrivacy) : "public",
     enabled: body.enabled === true,
     monitorStream: !!body.monitorStream,
-    chat: { enabled: !!body.chat?.enabled, promoteToTicker: !!body.chat?.promoteToTicker },
+    chat: { enabled: body.chat?.enabled !== false, promoteToTicker: !!body.chat?.promoteToTicker },
   });
   if (!saved) {
     return NextResponse.json({ error: "failed to save slot" }, { status: 500, headers: NO_CACHE });

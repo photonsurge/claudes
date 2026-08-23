@@ -70,7 +70,11 @@ jest.mock("./SeismicStationRow", () => ({ __esModule: true, default: () => null 
 jest.mock("./TideStationRow", () => ({ __esModule: true, default: () => null }));
 jest.mock("./PointHistoryPanel", () => ({ __esModule: true, default: () => null }));
 jest.mock("./ForecastPanel", () => ({ __esModule: true, default: () => null }));
-jest.mock("./EventOverlay", () => ({ __esModule: true, default: () => null }));
+jest.mock("./EventOverlay", () => ({
+  __esModule: true,
+  default: () => null,
+  EventTrackingLabel: () => null,
+}));
 jest.mock("./SyslogFeed", () => ({ __esModule: true, default: () => <div data-testid="w-syslog" /> }));
 jest.mock("./UpNextPanel", () => ({ __esModule: true, default: () => <div data-testid="w-upNext" /> }));
 jest.mock("./BuildInfoTag", () => ({ __esModule: true, default: () => <div data-testid="w-buildInfo" /> }));

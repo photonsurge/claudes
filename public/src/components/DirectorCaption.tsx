@@ -6,7 +6,7 @@
  * title/subtitle and a small "up next" hint. Non-interactive so it never eats
  * pointer events on the captured /watch surface.
  */
-import type { Segment, SegmentKind } from "@photonsurge/shared/director";
+import { upNextLabel, type Segment, type SegmentKind, type UpNextItem } from "@photonsurge/shared/director";
 
 const KIND_LABEL: Record<SegmentKind, string> = {
   intro: "Live",
@@ -29,7 +29,7 @@ export default function DirectorCaption({
   upNext,
 }: {
   segment: Segment;
-  upNext: { kind: SegmentKind; title: string }[];
+  upNext: UpNextItem[];
 }) {
   return (
     <div
@@ -65,7 +65,12 @@ export default function DirectorCaption({
       ) : null}
       {upNext.length ? (
         <div style={{ fontSize: 12, opacity: 0.7, marginTop: 10, letterSpacing: 0.5 }}>
-          UP NEXT · {upNext.map((u) => u.title).join("  ·  ")}
+          {upNext.map((u, i) => (
+            <div key={i}>
+              {i === 0 ? "UP NEXT · " : ""}
+              {upNextLabel(u)}
+            </div>
+          ))}
         </div>
       ) : null}
     </div>

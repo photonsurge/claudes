@@ -175,7 +175,10 @@ export function volcanoSegmentContent(v: VolcanoContentInput): SegmentContent {
   if (v.elevationM) details.push({ label: "Elevation", value: `${v.elevationM.toLocaleString()} m` });
   details.push({ label: "Location", value: `${v.lat.toFixed(3)}, ${v.lng.toFixed(3)}` });
   details.push({ label: "This week's report", value: utcLabel(v.lastDate) });
-  return { title: v.name, subtitle: VOLCANO_STATUS_SUBTITLE[v.status], icon: hazardMeta("volcano").icon, details };
+  // The title is just the volcano's name — the subtitle has to place it on the
+  // map, so the country rides along when we know it ("Volcanic unrest · Italy").
+  const subtitle = [VOLCANO_STATUS_SUBTITLE[v.status], v.country].filter(Boolean).join(" · ");
+  return { title: v.name, subtitle, icon: hazardMeta("volcano").icon, details };
 }
 
 /**

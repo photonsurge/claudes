@@ -9,7 +9,7 @@
  */
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ControlState } from "@photonsurge/shared/control";
-import type { Segment, SegmentKind } from "@photonsurge/shared/director";
+import { upNextLabel, type Segment, type SegmentKind, type UpNextItem } from "@photonsurge/shared/director";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { getVariable } from "@photonsurge/shared/variables";
 import { getPalette } from "@photonsurge/shared/palettes";
@@ -132,7 +132,7 @@ export default function ViewingOverlay({
   variable: string | null;
   /** The on-air control state — supplies the camera anchor + live spin/push-in. */
   state: ControlState;
-  upNext: { kind: SegmentKind; title: string }[];
+  upNext: UpNextItem[];
   draggable?: boolean;
   /** Operator-only: when this exact shot last aired + how many times this session. */
   lastShownAt?: number;
@@ -368,7 +368,12 @@ export default function ViewingOverlay({
 
         {upNext.length ? (
           <div style={{ fontSize: 11, opacity: 0.6, marginTop: 8, letterSpacing: 0.4 }}>
-            UP NEXT · {upNext.map((u) => u.title).join("  ·  ")}
+            {upNext.map((u, i) => (
+              <div key={i}>
+                {i === 0 ? "UP NEXT · " : ""}
+                {upNextLabel(u)}
+              </div>
+            ))}
           </div>
         ) : null}
       </div>
