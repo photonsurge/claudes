@@ -26,10 +26,37 @@ export interface BroadcastTheme {
   panelBg: string;
   /** Panel hairline border. */
   panelBorder: string;
+  /** ALL-CAPS panel/widget title ink. */
+  titleColor: string;
+  /** Card body ink. */
+  textColor: string;
+  /** Muted eyebrow/caption ink. */
+  mutedColor: string;
+  /** Dimmest caption ink. */
+  dimColor: string;
+  /** LIVE badge / ON AIR pip colour. */
+  liveColor: string;
+  /** Ticker crawl band background (raw CSS). */
+  tickerBg: string;
+  /** Ticker crawl text ink. */
+  tickerText: string;
 }
+
+/** Ink + furniture tokens shared by every preset — identical across presets
+ *  today, overridable per-preset here or per-channel via themeOverrides. */
+export const BASE_LOOK = {
+  titleColor: "#dfe7f5",
+  textColor: "#e6edf7",
+  mutedColor: "#9fb3cc",
+  dimColor: "#8ea3bf",
+  liveColor: "#ff3b3b",
+  tickerBg: "linear-gradient(180deg, rgba(6,10,18,0.74), rgba(4,7,13,0.7))",
+  tickerText: "#dfe7f5",
+};
 
 export const BROADCAST_THEMES: Record<string, BroadcastTheme> = {
   aurora: {
+    ...BASE_LOOK,
     name: "G.O.D.S.",
     tagline: "Global Orbital Detection System",
     tickerTitle: "GLOBAL FEED",
@@ -39,6 +66,7 @@ export const BROADCAST_THEMES: Record<string, BroadcastTheme> = {
     panelBorder: "1px solid rgba(120,140,170,0.25)",
   },
   command: {
+    ...BASE_LOOK,
     name: "G.O.D.S.",
     tagline: "Global Orbital Detection System",
     strapline: "DETECT. TRACK. PROTECT.",
@@ -50,6 +78,7 @@ export const BROADCAST_THEMES: Record<string, BroadcastTheme> = {
     panelBorder: "1px solid rgba(90,150,210,0.32)",
   },
   storm: {
+    ...BASE_LOOK,
     name: "STORM WATCH LIVE",
     tagline: "SEVERE WEATHER OPERATIONS",
     tickerTitle: "STORM FEED",
@@ -85,9 +114,6 @@ export function getBroadcastTheme(id?: string, overrides?: ThemeOverrides): Broa
   }
   return merged;
 }
-
-/** The LIVE badge stays broadcast-red regardless of theme accent. */
-export const LIVE_RED = "#ff3b3b";
 
 /**
  * Panel border with an accent stripe on the left. Spelled out per side because

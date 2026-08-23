@@ -2,38 +2,43 @@
 
 /**
  * Per-channel brand editor: a base theme preset (broadcastTheme) plus overrides
- * (themeOverrides) for the identity fields — name, tagline, accent, panel glass,
- * ticker/meter titles. Any field left blank inherits the preset. STAGED as a
- * DELTA patch (useSceneDraft) — the page's Save bar applies it to /watch/:id. A
- * live preview mirrors getBroadcastTheme() so the operator sees the resolved
- * brand as they type, before saving.
+ * (themeOverrides) for the identity fields and the chrome ink tokens — titles,
+ * body/muted text, LIVE badge, ticker colours, panel glass. Any field left
+ * blank inherits the preset. STAGED as a DELTA patch (useSceneDraft) — the
+ * page's Save bar applies it to /watch/:id. The ThemePreview at the top renders
+ * REAL broadcast components from the draft, so the operator sees the exact
+ * on-air look before saving.
  */
 import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
+import Collapse from "@mui/material/Collapse";
 import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { THEME_OVERRIDE_KEYS, type ControlState, type ThemeOverrides } from "@photonsurge/shared/control";
-import {
-  BROADCAST_THEMES,
-  DEFAULT_THEME,
-  THEME_OPTIONS,
-  getBroadcastTheme,
-} from "../../broadcast/config";
+import { THEME_OVERRIDE_KEYS, type ControlState } from "@photonsurge/shared/control";
+import { BROADCAST_THEMES, DEFAULT_THEME, THEME_OPTIONS, getBroadcastTheme } from "../../broadcast/config";
 import { fetchSceneState } from "../../../lib/scenes";
 import { useSceneDraft } from "./SceneDraft";
+import ColorField from "../ColorField";
+import ThemePreview from "./ThemePreview";
 
 const FIELDS: { key: (typeof THEME_OVERRIDE_KEYS)[number]; label: string; color?: boolean; advanced?: boolean }[] = [
   { key: "name", label: "Brand name" },
   { key: "tagline", label: "Tagline" },
   { key: "strapline", label: "Strapline" },
-  { key: "accent", label: "Accent colour", color: true },
   { key: "tickerTitle", label: "Ticker title" },
   { key: "meterTitle", label: "Meter title" },
+  { key: "accent", label: "Accent colour", color: true },
+  { key: "titleColor", label: "Panel title colour", color: true },
+  { key: "textColor", label: "Body text colour", color: true },
+  { key: "mutedColor", label: "Muted text colour", color: true },
+  { key: "liveColor", label: "LIVE badge colour", color: true },
+  { key: "tickerText", label: "Ticker text colour", color: true },
+  { key: "dimColor", label: "Dim text colour", color: true, advanced: true },
+  { key: "tickerBg", label: "Ticker background (CSS)", advanced: true },
   { key: "panelBg", label: "Panel background (CSS)", advanced: true },
   { key: "panelBorder", label: "Panel border (CSS)", advanced: true },
 ];
@@ -41,6 +46,7 @@ const FIELDS: { key: (typeof THEME_OVERRIDE_KEYS)[number]; label: string; color?
 export default function ThemeSettings({ sceneId }: { sceneId: string }) {
   const { stage: patch, epoch } = useSceneDraft();
   const [state, setState] = useState<ControlState | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,9 +77,34 @@ export default function ThemeSettings({ sceneId }: { sceneId: string }) {
     patch(sceneId, over);
   };
 
+  // Always send the FULL overrides map: mergeControlState replaces
+  // themeOverrides wholesale, so a single-key delta would wipe the rest.
   const setField = (key: (typeof THEME_OVERRIDE_KEYS)[number], value: string) => {
     apply({ themeOverrides: { ...overrides, [key]: value } });
   };
+
+  const renderField = (f: (typeof FIELDS)[number]) =>
+    f.color ? (
+      <ColorField
+        key={f.key}
+        label={f.label}
+        value={overrides[f.key] ?? ""}
+        placeholder={basePreset[f.key] ?? ""}
+        resolved={String(resolved[f.key] ?? "")}
+        onChange={(v) => setField(f.key, v)}
+      />
+    ) : (
+      <TextField
+        key={f.key}
+        size="small"
+        fullWidth
+        label={f.label}
+        value={overrides[f.key] ?? ""}
+        placeholder={basePreset[f.key] ?? ""}
+        onChange={(e) => setField(f.key, e.target.value)}
+        slotProps={{ inputLabel: { shrink: true }, htmlInput: { "aria-label": f.label } }}
+      />
+    );
 
   return (
     <Paper sx={{ p: 1.75 }}>
@@ -102,52 +133,30 @@ export default function ThemeSettings({ sceneId }: { sceneId: string }) {
         ))}
       </TextField>
 
-      {/* Live preview — the resolved brand as /watch will render it. */}
-      <Box
-        aria-label="Theme preview"
-        sx={{ p: 1.5, mb: 1.5, borderRadius: 1, background: resolved.panelBg, border: resolved.panelBorder }}
-      >
-        <Typography sx={{ color: resolved.accent, fontWeight: 800, letterSpacing: 0.5 }}>
-          {resolved.name}
-        </Typography>
-        <Typography variant="caption" sx={{ color: "#cbd5e1", display: "block" }}>
-          {resolved.tagline}
-        </Typography>
-        {resolved.strapline && (
-          <Typography variant="caption" sx={{ color: "#8b95a7", display: "block" }}>
-            {resolved.strapline}
-          </Typography>
-        )}
-        <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-          <Chip label={resolved.tickerTitle} size="small" sx={{ bgcolor: resolved.accent, color: "#00121c", fontWeight: 700 }} />
-          <Chip label={resolved.meterTitle} size="small" variant="outlined" sx={{ borderColor: resolved.accent, color: resolved.accent }} />
-        </Stack>
+      {/* Real /watch chrome, driven by the DRAFT theme — see it before Save. */}
+      <Box sx={{ mb: 1.75 }}>
+        <ThemePreview theme={resolved} />
       </Box>
 
       <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 1.25 }}>
-        {FIELDS.map((f) => (
-          <Stack key={f.key} direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
-            <TextField
-              size="small"
-              fullWidth
-              label={f.label}
-              value={overrides[f.key] ?? ""}
-              placeholder={basePreset[f.key] ?? ""}
-              onChange={(e) => setField(f.key, e.target.value)}
-              slotProps={{ inputLabel: { shrink: true }, htmlInput: { "aria-label": f.label } }}
-            />
-            {f.color && (
-              <input
-                type="color"
-                aria-label={`${f.label} picker`}
-                value={/^#[0-9a-fA-F]{6}$/.test(overrides.accent ?? "") ? overrides.accent! : resolved.accent}
-                onChange={(e) => setField("accent", e.target.value)}
-                style={{ width: 32, height: 32, border: "none", background: "none", padding: 0, cursor: "pointer" }}
-              />
-            )}
-          </Stack>
-        ))}
+        {FIELDS.filter((f) => !f.advanced).map(renderField)}
       </Box>
+
+      <Button size="small" sx={{ mt: 1.25 }} onClick={() => setShowAdvanced((v) => !v)}>
+        {showAdvanced ? "Hide advanced" : "Advanced…"}
+      </Button>
+      <Collapse in={showAdvanced}>
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+            gap: 1.25,
+            mt: 1,
+          }}
+        >
+          {FIELDS.filter((f) => f.advanced).map(renderField)}
+        </Box>
+      </Collapse>
     </Paper>
   );
 }

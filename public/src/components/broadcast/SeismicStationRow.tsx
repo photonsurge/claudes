@@ -47,7 +47,7 @@ function StationBox({
         >
           {name}
         </span>
-        <span style={{ fontSize: 8.8, fontWeight: 700, color: "#9fb0c8" }}>{Math.round(station.distanceKm)} km</span>
+        <span style={{ fontSize: 8.8, fontWeight: 700, color: theme.mutedColor }}>{Math.round(station.distanceKm)} km</span>
       </div>
       <div
         style={{
@@ -101,7 +101,7 @@ export default function SeismicStationRow({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center", pointerEvents: "none" }}>
       <style>{"@keyframes sstation-row-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
-      <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, letterSpacing: 1.4, color: "#dfe7f5" }}>
+      <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, letterSpacing: 1.4, color: theme.titleColor }}>
         <HeartbeatIcon active size={11} />
         NEARBY SEISMOGRAPH STATIONS
       </span>

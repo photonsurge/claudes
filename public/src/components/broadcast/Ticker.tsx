@@ -49,7 +49,7 @@ export default function Ticker({
         height,
         display: "flex",
         alignItems: "center",
-        background: "linear-gradient(180deg, rgba(6,10,18,0.74), rgba(4,7,13,0.7))",
+        background: theme.tickerBg,
         borderBottom: edge === "top" ? "1px solid rgba(120,140,170,0.2)" : undefined,
         // A band floating below the masthead (offset top crawl) is framed on
         // both edges; one pinned to the screen edge only needs the inner line.
@@ -58,7 +58,7 @@ export default function Ticker({
             ? "1px solid rgba(120,140,170,0.2)"
             : undefined,
         overflow: "hidden",
-        color: "#dfe7f5",
+        color: theme.tickerText,
         fontFamily: "system-ui, sans-serif",
         pointerEvents: "none",
       }}

@@ -126,12 +126,12 @@ export function realWavePath(samples: { v: number }[], w: number, h: number): st
 }
 
 /** Rising/falling/flat over the series, for the gauge readout. */
-function trend(samples: TideSample[]): { arrow: string; color: string } {
-  if (samples.length < 2) return { arrow: "—", color: "#9fb0c8" };
+function trend(samples: TideSample[], muted: string): { arrow: string; color: string } {
+  if (samples.length < 2) return { arrow: "—", color: muted };
   const d = samples[samples.length - 1].v - samples[0].v;
   if (d > 0.02) return { arrow: "▲", color: "#ff7a7a" };
   if (d < -0.02) return { arrow: "▼", color: "#43d9ff" };
-  return { arrow: "—", color: "#9fb0c8" };
+  return { arrow: "—", color: muted };
 }
 
 function Panel({
@@ -246,7 +246,7 @@ function CardShell({
       }}
     >
       <style>{"@keyframes bcast-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
-      <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: 1.2, color: "#dfe7f5" }}>{label}</div>
+      <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: 1.2, color: theme.titleColor }}>{label}</div>
       {children}
     </div>
   );
@@ -378,7 +378,7 @@ export function TsunamiMonitor({
 
   if (!samples) return null;
 
-  const tr = trend(samples);
+  const tr = trend(samples, theme.mutedColor);
 
   return (
     <CardShell theme={theme}>
@@ -513,7 +513,7 @@ function WeatherMonitorBox({
             fontSize: 8.2,
             fontWeight: 800,
             letterSpacing: 0.6,
-            color: "#dfe7f5",
+            color: theme.titleColor,
             textShadow: "0 1px 2px rgba(0,0,0,0.8)",
             pointerEvents: "none",
           }}
@@ -586,7 +586,7 @@ export function WeatherMonitors({
       }}
     >
       <style>{"@keyframes weather-row-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
-      <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.7, fontWeight: 800, letterSpacing: 1.4, color: "#dfe7f5" }}>
+      <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.7, fontWeight: 800, letterSpacing: 1.4, color: theme.titleColor }}>
         <WindIcon active size={13} />
         LOCAL MONITORS
       </span>

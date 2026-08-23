@@ -18,7 +18,8 @@
  * Pure presentation inside the scaled broadcast stage; pointer-inert.
  */
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
-import { accentBorder, GLASS_BG, DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { accentBorder, BASE_LOOK, GLASS_BG, type BroadcastTheme } from "./config";
+import { useBroadcastTheme } from "./theme-context";
 import AutoScroll from "./AutoScroll";
 
 /** One column width so the stacked cards share clean left/right edges. */
@@ -53,17 +54,28 @@ export const DeckChromeContext = createContext<DeckChrome | null>(null);
  *  off-screen. Default true so a standalone (non-deck) card scrolls normally. */
 export const DeckSlideActiveContext = createContext<boolean>(true);
 
-/** Shared ink tokens — every left-column panel drew from these ad-hoc before. */
-export const INK = "#e6edf7";
-export const MUTED = "#9fb3cc";
-export const DIM = "#8ea3bf";
+/** DEFAULT ink values (from the theme BASE_LOOK) — kept exported for the many
+ *  panels that hardcode the default look. Themed code should prefer
+ *  useBroadcastTheme() so per-channel overrides reach it. */
+export const INK = BASE_LOOK.textColor;
+export const MUTED = BASE_LOOK.mutedColor;
+export const DIM = BASE_LOOK.dimColor;
 export const DIVIDER = "1px solid rgba(120,140,170,0.15)";
-export const ON_AIR_RED = "#ff3b3b";
 
-/** Standard `▸ SECTION` micro-label used for card + sub-section headers. */
-export function CardEyebrow({ children, color = MUTED }: { children: ReactNode; color?: string }) {
+/** Standard `▸ SECTION` micro-label used for card + sub-section headers.
+ *  Un-tinted eyebrows follow the channel's muted ink. */
+export function CardEyebrow({ children, color }: { children: ReactNode; color?: string }) {
+  const theme = useBroadcastTheme();
   return (
-    <div style={{ fontSize: 11.3, fontWeight: 800, letterSpacing: 1.4, textTransform: "uppercase", color }}>
+    <div
+      style={{
+        fontSize: 11.3,
+        fontWeight: 800,
+        letterSpacing: 1.4,
+        textTransform: "uppercase",
+        color: color ?? theme.mutedColor,
+      }}
+    >
       {children}
     </div>
   );
@@ -103,10 +115,10 @@ export default function BroadcastCard({
   badgeColor,
   live = false,
   eyebrow,
-  eyebrowColor = MUTED,
+  eyebrowColor,
   headerRight,
   width = CARD_W,
-  theme = DEFAULT_THEME,
+  theme: propTheme,
   glass = false,
   children,
   style,
@@ -134,6 +146,9 @@ export default function BroadcastCard({
   children: ReactNode;
   style?: CSSProperties;
 }) {
+  // Prop wins; panels that pass no theme follow the channel's provider instead
+  // of silently falling back to the default preset.
+  const theme = useBroadcastTheme(propTheme);
   const chrome = useContext(DeckChromeContext);
   const slideActive = useContext(DeckSlideActiveContext);
   const stripe = chrome?.accent ?? accent ?? theme.accent;
@@ -163,7 +178,7 @@ export default function BroadcastCard({
           WebkitBackdropFilter: "blur(11px)",
           pointerEvents: "none",
           fontFamily: "system-ui, sans-serif",
-          color: INK,
+          color: theme.textColor,
           overflow: "hidden",
           // NB: the template deliberately does NOT spread the panel's `style` —
           // it owns the uniform size, so a panel's own `width`/`padding` override
@@ -234,7 +249,7 @@ export default function BroadcastCard({
         WebkitBackdropFilter: glass ? "blur(11px)" : "blur(8px)",
         pointerEvents: "none",
         fontFamily: "system-ui, sans-serif",
-        color: INK,
+        color: theme.textColor,
         ...style,
       }}
     >
@@ -259,8 +274,8 @@ export default function BroadcastCard({
             </span>
           ) : null}
           {live ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.2, fontWeight: 800, letterSpacing: 1.2, color: MUTED }}>
-              <span style={{ width: 9, height: 9, borderRadius: "50%", background: ON_AIR_RED, animation: "bcast-onair 1.4s ease-in-out infinite" }} />
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.2, fontWeight: 800, letterSpacing: 1.2, color: theme.mutedColor }}>
+              <span style={{ width: 9, height: 9, borderRadius: "50%", background: theme.liveColor, animation: "bcast-onair 1.4s ease-in-out infinite" }} />
               ON AIR
             </span>
           ) : null}
@@ -269,7 +284,7 @@ export default function BroadcastCard({
 
       {hasEyebrowRow ? (
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-          {eyebrow != null ? <CardEyebrow color={eyebrowColor}>▸ {eyebrow}</CardEyebrow> : null}
+          {eyebrow != null ? <CardEyebrow color={eyebrowColor ?? theme.mutedColor}>▸ {eyebrow}</CardEyebrow> : null}
           {headerRight != null ? <div style={{ marginLeft: "auto" }}>{headerRight}</div> : null}
         </div>
       ) : null}

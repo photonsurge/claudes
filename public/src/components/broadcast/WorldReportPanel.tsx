@@ -148,7 +148,7 @@ export default function WorldReportPanel({
           fontSize: 14.3,
           fontWeight: 800,
           letterSpacing: 1.8,
-          color: "#dfe7f5",
+          color: theme.titleColor,
         }}
       >
         <span>WORLD REPORT</span>

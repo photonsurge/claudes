@@ -9,12 +9,14 @@
  * exactly one copy, so the loop is seamless.
  */
 import type { WorldWatchItem } from "../../lib/broadcast";
+import { useBroadcastTheme } from "./theme-context";
 
 /** Rows shown before the list starts marqueeing (taller feeds auto-scroll). */
 export const FEED_VISIBLE = 7;
 export const FEED_ROW_H = 42;
 
 function FeedRow({ item }: { item: WorldWatchItem }) {
+  const theme = useBroadcastTheme();
   // Alerts drop the severity *text* chip ("EXTREME"/"SEVERE") — sorted
   // most-severe-first, the visible window becomes a monotonous wall of
   // identical red chips. A slim severity-coloured bar keeps the rank readable
@@ -82,7 +84,7 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
           style={{
             fontSize: 15.4,
             fontWeight: 700,
-            color: "#e6edf7",
+            color: theme.textColor,
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",

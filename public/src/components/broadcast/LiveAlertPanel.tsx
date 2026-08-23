@@ -112,7 +112,7 @@ export default function LiveAlertPanel({
           fontSize: 9.9,
           fontWeight: 800,
           letterSpacing: 1.4,
-          color: "#9fb0c8",
+          color: theme.mutedColor,
           marginBottom: 3,
         }}
       >

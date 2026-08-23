@@ -5,7 +5,7 @@
  * clock strip. Purely decorative (pointer-inert).
  */
 import { useEffect, useState } from "react";
-import { DEFAULT_THEME, LIVE_RED, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
 const WORLD_CLOCKS = [
   { label: "LONDON", timeZone: "Europe/London" },
@@ -366,14 +366,16 @@ export default function BrandPanel({
                 "polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)",
               background:
                 "linear-gradient(180deg, rgba(40,6,6,0.95), rgba(20,3,3,0.95))",
-              border: `1px solid ${LIVE_RED}8c`,
+              // NB: the glow relies on hex+alpha suffixes, so liveColor should
+              // stay a 6-digit hex (the admin swatch only produces those).
+              border: `1px solid ${theme.liveColor}8c`,
               fontFamily: "system-ui, sans-serif",
               fontSize: 12.1,
               fontWeight: 800,
               letterSpacing: 1.5,
               color: "#fff",
-              textShadow: `0 0 8px ${LIVE_RED}cc`,
-              boxShadow: `0 0 14px ${LIVE_RED}73, inset 0 0 8px ${LIVE_RED}33`,
+              textShadow: `0 0 8px ${theme.liveColor}cc`,
+              boxShadow: `0 0 14px ${theme.liveColor}73, inset 0 0 8px ${theme.liveColor}33`,
             }}
           >
             <span
@@ -382,7 +384,7 @@ export default function BrandPanel({
                 height: 7,
                 borderRadius: "50%",
                 background: "#fff",
-                boxShadow: `0 0 6px ${LIVE_RED}`,
+                boxShadow: `0 0 6px ${theme.liveColor}`,
                 animation: "bcast-livepulse 1.4s ease-in-out infinite",
               }}
             />

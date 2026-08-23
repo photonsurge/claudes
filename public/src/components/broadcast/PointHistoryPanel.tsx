@@ -20,6 +20,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { HISTORY_WINDOW_HOURS, type ClimateBucketedDataset } from "../../lib/history-client";
 import { usePointHistorySeries, useAreaHistorySeries, useClimateFor } from "../../lib/focus/focus-client";
 import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
+import { useBroadcastTheme } from "./theme-context";
 import BroadcastCard from "./BroadcastCard";
 
 /** Compact side-note (EventOverlay) paging: how many charts show at once before
@@ -189,6 +190,7 @@ export function MiniChart({
    *  caption so every tile is a uniform, single-line-safe cell. */
   dense?: boolean;
 }) {
+  const theme = useBroadcastTheme();
   const spark = sparkPoints(points, height);
   if (!spark) return null;
   const last = spark.pts[spark.pts.length - 1];
@@ -223,7 +225,7 @@ export function MiniChart({
             y1={spark.yOf(avg)}
             x2={CHART_W}
             y2={spark.yOf(avg)}
-            stroke="#9fb0c8"
+            stroke={theme.mutedColor}
             strokeWidth={1.2}
             strokeDasharray="5 5"
             opacity={0.55}
@@ -253,9 +255,10 @@ export function SectionTitle({
   page?: number;
   pageCount?: number;
 }) {
+  const theme = useBroadcastTheme();
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-      <span style={{ fontSize: 14.5, fontWeight: 850, letterSpacing: 1.5, color: "#eef4ff" }}>{title}</span>
+      <span style={{ fontSize: 14.5, fontWeight: 850, letterSpacing: 1.5, color: theme.titleColor }}>{title}</span>
       <span style={{ fontSize: 11, fontWeight: 750, letterSpacing: 1.05, color: accent }}>
         {tag}
         {pageCount != null && pageCount > 1 ? ` · ${(page ?? 0) + 1}/${pageCount}` : ""}

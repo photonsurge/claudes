@@ -12,10 +12,12 @@ import { satImgCaptionFor } from "@photonsurge/shared/satimg/types";
 import { buildLegend } from "../../lib/legend";
 import type { MapFreshness } from "../../lib/manifest";
 import { TILE_BG, type BroadcastTheme } from "./config";
+import { useBroadcastTheme } from "./theme-context";
 
 export default function IntensityMeter({
   variable,
   units,
+  theme: propTheme,
   compact = false,
   showSatImg,
   satImgFeeds,
@@ -38,6 +40,7 @@ export default function IntensityMeter({
    *  used when the brand block (and its masthead band) is off. */
   part?: "title" | "scale" | "all";
 }) {
+  const theme = useBroadcastTheme(propTheme);
   const sat = satImgCaptionFor(showSatImg, satImgFeeds);
 
   if (!variable) {
@@ -51,11 +54,11 @@ export default function IntensityMeter({
             fontWeight: 800,
             letterSpacing: 1.8,
             opacity: 0.7,
-            color: "#dfe7f5",
+            color: theme.titleColor,
             textShadow: "0 1px 4px rgba(0,0,0,0.8)",
           }}
         >
-          LIVE IMAGERY
+          {theme.meterTitle}
         </div>
         <div
           style={{
@@ -70,7 +73,7 @@ export default function IntensityMeter({
         >
           {sat.title}
         </div>
-        <div style={{ fontSize: compact ? 13.2 : 15.4, opacity: 0.85, color: "#dfe7f5", marginTop: 2 }}>
+        <div style={{ fontSize: compact ? 13.2 : 15.4, opacity: 0.85, color: theme.titleColor, marginTop: 2 }}>
           {sat.subtitle}
         </div>
       </div>
@@ -125,7 +128,7 @@ export default function IntensityMeter({
         gap: 8,
         pointerEvents: "none",
         fontFamily: "system-ui, sans-serif",
-        color: "#dfe7f5",
+        color: theme.titleColor,
       }}
     >
       {/* Hero: the ACTIVE MAP TYPE, big and unmissable — this is what viewers
@@ -163,7 +166,7 @@ export default function IntensityMeter({
               fontSize: compact ? 13.2 : 15.4,
               fontWeight: 800,
               letterSpacing: 1.1,
-              color: "#dfe7f5",
+              color: theme.titleColor,
             }}
           >
             SOURCE {freshness.source}
@@ -237,7 +240,7 @@ export default function IntensityMeter({
             fontSize: compact ? 12.1 : 13.2,
             fontWeight: 700,
             opacity: 0.8,
-            color: "#dfe7f5",
+            color: theme.titleColor,
             textShadow: "0 1px 4px rgba(0,0,0,0.8)",
             marginTop: -2,
           }}

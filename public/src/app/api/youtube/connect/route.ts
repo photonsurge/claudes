@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { YOUTUBE_OAUTH_SCOPES } from "@photonsurge/shared/runs";
 import { requireAdmin } from "../../../../lib/require-admin";
+import { publicOrigin } from "../../../../lib/public-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,23 +25,18 @@ async function GET__impl(req: Request) {
   // falling back to the YOUTUBE_* names.
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID;
   if (!clientId) {
-    return NextResponse.redirect(new URL("/admin/streams?error=notconfigured", req.url));
+    return NextResponse.redirect(new URL("/admin/youtube?error=notconfigured", publicOrigin(req)));
   }
   // Must exactly match a redirect URI registered on the Google OAuth client. The
   // app's callback lives at /google/redirect (see app/google/redirect/route.ts).
   // Prefer the pinned env var — it's the ONLY thing the worker's token exchange
   // reads, and Google requires the auth-request and token-request redirect_uri to
-  // agree. The derived fallback exists only for a not-yet-configured dev box; guard
-  // the 0.0.0.0 bind host (from the standalone HOSTNAME fix) so it never leaks a URI
-  // Google will reject — swap it for localhost, which Google accepts over http.
+  // agree. The derived fallback (via publicOrigin) is only for a not-yet-configured
+  // dev box, and already guards the 0.0.0.0 bind host from the standalone HOSTNAME fix.
   const redirectUri =
     process.env.GOOGLE_OAUTH_REDIRECT_URI ||
     process.env.YOUTUBE_REDIRECT_URI ||
-    (() => {
-      const u = new URL("/google/redirect", req.url);
-      if (u.hostname === "0.0.0.0") u.hostname = "localhost";
-      return u.toString();
-    })();
+    new URL("/google/redirect", publicOrigin(req)).toString();
   const state = randomUUID();
 
   const params = new URLSearchParams({

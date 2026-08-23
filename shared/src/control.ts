@@ -329,6 +329,20 @@ export interface ThemeOverrides {
   accent?: string;
   panelBg?: string;
   panelBorder?: string;
+  /** ALL-CAPS panel/widget title ink. */
+  titleColor?: string;
+  /** Card body ink. */
+  textColor?: string;
+  /** Muted eyebrow/caption ink. */
+  mutedColor?: string;
+  /** Dimmest caption ink. */
+  dimColor?: string;
+  /** LIVE badge / ON AIR pip colour. */
+  liveColor?: string;
+  /** Ticker crawl band background (raw CSS). */
+  tickerBg?: string;
+  /** Ticker crawl text ink. */
+  tickerText?: string;
 }
 
 /** The keys sanitised through mergeControlState / persisted for a theme override. */
@@ -341,6 +355,13 @@ export const THEME_OVERRIDE_KEYS = [
   "accent",
   "panelBg",
   "panelBorder",
+  "titleColor",
+  "textColor",
+  "mutedColor",
+  "dimColor",
+  "liveColor",
+  "tickerBg",
+  "tickerText",
 ] as const;
 
 /** Idle-motion defaults: a gentle 3° orbit + quarter-level breathe over a minute

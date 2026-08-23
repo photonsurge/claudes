@@ -77,7 +77,7 @@ export default function StartCountdown({
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 16.5, fontWeight: 800, letterSpacing: 4, color: "#dfe7f5" }}>{theme.name}</span>
+          <span style={{ fontSize: 16.5, fontWeight: 800, letterSpacing: 4, color: theme.titleColor }}>{theme.name}</span>
           <span style={{ fontSize: 13.2, fontWeight: 700, letterSpacing: 2, color: theme.accent }}>
             {theme.tagline}
           </span>

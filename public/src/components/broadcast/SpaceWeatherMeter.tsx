@@ -67,7 +67,7 @@ export default function SpaceWeatherMeter({
         WebkitBackdropFilter: "blur(8px)",
         pointerEvents: "none",
         fontFamily: "system-ui, sans-serif",
-        color: "#dfe7f5",
+        color: theme.titleColor,
         width: 196,
       }}
     >

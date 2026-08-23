@@ -74,7 +74,7 @@ export default function HazardScreen({
           fontSize: 14.3,
           fontWeight: 800,
           letterSpacing: 1.8,
-          color: "#dfe7f5",
+          color: theme.titleColor,
         }}
       >
         <span>{title}</span>
@@ -132,7 +132,7 @@ export default function HazardScreen({
                   textAlign: "right",
                   fontSize: 12.1,
                   fontWeight: 700,
-                  color: "#9fb0c8",
+                  color: theme.mutedColor,
                   fontVariantNumeric: "tabular-nums",
                 }}
               >

@@ -1,4 +1,5 @@
-import { accentBorder, getBroadcastTheme, BROADCAST_THEMES } from "./config";
+import { THEME_OVERRIDE_KEYS } from "@photonsurge/shared/control";
+import { accentBorder, getBroadcastTheme, BASE_LOOK, BROADCAST_THEMES } from "./config";
 
 describe("getBroadcastTheme", () => {
   it("resolves a preset id, falling back to the default", () => {
@@ -18,6 +19,23 @@ describe("getBroadcastTheme", () => {
     const t = getBroadcastTheme("command", { name: "", tagline: "   " });
     expect(t.name).toBe(BROADCAST_THEMES.command.name);
     expect(t.tagline).toBe(BROADCAST_THEMES.command.tagline);
+  });
+
+  it("layers the ink tokens like any other field", () => {
+    const t = getBroadcastTheme("command", { titleColor: "#ffffff", tickerBg: "red" });
+    expect(t.titleColor).toBe("#ffffff");
+    expect(t.tickerBg).toBe("red");
+    // An untouched token still comes from the preset's BASE_LOOK.
+    expect(t.liveColor).toBe(BASE_LOOK.liveColor);
+  });
+
+  it("every preset carries every overridable token (BASE_LOOK spread not forgotten)", () => {
+    for (const theme of Object.values(BROADCAST_THEMES)) {
+      for (const key of THEME_OVERRIDE_KEYS) {
+        if (key === "strapline") continue; // the one optional identity field
+        expect(typeof theme[key]).toBe("string");
+      }
+    }
   });
 });
 

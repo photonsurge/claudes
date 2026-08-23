@@ -18,6 +18,7 @@ import type { WorldWatchState } from "../../lib/world-watch";
 import { accentBorderRight, GLASS_BG, DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { StatTile, BreakdownChip, MiniBar } from "./worldStat";
 import FeedSection from "./FeedSection";
+import { useBroadcastTheme } from "./theme-context";
 
 /** One "Asia [alerts bar] 129  [quakes bar] 63  [volcanoes bar] 2" row — three
  *  side-by-side mini graphs (alerts | quakes | volcanoes), each its own colour
@@ -45,6 +46,7 @@ function ContinentRow({
   maxQuake: number;
   maxVolcano: number;
 }) {
+  const theme = useBroadcastTheme();
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <span
@@ -71,7 +73,7 @@ function ContinentRow({
           textAlign: "right",
           fontSize: 12.1,
           fontWeight: 700,
-          color: "#9fb0c8",
+          color: theme.mutedColor,
           fontVariantNumeric: "tabular-nums",
         }}
       >
@@ -88,7 +90,7 @@ function ContinentRow({
           textAlign: "right",
           fontSize: 12.1,
           fontWeight: 700,
-          color: "#9fb0c8",
+          color: theme.mutedColor,
           fontVariantNumeric: "tabular-nums",
         }}
       >
@@ -105,7 +107,7 @@ function ContinentRow({
           textAlign: "right",
           fontSize: 12.1,
           fontWeight: 700,
-          color: "#9fb0c8",
+          color: theme.mutedColor,
           fontVariantNumeric: "tabular-nums",
         }}
       >
@@ -159,7 +161,7 @@ export default function WorldSituationPanel({
           fontSize: 14.3,
           fontWeight: 800,
           letterSpacing: 1.8,
-          color: "#dfe7f5",
+          color: theme.titleColor,
         }}
       >
         <span>DETECTION GRID</span>

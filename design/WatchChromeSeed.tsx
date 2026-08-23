@@ -40,10 +40,29 @@ interface BroadcastTheme {
   accent: string;
   panelBg: string;
   panelBorder: string;
+  titleColor: string;
+  textColor: string;
+  mutedColor: string;
+  dimColor: string;
+  liveColor: string;
+  tickerBg: string;
+  tickerText: string;
 }
+
+// Ink + furniture defaults shared by every preset (config.ts BASE_LOOK).
+const BASE_LOOK = {
+  titleColor: "#dfe7f5",
+  textColor: "#e6edf7",
+  mutedColor: "#9fb3cc",
+  dimColor: "#8ea3bf",
+  liveColor: "#ff3b3b",
+  tickerBg: "linear-gradient(180deg, rgba(6,10,18,0.74), rgba(4,7,13,0.7))",
+  tickerText: "#dfe7f5",
+};
 
 const THEMES: Record<string, BroadcastTheme> = {
   command: {
+    ...BASE_LOOK,
     name: "G.O.D.S.",
     tagline: "Global Orbital Detection System",
     strapline: "DETECT. TRACK. PROTECT.",
@@ -54,6 +73,7 @@ const THEMES: Record<string, BroadcastTheme> = {
     panelBorder: "1px solid rgba(90,150,210,0.32)",
   },
   aurora: {
+    ...BASE_LOOK,
     name: "G.O.D.S.",
     tagline: "Global Orbital Detection System",
     tickerTitle: "GLOBAL FEED",
@@ -63,6 +83,7 @@ const THEMES: Record<string, BroadcastTheme> = {
     panelBorder: "1px solid rgba(120,140,170,0.25)",
   },
   storm: {
+    ...BASE_LOOK,
     name: "STORM WATCH LIVE",
     tagline: "SEVERE WEATHER OPERATIONS",
     tickerTitle: "STORM FEED",
@@ -73,6 +94,7 @@ const THEMES: Record<string, BroadcastTheme> = {
   },
   // Claude's brand language — coral/terracotta accent over warm espresso glass.
   claude: {
+    ...BASE_LOOK,
     name: "CLAUDE",
     tagline: "LIVE PLANETARY WEATHER",
     tickerTitle: "GLOBAL FEED",
@@ -83,13 +105,14 @@ const THEMES: Record<string, BroadcastTheme> = {
   },
 };
 
-const LIVE_RED = "#ff3b3b";
-// Shared left-column ink tokens (BroadcastCard.tsx)
-const INK = "#e6edf7";
-const MUTED = "#9fb3cc";
-const DIM = "#8ea3bf";
+// Ink tokens are themeable now (config.ts BASE_LOOK / themeOverrides); the
+// seed keeps flat consts at the defaults for its static layout.
+const LIVE_RED = BASE_LOOK.liveColor;
+const INK = BASE_LOOK.textColor;
+const MUTED = BASE_LOOK.mutedColor;
+const DIM = BASE_LOOK.dimColor;
 const DIVIDER = "1px solid rgba(120,140,170,0.15)";
-const ON_AIR_RED = "#ff3b3b";
+const ON_AIR_RED = BASE_LOOK.liveColor;
 
 function accentBorder(base: string, left: string) {
   return { borderTop: base, borderRight: base, borderBottom: base, borderLeft: left };

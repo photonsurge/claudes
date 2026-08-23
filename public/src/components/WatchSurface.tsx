@@ -43,6 +43,7 @@ import AdBreak from "./broadcast/AdBreak";
 import LoadingScreen from "./broadcast/LoadingScreen";
 import StartCountdown from "./broadcast/StartCountdown";
 import { getBroadcastTheme } from "./broadcast/config";
+import { BroadcastThemeContext } from "./broadcast/theme-context";
 
 interface WatchSurfaceProps {
   state: ControlState;
@@ -157,7 +158,12 @@ function WatchSurfaceBody({
   // Webcams feed the "near this event" broadcast panel; only load them when the
   // chrome is on (the plain surface doesn't show the panel).
   const cams = useCams(state.showBroadcastChrome && ready);
-  const theme = getBroadcastTheme(state.broadcastTheme, state.themeOverrides);
+  // Memoised: the object also feeds BroadcastThemeContext, and a fresh identity
+  // every socket beat would re-render every chrome consumer.
+  const theme = useMemo(
+    () => getBroadcastTheme(state.broadcastTheme, state.themeOverrides),
+    [state.broadcastTheme, state.themeOverrides],
+  );
 
   // Broadcast rule: the /watch output only ever shows the clean global cloud mosaic
   // (plus the lightning overlay) — every regional geostationary disc (GOES / Himawari /
@@ -172,6 +178,7 @@ function WatchSurfaceBody({
   );
 
   return (
+    <BroadcastThemeContext.Provider value={theme}>
     <main style={{ position: "fixed", inset: 0, background: "#0a0e16", overflow: "hidden" }}>
       <GlobeView
         state={broadcastState}
@@ -310,6 +317,7 @@ function WatchSurfaceBody({
           desktop (see FullscreenButton). */}
       <FullscreenButton />
     </main>
+    </BroadcastThemeContext.Provider>
   );
 }
 

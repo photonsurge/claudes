@@ -7,8 +7,10 @@
  * than a promise of exactly what airs next).
  */
 import type { SegmentKind } from "@photonsurge/shared/director";
+import { useBroadcastTheme } from "./theme-context";
 
 export default function UpNextPanel({ items }: { items: { kind: SegmentKind; title: string }[] }) {
+  const theme = useBroadcastTheme();
   if (!items.length) return null;
   return (
     <div
@@ -17,7 +19,7 @@ export default function UpNextPanel({ items }: { items: { kind: SegmentKind; tit
         fontSize: 13.8,
         fontWeight: 700,
         letterSpacing: 0.4,
-        color: "#9fb0c8",
+        color: theme.mutedColor,
         textShadow: "0 1px 3px rgba(0,0,0,0.85)",
         textAlign: "right",
         pointerEvents: "none",

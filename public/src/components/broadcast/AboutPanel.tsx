@@ -35,7 +35,7 @@ export default function AboutPanel({ theme, feed }: { theme: BroadcastTheme; fee
           fontSize: 15.4,
           fontWeight: 800,
           letterSpacing: 1.1,
-          color: "#dfe7f5",
+          color: theme.titleColor,
         }}
       >
         About G.O.D.S.

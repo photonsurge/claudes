@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { sendToQueueAndWait } from "@photonsurge/shared/bull/bull-queue";
 import { requireAdmin } from "../../../lib/require-admin";
+import { publicOrigin } from "../../../lib/public-origin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,8 @@ const STATE_COOKIE = "yt_oauth_state";
 async function GET__impl(req: Request) {
   const session = await requireAdmin();
   const url = new URL(req.url);
-  const back = (q: string) => NextResponse.redirect(new URL(`/admin/youtube?${q}`, req.url));
+  // Land back on the real public origin, not the container's 0.0.0.0 bind host.
+  const back = (q: string) => NextResponse.redirect(new URL(`/admin/youtube?${q}`, publicOrigin(req)));
 
   if (!session) return back("error=admin");
 

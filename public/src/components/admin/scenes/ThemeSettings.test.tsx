@@ -48,6 +48,37 @@ describe("ThemeSettings", () => {
     expect(within(preview).getByText("ZED CHANNEL")).toBeInTheDocument();
   });
 
+  it("each colour field patches ITS OWN override key (regression: swatch was hardcoded to accent)", async () => {
+    render(<ThemeSettings sceneId="wind" />);
+
+    const title = await screen.findByRole("textbox", { name: "Panel title colour" });
+    fireEvent.change(title, { target: { value: "#123456" } });
+    expect(patch).toHaveBeenLastCalledWith("wind", { themeOverrides: { titleColor: "#123456" } });
+
+    fireEvent.change(screen.getByLabelText("Accent colour picker"), { target: { value: "#ff0000" } });
+    expect(patch).toHaveBeenLastCalledWith("wind", {
+      themeOverrides: { titleColor: "#123456", accent: "#ff0000" },
+    });
+  });
+
+  it("advanced fields hide behind the Advanced toggle", async () => {
+    render(<ThemeSettings sceneId="wind" />);
+    await screen.findByRole("textbox", { name: "Brand name" });
+
+    // Collapsed by default (hidden from the a11y tree); the toggle reveals the
+    // raw-CSS fields.
+    expect(screen.queryByRole("textbox", { name: "Ticker background (CSS)" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Advanced…" }));
+    expect(screen.getByRole("textbox", { name: "Ticker background (CSS)" })).toBeVisible();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Ticker background (CSS)" }), {
+      target: { value: "linear-gradient(#000, #111)" },
+    });
+    expect(patch).toHaveBeenLastCalledWith("wind", {
+      themeOverrides: { tickerBg: "linear-gradient(#000, #111)" },
+    });
+  });
+
   it("Reset overrides clears themeOverrides when some are set", async () => {
     mockFetch.mockResolvedValue({
       state: { ...DEFAULT_CONTROL_STATE, themeOverrides: { name: "ZED" } },

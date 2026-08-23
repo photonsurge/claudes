@@ -114,7 +114,12 @@ describe("mergeControlState", () => {
       reportKindsOff: ["alert"],
       reportHazardsOff: ["fire", "fog"],
       pointVarsOff: ["humidity", "pressure"],
-      themeOverrides: { name: "ATLANTIC WIND", accent: "#00d0ff" },
+      themeOverrides: {
+        name: "ATLANTIC WIND",
+        accent: "#00d0ff",
+        titleColor: "#ffffff",
+        tickerBg: "linear-gradient(#000, #111)",
+      },
       showMapSource: true,
       audio: { enabled: true, mode: "deep", volume: 0.45, muted: true },
       chat: { enabled: true, promoteToTicker: true },
@@ -133,6 +138,18 @@ describe("mergeControlState", () => {
     expect(next.basemap).toBe("satellite");
     expect(next.showWind).toBe(false);
     expect(next.showPressure).toBe(base.showPressure);
+  });
+
+  it("sanitises themeOverrides to known string keys", () => {
+    const next = mergeControlState(base, {
+      themeOverrides: {
+        titleColor: "#123456",
+        bogus: "x",
+        textColor: 7,
+      } as never,
+    });
+    // Known string keys pass; unknown keys and non-strings are dropped.
+    expect(next.themeOverrides).toEqual({ titleColor: "#123456" });
   });
 
   it("sanitises alertHazardsOff to known hazard types and dedupes", () => {
