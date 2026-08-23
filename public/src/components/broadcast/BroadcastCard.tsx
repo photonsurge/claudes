@@ -63,7 +63,7 @@ export const ON_AIR_RED = "#ff3b3b";
 /** Standard `▸ SECTION` micro-label used for card + sub-section headers. */
 export function CardEyebrow({ children, color = MUTED }: { children: ReactNode; color?: string }) {
   return (
-    <div style={{ fontSize: 9.9, fontWeight: 800, letterSpacing: 1.4, textTransform: "uppercase", color }}>
+    <div style={{ fontSize: 11.3, fontWeight: 800, letterSpacing: 1.4, textTransform: "uppercase", color }}>
       {children}
     </div>
   );

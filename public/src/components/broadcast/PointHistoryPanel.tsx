@@ -255,8 +255,8 @@ export function SectionTitle({
 }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-      <span style={{ fontSize: 13.2, fontWeight: 850, letterSpacing: 1.5, color: "#eef4ff" }}>{title}</span>
-      <span style={{ fontSize: 9.9, fontWeight: 750, letterSpacing: 1.05, color: accent }}>
+      <span style={{ fontSize: 14.5, fontWeight: 850, letterSpacing: 1.5, color: "#eef4ff" }}>{title}</span>
+      <span style={{ fontSize: 11, fontWeight: 750, letterSpacing: 1.05, color: accent }}>
         {tag}
         {pageCount != null && pageCount > 1 ? ` · ${(page ?? 0) + 1}/${pageCount}` : ""}
       </span>

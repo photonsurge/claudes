@@ -727,6 +727,11 @@ export default function BroadcastFrame({
             flexDirection: "column-reverse",
             alignItems: "flex-start",
             gap: 10,
+            // Legibility: enlarge the whole deck as a unit (anchored to its
+            // bottom-left corner) rather than re-sizing every slide's fonts —
+            // keeps the fixed-card layout intact while reading bigger on air.
+            transform: "scale(1.15)",
+            transformOrigin: "left bottom",
           }}
         >
           {/* The 3-day forecast for a targeted event / region tour stop now hangs
@@ -839,6 +844,10 @@ export default function BroadcastFrame({
             flexDirection: "column",
             alignItems: "flex-end",
             gap: 10,
+            // Legibility: enlarge the whole WORLD WATCH column as a unit
+            // (anchored top-right) so the report + feed read bigger on air.
+            transform: "scale(1.12)",
+            transformOrigin: "right top",
           }}
         >
           {!off.has("worldReport") && (

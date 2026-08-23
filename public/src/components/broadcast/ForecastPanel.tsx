@@ -208,8 +208,8 @@ export default function ForecastPanel({
     return (
       <div style={{ marginTop: 11, paddingTop: 11, borderTop: "1px solid rgba(120,140,170,0.15)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
-          <span style={{ fontSize: 9.9, letterSpacing: 1, opacity: 0.55, fontWeight: 700 }}>3-DAY FORECAST</span>
-          <span style={{ fontSize: 11, opacity: 0.7 }}>{bbox ? "AREA" : "POINT"}</span>
+          <span style={{ fontSize: 11.3, letterSpacing: 1, opacity: 0.8, fontWeight: 800 }}>3-DAY FORECAST</span>
+          <span style={{ fontSize: 12.1, opacity: 0.7 }}>{bbox ? "AREA" : "POINT"}</span>
         </div>
         {days.length ? (
           <div style={{ display: "flex", flexDirection: "row", gap: 5 }}>

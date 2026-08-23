@@ -154,7 +154,7 @@ function Panel({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 8.8, fontWeight: 800, letterSpacing: 1, color: "#9fb0c8" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 800, letterSpacing: 1, color: "#aebdd2" }}>
           {icon}
           {title}
         </span>
@@ -246,7 +246,7 @@ function CardShell({
       }}
     >
       <style>{"@keyframes bcast-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
-      <div style={{ fontSize: 9.9, fontWeight: 800, letterSpacing: 1.2, color: "#dfe7f5" }}>{label}</div>
+      <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: 1.2, color: "#dfe7f5" }}>{label}</div>
       {children}
     </div>
   );
@@ -460,7 +460,7 @@ function WeatherMonitorBox({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
         <span
           style={{
-            fontSize: 9.9,
+            fontSize: 11,
             fontWeight: 800,
             letterSpacing: 0.4,
             color: "#c8d5e6",
@@ -471,7 +471,7 @@ function WeatherMonitorBox({
         >
           {locationLabel}
         </span>
-        <span style={{ fontSize: 8.8, fontWeight: 700, color: theme.accent, whiteSpace: "nowrap" }}>{latestLabel}</span>
+        <span style={{ fontSize: 9.9, fontWeight: 700, color: theme.accent, whiteSpace: "nowrap" }}>{latestLabel}</span>
       </div>
       <div
         style={{
@@ -586,8 +586,8 @@ export function WeatherMonitors({
       }}
     >
       <style>{"@keyframes weather-row-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
-      <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, letterSpacing: 1.4, color: "#dfe7f5" }}>
-        <WindIcon active size={11} />
+      <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.7, fontWeight: 800, letterSpacing: 1.4, color: "#dfe7f5" }}>
+        <WindIcon active size={13} />
         LOCAL MONITORS
       </span>
       <div style={{ display: "flex", gap: 10 }}>
