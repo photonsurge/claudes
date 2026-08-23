@@ -121,6 +121,20 @@ describe("WorldReportDeck per-channel curation", () => {
     expect(screen.queryByText("GLOBAL ALERTS")).not.toBeInTheDocument();
   });
 
+  it("threads reportKindsOff to the DETECTION GRID so a hidden kind's column disappears", () => {
+    render(
+      <WorldReportDeck
+        worldWatch={emptyWatch}
+        manifest={null}
+        reportOff={["hourly", "alerts", "seismic", "volcanoes", "about"]}
+        reportKindsOff={["alert"]}
+      />,
+    );
+    expect(screen.getByText("DETECTION GRID")).toBeInTheDocument();
+    expect(screen.queryByText("ALERTS")).not.toBeInTheDocument();
+    expect(screen.getByText("SEISMIC")).toBeInTheDocument();
+  });
+
   it("renders nothing when every report slide is hidden", () => {
     const { container } = render(
       <WorldReportDeck

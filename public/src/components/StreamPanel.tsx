@@ -230,7 +230,7 @@ function GoLiveForm({
   const [publishYoutube, setPublishYoutube] = useState(canPublish);
   const [durationMin, setDurationMin] = useState(0);
   const [monitorStream, setMonitorStream] = useState(false);
-  const [chatEnabled, setChatEnabled] = useState(false);
+  const [chatEnabled, setChatEnabled] = useState(true);
   const [withBroadcast, setWithBroadcast] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);

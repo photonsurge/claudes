@@ -934,6 +934,7 @@ export default function BroadcastFrame({
               theme={theme}
               reportOff={state.reportOff}
               reportOrder={state.reportOrder}
+              reportKindsOff={state.reportKindsOff}
             />
           )}
           {/* NEW ALERTS — the just-issued warnings ride below the always-on

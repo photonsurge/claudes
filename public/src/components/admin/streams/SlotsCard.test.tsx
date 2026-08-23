@@ -96,7 +96,10 @@ describe("SlotsCard", () => {
     fireEvent.click(screen.getByRole("option", { name: "Wind" }));
     fireEvent.click(screen.getByRole("button", { name: "Add stream" }));
 
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ sceneId: "wind", enabled: false }));
+    expect(onSave).toHaveBeenCalledWith(
+      // Chat defaults ON — the chat log only records while a run's poller runs.
+      expect.objectContaining({ sceneId: "wind", enabled: false, chat: { enabled: true, promoteToTicker: false } }),
+    );
   });
 
   it("submits the chosen channel, monitor and chat→ticker", () => {
@@ -119,7 +122,7 @@ describe("SlotsCard", () => {
     fireEvent.mouseDown(within(form).getByLabelText("YouTube"));
     fireEvent.click(screen.getByRole("option", { name: "Weather HD" }));
     fireEvent.click(within(form).getByRole("checkbox", { name: "monitor" }));
-    fireEvent.click(within(form).getByRole("checkbox", { name: "chat" }));
+    // chat is already checked by default; only opt into ticker promotion
     fireEvent.click(within(form).getByRole("checkbox", { name: "→ ticker" }));
     fireEvent.click(screen.getByRole("button", { name: "Add stream" }));
 

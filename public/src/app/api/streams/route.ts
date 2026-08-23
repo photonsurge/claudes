@@ -175,7 +175,9 @@ async function POST__impl(req: Request) {
     privacy,
     durationMs,
     platforms,
-    chat: { enabled: !!body.chat?.enabled, promoteToTicker: !!body.chat?.promoteToTicker },
+    // Chat defaults ON (poll + log + operator panel) unless explicitly opted out —
+    // the chat log is only written while a run's poller is running.
+    chat: { enabled: body.chat?.enabled !== false, promoteToTicker: !!body.chat?.promoteToTicker },
     createdBy: session.email,
   });
   if (!run) {

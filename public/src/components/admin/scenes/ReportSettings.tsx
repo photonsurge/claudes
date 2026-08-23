@@ -182,7 +182,8 @@ export default function ReportSettings({ sceneId }: { sceneId: string }) {
           Feed &amp; grid content
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-          Which events are counted in the detection grid and listed in the active feed.
+          Which events are counted and listed in the active feed — a kind you turn off also
+          drops its column from the detection grid.
         </Typography>
         <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
           {REPORT_KINDS.map((k) => (

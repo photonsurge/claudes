@@ -1,15 +1,70 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-flatpak run --command=obs com.obsproject.Studio --multi \
-  --profile "Earthquakes" \
-  --collection "Earthquakes" \
-  --websocket_port 4456 \
-  --websocket_password "secret" &
+# Each OBS instance gets its OWN config dir (via XDG_CONFIG_HOME). Two
+# instances sharing one config fight over the browser-source (CEF/Chromium)
+# cache — Chromium's singleton lock means every instance after the first
+# renders blank browser sources — and they also clobber each other's
+# obs-websocket config and log files.
+#
+# First run seeds each instance's config from the normal OBS config
+# (~/.var/app/com.obsproject.Studio/config). After that each instance owns
+# its config: edit a channel's scenes in THAT channel's OBS window, not in
+# normally-opened OBS.
 
-flatpak run --command=obs com.obsproject.Studio --multi \
-  --profile "Weather" \
-  --collection "Weather" \
-  --websocket_port 4457 \
-  --websocket_password "secret" &
+APP=com.obsproject.Studio
+APPDIR="$HOME/.var/app/$APP"
+BASE="$APPDIR/config"
+
+launch() {
+  local name="$1" port="$2"
+  local cfg="$APPDIR/config-$name"
+
+  if [[ ! -d "$cfg/obs-studio" ]]; then
+    mkdir -p "$cfg"
+    rsync -a \
+      --exclude plugin_config/obs-browser \
+      --exclude plugin_config/obs-websocket/config.json \
+      --exclude logs \
+      "$BASE/obs-studio/" "$cfg/obs-studio/"
+    # OBS 31.1+ pins absolute storage paths in global.ini [Locations];
+    # repoint them at the clone or it silently keeps using the shared dir
+    sed -i "s|$BASE|$cfg|g" "$cfg/obs-studio/global.ini"
+  fi
+
+  # stale Chromium singleton locks from a crashed run keep sources blank
+  rm -f "$cfg"/obs-studio/plugin_config/obs-browser/Singleton*
+
+  # browser HW accel renders black on this NVIDIA driver; the known-good
+  # normal session ran with it auto-disabled ("Blacklisted driver detected")
+  sed -i 's/^BrowserHWAccel=.*/BrowserHWAccel=false/' "$cfg/obs-studio/global.ini"
+
+  # --websocket_port/password only OVERRIDE settings; they don't enable the
+  # server, and a fresh config regenerates with server_enabled=false
+  mkdir -p "$cfg/obs-studio/plugin_config/obs-websocket"
+  cat > "$cfg/obs-studio/plugin_config/obs-websocket/config.json" <<EOF
+{
+  "alerts_enabled": false,
+  "auth_required": true,
+  "first_load": false,
+  "server_enabled": true,
+  "server_password": "secret",
+  "server_port": $port
+}
+EOF
+
+  # flatpak force-overrides an --env=XDG_CONFIG_HOME back to its own per-app
+  # dir, so export it INSIDE the sandbox instead
+  flatpak run --command=sh "$APP" -c "
+    export XDG_CONFIG_HOME='$cfg'
+    exec obs --multi \
+      --profile '$name' \
+      --collection '$name' \
+      --websocket_port $port \
+      --websocket_password 'secret'" &
+}
+
+launch Earthquakes 4456
+launch Weather 4457
 
 wait

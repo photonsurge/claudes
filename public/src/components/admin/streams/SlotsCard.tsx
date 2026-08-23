@@ -192,7 +192,7 @@ function AddSlotForm({
   const [title, setTitle] = useState("");
   const [privacy, setPrivacy] = useState<"public" | "unlisted" | "private">("public");
   const [monitorStream, setMonitorStream] = useState(false);
-  const [chatEnabled, setChatEnabled] = useState(false);
+  const [chatEnabled, setChatEnabled] = useState(true);
   const [promoteToTicker, setPromoteToTicker] = useState(false);
 
   const add = () => {
@@ -213,7 +213,7 @@ function AddSlotForm({
     setAccountId("");
     setTitle("");
     setMonitorStream(false);
-    setChatEnabled(false);
+    setChatEnabled(true);
     setPromoteToTicker(false);
   };
 

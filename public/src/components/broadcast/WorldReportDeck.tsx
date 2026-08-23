@@ -12,7 +12,7 @@
  * Pointer-inert like the rest of the chrome.
  */
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
-import { applyReportPrefs, type ReportSlideId } from "@photonsurge/shared/broadcast-report";
+import { applyReportPrefs, type ReportKind, type ReportSlideId } from "@photonsurge/shared/broadcast-report";
 import type { WorldWatchState } from "../../lib/world-watch";
 import { filterFeedByKind } from "../../lib/broadcast";
 import { useAreaForecast } from "../../lib/forecast-client";
@@ -48,6 +48,7 @@ export default function WorldReportDeck({
   theme = DEFAULT_THEME,
   reportOff,
   reportOrder,
+  reportKindsOff,
 }: {
   worldWatch: WorldWatchState;
   manifest: WeatherManifest | null;
@@ -56,6 +57,10 @@ export default function WorldReportDeck({
   reportOff?: ReportSlideId[];
   /** Per-channel report slide ranking (ControlState.reportOrder). */
   reportOrder?: ReportSlideId[];
+  /** Per-channel hidden event kinds (ControlState.reportKindsOff) — the data is
+   *  already scoped upstream (useWorldWatch); the DETECTION GRID also needs it
+   *  to prune the hidden kind's column/tile from its layout. */
+  reportKindsOff?: ReportKind[];
 }) {
   const s = worldWatch;
   // The channel's curated rotation: the natural DECK_SLIDES order with this
@@ -149,7 +154,7 @@ export default function WorldReportDeck({
   } else {
     // "detection" — the DETECTION GRID, with the full global ACTIVE FEED
     // integrated into its own card (like every other slide).
-    content = <WorldSituationPanel worldWatch={s} theme={theme} />;
+    content = <WorldSituationPanel worldWatch={s} theme={theme} kindsOff={reportKindsOff} />;
   }
 
   // Every slide now carries its ACTIVE FEED *inside* its own card — the category
