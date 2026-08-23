@@ -32,6 +32,8 @@ import {
   saveEncoder,
   deleteEncoder,
   testEncoder,
+  provisionEncoder,
+  refreshEncoder,
   saveSlot,
   deleteSlot,
   type StreamAccount,
@@ -39,6 +41,7 @@ import {
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import EncodersCard from "../../../components/admin/streams/EncodersCard";
 import SlotsCard from "../../../components/admin/streams/SlotsCard";
+import RunChatDialog from "../../../components/admin/streams/RunChatDialog";
 
 const STATUS_COLOR: Record<string, "default" | "error" | "warning" | "success"> = {
   scheduled: "warning",
@@ -159,6 +162,8 @@ export default function StreamsPage() {
           refetch();
         }}
         onTest={testEncoder}
+        onProvision={provisionEncoder}
+        onRefresh={refreshEncoder}
       />
 
       <SlotsCard
@@ -352,6 +357,7 @@ function StartRunForm({
 
 function RunRow({ run, onStopped }: { run: RunState; onStopped: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const active = runIsActive(run.status);
 
   const stop = async () => {
@@ -385,12 +391,16 @@ function RunRow({ run, onStopped }: { run: RunState; onStopped: () => void }) {
             Watch ↗
           </MuiLink>
         )}
+        <Button variant="outlined" size="small" onClick={() => setChatOpen(true)}>
+          Chat
+        </Button>
         {active && (
           <Button variant="outlined" color="error" onClick={stop} disabled={busy}>
             {busy ? "…" : "Stop"}
           </Button>
         )}
       </Stack>
+      <RunChatDialog runId={run.id} title={run.title || run.sceneId} open={chatOpen} onClose={() => setChatOpen(false)} />
     </Paper>
   );
 }

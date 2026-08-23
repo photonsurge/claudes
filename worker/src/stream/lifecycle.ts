@@ -32,7 +32,7 @@ import { emitWorkerEvent } from "../socket";
 import { startMonitor, stopMonitor, stopAllMonitors } from "./monitor";
 import { startChatPoll, stopChatPoll } from "./chat";
 import { ObsUnavailableError, setStreamKey, startStream, stopStream, getStatus, type ObsStreamStatus } from "../obs/client";
-import { endpointForRun } from "./encoders";
+import { endpointForRun, provisionEncoderScene } from "./encoders";
 import {
   getYoutubeClient,
   createBroadcast,
@@ -230,6 +230,15 @@ async function configureAndStartObs(run: Run, server: string, key: string): Prom
     // Resolving the endpoint throws ObsUnavailableError when the encoder is
     // missing/disabled/unconfigured — same manual-handoff branch as unreachable.
     const ep = await endpointForRun(run);
+    // Best-effort full auto-provision: make sure this OBS is showing the channel's
+    // tokened /watch URL before we start streaming. Never fail the run on this — if
+    // OBS is unreachable, setStreamKey below drives the same manual-handoff branch.
+    try {
+      const p = await provisionEncoderScene(run.encoderId);
+      log(TAG, `provisioned OBS scene for run ${run.id}: "${p.sceneName}" → ${p.url}`);
+    } catch (e) {
+      log(TAG, `OBS auto-provision skipped for run ${run.id}: ${String((e as Error)?.message ?? e)}`);
+    }
     await setStreamKey(ep, server, key);
     await persistPhase(run.id, "obs-config", { obs: { ...(run.obs ?? {}), configured: true, streaming: false } });
     await startStream(ep);

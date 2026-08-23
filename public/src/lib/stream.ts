@@ -156,6 +156,36 @@ export async function testEncoder(id: string): Promise<ObsTestResult> {
   return data as ObsTestResult;
 }
 
+/** Outcome of full auto-provision (worker pushes the browser-source scene into OBS). */
+export interface ProvisionResult {
+  ok: boolean;
+  sceneName?: string;
+  inputName?: string;
+  url?: string;
+  width?: number;
+  height?: number;
+  created?: boolean;
+  switched?: boolean;
+  refreshed?: boolean;
+  error?: string;
+}
+
+/** Push a full-canvas browser source (the channel's tokened /watch URL) into the encoder's OBS. */
+export async function provisionEncoder(id: string): Promise<ProvisionResult> {
+  const res = await fetch(`/api/streams/encoders/${encodeURIComponent(id)}/provision`, { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+  return data as ProvisionResult;
+}
+
+/** Force a no-cache reload of the encoder's globe browser source (post-deploy, no scene switch). */
+export async function refreshEncoder(id: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`/api/streams/encoders/${encodeURIComponent(id)}/refresh`, { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+  return data as { ok: boolean; error?: string };
+}
+
 /** Remove an encoder registration (refused while a run publishes through it). */
 export async function deleteEncoder(id: string): Promise<void> {
   const res = await fetch(`/api/streams/encoders/${encodeURIComponent(id)}`, { method: "DELETE" });

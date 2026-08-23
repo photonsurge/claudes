@@ -814,7 +814,7 @@
   integrity sha512-8awtpHXCx/bNpFt4mt2xdkgtgVvKqty8VbjHI/WWWQuEw+KLzFot3f4+LkQY9YmOtq7A5GdOnqoIC8Pdygjk2g==
 
 "@photonsurge/shared@file:../shared":
-  version "0.3.25"
+  version "0.3.27"
   dependencies:
     bcryptjs "^3.0.2"
     bullmq "5.73.4"

@@ -2,8 +2,11 @@
  * YouTube live-chat poller for a run. In-process (keyed `chat:<runId>` in the same
  * monitor registry the health loop uses) so it starts/stops with the run and
  * needs no self-rescheduling BullMQ job. Polls liveChatMessages.list at the
- * server-suggested interval and emits each new message as CHAT_MESSAGE over the
- * worker→browser relay. Ephemeral — chat is never persisted.
+ * server-suggested interval, LOGS every message to Mongo (db.chatLog — idempotent
+ * on the platform message id, so restarts/re-polls never duplicate), and emits
+ * each new message as CHAT_MESSAGE over the worker→browser relay. The first
+ * (backlog) page is logged but not emitted — the live panel only shows messages
+ * arriving after we start streaming, while the log keeps the full history.
  *
  * Chat is OPERATOR-ONLY (a /control panel), never rendered on /watch by default
  * (docs/streaming-runs-plan.md decision 4).
@@ -19,7 +22,8 @@ const TAG = "stream-chat";
 const chatKey = (runId: string) => `chat:${runId}`;
 
 // Per-run continuation token. Its PRESENCE also marks "we've polled once", so the
-// first (backlog) page is skipped — only messages arriving after we start stream.
+// first (backlog) page is skipped for display — only messages arriving after we
+// start stream to the operator panel; the log still records the backlog.
 const pageTokens = new Map<string, string | undefined>();
 
 export function startChatPoll(runId: string): void {
@@ -44,23 +48,31 @@ async function chatTick(runId: string): Promise<number> {
     const page = await listChat(ctx, yt.liveChatId, pageTokens.get(runId));
     pageTokens.set(runId, page.nextPageToken);
 
-    if (!first) {
-      for (const m of page.messages) {
-        const msg: ChatMessage = {
-          runId,
-          sceneId: run.sceneId,
-          platform: "youtube",
-          id: m.id,
-          author: m.author,
-          text: m.text,
-          ts: m.ts,
-          isMod: m.isMod,
-          isOwner: m.isOwner,
-          authorPhoto: m.authorPhoto,
-          superchatAmount: m.superchatAmount,
-        };
-        emitWorkerEvent({ type: CHAT_MESSAGE, data: msg });
+    const msgs: ChatMessage[] = page.messages.map((m) => ({
+      runId,
+      sceneId: run.sceneId,
+      platform: "youtube",
+      id: m.id,
+      author: m.author,
+      text: m.text,
+      ts: m.ts,
+      isMod: m.isMod,
+      isOwner: m.isOwner,
+      authorPhoto: m.authorPhoto,
+      superchatAmount: m.superchatAmount,
+    }));
+
+    // Log first — but never let a Mongo hiccup break the live relay.
+    if (msgs.length) {
+      try {
+        await db.chatLog.append(msgs);
+      } catch (err) {
+        log(TAG, `log append failed ${runId}`, String((err as Error)?.message ?? err));
       }
+    }
+
+    if (!first) {
+      for (const msg of msgs) emitWorkerEvent({ type: CHAT_MESSAGE, data: msg });
     }
     return Math.max(2_000, page.pollingIntervalMillis);
   } catch (err) {

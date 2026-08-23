@@ -126,6 +126,8 @@ import { makeUserRepo } from "./user-repo";
 import { getBroadcastStateModel, BROADCAST_STATE_ID } from "./broadcast-state-model";
 import { getDirectorConfigModel } from "./director-config-model";
 import { getRunModel, iRunModel } from "./run-model";
+import { getChatLogMessageModel } from "./chat-log-model";
+import { makeChatLogRepo } from "./chat-log-repo";
 import { getStreamEncoderModel, iStreamEncoderModel } from "./stream-encoder-model";
 import { getStreamSlotModel, iStreamSlotModel } from "./stream-slot-model";
 import { getYoutubeAccountModel, iYoutubeAccountModel } from "./youtube-account-model";
@@ -286,6 +288,7 @@ export function createDb(conn: Connection) {
     vehicles: makeVehicleRepo(getVehicleModel(conn)),
     logs: mongoCrud(getLogModel(conn)),
     airLog: makeAirLogRepo(getAirRunModel(conn), getAirEntryModel(conn)),
+    chatLog: makeChatLogRepo(getChatLogMessageModel(conn)),
     users: makeUserRepo(getUserModel(conn)),
     broadcastState,
     directorConfig,

@@ -200,6 +200,107 @@ export async function probe(ep: ObsEndpoint): Promise<ObsProbe> {
   });
 }
 
+/** Result of provisioning a browser-source scene. */
+export interface ProvisionResult {
+  sceneName: string;
+  inputName: string;
+  width: number;
+  height: number;
+  created: boolean; // input was newly created (vs URL updated)
+  switched: boolean; // program scene was switched to it
+  refreshed: boolean; // CEF page was force-reloaded (no cache) onto the current URL
+}
+
+/**
+ * Full auto-provision: create-or-update a full-canvas browser source pointing at
+ * `url`, in a dedicated scene, and (optionally) switch OBS to it. Idempotent — a
+ * re-run just updates the URL (so a rotated watch token re-pushes cleanly) and
+ * re-applies the transform. Sizes the source to the OBS base canvas for a crisp,
+ * exact-fit render. `overlay:true` on the settings update preserves any other
+ * browser-source tweaks (css, fps) the operator made.
+ */
+export async function provisionBrowserScene(
+  ep: ObsEndpoint,
+  opts: { url: string; sceneName: string; inputName: string; makeActive?: boolean },
+): Promise<ProvisionResult> {
+  const { url, sceneName, inputName, makeActive = true } = opts;
+  return withObs(ep, async (obs) => {
+    const video = await obs.call("GetVideoSettings");
+    const width = Number(video.baseWidth) || 1920;
+    const height = Number(video.baseHeight) || 1080;
+    const inputSettings = { url, width, height };
+
+    const { scenes } = await obs.call("GetSceneList");
+    if (!(scenes as { sceneName: string }[]).some((s) => s.sceneName === sceneName)) {
+      await obs.call("CreateScene", { sceneName });
+    }
+
+    const { inputs } = await obs.call("GetInputList");
+    const inputExists = (inputs as { inputName: string }[]).some((i) => i.inputName === inputName);
+    let created = false;
+    if (!inputExists) {
+      await obs.call("CreateInput", {
+        sceneName,
+        inputName,
+        inputKind: "browser_source",
+        inputSettings,
+        sceneItemEnabled: true,
+      });
+      created = true;
+    } else {
+      await obs.call("SetInputSettings", { inputName, inputSettings, overlay: true });
+      // Make sure this source is actually IN the target scene (it may live elsewhere).
+      try {
+        await obs.call("GetSceneItemId", { sceneName, sourceName: inputName });
+      } catch {
+        await obs.call("CreateSceneItem", { sceneName, sourceName: inputName, sceneItemEnabled: true });
+      }
+    }
+
+    // Fill the canvas: source is already canvas-sized, so position 0,0 at scale 1.
+    const { sceneItemId } = await obs.call("GetSceneItemId", { sceneName, sourceName: inputName });
+    await obs.call("SetSceneItemTransform", {
+      sceneName,
+      sceneItemId,
+      sceneItemTransform: { positionX: 0, positionY: 0, scaleX: 1, scaleY: 1, boundsType: "OBS_BOUNDS_NONE" },
+    });
+
+    let switched = false;
+    if (makeActive) {
+      await obs.call("SetCurrentProgramScene", { sceneName });
+      switched = true;
+    }
+
+    // Force a no-cache reload so the source actually navigates to the (possibly
+    // just-changed) URL and drops any stale /watch bundle — the OBS "Refresh cache
+    // of current page" button, done for the operator. Best-effort: a build/plugin
+    // without this property must not fail the whole provision.
+    let refreshed = false;
+    try {
+      await obs.call("PressInputPropertiesButton", { inputName, propertyName: "refreshnocache" });
+      refreshed = true;
+    } catch (err) {
+      log(TAG, "refreshnocache press failed (non-fatal)", `${inputName}: ${String((err as Error)?.message ?? err)}`);
+    }
+
+    return { sceneName, inputName, width, height, created, switched, refreshed };
+  });
+}
+
+/**
+ * Force a no-cache reload of a browser source (the OBS "Refresh" button), without
+ * touching scenes/URL. Throws ObsUnavailableError if the input isn't there yet.
+ */
+export async function refreshBrowserSource(ep: ObsEndpoint, inputName: string): Promise<void> {
+  await withObs(ep, async (obs) => {
+    const { inputs } = await obs.call("GetInputList");
+    if (!(inputs as { inputName: string }[]).some((i) => i.inputName === inputName)) {
+      throw new ObsUnavailableError(`browser source "${inputName}" not found — provision it first`);
+    }
+    await obs.call("PressInputPropertiesButton", { inputName, propertyName: "refreshnocache" });
+  });
+}
+
 /** Tear down every cached connection (worker shutdown). */
 export function closeObs(): void {
   for (const url of [...conns.keys()]) reset(url);

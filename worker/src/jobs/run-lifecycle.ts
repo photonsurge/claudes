@@ -12,7 +12,7 @@
 import type { Job } from "bullmq";
 import { goLive as doGoLive, finishRun } from "../stream/lifecycle";
 import { reconcileSlots } from "../stream/slots";
-import { endpointForEncoderId } from "../stream/encoders";
+import { endpointForEncoderId, provisionEncoderScene, refreshEncoderScene } from "../stream/encoders";
 import { probe } from "../obs/client";
 
 export async function goLive(job: Job) {
@@ -57,5 +57,34 @@ export async function testEncoder(job: Job) {
     return { reachable: true, url: ep.url, ...info };
   } catch (err) {
     return { reachable: false, error: String((err as Error)?.message ?? err) };
+  }
+}
+
+/**
+ * Admin action (POST /api/streams/encoders/:id/provision): push a full-canvas
+ * browser source with the channel's tokened /watch URL into this encoder's OBS and
+ * switch to it. Resolves (never rejects) with a structured ok/error for the UI.
+ */
+export async function provisionEncoder(job: Job) {
+  const encoderId = job.data?.data?.encoderId ? String(job.data.data.encoderId) : undefined;
+  try {
+    const res = await provisionEncoderScene(encoderId);
+    return { ok: true, ...res };
+  } catch (err) {
+    return { ok: false, error: String((err as Error)?.message ?? err) };
+  }
+}
+
+/**
+ * Admin action (POST /api/streams/encoders/:id/refresh): no-cache reload of the
+ * channel's globe browser source in this encoder's OBS. Resolves (never rejects).
+ */
+export async function refreshEncoder(job: Job) {
+  const encoderId = job.data?.data?.encoderId ? String(job.data.data.encoderId) : undefined;
+  try {
+    const res = await refreshEncoderScene(encoderId);
+    return { ok: true, ...res };
+  } catch (err) {
+    return { ok: false, error: String((err as Error)?.message ?? err) };
   }
 }

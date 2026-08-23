@@ -105,7 +105,7 @@ const TICKER_H = 34;
 /** With the masthead banner on, the top crawl band rides this far below the
  *  very top edge — tucking it down into the banner plate rather than kissing
  *  the screen edge. */
-const TICKER_DROP = 5;
+const TICKER_DROP = 10;
 const INSET = 30;
 const BRAND_STACK_H = 150;
 /** The masthead brand block sits at the very top-left, scaled up for
