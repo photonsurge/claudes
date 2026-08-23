@@ -730,7 +730,8 @@ export default function BroadcastFrame({
             // Legibility: enlarge the whole deck as a unit (anchored to its
             // bottom-left corner) rather than re-sizing every slide's fonts —
             // keeps the fixed-card layout intact while reading bigger on air.
-            transform: "scale(1.15)",
+            // (EventOverlay's LABEL_POS budgets for the scaled right edge.)
+            transform: "scale(1.2)",
             transformOrigin: "left bottom",
           }}
         >
@@ -846,7 +847,8 @@ export default function BroadcastFrame({
             gap: 10,
             // Legibility: enlarge the whole WORLD WATCH column as a unit
             // (anchored top-right) so the report + feed read bigger on air.
-            transform: "scale(1.12)",
+            // (EventOverlay's HISTORY_POS budgets for the scaled left edge.)
+            transform: "scale(1.16)",
             transformOrigin: "right top",
           }}
         >

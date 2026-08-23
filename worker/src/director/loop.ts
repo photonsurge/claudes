@@ -294,10 +294,12 @@ async function tick(): Promise<void> {
         if (next) {
           r.lastCutWasPriority = pickedViaPriority;
           if (next.kind === "ad") r.pendingAd = false;
-          // Anchor any camera motion (world spin, area orbit OR push-in zoom
-          // drift) to the cut instant so /control and /watch compute it in phase.
-          if (next.patch.autoSpin || next.patch.zoomDrift || next.patch.orbitDrift)
-            next.patch.spinEpoch = now;
+          // Anchor ALL camera motion to the cut instant so /control and /watch
+          // compute it in phase — the preset's spin/orbit/push-in AND a channel's
+          // idle drift (idleMotion), which is epoch-derived too. Unconditional:
+          // a motionless cut on an idle-motion channel still needs a fresh epoch
+          // or the drift lands mid-phase instead of easing out from the anchor.
+          next.patch.spinEpoch = now;
 
           // Fly every cut for the operator-set transition time: /watch and /control
           // read this off the merged ControlState in Globe.runFlight, so each shot

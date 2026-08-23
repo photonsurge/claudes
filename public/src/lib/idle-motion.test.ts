@@ -6,7 +6,13 @@
  */
 import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
 import { orbitAmpCap } from "./orbit-frame";
-import { idleBreatheZoom, idleMotionActive, idleMotionOffsets } from "./idle-motion";
+import {
+  idleBreatheActive,
+  idleBreatheZoom,
+  idleMotionActive,
+  idleMotionOffsets,
+  idleOrbitActive,
+} from "./idle-motion";
 
 const on = {
   ...DEFAULT_CONTROL_STATE,
@@ -26,10 +32,25 @@ describe("idleMotionActive", () => {
     expect(idleMotionActive({ ...on, idleBreathe: 0 })).toBe(true);
   });
 
-  it("yields to every other deterministic camera motion", () => {
-    expect(idleMotionActive({ ...on, autoSpin: true })).toBe(false);
-    expect(idleMotionActive({ ...on, zoomDrift: 0.04 })).toBe(false);
-    expect(idleMotionActive({ ...on, orbitDrift: 5 })).toBe(false);
+  it("composes with a director push-in: orbit rides along, breathe yields", () => {
+    // A settled detail shot (zoomDrift push-in, no orbit) must keep circling
+    // its subject — the push-in saturates ~30s into the hold and the shot
+    // would otherwise go dead still. The zoom stays the push-in's alone.
+    const pushing = { ...on, zoomDrift: 0.045 };
+    expect(idleOrbitActive(pushing)).toBe(true);
+    expect(idleBreatheActive(pushing)).toBe(false);
+    expect(idleMotionActive(pushing)).toBe(true);
+    // A breathe-only channel has nothing left to add under a push-in.
+    expect(idleMotionActive({ ...pushing, idleOrbit: 0 })).toBe(false);
+  });
+
+  it("yields entirely to the world spin and the director's own orbit", () => {
+    for (const other of [{ autoSpin: true }, { orbitDrift: 5 }]) {
+      const s = { ...on, ...other };
+      expect(idleOrbitActive(s)).toBe(false);
+      expect(idleBreatheActive(s)).toBe(false);
+      expect(idleMotionActive(s)).toBe(false);
+    }
   });
 });
 

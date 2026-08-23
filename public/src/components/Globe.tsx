@@ -66,7 +66,12 @@ import { stationMarkerLayers } from "./layers/monitor-stations";
 import type { TrackPath } from "../lib/tracks/client";
 import type { OrbitSegment } from "../lib/tracks/orbit";
 import { orbitAmpCap } from "../lib/orbit-frame";
-import { idleMotionActive, idleMotionOffsets } from "../lib/idle-motion";
+import {
+  idleBreatheActive,
+  idleMotionActive,
+  idleMotionOffsets,
+  idleOrbitActive,
+} from "../lib/idle-motion";
 import type { AlertFeature } from "../lib/alerts";
 import { alertFocusKey, type AlertFocus } from "../lib/alert-cycle";
 import type { Segment } from "@photonsurge/shared/director";
@@ -666,10 +671,17 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     const spinSpeed = state.autoSpin ? state.spinSpeed : 0;
     const zoomDrift = state.zoomDrift || 0;
     const orbitDrift = state.orbitDrift || 0;
-    // Channel idle drift: only when NO other motion owns the camera (the gate
-    // inside idleMotionActive), so the branches below are mutually exclusive.
+    // Channel idle drift, per-movement gated so it COMPOSES with a director
+    // hold: the orbit rides along with a push-in (only autoSpin / the
+    // director's own orbit suppress it), the breathe only when nothing else
+    // owns the zoom. Suppressed movements are zeroed here so the loop below
+    // never double-drives an axis.
     const idle = idleMotionActive(state)
-      ? { idleOrbit: state.idleOrbit, idleBreathe: state.idleBreathe, idlePeriodS: state.idlePeriodS }
+      ? {
+          idleOrbit: idleOrbitActive(state) ? state.idleOrbit : 0,
+          idleBreathe: idleBreatheActive(state) ? state.idleBreathe : 0,
+          idlePeriodS: state.idlePeriodS,
+        }
       : null;
     if (spinSpeed === 0 && zoomDrift === 0 && orbitDrift === 0 && !idle) return;
     // Anchor to the cut so motion is deterministic (same on /control and /watch).
@@ -699,14 +711,16 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       let longitude = anchorLng + spinSpeed * dt;
       let latitude = anchorLat;
       if (idle) {
-        // Parked-camera idle drift (per-channel): slow orbit round the anchor
-        // and/or a raised-cosine zoom breathe, both deterministic in dt so
-        // /control and /watch drift in phase. Same fly-in grace as the orbit.
+        // Idle drift (per-channel): slow orbit round the anchor and/or a
+        // raised-cosine zoom breathe, deterministic in dt so /control and
+        // /watch drift in phase. Pass the LIVE zoom (incl. any push-in) so the
+        // orbit pan cap tightens as a detail shot creeps closer, exactly like
+        // the director orbit below. Same fly-in grace, additive on both axes.
         const ot = Math.max(0, dt - flightSec);
-        const o = idleMotionOffsets(idle, ot, { zoom: anchorZoom, lat: anchorLat });
+        const o = idleMotionOffsets(idle, ot, { zoom, lat: anchorLat });
         longitude += o.dLng;
         latitude = Math.max(-85, Math.min(85, latitude + o.dLat));
-        zoom = anchorZoom + o.dZoom;
+        zoom += o.dZoom;
       }
       if (orbitDrift > 0) {
         const ot = Math.max(0, dt - flightSec); // time since the fly-in settled

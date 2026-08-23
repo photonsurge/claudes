@@ -157,9 +157,10 @@ export default function CameraSettings({ sceneId }: { sceneId: string }) {
       </Stack>
 
       <Alert severity="info">
-        Adds a slight drift whenever this channel&apos;s camera is parked on a location —
-        slowly circling the point and gently zooming in and back out. The world spin and
-        the director&apos;s own shot moves always take priority, so this never fights them.
+        Adds a slight drift whenever this channel&apos;s camera settles on a location —
+        slowly circling the point and gently zooming in and back out. It rides along with
+        the director&apos;s push-in shots (the orbit keeps the hold alive after the push-in
+        tops out), and yields to the world spin and the director&apos;s own orbits.
       </Alert>
     </Paper>
   );

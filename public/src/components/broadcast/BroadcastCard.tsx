@@ -153,8 +153,9 @@ export default function BroadcastCard({
           flexDirection: "column",
           // See-through glass (lighter than the theme's near-solid panelBg) so the
           // map reads behind the on-air deck card; a stronger blur keeps the body
-          // legible over it.
-          background: "rgba(8,14,24,0.32)",
+          // legible over it. Opaque enough to survive OBS/YouTube compression —
+          // thinner fills washed out to unreadable on stream.
+          background: "rgba(8,14,24,0.58)",
           ...accentBorder(theme.panelBorder, `4px solid ${stripe}`),
           borderRadius: 14,
           boxShadow: "0 8px 26px rgba(0,0,0,0.45)",

@@ -407,13 +407,16 @@ export interface ControlState {
    */
   orbitDrift: number;
   /**
-   * Per-channel IDLE camera motion: keep a shot that is holding still on a
-   * point alive with a slight drift — a slow orbit round the anchor and/or a
-   * gentle zoom "breathe" in and back out. Unlike zoomDrift/orbitDrift (which
-   * the auto-director stamps per cut), this is a standing channel preference
-   * for cameras parked on a location. Inert while any other motion owns the
-   * camera (autoSpin, a director push-in or orbit). Deterministic off
-   * spinEpoch like the rest, so /control and /watch drift in phase.
+   * Per-channel IDLE camera motion: keep a shot settled on a location alive
+   * with a slight drift — a slow orbit round the anchor and/or a gentle zoom
+   * "breathe" in and back out. Unlike zoomDrift/orbitDrift (which the
+   * auto-director stamps per cut), this is a standing channel preference that
+   * COMPOSES with a hold: the orbit rides along with a director push-in (so a
+   * detail shot keeps circling its subject after the push-in saturates), the
+   * breathe only runs when nothing else owns the zoom, and both yield to
+   * autoSpin and the director's own orbit (see idle-motion.ts gates).
+   * Deterministic off spinEpoch like the rest, so /control and /watch drift
+   * in phase.
    */
   idleMotion: boolean;
   /** Idle-motion orbit pan radius in degrees round the anchor (0 = no orbit). */

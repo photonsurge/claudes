@@ -23,19 +23,34 @@ export type IdleMotionState = Pick<
 >;
 
 /**
- * True when idle motion should own the camera: the channel opted in, there is
- * something to move (orbit and/or breathe amount set), and no other
- * deterministic motion already keeps the shot alive — the world spin and the
- * director's push-in/orbit always win.
+ * The two idle movements gate independently so the drift COMPOSES with a
+ * director hold instead of dying under it (a detail cut's push-in saturates at
+ * MAX_PUSH_IN ~30s in, and the shot would sit dead still for the rest of the
+ * hold):
+ *
+ *  - ORBIT runs whenever nothing else moves the camera laterally — only the
+ *    world spin and the director's own orbit suppress it, a push-in does not,
+ *    so a settled detail shot keeps circling its subject.
+ *  - BREATHE runs only when nothing else owns the zoom — a push-in is already
+ *    the zoom motion, and layering a second one would fight it.
  */
-export function idleMotionActive(state: IdleMotionState): boolean {
+export function idleOrbitActive(state: IdleMotionState): boolean {
+  return !!state.idleMotion && !state.autoSpin && !state.orbitDrift && state.idleOrbit > 0;
+}
+
+export function idleBreatheActive(state: IdleMotionState): boolean {
   return (
     !!state.idleMotion &&
     !state.autoSpin &&
     !state.zoomDrift &&
     !state.orbitDrift &&
-    (state.idleOrbit > 0 || state.idleBreathe > 0)
+    state.idleBreathe > 0
   );
+}
+
+/** True when idle motion contributes ANY movement (either gate open). */
+export function idleMotionActive(state: IdleMotionState): boolean {
+  return idleOrbitActive(state) || idleBreatheActive(state);
 }
 
 /**

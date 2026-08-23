@@ -35,7 +35,7 @@ export const BROADCAST_THEMES: Record<string, BroadcastTheme> = {
     tickerTitle: "GLOBAL FEED",
     meterTitle: "INTENSITY METER",
     accent: "#38bdf8",
-    panelBg: "linear-gradient(180deg, rgba(12,17,28,0.62), rgba(8,12,20,0.7))",
+    panelBg: "linear-gradient(180deg, rgba(12,17,28,0.74), rgba(8,12,20,0.82))",
     panelBorder: "1px solid rgba(120,140,170,0.25)",
   },
   command: {
@@ -46,7 +46,7 @@ export const BROADCAST_THEMES: Record<string, BroadcastTheme> = {
     tickerTitle: "VIGIL TAPE",
     meterTitle: "THREAT MATRIX",
     accent: "#4dc8ff",
-    panelBg: "linear-gradient(180deg, rgba(10,20,38,0.66), rgba(6,13,26,0.74))",
+    panelBg: "linear-gradient(180deg, rgba(10,20,38,0.78), rgba(6,13,26,0.86))",
     panelBorder: "1px solid rgba(90,150,210,0.32)",
   },
   storm: {
@@ -55,7 +55,7 @@ export const BROADCAST_THEMES: Record<string, BroadcastTheme> = {
     tickerTitle: "STORM FEED",
     meterTitle: "INTENSITY METER",
     accent: "#f43f5e",
-    panelBg: "linear-gradient(180deg, rgba(24,12,20,0.64), rgba(14,8,14,0.72))",
+    panelBg: "linear-gradient(180deg, rgba(24,12,20,0.76), rgba(14,8,14,0.84))",
     panelBorder: "1px solid rgba(200,120,140,0.26)",
   },
 };
@@ -116,9 +116,11 @@ export function accentBorderRight(base: string, right: string): {
 }
 
 /** Shared see-through glass fill for panels that let the map read behind them
- *  (a step lighter than the theme `panelBg`). */
-export const GLASS_BG = "rgba(8,14,24,0.5)";
+ *  (a step lighter than the theme `panelBg`). Kept fairly opaque: the chrome is
+ *  consumed through OBS + YouTube's H.264, and thin glass over a busy moving
+ *  basemap washes out to unreadable after compression. */
+export const GLASS_BG = "rgba(8,14,24,0.66)";
 
 /** Shared fill for inset tiles (sparklines, monitor cells, chart canvases) that
  *  stack on top of a panel fill — one knob so every inset reads the same. */
-export const TILE_BG = "rgba(4,10,20,0.55)";
+export const TILE_BG = "rgba(4,10,20,0.72)";

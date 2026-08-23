@@ -34,11 +34,11 @@ const H = 440;
  */
 // NB: the hung readouts render at scale 1.15 (see below), so these anchors also
 // keep them CLEAR of the enlarged corner panels: the LABEL's left edge must stay
-// right of the bottom-left deck (which now reaches ~497 design px, see
+// right of the bottom-left deck (which now reaches ~518 design px, see
 // BroadcastFrame's scaled leftDeck) so a tall volcano readout's last rows don't
 // slide under the card; HISTORY must stop short of the top-right WORLD WATCH
-// column (left edge ~1468) so the two don't touch.
-const LABEL_POS = { top: -56, left: -118 };
+// column (left edge ~1452) so the two don't touch.
+const LABEL_POS = { top: -56, left: -100 };
 const HISTORY_POS = { top: -44, right: -96 };
 const FORECAST_POS = { top: H + 10, right: -60 };
 

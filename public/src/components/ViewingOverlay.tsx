@@ -15,7 +15,7 @@ import { getVariable } from "@photonsurge/shared/variables";
 import { getPalette } from "@photonsurge/shared/palettes";
 import { buildLegend } from "../lib/legend";
 import { mapFreshness } from "../lib/manifest";
-import { idleBreatheZoom, idleMotionActive } from "../lib/idle-motion";
+import { idleBreatheActive, idleBreatheZoom } from "../lib/idle-motion";
 
 /** Max zoom a push-in adds over a hold — keep in sync with Globe's MAX_PUSH_IN. */
 const MAX_PUSH_IN = 1.2;
@@ -162,8 +162,9 @@ export default function ViewingOverlay({
   const spinSpeed = state.autoSpin ? state.spinSpeed : 0;
   const zoomDrift = state.zoomDrift || 0;
   // Channel idle drift: the readout tracks its zoom breathe (the small lat/lng
-  // orbit is omitted here, same as the director orbit above).
-  const idleBreathe = idleMotionActive(state) ? state.idleBreathe : 0;
+  // orbit is omitted here, same as the director orbit above). Breathe-gated —
+  // during a push-in shot the push-in stays the zoom readout.
+  const idleBreathe = idleBreatheActive(state) ? state.idleBreathe : 0;
   const idlePeriodS = state.idlePeriodS;
   const flightSec = (state.cutTransitionMs || 0) / 1000;
   const epoch = state.spinEpoch || 0;
