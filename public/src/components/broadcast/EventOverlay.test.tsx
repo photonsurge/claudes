@@ -57,7 +57,24 @@ describe("EventTrackingLabel (deck-embedded tracking readout)", () => {
     expect(screen.queryByText("[ACTIVE]")).not.toBeInTheDocument();
   });
 
-  it("trackingBlockHeight grows with the row count", () => {
-    expect(trackingBlockHeight(5)).toBeGreaterThan(trackingBlockHeight(2));
+  it("trackingBlockHeight pairs tiles two to a line", () => {
+    // Real-world rows: only the VALUE length matters (labels stack above), so
+    // even a wordy pair like Depth tiles beside Magnitude.
+    const mag = { label: "Magnitude", value: "M4.6 · Light" };
+    const depth = { label: "Depth", value: "105 km · Intermediate" };
+    expect(trackingBlockHeight([mag, depth])).toBe(trackingBlockHeight([mag]));
+    // A third wraps to a new line.
+    expect(trackingBlockHeight([mag, depth, mag])).toBeGreaterThan(
+      trackingBlockHeight([mag, depth]),
+    );
+  });
+
+  it("trackingBlockHeight gives a long-valued row its own full-width line", () => {
+    const mag = { label: "Magnitude", value: "M4.6 · Light" };
+    const region = { label: "Region", value: "32 km NNE of Calama, Chile" };
+    // A long value can't share a line, so mag+region needs two lines.
+    expect(trackingBlockHeight([mag, region])).toBeGreaterThan(
+      trackingBlockHeight([mag, mag]),
+    );
   });
 });

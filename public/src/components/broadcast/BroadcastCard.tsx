@@ -25,8 +25,9 @@ import AutoScroll from "./AutoScroll";
 /** One column width so the stacked cards share clean left/right edges. */
 export const CARD_W = 420;
 /** Fixed card height in the on-air deck so every rotating slide is the SAME size
- *  (no jump as the deck cross-fades); overlong bodies scroll inside. */
-export const CARD_H = 520;
+ *  (no jump as the deck cross-fades); overlong bodies scroll inside.
+ *  Trimmed from 520 — the old height left most slides with a big empty apron. */
+export const CARD_H = 415;
 
 /**
  * Per-deck "chrome" the on-air SlideDeck injects so every slide shares ONE

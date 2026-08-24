@@ -14,6 +14,7 @@
  * card's fixed header, it stays on screen for the whole segment no matter which
  * slide rotates beneath it.
  */
+import type { CSSProperties } from "react";
 import type { Segment } from "@photonsurge/shared/director";
 import { STAGE_W, STAGE_H } from "./useStageScale";
 import { KIND_COLOR } from "./kinds";
@@ -245,13 +246,48 @@ export default function EventOverlay({
 }
 
 /**
- * How much taller the deck card gets for an embedded EventTrackingLabel of
- * `rows` data rows — BroadcastFrame adds this to CARD_H when it passes the
- * readout into the deck chrome, so the slide bodies keep their full height
- * under it. (Block padding + eyebrow row + ~21 design px per data row.)
+ * The data rows tile into a 2-column grid of stat tiles — label stacked over
+ * value, so the value gets the half-cell's full width (side-by-side label+value
+ * left almost every real row too long to pair, and the "2 columns" never
+ * happened). A row only spans the full card width when its value (or an
+ * unusually long label) alone can't fit a half cell — ~24 chars at the value
+ * size (e.g. an NWS multi-county REGION string). Shared by the renderer and
+ * the height calc so the deck card is sized for the lines that actually render.
  */
-export function trackingBlockHeight(rows: number): number {
-  return 40 + 21 * rows;
+const SPAN_CHARS = 24;
+
+function rowSpansBoth(row: { label: string; value: string }): boolean {
+  return row.value.length > SPAN_CHARS || row.label.length > SPAN_CHARS;
+}
+
+/** Grid lines the rows occupy under auto-placement (a span-2 row that can't
+ *  fit beside a half cell wraps to its own line, leaving the hole empty). */
+function trackingLines(rows: { label: string; value: string }[]): number {
+  let lines = 0;
+  let halfFilled = false;
+  for (const row of rows) {
+    if (rowSpansBoth(row)) {
+      lines += 1;
+      halfFilled = false;
+    } else if (halfFilled) {
+      halfFilled = false;
+    } else {
+      lines += 1;
+      halfFilled = true;
+    }
+  }
+  return lines;
+}
+
+/**
+ * How much taller the deck card gets for an embedded EventTrackingLabel of
+ * these data rows — BroadcastFrame adds this to CARD_H when it passes the
+ * readout into the deck chrome, so the slide bodies keep their full height
+ * under it. (Block padding + eyebrow row + ~35 design px per grid line of
+ * stacked tiles; tiles pair two to a line unless one spans both columns.)
+ */
+export function trackingBlockHeight(rows: { label: string; value: string }[]): number {
+  return 36 + 35 * trackingLines(rows);
 }
 
 /**
@@ -314,33 +350,53 @@ export function EventTrackingLabel({
       </div>
       {/* A tour stop names its CITY here (the deck header stays on the area), so
           the place variant keeps a LOCATION row; an event's name would just
-          repeat the deck header directly beneath, so it doesn't. */}
-      {isPlace ? <Row label="LOCATION" value={flag ? `${flag} ${name}` : name} color={color} /> : null}
-      {details.map((d) => (
-        <Row key={d.label} label={d.label.toUpperCase()} value={d.value} color={color} />
-      ))}
+          repeat the deck header directly beneath, so it doesn't. The rows tile
+          two to a line; a long pair takes the full width (rowSpansBoth). */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 14 }}>
+        {(isPlace
+          ? [{ label: "LOCATION", value: flag ? `${flag} ${name}` : name }, ...details]
+          : details
+        ).map((d) => (
+          <Row
+            key={d.label}
+            label={d.label.toUpperCase()}
+            value={d.value}
+            color={color}
+            span2={rowSpansBoth(d)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
 
-function Row({ label, value, color }: { label: string; value: string; color: string }) {
+/** One stat tile: micro-label stacked over its value, so the value owns the
+ *  cell's full width instead of fighting the label for one line. */
+function Row({
+  label,
+  value,
+  color,
+  span2,
+}: {
+  label: string;
+  value: string;
+  color: string;
+  span2?: boolean;
+}) {
+  const clip: CSSProperties = { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
   return (
     <div
       style={{
-        display: "flex",
-        gap: 8,
-        alignItems: "baseline",
-        fontSize: 12.5,
-        padding: "1.5px 0",
+        padding: "3px 0 2px",
         borderTop: "1px solid rgba(120,140,170,0.12)",
+        gridColumn: span2 ? "1 / -1" : undefined,
+        minWidth: 0,
       }}
     >
-      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: "#9db1cb", minWidth: 92 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, color: "#9db1cb", ...clip }}>
         {label}
-      </span>
-      <span style={{ fontWeight: 700, color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {value}
-      </span>
+      </div>
+      <div style={{ fontSize: 12.5, fontWeight: 700, color, ...clip }}>{value}</div>
     </div>
   );
 }

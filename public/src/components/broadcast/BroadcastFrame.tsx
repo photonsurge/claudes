@@ -619,13 +619,14 @@ export default function BroadcastFrame({
   // put for the whole segment while only the slide bodies rotate. A targeted
   // event shows its detail rows; an Areas tour shows the current stop's city +
   // live weather (fetch-free, off the focus bundle's regionCountries). The row
-  // count sizes the deck (CARD_H + trackingBlockHeight) so slide bodies keep
-  // their full height under the readout.
+  // rows size the deck (CARD_H + trackingBlockHeight) so slide bodies keep
+  // their full height under the readout — the height calc needs the actual
+  // label/value pairs now that rows tile two to a line unless one is long.
   let deckTracking: ReactNode = null;
-  let deckTrackingRows = 0;
+  let deckTrackingRows: { label: string; value: string }[] = [];
   if (onAirSegment && eventTargeted) {
     const extras = nearestCityDetails(onAirSegment, cities);
-    deckTrackingRows = (onAirSegment.details?.length ?? 0) + extras.length;
+    deckTrackingRows = [...(onAirSegment.details ?? []), ...extras];
     deckTracking = <EventTrackingLabel segment={onAirSegment} extraDetails={extras} />;
   } else if (onAirSegment?.kind === "region" && focusCaption) {
     const extras = tourStopWeather
@@ -646,8 +647,14 @@ export default function BroadcastFrame({
             : []),
         ]
       : [];
-    // +1: the place variant leads with its LOCATION row (the tour stop's city).
-    deckTrackingRows = 1 + extras.length;
+    // The place variant leads with its LOCATION row (the tour stop's city).
+    // The height rows mirror the rendered value (flag prefix included) so the
+    // half-vs-full-width decision matches what actually renders.
+    const flag = tourStopWeather ? flagEmoji(tourStopWeather.cc) : undefined;
+    deckTrackingRows = [
+      { label: "LOCATION", value: flag ? `${flag} ${focusCaption.title}` : focusCaption.title },
+      ...extras,
+    ];
     deckTracking = (
       <EventTrackingLabel
         segment={{
@@ -657,7 +664,7 @@ export default function BroadcastFrame({
           details: [],
         }}
         extraDetails={extras}
-        flag={tourStopWeather ? flagEmoji(tourStopWeather.cc) : undefined}
+        flag={flag}
         variant="place"
       />
     );
@@ -708,21 +715,20 @@ export default function BroadcastFrame({
           transformOrigin: "center center",
         }}
       >
-        {/* The little locator sub-globe — the stage's FIRST child, so every
-            other piece of chrome (the top-right situation stack, the syslog /
-            UP NEXT column, the ticker) paints OVER it (DOM order, same
-            stacking context): pure backdrop, with the syslog lines drifting
-            across the planet's face. It follows the camera anchor every
-            cut/tour stop patches (state.camera — "the one place that actually
-            tracks the live stop") and re-derives a world spin from the same
-            deterministic spinSpeed/spinEpoch params Globe.tsx uses, so it
-            needs no per-frame camera feed. Ghosted and sunk past the stage
-            edge (the stage clips overflow), so the planet peeks up from
-            behind the ticker instead of sitting ON the chrome. */}
+        {/* The locator sub-globe — the stage's FIRST child, so every other
+            piece of chrome (the left card deck, the monitor row, the ticker)
+            paints OVER it (DOM order, same stacking context): a pure
+            bottom-LEFT backdrop rising behind the on-air deck. It follows the
+            camera anchor every cut/tour stop patches (state.camera — "the one
+            place that actually tracks the live stop") and re-derives a world
+            spin from the same deterministic spinSpeed/spinEpoch params
+            Globe.tsx uses, so it needs no per-frame camera feed. Ghosted and
+            sunk past the stage edge (the stage clips overflow), so the planet
+            peeks up from behind the ticker instead of sitting ON the chrome. */}
         {!off.has("subglobe") && (
-          <div style={{ position: "absolute", bottom: -36, right: -10, opacity: 0.7 }}>
+          <div style={{ position: "absolute", bottom: -72, left: -10, opacity: 0.7 }}>
             <SubGlobeWidget
-              size={240}
+              size={480}
               center={state.camera.center}
               zoom={state.camera.zoom}
               autoSpin={state.autoSpin}
