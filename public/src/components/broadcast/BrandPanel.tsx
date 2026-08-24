@@ -1,101 +1,12 @@
 "use client";
 
 /**
- * Top-left identity block: the channel mark, a pulsing LIVE badge and the
- * operator readout. Purely decorative (pointer-inert). The world clock strip
- * that used to ride this block now docks in the masthead map plate
- * (WorldClockStrip inside IntensityMeter).
+ * Top-left identity block. Purely decorative (pointer-inert). Shot/map status
+ * lives in the event deck and masthead, so it is deliberately not repeated
+ * beneath the mark.
  */
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
-
-/** Live operator readout for the top-left block: the on-air shot (its kind as the
- *  field label, its target/title as the value) and the weather attribute painted
- *  on the globe. So an aircraft shot reads "AIRCRAFT · Air Force One" and a
- *  country shot reads "COUNTRIES · United Kingdom". */
-export interface BrandStatus {
-  /** On-air shot kind, used as the readout's field label (e.g. "Aircraft"). */
-  shotKind: string | null;
-  /** The shot's target/title, used as the value (e.g. "Air Force One", a
-   *  country name). Null when nothing's on air. */
-  shotTarget: string | null;
-  /** Human label for the active weather attribute, or null. */
-  attribute: string | null;
-}
-
-function StatusReadout({
-  status,
-  theme,
-}: {
-  status: BrandStatus;
-  theme: BroadcastTheme;
-}) {
-  const cells = [
-    ...(status.shotKind
-      ? [{ label: status.shotKind, value: status.shotTarget ?? "—" }]
-      : []),
-    { label: "MAP", value: status.attribute ?? "—" },
-  ];
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "stretch",
-        gap: 6,
-        padding: "5px 11px",
-        background:
-          "linear-gradient(180deg, rgba(8,13,24,0.72), rgba(5,9,18,0.84))",
-        border: theme.panelBorder,
-        borderRadius: 7,
-        boxShadow: "0 8px 22px rgba(0,0,0,0.34)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        fontFamily: "system-ui, sans-serif",
-      }}
-    >
-      {cells.map((cell, i) => (
-        <div
-          key={cell.label}
-          style={{
-            display: "flex",
-            alignItems: "baseline",
-            gap: 4,
-            ...(i > 0
-              ? {
-                  borderLeft: "1px solid rgba(255,255,255,0.09)",
-                  paddingLeft: 7,
-                }
-              : {}),
-          }}
-        >
-          <span
-            style={{
-              fontSize: 9.4,
-              fontWeight: 800,
-              letterSpacing: 0.9,
-              color: theme.accent,
-              opacity: 0.85,
-              textTransform: "uppercase",
-            }}
-          >
-            {cell.label}
-          </span>
-          <span
-            style={{
-              fontSize: 12.1,
-              fontWeight: 700,
-              letterSpacing: 0.3,
-              color: "#dce9fb",
-              whiteSpace: "nowrap",
-              textTransform: "uppercase",
-            }}
-          >
-            {cell.value}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
+import GodsBanner from "./GodsBanner";
 
 /** Globe + satellite-ring monogram used by themes with iconVariant "orbit". */
 function OrbitMark({ size, accent }: { size: number; accent: string }) {
@@ -165,17 +76,9 @@ function OrbitMark({ size, accent }: { size: number; accent: string }) {
 export default function BrandPanel({
   theme = DEFAULT_THEME,
   compact = false,
-  live = false,
-  status = null,
 }: {
   theme?: BroadcastTheme;
   compact?: boolean;
-  /** Show the pulsing LIVE badge — true only while the auto-director is
-   *  actively driving the broadcast; an idle/off director isn't "on air". */
-  live?: boolean;
-  /** Operator readout (on-air shot + active attribute) shown under the mark.
-   *  Null hides the strip. */
-  status?: BrandStatus | null;
 }) {
   const usesGodsBanner = theme.name === "G.O.D.S.";
   const bannerWidth = compact ? 400 : 620;
@@ -188,19 +91,16 @@ export default function BrandPanel({
         pointerEvents: "none",
       }}
     >
-      <style>
-        {"@keyframes bcast-livepulse{0%,100%{opacity:1}50%{opacity:0.35}}"}
-      </style>
       {usesGodsBanner ? (
-        <img
-          src="/gods_banner_transparent.png"
-          alt={`${theme.name} ${theme.tagline}`}
+        <GodsBanner
+          accent={theme.accent}
+          titleColor={theme.titleColor}
+          label={`${theme.name} ${theme.tagline}`}
+          width={bannerWidth}
           style={{
             display: "block",
-            width: bannerWidth,
-            height: "auto",
-            // The banner PNG is tightly cropped (no baked frame), so it stacks
-            // directly with the readout/clock strip beneath it — no margin fixup.
+            // The SVG uses the source artwork's tight viewBox, so it stacks
+            // directly with the readout/clock strip beneath it.
             filter: "drop-shadow(0 8px 26px rgba(0,0,0,0.5))",
           }}
         />
@@ -297,57 +197,6 @@ export default function BrandPanel({
         </div>
       )}
 
-      {/* Operator readout on one left-aligned strip beneath the banner —
-          small, single line, hugging the screen's left edge. */}
-      {(live || status) && (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          flexWrap: "nowrap",
-          marginTop: -6,
-        }}
-      >
-        {live && (
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "4px 10px 4px 8px",
-              clipPath:
-                "polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)",
-              background:
-                "linear-gradient(180deg, rgba(40,6,6,0.95), rgba(20,3,3,0.95))",
-              // NB: the glow relies on hex+alpha suffixes, so liveColor should
-              // stay a 6-digit hex (the admin swatch only produces those).
-              border: `1px solid ${theme.liveColor}8c`,
-              fontFamily: "system-ui, sans-serif",
-              fontSize: 12.1,
-              fontWeight: 800,
-              letterSpacing: 1.5,
-              color: "#fff",
-              textShadow: `0 0 8px ${theme.liveColor}cc`,
-              boxShadow: `0 0 14px ${theme.liveColor}73, inset 0 0 8px ${theme.liveColor}33`,
-            }}
-          >
-            <span
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                background: "#fff",
-                boxShadow: `0 0 6px ${theme.liveColor}`,
-                animation: "bcast-livepulse 1.4s ease-in-out infinite",
-              }}
-            />
-            LIVE
-          </div>
-        )}
-        {status && <StatusReadout status={status} theme={theme} />}
-      </div>
-      )}
     </div>
   );
 }

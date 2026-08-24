@@ -66,8 +66,6 @@ import {
   useFocusTarget,
 } from "../../lib/focus/focus-client";
 import { legendVariableFor, legendPaletteFor } from "../../lib/legend";
-import { VARIABLE_REGISTRY } from "@photonsurge/shared/variables";
-import { KIND_LABEL } from "../../lib/kind-labels";
 import { nearest, formatKm } from "../../lib/geo";
 import { useWorldWatch } from "../../lib/world-watch";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
@@ -106,9 +104,6 @@ import { hasRealLocation, isTargetedEvent, KIND_COLOR, KIND_LABEL as KIND_BADGE 
 /** Design-stage layout constants (in 1080p reference pixels). */
 const TICKER_H = 34;
 const INSET = 30;
-/** Design height of the brand block (banner + the LIVE/status strip) — the
- *  clocks that used to pad this out now ride the masthead map plate. */
-const BRAND_STACK_H = 136;
 /** The masthead brand block sits at the very top-left, scaled up for
  *  legibility. There is no top crawl any more — the map title/details row
  *  rides the full masthead strip to the right of the logo. */
@@ -118,10 +113,12 @@ const BRAND_SCALE = 1.5;
  *  just past the scaled banner's right edge (banner is 620 design px wide at
  *  left -4 → ~926 scaled). */
 const BRAND_INSET = 940;
-/** Scaled bottom edge of the masthead banner PNG (1951×294 source at 620
+/** Scaled bottom edge of the masthead banner SVG (1948×291 source at 620
  *  design px wide → ~93 px tall, ×1.5, +BRAND_TOP ≈ 144) — the masthead
  *  title row ends at this edge, so the chrome below hangs off it. */
 const BANNER_BOTTOM = 144;
+/** Kp panel height plus the gap before the left deck when both are visible. */
+const KP_PANEL_STACK_H = 68;
 
 /**
  * A "Nearest City" reticle row for a moving target (aircraft / ship) — the
@@ -177,7 +174,6 @@ export default function BroadcastFrame({
   focusCaption = null,
   upNext = [],
   assetsReady = true,
-  directorOn = false,
 }: {
   state: ControlState;
   manifest: WeatherManifest | null;
@@ -222,9 +218,6 @@ export default function BroadcastFrame({
    *  defers the WORLD WATCH panels' cold-start fetch so it doesn't compete with
    *  those for bandwidth while the loading screen is still up. */
   assetsReady?: boolean;
-  /** Whether the auto-director is actively driving this scene — gates the
-   *  brand block's LIVE badge (an idle/off director isn't on air). */
-  directorOn?: boolean;
 }) {
   const scale = useStageScale();
   // While the director cuts to the next shot the globe flies for
@@ -276,15 +269,6 @@ export default function BroadcastFrame({
   const eventTargeted = onAirSegment
     ? isTargetedEvent(onAirSegment.kind)
     : false;
-  // Top-left operator readout: the on-air shot (its kind + the specific target it
-  // framed, e.g. AIRCRAFT · Air Force One) and which weather attribute is painted.
-  const brandStatus = {
-    shotKind: onAirSegment ? KIND_LABEL[onAirSegment.kind] : null,
-    shotTarget: onAirSegment ? onAirSegment.title : null,
-    attribute: state.activeVariable
-      ? (VARIABLE_REGISTRY[state.activeVariable]?.label ?? state.activeVariable)
-      : null,
-  };
   // Global spins (intro/global/ocean/orbital) frame an arbitrary point, not a real
   // ground location — the weather/climate history panel has nothing to sample.
   const segmentHasLocation = onAirSegment
@@ -307,6 +291,10 @@ export default function BroadcastFrame({
   // top crawl is gone), so it hangs off the screen edge itself.
   const brandOn = !off.has("brand");
   const chromeTop = (brandOn ? BANNER_BOTTOM : 0) + INSET;
+  const kpPanelOn = kpShown && !off.has("kpIndex");
+  const leftDeckTop = brandOn
+    ? BANNER_BOTTOM + 10 + (kpPanelOn ? KP_PANEL_STACK_H : 0)
+    : INSET;
   // A country spotlight scopes the global alerts/quakes feeds down to its own
   // bbox (`shared/director-countries`); a weather-check segment has no fixed
   // bbox but does sit on a real ground location, so it gets the
@@ -790,32 +778,25 @@ export default function BroadcastFrame({
           />
         ) : null}
 
-        {/* Bottom-left column: the archived history charts for the focus, stacked
-            above whichever context card currently owns the bottom-left slot (the
-            wide-shot "now viewing" card, a Track Info card for a notable
-            aircraft/ship, or the targeted-event quake/nearby-cities report — all
-            mutually exclusive on segment kind). column-reverse anchors the
-            context card to the bottom edge regardless of the history panel's
-            (self-hiding, variable-height) content. On a targeted event / Areas
-            tour the reticle's tracking readout (EventTrackingLabel) rides the
-            deck card's own fixed header via DeckChrome.tracking, outside the
-            slide rotation, so the event detail rows stay on screen no matter
-            which slide is airing. */}
+        {/* Left mode deck: top-anchored immediately below the masthead banner so
+            its position is stable across short and tall slides. On a targeted
+            event / Areas tour the reticle's tracking readout rides the deck
+            card's fixed header, outside the slide rotation. */}
         {!off.has("leftDeck") && (
         <div
           style={{
             position: "absolute",
             left: INSET - 16,
-            bottom: TICKER_H + INSET,
+            top: leftDeckTop,
             display: "flex",
-            flexDirection: "column-reverse",
+            flexDirection: "column",
             alignItems: "flex-start",
             gap: 10,
             // Legibility: enlarge the whole deck as a unit (anchored to its
-            // bottom-left corner) rather than re-sizing every slide's fonts —
+            // top-left corner) rather than re-sizing every slide's fonts —
             // keeps the fixed-card layout intact while reading bigger on air.
             transform: "scale(1.2)",
-            transformOrigin: "left bottom",
+            transformOrigin: "left top",
           }}
         >
           {/* The 3-day forecast for a targeted event / region tour stop now hangs
@@ -866,7 +847,7 @@ export default function BroadcastFrame({
               transformOrigin: "left top",
             }}
           >
-            <BrandPanel theme={theme} live={directorOn} status={brandStatus} />
+            <BrandPanel theme={theme} />
           </div>
         )}
 
@@ -902,13 +883,12 @@ export default function BroadcastFrame({
           </div>
         )}
 
-        {/* Geomagnetic Kp readout, tucked under the brand block when the aurora
-            overlay is on; pushes the intensity meter down so they don't overlap. */}
-        {kpShown && !off.has("kpIndex") ? (
+        {/* Geomagnetic Kp readout, tucked directly under the brand banner. */}
+        {kpPanelOn ? (
           <div
             style={{
               position: "absolute",
-              top: BRAND_TOP + BRAND_STACK_H * BRAND_SCALE + 10,
+              top: BANNER_BOTTOM + 10,
               left: -4,
             }}
           >

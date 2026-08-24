@@ -244,7 +244,6 @@ function WatchSurfaceBody({
           focusCaption={focusCaption ?? null}
           upNext={upNext}
           assetsReady={ready}
-          directorOn={directorOn}
         />
       ) : null}
       {/* Plain run/attribution label — only on the clean surface; the broadcast

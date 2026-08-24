@@ -44,12 +44,8 @@ export default function ThemePreview({ theme }: { theme: BroadcastTheme }) {
         }}
       >
         <BroadcastThemeContext.Provider value={theme}>
-          {/* Masthead + LIVE badge (liveColor) + accent monogram. */}
-          <BrandPanel
-            theme={theme}
-            live
-            status={{ shotKind: "Country", shotTarget: "Iceland", attribute: "Wind gusts" }}
-          />
+          {/* Masthead identity; shot/map status lives in the surrounding chrome. */}
+          <BrandPanel theme={theme} />
           {/* The crawl self-positions absolutely — give it a band to live in. */}
           <Box sx={{ position: "relative", alignSelf: "stretch", height: 30 }}>
             <Ticker title={theme.tickerTitle} items={SAMPLE_TICKER} edge="top" />

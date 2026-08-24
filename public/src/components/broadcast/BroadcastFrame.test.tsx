@@ -139,6 +139,26 @@ describe("BroadcastFrame — per-channel widgetsOff gating", () => {
     }
   });
 
+  it("anchors the left deck directly below the brand banner", () => {
+    render(
+      <BroadcastFrame
+        state={{ ...DEFAULT_CONTROL_STATE, widgetsOff: [] }}
+        manifest={null}
+      />,
+    );
+    const anchor = screen.getByTestId(TESTID.leftDeck).parentElement;
+
+    expect(anchor).toHaveStyle({ top: "154px", transformOrigin: "left top" });
+    expect(anchor?.style.bottom).toBe("");
+  });
+
+  it("keeps the left deck below the Kp panel when that panel is visible", () => {
+    renderFrame([]);
+    const anchor = screen.getByTestId(TESTID.leftDeck).parentElement;
+
+    expect(anchor).toHaveStyle({ top: "222px" });
+  });
+
   it("hides exactly the widgets named in widgetsOff, leaves the rest shown", () => {
     renderFrame(["seismic", "syslog"]);
     expect(screen.queryByTestId(TESTID.seismic)).not.toBeInTheDocument();
