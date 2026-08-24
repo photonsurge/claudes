@@ -52,6 +52,7 @@ export default function SubGlobeWidget({
   accent,
   theme = DEFAULT_THEME,
   size = 300,
+  tiltDeg = 0,
 }: {
   /** Camera anchor (ControlState.camera.center) — [lng, lat]. */
   center: [number, number];
@@ -64,6 +65,10 @@ export default function SubGlobeWidget({
   theme?: BroadcastTheme;
   /** Planet diameter in 1080p design px. */
   size?: number;
+  /** Tip the viewpoint this many degrees SOUTH of the camera point, so the
+   *  (still-correct) marked location renders above the disc centre — pairs
+   *  with the mount sinking the disc off the stage bottom. */
+  tiltDeg?: number;
 }) {
   const reticle = accent ?? theme.accent;
   // Fixed 2× backing store — crisp through the 1080p stage scale on a 4K out.
@@ -75,8 +80,8 @@ export default function SubGlobeWidget({
   // Where the planet is currently pointed (imperative — never React state).
   const shownRef = useRef<SubGlobeCamera>({ lng: wrapLng(center[0]), lat: center[1], zoom });
   // Fresh props for the tick without re-subscribing the interval.
-  const propsRef = useRef({ center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land });
-  propsRef.current = { center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land };
+  const propsRef = useRef({ center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land, tiltDeg });
+  propsRef.current = { center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land, tiltDeg };
 
   useEffect(() => {
     let alive = true;
@@ -100,7 +105,7 @@ export default function SubGlobeWidget({
     const g = canvas?.getContext("2d");
     if (!canvas || !g) return; // jsdom / lost context — the readout still renders
     const p = propsRef.current;
-    drawSubGlobe(g, canvasPx, shownRef.current, p.land ?? [], p.reticle);
+    drawSubGlobe(g, canvasPx, shownRef.current, p.land ?? [], p.reticle, p.tiltDeg);
     if (readoutRef.current) {
       readoutRef.current.textContent = formatLonLat(shownRef.current.lng, shownRef.current.lat);
     }

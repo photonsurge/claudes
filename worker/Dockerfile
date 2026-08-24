@@ -13,7 +13,9 @@ RUN --mount=type=cache,target=/root/.yarn/cache \
     yarn install && yarn build
 
 WORKDIR /app/worker
-COPY worker/package.json ./
+# Lockfile too, so the image installs the pinned versions instead of
+# re-resolving to latest at build time.
+COPY worker/package.json worker/yarn.lock ./
 RUN --mount=type=cache,target=/root/.yarn/cache yarn install
 
 

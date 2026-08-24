@@ -714,9 +714,10 @@ export default function BroadcastFrame({
             sunk past the stage edge (the stage clips overflow), so the planet
             peeks up from behind the ticker instead of sitting ON the chrome. */}
         {!off.has("subglobe") && (
-          <div style={{ position: "absolute", bottom: -72, left: -10, opacity: 0.7 }}>
+          <div style={{ position: "absolute", bottom: -130, left: -10, opacity: 0.7 }}>
             <SubGlobeWidget
-              size={480}
+              size={400}
+              tiltDeg={28}
               center={state.camera.center}
               zoom={state.camera.zoom}
               autoSpin={state.autoSpin}

@@ -115,6 +115,12 @@ const LIMB = "rgba(150,176,206,0.45)";
  * device px; `land` is the pre-simplified outer-ring list (subglobe-land).
  * Far-side ring vertices are clamped to the limb along their azimuth — the
  * standard cheap fill trick, invisible at locator size.
+ *
+ * `tiltDeg` tips the viewpoint that many degrees SOUTH of the camera point,
+ * so the marked location renders that far up from the disc centre (its
+ * coordinates stay true — only the perspective shifts). Used because the
+ * on-air widget sinks the disc past the stage edge: without the tilt the
+ * reticle would hug the clipped bottom.
  */
 export function drawSubGlobe(
   g: CanvasRenderingContext2D,
@@ -122,10 +128,16 @@ export function drawSubGlobe(
   cam: SubGlobeCamera,
   land: readonly Point[][],
   accent: string,
+  tiltDeg = 0,
 ): void {
   const c = size / 2;
   const r = c - size * 0.03;
-  const center: LonLat = [cam.lng, cam.lat];
+  const center: LonLat = [cam.lng, Math.max(-90, Math.min(90, cam.lat - tiltDeg))];
+  // The camera point's on-disc position under the tilted viewpoint — the
+  // reticle anchors here (disc centre when tiltDeg is 0).
+  const mark = projectOrtho([cam.lng, cam.lat], center, r);
+  const mx = c + mark.x;
+  const my = c - mark.y;
   g.clearRect(0, 0, size, size);
 
   // Ocean disc — a soft radial falloff so the sphere reads as lit, not flat.
@@ -217,8 +229,11 @@ export function drawSubGlobe(
   g.lineWidth = size / 360;
   g.stroke();
 
-  // Reticle — the camera point is always the disc centre; the accent ring is
-  // the main view's rough footprint, so it tightens as the shot pushes in.
+  // Reticle — anchored on the camera point's projected position (disc centre
+  // only when untilted); the accent ring is the main view's rough footprint,
+  // so it tightens as the shot pushes in. (A footprint circle around an
+  // off-centre point isn't exactly circular in orthographic projection — at
+  // locator size and modest tilts the difference is invisible.)
   const ringR = r * Math.sin(footprintDeg(cam.zoom) * RAD);
   g.save();
   g.shadowColor = accent;
@@ -226,20 +241,20 @@ export function drawSubGlobe(
   g.strokeStyle = accent;
   g.lineWidth = size / 280;
   g.beginPath();
-  g.arc(c, c, ringR, 0, Math.PI * 2);
+  g.arc(mx, my, ringR, 0, Math.PI * 2);
   g.stroke();
   // Four compass ticks just outside the ring.
   const tick = size / 36;
   g.beginPath();
   for (let i = 0; i < 4; i++) {
     const a = (i * Math.PI) / 2;
-    g.moveTo(c + Math.cos(a) * (ringR + tick * 0.4), c + Math.sin(a) * (ringR + tick * 0.4));
-    g.lineTo(c + Math.cos(a) * (ringR + tick), c + Math.sin(a) * (ringR + tick));
+    g.moveTo(mx + Math.cos(a) * (ringR + tick * 0.4), my + Math.sin(a) * (ringR + tick * 0.4));
+    g.lineTo(mx + Math.cos(a) * (ringR + tick), my + Math.sin(a) * (ringR + tick));
   }
   g.stroke();
   g.fillStyle = accent;
   g.beginPath();
-  g.arc(c, c, size / 110, 0, Math.PI * 2);
+  g.arc(mx, my, size / 110, 0, Math.PI * 2);
   g.fill();
   g.restore();
 }

@@ -13,7 +13,10 @@ RUN --mount=type=cache,target=/root/.yarn/cache \
     yarn install && yarn build
 
 WORKDIR /app/public
-COPY public/package.json ./
+# Copy the lockfile too — without it yarn re-resolves every dep to latest at
+# image-build time (non-reproducible, and breaks when the registry mirror has
+# a half-propagated release).
+COPY public/package.json public/yarn.lock ./
 RUN --mount=type=cache,target=/root/.yarn/cache yarn install
 
 
