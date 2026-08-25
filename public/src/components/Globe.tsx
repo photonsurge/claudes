@@ -430,17 +430,26 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // and the camera would never reach the target).
   const flyingRef = useRef(false);
   const flyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flightRafRef = useRef<number | null>(null);
 
   // Raise the flying flag and arm a self-clearing safety net: a superseding
   // flyTo cancels the prior transition WITHOUT firing its onTransitionEnd, so we
   // must never rely on that alone to lower the flag (or the spin loop would
-  // yield forever).
-  const beginFlight = () => {
+  // yield forever). Armed from THIS flight's duration — a fixed cap here fired
+  // mid-flight on long director transitions (slider allows 12s) and the motion
+  // loop snapped the camera to the target, skipping the end of the move. If the
+  // net does fire, kill the flight rAF too so a stuck flight can't keep
+  // fighting the motion loop for the camera.
+  const beginFlight = (durationMs: number) => {
     flyingRef.current = true;
     if (flyTimerRef.current) clearTimeout(flyTimerRef.current);
     flyTimerRef.current = setTimeout(() => {
       flyingRef.current = false;
-    }, FLY_MAX + 300);
+      if (flightRafRef.current !== null) {
+        cancelAnimationFrame(flightRafRef.current);
+        flightRafRef.current = null;
+      }
+    }, durationMs + 300);
   };
 
   // Persist wherever a programmatic transition lands so the operator's camera
@@ -462,7 +471,6 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // target (longitude/latitude move, which on a GlobeView turns the sphere) and
   // dips the zoom OUT mid-flight and back IN, so a far cut sweeps up over the
   // planet and settles. Endpoints are exact (sin(πt) = 0 at t=0 and t=1).
-  const flightRafRef = useRef<number | null>(null);
   const runFlight = (lng: number, lat: number, zoom: number, onDone?: () => void) => {
     if (flightRafRef.current !== null) cancelAnimationFrame(flightRafRef.current);
     const s = viewStateRef.current;
@@ -485,7 +493,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // Keep the mid-flight pull-back shallow so cuts stay near the surface and the
     // weather/eye-candy never shrinks to a distant dot before settling.
     const dip = Math.min(1.0, dist * 0.014); // zoom levels to pull back mid-flight
-    beginFlight();
+    beginFlight(duration);
     let t0 = 0;
     const step = (now: number) => {
       if (!t0) t0 = now;

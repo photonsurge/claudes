@@ -61,6 +61,26 @@ export function normaliseAdMeta(input: Record<string, unknown>): AdMeta | null {
  * `clickUrl`/`advertiser`/`notes`/`tags` accept an explicit empty string to
  * clear the field (mapped to `undefined` → `$unset`-equivalent overwrite).
  */
+/**
+ * Distinct on-air sponsor names from an ad pool — the advertiser field, falling
+ * back to the creative's title when no advertiser was set. Order-preserving,
+ * case-insensitively deduped (one mention per sponsor however many creatives
+ * they run). Feeds the "Sponsored by …" ticker line.
+ */
+export function sponsorNames(ads: Pick<AdMeta, "advertiser" | "title">[]): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const ad of ads) {
+    const name = trimOrUndef(ad.advertiser) ?? trimOrUndef(ad.title);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+  }
+  return names;
+}
+
 export function normaliseAdPatch(input: Record<string, unknown>): Partial<AdMeta> {
   const patch: Partial<AdMeta> = {};
   if ("title" in input) {

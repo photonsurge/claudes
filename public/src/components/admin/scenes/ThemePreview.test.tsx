@@ -14,8 +14,9 @@ describe("ThemePreview", () => {
     const stage = screen.getByLabelText("Theme preview");
     expect(within(stage).getByText("ZED CHANNEL")).toBeInTheDocument();
     expect(within(stage).getByText("ZED TAPE")).toBeInTheDocument();
-    // The masthead is live in the preview so the LIVE badge is visible.
-    expect(within(stage).getByText("LIVE")).toBeInTheDocument();
+    // The masthead carries identity only — no LIVE badge (see BrandPanel.test);
+    // the sample card's ON AIR pip is the preview's live cue.
+    expect(within(stage).queryByText("LIVE")).not.toBeInTheDocument();
     expect(within(stage).getByText("ON AIR")).toBeInTheDocument();
   });
 

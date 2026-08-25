@@ -24,6 +24,25 @@ describe("Ticker", () => {
     expect(chip).toHaveStyle({ background: "rgb(17, 34, 51)", color: "rgb(255, 255, 255)" });
   });
 
+  // A woven sponsored mention (lib/broadcast weaveSponsors) rides the crawl in
+  // the accent ink with an AD tag; plain feed lines keep the band's ink.
+  it("renders a sponsored entry in the accent with an AD tag", () => {
+    render(
+      <Ticker
+        title="FEED"
+        items={["ONE", { text: "Sponsored by Acme", ad: true }]}
+        edge="bottom"
+        theme={themed}
+      />,
+    );
+
+    const mention = screen.getAllByText(/Sponsored by Acme/)[0];
+    expect(mention).toHaveStyle({ color: "rgb(17, 34, 51)" });
+    expect(screen.getAllByText("AD").length).toBeGreaterThan(0);
+    // The plain line stays on the band ink (inherited, so no own color style).
+    expect(screen.getAllByText("ONE")[0]).not.toHaveStyle({ color: "rgb(17, 34, 51)" });
+  });
+
   it("falls back to the standby line with no items", () => {
     render(<Ticker title="FEED" items={[]} edge="bottom" />);
     expect(screen.getAllByText(/STANDING BY · AWAITING LIVE FEED/).length).toBeGreaterThan(0);

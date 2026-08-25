@@ -6,8 +6,53 @@
  * slides by exactly half its width, so the loop is gapless; speed is derived
  * from content length so a short feed doesn't whip past. Pure CSS animation —
  * no rAF.
+ *
+ * Entries are plain strings, or `{ text, ad: true }` sponsored mentions (see
+ * lib/broadcast's weaveSponsors) rendered in the accent ink behind a small AD
+ * tag — clearly sponsor, never disguised as a feed line.
  */
+import { Fragment } from "react";
+import type { TickerEntry } from "../../lib/broadcast";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+
+const SEPARATOR = "❯";
+const STANDBY = "STANDING BY · AWAITING LIVE FEED";
+
+const entryText = (e: TickerEntry): string => (typeof e === "string" ? e : e.text);
+
+/** One copy of the crawl content — items with separators between them. */
+function CrawlContent({ entries, theme }: { entries: TickerEntry[]; theme: BroadcastTheme }) {
+  return (
+    <span style={{ paddingLeft: 24 }}>
+      {entries.map((e, i) => (
+        <Fragment key={i}>
+          {i > 0 && <span style={{ padding: "0 20px", opacity: 0.7 }}>{SEPARATOR}</span>}
+          {typeof e === "string" ? (
+            <span>{e}</span>
+          ) : (
+            <span style={{ color: theme.accent, fontWeight: 800 }}>
+              <span
+                style={{
+                  display: "inline-block",
+                  border: `1px solid ${theme.accent}`,
+                  borderRadius: 3,
+                  padding: "0px 4px",
+                  marginRight: 8,
+                  fontSize: "0.75em",
+                  letterSpacing: 1.2,
+                  verticalAlign: "1px",
+                }}
+              >
+                AD
+              </span>
+              {e.text}
+            </span>
+          )}
+        </Fragment>
+      ))}
+    </span>
+  );
+}
 
 export default function Ticker({
   title,
@@ -22,7 +67,7 @@ export default function Ticker({
 }: {
   /** Title chip text; null/empty renders no chip (a bare band). */
   title?: string | null;
-  items: string[];
+  items: TickerEntry[];
   /** Which edge to pin to. */
   edge: "top" | "bottom";
   height?: number;
@@ -41,9 +86,8 @@ export default function Ticker({
   contentInset?: number;
   theme?: BroadcastTheme;
 }) {
-  const line = items.length
-    ? items.join("     ❯     ")
-    : "STANDING BY · AWAITING LIVE FEED";
+  const entries: TickerEntry[] = items.length ? items : [STANDBY];
+  const line = entries.map(entryText).join(`     ${SEPARATOR}     `);
   // Seconds for one full cycle — ~7 chars/sec, floored so short feeds still move.
   const dur = Math.max(24, line.length * 0.16);
   const fontSize = compact ? 10 : 12;
@@ -121,8 +165,8 @@ export default function Ticker({
             letterSpacing: 0.6,
           }}
         >
-          <span style={{ paddingLeft: 24 }}>{line}</span>
-          <span style={{ paddingLeft: 24 }}>{line}</span>
+          <CrawlContent entries={entries} theme={theme} />
+          <CrawlContent entries={entries} theme={theme} />
         </div>
       </div>
     </div>

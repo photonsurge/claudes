@@ -5,6 +5,7 @@ import {
   formatLonLat,
   projectOrtho,
   slerpLonLat,
+  spherePointAt,
   spinLongitude,
   wrapLng,
 } from "./subglobe-render";
@@ -62,6 +63,17 @@ describe("subglobe math", () => {
     expect(slerpLonLat([12, 34], [12, 34], 0.3)).toEqual([12, 34]);
   });
 
+  it("walks great-circle destinations for the ground-circle reticle", () => {
+    const north = spherePointAt([0, 0], 90, 0);
+    expect(north[1]).toBeCloseTo(90, 6); // 90° due north of the equator = the pole
+    const east = spherePointAt([0, 0], 90, 90);
+    expect(east[0]).toBeCloseTo(90, 6);
+    expect(east[1]).toBeCloseTo(0, 6);
+    const small = spherePointAt([10, 20], 5, 180);
+    expect(small[0]).toBeCloseTo(10, 6); // due south keeps the meridian
+    expect(small[1]).toBeCloseTo(15, 6);
+  });
+
   it("formats the coordinate readout with hemispheres", () => {
     expect(formatLonLat(10.04, 20.06)).toBe("20.1°N · 10.0°E");
     expect(formatLonLat(-149.94, -17.53)).toBe("17.5°S · 149.9°W");
@@ -69,8 +81,8 @@ describe("subglobe math", () => {
 });
 
 describe("drawSubGlobe", () => {
-  it("paints a frame against a stub 2d context without throwing", () => {
-    const g = {
+  const stubCtx = () =>
+    ({
       clearRect: jest.fn(),
       createRadialGradient: jest.fn(() => ({ addColorStop: jest.fn() })),
       beginPath: jest.fn(),
@@ -83,19 +95,41 @@ describe("drawSubGlobe", () => {
       lineTo: jest.fn(),
       closePath: jest.fn(),
       stroke: jest.fn(),
-    } as unknown as CanvasRenderingContext2D;
-    const square: [number, number][] = [
-      [0, 0],
-      [20, 0],
-      [20, 20],
-      [0, 20],
-      [0, 0],
-    ];
-    drawSubGlobe(g, 720, { lng: 10, lat: 10, zoom: 3 }, [square], "#38bdf8");
-    expect((g.clearRect as jest.Mock).mock.calls.length).toBe(1);
+    }) as unknown as CanvasRenderingContext2D;
+  const square = (lng0: number, lng1: number, lat0: number, lat1: number): [number, number][] => [
+    [lng0, lat0],
+    [lng1, lat0],
+    [lng1, lat1],
+    [lng0, lat1],
+    [lng0, lat0],
+  ];
+  const calls = (g: CanvasRenderingContext2D, m: keyof CanvasRenderingContext2D) =>
+    (g[m] as unknown as jest.Mock).mock.calls.length;
+
+  it("paints a frame against a stub 2d context without throwing", () => {
+    const g = stubCtx();
+    drawSubGlobe(g, 720, { lng: 10, lat: 10, zoom: 3 }, [square(0, 20, 0, 20)], "#38bdf8");
+    expect(calls(g, "clearRect")).toBe(1);
     // Disc + limb + reticle ring + centre dot all arc; land ring drew lines.
-    expect((g.arc as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(4);
-    expect((g.lineTo as jest.Mock).mock.calls.length).toBeGreaterThan(0);
-    expect((g.stroke as jest.Mock).mock.calls.length).toBeGreaterThan(0);
+    expect(calls(g, "arc")).toBeGreaterThanOrEqual(4);
+    expect(calls(g, "lineTo")).toBeGreaterThan(0);
+    expect(calls(g, "stroke")).toBeGreaterThan(0);
+  });
+
+  it("horizon-clips rings: far-side land draws nothing, straddling land rides the limb", () => {
+    // A ring fully behind the planet contributes NO path at all — the old
+    // clamp-to-limb shortcut swept it across the disc as a giant false wedge.
+    const farSide = stubCtx();
+    drawSubGlobe(farSide, 720, { lng: 0, lat: 0, zoom: 3 }, [square(160, 200, -20, 20)], "#fff");
+    const empty = stubCtx();
+    drawSubGlobe(empty, 720, { lng: 0, lat: 0, zoom: 3 }, [], "#fff");
+    expect(calls(farSide, "lineTo")).toBe(calls(empty, "lineTo"));
+    expect(calls(farSide, "moveTo")).toBe(calls(empty, "moveTo"));
+
+    // A ring crossing the horizon (edge at ~lng 90) bridges its hidden
+    // stretch with an extra limb arc beyond the 4 chrome arcs.
+    const straddle = stubCtx();
+    drawSubGlobe(straddle, 720, { lng: 0, lat: 0, zoom: 3 }, [square(60, 120, -20, 20)], "#fff");
+    expect(calls(straddle, "arc")).toBeGreaterThanOrEqual(5);
   });
 });

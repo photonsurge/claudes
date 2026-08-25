@@ -30,17 +30,20 @@ const H = 440;
  * so each data panel hangs off the target frame and travels with it rather than
  * pinning to a screen corner. These are the knobs for where the readouts sit:
  *   • HISTORY  — point-history, top-right, pushed out to the right
- *   • FORECAST — 3-day forecast strip, hung BELOW the frame's bottom edge and
- *                right-aligned to it. Below the frame (not on the bottom-right
- *                corner, where it used to crowd the focus point and clip the
- *                centred lower-third) it clears the name/subtitle entirely while
- *                still reading as "the outlook for this locked target".
+ *   • FORECAST — 3-day forecast strip, pinned to the BOTTOM of the stage
+ *                (right-aligned to the frame, sitting on the same baseline as
+ *                the rest of the bottom chrome, just above the ticker) — it
+ *                used to hang directly below the frame's bottom edge, but that
+ *                floated it mid-screen over the map; docked at the stage bottom
+ *                it stays clear of the subject entirely.
  */
 // NB: the hung readouts render at scale 1.15 (see below), so these anchors also
 // keep them CLEAR of the enlarged corner panels: HISTORY must stop short of the
 // top-right WORLD WATCH column (left edge ~1452) so the two don't touch.
 const HISTORY_POS = { top: -44, right: -96 };
-const FORECAST_POS = { top: H + 10, right: -60 };
+/** Stage-bottom clearance for the forecast strip — mirrors BroadcastFrame's
+ *  TICKER_H (34) + INSET (30) baseline that the other bottom chrome sits on. */
+const FORECAST_CLEAR = 34 + 30;
 
 /**
  * The reticle's targeting marks, drawn in one SVG (viewBox = design pixels) so
@@ -94,7 +97,8 @@ export default function EventOverlay({
   segment: Segment;
   /** Point-history trend, hung off the reticle's top-right (HISTORY_POS). */
   historyPanel?: React.ReactNode;
-  /** 3-day forecast strip, hung below the reticle's bottom edge (FORECAST_POS). */
+  /** 3-day forecast strip, docked at the stage bottom under the reticle
+   *  (right-aligned to it, on the bottom chrome's ticker baseline). */
   forecastPanel?: React.ReactNode;
 }) {
   const color = KIND_COLOR[segment.kind] ?? "#38bdf8";
@@ -102,6 +106,10 @@ export default function EventOverlay({
 
   const left = (STAGE_W - W) / 2;
   const top0 = (STAGE_H - H) / 2 - 40;
+  // The forecast wrapper is bottom-anchored INSIDE this frame-sized container,
+  // so its `bottom` offset reaches down past the frame to the stage's bottom
+  // chrome baseline (negative = below the frame's bottom edge).
+  const forecastBottom = -(STAGE_H - top0 - H - FORECAST_CLEAR);
 
   return (
     <div style={{ position: "absolute", left, top: top0, width: W, height: H, pointerEvents: "none" }}>
@@ -145,10 +153,12 @@ export default function EventOverlay({
         <div style={{ position: "absolute", ...HISTORY_POS, transform: "scale(1.15)", transformOrigin: "right top" }}>{historyPanel}</div>
       ) : null}
 
-      {/* 3-day forecast strip, hung below the frame's bottom edge (right-aligned),
-          so it travels with the reticle without touching the centred lower-third. */}
+      {/* 3-day forecast strip, docked at the stage bottom (right-aligned to the
+          frame, on the bottom chrome's ticker baseline). Bottom-anchored with a
+          bottom-right transform origin so the strip grows UPWARD from that
+          baseline whatever its content height. */}
       {forecastPanel ? (
-        <div style={{ position: "absolute", ...FORECAST_POS, transform: "scale(1.15)", transformOrigin: "right top" }}>{forecastPanel}</div>
+        <div style={{ position: "absolute", bottom: forecastBottom, right: -60, transform: "scale(1.15)", transformOrigin: "right bottom" }}>{forecastPanel}</div>
       ) : null}
 
       {/* Event name, lower-centre of the frame. A kind-tinted vector mark (never

@@ -34,6 +34,7 @@ import { regionShot } from "@photonsurge/shared/director-regions";
 import {
   buildTicker,
   alertTickerLines,
+  weaveSponsors,
   scopeAlertsToBbox,
   scopeQuakesToBbox,
   scopeVolcanoesToBbox,
@@ -43,6 +44,7 @@ import {
 } from "../../lib/broadcast";
 import { bboxForCamera, type HistorySeries } from "../../lib/history-client";
 import { useLatestRoundup } from "../../lib/summaries";
+import { useSponsors } from "../../lib/ads/use-sponsors";
 import {
   useFocusRegion,
   useFocusCountry,
@@ -261,8 +263,15 @@ export default function BroadcastFrame({
   // tour of their own, still surface the live "state of the planet" narrative +
   // headline numbers as a deck slide (see mode-slides' wide-shot branch).
   const worldRoundupDoc = useLatestRoundup("hourly");
+  // Active sponsors ride the crawl as flagged "Sponsored by …" mentions, woven
+  // evenly through the live feed (see weaveSponsors) — the easy-win sponsor
+  // surface: no screen real estate taken, clearly tagged AD in the accent ink.
+  const sponsors = useSponsors();
   const bottomTickerTitle = theme.tickerTitle;
-  const bottomTickerItems = ticker;
+  const bottomTickerItems = useMemo(
+    () => weaveSponsors(ticker, sponsors),
+    [ticker, sponsors],
+  );
   const legendVariable = legendVariableFor(state);
   const legendPalette = legendPaletteFor(state);
   const mapMeta = mapFreshness(manifest, legendVariable, Date.now());
@@ -732,10 +741,10 @@ export default function BroadcastFrame({
 
         {/* Targeted point events (storm/quake/aircraft/ship/volcano) get the
             centred reticle + lower-third, with point-history on its top-right
-            and the 3-day forecast strip hung below its bottom edge — both
-            travelling with the reticle. The tracking-detail readout no longer
-            hangs off the frame: it rides on top of the bottom-left deck
-            instead (see EventTrackingLabel below). */}
+            and the 3-day forecast strip docked at the stage bottom beneath it
+            (right-aligned to the frame, above the ticker). The tracking-detail
+            readout no longer hangs off the frame: it rides on top of the
+            bottom-left deck instead (see EventTrackingLabel below). */}
         {onAirSegment && isTargetedEvent(onAirSegment.kind) ? (
           <EventOverlay
             segment={onAirSegment}
@@ -801,10 +810,10 @@ export default function BroadcastFrame({
             transformOrigin: "left top",
           }}
         >
-          {/* The 3-day forecast for a targeted event / region tour stop now hangs
-              off the reticle itself (EventOverlay's forecastPanel) rather than
-              docking here — so the bottom-left column is just the rotating mode
-              deck below. */}
+          {/* The 3-day forecast for a targeted event / region tour stop renders
+              via EventOverlay's forecastPanel slot (docked at the stage bottom,
+              right of centre) rather than docking here — so the bottom-left
+              column is just the rotating mode deck below. */}
 
           {/* One rotating card per mode: the mode cards plus the weather /
               area-history / depth / round-up context slides all live in this

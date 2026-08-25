@@ -155,6 +155,43 @@ export function buildTicker(input: {
   return [...new Set(items)];
 }
 
+/**
+ * One crawl entry: a plain feed line, or a flagged sponsored mention the Ticker
+ * renders in the accent ink with an AD tag (never disguised as news).
+ */
+export type TickerEntry = string | { text: string; ad: true };
+
+/** The crawl's sponsored mention for one sponsor. */
+export const sponsorLine = (name: string): TickerEntry => ({
+  text: `Sponsored by ${name}`,
+  ad: true,
+});
+
+/**
+ * Weave the active sponsors' mentions through the live crawl — each sponsor
+ * appears once per loop, spread evenly through the feed instead of clumped at
+ * the end (the loop is gapless, so "evenly through" reads as a steady cadence
+ * on air). No live items = the mentions alone. No sponsors = the feed untouched.
+ */
+export function weaveSponsors(items: string[], sponsors: string[]): TickerEntry[] {
+  if (!sponsors.length) return items;
+  if (!items.length) return sponsors.map(sponsorLine);
+  const out: TickerEntry[] = [];
+  let placed = 0;
+  items.forEach((item, i) => {
+    out.push(item);
+    // Drop the next mention in once the crawl crosses each 1/n boundary.
+    while (
+      placed < sponsors.length &&
+      i + 1 >= Math.round(((placed + 1) * items.length) / sponsors.length)
+    ) {
+      out.push(sponsorLine(sponsors[placed]));
+      placed += 1;
+    }
+  });
+  return out;
+}
+
 /** Active alerts, de-duped by area and sorted most-severe first — the full list. */
 export function sortedAlerts(alerts: AlertFeature[]): AlertFeature[] {
   return dedupeAlerts(alerts).sort(

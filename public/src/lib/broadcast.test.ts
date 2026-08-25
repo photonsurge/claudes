@@ -20,6 +20,8 @@ import {
   EVENT_SCOPE_RADIUS_KM,
   worldWatchSummary,
   worldWatchFeed,
+  weaveSponsors,
+  sponsorLine,
 } from "./broadcast";
 import type { Alert, AlertFeature } from "./alerts";
 import type { Quake, Track } from "./tracks/types";
@@ -114,6 +116,36 @@ describe("buildTicker", () => {
   });
   it("returns [] with no data", () => {
     expect(buildTicker({})).toEqual([]);
+  });
+});
+
+describe("weaveSponsors", () => {
+  it("leaves the feed untouched with no sponsors", () => {
+    expect(weaveSponsors(["A", "B"], [])).toEqual(["A", "B"]);
+  });
+
+  it("returns the mentions alone with no live items", () => {
+    expect(weaveSponsors([], ["Acme"])).toEqual([
+      { text: "Sponsored by Acme", ad: true },
+    ]);
+  });
+
+  it("spreads each sponsor once, evenly through the crawl", () => {
+    const out = weaveSponsors(["A", "B", "C", "D"], ["S1", "S2"]);
+    expect(out).toEqual([
+      "A",
+      "B",
+      sponsorLine("S1"),
+      "C",
+      "D",
+      sponsorLine("S2"),
+    ]);
+  });
+
+  it("places every sponsor even when they outnumber the items", () => {
+    const out = weaveSponsors(["A"], ["S1", "S2", "S3"]);
+    expect(out.filter((e) => typeof e !== "string").length).toBe(3);
+    expect(out.filter((e) => typeof e === "string")).toEqual(["A"]);
   });
 });
 

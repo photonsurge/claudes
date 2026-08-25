@@ -2,6 +2,7 @@ import {
   normaliseAdMeta,
   normaliseAdPatch,
   normaliseWeight,
+  sponsorNames,
 } from "./normalise";
 import { adMediaTypeFor } from "./types";
 
@@ -74,6 +75,28 @@ describe("normaliseAdPatch", () => {
 
   it("ignores an invalid status", () => {
     expect(normaliseAdPatch({ status: "nope" })).toEqual({});
+  });
+});
+
+describe("sponsorNames", () => {
+  it("uses advertiser, falling back to title, skipping blanks", () => {
+    expect(
+      sponsorNames([
+        { title: "Spring push", advertiser: "Acme Weather Gear" },
+        { title: "House promo", advertiser: "   " },
+        { title: "   " },
+      ]),
+    ).toEqual(["Acme Weather Gear", "House promo"]);
+  });
+
+  it("dedupes case-insensitively, keeping first spelling and order", () => {
+    expect(
+      sponsorNames([
+        { title: "a", advertiser: "Acme" },
+        { title: "b", advertiser: "ACME" },
+        { title: "c", advertiser: "Borealis" },
+      ]),
+    ).toEqual(["Acme", "Borealis"]);
   });
 });
 

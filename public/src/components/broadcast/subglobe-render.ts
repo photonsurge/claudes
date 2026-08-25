@@ -88,6 +88,20 @@ export function projectOrtho(p: LonLat, center: LonLat, r: number): Projected {
   };
 }
 
+/** Destination point at angular distance `distDeg` along `bearingDeg`
+ *  (0 = north, 90 = east) from `p` — the ground-circle sampler for the
+ *  reticle ring, so it lies ON the sphere instead of being a flat overlay. */
+export function spherePointAt(p: LonLat, distDeg: number, bearingDeg: number): LonLat {
+  const φ1 = p[1] * RAD;
+  const λ1 = p[0] * RAD;
+  const δ = distDeg * RAD;
+  const θ = bearingDeg * RAD;
+  const sinφ2 = Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ);
+  const φ2 = Math.asin(Math.max(-1, Math.min(1, sinφ2)));
+  const λ2 = λ1 + Math.atan2(Math.sin(θ) * Math.sin(δ) * Math.cos(φ1), Math.cos(δ) - Math.sin(φ1) * sinφ2);
+  return [λ2 / RAD, φ2 / RAD];
+}
+
 /** "20.1°N · 149.9°W" — the panel's live coordinate readout. */
 export function formatLonLat(lng: number, lat: number): string {
   const w = wrapLng(lng);
@@ -110,11 +124,36 @@ const LAND_EDGE = "rgba(165,192,220,0.35)";
 const GRATICULE = "rgba(130,152,178,0.16)";
 const LIMB = "rgba(150,176,206,0.45)";
 
+/** Exact horizon crossing on the edge a→b (cosc straddles 0): dot(v, view) is
+ *  linear along the 3D chord and normalisation preserves its sign, so the
+ *  zero crossing is found by linear interpolation, then projected (landing on
+ *  the limb by construction). */
+function horizonCrossing(
+  a: LonLat,
+  coscA: number,
+  b: LonLat,
+  coscB: number,
+  center: LonLat,
+  r: number,
+): Projected {
+  const va = toVec3(a);
+  const vb = toVec3(b);
+  const f = coscA / (coscA - coscB);
+  const v: [number, number, number] = [
+    va[0] + f * (vb[0] - va[0]),
+    va[1] + f * (vb[1] - va[1]),
+    va[2] + f * (vb[2] - va[2]),
+  ];
+  const len = Math.hypot(v[0], v[1], v[2]) || 1;
+  return projectOrtho(vec3ToLonLat([v[0] / len, v[1] / len, v[2] / len]), center, r);
+}
+
 /**
  * Draw the whole sub-globe frame. `size` is the square backing-store size in
  * device px; `land` is the pre-simplified outer-ring list (subglobe-land).
- * Far-side ring vertices are clamped to the limb along their azimuth — the
- * standard cheap fill trick, invisible at locator size.
+ * Rings are clipped at the horizon: hidden stretches are replaced by arcs
+ * along the limb (an earlier clamp-to-limb shortcut swept giant false wedges
+ * across the disc whenever a continent sat mostly behind the planet).
  *
  * `tiltDeg` tips the viewpoint that many degrees SOUTH of the camera point,
  * so the marked location renders that far up from the disc centre; `panDeg`
@@ -157,36 +196,56 @@ export function drawSubGlobe(
   g.arc(c, c, r, 0, Math.PI * 2);
   g.clip();
 
-  // Land silhouettes.
+  // Land silhouettes, horizon-clipped. Each ring is walked from a visible
+  // vertex; when an edge crosses the horizon the exact crossing is emitted,
+  // and each hidden stretch is bridged by the SHORTER arc along the limb —
+  // the correct silhouette for every coastline this locator will meet.
+  const angleOf = (p: Projected) => Math.atan2(-p.y, p.x); // canvas-coords angle
   g.beginPath();
   for (const ring of land) {
-    let started = false;
-    let visible = 0;
-    const path: Array<[number, number]> = [];
-    for (const pt of ring) {
-      const p = projectOrtho(pt as LonLat, center, r);
-      let { x, y } = p;
-      if (p.cosc < 0) {
-        // Far side — pin to the limb along this vertex's azimuth.
-        const len = Math.hypot(x, y);
-        if (len < 1e-9) continue;
-        x = (x / len) * r;
-        y = (y / len) * r;
-      } else {
-        visible++;
-      }
-      path.push([c + x, c - y]);
+    // Treat the ring cyclically (drop the GeoJSON closing duplicate).
+    const last = ring.length - 1;
+    const n =
+      ring.length > 1 && ring[0][0] === ring[last][0] && ring[0][1] === ring[last][1]
+        ? last
+        : ring.length;
+    if (n < 3) continue;
+    const proj: Projected[] = new Array(n);
+    let firstVis = -1;
+    for (let i = 0; i < n; i++) {
+      proj[i] = projectOrtho(ring[i] as LonLat, center, r);
+      if (firstVis < 0 && proj[i].cosc >= 0) firstVis = i;
     }
-    if (!visible) continue;
-    for (const [x, y] of path) {
-      if (!started) {
-        g.moveTo(x, y);
-        started = true;
-      } else {
-        g.lineTo(x, y);
+    if (firstVis < 0) continue; // fully behind the planet
+    const start = proj[firstVis];
+    g.moveTo(c + start.x, c - start.y);
+    let exitAngle = 0;
+    for (let k = 0; k < n; k++) {
+      const i = (firstVis + k) % n;
+      const j = (firstVis + k + 1) % n;
+      const a = proj[i];
+      const b = proj[j];
+      const aVis = a.cosc >= 0;
+      const bVis = b.cosc >= 0;
+      if (aVis && bVis) {
+        g.lineTo(c + b.x, c - b.y);
+      } else if (aVis && !bVis) {
+        const x = horizonCrossing(ring[i] as LonLat, a.cosc, ring[j] as LonLat, b.cosc, center, r);
+        g.lineTo(c + x.x, c - x.y);
+        exitAngle = angleOf(x);
+      } else if (!aVis && bVis) {
+        const x = horizonCrossing(ring[i] as LonLat, a.cosc, ring[j] as LonLat, b.cosc, center, r);
+        // Bridge the hidden stretch along the limb, short way round.
+        const entryAngle = angleOf(x);
+        let sweep = entryAngle - exitAngle;
+        while (sweep > Math.PI) sweep -= 2 * Math.PI;
+        while (sweep < -Math.PI) sweep += 2 * Math.PI;
+        g.arc(c, c, r, exitAngle, entryAngle, sweep < 0);
+        g.lineTo(c + b.x, c - b.y);
       }
+      // both hidden → nothing; the limb arc above already spans it.
     }
-    if (started) g.closePath();
+    g.closePath();
   }
   g.fillStyle = LAND_FILL;
   g.fill();
@@ -232,26 +291,41 @@ export function drawSubGlobe(
   g.stroke();
 
   // Reticle — anchored on the camera point's projected position (disc centre
-  // only when untilted); the accent ring is the main view's rough footprint,
-  // so it tightens as the shot pushes in. (A footprint circle around an
-  // off-centre point isn't exactly circular in orthographic projection — at
-  // locator size and modest tilts the difference is invisible.)
-  const ringR = r * Math.sin(footprintDeg(cam.zoom) * RAD);
+  // only when untilted). The footprint ring is a TRUE ground circle: sampled
+  // on the sphere around the camera point and projected point-by-point, so
+  // under the tilted perspective it foreshortens into the correct ellipse
+  // hugging the surface instead of reading as a flat pasted-on circle. It
+  // still tightens as the shot pushes in.
+  const fp = footprintDeg(cam.zoom);
+  const target: LonLat = [cam.lng, cam.lat];
   g.save();
   g.shadowColor = accent;
   g.shadowBlur = size / 60;
   g.strokeStyle = accent;
   g.lineWidth = size / 280;
   g.beginPath();
-  g.arc(mx, my, ringR, 0, Math.PI * 2);
+  let ringPen = false;
+  for (let i = 0; i <= 48; i++) {
+    const q = projectOrtho(spherePointAt(target, fp, (i % 48) * 7.5), center, r);
+    if (q.cosc < 0.01) {
+      ringPen = false; // ring slice behind the horizon — break the stroke
+      continue;
+    }
+    if (ringPen) g.lineTo(c + q.x, c - q.y);
+    else g.moveTo(c + q.x, c - q.y);
+    ringPen = true;
+  }
   g.stroke();
-  // Four compass ticks just outside the ring.
-  const tick = size / 36;
+  // Four compass ticks just outside the ring — walked on the sphere along
+  // their bearings, so they stay radial under the tilt (lengths set in px).
+  const tickDeg = ((size / 36) / r) * (180 / Math.PI);
   g.beginPath();
-  for (let i = 0; i < 4; i++) {
-    const a = (i * Math.PI) / 2;
-    g.moveTo(mx + Math.cos(a) * (ringR + tick * 0.4), my + Math.sin(a) * (ringR + tick * 0.4));
-    g.lineTo(mx + Math.cos(a) * (ringR + tick), my + Math.sin(a) * (ringR + tick));
+  for (let bearing = 0; bearing < 360; bearing += 90) {
+    const t0 = projectOrtho(spherePointAt(target, fp + tickDeg * 0.4, bearing), center, r);
+    const t1 = projectOrtho(spherePointAt(target, fp + tickDeg, bearing), center, r);
+    if (t0.cosc < 0 || t1.cosc < 0) continue;
+    g.moveTo(c + t0.x, c - t0.y);
+    g.lineTo(c + t1.x, c - t1.y);
   }
   g.stroke();
   g.fillStyle = accent;
