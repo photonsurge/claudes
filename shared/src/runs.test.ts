@@ -8,6 +8,7 @@ import {
   toRunState,
   runIsActive,
   runIsFinished,
+  youtubeChatUrl,
   type Run,
   type StreamEncoder,
 } from "./runs";
@@ -70,6 +71,17 @@ describe("toRunState", () => {
     const state = toRunState(baseRun({ encoderId: "obs-2", slotId: "slot-wind" }));
     expect(state.encoderId).toBe("obs-2");
     expect(state.slotId).toBe("slot-wind");
+  });
+});
+
+describe("youtubeChatUrl", () => {
+  it("builds the popout chat URL from a broadcast id", () => {
+    expect(youtubeChatUrl("abc123")).toBe("https://www.youtube.com/live_chat?is_popout=1&v=abc123");
+  });
+  it("returns null without a broadcast id", () => {
+    expect(youtubeChatUrl(undefined)).toBeNull();
+    expect(youtubeChatUrl(null)).toBeNull();
+    expect(youtubeChatUrl("")).toBeNull();
   });
 });
 

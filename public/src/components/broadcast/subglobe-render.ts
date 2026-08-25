@@ -117,10 +117,11 @@ const LIMB = "rgba(150,176,206,0.45)";
  * standard cheap fill trick, invisible at locator size.
  *
  * `tiltDeg` tips the viewpoint that many degrees SOUTH of the camera point,
- * so the marked location renders that far up from the disc centre (its
- * coordinates stay true — only the perspective shifts). Used because the
- * on-air widget sinks the disc past the stage edge: without the tilt the
- * reticle would hug the clipped bottom.
+ * so the marked location renders that far up from the disc centre; `panDeg`
+ * tips it WEST, so the mark renders to the right. Coordinates stay true —
+ * only the perspective shifts. Used because the on-air widget sinks the disc
+ * past the stage edge/corner: without the offsets the reticle would hug the
+ * clipped bottom.
  */
 export function drawSubGlobe(
   g: CanvasRenderingContext2D,
@@ -129,10 +130,11 @@ export function drawSubGlobe(
   land: readonly Point[][],
   accent: string,
   tiltDeg = 0,
+  panDeg = 0,
 ): void {
   const c = size / 2;
   const r = c - size * 0.03;
-  const center: LonLat = [cam.lng, Math.max(-90, Math.min(90, cam.lat - tiltDeg))];
+  const center: LonLat = [cam.lng - panDeg, Math.max(-90, Math.min(90, cam.lat - tiltDeg))];
   // The camera point's on-disc position under the tilted viewpoint — the
   // reticle anchors here (disc centre when tiltDeg is 0).
   const mark = projectOrtho([cam.lng, cam.lat], center, r);

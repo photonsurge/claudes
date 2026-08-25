@@ -341,6 +341,14 @@ export function runIsFinished(status: RunStatus): boolean {
   return status === "ended" || status === "stopped" || status === "failed";
 }
 
+/** Public YouTube live-chat popout URL for a broadcast (the broadcast id IS the
+ *  watch-page video id). Secret-free — safe for anonymous surfaces. */
+export function youtubeChatUrl(broadcastId?: string | null): string | null {
+  return broadcastId
+    ? `https://www.youtube.com/live_chat?is_popout=1&v=${encodeURIComponent(broadcastId)}`
+    : null;
+}
+
 /**
  * Project a persisted Run into the secret-free RunState for the socket. Strips
  * the RTMP stream key; keeps the (non-secret) ingestion address + watch URL.

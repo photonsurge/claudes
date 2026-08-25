@@ -717,7 +717,8 @@ export default function BroadcastFrame({
           <div style={{ position: "absolute", bottom: -130, left: -10, opacity: 0.7 }}>
             <SubGlobeWidget
               size={400}
-              tiltDeg={28}
+              tiltDeg={22}
+              panDeg={14}
               center={state.camera.center}
               zoom={state.camera.zoom}
               autoSpin={state.autoSpin}

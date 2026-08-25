@@ -14,6 +14,7 @@ import {
   RUN_STATE,
   RUN_STATUS,
   runIsActive,
+  youtubeChatUrl,
   type RunState,
   type StreamHealth,
   type CreateRunRequest,
@@ -223,21 +224,23 @@ export async function disconnectYoutube(channelId: string): Promise<void> {
 }
 
 /**
- * PUBLIC live-status hook for the home-page badge: cold-starts from the public
- * /api/streams/live, then live-updates from RUN_STATE. Returns the live run for
- * `sceneId` (or null). Safe for anonymous viewers — no admin, no secrets.
+ * PUBLIC live-status hooks for the home page: cold-start from the public
+ * /api/streams/live, then live-update from RUN_STATE. Safe for anonymous
+ * viewers — no admin, no secrets (watch/chat URLs are the public YouTube pages).
  */
 export interface PublicRunLite {
   sceneId: string;
   status: string;
   title: string | null;
   watchUrl: string | null;
+  chatUrl: string | null;
   startAt: number | null;
 }
 
-export function usePublicLiveRun(sceneId: string): PublicRunLite | null {
+/** All currently-live runs keyed by scene id (one active run per scene). */
+export function usePublicLiveRuns(): Record<string, PublicRunLite> {
   const { socket } = useSocket();
-  const [run, setRun] = useState<PublicRunLite | null>(null);
+  const [runs, setRuns] = useState<Record<string, PublicRunLite>>({});
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -246,31 +249,52 @@ export function usePublicLiveRun(sceneId: string): PublicRunLite | null {
       .then((r) => (r.ok ? r.json() : { runs: [] }))
       .then((d: { runs: PublicRunLite[] }) => {
         if (!mounted.current) return;
-        const live = d.runs.find((r) => r.sceneId === sceneId && r.status === "live");
-        if (live) setRun(live);
+        const live: Record<string, PublicRunLite> = {};
+        for (const run of d.runs ?? []) if (run.status === "live") live[run.sceneId] = run;
+        setRuns((prev) => ({ ...live, ...prev }));
       })
       .catch(() => {});
     return () => {
       mounted.current = false;
     };
-  }, [sceneId]);
+  }, []);
 
   useEffect(() => {
     if (!socket) return;
     const onState = (payload: { data?: RunState } & Partial<RunState>) => {
       const rs = (payload?.data ?? payload) as RunState;
-      if (!rs?.id || rs.sceneId !== sceneId) return;
-      if (rs.status === "live") {
-        setRun({ sceneId: rs.sceneId, status: rs.status, title: rs.title ?? null, watchUrl: rs.youtube?.watchUrl ?? null, startAt: rs.startAt ?? null });
-      } else {
-        setRun((prev) => (prev ? null : prev));
-      }
+      if (!rs?.id || !rs.sceneId) return;
+      setRuns((prev) => {
+        if (rs.status === "live") {
+          return {
+            ...prev,
+            [rs.sceneId]: {
+              sceneId: rs.sceneId,
+              status: rs.status,
+              title: rs.title ?? null,
+              watchUrl: rs.youtube?.watchUrl ?? null,
+              chatUrl: youtubeChatUrl(rs.youtube?.broadcastId),
+              startAt: rs.startAt ?? null,
+            },
+          };
+        }
+        if (!prev[rs.sceneId]) return prev;
+        const next = { ...prev };
+        delete next[rs.sceneId];
+        return next;
+      });
     };
     socket.on(RUN_STATE, onState);
     return () => {
       socket.off(RUN_STATE, onState);
     };
-  }, [socket, sceneId]);
+  }, [socket]);
 
-  return run;
+  return runs;
+}
+
+/** The live run for one scene (the home-page badge), or null. */
+export function usePublicLiveRun(sceneId: string): PublicRunLite | null {
+  const runs = usePublicLiveRuns();
+  return runs[sceneId] ?? null;
 }

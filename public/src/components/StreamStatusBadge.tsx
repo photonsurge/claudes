@@ -39,6 +39,11 @@ export default function StreamStatusBadge() {
           ↗
         </a>
       ) : null}
+      {liveRun?.chatUrl ? (
+        <a href={liveRun.chatUrl} target="_blank" rel="noreferrer" style={{ color: "#7dd3fc" }}>
+          Chat ↗
+        </a>
+      ) : null}
     </div>
   );
 }
