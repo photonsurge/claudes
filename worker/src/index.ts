@@ -502,6 +502,27 @@ process.on("uncaughtException", (err) => {
     log(TAG, `failed to register alerts.reconcile`, { err: summarizeForLog(err) });
   }
 
+  // ---- Repeatable sponsor-exposure sweep (the admin "ticker log") ----
+  // Reconciles ad-exposure windows to the pairs actually airing (active
+  // ticker-placed ads × scenes showing the crawl): "sponsor X was in the
+  // ticker on channel Y from T1 to T2". Cheap — a handful of tiny reads and
+  // usually zero writes; the cadence also bounds the accuracy of window edges.
+  // (jobs/ads.ts derives its stale threshold from the same env var.)
+  const ADS_EXPOSURE_MS = Number(process.env.ADS_EXPOSURE_MS || 60 * 1000);
+  try {
+    await addJob(
+      "do",
+      { domain: "ads", type: "ads", event: "exposure", data: {} },
+      {
+        repeat: { every: ADS_EXPOSURE_MS, offset: staggerOffset("ads-exposure", ADS_EXPOSURE_MS) },
+        jobId: "ads-exposure",
+      },
+    );
+    log(TAG, `registered repeatable ads.exposure`, { every: ADS_EXPOSURE_MS });
+  } catch (err) {
+    log(TAG, `failed to register ads.exposure`, { err: summarizeForLog(err) });
+  }
+
   // ---- Repeatable stream reconcile (persistent slots) ----
   // Keeps every enabled StreamSlot's constant stream alive: restarts dead runs
   // (with backoff owned by the sweep, not the schedule) and ends runs whose slot

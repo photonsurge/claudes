@@ -7,13 +7,14 @@
  * catalog surface.
  */
 import { useCallback, useEffect, useState } from "react";
-import { listAds, setAdStatus, deleteAd } from "../../lib/ads/client";
+import { listAds, setAdStatus, deleteAd, getAdExposureTotals, type AdExposureTotal } from "../../lib/ads/client";
 import { AD_PLACEMENT_LABELS } from "../../lib/ads/types";
 import type { Ad, AdStatus } from "../../lib/ads/types";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "../tracks/styles";
 import AdViewer from "./AdViewer";
 import AddAdForm from "./AddAdForm";
 import AdEditPanel from "./AdEditPanel";
+import AdExposureLog, { fmtWindowMs } from "./AdExposureLog";
 import { useTableSort } from "../admin/useTableSort";
 
 const STATUS_FILTERS: { id: "" | AdStatus; label: string }[] = [
@@ -67,12 +68,19 @@ export default function AdsTable() {
   const [selected, setSelected] = useState<Ad | null>(null);
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  // Worker-written ticker-exposure rollup (cumulative crawl time + live-now
+  // scenes per ad) — fetched alongside the list, keyed by adId.
+  const [exposure, setExposure] = useState<Record<string, AdExposureTotal>>({});
 
   const reload = useCallback(async () => {
     setLoading(true);
     setNote(null);
-    const res = await listAds({ status: status || undefined, q: q.trim() || undefined });
+    const [res, totals] = await Promise.all([
+      listAds({ status: status || undefined, q: q.trim() || undefined }),
+      getAdExposureTotals(),
+    ]);
     setRows(res.ads);
+    setExposure(totals);
     if (res.error) setNote(res.error);
     setLoading(false);
   }, [status, q]);
@@ -115,7 +123,8 @@ export default function AdsTable() {
   };
   const sorted = useTableSort(rows, { title: (a) => a.title, advertiser: (a) => a.advertiser, type: (a) => a.mediaType,
     runs: (a) => (a.placements ?? []).join(","), size: (a) => a.byteSize, weight: (a) => a.weight,
-    shown: (a) => a.lastShownAt, screen: (a) => a.totalDisplayMs, status: (a) => a.status }, "title");
+    shown: (a) => a.lastShownAt, screen: (a) => a.totalDisplayMs,
+    ticker: (a) => exposure[a.adId]?.ms ?? 0, status: (a) => a.status }, "title");
 
   return (
     <div>
@@ -154,7 +163,8 @@ export default function AdsTable() {
                 <th style={th}>{sorted.header("type", "Type")}</th><th style={th}>{sorted.header("runs", "Runs in")}</th>
                 <th style={thNum}>{sorted.header("size", "Size")}</th>
                 <th style={thNum}>{sorted.header("weight", "Weight")}</th><th style={th}>{sorted.header("shown", "Last shown")}</th>
-                <th style={th}>{sorted.header("screen", "On screen")}</th><th style={th}>{sorted.header("status", "Status")}</th>
+                <th style={th}>{sorted.header("screen", "On screen")}</th><th style={th}>{sorted.header("ticker", "Ticker time")}</th>
+                <th style={th}>{sorted.header("status", "Status")}</th>
                 <th style={th}></th>
               </tr>
             </thead>
@@ -181,6 +191,19 @@ export default function AdsTable() {
                     <td style={{ ...td, color: "#8b95a7", whiteSpace: "nowrap" }} title="cumulative time actually on screen">
                       {fmtDuration(a.totalDisplayMs)}
                     </td>
+                    <td
+                      style={{ ...td, color: "#8b95a7", whiteSpace: "nowrap" }}
+                      title={
+                        exposure[a.adId]?.liveScenes.length
+                          ? `in the crawl now on: ${exposure[a.adId].liveScenes.map((s) => s.name).join(", ")}`
+                          : "cumulative time the Sponsored-by mention has been in the crawl"
+                      }
+                    >
+                      {exposure[a.adId] ? fmtWindowMs(exposure[a.adId].ms) : "—"}
+                      {exposure[a.adId]?.liveScenes.length ? (
+                        <span style={{ color: "#34d399", marginLeft: 6, fontSize: 11, fontWeight: 700 }}>● LIVE</span>
+                      ) : null}
+                    </td>
                     <td style={td}>
                       <button
                         type="button"
@@ -205,7 +228,7 @@ export default function AdsTable() {
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td style={td} colSpan={10}>
+                  <td style={td} colSpan={11}>
                     {loading ? "Loading…" : "No ads yet — add one above."}
                   </td>
                 </tr>
@@ -233,6 +256,7 @@ export default function AdsTable() {
               ) : null}
             </div>
             <AdEditPanel ad={selected} onSaved={upsertRow} />
+            <AdExposureLog adId={selected.adId} />
           </div>
         )}
       </div>

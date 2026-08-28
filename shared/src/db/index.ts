@@ -111,6 +111,8 @@ import { getSeaPointModel } from "./sea-point-model";
 import { makeSeaPointRepo } from "./sea-point-repo";
 import { getAdModel } from "./ad-model";
 import { makeAdRepo } from "./ad-repo";
+import { getAdExposureModel } from "./ad-exposure-model";
+import { makeAdExposureRepo } from "./ad-exposure-repo";
 import { getAdminImageModel } from "./admin-image-model";
 import { makeAdminImageRepo } from "./admin-image-repo";
 import { getAdminEditModel } from "./admin-edit-model";
@@ -282,6 +284,7 @@ export function createDb(conn: Connection) {
     cams: makeCamRepo(getCamModel(conn)),
     seaPoints: makeSeaPointRepo(getSeaPointModel(conn)),
     ads: makeAdRepo(getAdModel(conn), blobs.ad),
+    adExposures: makeAdExposureRepo(getAdExposureModel(conn)),
     adminImages: makeAdminImageRepo(getAdminImageModel(conn), blobs.adminImage),
     adminEdits: makeAdminEditRepo(getAdminEditModel(conn)),
     aircraftMeta: mongoCrud<iAircraftMetaModel>(getAircraftMetaModel(conn)),
