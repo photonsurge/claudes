@@ -111,8 +111,11 @@ describe("mergeControlState", () => {
       slideHoldMs: 12000,
       reportOff: ["hourly", "alerts"],
       reportOrder: ["seismic", "volcanoes"],
+      reportHoldMs: 9000,
       reportKindsOff: ["alert"],
       reportHazardsOff: ["fire", "fog"],
+      tickerKindsOff: ["track", "ad"],
+      tickerHazardsOff: ["heat"],
       pointVarsOff: ["humidity", "pressure"],
       themeOverrides: {
         name: "ATLANTIC WIND",

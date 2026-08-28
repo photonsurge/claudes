@@ -2,7 +2,7 @@ import mongoose, { Connection } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 import { iGeneralModel, mongoTimestamps } from "../interfaces/iGeneralModel";
 import { getModel } from "../utill/getModel";
-import type { AdMediaType, AdStatus, AdStorage } from "../ads/types";
+import type { AdMediaType, AdPlacement, AdStatus, AdStorage } from "../ads/types";
 
 /**
  * An advertisement: sponsor creative shown on the broadcast, managed from
@@ -26,6 +26,8 @@ export interface iAd extends iGeneralModel {
   advertiser?: string;
   clickUrl?: string;
   weight: number;
+  /** Broadcast surfaces this ad runs on; absent (pre-field docs) = break-only. */
+  placements?: AdPlacement[];
   tags?: string[];
   notes?: string;
   storage: AdStorage;
@@ -65,6 +67,7 @@ const AdSchema = new mongoose.Schema<iAdModel>(
     advertiser: { type: String, required: false },
     clickUrl: { type: String, required: false },
     weight: { type: Number, required: true, default: 1 },
+    placements: { type: [{ type: String, enum: ["break", "ticker"] }], required: false },
     tags: { type: [String], required: false },
     notes: { type: String, required: false },
     storage: {

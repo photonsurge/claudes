@@ -41,8 +41,18 @@ jest.mock("../../lib/focus/focus-client", () => ({
 }));
 jest.mock("../../lib/world-watch", () => ({ useWorldWatch: () => ({}) }));
 jest.mock("../../lib/summaries", () => ({ useLatestRoundup: () => null }));
+// One active sponsor by default so the "ad" crawl-kind gating is observable.
+jest.mock("../../lib/ads/use-sponsors", () => ({ useSponsors: () => ["Acme"] }));
 
-jest.mock("./Ticker", () => ({ __esModule: true, default: () => null }));
+// The crawl probe exposes what BroadcastFrame actually fed it, so the
+// per-channel content gating (tickerKindsOff / tickerHazardsOff) is testable
+// without rendering the real marquee.
+jest.mock("./Ticker", () => ({
+  __esModule: true,
+  default: ({ items }: { items: unknown[] }) => (
+    <div data-testid="w-ticker" data-items={JSON.stringify(items)} />
+  ),
+}));
 jest.mock("./BrandPanel", () => ({ __esModule: true, default: () => <div data-testid="w-brand" /> }));
 jest.mock("./IntensityMeter", () => ({
   __esModule: true,
@@ -107,6 +117,7 @@ const TESTID: Record<WidgetId, string> = {
   syslog: "w-syslog",
   subglobe: "w-subglobe",
   buildInfo: "w-buildInfo",
+  ticker: "w-ticker",
 };
 
 // kpIndex and spaceWeather also require data (aurora/geomag meta) to show at
@@ -207,5 +218,68 @@ describe("BroadcastFrame — per-channel widgetsOff gating", () => {
       />,
     );
     expect(screen.queryByTestId(TESTID.spaceWeather)).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-channel crawl CONTENT gating (ControlState.tickerKindsOff /
+// tickerHazardsOff — see shared/broadcast-ticker). The Ticker stub above
+// serialises its `items`, so these assert on what the frame actually fed it.
+// ---------------------------------------------------------------------------
+
+const crawlQuake = { id: "q1", mag: 5.9, place: "Somewhere", time: 0, lng: 10, lat: 20, depthKm: 10 } as never;
+const crawlVolcano = {
+  id: "v1", name: "Etna", country: "Italy", lat: 37.75, lng: 15,
+  status: "erupting", firstDate: 0, lastDate: 0, statusChangedAt: 0,
+} as never;
+const crawlAlert = {
+  type: "Feature",
+  geometry: { type: "Point", coordinates: [0, 0] },
+  properties: {
+    id: "a1", source: "test", identifier: "x", event: "Tsunami Watch",
+    severityRank: 3, hazard: "tsunami", areaDesc: "Fiji Region",
+  },
+} as never;
+
+function crawlItems(state: Partial<ControlState>): string {
+  render(
+    <BroadcastFrame
+      state={{ ...DEFAULT_CONTROL_STATE, ...state } as ControlState}
+      manifest={null}
+      quakes={[crawlQuake]}
+      volcanoes={[crawlVolcano]}
+      alerts={[crawlAlert]}
+    />,
+  );
+  return screen.getByTestId("w-ticker").getAttribute("data-items") ?? "";
+}
+
+describe("BroadcastFrame — per-channel crawl content (tickerKindsOff)", () => {
+  it("feeds every kind (plus the sponsor mention) with an empty off-list", () => {
+    const items = crawlItems({});
+    expect(items).toContain("SEISMIC");
+    expect(items).toContain("VOLCANO ERUPTING");
+    expect(items).toContain("Tsunami");
+    expect(items).toContain("Sponsored by Acme");
+  });
+
+  it("drops exactly the kinds on the off-list", () => {
+    const items = crawlItems({ tickerKindsOff: ["quake", "volcano"] });
+    expect(items).not.toContain("SEISMIC");
+    expect(items).not.toContain("VOLCANO");
+    expect(items).toContain("Tsunami");
+    expect(items).toContain("Sponsored by Acme");
+  });
+
+  it("'ad' off strips the sponsor weave, leaving the live feed intact", () => {
+    const items = crawlItems({ tickerKindsOff: ["ad"] });
+    expect(items).not.toContain("Sponsored by");
+    expect(items).toContain("SEISMIC");
+  });
+
+  it("tickerHazardsOff filters the crawl's alerts by hazard", () => {
+    const items = crawlItems({ tickerHazardsOff: ["tsunami"] });
+    expect(items).not.toContain("Tsunami Watch");
+    expect(items).toContain("SEISMIC");
   });
 });

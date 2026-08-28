@@ -39,15 +39,19 @@ const SLIDE_HOLD_MS = 6000;
  * EventNearbyPanel's featured-city climate strip) can reuse the same timer
  * instead of stacking every chart at once.
  */
-export function usePagedSlides<T>(items: T[], perPage: number): { visible: T[]; page: number; pageCount: number } {
+export function usePagedSlides<T>(
+  items: T[],
+  perPage: number,
+  holdMs: number = SLIDE_HOLD_MS,
+): { visible: T[]; page: number; pageCount: number } {
   const pageCount = Math.max(1, Math.ceil(items.length / perPage));
   const [idx, setIdx] = useState(0);
 
   useEffect(() => {
     if (pageCount <= 1) return;
-    const iv = setInterval(() => setIdx((n) => n + 1), SLIDE_HOLD_MS);
+    const iv = setInterval(() => setIdx((n) => n + 1), holdMs);
     return () => clearInterval(iv);
-  }, [pageCount]);
+  }, [pageCount, holdMs]);
 
   const page = idx % pageCount;
   return { visible: items.slice(page * perPage, page * perPage + perPage), page, pageCount };

@@ -34,6 +34,7 @@ import { regionShot } from "@photonsurge/shared/director-regions";
 import {
   buildTicker,
   alertTickerLines,
+  hazardFilteredAlerts,
   weaveSponsors,
   scopeAlertsToBbox,
   scopeQuakesToBbox,
@@ -240,17 +241,37 @@ export default function BroadcastFrame({
     kindsOff: state.reportKindsOff,
     hazardsOff: state.reportHazardsOff,
   });
+  // Per-channel crawl content (shared/broadcast-ticker): an off-list of kinds
+  // plus a crawl-specific alert-hazard filter — how a themed channel's GLOBAL
+  // FEED differs from the default everything-feed. Keyed as joined strings so
+  // the memos below don't rerun on every fresh (but equal) state array.
+  const tickerKindsKey = [...state.tickerKindsOff].sort().join(",");
+  const tickerOff = useMemo(() => new Set<string>(tickerKindsKey ? tickerKindsKey.split(",") : []), [tickerKindsKey]);
+  const tickerHazardsKey = [...state.tickerHazardsOff].sort().join(",");
   // The alert crawl lines carry a per-alert nearest-city flag scan (the crawl's
-  // one expensive step), so memoise them on JUST [alerts, cities] — otherwise the
-  // dead-reckoned track feed (new array ~1×/s) would rerun the whole scan every
-  // second and jam the render on a busy global feed. The final assembly is cheap.
+  // one expensive step), so memoise them on JUST [alerts, cities] (+ the channel
+  // filters) — otherwise the dead-reckoned track feed (new array ~1×/s) would
+  // rerun the whole scan every second and jam the render on a busy global feed.
+  // Alerts off skips the scan entirely. The final assembly is cheap.
   const alertLines = useMemo(
-    () => alertTickerLines(alerts, cities),
-    [alerts, cities],
+    () =>
+      tickerOff.has("alert")
+        ? []
+        : alertTickerLines(
+            hazardFilteredAlerts(alerts, tickerHazardsKey ? tickerHazardsKey.split(",") : []),
+            cities,
+          ),
+    [alerts, cities, tickerOff, tickerHazardsKey],
   );
   const ticker = useMemo(
-    () => buildTicker({ quakes, tracks, alertLines }),
-    [quakes, tracks, alertLines],
+    () =>
+      buildTicker({
+        quakes: tickerOff.has("quake") ? [] : quakes,
+        volcanoes: tickerOff.has("volcano") ? [] : volcanoes,
+        tracks: tickerOff.has("track") ? [] : tracks,
+        alertLines,
+      }),
+    [quakes, volcanoes, tracks, alertLines, tickerOff],
   );
   // The round-up narrative rides on a `global` spin (see director.ts's
   // `Segment.summary`) — surfaced as on-air graphics (the round-up deck card),
@@ -268,9 +289,11 @@ export default function BroadcastFrame({
   // surface: no screen real estate taken, clearly tagged AD in the accent ink.
   const sponsors = useSponsors();
   const bottomTickerTitle = theme.tickerTitle;
+  // "ad" kind off = no crawl mentions on this channel. Sponsor SLIDES are
+  // governed separately (ads/slides settings) — this only strips the weave.
   const bottomTickerItems = useMemo(
-    () => weaveSponsors(ticker, sponsors),
-    [ticker, sponsors],
+    () => (tickerOff.has("ad") ? ticker : weaveSponsors(ticker, sponsors)),
+    [ticker, sponsors, tickerOff],
   );
   const legendVariable = legendVariableFor(state);
   const legendPalette = legendPaletteFor(state);
@@ -295,6 +318,10 @@ export default function BroadcastFrame({
   // Per-channel chrome-widget off-list (see shared/broadcast-widgets). Each
   // optional widget below is wrapped in `!off.has("<id>")`; empty = show all.
   const off = new Set<string>(state.widgetsOff);
+  // Bottom crawl off: the bottom-anchored chrome drops to the screen edge
+  // instead of leaving a dead TICKER_H strip (same adaptive move as `brand`).
+  const tickerOn = !off.has("ticker");
+  const chromeBottom = (tickerOn ? TICKER_H : 0) + INSET;
   // Brand on: the chrome below (centre legends, WORLD WATCH) hangs off the
   // masthead banner's bottom edge. Brand off: nothing rides the top edge (the
   // top crawl is gone), so it hangs off the screen edge itself.
@@ -667,6 +694,21 @@ export default function BroadcastFrame({
     );
   }
 
+  // The 3-day forecast strip for the on-air subject. It used to hang off the
+  // EventOverlay reticle (stage-bottom, right-aligned to the frame), but that
+  // was a second, independent anchor on the same baseline the bottom-centre
+  // monitor row owns — wide content made the two collide. Now it renders AS a
+  // member of that flex row (rightmost slot), so flexbox keeps it and the
+  // monitors nicely beside each other whatever their widths. Same render
+  // conditions as the old reticle slot: a located targeted event fetches by
+  // point; an Areas-tour stop reuses the focus bundle's pre-fetched days.
+  const forecastStrip =
+    onAirSegment && isTargetedEvent(onAirSegment.kind) && segmentHasLocation ? (
+      <ForecastPanel center={onAirSegment.camera.center} theme={theme} compact glass />
+    ) : onAirSegment?.kind === "region" && focusCaption && tourStopWeather?.days?.length ? (
+      <ForecastPanel center={null} daysOverride={tourStopWeather.days} compact theme={theme} glass />
+    ) : null;
+
   return (
     <div
       style={{
@@ -740,11 +782,10 @@ export default function BroadcastFrame({
         )}
 
         {/* Targeted point events (storm/quake/aircraft/ship/volcano) get the
-            centred reticle + lower-third, with point-history on its top-right
-            and the 3-day forecast strip docked at the stage bottom beneath it
-            (right-aligned to the frame, above the ticker). The tracking-detail
-            readout no longer hangs off the frame: it rides on top of the
-            bottom-left deck instead (see EventTrackingLabel below). */}
+            centred reticle + lower-third, with point-history on its top-right.
+            The 3-day forecast strip rides the bottom-centre monitor row (see
+            forecastStrip above); the tracking-detail readout rides on top of
+            the bottom-left deck (see EventTrackingLabel below). */}
         {onAirSegment && isTargetedEvent(onAirSegment.kind) ? (
           <EventOverlay
             segment={onAirSegment}
@@ -758,21 +799,15 @@ export default function BroadcastFrame({
                 />
               ) : null
             }
-            forecastPanel={
-              segmentHasLocation ? (
-                <ForecastPanel center={onAirSegment.camera.center} theme={theme} compact glass />
-              ) : null
-            }
           />
         ) : null}
 
         {/* Areas (region) tour: the camera frames each country's biggest city dead-
             centre, so a caption-only reticle names the CURRENT CITY there while the
-            left card keeps naming the area. The 3-day forecast strip comes from the
-            tour stop's country on the focus bundle (regionCountries, matched by
-            coordinate) — NOT a per-stop fetch — so the reticle stays fetch-free
-            while still showing the stop's outlook. (The stop's current weather rows
-            ride the deck-top tracking strip below.) */}
+            left card keeps naming the area. The stop's 3-day outlook rides the
+            bottom-centre monitor row (see forecastStrip above — focus-bundle days,
+            NOT a per-stop fetch); its current weather rows ride the deck-top
+            tracking strip below. */}
         {onAirSegment?.kind === "region" && focusCaption ? (
           <EventOverlay
             segment={{
@@ -781,11 +816,6 @@ export default function BroadcastFrame({
               subtitle: focusCaption.subtitle,
               details: [],
             }}
-            forecastPanel={
-              tourStopWeather?.days?.length ? (
-                <ForecastPanel center={null} daysOverride={tourStopWeather.days} compact theme={theme} glass />
-              ) : null
-            }
           />
         ) : null}
 
@@ -811,9 +841,9 @@ export default function BroadcastFrame({
           }}
         >
           {/* The 3-day forecast for a targeted event / region tour stop renders
-              via EventOverlay's forecastPanel slot (docked at the stage bottom,
-              right of centre) rather than docking here — so the bottom-left
-              column is just the rotating mode deck below. */}
+              in the bottom-centre monitor row (see forecastStrip) rather than
+              docking here — so the bottom-left column is just the rotating
+              mode deck below. */}
 
           {/* One rotating card per mode: the mode cards plus the weather /
               area-history / depth / round-up context slides all live in this
@@ -974,6 +1004,7 @@ export default function BroadcastFrame({
               reportOrder={state.reportOrder}
               reportKindsOff={state.reportKindsOff}
               about={state.about}
+              holdMs={state.reportHoldMs}
             />
           )}
           {/* NEW ALERTS — the just-issued warnings ride below the always-on
@@ -990,7 +1021,7 @@ export default function BroadcastFrame({
         <div
           style={{
             position: "absolute",
-            bottom: TICKER_H + INSET,
+            bottom: chromeBottom,
             right: INSET,
             display: "flex",
             flexDirection: "column-reverse",
@@ -1004,18 +1035,22 @@ export default function BroadcastFrame({
         </div>
 
         {/* Bottom-centre row: seismic monitor column, the extra weather-
-            instrument cards (wind/pressure/wave), then the tsunami gauge
-            column — all anchored to the same bottom edge (alignItems:
-            flex-end + column-reverse) so any of them can grow upward
-            independently without disturbing the others' baseline. The gauges
-            row (NEARBY TSUNAMI GAUGES) sits closest to the bottom edge in its
-            column; the GLOBAL MONITOR tsunami card only appears above it when
-            there's a single gauge in range (it hides itself once the row has
-            2+, to avoid showing the same gauge twice). */}
+            instrument cards (wind/pressure/wave), the tsunami gauge column,
+            then the on-air subject's 3-DAY FORECAST strip — all anchored to
+            the same bottom edge (alignItems: flex-end + column-reverse) so any
+            of them can grow upward independently without disturbing the
+            others' baseline. The forecast lives IN this row (not hung off the
+            EventOverlay reticle) precisely so flexbox keeps it and the monitor
+            cards beside each other instead of two absolute anchors colliding
+            on the same baseline. The gauges row (NEARBY TSUNAMI GAUGES) sits
+            closest to the bottom edge in its column; the GLOBAL MONITOR
+            tsunami card only appears above it when there's a single gauge in
+            range (it hides itself once the row has 2+, to avoid showing the
+            same gauge twice). */}
         <div
           style={{
             position: "absolute",
-            bottom: TICKER_H + INSET,
+            bottom: chromeBottom,
             left: "50%",
             display: "flex",
             flexDirection: "row",
@@ -1078,15 +1113,18 @@ export default function BroadcastFrame({
               />
             </div>
           )}
+          {forecastStrip}
         </div>
 
-        <Ticker
-          title={bottomTickerTitle}
-          items={bottomTickerItems}
-          edge="bottom"
-          height={TICKER_H}
-          theme={theme}
-        />
+        {tickerOn && (
+          <Ticker
+            title={bottomTickerTitle}
+            items={bottomTickerItems}
+            edge="bottom"
+            height={TICKER_H}
+            theme={theme}
+          />
+        )}
       </div>
     </div>
   );

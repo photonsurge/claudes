@@ -1,6 +1,7 @@
 /**
  * ReportSettings — per-channel World Report editor. Focus presets set reportOff
- * in one click; checkboxes toggle single slides; ↑/↓ reorder. All DELTA-patched.
+ * in one click; checkboxes toggle single slides; ↑/↓ reorder; a dwell picker
+ * sets reportHoldMs. All DELTA-patched.
  */
 import { fireEvent, render, screen } from "@testing-library/react";
 import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
@@ -70,6 +71,23 @@ describe("ReportSettings", () => {
     expect(await screen.findByRole("checkbox", { name: "Earthquakes" })).toBeInTheDocument();
     // …but with alerts off, the hazard sub-filter is gone.
     expect(screen.queryByText("Alert hazards")).not.toBeInTheDocument();
+  });
+
+  it("changes the report rotation dwell via the slider", async () => {
+    render(<ReportSettings sceneId="wx" />);
+    const dwell = await screen.findByRole("slider", { name: "Report rotation dwell" });
+    fireEvent.change(dwell, { target: { value: "12000" } });
+
+    expect(patch).toHaveBeenCalledWith("wx", { reportHoldMs: 12000 });
+  });
+
+  it("types an exact report dwell override in seconds", async () => {
+    render(<ReportSettings sceneId="wx" />);
+    const secs = await screen.findByRole("textbox", { name: "Report rotation dwell seconds" });
+    fireEvent.change(secs, { target: { value: "9" } });
+    fireEvent.blur(secs);
+
+    expect(patch).toHaveBeenCalledWith("wx", { reportHoldMs: 9000 });
   });
 
   it("reorders a slide up (delta patch carries the new order)", async () => {

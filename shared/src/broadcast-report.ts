@@ -51,6 +51,11 @@ export const BROADCAST_REPORT_SLIDES: readonly ReportSlide[] = [
   { id: "about", label: "About card", note: "Channel description + data sources (copy editable per channel)" },
 ];
 
+/** Report dwell bounds (ms) for the rotation-speed control. */
+export const REPORT_HOLD_MIN_MS = 3000;
+export const REPORT_HOLD_MAX_MS = 30000;
+export const DEFAULT_REPORT_HOLD_MS = 6000;
+
 /** All report slide ids, in catalog order. */
 export const REPORT_SLIDE_IDS: readonly ReportSlideId[] = BROADCAST_REPORT_SLIDES.map((s) => s.id);
 

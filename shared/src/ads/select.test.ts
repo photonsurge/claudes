@@ -10,6 +10,7 @@ const ad = (over: Partial<Ad>): Ad => ({
   contentType: "image/png",
   byteSize: 1,
   weight: 1,
+  placements: ["break"],
   storage: "inline",
   ...over,
 });

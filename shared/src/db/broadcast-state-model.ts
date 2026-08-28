@@ -11,6 +11,7 @@ import {
 } from "../control";
 import { defaultSatImgFeeds } from "../satimg/types";
 import { DEFAULT_SLIDE_HOLD_MS } from "../broadcast-slides";
+import { DEFAULT_REPORT_HOLD_MS } from "../broadcast-report";
 
 /** The id of the single broadcast-state document (single-domain → one row). */
 export const BROADCAST_STATE_ID = "default" as const;
@@ -153,8 +154,11 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     slideHoldMs: { type: Number, required: true, default: DEFAULT_SLIDE_HOLD_MS },
     reportOff: { type: [String], required: true, default: [] },
     reportOrder: { type: [String], required: true, default: [] },
+    reportHoldMs: { type: Number, required: true, default: DEFAULT_REPORT_HOLD_MS },
     reportKindsOff: { type: [String], required: true, default: [] },
     reportHazardsOff: { type: [String], required: true, default: [] },
+    tickerKindsOff: { type: [String], required: true, default: [] },
+    tickerHazardsOff: { type: [String], required: true, default: [] },
     pointVarsOff: { type: [String], required: true, default: [] },
     themeOverrides: { type: mongoose.Schema.Types.Mixed, required: true, default: () => ({}) },
     about: {

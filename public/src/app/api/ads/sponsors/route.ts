@@ -12,15 +12,18 @@ const NO_CACHE = { "Cache-Control": "no-store" };
 /**
  * GET /api/ads/sponsors
  * The active sponsors' display names for the on-air "Sponsored by …" ticker
- * mentions — one entry per advertiser however many creatives they run, no
- * media, no metadata. Public (the /watch surface reads it), served from the
- * shared feed cache like the other broadcast reads.
+ * mentions — only ads placed on the `ticker` surface (an ad-break creative
+ * stays off the crawl unless the operator opts it in), one entry per
+ * advertiser however many creatives they run, no media, no metadata. Public
+ * (the /watch surface reads it), served from the shared feed cache like the
+ * other broadcast reads.
  */
 async function GET__impl() {
   try {
-    const { value, hit } = await withCache("feed:v1:ads:sponsors", FEED_TTL_SEC, async () => {
+    const { value, hit } = await withCache("feed:v2:ads:sponsors", FEED_TTL_SEC, async () => {
       const db = await getAppDb();
-      const sponsors = sponsorNames(await db.ads.list({ status: "active" }));
+      const active = await db.ads.list({ status: "active" });
+      const sponsors = sponsorNames(active.filter((a) => a.placements.includes("ticker")));
       return { count: sponsors.length, sponsors };
     });
     return NextResponse.json(value, {

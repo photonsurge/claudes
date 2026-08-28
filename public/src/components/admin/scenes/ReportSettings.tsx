@@ -2,10 +2,10 @@
 
 /**
  * Per-channel WORLD REPORT editor — which top-right report slides show, in what
- * order. This is how one globe becomes several themed channels: the focus
- * presets ("Weather focus", "Quakes & volcanoes") set the off-list in one click.
- * STAGED as a DELTA patch (reportOff / reportOrder) — the page's Save bar
- * applies it to /watch/:id.
+ * order, and how long each holds (rotation dwell). This is how one globe becomes
+ * several themed channels: the focus presets ("Weather focus", "Quakes &
+ * volcanoes") set the off-list in one click. STAGED as a DELTA patch (reportOff
+ * / reportOrder / reportHoldMs) — the page's Save bar applies it to /watch/:id.
  */
 import { useEffect, useMemo, useState } from "react";
 import Box from "@mui/material/Box";
@@ -21,6 +21,9 @@ import {
   REPORT_SLIDE_IDS,
   REPORT_PRESETS,
   REPORT_KINDS,
+  DEFAULT_REPORT_HOLD_MS,
+  REPORT_HOLD_MIN_MS,
+  REPORT_HOLD_MAX_MS,
   type ReportSlideId,
   type ReportKind,
 } from "@photonsurge/shared/broadcast-report";
@@ -29,6 +32,7 @@ import { type ControlState } from "@photonsurge/shared/control";
 import { fetchSceneState } from "../../../lib/scenes";
 import { useSceneDraft } from "./SceneDraft";
 import AlertHazardChips from "../../AlertHazardChips";
+import DwellField from "./DwellField";
 
 const REPORT_BY_ID = new Map(BROADCAST_REPORT_SLIDES.map((s) => [s.id, s]));
 
@@ -125,6 +129,15 @@ export default function ReportSettings({ sceneId }: { sceneId: string }) {
           </Button>
         ))}
       </Stack>
+
+      <DwellField
+        label="Report rotation dwell"
+        valueMs={state.reportHoldMs ?? DEFAULT_REPORT_HOLD_MS}
+        defaultMs={DEFAULT_REPORT_HOLD_MS}
+        minMs={REPORT_HOLD_MIN_MS}
+        maxMs={REPORT_HOLD_MAX_MS}
+        onChange={(ms) => apply({ reportHoldMs: ms })}
+      />
 
       <Box sx={{ display: "grid", gap: 0.5 }}>
         {ordered.map((id, idx) => {

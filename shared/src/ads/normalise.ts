@@ -4,7 +4,7 @@
  * patch). No I/O and no bytes here — easy to unit test. The media itself
  * (content-type, size, kind) is validated in the route where the file is read.
  */
-import type { AdMeta, AdStatus } from "./types";
+import { AD_PLACEMENTS, type AdMeta, type AdPlacement, type AdStatus } from "./types";
 
 const STATUSES: AdStatus[] = ["active", "inactive"];
 
@@ -37,6 +37,21 @@ const normaliseTags = (v: unknown): string[] | undefined => {
 };
 
 /**
+ * Parse the placements field — an array or a comma string ("break,ticker"),
+ * unknown values dropped, canonical AD_PLACEMENTS order. Nothing valid (or
+ * nothing at all) = ["break"]: an ad always runs somewhere, and break is the
+ * surface the catalog was built for.
+ */
+export function normalisePlacements(v: unknown): AdPlacement[] {
+  const raw = Array.isArray(v) ? v : typeof v === "string" ? v.split(",") : [];
+  const wanted = new Set(
+    raw.map((p) => (typeof p === "string" ? p.trim() : "")).filter(Boolean),
+  );
+  const placements = AD_PLACEMENTS.filter((p) => wanted.has(p));
+  return placements.length ? placements : ["break"];
+}
+
+/**
  * Full metadata for a create. Returns null when unusable (a missing title) so
  * the route can reject rather than persist junk. Everything else falls back to
  * a sensible default.
@@ -50,6 +65,7 @@ export function normaliseAdMeta(input: Record<string, unknown>): AdMeta | null {
     advertiser: trimOrUndef(input.advertiser),
     clickUrl: trimOrUndef(input.clickUrl),
     weight: normaliseWeight(input.weight),
+    placements: normalisePlacements(input.placements),
     tags: normaliseTags(input.tags),
     notes: trimOrUndef(input.notes),
   };
@@ -94,6 +110,7 @@ export function normaliseAdPatch(input: Record<string, unknown>): Partial<AdMeta
   if ("clickUrl" in input) patch.clickUrl = trimOrUndef(input.clickUrl);
   if ("notes" in input) patch.notes = trimOrUndef(input.notes);
   if ("weight" in input) patch.weight = normaliseWeight(input.weight);
+  if ("placements" in input) patch.placements = normalisePlacements(input.placements);
   if ("tags" in input) patch.tags = normaliseTags(input.tags);
   return patch;
 }

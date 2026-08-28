@@ -95,6 +95,27 @@ export function alertTicker(a: AlertFeature, candidateCities: City[] = []): stri
   return `${flag ? `${flag} ` : ""}${sev ? `${sev.toUpperCase()}: ` : ""}${event}${area}`;
 }
 
+/** "VOLCANO ERUPTING: Etna · Italy" — dormant volcanoes never reach the crawl
+ *  (callers pass erupting/unrest only, same exclusion as every other surface). */
+export function volcanoTicker(v: Volcano): string {
+  const status = VOLCANO_STATUS_META[v.status].label.toUpperCase();
+  const where = v.country ? ` · ${v.country}` : "";
+  return `VOLCANO ${status}: ${v.name}${where}`;
+}
+
+/** The crawl's alert subset for a channel: drop hazards on the channel's
+ *  crawl-specific off-list (empty = untouched, and the SAME array back so
+ *  memo keys stay stable). Layered on top of the globe's own operator filter,
+ *  which is applied upstream in useAlertFeatures. */
+export function hazardFilteredAlerts(
+  alerts: AlertFeature[],
+  hazardsOff: readonly string[],
+): AlertFeature[] {
+  if (!hazardsOff.length) return alerts;
+  const off = new Set(hazardsOff);
+  return alerts.filter((a) => !off.has(a.properties.hazard));
+}
+
 /** "🇺🇸 GLOBAL THUNDER-26 · AIRCRAFT" */
 export function trackTicker(t: Track): string {
   const id = t.name || t.code || "UNKNOWN";
@@ -121,9 +142,9 @@ export function dedupeAlerts(alerts: AlertFeature[]): AlertFeature[] {
 }
 
 /**
- * All ticker lines from the live data, seismic → alerts → tracks. Alerts are
- * de-duped by area first (kills the multi-language repeats); no cap otherwise —
- * the crawl shows everything (long feeds just scroll longer).
+ * All ticker lines from the live data, seismic → volcanoes → alerts → tracks.
+ * Alerts are de-duped by area first (kills the multi-language repeats); no cap
+ * otherwise — the crawl shows everything (long feeds just scroll longer).
  */
 /**
  * The alert crawl lines — deduped by area, then each flagged by its nearest
@@ -140,6 +161,9 @@ export function alertTickerLines(alerts: AlertFeature[], cities: City[] = []): s
 export function buildTicker(input: {
   alerts?: AlertFeature[];
   quakes?: Quake[];
+  /** Erupting/unrest volcanoes — dormant entries are skipped here too, so a raw
+   *  catalog list can be passed straight through. */
+  volcanoes?: Volcano[];
   tracks?: Track[];
   /** Curated, wiki-enriched cities — optional, purely for the per-alert country
    *  flag (nearest notable place). Omit and alerts simply carry no flag. */
@@ -150,6 +174,7 @@ export function buildTicker(input: {
 }): string[] {
   const items: string[] = [];
   for (const q of input.quakes ?? []) items.push(quakeTicker(q));
+  for (const v of input.volcanoes ?? []) if (v.status !== "dormant") items.push(volcanoTicker(v));
   items.push(...(input.alertLines ?? alertTickerLines(input.alerts ?? [], input.cities)));
   for (const t of input.tracks ?? []) items.push(trackTicker(t));
   return [...new Set(items)];

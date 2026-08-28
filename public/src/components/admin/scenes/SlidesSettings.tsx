@@ -14,16 +14,16 @@ import Button from "@mui/material/Button";
 import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
-import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import {
   BROADCAST_SLIDES,
   SLIDE_IDS,
   SLIDE_GROUP_LABELS,
   DEFAULT_SLIDE_HOLD_MS,
+  SLIDE_HOLD_MIN_MS,
+  SLIDE_HOLD_MAX_MS,
   isPinnedSlide,
   type SlideId,
 } from "@photonsurge/shared/broadcast-slides";
@@ -32,18 +32,9 @@ import { type ControlState } from "@photonsurge/shared/control";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import { fetchSceneState } from "../../../lib/scenes";
 import { useSceneDraft } from "./SceneDraft";
+import DwellField from "./DwellField";
 
 const SLIDE_BY_ID = new Map(BROADCAST_SLIDES.map((s) => [s.id, s]));
-
-/** Dwell presets for the rotation-speed picker (label ↔ ms). */
-const HOLD_PRESETS: { ms: number; label: string }[] = [
-  { ms: 8000, label: "Fast · 8s" },
-  { ms: 12000, label: "Brisk · 12s" },
-  { ms: 16000, label: "Normal · 16s" },
-  { ms: 24000, label: "Slow · 24s" },
-  { ms: 32000, label: "Slower · 32s" },
-  { ms: 40000, label: "Very slow · 40s" },
-];
 
 export default function SlidesSettings({ sceneId }: { sceneId: string }) {
   const { stage: patch, epoch } = useSceneDraft();
@@ -110,11 +101,6 @@ export default function SlidesSettings({ sceneId }: { sceneId: string }) {
   }
 
   const pinned = BROADCAST_SLIDES.filter((s) => s.pinned);
-  const holdMs = state.slideHoldMs ?? DEFAULT_SLIDE_HOLD_MS;
-  // A non-preset persisted value still needs an option to sit on, or MUI warns.
-  const holdOptions = HOLD_PRESETS.some((p) => p.ms === holdMs)
-    ? HOLD_PRESETS
-    : [...HOLD_PRESETS, { ms: holdMs, label: `${Math.round(holdMs / 1000)}s` }];
 
   return (
     <Paper sx={{ p: 1.75 }}>
@@ -134,21 +120,14 @@ export default function SlidesSettings({ sceneId }: { sceneId: string }) {
         </Button>
       </Stack>
 
-      <TextField
-        select
-        size="small"
+      <DwellField
         label="Rotation dwell"
-        value={holdMs}
-        onChange={(e) => apply({ slideHoldMs: Number(e.target.value) })}
-        sx={{ mb: 1.5, minWidth: 180 }}
-        slotProps={{ htmlInput: { "aria-label": "Rotation dwell" } }}
-      >
-        {holdOptions.map((p) => (
-          <MenuItem key={p.ms} value={p.ms}>
-            {p.label}
-          </MenuItem>
-        ))}
-      </TextField>
+        valueMs={state.slideHoldMs ?? DEFAULT_SLIDE_HOLD_MS}
+        defaultMs={DEFAULT_SLIDE_HOLD_MS}
+        minMs={SLIDE_HOLD_MIN_MS}
+        maxMs={SLIDE_HOLD_MAX_MS}
+        onChange={(ms) => apply({ slideHoldMs: ms })}
+      />
 
       <Alert severity="info" sx={{ mb: 1.5 }}>
         The on-air lede is pinned — it always opens the deck. Slides also self-hide

@@ -7,7 +7,8 @@
  */
 import { useRef, useState } from "react";
 import { createAd } from "../../lib/ads/client";
-import type { Ad, AdStatus } from "../../lib/ads/types";
+import { AD_PLACEMENTS, AD_PLACEMENT_LABELS } from "../../lib/ads/types";
+import type { Ad, AdPlacement, AdStatus } from "../../lib/ads/types";
 import { primary, select } from "../tracks/styles";
 
 const STATUSES: AdStatus[] = ["active", "inactive"];
@@ -43,6 +44,7 @@ const empty = {
 export default function AddAdForm({ onSaved }: { onSaved: (ad: Ad) => void }) {
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ ...empty });
+  const [placements, setPlacements] = useState<AdPlacement[]>(["break"]);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,8 +63,12 @@ export default function AddAdForm({ onSaved }: { onSaved: (ad: Ad) => void }) {
     setPreview(chosen ? URL.createObjectURL(chosen) : null);
   };
 
+  const togglePlacement = (p: AdPlacement) =>
+    setPlacements((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
+
   const reset = () => {
     setF({ ...empty });
+    setPlacements(["break"]);
     setFile(null);
     if (preview) URL.revokeObjectURL(preview);
     setPreview(null);
@@ -78,6 +84,10 @@ export default function AddAdForm({ onSaved }: { onSaved: (ad: Ad) => void }) {
       setErr("choose an image or video file");
       return;
     }
+    if (placements.length === 0) {
+      setErr("pick at least one placement (ad break / ticker mention)");
+      return;
+    }
     setBusy(true);
     setErr(null);
 
@@ -87,6 +97,7 @@ export default function AddAdForm({ onSaved }: { onSaved: (ad: Ad) => void }) {
     if (f.clickUrl.trim()) form.set("clickUrl", f.clickUrl.trim());
     form.set("weight", f.weight || "1");
     form.set("status", f.status);
+    form.set("placements", placements.join(","));
     if (f.tags.trim()) form.set("tags", f.tags.trim());
     if (f.notes.trim()) form.set("notes", f.notes.trim());
     form.set("file", file);
@@ -138,6 +149,20 @@ export default function AddAdForm({ onSaved }: { onSaved: (ad: Ad) => void }) {
             {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
+        <div style={{ ...label, gridColumn: "1 / -1" }}>
+          Runs in
+          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+            {AD_PLACEMENTS.map((p) => (
+              <label key={p} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, color: "#fff", cursor: "pointer" }}>
+                <input type="checkbox" checked={placements.includes(p)} onChange={() => togglePlacement(p)} />
+                {AD_PLACEMENT_LABELS[p]}
+              </label>
+            ))}
+            <span style={{ fontSize: 11, color: "#8b95a7" }}>
+              Ad break shows the creative full screen; ticker mention weaves &ldquo;Sponsored by {f.advertiser.trim() || "…"}&rdquo; into the crawl.
+            </span>
+          </div>
+        </div>
         <label style={{ ...label, gridColumn: "1 / -1" }}>Click URL<input style={field} value={f.clickUrl} onChange={set("clickUrl")} placeholder="https://sponsor.example" /></label>
         <label style={{ ...label, gridColumn: "1 / -1" }}>Tags (comma separated)<input style={field} value={f.tags} onChange={set("tags")} placeholder="summer, drinks" /></label>
         <label style={{ ...label, gridColumn: "1 / -1" }}>Notes<textarea style={{ ...field, minHeight: 48, resize: "vertical" }} value={f.notes} onChange={set("notes")} placeholder="Runs through August" /></label>

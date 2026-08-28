@@ -3,7 +3,7 @@
  * order (slideOrder via ↑/↓), and dwell (slideHoldMs). All DELTA-patched; the
  * pinned on-air lede is locked.
  */
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
 import SlidesSettings from "./SlidesSettings";
 
@@ -49,14 +49,21 @@ describe("SlidesSettings", () => {
     expect(sent.slideOrder.slice(0, 2)).toEqual(["history", "track"]);
   });
 
-  it("changes the rotation dwell", async () => {
+  it("changes the rotation dwell via the slider", async () => {
     render(<SlidesSettings sceneId="wind" />);
-    const dwell = await screen.findByRole("combobox", { name: "Rotation dwell" });
-    fireEvent.mouseDown(dwell);
-    const listbox = within(screen.getByRole("listbox"));
-    fireEvent.click(listbox.getByText("Slow · 24s"));
+    const dwell = await screen.findByRole("slider", { name: "Rotation dwell" });
+    fireEvent.change(dwell, { target: { value: "24000" } });
 
     expect(patch).toHaveBeenCalledWith("wind", { slideHoldMs: 24000 });
+  });
+
+  it("types an exact dwell override in seconds", async () => {
+    render(<SlidesSettings sceneId="wind" />);
+    const secs = await screen.findByRole("textbox", { name: "Rotation dwell seconds" });
+    fireEvent.change(secs, { target: { value: "45" } });
+    fireEvent.blur(secs);
+
+    expect(patch).toHaveBeenCalledWith("wind", { slideHoldMs: 45000 });
   });
 
   it("hides a point-history variable via its checkbox", async () => {

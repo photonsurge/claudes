@@ -6,6 +6,7 @@ import {
   isReportSlideId,
   isReportKind,
   applyReportPrefs,
+  DEFAULT_REPORT_HOLD_MS,
 } from "./broadcast-report";
 import { DEFAULT_CONTROL_STATE, mergeControlState } from "./control";
 
@@ -68,6 +69,17 @@ describe("mergeControlState report fields", () => {
   it("defaults empty", () => {
     expect(DEFAULT_CONTROL_STATE.reportOff).toEqual([]);
     expect(DEFAULT_CONTROL_STATE.reportOrder).toEqual([]);
+    expect(DEFAULT_CONTROL_STATE.reportHoldMs).toBe(DEFAULT_REPORT_HOLD_MS);
+  });
+
+  it("accepts a positive reportHoldMs and rejects non-positive values", () => {
+    expect(mergeControlState(DEFAULT_CONTROL_STATE, { reportHoldMs: 12000 }).reportHoldMs).toBe(12000);
+    expect(mergeControlState(DEFAULT_CONTROL_STATE, { reportHoldMs: 0 }).reportHoldMs).toBe(
+      DEFAULT_REPORT_HOLD_MS,
+    );
+    expect(mergeControlState(DEFAULT_CONTROL_STATE, { reportHoldMs: "9000" as never }).reportHoldMs).toBe(
+      DEFAULT_REPORT_HOLD_MS,
+    );
   });
 
   it("filters invalid ids and dedupes", () => {

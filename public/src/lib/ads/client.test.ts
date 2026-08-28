@@ -9,6 +9,7 @@ const baseAd: Ad = {
   contentType: "image/png",
   byteSize: 10,
   weight: 1,
+  placements: ["break"],
   storage: "inline",
 };
 

@@ -1,6 +1,7 @@
 import {
   normaliseAdMeta,
   normaliseAdPatch,
+  normalisePlacements,
   normaliseWeight,
   sponsorNames,
 } from "./normalise";
@@ -35,6 +36,7 @@ describe("normaliseAdMeta", () => {
       advertiser: "Beans Ltd",
       clickUrl: "https://beans.example",
       weight: 3,
+      placements: ["break"],
       tags: ["coffee", "morning"],
       notes: undefined,
     });
@@ -75,6 +77,30 @@ describe("normaliseAdPatch", () => {
 
   it("ignores an invalid status", () => {
     expect(normaliseAdPatch({ status: "nope" })).toEqual({});
+  });
+});
+
+describe("normalisePlacements", () => {
+  it("accepts an array or a comma string, canonical order, junk dropped", () => {
+    expect(normalisePlacements(["ticker", "break"])).toEqual(["break", "ticker"]);
+    expect(normalisePlacements("ticker, break")).toEqual(["break", "ticker"]);
+    expect(normalisePlacements("ticker, popup")).toEqual(["ticker"]);
+  });
+
+  it("defaults to break-only when empty or unusable", () => {
+    expect(normalisePlacements(undefined)).toEqual(["break"]);
+    expect(normalisePlacements("")).toEqual(["break"]);
+    expect(normalisePlacements(["banner"])).toEqual(["break"]);
+    expect(normalisePlacements(42)).toEqual(["break"]);
+  });
+
+  it("rides create meta and the patch (only when the key is present)", () => {
+    expect(normaliseAdMeta({ title: "Spot" })?.placements).toEqual(["break"]);
+    expect(normaliseAdMeta({ title: "Spot", placements: "ticker" })?.placements).toEqual(["ticker"]);
+    expect(normaliseAdPatch({ placements: "break,ticker" })).toEqual({
+      placements: ["break", "ticker"],
+    });
+    expect(normaliseAdPatch({})).toEqual({});
   });
 });
 

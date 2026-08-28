@@ -7,7 +7,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { replaceAdMedia, updateAd } from "../../lib/ads/client";
-import type { Ad, AdStatus } from "../../lib/ads/types";
+import { AD_PLACEMENTS, AD_PLACEMENT_LABELS } from "../../lib/ads/types";
+import type { Ad, AdPlacement, AdStatus } from "../../lib/ads/types";
 import { primary, select } from "../tracks/styles";
 
 const STATUSES: AdStatus[] = ["active", "inactive"];
@@ -42,6 +43,7 @@ const fromAd = (ad: Ad) => ({
 
 export default function AdEditPanel({ ad, onSaved }: { ad: Ad; onSaved: (ad: Ad) => void }) {
   const [f, setF] = useState(() => fromAd(ad));
+  const [placements, setPlacements] = useState<AdPlacement[]>(() => ad.placements ?? ["break"]);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -49,9 +51,13 @@ export default function AdEditPanel({ ad, onSaved }: { ad: Ad; onSaved: (ad: Ad)
   // Reset the form when a different ad is selected.
   useEffect(() => {
     setF(fromAd(ad));
+    setPlacements(ad.placements ?? ["break"]);
     setNote(null);
     if (fileRef.current) fileRef.current.value = "";
   }, [ad.adId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const togglePlacement = (p: AdPlacement) =>
+    setPlacements((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
 
   const set =
     (k: keyof ReturnType<typeof fromAd>) =>
@@ -59,6 +65,10 @@ export default function AdEditPanel({ ad, onSaved }: { ad: Ad; onSaved: (ad: Ad)
       setF((prev) => ({ ...prev, [k]: e.target.value }));
 
   const saveMeta = async () => {
+    if (placements.length === 0) {
+      setNote("pick at least one placement");
+      return;
+    }
     setBusy(true);
     setNote(null);
     const res = await updateAd(ad.adId, {
@@ -67,6 +77,7 @@ export default function AdEditPanel({ ad, onSaved }: { ad: Ad; onSaved: (ad: Ad)
       clickUrl: f.clickUrl,
       weight: f.weight,
       status: f.status,
+      placements,
       tags: f.tags,
       notes: f.notes,
     });
@@ -106,6 +117,17 @@ export default function AdEditPanel({ ad, onSaved }: { ad: Ad; onSaved: (ad: Ad)
             {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
+        <div style={{ ...label, gridColumn: "1 / -1" }}>
+          Runs in
+          <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+            {AD_PLACEMENTS.map((p) => (
+              <label key={p} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, color: "#fff", cursor: "pointer" }}>
+                <input type="checkbox" checked={placements.includes(p)} onChange={() => togglePlacement(p)} />
+                {AD_PLACEMENT_LABELS[p]}
+              </label>
+            ))}
+          </div>
+        </div>
         <label style={{ ...label, gridColumn: "1 / -1" }}>Click URL<input style={field} value={f.clickUrl} onChange={set("clickUrl")} /></label>
         <label style={{ ...label, gridColumn: "1 / -1" }}>Tags<input style={field} value={f.tags} onChange={set("tags")} placeholder="comma separated" /></label>
         <label style={{ ...label, gridColumn: "1 / -1" }}>Notes<textarea style={{ ...field, minHeight: 44, resize: "vertical" }} value={f.notes} onChange={set("notes")} /></label>

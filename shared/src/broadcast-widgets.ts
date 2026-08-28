@@ -15,7 +15,8 @@ export type WidgetZone =
   | "top-center"
   | "top-left"
   | "bottom-left"
-  | "bottom-right";
+  | "bottom-right"
+  | "bottom-edge";
 
 /** Stable id for one toggleable chrome widget (never renamed — it persists). */
 export type WidgetId =
@@ -32,7 +33,8 @@ export type WidgetId =
   | "upNext"
   | "syslog"
   | "subglobe"
-  | "buildInfo";
+  | "buildInfo"
+  | "ticker";
 
 export interface BroadcastWidget {
   id: WidgetId;
@@ -69,6 +71,9 @@ export const BROADCAST_WIDGETS: readonly BroadcastWidget[] = [
   { id: "upNext", zone: "bottom-right", label: "Up next", hint: "Director's next-shot hint" },
   { id: "syslog", zone: "bottom-right", label: "Syslog", hint: "Live system-event ticker" },
   { id: "buildInfo", zone: "bottom-right", label: "Build stamp", hint: "Version / build tag" },
+  // Bottom edge — the GLOBAL FEED crawl (its CONTENT is curated separately,
+  // see broadcast-ticker.ts / the Bottom crawl admin card).
+  { id: "ticker", zone: "bottom-edge", label: "Bottom crawl", hint: "GLOBAL FEED live crawl band" },
 ];
 
 /** Display labels for each zone, in admin-form order. */
@@ -79,6 +84,7 @@ export const WIDGET_ZONE_LABELS: Record<WidgetZone, string> = {
   "top-left": "Top-left",
   "bottom-left": "Bottom-left card",
   "bottom-right": "Bottom-right feeds",
+  "bottom-edge": "Bottom crawl",
 };
 
 /** Zone render order for the admin form. */
@@ -89,6 +95,7 @@ export const WIDGET_ZONE_ORDER: readonly WidgetZone[] = [
   "top-left",
   "bottom-left",
   "bottom-right",
+  "bottom-edge",
 ];
 
 /** All widget ids, in catalog order. */

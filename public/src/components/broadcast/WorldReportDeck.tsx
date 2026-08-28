@@ -7,13 +7,18 @@
  * VOLCANOES drill-downs, and a reserved ABOUT US card. Every category slide is
  * derived from the one shared `worldWatch` tally BroadcastFrame already fetches
  * — only the WORLD REPORT slide pulls extra data (the global area forecast),
- * lifted here so it doesn't refetch on each rotation. Advances on the same
- * SLIDE_HOLD_MS timer the frame's other in-panel slide rotations use.
+ * lifted here so it doesn't refetch on each rotation. Advances on the channel's
+ * `reportHoldMs` dwell (DEFAULT_REPORT_HOLD_MS when unset).
  * Pointer-inert like the rest of the chrome.
  */
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { AboutSettings } from "@photonsurge/shared/control";
-import { applyReportPrefs, type ReportKind, type ReportSlideId } from "@photonsurge/shared/broadcast-report";
+import {
+  applyReportPrefs,
+  DEFAULT_REPORT_HOLD_MS,
+  type ReportKind,
+  type ReportSlideId,
+} from "@photonsurge/shared/broadcast-report";
 import type { WorldWatchState } from "../../lib/world-watch";
 import { filterFeedByKind } from "../../lib/broadcast";
 import { useAreaForecast } from "../../lib/forecast-client";
@@ -51,6 +56,7 @@ export default function WorldReportDeck({
   reportOrder,
   reportKindsOff,
   about,
+  holdMs = DEFAULT_REPORT_HOLD_MS,
 }: {
   worldWatch: WorldWatchState;
   manifest: WeatherManifest | null;
@@ -65,6 +71,8 @@ export default function WorldReportDeck({
   reportKindsOff?: ReportKind[];
   /** Per-channel ABOUT card copy (ControlState.about) — empty fields fall back to the built-in text. */
   about?: AboutSettings;
+  /** Per-channel rotation dwell in ms (ControlState.reportHoldMs). */
+  holdMs?: number;
 }) {
   const s = worldWatch;
   // The channel's curated rotation: the natural DECK_SLIDES order with this
@@ -78,7 +86,7 @@ export default function WorldReportDeck({
   // Lifted here (not inside the slide) so rotating away and back doesn't
   // re-trigger the global-bbox fetch each cycle.
   const worldReport = useAreaForecast(WORLD_BBOX);
-  const { page } = usePagedSlides(active, 1);
+  const { page } = usePagedSlides(active, 1, holdMs);
   const slide = active[page] ?? active[0];
   // A channel can pare the report to nothing — then render nothing (the whole
   // widget can also be hidden via widgetsOff "worldReport").

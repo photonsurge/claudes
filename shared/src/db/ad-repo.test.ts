@@ -80,6 +80,12 @@ describe("toAd", () => {
     expect(ad.createdAt).toBeUndefined();
     expect(ad.updatedAt).toBeUndefined();
   });
+
+  it("reads pre-placement docs as break-only, and keeps a stored value", () => {
+    expect(toAd(adDoc()).placements).toEqual(["break"]);
+    expect(toAd(adDoc({ placements: [] })).placements).toEqual(["break"]);
+    expect(toAd(adDoc({ placements: ["ticker"] })).placements).toEqual(["ticker"]);
+  });
 });
 
 describe("makeAdRepo.create", () => {
@@ -87,6 +93,7 @@ describe("makeAdRepo.create", () => {
     title: "Sponsor spot",
     status: "active" as const,
     weight: 2,
+    placements: ["break" as const],
     mediaType: "image" as const,
     contentType: "image/png",
     byteSize: 3,
@@ -301,6 +308,16 @@ describe("makeAdRepo.pickForAir", () => {
     expect(model.find).toHaveBeenCalledWith({ status: "active" });
     expect(model.chain.select).toHaveBeenCalledWith("-data");
     expect(ad?.adId).toBe("b");
+  });
+
+  it("never picks a ticker-only sponsor (break placement required)", async () => {
+    const model = modelWith([
+      adDoc({ adId: "mention", placements: ["ticker"], timesShown: 0 }),
+      adDoc({ adId: "creative", placements: ["break", "ticker"], timesShown: 9 }),
+    ]);
+    const ad = await repoWith(model).pickForAir(() => 0);
+    expect(ad?.adId).toBe("creative");
+    expect((await repoWith(modelWith([adDoc({ placements: ["ticker"] })])).pickForAir())).toBeNull();
   });
 
   it("avoids repeating the previous airing among equally-due ads", async () => {

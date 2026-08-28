@@ -2,6 +2,8 @@ import {
   quakeTicker,
   alertTicker,
   trackTicker,
+  volcanoTicker,
+  hazardFilteredAlerts,
   buildTicker,
   dedupeAlerts,
   sortedAlerts,
@@ -99,20 +101,43 @@ describe("ticker line builders", () => {
   it("formats a track with flag + kind", () => {
     expect(trackTicker(track())).toBe("🇺🇸 GLOBAL THUNDER-26 · AIRCRAFT");
   });
+  it("formats a volcano with status + country", () => {
+    expect(volcanoTicker(volcano())).toBe("VOLCANO ERUPTING: Etna · Italy");
+    expect(volcanoTicker(volcano({ status: "unrest", country: undefined }))).toBe(
+      "VOLCANO UNREST: Etna",
+    );
+  });
+});
+
+describe("hazardFilteredAlerts", () => {
+  it("returns the same array when the off-list is empty (stable memo key)", () => {
+    const alerts = [alert(2)];
+    expect(hazardFilteredAlerts(alerts, [])).toBe(alerts);
+  });
+  it("drops alerts whose hazard is on the off-list", () => {
+    const keep = alert(2);
+    const drop = alert(3, { hazard: "heat" as AlertFeature["properties"]["hazard"] });
+    expect(hazardFilteredAlerts([keep, drop], ["heat"])).toEqual([keep]);
+  });
 });
 
 describe("buildTicker", () => {
-  it("orders seismic → alerts → tracks and de-dupes", () => {
+  it("orders seismic → volcanoes → alerts → tracks and de-dupes", () => {
     const items = buildTicker({
       quakes: [quake(), quake()], // identical → one line
+      volcanoes: [volcano()],
       alerts: [alert(2)],
       tracks: [track()],
     });
     expect(items[0]).toContain("SEISMIC");
+    expect(items[1]).toBe("VOLCANO ERUPTING: Etna · Italy");
     expect(items.some((i) => i.includes("Tsunami"))).toBe(true);
     expect(items.some((i) => i.includes("GLOBAL THUNDER"))).toBe(true);
     // The two identical quakes collapse to one.
     expect(items.filter((i) => i.startsWith("SEISMIC")).length).toBe(1);
+  });
+  it("skips dormant volcanoes", () => {
+    expect(buildTicker({ volcanoes: [volcano({ status: "dormant" })] })).toEqual([]);
   });
   it("returns [] with no data", () => {
     expect(buildTicker({})).toEqual([]);

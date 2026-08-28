@@ -9,6 +9,24 @@
 
 export type AdStatus = "active" | "inactive";
 
+/**
+ * Which broadcast surfaces an ad runs on. `break` = the auto-director's
+ * commercial-break interstitial (the creative on screen); `ticker` = a
+ * "Sponsored by …" text mention woven through the bottom crawl (name only —
+ * the media never airs there). One ad can run on several; a doc stored before
+ * this field existed reads as break-only, so the interstitial-era catalog
+ * never leaks into the crawl.
+ */
+export type AdPlacement = "break" | "ticker";
+
+export const AD_PLACEMENTS: AdPlacement[] = ["break", "ticker"];
+
+/** Operator-facing names for each placement (admin UI). */
+export const AD_PLACEMENT_LABELS: Record<AdPlacement, string> = {
+  break: "Ad break",
+  ticker: "Ticker mention",
+};
+
 /** Which kind of creative the bytes are. Drives how the viewer renders it. */
 export type AdMediaType = "image" | "video";
 
@@ -64,6 +82,8 @@ export interface AdMeta {
   clickUrl?: string;
   /** Tiebreaker when multiple ads are equally due in the rotation — higher wins. */
   weight: number;
+  /** Broadcast surfaces this ad runs on (never empty — defaults to ["break"]). */
+  placements: AdPlacement[];
   tags?: string[];
   notes?: string;
 }

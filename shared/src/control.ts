@@ -17,7 +17,14 @@ import {
 import { isHazardType, type HazardType } from "./alerts/hazard";
 import { isWidgetId, type WidgetId } from "./broadcast-widgets";
 import { isSlideId, DEFAULT_SLIDE_HOLD_MS, type SlideId } from "./broadcast-slides";
-import { isReportSlideId, isReportKind, type ReportSlideId, type ReportKind } from "./broadcast-report";
+import {
+  isReportSlideId,
+  isReportKind,
+  DEFAULT_REPORT_HOLD_MS,
+  type ReportSlideId,
+  type ReportKind,
+} from "./broadcast-report";
+import { isTickerKind, type TickerKind } from "./broadcast-ticker";
 import { isPointVar, type PointVar } from "./point-vars";
 
 /** Socket event names (also the worker→browser weather event). */
@@ -602,6 +609,8 @@ export interface ControlState {
   reportOff: ReportSlideId[];
   /** Per-channel ranking for the WORLD REPORT deck slides (stable-sort key). */
   reportOrder: ReportSlideId[];
+  /** WORLD REPORT deck rotation dwell in ms (how long each slide holds). */
+  reportHoldMs: number;
   /**
    * Event KINDS excluded from the WORLD REPORT (empty = all). Drops the kind from
    * BOTH the detection grid and the active feed — how a themed channel's whole
@@ -615,6 +624,18 @@ export interface ControlState {
    * fire channel keeps only "fire", a flood channel drops "fire"/"heat", etc.
    */
   reportHazardsOff: HazardType[];
+  /**
+   * Content KINDS excluded from the bottom crawl (empty = all). Off-list keyed
+   * by TICKER_KINDS ids — scopes the GLOBAL FEED band to the channel's theme
+   * (a seismic channel drops "alert"/"track", an ad-free channel drops "ad").
+   */
+  tickerKindsOff: TickerKind[];
+  /**
+   * Alert HAZARD types excluded from the bottom crawl (empty = all). Crawl-
+   * specific (independent of both the globe overlay's `alertHazardsOff` and the
+   * report's `reportHazardsOff`) — only meaningful while the "alert" kind is on.
+   */
+  tickerHazardsOff: HazardType[];
   /**
    * Weather variables HIDDEN from the POINT / AREA HISTORY card (empty = show
    * all). Off-list keyed by POINT_VARS ids.
@@ -713,8 +734,11 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   slideHoldMs: DEFAULT_SLIDE_HOLD_MS,
   reportOff: [],
   reportOrder: [],
+  reportHoldMs: DEFAULT_REPORT_HOLD_MS,
   reportKindsOff: [],
   reportHazardsOff: [],
+  tickerKindsOff: [],
+  tickerHazardsOff: [],
   pointVarsOff: [],
   themeOverrides: {},
   about: { ...DEFAULT_ABOUT_SETTINGS },
@@ -911,12 +935,22 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
     reportOrder: Array.isArray(patch.reportOrder)
       ? [...new Set(patch.reportOrder.filter(isReportSlideId))]
       : base.reportOrder ?? [],
+    reportHoldMs:
+      typeof patch.reportHoldMs === "number" && patch.reportHoldMs > 0
+        ? patch.reportHoldMs
+        : base.reportHoldMs ?? DEFAULT_REPORT_HOLD_MS,
     reportKindsOff: Array.isArray(patch.reportKindsOff)
       ? [...new Set(patch.reportKindsOff.filter(isReportKind))]
       : base.reportKindsOff ?? [],
     reportHazardsOff: Array.isArray(patch.reportHazardsOff)
       ? [...new Set(patch.reportHazardsOff.filter(isHazardType))]
       : base.reportHazardsOff ?? [],
+    tickerKindsOff: Array.isArray(patch.tickerKindsOff)
+      ? [...new Set(patch.tickerKindsOff.filter(isTickerKind))]
+      : base.tickerKindsOff ?? [],
+    tickerHazardsOff: Array.isArray(patch.tickerHazardsOff)
+      ? [...new Set(patch.tickerHazardsOff.filter(isHazardType))]
+      : base.tickerHazardsOff ?? [],
     pointVarsOff: Array.isArray(patch.pointVarsOff)
       ? [...new Set(patch.pointVarsOff.filter(isPointVar))]
       : base.pointVarsOff ?? [],

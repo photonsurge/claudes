@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import HazardScreen from "./HazardScreen";
 import AboutPanel from "./AboutPanel";
 import WorldReportDeck from "./WorldReportDeck";
@@ -185,6 +185,31 @@ describe("WorldReportDeck per-channel curation", () => {
     );
     expect(screen.getByText("About Storm Watch")).toBeInTheDocument();
     expect(screen.getByText("NOAA GFS")).toBeInTheDocument();
+  });
+
+  it("rotates on the channel's holdMs dwell", () => {
+    jest.useFakeTimers();
+    try {
+      render(
+        <WorldReportDeck
+          worldWatch={emptyWatch}
+          manifest={null}
+          reportOff={["detection", "hourly", "alerts", "about"]}
+          holdMs={5000}
+        />,
+      );
+      expect(screen.getByText("SEISMIC ACTIVITY")).toBeInTheDocument();
+
+      // One dwell short of the hold → still on the first slide.
+      act(() => void jest.advanceTimersByTime(4999));
+      expect(screen.getByText("SEISMIC ACTIVITY")).toBeInTheDocument();
+
+      // Crossing the hold advances to the next curated slide.
+      act(() => void jest.advanceTimersByTime(1));
+      expect(screen.getByText("VOLCANIC ACTIVITY")).toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("renders nothing when every report slide is hidden", () => {

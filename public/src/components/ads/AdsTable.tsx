@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { listAds, setAdStatus, deleteAd } from "../../lib/ads/client";
+import { AD_PLACEMENT_LABELS } from "../../lib/ads/types";
 import type { Ad, AdStatus } from "../../lib/ads/types";
 import { primary, select, th, thNum, td, tdNum, toolbar, asOf } from "../tracks/styles";
 import AdViewer from "./AdViewer";
@@ -113,7 +114,8 @@ export default function AdsTable() {
     }
   };
   const sorted = useTableSort(rows, { title: (a) => a.title, advertiser: (a) => a.advertiser, type: (a) => a.mediaType,
-    size: (a) => a.byteSize, weight: (a) => a.weight, shown: (a) => a.lastShownAt, screen: (a) => a.totalDisplayMs, status: (a) => a.status }, "title");
+    runs: (a) => (a.placements ?? []).join(","), size: (a) => a.byteSize, weight: (a) => a.weight,
+    shown: (a) => a.lastShownAt, screen: (a) => a.totalDisplayMs, status: (a) => a.status }, "title");
 
   return (
     <div>
@@ -149,7 +151,8 @@ export default function AdsTable() {
             <thead>
               <tr style={{ textAlign: "left", color: "#8b95a7" }}>
                 <th style={th}>{sorted.header("title", "Title")}</th><th style={th}>{sorted.header("advertiser", "Advertiser")}</th>
-                <th style={th}>{sorted.header("type", "Type")}</th><th style={thNum}>{sorted.header("size", "Size")}</th>
+                <th style={th}>{sorted.header("type", "Type")}</th><th style={th}>{sorted.header("runs", "Runs in")}</th>
+                <th style={thNum}>{sorted.header("size", "Size")}</th>
                 <th style={thNum}>{sorted.header("weight", "Weight")}</th><th style={th}>{sorted.header("shown", "Last shown")}</th>
                 <th style={th}>{sorted.header("screen", "On screen")}</th><th style={th}>{sorted.header("status", "Status")}</th>
                 <th style={th}></th>
@@ -167,6 +170,9 @@ export default function AdsTable() {
                     <td style={td}>{a.title}</td>
                     <td style={{ ...td, color: "#8b95a7" }}>{a.advertiser ?? "—"}</td>
                     <td style={{ ...td, color: "#8b95a7" }}>{a.mediaType}</td>
+                    <td style={{ ...td, color: "#8b95a7", whiteSpace: "nowrap" }}>
+                      {(a.placements ?? ["break"]).map((p) => AD_PLACEMENT_LABELS[p]).join(" · ")}
+                    </td>
                     <td style={tdNum}>{fmtBytes(a.byteSize)}</td>
                     <td style={tdNum}>{a.weight}</td>
                     <td style={{ ...td, color: "#8b95a7", whiteSpace: "nowrap" }} title={a.timesShown ? `${a.timesShown}× total` : "never aired"}>
@@ -199,7 +205,7 @@ export default function AdsTable() {
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td style={td} colSpan={9}>
+                  <td style={td} colSpan={10}>
                     {loading ? "Loading…" : "No ads yet — add one above."}
                   </td>
                 </tr>

@@ -24,6 +24,9 @@ export function toAd(doc: iAdModel): Ad {
     advertiser: doc.advertiser,
     clickUrl: doc.clickUrl,
     weight: doc.weight,
+    // Docs stored before the field existed are break-only — the surface the
+    // whole catalog was built for — so the wire shape always carries it.
+    placements: doc.placements && doc.placements.length ? doc.placements : ["break"],
     tags: doc.tags && doc.tags.length ? doc.tags : undefined,
     notes: doc.notes,
     storage: doc.storage,
@@ -74,6 +77,7 @@ export function makeAdRepo(model: Model<iAdModel>, blobs: InlineBlobStore) {
         advertiser: input.advertiser,
         clickUrl: input.clickUrl,
         weight: input.weight,
+        placements: input.placements,
         tags: input.tags,
         notes: input.notes,
         storage: input.storage ?? "inline",
@@ -174,12 +178,14 @@ export function makeAdRepo(model: Model<iAdModel>, blobs: InlineBlobStore) {
      * repeats (director commercial break). `excludeAdId` (the previous airing)
      * is a last-resort tiebreaker so two breaks in a row don't repeat the same
      * ad, unless it's the only active one. Returns null when nothing is
-     * active. Pure selection lives in `pickAdForAir`; the repo just supplies
-     * the active pool (no bytes).
+     * active. Only ads placed on the `break` surface are candidates — a
+     * ticker-only sponsor never takes over the screen. Pure selection lives in
+     * `pickAdForAir`; the repo just supplies the pool (no bytes).
      */
     async pickForAir(rng?: () => number, excludeAdId?: string): Promise<Ad | null> {
       const active = await this.list({ status: "active" });
-      return pickAdForAir(active, rng, excludeAdId);
+      const breaks = active.filter((a) => a.placements.includes("break"));
+      return pickAdForAir(breaks, rng, excludeAdId);
     },
 
     /**
