@@ -26,6 +26,23 @@ describe("BrandPanel", () => {
     expect(banner.querySelector("mask")).not.toBeInTheDocument();
   });
 
+  it("applies the scene theme's dedicated G.O.D.S. palette", () => {
+    const theme = {
+      ...BROADCAST_THEMES.command,
+      godsPanelTopColor: "#112233",
+      godsPanelMidColor: "#223344",
+      godsPanelBottomColor: "#334455",
+      godsBorderColor: "#445566",
+    };
+    render(<BrandPanel theme={theme} />);
+    const banner = screen.getByRole("img");
+
+    for (const color of ["#112233", "#223344", "#334455"]) {
+      expect(banner.querySelector(`stop[stop-color="${color}"]`)).toBeInTheDocument();
+    }
+    expect(banner.querySelector(`path[stroke="${theme.godsBorderColor}"]`)).toBeInTheDocument();
+  });
+
   it("embeds the live locator globe behind the banner when liveGlobe is set", async () => {
     const getContext = jest
       .spyOn(HTMLCanvasElement.prototype, "getContext")

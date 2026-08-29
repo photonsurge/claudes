@@ -42,6 +42,20 @@ export interface BroadcastTheme {
   tickerBg: string;
   /** Ticker crawl text ink. */
   tickerText: string;
+  /** G.O.D.S. masthead SVG panel gradient colours. */
+  godsPanelTopColor: string;
+  godsPanelMidColor: string;
+  godsPanelBottomColor: string;
+  /** G.O.D.S. masthead bezel / panel hairline colour. */
+  godsBorderColor: string;
+  /** Locator minimap palette. */
+  minimapOceanInnerColor: string;
+  minimapOceanOuterColor: string;
+  minimapLandColor: string;
+  minimapLandEdgeColor: string;
+  minimapGridColor: string;
+  minimapLimbColor: string;
+  minimapAccentColor: string;
 }
 
 /** Ink + furniture tokens shared by every preset — identical across presets
@@ -54,6 +68,17 @@ export const BASE_LOOK = {
   liveColor: "#ff3b3b",
   tickerBg: "linear-gradient(180deg, rgba(6,10,18,0.74), rgba(4,7,13,0.7))",
   tickerText: "#dfe7f5",
+  godsPanelTopColor: "#0e1e29",
+  godsPanelMidColor: "#081420",
+  godsPanelBottomColor: "#0a1a24",
+  godsBorderColor: "#1d4354",
+  minimapOceanInnerColor: "#101c30",
+  minimapOceanOuterColor: "#070d18",
+  minimapLandColor: "#547498",
+  minimapLandEdgeColor: "#a5c0dc",
+  minimapGridColor: "#8298b2",
+  minimapLimbColor: "#96b0ce",
+  minimapAccentColor: "#4dc8ff",
 };
 
 export const BROADCAST_THEMES: Record<string, BroadcastTheme> = {

@@ -158,7 +158,14 @@ export default function BrandPanel({
           )}
           <GodsBanner
             accent={theme.accent}
+            border={theme.godsBorderColor}
+            panelTopColor={theme.godsPanelTopColor}
+            panelMidColor={theme.godsPanelMidColor}
+            panelBottomColor={theme.godsPanelBottomColor}
             titleColor={theme.titleColor}
+            textColor={theme.textColor}
+            mutedColor={theme.mutedColor}
+            dimColor={theme.dimColor}
             label={`${theme.name} ${theme.tagline}`}
             width={bannerWidth}
             liveCore={!!liveGlobe}

@@ -6,6 +6,11 @@ import { render, screen, within } from "@testing-library/react";
 import { getBroadcastTheme } from "../../broadcast/config";
 import ThemePreview from "./ThemePreview";
 
+jest.mock("../../broadcast/SubGlobeWidget", () => ({
+  __esModule: true,
+  default: () => <canvas data-testid="theme-minimap" />,
+}));
+
 describe("ThemePreview", () => {
   it("renders the resolved brand through the real chrome components", () => {
     const theme = getBroadcastTheme("command", { name: "ZED CHANNEL", tickerTitle: "ZED TAPE" });

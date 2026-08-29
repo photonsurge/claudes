@@ -7,9 +7,16 @@ export interface GodsBannerProps {
   accent?: string;
   /** Panel fill / border tone. */
   border?: string;
+  panelTopColor?: string;
+  panelMidColor?: string;
+  panelBottomColor?: string;
   title?: string;
   /** Main title ink; defaults to the artwork's off-white. */
   titleColor?: string;
+  /** Status/readout ink tokens supplied by the scene theme. */
+  textColor?: string;
+  mutedColor?: string;
+  dimColor?: string;
   /** Left-to-right status chips; the first is treated as active. */
   channels?: string[];
   /** Coordinate readout, e.g. { lat: -15.389, lon: 167.835 }. */
@@ -113,8 +120,14 @@ function useCountdown(nextAt?: number | null) {
 export default function GodsBanner({
   accent = "#3fd0ff",
   border = "#1d4354",
+  panelTopColor = "#0e1e29",
+  panelMidColor = "#081420",
+  panelBottomColor = "#0a1a24",
   title = "GLOBAL ORBITAL DETECTION SYSTEM",
   titleColor = "#e9f3f7",
+  textColor = "#c4d6de",
+  mutedColor = "#a8c0cb",
+  dimColor = "#6f9aaa",
   channels = [],
   coords = null,
   version,
@@ -149,9 +162,9 @@ export default function GodsBanner({
       <defs>
         <style>{KEYFRAMES}</style>
         <linearGradient id={id("panel")} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#0e1e29" />
-          <stop offset="0.5" stopColor="#081420" />
-          <stop offset="1" stopColor="#0a1a24" />
+          <stop offset="0" stopColor={panelTopColor} />
+          <stop offset="0.5" stopColor={panelMidColor} />
+          <stop offset="1" stopColor={panelBottomColor} />
         </linearGradient>
         <linearGradient id={id("hairline")} x1="0" y1="0" x2="1" y2="0">
           <stop offset="0" stopColor={accent} stopOpacity="0.06" />
@@ -176,20 +189,6 @@ export default function GodsBanner({
             <mask id={id("hole")}>
               <rect x="0" y="0" width="1400" height="320" fill="#ffffff" />
               <circle cx="176" cy="160" r="138" fill="#000000" />
-            </mask>
-            {/* Orbital occlusion for the ring ellipses: hide them where they
-                are BOTH inside the planet's disc (limb r=140) AND on the back
-                half of the ring plane (local y<0 in the ring's -27° frame) —
-                the far arc ducks behind the planet, the near arc still crosses
-                in front of it. */}
-            <clipPath id={id("core-clip")}>
-              <circle cx="176" cy="160" r="140" />
-            </clipPath>
-            <mask id={id("ring-back")}>
-              <rect x="0" y="0" width="1400" height="320" fill="#ffffff" />
-              <g clipPath={`url(#${id("core-clip")})`}>
-                <rect x="-160" y="-160" width="320" height="160" fill="#000000" transform="translate(176 160) rotate(-27)" />
-              </g>
             </mask>
           </>
         )}
@@ -216,7 +215,7 @@ export default function GodsBanner({
 
       <g data-layer="globe-bezel" fill="none">
         <circle cx="176" cy="160" r="158" stroke={border} strokeWidth="2.4" />
-        <circle cx="176" cy="160" r="152" stroke="#173445" strokeWidth="1.4" />
+        <circle cx="176" cy="160" r="152" stroke={border} strokeWidth="1.4" opacity="0.78" />
         <circle
           data-gods-anim=""
           cx="176"
@@ -233,7 +232,7 @@ export default function GodsBanner({
           cx="176"
           cy="160"
           r="146"
-          stroke="#2a5f76"
+          stroke={border}
           strokeWidth="6"
           strokeDasharray="36 230"
           style={{ transformOrigin: "176px 160px", ...anim("gbSpinRev 18s linear infinite") }}
@@ -248,8 +247,10 @@ export default function GodsBanner({
           <path d="M64 272 l16 -16" />
           <path d="M288 272 l-16 -16" />
         </g>
-        <g mask={liveCore ? `url(#${id("ring-back")})` : undefined}>
-          <ellipse cx="176" cy="160" rx="180" ry="62" transform="rotate(-27 176 160)" stroke="#dff6fd" strokeWidth="2.4" opacity="0.9" />
+        {/* Keep the entire orbit visible over the live globe. Occluding its
+            back half looked like broken artwork after stream compression. */}
+        <g>
+          <ellipse cx="176" cy="160" rx="180" ry="62" transform="rotate(-27 176 160)" stroke={titleColor} strokeWidth="2.4" opacity="0.9" />
           <ellipse
             data-gods-anim=""
             cx="176"
@@ -269,12 +270,12 @@ export default function GodsBanner({
       {(ticker || countdown) && (
         <g data-layer="ticker" style={{ userSelect: "none" }}>
           <path d="M382 232 l9 -6 v12 z" fill={accent} opacity="0.8" />
-          <text x="402" y="236" fill="#5b8496" fontFamily={MONO} fontSize="14" letterSpacing="1.4">
+          <text x="402" y="236" fill={dimColor} fontFamily={MONO} fontSize="14" letterSpacing="1.4">
             {ticker}
           </text>
           {/* Countdown to the next cut replaces the tape filler while live —
               both anchored right so a long up-next line can't collide. */}
-          <text x="1146" y="236" textAnchor="end" fill={countdown ? "#7f9dab" : "#41647a"} fontFamily={MONO} fontSize="13" letterSpacing="1.4">
+          <text x="1146" y="236" textAnchor="end" fill={countdown ? mutedColor : dimColor} fontFamily={MONO} fontSize="13" letterSpacing="1.4">
             {countdown
               ? `NEXT IN ${countdown}`
               : version
@@ -285,7 +286,7 @@ export default function GodsBanner({
       )}
 
       <g data-layer="title" style={{ userSelect: "none" }}>
-        <text x="382" y="112" fill={titleColor} fontFamily={SANS} fontSize="48" fontWeight="500" letterSpacing="1.5" textLength="860" lengthAdjust="spacing">
+        <text x="340" y="113" fill={titleColor} fontFamily={SANS} fontSize="56" fontWeight="600" letterSpacing="0">
           {title}
         </text>
         <path d="M384 138 H1340" stroke={`url(#${id("hairline")})`} strokeWidth="1.6" />
@@ -295,16 +296,16 @@ export default function GodsBanner({
       </g>
 
       <g data-layer="status" style={{ userSelect: "none" }}>
-        <rect data-gods-anim="" x="384" y="152" width="9" height="9" fill={accent} style={anim("gbPulse 1.8s ease-in-out infinite")} />
+        <rect data-gods-anim="" x="384" y="144" width="9" height="9" fill={accent} style={anim("gbPulse 1.8s ease-in-out infinite")} />
         {channels.map((channel, i) => (
           <text
             key={channel}
             x={408 + i * 154}
-            y="162"
-            fill={i === 0 ? accent : "#7d97a4"}
+            y="159"
+            fill={i === 0 ? accent : mutedColor}
             fontFamily={SANS}
-            fontSize="20"
-            fontWeight={i === 0 ? 600 : 400}
+            fontSize="30"
+            fontWeight={i === 0 ? 600 : 500}
             letterSpacing="4.5"
           >
             {channel}
@@ -313,27 +314,27 @@ export default function GodsBanner({
         <path d="M846 157 H884" stroke={border} strokeWidth="1.4" />
         {coords && (
           <>
-            <text x="906" y="163" fill="#41647a" fontFamily={MONO} fontSize="15" letterSpacing="1.2">
+            <text x="892" y="163" fill={dimColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
               LAT
             </text>
-            <text x="946" y="163" fill="#9fb8c4" fontFamily={MONO} fontSize="15" letterSpacing="1.2">
+            <text x="938" y="163" fill={textColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
               {coords.lat.toFixed(3)}
             </text>
-            <text x="1052" y="163" fill="#41647a" fontFamily={MONO} fontSize="15" letterSpacing="1.2">
+            <text x="1028" y="163" fill={dimColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
               LON
             </text>
-            <text x="1092" y="163" fill="#9fb8c4" fontFamily={MONO} fontSize="15" letterSpacing="1.2">
+            <text x="1074" y="163" fill={textColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
               {coords.lon.toFixed(3)}
             </text>
           </>
         )}
         {clock && (
           <>
-            <path d="M1196 150 v16" stroke={border} strokeWidth="1.4" />
-            <text x="1340" y="163" textAnchor="end" fill="#9fb8c4" fontFamily={MONO} fontSize="15" letterSpacing="1.2">
+            <path d="M1184 150 v16" stroke={border} strokeWidth="1.4" />
+            <text x="1340" y="163" textAnchor="end" fill={textColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
               {times.utc}
             </text>
-            <text x="1340" y="184" textAnchor="end" fill="#7f9dab" fontFamily={MONO} fontSize="13" letterSpacing="1.2">
+            <text x="1340" y="184" textAnchor="end" fill={mutedColor} fontFamily={MONO} fontSize="17" fontWeight="500" letterSpacing="0.8">
               {times.cities}
             </text>
           </>

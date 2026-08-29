@@ -45,7 +45,11 @@ export default function ThemePreview({ theme }: { theme: BroadcastTheme }) {
       >
         <BroadcastThemeContext.Provider value={theme}>
           {/* Masthead identity; shot/map status lives in the surrounding chrome. */}
-          <BrandPanel theme={theme} />
+          <BrandPanel
+            theme={theme}
+            liveGlobe={{ center: [0, 20], zoom: 2.5, accent: theme.minimapAccentColor }}
+            channels={["WEATHER"]}
+          />
           {/* The crawl self-positions absolutely — give it a band to live in. */}
           <Box sx={{ position: "relative", alignSelf: "stretch", height: 30 }}>
             <Ticker title={theme.tickerTitle} items={SAMPLE_TICKER} edge="top" />

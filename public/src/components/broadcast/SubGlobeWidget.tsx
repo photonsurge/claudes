@@ -2,7 +2,7 @@
 
 /**
  * "SUB-GLOBE" — the little always-on locator planet: a true orthographic
- * hemisphere centred on where the main globe is parked, with a kind-accent
+ * hemisphere centred on where the main globe is parked, with a theme-coloured
  * reticle whose ring tightens as the shot pushes in. It lives INSIDE the
  * G.O.D.S. masthead now — BrandPanel sinks it behind GodsBanner's liveCore
  * hole so the banner's rings/ellipse read as its bezel (the old bottom-left
@@ -33,6 +33,7 @@ import {
   wrapLng,
   type LonLat,
   type SubGlobeCamera,
+  type SubGlobePalette,
 } from "./subglobe-render";
 
 /** ~12fps: a locator, not a game — invisible at this size, negligible CPU. */
@@ -62,7 +63,7 @@ export default function SubGlobeWidget({
   autoSpin?: boolean;
   spinSpeed?: number;
   spinEpoch?: number;
-  /** On-air kind accent — the reticle colour (defaults to the theme accent). */
+  /** Optional reticle override; defaults to the scene theme's minimap accent. */
   accent?: string;
   theme?: BroadcastTheme;
   /** Planet diameter in 1080p design px. */
@@ -77,7 +78,15 @@ export default function SubGlobeWidget({
   /** Hide the lon/lat readout line — canvas only (the in-logo variant). */
   showReadout?: boolean;
 }) {
-  const reticle = accent ?? theme.accent;
+  const reticle = accent ?? theme.minimapAccentColor;
+  const palette: SubGlobePalette = {
+    oceanInner: theme.minimapOceanInnerColor,
+    oceanOuter: theme.minimapOceanOuterColor,
+    land: theme.minimapLandColor,
+    landEdge: theme.minimapLandEdgeColor,
+    grid: theme.minimapGridColor,
+    limb: theme.minimapLimbColor,
+  };
   // Fixed 2× backing store — crisp through the 1080p stage scale on a 4K out.
   const canvasPx = size * 2;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -87,8 +96,8 @@ export default function SubGlobeWidget({
   // Where the planet is currently pointed (imperative — never React state).
   const shownRef = useRef<SubGlobeCamera>({ lng: wrapLng(center[0]), lat: center[1], zoom });
   // Fresh props for the tick without re-subscribing the interval.
-  const propsRef = useRef({ center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land, tiltDeg, panDeg });
-  propsRef.current = { center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land, tiltDeg, panDeg };
+  const propsRef = useRef({ center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land, tiltDeg, panDeg, palette });
+  propsRef.current = { center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land, tiltDeg, panDeg, palette };
 
   useEffect(() => {
     let alive = true;
@@ -100,7 +109,7 @@ export default function SubGlobeWidget({
     };
   }, []);
 
-  // One immediate paint per (land, accent) so the corner is never blank
+  // One immediate paint per (land, palette/accent) so the corner is never blank
   // between the mount and the first tick.
   useEffect(() => {
     paint();
@@ -112,7 +121,7 @@ export default function SubGlobeWidget({
     const g = canvas?.getContext("2d");
     if (!canvas || !g) return; // jsdom / lost context — the readout still renders
     const p = propsRef.current;
-    drawSubGlobe(g, canvasPx, shownRef.current, p.land ?? [], p.reticle, p.tiltDeg, p.panDeg);
+    drawSubGlobe(g, canvasPx, shownRef.current, p.land ?? [], p.reticle, p.tiltDeg, p.panDeg, p.palette);
     if (readoutRef.current) {
       readoutRef.current.textContent = formatLonLat(shownRef.current.lng, shownRef.current.lat);
     }

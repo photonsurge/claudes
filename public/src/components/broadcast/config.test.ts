@@ -22,9 +22,16 @@ describe("getBroadcastTheme", () => {
   });
 
   it("layers the ink tokens like any other field", () => {
-    const t = getBroadcastTheme("command", { titleColor: "#ffffff", tickerBg: "red" });
+    const t = getBroadcastTheme("command", {
+      titleColor: "#ffffff",
+      tickerBg: "red",
+      godsPanelMidColor: "#123456",
+      minimapLandColor: "#abcdef",
+    });
     expect(t.titleColor).toBe("#ffffff");
     expect(t.tickerBg).toBe("red");
+    expect(t.godsPanelMidColor).toBe("#123456");
+    expect(t.minimapLandColor).toBe("#abcdef");
     // An untouched token still comes from the preset's BASE_LOOK.
     expect(t.liveColor).toBe(BASE_LOOK.liveColor);
   });

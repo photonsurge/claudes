@@ -116,6 +116,22 @@ describe("drawSubGlobe", () => {
     expect(calls(g, "stroke")).toBeGreaterThan(0);
   });
 
+  it("uses the supplied scene-theme ocean palette", () => {
+    const g = stubCtx();
+    drawSubGlobe(g, 720, { lng: 0, lat: 0, zoom: 3 }, [], "#abcdef", 0, 0, {
+      oceanInner: "#111111",
+      oceanOuter: "#222222",
+      land: "#333333",
+      landEdge: "#444444",
+      grid: "#555555",
+      limb: "#666666",
+    });
+
+    const gradient = (g.createRadialGradient as jest.Mock).mock.results[0].value;
+    expect(gradient.addColorStop).toHaveBeenNthCalledWith(1, 0, "#111111");
+    expect(gradient.addColorStop).toHaveBeenNthCalledWith(2, 1, "#222222");
+  });
+
   it("horizon-clips rings: far-side land draws nothing, straddling land rides the limb", () => {
     // A ring fully behind the planet contributes NO path at all — the old
     // clamp-to-limb shortcut swept it across the disc as a giant false wedge.

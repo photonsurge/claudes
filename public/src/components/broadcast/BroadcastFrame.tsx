@@ -880,7 +880,7 @@ export default function BroadcastFrame({
                 autoSpin: state.autoSpin,
                 spinSpeed: state.spinSpeed,
                 spinEpoch: state.spinEpoch,
-                accent: onAirSegment ? (KIND_COLOR[onAirSegment.kind] ?? theme.accent) : theme.accent,
+                accent: theme.minimapAccentColor,
               }}
               ticker={upNext.length ? `UP NEXT · ${upNextLabel(upNext[0]).toUpperCase()}` : ""}
               nextCutAt={nextCutAt}

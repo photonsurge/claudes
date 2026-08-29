@@ -1,6 +1,6 @@
 // Pure math + canvas drawing for the SUB-GLOBE locator slide: a true
 // orthographic hemisphere centred on the camera anchor, land silhouette +
-// graticule + a kind-accent reticle whose ring tightens with zoom. Everything
+// graticule + a scene-theme reticle whose ring tightens with zoom. Everything
 // here is deterministic in its inputs (no Date.now, no fetch) so the panel's
 // tick loop owns time and the tests can pin the projection exactly.
 
@@ -114,15 +114,25 @@ export interface SubGlobeCamera {
   zoom: number;
 }
 
-/** Fixed night-nav palette — deliberately theme-independent so the little
- *  planet reads the same on every channel; only the reticle takes the on-air
- *  kind's accent. */
-const OCEAN_IN = "rgba(16,28,48,0.95)";
-const OCEAN_OUT = "rgba(7,13,24,0.95)";
-const LAND_FILL = "rgba(84,116,152,0.85)";
-const LAND_EDGE = "rgba(165,192,220,0.35)";
-const GRATICULE = "rgba(130,152,178,0.16)";
-const LIMB = "rgba(150,176,206,0.45)";
+/** Scene-theme palette for the locator planet. Opacity stays part of the
+ * renderer so the admin colour fields can use ordinary hex/CSS colours. */
+export interface SubGlobePalette {
+  oceanInner: string;
+  oceanOuter: string;
+  land: string;
+  landEdge: string;
+  grid: string;
+  limb: string;
+}
+
+export const DEFAULT_SUBGLOBE_PALETTE: SubGlobePalette = {
+  oceanInner: "#101c30",
+  oceanOuter: "#070d18",
+  land: "#547498",
+  landEdge: "#a5c0dc",
+  grid: "#8298b2",
+  limb: "#96b0ce",
+};
 
 /** Exact horizon crossing on the edge a→b (cosc straddles 0): dot(v, view) is
  *  linear along the 3D chord and normalisation preserves its sign, so the
@@ -170,6 +180,7 @@ export function drawSubGlobe(
   accent: string,
   tiltDeg = 0,
   panDeg = 0,
+  palette: SubGlobePalette = DEFAULT_SUBGLOBE_PALETTE,
 ): void {
   const c = size / 2;
   const r = c - size * 0.03;
@@ -183,12 +194,15 @@ export function drawSubGlobe(
 
   // Ocean disc — a soft radial falloff so the sphere reads as lit, not flat.
   const fill = g.createRadialGradient(c - r * 0.25, c - r * 0.3, r * 0.1, c, c, r);
-  fill.addColorStop(0, OCEAN_IN);
-  fill.addColorStop(1, OCEAN_OUT);
+  fill.addColorStop(0, palette.oceanInner);
+  fill.addColorStop(1, palette.oceanOuter);
   g.beginPath();
   g.arc(c, c, r, 0, Math.PI * 2);
   g.fillStyle = fill;
+  g.save();
+  g.globalAlpha = 0.95;
   g.fill();
+  g.restore();
 
   // Everything on the sphere clips to the disc.
   g.save();
@@ -247,15 +261,22 @@ export function drawSubGlobe(
     }
     g.closePath();
   }
-  g.fillStyle = LAND_FILL;
+  g.fillStyle = palette.land;
+  g.save();
+  g.globalAlpha = 0.85;
   g.fill();
-  g.strokeStyle = LAND_EDGE;
+  g.restore();
+  g.strokeStyle = palette.landEdge;
   g.lineWidth = size / 480;
+  g.save();
+  g.globalAlpha = 0.35;
   g.stroke();
+  g.restore();
 
   // Graticule — 30° mesh, segments broken at the horizon.
-  g.strokeStyle = GRATICULE;
+  g.strokeStyle = palette.grid;
   g.lineWidth = size / 600;
+  g.globalAlpha = 0.16;
   const stroke = (points: LonLat[]) => {
     g.beginPath();
     let pen = false;
@@ -281,14 +302,18 @@ export function drawSubGlobe(
     for (let lat = -90; lat <= 90; lat += 3) line.push([lng, lat]);
     stroke(line);
   }
+  g.globalAlpha = 1;
   g.restore();
 
   // Limb.
   g.beginPath();
   g.arc(c, c, r, 0, Math.PI * 2);
-  g.strokeStyle = LIMB;
+  g.strokeStyle = palette.limb;
   g.lineWidth = size / 360;
+  g.save();
+  g.globalAlpha = 0.45;
   g.stroke();
+  g.restore();
 
   // Reticle — anchored on the camera point's projected position (disc centre
   // only when untilted). The footprint ring is a TRUE ground circle: sampled

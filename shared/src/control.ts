@@ -378,6 +378,20 @@ export interface ThemeOverrides {
   tickerBg?: string;
   /** Ticker crawl text ink. */
   tickerText?: string;
+  /** G.O.D.S. masthead SVG panel gradient colours. */
+  godsPanelTopColor?: string;
+  godsPanelMidColor?: string;
+  godsPanelBottomColor?: string;
+  /** G.O.D.S. masthead bezel / panel hairline colour. */
+  godsBorderColor?: string;
+  /** Locator minimap ocean gradient, land fill, and reticle colours. */
+  minimapOceanInnerColor?: string;
+  minimapOceanOuterColor?: string;
+  minimapLandColor?: string;
+  minimapLandEdgeColor?: string;
+  minimapGridColor?: string;
+  minimapLimbColor?: string;
+  minimapAccentColor?: string;
 }
 
 /** The keys sanitised through mergeControlState / persisted for a theme override. */
@@ -397,6 +411,17 @@ export const THEME_OVERRIDE_KEYS = [
   "liveColor",
   "tickerBg",
   "tickerText",
+  "godsPanelTopColor",
+  "godsPanelMidColor",
+  "godsPanelBottomColor",
+  "godsBorderColor",
+  "minimapOceanInnerColor",
+  "minimapOceanOuterColor",
+  "minimapLandColor",
+  "minimapLandEdgeColor",
+  "minimapGridColor",
+  "minimapLimbColor",
+  "minimapAccentColor",
 ] as const;
 
 /** Idle-motion defaults: a gentle 3° orbit + quarter-level breathe over a minute

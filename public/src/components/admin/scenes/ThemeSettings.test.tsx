@@ -14,6 +14,11 @@ jest.mock("../../../lib/scenes", () => ({
 import { fetchSceneState } from "../../../lib/scenes";
 const mockFetch = fetchSceneState as jest.MockedFunction<typeof fetchSceneState>;
 
+jest.mock("../../broadcast/SubGlobeWidget", () => ({
+  __esModule: true,
+  default: () => <canvas data-testid="theme-minimap" />,
+}));
+
 beforeEach(() => {
   patch.mockClear();
   mockFetch.mockResolvedValue({ state: { ...DEFAULT_CONTROL_STATE }, tokenError: false });
@@ -76,6 +81,23 @@ describe("ThemeSettings", () => {
     });
     expect(patch).toHaveBeenLastCalledWith("wind", {
       themeOverrides: { tickerBg: "linear-gradient(#000, #111)" },
+    });
+  });
+
+  it("persists G.O.D.S. and minimap palette overrides from the advanced form", async () => {
+    render(<ThemeSettings sceneId="wind" />);
+    await screen.findByRole("textbox", { name: "Brand name" });
+    fireEvent.click(screen.getByRole("button", { name: "Advanced…" }));
+
+    fireEvent.change(screen.getByRole("textbox", { name: "G.O.D.S. panel top" }), {
+      target: { value: "#112233" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Minimap land colour" }), {
+      target: { value: "#445566" },
+    });
+
+    expect(patch).toHaveBeenLastCalledWith("wind", {
+      themeOverrides: { godsPanelTopColor: "#112233", minimapLandColor: "#445566" },
     });
   });
 
