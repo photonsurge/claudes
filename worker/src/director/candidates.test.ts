@@ -358,7 +358,9 @@ describe("buildCandidates", () => {
       },
     ];
     const recent = await buildCandidates(fakeDb({ alerts: alert(new Date().toISOString()) }), cfg());
-    expect(recent.find((c) => c.segment.kind === "storm")!.breaking).toBe(true);
+    const recentStorm = recent.find((c) => c.segment.kind === "storm")!;
+    expect(recentStorm.breaking).toBe(true);
+    expect(recentStorm.areaKey).toBe("country:US");
 
     // Ingested an hour ago — no longer breaking, even though NWS re-stamped the onset
     // just now (national met services do this on every refresh of an ongoing warning).

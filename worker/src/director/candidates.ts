@@ -38,6 +38,7 @@ import { regionShot } from "@photonsurge/shared/director-regions";
 import type { iCountryModel } from "@photonsurge/shared/db/country-model";
 import { adMediaPath } from "@photonsurge/shared/ads/types";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
+import { alertCountryCode } from "@photonsurge/shared/alerts/country";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
 import { quakeSegmentContent, alertSegmentContent, volcanoSegmentContent, volcanoTrackInfo } from "@photonsurge/shared/segments";
@@ -687,7 +688,17 @@ export async function buildCandidates(
         seg.icon = c.icon;
         seg.details = c.details;
         const breaking = !Number.isNaN(firstSeenMs) && now - firstSeenMs <= BREAKING_NEWS_WINDOW_MS;
-        pool.push({ score: 50 + sev * 12, segment: seg, breaking });
+        // Country is the editorial area for alert rotation. A numeric camera
+        // distance alone is too weak here: large countries (notably Kazakhstan)
+        // can have alerts many degrees apart while still looking like the same
+        // repeated destination on air.
+        const countryCode = alertCountryCode(a);
+        pool.push({
+          score: 50 + sev * 12,
+          segment: seg,
+          breaking,
+          areaKey: countryCode ? `country:${countryCode}` : undefined,
+        });
       }
     } catch {
       /* alerts not ingested — skip */

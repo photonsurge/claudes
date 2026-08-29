@@ -37,6 +37,12 @@ export interface Candidate {
   /** Higher = more newsworthy. Kept for the "coming up" preview, not selection. */
   score: number;
   /**
+   * Stable editorial area for variety within one kind (for example `country:KZ`
+   * on a Kazakhstan weather alert). When absent, located shots fall back to a
+   * coarse geographic cell derived from their camera centre.
+   */
+  areaKey?: string;
+  /**
    * Eligible to preempt fair rotation via `selectPriority` (see PRIORITY_KINDS).
    * Defaults to true when omitted. Set false for a priority-kind candidate that's
    * merely unaired-this-session but not actually recent — e.g. a backlog of
@@ -65,6 +71,8 @@ export interface SelectOpts {
   isFirst?: boolean;
   /** [lng,lat] centers of recently-aired located shots, for the geo cooldown. */
   recentCenters?: [number, number][];
+  /** Last area aired by each kind, so a kind returns somewhere else next time. */
+  lastAreaByKind?: ReadonlyMap<SegmentKind, string>;
   geoCooldownDeg?: number;
   /**
    * Relative airtime multiplier per kind (DirectorConfig.kindWeights); absent
@@ -72,6 +80,37 @@ export interface SelectOpts {
    * unchanged.
    */
   kindWeights?: Partial<Record<SegmentKind, number>>;
+}
+
+/**
+ * Area identity used by the per-kind variety rule. Candidate builders can
+ * provide a semantic key (alerts use their country); other located subjects use
+ * a deliberately broad cell so a later cut of the same kind moves to a visibly
+ * different part of the map. World-view kinds have no geographic identity.
+ */
+export function candidateAreaKey(candidate: Candidate): string | undefined {
+  if (GLOBAL_KINDS.has(candidate.segment.kind)) return undefined;
+  if (candidate.areaKey) return candidate.areaKey;
+  const [rawLng, rawLat] = candidate.segment.camera.center;
+  if (!Number.isFinite(rawLng) || !Number.isFinite(rawLat)) return undefined;
+  const lng = ((((rawLng + 180) % 360) + 360) % 360) - 180;
+  const lat = Math.max(-90, Math.min(90, rawLat));
+  const lngCell = Math.min(11, Math.floor((lng + 180) / 30));
+  const latCell = Math.min(8, Math.floor((lat + 90) / 20));
+  return `cell:${lngCell}:${latCell}`;
+}
+
+/** Prefer a different area from the last airing of this kind, but never empty
+ * the pool when all currently available candidates are in that one area. */
+function withoutLastArea(
+  candidates: Candidate[],
+  kind: SegmentKind,
+  lastAreaByKind?: ReadonlyMap<SegmentKind, string>,
+): Candidate[] {
+  const lastArea = lastAreaByKind?.get(kind);
+  if (!lastArea) return candidates;
+  const elsewhere = candidates.filter((candidate) => candidateAreaKey(candidate) !== lastArea);
+  return elsewhere.length > 0 ? elsewhere : candidates;
 }
 
 /** Great-circle-ish degree gap with longitude wrap (good enough for cooldown). */
@@ -131,13 +170,15 @@ export const PRIORITY_KINDS: SegmentKind[] = ["quake", "storm", "volcano"];
 export function selectPriority(
   pool: Candidate[],
   counts: Map<string, number>,
-  opts?: { cooldown?: boolean },
+  opts?: { cooldown?: boolean; lastAreaByKind?: ReadonlyMap<SegmentKind, string> },
 ): Segment | null {
   if (opts?.cooldown) return null;
   for (const kind of PRIORITY_KINDS) {
-    const unaired = pool
-      .filter((c) => c.segment.kind === kind && !counts.has(c.segment.id) && c.breaking !== false)
-      .sort((a, b) => b.score - a.score);
+    const unaired = withoutLastArea(
+      pool.filter((c) => c.segment.kind === kind && !counts.has(c.segment.id) && c.breaking !== false),
+      kind,
+      opts?.lastAreaByKind,
+    ).sort((a, b) => b.score - a.score);
     if (unaired.length > 0) return unaired[0].segment;
   }
   return null;
@@ -179,6 +220,7 @@ export function selectNext(pool: Candidate[], opts: SelectOpts): Segment | null 
   // 3. Within the kind: spread regions out (geo cooldown), then pick at random
   //    among the least-aired so we cycle the whole set before repeating any.
   let ofKind = eligible.filter((c) => c.segment.kind === kind);
+  ofKind = withoutLastArea(ofKind, kind, opts.lastAreaByKind);
   const recentCenters = opts.recentCenters ?? [];
   const geoDeg = opts.geoCooldownDeg ?? DEFAULT_GEO_COOLDOWN_DEG;
   if (recentCenters.length > 0 && !GLOBAL_KINDS.has(kind)) {

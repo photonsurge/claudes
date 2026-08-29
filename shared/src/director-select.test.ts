@@ -10,9 +10,10 @@ const seg = (id: string, kind: SegmentKind, center: [number, number] = [0, 0]): 
   holdMs: 12000,
 });
 
-const cand = (id: string, kind: SegmentKind, center?: [number, number], score = 1): Candidate => ({
+const cand = (id: string, kind: SegmentKind, center?: [number, number], score = 1, areaKey?: string): Candidate => ({
   segment: seg(id, kind, center),
   score,
+  areaKey,
 });
 
 describe("selectNext", () => {
@@ -70,6 +71,25 @@ describe("selectNext", () => {
     ).toBe("storm:b");
   });
 
+  it("moves a kind away from the area where that kind last aired", () => {
+    const pool = [
+      cand("storm:kz-1", "storm", [66, 48], 1, "country:KZ"),
+      cand("storm:kz-2", "storm", [82, 43], 1, "country:KZ"),
+      cand("storm:jp", "storm", [139, 36], 1, "country:JP"),
+    ];
+    const lastAreaByKind = new Map<SegmentKind, string>([["storm", "country:KZ"]]);
+    expect(selectNext(pool, { history: [], lastAreaByKind, rng: () => 0 })?.id).toBe("storm:jp");
+  });
+
+  it("falls back to the same area when a kind has nowhere else available", () => {
+    const pool = [
+      cand("storm:kz-1", "storm", [66, 48], 1, "country:KZ"),
+      cand("storm:kz-2", "storm", [82, 43], 1, "country:KZ"),
+    ];
+    const lastAreaByKind = new Map<SegmentKind, string>([["storm", "country:KZ"]]);
+    expect(selectNext(pool, { history: [], lastAreaByKind, rng: () => 0 })).not.toBeNull();
+  });
+
   it("kind weights bias the kind draw — a heavy kind claims more of the rng range", () => {
     const pool = [cand("country:a", "country"), cand("ship:s", "ship")];
     // Unweighted, the kinds split the [0,1) roll evenly: 0.6 lands on ship.
@@ -114,6 +134,15 @@ describe("selectPriority", () => {
       cand("quake:big", "quake", undefined, 140),
     ];
     expect(selectPriority(pool, new Map())?.id).toBe("quake:big");
+  });
+
+  it("moves breaking alerts to another area when one is available", () => {
+    const pool = [
+      { ...cand("storm:kz", "storm", [70, 48], 100, "country:KZ"), breaking: true },
+      { ...cand("storm:jp", "storm", [139, 36], 80, "country:JP"), breaking: true },
+    ];
+    const lastAreaByKind = new Map<SegmentKind, string>([["storm", "country:KZ"]]);
+    expect(selectPriority(pool, new Map(), { lastAreaByKind })?.id).toBe("storm:jp");
   });
 
   it("doesn't preempt for ordinary filler kinds", () => {

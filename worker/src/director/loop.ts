@@ -19,6 +19,7 @@ import {
 import {
   selectNext,
   selectPriority,
+  candidateAreaKey,
   PRIORITY_KINDS,
   type Candidate,
 } from "@photonsurge/shared/director-select";
@@ -42,6 +43,8 @@ interface SceneRunner {
   seen: Map<string, { count: number; last: number }>;
   /** [lng,lat] of recently-aired located shots, for the geographic cooldown. */
   recentCenters: [number, number][];
+  /** Last semantic/coarse area aired by kind, for between-appearance variety. */
+  lastAreaByKind: Map<SegmentKind, string>;
   current: Segment | null;
   startedAt: number;
   endsAt: number;
@@ -83,6 +86,7 @@ const newRunner = (sceneId: string): SceneRunner => ({
   history: [],
   seen: new Map(),
   recentCenters: [],
+  lastAreaByKind: new Map(),
   current: null,
   startedAt: 0,
   endsAt: 0,
@@ -113,6 +117,18 @@ function pickLeastAired(cands: Candidate[], counts: Map<string, number>): Candid
   const minCount = Math.min(...cands.map((c) => countOf(c.segment.id)));
   const atMin = cands.filter((c) => countOf(c.segment.id) === minCount);
   return atMin[Math.floor(Math.random() * atMin.length)];
+}
+
+/** Mirror the selector's per-kind area fallback for the non-binding preview. */
+function awayFromLastArea(
+  cands: Candidate[],
+  kind: SegmentKind,
+  lastAreaByKind: ReadonlyMap<SegmentKind, string>,
+): Candidate[] {
+  const lastArea = lastAreaByKind.get(kind);
+  if (!lastArea) return cands;
+  const elsewhere = cands.filter((candidate) => candidateAreaKey(candidate) !== lastArea);
+  return elsewhere.length ? elsewhere : cands;
 }
 
 /**
@@ -148,15 +164,25 @@ function previewNext(
   excludeId: string,
   counts: Map<string, number>,
   cooldownActive: boolean,
+  lastAreaByKind: ReadonlyMap<SegmentKind, string>,
   lastKind?: SegmentKind,
 ): UpNextEntry[] {
   const eligible = pool.filter((c) => c.segment.id !== excludeId);
   const out: UpNextEntry[] = [];
 
   if (!cooldownActive) {
-    const breaking = eligible
-      .filter((c) => PRIORITY_KINDS.includes(c.segment.kind) && c.breaking !== false && !counts.has(c.segment.id))
-      .sort((a, b) => b.score - a.score)[0];
+    let breaking: Candidate | undefined;
+    for (const kind of PRIORITY_KINDS) {
+      const ofKind = awayFromLastArea(
+        eligible.filter((c) => c.segment.kind === kind && c.breaking !== false && !counts.has(c.segment.id)),
+        kind,
+        lastAreaByKind,
+      ).sort((a, b) => b.score - a.score);
+      if (ofKind.length) {
+        breaking = ofKind[0];
+        break;
+      }
+    }
     if (breaking) out.push({ kind: breaking.segment.kind, title: breaking.segment.title, subtitle: breaking.segment.subtitle, ...focusOf(breaking.segment) });
   }
 
@@ -165,7 +191,11 @@ function previewNext(
   if (lastKind && remainingKinds.length > 1) remainingKinds = remainingKinds.filter((k) => k !== lastKind);
 
   for (const kind of shuffled(remainingKinds)) {
-    const cands = eligible.filter((c) => c.segment.kind === kind);
+    const cands = awayFromLastArea(
+      eligible.filter((c) => c.segment.kind === kind),
+      kind,
+      lastAreaByKind,
+    );
     const pick = pickLeastAired(cands, counts).segment;
     out.push({ kind, title: pick.title, subtitle: pick.subtitle, ...focusOf(pick) });
     if (out.length >= 3) break;
@@ -266,7 +296,9 @@ async function tick(): Promise<void> {
           // a scheduled ad break — build the pool early just to check, and defer
           // the ad by one cut rather than let it stall breaking news.
           pool = await buildCandidates(db, cfg, counts);
-          priority = r.seq > 0 ? selectPriority(pool, counts, { cooldown }) : null;
+          priority = r.seq > 0
+            ? selectPriority(pool, counts, { cooldown, lastAreaByKind: r.lastAreaByKind })
+            : null;
           if (priority) {
             r.pendingAd = true;
           } else {
@@ -279,13 +311,18 @@ async function tick(): Promise<void> {
           // first (which always opens on the intro) — a brand-new quake/storm/
           // volcano airs at the next opportunity, not whenever fair rotation
           // happens to land on its kind.
-          next = priority ?? (r.seq > 0 ? selectPriority(pool, counts, { cooldown }) : null);
+          next = priority ?? (
+            r.seq > 0
+              ? selectPriority(pool, counts, { cooldown, lastAreaByKind: r.lastAreaByKind })
+              : null
+          );
           if (next) {
             pickedViaPriority = true;
           } else {
             next = selectNext(pool, {
               history: r.history,
               recentCenters: r.recentCenters,
+              lastAreaByKind: r.lastAreaByKind,
               counts,
               isFirst: r.seq === 0,
               kindWeights: cfg.kindWeights,
@@ -321,13 +358,18 @@ async function tick(): Promise<void> {
             r.recentCenters.push(next.camera.center);
             if (r.recentCenters.length > GEO_RECENT_CAP) r.recentCenters.shift();
           }
+          const selectedCandidate = pool.find((candidate) => candidate.segment.id === next.id);
+          const selectedArea = selectedCandidate ? candidateAreaKey(selectedCandidate) : undefined;
+          if (selectedArea) r.lastAreaByKind.set(next.kind, selectedArea);
 
           r.seq += 1;
           r.current = next;
           r.startedAt = now;
           r.endsAt = now + next.holdMs;
           // Ad cuts skip the candidate build, so keep the prior "coming up" rail.
-          r.upNext = pool.length ? previewNext(pool, next.id, counts, r.lastCutWasPriority, next.kind) : r.upNext;
+          r.upNext = pool.length
+            ? previewNext(pool, next.id, counts, r.lastCutWasPriority, r.lastAreaByKind, next.kind)
+            : r.upNext;
           r.history.push(next.id);
           if (r.history.length > HISTORY_CAP) r.history.shift();
           r.lastSkipNonce = cfg.skipNonce;
