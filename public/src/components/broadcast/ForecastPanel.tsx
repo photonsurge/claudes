@@ -16,7 +16,8 @@ import { type ForecastDay, type AreaForecastDay } from "../../lib/forecast-clien
 import { usePointForecastDays, useAreaForecastDays } from "../../lib/focus/focus-client";
 import { formatReading } from "./PointHistoryPanel";
 import { SectionTitle } from "./PointHistoryPanel";
-import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { MONO, INK_DIM, GODS_TILE, GODS_TILE_BORDER } from "./GodsPanel";
 import BroadcastCard, { DeckChromeContext } from "./BroadcastCard";
 import { WeatherGlyph, WarnTriangle } from "./glyphs";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
@@ -90,8 +91,8 @@ function DayCard({
         alignItems: "center",
         gap: 4,
         padding: fill ? "8px 3px" : "8px 6px",
-        borderRadius: 8,
-        background: TILE_BG,
+        background: GODS_TILE,
+        border: `1px solid ${GODS_TILE_BORDER}`,
       }}
     >
       {topHazard ? (
@@ -106,7 +107,6 @@ function DayCard({
             justifyContent: "center",
             width: 18,
             height: 18,
-            borderRadius: 999,
             background: SEVERITY_COLORS[topHazard.severityRank] ?? accent,
             boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
           }}
@@ -114,20 +114,30 @@ function DayCard({
           <WarnTriangle size={11} />
         </div>
       ) : null}
-      <span style={{ fontSize: fill ? 11 : 12.1, fontWeight: 800, letterSpacing: 1, color: "#aebdd2" }}>{day.label}</span>
+      <span style={{ fontFamily: MONO, fontSize: fill ? 10 : 10.5, letterSpacing: 1, color: INK_DIM }}>
+        {day.label}
+      </span>
       <div style={{ height: fill ? 22 : compact ? 24 : 30, display: "flex", alignItems: "center" }}>
         <WeatherGlyph condition={day.condition} size={fill ? 22 : compact ? 24 : 30} />
       </div>
-      <span style={{ fontSize: fill ? 15.4 : compact ? 16.5 : 19.8, fontWeight: 850, color: "#f3f7ff", whiteSpace: "nowrap" }}>
+      <span
+        style={{
+          fontSize: fill ? 15.4 : compact ? 16.5 : 19.8,
+          fontWeight: 500,
+          color: "#f3f7ff",
+          whiteSpace: "nowrap",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
         {day.hi != null ? formatReading(day.hi) : "—"}°
-        <span style={{ fontSize: fill ? 11.6 : 13.2, fontWeight: 700, color: "#9db0ca", marginLeft: fill ? 3 : 4 }}>
+        <span style={{ fontSize: fill ? 11.6 : 13.2, fontWeight: 400, color: INK_DIM, marginLeft: fill ? 3 : 4 }}>
           {day.lo != null ? `${formatReading(day.lo)}°` : ""}
         </span>
       </span>
-      <span style={{ fontSize: fill ? 9.9 : 11, fontWeight: 700, color: "#91a1b9" }}>
+      <span style={{ fontFamily: MONO, fontSize: fill ? 9.5 : 10.5, color: INK_DIM }}>
         {day.wind != null ? `${formatReading(day.wind)} m/s` : "—"}
       </span>
-      <span style={{ fontSize: fill ? 9.9 : 11, fontWeight: 700, color: "#5fb0e6" }}>
+      <span style={{ fontFamily: MONO, fontSize: fill ? 9.5 : 10.5, color: "#5fb0e6" }}>
         {day.precipChance != null ? `${day.precipChance}%` : ""}
       </span>
     </div>

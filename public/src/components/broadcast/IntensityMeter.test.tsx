@@ -6,10 +6,19 @@ import type { MapFreshness } from "../../lib/manifest";
 const UNITS = { wind: "kt", temp: "C" } as const;
 
 const FRESHNESS: MapFreshness = {
-  source: "ETOPO",
-  updatedLabel: "48d ago",
-  runLabel: "06 Jul 14:27 UTC",
-  generatedLabel: "06 Jul 14:27 UTC",
+  source: "GFS",
+  updatedLabel: "2h ago",
+  runLabel: "29 Aug 06:00 UTC",
+  generatedLabel: "29 Aug 10:12 UTC",
+};
+
+/** What mapFreshness emits for a timeless field (elevation/ETOPO). */
+const STATIC_FRESHNESS: MapFreshness = {
+  source: "ETOPO 2022",
+  updatedLabel: "",
+  runLabel: "",
+  generatedLabel: "",
+  note: "STATIC DATASET",
 };
 
 describe("IntensityMeter — masthead plate", () => {
@@ -26,12 +35,26 @@ describe("IntensityMeter — masthead plate", () => {
     expect(screen.getByText("Temperature")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "SOURCE ETOPO · CREATED 06 Jul 14:27 UTC (48d ago) · RUN 06 Jul 14:27 UTC",
+        "SOURCE GFS · CREATED 29 Aug 10:12 UTC (2h ago) · RUN 29 Aug 06:00 UTC",
       ),
     ).toBeInTheDocument();
     // The temp legend spans its domain — both extreme ticks are on the bar.
     expect(screen.getByText("-40 °C")).toBeInTheDocument();
     expect(screen.getByText("50 °C")).toBeInTheDocument();
+  });
+
+  it("shows a static dataset's vintage with no CREATED/RUN timestamps", () => {
+    render(
+      <IntensityMeter
+        part="masthead"
+        variable="elevation"
+        units={UNITS}
+        theme={BROADCAST_THEMES.command}
+        freshness={STATIC_FRESHNESS}
+      />,
+    );
+    expect(screen.getByText("SOURCE ETOPO 2022 · STATIC DATASET")).toBeInTheDocument();
+    expect(screen.queryByText(/CREATED|RUN/)).not.toBeInTheDocument();
   });
 
   it("paints the paletteId override's ramp, not the variable's default", () => {
@@ -44,7 +67,7 @@ describe("IntensityMeter — masthead plate", () => {
         variable="elevation"
         units={UNITS}
         theme={BROADCAST_THEMES.command}
-        freshness={FRESHNESS}
+        freshness={STATIC_FRESHNESS}
         paletteId="elevation_line"
       />,
     );
@@ -77,7 +100,7 @@ describe("IntensityMeter — stand-alone legend strip (brand off)", () => {
       />,
     );
     expect(screen.getByText("Temperature")).toBeInTheDocument();
-    expect(screen.getByText(/SOURCE ETOPO/)).toBeInTheDocument();
+    expect(screen.getByText(/SOURCE GFS/)).toBeInTheDocument();
     expect(screen.getByText("-40 °C")).toBeInTheDocument();
   });
 });

@@ -87,6 +87,11 @@ describe("normalisePlacements", () => {
     expect(normalisePlacements("ticker, popup")).toEqual(["ticker"]);
   });
 
+  it("accepts the billboard surface", () => {
+    expect(normalisePlacements("billboard")).toEqual(["billboard"]);
+    expect(normalisePlacements(["billboard", "break"])).toEqual(["break", "billboard"]);
+  });
+
   it("defaults to break-only when empty or unusable", () => {
     expect(normalisePlacements(undefined)).toEqual(["break"]);
     expect(normalisePlacements("")).toEqual(["break"]);

@@ -11,19 +11,38 @@ airtime as exposure windows the way ticker mentions do.
 and it slots straight into the existing `AdPlacement` machinery next to
 `break` and `ticker`.
 
-## Where it sits
+## Where it sits — geometry (1080p stage space)
 
 - Anchor: `left: INSET - 16`, `bottom: chromeBottom` (so it rides up/down with
   the crawl toggle exactly like the bottom-right feeds), `scale(1.2)` with
-  `transform-origin: left bottom` — the same legibility treatment as the left
-  deck above it.
-- Width: `CARD_W` (420) so the left column reads as one unit; media box capped
-  at ~180–200 px tall, `object-fit: contain` on a dark tile. Total footprint
-  ≈ 420×230 incl. header — well clear of the top-anchored left deck even with
-  its tracking header extension.
+  `transform-origin: left bottom` — the same treatment as the left deck above,
+  so its right edge lines up with the deck column.
+- Width: `CARD_W` (420), matching the deck column exactly.
 - Chrome: the new **GodsPanel** shell (chamfered plate, SANS/MONO ramp) with a
   small "SPONSORED" header row + advertiser name, so it lands already in the
   HUD language the current UI pass is establishing.
+
+**The gap is not fixed** — the deck above is top-anchored and grows, so the
+free band between deck bottom and the crawl varies (rendered px, ticker on):
+
+| Deck state                      | Deck bottom | Free band above crawl |
+| ------------------------------- | ----------- | --------------------- |
+| plain deck                      | 776         | **240 px**            |
+| + Kp panel (aurora on)          | 844         | **172 px**            |
+| + tracking header (3 rows)      | 945         | 71 px                 |
+| + tracking + Kp                 | 1013        | 3 px                  |
+
+So the billboard **fits adaptively instead of assuming a hole**: BroadcastFrame
+already knows `leftDeckTop`, `deckTracking` and the Kp stack, so it computes
+`deckBottom = leftDeckTop + 1.2 × (CARD_H + trackingBlockHeight)` and hands the
+billboard the remaining band (minus a ~12 px gap). The billboard clamps its
+media box to fit — full band ≈ 420×150 design-px creative area, Kp-squeezed
+≈ 420×100 — and renders `null` when the band drops under a ~120 px floor.
+The under-floor cases are exactly the targeted-event tracking modes, where
+yielding the corner is editorially right anyway (same spirit as breaking-news
+deferring ad breaks). Creative guidance for operators: wide banner, roughly
+2.5:1–4:1 (leaderboard-shaped) reads best; `object-fit: contain` on a dark
+tile handles anything else.
 
 ## Steps
 
@@ -50,10 +69,12 @@ and it slots straight into the existing `AdPlacement` machinery next to
 
 5. **Component** — `SponsorBillboard.tsx` in components/broadcast: cycles the
    list on a ~25 s hold with the FadeSwap cross-fade; deterministic order
-   (catalog order, offset by time) so it needs no server coordination. Renders
-   `null` when the list is empty — no empty frame ever airs. Hidden during the
-   `cutting` window like the deck, and suppressed while HazardScreen has the
-   stage (mirrors "breaking-news defers" for breaks).
+   (catalog order, offset by time) so it needs no server coordination. Takes a
+   `maxHeight` from the frame (the adaptive band above) and clamps its media
+   box to it. Renders `null` when the list is empty or the band is under the
+   floor — no empty frame ever airs. Hidden during the `cutting` window like
+   the deck, and suppressed while HazardScreen has the stage (mirrors
+   "breaking-news defers" for breaks).
 
 6. **Widget toggle** — [broadcast-widgets.ts](../shared/src/broadcast-widgets.ts):
    new id `"billboard"`, zone `bottom-left`, label "Sponsor billboard".

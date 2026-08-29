@@ -97,7 +97,8 @@ function MapLegend({
       </div>
       {freshness && (
         <div style={{ marginTop: 4, fontSize: 9, opacity: 0.7 }}>
-          {freshness.source} · run {freshness.runLabel} · updated {freshness.updatedLabel}
+          {freshness.source} ·{" "}
+          {freshness.note ?? `run ${freshness.runLabel} · updated ${freshness.updatedLabel}`}
         </div>
       )}
     </div>

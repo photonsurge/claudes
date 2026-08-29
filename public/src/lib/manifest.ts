@@ -10,6 +10,7 @@
 import { textureUrl, type WeatherManifest, type WeatherVariableManifest } from "@photonsurge/shared/manifest";
 import type { iWeatherRun, iWeatherVariableEntry } from "@photonsurge/shared/db/weather-run-model";
 import { getSource, isNestSource } from "@photonsurge/shared/sources";
+import { getVariable } from "@photonsurge/shared/variables";
 
 /** The subset of a run we read when building the client manifest. */
 export type RunLike = Pick<
@@ -231,6 +232,13 @@ export interface MapFreshness {
   runLabel: string;
   /** Absolute UTC time the selected map source finished creating the field. */
   generatedLabel: string;
+  /**
+   * Set (with the timing labels empty) for a timeless reference field — e.g.
+   * "STATIC DATASET" for ETOPO elevation. UIs render `source · note` instead
+   * of run/updated lines: showing a static field's ingest time would age it
+   * like a forecast run ("54d ago") when the data itself never goes stale.
+   */
+  note?: string;
 }
 
 /** Format a ms age as a compact "just now / 5m / 3h / 2d ago". */
@@ -268,6 +276,18 @@ export function mapFreshness(
   nowMs: number,
 ): MapFreshness | null {
   if (!manifest) return null;
+  // Timeless reference fields (elevation/ETOPO): the stored run time is only
+  // when we last INGESTED the dataset, so show its vintage, never an age.
+  const staticDataset = variableId ? getVariable(variableId)?.staticDataset : undefined;
+  if (staticDataset) {
+    return {
+      source: staticDataset.toUpperCase(),
+      updatedLabel: "",
+      runLabel: "",
+      generatedLabel: "",
+      note: "STATIC DATASET",
+    };
+  }
   const v = variableId ? manifest.variables[variableId] : undefined;
   const source = (v?.sourceId ?? manifest.model ?? "").toUpperCase();
   const runTimeUtc = v?.runTimeUtc ?? manifest.run;

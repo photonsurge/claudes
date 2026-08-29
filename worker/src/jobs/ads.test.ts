@@ -37,3 +37,43 @@ describe("exposurePairs", () => {
     expect(pairs).toEqual([{ adId: "a", sceneId: "storm" }]);
   });
 });
+
+describe("exposurePairs — billboard surface", () => {
+  const img = (adId: string, over: Partial<Parameters<typeof exposurePairs>[1][number]> = {}) => ({
+    adId,
+    status: "active" as const,
+    placements: ["billboard" as const],
+    mediaType: "image" as const,
+    ...over,
+  });
+
+  it("crosses active billboard-placed image ads with corner-showing scenes", () => {
+    const pairs = exposurePairs(
+      [{ id: "default" }, { id: "storm", widgetsOff: ["ticker"] }],
+      [img("a"), img("ticker-only", { placements: ["ticker"] })],
+      "billboard",
+    );
+    expect(pairs).toEqual([
+      { adId: "a", sceneId: "default" },
+      { adId: "a", sceneId: "storm" },
+    ]);
+  });
+
+  it("never logs a video creative — the billboard renders images only", () => {
+    const pairs = exposurePairs(
+      [{ id: "default" }],
+      [img("clip", { mediaType: "video" }), img("still")],
+      "billboard",
+    );
+    expect(pairs).toEqual([{ adId: "still", sceneId: "default" }]);
+  });
+
+  it("skips scenes whose billboard widget is hidden", () => {
+    const pairs = exposurePairs(
+      [{ id: "default", widgetsOff: ["billboard"] }, { id: "storm" }],
+      [img("a")],
+      "billboard",
+    );
+    expect(pairs).toEqual([{ adId: "a", sceneId: "storm" }]);
+  });
+});

@@ -67,7 +67,7 @@ const AdSchema = new mongoose.Schema<iAdModel>(
     advertiser: { type: String, required: false },
     clickUrl: { type: String, required: false },
     weight: { type: Number, required: true, default: 1 },
-    placements: { type: [{ type: String, enum: ["break", "ticker"] }], required: false },
+    placements: { type: [{ type: String, enum: ["break", "ticker", "billboard"] }], required: false },
     tags: { type: [String], required: false },
     notes: { type: String, required: false },
     storage: {

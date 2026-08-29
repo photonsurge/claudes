@@ -21,6 +21,7 @@ import { HISTORY_WINDOW_HOURS, type ClimateBucketedDataset } from "../../lib/his
 import { usePointHistorySeries, useAreaHistorySeries, useClimateFor } from "../../lib/focus/focus-client";
 import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
 import { useBroadcastTheme } from "./theme-context";
+import { accentRule, INK as GODS_INK, MONO as GODS_MONO } from "./GodsPanel";
 import BroadcastCard from "./BroadcastCard";
 
 /** Compact side-note (EventOverlay) paging: how many charts show at once before
@@ -259,11 +260,16 @@ export function SectionTitle({
   page?: number;
   pageCount?: number;
 }) {
-  const theme = useBroadcastTheme();
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-      <span style={{ fontSize: 14.5, fontWeight: 850, letterSpacing: 1.5, color: theme.titleColor }}>{title}</span>
-      <span style={{ fontSize: 11, fontWeight: 750, letterSpacing: 1.05, color: accent }}>
+    // G.O.D.S. section rule: Saira title + accent hairline running out to the
+    // mono tag (see GodsPanel's GodsSectionRule — inlined here for the tag/page
+    // suffix this variant carries).
+    <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+      <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: 2, color: GODS_INK, whiteSpace: "nowrap" }}>
+        {title}
+      </span>
+      <span style={{ flex: 1, alignSelf: "center", height: 1, background: accentRule(accent) }} />
+      <span style={{ fontFamily: GODS_MONO, fontSize: 10.5, letterSpacing: 1, color: accent, whiteSpace: "nowrap" }}>
         {tag}
         {pageCount != null && pageCount > 1 ? ` · ${(page ?? 0) + 1}/${pageCount}` : ""}
       </span>

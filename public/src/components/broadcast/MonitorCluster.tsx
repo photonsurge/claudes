@@ -453,14 +453,14 @@ function WeatherMonitorBox({
   const path = spec.wave ? realWavePath(samples, ROW_BOX_W, ROW_BOX_H) : realLinePath(samples, ROW_BOX_W, ROW_BOX_H);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3, width: ROW_BOX_W }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, width: ROW_BOX_W }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
         <span
           style={{
             fontSize: 11,
-            fontWeight: 800,
+            fontWeight: 500,
             letterSpacing: 0.4,
-            color: "#c8d5e6",
+            color: INK_DIM,
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -468,14 +468,15 @@ function WeatherMonitorBox({
         >
           {locationLabel}
         </span>
-        <span style={{ fontSize: 9.9, fontWeight: 700, color: theme.accent, whiteSpace: "nowrap" }}>{latestLabel}</span>
+        <span style={{ fontFamily: MONO, fontSize: 9.5, color: theme.accent, whiteSpace: "nowrap" }}>
+          {latestLabel}
+        </span>
       </div>
       <div
         style={{
           height: ROW_BOX_H,
-          borderRadius: 6,
-          background: TILE_BG,
-          border: "1px solid rgba(90,120,160,0.25)",
+          background: GODS_TILE,
+          border: `1px solid ${GODS_TILE_BORDER}`,
           overflow: "hidden",
           position: "relative",
         }}
@@ -507,10 +508,10 @@ function WeatherMonitorBox({
             display: "flex",
             alignItems: "center",
             gap: 3,
+            fontFamily: MONO,
             fontSize: 8.2,
-            fontWeight: 800,
             letterSpacing: 0.6,
-            color: theme.titleColor,
+            color: INK_DIM,
             textShadow: "0 1px 2px rgba(0,0,0,0.8)",
             pointerEvents: "none",
           }}
@@ -561,32 +562,31 @@ export function WeatherMonitors({
   const { visible, location: heldLocation } = held;
 
   return (
-    // Solid card, matching the GLOBAL MONITOR (tsunami/seismic) CardShell — the
-    // strip used to be bare labels + trace boxes floating on the map, so over a
-    // bright field (a hot temperature map) it washed out to near-invisible and
-    // read as "gone". An opaque, blurred panel keeps it legible over ANY basemap.
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-        alignItems: "center",
-        pointerEvents: "none",
-        padding: "8px 12px",
-        background: theme.panelBg,
-        border: theme.panelBorder,
-        borderRadius: 10,
-        boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        fontFamily: "system-ui, sans-serif",
-      }}
-    >
+    // Solid chamfered G.O.D.S. plate, matching the GLOBAL MONITOR
+    // (tsunami/seismic) CardShell — the strip used to be bare labels + trace
+    // boxes floating on the map, so over a bright field (a hot temperature map)
+    // it washed out to near-invisible and read as "gone". The opaque navy fill
+    // keeps it legible over ANY basemap.
+    <GodsPanel notch={[10, 16]} padding="9px 14px 12px" gap={6} style={{ pointerEvents: "none" }}>
       <style>{"@keyframes weather-row-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
-      <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.7, fontWeight: 800, letterSpacing: 1.4, color: theme.titleColor }}>
-        <WindIcon active size={13} />
-        LOCAL MONITORS
-      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12.5,
+            fontWeight: 600,
+            letterSpacing: 2.2,
+            color: INK,
+            whiteSpace: "nowrap",
+          }}
+        >
+          <WindIcon active size={13} />
+          LOCAL MONITORS
+        </span>
+        <div style={{ flex: 1, minWidth: 20, height: 1, background: accentRule(theme.accent) }} />
+      </div>
       <div style={{ display: "flex", gap: 10 }}>
         {visible.map((item) => (
           <WeatherMonitorBox
@@ -599,6 +599,6 @@ export function WeatherMonitors({
           />
         ))}
       </div>
-    </div>
+    </GodsPanel>
   );
 }

@@ -26,6 +26,7 @@ export type WidgetId =
   | "weatherMonitors"
   | "tsunami"
   | "leftDeck"
+  | "billboard"
   | "intensityMeter"
   | "spaceWeather"
   | "brand"
@@ -56,8 +57,9 @@ export const BROADCAST_WIDGETS: readonly BroadcastWidget[] = [
   { id: "seismic", zone: "gauges", label: "Seismic monitor", hint: "Recent quakes + live station traces" },
   { id: "weatherMonitors", zone: "gauges", label: "Weather monitors", hint: "Wind / pressure / wave cards" },
   { id: "tsunami", zone: "gauges", label: "Tsunami & tide gauges", hint: "Sea-level gauges near the shot" },
-  // Bottom-left — the rotating on-air context card.
+  // Bottom-left — the rotating on-air context card + the sponsor corner.
   { id: "leftDeck", zone: "bottom-left", label: "Left card deck", hint: "Rotating now-viewing / weather / event card" },
+  { id: "billboard", zone: "bottom-left", label: "Sponsor billboard", hint: "Rotating sponsor creative in the corner" },
   // Top-centre — on-air colour legends.
   { id: "intensityMeter", zone: "top-center", label: "Variable legend", hint: "Active scalar-variable colour scale" },
   { id: "spaceWeather", zone: "top-center", label: "Space-weather key", hint: "Aurora / magnetic-field legend" },

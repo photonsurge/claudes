@@ -60,7 +60,8 @@ export default function Legend({ variableId, units, onUnitsChange, manifest, pal
 
       {freshness && (
         <div style={{ marginTop: 4, fontSize: 10, opacity: 0.7 }}>
-          {freshness.source} · run {freshness.runLabel} · updated {freshness.updatedLabel}
+          {freshness.source} ·{" "}
+          {freshness.note ?? `run ${freshness.runLabel} · updated ${freshness.updatedLabel}`}
         </div>
       )}
 

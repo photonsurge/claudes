@@ -260,6 +260,23 @@ describe("mapFreshness / ageLabel", () => {
     expect(f.updatedLabel).toBe("1h ago"); // rtofs generatedAt 05:00 vs now 06:00
   });
 
+  it("shows a static dataset's vintage, never its ingest age", () => {
+    // Elevation is timeless ETOPO terrain — its run/generatedAt is only when
+    // `refresh:elevation` last ran, so no CREATED/RUN/age must reach air.
+    const elev: RunLike = {
+      model: "elevation", run: new Date("2026-05-01T00:00:00Z"), generatedAt: new Date("2026-05-01T00:00:00Z"),
+      bounds: [-180, -90, 180, 90], grid: { width: 1440, height: 721, res: 0.25 },
+      steps: [{ validTime: "a", fhr: 0 }],
+      variables: { elevation: { encoding: "scalar", units: "m", sourceId: "etopo", files: { "0": "etopo-elev" } } },
+    };
+    const f = mapFreshness(composeManifest([elev])!, "elevation", now)!;
+    expect(f.source).toBe("ETOPO 2022");
+    expect(f.note).toBe("STATIC DATASET");
+    expect(f.runLabel).toBe("");
+    expect(f.generatedLabel).toBe("");
+    expect(f.updatedLabel).toBe("");
+  });
+
   it("returns null without a manifest", () => {
     expect(mapFreshness(null, "sst", now)).toBeNull();
   });

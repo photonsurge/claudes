@@ -28,6 +28,7 @@ import { basemapLayers, countriesLayer, TILE_MIN_ZOOM } from "./layers/basemap";
 import {
   scalarRasterLayers,
   vectorParticleLayers,
+  windBarbLayers,
   pressureLayers,
   elevationLayers,
   elevationReliefLayer,
@@ -926,7 +927,13 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         );
       }
       if (state.showWind) {
-        layers.push(...vectorParticleLayers(manifest, "wind", state.fhr, resolve, camera, state.wind));
+        if (state.windMode === "barbs") {
+          // Meteorological barbs of the same uv field. Only the colour follows
+          // the operator's wind settings — the particle sliders don't apply.
+          layers.push(...windBarbLayers(manifest, "wind", state.fhr, resolve, camera, { color: state.wind.color }));
+        } else {
+          layers.push(...vectorParticleLayers(manifest, "wind", state.fhr, resolve, camera, state.wind));
+        }
       }
     }
 

@@ -273,6 +273,7 @@ function WatchSurfaceBody({
             // (sources refresh at different cadences, so this is per-variable).
             const f = mapFreshness(manifest, state.activeVariable, Date.now());
             if (!f) return "Awaiting weather data…";
+            if (f.note) return `${f.source} · ${f.note}`;
             return (
               <>
                 {f.source} · run {f.runLabel}

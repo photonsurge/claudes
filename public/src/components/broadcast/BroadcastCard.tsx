@@ -277,21 +277,26 @@ export default function BroadcastCard({
   const hasEyebrowRow = eyebrow != null || headerRight != null;
 
   return (
+    // Standalone (off-deck) shell on the same G.O.D.S. surfaces as the deck
+    // template — navy fill, square corners, hairline border (accent stripe kept
+    // for non-glass callers). Rectangular rather than chamfered: this branch is
+    // a single element whose callers override padding/width via `style`, which
+    // the two-layer chamfer clip can't accommodate.
     <div
       style={{
         width,
         padding: "14px 20px",
-        background: glass ? GLASS_BG : theme.panelBg,
+        background: glass ? GLASS_BG : GODS_FILL,
         ...(glass
-          ? { border: theme.panelBorder }
-          : accentBorder(theme.panelBorder, `4px solid ${stripe}`)),
-        borderRadius: 14,
+          ? { border: `1px solid ${GODS_BORDER}` }
+          : accentBorder(`1px solid ${GODS_BORDER}`, `4px solid ${stripe}`)),
+        borderRadius: 0,
         boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-        backdropFilter: glass ? "blur(11px)" : "blur(8px)",
-        WebkitBackdropFilter: glass ? "blur(11px)" : "blur(8px)",
+        backdropFilter: glass ? "blur(11px)" : undefined,
+        WebkitBackdropFilter: glass ? "blur(11px)" : undefined,
         pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-        color: theme.textColor,
+        fontFamily: SANS,
+        color: GODS_INK,
         ...style,
       }}
     >
@@ -302,12 +307,11 @@ export default function BroadcastCard({
           {badge != null ? (
             <span
               style={{
-                fontSize: 13.2,
-                fontWeight: 800,
-                letterSpacing: 1,
+                fontSize: 12.5,
+                fontWeight: 600,
+                letterSpacing: 1.4,
                 textTransform: "uppercase",
                 padding: "3px 10px",
-                borderRadius: 5,
                 background: badgeColor ?? stripe,
                 color: "#fff",
               }}

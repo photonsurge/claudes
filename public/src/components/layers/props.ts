@@ -142,6 +142,65 @@ export function windParticleProps(
   return vectorParticleProps(manifest, "wind", fhr, opts);
 }
 
+export interface WindBarbProps {
+  id: string;
+  image: string;
+  imageUnscale: [number, number];
+  /** GridLayer defaults to SCALAR — the uv wind field must say it's a vector. */
+  imageType: "VECTOR";
+  bounds: Bounds;
+  /**
+   * WeatherLayers GridStyle.WIND_BARB: glyph picked from the built-in barb
+   * atlas by decoded speed (its iconBounds span 0–100 kt), rotated to direction.
+   */
+  style: "WIND_BARB";
+  iconSize: number;
+  iconColor: [number, number, number, number];
+  opacity: number;
+  visible: boolean;
+}
+
+export interface WindBarbOpts {
+  /** Barb glyph colour as `#rrggbb`; defaults to white. */
+  color?: string;
+  iconSize?: number;
+  /** Appended to the layer id so a base + its nests get unique ids (deck.gl). */
+  idSuffix?: string;
+}
+
+/**
+ * PURE props for a wind-barb GridLayer (windMode "barbs") from an explicit
+ * entry + bounds — the same resolver seam as `vectorParticlePropsFromEntry`,
+ * reading the same uv textures. Returns null when the entry has no
+ * texture/unscale at this step. Opacity is fixed rather than the operator's
+ * particle opacity: the wind sliders only style the particles look, and
+ * director slides tone particles down to ~0.1 — barbs ARE the chart, so they
+ * must stay readable.
+ */
+export function windBarbPropsFromEntry(
+  entry: WeatherVariableManifest,
+  variableId: string,
+  fhr: number,
+  bounds: Bounds,
+  opts: WindBarbOpts = {},
+): WindBarbProps | null {
+  const image = entry.files[String(fhr)];
+  const unscale = entry.vectorUnscale ?? entry.imageUnscale;
+  if (!image || !unscale) return null;
+  return {
+    id: `${variableId}-barbs-${fhr}${opts.idSuffix ?? ""}`,
+    image,
+    imageUnscale: unscale,
+    imageType: "VECTOR",
+    bounds,
+    style: "WIND_BARB",
+    iconSize: opts.iconSize ?? 40,
+    iconColor: hexToRgba(opts.color),
+    opacity: 0.9,
+    visible: true,
+  };
+}
+
 /**
  * Parse a `#rrggbb` (or `#rgb`) hex string into an opaque RGBA tuple. Falls back
  * to white on anything unparseable so the particle layer always renders. Pure.

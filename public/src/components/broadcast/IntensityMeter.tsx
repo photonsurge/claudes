@@ -109,6 +109,7 @@ export default function IntensityMeter({
 
   const freshnessText = freshness
     ? `SOURCE ${freshness.source}` +
+      (freshness.note ? ` · ${freshness.note}` : "") +
       (freshness.generatedLabel ? ` · CREATED ${freshness.generatedLabel}` : "") +
       (freshness.updatedLabel ? ` (${freshness.updatedLabel})` : "") +
       (freshness.runLabel ? ` · RUN ${freshness.runLabel}` : "")

@@ -60,6 +60,14 @@ export interface iVariableMeta {
    * The GFS ingest loop skips any variable without a `gfs` binding.
    */
   gfs?: iGfsField;
+  /**
+   * Timeless reference dataset: the value names the dataset vintage shown as
+   * the on-air source (e.g. "ETOPO 2022"). Such a field has no forecast run —
+   * its stored run/generatedAt is merely WHEN WE LAST INGESTED it — so
+   * provenance UIs must show this label instead of run/age timestamps (a
+   * static field is never "stale").
+   */
+  staticDataset?: string;
 }
 
 export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
@@ -391,6 +399,7 @@ export const VARIABLE_REGISTRY: Record<string, iVariableMeta> = {
     // from a DEM by `yarn refresh:elevation`, not the forecast ingest loop. The
     // GFS ingest skips any variable without a `gfs` field, so this never rides a
     // weather run — it publishes its own tiny single-step "elevation" run.
+    staticDataset: "ETOPO 2022",
   },
 };
 
