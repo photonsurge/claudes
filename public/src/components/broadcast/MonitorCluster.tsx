@@ -15,7 +15,7 @@
  * globe itself (layers/seismograph-stations.ts, layers/tide-stations.ts,
  * lib/weather-point.ts) — so the map and these cards always agree.
  */
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import type { Segment } from "@photonsurge/shared/director";
 import type { TideSample } from "@photonsurge/shared/tides/types";
 import { nearby } from "../../lib/geo";
@@ -532,10 +532,12 @@ function WeatherMonitorBox({
  * archived data for the focus point, same self-hiding rule as
  * SeismicMonitor/TsunamiMonitor.
  */
-export function WeatherMonitors({
+export function LocalWeatherPanel({
   series,
   locationLabel = null,
   theme = DEFAULT_THEME,
+  forecast = null,
+  showMonitors = true,
 }: {
   /** Archived point-history at the on-air focus — lifted once in WatchSurface
    *  (see lib/history-client's usePointHistory) so this panel and the globe's
@@ -544,6 +546,10 @@ export function WeatherMonitors({
   /** Human-readable on-air place name for the shared local monitor focus. */
   locationLabel?: string | null;
   theme?: BroadcastTheme;
+  /** Bare ForecastPanel section rendered in the same shared panel shell. */
+  forecast?: ReactNode;
+  /** Scene toggle for the archived wind/pressure/wave half of the panel. */
+  showMonitors?: boolean;
 }) {
   const location = formatMonitorLocation(series, locationLabel);
   const computed = WEATHER_MONITORS.map((spec) => {
@@ -558,8 +564,8 @@ export function WeatherMonitors({
   // (the point-history is sampled at cities) keeps the strip up with its last
   // good traces instead of blanking it out for that one slide.
   const held = useLastPresent(computed.length > 0 ? { visible: computed, location } : null);
-  if (!held) return null;
-  const { visible, location: heldLocation } = held;
+  const monitorData = showMonitors ? held : null;
+  if (!monitorData && !forecast) return null;
 
   return (
     // Solid chamfered G.O.D.S. plate, matching the GLOBAL MONITOR
@@ -567,38 +573,60 @@ export function WeatherMonitors({
     // boxes floating on the map, so over a bright field (a hot temperature map)
     // it washed out to near-invisible and read as "gone". The opaque navy fill
     // keeps it legible over ANY basemap.
-    <GodsPanel notch={[10, 16]} padding="9px 14px 12px" gap={6} style={{ pointerEvents: "none" }}>
+    <GodsPanel notch={[10, 16]} padding="9px 14px 12px" gap={0} style={{ pointerEvents: "none" }}>
       <style>{"@keyframes weather-row-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 12.5,
-            fontWeight: 600,
-            letterSpacing: 2.2,
-            color: INK,
-            whiteSpace: "nowrap",
-          }}
-        >
-          <WindIcon active size={13} />
-          LOCAL MONITORS
-        </span>
-        <div style={{ flex: 1, minWidth: 20, height: 1, background: accentRule(theme.accent) }} />
-      </div>
-      <div style={{ display: "flex", gap: 10 }}>
-        {visible.map((item) => (
-          <WeatherMonitorBox
-            key={item.spec.variable}
-            spec={item.spec}
-            samples={item.samples}
-            latestLabel={item.latestLabel}
-            locationLabel={heldLocation}
-            theme={theme}
-          />
-        ))}
+      <div style={{ display: "flex", alignItems: "stretch", gap: 14 }}>
+        {monitorData && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  letterSpacing: 2.2,
+                  color: INK,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <WindIcon active size={13} />
+                LOCAL MONITORS
+              </span>
+              <div style={{ flex: 1, minWidth: 20, height: 1, background: accentRule(theme.accent) }} />
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              {monitorData.visible.map((item) => (
+                <WeatherMonitorBox
+                  key={item.spec.variable}
+                  spec={item.spec}
+                  samples={item.samples}
+                  latestLabel={item.latestLabel}
+                  locationLabel={monitorData.location}
+                  theme={theme}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        {forecast && (
+          <div
+            style={{
+              display: "flex",
+              paddingLeft: monitorData ? 14 : 0,
+              borderLeft: monitorData ? `1px solid ${GODS_TILE_BORDER}` : undefined,
+            }}
+          >
+            {forecast}
+          </div>
+        )}
       </div>
     </GodsPanel>
   );
+}
+
+/** Standalone compatibility wrapper used by focused monitor tests/callers. */
+export function WeatherMonitors(props: Omit<Parameters<typeof LocalWeatherPanel>[0], "forecast" | "showMonitors">) {
+  return <LocalWeatherPanel {...props} />;
 }

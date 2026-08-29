@@ -159,7 +159,7 @@ export default function WorldReportDeck({
       />
     );
   } else if (slide === "about") {
-    content = <AboutPanel theme={theme} feed={s.feed} about={about} />;
+    content = <AboutPanel theme={theme} about={about} />;
   } else {
     // "detection" — the DETECTION GRID, with the full global ACTIVE FEED
     // integrated into its own card (like every other slide).

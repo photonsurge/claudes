@@ -4,7 +4,7 @@ import type { Quake } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
 import type { TideStationReading } from "../../lib/tides/types";
 import type { HistorySeries } from "../../lib/history-client";
-import { SeismicMonitor, TsunamiMonitor, WeatherMonitors } from "./MonitorCluster";
+import { LocalWeatherPanel, SeismicMonitor, TsunamiMonitor, WeatherMonitors } from "./MonitorCluster";
 
 const quakeFarFromOrigin: Quake = { id: "q1", mag: 6.2, place: "Off Kermadec", time: 0, lng: 178, lat: -30, depthKm: 10 };
 
@@ -156,5 +156,27 @@ describe("WeatherMonitors", () => {
     ];
     rerender(<WeatherMonitors series={updated} locationLabel="Chiayi City" />);
     expect(screen.getByText("9 m/s")).toBeInTheDocument();
+  });
+
+  it("integrates the forecast into the same local-weather panel", () => {
+    const series: HistorySeries[] = [
+      {
+        variable: "wind",
+        encoding: "uv",
+        units: "m/s",
+        lat: 0,
+        lng: 0,
+        series: [{ t: "1", model: "gfs", fhr: 0, speed: 4 }, { t: "2", model: "gfs", fhr: 1, speed: 6 }],
+        stats: null,
+      },
+    ];
+    render(
+      <LocalWeatherPanel
+        series={series}
+        forecast={<div>3-DAY FORECAST</div>}
+      />,
+    );
+    expect(screen.getByText("LOCAL MONITORS")).toBeInTheDocument();
+    expect(screen.getByText("3-DAY FORECAST")).toBeInTheDocument();
   });
 });

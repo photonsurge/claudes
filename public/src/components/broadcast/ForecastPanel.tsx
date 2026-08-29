@@ -17,7 +17,7 @@ import { usePointForecastDays, useAreaForecastDays } from "../../lib/focus/focus
 import { formatReading } from "./PointHistoryPanel";
 import { SectionTitle } from "./PointHistoryPanel";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
-import { MONO, INK_DIM, GODS_TILE, GODS_TILE_BORDER } from "./GodsPanel";
+import { MONO, INK, INK_DIM, GODS_TILE, GODS_TILE_BORDER, accentRule } from "./GodsPanel";
 import BroadcastCard, { DeckChromeContext } from "./BroadcastCard";
 import { WeatherGlyph, WarnTriangle } from "./glyphs";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
@@ -192,10 +192,9 @@ export default function ForecastPanel({
   daysOverride?: (ForecastDay | AreaForecastDay)[];
   theme?: BroadcastTheme;
   compact?: boolean;
-  /** "card" (own BroadcastCard shell) or "inline" (bare section for embedding in
-   *  another card, e.g. the sandbox "SELECTED" overlay — shows a spinner while
-   *  loading and fills the host card's width). */
-  variant?: "card" | "inline";
+  /** "card" (own BroadcastCard shell), "inline" (full-width section inside a
+   *  detail card), or "monitor" (compact bare section inside LocalWeatherPanel). */
+  variant?: "card" | "inline" | "monitor";
   /** No-accent see-through glass shell (reticle-attached instances) — see
    *  BroadcastCard's `glass`. */
   glass?: boolean;
@@ -213,18 +212,55 @@ export default function ForecastPanel({
   // Inline: a bare section (matching ViewingOverlay's section styling) that shows
   // a spinner while the fetch is in flight, then the fill-width day strip. Hides
   // itself only once loading has finished with nothing to show.
-  if (variant === "inline") {
+  if (variant === "inline" || variant === "monitor") {
     if (!days.length && !src.loading) return null;
+    const monitor = variant === "monitor";
     return (
-      <div style={{ marginTop: 11, paddingTop: 11, borderTop: "1px solid rgba(120,140,170,0.15)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
-          <span style={{ fontSize: 11.3, letterSpacing: 1, opacity: 0.8, fontWeight: 800 }}>3-DAY FORECAST</span>
-          <span style={{ fontSize: 12.1, opacity: 0.7 }}>{bbox ? "AREA" : "POINT"}</span>
+      <div
+        style={
+          monitor
+            ? { display: "flex", flexDirection: "column", gap: 6 }
+            : { marginTop: 11, paddingTop: 11, borderTop: "1px solid rgba(120,140,170,0.15)" }
+        }
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: monitor ? 10 : 8,
+            marginBottom: monitor ? 0 : 7,
+          }}
+        >
+          <span
+            style={{
+              fontSize: monitor ? 12.5 : 11.3,
+              fontWeight: monitor ? 600 : 800,
+              letterSpacing: monitor ? 2.2 : 1,
+              color: monitor ? INK : undefined,
+              opacity: monitor ? 1 : 0.8,
+              whiteSpace: "nowrap",
+            }}
+          >
+            3-DAY FORECAST
+          </span>
+          {monitor && <div style={{ flex: 1, minWidth: 20, height: 1, background: accentRule(theme.accent) }} />}
+          <span
+            style={{
+              marginLeft: monitor ? 0 : "auto",
+              fontFamily: monitor ? MONO : undefined,
+              fontSize: monitor ? 9.5 : 12.1,
+              letterSpacing: monitor ? 1 : undefined,
+              color: monitor ? theme.accent : undefined,
+              opacity: monitor ? 1 : 0.7,
+            }}
+          >
+            {bbox ? "AREA" : "POINT"}
+          </span>
         </div>
         {days.length ? (
-          <div style={{ display: "flex", flexDirection: "row", gap: 5 }}>
+          <div style={{ display: "flex", flexDirection: "row", gap: monitor ? 6 : 5 }}>
             {days.map((d) => (
-              <DayCard key={d.date} day={d} accent={theme.accent} compact fill />
+              <DayCard key={d.date} day={d} accent={theme.accent} compact fill={!monitor} />
             ))}
           </div>
         ) : (

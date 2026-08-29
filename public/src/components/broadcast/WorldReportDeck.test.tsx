@@ -51,7 +51,7 @@ describe("HazardScreen", () => {
         heroColor="#4dc8ff"
         subtitle="Strongest M6.3 · off the coast"
         chips={[{ key: "major", label: "Major", count: 3, color: "#f00" }]}
-        continents={[{ name: "Asia", count: 20, segments: [{ key: "s", color: "#f00", count: 20 }] }]}
+        continents={[{ name: "North America", count: 20, segments: [{ key: "s", color: "#f00", count: 20 }] }]}
         feed={[feedItem("quake", "q1")]}
         theme={DEFAULT_THEME}
       />,
@@ -59,7 +59,7 @@ describe("HazardScreen", () => {
     expect(screen.getByText("SEISMIC ACTIVITY")).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
     expect(screen.getByText("Major")).toBeInTheDocument();
-    expect(screen.getByText("Asia")).toBeInTheDocument();
+    expect(screen.getByText("North America")).toHaveStyle({ flex: "0 0 112px" });
     expect(screen.getByText(/Strongest M6.3/)).toBeInTheDocument();
     expect(screen.getByText("quake q1")).toBeInTheDocument();
   });
@@ -84,22 +84,21 @@ describe("HazardScreen", () => {
 
 describe("AboutPanel", () => {
   it("renders the G.O.D.S. about copy and warning-service disclaimer", () => {
-    render(<AboutPanel theme={DEFAULT_THEME} feed={[]} />);
+    render(<AboutPanel theme={DEFAULT_THEME} />);
     expect(screen.getByText("About G.O.D.S.")).toBeInTheDocument();
     expect(screen.getByText(/live visual monitoring platform created by Thronix/)).toBeInTheDocument();
     expect(screen.getByText(/not an official warning service/)).toBeInTheDocument();
   });
 
-  it("carries the integrated ACTIVE FEED at its foot", () => {
-    render(<AboutPanel theme={DEFAULT_THEME} feed={[]} />);
-    expect(screen.getByText("ACTIVE FEED")).toBeInTheDocument();
+  it("does not show the active feed on the about slide", () => {
+    render(<AboutPanel theme={DEFAULT_THEME} />);
+    expect(screen.queryByText("ACTIVE FEED")).not.toBeInTheDocument();
   });
 
   it("renders per-channel custom copy — title, paragraphs, sources and footnote", () => {
     render(
       <AboutPanel
         theme={DEFAULT_THEME}
-        feed={[]}
         about={{
           title: "About Storm Watch",
           body: "First paragraph.\n\nSecond paragraph.",
@@ -124,7 +123,6 @@ describe("AboutPanel", () => {
     render(
       <AboutPanel
         theme={DEFAULT_THEME}
-        feed={[]}
         about={{ title: "", body: "", sources: "NOAA GFS", footer: "" }}
       />,
     );

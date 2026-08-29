@@ -83,7 +83,7 @@ import SpaceWeatherMeter from "./SpaceWeatherMeter";
 import {
   SeismicMonitor,
   TsunamiMonitor,
-  WeatherMonitors,
+  LocalWeatherPanel,
 } from "./MonitorCluster";
 import SeismicStationRow from "./SeismicStationRow";
 import TideStationRow from "./TideStationRow";
@@ -703,15 +703,15 @@ export default function BroadcastFrame({
   // EventOverlay reticle (stage-bottom, right-aligned to the frame), but that
   // was a second, independent anchor on the same baseline the bottom-centre
   // monitor row owns — wide content made the two collide. Now it renders AS a
-  // member of that flex row (rightmost slot), so flexbox keeps it and the
-  // monitors nicely beside each other whatever their widths. Same render
-  // conditions as the old reticle slot: a located targeted event fetches by
-  // point; an Areas-tour stop reuses the focus bundle's pre-fetched days.
+  // right half of LocalWeatherPanel, sharing the monitors' compact chamfered
+  // shell instead of looking like a separate card. Same render conditions as
+  // the old reticle slot: a located targeted event fetches by point; an
+  // Areas-tour stop reuses the focus bundle's pre-fetched days.
   const forecastStrip =
     onAirSegment && isTargetedEvent(onAirSegment.kind) && segmentHasLocation ? (
-      <ForecastPanel center={onAirSegment.camera.center} theme={theme} compact glass />
+      <ForecastPanel center={onAirSegment.camera.center} theme={theme} compact variant="monitor" />
     ) : onAirSegment?.kind === "region" && focusCaption && tourStopWeather?.days?.length ? (
-      <ForecastPanel center={null} daysOverride={tourStopWeather.days} compact theme={theme} glass />
+      <ForecastPanel center={null} daysOverride={tourStopWeather.days} compact theme={theme} variant="monitor" />
     ) : null;
 
   return (
@@ -1029,15 +1029,12 @@ export default function BroadcastFrame({
           {!off.has("syslog") && <SyslogFeed />}
         </div>
 
-        {/* Bottom-centre row: seismic monitor column, the extra weather-
-            instrument cards (wind/pressure/wave), the tsunami gauge column,
-            then the on-air subject's 3-DAY FORECAST strip — all anchored to
-            the same bottom edge (alignItems: flex-end + column-reverse) so any
-            of them can grow upward independently without disturbing the
-            others' baseline. The forecast lives IN this row (not hung off the
-            EventOverlay reticle) precisely so flexbox keeps it and the monitor
-            cards beside each other instead of two absolute anchors colliding
-            on the same baseline. The gauges row (NEARBY TSUNAMI GAUGES) sits
+        {/* Bottom-centre row: seismic monitor column, one combined local-weather
+            panel (wind/pressure/wave + 3-DAY FORECAST), then the tsunami gauge
+            column — all anchored to the same bottom edge (alignItems: flex-end
+            + column-reverse) so any of them can grow upward independently
+            without disturbing the others' baseline. The gauges row (NEARBY
+            TSUNAMI GAUGES) sits
             closest to the bottom edge in its column; the GLOBAL MONITOR
             tsunami card only appears above it when there's a single gauge in
             range (it hides itself once the row has 2+, to avoid showing the
@@ -1082,15 +1079,15 @@ export default function BroadcastFrame({
               />
             </div>
           )}
-          {!off.has("weatherMonitors") && (
-            <WeatherMonitors
-              series={pointHistorySeries}
-              locationLabel={
-                onAirSegment && segmentHasLocation ? onAirSegment.title : null
-              }
-              theme={theme}
-            />
-          )}
+          <LocalWeatherPanel
+            series={pointHistorySeries}
+            locationLabel={
+              onAirSegment && segmentHasLocation ? onAirSegment.title : null
+            }
+            theme={theme}
+            forecast={forecastStrip}
+            showMonitors={!off.has("weatherMonitors")}
+          />
           {!off.has("tsunami") && (
             <div
               style={{
@@ -1108,7 +1105,6 @@ export default function BroadcastFrame({
               />
             </div>
           )}
-          {forecastStrip}
         </div>
 
         {tickerOn && (

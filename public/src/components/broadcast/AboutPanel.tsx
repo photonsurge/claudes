@@ -5,27 +5,21 @@
  * source credits. Copy comes from ControlState.about (edited per channel on
  * /admin/scenes/:id); every field falls back individually to the built-in
  * G.O.D.S. copy when empty, so an untouched channel reads exactly as before.
- * Carries the shared ACTIVE FEED at its foot like every other slide, so the
- * rolling state-of-the-world readout stays on screen through the whole
- * rotation instead of vanishing here. Rendered on the shared G.O.D.S.
- * chamfered panel chrome. Pointer-inert like the rest of the chrome.
+ * Rendered on the shared G.O.D.S. chamfered panel chrome. Pointer-inert like
+ * the rest of the chrome.
  */
 import type { AboutSettings } from "@photonsurge/shared/control";
-import type { WorldWatchItem } from "../../lib/broadcast";
 import type { BroadcastTheme } from "./config";
 import { GodsPanel, GodsSectionRule, INK, INK_DIM, GODS_TILE_BORDER } from "./GodsPanel";
-import FeedSection from "./FeedSection";
 
 const DEFAULT_DISCLAIMER =
   "It is not an official warning service, but a visual awareness and exploration tool for global conditions.";
 
 export default function AboutPanel({
   theme,
-  feed,
   about,
 }: {
   theme: BroadcastTheme;
-  feed: WorldWatchItem[];
   /** Per-channel copy (ControlState.about). Absent/empty fields = built-in G.O.D.S. copy. */
   about?: AboutSettings;
 }) {
@@ -119,8 +113,6 @@ export default function AboutPanel({
           {footer}
         </p>
       </div>
-
-      <FeedSection feed={feed} theme={theme} visible={4} />
     </GodsPanel>
   );
 }

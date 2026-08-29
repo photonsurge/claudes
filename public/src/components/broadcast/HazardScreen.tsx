@@ -80,15 +80,13 @@ export default function HazardScreen({
             <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span
                 style={{
-                  flex: "0 0 84px",
+                  flex: "0 0 112px",
                   fontFamily: MONO,
                   fontSize: 11.5,
                   letterSpacing: 0.6,
                   textTransform: "uppercase",
                   color: INK_DIM,
                   whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
                 }}
               >
                 {c.name}
