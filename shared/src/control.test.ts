@@ -153,12 +153,18 @@ describe("mergeControlState", () => {
     const next = mergeControlState(base, {
       themeOverrides: {
         titleColor: "#123456",
+        godsBorderColor: "#223344",
+        minimapLandColor: "#445566",
         bogus: "x",
         textColor: 7,
       } as never,
     });
     // Known string keys pass; unknown keys and non-strings are dropped.
-    expect(next.themeOverrides).toEqual({ titleColor: "#123456" });
+    expect(next.themeOverrides).toEqual({
+      titleColor: "#123456",
+      godsBorderColor: "#223344",
+      minimapLandColor: "#445566",
+    });
   });
 
   it("merges about partially, dropping non-string values", () => {

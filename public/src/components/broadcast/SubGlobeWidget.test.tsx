@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import SubGlobeWidget from "./SubGlobeWidget";
+import { DEFAULT_THEME } from "./config";
 
 // One little square continent — enough to exercise the land path end-to-end
 // without the 2MB Natural Earth fetch.
@@ -73,5 +74,24 @@ describe("SubGlobeWidget", () => {
     expect(screen.getByText("20.0°N · 0.0°E")).toBeInTheDocument();
     // Flush the mocked land promise inside act so its setState is covered.
     await act(async () => {});
+  });
+
+  it("repaints immediately when the scene minimap palette changes", async () => {
+    const { rerender, unmount } = render(
+      <SubGlobeWidget center={[0, 20]} zoom={2.5} theme={DEFAULT_THEME} />,
+    );
+    await waitFor(() => expect(stub.clearRect).toHaveBeenCalled());
+    await act(async () => {});
+    stub.clearRect.mockClear();
+
+    rerender(
+      <SubGlobeWidget
+        center={[0, 20]}
+        zoom={2.5}
+        theme={{ ...DEFAULT_THEME, minimapLandColor: "#ff00ff" }}
+      />,
+    );
+    expect(stub.clearRect).toHaveBeenCalled();
+    unmount();
   });
 });

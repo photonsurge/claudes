@@ -114,7 +114,16 @@ export default function SubGlobeWidget({
   useEffect(() => {
     paint();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [land, reticle]);
+  }, [
+    land,
+    reticle,
+    palette.oceanInner,
+    palette.oceanOuter,
+    palette.land,
+    palette.landEdge,
+    palette.grid,
+    palette.limb,
+  ]);
 
   function paint() {
     const canvas = canvasRef.current;
