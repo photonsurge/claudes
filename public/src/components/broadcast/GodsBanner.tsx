@@ -25,6 +25,12 @@ export interface GodsBannerProps {
   className?: string;
   style?: CSSProperties;
   label?: string;
+  /**
+   * Punch a transparent hole where the static sphere sits so a live globe
+   * layered BEHIND the svg shows through, keeping every ring/ellipse as a
+   * bezel drawn over it. The hole is r=74 around (217,144); see BrandPanel.
+   */
+  liveCore?: boolean;
 }
 
 /**
@@ -41,6 +47,7 @@ export default function GodsBanner({
   className,
   style,
   label = "G.O.D.S. Global Orbital Detection System",
+  liveCore = false,
 }: GodsBannerProps) {
   const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const id = (name: string) => `gods-${name}-${instanceId}`;
@@ -128,32 +135,66 @@ export default function GodsBanner({
       </g>
 
       <g data-layer="globe">
-        <circle cx="217" cy="144" r="123" fill="#02101a" stroke="#274b5b" strokeWidth="5" />
+        {liveCore ? (
+          // Annulus: outer disc + r=74 hole (evenodd) so the live canvas
+          // layered behind the svg shows through; the inner rim's stroke
+          // doubles as a bezel masking the canvas disc's edge.
+          <path
+            d="M94 144a123 123 0 1 0 246 0a123 123 0 1 0-246 0M143 144a74 74 0 1 0 148 0a74 74 0 1 0-148 0"
+            fillRule="evenodd"
+            fill="#02101a"
+            stroke="#274b5b"
+            strokeWidth="5"
+          />
+        ) : (
+          <circle cx="217" cy="144" r="123" fill="#02101a" stroke="#274b5b" strokeWidth="5" />
+        )}
         <circle cx="217" cy="144" r="112" fill="none" stroke={accent} strokeWidth="1.8" opacity="0.72" />
         <circle cx="217" cy="144" r="99" fill="none" stroke={accentDeep} strokeWidth="1.2" strokeDasharray="3 8" opacity="0.85" />
         <g stroke={accent} filter={`url(#${id("cyan-glow")})`}>
-          <line x1="217" y1="18" x2="217" y2="270" strokeWidth="2" />
-          <line x1="60" y1="144" x2="364" y2="144" strokeWidth="2" />
+          {liveCore ? (
+            // Crosshair stops at the hole edge instead of streaking across
+            // the live globe.
+            <>
+              <line x1="217" y1="18" x2="217" y2="66" strokeWidth="2" />
+              <line x1="217" y1="222" x2="217" y2="270" strokeWidth="2" />
+              <line x1="60" y1="144" x2="139" y2="144" strokeWidth="2" />
+              <line x1="295" y1="144" x2="364" y2="144" strokeWidth="2" />
+            </>
+          ) : (
+            <>
+              <line x1="217" y1="18" x2="217" y2="270" strokeWidth="2" />
+              <line x1="60" y1="144" x2="364" y2="144" strokeWidth="2" />
+            </>
+          )}
         </g>
-        <circle cx="217" cy="144" r="76" fill={`url(#${id("globe-fill")})`} stroke={accentSoft} strokeWidth="1.2" />
-        <g fill="none" stroke={accentSoft} opacity="0.4">
-          <ellipse cx="217" cy="144" rx="74" ry="24" />
-          <ellipse cx="217" cy="144" rx="74" ry="48" />
-          <ellipse cx="217" cy="144" rx="35" ry="75" />
-          <ellipse cx="217" cy="144" rx="58" ry="75" />
-          <line x1="143" y1="144" x2="291" y2="144" />
-        </g>
-        <g data-layer="continents" fill={accentSoft} opacity="0.88">
-          <path d="M191 83 l15 -8 22 2 8 8 19 3 6 7 -12 8 -13 -2 -7 10 -13 1 -8 -7 -8 3 -9 -9 z" />
-          <path d="M170 98 l9 -5 11 4 -1 10 8 8 -5 9 -14 2 -9 12 -12 -3 -1 -11 8 -8 -3 -9 z" />
-          <path d="M211 120 l18 -4 12 7 9 1 9 11 -5 10 -12 2 -7 8 -11 -1 -5 -11 -11 -5 z" />
-          <path d="M239 151 l12 -3 13 8 5 12 -8 8 -6 17 -12 5 -6 -14 -9 -10 5 -11 z" />
-          <path d="M181 150 l12 -5 12 5 -1 12 -8 8 -3 18 -11 10 -7 -14 3 -13 -5 -8 z" />
-        </g>
+        {!liveCore && (
+          <>
+            <circle cx="217" cy="144" r="76" fill={`url(#${id("globe-fill")})`} stroke={accentSoft} strokeWidth="1.2" />
+            <g fill="none" stroke={accentSoft} opacity="0.4">
+              <ellipse cx="217" cy="144" rx="74" ry="24" />
+              <ellipse cx="217" cy="144" rx="74" ry="48" />
+              <ellipse cx="217" cy="144" rx="35" ry="75" />
+              <ellipse cx="217" cy="144" rx="58" ry="75" />
+              <line x1="143" y1="144" x2="291" y2="144" />
+            </g>
+            <g data-layer="continents" fill={accentSoft} opacity="0.88">
+              <path d="M191 83 l15 -8 22 2 8 8 19 3 6 7 -12 8 -13 -2 -7 10 -13 1 -8 -7 -8 3 -9 -9 z" />
+              <path d="M170 98 l9 -5 11 4 -1 10 8 8 -5 9 -14 2 -9 12 -12 -3 -1 -11 8 -8 -3 -9 z" />
+              <path d="M211 120 l18 -4 12 7 9 1 9 11 -5 10 -12 2 -7 8 -11 -1 -5 -11 -11 -5 z" />
+              <path d="M239 151 l12 -3 13 8 5 12 -8 8 -6 17 -12 5 -6 -14 -9 -10 5 -11 z" />
+              <path d="M181 150 l12 -5 12 5 -1 12 -8 8 -3 18 -11 10 -7 -14 3 -13 -5 -8 z" />
+            </g>
+          </>
+        )}
         <ellipse cx="217" cy="144" rx="119" ry="43" transform="rotate(-29 217 144)" fill="none" stroke="#e9fbff" strokeWidth="3.1" />
         <ellipse cx="217" cy="144" rx="116" ry="40" transform="rotate(-29 217 144)" fill="none" stroke={accent} strokeWidth="1.2" opacity="0.8" />
-        <circle cx="225" cy="171" r="4" fill="#ffffff" />
-        <circle cx="225" cy="171" r="12" fill={accentSoft} opacity="0.75" filter={`url(#${id("soft-glow")})`} />
+        {!liveCore && (
+          <>
+            <circle cx="225" cy="171" r="4" fill="#ffffff" />
+            <circle cx="225" cy="171" r="12" fill={accentSoft} opacity="0.75" filter={`url(#${id("soft-glow")})`} />
+          </>
+        )}
       </g>
 
       <g data-layer="lower-panel">

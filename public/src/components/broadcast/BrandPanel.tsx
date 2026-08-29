@@ -7,6 +7,26 @@
  */
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import GodsBanner from "./GodsBanner";
+import SubGlobeWidget from "./SubGlobeWidget";
+
+/** GodsBanner viewBox geometry the live core must line up with. */
+const BANNER_VIEW_W = 1948;
+const BANNER_GLOBE_CX = 217;
+const BANNER_GLOBE_CY = 144;
+/** Canvas core radius in viewBox units — slightly over the svg's r=74 hole
+ *  (drawSubGlobe insets its disc 3%, so the painted disc lands ≈76.6 and the
+ *  hole's rim stroke masks the seam). */
+const BANNER_CORE_R = 79;
+
+/** Camera-anchor bundle that turns the banner's globe into the live locator. */
+export interface BrandLiveGlobe {
+  center: [number, number];
+  zoom: number;
+  autoSpin?: boolean;
+  spinSpeed?: number;
+  spinEpoch?: number;
+  accent?: string;
+}
 
 /** Globe + satellite-ring monogram used by themes with iconVariant "orbit". */
 function OrbitMark({ size, accent }: { size: number; accent: string }) {
@@ -76,12 +96,18 @@ function OrbitMark({ size, accent }: { size: number; accent: string }) {
 export default function BrandPanel({
   theme = DEFAULT_THEME,
   compact = false,
+  liveGlobe,
 }: {
   theme?: BroadcastTheme;
   compact?: boolean;
+  /** When set, the banner's decorative globe becomes the live locator
+   *  sub-globe (canvas layered BEHIND the svg, showing through its hole).
+   *  Omitted → the pure static artwork (admin previews, tests). */
+  liveGlobe?: BrandLiveGlobe;
 }) {
   const usesGodsBanner = theme.name === "G.O.D.S.";
   const bannerWidth = compact ? 400 : 620;
+  const bannerScale = bannerWidth / BANNER_VIEW_W;
   return (
     <div
       style={{
@@ -92,18 +118,47 @@ export default function BrandPanel({
       }}
     >
       {usesGodsBanner ? (
-        <GodsBanner
-          accent={theme.accent}
-          titleColor={theme.titleColor}
-          label={`${theme.name} ${theme.tagline}`}
-          width={bannerWidth}
-          style={{
-            display: "block",
-            // The SVG uses the source artwork's tight viewBox, so it stacks
-            // directly with the readout/clock strip beneath it.
-            filter: "drop-shadow(0 8px 26px rgba(0,0,0,0.5))",
-          }}
-        />
+        <div style={{ position: "relative" }}>
+          {liveGlobe && (
+            // Live locator planet sunk BEHIND the banner svg: the svg's
+            // liveCore hole lets it show through while every ring/ellipse
+            // stays on top as the bezel.
+            <div
+              style={{
+                position: "absolute",
+                left: (BANNER_GLOBE_CX - BANNER_CORE_R) * bannerScale,
+                top: (BANNER_GLOBE_CY - BANNER_CORE_R) * bannerScale,
+              }}
+            >
+              <SubGlobeWidget
+                size={2 * BANNER_CORE_R * bannerScale}
+                showReadout={false}
+                center={liveGlobe.center}
+                zoom={liveGlobe.zoom}
+                autoSpin={liveGlobe.autoSpin}
+                spinSpeed={liveGlobe.spinSpeed}
+                spinEpoch={liveGlobe.spinEpoch}
+                accent={liveGlobe.accent}
+                theme={theme}
+              />
+            </div>
+          )}
+          <GodsBanner
+            accent={theme.accent}
+            titleColor={theme.titleColor}
+            label={`${theme.name} ${theme.tagline}`}
+            width={bannerWidth}
+            liveCore={!!liveGlobe}
+            style={{
+              display: "block",
+              // Positioned so the svg stacks OVER the absolute live canvas.
+              position: "relative",
+              // The SVG uses the source artwork's tight viewBox, so it stacks
+              // directly with the readout/clock strip beneath it.
+              filter: "drop-shadow(0 8px 26px rgba(0,0,0,0.5))",
+            }}
+          />
+        </div>
       ) : (
         <div
           style={{

@@ -58,6 +58,15 @@ describe("SubGlobeWidget", () => {
     unmount(); // interval cleared without leaking a timer past teardown
   });
 
+  it("hides the readout for the in-logo variant (canvas only)", async () => {
+    const { unmount } = render(<SubGlobeWidget center={[-149.9, -17.5]} zoom={3} showReadout={false} />);
+    expect(screen.queryByText("17.5°S · 149.9°W")).not.toBeInTheDocument();
+    // The planet itself still paints.
+    await waitFor(() => expect(stub.clearRect).toHaveBeenCalled());
+    await act(async () => {}); // flush the land promise while the ctx stub is live
+    unmount();
+  });
+
   it("survives a lost/absent 2d context (jsdom default) without crashing", async () => {
     getContext.mockReturnValue(null as unknown as RenderingContext);
     render(<SubGlobeWidget center={[0, 20]} zoom={2.5} />);

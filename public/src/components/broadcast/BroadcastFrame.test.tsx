@@ -87,7 +87,6 @@ jest.mock("./EventOverlay", () => ({
   trackingBlockHeight: () => 0,
 }));
 jest.mock("./SyslogFeed", () => ({ __esModule: true, default: () => <div data-testid="w-syslog" /> }));
-jest.mock("./SubGlobeWidget", () => ({ __esModule: true, default: () => <div data-testid="w-subglobe" /> }));
 jest.mock("./UpNextPanel", () => ({ __esModule: true, default: () => <div data-testid="w-upNext" /> }));
 jest.mock("./BuildInfoTag", () => ({ __esModule: true, default: () => <div data-testid="w-buildInfo" /> }));
 jest.mock("./SlideDeck", () => ({ __esModule: true, default: () => null }));
@@ -115,7 +114,6 @@ const TESTID: Record<WidgetId, string> = {
   kpIndex: "w-kpIndex",
   upNext: "w-upNext",
   syslog: "w-syslog",
-  subglobe: "w-subglobe",
   buildInfo: "w-buildInfo",
   ticker: "w-ticker",
 };

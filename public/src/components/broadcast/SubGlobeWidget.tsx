@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * "SUB-GLOBE" — the little always-on locator planet in the BOTTOM-RIGHT
- * corner: a true orthographic hemisphere centred on where the main globe is
- * parked, with a kind-accent reticle whose ring tightens as the shot pushes
- * in. BroadcastFrame paints it UNDER the bottom-right telemetry column (DOM
- * order, no z-index games), so the syslog lines drift across its face — the
- * planet doubles as the dark backing that makes that bare text read.
+ * "SUB-GLOBE" — the little always-on locator planet: a true orthographic
+ * hemisphere centred on where the main globe is parked, with a kind-accent
+ * reticle whose ring tightens as the shot pushes in. It lives INSIDE the
+ * G.O.D.S. masthead now — BrandPanel sinks it behind GodsBanner's liveCore
+ * hole so the banner's rings/ellipse read as its bezel (the old bottom-left
+ * corner mount is gone; that space is reserved for sponsor placements).
  *
  * It deliberately does NOT track the live per-frame camera (that never leaves
  * Globe.tsx's rAF loop). It follows the camera ANCHOR (`ControlState.camera`)
@@ -54,6 +54,7 @@ export default function SubGlobeWidget({
   size = 300,
   tiltDeg = 0,
   panDeg = 0,
+  showReadout = true,
 }: {
   /** Camera anchor (ControlState.camera.center) — [lng, lat]. */
   center: [number, number];
@@ -73,6 +74,8 @@ export default function SubGlobeWidget({
   /** Tip the viewpoint this many degrees WEST, so the mark renders to the
    *  RIGHT of the disc centre — pairs with the mount clipping the left edge. */
   panDeg?: number;
+  /** Hide the lon/lat readout line — canvas only (the in-logo variant). */
+  showReadout?: boolean;
 }) {
   const reticle = accent ?? theme.accent;
   // Fixed 2× backing store — crisp through the 1080p stage scale on a 4K out.
@@ -152,20 +155,22 @@ export default function SubGlobeWidget({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, pointerEvents: "none" }}>
-      <div
-        ref={readoutRef}
-        style={{
-          fontSize: 12.5,
-          fontWeight: 700,
-          letterSpacing: 1.6,
-          color: theme.mutedColor,
-          fontVariantNumeric: "tabular-nums",
-          // Bare text over the map, like the syslog lines beneath it.
-          textShadow: "0 1px 3px rgba(0,0,0,0.9)",
-        }}
-      >
-        {formatLonLat(shownRef.current.lng, shownRef.current.lat)}
-      </div>
+      {showReadout && (
+        <div
+          ref={readoutRef}
+          style={{
+            fontSize: 12.5,
+            fontWeight: 700,
+            letterSpacing: 1.6,
+            color: theme.mutedColor,
+            fontVariantNumeric: "tabular-nums",
+            // Bare text over the map, like the syslog lines beneath it.
+            textShadow: "0 1px 3px rgba(0,0,0,0.9)",
+          }}
+        >
+          {formatLonLat(shownRef.current.lng, shownRef.current.lat)}
+        </div>
+      )}
       <canvas
         ref={canvasRef}
         width={canvasPx}

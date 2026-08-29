@@ -95,7 +95,6 @@ import EventOverlay, { EventTrackingLabel, trackingBlockHeight } from "./EventOv
 import { CARD_H } from "./BroadcastCard";
 import { flagEmoji } from "./RegionCountryPanel";
 import SyslogFeed from "./SyslogFeed";
-import SubGlobeWidget from "./SubGlobeWidget";
 import UpNextPanel from "./UpNextPanel";
 import BuildInfoTag from "./BuildInfoTag";
 import SlideDeck from "./SlideDeck";
@@ -754,33 +753,6 @@ export default function BroadcastFrame({
           transformOrigin: "center center",
         }}
       >
-        {/* The locator sub-globe — the stage's FIRST child, so every other
-            piece of chrome (the left card deck, the monitor row, the ticker)
-            paints OVER it (DOM order, same stacking context): a pure
-            bottom-LEFT backdrop rising behind the on-air deck. It follows the
-            camera anchor every cut/tour stop patches (state.camera — "the one
-            place that actually tracks the live stop") and re-derives a world
-            spin from the same deterministic spinSpeed/spinEpoch params
-            Globe.tsx uses, so it needs no per-frame camera feed. Ghosted and
-            sunk past the stage edge (the stage clips overflow), so the planet
-            peeks up from behind the ticker instead of sitting ON the chrome. */}
-        {!off.has("subglobe") && (
-          <div style={{ position: "absolute", bottom: -130, left: -10, opacity: 0.7 }}>
-            <SubGlobeWidget
-              size={400}
-              tiltDeg={22}
-              panDeg={14}
-              center={state.camera.center}
-              zoom={state.camera.zoom}
-              autoSpin={state.autoSpin}
-              spinSpeed={state.spinSpeed}
-              spinEpoch={state.spinEpoch}
-              accent={onAirSegment ? (KIND_COLOR[onAirSegment.kind] ?? theme.accent) : theme.accent}
-              theme={theme}
-            />
-          </div>
-        )}
-
         {/* Targeted point events (storm/quake/aircraft/ship/volcano) get the
             centred reticle + lower-third, with point-history on its top-right.
             The 3-day forecast strip rides the bottom-centre monitor row (see
@@ -888,7 +860,23 @@ export default function BroadcastFrame({
               transformOrigin: "left top",
             }}
           >
-            <BrandPanel theme={theme} />
+            {/* The banner's globe IS the locator sub-globe now (the old
+                bottom-left corner planet is gone — that space is reserved
+                for sponsor placements): it follows the camera anchor every
+                cut/tour stop patches (state.camera) and re-derives the world
+                spin from the same deterministic spinSpeed/spinEpoch params
+                Globe.tsx uses, so it needs no per-frame camera feed. */}
+            <BrandPanel
+              theme={theme}
+              liveGlobe={{
+                center: state.camera.center,
+                zoom: state.camera.zoom,
+                autoSpin: state.autoSpin,
+                spinSpeed: state.spinSpeed,
+                spinEpoch: state.spinEpoch,
+                accent: onAirSegment ? (KIND_COLOR[onAirSegment.kind] ?? theme.accent) : theme.accent,
+              }}
+            />
           </div>
         )}
 
