@@ -15,6 +15,7 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import {
   BROADCAST_REPORT_SLIDES,
@@ -28,7 +29,7 @@ import {
   type ReportKind,
 } from "@photonsurge/shared/broadcast-report";
 import type { HazardType } from "@photonsurge/shared/alerts/hazard";
-import { type ControlState } from "@photonsurge/shared/control";
+import { type ControlState, type WeatherLocation } from "@photonsurge/shared/control";
 import { fetchSceneState } from "../../../lib/scenes";
 import { useSceneDraft } from "./SceneDraft";
 import AlertHazardChips from "../../AlertHazardChips";
@@ -106,14 +107,39 @@ export default function ReportSettings({ sceneId }: { sceneId: string }) {
     apply({ reportKindsOff: [...next] as ReportKind[] });
   };
 
+  const locations = state.weatherLocations ?? [];
+  const updateLocation = (index: number, over: Partial<WeatherLocation>) => {
+    apply({
+      weatherLocations: locations.map((location, i) =>
+        i === index ? { ...location, ...over } : location,
+      ),
+    });
+  };
+  const removeLocation = (index: number) => {
+    apply({ weatherLocations: locations.filter((_, i) => i !== index) });
+  };
+  const addLocation = () => {
+    if (locations.length >= 4) return;
+    apply({
+      weatherLocations: [
+        ...locations,
+        {
+          label: `Location ${locations.length + 1}`,
+          lat: Number(state.camera.center[1].toFixed(3)),
+          lng: Number(state.camera.center[0].toFixed(3)),
+        },
+      ],
+    });
+  };
+
   return (
     <Paper sx={{ p: 1.75 }}>
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
-        World report
+        Top-right report
       </Typography>
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.25 }}>
-        The top-right whole-planet deck. Pare it to this channel&apos;s theme — a focus preset is
-        the fast way, then fine-tune below.
+        The top-right report deck. Event slides are global; the weather slide uses only the
+        locations chosen for this scene.
       </Typography>
 
       {/* One-click focuses — the multi-channel workhorse. */}
@@ -138,6 +164,55 @@ export default function ReportSettings({ sceneId }: { sceneId: string }) {
         maxMs={REPORT_HOLD_MAX_MS}
         onChange={(ms) => apply({ reportHoldMs: ms })}
       />
+
+      <Box sx={{ mt: 1.75, mb: 1.75, pt: 1.5, borderTop: 1, borderColor: "divider" }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 0.5 }}>
+          <Typography variant="subtitle2" sx={{ flex: 1 }}>
+            Weather locations
+          </Typography>
+          <Button size="small" disabled={locations.length >= 4} onClick={addLocation}>
+            Add current view
+          </Button>
+        </Stack>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+          Up to four named point forecasts. With none selected, the slide follows the live camera.
+        </Typography>
+        <Stack spacing={1}>
+          {locations.map((location, index) => (
+            <Stack key={index} direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: "center" }}>
+              <TextField
+                size="small"
+                fullWidth
+                label={`Location ${index + 1} name`}
+                value={location.label}
+                onChange={(event) => updateLocation(index, { label: event.target.value })}
+                slotProps={{ htmlInput: { "aria-label": `Weather location ${index + 1} name` } }}
+              />
+              <TextField
+                size="small"
+                type="number"
+                label="Latitude"
+                value={location.lat}
+                onChange={(event) => updateLocation(index, { lat: Number(event.target.value) })}
+                slotProps={{ htmlInput: { "aria-label": `Weather location ${index + 1} latitude`, min: -90, max: 90, step: 0.001 } }}
+                sx={{ width: { xs: "100%", sm: 150 } }}
+              />
+              <TextField
+                size="small"
+                type="number"
+                label="Longitude"
+                value={location.lng}
+                onChange={(event) => updateLocation(index, { lng: Number(event.target.value) })}
+                slotProps={{ htmlInput: { "aria-label": `Weather location ${index + 1} longitude`, min: -180, max: 180, step: 0.001 } }}
+                sx={{ width: { xs: "100%", sm: 150 } }}
+              />
+              <Button size="small" color="error" onClick={() => removeLocation(index)}>
+                Remove
+              </Button>
+            </Stack>
+          ))}
+        </Stack>
+      </Box>
 
       <Box sx={{ display: "grid", gap: 0.5 }}>
         {ordered.map((id, idx) => {

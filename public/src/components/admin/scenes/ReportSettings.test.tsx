@@ -92,10 +92,27 @@ describe("ReportSettings", () => {
 
   it("reorders a slide up (delta patch carries the new order)", async () => {
     render(<ReportSettings sceneId="wx" />);
-    // 'World report' (hourly) is second → moving it up puts it before 'detection'.
-    fireEvent.click(await screen.findByRole("button", { name: "Move World report up" }));
+    // 'Location weather' (hourly) is second → moving it up puts it before 'detection'.
+    fireEvent.click(await screen.findByRole("button", { name: "Move Location weather up" }));
 
     const [, sent] = patch.mock.calls[patch.mock.calls.length - 1];
     expect(sent.reportOrder.slice(0, 2)).toEqual(["hourly", "detection"]);
+  });
+
+  it("clearly adds and edits chosen weather locations from the scene form", async () => {
+    render(<ReportSettings sceneId="wx" />);
+    expect(await screen.findByText("Weather locations")).toBeInTheDocument();
+    expect(screen.getByText(/With none selected, the slide follows the live camera/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add current view" }));
+    expect(patch).toHaveBeenLastCalledWith("wx", {
+      weatherLocations: [{ label: "Location 1", lat: 20, lng: 0 }],
+    });
+
+    const name = screen.getByRole("textbox", { name: "Weather location 1 name" });
+    fireEvent.change(name, { target: { value: "Tashkent" } });
+    expect(patch).toHaveBeenLastCalledWith("wx", {
+      weatherLocations: [{ label: "Tashkent", lat: 20, lng: 0 }],
+    });
   });
 });

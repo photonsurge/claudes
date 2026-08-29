@@ -3,7 +3,7 @@
  * for the /watch renderer (WorldReportDeck), the admin editor and the operator
  * console. The report is how a channel presents the whole-planet dataset, so
  * curating it is how one globe becomes several themed channels: a SEISMIC
- * channel keeps quakes + volcanoes, a WEATHER channel keeps the weather report +
+ * channel keeps quakes + volcanoes, a WEATHER channel keeps location weather +
  * alerts, and so on.
  *
  * Per channel: HIDE slides (`ControlState.reportOff`, an off-list — empty = show
@@ -44,7 +44,7 @@ export interface ReportSlide {
 /** Every report slide, in natural rotation order (also the default ranking). */
 export const BROADCAST_REPORT_SLIDES: readonly ReportSlide[] = [
   { id: "detection", label: "Detection grid", note: "Whole-planet situation grid + active feed" },
-  { id: "hourly", label: "World report", note: "Global weather report (area forecast)" },
+  { id: "hourly", label: "Location weather", note: "Point forecasts for this scene's chosen locations" },
   { id: "alerts", label: "Global alerts", note: "Active weather alerts by severity & continent" },
   { id: "seismic", label: "Seismic activity", note: "24h quakes by magnitude & continent" },
   { id: "volcanoes", label: "Volcanic activity", note: "Active volcanoes by status & continent" },

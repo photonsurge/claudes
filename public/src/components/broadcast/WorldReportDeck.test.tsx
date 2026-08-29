@@ -7,9 +7,10 @@ import type { WorldWatchItem } from "../../lib/broadcast";
 import type { WorldWatchState } from "../../lib/world-watch";
 import { DEFAULT_THEME } from "./config";
 
-// The WORLD REPORT slide pulls a global area forecast; stub it so the deck can
-// mount without a fetch (only the "hourly" slide reads it anyway).
-jest.mock("../../lib/forecast-client", () => ({ useAreaForecast: () => ({ days: [], loading: false }) }));
+const mockUsePointForecast = jest.fn((_center: [number, number] | null) => ({ days: [], loading: false }));
+jest.mock("../../lib/forecast-client", () => ({
+  usePointForecast: (center: [number, number] | null) => mockUsePointForecast(center),
+}));
 
 function feedItem(kind: WorldWatchItem["kind"], key: string): WorldWatchItem {
   return {
@@ -152,7 +153,6 @@ describe("WorldReportDeck per-channel curation", () => {
     render(
       <WorldReportDeck
         worldWatch={emptyWatch}
-        manifest={null}
         reportOff={["detection", "hourly", "alerts", "volcanoes", "about"]}
       />,
     );
@@ -164,7 +164,6 @@ describe("WorldReportDeck per-channel curation", () => {
     render(
       <WorldReportDeck
         worldWatch={emptyWatch}
-        manifest={null}
         reportOff={["hourly", "alerts", "seismic", "volcanoes", "about"]}
         reportKindsOff={["alert"]}
       />,
@@ -178,7 +177,6 @@ describe("WorldReportDeck per-channel curation", () => {
     render(
       <WorldReportDeck
         worldWatch={emptyWatch}
-        manifest={null}
         reportOff={["detection", "hourly", "alerts", "seismic", "volcanoes"]}
         about={{ title: "About Storm Watch", body: "", sources: "NOAA GFS", footer: "" }}
       />,
@@ -193,7 +191,6 @@ describe("WorldReportDeck per-channel curation", () => {
       render(
         <WorldReportDeck
           worldWatch={emptyWatch}
-          manifest={null}
           reportOff={["detection", "hourly", "alerts", "about"]}
           holdMs={5000}
         />,
@@ -216,10 +213,29 @@ describe("WorldReportDeck per-channel curation", () => {
     const { container } = render(
       <WorldReportDeck
         worldWatch={emptyWatch}
-        manifest={null}
         reportOff={["detection", "hourly", "alerts", "seismic", "volcanoes", "about"]}
       />,
     );
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders point forecasts for the scene's chosen weather locations", () => {
+    render(
+      <WorldReportDeck
+        worldWatch={emptyWatch}
+        reportOff={["detection", "alerts", "seismic", "volcanoes", "about"]}
+        weatherLocations={[
+          { label: "London", lat: 51.507, lng: -0.128 },
+          { label: "Tokyo", lat: 35.676, lng: 139.65 },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("LOCATION WEATHER")).toBeInTheDocument();
+    expect(screen.getByText("LONDON")).toBeInTheDocument();
+    expect(screen.getByText("TOKYO")).toBeInTheDocument();
+    expect(screen.queryByText("ACTIVE FEED")).not.toBeInTheDocument();
+    expect(mockUsePointForecast).toHaveBeenCalledWith([-0.128, 51.507]);
+    expect(mockUsePointForecast).toHaveBeenCalledWith([139.65, 35.676]);
   });
 });

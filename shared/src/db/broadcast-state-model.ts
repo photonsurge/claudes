@@ -155,6 +155,18 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     reportOff: { type: [String], required: true, default: [] },
     reportOrder: { type: [String], required: true, default: [] },
     reportHoldMs: { type: Number, required: true, default: DEFAULT_REPORT_HOLD_MS },
+    weatherLocations: {
+      type: [
+        {
+          _id: false,
+          label: { type: String, required: true },
+          lat: { type: Number, required: true },
+          lng: { type: Number, required: true },
+        },
+      ],
+      required: true,
+      default: [],
+    },
     reportKindsOff: { type: [String], required: true, default: [] },
     reportHazardsOff: { type: [String], required: true, default: [] },
     tickerKindsOff: { type: [String], required: true, default: [] },

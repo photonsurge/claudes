@@ -112,6 +112,10 @@ describe("mergeControlState", () => {
       reportOff: ["hourly", "alerts"],
       reportOrder: ["seismic", "volcanoes"],
       reportHoldMs: 9000,
+      weatherLocations: [
+        { label: "London", lat: 51.507, lng: -0.128 },
+        { label: "Tokyo", lat: 35.676, lng: 139.65 },
+      ],
       reportKindsOff: ["alert"],
       reportHazardsOff: ["fire", "fog"],
       tickerKindsOff: ["track", "ad"],
@@ -165,6 +169,26 @@ describe("mergeControlState", () => {
       godsBorderColor: "#223344",
       minimapLandColor: "#445566",
     });
+  });
+
+  it("sanitises and caps chosen weather locations", () => {
+    const next = mergeControlState(base, {
+      weatherLocations: [
+        { label: "  London  ", lat: 51.507, lng: -0.128 },
+        { label: "", lat: 0, lng: 0 },
+        { label: "Bad latitude", lat: 120, lng: 0 },
+        { label: "Tokyo", lat: 35.676, lng: 139.65 },
+        { label: "Sydney", lat: -33.868, lng: 151.209 },
+        { label: "Lima", lat: -12.046, lng: -77.043 },
+        { label: "Fifth", lat: 10, lng: 10 },
+      ],
+    });
+    expect(next.weatherLocations).toEqual([
+      { label: "London", lat: 51.507, lng: -0.128 },
+      { label: "Tokyo", lat: 35.676, lng: 139.65 },
+      { label: "Sydney", lat: -33.868, lng: 151.209 },
+      { label: "Lima", lat: -12.046, lng: -77.043 },
+    ]);
   });
 
   it("merges about partially, dropping non-string values", () => {

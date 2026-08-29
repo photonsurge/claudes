@@ -394,6 +394,13 @@ export interface ThemeOverrides {
   minimapAccentColor?: string;
 }
 
+/** One named point shown by the top-right location-weather slide. */
+export interface WeatherLocation {
+  label: string;
+  lat: number;
+  lng: number;
+}
+
 /** The keys sanitised through mergeControlState / persisted for a theme override. */
 export const THEME_OVERRIDE_KEYS = [
   "name",
@@ -636,6 +643,9 @@ export interface ControlState {
   reportOrder: ReportSlideId[];
   /** WORLD REPORT deck rotation dwell in ms (how long each slide holds). */
   reportHoldMs: number;
+  /** Named point forecasts shown by the location-weather report slide. Empty =
+   * use the live camera position, so the slide is never a global forecast. */
+  weatherLocations: WeatherLocation[];
   /**
    * Event KINDS excluded from the WORLD REPORT (empty = all). Drops the kind from
    * BOTH the detection grid and the active feed — how a themed channel's whole
@@ -760,6 +770,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   reportOff: [],
   reportOrder: [],
   reportHoldMs: DEFAULT_REPORT_HOLD_MS,
+  weatherLocations: [],
   reportKindsOff: [],
   reportHazardsOff: [],
   tickerKindsOff: [],
@@ -785,6 +796,24 @@ function sanitizeThemeOverrides(v: Partial<ThemeOverrides> | undefined): ThemeOv
   for (const k of THEME_OVERRIDE_KEYS) {
     const val = src[k];
     if (typeof val === "string") out[k] = val;
+  }
+  return out;
+}
+
+/** Keep at most four valid, named point forecasts for the compact report card. */
+function sanitizeWeatherLocations(value: unknown): WeatherLocation[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: WeatherLocation[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as Record<string, unknown>;
+    const label = typeof item.label === "string" ? item.label.trim().slice(0, 80) : "";
+    const lat = Number(item.lat);
+    const lng = Number(item.lng);
+    if (!label || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+    out.push({ label, lat, lng });
+    if (out.length === 4) break;
   }
   return out;
 }
@@ -964,6 +993,7 @@ export function mergeControlState(base: ControlState, patch: Partial<ControlStat
       typeof patch.reportHoldMs === "number" && patch.reportHoldMs > 0
         ? patch.reportHoldMs
         : base.reportHoldMs ?? DEFAULT_REPORT_HOLD_MS,
+    weatherLocations: sanitizeWeatherLocations(patch.weatherLocations) ?? base.weatherLocations ?? [],
     reportKindsOff: Array.isArray(patch.reportKindsOff)
       ? [...new Set(patch.reportKindsOff.filter(isReportKind))]
       : base.reportKindsOff ?? [],

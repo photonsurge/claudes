@@ -3,16 +3,14 @@
 /**
  * WORLD REPORT deck — the auto-rotating top-right stack. Slide 1 is the
  * original DETECTION GRID (WorldSituationPanel) + ACTIVE FEED, then the deck
- * cycles a whole-planet weather report, single-category ALERTS / SEISMIC /
+ * cycles chosen-location weather, single-category ALERTS / SEISMIC /
  * VOLCANOES drill-downs, and a reserved ABOUT US card. Every category slide is
  * derived from the one shared `worldWatch` tally BroadcastFrame already fetches
- * — only the WORLD REPORT slide pulls extra data (the global area forecast),
- * lifted here so it doesn't refetch on each rotation. Advances on the channel's
+ * — each weather-location tile owns its point forecast. Advances on the channel's
  * `reportHoldMs` dwell (DEFAULT_REPORT_HOLD_MS when unset).
  * Pointer-inert like the rest of the chrome.
  */
-import type { WeatherManifest } from "@photonsurge/shared/manifest";
-import type { AboutSettings } from "@photonsurge/shared/control";
+import type { AboutSettings, WeatherLocation } from "@photonsurge/shared/control";
 import {
   applyReportPrefs,
   DEFAULT_REPORT_HOLD_MS,
@@ -21,17 +19,13 @@ import {
 } from "@photonsurge/shared/broadcast-report";
 import type { WorldWatchState } from "../../lib/world-watch";
 import { filterFeedByKind } from "../../lib/broadcast";
-import { useAreaForecast } from "../../lib/forecast-client";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { GODS_BORDER } from "./GodsPanel";
 import { usePagedSlides } from "./PointHistoryPanel";
 import WorldSituationPanel from "./WorldSituationPanel";
-import WorldReportPanel from "./WorldReportPanel";
+import LocationWeatherPanel from "./LocationWeatherPanel";
 import HazardScreen, { type HazardContinent } from "./HazardScreen";
 import AboutPanel from "./AboutPanel";
-
-/** Whole-planet bbox for the global "latest report" area forecast. */
-const WORLD_BBOX: [number, number, number, number] = [-180, -90, 180, 90];
 
 /** The rotation order — kept as data so the count drives the dot indicator. */
 export const DECK_SLIDES = ["detection", "hourly", "alerts", "seismic", "volcanoes", "about"] as const;
@@ -51,8 +45,9 @@ function categoryContinents(
 
 export default function WorldReportDeck({
   worldWatch,
-  manifest,
   theme = DEFAULT_THEME,
+  weatherLocations,
+  cameraCenter,
   reportOff,
   reportOrder,
   reportKindsOff,
@@ -60,8 +55,11 @@ export default function WorldReportDeck({
   holdMs = DEFAULT_REPORT_HOLD_MS,
 }: {
   worldWatch: WorldWatchState;
-  manifest: WeatherManifest | null;
   theme?: BroadcastTheme;
+  /** Explicit point forecasts configured on admin/scenes/:id. */
+  weatherLocations?: WeatherLocation[];
+  /** Empty location lists follow the live view instead of becoming global. */
+  cameraCenter?: [number, number];
   /** Per-channel hidden report slides (ControlState.reportOff). */
   reportOff?: ReportSlideId[];
   /** Per-channel report slide ranking (ControlState.reportOrder). */
@@ -84,9 +82,15 @@ export default function WorldReportDeck({
     reportOff ?? [],
     reportOrder ?? [],
   ).map((x) => x.id);
-  // Lifted here (not inside the slide) so rotating away and back doesn't
-  // re-trigger the global-bbox fetch each cycle.
-  const worldReport = useAreaForecast(WORLD_BBOX);
+  const locations: WeatherLocation[] = weatherLocations?.length
+    ? weatherLocations.slice(0, 4)
+    : [
+        {
+          label: "Current view",
+          lng: cameraCenter?.[0] ?? 0,
+          lat: cameraCenter?.[1] ?? 20,
+        },
+      ];
   const { page } = usePagedSlides(active, 1, holdMs);
   const slide = active[page] ?? active[0];
   // A channel can pare the report to nothing — then render nothing (the whole
@@ -98,15 +102,7 @@ export default function WorldReportDeck({
 
   let content: React.ReactNode;
   if (slide === "hourly") {
-    content = (
-      <WorldReportPanel
-        days={worldReport.days}
-        loading={worldReport.loading}
-        manifest={manifest}
-        feed={s.feed}
-        theme={theme}
-      />
-    );
+    content = <LocationWeatherPanel locations={locations} theme={theme} />;
   } else if (slide === "alerts") {
     content = (
       <HazardScreen

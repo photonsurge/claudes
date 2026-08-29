@@ -994,8 +994,9 @@ export default function BroadcastFrame({
           {!off.has("worldReport") && (
             <WorldReportDeck
               worldWatch={worldWatch}
-              manifest={manifest}
               theme={theme}
+              weatherLocations={state.weatherLocations}
+              cameraCenter={state.camera.center}
               reportOff={state.reportOff}
               reportOrder={state.reportOrder}
               reportKindsOff={state.reportKindsOff}

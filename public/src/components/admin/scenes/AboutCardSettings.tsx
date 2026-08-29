@@ -101,7 +101,7 @@ export default function AboutCardSettings({ sceneId }: { sceneId: string }) {
       <Alert severity="info">
         The ABOUT slide in this channel&apos;s top-right WORLD REPORT rotation — its own
         description and the data sources it uses. Show, hide or reorder the slide itself
-        in the World report card above.
+        in the top-right report card above.
       </Alert>
     </Paper>
   );
