@@ -8,7 +8,7 @@
  */
 
 export function HeartbeatIcon({ active = false, size = 12 }: { active?: boolean; size?: number }) {
-  const color = active ? "#43d9ff" : "#c8d5e6";
+  const color = active ? "var(--gods-accent, #43d9ff)" : "var(--gods-muted, #c8d5e6)";
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" style={{ flex: "none" }}>
       <path
@@ -24,7 +24,7 @@ export function HeartbeatIcon({ active = false, size = 12 }: { active?: boolean;
 }
 
 export function WaveIcon({ active = false, size = 12 }: { active?: boolean; size?: number }) {
-  const color = active ? "#43d9ff" : "#c8d5e6";
+  const color = active ? "var(--gods-accent, #43d9ff)" : "var(--gods-muted, #c8d5e6)";
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" style={{ flex: "none" }}>
       <path
@@ -40,7 +40,7 @@ export function WaveIcon({ active = false, size = 12 }: { active?: boolean; size
 }
 
 export function WindIcon({ active = false, size = 12 }: { active?: boolean; size?: number }) {
-  const color = active ? "#43d9ff" : "#c8d5e6";
+  const color = active ? "var(--gods-accent, #43d9ff)" : "var(--gods-muted, #c8d5e6)";
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" style={{ flex: "none" }}>
       <path
@@ -56,7 +56,7 @@ export function WindIcon({ active = false, size = 12 }: { active?: boolean; size
 }
 
 export function GaugeIcon({ active = false, size = 12 }: { active?: boolean; size?: number }) {
-  const color = active ? "#43d9ff" : "#c8d5e6";
+  const color = active ? "var(--gods-accent, #43d9ff)" : "var(--gods-muted, #c8d5e6)";
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" style={{ flex: "none" }}>
       <path d="M2 12.5 A6 6 0 0 1 14 12.5" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
@@ -68,18 +68,18 @@ export function GaugeIcon({ active = false, size = 12 }: { active?: boolean; siz
 
 /** Generic instrument pin — the on-air point the WIND/PRESSURE/WAVE "LOCAL
  *  MONITOR" cards are reading, not a named station like the seismo/tide dots. */
-export function MonitorPinIcon({ active = false, size = 12 }: { active?: boolean; size?: number }) {
-  const color = active ? "#9085e9" : "#c8d5e6";
+export function MonitorPinIcon({ active = false, size = 12, color }: { active?: boolean; size?: number; color?: string }) {
+  const ink = color ?? (active ? "var(--gods-accent, #43d9ff)" : "var(--gods-muted, #c8d5e6)");
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" style={{ flex: "none" }}>
       <path
         d="M8 1.5 C4.5 1.5 2 4.1 2 7.2 C2 10.8 8 14.5 8 14.5 C8 14.5 14 10.8 14 7.2 C14 4.1 11.5 1.5 8 1.5 Z"
         fill="none"
-        stroke={color}
+        stroke={ink}
         strokeWidth="1.5"
         strokeLinejoin="round"
       />
-      <circle cx="8" cy="7.2" r="1.8" fill={color} />
+      <circle cx="8" cy="7.2" r="1.8" fill={ink} />
     </svg>
   );
 }

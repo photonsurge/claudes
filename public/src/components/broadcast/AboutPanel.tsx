@@ -61,7 +61,7 @@ export default function AboutPanel({
           gap: 10,
           fontSize: 13.8,
           lineHeight: 1.45,
-          color: INK_DIM,
+          color: theme.textColor,
         }}
       >
         {paragraphs ? (
@@ -73,7 +73,7 @@ export default function AboutPanel({
         ) : (
           <>
             <p style={{ margin: 0 }}>
-              <strong style={{ color: "#ffffff", fontWeight: 600 }}>G.O.D.S.</strong> &mdash; Global Orbital Detection
+              <strong style={{ color: theme.titleColor, fontWeight: 600 }}>G.O.D.S.</strong> &mdash; Global Orbital Detection
               System &mdash; is a live visual monitoring platform created by Thronix and built with PhotonSurge
               technology.
             </p>

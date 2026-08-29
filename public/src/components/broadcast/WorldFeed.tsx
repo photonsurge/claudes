@@ -77,7 +77,7 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
             style={{
               fontSize: 14.5,
               fontWeight: 500,
-              color: "#dfe9ee",
+              color: theme.textColor,
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",

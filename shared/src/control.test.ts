@@ -158,6 +158,8 @@ describe("mergeControlState", () => {
       themeOverrides: {
         titleColor: "#123456",
         godsBorderColor: "#223344",
+        tileColor: "#334455",
+        mapHighlightColor: "#556677",
         minimapLandColor: "#445566",
         bogus: "x",
         textColor: 7,
@@ -167,6 +169,8 @@ describe("mergeControlState", () => {
     expect(next.themeOverrides).toEqual({
       titleColor: "#123456",
       godsBorderColor: "#223344",
+      tileColor: "#334455",
+      mapHighlightColor: "#556677",
       minimapLandColor: "#445566",
     });
   });

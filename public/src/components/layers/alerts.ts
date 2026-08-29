@@ -326,6 +326,7 @@ export function onAirPulseLayers(
   features: AlertFeature[],
   at: [number, number],
   now: number,
+  fallbackColor: [number, number, number] = [255, 95, 95],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any[] {
   // `breathe` 0→1→0 (a soft heartbeat); `ping` 0→1 ramps then snaps back (an
@@ -338,7 +339,7 @@ export function onAirPulseLayers(
   const breathe = 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI);
   const ping = phase; // 0..1 sawtooth
   const onAir = onAirFeature(features, at);
-  const c: [number, number, number] = onAir ? base(onAir) : [255, 95, 95];
+  const c: [number, number, number] = onAir ? base(onAir) : fallbackColor;
   const lit: [number, number, number] = lighten(c, 0.6);
 
   // When the on-air event has a real drawn area (Polygon/MultiPolygon), the

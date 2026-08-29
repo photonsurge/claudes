@@ -31,4 +31,13 @@ describe("ThemePreview", () => {
 
     expect(screen.getByText("WORLD REPORT")).toHaveStyle({ color: "rgb(18, 52, 86)" });
   });
+
+  it("publishes draft panel and tile colours to all nested G.O.D.S. chrome", () => {
+    const theme = getBroadcastTheme("command", { godsBorderColor: "#123456", tileColor: "#654321" });
+    render(<ThemePreview theme={theme} />);
+
+    const stage = screen.getByLabelText("Theme preview");
+    expect(stage.style.getPropertyValue("--gods-border")).toBe("#123456");
+    expect(stage.style.getPropertyValue("--gods-tile")).toBe("#654321");
+  });
 });

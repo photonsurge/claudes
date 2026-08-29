@@ -24,7 +24,7 @@ import type { ControlState } from "@photonsurge/shared/control";
 import { loadTexture, preloadTextures, type LoadedTexture } from "../lib/textures";
 import { useCrossfadeVariable } from "../lib/crossfade";
 import { textureUrlFor } from "./layers/props";
-import { basemapLayers, countriesLayer, TILE_MIN_ZOOM } from "./layers/basemap";
+import { basemapLayers, countriesLayer, hexToRgb, TILE_MIN_ZOOM } from "./layers/basemap";
 import {
   scalarRasterLayers,
   vectorParticleLayers,
@@ -42,7 +42,6 @@ import { cityLabelMinZoom, cityDetail } from "../lib/cities";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
 import { countryFeatureFor, countriesInBbox, countryGlowLayers } from "./layers/countryGlow";
-import { flagPaletteFor } from "./layers/flagColors";
 import { seismicLayer } from "./layers/seismic";
 import { seismographStationLayers, seismoKeyOf, seismoShortName } from "./layers/seismograph-stations";
 import { graticuleLayer } from "./layers/graticule";
@@ -150,6 +149,10 @@ export interface GlobeProps {
   glowRegionBbox?: [number, number, number, number] | null;
   /** On-air plane/ship to spotlight with a locator ring on the globe, or null. */
   highlightTrack?: TrackHighlight | null;
+  /** Scene palette colours for map selection chrome and place labels. */
+  mapHighlightColor?: string;
+  mapLabelColor?: string;
+  mapCapitalColor?: string;
   /**
    * Click-to-select an event/quake → its info-box segment (null when the click
    * misses every pickable event). Undefined disables selection entirely.
@@ -234,7 +237,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], alertFocus = null, quakes = [], seismoStations = [], seismoActive = null, tideStations = [], tideActive = null, weatherPointCenter = null, weatherPointLabel = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, glowRegionBbox, highlightTrack, onSelect, onPickPoint },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], alertFocus = null, quakes = [], seismoStations = [], seismoActive = null, tideStations = [], tideActive = null, weatherPointCenter = null, weatherPointLabel = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, glowRegionBbox, highlightTrack, mapHighlightColor = "#4dc8ff", mapLabelColor = "#ffffff", mapCapitalColor = "#ffd700", onSelect, onPickPoint },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -247,6 +250,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const baseLayersRef = useRef<any[]>([]);
   const pulseAtRef = useRef<[number, number] | null>(pulseAt ?? null);
+  const mapHighlightRgb = hexToRgb(mapHighlightColor);
+  const mapLabelRgb = hexToRgb(mapLabelColor);
+  const mapCapitalRgb = hexToRgb(mapCapitalColor);
   useEffect(() => {
     pulseAtRef.current = pulseAt ?? null;
   });
@@ -408,16 +414,15 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     const hover = hoverPulseRef.current;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let pulse: any[] = [];
-    if (cut) pulse = onAirPulseLayers(alertsRef.current, cut, Date.now());
-    else if (hover) pulse = onAirPulseLayers(hover.features, hover.at, Date.now());
+    if (cut) pulse = onAirPulseLayers(alertsRef.current, cut, Date.now(), mapHighlightRgb);
+    else if (hover) pulse = onAirPulseLayers(hover.features, hover.at, Date.now(), mapHighlightRgb);
     // A country spotlight breathes its boundary glow independently of (and
     // alongside) the point pulse above — the two kinds never overlap on air.
     // Outline only (no interior fill); each country's outline cycles through its
     // own flag colours, falling back to white where we have no flag palette.
     const glow = countryGlowLayers(glowFeatureRef.current, Date.now(), {
       fill: false,
-      color: [255, 255, 255],
-      paletteFor: flagPaletteFor,
+      color: mapHighlightRgb,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     }) as any[];
     const extra = [...pulse, ...glow];
@@ -1024,7 +1029,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
           [weatherPointCenter],
           (d) => [d[0], d[1], 0],
           () => true,
-          [144, 133, 233],
+          mapHighlightRgb,
         ),
       );
     }
@@ -1133,6 +1138,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     nestKey,
     highlightTrack?.kind,
     highlightTrack?.code,
+    mapHighlightColor,
   ]);
 
   // Animate the event pulse: while an event is on air, re-commit the layers each
@@ -1150,13 +1156,13 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pulseAt?.[0], pulseAt?.[1], hoverPulse?.[0], hoverPulse?.[1], glowCountryIso, glowRegionBbox?.[0], glowRegionBbox?.[1], glowRegionBbox?.[2], glowRegionBbox?.[3]]);
+  }, [pulseAt?.[0], pulseAt?.[1], hoverPulse?.[0], hoverPulse?.[1], glowCountryIso, glowRegionBbox?.[0], glowRegionBbox?.[1], glowRegionBbox?.[2], glowRegionBbox?.[3], mapHighlightColor]);
 
   // Name labels for the HTML overlay (deck's TextLayer draws blank under the
   // globe). Track names honour the "Names" toggle and always show (minZoom 0);
   // city names follow the Cities layer and reveal progressively by population as
   // you zoom in, with a dim country·population detail line once zoomed close.
-  // Capitals gold, other cities white — matching the city dots.
+  // Capital and city label colours follow the scene's map palette.
   const overlayLabels = useMemo<OverlayLabel[]>(() => {
     const out: OverlayLabel[] = [];
     if (state.showTrackLabels) {
@@ -1183,7 +1189,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
           text: c.name,
           detail: cityDetail(c),
           position: [c.lng, c.lat, 0],
-          color: c.isCapital ? [255, 215, 0] : [255, 255, 255],
+          color: c.isCapital ? mapCapitalRgb : mapLabelRgb,
           minZoom,
           // Detail only once zoomed a step past the name's reveal (and never on
           // the whole-globe view), so low zooms stay clean.
@@ -1237,10 +1243,10 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     if (weatherPointCenter && weatherPointLabel) {
       out.push({
         id: "weather-point",
-        icon: <MonitorPinIcon active />,
+        icon: <MonitorPinIcon active color={mapHighlightColor} />,
         text: weatherPointLabel,
         position: [weatherPointCenter[0], weatherPointCenter[1], 0],
-        color: [144, 133, 233],
+        color: mapHighlightRgb,
         minZoom: 0,
       });
     }
@@ -1266,6 +1272,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.satelliteStyle,
     state.aircraftStyle,
     state.shipStyle,
+    mapHighlightColor,
+    mapLabelColor,
+    mapCapitalColor,
   ]);
 
   return (

@@ -48,6 +48,13 @@ export interface BroadcastTheme {
   godsPanelBottomColor: string;
   /** G.O.D.S. masthead bezel / panel hairline colour. */
   godsBorderColor: string;
+  /** Inset tiles used by feeds, forecasts, charts, and monitor boxes. */
+  tileColor: string;
+  tileBorderColor: string;
+  /** Main-map selected-subject highlight and place-label colours. */
+  mapHighlightColor: string;
+  mapLabelColor: string;
+  mapCapitalColor: string;
   /** Locator minimap palette. */
   minimapOceanInnerColor: string;
   minimapOceanOuterColor: string;
@@ -72,6 +79,11 @@ export const BASE_LOOK = {
   godsPanelMidColor: "#081420",
   godsPanelBottomColor: "#0a1a24",
   godsBorderColor: "#1d4354",
+  tileColor: "#0b1a24",
+  tileBorderColor: "#163241",
+  mapHighlightColor: "#4dc8ff",
+  mapLabelColor: "#ffffff",
+  mapCapitalColor: "#ffd700",
   minimapOceanInnerColor: "#101c30",
   minimapOceanOuterColor: "#070d18",
   minimapLandColor: "#547498",
@@ -126,6 +138,26 @@ export const THEME_OPTIONS: { id: string; label: string }[] = [
 ];
 
 export const DEFAULT_THEME: BroadcastTheme = BROADCAST_THEMES.command;
+
+/** CSS custom properties consumed by the shared G.O.D.S. panel constants.
+ * Applying these once at the scene root lets deeply nested tiles and dividers
+ * inherit the resolved palette without threading another prop through every
+ * presentation component. */
+export function broadcastThemeCssVars(theme: BroadcastTheme): Record<string, string> {
+  return {
+    "--gods-accent": theme.accent,
+    "--gods-title": theme.titleColor,
+    "--gods-text": theme.textColor,
+    "--gods-muted": theme.mutedColor,
+    "--gods-dim": theme.dimColor,
+    "--gods-panel-top": theme.godsPanelTopColor,
+    "--gods-panel-mid": theme.godsPanelMidColor,
+    "--gods-panel-bottom": theme.godsPanelBottomColor,
+    "--gods-border": theme.godsBorderColor,
+    "--gods-tile": theme.tileColor,
+    "--gods-tile-border": theme.tileBorderColor,
+  };
+}
 
 /**
  * Resolve a theme id to its preset (falling back to the default), then layer the

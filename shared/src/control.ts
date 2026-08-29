@@ -384,6 +384,13 @@ export interface ThemeOverrides {
   godsPanelBottomColor?: string;
   /** G.O.D.S. masthead bezel / panel hairline colour. */
   godsBorderColor?: string;
+  /** Inset tiles used by feeds, forecasts, charts, and monitor boxes. */
+  tileColor?: string;
+  tileBorderColor?: string;
+  /** Main-map chrome colours for selected subjects and place labels. */
+  mapHighlightColor?: string;
+  mapLabelColor?: string;
+  mapCapitalColor?: string;
   /** Locator minimap ocean gradient, land fill, and reticle colours. */
   minimapOceanInnerColor?: string;
   minimapOceanOuterColor?: string;
@@ -422,6 +429,11 @@ export const THEME_OVERRIDE_KEYS = [
   "godsPanelMidColor",
   "godsPanelBottomColor",
   "godsBorderColor",
+  "tileColor",
+  "tileBorderColor",
+  "mapHighlightColor",
+  "mapLabelColor",
+  "mapCapitalColor",
   "minimapOceanInnerColor",
   "minimapOceanOuterColor",
   "minimapLandColor",

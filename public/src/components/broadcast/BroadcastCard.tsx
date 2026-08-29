@@ -25,7 +25,7 @@ import {
   SANS,
   GODS_BORDER,
   GODS_FILL,
-  INK as GODS_INK,
+  TEXT_INK as GODS_INK,
 } from "./GodsPanel";
 import { useBroadcastTheme } from "./theme-context";
 import AutoScroll from "./AutoScroll";
@@ -74,7 +74,7 @@ export const DeckSlideActiveContext = createContext<boolean>(true);
 export const INK = BASE_LOOK.textColor;
 export const MUTED = BASE_LOOK.mutedColor;
 export const DIM = BASE_LOOK.dimColor;
-export const DIVIDER = "1px solid rgba(120,140,170,0.15)";
+export const DIVIDER = `1px solid ${GODS_BORDER}`;
 
 /** Standard `▸ SECTION` micro-label used for card + sub-section headers.
  *  Un-tinted eyebrows follow the channel's muted ink. */

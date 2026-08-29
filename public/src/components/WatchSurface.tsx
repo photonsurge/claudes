@@ -43,7 +43,7 @@ import BroadcastFrame from "./broadcast/BroadcastFrame";
 import AdBreak from "./broadcast/AdBreak";
 import LoadingScreen from "./broadcast/LoadingScreen";
 import StartCountdown from "./broadcast/StartCountdown";
-import { getBroadcastTheme } from "./broadcast/config";
+import { broadcastThemeCssVars, getBroadcastTheme } from "./broadcast/config";
 import { BroadcastThemeContext } from "./broadcast/theme-context";
 
 interface WatchSurfaceProps {
@@ -184,7 +184,15 @@ function WatchSurfaceBody({
 
   return (
     <BroadcastThemeContext.Provider value={theme}>
-    <main style={{ position: "fixed", inset: 0, background: "#0a0e16", overflow: "hidden" }}>
+    <main
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "#0a0e16",
+        overflow: "hidden",
+        ...broadcastThemeCssVars(theme),
+      }}
+    >
       <GlobeView
         state={broadcastState}
         manifest={manifest}
@@ -213,6 +221,9 @@ function WatchSurfaceBody({
         glowCountryIso={glowCountryIso}
         glowRegionBbox={glowRegionBbox}
         highlightTrack={highlightTrack}
+        mapHighlightColor={theme.mapHighlightColor}
+        mapLabelColor={theme.mapLabelColor}
+        mapCapitalColor={theme.mapCapitalColor}
       />
       {/* The broadcast chrome carries its own legend/alert furniture, so the plain
           map key only shows on the clean (chrome-off) surface to avoid clashing. */}

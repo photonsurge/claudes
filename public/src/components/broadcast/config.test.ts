@@ -1,5 +1,5 @@
 import { THEME_OVERRIDE_KEYS } from "@photonsurge/shared/control";
-import { accentBorder, getBroadcastTheme, BASE_LOOK, BROADCAST_THEMES } from "./config";
+import { accentBorder, broadcastThemeCssVars, getBroadcastTheme, BASE_LOOK, BROADCAST_THEMES } from "./config";
 
 describe("getBroadcastTheme", () => {
   it("resolves a preset id, falling back to the default", () => {
@@ -26,11 +26,15 @@ describe("getBroadcastTheme", () => {
       titleColor: "#ffffff",
       tickerBg: "red",
       godsPanelMidColor: "#123456",
+      tileColor: "#112233",
+      mapHighlightColor: "#abcdef",
       minimapLandColor: "#abcdef",
     });
     expect(t.titleColor).toBe("#ffffff");
     expect(t.tickerBg).toBe("red");
     expect(t.godsPanelMidColor).toBe("#123456");
+    expect(t.tileColor).toBe("#112233");
+    expect(t.mapHighlightColor).toBe("#abcdef");
     expect(t.minimapLandColor).toBe("#abcdef");
     // An untouched token still comes from the preset's BASE_LOOK.
     expect(t.liveColor).toBe(BASE_LOOK.liveColor);
@@ -43,6 +47,17 @@ describe("getBroadcastTheme", () => {
         expect(typeof theme[key]).toBe("string");
       }
     }
+  });
+});
+
+describe("broadcastThemeCssVars", () => {
+  it("publishes the resolved panel, tile, and ink palette for nested chrome", () => {
+    const theme = getBroadcastTheme("command", { textColor: "#010203", tileColor: "#112233" });
+    expect(broadcastThemeCssVars(theme)).toMatchObject({
+      "--gods-text": "#010203",
+      "--gods-tile": "#112233",
+      "--gods-border": theme.godsBorderColor,
+    });
   });
 });
 

@@ -15,14 +15,16 @@ export const MONO = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace
 
 /** Default accent when no theme colour is passed — the banner's cyan. */
 export const GODS_ACCENT = "#3fd0ff";
-export const GODS_BORDER = "#1d4354";
-export const GODS_FILL = "linear-gradient(180deg, #0e1e29 0%, #081420 60%, #0a1a24 100%)";
-export const INK = "#e9f3f7";
-export const INK_DIM = "#9fb8c4";
-export const INK_FAINT = "#7f9dab";
+export const GODS_BORDER = "var(--gods-border, #1d4354)";
+export const GODS_FILL =
+  "linear-gradient(180deg, var(--gods-panel-top, #0e1e29) 0%, var(--gods-panel-mid, #081420) 60%, var(--gods-panel-bottom, #0a1a24) 100%)";
+export const INK = "var(--gods-title, #e9f3f7)";
+export const TEXT_INK = "var(--gods-text, #c4d6de)";
+export const INK_DIM = "var(--gods-muted, #9fb8c4)";
+export const INK_FAINT = "var(--gods-dim, #7f9dab)";
 /** Inset tile / feed-row fill + hairline that sit ON the panel fill. */
-export const GODS_TILE = "#0b1a24";
-export const GODS_TILE_BORDER = "#163241";
+export const GODS_TILE = "var(--gods-tile, #0b1a24)";
+export const GODS_TILE_BORDER = "var(--gods-tile-border, #163241)";
 
 const KEYFRAMES = `@keyframes gpPulse{0%,100%{opacity:1}50%{opacity:.3}}
 @media (prefers-reduced-motion: reduce){[data-gods-pulse]{animation:none !important}}`;
@@ -189,7 +191,7 @@ export function GodsHeadline({
   return (
     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20 }}>
       <div style={{ display: "flex", flexDirection: "column" }}>
-        <div style={{ color: "#ffffff", fontSize: 58, fontWeight: 300, lineHeight: 0.9, letterSpacing: -1 }}>
+        <div style={{ color: TEXT_INK, fontSize: 58, fontWeight: 300, lineHeight: 0.9, letterSpacing: -1 }}>
           {value}
         </div>
         <div style={{ color: captionColor, fontSize: 14, fontWeight: 500, letterSpacing: 4, marginTop: 6 }}>

@@ -68,12 +68,12 @@ const STRIP_GAP = 8;
 
 function DayCard({
   day,
-  accent,
+  theme,
   compact,
   fill = false,
 }: {
   day: NormalizedDay;
-  accent: string;
+  theme: BroadcastTheme;
   compact: boolean;
   /** Fill an equal share of the row instead of a fixed width (embedded strip). */
   fill?: boolean;
@@ -107,7 +107,7 @@ function DayCard({
             justifyContent: "center",
             width: 18,
             height: 18,
-            background: SEVERITY_COLORS[topHazard.severityRank] ?? accent,
+            background: SEVERITY_COLORS[topHazard.severityRank] ?? theme.accent,
             boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
           }}
         >
@@ -124,7 +124,7 @@ function DayCard({
         style={{
           fontSize: fill ? 15.4 : compact ? 16.5 : 19.8,
           fontWeight: 500,
-          color: "#f3f7ff",
+          color: theme.textColor,
           whiteSpace: "nowrap",
           fontVariantNumeric: "tabular-nums",
         }}
@@ -137,7 +137,7 @@ function DayCard({
       <span style={{ fontFamily: MONO, fontSize: fill ? 9.5 : 10.5, color: INK_DIM }}>
         {day.wind != null ? `${formatReading(day.wind)} m/s` : "—"}
       </span>
-      <span style={{ fontFamily: MONO, fontSize: fill ? 9.5 : 10.5, color: "#5fb0e6" }}>
+      <span style={{ fontFamily: MONO, fontSize: fill ? 9.5 : 10.5, color: theme.accent }}>
         {day.precipChance != null ? `${day.precipChance}%` : ""}
       </span>
     </div>
@@ -260,7 +260,7 @@ export default function ForecastPanel({
         {days.length ? (
           <div style={{ display: "flex", flexDirection: "row", gap: monitor ? 6 : 5 }}>
             {days.map((d) => (
-              <DayCard key={d.date} day={d} accent={theme.accent} compact fill={!monitor} />
+              <DayCard key={d.date} day={d} theme={theme} compact fill={!monitor} />
             ))}
           </div>
         ) : (
@@ -282,7 +282,7 @@ export default function ForecastPanel({
         <SectionTitle title="3-DAY FORECAST" tag={bbox ? "AREA" : "POINT"} accent={theme.accent} />
         <div style={{ display: "flex", flexDirection: "row", gap: STRIP_GAP }}>
           {days.map((d) => (
-            <DayCard key={d.date} day={d} accent={theme.accent} compact={compact} fill={inDeck} />
+            <DayCard key={d.date} day={d} theme={theme} compact={compact} fill={inDeck} />
           ))}
         </div>
       </div>

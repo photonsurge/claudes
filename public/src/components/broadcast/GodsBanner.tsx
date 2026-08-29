@@ -173,7 +173,7 @@ export default function GodsBanner({
         </linearGradient>
         <linearGradient id={id("scan")} x1="0" y1="0" x2="1" y2="0">
           <stop offset="0" stopColor={accent} stopOpacity="0" />
-          <stop offset="1" stopColor="#9beaff" stopOpacity="0.85" />
+          <stop offset="1" stopColor={titleColor} stopOpacity="0.85" />
         </linearGradient>
         <clipPath id={id("panel-clip")}>
           <path d={PANEL} />

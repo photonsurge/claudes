@@ -10,7 +10,7 @@
  */
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
-import type { BroadcastTheme } from "../../broadcast/config";
+import { broadcastThemeCssVars, type BroadcastTheme } from "../../broadcast/config";
 import { BroadcastThemeContext } from "../../broadcast/theme-context";
 import BrandPanel from "../../broadcast/BrandPanel";
 import Ticker from "../../broadcast/Ticker";
@@ -30,6 +30,7 @@ export default function ThemePreview({ theme }: { theme: BroadcastTheme }) {
       </Typography>
       <Box
         aria-label="Theme preview"
+        style={broadcastThemeCssVars(theme)}
         sx={{
           background: "radial-gradient(120% 120% at 30% 10%, #12203a 0%, #060b14 60%)",
           border: 1,

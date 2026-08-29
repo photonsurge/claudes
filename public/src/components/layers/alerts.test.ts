@@ -354,4 +354,9 @@ describe("onAirPulseLayers — pulse phase (now drives every accessor)", () => {
     const dot = byId(onAirPulseLayers([], [0, 0], 0), "alerts-onair-dot").props;
     expect(dot.getFillColor()).toEqual([255, 95, 95, 150]);
   });
+
+  it("uses the scene map-highlight colour for a point with no hazard polygon", () => {
+    const dot = byId(onAirPulseLayers([], [0, 0], 0, [18, 52, 86]), "alerts-onair-dot").props;
+    expect(dot.getFillColor()).toEqual([18, 52, 86, 150]);
+  });
 });
