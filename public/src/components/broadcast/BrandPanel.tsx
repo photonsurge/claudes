@@ -10,13 +10,15 @@ import GodsBanner from "./GodsBanner";
 import SubGlobeWidget from "./SubGlobeWidget";
 
 /** GodsBanner viewBox geometry the live core must line up with. */
-const BANNER_VIEW_W = 1948;
-const BANNER_GLOBE_CX = 217;
-const BANNER_GLOBE_CY = 144;
-/** Canvas core radius in viewBox units — slightly over the svg's r=74 hole
- *  (drawSubGlobe insets its disc 3%, so the painted disc lands ≈76.6 and the
- *  hole's rim stroke masks the seam). */
-const BANNER_CORE_R = 79;
+const BANNER_VIEW_W = 1400;
+const BANNER_GLOBE_CX = 176;
+const BANNER_GLOBE_CY = 160;
+/** Canvas core radius in viewBox units. drawSubGlobe insets its disc 6%
+ *  (r = 0.94·half), so 149 paints the planet's limb at ≈140 — exactly under
+ *  the banner's dashed r=140 bezel ring, with the r=146/152/158 rings tiered
+ *  OUTSIDE the globe as its frame. The svg's mask hole (r=138) sits just
+ *  inside the limb so the panel never peeks between disc and ring. */
+const BANNER_CORE_R = 149;
 
 /** Camera-anchor bundle that turns the banner's globe into the live locator. */
 export interface BrandLiveGlobe {
@@ -97,16 +99,27 @@ export default function BrandPanel({
   theme = DEFAULT_THEME,
   compact = false,
   liveGlobe,
+  ticker,
+  nextCutAt,
+  channels,
 }: {
   theme?: BroadcastTheme;
   compact?: boolean;
-  /** When set, the banner's decorative globe becomes the live locator
+  /** When set, the banner's globe aperture becomes the live locator
    *  sub-globe (canvas layered BEHIND the svg, showing through its hole).
-   *  Omitted → the pure static artwork (admin previews, tests). */
+   *  Omitted → the aperture stays an empty bezel (admin previews, tests). */
   liveGlobe?: BrandLiveGlobe;
+  /** Lower-notch tape line (e.g. the director's real up-next hint). */
+  ticker?: string;
+  /** Wall-clock ms the current shot ends — the tape row's NEXT IN countdown. */
+  nextCutAt?: number | null;
+  /** Status chips — this channel's display name (first chip reads active). */
+  channels?: string[];
 }) {
   const usesGodsBanner = theme.name === "G.O.D.S.";
-  const bannerWidth = compact ? 400 : 620;
+  // ×1.5 BroadcastFrame stage scale → 1140 stream px (the design spec's
+  // 760 grew 50% on operator request).
+  const bannerWidth = compact ? 495 : 760;
   const bannerScale = bannerWidth / BANNER_VIEW_W;
   return (
     <div
@@ -149,12 +162,13 @@ export default function BrandPanel({
             label={`${theme.name} ${theme.tagline}`}
             width={bannerWidth}
             liveCore={!!liveGlobe}
+            coords={liveGlobe ? { lat: liveGlobe.center[1], lon: liveGlobe.center[0] } : null}
+            ticker={ticker}
+            nextAt={nextCutAt}
+            channels={channels}
             style={{
-              display: "block",
               // Positioned so the svg stacks OVER the absolute live canvas.
               position: "relative",
-              // The SVG uses the source artwork's tight viewBox, so it stacks
-              // directly with the readout/clock strip beneath it.
               filter: "drop-shadow(0 8px 26px rgba(0,0,0,0.5))",
             }}
           />

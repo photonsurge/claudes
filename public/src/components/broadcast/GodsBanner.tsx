@@ -1,257 +1,324 @@
-import { useId, type CSSProperties } from "react";
+"use client";
 
-const DEFAULT_ACCENT = "#20d8ff";
-
-function mixHex(color: string, target: "#000000" | "#ffffff", amount: number): string {
-  const match = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(color);
-  if (!match) return color;
-  const targetChannel = target === "#ffffff" ? 255 : 0;
-  const channel = (value: string) =>
-    Math.round(Number.parseInt(value, 16) * (1 - amount) + targetChannel * amount)
-      .toString(16)
-      .padStart(2, "0");
-  return `#${channel(match[1])}${channel(match[2])}${channel(match[3])}`;
-}
+import { useEffect, useId, useState, type CSSProperties } from "react";
 
 export interface GodsBannerProps {
-  /** Main scene colour. Omitting it preserves the supplied artwork's cyan. */
+  /** Main scene colour. */
   accent?: string;
-  /** Optional lighter/deeper palette stops for callers that need exact control. */
-  accentSoft?: string;
-  accentDeep?: string;
-  /** Main title ink; defaults to the artwork's silver. */
+  /** Panel fill / border tone. */
+  border?: string;
+  title?: string;
+  /** Main title ink; defaults to the artwork's off-white. */
   titleColor?: string;
+  /** Left-to-right status chips; the first is treated as active. */
+  channels?: string[];
+  /** Coordinate readout, e.g. { lat: -15.389, lon: 167.835 }. */
+  coords?: { lat: number; lon: number } | null;
+  version?: string;
+  /** Ticker line in the lower notch; the tape row hides when both this and
+   *  `nextAt` are empty. */
+  ticker?: string;
+  /** Wall-clock ms when the current shot ends (DirectorState.endsAt) — shows
+   *  a live "NEXT IN mm:ss" countdown at the tape row's right edge. */
+  nextAt?: number | null;
+  /** Show the ticking UTC clock + city times at the right of the status row. */
+  clock?: boolean;
+  /**
+   * Punch a transparent hole where the globe sits so a live map/globe layered
+   * BEHIND the svg shows through. Hole is r=138 around (176,160) in the
+   * 1400x320 viewBox — just inside the dashed r=140 bezel ring the live
+   * planet's limb tucks under; BrandPanel owns the matching canvas geometry.
+   */
+  liveCore?: boolean;
+  /** Freeze all motion (screenshots, reduced-motion callers). */
+  static?: boolean;
   width?: number | string;
   className?: string;
   style?: CSSProperties;
   label?: string;
-  /**
-   * Punch a transparent hole where the static sphere sits so a live globe
-   * layered BEHIND the svg shows through, keeping every ring/ellipse as a
-   * bezel drawn over it. The hole is r=74 around (217,144); see BrandPanel.
-   */
-  liveCore?: boolean;
+}
+
+const KEYFRAMES = `
+@keyframes gbSpin{to{transform:rotate(360deg)}}
+@keyframes gbSpinRev{to{transform:rotate(-360deg)}}
+@keyframes gbSweep{0%{opacity:0;transform:translateX(0)}12%{opacity:1}100%{opacity:0;transform:translateX(940px)}}
+@keyframes gbPulse{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes gbDash{to{stroke-dashoffset:-220}}
+@media (prefers-reduced-motion: reduce){
+  [data-gods-anim]{animation:none !important}
+}`;
+
+/** Load once in your app shell: Saira + JetBrains Mono from Google Fonts. */
+export const GODS_FONT_HREF =
+  "https://fonts.googleapis.com/css2?family=Saira:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap";
+
+const SANS = "Saira, 'Helvetica Neue', Helvetica, sans-serif";
+const MONO = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace";
+
+/** City clocks on the status row's second line, west → east. */
+const CITY_CLOCKS: [name: string, tz: string][] = [
+  ["LONDON", "Europe/London"],
+  ["NEW YORK", "America/New_York"],
+  ["BEIJING", "Asia/Shanghai"],
+  ["TOKYO", "Asia/Tokyo"],
+  ["MOSCOW", "Europe/Moscow"],
+];
+
+function useClocks(enabled: boolean) {
+  const [value, setValue] = useState({ utc: "", cities: "" });
+  useEffect(() => {
+    if (!enabled) return;
+    const p = (n: number) => String(n).padStart(2, "0");
+    const at = (tz: string) =>
+      new Date().toLocaleTimeString("en-GB", { timeZone: tz, hour12: false });
+    const tick = () => {
+      const d = new Date();
+      setValue({
+        utc: `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} UTC`,
+        cities: CITY_CLOCKS.map(([name, tz]) => `${name} ${at(tz)}`).join(" · "),
+      });
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [enabled]);
+  return value;
+}
+
+/** "mm:ss" until `nextAt` (clamped at 00:00), empty when no target. */
+function useCountdown(nextAt?: number | null) {
+  const [label, setLabel] = useState("");
+  useEffect(() => {
+    if (!nextAt) {
+      setLabel("");
+      return;
+    }
+    const tick = () => {
+      const s = Math.max(0, Math.ceil((nextAt - Date.now()) / 1000));
+      setLabel(`${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`);
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [nextAt]);
+  return label;
 }
 
 /**
- * Editable G.O.D.S. masthead artwork rendered as native SVG. Its accent follows
- * the active broadcast scene while every optional colour falls back to the
- * original gods-editable-logo-v2.svg palette.
+ * G.O.D.S. masthead. 1400x320 viewBox, thin HUD chrome matching the map UI,
+ * oversized globe aperture on the left. Pass liveCore to punch the globe hole
+ * and layer the real globe canvas behind the svg (BrandPanel does exactly
+ * that with SubGlobeWidget).
  */
 export default function GodsBanner({
-  accent: accentProp,
-  accentSoft: accentSoftProp,
-  accentDeep: accentDeepProp,
-  titleColor,
+  accent = "#3fd0ff",
+  border = "#1d4354",
+  title = "GLOBAL ORBITAL DETECTION SYSTEM",
+  titleColor = "#e9f3f7",
+  channels = [],
+  coords = null,
+  version,
+  ticker = "",
+  nextAt = null,
+  clock = true,
+  liveCore = false,
+  static: frozen = false,
   width = "100%",
   className,
   style,
-  label = "G.O.D.S. Global Orbital Detection System",
-  liveCore = false,
+  label = "Global Orbital Detection System",
 }: GodsBannerProps) {
-  const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
-  const id = (name: string) => `gods-${name}-${instanceId}`;
-  const accent = accentProp ?? DEFAULT_ACCENT;
-  // Supplying just a scene accent recolours the whole luminous family. With no
-  // scene colour, retain the editable source's original three-tone cyan ramp.
-  const accentSoft = accentSoftProp ?? (accentProp ? mixHex(accent, "#ffffff", 0.35) : "#68eaff");
-  const accentDeep = accentDeepProp ?? (accentProp ? mixHex(accent, "#000000", 0.55) : "#083a72");
-  const titleTop = titleColor ? mixHex(titleColor, "#ffffff", 0.35) : "#ffffff";
-  const titleMid = titleColor ?? "#e6edf0";
-  const titleBottom = titleColor ? mixHex(titleColor, "#000000", 0.35) : "#8ea2aa";
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const id = (name: string) => `gb-${name}-${uid}`;
+  const times = useClocks(clock);
+  const countdown = useCountdown(nextAt);
+  const anim = (value: string): CSSProperties => (frozen ? {} : { animation: value });
+  const PANEL =
+    "M24 58 H1358 L1386 86 V190 L1358 218 H1178 L1154 246 H360 L336 218 H24 Z";
 
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 1400 320"
       width={width}
-      height="auto"
-      viewBox="0 0 1948 291"
       role="img"
       aria-label={label}
       className={className}
-      style={style}
+      style={{ display: "block", ...style }}
     >
       <defs>
-        <linearGradient id={id("frame-metal")} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#d6eef5" />
-          <stop offset="0.18" stopColor="#355b68" />
-          <stop offset="0.52" stopColor="#0a1d25" />
-          <stop offset="0.82" stopColor="#426b78" />
-          <stop offset="1" stopColor="#d5f0f7" />
+        <style>{KEYFRAMES}</style>
+        <linearGradient id={id("panel")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#0e1e29" />
+          <stop offset="0.5" stopColor="#081420" />
+          <stop offset="1" stopColor="#0a1a24" />
         </linearGradient>
-        <linearGradient id={id("title-silver")} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={titleTop} />
-          <stop offset="0.55" stopColor={titleMid} />
-          <stop offset="1" stopColor={titleBottom} />
+        <linearGradient id={id("hairline")} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor={accent} stopOpacity="0.06" />
+          <stop offset="0.3" stopColor={accent} stopOpacity="0.8" />
+          <stop offset="1" stopColor={accent} stopOpacity="0.06" />
         </linearGradient>
-        <radialGradient id={id("globe-fill")} cx="45%" cy="38%" r="68%">
-          <stop offset="0" stopColor={accentSoft} />
-          <stop offset="0.35" stopColor={accent} />
-          <stop offset="0.7" stopColor={accentDeep} />
-          <stop offset="1" stopColor="#010c18" />
-        </radialGradient>
-        <filter id={id("cyan-glow")} x="-80%" y="-80%" width="260%" height="260%">
-          <feGaussianBlur stdDeviation="4" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-        <filter id={id("soft-glow")} x="-100%" y="-100%" width="300%" height="300%">
-          <feGaussianBlur stdDeviation="8" />
-        </filter>
+        <linearGradient id={id("scan")} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor={accent} stopOpacity="0" />
+          <stop offset="1" stopColor="#9beaff" stopOpacity="0.85" />
+        </linearGradient>
+        <clipPath id={id("panel-clip")}>
+          <path d={PANEL} />
+        </clipPath>
+        <clipPath id={id("scan-clip")}>
+          <path d="M26 60 H1356 L1384 86 V188 L1356 216 H1156 L1152 244 H362 L358 216 H26 Z" />
+        </clipPath>
+        {liveCore && (
+          // The live-core hole: the panel spans the globe area, so it carries
+          // this mask or the aperture would just show its opaque fill.
+          <mask id={id("hole")}>
+            <rect x="0" y="0" width="1400" height="320" fill="#ffffff" />
+            <circle cx="176" cy="160" r="138" fill="#000000" />
+          </mask>
+        )}
       </defs>
 
-      <g data-layer="outer-frame">
-        <path
-          d="M67 2 H1857 L1893 18 L1943 68 L1944 174 L1910 213 L1877 226 H1261 L1208 273 H589 L573 289 H69 L40 266 L3 214 L3 71 L28 35 Z"
-          fill={`url(#${id("frame-metal")})`}
-          stroke="#bce8f5"
-          strokeWidth="2"
-        />
-        <path
-          d="M73 15 H1849 L1881 29 L1927 75 V165 L1899 198 L1869 211 H1252 L1198 259 H574 L558 275 H77 L52 255 L18 207 V80 L40 48 Z"
-          fill="#07151e"
-          stroke="#163c4d"
-          strokeWidth="2"
-        />
-      </g>
-
-      <g data-layer="top-panel">
-        <path
-          d="M330 28 H1855 L1889 39 L1920 73 V159 L1889 193 H399 L361 174 H330 Z"
-          fill="#020912"
-          stroke={accentDeep}
-          strokeWidth="2"
-        />
-        <path d="M352 40 H1850" stroke={accent} strokeWidth="3" opacity="0.9" filter={`url(#${id("cyan-glow")})`} />
-        <path d="M1787 197 H1860" stroke={accent} strokeWidth="4" filter={`url(#${id("cyan-glow")})`} />
-        <circle cx="1787" cy="197" r="4" fill={accent} filter={`url(#${id("cyan-glow")})`} />
-        <g fill={accent} opacity="0.9">
-          {[1810, 1820, 1830, 1840, 1850, 1860].map((x) => (
-            <rect key={x} x={x} y="177" width="3" height="7" />
-          ))}
+      <g data-layer="panel" mask={liveCore ? `url(#${id("hole")})` : undefined}>
+        <path d={PANEL} fill={`url(#${id("panel")})`} stroke={border} strokeWidth="2.4" />
+        <g clipPath={`url(#${id("panel-clip")})`} opacity="0.14" stroke={accent} strokeWidth="1">
+          <path d="M400 58 V218 M500 58 V218 M600 58 V218 M700 58 V218 M800 58 V218 M900 58 V218 M1000 58 V218 M1100 58 V218 M1200 58 V218 M1300 58 V218" />
         </g>
-      </g>
-
-      <g data-layer="globe">
-        {liveCore ? (
-          // Annulus: outer disc + r=74 hole (evenodd) so the live canvas
-          // layered behind the svg shows through; the inner rim's stroke
-          // doubles as a bezel masking the canvas disc's edge.
-          <path
-            d="M94 144a123 123 0 1 0 246 0a123 123 0 1 0-246 0M143 144a74 74 0 1 0 148 0a74 74 0 1 0-148 0"
-            fillRule="evenodd"
-            fill="#02101a"
-            stroke="#274b5b"
-            strokeWidth="5"
+        <g clipPath={`url(#${id("scan-clip")})`}>
+          <rect
+            data-gods-anim=""
+            x="380"
+            y="60"
+            width="110"
+            height="186"
+            fill={`url(#${id("scan")})`}
+            opacity="0.16"
+            style={anim("gbSweep 5.5s linear infinite")}
           />
-        ) : (
-          <circle cx="217" cy="144" r="123" fill="#02101a" stroke="#274b5b" strokeWidth="5" />
-        )}
-        <circle cx="217" cy="144" r="112" fill="none" stroke={accent} strokeWidth="1.8" opacity="0.72" />
-        <circle cx="217" cy="144" r="99" fill="none" stroke={accentDeep} strokeWidth="1.2" strokeDasharray="3 8" opacity="0.85" />
-        <g stroke={accent} filter={`url(#${id("cyan-glow")})`}>
-          {liveCore ? (
-            // Crosshair stops at the hole edge instead of streaking across
-            // the live globe.
-            <>
-              <line x1="217" y1="18" x2="217" y2="66" strokeWidth="2" />
-              <line x1="217" y1="222" x2="217" y2="270" strokeWidth="2" />
-              <line x1="60" y1="144" x2="139" y2="144" strokeWidth="2" />
-              <line x1="295" y1="144" x2="364" y2="144" strokeWidth="2" />
-            </>
-          ) : (
-            <>
-              <line x1="217" y1="18" x2="217" y2="270" strokeWidth="2" />
-              <line x1="60" y1="144" x2="364" y2="144" strokeWidth="2" />
-            </>
-          )}
         </g>
-        {!liveCore && (
-          <>
-            <circle cx="217" cy="144" r="76" fill={`url(#${id("globe-fill")})`} stroke={accentSoft} strokeWidth="1.2" />
-            <g fill="none" stroke={accentSoft} opacity="0.4">
-              <ellipse cx="217" cy="144" rx="74" ry="24" />
-              <ellipse cx="217" cy="144" rx="74" ry="48" />
-              <ellipse cx="217" cy="144" rx="35" ry="75" />
-              <ellipse cx="217" cy="144" rx="58" ry="75" />
-              <line x1="143" y1="144" x2="291" y2="144" />
-            </g>
-            <g data-layer="continents" fill={accentSoft} opacity="0.88">
-              <path d="M191 83 l15 -8 22 2 8 8 19 3 6 7 -12 8 -13 -2 -7 10 -13 1 -8 -7 -8 3 -9 -9 z" />
-              <path d="M170 98 l9 -5 11 4 -1 10 8 8 -5 9 -14 2 -9 12 -12 -3 -1 -11 8 -8 -3 -9 z" />
-              <path d="M211 120 l18 -4 12 7 9 1 9 11 -5 10 -12 2 -7 8 -11 -1 -5 -11 -11 -5 z" />
-              <path d="M239 151 l12 -3 13 8 5 12 -8 8 -6 17 -12 5 -6 -14 -9 -10 5 -11 z" />
-              <path d="M181 150 l12 -5 12 5 -1 12 -8 8 -3 18 -11 10 -7 -14 3 -13 -5 -8 z" />
-            </g>
-          </>
-        )}
-        <ellipse cx="217" cy="144" rx="119" ry="43" transform="rotate(-29 217 144)" fill="none" stroke="#e9fbff" strokeWidth="3.1" />
-        <ellipse cx="217" cy="144" rx="116" ry="40" transform="rotate(-29 217 144)" fill="none" stroke={accent} strokeWidth="1.2" opacity="0.8" />
-        {!liveCore && (
-          <>
-            <circle cx="225" cy="171" r="4" fill="#ffffff" />
-            <circle cx="225" cy="171" r="12" fill={accentSoft} opacity="0.75" filter={`url(#${id("soft-glow")})`} />
-          </>
-        )}
       </g>
 
-      <g data-layer="lower-panel">
-        <path
-          d="M401 178 H1217 L1258 211 H1212 L1174 254 H587 L567 272 H348 L382 236 Z"
-          fill="#04111a"
-          stroke={accentDeep}
-          strokeWidth="2"
+      <g data-layer="globe-bezel" fill="none">
+        <circle cx="176" cy="160" r="158" stroke={border} strokeWidth="2.4" />
+        <circle cx="176" cy="160" r="152" stroke="#173445" strokeWidth="1.4" />
+        <circle
+          data-gods-anim=""
+          cx="176"
+          cy="160"
+          r="140"
+          stroke={accent}
+          strokeWidth="1"
+          strokeDasharray="2 9"
+          opacity="0.5"
+          style={{ transformOrigin: "176px 160px", ...anim("gbSpin 42s linear infinite") }}
         />
-        <path d="M397 179 H1210" stroke={accent} strokeWidth="1.7" opacity="0.75" />
-        <path d="M718 218 H1190" stroke={accent} strokeWidth="2.3" filter={`url(#${id("cyan-glow")})`} />
-        <circle cx="718" cy="218" r="5" fill={accent} filter={`url(#${id("cyan-glow")})`} />
-        <path d="M1190 213 v10" stroke={accentDeep} strokeWidth="3" />
-        <g transform="translate(426 204) skewX(-28)" fill={accent}>
-          <rect width="38" height="20" rx="2" />
-          <rect x="47" width="38" height="20" rx="2" />
-          <rect x="94" width="38" height="20" rx="2" />
+        <circle
+          data-gods-anim=""
+          cx="176"
+          cy="160"
+          r="146"
+          stroke="#2a5f76"
+          strokeWidth="6"
+          strokeDasharray="36 230"
+          style={{ transformOrigin: "176px 160px", ...anim("gbSpinRev 18s linear infinite") }}
+        />
+        <g stroke={accent} strokeWidth="2" opacity="0.85">
+          <path d="M8 160 h22" />
+          <path d="M322 160 h22" />
         </g>
-        <g stroke={accent} opacity="0.55">
-          <path d="M365 250 h42" />
-          <path d="M377 258 h30" />
-          <path d="M389 266 h18" />
+        <g stroke={accent} strokeWidth="1.6" opacity="0.45">
+          <path d="M64 48 l16 16" />
+          <path d="M288 48 l-16 16" />
+          <path d="M64 272 l16 -16" />
+          <path d="M288 272 l-16 -16" />
+        </g>
+        <ellipse cx="176" cy="160" rx="180" ry="62" transform="rotate(-27 176 160)" stroke="#dff6fd" strokeWidth="2.4" opacity="0.9" />
+        <ellipse
+          data-gods-anim=""
+          cx="176"
+          cy="160"
+          rx="173"
+          ry="55"
+          transform="rotate(-27 176 160)"
+          stroke={accent}
+          strokeWidth="1.1"
+          opacity="0.5"
+          strokeDasharray="30 12"
+          style={anim("gbDash 6s linear infinite")}
+        />
+      </g>
+
+      {(ticker || countdown) && (
+        <g data-layer="ticker" style={{ userSelect: "none" }}>
+          <path d="M382 232 l9 -6 v12 z" fill={accent} opacity="0.8" />
+          <text x="402" y="236" fill="#5b8496" fontFamily={MONO} fontSize="14" letterSpacing="1.4">
+            {ticker}
+          </text>
+          {/* Countdown to the next cut replaces the tape filler while live —
+              both anchored right so a long up-next line can't collide. */}
+          <text x="1146" y="236" textAnchor="end" fill={countdown ? "#7f9dab" : "#41647a"} fontFamily={MONO} fontSize="13" letterSpacing="1.4">
+            {countdown
+              ? `NEXT IN ${countdown}`
+              : version
+                ? `VIGIL TAPE · 24 H · ${version}`
+                : "VIGIL TAPE · 24 H"}
+          </text>
+        </g>
+      )}
+
+      <g data-layer="title" style={{ userSelect: "none" }}>
+        <text x="382" y="112" fill={titleColor} fontFamily={SANS} fontSize="48" fontWeight="500" letterSpacing="1.5" textLength="860" lengthAdjust="spacing">
+          {title}
+        </text>
+        <path d="M384 138 H1340" stroke={`url(#${id("hairline")})`} strokeWidth="1.6" />
+        <g stroke={accent} opacity="0.4" strokeWidth="1">
+          <path d="M384 138 v-7 M434 138 v-4 M484 138 v-4 M534 138 v-7 M584 138 v-4 M634 138 v-4 M684 138 v-7 M734 138 v-4 M784 138 v-4 M834 138 v-7 M884 138 v-4 M934 138 v-4 M984 138 v-7 M1034 138 v-4 M1084 138 v-4 M1134 138 v-7 M1184 138 v-4 M1234 138 v-4 M1284 138 v-7 M1334 138 v-4" />
         </g>
       </g>
 
-      <g data-layer="text" style={{ userSelect: "none" }}>
-        <text
-          x="417"
-          y="139"
-          fill={`url(#${id("title-silver")})`}
-          fontFamily='"Orbitron", "Eurostile", "Bank Gothic", "Arial Narrow", sans-serif'
-          fontSize="58"
-          fontWeight="500"
-          letterSpacing="13"
-        >
-          GLOBAL ORBITAL DETECTION SYSTEM
-        </text>
-        <text
-          x="590"
-          y="226"
-          fill={accent}
-          fontFamily='"Orbitron", "Eurostile", "Bank Gothic", "Arial Narrow", sans-serif'
-          fontSize="31"
-          fontWeight="600"
-          letterSpacing="9"
-        >
-          G.O.D.S.
-        </text>
-      </g>
-
-      <g data-layer="micro-detail" fill={accent} opacity="0.8">
-        <rect x="344" y="27" width="30" height="2" />
-        <rect x="382" y="27" width="8" height="2" />
-        <rect x="398" y="27" width="5" height="2" />
-        <rect x="407" y="27" width="3" height="2" />
-        <rect x="1820" y="34" width="35" height="3" />
-        <rect x="1858" y="34" width="7" height="3" />
+      <g data-layer="status" style={{ userSelect: "none" }}>
+        <rect data-gods-anim="" x="384" y="152" width="9" height="9" fill={accent} style={anim("gbPulse 1.8s ease-in-out infinite")} />
+        {channels.map((channel, i) => (
+          <text
+            key={channel}
+            x={408 + i * 154}
+            y="162"
+            fill={i === 0 ? accent : "#7d97a4"}
+            fontFamily={SANS}
+            fontSize="20"
+            fontWeight={i === 0 ? 600 : 400}
+            letterSpacing="4.5"
+          >
+            {channel}
+          </text>
+        ))}
+        <path d="M846 157 H884" stroke={border} strokeWidth="1.4" />
+        {coords && (
+          <>
+            <text x="906" y="163" fill="#41647a" fontFamily={MONO} fontSize="15" letterSpacing="1.2">
+              LAT
+            </text>
+            <text x="946" y="163" fill="#9fb8c4" fontFamily={MONO} fontSize="15" letterSpacing="1.2">
+              {coords.lat.toFixed(3)}
+            </text>
+            <text x="1052" y="163" fill="#41647a" fontFamily={MONO} fontSize="15" letterSpacing="1.2">
+              LON
+            </text>
+            <text x="1092" y="163" fill="#9fb8c4" fontFamily={MONO} fontSize="15" letterSpacing="1.2">
+              {coords.lon.toFixed(3)}
+            </text>
+          </>
+        )}
+        {clock && (
+          <>
+            <path d="M1196 150 v16" stroke={border} strokeWidth="1.4" />
+            <text x="1340" y="163" textAnchor="end" fill="#9fb8c4" fontFamily={MONO} fontSize="15" letterSpacing="1.2">
+              {times.utc}
+            </text>
+            <text x="1340" y="184" textAnchor="end" fill="#7f9dab" fontFamily={MONO} fontSize="13" letterSpacing="1.2">
+              {times.cities}
+            </text>
+          </>
+        )}
       </g>
     </svg>
   );

@@ -65,6 +65,9 @@ interface WatchSurfaceProps {
   focusCaption?: { title: string; subtitle: string } | null;
   /** Director's "coming up" preview — drives the chrome's UP NEXT hint. */
   upNext?: DirectorState["upNext"];
+  /** Wall-clock ms the current director shot ends (DirectorState.endsAt) —
+   *  the masthead tape row's NEXT IN countdown. */
+  nextCutAt?: number | null;
   /** Name of the on-air segment kind's active saved "slide" look, if any. */
   slideName?: string;
   /** Dwell per step of the alert hazard cycle (DirectorConfig.alertCycleSeconds). */
@@ -85,6 +88,7 @@ function WatchSurfaceBody({
   onAirSegment,
   focusCaption,
   upNext = [],
+  nextCutAt = null,
   slideName,
   alertCycleSeconds,
   directorOn = false,
@@ -243,7 +247,9 @@ function WatchSurfaceBody({
           onAirSegment={onAirSegment ?? null}
           focusCaption={focusCaption ?? null}
           upNext={upNext}
+          nextCutAt={nextCutAt}
           assetsReady={ready}
+          sceneName={sceneName}
         />
       ) : null}
       {/* Plain run/attribution label — only on the clean surface; the broadcast
@@ -327,6 +333,7 @@ function WatchSurfaceBody({
             onAirSegment,
             focusCaption,
             upNext,
+            nextCutAt,
             slideName,
             alertCycleSeconds,
             pulseAt,

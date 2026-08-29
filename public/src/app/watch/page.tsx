@@ -149,6 +149,7 @@ function WatchPageInner() {
         onAirSegment={director?.active ? onAir : null}
         focusCaption={director?.active ? focus : null}
         upNext={director?.active ? director.upNext : []}
+        nextCutAt={director?.active ? director.endsAt : null}
         slideName={director?.active ? slideName : undefined}
         alertCycleSeconds={directorConfig.alertCycleSeconds}
         directorOn={!!director?.active}

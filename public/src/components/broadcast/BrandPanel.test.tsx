@@ -20,10 +20,10 @@ describe("BrandPanel", () => {
       name: "G.O.D.S. Global Orbital Detection System",
     });
     expect(banner.tagName).toBe("svg");
-    expect(banner).toHaveAttribute("width", "620");
+    expect(banner).toHaveAttribute("width", "760");
     expect(banner.querySelector(`[stroke="${BROADCAST_THEMES.command.accent}"]`)).toBeInTheDocument();
-    // Without liveGlobe the static artwork core stays intact.
-    expect(banner.querySelector('[data-layer="continents"]')).toBeInTheDocument();
+    // Without liveGlobe there's no live canvas and no aperture mask.
+    expect(banner.querySelector("mask")).not.toBeInTheDocument();
   });
 
   it("embeds the live locator globe behind the banner when liveGlobe is set", async () => {
@@ -31,15 +31,29 @@ describe("BrandPanel", () => {
       .spyOn(HTMLCanvasElement.prototype, "getContext")
       .mockReturnValue(null as unknown as RenderingContext);
     const { container } = render(
-      <BrandPanel theme={BROADCAST_THEMES.command} liveGlobe={{ center: [0, 20], zoom: 2.5 }} />,
+      <BrandPanel
+        theme={BROADCAST_THEMES.command}
+        liveGlobe={{ center: [167.835, -15.389], zoom: 2.5 }}
+        ticker="UP NEXT · EARTHQUAKE M5.0"
+        nextCutAt={Date.now() + 125_000}
+        channels={["SEISMIC"]}
+      />,
     );
     const banner = screen.getByRole("img", {
       name: "G.O.D.S. Global Orbital Detection System",
     });
-    expect(banner).toHaveAttribute("width", "620");
-    // Canvas layered behind the svg; the static core is punched out for it.
+    expect(banner).toHaveAttribute("width", "760");
+    // Canvas layered behind the svg; the panel carries the aperture mask.
     expect(container.querySelector("canvas")).toBeInTheDocument();
-    expect(banner.querySelector('[data-layer="continents"]')).not.toBeInTheDocument();
+    expect(banner.querySelector('[data-layer="panel"]')?.getAttribute("mask")).toMatch(/^url\(/);
+    // The camera anchor doubles as the status-row coordinate readout.
+    expect(screen.getByText("-15.389")).toBeInTheDocument();
+    expect(screen.getByText("167.835")).toBeInTheDocument();
+    expect(screen.getByText("UP NEXT · EARTHQUAKE M5.0")).toBeInTheDocument();
+    // The channel chip is the scene's display name, not a hardcoded set.
+    expect(screen.getByText("SEISMIC")).toBeInTheDocument();
+    // The next-cut countdown rides the tape row's right edge.
+    expect(screen.getByText(/NEXT IN 02:0[3-5]/)).toBeInTheDocument();
     await act(async () => {}); // flush the mocked land promise's setState
     getContext.mockRestore();
   });

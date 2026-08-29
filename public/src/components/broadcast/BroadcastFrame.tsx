@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
-import type { Segment, UpNextItem } from "@photonsurge/shared/director";
+import { upNextLabel, type Segment, type UpNextItem } from "@photonsurge/shared/director";
 import type { AuroraOverlay } from "../../lib/aurora-overlay";
 import type { GeomagOverlay } from "../../lib/geomag-overlay";
 import type { AlertFeature } from "../../lib/alerts";
@@ -175,7 +175,9 @@ export default function BroadcastFrame({
   onAirSegment = null,
   focusCaption = null,
   upNext = [],
+  nextCutAt = null,
   assetsReady = true,
+  sceneName,
 }: {
   state: ControlState;
   manifest: WeatherManifest | null;
@@ -216,10 +218,15 @@ export default function BroadcastFrame({
   /** Director's best-guess "coming up" preview (score-ranked at the last cut,
    *  not a committed pick) — drives the small UP NEXT line by the SYSLOG feed. */
   upNext?: UpNextItem[];
+  /** Wall-clock ms the current director shot ends (DirectorState.endsAt) —
+   *  the masthead tape row's NEXT IN countdown. */
+  nextCutAt?: number | null;
   /** True once the globe's own textures are ready (see useGlobeReadyOnce) —
    *  defers the WORLD WATCH panels' cold-start fetch so it doesn't compete with
    *  those for bandwidth while the loading screen is still up. */
   assetsReady?: boolean;
+  /** This channel's display name — the masthead's status chip. */
+  sceneName?: string;
 }) {
   const scale = useStageScale();
   // While the director cuts to the next shot the globe flies for
@@ -876,6 +883,9 @@ export default function BroadcastFrame({
                 spinEpoch: state.spinEpoch,
                 accent: onAirSegment ? (KIND_COLOR[onAirSegment.kind] ?? theme.accent) : theme.accent,
               }}
+              ticker={upNext.length ? `UP NEXT · ${upNextLabel(upNext[0]).toUpperCase()}` : ""}
+              nextCutAt={nextCutAt}
+              channels={sceneName ? [sceneName.toUpperCase()] : []}
             />
           </div>
         )}
