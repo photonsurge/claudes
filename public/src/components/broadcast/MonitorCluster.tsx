@@ -24,7 +24,16 @@ import { historySamples, type HistorySeries } from "../../lib/history-client";
 import { formatReading } from "./PointHistoryPanel";
 import type { Quake } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
-import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import {
+  GodsPanel,
+  accentRule,
+  MONO,
+  INK,
+  INK_DIM,
+  GODS_TILE,
+  GODS_TILE_BORDER,
+} from "./GodsPanel";
 import { HeartbeatIcon, WaveIcon, WindIcon, GaugeIcon } from "./icons";
 
 /** Radius (km) of quakes counted as "relevant" to a focused quake vs a region. */
@@ -152,18 +161,18 @@ function Panel({
   theme: BroadcastTheme;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 800, letterSpacing: 1, color: "#aebdd2" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10.5, fontWeight: 600, letterSpacing: 1.2, color: INK_DIM }}>
           {icon}
           {title}
         </span>
         {tag ? (
           <span
             style={{
-              fontSize: 8.2,
-              fontWeight: 700,
-              letterSpacing: 0.8,
+              fontFamily: MONO,
+              fontSize: 8.5,
+              letterSpacing: 0.6,
               color: theme.accent,
               whiteSpace: "nowrap",
               overflow: "hidden",
@@ -178,9 +187,8 @@ function Panel({
       <div
         style={{
           height: TRACE_H,
-          borderRadius: 5,
-          background: TILE_BG,
-          border: "1px solid rgba(90,120,160,0.25)",
+          background: GODS_TILE,
+          border: `1px solid ${GODS_TILE_BORDER}`,
           overflow: "hidden",
           position: "relative",
         }}
@@ -192,8 +200,8 @@ function Panel({
               position: "absolute",
               left: 5,
               bottom: 3,
+              fontFamily: MONO,
               fontSize: 8.2,
-              fontWeight: 700,
               letterSpacing: 0.4,
               color: "#cdd8ea",
               textShadow: "0 1px 2px rgba(0,0,0,0.8)",
@@ -228,27 +236,16 @@ function CardShell({
   label?: string;
 }) {
   return (
-    <div
-      style={{
-        width: 172,
-        display: "flex",
-        flexDirection: "column",
-        gap: 7,
-        padding: "8px 10px",
-        background: theme.panelBg,
-        border: theme.panelBorder,
-        borderRadius: 10,
-        boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-      }}
-    >
+    <GodsPanel width={172} notch={[8, 14]} padding="9px 12px 11px" gap={6} style={{ pointerEvents: "none" }}>
       <style>{"@keyframes bcast-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
-      <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: 1.2, color: theme.titleColor }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1.8, color: INK, whiteSpace: "nowrap" }}>
+          {label}
+        </div>
+        <div style={{ flex: 1, height: 1, background: accentRule(theme.accent) }} />
+      </div>
       {children}
-    </div>
+    </GodsPanel>
   );
 }
 

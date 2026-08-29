@@ -76,7 +76,6 @@ import { useStageScale, STAGE_W, STAGE_H } from "./useStageScale";
 import Ticker from "./Ticker";
 import BrandPanel from "./BrandPanel";
 import IntensityMeter from "./IntensityMeter";
-import WorldClockStrip from "./WorldClockStrip";
 import LiveAlertPanel from "./LiveAlertPanel";
 import WorldReportDeck from "./WorldReportDeck";
 import KpIndexPanel from "./KpIndexPanel";
@@ -95,7 +94,6 @@ import EventOverlay, { EventTrackingLabel, trackingBlockHeight } from "./EventOv
 import { CARD_H } from "./BroadcastCard";
 import { flagEmoji } from "./RegionCountryPanel";
 import SyslogFeed from "./SyslogFeed";
-import UpNextPanel from "./UpNextPanel";
 import BuildInfoTag from "./BuildInfoTag";
 import SlideDeck from "./SlideDeck";
 import FadeSwap from "./FadeSwap";
@@ -111,14 +109,15 @@ const INSET = 30;
  *  rides the full masthead strip to the right of the logo. */
 const BRAND_TOP = 4;
 const BRAND_SCALE = 1.5;
-/** Left edge of the masthead title band (the active-map hero + source chip):
- *  just past the scaled banner's right edge (banner is 620 design px wide at
- *  left -4 → ~926 scaled). */
-const BRAND_INSET = 940;
 /** Scaled bottom edge of the masthead banner SVG (1948×291 source at 620
  *  design px wide → ~93 px tall, ×1.5, +BRAND_TOP ≈ 144) — the masthead
  *  title row ends at this edge, so the chrome below hangs off it. */
 const BANNER_BOTTOM = 144;
+/** Top of the LEFT column (Kp panel / mode deck) with the brand on: clears the
+ *  banner's oversized globe bezel (r=158 at cy=160 in the 1400-wide viewBox →
+ *  bottom ≈ 263 stage px at the 1140-px scaled banner), so the deck no longer
+ *  overlaps the live minimap. */
+const LEFT_DECK_TOP = 278;
 /** Kp panel height plus the gap before the left deck when both are visible. */
 const KP_PANEL_STACK_H = 68;
 
@@ -335,7 +334,7 @@ export default function BroadcastFrame({
   const chromeTop = (brandOn ? BANNER_BOTTOM : 0) + INSET;
   const kpPanelOn = kpShown && !off.has("kpIndex");
   const leftDeckTop = brandOn
-    ? BANNER_BOTTOM + 10 + (kpPanelOn ? KP_PANEL_STACK_H : 0)
+    ? LEFT_DECK_TOP + (kpPanelOn ? KP_PANEL_STACK_H : 0)
     : INSET;
   // A country spotlight scopes the global alerts/quakes feeds down to its own
   // bbox (`shared/director-countries`); a weather-check segment has no fixed
@@ -891,43 +890,42 @@ export default function BroadcastFrame({
         )}
 
         {/* Masthead map widget: the ACTIVE MAP TYPE + its source/timing
-            metadata with the colour scale and the world clocks docked beneath,
-            all ONE plate (see IntensityMeter part="masthead") hugging the TOP
-            of the strip to the right of the logo. The clocks ride the brand
-            identity, so turning the intensityMeter widget off blanks only the
-            map half and leaves a clocks-only plate. */}
-        {brandOn && (
+            metadata with the colour scale beneath, ONE chamfered G.O.D.S.
+            plate (see IntensityMeter part="masthead") bound to the TOP-RIGHT
+            corner — right edge flush with the WORLD REPORT deck below it, well
+            clear of the banner artwork. No clocks here — the wall times ride
+            the banner itself (GodsBanner clock). */}
+        {brandOn && !off.has("intensityMeter") && (
           <div
             style={{
               position: "absolute",
               top: BRAND_TOP + 4,
-              left: BRAND_INSET,
-              right: 0,
+              right: INSET - 26,
               display: "flex",
               alignItems: "flex-start",
-              justifyContent: "center",
+              justifyContent: "flex-end",
             }}
           >
             <IntensityMeter
               part="masthead"
-              variable={off.has("intensityMeter") ? null : legendVariable}
+              variable={legendVariable}
               units={state.units}
               theme={theme}
-              showSatImg={off.has("intensityMeter") ? false : state.showSatImg}
+              showSatImg={state.showSatImg}
               satImgFeeds={state.satImgFeeds}
               freshness={mapMeta}
               paletteId={legendPalette}
-              clocks={<WorldClockStrip theme={theme} framed={false} scale={1.3} />}
             />
           </div>
         )}
 
-        {/* Geomagnetic Kp readout, tucked directly under the brand banner. */}
+        {/* Geomagnetic Kp readout, tucked directly under the banner's globe
+            bezel (the left deck budgets KP_PANEL_STACK_H below this). */}
         {kpPanelOn ? (
           <div
             style={{
               position: "absolute",
-              top: BANNER_BOTTOM + 10,
+              top: LEFT_DECK_TOP,
               left: -4,
             }}
           >
@@ -1012,10 +1010,9 @@ export default function BroadcastFrame({
           )}
         </div>
 
-        {/* Bottom-right column: UP NEXT hint, the SYSLOG feed, and the build
-            stamp anchored beneath both. column-reverse anchors the first child
-            (BuildInfoTag) to the bottom edge, with SYSLOG then UP NEXT
-            stacking upward above it. */}
+        {/* Bottom-right column: the SYSLOG feed with the build stamp anchored
+            beneath it. column-reverse anchors the first child (BuildInfoTag)
+            to the bottom edge, with SYSLOG stacking upward above it. */}
         <div
           style={{
             position: "absolute",
@@ -1029,7 +1026,6 @@ export default function BroadcastFrame({
         >
           {!off.has("buildInfo") && <BuildInfoTag />}
           {!off.has("syslog") && <SyslogFeed />}
-          {!off.has("upNext") && <UpNextPanel items={upNext} />}
         </div>
 
         {/* Bottom-centre row: seismic monitor column, the extra weather-

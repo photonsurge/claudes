@@ -23,6 +23,7 @@ import type { WorldWatchState } from "../../lib/world-watch";
 import { filterFeedByKind } from "../../lib/broadcast";
 import { useAreaForecast } from "../../lib/forecast-client";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { GODS_BORDER } from "./GodsPanel";
 import { usePagedSlides } from "./PointHistoryPanel";
 import WorldSituationPanel from "./WorldSituationPanel";
 import WorldReportPanel from "./WorldReportPanel";
@@ -179,15 +180,14 @@ export default function WorldReportDeck({
       {/* Slide position — a dot per ACTIVE slide so the rotation reads as
           deliberate (and a single-category channel shows a single dot). */}
       {active.length > 1 && (
-        <div style={{ display: "flex", gap: 6, paddingRight: 4 }}>
+        <div style={{ display: "flex", gap: 6, paddingRight: 22 }}>
           {active.map((id, i) => (
             <span
               key={id}
               style={{
-                width: i === page ? 16 : 6,
+                width: i === page ? 18 : 6,
                 height: 6,
-                borderRadius: 3,
-                background: i === page ? theme.accent : "rgba(255,255,255,0.25)",
+                background: i === page ? theme.accent : GODS_BORDER,
                 transition: "width 0.3s, background 0.3s",
               }}
             />

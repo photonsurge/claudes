@@ -169,12 +169,29 @@ export default function GodsBanner({
           <path d="M26 60 H1356 L1384 86 V188 L1356 216 H1156 L1152 244 H362 L358 216 H26 Z" />
         </clipPath>
         {liveCore && (
-          // The live-core hole: the panel spans the globe area, so it carries
-          // this mask or the aperture would just show its opaque fill.
-          <mask id={id("hole")}>
-            <rect x="0" y="0" width="1400" height="320" fill="#ffffff" />
-            <circle cx="176" cy="160" r="138" fill="#000000" />
-          </mask>
+          <>
+            {/* The live-core hole: the panel spans the globe area, so it
+                carries this mask or the aperture would just show its opaque
+                fill. */}
+            <mask id={id("hole")}>
+              <rect x="0" y="0" width="1400" height="320" fill="#ffffff" />
+              <circle cx="176" cy="160" r="138" fill="#000000" />
+            </mask>
+            {/* Orbital occlusion for the ring ellipses: hide them where they
+                are BOTH inside the planet's disc (limb r=140) AND on the back
+                half of the ring plane (local y<0 in the ring's -27° frame) —
+                the far arc ducks behind the planet, the near arc still crosses
+                in front of it. */}
+            <clipPath id={id("core-clip")}>
+              <circle cx="176" cy="160" r="140" />
+            </clipPath>
+            <mask id={id("ring-back")}>
+              <rect x="0" y="0" width="1400" height="320" fill="#ffffff" />
+              <g clipPath={`url(#${id("core-clip")})`}>
+                <rect x="-160" y="-160" width="320" height="160" fill="#000000" transform="translate(176 160) rotate(-27)" />
+              </g>
+            </mask>
+          </>
         )}
       </defs>
 
@@ -231,20 +248,22 @@ export default function GodsBanner({
           <path d="M64 272 l16 -16" />
           <path d="M288 272 l-16 -16" />
         </g>
-        <ellipse cx="176" cy="160" rx="180" ry="62" transform="rotate(-27 176 160)" stroke="#dff6fd" strokeWidth="2.4" opacity="0.9" />
-        <ellipse
-          data-gods-anim=""
-          cx="176"
-          cy="160"
-          rx="173"
-          ry="55"
-          transform="rotate(-27 176 160)"
-          stroke={accent}
-          strokeWidth="1.1"
-          opacity="0.5"
-          strokeDasharray="30 12"
-          style={anim("gbDash 6s linear infinite")}
-        />
+        <g mask={liveCore ? `url(#${id("ring-back")})` : undefined}>
+          <ellipse cx="176" cy="160" rx="180" ry="62" transform="rotate(-27 176 160)" stroke="#dff6fd" strokeWidth="2.4" opacity="0.9" />
+          <ellipse
+            data-gods-anim=""
+            cx="176"
+            cy="160"
+            rx="173"
+            ry="55"
+            transform="rotate(-27 176 160)"
+            stroke={accent}
+            strokeWidth="1.1"
+            opacity="0.5"
+            strokeDasharray="30 12"
+            style={anim("gbDash 6s linear infinite")}
+          />
+        </g>
       </g>
 
       {(ticker || countdown) && (

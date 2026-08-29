@@ -30,7 +30,6 @@ export type WidgetId =
   | "spaceWeather"
   | "brand"
   | "kpIndex"
-  | "upNext"
   | "syslog"
   | "buildInfo"
   | "ticker";
@@ -67,7 +66,6 @@ export const BROADCAST_WIDGETS: readonly BroadcastWidget[] = [
   { id: "kpIndex", zone: "top-left", label: "Kp index", hint: "Geomagnetic activity readout (with aurora)" },
   // Bottom-right — operator / telemetry feeds. (The locator planet now lives
   // inside the brand banner's globe, riding the "brand" toggle.)
-  { id: "upNext", zone: "bottom-right", label: "Up next", hint: "Director's next-shot hint" },
   { id: "syslog", zone: "bottom-right", label: "Syslog", hint: "Live system-event ticker" },
   { id: "buildInfo", zone: "bottom-right", label: "Build stamp", hint: "Version / build tag" },
   // Bottom edge — the GLOBAL FEED crawl (its CONTENT is curated separately,

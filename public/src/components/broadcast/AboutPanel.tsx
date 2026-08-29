@@ -7,11 +7,13 @@
  * G.O.D.S. copy when empty, so an untouched channel reads exactly as before.
  * Carries the shared ACTIVE FEED at its foot like every other slide, so the
  * rolling state-of-the-world readout stays on screen through the whole
- * rotation instead of vanishing here. Pointer-inert like the rest of the chrome.
+ * rotation instead of vanishing here. Rendered on the shared G.O.D.S.
+ * chamfered panel chrome. Pointer-inert like the rest of the chrome.
  */
 import type { AboutSettings } from "@photonsurge/shared/control";
 import type { WorldWatchItem } from "../../lib/broadcast";
-import { accentBorderRight, GLASS_BG, type BroadcastTheme } from "./config";
+import type { BroadcastTheme } from "./config";
+import { GodsPanel, GodsSectionRule, INK, INK_DIM, GODS_TILE_BORDER } from "./GodsPanel";
 import FeedSection from "./FeedSection";
 
 const DEFAULT_DISCLAIMER =
@@ -42,33 +44,20 @@ export default function AboutPanel({
   const footer = about?.footer.trim() || DEFAULT_DISCLAIMER;
 
   return (
-    <div
-      style={{
-        position: "relative",
-        width: 400,
-        padding: "20px 24px 22px",
-        background: GLASS_BG,
-        ...accentBorderRight(theme.panelBorder, `5px solid ${theme.accent}`),
-        borderRadius: 16,
-        boxShadow: `0 12px 36px rgba(0,0,0,0.5), 0 0 20px ${theme.accent}28`,
-        backdropFilter: "blur(11px)",
-        WebkitBackdropFilter: "blur(11px)",
-        pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-        display: "flex",
-        flexDirection: "column",
-        gap: 14,
-      }}
+    <GodsPanel
+      width={400}
+      notch={[14, 22]}
+      padding="18px 22px 20px"
+      gap={14}
+      style={{ pointerEvents: "none" }}
     >
-      <div
-        style={{
-          fontSize: 15.4,
-          fontWeight: 800,
-          letterSpacing: 1.1,
-          color: theme.titleColor,
-        }}
-      >
-        {title}
+      {/* Mixed-case title, so not the ALL-CAPS GodsPanelHeader — but the same
+          row anatomy: title + border hairline out to the right. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ color: INK, fontSize: 18, fontWeight: 600, letterSpacing: 1.1, whiteSpace: "nowrap" }}>
+          {title}
+        </div>
+        <div style={{ flex: 1, height: 1, background: GODS_TILE_BORDER }} />
       </div>
 
       <div
@@ -78,7 +67,7 @@ export default function AboutPanel({
           gap: 10,
           fontSize: 13.8,
           lineHeight: 1.45,
-          color: "rgba(224,232,246,0.88)",
+          color: INK_DIM,
         }}
       >
         {paragraphs ? (
@@ -90,7 +79,7 @@ export default function AboutPanel({
         ) : (
           <>
             <p style={{ margin: 0 }}>
-              <strong style={{ color: "#ffffff", fontWeight: 800 }}>G.O.D.S.</strong> &mdash; Global Orbital Detection
+              <strong style={{ color: "#ffffff", fontWeight: 600 }}>G.O.D.S.</strong> &mdash; Global Orbital Detection
               System &mdash; is a live visual monitoring platform created by Thronix and built with PhotonSurge
               technology.
             </p>
@@ -111,21 +100,9 @@ export default function AboutPanel({
         )}
 
         {sources.length > 0 && (
-          <div style={{ marginTop: 2 }}>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 800,
-                letterSpacing: 1.4,
-                color: theme.mutedColor,
-                marginBottom: 3,
-              }}
-            >
-              DATA SOURCES
-            </div>
-            <div style={{ color: "rgba(203,216,235,0.85)", fontSize: 12.7, lineHeight: 1.5 }}>
-              {sources.join(" · ")}
-            </div>
+          <div style={{ marginTop: 2, display: "flex", flexDirection: "column", gap: 4 }}>
+            <GodsSectionRule label="DATA SOURCES" accent={theme.accent} />
+            <div style={{ color: INK_DIM, fontSize: 12.7, lineHeight: 1.5 }}>{sources.join(" · ")}</div>
           </div>
         )}
 
@@ -133,8 +110,8 @@ export default function AboutPanel({
           style={{
             margin: "2px 0 0",
             paddingTop: 10,
-            borderTop: `1px solid ${theme.accent}38`,
-            color: "rgba(203,216,235,0.8)",
+            borderTop: `1px solid ${GODS_TILE_BORDER}`,
+            color: "#8fa6b2",
             fontSize: 12.7,
             lineHeight: 1.45,
           }}
@@ -144,6 +121,6 @@ export default function AboutPanel({
       </div>
 
       <FeedSection feed={feed} theme={theme} visible={4} />
-    </div>
+    </GodsPanel>
   );
 }

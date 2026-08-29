@@ -68,6 +68,10 @@ describe("GodsBanner", () => {
     // carries it — otherwise the aperture would just show the panel fill.
     expect(banner.querySelector("mask circle")).toBeInTheDocument();
     expect(banner.querySelector('[data-layer="panel"]')?.getAttribute("mask")).toMatch(/^url\(#gb-hole-/);
+    // The orbit ellipses carry the occlusion mask so their far arc ducks
+    // behind the live planet instead of drawing across it.
+    const ringGroup = banner.querySelector("ellipse")?.parentElement;
+    expect(ringGroup?.getAttribute("mask")).toMatch(/^url\(#gb-ring-back-/);
   });
 
   it("uses unique paint-server ids for multiple banners", () => {

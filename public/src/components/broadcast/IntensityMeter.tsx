@@ -2,10 +2,13 @@
 
 /**
  * The active-map widget: the on-air variable's name, its source/timing
- * metadata and its palette as a labelled gradient bar. With the brand block on
- * it renders as ONE masthead plate (part="masthead") — title + source chip on
- * top, colour scale and the world clocks docked beneath; with the brand off it
- * falls back to the stacked top-centre layout (part="all").
+ * metadata and its palette as a labelled gradient bar, on the shared G.O.D.S.
+ * chamfered panel chrome (GodsPanel) — Saira title + hairline rule, mono
+ * provenance line, square-cornered scale bar with mono ticks. With the brand
+ * block on it renders as ONE masthead plate (part="masthead") — title +
+ * source line on top, colour scale beneath; with the brand off it falls back
+ * to a single stacked legend strip (part="all"). No clocks here — the wall
+ * times live in the masthead banner (GodsBanner).
  */
 import type { ControlState } from "@photonsurge/shared/control";
 import { getVariable } from "@photonsurge/shared/variables";
@@ -13,19 +16,20 @@ import { getPalette } from "@photonsurge/shared/palettes";
 import { satImgCaptionFor } from "@photonsurge/shared/satimg/types";
 import { buildLegend } from "../../lib/legend";
 import type { MapFreshness } from "../../lib/manifest";
-import { TILE_BG, type BroadcastTheme } from "./config";
+import { type BroadcastTheme } from "./config";
 import { useBroadcastTheme } from "./theme-context";
+import {
+  GodsPanel,
+  accentRule,
+  MONO,
+  INK,
+  INK_DIM,
+  INK_FAINT,
+  GODS_BORDER,
+} from "./GodsPanel";
 
-/** Shared plate chrome for every layout below. */
-const PLATE: React.CSSProperties = {
-  background: TILE_BG,
-  border: "1px solid rgba(255,255,255,0.09)",
-  boxShadow: "0 6px 18px rgba(0,0,0,0.4)",
-  backdropFilter: "blur(6px)",
-  WebkitBackdropFilter: "blur(6px)",
-};
-
-const DIVIDER = "1px solid rgba(255,255,255,0.14)";
+/** Vertical divider between the docked bar / sat note / clocks slots. */
+const DIVIDER = `1px solid ${GODS_BORDER}`;
 
 export default function IntensityMeter({
   variable,
@@ -37,7 +41,6 @@ export default function IntensityMeter({
   freshness,
   paletteId,
   part = "all",
-  clocks,
 }: {
   variable: string | null;
   units: ControlState["units"];
@@ -54,14 +57,10 @@ export default function IntensityMeter({
   /** Supplier and timestamps for the active map variable. */
   freshness?: MapFreshness | null;
   /** Which layout: "masthead" is the single masthead plate (map-type hero +
-   *  source/timing chip on top, colour scale + clocks beneath) riding the band
-   *  next to the logo when the brand block is on; "all" stacks a hero plate
-   *  over a separate scale pill — the pre-split top-centre layout used when
-   *  the brand block (and its masthead band) is off. */
+   *  source/timing line on top, colour scale beneath) riding the band next to
+   *  the logo when the brand block is on; "all" is the stand-alone legend
+   *  strip used top-centre when the brand block is off. */
   part?: "masthead" | "all";
-  /** World-clock strip to dock in the masthead plate's bottom row (only
-   *  rendered by part="masthead"). */
-  clocks?: React.ReactNode;
 }) {
   const theme = useBroadcastTheme(propTheme);
   const sat = satImgCaptionFor(showSatImg, satImgFeeds);
@@ -77,7 +76,7 @@ export default function IntensityMeter({
         .map(([stop, hex]) => `${hex} ${Math.round(stop * 100)}%`)
         .join(", ")})`
     : "";
-  // Nearest palette colour at a normalised position, for the accent underline.
+  // Nearest palette colour at a normalised position, for the tick ink.
   const hexAt = (t: number) => {
     if (!palette) return "#fff";
     let best = palette[0][1];
@@ -91,9 +90,9 @@ export default function IntensityMeter({
     }
     return best;
   };
-  // Tick text sits on the dark scale pill — lift too-dark palette colours
-  // (deep blues at the low end of wind/rain ramps) toward white so every stop
-  // stays legible.
+  // Tick text sits on the dark panel — lift too-dark palette colours (deep
+  // blues at the low end of wind/rain ramps) toward white so every stop stays
+  // legible.
   const tickColor = (t: number) => {
     const hex = hexAt(t);
     if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
@@ -115,57 +114,71 @@ export default function IntensityMeter({
       (freshness.runLabel ? ` · RUN ${freshness.runLabel}` : "")
     : null;
 
-  const heroStyle: React.CSSProperties = {
-    fontSize: compact ? 24.2 : 30.8,
-    fontWeight: 800,
-    letterSpacing: 0.3,
-    lineHeight: 1.05,
-    color: "#fff",
-    whiteSpace: "nowrap",
-    textShadow: "0 1px 8px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.5)",
-  };
-  const chipStyle: React.CSSProperties = {
-    borderLeft: DIVIDER,
-    paddingLeft: 16,
-    fontSize: compact ? 13.2 : 15.4,
-    fontWeight: 800,
-    letterSpacing: 1.1,
-    color: theme.titleColor,
-    whiteSpace: "nowrap",
-  };
+  /** Title row: map-type name + mono unit + accent hairline running out right. */
+  const titleRow = (title: string, unit: string | null) => (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+      <div
+        style={{
+          color: INK,
+          fontSize: compact ? 20 : 24,
+          fontWeight: 500,
+          letterSpacing: 0.4,
+          lineHeight: 1.05,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {title}
+      </div>
+      {unit ? (
+        <div style={{ color: theme.accent, fontFamily: MONO, fontSize: compact ? 12.5 : 14 }}>{unit}</div>
+      ) : null}
+      <div style={{ flex: 1, minWidth: 36, height: 1, background: accentRule(theme.accent) }} />
+    </div>
+  );
 
-  const scaleBar = (barW: number) =>
+  /** Mono provenance line under the title. */
+  const metaLine = (text: string) => (
+    <div style={{ color: INK_FAINT, fontFamily: MONO, fontSize: compact ? 11.5 : 12.5, letterSpacing: 0.8 }}>
+      {text}
+    </div>
+  );
+
+  /** Bar + ticks. No `barW` → fills whatever width the plate's widest row
+   *  (usually the mono provenance line) established, so the scale never sits
+   *  as a stub inside a wider plate. */
+  const scaleBar = (barW?: number) =>
     hasScale ? (
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 7,
+          ...(barW == null ? { flex: 1, minWidth: 0 } : {}),
+        }}
+      >
         <div
           style={{
-            width: barW,
-            height: compact ? 14 : 19,
-            borderRadius: 5,
+            width: barW ?? "100%",
+            boxSizing: "border-box",
+            height: compact ? 12 : 14,
+            border: `1px solid ${GODS_BORDER}`,
             background: gradient,
-            border: "1px solid rgba(0,0,0,0.6)",
-            boxShadow: "inset 0 0 6px rgba(0,0,0,0.4)",
           }}
         />
         <div
           style={{
-            width: barW,
+            width: barW ?? "100%",
+            boxSizing: "border-box",
             display: "flex",
             justifyContent: "space-between",
-            fontSize: compact ? 12.7 : 14.3,
-            fontWeight: 700,
+            fontFamily: MONO,
+            fontSize: compact ? 11.5 : 12.5,
+            letterSpacing: 0.5,
             fontVariantNumeric: "tabular-nums",
           }}
         >
           {legend!.stops.map((s, i) => (
-            <span
-              key={i}
-              style={{
-                color: tickColor(s.t),
-                whiteSpace: "nowrap",
-                textShadow: "0 1px 3px rgba(0,0,0,0.9)",
-              }}
-            >
+            <span key={i} style={{ color: tickColor(s.t), whiteSpace: "nowrap" }}>
               {s.label}
             </span>
           ))}
@@ -179,86 +192,41 @@ export default function IntensityMeter({
   // appears on the globe with no on-screen indication at all.
   const satNote =
     hasScale && sat ? (
-      <div
-        style={{
-          fontSize: compact ? 12.1 : 13.2,
-          fontWeight: 700,
-          opacity: 0.8,
-          color: theme.titleColor,
-          textShadow: "0 1px 4px rgba(0,0,0,0.8)",
-        }}
-      >
+      <div style={{ fontSize: compact ? 11.5 : 12.5, color: INK_DIM, whiteSpace: "nowrap" }}>
         🛰 {sat.subtitle}
       </div>
     ) : null;
 
   if (part === "masthead") {
-    // Hero row: the active map type + source chip; a photographic feed with no
+    // Hero row: the active map type + source line; a photographic feed with no
     // scalar shows its feed caption instead.
     const hero = hasScale
       ? { title: meta!.label, unit: legend!.unit, chip: freshnessText }
       : sat
         ? { title: sat.title, unit: null, chip: sat.subtitle }
         : null;
-    if (!hero && !clocks) return null;
-    const bar = scaleBar(compact ? 290 : 330);
+    if (!hero) return null;
+    const bar = scaleBar();
     return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 8,
-          padding: "10px 24px",
-          borderRadius: 14,
-          ...PLATE,
-          pointerEvents: "none",
-          fontFamily: "system-ui, sans-serif",
-          color: theme.titleColor,
-        }}
+      <GodsPanel
+        notch={[12, 20]}
+        padding={compact ? "10px 20px 12px" : "12px 24px 14px"}
+        gap={10}
+        style={{ pointerEvents: "none" }}
       >
-        {hero ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={heroStyle}>
-              {hero.title}
-              {hero.unit ? (
-                <span
-                  style={{
-                    fontSize: compact ? 16 : 18.7,
-                    fontWeight: 700,
-                    color: hexAt(1),
-                    marginLeft: 6,
-                  }}
-                >
-                  {hero.unit}
-                </span>
-              ) : null}
-            </div>
-            {hero.chip ? <div style={chipStyle}>{hero.chip}</div> : null}
-          </div>
-        ) : null}
-        {bar || satNote || clocks ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {titleRow(hero.title, hero.unit)}
+          {hero.chip ? metaLine(hero.chip) : null}
+        </div>
+        {bar || satNote ? (
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {bar}
             {satNote ? (
-              <div style={bar ? { borderLeft: DIVIDER, paddingLeft: 16 } : undefined}>
-                {satNote}
-              </div>
-            ) : null}
-            {clocks ? (
-              <div
-                style={
-                  bar || satNote
-                    ? { borderLeft: DIVIDER, paddingLeft: 16 }
-                    : undefined
-                }
-              >
-                {clocks}
-              </div>
+              <div style={bar ? { borderLeft: DIVIDER, paddingLeft: 16 } : undefined}>{satNote}</div>
             ) : null}
           </div>
         ) : null}
-      </div>
+      </GodsPanel>
     );
   }
 
@@ -266,104 +234,46 @@ export default function IntensityMeter({
     // Photographic feed only: all the meter has is a caption — a "title".
     if (!sat) return null;
     return (
-      <div
-        style={{
-          textAlign: "center",
-          pointerEvents: "none",
-          fontFamily: "system-ui, sans-serif",
-          // Same one-plate treatment as the map-type hero below.
-          padding: "8px 24px",
-          borderRadius: 14,
-          ...PLATE,
-        }}
+      <GodsPanel
+        notch={[12, 20]}
+        padding={compact ? "12px 22px 14px" : "14px 26px 16px"}
+        gap={6}
+        style={{ pointerEvents: "none" }}
       >
         <div
           style={{
-            fontSize: 12.7,
-            fontWeight: 800,
+            color: INK_FAINT,
+            fontFamily: MONO,
+            fontSize: 11.5,
             letterSpacing: 1.8,
-            opacity: 0.7,
-            color: theme.titleColor,
-            textShadow: "0 1px 4px rgba(0,0,0,0.8)",
           }}
         >
           {theme.meterTitle}
         </div>
-        <div style={{ ...heroStyle, whiteSpace: undefined, marginTop: 2 }}>
-          {sat.title}
-        </div>
-        <div
-          style={{
-            fontSize: compact ? 13.2 : 15.4,
-            opacity: 0.85,
-            color: theme.titleColor,
-            marginTop: 2,
-          }}
-        >
-          {sat.subtitle}
-        </div>
-      </div>
+        {titleRow(sat.title, null)}
+        <div style={{ fontSize: compact ? 12.5 : 14, color: INK_DIM }}>{sat.subtitle}</div>
+      </GodsPanel>
     );
   }
 
+  // Stand-alone legend strip (brand off): title + provenance + scale on ONE
+  // chamfered plate, top-centre.
+  const stripW = compact ? 400 : 520;
+  const stripPad = compact ? 22 : 26;
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 8,
-        pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-        color: theme.titleColor,
-      }}
+    <GodsPanel
+      width={stripW}
+      notch={[12, 20]}
+      padding={`16px ${stripPad}px 18px`}
+      gap={12}
+      style={{ pointerEvents: "none" }}
     >
-      {/* Hero: the ACTIVE MAP TYPE + its source/timing metadata on ONE dark
-          plate — a single widget rather than bare hero text floating over a
-          bright basemap with a separate chip beside it. */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 16,
-          textAlign: "center",
-          padding: "8px 24px",
-          borderRadius: 14,
-          ...PLATE,
-        }}
-      >
-        <div style={heroStyle}>
-          {meta!.label}
-          {legend!.unit ? (
-            <span
-              style={{
-                fontSize: compact ? 16 : 18.7,
-                fontWeight: 700,
-                color: hexAt(1),
-                marginLeft: 6,
-              }}
-            >
-              {legend!.unit}
-            </span>
-          ) : null}
-        </div>
-        {freshnessText ? <div style={chipStyle}>{freshnessText}</div> : null}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {titleRow(meta!.label, legend!.unit)}
+        {freshnessText ? metaLine(freshnessText) : null}
       </div>
-      {/* Scale pill: bar + tick labels on their own dark panel, matching the
-          card chrome — the palette-coloured tick text is unreadable straight
-          over a light basemap. */}
-      <div
-        style={{
-          padding: "9px 12px 7px",
-          borderRadius: 11,
-          ...PLATE,
-          boxShadow: "0 6px 18px rgba(0,0,0,0.4)",
-        }}
-      >
-        {scaleBar(compact ? 290 : 400)}
-      </div>
-      {satNote ? <div style={{ marginTop: -2 }}>{satNote}</div> : null}
-    </div>
+      {scaleBar(stripW - 2 * stripPad - 3)}
+      {satNote}
+    </GodsPanel>
   );
 }

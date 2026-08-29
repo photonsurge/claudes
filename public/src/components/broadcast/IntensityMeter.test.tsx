@@ -13,7 +13,7 @@ const FRESHNESS: MapFreshness = {
 };
 
 describe("IntensityMeter — masthead plate", () => {
-  it("renders hero, source chip, colour-scale ticks and the clocks slot on one plate", () => {
+  it("renders hero, source line and colour-scale ticks on one plate", () => {
     render(
       <IntensityMeter
         part="masthead"
@@ -21,7 +21,6 @@ describe("IntensityMeter — masthead plate", () => {
         units={UNITS}
         theme={BROADCAST_THEMES.command}
         freshness={FRESHNESS}
-        clocks={<div data-testid="clock-slot" />}
       />,
     );
     expect(screen.getByText("Temperature")).toBeInTheDocument();
@@ -33,7 +32,6 @@ describe("IntensityMeter — masthead plate", () => {
     // The temp legend spans its domain — both extreme ticks are on the bar.
     expect(screen.getByText("-40 °C")).toBeInTheDocument();
     expect(screen.getByText("50 °C")).toBeInTheDocument();
-    expect(screen.getByTestId("clock-slot")).toBeInTheDocument();
   });
 
   it("paints the paletteId override's ramp, not the variable's default", () => {
@@ -54,21 +52,7 @@ describe("IntensityMeter — masthead plate", () => {
     expect(screen.getByText("-11000 m")).toHaveStyle({ color: "#6f8cff" });
   });
 
-  it("still shows a clocks-only plate when no scalar map is on air", () => {
-    render(
-      <IntensityMeter
-        part="masthead"
-        variable={null}
-        units={UNITS}
-        theme={BROADCAST_THEMES.command}
-        clocks={<div data-testid="clock-slot" />}
-      />,
-    );
-    expect(screen.getByTestId("clock-slot")).toBeInTheDocument();
-    expect(screen.queryByText(/SOURCE/)).not.toBeInTheDocument();
-  });
-
-  it("renders nothing without a variable, satellite caption or clocks", () => {
+  it("renders nothing without a variable or satellite caption", () => {
     const { container } = render(
       <IntensityMeter
         part="masthead"
@@ -81,8 +65,8 @@ describe("IntensityMeter — masthead plate", () => {
   });
 });
 
-describe("IntensityMeter — stacked fallback (brand off)", () => {
-  it("renders the hero plate and scale pill, no clocks", () => {
+describe("IntensityMeter — stand-alone legend strip (brand off)", () => {
+  it("renders the hero, source line and scale on one strip", () => {
     render(
       <IntensityMeter
         part="all"

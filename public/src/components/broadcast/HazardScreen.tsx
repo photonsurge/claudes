@@ -4,15 +4,17 @@
  * A single-category drill-down slide in the WORLD REPORT deck — ALERTS,
  * SEISMIC, or VOLCANOES. The DETECTION GRID slide (WorldSituationPanel) tallies
  * all three side by side; each of these takes one category and gives it the
- * whole card: a hero count, that category's severity/magnitude/status
- * breakdown, a per-continent bar column on the category's own scale, and the
- * scrolling feed filtered to just this kind. Everything is derived from the
- * same shared `worldWatch` tally the deck already holds — no extra fetch.
+ * whole card: a big headline count (GodsHeadline), that category's severity/
+ * magnitude/status breakdown, a per-continent bar column on the category's own
+ * scale, and the scrolling feed filtered to just this kind. Everything is
+ * derived from the same shared `worldWatch` tally the deck already holds — no
+ * extra fetch. Rendered on the shared G.O.D.S. chamfered panel chrome.
  * Pointer-inert like the rest of the chrome.
  */
 import type { WorldWatchItem } from "../../lib/broadcast";
-import { accentBorderRight, GLASS_BG, type BroadcastTheme } from "./config";
-import { StatTile, BreakdownChip, MiniBar } from "./worldStat";
+import type { BroadcastTheme } from "./config";
+import { GodsPanel, GodsPanelHeader, GodsHeadline, MONO, INK_DIM } from "./GodsPanel";
+import { BreakdownChip, MiniBar } from "./worldStat";
 import FeedSection from "./FeedSection";
 
 export interface HazardContinent {
@@ -48,57 +50,21 @@ export default function HazardScreen({
   const max = Math.max(1, ...continents.map((c) => c.count));
 
   return (
-    <div
-      style={{
-        position: "relative",
-        width: 400,
-        padding: "20px 24px",
-        background: GLASS_BG,
-        ...accentBorderRight(theme.panelBorder, `5px solid ${heroColor}`),
-        borderRadius: 16,
-        boxShadow: `0 12px 36px rgba(0,0,0,0.5), 0 0 20px ${heroColor}28`,
-        backdropFilter: "blur(11px)",
-        WebkitBackdropFilter: "blur(11px)",
-        pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-      }}
+    <GodsPanel
+      width={400}
+      notch={[14, 22]}
+      padding="18px 22px 20px"
+      gap={12}
+      style={{ pointerEvents: "none" }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          fontSize: 14.3,
-          fontWeight: 800,
-          letterSpacing: 1.8,
-          color: theme.titleColor,
-        }}
-      >
-        <span>{title}</span>
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: theme.accent }}>LAST 24H</span>
-      </div>
+      <GodsPanelHeader title={title} tag="LAST 24H" accent={theme.accent} />
 
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 14 }}>
-        <StatTile label={heroLabel} value={heroCount} color={heroColor} />
-        {subtitle ? (
-          <div
-            style={{
-              flex: 2,
-              minWidth: 0,
-              fontSize: 13.2,
-              fontWeight: 700,
-              color: "#c3cee0",
-              lineHeight: 1.3,
-              textAlign: "right",
-            }}
-          >
-            {subtitle}
-          </div>
-        ) : null}
-      </div>
+      <GodsHeadline
+        value={heroCount.toLocaleString()}
+        caption={heroLabel}
+        captionColor={heroColor}
+        note={subtitle}
+      />
 
       {chips.length > 0 ? (
         <div style={{ display: "flex", flexWrap: "wrap", rowGap: 6, columnGap: 14 }}>
@@ -114,10 +80,12 @@ export default function HazardScreen({
             <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span
                 style={{
-                  flex: "0 0 66px",
-                  fontSize: 12.1,
-                  fontWeight: 700,
-                  color: "#c3cee0",
+                  flex: "0 0 84px",
+                  fontFamily: MONO,
+                  fontSize: 11.5,
+                  letterSpacing: 0.6,
+                  textTransform: "uppercase",
+                  color: INK_DIM,
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -130,9 +98,9 @@ export default function HazardScreen({
                 style={{
                   flex: "0 0 24px",
                   textAlign: "right",
-                  fontSize: 12.1,
-                  fontWeight: 700,
-                  color: theme.mutedColor,
+                  fontFamily: MONO,
+                  fontSize: 12,
+                  color: "#dfe9ee",
                   fontVariantNumeric: "tabular-nums",
                 }}
               >
@@ -144,6 +112,6 @@ export default function HazardScreen({
       ) : null}
 
       <FeedSection feed={feed} theme={theme} emptyLabel={emptyFeedLabel} />
-    </div>
+    </GodsPanel>
   );
 }

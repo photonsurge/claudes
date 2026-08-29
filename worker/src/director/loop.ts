@@ -117,7 +117,7 @@ function pickLeastAired(cands: Candidate[], counts: Map<string, number>): Candid
 
 /**
  * Top few upcoming shots (one per kind) for a "coming up" rail — a best-guess
- * hint, not a promise (see UpNextPanel). `selectNext` picks the NEXT kind
+ * hint, not a promise (see the banner's UP NEXT ticker). `selectNext` picks the NEXT kind
  * UNIFORMLY AT RANDOM among those present (excluding the just-aired kind) —
  * there's no "readiness order" to predict, so this samples the same way
  * rather than inventing one. An earlier version sorted kinds by least-aired

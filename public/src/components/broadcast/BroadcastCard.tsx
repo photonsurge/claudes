@@ -19,6 +19,14 @@
  */
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
 import { accentBorder, BASE_LOOK, GLASS_BG, type BroadcastTheme } from "./config";
+import {
+  chamfer,
+  accentRule,
+  SANS,
+  GODS_BORDER,
+  GODS_FILL,
+  INK as GODS_INK,
+} from "./GodsPanel";
 import { useBroadcastTheme } from "./theme-context";
 import AutoScroll from "./AutoScroll";
 
@@ -165,77 +173,102 @@ export default function BroadcastCard({
   // changes. The panel's `children` (incl. its inner CardSection eyebrows) render
   // in the scroll area untouched.
   if (chrome) {
+    // The on-air deck card wears the shared G.O.D.S. chamfered chrome (see
+    // GodsPanel): border + navy fill layers clipped to the same silhouette,
+    // depth from a drop-shadow filter on the wrapper (clip-path swallows a
+    // normal box-shadow). Hand-rolled rather than <GodsPanel> because the
+    // template owns a fixed height with a scrolling body.
+    const clip = chamfer(14, 22);
     return (
       <div
         style={{
           width,
           height: chrome.height ?? CARD_H,
-          display: "flex",
-          flexDirection: "column",
-          // See-through glass (lighter than the theme's near-solid panelBg) so the
-          // map reads behind the on-air deck card; a stronger blur keeps the body
-          // legible over it. Opaque enough to survive OBS/YouTube compression —
-          // thinner fills washed out to unreadable on stream.
-          background: "rgba(8,14,24,0.58)",
-          ...accentBorder(theme.panelBorder, `4px solid ${stripe}`),
-          borderRadius: 14,
-          boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-          backdropFilter: "blur(11px)",
-          WebkitBackdropFilter: "blur(11px)",
+          filter: "drop-shadow(0 10px 28px rgba(0,0,0,0.45))",
           pointerEvents: "none",
-          fontFamily: "system-ui, sans-serif",
-          color: theme.textColor,
-          overflow: "hidden",
+          fontFamily: SANS,
+          color: GODS_INK,
           // NB: the template deliberately does NOT spread the panel's `style` —
           // it owns the uniform size, so a panel's own `width`/`padding` override
           // (e.g. ForecastPanel's `width:"auto"`) can't break the fixed template.
         }}
       >
-        {/* One-line title bar: badge chip + event title on a single row. The
-            right padding clears the deck's page-dot indicator (top-right). */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 64px 11px 20px", flexShrink: 0 }}>
-          <span
+        <div
+          style={{
+            background: GODS_BORDER,
+            clipPath: clip,
+            padding: 1.6,
+            height: "100%",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
             style={{
-              flexShrink: 0,
-              fontSize: 13.2,
-              fontWeight: 800,
-              letterSpacing: 1,
-              textTransform: "uppercase",
-              padding: "3px 10px",
-              borderRadius: 5,
-              background: chrome.badgeColor ?? stripe,
-              color: "#fff",
+              background: GODS_FILL,
+              clipPath: clip,
+              height: "100%",
+              boxSizing: "border-box",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
             }}
           >
-            {chrome.badge}
-          </span>
-          {chrome.title ? (
-            <div
-              style={{
-                flex: 1,
-                minWidth: 0,
-                fontSize: 19.8,
-                fontWeight: 800,
-                lineHeight: 1.1,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {chrome.title}
+            {/* One-line title bar: badge chip + event title on a single row,
+                closed by an accent hairline. The right padding clears the
+                deck's page-dot indicator (top-right). */}
+            <div style={{ flexShrink: 0, padding: "14px 20px 0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, paddingRight: 44 }}>
+                <span
+                  style={{
+                    flexShrink: 0,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    letterSpacing: 1.4,
+                    textTransform: "uppercase",
+                    padding: "3px 10px",
+                    background: chrome.badgeColor ?? stripe,
+                    color: "#fff",
+                  }}
+                >
+                  {chrome.badge}
+                </span>
+                {chrome.title ? (
+                  <div
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: 19.5,
+                      fontWeight: 600,
+                      letterSpacing: 0.5,
+                      lineHeight: 1.1,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {chrome.title}
+                  </div>
+                ) : null}
+              </div>
+              <div style={{ marginTop: 10, height: 1, background: accentRule(stripe) }} />
             </div>
-          ) : null}
+            {/* The persistent tracking readout (EVENT DETECTION OVERLAY rows) —
+                part of the card's fixed header, so only the slide body rotates
+                below. */}
+            {chrome.tracking ? <div style={{ flexShrink: 0 }}>{chrome.tracking}</div> : null}
+            {/* Pointer-inert on air, so overlong bodies can't be hand-scrolled —
+                AutoScroll walks them top→bottom→top; content that fits sits still.
+                `active` resets it to the top when this slide airs (and holds it
+                there while it waits off-screen), so a slide always loads scrolled
+                to top. */}
+            <AutoScroll
+              active={slideActive}
+              style={{ flex: 1, minHeight: 0, overflowY: "hidden", padding: "10px 20px 16px" }}
+            >
+              {children}
+            </AutoScroll>
+          </div>
         </div>
-        {/* The persistent tracking readout (EVENT DETECTION OVERLAY rows) — part
-            of the card's fixed header, so only the slide body rotates below. */}
-        {chrome.tracking ? <div style={{ flexShrink: 0 }}>{chrome.tracking}</div> : null}
-        {/* Pointer-inert on air, so overlong bodies can't be hand-scrolled —
-            AutoScroll walks them top→bottom→top; content that fits sits still.
-            `active` resets it to the top when this slide airs (and holds it there
-            while it waits off-screen), so a slide always loads scrolled to top. */}
-        <AutoScroll active={slideActive} style={{ flex: 1, minHeight: 0, overflowY: "hidden", padding: "2px 20px 16px" }}>
-          {children}
-        </AutoScroll>
       </div>
     );
   }

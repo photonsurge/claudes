@@ -8,7 +8,8 @@
  * integrated at the card's foot (see FeedSection) — the tally is the "how
  * much/how bad" headline, the feed the "which ones" detail. Deliberately
  * independent of the operator's show-alerts/seismic toggles and the camera
- * bbox (see useWorldWatch). Pointer-inert like the rest of the chrome.
+ * bbox (see useWorldWatch). Rendered on the shared G.O.D.S. chamfered panel
+ * chrome (GodsPanel). Pointer-inert like the rest of the chrome.
  *
  * The grid is COLUMNS-DRIVEN: each report kind (alert/quake/volcano) is one
  * column spec carrying its tile, chips and continent bar, and the channel's
@@ -22,10 +23,10 @@
 import { Fragment } from "react";
 import type { ReportKind } from "@photonsurge/shared/broadcast-report";
 import type { WorldWatchState } from "../../lib/world-watch";
-import { accentBorderRight, GLASS_BG, DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { GodsPanel, GodsPanelHeader, MONO, INK_DIM } from "./GodsPanel";
 import { StatTile, BreakdownChip, MiniBar } from "./worldStat";
 import FeedSection from "./FeedSection";
-import { useBroadcastTheme } from "./theme-context";
 
 type Continent = WorldWatchState["byContinent"][number];
 
@@ -49,15 +50,16 @@ interface GridColumn {
  *  mini graph per VISIBLE column, each its own colour ramp and scale, so the
  *  event types never blend into one ambiguous bar. */
 function ContinentRow({ continent, columns }: { continent: Continent; columns: GridColumn[] }) {
-  const theme = useBroadcastTheme();
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <span
         style={{
           flex: "0 0 66px",
-          fontSize: 12.1,
-          fontWeight: 700,
-          color: "#c3cee0",
+          fontFamily: MONO,
+          fontSize: 11.5,
+          letterSpacing: 0.6,
+          textTransform: "uppercase",
+          color: INK_DIM,
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
@@ -72,9 +74,9 @@ function ContinentRow({ continent, columns }: { continent: Continent; columns: G
             style={{
               flex: "0 0 18px",
               textAlign: "right",
-              fontSize: 12.1,
-              fontWeight: 700,
-              color: theme.mutedColor,
+              fontFamily: MONO,
+              fontSize: 12,
+              color: "#dfe9ee",
               fontVariantNumeric: "tabular-nums",
             }}
           >
@@ -138,40 +140,14 @@ export default function WorldSituationPanel({
   ).filter((col) => !off.has(col.kind));
 
   return (
-    <div
-      style={{
-        position: "relative",
-        width: 400,
-        padding: "20px 24px",
-        background: GLASS_BG,
-        ...accentBorderRight(theme.panelBorder, `5px solid ${topColor}`),
-        borderRadius: 16,
-        boxShadow: `0 12px 36px rgba(0,0,0,0.5), 0 0 20px ${topColor}28`,
-        backdropFilter: "blur(11px)",
-        WebkitBackdropFilter: "blur(11px)",
-        pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-      }}
+    <GodsPanel
+      width={400}
+      notch={[14, 22]}
+      padding="18px 22px 20px"
+      gap={12}
+      style={{ pointerEvents: "none" }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          fontSize: 14.3,
-          fontWeight: 800,
-          letterSpacing: 1.8,
-          color: theme.titleColor,
-        }}
-      >
-        <span>DETECTION GRID</span>
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: theme.accent }}>
-          LAST 24H
-        </span>
-      </div>
+      <GodsPanelHeader title="DETECTION GRID" tag="LAST 24H" accent={theme.accent} />
 
       {columns.length > 0 ? (
         <div style={{ display: "flex", gap: 18 }}>
@@ -204,8 +180,8 @@ export default function WorldSituationPanel({
                   style={{
                     flex: 1,
                     textAlign: i === 0 ? "left" : "right",
-                    fontSize: 9.9,
-                    fontWeight: 800,
+                    fontFamily: MONO,
+                    fontSize: 10,
                     letterSpacing: 1,
                     color: col.color,
                   }}
@@ -223,6 +199,6 @@ export default function WorldSituationPanel({
       ) : null}
 
       <FeedSection feed={s.feed} theme={theme} visible={4} />
-    </div>
+    </GodsPanel>
   );
 }

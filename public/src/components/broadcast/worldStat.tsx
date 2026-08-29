@@ -2,11 +2,14 @@
 
 /**
  * Shared stat primitives for the top-right WORLD REPORT deck: the hero
- * count tile, the "● 34 Extreme" breakdown chip, and the per-continent mini
+ * count tile, the "■ 34 EXTREME" breakdown chip, and the per-continent mini
  * bar-graph. Lifted out of WorldSituationPanel so the DETECTION GRID slide and
  * the per-category ALERTS / SEISMIC / VOLCANOES drill-down slides all render
- * the exact same shapes instead of re-implementing them.
+ * the exact same shapes instead of re-implementing them. Styled on the shared
+ * G.O.D.S. panel chrome (GodsPanel): thin Saira hero numerals, mono data ink,
+ * square swatches — data colours still come from the callers.
  */
+import { MONO, INK_DIM } from "./GodsPanel";
 
 /** Hero count + caption. */
 export function StatTile({ label, value, color }: { label: string; value: number; color: string }) {
@@ -14,40 +17,40 @@ export function StatTile({ label, value, color }: { label: string; value: number
     <div style={{ flex: 1, minWidth: 0 }}>
       <div
         style={{
-          fontSize: 39.6,
-          fontWeight: 800,
-          color: "#fff",
-          lineHeight: 1,
-          textShadow: "0 1px 6px rgba(0,0,0,0.5)",
+          fontSize: 40,
+          fontWeight: 300,
+          color: "#ffffff",
+          lineHeight: 0.95,
+          letterSpacing: -0.5,
+          fontVariantNumeric: "tabular-nums",
         }}
       >
         {value.toLocaleString()}
       </div>
-      <div style={{ fontSize: 12.1, fontWeight: 800, letterSpacing: 1, color, marginTop: 5 }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 500, letterSpacing: 2.6, color, marginTop: 5 }}>{label}</div>
     </div>
   );
 }
 
-/** One "● 34 Extreme" chip in the severity/magnitude breakdown — a coloured
- *  dot + count + label, light enough that a dozen of them still read as one
+/** One "■ 34 EXTREME" chip in the severity/magnitude breakdown — a coloured
+ *  square + count + label, light enough that a dozen of them still read as one
  *  scannable line instead of a wall of boxed pills. */
 export function BreakdownChip({ label, count, color }: { label: string; count: number; color: string }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
-      <span
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: 2,
-          background: color,
-          boxShadow: `0 0 5px ${color}99`,
-          flex: "0 0 auto",
-        }}
-      />
-      <span style={{ fontSize: 13.2, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
-        {count}
-      </span>
-      <span style={{ fontSize: 12.1, fontWeight: 700, color: "#c3cee0", letterSpacing: 0.3 }}>{label}</span>
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 7,
+        whiteSpace: "nowrap",
+        fontFamily: MONO,
+        fontSize: 12.5,
+        color: INK_DIM,
+      }}
+    >
+      <span style={{ width: 8, height: 8, background: color, flex: "0 0 auto" }} />
+      <span style={{ color: "#dfe9ee", fontVariantNumeric: "tabular-nums" }}>{count}</span>
+      <span style={{ textTransform: "uppercase", letterSpacing: 0.6 }}>{label}</span>
     </span>
   );
 }
@@ -71,9 +74,10 @@ export function MiniBar({
     <div
       style={{
         flex: 1,
+        display: "flex",
         height: 9,
-        borderRadius: 3,
-        background: "rgba(255,255,255,0.07)",
+        background: "#0d1f2b",
+        border: "1px solid #163241",
         overflow: "hidden",
       }}
     >

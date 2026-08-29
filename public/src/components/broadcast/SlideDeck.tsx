@@ -15,6 +15,7 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { CARD_W, MUTED, DeckChromeContext, DeckSlideActiveContext, type DeckChrome } from "./BroadcastCard";
+import { GODS_BORDER } from "./GodsPanel";
 
 /** One rotation position. `id` must be stable across renders so React keeps the
  *  slide mounted (and its internal state alive) as data streams in. */
@@ -29,18 +30,20 @@ const HOLD_MS = 16000;
  *  quick cut. */
 const FADE_MS = 1200;
 
+/** GODS-style page squares (the active one stretches), matching the top-right
+ *  WORLD REPORT deck's indicator. Positioned to clear the card's chamfered
+ *  top-right corner. */
 function Dots({ count, active, accent }: { count: number; active: number; accent: string }) {
   return (
-    <div style={{ position: "absolute", top: 15, right: 18, display: "flex", gap: 5 }}>
+    <div style={{ position: "absolute", top: 20, right: 26, display: "flex", gap: 5, alignItems: "center" }}>
       {Array.from({ length: count }, (_, i) => (
         <span
           key={i}
           style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: i === active ? accent : "rgba(159,179,204,0.3)",
-            transition: `background ${FADE_MS}ms ease`,
+            width: i === active ? 14 : 5,
+            height: 5,
+            background: i === active ? accent : GODS_BORDER,
+            transition: `width ${FADE_MS}ms ease, background ${FADE_MS}ms ease`,
           }}
         />
       ))}

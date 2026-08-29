@@ -6,16 +6,25 @@
  * forecast (useAreaForecast over the whole-world bbox, lifted to the deck so it
  * doesn't refetch every rotation) gives today's temperature span, peak gust and
  * peak rainfall anywhere on Earth, plus a four-day TODAY/TOMORROW/+2/+3 outlook
- * strip. The run stamp names which cycle it came from. Pointer-inert like the
- * rest of the chrome.
+ * strip. The run stamp names which cycle it came from. Rendered on the shared
+ * G.O.D.S. chamfered panel chrome. Pointer-inert like the rest of the chrome.
  */
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { WorldWatchItem } from "../../lib/broadcast";
 import type { AreaForecastDay } from "../../lib/forecast-client";
 import { formatReading } from "./PointHistoryPanel";
-import { accentBorderRight, GLASS_BG, TILE_BG, type BroadcastTheme } from "./config";
+import type { BroadcastTheme } from "./config";
 import { hazardMeta } from "../../lib/hazard";
 import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
+import {
+  GodsPanel,
+  GodsPanelHeader,
+  MONO,
+  INK_DIM,
+  INK_FAINT,
+  GODS_TILE,
+  GODS_TILE_BORDER,
+} from "./GodsPanel";
 import { BreakdownChip } from "./worldStat";
 import FeedSection from "./FeedSection";
 
@@ -44,10 +53,10 @@ function runLabel(manifest: WeatherManifest | null): string {
 function Extreme({ icon, label, value, color }: { icon: string; label: string; value: string; color: string }) {
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: "#8fa0b8" }}>{label}</div>
+      <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: 0.8, color: INK_FAINT }}>{label}</div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginTop: 3 }}>
         <span style={{ fontSize: 15.4 }}>{icon}</span>
-        <span style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontSize: 22, fontWeight: 400, color, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
           {value}
         </span>
       </div>
@@ -70,8 +79,8 @@ function DayCell({ day }: { day: AreaForecastDay }) {
         alignItems: "center",
         gap: 3,
         padding: "8px 4px",
-        borderRadius: 8,
-        background: TILE_BG,
+        background: GODS_TILE,
+        border: `1px solid ${GODS_TILE_BORDER}`,
       }}
     >
       {topHazard ? (
@@ -84,18 +93,17 @@ function DayCell({ day }: { day: AreaForecastDay }) {
             fontSize: 12.1,
             lineHeight: 1,
             padding: "3px 4px",
-            borderRadius: 999,
             background: SEVERITY_COLORS[topHazard.severityRank] ?? "#f97316",
           }}
         >
           {hazardMeta(topHazard.hazard).icon}
         </div>
       ) : null}
-      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: "#aebdd2" }}>{day.label}</span>
+      <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: 0.8, color: INK_DIM }}>{day.label}</span>
       <span style={{ fontSize: 24.2, lineHeight: 1 }}>{CONDITION_GLYPH[day.condition]}</span>
-      <span style={{ fontSize: 15.4, fontWeight: 850, color: "#f3f7ff" }}>
+      <span style={{ fontSize: 15.4, fontWeight: 500, color: "#f3f7ff", fontVariantNumeric: "tabular-nums" }}>
         {hi != null ? formatReading(hi) : "—"}°
-        <span style={{ fontSize: 12.1, fontWeight: 700, color: "#9db0ca", marginLeft: 3 }}>
+        <span style={{ fontSize: 12.1, fontWeight: 400, color: INK_DIM, marginLeft: 3 }}>
           {lo != null ? `${formatReading(lo)}°` : ""}
         </span>
       </span>
@@ -119,43 +127,16 @@ export default function WorldReportPanel({
   theme: BroadcastTheme;
 }) {
   const today = days[0] ?? null;
-  const accent = theme.accent;
 
   return (
-    <div
-      style={{
-        position: "relative",
-        width: 400,
-        padding: "20px 24px",
-        background: GLASS_BG,
-        ...accentBorderRight(theme.panelBorder, `5px solid ${accent}`),
-        borderRadius: 16,
-        boxShadow: `0 12px 36px rgba(0,0,0,0.5), 0 0 20px ${accent}28`,
-        backdropFilter: "blur(11px)",
-        WebkitBackdropFilter: "blur(11px)",
-        pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-      }}
+    <GodsPanel
+      width={400}
+      notch={[14, 22]}
+      padding="18px 22px 20px"
+      gap={12}
+      style={{ pointerEvents: "none" }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          fontSize: 14.3,
-          fontWeight: 800,
-          letterSpacing: 1.8,
-          color: theme.titleColor,
-        }}
-      >
-        <span>WORLD REPORT</span>
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.8, color: accent }}>
-          {runLabel(manifest)}
-        </span>
-      </div>
+      <GodsPanelHeader title="WORLD REPORT" tag={runLabel(manifest)} accent={theme.accent} />
 
       {today ? (
         <>
@@ -206,12 +187,12 @@ export default function WorldReportPanel({
           </div>
         </>
       ) : (
-        <div style={{ fontSize: 14.3, fontWeight: 700, color: "#7f8ea6", padding: "8px 0" }}>
+        <div style={{ fontFamily: MONO, fontSize: 12.5, color: INK_FAINT, padding: "8px 0" }}>
           {loading ? "Building latest world report…" : "No world report available."}
         </div>
       )}
 
       <FeedSection feed={feed} theme={theme} />
-    </div>
+    </GodsPanel>
   );
 }

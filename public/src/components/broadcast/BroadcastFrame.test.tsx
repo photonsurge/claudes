@@ -87,7 +87,6 @@ jest.mock("./EventOverlay", () => ({
   trackingBlockHeight: () => 0,
 }));
 jest.mock("./SyslogFeed", () => ({ __esModule: true, default: () => <div data-testid="w-syslog" /> }));
-jest.mock("./UpNextPanel", () => ({ __esModule: true, default: () => <div data-testid="w-upNext" /> }));
 jest.mock("./BuildInfoTag", () => ({ __esModule: true, default: () => <div data-testid="w-buildInfo" /> }));
 jest.mock("./SlideDeck", () => ({ __esModule: true, default: () => null }));
 // FadeSwap wraps the whole "leftDeck" widget — probe its wrapper rather than
@@ -112,7 +111,6 @@ const TESTID: Record<WidgetId, string> = {
   spaceWeather: "w-spaceWeather",
   brand: "w-brand",
   kpIndex: "w-kpIndex",
-  upNext: "w-upNext",
   syslog: "w-syslog",
   buildInfo: "w-buildInfo",
   ticker: "w-ticker",
@@ -148,7 +146,7 @@ describe("BroadcastFrame — per-channel widgetsOff gating", () => {
     }
   });
 
-  it("anchors the left deck directly below the brand banner", () => {
+  it("anchors the left deck below the banner's globe bezel", () => {
     render(
       <BroadcastFrame
         state={{ ...DEFAULT_CONTROL_STATE, widgetsOff: [] }}
@@ -157,7 +155,7 @@ describe("BroadcastFrame — per-channel widgetsOff gating", () => {
     );
     const anchor = screen.getByTestId(TESTID.leftDeck).parentElement;
 
-    expect(anchor).toHaveStyle({ top: "154px", transformOrigin: "left top" });
+    expect(anchor).toHaveStyle({ top: "278px", transformOrigin: "left top" });
     expect(anchor?.style.bottom).toBe("");
   });
 
@@ -165,7 +163,7 @@ describe("BroadcastFrame — per-channel widgetsOff gating", () => {
     renderFrame([]);
     const anchor = screen.getByTestId(TESTID.leftDeck).parentElement;
 
-    expect(anchor).toHaveStyle({ top: "222px" });
+    expect(anchor).toHaveStyle({ top: "346px" });
   });
 
   it("hides exactly the widgets named in widgetsOff, leaves the rest shown", () => {
