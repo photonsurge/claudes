@@ -46,6 +46,7 @@ import {
 import { bboxForCamera, type HistorySeries } from "../../lib/history-client";
 import { useLatestRoundup } from "../../lib/summaries";
 import { useSponsors } from "../../lib/ads/use-sponsors";
+import { useBillboardAds } from "../../lib/ads/use-billboard";
 import {
   useFocusRegion,
   useFocusCountry,
@@ -92,6 +93,7 @@ import ForecastPanel from "./ForecastPanel";
 import { mapFreshness } from "../../lib/manifest";
 import EventOverlay, { EventTrackingLabel, trackingBlockHeight } from "./EventOverlay";
 import { CARD_H } from "./BroadcastCard";
+import SponsorBillboard, { BILLBOARD_MIN_H } from "./SponsorBillboard";
 import { flagEmoji } from "./RegionCountryPanel";
 import SyslogFeed from "./SyslogFeed";
 import BuildInfoTag from "./BuildInfoTag";
@@ -293,6 +295,9 @@ export default function BroadcastFrame({
   // evenly through the live feed (see weaveSponsors) — the easy-win sponsor
   // surface: no screen real estate taken, clearly tagged AD in the accent ink.
   const sponsors = useSponsors();
+  // The bottom-left corner's sponsor rotation — active billboard-placed image
+  // creatives, polled like the sponsor names (see SponsorBillboard below).
+  const billboardAds = useBillboardAds();
   const bottomTickerTitle = theme.tickerTitle;
   // "ad" kind off = no crawl mentions on this channel. Sponsor SLIDES are
   // governed separately (ads/slides settings) — this only strips the weave.
@@ -714,6 +719,19 @@ export default function BroadcastFrame({
       <ForecastPanel center={null} daysOverride={tourStopWeather.days} compact theme={theme} variant="monitor" />
     ) : null;
 
+  // The bottom-left corner's free band for the sponsor billboard, in the deck
+  // column's pre-scale design px. The corner is not a fixed hole: the deck
+  // above is top-anchored and grows (Kp stack via leftDeckTop, tracking header
+  // via trackingBlockHeight), so the billboard clamps to what's actually free
+  // and yields entirely (renders nothing) under its floor — which is exactly
+  // the targeted-event tracking modes, where the corner goes back to the
+  // broadcast. With the deck widget off the whole column is free below its
+  // would-be anchor.
+  const billboardDeckBottom = off.has("leftDeck")
+    ? leftDeckTop
+    : leftDeckTop + 1.2 * (CARD_H + (deckTracking ? trackingBlockHeight(deckTrackingRows) : 0));
+  const billboardMaxH = (STAGE_H - chromeBottom - billboardDeckBottom - 12) / 1.2;
+
   return (
     <div
       style={{
@@ -854,6 +872,26 @@ export default function BroadcastFrame({
             ) : null}
           </FadeSwap>
         </div>
+        )}
+
+        {/* Bottom-left sponsor billboard — docked in the corner the locator
+            planet freed up, right edge lined up with the deck column (same
+            scale(1.2) treatment, anchored to the bottom so it rides the crawl
+            toggle). Self-hiding: nothing placed, or the free band under the
+            deck squeezed below the floor (see billboardMaxH above), airs no
+            empty frame. */}
+        {!off.has("billboard") && billboardMaxH >= BILLBOARD_MIN_H && (
+          <div
+            style={{
+              position: "absolute",
+              left: INSET - 16,
+              bottom: chromeBottom,
+              transform: "scale(1.2)",
+              transformOrigin: "left bottom",
+            }}
+          >
+            <SponsorBillboard ads={billboardAds} maxHeight={billboardMaxH} hidden={cutting} />
+          </div>
         )}
 
         {brandOn && (

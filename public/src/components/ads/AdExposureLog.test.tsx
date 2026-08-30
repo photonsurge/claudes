@@ -1,6 +1,7 @@
 /**
- * AdExposureLog — the per-ad TICKER LOG: window rows (scene · range · duration),
- * ON AIR badge on open windows, and nothing at all for an ad with no history.
+ * AdExposureLog — the per-ad EXPOSURE LOG: window rows (surface · scene ·
+ * range · duration), ON AIR badge on open windows, and nothing at all for an
+ * ad with no history.
  */
 import { render, screen, waitFor } from "@testing-library/react";
 import AdExposureLog, { fmtWindowMs, fmtWindowRange } from "./AdExposureLog";
@@ -27,13 +28,15 @@ describe("fmtWindowMs / fmtWindowRange", () => {
 describe("AdExposureLog", () => {
   it("renders one row per window with the ON AIR badge on the open one", async () => {
     getAdExposure.mockResolvedValue([
-      { sceneId: "default", sceneName: "Main", startedAt: T0, ms: 10 * MIN },
-      { sceneId: "storm", sceneName: "Storm Watch", startedAt: T0 - 120 * MIN, endedAt: T0 - 30 * MIN, ms: 90 * MIN },
+      { sceneId: "default", sceneName: "Main", surface: "ticker", startedAt: T0, ms: 10 * MIN },
+      { sceneId: "storm", sceneName: "Storm Watch", surface: "billboard", startedAt: T0 - 120 * MIN, endedAt: T0 - 30 * MIN, ms: 90 * MIN },
     ]);
     render(<AdExposureLog adId="ad-1" />);
 
-    await waitFor(() => expect(screen.getByText("TICKER LOG")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("EXPOSURE LOG")).toBeInTheDocument());
     expect(screen.getByText("Main")).toBeInTheDocument();
+    expect(screen.getByText("CRAWL")).toBeInTheDocument();
+    expect(screen.getByText("BILLBOARD")).toBeInTheDocument();
     expect(screen.getByText("Storm Watch")).toBeInTheDocument();
     expect(screen.getAllByText("● ON AIR")).toHaveLength(1);
     expect(screen.getByText("1h 30m")).toBeInTheDocument();

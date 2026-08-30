@@ -127,6 +127,11 @@ export default function AdEditPanel({ ad, onSaved }: { ad: Ad; onSaved: (ad: Ad)
               </label>
             ))}
           </div>
+          {ad.mediaType === "video" && placements.includes("billboard") && (
+            <div style={{ fontSize: 11, color: "#fbbf24" }}>
+              The billboard airs images only — this video will run on its other placements but never in the corner.
+            </div>
+          )}
         </div>
         <label style={{ ...label, gridColumn: "1 / -1" }}>Click URL<input style={field} value={f.clickUrl} onChange={set("clickUrl")} /></label>
         <label style={{ ...label, gridColumn: "1 / -1" }}>Tags<input style={field} value={f.tags} onChange={set("tags")} placeholder="comma separated" /></label>

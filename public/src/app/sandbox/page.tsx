@@ -179,7 +179,12 @@ export default function SandboxPage() {
           interactive
           onSelect={setSelected}
           onPickPoint={pickPoint}
-          onCameraChange={(center, zoom) => apply({ ...state, camera: { center, zoom } })}
+          // MUST merge functionally: while the globe spins, camera ticks arrive
+          // every frame through a callback whose `state` closure can be one
+          // render stale — spreading `state` here re-applies the pre-click
+          // snapshot and silently reverts whatever the panel just changed
+          // (the "can't switch wind barbs on" bug).
+          onCameraChange={(center, zoom) => setState((s) => ({ ...s, camera: { center, zoom } }))}
         />
         {state.showAlerts || state.showSeismic || state.showAurora || state.showMagneticField ? (
           <AlertLegend alerts={alerts} activeHazard={alertStep?.hazard ?? null} quakes={quakes} aurora={aurora} geomag={geomag} />
@@ -285,12 +290,13 @@ export default function SandboxPage() {
           onChange={apply}
           // Flying to a place means "look here" — stop the idle spin first so it
           // doesn't drag the globe back to the old anchor when the flight lands.
+          // Functional for the same stale-tick reason as onCameraChange above.
           onFitBounds={(bbox) => {
-            if (state.autoSpin) apply({ ...state, autoSpin: false });
+            setState((s) => (s.autoSpin ? { ...s, autoSpin: false } : s));
             globe.current?.fitBounds(bbox);
           }}
           onFlyTo={(center, zoom) => {
-            if (state.autoSpin) apply({ ...state, autoSpin: false });
+            setState((s) => (s.autoSpin ? { ...s, autoSpin: false } : s));
             globe.current?.flyTo(center, zoom);
           }}
         />

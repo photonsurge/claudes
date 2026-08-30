@@ -68,8 +68,8 @@ export default function AdsTable() {
   const [selected, setSelected] = useState<Ad | null>(null);
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  // Worker-written ticker-exposure rollup (cumulative crawl time + live-now
-  // scenes per ad) — fetched alongside the list, keyed by adId.
+  // Worker-written exposure rollup (cumulative crawl + billboard time, plus
+  // live-now scenes per ad) — fetched alongside the list, keyed by adId.
   const [exposure, setExposure] = useState<Record<string, AdExposureTotal>>({});
 
   const reload = useCallback(async () => {
@@ -163,7 +163,7 @@ export default function AdsTable() {
                 <th style={th}>{sorted.header("type", "Type")}</th><th style={th}>{sorted.header("runs", "Runs in")}</th>
                 <th style={thNum}>{sorted.header("size", "Size")}</th>
                 <th style={thNum}>{sorted.header("weight", "Weight")}</th><th style={th}>{sorted.header("shown", "Last shown")}</th>
-                <th style={th}>{sorted.header("screen", "On screen")}</th><th style={th}>{sorted.header("ticker", "Ticker time")}</th>
+                <th style={th}>{sorted.header("screen", "On screen")}</th><th style={th}>{sorted.header("ticker", "Air time")}</th>
                 <th style={th}>{sorted.header("status", "Status")}</th>
                 <th style={th}></th>
               </tr>

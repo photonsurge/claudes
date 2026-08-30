@@ -1,5 +1,9 @@
 # Bottom-left sponsor billboard — plan
 
+> **Status: SHIPPED 2026-08-30.** All steps below landed (including the
+> BroadcastFrame wiring — the widget-catalog parity test required it in the
+> same pass). Worker restart needed for billboard exposure logging.
+
 A third ad placement, `billboard`: an always-on **image** creative docked in the
 freed bottom-left corner (the old locator-planet spot — the corner the
 BroadcastFrame comment already reserves "for sponsor placements"). It rotates

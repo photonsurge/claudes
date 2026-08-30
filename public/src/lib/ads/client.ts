@@ -85,24 +85,26 @@ export async function deleteAd(adId: string): Promise<{ ok: boolean; error?: str
   return { ok: true };
 }
 
-/** Per-ad ticker-exposure rollup (worker-written windows; see /admin/ads). */
+/** Per-ad exposure rollup across the always-on surfaces (see /admin/ads). */
 export interface AdExposureTotal {
-  /** Cumulative ms the ad's "Sponsored by …" mention has been in the crawl. */
+  /** Cumulative on-air ms: crawl mention + billboard rotation, summed. */
   ms: number;
   /** Scenes it is airing on right now (empty = not currently on air). */
   liveScenes: { id: string; name: string }[];
 }
 
-/** One ticker-exposure window (no `endedAt` = on air right now). */
+/** One exposure window (no `endedAt` = on air right now). */
 export interface AdExposureWindow {
   sceneId: string;
   sceneName: string;
+  /** Which always-on surface the window aired on. */
+  surface: "ticker" | "billboard";
   startedAt: number;
   endedAt?: number;
   ms: number;
 }
 
-/** Cumulative ticker time + live-now scenes for every ad, keyed by adId. */
+/** Cumulative exposure time + live-now scenes for every ad, keyed by adId. */
 export async function getAdExposureTotals(): Promise<Record<string, AdExposureTotal>> {
   const res = await fetch("/api/admin/ads/exposure", { cache: "no-store" });
   const body = await res.json().catch(() => null);
@@ -110,7 +112,7 @@ export async function getAdExposureTotals(): Promise<Record<string, AdExposureTo
   return body.totals as Record<string, AdExposureTotal>;
 }
 
-/** One ad's full ticker log, newest first. */
+/** One ad's full exposure log (all surfaces), newest first. */
 export async function getAdExposure(adId: string): Promise<AdExposureWindow[]> {
   const res = await fetch(`/api/admin/ads/${encodeURIComponent(adId)}/exposure`, { cache: "no-store" });
   const body = await res.json().catch(() => null);

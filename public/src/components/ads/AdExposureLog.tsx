@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * TICKER LOG for one ad — the what/where/when record of its "Sponsored by …"
- * crawl mentions: one row per exposure window (scene, start → end, duration),
- * newest first, with an ON AIR badge while a window is still open. Windows are
+ * EXPOSURE LOG for one ad — the what/where/when record of its always-on
+ * airings ("Sponsored by …" crawl mentions + bottom-left billboard rotation):
+ * one row per exposure window (surface, scene, start → end, duration), newest
+ * first, with an ON AIR badge while a window is still open. Windows are
  * written by the worker's ads.exposure sweep; this just reads them. Renders
- * nothing for an ad that has never been ticker-placed (no windows).
+ * nothing for an ad that has never been placed on either surface (no windows).
  */
 import { useEffect, useState } from "react";
 import { getAdExposure, type AdExposureWindow } from "../../lib/ads/client";
@@ -55,7 +56,7 @@ export default function AdExposureLog({ adId }: { adId: string }) {
   return (
     <div style={{ marginTop: 12, borderTop: "1px solid #1b2030", paddingTop: 10 }}>
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "#8b95a7", marginBottom: 6 }}>
-        TICKER LOG
+        EXPOSURE LOG
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 180, overflowY: "auto" }}>
         {windows.map((w, i) => (
@@ -68,6 +69,17 @@ export default function AdExposureLog({ adId }: { adId: string }) {
                 ● ON AIR
               </span>
             )}
+            <span
+              style={{
+                color: w.surface === "billboard" ? "#7dd3fc" : "#8b95a7",
+                fontSize: 10.5,
+                fontWeight: 700,
+                letterSpacing: 0.6,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {w.surface === "billboard" ? "BILLBOARD" : "CRAWL"}
+            </span>
             <span style={{ color: "#8b95a7" }}>{w.sceneName}</span>
             <span>{fmtWindowRange(w)}</span>
             <span style={{ color: "#8b95a7", marginLeft: "auto", whiteSpace: "nowrap" }}>{fmtWindowMs(w.ms)}</span>
@@ -75,7 +87,7 @@ export default function AdExposureLog({ adId }: { adId: string }) {
         ))}
       </div>
       <div style={{ ...asOf, marginTop: 6 }}>
-        When this ad&rsquo;s &ldquo;Sponsored by&rdquo; mention was in the crawl, per channel.
+        When this ad was on an always-on surface (crawl mention / corner billboard), per channel.
       </div>
     </div>
   );

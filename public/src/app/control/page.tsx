@@ -238,9 +238,19 @@ export default function ControlPage() {
           onSelect={cut ? undefined : setSelected}
           // While a director cut is on air it owns the camera (imperative flyTo);
           // don't persist those frames or the operator's manual baseline drifts.
+          // MUST merge functionally: while spinning, camera ticks arrive every
+          // frame through a closure that can be one render stale — spreading
+          // `state` would re-apply the pre-click snapshot and revert whatever
+          // the panel just changed. The emit rides the updater so it carries
+          // the same merged state (a duplicate dev StrictMode emit is benign —
+          // identical payload).
           onCameraChange={(center, zoom) => {
             if (cut) return;
-            apply({ ...state, camera: { center, zoom } });
+            setState((s) => {
+              const next = { ...s, camera: { center, zoom } };
+              emit(sceneId, next);
+              return next;
+            });
           }}
         />
         {shown.showAlerts || shown.showSeismic || shown.showAurora || shown.showMagneticField ? (

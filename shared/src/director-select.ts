@@ -28,7 +28,9 @@
  *     items (by session count). So every region / alert / quake of a kind is
  *     shown once before any repeats; when all are level the whole set is open
  *     again ("random all"). A geographic cooldown spreads located shots so a
- *     cluster of alerts over one country doesn't air back-to-back.
+ *     cluster of alerts over one country doesn't air back-to-back, and each
+ *     kind remembers its last few aired areas (AREA_MEMORY_CAP) so it keeps
+ *     moving to fresh countries instead of ping-ponging between two.
  */
 import type { Segment, SegmentKind } from "./director";
 
@@ -60,6 +62,15 @@ const GLOBAL_KINDS = new Set<SegmentKind>(["intro", "global", "ocean", "orbital"
 /** Suppress a located shot within this many degrees of a recently-aired one. */
 export const DEFAULT_GEO_COOLDOWN_DEG = 8;
 
+/**
+ * How many recently-aired areas each kind remembers (and avoids revisiting)
+ * between its appearances. 3 forces a kind through four distinct areas before
+ * one can recur — one-step avoidance alone let a pool dominated by a single
+ * country (Kazakhstan during a bulk warning issuance) ping-pong between it and
+ * whichever lone neighbour was also in the pool.
+ */
+export const AREA_MEMORY_CAP = 3;
+
 export interface SelectOpts {
   /** Recent segment ids, oldest→newest — used only to avoid same-kind-in-a-row. */
   history: string[];
@@ -71,8 +82,9 @@ export interface SelectOpts {
   isFirst?: boolean;
   /** [lng,lat] centers of recently-aired located shots, for the geo cooldown. */
   recentCenters?: [number, number][];
-  /** Last area aired by each kind, so a kind returns somewhere else next time. */
-  lastAreaByKind?: ReadonlyMap<SegmentKind, string>;
+  /** Areas each kind recently aired (oldest→newest, capped at AREA_MEMORY_CAP),
+   *  so a kind keeps visiting fresh areas instead of ping-ponging between two. */
+  recentAreasByKind?: ReadonlyMap<SegmentKind, readonly string[]>;
   geoCooldownDeg?: number;
   /**
    * Relative airtime multiplier per kind (DirectorConfig.kindWeights); absent
@@ -91,7 +103,15 @@ export interface SelectOpts {
 export function candidateAreaKey(candidate: Candidate): string | undefined {
   if (GLOBAL_KINDS.has(candidate.segment.kind)) return undefined;
   if (candidate.areaKey) return candidate.areaKey;
-  const [rawLng, rawLat] = candidate.segment.camera.center;
+  return coarseGeoCell(candidate.segment.camera.center);
+}
+
+/** The deliberately broad 30°×20° cell behind candidateAreaKey's fallback.
+ *  Exported so candidate builders can bucket subjects by the same identity
+ *  (the storm pool's per-country cap uses it for alerts whose source encodes
+ *  no country). */
+export function coarseGeoCell(center: [number, number]): string | undefined {
+  const [rawLng, rawLat] = center;
   if (!Number.isFinite(rawLng) || !Number.isFinite(rawLat)) return undefined;
   const lng = ((((rawLng + 180) % 360) + 360) % 360) - 180;
   const lat = Math.max(-90, Math.min(90, rawLat));
@@ -100,17 +120,31 @@ export function candidateAreaKey(candidate: Candidate): string | undefined {
   return `cell:${lngCell}:${latCell}`;
 }
 
-/** Prefer a different area from the last airing of this kind, but never empty
- * the pool when all currently available candidates are in that one area. */
-function withoutLastArea(
+/**
+ * Prefer areas this kind hasn't visited recently. When blocking the whole
+ * recent window would empty the pool, relax it oldest-first — the most recent
+ * area stays blocked the longest, so even a two-country pool alternates rather
+ * than repeating — and only when EVERY candidate is in the just-aired area does
+ * it give up and return the pool unchanged (never empty it). Exported so the
+ * loop's non-binding "up next" preview filters with exactly this rule instead
+ * of a drifting mirror copy.
+ */
+export function withoutRecentAreas(
   candidates: Candidate[],
   kind: SegmentKind,
-  lastAreaByKind?: ReadonlyMap<SegmentKind, string>,
+  recentAreasByKind?: ReadonlyMap<SegmentKind, readonly string[]>,
 ): Candidate[] {
-  const lastArea = lastAreaByKind?.get(kind);
-  if (!lastArea) return candidates;
-  const elsewhere = candidates.filter((candidate) => candidateAreaKey(candidate) !== lastArea);
-  return elsewhere.length > 0 ? elsewhere : candidates;
+  const recent = recentAreasByKind?.get(kind);
+  if (!recent || recent.length === 0) return candidates;
+  for (let depth = recent.length; depth > 0; depth--) {
+    const blocked = new Set(recent.slice(recent.length - depth));
+    const elsewhere = candidates.filter((candidate) => {
+      const area = candidateAreaKey(candidate);
+      return area === undefined || !blocked.has(area);
+    });
+    if (elsewhere.length > 0) return elsewhere;
+  }
+  return candidates;
 }
 
 /** Great-circle-ish degree gap with longitude wrap (good enough for cooldown). */
@@ -170,14 +204,14 @@ export const PRIORITY_KINDS: SegmentKind[] = ["quake", "storm", "volcano"];
 export function selectPriority(
   pool: Candidate[],
   counts: Map<string, number>,
-  opts?: { cooldown?: boolean; lastAreaByKind?: ReadonlyMap<SegmentKind, string> },
+  opts?: { cooldown?: boolean; recentAreasByKind?: ReadonlyMap<SegmentKind, readonly string[]> },
 ): Segment | null {
   if (opts?.cooldown) return null;
   for (const kind of PRIORITY_KINDS) {
-    const unaired = withoutLastArea(
+    const unaired = withoutRecentAreas(
       pool.filter((c) => c.segment.kind === kind && !counts.has(c.segment.id) && c.breaking !== false),
       kind,
-      opts?.lastAreaByKind,
+      opts?.recentAreasByKind,
     ).sort((a, b) => b.score - a.score);
     if (unaired.length > 0) return unaired[0].segment;
   }
@@ -220,7 +254,7 @@ export function selectNext(pool: Candidate[], opts: SelectOpts): Segment | null 
   // 3. Within the kind: spread regions out (geo cooldown), then pick at random
   //    among the least-aired so we cycle the whole set before repeating any.
   let ofKind = eligible.filter((c) => c.segment.kind === kind);
-  ofKind = withoutLastArea(ofKind, kind, opts.lastAreaByKind);
+  ofKind = withoutRecentAreas(ofKind, kind, opts.recentAreasByKind);
   const recentCenters = opts.recentCenters ?? [];
   const geoDeg = opts.geoCooldownDeg ?? DEFAULT_GEO_COOLDOWN_DEG;
   if (recentCenters.length > 0 && !GLOBAL_KINDS.has(kind)) {

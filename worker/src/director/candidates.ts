@@ -20,7 +20,7 @@ import {
   type SegmentSummaryStop,
   type TrackInfo,
 } from "@photonsurge/shared/director";
-import type { Candidate } from "@photonsurge/shared/director-select";
+import { coarseGeoCell, type Candidate } from "@photonsurge/shared/director-select";
 import { DEFAULT_WIND_SETTINGS } from "@photonsurge/shared/control";
 import { vehicleId, vehicleLabel, type iVehicle } from "@photonsurge/shared/db/vehicle-model";
 import type { iRegionCity } from "@photonsurge/shared/db/region-model";
@@ -131,6 +131,22 @@ const VOLCANO_BREAKING_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 /** Frame zoom mirrors the manual click-to-select path (see public/lib/select-segment.ts). */
 const VOLCANO_ZOOM = 5;
+
+/** How many severe-weather candidates the storm pool holds at most. */
+const ALERT_POOL_CAP = 40;
+/** How deep into the globally severity-ranked alert list we scan to fill it. */
+const ALERT_SCAN_LIMIT = 300;
+/**
+ * Per-country storm-candidate cap. `db.alerts.list` ranks by severity then
+ * recency GLOBALLY, so one prolific met service can outnumber the whole pool
+ * cap by itself (live incident: Kazhydromet ran 66 simultaneous sev-4 warnings
+ * — the top-40 slice came back 36× Kazakhstan and rotation could only
+ * ping-pong between it and the four other alerts that squeezed in, while every
+ * lower-severity country never became a candidate at all). Walking the ranked
+ * list and keeping at most this many per country preserves "biggest stories
+ * first" while letting the rest of the world on air.
+ */
+const ALERT_COUNTRY_CAP = 3;
 
 /**
  * Merge a notable catalog entry with the live meta into the on-air TrackInfo card
@@ -642,15 +658,30 @@ export async function buildCandidates(
     }
   }
 
-  // --- Severe weather: normalised severity ranks; centroid from the polygon. ---
+  // --- Severe weather: normalised severity ranks; centroid from the polygon.
+  //     Scanned deep but capped per country (ALERT_COUNTRY_CAP) so the pool
+  //     spans the world's active warnings, not one chatty source's. ---
   if (cfg.kinds.storm) {
     try {
-      const alerts = await db.alerts.list({ activeOnly: true, severityMin: cfg.minAlertSeverity, limit: 40 });
+      const alerts = await db.alerts.list({ activeOnly: true, severityMin: cfg.minAlertSeverity, limit: ALERT_SCAN_LIMIT });
+      const perCountry = new Map<string, number>();
+      let stormCount = 0;
       for (const a of alerts as any[]) {
+        if (stormCount >= ALERT_POOL_CAP) break;
         const info = Array.isArray(a.info) ? a.info[0] : undefined;
         const area = info?.area?.[0];
         const center = alertRepPoint(area?.geometry);
         if (!center) continue; // geocode-only alert (no polygon) — can't frame it
+        // Country is the editorial area for alert rotation AND the pool cap. A
+        // numeric camera distance alone is too weak here: large countries
+        // (notably Kazakhstan) can have alerts many degrees apart while still
+        // looking like the same repeated destination on air. Alerts whose
+        // source encodes no country bucket by the selector's own coarse cell so
+        // an undecodable source can't flood the pool either.
+        const countryCode = alertCountryCode(a);
+        const capKey = countryCode ? `country:${countryCode}` : coarseGeoCell(center) ?? "cell:unknown";
+        const used = perCountry.get(capKey) ?? 0;
+        if (used >= ALERT_COUNTRY_CAP) continue;
         const sev = typeof a.maxSeverityRank === "number" ? a.maxSeverityRank : info?.severityRank ?? 0;
         const sinceIso = info?.onset ?? info?.effective ?? a.sent;
         const sinceMs = sinceIso ? Date.parse(sinceIso) : NaN;
@@ -688,11 +719,8 @@ export async function buildCandidates(
         seg.icon = c.icon;
         seg.details = c.details;
         const breaking = !Number.isNaN(firstSeenMs) && now - firstSeenMs <= BREAKING_NEWS_WINDOW_MS;
-        // Country is the editorial area for alert rotation. A numeric camera
-        // distance alone is too weak here: large countries (notably Kazakhstan)
-        // can have alerts many degrees apart while still looking like the same
-        // repeated destination on air.
-        const countryCode = alertCountryCode(a);
+        perCountry.set(capKey, used + 1);
+        stormCount += 1;
         pool.push({
           score: 50 + sev * 12,
           segment: seg,

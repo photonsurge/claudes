@@ -43,6 +43,14 @@ jest.mock("../../lib/world-watch", () => ({ useWorldWatch: () => ({}) }));
 jest.mock("../../lib/summaries", () => ({ useLatestRoundup: () => null }));
 // One active sponsor by default so the "ad" crawl-kind gating is observable.
 jest.mock("../../lib/ads/use-sponsors", () => ({ useSponsors: () => ["Acme"] }));
+jest.mock("../../lib/ads/use-billboard", () => ({ useBillboardAds: () => [] }));
+// Stubbed so presence = the frame's widget gate (the real card also self-hides
+// on an empty rotation, which would shadow the widgetsOff behaviour under test).
+jest.mock("./SponsorBillboard", () => ({
+  __esModule: true,
+  default: () => <div data-testid="w-billboard" />,
+  BILLBOARD_MIN_H: 100,
+}));
 
 // The crawl probe exposes what BroadcastFrame actually fed it, so the
 // per-channel content gating (tickerKindsOff / tickerHazardsOff) is testable
@@ -74,7 +82,12 @@ jest.mock("./SpaceWeatherMeter", () => ({
 jest.mock("./MonitorCluster", () => ({
   SeismicMonitor: () => <div data-testid="w-seismic" />,
   TsunamiMonitor: () => <div data-testid="w-tsunami" />,
-  WeatherMonitors: () => <div data-testid="w-weatherMonitors" />,
+  // The frame renders LocalWeatherPanel now (WeatherMonitors is its
+  // monitors-only wrapper) and gates the widget via its showMonitors prop
+  // (the panel itself stays mounted to carry the forecast strip) — the probe
+  // mirrors that gate under the widget id's testid.
+  LocalWeatherPanel: ({ showMonitors }: { showMonitors?: boolean }) =>
+    showMonitors ? <div data-testid="w-weatherMonitors" /> : null,
 }));
 jest.mock("./SeismicStationRow", () => ({ __esModule: true, default: () => null }));
 jest.mock("./TideStationRow", () => ({ __esModule: true, default: () => null }));
@@ -107,6 +120,7 @@ const TESTID: Record<WidgetId, string> = {
   weatherMonitors: "w-weatherMonitors",
   tsunami: "w-tsunami",
   leftDeck: "w-leftDeck",
+  billboard: "w-billboard",
   intensityMeter: "w-intensityMeter",
   spaceWeather: "w-spaceWeather",
   brand: "w-brand",

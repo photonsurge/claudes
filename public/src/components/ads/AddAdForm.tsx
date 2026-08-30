@@ -159,9 +159,14 @@ export default function AddAdForm({ onSaved }: { onSaved: (ad: Ad) => void }) {
               </label>
             ))}
             <span style={{ fontSize: 11, color: "#8b95a7" }}>
-              Ad break shows the creative full screen; ticker mention weaves &ldquo;Sponsored by {f.advertiser.trim() || "…"}&rdquo; into the crawl.
+              Ad break shows the creative full screen; ticker mention weaves &ldquo;Sponsored by {f.advertiser.trim() || "…"}&rdquo; into the crawl; the billboard rotates image creative through the bottom-left corner (wide, roughly 2.5:1&ndash;4:1, reads best).
             </span>
           </div>
+          {isVideo && placements.includes("billboard") && (
+            <div style={{ fontSize: 11, color: "#fbbf24" }}>
+              The billboard airs images only — this video will run on its other placements but never in the corner.
+            </div>
+          )}
         </div>
         <label style={{ ...label, gridColumn: "1 / -1" }}>Click URL<input style={field} value={f.clickUrl} onChange={set("clickUrl")} placeholder="https://sponsor.example" /></label>
         <label style={{ ...label, gridColumn: "1 / -1" }}>Tags (comma separated)<input style={field} value={f.tags} onChange={set("tags")} placeholder="summer, drinks" /></label>

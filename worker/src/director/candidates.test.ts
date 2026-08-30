@@ -546,6 +546,33 @@ describe("buildCandidates", () => {
     expect(lat).toBeCloseTo(25.8, 1);
   });
 
+  it("caps storm candidates per country so one prolific met service can't flood the pool", async () => {
+    // Models the live incident that motivated the cap: Kazhydromet ran 66
+    // simultaneous sev-4 warnings, so the globally severity-sorted top-40
+    // came back ~90% Kazakhstan and storm rotation "stayed in one country" —
+    // while every lower-severity country never became a candidate at all.
+    const poly = (lng: number, lat: number) => ({
+      type: "Polygon",
+      coordinates: [[[lng, lat], [lng + 1, lat], [lng + 1, lat + 1], [lng, lat + 1], [lng, lat]]],
+    });
+    const kz = Array.from({ length: 10 }, (_, i) => ({
+      source: "wmo",
+      identifier: `kz-kazhydromet-en/2026/08/28/w${i}.xml`,
+      maxSeverityRank: 4,
+      info: [{ event: "Strong Wind", area: [{ areaDesc: `Oblast ${i}`, geometry: poly(60 + i * 2, 45) }] }],
+    }));
+    const hr = {
+      source: "meteoalarm",
+      identifier: "2.49.0.0.HR.20260829.1",
+      maxSeverityRank: 3, // ranks BELOW every KZ alert — only the cap lets it in
+      info: [{ event: "Wind Warning", area: [{ areaDesc: "Split", geometry: poly(16, 43) }] }],
+    };
+    const pool = await buildCandidates(fakeDb({ alerts: [...kz, hr] }), cfg());
+    const storms = pool.filter((c) => c.segment.kind === "storm");
+    expect(storms.filter((c) => c.areaKey === "country:KZ")).toHaveLength(3);
+    expect(storms.some((c) => c.areaKey === "country:HR")).toBe(true);
+  });
+
   it("picks notable aircraft and ships from the latest frame", async () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     expect(pool.some((c) => c.segment.id === "flight:abc123")).toBe(true);

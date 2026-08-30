@@ -77,8 +77,38 @@ describe("selectNext", () => {
       cand("storm:kz-2", "storm", [82, 43], 1, "country:KZ"),
       cand("storm:jp", "storm", [139, 36], 1, "country:JP"),
     ];
-    const lastAreaByKind = new Map<SegmentKind, string>([["storm", "country:KZ"]]);
-    expect(selectNext(pool, { history: [], lastAreaByKind, rng: () => 0 })?.id).toBe("storm:jp");
+    const recentAreasByKind = new Map<SegmentKind, readonly string[]>([["storm", ["country:KZ"]]]);
+    expect(selectNext(pool, { history: [], recentAreasByKind, rng: () => 0 })?.id).toBe("storm:jp");
+  });
+
+  it("remembers several recent areas — a kind visits fresh countries before any recurs", () => {
+    const pool = [
+      cand("storm:kz", "storm", [66, 48], 1, "country:KZ"),
+      cand("storm:hr", "storm", [16, 45], 1, "country:HR"),
+      cand("storm:it", "storm", [12, 42], 1, "country:IT"),
+      cand("storm:jp", "storm", [139, 36], 1, "country:JP"),
+    ];
+    // All three remembered areas are blocked, not just the newest — so the only
+    // possible pick is the one country the kind hasn't visited lately.
+    const recentAreasByKind = new Map<SegmentKind, readonly string[]>([
+      ["storm", ["country:KZ", "country:HR", "country:IT"]],
+    ]);
+    for (const roll of [0, 0.5, 0.99]) {
+      expect(selectNext(pool, { history: [], recentAreasByKind, rng: () => roll })?.id).toBe("storm:jp");
+    }
+  });
+
+  it("relaxes the area window oldest-first, so a two-country pool alternates", () => {
+    const pool = [
+      cand("storm:kz-1", "storm", [66, 48], 1, "country:KZ"),
+      cand("storm:hr", "storm", [16, 45], 1, "country:HR"),
+    ];
+    // Both areas are in the window; blocking both would empty the pool, so the
+    // OLDEST (KZ) unblocks first while the just-aired HR stays blocked.
+    const recentAreasByKind = new Map<SegmentKind, readonly string[]>([
+      ["storm", ["country:KZ", "country:HR"]],
+    ]);
+    expect(selectNext(pool, { history: [], recentAreasByKind, rng: () => 0 })?.id).toBe("storm:kz-1");
   });
 
   it("falls back to the same area when a kind has nowhere else available", () => {
@@ -86,8 +116,8 @@ describe("selectNext", () => {
       cand("storm:kz-1", "storm", [66, 48], 1, "country:KZ"),
       cand("storm:kz-2", "storm", [82, 43], 1, "country:KZ"),
     ];
-    const lastAreaByKind = new Map<SegmentKind, string>([["storm", "country:KZ"]]);
-    expect(selectNext(pool, { history: [], lastAreaByKind, rng: () => 0 })).not.toBeNull();
+    const recentAreasByKind = new Map<SegmentKind, readonly string[]>([["storm", ["country:KZ"]]]);
+    expect(selectNext(pool, { history: [], recentAreasByKind, rng: () => 0 })).not.toBeNull();
   });
 
   it("kind weights bias the kind draw — a heavy kind claims more of the rng range", () => {
@@ -141,8 +171,8 @@ describe("selectPriority", () => {
       { ...cand("storm:kz", "storm", [70, 48], 100, "country:KZ"), breaking: true },
       { ...cand("storm:jp", "storm", [139, 36], 80, "country:JP"), breaking: true },
     ];
-    const lastAreaByKind = new Map<SegmentKind, string>([["storm", "country:KZ"]]);
-    expect(selectPriority(pool, new Map(), { lastAreaByKind })?.id).toBe("storm:jp");
+    const recentAreasByKind = new Map<SegmentKind, readonly string[]>([["storm", ["country:KZ"]]]);
+    expect(selectPriority(pool, new Map(), { recentAreasByKind })?.id).toBe("storm:jp");
   });
 
   it("doesn't preempt for ordinary filler kinds", () => {
