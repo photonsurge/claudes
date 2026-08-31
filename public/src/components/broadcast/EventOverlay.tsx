@@ -163,8 +163,8 @@ export default function EventOverlay({
           padding: "10px 18px 12px",
           borderRadius: 12,
           background: TILE_BG,
-          backdropFilter: "blur(5px)",
-          WebkitBackdropFilter: "blur(5px)",
+          backdropFilter: "var(--panel-blur, blur(5px))",
+          WebkitBackdropFilter: "var(--panel-blur, blur(5px))",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10, maxWidth: "100%" }}>

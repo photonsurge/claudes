@@ -7,7 +7,7 @@
  * small run/attribution label. No chrome — designed to be captured as a YouTube
  * output or an OBS browser source.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { broadcastSatImgFeeds } from "@photonsurge/shared/satimg/types";
@@ -35,6 +35,8 @@ import { useCams } from "../lib/cams/useCams";
 import type { City } from "../lib/cities";
 import { useGlobeReadyOnce } from "../lib/globe-ready";
 import GlobeView from "./GlobeView";
+import RenderHealthBadge from "./RenderHealthBadge";
+import { getRendererInfo, isObsRender } from "../lib/broadcast-render";
 import AlertLegend from "./AlertLegend";
 import DebugOverlay from "./DebugOverlay";
 import FullscreenButton from "./FullscreenButton";
@@ -181,6 +183,23 @@ function WatchSurfaceBody({
     () => ({ ...state, satImgFeeds: broadcastSatImgFeeds(state.satImgFeeds) }),
     [state],
   );
+
+  // OBS render mode: every backdrop-filter in the watch chrome reads
+  // var(--panel-blur, blur(N px)), so setting the var to `none` switches all
+  // the glass panels to plain translucency at once. Backdrop blur re-samples
+  // the (always animating) globe behind each panel EVERY frame — a pure
+  // per-frame GPU tax a multi-stream encoder pays N times over, and no viewer
+  // ever saw crisply through 6Mbps of H.264 anyway. Set on the document root
+  // (post-mount, so SSR markup never mismatches) because ViewingOverlay mounts
+  // as a page-level sibling of this surface, not a descendant.
+  useEffect(() => {
+    if (!isObsRender()) return;
+    const root = document.documentElement;
+    root.style.setProperty("--panel-blur", "none");
+    return () => {
+      root.style.removeProperty("--panel-blur");
+    };
+  }, []);
 
   return (
     <BroadcastThemeContext.Provider value={theme}>
@@ -335,6 +354,10 @@ function WatchSurfaceBody({
           desktop (see FullscreenButton). */}
       <FullscreenButton />
 
+      {/* Inside OBS only: red chip when WebGL fell back to software rendering,
+          drawn into the capture so the encoder preview shows the fault. */}
+      <RenderHealthBadge />
+
       {/* Ctrl+D diagnostic console — live JSON dump of everything driving this
           surface. Hidden until toggled, so it never leaks into a capture. */}
       <DebugOverlay
@@ -354,6 +377,10 @@ function WatchSurfaceBody({
           },
           overlays: {
             ready,
+            // The WebGL device deck actually initialised on — "is Chromium
+            // really on the GPU?" answered without leaving the page.
+            gpu: getRendererInfo(),
+            obsRender: isObsRender(),
             sceneName: sceneName ?? "(main)",
             cities: cities.length,
             tracks: tracks.length,

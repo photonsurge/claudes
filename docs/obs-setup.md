@@ -15,8 +15,14 @@ actually pushes pixels to YouTube.
   stream key (`SetStreamServiceSettings`)
 - presses **Start Streaming** / **Stop Streaming**
 - reads status (bitrate, dropped frames, uptime) for the health readout
+- auto-provisions **its own** capture scene (`PhotonSurge — <scene>`) with a
+  full-canvas browser source on the channel's tokened /watch URL, created with
+  sane performance defaults (30fps custom frame rate, shutdown-on-hidden off —
+  see the performance section below). On re-provision it only fills in settings
+  you've never touched, so your hand-set tweaks on that source stick.
 
-It does **not** touch your scenes, sources, or encoder settings. You own those.
+It does **not** touch any other scene or source, and never your encoder
+settings. You own those.
 
 ---
 
@@ -166,6 +172,71 @@ source carries it. Make sure the Browser source's audio isn't muted in the **Aud
 Mixer**, and that **Control audio via OBS** is ticked on the source if you want its
 level in the mixer.
 
+> Hand-building this scene is only needed if you skip auto-provision: on go-live
+> the worker creates/updates its own `PhotonSurge — <scene>` scene with exactly
+> these settings (and respects anything you've changed on it since).
+
+---
+
+## Browser sources: performance & the GPU (multi-stream Chromium)
+
+Every OBS browser source is a **full embedded Chromium (CEF) rendering the whole
+/watch page** — 4 constant streams means the entire globe UI is rendered 4 times
+over. The stack is architected so that stays cheap, but two halves have to
+cooperate: the app's half is automatic, yours is a one-time OBS setting per
+instance.
+
+**What the app does automatically:**
+
+- **Auto-provisioned sources are capped at a 30fps custom frame rate** (set
+  `OBS_BROWSER_FPS` in the root `.env` to override, 10–60). Everything animated
+  on /watch — the spin, wind particles, label projection, pulses — runs off
+  `requestAnimationFrame`, so CEF's paint cap throttles the *whole page's*
+  render work to the stream's real output rate instead of Chromium's default 60.
+  Sources where you already ticked "Use custom frame rate" yourself are left
+  exactly as you set them.
+- **Shutdown-on-hidden / refresh-on-activate stay off** on provisioned sources,
+  so a scene switch never reloads the globe (black frame + texture refetch storm).
+- **The page detects it's inside OBS** (CEF's `window.obsstudio`; force it in a
+  normal browser with `?obs=1` on the watch URL) and switches to broadcast-render
+  mode: backdrop-filter blurs behind the glass panels are dropped (a per-frame
+  GPU tax invisible through H.264), the WebGL canvas renders at exactly 1× device
+  pixels, and the context asks for the `high-performance` (discrete) GPU.
+- **It tells you when the GPU is missing**: if WebGL initialises on a software
+  rasteriser (llvmpipe / SwiftShader), the page draws a red **⚠ SOFTWARE
+  RENDER** chip top-left — visible straight in that encoder's OBS preview — and
+  logs the device string (`[globe] WebGL device: …`) to the source's console.
+
+**What only you can set (once per OBS instance):**
+
+1. **Settings → Advanced → Sources → "Enable Browser Source Hardware
+   Acceleration" — ON.** Without it every browser source composites on the CPU
+   regardless of anything else. (Needs an OBS restart to take effect.)
+2. **Keep Settings → Video FPS equal to the browser-source fps** (30/30 by
+   default) — a 60fps canvas over a 30fps source buys nothing and doubles
+   compositing.
+3. **Verify the NVIDIA card is really doing the work** (run these on the OBS box):
+
+   ```bash
+   nvidia-smi                       # obs should be listed with GPU memory in use
+   ```
+
+   On a hybrid-GPU (laptop/iGPU+dGPU) machine, launch OBS onto the NVIDIA card:
+
+   ```bash
+   prime-run obs        # or:
+   __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia obs
+   ```
+
+   If the SOFTWARE RENDER chip shows, Chromium fell back to CPU rasterisation —
+   fix the display/driver situation rather than living with it: 4×1080p30 of
+   llvmpipe is exactly the "streams melt the box" failure mode.
+
+Cost expectations once all of the above holds: each 1080p30 instance is one CEF
+render + one NVENC session; recent consumer NVIDIA cards run 3–5 such streams
+comfortably (NVENC allows 5+ sessions), and the shared Mongo/socket backend does
+no extra work per stream — each page just reads the same cached feeds.
+
 ---
 
 ## Step 5 — Encoder / output settings
@@ -223,8 +294,12 @@ Use this any time OBS is on a machine the worker can't talk to.
 
 OBS needs a display server; it will not start on a bare headless box. On a GPU VM:
 
-- run a virtual display (`Xvfb`, or an X server with the NVIDIA driver attached) and
-  launch OBS against it, e.g. `DISPLAY=:99 obs --startvirtualcam --minimize-to-tray`
+- run a virtual display and launch OBS against it, e.g.
+  `DISPLAY=:99 obs --startvirtualcam --minimize-to-tray` — but note **`Xvfb` is
+  pure software GL (llvmpipe)**: fine for a smoke test, ruinous for real streams
+  (the /watch page will show its SOFTWARE RENDER chip). For production use an X
+  server attached to the NVIDIA driver (headless `xorg.conf` with
+  `Option "AllowEmptyInitialConfiguration"`, or a virtual display on the card)
 - keep `OBS_WEBSOCKET_URL=ws://127.0.0.1:4455` — the worker runs on that same VM, so
   nothing else changes
 - NVENC needs the real NVIDIA driver in the VM (not llvmpipe/software GL), or the
@@ -244,6 +319,8 @@ This is exactly why the endpoint is an env var: same code, local box today, GPU 
 | Stuck on **AWAITING INGEST** | OBS isn't actually sending. Check OBS's own status bar for a bitrate; check Settings → Stream got populated. Use the manual key card to verify. |
 | Black frame / globe missing | Browser source had **Shutdown source when not visible** ticked, or the watch URL needs a token (get it from `/admin/access`). |
 | Choppy output, dropped frames climbing | Encoder overloaded — drop to 30 fps, lower bitrate, or switch to NVENC. The panel's **Dropped** % is the number to watch. |
+| Red **⚠ SOFTWARE RENDER** chip on the globe | WebGL fell back to CPU rasterisation (llvmpipe/SwiftShader) inside that browser source. Enable Browser Source Hardware Acceleration, check the NVIDIA driver/display setup (see the performance section), restart OBS. |
+| Whole OBS sluggish with several browser sources | Browser Source Hardware Acceleration off, sources running 60fps (re-provision or set custom frame rate 30), or everything landed on the iGPU/software GL. |
 | Stream drops after a few hours | Keyframe interval not set to 2 (step 5), or upstream bandwidth. |
 
 Related: [youtube-setup.md](youtube-setup.md) · [streaming-runs-plan.md](streaming-runs-plan.md)

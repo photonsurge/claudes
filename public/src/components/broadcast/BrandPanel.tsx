@@ -191,8 +191,8 @@ export default function BrandPanel({
             border: theme.panelBorder,
             borderRadius: 12,
             boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-            backdropFilter: "blur(8px)",
-            WebkitBackdropFilter: "blur(8px)",
+            backdropFilter: "var(--panel-blur, blur(8px))",
+            WebkitBackdropFilter: "var(--panel-blur, blur(8px))",
           }}
         >
           {/* Monogram mark */}

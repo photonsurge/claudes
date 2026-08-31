@@ -244,8 +244,8 @@ export default function ViewingOverlay({
         border: "1px solid rgba(120,140,170,0.22)",
         borderRadius: 12,
         boxShadow: "0 10px 30px rgba(0,0,0,0.45)",
-        backdropFilter: "blur(10px)",
-        WebkitBackdropFilter: "blur(10px)",
+        backdropFilter: "var(--panel-blur, blur(10px))",
+        WebkitBackdropFilter: "var(--panel-blur, blur(10px))",
         overflow: "hidden",
         userSelect: "none",
       }}

@@ -22,6 +22,7 @@ import { Deck, _GlobeView as GlobeView } from "@deck.gl/core";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { loadTexture, preloadTextures, type LoadedTexture } from "../lib/textures";
+import { isObsRender, setRendererInfo } from "../lib/broadcast-render";
 import { useCrossfadeVariable } from "../lib/crossfade";
 import { textureUrlFor } from "./layers/props";
 import { basemapLayers, countriesLayer, hexToRgb, TILE_MIN_ZOOM } from "./layers/basemap";
@@ -540,6 +541,23 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     if (!canvasRef.current || deckRef.current) return;
     const deck = new Deck<GlobeView[]>({
       canvas: canvasRef.current,
+      // Inside an OBS browser source the canvas IS the broadcast raster (CEF
+      // paints a fixed 1920×1080 and the encoder takes it verbatim), so a DPR
+      // upscale would be wasted fill-rate on pixels nobody ever sees. Normal
+      // browsers keep the crisp devicePixelRatio render.
+      useDevicePixels: !isObsRender(),
+      // On dual-GPU machines (and CEF, which honours the same context hint) ask
+      // for the discrete adapter — a browser source quietly landing on the iGPU
+      // or a software rasteriser is the classic "4 streams melt the box" cause.
+      deviceProps: { webgl: { powerPreference: "high-performance" } },
+      // Surface which device WebGL ACTUALLY came up on: RenderHealthBadge turns
+      // it into the on-air SOFTWARE RENDER chip inside OBS, and the console line
+      // is what you read via remote-debugging a headless encoder.
+      onDeviceInitialized: (device) => {
+        const { vendor, renderer } = device.info;
+        setRendererInfo(vendor, renderer);
+        console.info(`[globe] WebGL device: ${vendor} — ${renderer}`);
+      },
       // `resolution` is the degree grid deck cuts flat polygons on before
       // projecting them onto the sphere — it defaults to 10°, whose chords sag
       // ~24km BELOW the surface at cell centre. The depth sphere basemap.ts

@@ -131,8 +131,8 @@ export default function WorldClockStrip({
         border: theme.panelBorder,
         borderRadius: 10,
         boxShadow: "0 8px 22px rgba(0,0,0,0.34)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
+        backdropFilter: "var(--panel-blur, blur(8px))",
+        WebkitBackdropFilter: "var(--panel-blur, blur(8px))",
       }}
     >
       {grid}

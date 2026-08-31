@@ -200,6 +200,47 @@ export async function probe(ep: ObsEndpoint): Promise<ObsProbe> {
   });
 }
 
+/**
+ * CEF paint rate for auto-provisioned browser sources. Default 30: the streams
+ * encode at 1080p30, and the whole /watch page is rAF-driven (spin, wind
+ * particles, label projection…), so capping the source's custom frame rate at
+ * the real output rate halves every animation loop's work per instance versus
+ * CEF's 60fps default. `OBS_BROWSER_FPS` overrides (clamped 10–60) for a rig
+ * that actually encodes 60.
+ */
+export function browserSourceFps(): number {
+  const n = Number(process.env.OBS_BROWSER_FPS);
+  return Number.isFinite(n) && n >= 10 && n <= 60 ? Math.round(n) : 30;
+}
+
+/**
+ * Settings pushed onto the /watch browser source. `existing` is the input's
+ * current OBS settings object (pass null/undefined when creating it): each perf
+ * default is applied ONLY when that key has never been set on the source, so a
+ * hand-tuned 60fps source stays the operator's — while every fresh provision
+ * starts life sensible:
+ *  - fps_custom+fps → CEF paints at the stream's real frame rate, not 60;
+ *  - shutdown/restart_when_active off → a scene switch must never reload the
+ *    globe (black frame + a full texture refetch storm);
+ *  - reroute_audio → the page's audio bed reaches the stream mix instead of
+ *    playing on the encoder host (always enforced — runs depend on it).
+ */
+export function browserSourceSettings(
+  base: { url: string; width: number; height: number },
+  existing?: Record<string, unknown> | null,
+): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = { ...base, reroute_audio: true };
+  const owned = (k: string) => !!existing && k in existing;
+  // The fps pair is owned together: an operator-set fps_custom keeps their fps.
+  if (!owned("fps_custom")) {
+    out.fps_custom = true;
+    out.fps = browserSourceFps();
+  }
+  if (!owned("shutdown")) out.shutdown = false;
+  if (!owned("restart_when_active")) out.restart_when_active = false;
+  return out;
+}
+
 /** Result of provisioning a browser-source scene. */
 export interface ProvisionResult {
   sceneName: string;
@@ -216,8 +257,10 @@ export interface ProvisionResult {
  * `url`, in a dedicated scene, and (optionally) switch OBS to it. Idempotent — a
  * re-run just updates the URL (so a rotated watch token re-pushes cleanly) and
  * re-applies the transform. Sizes the source to the OBS base canvas for a crisp,
- * exact-fit render. `overlay:true` on the settings update preserves any other
- * browser-source tweaks (css, fps) the operator made.
+ * exact-fit render. Settings go through browserSourceSettings(): perf defaults
+ * (30fps custom rate, no shutdown/reload-on-visibility) apply only to keys the
+ * operator has never touched, and `overlay:true` on the update preserves every
+ * other tweak (css etc.) they made.
  */
 export async function provisionBrowserScene(
   ep: ObsEndpoint,
@@ -228,9 +271,7 @@ export async function provisionBrowserScene(
     const video = await obs.call("GetVideoSettings");
     const width = Number(video.baseWidth) || 1920;
     const height = Number(video.baseHeight) || 1080;
-    // reroute_audio = the "Control audio via OBS" checkbox, so the page's audio
-    // bed reaches the stream mix instead of playing on the encoder host.
-    const inputSettings = { url, width, height, reroute_audio: true };
+    const base = { url, width, height };
 
     const { scenes } = await obs.call("GetSceneList");
     if (!(scenes as { sceneName: string }[]).some((s) => s.sceneName === sceneName)) {
@@ -245,12 +286,25 @@ export async function provisionBrowserScene(
         sceneName,
         inputName,
         inputKind: "browser_source",
-        inputSettings,
+        inputSettings: browserSourceSettings(base),
         sceneItemEnabled: true,
       });
       created = true;
     } else {
-      await obs.call("SetInputSettings", { inputName, inputSettings, overlay: true });
+      // Read the source's current settings so perf defaults only fill gaps the
+      // operator never set (best-effort: unreadable → treat as fresh).
+      let existing: Record<string, unknown> | null = null;
+      try {
+        const cur = await obs.call("GetInputSettings", { inputName });
+        existing = (cur.inputSettings ?? {}) as Record<string, unknown>;
+      } catch {
+        existing = null;
+      }
+      await obs.call("SetInputSettings", {
+        inputName,
+        inputSettings: browserSourceSettings(base, existing),
+        overlay: true,
+      });
       // Make sure this source is actually IN the target scene (it may live elsewhere).
       try {
         await obs.call("GetSceneItemId", { sceneName, sourceName: inputName });
