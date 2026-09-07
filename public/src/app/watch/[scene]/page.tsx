@@ -17,6 +17,7 @@ import { fetchManifest } from "../../../lib/manifest";
 import { listCities, type City } from "../../../lib/cities";
 import { useRegionCities } from "../../../lib/useRegionCities";
 import { useSceneState, listScenes } from "../../../lib/scenes";
+import { retryUntil } from "../../../lib/retry";
 import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox } from "../../../lib/director";
 import WatchSurface from "../../../components/WatchSurface";
 import ViewingOverlay from "../../../components/ViewingOverlay";
@@ -74,25 +75,36 @@ function SceneWatchPageInner() {
   }, [directorConfig, onAir]);
 
   // Cold start the globally-shared data + resolve this scene's display name.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const [m, c, scenes] = await Promise.all([fetchManifest(), listCities(), listScenes()]);
-      if (cancelled) return;
-      setManifest(m);
-      setCities(c);
-      setSceneName(scenes.find((s) => s.id === sceneId)?.name);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sceneId]);
+  // Retried until the manifest lands: this page runs unattended inside OBS
+  // browser sources, and a cold start that hits a deploy/restart window (fetch
+  // rejected, or a 5xx that fetchManifest reports as null) would otherwise
+  // strand the stream on the loading screen until a human refreshes.
+  useEffect(
+    () =>
+      retryUntil(
+        async () => {
+          const [m, c, scenes] = await Promise.all([fetchManifest(), listCities(), listScenes()]);
+          return m ? { m, c, scenes } : null;
+        },
+        ({ m, c, scenes }) => {
+          setManifest(m);
+          setCities(c);
+          setSceneName(scenes.find((s) => s.id === sceneId)?.name);
+        },
+      ),
+    [sceneId],
+  );
 
-  // Refetch shared data when the worker publishes new runs / cities.
+  // Refetch shared data when the worker publishes new runs / cities. Fail soft
+  // here — data is already on screen, so a blip must keep the last good value
+  // (fetchManifest resolves null on a 5xx; listCities fails soft to []).
   useEffect(() => {
     if (!socket) return;
-    const onRun = () => fetchManifest().then(setManifest);
-    const onCities = () => listCities().then(setCities);
+    const onRun = () =>
+      fetchManifest()
+        .then((m) => m && setManifest(m))
+        .catch(() => {});
+    const onCities = () => listCities().then((c) => (c.length ? setCities(c) : undefined));
     socket.on(WEATHER_RUN, onRun);
     socket.on(CITIES_UPDATED, onCities);
     return () => {

@@ -27,6 +27,7 @@ import { useSocket } from "../../lib/socket-provider";
 import { fetchBroadcastState } from "../../lib/control";
 import { fetchManifest } from "../../lib/manifest";
 import { listCities, type City } from "../../lib/cities";
+import { retryUntil } from "../../lib/retry";
 import { useRegionCities } from "../../lib/useRegionCities";
 import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
 import WatchSurface from "../../components/WatchSurface";
@@ -80,33 +81,46 @@ function WatchPageInner() {
     return directorConfig.kindSlides[onAir.kind]?.find((s) => s.id === id)?.name;
   }, [directorConfig, onAir]);
 
-  // Cold start.
+  // Cold start. Broadcast state fails soft internally (default state; the real
+  // one arrives over the socket) so it applies straight away — but the manifest
+  // is retried until it lands: this page runs unattended inside OBS browser
+  // sources, and a cold start lost to a deploy/restart window (fetch rejected,
+  // or a 5xx that fetchManifest reports as null) would otherwise strand the
+  // stream on the loading screen until a human refreshes.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const [{ state: s, tokenError: te }, m, c] = await Promise.all([
-        fetchBroadcastState(token),
-        fetchManifest(),
-        listCities(),
-      ]);
+    fetchBroadcastState(token).then(({ state: s, tokenError: te }) => {
       if (cancelled) return;
       setState(s);
       setTokenError(te);
-      setManifest(m);
-      setCities(c);
-    })();
+    });
+    const stop = retryUntil(
+      async () => {
+        const [m, c] = await Promise.all([fetchManifest(), listCities()]);
+        return m ? { m, c } : null;
+      },
+      ({ m, c }) => {
+        setManifest(m);
+        setCities(c);
+      },
+    );
     return () => {
       cancelled = true;
+      stop();
     };
   }, [token]);
 
-  // Live updates.
+  // Live updates. The refetches fail soft — data is already on screen, so a
+  // blip keeps the last good value rather than blanking it.
   useEffect(() => {
     if (!socket) return;
     const onState = (patch: Partial<ControlState>) =>
       setState((prev) => mergeControlState(prev, patch ?? {}));
-    const onRun = () => fetchManifest().then(setManifest);
-    const onCities = () => listCities().then(setCities);
+    const onRun = () =>
+      fetchManifest()
+        .then((m) => m && setManifest(m))
+        .catch(() => {});
+    const onCities = () => listCities().then((c) => (c.length ? setCities(c) : undefined));
 
     socket.on(CONTROL_STATE, onState);
     socket.on(WEATHER_RUN, onRun);

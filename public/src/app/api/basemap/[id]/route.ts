@@ -26,12 +26,25 @@ async function GET__impl(req: Request, { params }: { params: Promise<{ id: strin
       { status: 404, headers: { "Cache-Control": "no-store" } },
     );
   }
+  // Fallback = RELATIVE redirect to the deploy-time static file, resolved by
+  // the CLIENT against the URL it actually requested. Never build an absolute
+  // URL from req.url here: inside the container that origin is the 0.0.0.0
+  // bind address (the compose HOSTNAME fix), and a browser source handed
+  // `Location: https://0.0.0.0:10100/data/night.jpg` dies with "Failed to
+  // fetch" — a permanently black basemap on the OBS encoders. no-store so a
+  // later successful bake is picked up on the next reload.
+  const fallback = () =>
+    new NextResponse(null, {
+      status: 302,
+      headers: { Location: tex.fallback, "Cache-Control": "no-store" },
+    });
+
   try {
     const db = await getAppDb();
     const bytes = await db.basemapTextures.get(id);
     if (!bytes) {
       // No baked blob yet — fall back to the static deploy-time file.
-      return NextResponse.redirect(new URL(tex.fallback, req.url), 302);
+      return fallback();
     }
     return new NextResponse(new Uint8Array(bytes), {
       status: 200,
@@ -42,7 +55,7 @@ async function GET__impl(req: Request, { params }: { params: Promise<{ id: strin
     });
   } catch {
     // On any store error, still render a globe: redirect to the static file.
-    return NextResponse.redirect(new URL(tex.fallback, req.url), 302);
+    return fallback();
   }
 }
 
