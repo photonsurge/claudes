@@ -290,7 +290,7 @@ describe("onAirPulseLayers — matching tolerance", () => {
   it("matches an alert within the ~0.5° tolerance and pulses its area", () => {
     // d² = 0.3² + 0.3² = 0.18 — inside ON_AIR_EPS2 (0.25).
     const layers = onAirPulseLayers([square()], [10.1, 20.1], 0);
-    expect(ids(layers)).toEqual(["alerts-onair-fill"]);
+    expect(ids(layers)).toEqual(["alerts-onair-fill", "alerts-onair-edge"]);
   });
 
   it("falls back to the marker just outside the tolerance", () => {
@@ -306,7 +306,7 @@ describe("onAirPulseLayers — matching tolerance", () => {
         [[[99, -1], [101, -1], [101, 1], [99, 1], [99, -1]]], // centroid ≈ [100,0]
       ],
     });
-    expect(ids(onAirPulseLayers([twoPart], [10, 20], 0))).toEqual(["alerts-onair-fill"]);
+    expect(ids(onAirPulseLayers([twoPart], [10, 20], 0))).toEqual(["alerts-onair-fill", "alerts-onair-edge"]);
     expect(ids(onAirPulseLayers([twoPart], [100, 0], 0))).toEqual([
       "alerts-onair-ping",
       "alerts-onair-dot",
@@ -314,49 +314,73 @@ describe("onAirPulseLayers — matching tolerance", () => {
   });
 });
 
-describe("onAirPulseLayers — pulse phase (now drives every accessor)", () => {
+describe("onAirPulseLayers — the pulse rides GPU uniforms over constant attributes", () => {
   const HALF = 750; // half the 1500 ms period: breathe 0→1, ping 0→0.5
 
-  it("breathes the on-air area: fill alpha 40→150, edge width 1.5→5.5", () => {
+  it("breathes the on-air area via opacity + lineWidthScale, never an accessor keyed on the clock", () => {
     const f = square();
-    const rest = byId(onAirPulseLayers([f], [10, 20], 0), "alerts-onair-fill").props;
-    expect(rest.getFillColor()).toEqual([...FLOOD, 40]);
-    expect(rest.getLineWidth()).toBeCloseTo(1.5);
-    expect(rest.updateTriggers.getFillColor).toBe(0);
-    const peak = byId(onAirPulseLayers([f], [10, 20], HALF), "alerts-onair-fill").props;
-    expect(peak.getFillColor()).toEqual([...FLOOD, 150]);
-    expect(peak.getLineWidth()).toBeCloseTo(5.5);
-    expect(peak.updateTriggers.getFillColor).toBe(HALF);
+    const rest = onAirPulseLayers([f], [10, 20], 0);
+    const fill0 = byId(rest, "alerts-onair-fill").props;
+    const edge0 = byId(rest, "alerts-onair-edge").props;
+    // Attributes are constants baked at the breath's PEAK …
+    expect(fill0.getFillColor).toEqual([...FLOOD, 150]);
+    expect(edge0.getLineColor[3]).toBe(220);
+    expect(edge0.getLineWidth).toBe(1.5);
+    // … and the uniforms take them down to the trough (fill alpha 40, edge 1.5 px).
+    expect(fill0.opacity).toBeCloseTo(40 / 150);
+    expect(edge0.lineWidthScale).toBeCloseTo(1);
+    const peak = onAirPulseLayers([f], [10, 20], HALF);
+    expect(byId(peak, "alerts-onair-fill").props.opacity).toBeCloseTo(1);
+    expect(byId(peak, "alerts-onair-edge").props.lineWidthScale).toBeCloseTo(5.5 / 1.5);
+  });
+
+  it("hands deck the SAME data array every frame (a fresh one re-tessellates the whole polygon)", () => {
+    const f = square();
+    const a = byId(onAirPulseLayers([f], [10, 20], 0), "alerts-onair-fill").props.data;
+    const b = byId(onAirPulseLayers([f], [10, 20], HALF), "alerts-onair-fill").props.data;
+    expect(b).toBe(a);
+    expect(byId(onAirPulseLayers([f], [10, 20], HALF), "alerts-onair-edge").props.data).toBe(a);
+    const p0 = byId(onAirPulseLayers([], [30, 40], 0), "alerts-onair-ping").props.data;
+    const p1 = byId(onAirPulseLayers([], [30, 40], HALF), "alerts-onair-dot").props.data;
+    expect(p1).toBe(p0);
+    // Nothing is keyed on `now`.
+    for (const l of [...onAirPulseLayers([f], [10, 20], HALF), ...onAirPulseLayers([], [30, 40], HALF)]) {
+      expect(l.props.updateTriggers ?? {}).toEqual({});
+    }
   });
 
   it("expands and fades the sonar ring over the period", () => {
     const f = point([30, 40]);
     const at0 = byId(onAirPulseLayers([f], [30, 40], 0), "alerts-onair-ping").props;
-    expect(at0.getRadius()).toBeCloseTo(14);
-    expect(at0.getLineColor()[3]).toBe(230);
+    expect(at0.getRadius).toBe(1);
+    expect(at0.radiusScale).toBeCloseTo(14);
+    expect(at0.getLineColor[3]).toBe(230);
+    expect(at0.opacity).toBeCloseTo(1);
     const atHalf = byId(onAirPulseLayers([f], [30, 40], HALF), "alerts-onair-ping").props;
-    expect(atHalf.getRadius()).toBeCloseTo(52); // 14 + 76·0.5
-    expect(atHalf.getLineColor()[3]).toBe(115); // 230·(1−0.5)
-    expect(atHalf.getLineWidth()).toBeCloseTo(3.75);
+    expect(atHalf.radiusScale).toBeCloseTo(52); // 14 + 76·0.5
+    expect(atHalf.opacity).toBeCloseTo(0.5); // 230·(1−0.5) / 230
+    expect(atHalf.lineWidthScale).toBeCloseTo(3.75 / 2.5);
   });
 
   it("breathes the core dot in the matched hazard's colour", () => {
     const f = point([30, 40]); // flood
     const at0 = byId(onAirPulseLayers([f], [30, 40], 0), "alerts-onair-dot").props;
-    expect(at0.getRadius()).toBeCloseTo(6);
-    expect(at0.getFillColor()).toEqual([...FLOOD, 150]);
+    expect(at0.getFillColor).toEqual([...FLOOD, 230]);
+    expect(at0.getRadius).toBe(6);
+    expect(at0.radiusScale).toBeCloseTo(1);
+    expect(at0.opacity).toBeCloseTo(150 / 230);
     const atHalf = byId(onAirPulseLayers([f], [30, 40], HALF), "alerts-onair-dot").props;
-    expect(atHalf.getRadius()).toBeCloseTo(10);
-    expect(atHalf.getFillColor()).toEqual([...FLOOD, 230]);
+    expect(atHalf.radiusScale).toBeCloseTo(10 / 6);
+    expect(atHalf.opacity).toBeCloseTo(1);
   });
 
   it("uses the fallback red when nothing matches the framing point", () => {
     const dot = byId(onAirPulseLayers([], [0, 0], 0), "alerts-onair-dot").props;
-    expect(dot.getFillColor()).toEqual([255, 95, 95, 150]);
+    expect(dot.getFillColor).toEqual([255, 95, 95, 230]);
   });
 
   it("uses the scene map-highlight colour for a point with no hazard polygon", () => {
     const dot = byId(onAirPulseLayers([], [0, 0], 0, [18, 52, 86]), "alerts-onair-dot").props;
-    expect(dot.getFillColor()).toEqual([18, 52, 86, 150]);
+    expect(dot.getFillColor).toEqual([18, 52, 86, 230]);
   });
 });

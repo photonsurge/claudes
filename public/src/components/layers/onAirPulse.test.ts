@@ -36,7 +36,7 @@ describe("onAirPulseLayers", () => {
 
   it("pulses the outline and drops the location marker when the event has a drawn area", () => {
     const layers = onAirPulseLayers([polygon], [10, 20], 0) as { props: { id: string } }[];
-    expect(ids(layers)).toEqual(["alerts-onair-fill"]);
+    expect(ids(layers)).toEqual(["alerts-onair-fill", "alerts-onair-edge"]);
     // No ping / dot marker sits on top of a real geo area.
     expect(ids(layers)).not.toContain("alerts-onair-ping");
     expect(ids(layers)).not.toContain("alerts-onair-dot");

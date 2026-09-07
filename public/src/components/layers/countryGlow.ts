@@ -121,6 +121,12 @@ const withA = (c: [number, number, number], a: number): [number, number, number,
  *  weather raster from a wide shot. */
 const GLOW_COLOR: [number, number, number] = [70, 225, 225];
 
+/** ms between re-evaluations of the flag-colour cycle. The colour accessors
+ *  below regenerate a per-vertex attribute over EVERY boundary vertex when
+ *  their trigger moves, so the drift is quantised to this beat instead of
+ *  running per frame. Sub-second, so the blend still reads as continuous. */
+const FLAG_COLOR_STEP_MS = 200;
+
 /**
  * A breathing multi-pass halo around one or more spotlighted countries'
  * boundaries — wide soft glow, mid glow, translucent fill, crisp lit edge —
@@ -130,6 +136,12 @@ const GLOW_COLOR: [number, number, number] = [70, 225, 225];
  * as visually distinct on the globe instead of relying on the camera move
  * alone. Returns [] while nothing has resolved yet (still loading, or no
  * geojson match).
+ *
+ * Rebuilt every frame by the globe's pulse loop, so the breathe rides GPU
+ * uniforms only: colour/width attributes are baked at the breath's PEAK and
+ * `opacity` / `lineWidthScale` take them down to the trough and back. Nothing
+ * per-vertex is touched per frame (the earlier `updateTriggers: now` regenerated
+ * every attribute of a 4 MB country outline, ×3 passes, every frame).
  *
  * `opts.fill: false` drops the translucent interior fill, so the glow is just
  * the framing halo + rim. `opts.color` overrides the base glow hue.
@@ -152,57 +164,53 @@ export function countryGlowLayers(
   const paletteFor = opts?.paletteFor;
   const phase = (now % GLOW_PERIOD_MS) / GLOW_PERIOD_MS;
   const breathe = 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI);
-  // Per-feature glow hue: a country's cycling flag colours, else the flat base.
+  // Per-feature glow hue: a country's cycling flag colours (quantised to
+  // FLAG_COLOR_STEP_MS), else the flat base.
+  const colorTick = paletteFor ? Math.floor(now / FLAG_COLOR_STEP_MS) : 0;
+  const colorNow = colorTick * FLAG_COLOR_STEP_MS;
   const colorOf = (feature: CountryFeature): [number, number, number] => {
     if (paletteFor) {
       const iso = String(feature?.properties?.iso_a2 ?? "").toUpperCase();
       const pal = paletteFor(iso);
-      if (pal && pal.length) return cyclePalette(pal, now);
+      if (pal && pal.length) return cyclePalette(pal, colorNow);
     }
     return color;
   };
+  // The only thing that may regenerate the colour attribute: the base hue or
+  // the (quantised) flag-cycle step.
+  const colorKey = `${color.join(",")}|${colorTick}`;
   const data = features;
+
+  /** One stroke pass: alpha/width baked at the peak, breathed via uniforms. */
+  const stroke = (
+    id: string,
+    lightenBy: number,
+    alpha: [number, number],
+    width: [number, number],
+    minPixels: number,
+  ) =>
+    new GeoJsonLayer({
+      id,
+      data,
+      filled: false,
+      stroked: true,
+      getLineColor: (f: CountryFeature) => withA(lighten(colorOf(f), lightenBy), alpha[1]),
+      getLineWidth: width[0],
+      lineWidthUnits: "pixels",
+      lineWidthMinPixels: minPixels,
+      opacity: (alpha[0] + (alpha[1] - alpha[0]) * breathe) / alpha[1],
+      lineWidthScale: (width[0] + (width[1] - width[0]) * breathe) / width[0],
+      parameters: DEPTH_TEST,
+      updateTriggers: { getLineColor: colorKey },
+    });
 
   return [
     // 1 ─ Outer bloom — very wide, low-opacity, so it reads from a whole-globe shot.
-    new GeoJsonLayer({
-      id: "country-glow-bloom",
-      data,
-      filled: false,
-      stroked: true,
-      getLineColor: (f: CountryFeature) => withA(lighten(colorOf(f), 0.4), 30 + 22 * breathe),
-      getLineWidth: () => 26 + 14 * breathe,
-      lineWidthUnits: "pixels",
-      lineWidthMinPixels: 20,
-      parameters: DEPTH_TEST,
-      updateTriggers: { getLineColor: now, getLineWidth: now },
-    }),
+    stroke("country-glow-bloom", 0.4, [30, 52], [26, 40], 20),
     // 2 ─ Wide soft halo.
-    new GeoJsonLayer({
-      id: "country-glow-wide",
-      data,
-      filled: false,
-      stroked: true,
-      getLineColor: (f: CountryFeature) => withA(lighten(colorOf(f), 0.35), 70 + 50 * breathe),
-      getLineWidth: () => 14 + 8 * breathe,
-      lineWidthUnits: "pixels",
-      lineWidthMinPixels: 11,
-      parameters: DEPTH_TEST,
-      updateTriggers: { getLineColor: now, getLineWidth: now },
-    }),
+    stroke("country-glow-wide", 0.35, [70, 120], [14, 22], 11),
     // 3 ─ Mid glow.
-    new GeoJsonLayer({
-      id: "country-glow-mid",
-      data,
-      filled: false,
-      stroked: true,
-      getLineColor: (f: CountryFeature) => withA(lighten(colorOf(f), 0.2), 140 + 90 * breathe),
-      getLineWidth: () => 7 + 4 * breathe,
-      lineWidthUnits: "pixels",
-      lineWidthMinPixels: 5,
-      parameters: DEPTH_TEST,
-      updateTriggers: { getLineColor: now, getLineWidth: now },
-    }),
+    stroke("country-glow-mid", 0.2, [140, 230], [7, 11], 5),
     // 4 ─ Translucent fill so the whole country reads as lit, not just its edge.
     //     Omitted when a real map-imagery fill (countryMapGlow) sits underneath.
     ...(withFill
@@ -212,24 +220,14 @@ export function countryGlowLayers(
             data,
             filled: true,
             stroked: false,
-            getFillColor: (f: CountryFeature) => withA(colorOf(f), 26 + 34 * breathe),
+            getFillColor: (f: CountryFeature) => withA(colorOf(f), 60),
+            opacity: (26 + 34 * breathe) / 60,
             parameters: DEPTH_TEST,
-            updateTriggers: { getFillColor: now },
+            updateTriggers: { getFillColor: colorKey },
           }),
         ]
       : []),
     // 5 ─ Crisp lit edge on top, near-solid at the breath's peak.
-    new GeoJsonLayer({
-      id: "country-glow-edge",
-      data,
-      filled: false,
-      stroked: true,
-      getLineColor: (f: CountryFeature) => withA(lighten(colorOf(f), 0.6), 220 + 35 * breathe),
-      getLineWidth: () => 2.5 + 2.5 * breathe,
-      lineWidthUnits: "pixels",
-      lineWidthMinPixels: 2,
-      parameters: DEPTH_TEST,
-      updateTriggers: { getLineColor: now, getLineWidth: now },
-    }),
+    stroke("country-glow-edge", 0.6, [220, 255], [2.5, 5], 2),
   ];
 }

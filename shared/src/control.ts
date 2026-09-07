@@ -835,7 +835,44 @@ function sanitizeWeatherLocations(value: unknown): WeatherLocation[] | undefined
  * base state, keeping unknown/missing fields at their previous value. Pure —
  * used by both client and server, and unit-tested.
  */
+/** Structural equality for the JSON-shaped values ControlState holds. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    const bb = b as unknown[];
+    return a.length === bb.length && a.every((v, i) => sameValue(v, bb[i]));
+  }
+  const ra = a as Record<string, unknown>;
+  const rb = b as Record<string, unknown>;
+  const ka = Object.keys(ra);
+  return ka.length === Object.keys(rb).length && ka.every((k) => k in rb && sameValue(ra[k], rb[k]));
+}
+
+/**
+ * Reuse `base`'s nested objects/arrays wherever the merge produced a
+ * structurally identical value. `buildControlState` allocates every nested
+ * value afresh (wind, basemapColors, elevation, camera, the *Off lists …), and
+ * consumers key effects on those identities — so a socket beat that changed
+ * nothing used to rebuild the whole deck.gl layer stack. After this pass, a
+ * new identity means the value actually changed.
+ */
+function reuseUnchanged(base: ControlState, next: ControlState): ControlState {
+  const b = base as unknown as Record<string, unknown>;
+  const n = next as unknown as Record<string, unknown>;
+  for (const k of Object.keys(n)) {
+    const v = n[k];
+    if (v !== null && typeof v === "object" && sameValue(v, b[k])) n[k] = b[k];
+  }
+  return next;
+}
+
 export function mergeControlState(base: ControlState, patch: Partial<ControlState>): ControlState {
+  return reuseUnchanged(base, buildControlState(base, patch));
+}
+
+function buildControlState(base: ControlState, patch: Partial<ControlState>): ControlState {
   return {
     activeVariable:
       patch.activeVariable === undefined ? base.activeVariable : patch.activeVariable,

@@ -9,6 +9,7 @@ import {
   vectorParticlePropsFromEntry,
   pressureProps,
   cityProps,
+  scalePaletteToDomain,
 } from "./props";
 import type { City } from "../../lib/cities";
 
@@ -213,5 +214,39 @@ describe("cityProps", () => {
     // A capital's day colour is unchanged when the city sits in full daylight.
     const daySub: [number, number] = [-0.12, 51.5]; // sun straight over London
     expect(cityProps(cities, daySub).scatter.getFillColor(london)).toEqual([255, 215, 0, 255]);
+  });
+});
+
+describe("reference stability across layer rebuilds", () => {
+  const manifest = {
+    run: "2026-01-01T00:00:00Z",
+    bounds: [-180, -90, 180, 90],
+    variables: {},
+  } as unknown as Parameters<typeof manifestBounds>[0];
+
+  it("manifestBounds returns the SAME tuple for the same manifest (deck re-meshes on a new one)", () => {
+    expect(manifestBounds(manifest)).toBe(manifestBounds(manifest));
+    expect(manifestBounds(manifest)).toEqual([-180, -90, 180, 90]);
+  });
+
+  it("scalePaletteToDomain returns the SAME array for the same palette + domain (WeatherLayers re-bakes on a new one)", () => {
+    const palette: [number, string][] = [
+      [0, "#000000"],
+      [1, "#ffffff"],
+    ];
+    const a = scalePaletteToDomain(palette, [-40, 50]);
+    expect(scalePaletteToDomain(palette, [-40, 50])).toBe(a);
+    expect(a).toEqual([
+      [-40, "#000000"],
+      [50, "#ffffff"],
+    ]);
+    // A different domain is a different (cached) array.
+    expect(scalePaletteToDomain(palette, [0, 1])).not.toBe(a);
+    expect(scalePaletteToDomain(palette)).toBe(palette);
+  });
+
+  it("hexToRgba returns the SAME tuple for the same hex", () => {
+    expect(hexToRgba("#ff0000")).toBe(hexToRgba("#ff0000"));
+    expect(hexToRgba("#ff0000")).toEqual([255, 0, 0, 255]);
   });
 });

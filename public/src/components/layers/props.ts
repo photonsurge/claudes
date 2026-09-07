@@ -18,9 +18,21 @@ import { cosSunZenith, nightAlpha } from "../../lib/sun";
 /** WeatherLayers `bounds` is [west, south, east, north]. */
 export type Bounds = [number, number, number, number];
 
+/**
+ * Cached per manifest object so the SAME array comes back on every call. deck's
+ * BitmapLayer regenerates its (2° globe) mesh whenever `bounds` changes
+ * identity — a fresh tuple per layer build meant every rebuild of the layer
+ * stack re-meshed every full-globe raster.
+ */
+const boundsCache = new WeakMap<WeatherManifest, Bounds>();
 export function manifestBounds(manifest: WeatherManifest): Bounds {
-  const [w, s, e, n] = manifest.bounds;
-  return [w, s, e, n];
+  let b = boundsCache.get(manifest);
+  if (!b) {
+    const [w, s, e, n] = manifest.bounds;
+    b = [w, s, e, n];
+    boundsCache.set(manifest, b);
+  }
+  return b;
 }
 
 /** The texture URL for a variable at a forecast hour, or undefined. */
@@ -206,6 +218,16 @@ export function windBarbPropsFromEntry(
  * to white on anything unparseable so the particle layer always renders. Pure.
  */
 export function hexToRgba(hex?: string): [number, number, number, number] {
+  // Memoised per input so the same hex yields the same tuple: WeatherLayers'
+  // ParticleLayer diffs `color` by reference and re-runs its setup on a change.
+  const cached = rgbaCache.get(hex ?? "");
+  if (cached) return cached;
+  const out = parseHexRgba(hex);
+  rgbaCache.set(hex ?? "", out);
+  return out;
+}
+const rgbaCache = new Map<string, [number, number, number, number]>();
+function parseHexRgba(hex?: string): [number, number, number, number] {
   const white: [number, number, number, number] = [255, 255, 255, 255];
   if (!hex) return white;
   let h = hex.trim().replace(/^#/, "");
@@ -277,11 +299,32 @@ export function scalarRasterPropsFromEntry(
   };
 }
 
-/** Map a normalised 0..1 palette onto a physical [min,max] domain. */
+/**
+ * Map a normalised 0..1 palette onto a physical [min,max] domain.
+ *
+ * Memoised per (palette, domain): WeatherLayers compares `palette` by
+ * reference and re-parses the ramp, redraws its 256-px canvas and uploads a new
+ * GPU texture (`_updatePalette`) whenever it changes — so a fresh array per
+ * layer build re-baked every raster/contour palette on every rebuild of the
+ * layer stack. `getPalette` returns module constants, so keying on identity is
+ * exact.
+ */
+const scaledPaletteCache = new WeakMap<Palette, Map<string, Palette>>();
 export function scalePaletteToDomain(palette: Palette, domain?: [number, number]): Palette {
   if (!domain) return palette;
   const [min, max] = domain;
-  return palette.map(([stop, hex]) => [min + stop * (max - min), hex] as [number, string]);
+  const key = `${min}|${max}`;
+  let byDomain = scaledPaletteCache.get(palette);
+  if (!byDomain) {
+    byDomain = new Map();
+    scaledPaletteCache.set(palette, byDomain);
+  }
+  let scaled = byDomain.get(key);
+  if (!scaled) {
+    scaled = palette.map(([stop, hex]) => [min + stop * (max - min), hex] as [number, string]);
+    byDomain.set(key, scaled);
+  }
+  return scaled;
 }
 
 export interface PressureProps {

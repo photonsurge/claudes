@@ -319,3 +319,42 @@ describe("slugifySceneId", () => {
     expect(slugifySceneId("")).toBe("");
   });
 });
+
+describe("mergeControlState — nested identity", () => {
+  const base: ControlState = mergeControlState(DEFAULT_CONTROL_STATE, {
+    wind: { numParticles: 1234, speedFactor: 3, maxAge: 7, width: 5, opacity: 0.5, color: "#abcdef" },
+    camera: { center: [10, 20], zoom: 5 },
+    alertHazardsOff: ["flood"],
+  });
+
+  it("reuses nested objects/arrays the patch left unchanged (identity == changed)", () => {
+    const next = mergeControlState(base, { fhr: 12 });
+    expect(next).not.toBe(base);
+    expect(next.fhr).toBe(12);
+    expect(next.wind).toBe(base.wind);
+    expect(next.camera).toBe(base.camera);
+    expect(next.basemapColors).toBe(base.basemapColors);
+    expect(next.elevation).toBe(base.elevation);
+    expect(next.units).toBe(base.units);
+    expect(next.alertHazardsOff).toBe(base.alertHazardsOff);
+    expect(next.satImgFeeds).toBe(base.satImgFeeds);
+    expect(next.about).toBe(base.about);
+  });
+
+  it("reuses a nested object when the patch restates the same values", () => {
+    const next = mergeControlState(base, { wind: { ...base.wind }, camera: { center: [10, 20], zoom: 5 } });
+    expect(next.wind).toBe(base.wind);
+    expect(next.camera).toBe(base.camera);
+  });
+
+  it("allocates a new nested object only when a value inside it changed", () => {
+    const next = mergeControlState(base, { wind: { ...base.wind, opacity: 0.9 }, camera: { center: [10, 21], zoom: 5 } });
+    expect(next.wind).not.toBe(base.wind);
+    expect(next.wind.opacity).toBe(0.9);
+    expect(next.camera).not.toBe(base.camera);
+    expect(next.camera.center).toEqual([10, 21]);
+    // …and everything else still shares identity with base.
+    expect(next.basemapColors).toBe(base.basemapColors);
+    expect(next.elevation).toBe(base.elevation);
+  });
+});

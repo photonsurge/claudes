@@ -128,6 +128,36 @@ layout + React commits); deck.gl is about one-sixth. Fix order below is re-ranke
    GeoJsonLayers (full re-tessellation of every dissolved polygon on the main thread),
    or a region-city fetch mounting ~1.2 k label divs at once.
 
+## Shipped (2026-09-07)
+
+- **Labels → canvas**: `GlobeLabels.tsx` draws text labels on one 2D canvas
+  (halo stroke + fill, detail chip); only icon pins stay DOM, hidden via
+  `visibility` and positioned write-on-change. No `will-change` layers.
+- **No per-frame layout**: `AutoScroll.tsx` measures overflow via
+  ResizeObserver/MutationObserver (+ one settle re-measure), tracks position
+  locally and writes `scrollTop` only while moving. `GlobeAtmosphere.tsx` writes
+  size/position/mask only when the rounded disc changed; ticks rotate at 0.1°
+  quantisation.
+- **Stable references**: `props.ts` caches `manifestBounds` (per manifest),
+  `scalePaletteToDomain` (per palette + domain) and `hexToRgba` (per hex) so deck
+  never re-meshes and WeatherLayers never re-bakes a palette on a rebuild.
+  `shared/control.ts` `mergeControlState` now reuses `base`'s nested objects and
+  arrays when structurally unchanged (identity == changed).
+- **Layer effect split**: `Globe.tsx` builds four groups (weather / events /
+  cities / tracks) in separate effects with their own deps; `commitLayers`
+  concatenates. The 1 s track tick and the station cycle rebuild only their group.
+- **Pulse/glow uniform-only**: `alerts.ts` `onAirPulseLayers` uses stable `data`
+  (memoised `[onAir]` / point) and animates via `opacity` / `lineWidthScale` /
+  `radiusScale` — the area highlight is now a fill layer + an edge layer.
+  `countryGlow.ts` bakes colour/width at the breath's peak and breathes via
+  uniforms; flag-colour cycling is quantised to 200 ms. The pulse loop commits at
+  ~30 Hz (`PULSE_FRAME_MS`).
+- Still open: item 5 (the 1.9 s stall) — needs the long task from a saved profile.
+
+Verify on the OBS box with `node scripts/profile-watch.mjs http://localhost:9221 --raf-census`
+and compare with the 2026-09-07 baseline above (busy 93 %, 16 fps, Layout ~1/frame,
+1498 will-change elements).
+
 ## Verification
 - `node scripts/profile-watch.mjs http://localhost:9221 --seconds 20 --raf-census`
   against the forwarded OBS remote-debugging port (or a local Chrome) prints the

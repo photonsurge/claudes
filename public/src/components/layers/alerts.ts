@@ -314,13 +314,40 @@ function onAirFeature(features: AlertFeature[], at: [number, number]): AlertFeat
 }
 
 /**
+ * Stable `data` arrays for the pulse layers. deck treats a new `data` reference
+ * as "re-tessellate / re-upload everything", and the on-air breathe is rebuilt
+ * every frame — so a fresh `[onAir]` literal per frame put the dissolved,
+ * country-sized alert polygon through earcut 60 times a second.
+ */
+const areaDataCache = new WeakMap<AlertFeature, AlertFeature[]>();
+function areaData(f: AlertFeature): AlertFeature[] {
+  let d = areaDataCache.get(f);
+  if (!d) {
+    d = [f];
+    areaDataCache.set(f, d);
+  }
+  return d;
+}
+type PulsePoint = { position: [number, number] };
+let pointDataCache: { at: [number, number]; data: PulsePoint[] } | null = null;
+function pointData(at: [number, number]): PulsePoint[] {
+  const c = pointDataCache;
+  if (c && c.at[0] === at[0] && c.at[1] === at[1]) return c.data;
+  const data: PulsePoint[] = [{ position: [at[0], at[1]] }];
+  pointDataCache = { at: [at[0], at[1]], data };
+  return data;
+}
+
+/**
  * On-air highlight: while the director holds an alert, breathe *its own area*
  * (fill opacity + a widening lit edge) so the eye locks onto the shape being
- * talked about, not a free-floating reticle. Re-built every frame by the globe's
- * pulse loop, so `now` drives the phase. Only when the on-air event has no drawn
- * polygon (point-only / geometry stripped) do we fall back to a pulsing sonar
- * ring + hazard-coloured dot at the framing point — a real area never gets the
- * location marker, since its breathing outline already carries the highlight.
+ * talked about, not a free-floating reticle. Rebuilt every frame by the globe's
+ * pulse loop, so EVERYTHING animated here rides a layer-level GPU uniform
+ * (`opacity`, `lineWidthScale`, `radiusScale`) over CONSTANT attributes and
+ * stable `data`: a frame costs a few uniform writes, never an attribute
+ * regeneration or a re-tessellation. (The previous version keyed function
+ * accessors on `now`, which regenerated every attribute of the whole polygon
+ * each frame — and passed a fresh `[onAir]` array, which re-tessellated it.)
  */
 export function onAirPulseLayers(
   features: AlertFeature[],
@@ -330,11 +357,7 @@ export function onAirPulseLayers(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any[] {
   // `breathe` 0→1→0 (a soft heartbeat); `ping` 0→1 ramps then snaps back (an
-  // expanding sonar ring). Both are derived from `now`, but EVERY animated prop
-  // below is a *function* accessor keyed by `updateTriggers: { …: now }` — deck
-  // only re-uploads accessor values when their trigger changes, and silently
-  // ignores triggers on constant (non-function) accessors. Passing constants
-  // here is exactly why the highlight rendered once and never moved.
+  // expanding sonar ring).
   const phase = (now % PULSE_PERIOD_MS) / PULSE_PERIOD_MS;
   const breathe = 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI);
   const ping = phase; // 0..1 sawtooth
@@ -353,21 +376,36 @@ export function onAirPulseLayers(
   const layers: any[] = [];
 
   // 1 ─ Breathe the on-air area itself, so the eye locks onto the exact shape.
-  if (area) {
+  if (area && onAir) {
+    const data = areaData(onAir);
+    // Fill alpha is baked at the breath's peak (150); `opacity` takes it down to
+    // the trough (40) and back.
+    const FILL_PEAK = 150;
     layers.push(
       new GeoJsonLayer({
         id: "alerts-onair-fill",
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        data: [onAir] as any,
+        data: data as any,
         filled: true,
+        stroked: false,
+        getFillColor: withA(c, FILL_PEAK),
+        opacity: (40 + 110 * breathe) / FILL_PEAK,
+        parameters: DEPTH_TEST,
+      }),
+      // Lit edge: a constant 1.5 px width attribute; `lineWidthScale` swells it
+      // to 5.5 px at the peak.
+      new GeoJsonLayer({
+        id: "alerts-onair-edge",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: data as any,
+        filled: false,
         stroked: true,
-        getFillColor: () => withA(c, 40 + 110 * breathe),
-        getLineColor: () => withA(lit, 220),
-        getLineWidth: () => 1.5 + 4 * breathe,
+        getLineColor: withA(lit, 220),
+        getLineWidth: 1.5,
+        lineWidthScale: (1.5 + 4 * breathe) / 1.5,
         lineWidthUnits: "pixels",
         lineWidthMinPixels: 1.5,
         parameters: DEPTH_TEST,
-        updateTriggers: { getFillColor: now, getLineColor: now, getLineWidth: now },
       }),
     );
     return layers;
@@ -376,42 +414,47 @@ export function onAirPulseLayers(
   // 2 ─ No drawable area → an expanding "sonar" ring at the framing point plus a
   //     breathing core dot, so a point-only alert still reads unmistakably on a
   //     wide broadcast shot.
+  const data = pointData(at);
   layers.push(
-    new ScatterplotLayer<{ position: [number, number] }>({
+    new ScatterplotLayer<PulsePoint>({
       id: "alerts-onair-ping",
-      data: [{ position: at }],
+      data,
       getPosition: (d) => d.position,
       stroked: true,
       filled: false,
       radiusUnits: "pixels",
       // Bigger radial expansion — the ring sweeps out to ~90px so the "sonar"
-      // read is unmistakable on a wide broadcast shot.
-      getRadius: () => 14 + 76 * ping,
+      // read is unmistakable on a wide broadcast shot. Unit radius attribute,
+      // `radiusScale` is the animated pixel radius.
+      getRadius: 1,
+      radiusScale: 14 + 76 * ping,
       radiusMinPixels: 6,
-      getLineColor: () => [lit[0], lit[1], lit[2], Math.round(230 * (1 - ping))],
-      getLineWidth: () => 2.5 + 2.5 * (1 - ping),
+      getLineColor: [lit[0], lit[1], lit[2], 230],
+      opacity: 1 - ping,
+      getLineWidth: 2.5,
+      lineWidthScale: (2.5 + 2.5 * (1 - ping)) / 2.5,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 1.5,
       parameters: DEPTH_TEST,
-      updateTriggers: { getRadius: now, getLineColor: now, getLineWidth: now },
     }),
     // 3 ─ A solid breathing core dot under the ring (anchors the ping; the sole
     //     highlight when the on-air event has no drawn polygon).
-    new ScatterplotLayer<{ position: [number, number] }>({
+    new ScatterplotLayer<PulsePoint>({
       id: "alerts-onair-dot",
-      data: [{ position: at }],
+      data,
       getPosition: (d) => d.position,
       stroked: true,
       filled: true,
       radiusUnits: "pixels",
-      getRadius: () => 6 + 4 * breathe,
+      getRadius: 6,
+      radiusScale: (6 + 4 * breathe) / 6,
       radiusMinPixels: 3,
-      getFillColor: () => withA(c, 150 + 80 * breathe),
+      getFillColor: withA(c, 230),
       getLineColor: [lit[0], lit[1], lit[2], 255],
       getLineWidth: 1.5,
       lineWidthUnits: "pixels",
+      opacity: (150 + 80 * breathe) / 230,
       parameters: DEPTH_TEST,
-      updateTriggers: { getRadius: now, getFillColor: now },
     }),
   );
 

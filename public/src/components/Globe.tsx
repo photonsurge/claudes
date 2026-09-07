@@ -175,6 +175,9 @@ type ViewState = { longitude: number; latitude: number; zoom: number } & Record<
 const FLY_MIN = 2600;
 const FLY_MAX = 7000;
 
+/** Min ms between on-air pulse/glow re-commits (~30 Hz). */
+const PULSE_FRAME_MS = 30;
+
 // MAX_PUSH_IN (max extra zoom a detail-shot push-in may add) lives in
 // idle-motion.ts — the idle breathe hands off from the push-in at that cap.
 
@@ -247,9 +250,16 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // values (manual picks, VAR_CYCLE, or the ocean depth-cycle scene) instead
   // of the instant mount/unmount a raw variable-id-keyed layer id would do.
   const variableFade = useCrossfadeVariable(state.activeVariable, 700);
-  // The non-pulse layers, kept so the pulse rAF can re-commit them each frame.
+  // The non-pulse layers, in four independently rebuilt groups that concatenate
+  // in stack order (weather → events → cities → tracks) — see the group effects
+  // below. Kept in a ref so the pulse rAF can re-commit them each frame.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const baseLayersRef = useRef<any[]>([]);
+  const layerGroupsRef = useRef<{ weather: any[]; events: any[]; cities: any[]; tracks: any[] }>({
+    weather: [],
+    events: [],
+    cities: [],
+    tracks: [],
+  });
   const pulseAtRef = useRef<[number, number] | null>(pulseAt ?? null);
   const mapHighlightRgb = hexToRgb(mapHighlightColor);
   const mapLabelRgb = hexToRgb(mapLabelColor);
@@ -380,17 +390,14 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   const lastCityZoomRef = useRef(-Infinity);
   const refreshCityZoom = (zoom: number) => {
     if (Math.abs(zoom - lastCityZoomRef.current) < 0.05) return;
-    const idx = baseLayersRef.current.findIndex((l) => l?.id === "cities-scatter");
+    const group = layerGroupsRef.current.cities;
+    const idx = group.findIndex((l) => l?.id === "cities-scatter");
     if (idx === -1) return;
     lastCityZoomRef.current = zoom;
-    const layer = baseLayersRef.current[idx];
+    const layer = group[idx];
     const next = layer.clone({ filterRange: [0, zoom] });
     if (next === layer) return;
-    baseLayersRef.current = [
-      ...baseLayersRef.current.slice(0, idx),
-      next,
-      ...baseLayersRef.current.slice(idx + 1),
-    ];
+    layerGroupsRef.current.cities = [...group.slice(0, idx), next, ...group.slice(idx + 1)];
     commitLayers();
   };
 
@@ -426,8 +433,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       color: mapHighlightRgb,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     }) as any[];
-    const extra = [...pulse, ...glow];
-    const layers = extra.length ? [...baseLayersRef.current, ...extra] : baseLayersRef.current;
+    const g = layerGroupsRef.current;
+    const layers = [...g.weather, ...g.events, ...g.cities, ...g.tracks, ...pulse, ...glow];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     deckRef.current?.setProps({ layers } as any);
   };
@@ -864,13 +871,20 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     preloadTextures(Object.keys(manifest.variables).map((id) => textureUrlFor(manifest, id, state.fhr)));
   }, [manifest, state.fhr]);
 
-  // ── Rebuild all layers (basemap → weather → borders → cities) ─────────────
+  // ── Rebuild layers — four independent groups ──────────────────────────────
+  // The stack is weather → events → cities → tracks. Each group has its own
+  // effect + deps, so the 1 s track dead-reckon tick only rebuilds the track
+  // layers: rebuilding EVERYTHING per tick re-diffed every layer and sublayer
+  // (and, before props.ts cached bounds/palettes, re-meshed every raster and
+  // re-baked every palette) roughly twice a second on air.
+
+  // Group 1 — basemap, weather rasters/particles/contours, borders, reference
+  // overlays (graticule, sat imagery, aurora, cables, faults).
   useEffect(() => {
     const deck = deckRef.current;
     if (!deck) return;
     const resolve: TextureResolver = (url) => loadedTextures.get(url);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     // A full-globe weather raster (non-nest-only variable) seals the depth sphere
     // itself; a nest-only variable (radar) does not, so the basemap background must
     // stay the occluder. Detected by whether the active variable has a base texture
@@ -892,6 +906,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // when it's the only overlay on.
     const geomagOn = !!(state.showMagneticField && geomag?.texture);
     const hasGlobalRaster = weatherRaster || reliefBasemap || contourOn || geomagOn;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const layers: any[] = [...basemapLayers(state, tilesActive, hasGlobalRaster)];
 
     // Day/night terminator: shade the earth's night hemisphere from the real sun
@@ -960,13 +975,13 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       }
     }
 
-    // Country borders sit ABOVE the weather fill.
     // Global geomagnetic-field intensity (IGRF) — a full-globe scalar field drawn
     // as the surface (under borders/cities/overlays), like the weather rasters.
     if (state.showMagneticField && geomag?.texture) {
       layers.push(...geomagLayers(geomag.meta, geomag.texture, state.magneticFieldOpacity));
     }
 
+    // Country borders sit ABOVE the weather fill.
     layers.push(countriesLayer(state));
 
     // DEBUG: outline each active weather-map source's bbox + label, above the
@@ -1011,6 +1026,58 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     if (state.showFaults && faults && faults.length) {
       layers.push(...faultLayers(faults));
     }
+
+    layerGroupsRef.current.weather = layers;
+    commitLayers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    manifest,
+    loadedTextures,
+    tilesActive,
+    state.basemap,
+    state.activeVariable,
+    variableFade.from,
+    variableFade.to,
+    variableFade.progress,
+    state.showPressure,
+    state.showElevation,
+    state.elevation,
+    state.showWind,
+    state.fhr,
+    state.basemapColors,
+    state.wind,
+    state.windMode,
+    state.showContours,
+    state.showRadar,
+    state.showCables,
+    state.showCableLabels,
+    state.showFaults,
+    state.showAurora,
+    state.auroraOpacity,
+    state.showSatImg,
+    state.satImgFeeds,
+    state.showMagneticField,
+    state.magneticFieldOpacity,
+    state.showMapSource,
+    state.showGraticule,
+    state.graticuleColor,
+    state.graticuleLabels,
+    state.showDayNight,
+    sunTick,
+    cables,
+    faults,
+    aurora,
+    satimg,
+    geomag,
+    nestKey,
+  ]);
+
+  // Group 2 — live events: alert areas, quakes, seismograph/tide stations, the
+  // LOCAL MONITOR point, fires, volcanoes.
+  useEffect(() => {
+    if (!deckRef.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const layers: any[] = [];
 
     // Weather-alert polygons above borders, below cities/tracks. Kept mounted
     // (visibility toggled, not added/removed) so a director cut flipping
@@ -1059,11 +1126,51 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // same layer band as fires; the cone glyph itself is the DOM overlay below.
     if (state.showVolcanoes && volcanoes.length) layers.push(...volcanoLayers(volcanoes));
 
-    if (state.showCities && cities.length)
-      layers.push(...cityLayer(cities, subsolar ?? undefined, viewStateRef.current.zoom));
+    layerGroupsRef.current.events = layers;
+    commitLayers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    alerts,
+    state.showAlerts,
+    // Key on the focus VALUE, not the object identity: the cycle hands us a
+    // fresh object every tick, and only the ~6 fade increments per step should
+    // rebuild the layers (a colour re-upload each — never a re-tessellation).
+    alertFocusKey(alertFocus),
+    state.showSeismic,
+    quakes,
+    seismoStations,
+    seismoActive,
+    tideStations,
+    tideActive,
+    weatherPointCenter?.[0],
+    weatherPointCenter?.[1],
+    state.showFires,
+    fires,
+    state.showVolcanoes,
+    volcanoes,
+    mapHighlightColor,
+  ]);
 
-    // Live tracks overlay sits on top of everything (trails + orbit rings under
-    // the point markers).
+  // Group 3 — city dots (names are the GlobeLabels canvas overlay).
+  useEffect(() => {
+    if (!deckRef.current) return;
+    const subsolar = state.showDayNight ? subsolarPoint(new Date()) : null;
+    const zoom = viewStateRef.current.zoom;
+    layerGroupsRef.current.cities =
+      state.showCities && cities.length ? cityLayer(cities, subsolar ?? undefined, zoom) : [];
+    // The fresh layer is filtered at the live zoom; re-arm the zoom follow.
+    lastCityZoomRef.current = zoom;
+    commitLayers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cities, state.showCities, state.showDayNight, sunTick]);
+
+  // Group 4 — live tracks on top of everything (trails + orbit rings under the
+  // point markers). Rebuilds on every dead-reckon tick — cheaply, now that it's
+  // only these layers.
+  useEffect(() => {
+    if (!deckRef.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const layers: any[] = [];
     if (state.showTrails && trails.length) {
       // Trails follow the same per-type filters as the markers, so filtered-out
       // planes/ships don't keep a dangling trail.
@@ -1081,82 +1188,23 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
           highlight: highlightTrack ?? null,
         }),
       );
-
-    baseLayersRef.current = layers;
+    layerGroupsRef.current.tracks = layers;
     commitLayers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    manifest,
-    cities,
-    loadedTextures,
-    tilesActive,
-    state.basemap,
-    state.activeVariable,
-    variableFade.from,
-    variableFade.to,
-    variableFade.progress,
-    state.showPressure,
-    state.showElevation,
-    state.elevation,
-    state.showWind,
-    state.showCities,
-    state.fhr,
-    state.basemapColors,
-    state.wind,
-    state.windMode,
-    state.showContours,
-    state.showRadar,
+    tracks,
+    orbits,
+    trails,
+    state.showTrails,
+    state.trailOpacity,
+    state.showOrbits,
     state.showTrackLabels,
     state.satelliteStyle,
     state.aircraftStyle,
     state.shipStyle,
-    state.showOrbits,
-    state.showTrails,
-    state.trailOpacity,
-    state.showAlerts,
-    state.showSeismic,
-    state.showCables,
-    state.showCableLabels,
-    state.showFaults,
-    state.showAurora,
-    state.auroraOpacity,
-    state.showSatImg,
-    state.satImgFeeds,
-    state.showFires,
-    state.showVolcanoes,
-    state.showMagneticField,
-    state.magneticFieldOpacity,
-    state.showMapSource,
-    state.showGraticule,
-    state.graticuleColor,
-    state.graticuleLabels,
-    state.showDayNight,
-    sunTick,
-    tracks,
-    orbits,
-    trails,
-    alerts,
-    // Key on the focus VALUE, not the object identity: the cycle hands us a
-    // fresh object every tick, and only the ~6 fade increments per step should
-    // rebuild the layers (a colour re-upload each — never a re-tessellation).
-    alertFocusKey(alertFocus),
-    quakes,
-    seismoStations,
-    seismoActive,
-    tideStations,
-    tideActive,
-    weatherPointCenter?.[0],
-    weatherPointCenter?.[1],
-    cables,
-    faults,
-    aurora,
-    satimg,
-    fires,
-    volcanoes,
-    geomag,
-    nestKey,
+    state.camera.zoom,
     highlightTrack?.kind,
     highlightTrack?.code,
-    mapHighlightColor,
   ]);
 
   // Animate the event pulse: while an event is on air, re-commit the layers each
@@ -1167,9 +1215,15 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       return;
     }
     let raf = 0;
-    const loop = () => {
-      commitLayers();
+    let last = 0;
+    const loop = (t: number) => {
       raf = requestAnimationFrame(loop);
+      // Every commit makes deck walk every layer + sublayer in the stack; the
+      // pulse/glow layers themselves are uniform-only now, so the walk IS the
+      // cost. 30 Hz is indistinguishable on a 1.5–2.6 s breathe and halves it.
+      if (t - last < PULSE_FRAME_MS) return;
+      last = t;
+      commitLayers();
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);

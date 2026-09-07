@@ -73,43 +73,60 @@ export default function GlobeAtmosphere({
       }
       raf = requestAnimationFrame(loop);
     };
+    // Last values written to the DOM. Every write below is a layout-affecting
+    // style (width/height/left/top) or a mask re-raster, so a steady disc must
+    // cost nothing: only write when the rounded value actually moved. During a
+    // push-in the disc grows every frame — those writes are real, and cheap
+    // once the DOM around them (labels) stopped being thousands of layers.
+    const last = { cx: NaN, cy: NaN, r: NaN, rot: NaN };
     const tick = () => {
       const d = getDisc();
-      if (d) {
+      if (!d) return;
+      const cx = Math.round(d.cx * 2) / 2;
+      const cy = Math.round(d.cy * 2) / 2;
+      const r = Math.round(d.r * 2) / 2;
+      if (cx !== last.cx || cy !== last.cy || r !== last.r) {
+        last.cx = cx;
+        last.cy = cy;
+        last.r = r;
         const glow = glowRef.current;
         if (glow) {
-          const size = d.r * 3.2;
+          const size = r * 3.2;
           glow.style.width = `${size}px`;
           glow.style.height = `${size}px`;
-          glow.style.left = `${d.cx}px`;
-          glow.style.top = `${d.cy}px`;
+          glow.style.left = `${cx}px`;
+          glow.style.top = `${cy}px`;
         }
         const ring = ringRef.current;
         if (ring) {
-          const w = d.r * RING_W;
-          const h = d.r * RING_H;
+          const w = r * RING_W;
+          const h = r * RING_H;
           ring.style.width = `${w}px`;
           ring.style.height = `${h}px`;
-          ring.style.left = `${d.cx}px`;
-          ring.style.top = `${d.cy + d.r * RING_CY}px`;
+          ring.style.left = `${cx}px`;
+          ring.style.top = `${cy + r * RING_CY}px`;
           // Punch a hole where the globe disc is, so the ellipse's back arc hides
           // behind the planet. Hole centre is the globe centre expressed in the
           // (translate -50%,-50%) container's own coordinates.
           const mx = w / 2;
-          const my = h / 2 - d.r * RING_CY;
+          const my = h / 2 - r * RING_CY;
           const mask = `radial-gradient(circle at ${mx.toFixed(1)}px ${my.toFixed(1)}px, transparent ${(
-            d.r - 3
-          ).toFixed(1)}px, #000 ${(d.r + 6).toFixed(1)}px)`;
+            r - 3
+          ).toFixed(1)}px, #000 ${(r + 6).toFixed(1)}px)`;
           ring.style.maskImage = mask;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (ring.style as any).webkitMaskImage = mask;
         }
-        // Spin the graduation ticks in lock-step with the globe's longitude so
-        // they read as meridian marks fixed to the planet, not a static frame.
-        const ticks = tickGroupRef.current;
-        if (ticks) {
-          const rot = d.lng * RING_SPIN_GAIN;
-          ticks.setAttribute("transform", `rotate(${rot.toFixed(2)} 100 100)`);
+      }
+      // Spin the graduation ticks in lock-step with the globe's longitude so
+      // they read as meridian marks fixed to the planet, not a static frame.
+      // Quantised to 0.1° so a resting globe writes nothing.
+      const ticks = tickGroupRef.current;
+      if (ticks) {
+        const rot = Math.round(d.lng * RING_SPIN_GAIN * 10) / 10;
+        if (rot !== last.rot) {
+          last.rot = rot;
+          ticks.setAttribute("transform", `rotate(${rot.toFixed(1)} 100 100)`);
         }
       }
     };
