@@ -285,7 +285,7 @@ async function monitorTick(runId: string): Promise<number> {
 }
 
 // Per-run confirm bookkeeping (in-process, like the monitors themselves).
-const confirmState = new Map<string, { inactiveTicks: number; ingest?: string }>();
+const confirmState = new Map<string, { inactiveTicks: number; ingest?: string; lastError?: string }>();
 
 async function confirmTick(run: Run): Promise<number> {
   const yt = run.platforms?.youtube;
@@ -308,7 +308,15 @@ async function confirmTick(run: Run): Promise<number> {
       return committed ? HEARTBEAT_MS : CONFIRM_POLL_MS;
     }
   } catch (err) {
-    log(TAG, `confirm error ${run.id}`, String((err as Error)?.message ?? err));
+    // A persistent condition (spent quota, dead token, OBS down) would otherwise
+    // log every CONFIRM_POLL_MS — say it when it changes.
+    const message = String((err as Error)?.message ?? err);
+    const st = confirmState.get(run.id) ?? { inactiveTicks: 0 };
+    if (st.lastError !== message) {
+      st.lastError = message;
+      confirmState.set(run.id, st);
+      log(TAG, `confirm error ${run.id}`, message);
+    }
   }
   return CONFIRM_POLL_MS;
 }
@@ -316,6 +324,7 @@ async function confirmTick(run: Run): Promise<number> {
 /** Log YouTube's ingest status for a run whenever it changes (inactive → ready → active). */
 function noteIngestStatus(runId: string, streamStatus: string | undefined): void {
   const st = confirmState.get(runId) ?? { inactiveTicks: 0 };
+  st.lastError = undefined; // a successful poll clears the repeat-suppression
   if (st.ingest !== streamStatus) {
     log(TAG, `run ${runId}: YouTube ingest ${st.ingest ?? "?"} → ${streamStatus ?? "?"}`);
     st.ingest = streamStatus;

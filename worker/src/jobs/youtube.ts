@@ -1,11 +1,13 @@
 /**
- * YouTube OAuth token exchange, on behalf of the public /google/redirect
- * route. Dispatched as `youtube.exchangeCode { code, connectedBy }` and awaited by
- * the callback (sendToQueueAndWait). The exchange + refresh-token encryption happen
- * HERE, in the worker, so the client secret and the AES key never enter `public`.
+ * YouTube OAuth jobs, on behalf of public's admin routes (both awaited via
+ * sendToQueueAndWait; `youtube` is a FOREGROUND type):
+ *   youtube.exchangeCode { code, connectedBy }  ← /google/redirect callback
+ *   youtube.check        { accountId? }         ← POST /api/youtube/check
+ * The exchange + refresh-token encryption + token minting happen HERE, in the
+ * worker, so the client secret and the AES key never enter `public`.
  */
 import { UnrecoverableError, type Job } from "bullmq";
-import { exchangeAuthCode } from "../youtube/client";
+import { checkYoutubeConnection, exchangeAuthCode } from "../youtube/client";
 
 export async function exchangeCode(job: Job) {
   const code = String(job.data?.data?.code ?? "");
@@ -20,5 +22,20 @@ export async function exchangeCode(job: Job) {
     // call AFTER the code is already spent). Make every failure terminal so the
     // genuine message propagates back to the /google/redirect caller on the first try.
     throw new UnrecoverableError((err as Error)?.message ?? String(err));
+  }
+}
+
+/**
+ * Admin diagnostic (POST /api/youtube/check): prove the stored refresh token
+ * still mints access tokens and that one 1-unit Data API call succeeds; report
+ * today's quota spend. Resolves (never rejects) with a structured result so the
+ * operator sees the reason ("invalid_grant — reconnect", "quota exhausted until…").
+ */
+export async function check(job: Job) {
+  const accountId = job.data?.data?.accountId ? String(job.data.data.accountId) : undefined;
+  try {
+    return await checkYoutubeConnection(accountId);
+  } catch (err) {
+    return { ok: false, configured: true, tokenOk: false, apiOk: false, apiTimeoutMs: 0, error: String((err as Error)?.message ?? err) };
   }
 }

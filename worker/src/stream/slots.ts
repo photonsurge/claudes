@@ -28,8 +28,12 @@ import {
   type StreamSlot,
 } from "@photonsurge/shared/runs";
 import { log } from "@photonsurge/shared/utill/logger";
+import { exhaustedUntil, fmtResetTime } from "../youtube/quota";
 
 const TAG = "stream-slots";
+const QUOTA_HOLD_LOG_EVERY_MS = 10 * 60_000;
+// Last "holding for quota" log per slot — the sweep runs every minute.
+const quotaHoldLoggedAt = new Map<string, number>();
 
 async function enqueueLifecycle(event: "goLive" | "end", data: Record<string, unknown>): Promise<void> {
   await getQueue("foreground").add(
@@ -95,6 +99,21 @@ async function reconcileSlot(db: AppDb, slot: StreamSlot, now: number): Promise<
     await db.saveStreamSlot({ id: slot.id, lastAttemptAt: now, failCount: (slot.failCount ?? 0) + 1 });
     return;
   }
+
+  // A spent daily API quota fails every go-live the same way until midnight
+  // Pacific — don't manufacture a failed run per backoff window (each would
+  // deepen the slot's backoff and litter /admin/streams). Hold, and say so
+  // occasionally; the next sweep after the reset launches as normal.
+  const blockedUntil = await exhaustedUntil(account.id, now);
+  if (blockedUntil) {
+    const lastLog = quotaHoldLoggedAt.get(slot.id) ?? 0;
+    if (now - lastLog >= QUOTA_HOLD_LOG_EVERY_MS) {
+      quotaHoldLoggedAt.set(slot.id, now);
+      log(TAG, `slot ${slot.id}: holding — YouTube API quota exhausted until ${fmtResetTime(blockedUntil)}`);
+    }
+    return;
+  }
+  quotaHoldLoggedAt.delete(slot.id);
 
   // Encoder: explicit pin, else the encoder bound to this scene, else the env OBS.
   const encoderId = slot.encoderId || (await db.encoderForScene(slot.sceneId))?.id;

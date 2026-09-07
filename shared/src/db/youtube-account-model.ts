@@ -12,6 +12,18 @@ import { getModel } from "../utill/getModel";
  * Only the WORKER reads/writes this (it holds the secretbox key); `public` never
  * touches the token — it delegates the OAuth code→token exchange to the worker.
  */
+/**
+ * Why Google last refused this channel's credentials — stamped by the worker when
+ * the token endpoint answers `invalid_grant` (refresh token expired: consent screen
+ * still in "Testing", or revoked by the user), cleared by the next successful call
+ * or a reconnect. Drives the "needs reconnect" chip on /admin/youtube.
+ */
+export interface iYoutubeAuthError {
+  kind: string;
+  message: string;
+  at: number;
+}
+
 export interface iYoutubeAccount {
   id?: string; // = channelId
   channelTitle?: string;
@@ -20,6 +32,9 @@ export interface iYoutubeAccount {
   scopes?: string[];
   connectedAt?: number;
   connectedBy?: string;
+  authError?: iYoutubeAuthError | null;
+  /** Last authenticated API success (worker-stamped, throttled to ~10 min). */
+  lastOkAt?: number;
 }
 
 export interface iYoutubeAccountModel extends iGeneralModel, iYoutubeAccount {
@@ -35,6 +50,8 @@ const YoutubeAccountSchema = new mongoose.Schema<iYoutubeAccountModel>(
     scopes: { type: [String], required: false, default: [] },
     connectedAt: { type: Number, required: false },
     connectedBy: { type: String, required: false },
+    authError: { type: mongoose.Schema.Types.Mixed, required: false, default: null },
+    lastOkAt: { type: Number, required: false },
   },
   mongoTimestamps,
 );

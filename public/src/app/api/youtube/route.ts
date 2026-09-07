@@ -46,6 +46,10 @@ async function GET__impl(req: Request) {
         connectedAt: a.connectedAt ?? null,
         connectedBy: a.connectedBy ?? null,
         scopes: a.scopes ?? [],
+        // Worker-stamped: set when Google rejected the refresh token (invalid_grant),
+        // cleared by the next successful call or a reconnect.
+        authError: a.authError ?? null,
+        lastOkAt: a.lastOkAt ?? null,
       })),
     },
     { status: 200, headers: NO_CACHE },

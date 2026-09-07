@@ -20,6 +20,15 @@ jest.mock("../youtube/client", () => ({
   getYoutubeClient: jest.fn(async () => ({})),
   listChat: (...a: unknown[]) => mockListChat(...a),
   sendChatMessage: (...a: unknown[]) => mockSendChat(...a),
+  // Errors thrown by the real client carry their classified `kind`.
+  youtubeErrorKind: (e: { kind?: string } | null) => e?.kind ?? "other",
+}));
+
+const mockPacing = jest.fn();
+jest.mock("../youtube/quota", () => ({
+  CHAT_PAUSE_MAX_MS: 600_000,
+  chatPacing: (...a: unknown[]) => mockPacing(...a),
+  fmtResetTime: () => "07:00 UTC",
 }));
 
 const mockCommandReplies = jest.fn();
@@ -62,7 +71,9 @@ beforeEach(() => {
   mockListChat.mockReset();
   mockSendChat.mockReset().mockResolvedValue(undefined);
   mockCommandReplies.mockReset().mockResolvedValue([]);
+  mockPacing.mockReset().mockResolvedValue({ floorMs: 0 });
   stopChatPoll("r1"); // clear any page token left by a previous test
+  stopChatPoll("r2");
   startChatPoll("r1");
 });
 
@@ -144,4 +155,57 @@ it("clamps the poll interval to at least 2s and backs off 5s on API errors", asy
   expect(await tick()).toBe(2_000);
   mockListChat.mockRejectedValueOnce(new Error("quota"));
   expect(await tick()).toBe(5_000);
+});
+
+describe("quota pacing", () => {
+  it("stretches the poll interval to the quota-derived floor", async () => {
+    mockPacing.mockResolvedValue({ floorMs: 60_000 });
+    mockListChat.mockResolvedValueOnce(page([], "tok-2", 4_000));
+    expect(await tick()).toBe(60_000);
+  });
+
+  it("pauses WITHOUT calling the API once the budget is spent, and logs once", async () => {
+    mockPacing.mockResolvedValue({ floorMs: 3_600_000, pauseMs: 600_000 });
+    expect(await tick()).toBe(600_000);
+    expect(await tick()).toBe(600_000);
+    expect(mockListChat).not.toHaveBeenCalled();
+    const { log } = jest.requireMock("@photonsurge/shared/utill/logger");
+    expect(log.mock.calls.filter((c: string[]) => /chat poll paused/.test(c[1])).length).toBe(1);
+  });
+
+  it("splits the budget across the runs currently polling", async () => {
+    startChatPoll("r2");
+    mockListChat.mockResolvedValueOnce(page([], "tok-2"));
+    await tick();
+    expect(mockPacing).toHaveBeenLastCalledWith("acct", 2);
+  });
+
+  it("backs off by error kind: spent quota sleeps toward the reset, dead token waits for a reconnect, blips retry soon", async () => {
+    mockListChat.mockRejectedValueOnce(Object.assign(new Error("quota gone"), { kind: "quota", resetAt: Date.now() + 2 * 3_600_000 }));
+    expect(await tick()).toBe(600_000); // capped at CHAT_PAUSE_MAX_MS
+    mockListChat.mockRejectedValueOnce(Object.assign(new Error("quota gone"), { kind: "quota", resetAt: Date.now() + 60_000 }));
+    expect(await tick()).toBeLessThanOrEqual(60_000);
+    mockListChat.mockRejectedValueOnce(Object.assign(new Error("revoked"), { kind: "auth-revoked" }));
+    expect(await tick()).toBe(5 * 60_000);
+    mockListChat.mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { kind: "network" }));
+    expect(await tick()).toBe(15_000);
+    mockListChat.mockRejectedValueOnce(Object.assign(new Error("slow"), { kind: "timeout" }));
+    expect(await tick()).toBe(15_000);
+  });
+
+  it("a repeating failure logs once per kind, and a success resets that", async () => {
+    const { log } = jest.requireMock("@photonsurge/shared/utill/logger");
+    log.mockClear();
+    const fail = () => mockListChat.mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { kind: "network" }));
+    fail();
+    await tick();
+    fail();
+    await tick();
+    expect(log.mock.calls.filter((c: string[]) => /poll error/.test(c[1])).length).toBe(1);
+    mockListChat.mockResolvedValueOnce(page([], "tok-2"));
+    await tick();
+    fail();
+    await tick();
+    expect(log.mock.calls.filter((c: string[]) => /poll error/.test(c[1])).length).toBe(2);
+  });
 });

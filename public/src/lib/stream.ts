@@ -227,6 +227,33 @@ export async function disconnectYoutube(channelId: string): Promise<void> {
   await fetch("/api/youtube/disconnect", { method: "POST", headers: jsonHeaders, body: JSON.stringify({ channelId }) });
 }
 
+/** Result of POST /api/youtube/check (mirrors the worker's YoutubeCheckResult). */
+export interface YoutubeCheck {
+  ok: boolean;
+  configured: boolean;
+  /** The stored refresh token still mints access tokens. */
+  tokenOk: boolean;
+  /** A real (1-unit) Data API call succeeded. */
+  apiOk: boolean;
+  accountId?: string;
+  channelTitle?: string;
+  tokenExpiresAt?: number | null;
+  quota?: { budget: number; reserve: number; spent: number; remaining: number; resetAt: number; exhaustedUntil: number | null };
+  apiTimeoutMs?: number;
+  error?: string;
+  kind?: string;
+}
+
+/** Ask the worker whether a connected channel's token + API access are alive. Never throws. */
+export async function checkYoutube(channelId?: string): Promise<YoutubeCheck> {
+  try {
+    const res = await fetch("/api/youtube/check", { method: "POST", headers: jsonHeaders, body: JSON.stringify({ channelId }) });
+    return (await res.json()) as YoutubeCheck;
+  } catch (e) {
+    return { ok: false, configured: true, tokenOk: false, apiOk: false, error: String((e as Error)?.message ?? e) };
+  }
+}
+
 /**
  * PUBLIC live-status hooks for the home page: cold-start from the public
  * /api/streams/live, then live-update from RUN_STATE. Safe for anonymous

@@ -193,11 +193,18 @@ On `/control` (Stream panel) or `/admin/streams`:
 |---|---|
 | `redirect_uri_mismatch` | The URI in step 4 ≠ `YOUTUBE_REDIRECT_URI`. Compare exactly: scheme, host, port, path, trailing slash. |
 | "Google returned no refresh token" | Happens if Google already granted consent without `prompt=consent`. Revoke the app at <https://myaccount.google.com/permissions> and reconnect. |
-| Auth works, then breaks ~7 days later | Consent screen still in **Testing**. Publish the app (step 3) and reconnect. |
+| Auth works, then breaks ~7 days later | Consent screen still in **Testing**. Publish the app (step 3) and reconnect. The worker stamps the channel **needs reconnect** on `/admin/youtube` the moment Google answers `invalid_grant`; **Check connection** there re-tests the stored token on demand. |
 | `livePermissionBlocked` / `liveStreamingNotEnabled` | Step 0 not done, or the 24h wait hasn't elapsed, or you authorized the wrong channel (personal vs Brand Account). |
 | Run sits on **AWAITING INGEST** forever | That's the OBS side, not YouTube — see [obs-setup.md](obs-setup.md). The panel will show the stream key to paste manually. |
-| `quotaExceeded` | Default is 10,000 units/day. Each go-live costs ~200 units (insert 50 + insert 50 + bind 50 + transition 50); health polling is 1 unit per ~30s. That's fine for normal use; request more quota in the console if you're cycling broadcasts hard. |
+| `quotaExceeded` / everything YouTube fails from mid-morning until ~08:00 UK | The project's **10,000 units/day** quota is spent (it resets at midnight Pacific). Go-live ≈ 200 units, health ≈ 1 unit / 2 min per stream — but **live-chat polling** at YouTube's suggested 2–5 s is ~90,000 units/day *per live run*, so with chat on the quota is gone within hours. The worker now meters spend (Redis, per Pacific day) and stretches chat polling to fit the remaining budget (`YOUTUBE_CHAT_QUOTA_SHARE`, `YOUTUBE_QUOTA_RESERVE` in `.env.sample`); once Google answers `quotaExceeded` it stops calling until the reset and persistent slots hold instead of piling up failed runs. **Check connection** on `/admin/youtube` shows today's count. For snappy chat on several constant streams, request a quota extension (APIs & Services → YouTube Data API → Quotas → *Apply for higher quota*), then raise `YOUTUBE_QUOTA_DAILY`. |
 | "connect a YouTube channel first" when going live | No account stored — do step 6. |
+
+**Do tokens need refreshing?** No — the worker stores only the long-lived *refresh*
+token and google-auth-library mints a fresh access token before each call that
+needs one (and retries once after a forced refresh if Google answers 401/403
+anyway). The two things that DO stop the API "after a while" are the daily quota
+(above) and a refresh token that Google has expired (Testing-mode consent screen)
+or that you revoked — both are now visible on `/admin/youtube`.
 
 **To disconnect:** `/admin/streams` → Disconnect. Also revoke at
 <https://myaccount.google.com/permissions> if you want it gone from the Google side.

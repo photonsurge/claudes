@@ -17,7 +17,7 @@ import MuiLink from "@mui/material/Link";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { connectYoutube, disconnectYoutube } from "../../../lib/stream";
+import { checkYoutube, connectYoutube, disconnectYoutube, type YoutubeCheck } from "../../../lib/stream";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import { font } from "../../../theme/tokens";
 
@@ -30,13 +30,30 @@ interface YtStatus {
   tokenEncryption: boolean;
   obsConfigured: boolean;
   obsUrl: string | null;
-  accounts: { channelId: string; channelTitle: string | null; connectedAt: number | null; connectedBy: string | null; scopes: string[] }[];
+  accounts: {
+    channelId: string;
+    channelTitle: string | null;
+    connectedAt: number | null;
+    connectedBy: string | null;
+    scopes: string[];
+    /** Worker-stamped when Google rejected the refresh token — the channel needs reconnecting. */
+    authError: { kind: string; message: string; at: number } | null;
+    lastOkAt: number | null;
+  }[];
 }
 
 export default function YoutubePage() {
   const [status, setStatus] = useState<YtStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ connected?: string; oauthError?: string }>({});
+  // Per-channel "Check connection" state (worker-side token mint + 1-unit API call).
+  const [checks, setChecks] = useState<Record<string, { busy?: boolean; result?: YoutubeCheck }>>({});
+  const runCheck = async (channelId: string) => {
+    setChecks((c) => ({ ...c, [channelId]: { busy: true } }));
+    const result = await checkYoutube(channelId);
+    setChecks((c) => ({ ...c, [channelId]: { result } }));
+    refresh(); // the check may have stamped/cleared authError
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -142,7 +159,11 @@ export default function YoutubePage() {
           {status?.accounts.map((a) => (
             <Paper key={a.channelId} variant="outlined" sx={{ p: 1.5 }}>
               <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-                <Chip color="success" size="small" label="connected" />
+                {a.authError ? (
+                  <Chip color="error" size="small" label="needs reconnect" />
+                ) : (
+                  <Chip color="success" size="small" label="connected" />
+                )}
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                     {a.channelTitle || a.channelId}
@@ -151,8 +172,12 @@ export default function YoutubePage() {
                     {a.channelId}
                     {a.connectedAt ? ` · ${new Date(a.connectedAt).toLocaleString()}` : ""}
                     {a.connectedBy ? ` · ${a.connectedBy}` : ""}
+                    {a.lastOkAt ? ` · last OK ${new Date(a.lastOkAt).toLocaleString()}` : ""}
                   </Typography>
                 </Box>
+                <Button variant="outlined" size="small" disabled={!!checks[a.channelId]?.busy} onClick={() => runCheck(a.channelId)}>
+                  {checks[a.channelId]?.busy ? "Checking…" : "Check connection"}
+                </Button>
                 <Button
                   variant="outlined"
                   color="error"
@@ -167,11 +192,44 @@ export default function YoutubePage() {
                   Disconnect
                 </Button>
               </Stack>
+              {a.authError && (
+                <Alert severity="error" sx={{ mt: 1 }}>
+                  Google rejected the stored token on {new Date(a.authError.at).toLocaleString()}: {a.authError.message}.{" "}
+                  Click <strong>Connect another</strong> and authorize this channel again (a consent screen still in{" "}
+                  <em>Testing</em> expires tokens after 7 days — see docs/youtube-setup.md).
+                </Alert>
+              )}
+              {checks[a.channelId]?.result && <CheckResult r={checks[a.channelId].result!} />}
             </Paper>
           ))}
         </Stack>
       </Paper>
     </AdminPageShell>
+  );
+}
+
+/** Outcome of a "Check connection" run: token, API, and today's quota at a glance. */
+function CheckResult({ r }: { r: YoutubeCheck }) {
+  const q = r.quota;
+  const fmt = (ms: number) => new Date(ms).toLocaleString();
+  return (
+    <Alert severity={r.ok ? "success" : "warning"} sx={{ mt: 1 }}>
+      <Stack spacing={0.25}>
+        <Check ok={r.tokenOk} label="Refresh token" detail={r.tokenOk ? `mints access tokens${r.tokenExpiresAt ? ` (current one until ${fmt(r.tokenExpiresAt)})` : ""}` : r.error} />
+        <Check ok={r.apiOk} label="Data API" detail={r.apiOk ? `reachable${r.channelTitle ? ` as ${r.channelTitle}` : ""}` : r.error} />
+        {q && (
+          <Check
+            ok={!q.exhaustedUntil}
+            warnOnly={!q.exhaustedUntil && q.spent > q.budget * 0.8}
+            label="Quota today"
+            detail={
+              `${q.spent.toLocaleString()} / ${q.budget.toLocaleString()} units (worker-side count) · resets ${fmt(q.resetAt)}` +
+              (q.exhaustedUntil ? ` · EXHAUSTED until ${fmt(q.exhaustedUntil)}` : "")
+            }
+          />
+        )}
+      </Stack>
+    </Alert>
   );
 }
 
