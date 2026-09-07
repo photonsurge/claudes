@@ -32,7 +32,16 @@ import { emitWorkerEvent } from "../socket";
 import { startMonitor, stopMonitor, stopAllMonitors } from "./monitor";
 import { queueAnnounce } from "./announce";
 import { startChatPoll, stopChatPoll } from "./chat";
-import { ObsUnavailableError, setStreamKey, startStream, stopStream, getStatus, type ObsStreamStatus } from "../obs/client";
+import {
+  ObsUnavailableError,
+  setStreamKey,
+  startStream,
+  stopStream,
+  getStatus,
+  lastStreamStateFor,
+  outputInFlight,
+  type ObsStreamStatus,
+} from "../obs/client";
 import { endpointForRun, provisionEncoderScene } from "./encoders";
 import {
   getYoutubeClient,
@@ -53,6 +62,10 @@ const YT_HEALTH_EVERY = 6; // refresh YouTube health ~every 30s (spare API quota
 // Unbounded (persistent) runs poll YouTube health ~every 2 min instead — three
 // always-on streams at 30s would eat ~8.6k of the 10k/day default quota alone.
 const YT_HEALTH_EVERY_UNBOUNDED = 24;
+// Confirm ticks an OBS output may sit inactive (not reconnecting) after StartStream
+// before we call it dead — RTMP connect + encoder init take a few seconds, and
+// GetStreamStatus.outputActive only flips once data capture begins.
+const OBS_OUTPUT_GRACE_TICKS = 4; // ≈12s at CONFIRM_POLL_MS
 
 const autoEndJobId = (runId: string) => `run-end-${runId}`;
 
@@ -155,6 +168,7 @@ async function failRun(runId: string, step: string, err: unknown): Promise<void>
   const run = await db.getRun(runId);
   if (run) emitRunState(run);
   stopMonitor(runId);
+  confirmState.delete(runId);
 }
 
 // ---- go live ----
@@ -241,8 +255,10 @@ async function configureAndStartObs(run: Run, server: string, key: string): Prom
       log(TAG, `OBS auto-provision skipped for run ${run.id}: ${String((e as Error)?.message ?? e)}`);
     }
     await setStreamKey(ep, server, key);
+    log(TAG, `run ${run.id}: OBS ${ep.url} stream settings set → ${server} (key …${key.slice(-4)})`);
     await persistPhase(run.id, "obs-config", { obs: { ...(run.obs ?? {}), configured: true, streaming: false } });
     await startStream(ep);
+    log(TAG, `run ${run.id}: StartStream accepted by OBS ${ep.url} — waiting for its output, then YouTube ingest`);
     await persistPhase(run.id, "obs-start", { obs: { configured: true, streaming: true } });
   } catch (err) {
     if (err instanceof ObsUnavailableError) {
@@ -268,6 +284,9 @@ async function monitorTick(runId: string): Promise<number> {
   return HEARTBEAT_MS; // scheduled / ending — idle
 }
 
+// Per-run confirm bookkeeping (in-process, like the monitors themselves).
+const confirmState = new Map<string, { inactiveTicks: number; ingest?: string }>();
+
 async function confirmTick(run: Run): Promise<number> {
   const yt = run.platforms?.youtube;
   if (!yt?.streamId || !yt.broadcastId) return HEARTBEAT_MS;
@@ -275,12 +294,14 @@ async function confirmTick(run: Run): Promise<number> {
   let obs: ObsStreamStatus | undefined;
   try {
     obs = await getStatus(await endpointForRun(run));
+    run = await reconcileObsOutput(run, obs);
   } catch {
     /* OBS may be unreachable during manual handoff — keep polling YouTube */
   }
   try {
     const ctx = await getYoutubeClient(yt.accountId);
     const { streamStatus, health } = await getStreamStatus(ctx, yt.streamId);
+    noteIngestStatus(run.id, streamStatus);
     emitHealth(run, obs, { health, streamStatus });
     if (streamStatus === "active") {
       const committed = await transitionToLive(run, ctx);
@@ -290,6 +311,64 @@ async function confirmTick(run: Run): Promise<number> {
     log(TAG, `confirm error ${run.id}`, String((err as Error)?.message ?? err));
   }
   return CONFIRM_POLL_MS;
+}
+
+/** Log YouTube's ingest status for a run whenever it changes (inactive → ready → active). */
+function noteIngestStatus(runId: string, streamStatus: string | undefined): void {
+  const st = confirmState.get(runId) ?? { inactiveTicks: 0 };
+  if (st.ingest !== streamStatus) {
+    log(TAG, `run ${runId}: YouTube ingest ${st.ingest ?? "?"} → ${streamStatus ?? "?"}`);
+    st.ingest = streamStatus;
+  }
+  confirmState.set(runId, st);
+}
+
+/**
+ * Compare what OBS says about its streaming output with what the run believes.
+ * obs-websocket's StartStream is fire-and-forget: OBS accepts it and only later
+ * fails (encoder init, RTMP connect…), which the worker would otherwise never
+ * see — the run would sit in awaiting-ingest with no clue why. So an output we
+ * started that is neither active nor reconnecting (past a short grace, or as soon
+ * as OBS's own StreamStateChanged says STOPPED) is flagged on the run — visible on
+ * /admin/streams + /control — and logged with OBS's last state. The flag clears
+ * itself the moment OBS's output is running (operator restarted it by hand).
+ */
+async function reconcileObsOutput(run: Run, obs: ObsStreamStatus): Promise<Run> {
+  const believed = !!run.obs?.streaming;
+  const actual = obs.outputActive || obs.outputReconnecting;
+  const st = confirmState.get(run.id) ?? { inactiveTicks: 0 };
+  st.inactiveTicks = actual ? 0 : st.inactiveTicks + 1;
+  confirmState.set(run.id, st);
+  if (believed === actual) return run;
+
+  const db = await getAppDb();
+  if (!actual) {
+    const ep = await endpointForRun(run).catch(() => null);
+    const last = ep ? lastStreamStateFor(ep.url) : undefined;
+    // Still coming up (OBS said STARTING / RECONNECTING, or no verdict yet within grace)? Wait.
+    if (outputInFlight(last)) return run;
+    const stopped = !!last && !last.outputActive;
+    if (!stopped && st.inactiveTicks < OBS_OUTPUT_GRACE_TICKS) return run;
+
+    const message =
+      "OBS accepted StartStream but its streaming output is not running" +
+      (last ? ` (last OBS state: ${last.outputState})` : "") +
+      " — check the OBS log on the encoder host (encoder init / RTMP connect failure), then press Start Streaming in OBS or Stop and Go Live again";
+    log(TAG, `run ${run.id}: ${message}`);
+    await db.updateRun(run.id, {
+      obs: { ...(run.obs ?? { configured: false }), streaming: false },
+      error: { step: "obs-output", message, at: Date.now() },
+    });
+  } else {
+    log(TAG, `run ${run.id}: OBS streaming output is running (active=${obs.outputActive}, reconnecting=${obs.outputReconnecting})`);
+    await db.updateRun(run.id, {
+      obs: { ...(run.obs ?? { configured: false }), streaming: true },
+      error: run.error?.step === "obs-output" ? null : (run.error ?? null),
+    });
+  }
+  const cur = await db.getRun(run.id);
+  if (cur) emitRunState(cur);
+  return cur ?? run;
 }
 
 /** Drive YouTube from ready→(testing→)live. Returns true once the run is committed live. */
@@ -393,6 +472,7 @@ export async function finishRun(runId: string, reason: "manual" | "auto"): Promi
     stopMonitor(runId);
     stopChatPoll(runId);
     healthTicks.delete(runId);
+    confirmState.delete(runId);
     return;
   }
 
@@ -424,6 +504,7 @@ export async function finishRun(runId: string, reason: "manual" | "auto"): Promi
   stopMonitor(runId);
   stopChatPoll(runId);
   healthTicks.delete(runId);
+  confirmState.delete(runId);
 }
 
 // ---- boot reconciler ----

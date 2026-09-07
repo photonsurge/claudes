@@ -18,6 +18,8 @@ jest.mock("../obs/client", () => {
     setStreamKey: jest.fn(async () => {}),
     startStream: jest.fn(async () => {}),
     stopStream: jest.fn(async () => {}),
+    lastStreamStateFor: jest.fn(() => undefined),
+    outputInFlight: jest.fn((st: any) => !!st && /_(STARTING|RECONNECTING)$/.test(st.outputState)),
     getStatus: jest.fn(async () => ({
       outputActive: true,
       outputReconnecting: false,
@@ -75,8 +77,29 @@ const db = {
 jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: jest.fn(async () => db) }));
 
 import { goLive, finishRun } from "./lifecycle";
+import { startMonitor } from "./monitor";
 import * as obs from "../obs/client";
 import * as yt from "../youtube/client";
+
+const OBS_IDLE = {
+  outputActive: false,
+  outputReconnecting: false,
+  outputBytes: 0,
+  outputSkippedFrames: 0,
+  outputTotalFrames: 0,
+  outputDurationMs: 0,
+  outputCongestion: 0,
+};
+const OBS_ACTIVE = { ...OBS_IDLE, outputActive: true };
+
+/** goLive a fresh run and hand back the monitor tick the orchestrator registered for it. */
+async function goLiveAndGetTick(id: string): Promise<() => Promise<number>> {
+  runs.set(id, { id, sceneId: "default", status: "scheduled", phase: "created", platforms: { youtube: {} }, durationMs: null });
+  await goLive(id);
+  const call = (startMonitor as jest.Mock).mock.calls.find((c) => c[0] === id);
+  if (!call) throw new Error("monitor not started");
+  return call[1];
+}
 
 const setRun = (r: any) => runs.set(r.id, r);
 
@@ -179,6 +202,80 @@ describe("goLive", () => {
     expect(yt.createBroadcast).not.toHaveBeenCalled();
     expect(yt.createStream).not.toHaveBeenCalled();
     expect(yt.bindBroadcast).toHaveBeenCalledTimes(1); // bind is idempotent, re-run is safe
+  });
+});
+
+describe("confirm tick (awaiting-ingest)", () => {
+  it("commits live once YouTube reports active ingest", async () => {
+    const tick = await goLiveAndGetTick("c1");
+    (obs.getStatus as jest.Mock).mockResolvedValue(OBS_ACTIVE);
+    (yt.getStreamStatus as jest.Mock).mockResolvedValue({ streamStatus: "active", health: "good" });
+    await tick();
+    expect(runs.get("c1").status).toBe("live");
+    expect(runs.get("c1").error).toBeNull();
+  });
+
+  it("flags an OBS output that never came up after StartStream — after a grace, run stays awaiting", async () => {
+    const tick = await goLiveAndGetTick("c2");
+    (obs.getStatus as jest.Mock).mockResolvedValue(OBS_IDLE); // StartStream was accepted, output never started
+    (yt.getStreamStatus as jest.Mock).mockResolvedValue({ streamStatus: "ready" });
+
+    // Within grace: RTMP connect / encoder init still plausible → no verdict yet.
+    await tick();
+    await tick();
+    await tick();
+    expect(runs.get("c2").error).toBeUndefined();
+    expect(runs.get("c2").obs).toMatchObject({ configured: true, streaming: true });
+
+    await tick();
+    const run = runs.get("c2");
+    expect(run.status).toBe("awaiting-ingest"); // NOT failed — operator can still fix OBS
+    expect(run.obs).toMatchObject({ configured: true, streaming: false });
+    expect(run.error).toMatchObject({ step: "obs-output" });
+    expect(run.error.message).toMatch(/not running/);
+  });
+
+  it("flags immediately when OBS itself reported the output STOPPED", async () => {
+    const tick = await goLiveAndGetTick("c3");
+    (obs.getStatus as jest.Mock).mockResolvedValue(OBS_IDLE);
+    (obs.lastStreamStateFor as jest.Mock).mockReturnValue({
+      outputActive: false,
+      outputState: "OBS_WEBSOCKET_OUTPUT_STOPPED",
+      at: Date.now(),
+    });
+    (yt.getStreamStatus as jest.Mock).mockResolvedValue({ streamStatus: "ready" });
+    await tick();
+    expect(runs.get("c3").error).toMatchObject({ step: "obs-output" });
+    expect(runs.get("c3").error.message).toContain("OBS_WEBSOCKET_OUTPUT_STOPPED");
+  });
+
+  it("waits while OBS says the output is still STARTING, and clears the flag once it runs", async () => {
+    const tick = await goLiveAndGetTick("c4");
+    (obs.getStatus as jest.Mock).mockResolvedValue(OBS_IDLE);
+    (obs.lastStreamStateFor as jest.Mock).mockReturnValue({
+      outputActive: false,
+      outputState: "OBS_WEBSOCKET_OUTPUT_STARTING",
+      at: Date.now(),
+    });
+    (yt.getStreamStatus as jest.Mock).mockResolvedValue({ streamStatus: "ready" });
+    for (let i = 0; i < 6; i++) await tick();
+    expect(runs.get("c4").error).toBeUndefined(); // in flight — never flagged
+
+    // Now it dies…
+    (obs.lastStreamStateFor as jest.Mock).mockReturnValue({
+      outputActive: false,
+      outputState: "OBS_WEBSOCKET_OUTPUT_STOPPED",
+      at: Date.now(),
+    });
+    await tick();
+    expect(runs.get("c4").error).toMatchObject({ step: "obs-output" });
+
+    // …and the operator presses Start Streaming in OBS by hand.
+    (obs.getStatus as jest.Mock).mockResolvedValue(OBS_ACTIVE);
+    await tick();
+    expect(runs.get("c4").error).toBeNull();
+    expect(runs.get("c4").obs).toMatchObject({ streaming: true });
+    expect(runs.get("c4").status).toBe("awaiting-ingest"); // YouTube still hasn't seen bytes
   });
 });
 

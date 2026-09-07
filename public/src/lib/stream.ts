@@ -146,6 +146,10 @@ export interface ObsTestResult {
   websocketVersion?: string;
   streaming?: boolean;
   outputBytes?: number;
+  /** Settings → Stream as OBS holds it (server only — never the key). */
+  service?: { type: string; server?: string; keySet: boolean };
+  /** Last StreamStateChanged OBS pushed to the worker (e.g. OBS_WEBSOCKET_OUTPUT_STOPPED). */
+  lastState?: string;
   error?: string;
 }
 

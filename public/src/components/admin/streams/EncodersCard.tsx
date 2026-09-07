@@ -238,7 +238,7 @@ function EncoderRow({
         {test && (
           <ResultLine ok={test.reachable}>
             {test.reachable
-              ? `reached ${test.url} — OBS ${test.obsVersion} (ws ${test.websocketVersion}) · ${test.streaming ? "streaming now" : "idle"}`
+              ? `reached ${test.url} — OBS ${test.obsVersion} (ws ${test.websocketVersion}) · ${test.streaming ? "streaming now" : "idle"}${describeService(test)}`
               : test.error}
           </ResultLine>
         )}
@@ -254,6 +254,17 @@ function EncoderRow({
       </Stack>
     </Paper>
   );
+}
+
+/** " · stream: rtmp_custom → rtmp://… (key set) · last: OBS_WEBSOCKET_OUTPUT_STOPPED" from a probe. */
+function describeService(test: ObsTestResult): string {
+  const parts: string[] = [];
+  if (test.service) {
+    const { type, server, keySet } = test.service;
+    parts.push(`stream: ${type}${server ? ` → ${server}` : ""} (${keySet ? "key set" : "no key"})`);
+  }
+  if (test.lastState) parts.push(`last: ${test.lastState.replace(/^OBS_WEBSOCKET_OUTPUT_/, "").toLowerCase()}`);
+  return parts.length ? ` · ${parts.join(" · ")}` : "";
 }
 
 function ResultLine({ ok, children }: { ok: boolean; children: ReactNode }) {

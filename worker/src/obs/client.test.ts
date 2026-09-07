@@ -1,6 +1,6 @@
 // Unit tests for the browser-source settings policy (pure functions only — the
 // websocket plumbing is exercised via the lifecycle's manual-handoff paths).
-import { browserSourceFps, browserSourceSettings } from "./client";
+import { browserSourceFps, browserSourceSettings, outputInFlight, redactObsValue, summarizeObsValue } from "./client";
 
 const BASE = { url: "http://localhost:10100/watch/main?token=t", width: 1920, height: 1080 };
 
@@ -64,5 +64,41 @@ describe("browserSourceSettings", () => {
   it("always enforces url/size/reroute_audio — runs depend on them", () => {
     const out = browserSourceSettings(BASE, { reroute_audio: false, url: "http://stale" });
     expect(out).toMatchObject({ ...BASE, reroute_audio: true });
+  });
+});
+
+describe("websocket traffic log helpers", () => {
+  it("redacts the stream key + passwords at any depth, keeps everything else", () => {
+    const out = redactObsValue({
+      streamServiceType: "rtmp_custom",
+      streamServiceSettings: { server: "rtmp://a.rtmp.youtube.com/live2", key: "abcd-efgh-ijkl", use_auth: false },
+      password: "hunter2",
+      list: [{ key: "x" }],
+    }) as any;
+    expect(out.streamServiceSettings.server).toBe("rtmp://a.rtmp.youtube.com/live2");
+    expect(out.streamServiceSettings.key).toBe("…ijkl");
+    expect(out.streamServiceSettings.use_auth).toBe(false);
+    expect(out.password).toBe("…ter2");
+    expect(out.list[0].key).toBe("…");
+    expect(JSON.stringify(out)).not.toContain("abcd-efgh");
+  });
+
+  it("passes primitives / undefined through and bounds long values", () => {
+    expect(redactObsValue(undefined)).toBeUndefined();
+    expect(redactObsValue("x")).toBe("x");
+    expect(summarizeObsValue(undefined)).toBe("");
+    expect(summarizeObsValue({ a: 1 })).toBe('{"a":1}');
+    const big = summarizeObsValue({ scenes: Array.from({ length: 200 }, (_, i) => ({ sceneName: `scene ${i}` })) }, 50);
+    expect(big.length).toBeLessThan(90);
+    expect(big).toMatch(/…\(\d+ chars\)$/);
+  });
+
+  it("treats STARTING/RECONNECTING as in flight, STARTED/STOPPED as settled", () => {
+    const st = (outputState: string) => ({ outputActive: false, outputState, at: 0 });
+    expect(outputInFlight(undefined)).toBe(false);
+    expect(outputInFlight(st("OBS_WEBSOCKET_OUTPUT_STARTING"))).toBe(true);
+    expect(outputInFlight(st("OBS_WEBSOCKET_OUTPUT_RECONNECTING"))).toBe(true);
+    expect(outputInFlight(st("OBS_WEBSOCKET_OUTPUT_STOPPED"))).toBe(false);
+    expect(outputInFlight(st("OBS_WEBSOCKET_OUTPUT_STARTED"))).toBe(false);
   });
 });

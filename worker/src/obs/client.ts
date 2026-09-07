@@ -21,6 +21,112 @@ import { log } from "@photonsurge/shared/utill/logger";
 const TAG = "obs";
 const CONNECT_TIMEOUT_MS = 4_000;
 
+/**
+ * Websocket traffic log. Every request the worker sends an OBS instance and every
+ * state event OBS pushes back is logged (`→ url Request …` / `← url Request ok 12ms …`),
+ * with the stream key and any password redacted. GetStreamStatus is polled every
+ * few seconds per run, so by default it is logged only when the answer CHANGES;
+ * `OBS_WS_LOG=all` logs every poll verbatim, `OBS_WS_LOG=off` silences request
+ * logging (failures + events always log). Why: obs-websocket's StartStream is
+ * fire-and-forget — OBS accepts it and only later fails (encoder init, RTMP
+ * connect…) — so the traffic log is the worker-side record of what OBS was told
+ * and what it said back.
+ */
+type WsLogMode = "default" | "all" | "off";
+function wsLogMode(): WsLogMode {
+  const v = (process.env.OBS_WS_LOG || "").toLowerCase();
+  return v === "all" || v === "off" ? v : "default";
+}
+const LOG_MAX = 400;
+const POLL_REQUESTS = new Set(["GetStreamStatus", "GetOutputStatus"]);
+const SECRET_KEYS = /^(key|password|streamKey|server_password|bearer_token)$/i;
+
+/** Strip secrets from a request/response object before it hits a log line. */
+export function redactObsValue(data: unknown): unknown {
+  if (!data || typeof data !== "object") return data;
+  if (Array.isArray(data)) return data.map(redactObsValue);
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+    if (SECRET_KEYS.test(k) && typeof v === "string") out[k] = v.length > 4 ? `…${v.slice(-4)}` : "…";
+    else out[k] = redactObsValue(v);
+  }
+  return out;
+}
+
+/** Compact one-line JSON for a log line, bounded (scene/input lists can be huge). */
+export function summarizeObsValue(v: unknown, max = LOG_MAX): string {
+  if (v === undefined) return "";
+  let s: string | undefined;
+  try {
+    s = JSON.stringify(v);
+  } catch {
+    s = String(v);
+  }
+  if (s === undefined) return "";
+  return s.length > max ? `${s.slice(0, max)}…(${s.length} chars)` : s;
+}
+
+/** Last `StreamStateChanged` an OBS instance pushed to this worker. */
+export interface ObsStreamState {
+  outputActive: boolean;
+  outputState: string; // OBS_WEBSOCKET_OUTPUT_STARTING | STARTED | STOPPING | STOPPED | RECONNECTING | RECONNECTED
+  at: number;
+}
+const lastStreamState = new Map<string, ObsStreamState>();
+
+/** The last streaming-output state event OBS at `url` sent (since we connected), if any. */
+export function lastStreamStateFor(url: string): ObsStreamState | undefined {
+  return lastStreamState.get(url);
+}
+
+/** True while OBS's last event says the output is still coming up / reconnecting. */
+export function outputInFlight(state: ObsStreamState | undefined): boolean {
+  return !!state && /_(STARTING|RECONNECTING)$/.test(state.outputState);
+}
+
+function pollSignature(res: unknown): string {
+  const r = (res ?? {}) as Record<string, unknown>;
+  return summarizeObsValue({ outputActive: r.outputActive, outputReconnecting: r.outputReconnecting });
+}
+
+/**
+ * Monkey-patch `call` on one client so every request → response (or failure) is
+ * logged for that url. Polls are de-duplicated (logged on change) unless
+ * OBS_WS_LOG=all.
+ */
+function installCallLogging(obs: OBSWebSocket, url: string): void {
+  const raw = obs.call.bind(obs) as (requestType: string, requestData?: unknown) => Promise<unknown>;
+  const lastPoll = new Map<string, string>();
+  const wrapped = async (requestType: string, requestData?: unknown): Promise<unknown> => {
+    const mode = wsLogMode();
+    const isPoll = POLL_REQUESTS.has(requestType);
+    const verbose = mode === "all" || (mode === "default" && !isPoll);
+    if (verbose) {
+      const params = requestData === undefined ? "" : ` ${summarizeObsValue(redactObsValue(requestData))}`;
+      log(TAG, `→ ${url} ${requestType}${params}`);
+    }
+    const t0 = Date.now();
+    try {
+      const res = await raw(requestType, requestData);
+      const ms = Date.now() - t0;
+      if (verbose) {
+        log(TAG, `← ${url} ${requestType} ok ${ms}ms ${summarizeObsValue(redactObsValue(res))}`.trimEnd());
+      } else if (mode === "default" && isPoll) {
+        const sig = pollSignature(res);
+        if (lastPoll.get(requestType) !== sig) {
+          lastPoll.set(requestType, sig);
+          log(TAG, `← ${url} ${requestType} changed: ${sig}`);
+        }
+      }
+      return res;
+    } catch (err) {
+      log(TAG, `← ${url} ${requestType} FAILED ${Date.now() - t0}ms: ${String((err as Error)?.message ?? err)}`);
+      throw err;
+    }
+  };
+  obs.call = wrapped as typeof obs.call;
+}
+
 /** Thrown when OBS can't be reached — the orchestrator branches to manual handoff. */
 export class ObsUnavailableError extends Error {
   constructor(message: string) {
@@ -66,6 +172,7 @@ export function envEndpoint(): ObsEndpoint | null {
 }
 
 function reset(url: string) {
+  lastStreamState.delete(url); // events stop with the connection — don't report a stale one
   const conn = conns.get(url);
   if (!conn) return;
   if (conn.client) {
@@ -87,11 +194,20 @@ async function ensure(ep: ObsEndpoint): Promise<OBSWebSocket> {
   if (conn?.connecting) return conn.connecting;
 
   const obs = new OBSWebSocket();
+  installCallLogging(obs, url);
   obs.on("ConnectionClosed", () => {
     log(TAG, "connection closed", url);
     if (conns.get(url)?.client === obs) reset(url);
   });
   obs.on("ConnectionError", (err: unknown) => log(TAG, "connection error", `${url}: ${String(err)}`));
+  obs.on("Identified", (d) => log(TAG, `${url} identified (rpc v${d.negotiatedRpcVersion})`));
+  // The one event that answers "did StartStream actually take?" — OBS reports the
+  // output's real lifecycle here, long after the request itself returned OK.
+  obs.on("StreamStateChanged", (d) => {
+    lastStreamState.set(url, { outputActive: !!d.outputActive, outputState: String(d.outputState), at: Date.now() });
+    log(TAG, `${url} event StreamStateChanged ${d.outputState} (active=${d.outputActive})`);
+  });
+  obs.on("ExitStarted", () => log(TAG, `${url} event ExitStarted — OBS is shutting down`));
 
   conn = { client: null, connecting: null };
   conns.set(url, conn);
@@ -180,6 +296,10 @@ export interface ObsProbe {
   websocketVersion: string;
   streaming: boolean;
   outputBytes: number;
+  /** Settings → Stream as OBS holds it right now (server only — the key never leaves the worker). */
+  service?: { type: string; server?: string; keySet: boolean };
+  /** Last StreamStateChanged OBS pushed to this worker, e.g. OBS_WEBSOCKET_OUTPUT_STOPPED. */
+  lastState?: string;
 }
 
 /**
@@ -191,11 +311,25 @@ export async function probe(ep: ObsEndpoint): Promise<ObsProbe> {
   return withObs(ep, async (obs) => {
     const v = await obs.call("GetVersion");
     const s = await obs.call("GetStreamStatus");
+    let service: ObsProbe["service"];
+    try {
+      const svc = await obs.call("GetStreamServiceSettings");
+      const st = (svc.streamServiceSettings ?? {}) as Record<string, unknown>;
+      service = {
+        type: String(svc.streamServiceType ?? "?"),
+        server: typeof st.server === "string" ? st.server : undefined,
+        keySet: typeof st.key === "string" && st.key.length > 0,
+      };
+    } catch {
+      /* optional readout — an odd build without it must not fail the probe */
+    }
     return {
       obsVersion: String(v.obsVersion ?? "?"),
       websocketVersion: String(v.obsWebSocketVersion ?? "?"),
       streaming: !!s.outputActive,
       outputBytes: Number(s.outputBytes ?? 0),
+      service,
+      lastState: lastStreamState.get(ep.url)?.outputState,
     };
   });
 }
