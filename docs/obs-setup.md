@@ -16,13 +16,19 @@ actually pushes pixels to YouTube.
 - presses **Start Streaming** / **Stop Streaming**
 - reads status (bitrate, dropped frames, uptime) for the health readout
 - auto-provisions **its own** capture scene (`PhotonSurge — <scene>`) with a
-  full-canvas browser source on the channel's tokened /watch URL, created with
-  sane performance defaults (30fps custom frame rate, shutdown-on-hidden off —
-  see the performance section below). On re-provision it only fills in settings
-  you've never touched, so your hand-set tweaks on that source stick.
+  full-canvas browser source on the channel's tokened /watch URL, with managed
+  performance settings (30fps custom frame rate, shutdown-on-hidden off — see
+  the performance section below)
+- **hard-resets that source at every go-live** (constant-stream relaunches and
+  recycles included): any stale streaming output is stopped first, then the
+  browser source is torn down and rebuilt — a fresh Chromium with zero
+  accumulated state, your custom CSS carried over. `OBS_HARD_PROVISION=off`
+  falls back to a settings-restamp + no-cache refresh.
 
-It does **not** touch any other scene or source, and never your encoder
-settings. You own those.
+It owns the settings it stamps on that one source (URL, size, fps, visibility
+flags, audio reroute — your custom CSS and other tweaks survive). It does
+**not** touch any other scene or source, and never your encoder settings. You
+own those.
 
 ---
 
@@ -188,15 +194,30 @@ instance.
 
 **What the app does automatically:**
 
-- **Auto-provisioned sources are capped at a 30fps custom frame rate** (set
-  `OBS_BROWSER_FPS` in the root `.env` to override, 10–60). Everything animated
-  on /watch — the spin, wind particles, label projection, pulses — runs off
+- **Auto-provisioned sources run a 30fps custom frame rate**, and
+  `OBS_BROWSER_FPS` in the root `.env` (10–60) is THE knob: it is re-stamped on
+  every provision, so bump it, restart the worker, and the next
+  go-live/recycle applies it to every managed source. Everything animated on
+  /watch — the spin, wind particles, label projection, pulses — runs off
   `requestAnimationFrame`, so CEF's paint cap throttles the *whole page's*
-  render work to the stream's real output rate instead of Chromium's default 60.
-  Sources where you already ticked "Use custom frame rate" yourself are left
-  exactly as you set them.
+  render work to the stream's real output rate instead of Chromium's default
+  60. (Want a manually-tuned source instead? Build one under your own name —
+  provisioning only ever touches `PhotonSurge globe — <scene>`.)
 - **Shutdown-on-hidden / refresh-on-activate stay off** on provisioned sources,
   so a scene switch never reloads the globe (black frame + texture refetch storm).
+- **Every go-live is a hard reset** (default; `OBS_HARD_PROVISION=off` reverts
+  to refresh-only): the browser source is removed and recreated, which kills
+  and respawns its CEF browser — hours of accumulated renderer state and memory
+  gone, page cold-started fresh on the new run's URL. A stale streaming output
+  from a crashed run is stopped before the new key is set, so a relaunch can
+  never keep pushing to a dead broadcast.
+
+**Pushing the frame rate up (1080p60):** set `OBS_BROWSER_FPS=60` + worker
+restart, and in EACH OBS instance set Settings → Video FPS to 60 and raise the
+stream bitrate to ~9000 Kbps (Step 5). Keep the two fps equal — a 60fps canvas
+over a 30fps source (or vice versa) buys nothing and doubles work on one side.
+Budget check first: 60fps doubles per-instance render AND encode cost, ×N
+constant streams.
 - **The page detects it's inside OBS** (CEF's `window.obsstudio`; force it in a
   normal browser with `?obs=1` on the watch URL) and switches to broadcast-render
   mode: backdrop-filter blurs behind the glass panels are dropped (a per-frame

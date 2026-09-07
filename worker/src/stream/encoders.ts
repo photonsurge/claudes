@@ -93,16 +93,22 @@ async function resolveEncoderScene(encoderId?: string): Promise<{
 /**
  * Full auto-provision an encoder's OBS: build the channel's tokened /watch URL and
  * push a full-canvas browser-source scene into that OBS instance (switching to it,
- * then a no-cache refresh). The scene/input are named after the channel so re-running
- * is idempotent — a rotated token just re-pushes the URL. Throws ObsUnavailableError
- * if OBS is unreachable (callers treat it as best-effort at go-live).
+ * then reloading the page). The scene/input are named after the channel so re-running
+ * is idempotent — a rotated token just re-pushes the URL. By default this is a HARD
+ * reset (the existing browser source is torn down and rebuilt, so every run starts
+ * on a fresh Chromium with zero accumulated state); `OBS_HARD_PROVISION=off` in the
+ * env — or `{ hard: false }` — falls back to a settings-restamp + no-cache refresh.
+ * Throws ObsUnavailableError if OBS is unreachable (callers treat it as best-effort
+ * at go-live).
  */
 export async function provisionEncoderScene(
   encoderId?: string,
+  opts?: { hard?: boolean },
 ): Promise<ProvisionResult & { url: string; sceneId: string }> {
   const { ep, sceneId, sceneName, inputName } = await resolveEncoderScene(encoderId);
   const url = await watchUrlForScene(sceneId);
-  const res = await provisionBrowserScene(ep, { url, sceneName, inputName });
+  const hard = opts?.hard ?? process.env.OBS_HARD_PROVISION !== "off";
+  const res = await provisionBrowserScene(ep, { url, sceneName, inputName, hard });
   return { ...res, url, sceneId };
 }
 

@@ -37,6 +37,7 @@ import {
   setStreamKey,
   startStream,
   stopStream,
+  ensureOutputStopped,
   getStatus,
   lastStreamStateFor,
   outputInFlight,
@@ -245,12 +246,28 @@ async function configureAndStartObs(run: Run, server: string, key: string): Prom
     // Resolving the endpoint throws ObsUnavailableError when the encoder is
     // missing/disabled/unconfigured — same manual-handoff branch as unreachable.
     const ep = await endpointForRun(run);
-    // Best-effort full auto-provision: make sure this OBS is showing the channel's
-    // tokened /watch URL before we start streaming. Never fail the run on this — if
-    // OBS is unreachable, setStreamKey below drives the same manual-handoff branch.
+    // Hard-reset the instance before configuring it. Step 1: a stale streaming
+    // output (a crashed run's leftover — the per-encoder guard means no live
+    // run of ours owns it) must stop first, or StartStream below would "already
+    // be streaming" to the OLD destination and the run would sit on AWAITING
+    // INGEST forever. Best-effort: unreachable OBS lands on the manual-handoff
+    // branch via setStreamKey below.
+    try {
+      if (await ensureOutputStopped(ep)) {
+        log(TAG, `run ${run.id}: stopped a stale OBS output on ${ep.url} before reconfiguring`);
+      }
+    } catch {
+      /* handled by setStreamKey's manual-handoff branch */
+    }
+    // Step 2: best-effort full auto-provision — by default a hard reset that
+    // rebuilds the browser source (fresh Chromium, zero accumulated state) on
+    // the channel's tokened /watch URL. Never fail the run on this.
     try {
       const p = await provisionEncoderScene(run.encoderId);
-      log(TAG, `provisioned OBS scene for run ${run.id}: "${p.sceneName}" → ${p.url}`);
+      log(
+        TAG,
+        `provisioned OBS scene for run ${run.id}: "${p.sceneName}" → ${p.url}${p.recreated ? " (hard reset: browser source rebuilt)" : ""}`,
+      );
     } catch (e) {
       log(TAG, `OBS auto-provision skipped for run ${run.id}: ${String((e as Error)?.message ?? e)}`);
     }

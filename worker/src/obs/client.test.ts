@@ -35,35 +35,38 @@ describe("browserSourceSettings", () => {
     });
   });
 
-  it("applies defaults on update when the source has never had them set", () => {
-    // A legacy auto-provisioned source only ever stored url/size/audio.
-    const existing = { url: "http://old", width: 1920, height: 1080, reroute_audio: true };
-    expect(browserSourceSettings(BASE, existing)).toMatchObject({
+  it("always restamps the managed keys, even over previously stored values", () => {
+    // Central tuning must WIN: bumping OBS_BROWSER_FPS applies on the next
+    // provision even to a source that was created back when the default was 30.
+    process.env.OBS_BROWSER_FPS = "60";
+    const existing = {
+      url: "http://stale",
+      reroute_audio: false,
       fps_custom: true,
       fps: 30,
+      shutdown: true,
+      restart_when_active: true,
+    };
+    expect(browserSourceSettings(BASE, existing)).toEqual({
+      ...BASE,
+      reroute_audio: true,
+      fps_custom: true,
+      fps: 60,
       shutdown: false,
       restart_when_active: false,
     });
   });
 
-  it("leaves an operator-owned frame rate alone (the fps pair travels together)", () => {
-    const out = browserSourceSettings(BASE, { fps_custom: true, fps: 60 });
-    expect(out).not.toHaveProperty("fps");
-    expect(out).not.toHaveProperty("fps_custom");
-    // Untouched keys still get their defaults.
-    expect(out).toMatchObject({ shutdown: false, restart_when_active: false });
+  it("carries unmanaged primitive tweaks (css…) forward across a recreate", () => {
+    const out = browserSourceSettings(BASE, { css: "body{background:#000}", zoom: 2, is_local_file: false });
+    expect(out).toMatchObject({ css: "body{background:#000}", zoom: 2, is_local_file: false });
   });
 
-  it("respects an explicit operator choice on the visibility flags", () => {
-    const out = browserSourceSettings(BASE, { shutdown: true, restart_when_active: true });
-    expect(out).not.toHaveProperty("shutdown");
-    expect(out).not.toHaveProperty("restart_when_active");
-    expect(out).toMatchObject({ fps_custom: true, fps: 30 });
-  });
-
-  it("always enforces url/size/reroute_audio — runs depend on them", () => {
-    const out = browserSourceSettings(BASE, { reroute_audio: false, url: "http://stale" });
-    expect(out).toMatchObject({ ...BASE, reroute_audio: true });
+  it("drops non-primitive unmanaged values and never lets existing override managed keys", () => {
+    const out = browserSourceSettings(BASE, { weird: { nested: 1 }, list: [1, 2], width: 640 });
+    expect(out).not.toHaveProperty("weird");
+    expect(out).not.toHaveProperty("list");
+    expect(out.width).toBe(1920);
   });
 });
 

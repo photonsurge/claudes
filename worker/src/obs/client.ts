@@ -274,6 +274,30 @@ export async function stopStream(ep: ObsEndpoint): Promise<void> {
   });
 }
 
+/**
+ * Go-live hard-reset guard: if this instance's streaming output is still active
+ * (a crashed/stale run's leftover — the per-encoder guard means no live run of
+ * ours should be on it), stop it and wait for it to settle, so the new stream
+ * key isn't set under a running output (OBS only reads the key at StartStream —
+ * a stale output would keep pushing to the OLD destination while the run sits
+ * on AWAITING INGEST forever). Returns true if a stale output was stopped;
+ * proceeds after `timeoutMs` even if it's still draining.
+ */
+export async function ensureOutputStopped(ep: ObsEndpoint, timeoutMs = 8_000): Promise<boolean> {
+  return withObs(ep, async (obs) => {
+    const status = await obs.call("GetStreamStatus");
+    if (!status.outputActive) return false;
+    await obs.call("StopStream");
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeoutMs) {
+      await new Promise((r) => setTimeout(r, 500));
+      const cur = await obs.call("GetStreamStatus");
+      if (!cur.outputActive) return true;
+    }
+    return true;
+  });
+}
+
 /** Current stream output status (for the health heartbeat). */
 export async function getStatus(ep: ObsEndpoint): Promise<ObsStreamStatus> {
   return withObs(ep, async (obs) => {
@@ -348,31 +372,59 @@ export function browserSourceFps(): number {
 }
 
 /**
- * Settings pushed onto the /watch browser source. `existing` is the input's
- * current OBS settings object (pass null/undefined when creating it): each perf
- * default is applied ONLY when that key has never been set on the source, so a
- * hand-tuned 60fps source stays the operator's — while every fresh provision
- * starts life sensible:
+ * Settings keys the app OWNS on its auto-provisioned browser source — stamped
+ * on every provision, so tuning is central (change `OBS_BROWSER_FPS`, restart
+ * the worker, and the next go-live applies it everywhere) instead of frozen
+ * into whatever each source happened to be created with:
+ *  - url/width/height → the tokened /watch URL at exact canvas size;
  *  - fps_custom+fps → CEF paints at the stream's real frame rate, not 60;
  *  - shutdown/restart_when_active off → a scene switch must never reload the
  *    globe (black frame + a full texture refetch storm);
  *  - reroute_audio → the page's audio bed reaches the stream mix instead of
- *    playing on the encoder host (always enforced — runs depend on it).
+ *    playing on the encoder host.
+ * Anything else (custom css, zoom…) is the operator's: soft updates preserve it
+ * via overlay:true, hard recreates carry it forward via `existing`. An operator
+ * who wants full manual control builds their own source under a different name
+ * — provisioning only ever touches `PhotonSurge globe — <scene>`.
+ */
+const MANAGED_KEYS = new Set([
+  "url",
+  "width",
+  "height",
+  "reroute_audio",
+  "fps_custom",
+  "fps",
+  "shutdown",
+  "restart_when_active",
+]);
+
+/**
+ * Settings pushed onto the /watch browser source. Managed keys (above) are
+ * always ours; pass `existing` (the input's current settings) on a recreate to
+ * carry the operator's unmanaged primitive tweaks (e.g. css) into the new input.
  */
 export function browserSourceSettings(
   base: { url: string; width: number; height: number },
   existing?: Record<string, unknown> | null,
 ): Record<string, string | number | boolean> {
-  const out: Record<string, string | number | boolean> = { ...base, reroute_audio: true };
-  const owned = (k: string) => !!existing && k in existing;
-  // The fps pair is owned together: an operator-set fps_custom keeps their fps.
-  if (!owned("fps_custom")) {
-    out.fps_custom = true;
-    out.fps = browserSourceFps();
+  const out: Record<string, string | number | boolean> = {};
+  if (existing) {
+    for (const [k, v] of Object.entries(existing)) {
+      if (MANAGED_KEYS.has(k)) continue;
+      // Primitive-valued tweaks only — enough for css/zoom-style settings, and
+      // keeps the payload a clean JsonObject.
+      if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") out[k] = v;
+    }
   }
-  if (!owned("shutdown")) out.shutdown = false;
-  if (!owned("restart_when_active")) out.restart_when_active = false;
-  return out;
+  return {
+    ...out,
+    ...base,
+    reroute_audio: true,
+    fps_custom: true,
+    fps: browserSourceFps(),
+    shutdown: false,
+    restart_when_active: false,
+  };
 }
 
 /** Result of provisioning a browser-source scene. */
@@ -382,8 +434,9 @@ export interface ProvisionResult {
   width: number;
   height: number;
   created: boolean; // input was newly created (vs URL updated)
+  recreated: boolean; // hard reset: existing input torn down and rebuilt (fresh CEF)
   switched: boolean; // program scene was switched to it
-  refreshed: boolean; // CEF page was force-reloaded (no cache) onto the current URL
+  refreshed: boolean; // CEF page was (re)loaded onto the current URL
 }
 
 /**
@@ -391,16 +444,21 @@ export interface ProvisionResult {
  * `url`, in a dedicated scene, and (optionally) switch OBS to it. Idempotent — a
  * re-run just updates the URL (so a rotated watch token re-pushes cleanly) and
  * re-applies the transform. Sizes the source to the OBS base canvas for a crisp,
- * exact-fit render. Settings go through browserSourceSettings(): perf defaults
- * (30fps custom rate, no shutdown/reload-on-visibility) apply only to keys the
- * operator has never touched, and `overlay:true` on the update preserves every
- * other tweak (css etc.) they made.
+ * exact-fit render.
+ *
+ * `hard:true` = the go-live hard reset: an existing input is REMOVED and
+ * recreated, which tears down that CEF browser entirely — dropping accumulated
+ * renderer state/memory from a long-lived instance and guaranteeing the page
+ * cold-starts fresh on the new run's URL. Unmanaged operator tweaks (css…) are
+ * read first and carried onto the new input. Soft mode just restamps the
+ * managed settings (overlay:true preserves the rest) and presses a no-cache
+ * refresh.
  */
 export async function provisionBrowserScene(
   ep: ObsEndpoint,
-  opts: { url: string; sceneName: string; inputName: string; makeActive?: boolean },
+  opts: { url: string; sceneName: string; inputName: string; makeActive?: boolean; hard?: boolean },
 ): Promise<ProvisionResult> {
-  const { url, sceneName, inputName, makeActive = true } = opts;
+  const { url, sceneName, inputName, makeActive = true, hard = false } = opts;
   return withObs(ep, async (obs) => {
     const video = await obs.call("GetVideoSettings");
     const width = Number(video.baseWidth) || 1920;
@@ -415,6 +473,7 @@ export async function provisionBrowserScene(
     const { inputs } = await obs.call("GetInputList");
     const inputExists = (inputs as { inputName: string }[]).some((i) => i.inputName === inputName);
     let created = false;
+    let recreated = false;
     if (!inputExists) {
       await obs.call("CreateInput", {
         sceneName,
@@ -424,9 +483,9 @@ export async function provisionBrowserScene(
         sceneItemEnabled: true,
       });
       created = true;
-    } else {
-      // Read the source's current settings so perf defaults only fill gaps the
-      // operator never set (best-effort: unreadable → treat as fresh).
+    } else if (hard) {
+      // Hard reset: carry the operator's unmanaged tweaks forward, then rebuild
+      // the input from scratch (best-effort read — unreadable → just ours).
       let existing: Record<string, unknown> | null = null;
       try {
         const cur = await obs.call("GetInputSettings", { inputName });
@@ -434,10 +493,20 @@ export async function provisionBrowserScene(
       } catch {
         existing = null;
       }
+      await obs.call("RemoveInput", { inputName });
+      await obs.call("CreateInput", {
+        sceneName,
+        inputName,
+        inputKind: "browser_source",
+        inputSettings: browserSourceSettings(base, existing),
+        sceneItemEnabled: true,
+      });
+      recreated = true;
+    } else {
       await obs.call("SetInputSettings", {
         inputName,
-        inputSettings: browserSourceSettings(base, existing),
-        overlay: true,
+        inputSettings: browserSourceSettings(base),
+        overlay: true, // unmanaged operator tweaks (css…) stay as they are
       });
       // Make sure this source is actually IN the target scene (it may live elsewhere).
       try {
@@ -463,17 +532,21 @@ export async function provisionBrowserScene(
 
     // Force a no-cache reload so the source actually navigates to the (possibly
     // just-changed) URL and drops any stale /watch bundle — the OBS "Refresh cache
-    // of current page" button, done for the operator. Best-effort: a build/plugin
-    // without this property must not fail the whole provision.
-    let refreshed = false;
-    try {
-      await obs.call("PressInputPropertiesButton", { inputName, propertyName: "refreshnocache" });
-      refreshed = true;
-    } catch (err) {
-      log(TAG, "refreshnocache press failed (non-fatal)", `${inputName}: ${String((err as Error)?.message ?? err)}`);
+    // of current page" button, done for the operator. A just-created/recreated
+    // input already cold-loaded the URL, so skip the press there (a second load
+    // would only race the first). Best-effort: a build/plugin without this
+    // property must not fail the whole provision.
+    let refreshed = created || recreated;
+    if (!refreshed) {
+      try {
+        await obs.call("PressInputPropertiesButton", { inputName, propertyName: "refreshnocache" });
+        refreshed = true;
+      } catch (err) {
+        log(TAG, "refreshnocache press failed (non-fatal)", `${inputName}: ${String((err as Error)?.message ?? err)}`);
+      }
     }
 
-    return { sceneName, inputName, width, height, created, switched, refreshed };
+    return { sceneName, inputName, width, height, created, recreated, switched, refreshed };
   });
 }
 
