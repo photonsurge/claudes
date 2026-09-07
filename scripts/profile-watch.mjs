@@ -11,6 +11,9 @@
  * Options: --seconds N (20) · --interval µs (250) · --top N (35) · --match substr (/watch)
  *          --out dir (scratchpad/profile/<ts>) · --no-source (skip minified-code snippets)
  *          --raf-census (temporarily wraps requestAnimationFrame to count loops per frame)
+ *          --trace [N] (after the profile, record an N s (8) Chrome timeline trace with layout/style
+ *                      invalidation tracking: breaks "(program)" down by renderer event and names
+ *                      the node + reason + JS caller of every layout invalidation / forced layout)
  *
  * Read-only against the page (Profiler / Performance / Runtime.evaluate). Needs Node ≥ 22
  * (global WebSocket); zero dependencies. Works with DevTools already attached.
@@ -36,6 +39,12 @@ const MATCH = opt("match", "/watch");
 const OUT = opt("out", path.join("scratchpad", "profile", new Date().toISOString().replace(/[:.]/g, "-")));
 const WANT_SOURCE = !flag("no-source");
 const RAF_CENSUS = flag("raf-census");
+const TRACE_SECONDS = (() => {
+  const i = argv.indexOf("--trace");
+  if (i === -1) return 0;
+  const v = Number(argv[i + 1]);
+  return Number.isFinite(v) && !String(argv[i + 1] ?? "").startsWith("--") ? v : 8;
+})();
 
 if (typeof WebSocket === "undefined") {
   console.error("Node ≥ 22 is required (global WebSocket). Current:", process.version);
@@ -193,6 +202,153 @@ async function snippetFetcher(cdp) {
   };
 }
 
+// ── Timeline trace (who dirties layout / what is "(program)") ───────────────
+// Recorded AFTER the CPU profile so neither skews the other. Chrome's timeline
+// categories carry every Layout / style-recalc event with its duration, the JS
+// stack that FORCED it (if any), and — with invalidation tracking on — the node
+// + reason for every layout/style invalidation. That's the answer to "why is
+// layout running every frame" that a CPU profile can't give.
+const TRACE_CATEGORIES = [
+  "devtools.timeline",
+  "disabled-by-default-devtools.timeline",
+  "disabled-by-default-devtools.timeline.invalidationTracking",
+  "disabled-by-default-devtools.timeline.stack",
+  "blink.user_timing",
+];
+
+async function recordTrace(cdp, seconds) {
+  const events = [];
+  cdp.on("Tracing.dataCollected", (p) => {
+    for (const e of p.value ?? []) events.push(e);
+  });
+  let done;
+  const complete = new Promise((r) => (done = r));
+  cdp.on("Tracing.tracingComplete", () => done());
+  await cdp.send("Tracing.start", {
+    traceConfig: { recordMode: "recordContinuously", includedCategories: TRACE_CATEGORIES },
+    transferMode: "ReportEvents",
+  });
+  await new Promise((r) => setTimeout(r, seconds * 1000));
+  await cdp.send("Tracing.end");
+  await complete;
+  return events;
+}
+
+const frameOf = (f) =>
+  f ? `${f.functionName || "(anonymous)"} @ ${(f.url || "").split("/").pop().split("?")[0]}:${(f.lineNumber ?? 0) + 1}:${(f.columnNumber ?? 0) + 1}` : "(no stack)";
+/** First frame that isn't inside a well-known library, else the top frame. */
+const callerOf = (stack) => {
+  if (!stack || !stack.length) return "(no stack — not forced by JS)";
+  return frameOf(stack[0]);
+};
+
+function analyzeTrace(events) {
+  // The renderer main thread is the one firing animation frames / recalculating
+  // style (compositor + browser threads only ever show RunTask).
+  const score = new Map();
+  for (const e of events) {
+    const w =
+      e.name === "FireAnimationFrame" || e.name === "UpdateLayoutTree" || e.name === "Layout"
+        ? 1000
+        : e.name === "RunTask"
+          ? 1
+          : 0;
+    if (!w) continue;
+    const k = `${e.pid}:${e.tid}`;
+    score.set(k, (score.get(k) ?? 0) + w);
+  }
+  const main = [...score.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const ev = events
+    .filter((e) => `${e.pid}:${e.tid}` === main && e.ph !== "M" && typeof e.ts === "number" && e.ts > 0)
+    .sort((a, b) => a.ts - b.ts);
+  let t0 = Infinity;
+  let t1 = -Infinity;
+  const dur = new Map();
+  const count = new Map();
+  const open = new Map();
+  const layouts = [];
+  const recalcs = [];
+  const layoutInval = new Map();
+  const layoutInvalCallers = new Map();
+  const styleInval = new Map();
+  const styleInvalCallers = new Map();
+  const bump = (m, k, n = 1) => m.set(k, (m.get(k) ?? 0) + n);
+  const add = (name, d, begin) => {
+    bump(dur, name, d);
+    bump(count, name);
+    if (name === "Layout") {
+      const bd = begin.args?.beginData ?? {};
+      layouts.push({ d, stack: bd.stackTrace, dirty: bd.dirtyObjects ?? 0, total: bd.totalObjects ?? 0, partial: !!bd.partialLayout });
+    } else if (name === "UpdateLayoutTree") {
+      const bd = begin.args?.beginData ?? {};
+      recalcs.push({ d, stack: bd.stackTrace, n: begin.args?.elementCount ?? 0 });
+    }
+  };
+  for (const e of ev) {
+    if (typeof e.ts === "number") {
+      if (e.ts < t0) t0 = e.ts;
+      const end = e.ts + (e.dur ?? 0);
+      if (end > t1) t1 = end;
+    }
+    if (e.ph === "X") add(e.name, e.dur ?? 0, e);
+    else if (e.ph === "B") {
+      if (!open.has(e.name)) open.set(e.name, []);
+      open.get(e.name).push(e);
+    } else if (e.ph === "E") {
+      const b = open.get(e.name)?.pop();
+      if (b) add(e.name, e.ts - b.ts, b);
+    } else if (e.ph === "I" || e.ph === "i" || e.ph === "R" || e.ph === "n") {
+      const d = e.args?.data ?? {};
+      if (e.name === "LayoutInvalidationTracking") {
+        bump(layoutInval, `${d.reason ?? "?"} · ${(d.nodeName ?? "?").slice(0, 70)}`);
+        bump(layoutInvalCallers, callerOf(d.stackTrace));
+      } else if (
+        e.name === "StyleRecalcInvalidationTracking" ||
+        e.name === "ScheduleStyleInvalidationTracking" ||
+        e.name === "StyleInvalidatorInvalidationTracking"
+      ) {
+        const what = d.changedClass ?? d.changedId ?? d.changedAttribute ?? d.changedPseudo ?? d.extraData ?? "";
+        bump(styleInval, `${e.name.replace("InvalidationTracking", "")} · ${d.reason ?? "?"}${what ? ` (${what})` : ""} · ${(d.nodeName ?? "?").slice(0, 60)}`);
+        bump(styleInvalCallers, callerOf(d.stackTrace));
+      }
+    }
+  }
+  const wallMs = (t1 - t0) / 1000;
+  const top = (m, n) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
+  const ms = (us) => (us / 1000).toFixed(1).padStart(8);
+  const lines = [];
+  const p = (s = "") => lines.push(s);
+  p(`## Timeline trace — main thread ${main ?? "?"}, ${wallMs.toFixed(0)} ms of wall time`);
+  p(`### Main-thread time by event (inclusive; nested events overlap)`);
+  p(`  total ms   count  event`);
+  for (const [name, us] of top(dur, 22)) p(`${ms(us)}  ${String(count.get(name)).padStart(6)}  ${name}`);
+  p();
+  const lTotal = layouts.reduce((a, l) => a + l.d, 0);
+  const forced = layouts.filter((l) => l.stack && l.stack.length);
+  p(`### Layout: ${layouts.length}× · ${(lTotal / 1000).toFixed(0)} ms · avg ${layouts.length ? (lTotal / layouts.length / 1000).toFixed(1) : "0"} ms · avg dirty/total objects ${layouts.length ? Math.round(layouts.reduce((a, l) => a + l.dirty, 0) / layouts.length) : 0}/${layouts.length ? Math.round(layouts.reduce((a, l) => a + l.total, 0) / layouts.length) : 0}`);
+  p(`  forced synchronously by JS: ${forced.length}× (${(forced.reduce((a, l) => a + l.d, 0) / 1000).toFixed(0)} ms)`);
+  const forcedBy = new Map();
+  for (const l of forced) bump(forcedBy, callerOf(l.stack), l.d);
+  for (const [k, us] of top(forcedBy, 8)) p(`${ms(us)}  ${k}`);
+  p();
+  p(`### Who invalidated layout (LayoutInvalidationTracking) — reason · node`);
+  for (const [k, n] of top(layoutInval, 15)) p(`${String(n).padStart(8)}×  ${k}`);
+  p(`  … by JS caller:`);
+  for (const [k, n] of top(layoutInvalCallers, 8)) p(`${String(n).padStart(8)}×  ${k}`);
+  p();
+  const rTotal = recalcs.reduce((a, r) => a + r.d, 0);
+  const rForced = recalcs.filter((r) => r.stack && r.stack.length);
+  p(`### Style recalc (UpdateLayoutTree): ${recalcs.length}× · ${(rTotal / 1000).toFixed(0)} ms · forced by JS ${rForced.length}×`);
+  const rBy = new Map();
+  for (const r of rForced) bump(rBy, callerOf(r.stack), r.d);
+  for (const [k, us] of top(rBy, 6)) p(`${ms(us)}  ${k}`);
+  p(`  top style invalidations:`);
+  for (const [k, n] of top(styleInval, 12)) p(`${String(n).padStart(8)}×  ${k}`);
+  p(`  … by JS caller:`);
+  for (const [k, n] of top(styleInvalCallers, 8)) p(`${String(n).padStart(8)}×  ${k}`);
+  return lines.join("\n");
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 (async () => {
   const wsUrl = await resolveWsUrl(target);
@@ -296,11 +452,23 @@ async function snippetFetcher(cdp) {
   try {
     if (WANT_SOURCE) await cdp.send("Debugger.disable");
   } catch {}
+  if (TRACE_SECONDS > 0) {
+    console.error(`recording a ${TRACE_SECONDS}s timeline trace …`);
+    try {
+      const events = await recordTrace(cdp, TRACE_SECONDS);
+      fs.writeFileSync(path.join(OUT, "trace.json"), JSON.stringify({ traceEvents: events }));
+      p();
+      p(analyzeTrace(events));
+    } catch (e) {
+      p();
+      p(`## Timeline trace failed: ${e.message || e}`);
+    }
+  }
   const report = lines.join("\n");
   fs.writeFileSync(path.join(OUT, "report.txt"), report);
   fs.writeFileSync(path.join(OUT, "meta.json"), JSON.stringify({ href, fps, dom, m0, m1, census }, null, 2));
   console.log(report);
-  console.error(`\nsaved ${path.join(OUT, "profile.cpuprofile")} (load it in DevTools → Performance → ⬆) and report.txt`);
+  console.error(`\nsaved ${path.join(OUT, "profile.cpuprofile")} (load it in DevTools → Performance → ⬆)${TRACE_SECONDS > 0 ? ", trace.json (same panel)" : ""} and report.txt`);
   cdp.close();
 })().catch((e) => {
   console.error(e.message || e);

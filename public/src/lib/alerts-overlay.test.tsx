@@ -7,7 +7,7 @@
  * network (which would also fragment the shared Redis entry).
  */
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { useAlertFeatures } from "./alerts-overlay";
+import { useAlertFeatures, featureSetFingerprint } from "./alerts-overlay";
 import { ALERTS_UPDATED } from "@photonsurge/shared/control";
 
 /** Fire the worker's "alerts changed" beat, keyed on the real event NAME — using
@@ -151,5 +151,47 @@ describe("useAlertFeatures", () => {
     const { result } = renderHook(() => useAlertFeatures(true, 0));
 
     await waitFor(() => expect(result.current).toEqual([]));
+  });
+});
+
+describe("useAlertFeatures — poll identity", () => {
+  it("keeps the SAME array when a re-poll returns the same picture (no re-tessellation)", async () => {
+    const fn = mockFetch();
+    const { result } = renderHook(() => useAlertFeatures(true, 0));
+    await waitFor(() => expect(result.current).toHaveLength(3));
+    const first = result.current;
+    // Worker beat → refetch; the response is structurally identical.
+    await act(async () => {
+      alertsUpdated();
+    });
+    await waitFor(() => expect(fn).toHaveBeenCalledTimes(2));
+    expect(result.current).toBe(first);
+  });
+
+  it("swaps the array when the picture changes", async () => {
+    const fn = mockFetch();
+    const { result } = renderHook(() => useAlertFeatures(true, 0));
+    await waitFor(() => expect(result.current).toHaveLength(3));
+    const first = result.current;
+    fn.mockResolvedValue({ json: async () => ({ features: [...FEATURES, feature("snow", 3)], count: 4 }) });
+    await act(async () => {
+      alertsUpdated();
+    });
+    await waitFor(() => expect(result.current).toHaveLength(4));
+    expect(result.current).not.toBe(first);
+  });
+
+  it("fingerprints id, issue time, membership and vertex count", () => {
+    const base = [
+      { type: "Feature", geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] }, properties: { id: "a", sent: "t1", memberCount: 2, severityRank: 3, hazard: "heat" } },
+    ] as never;
+    const same = JSON.parse(JSON.stringify(base));
+    expect(featureSetFingerprint(same)).toBe(featureSetFingerprint(base));
+    const moved = JSON.parse(JSON.stringify(base));
+    moved[0].geometry.coordinates[0].push([0.5, 0.5]);
+    expect(featureSetFingerprint(moved)).not.toBe(featureSetFingerprint(base));
+    const reissued = JSON.parse(JSON.stringify(base));
+    reissued[0].properties.sent = "t2";
+    expect(featureSetFingerprint(reissued)).not.toBe(featureSetFingerprint(base));
   });
 });

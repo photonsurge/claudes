@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AlertFeature } from "./alerts";
 import { useSocket } from "./socket-provider";
 import { ALERTS_UPDATED } from "@photonsurge/shared/control";
@@ -48,12 +48,43 @@ async function fetchBlobFeatures(): Promise<AlertFeature[]> {
   return Array.isArray(body?.features) ? body.features : [];
 }
 
+/** Coordinate count of any GeoJSON geometry — a cheap shape fingerprint. */
+function coordCount(c: unknown): number {
+  if (!Array.isArray(c)) return 0;
+  if (typeof c[0] === "number") return 1;
+  let n = 0;
+  for (const x of c) n += coordCount(x);
+  return n;
+}
+
+/**
+ * A cheap identity for a fetched feature set: every shape's representative id
+ * + issue time + member count + vertex count. Two polls that fingerprint the
+ * same are the same picture, so the hook keeps the PREVIOUS array — handing
+ * deck a fresh array makes all four alert passes re-tessellate every dissolved
+ * polygon on the main thread (a ~1–2 s freeze on air), even when nothing moved.
+ * Exported for tests.
+ */
+export function featureSetFingerprint(features: AlertFeature[]): string {
+  const parts: string[] = [String(features.length)];
+  for (const f of features) {
+    const p = f.properties as unknown as Record<string, unknown>;
+    parts.push(
+      `${p.id ?? ""}@${p.sent ?? ""}@${p.memberCount ?? ""}@${p.severityRank ?? ""}@${coordCount(
+        (f.geometry as { coordinates?: unknown } | null)?.coordinates,
+      )}`,
+    );
+  }
+  return parts.join("|");
+}
+
 export function useAlertFeatures(
   enabled: boolean,
   severityMin: number,
   hazardsOff: readonly string[] = [],
 ): AlertFeature[] {
   const [features, setFeatures] = useState<AlertFeature[]>([]);
+  const fingerprintRef = useRef<string>("");
   const { socket } = useSocket();
   const [liveTick, setLiveTick] = useState(0);
 
@@ -79,6 +110,10 @@ export function useAlertFeatures(
       // A transient empty/failed FETCH must not blank an on-air overlay; keep the
       // last good features. (A legit filter-to-empty below still clears it.)
       if (cancelled || next.length === 0) return;
+      // Same picture as last time → keep the array identity (no re-tessellation).
+      const fp = featureSetFingerprint(next);
+      if (fp === fingerprintRef.current) return;
+      fingerprintRef.current = fp;
       setFeatures(next);
     };
     poll();

@@ -28,6 +28,31 @@ reference — i.e. the whole base layer stack is being rebuilt, not just redrawn
 Conclusion: roughly two-thirds of the busy time is DOM-overlay driven (labels + per-frame
 layout + React commits); deck.gl is about one-sixth. Fix order below is re-ranked on this.
 
+### Round 3 (2026-09-08)
+
+Second re-profile (after round 2): busy 94 %, 16.4 fps, Layout STILL 349× / 2.7 s
+(~1 per frame, ~8 ms each); AutoScroll's forced layout is gone. deck rose to 26 %
+because this capture was a zoomed-in shot with XYZ tiles on: `TileLayer` is a
+composite whose `shouldUpdateState` fires on every viewport change, so during any
+camera motion deck re-walks the whole stack every frame and recomputes tile
+bounding volumes (~9 %), and draw is 16 % (~100 sublayers × luma uniform
+bookkeeping). `_createMesh` / `_updatePalette` stayed gone.
+
+- **Alert poll identity** (the 1.7–1.9 s stall): `useAlertFeatures` now fingerprints
+  each fetched set (id · sent · memberCount · severityRank · vertex count) and keeps
+  the previous array when unchanged, so the four alert passes don't re-tessellate
+  every dissolved polygon on every worker beat.
+- **Ruled out by local trace experiments** (`scripts/profile-watch.mjs --trace` on a
+  synthetic 11 k-node page): per-frame `transform` writes on absolutely positioned
+  elements cause style recalc but NO layout (the icon pins are innocent); per-frame
+  text changes DO (Added/Removed from layout · #text) and a following layout read
+  forces them. The sub-globe readout is not rendered on air (`showReadout={false}`).
+  All chrome `@keyframes` animate transform/opacity/stroke-dashoffset only.
+- **Next**: run `--trace 8` on the OBS box. The report names the node, reason and JS
+  caller of every layout invalidation plus which JS forces layouts, and breaks the
+  `(program)` bucket down by renderer event (Layout / UpdateLayoutTree / PrePaint /
+  Paint / Layerize / Commit …).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
