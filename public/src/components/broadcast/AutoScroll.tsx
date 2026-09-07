@@ -7,16 +7,16 @@
  * this walks it into view. Content that fits sits still, pinned at the top.
  *
  * JS-driven (rAF) rather than a CSS keyframe because the travel distance is the
- * runtime overflow amount, not known ahead of time. The container is
- * `overflow: hidden` — still programmatically scrollable via `scrollTop`, so no
- * scrollbar shows on air.
+ * runtime overflow amount, not known ahead of time.
  *
- * The overflow is MEASURED only on (re)activation and when the box or its
- * content changes (ResizeObserver + MutationObserver), never per frame: reading
- * `scrollHeight` forces a synchronous layout of the whole document, and doing
- * that every frame right after the other overlays' style writes was one of the
- * larger fixed costs on the /watch main thread. The scroll position is tracked
- * locally and only written while actually moving.
+ * Moves the content with a `transform` on an inner wrapper — NOT `scrollTop`.
+ * Reading `scrollHeight` (or writing `scrollTop`, which must clamp against
+ * current layout) forces a synchronous layout of the whole document whenever
+ * anything has dirtied it that frame; on /watch that was a ~5 ms hit every
+ * single frame. A transform is compositor-only. The overflow is measured from
+ * ResizeObserver entries (they arrive after layout — nothing is forced) for
+ * both the box and the content, so it tracks late fonts/images and slide
+ * content changes for free.
  */
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 
@@ -41,52 +41,52 @@ export default function AutoScroll({
   active?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
-    // Off-screen slide: pin to the top and don't run the loop.
-    if (!active) {
-      el.scrollTop = 0;
-      return;
-    }
-    if (typeof requestAnimationFrame !== "function") return;
+    const inner = innerRef.current;
+    if (!el || !inner) return;
     // Fresh cycle on (re)activation — start pinned at the top with the read hold.
-    el.scrollTop = 0;
+    inner.style.transform = "translate3d(0, 0, 0)";
+    // Off-screen slide: pin to the top and don't run the loop.
+    if (!active) return;
+    if (typeof requestAnimationFrame !== "function") return;
 
-    let overflow = 0;
-    let dirty = true;
-    const measure = () => {
-      dirty = false;
-      overflow = el.scrollHeight - el.clientHeight;
-    };
-    const markDirty = () => {
-      dirty = true;
-    };
-    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(markDirty) : null;
+    let boxH = el.clientHeight;
+    let contentH = inner.offsetHeight;
+    const ro =
+      typeof ResizeObserver === "function"
+        ? new ResizeObserver((entries) => {
+            for (const e of entries) {
+              const height = e.contentRect.height;
+              if (e.target === el) boxH = height;
+              else if (e.target === inner) contentH = height;
+            }
+          })
+        : null;
     ro?.observe(el);
-    const mo = typeof MutationObserver === "function" ? new MutationObserver(markDirty) : null;
-    mo?.observe(el, { childList: true, subtree: true, characterData: true });
-    // Fonts/images landing after mount change the content height without a DOM
-    // mutation — re-measure once they've had a moment.
-    const settle = setTimeout(markDirty, 600);
+    ro?.observe(inner);
 
     let raf = 0;
     let last = 0;
     let pos = 0;
     let phase: "holdTop" | "down" | "holdBottom" | "up" = "holdTop";
     let waited = 0;
+    const write = () => {
+      inner.style.transform = `translate3d(0, ${(-pos).toFixed(2)}px, 0)`;
+    };
 
     const step = (t: number) => {
       const dt = last ? t - last : 0;
       last = t;
-      if (dirty) measure();
+      const overflow = contentH - boxH;
 
       if (overflow <= 4) {
         // Fits (or not yet laid out) — keep it pinned to the top, reset cycle.
         if (pos !== 0) {
           pos = 0;
-          el.scrollTop = 0;
+          write();
         }
         phase = "holdTop";
         waited = 0;
@@ -95,7 +95,7 @@ export default function AutoScroll({
         if (waited >= pause) (waited = 0), (phase = "down");
       } else if (phase === "down") {
         pos = Math.min(overflow, pos + (speed * dt) / 1000);
-        el.scrollTop = pos;
+        write();
         if (pos >= overflow - 0.5) phase = "holdBottom";
       } else if (phase === "holdBottom") {
         waited += dt;
@@ -103,7 +103,7 @@ export default function AutoScroll({
       } else {
         // Glide back up a touch faster than the read-down.
         pos = Math.max(0, pos - (speed * 1.7 * dt) / 1000);
-        el.scrollTop = pos;
+        write();
         if (pos <= 0.5) phase = "holdTop";
       }
 
@@ -113,15 +113,15 @@ export default function AutoScroll({
     raf = requestAnimationFrame(step);
     return () => {
       cancelAnimationFrame(raf);
-      clearTimeout(settle);
       ro?.disconnect();
-      mo?.disconnect();
     };
   }, [speed, pause, active]);
 
   return (
-    <div ref={ref} style={style}>
-      {children}
+    <div ref={ref} style={{ ...style, overflow: "hidden" }}>
+      <div ref={innerRef} style={{ willChange: active ? "transform" : undefined }}>
+        {children}
+      </div>
     </div>
   );
 }

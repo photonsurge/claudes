@@ -133,11 +133,16 @@ layout + React commits); deck.gl is about one-sixth. Fix order below is re-ranke
 - **Labels → canvas**: `GlobeLabels.tsx` draws text labels on one 2D canvas
   (halo stroke + fill, detail chip); only icon pins stay DOM, hidden via
   `visibility` and positioned write-on-change. No `will-change` layers.
-- **No per-frame layout**: `AutoScroll.tsx` measures overflow via
-  ResizeObserver/MutationObserver (+ one settle re-measure), tracks position
-  locally and writes `scrollTop` only while moving. `GlobeAtmosphere.tsx` writes
-  size/position/mask only when the rounded disc changed; ticks rotate at 0.1°
-  quantisation.
+- **No per-frame layout** (round 2, after the first re-profile still showed
+  Layout ~1/frame at ~11 ms and AutoScroll's step as the top JS frame): the
+  pedestal ring's SVG `transform` attribute rotation (SVG layout every frame the
+  globe turns) and its SMIL sweep (style invalidation every frame) were the
+  per-frame dirtiers, and AutoScroll's `scrollTop` write then paid for that
+  layout synchronously. `GlobeAtmosphere.tsx` is now ONE canvas (glow, ring,
+  ticks, sweep, disc punch-out via destination-out) — no DOM style writes at
+  all; host size via ResizeObserver. `AutoScroll.tsx` moves an inner wrapper
+  with `transform` and measures box/content height from ResizeObserver entries —
+  it never reads `scrollHeight` or writes `scrollTop`.
 - **Stable references**: `props.ts` caches `manifestBounds` (per manifest),
   `scalePaletteToDomain` (per palette + domain) and `hexToRgba` (per hex) so deck
   never re-meshes and WeatherLayers never re-bakes a palette on a rebuild.
@@ -153,6 +158,10 @@ layout + React commits); deck.gl is about one-sixth. Fix order below is re-ranke
   uniforms; flag-colour cycling is quantised to 200 ms. The pulse loop commits at
   ~30 Hz (`PULSE_FRAME_MS`).
 - Still open: item 5 (the 1.9 s stall) — needs the long task from a saved profile.
+
+First re-profile (after round 1): busy 93 → 89 %, `setLayers` 7.8 → 0.5 %,
+`_createMesh`/`_updatePalette` gone, will-change 1498 → 1, heap 161 → 106 MB — but
+Layout still ~1/frame (356× = 3.8 s) and 16.5 fps, which is what round 2 targets.
 
 Verify on the OBS box with `node scripts/profile-watch.mjs http://localhost:9221 --raf-census`
 and compare with the 2026-09-07 baseline above (busy 93 %, 16 fps, Layout ~1/frame,
