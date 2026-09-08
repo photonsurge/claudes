@@ -14,6 +14,17 @@ export class GeoJsonLayer extends BaseLayer {}
 export class SolidPolygonLayer extends BaseLayer {}
 export class IconLayer extends BaseLayer {}
 export class _GlobeView extends BaseLayer {}
+/** @deck.gl/core LayerExtension base — enough for app extensions to subclass. */
+export class LayerExtension {
+  opts: Record<string, unknown>;
+  constructor(opts: Record<string, unknown> = {}) {
+    this.opts = opts;
+  }
+  getShaders(): unknown {
+    return null;
+  }
+  draw() {}
+}
 /** @deck.gl/extensions stub — captures opts so layers can still be constructed. */
 export class PathStyleExtension {
   opts: Record<string, unknown>;

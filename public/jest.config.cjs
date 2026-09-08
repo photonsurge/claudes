@@ -34,6 +34,9 @@ module.exports = {
     // Web Worker factory (uses import.meta.url — not parseable as CommonJS);
     // the stub returns null so SubGlobeWidget paints on the main thread.
     "subglobe-worker-client$": "<rootDir>/src/test/mocks/subglobe-worker-client.ts",
+    // Same story for the texture decode worker pool: the stub returns null so
+    // textures.ts uses the (mocked) WeatherLayers loader in tests.
+    "texture-decode-client$": "<rootDir>/src/test/mocks/texture-decode-client.ts",
     "^maplibre-gl$": "<rootDir>/src/test/mocks/maplibre-gl.ts",
     "^@deck.gl/core$": "<rootDir>/src/test/mocks/deckgl.ts",
     "^@deck.gl/layers$": "<rootDir>/src/test/mocks/deckgl.ts",

@@ -17,13 +17,18 @@ jest.mock("@deck.gl/layers", () => {
     }
   }
   return {
+    // @deck.gl/core and @deck.gl/layers both map to the shared mock file, so
+    // this factory replaces BOTH — keep the shared exports (LayerExtension for
+    // breathe-extension.ts) and only override the layer classes.
+    ...jest.requireActual<Record<string, unknown>>("../../test/mocks/deckgl"),
     GeoJsonLayer: class extends MockLayer {},
     ScatterplotLayer: class extends MockLayer {},
     TextLayer: class extends MockLayer {},
   };
 });
 
-import { alertsLayer, onAirPulseLayers } from "./alerts";
+import { alertsLayer, onAirPulseLayers, pulseIsPoint } from "./alerts";
+import { BREATHE } from "./breathe-extension";
 import type { AlertFeature } from "../../lib/alerts";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
 import type { HazardType } from "../../lib/hazard";
@@ -317,7 +322,7 @@ describe("onAirPulseLayers — matching tolerance", () => {
 describe("onAirPulseLayers — the pulse rides GPU uniforms over constant attributes", () => {
   const HALF = 750; // half the 1500 ms period: breathe 0→1, ping 0→0.5
 
-  it("breathes the on-air area via opacity + lineWidthScale, never an accessor keyed on the clock", () => {
+  it("breathes the on-air area on the GPU: static layers carrying a BreatheExtension spec", () => {
     const f = square();
     const rest = onAirPulseLayers([f], [10, 20], 0);
     const fill0 = byId(rest, "alerts-onair-fill").props;
@@ -326,12 +331,24 @@ describe("onAirPulseLayers — the pulse rides GPU uniforms over constant attrib
     expect(fill0.getFillColor).toEqual([...FLOOD, 150]);
     expect(edge0.getLineColor[3]).toBe(220);
     expect(edge0.getLineWidth).toBe(1.5);
-    // … and the uniforms take them down to the trough (fill alpha 40, edge 1.5 px).
-    expect(fill0.opacity).toBeCloseTo(40 / 150);
-    expect(edge0.lineWidthScale).toBeCloseTo(1);
+    // … and the extension's spec takes them to the trough (fill alpha 40, edge
+    // 1.5 px) and back over the period, with NO per-commit uniform in sight.
+    expect(fill0.extensions).toEqual([BREATHE]);
+    expect(fill0.breathe).toEqual({ periodMs: 1500, alpha: [40 / 150, 1] });
+    expect(fill0.opacity).toBeUndefined();
+    expect(edge0.extensions).toEqual([BREATHE]);
+    expect(edge0.breathe).toEqual({ periodMs: 1500, size: [1, 5.5 / 1.5] });
+    expect(edge0.lineWidthScale).toBeUndefined();
+    // The clock no longer changes the layers at all.
     const peak = onAirPulseLayers([f], [10, 20], HALF);
-    expect(byId(peak, "alerts-onair-fill").props.opacity).toBeCloseTo(1);
-    expect(byId(peak, "alerts-onair-edge").props.lineWidthScale).toBeCloseTo(5.5 / 1.5);
+    expect(byId(peak, "alerts-onair-fill").props.breathe).toEqual(fill0.breathe);
+    expect(byId(peak, "alerts-onair-edge").props.breathe).toEqual(edge0.breathe);
+  });
+
+  it("pulseIsPoint: an area on air needs no pulse loop, a point (or no match) does", () => {
+    expect(pulseIsPoint([square()], [10, 20])).toBe(false);
+    expect(pulseIsPoint([square()], [10.4, 19.8])).toBe(true);
+    expect(pulseIsPoint([], [0, 0])).toBe(true);
   });
 
   it("hands deck the SAME data array every frame (a fresh one re-tessellates the whole polygon)", () => {

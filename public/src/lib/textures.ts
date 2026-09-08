@@ -29,6 +29,7 @@
 // actual weatherlayers-gl module references `Worker` at import time and must
 // never load during SSR — so we import it lazily, only in the browser.
 import type { TextureData } from "weatherlayers-gl";
+import { createTextureDecoder } from "./texture-decode-client";
 
 export type LoadedTexture = TextureData;
 
@@ -59,11 +60,19 @@ function evictLru(): void {
 }
 
 let loaderPromise: Promise<(url: string) => Promise<TextureData>> | null = null;
+/**
+ * The decoder: a worker pool (fetch + decode + readback off the main thread —
+ * see texture-decode.worker.ts) where the browser has Workers and
+ * OffscreenCanvas, else WeatherLayers' own main-thread `loadTextureData`.
+ */
 function getLoader(): Promise<(url: string) => Promise<TextureData>> {
   if (!loaderPromise) {
-    loaderPromise = import("weatherlayers-gl").then(
-      (m) => m.loadTextureData as unknown as (url: string) => Promise<TextureData>,
-    );
+    const worker = createTextureDecoder();
+    loaderPromise = worker
+      ? Promise.resolve(worker as (url: string) => Promise<TextureData>)
+      : import("weatherlayers-gl").then(
+          (m) => m.loadTextureData as unknown as (url: string) => Promise<TextureData>,
+        );
   }
   return loaderPromise;
 }

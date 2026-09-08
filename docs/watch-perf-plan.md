@@ -351,6 +351,49 @@ the Bottom-Up table, and busy a few points lower. Still open: the per-frame
 Layerize trigger, global + nest particles both drawing, and luma's per-draw
 plumbing (only the visual-trade-off cuts and a shader-side breathe left there).
 
+### Round 13 (2026-09-08) — the pulse loop, and texture decodes
+
+Round 12 measured (full scene, 28 primitive layers, alerts + volcanoes + a
+country glow on air): busy 68.5 → **57.5 %**, 29 fps. The H/L rows and
+`project()` are gone as predicted; deck is 54 % of busy (~10.7 ms/frame,
+down from 15). What the run turned up next: `setLayers` at 6.1 % — the 15 Hz
+pulse loop re-diffing 42 layers per commit while a country glow was on air;
+`getImageData` at 2.6 % — WeatherLayers decoding the map-type tour's nest
+textures on the main thread (plus their 4 MB arrays on the GC); React DOM
+commits ~1.2 ms/frame (not yet chased); and Layerize still every frame at
+~1.3 ms with no identified trigger.
+
+Shipped:
+
+- **BreatheExtension** (`layers/breathe-extension.ts`): a deck LayerExtension
+  whose `draw` hook writes two floats (alpha, size multipliers from a
+  wall-clock phase) into a uniform block and injects `color.a *= …` /
+  `size *= …` through `DECKGL_FILTER_COLOR` / `DECKGL_FILTER_SIZE`. The country
+  glow's four stroke passes + fill and the on-air area highlight (fill + edge)
+  are now STATIC layers carrying a `breathe` spec — Globe commits them once
+  per spotlight and they breathe at the full frame rate. Semantics match the
+  old `opacity` / `lineWidthScale` uniforms exactly (deck's pow(x, 1/2.2)
+  opacity gamma included; base widths sit at or above the min-pixel clamp so
+  the post-clamp scale is equivalent). Only the POINT ping (sonar ring + dot,
+  whose ring width and radius move against each other, which one size uniform
+  can't express) still rides per-commit uniforms, and the pulse loop now
+  commits only while `pulseIsPoint()` says one is on air.
+- **Texture decode worker** (`lib/texture-decode.worker.ts` + client): fetch,
+  decode and readback in a two-worker pool, buffer transferred back; same
+  Blink decode pipeline as an `<img>` on a canvas, so bytes match
+  WeatherLayers' loader (which stays the fallback where Workers/OffscreenCanvas
+  are missing — and in jest).
+- **Texture state leak**: Globe's `loadedTextures` Map kept every texture ever
+  loaded alive, defeating the LRU's memory bound on a 24/7 page (4 MB per map
+  cycle / run / forecast hour). It's now pruned to the wanted set plus whatever
+  the LRU still holds.
+
+Next run: expect `setLayers` a few percent lower with a glow on air,
+`getImageData` gone from the table, and a flatter JS heap over hours. Still
+open: the per-frame Layerize trigger, React's per-frame commit work (run with
+`--dom-census 5` to name the churn), global + nest particles both drawing, and
+luma's per-draw plumbing.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

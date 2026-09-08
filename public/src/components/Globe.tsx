@@ -21,7 +21,7 @@ import {
 import { Deck, _GlobeView as GlobeView } from "@deck.gl/core";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
-import { loadTexture, preloadTextures, type LoadedTexture } from "../lib/textures";
+import { isTextureCached, loadTexture, preloadTextures, type LoadedTexture } from "../lib/textures";
 import { isObsRender, setRendererInfo } from "../lib/broadcast-render";
 import { useCrossfadeVariable } from "../lib/crossfade";
 import { pressureProps, textureUrlFor } from "./layers/props";
@@ -42,7 +42,7 @@ import type { City } from "../lib/cities";
 import { tracksLayer, orbitLayer, trailsLayer, filterTrails, trackLabelData, type TrackHighlight } from "./layers/tracks";
 import { cityLabelMinZoom, cityDetail } from "../lib/cities";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
-import { alertsLayer, onAirPulseLayers } from "./layers/alerts";
+import { alertsLayer, onAirPulseLayers, pulseIsPoint } from "./layers/alerts";
 import { countryFeatureFor, countriesInBbox, countryGlowLayers } from "./layers/countryGlow";
 import { seismicLayer } from "./layers/seismic";
 import { seismographStationLayers, seismoKeyOf, seismoShortName } from "./layers/seismograph-stations";
@@ -856,11 +856,24 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     if (state.showElevation || state.basemap === "relief") add(textureUrlFor(manifest, "elevation", 0));
 
     let cancelled = false;
+    // Drop textures this state still holds that nothing wants any more and the
+    // LRU has already let go of: this Map used to keep EVERY texture ever
+    // loaded alive (a 24/7 page grew by one 4 MB grid per map cycle / run /
+    // forecast hour), defeating the cache's memory bound.
+    setLoadedTextures((prev) => {
+      let next: Map<string, LoadedTexture> | null = null;
+      for (const url of prev.keys()) {
+        if (urls.has(url) || isTextureCached(url)) continue;
+        if (!next) next = new Map(prev);
+        next.delete(url);
+      }
+      return next ?? prev;
+    });
     [...urls].forEach((url) => {
       loadTexture(url)
         .then((tex) => {
           if (cancelled) return;
-          setLoadedTextures((prev) => new Map(prev).set(url, tex));
+          setLoadedTextures((prev) => (prev.get(url) === tex ? prev : new Map(prev).set(url, tex)));
         })
         .catch((err) => {
           if (!cancelled) console.warn(`[globe] texture load failed: ${url}`, err);
@@ -1219,21 +1232,25 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     highlightTrack?.code,
   ]);
 
-  // Animate the event pulse: while an event is on air, re-commit the layers each
-  // frame so the rings expand/fade. When it clears, commit once without them.
+  // The event pulse and the country glow: one commit puts them on the globe;
+  // an on-air AREA and the glow then breathe on the GPU (BreatheExtension —
+  // static layers, a clock uniform per draw), so nothing is re-committed for
+  // them. Only a POINT ping (sonar ring + dot, whose ring width and radius move
+  // against each other) still rides per-commit uniforms, at PULSE_FRAME_MS.
+  // When everything clears, commit once without them.
   useEffect(() => {
-    if (!pulseAt && !hoverPulse && !glowCountryIso && !glowRegionBbox) {
-      commitLayers();
-      return;
-    }
+    commitLayers();
+    if (!pulseAt && !hoverPulse) return;
     let raf = 0;
     let last = 0;
     const loop = (t: number) => {
       raf = requestAnimationFrame(loop);
-      // Every commit makes deck walk every layer + sublayer in the stack; the
-      // pulse/glow layers themselves are uniform-only now, so the walk IS the
-      // cost — see PULSE_FRAME_MS.
+      // Every commit makes deck walk every layer + sublayer in the stack — the
+      // walk IS the cost, so only pay it while a point ping is actually on air.
       if (t - last < PULSE_FRAME_MS) return;
+      const cut = pulseAtRef.current;
+      const point = hoverPulseRef.current ? true : cut ? pulseIsPoint(alertsRef.current, cut) : false;
+      if (!point) return;
       last = t;
       commitLayers();
     };

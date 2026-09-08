@@ -1,6 +1,7 @@
 import { GeoJsonLayer } from "@deck.gl/layers";
 import { COUNTRIES_URL } from "./basemap";
 import { DEPTH_TEST } from "./depth";
+import { BREATHE, type BreatheSpec } from "./breathe-extension";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type CountryFeature = any;
@@ -137,11 +138,14 @@ const FLAG_COLOR_STEP_MS = 200;
  * alone. Returns [] while nothing has resolved yet (still loading, or no
  * geojson match).
  *
- * Rebuilt every frame by the globe's pulse loop, so the breathe rides GPU
- * uniforms only: colour/width attributes are baked at the breath's PEAK and
- * `opacity` / `lineWidthScale` take them down to the trough and back. Nothing
- * per-vertex is touched per frame (the earlier `updateTriggers: now` regenerated
- * every attribute of a 4 MB country outline, ×3 passes, every frame).
+ * The breathe rides the GPU: colour/width attributes are baked at the breath's
+ * PEAK and BreatheExtension multiplies alpha / width down to the trough and
+ * back from a clock uniform each draw, so the layers are STATIC — Globe commits
+ * them once per spotlight, not per frame (an earlier version rebuilt them at
+ * 15 Hz with `opacity` / `lineWidthScale`, and each commit re-diffed the whole
+ * stack; before that, `updateTriggers: now` regenerated every attribute of a
+ * 4 MB country outline, ×3 passes, every frame). Only the flag-colour drift
+ * (`paletteFor`) still needs a rebuild, on its 200 ms step.
  *
  * `opts.fill: false` drops the translucent interior fill, so the glow is just
  * the framing halo + rim. `opts.color` overrides the base glow hue.
@@ -162,8 +166,6 @@ export function countryGlowLayers(
   const color = opts?.color ?? GLOW_COLOR;
   const withFill = opts?.fill !== false;
   const paletteFor = opts?.paletteFor;
-  const phase = (now % GLOW_PERIOD_MS) / GLOW_PERIOD_MS;
-  const breathe = 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI);
   // Per-feature glow hue: a country's cycling flag colours (quantised to
   // FLAG_COLOR_STEP_MS), else the flat base.
   const colorTick = paletteFor ? Math.floor(now / FLAG_COLOR_STEP_MS) : 0;
@@ -181,15 +183,22 @@ export function countryGlowLayers(
   const colorKey = `${color.join(",")}|${colorTick}`;
   const data = features;
 
-  /** One stroke pass: alpha/width baked at the peak, breathed via uniforms. */
+  /** One stroke pass: alpha/width baked at the peak, breathed on the GPU by
+   *  BreatheExtension (alpha and width multipliers from a clock uniform) — the
+   *  layer itself is static, so no per-frame commit is needed. */
   const stroke = (
     id: string,
     lightenBy: number,
     alpha: [number, number],
     width: [number, number],
     minPixels: number,
-  ) =>
-    new GeoJsonLayer({
+  ) => {
+    const breathe: BreatheSpec = {
+      periodMs: GLOW_PERIOD_MS,
+      alpha: [alpha[0] / alpha[1], 1],
+      size: [1, width[1] / width[0]],
+    };
+    return new GeoJsonLayer({
       id,
       data,
       filled: false,
@@ -198,11 +207,12 @@ export function countryGlowLayers(
       getLineWidth: width[0],
       lineWidthUnits: "pixels",
       lineWidthMinPixels: minPixels,
-      opacity: (alpha[0] + (alpha[1] - alpha[0]) * breathe) / alpha[1],
-      lineWidthScale: (width[0] + (width[1] - width[0]) * breathe) / width[0],
+      extensions: [BREATHE],
+      breathe,
       parameters: DEPTH_TEST,
       updateTriggers: { getLineColor: colorKey },
     });
+  };
 
   return [
     // 1 ─ Outer bloom — very wide, low-opacity, so it reads from a whole-globe shot.
@@ -221,7 +231,8 @@ export function countryGlowLayers(
             filled: true,
             stroked: false,
             getFillColor: (f: CountryFeature) => withA(colorOf(f), 60),
-            opacity: (26 + 34 * breathe) / 60,
+            extensions: [BREATHE],
+            breathe: { periodMs: GLOW_PERIOD_MS, alpha: [26 / 60, 1] } satisfies BreatheSpec,
             parameters: DEPTH_TEST,
             updateTriggers: { getFillColor: colorKey },
           }),

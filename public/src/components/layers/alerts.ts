@@ -5,6 +5,7 @@ import type { AlertFeature } from "../../lib/alerts";
 import { hazardMeta } from "../../lib/hazard";
 import { alertFocusKey, litWeight, type AlertFocus } from "../../lib/alert-cycle";
 import { DEPTH_TEST } from "./depth";
+import { BREATHE, type BreatheSpec } from "./breathe-extension";
 
 /** "#rrggbb" → [r,g,b]. */
 function rgb(hex: string): [number, number, number] {
@@ -339,6 +340,17 @@ function pointData(at: [number, number]): PulsePoint[] {
 }
 
 /**
+ * Does the on-air highlight at `at` fall back to the POINT ping (sonar ring +
+ * dot)? That branch still animates through per-commit uniforms, so Globe's
+ * pulse loop only re-commits while this is true; an on-air AREA breathes on
+ * the GPU (BreatheExtension) from static layers and needs no loop.
+ */
+export function pulseIsPoint(features: AlertFeature[], at: [number, number]): boolean {
+  const onAir = onAirFeature(features, at);
+  return !(onAir && hasArea(onAir));
+}
+
+/**
  * On-air highlight: while the director holds an alert, breathe *its own area*
  * (fill opacity + a widening lit edge) so the eye locks onto the shape being
  * talked about, not a free-floating reticle. Rebuilt every frame by the globe's
@@ -376,10 +388,13 @@ export function onAirPulseLayers(
   const layers: any[] = [];
 
   // 1 ─ Breathe the on-air area itself, so the eye locks onto the exact shape.
+  //     These two layers are STATIC: BreatheExtension breathes them on the GPU
+  //     (alpha / width multipliers from a clock uniform), so no pulse-loop
+  //     commit is needed while an area is on air — see pulseIsPoint().
   if (area && onAir) {
     const data = areaData(onAir);
-    // Fill alpha is baked at the breath's peak (150); `opacity` takes it down to
-    // the trough (40) and back.
+    // Fill alpha is baked at the breath's peak (150); the extension takes it
+    // down to the trough (40) and back.
     const FILL_PEAK = 150;
     layers.push(
       new GeoJsonLayer({
@@ -389,11 +404,11 @@ export function onAirPulseLayers(
         filled: true,
         stroked: false,
         getFillColor: withA(c, FILL_PEAK),
-        opacity: (40 + 110 * breathe) / FILL_PEAK,
+        extensions: [BREATHE],
+        breathe: { periodMs: PULSE_PERIOD_MS, alpha: [40 / FILL_PEAK, 1] } satisfies BreatheSpec,
         parameters: DEPTH_TEST,
       }),
-      // Lit edge: a constant 1.5 px width attribute; `lineWidthScale` swells it
-      // to 5.5 px at the peak.
+      // Lit edge: a constant 1.5 px width attribute, swelled to 5.5 px at the peak.
       new GeoJsonLayer({
         id: "alerts-onair-edge",
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -402,9 +417,10 @@ export function onAirPulseLayers(
         stroked: true,
         getLineColor: withA(lit, 220),
         getLineWidth: 1.5,
-        lineWidthScale: (1.5 + 4 * breathe) / 1.5,
         lineWidthUnits: "pixels",
         lineWidthMinPixels: 1.5,
+        extensions: [BREATHE],
+        breathe: { periodMs: PULSE_PERIOD_MS, size: [1, 5.5 / 1.5] } satisfies BreatheSpec,
         parameters: DEPTH_TEST,
       }),
     );
