@@ -507,6 +507,55 @@ crawl; a label canvas in a worker (would take the whole ~3 ms off the main
 thread in dense shots, but risks a one-frame lag between labels and their
 dots during fast pans — a design call); global + nest particles; luma.
 
+### Round 17 (2026-09-08) — luma's uniform buffers, and the label grid
+
+Round 16 measured (two runs, the first mid-cut on a fresh load): busy 68.4 →
+**58.7 / 56.0 %**, DOM 2 563 / 2 286 nodes, heap 237 → 129 MB once settled.
+`drawImage` calls now track labels drawn (243 for 230; 63 for 61) and the culled
+label loop is ~1.1 ms/frame on the dense shot. Deck is ~10 ms/frame (51–56 % of
+busy) and the Bottom-Up table says where: luma's uniform plumbing — `bindBuffer`
+(0.7 s), `getData` (0.4 s), `updateUniformBuffer` (0.38 s), `setUniforms` ×2
+(0.45 s), `bufferSubData` (0.26 s), `_flattenCompositeValue`, `_updateCache` —
+≈ 2.6 s of the 20 s, ~4 ms/frame across 22 real draws. Root cause in luma 9.3.5:
+`UniformBlock.setUniforms` sets `needsRedraw` on EVERY call, whether or not
+`_setUniform` found a changed value, so every block of every model (project,
+picking, the layer's own, each extension's) is repacked into a fresh ArrayBuffer
+and re-uploaded on every draw when only `project` moved with the camera.
+
+Also read off the trace: the renderer pipeline is ~4.6 ms/frame (Commit 1.9,
+Layerize 1.4, PrePaint 0.5, style 0.4); Layout ran 37× per 8 s at 1.6 ms each
+because the page-indicator squares animate `width` on every deck flip; the two
+per-frame inline-style writers left are the World Watch marquees (`WorldFeed`,
+`AutoScroll`), both already on their own layer; and the `clear` frame at
+~0.3 ms/frame is the full-canvas `clearRect` on the software 2D canvas
+(`Map.clear` is 0.1 µs) — the fixed cost of a viewport-sized label canvas.
+
+Shipped:
+
+- **luma uniform patch** (`lib/luma-uniform-patch.ts`, installed in `Globe.tsx`
+  before `new Deck`): `setUniforms` flags a redraw only when `_setUniform`
+  recorded a change (`modifiedUniforms`, which `getAllUniforms` clears together
+  with the flag at write time). A runtime prototype patch guarded on the 9.3
+  method shapes — a different luma leaves the class alone and logs once. jest
+  maps `@luma.gl/core` to a verbatim 9.3.5 `UniformBlock` copy
+  (`test/mocks/luma.ts`) so both the bug and the fix are tested.
+- **LabelGrid without per-frame allocation**: a frame stamp instead of
+  `Map.clear()` + regrow, flat rect arrays, inlined cell loops (no closures).
+- **Page squares off layout** (`page-dots.ts`, used by `GodsPanelFooter`,
+  `WorldReportDeck`, `SlideDeck`): the active square `scaleX`s from its left
+  edge, later ones `translateX` by the extra width, the row carries that width
+  as slack — same picture, same easing, and a flip no longer lays the page out
+  for nine frames.
+
+Next run: expect `getData`, `updateUniformBuffer`, `bufferSubData` and luma's
+`bindBuffer` wrapper to fall by well over half (only `project` and animating
+`breathe` blocks rewrite), and Layout near zero outside slide swaps. Still open:
+ticker windowing (1.6 k nodes — needs a one-time entry-width measurement so the
+strip stays continuous); the label canvas in a worker; merging the 3-ring glows
+into one banded draw (visual trade-off at joins); luma `_applyBindings` looking
+up block indices per draw (~0.25 ms/frame); WeatherLayers' `ensureDefaultProps`
+per draw (~0.3 ms/frame + GC).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

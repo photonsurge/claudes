@@ -109,6 +109,21 @@ beforeEach(() => {
 });
 
 describe("goLive", () => {
+  it("resolves the title once, stores it and reuses it when resuming", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-09-08T13:05:00Z"));
+    try {
+      setRun({ id: "title", sceneId: "default", status: "scheduled", title: "Weather %d/%m/%Y %H:%M %%d", platforms: { youtube: {} } });
+      await goLive("title");
+      const title = "Weather 08/09/2026 14:05 %d";
+      expect(yt.createBroadcast).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title }));
+      expect(yt.createStream).toHaveBeenCalledWith(expect.anything(), { title });
+      expect(runs.get("title").title).toBe(title);
+      jest.advanceTimersByTime(60_000);
+      await goLive("title");
+      expect(yt.createBroadcast).toHaveBeenCalledTimes(1);
+      expect(runs.get("title").title).toBe(title);
+    } finally { jest.useRealTimers(); }
+  });
   it("creates + binds YouTube, points OBS at the key, and lands in awaiting-ingest", async () => {
     setRun({ id: "r1", sceneId: "default", status: "scheduled", phase: "created", platforms: { youtube: {} }, durationMs: null });
     await goLive("r1");

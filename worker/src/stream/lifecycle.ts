@@ -18,6 +18,7 @@
  */
 import { getQueue } from "@photonsurge/shared/bull/bull";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { formatStreamTitle } from "@photonsurge/shared/stream-title";
 import {
   RUN_STATE,
   RUN_STATUS,
@@ -202,14 +203,15 @@ export async function goLive(runId: string): Promise<void> {
       // Each step guarded by what's already persisted, so a re-enqueued goLive
       // resumes instead of creating duplicate broadcasts/streams.
       if (!yt.broadcastId) {
+        const title = formatStreamTitle(run.title || defaultTitle(run));
         const { broadcastId, watchUrl } = await createBroadcast(ctx, {
-          title: run.title || defaultTitle(run),
+          title,
           privacy: run.privacy || "unlisted",
           scheduledStartTime: new Date().toISOString(),
           monitorStream: !!yt.monitorStream,
         });
         yt = { ...yt, broadcastId, watchUrl };
-        run = await persistPhase(runId, "broadcast", { platforms: withYoutube(run, yt) });
+        run = await persistPhase(runId, "broadcast", { title, platforms: withYoutube(run, yt) });
       }
       if (!yt.streamId) {
         const { streamId, ingestionAddress, streamName } = await createStream(ctx, {

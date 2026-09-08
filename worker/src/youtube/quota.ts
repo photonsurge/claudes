@@ -30,6 +30,7 @@ const TAG = "youtube-quota";
 /** Units per call. `liveChatMessages.list` is env-overridable — see YOUTUBE_QUOTA_COST_CHAT_LIST. */
 const BASE_COST = {
   "channels.list": 1,
+  "videos.list": 1,
   "liveBroadcasts.list": 1,
   "liveBroadcasts.insert": 50,
   "liveBroadcasts.bind": 50,

@@ -9,6 +9,7 @@
  * ramps, palette colours) stay with the callers — this file owns only chrome.
  */
 import type { CSSProperties, ReactNode } from "react";
+import { pageDotStyle, pageDotsSlack } from "./page-dots";
 
 export const SANS = "Saira, 'Helvetica Neue', Helvetica, sans-serif";
 export const MONO = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace";
@@ -161,17 +162,9 @@ export function GodsPanelFooter({ note, pages = 0, activePage = 0, accent = GODS
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
       {note && <div style={{ color: INK_FAINT, fontFamily: MONO, fontSize: 11.5, letterSpacing: 1.2 }}>{note}</div>}
       {pages > 0 && (
-        <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto", marginRight: pageDotsSlack(6, 18) }}>
           {Array.from({ length: pages }, (_, i) => (
-            <span
-              key={i}
-              style={{
-                width: i === activePage ? 18 : 6,
-                height: 6,
-                background: i === activePage ? accent : GODS_BORDER,
-                transition: "width 0.3s, background 0.3s",
-              }}
-            />
+            <span key={i} style={pageDotStyle(i, activePage, 6, 18, accent, GODS_BORDER, 300)} />
           ))}
         </div>
       )}

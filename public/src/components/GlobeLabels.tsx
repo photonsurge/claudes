@@ -103,51 +103,63 @@ export function labelWidth(text: string): number {
   return Math.min(240, 18 + text.length * CHAR_W);
 }
 
+/** One 48 px cell's boxes for the current frame. `stamp` is the frame that last
+ *  wrote it: `clear()` only bumps the grid's stamp, so the Map and every cell's
+ *  array survive from frame to frame instead of being dropped and regrown (a
+ *  thousand cells' worth of Map growth, array allocation and the per-call
+ *  closures `forCells` took — all GC pressure at 30 frames/s). Rects are stored
+ *  flat (x0, y0, x1, y1, …) for the same reason. */
+type Cell = { stamp: number; rects: number[] };
+
 export class LabelGrid {
   // Numeric cell keys: this runs per label per frame, and a `${cx},${cy}`
   // template string per cell was a measurable allocation + hash cost.
-  private cells = new Map<number, Array<[number, number, number, number]>>();
+  private cells = new Map<number, Cell>();
+  private stamp = 1;
 
+  /** Forget this frame's boxes — O(1): cells with an older stamp read as empty. */
   clear() {
-    this.cells.clear();
+    this.stamp++;
   }
 
-  private forCells(x0: number, y0: number, x1: number, y1: number, fn: (key: number) => void) {
+  /** True if the box overlaps anything already placed this frame. */
+  collides(x0: number, y0: number, x1: number, y1: number): boolean {
     const cx0 = Math.floor(x0 / GRID_CELL);
     const cx1 = Math.floor(x1 / GRID_CELL);
     const cy0 = Math.floor(y0 / GRID_CELL);
     const cy1 = Math.floor(y1 / GRID_CELL);
     for (let cx = cx0; cx <= cx1; cx++) {
-      for (let cy = cy0; cy <= cy1; cy++) fn((cx + 32768) * 65536 + (cy + 32768));
-    }
-  }
-
-  /** True if the box overlaps anything already placed. */
-  collides(x0: number, y0: number, x1: number, y1: number): boolean {
-    let hit = false;
-    this.forCells(x0, y0, x1, y1, (key) => {
-      if (hit) return;
-      const rects = this.cells.get(key);
-      if (!rects) return;
-      for (const [rx0, ry0, rx1, ry1] of rects) {
-        if (x0 < rx1 && x1 > rx0 && y0 < ry1 && y1 > ry0) {
-          hit = true;
-          break;
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const cell = this.cells.get((cx + 32768) * 65536 + (cy + 32768));
+        if (!cell || cell.stamp !== this.stamp) continue;
+        const r = cell.rects;
+        for (let i = 0; i < r.length; i += 4) {
+          if (x0 < r[i + 2] && x1 > r[i] && y0 < r[i + 3] && y1 > r[i + 1]) return true;
         }
       }
-    });
-    return hit;
+    }
+    return false;
   }
 
   place(x0: number, y0: number, x1: number, y1: number) {
-    this.forCells(x0, y0, x1, y1, (key) => {
-      let rects = this.cells.get(key);
-      if (!rects) {
-        rects = [];
-        this.cells.set(key, rects);
+    const cx0 = Math.floor(x0 / GRID_CELL);
+    const cx1 = Math.floor(x1 / GRID_CELL);
+    const cy0 = Math.floor(y0 / GRID_CELL);
+    const cy1 = Math.floor(y1 / GRID_CELL);
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const key = (cx + 32768) * 65536 + (cy + 32768);
+        let cell = this.cells.get(key);
+        if (!cell) {
+          cell = { stamp: this.stamp, rects: [] };
+          this.cells.set(key, cell);
+        } else if (cell.stamp !== this.stamp) {
+          cell.stamp = this.stamp;
+          cell.rects.length = 0;
+        }
+        cell.rects.push(x0, y0, x1, y1);
       }
-      rects.push([x0, y0, x1, y1]);
-    });
+    }
   }
 }
 

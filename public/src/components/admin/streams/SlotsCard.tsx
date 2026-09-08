@@ -22,6 +22,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import type { SceneMeta } from "@photonsurge/shared/control";
 import { runIsActive, type RunState, type StreamEncoderInfo, type StreamSlot } from "@photonsurge/shared/runs";
+import StreamTitleField from "../../StreamTitleField";
 
 /** Connected YouTube channel a slot can publish to (subset of lib/stream StreamAccount). */
 export interface SlotAccount {
@@ -101,6 +102,7 @@ export default function SlotsCard({
             onToggle={(enabled) => run(() => onSave({ ...slot, enabled }))}
             onRestartChange={(restartEveryMs) => run(() => onSave({ ...slot, restartEveryMs }))}
             onAnnounceChange={(announce) => run(() => onSave({ ...slot, announce }))}
+            onTitleChange={(title) => onSave({ ...slot, title })}
             onDelete={() => run(() => onDelete(slot.id))}
           />
         ))}
@@ -128,6 +130,7 @@ function SlotRow({
   onToggle,
   onRestartChange,
   onAnnounceChange,
+  onTitleChange,
   onDelete,
 }: {
   slot: StreamSlot;
@@ -136,8 +139,13 @@ function SlotRow({
   onToggle: (enabled: boolean) => void;
   onRestartChange: (restartEveryMs: number | null) => void;
   onAnnounceChange: (announce: boolean) => void;
+  onTitleChange: (title: string) => Promise<unknown>;
   onDelete: () => void;
 }) {
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(slot.title ?? "");
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [titleError, setTitleError] = useState<string | null>(null);
   const active = !!run && runIsActive(run.status);
   const status = !slot.enabled
     ? active
@@ -172,6 +180,9 @@ function SlotRow({
         </Typography>
       )}
       <Box sx={{ flex: 1 }} />
+      <Button size="small" onClick={() => { setTitleDraft(slot.title ?? ""); setTitleError(null); setEditingTitle(!editingTitle); }}>
+        Edit title
+      </Button>
       <FormControlLabel
         control={<Checkbox size="small" checked={!!slot.announce} onChange={(e) => onAnnounceChange(e.target.checked)} />}
         label="📣"
@@ -201,6 +212,23 @@ function SlotRow({
       <Button size="small" color="error" onClick={onDelete}>
         Remove
       </Button>
+      {editingTitle && (
+        <Box sx={{ width: "100%", p: 1, borderTop: "1px solid", borderColor: "divider" }}>
+          <StreamTitleField value={titleDraft} onChange={setTitleDraft} recurring />
+          <Typography variant="caption" color="text.secondary" component="p" sx={{ my: 1 }}>
+            Changes apply to the next broadcast. An already-live video keeps its current title.
+          </Typography>
+          {titleError && <Alert severity="error" sx={{ mb: 1 }}>{titleError}</Alert>}
+          <Button size="small" variant="contained" disabled={savingTitle} onClick={async () => {
+            setSavingTitle(true);
+            setTitleError(null);
+            try { await onTitleChange(titleDraft); setEditingTitle(false); }
+            catch (e) { setTitleError(String((e as Error)?.message ?? e)); }
+            finally { setSavingTitle(false); }
+          }}>Save title</Button>
+          <Button size="small" disabled={savingTitle} onClick={() => setEditingTitle(false)}>Cancel</Button>
+        </Box>
+      )}
     </Stack>
   );
 }
@@ -292,7 +320,7 @@ function AddSlotForm({
           </MenuItem>
         ))}
       </TextField>
-      <TextField label="title" value={title} onChange={(e) => setTitle(e.target.value)} sx={{ flex: 1, minWidth: 160 }} />
+      <StreamTitleField value={title} onChange={setTitle} recurring />
       <TextField
         select
         label="privacy"

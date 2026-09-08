@@ -65,7 +65,7 @@ async function POST__impl(req: Request) {
     sceneId,
     encoderId,
     accountId: body.accountId ? String(body.accountId).trim() : undefined,
-    title: body.title ? String(body.title).slice(0, 100) : undefined,
+    title: typeof body.title === "string" ? body.title.slice(0, 100) : undefined,
     privacy: PRIVACIES.includes(body.privacy as YoutubePrivacy) ? (body.privacy as YoutubePrivacy) : "public",
     enabled: body.enabled === true,
     monitorStream: !!body.monitorStream,

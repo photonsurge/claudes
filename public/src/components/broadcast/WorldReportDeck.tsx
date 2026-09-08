@@ -11,6 +11,7 @@
  * Pointer-inert like the rest of the chrome.
  */
 import type { AboutSettings, WeatherLocation } from "@photonsurge/shared/control";
+import { pageDotStyle, pageDotsSlack } from "./page-dots";
 import {
   applyReportPrefs,
   DEFAULT_REPORT_HOLD_MS,
@@ -176,17 +177,9 @@ export default function WorldReportDeck({
       {/* Slide position — a dot per ACTIVE slide so the rotation reads as
           deliberate (and a single-category channel shows a single dot). */}
       {active.length > 1 && (
-        <div style={{ display: "flex", gap: 6, paddingRight: 22 }}>
+        <div style={{ display: "flex", gap: 6, paddingRight: 22 + pageDotsSlack(6, 18) }}>
           {active.map((id, i) => (
-            <span
-              key={id}
-              style={{
-                width: i === page ? 18 : 6,
-                height: 6,
-                background: i === page ? theme.accent : GODS_BORDER,
-                transition: "width 0.3s, background 0.3s",
-              }}
-            />
+            <span key={id} style={pageDotStyle(i, page, 6, 18, theme.accent, GODS_BORDER, 300)} />
           ))}
         </div>
       )}

@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import { Deck, _GlobeView as GlobeView } from "@deck.gl/core";
+import { installLumaUniformPatch } from "../lib/luma-uniform-patch";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { isTextureCached, loadTexture, preloadTextures, type LoadedTexture } from "../lib/textures";
@@ -553,6 +554,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // ── Deck init (once) ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!canvasRef.current || deckRef.current) return;
+    // luma 9.3 re-uploads every uniform buffer every draw; flag only real changes.
+    installLumaUniformPatch();
     const deck = new Deck<GlobeView[]>({
       canvas: canvasRef.current,
       // Inside an OBS browser source the canvas IS the broadcast raster (CEF

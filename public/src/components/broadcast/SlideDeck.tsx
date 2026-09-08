@@ -14,6 +14,7 @@
  * scaled broadcast stage; pointer-inert.
  */
 import { useEffect, useState, type ReactNode } from "react";
+import { pageDotStyle, pageDotsSlack } from "./page-dots";
 import { CARD_W, MUTED, DeckChromeContext, DeckSlideActiveContext, type DeckChrome } from "./BroadcastCard";
 import { GODS_BORDER } from "./GodsPanel";
 
@@ -35,17 +36,9 @@ const FADE_MS = 1200;
  *  top-right corner. */
 function Dots({ count, active, accent }: { count: number; active: number; accent: string }) {
   return (
-    <div style={{ position: "absolute", top: 20, right: 26, display: "flex", gap: 5, alignItems: "center" }}>
+    <div style={{ position: "absolute", top: 20, right: 26 + pageDotsSlack(5, 14), display: "flex", gap: 5, alignItems: "center" }}>
       {Array.from({ length: count }, (_, i) => (
-        <span
-          key={i}
-          style={{
-            width: i === active ? 14 : 5,
-            height: 5,
-            background: i === active ? accent : GODS_BORDER,
-            transition: `width ${FADE_MS}ms ease, background ${FADE_MS}ms ease`,
-          }}
-        />
+        <span key={i} style={pageDotStyle(i, active, 5, 14, accent, GODS_BORDER, FADE_MS)} />
       ))}
     </div>
   );

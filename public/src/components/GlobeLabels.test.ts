@@ -99,6 +99,17 @@ describe("LabelGrid", () => {
     expect(grid.collides(0, 0, 50, 15)).toBe(false);
   });
 
+  it("reuses cells across frames without leaking the previous frame's boxes", () => {
+    const grid = new LabelGrid();
+    grid.place(0, 0, 20, 10); // frame 1, cell (0,0)
+    grid.clear();
+    grid.place(25, 20, 45, 30); // frame 2, same cell, disjoint box
+    expect(grid.collides(0, 0, 20, 10)).toBe(false); // frame 1's box is gone
+    expect(grid.collides(30, 22, 40, 28)).toBe(true); // frame 2's is live
+    grid.clear();
+    expect(grid.collides(30, 22, 40, 28)).toBe(false);
+  });
+
   it("detects collisions across grid-cell boundaries", () => {
     const grid = new LabelGrid();
     // A wide box spanning several 48px cells.

@@ -8,6 +8,12 @@
  */
 import { UnrecoverableError, type Job } from "bullmq";
 import { checkYoutubeConnection, exchangeAuthCode } from "../youtube/client";
+import { streamVideoStats } from "../youtube/video-stats";
+
+/** Admin-only audience statistics, read through the worker's existing OAuth connection. */
+export async function videoStats() {
+  return streamVideoStats();
+}
 
 export async function exchangeCode(job: Job) {
   const code = String(job.data?.data?.code ?? "");

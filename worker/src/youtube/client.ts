@@ -478,6 +478,14 @@ export async function getStreamStatus(
   };
 }
 
+/** Batch basic audience counters using the existing channel authorization. */
+export async function getVideoStats(ctx: YoutubeCtx, ids: string[]) {
+  const res = await apiCall(ctx, "videos.list", () =>
+    ctx.youtube.videos.list({ part: ["statistics", "liveStreamingDetails"], id: ids }),
+  );
+  return res.data.items ?? [];
+}
+
 export async function resolveLiveChatId(ctx: YoutubeCtx, broadcastId: string): Promise<string | undefined> {
   const res = await apiCall(ctx, "liveBroadcasts.list", () =>
     ctx.youtube.liveBroadcasts.list({ part: ["snippet"], id: [broadcastId] }),

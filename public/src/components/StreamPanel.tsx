@@ -21,6 +21,7 @@ import {
 import { useDirector } from "../lib/director";
 import { box } from "./panelBox";
 import LiveChatPanel from "./control/LiveChatPanel";
+import StreamTitleField from "./StreamTitleField";
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   scheduled: { label: "STARTING", color: "#ffb454" },
@@ -269,12 +270,7 @@ function GoLiveForm({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Broadcast title (optional)"
-        style={{ ...box, padding: "6px 8px" }}
-      />
+      <StreamTitleField value={title} onChange={setTitle} />
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
           <input type="checkbox" checked={publishYoutube} disabled={!canPublish} onChange={(e) => setPublishYoutube(e.target.checked)} />

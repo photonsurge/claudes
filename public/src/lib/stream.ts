@@ -40,6 +40,48 @@ export interface StreamSnapshot {
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
+export interface YoutubeVideoStats {
+  views?: string;
+  likes?: string;
+  watchingNow?: string;
+  fetchedAt?: number;
+  error?: string;
+}
+
+/** Poll only while the fleet page is visible; the worker shares cached batches across tabs. */
+export function useYoutubeVideoStats(enabled: boolean) {
+  const [stats, setStats] = useState<Record<string, YoutubeVideoStats>>({});
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let disposed = false;
+    let pending = false;
+    const controller = new AbortController();
+    const refresh = async () => {
+      if (pending || document.visibilityState === "hidden") return;
+      pending = true;
+      try {
+        const res = await fetch("/api/streams/stats", { cache: "no-store", signal: controller.signal });
+        if (!res.ok) throw new Error("YouTube stats temporarily unavailable");
+        const data = await res.json();
+        if (!disposed) { setStats(data.stats ?? {}); setError(null); }
+      } catch {
+        if (!disposed) setError("YouTube stats temporarily unavailable");
+      } finally { pending = false; }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 60_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      disposed = true;
+      controller.abort();
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [enabled]);
+  return { stats, error };
+}
+
 /** Cold-start snapshot (admin) + live run:state/run:status merged in. For /control + /admin/streams. */
 export function useStreams() {
   const { socket } = useSocket();

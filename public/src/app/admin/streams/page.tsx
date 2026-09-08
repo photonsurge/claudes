@@ -21,10 +21,12 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 import Checkbox from "@mui/material/Checkbox";
 import Typography from "@mui/material/Typography";
 import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
-import { runIsActive, type RunState, type StreamEncoderInfo, type YoutubePrivacy } from "@photonsurge/shared/runs";
+import { runIsActive, type RunState, type StreamHealth, type StreamEncoderInfo, type YoutubePrivacy } from "@photonsurge/shared/runs";
 import { listScenes } from "../../../lib/scenes";
 import {
   useStreams,
+  useYoutubeVideoStats,
+  type YoutubeVideoStats,
   startStream,
   stopStream,
   connectYoutube,
@@ -42,6 +44,8 @@ import AdminPageShell from "../../../components/admin/AdminPageShell";
 import EncodersCard from "../../../components/admin/streams/EncodersCard";
 import SlotsCard from "../../../components/admin/streams/SlotsCard";
 import RunChatDialog from "../../../components/admin/streams/RunChatDialog";
+import RunStats from "../../../components/admin/streams/RunStats";
+import StreamTitleField from "../../../components/StreamTitleField";
 
 const STATUS_COLOR: Record<string, "default" | "error" | "warning" | "success"> = {
   scheduled: "warning",
@@ -54,7 +58,7 @@ const STATUS_COLOR: Record<string, "default" | "error" | "warning" | "success"> 
 };
 
 export default function StreamsPage() {
-  const { snapshot, error, refetch, activeRunFor } = useStreams();
+  const { snapshot, health, error, refetch, activeRunFor } = useStreams();
   const [scenes, setScenes] = useState<SceneMeta[]>([]);
   // Read the OAuth callback result from the URL directly (avoids useSearchParams'
   // Suspense-boundary requirement in the App Router).
@@ -70,6 +74,7 @@ export default function StreamsPage() {
   const accounts = snapshot?.accounts ?? [];
   const encoders = snapshot?.encoders ?? [];
   const runs = snapshot?.runs ?? [];
+  const { stats: youtubeStats, error: statsError } = useYoutubeVideoStats(runs.some((r) => !!r.youtube?.broadcastId));
 
   return (
     <AdminPageShell
@@ -192,6 +197,7 @@ export default function StreamsPage() {
       />
 
       {/* Runs */}
+      {statsError && <Alert severity="warning" sx={{ mt: 2 }}>{statsError}</Alert>}
       <Box sx={{ display: "grid", gap: 1.25, mt: 2.25 }}>
         {runs.length === 0 && (
           <Typography variant="body2" color="text.secondary">
@@ -199,7 +205,7 @@ export default function StreamsPage() {
           </Typography>
         )}
         {runs.map((run) => (
-          <RunRow key={run.id} run={run} onStopped={refetch} />
+          <RunRow key={run.id} run={run} health={health?.[run.id]} youtubeStats={youtubeStats[run.id]} statsError={statsError} onStopped={refetch} />
         ))}
       </Box>
     </AdminPageShell>
@@ -295,12 +301,7 @@ function StartRunForm({
             </MenuItem>
           ))}
         </TextField>
-        <TextField
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Title (optional)"
-          sx={{ flex: 1, minWidth: 160 }}
-        />
+        <StreamTitleField value={title} onChange={setTitle} />
         {canPublish && (
           <TextField
             select
@@ -375,7 +376,7 @@ function StartRunForm({
   );
 }
 
-function RunRow({ run, onStopped }: { run: RunState; onStopped: () => void }) {
+function RunRow({ run, health, youtubeStats, statsError, onStopped }: { run: RunState; health?: StreamHealth; youtubeStats?: YoutubeVideoStats; statsError?: string | null; onStopped: () => void }) {
   const [busy, setBusy] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const active = runIsActive(run.status);
@@ -422,6 +423,7 @@ function RunRow({ run, onStopped }: { run: RunState; onStopped: () => void }) {
           </Button>
         )}
       </Stack>
+      <RunStats run={run} health={health} youtubeStats={youtubeStats} statsError={statsError} />
       <RunChatDialog runId={run.id} title={run.title || run.sceneId} open={chatOpen} onClose={() => setChatOpen(false)} />
     </Paper>
   );
