@@ -306,6 +306,51 @@ glyphs on the label canvas instead — WeatherLayers keeps its point finder
 internal, `getHighLowPointData`, so it needs investigating), and both wind
 particle layers (global + nest) draw at once, 1.7 ms/frame.
 
+### Round 12 (2026-09-08) — the H/L text and the label projection
+
+First apples-to-apples read on the heaviest scene with the ready-latch fix live
+(31 primitive layers, alerts + volcanoes + country glow on air): busy 82 →
+**68.5 %**, 29 fps (p95 33.4 ms). Layout and Paint hold at one frame in four;
+Layerize is still every frame (1.4 ms) with Commit 1.05, PrePaint 0.5 and
+style 0.4 → ~3.4 ms/frame of pipeline. Its per-frame trigger is NOT identified:
+the two JS transform writers (World Watch marquee, AutoScroll) already sit on
+`will-change` layers, so the remaining suspects are the canvases or gaps in
+CEF's direct-update coverage — open. deck is 63 % of busy (~15 ms/frame); the
+pressure H/L TextLayers alone 3.4 ms/frame (four luma draws with per-draw
+uniform re-uploads and glyph-atlas re-binding); particles 2.1 ms (global +
+nest both drawn); the label loop 1.3 ms — 1 131 `project()` calls a frame to
+draw 62 labels (a dense region: the collision grid needs every screen
+position to declutter).
+
+Shipped:
+
+- **H/L centres → label canvas.** `lib/high-low.ts` finds them from the decoded
+  pressure texture: byte grid → hPa, box blur scaled to the separation radius
+  (~9 cells on the 0.25° grid, so a byte-quantised plateau gets one strictly
+  highest cell), extrema = at least as high as the 8-neighbour ring and
+  strictly higher than the ring two cells out (a plain "≥" admitted every flat
+  cell beside a dip, ringing each low with fake 1013 hPa highs; a plain strict
+  test missed peaks that straddle two cells), then bucket + radius suppression
+  (WeatherLayers' own rule). `layers/high-low-labels.ts` turns them into
+  centred label-canvas entries (13px bold letter, 11px value, Helvetica
+  Neue/Arial, white on a dark halo — the deck layer's 12px white/black look),
+  memoised per texture. `pressureLayers` returns the ContourLayer only: −4
+  luma draws, −2 composite layers per frame. Tests: `lib/high-low.test.ts`
+  (centres, values, radius suppression, antimeridian, plateau, no-data).
+- **Label fast projection.** `GlobeLabels` caches each label's world position
+  (`viewport.projectPosition` is pure lng/lat → sphere; zoom lives in the
+  matrix) and projects with one allocation-free multiply through
+  `pixelProjectionMatrix` — exactly deck's `project()` (GlobeViewport doesn't
+  override it) minus the trig and three array allocations per label per frame.
+  `align: "center"`, `font`, `detailStyle: "plain"`, `detailFont` added to
+  `OverlayLabel` for the H/L look.
+
+Next run: expect the `pressure-highlow` rows gone from the deck census, the
+label census a few dozen labels higher, `project`/`projectPosition` gone from
+the Bottom-Up table, and busy a few points lower. Still open: the per-frame
+Layerize trigger, global + nest particles both drawing, and luma's per-draw
+plumbing (only the visual-trade-off cuts and a shader-side breathe left there).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

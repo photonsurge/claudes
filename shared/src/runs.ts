@@ -143,7 +143,7 @@ export const SLOT_HEALTHY_AFTER_MS = 5 * 60_000;
  * Floor for a slot's scheduled-restart interval — must clear the healthy window
  * above, or the restart's attempt bookkeeping would ratchet the backoff forever.
  */
-export const SLOT_RESTART_MIN_MS = 15 * 60_000;
+export const SLOT_RESTART_MIN_MS = 10 * 60_000;
 
 export function slotRetryDelayMs(failCount: number): number {
   const n = Math.max(0, Math.floor(failCount));

@@ -47,6 +47,14 @@ export interface OverlayLabel {
   minZoom?: number;
   /** Hide just the detail line below this zoom. Default = always show detail. */
   detailMinZoom?: number;
+  /** Anchor: text to the right of the point (default) or centred on it (H/L markers). */
+  align?: "left" | "center";
+  /** Canvas font for the name; default NAME_FONT. */
+  font?: string;
+  /** Detail as the dark chip (default) or plain haloed text under the name. */
+  detailStyle?: "chip" | "plain";
+  /** Canvas font for a plain detail; default PLAIN_DETAIL_FONT. */
+  detailFont?: string;
 }
 
 // deck's viewport type is awkward to import; we only need project()/width/height/zoom.
@@ -202,13 +210,16 @@ function textWidth(font: string, text: string): number {
   return measureCtx.measureText(text).width;
 }
 
-function nameSprite(text: string, color: string, dpr: number): Sprite | null {
-  const key = `n|${dpr}|${color}|${text}`;
+/** Plain (chip-less) detail line, e.g. a pressure centre's hPa value. */
+const PLAIN_DETAIL_FONT = "600 11px system-ui, sans-serif";
+
+function nameSprite(text: string, color: string, dpr: number, font = NAME_FONT): Sprite | null {
+  const key = `n|${dpr}|${font}|${color}|${text}`;
   const hit = sprites.get(key);
   if (hit) return hit;
-  const w = Math.ceil(textWidth(NAME_FONT, text)) + NAME_PAD * 2;
+  const w = Math.ceil(textWidth(font, text)) + NAME_PAD * 2;
   return makeSprite(key, dpr, w, NAME_H, (g) => {
-    g.font = NAME_FONT;
+    g.font = font;
     g.textBaseline = "middle";
     g.textAlign = "left";
     g.lineJoin = "round";
@@ -314,10 +325,15 @@ const textByLabel = new WeakMap<OverlayLabel, LabelSprites>();
 function spritesOf(l: OverlayLabel, dpr: number): LabelSprites {
   let s = textByLabel.get(l);
   if (s && s.dpr === dpr) return s;
+  const color = `rgb(${l.color[0]},${l.color[1]},${l.color[2]})`;
   s = {
     dpr,
-    name: l.text ? nameSprite(l.text, `rgb(${l.color[0]},${l.color[1]},${l.color[2]})`, dpr) : null,
-    detail: l.detail ? detailSprite(l.detail, dpr) : null,
+    name: l.text ? nameSprite(l.text, color, dpr, l.font) : null,
+    detail: !l.detail
+      ? null
+      : l.detailStyle === "plain"
+        ? nameSprite(l.detail, color, dpr, l.detailFont ?? PLAIN_DETAIL_FONT)
+        : detailSprite(l.detail, dpr),
   };
   textByLabel.set(l, s);
   return s;
@@ -325,6 +341,38 @@ function spritesOf(l: OverlayLabel, dpr: number): LabelSprites {
 
 /** Last-frame counters for scripts/profile-watch.mjs (`--deck` prints them). */
 const labelStats = { frames: 0, skipped: 0, considered: 0, projected: 0, drawn: 0, draws: 0 };
+
+// ── Fast projection ───────────────────────────────────────────────────────
+// deck's viewport.project() is trig + a 4×4 transform + three array
+// allocations per call, and a dense region projects >1 k labels a frame to
+// draw a few dozen (the collision grid needs screen positions to declutter).
+// The world position of a label never changes (GlobeViewport.projectPosition
+// is pure lng/lat → sphere; zoom lives in the matrix), so it is cached per
+// label and each frame is one allocation-free matrix multiply. Falls back to
+// project() for any viewport that lacks the pieces.
+const worldCache = new WeakMap<OverlayLabel, { ctor: unknown; p: number[] }>();
+function worldOf(l: OverlayLabel, vp: Viewport): number[] {
+  let c = worldCache.get(l);
+  if (!c || c.ctor !== vp.constructor) {
+    c = { ctor: vp.constructor, p: vp.projectPosition(l.position) };
+    worldCache.set(l, c);
+  }
+  return c.p;
+}
+function fastMatrix(vp: Viewport): ArrayLike<number> | null {
+  const m = vp.pixelProjectionMatrix;
+  return m && m.length === 16 && typeof vp.projectPosition === "function" ? m : null;
+}
+/** World → pixel through deck's pixelProjectionMatrix (column-major), perspective-divided. */
+export function projectWorld(m: ArrayLike<number>, p: ArrayLike<number>, out: [number, number]): [number, number] {
+  const x = p[0];
+  const y = p[1];
+  const z = p[2] ?? 0;
+  const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+  out[0] = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
+  out[1] = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+  return out;
+}
 
 export default function GlobeLabels({
   getViewport,
@@ -432,6 +480,8 @@ export default function GlobeLabels({
       const [cx, cy, cz] = unit(cam.longitude, cam.latitude);
       const grid = gridRef.current;
       grid.clear();
+      const m = fastMatrix(vp);
+      const px: [number, number] = [0, 0];
       let considered = 0;
       let projected = 0;
       let drawn = 0;
@@ -445,22 +495,47 @@ export default function GlobeLabels({
         // labels don't flicker right at the limb.
         if (ux * cx + uy * cy + uz * cz <= 0.04) continue;
         projected++;
-        const p = vp.project(l.position);
-        const x: number = p[0];
-        const y: number = p[1];
+        let x: number;
+        let y: number;
+        if (m) {
+          projectWorld(m, worldOf(l, vp), px);
+          x = px[0];
+          y = px[1];
+        } else {
+          const p = vp.project(l.position);
+          x = p[0];
+          y = p[1];
+        }
         if (x < -160 || y < -50 || x > w + 160 || y > h + 50) continue;
         // Decluttering: skip (hide) this label if a higher-priority one
         // already claimed overlapping screen space this frame. Box is
-        // anchored the same way the text is laid out — right of the point,
-        // vertically centred.
-        const x0 = x;
+        // anchored the same way the text is laid out — right of the point
+        // (or centred on it), vertically centred.
+        const centred = l.align === "center";
+        const showDetail = !!l.detail && zoom >= (l.detailMinZoom ?? 0);
+        const boxW = centred
+          ? Math.max(labelWidth(l.text), showDetail ? labelWidth(l.detail!) : 0)
+          : labelWidth(l.text);
+        const x0 = centred ? x - boxW / 2 : x;
         const y0 = y - LABEL_H / 2;
-        const x1 = x + labelWidth(l.text);
-        const y1 = y0 + LABEL_H;
+        const x1 = x0 + boxW;
+        const y1 = y0 + LABEL_H + (centred && showDetail ? DETAIL_H : 0);
         if (grid.collides(x0, y0, x1, y1)) continue;
         grid.place(x0, y0, x1, y1);
         drawn++;
 
+        const sp = spritesOf(l, dpr);
+        if (centred) {
+          if (sp.name) {
+            ctx.drawImage(sp.name.img, x - sp.name.w / 2, y - sp.name.h / 2, sp.name.w, sp.name.h);
+            draws++;
+          }
+          if (sp.detail && showDetail) {
+            ctx.drawImage(sp.detail.img, x - sp.detail.w / 2, y + LABEL_H / 2 - 3, sp.detail.w, sp.detail.h);
+            draws++;
+          }
+          continue;
+        }
         let tx = x + TEXT_DX;
         if (l.icon) {
           const ic = iconFor(l, dpr);
@@ -470,12 +545,11 @@ export default function GlobeLabels({
             tx += ic.w + ICON_GAP;
           }
         }
-        const sp = spritesOf(l, dpr);
         if (sp.name) {
           ctx.drawImage(sp.name.img, tx - NAME_PAD, y - sp.name.h / 2, sp.name.w, sp.name.h);
           draws++;
         }
-        if (sp.detail && zoom >= (l.detailMinZoom ?? 0)) {
+        if (sp.detail && showDetail) {
           ctx.drawImage(sp.detail.img, tx, y + LABEL_H / 2 + 2, sp.detail.w, sp.detail.h);
           draws++;
         }

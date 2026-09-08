@@ -11,7 +11,6 @@ import {
   RasterLayer,
   ParticleLayer,
   ContourLayer,
-  HighLowLayer,
   GridLayer,
 } from "weatherlayers-gl";
 import type { WeatherManifest, WeatherVariableManifest } from "@photonsurge/shared/manifest";
@@ -307,18 +306,19 @@ export function pressureLayers(
   fhr: number,
   resolve: TextureResolver,
   opts?: Parameters<typeof pressureProps>[2],
-): Array<ContourLayer | HighLowLayer> {
+): ContourLayer[] {
   const props = pressureProps(manifest, fhr, opts);
   if (!props) return [];
   const image = resolve(props.contour.image);
   if (!image) return [];
-  // Depth-tested so far-side isobars/H-L markers are occluded by the depth
-  // sphere rather than showing through the front of the globe.
+  // Depth-tested so far-side isobars are occluded by the depth sphere rather
+  // than showing through the front of the globe. The H/L centres are NOT a
+  // deck layer any more: WeatherLayers' HighLowLayer was two TextLayers at
+  // ~3.4 ms a frame on the OBS main thread; Globe.tsx now draws them on the
+  // label canvas from the same texture (layers/high-low-labels.ts).
   return [
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     new ContourLayer({ ...props.contour, image: image as any, parameters: DEPTH_TEST }),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new HighLowLayer({ ...props.highLow, image: image as any, parameters: DEPTH_TEST }),
   ];
 }
 

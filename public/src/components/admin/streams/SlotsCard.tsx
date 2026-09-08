@@ -29,9 +29,9 @@ export interface SlotAccount {
   channelTitle?: string;
 }
 
-/** Selectable scheduled-restart cadences (hours; 0 = never recycle). */
-const RESTART_HOURS = [0, 1, 2, 4, 6, 8, 12, 24];
-const HOUR_MS = 3_600_000;
+/** Selectable scheduled-restart cadences (minutes; 0 = never recycle). */
+const RESTART_MINUTES = [0, 10, 15, 30, 45, 60, 120, 240, 360, 480, 720, 1440];
+const MINUTE_MS = 60_000;
 
 /** Colour for a slot's derived status label (canonical run statuses + off/starting/retrying/…). */
 function slotStatusColor(status: string): "default" | "error" | "warning" | "success" {
@@ -186,9 +186,9 @@ function SlotRow({
         onChange={(e) => onRestartChange(Number(e.target.value) || null)}
         sx={{ width: 100 }}
       >
-        {RESTART_HOURS.map((h) => (
-          <MenuItem key={h} value={String(h * HOUR_MS)}>
-            {h ? `${h}h` : "never"}
+        {RESTART_MINUTES.map((m) => (
+          <MenuItem key={m} value={String(m * MINUTE_MS)}>
+            {m === 0 ? "never" : m < 60 ? `${m} min` : `${m / 60}h`}
           </MenuItem>
         ))}
       </TextField>
@@ -222,7 +222,7 @@ function AddSlotForm({
   const [accountId, setAccountId] = useState("");
   const [title, setTitle] = useState("");
   const [privacy, setPrivacy] = useState<"public" | "unlisted" | "private">("public");
-  const [restartHours, setRestartHours] = useState(0);
+  const [restartMinutes, setRestartMinutes] = useState(0);
   const [monitorStream, setMonitorStream] = useState(false);
   const [chatEnabled, setChatEnabled] = useState(true);
   const [promoteToTicker, setPromoteToTicker] = useState(false);
@@ -236,7 +236,7 @@ function AddSlotForm({
       accountId: accountId || undefined,
       title: title || undefined,
       privacy,
-      restartEveryMs: restartHours ? restartHours * HOUR_MS : null,
+      restartEveryMs: restartMinutes ? restartMinutes * MINUTE_MS : null,
       monitorStream,
       chat: { enabled: chatEnabled, promoteToTicker: chatEnabled && promoteToTicker },
       announce,
@@ -247,7 +247,7 @@ function AddSlotForm({
     setEncoderId("");
     setAccountId("");
     setTitle("");
-    setRestartHours(0);
+    setRestartMinutes(0);
     setMonitorStream(false);
     setChatEnabled(true);
     setPromoteToTicker(false);
@@ -307,13 +307,13 @@ function AddSlotForm({
       <TextField
         select
         label="restart"
-        value={String(restartHours)}
-        onChange={(e) => setRestartHours(Number(e.target.value) || 0)}
+        value={String(restartMinutes)}
+        onChange={(e) => setRestartMinutes(Number(e.target.value) || 0)}
         sx={{ minWidth: 100 }}
       >
-        {RESTART_HOURS.map((h) => (
-          <MenuItem key={h} value={String(h)}>
-            {h ? `${h}h` : "never"}
+        {RESTART_MINUTES.map((m) => (
+          <MenuItem key={m} value={String(m)}>
+            {m === 0 ? "never" : m < 60 ? `${m} min` : `${m / 60}h`}
           </MenuItem>
         ))}
       </TextField>

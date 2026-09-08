@@ -24,7 +24,8 @@ import type { ControlState } from "@photonsurge/shared/control";
 import { loadTexture, preloadTextures, type LoadedTexture } from "../lib/textures";
 import { isObsRender, setRendererInfo } from "../lib/broadcast-render";
 import { useCrossfadeVariable } from "../lib/crossfade";
-import { textureUrlFor } from "./layers/props";
+import { pressureProps, textureUrlFor } from "./layers/props";
+import { highLowOverlayLabels } from "./layers/high-low-labels";
 import { basemapLayers, countriesLayer, hexToRgb, TILE_MIN_ZOOM } from "./layers/basemap";
 import {
   scalarRasterLayers,
@@ -1246,8 +1247,20 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // city names follow the Cities layer and reveal progressively by population as
   // you zoom in, with a dim country·population detail line once zoomed close.
   // Capital and city label colours follow the scene's map palette.
+  // Pressure H / L centres, from the same decoded texture the isobars use —
+  // drawn on the label canvas (centred letter + hPa value) instead of
+  // WeatherLayers' HighLowLayer, whose two TextLayers cost the OBS main thread
+  // ~3.4 ms a frame. Memoised per texture inside highLowOverlayLabels; this
+  // memo only re-runs when the texture set or the toggle changes.
+  const highLowLabels = useMemo<OverlayLabel[]>(() => {
+    if (!manifest || !state.showPressure) return [];
+    const p = pressureProps(manifest, state.fhr);
+    const tex = p && loadedTextures.get(p.highLow.image);
+    return tex ? highLowOverlayLabels(tex, p.highLow) : [];
+  }, [manifest, state.fhr, state.showPressure, loadedTextures]);
+
   const overlayLabels = useMemo<OverlayLabel[]>(() => {
-    const out: OverlayLabel[] = [];
+    const out: OverlayLabel[] = [...highLowLabels];
     if (state.showTrackLabels) {
       for (const l of trackLabelData(tracks, {
         satelliteStyle: state.satelliteStyle,
@@ -1335,6 +1348,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     }
     return out;
   }, [
+    highLowLabels,
     state.showTrackLabels,
     state.showCities,
     state.showSeismic,

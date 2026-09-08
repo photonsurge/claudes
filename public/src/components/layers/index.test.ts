@@ -348,17 +348,14 @@ describe("windBarbLayers (nest-aware, single winner)", () => {
 });
 
 describe("pressureLayers", () => {
-  it("builds a depth-tested contour + high/low pair sharing the texture", () => {
+  it("builds a depth-tested contour layer only — the H/L centres ride the label canvas", () => {
     const layers = pressureLayers(manifest, 0, resolve);
-    expect(layers).toHaveLength(2);
+    expect(layers).toHaveLength(1);
     expect(layers[0]).toBeInstanceOf(ContourLayer);
-    expect(layers[1]).toBeInstanceOf(HighLowLayer);
+    expect(layers.some((l) => l instanceof HighLowLayer)).toBe(false);
     expect(props(layers[0]).id).toBe("pressure-contour-0");
-    expect(props(layers[1]).id).toBe("pressure-highlow-0");
-    for (const l of layers) {
-      expect(props(l).image).toEqual({ url: "/tex/pres0" });
-      expect(props(l).parameters).toBe(DEPTH_TEST);
-    }
+    expect(props(layers[0]).image).toEqual({ url: "/tex/pres0" });
+    expect(props(layers[0]).parameters).toBe(DEPTH_TEST);
   });
 
   it("forwards isobar spacing opts to the contour layer", () => {
