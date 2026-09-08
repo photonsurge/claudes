@@ -1,4 +1,27 @@
-import { LabelGrid, holderLabels, iconSig, iconVarsOf, labelWidth, type OverlayLabel } from "./GlobeLabels";
+import { LabelGrid, holderLabels, iconSig, iconVarsOf, labelWidth, viewCosMin, type OverlayLabel } from "./GlobeLabels";
+
+describe("viewCosMin (pre-projection view culling)", () => {
+  const cam: [number, number, number] = [1, 0, 0]; // sub-camera point at lng 0, lat 0
+
+  it("tightens to the corners' angular reach on a zoomed shot", () => {
+    // Corners unproject to ±3° around the camera → reach ≈ 3°·√2, widened by a
+    // quarter plus a degree ≈ 6.3° → cos ≈ 0.994: far more selective than 0.04.
+    const vp = { unproject: ([x, y]: number[]) => [x ? 3 : -3, y ? 3 : -3] };
+    const c = viewCosMin(vp, 100, 100, cam);
+    expect(c).toBeGreaterThan(0.99);
+    expect(c).toBeLessThan(1);
+  });
+
+  it("falls back to the hemisphere floor on a whole-globe shot or without unproject()", () => {
+    // Corners land on the limb (90° away) → floor.
+    const limb = { unproject: () => [90, 0] };
+    expect(viewCosMin(limb, 100, 100, cam)).toBe(0.04);
+    expect(viewCosMin({}, 100, 100, cam)).toBe(0.04);
+    // A corner that can't be unprojected → floor too.
+    const nan = { unproject: () => [NaN, NaN] };
+    expect(viewCosMin(nan, 100, 100, cam)).toBe(0.04);
+  });
+});
 
 describe("keyed icon sprites", () => {
   const resolve = (name: string, fallback: string) =>

@@ -250,6 +250,9 @@ export interface ScalarRasterProps {
 
 export interface ScalarRasterOpts {
   opacity?: number;
+  /** Cross-fade ramp drawn on the GPU (BreatheExtension `ramp`), or null. Attached
+   *  by the layer builder, not here — this file stays deck-free. */
+  fade?: import("./breathe-extension").BreatheSpec | null;
   /** Appended to the layer id so a base + its nests get unique ids (deck.gl). */
   idSuffix?: string;
 }

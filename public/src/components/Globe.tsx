@@ -961,15 +961,19 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         // Mid-crossfade: draw the outgoing variable fading out UNDER the
         // incoming one fading in (see useCrossfadeVariable) instead of the
         // instant hard cut a bare activeVariable switch would produce.
-        if (variableFade.from && variableFade.progress < 1) {
+        if (variableFade.from) {
+          // Both layers are committed ONCE per cut; the fade itself is a GPU
+          // ramp (BreatheExtension) from `startedAt` over `fadeMs`, so no
+          // per-step rebuild of this whole stack while it runs.
+          const ramp = { wave: "ramp" as const, periodMs: variableFade.fadeMs, startMs: variableFade.startedAt };
           layers.push(
             ...scalarRasterLayers(manifest, variableFade.from, state.fhr, resolve, camera, {
-              opacity: 0.7 * (1 - variableFade.progress),
+              fade: { ...ramp, alpha: [1, 0] },
             }),
           );
           layers.push(
             ...scalarRasterLayers(manifest, variableFade.to, state.fhr, resolve, camera, {
-              opacity: 0.7 * variableFade.progress,
+              fade: { ...ramp, alpha: [0, 1] },
             }),
           );
         } else {
@@ -1063,7 +1067,8 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.activeVariable,
     variableFade.from,
     variableFade.to,
-    variableFade.progress,
+    variableFade.startedAt,
+    variableFade.fadeMs,
     state.showPressure,
     state.showElevation,
     state.elevation,

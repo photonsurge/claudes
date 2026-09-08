@@ -1,4 +1,4 @@
-import { BREATHE, BreatheExtension, breatheModule, breatheUniforms, type BreatheSpec } from "./breathe-extension";
+import { BREATHE, BreatheExtension, breatheModule, breatheUniforms, breatheWave, type BreatheSpec } from "./breathe-extension";
 
 const GAMMA = (x: number) => Math.pow(x, 1 / 2.2);
 
@@ -21,6 +21,27 @@ describe("breatheUniforms", () => {
     expect(breatheUniforms(ping, 250).alpha).toBeCloseTo(GAMMA(0.75));
     expect(breatheUniforms(ping, 999).size).toBeCloseTo(5.995);
     expect(breatheUniforms(ping, 1000).size).toBeCloseTo(1);
+  });
+
+  it("ramp runs 0→1 once from startMs over periodMs and holds", () => {
+    const ramp: BreatheSpec = { periodMs: 700, wave: "ramp", startMs: 10_000, alpha: [0, 1] };
+    expect(breatheWave(ramp, 9_000)).toBe(0);
+    expect(breatheWave(ramp, 10_350)).toBeCloseTo(0.5);
+    expect(breatheWave(ramp, 10_700)).toBe(1);
+    expect(breatheWave(ramp, 99_999)).toBe(1);
+    expect(breatheUniforms(ramp, 10_350).alpha).toBeCloseTo(GAMMA(0.5));
+  });
+
+  it("a finished ramp stops asking deck for frames; a running one keeps asking", () => {
+    const setShaderModuleProps = jest.fn();
+    const setNeedsRedraw = jest.fn();
+    const running = { props: { breathe: { periodMs: 700, wave: "ramp", startMs: Date.now(), alpha: [0, 1] } }, setShaderModuleProps, setNeedsRedraw };
+    BREATHE.draw.call(running as never);
+    expect(setNeedsRedraw).toHaveBeenCalledTimes(1);
+    const done = { props: { breathe: { periodMs: 700, wave: "ramp", startMs: Date.now() - 5000, alpha: [0, 1] } }, setShaderModuleProps, setNeedsRedraw };
+    BREATHE.draw.call(done as never);
+    expect(setNeedsRedraw).toHaveBeenCalledTimes(1);
+    expect(setShaderModuleProps).toHaveBeenLastCalledWith({ breathe: { alpha: 1, size: 1 } });
   });
 
   it("leaves a channel alone when its range is omitted", () => {

@@ -18,7 +18,11 @@ jest.mock("weatherlayers-gl", () => ({
   ContourLayer: class { constructor(_p: Rec) {} },
   HighLowLayer: class { constructor(_p: Rec) {} },
 }));
+// @deck.gl/core and @deck.gl/layers map to the same shared mock file, so this
+// factory replaces BOTH — keep the shared exports (LayerExtension, for the
+// BreatheExtension the raster builders attach) and only override the layer.
 jest.mock("@deck.gl/layers", () => ({
+  ...jest.requireActual<Record<string, unknown>>("../../test/mocks/deckgl"),
   ScatterplotLayer: class { constructor(_p: Rec) {} },
 }));
 

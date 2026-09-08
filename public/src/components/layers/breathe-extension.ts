@@ -24,8 +24,12 @@ import { LayerExtension, type Layer } from "@deck.gl/core";
 export interface BreatheSpec {
   /** One full cycle, ms. Phase is wall-clock based so every layer breathes in step. */
   periodMs: number;
-  /** Waveform: cosine breathe (0→1→0, default) or sawtooth ping (0→1, snap back). */
-  wave?: "breathe" | "ping";
+  /** Waveform: cosine breathe (0→1→0, default), sawtooth ping (0→1, snap
+   *  back), or a one-shot ramp 0→1 over `periodMs` from `startMs` (a
+   *  cross-fade — no commits while it runs, no redraw requests once done). */
+  wave?: "breathe" | "ping" | "ramp";
+  /** Ramp start, wall-clock ms (ramp only). */
+  startMs?: number;
   /** Alpha multiplier at wave 0 and wave 1 (default: no change). */
   alpha?: [number, number];
   /** Line-width / radius multiplier at wave 0 and wave 1 (default: no change). */
@@ -52,11 +56,17 @@ export const breatheModule = {
   },
 } as const;
 
+/** Where in its cycle (0..1) `spec` is at wall-clock `now` (ms). */
+export function breatheWave(spec: BreatheSpec, now: number): number {
+  const period = spec.periodMs > 0 ? spec.periodMs : 1;
+  if (spec.wave === "ramp") return Math.min(1, Math.max(0, (now - (spec.startMs ?? 0)) / period));
+  const phase = (((now % period) + period) % period) / period;
+  return spec.wave === "ping" ? phase : 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI);
+}
+
 /** The two uniforms for `spec` at wall-clock `now` (ms). */
 export function breatheUniforms(spec: BreatheSpec, now: number): { alpha: number; size: number } {
-  const period = spec.periodMs > 0 ? spec.periodMs : 1;
-  const phase = (((now % period) + period) % period) / period;
-  const w = spec.wave === "ping" ? phase : 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI);
+  const w = breatheWave(spec, now);
   const lerp = (r: [number, number] | undefined) => (r ? r[0] + (r[1] - r[0]) * w : 1);
   return { alpha: Math.pow(Math.max(0, lerp(spec.alpha)), 1 / 2.2), size: lerp(spec.size) };
 }
@@ -76,9 +86,11 @@ export class BreatheExtension extends LayerExtension {
       this.setShaderModuleProps({ breathe: { alpha: 1, size: 1 } });
       return;
     }
-    this.setShaderModuleProps({ breathe: breatheUniforms(spec, Date.now()) });
-    // Keep the animation going when nothing else asks deck for a frame.
-    this.setNeedsRedraw();
+    const now = Date.now();
+    this.setShaderModuleProps({ breathe: breatheUniforms(spec, now) });
+    // Keep the animation going when nothing else asks deck for a frame — a
+    // finished ramp stops asking.
+    if (spec.wave !== "ramp" || breatheWave(spec, now) < 1) this.setNeedsRedraw();
   }
 }
 

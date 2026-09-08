@@ -178,6 +178,8 @@ interface Sprite {
   /** CSS-px size. */
   w: number;
   h: number;
+  /** Cache key — combined sprites key on their parts' keys. */
+  key: string;
 }
 
 const sprites = new Map<string, Sprite>();
@@ -199,7 +201,7 @@ function makeSprite(
   if (!g) return null;
   g.scale(dpr, dpr);
   paint(g);
-  const s = { img: c, w, h };
+  const s: Sprite = { img: c, w, h, key };
   if (sprites.size >= SPRITE_CAP) {
     const oldest = sprites.keys().next().value;
     if (oldest !== undefined) sprites.delete(oldest);
@@ -386,23 +388,75 @@ interface LabelSprites {
   dpr: number;
   name: Sprite | null;
   detail: Sprite | null;
+  /** Name + detail pre-composed for the left-anchored layout: ONE drawImage
+   *  per label instead of two (a dense zoomed shot draws ~300 of each). */
+  combo: Sprite | null;
 }
+/** Vertical offset of the detail line below the name sprite's top edge. */
+const DETAIL_DY = NAME_H / 2 + LABEL_H / 2 + 2;
+
+function comboSprite(name: Sprite, detail: Sprite, dpr: number): Sprite | null {
+  const key = `c|${name.key}|${detail.key}`;
+  const hit = sprites.get(key);
+  if (hit) return hit;
+  const w = Math.max(name.w, NAME_PAD + detail.w);
+  const h = DETAIL_DY + detail.h;
+  return makeSprite(key, dpr, w, h, (g) => {
+    g.drawImage(name.img, 0, 0, name.w, name.h);
+    g.drawImage(detail.img, NAME_PAD, DETAIL_DY, detail.w, detail.h);
+  });
+}
+
 const textByLabel = new WeakMap<OverlayLabel, LabelSprites>();
 function spritesOf(l: OverlayLabel, dpr: number): LabelSprites {
   let s = textByLabel.get(l);
   if (s && s.dpr === dpr) return s;
   const color = `rgb(${l.color[0]},${l.color[1]},${l.color[2]})`;
+  const name = l.text ? nameSprite(l.text, color, dpr, l.font) : null;
+  const detail = !l.detail
+    ? null
+    : l.detailStyle === "plain"
+      ? nameSprite(l.detail, color, dpr, l.detailFont ?? PLAIN_DETAIL_FONT)
+      : detailSprite(l.detail, dpr);
   s = {
     dpr,
-    name: l.text ? nameSprite(l.text, color, dpr, l.font) : null,
-    detail: !l.detail
-      ? null
-      : l.detailStyle === "plain"
-        ? nameSprite(l.detail, color, dpr, l.detailFont ?? PLAIN_DETAIL_FONT)
-        : detailSprite(l.detail, dpr),
+    name,
+    detail,
+    combo: name && detail && l.align !== "center" ? comboSprite(name, detail, dpr) : null,
   };
   textByLabel.set(l, s);
   return s;
+}
+
+// ── View culling ──────────────────────────────────────────────────────────
+/**
+ * cos of the widest angle from the sub-camera point that can still land on
+ * screen (plus the label margin), from the viewport's four corners. Labels
+ * beyond it are skipped BEFORE projection and collision testing — a zoomed
+ * shot has ~1 000 labels facing the camera but only a few hundred anywhere
+ * near the screen. Falls back to the near-hemisphere floor (whole-globe
+ * shots, or a viewport without unproject()).
+ */
+export function viewCosMin(vp: Viewport, w: number, h: number, cam: [number, number, number]): number {
+  const FLOOR = 0.04;
+  if (typeof vp.unproject !== "function") return FLOOR;
+  let maxAngle = 0;
+  for (const [x, y] of [
+    [0, 0],
+    [w, 0],
+    [0, h],
+    [w, h],
+  ]) {
+    const ll = vp.unproject([x, y]);
+    if (!ll || !Number.isFinite(ll[0]) || !Number.isFinite(ll[1])) return FLOOR;
+    const [ux, uy, uz] = unit(ll[0], ll[1]);
+    const d = Math.max(-1, Math.min(1, ux * cam[0] + uy * cam[1] + uz * cam[2]));
+    maxAngle = Math.max(maxAngle, Math.acos(d));
+  }
+  // Labels may sit up to ~160 px outside the viewport: widen by a quarter
+  // plus a degree, never past the hemisphere.
+  const a = Math.min(Math.PI / 2, maxAngle * 1.25 + Math.PI / 180);
+  return Math.max(FLOOR, Math.cos(a));
 }
 
 /** Last-frame counters for scripts/profile-watch.mjs (`--deck` prints them). */
@@ -566,6 +620,7 @@ export default function GlobeLabels({
       ctx.clearRect(0, 0, w, h);
 
       const [cx, cy, cz] = unit(cam.longitude, cam.latitude);
+      const cosMin = viewCosMin(vp, w, h, [cx, cy, cz]);
       const grid = gridRef.current;
       grid.clear();
       const m = fastMatrix(vp);
@@ -579,9 +634,9 @@ export default function GlobeLabels({
         if (zoom < (l.minZoom ?? 0)) continue;
         considered++;
         const [ux, uy, uz] = unitOf(l);
-        // Dot < 0 → the point is on the hidden hemisphere; small margin so
-        // labels don't flicker right at the limb.
-        if (ux * cx + uy * cy + uz * cz <= 0.04) continue;
+        // Beyond the view's angular reach (or on the hidden hemisphere — the
+        // 0.04 floor keeps a small margin so labels don't flicker at the limb).
+        if (ux * cx + uy * cy + uz * cz <= cosMin) continue;
         projected++;
         let x: number;
         let y: number;
@@ -632,6 +687,12 @@ export default function GlobeLabels({
             draws++;
             tx += ic.w + ICON_GAP;
           }
+        }
+        if (sp.combo && showDetail) {
+          // Name + detail in one blit (same placement as the two draws below).
+          ctx.drawImage(sp.combo.img, tx - NAME_PAD, y - NAME_H / 2, sp.combo.w, sp.combo.h);
+          draws++;
+          continue;
         }
         if (sp.name) {
           ctx.drawImage(sp.name.img, tx - NAME_PAD, y - sp.name.h / 2, sp.name.w, sp.name.h);

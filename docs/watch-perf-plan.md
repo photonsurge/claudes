@@ -470,6 +470,43 @@ few dozen nodes and React's frames (`cr`, `i_`, `ua`) to drop. Still open: the
 cut ~1.5 k nodes → less PrePaint/Layerize per frame), global + nest particles
 both drawing, luma's per-draw plumbing.
 
+### Round 16 (2026-09-08) — dense label shots, and the cross-fade
+
+Round 15 measured: DOM 5 913 → **2 488** nodes, React's frames 597 → 391 ms
+per 20 s, `serializeToString` gone, heap 179 → 70 MB. Busy read 68.4 % because
+this was the densest label shot yet — 270 labels drawn of 1 122 facing the
+camera, 375 `drawImage` calls — putting the label canvas at ~3.3 ms/frame:
+1.7 ms of blits plus ~1.5 ms projecting and collision-testing a thousand
+candidates to keep a quarter of them. `setLayers` was still 3.7 %: the
+map-type cross-fade stepped `progress` every 60 ms and every step rebuilt and
+re-diffed the whole deck stack (~12 commits per cut).
+
+Shipped:
+
+- **View culling before projection** (`viewCosMin`): the four viewport corners
+  are unprojected once a frame and every label beyond their angular reach
+  (+25 % and a degree for the label margin) is skipped before projection and
+  the collision grid — on a zoomed shot that is most of the ~1 000 facing
+  labels. Whole-globe shots fall back to the hemisphere test unchanged.
+- **Combined name + detail sprites**: the left-anchored layout pre-composes the
+  two sprites once per label (`comboSprite`, keyed on its parts) so a label
+  with its detail line is ONE `drawImage`, not two — 375 → ~270 calls on that
+  shot, placement identical.
+- **Cross-fade on the GPU**: `BreatheExtension` gained a one-shot `ramp` wave
+  (`startMs` → over `periodMs`, stops requesting frames when done); every
+  scalar raster now carries the extension (with a null spec when not fading,
+  so `extensions` never changes and no shader is recompiled mid-cut), and
+  `useCrossfadeVariable` no longer ticks — it records the start and clears
+  `from` once, so a map-type cut is two commits (start, settle) instead of ~12.
+  The finest nest now fades with the base instead of popping.
+
+Next run: expect the label loop's frames (`h`, `forCells`, `collides`) to
+shrink on zoomed shots, `drawImage` calls ≈ labels drawn, and `setLayers` a
+couple of points lower during the tour. Still open: the 1.6 k-node ticker
+crawl; a label canvas in a worker (would take the whole ~3 ms off the main
+thread in dense shots, but risks a one-frame lag between labels and their
+dots during fast pans — a design call); global + nest particles; luma.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

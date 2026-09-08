@@ -33,6 +33,7 @@ import {
 } from "./props";
 import { resolveEntries, rankNestsByFit, type ResolverCamera } from "./resolve";
 import { DEPTH_OCCLUDE, DEPTH_TEST, DEPTH_PAINT } from "./depth";
+import { BREATHE, type BreatheSpec } from "./breathe-extension";
 
 /** A resolver mapping a texture URL to an already-loaded image (or undefined). */
 export type TextureResolver = (url: string) => LoadedTexture | undefined;
@@ -103,8 +104,12 @@ export function scalarRasterLayers(
   fhr: number,
   resolve: TextureResolver,
   camera: ResolverCamera,
-  opts?: { opacity?: number },
+  opts?: { opacity?: number; fade?: BreatheSpec | null },
 ): RasterLayer[] {
+  // Every raster carries the extension (with a null spec when not fading) so a
+  // fade starting or ending never changes `extensions` — that would rebuild
+  // the layer's model and recompile its shader mid-cut.
+  const fade = { extensions: [BREATHE], breathe: (opts?.fade ?? null) as BreatheSpec | null };
   const entries = resolveEntries(manifest.variables[variableId], camera);
   const out: RasterLayer[] = [];
   const buildNest = (e: WeatherVariableManifest, i: number) =>
@@ -133,7 +138,7 @@ export function scalarRasterLayers(
     });
     const image = props && resolve(props.image);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (props && image) out.push(new RasterLayer({ ...props, image: image as any, parameters: DEPTH_OCCLUDE }));
+    if (props && image) out.push(new RasterLayer({ ...props, ...fade, image: image as any, parameters: DEPTH_OCCLUDE }));
     else {
       // No TRUE global base drew (nest-only variable, e.g. temp/humidity whose base
       // has empty `files`). Promote the COARSEST loaded nest — icon-global spans the
@@ -142,7 +147,7 @@ export function scalarRasterLayers(
       const coarse = pickCoarsestLoaded(entries, buildNest, resolve);
       if (coarse) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        out.push(new RasterLayer({ ...coarse.props, image: coarse.image as any, parameters: DEPTH_OCCLUDE }));
+        out.push(new RasterLayer({ ...coarse.props, ...fade, image: coarse.image as any, parameters: DEPTH_OCCLUDE }));
         baseNestIndex = coarse.index;
       }
     }
@@ -157,7 +162,7 @@ export function scalarRasterLayers(
   // when it's the very nest already drawn as the promoted base (single active nest).
   const finest = pickBestFitLoaded(entries, buildFinestNest, resolve, camera);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (finest && finest.index !== baseNestIndex) out.push(new RasterLayer({ ...finest.props, image: finest.image as any, parameters: DEPTH_PAINT }));
+  if (finest && finest.index !== baseNestIndex) out.push(new RasterLayer({ ...finest.props, ...fade, image: finest.image as any, parameters: DEPTH_PAINT }));
   return out;
 }
 
