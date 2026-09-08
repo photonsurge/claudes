@@ -6,9 +6,10 @@
  * a single-kind slice). Just the row + marquee body — the surrounding card
  * chrome/header belongs to whoever renders it. Rows are the G.O.D.S. boxed
  * style: a dark inset tile with a severity-coloured left edge and a mono badge.
- * Once the list outgrows the window it marquees vertically: we render the list
- * twice and slide up by exactly one copy, so the loop is seamless.
+ * Once the list outgrows the window it marquees vertically — see MarqueeFeed:
+ * every row still scrolls through, but only the on-screen ones exist in the DOM.
  */
+import { useEffect, useRef, useState } from "react";
 import type { WorldWatchItem } from "../../lib/broadcast";
 import { MONO, GODS_TILE, GODS_TILE_BORDER, INK_FAINT } from "./GodsPanel";
 import { useBroadcastTheme } from "./theme-context";
@@ -122,6 +123,76 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
   );
 }
 
+/** Rows the marquee keeps mounted beyond the window (one entering, one leaving). */
+const WINDOW_SLACK = 2;
+/** Marquee pace: one row scrolls past every this many ms — the same speed the
+ *  old CSS loop ran at (the whole list in `items.length × 2.4 s`). */
+const MS_PER_ROW = 2400;
+
+/**
+ * Vertical marquee that keeps only the on-screen rows in the DOM. Nothing is
+ * capped — the whole list scrolls through — but the previous version mounted
+ * the ENTIRE list twice (for a seamless CSS loop): a 500-row ALERTS slice was
+ * ~13 k DOM nodes and hundreds of thumbnail <img>s, a compositor layer the
+ * height of the whole list, and Chrome's per-frame layer assignment
+ * (Layerize) ballooning to ~40 ms a frame for as long as that slide was up —
+ * then thousands of nodes unmounted on every deck rotation.
+ *
+ * Now: `visible + WINDOW_SLACK` rows. The sub-row motion is a compositor-only
+ * transform written straight to the track element each frame (no React); the
+ * window itself shifts by one row every MS_PER_ROW, which IS a React render but
+ * only of a dozen rows. Row keys carry a lap counter so a row keeps its DOM
+ * identity while it slides through the window instead of being re-mounted.
+ */
+function MarqueeFeed({ items, visible, viewH }: { items: WorldWatchItem[]; visible: number; viewH: number }) {
+  const n = items.length;
+  const [start, setStart] = useState(0);
+  const startRef = useRef(0);
+  const trackRef = useRef<HTMLDivElement>(null);
+  // Scroll clock origin, kept across item changes so a feed refresh never snaps.
+  const originRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (typeof requestAnimationFrame !== "function") return;
+    const pxPerMs = FEED_ROW_H / MS_PER_ROW;
+    let raf = 0;
+    const loop = (t: number) => {
+      raf = requestAnimationFrame(loop);
+      if (originRef.current === null) originRef.current = t;
+      // Unbounded offset: the window index only ever grows, so keys never
+      // collide and a row keeps its identity as it slides through.
+      const offset = (t - originRef.current) * pxPerMs;
+      const idx = Math.floor(offset / FEED_ROW_H);
+      const frac = offset - idx * FEED_ROW_H;
+      const track = trackRef.current;
+      if (track) track.style.transform = `translate3d(0, ${(-frac).toFixed(2)}px, 0)`;
+      if (idx !== startRef.current) {
+        startRef.current = idx;
+        setStart(idx);
+      }
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const count = Math.min(n, visible + WINDOW_SLACK);
+  const rows: { item: WorldWatchItem; key: string }[] = [];
+  for (let i = 0; i < count; i++) {
+    const g = start + i;
+    const item = items[g % n];
+    rows.push({ item, key: `${item.key}@${Math.floor(g / n)}` });
+  }
+  return (
+    <div style={{ height: viewH, overflow: "hidden", position: "relative" }}>
+      <div ref={trackRef} style={{ willChange: "transform" }}>
+        {rows.map((r) => (
+          <FeedRow key={r.key} item={r.item} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function WorldFeed({
   items,
   visible = FEED_VISIBLE,
@@ -149,28 +220,17 @@ export default function WorldFeed({
     );
   }
 
-  // Once the feed outgrows the window, marquee it vertically. Duration scales
-  // with length (a busy planet scrolls faster but stays readable).
+  // Once the feed outgrows the window, marquee it vertically (windowed — see
+  // MarqueeFeed); a short feed just sits still.
   const scrolling = items.length > visible;
   const viewH = Math.min(items.length, visible) * FEED_ROW_H - (scrolling ? 0 : ROW_GAP);
-  const duration = Math.max(12, items.length * 2.4);
+  if (scrolling) return <MarqueeFeed items={items} visible={visible} viewH={viewH} />;
 
   return (
     <div style={{ height: viewH, overflow: "hidden", position: "relative" }}>
-      <style>{"@keyframes bcast-wwscroll{from{transform:translateY(0)}to{transform:translateY(-50%)}}"}</style>
-      <div
-        style={
-          scrolling
-            ? { animation: `bcast-wwscroll ${duration}s linear infinite`, willChange: "transform" }
-            : undefined
-        }
-      >
-        {items.map((item) => (
-          <FeedRow key={item.key} item={item} />
-        ))}
-        {/* Second copy: only needed while marqueeing, for the seamless wrap. */}
-        {scrolling ? items.map((item) => <FeedRow key={`dup:${item.key}`} item={item} />) : null}
-      </div>
+      {items.map((item) => (
+        <FeedRow key={item.key} item={item} />
+      ))}
     </div>
   );
 }

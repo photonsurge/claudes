@@ -86,6 +86,28 @@ removals too). DOM was 13.2 k nodes in this window (7.8 k earlier).
   crawl, the scrolling traces, the World Watch marquee; anything "Overlaps other
   composited content" in bulk is the Layerize driver) and the churn list.
 
+### Round 5 (2026-09-08) — the DOM-size driver
+
+Second `--trace` window (same build): DOM 5.6 k nodes → **Layerize 5.6 ms/frame**
+(vs 40 ms at 13.2 k nodes). Layerize scales with the slide on air. The trace also
+showed ~1.5 k nodes/s being ADDED (DIV/SPAN/#text triplets + ~5 IMG/s) with
+removals arriving in bursts, and the hot row component `em` resolved to
+`WorldFeed`'s `FeedRow`. Cause: the WORLD REPORT deck's per-kind slides render
+the ENTIRE World Watch feed as DOM rows, twice (the old seamless CSS marquee), so
+the ALERTS slice is ~1 000 boxed rows ≈ 13 k nodes + hundreds of thumbnail
+`<img>`s, a compositor layer the height of the whole list, and thousands of nodes
+mounted/unmounted on every deck rotation.
+
+- **Windowed marquee** (`WorldFeed.tsx` → `MarqueeFeed`): only `visible + 2` rows
+  in the DOM; sub-row motion is a transform written to the track each frame
+  (compositor-only); the window shifts by one row every 2.4 s (a dozen-row React
+  render); lap-counter keys keep row identity while sliding. Same pace and look,
+  nothing capped — every row still scrolls through.
+- Remaining per-frame work after this + the banner split: GlobeLabels' pin style
+  writes (~18/frame) + canvas text forcing a style recalc (~3 ms/frame with a big
+  DOM, less with a small one), deck draw (~10 %), CSS animations (reticle scan,
+  syslog lines, traces).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
