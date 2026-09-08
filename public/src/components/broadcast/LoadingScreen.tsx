@@ -62,7 +62,7 @@ export default function LoadingScreen({
           height={56}
           viewBox="0 0 40 40"
           aria-hidden
-          style={{ animation: "bcast-loadspin 1.1s linear infinite" }}
+          style={{ animation: "bcast-loadspin 1.1s linear infinite", willChange: "transform" }}
         >
           <circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="3" />
           <circle

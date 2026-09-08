@@ -19,6 +19,10 @@
  *          --dom-census [N] (N s (5) MutationObserver: which parents are having nodes added/removed)
  *          --deck      (what deck.gl draws per frame: primitive layer count by id prefix, needs
  *                      the page's window.__godsDeck hook)
+ *          --callees <substr> (call-tree view of one function: inclusive time of what the
+ *                      frames matching <substr> call, so a hot method can be opened up)
+ *          --anim-census (every running CSS / Web animation and SMIL element, by target element —
+ *                      pair with --trace, which resolves the nodes still re-styled every frame)
  *
  * Read-only against the page (Profiler / Performance / Runtime.evaluate). Needs Node ≥ 22
  * (global WebSocket); zero dependencies. Works with DevTools already attached.
@@ -46,6 +50,8 @@ const WANT_SOURCE = !flag("no-source");
 const RAF_CENSUS = flag("raf-census");
 const LAYERS = flag("layers");
 const DECK = flag("deck");
+const CALLEES = opt("callees", "");
+const ANIM_CENSUS = flag("anim-census");
 const DOM_CENSUS_SECONDS = (() => {
   const i = argv.indexOf("--dom-census");
   if (i === -1) return 0;
@@ -152,10 +158,26 @@ function analyze(profile) {
   const self = new Map();
   const incl = new Map();
   const script = new Map();
+  const callees = new Map();
   const special = { idle: 0, program: 0, gc: 0 };
   for (const [nid, us] of selfNode) {
     const n = byId.get(nid);
     const k = keyOf(n.callFrame);
+    if (CALLEES) {
+      // Closest-to-leaf frame matching the pattern; what it called (towards the leaf) gets the time.
+      let cur = nid;
+      let below = null;
+      while (cur !== undefined) {
+        const kk = keyOf(byId.get(cur).callFrame);
+        if (kk.includes(CALLEES)) {
+          const callee = below === null ? "(self)" : keyOf(byId.get(below).callFrame);
+          callees.set(callee, (callees.get(callee) ?? 0) + us);
+          break;
+        }
+        below = cur;
+        cur = parent.get(cur);
+      }
+    }
     self.set(k, (self.get(k) ?? 0) + us);
     const fn = n.callFrame.functionName;
     if (fn === "(idle)") special.idle += us;
@@ -175,7 +197,7 @@ function analyze(profile) {
       cur = parent.get(cur);
     }
   }
-  return { total, special, self, incl, script, byId };
+  return { total, special, self, incl, script, callees, byId };
 }
 
 const WATCH = /^(_onRenderFrame|redraw|_drawLayers|drawLayers|renderLayers|updateLayers|setLayers|_updateLayers|_updateSublayersRecursively|_updateLayer|_transferState|_diffProps|_update|updateState|_postUpdate|_updateAttributes|_updatePalette|_createMesh|_updateFeatures|update|updateBuffer|_updateAttribute|setData|tesselate|tessellate|earcut|project|getViewports|draw|render|onHover|flushSync|performWorkUntilDeadline|commitRoot|performConcurrentWorkOnRoot|animationFrame|_animationFrame|tick|loop|step|commitLayers)$/;
@@ -286,6 +308,16 @@ function analyzeTrace(events) {
   const styleInval = new Map();
   const styleInvalCallers = new Map();
   const bump = (m, k, n = 1) => m.set(k, (m.get(k) ?? 0) + n);
+  // Nodes Blink keeps re-styling / re-laying-out without any JS touching them:
+  // CSS/SMIL animations the compositor didn't take. Resolved to elements after
+  // the trace (the ids are DOM backend node ids).
+  const nodeHits = new Map();
+  const hitNode = (id, name, why) => {
+    let h = nodeHits.get(id);
+    if (!h) nodeHits.set(id, (h = { id, name: name ?? "?", n: 0, why: new Set() }));
+    h.n++;
+    h.why.add(why);
+  };
   const add = (name, d, begin) => {
     bump(dur, name, d);
     bump(count, name);
@@ -315,6 +347,8 @@ function analyzeTrace(events) {
       if (e.name === "LayoutInvalidationTracking") {
         bump(layoutInval, `${d.reason ?? "?"} · ${(d.nodeName ?? "?").slice(0, 70)}`);
         bump(layoutInvalCallers, callerOf(d.stackTrace));
+        if (d.nodeId && /^Style changed/.test(d.reason ?? "") && !(d.stackTrace && d.stackTrace.length))
+          hitNode(d.nodeId, d.nodeName, "layout: style changed");
       } else if (
         e.name === "StyleRecalcInvalidationTracking" ||
         e.name === "ScheduleStyleInvalidationTracking" ||
@@ -323,6 +357,7 @@ function analyzeTrace(events) {
         const what = d.changedClass ?? d.changedId ?? d.changedAttribute ?? d.changedPseudo ?? d.extraData ?? "";
         bump(styleInval, `${e.name.replace("InvalidationTracking", "")} · ${d.reason ?? "?"}${what ? ` (${what})` : ""} · ${(d.nodeName ?? "?").slice(0, 60)}`);
         bump(styleInvalCallers, callerOf(d.stackTrace));
+        if (d.nodeId && d.reason === "Animation") hitNode(d.nodeId, d.nodeName, "style: Animation");
       }
     }
   }
@@ -359,6 +394,72 @@ function analyzeTrace(events) {
   for (const [k, n] of top(styleInval, 12)) p(`${String(n).padStart(8)}×  ${k}`);
   p(`  … by JS caller:`);
   for (const [k, n] of top(styleInvalCallers, 8)) p(`${String(n).padStart(8)}×  ${k}`);
+  return {
+    text: lines.join("\n"),
+    wallMs,
+    nodes: [...nodeHits.values()].sort((a, b) => b.n - a.n).slice(0, 14),
+  };
+}
+
+// ── Which elements is Blink animating on the main thread? ───────────────────
+// The trace only names a node's tag. Resolve its backend id to the live element
+// and describe it the way the DOM census does (ancestor chain + data-* + style),
+// with the animations currently attached to it.
+const SIG_SRC = `(el) => { const parts = []; let n = el; for (let i = 0; i < 6 && n && n.nodeType === 1; i++) {
+    let s = n.tagName.toLowerCase(); if (n.id) s += '#' + n.id; if (n.className && typeof n.className === 'string') s += '.' + n.className.trim().split(/\\s+/).slice(0,2).join('.');
+    for (const a of n.attributes) if (a.name.startsWith('data-') && a.name !== 'data-reactroot') { s += '[' + a.name + (a.value ? '=' + a.value.slice(0,20) : '') + ']'; break; }
+    parts.unshift(s); n = n.parentElement; } return parts.join(' > '); }`;
+const ANIMS_SRC = `(el) => (el.getAnimations ? el.getAnimations() : []).map((a) => {
+    const kf = a.effect && a.effect.getKeyframes ? a.effect.getKeyframes() : [];
+    const props = [...new Set(kf.flatMap((k) => Object.keys(k).filter((x) => !['offset','computedOffset','easing','composite'].includes(x))))];
+    return (a.animationName || a.transitionProperty || 'web') + '[' + props.join('+') + ']'; })`;
+
+async function describeTraceNodes(cdp, nodes, wallMs) {
+  const lines = [];
+  const p = (s = "") => lines.push(s);
+  p(`### Nodes re-styled / re-laid-out every frame with no JS involved (main-thread animations)`);
+  p(`  per-second · reasons · element (→ ancestors) · its animations · inline style`);
+  await cdp.send("DOM.enable");
+  await cdp.send("DOM.getDocument", { depth: 0 });
+  for (const h of nodes) {
+    let desc = "(node gone)";
+    try {
+      const { object } = await cdp.send("DOM.resolveNode", { backendNodeId: h.id });
+      const r = await cdp.send("Runtime.callFunctionOn", {
+        objectId: object.objectId,
+        returnByValue: true,
+        functionDeclaration: `function() { const sig = ${SIG_SRC}; const anims = ${ANIMS_SRC};
+          const st = (this.getAttribute && this.getAttribute('style')) || '';
+          return sig(this) + ' · anims=' + JSON.stringify(anims(this)) + (st ? ' · style="' + st.slice(0, 110) + (st.length > 110 ? '…' : '') + '"' : ''); }`,
+      });
+      desc = r.result?.value ?? "(no description)";
+      await cdp.send("Runtime.releaseObject", { objectId: object.objectId }).catch(() => {});
+    } catch (e) {
+      desc = `(unresolved: ${e.message || e})`;
+    }
+    p(`${((h.n * 1000) / Math.max(1, wallMs)).toFixed(1).padStart(7)}/s  ${[...h.why].join(", ")}  ${h.name} → ${desc}`);
+  }
+  return lines.join("\n");
+}
+
+// ── Animation census (what is running, on which elements?) ──────────────────
+async function animCensus(cdp) {
+  const r = await evaluate(
+    cdp,
+    `(() => { const sig = ${SIG_SRC}; const anims = ${ANIMS_SRC}; const out = new Map();
+      const all = document.getAnimations();
+      for (const a of all) { const el = a.effect && a.effect.target; if (!el) continue;
+        const k = anims(el).join(',') + ' ' + a.playState + ' · ' + sig(el);
+        out.set(k, (out.get(k) ?? 0) + 1); }
+      const smil = [...document.querySelectorAll('animate, animateTransform, animateMotion, set')].map((e) => sig(e.parentElement || e));
+      return { total: all.length, smil, rows: [...out.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40) }; })()`,
+  );
+  const lines = [];
+  const p = (s = "") => lines.push(s);
+  p(`## Animation census: ${r.total} CSS/Web animations running, ${r.smil.length} SMIL elements`);
+  p(`  count · animation[properties] state · target (→ ancestors)`);
+  for (const [k, n] of r.rows) p(`${String(n).padStart(6)}×  ${k}`);
+  for (const s of r.smil.slice(0, 12)) p(`   SMIL  ${s}`);
   return lines.join("\n");
 }
 
@@ -486,7 +587,8 @@ async function deckCensus(cdp) {
       for (const l of drawn) { const k = String(l.id).replace(/[-_ ]?[0-9a-f]{4,}.*$/i, '').replace(/[-_]?\d+.*$/, '') || l.id;
         byPrefix.set(k, (byPrefix.get(k) ?? 0) + 1); }
       return { top: d.props.layers.length, all: all.length, primitive: prim.length, drawn: drawn.length,
-        groups: [...byPrefix.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40) }; })()`,
+        groups: [...byPrefix.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40),
+        labels: window.__godsLabels ?? null }; })()`,
   );
   const lines = [];
   const p = (s = "") => lines.push(s);
@@ -495,7 +597,12 @@ async function deckCensus(cdp) {
     return lines.join("\n");
   }
   p(`## deck census: ${r.top} top-level layers → ${r.all} incl. sublayers → ${r.primitive} primitive, ${r.drawn} drawn (visible) per frame`);
+  p(`  (a GeoJsonLayer that only strokes still lists a polygons-fill sublayer whose draw() is a no-op — count the strokes)`);
   for (const [k, n] of r.groups) p(`${String(n).padStart(6)}×  ${k}`);
+  if (r.labels) {
+    const L = r.labels;
+    p(`## label canvas (last frame): ${L.drawn} labels drawn of ${L.projected} facing the camera / ${L.considered} in zoom range · ${L.draws} drawImage calls · ${L.skipped}/${L.frames} frames skipped as unchanged`);
+  }
   return lines.join("\n");
 }
 
@@ -588,6 +695,12 @@ async function deckCensus(cdp) {
   p(`## Inclusive (subtree) time — deck.gl / WeatherLayers / React / rAF entry points`);
   const inclSorted = [...a.incl.entries()].filter(([k]) => WATCH.test(k.split(" @ ")[0])).sort((x, y) => y[1] - x[1]).slice(0, 30);
   for (const [k, us] of inclSorted) p(`${fmt(us)}  ${pct(us, busy)}  ${k}`);
+  if (CALLEES) {
+    p();
+    const tot = [...a.callees.values()].reduce((x, y) => x + y, 0);
+    p(`## Callees of frames matching "${CALLEES}" (inclusive ${fmt(tot)} ms)`);
+    for (const [k, us] of [...a.callees.entries()].sort((x, y) => y[1] - x[1]).slice(0, 18)) p(`${fmt(us)}  ${pct(us, tot)}  ${k}`);
+  }
   // Snippets for hot but mangled frames — plus the heaviest `draw`/`updateState`
   // methods by inclusive time, so a deck.gl layer class can be told apart from
   // its chunk name alone.
@@ -611,6 +724,14 @@ async function deckCensus(cdp) {
       p(await deckCensus(cdp));
     } catch (e) {
       p(`## deck census failed: ${e.message || e}`);
+    }
+  }
+  if (ANIM_CENSUS) {
+    try {
+      p();
+      p(await animCensus(cdp));
+    } catch (e) {
+      p(`## Animation census failed: ${e.message || e}`);
     }
   }
   if (LAYERS) {
@@ -637,7 +758,16 @@ async function deckCensus(cdp) {
       const events = await recordTrace(cdp, TRACE_SECONDS);
       fs.writeFileSync(path.join(OUT, "trace.json"), JSON.stringify({ traceEvents: events }));
       p();
-      p(analyzeTrace(events));
+      const { text, wallMs, nodes } = analyzeTrace(events);
+      p(text);
+      if (nodes.length) {
+        p();
+        try {
+          p(await describeTraceNodes(cdp, nodes, wallMs));
+        } catch (e) {
+          p(`### animated-node resolution failed: ${e.message || e}`);
+        }
+      }
     } catch (e) {
       p();
       p(`## Timeline trace failed: ${e.message || e}`);

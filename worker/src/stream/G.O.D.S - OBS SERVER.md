@@ -1,6 +1,21 @@
+https://chatgpt.com/c/6a9edbf0-8fbc-83eb-bd59-7325381c336f
+
+Yep — for channel 1, whose Chromium debug port is 9221, run this on your local machine:
+
+ssh -N -L 9221:127.0.0.1:9221 root@gds1.thronix.uk
+
+Then locally open:
+
+http://127.0.0.1:9221
+
+You should see the Chromium/CEF debug targets f
+
 # G.O.D.S. GPU VPS – Headless Multi-OBS Setup
 
 This documents the working setup for running multiple independent OBS Studio instances on a headless Ubuntu GPU VPS.
+
+
+
 
 ## Server
 

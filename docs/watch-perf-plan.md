@@ -158,6 +158,123 @@ setUniforms/bindBuffer ≈ 0.3 ms per draw), not an oversized stack.
 - deck: nothing left to thin at 12 draws; further savings would need fewer layers
   per scene (e.g. merged border passes) or upstream luma work.
 
+### Round 8 (2026-09-08) — the heaviest scene (`/watch/default`)
+
+`--deck --trace 8` on the main scene: busy 75 %, 29.1 fps at the 30 cap, p95 33.4 ms
+(holds frame rate). **31 primitive layers drawn/frame** (humidity raster + nest, wind
+particles + nest, pressure contour + high/low text ×2, 4 alert passes ×2, country glow
+×7, borders ×2, cities, volcano, weather point, basemap ×2) → deck 45 % of wall, of
+which luma's per-draw uniform plumbing (setProps/updateUniformBuffer/getData/
+setUniforms/bindBuffer/bufferSubData) ≈ 17 %; TextLayer draws twice per sublayer
+(outline + fill), ParticleLayer runs a transform-feedback pass + draw per layer, so
+~40 luma draws a frame at ~0.2 ms each. DOM side ~14 %, labels 5 %, GC 2 %.
+
+- Pulse/glow commit cap 30 → **15 Hz** (`PULSE_FRAME_MS` 60): a 30 Hz cap was a no-op
+  at the OBS 30 Hz rAF, so every frame re-walked the stack and re-rendered the
+  pulse/glow composites' ~15 sublayers (~1.5 ms). Breathe steps in 25–40 increments —
+  imperceptible.
+- Profiler `--callees <substr>`: call-tree breakdown under one function.
+- Checked and ruled out: WeatherLayers' HighLowLayer does NOT re-render its text per
+  viewport change (the `shouldUpdateState || viewportChanged` override is a different
+  class); its cost is plain draw count.
+- Left on the table, each a few draws (~0.6 % wall per draw) with a visual trade-off:
+  merge the alert glow-wide + glow-mid passes; drop the country-glow bloom pass; H/L
+  text without outline (halves its draws); fewer particles/nests on wide shots.
+
+### Round 9 (2026-09-08) — rounds 7+8 live: the DOM pipeline and the label canvas
+
+Measured on `/watch/default` (20 s, country spotlight + alerts glow + particles on
+air): busy 82.5 %, 28.7 fps (p50 33.3 / p95 33.4 ms, one 667 ms stall), heap
+525 MB, 30 primitive layers. The sub-globe paint is gone from the table (round 7
+landed) and `setLayers` is 3.6 % at the 15 Hz pulse (round 8). Where the frame goes:
+
+| bucket | share of busy | ms / frame | what it is |
+| --- | --- | --- | --- |
+| deck `_animationFrame` | 57.7 % | ~16.6 | `Model.draw` 34.6 % (uniform-buffer plumbing ≈ 4.4 ms/frame, luma GL-state tracking + `bindBuffer` ≈ 1.6 ms, WeatherLayers `ensureDefaultProps` freeze+spread 0.4 s/20 s); ~26 real GL draws — every stroke-only GeoJsonLayer also lists a `polygons-fill` sublayer whose `draw()` is a no-op, which is what the census's "2×" rows are |
+| `(program)` | 19.1 % | ~5 | the renderer pipeline, per the trace: Layerize 1.4 + Commit 1.2 + PrePaint 0.9 + style 0.6 + Paint 0.4 + Layout 0.2 |
+| label canvas | ~12 % | ~3.5 | `drawImage` 1.32 s (icon sprites were SVG `<img>`s — Blink re-rasterises the vector on EVERY drawImage), loop/grid/project ≈ 0.6 s |
+| pulse commits (15 Hz) | 3.6 % | ~1 | ~2 ms per commit, all deck prop-diffing of the GeoJsonLayer → PolygonLayer → Path/SolidPolygon trees the country glow rebuilds |
+| GC | 2.3 % | | scavenges from per-frame allocation |
+
+**Per-frame DOM invalidators** (8 s trace, 236 frames): the banner SVG's five
+CSS-animated children (sweep rect, status rect, two spin circles, dashed
+ellipse — the counts match exactly) → style + layout + paint + Layerize of that
+root every frame; plus per frame 2 DIV + 1 SPAN + 3 `svg` "Animation" style
+invalidations and ~2 inline-style DIV mutations. Local headless-Chrome test
+(`scratchpad/anim-test*.html` + `--trace`): HTML-level opacity/transform
+animations cost the main thread NOTHING in any context tried (flex item, inline
+span, inline `<svg>` root, under clip-path / filter / backdrop-filter / a scaled
+will-change stage); the same animation on an SVG child costs style + layout +
+paint + Layerize every frame. So the OBS page's DIV/SPAN/svg ones are animations
+CEF is refusing to composite for a reason only the live page can show.
+
+Shipped:
+
+- **Banner motion → canvas** (`GodsBannerMotion.tsx`, drawing in
+  `banner-motion.ts`): sweep, bezel rings, aperture ticks, both orbit rings (the
+  live-core back-arc hide is an even-odd clip), status pulse — geometry, dash
+  patterns, colours and periods verbatim from the SVG. The panel SVG keeps only
+  the static fill/border/grid and the aperture mask; no animated SVG child is
+  left in the banner. Tests: `banner-motion.test.ts` (recording context).
+- **Label canvas**: icon sprites baked to bitmaps on load; text sprites memoised
+  per label object (no per-frame cache-key strings); numeric collision-grid
+  keys; a frame whose camera + size + label generation + icon epoch are
+  unchanged is skipped outright; `window.__godsLabels` last-frame counters
+  (`--deck` prints them: labels drawn / facing / in zoom range, drawImage calls,
+  frames skipped).
+- **Profiler**: `--anim-census` (every running animation by target element +
+  SMIL); `--trace` now resolves the nodes Blink re-styles/re-lays-out per frame
+  with no JS involved to elements (ancestor chain, attached animations, inline
+  style) — the list that names the DIV/SPAN/svg animations above.
+- jest: global quiet `getContext` stub in `jest.setup.ts`.
+
+Next run: `node scripts/profile-watch.mjs http://localhost:9221 --seconds 20 --deck --trace 8 --anim-census`.
+Expect Layout ≈ 0 and the banner's rect/circle/ellipse rows gone; read "Nodes
+re-styled every frame" to name the remaining DIV/SPAN/svg animations, then
+either give them a compositable form or move them to a canvas — only once ALL
+per-frame invalidators are gone do PrePaint/Paint/Layerize drop to the frames
+with real DOM updates (~7/s). Still on the table for deck: countryGlow via
+direct `PathLayer`/`SolidPolygonLayer` (≈¼ the layers diffed per 15 Hz commit),
+a shader-side breathe (`DECKGL_FILTER_COLOR`/`_SIZE` injection with a time
+uniform — no commit loop at all, 30 Hz breathe), and the visual-trade-off cuts
+listed under round 8.
+
+### Round 10 (2026-09-08) — the new diagnostics on the live page (pre-round-9 build)
+
+The `--anim-census` + resolved-node run (busy 82 %, 28.5 fps) named every
+per-frame invalidator on `/watch/default`: the banner's five SVG children
+(round 9's fix, not yet deployed) plus the ticker crawl DIV, the GodsPanelHeader
+pulse DIV (×2), the LiveAlertPanel dot SPAN and three monitor-row trace `<svg>`
+roots — all CSS animations CEF ticks on the main thread. Only animations that
+START inside the trace window carry a `compositeFailed` verdict (two page-dot
+transitions did: 8192 = unsupported property, +32 = invalid compositing state);
+the infinite ones started long before, so no verdict from this run.
+
+What the trace's thread list adds: the renderer has a Compositor thread
+(threaded compositing on); `RasterTask` runs in the renderer's worker pool
+(software raster — every paint invalidation re-rasterises tiles on the CPU);
+`HitTest` cost 1.6 ms/frame — Blink's hover update after each per-frame layout,
+i.e. another banner tax.
+
+Local reproduction, `google-chrome --disable-threaded-animation` +
+`scratchpad/anim-test3.html`: the identical signature (a "style: Animation"
+invalidation on every animated element per frame, `<svg>` roots included) — and
+in that mode the change still takes the compositor's direct-update path (no
+Paint, Layerize ≈ 2 µs) because Chrome gives an actively-animated element its
+own layer. If CEF's build doesn't promote them, `will-change` forces the layer.
+
+Shipped: `will-change: transform` / `opacity` on the ten CSS-animated elements
+(ticker crawl, the four MonitorCluster traces, seismic + tide station traces,
+GodsPanelHeader pulse, ON AIR dot, alert-panel dot, reticle scan, both spinners).
+
+Next run (rounds 9 + 10 deployed): expect Layout ≈ 0, HitTest small, the
+rect/circle/ellipse rows gone. The DIV/SPAN/svg rows will STILL be listed (they
+are still ticked on the main thread) — what should change is Paint and Layerize
+collapsing to the frames with real DOM updates (~7/s). If Paint/Layerize stay at
+one per frame, CEF isn't taking the direct-update path either, and the fallback
+is a shared rAF driver writing transform/opacity itself (or quantising the
+pulses to a few Hz).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

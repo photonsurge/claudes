@@ -2,6 +2,12 @@ import { render, screen } from "@testing-library/react";
 import GodsBanner from "./GodsBanner";
 
 describe("GodsBanner", () => {
+  // jsdom has no 2D context: the motion canvas must simply stay blank.
+  beforeAll(() => {
+    jest.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null as unknown as RenderingContext);
+  });
+  afterAll(() => jest.restoreAllMocks());
+
   it("renders the masthead with the scene accent and no hole by default", () => {
     render(<GodsBanner accent="#f43f5e" clock={false} />);
     const banner = screen.getByRole("img", {
@@ -68,10 +74,23 @@ describe("GodsBanner", () => {
     // carries it — otherwise the aperture would just show the panel fill.
     expect(banner.querySelector("mask circle")).toBeInTheDocument();
     expect(banner.querySelector('[data-layer="panel"]')?.getAttribute("mask")).toMatch(/^url\(#gb-hole-/);
-    // The orbit stays complete over the globe so it remains legible after
-    // low-resolution stream compression.
-    const ringGroup = banner.querySelector("ellipse")?.parentElement;
-    expect(ringGroup?.getAttribute("mask")).toBeNull();
+    // The moving chrome (bezel rings, orbit, sweep, pulse) is a canvas between
+    // the panel and the text — told about the live core so the orbit's back
+    // arc ducks behind the globe (banner-motion.test covers the drawing).
+    const motion = banner.querySelector("canvas[data-gods-motion]");
+    expect(motion).toBeInTheDocument();
+    expect(motion).toHaveAttribute("data-live-core");
+    // No animated SVG children remain: nothing here for Blink to re-layout per frame.
+    expect(banner.querySelector("svg [style*='animation']")).not.toBeInTheDocument();
+    expect(banner.querySelector("svg ellipse, svg circle:not(mask circle)")).not.toBeInTheDocument();
+  });
+
+  it("keeps the orbit whole over the plain panel (no liveCore)", () => {
+    render(<GodsBanner clock={false} />);
+    const banner = screen.getByRole("img");
+    const motion = banner.querySelector("canvas[data-gods-motion]");
+    expect(motion).toBeInTheDocument();
+    expect(motion).not.toHaveAttribute("data-live-core");
   });
 
   it("uses unique paint-server ids for multiple banners", () => {

@@ -145,6 +145,7 @@ export default function LiveAlertPanel({
             background: color,
             boxShadow: `0 0 8px ${color}`,
             animation: "bcast-alertpulse 1.2s ease-in-out infinite",
+            willChange: "opacity",
             flex: "0 0 auto",
           }}
         />

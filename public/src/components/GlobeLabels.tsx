@@ -18,9 +18,11 @@
  * and stroking glyph outlines for a halo is the expensive way to draw text.
  * Icon labels (station/volcano/monitor pins) keep their React icon glyphs: the
  * elements are rendered into a `display:none` holder, serialised to an SVG
- * image once per variant (CSS custom properties resolved), and drawn as
- * sprites too — the previous DOM pins wrote ~26 inline styles a frame during a
- * spin, which forced one of the two style recalcs every frame paid for.
+ * image once per variant (CSS custom properties resolved), baked to a bitmap
+ * the moment it loads, and drawn as sprites too — the previous DOM pins wrote
+ * ~26 inline styles a frame during a spin, which forced one of the two style
+ * recalcs every frame paid for. A frame whose camera, size and label set are
+ * unchanged since the last one is skipped outright (a parked shot costs nothing).
  *
  * Per-frame, from the LIVE viewport (not React state, which doesn't rebuild on
  * zoom): far-side culling (deck's project() happily returns screen coords for
@@ -89,19 +91,21 @@ export function labelWidth(text: string): number {
 }
 
 export class LabelGrid {
-  private cells = new Map<string, Array<[number, number, number, number]>>();
+  // Numeric cell keys: this runs per label per frame, and a `${cx},${cy}`
+  // template string per cell was a measurable allocation + hash cost.
+  private cells = new Map<number, Array<[number, number, number, number]>>();
 
   clear() {
     this.cells.clear();
   }
 
-  private forCells(x0: number, y0: number, x1: number, y1: number, fn: (key: string) => void) {
+  private forCells(x0: number, y0: number, x1: number, y1: number, fn: (key: number) => void) {
     const cx0 = Math.floor(x0 / GRID_CELL);
     const cx1 = Math.floor(x1 / GRID_CELL);
     const cy0 = Math.floor(y0 / GRID_CELL);
     const cy1 = Math.floor(y1 / GRID_CELL);
     for (let cx = cx0; cx <= cx1; cx++) {
-      for (let cy = cy0; cy <= cy1; cy++) fn(`${cx},${cy}`);
+      for (let cy = cy0; cy <= cy1; cy++) fn((cx + 32768) * 65536 + (cy + 32768));
     }
   }
 
@@ -243,39 +247,84 @@ function detailSprite(text: string, dpr: number): Sprite | null {
 
 /** An icon glyph rasterised from its React-rendered <svg>. */
 interface IconSprite {
-  img: HTMLImageElement;
-  ready: boolean;
+  /** Bitmap at the sprite's dpr — null until the SVG image has loaded and been baked. */
+  img: HTMLCanvasElement | null;
+  /** CSS-px size. */
   w: number;
   h: number;
 }
 const iconSprites = new Map<string, IconSprite>();
 const serializer = typeof XMLSerializer === "function" ? new XMLSerializer() : null;
+/** Bumped whenever an icon bitmap lands, so a parked frame knows to repaint. */
+let iconEpoch = 0;
 
 /**
- * SVG markup → image sprite, once per distinct markup. `var(--x, fallback)`
- * references (the icons take their ink from the scene's --gods-* custom
- * properties) are resolved against `vars` first: a data: image has no access
- * to the page's custom properties and would fall back to the defaults.
+ * SVG markup → bitmap sprite, once per distinct (markup, dpr). `var(--x,
+ * fallback)` references (the icons take their ink from the scene's --gods-*
+ * custom properties) are resolved against `vars` first: a data: image has no
+ * access to the page's custom properties and would fall back to the defaults.
+ *
+ * Baked to a canvas the moment the <img> loads: `drawImage` of an SVG-backed
+ * image element makes Blink re-rasterise the vector document on EVERY call,
+ * and dozens of icon labels a frame made that the label canvas's top cost. A
+ * bitmap blit is a texture copy.
  */
-function iconSprite(svg: Element, vars: (name: string, fallback: string) => string): IconSprite | null {
+function iconSprite(
+  svg: Element,
+  vars: (name: string, fallback: string) => string,
+  dpr: number,
+): IconSprite | null {
   if (!serializer) return null;
   const html = serializer
     .serializeToString(svg)
     .replace(/var\((--[\w-]+)\s*,\s*([^)]+)\)/g, (_, name: string, fallback: string) => vars(name, fallback.trim()));
-  let s = iconSprites.get(html);
-  if (s) return s;
+  const key = `${dpr}|${html}`;
+  const hit = iconSprites.get(key);
+  if (hit) return hit;
+  const entry: IconSprite = { img: null, w: 0, h: 0 };
   const img = new Image();
-  const entry: IconSprite = { img, ready: false, w: 0, h: 0 };
   img.onload = () => {
-    entry.ready = true;
-    entry.w = img.naturalWidth || 12;
-    entry.h = img.naturalHeight || 12;
+    const w = img.naturalWidth || 12;
+    const h = img.naturalHeight || 12;
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.ceil(w * dpr));
+    c.height = Math.max(1, Math.ceil(h * dpr));
+    const g = c.getContext("2d");
+    if (!g) return;
+    g.scale(dpr, dpr);
+    g.drawImage(img, 0, 0, w, h);
+    entry.img = c;
+    entry.w = w;
+    entry.h = h;
+    iconEpoch += 1;
   };
   img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(html)}`;
-  iconSprites.set(html, entry);
-  s = entry;
+  iconSprites.set(key, entry);
+  return entry;
+}
+
+/** Text sprites resolved once per label object (labels rebuild ~1/s; the
+ *  per-frame path used to rebuild a cache-key string for every label). */
+interface LabelSprites {
+  dpr: number;
+  name: Sprite | null;
+  detail: Sprite | null;
+}
+const textByLabel = new WeakMap<OverlayLabel, LabelSprites>();
+function spritesOf(l: OverlayLabel, dpr: number): LabelSprites {
+  let s = textByLabel.get(l);
+  if (s && s.dpr === dpr) return s;
+  s = {
+    dpr,
+    name: l.text ? nameSprite(l.text, `rgb(${l.color[0]},${l.color[1]},${l.color[2]})`, dpr) : null,
+    detail: l.detail ? detailSprite(l.detail, dpr) : null,
+  };
+  textByLabel.set(l, s);
   return s;
 }
+
+/** Last-frame counters for scripts/profile-watch.mjs (`--deck` prints them). */
+const labelStats = { frames: 0, skipped: 0, considered: 0, projected: 0, drawn: 0, draws: 0 };
 
 export default function GlobeLabels({
   getViewport,
@@ -295,9 +344,12 @@ export default function GlobeLabels({
   // Per-label icon sprite, valid for one `labels` generation (an icon's
   // active/colour props can change with the labels, so it's re-serialised —
   // cheaply, and de-duplicated by markup — whenever they do).
-  const iconByLabel = useRef<Map<string, { gen: number; sprite: IconSprite | null }>>(new Map());
+  const iconByLabel = useRef<Map<string, { gen: number; dpr: number; sprite: IconSprite | null }>>(new Map());
   const genRef = useRef(0);
   const computedRef = useRef<CSSStyleDeclaration | null>(null);
+  // Signature of the last painted frame: camera + size + label generation.
+  // A parked shot (no spin, no idle motion, no new labels) repaints nothing.
+  const lastSigRef = useRef("");
   // Biggest/capital first (lowest minZoom) so a crowded conurbation always
   // keeps its most important label and thins out the smaller neighbours.
   const priorityLabels = useMemo(
@@ -338,13 +390,13 @@ export default function GlobeLabels({
       const v = computedRef.current?.getPropertyValue(name).trim();
       return v || fallback;
     };
-    const iconFor = (l: OverlayLabel): IconSprite | null => {
+    const iconFor = (l: OverlayLabel, dpr: number): IconSprite | null => {
       const gen = genRef.current;
       const cached = iconByLabel.current.get(l.id);
-      if (cached && cached.gen === gen) return cached.sprite;
+      if (cached && cached.gen === gen && cached.dpr === dpr) return cached.sprite;
       const svg = iconHolders.current.get(l.id)?.firstElementChild ?? null;
-      const sprite = svg ? iconSprite(svg, resolveVar) : null;
-      iconByLabel.current.set(l.id, { gen, sprite });
+      const sprite = svg ? iconSprite(svg, resolveVar, dpr) : null;
+      iconByLabel.current.set(l.id, { gen, dpr, sprite });
       return sprite;
     };
     const tick = () => {
@@ -354,6 +406,16 @@ export default function GlobeLabels({
       const w: number = vp.width;
       const h: number = vp.height;
       const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+      const cam = getCamera();
+      const zoom: number = vp.zoom ?? 0;
+      // Nothing moved and nothing new to show → keep last frame's pixels.
+      const sig = `${w}|${h}|${dpr}|${vp.longitude}|${vp.latitude}|${zoom}|${cam.longitude}|${cam.latitude}|${genRef.current}|${iconEpoch}`;
+      labelStats.frames += 1;
+      if (sig === lastSigRef.current) {
+        labelStats.skipped += 1;
+        return;
+      }
+      lastSigRef.current = sig;
       const bw = Math.round(w * dpr);
       const bh = Math.round(h * dpr);
       if (canvas.width !== bw || canvas.height !== bh) {
@@ -367,18 +429,22 @@ export default function GlobeLabels({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      const cam = getCamera();
       const [cx, cy, cz] = unit(cam.longitude, cam.latitude);
-      const zoom: number = vp.zoom ?? 0;
       const grid = gridRef.current;
       grid.clear();
+      let considered = 0;
+      let projected = 0;
+      let drawn = 0;
+      let draws = 0;
       for (const l of priorityRef.current) {
         // Progressive reveal: below the label's minZoom it's not shown at all.
         if (zoom < (l.minZoom ?? 0)) continue;
+        considered++;
         const [ux, uy, uz] = unitOf(l);
         // Dot < 0 → the point is on the hidden hemisphere; small margin so
         // labels don't flicker right at the limb.
         if (ux * cx + uy * cy + uz * cz <= 0.04) continue;
+        projected++;
         const p = vp.project(l.position);
         const x: number = p[0];
         const y: number = p[1];
@@ -393,27 +459,38 @@ export default function GlobeLabels({
         const y1 = y0 + LABEL_H;
         if (grid.collides(x0, y0, x1, y1)) continue;
         grid.place(x0, y0, x1, y1);
+        drawn++;
 
         let tx = x + TEXT_DX;
         if (l.icon) {
-          const ic = iconFor(l);
-          if (ic?.ready) {
+          const ic = iconFor(l, dpr);
+          if (ic?.img) {
             ctx.drawImage(ic.img, tx, y - ic.h / 2, ic.w, ic.h);
+            draws++;
             tx += ic.w + ICON_GAP;
           }
         }
-        if (l.text) {
-          const s = nameSprite(l.text, `rgb(${l.color[0]},${l.color[1]},${l.color[2]})`, dpr);
-          if (s) ctx.drawImage(s.img, tx - NAME_PAD, y - s.h / 2, s.w, s.h);
+        const sp = spritesOf(l, dpr);
+        if (sp.name) {
+          ctx.drawImage(sp.name.img, tx - NAME_PAD, y - sp.name.h / 2, sp.name.w, sp.name.h);
+          draws++;
         }
-        if (l.detail && zoom >= (l.detailMinZoom ?? 0)) {
-          const d = detailSprite(l.detail, dpr);
-          if (d) ctx.drawImage(d.img, tx, y + LABEL_H / 2 + 2, d.w, d.h);
+        if (sp.detail && zoom >= (l.detailMinZoom ?? 0)) {
+          ctx.drawImage(sp.detail.img, tx, y + LABEL_H / 2 + 2, sp.detail.w, sp.detail.h);
+          draws++;
         }
       }
+      labelStats.considered = considered;
+      labelStats.projected = projected;
+      labelStats.drawn = drawn;
+      labelStats.draws = draws;
     };
+    (window as unknown as { __godsLabels?: unknown }).__godsLabels = labelStats;
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      delete (window as unknown as { __godsLabels?: unknown }).__godsLabels;
+    };
   }, [getViewport, getCamera]);
 
   return (

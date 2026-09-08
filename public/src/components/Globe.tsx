@@ -175,8 +175,14 @@ type ViewState = { longitude: number; latitude: number; zoom: number } & Record<
 const FLY_MIN = 2600;
 const FLY_MAX = 7000;
 
-/** Min ms between on-air pulse/glow re-commits (~30 Hz). */
-const PULSE_FRAME_MS = 30;
+/**
+ * Min ms between on-air pulse/glow re-commits: ~15 Hz. Every commit makes deck
+ * diff the whole stack and re-render the pulse/glow composites' sublayers
+ * (~15 of them), ~1.5 ms a time on the OBS renderer. The OBS browser source
+ * runs rAF at 30 Hz, so a 30 Hz cap was a no-op there; at 15 Hz a 1.5–2.6 s
+ * breathe still steps in ~25–40 increments — imperceptible on a soft glow.
+ */
+const PULSE_FRAME_MS = 60;
 
 // MAX_PUSH_IN (max extra zoom a detail-shot push-in may add) lives in
 // idle-motion.ts — the idle breathe hands off from the push-in at that cap.
@@ -1225,7 +1231,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       raf = requestAnimationFrame(loop);
       // Every commit makes deck walk every layer + sublayer in the stack; the
       // pulse/glow layers themselves are uniform-only now, so the walk IS the
-      // cost. 30 Hz is indistinguishable on a 1.5–2.6 s breathe and halves it.
+      // cost — see PULSE_FRAME_MS.
       if (t - last < PULSE_FRAME_MS) return;
       last = t;
       commitLayers();

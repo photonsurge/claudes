@@ -117,6 +117,9 @@ export function GodsPanelHeader({ title, tag, pulse = true, accent = GODS_ACCENT
             flex: "0 0 auto",
             background: accent,
             animation: "gpPulse 1.8s ease-in-out infinite",
+            // Own compositor layer: CEF ticks this on the main thread; without
+            // a layer every pulse step repaints (docs/watch-perf-plan.md, round 10).
+            willChange: "opacity",
           }}
         />
       )}

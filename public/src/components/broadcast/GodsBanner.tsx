@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState, type CSSProperties } from "react";
+import GodsBannerMotion from "./GodsBannerMotion";
 
 export interface GodsBannerProps {
   /** Main scene colour. */
@@ -44,16 +45,6 @@ export interface GodsBannerProps {
   style?: CSSProperties;
   label?: string;
 }
-
-const KEYFRAMES = `
-@keyframes gbSpin{to{transform:rotate(360deg)}}
-@keyframes gbSpinRev{to{transform:rotate(-360deg)}}
-@keyframes gbSweep{0%{opacity:0;transform:translateX(0)}12%{opacity:1}100%{opacity:0;transform:translateX(940px)}}
-@keyframes gbPulse{0%,100%{opacity:1}50%{opacity:.25}}
-@keyframes gbDash{to{stroke-dashoffset:-220}}
-@media (prefers-reduced-motion: reduce){
-  [data-gods-anim]{animation:none !important}
-}`;
 
 /** Load once in your app shell: Saira + JetBrains Mono from Google Fonts. */
 export const GODS_FONT_HREF =
@@ -145,19 +136,20 @@ export default function GodsBanner({
   const id = (name: string) => `gb-${name}-${uid}`;
   const times = useClocks(clock);
   const countdown = useCountdown(nextAt);
-  const anim = (value: string): CSSProperties => (frozen ? {} : { animation: value });
   const PANEL =
     "M24 58 H1358 L1386 86 V190 L1358 218 H1178 L1154 246 H360 L336 218 H24 Z";
 
-  // Two stacked SVGs sharing one viewBox. The ANIMATED chrome (panel sweep,
-  // bezel rings, dashed orbit, status pulse) lives in the lower one, which has
-  // no text; the text (title, status chips, coords, clocks, tape row) in the
-  // upper one. Why: a CSS animation on an SVG child re-lays-out its whole SVG
-  // root every frame, and with this banner's dozen letter-spaced <text> runs
-  // in the same root that relayout cost the /watch main thread ~13 ms a frame
-  // (a measured 16 % of it). Split, the per-frame relayout touches ~25 plain
-  // shapes; the text SVG only relayouts when the clock/countdown ticks (1 Hz).
-  // The wrapper carries the accessible name so the banner is still one image.
+  // Three stacked layers sharing one 1400×320 frame. Bottom: the STATIC panel
+  // artwork (svg — fill, border, grid, and the aperture mask). Middle: every
+  // MOVING part (panel sweep, bezel rings, dashed orbit, status pulse) on a
+  // canvas — GodsBannerMotion. Top: the text (title, status chips, coords,
+  // clocks, tape row) in its own svg, which only relayouts when the clock or
+  // countdown ticks (1 Hz). Why: a CSS animation on an SVG child is ticked on
+  // the main thread and re-lays-out, repaints and re-layerizes its whole root
+  // every frame (measured at ~13 ms/frame with the text in the same root, and
+  // still ~3 ms with the text split out); a canvas repaint touches no style or
+  // layout at all. The wrapper carries the accessible name so the banner is
+  // still one image.
   return (
     <div
       role="img"
@@ -173,32 +165,22 @@ export default function GodsBanner({
         style={{ display: "block" }}
       >
         <defs>
-          <style>{KEYFRAMES}</style>
           <linearGradient id={id("panel")} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor={panelTopColor} />
             <stop offset="0.5" stopColor={panelMidColor} />
             <stop offset="1" stopColor={panelBottomColor} />
           </linearGradient>
-          <linearGradient id={id("scan")} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor={accent} stopOpacity="0" />
-            <stop offset="1" stopColor={titleColor} stopOpacity="0.85" />
-          </linearGradient>
           <clipPath id={id("panel-clip")}>
             <path d={PANEL} />
           </clipPath>
-          <clipPath id={id("scan-clip")}>
-            <path d="M26 60 H1356 L1384 86 V188 L1356 216 H1156 L1152 244 H362 L358 216 H26 Z" />
-          </clipPath>
           {liveCore && (
-            <>
-              {/* The live-core hole: the panel spans the globe area, so it
-                  carries this mask or the aperture would just show its opaque
-                  fill. */}
-              <mask id={id("hole")}>
-                <rect x="0" y="0" width="1400" height="320" fill="#ffffff" />
-                <circle cx="176" cy="160" r="138" fill="#000000" />
-              </mask>
-            </>
+            // The live-core hole: the panel spans the globe area, so it
+            // carries this mask or the aperture would just show its opaque
+            // fill.
+            <mask id={id("hole")}>
+              <rect x="0" y="0" width="1400" height="320" fill="#ffffff" />
+              <circle cx="176" cy="160" r="138" fill="#000000" />
+            </mask>
           )}
         </defs>
 
@@ -207,79 +189,16 @@ export default function GodsBanner({
           <g clipPath={`url(#${id("panel-clip")})`} opacity="0.14" stroke={accent} strokeWidth="1">
             <path d="M400 58 V218 M500 58 V218 M600 58 V218 M700 58 V218 M800 58 V218 M900 58 V218 M1000 58 V218 M1100 58 V218 M1200 58 V218 M1300 58 V218" />
           </g>
-          <g clipPath={`url(#${id("scan-clip")})`}>
-            <rect
-              data-gods-anim=""
-              x="380"
-              y="60"
-              width="110"
-              height="186"
-              fill={`url(#${id("scan")})`}
-              opacity="0.16"
-              style={anim("gbSweep 5.5s linear infinite")}
-            />
-          </g>
-        </g>
-
-        <g data-layer="globe-bezel" fill="none">
-          <circle cx="176" cy="160" r="158" stroke={border} strokeWidth="2.4" />
-          <circle cx="176" cy="160" r="152" stroke={border} strokeWidth="1.4" opacity="0.78" />
-          <circle
-            data-gods-anim=""
-            cx="176"
-            cy="160"
-            r="140"
-            stroke={accent}
-            strokeWidth="1"
-            strokeDasharray="2 9"
-            opacity="0.5"
-            style={{ transformOrigin: "176px 160px", ...anim("gbSpin 42s linear infinite") }}
-          />
-          <circle
-            data-gods-anim=""
-            cx="176"
-            cy="160"
-            r="146"
-            stroke={border}
-            strokeWidth="6"
-            strokeDasharray="36 230"
-            style={{ transformOrigin: "176px 160px", ...anim("gbSpinRev 18s linear infinite") }}
-          />
-          <g stroke={accent} strokeWidth="2" opacity="0.85">
-            <path d="M8 160 h22" />
-            <path d="M322 160 h22" />
-          </g>
-          <g stroke={accent} strokeWidth="1.6" opacity="0.45">
-            <path d="M64 48 l16 16" />
-            <path d="M288 48 l-16 16" />
-            <path d="M64 272 l16 -16" />
-            <path d="M288 272 l-16 -16" />
-          </g>
-          {/* Keep the entire orbit visible over the live globe. Occluding its
-              back half looked like broken artwork after stream compression. */}
-          <g>
-            <ellipse cx="176" cy="160" rx="180" ry="62" transform="rotate(-27 176 160)" stroke={titleColor} strokeWidth="2.4" opacity="0.9" />
-            <ellipse
-              data-gods-anim=""
-              cx="176"
-              cy="160"
-              rx="173"
-              ry="55"
-              transform="rotate(-27 176 160)"
-              stroke={accent}
-              strokeWidth="1.1"
-              opacity="0.5"
-              strokeDasharray="30 12"
-              style={anim("gbDash 6s linear infinite")}
-            />
-          </g>
-        </g>
-
-        {/* Status pulse dot — animated, so it lives here with the other motion. */}
-        <g data-layer="status-pulse">
-          <rect data-gods-anim="" x="384" y="144" width="9" height="9" fill={accent} style={anim("gbPulse 1.8s ease-in-out infinite")} />
         </g>
       </svg>
+
+      <GodsBannerMotion
+        accent={accent}
+        border={border}
+        titleColor={titleColor}
+        liveCore={liveCore}
+        frozen={frozen}
+      />
 
       <svg
         xmlns="http://www.w3.org/2000/svg"

@@ -65,7 +65,7 @@ function StationBox({
           height="100%"
           viewBox={`0 0 ${BOX_W * 2} ${BOX_H}`}
           preserveAspectRatio="none"
-          style={{ position: "absolute", inset: 0, animation: "sstation-row-trace 9s linear infinite" }}
+          style={{ position: "absolute", inset: 0, animation: "sstation-row-trace 9s linear infinite", willChange: "transform" }}
         >
           <path d={realLinePath(station.samples, BOX_W, BOX_H)} fill="none" stroke="#43d9ff" strokeWidth="1.1" />
           <path

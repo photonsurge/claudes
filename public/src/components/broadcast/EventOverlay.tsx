@@ -127,6 +127,7 @@ export default function EventOverlay({
             background: `linear-gradient(90deg, transparent, ${color}, transparent)`,
             boxShadow: `0 0 12px ${color}`,
             animation: "bcast-reticle-scan 4s ease-in-out infinite",
+            willChange: "transform, opacity",
           }}
         />
         <ReticleMarks color={color} />

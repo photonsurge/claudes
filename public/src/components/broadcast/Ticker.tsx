@@ -160,6 +160,10 @@ export default function Ticker({
             height: "100%",
             whiteSpace: "nowrap",
             animation: `bcast-crawl ${dur}s linear infinite`,
+            // Its own compositor layer: OBS's CEF ticks CSS animations on the
+            // main thread, and without a layer each step repaints + relayerizes
+            // the page (docs/watch-perf-plan.md, round 10).
+            willChange: "transform",
             fontSize,
             fontWeight: 600,
             letterSpacing: 0.6,

@@ -53,7 +53,7 @@ function GaugeBox({ station, primary, theme }: { station: TideStationReading; pr
           height="100%"
           viewBox={`0 0 ${BOX_W * 2} ${BOX_H}`}
           preserveAspectRatio="none"
-          style={{ position: "absolute", inset: 0, animation: "tstation-row-trace 11s linear infinite" }}
+          style={{ position: "absolute", inset: 0, animation: "tstation-row-trace 11s linear infinite", willChange: "transform" }}
         >
           <path d={realWavePath(station.samples, BOX_W, BOX_H)} fill="rgba(60,150,230,0.5)" />
           <path d={realWavePath(station.samples, BOX_W, BOX_H)} transform={`translate(${BOX_W},0)`} fill="rgba(60,150,230,0.5)" />

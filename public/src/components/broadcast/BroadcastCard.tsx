@@ -321,7 +321,7 @@ export default function BroadcastCard({
           ) : null}
           {live ? (
             <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.2, fontWeight: 800, letterSpacing: 1.2, color: theme.mutedColor }}>
-              <span style={{ width: 9, height: 9, borderRadius: "50%", background: theme.liveColor, animation: "bcast-onair 1.4s ease-in-out infinite" }} />
+              <span style={{ width: 9, height: 9, borderRadius: "50%", background: theme.liveColor, animation: "bcast-onair 1.4s ease-in-out infinite", willChange: "opacity" }} />
               ON AIR
             </span>
           ) : null}

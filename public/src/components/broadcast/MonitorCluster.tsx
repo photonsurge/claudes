@@ -315,7 +315,7 @@ export function SeismicMonitor({
             height="100%"
             viewBox={`0 0 ${W * 2} ${TRACE_H}`}
             preserveAspectRatio="none"
-            style={{ position: "absolute", inset: 0, animation: "bcast-trace 9s linear infinite" }}
+            style={{ position: "absolute", inset: 0, animation: "bcast-trace 9s linear infinite", willChange: "transform" }}
           >
             <path d={realLinePath(realSeismoSamples, W, TRACE_H)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
             <path
@@ -332,7 +332,7 @@ export function SeismicMonitor({
             height="100%"
             viewBox={`0 0 ${W * 2} ${TRACE_H}`}
             preserveAspectRatio="none"
-            style={{ position: "absolute", inset: 0, animation: "bcast-trace 6s linear infinite" }}
+            style={{ position: "absolute", inset: 0, animation: "bcast-trace 6s linear infinite", willChange: "transform" }}
           >
             <path d={seismoPath(W, TRACE_H, amp)} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
             <path d={seismoPath(W, TRACE_H, amp)} transform={`translate(${W},0)`} fill="none" stroke="#43d9ff" strokeWidth="1.2" />
@@ -395,7 +395,7 @@ export function TsunamiMonitor({
           height="100%"
           viewBox={`0 0 ${W * 2} ${TRACE_H}`}
           preserveAspectRatio="none"
-          style={{ position: "absolute", inset: 0, animation: "bcast-trace 11s linear infinite" }}
+          style={{ position: "absolute", inset: 0, animation: "bcast-trace 11s linear infinite", willChange: "transform" }}
         >
           <path d={realWavePath(samples, W, TRACE_H)} fill="rgba(60,150,230,0.5)" />
           <path d={realWavePath(samples, W, TRACE_H)} transform={`translate(${W},0)`} fill="rgba(60,150,230,0.5)" />
@@ -486,7 +486,7 @@ function WeatherMonitorBox({
           height="100%"
           viewBox={`0 0 ${ROW_BOX_W * 2} ${ROW_BOX_H}`}
           preserveAspectRatio="none"
-          style={{ position: "absolute", inset: 0, animation: `weather-row-trace ${spec.animMs}ms linear infinite` }}
+          style={{ position: "absolute", inset: 0, animation: `weather-row-trace ${spec.animMs}ms linear infinite`, willChange: "transform" }}
         >
           {spec.wave ? (
             <>
