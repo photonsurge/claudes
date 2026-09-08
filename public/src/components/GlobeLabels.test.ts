@@ -1,4 +1,39 @@
-import { LabelGrid, labelWidth } from "./GlobeLabels";
+import { LabelGrid, holderLabels, iconSig, iconVarsOf, labelWidth, type OverlayLabel } from "./GlobeLabels";
+
+describe("keyed icon sprites", () => {
+  const resolve = (name: string, fallback: string) =>
+    ({ "--gods-accent": "#43d9ff", "--gods-muted": "#c8d5e6" })[name] ?? fallback;
+
+  it("iconVarsOf lists each custom property an icon's markup reads, once", () => {
+    const svg = '<svg><path stroke="var(--gods-accent, #43d9ff)"/><circle fill="var(--gods-accent, #fff)" stroke="var(--gods-muted, #ccc)"/></svg>';
+    expect(iconVarsOf(svg)).toEqual(["--gods-accent", "--gods-muted"]);
+    expect(iconVarsOf("<svg><path stroke='#fff'/></svg>")).toEqual([]);
+  });
+
+  it("iconSig is null before a key's variables are known, then bakes their current values", () => {
+    expect(iconSig("heartbeat:on", 1, undefined, resolve)).toBeNull();
+    expect(iconSig("heartbeat:on", 1, ["--gods-accent"], resolve)).toBe("heartbeat:on|1|#43d9ff");
+    // A theme change (new accent) is a different signature → a fresh sprite.
+    const other = (n: string, f: string) => (n === "--gods-accent" ? "#f43f5e" : f);
+    expect(iconSig("heartbeat:on", 1, ["--gods-accent"], other)).toBe("heartbeat:on|1|#f43f5e");
+    // No variables at all → the key + dpr alone.
+    expect(iconSig("pin:#fff", 2, [], resolve)).toBe("pin:#fff|2|");
+  });
+
+  it("holderLabels keeps keyless icons and keyed ones whose look has no sprite yet", () => {
+    const label = (id: string, iconKey?: string): OverlayLabel => ({
+      id,
+      text: id,
+      position: [0, 0, 0],
+      color: [255, 255, 255],
+      icon: null,
+      iconKey,
+    });
+    const labels = [label("a"), label("b", "heartbeat:on"), label("c", "heartbeat:on")];
+    // Nothing rasterised yet → every icon label still needs its holder.
+    expect(holderLabels(labels, null, 0).map((l) => l.id)).toEqual(["a", "b", "c"]);
+  });
+});
 
 describe("labelWidth", () => {
   it("grows with text length", () => {

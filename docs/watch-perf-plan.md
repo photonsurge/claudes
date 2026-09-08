@@ -437,6 +437,39 @@ keeping every inactive slide mounted; the hidden icon holders). Still open:
 global + nest particles both drawing; luma's per-draw plumbing (~10 ms/frame
 at 28 layers — only the visual-trade-off cuts remain there).
 
+### Round 15 (2026-09-08) — what the DOM census named
+
+Round 14 measured on a HEAVIER moment (a Japan spotlight zoomed onto a dense
+city region: 138 labels drawn, 209 `drawImage`, a JMA-MSM nest raster, 29
+layers): busy 59.5 %, 28.9 fps — labels alone ~1.7 ms/frame at that density,
+which is scene, not regression. React's share did NOT fall as expected
+(~600 ms/20 s again). The new DOM-weight census explained both open items:
+
+- `main > div.deck-widget-container` = 3 602 nodes. That is OUR Globe host
+  (deck 9.3's WidgetManager adds its class to the canvas's parent), and the
+  nodes are GlobeLabels' hidden icon holders: ~350 station/volcano/gauge pins
+  as `display:none` SVGs. Free for layout/paint, but React re-diffs all of them
+  and every one is re-serialised (`serializeToString` 59 ms) each time the
+  label list rebuilds — and `seismoActive` (the station cycle) rebuilds it every
+  few seconds. That was the surviving React cost.
+- The bottom ticker crawl = 1 636 nodes (two 818-node copies of the whole
+  entry list for the seamless loop). In the layout tree and inside the
+  per-frame-animated track.
+
+Shipped: **keyed icon sprites**. `OverlayLabel.iconKey` names an icon's LOOK
+(`heartbeat:on`, `volcano:<rgb>:<status>`, `wave:off`, `pin:<colour>`); the
+canvas rasterises one sprite per (look, dpr, current theme-variable values —
+`iconSig`), serialises each look once to learn which `--gods-*` variables it
+reads (`iconVarsOf`), and drops the hidden holder as soon as its sprite exists
+(`holderLabels`). ~350 holders → ~10, no per-rebuild serialisation, no React
+diff of the pins. Tests in `GlobeLabels.test.ts`.
+
+Next run: expect the census's Globe-host subtree to shrink from ~3.6 k to a
+few dozen nodes and React's frames (`cr`, `i_`, `ua`) to drop. Still open: the
+1.6 k-node ticker crawl (a windowed crawl like World Watch's marquee would
+cut ~1.5 k nodes → less PrePaint/Layerize per frame), global + nest particles
+both drawing, luma's per-draw plumbing.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

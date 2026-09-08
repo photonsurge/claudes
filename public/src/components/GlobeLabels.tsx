@@ -30,7 +30,7 @@
  * test), progressive reveal by `minZoom` / `detailMinZoom`, and collision
  * decluttering in priority order.
  */
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 export interface OverlayLabel {
   id: string;
@@ -38,6 +38,11 @@ export interface OverlayLabel {
   /** Small glyph rendered before the text (e.g. a station-type icon). Purely
    *  decorative — not counted by `labelWidth()`'s collision estimate. */
   icon?: ReactNode;
+  /** Stable identity of the icon's LOOK (e.g. `heartbeat:on`). With it the
+   *  glyph is rasterised once per look (+ theme colours) and its hidden DOM
+   *  copy is dropped after that first frame; without it the icon stays in the
+   *  DOM and is re-serialised on every label rebuild. */
+  iconKey?: string;
   /** Dim secondary line (e.g. "United Kingdom · 9.0M"), shown when zoomed in. */
   detail?: string;
   /** [lng, lat, altM] — same position the marker/dot uses, so they line up. */
@@ -280,15 +285,76 @@ let iconEpoch = 0;
  * and dozens of icon labels a frame made that the label canvas's top cost. A
  * bitmap blit is a texture copy.
  */
+const VAR_RE = /var\((--[\w-]+)\s*,\s*([^)]+)\)/g;
+
+/** The custom-property names an icon's markup reads (`var(--x, fallback)`). */
+export function iconVarsOf(markup: string): string[] {
+  const out = new Set<string>();
+  for (const m of markup.matchAll(VAR_RE)) out.add(m[1]);
+  return [...out];
+}
+
+/**
+ * Cache signature for a keyed icon: its look key, the backing-store scale and
+ * the CURRENT values of the theme variables it reads — so a scene theme change
+ * rasterises fresh sprites while everything else hits the cache. Null until
+ * the key has been serialised once (its variables aren't known before that).
+ */
+export function iconSig(
+  key: string,
+  dpr: number,
+  vars: string[] | undefined,
+  resolve: (name: string, fallback: string) => string,
+): string | null {
+  if (!vars) return null;
+  return `${key}|${dpr}|${vars.map((v) => resolve(v, "")).join("|")}`;
+}
+
+/** Serialise a rendered icon <svg> with its theme variables resolved. */
+function serialiseIcon(svg: Element, vars: (name: string, fallback: string) => string): { html: string; varNames: string[] } {
+  const raw = serializer ? serializer.serializeToString(svg) : "";
+  const varNames = iconVarsOf(raw);
+  const html = raw.replace(VAR_RE, (_, name: string, fallback: string) => vars(name, fallback.trim()));
+  return { html, varNames };
+}
+
+/** Which theme variables each icon key's markup reads — learned on first serialisation. */
+const iconKeyVars = new Map<string, string[]>();
+/** Sprite per keyed-icon signature (see iconSig). */
+const iconBySig = new Map<string, IconSprite>();
+
+/**
+ * Which icon labels still need a hidden DOM holder: every keyless one, plus
+ * keyed ones whose look (at the current theme colours and dpr) has no sprite
+ * yet. `epoch` only ties the call to the render that follows a rasterisation.
+ */
+export function holderLabels(
+  iconLabels: OverlayLabel[],
+  computed: CSSStyleDeclaration | null,
+  epoch: number,
+): OverlayLabel[] {
+  void epoch;
+  const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, MAX_DPR) : 1;
+  const resolve = (name: string, fallback: string) => computed?.getPropertyValue(name).trim() || fallback;
+  return iconLabels.filter((l) => {
+    if (!l.iconKey) return true;
+    const sig = iconSig(l.iconKey, dpr, iconKeyVars.get(l.iconKey), resolve);
+    return !sig || !iconBySig.has(sig);
+  });
+}
+
 function iconSprite(
   svg: Element,
   vars: (name: string, fallback: string) => string,
   dpr: number,
 ): IconSprite | null {
   if (!serializer) return null;
-  const html = serializer
-    .serializeToString(svg)
-    .replace(/var\((--[\w-]+)\s*,\s*([^)]+)\)/g, (_, name: string, fallback: string) => vars(name, fallback.trim()));
+  const { html } = serialiseIcon(svg, vars);
+  return spriteForHtml(html, dpr);
+}
+
+/** Bitmap sprite for resolved icon markup, once per distinct (markup, dpr). */
+function spriteForHtml(html: string, dpr: number): IconSprite {
   const key = `${dpr}|${html}`;
   const hit = iconSprites.get(key);
   if (hit) return hit;
@@ -395,6 +461,9 @@ export default function GlobeLabels({
   const iconByLabel = useRef<Map<string, { gen: number; dpr: number; sprite: IconSprite | null }>>(new Map());
   const genRef = useRef(0);
   const computedRef = useRef<CSSStyleDeclaration | null>(null);
+  // Bumped when a keyed icon has just been rasterised, so the render below can
+  // drop its hidden DOM holder (kept only until the first sprite exists).
+  const [holderEpoch, setHolderEpoch] = useState(0);
   // Signature of the last painted frame: camera + size + label generation.
   // A parked shot (no spin, no idle motion, no new labels) repaints nothing.
   const lastSigRef = useRef("");
@@ -438,7 +507,26 @@ export default function GlobeLabels({
       const v = computedRef.current?.getPropertyValue(name).trim();
       return v || fallback;
     };
+    // Set when a keyed icon was rasterised this frame → re-render to drop holders.
+    let keyedNew = false;
     const iconFor = (l: OverlayLabel, dpr: number): IconSprite | null => {
+      if (l.iconKey) {
+        // Keyed: one sprite per (look, dpr, theme colours), shared by every
+        // label with that look; serialised once per look, then never again.
+        const sig = iconSig(l.iconKey, dpr, iconKeyVars.get(l.iconKey), resolveVar);
+        if (sig) {
+          const hit = iconBySig.get(sig);
+          if (hit) return hit;
+        }
+        const svg = iconHolders.current.get(l.id)?.firstElementChild ?? null;
+        if (!svg || !serializer) return null; // holder not rendered yet
+        const { html, varNames } = serialiseIcon(svg, resolveVar);
+        iconKeyVars.set(l.iconKey, varNames);
+        const sprite = spriteForHtml(html, dpr);
+        iconBySig.set(iconSig(l.iconKey, dpr, varNames, resolveVar)!, sprite);
+        keyedNew = true;
+        return sprite;
+      }
       const gen = genRef.current;
       const cached = iconByLabel.current.get(l.id);
       if (cached && cached.gen === gen && cached.dpr === dpr) return cached.sprite;
@@ -558,6 +646,10 @@ export default function GlobeLabels({
       labelStats.projected = projected;
       labelStats.drawn = drawn;
       labelStats.draws = draws;
+      if (keyedNew) {
+        keyedNew = false;
+        setHolderEpoch((e) => e + 1);
+      }
     };
     (window as unknown as { __godsLabels?: unknown }).__godsLabels = labelStats;
     raf = requestAnimationFrame(loop);
@@ -574,9 +666,12 @@ export default function GlobeLabels({
     >
       <canvas ref={canvasRef} style={{ position: "absolute", left: 0, top: 0 }} />
       {/* Sprite source for the icon glyphs: rendered by React, never laid out or
-          painted (display:none), serialised into image sprites on demand. */}
+          painted (display:none), serialised into image sprites on demand. Keyed
+          icons keep a holder only until their look has been rasterised — a few
+          hundred station pins would otherwise sit in the DOM and be re-diffed
+          by React on every label rebuild. */}
       <div style={{ display: "none" }} aria-hidden="true">
-        {iconLabels.map((l) => (
+        {holderLabels(iconLabels, computedRef.current, holderEpoch).map((l) => (
           <div
             key={l.id}
             ref={(el) => {

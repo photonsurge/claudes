@@ -1319,6 +1319,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         out.push({
           id: `seismo:${seismoKeyOf(s)}`,
           icon: <HeartbeatIcon active={isActive} />,
+          iconKey: `heartbeat:${isActive ? "on" : "off"}`,
           text: seismoShortName(s),
           position: [s.lng, s.lat, 0],
           color: isActive ? [67, 217, 255] : [200, 215, 230],
@@ -1332,6 +1333,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         out.push({
           id: `volcano:${v.id}`,
           icon: <VolcanoIcon color={`rgb(${r}, ${g}, ${b})`} size={v.status === "erupting" ? 34 : v.status === "unrest" ? 27 : 20} />,
+          iconKey: `volcano:${r},${g},${b}:${v.status}`,
           text: v.status === "erupting" ? v.name : "",
           position: volcanoPosition(v),
           color: [r, g, b],
@@ -1346,6 +1348,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         out.push({
           id: `tide:${tideKeyOf(s)}`,
           icon: <WaveIcon active={isActive} />,
+          iconKey: `wave:${isActive ? "on" : "off"}`,
           text: tideShortName(s),
           position: [s.lng, s.lat, 0],
           color: isActive ? [60, 150, 230] : [200, 215, 230],
@@ -1357,6 +1360,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       out.push({
         id: "weather-point",
         icon: <MonitorPinIcon active color={mapHighlightColor} />,
+        iconKey: `pin:${mapHighlightColor}`,
         text: weatherPointLabel,
         position: [weatherPointCenter[0], weatherPointCenter[1], 0],
         color: mapHighlightRgb,
