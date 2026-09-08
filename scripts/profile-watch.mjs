@@ -571,6 +571,23 @@ async function domCensus(cdp, seconds) {
   for (const [k, n] of r.removed) p(`${String(n).padStart(7)}  ${k}`);
   p(`  most frequent inserted content / text changes:`);
   for (const [k, n] of r.text) p(`${String(n).padStart(7)}  ${k}`);
+  // DOM weight: PrePaint (and, in CEF, Layerize) walk the whole tree every
+  // frame something animates, so the heaviest subtrees are the ones to slim.
+  try {
+    const w = await evaluate(
+      cdp,
+      `(() => { const sig = ${SIG_SRC}; const out = [];
+        const size = (el) => 1 + el.getElementsByTagName('*').length;
+        const walk = (el, depth) => { for (const c of el.children) { const n = size(c);
+          if (n >= 150) { out.push([n, sig(c)]); if (depth < 7) walk(c, depth + 1); } } };
+        walk(document.body, 0);
+        return { total: size(document.body), rows: out.sort((a, b) => b[0] - a[0]).slice(0, 24) }; })()`,
+    );
+    p(`  heaviest subtrees (≥150 nodes; nested ones listed under their parents' totals) of ${w.total}:`);
+    for (const [n, k] of w.rows) p(`${String(n).padStart(7)}  ${k}`);
+  } catch (e) {
+    p(`  DOM weight census failed: ${e.message || e}`);
+  }
   return lines.join("\n");
 }
 

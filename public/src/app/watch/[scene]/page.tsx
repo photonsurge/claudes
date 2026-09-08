@@ -14,6 +14,10 @@ import { WEATHER_RUN, CITIES_UPDATED, mergeControlState } from "@photonsurge/sha
 import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../../lib/socket-provider";
 import { fetchManifest } from "../../../lib/manifest";
+import { useStableJson } from "../../../lib/use-stable";
+
+/** Stable "no up-next" so an idle director doesn't mint a fresh [] per beat. */
+const NO_UP_NEXT: never[] = [];
 import { listCities, type City } from "../../../lib/cities";
 import { useRegionCities } from "../../../lib/useRegionCities";
 import { useSceneState, listScenes } from "../../../lib/scenes";
@@ -73,6 +77,14 @@ function SceneWatchPageInner() {
     const id = directorConfig.activeSlideId[onAir.kind];
     return directorConfig.kindSlides[onAir.kind]?.find((s) => s.id === id)?.name;
   }, [directorConfig, onAir]);
+
+  // Director-derived props for the surface, identity-stable while their VALUE
+  // is unchanged: every director heartbeat re-renders this page, and fresh
+  // little arrays here would defeat the memoised WatchSurface below (the whole
+  // broadcast chrome would re-diff its thousands of inline styles per beat).
+  const pulseAt = useStableJson(eventPulse(director));
+  const glowRegionBbox = useStableJson(activeRegionBbox(director, shown.camera));
+  const upNext = useStableJson(director?.active ? director.upNext : NO_UP_NEXT);
 
   // Cold start the globally-shared data + resolve this scene's display name.
   // Retried until the manifest lands: this page runs unattended inside OBS
@@ -139,12 +151,12 @@ function SceneWatchPageInner() {
         manifest={manifest}
         cities={shownCities}
         sceneName={sceneName}
-        pulseAt={eventPulse(director)}
+        pulseAt={pulseAt}
         glowCountryIso={activeCountryIso(director, shown.camera.center)}
-        glowRegionBbox={activeRegionBbox(director, shown.camera)}
+        glowRegionBbox={glowRegionBbox}
         onAirSegment={director?.active ? onAir : null}
         focusCaption={director?.active ? focus : null}
-        upNext={director?.active ? director.upNext : []}
+        upNext={upNext}
         nextCutAt={director?.active ? director.endsAt : null}
         slideName={director?.active ? slideName : undefined}
         alertCycleSeconds={directorConfig.alertCycleSeconds}

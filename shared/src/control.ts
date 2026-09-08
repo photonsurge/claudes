@@ -861,11 +861,16 @@ function sameValue(a: unknown, b: unknown): boolean {
 function reuseUnchanged(base: ControlState, next: ControlState): ControlState {
   const b = base as unknown as Record<string, unknown>;
   const n = next as unknown as Record<string, unknown>;
+  let same = true;
   for (const k of Object.keys(n)) {
     const v = n[k];
     if (v !== null && typeof v === "object" && sameValue(v, b[k])) n[k] = b[k];
+    if (n[k] !== b[k]) same = false;
   }
-  return next;
+  // Nothing changed at all → hand back `base` itself. A socket heartbeat that
+  // repeats the current state then leaves React state identity untouched, so
+  // memoised consumers (the whole /watch chrome) skip the re-render.
+  return same && Object.keys(b).length === Object.keys(n).length ? base : next;
 }
 
 export function mergeControlState(base: ControlState, patch: Partial<ControlState>): ControlState {

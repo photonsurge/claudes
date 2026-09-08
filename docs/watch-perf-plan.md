@@ -394,6 +394,49 @@ open: the per-frame Layerize trigger, React's per-frame commit work (run with
 `--dom-census 5` to name the churn), global + nest particles both drawing, and
 luma's per-draw plumbing.
 
+### Round 14 (2026-09-08) — React re-renders, and what Layerize really is
+
+Round 13 measured (full scene, 28 layers, country glow on air): busy 57.5 →
+**54.4 %**, 29.3 fps. `getImageData` gone; `setLayers` 6.1 → 3.9 %. The DOM
+census showed only ~30 node changes a second, yet React's commit phase
+(`setProp`, `setValueForStyles`, `commitMutationEffects`) was ~1.2 ms/frame:
+a large subtree re-rendering several times a second with fresh inline-style
+objects, every element re-diffed key by key. Causes found in code: the
+director heartbeat re-renders the page every second (and `WatchSurface` was
+not memoised, so identical props still re-rendered the whole chrome); the
+page minted fresh `[lng,lat]` / bbox / `[]` props per render; `WatchSurface`
+passed `[]` literals for every "layer off" list; and `mergeControlState`
+returned a new state object even for a heartbeat that changed nothing, so
+socket beats re-rendered everything too.
+
+A local experiment (`scratchpad/layerize-test.html`, 6 000 nodes, per-frame
+canvas + a main-thread crawl animation, `--disable-threaded-animation`)
+answered the Layerize question: locally it stays at ~17 µs/frame even at 6 k
+nodes, while PrePaint scales with DOM size (~0.6 ms/frame at 6 k). The OBS
+page's 1.3 ms Layerize is therefore a CEF-version tax (its Chromium does a
+fuller compositor update per frame than current Chrome), not a page bug; the
+lever that works everywhere is DOM weight, which the profiler's `--dom-census`
+now reports per subtree.
+
+Shipped:
+
+- **`mergeControlState` returns `base` itself when nothing changed** (shared;
+  `./update-shared` run) — a repeated heartbeat leaves React state identity
+  alone and memoised consumers skip.
+- **Memoised surface and chrome**: `WatchSurfaceBody` and `BroadcastFrame`
+  wrapped in `React.memo` (in WatchSurface.tsx); all "layer off" props share
+  one `NONE` array; both watch pages stabilise `pulseAt`, `glowRegionBbox` and
+  `upNext` by value (`lib/use-stable.ts`, `useStableJson`). Render-time
+  `Date.now()` uses in the chrome (map freshness, "ago" labels, 3 h buckets)
+  are coarse and still refresh on the polls, so memoisation is safe.
+- **Profiler**: `--dom-census` lists the heaviest subtrees (≥150 nodes).
+
+Next run: expect React's share (`ua`, `i_`, `cr`, `t_`) to fall well below
+1 %, and the census to name what holds the ~5.7 k nodes (suspects: SlideDeck
+keeping every inactive slide mounted; the hidden icon holders). Still open:
+global + nest particles both drawing; luma's per-draw plumbing (~10 ms/frame
+at 28 layers — only the visual-trade-off cuts remain there).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

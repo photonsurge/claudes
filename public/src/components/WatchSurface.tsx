@@ -7,7 +7,7 @@
  * small run/attribution label. No chrome — designed to be captured as a YouTube
  * output or an OBS browser source.
  */
-import { useEffect, useMemo } from "react";
+import { memo, useEffect, useMemo } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { broadcastSatImgFeeds } from "@photonsurge/shared/satimg/types";
@@ -47,6 +47,20 @@ import LoadingScreen from "./broadcast/LoadingScreen";
 import StartCountdown from "./broadcast/StartCountdown";
 import { broadcastThemeCssVars, getBroadcastTheme } from "./broadcast/config";
 import { BroadcastThemeContext } from "./broadcast/theme-context";
+
+/** One shared empty list for every "layer off" prop — a fresh `[]` per render
+ *  would defeat the memoised chrome below. */
+const NONE: never[] = [];
+
+/**
+ * The broadcast chrome is thousands of inline-styled elements; React re-diffs
+ * every one of them on any re-render of this surface (each hook's poll, the
+ * tracks tick, a socket heartbeat). Memoised, it re-renders only when a prop it
+ * actually reads changes — everything passed below is identity-stable between
+ * unrelated updates (state via mergeControlState, alerts via their fingerprint,
+ * theme via useMemo, the lists via NONE).
+ */
+const BroadcastFrameMemo = memo(BroadcastFrame);
 
 interface WatchSurfaceProps {
   state: ControlState;
@@ -222,7 +236,7 @@ function WatchSurfaceBody({
         alerts={alerts}
         alertFocus={alertStep}
         quakes={quakes}
-        seismoStations={state.showSeismic ? seismoStations : []}
+        seismoStations={state.showSeismic ? seismoStations : NONE}
         seismoActive={state.showSeismic ? seismoActive : null}
         tideStations={tideStations}
         tideActive={tideActive}
@@ -248,22 +262,22 @@ function WatchSurfaceBody({
           map key only shows on the clean (chrome-off) surface to avoid clashing. */}
       {!state.showBroadcastChrome ? (
         <AlertLegend
-          alerts={state.showAlerts ? alerts : []}
+          alerts={state.showAlerts ? alerts : NONE}
           activeHazard={alertStep?.hazard ?? null}
-          quakes={state.showSeismic ? quakes : []}
+          quakes={state.showSeismic ? quakes : NONE}
           aurora={aurora}
           geomag={geomag}
         />
       ) : null}
       {state.showBroadcastChrome ? (
-        <BroadcastFrame
+        <BroadcastFrameMemo
           state={broadcastState}
           manifest={manifest}
-          alerts={state.showAlerts ? alerts : []}
+          alerts={state.showAlerts ? alerts : NONE}
           activeHazard={alertStep?.hazard ?? null}
-          quakes={state.showSeismic ? quakes : []}
-          volcanoes={state.showVolcanoes ? volcanoes : []}
-          seismoStations={state.showSeismic ? seismoStations : []}
+          quakes={state.showSeismic ? quakes : NONE}
+          volcanoes={state.showVolcanoes ? volcanoes : NONE}
+          seismoStations={state.showSeismic ? seismoStations : NONE}
           seismoActive={state.showSeismic ? seismoActive : null}
           tideStations={tideStations}
           tideActive={tideActive}
@@ -412,6 +426,11 @@ function WatchSurfaceBody({
   );
 }
 
+/** The body re-renders on its own hooks' updates; memoised so a parent
+ *  re-render with identical props (every director heartbeat re-renders the
+ *  page) doesn't re-diff the whole surface for nothing. */
+const WatchSurfaceBodyMemo = memo(WatchSurfaceBody);
+
 /**
  * Wrapper: latches `ready` once and mounts the FocusProvider so a single
  * /api/focus fetch per on-air cut feeds every panel below (globe markers +
@@ -428,7 +447,7 @@ export default function WatchSurface(props: WatchSurfaceProps) {
       enabled={ready}
       upcoming={props.upNext}
     >
-      <WatchSurfaceBody {...props} ready={ready} />
+      <WatchSurfaceBodyMemo {...props} ready={ready} />
     </FocusProvider>
   );
 }

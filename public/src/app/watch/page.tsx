@@ -26,6 +26,10 @@ import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../lib/socket-provider";
 import { fetchBroadcastState } from "../../lib/control";
 import { fetchManifest } from "../../lib/manifest";
+import { useStableJson } from "../../lib/use-stable";
+
+/** Stable "no up-next" so an idle director doesn't mint a fresh [] per beat. */
+const NO_UP_NEXT: never[] = [];
 import { listCities, type City } from "../../lib/cities";
 import { retryUntil } from "../../lib/retry";
 import { useRegionCities } from "../../lib/useRegionCities";
@@ -80,6 +84,13 @@ function WatchPageInner() {
     const id = directorConfig.activeSlideId[onAir.kind];
     return directorConfig.kindSlides[onAir.kind]?.find((s) => s.id === id)?.name;
   }, [directorConfig, onAir]);
+
+  // Director-derived props for the surface, identity-stable while their VALUE
+  // is unchanged: every director heartbeat re-renders this page, and fresh
+  // little arrays here would defeat the memoised WatchSurface below.
+  const pulseAt = useStableJson(eventPulse(director));
+  const glowRegionBbox = useStableJson(activeRegionBbox(director, shown.camera));
+  const upNext = useStableJson(director?.active ? director.upNext : NO_UP_NEXT);
 
   // Cold start. Broadcast state fails soft internally (default state; the real
   // one arrives over the socket) so it applies straight away — but the manifest
@@ -157,12 +168,12 @@ function WatchPageInner() {
         state={shown}
         manifest={manifest}
         cities={shownCities}
-        pulseAt={eventPulse(director)}
+        pulseAt={pulseAt}
         glowCountryIso={activeCountryIso(director, shown.camera.center)}
-        glowRegionBbox={activeRegionBbox(director, shown.camera)}
+        glowRegionBbox={glowRegionBbox}
         onAirSegment={director?.active ? onAir : null}
         focusCaption={director?.active ? focus : null}
-        upNext={director?.active ? director.upNext : []}
+        upNext={upNext}
         nextCutAt={director?.active ? director.endsAt : null}
         slideName={director?.active ? slideName : undefined}
         alertCycleSeconds={directorConfig.alertCycleSeconds}

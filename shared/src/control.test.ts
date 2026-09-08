@@ -320,6 +320,22 @@ describe("slugifySceneId", () => {
   });
 });
 
+describe("mergeControlState — unchanged state keeps its identity", () => {
+  it("returns the SAME object when the patch changes nothing (a repeated heartbeat)", () => {
+    const base = mergeControlState(DEFAULT_CONTROL_STATE, { fhr: 6, showWind: true });
+    expect(mergeControlState(base, {})).toBe(base);
+    expect(mergeControlState(base, { fhr: 6 })).toBe(base);
+    expect(mergeControlState(base, { camera: { ...base.camera } })).toBe(base);
+  });
+
+  it("returns a new object as soon as one field differs", () => {
+    const base = mergeControlState(DEFAULT_CONTROL_STATE, { fhr: 6 });
+    const next = mergeControlState(base, { fhr: 9 });
+    expect(next).not.toBe(base);
+    expect(next.fhr).toBe(9);
+  });
+});
+
 describe("mergeControlState — nested identity", () => {
   const base: ControlState = mergeControlState(DEFAULT_CONTROL_STATE, {
     wind: { numParticles: 1234, speedFactor: 3, maxAge: 7, width: 5, opacity: 0.5, color: "#abcdef" },
