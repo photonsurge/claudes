@@ -12,6 +12,12 @@
  * a square handing over the active role goes scaleX(k) → translateX(extra),
  * which interpolates as shrink-while-sliding with a fixed right edge — what
  * the reflow did to it when the square before it grew.
+ *
+ * Squares before the active one carry `translateX(0)` rather than `none`: a
+ * transform that comes and goes creates and destroys the element's paint layer,
+ * and Blink lays the page out for that — the round-18 trace showed `layout:
+ * style changed` on exactly those squares. An identity transform keeps the
+ * layer, so a flip is style + paint only.
  */
 import type { CSSProperties } from "react";
 
@@ -30,7 +36,7 @@ export function pageDotStyle(
     height: size,
     background: i === active ? accent : border,
     transformOrigin: "left center",
-    transform: i === active ? `scaleX(${activeWidth / size})` : i > active ? `translateX(${extra}px)` : "none",
+    transform: i === active ? `scaleX(${activeWidth / size})` : `translateX(${i > active ? extra : 0}px)`,
     transition: `transform ${ms}ms ease, background ${ms}ms ease`,
   };
 }

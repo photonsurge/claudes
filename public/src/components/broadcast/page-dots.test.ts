@@ -3,7 +3,7 @@ import { pageDotStyle, pageDotsSlack } from "./page-dots";
 describe("pageDotStyle (layout-free page indicator)", () => {
   it("stretches the active square from its left edge and slides the ones after it", () => {
     const st = (i: number) => pageDotStyle(i, 1, 6, 18, "#43d9ff", "#1d4354", 300);
-    expect(st(0).transform).toBe("none");
+    expect(st(0).transform).toBe("translateX(0px)"); // identity, never `none`: keeps the paint layer
     expect(st(1).transform).toBe("scaleX(3)");
     expect(st(2).transform).toBe("translateX(12px)");
     expect(st(1).background).toBe("#43d9ff");

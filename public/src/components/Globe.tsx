@@ -26,7 +26,7 @@ import { isTextureCached, loadTexture, preloadTextures, type LoadedTexture } fro
 import { isObsRender, setRendererInfo } from "../lib/broadcast-render";
 import { useCrossfadeVariable } from "../lib/crossfade";
 import { pressureProps, textureUrlFor } from "./layers/props";
-import { highLowOverlayLabels } from "./layers/high-low-labels";
+import { useHighLowLabels } from "./layers/high-low-labels";
 import { basemapLayers, countriesLayer, hexToRgb, TILE_MIN_ZOOM } from "./layers/basemap";
 import {
   scalarRasterLayers,
@@ -1275,14 +1275,17 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   // Pressure H / L centres, from the same decoded texture the isobars use —
   // drawn on the label canvas (centred letter + hPa value) instead of
   // WeatherLayers' HighLowLayer, whose two TextLayers cost the OBS main thread
-  // ~3.4 ms a frame. Memoised per texture inside highLowOverlayLabels; this
-  // memo only re-runs when the texture set or the toggle changes.
-  const highLowLabels = useMemo<OverlayLabel[]>(() => {
-    if (!manifest || !state.showPressure) return [];
-    const p = pressureProps(manifest, state.fhr);
-    const tex = p && loadedTextures.get(p.highLow.image);
-    return tex ? highLowOverlayLabels(tex, p.highLow) : [];
-  }, [manifest, state.fhr, state.showPressure, loadedTextures]);
+  // ~3.4 ms a frame. Scanned once per texture in a Web Worker
+  // (useHighLowLabels): the letters land a beat after the isobars instead of
+  // the scan freezing this render for seconds on a fine bake.
+  const pressureHighLow = useMemo(
+    () => (manifest && state.showPressure ? (pressureProps(manifest, state.fhr)?.highLow ?? null) : null),
+    [manifest, state.fhr, state.showPressure],
+  );
+  const highLowLabels = useHighLowLabels(
+    pressureHighLow ? loadedTextures.get(pressureHighLow.image) : undefined,
+    pressureHighLow,
+  );
 
   const overlayLabels = useMemo<OverlayLabel[]>(() => {
     const out: OverlayLabel[] = [...highLowLabels];

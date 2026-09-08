@@ -1,4 +1,14 @@
-import { boxBlur, decodeScalar, findHighLows, haversineM, type LngLatBounds, type ScalarImage } from "./high-low";
+import {
+  boxBlur,
+  decodeScalar,
+  downsample,
+  findHighLows,
+  findHighLowsAt,
+  haversineM,
+  workGridFactor,
+  type LngLatBounds,
+  type ScalarImage,
+} from "./high-low";
 
 const W = 360;
 const H = 181;
@@ -30,6 +40,26 @@ function field(bumps: Bump[], nodata?: (lng: number, lat: number) => boolean): S
     }
   }
   return { data, width: W, height: H };
+}
+
+/** Same field on an arbitrary grid/bounds (a regional fine bake). */
+function fieldOn(w: number, h: number, [west, south, east, north]: LngLatBounds, bumps: Bump[]): ScalarImage {
+  const data = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    const lat = north - ((y + 0.5) / h) * (north - south);
+    for (let x = 0; x < w; x++) {
+      const lng = west + ((x + 0.5) / w) * (east - west);
+      let v = 1013;
+      for (const b of bumps) {
+        const d2 = (lng - b.lng) ** 2 + (lat - b.lat) ** 2;
+        v += b.amp * Math.exp(-d2 / (2 * b.sigma * b.sigma));
+      }
+      const o = (y * w + x) * 4;
+      data[o] = Math.round(((v - UNSCALE[0]) / (UNSCALE[1] - UNSCALE[0])) * 255);
+      data[o + 3] = 255;
+    }
+  }
+  return { data, width: w, height: h };
 }
 
 const near = (p: [number, number], lng: number, lat: number, tolDeg = 2) => {
@@ -111,5 +141,50 @@ describe("findHighLows", () => {
 
   it("returns nothing for a degenerate image", () => {
     expect(findHighLows({ data: new Uint8Array(8), width: 2, height: 1 }, BOUNDS, UNSCALE, RADIUS)).toEqual([]);
+  });
+});
+
+describe("fine bakes: folded search grid + refinement", () => {
+  const cell = (deg: number) => 111_000 * deg;
+
+  it("workGridFactor leaves the 0.25° GFS grid alone and folds finer bakes", () => {
+    expect(workGridFactor(RADIUS, cell(1))).toBe(1);
+    expect(workGridFactor(RADIUS, cell(0.25))).toBe(1);
+    expect(workGridFactor(RADIUS, cell(0.125))).toBe(2);
+    expect(workGridFactor(RADIUS, cell(0.0625))).toBe(4);
+    expect(workGridFactor(RADIUS, cell(0.05))).toBe(5);
+  });
+
+  it("downsample takes NaN-aware block means", () => {
+    // 4×2 grid, 2×2 blocks → 2×1.
+    const v = new Float32Array([1, 3, 10, NaN, 5, 7, 20, 20]);
+    const d = downsample(v, 4, 2, 2, 1);
+    expect(d[0]).toBeCloseTo((1 + 3 + 5 + 7) / 4);
+    expect(d[1]).toBeCloseTo((10 + 20 + 20) / 3);
+  });
+
+  it("a 0.05° regional bake: folded search lands where the full-grid search does", () => {
+    // Europe at 0.05°: 1200×800 cells of ~5.5 km → factor 5 at the 2 000 km default.
+    const EU: LngLatBounds = [-30, 30, 30, 70];
+    const img = fieldOn(1200, 800, EU, [
+      { lng: 2.03, lat: 50.02, amp: 20, sigma: 4 },
+      { lng: 20.47, lat: 40.71, amp: -25, sigma: 4 },
+    ]);
+    const full = findHighLowsAt(img, EU, UNSCALE, RADIUS, 1);
+    const folded = findHighLows(img, EU, UNSCALE, RADIUS);
+    expect(full.map((p) => p.type).sort()).toEqual(["H", "L"]);
+    expect(folded.map((p) => p.type).sort()).toEqual(["H", "L"]);
+    for (const p of folded) {
+      const twin = full.find((q) => q.type === p.type)!;
+      // Same bake cell give or take one (0.05°), same decoded value (a byte step is 0.4 hPa).
+      expect(Math.abs(p.position[0] - twin.position[0])).toBeLessThanOrEqual(0.11);
+      expect(Math.abs(p.position[1] - twin.position[1])).toBeLessThanOrEqual(0.11);
+      expect(Math.abs(p.value - twin.value)).toBeLessThanOrEqual(0.8);
+    }
+    const high = folded.find((p) => p.type === "H")!;
+    expect(near(high.position, 2.03, 50.02, 0.15)).toBe(true);
+    expect(high.value).toBeCloseTo(1033, 0);
+    const low = folded.find((p) => p.type === "L")!;
+    expect(near(low.position, 20.47, 40.71, 0.15)).toBe(true);
   });
 });

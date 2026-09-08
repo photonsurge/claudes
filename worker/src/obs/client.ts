@@ -17,6 +17,7 @@
  */
 import OBSWebSocket from "obs-websocket-js";
 import { log } from "@photonsurge/shared/utill/logger";
+import { listInputNames, ourInputs, pickLiveInput, rebuildBrowserInput } from "./rebuild";
 
 const TAG = "obs";
 const CONNECT_TIMEOUT_MS = 4_000;
@@ -450,15 +451,17 @@ export interface ProvisionResult {
  * recreated, which tears down that CEF browser entirely — dropping accumulated
  * renderer state/memory from a long-lived instance and guaranteeing the page
  * cold-starts fresh on the new run's URL. Unmanaged operator tweaks (css…) are
- * read first and carried onto the new input. Soft mode just restamps the
- * managed settings (overlay:true preserves the rest) and presses a no-cache
- * refresh.
+ * read first and carried onto the new input. OBS frees a removed source
+ * asynchronously, so the recreate WAITS for the name to be released (see
+ * ./rebuild.ts) — racing it fails with "A source already exists by that input
+ * name" and leaves the scene empty. Soft mode just restamps the managed
+ * settings (overlay:true preserves the rest) and presses a no-cache refresh.
  */
 export async function provisionBrowserScene(
   ep: ObsEndpoint,
   opts: { url: string; sceneName: string; inputName: string; makeActive?: boolean; hard?: boolean },
 ): Promise<ProvisionResult> {
-  const { url, sceneName, inputName, makeActive = true, hard = false } = opts;
+  const { url, sceneName, inputName: canonicalName, makeActive = true, hard = false } = opts;
   return withObs(ep, async (obs) => {
     const video = await obs.call("GetVideoSettings");
     const width = Number(video.baseWidth) || 1920;
@@ -470,11 +473,14 @@ export async function provisionBrowserScene(
       await obs.call("CreateScene", { sceneName });
     }
 
-    const { inputs } = await obs.call("GetInputList");
-    const inputExists = (inputs as { inputName: string }[]).some((i) => i.inputName === inputName);
+    // Ours = the canonical name plus any `<name> #n` sibling a previous reset had
+    // to fall back to (see ./rebuild.ts). A removed-but-not-yet-freed source is
+    // still listed here, which is exactly why the hard path must wait, not race.
+    const ours = ourInputs(await listInputNames(obs), canonicalName);
     let created = false;
     let recreated = false;
-    if (!inputExists) {
+    let inputName = canonicalName;
+    if (ours.length === 0) {
       await obs.call("CreateInput", {
         sceneName,
         inputName,
@@ -484,25 +490,35 @@ export async function provisionBrowserScene(
       });
       created = true;
     } else if (hard) {
-      // Hard reset: carry the operator's unmanaged tweaks forward, then rebuild
-      // the input from scratch (best-effort read — unreadable → just ours).
+      // Hard reset: carry the operator's unmanaged tweaks forward from the live
+      // source (best-effort read — unreadable → just ours), then tear every one
+      // of ours down and rebuild from scratch once OBS has released the name.
+      const live = (await pickLiveInput(obs, sceneName, ours)) ?? ours[0];
       let existing: Record<string, unknown> | null = null;
       try {
-        const cur = await obs.call("GetInputSettings", { inputName });
+        const cur = await obs.call("GetInputSettings", { inputName: live });
         existing = (cur.inputSettings ?? {}) as Record<string, unknown>;
       } catch {
         existing = null;
       }
-      await obs.call("RemoveInput", { inputName });
-      await obs.call("CreateInput", {
+      const r = await rebuildBrowserInput(obs, {
         sceneName,
-        inputName,
-        inputKind: "browser_source",
+        inputName: canonicalName,
+        existing: ours,
         inputSettings: browserSourceSettings(base, existing),
-        sceneItemEnabled: true,
       });
+      inputName = r.inputName;
       recreated = true;
+      if (r.fallback) {
+        log(
+          TAG,
+          `${ep.url} did not release "${canonicalName}" within ${r.waitedMs}ms — rebuilt the browser source as "${inputName}" instead`,
+        );
+      } else if (r.waitedMs > 1_000) {
+        log(TAG, `${ep.url} took ${r.waitedMs}ms to release "${canonicalName}" before it could be recreated`);
+      }
     } else {
+      inputName = (await pickLiveInput(obs, sceneName, ours)) ?? ours[0];
       await obs.call("SetInputSettings", {
         inputName,
         inputSettings: browserSourceSettings(base),
@@ -552,15 +568,18 @@ export async function provisionBrowserScene(
 
 /**
  * Force a no-cache reload of a browser source (the OBS "Refresh" button), without
- * touching scenes/URL. Throws ObsUnavailableError if the input isn't there yet.
+ * touching scenes/URL. `inputName` is the canonical name; a `<name> #n` sibling
+ * left by a fallback rebuild is found too (the one actually in `sceneName`
+ * wins). Throws ObsUnavailableError if no such input exists yet. Returns the
+ * name that was refreshed.
  */
-export async function refreshBrowserSource(ep: ObsEndpoint, inputName: string): Promise<void> {
-  await withObs(ep, async (obs) => {
-    const { inputs } = await obs.call("GetInputList");
-    if (!(inputs as { inputName: string }[]).some((i) => i.inputName === inputName)) {
-      throw new ObsUnavailableError(`browser source "${inputName}" not found — provision it first`);
-    }
-    await obs.call("PressInputPropertiesButton", { inputName, propertyName: "refreshnocache" });
+export async function refreshBrowserSource(ep: ObsEndpoint, inputName: string, sceneName?: string): Promise<string> {
+  return withObs(ep, async (obs) => {
+    const ours = ourInputs(await listInputNames(obs), inputName);
+    const live = sceneName ? await pickLiveInput(obs, sceneName, ours) : ours[0];
+    if (!live) throw new ObsUnavailableError(`browser source "${inputName}" not found — provision it first`);
+    await obs.call("PressInputPropertiesButton", { inputName: live, propertyName: "refreshnocache" });
+    return live;
   });
 }
 

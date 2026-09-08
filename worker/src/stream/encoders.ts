@@ -118,7 +118,7 @@ export async function provisionEncoderScene(
  * scenes. Throws ObsUnavailableError if OBS is unreachable or not provisioned yet.
  */
 export async function refreshEncoderScene(encoderId?: string): Promise<{ sceneId: string; inputName: string }> {
-  const { ep, sceneId, inputName } = await resolveEncoderScene(encoderId);
-  await refreshBrowserSource(ep, inputName);
-  return { sceneId, inputName };
+  const { ep, sceneId, sceneName, inputName } = await resolveEncoderScene(encoderId);
+  const refreshed = await refreshBrowserSource(ep, inputName, sceneName);
+  return { sceneId, inputName: refreshed };
 }

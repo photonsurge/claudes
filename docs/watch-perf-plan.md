@@ -556,6 +556,53 @@ into one banded draw (visual trade-off at joins); luma `_applyBindings` looking
 up block indices per draw (~0.25 ms/frame); WeatherLayers' `ensureDefaultProps`
 per draw (~0.3 ms/frame + GC).
 
+### Round 18 (2026-09-08) — the frozen frame the profiler finally caught
+
+Round 17 measured: busy 58.0 % (from 58.7 / 56.0) with deck's frame 10 → **7.5 ms**
+— `getData` 387 → 97 ms, `bufferSubData` 256 → 135, luma's `bindBuffer` wrapper
+(570 ms) gone from the table, `setUniforms` 457 → 204; Layout 37 → 28× per 8 s.
+But rAF read 25.8 fps with a **2 467 ms** maximum frame gap, and two new frames
+sat at the top of the table: 1 678 + 642 + 88 ms in `lib/high-low.ts` (`boxBlur`,
+the extremum scan, `decodeScalar`) — ONE synchronous pressure H / L scan, run
+inside Globe's render when the pressure texture changed. The scan was sized for
+the 0.25° GFS grid (~30 ms); the pressure bake on air is far finer, and
+`smoothRadiusCells`' 12-cell cap meant it under-smoothed it as well. So since
+round 12 every new pressure texture — each forecast hour, each new run, each
+reload after LRU eviction — froze the broadcast for ~2.4 s, and no earlier 20 s
+window happened to overlap one. A regression of this plan's own making.
+
+Also from the trace: the page squares' `transform: none` ↔ transform transitions
+created and destroyed paint layers, which Blink lays out for (`layout: style
+changed` on exactly those spans).
+
+Shipped:
+
+- **Search grid sized to the radius** (`workGridFactor`: 70 cells per
+  separation radius, so 0.25° is unchanged and 0.125° / 0.0625° / 0.05° bakes
+  fold 2× / 4× / 5× by NaN-aware block means), with each kept centre **refined**
+  back onto the bake's own cells (`refine`: the locally smoothed extremum within
+  its work cell and the eight around it, reporting that cell's centre and
+  decoded value). Parity test on a 0.05° regional bake: full-grid vs folded
+  within one cell and one byte step. Node timing on a 0.125° global grid:
+  538 → 165 ms, identical centres and values.
+- **Off the main thread**: `lib/high-low.worker.ts` + `high-low-client.ts`
+  (one lazy worker; the texture is copied and the copy transferred).
+  `layers/high-low-labels.ts` is async — `highLowLabelsFor` (one scan per
+  texture + key, joined while in flight), `highLowLabelsReady`, and
+  `useHighLowLabels`, which returns the memoised labels synchronously and
+  re-renders once when a fresh texture's scan lands. Globe keeps a
+  `pressureHighLow` memo and calls the hook. Without Workers the scan is
+  deferred out of the render instead.
+- **Page squares** carry `translateX(0)` instead of `none`, so their paint
+  layer persists and a flip is style + paint only.
+
+Next run: rAF back at ~29.5 fps with the max frame gap down to a texture load,
+no `high-low.ts` frames, Layout ≈ slide swaps only. Still open: ticker
+windowing (1.6 k nodes; one-time entry-width measurement), the label canvas in
+a worker, merging the 3-ring glows (visual trade-off at joins), luma
+`_applyBindings` block-index lookups per draw, WeatherLayers' `ensureDefaultProps`
+per draw.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
