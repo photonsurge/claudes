@@ -136,6 +136,28 @@ forcing the other), (program) ~15 %.
   sprite round + a deck draw cut first; and on Linux OBS each browser source at
   60 doubles the CEF→OBS frame-copy cost per stream.
 
+### Round 7 (2026-09-08) — spin segment + deck census
+
+Run during a world spin: busy 49 % (34.6 % on a hold) — the difference was the
+SUB-GLOBE locator (`SubGlobeWidget`, inside the G.O.D.S. logo): parked it skips
+repaints, but on a spin it repaints every 80 ms tick and one paint (a few thousand
+coastline vertices projected, horizon-clipped, filled: `closePath`/`lineTo`/
+`projectOrtho`) measured ~7 ms → ~9 % of wall. `--deck` census: only **12
+primitive layers drawn per frame** (basemap bg/land, 2 border passes, relief +
+contour bitmaps, faults, volcano glow/marker, cities, pulse ping/dot) — deck's
+~4 ms/frame is luma 9's per-draw bookkeeping (setProps/updateUniformBuffer/
+setUniforms/bindBuffer ≈ 0.3 ms per draw), not an oversized stack.
+
+- **Sub-globe → Web Worker + OffscreenCanvas** (`subglobe.worker.ts`,
+  `subglobe-worker-client.ts`): the widget transfers its canvas and posts the
+  chased camera per tick; the worker fetches/simplifies the land itself and paints.
+  Main-thread fallback when Workers/OffscreenCanvas are missing (jsdom, old CEF);
+  `<canvas key={size}>` remounts on a size change (a transferred canvas can't be
+  re-transferred). `LAND_URL`/`COUNTRIES_URL` moved to `layers/data-urls.ts` so the
+  worker bundle doesn't pull deck.gl. jest maps the worker client to a null stub.
+- deck: nothing left to thin at 12 draws; further savings would need fewer layers
+  per scene (e.g. merged border passes) or upstream luma work.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

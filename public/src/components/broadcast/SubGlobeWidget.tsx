@@ -24,6 +24,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Point } from "@photonsurge/shared/geo/simplify";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { loadSubGlobeLand } from "./subglobe-land";
+import { createSubGlobeWorker, type SubGlobeWorkerMessage } from "./subglobe-worker-client";
 import {
   angularDistanceDeg,
   drawSubGlobe,
@@ -99,7 +100,37 @@ export default function SubGlobeWidget({
   const propsRef = useRef({ center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land, tiltDeg, panDeg, palette });
   propsRef.current = { center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land, tiltDeg, panDeg, palette };
 
+  // Off-main-thread painter: hand the canvas to a Worker (OffscreenCanvas) so a
+  // repaint — ~7 ms of coastline projection during a world spin, every tick —
+  // never touches the page's main thread. Falls back to painting here when
+  // Workers/OffscreenCanvas are unavailable (jsdom, old CEF). A transferred
+  // canvas can't be transferred twice, so the <canvas> is keyed on its size and
+  // remounts (with a fresh worker) if that ever changes.
+  const workerRef = useRef<Worker | null>(null);
   useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || typeof canvas.transferControlToOffscreen !== "function") return;
+    const worker = createSubGlobeWorker();
+    if (!worker) return;
+    const offscreen = canvas.transferControlToOffscreen();
+    const p = propsRef.current;
+    const init: SubGlobeWorkerMessage = {
+      type: "init",
+      canvas: offscreen,
+      size: canvasPx,
+      config: { accent: p.reticle, tiltDeg: p.tiltDeg, panDeg: p.panDeg, palette: p.palette },
+    };
+    worker.postMessage(init, [offscreen]);
+    workerRef.current = worker;
+    return () => {
+      worker.terminate();
+      workerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasPx]);
+
+  useEffect(() => {
+    if (workerRef.current) return; // the worker fetches its own land
     let alive = true;
     loadSubGlobeLand().then((rings) => {
       if (alive) setLand(rings);
@@ -112,11 +143,22 @@ export default function SubGlobeWidget({
   // One immediate paint per (land, palette/accent) so the corner is never blank
   // between the mount and the first tick.
   useEffect(() => {
+    const worker = workerRef.current;
+    if (worker) {
+      const p = propsRef.current;
+      const msg: SubGlobeWorkerMessage = {
+        type: "config",
+        config: { accent: p.reticle, tiltDeg: p.tiltDeg, panDeg: p.panDeg, palette: p.palette },
+      };
+      worker.postMessage(msg);
+    }
     paint();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     land,
     reticle,
+    tiltDeg,
+    panDeg,
     palette.oceanInner,
     palette.oceanOuter,
     palette.land,
@@ -126,11 +168,19 @@ export default function SubGlobeWidget({
   ]);
 
   function paint() {
-    const canvas = canvasRef.current;
-    const g = canvas?.getContext("2d");
-    if (!canvas || !g) return; // jsdom / lost context — the readout still renders
-    const p = propsRef.current;
-    drawSubGlobe(g, canvasPx, shownRef.current, p.land ?? [], p.reticle, p.tiltDeg, p.panDeg, p.palette);
+    const worker = workerRef.current;
+    if (worker) {
+      const msg: SubGlobeWorkerMessage = { type: "paint", cam: { ...shownRef.current } };
+      worker.postMessage(msg);
+    } else {
+      const canvas = canvasRef.current;
+      const g = canvas?.getContext("2d");
+      if (canvas && g) {
+        // jsdom / lost context → no frame, but the readout still renders.
+        const p = propsRef.current;
+        drawSubGlobe(g, canvasPx, shownRef.current, p.land ?? [], p.reticle, p.tiltDeg, p.panDeg, p.palette);
+      }
+    }
     if (readoutRef.current) {
       readoutRef.current.textContent = formatLonLat(shownRef.current.lng, shownRef.current.lat);
     }
@@ -190,6 +240,7 @@ export default function SubGlobeWidget({
         </div>
       )}
       <canvas
+        key={canvasPx}
         ref={canvasRef}
         width={canvasPx}
         height={canvasPx}

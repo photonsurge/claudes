@@ -5,7 +5,9 @@
 // instance shares one fetch + one simplify pass for the life of the tab.
 
 import { simplifyRing, type Point } from "@photonsurge/shared/geo/simplify";
-import { LAND_URL } from "../layers/basemap";
+// data-urls, not basemap: this module also runs inside the sub-globe's Web
+// Worker, and basemap.ts would drag deck.gl into that bundle.
+import { LAND_URL } from "../layers/data-urls";
 
 /** Coarse for a locator globe: ~0.6° is invisible at 360px and cuts the 50m
  *  land set roughly 20×. */

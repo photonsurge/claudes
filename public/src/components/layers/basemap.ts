@@ -14,8 +14,8 @@ import { DEFAULT_BASEMAP_COLORS, type ControlState } from "@photonsurge/shared/c
 import { TILE_TEMPLATES, NIGHT_TILE_MAX_ZOOM } from "@photonsurge/shared/basemaps";
 import { DEPTH_OCCLUDE, DEPTH_TEST, DEPTH_PAINT } from "./depth";
 
-export const LAND_URL = "/data/land.geojson";
-export const COUNTRIES_URL = "/data/countries.geojson";
+import { LAND_URL, COUNTRIES_URL } from "./data-urls";
+export { LAND_URL, COUNTRIES_URL };
 // Full-globe base images served from the shared blob store, refreshable from
 // /admin/jobs (worker `basemap.refresh`). The route falls back to the static
 // /data/<id>.jpg deploy-time file until the first bake — see
