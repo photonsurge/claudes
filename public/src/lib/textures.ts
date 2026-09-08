@@ -68,6 +68,23 @@ function getLoader(): Promise<(url: string) => Promise<TextureData>> {
   return loaderPromise;
 }
 
+/**
+ * A single texture fetch+decode is given this long before it's treated as
+ * failed (dropped from the cache so the next request retries). A hung response
+ * — the connection accepted, the body never arriving — has no browser-side
+ * timeout at all, and one of those would wedge every "all textures loaded"
+ * wait (the /watch cold-start cover) for the life of the page.
+ */
+export const TEXTURE_LOAD_TIMEOUT_MS = 90_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, url: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bail = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`texture load timed out after ${ms} ms: ${url}`)), ms);
+  });
+  return Promise.race([p, bail]).finally(() => clearTimeout(timer));
+}
+
 /** Load (or return cached) texture for a URL as WeatherLayers TextureData. */
 export function loadTexture(url: string): Promise<LoadedTexture> {
   const existing = cache.get(url);
@@ -76,7 +93,7 @@ export function loadTexture(url: string): Promise<LoadedTexture> {
     return existing;
   }
   const p = getLoader()
-    .then((load) => load(url))
+    .then((load) => withTimeout(load(url), TEXTURE_LOAD_TIMEOUT_MS, url))
     .catch((err) => {
       cache.delete(url); // allow a future retry
       throw err;

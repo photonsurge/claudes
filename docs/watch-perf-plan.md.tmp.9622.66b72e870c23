@@ -275,36 +275,45 @@ one per frame, CEF isn't taking the direct-update path either, and the fallback
 is a shared rAF driver writing transform/opacity itself (or quantising the
 pulses to a few Hz).
 
-### Round 11 (2026-09-08) — rounds 9+10 measured, and the cover that never lifted
+### Round 11 (2026-09-08) — rounds 9 + 10 measured, and the cover that never lifted
 
-Measured with rounds 9 + 10 live (`/watch/default`, 20 s): busy 82 → **53.6 %**,
-29.6 fps (p95 33.4 ms, max 200 ms). Trace, per 8 s: Layout 259 → 59 (one frame
-in four), Paint 238 → 59, HitTest 411 → 0 ms, Layerize 1.46 → 0.6 ms/frame,
-style 0.6 → 0.4 ms; Commit unchanged at 1.7 ms/frame and now the largest
-pipeline item (the main thread waiting on the compositor's commit). Label canvas
-`drawImage` 2.3 → 0.33 ms/frame (112 labels, 163 draws). The ticker crawl and
-monitor traces are still main-thread ticked but cost a style recalc only.
-Caveat: a lighter scene (21 layers, no alerts) — part of the drop is content.
+Measured on `/watch/default` with rounds 9 + 10 live: **busy 82 → 53.6 %**,
+29.6 fps (p95 33.4 ms, max gap 200 ms). Trace, per 8 s / 240 frames:
 
-**And an on-air bug the same run exposed.** The loading spinner was animating
-throughout, the DOM was 534 nodes (a tenth of normal), every `ready`-gated
-overlay was missing from the census, and the label counter put the page at
-10.5 min uptime: the scene had been behind the cold-start cover for ten minutes
-with the globe drawing underneath. `useGlobeReadyOnce` cancelled the previous
-load's latch on every effect re-run (a refetched manifest object, an fhr step,
-a new bake stamp), so whenever those inputs changed faster than a full texture
-set loads it never latched — and nothing had a timeout, so one hung texture
-fetch would wedge it for good. Fixed in `lib/globe-ready.ts` (URL-set keyed, no
-cancellation, `READY_TIMEOUT_MS` 45 s fail-safe) and `lib/textures.ts` (90 s
-per-texture timeout, entry dropped so the next request retries); tests cover
-the churn, the timeout and the retry.
+| event | round 8 (old build) | now |
+| --- | --- | --- |
+| Layout | 259× (every frame) | 59× (a quarter of frames, React updates only) |
+| Paint | 238× | 59× |
+| HitTest (hover update after layout) | 411 ms | 0 |
+| Layerize | 1.46 ms/frame | 0.6 ms/frame |
+| UpdateLayoutTree | 0.6 ms/frame | 0.4 ms/frame (the remaining main-thread animations) |
+| Commit | 1.7 ms/frame | 1.7 ms/frame — now the largest pipeline item; mostly the main thread waiting on the compositor's commit |
+| label canvas `drawImage` | 2.3 ms/frame | 0.33 ms/frame (112 labels, 163 draws) |
 
-What's left is deck at 67 % of busy (~12 ms/frame at 21 layers, ~16 at 31):
-per-draw luma plumbing as before. Two specific items stand out: the pressure
-high/low TextLayer is 3.3 ms/frame for four draws (candidate: draw the H/L
-glyphs on the label canvas instead — WeatherLayers keeps its point finder
-internal, `getHighLowPointData`, so it needs investigating), and both wind
-particle layers (global + nest) draw at once, 1.7 ms/frame.
+The ticker crawl and monitor-row traces are still ticked on the main thread
+(they stay in the "Nodes re-styled" list) but with their own layers they cost a
+style recalc and nothing else — Paint no longer tracks them.
+
+Caveat, and a real finding: this was a LIGHTER page — 21 primitive layers, no
+alerts — and not a healthy one. The LoadingScreen spinner (`bcast-loadspin`)
+was animating throughout, the DOM was 534 nodes (vs ~5.9 k), every
+`ready`-gated overlay was absent from the census, and the label counter put the
+page 10.5 minutes into its life: the scene had been sitting behind the
+cold-start cover. Cause: `useGlobeReadyOnce` cancelled the previous load's
+latch on every effect re-run (a refetched manifest object, an fhr step, a new
+bake stamp), so whenever those inputs churned faster than a full texture set
+loads, it never latched; and no texture fetch had a timeout, so one hung
+response could wedge it forever. Fixed in `lib/globe-ready.ts` (URL-set keyed,
+no cancellation — any set that finishes counts — plus a 45 s `READY_TIMEOUT_MS`
+fail-safe) and `lib/textures.ts` (90 s per-texture timeout, entry dropped so the
+next request retries). Tests cover the churn, the timeout and the retry.
+
+Where the 53.6 % goes now: deck is 67 % of busy (~12 ms/frame at 21 layers —
+per-draw luma plumbing, unchanged); the pressure high/low TextLayer is 3.3 ms of
+that for four draws (a candidate for the label canvas, which draws 163 sprites
+in 0.33 ms — WeatherLayers keeps the extrema search internal, so it needs a look
+before promising it); the two particle layers (global base + regional nest both
+draw) 1.7 ms. The DOM pipeline is ~3 ms/frame, mostly Commit.
 
 ## Findings (from source, ranked by likely share of the main thread)
 
