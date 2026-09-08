@@ -14,6 +14,9 @@
  *          --trace [N] (after the profile, record an N s (8) Chrome timeline trace with layout/style
  *                      invalidation tracking: breaks "(program)" down by renderer event and names
  *                      the node + reason + JS caller of every layout invalidation / forced layout)
+ *          --layers    (census of Chrome's composited layers with compositing reasons + DOM node —
+ *                      Layerize cost scales with paint chunks × composited layers)
+ *          --dom-census [N] (N s (5) MutationObserver: which parents are having nodes added/removed)
  *
  * Read-only against the page (Profiler / Performance / Runtime.evaluate). Needs Node ≥ 22
  * (global WebSocket); zero dependencies. Works with DevTools already attached.
@@ -39,6 +42,13 @@ const MATCH = opt("match", "/watch");
 const OUT = opt("out", path.join("scratchpad", "profile", new Date().toISOString().replace(/[:.]/g, "-")));
 const WANT_SOURCE = !flag("no-source");
 const RAF_CENSUS = flag("raf-census");
+const LAYERS = flag("layers");
+const DOM_CENSUS_SECONDS = (() => {
+  const i = argv.indexOf("--dom-census");
+  if (i === -1) return 0;
+  const v = Number(argv[i + 1]);
+  return Number.isFinite(v) && !String(argv[i + 1] ?? "").startsWith("--") ? v : 5;
+})();
 const TRACE_SECONDS = (() => {
   const i = argv.indexOf("--trace");
   if (i === -1) return 0;
@@ -349,6 +359,117 @@ function analyzeTrace(events) {
   return lines.join("\n");
 }
 
+// ── Composited-layer census (why is Layerize expensive?) ────────────────────
+// Every cc layer Chrome keeps for the page, with Blink's own compositing
+// reasons and the DOM node behind it. Layerize / overlap testing scales with
+// (paint chunks × composited layers), so this is the list to shrink.
+async function layerCensus(cdp) {
+  await cdp.send("DOM.enable");
+  await cdp.send("DOM.getDocument", { depth: 0 });
+  const layers = await new Promise((resolve) => {
+    let done = false;
+    const t = setTimeout(() => {
+      if (!done) {
+        done = true;
+        resolve(null);
+      }
+    }, 4000);
+    cdp.on("LayerTree.layerTreeDidChange", (p) => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      resolve(p.layers ?? []);
+    });
+    cdp.send("LayerTree.enable").catch(() => {
+      if (!done) {
+        done = true;
+        clearTimeout(t);
+        resolve(null);
+      }
+    });
+  });
+  const lines = [];
+  const p = (s = "") => lines.push(s);
+  if (!layers) {
+    p("## Layer census: LayerTree domain unavailable / no tree within 4s");
+    return lines.join("\n");
+  }
+  const rows = [];
+  const reasonCount = new Map();
+  for (const l of layers) {
+    let reasons = [];
+    try {
+      const r = await cdp.send("LayerTree.compositingReasons", { layerId: l.layerId });
+      reasons = r.compositingReasons ?? r.compositingReasonIds ?? [];
+    } catch {}
+    for (const r of reasons) reasonCount.set(r, (reasonCount.get(r) ?? 0) + 1);
+    let node = "";
+    if (l.backendNodeId) {
+      try {
+        const { node: n } = await cdp.send("DOM.describeNode", { backendNodeId: l.backendNodeId });
+        const attrs = n.attributes ?? [];
+        const get = (k) => {
+          const i = attrs.indexOf(k);
+          return i === -1 ? "" : attrs[i + 1];
+        };
+        const style = get("style");
+        node = `${n.nodeName}${get("id") ? "#" + get("id") : ""}${get("class") ? "." + get("class").split(" ").join(".") : ""}${style ? ` style="${style.slice(0, 70)}${style.length > 70 ? "…" : ""}"` : ""}`;
+      } catch {}
+    }
+    rows.push({ id: l.layerId, w: Math.round(l.width), h: Math.round(l.height), paints: l.paintCount ?? 0, drawsContent: !!l.drawsContent, reasons, node });
+  }
+  try {
+    await cdp.send("LayerTree.disable");
+  } catch {}
+  const drawing = rows.filter((r) => r.drawsContent);
+  p(`## Layer census: ${rows.length} cc layers (${drawing.length} draw content)`);
+  p(`  by compositing reason:`);
+  for (const [r, n] of [...reasonCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15)) p(`${String(n).padStart(6)}×  ${r}`);
+  p(`  largest content layers (w×h · paints · reasons · node):`);
+  for (const r of drawing.sort((a, b) => b.w * b.h - a.w * a.h).slice(0, 30)) {
+    p(`  ${String(r.w).padStart(5)}×${String(r.h).padEnd(5)} ${String(r.paints).padStart(6)}  ${r.reasons.join(",") || "-"}  ${r.node}`);
+  }
+  return lines.join("\n");
+}
+
+// ── DOM churn census (who is remounting nodes?) ─────────────────────────────
+// A MutationObserver for a few seconds, grouping added/removed nodes by the
+// nearest identifiable ancestor chain so a remounting list shows up by name.
+async function domCensus(cdp, seconds) {
+  const r = await evaluate(
+    cdp,
+    `new Promise((res) => {
+      const sig = (el) => { const parts = []; let n = el; for (let i = 0; i < 6 && n && n.nodeType === 1; i++) {
+          let s = n.tagName.toLowerCase(); if (n.id) s += '#' + n.id; if (n.className && typeof n.className === 'string') s += '.' + n.className.trim().split(/\\s+/).slice(0,2).join('.');
+          for (const a of n.attributes) if (a.name.startsWith('data-') && a.name !== 'data-reactroot') { s += '[' + a.name + (a.value ? '=' + a.value.slice(0,20) : '') + ']'; break; }
+          parts.unshift(s); n = n.parentElement; } return parts.join(' > '); };
+      const added = new Map(); const removed = new Map(); let nAdded = 0, nRemoved = 0; let text = new Map();
+      const count = (m, k, n) => m.set(k, (m.get(k) ?? 0) + n);
+      const size = (node) => node.nodeType === 1 ? 1 + node.getElementsByTagName('*').length : 1;
+      const mo = new MutationObserver((muts) => { for (const m of muts) {
+          if (m.type === 'childList') { const k = sig(m.target);
+            for (const n of m.addedNodes) { const c = size(n); nAdded += c; count(added, k, c); if (n.textContent) count(text, k + ' :: "' + n.textContent.trim().slice(0, 40) + '"', 1); }
+            for (const n of m.removedNodes) { const c = size(n); nRemoved += c; count(removed, k, c); } }
+          else if (m.type === 'characterData') { count(text, sig(m.target.parentElement) + ' :: (text)', 1); } } });
+      mo.observe(document.body, { childList: true, subtree: true, characterData: true });
+      setTimeout(() => { mo.disconnect();
+        const top = (m) => [...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0, 12);
+        res({ nAdded, nRemoved, added: top(added), removed: top(removed), text: top(text) }); }, ${seconds * 1000});
+    })`,
+    true,
+  );
+  const lines = [];
+  const p = (s = "") => lines.push(s);
+  p(`## DOM churn census (${seconds}s): ${r.nAdded} nodes added, ${r.nRemoved} removed (${(r.nAdded / seconds).toFixed(0)}/s, ${(r.nRemoved / seconds).toFixed(0)}/s)`);
+  p(`  added, by parent (subtree node counts):`);
+  for (const [k, n] of r.added) p(`${String(n).padStart(7)}  ${k}`);
+  p(`  removed, by parent:`);
+  for (const [k, n] of r.removed) p(`${String(n).padStart(7)}  ${k}`);
+  p(`  most frequent inserted content / text changes:`);
+  for (const [k, n] of r.text) p(`${String(n).padStart(7)}  ${k}`);
+  return lines.join("\n");
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 (async () => {
   const wsUrl = await resolveWsUrl(target);
@@ -452,6 +573,24 @@ function analyzeTrace(events) {
   try {
     if (WANT_SOURCE) await cdp.send("Debugger.disable");
   } catch {}
+  if (LAYERS) {
+    console.error("taking a composited-layer census …");
+    try {
+      p();
+      p(await layerCensus(cdp));
+    } catch (e) {
+      p(`## Layer census failed: ${e.message || e}`);
+    }
+  }
+  if (DOM_CENSUS_SECONDS > 0) {
+    console.error(`watching DOM mutations for ${DOM_CENSUS_SECONDS}s …`);
+    try {
+      p();
+      p(await domCensus(cdp, DOM_CENSUS_SECONDS));
+    } catch (e) {
+      p(`## DOM census failed: ${e.message || e}`);
+    }
+  }
   if (TRACE_SECONDS > 0) {
     console.error(`recording a ${TRACE_SECONDS}s timeline trace …`);
     try {

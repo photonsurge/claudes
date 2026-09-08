@@ -19,8 +19,9 @@ describe("BrandPanel", () => {
     const banner = screen.getByRole("img", {
       name: "G.O.D.S. Global Orbital Detection System",
     });
-    expect(banner.tagName).toBe("svg");
-    expect(banner).toHaveAttribute("width", "760");
+    // The banner is a wrapper around two stacked SVGs (animated chrome + text).
+    expect(banner.querySelectorAll("svg")).toHaveLength(2);
+    expect(banner).toHaveStyle({ width: "760px" });
     expect(banner.querySelector(`[stroke="${BROADCAST_THEMES.command.accent}"]`)).toBeInTheDocument();
     // Without liveGlobe there's no live canvas and no aperture mask.
     expect(banner.querySelector("mask")).not.toBeInTheDocument();
@@ -59,7 +60,7 @@ describe("BrandPanel", () => {
     const banner = screen.getByRole("img", {
       name: "G.O.D.S. Global Orbital Detection System",
     });
-    expect(banner).toHaveAttribute("width", "760");
+    expect(banner).toHaveStyle({ width: "760px" });
     // Canvas layered behind the svg; the panel carries the aperture mask.
     expect(container.querySelector("canvas")).toBeInTheDocument();
     expect(banner.querySelector('[data-layer="panel"]')?.getAttribute("mask")).toMatch(/^url\(/);

@@ -149,197 +149,225 @@ export default function GodsBanner({
   const PANEL =
     "M24 58 H1358 L1386 86 V190 L1358 218 H1178 L1154 246 H360 L336 218 H24 Z";
 
+  // Two stacked SVGs sharing one viewBox. The ANIMATED chrome (panel sweep,
+  // bezel rings, dashed orbit, status pulse) lives in the lower one, which has
+  // no text; the text (title, status chips, coords, clocks, tape row) in the
+  // upper one. Why: a CSS animation on an SVG child re-lays-out its whole SVG
+  // root every frame, and with this banner's dozen letter-spaced <text> runs
+  // in the same root that relayout cost the /watch main thread ~13 ms a frame
+  // (a measured 16 % of it). Split, the per-frame relayout touches ~25 plain
+  // shapes; the text SVG only relayouts when the clock/countdown ticks (1 Hz).
+  // The wrapper carries the accessible name so the banner is still one image.
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 1400 320"
-      width={width}
+    <div
       role="img"
       aria-label={label}
       className={className}
-      style={{ display: "block", ...style }}
+      style={{ position: "relative", width, ...style }}
     >
-      <defs>
-        <style>{KEYFRAMES}</style>
-        <linearGradient id={id("panel")} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={panelTopColor} />
-          <stop offset="0.5" stopColor={panelMidColor} />
-          <stop offset="1" stopColor={panelBottomColor} />
-        </linearGradient>
-        <linearGradient id={id("hairline")} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor={accent} stopOpacity="0.06" />
-          <stop offset="0.3" stopColor={accent} stopOpacity="0.8" />
-          <stop offset="1" stopColor={accent} stopOpacity="0.06" />
-        </linearGradient>
-        <linearGradient id={id("scan")} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor={accent} stopOpacity="0" />
-          <stop offset="1" stopColor={titleColor} stopOpacity="0.85" />
-        </linearGradient>
-        <clipPath id={id("panel-clip")}>
-          <path d={PANEL} />
-        </clipPath>
-        <clipPath id={id("scan-clip")}>
-          <path d="M26 60 H1356 L1384 86 V188 L1356 216 H1156 L1152 244 H362 L358 216 H26 Z" />
-        </clipPath>
-        {liveCore && (
-          <>
-            {/* The live-core hole: the panel spans the globe area, so it
-                carries this mask or the aperture would just show its opaque
-                fill. */}
-            <mask id={id("hole")}>
-              <rect x="0" y="0" width="1400" height="320" fill="#ffffff" />
-              <circle cx="176" cy="160" r="138" fill="#000000" />
-            </mask>
-          </>
-        )}
-      </defs>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 1400 320"
+        width="100%"
+        aria-hidden="true"
+        style={{ display: "block" }}
+      >
+        <defs>
+          <style>{KEYFRAMES}</style>
+          <linearGradient id={id("panel")} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={panelTopColor} />
+            <stop offset="0.5" stopColor={panelMidColor} />
+            <stop offset="1" stopColor={panelBottomColor} />
+          </linearGradient>
+          <linearGradient id={id("scan")} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor={accent} stopOpacity="0" />
+            <stop offset="1" stopColor={titleColor} stopOpacity="0.85" />
+          </linearGradient>
+          <clipPath id={id("panel-clip")}>
+            <path d={PANEL} />
+          </clipPath>
+          <clipPath id={id("scan-clip")}>
+            <path d="M26 60 H1356 L1384 86 V188 L1356 216 H1156 L1152 244 H362 L358 216 H26 Z" />
+          </clipPath>
+          {liveCore && (
+            <>
+              {/* The live-core hole: the panel spans the globe area, so it
+                  carries this mask or the aperture would just show its opaque
+                  fill. */}
+              <mask id={id("hole")}>
+                <rect x="0" y="0" width="1400" height="320" fill="#ffffff" />
+                <circle cx="176" cy="160" r="138" fill="#000000" />
+              </mask>
+            </>
+          )}
+        </defs>
 
-      <g data-layer="panel" mask={liveCore ? `url(#${id("hole")})` : undefined}>
-        <path d={PANEL} fill={`url(#${id("panel")})`} stroke={border} strokeWidth="2.4" />
-        <g clipPath={`url(#${id("panel-clip")})`} opacity="0.14" stroke={accent} strokeWidth="1">
-          <path d="M400 58 V218 M500 58 V218 M600 58 V218 M700 58 V218 M800 58 V218 M900 58 V218 M1000 58 V218 M1100 58 V218 M1200 58 V218 M1300 58 V218" />
+        <g data-layer="panel" mask={liveCore ? `url(#${id("hole")})` : undefined}>
+          <path d={PANEL} fill={`url(#${id("panel")})`} stroke={border} strokeWidth="2.4" />
+          <g clipPath={`url(#${id("panel-clip")})`} opacity="0.14" stroke={accent} strokeWidth="1">
+            <path d="M400 58 V218 M500 58 V218 M600 58 V218 M700 58 V218 M800 58 V218 M900 58 V218 M1000 58 V218 M1100 58 V218 M1200 58 V218 M1300 58 V218" />
+          </g>
+          <g clipPath={`url(#${id("scan-clip")})`}>
+            <rect
+              data-gods-anim=""
+              x="380"
+              y="60"
+              width="110"
+              height="186"
+              fill={`url(#${id("scan")})`}
+              opacity="0.16"
+              style={anim("gbSweep 5.5s linear infinite")}
+            />
+          </g>
         </g>
-        <g clipPath={`url(#${id("scan-clip")})`}>
-          <rect
-            data-gods-anim=""
-            x="380"
-            y="60"
-            width="110"
-            height="186"
-            fill={`url(#${id("scan")})`}
-            opacity="0.16"
-            style={anim("gbSweep 5.5s linear infinite")}
-          />
-        </g>
-      </g>
 
-      <g data-layer="globe-bezel" fill="none">
-        <circle cx="176" cy="160" r="158" stroke={border} strokeWidth="2.4" />
-        <circle cx="176" cy="160" r="152" stroke={border} strokeWidth="1.4" opacity="0.78" />
-        <circle
-          data-gods-anim=""
-          cx="176"
-          cy="160"
-          r="140"
-          stroke={accent}
-          strokeWidth="1"
-          strokeDasharray="2 9"
-          opacity="0.5"
-          style={{ transformOrigin: "176px 160px", ...anim("gbSpin 42s linear infinite") }}
-        />
-        <circle
-          data-gods-anim=""
-          cx="176"
-          cy="160"
-          r="146"
-          stroke={border}
-          strokeWidth="6"
-          strokeDasharray="36 230"
-          style={{ transformOrigin: "176px 160px", ...anim("gbSpinRev 18s linear infinite") }}
-        />
-        <g stroke={accent} strokeWidth="2" opacity="0.85">
-          <path d="M8 160 h22" />
-          <path d="M322 160 h22" />
-        </g>
-        <g stroke={accent} strokeWidth="1.6" opacity="0.45">
-          <path d="M64 48 l16 16" />
-          <path d="M288 48 l-16 16" />
-          <path d="M64 272 l16 -16" />
-          <path d="M288 272 l-16 -16" />
-        </g>
-        {/* Keep the entire orbit visible over the live globe. Occluding its
-            back half looked like broken artwork after stream compression. */}
-        <g>
-          <ellipse cx="176" cy="160" rx="180" ry="62" transform="rotate(-27 176 160)" stroke={titleColor} strokeWidth="2.4" opacity="0.9" />
-          <ellipse
+        <g data-layer="globe-bezel" fill="none">
+          <circle cx="176" cy="160" r="158" stroke={border} strokeWidth="2.4" />
+          <circle cx="176" cy="160" r="152" stroke={border} strokeWidth="1.4" opacity="0.78" />
+          <circle
             data-gods-anim=""
             cx="176"
             cy="160"
-            rx="173"
-            ry="55"
-            transform="rotate(-27 176 160)"
+            r="140"
             stroke={accent}
-            strokeWidth="1.1"
+            strokeWidth="1"
+            strokeDasharray="2 9"
             opacity="0.5"
-            strokeDasharray="30 12"
-            style={anim("gbDash 6s linear infinite")}
+            style={{ transformOrigin: "176px 160px", ...anim("gbSpin 42s linear infinite") }}
           />
+          <circle
+            data-gods-anim=""
+            cx="176"
+            cy="160"
+            r="146"
+            stroke={border}
+            strokeWidth="6"
+            strokeDasharray="36 230"
+            style={{ transformOrigin: "176px 160px", ...anim("gbSpinRev 18s linear infinite") }}
+          />
+          <g stroke={accent} strokeWidth="2" opacity="0.85">
+            <path d="M8 160 h22" />
+            <path d="M322 160 h22" />
+          </g>
+          <g stroke={accent} strokeWidth="1.6" opacity="0.45">
+            <path d="M64 48 l16 16" />
+            <path d="M288 48 l-16 16" />
+            <path d="M64 272 l16 -16" />
+            <path d="M288 272 l-16 -16" />
+          </g>
+          {/* Keep the entire orbit visible over the live globe. Occluding its
+              back half looked like broken artwork after stream compression. */}
+          <g>
+            <ellipse cx="176" cy="160" rx="180" ry="62" transform="rotate(-27 176 160)" stroke={titleColor} strokeWidth="2.4" opacity="0.9" />
+            <ellipse
+              data-gods-anim=""
+              cx="176"
+              cy="160"
+              rx="173"
+              ry="55"
+              transform="rotate(-27 176 160)"
+              stroke={accent}
+              strokeWidth="1.1"
+              opacity="0.5"
+              strokeDasharray="30 12"
+              style={anim("gbDash 6s linear infinite")}
+            />
+          </g>
         </g>
-      </g>
 
-      {(ticker || countdown) && (
-        <g data-layer="ticker" style={{ userSelect: "none" }}>
-          <path d="M382 232 l9 -6 v12 z" fill={accent} opacity="0.8" />
-          <text x="402" y="236" fill={dimColor} fontFamily={MONO} fontSize="14" letterSpacing="1.4">
-            {ticker}
-          </text>
-          {/* Countdown to the next cut replaces the tape filler while live —
-              both anchored right so a long up-next line can't collide. */}
-          <text x="1146" y="236" textAnchor="end" fill={countdown ? mutedColor : dimColor} fontFamily={MONO} fontSize="13" letterSpacing="1.4">
-            {countdown
-              ? `NEXT IN ${countdown}`
-              : version
-                ? `VIGIL TAPE · 24 H · ${version}`
-                : "VIGIL TAPE · 24 H"}
-          </text>
+        {/* Status pulse dot — animated, so it lives here with the other motion. */}
+        <g data-layer="status-pulse">
+          <rect data-gods-anim="" x="384" y="144" width="9" height="9" fill={accent} style={anim("gbPulse 1.8s ease-in-out infinite")} />
         </g>
-      )}
+      </svg>
 
-      <g data-layer="title" style={{ userSelect: "none" }}>
-        <text x="340" y="113" fill={titleColor} fontFamily={SANS} fontSize="56" fontWeight="600" letterSpacing="0">
-          {title}
-        </text>
-        <path d="M384 138 H1340" stroke={`url(#${id("hairline")})`} strokeWidth="1.6" />
-        <g stroke={accent} opacity="0.4" strokeWidth="1">
-          <path d="M384 138 v-7 M434 138 v-4 M484 138 v-4 M534 138 v-7 M584 138 v-4 M634 138 v-4 M684 138 v-7 M734 138 v-4 M784 138 v-4 M834 138 v-7 M884 138 v-4 M934 138 v-4 M984 138 v-7 M1034 138 v-4 M1084 138 v-4 M1134 138 v-7 M1184 138 v-4 M1234 138 v-4 M1284 138 v-7 M1334 138 v-4" />
-        </g>
-      </g>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 1400 320"
+        aria-hidden="true"
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" }}
+      >
+        <defs>
+          <linearGradient id={id("hairline")} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor={accent} stopOpacity="0.06" />
+            <stop offset="0.3" stopColor={accent} stopOpacity="0.8" />
+            <stop offset="1" stopColor={accent} stopOpacity="0.06" />
+          </linearGradient>
+        </defs>
 
-      <g data-layer="status" style={{ userSelect: "none" }}>
-        <rect data-gods-anim="" x="384" y="144" width="9" height="9" fill={accent} style={anim("gbPulse 1.8s ease-in-out infinite")} />
-        {channels.map((channel, i) => (
-          <text
-            key={channel}
-            x={408 + i * 154}
-            y="159"
-            fill={i === 0 ? accent : mutedColor}
-            fontFamily={SANS}
-            fontSize="30"
-            fontWeight={i === 0 ? 600 : 500}
-            letterSpacing="4.5"
-          >
-            {channel}
-          </text>
-        ))}
-        <path d="M846 157 H884" stroke={border} strokeWidth="1.4" />
-        {coords && (
-          <>
-            <text x="892" y="163" fill={dimColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
-              LAT
+        {(ticker || countdown) && (
+          <g data-layer="ticker" style={{ userSelect: "none" }}>
+            <path d="M382 232 l9 -6 v12 z" fill={accent} opacity="0.8" />
+            <text x="402" y="236" fill={dimColor} fontFamily={MONO} fontSize="14" letterSpacing="1.4">
+              {ticker}
             </text>
-            <text x="938" y="163" fill={textColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
-              {coords.lat.toFixed(3)}
+            {/* Countdown to the next cut replaces the tape filler while live —
+                both anchored right so a long up-next line can't collide. */}
+            <text x="1146" y="236" textAnchor="end" fill={countdown ? mutedColor : dimColor} fontFamily={MONO} fontSize="13" letterSpacing="1.4">
+              {countdown
+                ? `NEXT IN ${countdown}`
+                : version
+                  ? `VIGIL TAPE · 24 H · ${version}`
+                  : "VIGIL TAPE · 24 H"}
             </text>
-            <text x="1028" y="163" fill={dimColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
-              LON
-            </text>
-            <text x="1074" y="163" fill={textColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
-              {coords.lon.toFixed(3)}
-            </text>
-          </>
+          </g>
         )}
-        {clock && (
-          <>
-            <path d="M1184 150 v16" stroke={border} strokeWidth="1.4" />
-            <text x="1340" y="163" textAnchor="end" fill={textColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
-              {times.utc}
+
+        <g data-layer="title" style={{ userSelect: "none" }}>
+          <text x="340" y="113" fill={titleColor} fontFamily={SANS} fontSize="56" fontWeight="600" letterSpacing="0">
+            {title}
+          </text>
+          <path d="M384 138 H1340" stroke={`url(#${id("hairline")})`} strokeWidth="1.6" />
+          <g stroke={accent} opacity="0.4" strokeWidth="1">
+            <path d="M384 138 v-7 M434 138 v-4 M484 138 v-4 M534 138 v-7 M584 138 v-4 M634 138 v-4 M684 138 v-7 M734 138 v-4 M784 138 v-4 M834 138 v-7 M884 138 v-4 M934 138 v-4 M984 138 v-7 M1034 138 v-4 M1084 138 v-4 M1134 138 v-7 M1184 138 v-4 M1234 138 v-4 M1284 138 v-7 M1334 138 v-4" />
+          </g>
+        </g>
+
+        <g data-layer="status" style={{ userSelect: "none" }}>
+          {channels.map((channel, i) => (
+            <text
+              key={channel}
+              x={408 + i * 154}
+              y="159"
+              fill={i === 0 ? accent : mutedColor}
+              fontFamily={SANS}
+              fontSize="30"
+              fontWeight={i === 0 ? 600 : 500}
+              letterSpacing="4.5"
+            >
+              {channel}
             </text>
-            <text x="1340" y="184" textAnchor="end" fill={mutedColor} fontFamily={MONO} fontSize="17" fontWeight="500" letterSpacing="0.8">
-              {times.cities}
-            </text>
-          </>
-        )}
-      </g>
-    </svg>
+          ))}
+          <path d="M846 157 H884" stroke={border} strokeWidth="1.4" />
+          {coords && (
+            <>
+              <text x="892" y="163" fill={dimColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
+                LAT
+              </text>
+              <text x="938" y="163" fill={textColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
+                {coords.lat.toFixed(3)}
+              </text>
+              <text x="1028" y="163" fill={dimColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
+                LON
+              </text>
+              <text x="1074" y="163" fill={textColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
+                {coords.lon.toFixed(3)}
+              </text>
+            </>
+          )}
+          {clock && (
+            <>
+              <path d="M1184 150 v16" stroke={border} strokeWidth="1.4" />
+              <text x="1340" y="163" textAnchor="end" fill={textColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
+                {times.utc}
+              </text>
+              <text x="1340" y="184" textAnchor="end" fill={mutedColor} fontFamily={MONO} fontSize="17" fontWeight="500" letterSpacing="0.8">
+                {times.cities}
+              </text>
+            </>
+          )}
+        </g>
+      </svg>
+    </div>
   );
 }

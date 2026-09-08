@@ -53,6 +53,39 @@ bookkeeping). `_createMesh` / `_updatePalette` stayed gone.
   `(program)` bucket down by renderer event (Layout / UpdateLayoutTree / PrePaint /
   Paint / Layerize / Commit …).
 
+### Round 4 (2026-09-08) — the trace answers
+
+`--trace 8` on gds1 (8 s window, ~100 frames): RunTask 7961 ms · **Layerize 4065 ms
+(40 ms/frame)** · FunctionCall 1827 · **Layout 1302 ms (100×, 13 ms each, avg 115
+dirty / 1050 objects)** · UpdateLayoutTree 476 · PrePaint 193 · Paint 159 · Commit 90.
+No JS forces layout any more. Layout invalidations per frame: "Style changed ·
+circle ×2, rect ×1" = the G.O.D.S. banner's CSS-animated SVG shapes (gbSpin /
+gbSpinRev / gbDash / gbPulse / gbSweep) — a style change on an SVG child re-lays-out
+the whole SVG root, and that root held a dozen letter-spaced `<text>` runs. Plus
+~12 k "Added/Removed from layout · #text/SPAN/DIV" in 8 s from React commits
+(`removeChild` ~40 ms self): some list is remounting ~1.5 k nodes/s (44 IMG
+removals too). DOM was 13.2 k nodes in this window (7.8 k earlier).
+
+- **Banner split** (`GodsBanner.tsx`): two stacked SVGs sharing the viewBox — the
+  animated chrome (sweep, bezel rings, dashed orbit, pulse dot; no text) in the
+  lower one, all text in the upper one. Per-frame relayout now touches ~25 plain
+  shapes; the text SVG relayouts at 1 Hz (clock). Wrapper `<div role="img">`
+  carries the accessible name; BrandPanel tests check `style.width` instead of a
+  `width` attribute.
+- **Profiler**: `--layers` (cc layer census with Blink's compositing reasons +
+  DOM node) and `--dom-census N` (MutationObserver churn by parent path + inserted
+  text) — Layerize scales with paint chunks × composited layers, and the DOM
+  census names the remounting list.
+- Local trace experiments: a `transform` write on an abspos element → style recalc
+  only (no layout); a text change → layout. Canvas `fillText`/`strokeText` force a
+  style recalc (Blink resolves the canvas font via style), which is why GlobeLabels'
+  tick shows the pending layout-tree rebuild on its own stack — it's paying for
+  React's DOM churn, not causing it.
+- Next: `node scripts/profile-watch.mjs http://localhost:9221 --seconds 20 --layers
+  --dom-census 5 --trace 8` — read the layer list (expect the 4 canvases, the
+  crawl, the scrolling traces, the World Watch marquee; anything "Overlaps other
+  composited content" in bulk is the Layerize driver) and the churn list.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
