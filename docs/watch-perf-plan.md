@@ -108,6 +108,34 @@ mounted/unmounted on every deck rotation.
   DOM, less with a small one), deck draw (~10 %), CSS animations (reticle scan,
   syslog lines, traces).
 
+### Round 6 (2026-09-08) — measured after rounds 4+5 deployed
+
+`--layers --dom-census 5 --trace 8` on gds1: **busy 44.9 %** (was 93), **29.8 fps at the
+OBS 30 fps cap, p95 33.4 ms** (no drops; one 167 ms hitch), Layout 0.3 ms avg,
+Layerize 1.1 ms/frame, DOM 5.6 k, churn 22 nodes/s (feed window + clock text).
+78 cc layers (32 overlap-squashed chrome, 4 canvases, 10 animations; the crawl is
+a 39 103×34 px layer). Remaining: deck draw ~12 % of wall, GlobeLabels tick ~6 %
+(26 pin style writes/frame → one of the two style recalcs per frame; canvas text
+forcing the other), (program) ~15 %.
+
+- **Labels as sprites** (`GlobeLabels.tsx`): every distinct name/colour, detail
+  chip and icon glyph is rasterised once and `drawImage`d — no `strokeText`/
+  `fillText` per frame (each resolves the font via the style engine) and the icon
+  pins are no longer DOM: the React icons render into a `display:none` holder,
+  are serialised to SVG images (CSS `var(--gods-*)` resolved) and drawn on the
+  canvas. The page now writes NOTHING to the DOM per frame from the globe side.
+  Unit vectors cached per label object. FIFO sprite cache (4 000).
+- **deck draw census**: `Globe.tsx` exposes `window.__godsDeck` (diagnostics only);
+  `profile-watch.mjs --deck` prints how many primitive layers deck draws per frame,
+  grouped by id prefix. deck draw is now the largest per-frame item (~4 ms draw +
+  ~2 ms luma uniform/bind bookkeeping per frame at ~50–70 draws); the census says
+  which groups (tiles when zoomed in, the 4 alert passes, stations …) to thin.
+- 60 fps (deferred by the operator): the rAF is pinned at 30 by the OBS browser
+  source (`OBS_BROWSER_FPS`, docs/obs-setup.md "Pushing the frame rate up"). At
+  ~15 ms main-thread per frame today, 60 would run ~90 % busy — needs the
+  sprite round + a deck draw cut first; and on Linux OBS each browser source at
+  60 doubles the CEF→OBS frame-copy cost per stream.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

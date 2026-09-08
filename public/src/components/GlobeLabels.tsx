@@ -4,17 +4,23 @@
  * Name labels for the live-track + city overlays, drawn on ONE 2D canvas laid
  * over the WebGL globe. deck's TextLayer renders blank under the _GlobeView
  * build (its GPU font atlases come back empty — see the icon/text-atlas note),
- * and the previous DOM version — one absolutely-positioned div per label with
+ * and the earlier DOM version — one absolutely-positioned div per label with
  * `will-change: transform` — cost the /watch main thread a compositor layer per
  * label (~1.5 k when zoomed into a region), a style recalc over all of them
  * every frame, and a React re-diff of every div each time the track list
- * ticked. A canvas overlay is a handful of `fillText` calls per visible label
- * and no DOM at all. Being part of the page, it's captured by OBS / the
- * YouTube output exactly like the DOM was.
+ * ticked. Being part of the page, the canvas is captured by OBS / the YouTube
+ * output exactly like the DOM was.
  *
- * Labels with an `icon` (station/volcano/monitor pins — a few dozen at most)
- * stay as DOM so the React icon glyphs render, positioned write-on-change and
- * hidden via `visibility` so a culled pin costs nothing.
+ * Per frame this writes NOTHING to the DOM. Each distinct label (name + colour,
+ * detail chip, icon) is rasterised once into a small sprite and `drawImage`d
+ * every frame after that: canvas `fillText`/`strokeText` have to resolve the
+ * font through the style engine (a forced style recalc when anything is dirty)
+ * and stroking glyph outlines for a halo is the expensive way to draw text.
+ * Icon labels (station/volcano/monitor pins) keep their React icon glyphs: the
+ * elements are rendered into a `display:none` holder, serialised to an SVG
+ * image once per variant (CSS custom properties resolved), and drawn as
+ * sprites too — the previous DOM pins wrote ~26 inline styles a frame during a
+ * spin, which forced one of the two style recalcs every frame paid for.
  *
  * Per-frame, from the LIVE viewport (not React state, which doesn't rebuild on
  * zoom): far-side culling (deck's project() happily returns screen coords for
@@ -51,6 +57,18 @@ function unit(lng: number, lat: number): [number, number, number] {
   const lo = (lng * Math.PI) / 180;
   const cl = Math.cos(la);
   return [cl * Math.cos(lo), cl * Math.sin(lo), Math.sin(la)];
+}
+
+/** Per-label unit vectors, computed once per label object (labels are
+ *  rebuilt about once a second; positions are static for cities). */
+const unitCache = new WeakMap<OverlayLabel, [number, number, number]>();
+function unitOf(l: OverlayLabel): [number, number, number] {
+  let u = unitCache.get(l);
+  if (!u) {
+    u = unit(l.position[0], l.position[1]);
+    unitCache.set(l, u);
+  }
+  return u;
 }
 
 // ── Collision avoidance ───────────────────────────────────────────────────
@@ -116,43 +134,147 @@ export class LabelGrid {
   }
 }
 
-// ── Canvas text ───────────────────────────────────────────────────────────
+// ── Sprites ───────────────────────────────────────────────────────────────
 /** Matches the old DOM styling: 12px/600 name, 10px/500 detail chip. */
 const NAME_FONT = "600 12px system-ui, sans-serif";
 const DETAIL_FONT = "500 10px system-ui, sans-serif";
 /** Text starts right of the marker dot, like the DOM's paddingLeft. */
 const TEXT_DX = 9;
+/** Gap between an icon glyph and its text (the DOM flex `gap`). */
+const ICON_GAP = 3;
 /** Dark halo standing in for the DOM's stacked text-shadows. */
 const HALO = "rgba(0,0,0,0.85)";
 const DETAIL_BG = "rgba(2,8,18,0.62)";
 const DETAIL_FG = "rgba(226,232,240,0.92)";
 const DETAIL_H = 14;
 const DETAIL_PAD = 6;
+/** Name sprite box: tall enough for the 12px face plus a 3px halo. */
+const NAME_H = 20;
+const NAME_PAD = 4;
 /** Backing-store cap: 2× is crisp on any broadcast canvas; more is wasted fill. */
 const MAX_DPR = 2;
+/** Sprite cache bound — FIFO eviction; cities ≈ 2.3 k, track names churn. */
+const SPRITE_CAP = 4000;
 
-/** Detail-line widths, measured once per distinct string (the font is fixed). */
-const detailWidths = new Map<string, number>();
+interface Sprite {
+  img: HTMLCanvasElement;
+  /** CSS-px size. */
+  w: number;
+  h: number;
+}
 
-function drawDetail(ctx: CanvasRenderingContext2D, text: string, x: number, y: number) {
-  let tw = detailWidths.get(text);
-  if (tw === undefined) {
-    ctx.font = DETAIL_FONT;
-    tw = ctx.measureText(text).width;
-    detailWidths.set(text, tw);
+const sprites = new Map<string, Sprite>();
+let measureCtx: CanvasRenderingContext2D | null = null;
+
+function makeSprite(
+  key: string,
+  dpr: number,
+  w: number,
+  h: number,
+  paint: (g: CanvasRenderingContext2D) => void,
+): Sprite | null {
+  const hit = sprites.get(key);
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.ceil(w * dpr));
+  c.height = Math.max(1, Math.ceil(h * dpr));
+  const g = c.getContext("2d");
+  if (!g) return null;
+  g.scale(dpr, dpr);
+  paint(g);
+  const s = { img: c, w, h };
+  if (sprites.size >= SPRITE_CAP) {
+    const oldest = sprites.keys().next().value;
+    if (oldest !== undefined) sprites.delete(oldest);
   }
-  const bw = tw + DETAIL_PAD * 2;
-  ctx.fillStyle = DETAIL_BG;
-  if (typeof ctx.roundRect === "function") {
-    ctx.beginPath();
-    ctx.roundRect(x, y, bw, DETAIL_H, 4);
-    ctx.fill();
-  } else {
-    ctx.fillRect(x, y, bw, DETAIL_H);
-  }
-  ctx.font = DETAIL_FONT;
-  ctx.fillStyle = DETAIL_FG;
-  ctx.fillText(text, x + DETAIL_PAD, y + DETAIL_H / 2);
+  sprites.set(key, s);
+  return s;
+}
+
+function textWidth(font: string, text: string): number {
+  if (!measureCtx) measureCtx = document.createElement("canvas").getContext("2d");
+  if (!measureCtx) return labelWidth(text);
+  measureCtx.font = font;
+  return measureCtx.measureText(text).width;
+}
+
+function nameSprite(text: string, color: string, dpr: number): Sprite | null {
+  const key = `n|${dpr}|${color}|${text}`;
+  const hit = sprites.get(key);
+  if (hit) return hit;
+  const w = Math.ceil(textWidth(NAME_FONT, text)) + NAME_PAD * 2;
+  return makeSprite(key, dpr, w, NAME_H, (g) => {
+    g.font = NAME_FONT;
+    g.textBaseline = "middle";
+    g.textAlign = "left";
+    g.lineJoin = "round";
+    g.lineWidth = 3;
+    g.strokeStyle = HALO;
+    g.strokeText(text, NAME_PAD, NAME_H / 2);
+    g.fillStyle = color;
+    g.fillText(text, NAME_PAD, NAME_H / 2);
+  });
+}
+
+function detailSprite(text: string, dpr: number): Sprite | null {
+  const key = `d|${dpr}|${text}`;
+  const hit = sprites.get(key);
+  if (hit) return hit;
+  const w = Math.ceil(textWidth(DETAIL_FONT, text)) + DETAIL_PAD * 2;
+  return makeSprite(key, dpr, w, DETAIL_H, (g) => {
+    // Backing chip: the detail line ("Country · 1.5M · capital") is small and
+    // sits straight on the basemap — a halo alone isn't enough over light
+    // terrain, especially after stream compression.
+    g.fillStyle = DETAIL_BG;
+    if (typeof g.roundRect === "function") {
+      g.beginPath();
+      g.roundRect(0, 0, w, DETAIL_H, 4);
+      g.fill();
+    } else {
+      g.fillRect(0, 0, w, DETAIL_H);
+    }
+    g.font = DETAIL_FONT;
+    g.textBaseline = "middle";
+    g.textAlign = "left";
+    g.fillStyle = DETAIL_FG;
+    g.fillText(text, DETAIL_PAD, DETAIL_H / 2);
+  });
+}
+
+/** An icon glyph rasterised from its React-rendered <svg>. */
+interface IconSprite {
+  img: HTMLImageElement;
+  ready: boolean;
+  w: number;
+  h: number;
+}
+const iconSprites = new Map<string, IconSprite>();
+const serializer = typeof XMLSerializer === "function" ? new XMLSerializer() : null;
+
+/**
+ * SVG markup → image sprite, once per distinct markup. `var(--x, fallback)`
+ * references (the icons take their ink from the scene's --gods-* custom
+ * properties) are resolved against `vars` first: a data: image has no access
+ * to the page's custom properties and would fall back to the defaults.
+ */
+function iconSprite(svg: Element, vars: (name: string, fallback: string) => string): IconSprite | null {
+  if (!serializer) return null;
+  const html = serializer
+    .serializeToString(svg)
+    .replace(/var\((--[\w-]+)\s*,\s*([^)]+)\)/g, (_, name: string, fallback: string) => vars(name, fallback.trim()));
+  let s = iconSprites.get(html);
+  if (s) return s;
+  const img = new Image();
+  const entry: IconSprite = { img, ready: false, w: 0, h: 0 };
+  img.onload = () => {
+    entry.ready = true;
+    entry.w = img.naturalWidth || 12;
+    entry.h = img.naturalHeight || 12;
+  };
+  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(html)}`;
+  iconSprites.set(html, entry);
+  s = entry;
+  return s;
 }
 
 export default function GlobeLabels({
@@ -166,12 +288,16 @@ export default function GlobeLabels({
   getCamera: () => { longitude: number; latitude: number };
   labels: OverlayLabel[];
 }) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  // DOM-rendered icon labels: element + detail element by id, and the last
-  // placement written to each so a steady pin writes nothing.
-  const elRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const detailRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const lastPlacedRef = useRef<Map<string, string>>(new Map());
+  // Hidden holders for the React icon glyphs, by label id — the sprite source.
+  const iconHolders = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Per-label icon sprite, valid for one `labels` generation (an icon's
+  // active/colour props can change with the labels, so it's re-serialised —
+  // cheaply, and de-duplicated by markup — whenever they do).
+  const iconByLabel = useRef<Map<string, { gen: number; sprite: IconSprite | null }>>(new Map());
+  const genRef = useRef(0);
+  const computedRef = useRef<CSSStyleDeclaration | null>(null);
   // Biggest/capital first (lowest minZoom) so a crowded conurbation always
   // keeps its most important label and thins out the smaller neighbours.
   const priorityLabels = useMemo(
@@ -182,6 +308,16 @@ export default function GlobeLabels({
   priorityRef.current = priorityLabels;
   const iconLabels = useMemo(() => labels.filter((l) => l.icon), [labels]);
   const gridRef = useRef<LabelGrid>(new LabelGrid());
+
+  // New labels → new generation (icons re-serialised on next use) and a fresh
+  // look at the scene's custom properties. Runs after React committed the
+  // holders, so the DOM icons already carry the new props.
+  useEffect(() => {
+    genRef.current += 1;
+    if (hostRef.current && typeof getComputedStyle === "function") {
+      computedRef.current = getComputedStyle(hostRef.current);
+    }
+  }, [labels]);
 
   // Project + draw every frame (camera may be spinning/zooming without new data).
   useEffect(() => {
@@ -198,10 +334,18 @@ export default function GlobeLabels({
       }
       raf = requestAnimationFrame(loop);
     };
-    const hideDom = (id: string, el: HTMLDivElement) => {
-      if (lastPlacedRef.current.get(id) === "hidden") return;
-      lastPlacedRef.current.set(id, "hidden");
-      el.style.visibility = "hidden";
+    const resolveVar = (name: string, fallback: string): string => {
+      const v = computedRef.current?.getPropertyValue(name).trim();
+      return v || fallback;
+    };
+    const iconFor = (l: OverlayLabel): IconSprite | null => {
+      const gen = genRef.current;
+      const cached = iconByLabel.current.get(l.id);
+      if (cached && cached.gen === gen) return cached.sprite;
+      const svg = iconHolders.current.get(l.id)?.firstElementChild ?? null;
+      const sprite = svg ? iconSprite(svg, resolveVar) : null;
+      iconByLabel.current.set(l.id, { gen, sprite });
+      return sprite;
     };
     const tick = () => {
       const vp = getViewport();
@@ -222,13 +366,6 @@ export default function GlobeLabels({
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
-      ctx.textBaseline = "middle";
-      ctx.textAlign = "left";
-      ctx.lineJoin = "round";
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = HALO;
-      ctx.font = NAME_FONT;
-      let font = NAME_FONT;
 
       const cam = getCamera();
       const [cx, cy, cz] = unit(cam.longitude, cam.latitude);
@@ -236,26 +373,16 @@ export default function GlobeLabels({
       const grid = gridRef.current;
       grid.clear();
       for (const l of priorityRef.current) {
-        const el = l.icon ? elRefs.current.get(l.id) : undefined;
         // Progressive reveal: below the label's minZoom it's not shown at all.
-        if (zoom < (l.minZoom ?? 0)) {
-          if (el) hideDom(l.id, el);
-          continue;
-        }
-        const [ux, uy, uz] = unit(l.position[0], l.position[1]);
+        if (zoom < (l.minZoom ?? 0)) continue;
+        const [ux, uy, uz] = unitOf(l);
         // Dot < 0 → the point is on the hidden hemisphere; small margin so
         // labels don't flicker right at the limb.
-        if (ux * cx + uy * cy + uz * cz <= 0.04) {
-          if (el) hideDom(l.id, el);
-          continue;
-        }
+        if (ux * cx + uy * cy + uz * cz <= 0.04) continue;
         const p = vp.project(l.position);
         const x: number = p[0];
         const y: number = p[1];
-        if (x < -160 || y < -50 || x > w + 160 || y > h + 50) {
-          if (el) hideDom(l.id, el);
-          continue;
-        }
+        if (x < -160 || y < -50 || x > w + 160 || y > h + 50) continue;
         // Decluttering: skip (hide) this label if a higher-priority one
         // already claimed overlapping screen space this frame. Box is
         // anchored the same way the text is laid out — right of the point,
@@ -264,41 +391,24 @@ export default function GlobeLabels({
         const y0 = y - LABEL_H / 2;
         const x1 = x + labelWidth(l.text);
         const y1 = y0 + LABEL_H;
-        if (grid.collides(x0, y0, x1, y1)) {
-          if (el) hideDom(l.id, el);
-          continue;
-        }
+        if (grid.collides(x0, y0, x1, y1)) continue;
         grid.place(x0, y0, x1, y1);
-        const showDetail = !!l.detail && zoom >= (l.detailMinZoom ?? 0);
 
+        let tx = x + TEXT_DX;
         if (l.icon) {
-          // DOM pin: write only when its placement changed since last frame.
-          if (!el) continue;
-          const key = `${x.toFixed(1)},${y.toFixed(1)},${showDetail ? 1 : 0}`;
-          if (lastPlacedRef.current.get(l.id) === key) continue;
-          lastPlacedRef.current.set(l.id, key);
-          el.style.visibility = "visible";
-          el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
-          const detail = detailRefs.current.get(l.id);
-          if (detail) detail.style.display = showDetail ? "block" : "none";
-          continue;
+          const ic = iconFor(l);
+          if (ic?.ready) {
+            ctx.drawImage(ic.img, tx, y - ic.h / 2, ic.w, ic.h);
+            tx += ic.w + ICON_GAP;
+          }
         }
-
-        // Canvas text: halo stroke, then the coloured name.
-        if (font !== NAME_FONT) {
-          ctx.font = NAME_FONT;
-          font = NAME_FONT;
+        if (l.text) {
+          const s = nameSprite(l.text, `rgb(${l.color[0]},${l.color[1]},${l.color[2]})`, dpr);
+          if (s) ctx.drawImage(s.img, tx - NAME_PAD, y - s.h / 2, s.w, s.h);
         }
-        const tx = x + TEXT_DX;
-        ctx.strokeText(l.text, tx, y);
-        ctx.fillStyle = `rgb(${l.color[0]},${l.color[1]},${l.color[2]})`;
-        ctx.fillText(l.text, tx, y);
-        if (showDetail && l.detail) {
-          // Backing chip: the detail line ("Country · 1.5M · capital") is
-          // small and sits straight on the basemap — a halo alone isn't enough
-          // over light terrain, especially after stream compression.
-          drawDetail(ctx, l.detail, tx, y + LABEL_H / 2 + 2);
-          font = DETAIL_FONT;
+        if (l.detail && zoom >= (l.detailMinZoom ?? 0)) {
+          const d = detailSprite(l.detail, dpr);
+          if (d) ctx.drawImage(d.img, tx, y + LABEL_H / 2 + 2, d.w, d.h);
         }
       }
     };
@@ -307,71 +417,29 @@ export default function GlobeLabels({
   }, [getViewport, getCamera]);
 
   return (
-    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 2 }}>
+    <div
+      ref={hostRef}
+      style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 2 }}
+    >
       <canvas ref={canvasRef} style={{ position: "absolute", left: 0, top: 0 }} />
-      {iconLabels.map((l) => (
-        <div
-          key={l.id}
-          ref={(el) => {
-            if (el) elRefs.current.set(l.id, el);
-            else {
-              elRefs.current.delete(l.id);
-              lastPlacedRef.current.delete(l.id);
-            }
-          }}
-          style={{
-            position: "absolute",
-            left: 0,
-            top: 0,
-            visibility: "hidden",
-            transform: "translate(-9999px, -9999px)",
-            // Nudge the text to the right of the dot and vertically centre it on
-            // the projected point.
-            paddingLeft: TEXT_DX,
-            marginTop: "-0.5em",
-            whiteSpace: "nowrap",
-            fontFamily: "system-ui, sans-serif",
-            lineHeight: 1.1,
-          }}
-        >
+      {/* Sprite source for the icon glyphs: rendered by React, never laid out or
+          painted (display:none), serialised into image sprites on demand. */}
+      <div style={{ display: "none" }} aria-hidden="true">
+        {iconLabels.map((l) => (
           <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 3,
-              fontSize: 12,
-              fontWeight: 600,
-              color: `rgb(${l.color[0]}, ${l.color[1]}, ${l.color[2]})`,
-              textShadow: "0 0 3px #000, 0 0 3px #000, 0 1px 2px #000",
+            key={l.id}
+            ref={(el) => {
+              if (el) iconHolders.current.set(l.id, el);
+              else {
+                iconHolders.current.delete(l.id);
+                iconByLabel.current.delete(l.id);
+              }
             }}
           >
             {l.icon}
-            {l.text}
           </div>
-          {l.detail ? (
-            <div
-              ref={(el) => {
-                if (el) detailRefs.current.set(l.id, el);
-                else detailRefs.current.delete(l.id);
-              }}
-              style={{
-                display: "none",
-                width: "fit-content",
-                marginTop: 2,
-                padding: "1px 6px",
-                borderRadius: 4,
-                background: DETAIL_BG,
-                fontSize: 10,
-                fontWeight: 500,
-                color: DETAIL_FG,
-                textShadow: "0 1px 2px #000",
-              }}
-            >
-              {l.detail}
-            </div>
-          ) : null}
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }

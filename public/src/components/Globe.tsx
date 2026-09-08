@@ -653,9 +653,14 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       },
     });
     deckRef.current = deck;
+    // Diagnostics hook for scripts/profile-watch.mjs (`--deck`): lets a CDP
+    // session count the primitive layers deck draws per frame. Viewer-side
+    // only; nothing reads it in the app.
+    (window as unknown as { __godsDeck?: unknown }).__godsDeck = deck;
     return () => {
       deck.finalize();
       deckRef.current = null;
+      delete (window as unknown as { __godsDeck?: unknown }).__godsDeck;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

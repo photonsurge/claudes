@@ -17,6 +17,8 @@
  *          --layers    (census of Chrome's composited layers with compositing reasons + DOM node —
  *                      Layerize cost scales with paint chunks × composited layers)
  *          --dom-census [N] (N s (5) MutationObserver: which parents are having nodes added/removed)
+ *          --deck      (what deck.gl draws per frame: primitive layer count by id prefix, needs
+ *                      the page's window.__godsDeck hook)
  *
  * Read-only against the page (Profiler / Performance / Runtime.evaluate). Needs Node ≥ 22
  * (global WebSocket); zero dependencies. Works with DevTools already attached.
@@ -43,6 +45,7 @@ const OUT = opt("out", path.join("scratchpad", "profile", new Date().toISOString
 const WANT_SOURCE = !flag("no-source");
 const RAF_CENSUS = flag("raf-census");
 const LAYERS = flag("layers");
+const DECK = flag("deck");
 const DOM_CENSUS_SECONDS = (() => {
   const i = argv.indexOf("--dom-census");
   if (i === -1) return 0;
@@ -470,6 +473,32 @@ async function domCensus(cdp, seconds) {
   return lines.join("\n");
 }
 
+
+// ── deck.gl draw census (how many models are drawn per frame?) ──────────────
+async function deckCensus(cdp) {
+  const r = await evaluate(
+    cdp,
+    `(() => { const d = window.__godsDeck; if (!d) return null;
+      const all = d.layerManager.getLayers();
+      const prim = all.filter((l) => !l.isComposite);
+      const drawn = prim.filter((l) => l.props.visible !== false);
+      const byPrefix = new Map();
+      for (const l of drawn) { const k = String(l.id).replace(/[-_ ]?[0-9a-f]{4,}.*$/i, '').replace(/[-_]?\d+.*$/, '') || l.id;
+        byPrefix.set(k, (byPrefix.get(k) ?? 0) + 1); }
+      return { top: d.props.layers.length, all: all.length, primitive: prim.length, drawn: drawn.length,
+        groups: [...byPrefix.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40) }; })()`,
+  );
+  const lines = [];
+  const p = (s = "") => lines.push(s);
+  if (!r) {
+    p("## deck census: window.__godsDeck not present (older build?)");
+    return lines.join("\n");
+  }
+  p(`## deck census: ${r.top} top-level layers → ${r.all} incl. sublayers → ${r.primitive} primitive, ${r.drawn} drawn (visible) per frame`);
+  for (const [k, n] of r.groups) p(`${String(n).padStart(6)}×  ${k}`);
+  return lines.join("\n");
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 (async () => {
   const wsUrl = await resolveWsUrl(target);
@@ -559,8 +588,11 @@ async function domCensus(cdp, seconds) {
   p(`## Inclusive (subtree) time — deck.gl / WeatherLayers / React / rAF entry points`);
   const inclSorted = [...a.incl.entries()].filter(([k]) => WATCH.test(k.split(" @ ")[0])).sort((x, y) => y[1] - x[1]).slice(0, 30);
   for (const [k, us] of inclSorted) p(`${fmt(us)}  ${pct(us, busy)}  ${k}`);
-  // Snippets for hot but mangled frames
-  const mangled = selfSorted.filter(([k]) => /^(\(anonymous\)|[a-zA-Z_$]{1,3}) @/.test(k)).slice(0, 15);
+  // Snippets for hot but mangled frames — plus the heaviest `draw`/`updateState`
+  // methods by inclusive time, so a deck.gl layer class can be told apart from
+  // its chunk name alone.
+  const drawish = inclSorted.filter(([k]) => /^(draw|updateState|renderLayers) @/.test(k)).slice(0, 8);
+  const mangled = [...selfSorted.filter(([k]) => /^(\(anonymous\)|[a-zA-Z_$]{1,3}) @/.test(k)).slice(0, 15), ...drawish];
   if (mangled.length && WANT_SOURCE) {
     p();
     p(`## What the mangled hot frames are (source around the sampled position)`);
@@ -573,6 +605,14 @@ async function domCensus(cdp, seconds) {
   try {
     if (WANT_SOURCE) await cdp.send("Debugger.disable");
   } catch {}
+  if (DECK) {
+    try {
+      p();
+      p(await deckCensus(cdp));
+    } catch (e) {
+      p(`## deck census failed: ${e.message || e}`);
+    }
+  }
   if (LAYERS) {
     console.error("taking a composited-layer census …");
     try {
