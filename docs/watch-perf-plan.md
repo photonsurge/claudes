@@ -1695,6 +1695,50 @@ barbs under a live warning, with nothing wrong in the sampling at all. Picking
 the step nearest to now is a product decision, not a bug fix, so it is flagged
 rather than changed.
 
+### Round 39 (2026-09-10) — cache restored: the A/B's other half
+
+Rebuilt with `NEXT_PUBLIC_WL_GRID_PATCH` unset (`[globe] WeatherLayers grid
+caches active`). Two runs, and they close round 38's experiment from the other
+side.
+
+| grid cache | busy   | fps  | max gap | stalls           |
+|------------|--------|------|---------|------------------|
+| **off**    | 43.3 % | 29.3 | 367 ms  | 14 / **14 655 ms**, 22 / 6 681 ms |
+| **on**     | 36.2 % | 29.5 | 400 ms  | 12 / **2 222 ms**, 8 / **1 780 ms** |
+
+Stalls fall by ~7× and the icomesh/KDBush frames (`eo`, `e`, `c`) leave the top
+of the table entirely. Round 25's patch is worth what it claimed, the flag is
+out of `.env.deploy`, and the wind sampling cache is definitively not the cause
+of the calm barbs.
+
+**The preloading landed too.** `texSubImage2D` in this run's stalls is 72 ms and
+40 ms, against the 368 ms and 399 ms of round 32 — the base-plus-nest warm set
+(round 35) means a cut now finds its texture decoded instead of fetching and
+uploading one 38.6 MB image mid-frame.
+
+**What is now the biggest single stall, and why it is honest work.** The 685 ms
+stall at 9.7 s is deck's polygon path: `C` (cut-by-grid) 173 ms, earcut
+underneath it, `v`/`nU` beside it, and 94 ms of GC — under `setLayers` /
+`_updateSublayersRecursively`, i.e. a layer update. Checked whether it was
+avoidable churn and it is not: `alerts-overlay.ts` already fingerprints each
+poll and only calls `setFeatures` when the set actually changed;
+`layers/alerts.ts` already passes `features` straight through as `data`, already
+draws all three glow passes as PathLayers over memoised `outlineRings`, and its
+own comment already notes that `alerts-fill` is the one remaining tessellation.
+So this is one genuine re-tessellation of the dissolved, country-sized alert
+polygons when the alert set really changes. Making it cheaper means fewer
+vertices (simplify at the worker, a visual change) rather than fewer
+tessellations.
+
+Still present, unchanged and each small: `eO` (WeatherLayers
+`ensureDefaultProps`, per draw) 395 ms; `getBoundingClientRect` + `get
+clientHeight` 120 ms in two stalls; `_setupTransformFeedback` on cuts;
+`e.s.r` (`geo.ts` `nearby`) 255 ms.
+
+**The wind is unchanged and still points at the hour.** Both runs:
+`run=2026-09-09T18:00:00.000Z (6h ago) steps=51 fhr=0`. Six hours of drift
+between the field on screen and the alerts drawn over it.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
