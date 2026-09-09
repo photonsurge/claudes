@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Top-centre "NEW ALERTS" panel: cycles through only the JUST-ISSUED warnings
+ * Right-column "NEW ALERTS" panel: cycles through only the JUST-ISSUED warnings
  * (issued within the last ~hour — see freshAlerts), de-duped and most-severe
- * first, one at a time in a pulsing hazard-tinted card. A warning surfaces when
+ * first, one at a time in a fixed-height hazard-tinted card. A warning surfaces when
  * it's issued, holds for about an hour, then drops off on its own even if the
  * hazard is still active, so the panel reads as breaking news rather than a
  * standing list (the always-on World Watch panel is the comprehensive view).
@@ -69,39 +69,40 @@ export default function LiveAlertPanel({
   return (
     <section aria-label="New weather alert" style={{
       position: "relative", zIndex: 1, isolation: "isolate",
-      width: compact ? 280 : 350, maxWidth: "100%", boxSizing: "border-box",
-      padding: compact ? "12px 14px" : "14px 18px",
+      width: compact ? 280 : 400, maxWidth: "100%", boxSizing: "border-box",
+      height: compact ? 224 : 214, flexShrink: 0,
+      padding: compact ? "12px 16px" : "14px 24px",
       backgroundColor: "#081420", backgroundImage: GODS_FILL,
       border: `1px solid ${color}66`, borderTop: `3px solid ${color}`,
       clipPath: chamfer(8, 14),
       pointerEvents: "none", fontFamily: SANS, textAlign: "left",
-      display: "flex", flexDirection: "column", gap: 7,
-      overflowWrap: "anywhere", minWidth: 0,
+      display: "flex", flexDirection: "column", gap: 6,
+      overflowWrap: "break-word", minWidth: 0, overflow: "hidden",
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, fontFamily: MONO, fontSize: 10 }}>
         <span style={{ fontWeight: 700, letterSpacing: 1.5, color }}>NEW ALERT</span>
         {severity && <span aria-label={`Severity: ${severity}`} style={{ color, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase" }}>{severity}</span>}
       </div>
-      <div style={{ fontSize: compact ? 20 : 23, fontWeight: 700, lineHeight: 1.15, color: INK,
-        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+      <div style={{ fontSize: compact ? 19 : 22, fontWeight: 700, lineHeight: 1.2, color: INK,
+        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", flexShrink: 0 }}>
         {alertLabel(top.properties)}
       </div>
-      {area && <div style={{ color: INK, fontSize: 14, lineHeight: 1.35,
-        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{area}</div>}
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontFamily: MONO, fontSize: 10, color: INK_DIM }}>
-        <span>{ago ? `Issued ${ago}` : "Latest warning"}</span>
-        {list.length > 1 && <span>Alert {pos + 1} of {list.length}</span>}
-      </div>
+      {area && <div style={{ color: INK, fontSize: 14, lineHeight: 1.35, flexShrink: 0,
+        display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{area}</div>}
       {instruction && (
-        <div style={{ borderTop: `1px solid ${color}44`, paddingTop: 8 }}>
-          <div style={{ color, fontSize: 10, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>OFFICIAL ADVICE</div>
-          <div style={{ color: INK, fontSize: compact ? 12 : 13, lineHeight: 1.5,
+        <div style={{ borderTop: `1px solid ${color}44`, paddingTop: 7, minHeight: 0 }}>
+          <div style={{ color, fontSize: 9, fontWeight: 700, letterSpacing: 1, marginBottom: 3 }}>OFFICIAL ADVICE</div>
+          <div style={{ color: INK, fontSize: 12, lineHeight: 1.4,
             display: "-webkit-box", WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical", overflow: "hidden", whiteSpace: "pre-line" }}>
+            WebkitBoxOrient: "vertical", overflow: "hidden", whiteSpace: "normal" }}>
             {instruction}
           </div>
         </div>
       )}
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: "auto", paddingTop: 6, flexShrink: 0, fontFamily: MONO, fontSize: 10, color: INK_DIM }}>
+        <span>{ago ? `Issued ${ago}` : "Latest warning"}</span>
+        {list.length > 1 && <span>Alert {pos + 1} of {list.length}</span>}
+      </div>
     </section>
   );
 }

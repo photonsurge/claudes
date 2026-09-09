@@ -20,12 +20,27 @@ const STANDBY = "STANDING BY · AWAITING LIVE FEED";
 
 const entryText = (e: TickerEntry): string => (typeof e === "string" ? e : e.text);
 
+/** Stable keys — an entry's text, a repeat suffixed — so a feed change adds and
+ *  removes only the changed entries' nodes. Index keys made every cut rewrite
+ *  the text of every span after the first change: ~740 "text changed"
+ *  invalidations and a ~270 ms full-page layout on the profiler (round 26). */
+export function entryKeys(entries: TickerEntry[]): string[] {
+  const seen = new Map<string, number>();
+  return entries.map((e) => {
+    const text = entryText(e);
+    const n = seen.get(text) ?? 0;
+    seen.set(text, n + 1);
+    return n ? `${text}#${n}` : text;
+  });
+}
+
 /** One copy of the crawl content — items with separators between them. */
 function CrawlContent({ entries, theme }: { entries: TickerEntry[]; theme: BroadcastTheme }) {
+  const keys = entryKeys(entries);
   return (
     <span style={{ paddingLeft: 24 }}>
       {entries.map((e, i) => (
-        <Fragment key={i}>
+        <Fragment key={keys[i]}>
           {i > 0 && <span style={{ padding: "0 20px", opacity: 0.7 }}>{SEPARATOR}</span>}
           {typeof e === "string" ? (
             <span>{e}</span>

@@ -359,7 +359,7 @@ function findStalls(profile, minUs) {
   return out;
 }
 
-const MANGLED_RE = /^(\(anonymous\)|[a-zA-Z_$]{1,3}) @/;
+const MANGLED_RE = /^(\(anonymous\)|[a-zA-Z_$]{1,3}(\.[a-zA-Z_$]{1,3})*) @/;
 
 /**
  * The CPU-profile sections (shared with `--cpuprofile` offline mode): Bottom-Up,

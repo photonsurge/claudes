@@ -994,6 +994,61 @@ CEF); `e.s.r @ 0yj.p.itd4~mp.js` 571 ms unnamed (dotted names miss the
 profiler's snippet filter — widen `MANGLED_RE`). `getGLKey` at 2.7 ms in one
 stall means the deploy predated round 24.
 
+### Round 26 (2026-09-09) — round 25 measured; the cut's layout, named to the node
+
+Round 25 over 60 s with barbs in the mix: busy 57.7 → **42.9 %**, 29.1 fps,
+stalls **31 → 8** (17.0 → 3.1 s of the minute). The grid layer's `updateState`
+fell from 12.0 s to **0.35 s** inclusive; what remains of it is one icosphere
+build per order (`iN` 15 ms, icomesh 29 ms, kdbush 18 ms in one stall — once,
+as intended). The `--stall-trace` invalidation tracking then named the rest of
+a cut to the DOM node:
+
+- **Two ~270 ms full-page layouts** (dirty 1 566 of 2 947 objects; 1 673 of
+  3 331), each preceded by ~740 "Text changed #text" invalidations and a few
+  hundred SPAN adds/removes: the **ticker crawl**. `CrawlContent` keyed its
+  entries by index, so one new line at the front rewrote the text of every
+  span after it (twice — the crawl is rendered twice for the loop) and Blink
+  re-shaped every run of the ~100 000 px line.
+- **"Fonts changed" ×211** inside the first of them, with a Saira `.woff2`
+  arriving from fonts.gstatic.com mid-cut: Google Fonts serves each weight in
+  unicode-range subsets (latin, latin-ext, vietnamese) with `display=swap`, so
+  the first cut to show a "Kraków" fetched a subset and invalidated every text
+  node of the family.
+- **`nearestCityDetails`** (`BroadcastFrame`): with a flight or ship on air,
+  every frame render filtered the 15 k cities to the notable subset and ran the
+  unbounded linear `nearest()` over it — `e.s.r` 129 ms of the minute (571 ms
+  in the barbs run), 17 ms inside the cut.
+- Chrome re-render proper (React `O` tasks 43–76 ms, 557 DIV / 322 SPAN / 52
+  svg adds in the 48 s cut, `removeChild` 22 ms) — the other session's area.
+- One-offs: `getImageData` 124 ms = WeatherLayers decoding its barb icon atlas
+  (cached per URL and per device inside WL — first appearance of barbs only);
+  `getProgramParameter` 16 ms = a shader link wait for a new pipeline;
+  `_setupTransformFeedback` 30 ms = WL particle re-init (unchanged).
+
+Shipped (lossless):
+
+- **Stable crawl keys** (`Ticker.tsx` `entryKeys`): an entry's text (repeats
+  suffixed) keys its fragment, so a feed change adds and removes only the
+  changed entries' nodes. Test: an entry's DOM node survives an insertion in
+  front of it.
+- **Font warm-up** (`useFontWarmup.ts`, mounted in `BroadcastFrame`): every
+  face of the ramp — Saira 300/400/500/600, JetBrains Mono 400/500 — requested
+  once at mount through `document.fonts.load` with a sample spanning the served
+  subsets, so no cut ever triggers a font fetch. Same faces render either way.
+- **`nearestNotableCity`** (`lib/broadcast.ts`): the moving target's "Nearest
+  City" from the shared city grid in widening rings (350 / 1 400 / 5 600 km,
+  then the sphere) — a hit inside a ring is the global nearest since everything
+  outside is farther; parity-tested against the linear `nearest()` incl. a
+  Point-Nemo case and ties.
+- Profiler: `MANGLED_RE` accepts dotted short names, so a frame like `e.s.r`
+  gets its source snippet next time.
+
+Next run: expect the two ~270 ms layouts to shrink to the changed entries, no
+"Fonts changed", and `e.s.r` gone. What is left of a cut is then the chrome
+re-render and the GPU-side one-offs (a 382 ms `texSubImage2D` in the barbs run
+is still unexplained — which texture, and whether it is the humidity raster's
+first upload).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

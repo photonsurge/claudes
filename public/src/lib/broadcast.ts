@@ -475,6 +475,28 @@ function cityGrid(cities: City[]): GeoGrid<City> {
   return g;
 }
 const notableGrid = (cities: City[]): GeoGrid<City> => cityGrid(notableCities(cities));
+
+/** Widening rings for nearestNotableCity; the last spans the whole sphere (half
+ *  a circumference is ~20 015 km). */
+const NEAREST_RINGS_KM = [350, 1400, 5600, 20100];
+/**
+ * The nearest notable city to a point with NO radius bound — the moving
+ * target's "Nearest City" row, which mid-ocean still names the closest
+ * landfall — or null with no cities. Exactly `nearest(notableCities(cities), …)`
+ * (first of equal distances wins) without its scan: the grid is asked in
+ * widening rings, and a hit inside a ring is the global nearest because
+ * everything outside it is farther. That scan ran on every frame render with a
+ * flight or ship on air (~130 ms of a minute on the profiler, round 26).
+ */
+export function nearestNotableCity(cities: City[], point: [number, number]): Nearby<City> | null {
+  if (!cities.length) return null;
+  const grid = notableGrid(cities);
+  for (const r of NEAREST_RINGS_KM) {
+    const hit = grid.nearest(point, r);
+    if (hit) return hit;
+  }
+  return null;
+}
 function nearbyPlaces(point: [number, number] | null, cities: City[]): Nearby<City>[] {
   if (!point || cities.length === 0) return [];
   return notableGrid(cities).nearby(point, NEARBY_RADIUS_KM);

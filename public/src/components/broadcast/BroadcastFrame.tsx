@@ -12,6 +12,7 @@
  * never intercepts the capture surface, and derives entirely from data the watch
  * surface already has (alerts, quakes, tracks, the active variable's legend).
  */
+import FittedColumn from "./FittedColumn";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
@@ -42,6 +43,7 @@ import {
   scopeAlertsToRadius,
   scopeQuakesToRadius,
   scopeVolcanoesToRadius,
+  nearestNotableCity,
 } from "../../lib/broadcast";
 import { bboxForCamera, type HistorySeries } from "../../lib/history-client";
 import { useLatestRoundup } from "../../lib/summaries";
@@ -70,7 +72,8 @@ import {
   useFocusTarget,
 } from "../../lib/focus/focus-client";
 import { legendVariableFor, legendPaletteFor } from "../../lib/legend";
-import { nearest, formatKm } from "../../lib/geo";
+import { formatKm } from "../../lib/geo";
+import { useFontWarmup } from "./useFontWarmup";
 import { useWorldWatch } from "../../lib/world-watch";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { useStageScale, STAGE_W, STAGE_H } from "./useStageScale";
@@ -134,8 +137,7 @@ function nearestCityDetails(
   cities: City[],
 ): { label: string; value: string }[] {
   if (segment.kind !== "flight" && segment.kind !== "ship") return [];
-  const notable = cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital);
-  const n = nearest(notable, segment.camera.center, (c) => [c.lng, c.lat]);
+  const n = nearestNotableCity(cities, segment.camera.center);
   if (!n) return [];
   const name = n.item.country
     ? `${n.item.name}, ${n.item.country}`
@@ -229,6 +231,7 @@ export default function BroadcastFrame({
   /** This channel's display name — the masthead's status chip. */
   sceneName?: string;
 }) {
+  useFontWarmup();
   const scale = useStageScale();
   // While the director cuts to the next shot the globe flies for
   // `state.cutTransitionMs`; hide the bottom-left deck for that window so it
@@ -1011,24 +1014,10 @@ export default function BroadcastFrame({
             ALERTS drill-down. Independent of the operator's show-alerts/seismic
             toggles — it reuses the one worldWatch fetch (above) rather than each
             panel pulling its own. */}
-        <div
-          style={{
-            position: "absolute",
-            // Rides a touch higher than the shared chrome line so the stack
-            // clears the sub-globe corner below it.
-            top: chromeTop - 20,
-            zIndex: 2,
-            right: INSET - 26,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-end",
-            gap: 10,
-            // Legibility: enlarge the whole WORLD WATCH column as a unit
-            // (anchored top-right) so the report + feed read bigger on air.
-            // (EventOverlay's HISTORY_POS budgets for the scaled left edge.)
-            transform: "scale(1.16)",
-            transformOrigin: "right top",
-          }}
+        <FittedColumn
+          top={chromeTop - 20}
+          right={INSET - 26}
+          maxHeight={STAGE_H - chromeBottom - (chromeTop - 20) - 12}
         >
           {/* Fresh warnings lead the column so the world report cannot push them off-screen. */}
           {!off.has("liveAlerts") && (
@@ -1051,7 +1040,7 @@ export default function BroadcastFrame({
               holdMs={state.reportHoldMs}
             />
           )}
-        </div>
+        </FittedColumn>
 
         {/* Bottom-right column: the SYSLOG feed with the build stamp anchored
             beneath it. column-reverse anchors the first child (BuildInfoTag)

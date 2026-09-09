@@ -3,7 +3,7 @@
  * title chip rides the accent, and the chip text stays white regardless.
  */
 import { render, screen } from "@testing-library/react";
-import Ticker from "./Ticker";
+import Ticker, { entryKeys } from "./Ticker";
 import { DEFAULT_THEME } from "./config";
 
 describe("Ticker", () => {
@@ -13,6 +13,16 @@ describe("Ticker", () => {
     tickerBg: "rgb(1, 2, 3)",
     tickerText: "#445566",
   };
+
+  it("keeps an entry's DOM node when the feed changes around it (stable keys)", () => {
+    const { rerender } = render(<Ticker title="T" items={["ONE", "TWO"]} edge="top" theme={themed} />);
+    const before = screen.getAllByText("TWO")[0];
+    rerender(<Ticker title="T" items={["ZERO", "ONE", "TWO", "TWO"]} edge="top" theme={themed} />);
+    expect(screen.getAllByText("TWO")[0]).toBe(before);
+    expect(screen.getAllByText("ZERO").length).toBeGreaterThan(0);
+    // Keys are the text; repeats (a sponsor line twice, say) get a suffix.
+    expect(entryKeys(["A", "B", "A", { text: "A", ad: true }])).toEqual(["A", "B", "A#1", "A#2"]);
+  });
 
   it("themes the band background and crawl ink", () => {
     render(<Ticker title="VIGIL TAPE" items={["ONE", "TWO"]} edge="top" theme={themed} />);

@@ -1,6 +1,8 @@
+import { nearest } from "./geo";
 import {
   quakeTicker,
   alertTicker,
+  nearestNotableCity,
   notableCities,
   trackTicker,
   volcanoTicker,
@@ -727,5 +729,45 @@ describe("topAlert / alertBannerText", () => {
     // area portion (between ": " and " — ") stays within the 40-char cap
     const area = text.slice(text.indexOf(": ") + 2, text.lastIndexOf(" — "));
     expect(area.length).toBeLessThanOrEqual(41); // 40 + ellipsis
+  });
+});
+
+describe("nearestNotableCity", () => {
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const cities = Array.from({ length: 600 }, (_, i) => ({
+    id: `c${i}`,
+    name: `City ${i}`,
+    lng: -180 + rnd() * 360,
+    lat: -90 + rnd() * 180,
+    cc: "FR",
+    population: i % 3 === 0 ? 0 : 1000 + i,
+    isCapital: i % 50 === 0,
+  })) as City[];
+  const pt = (c: City): [number, number] => [c.lng, c.lat];
+
+  it("answers exactly what the linear scan over the notable subset answers", () => {
+    const points: [number, number][] = [[0, 51.5], [-140, -50], [179.9, 3], [-179.9, 3], [20, 89], [-100, -89], [120, 15]];
+    for (const p of points) {
+      const expected = nearest(notableCities(cities), p, pt);
+      const got = nearestNotableCity(cities, p);
+      expect(got?.item).toBe(expected?.item);
+      expect(got?.distanceKm).toBe(expected?.distanceKm);
+    }
+  });
+
+  it("widens the ring until it finds landfall, and keeps the first of equal distances", () => {
+    const few = [
+      { id: "far", name: "Far", lng: 170, lat: -60, cc: "NZ", population: 10 },
+      { id: "twinA", name: "A", lng: 1, lat: 0, cc: "FR", population: 10 },
+      { id: "twinB", name: "B", lng: -1, lat: 0, cc: "FR", population: 10 },
+      { id: "hamlet", name: "H", lng: -139, lat: -49, cc: "PN" },
+    ] as City[];
+    // Point Nemo-ish: nothing notable within thousands of km → the far city.
+    expect(nearestNotableCity(few, [-123, -48])?.item.id).toBe("far");
+    expect(nearestNotableCity(few, [-123, -48])).toEqual(nearest(notableCities(few), [-123, -48], pt));
+    expect(nearestNotableCity(few, [0, 0])?.item.id).toBe("twinA");
+    expect(nearestNotableCity([], [0, 0])).toBeNull();
+    expect(nearestNotableCity([few[3]], [0, 0])).toBeNull();
   });
 });
