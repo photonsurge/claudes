@@ -24,18 +24,36 @@ SERVICES=("$@")
 
 svc_version() { grep '"version"' "$1/package.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/'; }
 
-# NEXT_PUBLIC_SOCKET_URL is COMPILED INTO the public client bundle at build time.
+# Every NEXT_PUBLIC_* is COMPILED INTO the public client bundle at build time —
+# setting one in the host's env after the fact does nothing, the image is made.
 # The docker images are deploy artifacts, so prefer the deploy env's value:
 #   explicit env override  >  .env.deploy  >  .env (local dev fallback)
-if [[ -z "${NEXT_PUBLIC_SOCKET_URL:-}" ]]; then
-  for f in .env.deploy .env; do
-    [[ -f "$f" ]] || continue
-    v=$(sed -n 's/^NEXT_PUBLIC_SOCKET_URL=//p' "$f" | head -1)
-    [[ -n "$v" ]] && { NEXT_PUBLIC_SOCKET_URL="$v"; break; }
-  done
-fi
-[[ -n "${NEXT_PUBLIC_SOCKET_URL:-}" ]] && export NEXT_PUBLIC_SOCKET_URL
-echo "==> public NEXT_PUBLIC_SOCKET_URL baked = ${NEXT_PUBLIC_SOCKET_URL:-(unset!)}"
+# .env holds LOCAL values (localhost socket), so reading it first would bake dev
+# settings into a production image.
+bake() {
+  local var="$1" v="" f
+  if [[ -n "${!var:-}" ]]; then
+    v="${!var}"
+  else
+    for f in .env.deploy .env; do
+      [[ -f "$f" ]] || continue
+      v=$(sed -n "s/^${var}=//p" "$f" | head -1)
+      if [[ -n "$v" ]]; then break; fi
+    done
+  fi
+  if [[ -n "$v" ]]; then
+    export "$var=$v"
+    echo "==> public $var baked = $v"
+  else
+    echo "==> public $var unset (shipped default)"
+  fi
+}
+bake NEXT_PUBLIC_SOCKET_URL
+# Optional knobs; unset is the normal state.
+#   WL_GRID_PATCH=off   diagnostic — disables the wind-grid sampling cache
+#   TEXTURE_CACHE_MAX   decoded textures held in RAM (default 256, ~4 MB each)
+bake NEXT_PUBLIC_WL_GRID_PATCH
+bake NEXT_PUBLIC_TEXTURE_CACHE_MAX
 
 echo "==> Building @photonsurge/shared"
 ( cd shared && yarn install && yarn build )
