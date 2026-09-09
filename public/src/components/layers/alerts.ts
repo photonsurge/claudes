@@ -80,7 +80,18 @@ const withA = (c: [number, number, number], a: number): [number, number, number,
  * Where the hazard badge sits — shared with the director's camera framing so the
  * on-air pulse reticle lands on the same point as the badge (see alertRepPoint).
  */
-const repPoint = (f: AlertFeature): [number, number] | null => alertRepPoint(f.geometry);
+const repPoints = new WeakMap<AlertFeature, [number, number] | null>();
+const repPoint = (f: AlertFeature): [number, number] | null => {
+  // Memoised per feature: onAirFeature scans every drawn alert for the nearest
+  // rep point on each rebuild, and a rep point is a geometry walk (~0.5 s of a
+  // minute's main thread on the profiler, round 25).
+  let p = repPoints.get(f);
+  if (p === undefined) {
+    p = alertRepPoint(f.geometry);
+    repPoints.set(f, p);
+  }
+  return p;
+};
 
 /**
  * True when the feature draws a real polygon (Polygon/MultiPolygon). Polygon

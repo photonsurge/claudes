@@ -22,7 +22,7 @@ const FADE_MS = 450;
 
 type AirAd = NonNullable<Segment["ad"]>;
 
-export default function AdBreak({ segment }: { segment: Segment | null }) {
+export default function AdBreak({ segment, endsAt = null }: { segment: Segment | null; endsAt?: number | null }) {
   const ad = segment?.kind === "ad" ? (segment.ad ?? null) : null;
   const [shown, setShown] = useState<AirAd | null>(null);
   const [visible, setVisible] = useState(false);
@@ -44,6 +44,15 @@ export default function AdBreak({ segment }: { segment: Segment | null }) {
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
   }, [ad?.adId]);
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!ad || endsAt == null) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(timer);
+  }, [ad?.adId, endsAt]);
+  const remaining = endsAt == null ? null : Math.max(0, Math.ceil((endsAt - now) / 1000));
 
   if (!shown) return null;
 
@@ -87,6 +96,32 @@ export default function AdBreak({ segment }: { segment: Segment | null }) {
         >
           Advertisement
         </div>
+        {ad && remaining !== null && (
+          <div
+            role="timer"
+            aria-label="Advertisement time remaining"
+            style={{
+              position: "absolute",
+              right: 16,
+              bottom: 16,
+              zIndex: 2,
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              padding: "12px 18px",
+              borderRadius: 10,
+              background: "#080e1b",
+              color: "#fff",
+              border: "2px solid rgba(255,255,255,0.8)",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.65)",
+            }}
+          >
+            <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.06em" }}>BACK IN</span>
+            <span style={{ fontSize: 36, fontWeight: 800, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+              {Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, "0")}
+            </span>
+          </div>
+        )}
         {shown.mediaType === "video" ? (
           // eslint-disable-next-line jsx-a11y/media-has-caption
           <video

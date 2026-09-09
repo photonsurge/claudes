@@ -6,7 +6,7 @@ import { requireAdmin } from "../../../../lib/require-admin";
 import { sendToQueueAndWait } from "@photonsurge/shared/bull/bull-queue";
 import { GET } from "./route";
 
-const get = () => GET(new Request("http://x/api/streams/stats") as never, {});
+const get = () => GET();
 beforeEach(() => {
   jest.resetAllMocks();
   (requireAdmin as jest.Mock).mockResolvedValue(true);

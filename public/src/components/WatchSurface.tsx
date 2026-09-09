@@ -348,7 +348,7 @@ function WatchSurfaceBody({
 
       {/* Full-frame ad interstitial — covers the globe + chrome when the director
           cuts to an ad. Renders nothing for every other segment kind. */}
-      <AdBreak segment={onAirSegment ?? null} />
+      <AdBreak segment={onAirSegment ?? null} endsAt={nextCutAt} />
 
       {/* Generative music bed — operator-driven via state.audio (synced over the
           same socket as the rest of the ControlState). Renders UI only while a

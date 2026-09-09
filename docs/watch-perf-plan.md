@@ -931,6 +931,69 @@ Next run, please WITH the flag: `--seconds 60 --deck --stall-trace` and two or
 three manual cuts. The "renderer events in this window" line under each
 "(program)" stall is what decides between chrome layout/paint and a GPU wait.
 
+### Round 25 (2026-09-09) — the trace run: wind barbs, and what "(program)" was
+
+The `--stall-trace` run landed on a heavier scene than rounds 21–24: wind
+mode **barbs**, two humidity rasters, 154 labels drawn. Busy **57.7 %**,
+27.5 fps, **31 stalls / 17.0 s** of the minute, one of 3.2 s and one of 2.0 s.
+The operator's "wind looks slightly off in the output" is this: barbs stutter
+and jump through every move. No source change in the last two days touches
+barb geometry or colour (checked `layers/index.ts`, `layers/props.ts`,
+`Globe.tsx`); the patches of rounds 17–24 alter no vertex, uniform value or
+pixel.
+
+What the barbs cost, from the profile — WeatherLayers' `GridLayer` composite:
+
+- **It never caches its grid.** Positions come from an icosphere whose order
+  follows the zoom (up to 163 842 points at zoom ≥ 5) and a KDBush over it;
+  two module-level Maps are read as caches but nothing writes them. Every
+  camera tick rebuilds both: icomesh 1.8 s + kdbush sort 1.6 s + helpers
+  0.9 s ≈ **4.3 s of the minute**.
+- **It re-samples every visible point every tick.** `shouldUpdateState` fires
+  on `viewportChanged`, `_updatePositions` → `_updateFeatures` cubic-samples
+  the raster at each visible point (16 texel reads, an array per read):
+  `eG`/`eX`/`e1`/`ez`/`eW` ≈ **7 s of the minute**, plus most of the 1.2 s GC.
+  Inclusive, `updateState` was 12.0 s — 33.6 % of the main thread — and the
+  300–2 000 ms stalls from 7.8 s to 15 s are one fly-to with barbs on.
+
+Shipped (lossless):
+
+- **`lib/wl-grid-positions.ts`**: WeatherLayers' globe grid builder with the
+  caches it intended — the same icomesh / kdbush / geokdbush / geodesy-fn calls
+  with the same arguments (sphere radius 6 370 972 m, the same edge-pixel
+  radius, Float32 KDBush, `around` nearest-first), icosphere and index memoised
+  per order. Parity-tested against a brute-force radius filter; the seam
+  duplicates WeatherLayers keeps are kept.
+- **`lib/wl-grid-patch.ts`**: two prototype patches on the internal composite,
+  reached through `GridLayer.renderLayers`. `_updatePositions` takes the
+  memoised positions (globe viewports; Mercator falls through). `_updateFeatures`
+  keeps a per-layer cache of each point's feature keyed by the point (the
+  memoised icosphere hands out the same arrays every tick), emptied when any
+  sampling prop changes; only unseen points are sampled — by WeatherLayers'
+  own `_updateFeatures` on that subset — so the features are exactly its own,
+  in position order, NaN points remembered as absent. A composite whose
+  features are not built on their positions hands back for good. Installed
+  in `Globe.tsx` with the other patches; jest transforms the four ESM
+  packages; the packages are declared at WeatherLayers' own ranges (lockfile
+  unchanged).
+- **`repPoint` memo** (`layers/alerts.ts`): `onAirFeature` walked every alert's
+  geometry for its rep point on each rebuild — 572 ms of the minute.
+
+The trace answered round 24's question. The native share of a stall is
+**Layerize** (13–70 ms per stall — CEF's off-screen compositing), GC, and in
+the 3.2 s cut stall **Layout 312 ms + Paint 46 ms + a 547 ms React task**
+(`FunctionCall O`) with `removeChild` 228 ms: the chrome re-render is the other
+half of a cut (the other session's area). Not GPU waits.
+
+Still open from this run: a single **`texSubImage2D` of 382 ms** at 2.3 s (one
+synchronous texture upload — a raster or nest image; which one, and whether it
+can be split or made async, is the next question); main-thread `getImageData`
+169 ms inside the cut = WeatherLayers' `loadTextureData` (our worker-pool
+fallback, or WeatherLayers' own loads — check the `[globe]` console line in
+CEF); `e.s.r @ 0yj.p.itd4~mp.js` 571 ms unnamed (dotted names miss the
+profiler's snippet filter — widen `MANGLED_RE`). `getGLKey` at 2.7 ms in one
+stall means the deploy predated round 24.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

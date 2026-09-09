@@ -15,7 +15,7 @@
  * globe itself (layers/seismograph-stations.ts, layers/tide-stations.ts,
  * lib/weather-point.ts) — so the map and these cards always agree.
  */
-import { useRef, type ReactNode } from "react";
+import { useEffect, useState, useRef, type ReactNode } from "react";
 import type { Segment } from "@photonsurge/shared/director";
 import type { TideSample } from "@photonsurge/shared/tides/types";
 import { nearby } from "../../lib/geo";
@@ -473,8 +473,7 @@ function WeatherMonitorBox({
 /**
  * Local wind, barometric pressure, and wave height, all read from the same
  * archived point-history the POINT HISTORY panel already fetches (see
- * history-client's usePointHistory), just as a permanent glance-strip instead
- * of a slideshow. Each blob hides on its own once its variable has too little
+ * history-client's usePointHistory), in rotating groups of three to keep the panel to a single row. Each blob hides on its own once its variable has too little
  * archived data for the focus point, same self-hiding rule as
  * SeismicMonitor/TsunamiMonitor.
  */
@@ -506,8 +505,22 @@ export function LocalWeatherPanel({
     return { spec, samples, latestLabel: `${formatReading(latest)}${units ? ` ${units}` : ""}` };
   }).filter((item): item is { spec: (typeof WEATHER_MONITORS)[number]; samples: { v: number }[]; latestLabel: string } => item != null);
 
+  const pageCount = Math.ceil(computed.length / 3);
+  const pageKey = `${location}:${computed.map((item) => item.spec.variable).join(",")}`;
+  const [rotation, setRotation] = useState({ key: pageKey, page: 0 });
+  const page = rotation.key === pageKey ? rotation.page % Math.max(1, pageCount) : 0;
+  useEffect(() => {
+    setRotation({ key: pageKey, page: 0 });
+    if (!showMonitors || pageCount < 2) return;
+    const timer = setInterval(() => {
+      setRotation((previous) => ({ key: pageKey, page: (previous.page + 1) % pageCount }));
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [pageKey, pageCount, showMonitors]);
+
   // Render only the current fetch, matching the weather-point marker.
-  const monitorData = showMonitors && computed.length > 0 ? { visible: computed, location } : null;
+  const monitorData = showMonitors && computed.length > 0
+    ? { visible: computed.slice(page * 3, page * 3 + 3), location } : null;
   if (!monitorData && !forecast) return null;
 
   return (
@@ -540,7 +553,7 @@ export function LocalWeatherPanel({
             </div>
             <div style={{ fontSize: 11, color: INK_DIM }}>
               {monitorData.location}
-              <div style={{ fontSize: 9, marginTop: 3 }}>Past 72 hours · latest readings · oldest → newest</div>
+              <div style={{ fontSize: 9, marginTop: 3 }}>Past 72 hours · oldest → newest{pageCount > 1 ? ` · ${page + 1}/${pageCount}` : ""}</div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(3, monitorData.visible.length)}, minmax(0, 1fr))`, gap: 8 }}>
               {monitorData.visible.map((item) => (

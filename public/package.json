@@ -1,6 +1,6 @@
 {
   "name": "public",
-  "version": "0.4.57",
+  "version": "0.4.58",
   "private": true,
   "scripts": {
     "update-shared": "rm -rf .next/; yarn upgrade @photonsurge/shared",
@@ -32,7 +32,11 @@
     "@mui/material-nextjs": "^9",
     "@photonsurge/shared": "file:../shared",
     "@tanstack/react-table": "^8.21.3",
+    "geodesy-fn": "^1.2.2",
+    "geokdbush": "^2.1.0",
     "geotiff": "^3.0.0",
+    "icomesh": "^1.1.0",
+    "kdbush": "^4.0.2",
     "maplibre-gl": "^5.0.0",
     "next": "16.2.6",
     "pngjs": "^7.0.0",

@@ -1030,6 +1030,10 @@ export default function BroadcastFrame({
             transformOrigin: "right top",
           }}
         >
+          {/* Fresh warnings lead the column so the world report cannot push them off-screen. */}
+          {!off.has("liveAlerts") && (
+            <LiveAlertPanel alerts={alerts} cities={cities} theme={theme} />
+          )}
           {!off.has("worldReport") && (
             <WorldReportDeck
               worldWatch={worldWatch}
@@ -1046,11 +1050,6 @@ export default function BroadcastFrame({
               about={state.about}
               holdMs={state.reportHoldMs}
             />
-          )}
-          {/* NEW ALERTS — the just-issued warnings ride below the always-on
-              WORLD WATCH summary here, out of the top-centre map legend's way. */}
-          {!off.has("liveAlerts") && (
-            <LiveAlertPanel alerts={alerts} cities={cities} theme={theme} />
           )}
         </div>
 

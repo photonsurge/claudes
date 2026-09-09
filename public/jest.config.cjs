@@ -9,7 +9,12 @@ module.exports = {
   roots: ["<rootDir>/src"],
   testMatch: ["**/*.test.ts", "**/*.test.tsx"],
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
+  // ESM-only geometry packages the WeatherLayers grid patch shares with
+  // WeatherLayers (lib/wl-grid-positions.ts); everything else in node_modules
+  // stays untransformed.
+  transformIgnorePatterns: ["/node_modules/(?!(kdbush|geokdbush|tinyqueue|icomesh)/)"],
   transform: {
+    "^.+\\.js$": ["ts-jest", { tsconfig: { allowJs: true, module: "commonjs", esModuleInterop: true, target: "ES2021" }, diagnostics: false }],
     "^.+\\.(ts|tsx)$": [
       "ts-jest",
       {

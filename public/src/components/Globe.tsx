@@ -22,6 +22,7 @@ import { Deck, _GlobeView as GlobeView } from "@deck.gl/core";
 import { installLumaUniformPatch } from "../lib/luma-uniform-patch";
 import { installBitmapMeshPatch } from "../lib/bitmap-mesh-patch";
 import { installGlKeyPatch } from "../lib/luma-glkey-patch";
+import { installGridPatch } from "../lib/wl-grid-patch";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { isTextureCached, loadTexture, preloadTextures, type LoadedTexture } from "../lib/textures";
@@ -564,6 +565,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     installLumaUniformPatch();
     // deck re-tessellates every new BitmapLayer's bounds; share meshes across instances.
     installBitmapMeshPatch();
+    // WeatherLayers' GridLayer (wind barbs) rebuilds its icosphere and re-samples
+    // every visible point on every camera tick; cache both.
+    installGridPatch();
     const deck = new Deck<GlobeView[]>({
       canvas: canvasRef.current,
       // Inside an OBS browser source the canvas IS the broadcast raster (CEF

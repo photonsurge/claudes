@@ -14,8 +14,8 @@ import type { AlertFeature } from "../../lib/alerts";
 import { SEVERITY_COLORS, SEVERITY_LABELS } from "@photonsurge/shared/alerts/severity";
 import { sortedAlerts, freshAlerts, issuedAgoLabel, FRESH_ALERT_WINDOW_MIN, alertLabel, alertAreaLabel } from "../../lib/broadcast";
 import type { City } from "../../lib/cities";
-import { GODS_FILL, INK, INK_DIM, MONO, SANS } from "./GodsPanel";
-import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { GODS_FILL, INK, INK_DIM, MONO, SANS, chamfer } from "./GodsPanel";
+import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
 /** Seconds each alert holds on screen before advancing to the next. */
 const HOLD_MS = 10000;
@@ -69,32 +69,34 @@ export default function LiveAlertPanel({
   return (
     <section aria-label="New weather alert" style={{
       position: "relative", zIndex: 1, isolation: "isolate",
-      width: compact ? 280 : 400, maxWidth: "100%", boxSizing: "border-box",
-      padding: compact ? 12 : 16,
+      width: compact ? 280 : 350, maxWidth: "100%", boxSizing: "border-box",
+      padding: compact ? "12px 14px" : "14px 18px",
       backgroundColor: "#081420", backgroundImage: GODS_FILL,
-      ...accentBorder(`1px solid ${color}66`, `3px solid ${color}`),
-      borderRadius: 8, boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
+      border: `1px solid ${color}66`, borderTop: `3px solid ${color}`,
+      clipPath: chamfer(8, 14),
       pointerEvents: "none", fontFamily: SANS, textAlign: "left",
-      display: "flex", flexDirection: "column", gap: 8,
+      display: "flex", flexDirection: "column", gap: 7,
       overflowWrap: "anywhere", minWidth: 0,
     }}>
-      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "4px 12px", fontFamily: MONO, fontSize: 10, color: INK_DIM }}>
-        <span style={{ fontWeight: 700, letterSpacing: 1 }}>NEW ALERT</span>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, fontFamily: MONO, fontSize: 10 }}>
+        <span style={{ fontWeight: 700, letterSpacing: 1.5, color }}>NEW ALERT</span>
+        {severity && <span aria-label={`Severity: ${severity}`} style={{ color, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase" }}>{severity}</span>}
+      </div>
+      <div style={{ fontSize: compact ? 20 : 23, fontWeight: 700, lineHeight: 1.15, color: INK,
+        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+        {alertLabel(top.properties)}
+      </div>
+      {area && <div style={{ color: INK, fontSize: 14, lineHeight: 1.35,
+        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{area}</div>}
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontFamily: MONO, fontSize: 10, color: INK_DIM }}>
+        <span>{ago ? `Issued ${ago}` : "Latest warning"}</span>
         {list.length > 1 && <span>Alert {pos + 1} of {list.length}</span>}
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "6px 10px" }}>
-        <div style={{ flex: "1 1 180px", fontSize: compact ? 17 : 20, fontWeight: 700, lineHeight: 1.25, color: INK }}>
-          {alertLabel(top.properties)}
-        </div>
-        {severity && <span style={{ color, border: `1px solid ${color}88`, borderRadius: 4, padding: "2px 6px", fontSize: 11, fontWeight: 700 }}>Severity: {severity}</span>}
-      </div>
-      {area && <div style={{ color: INK, fontSize: 14, lineHeight: 1.4 }}>Area: {area}</div>}
-      {ago && <div style={{ color: INK_DIM, fontSize: 11 }}>Issued {ago}</div>}
       {instruction && (
         <div style={{ borderTop: `1px solid ${color}44`, paddingTop: 8 }}>
           <div style={{ color, fontSize: 10, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>OFFICIAL ADVICE</div>
           <div style={{ color: INK, fontSize: compact ? 12 : 13, lineHeight: 1.5,
-            display: "-webkit-box", WebkitLineClamp: compact ? 3 : 4,
+            display: "-webkit-box", WebkitLineClamp: 2,
             WebkitBoxOrient: "vertical", overflow: "hidden", whiteSpace: "pre-line" }}>
             {instruction}
           </div>

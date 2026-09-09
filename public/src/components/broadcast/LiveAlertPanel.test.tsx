@@ -12,8 +12,8 @@ const warning = (id: string, area: string): AlertFeature => ({
 
 it("separates location, severity, timing and official advice", () => {
   render(<LiveAlertPanel alerts={[warning("a", "Reutte")]} />);
-  expect(screen.getByText("Area: Reutte")).toBeInTheDocument();
-  expect(screen.getByText(/Severity:/)).toBeInTheDocument();
+  expect(screen.getByText("Reutte")).toBeInTheDocument();
+  expect(screen.getByLabelText(/Severity:/)).toBeInTheDocument();
   expect(screen.getByText(/Issued /)).toBeInTheDocument();
   expect(screen.getByText("OFFICIAL ADVICE")).toBeInTheDocument();
   expect(screen.getByText("Take extra care in exposed areas.")).toBeInTheDocument();
