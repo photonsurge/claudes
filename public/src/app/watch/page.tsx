@@ -25,7 +25,7 @@ import {
 import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../lib/socket-provider";
 import { fetchBroadcastState } from "../../lib/control";
-import { fetchManifest } from "../../lib/manifest";
+import { MANIFEST_POLL_MS, fetchManifest } from "../../lib/manifest";
 import { useStableJson } from "../../lib/use-stable";
 
 /** Stable "no up-next" so an idle director doesn't mint a fresh [] per beat. */
@@ -135,8 +135,12 @@ function WatchPageInner() {
 
     socket.on(CONTROL_STATE, onState);
     socket.on(WEATHER_RUN, onRun);
+    // Backstop: a missed WEATHER_RUN would otherwise strand the page on the
+    // maps it started with for the rest of the broadcast.
+    const manifestPoll = setInterval(onRun, MANIFEST_POLL_MS);
     socket.on(CITIES_UPDATED, onCities);
     return () => {
+      clearInterval(manifestPoll);
       socket.off(CONTROL_STATE, onState);
       socket.off(WEATHER_RUN, onRun);
       socket.off(CITIES_UPDATED, onCities);

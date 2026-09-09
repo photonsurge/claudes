@@ -46,14 +46,23 @@ export function makeQuakeRepo(model: Model<iQuakeModel>) {
       return { upserted: res.upsertedCount ?? 0, matched: res.matchedCount ?? 0 };
     },
 
-    /** Recent quakes (newest first), optionally filtered by magnitude/bbox. */
+    /** Recent quakes (newest first), optionally filtered by magnitude/bbox/age. */
     async list(opts: {
       minMag?: number;
       bbox?: [number, number, number, number];
       limit?: number;
+      /**
+       * Epoch-ms floor on event `time` — drop anything older. The collection
+       * retains ~a month (see the TTL on quake-model), which is right for
+       * history and wrong for the live picture, so every "what's happening
+       * now" caller passes `quakeLiveWindowSince()` (see shared/seismic).
+       * Omitted = the whole retained window, for archive/context reads.
+       */
+      sinceMs?: number;
     } = {}): Promise<iQuakeModel[]> {
       const q: Record<string, unknown> = {};
       if (typeof opts.minMag === "number") q.mag = { $gte: opts.minMag };
+      if (typeof opts.sinceMs === "number") q.time = { $gte: new Date(opts.sinceMs) };
       if (opts.bbox) {
         const [w, s, e, n] = opts.bbox;
         q.loc = {

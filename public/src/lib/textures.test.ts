@@ -1,5 +1,5 @@
 import * as WL from "weatherlayers-gl";
-import { TEXTURE_LOAD_TIMEOUT_MS, clearTextureCache, isTextureCached, loadTexture, textureSizeLine } from "./textures";
+import { TEXTURE_LOAD_TIMEOUT_MS, clearTextureCache, isTextureCached, loadTexture, cacheMaxFrom, textureSizeLine } from "./textures";
 
 type Loader = typeof WL.loadTextureData;
 const original: Loader = WL.loadTextureData;
@@ -64,5 +64,17 @@ describe("textureSizeLine", () => {
 
   it("survives a texture with nothing on it", () => {
     expect(textureSizeLine("a/b.png", undefined as never)).toBe("[globe] texture b.png 0\u00d70 0.0 MB");
+  });
+});
+
+describe("cacheMaxFrom", () => {
+  it("takes a sane override and ignores nonsense", () => {
+    expect(cacheMaxFrom("512")).toBe(512);
+    expect(cacheMaxFrom("512.7")).toBe(512);
+    expect(cacheMaxFrom(undefined)).toBe(256);
+    expect(cacheMaxFrom("")).toBe(256);
+    expect(cacheMaxFrom("lots")).toBe(256);
+    expect(cacheMaxFrom("0")).toBe(256);
+    expect(cacheMaxFrom("-5")).toBe(256);
   });
 });

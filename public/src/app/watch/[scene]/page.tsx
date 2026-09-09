@@ -13,7 +13,7 @@ import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import { WEATHER_RUN, CITIES_UPDATED, mergeControlState } from "@photonsurge/shared/control";
 import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../../lib/socket-provider";
-import { fetchManifest } from "../../../lib/manifest";
+import { MANIFEST_POLL_MS, fetchManifest } from "../../../lib/manifest";
 import { useStableJson } from "../../../lib/use-stable";
 
 /** Stable "no up-next" so an idle director doesn't mint a fresh [] per beat. */
@@ -119,7 +119,11 @@ function SceneWatchPageInner() {
     const onCities = () => listCities().then((c) => (c.length ? setCities(c) : undefined));
     socket.on(WEATHER_RUN, onRun);
     socket.on(CITIES_UPDATED, onCities);
+    // Backstop: a missed WEATHER_RUN would otherwise strand the page on the
+    // maps it started with for the rest of the broadcast.
+    const manifestPoll = setInterval(onRun, MANIFEST_POLL_MS);
     return () => {
+      clearInterval(manifestPoll);
       socket.off(WEATHER_RUN, onRun);
       socket.off(CITIES_UPDATED, onCities);
     };

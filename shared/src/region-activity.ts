@@ -13,6 +13,7 @@
 import type { AppDb } from "./db/index";
 import { memberCountryCodes } from "./region-membership";
 import { countryBboxContaining } from "./countries";
+import { quakeLiveWindowSince } from "./seismic";
 
 export interface RegionAlertItem {
   id: string;
@@ -60,7 +61,9 @@ export async function regionActivity(
 
   const [alerts, quakes, volcanoes] = await Promise.all([
     db.alerts.list({ activeOnly: true, bbox: region.bbox }),
-    db.quakes.list({ bbox: region.bbox }),
+    // Live window only (shared/seismic) — this panel answers "what is
+    // happening in this area now", and the collection retains ~a month.
+    db.quakes.list({ bbox: region.bbox, sinceMs: quakeLiveWindowSince() }),
     db.volcanoes.list({ bbox: region.bbox }),
   ]);
 

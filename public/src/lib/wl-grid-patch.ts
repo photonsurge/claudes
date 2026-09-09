@@ -25,6 +25,7 @@
  */
 import { GridLayer } from "weatherlayers-gl";
 import { globeGridPositions, type GlobeViewportLike, type LngLat } from "./wl-grid-positions";
+import { godsLog } from "./globe-log";
 
 export type PatchResult = "patched" | "already" | "skipped";
 
@@ -187,9 +188,45 @@ export function patchGridLayer(ctor: { prototype: object }): PatchResult {
   return "patched";
 }
 
+/**
+ * A/B switch for this patch, off the page URL: `?nogrid=1` on /watch leaves
+ * WeatherLayers' own uncached grid in place.
+ *
+ * It exists because the operator reports barbs showing calm circles and single
+ * half-barbs in places the field should be strong (a damaging-wind warning,
+ * 2026-09-10) and the sampled values, not the glyph choice, are what look wrong
+ * — the atlas units were checked and are correct. This cache is the one thing
+ * standing between WeatherLayers' sampling and what gets drawn, so it is the
+ * first thing to rule in or out. Flipping it needs no rebuild: change the OBS
+ * browser source URL, reload, look. If the circles survive `?nogrid=1`, the
+ * cause is upstream of us (WeatherLayers' sampling or the baked texture) and
+ * this patch is exonerated.
+ */
+export function gridPatchDisabled(search: string | undefined, env?: string): boolean {
+  // Env first: the OBS browser sources on the encoder host are created from the
+  // stream config, not by hand, so the operator has no UI in which to edit a
+  // URL — but the deploy syncs `.env.deploy`, which makes an env var the lever
+  // they actually have. `NEXT_PUBLIC_WL_GRID_PATCH=off` disables the cache for
+  // every source at once; set it back to anything else (or drop it) to restore.
+  const e = env?.trim().toLowerCase();
+  if (e === "off" || e === "0" || e === "false" || e === "no") return true;
+  if (!search) return false;
+  const v = new URLSearchParams(search).get("nogrid");
+  return v !== null && v !== "0" && v !== "false";
+}
+
 /** Install on WeatherLayers' GridLayer. Logs when the shape is unknown. */
 export function installGridPatch(): PatchResult {
+  const search = typeof location !== "undefined" ? location.search : undefined;
+  if (gridPatchDisabled(search, process.env.NEXT_PUBLIC_WL_GRID_PATCH)) {
+    godsLog("[globe] WeatherLayers grid caches DISABLED (NEXT_PUBLIC_WL_GRID_PATCH / ?nogrid) — uncached sampling (A/B)");
+    return "skipped";
+  }
   const installed = patchGridLayer(GridLayer as unknown as { prototype: object });
-  if (installed === "skipped") console.info("[globe] WeatherLayers GridLayer shape changed — grid caches not applied");
+  godsLog(
+    installed === "skipped"
+      ? "[globe] WeatherLayers GridLayer shape changed — grid caches not applied"
+      : "[globe] WeatherLayers grid caches active",
+  );
   return installed;
 }

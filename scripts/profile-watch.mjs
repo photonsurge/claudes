@@ -849,6 +849,39 @@ async function domCensus(cdp, seconds) {
 
 
 // ── deck.gl draw census (how many models are drawn per frame?) ──────────────
+/**
+ * The page's `[globe] …` lines (which patches went live, what size each texture
+ * decoded to). CDP can only subscribe to FUTURE console messages, and this
+ * profiler attaches to a browser source that has been up for hours — so the
+ * page keeps them in a ring buffer on `window.__godsLog` (lib/globe-log.ts) and
+ * we read that instead. An older build simply has no ring.
+ */
+async function globeLog(cdp) {
+  const log = await evaluate(cdp, "Array.isArray(window.__godsLog) ? window.__godsLog : null");
+  if (!log) return "## globe log: window.__godsLog not present (older build?)";
+  if (!log.length) return "## globe log: empty";
+  const lines = [];
+  const p = (s = "") => lines.push(s);
+  p(`## globe log (${log.length} line${log.length === 1 ? "" : "s"} since page load)`);
+  // Textures are the bulky repeat: show the distinct sizes, biggest first, and
+  // every non-texture line verbatim (patches, warnings).
+  const tex = new Map();
+  for (const line of log) {
+    const m = /texture (\S+) (\d+)×(\d+) ([\d.]+) MB$/.exec(line);
+    if (m) {
+      const mb = parseFloat(m[4]);
+      tex.set(`${m[2]}×${m[3]}`, { mb, n: (tex.get(`${m[2]}×${m[3]}`)?.n ?? 0) + 1, eg: m[1] });
+    } else p(`  ${line}`);
+  }
+  if (tex.size) {
+    p(`  textures decoded, by grid (biggest first):`);
+    for (const [grid, { mb, n, eg }] of [...tex].sort((a, b) => b[1].mb - a[1].mb)) {
+      p(`    ${grid.padEnd(12)} ${mb.toFixed(1).padStart(6)} MB  ×${n}  e.g. ${eg}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 async function deckCensus(cdp) {
   const r = await evaluate(
     cdp,
@@ -1027,6 +1060,8 @@ async function deckCensus(cdp) {
   } catch {}
   if (DECK) {
     try {
+      p();
+      p(await globeLog(cdp));
       p();
       p(await deckCensus(cdp));
     } catch (e) {

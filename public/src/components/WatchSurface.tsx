@@ -16,7 +16,7 @@ import type { Segment, SegmentKind, DirectorState } from "@photonsurge/shared/di
 import { useTracks } from "../lib/tracks/useTracks";
 import { useAlertFeatures } from "../lib/alerts-overlay";
 import { useAlertHazardStep, ALERT_CYCLE_MS } from "../lib/alert-cycle";
-import { useQuakes } from "../lib/seismic-overlay";
+import { useBroadcastQuakes } from "../lib/seismic-overlay";
 import {
   FocusProvider,
   useSeismoStations,
@@ -156,7 +156,10 @@ function WatchSurfaceBody({
     cut: onAirSegment,
     dwellMs: alertCycleSeconds ? alertCycleSeconds * 1000 : ALERT_CYCLE_MS,
   });
-  const quakes = useQuakes(state.showSeismic && ready, state.seismicMinMag);
+  // Live 48h feed UNION the on-air event's own quakes — the window keeps the
+  // globe readable, the union keeps the shot we're presenting on screen even
+  // when it has aged out. See mergeOnAirQuakes.
+  const quakes = useBroadcastQuakes(state.showSeismic && ready, state.seismicMinMag);
   // Same focus point SeismicMonitor uses for the fake-vs-real trace decision:
   // the on-air segment's location if there is one, else the current camera.
   const seismoFocus: [number, number] | null = onAirSegment?.camera.center ?? state.camera.center ?? null;

@@ -83,12 +83,7 @@ export default function LiveAlertPanel({
     <section aria-label="New weather alert" style={{
       position: "relative", zIndex: 1, isolation: "isolate",
       width: compact ? 280 : 400, maxWidth: "100%", boxSizing: "border-box",
-      // Height follows the content. No cap is needed: every text block below is
-      // line-clamped, so the card tops out around the old fixed 214 — and a
-      // cap would clip the footer off the tallest cards instead.
-      // The floor only catches the sparsest card (no area line); a card with a
-      // title and an area already measures past it, so nothing is padded out.
-      minHeight: compact ? 132 : 124, flexShrink: 0,
+      flexShrink: 0,
       padding: compact ? "12px 16px" : "14px 24px",
       backgroundColor: "#081420", backgroundImage: GODS_FILL,
       border: `1px solid ${color}66`, borderTop: `3px solid ${color}`,
@@ -120,7 +115,7 @@ export default function LiveAlertPanel({
           </div>
         </div>
       )}
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: "auto", paddingTop: 6, flexShrink: 0, fontFamily: MONO, fontSize: 10, color: INK_DIM }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, paddingTop: 6, flexShrink: 0, fontFamily: MONO, fontSize: 10, color: INK_DIM }}>
         <span>{timing || "Latest warning"}</span>
         {list.length > 1 && <span>Alert {pos + 1} of {list.length}</span>}
       </div>

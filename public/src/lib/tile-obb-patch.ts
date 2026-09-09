@@ -31,6 +31,7 @@
  * those keeps its own method.
  */
 import { _Tileset2D as Tileset2D } from "@deck.gl/geo-layers";
+import { godsLog } from "./globe-log";
 
 export type PatchResult = "patched" | "already" | "skipped";
 
@@ -229,7 +230,7 @@ export function patchTileset(ctor: { prototype?: object } | undefined | null): P
         // zoom ≥ TILE_MIN_ZOOM), so on a tile-less scene NEITHER line appears —
         // which is what made round 31 unverifiable from a profile alone. This is
         // the line to look for in the CEF console when checking it.
-        console.info(
+        godsLog(
           result === "skipped"
             ? "[globe] deck OSMNode.getBoundingVolume shape changed — tile bounding-volume cache not applied"
             : "[globe] deck tile bounding-volume cache active",

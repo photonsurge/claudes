@@ -27,9 +27,11 @@ import { installTileObbPatch } from "../lib/tile-obb-patch";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { isTextureCached, loadTexture, preloadTextures, type LoadedTexture } from "../lib/textures";
+import { godsLog } from "../lib/globe-log";
+import { manifestLogLine } from "../lib/manifest";
 import { isObsRender, setRendererInfo } from "../lib/broadcast-render";
 import { useCrossfadeVariable } from "../lib/crossfade";
-import { pressureProps, textureUrlFor } from "./layers/props";
+import { allTextureUrlsFor, pressureProps, textureUrlFor } from "./layers/props";
 import { useHighLowLabels } from "./layers/high-low-labels";
 import { basemapLayers, countriesLayer, hexToRgb, TILE_MIN_ZOOM } from "./layers/basemap";
 import {
@@ -914,15 +916,20 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   }, [manifest, state.fhr, state.activeVariable, state.showWind, state.showPressure, state.showElevation, state.basemap, nestKey]);
 
   // ── Keep EVERY weather map decoded in RAM (instant director cuts) ──────────
-  // Warm the texture cache for all variables' global base maps at the active
-  // fhr, not just the one on screen. A director cut — or a within-shot field
-  // cycle — then switches instantly: the decoded TextureData is already in
-  // memory, so there's no mid-broadcast network fetch (the "control feels slow
-  // when directed" lag). The module cache holds the decoded texture, so this is
-  // literally all the maps kept in RAM. Aurora/sat-imagery use their own loaders.
+  // Warm the texture cache for every variable at the active fhr — global base
+  // maps AND their regional nests — not just the one on screen. A director cut,
+  // a within-shot field cycle, or a fly-in to a region with a high-res nest then
+  // switches instantly: the decoded TextureData is already in memory, so there's
+  // no mid-broadcast fetch + decode (the "control feels slow when directed" lag,
+  // and the fetch/decode the CPU-bound OBS box can least afford mid-cut).
+  // Aurora/sat-imagery use their own loaders.
   useEffect(() => {
     if (!manifest) return;
-    preloadTextures(Object.keys(manifest.variables).map((id) => textureUrlFor(manifest, id, state.fhr)));
+    // Name the weather that is actually on air (model, run, how old, which
+    // hour). A screenshot of a wrong-looking field can't tell "sampled wrong"
+    // from "faithfully drawing a run that is two days old"; this can.
+    godsLog(manifestLogLine(manifest, state.fhr));
+    preloadTextures(allTextureUrlsFor(manifest, state.fhr));
   }, [manifest, state.fhr]);
 
   // ── Rebuild layers — four independent groups ──────────────────────────────

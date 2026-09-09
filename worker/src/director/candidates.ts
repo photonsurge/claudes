@@ -42,6 +42,7 @@ import { alertCountryCode } from "@photonsurge/shared/alerts/country";
 import { classifyHazard } from "@photonsurge/shared/alerts/hazard";
 import { hazardMapPlan } from "@photonsurge/shared/alerts/hazard-director";
 import { quakeSegmentContent, alertSegmentContent, volcanoSegmentContent, volcanoTrackInfo } from "@photonsurge/shared/segments";
+import { quakeLiveWindowSince } from "@photonsurge/shared/seismic";
 import { discLookFeeds, type SatImgFeedState } from "@photonsurge/shared/satimg/types";
 import { mmsiCountry, countryNameFlag } from "@photonsurge/shared/tracks/flags";
 import type { SummaryPeriod, iEventSummaryModel } from "@photonsurge/shared/db/event-summary-model";
@@ -588,7 +589,14 @@ export async function buildCandidates(
   // --- Earthquakes: magnitude is the headline; recent + big ranks highest. ---
   if (cfg.kinds.quake) {
     try {
-      const quakes = await db.quakes.list({ minMag: cfg.minQuakeMag, limit: 40 });
+      // Same window the globe overlay draws (shared/seismic). A quake the
+      // overlay has aged out must not stay cuttable, or the show pans to an
+      // empty patch of ocean and talks about a ring that isn't there.
+      const quakes = await db.quakes.list({
+        minMag: cfg.minQuakeMag,
+        limit: 40,
+        sinceMs: quakeLiveWindowSince(now),
+      });
       for (const q of quakes) {
         const c = quakeSegmentContent({
           mag: q.mag,

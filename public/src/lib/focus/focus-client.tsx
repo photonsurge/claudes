@@ -21,6 +21,7 @@ import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 import { hasRealLocation } from "../../components/broadcast/kinds";
 import { buildFocusKey } from "./focusKey";
 import type { FocusBundle, FocusDetail, FocusNearbyCity, FocusRegionCountry, FocusRequest, FocusTarget } from "./types";
+import type { Quake } from "../tracks/types";
 import type { AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
 import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
 import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model";
@@ -523,6 +524,21 @@ export function useNearbyCities(center: Center | null): FocusNearbyCity[] {
 export function useFocusTarget(): FocusTarget {
   const { bundle, covers } = useFocusContext();
   return covers() ? bundle!.target : null;
+}
+
+/** Stable empty list so a bundle-less render doesn't churn memo dependencies. */
+const NO_QUAKES: Quake[] = [];
+
+/**
+ * The quakes around the on-air shot, straight off the bundle. Deliberately NOT
+ * age-windowed (unlike the global overlay feed): the bundle is scoped by the
+ * cut's bbox, so an older headline event keeps its epicentre and its local
+ * aftershock swarm on screen while the rest of the globe stays inside the live
+ * 48h window. See QUAKE_LIVE_WINDOW_HOURS and mergeOnAirQuakes.
+ */
+export function useFocusAreaQuakes(): Quake[] {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.areaQuakes : NO_QUAKES;
 }
 
 /** The on-air storm's change timeline (empty off a storm cut or before a bundle). */

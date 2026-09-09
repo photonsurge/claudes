@@ -30,6 +30,7 @@
 // never load during SSR — so we import it lazily, only in the browser.
 import type { TextureData } from "weatherlayers-gl";
 import { createTextureDecoder } from "./texture-decode-client";
+import { godsLog } from "./globe-log";
 
 export type LoadedTexture = TextureData;
 
@@ -41,7 +42,28 @@ const cache = new Map<string, Promise<LoadedTexture>>();
  * cache-warm and never evict what's on screen — but bounded so a day-long
  * broadcast can't accumulate every run's frames.
  */
-const TEXTURE_CACHE_MAX = 96;
+const DEFAULT_TEXTURE_CACHE_MAX = 256;
+
+/**
+ * Parse the `NEXT_PUBLIC_TEXTURE_CACHE_MAX` override (Next inlines it at build
+ * time). Exported for the test; a missing or nonsense value keeps the default.
+ */
+export function cacheMaxFrom(raw: string | undefined): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : DEFAULT_TEXTURE_CACHE_MAX;
+}
+
+/**
+ * Raised from 96 (2026-09-10): the OBS box has 32 GB of RAM and is short of CPU
+ * and disk — 3–4 browser sources max the CPU out — so a re-fetch and re-decode
+ * of a texture we already had is the expensive kind of miss, and holding it is
+ * the cheap kind of cost. The warm set is now every variable's base map AND
+ * every regional nest at the active hour (`allTextureUrlsFor`), which alone can
+ * approach the old cap and would have thrashed against it. A decoded global
+ * 0.25° frame is ~4 MB, so 256 is ~1 GB worst case per source, ~4 GB across
+ * four. Tune with `NEXT_PUBLIC_TEXTURE_CACHE_MAX` without a code change.
+ */
+const TEXTURE_CACHE_MAX = cacheMaxFrom(process.env.NEXT_PUBLIC_TEXTURE_CACHE_MAX);
 
 /** Mark `url` most-recently-used (Map iterates in insertion order, so delete +
  *  re-set moves it to the newest slot). Keeps the on-screen/hot set unevictable. */
@@ -116,7 +138,7 @@ export function textureSizeLine(url: string, t: LoadedTexture): string {
 const logTextureSize =
   (url: string) =>
   (t: LoadedTexture): LoadedTexture => {
-    console.info(textureSizeLine(url, t));
+    godsLog(textureSizeLine(url, t));
     return t;
   };
 

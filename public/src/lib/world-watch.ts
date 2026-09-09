@@ -51,7 +51,8 @@ const VOLCANO_FALLBACK_MS = 10 * 60 * 1000;
  * screen no matter what the map is currently showing. We refetch on the same
  * socket beats the overlays use (ALERTS_UPDATED / TRACKS_UPDATED:seismic|volcanoes);
  * the interval is a fallback if the socket is down. The tally fetches every
- * active alert and every cached quake (no severity/magnitude floor) so the full
+ * active alert and every quake in the live 48h window (no severity/magnitude
+ * floor — the window is the route's, see QUAKE_LIVE_WINDOW_HOURS) so the full
  * picture — down to Minor alerts and M2.5+ quakes — shows in the stat tiles and
  * continent bars; only the scrolling ACTIVE FEED narrows back down to
  * broadcast-worthy events (see MIN_ALERT_SEVERITY / MIN_QUAKE_MAG). Volcanoes are

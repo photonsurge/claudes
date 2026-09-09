@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listQuakes } from "./tracks/client";
 import type { Quake } from "./tracks/types";
 import { useSocket } from "./socket-provider";
 import { TRACKS_UPDATED } from "@photonsurge/shared/control";
+import { useFocusAreaQuakes, useFocusTarget } from "./focus/focus-client";
+import type { FocusTarget } from "./focus/types";
 
 /**
  * Poll worker-cached USGS earthquakes for the globe overlay. Quakes are
@@ -55,4 +57,54 @@ export function useQuakes(enabled: boolean, minMag: number): Quake[] {
   }, [enabled, minMag, liveTick]);
 
   return quakes;
+}
+
+/**
+ * Union the global live feed with the on-air event's own quakes.
+ *
+ * The feed is clipped to the live window (QUAKE_LIVE_WINDOW_HOURS, applied
+ * server-side) so a month of retained upserts stops smearing the plate
+ * boundaries into a solid band. That clip must not reach the shot the show is
+ * actually presenting, so the focus bundle's un-windowed `target` + `areaQuakes`
+ * are merged back in: a week-old M7 keeps its epicentre AND its local aftershock
+ * swarm while everywhere else stays clean.
+ *
+ * The operator's magnitude floor still governs the swarm — a floor set to keep
+ * the globe quiet shouldn't be undone by proximity to the cut. The TARGET is the
+ * one thing exempt from both window and floor: if the broadcast is talking about
+ * it, it is on screen.
+ */
+export function mergeOnAirQuakes(
+  live: Quake[],
+  target: FocusTarget,
+  areaQuakes: Quake[],
+  minMag: number,
+): Quake[] {
+  const targetQuake = target?.kind === "quake" ? target.quake : null;
+  const extras = areaQuakes.filter((q) => q.mag >= minMag);
+  if (!targetQuake && !extras.length) return live;
+
+  const seen = new Set(live.map((q) => q.id));
+  const out = live.slice();
+  for (const q of extras) {
+    if (seen.has(q.id)) continue;
+    seen.add(q.id);
+    out.push(q);
+  }
+  if (targetQuake && !seen.has(targetQuake.id)) out.push(targetQuake);
+  return out;
+}
+
+/**
+ * `useQuakes` plus the on-air exception — what every broadcast surface should
+ * render. Split from the fetch hook so the merge stays pure and testable.
+ */
+export function useBroadcastQuakes(enabled: boolean, minMag: number): Quake[] {
+  const live = useQuakes(enabled, minMag);
+  const target = useFocusTarget();
+  const areaQuakes = useFocusAreaQuakes();
+  return useMemo(
+    () => (enabled ? mergeOnAirQuakes(live, target, areaQuakes, minMag) : live),
+    [enabled, live, target, areaQuakes, minMag],
+  );
 }

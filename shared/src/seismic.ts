@@ -152,3 +152,36 @@ export const QUAKE_CLASS_COLORS: Record<QuakeMagnitudeClass, string> = {
 export function quakeMagnitudeColor(mag: number): string {
   return QUAKE_CLASS_COLORS[quakeMagnitudeClass(mag)];
 }
+
+// ---------------------------------------------------------------------------
+// Display window
+// ---------------------------------------------------------------------------
+
+/**
+ * How far back the LIVE seismic picture reaches, in hours.
+ *
+ * Quakes are retained for ~a month (the TTL on `quake-model`), which is right
+ * for history and context but wrong for air: a month of global M2.5+ upserts
+ * smears the plate boundaries into a solid band of rings and the globe stops
+ * reading as "what is happening now". Everything that answers "right now" —
+ * the globe overlay, the World Watch seismic tally, region activity and the
+ * director's candidate pool — clips to this window instead.
+ *
+ * The director shares the number deliberately. A quake the overlay does not
+ * draw must not be cuttable, or the show pans to an empty patch of ocean.
+ *
+ * The on-air event is the ONE exception, and it needs no window of its own:
+ * the focus bundle loads the cut's subject quake (and the quakes around it) by
+ * id/bbox with no age filter, so a shot keeps its epicentre and its local
+ * aftershock swarm however old they are, while the rest of the globe stays
+ * clean. See getFocusBundle (`target` / `areaQuakes`) and WatchSurface.
+ */
+export const QUAKE_LIVE_WINDOW_HOURS = 48;
+
+/** `QUAKE_LIVE_WINDOW_HOURS` in ms — the usual form at a call site. */
+export const QUAKE_LIVE_WINDOW_MS = QUAKE_LIVE_WINDOW_HOURS * 60 * 60 * 1000;
+
+/** Epoch-ms floor for the live window, i.e. "quakes at or after this instant". */
+export function quakeLiveWindowSince(now: number = Date.now()): number {
+  return now - QUAKE_LIVE_WINDOW_MS;
+}

@@ -46,6 +46,34 @@ export function textureUrlFor(
   return v.files[String(fhr)];
 }
 
+/**
+ * EVERY texture URL the manifest can serve at `fhr` — each variable's global
+ * base map AND each of its regional nests.
+ *
+ * The preload path warms this whole set at load. Base maps were already kept
+ * decoded in RAM (instant director cuts), but the NESTS were not, so flying
+ * into a region that has a high-res nest paid a fetch + decode at the cut —
+ * exactly the disk and CPU the OBS box is short of, at exactly the moment it
+ * can least afford them. RAM is the plentiful resource there (32 GB, and a
+ * decoded global frame is ~4 MB), so we trade it.
+ *
+ * A variable with no file at this hour (elevation and the other statics are
+ * baked once, at hour 0) falls back to its hour-0 texture rather than being
+ * skipped.
+ */
+export function allTextureUrlsFor(manifest: WeatherManifest, fhr: number): string[] {
+  const urls = new Set<string>();
+  const add = (v: { files?: Record<string, string> } | undefined) => {
+    const url = v?.files?.[String(fhr)] ?? v?.files?.["0"];
+    if (url) urls.add(url);
+  };
+  for (const v of Object.values(manifest.variables ?? {})) {
+    add(v);
+    for (const nest of v?.nests ?? []) add(nest);
+  }
+  return [...urls];
+}
+
 export interface VectorParticleProps {
   id: string;
   image: string;
@@ -163,7 +191,15 @@ export interface WindBarbProps {
   bounds: Bounds;
   /**
    * WeatherLayers GridStyle.WIND_BARB: glyph picked from the built-in barb
-   * atlas by decoded speed (its iconBounds span 0–100 kt), rotated to direction.
+   * atlas by decoded speed, rotated to direction.
+   *
+   * UNITS — checked in the bundle, because the wording here used to say "0–100
+   * kt" and that reads like an instruction to convert: the atlas declares
+   * `iconBounds: [0, 51.444]`, and 51.444 m/s IS 100 kt. So it wants **metres
+   * per second**, which is what the GFS u/v textures already decode to. Do NOT
+   * scale these values into knots — that was tried on 2026-09-10 while chasing
+   * calm-looking barbs under a damaging-wind warning, and it would have made
+   * every barb 1.94× too strong.
    */
   style: "WIND_BARB";
   iconSize: number;

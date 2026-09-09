@@ -167,8 +167,9 @@ const TOP_EVENTS = 12;
 
 /**
  * Read active events for `period` and reduce them to `{stats, hotspots,
- * topEvents}`. Alerts are the whole active set (global); quakes are the recent
- * feed clipped by magnitude; notable tracks are counted only (low priority).
+ * topEvents}`. Alerts are the whole active set (global); quakes are the feed
+ * clipped by magnitude AND to `period`'s window; notable tracks are counted
+ * only (low priority).
  */
 export async function aggregate(
   db: AppDb,
@@ -179,7 +180,11 @@ export async function aggregate(
   const windowStart = new Date(now.getTime() - WINDOW_HOURS[period] * 3_600_000);
 
   const alerts = await db.alerts.list({ activeOnly: true });
-  const quakes = await db.quakes.list({ minMag: 2.5 });
+  // Clip to the period's own window. This used to read the whole retained
+  // collection (~a month) while still PUBLISHING `windowStart` below, so a
+  // round-up labelled "24h quakes by magnitude & continent" was really
+  // counting every quake since the TTL last swept.
+  const quakes = await db.quakes.list({ minMag: 2.5, sinceMs: windowStart.getTime() });
   const ships = await db.trackSnapshots.latest({ kind: "ship" }).catch(() => ({ at: null, rows: [] }));
   // Dormant volcanoes carry no headline — excluded from stats/hotspots/topEvents
   // entirely (they still render on the map overlay, which reads the cache directly).

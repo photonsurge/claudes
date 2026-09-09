@@ -79,10 +79,21 @@ describe("clusterHotspots", () => {
 describe("aggregate", () => {
   const now = new Date("2026-07-01T12:00:00.000Z");
 
+  /** Captures the opts each `quakes.list` call was made with. */
+  let quakeListOpts: any[] = [];
+  beforeEach(() => {
+    quakeListOpts = [];
+  });
+
   const stubDb = (over: Partial<Record<"alerts" | "quakes" | "trackSnapshots" | "volcanoes", any>> = {}) =>
     ({
       alerts: { list: async () => over.alerts ?? [] },
-      quakes: { list: async () => over.quakes ?? [] },
+      quakes: {
+        list: async (opts: any = {}) => {
+          quakeListOpts.push(opts);
+          return over.quakes ?? [];
+        },
+      },
       trackSnapshots: { latest: async () => over.trackSnapshots ?? { at: null, rows: [] } },
       volcanoes: { list: async () => over.volcanoes ?? [] },
     }) as any;
@@ -113,6 +124,18 @@ describe("aggregate", () => {
     expect(res.stats.alertsBySeverity["2"]).toBe(1);
     expect(res.stats.alertsBySource).toEqual({ gdacs: 1, wmo: 1 });
     expect(res.sources).toContain("gdacs");
+  });
+
+  it.each([
+    ["hourly", 1],
+    ["12h", 12],
+    ["daily", 24],
+  ] as const)("clips quakes to the %s window rather than the whole retained month", async (period, hours) => {
+    // The round-up publishes `windowStart` and labels its slide "24h quakes".
+    // It used to read the entire collection (~a month of TTL'd upserts) while
+    // still printing that label, so the tally was silently wrong.
+    await aggregate(stubDb(), period, now);
+    expect(quakeListOpts[0].sinceMs).toBe(now.getTime() - hours * 3_600_000);
   });
 
   it("ranks top events by severity across kinds and tracks quake max magnitude", async () => {

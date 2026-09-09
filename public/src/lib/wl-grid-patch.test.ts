@@ -1,4 +1,4 @@
-import { cachedUpdateFeatures, installGridPatch, patchGridComposite, patchGridLayer, type GridComposite, type GridFeature } from "./wl-grid-patch";
+import { cachedUpdateFeatures, installGridPatch, patchGridComposite, patchGridLayer, type GridComposite, type GridFeature, gridPatchDisabled } from "./wl-grid-patch";
 import { globeGridPositions, icosphereOrder, icospherePoints, type LngLat } from "./wl-grid-positions";
 
 type Img = { id: string; valueAt: (p: LngLat) => number };
@@ -162,5 +162,33 @@ describe("WeatherLayers GridLayer patch", () => {
     expect(installGridPatch()).toBe("skipped");
     expect(info).toHaveBeenCalledTimes(1);
     info.mockRestore();
+  });
+});
+
+describe("gridPatchDisabled", () => {
+  it("is off unless the URL asks for it", () => {
+    for (const s of [undefined, "", "?token=abc", "?nogrid=0", "?nogrid=false"]) {
+      expect(gridPatchDisabled(s)).toBe(false);
+    }
+  });
+
+  it("is on for ?nogrid, with or without a value", () => {
+    for (const s of ["?nogrid=1", "?nogrid", "?nogrid=yes", "?token=abc&nogrid=1"]) {
+      expect(gridPatchDisabled(s)).toBe(true);
+    }
+  });
+
+  it("takes the env lever, which is what the operator can actually set", () => {
+    // OBS browser sources are built from the stream config, so there is no URL
+    // to edit by hand — but the deploy syncs .env.deploy.
+    for (const e of ["off", "OFF", " off ", "0", "false", "no"]) {
+      expect(gridPatchDisabled(undefined, e)).toBe(true);
+    }
+    for (const e of [undefined, "", "on", "1", "true"]) {
+      expect(gridPatchDisabled(undefined, e)).toBe(false);
+    }
+    // Env off wins even on a plain URL; env on doesn't override an explicit URL.
+    expect(gridPatchDisabled("?token=abc", "off")).toBe(true);
+    expect(gridPatchDisabled("?nogrid=1", "on")).toBe(true);
   });
 });

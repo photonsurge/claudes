@@ -1,5 +1,6 @@
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import {
+  allTextureUrlsFor,
   textureUrlFor,
   manifestBounds,
   windParticleProps,
@@ -248,5 +249,39 @@ describe("reference stability across layer rebuilds", () => {
   it("hexToRgba returns the SAME tuple for the same hex", () => {
     expect(hexToRgba("#ff0000")).toBe(hexToRgba("#ff0000"));
     expect(hexToRgba("#ff0000")).toEqual([255, 0, 0, 255]);
+  });
+});
+
+describe("allTextureUrlsFor", () => {
+  const manifest = {
+    variables: {
+      wind: {
+        files: { "0": "/tex/wind0.png", "3": "/tex/wind3.png" },
+        nests: [
+          { files: { "0": "/tex/wind0-icond2.png", "3": "/tex/wind3-icond2.png" } },
+          { files: { "0": "/tex/wind0-hrrr.png" } },
+        ],
+      },
+      temp: { files: { "0": "/tex/temp0.png", "3": "/tex/temp3.png" } },
+      elevation: { files: { "0": "/tex/elev.png" } },
+    },
+  } as never;
+
+  it("collects every base map AND every nest at the hour", () => {
+    expect(allTextureUrlsFor(manifest, 0).sort()).toEqual(
+      ["/tex/elev.png", "/tex/temp0.png", "/tex/wind0-hrrr.png", "/tex/wind0-icond2.png", "/tex/wind0.png"].sort(),
+    );
+  });
+
+  it("falls back to hour 0 for statics baked once, and dedupes", () => {
+    // At hour 3: wind + its icond2 nest have their own; the hrrr nest and
+    // elevation only exist at hour 0 and must still be warmed, not skipped.
+    expect(allTextureUrlsFor(manifest, 3).sort()).toEqual(
+      ["/tex/elev.png", "/tex/temp3.png", "/tex/wind0-hrrr.png", "/tex/wind3-icond2.png", "/tex/wind3.png"].sort(),
+    );
+  });
+
+  it("is empty for a manifest with no variables", () => {
+    expect(allTextureUrlsFor({} as never, 0)).toEqual([]);
   });
 });

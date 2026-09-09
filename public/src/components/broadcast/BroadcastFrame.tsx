@@ -1018,11 +1018,10 @@ export default function BroadcastFrame({
           top={chromeTop - 20}
           right={INSET - 26}
           maxHeight={STAGE_H - chromeBottom - (chromeTop - 20) - 12}
-        >
-          {/* Fresh warnings lead the column so the world report cannot push them off-screen. */}
-          {!off.has("liveAlerts") && (
+          header={!off.has("liveAlerts") ? (
             <LiveAlertPanel alerts={alerts} cities={cities} theme={theme} />
-          )}
+          ) : null}
+        >
           {!off.has("worldReport") && (
             <WorldReportDeck
               worldWatch={worldWatch}

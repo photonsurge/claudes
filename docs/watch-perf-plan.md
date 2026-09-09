@@ -1479,6 +1479,170 @@ for it is also uncommitted, so it is still in the running build.
 `e.s.r` (`geo.ts` `nearby`) at 379.4 ms, both in line with rounds 30–32 — the
 round-29 scan cache is still holding.
 
+### Round 34 (2026-09-09) — first runs on the deployed build; the stress test moves the cut cost to React
+
+The deploy landed (every script hash in the report changed), so these three
+runs DO carry rounds 31–32 and the parallel session's `FittedColumn` fix. The
+third was the operator deliberately stressing it, hard-cutting **global →
+alerts only**, repeatedly.
+
+| run                       | busy   | fps  | max gap    | stalls         | scene                                   |
+|---------------------------|--------|------|------------|----------------|-----------------------------------------|
+| 22:48 temp                | 38.6 % | 29.6 | 267 ms     | 9 / 1 879 ms   | temp raster + icon atlas + contours + wind |
+| 22:50 humidity            | 35.3 % | 29.7 | **167 ms** | 7 / 1 240 ms   | humidity ×2 + contours + wind + 4 alert layers |
+| **22:5x stress (cuts)**   | 38.8 % | 27.7 | **1 333 ms** | **15 / 6 242 ms** | repeated global → alerts-only cuts    |
+
+The 22:50 run has the lowest maximum frame gap ever recorded here, 167 ms.
+Steady state is in good shape. **The cut is not.**
+
+**Under repeated cuts the cost is no longer deck — it is React tearing down and
+rebuilding DOM.** The stress run's top self-time entries after `(program)`:
+
+| frame                                   | self      | share |
+|-----------------------------------------|-----------|-------|
+| `i7 @ 0yz5czvwbmzx8.js:1:116427` (React)| 2 078 ms  | 8.6 % |
+| `removeChild`                           | 1 638 ms  | 6.8 % |
+| `tE` (React set style)                  | 414 ms    | 1.7 % |
+| `tS` (React set text) + `set nodeValue` | 687 ms    | 2.8 % |
+
+That is ~4.8 s of the minute in React DOM mutation, and React
+(`0yz5czvwbmzx8.js`) is the second-heaviest script in the run at 14.1 % self,
+ahead of every deck and luma bundle. deck's share FALLS in the same run —
+`setLayers` 5.3 % inclusive against 10.6 % on the humidity run, `_drawLayers`
+21.8 % against 30.1 %. The first stall, 328 ms at 0.5 s, is 44.5 % `i7` plus
+32.3 % `removeChild` under a single 283 ms React task.
+
+So a mode change is now dominated by unmounting one chrome and mounting
+another, not by rebuilding the globe's layers. `removeChild` at 1.6 s of a
+minute is a whole-subtree teardown repeated per cut — the left-column deck
+(`modeSlides` → `SlideDeck` → `BroadcastCard`) is the obvious candidate, since
+switching global → alerts replaces the entire slide set. Not yet traced to the
+component; the way in is a `--dom-census` on the stress pattern, and the fix
+shape is almost certainly keying the cards so a mode change re-props the same
+elements instead of destroying and recreating them.
+
+**Round 31 is STILL unverified.** Neither the temp nor the humidity run mounted
+a tile layer (no `basemap-tiles-*` in either census). Four rounds, no tile scene.
+
+**Fixed the reason that keeps happening.** The `[globe]` lines that say whether
+a patch went live, and what each texture decoded to, are written once at page
+load; CDP can only subscribe to FUTURE console messages, and the profiler
+attaches to a browser source that has been up for hours, so those lines had
+always already scrolled past. They now go to a ring buffer on `window.__godsLog`
+(`lib/globe-log.ts`, the `__godsDeck` / `__godsLabels` pattern) and
+`profile-watch.mjs` prints them as a `## globe log` section — patch lines
+verbatim, textures grouped by grid, biggest first. From the next deploy on, every
+report answers "is the tile cache live?" and "how big is the texture behind the
+368 ms upload?" on its own.
+
+**Also seen:** `getImageData` 132.7 ms inside the 457 ms stall of the temp run,
+alongside `Decode Image` in the renderer events — a WeatherLayers icon-atlas
+decode on the main thread as `scalar-temp-0-icon-global-bitmap` mounts, one-off
+per atlas (round 26 saw the same shape for the barb atlas).
+`getBoundingClientRect` is still 149–203 ms per run and still in several stalls
+DESPITE the `FittedColumn` fix being deployed — with `get clientHeight` beside
+it and `(anonymous) @ 00rla3zhuv_os.js:2:2896` (a `clientWidth` read in a
+marquee/crawl effect) in the stall windows, so at least part of the remaining
+layout read is the ticker's own measurement, not the alert column. Worth a
+`--dom-census` before attributing it.
+
+### Round 35 (2026-09-10) — trading RAM for CPU and disk
+
+The box: **32 GB of RAM, and 3–4 browser sources max the CPU out.** So RAM is
+the plentiful resource and CPU/disk are what limit how many streams run. Every
+re-fetch and re-decode of a texture we already had is the expensive kind of
+miss; holding it is the cheap kind of cost.
+
+- **Nests are preloaded now, not just base maps.** `Globe.tsx` already warmed
+  every variable's global base map at the active hour, but a variable's REGIONAL
+  NESTS were left to load on demand — so flying into a region with a high-res
+  nest paid a fetch + decode at the cut, the exact disk and CPU the box can
+  least afford at the exact moment it can least afford them. New pure helper
+  `allTextureUrlsFor(manifest, fhr)` (`layers/props.ts`) collects every base map
+  AND every nest, falling back to the hour-0 texture for statics baked once
+  (elevation), deduped. Tested.
+- **Texture cache 96 → 256**, overridable at build time with
+  `NEXT_PUBLIC_TEXTURE_CACHE_MAX` (`cacheMaxFrom`, tested). The warm set above
+  alone can approach the old cap and would have thrashed against it. A decoded
+  global 0.25° frame is ~4 MB, so 256 is ~1 GB worst case per source and ~4 GB
+  across four.
+- **A manifest poll backstop.** The operator's warning — "don't want to be stuck
+  on the time of the start" — is a real hole: the manifest was refetched ONLY on
+  a `WEATHER_RUN` socket event, so a single missed event (socket drop, a publish
+  landing during a reconnect) left a 24/7 broadcast on the maps it loaded at
+  start-up for the rest of the day, with nothing to recover it. Both watch pages
+  now also poll every `MANIFEST_POLL_MS` (5 min, `lib/manifest.ts`), failing
+  soft. Note this makes the bigger cache safe in the other direction too: texture
+  URLs carry a bake stamp, so a new run means new URLs — old-run textures age out
+  of the LRU rather than ever being shown.
+
+### Round 36 (2026-09-10) — the wind barbs: a units red herring, and an A/B switch
+
+The operator sent a screenshot of barbs over a **DAMAGING WIND** warning showing
+**bare circles and single half-barbs** — WeatherLayers' calm and light-wind
+glyphs — where the field should be strong. Their description: "on a new area or
+zoom it seems to have circle glyphs with a line pointing in a direction."
+
+**The obvious cause is wrong.** m/s read as knots would produce exactly this
+picture, and `props.ts` even said the atlas "iconBounds span 0–100 kt", which
+reads like an instruction to convert. Checked the bundle before touching it:
+WeatherLayers declares `iconBounds: [0, 51.444]`, and **51.444 m/s IS 100 kt**.
+The atlas wants metres per second, which is what the GFS u/v textures already
+decode to. Scaling by 1.94 would have made every barb on air almost twice too
+strong. The comment is now corrected to say so explicitly, with the date and the
+reason, so the next reader doesn't "fix" it either.
+
+So the glyph choice is right and the **sampled values** are what look wrong.
+Our round-25 grid patch is the only thing standing between WeatherLayers'
+sampling and the draw, and rounds 27–28 proved it byte-identical to
+WeatherLayers' own methods across 460 k feature entries and a 600-tick stress —
+but those tests drove prop changes the test itself controlled, which is exactly
+the class of bug a live nest switch or mid-flight zoom could sit outside.
+
+**Shipped an A/B rather than a guess**: `?nogrid=1` on the /watch URL skips
+`installGridPatch()` entirely (`gridPatchDisabled`, tested), leaving
+WeatherLayers' own uncached sampling. No rebuild to flip it — change the OBS
+browser source URL and reload. Both paths now announce themselves in the globe
+log ("grid caches active" / "DISABLED by ?nogrid"), so a profile says which ran.
+If the circles survive `?nogrid=1`, the cause is upstream of us — WeatherLayers'
+sampling or the baked texture — and the patch is exonerated. If they vanish, the
+cache is serving stale or absent features and round 28's stress test needs a
+case it doesn't have.
+
+### Round 37 (2026-09-10) — the A/B the operator can actually reach, and naming the run on air
+
+Two corrections to round 36, both from the operator.
+
+**The `?nogrid=1` URL flag is useless to them.** The OBS browser sources on the
+encoder host are created from the stream config, not by hand — "i cant its no ui
+obs". What they DO have is `.env.deploy`, which the deploy syncs. So the A/B is
+now primarily an env lever: **`NEXT_PUBLIC_WL_GRID_PATCH=off`** disables the
+round-25 grid sampling cache for every source at once (the URL flag still works
+for a one-off). Both paths announce themselves in the globe log, so a profile
+says which ran. Lesson worth keeping: a debug switch the operator cannot reach
+is not a debug switch.
+
+**"maybe magnitude * a day or 2" — a second hypothesis that needs no bug at
+all.** The barbs may be faithfully drawing a run that is a day or two stale while
+the alert polygon beside them is current. That fits "fine mostly, wrong in a new
+area" exactly as well as a sampling bug does, and nothing in a screenshot or a
+CPU profile separates them. `manifestLogLine` (`lib/manifest.ts`, tested) now
+writes one line on every manifest/fhr change:
+
+    [globe] manifest gfs run=2026-09-10T06:00:00Z (3h ago) steps=41 fhr=0
+
+Run age in **hours** means the wind is current and the sampling is suspect. Run
+age in **days** means the wind is stale and the pipeline is — and the client half
+of that is already covered by round 35's `MANIFEST_POLL_MS` backstop, so a days-old
+run would point at the worker, not the page.
+
+**Unrelated red tree, fixed.** Mid-round the suite went red: a third session had
+added `QUAKE_LIVE_WINDOW_HOURS` / `quakeLiveWindowSince` to `shared/src/seismic.ts`
+and used them from public and worker WITHOUT rebuilding `shared/dist` — public
+failed typecheck on two missing exports, the worker director suite failed nine
+tests. `./update-shared` (the documented step for exactly that symptom) fixed it.
+All four packages green: **1 483 tests**, typecheck and production build clean.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
