@@ -264,12 +264,12 @@ export function SectionTitle({
     // G.O.D.S. section rule: Saira title + accent hairline running out to the
     // mono tag (see GodsPanel's GodsSectionRule — inlined here for the tag/page
     // suffix this variant carries).
-    <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-      <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: 2, color: GODS_INK, whiteSpace: "nowrap" }}>
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 10, rowGap: 4, minWidth: 0 }}>
+      <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: 2, color: GODS_INK, maxWidth: "100%", overflowWrap: "anywhere" }}>
         {title}
       </span>
       <span style={{ flex: 1, alignSelf: "center", height: 1, background: accentRule(accent) }} />
-      <span style={{ fontFamily: GODS_MONO, fontSize: 10.5, letterSpacing: 1, color: accent, whiteSpace: "nowrap" }}>
+      <span style={{ fontFamily: GODS_MONO, fontSize: 10.5, letterSpacing: 1, color: accent, maxWidth: "100%", overflowWrap: "anywhere" }}>
         {tag}
         {pageCount != null && pageCount > 1 ? ` · ${(page ?? 0) + 1}/${pageCount}` : ""}
       </span>
