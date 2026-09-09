@@ -7,6 +7,8 @@ import {
   compass16,
   bearingLabel,
   withinBbox,
+  radiusBox,
+  withinRadiusBox,
 } from "./geo";
 
 describe("haversineKm", () => {
@@ -129,5 +131,68 @@ describe("withinBbox", () => {
     expect(withinBbox(175, 0, wraps)).toBe(true);
     expect(withinBbox(-175, 0, wraps)).toBe(true);
     expect(withinBbox(0, 0, wraps)).toBe(false);
+  });
+});
+
+describe("radiusBox pre-cull", () => {
+  /** Deterministic LCG so the property test is reproducible. */
+  function rng(seed: number) {
+    let s = seed >>> 0;
+    return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  }
+
+  it("never drops a point the exact haversine would keep (random centres, radii, latitudes)", () => {
+    const rand = rng(42);
+    const pts: [number, number][] = [];
+    for (let i = 0; i < 4000; i++) pts.push([rand() * 360 - 180, rand() * 180 - 90]);
+    // Dense samples right at the dateline and near the poles, where a naive box breaks.
+    for (let i = 0; i < 400; i++) {
+      pts.push([179.5 + rand(), rand() * 160 - 80]);
+      pts.push([-180 + rand() * 0.5, rand() * 160 - 80]);
+      pts.push([rand() * 360 - 180, 85 + rand() * 5]);
+    }
+    const centres: [number, number][] = [
+      [0, 0],
+      [179.9, 10],
+      [-179.9, -10],
+      [10, 60],
+      [-100, 75],
+      [30, 86],
+      [-45, -88],
+      [140, 45],
+    ];
+    for (const c of centres) {
+      for (const radiusKm of [5, 50, 350, 1500, 4000]) {
+        const box = radiusBox(c, radiusKm);
+        for (const p of pts) {
+          if (haversineKm(c, p) <= radiusKm) expect(withinRadiusBox(c, p, box)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("gives the same result as the brute-force scan, in the same order", () => {
+    const rand = rng(7);
+    const items = Array.from({ length: 3000 }, (_, i) => ({ i, lng: rand() * 360 - 180, lat: rand() * 180 - 90 }));
+    const getPoint = (x: (typeof items)[number]): [number, number] => [x.lng, x.lat];
+    for (const c of [[0, 0], [179.5, 60], [-30, -85]] as [number, number][]) {
+      const brute = items
+        .map((item) => ({ item, distanceKm: haversineKm(c, getPoint(item)) }))
+        .filter((x) => x.distanceKm <= 2000)
+        .sort((a, b) => a.distanceKm - b.distanceKm)
+        .map((x) => x.item.i);
+      expect(nearby(items, c, getPoint, 2000).map((x) => x.item.i)).toEqual(brute);
+    }
+  });
+
+  it("spans every longitude once the box touches a pole", () => {
+    expect(radiusBox([0, 89], 500).dLng).toBe(180);
+    expect(radiusBox([0, 0], 500).dLng).toBeLessThan(10);
+  });
+
+  it("is dateline-aware", () => {
+    const box = radiusBox([179.9, 0], 100);
+    expect(withinRadiusBox([179.9, 0], [-179.9, 0], box)).toBe(true);
+    expect(withinRadiusBox([179.9, 0], [170, 0], box)).toBe(false);
   });
 });

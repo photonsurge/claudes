@@ -649,6 +649,66 @@ lower and `updateUniformBuffer` gone from the table. Still open (trade-offs,
 the user's call): ticker windowing, the label canvas in a worker, merging the
 3-ring glows, global + nest particles both drawing.
 
+### Round 20 (2026-09-09) — the cut, named
+
+Round 19 measured (`/watch/default`, country spotlight + alerts + volcanoes on
+air, 29 draws): busy 59.9 %, rAF **26.5 fps** with p50 33.3 / p95 33.4 ms and a
+**833 ms** maximum gap. `gpu features:` now says `gpu_compositing=enabled` —
+the host lever took: Commit 3.2 → **1.5 ms/frame**. Steady state holds the 30
+fps cap; the fps loss is stalls, and the saved `profile.cpuprofile`
+(`scratchpad/stalls.mjs`-style split into busy stretches) names them:
+
+| stall | inside | what |
+|---|---|---|
+| 822 ms | `setLayers → _initializeLayer → SolidPolygonLayer.updateState → PolygonTesselator` | earcut + globe grid-cut of the 4 MB country outline, **×4** |
+| ~500 ms | `(program)` + `_linkShaders/_getLinkStatus` | shader compile + link for the freshly created layers |
+| 888 ms | React commit for the cut | 47 ms `haversineKm` from `eventNearbySlideHasContent` (mode-slides memo), 30 ms `measureText` for new label sprites |
+
+Two deck facts explain the first two rows. **GeoJsonLayer always builds its
+`polygons-fill` SolidPolygonLayer sublayer** when polygon features exist
+(`CompositeLayer.shouldRenderSubLayer` checks only `data.length`; `filled` only
+reaches the sublayer's `draw()`), and that sublayer tessellates in
+`updateState`. So every stroke-only GeoJsonLayer pays a full earcut for
+nothing — the four country-glow rings paid it four times per cut, and the three
+alert glow rings tessellate thousands of alert polygons three extra times per
+refresh. And the glow layers only existed while a country was on air, so each
+cut was a cold `_initializeLayer`; deck released their models on the way out
+and luma freed the shared pipelines, hence the re-link.
+
+Shipped:
+
+- **`layers/outline-rings.ts`**: `outlineRings(features)` (every Polygon /
+  MultiPolygon ring as `{ path, feature }`, memoised on the features array
+  identity — exactly what GeoJsonLayer's own stroke sublayer draws),
+  `polygonParts(feature)` for a direct SolidPolygonLayer, shared `NO_RINGS` /
+  `NO_PARTS`, and `pickedFeature()` to unwrap a ring pick.
+- **Country glow**: the four rings are PathLayers over the rings (no fill
+  sublayer, no earcut) and are ALWAYS returned — empty + `visible: false`
+  between spotlights — so deck keeps the models and luma the
+  PathLayer+Breathe pipeline. A cut now builds four path tessellations of the
+  outline (~35 ms each on the profile) and links nothing.
+- **Alerts**: `alerts-glow-wide/mid` and `alerts-edge` are PathLayers over
+  `outlineRings(features)`; only `alerts-fill` still tessellates. The on-air
+  AREA pair is a direct SolidPolygonLayer + PathLayer and is always in the
+  stack (`onAirPulseLayers(features, null, …)` = idle, empty, hidden), so a
+  polygon cut costs one tessellation of that shape and no shader link. Globe
+  commits the idle pair when nothing is on air and unwraps ring picks with
+  `pickedFeature` in `onHover` / `onClick`.
+- **`geo.nearby`**: `radiusBox` / `withinRadiusBox` pre-cull (latitude from
+  the radius, longitude at the box's pole-ward edge, dateline-aware, all
+  longitudes once a pole is inside) before any haversine — property-tested
+  against the brute-force scan. The mode-slides scan drops from ~15k trig
+  calls to a few dozen.
+
+Next run: expect the country-cut gap to read a few hundred ms at most (four
+path tessellations + the React commit) instead of ~2.2 s across three stalls,
+`getProgramParameter` gone from the busy stretches, and `c`/`u` (haversine /
+nearby) gone from the table. Still open: the outline itself (a simplified
+boundary for the glow is the only remaining lever on that tessellation — a
+visual call), ticker windowing, worker label canvas, glow merge, global + nest
+particles both drawing, and the small luma/WL per-draw items
+(`_setDebugData`, `ensureDefaultProps`).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

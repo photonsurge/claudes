@@ -1,11 +1,19 @@
-import { GeoJsonLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
+import { GeoJsonLayer, PathLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer } from "@deck.gl/layers";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
 import type { AlertFeature } from "../../lib/alerts";
 import { hazardMeta } from "../../lib/hazard";
 import { alertFocusKey, litWeight, type AlertFocus } from "../../lib/alert-cycle";
 import { DEPTH_TEST } from "./depth";
-import { BREATHE, type BreatheSpec } from "./breathe-extension";
+import { BREATHE, type BreatheProps, type BreatheSpec } from "./breathe-extension";
+import {
+  NO_PARTS,
+  NO_RINGS,
+  outlineRings,
+  polygonParts,
+  type OutlineRing,
+  type PolygonRings,
+} from "./outline-rings";
 
 /** "#rrggbb" → [r,g,b]. */
 function rgb(hex: string): [number, number, number] {
@@ -131,6 +139,13 @@ export function alertsLayer(features: AlertFeature[], visible = true, focus: Ale
   // deck doesn't re-tessellate on every globe rebuild (dead-reckon ticks).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = features as any;
+  // The three stroke passes are PathLayers over the polygon rings (memoised on
+  // `features` identity), not stroke-only GeoJsonLayers: GeoJsonLayer always
+  // adds a polygons-fill sublayer that earcuts every polygon even with
+  // `filled: false`, so the old stack tessellated thousands of alert shapes
+  // FOUR times per refresh. Only `alerts-fill` still needs (one) tessellation.
+  const rings = outlineRings(features);
+  type Ring = OutlineRing<AlertFeature>;
   // Depth-tested so far-side areas are occluded by the basemap depth sphere
   // instead of bleeding through the front of the globe.
   const params = DEPTH_TEST;
@@ -138,38 +153,28 @@ export function alertsLayer(features: AlertFeature[], visible = true, focus: Ale
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const layers: any[] = [
     // 1 ─ Wide soft halo (outer bloom). Lines only, no fill, no point circles.
-    new GeoJsonLayer({
+    new PathLayer<Ring>({
       id: "alerts-glow-wide",
-      data,
-      filled: false,
-      stroked: true,
-      pointType: "circle",
-      getPointRadius: 0,
-      pointRadiusMaxPixels: 0,
-      getLineColor: (f: any) => withA(lighten(base(f), 0.35), 26 * lit(f)),
-      getLineWidth: (f: any) => 6 + rank(f) * 3,
-      lineWidthUnits: "pixels",
-      lineWidthMinPixels: 5,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: rings,
+      getPath: (d) => d.path as [number, number][],
+      getColor: (d) => withA(lighten(base(d.feature), 0.35), 26 * lit(d.feature)),
+      getWidth: (d) => 6 + rank(d.feature) * 3,
+      widthUnits: "pixels",
+      widthMinPixels: 5,
       parameters: params,
-      updateTriggers: { getLineColor: [n, focusKey], getLineWidth: n },
+      updateTriggers: { getColor: [n, focusKey], getWidth: n },
     }),
     // 2 ─ Mid glow.
-    new GeoJsonLayer({
+    new PathLayer<Ring>({
       id: "alerts-glow-mid",
-      data,
-      filled: false,
-      stroked: true,
-      pointType: "circle",
-      getPointRadius: 0,
-      pointRadiusMaxPixels: 0,
-      getLineColor: (f: any) => withA(lighten(base(f), 0.2), 70 * lit(f)),
-      getLineWidth: (f: any) => 3 + rank(f) * 1.4,
-      lineWidthUnits: "pixels",
-      lineWidthMinPixels: 2.5,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: rings,
+      getPath: (d) => d.path as [number, number][],
+      getColor: (d) => withA(lighten(base(d.feature), 0.2), 70 * lit(d.feature)),
+      getWidth: (d) => 3 + rank(d.feature) * 1.4,
+      widthUnits: "pixels",
+      widthMinPixels: 2.5,
       parameters: params,
-      updateTriggers: { getLineColor: [n, focusKey], getLineWidth: n },
+      updateTriggers: { getColor: [n, focusKey], getWidth: n },
     }),
     // 3 ─ Translucent fill (opacity climbs with severity).
     new GeoJsonLayer({
@@ -189,32 +194,28 @@ export function alertsLayer(features: AlertFeature[], visible = true, focus: Ale
       updateTriggers: { getFillColor: [n, focusKey] },
     }),
     // 4 ─ Crisp lit edge on top.
-    new GeoJsonLayer({
+    new PathLayer<Ring>({
       id: "alerts-edge",
-      data,
-      filled: false,
-      stroked: true,
-      pointType: "circle",
-      getPointRadius: 0,
-      pointRadiusMaxPixels: 0,
+      data: rings,
+      getPath: (d) => d.path as [number, number][],
       // The outline now carries the shape (the fill was lightened so a
       // country-sized blob doesn't hide the weather under it), so it's a touch
       // wider — the boundary has to stay legible on a wide shot without the fill
       // helping.
       // The one pass a ghosted shape keeps: dimmed and hairline, so the warning
       // picture stays whole while only the cycle's current hazard glows.
-      getLineColor: (f: any) =>
-        withA(lighten(base(f), 0.55), GHOST_EDGE_ALPHA + (240 - GHOST_EDGE_ALPHA) * lit(f)),
-      getLineWidth: (f: any) => {
-        const full = 1.6 + rank(f) * 0.35;
-        return GHOST_EDGE_WIDTH + (full - GHOST_EDGE_WIDTH) * lit(f);
+      getColor: (d) =>
+        withA(lighten(base(d.feature), 0.55), GHOST_EDGE_ALPHA + (240 - GHOST_EDGE_ALPHA) * lit(d.feature)),
+      getWidth: (d) => {
+        const full = 1.6 + rank(d.feature) * 0.35;
+        return GHOST_EDGE_WIDTH + (full - GHOST_EDGE_WIDTH) * lit(d.feature);
       },
-      lineWidthUnits: "pixels",
-      lineWidthMinPixels: 1,
+      widthUnits: "pixels",
+      widthMinPixels: 1,
+      // A pick here yields the ring datum; Globe unwraps it with pickedFeature().
       pickable: true,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       parameters: params,
-      updateTriggers: { getLineColor: [n, focusKey], getLineWidth: [n, focusKey] },
+      updateTriggers: { getColor: [n, focusKey], getWidth: [n, focusKey] },
     }),
   ];
 
@@ -360,10 +361,15 @@ export function pulseIsPoint(features: AlertFeature[], at: [number, number]): bo
  * regeneration or a re-tessellation. (The previous version keyed function
  * accessors on `now`, which regenerated every attribute of the whole polygon
  * each frame — and passed a fresh `[onAir]` array, which re-tessellated it.)
+ *
+ * `at: null` = nothing on air: returns just the AREA pair, empty and hidden.
+ * The pair is always in the stack so deck keeps its models — and luma the
+ * SolidPolygon+Breathe / Path+Breathe pipelines — between cuts; a polygon cut
+ * then costs one tessellation of that shape, not a shader link as well.
  */
 export function onAirPulseLayers(
   features: AlertFeature[],
-  at: [number, number],
+  at: [number, number] | null,
   now: number,
   fallbackColor: [number, number, number] = [255, 95, 95],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -373,7 +379,7 @@ export function onAirPulseLayers(
   const phase = (now % PULSE_PERIOD_MS) / PULSE_PERIOD_MS;
   const breathe = 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI);
   const ping = phase; // 0..1 sawtooth
-  const onAir = onAirFeature(features, at);
+  const onAir = at ? onAirFeature(features, at) : null;
   const c: [number, number, number] = onAir ? base(onAir) : fallbackColor;
   const lit: [number, number, number] = lighten(c, 0.6);
 
@@ -391,41 +397,45 @@ export function onAirPulseLayers(
   //     These two layers are STATIC: BreatheExtension breathes them on the GPU
   //     (alpha / width multipliers from a clock uniform), so no pulse-loop
   //     commit is needed while an area is on air — see pulseIsPoint().
-  if (area && onAir) {
-    const data = areaData(onAir);
-    // Fill alpha is baked at the breath's peak (150); the extension takes it
-    // down to the trough (40) and back.
-    const FILL_PEAK = 150;
-    layers.push(
-      new GeoJsonLayer({
-        id: "alerts-onair-fill",
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        data: data as any,
-        filled: true,
-        stroked: false,
-        getFillColor: withA(c, FILL_PEAK),
-        extensions: [BREATHE],
-        breathe: { periodMs: PULSE_PERIOD_MS, alpha: [40 / FILL_PEAK, 1] } satisfies BreatheSpec,
-        parameters: DEPTH_TEST,
-      }),
-      // Lit edge: a constant 1.5 px width attribute, swelled to 5.5 px at the peak.
-      new GeoJsonLayer({
-        id: "alerts-onair-edge",
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        data: data as any,
-        filled: false,
-        stroked: true,
-        getLineColor: withA(lit, 220),
-        getLineWidth: 1.5,
-        lineWidthUnits: "pixels",
-        lineWidthMinPixels: 1.5,
-        extensions: [BREATHE],
-        breathe: { periodMs: PULSE_PERIOD_MS, size: [1, 5.5 / 1.5] } satisfies BreatheSpec,
-        parameters: DEPTH_TEST,
-      }),
-    );
-    return layers;
-  }
+  //     They are ALWAYS committed (empty + hidden without an area) so their
+  //     shader pipelines stay warm — see the function doc. Direct
+  //     SolidPolygonLayer / PathLayer, not GeoJsonLayer: an empty GeoJsonLayer
+  //     builds no sublayers (nothing to keep warm), and its stroke-only pass
+  //     would earcut the dissolved shape a second time (see outline-rings.ts).
+  const onAirArea = area && onAir ? onAir : null;
+  const fillParts = onAirArea ? polygonParts(onAirArea) : NO_PARTS;
+  const edgeRings = onAirArea ? outlineRings(areaData(onAirArea)) : NO_RINGS;
+  // Fill alpha is baked at the breath's peak (150); the extension takes it
+  // down to the trough (40) and back.
+  const FILL_PEAK = 150;
+  layers.push(
+    new SolidPolygonLayer<PolygonRings, BreatheProps>({
+      id: "alerts-onair-fill",
+      data: fillParts,
+      visible: !!onAirArea,
+      getPolygon: (d) => d as [number, number][][],
+      filled: true,
+      getFillColor: withA(c, FILL_PEAK),
+      extensions: [BREATHE],
+      breathe: { periodMs: PULSE_PERIOD_MS, alpha: [40 / FILL_PEAK, 1] } satisfies BreatheSpec,
+      parameters: DEPTH_TEST,
+    }),
+    // Lit edge: a constant 1.5 px width attribute, swelled to 5.5 px at the peak.
+    new PathLayer<OutlineRing<AlertFeature>, BreatheProps>({
+      id: "alerts-onair-edge",
+      data: edgeRings,
+      visible: !!onAirArea,
+      getPath: (d) => d.path as [number, number][],
+      getColor: withA(lit, 220),
+      getWidth: 1.5,
+      widthUnits: "pixels",
+      widthMinPixels: 1.5,
+      extensions: [BREATHE],
+      breathe: { periodMs: PULSE_PERIOD_MS, size: [1, 5.5 / 1.5] } satisfies BreatheSpec,
+      parameters: DEPTH_TEST,
+    }),
+  );
+  if (onAirArea || at === null) return layers;
 
   // 2 ─ No drawable area → an expanding "sonar" ring at the framing point plus a
   //     breathing core dot, so a point-only alert still reads unmistakably on a

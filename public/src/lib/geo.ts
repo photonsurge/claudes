@@ -36,14 +36,50 @@ export function nearby<T>(
   radiusKm: number,
 ): Nearby<T>[] {
   const out: Nearby<T>[] = [];
+  // Reject the vast majority of items with two subtractions before any trig:
+  // on the 15k-city set a scan is ~15k haversines otherwise, and the slide-deck
+  // memo runs one per rebuild — 47 ms inside a cut on the profiler.
+  const box = radiusBox(center, radiusKm);
   for (const item of items) {
     const p = getPoint(item);
-    if (!p) continue;
+    if (!p || !withinRadiusBox(center, p, box)) continue;
     const distanceKm = haversineKm(center, p);
     if (distanceKm <= radiusKm) out.push({ item, distanceKm });
   }
   out.sort((a, b) => a.distanceKm - b.distanceKm);
   return out;
+}
+
+/** Kilometres per degree of latitude on the haversine sphere (~111.2). */
+const KM_PER_DEG_LAT = (Math.PI / 180) * EARTH_RADIUS_KM;
+
+/** Half-extents (degrees) of a lat/lng box around a centre. */
+export interface RadiusBox {
+  dLat: number;
+  dLng: number;
+}
+
+/**
+ * A lat/lng box that contains EVERY point within `radiusKm` of `center` on the
+ * haversine sphere — a cheap pre-cull, never a substitute for the distance
+ * check. Latitude: the radius in degrees. Longitude: measured at the box's
+ * pole-ward edge, where the parallels are shortest, so it over-covers rather
+ * than under-covers at high latitude (plus a hair of slack for rounding); a box
+ * that reaches a pole spans every longitude.
+ */
+export function radiusBox(center: [number, number], radiusKm: number): RadiusBox {
+  const dLat = radiusKm / KM_PER_DEG_LAT;
+  const edgeLat = Math.abs(center[1]) + dLat;
+  if (edgeLat >= 89.9) return { dLat, dLng: 180 };
+  return { dLat, dLng: Math.min(180, (dLat / Math.cos(toRad(edgeLat))) * 1.001) };
+}
+
+/** True if `p` ([lng, lat]) lies inside the box around `center`, dateline-aware. */
+export function withinRadiusBox(center: [number, number], p: [number, number], box: RadiusBox): boolean {
+  if (Math.abs(p[1] - center[1]) > box.dLat) return false;
+  let dLng = Math.abs(p[0] - center[0]);
+  if (dLng > 180) dLng = 360 - dLng;
+  return dLng <= box.dLng;
 }
 
 /**

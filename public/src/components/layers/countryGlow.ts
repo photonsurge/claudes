@@ -1,7 +1,8 @@
-import { GeoJsonLayer } from "@deck.gl/layers";
+import { GeoJsonLayer, PathLayer } from "@deck.gl/layers";
 import { COUNTRIES_URL } from "./basemap";
 import { DEPTH_TEST } from "./depth";
-import { BREATHE, type BreatheSpec } from "./breathe-extension";
+import { BREATHE, type BreatheProps, type BreatheSpec } from "./breathe-extension";
+import { outlineRings, type OutlineRing } from "./outline-rings";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type CountryFeature = any;
@@ -162,7 +163,6 @@ export function countryGlowLayers(
     paletteFor?: (iso2: string) => [number, number, number][] | null | undefined;
   },
 ): unknown[] {
-  if (!features.length) return [];
   const color = opts?.color ?? GLOW_COLOR;
   const withFill = opts?.fill !== false;
   const paletteFor = opts?.paletteFor;
@@ -182,10 +182,23 @@ export function countryGlowLayers(
   // the (quantised) flag-cycle step.
   const colorKey = `${color.join(",")}|${colorTick}`;
   const data = features;
+  // The boundary rings, memoised on `features` identity (see outline-rings.ts).
+  const rings = outlineRings(features);
+  // The layers are ALWAYS returned — empty and hidden when nothing is on air.
+  // deck then keeps their models alive between spotlights, so luma keeps the
+  // PathLayer+Breathe pipeline: a cut no longer re-links shaders (~0.5 s of
+  // native time on the profiler) on top of building the new outline.
+  const visible = rings.length > 0;
 
   /** One stroke pass: alpha/width baked at the peak, breathed on the GPU by
    *  BreatheExtension (alpha and width multipliers from a clock uniform) — the
-   *  layer itself is static, so no per-frame commit is needed. */
+   *  layer itself is static, so no per-frame commit is needed.
+   *
+   *  A PathLayer over the rings, NOT a stroke-only GeoJsonLayer: GeoJsonLayer
+   *  always adds a polygons-fill sublayer that earcuts the whole outline even
+   *  with `filled: false` — four rings over a 4 MB country outline was the
+   *  822 ms main-thread stall at every spotlight cut. The stroke geometry is
+   *  identical (GeoJsonLayer strokes polygons with exactly this PathLayer). */
   const stroke = (
     id: string,
     lightenBy: number,
@@ -198,19 +211,19 @@ export function countryGlowLayers(
       alpha: [alpha[0] / alpha[1], 1],
       size: [1, width[1] / width[0]],
     };
-    return new GeoJsonLayer({
+    return new PathLayer<OutlineRing<CountryFeature>, BreatheProps>({
       id,
-      data,
-      filled: false,
-      stroked: true,
-      getLineColor: (f: CountryFeature) => withA(lighten(colorOf(f), lightenBy), alpha[1]),
-      getLineWidth: width[0],
-      lineWidthUnits: "pixels",
-      lineWidthMinPixels: minPixels,
+      data: rings,
+      visible,
+      getPath: (d) => d.path as [number, number][],
+      getColor: (d) => withA(lighten(colorOf(d.feature), lightenBy), alpha[1]),
+      getWidth: width[0],
+      widthUnits: "pixels",
+      widthMinPixels: minPixels,
       extensions: [BREATHE],
       breathe,
       parameters: DEPTH_TEST,
-      updateTriggers: { getLineColor: colorKey },
+      updateTriggers: { getColor: colorKey },
     });
   };
 
@@ -228,6 +241,7 @@ export function countryGlowLayers(
           new GeoJsonLayer({
             id: "country-glow-fill",
             data,
+            visible,
             filled: true,
             stroked: false,
             getFillColor: (f: CountryFeature) => withA(colorOf(f), 60),

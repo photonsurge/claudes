@@ -22,12 +22,16 @@ jest.mock("@deck.gl/layers", () => {
     // breathe-extension.ts) and only override the layer classes.
     ...jest.requireActual<Record<string, unknown>>("../../test/mocks/deckgl"),
     GeoJsonLayer: class extends MockLayer {},
+    PathLayer: class extends MockLayer {},
+    SolidPolygonLayer: class extends MockLayer {},
     ScatterplotLayer: class extends MockLayer {},
     TextLayer: class extends MockLayer {},
   };
 });
 
+import { PathLayer, SolidPolygonLayer } from "@deck.gl/layers";
 import { alertsLayer, onAirPulseLayers, pulseIsPoint } from "./alerts";
+import { NO_PARTS, NO_RINGS, outlineRings, polygonParts } from "./outline-rings";
 import { BREATHE } from "./breathe-extension";
 import type { AlertFeature } from "../../lib/alerts";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
@@ -81,6 +85,13 @@ const FIRE: [number, number, number] = [251, 113, 133];
 const ids = (layers: any[]) => layers.map((l) => l.props.id);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const byId = (layers: any[], id: string) => layers.find((l) => l.props.id === id)!;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const visibleIds = (layers: any[]) => layers.filter((l) => l.props.visible !== false).map((l) => l.props.id);
+/** A PathLayer ring datum for `f` — the stroke passes' accessors take these, not features. */
+const ring = (f: AlertFeature) => ({ path: [] as number[][], feature: f });
+/** The colour a pass paints `f`: the fill accessor on the fill, the ring accessor on a stroke pass. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const paint = (p: any, f: AlertFeature): number[] => (p.getFillColor ? p.getFillColor(f) : p.getColor(ring(f)));
 
 const AREA_IDS = ["alerts-glow-wide", "alerts-glow-mid", "alerts-fill", "alerts-edge"];
 const BADGE_IDS = ["alerts-badge-halo", "alerts-badge-core", "alerts-badge-glyph"];
@@ -162,17 +173,17 @@ describe("alertsLayer — hazard hue + severity intensity", () => {
   it("glow width scales with severity (wide halo 6+3r, crisp edge 1.6+0.35r)", () => {
     const layers = alertsLayer([rank0]);
     const wide = byId(layers, "alerts-glow-wide").props;
-    expect(wide.getLineWidth(rank0)).toBe(6);
-    expect(wide.getLineWidth(rank4)).toBe(18);
+    expect(wide.getWidth(ring(rank0))).toBe(6);
+    expect(wide.getWidth(ring(rank4))).toBe(18);
     const edge = byId(layers, "alerts-edge").props;
-    expect(edge.getLineWidth(rank0)).toBeCloseTo(1.6);
-    expect(edge.getLineWidth(rank4)).toBeCloseTo(3.0);
+    expect(edge.getWidth(ring(rank0))).toBeCloseTo(1.6);
+    expect(edge.getWidth(ring(rank4))).toBeCloseTo(3.0);
   });
 
   it("the outline stays stronger than the fill — it is what carries the shape", () => {
     // Lightening the fill without this is how a big blob becomes invisible.
     const layers = alertsLayer([rank4]);
-    const edgeAlpha = byId(layers, "alerts-edge").props.getLineColor(rank4)[3];
+    const edgeAlpha = byId(layers, "alerts-edge").props.getColor(ring(rank4))[3];
     const fillAlpha = byId(layers, "alerts-fill").props.getFillColor(rank4)[3];
 
     expect(edgeAlpha).toBeGreaterThan(fillAlpha * 3);
@@ -182,9 +193,27 @@ describe("alertsLayer — hazard hue + severity intensity", () => {
     const f = square(); // flood
     const layers = alertsLayer([f]);
     // lighten(FLOOD, 0.35) @ alpha 26.
-    expect(byId(layers, "alerts-glow-wide").props.getLineColor(f)).toEqual([126, 212, 250, 26]);
+    expect(byId(layers, "alerts-glow-wide").props.getColor(ring(f))).toEqual([126, 212, 250, 26]);
     // lighten(FLOOD, 0.55) @ alpha 240 — the crisp lit edge.
-    expect(byId(layers, "alerts-edge").props.getLineColor(f)).toEqual([165, 225, 252, 240]);
+    expect(byId(layers, "alerts-edge").props.getColor(ring(f))).toEqual([165, 225, 252, 240]);
+  });
+
+  it("strokes are PathLayers over the polygon rings — no GeoJsonLayer fill sublayer to earcut", () => {
+    // GeoJsonLayer always builds a polygons-fill sublayer that tessellates every
+    // polygon even with `filled: false`; the three stroke passes must not.
+    const f = square();
+    const features = [f];
+    const layers = alertsLayer(features);
+    const rings = outlineRings(features); // memoised on the SAME array instance
+    expect(rings).toHaveLength(1);
+    for (const id of ["alerts-glow-wide", "alerts-glow-mid", "alerts-edge"]) {
+      const l = byId(layers, id);
+      expect(l).toBeInstanceOf(PathLayer);
+      expect(l.props.data).toBe(rings);
+      expect(l.props.getPath(rings[0])).toBe(rings[0].path);
+      expect(l.props.filled).toBeUndefined();
+    }
+    expect(byId(layers, "alerts-fill")).not.toBeInstanceOf(PathLayer);
   });
 
   it("only the fill and the crisp edge are pickable (click-to-select surface)", () => {
@@ -227,9 +256,10 @@ describe("alertsLayer — hazard cycle ghosting", () => {
 
   it("keeps the data array reference so a step never re-tessellates", () => {
     const features = [lit, ghost];
+    const rings = outlineRings(features);
     for (const l of alertsLayer(features, true, FOCUS)) {
-      if (Array.isArray(l.props.data) && l.props.id.startsWith("alerts-badge")) continue;
-      expect(l.props.data).toBe(features);
+      if (l.props.id.startsWith("alerts-badge")) continue;
+      expect(l.props.data).toBe(l.props.id === "alerts-fill" ? features : rings);
     }
   });
 
@@ -239,11 +269,11 @@ describe("alertsLayer — hazard cycle ghosting", () => {
     const fill = byId(layers, "alerts-fill").props;
     const edge = byId(layers, "alerts-edge").props;
 
-    expect(wide.getLineColor(ghost)[3]).toBe(0);
+    expect(wide.getColor(ring(ghost))[3]).toBe(0);
     expect(fill.getFillColor(ghost)[3]).toBe(0);
     // The one surviving pass: dim, and hairline rather than severity-scaled.
-    expect(edge.getLineColor(ghost)[3]).toBe(38);
-    expect(edge.getLineWidth(ghost)).toBe(1);
+    expect(edge.getColor(ring(ghost))[3]).toBe(38);
+    expect(edge.getWidth(ring(ghost))).toBe(1);
   });
 
   it("leaves the lit hazard exactly as it draws with no cycle at all", () => {
@@ -252,9 +282,7 @@ describe("alertsLayer — hazard cycle ghosting", () => {
     for (const id of AREA_IDS) {
       const a = byId(withCycle, id).props;
       const b = byId(without, id).props;
-      const get = a.getFillColor ?? a.getLineColor;
-      const getB = b.getFillColor ?? b.getLineColor;
-      expect(get(lit)).toEqual(getB(lit));
+      expect(paint(a, lit)).toEqual(paint(b, lit));
     }
   });
 
@@ -295,12 +323,12 @@ describe("onAirPulseLayers — matching tolerance", () => {
   it("matches an alert within the ~0.5° tolerance and pulses its area", () => {
     // d² = 0.3² + 0.3² = 0.18 — inside ON_AIR_EPS2 (0.25).
     const layers = onAirPulseLayers([square()], [10.1, 20.1], 0);
-    expect(ids(layers)).toEqual(["alerts-onair-fill", "alerts-onair-edge"]);
+    expect(visibleIds(layers)).toEqual(["alerts-onair-fill", "alerts-onair-edge"]);
   });
 
   it("falls back to the marker just outside the tolerance", () => {
     const layers = onAirPulseLayers([square()], [10.4, 19.8], 0); // d² = 0.36
-    expect(ids(layers)).toEqual(["alerts-onair-ping", "alerts-onair-dot"]);
+    expect(visibleIds(layers)).toEqual(["alerts-onair-ping", "alerts-onair-dot"]);
   });
 
   it("a MultiPolygon is located by its FIRST part only (second-part framing misses)", () => {
@@ -311,8 +339,8 @@ describe("onAirPulseLayers — matching tolerance", () => {
         [[[99, -1], [101, -1], [101, 1], [99, 1], [99, -1]]], // centroid ≈ [100,0]
       ],
     });
-    expect(ids(onAirPulseLayers([twoPart], [10, 20], 0))).toEqual(["alerts-onair-fill", "alerts-onair-edge"]);
-    expect(ids(onAirPulseLayers([twoPart], [100, 0], 0))).toEqual([
+    expect(visibleIds(onAirPulseLayers([twoPart], [10, 20], 0))).toEqual(["alerts-onair-fill", "alerts-onair-edge"]);
+    expect(visibleIds(onAirPulseLayers([twoPart], [100, 0], 0))).toEqual([
       "alerts-onair-ping",
       "alerts-onair-dot",
     ]);
@@ -329,8 +357,8 @@ describe("onAirPulseLayers — the pulse rides GPU uniforms over constant attrib
     const edge0 = byId(rest, "alerts-onair-edge").props;
     // Attributes are constants baked at the breath's PEAK …
     expect(fill0.getFillColor).toEqual([...FLOOD, 150]);
-    expect(edge0.getLineColor[3]).toBe(220);
-    expect(edge0.getLineWidth).toBe(1.5);
+    expect(edge0.getColor[3]).toBe(220);
+    expect(edge0.getWidth).toBe(1.5);
     // … and the extension's spec takes them to the trough (fill alpha 40, edge
     // 1.5 px) and back over the period, with NO per-commit uniform in sight.
     expect(fill0.extensions).toEqual([BREATHE]);
@@ -338,7 +366,7 @@ describe("onAirPulseLayers — the pulse rides GPU uniforms over constant attrib
     expect(fill0.opacity).toBeUndefined();
     expect(edge0.extensions).toEqual([BREATHE]);
     expect(edge0.breathe).toEqual({ periodMs: 1500, size: [1, 5.5 / 1.5] });
-    expect(edge0.lineWidthScale).toBeUndefined();
+    expect(edge0.widthScale).toBeUndefined();
     // The clock no longer changes the layers at all.
     const peak = onAirPulseLayers([f], [10, 20], HALF);
     expect(byId(peak, "alerts-onair-fill").props.breathe).toEqual(fill0.breathe);
@@ -356,7 +384,9 @@ describe("onAirPulseLayers — the pulse rides GPU uniforms over constant attrib
     const a = byId(onAirPulseLayers([f], [10, 20], 0), "alerts-onair-fill").props.data;
     const b = byId(onAirPulseLayers([f], [10, 20], HALF), "alerts-onair-fill").props.data;
     expect(b).toBe(a);
-    expect(byId(onAirPulseLayers([f], [10, 20], HALF), "alerts-onair-edge").props.data).toBe(a);
+    expect(a).toBe(polygonParts(f));
+    const e0 = byId(onAirPulseLayers([f], [10, 20], 0), "alerts-onair-edge").props.data;
+    expect(byId(onAirPulseLayers([f], [10, 20], HALF), "alerts-onair-edge").props.data).toBe(e0);
     const p0 = byId(onAirPulseLayers([], [30, 40], 0), "alerts-onair-ping").props.data;
     const p1 = byId(onAirPulseLayers([], [30, 40], HALF), "alerts-onair-dot").props.data;
     expect(p1).toBe(p0);
@@ -399,5 +429,40 @@ describe("onAirPulseLayers — the pulse rides GPU uniforms over constant attrib
   it("uses the scene map-highlight colour for a point with no hazard polygon", () => {
     const dot = byId(onAirPulseLayers([], [0, 0], 0, [18, 52, 86]), "alerts-onair-dot").props;
     expect(dot.getFillColor).toEqual([18, 52, 86, 230]);
+  });
+});
+
+describe("onAirPulseLayers — the area pair stays mounted", () => {
+  // deck keeps a hidden layer's models, so luma keeps its shader pipelines: a
+  // polygon cut then costs one tessellation, not a shader link on top.
+  it("with nothing on air returns just the area pair, empty and hidden", () => {
+    const layers = onAirPulseLayers([], null, 0);
+    expect(ids(layers)).toEqual(["alerts-onair-fill", "alerts-onair-edge"]);
+    expect(visibleIds(layers)).toEqual([]);
+    expect(byId(layers, "alerts-onair-fill").props.data).toBe(NO_PARTS);
+    expect(byId(layers, "alerts-onair-edge").props.data).toBe(NO_RINGS);
+  });
+
+  it("a point cut keeps the hidden area pair under the marker; an area cut draws no marker", () => {
+    const pt = onAirPulseLayers([point([30, 40])], [30, 40], 0);
+    expect(ids(pt)).toEqual(["alerts-onair-fill", "alerts-onair-edge", "alerts-onair-ping", "alerts-onair-dot"]);
+    expect(visibleIds(pt)).toEqual(["alerts-onair-ping", "alerts-onair-dot"]);
+    const area = onAirPulseLayers([square()], [10, 20], 0);
+    expect(ids(area)).toEqual(["alerts-onair-fill", "alerts-onair-edge"]);
+    expect(visibleIds(area)).toEqual(["alerts-onair-fill", "alerts-onair-edge"]);
+  });
+
+  it("the on-air fill is a direct SolidPolygonLayer and the edge a PathLayer, never GeoJsonLayer", () => {
+    const f = square();
+    const layers = onAirPulseLayers([f], [10, 20], 0);
+    const fill = byId(layers, "alerts-onair-fill");
+    const edge = byId(layers, "alerts-onair-edge");
+    expect(fill).toBeInstanceOf(SolidPolygonLayer);
+    expect(edge).toBeInstanceOf(PathLayer);
+    expect(fill.props.getPolygon(fill.props.data[0])).toBe(fill.props.data[0]);
+    // The edge strokes the same feature's rings, and hands deck the memoised ring list.
+    expect(edge.props.data).toHaveLength(1);
+    expect(edge.props.data[0].feature).toBe(f);
+    expect(edge.props.getPath(edge.props.data[0])).toBe(edge.props.data[0].path);
   });
 });

@@ -1,4 +1,9 @@
+import { PathLayer } from "@deck.gl/layers";
 import { countryGlowLayers, cyclePalette } from "./countryGlow";
+import { NO_RINGS, outlineRings } from "./outline-rings";
+
+/** A ring datum as the stroke passes' accessors receive it. */
+const ring = (feature: unknown) => ({ path: [] as number[][], feature });
 
 /** A Polygon feature with the given ISO2 and a square boundary. */
 function countryFeature(iso2: string, [w, s, e, n]: [number, number, number, number]) {
@@ -105,8 +110,33 @@ describe("countriesInBbox / countryFeatureFor", () => {
 });
 
 describe("countryGlowLayers", () => {
-  it("returns no layers when there is nothing to glow", () => {
-    expect(countryGlowLayers([], 0)).toEqual([]);
+  it("keeps the stroke passes mounted but hidden and empty when there is nothing to glow", () => {
+    // deck keeps a hidden layer's models — and luma its shader pipeline — so
+    // the next spotlight cut skips the shader link; it only builds the outline.
+    const layers = countryGlowLayers([], 0, { fill: false }) as { props: { id: string; visible: boolean; data: unknown } }[];
+    expect(layers.map((l) => l.props.id)).toEqual([
+      "country-glow-bloom",
+      "country-glow-wide",
+      "country-glow-mid",
+      "country-glow-edge",
+    ]);
+    for (const l of layers) {
+      expect(l.props.visible).toBe(false);
+      expect(l.props.data).toBe(NO_RINGS);
+    }
+  });
+
+  it("strokes are PathLayers over the outline rings (no GeoJsonLayer fill sublayer to earcut)", () => {
+    const features = [countryFeature("PT", [-10, 36, -6, 42]), straddlingFeature("RU")];
+    const layers = countryGlowLayers(features, 0, { fill: false }) as PathLayer[];
+    const rings = outlineRings(features);
+    expect(rings).toHaveLength(3); // PT: 1 ring · RU: 2 parts
+    for (const l of layers) {
+      expect(l).toBeInstanceOf(PathLayer);
+      expect(l.props.data).toBe(rings);
+      expect(l.props.visible).toBe(true);
+      expect((l.props as unknown as { getPath: (d: unknown) => unknown }).getPath(rings[0])).toBe(rings[0].path);
+    }
   });
 
   it("draws the same layer stack for one or several features", () => {
@@ -136,9 +166,9 @@ describe("countryGlowLayers", () => {
       [countryFeature("PT", [-10, 36, -6, 42]), countryFeature("ES", [-9, 36, 3, 44])],
       0,
       { fill: false, paletteFor },
-    ) as { props: { getLineColor: (f: unknown) => number[] } }[];
-    const pt = bloom.props.getLineColor(countryFeature("PT", [0, 0, 1, 1]));
-    const es = bloom.props.getLineColor(countryFeature("ES", [0, 0, 1, 1]));
+    ) as { props: { getColor: (d: unknown) => number[] } }[];
+    const pt = bloom.props.getColor(ring(countryFeature("PT", [0, 0, 1, 1])));
+    const es = bloom.props.getColor(ring(countryFeature("ES", [0, 0, 1, 1])));
     expect(pt[0]).toBeGreaterThan(pt[2]); // reddish
     expect(es[2]).toBeGreaterThan(es[0]); // bluish
   });
@@ -149,8 +179,8 @@ describe("countryGlowLayers", () => {
       fill: false,
       color: [255, 255, 255],
       paletteFor,
-    }) as { props: { getLineColor: (f: unknown) => number[] } }[];
-    const c = bloom.props.getLineColor(countryFeature("ZZ", [0, 0, 1, 1]));
+    }) as { props: { getColor: (d: unknown) => number[] } }[];
+    const c = bloom.props.getColor(ring(countryFeature("ZZ", [0, 0, 1, 1])));
     // White base, lightened + alpha — the rgb channels stay equal (neutral).
     expect(c[0]).toBe(c[1]);
     expect(c[1]).toBe(c[2]);

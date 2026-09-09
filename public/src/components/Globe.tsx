@@ -44,6 +44,7 @@ import { tracksLayer, orbitLayer, trailsLayer, filterTrails, trackLabelData, typ
 import { cityLabelMinZoom, cityDetail } from "../lib/cities";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { alertsLayer, onAirPulseLayers, pulseIsPoint } from "./layers/alerts";
+import { pickedFeature } from "./layers/outline-rings";
 import { countryFeatureFor, countriesInBbox, countryGlowLayers } from "./layers/countryGlow";
 import { seismicLayer } from "./layers/seismic";
 import { seismographStationLayers, seismoKeyOf, seismoShortName } from "./layers/seismograph-stations";
@@ -428,10 +429,13 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // pass no alert features so it never matches/breathes a nearby polygon.
     const cut = pulseAtRef.current;
     const hover = hoverPulseRef.current;
+    // No cut and no hover still commits the (empty, hidden) on-air AREA pair so
+    // its shader pipelines stay warm for the next polygon cut.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let pulse: any[] = [];
+    let pulse: any[];
     if (cut) pulse = onAirPulseLayers(alertsRef.current, cut, Date.now(), mapHighlightRgb);
     else if (hover) pulse = onAirPulseLayers(hover.features, hover.at, Date.now(), mapHighlightRgb);
+    else pulse = onAirPulseLayers(alertsRef.current, null, Date.now(), mapHighlightRgb);
     // A country spotlight breathes its boundary glow independently of (and
     // alongside) the point pulse above — the two kinds never overlap on air.
     // Outline only (no interior fill); each country's outline cycles through its
@@ -602,7 +606,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       onHover: (info: any) => {
         if (!interactive) return;
         const layerId: string = info?.layer?.id ?? "";
-        const obj = info?.object;
+        // A glow-ring pick carries { path, feature } — unwrap to the feature.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const obj = pickedFeature<any>(info?.object);
         let next: { at: [number, number]; features: AlertFeature[] } | null = null;
         if (obj && layerId.startsWith("seismic")) {
           next = { at: [obj.lng, obj.lat], features: [] };
@@ -626,9 +632,12 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         const select = onSelectRef.current;
         const pick = onPickPointRef.current;
         const layerId: string = info?.layer?.id ?? "";
-        if (info?.object && layerId.startsWith("seismic")) select?.(quakeToSegment(info.object));
-        else if (info?.object && layerId.startsWith("alerts")) select?.(alertFeatureToSegment(info.object));
-        else if (info?.object && layerId.startsWith("volcano")) select?.(volcanoToSegment(info.object));
+        // A glow-ring pick carries { path, feature } — unwrap to the feature.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const obj = pickedFeature<any>(info?.object);
+        if (obj && layerId.startsWith("seismic")) select?.(quakeToSegment(obj));
+        else if (obj && layerId.startsWith("alerts")) select?.(alertFeatureToSegment(obj));
+        else if (obj && layerId.startsWith("volcano")) select?.(volcanoToSegment(obj));
         else {
           // deck gives `coordinate` when the pointer is over the globe surface;
           // it's undefined out in space, where a click should just clear.
