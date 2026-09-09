@@ -1643,6 +1643,58 @@ failed typecheck on two missing exports, the worker director suite failed nine
 tests. `./update-shared` (the documented step for exactly that symptom) fixed it.
 All four packages green: **1 483 tests**, typecheck and production build clean.
 
+### Round 38 (2026-09-10) — the A/B answered, and the texture log names the upload
+
+`NEXT_PUBLIC_WL_GRID_PATCH=off` shipped and confirmed live
+(`[globe] WeatherLayers grid caches DISABLED`). Two 60 s runs on it.
+
+**Verdict: the grid cache is exonerated, and it must go straight back on.**
+Without it a minute carries **14.6 s of stalls** — a 5 493 ms freeze, a 3 196 ms,
+a 1 833 ms, a 997 ms — and the second run 22 stalls / 6.7 s at 43.3 % busy. The
+frames inside them are exactly round 25's pathology, restored: `eo` (icomesh
+`icosphere(order)`) 977 ms in one stall, the KDBush sort `e` 950 ms beside it,
+`c` (icomesh's midpoint cache) and the `ej`/`eK`/`eH` vector helpers under
+`updateState` 6 260 ms inclusive and `_updateFeatures` 5 213 ms (19.4 %). The
+icosphere and its index are being rebuilt on every camera tick again. Flag
+removed from `.env.deploy` with the result recorded beside it.
+
+So the calm-looking barbs are NOT our sampling cache. Two hypotheses remain, and
+the same run's globe log speaks to the second.
+
+**The texture log named the 368 ms `texSubImage2D` — and it is much worse than
+assumed.** Decoded sizes this session:
+
+| grid        | size    | count |
+|-------------|---------|-------|
+| 4500×2250   | 38.6 MB | ×6    |
+| 4979×1913   | 36.3 MB | ×5    |
+| 3500×1750   | 23.4 MB | ×3    |
+| 2801×1791   | 19.1 MB | ×3    |
+| 1440×721    | 4.0 MB  | ×15   |
+| 241×151     | 0.1 MB  | ×1    |
+
+~900 MB across ~100 textures, a **400× spread** between largest and smallest. A
+38.6 MB upload IS the 368–399 ms stall. Round 32 guessed "a global GFS frame is
+~4 MB and should upload in single-digit ms" — true of the 1440×721 ones, and
+irrelevant, because the ones that stall are ten times that.
+
+**Which makes round 35's cache cap wrong.** Bounding a cache by ENTRY COUNT when
+entries span 0.1–38.6 MB is not a memory bound at all: 256 small ones is 1 GB,
+256 large ones is 10 GB. `textures.ts` now bounds by **bytes as well as count** —
+`NEXT_PUBLIC_TEXTURE_CACHE_MB`, default 1536 MB per browser source, with each
+entry's real weight recorded as it resolves. Tested.
+
+**The stale-hour hypothesis got sharper, not weaker.** The log says
+`manifest composite run=2026-09-09T18:00:00.000Z (5h ago) steps=51 fhr=0` — and
+`fhr: 0` is the shipped default in `shared/control.ts` with **no
+nearest-hour-to-now selection anywhere in the codebase**. So the globe always
+draws the run's ANALYSIS hour, which drifts up to ~6 h behind wall clock before
+the next run lands. A damaging-wind warning issued in the last hour is being
+drawn over a wind field from six hours earlier. That alone can produce calm
+barbs under a live warning, with nothing wrong in the sampling at all. Picking
+the step nearest to now is a product decision, not a bug fix, so it is flagged
+rather than changed.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

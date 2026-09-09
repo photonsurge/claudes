@@ -1,5 +1,5 @@
 import * as WL from "weatherlayers-gl";
-import { TEXTURE_LOAD_TIMEOUT_MS, clearTextureCache, isTextureCached, loadTexture, cacheMaxFrom, textureSizeLine } from "./textures";
+import { TEXTURE_LOAD_TIMEOUT_MS, clearTextureCache, isTextureCached, loadTexture, cacheBytesFrom, cacheMaxFrom, textureBytes, textureSizeLine } from "./textures";
 
 type Loader = typeof WL.loadTextureData;
 const original: Loader = WL.loadTextureData;
@@ -76,5 +76,24 @@ describe("cacheMaxFrom", () => {
     expect(cacheMaxFrom("lots")).toBe(256);
     expect(cacheMaxFrom("0")).toBe(256);
     expect(cacheMaxFrom("-5")).toBe(256);
+  });
+});
+
+describe("cacheBytesFrom / textureBytes", () => {
+  it("reads a megabyte budget, defaulting to 1536 MB", () => {
+    expect(cacheBytesFrom("512")).toBe(512 * 1048576);
+    expect(cacheBytesFrom(undefined)).toBe(1536 * 1048576);
+    expect(cacheBytesFrom("nonsense")).toBe(1536 * 1048576);
+    expect(cacheBytesFrom("0")).toBe(1536 * 1048576);
+  });
+
+  it("weighs a texture by its decoded bytes, not its dimensions", () => {
+    // The spread that makes a count cap meaningless: 4500x2250 is 38.6 MB,
+    // 241x151 is 0.1 MB, and 256 of each differ by ~10 GB.
+    const big = { data: new Uint8Array(4500 * 2250 * 4), width: 4500, height: 2250 };
+    const small = { data: new Uint8Array(241 * 151 * 4), width: 241, height: 151 };
+    expect(textureBytes(big as never)).toBe(4500 * 2250 * 4);
+    expect(textureBytes(big as never) / textureBytes(small as never)).toBeGreaterThan(250);
+    expect(textureBytes(undefined)).toBe(0);
   });
 });

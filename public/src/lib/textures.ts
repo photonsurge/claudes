@@ -43,6 +43,21 @@ const cache = new Map<string, Promise<LoadedTexture>>();
  * broadcast can't accumulate every run's frames.
  */
 const DEFAULT_TEXTURE_CACHE_MAX = 256;
+/**
+ * The cache is bounded by BYTES as well as by entry count, because the entries
+ * are nowhere near equal. The 2026-09-09 23:27 run's texture log:
+ *
+ *     4500×2250   38.6 MB  ×6
+ *     4979×1913   36.3 MB  ×5
+ *     1440×721     4.0 MB  ×15
+ *     241×151      0.1 MB  ×1
+ *
+ * — a 400× spread, and ~900 MB across ~100 textures in one session. A count cap
+ * alone is therefore meaningless as a memory bound: 256 of the small ones is
+ * 1 GB, 256 of the big ones is 10 GB. The OBS box has 32 GB and runs 3–4
+ * browser sources, so budget per source, not per entry.
+ */
+const DEFAULT_TEXTURE_CACHE_MB = 1536;
 
 /**
  * Parse the `NEXT_PUBLIC_TEXTURE_CACHE_MAX` override (Next inlines it at build
@@ -51,6 +66,12 @@ const DEFAULT_TEXTURE_CACHE_MAX = 256;
 export function cacheMaxFrom(raw: string | undefined): number {
   const n = Number(raw);
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : DEFAULT_TEXTURE_CACHE_MAX;
+}
+
+/** Parse `NEXT_PUBLIC_TEXTURE_CACHE_MB` into a byte budget. */
+export function cacheBytesFrom(raw: string | undefined): number {
+  const n = Number(raw);
+  return (Number.isFinite(n) && n >= 1 ? Math.floor(n) : DEFAULT_TEXTURE_CACHE_MB) * 1048576;
 }
 
 /**
@@ -64,6 +85,17 @@ export function cacheMaxFrom(raw: string | undefined): number {
  * four. Tune with `NEXT_PUBLIC_TEXTURE_CACHE_MAX` without a code change.
  */
 const TEXTURE_CACHE_MAX = cacheMaxFrom(process.env.NEXT_PUBLIC_TEXTURE_CACHE_MAX);
+const TEXTURE_CACHE_MAX_BYTES = cacheBytesFrom(process.env.NEXT_PUBLIC_TEXTURE_CACHE_MB);
+
+/** Decoded size per cached URL, recorded as each load resolves. */
+const bytesByUrl = new Map<string, number>();
+export const textureBytes = (t: LoadedTexture | undefined): number =>
+  (t as unknown as { data?: { byteLength?: number } } | undefined)?.data?.byteLength ?? 0;
+const cachedBytes = (): number => {
+  let n = 0;
+  for (const b of bytesByUrl.values()) n += b;
+  return n;
+};
 
 /** Mark `url` most-recently-used (Map iterates in insertion order, so delete +
  *  re-set moves it to the newest slot). Keeps the on-screen/hot set unevictable. */
@@ -72,12 +104,15 @@ function touch(url: string, p: Promise<LoadedTexture>): void {
   cache.set(url, p);
 }
 
-/** Drop least-recently-used entries (oldest-first) until back within the cap. */
+/** Drop least-recently-used entries (oldest-first) until back within BOTH caps.
+ *  Bytes are only known for entries that have resolved; an in-flight load counts
+ *  as zero and is bounded by the entry cap until it lands. */
 function evictLru(): void {
-  while (cache.size > TEXTURE_CACHE_MAX) {
+  while (cache.size > TEXTURE_CACHE_MAX || (cachedBytes() > TEXTURE_CACHE_MAX_BYTES && cache.size > 1)) {
     const oldest = cache.keys().next().value as string | undefined;
     if (oldest === undefined) break;
     cache.delete(oldest);
+    bytesByUrl.delete(oldest);
   }
 }
 
@@ -139,6 +174,11 @@ const logTextureSize =
   (url: string) =>
   (t: LoadedTexture): LoadedTexture => {
     godsLog(textureSizeLine(url, t));
+    // Now its real weight is known, so the byte budget can act on it.
+    if (cache.has(url)) {
+      bytesByUrl.set(url, textureBytes(t));
+      evictLru();
+    }
     return t;
   };
 
@@ -180,4 +220,5 @@ export function preloadTextures(urls: Array<string | undefined>): void {
 /** Test/SSR hook: clear the cache. */
 export function clearTextureCache(): void {
   cache.clear();
+  bytesByUrl.clear();
 }
