@@ -58,3 +58,39 @@ export class UniformBlock {
     this.modified = true;
   }
 }
+
+/** The parts of luma 9.3.5's `UniformStore` the update-loop patch touches — verbatim
+ *  (`log.log(...)()` reduced to a no-op: probe.gl's logger returns one below its level). */
+type Buf = { write(data: Uint8Array): void };
+export class UniformStore {
+  uniformBlocks = new Map<string, UniformBlock>();
+  uniformBuffers = new Map<string, Buf>();
+  shaderBlockWriters = new Map<string, { getData(values: Record<string, UniformValue>): Uint8Array }>();
+  getUniformBufferData(uniformBufferName: string): Uint8Array {
+    const uniformValues = this.uniformBlocks.get(uniformBufferName)?.getAllUniforms() || {};
+    const shaderBlockWriter = this.shaderBlockWriters.get(uniformBufferName);
+    return shaderBlockWriter?.getData(uniformValues) || new Uint8Array(0);
+  }
+  updateUniformBuffers(): false | string {
+    let reason: false | string = false;
+    for (const uniformBufferName of this.uniformBlocks.keys()) {
+      const bufferReason = this.updateUniformBuffer(uniformBufferName);
+      reason ||= bufferReason;
+    }
+    return reason;
+  }
+  updateUniformBuffer(uniformBufferName: string): false | string {
+    const uniformBlock = this.uniformBlocks.get(uniformBufferName);
+    let uniformBuffer = this.uniformBuffers.get(uniformBufferName);
+    let reason: false | string = false;
+    if (uniformBuffer && uniformBlock?.needsRedraw) {
+      reason ||= uniformBlock.needsRedraw;
+      // This clears the needs redraw flag
+      const uniformBufferData = this.getUniformBufferData(uniformBufferName);
+      uniformBuffer = this.uniformBuffers.get(uniformBufferName);
+      uniformBuffer?.write(uniformBufferData);
+      this.uniformBlocks.get(uniformBufferName)?.getAllUniforms();
+    }
+    return reason;
+  }
+}

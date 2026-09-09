@@ -603,6 +603,52 @@ a worker, merging the 3-ring glows (visual trade-off at joins), luma
 `_applyBindings` block-index lookups per draw, WeatherLayers' `ensureDefaultProps`
 per draw.
 
+### Round 19 (2026-09-09) — what is left, and whose it is
+
+Round 18 measured: busy 58.0 → **53.0 %**, rAF 29.6 fps with the maximum frame
+gap 2 467 → **267 ms** (a texture load), no `high-low.ts` frames, Layout 28 →
+25× per 8 s and no longer on the page squares. Deck 7.5 ms/frame (unchanged,
+31 draws). The per-frame budget now reads: deck ~7.5 ms, the CEF pipeline
+~6 ms (Commit 3.2, Layerize 1.5, PrePaint 0.5, style 0.5 — `(program)` at 37 %
+of busy is this), the label canvas ~1.7 ms on a 137-label shot, GC 0.55,
+React/DOM ~0.5.
+
+`Commit` is now the largest single item and it is not DOM work: with
+`--disable-gpu-compositing` cc composites 29 layers of 1920×1080 on the CPU every
+frame (and reads the WebGL frame back for it) while the main thread waits at
+commit. That is a host setting — OBS's browser-source hardware acceleration —
+not something the page can change; round 10's local reproduction with
+`--disable-threaded-animation` matched the animation signature, and GPU
+compositing is the same switch family. The profiler now reports it (below).
+
+Shipped:
+
+- **Profiler**: `gpuFeaturesOf` opens the browser-level CDP target
+  (`/json/version` → `SystemInfo.getInfo`) and prints `gpu features:` (gpu
+  compositing, rasterization, 2d canvas, webgl…) and the interesting `browser
+  flags:` from CEF's command line — decisive for the pipeline share.
+- **Label index** (`indexLabels`): the sorted priority list plus flat
+  `Float64Array`s of unit vectors and `minZoom`; the frame loop reads those for
+  the cull pass and, because the list is sorted, `break`s at the first label
+  above the zoom instead of scanning the tail (~1 000 objects a frame on this
+  shot). Same labels, same order.
+- **luma update-loop patch** (`patchUniformStore`): `updateUniformBuffers`
+  iterates the block map once and writes only flagged blocks — luma's version
+  re-fetched block and buffer per block, read the uniforms again for a level-4
+  log line and joined reasons for a level-3 one (~0.4 ms/frame across ~120
+  block visits now that most have nothing to write). Same writes, same flag
+  clearing; shape-guarded like the block patch; the mock carries a verbatim
+  `UniformStore` slice.
+
+Next run: read the new `gpu features:` line first. If it says
+`gpu_compositing=disabled_software`, the ~6 ms pipeline is the software
+compositor, and the host-side lever is OBS → Settings → Advanced → Sources →
+"Enable Browser Source Hardware Acceleration" (a restart of OBS / the browser
+source) — worth a before/after profile. On our side expect `u`/`place` a touch
+lower and `updateUniformBuffer` gone from the table. Still open (trade-offs,
+the user's call): ticker windowing, the label canvas in a worker, merging the
+3-ring glows, global + nest particles both drawing.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

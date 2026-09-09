@@ -1,4 +1,4 @@
-import { LabelGrid, holderLabels, iconSig, iconVarsOf, labelWidth, viewCosMin, type OverlayLabel } from "./GlobeLabels";
+import { LabelGrid, holderLabels, iconSig, iconVarsOf, indexLabels, labelWidth, viewCosMin, type OverlayLabel } from "./GlobeLabels";
 
 describe("viewCosMin (pre-projection view culling)", () => {
   const cam: [number, number, number] = [1, 0, 0]; // sub-camera point at lng 0, lat 0
@@ -20,6 +20,31 @@ describe("viewCosMin (pre-projection view culling)", () => {
     // A corner that can't be unprojected → floor too.
     const nan = { unproject: () => [NaN, NaN] };
     expect(viewCosMin(nan, 100, 100, cam)).toBe(0.04);
+  });
+});
+
+describe("indexLabels (the frame loop's sorted, flat label list)", () => {
+  const label = (id: string, lng: number, lat: number, minZoom?: number): OverlayLabel => ({
+    id,
+    text: id,
+    position: [lng, lat, 0],
+    color: [255, 255, 255],
+    minZoom,
+  });
+
+  it("sorts by minZoom (undefined = 0) and lays unit vectors out in that order", () => {
+    const idx = indexLabels([label("c", 0, 90, 4.5), label("a", 0, 0), label("b", 90, 0, 2)]);
+    expect(idx.labels.map((l) => l.id)).toEqual(["a", "b", "c"]);
+    expect(Array.from(idx.minZoom)).toEqual([0, 2, 4.5]);
+    // a: lng 0 lat 0 → +x; b: lng 90 → +y; c: lat 90 → +z.
+    expect(Array.from(idx.unit.slice(0, 3)).map((v) => Math.round(v))).toEqual([1, 0, 0]);
+    expect(Array.from(idx.unit.slice(3, 6)).map((v) => Math.round(v))).toEqual([0, 1, 0]);
+    expect(Array.from(idx.unit.slice(6, 9)).map((v) => Math.round(v))).toEqual([0, 0, 1]);
+  });
+
+  it("keeps a fractional minZoom exact, so a zoom equal to it still reveals the label", () => {
+    const idx = indexLabels([label("x", 0, 0, 3.7)]);
+    expect(3.7 < idx.minZoom[0]).toBe(false);
   });
 });
 

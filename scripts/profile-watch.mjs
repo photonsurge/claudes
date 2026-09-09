@@ -86,6 +86,37 @@ async function resolveWsUrl(t) {
   return u.toString();
 }
 
+// ── Browser-level GPU status (SystemInfo lives on the browser target) ───────
+// Decisive for the pipeline share of a profile: `gpu_compositing=disabled_software`
+// means cc composites every frame on the CPU (and WebGL is read back for it), so
+// per-frame Commit / Layerize time is the software compositor, not the DOM. The
+// browser's command line shows which switches the host (OBS) passed to CEF.
+async function gpuFeaturesOf(t) {
+  if (!/^https?:/.test(t)) return null;
+  try {
+    const base = t.replace(/\/+$/, "");
+    const v = await (await fetch(`${base}/json/version`)).json();
+    if (!v.webSocketDebuggerUrl) return null;
+    const u = new URL(v.webSocketDebuggerUrl);
+    u.host = new URL(base).host;
+    const cdp = await connect(u.toString());
+    try {
+      const info = await cdp.send("SystemInfo.getInfo");
+      const fs = info.gpu?.featureStatus ?? {};
+      const pick = ["gpu_compositing", "rasterization", "2d_canvas", "webgl", "webgl2", "canvas_oop_rasterization", "opengl", "video_decode"];
+      const feats = pick.filter((k) => k in fs).map((k) => `${k}=${fs[k]}`).join(" · ");
+      const flags = String(info.commandLine || "")
+        .split(/\s+/)
+        .filter((f) => f.startsWith("--") && /gpu|composit|anim|raster|frame|thread|software|angle|feature|gl\b|vsync|zero-copy|shared|ozone|headless|windowless/i.test(f));
+      return `gpu features: ${feats || "n/a"}\nbrowser flags: ${flags.join(" ") || "(none of interest)"}`;
+    } finally {
+      cdp.close();
+    }
+  } catch (e) {
+    return `gpu features: n/a (${e.message})`;
+  }
+}
+
 // ── Minimal CDP client ──────────────────────────────────────────────────────
 function connect(wsUrl) {
   return new Promise((resolve, reject) => {
@@ -626,6 +657,7 @@ async function deckCensus(cdp) {
 // ── Main ────────────────────────────────────────────────────────────────────
 (async () => {
   const wsUrl = await resolveWsUrl(target);
+  const gpuFeatures = await gpuFeaturesOf(target);
   const cdp = await connect(wsUrl);
   fs.mkdirSync(OUT, { recursive: true });
   const href = await evaluate(cdp, "location.href");
@@ -695,6 +727,7 @@ async function deckCensus(cdp) {
   const d = (k) => (m1[k] ?? 0) - (m0[k] ?? 0);
   p(`renderer: RecalcStyle ${d("RecalcStyleCount")}× (${(d("RecalcStyleDuration") * 1000).toFixed(0)}ms) · Layout ${d("LayoutCount")}× (${(d("LayoutDuration") * 1000).toFixed(0)}ms) · Script ${(d("ScriptDuration") * 1000).toFixed(0)}ms · Task ${(d("TaskDuration") * 1000).toFixed(0)}ms`);
   p(`DOM: ${dom.nodes} nodes · ${dom.willChange} inline will-change elements · ${dom.canvases} canvases · JS heap ${(m1.JSHeapUsedSize / 1048576).toFixed(0)}MB · GPU: ${dom.gpu}`);
+  if (gpuFeatures) p(gpuFeatures);
   if (census) {
     p(`rAF census (${census.frames} frames): ${census.callbacksPerFrame} callbacks/frame`);
     for (const [src, n] of census.loops) p(`   ${String(n).padStart(5)}×  ${src}`);

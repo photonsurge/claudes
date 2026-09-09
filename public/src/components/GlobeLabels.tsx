@@ -74,16 +74,36 @@ function unit(lng: number, lat: number): [number, number, number] {
   return [cl * Math.cos(lo), cl * Math.sin(lo), Math.sin(la)];
 }
 
-/** Per-label unit vectors, computed once per label object (labels are
- *  rebuilt about once a second; positions are static for cities). */
-const unitCache = new WeakMap<OverlayLabel, [number, number, number]>();
-function unitOf(l: OverlayLabel): [number, number, number] {
-  let u = unitCache.get(l);
-  if (!u) {
-    u = unit(l.position[0], l.position[1]);
-    unitCache.set(l, u);
+/**
+ * The frame loop's view of the label list: biggest/capital first (lowest
+ * `minZoom`) so a crowded conurbation keeps its most important label, plus flat
+ * per-label arrays for the cull pass. Built once per label rebuild (~1/s);
+ * the per-frame pass then reads two typed arrays instead of touching a couple
+ * of thousand objects and a WeakMap, and — because the list is sorted by
+ * `minZoom` — stops at the first label above the current zoom.
+ */
+export interface LabelIndex {
+  labels: OverlayLabel[];
+  /** Unit sphere vectors, 3 per label, in `labels` order. */
+  unit: Float64Array;
+  /** `minZoom ?? 0` per label (Float64: an exact-equality zoom must compare as before). */
+  minZoom: Float64Array;
+}
+
+export function indexLabels(labels: OverlayLabel[]): LabelIndex {
+  const sorted = [...labels].sort((a, b) => (a.minZoom ?? 0) - (b.minZoom ?? 0));
+  const n = sorted.length;
+  const u = new Float64Array(n * 3);
+  const mz = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const l = sorted[i];
+    const [x, y, z] = unit(l.position[0], l.position[1]);
+    u[i * 3] = x;
+    u[i * 3 + 1] = y;
+    u[i * 3 + 2] = z;
+    mz[i] = l.minZoom ?? 0;
   }
-  return u;
+  return { labels: sorted, unit: u, minZoom: mz };
 }
 
 // ── Collision avoidance ───────────────────────────────────────────────────
@@ -533,14 +553,9 @@ export default function GlobeLabels({
   // Signature of the last painted frame: camera + size + label generation.
   // A parked shot (no spin, no idle motion, no new labels) repaints nothing.
   const lastSigRef = useRef("");
-  // Biggest/capital first (lowest minZoom) so a crowded conurbation always
-  // keeps its most important label and thins out the smaller neighbours.
-  const priorityLabels = useMemo(
-    () => [...labels].sort((a, b) => (a.minZoom ?? 0) - (b.minZoom ?? 0)),
-    [labels],
-  );
-  const priorityRef = useRef<OverlayLabel[]>(priorityLabels);
-  priorityRef.current = priorityLabels;
+  const labelIndex = useMemo(() => indexLabels(labels), [labels]);
+  const indexRef = useRef<LabelIndex>(labelIndex);
+  indexRef.current = labelIndex;
   const iconLabels = useMemo(() => labels.filter((l) => l.icon), [labels]);
   const gridRef = useRef<LabelGrid>(new LabelGrid());
 
@@ -641,14 +656,18 @@ export default function GlobeLabels({
       let projected = 0;
       let drawn = 0;
       let draws = 0;
-      for (const l of priorityRef.current) {
-        // Progressive reveal: below the label's minZoom it's not shown at all.
-        if (zoom < (l.minZoom ?? 0)) continue;
+      const { labels: ls, unit: un, minZoom: mz } = indexRef.current;
+      for (let i = 0; i < ls.length; i++) {
+        // Progressive reveal: below the label's minZoom it's not shown at all —
+        // and the list is sorted by minZoom, so the first one above the zoom
+        // ends this frame's candidates.
+        if (zoom < mz[i]) break;
         considered++;
-        const [ux, uy, uz] = unitOf(l);
         // Beyond the view's angular reach (or on the hidden hemisphere — the
         // 0.04 floor keeps a small margin so labels don't flicker at the limb).
-        if (ux * cx + uy * cy + uz * cz <= cosMin) continue;
+        const j = i * 3;
+        if (un[j] * cx + un[j + 1] * cy + un[j + 2] * cz <= cosMin) continue;
+        const l = ls[i];
         projected++;
         let x: number;
         let y: number;
