@@ -489,31 +489,29 @@ export function useRegionNearTerm(): ForecastStep[] {
 const TOP_CITY_LIMIT = 8;
 
 /** Bbox cities fallback — replicates TopCitiesPanel's rounded-dedup + limit. */
-function useListCitiesInBbox(bbox: Bbox | null): City[] {
-  const [cities, setCities] = useState<City[]>([]);
-  const key = bbox ? bbox.map((v) => v.toFixed(1)).join(",") : "";
+function useListCitiesInBbox(bbox: Bbox | null, cc?: string): City[] {
+  const [state, setState] = useState<{ key: string; cities: City[] }>({ key: "", cities: [] });
+  const country = cc?.toLowerCase();
+  const key = bbox ? `${country ?? ""}|${bbox.map((v) => v.toFixed(1)).join(",")}` : "";
   useEffect(() => {
-    if (!bbox) {
-      setCities([]);
-      return;
-    }
+    if (!bbox) return;
     let cancelled = false;
-    listCities({ bbox, limit: TOP_CITY_LIMIT }).then((r) => {
-      if (!cancelled) setCities(r);
+    // Country membership, rather than camera bounds, defines a country list.
+    listCities({ ...(country ? { cc: country } : { bbox }), limit: TOP_CITY_LIMIT }).then((cities) => {
+      if (!cancelled) setState({ key, cities });
     });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- request scope is encoded in key
   }, [key]);
-  return cities;
+  return key && state.key === key ? state.cities : [];
 }
 
-export function useTopCities(bbox: Bbox | null): City[] {
+export function useTopCities(bbox: Bbox | null, cc?: string): City[] {
   const { bundle, enabled, awaitingFocus, framesFocus } = useFocusContext();
   const cover = framesFocus(bbox);
-  const fb = useListCitiesInBbox(cover || !enabled || awaitingFocus ? null : bbox);
-  return cover ? bundle!.topCities.map((c) => c.city) : fb;
+  const fb = useListCitiesInBbox(cover || !enabled || awaitingFocus ? null : bbox, cc);
+  const cities = cover ? bundle!.topCities.map((c) => c.city) : fb;
+  return cc ? cities.filter((city) => city.cc?.toLowerCase() === cc.toLowerCase()) : cities;
 }
 
 // ── Bundle-only selectors (no live fallback needed) ───────────────────────────

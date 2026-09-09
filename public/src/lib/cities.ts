@@ -145,6 +145,8 @@ export function regionHalfExtentDeg(zoom: number): number {
 // ── Client CRUD ──────────────────────────────────────────────────────────────
 
 export interface ListCitiesOptions {
+  /** Restrict results to this ISO country code before applying the limit. */
+  cc?: string;
   /** Max rows (default: server default — see /api/cities). */
   limit?: number;
   /** Only cities with population ≥ this. */
@@ -177,6 +179,7 @@ export interface CitiesPageResult {
 
 export async function listCities(opts: ListCitiesOptions = {}): Promise<City[]> {
   const q = new URLSearchParams();
+  if (opts.cc) q.set("cc", opts.cc.toLowerCase());
   if (opts.limit) q.set("limit", String(opts.limit));
   if (opts.minPop) q.set("minPop", String(opts.minPop));
   if (opts.capital) q.set("capital", "1");

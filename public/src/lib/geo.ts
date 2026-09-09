@@ -83,6 +83,61 @@ export function withinRadiusBox(center: [number, number], p: [number, number], b
 }
 
 /**
+ * `nearby()` over a fixed item set, answered from 1° lat/lng buckets instead of
+ * a full scan. The World Watch feed asked "what's near this alert" for a few
+ * hundred alerts on every rebuild, each a pass over the ~15 k-city list — ~30 ms
+ * of a cut's stall on the profiler (docs/watch-perf-plan.md, round 23). A query
+ * visits only the buckets under the radius box, then applies exactly the same
+ * box + haversine test and the same ordering (nearest first; equal distances
+ * in the items' original order), so the answer is identical to `nearby()`.
+ */
+export class GeoGrid<T> {
+  private cells = new Map<number, Array<{ item: T; p: [number, number]; i: number }>>();
+
+  constructor(items: T[], getPoint: (item: T) => [number, number] | null) {
+    for (let i = 0; i < items.length; i++) {
+      const p = getPoint(items[i]);
+      if (!p) continue;
+      const key = cellKey(p[0], p[1]);
+      let cell = this.cells.get(key);
+      if (!cell) this.cells.set(key, (cell = []));
+      cell.push({ item: items[i], p, i });
+    }
+  }
+
+  nearby(center: [number, number], radiusKm: number): Nearby<T>[] {
+    const box = radiusBox(center, radiusKm);
+    const lat0 = latCell(center[1] - box.dLat);
+    const lat1 = latCell(center[1] + box.dLat);
+    const allLng = box.dLng >= 180;
+    const lng0 = Math.floor(center[0] - box.dLng);
+    const lng1 = Math.floor(center[0] + box.dLng);
+    const found: Array<Nearby<T> & { i: number }> = [];
+    for (let la = lat0; la <= lat1; la++) {
+      for (let lo = allLng ? 0 : lng0; lo <= (allLng ? 359 : lng1); lo++) {
+        const cell = this.cells.get(la * 360 + (((lo % 360) + 360) % 360));
+        if (!cell) continue;
+        for (const e of cell) {
+          if (!withinRadiusBox(center, e.p, box)) continue;
+          const distanceKm = haversineKm(center, e.p);
+          if (distanceKm <= radiusKm) found.push({ item: e.item, distanceKm, i: e.i });
+        }
+      }
+    }
+    found.sort((a, b) => a.distanceKm - b.distanceKm || a.i - b.i);
+    return found.map(({ item, distanceKm }) => ({ item, distanceKm }));
+  }
+}
+
+/** 0..179 latitude band (a point at exactly +90 lands in the last band). */
+function latCell(lat: number): number {
+  return Math.min(179, Math.max(0, Math.floor(lat + 90)));
+}
+function cellKey(lng: number, lat: number): number {
+  return latCell(lat) * 360 + ((((Math.floor(lng) % 360) + 360) % 360) % 360);
+}
+
+/**
  * The single nearest item to `center` ([lng,lat]) with NO radius bound, or null
  * if nothing has a location. For place context on a moving target (aircraft /
  * ship) where the nearest city can be far — mid-ocean it still names the closest

@@ -57,6 +57,8 @@ async function buildCities(sp: URLSearchParams) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const query: any = {};
+  const cc = sp.get("cc")?.trim().toLowerCase();
+  if (cc) query.cc = { $in: [cc, cc.toUpperCase()] };
   if (minPop > 0) query.population = { $gte: minPop };
   if (capital === "1" || capital === "true") query.isCapital = true;
   if (q) {

@@ -438,7 +438,7 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
       slides.push({ id: "alerts", node: <AreaAlertsPanel alerts={ctx.areaAlerts} color={color} theme={ctx.theme} /> });
     }
     if (ctx.wideCitiesBbox) {
-      slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
+      slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} cc={ctx.wideCitiesCc} color={color} /> });
       // The area weather slide: the framed nation's top-5 cities, each with its
       // live NOW temp + 3-day strip (replaces the old single country-wide aggregate).
       slides.push({ id: "forecast", node: <CityForecastPanel bbox={ctx.wideCitiesBbox} color={color} /> });
@@ -503,7 +503,7 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
         node: <RegionCountryPanel country={c} rank={i + 1} total={countries.length} color={color} theme={ctx.theme} />,
       });
     });
-    slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
+    slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} cc={ctx.wideCitiesCc} color={color} /> });
     // City forecasts live in the top-right report.
     slides.push(...contextSlides(ctx));
     return slides;
@@ -520,7 +520,7 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     if (placeRoundupSlideHasContent(ctx.placeRoundup)) {
       slides.push({ id: "place-roundup", node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} theme={ctx.theme} /> });
     }
-    slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
+    slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} cc={ctx.wideCitiesCc} color={color} /> });
     // City forecasts live in the top-right report.
     slides.push(...contextSlides(ctx));
     return slides;

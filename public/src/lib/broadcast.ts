@@ -18,7 +18,7 @@ import { alertRepPoint, continentOf } from "@photonsurge/shared/alerts/geo";
 import { hazardMeta, classifyHazard, type HazardType } from "./hazard";
 import { broadcastEventLabel } from "@photonsurge/shared/alerts/phrasebook";
 import { isoToFlag } from "@photonsurge/shared/tracks/flags";
-import { nearby, haversineKm, withinBbox, type Nearby } from "./geo";
+import { nearby, haversineKm, withinBbox, type Nearby, GeoGrid } from "./geo";
 import type { City } from "./cities";
 import type { Volcano, VolcanoStatus } from "@photonsurge/shared/volcanoes/types";
 
@@ -474,10 +474,20 @@ function alertRepPointOf(a: Alert): [number, number] | null {
  *  unnamed hamlet that merely happens to be the closest point in the dataset. */
 const NEARBY_RADIUS_KM = 350;
 const MAX_NEARBY_NAMES = 2;
+/** The notable subset, bucketed — built once per city list (a feed rebuild used
+ *  to re-filter and re-scan the whole list for every alert, quake and volcano). */
+const notableGrids = new WeakMap<City[], GeoGrid<City>>();
+function notableGrid(cities: City[]): GeoGrid<City> {
+  let g = notableGrids.get(cities);
+  if (!g) {
+    g = new GeoGrid(notableCities(cities), (c) => [c.lng, c.lat]);
+    notableGrids.set(cities, g);
+  }
+  return g;
+}
 function nearbyPlaces(point: [number, number] | null, cities: City[]): Nearby<City>[] {
   if (!point || cities.length === 0) return [];
-  const notable = cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital);
-  return nearby(notable, point, (c) => [c.lng, c.lat], NEARBY_RADIUS_KM);
+  return notableGrid(cities).nearby(point, NEARBY_RADIUS_KM);
 }
 
 /** "near Wichita, Topeka" from the nearest notable cities, or "" if none are close. */

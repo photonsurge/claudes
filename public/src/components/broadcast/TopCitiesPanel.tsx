@@ -39,14 +39,16 @@ function TopCityRow({ city }: { city: City }) {
 
 export default function TopCitiesPanel({
   bbox,
+  cc,
   color = "#3f8f8f",
 }: {
   bbox: [number, number, number, number];
+  cc?: string;
   color?: string;
 }) {
   // Top cities in view, climate baked in — served from the one /api/focus bundle
   // when it frames this bbox, else a live bbox fetch (rounded dedup + cap inside).
-  const cities = useTopCities(bbox);
+  const cities = useTopCities(bbox, cc);
 
   // Cycle the featured slot through every top city, biggest first, looping.
   const [slide, setSlide] = useState(0);

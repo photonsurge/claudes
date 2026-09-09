@@ -832,6 +832,56 @@ three cuts / fly-tos from /control during the minute; read the `## Stalls`
 section — each stall's Bottom-Up names the JS, its "renderer events" line names
 the rest.
 
+### Round 23 (2026-09-09) — the cut, split into its stalls
+
+Round 22 measured over 60 s: busy 44.9 → **42.7 %**, 29.6 fps. The label
+canvas's tick frame 0.23 → 0.08 ms/frame, `place` / `collides` gone from the
+table (the worker has them), `drawImage` 0.65 → 0.43 ms/frame on a DENSER
+last frame (267 blits vs 141) — the atlas roughly tripled blit throughput.
+
+The new `## Stalls` section named the "glitch when translating": not one stall
+but a chain — 232, 263, 331, 129 and 190 ms between 1.8 s and 5.6 s, ~1.1 s of
+jank across a cut (13 stalls, 2.4 s, over the minute). What they are made of:
+
+- **Alert "near …" lookups on the main thread**: three of the stalls carry
+  `nearbyPlaces` → for every alert, quake and volcano in the World Watch feed,
+  a fresh `cities.filter(notable)` over the ~15 k-city list and a scan — ~30 ms
+  per feed rebuild, and the feed rebuilds whenever its inputs' identities change
+  during a cut.
+- **BitmapLayer `_createMesh`**: each cut creates fresh raster / contour bitmap
+  instances and deck re-tessellates the same bounds at the same resolution
+  (~40 ms per cut across the stalls, plus the luma `lerp` inside it).
+- **WeatherLayers ParticleLayer `_setupTransformFeedback`**: a new wind layer
+  instance (or a `visible` flip — WL tears the transform feedback down when
+  hidden and rebuilds it when shown) recreates its particle buffers and links
+  the update shader — ~30–60 ms per layer, native "(program)" share included.
+  WL-internal; only a kept-alive, visible layer avoids it.
+- **"(program)" 60–160 ms stalls** right after the JS ones: the chrome
+  re-render's layout / paint and GPU link waits — the `--stall-trace` run names
+  these; and `iM` (the luma buffer-write loop) at 49 ms in one stall is
+  `bufferSubData` blocking on GPU back-pressure straight after the uploads.
+
+Shipped (lossless):
+
+- **`GeoGrid`** (`lib/geo.ts`): 1° lat/lng buckets over the notable cities,
+  built once per city list (`WeakMap`), answering `nearby()` from the buckets
+  under the radius box with exactly the same box + haversine test and the same
+  ordering (ties in original order — parity-tested against `nearby()` on 4 000
+  random cities at seven centres incl. the dateline and both poles).
+  `nearbyPlaces` in `broadcast.ts` uses it: a few hundred lookups now touch a
+  few hundred cities instead of a few million.
+- **BitmapLayer mesh memo** (`lib/bitmap-mesh-patch.ts`, installed with the
+  luma patches): `_createMesh` memoised by bounds + resolution (LRU 32), shared
+  across instances — the arrays are only read, each instance uploads its own
+  GPU buffers. Shape-guarded like the luma patches.
+
+Next run: `--seconds 60 --deck --stall-trace` with two or three manual cuts —
+expect the alert-lookup frames (`u`, `b` in the alerts chunk) and `_createMesh`
+gone from the stalls, and the "renderer events" line to say what the remaining
+"(program)" is (layout/paint of the chrome vs GPU link). Particle re-init is
+WeatherLayers' and stays unless the wind layer is kept alive across cuts (the
+other session's raster-mounting work is the place for that decision).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

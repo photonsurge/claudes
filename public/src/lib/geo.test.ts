@@ -1,15 +1,4 @@
-import {
-  haversineKm,
-  nearby,
-  nearest,
-  formatKm,
-  initialBearingDeg,
-  compass16,
-  bearingLabel,
-  withinBbox,
-  radiusBox,
-  withinRadiusBox,
-} from "./geo";
+import { GeoGrid, bearingLabel, compass16, formatKm, haversineKm, initialBearingDeg, nearby, nearest, radiusBox, withinBbox, withinRadiusBox } from "./geo";
 
 describe("haversineKm", () => {
   it("is zero for the same point", () => {
@@ -194,5 +183,54 @@ describe("radiusBox pre-cull", () => {
     const box = radiusBox([179.9, 0], 100);
     expect(withinRadiusBox([179.9, 0], [-179.9, 0], box)).toBe(true);
     expect(withinRadiusBox([179.9, 0], [170, 0], box)).toBe(false);
+  });
+});
+
+describe("GeoGrid (bucketed nearby)", () => {
+  // Deterministic pseudo-random cities over the whole globe, dateline and poles included.
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const cities = Array.from({ length: 4000 }, (_, i) => ({
+    id: i,
+    lng: -180 + rnd() * 360,
+    lat: -90 + rnd() * 180,
+  }));
+  const pt = (c: { lng: number; lat: number }): [number, number] => [c.lng, c.lat];
+  const grid = new GeoGrid(cities, pt);
+
+  it("answers exactly what nearby() answers, in the same order", () => {
+    const centres: [number, number][] = [
+      [0, 51.5],
+      [179.9, -41],
+      [-179.5, 64],
+      [12, 89.5],
+      [-70, -88],
+      [139.7, 35.7],
+      [-0.4, 0.2],
+    ];
+    for (const c of centres) {
+      for (const r of [80, 350, 1200]) {
+        const a = nearby(cities, c, pt, r);
+        const b = grid.nearby(c, r);
+        expect(b.map((x) => x.item.id)).toEqual(a.map((x) => x.item.id));
+        expect(b.map((x) => x.distanceKm)).toEqual(a.map((x) => x.distanceKm));
+      }
+    }
+  });
+
+  it("keeps equal distances in the items' original order, like nearby()", () => {
+    const twins = [
+      { id: "b", lng: 1, lat: 0 },
+      { id: "a", lng: -1, lat: 0 },
+      { id: "c", lng: 0, lat: 0.5 },
+    ];
+    const g = new GeoGrid(twins, (t) => [t.lng, t.lat]);
+    expect(g.nearby([0, 0], 500).map((x) => x.item.id)).toEqual(["c", "b", "a"]);
+    expect(nearby(twins, [0, 0], (t) => [t.lng, t.lat], 500).map((x) => x.item.id)).toEqual(["c", "b", "a"]);
+  });
+
+  it("skips items without a location", () => {
+    const g = new GeoGrid([{ id: 1, p: null }, { id: 2, p: [0, 0] as [number, number] }], (t) => t.p);
+    expect(g.nearby([0, 0], 10).map((x) => x.item.id)).toEqual([2]);
   });
 });
