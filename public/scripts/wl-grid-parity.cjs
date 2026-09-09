@@ -110,6 +110,54 @@ const p = self({ ...DEFAULTS, image: imageA, imageType: "VECTOR", imageUnscale: 
 p._updatePositions();
 const vals = p.state.points.map((f) => f.properties.value);
 console.log("sample values (m/s): min", Math.min(...vals).toFixed(2), "max", Math.max(...vals).toFixed(2), "count", vals.length, "calm(<2.45)", vals.filter((v) => v < 2.45).length);
+// ── Long-run stress: one persistent composite pair, hundreds of ticks, so a
+// cache-corruption bug that only shows up "after a while" (reported live: barbs
+// correct at first, then wrong/blank) has room to appear. Unlike the cases
+// above (a handful of camera steps, fresh self() per case), this keeps ONE `o`
+// / `p` pair alive the whole run — same as the real composite instance living
+// for the life of the layer id — while flying, cutting, swapping the image
+// (fhr advance/loop) and changing density, all interleaved and in random order,
+// crossing icosphere order boundaries repeatedly. A deterministic PRNG keeps
+// the run reproducible.
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+{
+  const rnd = mulberry32(20260909);
+  const base = { ...DEFAULTS, imageType: "VECTOR", imageUnscale: [-30, 30], bounds: [-180, -90, 180, 90] };
+  const o = self({ ...base, image: imageA, density: 0 }, null, false);
+  const p = self({ ...base, image: imageA, density: 0 }, null, true);
+  let longitude = 0, latitude = 0, zoom = 2, density = 0, onImageA = true;
+  const STEPS = 600;
+  let mismatchStep = -1, pointsSeen = 0;
+  for (let step = 0; step < STEPS; step++) {
+    // Drift, with occasional hard cuts (fly-tos) and zoom sweeps through every
+    // icosphere order boundary (0..7).
+    if (step % 23 === 0) { longitude = rnd() * 360 - 180; latitude = rnd() * 140 - 70; zoom = rnd() * 9; }
+    else { longitude += (rnd() - 0.5) * 6; latitude = Math.max(-85, Math.min(85, latitude + (rnd() - 0.5) * 4)); zoom = Math.max(0, Math.min(9, zoom + (rnd() - 0.5) * 1.2)); }
+    if (step % 11 === 0) { onImageA = !onImageA; const img = onImageA ? imageA : imageB; o.props = { ...o.props, image: img }; p.props = { ...p.props, image: img }; }
+    if (step % 17 === 0) { density = density === 0 ? 1 : 0; o.props = { ...o.props, density }; p.props = { ...p.props, density }; }
+    const viewport = new Viewport({ width: 1920, height: 1080, longitude, latitude, zoom });
+    o.context.viewport = viewport; p.context.viewport = viewport;
+    o._updatePositions(); p._updatePositions();
+    const posOk = same(o.state.positions, p.state.positions);
+    const featOk = same(strip(o.state.points), strip(p.state.points));
+    pointsSeen += (p.state.points || []).length;
+    if ((!posOk || !featOk) && mismatchStep === -1) {
+      mismatchStep = step;
+      failures++;
+      console.log(`MISMATCH long-run @ step ${step} (lon ${longitude.toFixed(1)} lat ${latitude.toFixed(1)} zoom ${zoom.toFixed(2)} density ${density} image ${onImageA ? "A" : "B"})`);
+      if (!posOk) console.log("  positions differ: orig", JSON.stringify(o.state.positions).slice(0, 200), "\n                     patched", JSON.stringify(p.state.positions).slice(0, 200));
+      if (!featOk) console.log("  features differ: orig", JSON.stringify(strip(o.state.points)).slice(0, 200), "\n                     patched", JSON.stringify(strip(p.state.points)).slice(0, 200));
+    }
+  }
+  console.log(`long-run: ${STEPS} ticks on one persistent composite pair, ${pointsSeen} feature-list entries seen, ${mismatchStep === -1 ? "identical throughout" : `first mismatch at step ${mismatchStep}`}`);
+}
 console.log(failures ? `FAILURES: ${failures}` : "ALL IDENTICAL");
 process.exitCode = failures ? 1 : 0;
 } catch (e) { console.log("ERR:", e.message); console.log((e.stack || "").split("\n").slice(1, 6).map((l) => l.trim().slice(0, 160)).join("\n")); }

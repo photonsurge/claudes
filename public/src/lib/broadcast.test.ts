@@ -1,4 +1,4 @@
-import { nearby, nearest } from "./geo";
+import { nearby, nearest, GeoGrid } from "./geo";
 import {
   quakeTicker,
   alertTicker,
@@ -844,6 +844,33 @@ describe("nearbyCities / nearestCities (grid-backed)", () => {
       expect(nearbyCities(cities, c, 500).map((n) => n.item.id)).toEqual(nearby(cities, c, pt, 500).map((n) => n.item.id));
     }
     expect(nearbyCities([], [0, 0], 500)).toEqual([]);
+  });
+
+  it("caches the scan per list/point/radius: a repeat call, or the same call with a different `keep`, doesn't re-scan the grid; a different list does", () => {
+    const scan = jest.spyOn(GeoGrid.prototype, "nearby");
+    try {
+      const c: [number, number] = [10, 45];
+      nearbyCities(cities, c, 800, sizeable);
+      const calls = scan.mock.calls.length;
+      expect(calls).toBeGreaterThan(0);
+      // Same list/point/radius, no `keep`: cache hit, no new scan — but a
+      // different, unfiltered answer (sizeable cities are a subset of all).
+      const unfiltered = nearbyCities(cities, c, 800);
+      expect(scan.mock.calls.length).toBe(calls);
+      expect(unfiltered.length).toBeGreaterThan(nearbyCities(cities, c, 800, sizeable).length);
+      // A fresh call site's own closure for the same predicate: still a hit.
+      nearbyCities(cities, c, 800, (city) => sizeable(city));
+      expect(scan.mock.calls.length).toBe(calls);
+      // A different radius, or a different list (even with identical content),
+      // is a real scan.
+      nearbyCities(cities, c, 900, sizeable);
+      expect(scan.mock.calls.length).toBeGreaterThan(calls);
+      const calls2 = scan.mock.calls.length;
+      nearbyCities([...cities], c, 800, sizeable);
+      expect(scan.mock.calls.length).toBeGreaterThan(calls2);
+    } finally {
+      scan.mockRestore();
+    }
   });
 
   it("nearestCities equals the sphere-wide scan's first k", () => {

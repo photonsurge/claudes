@@ -526,6 +526,40 @@ const notableGrid = (cities: City[]): GeoGrid<City> => cityGrid(notableCities(ci
  *  a circumference is ~20 015 km). */
 const NEAREST_RINGS_KM = [350, 1400, 5600, 20100];
 /**
+ * The scan itself (grid.nearby, unfiltered) memoised per list + point + radius:
+ * `mode-slides.tsx` calls `eventNearbySlideHasContent` / `volcanoNearbySlideHasContent`
+ * to decide whether a slide belongs in the deck, then the slide's own panel
+ * (EventNearbyPanel / VolcanoNearbyPanel) asks the SAME question again to render
+ * it — and both run again on every render of the segment they're attached to,
+ * because `modeSlides()` isn't memoised (BroadcastFrame calls it inline; its
+ * context carries 40+ fields, several rebuilt as fresh objects every render, so
+ * memoising the CALL isn't a safe win — this caches its expensive inputs
+ * instead). `keep` is applied fresh to the cached answer, not part of the key —
+ * it's cheap (a filter over the hits, not the whole list) and call sites often
+ * pass a fresh closure each render. Bounded per list so a long session cycling
+ * through many segments doesn't grow this without limit.
+ */
+const MAX_NEARBY_SCAN_CACHE = 64;
+const nearbyScanCache = new WeakMap<City[], Map<string, Nearby<City>[]>>();
+function nearbyScan(cities: City[], center: [number, number], radiusKm: number): Nearby<City>[] {
+  let cache = nearbyScanCache.get(cities);
+  if (!cache) {
+    cache = new Map();
+    nearbyScanCache.set(cities, cache);
+  }
+  const key = `${center[0]},${center[1]},${radiusKm}`;
+  let hit = cache.get(key);
+  if (!hit) {
+    hit = cityGrid(cities).nearby(center, radiusKm);
+    if (cache.size >= MAX_NEARBY_SCAN_CACHE) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+    cache.set(key, hit);
+  }
+  return hit;
+}
+/**
  * The nearest notable city to a point with NO radius bound — the moving
  * target's "Nearest City" row, which mid-ocean still names the closest
  * landfall — or null with no cities. Exactly `nearest(notableCities(cities), …)`
@@ -540,7 +574,9 @@ const NEAREST_RINGS_KM = [350, 1400, 5600, 20100];
  * the answer — the notable rule, a population floor — and filtering the answer
  * is the same set in the same order as filtering the list first (ties keep
  * list order either way). The event / quake / volcano panels ran that scan on
- * every render (round 27).
+ * every render (round 27); the scan itself is now memoised (round 29) since
+ * the SAME (list, point, radius) gets asked twice per render (hasContent +
+ * the panel) and again on every redundant re-render of a held segment.
  */
 export function nearbyCities(
   cities: City[],
@@ -549,7 +585,7 @@ export function nearbyCities(
   keep?: (c: City) => boolean,
 ): Nearby<City>[] {
   if (!cities.length) return [];
-  const all = cityGrid(cities).nearby(center, radiusKm);
+  const all = nearbyScan(cities, center, radiusKm);
   return keep ? all.filter((n) => keep(n.item)) : all;
 }
 

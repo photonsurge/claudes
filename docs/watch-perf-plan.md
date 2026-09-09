@@ -1101,6 +1101,138 @@ first-run compiles are part of it); `requestAnimationFrame` itself at 800 ms
 of the minute across ~8 per-frame callers (a shared frame hub would be
 lossless); the alert fingerprint walk (9 ms per poll).
 
+### Round 28 (2026-09-09) — the crawl fix confirmed live; barbs re-checked under a long run
+
+Round 27's DOM fix landed: this run's page carried 562 DOM nodes, down from
+8 305 the round before — the windowed crawl is doing its job in production.
+Busy time 42.1 %, 6 stalls totalling 1.5 s (was 8.0 s), 29.6 fps. Nothing new
+in the stall list beyond what's already tracked (a `getBoundingClientRect` +
+`getImageData` pair in a tile-load stall, `_setupTransformFeedback` in
+another — both WeatherLayers-internal / the other session's particle work).
+
+**Wind barbs, re-checked.** "Fucked again after a while... it was working,
+[then] displays nowt but artifacts" describes a *degrade-over-time* pattern
+the earlier 27-camera-step differential test couldn't have caught — that test
+built a fresh composite state per case. `wl-grid-parity.cjs` now also runs a
+600-tick stress case on **one persistent composite pair** (the same instance
+living the whole time, matching how the real layer id persists for a session):
+a seeded pseudo-random camera walk with hard cuts every ~23 ticks, an image
+swap every 11 (fhr advance/loop) and a density flip every 17, sweeping every
+icosphere order boundary repeatedly. 460 066 feature-list entries compared,
+identical to WeatherLayers' own methods at every single tick — no divergence
+appears no matter how long the cache lives or how it's disturbed.
+
+That rules out cache corruption in the patch itself. Left unverified (needs
+the user's eyes on the live render, not something checkable from here): the
+crops show a fixed 40 px `iconSize` (`props.ts` `windBarbPropsFromEntry`,
+unchanged since the barbs feature shipped, not touched by the round-25 grid
+patch) against a grid that gets finer as you zoom in (WeatherLayers' own
+`density + 3` → icosphere order formula, proven byte-identical above) — at
+some zoom that's simply more 40 px glyphs than fit without overlapping into a
+fuzzy mass. Asked the user to confirm whether that's what "artifacts" means
+(overlapping/unreadable, not wrong-shaped) before touching `iconSize`.
+
+### Round 29 (2026-09-09) — wind barbs closed; the mode-slides re-render
+
+A different run, a night-tiles scene: busy 47.8 %, 21 stalls totalling 8.2 s,
+28.8 fps, DOM 1 171 nodes. `--deck` census explains a chunk of it: with the
+XYZ night-tile overlay active (`basemap.ts` `tileBasemapLayer`, deck's own
+`TileLayer`), the visible viewport at this zoom needed ~38 separate
+`basemap-tiles-night-*` sublayers (80 layers total incl. sublayers, 75
+primitive) — each its own BitmapLayer with its own buffers/texture, so a cut
+into this basemap is `bindBuffer` (463 ms self), `useProgram`,
+`bindBufferBase`, `getUniformBlockIndex` — classic per-draw-call GL state
+cost, multiplied by tile count — plus a single 364 ms `texSubImage2D` upload
+in the first stall (the tile textures landing at once on the cut). This is
+`TileLayer` working as designed (one BitmapLayer per visible XYZ tile); not
+touched this round.
+
+**Wind barbs — closed.** Walked the user through it live: a lone glyph over a
+scalar raster ("what I assume is direction placeholders") turned out to be
+WeatherLayers' own light-wind icon — confirmed by extracting the actual
+built-in `iconAtlas` PNG from the bundle and cropping icons 0–7 (icon 0 =
+calm circle; icon 1 = a shaft with one short tick, i.e. exactly the lone mark
+photographed). Their next screenshots (Chile/Santiago, a full field of
+correctly-rotated barbs) and the follow-up ("now gone back to that part of
+world and it's fine") confirm the field renders correctly once the camera
+settles — the sparse, lonely-glyph moment is the icosphere grid legitimately
+having fewer, wider-spaced points at lower zoom / mid-transition (unchanged
+WeatherLayers formula, proven byte-identical in rounds 27–28), not a loading
+race needing a background pre-generate as first guessed — the grid already
+recomputes fresh every tick (that's what rounds 25/28 made cheap, not
+deferred). No code change; iconSize/density tuning stays on the table if the
+user wants sparse moments to look fuller, but that would be a deliberate
+visual change, not a fix.
+
+**Shipped (lossless).** The night-tiles run's `e.s.r` (self time 315 ms,
+present in nearly every stall window) is `lib/geo.ts`'s `nearby()` again —
+traced this time to `BroadcastFrame.tsx`'s `modeSlides(onAirSegment, ctx)`
+call, made inline in the render body (not memoised — `ctx` carries 40+
+fields, several rebuilt as fresh objects every render, so memoising the call
+itself risks a stale-dependency bug). Every render re-runs
+`eventNearbySlideHasContent` / `volcanoNearbySlideHasContent` (deciding
+whether the slide belongs in the deck) AND the slide's own panel
+(`EventNearbyPanel` / `VolcanoNearbyPanel`), each asking `nearbyCities` the
+SAME (list, point, radius) question. `broadcast.ts` now memoises the scan
+itself (`nearbyScan`, WeakMap<cities, Map<"lng,lat,radius", hits>>, capped at
+64 entries per list) — `keep` is applied fresh to the cached hits rather than
+part of the key, since it's cheap (filters the hits, not the list) and call
+sites often pass a fresh closure every render. Parity + cache-hit-counting
+tests (spies `GeoGrid.prototype.nearby`: a repeat call or a different `keep`
+closure is a hit; a different radius or a different list array is a real
+scan).
+
+### Round 30 (2026-09-09) — deck's own tile bounding-box math, unmemoised (investigation only)
+
+A busier scene (geomag + faults + seismic + seismograph stations + cables +
+alerts all active, tiles spanning zoom 4 AND 5 at once — a zoom transition
+mid-capture): busy 64.2 %, 46 stalls totalling 15.4 s, 27.8 fps. `e.s.r`
+(`nearby`) is down to a minor share (1.2 %, ~464 ms) despite the busier
+scene — the round-29 scan cache is holding. The new dominant cost, present in
+nearly every one of the 46 stalls (7–15 % of each): three `@math.gl/culling`
+frames (`0rsgoc26bflf1.js:633:41198/41490/40736`, `si@…:23456`) — Cesium's
+oriented-bounding-box-from-points algorithm (mean point, covariance matrix,
+Jacobi eigen-decomposition) — over 2 s of self time combined.
+
+Traced it: `@deck.gl/geo-layers`' `TileLayer` (used for the night/satellite/
+terrain sharp-tile overlays, `basemap.ts`) selects visible tiles by walking
+an OSM quadtree (`tileset-2d/tile-2d-traversal.js`, private `OSMNode` class,
+rebuilt `new OSMNode(0,0,0)` from the root on **every call**). On a
+`_GlobeViewport` (always, here — never the cheap `WebMercatorViewport` /
+`AxisAlignedBoundingBox` branch) `OSMNode.getBoundingVolume` calls
+`makeOrientedBoundingBoxFromPoints` fresh for every node it visits, every
+time the tileset re-evaluates — which is every frame during any camera
+motion (`shouldUpdateState` fires on `viewportChanged`, and a spin/orbit/
+fly-to changes the viewport every frame), not just on a cut.
+
+That recompute is provably unnecessary: `GlobeViewport.projectPosition`
+(`@deck.gl/core`) is a pure function of `[lng, lat, Z]` alone — no
+`this.longitude/latitude/zoom/bearing/pitch` anywhere in it (checked the
+source). So a tile's reference-point positions, and therefore its oriented
+bounding box, depend ONLY on the tile's own `(x, y, z)` and the elevation
+range — never on where the camera is. The exact same OBB gets rebuilt from
+scratch, every frame, for every tile node the traversal visits, for the life
+of the session.
+
+**Not patched — flagging first.** Every patch shipped so far reached a
+class via something PUBLIC (`GridLayer`, `WebGLDevice`, `BitmapLayer`,
+`UniformBlock` — import it, mutate `.prototype`). This one doesn't have that
+seam: `makeOrientedBoundingBoxFromPoints` is a plain exported *function*, not
+a class method — ES/bundler live-binding semantics won't let an outside
+module reassign it — and the class actually doing the redundant work
+(`OSMNode`) is private to `tile-2d-traversal.js`, never handed out by the
+`Tileset2D` class that IS exported. Reaching it would mean either finding an
+`OSMNode` instance leaking out somewhere reachable (unconfirmed — `Tileset2D`
+maps tile indices to its own `Tile2DHeader` objects, and it's not yet checked
+whether those retain the node) or re-implementing the quadtree walk ourselves
+— a materially bigger, riskier patch than anything shipped in rounds 17–29.
+It's also squarely tile-mounting/raster territory during a camera change,
+which may overlap the parallel session's map-type-change work — asked the
+user which of us should pick this up before spending more time on it, given
+the size of the win if it lands (the dominant cost in nearly every stall this
+round) against the size of the risk (an undocumented private class, no
+existing shape-guard pattern to lean on).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
