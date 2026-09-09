@@ -35,6 +35,16 @@ COPY public/ ./
 ARG NEXT_PUBLIC_SOCKET_URL
 ENV NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL}
 
+# Next inlines every NEXT_PUBLIC_* at BUILD time, so these have to be build args
+# here — setting them in the host's .env does nothing, the image is already made.
+# Both are optional: unset keeps the shipped defaults.
+#   WL_GRID_PATCH=off   diagnostic — disables the wind-grid sampling cache
+#   TEXTURE_CACHE_MAX   decoded textures held in RAM (default 256, ~4 MB each)
+ARG NEXT_PUBLIC_WL_GRID_PATCH
+ENV NEXT_PUBLIC_WL_GRID_PATCH=${NEXT_PUBLIC_WL_GRID_PATCH}
+ARG NEXT_PUBLIC_TEXTURE_CACHE_MAX
+ENV NEXT_PUBLIC_TEXTURE_CACHE_MAX=${NEXT_PUBLIC_TEXTURE_CACHE_MAX}
+
 RUN yarn build
 
 

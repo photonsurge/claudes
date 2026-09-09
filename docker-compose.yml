@@ -218,6 +218,9 @@ services:
       dockerfile: public/Dockerfile
       args:
         NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL}
+        # Build-time only (Next inlines NEXT_PUBLIC_*). Unset = shipped default.
+        NEXT_PUBLIC_WL_GRID_PATCH: ${NEXT_PUBLIC_WL_GRID_PATCH:-}
+        NEXT_PUBLIC_TEXTURE_CACHE_MAX: ${NEXT_PUBLIC_TEXTURE_CACHE_MAX:-}
     restart: unless-stopped   # see socket
     # Hard container memory ceiling. Override per host in .env; exceeding it
     # causes Docker to OOM-kill/restart this service instead of exhausting the host.
