@@ -7,36 +7,32 @@
  * featured slot that cycles through them (photo + Wikipedia blurb when the City
  * doc has one, worker-cached; see enrich:wiki) and a clean list of the rest.
  *
- * Carries the same per-city history the "near this event" panel does: the
- * featured city's past-year climate strip, and a small past-year temperature
- * sparkline on each of the other city rows (both self-hiding when nothing is
- * cached for that city). The whole-area trend charts still live on their own
- * CURRENT & RECENT (area history) slide — this is the close-up on each named
- * city. Pure presentation inside the scaled broadcast stage; pointer-inert.
+ * Place context only: weather forecasts live in the top-right report.
  */
 import { useEffect, useState } from "react";
 import { formatPopulation, type City } from "../../lib/cities";
 import { useTopCities } from "../../lib/focus/focus-client";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
-import { FeaturedCityClimate, CityTempSpark } from "./CityHistory";
 
 /** Seconds the featured city holds before the slide advances to the next. */
 const FEATURED_HOLD_MS = 7000;
 
-/** One "other city" row — name + population/capital, with the city's own
- *  past-year temperature sparkline at the right edge (self-hiding when nothing
- *  is cached for it, leaving a clean text row). */
+/** Other cities: clearly labelled population and capital status. */
 function TopCityRow({ city }: { city: City }) {
-  const meta = [formatPopulation(city.population), city.isCapital ? "capital" : null].filter(Boolean).join(" · ");
+  const meta = [city.population != null ? `Population ${formatPopulation(city.population)}` : null, city.isCapital ? "capital" : null].filter(Boolean).join(" · ");
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "4px 0" }}>
+      {city.wikiThumb || city.wikiPhoto ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={city.wikiThumb || city.wikiPhoto} alt={`${city.name} city view`}
+          style={{ width: 64, height: 44, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
+      ) : null}
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontWeight: 700, color: "#e6eefb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {city.name}
         </div>
         {meta ? <div style={{ color: "#8ea3bf", whiteSpace: "nowrap" }}>{meta}</div> : null}
       </div>
-      <CityTempSpark city={city} />
     </div>
   );
 }
@@ -63,24 +59,24 @@ export default function TopCitiesPanel({
   if (!cities.length) return null;
 
   const featured = cities[slide % cities.length];
-  const rest = cities.filter((c) => c !== featured);
+  const rest = cities.filter((c) => c !== featured).slice(0, 4);
 
   return (
-    <BroadcastCard accent={color} eyebrow="Top Cities">
+    <BroadcastCard accent={color} eyebrow="City Guide">
       {/* Featured city — photo + short blurb; slot cycles through every top city. */}
       <div>
-        {featured.wikiThumb ? (
+        {featured.wikiPhoto || featured.wikiThumb ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={featured.wikiThumb}
-            alt={featured.name}
-            style={{ width: "100%", height: 175, objectFit: "cover", borderRadius: 7, display: "block", marginBottom: 9 }}
+            src={featured.wikiPhoto || featured.wikiThumb}
+            alt={`${featured.name} city view`}
+            style={{ width: "100%", height: 190, objectFit: "cover", borderRadius: 7, display: "block", marginBottom: 9 }}
           />
         ) : null}
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <span style={{ fontSize: 24.2, fontWeight: 800, color: "#fff" }}>{featured.name}</span>
           {formatPopulation(featured.population) ? (
-            <span style={{ fontSize: 15.4, fontWeight: 700, color }}>{formatPopulation(featured.population)}</span>
+            <span style={{ fontSize: 15.4, fontWeight: 700, color }}>Population {formatPopulation(featured.population)}</span>
           ) : null}
         </div>
         <div style={{ fontSize: 15.4, fontWeight: 600, color: "#aebfd6", marginTop: 2 }}>
@@ -94,7 +90,7 @@ export default function TopCitiesPanel({
               color: "#cdd9ec",
               marginTop: 7,
               display: "-webkit-box",
-              WebkitLineClamp: 4,
+              WebkitLineClamp: 3,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
             }}
@@ -104,13 +100,7 @@ export default function TopCitiesPanel({
         ) : null}
       </div>
 
-      {/* Featured city's past-year climate — the same temp/humidity/rain charts
-          the "near this event" panel and the area-history slide draw, keyed to
-          this city. Cycles with the featured slot above. */}
-      <FeaturedCityClimate name={featured.name} center={[featured.lng, featured.lat]} />
-
-      {/* The rest of the area's cities — a clean name/population list, each with
-          its own past-year temperature sparkline. */}
+      {/* Other major cities in the area. */}
       {rest.length ? (
         <CardSection style={{ fontSize: 14.3 }}>
           {rest.map((c) => (

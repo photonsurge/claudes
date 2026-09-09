@@ -31,6 +31,21 @@
  * decluttering in priority order.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { SpriteAtlas, type AtlasRegion } from "./label-atlas";
+import {
+  DETAIL_H,
+  LABEL_H,
+  LabelGrid,
+  declutter,
+  indexLabelData,
+  labelWidth,
+  projectWorldAt,
+  unit,
+  type Decision,
+  type FrameParams,
+} from "./label-declutter";
+import { createDeclutterer, type Declutterer } from "./label-declutter-client";
+export { LabelGrid, labelWidth, projectWorld } from "./label-declutter";
 
 export interface OverlayLabel {
   id: string;
@@ -66,122 +81,31 @@ export interface OverlayLabel {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Viewport = any;
 
-/** Unit vector on the sphere for a lng/lat (degrees). */
-function unit(lng: number, lat: number): [number, number, number] {
-  const la = (lat * Math.PI) / 180;
-  const lo = (lng * Math.PI) / 180;
-  const cl = Math.cos(la);
-  return [cl * Math.cos(lo), cl * Math.sin(lo), Math.sin(la)];
-}
-
 /**
  * The frame loop's view of the label list: biggest/capital first (lowest
- * `minZoom`) so a crowded conurbation keeps its most important label, plus flat
- * per-label arrays for the cull pass. Built once per label rebuild (~1/s);
- * the per-frame pass then reads two typed arrays instead of touching a couple
- * of thousand objects and a WeakMap, and — because the list is sorted by
- * `minZoom` — stops at the first label above the current zoom.
+ * `minZoom`) so a crowded conurbation keeps its most important label, plus the
+ * flat per-label arrays the declutter pass reads (label-declutter.ts) — built
+ * once per label rebuild (~1/s) so the per-frame pass touches typed arrays, not
+ * a couple of thousand objects. World positions are filled in by the frame
+ * loop (they need the live viewport) and then never change: the sphere
+ * position of a label is fixed, only the matrix moves.
  */
 export interface LabelIndex {
   labels: OverlayLabel[];
-  /** Unit sphere vectors, 3 per label, in `labels` order. */
-  unit: Float64Array;
-  /** `minZoom ?? 0` per label (Float64: an exact-equality zoom must compare as before). */
-  minZoom: Float64Array;
+  data: import("./label-declutter").LabelIndexData;
+  /** Bumped per rebuild; a worker decision is only used for the same generation. */
+  gen: number;
+  /** Which viewport class `data.world` was projected with (null until filled). */
+  worldCtor: unknown;
 }
-
+let indexGen = 0;
 export function indexLabels(labels: OverlayLabel[]): LabelIndex {
   const sorted = [...labels].sort((a, b) => (a.minZoom ?? 0) - (b.minZoom ?? 0));
-  const n = sorted.length;
-  const u = new Float64Array(n * 3);
-  const mz = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const l = sorted[i];
-    const [x, y, z] = unit(l.position[0], l.position[1]);
-    u[i * 3] = x;
-    u[i * 3 + 1] = y;
-    u[i * 3 + 2] = z;
-    mz[i] = l.minZoom ?? 0;
-  }
-  return { labels: sorted, unit: u, minZoom: mz };
+  return { labels: sorted, data: indexLabelData(sorted), gen: ++indexGen, worldCtor: null };
 }
 
-// ── Collision avoidance ───────────────────────────────────────────────────
-// A dense conurbation (Barcelona's satellite towns, Madrid's suburbs …) can
-// reveal a dozen same-tier labels within a few dozen pixels of each other.
-// Each frame, labels are placed in priority order (biggest/capital first —
-// `minZoom` is already that ranking) into a coarse screen-space grid; a label
-// whose estimated box collides with an already-placed one is hidden (its dot,
-// drawn by the separate deck.gl scatter layer, stays visible either way — only
-// the crowded TEXT thins out, same as any decluttered map).
-const LABEL_H = 15;
-const CHAR_W = 6.3;
-const GRID_CELL = 48;
-
-/** Rough on-screen text width, so collision testing never needs a DOM read. */
-export function labelWidth(text: string): number {
-  return Math.min(240, 18 + text.length * CHAR_W);
-}
-
-/** One 48 px cell's boxes for the current frame. `stamp` is the frame that last
- *  wrote it: `clear()` only bumps the grid's stamp, so the Map and every cell's
- *  array survive from frame to frame instead of being dropped and regrown (a
- *  thousand cells' worth of Map growth, array allocation and the per-call
- *  closures `forCells` took — all GC pressure at 30 frames/s). Rects are stored
- *  flat (x0, y0, x1, y1, …) for the same reason. */
-type Cell = { stamp: number; rects: number[] };
-
-export class LabelGrid {
-  // Numeric cell keys: this runs per label per frame, and a `${cx},${cy}`
-  // template string per cell was a measurable allocation + hash cost.
-  private cells = new Map<number, Cell>();
-  private stamp = 1;
-
-  /** Forget this frame's boxes — O(1): cells with an older stamp read as empty. */
-  clear() {
-    this.stamp++;
-  }
-
-  /** True if the box overlaps anything already placed this frame. */
-  collides(x0: number, y0: number, x1: number, y1: number): boolean {
-    const cx0 = Math.floor(x0 / GRID_CELL);
-    const cx1 = Math.floor(x1 / GRID_CELL);
-    const cy0 = Math.floor(y0 / GRID_CELL);
-    const cy1 = Math.floor(y1 / GRID_CELL);
-    for (let cx = cx0; cx <= cx1; cx++) {
-      for (let cy = cy0; cy <= cy1; cy++) {
-        const cell = this.cells.get((cx + 32768) * 65536 + (cy + 32768));
-        if (!cell || cell.stamp !== this.stamp) continue;
-        const r = cell.rects;
-        for (let i = 0; i < r.length; i += 4) {
-          if (x0 < r[i + 2] && x1 > r[i] && y0 < r[i + 3] && y1 > r[i + 1]) return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  place(x0: number, y0: number, x1: number, y1: number) {
-    const cx0 = Math.floor(x0 / GRID_CELL);
-    const cx1 = Math.floor(x1 / GRID_CELL);
-    const cy0 = Math.floor(y0 / GRID_CELL);
-    const cy1 = Math.floor(y1 / GRID_CELL);
-    for (let cx = cx0; cx <= cx1; cx++) {
-      for (let cy = cy0; cy <= cy1; cy++) {
-        const key = (cx + 32768) * 65536 + (cy + 32768);
-        let cell = this.cells.get(key);
-        if (!cell) {
-          cell = { stamp: this.stamp, rects: [] };
-          this.cells.set(key, cell);
-        } else if (cell.stamp !== this.stamp) {
-          cell.stamp = this.stamp;
-          cell.rects.length = 0;
-        }
-        cell.rects.push(x0, y0, x1, y1);
-      }
-    }
-  }
-}
+// Collision avoidance, projection and the per-frame decision live in
+// label-declutter.ts (pure data, shared with the declutter worker).
 
 // ── Sprites ───────────────────────────────────────────────────────────────
 /** Matches the old DOM styling: 12px/600 name, 10px/500 detail chip. */
@@ -195,7 +119,6 @@ const ICON_GAP = 3;
 const HALO = "rgba(0,0,0,0.85)";
 const DETAIL_BG = "rgba(2,8,18,0.62)";
 const DETAIL_FG = "rgba(226,232,240,0.92)";
-const DETAIL_H = 14;
 const DETAIL_PAD = 6;
 /** Name sprite box: tall enough for the 12px face plus a 3px halo. */
 const NAME_H = 20;
@@ -205,8 +128,12 @@ const MAX_DPR = 2;
 /** Sprite cache bound — FIFO eviction; cities ≈ 2.3 k, track names churn. */
 const SPRITE_CAP = 4000;
 
+/** Every sprite lives in the shared atlas (label-atlas.ts): one source for a frame's blits. */
+const atlas = new SpriteAtlas();
+
 interface Sprite {
-  img: HTMLCanvasElement;
+  /** Its atlas region (integer device pixels). */
+  region: AtlasRegion;
   /** CSS-px size. */
   w: number;
   h: number;
@@ -217,6 +144,35 @@ interface Sprite {
 const sprites = new Map<string, Sprite>();
 let measureCtx: CanvasRenderingContext2D | null = null;
 
+/** A cached sprite is only good while its atlas page is; a retired page's sprites re-rasterise. */
+function liveSprite(key: string): Sprite | null {
+  const hit = sprites.get(key);
+  return hit && hit.region.page.alive ? hit : null;
+}
+
+/** Paint `w`×`h` CSS px at `dpr` into a fresh atlas region — the clip and transform a sprite canvas had. */
+function paintRegion(dpr: number, w: number, h: number, paint: (g: CanvasRenderingContext2D) => void): AtlasRegion | null {
+  const bw = Math.max(1, Math.ceil(w * dpr));
+  const bh = Math.max(1, Math.ceil(h * dpr));
+  const region = atlas.alloc(bw, bh);
+  if (!region) return null;
+  const g = region.page.ctx;
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.beginPath();
+  g.rect(region.sx, region.sy, bw, bh);
+  g.clip();
+  g.setTransform(dpr, 0, 0, dpr, region.sx, region.sy);
+  paint(g);
+  g.restore();
+  return region;
+}
+
+/** One blit from the atlas: the sprite's integer source rect at its CSS-px size, exactly as before. */
+function blit(ctx: CanvasRenderingContext2D, r: AtlasRegion, w: number, h: number, dx: number, dy: number): void {
+  ctx.drawImage(r.page.canvas, r.sx, r.sy, r.sw, r.sh, dx, dy, w, h);
+}
+
 function makeSprite(
   key: string,
   dpr: number,
@@ -224,17 +180,12 @@ function makeSprite(
   h: number,
   paint: (g: CanvasRenderingContext2D) => void,
 ): Sprite | null {
-  const hit = sprites.get(key);
+  const hit = liveSprite(key);
   if (hit) return hit;
-  const c = document.createElement("canvas");
-  c.width = Math.max(1, Math.ceil(w * dpr));
-  c.height = Math.max(1, Math.ceil(h * dpr));
-  const g = c.getContext("2d");
-  if (!g) return null;
-  g.scale(dpr, dpr);
-  paint(g);
-  const s: Sprite = { img: c, w, h, key };
-  if (sprites.size >= SPRITE_CAP) {
+  const region = paintRegion(dpr, w, h, paint);
+  if (!region) return null;
+  const s: Sprite = { region, w, h, key };
+  if (!sprites.has(key) && sprites.size >= SPRITE_CAP) {
     const oldest = sprites.keys().next().value;
     if (oldest !== undefined) sprites.delete(oldest);
   }
@@ -254,7 +205,7 @@ const PLAIN_DETAIL_FONT = "600 11px system-ui, sans-serif";
 
 function nameSprite(text: string, color: string, dpr: number, font = NAME_FONT): Sprite | null {
   const key = `n|${dpr}|${font}|${color}|${text}`;
-  const hit = sprites.get(key);
+  const hit = liveSprite(key);
   if (hit) return hit;
   const w = Math.ceil(textWidth(font, text)) + NAME_PAD * 2;
   return makeSprite(key, dpr, w, NAME_H, (g) => {
@@ -272,7 +223,7 @@ function nameSprite(text: string, color: string, dpr: number, font = NAME_FONT):
 
 function detailSprite(text: string, dpr: number): Sprite | null {
   const key = `d|${dpr}|${text}`;
-  const hit = sprites.get(key);
+  const hit = liveSprite(key);
   if (hit) return hit;
   const w = Math.ceil(textWidth(DETAIL_FONT, text)) + DETAIL_PAD * 2;
   return makeSprite(key, dpr, w, DETAIL_H, (g) => {
@@ -297,11 +248,15 @@ function detailSprite(text: string, dpr: number): Sprite | null {
 
 /** An icon glyph rasterised from its React-rendered <svg>. */
 interface IconSprite {
-  /** Bitmap at the sprite's dpr — null until the SVG image has loaded and been baked. */
-  img: HTMLCanvasElement | null;
+  /** Atlas region at the sprite's dpr — null until the SVG image has loaded and been baked. */
+  region: AtlasRegion | null;
   /** CSS-px size. */
   w: number;
   h: number;
+  /** The resolved markup, so a retired page's glyph can be baked again. */
+  html: string;
+  dpr: number;
+  baking: boolean;
 }
 const iconSprites = new Map<string, IconSprite>();
 const serializer = typeof XMLSerializer === "function" ? new XMLSerializer() : null;
@@ -391,27 +346,42 @@ function iconSprite(
 function spriteForHtml(html: string, dpr: number): IconSprite {
   const key = `${dpr}|${html}`;
   const hit = iconSprites.get(key);
-  if (hit) return hit;
-  const entry: IconSprite = { img: null, w: 0, h: 0 };
+  if (hit) {
+    refreshIcon(hit);
+    return hit;
+  }
+  const entry: IconSprite = { region: null, w: 0, h: 0, html, dpr, baking: false };
+  iconSprites.set(key, entry);
+  bakeIcon(entry);
+  return entry;
+}
+
+/** An icon whose atlas page was retired keeps drawing from it (its pixels stay
+ *  until it is collected) while a fresh bake lands — no frame without its glyph. */
+function refreshIcon(entry: IconSprite): void {
+  if (entry.region && !entry.region.page.alive) bakeIcon(entry);
+}
+
+/** Load the glyph's SVG as an image and paint it into the atlas. */
+function bakeIcon(entry: IconSprite): void {
+  if (entry.baking) return;
+  entry.baking = true;
   const img = new Image();
   img.onload = () => {
     const w = img.naturalWidth || 12;
     const h = img.naturalHeight || 12;
-    const c = document.createElement("canvas");
-    c.width = Math.max(1, Math.ceil(w * dpr));
-    c.height = Math.max(1, Math.ceil(h * dpr));
-    const g = c.getContext("2d");
-    if (!g) return;
-    g.scale(dpr, dpr);
-    g.drawImage(img, 0, 0, w, h);
-    entry.img = c;
+    const region = paintRegion(entry.dpr, w, h, (g) => g.drawImage(img, 0, 0, w, h));
+    entry.baking = false;
+    if (!region) return;
+    entry.region = region;
     entry.w = w;
     entry.h = h;
     iconEpoch += 1;
   };
-  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(html)}`;
-  iconSprites.set(key, entry);
-  return entry;
+  img.onerror = () => {
+    entry.baking = false;
+  };
+  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(entry.html)}`;
 }
 
 /** Text sprites resolved once per label object (labels rebuild ~1/s; the
@@ -429,13 +399,13 @@ const DETAIL_DY = NAME_H / 2 + LABEL_H / 2 + 2;
 
 function comboSprite(name: Sprite, detail: Sprite, dpr: number): Sprite | null {
   const key = `c|${name.key}|${detail.key}`;
-  const hit = sprites.get(key);
+  const hit = liveSprite(key);
   if (hit) return hit;
   const w = Math.max(name.w, NAME_PAD + detail.w);
   const h = DETAIL_DY + detail.h;
   return makeSprite(key, dpr, w, h, (g) => {
-    g.drawImage(name.img, 0, 0, name.w, name.h);
-    g.drawImage(detail.img, NAME_PAD, DETAIL_DY, detail.w, detail.h);
+    blit(g, name.region, name.w, name.h, 0, 0);
+    blit(g, detail.region, detail.w, detail.h, NAME_PAD, DETAIL_DY);
   });
 }
 
@@ -496,34 +466,26 @@ const labelStats = { frames: 0, skipped: 0, considered: 0, projected: 0, drawn: 
 
 // ── Fast projection ───────────────────────────────────────────────────────
 // deck's viewport.project() is trig + a 4×4 transform + three array
-// allocations per call, and a dense region projects >1 k labels a frame to
-// draw a few dozen (the collision grid needs screen positions to declutter).
-// The world position of a label never changes (GlobeViewport.projectPosition
-// is pure lng/lat → sphere; zoom lives in the matrix), so it is cached per
-// label and each frame is one allocation-free matrix multiply. Falls back to
+// allocations per call. The world position of a label never changes
+// (GlobeViewport.projectPosition is pure lng/lat → sphere; zoom lives in the
+// matrix), so the index carries every label's world position and each frame
+// is one allocation-free matrix multiply (label-declutter.ts). Falls back to
 // project() for any viewport that lacks the pieces.
-const worldCache = new WeakMap<OverlayLabel, { ctor: unknown; p: number[] }>();
-function worldOf(l: OverlayLabel, vp: Viewport): number[] {
-  let c = worldCache.get(l);
-  if (!c || c.ctor !== vp.constructor) {
-    c = { ctor: vp.constructor, p: vp.projectPosition(l.position) };
-    worldCache.set(l, c);
-  }
-  return c.p;
-}
 function fastMatrix(vp: Viewport): ArrayLike<number> | null {
   const m = vp.pixelProjectionMatrix;
   return m && m.length === 16 && typeof vp.projectPosition === "function" ? m : null;
 }
-/** World → pixel through deck's pixelProjectionMatrix (column-major), perspective-divided. */
-export function projectWorld(m: ArrayLike<number>, p: ArrayLike<number>, out: [number, number]): [number, number] {
-  const x = p[0];
-  const y = p[1];
-  const z = p[2] ?? 0;
-  const w = m[3] * x + m[7] * y + m[11] * z + m[15];
-  out[0] = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
-  out[1] = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
-  return out;
+/** Fill the index's world positions for this viewport class (once per rebuild). */
+function ensureWorld(idx: LabelIndex, vp: Viewport): void {
+  if (idx.worldCtor === vp.constructor) return;
+  const { labels, data } = idx;
+  for (let i = 0; i < labels.length; i++) {
+    const p = vp.projectPosition(labels[i].position);
+    data.world[i * 3] = p[0];
+    data.world[i * 3 + 1] = p[1];
+    data.world[i * 3 + 2] = p[2] ?? 0;
+  }
+  idx.worldCtor = vp.constructor;
 }
 
 export default function GlobeLabels({
@@ -558,6 +520,10 @@ export default function GlobeLabels({
   indexRef.current = labelIndex;
   const iconLabels = useMemo(() => labels.filter((l) => l.icon), [labels]);
   const gridRef = useRef<LabelGrid>(new LabelGrid());
+  // The declutter worker (null where Workers are unavailable → inline), and
+  // the label generation it was last given.
+  const declutterRef = useRef<Declutterer | null | undefined>(undefined);
+  const sentGenRef = useRef(-1);
 
   // New labels → new generation (icons re-serialised on next use) and a fresh
   // look at the scene's custom properties. Runs after React committed the
@@ -597,7 +563,10 @@ export default function GlobeLabels({
         const sig = iconSig(l.iconKey, dpr, iconKeyVars.get(l.iconKey), resolveVar);
         if (sig) {
           const hit = iconBySig.get(sig);
-          if (hit) return hit;
+          if (hit) {
+            refreshIcon(hit);
+            return hit;
+          }
         }
         const svg = iconHolders.current.get(l.id)?.firstElementChild ?? null;
         if (!svg || !serializer) return null; // holder not rendered yet
@@ -610,7 +579,10 @@ export default function GlobeLabels({
       }
       const gen = genRef.current;
       const cached = iconByLabel.current.get(l.id);
-      if (cached && cached.gen === gen && cached.dpr === dpr) return cached.sprite;
+      if (cached && cached.gen === gen && cached.dpr === dpr) {
+        if (cached.sprite) refreshIcon(cached.sprite);
+        return cached.sprite;
+      }
       const svg = iconHolders.current.get(l.id)?.firstElementChild ?? null;
       const sprite = svg ? iconSprite(svg, resolveVar, dpr) : null;
       iconByLabel.current.set(l.id, { gen, dpr, sprite });
@@ -648,31 +620,41 @@ export default function GlobeLabels({
 
       const [cx, cy, cz] = unit(cam.longitude, cam.latitude);
       const cosMin = viewCosMin(vp, w, h, [cx, cy, cz]);
-      const grid = gridRef.current;
-      grid.clear();
+      const idx = indexRef.current;
+      const { labels: ls, data } = idx;
       const m = fastMatrix(vp);
+      if (m) ensureWorld(idx, vp);
+      const frame: FrameParams = { m, w, h, zoom, cx, cy, cz, cosMin };
+      // Which labels to draw (and with their detail line or not): the worker's
+      // pass over the PREVIOUS frame's camera when it has one for this label
+      // generation, else computed here. Positions below are always projected
+      // against THIS frame's matrix, so a one-frame-old decision only means a
+      // label at the edge of a collision appears or hides a frame late.
+      if (declutterRef.current === undefined) declutterRef.current = createDeclutterer();
+      const dc = declutterRef.current;
+      let decision: Decision;
+      if (dc && m) {
+        if (sentGenRef.current !== idx.gen) {
+          dc.setIndex(idx.gen, data);
+          sentGenRef.current = idx.gen;
+        }
+        const ready = dc.take();
+        if (!dc.busy) dc.request(idx.gen, frame);
+        decision = ready && ready.gen === idx.gen ? ready : declutter(data, frame, gridRef.current);
+      } else {
+        decision = declutter(data, frame, gridRef.current, m ? undefined : (i) => vp.project(ls[i].position));
+      }
       const px: [number, number] = [0, 0];
-      let considered = 0;
-      let projected = 0;
       let drawn = 0;
       let draws = 0;
-      const { labels: ls, unit: un, minZoom: mz } = indexRef.current;
-      for (let i = 0; i < ls.length; i++) {
-        // Progressive reveal: below the label's minZoom it's not shown at all —
-        // and the list is sorted by minZoom, so the first one above the zoom
-        // ends this frame's candidates.
-        if (zoom < mz[i]) break;
-        considered++;
-        // Beyond the view's angular reach (or on the hidden hemisphere — the
-        // 0.04 floor keeps a small margin so labels don't flicker at the limb).
-        const j = i * 3;
-        if (un[j] * cx + un[j + 1] * cy + un[j + 2] * cz <= cosMin) continue;
+      const { chosen, detail } = decision;
+      for (let k = 0; k < chosen.length; k++) {
+        const i = chosen[k];
         const l = ls[i];
-        projected++;
         let x: number;
         let y: number;
         if (m) {
-          projectWorld(m, worldOf(l, vp), px);
+          projectWorldAt(m, data.world, i * 3, px);
           x = px[0];
           y = px[1];
         } else {
@@ -680,32 +662,16 @@ export default function GlobeLabels({
           x = p[0];
           y = p[1];
         }
-        if (x < -160 || y < -50 || x > w + 160 || y > h + 50) continue;
-        // Decluttering: skip (hide) this label if a higher-priority one
-        // already claimed overlapping screen space this frame. Box is
-        // anchored the same way the text is laid out — right of the point
-        // (or centred on it), vertically centred.
-        const centred = l.align === "center";
-        const showDetail = !!l.detail && zoom >= (l.detailMinZoom ?? 0);
-        const boxW = centred
-          ? Math.max(labelWidth(l.text), showDetail ? labelWidth(l.detail!) : 0)
-          : labelWidth(l.text);
-        const x0 = centred ? x - boxW / 2 : x;
-        const y0 = y - LABEL_H / 2;
-        const x1 = x0 + boxW;
-        const y1 = y0 + LABEL_H + (centred && showDetail ? DETAIL_H : 0);
-        if (grid.collides(x0, y0, x1, y1)) continue;
-        grid.place(x0, y0, x1, y1);
         drawn++;
-
+        const showDetail = detail[k] === 1;
         const sp = spritesOf(l, dpr);
-        if (centred) {
+        if (l.align === "center") {
           if (sp.name) {
-            ctx.drawImage(sp.name.img, x - sp.name.w / 2, y - sp.name.h / 2, sp.name.w, sp.name.h);
+            blit(ctx, sp.name.region, sp.name.w, sp.name.h, x - sp.name.w / 2, y - sp.name.h / 2);
             draws++;
           }
           if (sp.detail && showDetail) {
-            ctx.drawImage(sp.detail.img, x - sp.detail.w / 2, y + LABEL_H / 2 - 3, sp.detail.w, sp.detail.h);
+            blit(ctx, sp.detail.region, sp.detail.w, sp.detail.h, x - sp.detail.w / 2, y + LABEL_H / 2 - 3);
             draws++;
           }
           continue;
@@ -713,29 +679,29 @@ export default function GlobeLabels({
         let tx = x + TEXT_DX;
         if (l.icon) {
           const ic = iconFor(l, dpr);
-          if (ic?.img) {
-            ctx.drawImage(ic.img, tx, y - ic.h / 2, ic.w, ic.h);
+          if (ic?.region) {
+            blit(ctx, ic.region, ic.w, ic.h, tx, y - ic.h / 2);
             draws++;
             tx += ic.w + ICON_GAP;
           }
         }
         if (sp.combo && showDetail) {
           // Name + detail in one blit (same placement as the two draws below).
-          ctx.drawImage(sp.combo.img, tx - NAME_PAD, y - NAME_H / 2, sp.combo.w, sp.combo.h);
+          blit(ctx, sp.combo.region, sp.combo.w, sp.combo.h, tx - NAME_PAD, y - NAME_H / 2);
           draws++;
           continue;
         }
         if (sp.name) {
-          ctx.drawImage(sp.name.img, tx - NAME_PAD, y - sp.name.h / 2, sp.name.w, sp.name.h);
+          blit(ctx, sp.name.region, sp.name.w, sp.name.h, tx - NAME_PAD, y - sp.name.h / 2);
           draws++;
         }
         if (sp.detail && showDetail) {
-          ctx.drawImage(sp.detail.img, tx, y + LABEL_H / 2 + 2, sp.detail.w, sp.detail.h);
+          blit(ctx, sp.detail.region, sp.detail.w, sp.detail.h, tx, y + LABEL_H / 2 + 2);
           draws++;
         }
       }
-      labelStats.considered = considered;
-      labelStats.projected = projected;
+      labelStats.considered = decision.considered;
+      labelStats.projected = decision.projected;
       labelStats.drawn = drawn;
       labelStats.draws = draws;
       if (keyedNew) {
@@ -748,6 +714,9 @@ export default function GlobeLabels({
     return () => {
       cancelAnimationFrame(raf);
       delete (window as unknown as { __godsLabels?: unknown }).__godsLabels;
+      declutterRef.current?.destroy();
+      declutterRef.current = undefined;
+      sentGenRef.current = -1;
     };
   }, [getViewport, getCamera]);
 

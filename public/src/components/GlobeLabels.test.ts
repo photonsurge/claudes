@@ -35,16 +35,19 @@ describe("indexLabels (the frame loop's sorted, flat label list)", () => {
   it("sorts by minZoom (undefined = 0) and lays unit vectors out in that order", () => {
     const idx = indexLabels([label("c", 0, 90, 4.5), label("a", 0, 0), label("b", 90, 0, 2)]);
     expect(idx.labels.map((l) => l.id)).toEqual(["a", "b", "c"]);
-    expect(Array.from(idx.minZoom)).toEqual([0, 2, 4.5]);
+    expect(Array.from(idx.data.minZoom)).toEqual([0, 2, 4.5]);
     // a: lng 0 lat 0 → +x; b: lng 90 → +y; c: lat 90 → +z.
-    expect(Array.from(idx.unit.slice(0, 3)).map((v) => Math.round(v))).toEqual([1, 0, 0]);
-    expect(Array.from(idx.unit.slice(3, 6)).map((v) => Math.round(v))).toEqual([0, 1, 0]);
-    expect(Array.from(idx.unit.slice(6, 9)).map((v) => Math.round(v))).toEqual([0, 0, 1]);
+    expect(Array.from(idx.data.unit.slice(0, 3)).map((v) => Math.round(v))).toEqual([1, 0, 0]);
+    expect(Array.from(idx.data.unit.slice(3, 6)).map((v) => Math.round(v))).toEqual([0, 1, 0]);
+    expect(Array.from(idx.data.unit.slice(6, 9)).map((v) => Math.round(v))).toEqual([0, 0, 1]);
+    // Generations are distinct per rebuild; world positions wait for a viewport.
+    expect(indexLabels([]).gen).toBeGreaterThan(idx.gen);
+    expect(idx.worldCtor).toBeNull();
   });
 
   it("keeps a fractional minZoom exact, so a zoom equal to it still reveals the label", () => {
     const idx = indexLabels([label("x", 0, 0, 3.7)]);
-    expect(3.7 < idx.minZoom[0]).toBe(false);
+    expect(3.7 < idx.data.minZoom[0]).toBe(false);
   });
 });
 

@@ -57,10 +57,9 @@ describe("modeSlides", () => {
       "onair",
       "place-roundup",
       "topcities",
-      "forecast",
     ]);
     // No round-up (or an empty one) → the slide is dropped, spotlight reads as before.
-    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities", "forecast"]);
+    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities"]);
   });
 
   it("a region ('area') spotlight with no dossier degrades to the country spotlight deck", () => {
@@ -73,7 +72,7 @@ describe("modeSlides", () => {
     // are skipped and it reads exactly like a country spotlight.
     expect(
       ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: roundup })),
-    ).toEqual(["onair", "place-roundup", "topcities", "forecast"]);
+    ).toEqual(["onair", "place-roundup", "topcities"]);
   });
 
   const regionSteps = [
@@ -103,7 +102,6 @@ describe("modeSlides", () => {
       "region-country-de",
       "region-country-fr",
       "topcities",
-      "forecast",
     ]);
   });
 
@@ -113,7 +111,7 @@ describe("modeSlides", () => {
     // region-only slides drop and it reads like a country spotlight.
     expect(
       ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox })),
-    ).toEqual(["onair", "topcities", "forecast"]);
+    ).toEqual(["onair", "topcities"]);
   });
 
   it("a region spotlight splits the round-up: state text, then a NEXT 24H outlook slide", () => {
@@ -125,20 +123,18 @@ describe("modeSlides", () => {
     } as unknown as ModeSlideContext["placeRoundup"];
     expect(
       ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: roundup })),
-    ).toEqual(["onair", "place-roundup", "place-roundup-24h", "topcities", "forecast"]);
+    ).toEqual(["onair", "place-roundup", "place-roundup-24h", "topcities"]);
     // No per-city outlook → only the state slide, no split.
     const noOutlook = { summary: "Settled." , inputs: { topCities: [], alerts: [], volcanoes: [] } } as unknown as ModeSlideContext["placeRoundup"];
     expect(
       ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: noOutlook })),
-    ).toEqual(["onair", "place-roundup", "topcities", "forecast"]);
+    ).toEqual(["onair", "place-roundup", "topcities"]);
   });
 
-  it("a country spotlight reads top-cities then the top-5 city forecast slide", () => {
+  it("a country spotlight leaves city forecasts to the right-hand report", () => {
     const bbox: [number, number, number, number] = [-1, -1, 1, 1];
-    // The city-forecast slide (top-5 cities + weather) replaces the old single
-    // country-wide aggregate; it rides unconditionally and self-hides at render
-    // when the per-city cache is empty, so it no longer keys off the area forecast.
-    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities", "forecast"]);
+    // Keep place context here; the right-hand report owns city forecasts.
+    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities"]);
   });
 
   it("every mode leads with the uniform on-air lede", () => {
@@ -315,7 +311,7 @@ describe("modeSlides", () => {
     ).toEqual(["onair", "forecast", "history"]);
   });
 
-  it("a region spotlight folds AREA HISTORY after its cities + forecast", () => {
+  it("a region spotlight folds AREA HISTORY after its city guide", () => {
     expect(
       ids(
         seg({ kind: "country" }),
@@ -326,7 +322,7 @@ describe("modeSlides", () => {
           histBbox: bbox,
         }),
       ),
-    ).toEqual(["onair", "topcities", "forecast", "history"]);
+    ).toEqual(["onair", "topcities", "history"]);
   });
 
   it("an ocean shot adds the sea-temp-by-depth slide", () => {
@@ -370,13 +366,12 @@ describe("modeSlides — per-channel slide prefs", () => {
   const spotlight = () => ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }));
 
   it("the country spotlight's natural deck (baseline)", () => {
-    expect(spotlight()).toEqual(["onair", "topcities", "forecast"]);
+    expect(spotlight()).toEqual(["onair", "topcities"]);
   });
 
   it("slidesOff hides the listed slide", () => {
     expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, slidesOff: ["topcities"] }))).toEqual([
       "onair",
-      "forecast",
     ]);
   });
 
@@ -387,6 +382,6 @@ describe("modeSlides — per-channel slide prefs", () => {
   it("slideOrder reranks the deck after the pinned lede", () => {
     expect(
       ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, slideOrder: ["forecast", "topcities"] })),
-    ).toEqual(["onair", "forecast", "topcities"]);
+    ).toEqual(["onair", "topcities"]);
   });
 });

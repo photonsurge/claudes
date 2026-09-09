@@ -504,8 +504,7 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
       });
     });
     slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
-    // Area weather: the region's top-5 cities, each with NOW temp + 3-day strip.
-    slides.push({ id: "forecast", node: <CityForecastPanel bbox={ctx.wideCitiesBbox} color={color} /> });
+    // City forecasts live in the top-right report.
     slides.push(...contextSlides(ctx));
     return slides;
   }
@@ -522,11 +521,7 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
       slides.push({ id: "place-roundup", node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} theme={ctx.theme} /> });
     }
     slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} color={color} /> });
-    // Area weather: the framed nation's top-5 cities, each with NOW temp + 3-day
-    // strip — replaces the meaningless single country-wide aggregate forecast.
-    // `wideCitiesCc` (country shots) scopes to the nation's own cities by ISO
-    // code; TopCitiesPanel gets the same scoping server-side via the focus bundle.
-    slides.push({ id: "forecast", node: <CityForecastPanel bbox={ctx.wideCitiesBbox} cc={ctx.wideCitiesCc} color={color} /> });
+    // City forecasts live in the top-right report.
     slides.push(...contextSlides(ctx));
     return slides;
   }

@@ -148,7 +148,10 @@ function useArchiveSeries<T extends { series: unknown[] }>(
     // eslint-disable-next-line react-hooks/exhaustive-deps -- urlFor is derived from key
   }, [key]);
 
-  return { byVar: state.byVar, loading: state.loading };
+  // Effects reset the fetch after render; never expose the previous point in that render.
+  return state.key === key
+    ? { byVar: state.byVar, loading: state.loading }
+    : { byVar: {}, loading: Boolean(key) };
 }
 
 const fromParam = (windowHours: number) => String(Date.now() - windowHours * 3600 * 1000);

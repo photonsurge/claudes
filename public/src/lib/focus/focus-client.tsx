@@ -610,3 +610,14 @@ export function useVolcanoEruptions(): FocusBundle["volcanoEruptions"] {
   const { bundle, covers } = useFocusContext();
   return covers() ? (bundle!.volcanoEruptions ?? []) : [];
 }
+
+/** Largest cities belonging to the current country/region; never reuse an old bundle. */
+export function useReportCities(kind?: string) {
+  const { bundle, covers } = useFocusContext();
+  if (!bundle || !covers()) return [];
+  const cities = kind === "region"
+    ? bundle.region?.topCities ?? []
+    : kind === "country" ? bundle.topCities.map((entry) => entry.city) : [];
+  return [...cities].sort((a, b) => (b.population ?? 0) - (a.population ?? 0)).slice(0, 5)
+    .map((city) => ({ label: city.name, lat: city.lat, lng: city.lng }));
+}

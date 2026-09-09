@@ -119,15 +119,15 @@ describe("WeatherMonitors", () => {
       },
     ];
     render(<WeatherMonitors series={series} locationLabel="Chiayi City" />);
-    expect(screen.getByText("Chiayi City")).toBeInTheDocument();
-    expect(screen.getByText("LOCAL MONITORS")).toBeInTheDocument();
-    expect(screen.getByText("WIND MONITOR")).toBeInTheDocument();
+    expect(screen.getByText("Chiayi City · 0.00°N 0.00°E")).toBeInTheDocument();
+    expect(screen.getByText("WEATHER AT SELECTED POINT")).toBeInTheDocument();
+    expect(screen.getByText("WIND SPEED")).toBeInTheDocument();
     expect(screen.getByText("6 m/s")).toBeInTheDocument();
-    expect(screen.queryByText("PRESSURE MONITOR")).not.toBeInTheDocument();
-    expect(screen.queryByText("WAVE MONITOR")).not.toBeInTheDocument();
+    expect(screen.queryByText("AIR PRESSURE")).not.toBeInTheDocument();
+    expect(screen.queryByText("WAVE HEIGHT")).not.toBeInTheDocument();
   });
 
-  it("holds its last readings once shown, so a slide whose archive reads empty can't blank it", () => {
+  it("clears previous readings while the next point has no data", () => {
     const series: HistorySeries[] = [
       {
         variable: "wind",
@@ -140,17 +140,14 @@ describe("WeatherMonitors", () => {
       },
     ];
     const { rerender } = render(<WeatherMonitors series={series} locationLabel="Chiayi City" />);
-    expect(screen.getByText("WIND MONITOR")).toBeInTheDocument();
+    expect(screen.getByText("WIND SPEED")).toBeInTheDocument();
     expect(screen.getByText("6 m/s")).toBeInTheDocument();
 
-    // The point-history archive reads empty for a beat (a stop away from a
-    // sampled city, or a bundle refetch) → the strip must hold its last frame,
-    // not blank out for that slide.
-    rerender(<WeatherMonitors series={[]} locationLabel="Chiayi City" />);
-    expect(screen.getByText("WIND MONITOR")).toBeInTheDocument();
-    expect(screen.getByText("6 m/s")).toBeInTheDocument();
+    rerender(<WeatherMonitors series={[]} locationLabel="London" />);
+    expect(screen.queryByText("WIND SPEED")).not.toBeInTheDocument();
+    expect(screen.queryByText("6 m/s")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Chiayi City/)).not.toBeInTheDocument();
 
-    // Fresh data updates the reading in place (still no blank).
     const updated: HistorySeries[] = [
       { ...series[0], series: [{ t: "3", model: "gfs", fhr: 0, speed: 7 }, { t: "4", model: "gfs", fhr: 1, speed: 9 }] },
     ];
@@ -176,7 +173,7 @@ describe("WeatherMonitors", () => {
         forecast={<div>3-DAY FORECAST</div>}
       />,
     );
-    expect(screen.getByText("LOCAL MONITORS")).toBeInTheDocument();
+    expect(screen.getByText("WEATHER AT SELECTED POINT")).toBeInTheDocument();
     expect(screen.getByText("3-DAY FORECAST")).toBeInTheDocument();
   });
 });

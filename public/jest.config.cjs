@@ -38,6 +38,7 @@ module.exports = {
     // textures.ts uses the (mocked) WeatherLayers loader in tests.
     "texture-decode-client$": "<rootDir>/src/test/mocks/texture-decode-client.ts",
     "high-low-client$": "<rootDir>/src/test/mocks/high-low-client.ts",
+    "label-declutter-client$": "<rootDir>/src/test/mocks/label-declutter-client.ts",
     "^maplibre-gl$": "<rootDir>/src/test/mocks/maplibre-gl.ts",
     "^@deck.gl/core$": "<rootDir>/src/test/mocks/deckgl.ts",
     "^@deck.gl/layers$": "<rootDir>/src/test/mocks/deckgl.ts",

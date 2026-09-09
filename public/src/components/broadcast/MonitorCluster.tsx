@@ -420,34 +420,31 @@ const WEATHER_MONITORS: {
   icon: React.ReactNode;
   animMs: number;
 }[] = [
-  { variable: "wind", title: "WIND MONITOR", color: "#9085e9", icon: <WindIcon active />, animMs: 7000 },
-  { variable: "pressure", title: "PRESSURE MONITOR", color: "#f2a33d", icon: <GaugeIcon active />, animMs: 10000 },
-  { variable: "wave", title: "WAVE MONITOR", color: "#3987e5", wave: true, icon: <WaveIcon active />, animMs: 9000 },
+  { variable: "wind", title: "WIND SPEED", color: "#9085e9", icon: <WindIcon active />, animMs: 7000 },
+  { variable: "pressure", title: "AIR PRESSURE", color: "#f2a33d", icon: <GaugeIcon active />, animMs: 10000 },
+  { variable: "wave", title: "WAVE HEIGHT", color: "#3987e5", wave: true, icon: <WaveIcon active />, animMs: 9000 },
 ];
 
 function formatMonitorLocation(series: HistorySeries[], locationLabel?: string | null): string {
   const label = locationLabel?.trim();
-  if (label) return label;
 
   const sampled = series.find((s) => Number.isFinite(s.lat) && Number.isFinite(s.lng));
-  if (!sampled) return "LOCAL POINT";
+  if (!sampled) return label || "Selected point";
 
-  const lat = `${Math.abs(sampled.lat).toFixed(1)}${sampled.lat >= 0 ? "N" : "S"}`;
-  const lng = `${Math.abs(sampled.lng).toFixed(1)}${sampled.lng >= 0 ? "E" : "W"}`;
-  return `${lat} ${lng}`;
+  const lat = `${Math.abs(sampled.lat).toFixed(2)}°${sampled.lat >= 0 ? "N" : "S"}`;
+  const lng = `${Math.abs(sampled.lng).toFixed(2)}°${sampled.lng >= 0 ? "E" : "W"}`;
+  return [label, `${lat} ${lng}`].filter(Boolean).join(" · ");
 }
 
 function WeatherMonitorBox({
   spec,
   samples,
   latestLabel,
-  locationLabel,
   theme,
 }: {
   spec: (typeof WEATHER_MONITORS)[number];
   samples: { v: number }[];
   latestLabel: string;
-  locationLabel: string;
   theme: BroadcastTheme;
 }) {
   const path = spec.wave ? realWavePath(samples, ROW_BOX_W, ROW_BOX_H) : realLinePath(samples, ROW_BOX_W, ROW_BOX_H);
@@ -455,19 +452,6 @@ function WeatherMonitorBox({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, width: ROW_BOX_W }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 500,
-            letterSpacing: 0.4,
-            color: INK_DIM,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {locationLabel}
-        </span>
         <span style={{ fontFamily: MONO, fontSize: 9.5, color: theme.accent, whiteSpace: "nowrap" }}>
           {latestLabel}
         </span>
@@ -560,11 +544,8 @@ export function LocalWeatherPanel({
     return { spec, samples, latestLabel: `${formatReading(latest)}${units ? ` ${units}` : ""}` };
   }).filter((item): item is { spec: (typeof WEATHER_MONITORS)[number]; samples: { v: number }[]; latestLabel: string } => item != null);
 
-  // Hold the last readings so a slide/stop whose archive reads empty for a beat
-  // (the point-history is sampled at cities) keeps the strip up with its last
-  // good traces instead of blanking it out for that one slide.
-  const held = useLastPresent(computed.length > 0 ? { visible: computed, location } : null);
-  const monitorData = showMonitors ? held : null;
+  // Render only the current fetch, matching the weather-point marker.
+  const monitorData = showMonitors && computed.length > 0 ? { visible: computed, location } : null;
   if (!monitorData && !forecast) return null;
 
   return (
@@ -584,17 +565,21 @@ export function LocalWeatherPanel({
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  fontSize: 12.5,
+                  fontSize: 11,
                   fontWeight: 600,
-                  letterSpacing: 2.2,
+                  letterSpacing: 1.2,
                   color: INK,
                   whiteSpace: "nowrap",
                 }}
               >
                 <WindIcon active size={13} />
-                LOCAL MONITORS
+                WEATHER AT SELECTED POINT
               </span>
               <div style={{ flex: 1, minWidth: 20, height: 1, background: accentRule(theme.accent) }} />
+            </div>
+            <div style={{ fontSize: 11, color: INK_DIM }}>
+              {monitorData.location}
+              <div style={{ fontSize: 9, marginTop: 3 }}>Past 72 hours · latest reading shown</div>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               {monitorData.visible.map((item) => (
@@ -603,7 +588,6 @@ export function LocalWeatherPanel({
                   spec={item.spec}
                   samples={item.samples}
                   latestLabel={item.latestLabel}
-                  locationLabel={monitorData.location}
                   theme={theme}
                 />
               ))}

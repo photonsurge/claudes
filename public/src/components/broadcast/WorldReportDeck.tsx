@@ -10,6 +10,7 @@
  * `reportHoldMs` dwell (DEFAULT_REPORT_HOLD_MS when unset).
  * Pointer-inert like the rest of the chrome.
  */
+import { useReportCities } from "../../lib/focus/focus-client";
 import type { AboutSettings, WeatherLocation } from "@photonsurge/shared/control";
 import { pageDotStyle, pageDotsSlack } from "./page-dots";
 import {
@@ -48,7 +49,9 @@ export default function WorldReportDeck({
   worldWatch,
   theme = DEFAULT_THEME,
   weatherLocations,
-  cameraCenter,
+  areaKind,
+  areaName,
+  targetLocation,
   reportOff,
   reportOrder,
   reportKindsOff,
@@ -59,8 +62,10 @@ export default function WorldReportDeck({
   theme?: BroadcastTheme;
   /** Explicit point forecasts configured on admin/scenes/:id. */
   weatherLocations?: WeatherLocation[];
-  /** Empty location lists follow the live view instead of becoming global. */
-  cameraCenter?: [number, number];
+  /** Country/region spotlights show their largest cities from the current focus bundle. */
+  areaKind?: string;
+  areaName?: string;
+  targetLocation?: WeatherLocation;
   /** Per-channel hidden report slides (ControlState.reportOff). */
   reportOff?: ReportSlideId[];
   /** Per-channel report slide ranking (ControlState.reportOrder). */
@@ -83,15 +88,9 @@ export default function WorldReportDeck({
     reportOff ?? [],
     reportOrder ?? [],
   ).map((x) => x.id);
-  const locations: WeatherLocation[] = weatherLocations?.length
-    ? weatherLocations.slice(0, 4)
-    : [
-        {
-          label: "Current view",
-          lng: cameraCenter?.[0] ?? 0,
-          lat: cameraCenter?.[1] ?? 20,
-        },
-      ];
+  const cityLocations = useReportCities(areaKind);
+  const isArea = areaKind === "country" || areaKind === "region";
+  const locations = isArea ? cityLocations : targetLocation ? [targetLocation] : (weatherLocations ?? []).slice(0, 5);
   const { page } = usePagedSlides(active, 1, holdMs);
   const slide = active[page] ?? active[0];
   // A channel can pare the report to nothing — then render nothing (the whole
@@ -103,7 +102,7 @@ export default function WorldReportDeck({
 
   let content: React.ReactNode;
   if (slide === "hourly") {
-    content = <LocationWeatherPanel locations={locations} theme={theme} />;
+    content = <LocationWeatherPanel locations={locations} theme={theme} areaName={isArea ? areaName : undefined} detailed={Boolean(targetLocation) && !isArea} />;
   } else if (slide === "alerts") {
     content = (
       <HazardScreen

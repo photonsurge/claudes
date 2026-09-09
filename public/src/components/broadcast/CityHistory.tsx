@@ -125,7 +125,7 @@ export function FeaturedCityClimate({
 
   return (
     <CardSection style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <CardEyebrow>{name.toUpperCase()} · Past Year</CardEyebrow>
+      <CardEyebrow>{name.toUpperCase()} · Climate · Past Year</CardEyebrow>
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
         {rows.map((row) => (
           <ClimateCell
@@ -159,9 +159,9 @@ export function CityTempSpark({ city }: { city: City }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
       {latest != null ? (
-        <span style={{ fontSize: 13.2, fontWeight: 800, color: tempRow.color }}>{formatReading(latest)}°</span>
+        <span style={{ fontSize: 11, color: tempRow.color }}>Temperature · latest monthly mean<br />{formatReading(latest)} °C</span>
       ) : null}
-      <svg width={ROW_SPARK_W} height={ROW_SPARK_H} viewBox={`0 0 ${CHART_W} ${ROW_SPARK_H}`} preserveAspectRatio="none">
+      <svg aria-label="Temperature history over the past year" role="img" width={ROW_SPARK_W} height={ROW_SPARK_H} viewBox={`0 0 ${CHART_W} ${ROW_SPARK_H}`} preserveAspectRatio="none">
         <path
           d={toPath(spark.pts)}
           fill="none"

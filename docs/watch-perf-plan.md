@@ -750,6 +750,88 @@ would take most of it. Draw-count levers left (~0.14 ms each): country glow 4 ri
 → 1 PathLayer with a per-level breathe attribute (−3), alert wide+mid → 1 (−1),
 halo+marker pairs (−2).
 
+### Round 21 (2026-09-09) — measured over a minute: the lossless floor
+
+Round 19 measured over 60 s: busy **44.9 %** (from 99 % on 2026-09-07), rAF
+29.7 fps, max frame gap 433 ms (a cut), `updateUniformBuffer` gone from the
+table (the lean loop `iM` is 0.21 ms/frame, from 0.41). The new `gpu features:`
+line settles round 19's question the other way: `gpu_compositing=enabled ·
+rasterization=enabled · 2d_canvas=enabled`, CEF launched with `--enable-gpu`
+(OBS's browser-source hardware acceleration is already ON). So the ~5–6 ms
+per-frame pipeline (Commit ~3 ms, Layerize ~1.5) is CEF's off-screen-rendering
+frame path plus its main-thread animation ticking — not a host setting the
+page can have flipped. There is no host lever left.
+
+Separately, the parallel session's commits 5d14b17 / 2959772 (2026-09-09)
+turned the stroke-only GeoJsonLayers (alert glow rings, country glow rings,
+borders) into PathLayers over pre-extracted rings (`outline-rings.ts`,
+`country-features.ts`): the census is now 23 primitive / 21 drawn per frame
+(from 31), and a cut no longer re-links shaders.
+
+Per-frame budget now (30 fps cap, 33 ms): deck ~7.2 ms (particles 1.7 across
+the two wind layers, path strokes 1.1, polygons 0.8, scatter 0.7, bitmaps 0.5,
+rasters 0.5, contour 0.3, deck/luma bookkeeping ~1.5 — `setProps`, WL
+`ensureDefaultProps`, `bindBuffer`), CEF pipeline ~5–6 ms, label canvas
+~1.2 ms on a 138-label shot (`drawImage` 0.65), GC 0.3, style recalc 0.5
+(every frame: the crawl, three monitor-row sweeps, two pulses, the alert dot).
+
+Everything lossless that pays more than a tenth of a millisecond has shipped.
+What remains is a trade-off menu (the user's call), with estimated returns:
+
+| lever | est. gain | what changes |
+|---|---|---|
+| label canvas in a worker | ~1.2 ms/f (3–4 pts) on dense shots | labels may trail their dots by one frame during fast pans |
+| merge the 3-ring glows into one banded draw (alerts + countries) | ~0.7 ms/f | identical bands; slight difference where rings self-overlap at joins |
+| particle counts (or one wind layer under a nest) | up to ~0.8 ms/f | visibly fewer particles |
+| ticker crawl windowing (1.6 k nodes → ~200) | ~0.3–0.5 ms/f | none, but needs a one-time entry-width measurement to keep the strip continuous |
+| monitor-row sweeps + pulses to canvas | ~0.2–0.4 ms/f | none if drawn faithfully; three small components |
+
+### Round 22 (2026-09-09) — the label canvas's last two levers, and naming a stall
+
+Shipped (lossless):
+
+- **Sprite atlas** (`components/label-atlas.ts`): every label sprite (name,
+  detail chip, combined, icon glyph) was its own small `<canvas>` — up to
+  4 000 of them — so each of a frame's ~140 `drawImage`s bound a different
+  source and nothing batched (0.65 ms/frame, the label canvas's largest cost).
+  Sprites are now painted into a few 2048² pages (shelf packing, 1 px gutter,
+  integer device-pixel regions → identical pixels), blitted from one source per
+  frame. Past three pages the oldest page is retired whole and its sprites
+  re-rasterise on demand; an icon whose page retired keeps drawing from it
+  until its re-bake lands.
+- **Declutter split** (`components/label-declutter.ts` + `.worker.ts` +
+  `-client.ts`): the per-frame decision — which labels to draw, in priority
+  order, with or without their detail line (view cull, projection, progressive
+  reveal, collision grid over the whole zoom-eligible list) — is pure data in,
+  pure data out, and runs in a Worker on the PREVIOUS frame's camera. The main
+  thread projects only the chosen labels against the CURRENT matrix and blits,
+  so positions are exact; a one-frame-old decision only means a label at the
+  edge of a collision appears or hides a frame late. Inline fallback for the
+  first frame after a rebuild, a busy worker, or no Worker. Expected: `u`,
+  `place`, `collides` and the projection frame leave the table (~0.5 ms/frame).
+- **Profiler stalls**: `findStalls` splits the profile into stretches with no
+  idle sample for ≥ 100 ms (`--stalls N`), each with its own Bottom-Up and the
+  deck/React entry points on the stack; `--cpuprofile <file>` re-analyses a
+  saved run offline; `--stall-trace` records the timeline trace DURING the
+  sampling window (same clock as the profile) and lists, per stall, the
+  renderer events — Layout, Paint, Commit, GC, script compiles, JS callbacks by
+  name — that made up its native "(program)" time. Re-analysing the 60 s run:
+  two stalls, the cut at 3.7 s = 554 ms of which 71 % "(program)" + 17 % GC —
+  i.e. not JavaScript, which is exactly what a CPU profile alone can't name
+  and the concurrent trace can.
+
+On 60 fps: at 30 fps the page sits at ~45 % busy ≈ 15 ms of main-thread work
+per 33 ms frame; the fixed per-frame costs (deck ~7, CEF pipeline ~5–6, labels
+~1, GC) are not far from a 16.7 ms budget, so a 60 fps trial will read ~85–95 %
+busy and drop frames on every cut. Worth trialling only after the cut stall is
+gone — a stall costs twice the frames at 60.
+
+How to capture the cut glitch: `node scripts/profile-watch.mjs
+http://localhost:9221 --seconds 60 --deck --stall-trace`, then trigger two or
+three cuts / fly-tos from /control during the minute; read the `## Stalls`
+section — each stall's Bottom-Up names the JS, its "renderer events" line names
+the rest.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

@@ -7,7 +7,10 @@ import type { WorldWatchItem } from "../../lib/broadcast";
 import type { WorldWatchState } from "../../lib/world-watch";
 import { DEFAULT_THEME } from "./config";
 
-const mockUsePointForecast = jest.fn((_center: [number, number] | null) => ({ days: [], loading: false }));
+const mockReportCities = jest.fn(() => [] as { label: string; lat: number; lng: number }[]);
+jest.mock("../../lib/focus/focus-client", () => ({ useReportCities: () => mockReportCities() }));
+
+const mockUsePointForecast = jest.fn((_center: [number, number] | null) => ({ days: [] as import("../../lib/forecast-client").ForecastDay[], loading: false }));
 jest.mock("../../lib/forecast-client", () => ({
   usePointForecast: (center: [number, number] | null) => mockUsePointForecast(center),
 }));
@@ -236,4 +239,34 @@ describe("WorldReportDeck per-channel curation", () => {
     expect(mockUsePointForecast).toHaveBeenCalledWith([-0.128, 51.507]);
     expect(mockUsePointForecast).toHaveBeenCalledWith([139.65, 35.676]);
   });
+  it("uses cities from the current area instead of configured locations or the camera centre", () => {
+    mockReportCities.mockReturnValue([{ label: "London", lat: 51.5, lng: -0.1 }]);
+    const { rerender } = render(<WorldReportDeck worldWatch={emptyWatch}
+      reportOrder={["hourly"]} areaKind="country" areaName="United Kingdom"
+      weatherLocations={[{ label: "Tokyo", lat: 35, lng: 139 }]} />);
+    expect(screen.getByText("CITY WEATHER")).toBeInTheDocument();
+    expect(screen.getByText("LONDON")).toBeInTheDocument();
+    expect(screen.queryByText("TOKYO")).not.toBeInTheDocument();
+    mockReportCities.mockReturnValue([]);
+    rerender(<WorldReportDeck worldWatch={emptyWatch} reportOrder={["hourly"]}
+      areaKind="region" areaName="Europe" />);
+    expect(screen.queryByText("LONDON")).not.toBeInTheDocument();
+    expect(screen.getByText("City forecasts unavailable")).toBeInTheDocument();
+  });
+
+  it("shows detailed forecasts at the selected target", () => {
+    mockUsePointForecast.mockReturnValue({ loading: false, days: [{
+      date: "2026-09-09", label: "TODAY", hiTemp: 22, loTemp: 14,
+      windAvg: 5, gustMax: 12, cloudAvg: 80, precipChance: 60, condition: "rain", hazards: [],
+    } as import("../../lib/forecast-client").ForecastDay] });
+    render(<WorldReportDeck worldWatch={emptyWatch} reportOrder={["hourly"]}
+      targetLocation={{ label: "Selected storm", lat: 51.5, lng: -0.1 }} />);
+    expect(screen.getByText("TARGET WEATHER")).toBeInTheDocument();
+    expect(screen.getByText("SELECTED STORM")).toBeInTheDocument();
+    expect(screen.getByText("Wind 5 m/s")).toBeInTheDocument();
+    expect(screen.getByText("Gusts 12 m/s")).toBeInTheDocument();
+    expect(screen.getByText("Chance of rain 60%")).toBeInTheDocument();
+    expect(mockUsePointForecast).toHaveBeenCalledWith([-0.1, 51.5]);
+  });
+
 });

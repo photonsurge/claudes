@@ -25,6 +25,14 @@
  *                      frames matching <substr> call, so a hot method can be opened up)
  *          --anim-census (every running CSS / Web animation and SMIL element, by target element —
  *                      pair with --trace, which resolves the nodes still re-styled every frame)
+ *          --stalls [ms] (100: every stretch with no idle sample for ≥ ms gets its own Bottom-Up —
+ *                      trigger cuts / fly-tos during a long capture and each one is named on its own)
+ *          --stall-trace (record the timeline trace DURING the sampling window as well, so every stall
+ *                      also lists the renderer events — Layout, Paint, Commit, GC, script compiles, JS
+ *                      callbacks by name — that made up its native "(program)" time; saved as
+ *                      stall-trace.json)
+ *          --cpuprofile <file> (offline: re-analyse a saved profile.cpuprofile — Bottom-Up, inclusive,
+ *                      stalls — no target needed; a stall-trace.json beside it is used for the stalls)
  *
  * Read-only against the page (Profiler / Performance / Runtime.evaluate). Needs Node ≥ 22
  * (global WebSocket); zero dependencies. Works with DevTools already attached.
@@ -39,10 +47,18 @@ const opt = (name, def) => {
   return i === -1 ? def : argv[i + 1];
 };
 const flag = (name) => argv.includes(`--${name}`);
-if (!target) {
-  console.error("usage: node scripts/profile-watch.mjs <http://host:port | ws://.../devtools/page/id> [--seconds 20]");
+const CPUPROFILE = opt("cpuprofile", "");
+if (!target && !CPUPROFILE) {
+  console.error("usage: node scripts/profile-watch.mjs <http://host:port | ws://.../devtools/page/id> [--seconds 20]  |  --cpuprofile <file>");
   process.exit(2);
 }
+const STALL_TRACE = flag("stall-trace");
+const STALL_MS = (() => {
+  const i = argv.indexOf("--stalls");
+  if (i === -1) return 100;
+  const v = Number(argv[i + 1]);
+  return Number.isFinite(v) && !String(argv[i + 1] ?? "").startsWith("--") ? v : 100;
+})();
 const SECONDS = Number(opt("seconds", 20));
 const INTERVAL_US = Number(opt("interval", 250));
 const TOP = Number(opt("top", 35));
@@ -303,6 +319,100 @@ function pct(us, of) {
   return (of ? (100 * us) / of : 0).toFixed(1).padStart(5) + "%";
 }
 
+/**
+ * Maximal runs of non-idle samples lasting ≥ minUs (an idle gap under 2 ms
+ * doesn't break a run), each as a sub-profile analyze() can take: a cut's
+ * stall stands on its own instead of being averaged into a minute of steady
+ * frames.
+ */
+function findStalls(profile, minUs) {
+  const idle = new Set(profile.nodes.filter((n) => n.callFrame.functionName === "(idle)").map((n) => n.id));
+  const { samples, timeDeltas: deltas } = profile;
+  const out = [];
+  let cum = 0;
+  let run = null;
+  const close = () => {
+    if (!run) return;
+    const durationUs = run.endUs - run.startUs;
+    if (durationUs >= minUs) {
+      out.push({
+        startUs: run.startUs,
+        durationUs,
+        profile: { nodes: profile.nodes, samples: samples.slice(run.i0, run.i1 + 1), timeDeltas: deltas.slice(run.i0, run.i1 + 2) },
+      });
+    }
+    run = null;
+  };
+  for (let i = 0; i < samples.length; i++) {
+    cum += deltas[i] ?? 0;
+    const startUs = cum;
+    const endUs = cum + Math.max(0, i + 1 < deltas.length ? deltas[i + 1] : 0);
+    if (idle.has(samples[i])) continue;
+    if (run && startUs - run.endUs > 2000) close();
+    if (!run) run = { i0: i, i1: i, startUs, endUs };
+    else {
+      run.i1 = i;
+      run.endUs = endUs;
+    }
+  }
+  close();
+  return out;
+}
+
+const MANGLED_RE = /^(\(anonymous\)|[a-zA-Z_$]{1,3}) @/;
+
+/**
+ * The CPU-profile sections (shared with `--cpuprofile` offline mode): Bottom-Up,
+ * per-script, inclusive entry points, callees, and the stalls — every stretch
+ * with no idle sample for ≥ STALL_MS, each with its own Bottom-Up and the deck /
+ * React entry points that were on the stack, so a cut triggered during a long
+ * capture is named on its own.
+ */
+function printCore(p, profile, a, busy, stallTrace = null) {
+  p(`## Bottom-Up — top ${TOP} by SELF time (% of busy main-thread time)`);
+  p(`   self ms   %busy  function @ script:line:col`);
+  const selfSorted = [...a.self.entries()].filter(([k]) => !/^\((idle|root)\)$/.test(k)).sort((x, y) => y[1] - x[1]).slice(0, TOP);
+  for (const [k, us] of selfSorted) p(`${fmt(us)}  ${pct(us, busy)}  ${k}`);
+  p();
+  p(`## Self time by script`);
+  for (const [s, us] of [...a.script.entries()].filter(([s]) => s !== "(idle)" && s !== "(root)").sort((x, y) => y[1] - x[1]).slice(0, 12))
+    p(`${fmt(us)}  ${pct(us, busy)}  ${s || "(native)"}`);
+  p();
+  p(`## Inclusive (subtree) time — deck.gl / WeatherLayers / React / rAF entry points`);
+  const inclSorted = [...a.incl.entries()].filter(([k]) => WATCH.test(k.split(" @ ")[0])).sort((x, y) => y[1] - x[1]).slice(0, 30);
+  for (const [k, us] of inclSorted) p(`${fmt(us)}  ${pct(us, busy)}  ${k}`);
+  if (CALLEES) {
+    p();
+    const tot = [...a.callees.values()].reduce((x, y) => x + y, 0);
+    p(`## Callees of frames matching "${CALLEES}" (inclusive ${fmt(tot)} ms)`);
+    for (const [k, us] of [...a.callees.entries()].sort((x, y) => y[1] - x[1]).slice(0, 18)) p(`${fmt(us)}  ${pct(us, tot)}  ${k}`);
+  }
+  p();
+  const stalls = findStalls(profile, STALL_MS * 1000);
+  const stallTotal = stalls.reduce((t, x) => t + x.durationUs, 0);
+  p(`## Stalls — stretches with no idle sample for ≥ ${STALL_MS} ms: ${stalls.length} (${(stallTotal / 1000).toFixed(0)} ms of ${(a.total / 1000).toFixed(0)} ms) — trigger cuts / fly-tos during a long capture and each is named here`);
+  const stallKeys = [];
+  for (const st of stalls.slice(0, 12)) {
+    p(`### at ${(st.startUs / 1e6).toFixed(1)} s · ${(st.durationUs / 1000).toFixed(0)} ms`);
+    const sa = analyze(st.profile);
+    const sb = sa.total - sa.special.idle;
+    const top = [...sa.self.entries()].filter(([k]) => !/^\((idle|root)\)$/.test(k)).sort((x, y) => y[1] - x[1]).slice(0, 8);
+    for (const [k, us] of top) {
+      p(`${fmt(us)}  ${pct(us, sb)}  ${k}`);
+      if (MANGLED_RE.test(k)) stallKeys.push(k);
+    }
+    const entries = [...sa.incl.entries()].filter(([k]) => WATCH.test(k.split(" @ ")[0])).sort((x, y) => y[1] - x[1]).slice(0, 6);
+    if (entries.length) p(`   on the stack: ${entries.map(([k, us]) => `${k.split(" @ ")[0]} ${(us / 1000).toFixed(0)} ms`).join(" · ")}`);
+    if (stallTrace && typeof profile.startTime === "number") {
+      const from = profile.startTime + st.startUs;
+      const rows = traceWindow(stallTrace.events, stallTrace.main, from, from + st.durationUs).slice(0, 12);
+      if (rows.length) p(`   renderer events in this window: ${rows.map(([n, us]) => `${n} ${(us / 1000).toFixed(0)} ms`).join(" · ")}`);
+    }
+  }
+  if (stalls.length > 12) p(`   … ${stalls.length - 12} more`);
+  return { selfSorted, inclSorted, stallKeys };
+}
+
 async function snippetFetcher(cdp) {
   if (!WANT_SOURCE) return async () => null;
   const cache = new Map();
@@ -345,7 +455,7 @@ const TRACE_CATEGORIES = [
   "blink.user_timing",
 ];
 
-async function recordTrace(cdp, seconds) {
+async function startTrace(cdp) {
   const events = [];
   cdp.on("Tracing.dataCollected", (p) => {
     for (const e of p.value ?? []) events.push(e);
@@ -357,10 +467,59 @@ async function recordTrace(cdp, seconds) {
     traceConfig: { recordMode: "recordContinuously", includedCategories: TRACE_CATEGORIES },
     transferMode: "ReportEvents",
   });
+  return {
+    stop: async () => {
+      await cdp.send("Tracing.end");
+      await complete;
+      return events;
+    },
+  };
+}
+
+async function recordTrace(cdp, seconds) {
+  const t = await startTrace(cdp);
   await new Promise((r) => setTimeout(r, seconds * 1000));
-  await cdp.send("Tracing.end");
-  await complete;
-  return events;
+  return t.stop();
+}
+
+/** The renderer main thread's `pid:tid` in a trace (the one firing animation frames / recalculating style). */
+function mainThreadOf(events) {
+  const score = new Map();
+  for (const e of events) {
+    const w =
+      e.name === "FireAnimationFrame" || e.name === "UpdateLayoutTree" || e.name === "Layout"
+        ? 1000
+        : e.name === "RunTask"
+          ? 1
+          : 0;
+    if (!w) continue;
+    const k = `${e.pid}:${e.tid}`;
+    score.set(k, (score.get(k) ?? 0) + w);
+  }
+  return [...score.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+}
+
+/**
+ * What the renderer main thread was doing in one time window, by trace event
+ * — the part of a stall a CPU profile files under "(program)". Complete ("X")
+ * events clipped to the window; JS callbacks are named (FunctionCall's
+ * function, TimerFire / EventDispatch types), nested events overlap.
+ */
+function traceWindow(events, main, fromTs, toTs) {
+  const dur = new Map();
+  for (const e of events) {
+    if (`${e.pid}:${e.tid}` !== main || e.ph !== "X" || typeof e.ts !== "number") continue;
+    const s0 = Math.max(e.ts, fromTs);
+    const s1 = Math.min(e.ts + (e.dur ?? 0), toTs);
+    if (s1 <= s0) continue;
+    const d = e.args?.data ?? {};
+    let name = e.name;
+    if (name === "FunctionCall" && d.functionName) name = `FunctionCall ${d.functionName}`;
+    else if ((name === "TimerFire" || name === "EventDispatch" || name === "XHRReadyStateChange") && d.type) name = `${name} ${d.type}`;
+    else if (name === "EvaluateScript" || name === "v8.compile" || name === "V8.CompileCode") name = `${name} ${(d.url || "").split("/").pop().split("?")[0]}`;
+    dur.set(name, (dur.get(name) ?? 0) + (s1 - s0));
+  }
+  return [...dur.entries()].filter(([n]) => n !== "RunTask" && !/^ThreadControllerImpl|^MessageLoop/.test(n)).sort((a, b) => b[1] - a[1]);
 }
 
 const frameOf = (f) =>
@@ -719,6 +878,26 @@ async function deckCensus(cdp) {
 
 // ── Main ────────────────────────────────────────────────────────────────────
 (async () => {
+  if (CPUPROFILE) {
+    // Offline: the CPU-profile sections from a saved profile.cpuprofile.
+    const profile = JSON.parse(fs.readFileSync(CPUPROFILE, "utf8"));
+    const a = analyze(profile);
+    const busy = a.total - a.special.idle;
+    const lines = [];
+    const p = (s = "") => lines.push(s);
+    p(`# profile-watch — ${CPUPROFILE}`);
+    p(`sampled ${(a.total / 1e6).toFixed(1)}s · main thread busy ${pct(busy, a.total)} (idle ${fmt(a.special.idle)}ms, GC ${fmt(a.special.gc)}ms, (program) ${fmt(a.special.program)}ms)`);
+    p();
+    let stallTrace = null;
+    const beside = path.join(path.dirname(CPUPROFILE), "stall-trace.json");
+    if (fs.existsSync(beside)) {
+      const events = JSON.parse(fs.readFileSync(beside, "utf8")).traceEvents ?? [];
+      stallTrace = { events, main: mainThreadOf(events) };
+    }
+    printCore(p, profile, a, busy, stallTrace);
+    console.log(lines.join("\n"));
+    return;
+  }
   const candidates = await resolvePageTargets(target);
   console.error("probing the browser target for GPU features…");
   const gpuFeatures = await gpuFeaturesOf(target);
@@ -780,10 +959,17 @@ async function deckCensus(cdp) {
        requestAnimationFrame(loop); })`,
     true,
   );
+  const stallTracer = STALL_TRACE ? await startTrace(cdp) : null;
   await cdp.send("Profiler.start");
-  console.error(`sampling main thread for ${SECONDS}s …`);
+  console.error(`sampling main thread for ${SECONDS}s …${STALL_TRACE ? " (timeline trace running alongside)" : ""}`);
   await sleep(SECONDS * 1000);
   const { profile } = await cdp.send("Profiler.stop");
+  let stallTrace = null;
+  if (stallTracer) {
+    const events = await stallTracer.stop();
+    fs.writeFileSync(path.join(OUT, "stall-trace.json"), JSON.stringify({ traceEvents: events }));
+    stallTrace = { events, main: mainThreadOf(events) };
+  }
   const m1 = await metricsOf(cdp);
   const fps = await fpsPromise;
   const census = censusPromise ? await censusPromise : null;
@@ -815,29 +1001,15 @@ async function deckCensus(cdp) {
     for (const [src, n] of census.loops) p(`   ${String(n).padStart(5)}×  ${src}`);
   }
   p();
-  p(`## Bottom-Up — top ${TOP} by SELF time (% of busy main-thread time)`);
-  p(`   self ms   %busy  function @ script:line:col`);
-  const selfSorted = [...a.self.entries()].filter(([k]) => !/^\((idle|root)\)$/.test(k)).sort((x, y) => y[1] - x[1]).slice(0, TOP);
-  for (const [k, us] of selfSorted) p(`${fmt(us)}  ${pct(us, busy)}  ${k}`);
-  p();
-  p(`## Self time by script`);
-  for (const [s, us] of [...a.script.entries()].filter(([s]) => s !== "(idle)" && s !== "(root)").sort((x, y) => y[1] - x[1]).slice(0, 12))
-    p(`${fmt(us)}  ${pct(us, busy)}  ${s || "(native)"}`);
-  p();
-  p(`## Inclusive (subtree) time — deck.gl / WeatherLayers / React / rAF entry points`);
-  const inclSorted = [...a.incl.entries()].filter(([k]) => WATCH.test(k.split(" @ ")[0])).sort((x, y) => y[1] - x[1]).slice(0, 30);
-  for (const [k, us] of inclSorted) p(`${fmt(us)}  ${pct(us, busy)}  ${k}`);
-  if (CALLEES) {
-    p();
-    const tot = [...a.callees.values()].reduce((x, y) => x + y, 0);
-    p(`## Callees of frames matching "${CALLEES}" (inclusive ${fmt(tot)} ms)`);
-    for (const [k, us] of [...a.callees.entries()].sort((x, y) => y[1] - x[1]).slice(0, 18)) p(`${fmt(us)}  ${pct(us, tot)}  ${k}`);
-  }
+  const { selfSorted, inclSorted, stallKeys } = printCore(p, profile, a, busy, stallTrace);
   // Snippets for hot but mangled frames — plus the heaviest `draw`/`updateState`
   // methods by inclusive time, so a deck.gl layer class can be told apart from
   // its chunk name alone.
   const drawish = inclSorted.filter(([k]) => /^(draw|updateState|renderLayers) @/.test(k)).slice(0, 8);
-  const mangled = [...selfSorted.filter(([k]) => /^(\(anonymous\)|[a-zA-Z_$]{1,3}) @/.test(k)).slice(0, 15), ...drawish];
+  const seenKeys = new Set();
+  const mangled = [...selfSorted.filter(([k]) => MANGLED_RE.test(k)).slice(0, 15), ...drawish, ...stallKeys.slice(0, 10).map((k) => [k, 0])].filter(
+    ([k]) => !seenKeys.has(k) && seenKeys.add(k),
+  );
   if (mangled.length && WANT_SOURCE) {
     p();
     p(`## What the mangled hot frames are (source around the sampled position)`);

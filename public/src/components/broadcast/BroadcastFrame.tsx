@@ -1034,7 +1034,11 @@ export default function BroadcastFrame({
               worldWatch={worldWatch}
               theme={theme}
               weatherLocations={state.weatherLocations}
-              cameraCenter={state.camera.center}
+              areaKind={onAirSegment?.kind}
+              areaName={onAirSegment?.title}
+              targetLocation={onAirSegment && segmentHasLocation && (eventTargeted || onAirSegment.kind === "point")
+                ? { label: onAirSegment.title, lng: onAirSegment.camera.center[0], lat: onAirSegment.camera.center[1] }
+                : undefined}
               reportOff={state.reportOff}
               reportOrder={state.reportOrder}
               reportKindsOff={state.reportKindsOff}
