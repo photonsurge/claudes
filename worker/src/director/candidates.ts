@@ -33,8 +33,8 @@ import {
   ORBITAL_VIEW_ZOOM,
   ORBITAL_VIEWS,
 } from "@photonsurge/shared/director-rois";
-import { countryShot, type CountryShot } from "@photonsurge/shared/director-countries";
-import { regionShot } from "@photonsurge/shared/director-regions";
+import { COUNTRY_SHOTS, countryShot, type CountryShot } from "@photonsurge/shared/director-countries";
+import { REGION_SHOTS, regionShot } from "@photonsurge/shared/director-regions";
 import type { iCountryModel } from "@photonsurge/shared/db/country-model";
 import { adMediaPath } from "@photonsurge/shared/ads/types";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
@@ -293,7 +293,7 @@ async function countryCandidates(db: AppDb, cfg: DirectorConfig): Promise<Candid
   if (!cfg.kinds.country) return [];
   const out: Candidate[] = [];
   const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
-  for (const id of cfg.countries) {
+  for (const id of COUNTRY_SHOTS.map((shot) => shot.id)) {
     const shot = countryShot(id);
     if (!shot) continue;
     // The computed dossier lives on the Country doc keyed by iso2-lowercased.
@@ -318,7 +318,7 @@ async function countryCandidates(db: AppDb, cfg: DirectorConfig): Promise<Candid
     const seg = make("country", shot.id, shot.name, subtitle, center, zoom, holdMs, cfg);
     seg.icon = shot.flag;
     if (stops.length) seg.tourStops = stops;
-    out.push({ score: 6, segment: seg });
+    out.push({ score: 6, segment: seg, weight: cfg.countries.includes(id) ? 5 : 1 });
   }
   return out;
 }
@@ -385,7 +385,8 @@ async function regionCandidates(db: AppDb, cfg: DirectorConfig): Promise<Candida
   if (!cfg.kinds.region) return [];
   const out: Candidate[] = [];
   const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
-  for (const id of cfg.regions) {
+  const regionIds = REGION_SHOTS.map((r) => r.id);
+  for (const id of regionIds) {
     const r = regionShot(id);
     if (!r) continue;
     const stops = await regionTourStops(db, r.id);
@@ -398,7 +399,7 @@ async function regionCandidates(db: AppDb, cfg: DirectorConfig): Promise<Candida
     const subtitle = stops.length ? "Area tour · Regional weather" : "Region spotlight · Regional weather";
     const seg = make("region", r.id, r.name, subtitle, r.center, r.zoom, holdMs, cfg);
     if (stops.length) seg.tourStops = stops;
-    out.push({ score: 6, segment: seg });
+    out.push({ score: 6, segment: seg, weight: cfg.regions.includes(id) ? 5 : 1 });
   }
   return out;
 }

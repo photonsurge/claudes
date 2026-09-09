@@ -1017,6 +1017,7 @@ export default function BroadcastFrame({
             // Rides a touch higher than the shared chrome line so the stack
             // clears the sub-globe corner below it.
             top: chromeTop - 20,
+            zIndex: 2,
             right: INSET - 26,
             display: "flex",
             flexDirection: "column",
@@ -1059,6 +1060,7 @@ export default function BroadcastFrame({
         <div
           style={{
             position: "absolute",
+            zIndex: 0,
             bottom: chromeBottom,
             right: INSET,
             display: "flex",

@@ -220,7 +220,7 @@ const W = 250;
 /** Height of every monitor's trace box, in both CSS and the SVG viewBox math. */
 const TRACE_H = 34;
 const ROW_BOX_W = 132;
-const ROW_BOX_H = 42;
+const ROW_BOX_H = 54;
 
 function CardShell({
   theme,
@@ -417,12 +417,14 @@ const WEATHER_MONITORS: {
   color: string;
   /** Filled swell area (like the tsunami gauge) instead of a stroked line. */
   wave?: boolean;
-  icon: React.ReactNode;
-  animMs: number;
+  icon?: React.ReactNode;
 }[] = [
-  { variable: "wind", title: "WIND SPEED", color: "#9085e9", icon: <WindIcon active />, animMs: 7000 },
-  { variable: "pressure", title: "AIR PRESSURE", color: "#f2a33d", icon: <GaugeIcon active />, animMs: 10000 },
-  { variable: "wave", title: "WAVE HEIGHT", color: "#3987e5", wave: true, icon: <WaveIcon active />, animMs: 9000 },
+  { variable: "temp", title: "TEMPERATURE", color: "#e66767" },
+  { variable: "humidity", title: "HUMIDITY", color: "#42c7a0" },
+  { variable: "rain", title: "RAIN RATE", color: "#59b5ef" },
+  { variable: "wind", title: "WIND SPEED", color: "#9085e9", icon: <WindIcon active /> },
+  { variable: "pressure", title: "AIR PRESSURE", color: "#f2a33d", icon: <GaugeIcon active /> },
+  { variable: "wave", title: "WAVE HEIGHT", color: "#3987e5", wave: true, icon: <WaveIcon active /> },
 ];
 
 function formatMonitorLocation(series: HistorySeries[], locationLabel?: string | null): string {
@@ -440,69 +442,29 @@ function WeatherMonitorBox({
   spec,
   samples,
   latestLabel,
-  theme,
 }: {
   spec: (typeof WEATHER_MONITORS)[number];
   samples: { v: number }[];
   latestLabel: string;
-  theme: BroadcastTheme;
 }) {
   const path = spec.wave ? realWavePath(samples, ROW_BOX_W, ROW_BOX_H) : realLinePath(samples, ROW_BOX_W, ROW_BOX_H);
 
+  const values = samples.map((sample) => sample.v);
+  const min = formatReading(Math.min(...values));
+  const max = formatReading(Math.max(...values));
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4, width: ROW_BOX_W }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
-        <span style={{ fontFamily: MONO, fontSize: 9.5, color: theme.accent, whiteSpace: "nowrap" }}>
-          {latestLabel}
-        </span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0, padding: 8, background: GODS_TILE, border: `1px solid ${GODS_TILE_BORDER}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, letterSpacing: 0.6, color: INK_DIM }}>
+        {spec.icon}{spec.title}
       </div>
-      <div
-        style={{
-          height: ROW_BOX_H,
-          background: GODS_TILE,
-          border: `1px solid ${GODS_TILE_BORDER}`,
-          overflow: "hidden",
-          position: "relative",
-        }}
-      >
-        <svg
-          width="200%"
-          height="100%"
-          viewBox={`0 0 ${ROW_BOX_W * 2} ${ROW_BOX_H}`}
-          preserveAspectRatio="none"
-          style={{ position: "absolute", inset: 0, animation: `weather-row-trace ${spec.animMs}ms linear infinite`, willChange: "transform" }}
-        >
-          {spec.wave ? (
-            <>
-              <path d={path} fill="rgba(60,150,230,0.5)" />
-              <path d={path} transform={`translate(${ROW_BOX_W},0)`} fill="rgba(60,150,230,0.5)" />
-            </>
-          ) : (
-            <>
-              <path d={path} fill="none" stroke={spec.color} strokeWidth="1.1" />
-              <path d={path} transform={`translate(${ROW_BOX_W},0)`} fill="none" stroke={spec.color} strokeWidth="1.1" />
-            </>
-          )}
-        </svg>
-        <div
-          style={{
-            position: "absolute",
-            left: 5,
-            bottom: 3,
-            display: "flex",
-            alignItems: "center",
-            gap: 3,
-            fontFamily: MONO,
-            fontSize: 8.2,
-            letterSpacing: 0.6,
-            color: INK_DIM,
-            textShadow: "0 1px 2px rgba(0,0,0,0.8)",
-            pointerEvents: "none",
-          }}
-        >
-          {spec.icon}
-          {spec.title}
-        </div>
+      <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: INK }}>{latestLabel}</div>
+      <svg role="img" aria-label={`${spec.title}: archived history, minimum ${min}, maximum ${max}`}
+        width="100%" height={ROW_BOX_H} viewBox={`0 0 ${ROW_BOX_W} ${ROW_BOX_H}`} preserveAspectRatio="none">
+        {[0.15, 0.5, 0.85].map((y) => <line key={y} x1={0} x2={ROW_BOX_W} y1={ROW_BOX_H * y} y2={ROW_BOX_H * y} stroke={GODS_TILE_BORDER} strokeDasharray="2 3" />)}
+        <path d={path} fill={spec.wave ? `${spec.color}66` : "none"} stroke={spec.color} strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 4, fontFamily: MONO, fontSize: 8.5, color: INK_DIM }}>
+        <span>Min {min}</span><span>Max {max}</span>
       </div>
     </div>
   );
@@ -555,10 +517,9 @@ export function LocalWeatherPanel({
     // it washed out to near-invisible and read as "gone". The opaque navy fill
     // keeps it legible over ANY basemap.
     <GodsPanel notch={[10, 16]} padding="9px 14px 12px" gap={0} style={{ pointerEvents: "none" }}>
-      <style>{"@keyframes weather-row-trace{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
       <div style={{ display: "flex", alignItems: "stretch", gap: 14 }}>
         {monitorData && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, width: 400, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span
                 style={{
@@ -579,16 +540,15 @@ export function LocalWeatherPanel({
             </div>
             <div style={{ fontSize: 11, color: INK_DIM }}>
               {monitorData.location}
-              <div style={{ fontSize: 9, marginTop: 3 }}>Past 72 hours · latest reading shown</div>
+              <div style={{ fontSize: 9, marginTop: 3 }}>Past 72 hours · latest readings · oldest → newest</div>
             </div>
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(3, monitorData.visible.length)}, minmax(0, 1fr))`, gap: 8 }}>
               {monitorData.visible.map((item) => (
                 <WeatherMonitorBox
                   key={item.spec.variable}
                   spec={item.spec}
                   samples={item.samples}
                   latestLabel={item.latestLabel}
-                  theme={theme}
                 />
               ))}
             </div>

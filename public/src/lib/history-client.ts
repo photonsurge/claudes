@@ -200,7 +200,7 @@ export function useAreaHistory(
 
 /** Variables the "LOCAL MONITOR" (wind/pressure/wave) HUD cards + matching
  *  globe marker read — see broadcast/MonitorCluster.tsx's WeatherMonitors. */
-export const MONITOR_VARIABLES = ["wind", "pressure", "wave"];
+export const MONITOR_VARIABLES = ["temp", "humidity", "rain", "wind", "pressure", "wave"];
 
 /** Pull a variable's series out of the archive response as plottable `{v}`
  *  samples (line paths want `.value`, uv-encoded ones like wind carry

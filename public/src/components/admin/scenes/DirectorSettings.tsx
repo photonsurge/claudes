@@ -176,6 +176,9 @@ export default function DirectorSettings({ sceneId }: { sceneId: string }) {
           enabled above.
         </Alert>
       )}
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        All countries can air. Favourites get a 5× selection preference.
+      </Typography>
       <FavouritesGrid
         items={COUNTRY_SHOTS.map((c) => ({ id: c.id, label: `${c.flag} ${c.name}` }))}
         selected={cfg.countries}
@@ -191,6 +194,9 @@ export default function DirectorSettings({ sceneId }: { sceneId: string }) {
           enabled above.
         </Alert>
       )}
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        All areas can air. Favourites get a 5× selection preference.
+      </Typography>
       <FavouritesGrid
         items={REGION_SHOTS.map((r) => ({ id: r.id, label: r.name }))}
         selected={cfg.regions}

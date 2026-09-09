@@ -18,7 +18,7 @@ import { alertRepPoint, continentOf } from "@photonsurge/shared/alerts/geo";
 import { hazardMeta, classifyHazard, type HazardType } from "./hazard";
 import { broadcastEventLabel } from "@photonsurge/shared/alerts/phrasebook";
 import { isoToFlag } from "@photonsurge/shared/tracks/flags";
-import { nearby, haversineKm, withinBbox, type Nearby, GeoGrid } from "./geo";
+import { haversineKm, withinBbox, type Nearby, GeoGrid } from "./geo";
 import type { City } from "./cities";
 import type { Volcano, VolcanoStatus } from "@photonsurge/shared/volcanoes/types";
 
@@ -43,42 +43,30 @@ export function quakeTicker(q: Quake): string {
 }
 
 /** Notable-city predicate — a real population or a capital, same as the World
- *  Watch feed so the ticker flags agree with it. `notableCities()` applies it
- *  ONCE per crawl build; the per-alert flag lookup then scans that subset. */
+ *  Watch feed so the ticker flags agree with it. Memoised per input array (the
+ *  SAME subset array back for the same city list), so the crawl and the World
+ *  Watch feed key one shared city grid off it instead of each rebuilding one. */
+const notableSubsets = new WeakMap<City[], City[]>();
 export function notableCities(cities: City[]): City[] {
-  return cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital);
+  let subset = notableSubsets.get(cities);
+  if (!subset) {
+    subset = cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital);
+    notableSubsets.set(cities, subset);
+  }
+  return subset;
 }
 
 /**
- * Nearest notable city's country flag for a point, "" if none within
- * NEARBY_RADIUS_KM. A cheap lat/lng bounding-box pre-cull (no trig) rejects the
- * vast majority of cities before any haversine, so this stays fast even scanning
- * the full ~15k-city set once per alert — the naive "haversine every city" cost
- * O(alerts × cities) trig calls and blocked the render for seconds on a busy
- * global feed. `candidates` should already be the notable subset (see
- * notableCities), so this doesn't re-filter per call.
+ * Nearest candidate city's country flag for a point, "" if none within
+ * NEARBY_RADIUS_KM. Answered from the candidates' bucketed grid (built once per
+ * array, see cityGrid) — the crawl asks this once per alert, and a full scan of
+ * the ~15k notable places per alert was a few ms of every cut's stall. The
+ * candidates are used as given; pass the notableCities() subset for the crawl.
  */
 function nearestFlag(point: [number, number] | null, candidates: City[]): string {
-  if (!point) return "";
-  const [lng, lat] = point;
-  const dLat = NEARBY_RADIUS_KM / 111; // radius as degrees of latitude
-  // Longitude degrees shrink toward the poles; guard cos so the box doesn't blow
-  // up to the whole globe right at a pole (where any city is "nearby" anyway).
-  const dLng = dLat / Math.max(0.05, Math.cos((lat * Math.PI) / 180));
-  let cc: string | undefined;
-  let best = Infinity;
-  for (const c of candidates) {
-    if (Math.abs(c.lat - lat) > dLat) continue;
-    let dl = Math.abs(c.lng - lng);
-    if (dl > 180) dl = 360 - dl; // dateline wrap
-    if (dl > dLng) continue;
-    const d = haversineKm(point, [c.lng, c.lat]);
-    if (d <= NEARBY_RADIUS_KM && d < best) {
-      best = d;
-      cc = c.cc;
-    }
-  }
-  return cc ? isoToFlag(cc) : "";
+  if (!point || candidates.length === 0) return "";
+  const hit = cityGrid(candidates).nearest(point, NEARBY_RADIUS_KM);
+  return hit?.item.cc ? isoToFlag(hit.item.cc) : "";
 }
 
 /** "🇫🇯 TSUNAMI WATCH: Fiji Region" (nearest-city flag + severity-prefixed hazard
@@ -474,17 +462,19 @@ function alertRepPointOf(a: Alert): [number, number] | null {
  *  unnamed hamlet that merely happens to be the closest point in the dataset. */
 const NEARBY_RADIUS_KM = 350;
 const MAX_NEARBY_NAMES = 2;
-/** The notable subset, bucketed — built once per city list (a feed rebuild used
- *  to re-filter and re-scan the whole list for every alert, quake and volcano). */
-const notableGrids = new WeakMap<City[], GeoGrid<City>>();
-function notableGrid(cities: City[]): GeoGrid<City> {
-  let g = notableGrids.get(cities);
+/** A city list, bucketed — built once per array (a feed rebuild used to
+ *  re-scan the whole list for every alert, quake and volcano). Keyed on the
+ *  memoised notable subset, so the crawl's flag lookups share the feed's grid. */
+const cityGrids = new WeakMap<City[], GeoGrid<City>>();
+function cityGrid(cities: City[]): GeoGrid<City> {
+  let g = cityGrids.get(cities);
   if (!g) {
-    g = new GeoGrid(notableCities(cities), (c) => [c.lng, c.lat]);
-    notableGrids.set(cities, g);
+    g = new GeoGrid(cities, (c) => [c.lng, c.lat]);
+    cityGrids.set(cities, g);
   }
   return g;
 }
+const notableGrid = (cities: City[]): GeoGrid<City> => cityGrid(notableCities(cities));
 function nearbyPlaces(point: [number, number] | null, cities: City[]): Nearby<City>[] {
   if (!point || cities.length === 0) return [];
   return notableGrid(cities).nearby(point, NEARBY_RADIUS_KM);

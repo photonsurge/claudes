@@ -11,13 +11,14 @@
  */
 import { useEffect, useState } from "react";
 import type { AlertFeature } from "../../lib/alerts";
-import { SEVERITY_COLORS } from "@photonsurge/shared/alerts/severity";
-import { sortedAlerts, freshAlerts, issuedAgoLabel, FRESH_ALERT_WINDOW_MIN, alertBannerText } from "../../lib/broadcast";
+import { SEVERITY_COLORS, SEVERITY_LABELS } from "@photonsurge/shared/alerts/severity";
+import { sortedAlerts, freshAlerts, issuedAgoLabel, FRESH_ALERT_WINDOW_MIN, alertLabel, alertAreaLabel } from "../../lib/broadcast";
 import type { City } from "../../lib/cities";
+import { GODS_FILL, INK, INK_DIM, MONO, SANS } from "./GodsPanel";
 import { accentBorder, DEFAULT_THEME, type BroadcastTheme } from "./config";
 
 /** Seconds each alert holds on screen before advancing to the next. */
-const HOLD_MS = 5000;
+const HOLD_MS = 10000;
 
 export default function LiveAlertPanel({
   alerts,
@@ -62,111 +63,43 @@ export default function LiveAlertPanel({
   const instruction = top.properties.translatedInstruction || top.properties.instruction;
   const ago = issuedAgoLabel(top.properties.sent ?? top.properties.since, now);
 
+  const area = alertAreaLabel(top, cities);
+  const severity = top.properties.level ?? SEVERITY_LABELS[top.properties.severityRank];
+
   return (
-    <div
-      style={{
-        position: "relative",
-        maxWidth: compact ? 240 : 340,
-        padding: compact ? "8px 26px 8px 11px" : "10px 30px 10px 14px",
-        background: theme.panelBg,
-        ...accentBorder(`1px solid ${color}66`, `3px solid ${color}`),
-        borderRadius: 10,
-        boxShadow: `0 8px 26px rgba(0,0,0,0.45), 0 0 14px ${color}33`,
-        backdropFilter: "var(--panel-blur, blur(8px))",
-        WebkitBackdropFilter: "var(--panel-blur, blur(8px))",
-        pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
-        textAlign: "right",
-      }}
-    >
-      <style>{"@keyframes bcast-alertpulse{0%,100%{opacity:1}50%{opacity:0.5}}"}</style>
-      {/* Right-edge vertical status tab (reference "[ISSUED]" flag). */}
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          bottom: 0,
-          right: 0,
-          width: 18,
-          background: color,
-          borderRadius: "0 9px 9px 0",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#fff",
-          fontSize: 8.8,
-          fontWeight: 800,
-          letterSpacing: 2,
-          writingMode: "vertical-rl",
-          textShadow: "0 1px 1px rgba(0,0,0,0.5)",
-        }}
-      >
-        NEW
+    <section aria-label="New weather alert" style={{
+      position: "relative", zIndex: 1, isolation: "isolate",
+      width: compact ? 280 : 400, maxWidth: "100%", boxSizing: "border-box",
+      padding: compact ? 12 : 16,
+      backgroundColor: "#081420", backgroundImage: GODS_FILL,
+      ...accentBorder(`1px solid ${color}66`, `3px solid ${color}`),
+      borderRadius: 8, boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
+      pointerEvents: "none", fontFamily: SANS, textAlign: "left",
+      display: "flex", flexDirection: "column", gap: 8,
+      overflowWrap: "anywhere", minWidth: 0,
+    }}>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "4px 12px", fontFamily: MONO, fontSize: 10, color: INK_DIM }}>
+        <span style={{ fontWeight: 700, letterSpacing: 1 }}>NEW ALERT</span>
+        {list.length > 1 && <span>Alert {pos + 1} of {list.length}</span>}
       </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "flex-end",
-          gap: 8,
-          fontSize: 9.9,
-          fontWeight: 800,
-          letterSpacing: 1.4,
-          color: theme.mutedColor,
-          marginBottom: 3,
-        }}
-      >
-        <span>NEW ALERTS</span>
-        {ago ? <span style={{ color, letterSpacing: 1, fontWeight: 700 }}>ISSUED {ago.toUpperCase()}</span> : null}
-        {list.length > 1 ? (
-          <span style={{ color, letterSpacing: 1 }}>
-            {pos + 1}/{list.length}
-          </span>
-        ) : null}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "6px 10px" }}>
+        <div style={{ flex: "1 1 180px", fontSize: compact ? 17 : 20, fontWeight: 700, lineHeight: 1.25, color: INK }}>
+          {alertLabel(top.properties)}
+        </div>
+        {severity && <span style={{ color, border: `1px solid ${color}88`, borderRadius: 4, padding: "2px 6px", fontSize: 11, fontWeight: 700 }}>Severity: {severity}</span>}
       </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "flex-end",
-          gap: 7,
-          fontSize: compact ? 13.2 : 15.4,
-          fontWeight: 700,
-          color,
-          textShadow: "0 1px 2px rgba(0,0,0,0.8)",
-        }}
-      >
-        <span>{alertBannerText(top, cities)}</span>
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: color,
-            boxShadow: `0 0 8px ${color}`,
-            animation: "bcast-alertpulse 1.2s ease-in-out infinite",
-            willChange: "opacity",
-            flex: "0 0 auto",
-          }}
-        />
-      </div>
+      {area && <div style={{ color: INK, fontSize: 14, lineHeight: 1.4 }}>Area: {area}</div>}
+      {ago && <div style={{ color: INK_DIM, fontSize: 11 }}>Issued {ago}</div>}
       {instruction && (
-        <div
-          style={{
-            marginTop: 4,
-            fontSize: compact ? 11 : 12.1,
-            fontWeight: 500,
-            color: "#c9d3e3",
-            textShadow: "0 1px 2px rgba(0,0,0,0.8)",
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-          }}
-        >
-          {instruction}
+        <div style={{ borderTop: `1px solid ${color}44`, paddingTop: 8 }}>
+          <div style={{ color, fontSize: 10, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>OFFICIAL ADVICE</div>
+          <div style={{ color: INK, fontSize: compact ? 12 : 13, lineHeight: 1.5,
+            display: "-webkit-box", WebkitLineClamp: compact ? 3 : 4,
+            WebkitBoxOrient: "vertical", overflow: "hidden", whiteSpace: "pre-line" }}>
+            {instruction}
+          </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }

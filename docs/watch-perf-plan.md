@@ -882,6 +882,55 @@ gone from the stalls, and the "renderer events" line to say what the remaining
 WeatherLayers' and stays unless the wind layer is kept alive across cuts (the
 other session's raster-mounting work is the place for that decision).
 
+### Round 24 (2026-09-09) — the cut comes in pairs; three more named costs
+
+Round 23 measured over 60 s: busy 42.7 → **40.5 %**, 29.7 fps, max frame gap
+**200 ms** (from 267–433), stalls 13 → **8** (2 405 → 1 598 ms over the
+minute). `_createMesh` is gone from every stall; the feed's alert lookups are
+now `GeoGrid.nearby` at 3.6 ms across a stall instead of ~30.
+
+Each cut now shows as a **pair**: a layer-update stall (200–340 ms: GC 23–48 ms,
+`getGLKey` 6–25 ms, `_setupTransformFeedback` 7–9 ms, `bufferSubData`,
+`_autoUpdater` / `getColor` for the alert attributes) and, ~0.8 s later, a
+130–180 ms stall that is **65 % "(program)"** with only 15–24 ms of JS under
+rAF. That second one is the chrome's own work after the cut (layout / paint —
+the ticker crawl's `entries.map` render and the World Report slide appear in
+the JS slice beside it) or a GPU wait; this run had no `--stall-trace`, so it
+is still unnamed. The trace run is the next step, unchanged.
+
+Named from this run and shipped (lossless):
+
+- **luma `WebGLDevice.getGLKey`** (`lib/luma-glkey-patch.ts`): names a GL
+  constant by walking every property of the WebGL2 context (~900) until one
+  matches, and `WEBGLTexture._setSamplerParameters` calls it twice per sampler
+  parameter of every new texture — as the argument of a level-2 log line that
+  never prints (built before the level check). A cut creates dozens of textures
+  (rasters, contour bitmaps, palettes, particle state): 25 ms of one stall.
+  Replaced by a value → key table built once per context by the same
+  enumeration (UPPER_CASE constants only; a miss falls through to luma's loop),
+  so every answer is the original's. Installed off the live device in deck's
+  `onDeviceInitialized` (no `@luma.gl/webgl` import), shape-guarded.
+- **Ticker flag lookup** (`nearestFlag` in `lib/broadcast.ts`): still a linear
+  scan of the ~15 k notable places per alert per crawl build — 3.5–5.7 ms in
+  two stalls. Now `GeoGrid.nearest()` (new: `nearby()[0]` without building the
+  list, same tie rule, parity-tested) over one grid shared with the World Watch
+  feed: `notableCities()` is memoised per input array, so the crawl's subset and
+  the feed's key the same `cityGrid`.
+- **`utcLabel`** (`lib/manifest.ts`): `Date.toLocaleString(locale, options)`
+  constructs an `Intl.DateTimeFormat` per call (~0.2 ms); the map-freshness
+  chip derived its two labels on every render of a cut — 5.2 ms of one stall.
+  One shared formatter, identical output.
+
+Still in the JS half of a cut: GC (23–48 ms per cut — the layer rebuild's
+allocation churn on a 137 MB heap; a retained-size question, not a hot loop),
+WeatherLayers' transform-feedback re-init (theirs; only a kept-alive wind layer
+avoids it — the other session's raster-mounting decision), and the alert
+attribute fills (legit work for new alert geometry).
+
+Next run, please WITH the flag: `--seconds 60 --deck --stall-trace` and two or
+three manual cuts. The "renderer events in this window" line under each
+"(program)" stall is what decides between chrome layout/paint and a GPU wait.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

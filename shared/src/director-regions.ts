@@ -4,8 +4,8 @@
  * channel can "visit": each entry frames a named area (a continent, an EU bloc, a
  * sub-continental band like the Sahel) and reads the live weather layers, exactly
  * like a country spotlight. The operator favourites a subset per scene
- * (DirectorConfig.regions, default none — opt-in); only favourites become
- * candidates.
+ * (DirectorConfig.regions); favourites receive a 5× preference.
+ * Enabling the kind includes the full eligible catalog.
  *
  * Eligibility is LAND regions + whole continents (see ELIGIBLE_GROUPS) minus the
  * whole-planet "world" framing: oceans are excluded because a region spotlight's
@@ -82,7 +82,7 @@ const byId = new Map(REGION_SHOTS.map((r) => [r.id, r]));
 /** Catalog lookup, or undefined for an id we don't know (stale config). */
 export const regionShot = (id: string): RegionShot | undefined => byId.get(id);
 
-/** The operator's starting favourites — none: the region kind is opt-in. */
+/** No initial restriction; the region kind remains off until enabled. */
 export const DEFAULT_DIRECTOR_REGIONS: string[] = [];
 
 /**

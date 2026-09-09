@@ -1,5 +1,5 @@
 import { textureUrl } from "@photonsurge/shared/manifest";
-import { buildManifestFromRun, composeManifest, mapFreshness, ageLabel, type RunLike } from "./manifest";
+import { buildManifestFromRun, composeManifest, mapFreshness, ageLabel, utcLabel, type RunLike } from "./manifest";
 
 const run: RunLike = {
   model: "gfs",
@@ -226,6 +226,19 @@ describe("composeManifest — regional nests", () => {
     // The promoted global base is NOT also listed as a nest (no double, coincident draw).
     const nestIds = (m.variables.temp.nests ?? []).map((n) => n.sourceId);
     expect(nestIds).toEqual(["icon-d2"]);
+  });
+});
+
+describe("utcLabel", () => {
+  it("formats an ISO stamp as day-month HH:MM UTC, same on repeat calls", () => {
+    expect(utcLabel("2026-06-30T00:00:00Z")).toBe("30 Jun 00:00 UTC");
+    expect(utcLabel("2026-06-30T00:00:00Z")).toBe("30 Jun 00:00 UTC");
+    expect(utcLabel("2026-01-05T23:07:00+02:00")).toBe("05 Jan 21:07 UTC");
+  });
+  it("is empty for missing or unparseable input", () => {
+    expect(utcLabel(undefined)).toBe("");
+    expect(utcLabel("")).toBe("");
+    expect(utcLabel("not a date")).toBe("");
   });
 });
 

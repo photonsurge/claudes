@@ -157,6 +157,7 @@ function previewNext(
   cooldownActive: boolean,
   recentAreasByKind: ReadonlyMap<SegmentKind, readonly string[]>,
   lastKind?: SegmentKind,
+  recentCenters: [number, number][] = [],
 ): UpNextEntry[] {
   const eligible = pool.filter((c) => c.segment.id !== excludeId);
   const out: UpNextEntry[] = [];
@@ -182,12 +183,15 @@ function previewNext(
   if (lastKind && remainingKinds.length > 1) remainingKinds = remainingKinds.filter((k) => k !== lastKind);
 
   for (const kind of shuffled(remainingKinds)) {
+    const ofKind = eligible.filter((c) => c.segment.kind === kind);
     const cands = withoutRecentAreas(
-      eligible.filter((c) => c.segment.kind === kind),
+      ofKind,
       kind,
       recentAreasByKind,
     );
-    const pick = pickLeastAired(cands, counts).segment;
+    const pick = (kind === "country" || kind === "region")
+      ? selectNext(ofKind, { history: [], counts, recentCenters, recentAreasByKind })!
+      : pickLeastAired(cands, counts).segment;
     out.push({ kind, title: pick.title, subtitle: pick.subtitle, ...focusOf(pick) });
     if (out.length >= 3) break;
   }
@@ -365,8 +369,9 @@ async function tick(): Promise<void> {
           r.startedAt = now;
           r.endsAt = now + next.holdMs;
           // Ad cuts skip the candidate build, so keep the prior "coming up" rail.
+          counts.set(next.id, r.timesShown);
           r.upNext = pool.length
-            ? previewNext(pool, next.id, counts, r.lastCutWasPriority, r.recentAreasByKind, next.kind)
+            ? previewNext(pool, next.id, counts, r.lastCutWasPriority, r.recentAreasByKind, next.kind, r.recentCenters)
             : r.upNext;
           r.history.push(next.id);
           if (r.history.length > HISTORY_CAP) r.history.shift();

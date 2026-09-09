@@ -410,13 +410,12 @@ export interface DirectorConfig {
   kindWeights: Partial<Record<SegmentKind, number>>;
   /**
    * Favourite country ids (see COUNTRY_SHOTS) the `country` kind rotates
-   * through — the operator's "channels we cover" list. Catalog-ordered.
+   * through with a 5× preference; all other countries remain eligible. Catalog-ordered.
    */
   countries: string[];
   /**
    * Favourite region ids (see REGION_SHOTS) the `region` kind rotates through —
-   * the "areas we cover" list, the Region-catalog cousin of `countries`.
-   * Catalog-ordered.
+   * with a 5× preference; all other areas remain eligible. Catalog-ordered.
    */
   regions: string[];
   /** Only schedule quakes at/above this magnitude. */

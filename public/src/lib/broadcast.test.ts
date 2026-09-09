@@ -1,6 +1,7 @@
 import {
   quakeTicker,
   alertTicker,
+  notableCities,
   trackTicker,
   volcanoTicker,
   hazardFilteredAlerts,
@@ -92,6 +93,16 @@ describe("ticker line builders", () => {
   it("omits the flag when no notable city is within range", () => {
     const far = { id: "c", name: "Sydney", lat: -33.87, lng: 151.21, cc: "AU", population: 5_000_000 } as City;
     expect(alertTicker(alert(3), [far])).toBe("SEVERE: Tsunami Watch · Fiji Region");
+  });
+  it("flags by the NEAREST candidate, using the list as given (the crawl pre-filters)", () => {
+    const hamlet = { id: "h", name: "Hamlet", lat: 0.2, lng: 0.2, cc: "GB" } as City;
+    const city = { id: "c", name: "City", lat: 1, lng: 1, cc: "FR", population: 5000 } as City;
+    const cities = [city, hamlet];
+    expect(alertTicker(alert(3), cities)).toBe("🇬🇧 SEVERE: Tsunami Watch · Fiji Region");
+    expect(alertTicker(alert(3), notableCities(cities))).toBe("🇫🇷 SEVERE: Tsunami Watch · Fiji Region");
+    // The notable subset is memoised per input array, so grids key off one identity.
+    expect(notableCities(cities)).toBe(notableCities(cities));
+    expect(notableCities(cities)).toEqual([city]);
   });
   it("names the hazard itself rather than echoing the source bulletin", () => {
     expect(alertTicker(alert(3, { event: "台风红色预警", translatedHeadline: "Typhoon Red Alert" }))).toBe(

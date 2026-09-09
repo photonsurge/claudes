@@ -7,11 +7,13 @@
  * featured slot that cycles through them (photo + Wikipedia blurb when the City
  * doc has one, worker-cached; see enrich:wiki) and a clean list of the rest.
  *
- * Place context only: weather forecasts live in the top-right report.
+ * Featured-city context and today’s forecast, followed by other major cities.
  */
 import { useEffect, useState } from "react";
 import { formatPopulation, type City } from "../../lib/cities";
-import { useTopCities } from "../../lib/focus/focus-client";
+import { useTopCities, usePointForecastDays } from "../../lib/focus/focus-client";
+import { WeatherGlyph } from "./glyphs";
+import { formatReading } from "./PointHistoryPanel";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 
 /** Seconds the featured city holds before the slide advances to the next. */
@@ -33,6 +35,30 @@ function TopCityRow({ city }: { city: City }) {
         </div>
         {meta ? <div style={{ color: "#8ea3bf", whiteSpace: "nowrap" }}>{meta}</div> : null}
       </div>
+    </div>
+  );
+}
+
+function FeaturedCityWeather({ city }: { city: City }) {
+  const { days, loading } = usePointForecastDays([city.lng, city.lat]);
+  const today = days[0];
+  const reading = (value: number | null | undefined, unit: string) => value == null ? "—" : `${formatReading(value)} ${unit}`;
+  return (
+    <div style={{ marginTop: 10, padding: "10px 12px", background: "#0b1a24", border: "1px solid #21404d", borderRadius: 5 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.7, color: "#aebfd6", marginBottom: 7 }}>
+        TODAY’S WEATHER · {city.name.toUpperCase()}
+      </div>
+      {today ? <>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, color: "#e6eefb" }}>
+          <WeatherGlyph condition={today.condition} size={28} />
+          <span style={{ textTransform: "capitalize" }}>{today.condition.replace(/-/g, " ")}</span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 7, color: "#e6eefb", fontSize: 13 }}>
+          <div><div style={{ color: "#8ea3bf", fontSize: 10 }}>High / low (°C)</div>{reading(today.hiTemp, "°")} / {reading(today.loTemp, "°")}</div>
+          <div><div style={{ color: "#8ea3bf", fontSize: 10 }}>Wind</div>{reading(today.windAvg, "m/s")}</div>
+          <div><div style={{ color: "#8ea3bf", fontSize: 10 }}>Chance of rain</div>{reading(today.precipChance, "%")}</div>
+        </div>
+      </> : <div style={{ fontSize: 12, color: "#8ea3bf" }}>{loading ? "Loading city forecast…" : "City forecast unavailable"}</div>}
     </div>
   );
 }
@@ -67,15 +93,16 @@ export default function TopCitiesPanel({
     <BroadcastCard accent={color} eyebrow="City Guide">
       {/* Featured city — photo + short blurb; slot cycles through every top city. */}
       <div>
+        <div style={{ fontSize: 11, fontWeight: 700, color, letterSpacing: 1, marginBottom: 6 }}>FEATURED CITY · {slide % cities.length + 1} OF {cities.length}</div>
         {featured.wikiPhoto || featured.wikiThumb ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={featured.wikiPhoto || featured.wikiThumb}
             alt={`${featured.name} city view`}
-            style={{ width: "100%", height: 190, objectFit: "cover", borderRadius: 7, display: "block", marginBottom: 9 }}
+            style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 7, display: "block", marginBottom: 9 }}
           />
         ) : null}
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "3px 10px" }}>
           <span style={{ fontSize: 24.2, fontWeight: 800, color: "#fff" }}>{featured.name}</span>
           {formatPopulation(featured.population) ? (
             <span style={{ fontSize: 15.4, fontWeight: 700, color }}>Population {formatPopulation(featured.population)}</span>
@@ -92,7 +119,7 @@ export default function TopCitiesPanel({
               color: "#cdd9ec",
               marginTop: 7,
               display: "-webkit-box",
-              WebkitLineClamp: 3,
+              WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
             }}
@@ -102,9 +129,12 @@ export default function TopCitiesPanel({
         ) : null}
       </div>
 
+      <FeaturedCityWeather key={`${featured.id}:${featured.lat}:${featured.lng}`} city={featured} />
+
       {/* Other major cities in the area. */}
       {rest.length ? (
         <CardSection style={{ fontSize: 14.3 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#aebfd6", letterSpacing: 0.5, marginBottom: 7 }}>OTHER MAJOR CITIES · BY POPULATION</div>
           {rest.map((c) => (
             <TopCityRow key={c.id} city={c} />
           ))}

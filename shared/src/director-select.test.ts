@@ -220,3 +220,32 @@ describe("selectPriority", () => {
     expect(selectPriority(pool, new Map())).toBeNull();
   });
 });
+
+it("gives favourites five times the odds while keeping other countries eligible", () => {
+  const pool = [{ ...cand("country:a", "country"), weight: 5 }, { ...cand("country:b", "country"), weight: 1 }];
+  const results = Array.from({ length: 600 }, (_, i) => selectNext(pool, { history: [], rng: () => (i + 0.5) / 600 })?.id);
+  expect(results.filter((id) => id === "country:a")).toHaveLength(500);
+  expect(results.filter((id) => id === "country:b")).toHaveLength(100);
+});
+
+ describe("geographic variety", () => {
+  it("avoids a neighbouring favourite across shot kinds", () => {
+    const pool = [{ ...cand("country:france", "country", [2, 47]), weight: 5 }, { ...cand("country:japan", "country", [138, 36]), weight: 1 }];
+    expect(selectNext(pool, { history: ["region:uk"], recentCenters: [[-2, 54]], rng: () => 0 })?.id).toBe("country:japan");
+  });
+  it("relaxes old locations before allowing a neighbour of the latest shot", () => {
+    const pool = [cand("country:france", "country", [2, 47]), cand("country:japan", "country", [138, 36])];
+    expect(selectNext(pool, { history: [], recentCenters: [[138, 36], [-2, 54]], rng: () => 0 })?.id).toBe("country:japan");
+  });
+  it("uses the farthest option when all candidates are local", () => {
+    const pool = [cand("country:near", "country", [1, 0]), cand("country:far", "country", [15, 0])];
+    expect(selectNext(pool, { history: [], recentCenters: [[0, 0]], rng: () => 0 })?.id).toBe("country:far");
+  });
+  it.each([
+    [[179, 0], [-179, 0], [100, 0]],
+    [[0, 85], [90, 85], [0, 40]],
+  ] as [number[], number[], number[]][])("measures globe distance from %j", (recent, near, far) => {
+    const pool = [cand("country:near", "country", near as [number, number]), cand("country:far", "country", far as [number, number])];
+    expect(selectNext(pool, { history: [], recentCenters: [recent as [number, number]], rng: () => 0 })?.id).toBe("country:far");
+  });
+ });

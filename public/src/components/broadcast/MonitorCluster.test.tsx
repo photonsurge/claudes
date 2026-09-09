@@ -155,6 +155,23 @@ describe("WeatherMonitors", () => {
     expect(screen.getByText("9 m/s")).toBeInTheDocument();
   });
 
+  it("shows six available weather variables as labelled history graphs", () => {
+    const variables = ["temp", "humidity", "rain", "wind", "pressure", "wave"];
+    const series: HistorySeries[] = variables.map((variable) => ({
+      variable, encoding: "scalar", units: variable === "temp" ? "°C" : "",
+      lat: 54.5, lng: -2.5, stats: null,
+      series: [{ t: "1", model: "gfs", fhr: 0, value: 1 }, { t: "2", model: "gfs", fhr: 1, value: 3 }],
+    }));
+    render(<WeatherMonitors series={series} locationLabel="Selected location" />);
+    expect(screen.getAllByRole("img")).toHaveLength(6);
+    expect(screen.getByText("TEMPERATURE")).toBeInTheDocument();
+    expect(screen.getByText("HUMIDITY")).toBeInTheDocument();
+    expect(screen.getByText("RAIN RATE")).toBeInTheDocument();
+    expect(screen.getByText("3 °C")).toBeInTheDocument();
+    expect(screen.getAllByText("Min 1")).toHaveLength(6);
+    expect(screen.getAllByText("Max 3")).toHaveLength(6);
+  });
+
   it("integrates the forecast into the same local-weather panel", () => {
     const series: HistorySeries[] = [
       {

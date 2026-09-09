@@ -227,6 +227,21 @@ describe("GeoGrid (bucketed nearby)", () => {
     const g = new GeoGrid(twins, (t) => [t.lng, t.lat]);
     expect(g.nearby([0, 0], 500).map((x) => x.item.id)).toEqual(["c", "b", "a"]);
     expect(nearby(twins, [0, 0], (t) => [t.lng, t.lat], 500).map((x) => x.item.id)).toEqual(["c", "b", "a"]);
+    // nearest() is nearby()[0], ties included: drop "c" and the twins tie at 111 km.
+    expect(g.nearest([0, 0], 500)?.item.id).toBe("c");
+    expect(g.nearest([0, 0], 60)?.item.id).toBe("c");
+    expect(new GeoGrid(twins.slice(0, 2), (t) => [t.lng, t.lat]).nearest([0, 0], 500)?.item.id).toBe("b");
+  });
+
+  it("nearest() is nearby()[0] everywhere, and null out of range", () => {
+    const centres: [number, number][] = [[0, 51.5], [179.9, -41], [-179.5, 64], [12, 89.5], [-70, -88], [139.7, 35.7]];
+    for (const c of centres) {
+      for (const r of [80, 350, 1200]) {
+        const first = grid.nearby(c, r)[0] ?? null;
+        expect(grid.nearest(c, r)).toEqual(first);
+      }
+    }
+    expect(grid.nearest([0, 0], 0.001)).toBeNull();
   });
 
   it("skips items without a location", () => {

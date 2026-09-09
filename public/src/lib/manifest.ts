@@ -255,12 +255,19 @@ export function ageLabel(fromIso: string | undefined, nowMs: number): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
+/** "30 Jun" — one shared formatter: `toLocaleString(locale, options)` builds a
+ *  fresh Intl.DateTimeFormat per call (~0.2 ms each), and the freshness chip
+ *  re-derived its two labels on every render of a cut (profiler round 24). */
+let utcDayMonth: Intl.DateTimeFormat | undefined;
+const formatUtcDayMonth = (d: Date): string =>
+  (utcDayMonth ??= new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" })).format(d);
+
 /** Absolute UTC label like "30 Jun 00:00 UTC" (empty on bad input). */
 export function utcLabel(iso: string | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const mon = d.toLocaleString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
+  const mon = formatUtcDayMonth(d);
   const hm = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
   return `${mon} ${hm} UTC`;
 }

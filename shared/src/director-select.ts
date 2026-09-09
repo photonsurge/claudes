@@ -38,6 +38,8 @@ export interface Candidate {
   segment: Segment;
   /** Higher = more newsworthy. Kept for the "coming up" preview, not selection. */
   score: number;
+  /** Relative selection preference; favourites use 5, other places use 1. */
+  weight?: number;
   /**
    * Stable editorial area for variety within one kind (for example `country:KZ`
    * on a Kazakhstan weather alert). When absent, located shots fall back to a
@@ -60,7 +62,7 @@ export interface Candidate {
 const GLOBAL_KINDS = new Set<SegmentKind>(["intro", "global", "ocean", "orbital"]);
 
 /** Suppress a located shot within this many degrees of a recently-aired one. */
-export const DEFAULT_GEO_COOLDOWN_DEG = 8;
+export const DEFAULT_GEO_COOLDOWN_DEG = 25;
 
 /**
  * How many recently-aired areas each kind remembers (and avoids revisiting)
@@ -147,11 +149,26 @@ export function withoutRecentAreas(
   return candidates;
 }
 
-/** Great-circle-ish degree gap with longitude wrap (good enough for cooldown). */
+/** Great-circle angular distance, including longitude wrap and polar convergence. */
 function degApart(a: [number, number], b: [number, number]): number {
-  let dLng = Math.abs(a[0] - b[0]) % 360;
-  if (dLng > 180) dLng = 360 - dLng;
-  return Math.hypot(dLng, a[1] - b[1]);
+  const rad = Math.PI / 180;
+  const dLat = (b[1] - a[1]) * rad;
+  const dLng = (b[0] - a[0]) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * Math.asin(Math.sqrt(Math.max(0, Math.min(1, h)))) / rad;
+}
+
+/** Keep the newest location protected when the full recent window is crowded. */
+function geographicallySpread(pool: Candidate[], centers: [number, number][], gap: number): Candidate[] {
+  for (let start = 0; start < centers.length; start++) {
+    const spread = pool.filter((c) => centers.slice(start).every((rc) => degApart(c.segment.camera.center, rc) > gap));
+    if (spread.length) return spread;
+  }
+  // A local-only pool cannot meet the gap: choose the farthest available shot.
+  const latest = centers[centers.length - 1];
+  const distances = pool.map((c) => degApart(c.segment.camera.center, latest));
+  const farthest = Math.max(...distances);
+  return pool.filter((_, i) => distances[i] >= farthest - 1e-6);
 }
 
 const pickRandom = <T>(arr: T[], rng: () => number): T =>
@@ -254,14 +271,22 @@ export function selectNext(pool: Candidate[], opts: SelectOpts): Segment | null 
   // 3. Within the kind: spread regions out (geo cooldown), then pick at random
   //    among the least-aired so we cycle the whole set before repeating any.
   let ofKind = eligible.filter((c) => c.segment.kind === kind);
-  ofKind = withoutRecentAreas(ofKind, kind, opts.recentAreasByKind);
   const recentCenters = opts.recentCenters ?? [];
   const geoDeg = opts.geoCooldownDeg ?? DEFAULT_GEO_COOLDOWN_DEG;
   if (recentCenters.length > 0 && !GLOBAL_KINDS.has(kind)) {
-    const spread = ofKind.filter(
-      (c) => !recentCenters.some((rc) => degApart(c.segment.camera.center, rc) <= geoDeg),
-    );
-    if (spread.length > 0) ofKind = spread;
+    ofKind = geographicallySpread(ofKind, recentCenters, geoDeg);
+  }
+  ofKind = withoutRecentAreas(ofKind, kind, opts.recentAreasByKind);
+
+  if ((kind === "country" || kind === "region") && ofKind.some((c) => c.weight !== undefined)) {
+    // Favourites boost odds, while prior airings reduce repetition pressure.
+    const weights = ofKind.map((c) => (c.weight ?? 1) / (1 + countOf(c.segment.id)));
+    let roll = rng() * weights.reduce((sum, w) => sum + w, 0);
+    for (let i = 0; i < ofKind.length; i++) {
+      roll -= weights[i];
+      if (roll < 0) return ofKind[i].segment;
+    }
+    return ofKind[ofKind.length - 1].segment;
   }
 
   const minCount = Math.min(...ofKind.map((c) => countOf(c.segment.id)));

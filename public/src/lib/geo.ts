@@ -106,13 +106,34 @@ export class GeoGrid<T> {
   }
 
   nearby(center: [number, number], radiusKm: number): Nearby<T>[] {
+    const found: Array<Nearby<T> & { i: number }> = [];
+    this.scan(center, radiusKm, (item, distanceKm, i) => found.push({ item, distanceKm, i }));
+    found.sort((a, b) => a.distanceKm - b.distanceKm || a.i - b.i);
+    return found.map(({ item, distanceKm }) => ({ item, distanceKm }));
+  }
+
+  /** `nearby(...)[0]` without building the list: the closest item within the
+   *  radius (equal distances → the earliest in the items' order), or null. */
+  nearest(center: [number, number], radiusKm: number): Nearby<T> | null {
+    let best: Nearby<T> | null = null;
+    let bestI = -1;
+    this.scan(center, radiusKm, (item, distanceKm, i) => {
+      if (!best || distanceKm < best.distanceKm || (distanceKm === best.distanceKm && i < bestI)) {
+        best = { item, distanceKm };
+        bestI = i;
+      }
+    });
+    return best;
+  }
+
+  /** Visit every item within the radius (bucket order — callers sort or reduce). */
+  private scan(center: [number, number], radiusKm: number, visit: (item: T, distanceKm: number, i: number) => void): void {
     const box = radiusBox(center, radiusKm);
     const lat0 = latCell(center[1] - box.dLat);
     const lat1 = latCell(center[1] + box.dLat);
     const allLng = box.dLng >= 180;
     const lng0 = Math.floor(center[0] - box.dLng);
     const lng1 = Math.floor(center[0] + box.dLng);
-    const found: Array<Nearby<T> & { i: number }> = [];
     for (let la = lat0; la <= lat1; la++) {
       for (let lo = allLng ? 0 : lng0; lo <= (allLng ? 359 : lng1); lo++) {
         const cell = this.cells.get(la * 360 + (((lo % 360) + 360) % 360));
@@ -120,12 +141,10 @@ export class GeoGrid<T> {
         for (const e of cell) {
           if (!withinRadiusBox(center, e.p, box)) continue;
           const distanceKm = haversineKm(center, e.p);
-          if (distanceKm <= radiusKm) found.push({ item: e.item, distanceKm, i: e.i });
+          if (distanceKm <= radiusKm) visit(e.item, distanceKm, e.i);
         }
       }
     }
-    found.sort((a, b) => a.distanceKm - b.distanceKm || a.i - b.i);
-    return found.map(({ item, distanceKm }) => ({ item, distanceKm }));
   }
 }
 

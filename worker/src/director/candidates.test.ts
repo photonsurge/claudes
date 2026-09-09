@@ -176,7 +176,7 @@ describe("buildCandidates", () => {
     const pool = await buildCandidates(fakeDb(), cfg());
     const countries = pool.filter((c) => c.segment.kind === "country");
     // Defaults: UK + Japan, one spotlight each.
-    expect(countries.map((c) => c.segment.id).sort()).toEqual(["country:japan", "country:uk"]);
+    expect(countries.filter((c) => c.weight === 5).map((c) => c.segment.id).sort()).toEqual(["country:japan", "country:uk"]);
     const uk = countries.find((c) => c.segment.id === "country:uk")!;
     expect(uk.segment.title).toBe("United Kingdom");
     expect(uk.segment.icon).toBe("🇬🇧");
@@ -188,7 +188,10 @@ describe("buildCandidates", () => {
   it("follows the operator's favourites list and skips unknown ids", async () => {
     const pool = await buildCandidates(fakeDb(), cfg({ countries: ["france", "atlantis"] }));
     const ids = pool.filter((c) => c.segment.kind === "country").map((c) => c.segment.id);
-    expect(ids).toEqual(["country:france"]);
+    expect(ids).toContain("country:france");
+    expect(ids).toContain("country:japan");
+    expect(ids).not.toContain("country:atlantis");
+    expect(pool.find((c) => c.segment.id === "country:france")?.weight).toBe(5);
   });
 
   it("flies a country's precomputed city tour — opening on a wide establishing centre", async () => {
@@ -231,7 +234,7 @@ describe("buildCandidates", () => {
     expect(jp.subtitle).toBe("Country spotlight · National weather");
   });
 
-  it("adds no region tours until the kind is enabled with favourites", async () => {
+  it("adds only favourite region tours when favourites are selected", async () => {
     // Off by default → no region candidates even though the catalog exists.
     const off = await buildCandidates(fakeDb(), cfg());
     expect(off.some((c) => c.segment.kind === "region")).toBe(false);
@@ -241,8 +244,9 @@ describe("buildCandidates", () => {
       cfg({ kinds: { region: true }, regions: ["europe", "atlantis"] }),
     );
     const regions = on.filter((c) => c.segment.kind === "region");
-    expect(regions.map((c) => c.segment.id)).toEqual(["region:europe"]);
-    const eu = regions[0].segment;
+    expect(regions.filter((c) => c.weight === 5).map((c) => c.segment.id)).toEqual(["region:europe"]);
+    expect(regions.length).toBeGreaterThan(1);
+    const eu = regions.find((c) => c.segment.id === "region:europe")!.segment;
     expect(eu.patch.autoSpin).toBe(false); // holds/orbits on the area like a country
     expect(eu.camera.zoom).toBeGreaterThan(0);
   });
@@ -806,3 +810,10 @@ describe("buildCandidates", () => {
     });
   });
 });
+
+ it("includes the area catalog when Areas is enabled without favourites", async () => {
+   const pool = await buildCandidates(fakeDb(), cfg({ kinds: { region: true }, regions: [] }));
+   const areas = pool.filter((c) => c.segment.kind === "region");
+   expect(areas.length).toBeGreaterThan(1);
+   expect(areas.some((c) => c.segment.id === "region:europe")).toBe(true);
+ });

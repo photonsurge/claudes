@@ -21,6 +21,7 @@ import {
 import { Deck, _GlobeView as GlobeView } from "@deck.gl/core";
 import { installLumaUniformPatch } from "../lib/luma-uniform-patch";
 import { installBitmapMeshPatch } from "../lib/bitmap-mesh-patch";
+import { installGlKeyPatch } from "../lib/luma-glkey-patch";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { isTextureCached, loadTexture, preloadTextures, type LoadedTexture } from "../lib/textures";
@@ -578,6 +579,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       // it into the on-air SOFTWARE RENDER chip inside OBS, and the console line
       // is what you read via remote-debugging a headless encoder.
       onDeviceInitialized: (device) => {
+        // luma names GL constants for a silent log line by walking the whole
+        // context per new texture; table it once (docs/watch-perf-plan.md, round 24).
+        installGlKeyPatch(device);
         const { vendor, renderer } = device.info;
         setRendererInfo(vendor, renderer);
         console.info(`[globe] WebGL device: ${vendor} — ${renderer}`);
