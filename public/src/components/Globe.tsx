@@ -23,6 +23,7 @@ import { installLumaUniformPatch } from "../lib/luma-uniform-patch";
 import { installBitmapMeshPatch } from "../lib/bitmap-mesh-patch";
 import { installGlKeyPatch } from "../lib/luma-glkey-patch";
 import { installGridPatch } from "../lib/wl-grid-patch";
+import { installTileObbPatch } from "../lib/tile-obb-patch";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
 import { isTextureCached, loadTexture, preloadTextures, type LoadedTexture } from "../lib/textures";
@@ -568,6 +569,11 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // WeatherLayers' GridLayer (wind barbs) rebuilds its icosphere and re-samples
     // every visible point on every camera tick; cache both.
     installGridPatch();
+    // deck's tile quadtree rebuilds every visited tile's oriented bounding box
+    // (covariance + eigen decomposition) on every frame the camera moves; the
+    // box depends only on the tile, so memoise it (docs/watch-perf-plan.md,
+    // round 31).
+    installTileObbPatch();
     const deck = new Deck<GlobeView[]>({
       canvas: canvasRef.current,
       // Inside an OBS browser source the canvas IS the broadcast raster (CEF

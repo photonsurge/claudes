@@ -5,3 +5,11 @@ export class TileLayer {
     this.props = props;
   }
 }
+
+/** Stand-in for the tileset class `tile-obb-patch` wraps to reach deck's
+ *  private OSMNode. Returns no tiles, so nothing is patched through it here. */
+export class _Tileset2D {
+  getTileIndices(): unknown[] {
+    return [];
+  }
+}

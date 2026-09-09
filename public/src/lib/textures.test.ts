@@ -1,5 +1,5 @@
 import * as WL from "weatherlayers-gl";
-import { TEXTURE_LOAD_TIMEOUT_MS, clearTextureCache, isTextureCached, loadTexture } from "./textures";
+import { TEXTURE_LOAD_TIMEOUT_MS, clearTextureCache, isTextureCached, loadTexture, textureSizeLine } from "./textures";
 
 type Loader = typeof WL.loadTextureData;
 const original: Loader = WL.loadTextureData;
@@ -51,5 +51,18 @@ describe("loadTexture", () => {
     expect(isTextureCached("/hung.png")).toBe(false);
     await expect(loadTexture("/hung.png")).resolves.toEqual({ data: new Uint8Array(4), width: 1, height: 1 });
     expect(calls).toBe(2);
+  });
+});
+
+describe("textureSizeLine", () => {
+  it("names the file and reports its grid and megabytes", () => {
+    const t = { data: new Uint8Array(1440 * 721 * 4), width: 1440, height: 721 };
+    expect(textureSizeLine("https://x/y/humidity-abc.png?v=9", t as never)).toBe(
+      "[globe] texture humidity-abc.png 1440\u00d7721 4.0 MB",
+    );
+  });
+
+  it("survives a texture with nothing on it", () => {
+    expect(textureSizeLine("a/b.png", undefined as never)).toBe("[globe] texture b.png 0\u00d70 0.0 MB");
   });
 });

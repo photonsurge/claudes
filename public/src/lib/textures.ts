@@ -94,6 +94,32 @@ function withTimeout<T>(p: Promise<T>, ms: number, url: string): Promise<T> {
   return Promise.race([p, bail]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * The two worst stalls of the 2026-09-09 raster run were a single synchronous
+ * `texSubImage2D` each (368 ms and 399 ms) — one texture landing on the GPU,
+ * with almost no JS beside it (docs/watch-perf-plan.md, round 32). A global GFS
+ * frame is ~4 MB of RGBA and should upload in single-digit ms, so the size of
+ * whatever is actually being uploaded is the question, and nothing in a CPU
+ * profile or a trace carries a texture's dimensions. One `[globe]` line per
+ * newly decoded URL names it: textures are immutable per URL and cached, so
+ * this is one line per distinct texture, not per frame.
+ */
+export function textureSizeLine(url: string, t: LoadedTexture): string {
+  const { width = 0, height = 0 } = t ?? {};
+  // `data` is a typed array (Uint8 for our PNG decodes, Float32 for a float
+  // raster — worth seeing, since that is 4× the bytes for the same grid).
+  const bytes = (t as unknown as { data?: { byteLength?: number } } | undefined)?.data?.byteLength ?? 0;
+  const name = url.split("?")[0].split("/").pop() || url;
+  return `[globe] texture ${name} ${width}×${height} ${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+const logTextureSize =
+  (url: string) =>
+  (t: LoadedTexture): LoadedTexture => {
+    console.info(textureSizeLine(url, t));
+    return t;
+  };
+
 /** Load (or return cached) texture for a URL as WeatherLayers TextureData. */
 export function loadTexture(url: string): Promise<LoadedTexture> {
   const existing = cache.get(url);
@@ -103,6 +129,7 @@ export function loadTexture(url: string): Promise<LoadedTexture> {
   }
   const p = getLoader()
     .then((load) => withTimeout(load(url), TEXTURE_LOAD_TIMEOUT_MS, url))
+    .then(logTextureSize(url))
     .catch((err) => {
       cache.delete(url); // allow a future retry
       throw err;

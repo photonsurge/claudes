@@ -1233,6 +1233,252 @@ the size of the win if it lands (the dominant cost in nearly every stall this
 round) against the size of the risk (an undocumented private class, no
 existing shape-guard pattern to lean on).
 
+### Round 31 (2026-09-09) — the tile bounding boxes, patched (and the trap in it)
+
+Ownership settled first: the parallel session (weatherchannel-48) confirmed it
+owns none of the deck.gl paths — its scope this session is broadcast chrome
+(`LiveAlertPanel`, `lib/broadcast.ts` helpers, a `ResizeObserver` stand-in in
+`jest.setup.ts`). So round 30's finding is this session's, and it is now
+**shipped**: `lib/tile-obb-patch.ts`, installed in `Globe.tsx` beside the other
+four patches.
+
+**The seam round 30 couldn't find.** `OSMNode` is private to
+`tile-2d-traversal.js`, but it leaks: `getOSMTileIndices` returns
+`root.getSelected()`, which pushes **the nodes themselves**, and `utils.js`
+`getTileIndices` hands that array straight back through the PUBLIC
+`Tileset2D.prototype.getTileIndices`. So the class is reached exactly the way
+the WeatherLayers composite was in round 25 — wrap the public method, take
+`.constructor` off the first result, patch that prototype. No re-implementation
+of the quadtree walk, no reassigning a module-level function binding. The
+wrapper then restores the original method, so nothing of it survives past the
+first geospatial result.
+
+**The trap: the projection is a per-frame object.** Round 30 checked that
+`GlobeViewport.projectPosition` is pure — it is, a class-body method whose body
+reads no `this` at all (deck calls it UNBOUND, which under ESM strict mode is
+the proof: any `this` access would already throw). What round 30 did NOT check
+is its *identity*. `Viewport`'s constructor runs
+`this.projectPosition = this.projectPosition.bind(this)` (`viewports/viewport.js:63`),
+so every viewport hands out its own bound copy — and deck builds a new viewport
+every frame the camera moves. The first cut of this patch keyed its cache on
+that function object and was therefore a **silent no-op**: a fresh table every
+frame, 0.0 % hit rate, and ~4 % SLOWER than not patching for the churn. It
+passed every unit test, because a test naturally reuses one projection.
+
+The fix is to key on what the projection DOES, not which object it is: a bound
+copy is fingerprinted once against four sample points and the volumes live
+under that fingerprint, the fingerprint held in a `WeakMap` so it dies with its
+viewport. One WeakMap miss per frame, four projection calls, then every node
+lookup hits the shared table. A genuinely different projection fingerprints
+differently and gets its own volumes; anything that isn't a projection
+(non-finite, too short, throws) is never cached and passes straight through.
+
+**Measured, against the real classes.** The unit tests can't catch an identity
+bug, so the patch was also driven end-to-end in node against deck 9.3.5's real
+`Tileset2D` and a real `_GlobeViewport` — 240-frame camera walks in three
+regimes, tile selection compared with the cache off and on:
+
+| regime (240 frames)          | traversal off | on   | OBBs asked | computed | hit rate |
+|------------------------------|---------------|------|------------|----------|----------|
+| slow spin (0.1°/frame, z4)   | 568 ms        | 27 ms| 73 140     | 329      | 99.6 %   |
+| idle orbit (0.05°/frame, z5) | 673 ms        | 29 ms| 86 848     | 393      | 99.5 %   |
+| fly-to (fast, zoom ramp)     | 369 ms        | 22 ms| 47 732     | 809      | 98.3 %   |
+
+Those are single COLD passes from an empty cache — the hit rate is already
+98–99 % within one sweep, because consecutive frames revisit the same tiles;
+a warmed cache lands at 99.9 %. **Zero mismatched frames in all three
+regimes**: the same tiles, in the same order, every frame. That last line is
+the one that matters — the win is worthless if a tile ever goes missing.
+
+**Guarded by behaviour, not by reading the source.** The other four patches
+sniff the method's text, which is all you can do when what you depend on is a
+shape. Here everything the cache assumes is *checkable*, so the guard runs the
+real method against bare `{x, y, z}` probe nodes and requires it to be finite,
+to repeat itself, to ignore `worldOffset` on that branch, and to actually vary
+with the tile and with the elevation range. Probing with a node carrying
+nothing but coordinates is what proves it reads nothing else off the node:
+anything it expected to find there comes back `undefined` and the volume stops
+being finite. A deck that fails any of those keeps its own method and logs one
+line. (The guard earned its keep immediately — it correctly rejected the
+counter wrapper the measurement harness tried to install underneath it.)
+
+Only the custom-projection branch is cached; the Web Mercator branch builds a
+cheap `AxisAlignedBoundingBox` and genuinely does depend on `worldOffset`, so
+it hands straight back to the original. Volumes are shared between frames,
+which is safe because they are read-only downstream —
+`CullingVolume.computeVisibility` only calls `intersectPlane` (reads
+centre/half-axes) and `distanceSquaredTo` works in module-level scratch
+vectors. 32 768 entries then start over (the `wl-grid-patch` rule).
+
+18 tests (`lib/tile-obb-patch.test.ts`), including a parity suite running deck
+9.3.5's `getBoundingVolume` verbatim over the real `@math.gl/culling` across
+the 11-, 9- and 5-reference-point tiers, and a regression test for the bound-
+copy bug above. Suite green: 194 files, 1 464 tests. `tsc --noEmit` clean,
+`next build` clean (jest mocks `@deck.gl/geo-layers`, so the build is what
+actually exercises the real `_Tileset2D` import).
+
+Not yet measured on the box — this session has no way to profile it (port 9221
+is the user's own SSH forward, off-limits from here). Next run to confirm:
+
+    node scripts/profile-watch.mjs http://localhost:9221 --seconds 60 --deck --stall-trace
+
+with a couple of manual cuts and a spin or fly-to over a night-tiles or
+satellite-tiles scene — the tile overlays are the only layers that walk the
+quadtree. What should be gone from the Bottom-Up table: the three
+`@math.gl/culling` frames (Cesium's mean-point / covariance / Jacobi
+eigen-decomposition), round 30's 7–15 % of every stall. What should be
+unchanged: which tiles are on screen. If a tile ever fails to appear, or one
+appears that shouldn't, this patch is the first suspect —
+`installTileObbPatch()` in `Globe.tsx` is one line to comment out for an A/B.
+
+### Round 32 (2026-09-09) — two runs; the tile patch is still unverified, and the raster upload is named
+
+Two 60 s `--deck --stall-trace` runs on `/watch/default`.
+
+| run              | busy   | fps  | max gap | stalls        | DOM | heap   | scene (drawn)                                                      |
+|------------------|--------|------|---------|---------------|-----|--------|--------------------------------------------------------------------|
+| 22:24 (raster)   | 49.2 % | 28.6 | 400 ms  | 29 / 7 228 ms | 781 | 148 MB | humidity ×2 + wind + alerts (glow/fill/edge) + country glow, 21 drawn |
+| 22:28 (light)    | 35.5 % | 29.7 | 200 ms  | 6 / 1 253 ms  | 532 | 125 MB | elevation relief + contours + faults + volcanoes + cities, 11 drawn  |
+
+**The 22:28 run is the best figure of the whole investigation** — 35.5 % busy
+against the 44.9 % "lossless floor" of round 21, 29.7 fps, max frame gap down to
+the 200 ms floor, six stalls totalling 1.25 s of the minute. No regression from
+round 31 anywhere.
+
+**Neither run contained round 31's patch at all, so it remains unverified —
+and these numbers are a clean pre-patch baseline, not a result.** The last
+commit at the time of both captures was 84e0534 (21:49); every change of the
+session — `tile-obb-patch.ts`, its install line in `Globe.tsx`, the texture-size
+log — was working-tree only, uncommitted and undeployed, and the captures point
+at production. Nothing tonight was in the build under test. (The same is true of
+the parallel session's `FittedColumn` read-back fix, which is why the layout pair
+below still appears.)
+
+Two things would have had to be true for a run to verify the patch, and NEITHER
+was: the build must contain it, and the scene must mount a `TileLayer`. The
+three `@math.gl/culling` frames are absent from both tables, which proves
+nothing on either count. The census is the tell for the second: both runs show
+`basemap-bg` + `basemap-lan` (the flat land basemap) and no `basemap-tiles-*`
+sublayers at all, where round 29's night run carried ~38. Tiles mount only when
+the basemap is **satellite, terrain or night** AND the camera is at **zoom ≥ 4**
+(`TILE_MIN_ZOOM`, `layers/basemap.ts` `tilesActive`). Round 30's measurement came
+from a scene with tiles spanning zoom 4 and 5 at once; that is the scene to
+re-run, on a build that has the patch in it. Confirming the patch also means
+confirming the tiles still APPEAR — a cache that culled wrongly would show up as
+missing tiles, not as a slow frame.
+
+To make that self-reporting rather than inferred, the patch now prints one line
+when it engages: `[globe] deck tile bounding-volume cache active` (or the
+shape-changed line if the guard rejects). On a tile-less scene NEITHER line
+appears, which distinguishes "not patched" from "never ran" without reading a
+census. Like the texture-size line, it only exists after a deploy.
+
+**Named from the raster run — the biggest single stall cause left.** Its two
+worst stalls are one synchronous texture upload each, with almost no JS beside
+them: 428 ms at 2.4 s that is **85.7 % `texSubImage2D` (368.8 ms)**, and 580 ms
+at 24.7 s that is **68.2 % (399.2 ms)**; 1 183 ms of `texSubImage2D` over the
+minute. This is round 25's deferred item, now clearly the top remaining glitch
+on raster-heavy scenes. The light run, with no big raster landing, has none of
+it. A global GFS frame is 1440×721 RGBA ≈ 4 MB and should upload in single-digit
+ms, so what is actually being uploaded is the question — and neither a CPU
+profile nor a trace carries a texture's dimensions. `lib/textures.ts` now logs
+one `[globe] texture <name> <w>×<h> <n> MB` line per newly decoded URL (textures
+are immutable per URL and cached, so it is one line per distinct texture, not per
+frame). Read it off the CEF console on the next run and the culprit names itself.
+
+**Also named, not yet touched:**
+
+- **deck's polygon cut-by-grid**, the 406 ms stall at 7.5 s of the raster run:
+  34 % `C @ 03kjcxsx1gsgx.js:148:27870` (139 ms) plus `v` (27 ms), with
+  `normalizeGeometry` 197 ms and `m` 188 ms over the minute — deck re-normalising
+  and cutting path/polygon geometry on a layer update (`setLayers` 258 ms on the
+  stack). Round 20's `outlineRings` memo fixed the DATA side; this is deck
+  re-tessellating it per new layer instance.
+- **WeatherLayers `ensureDefaultProps`** (`eO @ 03kjcxsx1gsgx.js:906:18139`,
+  the `for (let n in e) if (undefined === e[n] && n in t)` filler): 474 ms self in
+  the light run (2.1 % of busy), 216 ms in the raster run, called per draw under
+  the particle layer's `draw`. Flagged back in round 20 and still there. It is a
+  module-private function, so it has the same live-binding problem round 30 hit —
+  no obvious seam yet.
+- **The chrome's layout pair**, `getBoundingClientRect` + `removeChild`, in two
+  of the light run's six stalls (30 ms / 24 ms of `getBoundingClientRect`, Layout
+  26 ms / 19 ms, `FunctionCall O` 102 ms / 76 ms). This is exactly what the
+  parallel session predicted when it made the alert card size to its content:
+  `FittedColumn` re-fits on every child resize and the card's height now changes
+  as it cycles alerts every 10 s. Theirs, and they have been told it showed up.
+- `_setupTransformFeedback` (WeatherLayers particle re-init) in three of the
+  light run's six stalls — unchanged, WeatherLayers' own.
+
+Next run, to close round 31: switch the scene to a **night or satellite basemap
+at zoom ≥ 4** and spin or fly over it, then
+
+    node scripts/profile-watch.mjs http://localhost:9221 --seconds 60 --deck --stall-trace
+
+Expect `basemap-tiles-*` sublayers in the census (proof the path is live), the
+three `@math.gl/culling` frames absent from the Bottom-Up table, and the tiles
+looking exactly as they did before.
+
+### Round 33 (2026-09-09) — third run, the changed mode: a healthy raster scene
+
+Same build as round 32 (still 84e0534; nothing from this session is committed or
+deployed), a different on-air mode: storm raster + pressure contours + wind
+particles + the four alert layers + on-air ping, 19 top-level layers, 13 drawn.
+
+| run                    | busy   | fps  | max gap | stalls        | DOM   |
+|------------------------|--------|------|---------|---------------|-------|
+| 22:24 raster (r32)     | 49.2 % | 28.6 | 400 ms  | 29 / 7 228 ms | 781   |
+| 22:28 light (r32)      | 35.5 % | 29.7 | 200 ms  | 6 / 1 253 ms  | 532   |
+| **22:39 storm (r33)**  | **36.3 %** | **29.7** | **200 ms** | **6 / 1 030 ms** | 1 218 |
+
+This is the important comparison: a scene with a scalar raster, contours, wind
+particles AND alerts now costs what the near-empty elevation scene cost — 36.3 %
+against the 49.2 % of the earlier raster run, six stalls instead of 29, one
+second of stall in the minute instead of 7.2, and the frame gap pinned to the
+200 ms floor. Whatever changed about the mode, this is the healthiest raster
+scene measured in the whole investigation.
+
+**`texSubImage2D` is completely absent from this run.** Round 32's two ~400 ms
+uploads did not recur, on a scene that also carries a global scalar raster. So
+they are not a steady-state cost of having a raster on screen; they are one
+texture LANDING — a map-type change or a forecast-hour advance bringing a new
+image in. That narrows what the round-32 texture-size log has to catch: watch
+the `[globe] texture …` lines at the moment of a map-type cut, not at rest.
+
+**Still no `basemap-tiles-*` sublayers**, so this run does not exercise round 31
+either — and could not have, since the patch is not in the deployed build. Three
+runs, three tile-less scenes. Nothing about the tile path has been measured since
+round 30.
+
+**New, and the biggest nameable JS cost here: deck's attribute updates.**
+`_normalizeValue` (`0~1yz86pm33zq.js:1:22381`) is 579.7 ms self, third in the
+table behind `(program)` and rAF, and the subtree around it is large —
+`setLayers` / `updateLayers` 2 988 ms inclusive (13.2 %),
+`_updateSublayersRecursively` 2 601 ms (11.5 %), `_updateAttributes` 1 700 ms
+(7.5 %), `_updateAttribute` 1 288 ms, `updateBuffer` 998 ms. The light run's
+`setLayers` was 2.6 % inclusive, so this is five times the layer-update churn for
+a scene that is not five times bigger. The suspects are the four alert layers
+over dissolved, country-sized polygons (`alerts-glow-wi`, `alerts-glow-mi`,
+`alerts-fill`, `alerts-e`) having their attributes regenerated: normalisation
+cost scales with vertex count, and those are the highest-vertex layers on screen.
+Not yet traced to a specific trigger — that is the next question, and the way in
+is which accessor's `updateTriggers` is moving.
+
+**Read correctly, not a regression:** the 112 ms stall at 7.3 s is
+`eo @ …906:9443` (icomesh's `icosphere(order)`), `e @ …906:13159` (the KDBush
+sort), `c @ …906:9908` (icomesh's midpoint cache) and `iN @ …515:30703` — which
+is OUR `wl-grid-positions.ts` memo taking a miss. The grid is memoised PER
+ICOSPHERE ORDER, so a zoom that crosses an order boundary legitimately builds
+one new grid, once. That is the round-25 patch working as designed, not the
+uncached rebuild-every-tick it replaced.
+
+Unchanged and expected: `getBoundingClientRect` (45.1 ms in the 40.0 s stall,
+13.9 ms at 22.2 s) is the `FittedColumn` read-back — the parallel session's fix
+for it is also uncommitted, so it is still in the running build.
+`_setupTransformFeedback` at 22.2 s is WeatherLayers' particle re-init.
+`eO` (WeatherLayers `ensureDefaultProps`, per draw) holds at 429.5 ms and
+`e.s.r` (`geo.ts` `nearby`) at 379.4 ms, both in line with rounds 30–32 — the
+round-29 scan cache is still holding.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
