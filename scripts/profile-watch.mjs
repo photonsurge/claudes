@@ -9,6 +9,8 @@
  *   node scripts/profile-watch.mjs http://localhost:9221 --seconds 30 --match seismic
  *
  * Options: --seconds N (20) · --interval µs (250) · --top N (35) · --match substr (/watch)
+ *          --target <id or url substring> (pin ONE page when several match — an OBS hard reset can leave
+ *                      a dead one listed) · --attach-timeout s (10: per attach step, then the next page)
  *          --out dir (scratchpad/profile/<ts>) · --no-source (skip minified-code snippets)
  *          --raf-census (temporarily wraps requestAnimationFrame to count loops per frame)
  *          --trace [N] (after the profile, record an N s (8) Chrome timeline trace with layout/style
@@ -45,6 +47,8 @@ const SECONDS = Number(opt("seconds", 20));
 const INTERVAL_US = Number(opt("interval", 250));
 const TOP = Number(opt("top", 35));
 const MATCH = opt("match", "/watch");
+const TARGET_PICK = opt("target", "");
+const ATTACH_TIMEOUT_MS = Math.max(1, Number(opt("attach-timeout", 10)) || 10) * 1000;
 const OUT = opt("out", path.join("scratchpad", "profile", new Date().toISOString().replace(/[:.]/g, "-")));
 const WANT_SOURCE = !flag("no-source");
 const RAF_CENSUS = flag("raf-census");
@@ -71,20 +75,58 @@ if (typeof WebSocket === "undefined") {
 }
 
 // ── Target discovery ────────────────────────────────────────────────────────
-async function resolveWsUrl(t) {
-  if (t.startsWith("ws://") || t.startsWith("wss://")) return t;
+/** Reject `p` if it hasn't settled within `ms` — every attach step goes through this. */
+const withTimeout = (p, ms, what) =>
+  new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${what} timed out after ${ms / 1000}s`)), ms);
+    p.then(
+      (v) => (clearTimeout(t), resolve(v)),
+      (e) => (clearTimeout(t), reject(e)),
+    );
+  });
+
+/**
+ * Every page target worth trying, in order: the ones whose url contains --match
+ * (or --target, by id/url substring), else the first page. ALL matches are
+ * returned rather than the first: an OBS hard reset (go-live / "Set up in OBS")
+ * tears the browser source down and the dead CEF page can stay listed in /json
+ * for a while — its websocket opens, its renderer never answers.
+ */
+async function resolvePageTargets(t) {
+  if (t.startsWith("ws://") || t.startsWith("wss://")) return [{ id: "", title: "", url: t, wsUrl: t }];
   const base = t.replace(/\/+$/, "");
-  const list = await (await fetch(`${base}/json`)).json();
+  const res = await withTimeout(fetch(`${base}/json`), 5_000, `GET ${base}/json`);
+  const list = await withTimeout(res.json(), 5_000, `GET ${base}/json (body)`);
   const pages = list.filter((x) => x.type === "page");
-  const pick = pages.find((x) => x.url.includes(MATCH)) ?? pages[0];
-  if (!pick) throw new Error(`no page targets at ${base}/json`);
-  console.error(`target: ${pick.title || "(untitled)"} — ${pick.url}`);
+  let picks = TARGET_PICK
+    ? pages.filter((x) => String(x.id).includes(TARGET_PICK) || String(x.url).includes(TARGET_PICK))
+    : pages.filter((x) => x.url.includes(MATCH));
+  if (!picks.length && !TARGET_PICK && pages[0]) picks = [pages[0]];
+  if (!picks.length) {
+    throw new Error(`no page targets at ${base}/json${TARGET_PICK ? ` matching --target ${TARGET_PICK}` : ""}`);
+  }
   // CEF may advertise the remote host; keep the (forwarded) host:port we were given.
-  const u = new URL(pick.webSocketDebuggerUrl);
   const b = new URL(base);
-  u.host = b.host;
-  return u.toString();
+  const out = picks.map((p) => {
+    const u = new URL(p.webSocketDebuggerUrl);
+    u.host = b.host;
+    return { id: String(p.id ?? ""), title: p.title, url: p.url, wsUrl: u.toString() };
+  });
+  out.forEach((p, i) => {
+    const n = out.length > 1 ? ` ${i + 1}/${out.length}` : "";
+    console.error(`target${n}: ${p.title || "(untitled)"} — ${p.url}${p.id ? ` (id ${p.id})` : ""}`);
+  });
+  if (out.length > 1) console.error("  several pages match — trying each until one answers; pin with --target <id substring>");
+  return out;
 }
+
+const ATTACH_HELP = `no page target answered within ${ATTACH_TIMEOUT_MS / 1000}s. The two usual causes:
+  • a STALE target — an OBS hard reset (go-live / "Set up in OBS") replaces the browser source and the
+    old CEF page can linger in /json with no renderer behind it. Re-run in a minute, or pin the live page
+    with --target <id substring> (ids are printed above).
+  • a HUNG renderer — the page's main thread is stuck, so Runtime.evaluate never returns. Check the OBS
+    picture; if it is frozen, open chrome://inspect → Configure… → localhost:9221 → inspect the page →
+    Sources → ⏸ Pause: that interrupts the main thread and shows the stack it is stuck in.`;
 
 // ── Browser-level GPU status (SystemInfo lives on the browser target) ───────
 // Decisive for the pipeline share of a profile: `gpu_compositing=disabled_software`
@@ -95,13 +137,14 @@ async function gpuFeaturesOf(t) {
   if (!/^https?:/.test(t)) return null;
   try {
     const base = t.replace(/\/+$/, "");
-    const v = await (await fetch(`${base}/json/version`)).json();
+    const res = await withTimeout(fetch(`${base}/json/version`), 5_000, "GET /json/version");
+    const v = await withTimeout(res.json(), 5_000, "GET /json/version (body)");
     if (!v.webSocketDebuggerUrl) return null;
     const u = new URL(v.webSocketDebuggerUrl);
     u.host = new URL(base).host;
-    const cdp = await connect(u.toString());
+    const cdp = await connect(u.toString(), 5_000);
     try {
-      const info = await cdp.send("SystemInfo.getInfo");
+      const info = await cdp.send("SystemInfo.getInfo", {}, 5_000);
       const fs = info.gpu?.featureStatus ?? {};
       const pick = ["gpu_compositing", "rasterization", "2d_canvas", "webgl", "webgl2", "canvas_oop_rasterization", "opengl", "video_decode"];
       const feats = pick.filter((k) => k in fs).map((k) => `${k}=${fs[k]}`).join(" · ");
@@ -118,24 +161,44 @@ async function gpuFeaturesOf(t) {
 }
 
 // ── Minimal CDP client ──────────────────────────────────────────────────────
-function connect(wsUrl) {
+/**
+ * Open a CDP websocket. Rejects if it hasn't opened within `openTimeoutMs`;
+ * `send(method, params, timeoutMs)` rejects a request the other end never
+ * answers (a dead or hung page) when a timeout is given.
+ */
+function connect(wsUrl, openTimeoutMs = ATTACH_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     let id = 0;
     const pending = new Map();
     const listeners = new Map();
-    ws.onopen = () =>
+    const opened = setTimeout(() => {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+      reject(new Error(`websocket to ${wsUrl} did not open within ${openTimeoutMs / 1000}s`));
+    }, openTimeoutMs);
+    ws.onopen = () => {
+      clearTimeout(opened);
       resolve({
-        send: (method, params = {}) =>
-          new Promise((res, rej) => {
+        send: (method, params = {}, timeoutMs = 0) => {
+          const p = new Promise((res, rej) => {
             const mid = ++id;
             pending.set(mid, { res, rej, method });
             ws.send(JSON.stringify({ id: mid, method, params }));
-          }),
+          });
+          return timeoutMs ? withTimeout(p, timeoutMs, method) : p;
+        },
         on: (event, fn) => listeners.set(event, [...(listeners.get(event) ?? []), fn]),
         close: () => ws.close(),
       });
-    ws.onerror = (e) => reject(new Error(`websocket error connecting to ${wsUrl}: ${e.message ?? e}`));
+    };
+    ws.onerror = (e) => {
+      clearTimeout(opened);
+      reject(new Error(`websocket error connecting to ${wsUrl}: ${e.message ?? e}`));
+    };
     ws.onmessage = (m) => {
       const msg = JSON.parse(typeof m.data === "string" ? m.data : m.data.toString());
       if (msg.id && pending.has(msg.id)) {
@@ -656,11 +719,30 @@ async function deckCensus(cdp) {
 
 // ── Main ────────────────────────────────────────────────────────────────────
 (async () => {
-  const wsUrl = await resolveWsUrl(target);
+  const candidates = await resolvePageTargets(target);
+  console.error("probing the browser target for GPU features…");
   const gpuFeatures = await gpuFeaturesOf(target);
-  const cdp = await connect(wsUrl);
   fs.mkdirSync(OUT, { recursive: true });
-  const href = await evaluate(cdp, "location.href");
+  // Attach to the first candidate whose main thread actually answers — every
+  // step is bounded, so a dead/hung page is reported and skipped, never sat on.
+  let cdp = null;
+  let href = null;
+  for (const c of candidates) {
+    console.error(`opening page websocket…${c.id ? ` (id ${c.id})` : ""}`);
+    try {
+      const conn = await connect(c.wsUrl);
+      console.error("waiting for the page's main thread to answer…");
+      href = await withTimeout(evaluate(conn, "location.href"), ATTACH_TIMEOUT_MS, "Runtime.evaluate on the page");
+      cdp = conn;
+      break;
+    } catch (e) {
+      console.error(`  ✗ ${e.message}`);
+    }
+  }
+  if (!cdp) {
+    console.error(ATTACH_HELP);
+    process.exit(1);
+  }
   console.error(`attached: ${href}`);
 
   let censusPromise = null;

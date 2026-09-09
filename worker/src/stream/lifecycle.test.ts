@@ -36,6 +36,20 @@ jest.mock("../obs/client", () => {
 // reachable test endpoint so the OBS-call mocks above see it as the first arg.
 jest.mock("./encoders", () => ({
   endpointForRun: jest.fn(async () => ({ url: "ws://obs-test:4455" })),
+  provisionEncoderScene: jest.fn(async () => ({
+    sceneId: "default",
+    sceneName: "PhotonSurge — default",
+    inputName: "PhotonSurge globe — default",
+    url: "https://x/watch/default?token=t",
+    width: 1920,
+    height: 1080,
+    created: false,
+    recreated: true,
+    switched: true,
+    refreshed: true,
+    removedInputs: ["PhotonSurge globe — volcano"],
+    removedScenes: ["PhotonSurge — volcano"],
+  })),
 }));
 
 jest.mock("../youtube/client", () => ({
@@ -80,6 +94,7 @@ import { goLive, finishRun } from "./lifecycle";
 import { startMonitor } from "./monitor";
 import * as obs from "../obs/client";
 import * as yt from "../youtube/client";
+import { provisionEncoderScene } from "./encoders";
 
 const OBS_IDLE = {
   outputActive: false,
@@ -141,6 +156,32 @@ describe("goLive", () => {
     expect(run.phase).toBe("obs-start");
     expect(run.platforms.youtube).toMatchObject({ broadcastId: "bcast", streamId: "strm", streamName: "secret-key" });
     expect(run.obs).toMatchObject({ configured: true, streaming: true });
+  });
+
+  // The provision step is also the instance SWEEP (other channels' globes and
+  // duplicate /watch sources are removed there), so "does every launch provision?"
+  // is the same question as "does every launch sweep?". One-off runs and the
+  // constant-stream slots share this one path — a slot's scheduled recycle ends
+  // its run and the next reconcile sweep creates a NEW run through goLive.
+  it("provisions (and so sweeps) OBS on a one-off run, before the key is set", async () => {
+    setRun({ id: "one-off", sceneId: "default", status: "scheduled", encoderId: "gpu-1", platforms: { youtube: {} }, durationMs: 3_600_000 });
+    await goLive("one-off");
+
+    expect(provisionEncoderScene).toHaveBeenCalledWith("gpu-1");
+    const provisionedAt = (provisionEncoderScene as jest.Mock).mock.invocationCallOrder[0];
+    const keyedAt = (obs.setStreamKey as jest.Mock).mock.invocationCallOrder[0];
+    expect(provisionedAt).toBeLessThan(keyedAt);
+  });
+
+  it("provisions (and so sweeps) again for a slot relaunch — every recycle is a fresh run", async () => {
+    // What a constant slot enqueues after a restart-interval recycle: a brand new
+    // unbounded run on the same encoder.
+    setRun({ id: "slot-run-2", sceneId: "default", status: "scheduled", encoderId: "gpu-1", slotId: "slot-1", createdBy: "slot:slot-1", platforms: { youtube: {} }, durationMs: null });
+    await goLive("slot-run-2");
+
+    expect(provisionEncoderScene).toHaveBeenCalledWith("gpu-1");
+    expect(obs.startStream).toHaveBeenCalledTimes(1);
+    expect(runs.get("slot-run-2").status).toBe("awaiting-ingest");
   });
 
   it("falls back to manual handoff (no failure) when OBS is unreachable", async () => {

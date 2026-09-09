@@ -214,6 +214,10 @@ export interface ProvisionResult {
   created?: boolean;
   switched?: boolean;
   refreshed?: boolean;
+  /** Stray browser sources the provision swept out (other channels' globes, hand-made /watch copies). */
+  removedInputs?: string[];
+  /** Our scenes for other channels, swept out by the same provision. */
+  removedScenes?: string[];
   error?: string;
 }
 

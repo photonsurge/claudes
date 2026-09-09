@@ -7,7 +7,9 @@
  * static /data fallback); Natural Earth land/borders GeoJSON for the dark vector
  * basemap is still served locally from /data (see ./fetch-assets.sh).
  */
-import { BitmapLayer, GeoJsonLayer, SolidPolygonLayer } from "@deck.gl/layers";
+import { BitmapLayer, GeoJsonLayer, PathLayer, SolidPolygonLayer } from "@deck.gl/layers";
+import { countryBorderRings, type CountryFeature } from "./country-features";
+import type { OutlineRing } from "./outline-rings";
 import { TileLayer } from "@deck.gl/geo-layers";
 import { COORDINATE_SYSTEM } from "@deck.gl/core";
 import { DEFAULT_BASEMAP_COLORS, type ControlState } from "@photonsurge/shared/control";
@@ -194,21 +196,28 @@ export function basemapLayers(
   ];
 }
 
-/** Country borders — stroke only, drawn above the weather, colour from state. */
+/**
+ * Country borders — stroke only, drawn above the weather, colour from state.
+ *
+ * A PathLayer over every country ring (one shared, page-lifetime promise from
+ * country-features.ts), not a stroke-only GeoJsonLayer over the URL: GeoJsonLayer
+ * always builds a polygons-fill sublayer that earcuts every polygon in the
+ * 4 MB file on each cold start (one per OBS hard reset) and then draws a no-op
+ * each frame. The stroke is the same PathLayer GeoJsonLayer would have used.
+ */
 export function countriesLayer(state: ControlState) {
   const [r, g, b] = hexToRgb(state.basemapColors?.border ?? DEFAULT_BASEMAP_COLORS.border);
-  return new GeoJsonLayer({
+  return new PathLayer<OutlineRing<CountryFeature>>({
     id: "country-borders",
-    data: COUNTRIES_URL,
-    stroked: true,
-    filled: false,
-    getLineColor: [r, g, b, 170],
-    lineWidthUnits: "pixels",
-    getLineWidth: 1,
-    lineWidthMinPixels: 0.6,
+    data: countryBorderRings(),
+    getPath: (d) => d.path as [number, number][],
+    getColor: [r, g, b, 170],
+    widthUnits: "pixels",
+    getWidth: 1,
+    widthMinPixels: 0.6,
     // Depth-tested (less-equal) so borders draw over the basemap at the surface
     // but the far hemisphere's borders are hidden instead of bleeding through.
     parameters: DEPTH_TEST,
-    updateTriggers: { getLineColor: [r, g, b] },
+    updateTriggers: { getColor: [r, g, b] },
   });
 }

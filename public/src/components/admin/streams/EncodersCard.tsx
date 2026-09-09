@@ -245,7 +245,7 @@ function EncoderRow({
         {prov && (
           <ResultLine ok={prov.ok}>
             {prov.ok
-              ? `${prov.created ? "created" : "updated"} “${prov.sceneName}” (${prov.width}×${prov.height})${prov.switched ? " · switched OBS to it" : ""}${prov.refreshed ? " · refreshed" : ""}`
+              ? `${prov.created ? "created" : "updated"} “${prov.sceneName}” (${prov.width}×${prov.height})${prov.switched ? " · switched OBS to it" : ""}${prov.refreshed ? " · refreshed" : ""}${describeSweep(prov)}`
               : prov.error}
           </ResultLine>
         )}
@@ -265,6 +265,21 @@ function describeService(test: ObsTestResult): string {
   }
   if (test.lastState) parts.push(`last: ${test.lastState.replace(/^OBS_WEBSOCKET_OUTPUT_/, "").toLowerCase()}`);
   return parts.length ? ` · ${parts.join(" · ")}` : "";
+}
+
+/**
+ * What the provision swept out of this OBS instance. Worth saying out loud: a
+ * browser source left over from another channel keeps running (and holding its
+ * socket + textures) even while hidden, so "3 stray sources removed" is the line
+ * that explains a sudden drop in this encoder's dropped-frame count.
+ */
+function describeSweep(prov: ProvisionResult): string {
+  const parts: string[] = [];
+  const inputs = prov.removedInputs?.length ?? 0;
+  const scenes = prov.removedScenes?.length ?? 0;
+  if (inputs) parts.push(`${inputs} stray source${inputs === 1 ? "" : "s"}`);
+  if (scenes) parts.push(`${scenes} scene${scenes === 1 ? "" : "s"}`);
+  return parts.length ? ` · swept ${parts.join(" + ")}` : "";
 }
 
 function ResultLine({ ok, children }: { ok: boolean; children: ReactNode }) {

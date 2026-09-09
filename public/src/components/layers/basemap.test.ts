@@ -1,3 +1,4 @@
+import { PathLayer } from "@deck.gl/layers";
 import { hexToRgb, basemapLayers, countriesLayer, TILE_MIN_ZOOM } from "./basemap";
 import { DEFAULT_CONTROL_STATE, type ControlState } from "@photonsurge/shared/control";
 
@@ -134,15 +135,31 @@ describe("basemapLayers", () => {
 });
 
 describe("countriesLayer", () => {
-  it("draws stroke-only borders above weather with the operator's colour", () => {
+  it("draws the borders as a PathLayer over the country rings with the operator's colour", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const l = countriesLayer(state("dark", { border: "#ff8800" })) as any;
+    expect(l).toBeInstanceOf(PathLayer);
     expect(l.props.id).toBe("country-borders");
-    expect(l.props.filled).toBe(false);
-    expect(l.props.stroked).toBe(true);
-    expect(l.props.getLineColor).toEqual([255, 136, 0, 170]);
+    expect(l.props.getColor).toEqual([255, 136, 0, 170]);
+    expect(l.props.getWidth).toBe(1);
+    expect(l.props.widthUnits).toBe("pixels");
+    expect(l.props.widthMinPixels).toBe(0.6);
+    // No GeoJsonLayer: nothing to earcut a polygons-fill sublayer for.
+    expect(l.props.filled).toBeUndefined();
+    expect(l.props.stroked).toBeUndefined();
+    const ring = { path: [[0, 0], [1, 1]], feature: {} };
+    expect(l.props.getPath(ring)).toBe(ring.path);
     // Depth-tested (less-equal) so far-side borders are hidden by the globe.
     expect(l.props.parameters.depthCompare).toBe("less-equal");
+  });
+
+  it("hands deck one page-lifetime data promise, so a rebuild never refetches or re-tessellates", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const a = countriesLayer(state("dark")) as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b = countriesLayer(state("dark", { border: "#ff8800" })) as any;
+    expect(a.props.data).toBeInstanceOf(Promise);
+    expect(b.props.data).toBe(a.props.data);
   });
 });
 

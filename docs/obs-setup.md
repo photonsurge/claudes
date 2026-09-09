@@ -24,11 +24,15 @@ actually pushes pixels to YouTube.
   browser source is torn down and rebuilt — a fresh Chromium with zero
   accumulated state, your custom CSS carried over. `OBS_HARD_PROVISION=off`
   falls back to a settings-restamp + no-cache refresh.
+- **sweeps the instance down to that one channel**: another channel's globe left
+  in this instance, or a hand-made copy of a /watch source, is removed along with
+  our leftover `PhotonSurge — <other channel>` scenes. See "Keeping one instance
+  to one channel" below.
 
 It owns the settings it stamps on that one source (URL, size, fps, visibility
 flags, audio reroute — your custom CSS and other tweaks survive). It does
-**not** touch any other scene or source, and never your encoder settings. You
-own those.
+**not** touch your encoder settings, your own scenes, or any source of yours
+that isn't a second copy of the /watch page. You own those.
 
 ---
 
@@ -211,6 +215,19 @@ instance.
   gone, page cold-started fresh on the new run's URL. A stale streaming output
   from a crashed run is stopped before the new key is set, so a relaunch can
   never keep pushing to a dead broadcast.
+
+- **One instance renders exactly one channel.** Because shutdown-on-hidden is
+  off, a browser source you can't see is still a full Chromium: its own socket
+  to the app, its own map textures, its own render loop, competing for the same
+  GPU as the scene actually on air. An instance that has been re-bound between
+  channels quietly accumulates them. So every provision — go-live and the
+  **Set up in OBS** button — now also *sweeps*: our globe sources and scenes for
+  other channels go, and so does any source of yours pointing at a `/watch` page
+  (it costs exactly as much as one of ours). Your own scenes, your own non-watch
+  sources and whatever OBS currently has on program are never removed. The admin
+  result line reports what went ("swept 2 stray sources + 1 scene"), and the
+  worker log lists them by name under `[obs]`. `OBS_PRUNE=off` in the root
+  `.env` disables the sweep for a hand-built instance you manage yourself.
 
 **Pushing the frame rate up (1080p60):** set `OBS_BROWSER_FPS=60` + worker
 restart, and in EACH OBS instance set Settings → Video FPS to 60 and raise the

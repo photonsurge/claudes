@@ -1,34 +1,10 @@
 import { GeoJsonLayer, PathLayer } from "@deck.gl/layers";
-import { COUNTRIES_URL } from "./basemap";
 import { DEPTH_TEST } from "./depth";
 import { BREATHE, type BreatheProps, type BreatheSpec } from "./breathe-extension";
 import { outlineRings, type OutlineRing } from "./outline-rings";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type CountryFeature = any;
-
-/** Lazily fetched + parsed once, indexed by ISO-3166 alpha-2 (`iso_a2`) — the
- *  same countries.geojson `basemap.ts`'s borders layer already serves straight
- *  to deck.gl as a URL (never parsed for reuse until now). Module-level cache:
- *  every Globe instance shares one fetch. */
-let cache: Promise<Map<string, CountryFeature>> | null = null;
-
-function loadCountryFeatures(): Promise<Map<string, CountryFeature>> {
-  if (!cache) {
-    cache = fetch(COUNTRIES_URL)
-      .then((r) => r.json())
-      .then((fc: { features?: CountryFeature[] }) => {
-        const byIso = new Map<string, CountryFeature>();
-        for (const f of fc.features ?? []) {
-          const iso = String(f?.properties?.iso_a2 ?? "").toUpperCase();
-          if (iso) byIso.set(iso, f);
-        }
-        return byIso;
-      })
-      .catch(() => new Map<string, CountryFeature>());
-  }
-  return cache;
-}
+// countries.geojson is fetched + parsed once per page and shared with the
+// basemap borders layer — see country-features.ts.
+import { loadCountryFeatures, type CountryFeature } from "./country-features";
 
 /** Resolve a spotlighted country's ISO-3166 alpha-2 to its boundary feature, or
  *  null while loading / on a miss. Callers poll this each render (cheap: the

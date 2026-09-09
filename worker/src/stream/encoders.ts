@@ -12,6 +12,7 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import { MAIN_SCENE_ID } from "@photonsurge/shared/control";
 import { ENV_ENCODER_ID, encoderKeyForRun, type Run } from "@photonsurge/shared/runs";
 import { decryptSecret } from "@photonsurge/shared/utill/secretbox";
+import { obsNamesFor } from "../obs/names";
 import {
   ObsUnavailableError,
   envEndpoint,
@@ -70,11 +71,6 @@ export async function watchUrlForScene(sceneId: string): Promise<string> {
   return token ? `${url}?token=${token}` : url;
 }
 
-/** Stable OBS scene/input names for a channel — shared by provision + refresh so they never drift. */
-function obsNamesFor(sceneId: string): { sceneName: string; inputName: string } {
-  return { sceneName: `PhotonSurge — ${sceneId}`, inputName: `PhotonSurge globe — ${sceneId}` };
-}
-
 /** Resolve an encoder to its OBS endpoint + the channel it publishes + its scene/input names. */
 async function resolveEncoderScene(encoderId?: string): Promise<{
   ep: ObsEndpoint;
@@ -98,17 +94,20 @@ async function resolveEncoderScene(encoderId?: string): Promise<{
  * reset (the existing browser source is torn down and rebuilt, so every run starts
  * on a fresh Chromium with zero accumulated state); `OBS_HARD_PROVISION=off` in the
  * env — or `{ hard: false }` — falls back to a settings-restamp + no-cache refresh.
+ * Either way the instance is also swept down to this one channel (other channels'
+ * globes and stray /watch sources removed — see ../obs/prune.ts), because a hidden
+ * browser source still runs a full Chromium against the same GPU.
  * Throws ObsUnavailableError if OBS is unreachable (callers treat it as best-effort
  * at go-live).
  */
 export async function provisionEncoderScene(
   encoderId?: string,
-  opts?: { hard?: boolean },
+  opts?: { hard?: boolean; prune?: boolean },
 ): Promise<ProvisionResult & { url: string; sceneId: string }> {
   const { ep, sceneId, sceneName, inputName } = await resolveEncoderScene(encoderId);
   const url = await watchUrlForScene(sceneId);
   const hard = opts?.hard ?? process.env.OBS_HARD_PROVISION !== "off";
-  const res = await provisionBrowserScene(ep, { url, sceneName, inputName, hard });
+  const res = await provisionBrowserScene(ep, { url, sceneName, inputName, hard, prune: opts?.prune });
   return { ...res, url, sceneId };
 }
 

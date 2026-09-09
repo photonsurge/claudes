@@ -18,6 +18,7 @@
 import OBSWebSocket from "obs-websocket-js";
 import { log } from "@photonsurge/shared/utill/logger";
 import { listInputNames, ourInputs, pickLiveInput, rebuildBrowserInput } from "./rebuild";
+import { pruneEnabled, pruneForeignInputs, pruneForeignScenes } from "./prune";
 
 const TAG = "obs";
 const CONNECT_TIMEOUT_MS = 4_000;
@@ -438,6 +439,8 @@ export interface ProvisionResult {
   recreated: boolean; // hard reset: existing input torn down and rebuilt (fresh CEF)
   switched: boolean; // program scene was switched to it
   refreshed: boolean; // CEF page was (re)loaded onto the current URL
+  removedInputs: string[]; // other channels' / stray /watch browser sources swept out
+  removedScenes: string[]; // our scenes for other channels, swept out
 }
 
 /**
@@ -456,17 +459,39 @@ export interface ProvisionResult {
  * ./rebuild.ts) — racing it fails with "A source already exists by that input
  * name" and leaves the scene empty. Soft mode just restamps the managed
  * settings (overlay:true preserves the rest) and presses a no-cache refresh.
+ *
+ * It also SWEEPS the instance (see ./prune.ts) down to this one channel: another
+ * channel's globe left parked here by an earlier setup is a whole extra Chromium
+ * holding a socket, textures and a render loop against the same GPU as the scene
+ * on air — hidden costs exactly as much as visible, because our sources are
+ * provisioned `shutdown:false`. Sources go first (before the fresh one is built,
+ * so we never peak at N+1 pages), scenes after the switch (never the program
+ * scene). `OBS_PRUNE=off` leaves a hand-built instance untouched.
  */
 export async function provisionBrowserScene(
   ep: ObsEndpoint,
-  opts: { url: string; sceneName: string; inputName: string; makeActive?: boolean; hard?: boolean },
+  opts: { url: string; sceneName: string; inputName: string; makeActive?: boolean; hard?: boolean; prune?: boolean },
 ): Promise<ProvisionResult> {
   const { url, sceneName, inputName: canonicalName, makeActive = true, hard = false } = opts;
+  const prune = opts.prune ?? pruneEnabled();
   return withObs(ep, async (obs) => {
     const video = await obs.call("GetVideoSettings");
     const width = Number(video.baseWidth) || 1920;
     const height = Number(video.baseHeight) || 1080;
     const base = { url, width, height };
+
+    // Sweep other channels' globes (and stray /watch sources) out FIRST: each one
+    // is a live Chromium, and freeing them before the rebuild keeps peak memory at
+    // one page. Best-effort — a sweep failure must never cost us the provision.
+    const removedInputs: string[] = [];
+    if (prune) {
+      try {
+        removedInputs.push(...(await pruneForeignInputs(obs, canonicalName)));
+        if (removedInputs.length) log(TAG, `${ep.url} swept ${removedInputs.length} stray browser source(s): ${removedInputs.join(", ")}`);
+      } catch (err) {
+        log(TAG, "source sweep failed (non-fatal)", String((err as Error)?.message ?? err));
+      }
+    }
 
     const { scenes } = await obs.call("GetSceneList");
     if (!(scenes as { sceneName: string }[]).some((s) => s.sceneName === sceneName)) {
@@ -546,6 +571,18 @@ export async function provisionBrowserScene(
       switched = true;
     }
 
+    // Now that OBS is on OUR scene, the leftover scenes can go — doing this before
+    // the switch would hand OBS's program to a scene of its own choosing.
+    const removedScenes: string[] = [];
+    if (prune) {
+      try {
+        removedScenes.push(...(await pruneForeignScenes(obs, sceneName)));
+        if (removedScenes.length) log(TAG, `${ep.url} swept ${removedScenes.length} stray scene(s): ${removedScenes.join(", ")}`);
+      } catch (err) {
+        log(TAG, "scene sweep failed (non-fatal)", String((err as Error)?.message ?? err));
+      }
+    }
+
     // Force a no-cache reload so the source actually navigates to the (possibly
     // just-changed) URL and drops any stale /watch bundle — the OBS "Refresh cache
     // of current page" button, done for the operator. A just-created/recreated
@@ -562,7 +599,7 @@ export async function provisionBrowserScene(
       }
     }
 
-    return { sceneName, inputName, width, height, created, recreated, switched, refreshed };
+    return { sceneName, inputName, width, height, created, recreated, switched, refreshed, removedInputs, removedScenes };
   });
 }
 

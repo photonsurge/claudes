@@ -266,9 +266,13 @@ async function configureAndStartObs(run: Run, server: string, key: string): Prom
     // the channel's tokened /watch URL. Never fail the run on this.
     try {
       const p = await provisionEncoderScene(run.encoderId);
+      const swept =
+        p.removedInputs.length || p.removedScenes.length
+          ? ` (swept ${p.removedInputs.length} stray source(s), ${p.removedScenes.length} scene(s))`
+          : "";
       log(
         TAG,
-        `provisioned OBS scene for run ${run.id}: "${p.sceneName}" → ${p.url}${p.recreated ? " (hard reset: browser source rebuilt)" : ""}`,
+        `provisioned OBS scene for run ${run.id}: "${p.sceneName}" → ${p.url}${p.recreated ? " (hard reset: browser source rebuilt)" : ""}${swept}`,
       );
     } catch (e) {
       log(TAG, `OBS auto-provision skipped for run ${run.id}: ${String((e as Error)?.message ?? e)}`);

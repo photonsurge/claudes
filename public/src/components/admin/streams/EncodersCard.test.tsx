@@ -116,6 +116,36 @@ describe("EncodersCard", () => {
     await waitFor(() => expect(screen.getByText(/✓ created .*switched OBS to it/)).toBeInTheDocument());
   });
 
+  it("reports what the provision swept out of the instance", async () => {
+    const onProvision = jest.fn(async () => ({
+      ok: true,
+      sceneName: "PhotonSurge — wind",
+      inputName: "PhotonSurge globe — wind",
+      url: "https://io.photonsurge.uk/watch/wind?token=abc",
+      width: 1920,
+      height: 1080,
+      created: false,
+      switched: true,
+      removedInputs: ["PhotonSurge globe — main", "old globe copy"],
+      removedScenes: ["PhotonSurge — main"],
+    }));
+    render(
+      <EncodersCard
+        encoders={ENCODERS}
+        scenes={SCENES}
+        onSave={jest.fn()}
+        onDelete={jest.fn()}
+        onTest={jest.fn()}
+        onProvision={onProvision}
+        onRefresh={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Set up in OBS" })[0]);
+
+    await waitFor(() => expect(screen.getByText(/swept 2 stray sources \+ 1 scene/)).toBeInTheDocument());
+  });
+
   it("adds an encoder with the typed endpoint", () => {
     const onSave = jest.fn(async () => ({}));
     render(<EncodersCard encoders={[]} scenes={SCENES} onSave={onSave} onDelete={jest.fn()} onTest={jest.fn()} onProvision={jest.fn()} onRefresh={jest.fn()} />);

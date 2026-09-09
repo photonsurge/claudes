@@ -709,6 +709,47 @@ visual call), ticker windowing, worker label canvas, glow merge, global + nest
 particles both drawing, and the small luma/WL per-draw items
 (`_setDebugData`, `ensureDefaultProps`).
 
+**Round 20 measured** (2026-09-09 14:28, `/watch/default`, country spotlight + alerts +
+particles on air, 21 draws): busy 59.9 → **53.4 %**, rAF 26.5 → **28.9 fps**, maximum
+frame gap 833 → **233 ms**; no PolygonTesselator / `getProgramParameter` / haversine rows
+in the table. Census: every glow ring is one PathLayer entry (the `2×` polygons-fill
+rows are gone from country-glow and alerts). The first attach of the day sat on a
+DEAD `/watch/default` target for 10 s — its id changed by the next run, so an OBS
+reset had replaced the page; the profiler now lists every match, tries each with a
+timeout and can be pinned with `--target`. Per frame now: deck ~9.6 ms (draw 8.2, of
+which ~4.8 is per-draw bookkeeping across 21 draws — luma state tracker/bindings,
+deck shader-inputs merge, WL `ensureDefaultProps`+freeze 0.46), CEF pipeline ~5.2 ms
+(Layerize 1.5, Commit 1.2, PrePaint 0.6, style 0.5), labels ~0.5, GC 0.55. The window
+held no spotlight cut, so the post-fix cut cost is still unmeasured. A 60 s run
+(14:42, same page, glow on air throughout a world spin): busy **48.4 %**, 29.6 fps,
+max gap **200 ms**, heap 158 MB (57 MB fifteen minutes earlier on the same page —
+watch it). Its three longest busy stretches (321 / 307 / 266 ms) are map-type
+changes during the spin: `_initializeLayer` of the new raster stack (BitmapLayer
+`_createMesh`, WL raster `updateState`, particle `_setupTransformFeedback`) plus a
+React commit and GC — no PathTesselator anywhere (PolygonTesselator 2 ms total in
+60 s). So the glitch class is gone from a spin; the cut itself still needs a run
+with a country cut triggered from /control inside the window. Per frame over the
+60 s: deck 7.2 ms (particles 2.2, paths 1.1, solid polygons 0.75, scatter 0.7,
+lines 0.6, bitmaps ~1.2), `(program)` 6.1, labels ~1.1 on a 244-label shot, GC 0.4.
+The basemap `country-bor` was still a stroke-only GeoJsonLayer (2× row): it
+tessellated every country polygon once at page load and drew a no-op each frame.
+SHIPPED after the 60 s run: `layers/country-features.ts` fetches + parses
+countries.geojson ONCE per page (the borders layer and countryGlow used to each
+fetch the 4 MB file) and `countryBorderRings()` hands the borders PathLayer one
+page-lifetime promise as `data` (deck compares async props by identity — a fresh
+promise per rebuild would refetch and re-tessellate); `countriesLayer` is that
+PathLayer (same stroke, no polygons-fill sublayer). Effect: no world-wide earcut on
+a cold start (every OBS hard reset), one fetch instead of two, one draw fewer.
+Next target by visibility: the map-type change during a spin — the 60 s window's
+longest busy stretches (321 / 307 / 266 ms, rAF gap 200 ms) are `_initializeLayer`
+of the new raster stack (~80–100 ms: BitmapLayer `_createMesh`, WL raster
+`updateState`, particle `_setupTransformFeedback`) + a ~60 ms React commit + ~55 ms
+GC + native. Keeping every scalar raster layer mounted (hidden) so a change only
+swaps the texture, and looking at what the chrome re-renders on a map-type change,
+would take most of it. Draw-count levers left (~0.14 ms each): country glow 4 rings
+→ 1 PathLayer with a per-level breathe attribute (−3), alert wide+mid → 1 (−1),
+halo+marker pairs (−2).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
