@@ -1049,6 +1049,58 @@ re-render and the GPU-side one-offs (a 382 ms `texSubImage2D` in the barbs run
 is still unexplained — which texture, and whether it is the humidity raster's
 first upload).
 
+### Round 27 (2026-09-09) — the crawl's size, the barbs proven, the panels' scans
+
+Round 26 measured on a seismic scene (night tiles, geomag, cables, faults, no
+weather rasters): busy 51.5 %, 28.3 fps, 28 stalls / 8.0 s. The ticker keys
+worked — "Text changed" fell from ~740 to 1 per cut — but the crawl itself
+was the layout: a 246 ms one at 0.6 s (1 236 SPANs added at once) and a 154 ms
+one at 58.7 s adding **6 898 SPANs** (dirty 13 820 of 14 937 layout objects).
+The seismic feed put ~1 700 lines in the crawl, rendered twice; the page ended
+at 8 305 DOM nodes and every frame's PrePaint / Layerize paid for them.
+
+**Wind barbs, checked.** "Barbs fucked again" showed the calm glyph (a circle,
+WeatherLayers' icon 0 for < ~2.5 m/s) over Tibet at midnight local. A
+differential test (`public/scripts/wl-grid-parity.cjs`) drives WeatherLayers'
+OWN composite `_updatePositions` / `_updateFeatures` and the patched versions
+side by side — the real CJS build, deck's real `_GlobeViewport`, a synthetic
+uv image — across 27 camera steps, an image swap and back, nest bounds and a
+density change: every position list and all 22 810 features (value +
+direction) identical. The patch draws what WeatherLayers draws; the circles
+are the data (or the choice of texture the barbs sample — the single-winner
+nest rule — which is the same as before the patch).
+
+Shipped (lossless):
+
+- **Windowed crawl** (`crawl-window.ts`, `Ticker.tsx`): only a segment is in
+  the DOM — a head (≥ 400 chars, ~a minute) that slides out and a tail that
+  keeps the viewport full (measured; grows if short). A segment's track is
+  keyed, so the next remounts and restarts at translateX(0) exactly where the
+  previous ended (its head is the previous tail; the feed's first entry gets
+  the 24 px lead-in and no separator, wherever it falls). Speed is the old
+  formula's px/s, estimated from the segment's px-per-character, so short feeds
+  still crawl at the floor. Still pure CSS (no rAF). A feed whose *content*
+  changes restarts at its first line (the old crawl also jumped, arbitrarily);
+  a re-derived array with the same lines — the track feed, every second —
+  keeps rolling and keeps its nodes. ~40 spans instead of 6 900.
+- **Nearby panels on the city grid** (`nearbyCities`, `nearestCities` in
+  `lib/broadcast.ts`): the event, quake-report and volcano panels filtered
+  the 15 k cities and scanned them on every render (`e.s.r` 200 ms of the
+  minute — the profiler now names it: geo.ts `nearby`). Grid-backed, with the
+  panel's own predicate applied to the answer (same set, same order), and the
+  quake report's sphere-wide "10 nearest sizeable towns" from widening rings.
+  Parity-tested.
+- Profiler: `disabled-by-default-v8.compile` in the trace, so a first-time
+  code path's lazy compile shows in a stall's renderer events instead of
+  hiding in "(program)".
+
+Still open: the slow-frame burst during the night-tile cut (100–430 ms frames
+with ~60 % "(program)" INSIDE deck's frame — GPUTask 686 ms in the window,
+Layerize 30 ms a frame; the next trace's V8.Compile events will say whether
+first-run compiles are part of it); `requestAnimationFrame` itself at 800 ms
+of the minute across ~8 per-frame callers (a shared frame hub would be
+lossless); the alert fingerprint walk (9 ms per poll).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

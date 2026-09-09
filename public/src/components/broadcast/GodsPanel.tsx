@@ -48,6 +48,8 @@ export interface GodsPanelProps {
   children: ReactNode;
   /** Corner chamfer sizes in px: [small, large]. */
   notch?: [number, number];
+  /** Translucent shell for overlays that should leave the map visible. */
+  glass?: boolean;
   padding?: string;
   width?: number | string;
   gap?: number;
@@ -61,6 +63,7 @@ export interface GodsPanelProps {
 export function GodsPanel({
   children,
   notch = [16, 26],
+  glass = false,
   padding = "22px 26px 24px",
   width,
   gap = 18,
@@ -79,10 +82,10 @@ export function GodsPanel({
       }}
     >
       <style>{KEYFRAMES}</style>
-      <div style={{ background: GODS_BORDER, clipPath: clip, padding: 1.6 }}>
+      <div style={{ background: glass ? "rgba(65, 126, 149, 0.25)" : GODS_BORDER, clipPath: clip, padding: 1.6 }}>
         <div
           style={{
-            background: GODS_FILL,
+            background: glass ? "rgba(6, 18, 28, 0.72)" : GODS_FILL,
             clipPath: clip,
             padding,
             display: "flex",

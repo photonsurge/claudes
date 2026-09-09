@@ -453,6 +453,9 @@ const TRACE_CATEGORIES = [
   "disabled-by-default-devtools.timeline.invalidationTracking",
   "disabled-by-default-devtools.timeline.stack",
   "blink.user_timing",
+  // V8 lazy compiles / code-flushing recompiles: a first-time code path on a cut
+  // otherwise hides inside "(program)".
+  "disabled-by-default-v8.compile",
 ];
 
 async function startTrace(cdp) {

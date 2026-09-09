@@ -17,7 +17,8 @@ import {
 } from "@photonsurge/shared/seismic";
 import type { City } from "../../lib/cities";
 import { formatPopulation } from "../../lib/cities";
-import { nearby, formatKm, bearingLabel } from "../../lib/geo";
+import { formatKm, bearingLabel } from "../../lib/geo";
+import { nearestCities } from "../../lib/broadcast";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 import { CityForecastStrip, useCityWeatherByIds } from "./CityForecastStrip";
 
@@ -107,12 +108,9 @@ export default function QuakeReport({
   cities: City[];
   color?: string;
 }) {
-  const near = nearby(
-    cities.filter((c) => (c.population ?? 0) >= MIN_CITY_POP || c.isCapital),
-    center,
-    cityPoint,
-    ALL_KM,
-  ).slice(0, MAX_CITIES);
+  // The MAX_CITIES nearest sizeable towns anywhere (ALL_KM spans the sphere),
+  // from the city grid instead of a sphere-wide scan per render.
+  const near = nearestCities(cities, center, MAX_CITIES, (c) => (c.population ?? 0) >= MIN_CITY_POP || !!c.isCapital);
 
   // Hang each nearby town's live now + 3-day forecast off its row (worker cache,
   // by city id — only ≥100k-pop cities are cached, so smaller ones just show

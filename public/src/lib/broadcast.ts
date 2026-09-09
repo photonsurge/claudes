@@ -47,10 +47,12 @@ export function quakeTicker(q: Quake): string {
  *  SAME subset array back for the same city list), so the crawl and the World
  *  Watch feed key one shared city grid off it instead of each rebuilding one. */
 const notableSubsets = new WeakMap<City[], City[]>();
+/** The notable rule: a real population, or a capital. */
+export const isNotableCity = (c: City): boolean => (c.population ?? 0) > 0 || !!c.isCapital;
 export function notableCities(cities: City[]): City[] {
   let subset = notableSubsets.get(cities);
   if (!subset) {
-    subset = cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital);
+    subset = cities.filter(isNotableCity);
     notableSubsets.set(cities, subset);
   }
   return subset;
@@ -247,6 +249,50 @@ export function issuedAgoLabel(iso: string | undefined, now: number = Date.now()
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m ? `${h}h ${m}m ago` : `${h}h ago`;
+}
+
+/** "45m" / "3h" / "2d" — how long a warning still has to run, or "" when it
+ *  carries no usable expiry (or has already lapsed). Pairs with
+ *  {@link issuedAgoLabel} on the live card, so a viewer joining mid-hazard is
+ *  told how long it holds rather than only when it was written. */
+export function expiresInLabel(iso: string | undefined, now: number = Date.now()): string {
+  const t = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(t)) return "";
+  const mins = Math.round((t - now) / 60_000);
+  if (mins <= 0) return "";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.round(mins / 60);
+  return hrs < 48 ? `${hrs}h` : `${Math.round(hrs / 24)}d`;
+}
+
+/** Lowercased alphanumeric words — for "does this text say anything the card
+ *  hasn't already said?" comparisons, which punctuation and case must not sway. */
+const normalizeWords = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/**
+ * The body copy for the live alert card: the source's official advice when it
+ * ships one, else its headline — but the headline only when it is a real
+ * sentence saying something the title and area don't. Most feeds' headlines just
+ * restate the event, and a card reading "Severe Heat / DETAILS / Heat warning"
+ * is worse than a short card.
+ *
+ * Null when there is nothing worth printing, which is what lets the card size
+ * itself to its content instead of holding a fixed height open around a void.
+ */
+export function alertDetail(
+  p: AlertFeature["properties"],
+  area = "",
+): { label: "OFFICIAL ADVICE" | "DETAILS"; text: string } | null {
+  const advice = (p.translatedInstruction || p.instruction || "").trim();
+  if (advice) return { label: "OFFICIAL ADVICE", text: advice };
+  const headline = (p.translatedHeadline || p.headline || "").trim();
+  if (!headline) return null;
+  const words = normalizeWords(headline).split(" ").filter(Boolean);
+  // Fewer than five words is a restated title, not a sentence worth a section.
+  if (words.length < 5) return null;
+  const known = normalizeWords(`${alertLabel(p)} ${area}`);
+  if (words.every((w) => known.includes(w))) return null;
+  return { label: "DETAILS", text: headline };
 }
 
 /** Active alerts, de-duped by area and sorted most-severe first (top N). */
@@ -488,6 +534,45 @@ const NEAREST_RINGS_KM = [350, 1400, 5600, 20100];
  * everything outside it is farther. That scan ran on every frame render with a
  * flight or ship on air (~130 ms of a minute on the profiler, round 26).
  */
+/**
+ * Cities within `radiusKm` of a point, nearest first, from the list's grid
+ * (built once per array): `nearby(cities, …)` without its scan. `keep` filters
+ * the answer — the notable rule, a population floor — and filtering the answer
+ * is the same set in the same order as filtering the list first (ties keep
+ * list order either way). The event / quake / volcano panels ran that scan on
+ * every render (round 27).
+ */
+export function nearbyCities(
+  cities: City[],
+  center: [number, number],
+  radiusKm: number,
+  keep?: (c: City) => boolean,
+): Nearby<City>[] {
+  if (!cities.length) return [];
+  const all = cityGrid(cities).nearby(center, radiusKm);
+  return keep ? all.filter((n) => keep(n.item)) : all;
+}
+
+/**
+ * The `k` nearest cities (that `keep`) with no radius bound, nearest first —
+ * `nearby(cities.filter(keep), …, 20100).slice(0, k)` without the sphere-wide
+ * scan: rings widen until at least `k` qualify, and then those are the global
+ * `k` nearest (everything outside the ring is farther than the k-th inside).
+ */
+export function nearestCities(
+  cities: City[],
+  center: [number, number],
+  k: number,
+  keep?: (c: City) => boolean,
+): Nearby<City>[] {
+  if (!cities.length || k <= 0) return [];
+  for (const r of NEAREST_RINGS_KM) {
+    const hits = nearbyCities(cities, center, r, keep);
+    if (hits.length >= k || r === NEAREST_RINGS_KM[NEAREST_RINGS_KM.length - 1]) return hits.slice(0, k);
+  }
+  return [];
+}
+
 export function nearestNotableCity(cities: City[], point: [number, number]): Nearby<City> | null {
   if (!cities.length) return null;
   const grid = notableGrid(cities);

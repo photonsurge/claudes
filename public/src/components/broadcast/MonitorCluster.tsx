@@ -220,7 +220,7 @@ const W = 250;
 /** Height of every monitor's trace box, in both CSS and the SVG viewBox math. */
 const TRACE_H = 34;
 const ROW_BOX_W = 132;
-const ROW_BOX_H = 54;
+const ROW_BOX_H = 40;
 
 function CardShell({
   theme,
@@ -453,7 +453,7 @@ function WeatherMonitorBox({
   const min = formatReading(Math.min(...values));
   const max = formatReading(Math.max(...values));
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0, padding: 8, background: GODS_TILE, border: `1px solid ${GODS_TILE_BORDER}` }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0, padding: 6, background: "rgba(7, 22, 32, 0.35)", border: `1px solid ${GODS_TILE_BORDER}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, letterSpacing: 0.6, color: INK_DIM }}>
         {spec.icon}{spec.title}
       </div>
@@ -524,15 +524,10 @@ export function LocalWeatherPanel({
   if (!monitorData && !forecast) return null;
 
   return (
-    // Solid chamfered G.O.D.S. plate, matching the GLOBAL MONITOR
-    // (tsunami/seismic) CardShell — the strip used to be bare labels + trace
-    // boxes floating on the map, so over a bright field (a hot temperature map)
-    // it washed out to near-invisible and read as "gone". The opaque navy fill
-    // keeps it legible over ANY basemap.
-    <GodsPanel notch={[10, 16]} padding="9px 14px 12px" gap={0} style={{ pointerEvents: "none" }}>
-      <div style={{ display: "flex", alignItems: "stretch", gap: 14 }}>
+    <GodsPanel glass notch={[10, 16]} padding="8px 12px" gap={0} style={{ pointerEvents: "none" }}>
+      <div style={{ display: "flex", alignItems: "stretch", gap: 10 }}>
         {monitorData && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, width: 400, minWidth: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 340, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span
                 style={{
@@ -571,7 +566,7 @@ export function LocalWeatherPanel({
           <div
             style={{
               display: "flex",
-              paddingLeft: monitorData ? 14 : 0,
+              paddingLeft: monitorData ? 10 : 0,
               borderLeft: monitorData ? `1px solid ${GODS_TILE_BORDER}` : undefined,
             }}
           >

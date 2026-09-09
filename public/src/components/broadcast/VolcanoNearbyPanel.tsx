@@ -18,7 +18,7 @@ import { SEVERITY_LABELS, SEVERITY_COLORS } from "@photonsurge/shared/alerts/sev
 import { quakeMagnitudeLabel, quakeMagnitudeColor } from "@photonsurge/shared/seismic";
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import { nearby, formatKm, bearingLabel } from "../../lib/geo";
-import { alertLabel } from "../../lib/broadcast";
+import { alertLabel, isNotableCity, nearbyCities as nearbyCityGrid } from "../../lib/broadcast";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 import { CityForecastStrip, useCityWeatherByIds } from "./CityForecastStrip";
 
@@ -41,12 +41,7 @@ function agoLabel(ms: number): string {
 }
 
 function nearbyCities(center: [number, number], cities: City[]) {
-  return nearby(
-    cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital),
-    center,
-    cityPoint,
-    CITY_RADIUS_KM,
-  ).slice(0, MAX_ROWS);
+  return nearbyCityGrid(cities, center, CITY_RADIUS_KM, isNotableCity).slice(0, MAX_ROWS);
 }
 function nearbyQuakes(center: [number, number], quakes: Quake[]) {
   return nearby(quakes, center, quakePoint, QUAKE_RADIUS_KM).slice(0, MAX_ROWS);

@@ -1,8 +1,10 @@
-import { nearest } from "./geo";
+import { nearby, nearest } from "./geo";
 import {
   quakeTicker,
   alertTicker,
   nearestNotableCity,
+  nearbyCities,
+  nearestCities,
   notableCities,
   trackTicker,
   volcanoTicker,
@@ -12,6 +14,8 @@ import {
   sortedAlerts,
   freshAlerts,
   issuedAgoLabel,
+  expiresInLabel,
+  alertDetail,
   topAlerts,
   topAlert,
   alertBannerText,
@@ -260,6 +264,47 @@ describe("issuedAgoLabel", () => {
   it("returns empty for a missing/unparseable timestamp", () => {
     expect(issuedAgoLabel(undefined, NOW)).toBe("");
     expect(issuedAgoLabel("not-a-date", NOW)).toBe("");
+  });
+});
+
+describe("expiresInLabel", () => {
+  const NOW = Date.parse("2026-07-10T12:00:00Z");
+  const inMins = (m: number) => new Date(NOW + m * 60_000).toISOString();
+  it("formats minutes, hours and days", () => {
+    expect(expiresInLabel(inMins(45), NOW)).toBe("45m");
+    expect(expiresInLabel(inMins(180), NOW)).toBe("3h");
+    expect(expiresInLabel(inMins(60 * 72), NOW)).toBe("3d");
+  });
+  it("returns empty for a lapsed, missing or unparseable expiry", () => {
+    expect(expiresInLabel(inMins(-5), NOW)).toBe("");
+    expect(expiresInLabel(undefined, NOW)).toBe("");
+    expect(expiresInLabel("not-a-date", NOW)).toBe("");
+  });
+});
+
+describe("alertDetail", () => {
+  it("prefers the source's advice, translated where there is a translation", () => {
+    expect(alertDetail(alert(3, { instruction: "Move to higher ground." }).properties))
+      .toEqual({ label: "OFFICIAL ADVICE", text: "Move to higher ground." });
+    expect(
+      alertDetail(alert(3, { instruction: "Nach oben.", translatedInstruction: "Move up." }).properties),
+    ).toEqual({ label: "OFFICIAL ADVICE", text: "Move up." });
+  });
+
+  it("falls back to a headline that adds something the card has not said", () => {
+    const p = alert(3, { headline: "Waves of up to four metres expected along the coast" }).properties;
+    expect(alertDetail(p, "Fiji Region")).toEqual({
+      label: "DETAILS",
+      text: "Waves of up to four metres expected along the coast",
+    });
+  });
+
+  it("prints nothing when the alert carries no usable body copy", () => {
+    // A headline restating the title/area, a too-short one, and none at all —
+    // each leaves the card to shrink rather than opening an empty section.
+    expect(alertDetail(alert(3, { headline: "TSUNAMI WATCH — FIJI REGION" }).properties, "Fiji Region")).toBeNull();
+    expect(alertDetail(alert(3, { headline: "Tsunami watch" }).properties, "Fiji Region")).toBeNull();
+    expect(alertDetail(alert(3).properties, "Fiji Region")).toBeNull();
   });
 });
 
@@ -769,5 +814,49 @@ describe("nearestNotableCity", () => {
     expect(nearestNotableCity(few, [0, 0])?.item.id).toBe("twinA");
     expect(nearestNotableCity([], [0, 0])).toBeNull();
     expect(nearestNotableCity([few[3]], [0, 0])).toBeNull();
+  });
+});
+
+describe("nearbyCities / nearestCities (grid-backed)", () => {
+  let seed = 23;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const cities = Array.from({ length: 800 }, (_, i) => ({
+    id: `c${i}`,
+    name: `City ${i}`,
+    lng: -180 + rnd() * 360,
+    lat: -90 + rnd() * 180,
+    cc: "FR",
+    population: i % 4 === 0 ? 0 : (i % 7) * 20_000,
+    isCapital: i % 90 === 0,
+  })) as City[];
+  const pt = (c: City): [number, number] => [c.lng, c.lat];
+  const sizeable = (c: City) => (c.population ?? 0) >= 50_000 || !!c.isCapital;
+  const centres: [number, number][] = [[0, 51.5], [-140, -50], [179.9, 3], [20, 88], [120, 15]];
+
+  it("nearbyCities equals nearby() over the filtered list, in order", () => {
+    for (const c of centres) {
+      for (const r of [300, 1500]) {
+        const expected = nearby(cities.filter(sizeable), c, pt, r);
+        const got = nearbyCities(cities, c, r, sizeable);
+        expect(got.map((n) => n.item.id)).toEqual(expected.map((n) => n.item.id));
+        expect(got.map((n) => n.distanceKm)).toEqual(expected.map((n) => n.distanceKm));
+      }
+      expect(nearbyCities(cities, c, 500).map((n) => n.item.id)).toEqual(nearby(cities, c, pt, 500).map((n) => n.item.id));
+    }
+    expect(nearbyCities([], [0, 0], 500)).toEqual([]);
+  });
+
+  it("nearestCities equals the sphere-wide scan's first k", () => {
+    for (const c of centres) {
+      for (const k of [1, 10, 40]) {
+        const expected = nearby(cities.filter(sizeable), c, pt, 20_100).slice(0, k);
+        const got = nearestCities(cities, c, k, sizeable);
+        expect(got.map((n) => n.item.id)).toEqual(expected.map((n) => n.item.id));
+      }
+    }
+    // Sparse list: rings must widen past the first ones to fill k.
+    const few = cities.slice(0, 12);
+    expect(nearestCities(few, [0, 0], 5).map((n) => n.item.id)).toEqual(nearby(few, [0, 0], pt, 20_100).slice(0, 5).map((n) => n.item.id));
+    expect(nearestCities(cities, [0, 0], 0)).toEqual([]);
   });
 });

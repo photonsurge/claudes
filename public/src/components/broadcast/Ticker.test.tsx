@@ -2,7 +2,7 @@
  * Ticker — the crawl band follows the theme's tickerBg/tickerText tokens, the
  * title chip rides the accent, and the chip text stays white regardless.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import Ticker, { entryKeys } from "./Ticker";
 import { DEFAULT_THEME } from "./config";
 
@@ -14,14 +14,33 @@ describe("Ticker", () => {
     tickerText: "#445566",
   };
 
-  it("keeps an entry's DOM node when the feed changes around it (stable keys)", () => {
+  it("keeps the crawl's DOM when the feed is re-derived with the same lines, restarts on new content", () => {
     const { rerender } = render(<Ticker title="T" items={["ONE", "TWO"]} edge="top" theme={themed} />);
     const before = screen.getAllByText("TWO")[0];
-    rerender(<Ticker title="T" items={["ZERO", "ONE", "TWO", "TWO"]} edge="top" theme={themed} />);
+    // The track feed hands the ticker a fresh array every second: same lines, same nodes.
+    rerender(<Ticker title="T" items={["ONE", "TWO"]} edge="top" theme={themed} />);
     expect(screen.getAllByText("TWO")[0]).toBe(before);
+    // New content: the crawl restarts from the feed's first entry.
+    rerender(<Ticker title="T" items={["ZERO", "ONE", "TWO", "TWO"]} edge="top" theme={themed} />);
     expect(screen.getAllByText("ZERO").length).toBeGreaterThan(0);
+    const track = screen.getAllByText("ZERO")[0].closest("div")!;
+    expect(track.textContent!.startsWith("ZERO")).toBe(true);
     // Keys are the text; repeats (a sponsor line twice, say) get a suffix.
     expect(entryKeys(["A", "B", "A", { text: "A", ad: true }])).toEqual(["A", "B", "A#1", "A#2"]);
+  });
+
+  it("renders a window of a long feed, and advances when the head has scrolled out", () => {
+    const items = Array.from({ length: 3000 }, (_, i) => `LINE ${i} OF THE LONG FEED TONIGHT`);
+    render(<Ticker title="T" items={items} edge="top" theme={themed} />);
+    const spans = document.querySelectorAll("span").length;
+    expect(spans).toBeLessThan(120); // not 3000 × 2 × 2
+    expect(screen.getAllByText("LINE 0 OF THE LONG FEED TONIGHT").length).toBe(1);
+    expect(screen.queryByText("LINE 200 OF THE LONG FEED TONIGHT")).toBeNull();
+    const track = screen.getByText("LINE 0 OF THE LONG FEED TONIGHT").closest("div")!;
+    fireEvent.animationEnd(track);
+    // The next segment starts where the previous tail began.
+    expect(screen.queryByText("LINE 0 OF THE LONG FEED TONIGHT")).toBeNull();
+    expect(screen.getAllByText(/^LINE \d+ OF THE LONG FEED TONIGHT$/).length).toBeGreaterThan(0);
   });
 
   it("themes the band background and crawl ink", () => {

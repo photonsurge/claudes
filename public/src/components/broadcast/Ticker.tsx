@@ -2,46 +2,50 @@
 
 /**
  * A broadcast crawl: an optional title chip pinned to the left and the live feed
- * scrolling seamlessly beside it. The content is rendered twice and the track
- * slides by exactly half its width, so the loop is gapless; speed is derived
- * from content length so a short feed doesn't whip past. Pure CSS animation —
- * no rAF.
+ * scrolling seamlessly beside it. Only a window of the feed is in the DOM at a
+ * time (crawl-window.ts): a head that slides out over the segment and a tail
+ * that keeps the viewport full, the next segment starting where this one
+ * ended, so the loop is gapless; speed is derived from content length so a
+ * short feed doesn't whip past. Pure CSS animation — no rAF.
  *
  * Entries are plain strings, or `{ text, ad: true }` sponsored mentions (see
  * lib/broadcast's weaveSponsors) rendered in the accent ink behind a small AD
  * tag — clearly sponsor, never disguised as a feed line.
  */
-import { Fragment } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState, type AnimationEvent } from "react";
 import type { TickerEntry } from "../../lib/broadcast";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import {
+  charsOf,
+  crawlWindow,
+  cycleSeconds,
+  entryText,
+  HEAD_CHARS,
+  MAX_TAIL_CHARS,
+  nextStart,
+  SEPARATOR,
+  STANDBY,
+  TAIL_CHARS,
+  TAIL_GROWTH,
+  windowKeys,
+  type WindowEntry,
+} from "./crawl-window";
 
-const SEPARATOR = "❯";
-const STANDBY = "STANDING BY · AWAITING LIVE FEED";
+/** Exported for tests: the old per-entry keys, now over a rendered window part. */
+export const entryKeys = (entries: TickerEntry[]): string[] => windowKeys(entries.map((entry, index) => ({ entry, index })));
 
-const entryText = (e: TickerEntry): string => (typeof e === "string" ? e : e.text);
-
-/** Stable keys — an entry's text, a repeat suffixed — so a feed change adds and
- *  removes only the changed entries' nodes. Index keys made every cut rewrite
- *  the text of every span after the first change: ~740 "text changed"
- *  invalidations and a ~270 ms full-page layout on the profiler (round 26). */
-export function entryKeys(entries: TickerEntry[]): string[] {
-  const seen = new Map<string, number>();
-  return entries.map((e) => {
-    const text = entryText(e);
-    const n = seen.get(text) ?? 0;
-    seen.set(text, n + 1);
-    return n ? `${text}#${n}` : text;
-  });
-}
-
-/** One copy of the crawl content — items with separators between them. */
-function CrawlContent({ entries, theme }: { entries: TickerEntry[]; theme: BroadcastTheme }) {
-  const keys = entryKeys(entries);
+/** One part of the crawl — entries with a separator before each but the feed's first. */
+function CrawlContent({ part, theme }: { part: WindowEntry[]; theme: BroadcastTheme }) {
+  const keys = windowKeys(part);
   return (
-    <span style={{ paddingLeft: 24 }}>
-      {entries.map((e, i) => (
+    <span>
+      {part.map(({ entry: e, index }, i) => (
         <Fragment key={keys[i]}>
-          {i > 0 && <span style={{ padding: "0 20px", opacity: 0.7 }}>{SEPARATOR}</span>}
+          {index === 0 ? (
+            <span style={{ display: "inline-block", width: 24 }} />
+          ) : (
+            <span style={{ padding: "0 20px", opacity: 0.7 }}>{SEPARATOR}</span>
+          )}
           {typeof e === "string" ? (
             <span>{e}</span>
           ) : (
@@ -67,6 +71,12 @@ function CrawlContent({ entries, theme }: { entries: TickerEntry[]; theme: Broad
       ))}
     </span>
   );
+}
+
+/** The crawl's motion for one segment: how far the track slides and how long it takes. */
+interface Motion {
+  dist: number;
+  dur: number;
 }
 
 export default function Ticker({
@@ -101,11 +111,60 @@ export default function Ticker({
   contentInset?: number;
   theme?: BroadcastTheme;
 }) {
-  const entries: TickerEntry[] = items.length ? items : [STANDBY];
-  const line = entries.map(entryText).join(`     ${SEPARATOR}     `);
-  // Seconds for one full cycle — ~7 chars/sec, floored so short feeds still move.
-  const dur = Math.max(24, line.length * 0.16);
+  const entries: TickerEntry[] = useMemo(() => (items.length ? items : [STANDBY]), [items]);
   const fontSize = compact ? 10 : 12;
+
+  // Windowed crawl (crawl-window.ts): only the current segment is in the DOM.
+  // A segment is keyed so its track remounts and its animation restarts from
+  // translateX(0) — exactly where the previous segment ended, since its head
+  // is the previous tail. A feed whose CONTENT changed restarts from its first
+  // entry; a new array with the same lines (the track feed re-derives ~1×/s)
+  // keeps rolling.
+  const [seg, setSeg] = useState({ start: 0, id: 0 });
+  const [tailChars, setTailChars] = useState(TAIL_CHARS);
+  const feedKey = useMemo(() => entries.map(entryText).join("\u0001"), [entries]);
+  const lastKey = useRef(feedKey);
+  if (lastKey.current !== feedKey) {
+    lastKey.current = feedKey;
+    setSeg((s) => ({ start: 0, id: s.id + 1 }));
+  }
+  const window = useMemo(() => crawlWindow(entries, seg.start, HEAD_CHARS, tailChars), [entries, seg.start, tailChars]);
+  const [motion, setMotion] = useState<Motion | null>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLSpanElement>(null);
+
+  useLayoutEffect(() => {
+    const head = headRef.current;
+    const track = trackRef.current;
+    const viewport = viewportRef.current;
+    if (!head || !track || !viewport) return;
+    const dist = head.getBoundingClientRect().width;
+    const total = track.getBoundingClientRect().width;
+    if (!(dist > 0)) {
+      setMotion(null); // no layout (jsdom): a static crawl
+      return;
+    }
+    // The tail must still fill the viewport once the head has scrolled out.
+    if (total - dist < viewport.clientWidth + 40 && tailChars < MAX_TAIL_CHARS) {
+      setTailChars((t) => Math.min(MAX_TAIL_CHARS, Math.ceil(t * TAIL_GROWTH)));
+      return;
+    }
+    // The old whole-crawl speed: one feed width per cycleSeconds. Its width is
+    // estimated from this segment's px-per-character, so px/s stays constant
+    // across segments and matches what the two-copy crawl did.
+    const headChars = charsOf(window.head.map((e) => e.entry));
+    const pxPerChar = dist / Math.max(1, headChars);
+    const speed = (pxPerChar * charsOf(entries)) / cycleSeconds(entries);
+    const dur = dist / speed;
+    setMotion((m) => (m && m.dist === dist && m.dur === dur ? m : { dist, dur }));
+  }, [seg.id, tailChars, window, entries]);
+
+  const onAnimationEnd = (e: AnimationEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return;
+    setSeg((s) => ({ start: nextStart(s.start, window, entries.length), id: s.id + 1 }));
+  };
+  const animationName = `bcast-crawl-${seg.id}`;
 
   return (
     <div
@@ -131,7 +190,7 @@ export default function Ticker({
         pointerEvents: "none",
       }}
     >
-      <style>{"@keyframes bcast-crawl{from{transform:translateX(0)}to{transform:translateX(-50%)}}"}</style>
+      <style>{`@keyframes ${animationName}{from{transform:translateX(0)}to{transform:translateX(${-(motion?.dist ?? 0)}px)}}`}</style>
       {/* Title chip (optional) */}
       {title ? (
         <div
@@ -158,6 +217,7 @@ export default function Ticker({
       ) : null}
       {/* Crawl */}
       <div
+        ref={viewportRef}
         style={{
           position: "relative",
           flex: 1,
@@ -167,6 +227,9 @@ export default function Ticker({
         }}
       >
         <div
+          key={seg.id}
+          ref={trackRef}
+          onAnimationEnd={onAnimationEnd}
           style={{
             position: "absolute",
             top: 0,
@@ -174,7 +237,7 @@ export default function Ticker({
             alignItems: "center",
             height: "100%",
             whiteSpace: "nowrap",
-            animation: `bcast-crawl ${dur}s linear infinite`,
+            animation: motion ? `${animationName} ${motion.dur}s linear forwards` : undefined,
             // Its own compositor layer: OBS's CEF ticks CSS animations on the
             // main thread, and without a layer each step repaints + relayerizes
             // the page (docs/watch-perf-plan.md, round 10).
@@ -184,8 +247,10 @@ export default function Ticker({
             letterSpacing: 0.6,
           }}
         >
-          <CrawlContent entries={entries} theme={theme} />
-          <CrawlContent entries={entries} theme={theme} />
+          <span ref={headRef}>
+            <CrawlContent part={window.head} theme={theme} />
+          </span>
+          <CrawlContent part={window.tail} theme={theme} />
         </div>
       </div>
     </div>

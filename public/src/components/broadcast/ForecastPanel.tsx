@@ -259,7 +259,7 @@ export default function ForecastPanel({
         </div>
         {days.length ? (
           <div style={{ display: "flex", flexDirection: "row", gap: monitor ? 6 : 5 }}>
-            {days.map((d) => (
+            {(monitor ? days.slice(0, 3) : days).map((d) => (
               <DayCard key={d.date} day={d} theme={theme} compact fill={!monitor} />
             ))}
           </div>

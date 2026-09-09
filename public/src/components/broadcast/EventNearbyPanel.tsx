@@ -16,6 +16,7 @@ import type { City } from "../../lib/cities";
 import { formatPopulation } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
 import { nearby, formatKm } from "../../lib/geo";
+import { isNotableCity, nearbyCities } from "../../lib/broadcast";
 import { FeaturedCityClimate, CityTempSpark } from "./CityHistory";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 
@@ -47,7 +48,6 @@ function NearbyCityRow({ city, distanceKm }: { city: City; distanceKm: number })
   );
 }
 
-const cityPoint = (c: City): [number, number] => [c.lng, c.lat];
 const camPoint = (c: Cam): [number, number] | null =>
   Number.isFinite(c.lng) && Number.isFinite(c.lat) ? [c.lng, c.lat] : null;
 
@@ -61,12 +61,7 @@ const camPoint = (c: Cam): [number, number] | null =>
  */
 export function eventNearbySlideHasContent(center: [number, number], cities: City[], cams: Cam[]): boolean {
   if (nearby(cams, center, camPoint, CAM_RADIUS_KM).length) return true;
-  const near = nearby(
-    cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital),
-    center,
-    cityPoint,
-    CITY_RADIUS_KM,
-  );
+  const near = nearbyCities(cities, center, CITY_RADIUS_KM, isNotableCity);
   if (near.length >= 2) return true;
   return near.some((n) => n.item.wikiThumb != null || n.item.wikiExtract != null);
 }
@@ -84,12 +79,7 @@ export default function EventNearbyPanel({
 }) {
   // Cities with a real population (or capitals) so tiny unnamed places don't
   // crowd out the notable ones; nearest first.
-  const near = nearby(
-    cities.filter((c) => (c.population ?? 0) > 0 || c.isCapital),
-    center,
-    cityPoint,
-    CITY_RADIUS_KM,
-  );
+  const near = nearbyCities(cities, center, CITY_RADIUS_KM, isNotableCity);
   const nearCams = nearby(cams, center, camPoint, CAM_RADIUS_KM);
 
   // Cycle the featured slot through every nearby city, nearest first, looping.

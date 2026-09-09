@@ -2,11 +2,12 @@ import { act, render, screen } from "@testing-library/react";
 import type { AlertFeature } from "../../lib/alerts";
 import LiveAlertPanel from "./LiveAlertPanel";
 
-const warning = (id: string, area: string): AlertFeature => ({
+const warning = (id: string, area: string, extra: Record<string, unknown> = {}): AlertFeature => ({
   type: "Feature", geometry: { type: "Point", coordinates: [0, 0] },
   properties: { id, source: "test", identifier: id, event: "Thunderstorms",
     hazard: "thunderstorm", severityRank: 2, areaDesc: area, sent: new Date().toISOString(),
     instruction: "Take extra care in exposed areas.",
+    ...extra,
   },
 } as AlertFeature);
 
@@ -30,4 +31,36 @@ it("gives viewers ten seconds to read each warning", () => {
   expect(screen.getByText("Alert 2 of 2")).toBeInTheDocument();
   unmount();
   jest.useRealTimers();
+});
+
+it("drops the advice section rather than holding empty space open", () => {
+  render(<LiveAlertPanel alerts={[warning("a", "Reutte", { instruction: undefined })]} />);
+  expect(screen.queryByText("OFFICIAL ADVICE")).not.toBeInTheDocument();
+  expect(screen.queryByText("DETAILS")).not.toBeInTheDocument();
+  // The card sizes to its content, so nothing pins a fixed height any more.
+  expect(screen.getByRole("region", { name: "New weather alert" }).style.height).toBe("");
+});
+
+it("falls back to a headline that says more than the title does", () => {
+  render(<LiveAlertPanel alerts={[warning("a", "Reutte", {
+    instruction: undefined,
+    headline: "Storms with damaging gusts expected through Tuesday evening",
+  })]} />);
+  expect(screen.getByText("DETAILS")).toBeInTheDocument();
+  expect(screen.getByText(/damaging gusts/)).toBeInTheDocument();
+});
+
+it("ignores a headline that only restates the warning", () => {
+  render(<LiveAlertPanel alerts={[warning("a", "Reutte", {
+    instruction: undefined, headline: "Thunderstorm warning",
+  })]} />);
+  expect(screen.queryByText("DETAILS")).not.toBeInTheDocument();
+});
+
+it("tells viewers how long the warning runs and how many it stands for", () => {
+  render(<LiveAlertPanel alerts={[warning("a", "Reutte", {
+    expires: new Date(Date.now() + 3 * 3600_000).toISOString(), memberCount: 37,
+  })]} />);
+  expect(screen.getByText(/runs 3h more/)).toBeInTheDocument();
+  expect(screen.getByText("37 WARNINGS")).toBeInTheDocument();
 });
