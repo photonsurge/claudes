@@ -177,30 +177,53 @@ export default function Ticker({
   const trackRef = useRef<HTMLDivElement>(null);
   const headRef = useRef<HTMLSpanElement>(null);
 
+  // A segment's motion is sized from its head / track / viewport widths. Those
+  // come from a ResizeObserver, which reports right after the frame's own
+  // layout, not from getBoundingClientRect in the effect: read there, in the
+  // commit that mounted the segment, the rects forced a whole-document layout
+  // of the cut's fresh DOM (30 ms) that the frame then repeated
+  // (docs/watch-perf-plan.md, round 55). Nothing is lost — the crawl starts
+  // on the same frame it would have. No ResizeObserver (jsdom): a static crawl.
   useLayoutEffect(() => {
     const head = headRef.current;
     const track = trackRef.current;
     const viewport = viewportRef.current;
-    if (!head || !track || !viewport) return;
-    const dist = head.getBoundingClientRect().width;
-    const total = track.getBoundingClientRect().width;
-    if (!(dist > 0)) {
-      setMotion(null); // no layout (jsdom): a static crawl
+    if (!head || !track || !viewport || typeof ResizeObserver !== "function") {
+      setMotion(null);
       return;
     }
-    // The tail must still fill the viewport once the head has scrolled out.
-    if (total - dist < viewport.clientWidth + 40 && tailChars < MAX_TAIL_CHARS) {
-      setTailChars((t) => Math.min(MAX_TAIL_CHARS, Math.ceil(t * TAIL_GROWTH)));
-      return;
-    }
-    // The old whole-crawl speed: one feed width per cycleSeconds. Its width is
-    // estimated from this segment's px-per-character, so px/s stays constant
-    // across segments and matches what the two-copy crawl did.
-    const headChars = charsOf(window.head.map((e) => e.entry));
-    const pxPerChar = dist / Math.max(1, headChars);
-    const speed = (pxPerChar * charsOf(seg.entries)) / cycleSeconds(seg.entries);
-    const dur = dist / speed;
-    setMotion((m) => (m && m.dist === dist && m.dur === dur ? m : { dist, dur }));
+    let dist = 0;
+    let total = 0;
+    let width = 0;
+    const size = () => {
+      if (!(dist > 0)) return;
+      // The tail must still fill the viewport once the head has scrolled out.
+      if (total - dist < width + 40 && tailChars < MAX_TAIL_CHARS) {
+        setTailChars((t) => Math.min(MAX_TAIL_CHARS, Math.ceil(t * TAIL_GROWTH)));
+        return;
+      }
+      // The old whole-crawl speed: one feed width per cycleSeconds. Its width is
+      // estimated from this segment's px-per-character, so px/s stays constant
+      // across segments and matches what the two-copy crawl did.
+      const headChars = charsOf(window.head.map((e) => e.entry));
+      const pxPerChar = dist / Math.max(1, headChars);
+      const speed = (pxPerChar * charsOf(seg.entries)) / cycleSeconds(seg.entries);
+      const dur = dist / speed;
+      setMotion((m) => (m && m.dist === dist && m.dur === dur ? m : { dist, dur }));
+    };
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        const w = e.contentRect.width;
+        if (e.target === head) dist = w;
+        else if (e.target === track) total = w;
+        else width = w;
+      }
+      size();
+    });
+    ro.observe(head);
+    ro.observe(track);
+    ro.observe(viewport);
+    return () => ro.disconnect();
   }, [seg.id, seg.entries, tailChars, window]);
 
   const onAnimationEnd = (e: AnimationEvent<HTMLDivElement>) => {

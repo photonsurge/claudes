@@ -100,15 +100,15 @@ export function mergeOnAirQuakes(
  * render. Split from the fetch hook so the merge stays pure and testable.
  */
 export function useBroadcastQuakes(enabled: boolean, minMag: number): Quake[] {
-  // Armed once shown, never disarmed: the globe keeps the quake layers mounted
-  // (hidden) across the cuts that turn them off, so the data has to survive
-  // too — a cleared list would unmount them and cost a cold re-init on the
-  // next cut that turns them on (docs/watch-perf-plan.md, round 54). The same
-  // latch as the cables / faults overlays; the on-air merge below still
-  // follows the live toggle.
-  const [armed, setArmed] = useState(enabled);
-  if (enabled && !armed) setArmed(true);
-  const live = useQuakes(armed, minMag);
+  // Always fetching, whatever the toggle says: the globe keeps the quake
+  // layers mounted (hidden) across the cuts that turn them off, and their
+  // one-time init — two shader links and the label layer's font atlas, ~90 ms
+  // — lands wherever the data first arrives. Fed from page load that is at
+  // page load, off any cut, instead of inside the first cut that shows quakes
+  // (docs/watch-perf-plan.md, rounds 54–55). The feed is the same Redis entry
+  // the World Watch panel already polls. The on-air merge below still follows
+  // the live toggle.
+  const live = useQuakes(true, minMag);
   const target = useFocusTarget();
   const areaQuakes = useFocusAreaQuakes();
   return useMemo(

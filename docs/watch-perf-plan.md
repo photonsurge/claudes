@@ -2511,6 +2511,42 @@ readable: the label-canvas rAF loop, the spin rAF, and AutoScroll's rAF —
 i.e. the last rAF callback before each frame's natural layout, not forced
 layouts. Nothing left in a cut is a forced layout.
 
+### Round 55 (2026-09-10 19:54, round 54 live, a stressed minute) — the crawl's measure, and the quake init's timing
+
+The operator deliberately pushed cuts through this one:
+
+    19:54   busy 33.3 % · 29.8 fps · gap max 133 ms · 7 stalls / 1221 ms · DOM 1110 · Layout 184× / 223 ms
+
+Five of the seven are the shape from round 54 — a preset rebuild (7–27 ms
+setup + 5–8 ms upload, the 260 ms one at 30.7 s being the dense look: 27 ms
+setup and 29 ms of GC), a raster for the new map type, a commit or two,
+nothing over 133 ms of frame gap. The other two were new and both readable
+from the saved sources:
+
+- **60.1 s · 153 ms: the crawl measuring itself inside the cut's commit.**
+  `getBoundingClientRect` 30 ms — the Ticker's layout effect reading its head
+  and track widths and the viewport's `clientWidth` in the commit that
+  mounted a segment, which forced a whole-document layout of the cut's fresh
+  DOM (294 dirty of 657); the frame then laid it out again (26 ms). The only
+  forced layout in the run, and the last one in the chrome. The widths now
+  come from a ResizeObserver on the three elements, reported right after the
+  frame's own layout — the crawl starts on the same frame it would have, and
+  the effect reads no rects at all (the same pattern as AutoScroll, round 53).
+- **16.4 s · 182 ms: the quake layers' one-time init.** The label atlas
+  (58 ms), two shader links, four layers' attributes — landing on the first
+  cut that showed quakes, because the round 54 latch armed on first show.
+  Round 54 said "at page load"; now it is: `useBroadcastQuakes` fetches from
+  mount whatever the toggle says (the feed is the Redis entry the World Watch
+  panel already polls at load), so the layers mount, and pay their init,
+  while the page is still settling.
+
+Named but left: the broadcast frame's `scopeAlertsToBbox` runs
+`alertRepPoint` over every alert's geometry in a render-time memo, ~2–4 ms
+per cut (a per-alert cache in the shared lib would remove it); Globe's hidden
+icon-sprite filter reads computed-style properties per label per render,
+~3.5 ms per cut; the label list memo ~3.7 ms. All small, all inside the
+commit, none forced.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

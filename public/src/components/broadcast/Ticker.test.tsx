@@ -2,7 +2,7 @@
  * Ticker — the crawl band follows the theme's tickerBg/tickerText tokens, the
  * title chip rides the accent, and the chip text stays white regardless.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import Ticker, { entryKeys, feedStart } from "./Ticker";
 import { DEFAULT_THEME } from "./config";
 
@@ -30,6 +30,41 @@ describe("Ticker", () => {
     expect(screen.getAllByText("ZERO").length).toBeGreaterThan(0);
     // Keys are the text; repeats (a sponsor line twice, say) get a suffix.
     expect(entryKeys(["A", "B", "A", { text: "A", ad: true }])).toEqual(["A", "B", "A#1", "A#2"]);
+  });
+
+  it("sizes the crawl from a ResizeObserver, never a forced rect read", () => {
+    // The widths arrive after the frame's own layout (round 55); the effect
+    // reads no rects itself, so a segment mounting inside a cut's commit can't
+    // force a layout of the cut's fresh DOM.
+    const observed: Element[] = [];
+    let deliver: ResizeObserverCallback | null = null;
+    const Observer = class {
+      constructor(cb: ResizeObserverCallback) {
+        deliver = cb;
+      }
+      observe(el: Element) {
+        observed.push(el);
+      }
+      unobserve() {}
+      disconnect() {}
+    };
+    const real = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = Observer as unknown as typeof ResizeObserver;
+    const rect = jest.spyOn(Element.prototype, "getBoundingClientRect");
+    try {
+      render(<Ticker items={["one", "two", "three"]} edge="bottom" />);
+      const [head, track, viewport] = observed as HTMLElement[];
+      expect(track).toBe(head.parentElement);
+      expect(viewport).toBe(track.parentElement);
+      expect(track.style.animation).toBe("");
+      const entry = (target: Element, width: number) => ({ target, contentRect: { width } }) as unknown as ResizeObserverEntry;
+      act(() => deliver!([entry(head, 900), entry(track, 2400), entry(viewport, 1200)], {} as ResizeObserver));
+      expect(track.style.animation).toMatch(/^bcast-crawl-0 [\d.]+s linear forwards$/);
+      expect(rect).not.toHaveBeenCalled();
+    } finally {
+      globalThis.ResizeObserver = real;
+      rect.mockRestore();
+    }
   });
 
   it("adopts the first real feed straight away after standby", () => {
