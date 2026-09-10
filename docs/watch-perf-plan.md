@@ -1820,6 +1820,58 @@ resolution; nothing on the client can split a synchronous upload.
 this is genuine work on a real alert change, not churn. Worth re-checking once
 the manifest fix lands, since some of those rebuilds were the churn above.
 
+### Round 42 (2026-09-10 00:36) — three confirmations in one run
+
+A fresh page load on the newest build (log: 101 lines since load, one manifest
+line, the two patch lines), on the heaviest scene of the night — 25 layers, 19
+drawn: two wind layers, temp raster + icon overlay, pressure contours, all four
+alert layers, four seismic, two volcano, cities; 216 labels on the canvas.
+
+| busy   | fps  | max gap    | stalls        | Layout       |
+|--------|------|------------|---------------|--------------|
+| 35.0 % | 29.8 | **199.9 ms** | **6 / 791 ms** | 205× / 359 ms |
+
+Lowest stall total recorded, on the busiest scene, at the 200 ms frame-gap floor.
+
+**1. Round 31 is verified live, eleven rounds after it shipped.**
+`00:32:41 [globe] deck tile bounding-volume cache active`. That line can only
+print from inside `Tileset2D.getTileIndices` returning real nodes, which only
+happens with a `TileLayer` mounted — so a tile basemap was up during the load,
+deck's private `OSMNode` was reached through the public method in the
+production bundle, the behavioural probe passed against the real class, and the
+memo engaged. Tile-selection correctness was already proved in node against the
+real classes (round 31); this was the missing half, that the patch reaches the
+class at all in the built app. It does. Nothing in the tables under the culling
+frames' names.
+
+**2. Round 41's manifest fix is live and working.** One manifest line in the
+whole run, against ten in twelve minutes before it. The weather stack is no
+longer rebuilt on every repeat `WEATHER_RUN`. `_updateCache` (luma's state
+tracker, a per-layer-update cost) fell from 566–628 ms to 150 ms in step with it.
+
+**3. The remaining stalls are all ≤ 202 ms and almost none are ours:**
+
+- 132 ms at 0.8 s — `_setupTransformFeedback` + `bufferSubData`: WeatherLayers
+  initialising its particle system on page load. Theirs, once.
+- 119 ms at 5.8 s — `getImageData` 49 ms + `Decode Image`: WeatherLayers
+  decoding the temp icon atlas on the main thread as the icon layer mounts.
+  Theirs, once per atlas (round 34 saw the same).
+- 111 ms at 29.5 s — `eo` (icomesh) + `iN` (our `wl-grid-positions` memo taking
+  a miss): the camera crossed an icosphere order boundary and one new grid was
+  built, once. Round 33 documented this as the patch working as designed.
+- 202 / 112 / 115 ms at 5.6 / 9.0 / 11.7 s — the chrome: `getBoundingClientRect`
+  31 / 19 ms, `Layout` 28 / 31 / 15 ms, `e.s.r` beside them. The ticker
+  read-back from round 40, still the one clearly-ours item, still deliberately
+  left for a daylight visual check.
+
+Steady state: `e.s.r` (`geo.ts` `nearby`) is 449 ms this run, fourth in the
+table — the busiest scene of the night has the most alerts and events to ask
+"what is near this" about. It is the largest remaining piece of JavaScript that
+is ours; 0.75 % of the minute.
+
+**The wind is unchanged:** `run=2026-09-09T18:00:00.000Z (7h ago) fhr=0` — seven
+hours of drift now.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
