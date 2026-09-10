@@ -2042,6 +2042,50 @@ request that began before the window flagged as such — so the next unnamed
 body is visible without three hours of trace archaeology. Tested offline on
 the 01:29 capture: the first row is the 68.76 MB JSON.
 
+### Round 47 (2026-09-10 02:13) — the cams fix confirmed on air; the volcano beats
+
+A capture on the round-46 build, 86 s after a reload of /watch/default
+(cloud raster + seismic + volcanoes + alerts; 15 layers drawn):
+
+    busy 37.1 % · 29.5 fps · gap p95 33.4 ms · max 300 ms
+    7 stalls / 1650 ms of 62 s · JS heap 112 MB
+
+Two confirmations from the Bottom-Up alone: `e.s.r` — `geo.ts nearby`, the
+70 000-cam distance scan, 220–450 ms of self time in every profile since
+round 20 — is gone from the top 35, so the point-scoped `/api/cams` is live;
+and `getBoundingClientRect`, 90–115 ms/min through rounds 42–46, is gone too,
+so the crawl's per-second re-measure (round 45) is as well. The new
+`## network` section shows 4.3 MB over 46 responses and nothing unnamed
+(the page-load window itself was before this capture — the reload test for
+the 68 MB body is still the operator's to run).
+
+What is left, and what each is:
+
+- 12.2 s · 391 ms — `setData` + scavenges right after `/api/alerts/blobs`
+  (1.16 MB) landed: the warning shapes re-tessellating for a CHANGED alert
+  set. The alerts hook already fingerprints its features (round 14), so this
+  was real work.
+- 41.0 / 41.4 / 41.8 s · 268 + 164 + 296 ms — a cut: particle transform
+  feedback setup, a text atlas (`measureText`), then a 161 ms React commit
+  with `setAttribute` and a major GC. That last one follows `/api/volcanoes`
+  (2.37 MB) finishing at 41.9 s. `useVolcanoes` refetched on every
+  TRACKS_UPDATED "volcanoes" beat — which the worker emits from FIVE sub-jobs
+  (snapshot, wiki enrichment, bulletin parse, USGS patch, catalog update) —
+  and handed every consumer a NEW array of the same volcanoes each time:
+  the globe markers, the ticker lines, the World Watch tally and every
+  broadcast panel keyed on `volcanoes` re-rendered for nothing. The same
+  identity-churn class as the manifest (round 41) and the alerts (round 14).
+- 54.9 s · 247 ms and 17.2 s · 127 ms — `(program)` with Layout: React
+  commits after `/api/focus` (a cut's bundle), the panel deck rebuilding.
+
+**Fix (volcanoes):** `listVolcanoes` keeps the last response BODY and, when
+the next one is byte-identical, returns the SAME array without parsing;
+the hook's setState is functional so React bails out. A changed body parses
+and replaces as before; a failed or malformed read returns the previous
+list rather than emptying the air. Five new tests. The 2.4 MB download per
+beat per source remains — the watch tree does use the heavy fields (the
+volcano facts panel's gallery and summary), so the payload is not slimmed.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
