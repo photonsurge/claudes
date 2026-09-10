@@ -2492,6 +2492,25 @@ chunk:line:col` reads a mangled frame back to code, so the app-side frames in
 the cut commits (`d@…:899:37543`, `i@…:899:58066`, `oP`) can be named next
 round without another trip to the page.
 
+#### Round 54 verified (2026-09-10 19:50, this build live, fresh page)
+
+    18:47 (r53)   busy 37.5 % · 29.7 fps · gap max 267 ms · 6 stalls / 1310 ms
+    19:50 (r54)   busy 33.8 % · 29.9 fps · gap max 200 ms · 1 stall  /  328 ms
+
+The particle setup that remains (9.7 ms + 13 ms upload, at 15.8 s) ran under
+an UPDATE of the mounted layer through the keep-alive `updateState` — a
+preset change, as designed — not a layer init. The census grew by exactly the
+hidden wind base (25 top-level / 30 with sublayers, still 11 drawn). The one
+stall is now: raster init for the new map type 26 ms, the preset rebuild
+23 ms, the alert outline's re-tessellation + attribute upload ~20 ms, four
+React commits totalling ~57 ms (the biggest, 22 ms, is mostly `removeChild`
+— the old segment's DOM going), the cut's layout 31 ms (223 fresh objects,
+0.14 ms each — the normal rate), GC ~25 ms, and ~90 ms the sampler cannot
+name. With the sources saved, the three big layouts' "after" functions were
+readable: the label-canvas rAF loop, the spin rAF, and AutoScroll's rAF —
+i.e. the last rAF callback before each frame's natural layout, not forced
+layouts. Nothing left in a cut is a forced layout.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
