@@ -342,6 +342,41 @@ export function manifestLogLine(
   return `[globe] manifest ${m.model ?? "?"} run=${m.run ?? "?"} (${ageLabel(m.run, nowMs)}) steps=${m.steps?.length ?? 0} fhr=${fhr}`;
 }
 
+/**
+ * A cheap digest of everything the globe actually renders from. Two manifests
+ * that digest the same are interchangeable.
+ *
+ * Needed because `WEATHER_RUN` fires more often than a run actually changes —
+ * the 2026-09-10 00:12 globe log shows TEN manifest replacements in twelve
+ * minutes, every one of them reporting the same `run=2026-09-09T18:00Z`. Each
+ * replacement was a fresh object, and `manifest` is a dependency of Globe's
+ * weather-layer effect, so identical data was rebuilding the whole weather
+ * stack ten times over — the same identity-churn class as round 14's
+ * `mergeControlState` and the alert overlay's `featureSetFingerprint`.
+ *
+ * Digests the per-variable texture ids rather than just `run`/`generatedAt`, so
+ * a re-bake that republishes new textures under the same run still counts as a
+ * change (~20 variables, not the ~1 000 step entries).
+ */
+export function manifestFingerprint(m: WeatherManifest | null): string {
+  if (!m) return "";
+  const parts = [m.model ?? "", m.run ?? "", m.generatedAt ?? "", String(m.steps?.length ?? 0)];
+  for (const [id, v] of Object.entries(m.variables ?? {})) {
+    parts.push(`${id}:${v?.files?.["0"] ?? ""}:${v?.nests?.length ?? 0}`);
+  }
+  return parts.join("|");
+}
+
+/** Keep `prev` when the incoming manifest renders identically — identity
+ *  stability is what stops a no-op `WEATHER_RUN` rebuilding every layer. */
+export function pickManifest(
+  prev: WeatherManifest | null,
+  next: WeatherManifest | null,
+): WeatherManifest | null {
+  if (!next) return prev;
+  return manifestFingerprint(prev) === manifestFingerprint(next) ? prev : next;
+}
+
 /** Client: fetch the current manifest (or null if no run is published). */
 export async function fetchManifest(): Promise<WeatherManifest | null> {
   const res = await fetch("/api/weather/manifest", { cache: "no-store" });

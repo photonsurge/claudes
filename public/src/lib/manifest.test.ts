@@ -1,5 +1,5 @@
 import { textureUrl } from "@photonsurge/shared/manifest";
-import { buildManifestFromRun, composeManifest, mapFreshness, ageLabel, utcLabel, type RunLike } from "./manifest";
+import { buildManifestFromRun, composeManifest, mapFreshness, ageLabel, utcLabel, type RunLike, manifestFingerprint, pickManifest } from "./manifest";
 
 const run: RunLike = {
   model: "gfs",
@@ -292,5 +292,46 @@ describe("mapFreshness / ageLabel", () => {
 
   it("returns null without a manifest", () => {
     expect(mapFreshness(null, "sst", now)).toBeNull();
+  });
+});
+
+describe("manifestFingerprint / pickManifest", () => {
+  const base = () =>
+    ({
+      model: "composite",
+      run: "2026-09-09T18:00:00.000Z",
+      generatedAt: "2026-09-09T18:40:00.000Z",
+      steps: [{}, {}, {}],
+      variables: {
+        wind: { files: { "0": "a.png" }, nests: [{}, {}] },
+        temp: { files: { "0": "b.png" } },
+      },
+    }) as never;
+
+  it("keeps the previous object when the run renders identically", () => {
+    // WEATHER_RUN fired ten times in twelve minutes for one run; each fresh
+    // object rebuilt the whole weather stack.
+    const prev = base();
+    expect(pickManifest(prev, base())).toBe(prev);
+  });
+
+  it("takes the new one when anything the globe renders from changed", () => {
+    const prev = base();
+    const newRun = { ...(base() as object), run: "2026-09-10T00:00:00.000Z" } as never;
+    expect(pickManifest(prev, newRun)).toBe(newRun);
+    // A re-bake under the SAME run republishes texture ids — still a change.
+    const rebaked = base() as unknown as { variables: Record<string, { files: Record<string, string> }> };
+    rebaked.variables.wind.files["0"] = "a2.png";
+    expect(pickManifest(prev, rebaked as never)).toBe(rebaked);
+    // And a nest appearing counts.
+    const nested = base() as unknown as { variables: Record<string, { nests?: unknown[] }> };
+    nested.variables.temp.nests = [{}];
+    expect(pickManifest(prev, nested as never)).toBe(nested);
+  });
+
+  it("never drops what is on screen for a failed fetch", () => {
+    const prev = base();
+    expect(pickManifest(prev, null)).toBe(prev);
+    expect(manifestFingerprint(null)).toBe("");
   });
 });

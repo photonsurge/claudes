@@ -1782,6 +1782,44 @@ state tracker) 566 ms, `_normalizeValue` (deck attribute normalisation) 508 ms,
 **The wind, unchanged and unexplained by anything on the render path:** every
 run still reads `run=2026-09-09T18:00Z (6h ago) fhr=0`.
 
+### Round 41 (2026-09-10) — the manifest churn the log exposed, and the upload is back
+
+The 00:11 run: 34.7 % busy, 29.5 fps, 6 stalls / 1 533 ms, and `Layout` down to
+176× / 195 ms — the lowest layout figure recorded. Two stalls carry most of it,
+and the globe log added in round 34 named a third problem nobody was looking for.
+
+**A no-op `WEATHER_RUN` was rebuilding the whole weather stack, ten times in
+twelve minutes.** The log's manifest lines are written on every change of
+`manifest` identity, and this run printed ten of them — 00:02, 00:04 ×2, 00:05,
+00:06 ×2, 00:08, 00:09, 00:10, 00:12 — *every one reporting the same*
+`run=2026-09-09T18:00:00.000Z (6h ago)`. So the socket event fires far more often
+than a run actually publishes, each one refetched and called `setManifest(m)`
+with a fresh object for identical data, and `manifest` is a dependency of Globe's
+weather-layer effect. Identical weather, rebuilt ten times.
+
+Fixed the way round 14 fixed `mergeControlState` and the alert overlay fixed its
+polls: `manifestFingerprint` + `pickManifest` (`lib/manifest.ts`, tested) keep the
+PREVIOUS object when the incoming manifest renders identically. The digest covers
+model, run, `generatedAt`, step count and each variable's hour-0 texture id plus
+nest count — so a re-bake republishing new textures under the same run still
+counts as a change, while a repeat event does not. Both watch pages use it, and
+`pickManifest(prev, null)` keeps what is on screen when a fetch fails.
+
+This is the diagnostic paying for itself twice: the texture log named the 368 ms
+upload in round 38, and the manifest line has now named a rebuild loop that no
+CPU profile would ever have shown as anything but "layer updates".
+
+**The 391 ms texture upload is back** — the 570 ms stall at 12.8 s is 68.3 %
+`texSubImage2D`. Round 39's smaller 40–72 ms uploads were a quieter scene, not a
+fix. This is one of the 38.6 MB / 36.3 MB images landing, and it stays the single
+largest stall on the page. Making it smaller is a worker-side decision about bake
+resolution; nothing on the client can split a synchronous upload.
+
+**And the alert polygon tessellation, again**: 366 ms at 18.6 s, 40.7 % `C`
+(cut-by-grid) with `v`, `ez` and `nU` under `setLayers` — round 39 established
+this is genuine work on a real alert change, not churn. Worth re-checking once
+the manifest fix lands, since some of those rebuilds were the churn above.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

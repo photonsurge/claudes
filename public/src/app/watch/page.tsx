@@ -25,7 +25,7 @@ import {
 import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../lib/socket-provider";
 import { fetchBroadcastState } from "../../lib/control";
-import { MANIFEST_POLL_MS, fetchManifest } from "../../lib/manifest";
+import { MANIFEST_POLL_MS, fetchManifest, pickManifest } from "../../lib/manifest";
 import { useStableJson } from "../../lib/use-stable";
 
 /** Stable "no up-next" so an idle director doesn't mint a fresh [] per beat. */
@@ -129,7 +129,10 @@ function WatchPageInner() {
       setState((prev) => mergeControlState(prev, patch ?? {}));
     const onRun = () =>
       fetchManifest()
-        .then((m) => m && setManifest(m))
+        // Keep the previous object when the run renders identically: WEATHER_RUN
+        // fires far more often than the data changes, and `manifest` identity
+        // drives Globe's whole weather-layer rebuild.
+        .then((m) => setManifest((prev) => pickManifest(prev, m)))
         .catch(() => {});
     const onCities = () => listCities().then((c) => (c.length ? setCities(c) : undefined));
 
