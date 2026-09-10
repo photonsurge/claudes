@@ -1,9 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import AutoScroll from "./AutoScroll";
 
-/** Keep alerts visible and scroll overflowing reports at their normal text size. */
+/**
+ * The top-right column: the live alert (header) above the WORLD REPORT deck,
+ * clipped at the ticker. It never scales and never auto-scrolls — a walking
+ * column read as the whole card drifting on air — so each deck slide is sized
+ * to fit above the ticker on its own (see HazardScreen / WorldSituationPanel).
+ */
 export default function FittedColumn({ children, header, top, right, maxHeight }: {
   children: ReactNode;
   header?: ReactNode;
@@ -18,9 +22,9 @@ export default function FittedColumn({ children, header, top, right, maxHeight }
       width: 400, maxHeight: Math.max(0, maxHeight), overflow: "hidden",
     }}>
       {header}
-      <AutoScroll speed={22} pause={3000} style={{ minHeight: 0, flex: "0 1 auto" }}>
+      <div style={{ minHeight: 0, flex: "0 1 auto", overflow: "hidden" }}>
         {children}
-      </AutoScroll>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import { charsOf, crawlWindow, cycleSeconds, entryText, GAP_CHARS, nextStart, windowKeys } from "./crawl-window";
+import { DEFAULT_READ_CPS } from "@photonsurge/shared/reading-pace";
+import { charsOf, crawlWindow, cycleSeconds, entryText, GAP_CHARS, MIN_CYCLE_S, nextStart, windowKeys } from "./crawl-window";
 
 describe("crawl window", () => {
   const feed = ["ALPHA LINE", "BRAVO LINE LONGER", "CHARLIE", "DELTA FOUR", "ECHO FIVE FIVE"];
@@ -7,8 +8,19 @@ describe("crawl window", () => {
     const line = feed.map(entryText).join("     ❯     ");
     expect(charsOf(feed)).toBe(line.length);
     expect(GAP_CHARS).toBe("     ❯     ".length);
-    expect(cycleSeconds(feed)).toBe(Math.max(24, line.length * 0.16));
-    expect(cycleSeconds(["hi"])).toBe(24);
+  });
+
+  it("runs one cycle in the feed's own read time, floored for tiny feeds", () => {
+    const chars = charsOf(feed);
+    // Long enough to read for longer than the floor: pure read time.
+    const long = Array.from({ length: 30 }, () => feed).flat();
+    expect(cycleSeconds(long, 10)).toBe(charsOf(long) / 10);
+    // A slower pace takes proportionally longer over the same feed.
+    expect(cycleSeconds(long, 5)).toBe(charsOf(long) / 5);
+    // This short feed reads in under the floor, so the floor holds.
+    expect(chars / DEFAULT_READ_CPS).toBeLessThan(MIN_CYCLE_S);
+    expect(cycleSeconds(feed)).toBe(MIN_CYCLE_S);
+    expect(cycleSeconds(["hi"])).toBe(MIN_CYCLE_S);
   });
 
   it("takes a head of at least headChars then a tail, wrapping round the feed", () => {

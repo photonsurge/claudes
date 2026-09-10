@@ -70,6 +70,7 @@ import {
   useVolcanoCams,
   useVolcanoEruptions,
   useFocusTarget,
+  useClimateFor,
 } from "../../lib/focus/focus-client";
 import { legendVariableFor, legendPaletteFor } from "../../lib/legend";
 import { formatKm } from "../../lib/geo";
@@ -85,13 +86,9 @@ import WorldReportDeck from "./WorldReportDeck";
 import KpIndexPanel from "./KpIndexPanel";
 import SpaceWeatherMeter from "./SpaceWeatherMeter";
 import {
-  SeismicMonitor,
-  TsunamiMonitor,
   LocalWeatherPanel,
 } from "./MonitorCluster";
-import SeismicStationRow from "./SeismicStationRow";
-import TideStationRow from "./TideStationRow";
-import PointHistoryPanel from "./PointHistoryPanel";
+import { buildClimateRows, hasSpark } from "./PointHistoryPanel";
 import ForecastPanel from "./ForecastPanel";
 import { mapFreshness } from "../../lib/manifest";
 import EventOverlay, { EventTrackingLabel, trackingBlockHeight } from "./EventOverlay";
@@ -722,6 +719,14 @@ export default function BroadcastFrame({
       <ForecastPanel center={null} daysOverride={tourStopWeather.days} compact theme={theme} variant="monitor" />
     ) : null;
 
+  const bottomClimate = useClimateFor(
+    onAirSegment && isTargetedEvent(onAirSegment.kind) && segmentHasLocation
+      ? onAirSegment.camera.center : null,
+  );
+  const bottomClimateRows = buildClimateRows(bottomClimate.datasets).filter(
+    (row) => hasSpark(row.points) && !new Set<string>(state.pointVarsOff).has(row.variable),
+  );
+
   // The bottom-left corner's free band for the sponsor billboard, in the deck
   // column's pre-scale design px. The corner is not a fixed hole: the deck
   // above is top-anchored and grows (Kp stack via leftDeckTop, tracking header
@@ -781,23 +786,14 @@ export default function BroadcastFrame({
         }}
       >
         {/* Targeted point events (storm/quake/aircraft/ship/volcano) get the
-            centred reticle + lower-third, with point-history on its top-right.
+            centred reticle + lower-third; history now shares the bottom panel.
             The 3-day forecast strip rides the bottom-centre monitor row (see
             forecastStrip above); the tracking-detail readout rides on top of
             the bottom-left deck (see EventTrackingLabel below). */}
         {onAirSegment && isTargetedEvent(onAirSegment.kind) ? (
           <EventOverlay
             segment={onAirSegment}
-            historyPanel={
-              segmentHasLocation ? (
-                <PointHistoryPanel
-                  center={onAirSegment.camera.center}
-                  theme={theme}
-                  compact
-                  glass
-                />
-              ) : null
-            }
+
           />
         ) : null}
 
@@ -1060,16 +1056,7 @@ export default function BroadcastFrame({
           {!off.has("syslog") && <SyslogFeed />}
         </div>
 
-        {/* Bottom-centre row: seismic monitor column, one combined local-weather
-            panel (wind/pressure/wave + 3-DAY FORECAST), then the tsunami gauge
-            column — all anchored to the same bottom edge (alignItems: flex-end
-            + column-reverse) so any of them can grow upward independently
-            without disturbing the others' baseline. The gauges row (NEARBY
-            TSUNAMI GAUGES) sits
-            closest to the bottom edge in its column; the GLOBAL MONITOR
-            tsunami card only appears above it when there's a single gauge in
-            range (it hides itself once the row has 2+, to avoid showing the
-            same gauge twice). */}
+        {/* One shared bottom panel for weather, forecast and active instruments. */}
         <div
           style={{
             position: "absolute",
@@ -1086,30 +1073,6 @@ export default function BroadcastFrame({
             transformOrigin: "bottom center",
           }}
         >
-          {!off.has("seismic") && (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column-reverse",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
-              <SeismicMonitor
-                quakes={quakes}
-                seismoStations={seismoStations}
-                seismoActive={seismoActive}
-                onAirSegment={onAirSegment}
-                regionCenter={state.camera.center}
-                theme={theme}
-              />
-              <SeismicStationRow
-                stations={seismoStations}
-                onAirSegment={onAirSegment}
-                theme={theme}
-              />
-            </div>
-          )}
           <LocalWeatherPanel
             series={pointHistorySeries}
             locationLabel={
@@ -1117,25 +1080,11 @@ export default function BroadcastFrame({
             }
             theme={theme}
             forecast={forecastStrip}
+            climateRows={bottomClimateRows}
             showMonitors={!off.has("weatherMonitors")}
+            seismicStation={!off.has("seismic") ? (seismoActive ?? seismoStations.find((station) => station.samples?.length) ?? null) : null}
+            tideStation={!off.has("tsunami") ? (tideActive ?? tideStations.find((station) => station.samples?.length) ?? null) : null}
           />
-          {!off.has("tsunami") && (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column-reverse",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
-              <TideStationRow stations={tideStations} theme={theme} />
-              <TsunamiMonitor
-                stations={tideStations}
-                active={tideActive}
-                theme={theme}
-              />
-            </div>
-          )}
         </div>
 
         {tickerOn && (

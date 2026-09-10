@@ -5,8 +5,10 @@
  * scrolling seamlessly beside it. Only a window of the feed is in the DOM at a
  * time (crawl-window.ts): a head that slides out over the segment and a tail
  * that keeps the viewport full, the next segment starting where this one
- * ended, so the loop is gapless; speed is derived from content length so a
- * short feed doesn't whip past. Pure CSS animation — no rAF.
+ * ended, so the loop is gapless. Speed is the channel's READING PACE over the
+ * feed's own length (crawl-window's cycleSeconds → shared/reading-pace), so the
+ * band always passes at a readable characters-per-second and a short feed
+ * doesn't whip past. Pure CSS animation — no rAF.
  *
  * Entries are plain strings, or `{ text, ad: true }` sponsored mentions (see
  * lib/broadcast's weaveSponsors) rendered in the accent ink behind a small AD
@@ -31,6 +33,7 @@ import {
   type WindowEntry,
 } from "./crawl-window";
 import { UI_SANS } from "../../lib/fonts";
+import { useReadPace } from "./pace-context";
 
 /** What an entry renders as: its text, and whether it is the sponsored form. */
 const entryFingerprint = (e: TickerEntry): string => (typeof e === "string" ? e : `\u0002${e.text}`);
@@ -113,6 +116,7 @@ export default function Ticker({
   offset = 0,
   contentInset = 0,
   theme = DEFAULT_THEME,
+  cps,
 }: {
   /** Title chip text; null/empty renders no chip (a bare band). */
   title?: string | null;
@@ -134,7 +138,11 @@ export default function Ticker({
    *  left edge; meant for the chip-less mode. */
   contentInset?: number;
   theme?: BroadcastTheme;
+  /** Reading pace override, characters/sec. Omitted: the channel's own
+   *  (ReadPaceContext, set from ControlState.readPaceCps). */
+  cps?: number;
 }) {
+  const pace = useReadPace(cps);
   const rawEntries: TickerEntry[] = items.length ? items : STANDBY_ENTRIES;
   // The track feed hands the ticker a fresh array about once a second, nearly
   // always with the same lines. Everything downstream keys on `entries` — the
@@ -202,12 +210,13 @@ export default function Ticker({
         setTailChars((t) => Math.min(MAX_TAIL_CHARS, Math.ceil(t * TAIL_GROWTH)));
         return;
       }
-      // The old whole-crawl speed: one feed width per cycleSeconds. Its width is
-      // estimated from this segment's px-per-character, so px/s stays constant
-      // across segments and matches what the two-copy crawl did.
+      // One feed width per cycleSeconds — the whole feed's read time at the
+      // channel's pace. Its width is estimated from this segment's
+      // px-per-character, so px/s stays constant across segments (a segment of
+      // long words moves no faster than one of short ones).
       const headChars = charsOf(window.head.map((e) => e.entry));
       const pxPerChar = dist / Math.max(1, headChars);
-      const speed = (pxPerChar * charsOf(seg.entries)) / cycleSeconds(seg.entries);
+      const speed = (pxPerChar * charsOf(seg.entries)) / cycleSeconds(seg.entries, pace);
       const dur = dist / speed;
       setMotion((m) => (m && m.dist === dist && m.dur === dur ? m : { dist, dur }));
     };
@@ -224,7 +233,7 @@ export default function Ticker({
     ro.observe(track);
     ro.observe(viewport);
     return () => ro.disconnect();
-  }, [seg.id, seg.entries, tailChars, window]);
+  }, [seg.id, seg.entries, tailChars, window, pace]);
 
   const onAnimationEnd = (e: AnimationEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return;

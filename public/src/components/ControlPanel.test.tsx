@@ -74,6 +74,12 @@ describe("ControlPanel slide toggles", () => {
     fireEvent.change(screen.getByLabelText("Slide dwell"), { target: { value: "24000" } });
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ slideHoldMs: 24000 }));
   });
+
+  it("changes the reading pace every scrolling surface runs at", () => {
+    const onChange = renderPanel();
+    fireEvent.change(screen.getByLabelText("Reading pace"), { target: { value: "10" } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ readPaceCps: 10 }));
+  });
 });
 
 describe("ControlPanel camera idle motion", () => {

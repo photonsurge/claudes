@@ -17,6 +17,7 @@ import {
 import { isHazardType, type HazardType } from "./alerts/hazard";
 import { isWidgetId, type WidgetId } from "./broadcast-widgets";
 import { isSlideId, DEFAULT_SLIDE_HOLD_MS, type SlideId } from "./broadcast-slides";
+import { clampReadCps, DEFAULT_READ_CPS } from "./reading-pace";
 import {
   isReportSlideId,
   isReportKind,
@@ -679,6 +680,14 @@ export interface ControlState {
    */
   tickerHazardsOff: HazardType[];
   /**
+   * On-air READING PACE in characters per second — the one knob every scrolling
+   * surface sizes itself from (the bottom crawl, the WORLD REPORT row marquee,
+   * the deck cards' auto-scrolling bodies). Each derives its own motion from its
+   * own content length, so this stays a reading speed rather than a px/s tuned
+   * per surface. Default 15 cps ≈ 150 wpm; see reading-pace.ts.
+   */
+  readPaceCps: number;
+  /**
    * Weather variables HIDDEN from the POINT / AREA HISTORY card (empty = show
    * all). Off-list keyed by POINT_VARS ids.
    */
@@ -781,6 +790,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   reportHazardsOff: [],
   tickerKindsOff: [],
   tickerHazardsOff: [],
+  readPaceCps: DEFAULT_READ_CPS,
   pointVarsOff: [],
   themeOverrides: {},
   about: { ...DEFAULT_ABOUT_SETTINGS },
@@ -1053,6 +1063,10 @@ function buildControlState(base: ControlState, patch: Partial<ControlState>): Co
     tickerHazardsOff: Array.isArray(patch.tickerHazardsOff)
       ? [...new Set(patch.tickerHazardsOff.filter(isHazardType))]
       : base.tickerHazardsOff ?? [],
+    readPaceCps:
+      patch.readPaceCps !== undefined
+        ? clampReadCps(patch.readPaceCps)
+        : clampReadCps(base.readPaceCps ?? DEFAULT_READ_CPS),
     pointVarsOff: Array.isArray(patch.pointVarsOff)
       ? [...new Set(patch.pointVarsOff.filter(isPointVar))]
       : base.pointVarsOff ?? [],

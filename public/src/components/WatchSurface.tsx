@@ -47,6 +47,7 @@ import LoadingScreen from "./broadcast/LoadingScreen";
 import StartCountdown from "./broadcast/StartCountdown";
 import { broadcastThemeCssVars, getBroadcastTheme } from "./broadcast/config";
 import { BroadcastThemeContext } from "./broadcast/theme-context";
+import { ReadPaceContext } from "./broadcast/pace-context";
 import { UI_SANS } from "../lib/fonts";
 
 /** One shared empty list for every "layer off" prop — a fresh `[]` per render
@@ -222,6 +223,9 @@ function WatchSurfaceBody({
 
   return (
     <BroadcastThemeContext.Provider value={theme}>
+    {/* Every scrolling surface (crawl, report marquee, card bodies) reads its
+        reading pace from here rather than a px/s constant of its own. */}
+    <ReadPaceContext.Provider value={state.readPaceCps}>
     <main
       style={{
         position: "fixed",
@@ -427,6 +431,7 @@ function WatchSurfaceBody({
         }}
       />
     </main>
+    </ReadPaceContext.Provider>
     </BroadcastThemeContext.Provider>
   );
 }

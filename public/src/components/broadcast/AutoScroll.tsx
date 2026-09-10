@@ -9,6 +9,14 @@
  * JS-driven (rAF) rather than a CSS keyframe because the travel distance is the
  * runtime overflow amount, not known ahead of time.
  *
+ * Speed is not a constant: it is derived from the CONTENT (shared/reading-pace)
+ * so the text passes the window at the channel's reading pace — a dense
+ * paragraph creeps, a short list moves on, and neither outruns the viewer. The
+ * character count comes off `textContent` (a tree read, never a layout) and the
+ * content height off the same ResizeObserver as the overflow, so it re-paces
+ * itself for free whenever the slide's body changes. `speed` still forces a
+ * fixed px/s where a caller really wants one.
+ *
  * Moves the content with a `transform` on an inner wrapper — NOT `scrollTop`.
  * Reading `scrollHeight` (or writing `scrollTop`, which must clamp against
  * current layout) forces a synchronous layout of the whole document whenever
@@ -19,12 +27,15 @@
  * content changes for free.
  */
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { scrollPxPerSec } from "@photonsurge/shared/reading-pace";
+import { useReadPace } from "./pace-context";
 
 export default function AutoScroll({
   children,
   style,
-  /** Downward travel speed, px/sec. */
-  speed = 34,
+  /** Fixed downward travel speed, px/sec. Omitted (the norm): paced from the
+   *  content's own length at the channel's reading pace. */
+  speed,
   /** Hold, in ms, at the top and bottom of the loop. */
   pause = 1600,
   /** Whether this is the on-air slide. When false the region sits pinned at the
@@ -33,15 +44,19 @@ export default function AutoScroll({
    *  the top — so a slide always loads scrolled to the top. Default true for
    *  standalone use. */
   active = true,
+  cps,
 }: {
   children: ReactNode;
   style?: CSSProperties;
   speed?: number;
   pause?: number;
   active?: boolean;
+  /** Reading-pace override, characters/sec (default: the channel's). */
+  cps?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
+  const pace = useReadPace(cps);
 
   useEffect(() => {
     const el = ref.current;
@@ -62,13 +77,19 @@ export default function AutoScroll({
     // stays pinned at the top, which is where a fresh slide starts anyway.
     let boxH = 0;
     let contentH = 0;
+    // Characters in the body — read off the DOM tree (no layout) whenever the
+    // content's box changes, which is every time the slide's body changes.
+    let chars = inner.textContent?.length ?? 0;
     const ro =
       typeof ResizeObserver === "function"
         ? new ResizeObserver((entries) => {
             for (const e of entries) {
               const height = e.contentRect.height;
               if (e.target === el) boxH = height;
-              else if (e.target === inner) contentH = height;
+              else if (e.target === inner) {
+                contentH = height;
+                chars = inner.textContent?.length ?? 0;
+              }
             }
           })
         : null;
@@ -88,6 +109,9 @@ export default function AutoScroll({
       const dt = last ? t - last : 0;
       last = t;
       const overflow = contentH - boxH;
+      // Re-derived each frame: contentH/chars only change when the body does,
+      // and this is a couple of multiplies against a rAF that is running anyway.
+      const pxPerSec = speed ?? scrollPxPerSec(contentH, chars, pace);
 
       if (overflow <= 4) {
         // Fits (or not yet laid out) — keep it pinned to the top, reset cycle.
@@ -101,7 +125,7 @@ export default function AutoScroll({
         waited += dt;
         if (waited >= pause) (waited = 0), (phase = "down");
       } else if (phase === "down") {
-        pos = Math.min(overflow, pos + (speed * dt) / 1000);
+        pos = Math.min(overflow, pos + (pxPerSec * dt) / 1000);
         write();
         if (pos >= overflow - 0.5) phase = "holdBottom";
       } else if (phase === "holdBottom") {
@@ -109,7 +133,7 @@ export default function AutoScroll({
         if (waited >= pause) (waited = 0), (phase = "up");
       } else {
         // Glide back up a touch faster than the read-down.
-        pos = Math.max(0, pos - (speed * 1.7 * dt) / 1000);
+        pos = Math.max(0, pos - (pxPerSec * 1.7 * dt) / 1000);
         write();
         if (pos <= 0.5) phase = "holdTop";
       }
@@ -122,7 +146,7 @@ export default function AutoScroll({
       cancelAnimationFrame(raf);
       ro?.disconnect();
     };
-  }, [speed, pause, active]);
+  }, [speed, pause, active, pace]);
 
   return (
     <div ref={ref} style={{ ...style, overflow: "hidden" }}>

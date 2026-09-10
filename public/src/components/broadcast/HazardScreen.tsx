@@ -17,6 +17,9 @@ import { GodsPanel, GodsPanelHeader, GodsHeadline, MONO, INK_DIM } from "./GodsP
 import { BreakdownChip, MiniBar } from "./worldStat";
 import FeedSection from "./FeedSection";
 
+/** Feed rows on a category slide — see the note at the FeedSection below. */
+export const FEED_ROWS = 4;
+
 export interface HazardContinent {
   name: string;
   count: number;
@@ -53,8 +56,8 @@ export default function HazardScreen({
     <GodsPanel
       width={400}
       notch={[14, 22]}
-      padding="18px 22px 20px"
-      gap={12}
+      padding="16px 22px 18px"
+      gap={10}
       style={{ pointerEvents: "none" }}
     >
       <GodsPanelHeader title={title} tag="LAST 24H" accent={theme.accent} />
@@ -75,7 +78,7 @@ export default function HazardScreen({
       ) : null}
 
       {continents.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           {continents.map((c) => (
             <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span
@@ -109,7 +112,10 @@ export default function HazardScreen({
         </div>
       ) : null}
 
-      <FeedSection feed={feed} theme={theme} emptyLabel={emptyFeedLabel} />
+      {/* Four rows, like the DETECTION GRID slide: with the live alert stacked
+          above, five pushed this card past the ticker and the column had to
+          scroll it as a whole — the feed marquees the rest through anyway. */}
+      <FeedSection feed={feed} theme={theme} visible={FEED_ROWS} emptyLabel={emptyFeedLabel} />
     </GodsPanel>
   );
 }

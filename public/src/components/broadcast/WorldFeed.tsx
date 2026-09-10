@@ -14,6 +14,8 @@ import type { WorldWatchItem } from "../../lib/broadcast";
 import { MONO, GODS_TILE, GODS_TILE_BORDER, INK_FAINT } from "./GodsPanel";
 import { useBroadcastTheme } from "./theme-context";
 import { HazardGlyph } from "./glyphs";
+import { feedRowMs } from "@photonsurge/shared/reading-pace";
+import { useReadPace } from "./pace-context";
 
 /** Rows shown before the list starts marqueeing (taller feeds auto-scroll). */
 export const FEED_VISIBLE = 7;
@@ -126,9 +128,19 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
 
 /** Rows the marquee keeps mounted beyond the window (one entering, one leaving). */
 const WINDOW_SLACK = 2;
-/** Marquee pace: one row scrolls past every this many ms — the same speed the
- *  old CSS loop ran at (the whole list in `items.length × 2.4 s`). */
-const MS_PER_ROW = 2400;
+/** Characters in one feed row, for pacing: its title, its sub-line and the
+ *  expiry chip, which is what a viewer actually reads as the row passes. */
+const rowChars = (item: WorldWatchItem): number =>
+  item.title.length + (item.sub?.length ?? 0) + (item.expiresIn?.length ?? 0);
+
+/** Mean row length over the feed — a feed of terse quake lines steps on faster
+ *  than one of long alert headlines. */
+function meanRowChars(items: readonly WorldWatchItem[]): number {
+  if (!items.length) return 0;
+  let n = 0;
+  for (const item of items) n += rowChars(item);
+  return n / items.length;
+}
 
 /**
  * Vertical marquee that keeps only the on-screen rows in the DOM. Nothing is
@@ -141,12 +153,21 @@ const MS_PER_ROW = 2400;
  *
  * Now: `visible + WINDOW_SLACK` rows. The sub-row motion is a compositor-only
  * transform written straight to the track element each frame (no React); the
- * window itself shifts by one row every MS_PER_ROW, which IS a React render but
+ * window itself shifts by one row every `msPerRow`, which IS a React render but
  * only of a dozen rows. Row keys carry a lap counter so a row keeps its DOM
  * identity while it slides through the window instead of being re-mounted.
+ *
+ * `msPerRow` is the time one row takes to READ at the channel's reading pace
+ * (shared/reading-pace) rather than a fixed 2.4 s, so a feed of long headlines
+ * steps more slowly than one of short ones.
  */
 function MarqueeFeed({ items, visible, viewH }: { items: WorldWatchItem[]; visible: number; viewH: number }) {
   const n = items.length;
+  const pace = useReadPace();
+  // Rounded to a tenth of a character so a feed poll that shifts the mean by a
+  // hair doesn't restart the scroll clock.
+  const avgChars = Math.round(meanRowChars(items) * 10) / 10;
+  const msPerRow = feedRowMs(avgChars, pace);
   const [start, setStart] = useState(0);
   const startRef = useRef(0);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -155,7 +176,7 @@ function MarqueeFeed({ items, visible, viewH }: { items: WorldWatchItem[]; visib
 
   useEffect(() => {
     if (typeof requestAnimationFrame !== "function") return;
-    const pxPerMs = FEED_ROW_H / MS_PER_ROW;
+    const pxPerMs = FEED_ROW_H / msPerRow;
     let raf = 0;
     const loop = (t: number) => {
       raf = requestAnimationFrame(loop);
@@ -174,7 +195,9 @@ function MarqueeFeed({ items, visible, viewH }: { items: WorldWatchItem[]; visib
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, []);
+    // A pace change (operator, or a feed whose rows got longer) restarts the
+    // clock; `originRef` survives, so the rows carry on from where they are.
+  }, [msPerRow]);
 
   const count = Math.min(n, visible + WINDOW_SLACK);
   const rows: { item: WorldWatchItem; key: string }[] = [];

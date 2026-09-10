@@ -12,6 +12,7 @@
  * Browser-only: no AudioContext is created until start().
  */
 import type { AudioMode } from "@photonsurge/shared/control";
+import { fillCrackle, softClipCurve } from "./dsp";
 
 /**
  * Pinned energy target per fixed AudioMode — centred inside each SECTION band
@@ -89,6 +90,13 @@ const EM7: Chord = { v: [59, 62, 64, 67], root: 52 };
 const PROG: Chord[] = [AM, AM, FM7, FM7, CM7, G6, DM7, EM7];
 const PENT = [69, 72, 74, 76, 79, 81, 84, 86, 88, 91]; // A-minor pentatonic, 2 oct
 
+/**
+ * Fixed trim on the summing bus feeding the limiter. Set so a full "breaks"
+ * mix (kick + bass + pads + sends) lands a few dB over the limiter threshold
+ * on hits and well under it elsewhere — see scripts/measure-audio-bed.mjs.
+ */
+const BUS_TRIM = 0.6;
+
 const BPM = 121;
 const SWING = 0.16;
 const sec16 = () => 60 / BPM / 4;
@@ -102,6 +110,7 @@ export class AuroraBed {
 
   private ctx: AudioContext | null = null;
   private master!: GainNode;
+  private bus!: GainNode;
   private analyser!: AnalyserNode;
   private energyFilter!: BiquadFilterNode;
   private padFilter!: BiquadFilterNode;
@@ -217,12 +226,7 @@ export class AuroraBed {
   private makeCrackle(): AudioBuffer {
     const ctx = this.ctx!;
     const b = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
-    const d = b.getChannelData(0);
-    for (let i = 0; i < d.length; i++) {
-      let s = (rand() * 2 - 1) * 0.012;
-      if (rand() < 0.0009) s += (rand() * 2 - 1) * (0.4 + rand() * 0.5);
-      d[i] = s;
-    }
+    fillCrackle(b.getChannelData(0), ctx.sampleRate, rand);
     return b;
   }
   private makeIR(seconds: number, decay: number): AudioBuffer {
@@ -250,19 +254,32 @@ export class AuroraBed {
     this.ctx = ctx;
     this.noiseBuf = this.fillNoise(ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate));
 
-    this.master = ctx.createGain();
-    this.master.gain.value = 0.7;
+    // Master chain: bus (fixed trim) → limiter → soft-clip ceiling → master (the
+    // operator volume) → analyser → out. The volume sits AFTER the limiter so
+    // turning it up scales an already-bounded signal instead of driving the
+    // compressor harder; the shaper is the brickwall a DynamicsCompressor (soft
+    // knee + automatic makeup gain) is not, so the output can never hard-clip.
+    this.bus = ctx.createGain();
+    this.bus.gain.value = BUS_TRIM;
     const limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -6;
-    limiter.ratio.value = 12;
-    limiter.attack.value = 0.003;
-    limiter.release.value = 0.25;
+    limiter.knee.value = 2;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.002;
+    limiter.release.value = 0.2;
+    const ceiling = ctx.createWaveShaper();
+    ceiling.curve = softClipCurve();
+    ceiling.oversample = "2x";
+    this.master = ctx.createGain();
+    this.master.gain.value = 0.7;
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 1024;
     this.analyser.smoothingTimeConstant = 0.82;
     this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
-    this.master.connect(limiter);
-    limiter.connect(this.analyser);
+    this.bus.connect(limiter);
+    limiter.connect(ceiling);
+    ceiling.connect(this.master);
+    this.master.connect(this.analyser);
     this.analyser.connect(ctx.destination);
 
     this.convolver = ctx.createConvolver();
@@ -270,7 +287,7 @@ export class AuroraBed {
     const reverbReturn = ctx.createGain();
     reverbReturn.gain.value = 0.55;
     this.convolver.connect(reverbReturn);
-    reverbReturn.connect(this.master);
+    reverbReturn.connect(this.bus);
 
     this.delay = ctx.createDelay(1.0);
     this.delay.delayTime.value = sec16() * 3;
@@ -281,7 +298,7 @@ export class AuroraBed {
     this.delay.connect(delayFb);
     delayFb.connect(this.delay);
     this.delay.connect(delayReturn);
-    delayReturn.connect(this.master);
+    delayReturn.connect(this.bus);
     this.delay.connect(this.convolver);
 
     this.musicalSum = ctx.createGain();
@@ -294,11 +311,11 @@ export class AuroraBed {
     this.energyFilter.Q.value = 0.6;
     this.musicalSum.connect(this.sidechain);
     this.sidechain.connect(this.energyFilter);
-    this.energyFilter.connect(this.master);
+    this.energyFilter.connect(this.bus);
 
     this.drumBus = ctx.createGain();
     this.drumBus.gain.value = 0.92;
-    this.drumBus.connect(this.master);
+    this.drumBus.connect(this.bus);
 
     for (const k of ["keys", "pad", "lead", "bass"]) this.groups[k] = ctx.createGain();
     for (const k of ["kick", "hat", "perc"]) {
@@ -306,7 +323,7 @@ export class AuroraBed {
       this.groups[k].connect(this.drumBus);
     }
     this.groups.atmos = ctx.createGain();
-    this.groups.atmos.connect(this.master);
+    this.groups.atmos.connect(this.bus);
     this.groups.keys.connect(this.musicalSum);
     this.groups.lead.connect(this.musicalSum);
     this.groups.bass.connect(this.musicalSum);
@@ -706,7 +723,7 @@ export class AuroraBed {
     rs.gain.value = 0.6;
     g.connect(rs);
     rs.connect(this.convolver);
-    g.connect(this.master);
+    g.connect(this.bus);
     n.start(t);
     n.stop(t + dur + 0.2);
   }

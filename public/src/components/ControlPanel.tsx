@@ -43,6 +43,12 @@ import Timeline from "./Timeline";
 import Legend from "./Legend";
 import SearchFlyTo from "./SearchFlyTo";
 import AlertHazardChips from "./AlertHazardChips";
+import {
+  clampReadCps,
+  readWpm,
+  DEFAULT_READ_CPS,
+  READ_PACE_PRESETS,
+} from "@photonsurge/shared/reading-pace";
 import { THEME_OPTIONS } from "./broadcast/config";
 
 /**
@@ -135,6 +141,24 @@ export default function ControlPanel({
                 {THEME_OPTIONS.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {/* Reading pace — every scrolling surface (bottom crawl, WORLD
+                REPORT marquee, deck card bodies) sizes itself from this, each
+                from its own content length. Same field as the channel page's
+                Reading pace card. */}
+            <Field label="Reading pace">
+              <select
+                value={clampReadCps(state.readPaceCps)}
+                onChange={(e) => patch({ readPaceCps: Number(e.target.value) })}
+                aria-label="Reading pace"
+                style={miniSelect}
+              >
+                {READ_PACE_PRESETS.map((cps) => (
+                  <option key={cps} value={cps}>
+                    {`${cps} cps · ${readWpm(cps)} wpm${cps === DEFAULT_READ_CPS ? " (default)" : ""}`}
                   </option>
                 ))}
               </select>

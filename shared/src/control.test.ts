@@ -119,6 +119,7 @@ describe("mergeControlState", () => {
       reportHazardsOff: ["fire", "fog"],
       tickerKindsOff: ["track", "ad"],
       tickerHazardsOff: ["heat"],
+      readPaceCps: 11,
       pointVarsOff: ["humidity", "pressure"],
       themeOverrides: {
         name: "ATLANTIC WIND",
@@ -354,6 +355,16 @@ describe("mergeControlState — nested identity", () => {
     expect(next.alertHazardsOff).toBe(base.alertHazardsOff);
     expect(next.satImgFeeds).toBe(base.satImgFeeds);
     expect(next.about).toBe(base.about);
+  });
+
+  it("clamps the reading pace into the operator range", () => {
+    expect(mergeControlState(base, { readPaceCps: 9 }).readPaceCps).toBe(9);
+    expect(mergeControlState(base, { readPaceCps: 400 }).readPaceCps).toBe(24);
+    expect(mergeControlState(base, { readPaceCps: 0 }).readPaceCps).toBe(DEFAULT_CONTROL_STATE.readPaceCps);
+    // A state persisted before the field existed still reads as the default.
+    expect(mergeControlState({ ...base, readPaceCps: undefined as unknown as number }, {}).readPaceCps).toBe(
+      DEFAULT_CONTROL_STATE.readPaceCps,
+    );
   });
 
   it("reuses a nested object when the patch restates the same values", () => {

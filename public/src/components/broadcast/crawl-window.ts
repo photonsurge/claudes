@@ -10,10 +10,12 @@
  * window advances by the head and the next segment starts where this one
  * ended — the tail's first entry becomes the head's, at the same pixel.
  *
- * Pure: windowing, character counts and the cycle-length formula the old
- * whole-crawl animation used (kept as the speed reference so the crawl moves
- * at the same px/s it always did).
+ * Pure: windowing, character counts and the cycle length — which is now the
+ * feed's READ TIME at the channel's reading pace (shared/reading-pace), so the
+ * crawl moves at a speed a viewer can actually keep up with whatever the feed's
+ * length, instead of a px/s constant tuned by eye.
  */
+import { crawlSeconds, DEFAULT_READ_CPS } from "@photonsurge/shared/reading-pace";
 import type { TickerEntry } from "../../lib/broadcast";
 
 export const SEPARATOR = "❯";
@@ -22,8 +24,8 @@ export const entryText = (e: TickerEntry): string => (typeof e === "string" ? e 
 
 /** The old formula joined entries with `     ❯     ` — 11 characters a gap. */
 export const GAP_CHARS = 11;
-/** ~7 chars/sec, floored so short feeds still move. */
-export const SEC_PER_CHAR = 0.16;
+/** Floor: a feed short enough to sit in the band whole would otherwise whip
+ *  round every few seconds, so a cycle never runs shorter than this. */
 export const MIN_CYCLE_S = 24;
 /** Characters of head per segment (≈ a minute of crawl) and the tail's floor. */
 export const HEAD_CHARS = 400;
@@ -52,9 +54,10 @@ export function charsOf(entries: readonly TickerEntry[]): number {
   return n + GAP_CHARS * Math.max(0, entries.length - 1);
 }
 
-/** Seconds one full cycle of the whole feed took (the speed reference). */
-export function cycleSeconds(entries: readonly TickerEntry[]): number {
-  return Math.max(MIN_CYCLE_S, charsOf(entries) * SEC_PER_CHAR);
+/** Seconds one full cycle of the whole feed takes: its read time at `cps`
+ *  characters a second, floored for tiny feeds. */
+export function cycleSeconds(entries: readonly TickerEntry[], cps: number = DEFAULT_READ_CPS): number {
+  return crawlSeconds(charsOf(entries), cps, MIN_CYCLE_S);
 }
 
 function take(entries: readonly TickerEntry[], from: number, minChars: number): WindowEntry[] {

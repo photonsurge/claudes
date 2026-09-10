@@ -23,6 +23,7 @@ import ChannelSettings from "../../../../components/admin/scenes/ChannelSettings
 import DirectorSettings from "../../../../components/admin/scenes/DirectorSettings";
 import SceneDraftProvider from "../../../../components/admin/scenes/SceneDraft";
 import SlidesSettings from "../../../../components/admin/scenes/SlidesSettings";
+import PaceSettings from "../../../../components/admin/scenes/PaceSettings";
 import ReportSettings from "../../../../components/admin/scenes/ReportSettings";
 import ThemeSettings from "../../../../components/admin/scenes/ThemeSettings";
 import TickerSettings from "../../../../components/admin/scenes/TickerSettings";
@@ -44,7 +45,7 @@ export default function ChannelSettingsPage() {
     <AdminPageShell
       title={`Channel: ${name}`}
       crumbs={[{ href: "/admin/scenes", label: "Channels" }, { label: name }]}
-      description="On-air widgets, camera motion, the bottom crawl's content, the About card, the bottom-left slide deck, the auto-director's content (slide types, countries, areas), the music bed and the channel's brand. Changes stay staged here until you press Save, then apply live to its /watch output."
+      description="On-air widgets, camera motion, the bottom crawl's content, how fast everything scrolls, the About card, the bottom-left slide deck, the auto-director's content (slide types, countries, areas), the music bed and the channel's brand. Changes stay staged here until you press Save, then apply live to its /watch output."
       maxWidth={760}
       actions={
         <>
@@ -63,6 +64,7 @@ export default function ChannelSettingsPage() {
           <CameraSettings sceneId={sceneId} />
           <ReportSettings sceneId={sceneId} />
           <TickerSettings sceneId={sceneId} />
+          <PaceSettings sceneId={sceneId} />
           <AboutCardSettings sceneId={sceneId} />
           <SlidesSettings sceneId={sceneId} />
           <DirectorSettings sceneId={sceneId} />

@@ -1,0 +1,105 @@
+#!/usr/bin/env node
+/**
+ * Drive the real AuroraBed engine (public/src/lib/audio/engine.ts) in headless
+ * Chromium and report what reaches the output: peak level, share of samples
+ * at/over full scale (= hard clipping at the sink), RMS, per-second peaks.
+ * The ear-ball tool for the master chain — run it before touching levels.
+ *
+ *   node scripts/measure-audio-bed.mjs [--mode breaks|chill|lounge|deep|minimal|auto]
+ *                                      [--secs 20] [--vol 1] [--solo atmos]
+ */
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(path.join(root, "public", "package.json"));
+const ts = require("typescript");
+const { chromium } = require("playwright");
+
+const opts = { mode: "breaks", secs: "20", vol: "1", solo: "" };
+for (let i = 2; i < process.argv.length; i += 2) opts[process.argv[i].replace(/^--/, "")] = process.argv[i + 1];
+
+const transpile = (file) =>
+  ts
+    .transpileModule(readFileSync(path.join(root, "public/src/lib/audio", file), "utf8"), {
+      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    })
+    .outputText.replace(/from "\.\/dsp"/g, 'from "./dsp.js"');
+const files = {
+  "/": {
+    type: "text/html",
+    body: '<!doctype html><script type="module">import { AuroraBed } from "./engine.js"; window.AuroraBed = AuroraBed;</script>',
+  },
+  "/engine.js": { type: "text/javascript", body: transpile("engine.ts") },
+  "/dsp.js": { type: "text/javascript", body: transpile("dsp.ts") },
+};
+
+const browser = await chromium.launch({ headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });
+const page = await browser.newPage();
+page.on("pageerror", (e) => console.error("pageerror", e.message));
+await page.route("http://bed.local/**", (route) => {
+  const f = files[new URL(route.request().url()).pathname];
+  return f ? route.fulfill({ status: 200, contentType: f.type, body: f.body }) : route.fulfill({ status: 404 });
+});
+await page.goto("http://bed.local/");
+await page.waitForFunction(() => !!window.AuroraBed);
+
+const res = await page.evaluate(
+  async ({ mode, secs, solo, vol }) => {
+    const bed = new window.AuroraBed();
+    bed.start();
+    bed.setMode(mode);
+    bed.setMasterVolume(vol);
+    if (solo) for (const s of ["keys", "pad", "lead", "bass", "kick", "hat", "perc", "atmos"]) bed.setStem(s, s === solo);
+    const ctx = bed.ctx;
+    const an = bed.analyser; // last node before ctx.destination
+    await new Promise((r) => setTimeout(r, 300));
+    const t0 = ctx.currentTime;
+    const buf = new Float32Array(an.fftSize);
+    let peak = 0, n = 0, clipped = 0, sumSq = 0;
+    const perSec = new Map();
+    await new Promise((done) => {
+      const iv = setInterval(() => {
+        an.getFloatTimeDomainData(buf);
+        const sec = Math.floor(ctx.currentTime - t0);
+        let sp = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const a = Math.abs(buf[i]);
+          if (a > peak) peak = a;
+          if (a > sp) sp = a;
+          if (a >= 0.999) clipped++;
+          sumSq += a * a;
+          n++;
+        }
+        perSec.set(sec, Math.max(perSec.get(sec) ?? 0, sp));
+        if (ctx.currentTime - t0 >= secs) {
+          clearInterval(iv);
+          done();
+        }
+      }, 10);
+    });
+    const st = bed.getState();
+    const db = (x) => +(20 * Math.log10(Math.max(x, 1e-9))).toFixed(1);
+    return {
+      state: ctx.state,
+      sampleRate: ctx.sampleRate,
+      mode,
+      vol,
+      solo: solo || null,
+      energy: +st.energy.toFixed(2),
+      section: st.section.name,
+      peakDb: db(peak),
+      clippedPct: +((clipped / n) * 100).toFixed(3),
+      rmsDb: +(10 * Math.log10(sumSq / n)).toFixed(1),
+      perSecPeakDb: [...perSec.values()].map(db),
+    };
+  },
+  { mode: opts.mode, secs: +opts.secs, solo: opts.solo, vol: +opts.vol },
+);
+await browser.close();
+console.log(JSON.stringify(res));
+console.log(
+  `${res.mode}${res.solo ? " (solo " + res.solo + ")" : ""} @ vol ${res.vol}: peak ${res.peakDb} dBFS, rms ${res.rmsDb} dB, clipped ${res.clippedPct}%`,
+);

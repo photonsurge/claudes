@@ -34,6 +34,10 @@ jest.mock("../../../../components/admin/scenes/ReportSettings", () => ({
   __esModule: true,
   default: ({ sceneId }: { sceneId: string }) => <div data-testid="report">report:{sceneId}</div>,
 }));
+jest.mock("../../../../components/admin/scenes/PaceSettings", () => ({
+  __esModule: true,
+  default: ({ sceneId }: { sceneId: string }) => <div data-testid="pace">pace:{sceneId}</div>,
+}));
 jest.mock("../../../../components/admin/scenes/TickerSettings", () => ({
   __esModule: true,
   default: ({ sceneId }: { sceneId: string }) => <div data-testid="ticker">ticker:{sceneId}</div>,
@@ -64,6 +68,7 @@ describe("ChannelSettingsPage", () => {
     // All the per-channel editors mount for this scene.
     expect(screen.getByText("camera:wind")).toBeInTheDocument();
     expect(screen.getByText("ticker:wind")).toBeInTheDocument();
+    expect(screen.getByText("pace:wind")).toBeInTheDocument();
     expect(screen.getByText("slides:wind")).toBeInTheDocument();
     expect(screen.getByText("about:wind")).toBeInTheDocument();
     expect(screen.getByText("audio:wind")).toBeInTheDocument();

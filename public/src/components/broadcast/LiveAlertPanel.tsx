@@ -37,10 +37,9 @@ const HOLD_MS = 10000;
 const ADVICE_FONT_PX = 12;
 const ADVICE_LINE_HEIGHT = 1.4;
 const ADVICE_LINES = 3;
-/** Scroll pace (px/s) and the hold at each end (ms): slow enough to read a 12px
- *  line as it passes, and a typical six-line instruction completes one pass
- *  inside HOLD_MS before the next alert cuts in. */
-const ADVICE_SCROLL_PX_S = 12;
+/** The hold at each end of the advice scroll, ms. The travel speed itself is
+ *  not set here: AutoScroll paces the advice from its own length at the
+ *  channel's reading pace, so a long instruction creeps and a short one moves. */
 const ADVICE_SCROLL_PAUSE_MS = 2000;
 
 export default function LiveAlertPanel({
@@ -129,7 +128,6 @@ export default function LiveAlertPanel({
               pinned at the top, rather than inheriting mid-scroll position. */}
           <AutoScroll
             key={top.properties.id}
-            speed={ADVICE_SCROLL_PX_S}
             pause={ADVICE_SCROLL_PAUSE_MS}
             style={{ maxHeight: Math.round(ADVICE_FONT_PX * ADVICE_LINE_HEIGHT * ADVICE_LINES) }}
           >

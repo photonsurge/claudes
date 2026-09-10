@@ -206,3 +206,33 @@ describe("WeatherMonitors", () => {
     expect(screen.getByText("3-DAY FORECAST")).toBeInTheDocument();
   });
 });
+
+it("combines active instruments with the forecast and clears missing station data", () => {
+  const seismic: SeismoStationReading = {
+    net: "IU", sta: "ANMO", loc: "00", cha: "BHZ", siteName: "Albuquerque",
+    lat: 35, lng: -106, distanceKm: 40, sampleRateHz: 40,
+    samples: [{ t: 1, v: 100 }, { t: 2, v: 105 }], latest: 105, updatedAt: 0,
+  };
+  const { rerender, container } = render(<LocalWeatherPanel series={[]} forecast={<div>3-DAY FORECAST</div>}
+    seismicStation={seismic} tideStation={abashiri} />);
+  expect(screen.getByRole("img", { name: "SEISMOGRAPH · Albuquerque" })).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "SEA LEVEL · Abashiri" })).toBeInTheDocument();
+  expect(screen.getByText("1.27 m")).toBeInTheDocument();
+  expect(screen.getByText("3-DAY FORECAST")).toBeInTheDocument();
+  rerender(<LocalWeatherPanel series={[]} tideStation={{ ...abashiri, name: "Next gauge" }} />);
+  expect(screen.queryByText("Albuquerque")).not.toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "SEA LEVEL · Next gauge" })).toBeInTheDocument();
+  rerender(<LocalWeatherPanel series={[]} tideStation={{ ...abashiri, samples: [] }} />);
+  expect(container).toBeEmptyDOMElement();
+});
+
+it("shows past-year climate inside the shared bottom panel", () => {
+  render(<LocalWeatherPanel series={[]} climateRows={[{
+    variable: "humidity", label: "HUMIDITY", color: "#199e70", units: "%",
+    points: [{ t: "2025-01-01", value: 60 }, { t: "2025-02-01", value: 57 }],
+    avg: 58.5, caption: "avg 58.5",
+  }]} />);
+  expect(screen.getByText("PAST YEAR")).toBeInTheDocument();
+  expect(screen.getByText("MONTHLY · ERA5")).toBeInTheDocument();
+  expect(screen.getByText("HUMIDITY")).toBeInTheDocument();
+});

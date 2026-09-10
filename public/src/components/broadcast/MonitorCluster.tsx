@@ -21,7 +21,7 @@ import type { TideSample } from "@photonsurge/shared/tides/types";
 import { nearby } from "../../lib/geo";
 import type { TideStationReading } from "../../lib/tides/types";
 import { historySamples, type HistorySeries } from "../../lib/history-client";
-import { formatReading } from "./PointHistoryPanel";
+import { formatReading, MiniChart, SectionTitle, usePagedSlides, type buildClimateRows } from "./PointHistoryPanel";
 import type { Quake } from "../../lib/tracks/types";
 import type { SeismoStationReading } from "../../lib/seismo/types";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
@@ -470,6 +470,31 @@ function WeatherMonitorBox({
   );
 }
 
+/** Real station traces share the weather strip without adding another row. */
+function LiveInstrument({ title, name, distance, samples, wave = false, reading }: {
+  title: string; name: string; distance: number; samples: { v: number }[];
+  wave?: boolean; reading?: string;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 5, color: INK_DIM, fontSize: 9, letterSpacing: 0.7 }}>
+        {wave ? <WaveIcon active size={11} /> : <HeartbeatIcon active size={11} />}
+        <span>{title}</span>
+        {reading && <span style={{ marginLeft: "auto", color: INK, fontFamily: MONO }}>{reading}</span>}
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "baseline", color: INK, fontSize: 10 }}>
+        <span title={name} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{name}</span>
+        <span style={{ color: INK_DIM, fontSize: 8, whiteSpace: "nowrap" }}>{Math.round(distance)} km</span>
+      </div>
+      <svg role="img" aria-label={`${title} · ${name}`} width="100%" height={30} viewBox="0 0 160 30" preserveAspectRatio="none"
+        style={{ background: "rgba(7, 22, 32, 0.35)", border: `1px solid ${GODS_TILE_BORDER}` }}>
+        <path d={wave ? realWavePath(samples, 160, 30) : realLinePath(samples, 160, 30)}
+          fill={wave ? "rgba(60,150,230,0.45)" : "none"} stroke={wave ? "#59b5ef" : "#43d9ff"} strokeWidth={1} />
+      </svg>
+    </div>
+  );
+}
+
 /**
  * Local wind, barometric pressure, and wave height, all read from the same
  * archived point-history the POINT HISTORY panel already fetches (see
@@ -483,6 +508,9 @@ export function LocalWeatherPanel({
   theme = DEFAULT_THEME,
   forecast = null,
   showMonitors = true,
+  seismicStation = null,
+  tideStation = null,
+  climateRows = [],
 }: {
   /** Archived point-history at the on-air focus — lifted once in WatchSurface
    *  (see lib/history-client's usePointHistory) so this panel and the globe's
@@ -495,7 +523,12 @@ export function LocalWeatherPanel({
   forecast?: ReactNode;
   /** Scene toggle for the archived wind/pressure/wave half of the panel. */
   showMonitors?: boolean;
+  /** Active real stations, shared with the highlighted globe markers. */
+  seismicStation?: SeismoStationReading | null;
+  tideStation?: TideStationReading | null;
+  climateRows?: ReturnType<typeof buildClimateRows>;
 }) {
+  const climateSlide = usePagedSlides(climateRows, 1, 15000);
   const location = formatMonitorLocation(series, locationLabel);
   const computed = WEATHER_MONITORS.map((spec) => {
     const samples = historySamples(series, spec.variable);
@@ -521,7 +554,9 @@ export function LocalWeatherPanel({
   // Render only the current fetch, matching the weather-point marker.
   const monitorData = showMonitors && computed.length > 0
     ? { visible: computed.slice(page * 3, page * 3 + 3), location } : null;
-  if (!monitorData && !forecast) return null;
+  const seismic = seismicStation?.samples?.length ? seismicStation : null;
+  const tide = tideStation?.samples?.length ? tideStation : null;
+  if (!monitorData && !forecast && !seismic && !tide && !climateRows.length) return null;
 
   return (
     <GodsPanel glass notch={[10, 16]} padding="8px 12px" gap={0} style={{ pointerEvents: "none" }}>
@@ -571,6 +606,27 @@ export function LocalWeatherPanel({
             }}
           >
             {forecast}
+          </div>
+        )}
+        {climateRows.length > 0 && (
+          <div style={{ width: 170, flexShrink: 0, paddingLeft: 10, borderLeft: `1px solid ${GODS_TILE_BORDER}`,
+            display: "flex", flexDirection: "column", gap: 8 }}>
+            <SectionTitle title="PAST YEAR" tag="MONTHLY · ERA5" accent={theme.accent}
+              page={climateSlide.page} pageCount={climateSlide.pageCount} />
+            {climateSlide.visible.map((row) => <MiniChart key={row.variable}
+              label={row.label} color={row.color} units={row.units} points={row.points}
+              avg={row.avg} caption={row.caption} height={40} />)}
+          </div>
+        )}
+        {(seismic || tide) && (
+          <div style={{ width: 170, flexShrink: 0, display: "flex", flexDirection: "column", gap: 8,
+            paddingLeft: monitorData || forecast ? 10 : 0,
+            borderLeft: monitorData || forecast ? `1px solid ${GODS_TILE_BORDER}` : undefined }}>
+            <div style={{ color: INK, fontSize: 11, fontWeight: 600, letterSpacing: 1.2 }}>LIVE INSTRUMENTS</div>
+            {seismic && <LiveInstrument title="SEISMOGRAPH"
+              name={seismic.siteName || `${seismic.net}.${seismic.sta}`} distance={seismic.distanceKm} samples={seismic.samples} />}
+            {tide && <LiveInstrument title="SEA LEVEL" name={tide.name} distance={tide.distanceKm}
+              samples={tide.samples} wave reading={`${tide.latest.toFixed(2)} m`} />}
           </div>
         )}
       </div>

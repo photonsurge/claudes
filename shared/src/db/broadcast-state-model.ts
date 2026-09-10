@@ -12,6 +12,7 @@ import {
 import { defaultSatImgFeeds } from "../satimg/types";
 import { DEFAULT_SLIDE_HOLD_MS } from "../broadcast-slides";
 import { DEFAULT_REPORT_HOLD_MS } from "../broadcast-report";
+import { DEFAULT_READ_CPS } from "../reading-pace";
 
 /** The id of the single broadcast-state document (single-domain → one row). */
 export const BROADCAST_STATE_ID = "default" as const;
@@ -168,6 +169,7 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     },
     reportKindsOff: { type: [String], required: true, default: [] },
     reportHazardsOff: { type: [String], required: true, default: [] },
+    readPaceCps: { type: Number, required: true, default: DEFAULT_READ_CPS },
     tickerKindsOff: { type: [String], required: true, default: [] },
     tickerHazardsOff: { type: [String], required: true, default: [] },
     pointVarsOff: { type: [String], required: true, default: [] },
