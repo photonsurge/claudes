@@ -1949,6 +1949,45 @@ waits inside GL calls. Everything named and ours is small: `e.s.r` (geo.ts
 `nearby`) 219 ms, `getBoundingClientRect` 115 ms (the Ticker, round 42),
 `classifyHazard` + `alertRepPoint` a few ms in one stall.
 
+### Round 45 (2026-09-10) — the two items left after round 44
+
+**Ticker.** `Ticker.tsx` keyed its window memo and its `useLayoutEffect` on
+the `entries` array, and the track feed hands it a fresh array about once a
+second with the same lines — so every second the crawl re-measured itself:
+two `getBoundingClientRect` and a `clientWidth` read, each a forced layout,
+for content that had not changed (115 ms of self time in round 44's minute,
+and 15 ms inside the 13.7 s stall). The entries' identity now follows their
+content (text + sponsored flag, the two things the crawl renders): the array
+is swapped only when that fingerprint changes, so the memo and the effect are
+quiet on an unchanged feed. Same DOM, same keys, same restart-on-new-content
+rule; the existing "re-derived with the same lines keeps its nodes" test
+covers it.
+
+**Bake sizes.** WeatherLayers caches one GPU texture per decoded texture
+object per device (`createTextureCached`, a WeakMap keyed on the
+`TextureData`), so the synchronous `texSubImage2D` of round 32 recurs once
+per texture per page: the first time a new run's texture is drawn, at
+~10 ms per MB on the OBS box (Chrome's renderer→GPU-process transfer, not the
+GPU). That upload cannot be chunked or moved off the main thread from our
+side — the cache is module-private and a half-uploaded texture would draw —
+so the only lever is bytes, and the two grids that were 36–39 MB each are now
+under 10:
+
+| source | was | now | per texture |
+|---|---|---|---|
+| RTOFS global (sst, current, salinity, 4 depth slices) | 4500×2250 @ 0.08° | 2250×1125 @ 0.16° | 38.6 → 9.7 MB |
+| HRDPS Canada nest (5 variables, 4 runs/day) | 4979×1913 @ 0.0225° | 2490×957 @ 0.045° | 36.3 → 9.5 MB |
+
+RTOFS: the cdo remap target is `global_0.16` (the 0.08° detail stays in the
+regional GRIB2 windows). HRDPS: 0.045° is the only coarser step that keeps
+the descriptor bbox exact (4978 and 1912 are both even, gcd 2); the model is
+2.5 km, the bake is now 5 km — restore `0.0225` / `4979×1913` in
+`shared/src/sources.hrdps.ts` and the worker follows. Both take effect on the
+next run of each source; runs already in Mongo keep their old textures until
+then. The MRMS radar (3500×1750, 23 MB) and ICON global (2879×1441, 16 MB)
+are left alone: radar wants its detail, and ICON is the 0.125° base everyone
+sees.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

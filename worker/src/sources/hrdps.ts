@@ -12,7 +12,7 @@
 //
 // The descriptor (shared/src/sources.ts → getSource("hrdps")) is the source of
 // truth for bbox/dims/resolution; the -new_grid spec here is derived from it so
-// the regridded grid EXACTLY matches the descriptor dims {4979,1913}.
+// the regridded grid EXACTLY matches the descriptor dims {2490,957}.
 //
 // VERIFIED against a live file (2026-07-01 00Z):
 //   path : https://dd.weather.gc.ca/<YYYYMMDD>/WXO-DD/model_hrdps/continental/2.5km/<HH>/<hhh>/
@@ -26,8 +26,8 @@ const HRDPS_SOURCE = getSource("hrdps")!;
 
 /** HRDPS continental bbox [W,S,E,N] straight from the descriptor. */
 export const HRDPS_BBOX = HRDPS_SOURCE.bbox as [number, number, number, number];
-/** Regular-latlon regrid grid dims (matches the descriptor `dims` {4979,1913}). */
-const HRDPS_DIMS = HRDPS_SOURCE.dims ?? { width: 4979, height: 1913 };
+/** Regular-latlon regrid grid dims (matches the descriptor `dims` {2490,957}). */
+const HRDPS_DIMS = HRDPS_SOURCE.dims ?? { width: 2490, height: 957 };
 export const HRDPS_GRID = {
   width: HRDPS_DIMS.width,
   height: HRDPS_DIMS.height,

@@ -122,8 +122,8 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
     format: "netcdf",
     grid: "curvilinear",
     // Regridded target (global regular lat-lon); ~72°S–90°N useful coverage.
-    dims: { width: 4320, height: 2160 }, // 1/12° global target for the regrid
-    resolutionDeg: 0.083,
+    dims: { width: 2250, height: 1125 }, // matches RTOFS_TARGET_GRID (global_0.16 cdo remap)
+    resolutionDeg: 0.16, // baked (native 1/12°); see worker/src/sources/rtofs.ts
     bbox: [-180, -80, 180, 90],
     cadence: { kind: "cron", runsUtc: [0] }, // one 00z run/day
     latencyMinutes: 8 * 60, // ~8h; poll rather than trust a fixed time
@@ -143,8 +143,8 @@ export const SOURCE_REGISTRY: Record<string, SourceDescriptor> = {
     label: "NOAA Global RTOFS 1/12° temperature-at-depth (netCDF)",
     format: "netcdf",
     grid: "curvilinear",
-    dims: { width: 4500, height: 2250 }, // matches RTOFS_TARGET_GRID (global_0.08 cdo remap)
-    resolutionDeg: 0.083,
+    dims: { width: 2250, height: 1125 }, // matches RTOFS_TARGET_GRID (global_0.16 cdo remap)
+    resolutionDeg: 0.16, // baked (native 1/12°); see worker/src/sources/rtofs.ts
     bbox: [-180, -80, 180, 90],
     cadence: { kind: "cron", runsUtc: [0] }, // one 00z run/day
     latencyMinutes: 8 * 60, // ~8h; poll rather than trust a fixed time

@@ -117,7 +117,7 @@ describe("descriptor ↔ regrid grid consistency (HARD-WON ALIGNMENT LESSON)", (
 
   it("is a rotated-grid nest at ~2.5 km with a minZoom (regional overlay)", () => {
     expect(src.grid).toBe("rotated");
-    expect(src.resolutionDeg).toBeCloseTo(0.0225, 6);
+    expect(src.resolutionDeg).toBeCloseTo(0.045, 6); // baked 2× coarser than the 0.0225° model
     expect(src.minZoom).toBeDefined();
     expect(src.priority).toBe(30);
   });

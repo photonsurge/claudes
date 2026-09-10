@@ -34,10 +34,11 @@ describe("buildRtofsUrl (global netCDF)", () => {
     expect(RTOFS_VARS.sst.ncVars).toEqual(["sst"]);
   });
 
-  it("target grid dims match the cdo remap grid (global_0.08 = 4500×2250)", () => {
-    expect(RTOFS_CDO_REMAP_GRID).toBe("global_0.08");
-    expect(RTOFS_TARGET_GRID.width).toBe(360 / 0.08);
-    expect(RTOFS_TARGET_GRID.height).toBe(180 / 0.08);
+  it("target grid dims match the cdo remap grid (global_0.16 = 2250×1125)", () => {
+    expect(RTOFS_CDO_REMAP_GRID).toBe("global_0.16");
+    expect(RTOFS_TARGET_GRID.width).toBe(360 / 0.16);
+    expect(RTOFS_TARGET_GRID.height).toBe(180 / 0.16);
+    expect(RTOFS_TARGET_GRID.width * RTOFS_TARGET_GRID.height * 4).toBeLessThan(12 * 1048576); // one upload < ~120 ms
     expect(RTOFS_GRIB2_REGIONS).toContain("west_atl"); // regional tiles (not global)
   });
 });

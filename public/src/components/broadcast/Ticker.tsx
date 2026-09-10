@@ -19,7 +19,6 @@ import {
   charsOf,
   crawlWindow,
   cycleSeconds,
-  entryText,
   HEAD_CHARS,
   MAX_TAIL_CHARS,
   nextStart,
@@ -30,6 +29,9 @@ import {
   windowKeys,
   type WindowEntry,
 } from "./crawl-window";
+
+/** What an entry renders as: its text, and whether it is the sponsored form. */
+const entryFingerprint = (e: TickerEntry): string => (typeof e === "string" ? e : `\u0002${e.text}`);
 
 /** Exported for tests: the old per-entry keys, now over a rendered window part. */
 export const entryKeys = (entries: TickerEntry[]): string[] => windowKeys(entries.map((entry, index) => ({ entry, index })));
@@ -111,7 +113,18 @@ export default function Ticker({
   contentInset?: number;
   theme?: BroadcastTheme;
 }) {
-  const entries: TickerEntry[] = useMemo(() => (items.length ? items : [STANDBY]), [items]);
+  const rawEntries: TickerEntry[] = items.length ? items : [STANDBY];
+  // The track feed hands the ticker a fresh array about once a second, nearly
+  // always with the same lines. Everything downstream keys on `entries` — the
+  // window memo and, through it, the layout measurement in the effect below —
+  // so its identity has to follow the CONTENT, not the array: keyed on the
+  // array, the crawl re-measured itself (two getBoundingClientRect + a
+  // clientWidth read, each a forced layout) every second on air for a crawl
+  // that had not changed (docs/watch-perf-plan.md, round 42).
+  const feedKey = rawEntries.map(entryFingerprint).join("\u0001");
+  const stable = useRef({ key: feedKey, entries: rawEntries });
+  if (stable.current.key !== feedKey) stable.current = { key: feedKey, entries: rawEntries };
+  const entries = stable.current.entries;
   const fontSize = compact ? 10 : 12;
 
   // Windowed crawl (crawl-window.ts): only the current segment is in the DOM.
@@ -122,7 +135,6 @@ export default function Ticker({
   // keeps rolling.
   const [seg, setSeg] = useState({ start: 0, id: 0 });
   const [tailChars, setTailChars] = useState(TAIL_CHARS);
-  const feedKey = useMemo(() => entries.map(entryText).join("\u0001"), [entries]);
   const lastKey = useRef(feedKey);
   if (lastKey.current !== feedKey) {
     lastKey.current = feedKey;

@@ -13,15 +13,22 @@
 
 /**
  * cdo remap target. The global 2ds netCDF is CURVILINEAR (tripolar), which GRIB2
- * can't encode, so `cdo -remapbil,global_0.08` bilinearly interpolates the 2-D
+ * can't encode, so `cdo -remapbil,global_0.16` bilinearly interpolates the 2-D
  * lat/lon coords onto a regular global grid. `global_<res>` is cdo's predefined
  * global lon-lat grid (−180..180, −90..90, cell-centred). We then extract that
  * grid DIRECTLY (no wgrib2 -new_grid — cdo mangles the GRIB2 time, which trips
  * -new_grid into empty output; and a second regrid would just double-interpolate).
+ *
+ * 0.16°, not the native-ish 0.08° (2026-09-10): a 4500×2250 RGBA texture is
+ * 38.6 MB, and the ONE synchronous GPU upload each of those costs the /watch
+ * main thread is a ~360 ms freeze the first time a run's texture is drawn —
+ * the single largest stall left in the broadcast profile, ~10 ms per MB on the
+ * OBS box (docs/watch-perf-plan.md, rounds 32/44/45). 2250×1125 is 9.7 MB.
+ * The 0.08° detail lives on in the regional GRIB2 windows (rtofsRegional.ts).
  */
-export const RTOFS_CDO_REMAP_GRID = "global_0.08";
-/** MUST match global_0.08 dims: 360/0.08 = 4500 lon, 180/0.08 = 2250 lat. */
-export const RTOFS_TARGET_GRID = { width: 4500, height: 2250, res: 0.08 } as const;
+export const RTOFS_CDO_REMAP_GRID = "global_0.16";
+/** MUST match global_0.16 dims: 360/0.16 = 2250 lon, 180/0.16 = 1125 lat. */
+export const RTOFS_TARGET_GRID = { width: 2250, height: 1125, res: 0.16 } as const;
 export const RTOFS_TARGET_BOUNDS: [number, number, number, number] = [-180, -90, 180, 90];
 
 /** The three global 2-D surface netCDF bundles and the fields each carries. */
