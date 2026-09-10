@@ -2,7 +2,17 @@ import { GeoJsonLayer, PathLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer
 import { alertRepPoint } from "@photonsurge/shared/alerts/geo";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
 import type { AlertFeature } from "../../lib/alerts";
-import { hazardMeta } from "../../lib/hazard";
+import { HAZARDS, hazardMeta } from "../../lib/hazard";
+
+/**
+ * Every code point the badge glyph layer can ever draw — the hazard catalog's
+ * icons — fixed up front instead of `characterSet: "auto"`. "auto" re-derived
+ * the set from the badges on every data change, and each cut that surfaced a
+ * hazard not yet in the atlas extended the SDF atlas on the main thread
+ * (measureText + glyph draw + distance transform, 100–200 ms in one frame —
+ * docs/watch-perf-plan.md, round 53). Built once, the atlas is complete.
+ */
+export const HAZARD_GLYPHS: string[] = Array.from(new Set(HAZARDS.flatMap((h) => Array.from(h.icon))));
 import { alertFocusKey, litWeight, type AlertFocus } from "../../lib/alert-cycle";
 import { DEPTH_TEST } from "./depth";
 import { BREATHE, type BreatheProps, type BreatheSpec } from "./breathe-extension";
@@ -293,7 +303,7 @@ export function alertsLayer(features: AlertFeature[], visible = true, focus: Ale
         fontSettings: { sdf: true },
         outlineWidth: 2,
         outlineColor: [0, 0, 0, 180],
-        characterSet: "auto",
+        characterSet: HAZARD_GLYPHS,
         pickable: false,
         parameters: DEPTH_TEST,
         updateTriggers: { getText: badges.length, getSize: badges.length, getColor: badgeKey },

@@ -30,12 +30,12 @@ jest.mock("@deck.gl/layers", () => {
 });
 
 import { PathLayer, SolidPolygonLayer } from "@deck.gl/layers";
-import { alertsLayer, onAirPulseLayers, pulseIsPoint } from "./alerts";
+import { alertsLayer, HAZARD_GLYPHS, onAirPulseLayers, pulseIsPoint } from "./alerts";
 import { NO_PARTS, NO_RINGS, outlineRings, polygonParts } from "./outline-rings";
 import { BREATHE } from "./breathe-extension";
 import type { AlertFeature } from "../../lib/alerts";
 import type { SeverityRank } from "@photonsurge/shared/db/alert-model";
-import type { HazardType } from "../../lib/hazard";
+import { HAZARDS, type HazardType } from "../../lib/hazard";
 
 /** Minimal AlertFeature; hazard drives hue, severityRank drives intensity. */
 function feature(
@@ -95,6 +95,16 @@ const paint = (p: any, f: AlertFeature): number[] => (p.getFillColor ? p.getFill
 
 const AREA_IDS = ["alerts-glow-wide", "alerts-glow-mid", "alerts-fill", "alerts-edge"];
 const BADGE_IDS = ["alerts-badge-halo", "alerts-badge-core", "alerts-badge-glyph"];
+
+describe("alertsLayer — badge glyph atlas", () => {
+  it("fixes the glyph layer's character set to the whole hazard catalog, not \"auto\"", () => {
+    // "auto" grew the SDF atlas on the main thread whenever a cut surfaced a new
+    // hazard icon (round 53); a complete set up front is built once.
+    for (const h of HAZARDS) for (const cp of Array.from(h.icon)) expect(HAZARD_GLYPHS).toContain(cp);
+    const glyphs = byId(alertsLayer([point([30, 40], { hazard: "fire" })]), "alerts-badge-glyph");
+    expect(glyphs.props.characterSet).toBe(HAZARD_GLYPHS);
+  });
+});
 
 describe("alertsLayer — layer selection", () => {
   it("polygon alerts draw the four area passes and NO badge (the area is the marker)", () => {

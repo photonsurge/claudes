@@ -2387,6 +2387,47 @@ pre-warm shader programs for the rarely-shown layer types during the
 cold-start cover (a one-off 40 ms per type otherwise); and the alert-blob
 tessellation on real changes (round 49's list).
 
+### Round 53 (2026-09-10 16:50 + 16:5x) — two more on the same page: the last forced layout, and the badge atlas
+
+Same page as round 52 (no reload), two consecutive minutes:
+
+    16:50   busy 35.5 % · 29.7 fps · gap max 333 ms · 10 stalls / 1710 ms · DOM 1008 · Layout 189× / 286 ms
+    16:5x   busy 37.8 % · 29.7 fps · gap max 267 ms ·  9 stalls / 1632 ms · DOM 1172 · Layout 205× / 274 ms
+
+Every stall over 150 ms is a cut, and a cut is now: the deck frame
+110–220 ms (particle transform-feedback setup 7–40 ms — biggest when the
+kind look switches to the dense preset — `bufferSubData` 10–26 ms, 35–100 ms
+of native time the sampler cannot name, a major GC 8–14 ms), a React commit
+33–71 ms, a 10–20 ms layout. Two things in the list were cheap to remove:
+
+- **AutoScroll's activation read.** `get clientHeight` 10–21 ms inside the
+  cut commit (7.0 s, 50.7 s): the on-air slide's scroll region read
+  `el.clientHeight` and `inner.offsetHeight` when it became active — a forced
+  whole-document layout in the middle of React's effects, the last such read
+  left in a cut. The ResizeObserver it already had delivers both initial
+  sizes right after the next layout, so the reads are gone; until the
+  observer reports, the region counts as "fits" and stays pinned at the top,
+  which is where a fresh slide starts anyway.
+- **The alert badge atlas.** 30.1 s · 196 ms: a TextLayer's SDF atlas being
+  generated on the main thread again (measureText 23 ms, glyph draw 15,
+  distance transform 10, plus a 20 ms shader link) — the alert badges' glyph
+  layer, whose `characterSet: "auto"` re-derives its set from the badges on
+  every data change, so a cut that surfaced a hazard icon not yet in the
+  atlas extended it right then. The set is now the whole hazard catalog's
+  icons up front (`HAZARD_GLYPHS`); built once, complete. deck's
+  three-atlas cache limit is not reachable through the package's exports
+  map (the setter lives in a non-exported module), and with the badges,
+  seismic and graticule sharing one font key and the cables another, three
+  is enough once the badge set stops growing.
+
+Also seen: the volcano poll's body DID change once (30.5 s: 16 ms of parse
+in `listVolcanoes` + a 36 ms commit) — the worker's sub-jobs stamp the
+documents, so the round 47 guard only holds between stamps; and the alerts
+poll (2.46 MB + 0.89 MB of blobs at 46–47 s) cost ~100 ms of parse + GC
+with no tessellation behind it (the blob fingerprint matched).
+
+Still not exercised in these windows: a global spin (round 51's keep-alive).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

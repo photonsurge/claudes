@@ -53,8 +53,15 @@ export default function AutoScroll({
     if (!active) return;
     if (typeof requestAnimationFrame !== "function") return;
 
-    let boxH = el.clientHeight;
-    let contentH = inner.offsetHeight;
+    // Sizes come from the ResizeObserver only: it delivers both boxes' initial
+    // sizes right after the next layout, so nothing is read here. The old
+    // `el.clientHeight` / `inner.offsetHeight` reads on activation forced a
+    // whole-document layout inside every director cut's commit — 10–21 ms on
+    // OBS's CEF, the last forced layout left in a cut (docs/watch-perf-plan.md,
+    // round 53). Until the observer reports, the region reads as "fits" and
+    // stays pinned at the top, which is where a fresh slide starts anyway.
+    let boxH = 0;
+    let contentH = 0;
     const ro =
       typeof ResizeObserver === "function"
         ? new ResizeObserver((entries) => {
