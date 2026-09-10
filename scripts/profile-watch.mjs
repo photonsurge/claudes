@@ -30,7 +30,12 @@
  *          --stall-trace (record the timeline trace DURING the sampling window as well, so every stall
  *                      also lists the renderer events — Layout, Paint, Commit, GC, script compiles, JS
  *                      callbacks by name — that made up its native "(program)" time; saved as
- *                      stall-trace.json)
+ *                      stall-trace.json. LIGHT categories by default: see --deep-trace)
+ *          --deep-trace (with --stall-trace: add invalidation tracking + stack traces, which name the
+ *                      DOM node and the JS caller behind every style/layout invalidation — but Chrome
+ *                      captures a JS stack for EACH of them and for every requestAnimationFrame call,
+ *                      which roughly doubles a DOM-heavy commit and adds ~0.8 s/min of rAF stack
+ *                      captures. Use it to attribute churn, never to measure it — round 48)
  *          --cpuprofile <file> (offline: re-analyse a saved profile.cpuprofile — Bottom-Up, inclusive,
  *                      stalls — no target needed; a stall-trace.json beside it is used for the stalls)
  *
@@ -450,15 +455,29 @@ async function snippetFetcher(cdp) {
 const TRACE_CATEGORIES = [
   "devtools.timeline",
   "disabled-by-default-devtools.timeline",
-  "disabled-by-default-devtools.timeline.invalidationTracking",
-  "disabled-by-default-devtools.timeline.stack",
   "blink.user_timing",
   // V8 lazy compiles / code-flushing recompiles: a first-time code path on a cut
   // otherwise hides inside "(program)".
   "disabled-by-default-v8.compile",
 ];
+/**
+ * Attribution categories: every style / layout invalidation names its DOM node
+ * and carries the JS stack that caused it, and timer / rAF / postMessage
+ * scheduling carries a stack too. That is what the --trace report's callers
+ * and the animation census resolve against — and it is NOT free: in the
+ * 2026-09-10 02:21 capture the one 492 ms React commit carried 560 stack
+ * captures, and the minute held 16 482 requestAnimationFrame stack captures
+ * (~9 rAF callbacks a frame). A DOM-heavy stall measured with these on is
+ * roughly twice its real size, so the stall trace leaves them OFF unless
+ * --deep-trace asks (docs/watch-perf-plan.md, round 48).
+ */
+const DEEP_TRACE_CATEGORIES = [
+  "disabled-by-default-devtools.timeline.invalidationTracking",
+  "disabled-by-default-devtools.timeline.stack",
+];
+const DEEP_TRACE = flag("deep-trace");
 
-async function startTrace(cdp) {
+async function startTrace(cdp, deep = false) {
   const events = [];
   cdp.on("Tracing.dataCollected", (p) => {
     for (const e of p.value ?? []) events.push(e);
@@ -467,7 +486,7 @@ async function startTrace(cdp) {
   const complete = new Promise((r) => (done = r));
   cdp.on("Tracing.tracingComplete", () => done());
   await cdp.send("Tracing.start", {
-    traceConfig: { recordMode: "recordContinuously", includedCategories: TRACE_CATEGORIES },
+    traceConfig: { recordMode: "recordContinuously", includedCategories: deep ? [...TRACE_CATEGORIES, ...DEEP_TRACE_CATEGORIES] : TRACE_CATEGORIES },
     transferMode: "ReportEvents",
   });
   return {
@@ -480,7 +499,8 @@ async function startTrace(cdp) {
 }
 
 async function recordTrace(cdp, seconds) {
-  const t = await startTrace(cdp);
+  // The --trace report exists to attribute invalidations, so it always records deep.
+  const t = await startTrace(cdp, true);
   await new Promise((r) => setTimeout(r, seconds * 1000));
   return t.stop();
 }
@@ -1044,9 +1064,9 @@ async function deckCensus(cdp) {
        requestAnimationFrame(loop); })`,
     true,
   );
-  const stallTracer = STALL_TRACE ? await startTrace(cdp) : null;
+  const stallTracer = STALL_TRACE ? await startTrace(cdp, DEEP_TRACE) : null;
   await cdp.send("Profiler.start");
-  console.error(`sampling main thread for ${SECONDS}s …${STALL_TRACE ? " (timeline trace running alongside)" : ""}`);
+  console.error(`sampling main thread for ${SECONDS}s …${STALL_TRACE ? ` (timeline trace running alongside${DEEP_TRACE ? ", DEEP: invalidation stacks on — DOM-heavy stalls read ~2× their real size" : ""})` : ""}`);
   await sleep(SECONDS * 1000);
   const { profile } = await cdp.send("Profiler.stop");
   let stallTrace = null;

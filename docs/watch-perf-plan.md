@@ -2086,6 +2086,57 @@ list rather than emptying the air. Five new tests. The 2.4 MB download per
 beat per source remains — the watch tree does use the heavy fields (the
 volcano facts panel's gallery and summary), so the payload is not slimmed.
 
+### Round 48 (2026-09-10 02:21) — the chrome's own churn, and how much of it was the instrument
+
+A capture the operator labelled "old code" (the build before round 47's
+volcano guard), on a volcano segment with the full chrome cycling: relief +
+contours + faults + volcanoes, 11 layers drawn.
+
+    busy 40.5 % · 28.7 fps · gap max 500 ms · 16 stalls / 3943 ms · JS heap 49 MB
+
+Nothing deck-side this time. The Bottom-Up is React DOM: `i7` (React's
+deletion walk) 892 ms, `removeChild` 728 ms, `tS` (setTextContent) 456 ms,
+`tE` (setValueForStyle) 385 ms — and the stalls are React commits: 22.5 s ·
+285 ms, 29.0 s · 492 ms, 34.5 s · 180 ms, 40.5 s · 124 ms, 46.5 s · 145 ms,
+58.5 s · 275 ms, every one of them `FunctionCall O` (performWorkOnRoot)
+tearing down and rebuilding a subtree. The trace's invalidation events say
+which:
+
+- **Card cycling.** The 6–7 s cadence is the on-air panels swapping their
+  own content — EventNearbyPanel's featured city (7 s hold: photo, blurb,
+  PAST YEAR sparkline) and the volcano gallery strip — ~50 DIV + 50 SPAN +
+  45 text nodes torn down and rebuilt each time, with IMG ×23 and the
+  sparkline's line/circle/path removed over the minute.
+- **The alerts poll.** `/api/alerts` (2.53 MB) landed at 28.2 s; the 29.0 s
+  commit (SPAN −77 +61, text −141 +55, DIV −165 +16) is the crawl restarting
+  on new lines and the World Watch feed rebuilding. Real change.
+- **The same subtree twice.** 22.5 s and 58.5 s remove an identical
+  128 DIV / 94 SPAN / 82 text / 1 IMG — a panel going away and coming back.
+- **Main-thread CSS animations.** CEF ticks every CSS animation on the main
+  thread (round 10 knew): the two GodsPanel pulse dots (3 495 invalidations),
+  the reticle sweep (846), an svg spin (688) and the BroadcastCard live dot
+  SPAN (618) → one style recalc EVERY frame, `RecalcStyle 2212× (937 ms)`.
+- **Per-frame inline style writes.** WorldFeed's marquee and AutoScroll write
+  `transform` straight to the DOM each frame (1 156 invalidations, ~19/s) —
+  cheap individually, one more style recalc per frame.
+
+**The instrument.** Every one of those DOM operations was ~10× slower than
+Blink and React normally take (≈1 ms per removed node), uniformly. The
+reason is the trace itself: `--stall-trace` enabled
+`disabled-by-default-devtools.timeline.invalidationTracking` and
+`…timeline.stack`, and Chrome captures a JS stack for EACH invalidation and
+each requestAnimationFrame call — 560 stack captures inside the 492 ms
+commit, 16 482 rAF captures in the minute (~9 rAF callbacks a frame, i.e.
+~0.8 s/min of pure observation on the main thread). Those two categories are
+what made rounds 46–47's attribution possible, and they are exactly what
+inflates a DOM-heavy stall. So: `--stall-trace` now records the LIGHT
+categories (timeline, user timing, V8 compile — everything the stall
+sections and `## network` need), and `--deep-trace` adds the stacks back for
+attribution runs only. `--trace` (the standalone attribution report) stays
+deep. The chrome numbers above need re-measuring light before any of them
+is worth touching; the card-cycling commits are the first candidates if they
+survive at half size.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
