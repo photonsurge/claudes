@@ -7,6 +7,9 @@
  */
 import { render, screen } from "@testing-library/react";
 import AdminTopBar from "./AdminTopBar";
+import { INSTANCE_COLOR, type Instance } from "../../lib/instance";
+
+const LIVE: Instance = { id: "live", label: "LIVE", color: INSTANCE_COLOR.live };
 
 describe("AdminTopBar", () => {
   it("makes the logo the way home", () => {
@@ -58,5 +61,29 @@ describe("AdminTopBar", () => {
     render(<AdminTopBar email="" />);
 
     expect(screen.queryByRole("button", { name: "Log out" })).not.toBeInTheDocument();
+  });
+
+  describe("which deployment am I driving", () => {
+    // Three boxes run this same image. Before the badge, the only way to tell
+    // the live console from the test one was to recognise the data on it.
+    it("names the instance in the bar", () => {
+      render(<AdminTopBar email="ops@example.com" instance={LIVE} />);
+
+      expect(screen.getByText("LIVE")).toBeInTheDocument();
+    });
+
+    it("says nothing at all when the chrome is switched off", () => {
+      render(<AdminTopBar email="ops@example.com" instance={null} />);
+
+      expect(screen.queryByText("LIVE")).not.toBeInTheDocument();
+      // …and the bar still works.
+      expect(screen.getByRole("link", { name: "Admin" })).toBeInTheDocument();
+    });
+
+    it("takes the label from the instance rather than hardcoding the three", () => {
+      render(<AdminTopBar instance={{ id: "test", label: "STAGING", color: "#00ff00" }} />);
+
+      expect(screen.getByText("STAGING")).toBeInTheDocument();
+    });
   });
 });

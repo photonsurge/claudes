@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import AppBar from "@mui/material/AppBar";
+import Chip from "@mui/material/Chip";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import MuiLink from "@mui/material/Link";
+import { plateFor, type Instance } from "../../lib/instance";
 
 /**
  * The sticky admin bar. Split out of app/admin/layout.tsx as a client
@@ -16,8 +18,14 @@ import MuiLink from "@mui/material/Link";
  * component *function* as a prop — which can't cross the server→client
  * boundary. So the layout does the cookie read and hands us the email as a
  * plain string, and all the MUI lives here.
+ *
+ * The bar is also where /admin says WHICH deployment you're driving: the page
+ * ground behind it is already washed with the instance colour (see
+ * AdminThemeProvider), and the bar underlines itself in that colour and names
+ * it. Three boxes run this image — a dev laptop, the test box and live — and
+ * before this they were indistinguishable (lib/instance.ts).
  */
-export default function AdminTopBar({ email }: { email?: string }) {
+export default function AdminTopBar({ email, instance }: { email?: string; instance?: Instance | null }) {
   return (
     <AppBar
       position="sticky"
@@ -26,7 +34,14 @@ export default function AdminTopBar({ email }: { email?: string }) {
       // (solid #080a15), and on a lighter bar it reads as a pasted-on rectangle.
       // #080a15 and the page tone are within a few values of each other, so the
       // logo's edges disappear and the hairline alone carries the bar.
-      sx={{ bgcolor: "background.default", borderBottom: 1, borderColor: "divider", backgroundImage: "none" }}
+      sx={{
+        bgcolor: "background.default",
+        // The instance colour replaces the hairline here rather than adding a
+        // second rule — a 2px coloured edge is the loudest thing this bar does.
+        borderBottom: instance ? 2 : 1,
+        borderColor: instance ? instance.color : "divider",
+        backgroundImage: "none",
+      }}
     >
       <Toolbar variant="dense" disableGutters sx={{ minHeight: 52, px: 2, gap: 1.5 }}>
         {/* The logo is the way home — it reads better than "← Home" and brands the console. */}
@@ -45,6 +60,13 @@ export default function AdminTopBar({ email }: { email?: string }) {
         <MuiLink component={Link} href="/admin" variant="body2" color="text.primary" sx={{ fontWeight: 600 }}>
           Admin
         </MuiLink>
+        {instance && (
+          <Chip
+            label={instance.label}
+            title={`This console is the ${instance.label} deployment`}
+            sx={{ color: instance.color, borderColor: instance.color, bgcolor: plateFor(instance.color) }}
+          />
+        )}
 
         <Box sx={{ flex: 1 }} />
 

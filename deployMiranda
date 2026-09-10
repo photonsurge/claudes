@@ -1,76 +1,26 @@
 #!/usr/bin/env bash
-# Deploy to miranda (no building — run ./build first to build+push the images).
-# Syncs the compose file and .env.deploy (-> ~/weather/.env) to the host, then
-# pulls the images and (re)starts the stack.
+# Deploy to miranda — the TEST box. It runs the :test images ./build pushes.
+# (No building here — run ./build first to build+push.)
 #
-#   ./build && ./deployMiranda     # typical: build+push, then deploy
-#   ./deployMiranda                # deploy already-pushed images
+#   ./build && ./deployMiranda     # typical: build+push :test, then deploy it
+#   ./deployMiranda                # deploy the already-pushed :test images
 #   NO_UP=1 ./deployMiranda        # sync compose + env only, don't pull/restart
+#   TAG=1.4.2 ./deployMiranda      # put one specific version tag on the test box
 #   ENV_DEPLOY=.env.staging ./deployMiranda
 #
-# The host already holds titan registry auth, so we don't docker-login here.
+# miranda has NO in-compose caddy: it sits behind the LAN nginx box
+# (infra/nginx.weather-channel.conf). CADDY=0 makes ./deploy strip any
+# COMPOSE_PROFILES line from the synced env, so the profile can't be switched
+# on here by accident.
+#
+# Once it looks right on miranda, ./deployLive promotes :test -> :latest and
+# deploys that to the live box. The body lives in ./deploy.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-HOST="${HOST:-miranda}"
-DIR="${DIR:-weather}"
-ENV_DEPLOY="${ENV_DEPLOY:-.env.deploy}"
-
-if [[ ! -f "$ENV_DEPLOY" ]]; then
-  echo "!! $ENV_DEPLOY not found — create it (the synced prod env)" >&2
-  exit 1
-fi
-
-echo "==> [$HOST] syncing compose + env -> ~/$DIR/"
-ssh "$HOST" "mkdir -p ~/$DIR"
-scp docker-compose.yml "$HOST:$DIR/docker-compose.yml"
-scp "$ENV_DEPLOY" "$HOST:$DIR/.env"
-# The whole infra/ dir, not hand-picked files: anything added there (ops scripts,
-# nginx conf, the container watcher) lands on the host on the next deploy without
-# this script needing to know about it.
-rsync -az infra/ "$HOST:$DIR/infra/"
-
-# Basemap/geojson assets are bind-mounted into the worker + public containers
-# (docker-compose ${DATA_DIR:-./data}) instead of being baked into the images.
-# Push the local ./fetch-assets.sh output up to the host's ~/$DIR/data. rsync
-# skips unchanged files, so the ~50MB JPGs only transfer once. No --delete, so
-# a partial local dir never wipes the host.
-DATA_SRC="public/public/data"
-if [[ -f "$DATA_SRC/countries.geojson" ]]; then
-  echo "==> [$HOST] syncing basemap assets -> ~/$DIR/data/"
-  ssh "$HOST" "mkdir -p ~/$DIR/data"
-  rsync -az "$DATA_SRC/" "$HOST:$DIR/data/"
-else
-  echo "!! $DATA_SRC/countries.geojson missing — run ./fetch-assets.sh before deploy" >&2
-  echo "   (skipping asset sync; worker countries.seed + public /data will 404 on host)" >&2
-fi
-
-if [[ "${NO_UP:-0}" == "1" ]]; then
-  echo "==> Done (synced only). On host: cd ~/$DIR && docker compose pull && docker compose up -d"
-  exit 0
-fi
-
-echo "==> [$HOST] docker compose pull && up -d"
-ssh "$HOST" "cd ~/$DIR && docker compose pull && docker compose up -d"
-
-# Container incident recorder. Docker's event stream is LIVE-ONLY — if nothing is
-# listening when a container is stopped, there is no history to go back to, which
-# is exactly why the 2026-07-21 redis shutdown left no trace. So it has to be
-# running BEFORE the next one, and a deploy is the one moment we're guaranteed to
-# be here. The script self-guards on a pidfile, so starting it every deploy is a
-# no-op when it's already up; setsid + </dev/null detaches it so ssh can return.
-echo "==> [$HOST] container watcher"
-# NOTE the `;` before the background command, not `&&`: with `&&` the trailing `&`
-# backgrounds the WHOLE `cd && chmod && nohup …` list, so the shell running that
-# list stays alive as long as the watcher does — still holding ssh's stdout, so
-# ssh never sees EOF and the deploy hangs forever after printing the status line.
-ssh -n "$HOST" "cd ~/$DIR || exit 1; chmod +x infra/watch-containers.sh; \
-  nohup setsid infra/watch-containers.sh </dev/null >>~/weather-watcher.out 2>&1 & \
-  sleep 1; \
-  if pgrep -f '[w]atch-containers.sh' >/dev/null; then \
-    echo '    running — log: ~/weather-incidents.log'; \
-  else \
-    echo '    !! not running (see ~/weather-watcher.out)'; \
-  fi"
-
-echo "==> Done. https://io.photonsurge.uk  ($HOST:~/$DIR, env synced from $ENV_DEPLOY)"
+HOST="${HOST:-miranda}" \
+DIR="${DIR:-weather}" \
+ENV_DEPLOY="${ENV_DEPLOY:-.env.deploy}" \
+TAG="${TAG:-test}" \
+CADDY=0 \
+exec ./deploy

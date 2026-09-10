@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Deploy to the LIVE box: promote the images miranda has been running as :test
+# to :latest, then pull+restart the live stack on them. Nothing is built here —
+# live gets byte-for-byte the tested images.
+#
+#   ./deployLive                   # promote :test -> :latest, deploy live
+#   PROMOTE=0 ./deployLive         # re-deploy whatever :latest already is
+#   TAG=1.4.2 ./deployLive         # roll live to a specific version tag (no promotion)
+#   NO_UP=1 ./deployLive           # sync compose + env only, don't pull/restart
+#   HOST=user@other.box ./deployLive    # ssh target (default: asguard@asguard.thronix.uk)
+#
+# Promotion re-PULLS :test from the registry rather than trusting local tags,
+# so a later ./build (or one from another machine) can't leak untested layers
+# into live. Pushing needs a prior:  docker login titan.photonsurge.uk:5050
+#
+# Live box: asguard (asguard.thronix.uk, ssh as user asguard). Needs .env.live
+# — cp .env.deploy .env.live and set the live domain / origins / secrets.
+# SOCKET_PUBLIC_URL there overrides the socket URL that was baked into the
+# public image at build time (the test one), so one image serves both.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+REGISTRY="${REGISTRY:-titan.photonsurge.uk:5050/thronix/weather-channel}"
+SRC_TAG="${SRC_TAG:-test}"
+TAG="${TAG:-latest}"
+HOST="${HOST:-asguard@asguard.thronix.uk}"
+ENV_DEPLOY="${ENV_DEPLOY:-.env.live}"
+SERVICES=(public socket worker)
+
+# Promotion only ever writes :latest. Asking for another tag means "run that
+# exact tag on live", so it defaults promotion off rather than clobbering a
+# version tag with :test.
+if [[ -z "${PROMOTE:-}" ]]; then
+  [[ "$TAG" == "latest" ]] && PROMOTE=1 || PROMOTE=0
+fi
+
+if [[ ! -f "$ENV_DEPLOY" ]]; then
+  echo "!! $ENV_DEPLOY not found — cp .env.deploy $ENV_DEPLOY and set the live domain/origins/secrets" >&2
+  exit 1
+fi
+# Pre-flight the env before touching the registry: promotion is the one step
+# here that can't be taken back, so a CHANGEME left in .env.live must fail now.
+HOST="$HOST" ENV_DEPLOY="$ENV_DEPLOY" TAG="$TAG" CHECK=1 ./deploy
+
+if [[ "$PROMOTE" == "1" ]]; then
+  echo "==> Promoting $REGISTRY/<service>:$SRC_TAG -> :latest"
+  for svc in "${SERVICES[@]}"; do
+    docker pull "$REGISTRY/$svc:$SRC_TAG"
+    docker tag "$REGISTRY/$svc:$SRC_TAG" "$REGISTRY/$svc:latest"
+    docker push "$REGISTRY/$svc:latest"
+    digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$svc:latest" 2>/dev/null || true)
+    echo "    $svc:latest  ${digest#*@}"
+  done
+else
+  echo "==> No promotion — live gets the registry's current :$TAG"
+fi
+
+HOST="$HOST" DIR="${DIR:-weather}" ENV_DEPLOY="$ENV_DEPLOY" TAG="$TAG" exec ./deploy

@@ -1,0 +1,33 @@
+# Caddy front door for the compose stack (docker-compose `caddy` service, opt-in
+# via COMPOSE_PROFILES=caddy). One domain from SITE_DOMAIN: the Next app at /
+# and Socket.IO at /socket.io/ on the SAME origin — mirrors
+# infra/nginx.weather-channel.conf, so the browser connects same-origin and the
+# host env sets SOCKET_PUBLIC_URL=https://<SITE_DOMAIN> (+ ALLOWED_ORIGINS).
+#
+# Caddy fetches and renews the Let's Encrypt cert itself: DNS must point at this
+# box and 80/443 must reach it. WebSocket upgrades pass through reverse_proxy
+# untouched — no Upgrade/Connection header dance, unlike nginx. Upstreams are
+# the compose service names over the `internal` network, so the 1010x host
+# ports can stay on loopback (BIND_HOST=127.0.0.1).
+
+{$SITE_DOMAIN} {
+	encode zstd gzip
+
+	# nginx had client_max_body_size 25m (admin image/ad uploads).
+	request_body {
+		max_size 25MB
+	}
+
+	# ── Socket.IO ── the client is websocket-only (transports: ["websocket"]);
+	# stream it (no buffering) and never time the connection out.
+	handle /socket.io/* {
+		reverse_proxy socket:10101 {
+			flush_interval -1
+		}
+	}
+
+	# ── Next.js app (operator /control, broadcast /watch/:scene, /api) ──
+	handle {
+		reverse_proxy public:10100
+	}
+}

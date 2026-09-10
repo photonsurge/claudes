@@ -151,6 +151,40 @@ hydra's 3000/4000/5000). Mongo, Redis and `worker` stay internal to the compose
 network. The weather/geocode env vars flow into the `worker` and `public`
 containers via `env_file: .env` — no per-service wiring needed.
 
+### Deploy: test → live
+
+Images move through two tags. `./build` pushes every service as `:test` (plus
+its own `package.json` version); `./deployMiranda` runs `:test` on the test box
+(miranda); once it looks right there, `./deployLive` re-pulls `:test` from the
+registry, re-tags it `:latest`, pushes, and deploys the live box — so live runs
+byte-for-byte the images that were tested. `:latest` is only ever written by
+`deployLive`.
+
+```bash
+./build && ./deployMiranda      # build + push :test, deploy the test box
+./deployLive                    # promote :test -> :latest, deploy the live box
+TAG=1.4.2 ./deployLive          # roll live to one version tag (no promotion)
+PROMOTE=0 ./deployLive          # re-deploy whatever :latest already is
+NO_UP=1 ./deployMiranda         # sync compose + env + assets only
+```
+
+Each box has its own env file — `.env.deploy` for miranda, `.env.live` for the
+live box asguard (`asguard@asguard.thronix.uk`; both gitignored; `.env.live` starts as a copy of `.env.deploy` with
+every `CHANGEME.example` replaced by the live domain). The deploy pins
+`TAG=<tag>` into the copy it syncs to the host as `~/weather/.env`, so a by-hand
+`docker compose up` there resolves the same images. One public image serves both
+boxes because the socket URL baked at build time (`NEXT_PUBLIC_SOCKET_URL`) is
+overridable at runtime with `SOCKET_PUBLIC_URL` in the host env.
+
+The live box fronts itself: `COMPOSE_PROFILES=caddy` + `SITE_DOMAIN=<domain>` in
+its env enable the in-compose Caddy service (`infra/Caddyfile`) — HTTPS via
+Let's Encrypt, the Next app at `/` and Socket.IO at `/socket.io/` on that one
+domain, reaching the services over the compose network so `BIND_HOST` stays on
+loopback. miranda has no caddy — it stays behind the host nginx
+(`infra/nginx.weather-channel.conf`), and `deployMiranda` strips any
+`COMPOSE_PROFILES` line from the env it syncs so the profile can't be switched on
+there by accident.
+
 ### Run on another box (self-contained, no registry)
 
 `./build` / `./start.sh` push to and pull from the private titan registry. On a
@@ -185,6 +219,19 @@ docker compose logs -f worker     # follow a service (worker | socket | public)
 docker compose up -d --build      # rebuild + restart after a git pull
 docker compose down               # stop  (add -v to also wipe mongo/redis volumes)
 ```
+
+Compose's `blob-init` service prepares the host blob directory for the worker
+and public app (UID/GID 1001) before they start. For an older installation with
+root-owned files already inside that directory, repair the mounted store once:
+
+```bash
+docker compose run --rm --no-deps --user 0:0 --entrypoint sh worker -c 'chown -R 1001:1001 /app/blobs'
+docker compose up -d
+```
+
+This uses the configured blob mount, including a custom `BLOB_DIR`. It changes
+ownership only; it does not delete cached textures or other blobs.
+
 
 Then open `http://<box-ip>:10100`. If you front it with nginx/TLS instead, leave
 `BIND_HOST` at `127.0.0.1` and point the vhost at `127.0.0.1:10100` (web) and
@@ -261,7 +308,10 @@ Add a `makeCollection<T>(conn, "name")` line to `createDb()` in
 | Script | What it does |
 |---|---|
 | `./buildWgrib.sh` | Build + install `wgrib2` from NOAA source (needs cmake; uses sudo). Required only for the real GFS path. |
-| `./build` | Build `shared`, then build all Docker images. |
+| `./build` | Build `shared`, then build + push all Docker images as `:test` + `:<version>`. |
+| `./deployMiranda` | Deploy `:test` to the test box (miranda) — syncs compose/env/infra/assets, `pull && up -d`. |
+| `./deployLive` | Promote `:test` → `:latest` in the registry, then deploy the live box. |
+| `./deploy` | Shared body behind the two above (`HOST`/`ENV_DEPLOY`/`TAG` required; not run bare). |
 | `./start.sh` / `./stop.sh` | `docker compose up -d` / `down`. |
 | `./test` | Run `yarn test` in `shared`, `socket`, `worker`, and `public`. |
 | `./update-shared` | Rebuild `shared` and refresh it in every dependent. |

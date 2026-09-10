@@ -2,12 +2,13 @@
 # Build everything: the shared lib first, then the Docker images — tagged with
 # the titan registry image names that docker-compose pulls.
 #
-# Each service is tagged with ITS OWN package.json version, plus a :latest alias
-# (the default compose pull/up uses :latest).
+# Every image is tagged :test (what ./deployMiranda runs on the test box) plus
+# ITS OWN package.json version. :latest is NOT written here — that's the live
+# tag, and only ./deployLive moves it (by promoting a tested :test).
 #
-#   ./build                 # build shared + all services @ pkg version + :latest, then PUSH
+#   ./build                 # build shared + all services @ :test + :<version>, then PUSH
 #   ./build worker socket   # build only the named services (still pushes)
-#   TAG=v9 ./build          # force one explicit tag for every service (overrides version)
+#   TAG=v9 ./build          # force one explicit version tag for every service (still also :test)
 #   PUSH=0 ./build          # build only, skip the push
 #
 # Pushing requires a prior:  docker login titan.photonsurge.uk:5050
@@ -18,18 +19,22 @@ cd "$(dirname "$0")"
 PUSH="${PUSH:-1}"
 export REGISTRY="${REGISTRY:-titan.photonsurge.uk:5050/thronix/weather-channel}"
 TAG_OVERRIDE="${TAG:-}"
+BUILD_TAG=test
 
 SERVICES=("$@")
 [[ ${#SERVICES[@]} -eq 0 ]] && SERVICES=(public socket worker)
 
 svc_version() { grep '"version"' "$1/package.json" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/'; }
 
-# Every NEXT_PUBLIC_* is COMPILED INTO the public client bundle at build time —
+# Every NEXT_PUBLIC_* is COMPILED INTO the public bundle at build time —
 # setting one in the host's env after the fact does nothing, the image is made.
 # The docker images are deploy artifacts, so prefer the deploy env's value:
 #   explicit env override  >  .env.deploy  >  .env (local dev fallback)
 # .env holds LOCAL values (localhost socket), so reading it first would bake dev
 # settings into a production image.
+# The one baked value that differs per box — the browser-facing socket URL — has
+# a RUNTIME override (SOCKET_PUBLIC_URL in the host env), which is what lets the
+# same :test image be promoted to live unchanged.
 bake() {
   local var="$1" v="" f
   if [[ -n "${!var:-}" ]]; then
@@ -58,30 +63,30 @@ bake NEXT_PUBLIC_TEXTURE_CACHE_MB
 echo "==> Building @photonsurge/shared"
 ( cd shared && yarn install && yarn build )
 
-# Build at :latest (compose uses one TAG for all services), then re-tag each
+# Build at :test (compose uses one TAG for all services), then re-tag each
 # service with its own package.json version below.
-echo "==> Building Docker images ($REGISTRY/<service>:latest)"
-TAG=latest docker compose build "${SERVICES[@]}"
+echo "==> Building Docker images ($REGISTRY/<service>:$BUILD_TAG)"
+TAG=$BUILD_TAG docker compose build "${SERVICES[@]}"
 
 declare -a TAGGED
 for svc in "${SERVICES[@]}"; do
   ver="${TAG_OVERRIDE:-$(svc_version "$svc")}"
-  if [[ "$ver" != "latest" ]]; then
-    docker tag "$REGISTRY/$svc:latest" "$REGISTRY/$svc:$ver"
+  if [[ "$ver" != "$BUILD_TAG" ]]; then
+    docker tag "$REGISTRY/$svc:$BUILD_TAG" "$REGISTRY/$svc:$ver"
   fi
   TAGGED+=("$svc:$ver")
-  echo "    tagged $REGISTRY/$svc -> $ver (+ latest)"
+  echo "    tagged $REGISTRY/$svc -> $ver (+ $BUILD_TAG)"
 done
 
 if [[ "$PUSH" == "1" ]]; then
   echo "==> Pushing images to $REGISTRY"
   for svc in "${SERVICES[@]}"; do
     ver="${TAG_OVERRIDE:-$(svc_version "$svc")}"
-    docker push "$REGISTRY/$svc:latest"
-    [[ "$ver" != "latest" ]] && docker push "$REGISTRY/$svc:$ver"
+    docker push "$REGISTRY/$svc:$BUILD_TAG"
+    [[ "$ver" != "$BUILD_TAG" ]] && docker push "$REGISTRY/$svc:$ver"
   done
 else
   echo "    (push skipped: PUSH=0 — run PUSH=1 ./build after: docker login titan.photonsurge.uk:5050)"
 fi
 
-echo "==> Done.  ${TAGGED[*]}"
+echo "==> Done.  ${TAGGED[*]}  (all also :$BUILD_TAG — ./deployMiranda runs it; ./deployLive promotes it to :latest)"

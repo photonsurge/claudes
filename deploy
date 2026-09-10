@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# Generic stack deploy — the shared body behind ./deployMiranda (test box, :test)
+# and ./deployLive (live box, :latest). Not meant to be run bare: the wrappers
+# set the host, env file and image tag. No building here — ./build builds and
+# pushes the images.
+#
+# Required env (the wrappers set these):
+#   HOST        ssh alias of the box (~/.ssh/config)
+#   ENV_DEPLOY  the env file synced to the host as ~/$DIR/.env
+#   TAG         image tag the host runs (test | latest | <version>)
+# Optional:
+#   DIR=weather   ~/$DIR on the host
+#   NO_UP=1       sync compose + env + assets only; don't pull/restart
+#   CHECK=1       validate the env file and exit (no ssh)
+#   CADDY=0       strip COMPOSE_PROFILES from the synced env — the box has no
+#                 in-compose front door (miranda: host nginx does it)
+#
+# Syncs docker-compose.yml, the env (with TAG=$TAG pinned into it, so a
+# `docker compose up` on the host — ours or by hand — always resolves the same
+# images), infra/ and the basemap assets; then `compose pull && up -d` and
+# (re)arms the container incident watcher.
+#
+# The host already holds titan registry auth, so we don't docker-login here.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+usage() {
+  echo "usage: HOST=<ssh-host> ENV_DEPLOY=<env-file> TAG=<image-tag> [DIR=weather] [NO_UP=1] ./deploy" >&2
+  echo "       (run ./deployMiranda or ./deployLive instead — they set these)" >&2
+  exit 2
+}
+[[ -n "${HOST:-}" && -n "${ENV_DEPLOY:-}" && -n "${TAG:-}" ]] || usage
+DIR="${DIR:-weather}"
+
+if [[ ! -f "$ENV_DEPLOY" ]]; then
+  echo "!! $ENV_DEPLOY not found — create it (the synced env for $HOST)" >&2
+  exit 1
+fi
+
+# A half-filled env is the one thing that can't be fixed from here: a CHANGEME
+# left in (the .env.live template) or the caddy profile without the domain it
+# fronts (an empty site address crash-loops the caddy container).
+if grep -q '^[^#]*CHANGEME' "$ENV_DEPLOY"; then
+  echo "!! $ENV_DEPLOY still has CHANGEME placeholders — fill in the domain first:" >&2
+  grep -n '^[^#]*CHANGEME' "$ENV_DEPLOY" >&2
+  exit 1
+fi
+SITE_DOMAIN=$(sed -n 's/^SITE_DOMAIN=//p' "$ENV_DEPLOY" | head -1)
+if grep -q '^COMPOSE_PROFILES=.*caddy' "$ENV_DEPLOY"; then
+  if [[ -z "$SITE_DOMAIN" ]]; then
+    echo "!! $ENV_DEPLOY enables the caddy profile but sets no SITE_DOMAIN" >&2
+    exit 1
+  fi
+fi
+
+# Compose interpolates ${TAG} in the image names from the project's .env, so
+# pin it there: drop any TAG= line the env file carries and append ours. The
+# env file itself is untouched — the pinned copy is a temp file that exists
+# only to be scp'd.
+SYNCED_ENV=$(mktemp)
+trap 'rm -f "$SYNCED_ENV"' EXIT
+{ grep -v '^TAG=' "$ENV_DEPLOY" || true; echo "TAG=$TAG"; } > "$SYNCED_ENV"
+
+# CADDY=0 (deployMiranda): the test box must NOT run the in-compose caddy — it
+# sits behind the LAN nginx box, and a caddy there would only fail ACME noisily.
+# Profiles are the one thing that could switch it on, so drop them from the
+# synced copy rather than trusting the env file to stay clean.
+if [[ "${CADDY:-1}" == "0" ]]; then
+  if grep -q '^COMPOSE_PROFILES=' "$SYNCED_ENV"; then
+    echo "!! $ENV_DEPLOY sets $(grep '^COMPOSE_PROFILES=' "$SYNCED_ENV" | head -1) — stripped, $HOST runs no caddy" >&2
+    grep -v '^COMPOSE_PROFILES=' "$SYNCED_ENV" > "$SYNCED_ENV.tmp" && mv "$SYNCED_ENV.tmp" "$SYNCED_ENV"
+  fi
+  CADDY_NOTE="no caddy (host nginx)"
+elif grep -q '^COMPOSE_PROFILES=.*caddy' "$SYNCED_ENV"; then
+  CADDY_NOTE="caddy on $SITE_DOMAIN"
+else
+  CADDY_NOTE="no caddy"
+fi
+
+# CHECK=1: validate only (deployLive pre-flights the env this way BEFORE it
+# promotes anything to :latest, so a half-filled env can't leave a pushed tag
+# behind).
+if [[ "${CHECK:-0}" == "1" ]]; then
+  echo "==> $ENV_DEPLOY ok for $HOST (images :$TAG, $CADDY_NOTE)"
+  exit 0
+fi
+
+echo "==> [$HOST] syncing compose + env (images :$TAG, $CADDY_NOTE) -> ~/$DIR/"
+ssh "$HOST" "mkdir -p ~/$DIR"
+scp docker-compose.yml "$HOST:$DIR/docker-compose.yml"
+scp "$SYNCED_ENV" "$HOST:$DIR/.env"
+# The whole infra/ dir, not hand-picked files: anything added there (ops scripts,
+# nginx conf, the container watcher) lands on the host on the next deploy without
+# this script needing to know about it.
+rsync -az infra/ "$HOST:$DIR/infra/"
+
+# Basemap/geojson assets are bind-mounted into the worker + public containers
+# (docker-compose ${DATA_DIR:-./data}) instead of being baked into the images.
+# Push the local ./fetch-assets.sh output up to the host's ~/$DIR/data. rsync
+# skips unchanged files, so the ~50MB JPGs only transfer once. No --delete, so
+# a partial local dir never wipes the host.
+DATA_SRC="public/public/data"
+if [[ -f "$DATA_SRC/countries.geojson" ]]; then
+  echo "==> [$HOST] syncing basemap assets -> ~/$DIR/data/"
+  ssh "$HOST" "mkdir -p ~/$DIR/data"
+  rsync -az "$DATA_SRC/" "$HOST:$DIR/data/"
+else
+  echo "!! $DATA_SRC/countries.geojson missing — run ./fetch-assets.sh before deploy" >&2
+  echo "   (skipping asset sync; worker countries.seed + public /data will 404 on host)" >&2
+fi
+
+if [[ "${NO_UP:-0}" == "1" ]]; then
+  echo "==> Done (synced only). On host: cd ~/$DIR && docker compose pull && docker compose up -d"
+  exit 0
+fi
+
+echo "==> [$HOST] docker compose pull && up -d  (images :$TAG)"
+ssh "$HOST" "cd ~/$DIR && docker compose pull && docker compose up -d"
+
+# Container incident recorder. Docker's event stream is LIVE-ONLY — if nothing is
+# listening when a container is stopped, there is no history to go back to, which
+# is exactly why the 2026-07-21 redis shutdown left no trace. So it has to be
+# running BEFORE the next one, and a deploy is the one moment we're guaranteed to
+# be here. The script self-guards on a pidfile, so starting it every deploy is a
+# no-op when it's already up; setsid + </dev/null detaches it so ssh can return.
+echo "==> [$HOST] container watcher"
+# NOTE the `;` before the background command, not `&&`: with `&&` the trailing `&`
+# backgrounds the WHOLE `cd && chmod && nohup …` list, so the shell running that
+# list stays alive as long as the watcher does — still holding ssh's stdout, so
+# ssh never sees EOF and the deploy hangs forever after printing the status line.
+ssh -n "$HOST" "cd ~/$DIR || exit 1; chmod +x infra/watch-containers.sh; \
+  nohup setsid infra/watch-containers.sh </dev/null >>~/weather-watcher.out 2>&1 & \
+  sleep 1; \
+  if pgrep -f '[w]atch-containers.sh' >/dev/null; then \
+    echo '    running — log: ~/weather-incidents.log'; \
+  else \
+    echo '    !! not running (see ~/weather-watcher.out)'; \
+  fi"
+
+# Public URL for the closing line: SITE_DOMAIN when caddy fronts the box, else
+# APP_DOMAIN (io.photonsurge.uk behind the host nginx). The sample's "default"
+# label isn't a hostname, so only print a URL when it looks like one.
+DOMAIN=$(sed -n 's/^SITE_DOMAIN=//p' "$ENV_DEPLOY" | head -1)
+[[ -n "$DOMAIN" ]] || DOMAIN=$(sed -n 's/^APP_DOMAIN=//p' "$ENV_DEPLOY" | head -1)
+[[ "$DOMAIN" == *.* ]] && URL="https://$DOMAIN  " || URL=""
+echo "==> Done. ${URL}($HOST:~/$DIR, images :$TAG, env synced from $ENV_DEPLOY)"

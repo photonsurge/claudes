@@ -8,7 +8,7 @@
  * creeps back; both are §4.6 violations on the engine-room surface.
  */
 import { accent, font, ink, radius, status, stroke, surface } from "./tokens";
-import { adminTheme } from "./adminTheme";
+import { adminTheme, makeAdminTheme } from "./adminTheme";
 
 describe("adminTheme", () => {
   describe("flat by rule — no shadows, no gradients", () => {
@@ -140,5 +140,23 @@ describe("adminTheme", () => {
     const theme = adminTheme as unknown as { cssVarPrefix: string; vars: { palette: { background: { paper: string } } } };
     expect(theme.cssVarPrefix).toBe("adm");
     expect(theme.vars.palette.background.paper).toContain("--adm-");
+  });
+
+  describe("per-deployment page ground", () => {
+    // Three boxes run one image; each washes the ground with its own colour so
+    // the live console can't be mistaken for the test one (lib/instance.ts).
+    it("takes a tinted ground without disturbing anything else", () => {
+      const tinted = makeAdminTheme({ pageBg: "#231116" });
+
+      expect(tinted.palette.background.default).toBe("#231116");
+      // Cards are NOT tinted — the colour belongs to what's behind the console.
+      expect(tinted.palette.background.paper).toBe(surface.panel);
+      expect([...tinted.shadows]).toEqual(Array(25).fill("none"));
+    });
+
+    it("defaults to the house ground, so the untinted theme is unchanged", () => {
+      expect(makeAdminTheme().palette.background.default).toBe(surface.page);
+      expect(adminTheme.palette.background.default).toBe(surface.page);
+    });
   });
 });

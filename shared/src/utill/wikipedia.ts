@@ -16,7 +16,7 @@ export const WIKI_UA =
 export type WikiSummary = { title: string; extract?: string; thumb?: string; photo?: string };
 
 /**
- * Wikipedia's rate limit is per-IP, not per-caller — countries, regions,
+ * Wikipedia can rate-limit shared egress traffic, not just individual jobs — countries, regions,
  * cities, volcanoes and notable-tracks enrichment each import this module and
  * pace their OWN calls, but their repeatable jobs can fire together (e.g. all
  * `immediately: true` on worker startup), and independent per-job pacing
@@ -26,29 +26,52 @@ export type WikiSummary = { title: string; extract?: string; thumb?: string; pho
  * calling, and retries a 429 with backoff (honoring `Retry-After` when sent)
  * instead of letting one burst fail every remaining item in the run.
  */
-const MIN_GAP_MS = 150;
+const MIN_GAP_MS = 1000;
 const MAX_RETRIES = 2;
 let nextSlot = 0;
+let requestQueue: Promise<void> = Promise.resolve();
+
+function retryDelay(value: string | null | undefined, attempt: number): number {
+  const seconds = value?.trim() ? Number(value) : NaN;
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const date = value ? Date.parse(value) : NaN;
+  if (Number.isFinite(date)) return Math.max(0, date - Date.now());
+  return 30_000 * 2 ** attempt;
+}
+
+async function waitForSlot(): Promise<void> {
+  while (nextSlot > Date.now()) {
+    // Chunk long waits to avoid overflowing Node's timer range; never shorten
+    // the server's requested cooldown.
+    await new Promise((resolve) => setTimeout(resolve, Math.min(nextSlot - Date.now(), 60_000)));
+  }
+}
 
 async function pacedFetch(
   fetchImpl: typeof fetch,
   url: string,
   headers: Record<string, string>,
 ): Promise<Awaited<ReturnType<typeof fetch>>> {
-  for (let attempt = 0; ; attempt++) {
-    const now = Date.now();
-    const wait = Math.max(0, nextSlot - now);
-    nextSlot = Math.max(now, nextSlot) + MIN_GAP_MS;
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-
-    const res = await fetchImpl(url, { headers });
-    if (res.status !== 429 || attempt >= MAX_RETRIES) return res;
-
-    const retryAfterSec = Number(res.headers?.get?.("retry-after"));
-    const backoffMs =
-      Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 : MIN_GAP_MS * 2 ** (attempt + 1);
-    await new Promise((r) => setTimeout(r, Math.min(backoffMs, 5_000)));
-  }
+  const request = requestQueue.then(async () => {
+    for (let attempt = 0; ; attempt++) {
+      await waitForSlot();
+      let res: Awaited<ReturnType<typeof fetch>>;
+      try {
+        res = await fetchImpl(url, { headers });
+      } finally {
+        nextSlot = Date.now() + MIN_GAP_MS;
+      }
+      if (res.status !== 429) return res;
+      // Apply the cooldown even on the last retry: the NEXT queued country,
+      // city, gallery or intro must also wait instead of extending the ban.
+      nextSlot = Date.now() + Math.max(MIN_GAP_MS, retryDelay(res.headers?.get?.("retry-after"), attempt));
+      if (attempt >= MAX_RETRIES) return res;
+      await res.body?.cancel();
+    }
+  });
+  // A failed fetch must release the queue for subsequent jobs.
+  requestQueue = request.then(() => undefined, () => undefined);
+  return request;
 }
 
 /**

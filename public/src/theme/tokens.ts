@@ -7,6 +7,11 @@
  * utilitarian on purpose — no glass, no gradients, no blur. That language
  * belongs to the broadcast surface (/watch) and must never bleed in here.
  *
+ * ONE colour is not here: the per-deployment tint (which box am I on — local,
+ * test or live). It spans /admin AND the operator pages outside it, and it is a
+ * runtime value rather than a design token, so it lives in lib/instance.ts and
+ * arrives as a prop.
+ *
  * Deliberately NOT a copy of the old §4.6 values. Those had page (#0a0e16) and
  * card (#0c111c) within ~2% luminance of each other behind a near-invisible
  * #1b2030 hairline, so panels never read as objects. The ramp below separates

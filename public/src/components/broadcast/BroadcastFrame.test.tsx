@@ -25,6 +25,7 @@ jest.mock("../../lib/focus/focus-client", () => ({
   useRegionCountries: () => [],
   useRegionNearTerm: () => [],
   useAreaForecastDays: () => ({ days: [], loading: false }),
+  useClimateFor: () => ({ datasets: [], loading: false }),
   useAlertTimeline: () => [],
   useAlertSnapshots: () => [],
   useAlertResources: () => [],
@@ -86,12 +87,35 @@ jest.mock("./MonitorCluster", () => ({
   // monitors-only wrapper) and gates the widget via its showMonitors prop
   // (the panel itself stays mounted to carry the forecast strip) — the probe
   // mirrors that gate under the widget id's testid.
-  LocalWeatherPanel: ({ showMonitors }: { showMonitors?: boolean }) =>
-    showMonitors ? <div data-testid="w-weatherMonitors" /> : null,
+  // The seismic + tide monitors moved INSIDE this panel: the frame gates them
+  // by passing a station or null, so each probe mirrors that prop rather than
+  // looking for a widget of its own.
+  LocalWeatherPanel: ({
+    showMonitors,
+    seismicStation,
+    tideStation,
+  }: {
+    showMonitors?: boolean;
+    seismicStation?: unknown;
+    tideStation?: unknown;
+  }) => (
+    <>
+      {showMonitors ? <div data-testid="w-weatherMonitors" /> : null}
+      {seismicStation ? <div data-testid="w-seismic" /> : null}
+      {tideStation ? <div data-testid="w-tsunami" /> : null}
+    </>
+  ),
 }));
 jest.mock("./SeismicStationRow", () => ({ __esModule: true, default: () => null }));
 jest.mock("./TideStationRow", () => ({ __esModule: true, default: () => null }));
-jest.mock("./PointHistoryPanel", () => ({ __esModule: true, default: () => null }));
+// The frame also imports two PURE helpers from this module (the climate strip's
+// row builder + its spark test) — stub them too, or the whole frame throws.
+jest.mock("./PointHistoryPanel", () => ({
+  __esModule: true,
+  default: () => null,
+  buildClimateRows: () => [],
+  hasSpark: () => false,
+}));
 jest.mock("./ForecastPanel", () => ({ __esModule: true, default: () => null }));
 jest.mock("./EventOverlay", () => ({
   __esModule: true,
@@ -130,12 +154,15 @@ const TESTID: Record<WidgetId, string> = {
   ticker: "w-ticker",
 };
 
-// kpIndex and spaceWeather also require data (aurora/geomag meta) to show at
-// all — give both by default so widgetsOff is the only thing under test.
+// kpIndex, spaceWeather, seismic and tsunami also require data (aurora/geomag
+// meta, a station carrying samples) to show at all — give all of it by default
+// so widgetsOff is the only thing under test.
 const dataForShownWidgets = {
   state: { ...DEFAULT_CONTROL_STATE, showAurora: true } as ControlState,
   aurora: { meta: { kp: 4 } } as never,
   geomag: { meta: {} } as never,
+  seismoStations: [{ samples: [0, 1] }] as never,
+  tideStations: [{ samples: [0, 1] }] as never,
 };
 
 function renderFrame(widgetsOff: WidgetId[]) {
@@ -145,6 +172,8 @@ function renderFrame(widgetsOff: WidgetId[]) {
       manifest={null}
       aurora={dataForShownWidgets.aurora}
       geomag={dataForShownWidgets.geomag}
+      seismoStations={dataForShownWidgets.seismoStations}
+      tideStations={dataForShownWidgets.tideStations}
     />,
   );
 }

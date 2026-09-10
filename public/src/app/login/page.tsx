@@ -57,7 +57,9 @@ function LoginForm() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#0c111c",
+        // Washed with the instance colour so a test-box login can't be mistaken
+        // for the live one; falls back to the plain ground (see lib/instance.ts).
+        background: "var(--inst-panel, #0c111c)",
         fontFamily: "system-ui, sans-serif",
       }}
     >

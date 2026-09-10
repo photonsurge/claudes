@@ -2,11 +2,22 @@ import Link from "next/link";
 import ServiceStatusPanel from "../components/ServiceStatusPanel";
 import StreamStatusBadge from "../components/StreamStatusBadge";
 import ChannelLauncher from "../components/ChannelLauncher";
+import InstanceMark from "../components/InstanceMark";
+import { instanceVars, resolveInstance } from "../lib/instance";
+
+/**
+ * Rendered per request so the instance badge below is the box's OWN identity.
+ * Live runs the image miranda tested, so anything baked at build time would say
+ * "TEST" on live forever (lib/instance.ts).
+ */
+export const dynamic = "force-dynamic";
 
 /** Launcher / home (login-gated — see proxy.ts). Leads with the per-channel
  * launcher; the ping demo (PingPanel + /api/ping) stays on disk but is no longer
  * linked from here. */
 export default function Home() {
+  const instance = resolveInstance();
+
   return (
     <main
       style={{
@@ -15,12 +26,19 @@ export default function Home() {
         flexDirection: "column",
         alignItems: "center",
         gap: 10,
-        background: "#0a0e16",
+        // Washed with this deployment's colour — the launcher is where you pick
+        // a box, so it's where mistaking test for live costs the most. The
+        // variables are set on this very element (they apply to it too), so a
+        // static render can never freeze the build box's identity here.
+        background: "var(--inst-page, #0a0e16)",
         color: "#fff",
         fontFamily: "system-ui, sans-serif",
         padding: 40,
-      }}
+        ...instanceVars(instance),
+      } as React.CSSProperties}
     >
+      {/* Which box am I on — fixed chrome, costs the layout nothing. */}
+      <InstanceMark instance={instance} />
       <h1 style={{ margin: 0, fontSize: 34 }}>Live Weather Globe</h1>
       <p style={{ margin: 0, color: "#8b95a7", fontSize: 15 }}>
         NOAA weather · alerts · live satellites, aircraft & ships

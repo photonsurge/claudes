@@ -207,7 +207,10 @@ export default function ControlPage() {
   };
 
   return (
-    <main style={{ display: "flex", height: "100vh", background: "#0a0e16", color: "#fff" }}>
+    // The two grounds are washed with the instance colour (test vs live at a
+    // glance); `var(..., <original>)` keeps the designed look wherever the
+    // variables aren't set. See lib/instance.ts + app/control/layout.tsx.
+    <main style={{ display: "flex", height: "100vh", background: "var(--inst-page, #0a0e16)", color: "#fff" }}>
       <div style={{ position: "relative", flex: 1 }}>
         <GlobeView
           ref={globe}
@@ -313,7 +316,7 @@ export default function ControlPage() {
           padding: 20,
           overflowY: "auto",
           borderLeft: "1px solid #1b2030",
-          background: "#0c111c",
+          background: "var(--inst-panel, #0c111c)",
           fontFamily: "system-ui, sans-serif",
         }}
       >

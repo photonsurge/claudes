@@ -26,6 +26,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      {/* Deliberately no instance tint here: /watch renders through this layout
+          too, and this one is prerendered — it would carry the BUILD box's
+          identity to every deployment. The operator surfaces set the variables
+          on themselves instead (lib/instance.ts). */}
       <body style={{ fontFamily: UI_SANS, margin: 0 }}>
         <link rel="preload" as="font" type="font/woff2" href={FLAG_FONT_HREF} crossOrigin="anonymous" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />

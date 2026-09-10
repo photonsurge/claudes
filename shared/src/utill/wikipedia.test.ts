@@ -1,4 +1,18 @@
-import { fetchWikiSummary, fetchWikiGallery } from "./wikipedia";
+let wiki: typeof import("./wikipedia");
+beforeEach(async () => {
+  jest.useFakeTimers();
+  jest.resetModules();
+  wiki = await import("./wikipedia");
+});
+afterEach(() => jest.useRealTimers());
+
+async function finish<T>(pending: Promise<T>): Promise<T> {
+  void pending.catch(() => {});
+  await jest.runAllTimersAsync();
+  return pending;
+}
+const fetchWikiSummary = (...args: Parameters<typeof wiki.fetchWikiSummary>) => finish(wiki.fetchWikiSummary(...args));
+const fetchWikiGallery = (...args: Parameters<typeof wiki.fetchWikiGallery>) => finish(wiki.fetchWikiGallery(...args));
 
 describe("fetchWikiSummary", () => {
   it("returns the full-res originalimage as photo alongside the small thumbnail", async () => {
@@ -109,4 +123,48 @@ describe("fetchWikiGallery", () => {
     await expect(fetchWikiGallery("Mount Etna", 6, 640, fetchImpl)).resolves.toEqual([]);
     expect(fetchImpl).toHaveBeenCalledTimes(1); // never makes the second (imageinfo) call
   });
+});
+
+
+it("honours Retry-After and blocks other enrichment calls during the cooldown", async () => {
+  const start = Date.now();
+  const times: number[] = [];
+  const fetcher = jest.fn().mockImplementation(async () => {
+    times.push(Date.now() - start);
+    return times.length === 1
+      ? { status: 429, headers: { get: () => "60" } }
+      : { status: 200, ok: true, json: async () => ({ title: "Chile" }) };
+  });
+  await finish(Promise.all([
+    wiki.fetchWikiSummary("Chile", fetcher),
+    wiki.fetchWikiSummary("Peru", fetcher),
+  ]));
+  expect(times).toEqual([0, 60_000, 61_000]);
+});
+
+it("honours an HTTP-date Retry-After", async () => {
+  const start = Date.now();
+  const deadline = new Date(start + 90_000).toUTCString();
+  const fetcher = jest.fn()
+    .mockResolvedValueOnce({ status: 429, headers: { get: () => deadline } })
+    .mockResolvedValueOnce({ status: 200, ok: true, json: async () => ({ title: "Chile" }) });
+  await finish(wiki.fetchWikiSummary("Chile", fetcher));
+  expect(Date.now()).toBeGreaterThanOrEqual(Date.parse(deadline));
+});
+
+it("keeps the cooldown after exhausted retries and releases the queue after failure", async () => {
+  const start = Date.now();
+  const times: number[] = [];
+  const fetcher = jest.fn().mockImplementation(async () => {
+    times.push(Date.now() - start);
+    return times.length <= 3
+      ? { status: 429, headers: { get: () => "60" } }
+      : { status: 200, ok: true, json: async () => ({ title: "Peru" }) };
+  });
+  const result = await finish(Promise.allSettled([
+    wiki.fetchWikiSummary("Chile", fetcher), wiki.fetchWikiSummary("Peru", fetcher),
+  ]));
+  expect(result[0].status).toBe("rejected");
+  expect(result[1].status).toBe("fulfilled");
+  expect(times).toEqual([0, 60_000, 120_000, 180_000]);
 });

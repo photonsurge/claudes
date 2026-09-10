@@ -34,9 +34,14 @@ async function GET__impl() {
 
   const token = generateShortLivedJwt(payload, "1h", secret);
 
+  // SOCKET_PUBLIC_URL is a per-host RUNTIME override of NEXT_PUBLIC_SOCKET_URL,
+  // which Next inlines at build time. The public image is built once (:test)
+  // and ./deployLive promotes that same image to live, so the live box's env
+  // — not a rebuild — is what points its browsers at the live socket.
   return NextResponse.json({
     token,
-    socketUrl: process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000",
+    socketUrl:
+      process.env.SOCKET_PUBLIC_URL || process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000",
   });
 }
 

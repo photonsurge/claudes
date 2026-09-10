@@ -4,6 +4,9 @@
 #   build:  docker compose build
 #   push:   docker compose push          (after: docker login titan.photonsurge.uk:5050)
 #   deploy: docker compose pull && docker compose up -d
+#   scripts: ./build (-> :test) · ./deployMiranda (test box, :test) ·
+#            ./deployLive (promotes :test -> :latest, live box). Opt-in `caddy`
+#            profile = in-compose HTTPS front door, see the service below.
 #
 # TOTAL RAM: Compose has no native "whole-project" ceiling, so we bound each
 # service with `mem_limit` and the SUM of the caps is the effective total.
@@ -30,6 +33,21 @@ x-logging: &default-logging
     max-file: "${LOG_MAX_FILE:-5}"
 
 services:
+  # Bind mounts created by Docker start root-owned. Prepare the shared root
+  # before either non-root app writes its first blob. Reuses the worker image;
+  # only this short-lived setup service runs as root.
+  blob-init:
+    image: ${REGISTRY:-titan.photonsurge.uk:5050/thronix/weather-channel}/worker:${TAG:-latest}
+    user: "0:0"
+    restart: "no"
+    network_mode: none
+    read_only: true
+    entrypoint: ["sh", "-c"]
+    command: ["mkdir -p /app/blobs && chown 1001:1001 /app/blobs && chmod u+rwx /app/blobs"]
+    volumes:
+      - ${BLOB_DIR:-./blobs}:/app/blobs
+    logging: *default-logging
+
   mongodb:
     image: mongo:8
     restart: unless-stopped
@@ -185,12 +203,11 @@ services:
       - ${DATA_DIR:-./data}:/app/data:ro
       # Shared blob store (read-write) — the worker bakes textures/frames/etc here.
       # Host-bind so it's out of the Mongo dump and trivially rsync-able for backup.
-      # NOTE: both containers run as uid/gid 1001, but a bind-mount inherits the
-      # HOST dir's ownership (Docker auto-creates it root:root). Chown it ONCE on
-      # the host or the app gets EACCES on mkdir:
-      #   mkdir -p ./blobs && sudo chown -R 1001:1001 ./blobs
+      # blob-init prepares this directory for uid/gid 1001 before startup.
       - ${BLOB_DIR:-./blobs}:/app/blobs
     depends_on:
+      blob-init:
+        condition: service_completed_successfully
       mongodb:
         condition: service_healthy
       redis:
@@ -266,10 +283,12 @@ services:
       # request time, so a bind-mount over the data subdir is served live).
       - ${DATA_DIR:-./data}:/app/public/public/data:ro
       # Shared blob store (read-write) — same host dir as the worker. Reads serve
-      # textures/media; writes persist ad + admin-image uploads. Same one-time host
-      # chown applies (uid/gid 1001): `sudo chown -R 1001:1001 ./blobs`.
+      # textures/media; writes persist ad + admin-image uploads. Ownership is
+      # prepared by blob-init before startup.
       - ${BLOB_DIR:-./blobs}:/app/blobs
     depends_on:
+      blob-init:
+        condition: service_completed_successfully
       mongodb:
         condition: service_healthy
       redis:
@@ -292,6 +311,40 @@ services:
     logging: *default-logging
     networks: [internal]
 
+  # ── Caddy: in-compose HTTPS front door (opt-in) ─────────────────────────────
+  # Enabled per host with COMPOSE_PROFILES=caddy in .env; SITE_DOMAIN is the one
+  # domain it fronts (infra/Caddyfile: Next at /, Socket.IO at /socket.io/, same
+  # origin — so the host env sets SOCKET_PUBLIC_URL and ALLOWED_ORIGINS to
+  # https://$SITE_DOMAIN). It reaches public/socket over the compose network by
+  # service name, so the 1010x host ports can stay on loopback (BIND_HOST=
+  # 127.0.0.1). Certs are Let's Encrypt, automatic — DNS must point at this box
+  # and 80/443 must be open. The cert + ACME account live in caddy-data; losing
+  # that volume means re-issuing, and Let's Encrypt rate-limits re-issues.
+  # miranda (test) sits behind a host nginx (infra/nginx.weather-channel.conf)
+  # instead and leaves the profile off. No health gate on public/socket: caddy
+  # comes up first and answers 502 until they do, and it can fetch its cert
+  # while the stack is still warming.
+  caddy:
+    image: caddy:2-alpine
+    profiles: [caddy]
+    restart: unless-stopped
+    mem_limit: ${CADDY_MEMORY_LIMIT:-256m}
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - public
+      - socket
+    logging: *default-logging
+    networks: [internal]
+
 networks:
   internal:
     driver: bridge
@@ -300,3 +353,5 @@ volumes:
   mongo-data:
   redis-data:
   dem-cache:
+  caddy-data:
+  caddy-config:
