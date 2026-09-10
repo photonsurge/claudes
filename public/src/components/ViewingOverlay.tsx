@@ -17,6 +17,7 @@ import { buildLegend } from "../lib/legend";
 import { mapFreshness } from "../lib/manifest";
 import { idleBreatheActive, idleBreatheZoom, MAX_PUSH_IN } from "../lib/idle-motion";
 import { UI_SANS } from "../lib/fonts";
+import { HazardGlyph, type HazardGlyphId } from "./broadcast/glyphs";
 
 
 const KIND: Record<SegmentKind, { label: string; color: string }> = {
@@ -114,6 +115,19 @@ function ago(ms: number): string {
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   return `${h}h ${m % 60}m ago`;
+}
+
+/**
+ * The vector mark for a shot, or undefined when there is nothing to draw but the
+ * segment's own text. Storms carry their classified hazard; volcano and quake
+ * shots map to the matching hazard mark; a country/region shot's `icon` is a
+ * flag, which the self-hosted flag face renders as text.
+ */
+function segmentMark(segment: Segment): HazardGlyphId | undefined {
+  if (segment.hazard) return segment.hazard;
+  if (segment.kind === "volcano") return "volcano";
+  if (segment.kind === "quake") return "quake";
+  return undefined;
 }
 
 export default function ViewingOverlay({
@@ -312,7 +326,17 @@ export default function ViewingOverlay({
       {/* Body */}
       <div style={{ padding: "11px 13px 13px" }}>
         <div style={{ fontSize: 21, fontWeight: 700, lineHeight: 1.12 }}>
-          {segment.icon ? <span style={{ marginRight: 8 }}>{segment.icon}</span> : null}
+          {/* `segment.icon` is an EMOJI from the shared vocabulary, and the
+              encoder's Chromium has no emoji font — so anything we can name a
+              vector for is drawn as one, and only the flag (a country/region
+              shot, covered by the self-hosted flag face) falls through as text. */}
+          {segmentMark(segment) ? (
+            <span style={{ marginRight: 8, display: "inline-flex", verticalAlign: "-3px" }}>
+              <HazardGlyph id={segmentMark(segment)!} color="currentColor" size={21} />
+            </span>
+          ) : segment.icon ? (
+            <span style={{ marginRight: 8 }}>{segment.icon}</span>
+          ) : null}
           {segment.title}
         </div>
         {segment.subtitle ? (

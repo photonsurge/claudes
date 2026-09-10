@@ -11,8 +11,14 @@
  * hazard is still active, so the panel reads as breaking news rather than a
  * standing list (the always-on World Watch panel is the comprehensive view).
  * Renders nothing when nothing has been issued recently.
+ *
+ * The advice body is a fixed three-line window that auto-scrolls (AutoScroll)
+ * when the source's text runs longer: it used to line-clamp to "…", so a long
+ * instruction went to air cut off mid-sentence, and letting it grow instead
+ * would hand a wordy source half the column. Same footprint, whole text.
  */
 import { useEffect, useState } from "react";
+import AutoScroll from "./AutoScroll";
 import type { AlertFeature } from "../../lib/alerts";
 import { SEVERITY_COLORS, SEVERITY_LABELS } from "@photonsurge/shared/alerts/severity";
 import {
@@ -25,6 +31,17 @@ import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
 /** Seconds each alert holds on screen before advancing to the next. */
 const HOLD_MS = 10000;
+
+/** Advice body type + the scroll window: font px, line-height ratio, visible
+ *  lines. Three lines is the footprint the card always had for advice. */
+const ADVICE_FONT_PX = 12;
+const ADVICE_LINE_HEIGHT = 1.4;
+const ADVICE_LINES = 3;
+/** Scroll pace (px/s) and the hold at each end (ms): slow enough to read a 12px
+ *  line as it passes, and a typical six-line instruction completes one pass
+ *  inside HOLD_MS before the next alert cuts in. */
+const ADVICE_SCROLL_PX_S = 12;
+const ADVICE_SCROLL_PAUSE_MS = 2000;
 
 export default function LiveAlertPanel({
   alerts,
@@ -108,11 +125,18 @@ export default function LiveAlertPanel({
       {detail && (
         <div style={{ borderTop: `1px solid ${color}44`, paddingTop: 7, minHeight: 0 }}>
           <div style={{ color, fontSize: 9, fontWeight: 700, letterSpacing: 1, marginBottom: 3 }}>{detail.label}</div>
-          <div style={{ color: INK, fontSize: 12, lineHeight: 1.4,
-            display: "-webkit-box", WebkitLineClamp: 3,
-            WebkitBoxOrient: "vertical", overflow: "hidden", whiteSpace: "normal" }}>
-            {detail.text}
-          </div>
+          {/* Keyed on the alert so a new warning remounts the scroller and starts
+              pinned at the top, rather than inheriting mid-scroll position. */}
+          <AutoScroll
+            key={top.properties.id}
+            speed={ADVICE_SCROLL_PX_S}
+            pause={ADVICE_SCROLL_PAUSE_MS}
+            style={{ maxHeight: Math.round(ADVICE_FONT_PX * ADVICE_LINE_HEIGHT * ADVICE_LINES) }}
+          >
+            <div style={{ color: INK, fontSize: ADVICE_FONT_PX, lineHeight: ADVICE_LINE_HEIGHT, whiteSpace: "normal" }}>
+              {detail.text}
+            </div>
+          </AutoScroll>
         </div>
       )}
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, paddingTop: 6, flexShrink: 0, fontFamily: MONO, fontSize: 10, color: INK_DIM }}>

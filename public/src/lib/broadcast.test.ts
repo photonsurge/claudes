@@ -15,7 +15,7 @@ import {
   freshAlerts,
   issuedAgoLabel,
   expiresInLabel,
-  alertDetail,
+  alertDetail, dedupeSentences,
   topAlerts,
   topAlert,
   alertBannerText,
@@ -282,6 +282,18 @@ describe("expiresInLabel", () => {
   });
 });
 
+describe("dedupeSentences", () => {
+  it("drops only whole repeated sentences, keeping decimals and short fragments intact", () => {
+    expect(dedupeSentences("Waves of 1.5 m expected. Waves of 1.5 m expected. Stay ashore!")).toBe(
+      "Waves of 1.5 m expected. Stay ashore!",
+    );
+    // Matching is case/punctuation-insensitive; short fragments (e.g. abbreviations) never count.
+    expect(dedupeSentences("Take care near rivers. take care near rivers! Avoid low roads, e.g. underpasses, e.g. tunnels."))
+      .toBe("Take care near rivers. Avoid low roads, e.g. underpasses, e.g. tunnels.");
+    expect(dedupeSentences("no terminator at all")).toBe("no terminator at all");
+  });
+});
+
 describe("alertDetail", () => {
   it("prefers the source's advice, translated where there is a translation", () => {
     expect(alertDetail(alert(3, { instruction: "Move to higher ground." }).properties))
@@ -289,6 +301,17 @@ describe("alertDetail", () => {
     expect(
       alertDetail(alert(3, { instruction: "Nach oben.", translatedInstruction: "Move up." }).properties),
     ).toEqual({ label: "OFFICIAL ADVICE", text: "Move up." });
+  });
+
+  it("collapses advice a source repeats verbatim", () => {
+    const twice =
+      "Do not go out in a small boat: High risk of dangerous situations when in a small boat at sea. " +
+      "Do not go out in a small boat: High risk of dangerous situations when in a small boat at sea. " +
+      "If the boat is small, stay ashore.";
+    expect(alertDetail(alert(3, { instruction: twice }).properties)?.text).toBe(
+      "Do not go out in a small boat: High risk of dangerous situations when in a small boat at sea. " +
+        "If the boat is small, stay ashore.",
+    );
   });
 
   it("falls back to a headline that adds something the card has not said", () => {
@@ -660,10 +683,10 @@ describe("worldWatchFeed", () => {
     })),
   });
 
-  it("classifies the hazard icon and flags the nearest enriched city", () => {
+  it("classifies the hazard mark and flags the nearest enriched city", () => {
     const wildfire = withPoint(raw(4, "Forest Fire Warning", "Île-de-France"), 2.3, 48.86);
     const feed = worldWatchFeed([wildfire], [], [city()]);
-    expect(feed[0].icon).toBe("🔥");
+    expect(feed[0].glyph).toBe("fire");
     expect(feed[0].flag).toBe("🇫🇷");
   });
 
@@ -675,7 +698,7 @@ describe("worldWatchFeed", () => {
 
   it("flags a quake by its own coordinates, independent of any alert", () => {
     const feed = worldWatchFeed([], [quake({ lat: 48.85, lng: 2.35 })], [city()]);
-    expect(feed[0].icon).toBe("🌎");
+    expect(feed[0].glyph).toBe("quake");
     expect(feed[0].flag).toBe("🇫🇷");
   });
 
@@ -744,7 +767,7 @@ describe("worldWatchFeed", () => {
     expect(feed.map((f) => f.kind)).toEqual(["volcano", "volcano", "alert"]);
     expect(feed.find((f) => f.title === "Fuji")).toBeUndefined();
     const erupting = feed.find((f) => f.title === "Etna")!;
-    expect(erupting).toMatchObject({ kind: "volcano", tag: "ERUPTING", color: "#ef4444", icon: "🌋" });
+    expect(erupting).toMatchObject({ kind: "volcano", tag: "ERUPTING", color: "#ef4444", glyph: "volcano" });
   });
 
   it("is empty with no data (including no volcanoes)", () => {

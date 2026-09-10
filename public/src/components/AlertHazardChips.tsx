@@ -7,6 +7,7 @@
  * default and newly added hazard types show up enabled.
  */
 import { HAZARDS, type HazardType } from "@photonsurge/shared/alerts/hazard";
+import { HazardGlyph } from "./broadcast/glyphs";
 
 interface Props {
   hazardsOff: HazardType[];
@@ -63,7 +64,7 @@ export default function AlertHazardChips({ hazardsOff, onChange }: Props) {
                 opacity: on ? 1 : 0.7,
               }}
             >
-              <span aria-hidden>{h.icon}</span>
+              <HazardGlyph id={h.id} color={on ? h.color : "#596275"} size={15} />
               {h.label}
             </button>
           );

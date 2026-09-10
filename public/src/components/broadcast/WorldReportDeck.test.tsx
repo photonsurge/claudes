@@ -21,7 +21,7 @@ function feedItem(kind: WorldWatchItem["kind"], key: string): WorldWatchItem {
     kind,
     color: "#f00",
     tag: "TAG",
-    icon: "▲",
+    glyph: "other",
     flag: "",
     title: `${kind} ${key}`,
     sub: "somewhere",

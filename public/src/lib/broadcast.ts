@@ -270,6 +270,31 @@ export function expiresInLabel(iso: string | undefined, now: number = Date.now()
 const normalizeWords = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 /**
+ * Collapse sentences a source repeats verbatim. Some feeds ship the same advice
+ * twice in one instruction (MET Norway's gale warnings: "Do not go out in a
+ * small boat: … Do not go out in a small boat: …"), which doubles the card's
+ * body for nothing. A sentence ends at . ! ? … followed by whitespace (so "1.5 m"
+ * stays whole), and only four-plus-word sentences count as repeats — a recurring
+ * abbreviation fragment ("e.g.") is not a duplicated sentence.
+ */
+export function dedupeSentences(text: string): string {
+  const parts = text.match(/[\s\S]+?(?:[.!?…]+(?=\s|$)|$)/g) ?? [text];
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const raw of parts) {
+    const part = raw.trim();
+    if (!part) continue;
+    const key = normalizeWords(part);
+    if (key.split(" ").filter(Boolean).length >= 4) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    kept.push(part);
+  }
+  return kept.join(" ");
+}
+
+/**
  * The body copy for the live alert card: the source's official advice when it
  * ships one, else its headline — but the headline only when it is a real
  * sentence saying something the title and area don't. Most feeds' headlines just
@@ -283,9 +308,9 @@ export function alertDetail(
   p: AlertFeature["properties"],
   area = "",
 ): { label: "OFFICIAL ADVICE" | "DETAILS"; text: string } | null {
-  const advice = (p.translatedInstruction || p.instruction || "").trim();
+  const advice = dedupeSentences((p.translatedInstruction || p.instruction || "").trim());
   if (advice) return { label: "OFFICIAL ADVICE", text: advice };
-  const headline = (p.translatedHeadline || p.headline || "").trim();
+  const headline = dedupeSentences((p.translatedHeadline || p.headline || "").trim());
   if (!headline) return null;
   const words = normalizeWords(headline).split(" ").filter(Boolean);
   // Fewer than five words is a restated title, not a sentence worth a section.
@@ -386,7 +411,7 @@ export interface AreaSummary {
   /** Non-zero severity buckets, most severe first. */
   bySeverity: { rank: number; label: string; color: string; count: number }[];
   /** Hazard-type buckets, most common first. */
-  byHazard: { hazard: HazardType; label: string; icon: string; color: string; count: number }[];
+  byHazard: { hazard: HazardType; label: string; color: string; count: number }[];
 }
 
 /**
@@ -428,7 +453,7 @@ export function alertSummary(
   const byHazard = [...haz.entries()]
     .map(([hazard, count]) => {
       const m = hazardMeta(hazard);
-      return { hazard, label: m.label, icon: m.icon, color: m.color, count };
+      return { hazard, label: m.label, color: m.color, count };
     })
     .sort((a, b) => b.count - a.count);
 
@@ -799,8 +824,10 @@ export interface WorldWatchItem {
   color: string;
   /** Bold lead chip — "SEVERE" / "M6.3" / "ERUPTING". */
   tag: string;
-  /** Hazard glyph — from the shared hazard vocabulary (a fixed seismic glyph for quakes). */
-  icon: string;
+  /** Which vector mark identifies the row — a hazard from the shared vocabulary,
+   *  or the fixed seismic mark for quakes. NOT an emoji: the encoder's Chromium
+   *  has no emoji font, so WorldFeed draws this through <HazardGlyph>. */
+  glyph: HazardType | "quake";
   /** Nearest enriched city's flag within range, "" if none close enough to trust. */
   flag: string;
   /** Wikipedia thumbnail of the nearest enriched city that has one, if any. */
@@ -840,8 +867,6 @@ function quakeColor(mag: number): string {
   return "#43d9ff";
 }
 
-/** No dedicated hazard category for seismic activity — one fixed glyph for every quake row. */
-const QUAKE_ICON = "🌎";
 
 /** Status → the same importance scale quakeWeight uses — erupting rides near the
  *  top of the Extreme/M6+ tier, unrest sits around Moderate/M5. Dormant never
@@ -889,7 +914,7 @@ export function worldWatchFeed(
       kind: "alert",
       color: SEVERITY_COLORS[rank] ?? "#9ca3af",
       tag: (SEVERITY_LABELS[rank] ?? "ALERT").toUpperCase(),
-      icon: hazardMeta(hazard).icon,
+      glyph: hazard,
       flag: places[0] ? isoToFlag(places[0].item.cc) : "",
       photo: nearbyPhoto(places),
       title: broadcastEventLabel({
@@ -913,7 +938,7 @@ export function worldWatchFeed(
       kind: "quake",
       color: quakeColor(q.mag),
       tag: `M${q.mag.toFixed(1)}`,
-      icon: QUAKE_ICON,
+      glyph: "quake",
       flag: places[0] ? isoToFlag(places[0].item.cc) : "",
       photo: nearbyPhoto(places),
       title: q.place ?? `${q.lat.toFixed(1)}, ${q.lng.toFixed(1)}`,
@@ -932,7 +957,7 @@ export function worldWatchFeed(
       kind: "volcano",
       color: volcanoColor(v.status),
       tag: VOLCANO_STATUS_META[v.status].label.toUpperCase(),
-      icon: hazardMeta("volcano").icon,
+      glyph: "volcano",
       flag: places[0] ? isoToFlag(places[0].item.cc) : "",
       photo: v.wikiThumb ?? nearbyPhoto(places),
       title: v.name,

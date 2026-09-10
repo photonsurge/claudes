@@ -36,6 +36,7 @@ import { GEOMAG_DOMAIN } from "@photonsurge/shared/geomag/types";
 import type { AuroraOverlay } from "../lib/aurora-overlay";
 import type { GeomagOverlay } from "../lib/geomag-overlay";
 import { UI_SANS } from "../lib/fonts";
+import { HazardGlyph } from "./broadcast/glyphs";
 
 const rgbCss = (c: [number, number, number]) => `rgb(${c[0]},${c[1]},${c[2]})`;
 
@@ -198,9 +199,8 @@ export default function AlertLegend({
                       border: "1px solid rgba(255,255,255,0.35)",
                     }}
                   />
-                  <span style={{ fontSize: 12.5, fontWeight: dim ? 600 : 700 }}>
-                    {h.icon} {h.label}
-                  </span>
+                  <HazardGlyph id={id} color={h.color} size={15} />
+                  <span style={{ fontSize: 12.5, fontWeight: dim ? 600 : 700 }}>{h.label}</span>
                 </div>
               );
             })}

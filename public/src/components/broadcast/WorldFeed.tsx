@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import type { WorldWatchItem } from "../../lib/broadcast";
 import { MONO, GODS_TILE, GODS_TILE_BORDER, INK_FAINT } from "./GodsPanel";
 import { useBroadcastTheme } from "./theme-context";
+import { HazardGlyph } from "./glyphs";
 
 /** Rows shown before the list starts marqueeing (taller feeds auto-scroll). */
 export const FEED_VISIBLE = 7;
@@ -67,10 +68,10 @@ function FeedRow({ item }: { item: WorldWatchItem }) {
           />
         ) : (
           <span
-            style={{ flex: "0 0 auto", width: 26, textAlign: "center", fontSize: 17.6, lineHeight: 1 }}
+            style={{ flex: "0 0 auto", width: 26, display: "flex", justifyContent: "center" }}
             title={item.kind === "quake" ? "Seismic" : undefined}
           >
-            {item.icon}
+            <HazardGlyph id={item.glyph} color={item.color} size={22} />
           </span>
         )}
         <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", lineHeight: 1.2 }}>

@@ -21,6 +21,16 @@ it("separates location, severity, timing and official advice", () => {
   expect(screen.getByRole("region", { name: "New weather alert" })).toHaveStyle({ backgroundColor: "#081420" });
 });
 
+it("scrolls long advice through a three-line window instead of clamping it to an ellipsis", () => {
+  render(<LiveAlertPanel alerts={[warning("a", "Reutte")]} />);
+  const text = screen.getByText("Take extra care in exposed areas.");
+  expect(text).not.toHaveStyle({ display: "-webkit-box" });
+  // The AutoScroll window: capped at 3 lines (12px × 1.4, whole px) and clipping — never growing the card.
+  const win = text.closest<HTMLElement>("[style*='max-height']");
+  expect(win).not.toBeNull();
+  expect(win).toHaveStyle({ maxHeight: "50px", overflow: "hidden" });
+});
+
 it("gives viewers ten seconds to read each warning", () => {
   jest.useFakeTimers();
   const { unmount } = render(<LiveAlertPanel alerts={[warning("a", "Reutte"), warning("b", "Tyrol")]} />);

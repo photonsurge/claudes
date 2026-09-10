@@ -8,6 +8,7 @@
  */
 import type { AreaSummary } from "../../lib/broadcast";
 import type { HazardType } from "../../lib/hazard";
+import { HazardGlyph } from "./glyphs";
 
 /** One area's tally for the by-area breakdown — a continent on a world spin, so
  *  the whole-globe rollup reads "which parts of the planet are lit up" instead of
@@ -174,7 +175,7 @@ export default function AreaStatus({
                   transition: "opacity 400ms ease, background 400ms ease",
                 }}
               >
-                <span style={{ fontSize: 18.7 }}>{h.icon}</span>
+                <HazardGlyph id={h.hazard} color={h.color} size={18} />
                 <span style={{ color: h.color, fontVariantNumeric: "tabular-nums" }}>{h.count}</span>
                 <span style={{ opacity: on ? 0.95 : 0.75, fontWeight: 600 }}>{h.label}</span>
               </span>
