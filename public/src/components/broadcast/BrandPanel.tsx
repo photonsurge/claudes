@@ -8,6 +8,7 @@
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import GodsBanner from "./GodsBanner";
 import SubGlobeWidget from "./SubGlobeWidget";
+import { UI_SANS } from "../../lib/fonts";
 
 /** GodsBanner viewBox geometry the live core must line up with. */
 const BANNER_VIEW_W = 1400;
@@ -237,7 +238,7 @@ export default function BrandPanel({
                 fontWeight: 800,
                 letterSpacing: 1.3,
                 color: "#fff",
-                fontFamily: "system-ui, sans-serif",
+                fontFamily: UI_SANS,
               }}
             >
               {theme.name}
@@ -249,7 +250,7 @@ export default function BrandPanel({
                 letterSpacing: 1.2,
                 color: "#8fb6e6",
                 opacity: 0.8,
-                fontFamily: "system-ui, sans-serif",
+                fontFamily: UI_SANS,
               }}
             >
               {theme.tagline}
@@ -263,7 +264,7 @@ export default function BrandPanel({
                   color: "#5f87ad",
                   opacity: 0.85,
                   marginTop: 1,
-                  fontFamily: "system-ui, sans-serif",
+                  fontFamily: UI_SANS,
                 }}
               >
                 {theme.strapline}

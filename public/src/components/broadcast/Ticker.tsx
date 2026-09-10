@@ -30,6 +30,7 @@ import {
   type CrawlWindow,
   type WindowEntry,
 } from "./crawl-window";
+import { UI_SANS } from "../../lib/fonts";
 
 /** What an entry renders as: its text, and whether it is the sponsored form. */
 const entryFingerprint = (e: TickerEntry): string => (typeof e === "string" ? e : `\u0002${e.text}`);
@@ -229,7 +230,7 @@ export default function Ticker({
             : undefined,
         overflow: "hidden",
         color: theme.tickerText,
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: UI_SANS,
         pointerEvents: "none",
       }}
     >

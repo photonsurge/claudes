@@ -1,0 +1,16 @@
+noto-color-emoji-flags.woff2
+────────────────────────────
+Noto Color Emoji — flags-only subset (U+1F1E6–U+1F1FF, COLRv1).
+Fetched from Google Fonts' own served slice of the family:
+  https://fonts.googleapis.com/css2?family=Noto+Color+Emoji
+  (the subset whose unicode-range is U+1f1e6-1f1ff)
+
+Copyright Google Inc. Licensed under the SIL Open Font License, Version 1.1:
+  https://openfontlicense.org
+  https://github.com/googlefonts/noto-emoji/blob/main/fonts/LICENSE
+
+Self-hosted on purpose: the Chromium inside OBS on the encoder host ships no
+font covering the regional-indicator block, so flag emoji rendered as .notdef
+boxes on air while looking correct in desktop Chrome. Serving the glyphs from
+our own origin makes the broadcast independent of the encoder's system fonts.
+See public/src/app/globals.css.

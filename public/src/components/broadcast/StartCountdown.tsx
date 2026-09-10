@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { UI_SANS } from "../../lib/fonts";
 
 const FADE_MS = 600;
 
@@ -72,7 +73,7 @@ export default function StartCountdown({
           flexDirection: "column",
           alignItems: "center",
           gap: 22,
-          fontFamily: "system-ui, sans-serif",
+          fontFamily: UI_SANS,
           textAlign: "center",
         }}
       >

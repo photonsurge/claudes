@@ -47,6 +47,7 @@ import LoadingScreen from "./broadcast/LoadingScreen";
 import StartCountdown from "./broadcast/StartCountdown";
 import { broadcastThemeCssVars, getBroadcastTheme } from "./broadcast/config";
 import { BroadcastThemeContext } from "./broadcast/theme-context";
+import { UI_SANS } from "../lib/fonts";
 
 /** One shared empty list for every "layer off" prop — a fresh `[]` per render
  *  would defeat the memoised chrome below. */
@@ -309,7 +310,7 @@ function WatchSurfaceBody({
             left: 16,
             bottom: 16,
             color: "rgba(255,255,255,0.85)",
-            fontFamily: "system-ui, sans-serif",
+            fontFamily: UI_SANS,
             fontSize: 13,
             textShadow: "0 1px 2px rgba(0,0,0,0.8)",
             pointerEvents: "none",
@@ -340,7 +341,7 @@ function WatchSurfaceBody({
             right: 16,
             bottom: 16,
             color: "rgba(255,255,255,0.85)",
-            fontFamily: "system-ui, sans-serif",
+            fontFamily: UI_SANS,
             fontSize: 13,
             textShadow: "0 1px 2px rgba(0,0,0,0.8)",
             pointerEvents: "none",

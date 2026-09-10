@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { UI_SANS } from "../../lib/fonts";
 
 const WORLD_CLOCKS = [
   { label: "LONDON", timeZone: "Europe/London" },
@@ -92,7 +93,7 @@ export default function WorldClockStrip({
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
-                fontFamily: "system-ui, sans-serif",
+                fontFamily: UI_SANS,
                 fontSize: (primary ? 8.8 : 7.2) * scale,
                 fontWeight: 800,
                 letterSpacing: 0.7,

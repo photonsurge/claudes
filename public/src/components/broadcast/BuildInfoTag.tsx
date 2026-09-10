@@ -7,6 +7,7 @@
  * fetch failure rather than showing an error on air.
  */
 import { useEffect, useState } from "react";
+import { UI_MONO } from "../../lib/fonts";
 
 interface ServiceStatus {
   name: string;
@@ -47,7 +48,7 @@ export default function BuildInfoTag() {
       style={{
         display: "flex",
         gap: 10,
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        fontFamily: UI_MONO,
         fontSize: 11,
         letterSpacing: 0.2,
         color: "#5c7a94",

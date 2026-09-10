@@ -12,6 +12,7 @@ import { GEOMAG_DOMAIN } from "@photonsurge/shared/geomag/types";
 import type { AuroraOverlay } from "../../lib/aurora-overlay";
 import type { GeomagOverlay } from "../../lib/geomag-overlay";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { UI_SANS } from "../../lib/fonts";
 
 function Ramp({
   label,
@@ -66,7 +67,7 @@ export default function SpaceWeatherMeter({
         backdropFilter: "var(--panel-blur, blur(8px))",
         WebkitBackdropFilter: "var(--panel-blur, blur(8px))",
         pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: UI_SANS,
         color: theme.titleColor,
         width: 196,
       }}

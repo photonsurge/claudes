@@ -16,6 +16,7 @@ import { getPalette } from "@photonsurge/shared/palettes";
 import { buildLegend } from "../lib/legend";
 import { mapFreshness } from "../lib/manifest";
 import { idleBreatheActive, idleBreatheZoom, MAX_PUSH_IN } from "../lib/idle-motion";
+import { UI_SANS } from "../lib/fonts";
 
 
 const KIND: Record<SegmentKind, { label: string; color: string }> = {
@@ -238,7 +239,7 @@ export default function ViewingOverlay({
         ...anchor,
         width: 320,
         pointerEvents: draggable ? "auto" : "none",
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: UI_SANS,
         color: "#fff",
         background: "linear-gradient(180deg, rgba(12,17,28,0.82), rgba(8,12,20,0.88))",
         border: "1px solid rgba(120,140,170,0.22)",

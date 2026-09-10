@@ -7,6 +7,7 @@
  * pointer events on the captured /watch surface.
  */
 import { upNextLabel, type Segment, type SegmentKind, type UpNextItem } from "@photonsurge/shared/director";
+import { UI_SANS } from "../lib/fonts";
 
 const KIND_LABEL: Record<SegmentKind, string> = {
   intro: "Live",
@@ -38,7 +39,7 @@ export default function DirectorCaption({
         left: 24,
         bottom: 56,
         pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: UI_SANS,
         color: "#fff",
         textShadow: "0 1px 3px rgba(0,0,0,0.9)",
         maxWidth: "60vw",

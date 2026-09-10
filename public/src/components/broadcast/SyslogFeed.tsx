@@ -7,6 +7,7 @@
  * fade to transparent as they age, then drop off.
  */
 import { useEventLog, LOG_LIFETIME_MS } from "../../lib/event-log";
+import { UI_MONO } from "../../lib/fonts";
 
 export default function SyslogFeed() {
   const lines = useEventLog();
@@ -19,7 +20,7 @@ export default function SyslogFeed() {
         display: "flex",
         flexDirection: "column-reverse",
         gap: 3,
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        fontFamily: UI_MONO,
         fontSize: 12.1,
         letterSpacing: 0.2,
         pointerEvents: "none",

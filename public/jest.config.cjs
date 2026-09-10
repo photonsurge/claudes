@@ -29,6 +29,8 @@ module.exports = {
     ],
   },
   moduleNameMapper: {
+    // Global stylesheet imported by app/layout.tsx — jsdom has no CSS pipeline.
+    "\\.css$": "<rootDir>/src/test/mocks/style.ts",
     // Server-only logger; the real module loads mongoose (untransformed ESM
     // bson), so stub it for the many pure-logic suites that reach it via
     // lib/api-log (e.g. lib/focus/focus-cache).

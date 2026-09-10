@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AudioSettings } from "@photonsurge/shared/control";
 import type { Segment, SegmentKind } from "@photonsurge/shared/director";
 import { AuroraBed } from "../../lib/audio/engine";
+import { UI_SANS } from "../../lib/fonts";
 
 /**
  * How intense each on-air segment kind reads, 0..1 — the "auto" mode's driver.
@@ -130,7 +131,7 @@ export default function BroadcastBed({ audio, segment }: BroadcastBedProps) {
         background: "rgba(10,14,22,0.85)",
         border: "1px solid #2a3344",
         color: "#8b95a7",
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: UI_SANS,
         fontSize: 12,
         pointerEvents: "none",
       }}

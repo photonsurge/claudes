@@ -35,6 +35,7 @@ import { AURORA_DOMAIN } from "@photonsurge/shared/aurora/types";
 import { GEOMAG_DOMAIN } from "@photonsurge/shared/geomag/types";
 import type { AuroraOverlay } from "../lib/aurora-overlay";
 import type { GeomagOverlay } from "../lib/geomag-overlay";
+import { UI_SANS } from "../lib/fonts";
 
 const rgbCss = (c: [number, number, number]) => `rgb(${c[0]},${c[1]},${c[2]})`;
 
@@ -137,7 +138,7 @@ export default function AlertLegend({
         top: 24,
         width: 208,
         pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: UI_SANS,
         color: "#fff",
         background: "linear-gradient(180deg, rgba(12,17,28,0.82), rgba(8,12,20,0.88))",
         border: "1px solid rgba(120,140,170,0.22)",

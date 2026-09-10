@@ -10,6 +10,7 @@
  * normal browser tab.
  */
 import { isObsRender, useRendererInfo } from "../lib/broadcast-render";
+import { UI_SANS } from "../lib/fonts";
 
 export default function RenderHealthBadge() {
   const info = useRendererInfo();
@@ -28,7 +29,7 @@ export default function RenderHealthBadge() {
         color: "#fff",
         borderRadius: 6,
         padding: "5px 10px",
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: UI_SANS,
         fontSize: 12,
         fontWeight: 700,
         letterSpacing: 0.4,

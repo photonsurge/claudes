@@ -36,6 +36,7 @@ import { useRegionCities } from "../../lib/useRegionCities";
 import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
 import WatchSurface from "../../components/WatchSurface";
 import ViewingOverlay from "../../components/ViewingOverlay";
+import { UI_SANS } from "../../lib/fonts";
 
 function WatchPageInner() {
   const token = useSearchParams().get("token") ?? undefined;
@@ -160,7 +161,7 @@ function WatchPageInner() {
           justifyContent: "center",
           background: "#000",
           color: "#8b95a7",
-          fontFamily: "system-ui, sans-serif",
+          fontFamily: UI_SANS,
           fontSize: 14,
         }}
       >

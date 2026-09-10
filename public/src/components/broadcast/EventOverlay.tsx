@@ -21,6 +21,7 @@ import { KIND_COLOR } from "./kinds";
 import { TILE_BG } from "./config";
 import { KindGlyph } from "./glyphs";
 import { DIVIDER } from "./BroadcastCard";
+import { UI_SANS } from "../../lib/fonts";
 
 const W = 660;
 const H = 440;
@@ -156,7 +157,7 @@ export default function EventOverlay({
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          fontFamily: "system-ui, sans-serif",
+          fontFamily: UI_SANS,
           textShadow: "0 2px 12px rgba(0,0,0,0.85)",
           // Scrim: the name + location render straight over the basemap, which
           // can be near-white — a soft dark backing keeps the lower-third
@@ -322,7 +323,7 @@ export function EventTrackingLabel({
         // the readout from the title bar above without breaking the one-plate look.
         padding: "8px 20px 10px",
         borderTop: DIVIDER,
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: UI_SANS,
         pointerEvents: "none",
       }}
     >

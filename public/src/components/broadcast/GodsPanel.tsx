@@ -11,6 +11,12 @@
 import type { CSSProperties, ReactNode } from "react";
 import { pageDotStyle, pageDotsSlack } from "./page-dots";
 
+// No flag face listed here on purpose: globals.css re-declares `Saira` and
+// `JetBrains Mono` over `unicode-range: U+1F1E6-1F1FF` pointing at our
+// self-hosted flag subset, which EXTENDS both families with flag glyphs. So
+// every `fontFamily: SANS | MONO` on air (and GodsBanner's SVG <text>) draws
+// country flags without the encoder box owning an emoji font — see
+// public/src/lib/fonts.ts for why that matters.
 export const SANS = "Saira, 'Helvetica Neue', Helvetica, sans-serif";
 export const MONO = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace";
 

@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { UI_SANS } from "../../lib/fonts";
 
 const FADE_MS = 500;
 
@@ -54,7 +55,7 @@ export default function LoadingScreen({
           flexDirection: "column",
           alignItems: "center",
           gap: 18,
-          fontFamily: "system-ui, sans-serif",
+          fontFamily: UI_SANS,
         }}
       >
         <svg

@@ -9,6 +9,7 @@
  */
 import { kpLevel } from "@photonsurge/shared/aurora/kp";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
+import { UI_SANS } from "../../lib/fonts";
 
 const SEGMENTS = 9;
 
@@ -37,7 +38,7 @@ export default function KpIndexPanel({
         backdropFilter: "var(--panel-blur, blur(8px))",
         WebkitBackdropFilter: "var(--panel-blur, blur(8px))",
         pointerEvents: "none",
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: UI_SANS,
         color: theme.titleColor,
         width: 196,
       }}

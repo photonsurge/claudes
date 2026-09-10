@@ -25,6 +25,7 @@ import { retryUntil } from "../../../lib/retry";
 import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox } from "../../../lib/director";
 import WatchSurface from "../../../components/WatchSurface";
 import ViewingOverlay from "../../../components/ViewingOverlay";
+import { UI_SANS } from "../../../lib/fonts";
 
 function SceneWatchPageInner() {
   const params = useParams<{ scene: string }>();
@@ -142,7 +143,7 @@ function SceneWatchPageInner() {
           justifyContent: "center",
           background: "#000",
           color: "#8b95a7",
-          fontFamily: "system-ui, sans-serif",
+          fontFamily: UI_SANS,
           fontSize: 14,
         }}
       >
