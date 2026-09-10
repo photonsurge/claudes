@@ -11,7 +11,6 @@ import {
   RasterLayer,
   ParticleLayer,
   ContourLayer,
-  GridLayer,
 } from "weatherlayers-gl";
 import type { WeatherManifest, WeatherVariableManifest } from "@photonsurge/shared/manifest";
 import type { LoadedTexture } from "../../lib/textures";
@@ -20,9 +19,6 @@ import {
   windParticleProps,
   vectorParticleProps,
   vectorParticlePropsFromEntry,
-  windBarbPropsFromEntry,
-  type WindBarbProps,
-  type WindBarbOpts,
   scalarRasterProps,
   scalarRasterPropsFromEntry,
   pressureProps,
@@ -269,41 +265,6 @@ export function vectorParticleLayers(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (finest && finest.index !== baseNestIndex) out.push(new ParticleLayer({ ...finest.props, image: finest.image as any, parameters: DEPTH_TEST }));
   return out;
-}
-
-/**
- * Nest-aware wind BARBS (windMode "barbs"): the same uv textures as the
- * particles, drawn as a WeatherLayers WIND_BARB GridLayer. Unlike the particles
- * (base + finest nest stacked), barbs draw a SINGLE winner — the finest nest
- * covering the view, else the global base, else the coarsest loaded nest
- * promoted to base — because two overlapping barb grids at different spacings
- * read as broken double glyphs, not as better data.
- */
-export function windBarbLayers(
-  manifest: WeatherManifest,
-  variableId: string,
-  fhr: number,
-  resolve: TextureResolver,
-  camera: ResolverCamera,
-  opts?: WindBarbOpts,
-): GridLayer[] {
-  const entries = resolveEntries(manifest.variables[variableId], camera);
-  const buildNest = (e: WeatherVariableManifest, i: number) =>
-    e.bbox ? windBarbPropsFromEntry(e, variableId, fhr, e.bbox, { ...opts, idSuffix: `-${e.sourceId ?? `n${i}`}` }) : null;
-  const mk = (props: WindBarbProps, image: LoadedTexture) =>
-    // Depth-tested (never occluding), same reasoning as the particle layer.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new GridLayer({ ...props, image: image as any, parameters: DEPTH_TEST });
-  const finest = pickBestFitLoaded(entries, buildNest, resolve, camera);
-  if (finest) return [mk(finest.props, finest.image)];
-  const base = entries[0];
-  if (base) {
-    const props = windBarbPropsFromEntry(base, variableId, fhr, manifestBounds(manifest), { ...opts, idSuffix: "" });
-    const image = props && resolve(props.image);
-    if (props && image) return [mk(props, image)];
-  }
-  const coarse = pickCoarsestLoaded(entries, buildNest, resolve);
-  return coarse ? [mk(coarse.props, coarse.image)] : [];
 }
 
 export function pressureLayers(

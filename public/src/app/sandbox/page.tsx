@@ -183,7 +183,7 @@ export default function SandboxPage() {
           // every frame through a callback whose `state` closure can be one
           // render stale — spreading `state` here re-applies the pre-click
           // snapshot and silently reverts whatever the panel just changed
-          // (the "can't switch wind barbs on" bug).
+          // (the "panel toggles revert while spinning" bug).
           onCameraChange={(center, zoom) => setState((s) => ({ ...s, camera: { center, zoom } }))}
         />
         {state.showAlerts || state.showSeismic || state.showAurora || state.showMagneticField ? (

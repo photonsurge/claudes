@@ -290,15 +290,15 @@ describe("mergeDirectorConfig", () => {
 
   it("clears kindLooks fields with an explicit null, leaving siblings alone", () => {
     const merged = mergeDirectorConfig(base, {
-      kindLooks: { storm: { basemap: "night", windMode: "particles", wind: { speedFactor: 16 } } },
+      kindLooks: { storm: { basemap: "night", showSatImg: true, wind: { speedFactor: 16 } } },
     });
     const cleared = mergeDirectorConfig(merged, { kindLooks: { storm: { wind: null } } });
-    expect(cleared.kindLooks.storm).toEqual({ basemap: "night", windMode: "particles" });
+    expect(cleared.kindLooks.storm).toEqual({ basemap: "night", showSatImg: true });
 
     const clearedAll = mergeDirectorConfig(cleared, {
-      kindLooks: { storm: { basemap: null, windMode: null } },
+      kindLooks: { storm: { basemap: null, showSatImg: null } },
     });
-    expect(clearedAll.kindLooks.storm).toEqual({ basemap: undefined, windMode: undefined });
+    expect(clearedAll.kindLooks.storm).toEqual({ basemap: undefined, showSatImg: undefined });
   });
 
   it("merges a kindLooks satellite look/on-off, validates the look, and clears with null", () => {

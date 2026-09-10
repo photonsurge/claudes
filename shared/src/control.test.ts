@@ -46,7 +46,6 @@ describe("mergeControlState", () => {
       units: { wind: "m/s", temp: "F" },
       basemapColors: { ocean: "#111111", land: "#222222", border: "#333333" },
       wind: { numParticles: 1234, speedFactor: 3, maxAge: 7, width: 5, opacity: 0.5, color: "#abcdef" },
-      windMode: "barbs",
       showContours: true,
       showElevation: true,
       elevation: { colorMode: "custom", color: "#00ff00", width: 2, opacity: 0.8, interval: 500, majorInterval: 2000 },

@@ -78,7 +78,6 @@ const make = (
       ...PRESETS[kind],
       ...cfg.overlayOverrides?.[kind],
       ...(look?.basemap ? { basemap: look.basemap } : {}),
-      ...(look?.windMode ? { windMode: look.windMode } : {}),
       ...(look?.wind ? { wind: { ...DEFAULT_WIND_SETTINGS, ...look.wind } } : {}),
       // Per-kind satellite look: force the overlay on/off, and set every disc's
       // composite so an on disc flips to this shot's look (see discLookFeeds).

@@ -42,7 +42,6 @@ describe("controlPatchFromSlide", () => {
     const live: ControlState = { ...DEFAULT_CONTROL_STATE };
     const patch = controlPatchFromSlide(slideOf({ basemap: "satellite" }), live);
     expect(patch.basemap).toBe("satellite");
-    expect(patch.windMode).toBeUndefined();
     expect(patch.activeVariable).toBeUndefined();
     expect(patch.wind).toBeUndefined();
   });

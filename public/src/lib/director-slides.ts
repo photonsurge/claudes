@@ -18,7 +18,6 @@ export function slideFromLive(live: ControlState): Pick<KindSlide, "look" | "ove
   return {
     look: {
       basemap: live.basemap,
-      windMode: live.windMode,
       wind: { ...live.wind },
       showSatImg: live.showSatImg,
       activeVariable: live.activeVariable,
@@ -34,7 +33,6 @@ export function slideFromLive(live: ControlState): Pick<KindSlide, "look" | "ove
 export function controlPatchFromSlide(slide: KindSlide, live: ControlState): Partial<ControlState> {
   const patch: Partial<ControlState> = { ...slide.overlays };
   if (slide.look.basemap) patch.basemap = slide.look.basemap;
-  if (slide.look.windMode) patch.windMode = slide.look.windMode;
   if (slide.look.wind) patch.wind = { ...live.wind, ...slide.look.wind };
   if (typeof slide.look.showSatImg === "boolean") patch.showSatImg = slide.look.showSatImg;
   if (slide.look.activeVariable) patch.activeVariable = slide.look.activeVariable;
@@ -79,7 +77,6 @@ export function slideIsLive(slide: KindSlide, live: ControlState): boolean {
   const current = slideFromLive(live);
   return (
     (slide.look.basemap ?? null) === (current.look.basemap ?? null) &&
-    (slide.look.windMode ?? null) === (current.look.windMode ?? null) &&
     (slide.look.showSatImg ?? null) === (current.look.showSatImg ?? null) &&
     (slide.look.activeVariable ?? null) === (current.look.activeVariable ?? null) &&
     (slide.look.auroraOpacity ?? null) === (current.look.auroraOpacity ?? null) &&

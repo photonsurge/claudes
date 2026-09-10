@@ -298,12 +298,7 @@ export default function ControlPanel({
 
       {state.showWind && (
         <Section title="Wind">
-          <WindControls
-            wind={state.wind}
-            mode={state.windMode}
-            onWind={(wind) => patch({ wind })}
-            onMode={(windMode) => patch({ windMode })}
-          />
+          <WindControls wind={state.wind} onWind={(wind) => patch({ wind })} />
         </Section>
       )}
 

@@ -20,14 +20,13 @@ jest.mock("@deck.gl/extensions", () => ({
 }));
 
 import type { WeatherManifest, WeatherVariableManifest } from "@photonsurge/shared/manifest";
-import { RasterLayer, ParticleLayer, ContourLayer, HighLowLayer, GridLayer } from "weatherlayers-gl";
+import { RasterLayer, ParticleLayer, ContourLayer, HighLowLayer } from "weatherlayers-gl";
 import {
   vectorParticleLayer,
   windParticleLayer,
   scalarRasterLayer,
   scalarRasterLayers,
   vectorParticleLayers,
-  windBarbLayers,
   pressureLayers,
   elevationReliefLayer,
   elevationLayers,
@@ -268,82 +267,6 @@ describe("vectorParticleLayers (nest-aware wind)", () => {
     const wide = vectorParticleLayers(nestOnly, "wind", 0, resolve, { center: [0, 20], zoom: 3 });
     expect(wide).toHaveLength(1);
     expect(props(wide[0]).image).toEqual({ url: "/tex/wicon0" });
-  });
-});
-
-describe("windBarbLayers (nest-aware, single winner)", () => {
-  const windNest = entry({
-    encoding: "uv",
-    units: "m/s",
-    sourceId: "arome",
-    bbox: FRANCE,
-    minZoom: 5,
-    priority: 31,
-    resolutionDeg: 0.01,
-    imageUnscale: [-40, 40],
-    files: { "0": "/tex/warome0" },
-  });
-  const nested = makeManifest({
-    wind: entry({
-      encoding: "uv",
-      units: "m/s",
-      imageUnscale: [-30, 30],
-      files: { "0": "/tex/wind0" },
-      nests: [windNest],
-    }),
-  });
-  const inFrance = { center: [2, 47] as [number, number], zoom: 6 };
-
-  it("draws ONLY the finest covering nest — never base + nest stacked (double glyphs)", () => {
-    const layers = windBarbLayers(nested, "wind", 0, resolve, inFrance);
-    expect(layers).toHaveLength(1);
-    expect(layers[0]).toBeInstanceOf(GridLayer);
-    expect(props(layers[0]).id).toBe("wind-barbs-0-arome");
-    expect(props(layers[0]).bounds).toEqual(FRANCE);
-    expect(props(layers[0]).style).toBe("WIND_BARB");
-    expect(props(layers[0]).imageType).toBe("VECTOR");
-    expect(props(layers[0]).parameters).toBe(DEPTH_TEST);
-  });
-
-  it("falls back to the global base when zoomed out or the nest texture is unloaded", () => {
-    const wide = windBarbLayers(nested, "wind", 0, resolve, { center: [2, 47], zoom: 2 });
-    expect(wide).toHaveLength(1);
-    expect(props(wide[0]).id).toBe("wind-barbs-0");
-    expect(props(wide[0]).bounds).toEqual(GLOBAL);
-
-    const unloaded = windBarbLayers(nested, "wind", 0, resolver(["/tex/warome0"]), inFrance);
-    expect(unloaded).toHaveLength(1);
-    expect(props(unloaded[0]).image).toEqual({ url: "/tex/wind0" });
-  });
-
-  it("promotes the coarsest loaded nest when there is no true base", () => {
-    const nestOnly = makeManifest({
-      wind: entry({
-        encoding: "uv",
-        units: "m/s",
-        files: {},
-        nests: [
-          entry({
-            encoding: "uv",
-            units: "m/s",
-            sourceId: "icon-global",
-            bbox: GLOBAL,
-            minZoom: 2,
-            priority: 12,
-            imageUnscale: [-30, 30],
-            files: { "0": "/tex/wicon0" },
-          }),
-        ],
-      }),
-    });
-    const wide = windBarbLayers(nestOnly, "wind", 0, resolve, { center: [0, 20], zoom: 3 });
-    expect(wide).toHaveLength(1);
-    expect(props(wide[0]).image).toEqual({ url: "/tex/wicon0" });
-  });
-
-  it("returns [] when nothing is loaded or the variable is unknown", () => {
-    expect(windBarbLayers(nested, "wind", 0, resolver(["/tex/wind0", "/tex/warome0"]), inFrance)).toEqual([]);
-    expect(windBarbLayers(nested, "nope", 0, resolve, inFrance)).toEqual([]);
   });
 });
 

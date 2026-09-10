@@ -325,10 +325,10 @@ export const MANIFEST_POLL_MS = 5 * 60_000;
  * how old that run is, how many steps it carries and which forecast hour is
  * being drawn.
  *
- * Written because a screenshot of near-calm wind barbs under a live
- * damaging-wind warning has two very different explanations — the barbs are
- * sampling wrong, or the barbs are faithfully drawing a field from a run that
- * is a day or two old while the alert polygon beside them is current — and
+ * Written because a screenshot of a near-calm wind field under a live
+ * damaging-wind warning has two very different explanations — the field is
+ * sampled wrong, or it is faithfully drawn from a run that is a day or two
+ * old while the alert polygon beside it is current — and
  * nothing in a CPU profile or a screenshot tells the two apart. The age does.
  * A run age in hours means the wind is current and the sampling is suspect; a
  * run age in days means the wind is stale and the pipeline is (see the

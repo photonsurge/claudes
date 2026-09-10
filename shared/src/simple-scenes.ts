@@ -57,7 +57,6 @@ export const SIMPLE_SCENE_PRESETS: SimpleScenePreset[] = [
       activeVariable: null, // particles over plain dark; no scalar wash behind them
       basemap: "dark",
       showWind: true,
-      windMode: "particles",
       showPressure: true, // isobars + H/L give the flow its context
     },
   },

@@ -137,9 +137,6 @@ export const WIND_PRESETS: Record<string, WindSettings> = {
   storm: { numParticles: 9000, speedFactor: 16, maxAge: 16, width: 2.5, opacity: 1, color: "#cfe8ff" },
 };
 
-/** How the wind field is drawn. */
-export type WindMode = "particles" | "barbs";
-
 /**
  * How the generative audio bed on /watch picks its section. "auto" follows the
  * broadcast (on-air segment severity + the engine's slow drift); the named modes
@@ -469,8 +466,6 @@ export interface ControlState {
   basemapColors: BasemapColors;
   /** Wind particle appearance. */
   wind: WindSettings;
-  /** Draw wind as flowing particles or meteorological barbs. */
-  windMode: WindMode;
   /** Isolines for the active scalar variable. */
   showContours: boolean;
   /** Static terrain contour LINE overlay (the "relief" basemap is separate). */
@@ -723,7 +718,6 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   units: { wind: "kt", temp: "C" },
   basemapColors: { ...DEFAULT_BASEMAP_COLORS },
   wind: { ...DEFAULT_WIND_SETTINGS },
-  windMode: "particles",
   showContours: false,
   showElevation: false,
   elevation: { ...DEFAULT_ELEVATION_SETTINGS },
@@ -916,7 +910,6 @@ function buildControlState(base: ControlState, patch: Partial<ControlState>): Co
       opacity: patch.wind?.opacity ?? base.wind?.opacity ?? DEFAULT_WIND_SETTINGS.opacity,
       color: patch.wind?.color ?? base.wind?.color ?? DEFAULT_WIND_SETTINGS.color,
     },
-    windMode: patch.windMode ?? base.windMode ?? "particles",
     showContours:
       typeof patch.showContours === "boolean" ? patch.showContours : base.showContours ?? false,
     showElevation:

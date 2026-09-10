@@ -14,7 +14,7 @@
  * by /control via /api/director/config and read by the worker each tick. Same
  * cold-start-from-Mongo pattern as the broadcast ControlState.
  */
-import type { ControlState, WindSettings, WindMode } from "./control";
+import type { ControlState, WindSettings } from "./control";
 import { DEFAULT_WIND_SETTINGS, WIND_PRESETS } from "./control";
 import type { HazardType } from "./alerts/hazard";
 import type { AdMediaType } from "./ads/types";
@@ -494,7 +494,6 @@ export interface KindSlide {
  */
 export interface KindLook {
   basemap?: string | null;
-  windMode?: WindMode | null;
   wind?: Partial<WindSettings> | null;
   /** Force the satellite overlay on/off for this shot type (null/undefined = inherit live). */
   showSatImg?: boolean | null;
@@ -605,7 +604,6 @@ function seedSlide(id: string, name: string, look: KindLook, on: readonly string
   const overlays = { ...SEED_OVERLAYS_OFF };
   for (const k of on) overlays[k] = true;
   const overCap =
-    look.windMode === "particles" &&
     look.wind &&
     look.wind !== GUST_WIND &&
     (look.wind.opacity ?? 0) > SEED_MAX_WIND_OPACITY;
@@ -632,7 +630,7 @@ function landSpotlightSlides(prefix: string): KindSlide[] {
   const FIELD_RADAR = ["showWind", "showRadar", "showAlerts", "showElevation", "showCities"] as const;
   const FULL = ["showWind", "showPressure", "showRadar", "showAlerts", "showElevation", "showCities"] as const;
   const IMG = ["showSatImg", "showAlerts", "showCities"] as const;
-  const p = (activeVariable?: string): KindLook => ({ windMode: "particles", wind: SUBTLE_WIND, activeVariable });
+  const p = (activeVariable?: string): KindLook => ({ wind: SUBTLE_WIND, activeVariable });
   return [
     // ── Scalar weather fields ────────────────────────────────────────────────
     s("national-check", "National Weather Check", p(), FULL),
@@ -649,17 +647,15 @@ function landSpotlightSlides(prefix: string): KindSlide[] {
     s("feels-like", "Feels Like", p("feelslike"), FIELD),
     s("precipitable-water", "Precipitable Water", p("pwat"), FIELD),
     s("uv", "UV", p("uvindex"), FIELD),
-    s("severe-alert", "Severe Alert", { windMode: "particles", wind: GUST_WIND, activeVariable: "gust" }, ["showWind", "showPressure", "showRadar", "showAlerts", "showCities"]),
+    s("severe-alert", "Severe Alert", { wind: GUST_WIND, activeVariable: "gust" }, ["showWind", "showPressure", "showRadar", "showAlerts", "showCities"]),
     s("radar-focus", "Radar Focus", p("radar"), ["showWind", "showPressure", "showRadar", "showAlerts", "showCities"]),
-    // ── Barbs render of the same wind field ──────────────────────────────────
-    s("barb-chart", "Barb Chart", { windMode: "barbs", wind: SUBTLE_WIND }, FULL),
     // ── Live satellite looks ─────────────────────────────────────────────────
     s("satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, IMG),
     s("satellite-ir", "Satellite IR", { showSatImg: true, satImgLook: "ir" }, IMG),
     s("water-vapour", "Water Vapour", { showSatImg: true, satImgLook: "watervapour" }, IMG),
     s("dust-haze", "Dust & Haze", { showSatImg: true, satImgLook: "dust" }, IMG),
     // ── Terrain / basemap looks ──────────────────────────────────────────────
-    s("terrain-relief", "Terrain Relief", { basemap: "relief", windMode: "particles", wind: SUBTLE_WIND }, FULL),
+    s("terrain-relief", "Terrain Relief", { basemap: "relief", wind: SUBTLE_WIND }, FULL),
     s("topo-map", "Topo Map", { basemap: "terrain" }, ["showElevation", "showAlerts", "showCities"]),
     s("city-lights", "City Lights", { basemap: "night" }, ["showAlerts", "showCities"]),
     s("magnetic-field", "Magnetic Field", { basemap: "dark" }, ["showMagneticField", "showAlerts", "showCities"]),
@@ -684,12 +680,12 @@ function establishingSlides(prefix: string): KindSlide[] {
   const s = (id: string, name: string, look: KindLook, on: readonly string[]) =>
     seedSlide(`${prefix}-${id}`, name, look, on);
   const FIELD = ["showWind", "showCities"] as const;
-  const p = (activeVariable?: string): KindLook => ({ windMode: "particles", wind: SUBTLE_WIND, activeVariable });
+  const p = (activeVariable?: string): KindLook => ({ wind: SUBTLE_WIND, activeVariable });
   return [
     // ── Cinematic establishing looks ─────────────────────────────────────────
-    s("cinematic-dark", "Cinematic Dark", { basemap: "dark", windMode: "particles", wind: SUBTLE_WIND }, ["showWind", "showPressure", "showCities"]),
-    s("city-lights", "City Lights", { basemap: "night", windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } }, ["showCities"]),
-    s("aurora-glow", "Aurora Glow", { windMode: "particles", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } }, ["showAurora", "showCities"]),
+    s("cinematic-dark", "Cinematic Dark", { basemap: "dark", wind: SUBTLE_WIND }, ["showWind", "showPressure", "showCities"]),
+    s("city-lights", "City Lights", { basemap: "night", wind: { ...WIND_PRESETS.calm, opacity: 0.5 } }, ["showCities"]),
+    s("aurora-glow", "Aurora Glow", { wind: { ...WIND_PRESETS.calm, opacity: 0.5 } }, ["showAurora", "showCities"]),
     s("magnetic-field", "Magnetic Field", { basemap: "dark" }, ["showMagneticField", "showCities"]),
     // ── Scalar weather fields — one slide per non-sea variable ───────────────
     s("temperature", "Temperature", p("temp"), FIELD),
@@ -706,7 +702,7 @@ function establishingSlides(prefix: string): KindSlide[] {
     s("feels-like", "Feels Like", p("feelslike"), FIELD),
     s("precipitable-water", "Precipitable Water", p("pwat"), FIELD),
     s("uv", "UV", p("uvindex"), FIELD),
-    s("severe-wind", "Severe Wind", { windMode: "particles", wind: GUST_WIND, activeVariable: "gust" }, FIELD),
+    s("severe-wind", "Severe Wind", { wind: GUST_WIND, activeVariable: "gust" }, FIELD),
   ];
 }
 
@@ -731,7 +727,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     seedSlide(
       "ocean-storm-seas",
       "Storm Seas",
-      { windMode: "particles", wind: GUST_WIND, activeVariable: "wave" },
+      { wind: GUST_WIND, activeVariable: "wave" },
       ["showWind", "showCities"],
     ),
     seedSlide("ocean-satellite-view", "Satellite View", { showSatImg: true, satImgLook: "geocolor", satImgFeeds: GLOBAL_ONLY_SATIMG }, [
@@ -741,25 +737,21 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     seedSlide(
       "ocean-salinity",
       "Ocean Salinity",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "salinity" },
+      { wind: SUBTLE_WIND, activeVariable: "salinity" },
       ["showWind", "showCities"],
     ),
     seedSlide(
       "ocean-sea-surface-temp",
       "Sea Surface Temp",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "sst" },
+      { wind: SUBTLE_WIND, activeVariable: "sst" },
       ["showWind", "showCities"],
     ),
     seedSlide(
       "ocean-currents",
       "Ocean Currents",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "current" },
+      { wind: SUBTLE_WIND, activeVariable: "current" },
       ["showWind", "showCities"],
     ),
-    seedSlide("ocean-wave-barbs", "Wave Barbs", { windMode: "barbs", wind: SUBTLE_WIND, activeVariable: "wave" }, [
-      "showWind",
-      "showCities",
-    ]),
   ],
   // Space mode always rides the default (dark) basemap — a satellite constellation
   // reads best against the plain dark globe, not a terrain/satellite/night photo
@@ -790,7 +782,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
   // seeded slides, region-scoped ids so the two catalogs stay independent.
   region: landSpotlightSlides("region"),
   storm: [
-    seedSlide("storm-chaser", "Storm Chaser", { windMode: "particles", wind: GUST_WIND }, [
+    seedSlide("storm-chaser", "Storm Chaser", { wind: GUST_WIND }, [
       "showWind",
       "showPressure",
       "showRadar",
@@ -805,7 +797,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     seedSlide(
       "storm-radar-focus",
       "Radar Focus",
-      { windMode: "barbs", wind: SUBTLE_WIND, activeVariable: "rain" },
+      { wind: SUBTLE_WIND, activeVariable: "rain" },
       ["showWind", "showPressure", "showContours", "showRadar", "showAlerts", "showCities"],
     ),
     seedSlide("storm-water-vapour", "Water Vapour", { showSatImg: true, satImgLook: "watervapour" }, [
@@ -816,7 +808,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     seedSlide(
       "storm-heat-advisory",
       "Heat Advisory",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "temp" },
+      { wind: SUBTLE_WIND, activeVariable: "temp" },
       ["showWind", "showAlerts", "showCities"],
     ),
     seedSlide("storm-dust-storm", "Dust Storm", { showSatImg: true, satImgLook: "dust" }, [
@@ -857,19 +849,19 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     seedSlide(
       "quake-temperature",
       "Temperature",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "temp" },
+      { wind: SUBTLE_WIND, activeVariable: "temp" },
       ["showWind", "showSeismic", "showCables", "showFaults", "showCities"],
     ),
     seedSlide(
       "quake-rainfall",
       "Rainfall",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "rain" },
+      { wind: SUBTLE_WIND, activeVariable: "rain" },
       ["showWind", "showSeismic", "showCables", "showFaults", "showCities"],
     ),
     seedSlide(
       "quake-cloud-cover",
       "Cloud Cover",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "cloud" },
+      { wind: SUBTLE_WIND, activeVariable: "cloud" },
       ["showWind", "showSeismic", "showCables", "showFaults", "showCities"],
     ),
   ],
@@ -913,24 +905,24 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     seedSlide(
       "volcano-temperature",
       "Temperature",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "temp" },
+      { wind: SUBTLE_WIND, activeVariable: "temp" },
       ["showWind", "showVolcanoes", "showCables", "showFaults", "showCities"],
     ),
     seedSlide(
       "volcano-rainfall",
       "Rainfall",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "rain" },
+      { wind: SUBTLE_WIND, activeVariable: "rain" },
       ["showWind", "showVolcanoes", "showCables", "showFaults", "showCities"],
     ),
     seedSlide(
       "volcano-cloud-cover",
       "Cloud Cover",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "cloud" },
+      { wind: SUBTLE_WIND, activeVariable: "cloud" },
       ["showWind", "showVolcanoes", "showCables", "showFaults", "showCities"],
     ),
   ],
   flight: [
-    seedSlide("flight-jet-stream", "Jet Stream", { windMode: "particles", wind: GUST_WIND }, [
+    seedSlide("flight-jet-stream", "Jet Stream", { wind: GUST_WIND }, [
       "showWind",
       "showAircraft",
       "showTrails",
@@ -944,20 +936,13 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
       "showTrackLabels",
       "showCities",
     ]),
-    seedSlide("flight-barb-chart", "Barb Chart", { windMode: "barbs", wind: SUBTLE_WIND }, [
-      "showWind",
-      "showAircraft",
-      "showTrails",
-      "showTrackLabels",
-      "showCities",
-    ]),
     seedSlide(
       "flight-cloud-cover",
       "Cloud Cover",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "cloud" },
+      { wind: SUBTLE_WIND, activeVariable: "cloud" },
       ["showWind", "showAircraft", "showTrails", "showTrackLabels", "showCities"],
     ),
-    seedSlide("flight-storm-avoidance", "Storm Avoidance", { windMode: "particles", wind: SUBTLE_WIND }, [
+    seedSlide("flight-storm-avoidance", "Storm Avoidance", { wind: SUBTLE_WIND }, [
       "showWind",
       "showRadar",
       "showAircraft",
@@ -967,7 +952,7 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     ]),
   ],
   ship: [
-    seedSlide("ship-rough-seas", "Rough Seas", { windMode: "particles", wind: GUST_WIND }, [
+    seedSlide("ship-rough-seas", "Rough Seas", { wind: GUST_WIND }, [
       "showWind",
       "showShips",
       "showTrails",
@@ -984,19 +969,19 @@ export const DEFAULT_KIND_SLIDES: Partial<Record<SegmentKind, KindSlide[]>> = {
     seedSlide(
       "ship-calm-passage",
       "Calm Passage",
-      { windMode: "particles", wind: SUBTLE_WIND },
+      { wind: SUBTLE_WIND },
       ["showWind", "showShips", "showTrails", "showTrackLabels", "showCities"],
     ),
     seedSlide(
       "ship-current-tracker",
       "Current Tracker",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "current" },
+      { wind: SUBTLE_WIND, activeVariable: "current" },
       ["showWind", "showShips", "showTrails", "showTrackLabels", "showCities"],
     ),
     seedSlide(
       "ship-fog-watch",
       "Fog Watch",
-      { windMode: "particles", wind: SUBTLE_WIND, activeVariable: "humidity" },
+      { wind: SUBTLE_WIND, activeVariable: "humidity" },
       ["showWind", "showShips", "showTrails", "showTrackLabels", "showCities"],
     ),
   ],
@@ -1133,7 +1118,7 @@ function sanitizeSatImgFeedsPatch(raw: unknown): Partial<Record<string, Partial<
 
 /**
  * Merge a per-kind look map (untrusted) onto a base — unknown kinds dropped,
- * each kind's `basemap`/`windMode`/`wind` merged field-by-field (not
+ * each kind's `basemap`/`wind` merged field-by-field (not
  * replaced), so a patch touching one wind slider doesn't wipe the kind's
  * other fields. Since patches travel as JSON (where an `undefined` value is
  * indistinguishable from an absent key), a key must be explicitly present —
@@ -1154,9 +1139,6 @@ function mergeKindLooks(
 
       if ("basemap" in inner) {
         cur.basemap = typeof inner.basemap === "string" ? inner.basemap : undefined;
-      }
-      if ("windMode" in inner) {
-        cur.windMode = inner.windMode === "particles" || inner.windMode === "barbs" ? inner.windMode : undefined;
       }
       if ("wind" in inner) {
         const windPatch = inner.wind as Record<string, unknown> | null | undefined;

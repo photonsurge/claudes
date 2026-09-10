@@ -50,10 +50,10 @@ bake() {
 }
 bake NEXT_PUBLIC_SOCKET_URL
 # Optional knobs; unset is the normal state.
-#   WL_GRID_PATCH=off   diagnostic — disables the wind-grid sampling cache
-#   TEXTURE_CACHE_MAX   decoded textures held in RAM (default 256, ~4 MB each)
-bake NEXT_PUBLIC_WL_GRID_PATCH
+#   TEXTURE_CACHE_MAX   decoded textures held in RAM (default 256 entries)
+#   TEXTURE_CACHE_MB    byte budget for those textures (default 1536 MB)
 bake NEXT_PUBLIC_TEXTURE_CACHE_MAX
+bake NEXT_PUBLIC_TEXTURE_CACHE_MB
 
 echo "==> Building @photonsurge/shared"
 ( cd shared && yarn install && yarn build )

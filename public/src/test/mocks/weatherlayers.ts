@@ -9,7 +9,6 @@ export class RasterLayer extends BaseLayer {}
 export class ParticleLayer extends BaseLayer {}
 export class ContourLayer extends BaseLayer {}
 export class HighLowLayer extends BaseLayer {}
-export class GridLayer extends BaseLayer {}
 
 export const loadTextureData = async (_url: string) => ({
   data: new Uint8Array([0, 0, 0, 255]),

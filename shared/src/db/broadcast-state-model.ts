@@ -79,7 +79,6 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
       opacity: { type: Number, required: true, default: 0.9 },
       color: { type: String, required: true, default: "#ffffff" },
     },
-    windMode: { type: String, required: true, enum: ["particles", "barbs"], default: "particles" },
     showContours: { type: Boolean, required: true, default: false },
     showElevation: { type: Boolean, required: true, default: false },
     elevation: {

@@ -47,7 +47,7 @@ export type GetBoundingVolume = (
 
 const PATCHED = Symbol.for("gods.tileObbPatch");
 /** Whole-globe coverage is ~1 400 nodes at z5 and ~87 000 at z8; past this the
- *  cache starts over rather than grow (the wl-grid-patch rule). */
+ *  cache starts over rather than grow. */
 const MAX_CACHED = 32_768;
 
 /**

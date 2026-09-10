@@ -22,7 +22,6 @@ import { Deck, _GlobeView as GlobeView } from "@deck.gl/core";
 import { installLumaUniformPatch } from "../lib/luma-uniform-patch";
 import { installBitmapMeshPatch } from "../lib/bitmap-mesh-patch";
 import { installGlKeyPatch } from "../lib/luma-glkey-patch";
-import { installGridPatch } from "../lib/wl-grid-patch";
 import { installTileObbPatch } from "../lib/tile-obb-patch";
 import type { WeatherManifest } from "@photonsurge/shared/manifest";
 import type { ControlState } from "@photonsurge/shared/control";
@@ -37,7 +36,6 @@ import { basemapLayers, countriesLayer, hexToRgb, TILE_MIN_ZOOM } from "./layers
 import {
   scalarRasterLayers,
   vectorParticleLayers,
-  windBarbLayers,
   pressureLayers,
   elevationLayers,
   elevationReliefLayer,
@@ -568,9 +566,6 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     installLumaUniformPatch();
     // deck re-tessellates every new BitmapLayer's bounds; share meshes across instances.
     installBitmapMeshPatch();
-    // WeatherLayers' GridLayer (wind barbs) rebuilds its icosphere and re-samples
-    // every visible point on every camera tick; cache both.
-    installGridPatch();
     // deck's tile quadtree rebuilds every visited tile's oriented bounding box
     // (covariance + eigen decomposition) on every frame the camera moves; the
     // box depends only on the tile, so memoise it (docs/watch-perf-plan.md,
@@ -1030,13 +1025,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         );
       }
       if (state.showWind) {
-        if (state.windMode === "barbs") {
-          // Meteorological barbs of the same uv field. Only the colour follows
-          // the operator's wind settings — the particle sliders don't apply.
-          layers.push(...windBarbLayers(manifest, "wind", state.fhr, resolve, camera, { color: state.wind.color }));
-        } else {
-          layers.push(...vectorParticleLayers(manifest, "wind", state.fhr, resolve, camera, state.wind));
-        }
+        layers.push(...vectorParticleLayers(manifest, "wind", state.fhr, resolve, camera, state.wind));
       }
     }
 
@@ -1112,7 +1101,6 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.fhr,
     state.basemapColors,
     state.wind,
-    state.windMode,
     state.showContours,
     state.showRadar,
     state.showCables,

@@ -1872,6 +1872,50 @@ is ours; 0.75 % of the minute.
 **The wind is unchanged:** `run=2026-09-09T18:00:00.000Z (7h ago) fhr=0` — seven
 hours of drift now.
 
+### Round 43 (2026-09-10) — the barbs mode is gone
+
+The operator's next two screenshots settled the wind question from a different
+direction. Barbs over the South Pacific high (H 1024) and over interior Brazil:
+EVERY glyph a single half-barb (the 5 kt class), neighbours pointing 45–90°
+apart. That is not a sampling bug — the WeatherLayers CPU sampler was read end
+to end in the bundle (`Ve` → `ye` → `Qe` → `Ie`: bounds → pixel, cubic, alpha
+gate, `u = min + R/255·(max−min)`) and it is exactly the particle shader's
+maths. It is the DATA: the wind texture bakes u and v as one byte each over
+±128 m/s (`worker/src/grib/encode.ts`, `WIND_IMAGE_UNSCALE`), so each
+component is quantised to ~1 m/s. The barb atlas picks its glyph as
+`floor(speed / 2.45 m/s)`, so anything under ~5 m/s is class 0 or 1, and a
+direction computed from integer u/v scatters between compass points wherever
+the wind is light — which is precisely under a high and over land at night.
+The particles hide the same quantisation because they animate and their speed
+is a visual scale factor; the barbs are an honest chart of a coarse field, on
+top of the fhr 0 default drawing a run that is hours old (round 41).
+
+The operator's call, verbatim: "we need the one that has the nice moving
+arrows not the weird ass other one — can't we just delete it?" So the mode is
+deleted rather than tuned (a finer bake range is the only real fix, and nobody
+wants the glyphs):
+
+- `windMode` removed from `ControlState`, its defaults/merge, the Mongoose
+  broadcast-state schema, the simple-scene seed, `KindLook`/`mergeKindLooks`,
+  the director candidates patch and the slide snapshot/patch/equality helpers.
+  Persisted documents that still carry a `windMode` key are ignored (strict
+  schema; nothing reads it).
+- The three barbs-only director slides ("Barb Chart" ×2, "Wave Barbs") are
+  gone; "Radar Focus" (storm) keeps its look minus the barbs.
+- `WindControls` loses the Particles/Barbs toggle; the sliders and colour are
+  always shown. `Globe.tsx` draws `vectorParticleLayers` whenever wind is on.
+- `windBarbLayers` / `windBarbPropsFromEntry` and their tests deleted; the
+  `GridLayer` import and mock with them.
+- The round-25 grid patches (`wl-grid-patch.ts`, `wl-grid-positions.ts`, their
+  tests, the `icomesh` typing) deleted with their four dependencies
+  (`icomesh`, `kdbush`, `geokdbush`, `geodesy-fn`) and the jest transform
+  exception they needed. Rounds 25, 28, 38 and 39 are therefore moot: nothing
+  samples a grid on the main thread any more.
+- The `NEXT_PUBLIC_WL_GRID_PATCH` build knob is gone from `./build`, the
+  Dockerfile and compose. While in there, `NEXT_PUBLIC_TEXTURE_CACHE_MB`
+  (round 36's byte budget, until now only readable in code) is plumbed
+  through all three the same way as `_MAX`.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
