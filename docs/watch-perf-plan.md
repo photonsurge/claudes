@@ -1988,6 +1988,60 @@ then. The MRMS radar (3500×1750, 23 MB) and ICON global (2879×1441, 16 MB)
 are left alone: radar wants its detail, and ICON is the 0.125° base everyone
 sees.
 
+### Round 46 (2026-09-10) — the "(program)" stall was a 68 MB JSON: the webcam catalog
+
+Three runs (00:00, 01:08, 01:29) each carried one ~450–685 ms stall that the
+sampler filed almost entirely under `(program)` plus `(garbage collector)`,
+with no JS frame at all — 152 ms of pure `(program)` in round 42's 13.1 s
+stall, 354 ms in round 44's 13.7 s, 490 ms at 11.7 s in the 01:29 run. The
+saved `stall-trace.json` answered what the profile could not:
+
+- **Not CPU contention on the box.** The main thread's `tdur` (thread CPU) is
+  95 % of its wall time over the minute, and the 457 ms task at 11.8 s used
+  436 ms of CPU. `Performance.getMetrics` agrees (TaskDuration 28.6 s vs
+  ThreadTime 28.8 s). The renderer was working, not descheduled.
+- **The task has no JS and no Blink events for its first ~205 ms**, then
+  `V8.ExternalMemoryPressure`, then a full mark-compact with evacuation. Same
+  signature in all three runs (204 / 207 / 213 ms lead-in).
+- **A 68.8 / 68.6 / 68.3 MB `application/json` response finishes inside that
+  task** — ~2 000 chunks streamed over ten seconds, uncompressed (decoded ==
+  encoded), and its `ResourceSendRequest` is never in the window: it starts
+  at page load. The lead-in is `Response.json()` parsing 68 MB natively; the
+  pressure event is V8 registering the result; the GC is the clean-up. The
+  runs that did not show it (00:32, 00:36, 00:02, 00:04) were captured more
+  than twenty seconds after a reload.
+- **Which request:** ruled out by size or gating — cities (the watch page's
+  `listCities()` is the 300 biggest, 50 KB), satellites (off), fires (off),
+  seismo waveforms (a 120 s window per station), countries (never fetched by
+  /watch). The one that fits is `/api/cams`: `useCams(showBroadcastChrome &&
+  ready)` fetched the ENTIRE active webcam catalog — every Windy cam on the
+  planet, full documents, no limit — so that `EventNearbyPanel` could keep
+  the three within 400 km of the on-air cut. That is also the `geo.ts
+  nearby` (`e.s.r`) frame that has sat in every Bottom-Up since round 20 at
+  ~220–450 ms/min: a 70 000-item haversine scan per render.
+
+The fix scopes the read to the point the panel is about:
+
+- `/api/cams?lng&lat[&maxKm=400][&limit=60]` → the repo's existing `$geoNear`
+  (`cams.nearMany`, `cam_geo_ix`), active only, nearest first, Redis-cached
+  on the point to ~1 km so four browser sources cutting to the same segment
+  share one Mongo read. A missing or malformed coordinate is a 400 — never a
+  silent fall-through to the catalog. The bare list stays for tooling.
+- `useCams(enabled, center)` keys its fetch on a primitive `lng,lat` string
+  (~100 m), so the camera tuple's identity churn never refetches; a new place
+  drops the old place's cams at once and aborts an in-flight read; a
+  TRACKS_UPDATED "cams" refresh re-reads in place. WatchSurface passes the
+  on-air segment's centre (what `mode-slides` hands the panel), nothing
+  while no segment is on air.
+- Per page load per source: 68 MB → a few tens of KB per cut; the ~450 ms
+  freeze and the per-render 70 k scan are gone. Nine new tests.
+
+**Tooling:** `profile-watch.mjs` now prints a `## network` section from the
+trace — every response by bytes, mime, and seconds into the trace, with a
+request that began before the window flagged as such — so the next unnamed
+body is visible without three hours of trace archaeology. Tested offline on
+the 01:29 capture: the first row is the 68.76 MB JSON.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

@@ -179,9 +179,10 @@ function WatchSurfaceBody({
   const fires = useFires(state.showFires && ready);
   const volcanoes = useVolcanoes(state.showVolcanoes && ready);
   const geomag = useGeomag(state.showMagneticField && ready);
-  // Webcams feed the "near this event" broadcast panel; only load them when the
-  // chrome is on (the plain surface doesn't show the panel).
-  const cams = useCams(state.showBroadcastChrome && ready);
+  // Webcams feed the "near this event" broadcast panel: the few near the on-air
+  // segment's centre (the point that panel is about), only while the chrome is
+  // on (the plain surface doesn't show the panel). No segment ⇒ none.
+  const cams = useCams(state.showBroadcastChrome && ready, onAirSegment?.camera.center ?? null);
   // Memoised: the object also feeds BroadcastThemeContext, and a fresh identity
   // every socket beat would re-render every chrome consumer.
   const theme = useMemo(

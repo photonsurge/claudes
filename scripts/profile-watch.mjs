@@ -486,6 +486,51 @@ async function recordTrace(cdp, seconds) {
 }
 
 /** The renderer main thread's `pid:tid` in a trace (the one firing animation frames / recalculating style). */
+/**
+ * What the page pulled over the network during the trace, biggest first. The
+ * devtools.timeline Resource* events carry every response's bytes and mime, but
+ * only a request that STARTED inside the window has its URL — one already
+ * streaming when the trace began is listed by size alone and flagged. That
+ * unnamed 68 MB JSON is how round 46 found the webcam catalog: nothing in a CPU
+ * profile names a response body, and its parse is native time under "(program)".
+ */
+function networkLines(events, top = 12) {
+  const req = new Map();
+  const get = (id) => {
+    let r = req.get(id);
+    if (!r) req.set(id, (r = { bytes: 0, chunks: 0 }));
+    return r;
+  };
+  let t0 = Infinity;
+  for (const e of events) {
+    if (e.name === "RunTask" && typeof e.ts === "number" && e.ts < t0) t0 = e.ts;
+    const d = e.args?.data;
+    if (!d?.requestId) continue;
+    const r = get(d.requestId);
+    if (e.name === "ResourceSendRequest") r.url = d.url;
+    else if (e.name === "ResourceReceiveResponse") r.mime = d.mimeType;
+    else if (e.name === "ResourceReceivedData") {
+      r.bytes += d.encodedDataLength ?? 0;
+      r.chunks++;
+      r.first ??= e.ts;
+      r.last = e.ts;
+    } else if (e.name === "ResourceFinish") r.fin = e.ts;
+  }
+  const all = [...req.values()].filter((r) => r.bytes > 0);
+  if (!all.length) return ["## network: no resource events in the trace"];
+  const rows = all.sort((a, b) => b.bytes - a.bytes).slice(0, top);
+  const total = all.reduce((s, r) => s + r.bytes, 0);
+  const at = (ts) => (Number.isFinite(t0) && ts != null ? `${((ts - t0) / 1e6).toFixed(1)}s` : "?");
+  const out = [`## network — ${(total / 1048576).toFixed(1)} MB received over ${all.length} responses; top ${rows.length} by bytes (seconds into the trace)`];
+  for (const r of rows) {
+    const name = r.url
+      ? r.url.replace(/^https?:\/\/[^/]+/, "").replace(/\?.*$/, "").slice(0, 90)
+      : "(began before the trace — no URL in the window; a page-load or periodic fetch)";
+    out.push(`  ${(r.bytes / 1048576).toFixed(2).padStart(7)} MB  ${at(r.first)}→${at(r.fin ?? r.last)}  ${(r.mime ?? "").padEnd(22)} ${name}`);
+  }
+  return out;
+}
+
 function mainThreadOf(events) {
   const score = new Map();
   for (const e of events) {
@@ -931,6 +976,10 @@ async function deckCensus(cdp) {
       stallTrace = { events, main: mainThreadOf(events) };
     }
     printCore(p, profile, a, busy, stallTrace);
+    if (stallTrace) {
+      p();
+      for (const l of networkLines(stallTrace.events)) p(l);
+    }
     console.log(lines.join("\n"));
     return;
   }
@@ -1038,6 +1087,10 @@ async function deckCensus(cdp) {
   }
   p();
   const { selfSorted, inclSorted, stallKeys } = printCore(p, profile, a, busy, stallTrace);
+  if (stallTrace) {
+    p();
+    for (const l of networkLines(stallTrace.events)) p(l);
+  }
   // Snippets for hot but mangled frames — plus the heaviest `draw`/`updateState`
   // methods by inclusive time, so a deck.gl layer class can be told apart from
   // its chunk name alone.
