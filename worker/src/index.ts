@@ -458,6 +458,32 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable maintenance.measureBlobs (Files page's numbers) ----
+  // A stat per blob across the whole tree. It outgrew a single HTTP request, so
+  // public no longer walks it — the worker measures and caches, public reads.
+  // Kicked once at boot so a fresh deploy's Files page is never empty.
+  {
+    const MEASURE_MS = Number(process.env.BLOB_MEASURE_MS || 60 * 60 * 1000);
+    try {
+      await addJob(
+        "do",
+        { domain: "maintenance", type: "maintenance", event: "measureBlobs", data: {} },
+        {
+          repeat: { every: MEASURE_MS, offset: staggerOffset("blobs-measure", MEASURE_MS) },
+          jobId: "blobs-measure",
+        },
+      );
+      await addJob(
+        "do",
+        { domain: "maintenance", type: "maintenance", event: "measureBlobs", data: {} },
+        { removeOnComplete: true, removeOnFail: true },
+      );
+      log(TAG, `registered repeatable maintenance.measureBlobs`, { every: MEASURE_MS });
+    } catch (err) {
+      log(TAG, `failed to register maintenance.measureBlobs`, { err: summarizeForLog(err) });
+    }
+  }
+
   // ---- Repeatable weather.thinArchive (long-term frame archive retention) ----
   // The archive is keep-forever by design (it backs historical point sampling and
   // the future past-T scrub), but `archiveRun` fires on EVERY publish and MRMS

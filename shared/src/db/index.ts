@@ -50,6 +50,8 @@ import { getTrackSnapshotModel } from "./track-snapshot-model";
 import { makeTrackSnapshotRepo } from "./track-snapshot-repo";
 import { getQuakeModel } from "./quake-model";
 import { makeQuakeRepo } from "./quake-repo";
+import { getBlobUsageModel } from "./blob-usage-model";
+import { makeBlobUsageRepo } from "./blob-usage-repo";
 import { getQuakeArchiveModel } from "./quake-archive-model";
 import { makeQuakeArchiveRepo } from "./quake-archive-repo";
 import { getTideStationModel } from "./tide-station-model";
@@ -211,6 +213,10 @@ export function createDb(conn: Connection) {
     conn,
     blobFs,
     blobs,
+    // Cached measurement of the blob folder. The walk is a stat per file across
+    // the whole tree, which outgrew a single HTTP request — the worker measures,
+    // public reads this. See blob-usage-model.ts.
+    blobUsage: makeBlobUsageRepo(getBlobUsageModel(conn)),
     pings: makeCollection<iPing>(conn, "pings"),
     weatherRuns,
     weatherTextures: makeWeatherTextureRepo(getWeatherTextureModel(conn), blobs.tex),

@@ -230,6 +230,14 @@ AlertSchema.index({ source: 1, identifier: 1, sent: 1, active: 1 }, { name: "ale
 // "active now" list — matches list()'s sort exactly so the polled /api/alerts
 // read is fully index-served (no in-memory sort of thousands of CAP docs).
 AlertSchema.index({ active: 1, maxSeverityRank: -1, sent: -1 }, { name: "alert_active_sev_sent_ix" });
+// HISTORICAL day reads (/admin/archive): "which alerts were in force on date D".
+// Nothing else queries this collection by time alone — every other read is scoped
+// by `active` or by (source, identifier) — so without this the day view is a
+// collection scan plus an in-memory sort over every alert ever ingested, which
+// past a few hundred thousand documents does not just get slow, it exceeds
+// Mongo's 32MB sort limit and errors. Ordered to match the day query's sort
+// exactly so the read is fully index-served.
+AlertSchema.index({ sent: -1, maxSeverityRank: -1 }, { name: "alert_sent_sev_ix" });
 // Per-source sweeps (expiry, supersede, deactivate-missing).
 AlertSchema.index({ source: 1, active: 1 }, { name: "alert_source_active_ix" });
 // Cross-source merge: find every source reporting one national CAP message.

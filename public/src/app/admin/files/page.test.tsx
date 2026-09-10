@@ -15,11 +15,40 @@ const USAGE = {
   ],
   emptyNamespaces: ["ad", "aurora"],
   tookMs: 42,
+  pending: false,
+  measuredAt: new Date().toISOString(),
+  ageMs: 0,
+  stale: false,
   at: new Date().toISOString(),
 };
 
+/**
+ * The page reads the response as TEXT and parses it itself, so that a proxy's
+ * HTML error page produces a readable message instead of "Unexpected token '<'".
+ * The fake Response therefore has to answer `text()` like a real one does.
+ */
 function mockGet(body: unknown, ok = true) {
-  global.fetch = jest.fn(async () => ({ ok, status: ok ? 200 : 500, json: async () => body })) as unknown as typeof fetch;
+  const raw = JSON.stringify(body);
+  global.fetch = jest.fn(async () => ({
+    ok,
+    status: ok ? 200 : 500,
+    statusText: ok ? "OK" : "Internal Server Error",
+    text: async () => raw,
+    json: async () => body,
+  })) as unknown as typeof fetch;
+}
+
+/** A gateway answering instead of the app — what broke this page at scale. */
+function mockGatewayHtml(status = 504, statusText = "Gateway Timeout") {
+  global.fetch = jest.fn(async () => ({
+    ok: false,
+    status,
+    statusText,
+    text: async () => "<html>\r\n<head><title>504 Gateway Time-out</title></head>\r\n<body></body>\r\n</html>",
+    json: async () => {
+      throw new SyntaxError("Unexpected token '<'");
+    },
+  })) as unknown as typeof fetch;
 }
 
 afterEach(() => jest.restoreAllMocks());
@@ -63,5 +92,25 @@ describe("FilesPage", () => {
     render(<FilesPage />);
 
     expect(await screen.findByText(/not readable by this process/)).toBeInTheDocument();
+  });
+
+  it("says a gateway answered rather than dying on 'Unexpected token <'", async () => {
+    // The walk used to happen inside this request and outlived the reverse
+    // proxy's read timeout; the page then tried to JSON.parse nginx's HTML error
+    // page. The measuring now lives in the worker, but a proxy can still answer
+    // for any reason, and when it does the message has to be legible.
+    mockGatewayHtml();
+    render(<FilesPage />);
+
+    expect(await screen.findByText(/proxy or gateway rather than the app/)).toBeInTheDocument();
+    expect(screen.getByText(/504/)).toBeInTheDocument();
+  });
+
+  it("says so when the worker has not measured yet, instead of showing zeros", async () => {
+    mockGet({ enabled: true, pending: true, root: "/app/blobs", at: new Date().toISOString() });
+    render(<FilesPage />);
+
+    expect(await screen.findByText("Not measured yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Disk free")).not.toBeInTheDocument();
   });
 });

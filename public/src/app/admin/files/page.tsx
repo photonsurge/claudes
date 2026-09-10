@@ -49,6 +49,11 @@ interface FilesSummary {
   namespaces?: NamespaceUsage[];
   emptyNamespaces?: string[];
   tookMs?: number;
+  /** The worker has never measured yet (fresh deploy, or a run in flight). */
+  pending?: boolean;
+  measuredAt?: string;
+  ageMs?: number;
+  stale?: boolean;
   at: string;
 }
 
@@ -78,21 +83,66 @@ export default function FilesPage() {
   const [summary, setSummary] = useState<FilesSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [measuring, setMeasuring] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch("/api/admin/files", { cache: "no-store" });
-      const body = await res.json();
+      // The route always answers JSON, but a proxy in front of it may not — this
+      // page used to die on nginx's HTML error page with "Unexpected token '<'".
+      // Read as text and say something useful if it is not JSON.
+      const raw = await res.text();
+      let body: any;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        throw new Error(
+          `Expected JSON, got ${res.status} ${res.statusText || "response"} from a proxy or gateway rather than the app.`,
+        );
+      }
       if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
       setSummary(body);
       setError(null);
+      return body as FilesSummary;
     } catch (err: any) {
       setError(err?.message || String(err));
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
+
+  /**
+   * Ask the WORKER for a fresh measurement rather than measuring here. The walk
+   * is a stat per blob across the whole tree and outgrew a single HTTP request;
+   * doing it inline is what made this page fail. Enqueue, then poll until the
+   * cached measurement's timestamp moves.
+   */
+  const measureNow = useCallback(async () => {
+    setMeasuring(true);
+    const before = summary?.measuredAt ?? null;
+    try {
+      const res = await fetch("/api/admin/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: "blobs-measure" }),
+      });
+      if (!res.ok) throw new Error(`could not queue the measurement (HTTP ${res.status})`);
+      // The walk can legitimately take minutes on a large, busy folder.
+      const deadline = Date.now() + 10 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const body = await refresh();
+        if (body && !body.pending && body.measuredAt && body.measuredAt !== before) return;
+      }
+      setError("The measurement is taking unusually long — check the worker queue.");
+    } catch (err: any) {
+      setError(err?.message || String(err));
+    } finally {
+      setMeasuring(false);
+    }
+  }, [refresh, summary?.measuredAt]);
 
   useEffect(() => {
     refresh();
@@ -125,9 +175,14 @@ export default function FilesPage() {
       }
       maxWidth={980}
       actions={
-        <Button variant="outlined" onClick={refresh} disabled={loading}>
-          {loading ? "Walking…" : "Refresh"}
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button variant="outlined" onClick={refresh} disabled={loading || measuring}>
+            Refresh
+          </Button>
+          <Button variant="contained" onClick={measureNow} disabled={measuring}>
+            {measuring ? "Measuring…" : "Measure now"}
+          </Button>
+        </Stack>
       }
     >
       {error && (
@@ -146,11 +201,27 @@ export default function FilesPage() {
         </Alert>
       )}
 
-      {summary?.enabled && (
+      {summary?.enabled && summary.pending && (
+        <Alert severity="info" sx={{ mt: 2 }}>
+          <Typography variant="body2" component="span" sx={{ fontWeight: 700 }}>
+            Not measured yet.
+          </Typography>{" "}
+          The worker measures the blob folder hourly and on start-up, and no result has landed yet. Press{" "}
+          <strong>Measure now</strong> to run one, or wait for the next scheduled pass.
+        </Alert>
+      )}
+
+      {summary?.enabled && !summary.pending && (
         <>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            <code>{summary.root}</code> · walked in <Box component="span" sx={reading}>{summary.tookMs}ms</Box> · as of{" "}
-            <Box component="span" sx={reading}>{new Date(summary.at).toLocaleTimeString()}</Box>
+            <code>{summary.root}</code> · walked in <Box component="span" sx={reading}>{summary.tookMs}ms</Box> ·
+            measured{" "}
+            <Box component="span" sx={reading}>
+              {summary.measuredAt ? formatAge(+new Date(summary.measuredAt)) : "—"}
+            </Box>
+            {summary.stale && (
+              <Chip size="small" color="warning" variant="outlined" label="stale" sx={{ ml: 1 }} />
+            )}
           </Typography>
 
           <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 1.5, mt: 2 }}>

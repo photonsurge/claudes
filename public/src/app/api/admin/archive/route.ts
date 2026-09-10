@@ -58,32 +58,49 @@ async function GET__impl(req: Request) {
   // sent — a three-day warning belongs to all three days it covered. `sent` and
   // `expiresAt` are stored as ISO strings, and the rest of the codebase compares
   // them as strings (see alerts-repo#deactivateExpired), so this does the same.
-  const fromIso = from.toISOString();
+  //
+  // `sent` is bounded on BOTH sides on purpose. Alerts are never deleted, so an
+  // open-ended `sent <= dayEnd` walks every alert ever ingested and then sorts
+  // them in memory — past a few hundred thousand documents that exceeds Mongo's
+  // 32MB sort limit and errors outright. The lower bound turns it into an index
+  // range on `alert_sent_sev_ix`. The cost is a stated assumption: a warning
+  // issued more than ALERT_MAX_LEAD_DAYS before the day it covers is missed.
+  const leadDays = Number(process.env.ALERT_MAX_LEAD_DAYS || 14);
+  const fromIso = new Date(+from - leadDays * DAY).toISOString();
+  const dayStartIso = from.toISOString();
   const toIso = to.toISOString();
   const alertDocs = await db.alerts.model
     .find(
       {
-        sent: { $lte: toIso },
-        $or: [{ expiresAt: { $gte: fromIso } }, { expiresAt: null }, { expiresAt: { $exists: false } }],
+        sent: { $gte: fromIso, $lte: toIso },
+        $or: [{ expiresAt: { $gte: dayStartIso } }, { expiresAt: null }, { expiresAt: { $exists: false } }],
       },
       { _id: 0, id: 1, source: 1, identifier: 1, maxSeverityRank: 1, sent: 1, expiresAt: 1, info: { $slice: 1 } },
     )
-    .sort({ maxSeverityRank: -1, sent: -1 })
+    // Matches the index order, so the sort is index-served rather than in memory.
+    .sort({ sent: -1, maxSeverityRank: -1 })
+    // Force the index. This collection has a history of planner thrash (see the
+    // geo-index hints), and the "active" indexes look tempting for this shape.
+    .hint("alert_sent_sev_ix")
     .limit(500)
     .lean()
     .exec();
 
-  const alerts = (alertDocs as any[]).map((a) => ({
-    id: a.id,
-    source: a.source,
-    identifier: a.identifier,
-    severityRank: a.maxSeverityRank ?? 0,
-    sent: a.sent || null,
-    expires: a.expiresAt || null,
-    event: a.info?.[0]?.event ?? "",
-    headline: a.info?.[0]?.headline ?? "",
-    area: a.info?.[0]?.area?.[0]?.areaDesc ?? "",
-  }));
+  const alerts = (alertDocs as any[])
+    .map((a) => ({
+      id: a.id,
+      source: a.source,
+      identifier: a.identifier,
+      severityRank: a.maxSeverityRank ?? 0,
+      sent: a.sent || null,
+      expires: a.expiresAt || null,
+      event: a.info?.[0]?.event ?? "",
+      headline: a.info?.[0]?.headline ?? "",
+      area: a.info?.[0]?.area?.[0]?.areaDesc ?? "",
+    }))
+    // Severity-first is the useful reading order, but sorting on it in Mongo is
+    // what would have cost the index. 500 rows sort here for nothing.
+    .sort((x, y) => y.severityRank - x.severityRank || String(y.sent).localeCompare(String(x.sent)));
 
   // --- seismic: the permanent record, not the expiring working set -----------
   const quakes = (
@@ -107,6 +124,9 @@ async function GET__impl(req: Request) {
       { _id: 0, kind: 1, segmentId: 1, title: 1, subtitle: 1, startedAt: 1, breaking: 1 },
     )
     .sort({ startedAt: 1 })
+    // Index-served by `airentry_started_ix`; the log grows by a row per cut, so
+    // a scan-and-sort here would be the same trap as the alert query above.
+    .hint("airentry_started_ix")
     .limit(2000)
     .lean()
     .exec();

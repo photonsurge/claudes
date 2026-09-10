@@ -7,16 +7,23 @@ export const dynamic = "force-dynamic";
 
 const NO_CACHE = { "Cache-Control": "no-store" };
 
+/** Past this age the page says so, so nobody reads a stale number as live. */
+const STALE_AFTER_MS = Number(process.env.BLOB_USAGE_STALE_MS || 3 * 60 * 60 * 1000);
+
 /**
- * GET /api/admin/files — what the shared `${BLOB_DIR}` folder actually holds:
- * files and bytes per namespace, leftover temp writes, and how much room is
- * left on the disk underneath. The filesystem-side sibling of /api/admin/db
- * (which measures Mongo), since the bytes now live in a plain folder that
- * nothing else keeps count of.
+ * GET /api/admin/files — what the shared `${BLOB_DIR}` folder holds: files and
+ * bytes per namespace, leftover temp writes, and disk free underneath.
  *
- * The walk is a stat per blob, so this is deliberately on-demand and uncached —
- * an operator asking "what is eating the disk" wants the live number, and the
- * page is behind admin auth.
+ * This route used to do the measuring itself, and that stopped working. The walk
+ * is a `stat` per blob across the whole tree; once the tree was hundreds of
+ * thousands of files it outlived the reverse proxy's read timeout, and the page
+ * got the proxy's HTML error page back and choked trying to parse it as JSON. So
+ * the page that exists to diagnose disk usage was the one thing disk usage broke.
+ *
+ * The walk now lives in the worker (`maintenance.measureBlobs`, hourly and at
+ * boot) and this route reads one small cached document. Instant, and it can no
+ * longer be killed by the size of the thing it is reporting on. `Refresh` on the
+ * page enqueues a fresh measurement rather than blocking on one.
  */
 async function GET__impl() {
   const db = await getAppDb();
@@ -26,18 +33,24 @@ async function GET__impl() {
     return NextResponse.json({ enabled: false, at: new Date().toISOString() }, { status: 200, headers: NO_CACHE });
   }
 
-  const started = Date.now();
-  let usage;
-  try {
-    usage = await db.blobFs.usage();
-  } catch (err: any) {
-    // Most likely the bind-mount ownership trap: the containers run as 1001 but
-    // Docker creates the host folder root:root. Say so rather than "EACCES".
-    const detail = err?.code === "EACCES" || err?.code === "EPERM"
-      ? `${db.blobFs.root} is not readable by this process (${err.code}) — check the blob folder's ownership.`
-      : err?.message || String(err);
-    return NextResponse.json({ error: detail }, { status: 500, headers: NO_CACHE });
+  const snapshot = await db.blobUsage.get();
+  if (!snapshot) {
+    // The worker has not measured yet (fresh deploy, or the job is mid-flight).
+    // A 200 with `pending` beats an error: nothing is wrong, the answer is just
+    // not in yet, and the page can say so and offer to trigger one.
+    return NextResponse.json(
+      {
+        enabled: true,
+        pending: true,
+        root: db.blobFs.root,
+        at: new Date().toISOString(),
+      },
+      { status: 200, headers: NO_CACHE },
+    );
   }
+
+  const { usage, measuredAt, tookMs } = snapshot;
+  const ageMs = Date.now() - +new Date(measuredAt);
 
   const namespaces = usage.namespaces.map((n) => ({
     ...n,
@@ -49,6 +62,7 @@ async function GET__impl() {
   return NextResponse.json(
     {
       enabled: true,
+      pending: false,
       root: usage.root,
       files: usage.files,
       bytes: usage.bytes,
@@ -60,7 +74,10 @@ async function GET__impl() {
       // has ever been written for them. Worth showing so an empty overlay reads
       // as "never baked" instead of vanishing from the page.
       emptyNamespaces: Object.keys(BLOB_NAMESPACES).filter((ns) => !usage.namespaces.some((n) => n.ns === ns)),
-      tookMs: Date.now() - started,
+      measuredAt,
+      ageMs,
+      stale: ageMs > STALE_AFTER_MS,
+      tookMs,
       at: new Date().toISOString(),
     },
     { status: 200, headers: NO_CACHE },

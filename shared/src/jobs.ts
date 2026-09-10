@@ -248,6 +248,17 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     priority: 10,
   },
   {
+    id: "blobs-measure",
+    label: "Measure blob folder disk usage",
+    description:
+      "Walk the shared blob folder and cache how much each namespace is using, for the Files page. The walk checks every single file, which at this size takes far too long to do inside a page load — the Files page would sit there until the reverse proxy gave up and returned an error page. So the worker measures on a schedule (and at start-up) and the page reads the answer instantly. This button forces a fresh measurement.",
+    domain: "maintenance",
+    type: "maintenance",
+    event: "measureBlobs",
+    group: "Maintenance",
+    priority: 10,
+  },
+  {
     id: "blobs-orphans",
     label: "Check for orphaned blobs (report only)",
     description:

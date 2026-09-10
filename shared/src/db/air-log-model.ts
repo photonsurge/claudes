@@ -147,6 +147,11 @@ AirEntrySchema.index({ runId: 1, seq: 1 }, { name: "airentry_run_ix" });
 AirEntrySchema.index({ sceneId: 1, startedAt: -1 }, { name: "airentry_scene_ix" });
 // "When did this subject air" (e.g. an alert's aired-history panel).
 AirEntrySchema.index({ segmentId: 1, startedAt: -1 }, { name: "airentry_segment_ix" });
+// Whole-fleet time-range reads ("what aired on date D", /admin/archive). Every
+// other index here is prefixed by run, scene or segment, so a query on time
+// ALONE would scan the entire log — which grows by a row per cut, so thousands a
+// day — and then sort it in memory.
+AirEntrySchema.index({ startedAt: 1 }, { name: "airentry_started_ix" });
 
 export const getAirRunModel = (conn: Connection) => getModel<iAirRunModel>(conn, "AirRun", AirRunSchema);
 export const getAirEntryModel = (conn: Connection) => getModel<iAirEntryModel>(conn, "AirEntry", AirEntrySchema);

@@ -44,3 +44,29 @@ export async function sweepOrphanBlobs(job: Job) {
   const db = await getAppDb();
   return runOrphanSweep(db, { apply });
 }
+
+/**
+ * Measure the shared blob folder and cache the result for /api/admin/files.
+ *
+ * The walk is a `stat` per blob across the whole tree. That was fine when the
+ * folder was small and fatal once it was not: doing it inline in the admin
+ * request outlived the reverse proxy's read timeout, so the page got the proxy's
+ * HTML error page instead of JSON. Heavy work belongs here, not in public.
+ * Registry id `blobs-measure`; also runs on a schedule.
+ */
+export async function measureBlobs(_job: Job) {
+  const db = await getAppDb();
+  if (!db.blobFs) return { skipped: true, reason: "BLOB_DIR not set" };
+  const started = Date.now();
+  const usage = await db.blobFs.usage();
+  const tookMs = Date.now() - started;
+  await db.blobUsage.save(usage, tookMs);
+  return {
+    files: usage.files,
+    bytes: usage.bytes,
+    namespaces: usage.namespaces.length,
+    tmpFiles: usage.tmpFiles,
+    freeBytes: usage.disk?.freeBytes ?? null,
+    tookMs,
+  };
+}
