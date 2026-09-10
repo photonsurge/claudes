@@ -1916,6 +1916,39 @@ wants the glyphs):
   (round 36's byte budget, until now only readable in code) is plumbed
   through all three the same way as `_MAX`.
 
+### Round 44 (2026-09-10 01:08) — first run on the barbs-less build, /watch/default
+
+Operator's verdict on air: "no weird wind :)". The build is confirmed on air
+from the profile itself: the globe log no longer opens with the
+"grid caches active" line that led every previous run, and the census has no
+barbs layer — two `win` particle layers (base + nest) instead.
+
+60 s from PAGE LOAD on the default scene (rain raster + isobars + alerts +
+cities + wind ×2 + tide ×2; 16 layers drawn per frame):
+
+    busy 44.4 % · 28.7 fps · gap p95 33.4 ms · max 366.7 ms
+    17 stalls / 4477 ms of 62 s · JS heap 152 MB
+
+Not comparable with round 42's 35 % / 6 stalls: that was a warm page on a
+lighter scene. The first two stalls here (348 + 508 ms at 0.2 s and 0.6 s) are
+cold start — shader link (`getProgramParameter`), particle transform-feedback
+setup, the first earcut of the alert set. The rest, by cause:
+
+- 30.5 s · 400 ms — one `texSubImage2D` of 362 ms: the 38.6 MB 4500×2250
+  upload (round 32). Still the single largest item and still only fixable by
+  baking those grids smaller in the worker.
+- 30.9 s · 403 ms — a deck TextLayer regenerating its font atlas
+  (`measureText`, `getImageData`, the atlas `draw`/`B` pair) at a cut.
+- 36.3 s · 431 ms — deck's globe polygon splitting + earcut (`M`/`L` @148,
+  `e` @1:1593): the alert polygons of a cut, the genuine work of round 40.
+- 13.7 s · 497 ms and 13.1 s · 163 ms — almost entirely `(program)` with
+  scavenger GC beside it: native time the sampler cannot name.
+
+`(program)` is 33 % of busy time overall — GC, compile, paint and driver
+waits inside GL calls. Everything named and ours is small: `e.s.r` (geo.ts
+`nearby`) 219 ms, `getBoundingClientRect` 115 ms (the Ticker, round 42),
+`classifyHazard` + `alertRepPoint` a few ms in one stall.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
