@@ -7,6 +7,13 @@ const slides: DeckSlide[] = [
   { id: "c", node: <div>slide-c</div> },
 ];
 
+/** The wrapper SlideDeck puts around a mounted slide, or null while it's unmounted. */
+const wrapper = (id: string) => screen.queryByText(`slide-${id}`)?.parentElement ?? null;
+const mounted = (id: string) => wrapper(id) !== null;
+/** `content-visibility: hidden` — the engine skips the slide's layout and paint. */
+const skipped = (id: string) => wrapper(id)?.style.contentVisibility === "hidden";
+const active = () => slides.find((s) => wrapper(s.id)?.getAttribute("aria-hidden") === "false")?.id;
+
 describe("SlideDeck", () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
@@ -21,24 +28,56 @@ describe("SlideDeck", () => {
     expect(screen.getByText("slide-a")).toBeInTheDocument();
   });
 
-  it("keeps every slide mounted so panel state survives a rotation", () => {
-    render(<SlideDeck slides={slides} />);
-    // All three are in the DOM at once (opacity-toggled, never unmounted).
-    expect(screen.getByText("slide-a")).toBeInTheDocument();
-    expect(screen.getByText("slide-b")).toBeInTheDocument();
-    expect(screen.getByText("slide-c")).toBeInTheDocument();
+  it("mounts only the on-air slide and the one up next at a cut; the rest mount as they come up", () => {
+    render(<SlideDeck slides={slides} holdMs={1000} />);
+    expect(mounted("a")).toBe(true);
+    expect(mounted("b")).toBe(true); // up next — its fetches get a whole hold to land
+    expect(mounted("c")).toBe(false);
+    act(() => void jest.advanceTimersByTime(1000)); // b airs, c is up next
+    expect(mounted("c")).toBe(true);
+  });
+
+  it("keeps a slide mounted once it has aired, so panel state survives the rotation", () => {
+    render(<SlideDeck slides={slides} holdMs={1000} />);
+    act(() => void jest.advanceTimersByTime(2000)); // a → b → c
+    expect(active()).toBe("c");
+    expect(mounted("a")).toBe(true);
+    expect(mounted("b")).toBe(true);
+  });
+
+  it("skips layout of mounted off-air slides, except the one still fading out", () => {
+    render(<SlideDeck slides={slides} holdMs={1000} />);
+    expect(skipped("a")).toBe(false); // on air
+    expect(skipped("b")).toBe(true); // waiting, never shown
+    act(() => void jest.advanceTimersByTime(1000)); // b on air
+    expect(skipped("a")).toBe(false); // fading out — has to render to be seen fading
+    expect(skipped("b")).toBe(false);
+    expect(skipped("c")).toBe(true);
+    act(() => void jest.advanceTimersByTime(1000)); // c on air
+    expect(skipped("a")).toBe(true); // its fade is long over
+    expect(skipped("b")).toBe(false); // now the one fading out
   });
 
   it("advances the active slide on the hold timer and wraps around", () => {
     render(<SlideDeck slides={slides} holdMs={1000} />);
-    const active = () => slides.find((s) => screen.getByText(`slide-${s.id}`).parentElement?.getAttribute("aria-hidden") === "false");
+    expect(active()).toBe("a");
+    act(() => void jest.advanceTimersByTime(1000));
+    expect(active()).toBe("b");
+    act(() => void jest.advanceTimersByTime(1000));
+    expect(active()).toBe("c");
+    act(() => void jest.advanceTimersByTime(1000));
+    expect(active()).toBe("a");
+  });
 
-    expect(active()?.id).toBe("a");
-    act(() => void jest.advanceTimersByTime(1000));
-    expect(active()?.id).toBe("b");
-    act(() => void jest.advanceTimersByTime(1000));
-    expect(active()?.id).toBe("c");
-    act(() => void jest.advanceTimersByTime(1000));
-    expect(active()?.id).toBe("a");
+  it("a new segment rewinds to the first slide and starts a fresh lazy deck", () => {
+    const { rerender } = render(<SlideDeck slides={slides} holdMs={1000} resetKey="seg-1" />);
+    act(() => void jest.advanceTimersByTime(2000)); // everything mounted, c on air
+    expect(active()).toBe("c");
+    const next: DeckSlide[] = [...slides, { id: "d", node: <div>slide-d</div> }];
+    rerender(<SlideDeck slides={next} holdMs={1000} resetKey="seg-2" />);
+    expect(active()).toBe("a");
+    expect(mounted("b")).toBe(true); // up next
+    expect(mounted("c")).toBe(false); // aired for the previous segment — not carried over
+    expect(screen.queryByText("slide-d")).not.toBeInTheDocument();
   });
 });

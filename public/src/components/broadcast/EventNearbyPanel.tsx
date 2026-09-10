@@ -11,14 +11,14 @@
  * live webcams near the event. Pure presentation inside the scaled broadcast
  * stage; pointer-inert.
  */
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import type { City } from "../../lib/cities";
 import { formatPopulation } from "../../lib/cities";
 import type { Cam } from "../../lib/cams/types";
 import { nearby, formatKm } from "../../lib/geo";
 import { isNotableCity, nearbyCities } from "../../lib/broadcast";
 import { FeaturedCityClimate, CityTempSpark } from "./CityHistory";
-import BroadcastCard, { CardSection } from "./BroadcastCard";
+import BroadcastCard, { CardSection, DeckSlideActiveContext } from "./BroadcastCard";
 
 const CITY_RADIUS_KM = 500;
 const CAM_RADIUS_KM = 400;
@@ -83,12 +83,17 @@ export default function EventNearbyPanel({
   const nearCams = nearby(cams, center, camPoint, CAM_RADIUS_KM);
 
   // Cycle the featured slot through every nearby city, nearest first, looping.
+  // Paused while the card waits off air in the deck (SlideDeck's context; a
+  // stand-alone panel is always on air), so a hidden card isn't rebuilding its
+  // featured block every few seconds for nobody — that churn was landing in
+  // the document's layout on OBS (docs/watch-perf-plan.md, round 49).
+  const onAir = useContext(DeckSlideActiveContext);
   const [slide, setSlide] = useState(0);
   useEffect(() => {
-    if (near.length <= 1) return;
+    if (near.length <= 1 || !onAir) return;
     const iv = setInterval(() => setSlide((n) => n + 1), FEATURED_HOLD_MS);
     return () => clearInterval(iv);
-  }, [near.length]);
+  }, [near.length, onAir]);
 
   const featuredEntry = near.length ? near[slide % near.length] : undefined;
   const featured = featuredEntry?.item;

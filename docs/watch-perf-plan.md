@@ -2137,6 +2137,105 @@ deep. The chrome numbers above need re-measuring light before any of them
 is worth touching; the card-cycling commits are the first candidates if they
 survive at half size.
 
+### Round 49 (2026-09-10 14:31 + 14:38) — the new build measured light: what a cut costs now
+
+Two captures on the deployed build (rounds 44–48: barbs gone, cams
+point-scoped, crawl content-keyed, RTOFS/HRDPS bakes, volcano guard), with
+the light stall trace. The first had a page reload inside the window.
+
+    14:31 (reload in window)   busy 36.3 % · 29.6 fps · gap max 300 ms · 6 stalls / 1400 ms · DOM 1005
+    14:38 (steady, volcano)    busy 32.3 % · 29.7 fps · gap max 167 ms · 5 stalls / 1074 ms · DOM 1310
+    round 48 "old code" (deep) busy 40.5 % · 28.7 fps · gap max 500 ms · 16 stalls / 3943 ms · DOM 591
+
+Confirmed on air:
+
+- `## network` of the reload run tops out at 2.84 MB (`/api/alerts`). No
+  68 MB catalog — round 46's cams fix is live.
+- `/api/volcanoes` (2.37 MB) landed at 23.7 s of the 14:38 run with no stall
+  behind it: the round 47 guard holds. The 23.1 s stall (131 ms) is the tick
+  that ISSUES the volcano + faults fetches — a 57 ms React commit and the
+  fault PathLayer's colours — not the response.
+- Textures: HRDPS is 2490×957 (9.1 MB ×5; was 4979×1913 at 36 MB). RTOFS is
+  still 4500×2250 (38.6 MB ×6): round 45 changed its bake, but the worker
+  hasn't ingested RTOFS since the deploy; it shrinks to 2250×1125 on the next
+  RTOFS run.
+- React DOM self time 2300 ms → 548–733 ms/min; `removeChild` 728 ms → 15 ms.
+  Most of round 48's DOM-op cost was the instrument, as suspected.
+
+What's left, stall by stall (14:38):
+
+- **6.0 s · 329 ms and 40.0 s · 271 ms — cuts.** From the trace: a React
+  commit (~28 ms of JS) with a 42–66 ms document Layout forced INSIDE it (the
+  crawl's `useLayoutEffect` reading `getBoundingClientRect`, 46–69 ms self),
+  ~200 ms later a second commit + layout (the deck swap behind FadeSwap: 400
+  dirty objects, 16–19 ms), the deck's own cut frame (particle transform-
+  feedback re-init, texture + buffer uploads, `clear`: 58–127 ms) and a major
+  GC (11–33 ms).
+- **18.6 s · 132 ms and 54.5 s · 211 ms — `/api/focus` landing** (0.15 MB,
+  0.52 MB): the cards fill in — commit 31–36 ms, Layout 40–67 ms.
+- **(14:31) 2.3 s · 398 ms — the alert blobs' first tessellation.** 1.18 MB
+  of dissolved polygons: earcut + normalise ~150 ms, attribute upload ~75 ms,
+  GC 36 ms. Recurs whenever the blob feed really changes (the ALERTS_UPDATED
+  beat), because the hook's fingerprint is all-or-nothing and every polygon
+  re-tessellates.
+
+**The layout finding.** Chrome's `Layout` events carry `dirtyObjects /
+totalObjects` and `layoutRoots`. Every layout ≥ 8 ms in the run is a
+whole-document layout (root depth 1) of 200–540 dirty objects, and it costs
+~0.10–0.16 ms per FRESH object (6.08 s: 400 → 66 ms; 39.99 s: 332 → 42 ms;
+54.52 s: 540 → 66 ms) against ~0.04 ms when the same 400 objects are laid
+out again 250 ms later. Fifteen such layouts in the minute, 414 ms; all 189
+layouts, 569 ms. Round 48's deep trace says why the objects are fresh: the
+invalidation reasons per commit are "Removed from layout" and "Added to
+layout" in near-equal numbers (409/133, 147/125, 120/119 …) with "Text
+changed" in the tens — the chrome REPLACES subtrees rather than updating
+them. A cut is new content, so some of that is inherent; the deck was the
+avoidable part. SlideDeck mounted EVERY slide of a segment at the cut (5–8
+cards, one of them visible), so the cut commit built the whole deck, and the
+hidden slides then kept paying document layout for their own 7 s
+featured-city cycles.
+
+**Change.** SlideDeck mounts lazily: the on-air slide and the one up next
+(so its fetches still get a whole hold to land), kept once mounted, a fresh
+set per segment (`resetKey`; the rewind now happens during render, so the new
+segment's first commit already shows slide 0 rather than the previous
+rotation's index against the new list). Mounted off-air slides carry
+`content-visibility: hidden` — layout and paint skipped, DOM and state kept —
+except the one still fading out. EventNearbyPanel and TopCitiesPanel pause
+their featured cycle while their slide is off air (`DeckSlideActiveContext`).
+Expected: the deck's share of the cut commit falls from every slide to one,
+and the periodic 15–30 ms layouts from hidden cards' cycling go away. To be
+measured with a plain `--stall-trace`.
+
+Not changed, ranked:
+
+1. **Alert blob tessellation** (398 ms at load, ~250–400 ms per real
+   change): take earcut off the client. Pre-tessellate in the worker's blob
+   build (positions + start indices + triangle indices per feature, dateline-
+   split first) and give SolidPolygonLayer binary attributes with
+   `_normalize: false`; the hazard cycle keeps its per-feature `getFillColor`
+   (index → feature). deck's `_dataDiff` is not an option — it needs a
+   constant-length array, and the blob count changes every ingest.
+2. **WorldReportDeck** (top right) still remounts a whole page every
+   `reportHoldMs` (6 s default) — one HazardScreen / WorldSituationPanel with
+   its feed list, a 15–30 ms layout each. The same lazy + content-visibility
+   treatment applies if it shows in the next light run.
+3. **The crawl measure inside the cut commit** forces a layout the frame
+   would have done anyway, so moving it to a rAF is not a saving by itself;
+   left alone.
+4. **The deck's cut frame** (particle re-init ~10 ms, uploads ~20 ms,
+   `clear` 8–10 ms) and the major GC: worked over in rounds 1–42, no cheap win
+   visible.
+5. **WeatherLayers' `ensureDefaultProps`** (`eT`: an `Object.freeze({...})`
+   of the props per layer per frame) 425–620 ms/min self — steady-state
+   2–3 %, never a stall. A patch candidate only if steady busy has to fall.
+
+Rule for next time: size a layout from the Layout event's own data — dirty
+vs total objects, root depth, ms per dirty object, first vs repeat layout of
+the same set — before blaming any component; the deep trace's invalidation
+REASONS (removed/added vs text/style changed) tell remount churn from
+in-place updates.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

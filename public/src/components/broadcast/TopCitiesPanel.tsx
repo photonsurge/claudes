@@ -9,12 +9,12 @@
  *
  * Featured-city context and today’s forecast, followed by other major cities.
  */
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { formatPopulation, type City } from "../../lib/cities";
 import { useTopCities, usePointForecastDays } from "../../lib/focus/focus-client";
 import { WeatherGlyph } from "./glyphs";
 import { formatReading } from "./PointHistoryPanel";
-import BroadcastCard, { CardSection } from "./BroadcastCard";
+import BroadcastCard, { CardSection, DeckSlideActiveContext } from "./BroadcastCard";
 
 /** Seconds the featured city holds before the slide advances to the next. */
 const FEATURED_HOLD_MS = 7000;
@@ -77,12 +77,17 @@ export default function TopCitiesPanel({
   const cities = useTopCities(bbox, cc);
 
   // Cycle the featured slot through every top city, biggest first, looping.
+  // Paused while the card waits off air in the deck (SlideDeck's context; a
+  // stand-alone panel is always on air), so a hidden card isn't rebuilding its
+  // featured block every few seconds for nobody — that churn was landing in
+  // the document's layout on OBS (docs/watch-perf-plan.md, round 49).
+  const onAir = useContext(DeckSlideActiveContext);
   const [slide, setSlide] = useState(0);
   useEffect(() => {
-    if (cities.length <= 1) return;
+    if (cities.length <= 1 || !onAir) return;
     const iv = setInterval(() => setSlide((n) => n + 1), FEATURED_HOLD_MS);
     return () => clearInterval(iv);
-  }, [cities.length]);
+  }, [cities.length, onAir]);
 
   if (!cities.length) return null;
 
