@@ -1739,6 +1739,49 @@ clientHeight` 120 ms in two stalls; `_setupTransformFeedback` on cuts;
 `run=2026-09-09T18:00:00.000Z (6h ago) steps=51 fhr=0`. Six hours of drift
 between the field on screen and the alerts drawn over it.
 
+### Round 40 (2026-09-10) — the floor, so far
+
+The 00:02 run is the healthiest measurement of the whole investigation:
+
+| metric              | 2026-09-07 baseline | round 21 "floor" | round 32 best | **round 40** |
+|---------------------|---------------------|------------------|---------------|--------------|
+| main thread busy    | 99 %                | 44.9 %           | 35.5 %        | 38.0 %       |
+| rAF                 | 16 fps              | 29.6             | 29.7          | **29.8**     |
+| max frame gap       | —                   | —                | 167 ms        | **200 ms**   |
+| stalls in the minute| —                   | —                | 7 / 1 240 ms  | **4 / 828 ms** |
+
+Stall time is the lowest recorded — 1.3 % of the minute, against 8.0 s in round
+27 and 14.7 s with the grid cache off two hours ago. Busy sits slightly above
+round 32's record on a heavier scene (two wind layers, temp raster + icon
+overlay, pressure contours). The label canvas is now skipping 2 895 of 7 134
+frames as unchanged.
+
+**What the four remaining stalls are made of**, and how little of it is ours:
+
+- 275 ms at 19.8 s — GC 44 ms, WeatherLayers' `_setupTransformFeedback` 33 ms
+  (its particle re-init on a cut, theirs), `bufferSubData`, plus the chrome's
+  `getBoundingClientRect` 22 ms.
+- 284 ms at 43.9 s — 29 % `(program)`, `Layout` 58 ms in the renderer events,
+  `getBoundingClientRect` 22 ms and `get clientHeight` 6 ms. A chrome layout
+  stall, and the last clearly-actionable one that belongs to us: the parallel
+  session traced it to `Ticker`'s `useLayoutEffect` depending on the `entries`
+  ARRAY IDENTITY rather than on the crawl text, so the dead-reckoned track feed
+  re-runs it about once a second and it does two `getBoundingClientRect` reads
+  plus a `clientWidth` read each time. Keying that effect on the rendered text
+  is the fix. Not done: it changes an on-air crawl and wants a visual check.
+- 165 ms at 4.7 s — the mode-slides work (`eventNearbySlideHasContent` /
+  `nearbyCities`) plus React `removeChild`.
+- 105 ms at 54.4 s — 31 % GC, 21 % `(program)`. Nothing to take.
+
+Steady-state costs, all small and mostly not ours: `_updateCache` (luma's WebGL
+state tracker) 566 ms, `_normalizeValue` (deck attribute normalisation) 508 ms,
+`drawImage` (label canvas blits) 591 ms, `iP` (our own lean uniform patch)
+426 ms, `eO` (WeatherLayers `ensureDefaultProps`, per draw) 378 ms, `e.s.r`
+(`geo.ts` `nearby`) 242 ms.
+
+**The wind, unchanged and unexplained by anything on the render path:** every
+run still reads `run=2026-09-09T18:00Z (6h ago) fhr=0`.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
