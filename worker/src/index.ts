@@ -458,6 +458,31 @@ process.on("uncaughtException", (err) => {
     }
   }
 
+  // ---- Repeatable weather.thinArchive (long-term frame archive retention) ----
+  // The archive is keep-forever by design (it backs historical point sampling and
+  // the future past-T scrub), but `archiveRun` fires on EVERY publish and MRMS
+  // publishes every 2 minutes, so it grew ~700 frames a day unbounded. This sweep
+  // keeps the full-res working set, then one frame per (model, variable) per UTC
+  // day forever, and drops the zoom-gated nests past their shorter window.
+  // Metadata-only selection, background tier. Pause with WEATHER_ARCHIVE_THIN=off
+  // (e.g. while backfilling). See docs/blob-retention-plan.md.
+  {
+    const THIN_MS = Number(process.env.WEATHER_ARCHIVE_THIN_MS || 24 * 60 * 60 * 1000);
+    try {
+      await addJob(
+        "do",
+        { domain: "weather", type: "weather", event: "thinArchive", data: {} },
+        {
+          repeat: { every: THIN_MS, offset: staggerOffset("weather-thin-archive", THIN_MS) },
+          jobId: "weather-thin-archive",
+        },
+      );
+      log(TAG, `registered repeatable weather.thinArchive`, { every: THIN_MS });
+    } catch (err) {
+      log(TAG, `failed to register weather.thinArchive`, { err: summarizeForLog(err) });
+    }
+  }
+
   // ---- Repeatable alerts.ingest jobs (one per enabled source) ----
   // Each source polls on its own pollIntervalSec; a fixed jobId per source
   // de-duplicates the repeat scheduler across restarts (spec §6).
@@ -596,6 +621,26 @@ process.on("uncaughtException", (err) => {
       log(TAG, `registered repeatable alerts.snapshotCompare`, { every: ALERT_COMPARE_MS });
     } catch (err) {
       log(TAG, `failed to register alerts.snapshotCompare`, { err: summarizeForLog(err) });
+    }
+
+    // Daily imagery retention. Alert stills were never pruned by anything at all
+    // (the repo method existed, nothing called it), which is half of why the blob
+    // store hit 240 GB. Keeps the full-res window, then one still per alert/kind
+    // per UTC day, then nothing past the cap bar an aired alert's keepsake.
+    // Pause with ALERT_SNAPSHOT_RETENTION=off. See docs/blob-retention-plan.md.
+    const ALERT_PRUNE_MS = Number(process.env.ALERT_SNAPSHOT_PRUNE_MS || 24 * 60 * 60 * 1000);
+    try {
+      await addJob(
+        "do",
+        { domain: "alerts", type: "alerts", event: "pruneSnapshots", data: {} },
+        {
+          repeat: { every: ALERT_PRUNE_MS, offset: staggerOffset("alerts-prune-snapshots", ALERT_PRUNE_MS) },
+          jobId: "alerts-prune-snapshots",
+        },
+      );
+      log(TAG, `registered repeatable alerts.pruneSnapshots`, { every: ALERT_PRUNE_MS });
+    } catch (err) {
+      log(TAG, `failed to register alerts.pruneSnapshots`, { err: summarizeForLog(err) });
     }
 
     // Nearby-camera stills — opt-in (fetches + stores third-party images).
@@ -776,6 +821,38 @@ process.on("uncaughtException", (err) => {
       log(TAG, `registered repeatable tracks.snapshotSeismic`, { everyMs: SEISMIC_SNAPSHOT_MS });
     } catch (err) {
       log(TAG, `failed to register tracks.snapshotSeismic`, summarizeForLog(err));
+    }
+
+    // ---- Repeatable tracks.archiveSeismic (the PERMANENT seismic record) ----
+    // The live quake collection carries a 31-day TTL, so every event older than
+    // that was deleted by Mongo with nothing keeping a copy — there was no
+    // seismic history at all. This copies everything the ingested USGS feed
+    // carries (M2.5+) into a TTL-free collection daily, with a lookback generous
+    // enough that missed runs lose nothing, plus a one-shot at boot so a fresh
+    // deploy seeds itself. Small docs, no blobs, nothing to configure. Pause with
+    // QUAKE_ARCHIVE=off. See docs/blob-retention-plan.md.
+    const QUAKE_ARCHIVE_MS = Number(process.env.QUAKE_ARCHIVE_MS || 24 * 60 * 60 * 1000);
+    try {
+      await addJob(
+        "do",
+        { domain: "tracks", type: "tracks", event: "archiveSeismic", data: {} },
+        {
+          repeat: { every: QUAKE_ARCHIVE_MS, offset: staggerOffset("seismic-archive", QUAKE_ARCHIVE_MS) },
+          jobId: "seismic-archive",
+        },
+      );
+      // Kick ONCE at boot as well. A `repeat: { every }` only fires an interval
+      // later, so a fresh worker would leave the record unseeded for up to a day
+      // — and every unseeded day permanently loses whatever the TTL reaps in the
+      // meantime. Idempotent (upserts on the USGS id), so this is free.
+      await addJob(
+        "do",
+        { domain: "tracks", type: "tracks", event: "archiveSeismic", data: {} },
+        { removeOnComplete: true, removeOnFail: true },
+      );
+      log(TAG, `registered repeatable tracks.archiveSeismic`, { everyMs: QUAKE_ARCHIVE_MS });
+    } catch (err) {
+      log(TAG, `failed to register tracks.archiveSeismic`, summarizeForLog(err));
     }
   }
 

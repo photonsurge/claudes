@@ -50,6 +50,8 @@ import { getTrackSnapshotModel } from "./track-snapshot-model";
 import { makeTrackSnapshotRepo } from "./track-snapshot-repo";
 import { getQuakeModel } from "./quake-model";
 import { makeQuakeRepo } from "./quake-repo";
+import { getQuakeArchiveModel } from "./quake-archive-model";
+import { makeQuakeArchiveRepo } from "./quake-archive-repo";
 import { getTideStationModel } from "./tide-station-model";
 import { makeTideStationRepo } from "./tide-station-repo";
 import { getTideSeriesModel } from "./tide-series-model";
@@ -158,14 +160,14 @@ export interface iPing extends iEntity {
  */
 export const BLOB_NAMESPACES: Record<string, { label: string; desc: string }> = {
   tex: { label: "Weather textures", desc: "Baked GFS/model variable textures served to the globe." },
-  frame: { label: "Weather frames", desc: "Archived hourly weather frames (never pruned)." },
+  frame: { label: "Weather frames", desc: "Long-term weather frame archive: full cadence for the recent window, then one frame per map + variable per UTC day, kept forever. Zoom-gated nests (incl. radar) drop out after their shorter window." },
   "forecast-frame": { label: "Forecast frames", desc: "Daily forecast frames; pruned as runs age out." },
   "admin-image": { label: "Admin images", desc: "Operator-uploaded on-air imagery from /admin/content." },
   ad: { label: "Ads", desc: "Sponsor images and video." },
   aurora: { label: "Aurora", desc: "SWPC OVATION oval glow PNGs." },
   geomag: { label: "Geomagnetic", desc: "Magnetic-field overlay PNGs." },
   satimg: { label: "Satellite imagery", desc: "GIBS true-colour cloud overlays." },
-  "alert-snapshot": { label: "Alert snapshots", desc: "Satellite/compare/camera stills per alert." },
+  "alert-snapshot": { label: "Alert snapshots", desc: "Satellite/compare/camera stills per alert: full cadence for the recent window, then one per alert + kind per UTC day, then only an aired alert's keepsake." },
   "event-snapshot": { label: "Event snapshots", desc: "Stills attached to unified watched events." },
   "volcano-media": { label: "Volcano media", desc: "Photos enriched onto the volcano catalog." },
   basemap: { label: "Basemap textures", desc: "Full-globe base images (Blue Marble / topo / night) refreshed from /admin/jobs." },
@@ -251,6 +253,9 @@ export function createDb(conn: Connection) {
     satelliteTles: makeSatelliteTleRepo(getSatelliteTleModel(conn)),
     trackSnapshots: makeTrackSnapshotRepo(getTrackSnapshotModel(conn)),
     quakes: makeQuakeRepo(getQuakeModel(conn)),
+    // The permanent seismic record. `quakes` carries a 31-day TTL, so without
+    // this every earthquake older than a month was simply gone.
+    quakeArchive: makeQuakeArchiveRepo(getQuakeArchiveModel(conn)),
     tideStations: makeTideStationRepo(getTideStationModel(conn)),
     tideSeries: makeTideSeriesRepo(getTideSeriesModel(conn)),
     seismoStations: makeSeismoStationRepo(getSeismoStationModel(conn)),

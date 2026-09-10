@@ -15,9 +15,19 @@ This was the open question. Checked directly against the code:
 
 - `WeatherFrame` (`shared/src/db/weather-frame-model.ts`) has **no TTL / expiry
   index** — just plain `created`/`updated` timestamps via `mongoTimestamps`.
-  Nothing auto-prunes it. `archiveKeepDays()` defaults to `0` = keep forever,
-  and there's no `.env` override in this deployment (`.env`/`.env.deploy`
-  have no `WEATHER_ARCHIVE_KEEP_DAYS`).
+  `archiveKeepDays()` defaults to `0` = no age cutoff, and there's no `.env`
+  override in this deployment (`.env`/`.env.deploy` have no
+  `WEATHER_ARCHIVE_KEEP_DAYS`).
+
+  > **Updated 2026-09-10:** "nothing auto-prunes it" is no longer true. A daily
+  > `weather.thinArchive` sweep now SAMPLES the archive — full cadence inside
+  > `WEATHER_ARCHIVE_FULLRES_HOURS`, then one frame per (model, variable) per UTC
+  > day kept forever, with zoom-gated nests dropped past their own window. That
+  > was forced: keep-everything plus MRMS publishing every 2 minutes took the
+  > blob store to 240 GB. See [[blob-retention-plan]]. A backfill would land at
+  > daily resolution anyway, so this is compatible — but **pause thinning with
+  > `WEATHER_ARCHIVE_THIN=off` while a backfill is importing**, so the sweep is
+  > not thinning a half-written import.
 - The repo's query methods (`shared/src/db/weather-frame-repo.ts`) —
   `listMeta({variable, model?, from?, to?})`, `getSeries(...)`,
   `getByID(id)` — take arbitrary `Date` ranges. Nothing restricts `from` to

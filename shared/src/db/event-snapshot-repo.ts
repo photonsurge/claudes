@@ -162,6 +162,25 @@ export function makeEventSnapshotRepo(model: Model<iEventSnapshotModel>, blobs: 
       return { removed: res.deletedCount ?? 0 };
     },
 
+    /**
+     * Retention prune scoped to a SET OF EVENTS. Scoping by source only worked
+     * while one adapter owned every frame: the volcano sweep hard-coded
+     * "geonet", so frames from every other camera provider were thinned but
+     * never aged out at all (docs/blob-retention-plan.md §2). Scoping by event
+     * id is the honest boundary — a feature prunes its own events' snapshots and
+     * can never reach another feature's.
+     */
+    async pruneOlderThanForEvents(cutoff: Date, eventIds: string[]): Promise<{ removed: number }> {
+      if (!eventIds.length) return { removed: 0 };
+      const q = { eventId: { $in: eventIds }, capturedAt: { $lt: cutoff } };
+      if (blobs.fs) {
+        const doomed = await model.find(q).select({ id: 1, _id: 0 }).lean<{ id: string }[]>();
+        await blobs.delete(doomed.map((d) => d.id));
+      }
+      const res = await model.deleteMany(q);
+      return { removed: res.deletedCount ?? 0 };
+    },
+
     async count(): Promise<number> {
       return model.estimatedDocumentCount();
     },

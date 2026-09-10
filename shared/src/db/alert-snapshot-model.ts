@@ -25,6 +25,14 @@ export interface iAlertSnapshot extends iGeneralModel {
   kind: AlertSnapshotKind;
   /** Satellite layer ("geocolor" | "ir" …); undefined for camera/compare. */
   layer?: string;
+  /**
+   * Which SOURCE frames a derived image was built from, e.g. a compare's
+   * `${earliestId}:${latestId}`. The compare job skips re-rendering a pair it
+   * has already stored — without this it re-stored a byte-identical side-by-side
+   * every hour, which is what filled `${BLOB_DIR}` (docs/blob-retention-plan.md).
+   * Undefined for captured (non-derived) kinds.
+   */
+  pairKey?: string;
   /** Dedup key: `${alertId}:${kind}:${layer}:${hourSlot}`. */
   slotKey: string;
   /** The capture hour bucket, e.g. "2026-07-12T15". */
@@ -59,6 +67,7 @@ export const AlertSnapshotSchema = new mongoose.Schema<iAlertSnapshotModel>(
     eventId: { type: String, required: false },
     kind: { type: String, required: true, default: "satellite" },
     layer: { type: String, required: false },
+    pairKey: { type: String, required: false },
     slotKey: { type: String, required: true },
     hourSlot: { type: String, required: true },
     bounds: { type: [Number], required: false },

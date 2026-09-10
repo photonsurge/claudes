@@ -85,9 +85,16 @@ describe("weather map refresh fleet", () => {
   });
 
   it("the weather-typed refreshes each map to their own handler event", () => {
-    const events = weatherMapJobs.filter((j) => j.type === "weather").map((j) => j.event);
-    expect(events.length).toBeGreaterThan(1);
-    expect(new Set(events).size).toBe(events.length);
+    // Keyed on event PLUS payload, not the event alone: a dry-run twin
+    // deliberately shares its handler with the real job and is distinguished by
+    // `data` (archive thinning does this, as does the volcano cam purge). Two
+    // buttons that are byte-identical would be the real bug — one map's refresh
+    // silently wired to another map's handler.
+    const keys = weatherMapJobs
+      .filter((j) => j.type === "weather")
+      .map((j) => `${j.event}:${JSON.stringify(j.data ?? null)}`);
+    expect(keys.length).toBeGreaterThan(1);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });
 

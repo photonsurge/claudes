@@ -22,6 +22,10 @@ import { ingestHrdps } from "../weather/hrdps";
 import { ingestUkv } from "../weather/ukv";
 import { ingestOpenMeteo } from "../weather/openMeteo";
 import { runClearGfs } from "../weather/clear";
+import { runThinArchive, thinEnabled } from "../weather/thinArchive";
+import { getAppDb } from "@photonsurge/shared/db/index";
+import { runExclusive } from "../jobLock";
+import { log } from "@photonsurge/shared/utill/logger";
 import { runReingest } from "../weather/reingest";
 
 /** See ../weather/check.ts */
@@ -121,4 +125,24 @@ export async function refreshUkv(_job: Job) {
 /** Open-Meteo spatial nests (JMA Japan now; AU/CN/KR one-line adds) — see ../weather/openMeteo.ts */
 export async function refreshOpenMeteo(_job: Job) {
   return ingestOpenMeteo();
+}
+
+// -- Long-term archive retention -----------------------------------------------
+/**
+ * Thin the WeatherFrame archive: keep every frame inside the full-res window,
+ * then one per (model, variable) per UTC day forever, and drop zoom-gated nests
+ * (incl. the 2-minute MRMS radar firehose) past their shorter window. Carries
+ * `data.dryRun` for the count-only twin. See ../weather/thinArchive.ts and
+ * docs/blob-retention-plan.md.
+ */
+export async function thinArchive(job: Job) {
+  const dryRun = job?.data?.data?.dryRun === true;
+  if (!thinEnabled() && !dryRun) {
+    log("job:weather", "thinArchive skipped (WEATHER_ARCHIVE_THIN=off)");
+    return { skipped: true, reason: "WEATHER_ARCHIVE_THIN=off" };
+  }
+  return runExclusive("weather-thin-archive", "job:weather", async () => {
+    const db = await getAppDb();
+    return runThinArchive(db as never, { dryRun });
+  });
 }

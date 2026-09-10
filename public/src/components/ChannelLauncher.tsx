@@ -6,6 +6,10 @@
  * (/watch/:id). Mirrors the links on /admin/scenes so the login-gated home page
  * is a fast jump-off to drive or preview any channel.
  *
+ * Each card also carries the director's NOW/NEXT shots and a Next button that
+ * cuts the channel to the queued shot (ChannelNowNext), so the launcher can drive
+ * a running channel without opening its console.
+ *
  * Each card carries its own ON AIR state: a live streaming run on the channel
  * (usePublicLiveRuns) is the real signal — and when that run publishes to
  * YouTube the card links straight to the public watch page and the live-chat
@@ -18,6 +22,7 @@ import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
 import { listScenes } from "../lib/scenes";
 import { useDirector } from "../lib/director";
 import { usePublicLiveRuns, type PublicRunLite } from "../lib/stream";
+import ChannelNowNext from "./ChannelNowNext";
 
 const controlHref = (id: string) => (id === MAIN_SCENE_ID ? "/control" : `/control?scene=${id}`);
 const watchHref = (id: string) => `/watch/${id}`;
@@ -102,6 +107,7 @@ function ChannelCard({ scene, run }: { scene: SceneMeta; run: PublicRunLite | nu
           </span>
         )}
       </div>
+      <ChannelNowNext sceneId={scene.id} director={director} />
       <div style={{ display: "flex", gap: 16, fontSize: 14, flexWrap: "wrap" }}>
         <Link href={controlHref(scene.id)} style={{ color: "#6b93e0", textDecoration: "none" }}>
           Control

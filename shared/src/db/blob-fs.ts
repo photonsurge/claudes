@@ -159,6 +159,37 @@ export class BlobFs {
     };
   }
 
+  /** The namespace directories that actually exist under the root. */
+  async listNamespaces(): Promise<string[]> {
+    return listDirs(this.root);
+  }
+
+  /**
+   * Every stored key in a namespace, with its size. Abandoned `.tmp-*` writes are
+   * reported separately by `usage()` and excluded here — they are garbage, not
+   * blobs. Used by the ORPHAN SWEEP: a blob whose metadata doc is gone is
+   * invisible to every read path and would otherwise sit on disk forever
+   * (docs/blob-retention-plan.md).
+   */
+  async listKeys(ns: string): Promise<{ key: string; bytes: number; mtimeMs: number }[]> {
+    const dir = join(this.root, sanitize(ns));
+    const out: { key: string; bytes: number; mtimeMs: number }[] = [];
+    for (const shard of await listDirs(dir)) {
+      const shardDir = join(dir, shard);
+      for (const name of await listFiles(shardDir)) {
+        if (TMP_FILE.test(name)) continue;
+        try {
+          const st = await stat(join(shardDir, name));
+          out.push({ key: name, bytes: st.size, mtimeMs: st.mtimeMs });
+        } catch (err) {
+          if (isNotFound(err)) continue; // raced with a delete
+          throw err;
+        }
+      }
+    }
+    return out;
+  }
+
   private async namespaceUsage(ns: string): Promise<BlobNamespaceUsage> {
     const dir = join(this.root, ns);
     const usage: BlobNamespaceUsage = {

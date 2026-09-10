@@ -16,6 +16,7 @@ import { TRACKS_UPDATED } from "@photonsurge/shared/control";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
+import { runQuakeArchive, archiveEnabled as quakeArchiveEnabled } from "../seismo/archive";
 
 const TAG = "job:tracks";
 
@@ -377,6 +378,39 @@ export async function snapshotShips(_job: Job) {
     emitWorkerEvent({ type: TRACKS_UPDATED, data: { kind: "ship", batchAt: batchAt.toISOString(), count: recorded } });
   }
   return result;
+}
+
+/**
+ * Dispatched as type "tracks", event "archiveSeismic". Copies significant
+ * quakes out of the TTL'd working set into the permanent record before Mongo
+ * reaps them — without this there was no seismic history at all beyond ~31 days.
+ * Carries `data.dryRun` for the count-only twin. See ../seismo/archive.ts and
+ * docs/blob-retention-plan.md.
+ */
+export async function archiveSeismic(job: Job) {
+  const dryRun = job?.data?.data?.dryRun === true;
+  if (!quakeArchiveEnabled() && !dryRun) {
+    log(TAG, `archiveSeismic skipped (QUAKE_ARCHIVE=off)`);
+    return { skipped: true, reason: "QUAKE_ARCHIVE=off" };
+  }
+  const db = await getAppDb();
+  try {
+    const result = await runQuakeArchive(db as never, { dryRun });
+    blogInfo(
+      TAG,
+      dryRun
+        ? `seismic archive dry run: ${result.candidates} candidates, ${result.total} on record`
+        : `seismic archive: +${result.archived} new, ${result.total} on record`,
+      result,
+      "tracks",
+      "archiveSeismic",
+    );
+    return result;
+  } catch (err) {
+    log(TAG, `archiveSeismic failed`, summarizeForLog(err));
+    blogErr(TAG, `seismic archive failed`, err, "tracks", "archiveSeismic");
+    throw err;
+  }
 }
 
 /**

@@ -6,6 +6,7 @@ import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { migrateFrameBlobs as runFrameBlobMigration } from "../weather/frameBlobMigrate";
 import { migrateBlobs as runBlobMigration } from "../blob/migrate";
+import { runOrphanSweep } from "../blob/orphans";
 
 /**
  * Externalise the WeatherFrame + WeatherForecastFrame texture bytes into their
@@ -28,4 +29,18 @@ export async function migrateFrameBlobs(_job: Job) {
 export async function migrateBlobs(_job: Job) {
   const db = await getAppDb();
   return runBlobMigration(db);
+}
+
+/**
+ * Report (or, with `data.apply`, delete) blobs on disk that no metadata doc
+ * references. Every read path goes doc -> blob, so an orphan is invisible and
+ * permanent; a prune that died between the two writes, or an interrupted
+ * migration, leaves them behind. Report-only unless explicitly applied.
+ * Registry ids `blobs-orphans` / `blobs-orphans-purge`.
+ * See ../blob/orphans.ts and docs/blob-retention-plan.md.
+ */
+export async function sweepOrphanBlobs(job: Job) {
+  const apply = job?.data?.data?.apply === true;
+  const db = await getAppDb();
+  return runOrphanSweep(db, { apply });
 }

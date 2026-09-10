@@ -106,6 +106,18 @@ export function makeWeatherFrameRepo(model: Model<iWeatherFrameModel>, blobs: Bl
     },
 
     /** Delete frames with validTime older than `cutoff` (and their bytes); returns count. */
+    /**
+     * Drop specific frames (doc + bytes). Used by the archive THINNING sweep,
+     * which keeps one frame per (model, variable) per UTC day past the full-res
+     * window rather than a blunt age cutoff — see docs/blob-retention-plan.md.
+     */
+    async deleteMany(ids: string[]): Promise<{ removed: number }> {
+      if (!ids.length) return { removed: 0 };
+      await blobs.delete(ids);
+      const res = await model.deleteMany({ id: { $in: ids } });
+      return { removed: res.deletedCount ?? 0 };
+    },
+
     async pruneOlderThan(cutoff: Date): Promise<number> {
       const stale = await model
         .find({ validTime: { $lt: cutoff } })

@@ -1,7 +1,8 @@
 // weather/archive.ts
 // Long-term frame archiving: after a run publishes, copy its lowest forecast
 // hours (default f000/f003 — effectively the analysis) into the WeatherFrame
-// collection, which run retention never touches. That is what powers historical
+// collection, which run retention never touches (archive thinning does — see
+// thinArchive.ts). That is what powers historical
 // point sampling and, later, map replay. Selection logic is pure; the writer
 // re-reads texture bytes from Mongo so BOTH publish paths (GFS ingest and
 // publishSourceRun) and the backfill script share one code path.
@@ -33,7 +34,14 @@ export function archiveFhrs(): number[] {
     .filter((n) => Number.isFinite(n) && n >= 0);
 }
 
-/** Days of archive to keep; 0 (the default) keeps everything forever. */
+/**
+ * Days of archive to keep; 0 (the default) disables this blunt age cutoff.
+ *
+ * This is NOT the archive's retention any more — `weather/thinArchive.ts` is,
+ * and it samples (full-res window, then one frame per model+variable per UTC day
+ * forever) rather than cutting by age. This stays as a backstop for anyone who
+ * does want a hard cutoff. See docs/blob-retention-plan.md.
+ */
 export function archiveKeepDays(): number {
   return Number(process.env.WEATHER_ARCHIVE_KEEP_DAYS || 0);
 }

@@ -402,6 +402,29 @@ export async function patchDirectorConfig(
 }
 
 /**
+ * Operator "cut to the next shot now" for a scene — the same mechanism as
+ * /control's Skip ⏭: bump the persisted `skipNonce`, which the worker's director
+ * loop compares against the nonce it last acted on and cuts within a tick (~1s).
+ *
+ * Read-then-bump rather than a client-side counter so any surface can fire it
+ * without holding the config; both calls are checked so a failed hop surfaces to
+ * the caller instead of silently doing nothing (a swallowed GET would fall back
+ * to nonce 0 and the worker would ignore the bump).
+ */
+export async function skipToNextShot(sceneId: string): Promise<void> {
+  const url = `/api/director/${encodeURIComponent(sceneId)}/config`;
+  const read = await fetch(url, { cache: "no-store" });
+  if (!read.ok) throw new Error(`director config read failed (${read.status})`);
+  const cfg = (await read.json()) as DirectorConfig;
+  const write = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ skipNonce: (cfg.skipNonce ?? 0) + 1 }),
+  });
+  if (!write.ok) throw new Error(`director skip failed (${write.status})`);
+}
+
+/**
  * Deep-merge a director-config patch over a base, spreading the map-shaped
  * fields so a single-slider patch (e.g. `{ quakeHoldSeconds: { great: 40 } }`)
  * doesn't wipe its siblings. Top-level scalars and wholesale-replaced maps

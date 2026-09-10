@@ -115,6 +115,16 @@ export function makeAirLogRepo(runModel: Model<iAirRunModel>, entryModel: Model<
     },
 
     /**
+     * Every distinct subject of a given kind that has EVER aired, e.g. every
+     * `storm:<source>:<identifier>` the director has cut to. Snapshot retention
+     * uses this to spare the imagery of alerts that actually made it to air
+     * while dropping the rest (docs/blob-retention-plan.md).
+     */
+    async airedSegmentIds(kind: string): Promise<string[]> {
+      return entryModel.distinct("segmentId", { kind }).exec() as Promise<string[]>;
+    },
+
+    /**
      * A scene's most-recently-aired shots, newest-first, spanning run
      * boundaries (sorted by air time, not grouped by run). Backs the operator's
      * live "recently aired" glance on /control — it reads this durable log so it

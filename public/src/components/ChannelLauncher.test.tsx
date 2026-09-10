@@ -1,13 +1,14 @@
 /**
  * ChannelLauncher — one card per channel with correctly-scoped Control, Watch
  * and Settings links, the per-channel ON AIR badge (live run OR director
- * heartbeat) with YouTube watch/chat links, and the empty-state prompt.
+ * heartbeat) with YouTube watch/chat links, the director NOW/NEXT strip, and
+ * the empty-state prompt.
  */
 import { render, screen } from "@testing-library/react";
 import ChannelLauncher from "./ChannelLauncher";
 
 jest.mock("../lib/scenes", () => ({ listScenes: jest.fn() }));
-jest.mock("../lib/director", () => ({ useDirector: jest.fn() }));
+jest.mock("../lib/director", () => ({ useDirector: jest.fn(), skipToNextShot: jest.fn() }));
 jest.mock("../lib/stream", () => ({ usePublicLiveRuns: jest.fn() }));
 import { listScenes } from "../lib/scenes";
 import { useDirector } from "../lib/director";
@@ -103,6 +104,33 @@ describe("ChannelLauncher", () => {
     expect(screen.getByText("ON AIR")).toBeInTheDocument();
     // Director-only: no platform run, so no YouTube links.
     expect(screen.queryByRole("link", { name: "YouTube ↗" })).not.toBeInTheDocument();
+  });
+
+  it("carries the director's NOW/NEXT strip on the channel it is driving", async () => {
+    mockList.mockResolvedValue([
+      { id: "default", name: "Main" },
+      { id: "seismic", name: "Seismic" },
+    ] as Awaited<ReturnType<typeof listScenes>>);
+    mockDirector.mockImplementation((sceneId: string) =>
+      sceneId === "default"
+        ? {
+            sceneId,
+            active: true,
+            seq: 2,
+            segment: { title: "France", subtitle: "Amber wind warning" },
+            endsAt: Date.now() + 20_000,
+            upNext: [{ kind: "global", title: "World View" }],
+          }
+        : null,
+    );
+
+    render(<ChannelLauncher />);
+    await screen.findAllByRole("link", { name: "Control" });
+
+    expect(screen.getByText("France")).toBeInTheDocument();
+    expect(screen.getByText("World View")).toBeInTheDocument();
+    // Only the driven channel gets a Next button — the other card has no queue.
+    expect(screen.getAllByRole("button", { name: "Next ⏭" })).toHaveLength(1);
   });
 
   it("prompts to create a channel when there are none", async () => {

@@ -171,6 +171,27 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Weather maps",
   },
   {
+    id: "weather-thin-archive-dry",
+    label: "Check weather archive thinning (dry run)",
+    description:
+      "Count what archive thinning WOULD drop, deleting nothing. The long-term frame archive was written keep-forever while radar (MRMS) added a frame every 2 minutes, which is what filled the disk. Thinning keeps every frame inside the full-res window (WEATHER_ARCHIVE_FULLRES_HOURS, default 96h), then ONE frame per map + variable per UTC day forever, and drops the zoom-gated regional nests past WEATHER_ARCHIVE_NEST_KEEP_DAYS (default 7). Read this first, then run the real one.",
+    domain: "weather",
+    type: "weather",
+    event: "thinArchive",
+    group: "Weather maps",
+    data: { dryRun: true },
+  },
+  {
+    id: "weather-thin-archive",
+    label: "Thin weather archive (keep one a day)",
+    description:
+      "Apply archive thinning for real: keep every frame inside the full-res window, one frame per map + variable per UTC day beyond it (kept forever), and drop zoom-gated regional nests past their shorter window. Runs daily on its own; this button forces it. Nothing on air reads the archive further back than 72h, so the daily keepers are what a past day looks like. Pause with WEATHER_ARCHIVE_THIN=off while backfilling.",
+    domain: "weather",
+    type: "weather",
+    event: "thinArchive",
+    group: "Weather maps",
+  },
+  {
     id: "forecast-backfill",
     label: "Backfill 3-day forecast",
     description:
@@ -227,6 +248,29 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     priority: 10,
   },
   {
+    id: "blobs-orphans",
+    label: "Check for orphaned blobs (report only)",
+    description:
+      "List files in the shared blob folder that no database record points at, deleting nothing. Every read goes record → file, so an orphan is invisible to the app and nothing would ever remove it — a prune that died between the two deletes, or an interrupted migration, leaves them behind forever. Reports per namespace with a size total. Namespaces with no owning collection (basemap textures) are reported as not swept rather than guessed at.",
+    domain: "maintenance",
+    type: "maintenance",
+    event: "sweepOrphanBlobs",
+    group: "Maintenance",
+    priority: 10,
+  },
+  {
+    id: "blobs-orphans-purge",
+    label: "Delete orphaned blobs",
+    description:
+      "Actually delete the files the orphan report lists. Run the report first and read it. Files written in the last 15 minutes are always spared, in case a record is still being written alongside them.",
+    domain: "maintenance",
+    type: "maintenance",
+    event: "sweepOrphanBlobs",
+    group: "Maintenance",
+    priority: 10,
+    data: { apply: true },
+  },
+  {
     id: "alerts-ingest",
     label: "Ingest alerts",
     description:
@@ -267,6 +311,48 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     group: "Alerts & events",
   },
   {
+    id: "alerts-prune-snapshots-dry",
+    label: "Check alert imagery pruning (dry run)",
+    description:
+      "Count what alert-imagery retention WOULD drop, deleting nothing. Alert stills were never pruned by anything, and the hourly before/after comparison re-stored a byte-identical image every hour, which is what filled the disk. Retention keeps every still inside ALERT_SNAPSHOT_FULLRES_HOURS (default 72h), then the newest per alert + kind per UTC day, then nothing past ALERT_SNAPSHOT_KEEP_DAYS (default 30) except one keepsake still for alerts that actually aired. Read this first.",
+    domain: "alerts",
+    type: "alerts",
+    event: "pruneSnapshots",
+    group: "Alerts & events",
+    data: { dryRun: true },
+  },
+  {
+    id: "alerts-prune-snapshots",
+    label: "Prune alert imagery (keep one a day)",
+    description:
+      "Apply alert-imagery retention for real: full-res inside the recent window, one still per alert + kind per UTC day beyond it, nothing past the hard cap except an aired alert's keepsake. Runs daily on its own; this button forces it. The alerts themselves are never deleted — only the pictures.",
+    domain: "alerts",
+    type: "alerts",
+    event: "pruneSnapshots",
+    group: "Alerts & events",
+  },
+  {
+    id: "alerts-dedup-snapshots-dry",
+    label: "Check duplicate alert imagery (dry run)",
+    description:
+      "Count byte-identical duplicate alert stills without deleting any. The hourly before/after comparison used to re-store the same image every hour for every alert, so the same picture is on disk many times over. Cheap: stills are grouped by size first, so anything with a unique size is never even opened. Read this before the real one.",
+    domain: "alerts",
+    type: "alerts",
+    event: "dedupSnapshots",
+    group: "Alerts & events",
+    data: { dryRun: true },
+  },
+  {
+    id: "alerts-dedup-snapshots",
+    label: "Remove duplicate alert imagery",
+    description:
+      "Collapse byte-identical alert stills down to one copy, keeping the newest. Only exact duplicates of the same alert's same image kind are removed, so nothing you could tell apart by eye is lost. A one-off reclaim for what the old hourly comparison wrote; run it after the comparison fix is deployed.",
+    domain: "alerts",
+    type: "alerts",
+    event: "dedupSnapshots",
+    group: "Alerts & events",
+  },
+  {
     id: "tles",
     label: "Refresh satellite TLEs",
     description: "Fetch the configured Celestrak groups into Mongo.",
@@ -300,6 +386,27 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     domain: "tracks",
     type: "tracks",
     event: "snapshotSeismic",
+    group: "Tracks",
+  },
+  {
+    id: "seismic-archive-dry",
+    label: "Check seismic archive (dry run)",
+    description:
+      "Count the earthquakes that WOULD be copied into the permanent record, writing nothing. The live quake collection expires after ~31 days (a TTL, right for the map, wrong for history), so anything not copied out is simply gone. Archiving keeps M4.5+ (QUAKE_ARCHIVE_MIN_MAG) forever — small documents, no imagery.",
+    domain: "tracks",
+    type: "tracks",
+    event: "archiveSeismic",
+    group: "Tracks",
+    data: { dryRun: true },
+  },
+  {
+    id: "seismic-archive",
+    label: "Archive earthquakes (permanent record)",
+    description:
+      "Copy significant earthquakes out of the expiring live collection into the permanent seismic record. Runs daily on its own; this button forces it, and is also how you seed the record for the first time from whatever is still inside the 31-day window. Idempotent — re-running rewrites the same events and picks up USGS magnitude revisions.",
+    domain: "tracks",
+    type: "tracks",
+    event: "archiveSeismic",
     group: "Tracks",
   },
   {

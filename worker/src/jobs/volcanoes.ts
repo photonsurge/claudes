@@ -1366,24 +1366,34 @@ export async function timelapseCams(_job: Job) {
 }
 
 /**
- * Dispatched as `volcanoes.pruneCamSnapshots`. Two stages, both scoped to source
- * "geonet" (so alert-event snapshots keep their own retention):
- *  1. THIN — for each active volcano, keep every recent frame full-resolution but
+ * Dispatched as `volcanoes.pruneCamSnapshots`. Two stages, both scoped to the
+ * VOLCANO watched events (so another feature's event snapshots keep their own
+ * retention):
+ *  1. THIN — for each volcano, keep every recent frame full-resolution but
  *     thin frames older than CAM_FULLRES_DAYS to a DAY + a NIGHT representative per
  *     camera per UTC day (so history stays browsable + the diurnal cycle survives).
  *  2. AGE-PRUNE — drop everything past the retention window entirely.
  * Bytes + metadata both go.
+ *
+ * Both stages used to leak (docs/blob-retention-plan.md §2): stage 2 was scoped
+ * to source "geonet", so every OTHER camera provider's frames were thinned to two
+ * a day and then kept forever; and stage 1 only walked ACTIVE volcanoes, so the
+ * moment an eruption closed its frames stopped being revisited at all. Both are
+ * now scoped by volcano EVENT, whatever its status or camera provider.
  */
 export async function pruneCamSnapshots(_job: Job) {
   const db = await getAppDb();
   try {
+    // EVERY volcano event, not just the erupting ones — a closed event's frames
+    // are exactly the ones nothing would ever come back to.
+    const events = await db.watchedEvents.list({ type: "VOLCANO" });
+    const eventIds = events.map((e) => e.id).filter((id): id is string => !!id);
+
     // Stage 1 — day/night thinning of the older frames.
-    const events = await db.watchedEvents.list({ type: "VOLCANO", status: "ACTIVE" });
     const fullResUntilMs = Date.now() - CAM_FULLRES_DAYS * 86_400_000;
     let thinned = 0;
-    for (const ev of events) {
-      if (!ev.id) continue;
-      const snaps = await db.eventSnapshots.listForEvent(ev.id);
+    for (const evId of eventIds) {
+      const snaps = await db.eventSnapshots.listForEvent(evId);
       const doomed = planCamThinning(
         snaps.map((s) => ({ id: s.id, camId: s.camId, capturedAt: s.capturedAt, meanLuma: s.meanLuma, kind: s.kind })),
         { fullResUntilMs, nightMean: CAM_NIGHT_LUMA },
@@ -1391,11 +1401,17 @@ export async function pruneCamSnapshots(_job: Job) {
       if (doomed.length) thinned += (await db.eventSnapshots.deleteMany(doomed)).removed;
     }
 
-    // Stage 2 — hard age-prune past the retention window.
+    // Stage 2 — hard age-prune past the retention window, every provider.
     const cutoff = new Date(Date.now() - CAM_RETENTION_DAYS * 86_400_000);
-    const { removed } = await db.eventSnapshots.pruneOlderThanForSource(cutoff, "geonet");
+    const { removed } = await db.eventSnapshots.pruneOlderThanForEvents(cutoff, eventIds);
 
-    const result = { thinned, removed, fullResDays: CAM_FULLRES_DAYS, retentionDays: CAM_RETENTION_DAYS };
+    const result = {
+      events: eventIds.length,
+      thinned,
+      removed,
+      fullResDays: CAM_FULLRES_DAYS,
+      retentionDays: CAM_RETENTION_DAYS,
+    };
     log(TAG, `volcano cam prune done`, result);
     if (thinned || removed) {
       blogInfo(TAG, `volcano cam prune: ${thinned} thinned, ${removed} aged out`, result, "volcanoes", "pruneCamSnapshots");

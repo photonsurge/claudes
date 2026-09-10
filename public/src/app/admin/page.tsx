@@ -55,6 +55,7 @@ export const ADMIN_LINKS: AdminLink[] = [
   { group: "Operations", href: "/admin/users", title: "Users", desc: "Admin accounts for /admin and /control.", ready: true },
   { group: "Operations", href: "/admin/db", title: "Database", desc: "Mongo collection sizes, doc counts, storage summary.", ready: true },
   { group: "Operations", href: "/admin/files", title: "Files", desc: "Blob folder disk usage — textures, frames, snapshots and uploads, plus disk free.", ready: true },
+  { group: "Operations", href: "/admin/archive", title: "Archive", desc: "One UTC day of the permanent record — the maps as they were, warnings in force, earthquakes and what aired.", ready: true },
 ];
 
 export default function AdminPage() {

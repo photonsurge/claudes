@@ -11,6 +11,7 @@ export interface AlertSnapshotMeta {
   alertId?: string;
   kind: AlertSnapshotKind;
   layer?: string;
+  pairKey?: string;
   hourSlot: string;
   bounds?: number[];
   width: number;
@@ -30,6 +31,7 @@ export interface AlertSnapshotInput {
   alertId?: string;
   kind: AlertSnapshotKind;
   layer?: string;
+  pairKey?: string;
   hourSlot: string;
   bounds?: number[];
   width: number;
@@ -50,6 +52,7 @@ const toMeta = (doc: any): AlertSnapshotMeta => ({
   alertId: doc.alertId,
   kind: doc.kind,
   layer: doc.layer,
+  pairKey: doc.pairKey,
   hourSlot: doc.hourSlot,
   bounds: doc.bounds,
   width: doc.width,
@@ -92,6 +95,7 @@ export function makeAlertSnapshotRepo(model: Model<iAlertSnapshotModel>, blobs: 
               alertId: snap.alertId,
               kind: snap.kind,
               layer: snap.layer,
+              pairKey: snap.pairKey,
               hourSlot: snap.hourSlot,
               bounds: snap.bounds,
               width: snap.width,
@@ -145,6 +149,50 @@ export function makeAlertSnapshotRepo(model: Model<iAlertSnapshotModel>, blobs: 
         contentType: doc.contentType ?? "image/png",
         updatedAt: new Date(doc.capturedAt).toISOString(),
       };
+    },
+
+    /**
+     * Every snapshot's retention fields, bytes projected away. Deliberately a
+     * NARROW projection (not `-png`): the retention sweep walks the whole
+     * collection, so it reads five small fields per doc rather than the full
+     * metadata. Ordering is unspecified; the planner sorts what it needs.
+     */
+    async listAllMeta(): Promise<
+      {
+        id: string;
+        source: string;
+        identifier: string;
+        kind: AlertSnapshotKind;
+        layer?: string;
+        capturedAt: string;
+        width: number;
+        height: number;
+      }[]
+    > {
+      const docs = await model
+        .find({}, { _id: 0, id: 1, source: 1, identifier: 1, kind: 1, layer: 1, capturedAt: 1, width: 1, height: 1 })
+        .lean<
+          {
+            id: string;
+            source: string;
+            identifier: string;
+            kind: AlertSnapshotKind;
+            layer?: string;
+            capturedAt: Date;
+            width: number;
+            height: number;
+          }[]
+        >()
+        .exec();
+      return docs.map((d) => ({ ...d, capturedAt: new Date(d.capturedAt).toISOString() }));
+    },
+
+    /** Drop specific snapshots (doc + bytes) — the thinning sweep's executor. */
+    async deleteMany(ids: string[]): Promise<{ removed: number }> {
+      if (!ids.length) return { removed: 0 };
+      if (blobs.fs) await blobs.delete(ids);
+      const res = await model.deleteMany({ id: { $in: ids } });
+      return { removed: res.deletedCount ?? 0 };
     },
 
     /** Retention: drop snapshots captured before `cutoff` (and their on-disk bytes). */

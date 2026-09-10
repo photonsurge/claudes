@@ -17,6 +17,8 @@ import { emitWorkerEvent } from "../socket";
 import { closeEndedAlertEvents, retireUnservableSchedules } from "../events/close";
 import { eventsUnifiedEnabled } from "../events/config";
 import { resyncAlertPopulations } from "../alerts/population";
+import { runAlertSnapshotRetention, retentionEnabled } from "../alerts/snapshot-retention";
+import { runSnapshotDedup } from "../alerts/snapshot-dedup";
 
 export { translate } from "../alerts/translate";
 
@@ -325,14 +327,24 @@ export async function snapshotCompare(job: Job) {
     const hourSlot = hourSlotOf(new Date());
     let stored = 0;
     let skipped = 0;
+    let unchanged = 0;
     for (const alert of alerts) {
-      const sats = (await db.alertSnapshots.listForAlert(alert.source, alert.identifier)).filter(
-        (s) => s.kind === "satellite",
-      );
+      const all = await db.alertSnapshots.listForAlert(alert.source, alert.identifier);
+      const sats = all.filter((s) => s.kind === "satellite");
       const latest = sats[0];
       const earliest = sats[sats.length - 1];
       if (!latest || !earliest || latest.id === earliest.id) {
         skipped++;
+        continue;
+      }
+      // Only render a pair we have not already stored. The two ends move rarely
+      // (GIBS daily products refresh once a day, and `earliest` only moves when
+      // retention drops it), so without this the hourly sweep re-stored a
+      // byte-identical side-by-side every hour, per alert — the bulk of the 74 GB
+      // in `${BLOB_DIR}/alert-snapshot`. See docs/blob-retention-plan.md §5.
+      const pairKey = `${earliest.id}:${latest.id}`;
+      if (all.some((s) => s.kind === "compare" && s.pairKey === pairKey)) {
+        unchanged++;
         continue;
       }
       const [a, b] = await Promise.all([db.alertSnapshots.getPng(earliest.id), db.alertSnapshots.getPng(latest.id)]);
@@ -353,6 +365,7 @@ export async function snapshotCompare(job: Job) {
         alertId: alert.id,
         kind: "compare",
         layer: "satellite",
+        pairKey,
         hourSlot,
         width,
         height,
@@ -361,9 +374,15 @@ export async function snapshotCompare(job: Job) {
       });
       stored++;
     }
-    const result = { alerts: alerts.length, stored, skipped };
+    const result = { alerts: alerts.length, stored, skipped, unchanged };
     log(TAG, `snapshotCompare done`, result);
-    blogInfo(TAG, `alert satellite comparisons: ${stored}`, result, "alerts", "snapshotCompare");
+    blogInfo(
+      TAG,
+      `alert satellite comparisons: ${stored} (${unchanged} unchanged)`,
+      result,
+      "alerts",
+      "snapshotCompare",
+    );
     if (stored) emitWorkerEvent({ type: ALERTS_UPDATED, data: { compares: stored } });
     return result;
   } catch (err) {
@@ -465,6 +484,68 @@ export async function snapshotCameras(job: Job) {
   } catch (err) {
     log(TAG, `snapshotCameras failed`, summarizeForLog(err));
     blogErr(TAG, `alert camera snapshot failed`, err, "alerts", "snapshotCameras");
+    throw err;
+  }
+}
+
+/**
+ * Prune captured alert imagery: keep every still inside the full-res window,
+ * then the newest per (alert, kind, layer) per UTC day, then nothing past the
+ * hard cap except one keepsake for alerts that actually aired. Carries
+ * `data.dryRun` for the count-only twin. Dispatched as type "alerts", event
+ * "pruneSnapshots". See ../alerts/snapshot-retention.ts and
+ * docs/blob-retention-plan.md.
+ */
+export async function pruneSnapshots(job: Job) {
+  const dryRun = job?.data?.data?.dryRun === true;
+  if (!retentionEnabled() && !dryRun) {
+    log(TAG, `pruneSnapshots skipped (ALERT_SNAPSHOT_RETENTION=off)`);
+    return { skipped: true, reason: "ALERT_SNAPSHOT_RETENTION=off" };
+  }
+  const db = await getAppDb();
+  try {
+    const result = await runAlertSnapshotRetention(db as never, { dryRun });
+    blogInfo(
+      TAG,
+      dryRun
+        ? `alert imagery dry run: ${result.doomed} of ${result.scanned} would go`
+        : `alert imagery pruned: ${result.removed} of ${result.scanned}`,
+      result,
+      "alerts",
+      "pruneSnapshots",
+    );
+    return result;
+  } catch (err) {
+    log(TAG, `pruneSnapshots failed`, summarizeForLog(err));
+    blogErr(TAG, `alert imagery prune failed`, err, "alerts", "pruneSnapshots");
+    throw err;
+  }
+}
+
+/**
+ * One-shot reclaim: collapse byte-identical alert stills to a single copy. Only
+ * exact duplicates of the same alert's same kind go, newest kept. Carries
+ * `data.dryRun`. Dispatched as type "alerts", event "dedupSnapshots".
+ * See ../alerts/snapshot-dedup.ts.
+ */
+export async function dedupSnapshots(job: Job) {
+  const dryRun = job?.data?.data?.dryRun === true;
+  const db = await getAppDb();
+  try {
+    const result = await runSnapshotDedup(db as never, { dryRun });
+    blogInfo(
+      TAG,
+      dryRun
+        ? `alert imagery dedup dry run: ${result.duplicates} duplicate(s), ${Math.round(result.reclaimedBytes / 1048576)} MB`
+        : `alert imagery dedup: ${result.removed} removed, ${Math.round(result.reclaimedBytes / 1048576)} MB reclaimed`,
+      result,
+      "alerts",
+      "dedupSnapshots",
+    );
+    return result;
+  } catch (err) {
+    log(TAG, `dedupSnapshots failed`, summarizeForLog(err));
+    blogErr(TAG, `alert imagery dedup failed`, err, "alerts", "dedupSnapshots");
     throw err;
   }
 }
