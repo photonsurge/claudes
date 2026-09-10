@@ -72,10 +72,11 @@ export function hexToRgb(hex: string | undefined): [number, number, number] {
  *  clears up zoomed in. Painting (no depth test/write) over the already-correct
  *  depth sphere `background` wrote, with the far hemisphere culled geometrically
  *  instead of numerically, sidesteps the z-fight entirely. */
-function globalImageLayer(id: string, image: string) {
+function globalImageLayer(id: string, image: string, visible: boolean) {
   return new BitmapLayer({
     id: `basemap-image-${id}`,
     image,
+    visible,
     bounds: [-180, -90, 180, 90],
     parameters: { ...DEPTH_PAINT, cullMode: "back" },
   });
@@ -149,41 +150,38 @@ export function basemapLayers(
     parameters: hasGlobalRaster ? DEPTH_TEST : DEPTH_OCCLUDE,
   });
 
-  if (state.basemap === "satellite") {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const layers: any[] = [background, globalImageLayer("satellite", SATELLITE_IMG)];
-    if (tilesActive) layers.push(tileBasemapLayer("satellite", TILE_TEMPLATES.esriImagery));
-    return layers;
-  }
-  if (state.basemap === "terrain") {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const layers: any[] = [background, globalImageLayer("terrain", TERRAIN_IMG)];
-    if (tilesActive) layers.push(tileBasemapLayer("terrain", TILE_TEMPLATES.openTopo));
-    return layers;
-  }
-
-  if (state.basemap === "night") {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const layers: any[] = [background, globalImageLayer("night", NIGHT_IMG)];
-    if (tilesActive) layers.push(tileBasemapLayer("night", TILE_TEMPLATES.gibsNight, NIGHT_TILE_MAX_ZOOM));
-    return layers;
-  }
-
-  if (state.basemap === "relief") {
-    // The shaded hypsometric relief raster is added by Globe (it needs the Mongo
-    // elevation texture, unavailable here). We just lay down the ocean-dark
-    // background sphere; once the relief texture loads it occludes this, and
-    // `hasOccluder` (true via hasGlobalRaster) flips the bg to non-writing. No land
-    // GeoJSON fill — the relief paints land and sea itself.
-    return [background];
-  }
-
-  // dark: ocean sphere + recolourable land fill.
-  return [
+  // Every basemap's heavy layer stays in the list, toggled by `visible`, rather
+  // than being built when its basemap is on and thrown away when it is off. A
+  // global spin CYCLES map types, and each visit used to rebuild from scratch:
+  // the 8192×4096 base image re-created as a GPU texture (`texSubImage2D`
+  // 360–375 ms in one frame, every visit) and the 2.2 MB land GeoJSON
+  // re-fetched and re-tessellated on the main thread (~420 ms, plus the GC it
+  // leaves behind). deck keeps an invisible layer's state — the texture, the
+  // tessellation — and only skips its draw, so each is paid once per page
+  // load, behind the cold-start cover, and a map-type step is a flag flip
+  // (docs/watch-perf-plan.md, round 51). GPU memory for three base images is
+  // the price; the OBS box has it, and the worker now bakes them at 4096 wide.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const layers: any[] = [
     background,
+    globalImageLayer("satellite", SATELLITE_IMG, state.basemap === "satellite"),
+    globalImageLayer("terrain", TERRAIN_IMG, state.basemap === "terrain"),
+    globalImageLayer("night", NIGHT_IMG, state.basemap === "night"),
+  ];
+  // Sharp XYZ tiles over the active raster basemap once zoomed in — cheap to
+  // rebuild (the tile bounding-volume cache is page-lifetime), so not kept.
+  if (tilesActive && state.basemap === "satellite") layers.push(tileBasemapLayer("satellite", TILE_TEMPLATES.esriImagery));
+  if (tilesActive && state.basemap === "terrain") layers.push(tileBasemapLayer("terrain", TILE_TEMPLATES.openTopo));
+  if (tilesActive && state.basemap === "night") layers.push(tileBasemapLayer("night", TILE_TEMPLATES.gibsNight, NIGHT_TILE_MAX_ZOOM));
+  // dark: recolourable land fill over the ocean sphere. Hidden under the raster
+  // basemaps, and under relief too — that shaded hypsometric raster is added by
+  // Globe (it needs the Mongo elevation texture, unavailable here) and paints
+  // land and sea itself.
+  layers.push(
     new GeoJsonLayer({
       id: "basemap-land",
       data: LAND_URL,
+      visible: state.basemap === "dark",
       stroked: false,
       filled: true,
       getFillColor: hexToRgb(colors.land),
@@ -192,8 +190,10 @@ export function basemapLayers(
       // cullMode:'back', and NOT depth-testing stops it z-fighting the ocean
       // background grid (the green "spiky fill"). See DEPTH_PAINT.
       parameters: DEPTH_PAINT,
+      updateTriggers: { getFillColor: colors.land },
     }),
-  ];
+  );
+  return layers;
 }
 
 /**

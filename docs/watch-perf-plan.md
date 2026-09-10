@@ -2285,6 +2285,62 @@ Expected after this round: no forced layout in the cut commits, no crawl
 rewind at cuts, and the 6 s report layouts down from 17–40 ms of fresh
 layout to a few ms of repeat layout. Measure with a plain `--stall-trace`.
 
+### Round 51 (2026-09-10 16:20 + 16:21) — the map-type tour: a basemap step rebuilt a 134 MB texture and a 2 MB tessellation
+
+Two runs on the round-49 build (round 50's crawl + report-deck changes were
+not in this build: the crawl's effect is at the same minified position and
+the 6 s report layouts are still there). The chrome is where round 49 left
+it — DOM 356–428 nodes, Layout 115–129× / 239–359 ms — and the runs caught
+something no earlier capture had: a `global` spin cycling map types.
+
+    16:20  busy 32.1 % · 29.3 fps · gap max 367 ms · 6 stalls / 2227 ms
+    16:21  busy 34.5 % · 29.5 fps · gap max 333 ms · 7 stalls / 1644 ms
+
+Each step of the tour that visits a raster basemap or the dark basemap is a
+big stall, and it recurs every cycle (the 16:21 run is a minute after 16:20
+and pays the same bills):
+
+- **35.3 s · 850 ms and 43.5 s · 422 ms — the night base image.** A single
+  `texSubImage2D` of 363–375 ms, from `createTexture` inside deck's `image`
+  prop transform of a NEW `basemap-image-night` BitmapLayer. The images in
+  the store (and the static fallbacks) are 8192×4096 — 134 MB of RGBA per
+  upload — and `basemapLayers` built the layer when the basemap was night
+  and dropped it otherwise, so every visit re-created the texture.
+- **41.6 s · 421 ms and 44.3 s · 419 ms — the land fill.** `/data/land.geojson`
+  (2.2 MB) re-fetched (HTTP cache) and re-tessellated on the main thread
+  (`normalizeGeometry` / grid cut 156 ms, earcut flatten, then 40–80 ms of
+  scavenge GC) for a NEW `basemap-land` GeoJsonLayer on every step onto dark.
+- **The tour's overlays.** `/api/cables` (0.79 MB) fetched on every step that
+  turns cables on: the hook cleared its data on disable and refetched on
+  enable, and Globe rebuilt the PathLayer (`updateState` 60 ms) + label defs
+  (21 ms). Faults and the satellite-imagery frame (4.6 MB PNG, decoded and
+  uploaded again) had the same shape.
+- **One-off, not recurring:** the cables label TextLayer's font atlas
+  (`_generateFontAtlas` — measureText 40 ms, glyph draw 50 ms, SDF 55 ms) on
+  its first appearance after the page load at 16:19:41. deck caches three
+  atlases; it did not recur in the 16:21 run.
+
+**Change.** Keep them mounted, toggle `visible`. deck keeps an invisible
+layer's state (texture, tessellation, attributes) and only skips its draw:
+
+- `basemapLayers` now always returns the three base-image BitmapLayers and
+  the land GeoJsonLayer, each `visible` only for its basemap (tiles stay
+  conditional — cheap, with the page-lifetime bounding-volume cache). The
+  cost moves to once per page load, behind the cold-start cover.
+- The worker's basemap refresh resamples anything wider than 4096 px down
+  (`fitForGlobe`; the XYZ tiles take over at TILE_MIN_ZOOM 4, where the
+  world is exactly 4096 px across) — a quarter of the upload and the GPU
+  memory. The static /data fallbacks are still 8k; they only serve until the
+  first bake, so the operator should run the "Basemap textures" refresh once
+  after deploying.
+- `useCables` / `useFaults` / `useSatImg` are ARMED by `enabled` and keep
+  their data for the page; Globe mounts those layers whenever data is present
+  and clones them with `visible` following the toggle.
+
+Left as is: particle setup at cuts (kind looks, round 50), the alert-blob
+tessellation on real changes (round 49's list), and the cut-time chrome
+commits pending round 50's deploy.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

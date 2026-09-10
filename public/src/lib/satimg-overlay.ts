@@ -19,12 +19,18 @@ export interface SatImgOverlay {
  * each PNG straight from /api/satimg/frame.png (deck.gl handles the image load, so —
  * unlike aurora's scalar texture — there's no client-side decode here). Refetches on
  * the worker's TRACKS_UPDATED (kind "satimg") beat with a slow interval fallback.
- * Returns null when disabled or before the first frame.
+ * Returns null before the first frame; once armed the frames stay for the page.
  */
 export function useSatImg(enabled: boolean): SatImgOverlay | null {
   const [frames, setFrames] = useState<SatImgMeta[]>([]);
   const { socket } = useSocket();
   const [liveTick, setLiveTick] = useState(0);
+  // `enabled` ARMS the polling; the frames are then kept for the page and Globe
+  // toggles the layers' `visible` (the map-type tour flips showSatImg every few
+  // steps — clearing here re-fetched and re-uploaded the 4 MB frame on every
+  // on-step; see cables-overlay.ts, round 51).
+  const [armed, setArmed] = useState(enabled);
+  if (enabled && !armed) setArmed(true);
 
   useEffect(() => {
     if (!socket) return;
@@ -38,10 +44,7 @@ export function useSatImg(enabled: boolean): SatImgOverlay | null {
   }, [socket]);
 
   useEffect(() => {
-    if (!enabled) {
-      setFrames([]);
-      return;
-    }
+    if (!armed) return;
     let cancelled = false;
     const load = async () => {
       try {
@@ -58,8 +61,8 @@ export function useSatImg(enabled: boolean): SatImgOverlay | null {
       cancelled = true;
       clearInterval(t);
     };
-  }, [enabled, liveTick]);
+  }, [armed, liveTick]);
 
-  if (!enabled || !frames.length) return null;
+  if (!frames.length) return null;
   return { frames };
 }

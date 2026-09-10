@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { assertDecodable } from "./basemap";
+import { assertDecodable, fitForGlobe, MAX_BASEMAP_WIDTH } from "./basemap";
 import { BASEMAP_TEXTURES } from "@photonsurge/shared/basemaps";
 
 /**
@@ -27,6 +27,31 @@ async function bigJpeg(): Promise<Buffer> {
     .jpeg({ quality: 92 })
     .toBuffer();
 }
+
+describe("fitForGlobe", () => {
+  it("leaves an image within the width cap untouched", async () => {
+    const jpeg = await bigJpeg();
+    const out = await fitForGlobe(jpeg, 1024, 1024);
+    expect(out.resized).toBe(false);
+    expect(out.buf).toBe(jpeg);
+    expect(out.width).toBe(1024);
+  });
+
+  it("resamples a wider image down to the cap, keeping its aspect", async () => {
+    const jpeg = await bigJpeg();
+    const out = await fitForGlobe(jpeg, 1024, 1024, 512);
+    expect(out.resized).toBe(true);
+    expect(out.width).toBe(512);
+    expect(out.height).toBe(512);
+    expect(out.buf.length).toBeLessThan(jpeg.length);
+    // Still a clean JPEG the client can decode.
+    await expect(assertDecodable(out.buf, "satellite")).resolves.toEqual({ width: 512, height: 512 });
+  });
+
+  it("caps at the tile hand-over width (256 × 2^TILE_MIN_ZOOM)", () => {
+    expect(MAX_BASEMAP_WIDTH).toBe(4096);
+  });
+});
 
 describe("assertDecodable", () => {
   it("accepts a fully-decodable image and returns its dimensions", async () => {

@@ -18,6 +18,10 @@ export function useFaults(enabled: boolean): Fault[] {
   const [data, setData] = useState<Fault[]>(EMPTY);
   const { socket } = useSocket();
   const [liveTick, setLiveTick] = useState(0);
+  // `enabled` ARMS the fetch; the data is then kept for the page (the map-type
+  // tour flips showFaults every few steps — see cables-overlay.ts, round 51).
+  const [armed, setArmed] = useState(enabled);
+  if (enabled && !armed) setArmed(true);
 
   useEffect(() => {
     if (!socket) return;
@@ -31,10 +35,7 @@ export function useFaults(enabled: boolean): Fault[] {
   }, [socket]);
 
   useEffect(() => {
-    if (!enabled) {
-      setData(EMPTY);
-      return;
-    }
+    if (!armed) return;
     let cancelled = false;
     (async () => {
       try {
@@ -48,7 +49,7 @@ export function useFaults(enabled: boolean): Fault[] {
     return () => {
       cancelled = true;
     };
-  }, [enabled, liveTick]);
+  }, [armed, liveTick]);
 
   return data;
 }

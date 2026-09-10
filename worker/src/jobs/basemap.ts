@@ -51,6 +51,35 @@ export async function assertDecodable(
   return { width: meta.width, height: meta.height };
 }
 
+/**
+ * The widest base image worth shipping. The sharp XYZ tiles take over at
+ * TILE_MIN_ZOOM 4 (layers/basemap.ts), where the world is 256 × 2⁴ = 4096 px
+ * across — so at the hand-over the base is 1:1 and below it oversampled. The
+ * upstream 8192×4096 originals were 134 MB of RGBA each on the GPU, and the
+ * client paid a 360–375 ms `texSubImage2D` for one every time a global spin
+ * cycled onto the night or satellite basemap (docs/watch-perf-plan.md, round
+ * 51). At 4096 wide that upload is a quarter of the size, and the client now
+ * keeps the textures alive across basemap switches, so it is paid once.
+ */
+export const MAX_BASEMAP_WIDTH = 4096;
+
+/**
+ * Fit a validated texture for the globe: anything wider than `maxWidth` is
+ * resampled down (aspect kept, JPEG re-encoded); anything already within it is
+ * returned untouched. Exported for the unit test.
+ */
+export async function fitForGlobe(
+  buf: Buffer,
+  width: number,
+  height: number,
+  maxWidth = MAX_BASEMAP_WIDTH,
+): Promise<{ buf: Buffer; width: number; height: number; resized: boolean }> {
+  if (width <= maxWidth) return { buf, width, height, resized: false };
+  const out = await sharp(buf).resize({ width: maxWidth }).jpeg({ quality: 90 }).toBuffer();
+  const meta = await sharp(out).metadata();
+  return { buf: out, width: meta.width ?? maxWidth, height: meta.height ?? Math.round((height * maxWidth) / width), resized: true };
+}
+
 /** Download + validate + store ONE texture into the shared blob store. */
 async function refreshOne(
   db: Awaited<ReturnType<typeof getAppDb>>,
@@ -64,11 +93,12 @@ async function refreshOne(
     discardBody(res);
     throw new Error(`${tex.id}: upstream ${res.status} ${res.statusText}`);
   }
-  const buf = Buffer.from(await res.arrayBuffer());
-  const { width, height } = await assertDecodable(buf, tex.id);
+  const raw = Buffer.from(await res.arrayBuffer());
+  const decoded = await assertDecodable(raw, tex.id);
+  const { buf, width, height, resized } = await fitForGlobe(raw, decoded.width, decoded.height);
   // Only writes AFTER a clean decode, so a bad download never replaces a good frame.
   await db.basemapTextures.put(tex.id, buf);
-  const info = { id: tex.id, bytes: buf.length, width, height };
+  const info = { id: tex.id, bytes: buf.length, width, height, ...(resized ? { from: `${decoded.width}×${decoded.height}` } : {}) };
   log(TAG, "basemap texture refreshed", info);
   return info;
 }

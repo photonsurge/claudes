@@ -1058,8 +1058,12 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // Geostationary satellite imagery — real cloud disk(s) draped above the
     // weather/wind, below the reference overlays so those stay crisp on top. Full-
     // globe PNG per bird (transparent off-disk); the far side is depth-occluded.
-    if (state.showSatImg && satimg?.frames.length) {
-      layers.push(...satimgLayers(satimg.frames, state.satImgFeeds));
+    // Kept mounted and toggled by `visible` (like cables/faults below): the
+    // hook keeps its frames for the page, so a map-type step that turns the
+    // imagery off and on again neither re-fetches nor re-uploads the 4 MB
+    // frame (docs/watch-perf-plan.md, round 51).
+    if (satimg?.frames.length) {
+      layers.push(...satimgLayers(satimg.frames, state.satImgFeeds).map((l) => l.clone({ visible: state.showSatImg })));
     }
 
     // Aurora oval — a translucent glow above the weather/wind/borders but below
@@ -1071,14 +1075,19 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
 
     // Submarine cables read as reference geography — above borders/weather,
     // below the live event overlays (alerts/quakes/cities/tracks).
-    if (state.showCables && cables && cables.cables.length) {
-      layers.push(...cableLayers(cables.cables, cables.landings));
+    // Mounted whenever the data is here and toggled by `visible`, so deck keeps
+    // the PathLayer's geometry across the map-type tour's off-steps instead of
+    // rebuilding ~500 densified cable paths on each on-step (round 51).
+    if (cables && cables.cables.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      layers.push(...cableLayers(cables.cables, cables.landings).map((l: any) => l.clone({ visible: state.showCables })));
     }
 
     // Tectonic plate boundaries read as reference geography — above borders/
     // weather, below the live event overlays (alerts/quakes/cities/tracks).
-    if (state.showFaults && faults && faults.length) {
-      layers.push(...faultLayers(faults));
+    if (faults && faults.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      layers.push(...faultLayers(faults).map((l: any) => l.clone({ visible: state.showFaults })));
     }
 
     layerGroupsRef.current.weather = layers;

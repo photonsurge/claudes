@@ -16,12 +16,20 @@ const EMPTY: CableOverlay = { cables: [], landings: [] };
  * Load worker-cached submarine cables for the globe overlay. The dataset is
  * near-static, so there's no polling interval — we fetch once when the overlay
  * is enabled and refetch only when the worker emits TRACKS_UPDATED (kind
- * "cables") after a refresh lands. Disabling drops the data to free GL memory.
+ * "cables") after a refresh lands. Once fetched the data stays for the page
+ * (see `armed` below).
  */
 export function useCables(enabled: boolean): CableOverlay {
   const [data, setData] = useState<CableOverlay>(EMPTY);
   const { socket } = useSocket();
   const [liveTick, setLiveTick] = useState(0);
+  // `enabled` ARMS the fetch; the data is then kept for the page. A global spin
+  // cycles map types, and clearing on every off-step meant a re-fetch, a JSON
+  // parse and a rebuilt PathLayer on every on-step (docs/watch-perf-plan.md,
+  // round 51). Globe toggles the layers' `visible` instead, so deck keeps their
+  // geometry too. Refetches still follow the worker's TRACKS_UPDATED beat.
+  const [armed, setArmed] = useState(enabled);
+  if (enabled && !armed) setArmed(true);
 
   useEffect(() => {
     if (!socket) return;
@@ -35,10 +43,7 @@ export function useCables(enabled: boolean): CableOverlay {
   }, [socket]);
 
   useEffect(() => {
-    if (!enabled) {
-      setData(EMPTY);
-      return;
-    }
+    if (!armed) return;
     let cancelled = false;
     (async () => {
       try {
@@ -54,7 +59,7 @@ export function useCables(enabled: boolean): CableOverlay {
     return () => {
       cancelled = true;
     };
-  }, [enabled, liveTick]);
+  }, [armed, liveTick]);
 
   return data;
 }

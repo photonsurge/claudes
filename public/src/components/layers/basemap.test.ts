@@ -3,7 +3,12 @@ import { hexToRgb, basemapLayers, countriesLayer, TILE_MIN_ZOOM } from "./basema
 import { DEFAULT_CONTROL_STATE, type ControlState } from "@photonsurge/shared/control";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ids = (layers: any[]) => layers.map((l) => l.props.id);
+const allIds = (layers: any[]) => layers.map((l) => l.props.id);
+/** The layers that actually DRAW for this basemap — every basemap's heavy layer
+ *  (base images, land fill) stays mounted but hidden, so a map-type step never
+ *  rebuilds a texture or a tessellation (round 51). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ids = (layers: any[]) => layers.filter((l) => l.props.visible !== false).map((l) => l.props.id);
 const state = (basemap: string, colors?: Partial<ControlState["basemapColors"]>): ControlState => ({
   ...DEFAULT_CONTROL_STATE,
   basemap,
@@ -58,6 +63,17 @@ describe("basemapLayers", () => {
     const tiles = zoomed.find((l: any) => l.props.id === "basemap-tiles-night") as any;
     // GIBS Black Marble's tile pyramid ends at zoom 8 — deeper views stretch z8 tiles.
     expect(tiles.props.maxZoom).toBe(8);
+  });
+
+  it("keeps every base image and the land fill mounted but hidden across basemaps", () => {
+    const kept = ["basemap-image-satellite", "basemap-image-terrain", "basemap-image-night", "basemap-land"];
+    for (const id of ["dark", "satellite", "terrain", "night", "relief"]) {
+      const layers = basemapLayers(state(id), true, false);
+      for (const k of kept) expect(allIds(layers)).toContain(k);
+      // Exactly one of the kept layers draws (none for relief — Globe adds that raster).
+      const drawn = ids(layers).filter((x) => kept.includes(x));
+      expect(drawn).toEqual(id === "relief" ? [] : id === "dark" ? ["basemap-land"] : [`basemap-image-${id}`]);
+    }
   });
 
   it("dark ocean background uses the operator's ocean colour", () => {
