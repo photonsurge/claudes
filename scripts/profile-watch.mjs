@@ -446,6 +446,41 @@ async function snippetFetcher(cdp) {
   };
 }
 
+// ── Chunk sources ───────────────────────────────────────────────────────────
+// The full source of every app/vendor chunk the profile touched, saved next to
+// it, so a mangled frame in the report (`d@0.tf6pt1iu3-3.js:899:37543`) can be
+// read back to real code AFTER the run without another trip to the page:
+//   node scripts/profile-source.mjs scratchpad/profile/<ts> 0.tf6pt1iu3-3.js:899:37543
+async function dumpSources(cdp, profile) {
+  if (!WANT_SOURCE) return 0;
+  const scripts = new Map();
+  for (const n of profile.nodes) {
+    const cf = n.callFrame;
+    if (cf.scriptId && /\/_next\/static\/chunks\//.test(cf.url || "")) scripts.set(cf.scriptId, cf.url);
+  }
+  if (!scripts.size) return 0;
+  try {
+    await cdp.send("Debugger.enable");
+  } catch {
+    return 0;
+  }
+  const dir = path.join(OUT, "sources");
+  fs.mkdirSync(dir, { recursive: true });
+  const index = {};
+  for (const [scriptId, url] of scripts) {
+    try {
+      const { scriptSource } = await cdp.send("Debugger.getScriptSource", { scriptId });
+      const name = url.split("/").pop();
+      fs.writeFileSync(path.join(dir, name), scriptSource);
+      index[name] = { url, scriptId, bytes: scriptSource.length };
+    } catch {
+      /* a chunk that was already unloaded — skip it */
+    }
+  }
+  fs.writeFileSync(path.join(dir, "index.json"), JSON.stringify(index, null, 2));
+  return Object.keys(index).length;
+}
+
 // ── Timeline trace (who dirties layout / what is "(program)") ───────────────
 // Recorded AFTER the CPU profile so neither skews the other. Chrome's timeline
 // categories carry every Layout / style-recalc event with its duration, the JS
@@ -1079,6 +1114,7 @@ async function deckCensus(cdp) {
   const fps = await fpsPromise;
   const census = censusPromise ? await censusPromise : null;
   fs.writeFileSync(path.join(OUT, "profile.cpuprofile"), JSON.stringify(profile));
+  const sourcesDumped = await dumpSources(cdp, profile);
 
   const dom = await evaluate(
     cdp,
@@ -1192,7 +1228,7 @@ async function deckCensus(cdp) {
   fs.writeFileSync(path.join(OUT, "report.txt"), report);
   fs.writeFileSync(path.join(OUT, "meta.json"), JSON.stringify({ href, fps, dom, m0, m1, census }, null, 2));
   console.log(report);
-  console.error(`\nsaved ${path.join(OUT, "profile.cpuprofile")} (load it in DevTools → Performance → ⬆)${TRACE_SECONDS > 0 ? ", trace.json (same panel)" : ""} and report.txt`);
+  console.error(`\nsaved ${path.join(OUT, "profile.cpuprofile")} (load it in DevTools → Performance → ⬆)${TRACE_SECONDS > 0 ? ", trace.json (same panel)" : ""}${sourcesDumped ? `, sources/ (${sourcesDumped} chunks)` : ""} and report.txt`);
   cdp.close();
 })().catch((e) => {
   console.error(e.message || e);

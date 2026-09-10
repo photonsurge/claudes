@@ -17,6 +17,7 @@ jest.mock("weatherlayers-gl", () => ({
   ParticleLayer: class { constructor(p: Rec) { particleCalls.push(p); } },
   ContourLayer: class { constructor(_p: Rec) {} },
   HighLowLayer: class { constructor(_p: Rec) {} },
+  ImageType: { SCALAR: "SCALAR", VECTOR: "VECTOR" },
 }));
 // @deck.gl/core and @deck.gl/layers map to the same shared mock file, so this
 // factory replaces BOTH — keep the shared exports (LayerExtension, for the

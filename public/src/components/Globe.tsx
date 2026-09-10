@@ -849,6 +849,13 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     prevAutoSpin.current = state.autoSpin;
   }, [state.autoSpin]);
 
+  // The wind look the particle layer is built from: the live one while shown,
+  // else the last one that WAS shown, so the hidden base keeps its shape (see
+  // the wind block in the layers memo).
+  const shownWind = useRef(state.wind);
+  if (state.showWind) shownWind.current = state.wind;
+  const windLook = state.showWind ? state.wind : shownWind.current;
+
   // Signature of the ACTIVE regional-nest set for the visible variables. Changes
   // only when a zoom threshold is crossed or the view centre enters/leaves a nest
   // bbox — so the preload + layer-rebuild effects below re-run when nests flip on
@@ -874,6 +881,9 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       for (const e of resolveEntries(manifest.variables[variableId], camera)) add(e.files[String(state.fhr)]);
     };
     if (state.showWind) addEntries("wind");
+    // Hidden wind keeps its global base mounted (layers/particle-layer.ts), so
+    // the base texture stays wanted; nests only while shown.
+    else add(resolveEntries(manifest.variables.wind, camera)[0]?.files[String(state.fhr)]);
     if (state.activeVariable) addEntries(state.activeVariable);
     if (state.showPressure) add(textureUrlFor(manifest, "pressure", state.fhr));
     // Elevation is static (baked at fhr 0), so always pull its single texture
@@ -1024,9 +1034,14 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
           }),
         );
       }
-      if (state.showWind) {
-        layers.push(...vectorParticleLayers(manifest, "wind", state.fhr, resolve, camera, state.wind));
-      }
+      // Wind particles are mounted whenever the manifest has them: a look that
+      // hides wind toggles `visible` instead of dropping the layer, and while
+      // hidden the layer keeps the last SHOWN look's shape, so hide → show
+      // with the same preset costs no particle rebuild (docs/watch-perf-plan.md,
+      // round 54). A preset change (count / trail / width) still rebuilds.
+      layers.push(
+        ...vectorParticleLayers(manifest, "wind", state.fhr, resolve, camera, { ...windLook, visible: state.showWind }),
+      );
     }
 
     // Global geomagnetic-field intensity (IGRF) — a full-globe scalar field drawn
@@ -1109,7 +1124,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     state.showWind,
     state.fhr,
     state.basemapColors,
-    state.wind,
+    windLook,
     state.showContours,
     state.showRadar,
     state.showCables,
@@ -1147,16 +1162,18 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // showAlerts doesn't force a cold re-tessellation of every polygon.
     if (alerts.length) layers.push(...alertsLayer(alerts, state.showAlerts, alertFocus));
 
-    // Earthquakes above alerts, below cities/tracks.
-    if (state.showSeismic && quakes.length) layers.push(...seismicLayer(quakes));
+    // Earthquakes above alerts, below cities/tracks. Mounted whenever there is
+    // data; the director's toggle only flips `visible` (round 54).
+    if (quakes.length) layers.push(...seismicLayer(quakes, state.showSeismic));
 
     // Live seismograph stations — the real instruments behind the SEISMIC
     // MONITOR trace, shown near an on-air quake/region so the map and panel agree.
-    if (state.showSeismic && seismoStations.length) {
+    if (seismoStations.length) {
       layers.push(
         ...seismographStationLayers(
           seismoStations,
           seismoActive ? `${seismoActive.net}.${seismoActive.sta}.${seismoActive.loc}.${seismoActive.cha}` : null,
+          state.showSeismic,
         ),
       );
     }

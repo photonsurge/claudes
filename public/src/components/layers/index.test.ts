@@ -229,6 +229,17 @@ describe("vectorParticleLayers (nest-aware wind)", () => {
     for (const l of layers) expect(props(l).parameters).toBe(DEPTH_TEST);
   });
 
+  it("hidden: the global base alone stays mounted, invisible, with no nests", () => {
+    // The base keeps its particle buffers across the looks that hide wind
+    // (layers/particle-layer.ts); nests follow the camera and are built only
+    // while the wind is shown.
+    const layers = vectorParticleLayers(nested, "wind", 0, resolve, inFrance, { visible: false });
+    expect(layers).toHaveLength(1);
+    expect(props(layers[0]).id).toBe("wind-0");
+    expect(props(layers[0]).visible).toBe(false);
+    expect(props(vectorParticleLayers(nested, "wind", 0, resolve, inFrance)[0]).visible).toBe(true);
+  });
+
   it("base only when zoomed out or the nest texture is unloaded", () => {
     expect(vectorParticleLayers(nested, "wind", 0, resolve, { center: [2, 47], zoom: 2 })).toHaveLength(1);
     expect(vectorParticleLayers(nested, "wind", 0, resolver(["/tex/warome0"]), inFrance)).toHaveLength(1);

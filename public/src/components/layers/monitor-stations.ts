@@ -22,6 +22,9 @@ export function stationMarkerLayers<T>(
    *  the updateTriggers value so deck only rebuilds when it actually changes,
    *  not on every render. */
   activeKey?: string | null,
+  /** Mounted but not drawn — the caller keeps the layers across a toggle so a
+   *  cut that turns them back on costs no layer init. */
+  visible = true,
 ) {
   const active = data.filter(isActive);
 
@@ -36,6 +39,7 @@ export function stationMarkerLayers<T>(
       stroked: false,
       pickable: false,
       parameters: DEPTH_TEST,
+      visible,
     }),
     new ScatterplotLayer<T>({
       id: `${idPrefix}-marker`,
@@ -53,6 +57,7 @@ export function stationMarkerLayers<T>(
       pickable: true,
       parameters: DEPTH_TEST,
       updateTriggers: { getRadius: activeKey, getFillColor: activeKey },
+      visible,
     }),
   ];
 }

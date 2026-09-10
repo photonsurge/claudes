@@ -19,7 +19,7 @@ export const seismoKeyOf = (s: Pick<SeismoStationReading, "net" | "sta" | "loc" 
 export const seismoShortName = (s: SeismoStationReading): string =>
   s.siteName?.split(",")[0]?.trim() || `${s.net}.${s.sta}`;
 
-export function seismographStationLayers(stations: SeismoStationReading[], activeKey?: string | null) {
+export function seismographStationLayers(stations: SeismoStationReading[], activeKey?: string | null, visible = true) {
   return stationMarkerLayers(
     "seismograph-station",
     stations,
@@ -28,5 +28,6 @@ export function seismographStationLayers(stations: SeismoStationReading[], activ
     [67, 217, 255],
     [160, 190, 215],
     activeKey,
+    visible,
   );
 }

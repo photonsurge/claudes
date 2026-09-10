@@ -36,6 +36,11 @@ describe("vectorParticleProps", () => {
     expect(p.palette).toBeUndefined(); // flat colour by default
   });
 
+  it("is visible unless told otherwise (a hidden layer stays mounted)", () => {
+    expect(vectorParticleProps(manifest, "wind", 0)!.visible).toBe(true);
+    expect(vectorParticleProps(manifest, "wind", 0, { visible: false })!.visible).toBe(false);
+  });
+
   it("decodes current via vectorUnscale in preference to imageUnscale", () => {
     const p = vectorParticleProps(manifest, "current", 0)!;
     expect(p.id).toBe("current-0");

@@ -113,6 +113,9 @@ export interface VectorParticleOpts {
   colorByMagnitude?: boolean;
   /** Appended to the layer id so a base + its nests get unique ids (deck.gl). */
   idSuffix?: string;
+  /** Mounted but not drawn. The particle buffers stay alive while hidden — see
+   *  layers/particle-layer.ts — so flipping this back costs no rebuild. */
+  visible?: boolean;
 }
 
 /**
@@ -162,7 +165,7 @@ export function vectorParticlePropsFromEntry(
     color: hexToRgba(opts.color),
     animate: true,
     opacity: opts.opacity ?? 0.9,
-    visible: true,
+    visible: opts.visible ?? true,
   };
   if (opts.colorByMagnitude) {
     const paletteId = entry.palette ?? meta?.palette ?? variableId;

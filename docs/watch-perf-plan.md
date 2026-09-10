@@ -2428,6 +2428,70 @@ with no tessellation behind it (the blob fingerprint matched).
 
 Still not exercised in these windows: a global spin (round 51's keep-alive).
 
+### Round 54 (2026-09-10 18:47) — the wind particles were rebuilt from scratch at most cuts, the quake layers too
+
+Round 53's build on a fresh page (the globe log starts 13 s before the capture):
+
+    18:47   busy 37.5 % · 29.7 fps · gap max 267 ms · 6 stalls / 1310 ms · DOM 972 · Layout 189× / 254 ms
+
+Four cuts (9.7, 20.5, 31.6, 51.6 s). Read from the sampler's caller chains
+this time, not the summary — and the chains named two layer sets that were
+being CREATED at cuts, not updated:
+
+- **The wind ParticleLayer.** In three of the four cuts `_setupTransformFeedback`
+  ran under deck's `_initializeLayer` — a new layer instance, not a preset
+  change. The director's looks flip `showWind` with the map type (temp / sst /
+  wave / salinity on; cloud / rain / pressure / aurora / night / satimg off —
+  shared/director-rois.ts) and Globe included the layer conditionally on it.
+  Toggling `visible` alone would not have helped: WeatherLayers' own
+  `updateState` deletes the transform-feedback buffers whenever `visible` goes
+  false and rebuilds them when it comes back. A rebuild allocates four buffers
+  of numParticles × maxAge × (3+3+4+4) floats plus a JS array of that length
+  (dense: 12000 × 25 = 300 k slots ≈ 25 MB) and uploads it: 31 ms self in
+  `_setupTransformFeedback`, 15–18 ms `bufferSubData`, 40–50 ms of scavenge +
+  mark-compact in the same frame (20.5 s: a 131 ms deck frame inside a 394 ms
+  stall). Fix: `KeepAliveParticleLayer` (layers/particle-layer.ts) patches the
+  inner line layer's `updateState` to mirror upstream's minus the `visible`
+  term — upstream's hooks are checked for first, an unfamiliar build is left
+  alone. The base wind layer is now always mounted, `visible` follows
+  `showWind`, and while hidden it keeps the last SHOWN look's shape (count /
+  trail / width), so hide → show with the same preset is a uniform flip. Nests
+  are still built only while shown (they follow the camera anyway). A preset
+  change still rebuilds, and that is the presets' cost — calm 3000 × 45 =
+  135 k slots, storm 9000 × 16 = 144 k, default 6000 × 30 = 180 k, dense
+  12000 × 25 = 300 k. If the dense look's cut is still visible after this,
+  count × trail is the knob.
+- **The quake layers.** 9.9 s · 149 ms: the four seismic layers initialised —
+  two shader links (`getProgramParameter` 11 ms), attribute allocation, and
+  the labels' SDF font atlas generated from scratch (58 ms: the page had not
+  drawn a quake label yet; the alert badges share the font key but their
+  atlas held only the hazard glyphs, so the ASCII set was all new). Same
+  treatment as the basemaps in round 51: `seismicLayer` /
+  `seismographStationLayers` take `visible`, Globe mounts them whenever there
+  is data, and `useBroadcastQuakes` arms once and keeps its list across the
+  off-cuts (the cables / faults latch) so there IS data to stay mounted with.
+  The atlas is built once, at page load, off any cut.
+
+Measured, not changed: the scalar raster for the new map type is created
+per cut (14–17 ms: model + texture upload — a different texture, nothing to
+keep); the on-air alert outline's PathLayer re-tessellates and re-uploads for
+the new alert (~15 ms, most of it the fp64 split in `updateSubBuffer`); the
+label canvas measures the new place's labels (`measureText` 5.5 ms); a
+country bbox scan (`oM`) 5.8 ms; React commits 6–23 ms each, ~70 ms per cut;
+layouts 10–28 ms (20.6 s: 64 dirty objects in 19.5 ms — 0.3 ms per object,
+three times the usual, unattributable without a deep trace).
+
+Per-frame, for reference: the particle layer's draw is 44 ms/s while shown —
+`_runTransformFeedback` 18, the LineLayer draw 16, `setAttributes` +
+`setConstantAttributes` 6.5 (those two allocate three Float32Arrays every
+frame; WeatherLayers' code). Hidden costs nothing: deck skips the draw.
+
+Tooling: the profiler now saves every chunk the profile touched under
+`<profile>/sources/`, and `node scripts/profile-source.mjs <profile-dir>
+chunk:line:col` reads a mangled frame back to code, so the app-side frames in
+the cut commits (`d@…:899:37543`, `i@…:899:58066`, `oP`) can be named next
+round without another trip to the page.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

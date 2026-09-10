@@ -29,6 +29,7 @@ import {
 } from "./props";
 import { resolveEntries, rankNestsByFit, type ResolverCamera } from "./resolve";
 import { DEPTH_OCCLUDE, DEPTH_TEST, DEPTH_PAINT } from "./depth";
+import { KeepAliveParticleLayer } from "./particle-layer";
 import { BREATHE, type BreatheSpec } from "./breathe-extension";
 
 /** A resolver mapping a texture URL to an already-loaded image (or undefined). */
@@ -56,7 +57,7 @@ export function vectorParticleLayer(
   // overrides WeatherLayers' own `depthCompare: "always"` (which would otherwise
   // bleed back-side particles through AND disable depth for later layers).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new ParticleLayer({ ...props, image: image as any, parameters: DEPTH_TEST });
+  return new KeepAliveParticleLayer({ ...props, image: image as any, parameters: DEPTH_TEST });
 }
 
 export function windParticleLayer(
@@ -237,6 +238,11 @@ export function vectorParticleLayers(
 ): ParticleLayer[] {
   const entries = resolveEntries(manifest.variables[variableId], camera);
   const out: ParticleLayer[] = [];
+  // Hidden (`visible: false`): only the global base is built, invisible, so it
+  // stays mounted with its particle buffers intact across the looks that hide
+  // wind (layers/particle-layer.ts). Nests come and go with the camera anyway,
+  // so they are built only while the wind is shown.
+  const hidden = opts?.visible === false;
   const buildNest = (e: WeatherVariableManifest, i: number) =>
     e.bbox ? vectorParticlePropsFromEntry(e, variableId, fhr, e.bbox, { ...opts, idSuffix: `-${e.sourceId ?? `n${i}`}` }) : null;
   // Base (entries[0]) fills the globe.
@@ -247,23 +253,24 @@ export function vectorParticleLayers(
     const props = vectorParticlePropsFromEntry(base, variableId, fhr, baseBounds, { ...opts, idSuffix: "" });
     const image = props && resolve(props.image);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (props && image) out.push(new ParticleLayer({ ...props, image: image as any, parameters: DEPTH_TEST }));
-    else {
+    if (props && image) out.push(new KeepAliveParticleLayer({ ...props, image: image as any, parameters: DEPTH_TEST }));
+    else if (!hidden) {
       // No true global base — promote the coarsest loaded nest (icon-global spans the
       // globe) to base so wind still flows worldwide under the fine regional nest.
       const coarse = pickCoarsestLoaded(entries, buildNest, resolve);
       if (coarse) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        out.push(new ParticleLayer({ ...coarse.props, image: coarse.image as any, parameters: DEPTH_TEST }));
+        out.push(new KeepAliveParticleLayer({ ...coarse.props, image: coarse.image as any, parameters: DEPTH_TEST }));
         baseNestIndex = coarse.index;
       }
     }
   }
+  if (hidden) return out;
   // Only the finest available nest particles draw — same single-winner rule as the
   // scalar raster, so overlapping regional wind fields don't stack (see there).
   const finest = pickBestFitLoaded(entries, buildNest, resolve, camera);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (finest && finest.index !== baseNestIndex) out.push(new ParticleLayer({ ...finest.props, image: finest.image as any, parameters: DEPTH_TEST }));
+  if (finest && finest.index !== baseNestIndex) out.push(new KeepAliveParticleLayer({ ...finest.props, image: finest.image as any, parameters: DEPTH_TEST }));
   return out;
 }
 

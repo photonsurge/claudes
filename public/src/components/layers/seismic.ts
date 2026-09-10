@@ -11,6 +11,13 @@ import { DEPTH_TEST } from "./depth";
  * felt hardest, are red; deep ones blue). M5+ get a translucent halo and a
  * magnitude label. Depth-tested (like every globe layer) so a quake on the far
  * hemisphere is hidden by the globe instead of bleeding through the front.
+ *
+ * `visible` toggles drawing; the layers themselves stay mounted. The director
+ * flips quakes on and off between cuts, and rebuilding the four layers on each
+ * on-cut cost ~25 ms of model + attribute init — plus, the first time, the
+ * label layer's SDF font atlas (58 ms) right inside the cut. Mounted from the
+ * start (label layer included, empty or not) that all happens once, at page
+ * load (docs/watch-perf-plan.md, round 54).
  */
 
 /** Depth (km) → colour. Shallow = red, intermediate = orange, deep = blue. */
@@ -26,7 +33,7 @@ export function depthColor(depthKm: number): [number, number, number] {
 /** Magnitude → epicentre-ring radius in pixels (roughly area ∝ energy, clamped). */
 const radiusPx = (mag: number): number => Math.max(4, mag * mag * 0.9);
 
-export function seismicLayer(quakes: Quake[]) {
+export function seismicLayer(quakes: Quake[], visible = true) {
   const big = quakes.filter((q) => q.mag >= 5);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,6 +51,7 @@ export function seismicLayer(quakes: Quake[]) {
       pickable: false,
       parameters: DEPTH_TEST,
       updateTriggers: { getFillColor: big.length, getRadius: big.length },
+      visible,
     }),
     // Epicentre ring — hollow, depth-tinted, magnitude-scaled. This is the
     // "icony" shape that sets quakes apart from the filled alert badges.
@@ -70,6 +78,7 @@ export function seismicLayer(quakes: Quake[]) {
       pickable: true,
       parameters: DEPTH_TEST,
       updateTriggers: { getLineColor: quakes.length, getRadius: quakes.length, getLineWidth: quakes.length },
+      visible,
     }),
     // Centre dot — the epicentre point itself (fixed small size, depth-tinted).
     new ScatterplotLayer<Quake>({
@@ -89,10 +98,11 @@ export function seismicLayer(quakes: Quake[]) {
       pickable: true,
       parameters: DEPTH_TEST,
       updateTriggers: { getFillColor: quakes.length },
+      visible,
     }),
   ];
 
-  if (big.length) {
+  {
     const labelProps = {
       id: "seismic-labels",
       data: big,
@@ -109,6 +119,7 @@ export function seismicLayer(quakes: Quake[]) {
       outlineWidth: 2,
       outlineColor: [0, 0, 0, 200],
       parameters: DEPTH_TEST,
+      visible,
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     layers.push(new TextLayer(labelProps as any));
