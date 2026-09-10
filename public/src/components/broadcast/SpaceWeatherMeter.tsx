@@ -63,7 +63,6 @@ export default function SpaceWeatherMeter({
         background: theme.panelBg,
         border: theme.panelBorder,
         borderRadius: 12,
-        boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
         backdropFilter: "var(--panel-blur, blur(8px))",
         WebkitBackdropFilter: "var(--panel-blur, blur(8px))",
         pointerEvents: "none",

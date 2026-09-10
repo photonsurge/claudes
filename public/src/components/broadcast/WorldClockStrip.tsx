@@ -131,7 +131,6 @@ export default function WorldClockStrip({
           "linear-gradient(180deg, rgba(8,13,24,0.72), rgba(5,9,18,0.84))",
         border: theme.panelBorder,
         borderRadius: 10,
-        boxShadow: "0 8px 22px rgba(0,0,0,0.34)",
         backdropFilter: "var(--panel-blur, blur(8px))",
         WebkitBackdropFilter: "var(--panel-blur, blur(8px))",
       }}

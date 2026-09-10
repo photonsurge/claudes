@@ -6,7 +6,7 @@
  * compact `rgba(8,13,22,.82)` report look QuakeReport/TrackInfo hardcoded)
  * renders inside this instead, so the whole column reads as one system: same
  * themed glass background, hairline border with a coloured accent stripe,
- * radius, drop shadow, blur, width, base ink + font.
+ * radius, blur, width, base ink + font (no drop shadow — see GodsPanel).
  *
  * Header is optional and comes in two flavours (a panel usually picks one):
  *   • `badge` — a coloured kind chip, optionally with a pulsing ON AIR dot
@@ -175,16 +175,15 @@ export default function BroadcastCard({
   if (chrome) {
     // The on-air deck card wears the shared G.O.D.S. chamfered chrome (see
     // GodsPanel): border + navy fill layers clipped to the same silhouette,
-    // depth from a drop-shadow filter on the wrapper (clip-path swallows a
-    // normal box-shadow). Hand-rolled rather than <GodsPanel> because the
-    // template owns a fixed height with a scrolling body.
+    // no drop shadow (it washed the globe under the card — see GodsPanel).
+    // Hand-rolled rather than <GodsPanel> because the template owns a fixed
+    // height with a scrolling body.
     const clip = chamfer(14, 22);
     return (
       <div
         style={{
           width,
           height: chrome.height ?? CARD_H,
-          filter: "drop-shadow(0 10px 28px rgba(0,0,0,0.45))",
           pointerEvents: "none",
           fontFamily: SANS,
           color: GODS_INK,
@@ -291,7 +290,6 @@ export default function BroadcastCard({
           ? { border: `1px solid ${GODS_BORDER}` }
           : accentBorder(`1px solid ${GODS_BORDER}`, `4px solid ${stripe}`)),
         borderRadius: 0,
-        boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
         backdropFilter: glass ? "var(--panel-blur, blur(11px))" : undefined,
         WebkitBackdropFilter: glass ? "var(--panel-blur, blur(11px))" : undefined,
         pointerEvents: "none",

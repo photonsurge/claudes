@@ -144,7 +144,6 @@ export default function AlertLegend({
         background: "linear-gradient(180deg, rgba(12,17,28,0.82), rgba(8,12,20,0.88))",
         border: "1px solid rgba(120,140,170,0.22)",
         borderRadius: 12,
-        boxShadow: "0 10px 30px rgba(0,0,0,0.45)",
         backdropFilter: "var(--panel-blur, blur(10px))",
         WebkitBackdropFilter: "var(--panel-blur, blur(10px))",
         overflow: "hidden",

@@ -177,7 +177,6 @@ export default function BrandPanel({
             style={{
               // Positioned so the svg stacks OVER the absolute live canvas.
               position: "relative",
-              filter: "drop-shadow(0 8px 26px rgba(0,0,0,0.5))",
             }}
           />
         </div>
@@ -191,7 +190,6 @@ export default function BrandPanel({
             background: theme.panelBg,
             border: theme.panelBorder,
             borderRadius: 12,
-            boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
             backdropFilter: "var(--panel-blur, blur(8px))",
             WebkitBackdropFilter: "var(--panel-blur, blur(8px))",
           }}

@@ -76,7 +76,6 @@ export default function AdBreak({ segment, endsAt = null }: { segment: Segment |
           borderRadius: 14,
           overflow: "hidden",
           background: "rgba(6, 10, 20, 0.55)",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.55)",
           border: "1px solid rgba(255,255,255,0.08)",
         }}
       >

@@ -64,8 +64,10 @@ export interface GodsPanelProps {
 }
 
 /** Chamfered container with the banner's border + fill. clip-path swallows a
- *  box-shadow, so depth comes from a drop-shadow filter on the outer wrapper
- *  (same trick BrandPanel plays on the banner svg). */
+ *  box-shadow, and there is no drop-shadow filter on the wrapper either: a
+ *  shadow under a plate tints the globe beneath it (a ~25% black wash fading
+ *  out over ~40px), which read on air as a faint dark box behind every UI
+ *  element — the plates sit flat on the map instead. */
 export function GodsPanel({
   children,
   notch = [16, 26],
@@ -82,7 +84,6 @@ export function GodsPanel({
       className={className}
       style={{
         width,
-        filter: "drop-shadow(0 10px 28px rgba(0,0,0,0.45))",
         fontFamily: SANS,
         ...style,
       }}
