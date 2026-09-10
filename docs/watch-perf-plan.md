@@ -2341,6 +2341,52 @@ Left as is: particle setup at cuts (kind looks, round 50), the alert-blob
 tessellation on real changes (round 49's list), and the cut-time chrome
 commits pending round 50's deploy.
 
+### Round 52 (2026-09-10 16:42) — rounds 49–51 all on air; the first 10-minute YouTube trial
+
+The first capture on a build with all of today's commits (fresh page at
+16:42:49), on a volcano segment with a country spotlight. The operator's
+verdict from a 10-minute YouTube trial: "so much smoother".
+
+    busy 35.2 % · 29.8 fps · gap max 233 ms · 5 stalls / 1077 ms · DOM 965 · Layout 200× / 215 ms · JS heap 40 MB
+
+Confirmed:
+
+- **The crawl no longer re-measures at cuts.** `getBoundingClientRect` is
+  absent from the minute — not in the top 35, not in any stall (it was 15–29
+  ms inside every cut commit).
+- **The report deck's flips are cheap.** The 6 s cadence is still visible in
+  the Layout list (4.87, 10.86, 16.86, 22.86, 40.86, 46.86, 52.86 s) but each
+  is 6–15 ms of repeat layout now, not 17–40 ms of fresh nodes; no layout in
+  the minute exceeds 15 ms. The DOM is 965 nodes because the shown pages
+  stay mounted — that is the trade, and the per-frame style recalc for the
+  CSS animations grew only ~100 ms/min with it.
+- **The volcano poll landed twice** (17.5 s and 42.3 s, 2.37 MB each — the
+  worker's five sub-jobs each beat) with no chrome churn behind either.
+- **Cuts are a burst of small tasks now, not one big one.** Inside the 16.9 s
+  stall (285 ms) the largest task is 69 ms (a 50 ms deck frame + an 8.5 ms
+  layout + paint); the rest are 4–12 ms React commits and 6–8 ms deck
+  frames back to back with no idle between them. The deck's cut frame is
+  what remains: `bufferSubData` 20 ms (the alert passes recolour on
+  `focusKey` + new layers' attributes), particle transform-feedback setup
+  13 ms (kind looks, round 50), `toDoublePrecisionArray` 10 ms, the
+  spotlight's outline bbox 7 ms, one texture 7 ms, and ~60 ms of unattributed
+  native time spread across those tasks (style, paint, compile, GC).
+- **Not exercised in this window:** a global spin. The basemap / overlay
+  keep-alive (round 51) needs a capture that spans a map-type tour to be
+  confirmed; the 53.1 s stall (196 ms) is the faults layer's FIRST
+  appearance on this page — `getProgramParameter` 41 ms for its shader link
+  — which is once per page and will not recur now that the hook keeps its
+  data.
+
+What is left is small and per-cut: ~250 ms of back-to-back work at each
+cut, no single task over ~70 ms. Candidates if it ever needs to go lower,
+in order: recolour the alert passes with a uniform instead of per-vertex
+attributes on every `focusKey` change (~25 ms a cut); keep the wind preset
+constant across kind looks so the particle buffers survive a cut (~13 ms);
+pre-warm shader programs for the rarely-shown layer types during the
+cold-start cover (a one-off 40 ms per type otherwise); and the alert-blob
+tessellation on real changes (round 49's list).
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates
