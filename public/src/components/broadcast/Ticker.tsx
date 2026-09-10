@@ -27,11 +27,32 @@ import {
   TAIL_CHARS,
   TAIL_GROWTH,
   windowKeys,
+  type CrawlWindow,
   type WindowEntry,
 } from "./crawl-window";
 
 /** What an entry renders as: its text, and whether it is the sponsored form. */
 const entryFingerprint = (e: TickerEntry): string => (typeof e === "string" ? e : `\u0002${e.text}`);
+
+/** The placeholder feed, one identity so a segment cut from it is recognisable. */
+const STANDBY_ENTRIES: TickerEntry[] = [STANDBY];
+
+/**
+ * Where the next segment starts in `feed`, given the segment that just ended.
+ * The same feed: straight after the head, as always. A changed feed: at the
+ * entry that was due next (the old tail's first) if the new feed still has
+ * it, else at the same position modulo the new length — a line or two skipped
+ * or repeated at a boundary is invisible; a rewind to the top is not.
+ */
+export function feedStart(start: number, window: CrawlWindow, feed: readonly TickerEntry[]): number {
+  const due = window.tail[0]?.entry;
+  if (due !== undefined) {
+    const key = entryFingerprint(due);
+    const at = feed.findIndex((e) => entryFingerprint(e) === key);
+    if (at >= 0) return at;
+  }
+  return nextStart(start, window, feed.length);
+}
 
 /** Exported for tests: the old per-entry keys, now over a rendered window part. */
 export const entryKeys = (entries: TickerEntry[]): string[] => windowKeys(entries.map((entry, index) => ({ entry, index })));
@@ -113,7 +134,7 @@ export default function Ticker({
   contentInset?: number;
   theme?: BroadcastTheme;
 }) {
-  const rawEntries: TickerEntry[] = items.length ? items : [STANDBY];
+  const rawEntries: TickerEntry[] = items.length ? items : STANDBY_ENTRIES;
   // The track feed hands the ticker a fresh array about once a second, nearly
   // always with the same lines. Everything downstream keys on `entries` — the
   // window memo and, through it, the layout measurement in the effect below —
@@ -130,17 +151,26 @@ export default function Ticker({
   // Windowed crawl (crawl-window.ts): only the current segment is in the DOM.
   // A segment is keyed so its track remounts and its animation restarts from
   // translateX(0) — exactly where the previous segment ended, since its head
-  // is the previous tail. A feed whose CONTENT changed restarts from its first
-  // entry; a new array with the same lines (the track feed re-derives ~1×/s)
-  // keeps rolling.
-  const [seg, setSeg] = useState({ start: 0, id: 0 });
+  // is the previous tail. A segment is cut from the feed AS IT STOOD when the
+  // segment began (`seg.entries`); a feed that changes mid-segment is adopted
+  // when the segment ends, the next head cut from the new feed at the entry
+  // that was due next if the new feed still has it (see `feedStart`). Nothing
+  // rewinds, remounts or re-measures mid-segment. On air the feed changes on
+  // every director cut (the cut's toggles gate the alert / quake / volcano
+  // lines and the on-air event's quakes join the list) and on every poll, and
+  // each of those used to restart the crawl from its first entry — a forced
+  // layout inside the cut's commit, a rebuilt track, and a crawl that visibly
+  // jumped back to the top (docs/watch-perf-plan.md, round 50). The one feed
+  // adopted at once is the first real one after standby, so a page doesn't
+  // hold "STANDING BY" for a whole segment after its feed lands.
+  const [seg, setSeg] = useState(() => ({ start: 0, id: 0, entries }));
   const [tailChars, setTailChars] = useState(TAIL_CHARS);
-  const lastKey = useRef(feedKey);
-  if (lastKey.current !== feedKey) {
-    lastKey.current = feedKey;
-    setSeg((s) => ({ start: 0, id: s.id + 1 }));
+  const latest = useRef(entries);
+  latest.current = entries;
+  if (seg.entries === STANDBY_ENTRIES && entries !== STANDBY_ENTRIES) {
+    setSeg((s) => ({ start: 0, id: s.id + 1, entries }));
   }
-  const window = useMemo(() => crawlWindow(entries, seg.start, HEAD_CHARS, tailChars), [entries, seg.start, tailChars]);
+  const window = useMemo(() => crawlWindow(seg.entries, seg.start, HEAD_CHARS, tailChars), [seg.entries, seg.start, tailChars]);
   const [motion, setMotion] = useState<Motion | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -167,14 +197,15 @@ export default function Ticker({
     // across segments and matches what the two-copy crawl did.
     const headChars = charsOf(window.head.map((e) => e.entry));
     const pxPerChar = dist / Math.max(1, headChars);
-    const speed = (pxPerChar * charsOf(entries)) / cycleSeconds(entries);
+    const speed = (pxPerChar * charsOf(seg.entries)) / cycleSeconds(seg.entries);
     const dur = dist / speed;
     setMotion((m) => (m && m.dist === dist && m.dur === dur ? m : { dist, dur }));
-  }, [seg.id, tailChars, window, entries]);
+  }, [seg.id, seg.entries, tailChars, window]);
 
   const onAnimationEnd = (e: AnimationEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return;
-    setSeg((s) => ({ start: nextStart(s.start, window, entries.length), id: s.id + 1 }));
+    const feed = latest.current;
+    setSeg((s) => ({ start: feedStart(s.start, window, feed), id: s.id + 1, entries: feed }));
   };
   const animationName = `bcast-crawl-${seg.id}`;
 

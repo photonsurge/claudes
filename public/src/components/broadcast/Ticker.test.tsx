@@ -3,7 +3,7 @@
  * title chip rides the accent, and the chip text stays white regardless.
  */
 import { fireEvent, render, screen } from "@testing-library/react";
-import Ticker, { entryKeys } from "./Ticker";
+import Ticker, { entryKeys, feedStart } from "./Ticker";
 import { DEFAULT_THEME } from "./config";
 
 describe("Ticker", () => {
@@ -14,19 +14,40 @@ describe("Ticker", () => {
     tickerText: "#445566",
   };
 
-  it("keeps the crawl's DOM when the feed is re-derived with the same lines, restarts on new content", () => {
+  it("keeps the crawl's DOM when the feed is re-derived with the same lines, and adopts new content at the segment boundary", () => {
     const { rerender } = render(<Ticker title="T" items={["ONE", "TWO"]} edge="top" theme={themed} />);
     const before = screen.getAllByText("TWO")[0];
     // The track feed hands the ticker a fresh array every second: same lines, same nodes.
     rerender(<Ticker title="T" items={["ONE", "TWO"]} edge="top" theme={themed} />);
     expect(screen.getAllByText("TWO")[0]).toBe(before);
-    // New content: the crawl restarts from the feed's first entry.
+    // New content mid-segment: the running segment keeps rolling, untouched —
+    // no rewind, no rebuilt track (every director cut changes the feed).
     rerender(<Ticker title="T" items={["ZERO", "ONE", "TWO", "TWO"]} edge="top" theme={themed} />);
+    expect(screen.queryByText("ZERO")).toBeNull();
+    expect(screen.getAllByText("TWO")[0]).toBe(before);
+    // When the segment ends, the next one is cut from the new feed.
+    fireEvent.animationEnd(before.closest("div")!);
     expect(screen.getAllByText("ZERO").length).toBeGreaterThan(0);
-    const track = screen.getAllByText("ZERO")[0].closest("div")!;
-    expect(track.textContent!.startsWith("ZERO")).toBe(true);
     // Keys are the text; repeats (a sponsor line twice, say) get a suffix.
     expect(entryKeys(["A", "B", "A", { text: "A", ad: true }])).toEqual(["A", "B", "A#1", "A#2"]);
+  });
+
+  it("adopts the first real feed straight away after standby", () => {
+    const { rerender } = render(<Ticker title="T" items={[]} edge="bottom" theme={themed} />);
+    expect(screen.getAllByText(/STANDING BY/).length).toBeGreaterThan(0);
+    rerender(<Ticker title="T" items={["FIRST LINE"]} edge="bottom" theme={themed} />);
+    expect(screen.getAllByText("FIRST LINE").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/STANDING BY/)).toBeNull();
+  });
+
+  it("feedStart continues at the entry that was due next when the feed changes", () => {
+    const window = { head: [{ entry: "A", index: 0 }], tail: [{ entry: "B", index: 1 }] };
+    // Same feed: straight after the head.
+    expect(feedStart(0, window, ["A", "B", "C"])).toBe(1);
+    // A line inserted ahead: B is still due next, now at index 2.
+    expect(feedStart(0, window, ["X", "A", "B", "C"])).toBe(2);
+    // B gone: the same position modulo the new length, never a rewind to 0 by accident.
+    expect(feedStart(0, window, ["A", "C"])).toBe(1);
   });
 
   it("renders a window of a long feed, and advances when the head has scrolled out", () => {

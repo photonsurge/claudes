@@ -210,6 +210,33 @@ describe("WorldReportDeck per-channel curation", () => {
     }
   });
 
+  it("keeps a shown page mounted after the flip, skipped by layout while off screen", () => {
+    jest.useFakeTimers();
+    try {
+      render(
+        <WorldReportDeck
+          worldWatch={emptyWatch}
+          reportOff={["detection", "hourly", "alerts", "about"]}
+          holdMs={5000}
+        />,
+      );
+      const wrapper = (text: string) => screen.getByText(text).closest("[aria-hidden]") as HTMLElement;
+      expect(wrapper("SEISMIC ACTIVITY").getAttribute("aria-hidden")).toBe("false");
+      // Up next: mounted (its data can land early) but not laid out.
+      expect(wrapper("VOLCANIC ACTIVITY").getAttribute("aria-hidden")).toBe("true");
+      expect(wrapper("VOLCANIC ACTIVITY").style.contentVisibility).toBe("hidden");
+
+      act(() => void jest.advanceTimersByTime(5000));
+      expect(wrapper("VOLCANIC ACTIVITY").getAttribute("aria-hidden")).toBe("false");
+      expect(wrapper("VOLCANIC ACTIVITY").style.contentVisibility).not.toBe("hidden");
+      // The page that just left stays in the DOM, parked off screen.
+      expect(wrapper("SEISMIC ACTIVITY").getAttribute("aria-hidden")).toBe("true");
+      expect(wrapper("SEISMIC ACTIVITY").style.contentVisibility).toBe("hidden");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("renders nothing when every report slide is hidden", () => {
     const { container } = render(
       <WorldReportDeck

@@ -2236,6 +2236,55 @@ the same set — before blaming any component; the deep trace's invalidation
 REASONS (removed/added vs text/style changed) tell remount churn from
 in-place updates.
 
+### Round 50 (2026-09-10 15:46) — the lazy deck confirmed; the crawl stops rewinding; the report deck keeps its pages
+
+A run on the round-49 build: volcano segment with a country spotlight, 20
+layers drawn.
+
+    busy 35.7 % · 29.7 fps · gap max 233 ms · 4 stalls / 733 ms · DOM 441 nodes (was 1310) · Layout 187× / 392 ms (was 206× / 612 ms)
+
+The lazy deck is live — the DOM is a third of what it was and the layouts
+inside the cut commits are 12–27 ms (were 42–66). RTOFS has re-baked
+(2250×1125, 9.7 MB ×7; the 38.6 MB grids are gone). Stalls: 8.8 s · 202 ms,
+24.0 s · 204 ms and 47.1 s · 188 ms are cuts; 40.6 s · 139 ms is a report-
+deck flip landing on top of a focus bundle. Three things account for what's
+left:
+
+- **The crawl re-measured at every cut** — `getBoundingClientRect` 15–29 ms
+  inside each cut commit, the same `useLayoutEffect` as before. The cause is
+  upstream: BroadcastFrame receives `alerts`, `quakes` and `volcanoes` gated
+  by the director's per-cut toggles (`state.showAlerts ? alerts : NONE` …),
+  and `useBroadcastQuakes` unions the on-air event's quakes, so the crawl's
+  lines change on every cut, and the crawl restarted from its first entry:
+  a remounted track, a forced whole-document layout inside the commit, and a
+  crawl that visibly jumped back to the top. Now a segment is cut from the
+  feed AS IT STOOD when it began, and a changed feed is adopted at the
+  segment boundary (`feedStart`: continue at the entry that was due next if
+  the new feed still has it, else the same position modulo the new length).
+  The one immediate adoption is the first real feed after standby.
+- **The WORLD REPORT deck flipped a page every 6 s**, building each page
+  from scratch — the 6 s cadence of 17–40 ms layouts (322 / 206 / 168 / 96
+  dirty objects, the page sizes alternating) is ~250 ms of the minute's
+  392 ms of layout, and the 40.6 s stall is one such flip (40 + 26 ms
+  layouts) coinciding with a focus landing. It now keeps the pages it has
+  shown (plus the one up next) mounted under `content-visibility: hidden`,
+  the same lazy deck as SlideDeck; a flip is a style change.
+- **Particle setup at cuts** (`_setupTransformFeedback` 48 ms/min via
+  `updateState`, 11–34 ms a cut) is by design: the kind looks change
+  `numParticles` / `maxAge` / `width` between shots (calm 3000 / 45 / 1.5 ·
+  dense 12000 / 25 / 1.4 · storm 9000 / 16 / 2.5) and WeatherLayers rebuilds
+  its transform-feedback buffers on any of those. A look that changed only
+  opacity or colour would not pay it. Left alone.
+
+The deck's cut frame otherwise: `bufferSubData` 7–25 ms (the alert passes'
+colour triggers + new layers' attributes), major GC 17–29 ms, and the label
+canvas redrawing every frame while the on-air marker pulses (`drawImage`
+733 ms/min steady, ~0.4 ms a frame — fine).
+
+Expected after this round: no forced layout in the cut commits, no crawl
+rewind at cuts, and the 6 s report layouts down from 17–40 ms of fresh
+layout to a few ms of repeat layout. Measure with a plain `--stall-trace`.
+
 ## Findings (from source, ranked by likely share of the main thread)
 
 ### 1. The on-air pulse/glow loop re-commits the whole deck stack every frame — and re-tessellates

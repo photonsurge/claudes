@@ -10,6 +10,7 @@
  * `reportHoldMs` dwell (DEFAULT_REPORT_HOLD_MS when unset).
  * Pointer-inert like the rest of the chrome.
  */
+import { useRef } from "react";
 import { useReportCities } from "../../lib/focus/focus-client";
 import type { AboutSettings, WeatherLocation } from "@photonsurge/shared/control";
 import { pageDotStyle, pageDotsSlack } from "./page-dots";
@@ -100,11 +101,13 @@ export default function WorldReportDeck({
   const alertColor = s.bySeverity[0]?.color ?? theme.accent;
   const volcanoColor = s.byVolcanoStatus[0]?.color ?? "#f97316";
 
-  let content: React.ReactNode;
-  if (slide === "hourly") {
-    content = <LocationWeatherPanel locations={locations} theme={theme} areaName={isArea ? areaName : undefined} detailed={Boolean(targetLocation) && !isArea} />;
-  } else if (slide === "alerts") {
-    content = (
+  // One page's content, by id — rendered on demand so the deck can keep the
+  // pages it has shown mounted (below) without spelling each out twice.
+  const pageContent = (id: ReportSlideId): React.ReactNode => {
+  if (id === "hourly") {
+    return <LocationWeatherPanel locations={locations} theme={theme} areaName={isArea ? areaName : undefined} detailed={Boolean(targetLocation) && !isArea} />;
+  } else if (id === "alerts") {
+    return (
       <HazardScreen
         title="GLOBAL ALERTS"
         heroLabel="ACTIVE ALERTS"
@@ -121,8 +124,8 @@ export default function WorldReportDeck({
         theme={theme}
       />
     );
-  } else if (slide === "seismic") {
-    content = (
+  } else if (id === "seismic") {
+    return (
       <HazardScreen
         title="SEISMIC ACTIVITY"
         heroLabel="QUAKES"
@@ -140,8 +143,8 @@ export default function WorldReportDeck({
         theme={theme}
       />
     );
-  } else if (slide === "volcanoes") {
-    content = (
+  } else if (id === "volcanoes") {
+    return (
       <HazardScreen
         title="VOLCANIC ACTIVITY"
         heroLabel="ACTIVE VOLCANOES"
@@ -158,21 +161,49 @@ export default function WorldReportDeck({
         theme={theme}
       />
     );
-  } else if (slide === "about") {
-    content = <AboutPanel theme={theme} about={about} />;
+  } else if (id === "about") {
+    return <AboutPanel theme={theme} about={about} />;
   } else {
     // "detection" — the DETECTION GRID, with the full global ACTIVE FEED
     // integrated into its own card (like every other slide).
-    content = <WorldSituationPanel worldWatch={s} theme={theme} kindsOff={reportKindsOff} />;
+    return <WorldSituationPanel worldWatch={s} theme={theme} kindsOff={reportKindsOff} />;
   }
+  };
 
   // Every slide now carries its ACTIVE FEED *inside* its own card — the category
   // slides a kind-filtered slice (HazardScreen), the rest the full global feed —
   // so nothing stacks a separate feed card below any more.
 
+  // Pages that have been on screen, plus the one up next, stay mounted and are
+  // skipped by layout and paint while off screen (`content-visibility`) — the
+  // same lazy deck as the left column's SlideDeck. Before this, every flip tore
+  // one page down and built the next from scratch: 100–320 fresh layout
+  // objects, a 17–40 ms whole-document layout each time, ~250 ms of layout a
+  // minute on OBS's CEF and the biggest recurring cost left in the chrome
+  // (docs/watch-perf-plan.md, round 50). Mounted-but-hidden pages keep their
+  // state and their tiles' fetched forecasts; a flip is now a style change.
+  const shown = useRef<Set<ReportSlideId>>(new Set());
+  shown.current.add(slide);
+  shown.current.add(active[(page + 1) % active.length]);
+  const pages = active.filter((id) => shown.current.has(id));
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end" }}>
-      {content}
+      <div style={{ position: "relative" }}>
+        {pages.map((id) => (
+          <div
+            key={id}
+            aria-hidden={id !== slide}
+            style={
+              id === slide
+                ? { position: "relative" }
+                : { position: "absolute", inset: 0, opacity: 0, pointerEvents: "none", contentVisibility: "hidden" }
+            }
+          >
+            {pageContent(id)}
+          </div>
+        ))}
+      </div>
       {/* Slide position — a dot per ACTIVE slide so the rotation reads as
           deliberate (and a single-category channel shows a single dot). */}
       {active.length > 1 && (
