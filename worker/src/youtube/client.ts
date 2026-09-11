@@ -486,6 +486,42 @@ export async function getVideoStats(ctx: YoutubeCtx, ids: string[]) {
   return res.data.items ?? [];
 }
 
+/**
+ * Rewrite a video's description via `compose(existing)`. videos.update REPLACES
+ * the whole snippet part, so the rest of it (title, category, tags, language)
+ * is read first and sent back unchanged — omit categoryId and the call 400s,
+ * omit the title and it's wiped. 1 unit to read, 50 to write; the write is
+ * skipped when nothing changed.
+ */
+export async function setVideoDescription(
+  ctx: YoutubeCtx,
+  videoId: string,
+  compose: (existing: string) => string,
+): Promise<{ changed: boolean; description: string }> {
+  const res = await apiCall(ctx, "videos.list", () => ctx.youtube.videos.list({ part: ["snippet"], id: [videoId] }));
+  const snippet = res.data.items?.[0]?.snippet;
+  if (!snippet) throw new Error(`videos.list: video ${videoId} not found`);
+  const existing = snippet.description ?? "";
+  const description = compose(existing);
+  if (description === existing) return { changed: false, description };
+  await apiCall(ctx, "videos.update", () =>
+    ctx.youtube.videos.update({
+      part: ["snippet"],
+      requestBody: {
+        id: videoId,
+        snippet: {
+          title: snippet.title,
+          categoryId: snippet.categoryId,
+          tags: snippet.tags,
+          defaultLanguage: snippet.defaultLanguage,
+          description,
+        },
+      },
+    }),
+  );
+  return { changed: true, description };
+}
+
 export async function resolveLiveChatId(ctx: YoutubeCtx, broadcastId: string): Promise<string | undefined> {
   const res = await apiCall(ctx, "liveBroadcasts.list", () =>
     ctx.youtube.liveBroadcasts.list({ part: ["snippet"], id: [broadcastId] }),

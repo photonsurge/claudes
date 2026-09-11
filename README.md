@@ -316,3 +316,10 @@ Add a `makeCollection<T>(conn, "name")` line to `createDb()` in
 | `./test` | Run `yarn test` in `shared`, `socket`, `worker`, and `public`. |
 | `./update-shared` | Rebuild `shared` and refresh it in every dependent. |
 | `./version-update [-m] [pkg]` | Bump patch (or minor) version in one/all packages. |
+
+
+
+cd ~/weather
+docker compose run --rm --no-deps \
+  -e ADMIN_EMAIL=you@example.com -e ADMIN_PASSWORD='…' \
+  worker node dist/scripts/seedAdmin.js

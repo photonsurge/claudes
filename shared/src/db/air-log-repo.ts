@@ -104,6 +104,27 @@ export function makeAirLogRepo(runModel: Model<iAirRunModel>, entryModel: Model<
     },
 
     /**
+     * Every cut that was on air for `sceneId` at any point inside [from, to),
+     * in air order — the "what aired during this video" join for the VOD
+     * as-run pages (docs/vod-as-run-plan.md). A streaming run and the director
+     * log share no key; scene + wall-clock window IS the join. Still-open
+     * entries (the shot on air now) count as reaching `to`. Served by
+     * airentry_scene_ix.
+     */
+    async listEntriesInWindow(opts: { sceneId: string; from: Date; to: Date }): Promise<iAirEntry[]> {
+      const docs = await entryModel
+        .find({
+          sceneId: opts.sceneId,
+          startedAt: { $lt: opts.to },
+          $or: [{ endedAt: { $gt: opts.from } }, { endedAt: null }],
+        })
+        .sort({ startedAt: 1 })
+        .lean()
+        .exec();
+      return docs.map((d) => strip<iAirEntry>(d));
+    },
+
+    /**
      * Every airing of one subject across all runs, newest-first — e.g.
      * "storm:nws:XYZ" for an alert's "when did this air" panel.
      */

@@ -1,6 +1,7 @@
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { runIsActive } from "@photonsurge/shared/runs";
 import { getVideoStats, getYoutubeClient } from "./client";
+import { stampVideoTimes } from "./video-times";
 
 interface VideoStats {
   views?: string;
@@ -44,6 +45,9 @@ async function refresh(): Promise<Record<string, VideoStats>> {
           const video = videos.find((v) => v.id === run.platforms.youtube!.broadcastId);
           const active = runIsActive(run.status);
           const live = video?.liveStreamingDetails;
+          // VOD time base for the as-run pages — this poll already carries the
+          // instants, so stamping them here costs nothing (writes only when new).
+          await stampVideoTimes(db, run, video);
           cache.set(run.id, {
             active,
             retryAt: fetchedAt + (active ? 60_000 : 15 * 60_000),

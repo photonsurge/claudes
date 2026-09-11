@@ -480,6 +480,13 @@ export function createDb(conn: Connection) {
       return res.success && res.data ? (res.data as Run) : null;
     },
 
+    /** The run behind a YouTube video id (its broadcast id), or null — the public /vod page's lookup. */
+    async getRunByBroadcastId(broadcastId: string) {
+      const res = await streamRuns.getAll({ "platforms.youtube.broadcastId": broadcastId } as any, { limit: 1 });
+      const row = res.success && res.data ? res.data[0] : undefined;
+      return row ? (row as Run) : null;
+    },
+
     /** Patch a run by id; returns the updated doc. */
     async updateRun(id: string, patch: Partial<Run>) {
       const res = await streamRuns.updateByID(id, patch as any);

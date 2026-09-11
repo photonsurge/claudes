@@ -37,6 +37,8 @@ export default function AudioLab() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const energyRef = useRef<HTMLDivElement | null>(null);
   const sectionRef = useRef<HTMLSpanElement | null>(null);
+  const keyRef = useRef<HTMLSpanElement | null>(null);
+  const phraseRef = useRef<HTMLSpanElement | null>(null);
   const beatRefs = useRef<HTMLDivElement[]>([]);
   const ledRefs = useRef<Record<string, HTMLSpanElement | null>>({});
 
@@ -68,6 +70,8 @@ export default function AudioLab() {
       const e = st.energy;
 
       if (energyRef.current) energyRef.current.style.width = (e * 100).toFixed(0) + "%";
+      if (keyRef.current && keyRef.current.textContent !== st.key) keyRef.current.textContent = st.key;
+      if (phraseRef.current && phraseRef.current.textContent !== st.phrase) phraseRef.current.textContent = st.phrase;
       if (sectionRef.current) {
         const label = st.section.name + (st.inBreak ? " · breakdown" : "");
         if (label !== curLabel) {
@@ -211,8 +215,16 @@ export default function AudioLab() {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   <span className="ro-l">Key</span>
-                  <span className="ro-v">A minor</span>
+                  <span className="ro-v" ref={keyRef}>
+                    —
+                  </span>
                 </div>
+              </div>
+              <div className="ro">
+                <span className="ro-l">Phrase</span>
+                <span className="ro-v" ref={phraseRef}>
+                  —
+                </span>
               </div>
             </div>
           </div>

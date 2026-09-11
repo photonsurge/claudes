@@ -63,6 +63,10 @@ const RunSchema = new mongoose.Schema<iRunModel>(
         streamName: { type: String, required: false },
         monitorStream: { type: Boolean, required: false, default: false },
         watchUrl: { type: String, required: false },
+        // VOD time base (docs/vod-as-run-plan.md) — MUST be declared here or the
+        // strict schema silently drops the worker's stamp.
+        actualStartTime: { type: Number, required: false, default: null },
+        actualEndTime: { type: Number, required: false, default: null },
       },
       twitch: {
         channelLogin: { type: String, required: false },
@@ -85,6 +89,11 @@ const RunSchema = new mongoose.Schema<iRunModel>(
     },
     announce: { type: Boolean, required: false, default: false },
     announcedAt: { type: Number, required: false, default: null },
+    chapters: {
+      publishedAt: { type: Number, required: false, default: null },
+      count: { type: Number, required: false, default: 0 },
+      error: { type: String, required: false, default: null },
+    },
     error: {
       step: { type: String, required: false },
       message: { type: String, required: false },
@@ -94,5 +103,8 @@ const RunSchema = new mongoose.Schema<iRunModel>(
   },
   mongoTimestamps,
 );
+
+// The public /vod/:videoId page looks a run up by its YouTube video id.
+RunSchema.index({ "platforms.youtube.broadcastId": 1 }, { name: "run_broadcast_ix", sparse: true });
 
 export const getRunModel = (conn: Connection) => getModel<iRunModel>(conn, "Run", RunSchema);

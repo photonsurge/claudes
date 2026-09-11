@@ -66,9 +66,19 @@ export async function listRuns(): Promise<{ runs: AirRun[]; sceneNames: Record<s
   return { runs: body.runs ?? [], sceneNames: body.sceneNames ?? {} };
 }
 
+/** A streaming run (YouTube video) that overlapped a director session. */
+export interface AiredVideo {
+  id: string;
+  title: string | null;
+  status: string;
+  watchUrl: string | null;
+  startAt: number | null;
+  endedAt: number | null;
+}
+
 export async function getRun(
   id: string,
-): Promise<{ run: AirRun; entries: AirEntry[]; sceneName: string } | null> {
+): Promise<{ run: AirRun; entries: AirEntry[]; sceneName: string; videos?: AiredVideo[] } | null> {
   const res = await fetch(`/api/admin/runs/${encodeURIComponent(id)}`);
   if (!res.ok) return null;
   return res.json();

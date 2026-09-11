@@ -405,6 +405,7 @@ function RunRow({ run, health, youtubeStats, statsError, onStopped }: { run: Run
             {run.slotId ? " · constant" : ""}
             {run.chat?.enabled ? (run.chat.promoteToTicker ? " · chat→ticker" : " · chat") : ""}
             {run.announce ? (run.announcedAt ? " · 📣 announced" : " · 📣") : ""}
+            {run.chapters?.publishedAt ? " · ⏱ chapters" : run.chapters?.error ? " · ⏱ chapters failed" : ""}
             {run.needsManualObs ? " · OBS manual handoff needed" : ""}
             {run.error ? ` · ${run.error.step}: ${run.error.message}` : ""}
           </Typography>
@@ -414,6 +415,9 @@ function RunRow({ run, health, youtubeStats, statsError, onStopped }: { run: Run
             Watch ↗
           </MuiLink>
         )}
+        <MuiLink component={Link} href={`/admin/streams/${encodeURIComponent(run.id)}`} variant="body2" sx={{ whiteSpace: "nowrap" }}>
+          As-run
+        </MuiLink>
         <Button variant="outlined" size="small" onClick={() => setChatOpen(true)}>
           Chat
         </Button>

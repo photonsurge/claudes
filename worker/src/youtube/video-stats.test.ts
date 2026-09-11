@@ -5,6 +5,7 @@ import { getYoutubeClient, getVideoStats } from "./client";
 import { streamVideoStats } from "./video-stats";
 
 const listRuns = jest.fn();
+const updateRun = jest.fn(async () => null);
 const run = (id: string, status = "live", accountId = "channel-a") => ({
   id, status, platforms: { youtube: { broadcastId: id, accountId } },
 });
@@ -12,7 +13,7 @@ beforeEach(async () => {
   jest.useFakeTimers();
   jest.setSystemTime(1_000_000);
   jest.clearAllMocks();
-  (getAppDb as jest.Mock).mockResolvedValue({ listRuns });
+  (getAppDb as jest.Mock).mockResolvedValue({ listRuns, updateRun });
   listRuns.mockResolvedValue([]);
   await streamVideoStats(); // Prune the previous test's cached runs.
   (getYoutubeClient as jest.Mock).mockImplementation(async (accountId) => ({ accountId }));
@@ -68,4 +69,14 @@ it("splits large channel batches into at most 50 videos", async () => {
   listRuns.mockResolvedValue(Array.from({ length: 51 }, (_, i) => run(String(i))));
   await streamVideoStats();
   expect((getVideoStats as jest.Mock).mock.calls.map((call) => call[1].length)).toEqual([50, 1]);
+});
+
+it("stamps YouTube's live instants onto runs that lack them, once", async () => {
+  listRuns.mockResolvedValue([run("a"), { ...run("b"), platforms: { youtube: { broadcastId: "b", accountId: "channel-a", actualStartTime: 5_000 } } }]);
+  (getVideoStats as jest.Mock).mockImplementation(async (_ctx, ids: string[]) => ids.map((id) => ({
+    id, statistics: {}, liveStreamingDetails: { actualStartTime: "1970-01-01T00:00:05.000Z" },
+  })));
+  await streamVideoStats();
+  expect(updateRun).toHaveBeenCalledTimes(1);
+  expect(updateRun).toHaveBeenCalledWith("a", { platforms: { youtube: { broadcastId: "a", accountId: "channel-a", actualStartTime: 5_000 } } });
 });

@@ -7,11 +7,14 @@
  *   run-lifecycle.end       { runId, reason }   (auto-end delayed job, or a stop alias)
  *   run-lifecycle.reconcile {}                  (repeatable persistent-slot sweep)
  *   run-lifecycle.announce  { runId }           ("notify the world" hydra post, retried)
+ *   run-lifecycle.chapters  { runId, force? }   (as-run chapters → video description; retried,
+ *                                                or awaited + never-rejecting when force)
  * Routed to the FOREGROUND tier (see bull-utils FOREGROUND_TYPES) so go-live/stop
  * never wait behind a bake.
  */
 import type { Job } from "bullmq";
 import { announceRun } from "../stream/announce";
+import { publishChapters } from "../stream/chapters";
 import { goLive as doGoLive, finishRun } from "../stream/lifecycle";
 import { reconcileSlots } from "../stream/slots";
 import { endpointForEncoderId, provisionEncoderScene, refreshEncoderScene } from "../stream/encoders";
@@ -45,6 +48,24 @@ export async function announce(job: Job) {
   if (!runId) throw new Error("run-lifecycle.announce: missing runId");
   await announceRun(runId);
   return { runId };
+}
+
+/**
+ * As-run chapters into the YouTube video description (docs/vod-as-run-plan.md §4).
+ * Queued from finishRun (throws → BullMQ retries); the admin "Publish chapters"
+ * button awaits it with `force`, which also re-publishes an already-published
+ * video and resolves (never rejects) with a structured result for the UI.
+ */
+export async function chapters(job: Job) {
+  const runId = String(job.data?.data?.runId ?? job.data?.runId ?? "");
+  if (!runId) throw new Error("run-lifecycle.chapters: missing runId");
+  const force = !!job.data?.data?.force;
+  try {
+    return await publishChapters(runId, { force });
+  } catch (err) {
+    if (force) return { ok: false, error: String((err as Error)?.message ?? err) };
+    throw err;
+  }
 }
 
 /** Repeatable sweep keeping every enabled persistent slot's stream alive. */

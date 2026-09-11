@@ -142,6 +142,20 @@ describe("SlotsCard", () => {
     );
   });
 
+  it("warns when a slot's cadence means YouTube won't archive its videos", () => {
+    render(
+      <SlotsCard
+        slots={[slot({ id: "s-never", restartEveryMs: null }), slot({ id: "s-6h", restartEveryMs: 6 * 3_600_000 }), slot({ id: "s-12h", restartEveryMs: 12 * 3_600_000 })]}
+        scenes={SCENES}
+        encoders={ENCODERS}
+        runs={[]}
+        onSave={jest.fn()}
+        onDelete={jest.fn()}
+      />,
+    );
+    expect(screen.getAllByText("no VOD")).toHaveLength(2);
+  });
+
   it("changing a row's restart interval saves restartEveryMs on the slot", () => {
     const onSave = jest.fn(async () => ({}));
     render(

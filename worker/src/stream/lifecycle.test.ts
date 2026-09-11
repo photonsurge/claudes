@@ -60,8 +60,12 @@ jest.mock("../youtube/client", () => ({
   transitionBroadcast: jest.fn(async () => {}),
   getBroadcastLifeCycle: jest.fn(async () => "live"),
   getStreamStatus: jest.fn(async () => ({ streamStatus: "active", health: "good" })),
+  getVideoStats: jest.fn(async () => []),
   resolveLiveChatId: jest.fn(async () => "chat-1"),
 }));
+
+const queueChapters = jest.fn(async () => {});
+jest.mock("./chapters", () => ({ queueChapters: (...a: unknown[]) => queueChapters(...a), chaptersEnabled: () => true }));
 
 const fakeQueue = { add: jest.fn(async () => ({})), getJob: jest.fn(async () => null) };
 jest.mock("@photonsurge/shared/bull/bull", () => ({ getQueue: jest.fn(() => fakeQueue) }));
@@ -352,6 +356,28 @@ describe("finishRun", () => {
     const run = runs.get("r5");
     expect(run.status).toBe("stopped");
     expect(run.endedAt).toEqual(expect.any(Number));
+    expect(queueChapters).toHaveBeenCalledWith("r5");
+  });
+
+  it("stamps YouTube's actual start/end instants (the VOD time base) on finish, and shrugs if they fail", async () => {
+    setRun({ id: "r7", sceneId: "default", status: "live", platforms: { youtube: { broadcastId: "bcast", streamName: "k" } } });
+    (yt.getVideoStats as jest.Mock).mockResolvedValueOnce([
+      { id: "bcast", liveStreamingDetails: { actualStartTime: "2026-09-01T10:00:03Z", actualEndTime: "2026-09-01T11:00:00Z" } },
+    ]);
+    await finishRun("r7", "auto");
+    expect(yt.getVideoStats).toHaveBeenCalledWith(expect.anything(), ["bcast"]);
+    const run = runs.get("r7");
+    expect(run.status).toBe("ended");
+    expect(run.platforms.youtube).toMatchObject({
+      streamName: "k",
+      actualStartTime: Date.parse("2026-09-01T10:00:03Z"),
+      actualEndTime: Date.parse("2026-09-01T11:00:00Z"),
+    });
+
+    setRun({ id: "r8", sceneId: "default", status: "live", platforms: { youtube: { broadcastId: "b2" } } });
+    (yt.getVideoStats as jest.Mock).mockRejectedValueOnce(new Error("quota"));
+    await finishRun("r8", "auto");
+    expect(runs.get("r8").status).toBe("ended");
   });
 
   it("is idempotent — a second finish on an ended run does nothing external", async () => {
@@ -359,5 +385,6 @@ describe("finishRun", () => {
     await finishRun("r6", "auto");
     expect(yt.transitionBroadcast).not.toHaveBeenCalled();
     expect(runs.get("r6").status).toBe("ended");
+    expect(queueChapters).not.toHaveBeenCalled();
   });
 });

@@ -3,16 +3,26 @@
  *
  * Everything is synthesized live from oscillators + noise via the Web Audio API
  * (no samples, no libraries) so it is copyright-safe for a 24/7 stream and never
- * repeats. One `energy` value (0..1) drives the whole arrangement: it free-runs
- * a slow drift that starts chill and is nudged up by `severity` / event pulses,
- * or is pinned outright by a fixed AudioMode (setMode). On air it's driven by
- * <BroadcastBed> in WatchSurface from the synced ControlState.audio + the
- * director's on-air segment; the `/music` lab page drives it by hand.
+ * repeats. One `energy` value (0..1) picks the SECTION (chill → breaks): it
+ * free-runs a slow drift nudged up by `severity` / event pulses, or is pinned
+ * by a fixed AudioMode. Above the step sequencer sits the ARRANGER: every 8–32
+ * bars it plans a phrase (intro / main / build / break) with its own chord
+ * progression, key, drum + bass + comping patterns, instrument patches and
+ * ending (fill, riser, drop-out), so the bed has real structure and variety.
  *
+ * Modules: theory (keys/chords), patterns (banks), arranger (phrases), graph
+ * (the rig), drums + synths (voices), clock (stall-proof scheduling), dsp.
  * Browser-only: no AudioContext is created until start().
  */
 import type { AudioMode } from "@photonsurge/shared/control";
-import { fillCrackle, softClipCurve } from "./dsp";
+import { type Phrase, type StemId, phraseLabel, planPhrase } from "./arranger";
+import { LOOKAHEAD_S, resyncGrid, startTicker } from "./clock";
+import { clap, duck, hat, kick, ride, rim, riser, shaker, snare, swell } from "./drums";
+import { type Rig, buildRig } from "./graph";
+import { type DrumVoice, type Fill, fillFor } from "./patterns";
+import { type Rng, chance, mulberry32, pick } from "./rng";
+import { Pad, acidNote, bassNote, bellNote, fmLead, pluckChord, rhodesChord, stabChord } from "./synths";
+import { type Chord, type Key, type SectionCls, chordOn, keyName, pentatonic } from "./theory";
 
 /**
  * Pinned energy target per fixed AudioMode — centred inside each SECTION band
@@ -28,7 +38,7 @@ export const MODE_ENERGY: Record<Exclude<AudioMode, "auto">, number> = {
 };
 
 export interface StemDef {
-  id: string;
+  id: StemId;
   name: string;
   note: string;
   color: string;
@@ -37,20 +47,21 @@ export interface StemDef {
 }
 
 export const STEMS: StemDef[] = [
-  { id: "keys", name: "Keys", note: "rhodes", color: "#54e6a6", live: () => true },
+  { id: "keys", name: "Keys", note: "rhodes · stab · pluck", color: "#54e6a6", live: () => true },
   { id: "pad", name: "Pad", note: "wash", color: "#35d6d0", live: () => true },
-  { id: "lead", name: "Lead", note: "motif", color: "#8cf5cd", live: (e) => e > 0.4 },
+  { id: "lead", name: "Lead", note: "motif · bell · acid", color: "#8cf5cd", live: (e) => e > 0.4 },
   { id: "bass", name: "Bass", note: "sub", color: "#a98bff", live: (e) => e > 0.26 },
   { id: "kick", name: "Kick", note: "floor / breaks", color: "#ffb454", drum: true, live: (e) => e > 0.34 },
-  { id: "hat", name: "Hats", note: "swing", color: "#ffb454", drum: true, live: (e) => e > 0.36 },
-  { id: "perc", name: "Perc", note: "clap · shaker", color: "#ff5f6d", drum: true, live: (e) => e > 0.45 },
+  { id: "hat", name: "Hats", note: "swing · ride", color: "#ffb454", drum: true, live: (e) => e > 0.36 },
+  { id: "perc", name: "Perc", note: "clap · rim · shaker", color: "#ff5f6d", drum: true, live: (e) => e > 0.45 },
   { id: "atmos", name: "Atmos", note: "vinyl", color: "#6a7d97", live: () => true },
 ];
+const STEM_BY_ID = Object.fromEntries(STEMS.map((s) => [s.id, s])) as Record<StemId, StemDef>;
 
 export interface Section {
   max: number;
   name: string;
-  cls: string;
+  cls: SectionCls;
   hint: string;
 }
 
@@ -66,65 +77,73 @@ export interface BedState {
   playing: boolean;
   energy: number;
   section: Section;
+  /** True while the arranger is in a break phrase (rhythm section out). */
   inBreak: boolean;
   beatStep: number;
+  /** Steps dropped after main-thread stalls since start(). */
+  dropped: number;
+  /** Current phrase, e.g. "main · 16 bars · vamp · D minor". */
+  phrase: string;
+  key: string;
 }
-
-interface Chord {
-  v: number[];
-  root: number;
-}
-interface PadVoice {
-  g: GainNode;
-  oscs: OscillatorNode[];
-}
-
-// A natural minor, jazz-voiced. 8-bar loop; repeated refs (AM,AM / FM7,FM7) mean
-// the pad only re-triggers on a real chord change.
-const AM: Chord = { v: [57, 60, 64, 67], root: 45 };
-const FM7: Chord = { v: [57, 60, 64, 65], root: 41 };
-const CM7: Chord = { v: [60, 64, 67, 71], root: 48 };
-const G6: Chord = { v: [59, 62, 64, 67], root: 43 };
-const DM7: Chord = { v: [57, 60, 62, 65], root: 50 };
-const EM7: Chord = { v: [59, 62, 64, 67], root: 52 };
-const PROG: Chord[] = [AM, AM, FM7, FM7, CM7, G6, DM7, EM7];
-const PENT = [69, 72, 74, 76, 79, 81, 84, 86, 88, 91]; // A-minor pentatonic, 2 oct
-
-/**
- * Fixed trim on the summing bus feeding the limiter. Set so a full "breaks"
- * mix (kick + bass + pads + sends) lands a few dB over the limiter threshold
- * on hits and well under it elsewhere — see scripts/measure-audio-bed.mjs.
- */
-const BUS_TRIM = 0.6;
 
 const BPM = 121;
-const SWING = 0.16;
 const sec16 = () => 60 / BPM / 4;
-const mtof = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 const rand = Math.random;
 const hum = () => (rand() - 0.5) * 0.004;
 
+interface MotifNote {
+  s: number;
+  i: number;
+}
+interface AcidStep {
+  s: number;
+  iv: number;
+  accent: boolean;
+  glide: boolean;
+}
+
+const RHYTHMS = [
+  [0, 3, 6, 10],
+  [0, 4, 7, 10, 12],
+  [2, 6, 9, 12],
+  [0, 2, 6, 8, 12, 14],
+  [3, 6, 10, 13],
+  [0, 6, 12],
+  [1, 4, 8, 11, 14],
+];
+
+function genMotif(rng: Rng): MotifNote[] {
+  const r = pick(rng, RHYTHMS);
+  let i = 3 + Math.floor(rng() * 3);
+  return r.map((s) => {
+    const leap = chance(rng, 0.15) ? (chance(rng, 0.5) ? 2 : -2) : 0;
+    i = clamp(i + (Math.floor(rng() * 3) - 1) + leap, 0, 9);
+    return { s, i };
+  });
+}
+
+function genAcidBar(rng: Rng): AcidStep[] {
+  const out: AcidStep[] = [];
+  for (let s = 0; s < 16; s++) {
+    if (!chance(rng, s % 2 === 0 ? 0.55 : 0.28)) continue;
+    out.push({ s, iv: pick(rng, [0, 0, 0, 3, 5, 7, 10, 12]), accent: chance(rng, 0.3), glide: chance(rng, 0.35) });
+  }
+  return out;
+}
+
+const sameKey = (a: Key, b: Key) => a.tonic === b.tonic && a.mode === b.mode;
+
 export class AuroraBed {
   playing = false;
 
-  private ctx: AudioContext | null = null;
-  private master!: GainNode;
-  private bus!: GainNode;
-  private analyser!: AnalyserNode;
-  private energyFilter!: BiquadFilterNode;
-  private padFilter!: BiquadFilterNode;
-  private sidechain!: GainNode;
-  private musicalSum!: GainNode;
-  private drumBus!: GainNode;
-  private convolver!: ConvolverNode;
-  private delay!: DelayNode;
-  private chorusIn!: GainNode;
-  private groups: Record<string, GainNode> = {};
-  private noiseBuf!: AudioBuffer;
-  private freqData!: Uint8Array<ArrayBuffer>;
+  private rig: Rig | null = null;
+  private pad: Pad | null = null;
+  private freqData: Uint8Array<ArrayBuffer> = new Uint8Array(512);
 
-  private schedTimer: ReturnType<typeof setInterval> | null = null;
+  private stopTicker: (() => void) | null = null;
+  private dropped = 0;
   private nextNoteTime = 0;
   private step = 0;
   private startTime = 0;
@@ -135,11 +154,21 @@ export class AuroraBed {
   private eventBoost = 0;
   /** Pinned energy target (a fixed AudioMode), or null to free-run ("auto"). */
   private forcedEnergy: number | null = null;
-  private padVoices: PadVoice[] = [];
-  private lastChord: Chord | null = null;
-  private motif: { s: number; n: number }[] | null = null;
 
   private enabled: Record<string, boolean> = Object.fromEntries(STEMS.map((s) => [s.id, true]));
+  private rng: Rng = mulberry32((Date.now() ^ Math.floor(rand() * 0xffffffff)) >>> 0);
+
+  // ---- arrangement state
+  private phrase: Phrase | null = null;
+  private phraseStart = 0;
+  private phraseEnd = 0;
+  private fill: Fill = { hits: {}, kickMuteFrom: 16 };
+  private chord: Chord | null = null;
+  private chordKey: Key | null = null;
+  private chordChanged = false;
+  private motif: MotifNote[] | null = null;
+  private acidBar: AcidStep[] = [];
+  private acidPrev: number | null = null;
 
   // ------------------------------------------------------------ public API
   toggle(): boolean {
@@ -148,25 +177,34 @@ export class AuroraBed {
   }
 
   start(): void {
-    if (!this.ctx) this.buildGraph();
-    const ctx = this.ctx!;
+    if (!this.rig) {
+      const Ctor: typeof AudioContext =
+        window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      this.rig = buildRig(new Ctor(), sec16(), this.enabled);
+      this.pad = new Pad(this.rig);
+      this.freqData = new Uint8Array(this.rig.analyser.frequencyBinCount);
+    }
+    const ctx = this.rig.ctx;
     if (ctx.state === "suspended") void ctx.resume();
     this.playing = true;
     this.startTime = ctx.currentTime;
     this.lastTick = ctx.currentTime;
     this.step = 0;
-    this.lastChord = null;
+    this.phrase = null;
+    this.chord = null;
+    this.chordKey = null;
     this.motif = null;
+    this.acidPrev = null;
     this.nextNoteTime = ctx.currentTime + 0.08;
-    if (this.schedTimer) clearInterval(this.schedTimer);
-    this.schedTimer = setInterval(() => this.scheduler(), 25);
+    this.stopTicker?.();
+    this.stopTicker = startTicker(() => this.scheduler());
   }
 
   stop(): void {
     this.playing = false;
-    if (this.schedTimer) clearInterval(this.schedTimer);
-    this.schedTimer = null;
-    void this.ctx?.suspend();
+    this.stopTicker?.();
+    this.stopTicker = null;
+    void this.rig?.ctx.suspend();
   }
 
   /** severity fraction 0..1 (director on-air intensity in the app). */
@@ -176,7 +214,7 @@ export class AuroraBed {
 
   /** Pin the arrangement to a fixed section, or "auto" to free-run again. */
   setMode(mode: AudioMode): void {
-    this.forcedEnergy = mode === "auto" ? null : MODE_ENERGY[mode] ?? null;
+    this.forcedEnergy = mode === "auto" ? null : (MODE_ENERGY[mode] ?? null);
   }
 
   /**
@@ -184,639 +222,189 @@ export class AuroraBed {
    * while `playing` means the browser refused resume() without a user gesture.
    */
   contextState(): AudioContextState | null {
-    return this.ctx?.state ?? null;
+    return this.rig?.ctx.state ?? null;
   }
 
   /** one-shot: spike energy + riser (an event cut / eventPulse in the app). */
   triggerEvent(): void {
-    if (!this.ctx || !this.playing) return;
+    if (!this.rig || !this.playing) return;
     this.eventBoost = 0.42;
-    this.riser(this.ctx.currentTime + 0.04, 2.6);
+    riser(this.rig, this.rig.ctx.currentTime + 0.04, 2.6);
   }
 
   setMasterVolume(x: number): void {
-    if (this.ctx) this.master.gain.setTargetAtTime(clamp(x, 0, 1), this.ctx.currentTime, 0.02);
+    if (this.rig) this.rig.master.gain.setTargetAtTime(clamp(x, 0, 1), this.rig.ctx.currentTime, 0.02);
   }
 
   setStem(id: string, on: boolean): void {
     this.enabled[id] = on;
-    if (this.ctx && this.groups[id]) this.groups[id].gain.setTargetAtTime(on ? 1 : 0, this.ctx.currentTime, 0.02);
+    const g = this.rig?.groups[id as StemId];
+    if (this.rig && g) g.gain.setTargetAtTime(on ? 1 : 0, this.rig.ctx.currentTime, 0.02);
   }
 
   spectrum(): Uint8Array<ArrayBuffer> {
-    if (this.ctx) this.analyser.getByteFrequencyData(this.freqData);
+    if (this.rig) this.rig.analyser.getByteFrequencyData(this.freqData);
     return this.freqData;
   }
 
   getState(): BedState {
-    const t = this.ctx ? this.ctx.currentTime - this.startTime : 0;
-    const bar = Math.floor(t / (sec16() * 16));
-    const inBreak = this.playing && bar % 16 >= 14;
+    const t = this.rig ? this.rig.ctx.currentTime - this.startTime : 0;
     const beatStep = Math.floor(t / sec16()) % 16;
-    const section = SECTIONS.find((s) => this.energy < s.max) || SECTIONS[SECTIONS.length - 1];
-    return { playing: this.playing, energy: this.energy, section, inBreak, beatStep };
-  }
-
-  // ------------------------------------------------------------ buffers
-  private fillNoise(b: AudioBuffer): AudioBuffer {
-    const d = b.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = rand() * 2 - 1;
-    return b;
-  }
-  private makeCrackle(): AudioBuffer {
-    const ctx = this.ctx!;
-    const b = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
-    fillCrackle(b.getChannelData(0), ctx.sampleRate, rand);
-    return b;
-  }
-  private makeIR(seconds: number, decay: number): AudioBuffer {
-    const ctx = this.ctx!;
-    const len = ctx.sampleRate * seconds;
-    const b = ctx.createBuffer(2, len, ctx.sampleRate);
-    for (let c = 0; c < 2; c++) {
-      const d = b.getChannelData(c);
-      for (let i = 0; i < len; i++) d[i] = (rand() * 2 - 1) * Math.pow(1 - i / len, decay);
-    }
-    return b;
-  }
-  private noiseSrc(loop = false): AudioBufferSourceNode {
-    const s = this.ctx!.createBufferSource();
-    s.buffer = this.noiseBuf;
-    s.loop = loop;
-    return s;
-  }
-
-  // ------------------------------------------------------------ graph
-  private buildGraph(): void {
-    const Ctor: typeof AudioContext =
-      window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new Ctor();
-    this.ctx = ctx;
-    this.noiseBuf = this.fillNoise(ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate));
-
-    // Master chain: bus (fixed trim) → limiter → soft-clip ceiling → master (the
-    // operator volume) → analyser → out. The volume sits AFTER the limiter so
-    // turning it up scales an already-bounded signal instead of driving the
-    // compressor harder; the shaper is the brickwall a DynamicsCompressor (soft
-    // knee + automatic makeup gain) is not, so the output can never hard-clip.
-    this.bus = ctx.createGain();
-    this.bus.gain.value = BUS_TRIM;
-    const limiter = ctx.createDynamicsCompressor();
-    limiter.threshold.value = -6;
-    limiter.knee.value = 2;
-    limiter.ratio.value = 20;
-    limiter.attack.value = 0.002;
-    limiter.release.value = 0.2;
-    const ceiling = ctx.createWaveShaper();
-    ceiling.curve = softClipCurve();
-    ceiling.oversample = "2x";
-    this.master = ctx.createGain();
-    this.master.gain.value = 0.7;
-    this.analyser = ctx.createAnalyser();
-    this.analyser.fftSize = 1024;
-    this.analyser.smoothingTimeConstant = 0.82;
-    this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
-    this.bus.connect(limiter);
-    limiter.connect(ceiling);
-    ceiling.connect(this.master);
-    this.master.connect(this.analyser);
-    this.analyser.connect(ctx.destination);
-
-    this.convolver = ctx.createConvolver();
-    this.convolver.buffer = this.makeIR(3.0, 2.6);
-    const reverbReturn = ctx.createGain();
-    reverbReturn.gain.value = 0.55;
-    this.convolver.connect(reverbReturn);
-    reverbReturn.connect(this.bus);
-
-    this.delay = ctx.createDelay(1.0);
-    this.delay.delayTime.value = sec16() * 3;
-    const delayFb = ctx.createGain();
-    delayFb.gain.value = 0.37;
-    const delayReturn = ctx.createGain();
-    delayReturn.gain.value = 0.4;
-    this.delay.connect(delayFb);
-    delayFb.connect(this.delay);
-    this.delay.connect(delayReturn);
-    delayReturn.connect(this.bus);
-    this.delay.connect(this.convolver);
-
-    this.musicalSum = ctx.createGain();
-    this.musicalSum.gain.value = 0.9;
-    this.sidechain = ctx.createGain();
-    this.sidechain.gain.value = 1;
-    this.energyFilter = ctx.createBiquadFilter();
-    this.energyFilter.type = "lowpass";
-    this.energyFilter.frequency.value = 700;
-    this.energyFilter.Q.value = 0.6;
-    this.musicalSum.connect(this.sidechain);
-    this.sidechain.connect(this.energyFilter);
-    this.energyFilter.connect(this.bus);
-
-    this.drumBus = ctx.createGain();
-    this.drumBus.gain.value = 0.92;
-    this.drumBus.connect(this.bus);
-
-    for (const k of ["keys", "pad", "lead", "bass"]) this.groups[k] = ctx.createGain();
-    for (const k of ["kick", "hat", "perc"]) {
-      this.groups[k] = ctx.createGain();
-      this.groups[k].connect(this.drumBus);
-    }
-    this.groups.atmos = ctx.createGain();
-    this.groups.atmos.connect(this.bus);
-    this.groups.keys.connect(this.musicalSum);
-    this.groups.lead.connect(this.musicalSum);
-    this.groups.bass.connect(this.musicalSum);
-
-    // pad chorus (dry + two modulated, panned delay lines) → LFO filter
-    this.chorusIn = ctx.createGain();
-    const chorusOut = ctx.createGain();
-    const cDry = ctx.createGain();
-    cDry.gain.value = 0.7;
-    this.chorusIn.connect(cDry);
-    cDry.connect(chorusOut);
-    const mkVoice = (base: number, rate: number, depth: number, pan: number) => {
-      const d = ctx.createDelay(0.06);
-      d.delayTime.value = base;
-      const lfo = ctx.createOscillator();
-      lfo.type = "sine";
-      lfo.frequency.value = rate;
-      const lg = ctx.createGain();
-      lg.gain.value = depth;
-      lfo.connect(lg);
-      lg.connect(d.delayTime);
-      lfo.start();
-      const p = ctx.createStereoPanner();
-      p.pan.value = pan;
-      this.chorusIn.connect(d);
-      d.connect(p);
-      p.connect(chorusOut);
+    return {
+      playing: this.playing,
+      energy: this.energy,
+      section: this.section(),
+      inBreak: this.playing && this.phrase?.role === "break",
+      beatStep,
+      dropped: this.dropped,
+      phrase: this.phrase ? phraseLabel(this.phrase) : "—",
+      key: this.phrase ? keyName(this.phrase.key) : "—",
     };
-    mkVoice(0.021, 0.6, 0.003, -0.6);
-    mkVoice(0.027, 0.47, 0.0035, 0.6);
-    this.padFilter = ctx.createBiquadFilter();
-    this.padFilter.type = "lowpass";
-    this.padFilter.frequency.value = 700;
-    this.padFilter.Q.value = 0.8;
-    chorusOut.connect(this.padFilter);
-    this.padFilter.connect(this.groups.pad);
-    this.groups.pad.connect(this.musicalSum);
-    const padLFO = ctx.createOscillator();
-    padLFO.type = "sine";
-    padLFO.frequency.value = 0.08;
-    const plg = ctx.createGain();
-    plg.gain.value = 650;
-    padLFO.connect(plg);
-    plg.connect(this.padFilter.frequency);
-    padLFO.start();
-
-    for (const k of Object.keys(this.groups)) this.groups[k].gain.value = this.enabled[k] ? 1 : 0;
-
-    // vinyl atmosphere — always running
-    const crackleGain = ctx.createGain();
-    crackleGain.gain.value = 0.5;
-    const chp = ctx.createBiquadFilter();
-    chp.type = "highpass";
-    chp.frequency.value = 1400;
-    const crackleSrc = ctx.createBufferSource();
-    crackleSrc.buffer = this.makeCrackle();
-    crackleSrc.loop = true;
-    crackleSrc.connect(chp);
-    chp.connect(crackleGain);
-    crackleGain.connect(this.groups.atmos);
-    crackleSrc.start();
   }
 
-  // ------------------------------------------------------------ voices
-  private duck(t: number): void {
-    const g = this.sidechain.gain;
-    g.cancelScheduledValues(t);
-    g.setValueAtTime(0.3, t);
-    g.setTargetAtTime(1, t + 0.008, 0.12);
+  // ------------------------------------------------------------ arrangement
+  private section(): Section {
+    return SECTIONS.find((s) => this.energy < s.max) || SECTIONS[SECTIONS.length - 1];
   }
 
-  private epNote(midi: number, t: number, dur: number, level: number, pan: number): void {
-    const ctx = this.ctx!;
-    const f = mtof(midi);
-    const car = ctx.createOscillator();
-    car.type = "sine";
-    car.frequency.value = f;
-    const mod = ctx.createOscillator();
-    mod.type = "sine";
-    mod.frequency.value = f;
-    const mg = ctx.createGain();
-    mg.gain.setValueAtTime(f * 3, t);
-    mg.gain.exponentialRampToValueAtTime(f * 0.35, t + 0.06);
-    mg.gain.exponentialRampToValueAtTime(f * 0.12, t + 0.5);
-    mod.connect(mg);
-    mg.connect(car.frequency);
-    const mod2 = ctx.createOscillator();
-    mod2.type = "sine";
-    mod2.frequency.value = f * 14;
-    const mg2 = ctx.createGain();
-    mg2.gain.setValueAtTime(f * 1.1, t);
-    mg2.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-    mod2.connect(mg2);
-    mg2.connect(car.frequency);
-    const amp = ctx.createGain();
-    amp.gain.setValueAtTime(0.0001, t);
-    amp.gain.exponentialRampToValueAtTime(level, t + 0.006);
-    amp.gain.setTargetAtTime(0.0001, t + Math.min(dur, 0.14), dur > 0.4 ? 0.45 : 0.1);
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = 3400;
-    lp.Q.value = 0.4;
-    const pn = ctx.createStereoPanner();
-    pn.pan.value = pan;
-    car.connect(lp);
-    lp.connect(amp);
-    amp.connect(pn);
-    pn.connect(this.groups.keys);
-    const rs = ctx.createGain();
-    rs.gain.value = 0.26;
-    amp.connect(rs);
-    rs.connect(this.convolver);
-    const end = t + Math.max(dur, 0.2) + 0.6;
-    car.start(t);
-    mod.start(t);
-    mod2.start(t);
-    car.stop(end);
-    mod.stop(end);
-    mod2.stop(end);
-  }
-  private epChord(chord: Chord, t: number, dur: number, level: number, spread: boolean): void {
-    const n = chord.v.length;
-    chord.v.forEach((m, i) =>
-      this.epNote(m, t + i * 0.007 + hum(), dur, level / Math.sqrt(n), spread ? ((i / (n - 1)) * 2 - 1) * 0.35 : 0),
-    );
+  /** At a bar boundary: start the next phrase when this one ends, or cut it at a 4-bar mark if the section drifted. */
+  private maybeNewPhrase(bar: number, cls: SectionCls): void {
+    const ph = this.phrase;
+    const barIn = ph ? bar - this.phraseStart : 0;
+    const ended = !ph || bar >= this.phraseEnd;
+    const drifted = !!ph && ph.cls !== cls && barIn >= 4 && barIn % 4 === 0;
+    if (!ended && !drifted) return;
+    const next = planPhrase(this.rng, cls, ph);
+    this.phrase = next;
+    this.phraseStart = bar;
+    this.phraseEnd = bar + next.bars;
+    this.fill = fillFor(next.fill, this.rng);
+    this.motif = null;
   }
 
-  private padChord(chord: Chord, t: number): void {
-    const ctx = this.ctx!;
-    this.padVoices.forEach((v) => {
-      v.g.gain.cancelScheduledValues(t);
-      v.g.gain.setTargetAtTime(0.0001, t, 0.8);
-      v.oscs.forEach((o) => {
-        try {
-          o.stop(t + 3.4);
-        } catch {
-          /* already stopped */
+  private playKeys(ph: Phrase, chord: Chord, t: number, dur: number, level: number): void {
+    const rig = this.rig!;
+    if (ph.keysPatch === "stab") stabChord(rig, chord.notes, t, level * 1.1);
+    else if (ph.keysPatch === "pluck") pluckChord(rig, chord.notes, t, level * 1.2);
+    else rhodesChord(rig, chord.notes, t, dur, level, true);
+  }
+
+  private motifStep(ph: Phrase, chord: Chord, barIn: number, s16: number, t: number): void {
+    if (s16 === 0 && (barIn % 8 === 0 || !this.motif)) this.motif = genMotif(this.rng);
+    const slot = barIn % 4;
+    if (slot === 3 || !this.motif) return; // call, answer, answer up an octave, rest
+    const hit = this.motif.find((m) => m.s === s16);
+    if (!hit) return;
+    const scale = pentatonic(ph.key);
+    let idx = clamp(hit.i + (slot === 1 ? 1 : slot === 2 ? 5 : 0), 0, scale.length - 1);
+    if (slot === 2 && hit === this.motif[this.motif.length - 1]) {
+      // resolve the answer onto a chord tone
+      for (let d = 0; d < scale.length; d++) {
+        const c = [idx - d, idx + d].find((k) => k >= 0 && k < scale.length && chord.pcs.includes(scale[k] % 12));
+        if (c !== undefined) {
+          idx = c;
+          break;
         }
-      });
-    });
-    this.padVoices = [];
-    const peak = 0.06 / chord.v.length;
-    chord.v.forEach((midi, idx) => {
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t);
-      const pan = ctx.createStereoPanner();
-      pan.pan.value = ((idx / (chord.v.length - 1)) * 2 - 1) * 0.5;
-      const oscs: OscillatorNode[] = [];
-      [-9, 0, 8].forEach((det) => {
-        const o = ctx.createOscillator();
-        o.type = "sawtooth";
-        o.frequency.value = mtof(midi);
-        o.detune.value = det;
-        o.connect(g);
-        o.start(t);
-        oscs.push(o);
-      });
-      const sub = ctx.createOscillator();
-      sub.type = "sine";
-      sub.frequency.value = mtof(midi - 12);
-      const sg = ctx.createGain();
-      sg.gain.value = 0.5;
-      sub.connect(sg);
-      sg.connect(g);
-      sub.start(t);
-      oscs.push(sub);
-      g.connect(pan);
-      pan.connect(this.chorusIn);
-      const rs = ctx.createGain();
-      rs.gain.value = 0.6;
-      g.connect(rs);
-      rs.connect(this.convolver);
-      g.gain.exponentialRampToValueAtTime(peak, t + 1.8);
-      g.gain.setTargetAtTime(peak * 0.8, t + 1.8, 1.2);
-      this.padVoices.push({ g, oscs });
-    });
-  }
-
-  private leadNote(midi: number, t: number, level: number): void {
-    const ctx = this.ctx!;
-    const f = mtof(midi);
-    const car = ctx.createOscillator();
-    car.type = "sine";
-    car.frequency.value = f;
-    const mod = ctx.createOscillator();
-    mod.type = "sine";
-    mod.frequency.value = f * 3.01;
-    const mg = ctx.createGain();
-    mg.gain.setValueAtTime(f * 2.2, t);
-    mg.gain.exponentialRampToValueAtTime(f * 0.2, t + 0.25);
-    mod.connect(mg);
-    mg.connect(car.frequency);
-    const amp = ctx.createGain();
-    amp.gain.setValueAtTime(0.0001, t);
-    amp.gain.exponentialRampToValueAtTime(level * 0.17, t + 0.01);
-    amp.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = 5200;
-    lp.Q.value = 1;
-    const pn = ctx.createStereoPanner();
-    pn.pan.value = (rand() * 2 - 1) * 0.4;
-    car.connect(lp);
-    lp.connect(amp);
-    amp.connect(pn);
-    pn.connect(this.groups.lead);
-    const ds = ctx.createGain();
-    ds.gain.value = 0.5;
-    amp.connect(ds);
-    ds.connect(this.delay);
-    const rs = ctx.createGain();
-    rs.gain.value = 0.3;
-    amp.connect(rs);
-    rs.connect(this.convolver);
-    car.start(t);
-    mod.start(t);
-    car.stop(t + 0.7);
-    mod.stop(t + 0.7);
-  }
-
-  private bass(root: number, t: number, dur: number, vel: number, glide: boolean): void {
-    const ctx = this.ctx!;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vel * 0.5, t + 0.012);
-    g.gain.setTargetAtTime(0.0001, t + dur * 0.55, 0.1);
-    const sub = ctx.createOscillator();
-    sub.type = "sine";
-    const saw = ctx.createOscillator();
-    saw.type = "sawtooth";
-    if (glide) {
-      for (const o of [sub, saw]) {
-        o.frequency.setValueAtTime(mtof(root) * 0.94, t);
-        o.frequency.exponentialRampToValueAtTime(mtof(root), t + 0.05);
       }
-    } else {
-      sub.frequency.value = mtof(root);
-      saw.frequency.value = mtof(root);
     }
-    const sf = ctx.createBiquadFilter();
-    sf.type = "lowpass";
-    sf.frequency.setValueAtTime(180, t);
-    sf.frequency.exponentialRampToValueAtTime(320, t + 0.03);
-    sf.Q.value = 2;
-    const sg = ctx.createGain();
-    sg.gain.value = 0.24;
-    saw.connect(sf);
-    sf.connect(sg);
-    sg.connect(g);
-    sub.connect(g);
-    g.connect(this.groups.bass);
-    sub.start(t);
-    saw.start(t);
-    sub.stop(t + dur + 0.3);
-    saw.stop(t + dur + 0.3);
+    const e = this.energy;
+    const tt = t + (s16 % 2 ? ph.swing * sec16() : 0) + hum();
+    const level = 0.55 + (e - 0.4);
+    if (ph.leadPatch === "bell") bellNote(this.rig!, scale[idx], tt, level * 0.1, (rand() * 2 - 1) * 0.5);
+    else fmLead(this.rig!, scale[idx], tt, level);
   }
 
-  private kick(t: number, vel: number): void {
-    const ctx = this.ctx!;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(vel, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
-    const o = ctx.createOscillator();
-    o.type = "sine";
-    o.frequency.setValueAtTime(150, t);
-    o.frequency.exponentialRampToValueAtTime(48, t + 0.11);
-    o.connect(g);
-    g.connect(this.groups.kick);
-    o.start(t);
-    o.stop(t + 0.44);
-    const n = this.noiseSrc();
-    const hp = ctx.createBiquadFilter();
-    hp.type = "highpass";
-    hp.frequency.value = 2200;
-    const ng = ctx.createGain();
-    ng.gain.setValueAtTime(vel * 0.5, t);
-    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.028);
-    n.connect(hp);
-    hp.connect(ng);
-    ng.connect(this.groups.kick);
-    n.start(t);
-    n.stop(t + 0.05);
+  private acidStep(ph: Phrase, barIn: number, s16: number, ts: number): void {
+    if (s16 === 0 && barIn % 2 === 0) this.acidBar = genAcidBar(this.rng);
+    const n = this.acidBar.find((x) => x.s === s16);
+    if (!n) return;
+    const midi = ph.key.tonic + 24 + n.iv;
+    acidNote(this.rig!, midi, ts, sec16() * 0.9, n.accent, n.glide ? this.acidPrev : null);
+    this.acidPrev = midi;
   }
 
-  private hat(t: number, vel: number, open: boolean, pan: number): void {
-    const ctx = this.ctx!;
-    const n = this.noiseSrc();
-    const hp = ctx.createBiquadFilter();
-    hp.type = "highpass";
-    hp.frequency.value = 7800;
-    const dec = open ? 0.17 : 0.045;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(vel * 0.34, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dec);
-    const pn = ctx.createStereoPanner();
-    pn.pan.value = pan;
-    n.connect(hp);
-    hp.connect(g);
-    g.connect(pn);
-    pn.connect(this.groups.hat);
-    n.start(t);
-    n.stop(t + dec + 0.02);
-  }
-
-  private clap(t: number, vel: number): void {
-    const ctx = this.ctx!;
-    const burst = (tt: number, v: number) => {
-      const n = this.noiseSrc();
-      const bp = ctx.createBiquadFilter();
-      bp.type = "bandpass";
-      bp.frequency.value = 1500;
-      bp.Q.value = 1.1;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(v, tt);
-      g.gain.exponentialRampToValueAtTime(0.001, tt + 0.12);
-      n.connect(bp);
-      bp.connect(g);
-      g.connect(this.groups.perc);
-      const rs = ctx.createGain();
-      rs.gain.value = 0.25;
-      g.connect(rs);
-      rs.connect(this.convolver);
-      n.start(tt);
-      n.stop(tt + 0.14);
-    };
-    burst(t, vel * 0.3);
-    burst(t + 0.011, vel * 0.42);
-    burst(t + 0.022, vel * 0.5);
-    burst(t + 0.036, vel * 0.6);
-  }
-
-  private snare(t: number, vel: number): void {
-    const ctx = this.ctx!;
-    const n = this.noiseSrc();
-    const bp = ctx.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.frequency.value = 1900;
-    bp.Q.value = 0.9;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(vel * 0.5, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
-    n.connect(bp);
-    bp.connect(g);
-    g.connect(this.groups.perc);
-    const o = ctx.createOscillator();
-    o.type = "triangle";
-    o.frequency.setValueAtTime(190, t);
-    o.frequency.exponentialRampToValueAtTime(120, t + 0.08);
-    const og = ctx.createGain();
-    og.gain.setValueAtTime(vel * 0.35, t);
-    og.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
-    o.connect(og);
-    og.connect(this.groups.perc);
-    o.start(t);
-    o.stop(t + 0.1);
-    const rs = ctx.createGain();
-    rs.gain.value = 0.2;
-    g.connect(rs);
-    rs.connect(this.convolver);
-    n.start(t);
-    n.stop(t + 0.16);
-  }
-
-  private shaker(t: number, vel: number, pan: number): void {
-    const ctx = this.ctx!;
-    const n = this.noiseSrc();
-    const hp = ctx.createBiquadFilter();
-    hp.type = "highpass";
-    hp.frequency.value = 9000;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(vel * 0.16, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-    const pn = ctx.createStereoPanner();
-    pn.pan.value = pan;
-    n.connect(hp);
-    hp.connect(g);
-    g.connect(pn);
-    pn.connect(this.groups.perc);
-    n.start(t);
-    n.stop(t + 0.08);
-  }
-
-  private riser(t: number, dur: number): void {
-    const ctx = this.ctx!;
-    const n = this.noiseSrc(true);
-    const hp = ctx.createBiquadFilter();
-    hp.type = "highpass";
-    hp.frequency.setValueAtTime(300, t);
-    hp.frequency.exponentialRampToValueAtTime(6500, t + dur);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.12, t + dur * 0.92);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur + 0.18);
-    n.connect(hp);
-    hp.connect(g);
-    const rs = ctx.createGain();
-    rs.gain.value = 0.6;
-    g.connect(rs);
-    rs.connect(this.convolver);
-    g.connect(this.bus);
-    n.start(t);
-    n.stop(t + dur + 0.2);
-  }
-
-  private genMotif(): { s: number; n: number }[] {
-    const rhythms = [
-      [0, 3, 6, 10],
-      [0, 4, 7, 10, 12],
-      [2, 6, 9, 12],
-      [0, 2, 6, 8, 12, 14],
-      [3, 6, 10, 13],
-    ];
-    const r = rhythms[(rand() * rhythms.length) | 0];
-    let i = 3 + ((rand() * 3) | 0);
-    return r.map((s) => {
-      i = clamp(i + (((rand() * 3) | 0) - 1), 0, PENT.length - 1);
-      return { s, n: PENT[i] };
-    });
-  }
-
-  // ------------------------------------------------------------ scheduler
+  // ------------------------------------------------------------ sequencer
   private scheduleStep(stp: number, t: number): void {
+    const rig = this.rig!;
     const s16 = stp % 16;
     const bar = Math.floor(stp / 16);
-    const barCyc = bar % 16;
-    const breakdown = barCyc >= 14;
-    const chord = PROG[bar % PROG.length];
+    const cls = this.section().cls;
+    if (s16 === 0) this.maybeNewPhrase(bar, cls);
+    const ph = this.phrase!;
+    const barIn = bar - this.phraseStart;
+    const lastBar = barIn === ph.bars - 1;
     const e = this.energy;
-    const on = (id: string) => this.enabled[id];
-    const changed = chord !== this.lastChord;
-    this.lastChord = chord;
+    const rng = this.rng;
+    const on = (id: StemId) => this.enabled[id] && ph.layers.has(id) && STEM_BY_ID[id].live(e);
+    const ts = t + (s16 % 2 ? ph.swing * sec16() : 0);
 
-    if (changed) this.padChord(chord, t);
+    // harmony: one chord per bar, voice-led from the last one
+    if (s16 === 0) {
+      const deg = ph.progression.degrees[barIn % ph.progression.degrees.length];
+      this.chordChanged = !this.chord || this.chord.degree !== deg || !this.chordKey || !sameKey(this.chordKey, ph.key);
+      if (this.chordChanged) {
+        this.chord = chordOn(ph.key, deg, this.chord);
+        this.chordKey = ph.key;
+      }
+    }
+    const chord = this.chord!;
+    const changed = s16 === 0 && this.chordChanged;
+    const fill = lastBar ? this.fill : null;
+    const kickMuted = (!!fill && s16 >= fill.kickMuteFrom) || (ph.transition === "dropout" && lastBar && s16 >= 12);
 
-    if (on("keys") && !breakdown) {
-      if (e < 0.3) {
-        if (changed) this.epChord(chord, t, sec16() * 6, 0.15, true);
+    if (changed) this.pad!.change(chord, t, cls === "chill" || cls === "lounge");
+
+    if (on("keys")) {
+      if (ph.comp.sustain || e < 0.3) {
+        if (changed) this.playKeys(ph, chord, t, sec16() * 6, 0.15);
       } else {
-        const sw = SWING * sec16();
-        if (s16 % 4 === 2) this.epChord(chord, t + sw + hum(), 0.17, 0.13 + e * 0.05, true);
-        if (e > 0.62 && (s16 === 7 || s16 === 11)) this.epChord(chord, t + sw, 0.14, 0.09, true);
+        for (const h of ph.comp.hits)
+          if (h.s === s16 && (h.p === undefined || chance(rng, h.p))) this.playKeys(ph, chord, ts + hum(), 0.17, h.v * (0.2 + e * 0.08));
       }
     }
 
-    if (on("lead") && e > 0.4 && e < 0.92 && !breakdown) {
-      if (stp % (16 * 8) === 0 || !this.motif) this.motif = this.genMotif();
-      const slot = bar % 4;
-      const play = slot === 0 || slot === 1 || slot === 2;
-      const oct = slot === 2 ? 12 : 0;
-      if (play) {
-        const hit = this.motif.find((m) => m.s === s16);
-        if (hit) this.leadNote(hit.n + oct, t + (s16 % 2 ? SWING * sec16() : 0) + hum(), 0.55 + (e - 0.4));
-      }
+    if (on("lead") && e < 0.92 && ph.role !== "intro") {
+      if (ph.leadPatch === "acid") this.acidStep(ph, barIn, s16, ts);
+      else this.motifStep(ph, chord, barIn, s16, t);
     }
 
-    if (on("bass") && e > 0.26 && !breakdown) {
-      if (s16 % 4 === 2) this.bass(chord.root, t, sec16() * 2 * 0.9, 0.85, false);
-      if (e > 0.62 && s16 % 4 === 0 && s16 !== 0) this.bass(chord.root, t, sec16() * 1.4, 0.55, true);
+    if (on("bass") && !kickMuted) {
+      for (const n of ph.bass.notes)
+        if (n.s === s16 && (n.p === undefined || chance(rng, n.p))) bassNote(rig, chord.root + n.iv, ts, n.len * sec16(), n.v, !!n.glide);
     }
 
-    if (!breakdown) {
-      if (on("kick") && e > 0.34) {
-        if (e <= 0.75) {
-          if (s16 % 4 === 0) {
-            this.kick(t, 0.92);
-            this.duck(t);
-          }
-        } else if (s16 === 0 || s16 === 6 || s16 === 10) {
-          this.kick(t, 0.92);
-          this.duck(t);
-        }
-      }
-      if (on("perc")) {
-        if (e > 0.5 && e <= 0.75 && (s16 === 4 || s16 === 12)) this.clap(t, 0.7);
-        if (e > 0.75 && (s16 === 4 || s16 === 12)) this.snare(t, 0.95);
-        if (e > 0.75 && (s16 === 7 || s16 === 14)) this.snare(t, 0.32);
-        if (e > 0.45 && s16 % 2 === 1) this.shaker(t + SWING * sec16() + hum(), 0.5 + rand() * 0.3, (rand() * 2 - 1) * 0.3);
-      }
-      if (on("hat") && e > 0.36) {
-        const sw = s16 % 2 === 1 ? SWING * sec16() : 0;
-        const pan = (rand() * 2 - 1) * 0.25;
-        if (s16 % 4 === 2) this.hat(t + sw, 0.62, e < 0.5, pan);
-        if (e > 0.5 && s16 % 2 === 0 && s16 % 4 !== 2) this.hat(t, 0.32, false, pan);
-        if (e > 0.66 && s16 % 2 === 1) this.hat(t + sw, 0.2, false, pan);
-      }
-    } else {
-      if (on("perc") && s16 % 4 === 2) this.shaker(t, 0.22, 0);
-      if (barCyc === 15 && s16 === 0) this.riser(t, sec16() * 16);
+    const hits = ph.drums.hits;
+    const fillHits = fill?.hits ?? {};
+    const play = (voice: DrumVoice, fn: (v: number) => void) => {
+      for (const src of [hits[voice], fillHits[voice]])
+        if (src) for (const h of src) if (h.s === s16 && (h.p === undefined || chance(rng, h.p))) fn(h.v);
+    };
+    if (on("kick") && !kickMuted)
+      play("kick", (v) => {
+        kick(rig, t, v);
+        duck(rig, t);
+      });
+    if (on("hat")) {
+      const pan = (rng() * 2 - 1) * 0.25;
+      play("hatC", (v) => hat(rig, ts, v, false, pan));
+      play("hatO", (v) => hat(rig, ts, v, true, pan));
+      play("ride", (v) => ride(rig, ts, v));
     }
+    if (on("perc")) {
+      play("clap", (v) => clap(rig, t, v));
+      play("snare", (v) => snare(rig, t, v));
+      play("rim", (v) => rim(rig, ts, v));
+      play("shaker", (v) => shaker(rig, ts + hum(), v, (rng() * 2 - 1) * 0.3));
+    }
+
+    // transitions into the next phrase
+    if (s16 === 0 && ph.transition === "riser" && barIn === ph.bars - 2) riser(rig, t, sec16() * 32);
+    if (s16 === 0 && lastBar && (ph.fill === "big" || ph.transition === "riser")) swell(rig, t + sec16() * 8, sec16() * 8);
   }
 
   private updateEnergy(): void {
-    const ctx = this.ctx!;
+    const rig = this.rig!;
+    const ctx = rig.ctx;
     const dt = Math.max(0, ctx.currentTime - this.lastTick);
     this.lastTick = ctx.currentTime;
     const t = ctx.currentTime - this.startTime;
@@ -824,14 +412,20 @@ export class AuroraBed {
     this.eventBoost *= Math.exp(-dt / 6.5);
     const target = clamp((this.forcedEnergy ?? drift + this.severity) + this.eventBoost, 0, 1);
     this.energy += (target - this.energy) * clamp(dt * 1.6, 0, 0.2);
-    this.energyFilter.frequency.setTargetAtTime(650 + this.energy * 5200, ctx.currentTime, 0.08);
-    this.padFilter.frequency.setTargetAtTime(520 + this.energy * 2400, ctx.currentTime, 0.1);
+    rig.energyFilter.frequency.setTargetAtTime(650 + this.energy * 5200, ctx.currentTime, 0.08);
+    rig.padFilter.frequency.setTargetAtTime(520 + this.energy * 2400, ctx.currentTime, 0.1);
   }
 
   private scheduler(): void {
-    const ctx = this.ctx!;
+    const ctx = this.rig!.ctx;
     this.updateEnergy();
-    while (this.nextNoteTime < ctx.currentTime + 0.12) {
+    const grid = resyncGrid({ step: this.step, time: this.nextNoteTime }, ctx.currentTime, sec16());
+    if (grid.dropped) {
+      this.step = grid.step;
+      this.nextNoteTime = grid.time;
+      this.dropped += grid.dropped;
+    }
+    while (this.nextNoteTime < ctx.currentTime + LOOKAHEAD_S) {
       this.scheduleStep(this.step, this.nextNoteTime);
       this.nextNoteTime += sec16();
       this.step++;

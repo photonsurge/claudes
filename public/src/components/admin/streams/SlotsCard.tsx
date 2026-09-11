@@ -22,6 +22,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import type { SceneMeta } from "@photonsurge/shared/control";
 import { runIsActive, type RunState, type StreamEncoderInfo, type StreamSlot } from "@photonsurge/shared/runs";
+import { vodArchiveAtRisk } from "@photonsurge/shared/vod";
 import StreamTitleField from "../../StreamTitleField";
 
 /** Connected YouTube channel a slot can publish to (subset of lib/stream StreamAccount). */
@@ -84,7 +85,9 @@ export default function SlotsCard({
       <Typography variant="caption" color="text.secondary">
         Always-on YouTube streams the worker keeps alive (restarted with backoff if they die). Switch a
         slot on to go live; switching it off ends its stream. A restart interval recycles the stream on
-        that cadence — the run is ended and relaunched onto a fresh broadcast.
+        that cadence — the run is ended and relaunched onto a fresh broadcast. YouTube does not archive
+        streams that run 12 h or longer: a slot set to never, 12h or 24h leaves no VOD, so its as-run
+        pages and chapters have no video to point at — keep the interval under 12 h for that.
       </Typography>
 
       <Box sx={{ display: "grid", gap: 1, mt: 1.25 }}>
@@ -203,6 +206,15 @@ function SlotRow({
           </MenuItem>
         ))}
       </TextField>
+      {vodArchiveAtRisk(slot.restartEveryMs) && (
+        <Chip
+          size="small"
+          variant="outlined"
+          color="warning"
+          label="no VOD"
+          title="YouTube won't archive a stream that runs 12 h or longer — set the restart interval under 12 h if you want the as-run page and chapters to have a video"
+        />
+      )}
       <Switch
         size="small"
         checked={slot.enabled}

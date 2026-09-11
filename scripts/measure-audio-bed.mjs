@@ -6,10 +6,11 @@
  * The ear-ball tool for the master chain — run it before touching levels.
  *
  *   node scripts/measure-audio-bed.mjs [--mode breaks|chill|lounge|deep|minimal|auto]
- *                                      [--secs 20] [--vol 1] [--solo atmos]
+ *                                      [--secs 20] [--vol 1] [--solo atmos] [--trace 1]
+ * --trace 1 prints every phrase change (role · bars · progression · key).
  */
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,7 +19,7 @@ const require = createRequire(path.join(root, "public", "package.json"));
 const ts = require("typescript");
 const { chromium } = require("playwright");
 
-const opts = { mode: "breaks", secs: "20", vol: "1", solo: "" };
+const opts = { mode: "breaks", secs: "20", vol: "1", solo: "", trace: "0" };
 for (let i = 2; i < process.argv.length; i += 2) opts[process.argv[i].replace(/^--/, "")] = process.argv[i + 1];
 
 const transpile = (file) =>
@@ -26,15 +27,15 @@ const transpile = (file) =>
     .transpileModule(readFileSync(path.join(root, "public/src/lib/audio", file), "utf8"), {
       compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
     })
-    .outputText.replace(/from "\.\/dsp"/g, 'from "./dsp.js"');
+    .outputText.replace(/from "\.\/(\w+)"/g, 'from "./$1.js"');
 const files = {
   "/": {
     type: "text/html",
     body: '<!doctype html><script type="module">import { AuroraBed } from "./engine.js"; window.AuroraBed = AuroraBed;</script>',
   },
-  "/engine.js": { type: "text/javascript", body: transpile("engine.ts") },
-  "/dsp.js": { type: "text/javascript", body: transpile("dsp.ts") },
 };
+for (const f of readdirSync(path.join(root, "public/src/lib/audio")))
+  if (f.endsWith(".ts") && !f.endsWith(".test.ts")) files["/" + f.replace(/\.ts$/, ".js")] = { type: "text/javascript", body: transpile(f) };
 
 const browser = await chromium.launch({ headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });
 const page = await browser.newPage();
@@ -47,19 +48,21 @@ await page.goto("http://bed.local/");
 await page.waitForFunction(() => !!window.AuroraBed);
 
 const res = await page.evaluate(
-  async ({ mode, secs, solo, vol }) => {
+  async ({ mode, secs, solo, vol, doTrace }) => {
     const bed = new window.AuroraBed();
     bed.start();
     bed.setMode(mode);
     bed.setMasterVolume(vol);
     if (solo) for (const s of ["keys", "pad", "lead", "bass", "kick", "hat", "perc", "atmos"]) bed.setStem(s, s === solo);
-    const ctx = bed.ctx;
-    const an = bed.analyser; // last node before ctx.destination
+    const ctx = bed.rig.ctx;
+    const an = bed.rig.analyser; // last node before ctx.destination
     await new Promise((r) => setTimeout(r, 300));
     const t0 = ctx.currentTime;
     const buf = new Float32Array(an.fftSize);
     let peak = 0, n = 0, clipped = 0, sumSq = 0;
     const perSec = new Map();
+    const trace = [];
+    let lastPhrase = "";
     await new Promise((done) => {
       const iv = setInterval(() => {
         an.getFloatTimeDomainData(buf);
@@ -74,6 +77,8 @@ const res = await page.evaluate(
           n++;
         }
         perSec.set(sec, Math.max(perSec.get(sec) ?? 0, sp));
+        const cur = bed.getState();
+        if (cur.phrase !== lastPhrase) { lastPhrase = cur.phrase; trace.push(`${sec}s ${cur.section.name} → ${cur.phrase}`); }
         if (ctx.currentTime - t0 >= secs) {
           clearInterval(iv);
           done();
@@ -90,16 +95,21 @@ const res = await page.evaluate(
       solo: solo || null,
       energy: +st.energy.toFixed(2),
       section: st.section.name,
+      phrase: st.phrase,
+      dropped: st.dropped,
       peakDb: db(peak),
       clippedPct: +((clipped / n) * 100).toFixed(3),
       rmsDb: +(10 * Math.log10(sumSq / n)).toFixed(1),
       perSecPeakDb: [...perSec.values()].map(db),
+      trace: doTrace ? trace : undefined,
     };
   },
-  { mode: opts.mode, secs: +opts.secs, solo: opts.solo, vol: +opts.vol },
+  { mode: opts.mode, secs: +opts.secs, solo: opts.solo, vol: +opts.vol, doTrace: opts.trace === "1" },
 );
 await browser.close();
-console.log(JSON.stringify(res));
+const { trace, ...rest } = res;
+console.log(JSON.stringify(rest));
+if (trace) for (const line of trace) console.log("  " + line);
 console.log(
   `${res.mode}${res.solo ? " (solo " + res.solo + ")" : ""} @ vol ${res.vol}: peak ${res.peakDb} dBFS, rms ${res.rmsDb} dB, clipped ${res.clippedPct}%`,
 );

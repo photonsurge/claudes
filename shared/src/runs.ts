@@ -175,6 +175,14 @@ export interface YoutubeBinding {
   monitorStream?: boolean;
   /** Public watch URL, derived from broadcastId. */
   watchUrl?: string;
+  /**
+   * YouTube's own go-live / end instants (epoch ms, from
+   * videos.list liveStreamingDetails.actualStartTime/EndTime) — the VOD's time
+   * base, so as-run cuts can be placed at `t=` offsets in the archived video.
+   * Stamped by the worker once seen (stats poll + finishRun); absent until then.
+   */
+  actualStartTime?: number | null;
+  actualEndTime?: number | null;
 }
 
 export interface TwitchBinding {
@@ -207,6 +215,16 @@ export interface RunError {
   at: number;
 }
 
+/** Outcome of the last chapters publish for a run's video. */
+export interface RunChapters {
+  /** When the description was last written; null = never (or last attempt failed). */
+  publishedAt: number | null;
+  /** Chapter lines written. */
+  count: number;
+  /** Last failure, cleared on success. */
+  error?: string | null;
+}
+
 /** The full persisted run document (Mongo). Superset of the socket projection. */
 export interface Run {
   id: string;
@@ -232,6 +250,8 @@ export interface Run {
   announce?: boolean;
   /** Set once the hydra announcement has been posted (idempotency for retries). */
   announcedAt?: number | null;
+  /** YouTube chapters (the as-run digest) written into the video description — docs/vod-as-run-plan.md §4. */
+  chapters?: RunChapters | null;
   error?: RunError | null;
   createdBy?: string;
   /** Managed by Mongo timestamps (Date at rest); present on persisted docs. */
@@ -262,6 +282,8 @@ export interface RunState {
     ingestionAddress?: string;
     watchUrl?: string;
     monitorStream?: boolean;
+    actualStartTime?: number | null;
+    actualEndTime?: number | null;
     /** Whether a YouTube binding exists at all. */
     bound: boolean;
   };
@@ -271,6 +293,7 @@ export interface RunState {
   chat?: { enabled: boolean; promoteToTicker: boolean };
   announce?: boolean;
   announcedAt?: number | null;
+  chapters?: RunChapters | null;
   error?: RunError | null;
   updated?: string;
 }
@@ -377,6 +400,8 @@ export function toRunState(run: Run): RunState {
           ingestionAddress: yt.ingestionAddress,
           watchUrl: yt.watchUrl,
           monitorStream: yt.monitorStream,
+          actualStartTime: yt.actualStartTime ?? null,
+          actualEndTime: yt.actualEndTime ?? null,
           bound: !!yt.broadcastId,
         }
       : undefined,
@@ -385,6 +410,7 @@ export function toRunState(run: Run): RunState {
     chat: run.chat,
     announce: run.announce,
     announcedAt: run.announcedAt ?? null,
+    chapters: run.chapters ?? null,
     error: run.error ?? null,
     updated: run.updated ? new Date(run.updated).toISOString() : undefined,
   };

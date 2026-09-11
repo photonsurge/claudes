@@ -101,6 +101,24 @@ describe("makeAirLogRepo", () => {
     ]);
   });
 
+  it("listEntriesInWindow joins a scene's cuts to a wall-clock window, keeping still-open shots", async () => {
+    const rows = [{ _id: "x", __v: 0, id: "e1", sceneId: "default", startedAt: T0 }];
+    const sort = jest.fn(() => chain(rows));
+    const entry = fakeModel<iAirEntryModel>({ find: jest.fn(() => ({ sort })) });
+    const run = fakeModel<iAirRunModel>();
+    const repo = makeAirLogRepo(run.model, entry.model);
+
+    const out = await repo.listEntriesInWindow({ sceneId: "default", from: T0, to: T1 });
+
+    expect(entry.find).toHaveBeenCalledWith({
+      sceneId: "default",
+      startedAt: { $lt: T1 },
+      $or: [{ endedAt: { $gt: T0 } }, { endedAt: null }],
+    });
+    expect(sort).toHaveBeenCalledWith({ startedAt: 1 });
+    expect(out).toEqual([{ id: "e1", sceneId: "default", startedAt: T0 }]);
+  });
+
   it("listRuns applies the scene filter and only caps when a limit is passed", async () => {
     const limit = jest.fn(() => chain([]));
     const sort = jest.fn(() => ({ ...chain([{ _id: "x", __v: 0, id: "r1", sceneId: "default" }]), limit }));

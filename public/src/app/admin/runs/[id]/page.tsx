@@ -15,12 +15,15 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import AdminPageShell from "../../../../components/admin/AdminPageShell";
 import RunTimelineEntry from "../../../../components/admin/RunTimelineEntry";
+import Link from "next/link";
+import MuiLink from "@mui/material/Link";
 import {
   fmtDuration,
   getRun,
   kindColor,
   runDurationMs,
   runIsLive,
+  type AiredVideo,
   type AirEntry,
   type AirRun,
 } from "../../../../lib/airlog";
@@ -37,6 +40,7 @@ export default function RunDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [run, setRun] = useState<AirRun | null>(null);
   const [entries, setEntries] = useState<AirEntry[]>([]);
+  const [videos, setVideos] = useState<AiredVideo[]>([]);
   const [sceneName, setSceneName] = useState("");
   const [missing, setMissing] = useState(false);
 
@@ -49,6 +53,7 @@ export default function RunDetailPage() {
     }
     setRun(res.run);
     setEntries(res.entries);
+    setVideos(res.videos ?? []);
     setSceneName(res.sceneName);
   }, [id]);
 
@@ -104,6 +109,30 @@ export default function RunDetailPage() {
                 sx={{ height: 22, fontSize: 12, color: kindColor(kind), borderColor: `${kindColor(kind)}55` }}
               />
             ))}
+        </Stack>
+      )}
+
+      {/* The YouTube video(s) this session went out on — the reverse of /admin/streams/:id. */}
+      {videos.length > 0 && (
+        <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", mb: 2.25 }}>
+          <Typography variant="caption" color="text.secondary">
+            Aired on
+          </Typography>
+          {videos.map((v) => (
+            <Typography key={v.id} variant="caption" component="span">
+              <MuiLink component={Link} href={`/admin/streams/${encodeURIComponent(v.id)}`}>
+                {v.title || v.id}
+              </MuiLink>
+              {v.watchUrl && (
+                <>
+                  {" · "}
+                  <MuiLink href={v.watchUrl} target="_blank">
+                    Watch ↗
+                  </MuiLink>
+                </>
+              )}
+            </Typography>
+          ))}
         </Stack>
       )}
 

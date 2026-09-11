@@ -32,6 +32,7 @@ import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "../socket";
 import { startMonitor, stopMonitor, stopAllMonitors } from "./monitor";
 import { queueAnnounce } from "./announce";
+import { chaptersEnabled, queueChapters } from "./chapters";
 import { startChatPoll, stopChatPoll } from "./chat";
 import {
   ObsUnavailableError,
@@ -53,9 +54,11 @@ import {
   transitionBroadcast,
   getBroadcastLifeCycle,
   getStreamStatus,
+  getVideoStats,
   resolveLiveChatId,
   type YoutubeCtx,
 } from "../youtube/client";
+import { stampVideoTimes } from "../youtube/video-times";
 
 const TAG = "stream";
 const HEARTBEAT_MS = 5_000; // health cadence while live
@@ -521,6 +524,16 @@ export async function finishRun(runId: string, reason: "manual" | "auto"): Promi
     } catch (err) {
       log(TAG, `finish: youtube complete failed ${runId}`, String((err as Error)?.message ?? err));
     }
+    // VOD time base for the as-run page (docs/vod-as-run-plan.md): YouTube's own
+    // go-live/end instants. One 1-unit videos.list; the stats poll re-stamps
+    // later if the end instant isn't set yet. Best-effort, never fails the finish.
+    try {
+      const ctx = await getYoutubeClient(yt.accountId);
+      const [video] = await getVideoStats(ctx, [yt.broadcastId]);
+      await stampVideoTimes(db, run, video);
+    } catch (err) {
+      log(TAG, `finish: video times failed ${runId}`, String((err as Error)?.message ?? err));
+    }
   }
   await stopRunObs(run);
 
@@ -531,6 +544,14 @@ export async function finishRun(runId: string, reason: "manual" | "auto"): Promi
   });
   const done = await db.getRun(runId);
   if (done) emitRunState(done);
+
+  // As-run chapters into the video description — its own delayed, retried job
+  // (docs/vod-as-run-plan.md §4); a YouTube hiccup must never affect the finish.
+  if (yt?.broadcastId && chaptersEnabled()) {
+    await queueChapters(runId).catch((err) =>
+      log(TAG, `chapters enqueue failed ${runId}`, String((err as Error)?.message ?? err)),
+    );
+  }
 
   await cancelAutoEnd(runId);
   stopMonitor(runId);

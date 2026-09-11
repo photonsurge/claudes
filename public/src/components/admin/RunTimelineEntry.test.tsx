@@ -43,6 +43,16 @@ describe("RunTimelineEntry", () => {
     expect(screen.getByText(/skipped early/)).toBeInTheDocument();
   });
 
+  it("takes a rail label, a seek button and a note for the VOD page", () => {
+    const onSeek = jest.fn();
+    render(<RunTimelineEntry entry={entry()} isLast railLabel="1:23:45" onSeek={onSeek} note="joined in progress" />);
+    expect(screen.getByText("1:23:45")).toBeInTheDocument();
+    expect(screen.queryByText("11:00:00")).not.toBeInTheDocument();
+    expect(screen.getByText("joined in progress")).toBeInTheDocument();
+    screen.getByRole("button", { name: "Play from 1:23:45" }).click();
+    expect(onSeek).toHaveBeenCalled();
+  });
+
   it("links storm shots to the alert detail page", () => {
     render(
       <RunTimelineEntry
@@ -52,6 +62,23 @@ describe("RunTimelineEntry", () => {
     );
     const link = screen.getByRole("link", { name: "nws:urn:oid:123" });
     expect(link).toHaveAttribute("href", `/admin/alerts/${encodeURIComponent("nws:urn:oid:123")}`);
+  });
+
+  it("prefixes each round-up stop with its estimated offset when given a stop rail", () => {
+    render(
+      <RunTimelineEntry
+        entry={entry({ stops: [{ label: "Tokyo", lng: 139.7, lat: 35.7 }] })}
+        isLast
+        stopRail={[{ label: "≈1:30" }]}
+      />,
+    );
+    expect(screen.getByText("≈1:30")).toBeInTheDocument();
+  });
+
+  it("can render subjects as plain text for public surfaces", () => {
+    render(<RunTimelineEntry entry={entry({ kind: "storm", segmentId: "storm:nws:urn:oid:123" })} isLast subjectLinks={false} />);
+    expect(screen.getByText("nws:urn:oid:123")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "nws:urn:oid:123" })).not.toBeInTheDocument();
   });
 
   it("lists the sub-view stops a round-up shot tours through", () => {
