@@ -46,15 +46,19 @@ export type Instance = {
 };
 
 /**
- * The identity colours. Deliberately NOT the brand accent (#38bdf8, see
- * theme/tokens.ts): the tint has to read as chrome saying "which box", never as
- * product content. Violet / amber / red also survive being mixed down to 12%
- * over a near-black ground as three obviously different hues.
+ * The identity colours: deep purple for live, and two hues nowhere near it.
+ *
+ * Deliberately NOT the brand accent (#38bdf8, see theme/tokens.ts) — the tint
+ * has to read as chrome saying "which box", never as product content — and
+ * deliberately three different HUES rather than three shades, because at 12%
+ * over a near-black ground a shade difference disappears and a hue difference
+ * doesn't. Teal is far enough off the brand sky blue to not be mistaken for it,
+ * and off the status green (#22c55e) to not read as "all healthy".
  */
 export const INSTANCE_COLOR: Record<InstanceId, string> = {
-  local: "#a855f7",
+  local: "#14b8a6",
   test: "#f59e0b",
-  live: "#ef4444",
+  live: "#7c3aed",
 };
 
 export const INSTANCE_LABEL: Record<InstanceId, string> = {

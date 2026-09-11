@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import GodsBanner from "./GodsBanner";
+import { createReadoutStore } from "./live-readout";
 
 describe("GodsBanner", () => {
   // jsdom has no 2D context: the motion canvas must simply stay blank.
@@ -91,6 +92,46 @@ describe("GodsBanner", () => {
     const motion = banner.querySelector("canvas[data-gods-motion]");
     expect(motion).toBeInTheDocument();
     expect(motion).not.toHaveAttribute("data-live-core");
+  });
+
+  it("follows the live readout store, and names where the locator globe is pointed", () => {
+    const store = createReadoutStore({ lat: 48.85, lon: 2.35, continent: "Europe", country: "France" });
+    render(
+      <GodsBanner
+        clock={false}
+        channels={["MAIN"]}
+        coords={{ lat: 0, lon: 0 }}
+        readout={store}
+      />,
+    );
+    const status = screen.getByRole("img").querySelector('[data-layer="status"]');
+
+    // The live position wins over the static camera-anchor coords.
+    expect(screen.getByText("48.850")).toBeInTheDocument();
+    expect(screen.queryByText("0.000")).not.toBeInTheDocument();
+    expect(status?.textContent).toContain("LOC EUROPE · FRANCE");
+
+    act(() => store.set({ lat: 15.4, lon: 18.7, continent: "Africa", country: "Chad" }));
+    expect(screen.getByText("15.400")).toBeInTheDocument();
+    expect(status?.textContent).toContain("LOC AFRICA · CHAD");
+    store.dispose();
+  });
+
+  it("leaves the location blank over open ocean rather than inventing one", () => {
+    const store = createReadoutStore({ lat: -30, lon: -140, continent: null, country: null });
+    render(<GodsBanner clock={false} channels={["MAIN"]} readout={store} />);
+    const status = screen.getByRole("img").querySelector('[data-layer="status"]');
+
+    expect(screen.getByText("-30.000")).toBeInTheDocument();
+    expect(status?.textContent).not.toContain("LOC");
+    store.dispose();
+  });
+
+  it("falls back to the static coords until the store publishes", () => {
+    const store = createReadoutStore(null);
+    render(<GodsBanner clock={false} coords={{ lat: -15.389, lon: 167.835 }} readout={store} />);
+    expect(screen.getByText("-15.389")).toBeInTheDocument();
+    store.dispose();
   });
 
   it("uses unique paint-server ids for multiple banners", () => {

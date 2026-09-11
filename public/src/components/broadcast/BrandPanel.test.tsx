@@ -7,6 +7,12 @@ jest.mock("./subglobe-land", () => ({
   loadSubGlobeLand: jest.fn(() => Promise.resolve([])),
 }));
 
+// …and off the 4 MB country index: the lookup itself is covered by place-at.test.
+jest.mock("./place-at", () => ({
+  ensurePlaceIndex: jest.fn(() => Promise.resolve()),
+  placeAt: jest.fn(() => ({ country: "Vanuatu", continent: "Oceania", iso: "VU" })),
+}));
+
 describe("BrandPanel", () => {
   it("does not duplicate LIVE or map status beneath the brand", () => {
     render(<BrandPanel theme={BROADCAST_THEMES.command} />);
@@ -70,9 +76,37 @@ describe("BrandPanel", () => {
     expect(screen.getByText("UP NEXT · EARTHQUAKE M5.0")).toBeInTheDocument();
     // The channel chip is the scene's display name, not a hardcoded set.
     expect(screen.getByText("SEISMIC")).toBeInTheDocument();
+    // …and the status row names the place under the locator globe.
+    expect(banner.querySelector('[data-layer="status"]')?.textContent).toContain(
+      "LOC OCEANIA · VANUATU",
+    );
     // The next-cut countdown rides the tape row's right edge.
     expect(screen.getByText(/NEXT IN 02:0[3-5]/)).toBeInTheDocument();
     await act(async () => {}); // flush the mocked land promise's setState
+    getContext.mockRestore();
+  });
+
+  it("moves the readout with the locator globe during a world spin", async () => {
+    const getContext = jest
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null as unknown as RenderingContext);
+    jest.useFakeTimers();
+    const spinEpoch = Date.now();
+    render(
+      <BrandPanel
+        theme={BROADCAST_THEMES.command}
+        liveGlobe={{ center: [0, 20], zoom: 1.2, autoSpin: true, spinSpeed: 6, spinEpoch }}
+        channels={["MAIN"]}
+      />,
+    );
+    // The camera anchor never moves; the little planet does, so the readout must.
+    expect(screen.getByText("0.000")).toBeInTheDocument();
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(screen.queryByText("0.000")).not.toBeInTheDocument();
+    jest.useRealTimers();
+    await act(async () => {});
     getContext.mockRestore();
   });
 

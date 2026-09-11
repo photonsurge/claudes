@@ -57,6 +57,7 @@ export default function SubGlobeWidget({
   tiltDeg = 0,
   panDeg = 0,
   showReadout = true,
+  onPosition,
 }: {
   /** Camera anchor (ControlState.camera.center) — [lng, lat]. */
   center: [number, number];
@@ -78,6 +79,11 @@ export default function SubGlobeWidget({
   panDeg?: number;
   /** Hide the lon/lat readout line — canvas only (the in-logo variant). */
   showReadout?: boolean;
+  /** Called with the position the planet is ACTUALLY showing on every repaint
+   *  (≤12.5 Hz, nothing while parked) — the masthead's live LAT/LON/LOC readout
+   *  rides this. Keep the handler cheap and non-rendering; it runs on the tick,
+   *  not in React. */
+  onPosition?: (lng: number, lat: number) => void;
 }) {
   const reticle = accent ?? theme.minimapAccentColor;
   const palette: SubGlobePalette = {
@@ -97,8 +103,8 @@ export default function SubGlobeWidget({
   // Where the planet is currently pointed (imperative — never React state).
   const shownRef = useRef<SubGlobeCamera>({ lng: wrapLng(center[0]), lat: center[1], zoom });
   // Fresh props for the tick without re-subscribing the interval.
-  const propsRef = useRef({ center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land, tiltDeg, panDeg, palette });
-  propsRef.current = { center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land, tiltDeg, panDeg, palette };
+  const propsRef = useRef({ center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land, tiltDeg, panDeg, palette, onPosition });
+  propsRef.current = { center, zoom, autoSpin, spinSpeed, spinEpoch, reticle, land, tiltDeg, panDeg, palette, onPosition };
 
   // Off-main-thread painter: hand the canvas to a Worker (OffscreenCanvas) so a
   // repaint — ~7 ms of coastline projection during a world spin, every tick —
@@ -168,6 +174,7 @@ export default function SubGlobeWidget({
   ]);
 
   function paint() {
+    const p = propsRef.current;
     const worker = workerRef.current;
     if (worker) {
       const msg: SubGlobeWorkerMessage = { type: "paint", cam: { ...shownRef.current } };
@@ -177,13 +184,13 @@ export default function SubGlobeWidget({
       const g = canvas?.getContext("2d");
       if (canvas && g) {
         // jsdom / lost context → no frame, but the readout still renders.
-        const p = propsRef.current;
         drawSubGlobe(g, canvasPx, shownRef.current, p.land ?? [], p.reticle, p.tiltDeg, p.panDeg, p.palette);
       }
     }
     if (readoutRef.current) {
       readoutRef.current.textContent = formatLonLat(shownRef.current.lng, shownRef.current.lat);
     }
+    p.onPosition?.(shownRef.current.lng, shownRef.current.lat);
   }
 
   useEffect(() => {

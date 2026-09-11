@@ -76,6 +76,40 @@ describe("SubGlobeWidget", () => {
     await act(async () => {});
   });
 
+  it("publishes the position it is actually showing, not the camera anchor", async () => {
+    const onPosition = jest.fn();
+    const { unmount } = render(
+      <SubGlobeWidget center={[12.5, -8.25]} zoom={3} onPosition={onPosition} showReadout={false} />,
+    );
+    // First paint = parked on the anchor.
+    expect(onPosition).toHaveBeenCalledWith(12.5, -8.25);
+
+    onPosition.mockClear();
+    // A world spin moves the planet while the anchor stands still: the readout
+    // must follow the PLANET (spinSpeed 6°/s over one 80 ms tick ≈ 0.5°).
+    jest.useFakeTimers();
+    const spinEpoch = Date.now();
+    render(
+      <SubGlobeWidget
+        center={[12.5, -8.25]}
+        zoom={3}
+        autoSpin
+        spinSpeed={6}
+        spinEpoch={spinEpoch}
+        onPosition={onPosition}
+        showReadout={false}
+      />,
+    );
+    act(() => {
+      jest.advanceTimersByTime(400);
+    });
+    const [lng] = onPosition.mock.calls[onPosition.mock.calls.length - 1];
+    expect(lng).toBeGreaterThan(12.5);
+    jest.useRealTimers();
+    await act(async () => {});
+    unmount();
+  });
+
   it("repaints immediately when the scene minimap palette changes", async () => {
     const { rerender, unmount } = render(
       <SubGlobeWidget center={[0, 20]} zoom={2.5} theme={DEFAULT_THEME} />,

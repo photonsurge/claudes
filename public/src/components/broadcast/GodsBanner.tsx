@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useId, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useId, useState, useSyncExternalStore, type CSSProperties } from "react";
 import GodsBannerMotion from "./GodsBannerMotion";
+import { placeLine, placeMaxWidth, PLACE_BASELINE_Y, PLACE_RIGHT_X } from "./banner-place";
+import type { BannerReadout, ReadoutStore } from "./live-readout";
 
 export interface GodsBannerProps {
   /** Main scene colour. */
@@ -20,8 +22,15 @@ export interface GodsBannerProps {
   dimColor?: string;
   /** Left-to-right status chips; the first is treated as active. */
   channels?: string[];
-  /** Coordinate readout, e.g. { lat: -15.389, lon: 167.835 }. */
-  coords?: { lat: number; lon: number } | null;
+  /** Static coordinate readout, e.g. { lat: -15.389, lon: 167.835 }. Used for
+   *  the first paint and for still callers (admin previews, tests); a live
+   *  `readout` supersedes it once the locator globe publishes a position. */
+  coords?: BannerReadout | null;
+  /** Live status readout published by the locator globe (BrandPanel wires it to
+   *  SubGlobeWidget): the position the little planet is ACTUALLY showing, plus
+   *  the continent/country under it. Coalesced to ~4 Hz by the store, so this
+   *  never re-renders the banner at the locator's tick rate. */
+  readout?: ReadoutStore | null;
   version?: string;
   /** Ticker line in the lower notch; the tape row hides when both this and
    *  `nextAt` are empty. */
@@ -102,6 +111,17 @@ function useCountdown(nextAt?: number | null) {
   return label;
 }
 
+/** Subscribe to the live readout store, falling back to the static prop. */
+function useReadout(store: ReadoutStore | null | undefined, fallback: BannerReadout | null) {
+  const subscribe = useCallback(
+    (onChange: () => void) => (store ? store.subscribe(onChange) : () => {}),
+    [store],
+  );
+  const snapshot = useCallback(() => (store ? store.get() : null), [store]);
+  const live = useSyncExternalStore(subscribe, snapshot, snapshot);
+  return live ?? fallback;
+}
+
 /**
  * G.O.D.S. masthead. 1400x320 viewBox, thin HUD chrome matching the map UI,
  * oversized globe aperture on the left. Pass liveCore to punch the globe hole
@@ -121,6 +141,7 @@ export default function GodsBanner({
   dimColor = "#6f9aaa",
   channels = [],
   coords = null,
+  readout = null,
   version,
   ticker = "",
   nextAt = null,
@@ -136,6 +157,10 @@ export default function GodsBanner({
   const id = (name: string) => `gb-${name}-${uid}`;
   const times = useClocks(clock);
   const countdown = useCountdown(nextAt);
+  const shown = useReadout(readout, coords);
+  // "LOC <CONTINENT> · <COUNTRY>" — only when a country actually resolved, and
+  // only in the room the channel chips leave behind (banner-place.ts).
+  const place = placeLine(shown, placeMaxWidth(channels));
   const PANEL =
     "M24 58 H1358 L1386 86 V190 L1358 218 H1178 L1154 246 H360 L336 218 H24 Z";
 
@@ -257,20 +282,40 @@ export default function GodsBanner({
               {channel}
             </text>
           ))}
+          {place && (
+            <text
+              x={PLACE_RIGHT_X}
+              y={PLACE_BASELINE_Y}
+              textAnchor="end"
+              fontFamily={MONO}
+              fontSize={place.size}
+              fontWeight="500"
+              letterSpacing="1"
+            >
+              {place.runs.map((run) => (
+                <tspan
+                  key={run.tone}
+                  fill={run.tone === "label" ? dimColor : run.tone === "muted" ? mutedColor : textColor}
+                >
+                  {run.text}
+                </tspan>
+              ))}
+            </text>
+          )}
           <path d="M846 157 H884" stroke={border} strokeWidth="1.4" />
-          {coords && (
+          {shown && (
             <>
               <text x="892" y="163" fill={dimColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
                 LAT
               </text>
               <text x="938" y="163" fill={textColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
-                {coords.lat.toFixed(3)}
+                {shown.lat.toFixed(3)}
               </text>
               <text x="1028" y="163" fill={dimColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
                 LON
               </text>
               <text x="1074" y="163" fill={textColor} fontFamily={MONO} fontSize="18" fontWeight="500" letterSpacing="1">
-                {coords.lon.toFixed(3)}
+                {shown.lon.toFixed(3)}
               </text>
             </>
           )}

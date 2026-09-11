@@ -5,9 +5,13 @@
  * lives in the event deck and masthead, so it is deliberately not repeated
  * beneath the mark.
  */
+import { useCallback, useEffect, useRef } from "react";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import GodsBanner from "./GodsBanner";
 import SubGlobeWidget from "./SubGlobeWidget";
+import { createReadoutStore, type ReadoutStore } from "./live-readout";
+import { ensurePlaceIndex, placeAt } from "./place-at";
+import { wrapLng } from "./subglobe-render";
 import { UI_SANS } from "../../lib/fonts";
 
 /** GodsBanner viewBox geometry the live core must line up with. */
@@ -118,6 +122,49 @@ export default function BrandPanel({
   channels?: string[];
 }) {
   const usesGodsBanner = theme.name === "G.O.D.S.";
+  // The masthead's status readout follows the LOCATOR GLOBE, not the camera
+  // anchor: during a world spin the anchor sits still while the little planet
+  // turns, and a readout that disagreed with the picture beside it would be
+  // worse than none. SubGlobeWidget publishes each repaint into this store,
+  // which coalesces to ~4 Hz so the banner never re-renders at the tick rate.
+  const storeRef = useRef<ReadoutStore | null>(null);
+  if (!storeRef.current) {
+    storeRef.current = createReadoutStore(
+      liveGlobe ? { lat: liveGlobe.center[1], lon: liveGlobe.center[0] } : null,
+    );
+  }
+  const readout = storeRef.current;
+  const handlePosition = useCallback((lng: number, lat: number) => {
+    // placeAt is a bbox-prefiltered ray cast over already-parsed features and
+    // answers null until the index is warm — cheap enough for the tick.
+    const place = placeAt(lng, lat);
+    readout.set({
+      lat,
+      lon: wrapLng(lng),
+      continent: place?.continent ?? null,
+      country: place?.country ?? null,
+    });
+  }, [readout]);
+
+  const wantsPlace = !!liveGlobe;
+  useEffect(() => {
+    if (!wantsPlace) return;
+    // Build the country index when the page goes idle. It piggybacks on the
+    // basemap's own countries.geojson promise, so asking earlier would only
+    // drag that 4 MB fetch ahead of the map's cold start.
+    const warm = () => {
+      void ensurePlaceIndex();
+    };
+    const idle = window.requestIdleCallback;
+    if (typeof idle === "function") {
+      const handle = idle.call(window, warm, { timeout: 8000 });
+      return () => window.cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(warm, 4000);
+    return () => window.clearTimeout(timer);
+  }, [wantsPlace]);
+
+  useEffect(() => () => readout.dispose(), [readout]);
   // ×1.5 BroadcastFrame stage scale → 1140 stream px (the design spec's
   // 760 grew 50% on operator request).
   const bannerWidth = compact ? 495 : 760;
@@ -154,6 +201,7 @@ export default function BrandPanel({
                 spinEpoch={liveGlobe.spinEpoch}
                 accent={liveGlobe.accent}
                 theme={theme}
+                onPosition={handlePosition}
               />
             </div>
           )}
@@ -171,6 +219,7 @@ export default function BrandPanel({
             width={bannerWidth}
             liveCore={!!liveGlobe}
             coords={liveGlobe ? { lat: liveGlobe.center[1], lon: liveGlobe.center[0] } : null}
+            readout={liveGlobe ? readout : null}
             ticker={ticker}
             nextAt={nextCutAt}
             channels={channels}
