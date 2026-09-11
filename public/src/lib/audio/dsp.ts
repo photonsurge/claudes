@@ -47,3 +47,29 @@ export function fillCrackle(d: Float32Array, sampleRate: number, rnd: () => numb
   }
   return d;
 }
+
+/** Mean raindrop rate for the rain texture, per second (sample-rate independent). */
+export const RAIN_DROPS_PER_SEC = 140;
+/** Loudest single drop, pre-bus. */
+export const RAIN_DROP_PEAK = 0.22;
+
+/**
+ * Fill a buffer with a rain texture: a faint hiss plus dense short drops, each
+ * a few milliseconds of decaying noise. Looped at low level behind wet scenes.
+ */
+export function fillRain(d: Float32Array, sampleRate: number, rnd: () => number = Math.random): Float32Array {
+  const p = RAIN_DROPS_PER_SEC / sampleRate;
+  for (let i = 0; i < d.length; i++) d[i] = (rnd() * 2 - 1) * 0.006;
+  for (let i = 0; i < d.length; i++) {
+    if (rnd() >= p) continue;
+    const amp = (0.2 + rnd() * 0.8) * RAIN_DROP_PEAK;
+    const len = Math.floor(sampleRate * (0.003 + rnd() * 0.006));
+    const k = Math.pow(0.01, 1 / len);
+    let env = amp;
+    for (let j = 0; j < len && i + j < d.length; j++) {
+      d[i + j] += (rnd() * 2 - 1) * env;
+      env *= k;
+    }
+  }
+  return d;
+}

@@ -23,6 +23,7 @@ import { type DrumVoice, type Fill, fillFor } from "./patterns";
 import { type Rng, chance, mulberry32, pick } from "./rng";
 import { Pad, acidNote, bassNote, bellNote, fmLead, pluckChord, rhodesChord, stabChord } from "./synths";
 import { type Chord, type Key, type SectionCls, chordOn, keyName, pentatonic } from "./theory";
+import { type Mood, NEUTRAL_MOOD } from "./weather";
 
 /**
  * Pinned energy target per fixed AudioMode — centred inside each SECTION band
@@ -85,6 +86,8 @@ export interface BedState {
   /** Current phrase, e.g. "main · 16 bars · vamp · D minor". */
   phrase: string;
   key: string;
+  /** Weather mood driving hats/brightness/beds (see weather.ts). */
+  mood: Mood;
 }
 
 const BPM = 121;
@@ -154,6 +157,7 @@ export class AuroraBed {
   private eventBoost = 0;
   /** Pinned energy target (a fixed AudioMode), or null to free-run ("auto"). */
   private forcedEnergy: number | null = null;
+  private mood: Mood = NEUTRAL_MOOD;
 
   private enabled: Record<string, boolean> = Object.fromEntries(STEMS.map((s) => [s.id, true]));
   private rng: Rng = mulberry32((Date.now() ^ Math.floor(rand() * 0xffffffff)) >>> 0);
@@ -183,6 +187,7 @@ export class AuroraBed {
       this.rig = buildRig(new Ctor(), sec16(), this.enabled);
       this.pad = new Pad(this.rig);
       this.freqData = new Uint8Array(this.rig.analyser.frequencyBinCount);
+      this.applyMood(0);
     }
     const ctx = this.rig.ctx;
     if (ctx.state === "suspended") void ctx.resume();
@@ -232,6 +237,29 @@ export class AuroraBed {
     riser(this.rig, this.rig.ctx.currentTime + 0.04, 2.6);
   }
 
+  /**
+   * Weather mood at the on-air location (0..1 axes): windy → extra 16th hats,
+   * wider stereo motion and a wind bed; wet → rain texture and longer delays;
+   * warm → brighter filters; aurora → a shimmer above the pad. Smoothed in
+   * the graph so cuts between places glide rather than jump.
+   */
+  setWeather(mood: Mood): void {
+    this.mood = mood;
+    this.applyMood(1.5);
+  }
+
+  private applyMood(tc: number): void {
+    const rig = this.rig;
+    if (!rig) return;
+    const now = rig.ctx.currentTime;
+    const m = this.mood;
+    rig.windBed.gain.setTargetAtTime(m.windy * 0.06, now, tc);
+    rig.rainBed.gain.setTargetAtTime(m.wet * 0.07, now, tc);
+    rig.shimmer.gain.setTargetAtTime(m.aurora, now, tc);
+    rig.delayFb.gain.setTargetAtTime(0.37 + m.wet * 0.15, now, tc);
+    rig.delayReturn.gain.setTargetAtTime(0.4 + m.wet * 0.12, now, tc);
+  }
+
   setMasterVolume(x: number): void {
     if (this.rig) this.rig.master.gain.setTargetAtTime(clamp(x, 0, 1), this.rig.ctx.currentTime, 0.02);
   }
@@ -259,6 +287,7 @@ export class AuroraBed {
       dropped: this.dropped,
       phrase: this.phrase ? phraseLabel(this.phrase) : "—",
       key: this.phrase ? keyName(this.phrase.key) : "—",
+      mood: this.mood,
     };
   }
 
@@ -385,16 +414,26 @@ export class AuroraBed {
         duck(rig, t);
       });
     if (on("hat")) {
-      const pan = (rng() * 2 - 1) * 0.25;
-      play("hatC", (v) => hat(rig, ts, v, false, pan));
-      play("hatO", (v) => hat(rig, ts, v, true, pan));
+      const windy = this.mood.windy;
+      const pan = (rng() * 2 - 1) * (0.25 + windy * 0.45);
+      let hatHit = false;
+      play("hatC", (v) => {
+        hatHit = true;
+        hat(rig, ts, v, false, pan);
+      });
+      play("hatO", (v) => {
+        hatHit = true;
+        hat(rig, ts, v, true, pan);
+      });
       play("ride", (v) => ride(rig, ts, v));
+      // wind: the empty 16ths fill in with quiet closed hats, more the windier it is
+      if (!hatHit && windy > 0 && chance(rng, windy * 0.45)) hat(rig, ts, 0.14 + windy * 0.12, false, pan);
     }
     if (on("perc")) {
       play("clap", (v) => clap(rig, t, v));
       play("snare", (v) => snare(rig, t, v));
       play("rim", (v) => rim(rig, ts, v));
-      play("shaker", (v) => shaker(rig, ts + hum(), v, (rng() * 2 - 1) * 0.3));
+      play("shaker", (v) => shaker(rig, ts + hum(), v, (rng() * 2 - 1) * (0.3 + this.mood.windy * 0.4)));
     }
 
     // transitions into the next phrase
@@ -412,8 +451,10 @@ export class AuroraBed {
     this.eventBoost *= Math.exp(-dt / 6.5);
     const target = clamp((this.forcedEnergy ?? drift + this.severity) + this.eventBoost, 0, 1);
     this.energy += (target - this.energy) * clamp(dt * 1.6, 0, 0.2);
-    rig.energyFilter.frequency.setTargetAtTime(650 + this.energy * 5200, ctx.currentTime, 0.08);
-    rig.padFilter.frequency.setTargetAtTime(520 + this.energy * 2400, ctx.currentTime, 0.1);
+    // warm places play brighter, cold ones darker (0.7×..1.3× the cutoffs)
+    const bright = 0.7 + this.mood.warm * 0.6;
+    rig.energyFilter.frequency.setTargetAtTime((650 + this.energy * 5200) * bright, ctx.currentTime, 0.08);
+    rig.padFilter.frequency.setTargetAtTime((520 + this.energy * 2400) * bright, ctx.currentTime, 0.1);
   }
 
   private scheduler(): void {

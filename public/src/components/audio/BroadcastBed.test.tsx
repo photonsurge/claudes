@@ -20,6 +20,7 @@ jest.mock("../../lib/audio/engine", () => {
     setMode = jest.fn();
     setSeverity = jest.fn();
     triggerEvent = jest.fn();
+    setWeather = jest.fn();
     contextState = jest.fn(() => this.ctxState);
     constructor() {
       instances.push(this);
@@ -37,6 +38,7 @@ type MockBed = {
   setMode: jest.Mock;
   setSeverity: jest.Mock;
   triggerEvent: jest.Mock;
+  setWeather: jest.Mock;
 };
 
 const lastBed = (): MockBed => {
@@ -94,6 +96,14 @@ describe("BroadcastBed", () => {
     // Same event stays on air across re-renders → no repeated riser.
     rerender(<BroadcastBed audio={audio({ enabled: true })} segment={{ ...stormSegment }} />);
     expect(bed.triggerEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns the on-air weather into a mood for the engine", () => {
+    const { rerender } = render(<BroadcastBed audio={audio({ enabled: true })} />);
+    const bed = lastBed();
+    expect(bed.setWeather).toHaveBeenLastCalledWith({ windy: 0, wet: 0, warm: 0.5, aurora: 0 });
+    rerender(<BroadcastBed audio={audio({ enabled: true })} weather={{ wind: 14, rain: 3, temp: 30, kp: 7 }} />);
+    expect(bed.setWeather).toHaveBeenLastCalledWith({ windy: 1, wet: 1, warm: 1, aurora: 1 });
   });
 
   it("shows the blocked badge while the context stays suspended", () => {

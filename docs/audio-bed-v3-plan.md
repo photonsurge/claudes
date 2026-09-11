@@ -30,7 +30,8 @@ Three complaints, three root causes (all measured, not guessed):
 | `graph.ts` | the rig: master chain, sends, stem groups, drum glue, vinyl | harness |
 | `drums.ts` | kick, hats, ride, clap, snare, rim, shaker, riser, swell | harness |
 | `synths.ts` | rhodes, stab, pluck (Karplus–Strong), bell, FM lead, acid, sub bass, Pad | harness |
-| `dsp.ts` | soft-clip ceiling curve, vinyl crackle | yes |
+| `dsp.ts` | soft-clip ceiling curve, vinyl crackle, rain texture | yes |
+| `weather.ts` | readings → mood axes (windy / wet / warm / aurora) | yes |
 | `rng.ts` | seeded PRNG + pickers | via tests |
 
 ## Musical design
@@ -83,6 +84,7 @@ reaches the resync).
 node scripts/measure-audio-bed.mjs --mode breaks --vol 1          # peak / rms / clipped
 node scripts/measure-audio-bed.mjs --mode deep --secs 150 --trace 1  # phrase changes
 node scripts/measure-audio-bed.mjs --mode chill --solo atmos      # vinyl layer alone
+node scripts/measure-audio-bed.mjs --weather 'wind=25,rain=10,temp=35,kp=9'  # every mood axis maxed
 ```
 
 ## Gotchas (Web Audio)
@@ -94,10 +96,28 @@ node scripts/measure-audio-bed.mjs --mode chill --solo atmos      # vinyl layer 
   octave below the keys register to keep the period long enough.
 - The analyser is post-volume; the lab spectrum shrinks with the slider.
 
+## Weather-reactive layer (shipped 2026-09-11)
+
+`weather.ts` turns the on-air location's latest readings into four 0..1 mood
+axes; `BroadcastBed` gets them as a `weather` prop (WatchSurface derives it
+from the focus bundle's point-history series — wind, gust, rain, temp — plus
+the aurora overlay's Kp, no new fetches). `AuroraBed.setWeather(mood)`:
+
+| Axis | From | Effect |
+|---|---|---|
+| windy | max(wind, 0.7·gust) / 14 m/s | empty 16ths fill with quiet closed hats (p = 0.45·windy), wider hat/shaker panning, a slow filtered-noise wind bed (gusting LFOs) |
+| wet | rain / 3 mm/h | looped rain texture (`fillRain`, 140 drops/s, bandpassed), delay feedback 0.37→0.52 and return 0.4→0.52 |
+| warm | (temp + 5) / 35 °C | musical + pad lowpass cutoffs ×0.7 (cold) … ×1.3 (hot) |
+| aurora | (Kp − 2) / 5 | two sine shimmer voices two octaves above the pad's top notes, slow tremolo, mostly reverb |
+
+Unknown readings are neutral (warm 0.5, the rest 0). All beds sit at gain 0
+until the mood opens them, smoothed over ~1.5 s so cuts glide. The lab has a
+"Conditions" panel with wind/rain/temp/Kp sliders. Levels with every axis
+maxed: breaks -2.1 dBFS, chill -12.1 dBFS, 0 % clipped
+(`--weather 'wind=25,rain=10,temp=35,kp=9'`).
+
 ## Next
 
-- Weather-reactive parameters: wind → hat density/pan rate, rain → filtered
-  noise texture + delay, temperature → brightness, aurora Kp → shimmer.
 - Motif development (transpose/invert/fragment), a second answering lead.
 - More voices: organ, choir pad, tom fills.
 - Half-time feel for chill instead of a tempo change.

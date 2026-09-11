@@ -10,7 +10,7 @@
  * Levels are checked with scripts/measure-audio-bed.mjs.
  */
 import type { StemId } from "./arranger";
-import { fillCrackle, softClipCurve } from "./dsp";
+import { fillCrackle, fillRain, softClipCurve } from "./dsp";
 
 /** Trim on the summing bus feeding the limiter: a full "breaks" mix lands a few dB over threshold on hits. */
 const BUS_TRIM = 0.6;
@@ -30,6 +30,15 @@ export interface Rig {
   convolver: ConvolverNode;
   /** Delay send input. */
   delay: DelayNode;
+  /** Delay feedback / return, opened up by wet weather. */
+  delayFb: GainNode;
+  delayReturn: GainNode;
+  /** Looped rain texture level (0 = silent). */
+  rainBed: GainNode;
+  /** Slow filtered-noise wind level (0 = silent). */
+  windBed: GainNode;
+  /** Aurora shimmer voices' master level (0 = silent). */
+  shimmer: GainNode;
   /** Fresh white-noise source (2 s buffer). */
   noise(loop?: boolean): AudioBufferSourceNode;
 }
@@ -173,6 +182,60 @@ export function buildRig(ctx: AudioContext, stepSeconds: number, enabled: Record
 
   for (const k of Object.keys(groups) as StemId[]) groups[k].gain.value = enabled[k] ? 1 : 0;
 
+  // ---- weather beds (all silent until the engine's mood opens them)
+  const rain = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
+  fillRain(rain.getChannelData(0), ctx.sampleRate, rand);
+  const rainSrc = ctx.createBufferSource();
+  rainSrc.buffer = rain;
+  rainSrc.loop = true;
+  const rainBp = ctx.createBiquadFilter();
+  rainBp.type = "bandpass";
+  rainBp.frequency.value = 4800;
+  rainBp.Q.value = 0.7;
+  const rainBed = gain(0);
+  rainSrc.connect(rainBp);
+  rainBp.connect(rainBed);
+  rainBed.connect(groups.atmos);
+  const rainVerb = gain(0.3);
+  rainBed.connect(rainVerb);
+  rainVerb.connect(convolver);
+  rainSrc.start();
+
+  const windSrc = ctx.createBufferSource();
+  windSrc.buffer = noiseBuf;
+  windSrc.loop = true;
+  const windLp = ctx.createBiquadFilter();
+  windLp.type = "lowpass";
+  windLp.frequency.value = 380;
+  windLp.Q.value = -3;
+  const windLfo = ctx.createOscillator();
+  windLfo.type = "sine";
+  windLfo.frequency.value = 0.11;
+  const windLfoDepth = gain(240);
+  windLfo.connect(windLfoDepth);
+  windLfoDepth.connect(windLp.frequency);
+  windLfo.start();
+  const gustLfo = ctx.createOscillator();
+  gustLfo.type = "triangle";
+  gustLfo.frequency.value = 0.043;
+  const gustDepth = gain(0.45);
+  const windShape = gain(0.55);
+  gustLfo.connect(gustDepth);
+  gustDepth.connect(windShape.gain);
+  gustLfo.start();
+  const windBed = gain(0);
+  windSrc.connect(windLp);
+  windLp.connect(windShape);
+  windShape.connect(windBed);
+  windBed.connect(groups.atmos);
+  windSrc.start();
+
+  const shimmer = gain(0);
+  shimmer.connect(groups.pad);
+  const shimmerVerb = gain(0.8);
+  shimmer.connect(shimmerVerb);
+  shimmerVerb.connect(convolver);
+
   // ---- vinyl atmosphere, always running
   const crackle = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
   fillCrackle(crackle.getChannelData(0), ctx.sampleRate, rand);
@@ -201,6 +264,11 @@ export function buildRig(ctx: AudioContext, stepSeconds: number, enabled: Record
     chorusIn,
     convolver,
     delay,
+    delayFb,
+    delayReturn,
+    rainBed,
+    windBed,
+    shimmer,
     noise: (loop = false) => {
       const s = ctx.createBufferSource();
       s.buffer = noiseBuf;

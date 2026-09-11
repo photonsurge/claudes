@@ -41,6 +41,7 @@ import AlertLegend from "./AlertLegend";
 import DebugOverlay from "./DebugOverlay";
 import FullscreenButton from "./FullscreenButton";
 import BroadcastBed from "./audio/BroadcastBed";
+import { weatherFromSeries } from "../lib/audio/weather";
 import BroadcastFrame from "./broadcast/BroadcastFrame";
 import AdBreak from "./broadcast/AdBreak";
 import LoadingScreen from "./broadcast/LoadingScreen";
@@ -177,6 +178,8 @@ function WatchSurfaceBody({
   const cables = useCables(state.showCables && ready);
   const faults = useFaults(state.showFaults && ready);
   const aurora = useAurora(state.showAurora && ready);
+  // Latest wind/gust/rain/temp at the on-air point + the aurora Kp → the music bed's mood.
+  const bedWeather = useMemo(() => weatherFromSeries(pointHistorySeries, aurora?.meta.kp ?? null), [pointHistorySeries, aurora]);
   const satimg = useSatImg(state.showSatImg && ready);
   const fires = useFires(state.showFires && ready);
   const volcanoes = useVolcanoes(state.showVolcanoes && ready);
@@ -362,7 +365,7 @@ function WatchSurfaceBody({
       {/* Generative music bed — operator-driven via state.audio (synced over the
           same socket as the rest of the ControlState). Renders UI only while a
           browser blocks autoplay; in OBS it just plays. */}
-      <BroadcastBed audio={state.audio} segment={onAirSegment ?? null} />
+      <BroadcastBed audio={state.audio} segment={onAirSegment ?? null} weather={bedWeather} />
 
       {/* Cold-start cover: hides the globe until its textures are ready (see
           `ready` above), then fades. Never reappears once dismissed. */}

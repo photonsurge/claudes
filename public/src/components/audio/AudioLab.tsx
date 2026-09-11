@@ -11,6 +11,10 @@
  */
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { AuroraBed, STEMS } from "../../lib/audio/engine";
+import { type BedWeather, moodFrom } from "../../lib/audio/weather";
+
+/** Lab slider values — the non-null subset of BedWeather. */
+type WxNums = Record<keyof BedWeather, number>;
 
 const PRESETS = [
   { label: "Calm ocean", sub: "intro · chill", sev: 0, riser: false, kc: "var(--teal)" },
@@ -151,6 +155,14 @@ export default function AudioLab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const [wx, setWx] = useState<WxNums>({ wind: 0, gust: 0, rain: 0, temp: 15, kp: 2 });
+  const applyWx = (patch: Partial<WxNums>) => {
+    setWx((w) => {
+      const next = { ...w, ...patch };
+      bedRef.current?.setWeather(moodFrom(next));
+      return next;
+    });
+  };
   const toggle = () => setPlaying(bedRef.current?.toggle() ?? false);
   const applySeverity = (pct: number, riser: boolean) => {
     setSev(pct);
@@ -287,6 +299,41 @@ export default function AudioLab() {
               <button className="evt" onClick={() => bedRef.current?.triggerEvent()}>
                 ▲ Trigger event pulse
               </button>
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-h">
+              Conditions <span className="tag">weather → mood</span>
+            </div>
+            <div className="rack-body">
+              {(
+                [
+                  { k: "wind", label: "Wind", unit: "m/s", min: 0, max: 25, step: 1 },
+                  { k: "rain", label: "Rain", unit: "mm/h", min: 0, max: 10, step: 0.5 },
+                  { k: "temp", label: "Temperature", unit: "°C", min: -15, max: 40, step: 1 },
+                  { k: "kp", label: "Aurora Kp", unit: "", min: 0, max: 9, step: 1 },
+                ] as const
+              ).map((f) => (
+                <div className="field" key={f.k}>
+                  <div className="field-l">
+                    <span>{f.label}</span>
+                    <b>
+                      {wx[f.k]}
+                      {f.unit && ` ${f.unit}`}
+                    </b>
+                  </div>
+                  <input
+                    type="range"
+                    min={f.min}
+                    max={f.max}
+                    step={f.step}
+                    value={wx[f.k]}
+                    onChange={(e) => applyWx({ [f.k]: +e.target.value })}
+                    aria-label={f.label}
+                  />
+                </div>
+              ))}
             </div>
           </div>
 

@@ -8,6 +8,7 @@
  *   node scripts/measure-audio-bed.mjs [--mode breaks|chill|lounge|deep|minimal|auto]
  *                                      [--secs 20] [--vol 1] [--solo atmos] [--trace 1]
  * --trace 1 prints every phrase change (role · bars · progression · key).
+ * --weather 'wind=20,rain=8,temp=30,kp=8' applies a weather mood (see weather.ts).
  */
 import { createRequire } from "node:module";
 import { readFileSync, readdirSync } from "node:fs";
@@ -19,7 +20,7 @@ const require = createRequire(path.join(root, "public", "package.json"));
 const ts = require("typescript");
 const { chromium } = require("playwright");
 
-const opts = { mode: "breaks", secs: "20", vol: "1", solo: "", trace: "0" };
+const opts = { mode: "breaks", secs: "20", vol: "1", solo: "", trace: "0", weather: "" };
 for (let i = 2; i < process.argv.length; i += 2) opts[process.argv[i].replace(/^--/, "")] = process.argv[i + 1];
 
 const transpile = (file) =>
@@ -31,7 +32,7 @@ const transpile = (file) =>
 const files = {
   "/": {
     type: "text/html",
-    body: '<!doctype html><script type="module">import { AuroraBed } from "./engine.js"; window.AuroraBed = AuroraBed;</script>',
+    body: '<!doctype html><script type="module">import { AuroraBed } from "./engine.js"; import { moodFrom } from "./weather.js"; window.AuroraBed = AuroraBed; window.moodFrom = moodFrom;</script>',
   },
 };
 for (const f of readdirSync(path.join(root, "public/src/lib/audio")))
@@ -48,11 +49,12 @@ await page.goto("http://bed.local/");
 await page.waitForFunction(() => !!window.AuroraBed);
 
 const res = await page.evaluate(
-  async ({ mode, secs, solo, vol, doTrace }) => {
+  async ({ mode, secs, solo, vol, doTrace, weather }) => {
     const bed = new window.AuroraBed();
     bed.start();
     bed.setMode(mode);
     bed.setMasterVolume(vol);
+    if (weather) bed.setWeather(window.moodFrom(Object.fromEntries(weather.split(",").map((kv) => { const [k, v] = kv.split("="); return [k, +v]; }))));
     if (solo) for (const s of ["keys", "pad", "lead", "bass", "kick", "hat", "perc", "atmos"]) bed.setStem(s, s === solo);
     const ctx = bed.rig.ctx;
     const an = bed.rig.analyser; // last node before ctx.destination
@@ -104,7 +106,7 @@ const res = await page.evaluate(
       trace: doTrace ? trace : undefined,
     };
   },
-  { mode: opts.mode, secs: +opts.secs, solo: opts.solo, vol: +opts.vol, doTrace: opts.trace === "1" },
+  { mode: opts.mode, secs: +opts.secs, solo: opts.solo, vol: +opts.vol, doTrace: opts.trace === "1", weather: opts.weather },
 );
 await browser.close();
 const { trace, ...rest } = res;

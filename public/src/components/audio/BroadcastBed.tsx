@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AudioSettings } from "@photonsurge/shared/control";
 import type { Segment, SegmentKind } from "@photonsurge/shared/director";
 import { AuroraBed } from "../../lib/audio/engine";
+import { type BedWeather, moodFrom } from "../../lib/audio/weather";
 import { UI_SANS } from "../../lib/fonts";
 
 /**
@@ -50,9 +51,11 @@ export interface BroadcastBedProps {
   audio: AudioSettings;
   /** On-air director segment (drives severity/pulses in "auto" mode), or null. */
   segment?: Segment | null;
+  /** Latest weather at the on-air location (mood: hats, brightness, rain/wind beds, shimmer). */
+  weather?: BedWeather | null;
 }
 
-export default function BroadcastBed({ audio, segment }: BroadcastBedProps) {
+export default function BroadcastBed({ audio, segment, weather }: BroadcastBedProps) {
   const bedRef = useRef<AuroraBed | null>(null);
   const [blocked, setBlocked] = useState(false);
 
@@ -100,6 +103,11 @@ export default function BroadcastBed({ audio, segment }: BroadcastBedProps) {
   useEffect(() => {
     bedRef.current?.setSeverity(kind ? KIND_SEVERITY[kind] ?? 0.3 : IDLE_SEVERITY);
   }, [kind]);
+
+  // Weather mood: re-applied after enable too, since the graph is built lazily.
+  useEffect(() => {
+    bedRef.current?.setWeather(moodFrom(weather ?? {}));
+  }, [weather, audio.enabled]);
 
   // One-shot riser when a new severe event lands on air (id change = new event).
   const pulseId = segment && PULSE_KINDS.has(segment.kind) ? segment.id : null;

@@ -370,5 +370,34 @@ export class Pad {
       g.gain.setTargetAtTime(peak * 0.8, t + 1.8, 1.2);
       this.voices.push({ g, oscs });
     });
+    // Aurora shimmer: the top two chord tones two octaves up, slow tremolo,
+    // into rig.shimmer (its gain is the mood's aurora axis, 0 by default).
+    notes.slice(-2).forEach((midi, i) => {
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.02, t + 2.5);
+      const o = ctx.createOscillator();
+      o.type = "sine";
+      o.frequency.value = mtof(midi + 24);
+      o.detune.value = i ? 6 : -5;
+      const trem = ctx.createOscillator();
+      trem.type = "sine";
+      trem.frequency.value = i ? 0.5 : 0.33;
+      const td = ctx.createGain();
+      td.gain.value = 0.5;
+      trem.connect(td);
+      const tg = ctx.createGain();
+      tg.gain.value = 0.5;
+      td.connect(tg.gain);
+      o.connect(tg);
+      tg.connect(g);
+      const pan = ctx.createStereoPanner();
+      pan.pan.value = i ? 0.6 : -0.6;
+      g.connect(pan);
+      pan.connect(this.rig.shimmer);
+      o.start(t);
+      trem.start(t);
+      this.voices.push({ g, oscs: [o, trem] });
+    });
   }
 }
