@@ -12,6 +12,10 @@ import { useEffect, useState } from "react";
 import { getAdExposure, type AdExposureWindow } from "../../lib/ads/client";
 import { asOf } from "../tracks/styles";
 
+/** Surface tag + ink per exposure surface (the crawl is the plain default). */
+const SURFACE_TAG: Record<string, string> = { billboard: "BILLBOARD", alertSlot: "ALERT SLOT", ticker: "CRAWL" };
+const SURFACE_INK: Record<string, string> = { billboard: "#7dd3fc", alertSlot: "#fbbf24", ticker: "#8b95a7" };
+
 /** "3m 20s" / "1h 05m" — window durations are minutes-to-hours scale. */
 export const fmtWindowMs = (ms: number): string => {
   const s = Math.round(ms / 1000);
@@ -71,14 +75,14 @@ export default function AdExposureLog({ adId }: { adId: string }) {
             )}
             <span
               style={{
-                color: w.surface === "billboard" ? "#7dd3fc" : "#8b95a7",
+                color: SURFACE_INK[w.surface] ?? "#8b95a7",
                 fontSize: 10.5,
                 fontWeight: 700,
                 letterSpacing: 0.6,
                 whiteSpace: "nowrap",
               }}
             >
-              {w.surface === "billboard" ? "BILLBOARD" : "CRAWL"}
+              {SURFACE_TAG[w.surface] ?? "CRAWL"}
             </span>
             <span style={{ color: "#8b95a7" }}>{w.sceneName}</span>
             <span>{fmtWindowRange(w)}</span>
@@ -87,7 +91,7 @@ export default function AdExposureLog({ adId }: { adId: string }) {
         ))}
       </div>
       <div style={{ ...asOf, marginTop: 6 }}>
-        When this ad was on an always-on surface (crawl mention / corner billboard), per channel.
+        When this ad was on an always-on surface (crawl mention / corner billboard / New alerts card), per channel.
       </div>
     </div>
   );

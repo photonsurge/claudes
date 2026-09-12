@@ -36,18 +36,40 @@ Three complaints, three root causes (all measured, not guessed):
 
 ## Musical design
 
-- **Sections** by energy are unchanged (chill < 0.3 < lounge < 0.45 < deep < 0.6 < min < 0.75 < breaks).
+- **Tracks (added 2026-09-12 after "better but samey").** What a listener
+  hears as a tune: every 5–9 phrases the arranger starts a new track with its
+  own tempo (per section: chill 98–110, lounge 110–120, deep 118–125, min
+  124–132, breaks 128–140 BPM), a fresh key (always modulated from the last,
+  relative major/minor 25 % of the time), kick flavour (punch / deep / tight /
+  soft), hat colour (bright / dark / crisp), pad type (saw / soft / organ /
+  strings / glass), bass flavour (sub / reese / pluck), chord voicing (7ths /
+  triads / shells) and lead octave. Each track opens with an 8-bar intro, so a
+  change reads like a DJ mix moving on. Tempo changes land on the bar; the
+  delay time glides with it. A section jump of two bands or more (a storm cut
+  from chill to breaks, or the calm after) starts a new track immediately.
+- **Sections** by energy: chill < 0.3 < lounge < 0.45 < deep < 0.6 < min < 0.75 < breaks. The
+  energy *floors* per stem were lowered (kick/hat 0.2, perc/lead 0.3, bass
+  0.15) so chill and lounge can carry a soft downtempo kick when a phrase
+  asks for one; the arranger's per-phrase stem subsets do the real shaping.
+- **Auto mode drift** now runs on three timescales (2.5 / 11 / 37 min) from
+  chill up into deep, instead of a single 2.5-min wobble between chill and
+  lounge — on /watch (which defaults to auto) it used to be lounge all day.
 - **Phrases.** `intro` (8 bars, pad + atmos + hats) → `main` (8/16/32) → `build` (8, kick out, big
-  snare roll, riser) / `break` (8/16, rhythm section out) → … Never the same
-  progression, drum, bass or comping pattern twice running. A section change
-  mid-phrase cuts the phrase at the next 4-bar mark.
-- **Harmony.** Progressions are scale degrees (three per section), chords are
-  7ths stacked in the scale and voice-led from the previous voicing. Keys
-  modulate by a fourth/fifth (sometimes a minor third) at main/break boundaries
-  with p 0.3, never twice in a row; the mode flips aeolian ↔ dorian sometimes
-  (IV turns major). Pentatonic lead and bass follow the key.
+  snare roll, riser) / `break` (8/16, rhythm section out) / `interlude` (8,
+  pad + bells only) → … Never the same progression, drum, bass or comping
+  pattern twice running. A **main phrase plays a random subset of stems**
+  (per-section probabilities, e.g. deep: kick always, lead 50 %, pad 80 %),
+  so texture changes phrase to phrase. A section change mid-phrase cuts the
+  phrase at the next 4-bar mark.
+- **Harmony.** Progressions are scale degrees (five per section in minor,
+  three in major), chords stacked in the scale (7ths, triads or shells per
+  track) and voice-led from the previous voicing. Within a track keys may
+  still modulate at main/break boundaries (p 0.2, never twice running, never
+  straight out of the intro). Major keys use the major pentatonic for the lead.
 - **Patterns.** 16-step masks with velocities, ghosts (`o`) and probabilities;
-  three drum grooves per groove section, 2–3 bass lines, 2–3 comping rhythms.
+  3–5 drum grooves per section including non-four kicks (broken, jack,
+  tribal, half step) and downtempo/heartbeat for chill, 2–3 bass lines, 2–3
+  comping rhythms.
   Fills: light pickups or a rising snare roll with the kick pulled; `dropout`
   mutes kick + bass on the last beat; `riser` + reverse swell into the drop.
 - **Patches** per phrase, weighted by section: keys ∈ rhodes / stab / pluck,
@@ -65,9 +87,11 @@ Drums get their own glue compressor before the bus. Measured at volume 1:
 | breaks | -2.4 dBFS | -15.9 dB | 0 % |
 | deep | -2.4 dBFS | -16.3 dB | 0 % |
 | minimal | -2.0 dBFS | — | 0 % |
-| chill | -12.9 dBFS | -28.9 dB | 0 % |
+| chill | -7.0 dBFS | -20.4 dB | 0 % |
 
-(Before: breaks peaked at +2.5 dBFS and clipped every second.)
+(Before the fix: breaks peaked at +2.5 dBFS and clipped every second. Chill
+came up from -28.9 dB RMS when its phrases gained a soft kick and bass; it is
+now ~5 dB under the groove sections instead of 13.)
 
 ## Clock
 
@@ -82,7 +106,7 @@ reaches the resync).
 
 ```
 node scripts/measure-audio-bed.mjs --mode breaks --vol 1          # peak / rms / clipped
-node scripts/measure-audio-bed.mjs --mode deep --secs 150 --trace 1  # phrase changes
+node scripts/measure-audio-bed.mjs --mode deep --secs 240 --trace 1  # track (♪) + phrase changes
 node scripts/measure-audio-bed.mjs --mode chill --solo atmos      # vinyl layer alone
 node scripts/measure-audio-bed.mjs --weather 'wind=25,rain=10,temp=35,kp=9'  # every mood axis maxed
 ```

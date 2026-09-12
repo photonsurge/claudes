@@ -1,6 +1,7 @@
 import { withApiLog } from "../../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { AD_EXPOSURE_SURFACES } from "@photonsurge/shared/db/ad-exposure-model";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,16 +23,12 @@ async function GET__impl(
   const { adId } = await params;
   try {
     const db = await getAppDb();
-    const [ticker, billboard, scenes] = await Promise.all([
-      db.adExposures.listForAd(decodeURIComponent(adId), "ticker"),
-      db.adExposures.listForAd(decodeURIComponent(adId), "billboard"),
-      db.listScenes(),
-    ]);
+    const id = decodeURIComponent(adId);
+    const scenes = await db.listScenes();
+    const lists = await Promise.all(AD_EXPOSURE_SURFACES.map((s) => db.adExposures.listForAd(id, s)));
     const nameOf = new Map(scenes.map((s: { id: string; name: string }) => [s.id, s.name]));
-    const windows = [
-      ...ticker.map((w) => ({ ...w, surface: "ticker" as const })),
-      ...billboard.map((w) => ({ ...w, surface: "billboard" as const })),
-    ].sort((a, b) => b.startedAt - a.startedAt);
+    const windows = AD_EXPOSURE_SURFACES.flatMap((surface, i) => lists[i].map((w) => ({ ...w, surface })))
+      .sort((a, b) => b.startedAt - a.startedAt);
     return NextResponse.json(
       {
         count: windows.length,

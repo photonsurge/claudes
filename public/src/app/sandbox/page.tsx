@@ -26,6 +26,7 @@ import { fetchSceneState } from "../../lib/scenes";
 import { listCities, type City } from "../../lib/cities";
 import { nearest, formatKm } from "../../lib/geo";
 import { pointToSegment } from "../../lib/select-segment";
+import { releaseCameraMotion } from "../../lib/camera-grab";
 import { useRegionCities } from "../../lib/useRegionCities";
 import { useTracks } from "../../lib/tracks/useTracks";
 import { useAlertFeatures } from "../../lib/alerts-overlay";
@@ -186,6 +187,14 @@ export default function SandboxPage() {
           // snapshot and silently reverts whatever the panel just changed
           // (the "panel toggles revert while spinning" bug).
           onCameraChange={(center, zoom) => setState((s) => ({ ...s, camera: { center, zoom } }))}
+          // Grabbing the globe means "I'll drive" — the same intent as the
+          // fly-to below, which already stops the spin. Without this the
+          // deterministic motion loop keeps the camera and every drag is
+          // discarded: the sandbox cold-starts from the live scene, so it
+          // arrives already spinning (or on the channel's idle drift) and
+          // looked simply broken. Functional for the same stale-tick reason as
+          // onCameraChange; a no-op merge when nothing was armed.
+          onUserCamera={() => setState(releaseCameraMotion)}
         />
         {state.showAlerts || state.showSeismic || state.showAurora || state.showMagneticField ? (
           <AlertLegend alerts={alerts} activeHazard={alertStep?.hazard ?? null} quakes={quakes} aurora={aurora} geomag={geomag} />

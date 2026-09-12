@@ -18,6 +18,7 @@
  */
 import { getQueue } from "@photonsurge/shared/bull/bull";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { buildBroadcastDescription } from "@photonsurge/shared/stream-description";
 import { formatStreamTitle } from "@photonsurge/shared/stream-title";
 import {
   RUN_STATE,
@@ -33,6 +34,8 @@ import { emitWorkerEvent } from "../socket";
 import { startMonitor, stopMonitor, stopAllMonitors } from "./monitor";
 import { queueAnnounce } from "./announce";
 import { chaptersEnabled, queueChapters } from "./chapters";
+import { channelYoutubeSettings } from "./channel-youtube";
+import { queueThumbnail, thumbnailsEnabled } from "./thumbnail";
 import { startChatPoll, stopChatPoll } from "./chat";
 import {
   ObsUnavailableError,
@@ -45,7 +48,7 @@ import {
   outputInFlight,
   type ObsStreamStatus,
 } from "../obs/client";
-import { endpointForRun, provisionEncoderScene } from "./encoders";
+import { endpointForRun, provisionEncoderScene, watchBaseUrl } from "./encoders";
 import {
   getYoutubeClient,
   createBroadcast,
@@ -206,15 +209,33 @@ export async function goLive(runId: string): Promise<void> {
       // Each step guarded by what's already persisted, so a re-enqueued goLive
       // resumes instead of creating duplicate broadcasts/streams.
       if (!yt.broadcastId) {
-        const title = formatStreamTitle(run.title || defaultTitle(run));
+        // Title + description come from the CHANNEL's YouTube settings
+        // (/admin/scenes/:id); a run/slot title overrides. Both resolve once,
+        // here — the description falls back to the deployment default, then the
+        // built-in copy, with the site link appended. The as-run chapters land
+        // BELOW this text after the run ends.
+        const channel = await channelYoutubeSettings(run.sceneId);
+        const title = formatStreamTitle(run.title || channel.title || defaultTitle(run));
+        const description = buildBroadcastDescription({
+          template: channel.description,
+          fallback: process.env.YOUTUBE_DESCRIPTION,
+          siteUrl: watchBaseUrl(),
+        });
         const { broadcastId, watchUrl } = await createBroadcast(ctx, {
           title,
+          description,
           privacy: run.privacy || "unlisted",
           scheduledStartTime: new Date().toISOString(),
           monitorStream: !!yt.monitorStream,
         });
         yt = { ...yt, broadcastId, watchUrl };
-        run = await persistPhase(runId, "broadcast", { title, platforms: withYoutube(run, yt) });
+        run = await persistPhase(runId, "broadcast", { title, description, platforms: withYoutube(run, yt) });
+        // Thumbnail as its own retried job — a slow image host must never delay go-live.
+        if (thumbnailsEnabled()) {
+          await queueThumbnail(runId).catch((err) =>
+            log(TAG, `thumbnail enqueue failed ${runId}`, String((err as Error)?.message ?? err)),
+          );
+        }
       }
       if (!yt.streamId) {
         const { streamId, ingestionAddress, streamName } = await createStream(ctx, {

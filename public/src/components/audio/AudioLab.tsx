@@ -43,6 +43,8 @@ export default function AudioLab() {
   const sectionRef = useRef<HTMLSpanElement | null>(null);
   const keyRef = useRef<HTMLSpanElement | null>(null);
   const phraseRef = useRef<HTMLSpanElement | null>(null);
+  const tempoRef = useRef<HTMLSpanElement | null>(null);
+  const trackRef = useRef<HTMLSpanElement | null>(null);
   const beatRefs = useRef<HTMLDivElement[]>([]);
   const ledRefs = useRef<Record<string, HTMLSpanElement | null>>({});
 
@@ -76,6 +78,9 @@ export default function AudioLab() {
       if (energyRef.current) energyRef.current.style.width = (e * 100).toFixed(0) + "%";
       if (keyRef.current && keyRef.current.textContent !== st.key) keyRef.current.textContent = st.key;
       if (phraseRef.current && phraseRef.current.textContent !== st.phrase) phraseRef.current.textContent = st.phrase;
+      const bpm = `${st.bpm} BPM`;
+      if (tempoRef.current && tempoRef.current.textContent !== bpm) tempoRef.current.textContent = bpm;
+      if (trackRef.current && trackRef.current.textContent !== st.track) trackRef.current.textContent = st.track;
       if (sectionRef.current) {
         const label = st.section.name + (st.inBreak ? " · breakdown" : "");
         if (label !== curLabel) {
@@ -223,7 +228,9 @@ export default function AudioLab() {
               <div className="ro" style={{ flexDirection: "row", gap: 22 }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   <span className="ro-l">Tempo</span>
-                  <span className="ro-v">121 BPM</span>
+                  <span className="ro-v" ref={tempoRef}>
+                    —
+                  </span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   <span className="ro-l">Key</span>
@@ -231,6 +238,12 @@ export default function AudioLab() {
                     —
                   </span>
                 </div>
+              </div>
+              <div className="ro">
+                <span className="ro-l">Track</span>
+                <span className="ro-v" ref={trackRef}>
+                  —
+                </span>
               </div>
               <div className="ro">
                 <span className="ro-l">Phrase</span>

@@ -116,6 +116,7 @@ export interface StreamSlot {
   encoderId?: string;
   /** YouTube channel to publish on; empty = the default connected account. */
   accountId?: string;
+  /** Title template override; empty = the channel's YouTube title (ControlState.youtube). */
   title?: string;
   privacy?: YoutubePrivacy;
   enabled: boolean;
@@ -225,6 +226,16 @@ export interface RunChapters {
   error?: string | null;
 }
 
+/** Outcome of the thumbnail upload for a run's video (custom thumbnails need a verified channel). */
+export interface RunThumbnail {
+  /** When the thumbnail was set on YouTube; null = not yet (or last attempt failed). */
+  setAt: number | null;
+  /** The image source that was uploaded (URL / path / "default"). */
+  source?: string;
+  /** Last failure, cleared on success. */
+  error?: string | null;
+}
+
 /** The full persisted run document (Mongo). Superset of the socket projection. */
 export interface Run {
   id: string;
@@ -235,8 +246,10 @@ export interface Run {
   slotId?: string;
   status: RunStatus;
   phase?: RunPhase;
-  /** Broadcast title (templated from ControlState at go-live time). */
+  /** Broadcast title — the run/slot override until go-live, the resolved text after. */
   title?: string;
+  /** Broadcast description as created on YouTube (resolved from the channel's template at go-live). */
+  description?: string;
   privacy?: YoutubePrivacy;
   /** Wall-clock ms the run went (or will go) live. */
   startAt?: number | null;
@@ -252,6 +265,8 @@ export interface Run {
   announcedAt?: number | null;
   /** YouTube chapters (the as-run digest) written into the video description — docs/vod-as-run-plan.md §4. */
   chapters?: RunChapters | null;
+  /** Custom thumbnail upload outcome (set right after the broadcast is created). */
+  thumbnail?: RunThumbnail | null;
   error?: RunError | null;
   createdBy?: string;
   /** Managed by Mongo timestamps (Date at rest); present on persisted docs. */
@@ -272,6 +287,7 @@ export interface RunState {
   status: RunStatus;
   phase?: RunPhase;
   title?: string;
+  description?: string;
   privacy?: YoutubePrivacy;
   startAt?: number | null;
   durationMs?: number | null;
@@ -294,6 +310,7 @@ export interface RunState {
   announce?: boolean;
   announcedAt?: number | null;
   chapters?: RunChapters | null;
+  thumbnail?: RunThumbnail | null;
   error?: RunError | null;
   updated?: string;
 }
@@ -342,6 +359,7 @@ export interface CreateRunRequest {
   accountId?: string;
   /** null / omitted = unbounded (manual stop only). */
   durationMs?: number | null;
+  /** Title template override; omitted = the channel's YouTube title (ControlState.youtube). */
   title?: string;
   privacy?: YoutubePrivacy;
   /** Which platforms to bind. `youtube:true` publishes; twitch/kick are chat-only logins. */
@@ -389,6 +407,7 @@ export function toRunState(run: Run): RunState {
     status: run.status,
     phase: run.phase,
     title: run.title,
+    description: run.description,
     privacy: run.privacy,
     startAt: run.startAt ?? null,
     durationMs: run.durationMs ?? null,
@@ -411,6 +430,7 @@ export function toRunState(run: Run): RunState {
     announce: run.announce,
     announcedAt: run.announcedAt ?? null,
     chapters: run.chapters ?? null,
+    thumbnail: run.thumbnail ?? null,
     error: run.error ?? null,
     updated: run.updated ? new Date(run.updated).toISOString() : undefined,
   };

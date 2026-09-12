@@ -38,11 +38,16 @@ const OFF = "..x...x...x...x.";
 const BACK = "....x.......x...";
 
 export const DRUMS: Record<SectionCls, DrumPattern[]> = {
-  chill: [{ name: "brush", hits: { shaker: steps("...x...x...x...x", 0.25, 0.6), rim: steps("........x.......", 0.3) } }],
+  chill: [
+    { name: "brush", hits: { shaker: steps("...x...x...x...x", 0.25, 0.6), rim: steps("........x.......", 0.3) } },
+    { name: "downtempo", hits: { kick: steps("x.........x.....", 0.55), rim: steps("........x.......", 0.35), hatC: steps("..x...x...x...x.", 0.22, 0.6) } },
+    { name: "heartbeat", hits: { kick: steps("x..x............", 0.5), shaker: steps("xxxxxxxxxxxxxxxx", 0.12, 0.5) } },
+  ],
   lounge: [
     { name: "halftime", hits: { kick: steps("x.......x.......", 0.8), hatC: steps(OFF, 0.5), rim: steps(BACK, 0.4) } },
     { name: "soft four", hits: { kick: steps(FOUR, 0.78), hatO: steps(OFF, 0.5), shaker: steps("...x...x...x...x", 0.3) } },
     { name: "skip", hits: { kick: steps("x...x...x.x.x...", 0.8), hatC: steps(OFF, 0.55), shaker: steps("..x...x...x...x.", 0.25, 0.7) } },
+    { name: "dusty", hits: { kick: steps("x.....x.x.......", 0.75), rim: steps("........x.......", 0.45), hatC: steps("..x.....x...x...", 0.4), shaker: steps("...x...x...x...x", 0.2, 0.6) } },
   ],
   deep: [
     {
@@ -56,6 +61,14 @@ export const DRUMS: Record<SectionCls, DrumPattern[]> = {
     {
       name: "sparse",
       hits: { kick: steps(FOUR, 0.9), hatO: steps("..x.......x.....", 0.6), hatC: steps("....x...x...x...", 0.3), clap: steps("............x...", 0.55), shaker: steps("xxxxxxxxxxxxxxxx", 0.18, 0.6) },
+    },
+    {
+      name: "broken",
+      hits: { kick: steps("x..x..x.x.....x.", 0.9), clap: steps(BACK, 0.5), hatC: steps("x.x.x.x.x.x.x.x.", 0.3), hatO: steps("......x.......x.", 0.5), shaker: steps("...x...x...x...x", 0.3) },
+    },
+    {
+      name: "jack",
+      hits: { kick: steps("x...x..x..x.x...", 0.92), rim: steps("..x...x...x...x.", 0.4), hatC: steps("xoxoxoxoxoxoxoxo", 0.3, 0.8), clap: steps("............x...", 0.5) },
     },
   ],
   min: [
@@ -71,6 +84,10 @@ export const DRUMS: Record<SectionCls, DrumPattern[]> = {
       name: "off kick",
       hits: { kick: steps("x...x...x...x.x.", 0.95), hatO: steps(OFF, 0.6), clap: steps("............x...", 0.5), shaker: steps("xxxxxxxxxxxxxxxx", 0.2, 0.7) },
     },
+    {
+      name: "tribal",
+      hits: { kick: steps("x..x..x...x..x..", 0.92), rim: steps(".x..x..x.x..x..x", 0.4, 0.8), hatC: steps("..x...x...x...x.", 0.35), shaker: steps("xxxxxxxxxxxxxxxx", 0.16, 0.6) },
+    },
   ],
   breaks: [
     {
@@ -84,6 +101,10 @@ export const DRUMS: Record<SectionCls, DrumPattern[]> = {
     {
       name: "two step",
       hits: { kick: steps("x.....x...x.....", 0.95), snare: steps("....x.......x...", 0.95), hatC: steps("x.xx.x.xx.x.xx.x", 0.35), shaker: steps("xxxxxxxxxxxxxxxx", 0.3, 0.6) },
+    },
+    {
+      name: "half step",
+      hits: { kick: steps("x.......x..x....", 0.95), snare: steps("........x.......", 1), hatC: steps("x.x.x.x.x.x.x.x.", 0.38), hatO: steps("......x.........", 0.5), shaker: steps("...x...x...x...x", 0.3) },
     },
   ],
 };

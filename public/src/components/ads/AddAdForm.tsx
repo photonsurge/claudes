@@ -159,7 +159,7 @@ export default function AddAdForm({ onSaved }: { onSaved: (ad: Ad) => void }) {
               </label>
             ))}
             <span style={{ fontSize: 11, color: "#8b95a7" }}>
-              Ad break shows the creative full screen; ticker mention weaves &ldquo;Sponsored by {f.advertiser.trim() || "…"}&rdquo; into the crawl; the billboard rotates image creative through the bottom-left corner (wide, roughly 2.5:1&ndash;4:1, reads best).
+              Ad break shows the creative full screen; ticker mention weaves &ldquo;Sponsored by {f.advertiser.trim() || "…"}&rdquo; into the crawl; the billboard rotates image creative through the bottom-left corner (wide, roughly 2.5:1&ndash;4:1, reads best); the New alerts card gives an image creative its own card in the top-right just-issued-warnings rotation (same wide shape), and holds that slot alone when nothing fresh is out.
             </span>
           </div>
           {isVideo && placements.includes("billboard") && (

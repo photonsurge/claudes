@@ -27,6 +27,7 @@ import PaceSettings from "../../../../components/admin/scenes/PaceSettings";
 import ReportSettings from "../../../../components/admin/scenes/ReportSettings";
 import ThemeSettings from "../../../../components/admin/scenes/ThemeSettings";
 import TickerSettings from "../../../../components/admin/scenes/TickerSettings";
+import YoutubeSettings from "../../../../components/admin/scenes/YoutubeSettings";
 
 export default function ChannelSettingsPage() {
   const params = useParams<{ id: string }>();
@@ -66,6 +67,7 @@ export default function ChannelSettingsPage() {
           <TickerSettings sceneId={sceneId} />
           <PaceSettings sceneId={sceneId} />
           <AboutCardSettings sceneId={sceneId} />
+          <YoutubeSettings sceneId={sceneId} />
           <SlidesSettings sceneId={sceneId} />
           <DirectorSettings sceneId={sceneId} />
           <AudioSettings sceneId={sceneId} />

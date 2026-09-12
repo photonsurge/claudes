@@ -9,12 +9,15 @@
  *   run-lifecycle.announce  { runId }           ("notify the world" hydra post, retried)
  *   run-lifecycle.chapters  { runId, force? }   (as-run chapters → video description; retried,
  *                                                or awaited + never-rejecting when force)
+ *   run-lifecycle.thumbnail { runId, force? }   (custom thumbnail onto the video; retried, or
+ *                                                awaited + never-rejecting when force)
  * Routed to the FOREGROUND tier (see bull-utils FOREGROUND_TYPES) so go-live/stop
  * never wait behind a bake.
  */
 import type { Job } from "bullmq";
 import { announceRun } from "../stream/announce";
 import { publishChapters } from "../stream/chapters";
+import { publishThumbnail } from "../stream/thumbnail";
 import { goLive as doGoLive, finishRun } from "../stream/lifecycle";
 import { reconcileSlots } from "../stream/slots";
 import { endpointForEncoderId, provisionEncoderScene, refreshEncoderScene } from "../stream/encoders";
@@ -62,6 +65,25 @@ export async function chapters(job: Job) {
   const force = !!job.data?.data?.force;
   try {
     return await publishChapters(runId, { force });
+  } catch (err) {
+    if (force) return { ok: false, error: String((err as Error)?.message ?? err) };
+    throw err;
+  }
+}
+
+/**
+ * Custom thumbnail onto the run's YouTube video. Queued from goLive as soon as
+ * the broadcast exists (throws → BullMQ retries; a refusal — unverified channel,
+ * rejected image — is recorded on the run and NOT retried). The admin "Set
+ * thumbnail" button awaits it with `force`, which also re-uploads and resolves
+ * (never rejects) with a structured result for the UI.
+ */
+export async function thumbnail(job: Job) {
+  const runId = String(job.data?.data?.runId ?? job.data?.runId ?? "");
+  if (!runId) throw new Error("run-lifecycle.thumbnail: missing runId");
+  const force = !!job.data?.data?.force;
+  try {
+    return await publishThumbnail(runId, { force });
   } catch (err) {
     if (force) return { ok: false, error: String((err as Error)?.message ?? err) };
     throw err;

@@ -54,6 +54,10 @@ jest.mock("../../../../components/admin/scenes/AboutCardSettings", () => ({
   __esModule: true,
   default: ({ sceneId }: { sceneId: string }) => <div data-testid="about">about:{sceneId}</div>,
 }));
+jest.mock("../../../../components/admin/scenes/YoutubeSettings", () => ({
+  __esModule: true,
+  default: ({ sceneId }: { sceneId: string }) => <div data-testid="youtube">youtube:{sceneId}</div>,
+}));
 jest.mock("../../../../components/admin/scenes/DirectorSettings", () => ({
   __esModule: true,
   default: ({ sceneId }: { sceneId: string }) => <div data-testid="director">director:{sceneId}</div>,

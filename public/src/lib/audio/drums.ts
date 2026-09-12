@@ -1,5 +1,21 @@
 /** Drum and FX voices: one-shot node graphs scheduled at an audio-clock time. */
+import type { HatColour, KickFlavour } from "./arranger";
 import type { Rig } from "./graph";
+
+/** Per-track kick character: pitch sweep, body length, click amount. */
+const KICKS: Record<KickFlavour, { f0: number; f1: number; sweep: number; decay: number; click: number; gain: number }> = {
+  punch: { f0: 150, f1: 48, sweep: 0.11, decay: 0.42, click: 0.4, gain: 1 },
+  deep: { f0: 120, f1: 38, sweep: 0.16, decay: 0.65, click: 0.25, gain: 1 },
+  tight: { f0: 190, f1: 55, sweep: 0.07, decay: 0.24, click: 0.55, gain: 1 },
+  soft: { f0: 110, f1: 45, sweep: 0.12, decay: 0.35, click: 0.15, gain: 0.8 },
+};
+
+/** Per-track hat colour: filter, relative decay and a level trim. */
+const HATS: Record<HatColour, { type: BiquadFilterType; f: number; q: number; decay: number; gain: number }> = {
+  bright: { type: "highpass", f: 7800, q: 1, decay: 1, gain: 1 },
+  dark: { type: "bandpass", f: 6000, q: 1.2, decay: 1.1, gain: 1.3 },
+  crisp: { type: "highpass", f: 9500, q: 1, decay: 0.8, gain: 1.1 },
+};
 
 const rand = Math.random;
 
@@ -11,25 +27,26 @@ export function duck(rig: Rig, t: number): void {
   g.setTargetAtTime(1, t + 0.008, 0.12);
 }
 
-export function kick(rig: Rig, t: number, vel: number): void {
+export function kick(rig: Rig, t: number, vel: number, flavour: KickFlavour = "punch"): void {
   const { ctx } = rig;
+  const k = KICKS[flavour];
   const g = ctx.createGain();
-  g.gain.setValueAtTime(vel, t);
-  g.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+  g.gain.setValueAtTime(vel * k.gain, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + k.decay);
   const o = ctx.createOscillator();
   o.type = "sine";
-  o.frequency.setValueAtTime(150, t);
-  o.frequency.exponentialRampToValueAtTime(48, t + 0.11);
+  o.frequency.setValueAtTime(k.f0, t);
+  o.frequency.exponentialRampToValueAtTime(k.f1, t + k.sweep);
   o.connect(g);
   g.connect(rig.groups.kick);
   o.start(t);
-  o.stop(t + 0.44);
+  o.stop(t + k.decay + 0.02);
   const n = rig.noise();
   const hp = ctx.createBiquadFilter();
   hp.type = "highpass";
   hp.frequency.value = 2200;
   const ng = ctx.createGain();
-  ng.gain.setValueAtTime(vel * 0.4, t);
+  ng.gain.setValueAtTime(vel * k.click, t);
   ng.gain.exponentialRampToValueAtTime(0.001, t + 0.028);
   n.connect(hp);
   hp.connect(ng);
@@ -38,15 +55,17 @@ export function kick(rig: Rig, t: number, vel: number): void {
   n.stop(t + 0.05);
 }
 
-export function hat(rig: Rig, t: number, vel: number, open: boolean, pan: number): void {
+export function hat(rig: Rig, t: number, vel: number, open: boolean, pan: number, colour: HatColour = "bright"): void {
   const { ctx } = rig;
+  const c = HATS[colour];
   const n = rig.noise();
   const hp = ctx.createBiquadFilter();
-  hp.type = "highpass";
-  hp.frequency.value = 7800;
-  const dec = open ? 0.17 : 0.045;
+  hp.type = c.type;
+  hp.frequency.value = c.f;
+  hp.Q.value = c.q;
+  const dec = (open ? 0.17 : 0.045) * c.decay;
   const g = ctx.createGain();
-  g.gain.setValueAtTime(vel * 0.34, t);
+  g.gain.setValueAtTime(vel * 0.34 * c.gain, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + dec);
   const pn = ctx.createStereoPanner();
   pn.pan.value = pan;

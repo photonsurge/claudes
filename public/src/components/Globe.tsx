@@ -81,6 +81,7 @@ import {
   idleOrbitActive,
   MAX_PUSH_IN,
 } from "../lib/idle-motion";
+import { cameraMotionActive, isUserGesture } from "../lib/camera-grab";
 import type { AlertFeature } from "../lib/alerts";
 import { alertFocusKey, type AlertFocus } from "../lib/alert-cycle";
 import type { Segment } from "@photonsurge/shared/director";
@@ -145,6 +146,15 @@ export interface GlobeProps {
   geomag?: GeomagOverlay | null;
   interactive?: boolean;
   onCameraChange?: (center: [number, number], zoom: number) => void;
+  /**
+   * A real pointer gesture (drag / wheel / pinch) landed on an interactive
+   * globe. Pages that let the operator take the camera back from a
+   * deterministic motion clear their motion fields here (`releaseCameraMotion`)
+   * — without it the spin/push-in/idle-drift loop owns the camera and every
+   * drag is discarded. Omit it to keep that behaviour: /control WANTS the
+   * director to hold the camera while a cut is on air.
+   */
+  onUserCamera?: () => void;
   /** [lng,lat] of the active event to pulse-highlight, or null/undefined for none. */
   pulseAt?: [number, number] | null;
   /** ISO-3166 alpha-2 of the on-air country spotlight to glow-highlight, or null. */
@@ -254,7 +264,7 @@ function zoomForBbox(bbox: [number, number, number, number]): number {
 const normLng = (lng: number): number => ((((lng + 180) % 360) + 360) % 360) - 180;
 
 const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
-  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], alertFocus = null, quakes = [], seismoStations = [], seismoActive = null, tideStations = [], tideActive = null, weatherPointCenter = null, weatherPointLabel = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, pulseAt, glowCountryIso, glowRegionBbox, highlightTrack, mapHighlightColor = "#4dc8ff", mapLabelColor = "#ffffff", mapCapitalColor = "#ffd700", onSelect, onPickPoint },
+  { state, manifest, cities, tracks = [], orbits = [], trails = [], alerts = [], alertFocus = null, quakes = [], seismoStations = [], seismoActive = null, tideStations = [], tideActive = null, weatherPointCenter = null, weatherPointLabel = null, cables, faults, aurora, satimg, fires = [], volcanoes = [], geomag, interactive = true, onCameraChange, onUserCamera, pulseAt, glowCountryIso, glowRegionBbox, highlightTrack, mapHighlightColor = "#4dc8ff", mapLabelColor = "#ffffff", mapCapitalColor = "#ffd700", onSelect, onPickPoint },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -380,16 +390,28 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     onPickPointRef.current = onPickPoint;
   });
 
+  // True from the instant a pointer gesture takes the camera until the page's
+  // motion fields actually clear. React can't turn a setState round inside the
+  // drag's own frame, so both the view-state gate and the motion loop read this
+  // ref directly — otherwise the first frames of every drag would still be
+  // overwritten by the spin/drift and the grab would feel like it slipped.
+  const grabbedRef = useRef(false);
+  const onUserCameraRef = useRef(onUserCamera);
+  useEffect(() => {
+    onUserCameraRef.current = onUserCamera;
+  });
+
   // Live flag read inside the once-created deck callback below: true whenever a
   // deterministic camera motion (orbit spin, push-in zoom drift or the channel's
   // idle drift) owns the camera, so onViewStateChange doesn't feed those frames
   // back into React.
-  const motionRef = useRef(
-    state.autoSpin || !!state.zoomDrift || !!state.orbitDrift || idleMotionActive(state),
-  );
+  const motionArmed = cameraMotionActive(state);
+  const motionRef = useRef(motionArmed);
   useEffect(() => {
-    motionRef.current =
-      state.autoSpin || !!state.zoomDrift || !!state.orbitDrift || idleMotionActive(state);
+    // The motion went quiet (the page honoured the grab, or the operator
+    // switched it off) — re-arm, so a later spin can drive the camera again.
+    if (!motionArmed) grabbedRef.current = false;
+    motionRef.current = motionArmed && !grabbedRef.current;
   });
 
   // Re-filter the (already-built) city dots in place as the live zoom changes,
@@ -666,6 +688,18 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onViewStateChange: ({ viewState, interactionState }: any) => {
         viewStateRef.current = viewState;
+        // A real pointer gesture outranks a deterministic motion: the operator
+        // grabbing the globe means "I'll drive". Tell the page once so it can
+        // drop its motion fields (and show that in the panel), and take the
+        // camera here immediately — waiting for the re-render would let the
+        // loop overwrite the first frames of the drag.
+        if (interactive && onUserCameraRef.current && isUserGesture(interactionState)) {
+          if (!grabbedRef.current) {
+            grabbedRef.current = true;
+            onUserCameraRef.current();
+          }
+          motionRef.current = false;
+        }
         // While a deterministic motion (spin/push-in) runs, the rAF loop owns the
         // camera. deck re-emits this callback for the loop's setProps; feeding
         // that back into React state would re-render/persist every frame
@@ -778,8 +812,10 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     const lngScale = Math.max(Math.cos((anchorLat * Math.PI) / 180), 0.35);
     let raf = 0;
     const loop = () => {
-      // A flyTo/fitBounds is animating — let it own the camera this frame.
-      if (flyingRef.current) {
+      // A flyTo/fitBounds is animating, or the operator has the globe in hand —
+      // let that own the camera this frame. The grab holds until the page's
+      // motion fields clear, which ends this effect anyway.
+      if (flyingRef.current || grabbedRef.current) {
         raf = requestAnimationFrame(loop);
         return;
       }

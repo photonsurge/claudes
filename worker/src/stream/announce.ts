@@ -16,6 +16,7 @@
 import { getQueue } from "@photonsurge/shared/bull/bull";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { runIsActive, type Run } from "@photonsurge/shared/runs";
+import { DEFAULT_STREAM_BLURB } from "@photonsurge/shared/stream-description";
 import { log } from "@photonsurge/shared/utill/logger";
 
 const TAG = "stream-announce";
@@ -56,10 +57,8 @@ export function slugify(text: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-const DEFAULT_BLURB =
-  "This is our live weather globe — real-time global wind, temperature, storms and " +
-  "severe-weather alerts, rendered live and directed automatically around breaking " +
-  "weather events.";
+// Same copy as the YouTube description's default body — one pitch everywhere.
+const DEFAULT_BLURB = DEFAULT_STREAM_BLURB;
 
 /** "14:05 UK (13:05 UTC) on 24 Aug 2026" — the go-live moment, both clocks. */
 function formatWhen(at: number): string {

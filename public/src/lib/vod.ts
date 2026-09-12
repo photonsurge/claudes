@@ -75,6 +75,25 @@ export async function publishChapters(runId: string): Promise<ChaptersResult> {
   }
 }
 
+export interface ThumbnailResult {
+  ok: boolean;
+  skipped?: string;
+  source?: string;
+  bytes?: number;
+  error?: string;
+}
+
+/** POST /api/streams/:id/thumbnail — (re)upload the run's thumbnail now; never throws. */
+export async function publishThumbnail(runId: string): Promise<ThumbnailResult> {
+  try {
+    const res = await fetch(`/api/streams/${encodeURIComponent(runId)}/thumbnail`, { method: "POST", cache: "no-store" });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    return (await res.json()) as ThumbnailResult;
+  } catch (e) {
+    return { ok: false, error: String((e as Error)?.message ?? e) };
+  }
+}
+
 /** How much of the video the director log accounts for — cuts vs. unlogged stretches. */
 export function asRunCoverage(items: AsRunItem<unknown>[], nowOffsetMs?: number): { cuts: number; loggedMs: number; gapMs: number } {
   let cuts = 0;

@@ -638,7 +638,7 @@
     "@tybys/wasm-util" "^0.10.3"
 
 "@photonsurge/shared@file:../shared":
-  version "0.4.89"
+  version "0.4.91"
   dependencies:
     bcryptjs "^3.0.2"
     bullmq "5.73.4"

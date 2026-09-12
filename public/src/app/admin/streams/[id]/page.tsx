@@ -29,7 +29,15 @@ import VodTimeline, { type VodChatLine } from "../../../../components/admin/stre
 import { fmtDuration, kindColor } from "../../../../lib/airlog";
 import { fetchChatLog } from "../../../../lib/chat";
 import { useYoutubeVideoStats } from "../../../../lib/stream";
-import { asRunCoverage, getAsRun, publishChapters, type AsRunBundle, type ChaptersResult } from "../../../../lib/vod";
+import {
+  asRunCoverage,
+  getAsRun,
+  publishChapters,
+  publishThumbnail,
+  type AsRunBundle,
+  type ChaptersResult,
+  type ThumbnailResult,
+} from "../../../../lib/vod";
 
 const POLL_MS = 5_000;
 
@@ -55,6 +63,8 @@ export default function StreamAsRunPage() {
   const [player, setPlayer] = useState<VodPlayerApi | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState<ChaptersResult | null>(null);
+  const [thumbBusy, setThumbBusy] = useState(false);
+  const [thumbResult, setThumbResult] = useState<ThumbnailResult | null>(null);
   const [showChat, setShowChat] = useState(false);
   const [chatLines, setChatLines] = useState<VodChatLine[] | null>(null);
 
@@ -108,6 +118,19 @@ export default function StreamAsRunPage() {
   const title = run ? run.title || bundle?.sceneName || run.sceneId : "Stream";
   const seek = player ? (ms: number) => player.seekTo(Math.floor(ms / 1000)) : undefined;
   const chapters = run?.chapters ?? null;
+  const thumbnail = run?.thumbnail ?? null;
+
+  const setThumb = async () => {
+    if (!id) return;
+    setThumbBusy(true);
+    setThumbResult(null);
+    try {
+      setThumbResult(await publishThumbnail(id));
+      await reload();
+    } finally {
+      setThumbBusy(false);
+    }
+  };
 
   const publish = async () => {
     if (!id) return;
@@ -144,6 +167,7 @@ export default function StreamAsRunPage() {
               </>
             )}
             {chapters?.publishedAt ? ` · ${chapters.count} chapters on YouTube` : ""}
+            {thumbnail?.setAt ? ` · thumbnail ${thumbnail.source === "default" ? "(logo)" : "set"}` : ""}
             {video?.watchUrl && (
               <>
                 {" · "}
@@ -171,6 +195,16 @@ export default function StreamAsRunPage() {
               {publishing ? "Publishing…" : chapters?.publishedAt ? "Re-publish chapters" : "Publish chapters"}
             </Button>
           )}
+          {video?.id && (
+            <Button
+              variant="outlined"
+              onClick={setThumb}
+              disabled={thumbBusy}
+              title="Fetch the run's thumbnail image, letterbox it to 1280×720 and upload it onto the YouTube video"
+            >
+              {thumbBusy ? "Uploading…" : thumbnail?.setAt ? "Re-set thumbnail" : "Set thumbnail"}
+            </Button>
+          )}
           <Button variant="outlined" onClick={reload}>
             Refresh
           </Button>
@@ -187,6 +221,19 @@ export default function StreamAsRunPage() {
       {!published && chapters?.error && (
         <Alert severity="warning" sx={{ mb: 1.75 }}>
           Last automatic chapters publish failed: {chapters.error}
+        </Alert>
+      )}
+      {thumbResult && (
+        <Alert severity={thumbResult.ok ? "success" : thumbResult.skipped ? "info" : "error"} sx={{ mb: 1.75 }} onClose={() => setThumbResult(null)}>
+          {thumbResult.ok
+            ? `Thumbnail ${thumbResult.skipped ? "already set" : "uploaded"}${thumbResult.source ? ` · ${thumbResult.source}` : ""}${thumbResult.bytes ? ` · ${Math.round(thumbResult.bytes / 1024)} KB` : ""}`
+            : thumbResult.skipped ?? thumbResult.error ?? "Thumbnail upload failed"}
+        </Alert>
+      )}
+      {!thumbResult && thumbnail?.error && !thumbnail.setAt && (
+        <Alert severity="warning" sx={{ mb: 1.75 }}>
+          Thumbnail not set: {thumbnail.error}
+          {/forbidden/i.test(thumbnail.error) ? " — custom thumbnails need a phone-verified YouTube channel (youtube.com/verify)." : ""}
         </Alert>
       )}
       {video?.id && (

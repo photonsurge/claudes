@@ -214,6 +214,26 @@ export const DEFAULT_ABOUT_SETTINGS: AboutSettings = {
   footer: "",
 };
 
+/**
+ * What this channel's YouTube broadcasts are published with. Templates (same
+ * `%` date codes as the stream title) are resolved by the worker once, when a
+ * broadcast is created; every field empty = the built-in defaults.
+ */
+export interface YoutubeSettings {
+  /** Broadcast title template. Empty = "Live — <channel> — <date>". A run/slot title overrides it. */
+  title: string;
+  /** Broadcast description template. Empty = YOUTUBE_DESCRIPTION, else the built-in globe blurb. */
+  description: string;
+  /** Thumbnail image: http(s) URL or site path (/x.png). Empty = YOUTUBE_THUMBNAIL_URL, else the logo. */
+  thumbnailUrl: string;
+}
+
+export const DEFAULT_YOUTUBE_SETTINGS: YoutubeSettings = {
+  title: "",
+  description: "",
+  thumbnailUrl: "",
+};
+
 /** How elevation contour lines are coloured. */
 export type ElevationLineColor = "default" | "elevation" | "custom";
 
@@ -703,6 +723,8 @@ export interface ControlState {
    * credits). Empty fields fall back to the built-in G.O.D.S. copy.
    */
   about: AboutSettings;
+  /** Title / description / thumbnail this channel's YouTube broadcasts are created with. */
+  youtube: YoutubeSettings;
   /** Generative music bed played on /watch (mode/volume/mute, operator-driven). */
   audio: AudioSettings;
   /** Live-platform chat monitoring preference for this scene (operator-only). */
@@ -794,6 +816,7 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   pointVarsOff: [],
   themeOverrides: {},
   about: { ...DEFAULT_ABOUT_SETTINGS },
+  youtube: { ...DEFAULT_YOUTUBE_SETTINGS },
   audio: { ...DEFAULT_AUDIO_SETTINGS },
   chat: { ...DEFAULT_CHAT_SETTINGS },
   startAt: null,
@@ -1088,6 +1111,20 @@ function buildControlState(base: ControlState, patch: Partial<ControlState>): Co
         typeof patch.about?.footer === "string"
           ? patch.about.footer
           : base.about?.footer ?? DEFAULT_ABOUT_SETTINGS.footer,
+    },
+    youtube: {
+      title:
+        typeof patch.youtube?.title === "string"
+          ? patch.youtube.title.slice(0, 100)
+          : base.youtube?.title ?? DEFAULT_YOUTUBE_SETTINGS.title,
+      description:
+        typeof patch.youtube?.description === "string"
+          ? patch.youtube.description.slice(0, 5_000)
+          : base.youtube?.description ?? DEFAULT_YOUTUBE_SETTINGS.description,
+      thumbnailUrl:
+        typeof patch.youtube?.thumbnailUrl === "string"
+          ? patch.youtube.thumbnailUrl.trim().slice(0, 500)
+          : base.youtube?.thumbnailUrl ?? DEFAULT_YOUTUBE_SETTINGS.thumbnailUrl,
     },
     audio: {
       enabled:

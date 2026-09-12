@@ -134,6 +134,7 @@ describe("mergeControlState", () => {
         sources: "NOAA GFS, USGS, GDACS",
         footer: "Custom small print.",
       },
+      youtube: { title: "Atlantic Wind %d/%m", description: "Gusts on %A", thumbnailUrl: "/thumbs/wind.png" },
       audio: { enabled: true, mode: "deep", volume: 0.45, muted: true },
       chat: { enabled: true, promoteToTicker: true },
       startAt: 1732000000000,
@@ -205,6 +206,19 @@ describe("mergeControlState", () => {
     expect(next.about.body).toBe(base.about.body);
     // Missing from the patch → keeps the base value.
     expect(mergeControlState(next, {}).about.sources).toBe("NOAA GFS, USGS");
+  });
+
+  it("merges youtube partially, dropping non-string values and trimming the thumbnail source", () => {
+    const seeded = mergeControlState(base, {
+      youtube: { title: "Wind %d", description: "Gusts on %A", thumbnailUrl: "/thumbs/wind.png" },
+    });
+    const next = mergeControlState(seeded, {
+      youtube: { description: "New copy", thumbnailUrl: "  https://cdn.example/t.png ", title: 7 } as never,
+    });
+    expect(next.youtube).toEqual({ title: "Wind %d", description: "New copy", thumbnailUrl: "https://cdn.example/t.png" });
+    // Missing from the patch → keeps the base value; defaults are all-empty.
+    expect(mergeControlState(next, {}).youtube.description).toBe("New copy");
+    expect(mergeControlState(DEFAULT_CONTROL_STATE, {}).youtube).toEqual({ title: "", description: "", thumbnailUrl: "" });
   });
 
   it("sanitises alertHazardsOff to known hazard types and dedupes", () => {

@@ -35,6 +35,7 @@ jest.mock("../obs/client", () => {
 // Encoder resolution is exercised in its own unit; here every run resolves to a
 // reachable test endpoint so the OBS-call mocks above see it as the first arg.
 jest.mock("./encoders", () => ({
+  watchBaseUrl: () => "http://localhost:10100",
   endpointForRun: jest.fn(async () => ({ url: "ws://obs-test:4455" })),
   provisionEncoderScene: jest.fn(async () => ({
     sceneId: "default",
@@ -66,6 +67,11 @@ jest.mock("../youtube/client", () => ({
 
 const queueChapters = jest.fn(async () => {});
 jest.mock("./chapters", () => ({ queueChapters: (...a: unknown[]) => queueChapters(...a), chaptersEnabled: () => true }));
+const queueThumbnail = jest.fn(async () => {});
+jest.mock("./thumbnail", () => ({ queueThumbnail: (...a: unknown[]) => queueThumbnail(...a), thumbnailsEnabled: () => true }));
+// The channel's YouTube settings (/admin/scenes/:id) — tests set what the channel says.
+let channelYoutube = { title: "", description: "", thumbnailUrl: "" };
+jest.mock("./channel-youtube", () => ({ channelYoutubeSettings: jest.fn(async () => ({ ...channelYoutube })) }));
 
 const fakeQueue = { add: jest.fn(async () => ({})), getJob: jest.fn(async () => null) };
 jest.mock("@photonsurge/shared/bull/bull", () => ({ getQueue: jest.fn(() => fakeQueue) }));
@@ -124,6 +130,7 @@ const setRun = (r: any) => runs.set(r.id, r);
 
 beforeEach(() => {
   runs.clear();
+  channelYoutube = { title: "", description: "", thumbnailUrl: "" };
   jest.clearAllMocks();
 });
 
@@ -141,6 +148,42 @@ describe("goLive", () => {
       await goLive("title");
       expect(yt.createBroadcast).toHaveBeenCalledTimes(1);
       expect(runs.get("title").title).toBe(title);
+    } finally { jest.useRealTimers(); }
+  });
+  it("takes title + description from the CHANNEL's YouTube settings, resolves them once and queues the thumbnail once", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-09-08T13:05:00Z"));
+    try {
+      channelYoutube = { title: "Wind live %d/%m", description: "Wind on %A", thumbnailUrl: "" };
+      setRun({ id: "desc", sceneId: "default", status: "scheduled", platforms: { youtube: {} } });
+      await goLive("desc");
+      const description = "Wind on Tuesday\n\nWatch the map live: http://localhost:10100";
+      expect(yt.createBroadcast).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ title: "Wind live 08/09", description }),
+      );
+      expect(runs.get("desc")).toMatchObject({ title: "Wind live 08/09", description });
+      expect(queueThumbnail).toHaveBeenCalledWith("desc");
+      // Resuming a run that already has its broadcast neither re-creates nor re-queues.
+      await goLive("desc");
+      expect(yt.createBroadcast).toHaveBeenCalledTimes(1);
+      expect(queueThumbnail).toHaveBeenCalledTimes(1);
+
+      // A run/slot title still wins over the channel's.
+      setRun({ ...runs.get("desc"), status: "ended" }); // free the (single, env) encoder
+      setRun({ id: "own", sceneId: "default", status: "scheduled", title: "Slot %d", platforms: { youtube: {} } });
+      await goLive("own");
+      expect((yt.createBroadcast as jest.Mock).mock.calls[1][1].title).toBe("Slot 08");
+
+      // Nothing on the channel → automatic title + built-in description copy.
+      channelYoutube = { title: "", description: "", thumbnailUrl: "" };
+      setRun({ ...runs.get("own"), status: "ended" });
+      setRun({ id: "nodesc", sceneId: "default", status: "scheduled", platforms: { youtube: {} } });
+      await goLive("nodesc");
+      expect((yt.createBroadcast as jest.Mock).mock.calls[2][1].title).toMatch(/^Live — default — 2026-09-08$/);
+      const dflt = (yt.createBroadcast as jest.Mock).mock.calls[2][1].description as string;
+      expect(dflt).toMatch(/^This is our live weather globe/);
+      expect(dflt).toContain("Streaming since Tuesday 8 September 2026, 14:05 BST.");
+      expect(dflt.endsWith("Watch the map live: http://localhost:10100")).toBe(true);
     } finally { jest.useRealTimers(); }
   });
   it("creates + binds YouTube, points OBS at the key, and lands in awaiting-ingest", async () => {

@@ -45,6 +45,10 @@ jest.mock("../../lib/summaries", () => ({ useLatestRoundup: () => null }));
 // One active sponsor by default so the "ad" crawl-kind gating is observable.
 jest.mock("../../lib/ads/use-sponsors", () => ({ useSponsors: () => ["Acme"] }));
 jest.mock("../../lib/ads/use-billboard", () => ({ useBillboardAds: () => [] }));
+// One placed creative, so the alertSlot gate has something to hide.
+jest.mock("../../lib/ads/use-alert-slot", () => ({
+  useAlertSlotAds: () => [{ adId: "s1", title: "s1", mediaUrl: "/api/ads/s1/media?v=1" }],
+}));
 // Stubbed so presence = the frame's widget gate (the real card also self-hides
 // on an empty rotation, which would shadow the widgetsOff behaviour under test).
 jest.mock("./SponsorBillboard", () => ({
@@ -67,9 +71,13 @@ jest.mock("./IntensityMeter", () => ({
   __esModule: true,
   default: () => <div data-testid="w-intensityMeter" />,
 }));
+// The alert-slot sponsor rides inside this panel: the frame gates it by
+// handing an empty sponsor list, which the stand-in reports as no testid.
 jest.mock("./LiveAlertPanel", () => ({
   __esModule: true,
-  default: () => <div data-testid="w-liveAlerts" />,
+  default: ({ sponsors = [] }: { sponsors?: unknown[] }) => (
+    <div data-testid="w-liveAlerts">{sponsors.length > 0 && <div data-testid="w-alertSlot" />}</div>
+  ),
 }));
 jest.mock("./WorldReportDeck", () => ({
   __esModule: true,
@@ -140,6 +148,7 @@ jest.mock("./FadeSwap", () => ({
 const TESTID: Record<WidgetId, string> = {
   worldReport: "w-worldReport",
   liveAlerts: "w-liveAlerts",
+  alertSlot: "w-alertSlot",
   seismic: "w-seismic",
   weatherMonitors: "w-weatherMonitors",
   tsunami: "w-tsunami",

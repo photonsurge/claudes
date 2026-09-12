@@ -180,6 +180,11 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
       sources: { type: String, required: false, default: "" },
       footer: { type: String, required: false, default: "" },
     },
+    youtube: {
+      title: { type: String, required: false, default: "" },
+      description: { type: String, required: false, default: "" },
+      thumbnailUrl: { type: String, required: false, default: "" },
+    },
     audio: {
       enabled: { type: Boolean, required: true, default: false },
       mode: { type: String, required: true, enum: AUDIO_MODES, default: "auto" },

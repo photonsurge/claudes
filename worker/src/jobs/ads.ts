@@ -7,7 +7,9 @@
  * `ticker` (the crawl's "Sponsored by …" mention: ad active + ticker-placed,
  * scene's crawl widget not hidden) and `billboard` (the bottom-left corner
  * rotation: active + billboard-placed IMAGE ads, scene's billboard widget not
- * hidden) — and reconciles the open exposure windows to match (open/close/
+ * hidden) and `alertSlot` (the top-right New alerts card's sponsor turns:
+ * active + alertSlot-placed IMAGE ads, scene showing both that widget and the
+ * New alerts panel it rides in) — and reconciles the open exposure windows to match (open/close/
  * heartbeat rules in shared/ads/exposure.ts, storage in db.adExposures). A
  * billboard window means "in the corner rotation", the same way a ticker
  * window means "in the crawl loop" — not sole possession of the slot. Ad
@@ -18,7 +20,7 @@ import type { Job } from "bullmq";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import type { Ad } from "@photonsurge/shared/ads/types";
 import type { ExposureKey } from "@photonsurge/shared/ads/exposure";
-import type { AdExposureSurface } from "@photonsurge/shared/db/ad-exposure-model";
+import { AD_EXPOSURE_SURFACES, type AdExposureSurface } from "@photonsurge/shared/db/ad-exposure-model";
 
 /** Sweep cadence — index.ts registers the repeatable off the same env var. */
 const ADS_EXPOSURE_MS = Number(process.env.ADS_EXPOSURE_MS || 60 * 1000);
@@ -29,9 +31,11 @@ const STALE_MS = 3 * ADS_EXPOSURE_MS;
  * The (ad, scene) pairs one surface is airing right now. Pure — the cross
  * product of the surface's active placed ads × the scenes showing its widget
  * (each surface's per-channel toggle shares its name, hidden via
- * ControlState.widgetsOff). The billboard renders images only, so a video
- * creative placed there never airs and never logs.
+ * ControlState.widgetsOff). The billboard and the alert slot render images
+ * only, so a video creative placed there never airs and never logs.
  */
+const IMAGE_ONLY: ReadonlySet<AdExposureSurface> = new Set(["billboard", "alertSlot"]);
+
 export function exposurePairs(
   scenes: { id: string; widgetsOff?: string[] }[],
   ads: (Pick<Ad, "adId" | "status" | "placements"> & { mediaType?: Ad["mediaType"] })[],
@@ -41,11 +45,15 @@ export function exposurePairs(
     (a) =>
       a.status === "active" &&
       a.placements.includes(surface) &&
-      (surface !== "billboard" || a.mediaType === "image"),
+      (!IMAGE_ONLY.has(surface) || a.mediaType === "image"),
   );
   const pairs: ExposureKey[] = [];
   for (const scene of scenes) {
-    if ((scene.widgetsOff ?? []).includes(surface)) continue;
+    const off = scene.widgetsOff ?? [];
+    if (off.includes(surface)) continue;
+    // The alert-slot sponsor is a turn INSIDE the New alerts panel: that
+    // widget hidden takes the sponsor cards off air with it.
+    if (surface === "alertSlot" && off.includes("liveAlerts")) continue;
     for (const ad of airing) pairs.push({ adId: ad.adId, sceneId: scene.id });
   }
   return pairs;
@@ -61,7 +69,7 @@ export async function exposure(_job: Job) {
     .filter((d): d is NonNullable<typeof d> => d != null)
     .map((d: any) => ({ id: String(d.id), widgetsOff: d.widgetsOff as string[] | undefined }));
   const now = new Date();
-  const surfaces: AdExposureSurface[] = ["ticker", "billboard"];
+  const surfaces = AD_EXPOSURE_SURFACES;
   const results = await Promise.all(
     surfaces.map((s) =>
       db.adExposures.reconcile(s, exposurePairs(scenes, ads, s), now, STALE_MS),

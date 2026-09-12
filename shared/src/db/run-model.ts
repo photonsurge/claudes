@@ -48,6 +48,7 @@ const RunSchema = new mongoose.Schema<iRunModel>(
     status: { type: String, required: true, enum: RUN_STATUSES, default: "scheduled", index: true },
     phase: { type: String, required: false, enum: RUN_PHASES, default: "created" },
     title: { type: String, required: false },
+    description: { type: String, required: false },
     privacy: { type: String, required: false, enum: PRIVACIES, default: "unlisted" },
     startAt: { type: Number, required: false, default: null },
     durationMs: { type: Number, required: false, default: null },
@@ -92,6 +93,11 @@ const RunSchema = new mongoose.Schema<iRunModel>(
     chapters: {
       publishedAt: { type: Number, required: false, default: null },
       count: { type: Number, required: false, default: 0 },
+      error: { type: String, required: false, default: null },
+    },
+    thumbnail: {
+      setAt: { type: Number, required: false, default: null },
+      source: { type: String, required: false },
       error: { type: String, required: false, default: null },
     },
     error: {

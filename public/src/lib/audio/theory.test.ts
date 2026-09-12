@@ -1,5 +1,5 @@
 import { mulberry32 } from "./rng";
-import { HOME_KEY, PROGRESSIONS, chordOn, chordPcs, keyName, modulate, pentatonic, pickProgression, scaleNote, voiceLead } from "./theory";
+import { HOME_KEY, PROGRESSIONS, PROGRESSIONS_MAJOR, chordOn, chordPcs, keyName, modulate, pentatonic, pickProgression, scaleNote, voiceLead } from "./theory";
 
 describe("theory", () => {
   it("names the home key A minor and builds its scale", () => {
@@ -34,14 +34,30 @@ describe("theory", () => {
     expect(new Set(v.map((n) => n % 12)).size).toBe(4);
   });
 
-  it("has three 8-bar progressions per section, all on valid degrees", () => {
-    for (const bank of Object.values(PROGRESSIONS)) {
-      expect(bank.length).toBe(3);
-      for (const p of bank) {
-        expect(p.degrees.length).toBe(8);
-        for (const d of p.degrees) expect(d >= 1 && d <= 7).toBe(true);
+  it("has 8-bar progressions per section in both banks, all on valid degrees", () => {
+    for (const banks of [PROGRESSIONS, PROGRESSIONS_MAJOR])
+      for (const bank of Object.values(banks)) {
+        expect(bank.length).toBeGreaterThanOrEqual(3);
+        for (const p of bank) {
+          expect(p.degrees.length).toBe(8);
+          for (const d of p.degrees) expect(d >= 1 && d <= 7).toBe(true);
+        }
       }
-    }
+    expect(pickProgression(mulberry32(1), "deep", null, true)).toBe(PROGRESSIONS_MAJOR.deep[1]);
+  });
+
+  it("voices triads and shells as well as sevenths", () => {
+    expect(chordPcs(HOME_KEY, 1, "triad")).toEqual([9, 0, 4]);
+    expect(chordPcs(HOME_KEY, 1, "shell")).toEqual([9, 0, 7]);
+    expect(chordOn(HOME_KEY, 6, null, "triad").notes.length).toBe(3);
+  });
+
+  it("knows major keys: C major is A minor's relative, with a major pentatonic", () => {
+    const c = { tonic: 48, mode: "ionian" as const };
+    expect(keyName(c)).toBe("C major");
+    expect(chordPcs(c, 1)).toEqual([0, 4, 7, 11]); // Cmaj7
+    expect(chordPcs(c, 5)).toEqual([7, 11, 2, 5]); // G7
+    expect(pentatonic(c).slice(0, 5)).toEqual([72, 74, 76, 79, 81]);
   });
 
   it("never repeats the previous progression when picking", () => {
@@ -54,16 +70,20 @@ describe("theory", () => {
     }
   });
 
-  it("modulates within the bass window by related intervals", () => {
+  it("modulates within the bass window by related intervals, visiting major and minor", () => {
     const rng = mulberry32(11);
     let key = HOME_KEY;
-    for (let i = 0; i < 50; i++) {
+    const modes = new Set<string>();
+    for (let i = 0; i < 80; i++) {
       const next = modulate(rng, key);
       expect(next.tonic).toBeGreaterThanOrEqual(40);
       expect(next.tonic).toBeLessThanOrEqual(51);
       const rel = (((next.tonic - key.tonic) % 12) + 12) % 12;
-      expect([5, 7, 3, 10]).toContain(rel);
+      expect([5, 7, 3, 9, 10]).toContain(rel);
+      if (next.mode === "ionian") expect(rel === 3 || key.mode === "ionian").toBe(true); // relative major is +3
+      modes.add(next.mode);
       key = next;
     }
+    expect(modes).toEqual(new Set(["aeolian", "dorian", "ionian"]));
   });
 });

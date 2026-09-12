@@ -23,6 +23,7 @@
  * Config (`GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI`) comes from env; if unset
  * every call throws `YoutubeNotConfiguredError` so scheduling can no-op cleanly.
  */
+import { Readable } from "node:stream";
 import { google, youtube_v3 } from "googleapis";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { encryptSecret, decryptSecret } from "@photonsurge/shared/utill/secretbox";
@@ -520,6 +521,25 @@ export async function setVideoDescription(
     }),
   );
   return { changed: true, description };
+}
+
+/**
+ * Upload a custom thumbnail for a video (a live broadcast's id IS its video id, so
+ * this works the moment the broadcast exists). 50 units. Google refuses custom
+ * thumbnails on channels that have not completed phone verification — that
+ * surfaces as a 403 "forbidden", which the caller records rather than retries.
+ */
+export async function setThumbnail(
+  ctx: YoutubeCtx,
+  videoId: string,
+  image: { body: Buffer; mimeType: "image/jpeg" | "image/png" },
+): Promise<void> {
+  await apiCall(ctx, "thumbnails.set", () =>
+    ctx.youtube.thumbnails.set({
+      videoId,
+      media: { mimeType: image.mimeType, body: Readable.from(image.body) },
+    }),
+  );
 }
 
 export async function resolveLiveChatId(ctx: YoutubeCtx, broadcastId: string): Promise<string | undefined> {

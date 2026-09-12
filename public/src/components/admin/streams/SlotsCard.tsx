@@ -228,7 +228,9 @@ function SlotRow({
         <Box sx={{ width: "100%", p: 1, borderTop: "1px solid", borderColor: "divider" }}>
           <StreamTitleField value={titleDraft} onChange={setTitleDraft} recurring />
           <Typography variant="caption" color="text.secondary" component="p" sx={{ my: 1 }}>
-            Changes apply to the next broadcast. An already-live video keeps its current title.
+            Changes apply to the next broadcast. An already-live video keeps its current title. Leave it blank to
+            use the channel&apos;s title; the description and thumbnail always come from the channel&apos;s{" "}
+            <MuiLink href={`/admin/scenes/${encodeURIComponent(slot.sceneId)}`}>YouTube settings</MuiLink>.
           </Typography>
           {titleError && <Alert severity="error" sx={{ mb: 1 }}>{titleError}</Alert>}
           <Button size="small" variant="contained" disabled={savingTitle} onClick={async () => {

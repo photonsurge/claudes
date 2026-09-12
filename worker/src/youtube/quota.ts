@@ -32,6 +32,7 @@ const BASE_COST = {
   "channels.list": 1,
   "videos.list": 1,
   "videos.update": 50,
+  "thumbnails.set": 50,
   "liveBroadcasts.list": 1,
   "liveBroadcasts.insert": 50,
   "liveBroadcasts.bind": 50,

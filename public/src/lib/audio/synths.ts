@@ -1,4 +1,5 @@
 /** Tonal voices: one-shot note/chord graphs plus the persistent Pad. */
+import type { BassFlavour, PadType } from "./arranger";
 import type { Rig } from "./graph";
 import type { Chord } from "./theory";
 
@@ -272,43 +273,73 @@ export function acidNote(rig: Rig, midi: number, t: number, len: number, accent:
   o.stop(t + len + 0.05);
 }
 
-/** Sub bass: sine + a filtered saw for edge, optional glide in. */
-export function bassNote(rig: Rig, midi: number, t: number, dur: number, vel: number, glide: boolean): void {
+/**
+ * Bass note in the track's flavour: `sub` = sine + a filtered saw for edge,
+ * `reese` = two detuned saws through a lowpass (wide and growling), `pluck`
+ * = sub with a snapping filter and a short decay. Optional glide in.
+ */
+export function bassNote(rig: Rig, midi: number, t: number, dur: number, vel: number, glide: boolean, flavour: BassFlavour = "sub"): void {
   const { ctx } = rig;
+  const f = mtof(midi);
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(vel * 0.5, t + 0.012);
-  g.gain.setTargetAtTime(0.0001, t + dur * 0.55, 0.1);
-  const sub = ctx.createOscillator();
-  sub.type = "sine";
-  const saw = ctx.createOscillator();
-  saw.type = "sawtooth";
-  const f = mtof(midi);
-  if (glide) {
-    for (const o of [sub, saw]) {
+  const oscs: OscillatorNode[] = [];
+  const tune = (o: OscillatorNode) => {
+    if (glide) {
       o.frequency.setValueAtTime(f * 0.94, t);
       o.frequency.exponentialRampToValueAtTime(f, t + 0.05);
+    } else o.frequency.value = f;
+    oscs.push(o);
+  };
+  if (flavour === "reese") {
+    g.gain.exponentialRampToValueAtTime(vel * 0.3, t + 0.02);
+    g.gain.setTargetAtTime(0.0001, t + dur * 0.6, 0.12);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 420;
+    lp.Q.value = 2;
+    for (const det of [-12, 12]) {
+      const saw = ctx.createOscillator();
+      saw.type = "sawtooth";
+      saw.detune.value = det;
+      tune(saw);
+      saw.connect(lp);
     }
+    lp.connect(g);
+    const sub = ctx.createOscillator();
+    sub.type = "sine";
+    tune(sub);
+    const sg = ctx.createGain();
+    sg.gain.value = 0.35;
+    sub.connect(sg);
+    sg.connect(g);
   } else {
-    sub.frequency.value = f;
-    saw.frequency.value = f;
+    const plucky = flavour === "pluck";
+    g.gain.exponentialRampToValueAtTime(vel * 0.5, t + 0.012);
+    g.gain.setTargetAtTime(0.0001, t + dur * (plucky ? 0.3 : 0.55), plucky ? 0.06 : 0.1);
+    const sub = ctx.createOscillator();
+    sub.type = "sine";
+    tune(sub);
+    const saw = ctx.createOscillator();
+    saw.type = "sawtooth";
+    tune(saw);
+    const sf = ctx.createBiquadFilter();
+    sf.type = "lowpass";
+    sf.frequency.setValueAtTime(plucky ? 900 : 180, t);
+    sf.frequency.exponentialRampToValueAtTime(plucky ? 150 : 320, t + (plucky ? 0.15 : 0.03));
+    sf.Q.value = 2;
+    const sg = ctx.createGain();
+    sg.gain.value = plucky ? 0.3 : 0.24;
+    saw.connect(sf);
+    sf.connect(sg);
+    sg.connect(g);
+    sub.connect(g);
   }
-  const sf = ctx.createBiquadFilter();
-  sf.type = "lowpass";
-  sf.frequency.setValueAtTime(180, t);
-  sf.frequency.exponentialRampToValueAtTime(320, t + 0.03);
-  sf.Q.value = 2;
-  const sg = ctx.createGain();
-  sg.gain.value = 0.24;
-  saw.connect(sf);
-  sf.connect(sg);
-  sg.connect(g);
-  sub.connect(g);
   g.connect(rig.groups.bass);
-  sub.start(t);
-  saw.start(t);
-  sub.stop(t + dur + 0.3);
-  saw.stop(t + dur + 0.3);
+  for (const o of oscs) {
+    o.start(t);
+    o.stop(t + dur + 0.3);
+  }
 }
 
 interface PadVoice {
@@ -322,8 +353,8 @@ export class Pad {
 
   constructor(private rig: Rig) {}
 
-  /** Fade the old chord out and a new one in at `t`; `soft` = triangle wash instead of supersaw. */
-  change(chord: Chord, t: number, soft: boolean): void {
+  /** Fade the old chord out and a new one in at `t`, built in the track's pad type. */
+  change(chord: Chord, t: number, type: PadType): void {
     const { ctx } = this.rig;
     for (const v of this.voices) {
       v.g.gain.cancelScheduledValues(t);
@@ -338,36 +369,99 @@ export class Pad {
     }
     this.voices = [];
     const notes = chord.notes;
-    const peak = (soft ? 0.075 : 0.06) / notes.length;
+    const PEAK: Record<PadType, number> = { saw: 0.06, soft: 0.075, organ: 0.09, strings: 0.05, glass: 0.08 };
+    const swell = type === "strings" ? 3.2 : type === "organ" ? 0.6 : 1.8;
+    const peak = PEAK[type] / notes.length;
     notes.forEach((midi, idx) => {
       const g = ctx.createGain();
       g.gain.setValueAtTime(0.0001, t);
       const pan = ctx.createStereoPanner();
-      pan.pan.value = ((idx / (notes.length - 1)) * 2 - 1) * 0.5;
+      pan.pan.value = ((idx / Math.max(1, notes.length - 1)) * 2 - 1) * 0.5;
       const oscs: OscillatorNode[] = [];
-      for (const det of [-9, 0, 8]) {
+      const f = mtof(midi);
+      // where the oscillators land: straight into the voice gain, or via a shaping filter
+      let into: AudioNode = g;
+      if (type === "strings") {
+        const hp = ctx.createBiquadFilter();
+        hp.type = "highpass";
+        hp.frequency.value = 220;
+        hp.Q.value = -3;
+        hp.connect(g);
+        into = hp;
+      }
+      const osc = (kind: OscillatorType, freq: number, det = 0, level = 1): OscillatorNode => {
         const o = ctx.createOscillator();
-        o.type = soft ? "triangle" : "sawtooth";
-        o.frequency.value = mtof(midi);
+        o.type = kind;
+        o.frequency.value = freq;
         o.detune.value = det;
-        o.connect(g);
+        if (level === 1) o.connect(into);
+        else {
+          const lg = ctx.createGain();
+          lg.gain.value = level;
+          o.connect(lg);
+          lg.connect(into);
+        }
         o.start(t);
         oscs.push(o);
+        return o;
+      };
+      if (type === "saw" || type === "soft") {
+        for (const det of [-9, 0, 8]) osc(type === "saw" ? "sawtooth" : "triangle", f, det);
+        osc("sine", f / 2, 0, 0.5);
+      } else if (type === "strings") {
+        for (const det of [-14, 0, 12]) osc("sawtooth", f, det);
+      } else if (type === "organ") {
+        const vib = ctx.createOscillator();
+        vib.type = "sine";
+        vib.frequency.value = 5.5;
+        const vd = ctx.createGain();
+        vd.gain.value = 5;
+        vib.connect(vd);
+        vib.start(t);
+        oscs.push(vib);
+        for (const [h, lv] of [
+          [1, 1],
+          [2, 0.5],
+          [3, 0.3],
+          [4, 0.15],
+        ] as const) {
+          const o = osc("sine", f * h, 0, lv);
+          vd.connect(o.detune);
+        }
+      } else {
+        // glass: lightly FM'd sine with a slow tremolo
+        const car = ctx.createOscillator();
+        car.type = "sine";
+        car.frequency.value = f;
+        const mod = ctx.createOscillator();
+        mod.type = "sine";
+        mod.frequency.value = f * 2;
+        const mg = ctx.createGain();
+        mg.gain.value = f * 0.6;
+        mod.connect(mg);
+        mg.connect(car.frequency);
+        const trem = ctx.createOscillator();
+        trem.type = "sine";
+        trem.frequency.value = 0.4 + idx * 0.13;
+        const td = ctx.createGain();
+        td.gain.value = 0.35;
+        const tg = ctx.createGain();
+        tg.gain.value = 0.65;
+        trem.connect(td);
+        td.connect(tg.gain);
+        car.connect(tg);
+        tg.connect(into);
+        osc("sine", f / 2, 0, 0.4);
+        for (const o of [car, mod, trem]) {
+          o.start(t);
+          oscs.push(o);
+        }
       }
-      const sub = ctx.createOscillator();
-      sub.type = "sine";
-      sub.frequency.value = mtof(midi - 12);
-      const sg = ctx.createGain();
-      sg.gain.value = 0.5;
-      sub.connect(sg);
-      sg.connect(g);
-      sub.start(t);
-      oscs.push(sub);
       g.connect(pan);
       pan.connect(this.rig.chorusIn);
       sends(this.rig, g, 0.6);
-      g.gain.exponentialRampToValueAtTime(peak, t + 1.8);
-      g.gain.setTargetAtTime(peak * 0.8, t + 1.8, 1.2);
+      g.gain.exponentialRampToValueAtTime(peak, t + swell);
+      g.gain.setTargetAtTime(peak * 0.8, t + swell, 1.2);
       this.voices.push({ g, oscs });
     });
     // Aurora shimmer: the top two chord tones two octaves up, slow tremolo,

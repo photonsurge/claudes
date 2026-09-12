@@ -98,7 +98,7 @@ export interface AdExposureWindow {
   sceneId: string;
   sceneName: string;
   /** Which always-on surface the window aired on. */
-  surface: "ticker" | "billboard";
+  surface: "ticker" | "billboard" | "alertSlot";
   startedAt: number;
   endedAt?: number;
   ms: number;

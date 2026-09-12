@@ -15,19 +15,23 @@ export type AdStatus = "active" | "inactive";
  * "Sponsored by …" text mention woven through the bottom crawl (name only —
  * the media never airs there); `billboard` = the always-on bottom-left corner
  * card rotating through the placed IMAGE creatives (video never airs there —
- * it stays on `break`). One ad can run on several; a doc stored before this
- * field existed reads as break-only, so the interstitial-era catalog never
- * leaks into the crawl or the corner.
+ * it stays on `break`); `alertSlot` = the top-right NEW ALERTS card, where an
+ * IMAGE creative takes its own card in the just-issued-warnings rotation (and
+ * holds the slot alone when nothing fresh is out — see shared/ads/alert-slot).
+ * One ad can run on several; a doc stored before this field existed reads as
+ * break-only, so the interstitial-era catalog never leaks into the crawl or
+ * the corner.
  */
-export type AdPlacement = "break" | "ticker" | "billboard";
+export type AdPlacement = "break" | "ticker" | "billboard" | "alertSlot";
 
-export const AD_PLACEMENTS: AdPlacement[] = ["break", "ticker", "billboard"];
+export const AD_PLACEMENTS: AdPlacement[] = ["break", "ticker", "billboard", "alertSlot"];
 
 /** Operator-facing names for each placement (admin UI). */
 export const AD_PLACEMENT_LABELS: Record<AdPlacement, string> = {
   break: "Ad break",
   ticker: "Ticker mention",
   billboard: "Bottom-left billboard",
+  alertSlot: "New alerts card",
 };
 
 /** Which kind of creative the bytes are. Drives how the viewer renders it. */

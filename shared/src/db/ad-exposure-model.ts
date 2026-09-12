@@ -14,7 +14,10 @@ import { getModel } from "../utill/getModel";
  */
 
 /** Continuous surfaces that log exposure windows (ad breaks use the as-run log). */
-export type AdExposureSurface = "ticker" | "billboard";
+export type AdExposureSurface = "ticker" | "billboard" | "alertSlot";
+
+/** Every logged surface, for sweeps and rollups that walk them all. */
+export const AD_EXPOSURE_SURFACES: readonly AdExposureSurface[] = ["ticker", "billboard", "alertSlot"];
 
 export interface iAdExposure extends iGeneralModel {
   adId: string;
@@ -37,7 +40,7 @@ const AdExposureSchema = new mongoose.Schema<iAdExposureModel>(
     id: { type: String, required: true, unique: true, default: () => uuidv4() },
     adId: { type: String, required: true },
     sceneId: { type: String, required: true },
-    surface: { type: String, enum: ["ticker", "billboard"], required: true },
+    surface: { type: String, enum: [...AD_EXPOSURE_SURFACES], required: true },
     startedAt: { type: Date, required: true },
     endedAt: { type: Date, required: false },
     lastSeenAt: { type: Date, required: true },

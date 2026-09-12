@@ -49,6 +49,7 @@ import { bboxForCamera, type HistorySeries } from "../../lib/history-client";
 import { useLatestRoundup } from "../../lib/summaries";
 import { useSponsors } from "../../lib/ads/use-sponsors";
 import { useBillboardAds } from "../../lib/ads/use-billboard";
+import { useAlertSlotAds } from "../../lib/ads/use-alert-slot";
 import {
   useFocusRegion,
   useFocusCountry,
@@ -298,6 +299,9 @@ export default function BroadcastFrame({
   // The bottom-left corner's sponsor rotation — active billboard-placed image
   // creatives, polled like the sponsor names (see SponsorBillboard below).
   const billboardAds = useBillboardAds();
+  // The New alerts card's sponsor turns — alertSlot-placed image creatives,
+  // same poll; the widget gate is applied where the panel is mounted below.
+  const alertSlotAds = useAlertSlotAds();
   const bottomTickerTitle = theme.tickerTitle;
   // "ad" kind off = no crawl mentions on this channel. Sponsor SLIDES are
   // governed separately (ads/slides settings) — this only strips the weave.
@@ -1015,7 +1019,12 @@ export default function BroadcastFrame({
           right={INSET - 26}
           maxHeight={STAGE_H - chromeBottom - (chromeTop - 20) - 12}
           header={!off.has("liveAlerts") ? (
-            <LiveAlertPanel alerts={alerts} cities={cities} theme={theme} />
+            <LiveAlertPanel
+              alerts={alerts}
+              cities={cities}
+              theme={theme}
+              sponsors={off.has("alertSlot") ? [] : alertSlotAds}
+            />
           ) : null}
         >
           {!off.has("worldReport") && (

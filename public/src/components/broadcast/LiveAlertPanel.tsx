@@ -10,7 +10,13 @@
  * it's issued, holds for about an hour, then drops off on its own even if the
  * hazard is still active, so the panel reads as breaking news rather than a
  * standing list (the always-on World Watch panel is the comprehensive view).
- * Renders nothing when nothing has been issued recently.
+ * Renders nothing when nothing has been issued recently and no sponsor is placed.
+ *
+ * Sponsor cards ride the same slot: an ad placed on the "New alerts card"
+ * surface takes its OWN card in the rotation — after every two warnings, or
+ * alternating with a lone one — and holds the slot by itself when nothing
+ * fresh has been issued, so the area earns its keep on a quiet day. A sponsor
+ * never shares a plate with a warning (rotation: shared/ads/alert-slot).
  *
  * The advice body is a fixed three-line window that auto-scrolls (AutoScroll)
  * when the source's text runs longer: it used to line-clamp to "…", so a long
@@ -19,8 +25,10 @@
  */
 import { useEffect, useState } from "react";
 import AutoScroll from "./AutoScroll";
+import AlertSlotSponsorCard from "./AlertSlotSponsorCard";
 import type { AlertFeature } from "../../lib/alerts";
 import { SEVERITY_COLORS, SEVERITY_LABELS } from "@photonsurge/shared/alerts/severity";
+import { alertSlotAt, type AlertSlotAd } from "@photonsurge/shared/ads/alert-slot";
 import {
   sortedAlerts, freshAlerts, issuedAgoLabel, expiresInLabel, alertDetail,
   FRESH_ALERT_WINDOW_MIN, alertLabel, alertAreaLabel,
@@ -29,7 +37,7 @@ import type { City } from "../../lib/cities";
 import { GODS_FILL, INK, INK_DIM, MONO, SANS, chamfer } from "./GodsPanel";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 
-/** Seconds each alert holds on screen before advancing to the next. */
+/** Seconds each turn (a warning or a sponsor card) holds before the next. */
 const HOLD_MS = 10000;
 
 /** Advice body type + the scroll window: font px, line-height ratio, visible
@@ -48,8 +56,11 @@ export default function LiveAlertPanel({
   theme = DEFAULT_THEME,
   compact = false,
   windowMinutes = FRESH_ALERT_WINDOW_MIN,
+  sponsors = [],
 }: {
   alerts: AlertFeature[];
+  /** Active "New alerts card"-placed creatives; [] when none, or the widget is off. */
+  sponsors?: AlertSlotAd[];
   /** For the areaDesc-missing fallback (nearest notable city) — mirrors WorldWatchPanel. */
   cities?: City[];
   theme?: BroadcastTheme;
@@ -71,15 +82,22 @@ export default function LiveAlertPanel({
   const list = sortedAlerts(freshAlerts(alerts, windowMinutes, now));
   const [idx, setIdx] = useState(0);
 
-  // Advance on a timer; the modulo keeps us in range as the list grows/shrinks.
+  // Advance on a timer whenever there is more than one turn to cycle through
+  // (warnings + sponsor cards); alertSlotAt maps the ever-growing counter onto
+  // the rotation, so both lists can grow and shrink underneath it.
+  const turns = list.length + sponsors.length;
   useEffect(() => {
-    if (list.length <= 1) return;
+    if (turns <= 1) return;
     const iv = setInterval(() => setIdx((n) => n + 1), HOLD_MS);
     return () => clearInterval(iv);
-  }, [list.length]);
+  }, [turns]);
 
-  if (list.length === 0) return null;
-  const pos = idx % list.length;
+  const slot = alertSlotAt(idx, list.length, sponsors.length);
+  if (!slot) return null;
+  if (slot.kind === "sponsor") {
+    return <AlertSlotSponsorCard ad={sponsors[slot.index]} accent={theme.accent} compact={compact} />;
+  }
+  const pos = slot.index;
   const top = list[pos];
   const color = SEVERITY_COLORS[top.properties.severityRank] ?? theme.accent;
   const ago = issuedAgoLabel(top.properties.sent ?? top.properties.since, now);

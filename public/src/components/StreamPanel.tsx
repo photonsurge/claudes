@@ -271,6 +271,15 @@ function GoLiveForm({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <StreamTitleField value={title} onChange={setTitle} />
+      {publishYoutube ? (
+        <span style={{ fontSize: 11, opacity: 0.7 }}>
+          Blank title = the channel&apos;s. Description and thumbnail come from the channel&apos;s{" "}
+          <a href={`/admin/scenes/${encodeURIComponent(sceneId)}`} target="_blank" rel="noreferrer" style={{ color: "inherit" }}>
+            YouTube settings
+          </a>
+          .
+        </span>
+      ) : null}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
           <input type="checkbox" checked={publishYoutube} disabled={!canPublish} onChange={(e) => setPublishYoutube(e.target.checked)} />

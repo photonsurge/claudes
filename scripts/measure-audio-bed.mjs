@@ -65,6 +65,7 @@ const res = await page.evaluate(
     const perSec = new Map();
     const trace = [];
     let lastPhrase = "";
+    let lastTrack = "";
     await new Promise((done) => {
       const iv = setInterval(() => {
         an.getFloatTimeDomainData(buf);
@@ -80,6 +81,7 @@ const res = await page.evaluate(
         }
         perSec.set(sec, Math.max(perSec.get(sec) ?? 0, sp));
         const cur = bed.getState();
+        if (cur.track !== lastTrack) { lastTrack = cur.track; trace.push(`${sec}s ♪ ${cur.track} · ${cur.key}`); }
         if (cur.phrase !== lastPhrase) { lastPhrase = cur.phrase; trace.push(`${sec}s ${cur.section.name} → ${cur.phrase}`); }
         if (ctx.currentTime - t0 >= secs) {
           clearInterval(iv);

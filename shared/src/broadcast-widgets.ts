@@ -22,6 +22,7 @@ export type WidgetZone =
 export type WidgetId =
   | "worldReport"
   | "liveAlerts"
+  | "alertSlot"
   | "seismic"
   | "weatherMonitors"
   | "tsunami"
@@ -53,6 +54,9 @@ export const BROADCAST_WIDGETS: readonly BroadcastWidget[] = [
   // Top-right — whole-planet situation summary.
   { id: "worldReport", zone: "top-right", label: "World Report", hint: "Hourly whole-planet situation deck" },
   { id: "liveAlerts", zone: "top-right", label: "New alerts", hint: "Just-issued warnings panel" },
+  // Shares its name with the ad placement + exposure surface (the worker's
+  // sweep keys the per-channel gate on it). Rides INSIDE the New alerts panel.
+  { id: "alertSlot", zone: "top-right", label: "Alert-slot sponsors", hint: "Sponsor cards mixed into the New alerts rotation" },
   // Gauges — the bottom-centre instrument row.
   { id: "seismic", zone: "gauges", label: "Seismic monitor", hint: "Recent quakes + live station traces" },
   { id: "weatherMonitors", zone: "gauges", label: "Weather monitors", hint: "Wind / pressure / wave cards" },

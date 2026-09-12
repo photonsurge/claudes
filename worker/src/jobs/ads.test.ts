@@ -77,3 +77,31 @@ describe("exposurePairs — billboard surface", () => {
     expect(pairs).toEqual([{ adId: "a", sceneId: "storm" }]);
   });
 });
+
+describe("exposurePairs — alertSlot surface", () => {
+  const img = (adId: string, over: Record<string, unknown> = {}) => ({
+    adId,
+    status: "active" as const,
+    placements: ["alertSlot" as const],
+    mediaType: "image" as const,
+    ...over,
+  });
+
+  it("crosses active alert-slot image ads with scenes showing the New alerts panel", () => {
+    const pairs = exposurePairs(
+      [
+        { id: "default" },
+        { id: "quiet", widgetsOff: ["alertSlot"] },
+        // The sponsor rides inside the New alerts panel — hiding that hides the sponsor.
+        { id: "bare", widgetsOff: ["liveAlerts"] },
+        { id: "storm", widgetsOff: ["billboard"] },
+      ],
+      [img("a"), img("clip", { mediaType: "video" }), img("corner-only", { placements: ["billboard"] })],
+      "alertSlot",
+    );
+    expect(pairs).toEqual([
+      { adId: "a", sceneId: "default" },
+      { adId: "a", sceneId: "storm" },
+    ]);
+  });
+});

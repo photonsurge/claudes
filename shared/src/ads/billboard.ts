@@ -7,7 +7,7 @@
  * needs no server coordination and multiple /watch outputs stay in step.
  * No I/O — unit-tested without a DB.
  */
-import { adMediaPath, type Ad } from "./types";
+import { adMediaPath, type Ad, type AdPlacement } from "./types";
 
 /** How long each creative holds the corner before the rotation advances. */
 export const BILLBOARD_HOLD_MS = 25_000;
@@ -24,17 +24,18 @@ export interface BillboardAd {
 }
 
 /**
- * The rotation list: active + billboard-placed + image-only (a video ticked
- * onto the billboard simply never airs there), in a stable order every client
- * agrees on (title, then adId as the tiebreaker) so the shared clock index
- * below lands on the same creative everywhere.
+ * The rotation list for any placed-IMAGE surface (the billboard, the New
+ * alerts card): active + placed there + image-only (a video ticked onto an
+ * image surface simply never airs there), in a stable order every client
+ * agrees on (title, then adId as the tiebreaker) so a shared clock index
+ * lands on the same creative everywhere.
  */
-export function billboardAds(ads: Ad[]): BillboardAd[] {
+export function placedImageAds(ads: Ad[], placement: AdPlacement): BillboardAd[] {
   return ads
     .filter(
       (a) =>
         a.status === "active" &&
-        a.placements.includes("billboard") &&
+        a.placements.includes(placement) &&
         a.mediaType === "image",
     )
     .sort((a, b) => a.title.localeCompare(b.title) || a.adId.localeCompare(b.adId))
@@ -46,6 +47,11 @@ export function billboardAds(ads: Ad[]): BillboardAd[] {
       width: a.width,
       height: a.height,
     }));
+}
+
+/** The bottom-left corner's rotation list. */
+export function billboardAds(ads: Ad[]): BillboardAd[] {
+  return placedImageAds(ads, "billboard");
 }
 
 /** Which creative holds the corner at `now` — a shared wall-clock rotation. */
