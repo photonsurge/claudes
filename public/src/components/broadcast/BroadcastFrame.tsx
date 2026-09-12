@@ -72,6 +72,7 @@ import {
   useVolcanoEruptions,
   useFocusTarget,
   useClimateFor,
+  useLocalZone,
 } from "../../lib/focus/focus-client";
 import { legendVariableFor, legendPaletteFor } from "../../lib/legend";
 import { formatKm } from "../../lib/geo";
@@ -396,6 +397,9 @@ export default function BroadcastFrame({
         ? (onAirSegment.camera.center ?? state.camera.center ?? null)
         : null;
   const ledeCountryDoc = useFocusCountry(ledeCenter);
+  // The clock where the camera is looking — composed on the focus bundle, so
+  // this is a read, not a fetch. Feeds the info tile's live LOCAL TIME row.
+  const localZone = useLocalZone();
   const summaryCountryDoc = onAirSegment?.summary ? ledeCountryDoc : null;
   // The framed place's own per-place round-up — the spotlight's second slide.
   // A country shot keys on the enriched Country under the on-air point
@@ -586,6 +590,7 @@ export default function BroadcastFrame({
         areaQuakes,
         areaVolcanoes,
         world: worldwide ? worldWatch : null,
+        localZone,
         wideCitiesBbox,
         wideCitiesCc,
         histCenter,

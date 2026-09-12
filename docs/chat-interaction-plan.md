@@ -104,6 +104,16 @@ with no socket traffic.
 
 ## 2. Map-mode requests go through the director
 
+> **Superseded in part (2026-09-12):** the loop-side consumption described in
+> steps 1–3 below is now specified as a `cut { target: mapType }` command on the
+> director command queue — see [director-commands-plan.md](./director-commands-plan.md)
+> §2 and phase C3. The `Segment.mapTypes` pin transport, the worker-side
+> availability check and the breaking-news precedence are unchanged; only the
+> *entry point* moves from a per-tick `viewerState.mapType` read to the queue,
+> so map picks, `:show japan`, `:roundup` and operator Take all go through one
+> arbitration (operator > break-in > viewer > rotation).
+
+
 The director is the only thing that should cut the globe. A `mapType` request is
 consumed in the worker loop, not painted over the top by the client:
 

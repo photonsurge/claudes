@@ -39,6 +39,7 @@ jest.mock("../../lib/focus/focus-client", () => ({
   useVolcanoCams: () => [],
   useVolcanoEruptions: () => [],
   useFocusTarget: () => null,
+  useLocalZone: () => null,
 }));
 jest.mock("../../lib/world-watch", () => ({ useWorldWatch: () => ({}) }));
 jest.mock("../../lib/summaries", () => ({ useLatestRoundup: () => null }));

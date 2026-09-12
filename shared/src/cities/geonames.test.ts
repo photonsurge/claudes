@@ -3,17 +3,19 @@ import {
   parseGeonamesCities,
   rankFromPop,
   isGeonamesTier,
+  isIanaZoneId,
+  parseGeonameZoneRow,
   DEFAULT_CITIES_TIER,
 } from "./geonames";
 
 const tab = (...f: (string | number)[]) => f.join("\t");
 
-// geoname-table columns: id, name, ascii, alt, lat, lng, fclass, fcode, cc, …, pop@14
-const cityRow = (over: Partial<{ id: string; name: string; lat: number; lng: number; fcode: string; cc: string; pop: number }> = {}) => {
-  const o = { id: "1", name: "Testville", lat: 10, lng: 20, fcode: "PPL", cc: "FR", pop: 50000, ...over };
-  const f = new Array(15).fill("");
+// geoname-table columns: id, name, ascii, alt, lat, lng, fclass, fcode, cc, …, pop@14, tz@17
+const cityRow = (over: Partial<{ id: string; name: string; lat: number; lng: number; fcode: string; cc: string; pop: number; tz: string }> = {}) => {
+  const o = { id: "1", name: "Testville", lat: 10, lng: 20, fcode: "PPL", cc: "FR", pop: 50000, tz: "Europe/Paris", ...over };
+  const f = new Array(19).fill("");
   f[0] = o.id; f[1] = o.name; f[2] = o.name; f[4] = String(o.lat); f[5] = String(o.lng);
-  f[7] = o.fcode; f[8] = o.cc; f[14] = String(o.pop);
+  f[7] = o.fcode; f[8] = o.cc; f[14] = String(o.pop); f[17] = o.tz;
   return f.join("\t");
 };
 
@@ -51,6 +53,37 @@ describe("parseGeonamesCities", () => {
     expect(docs.map((d) => d.name)).toEqual(["Xtown"]);
     expect(docs[0].country).toBe("");
   });
+
+  it("keeps the gazetteer's IANA timezone, trimming a CRLF dump's trailing \\r", () => {
+    const txt = [
+      cityRow({ id: "7", name: "Tokyo", tz: "Asia/Tokyo" }),
+      `${cityRow({ id: "8", name: "Kolkata", tz: "Asia/Kolkata" })}\r`,
+    ].join("\n");
+    const docs = parseGeonamesCities(txt, names);
+    expect(docs.map((d) => d.timezone)).toEqual(["Asia/Tokyo", "Asia/Kolkata"]);
+  });
+
+  it("omits the field entirely when the timezone cell is blank or mangled", () => {
+    const txt = [cityRow({ id: "7", tz: "" }), cityRow({ id: "8", tz: "not a zone" })].join("\n");
+    const docs = parseGeonamesCities(txt, names);
+    expect(docs.every((d) => d.timezone === undefined)).toBe(true);
+  });
+});
+
+describe("isIanaZoneId", () => {
+  it("accepts two- and three-segment zone ids", () => {
+    expect(isIanaZoneId("Asia/Tokyo")).toBe(true);
+    expect(isIanaZoneId("America/Argentina/Salta")).toBe(true);
+    expect(isIanaZoneId("America/Port-au-Prince")).toBe(true);
+    expect(isIanaZoneId("Etc/GMT+5")).toBe(true);
+  });
+
+  it("rejects blanks, prose and bare words", () => {
+    expect(isIanaZoneId("")).toBe(false);
+    expect(isIanaZoneId("not a zone")).toBe(false);
+    expect(isIanaZoneId("Tokyo")).toBe(false);
+    expect(isIanaZoneId("Asia/Tokyo\r")).toBe(false);
+  });
 });
 
 describe("rankFromPop / tiers", () => {
@@ -64,5 +97,30 @@ describe("rankFromPop / tiers", () => {
     expect(isGeonamesTier(DEFAULT_CITIES_TIER)).toBe(true);
     expect(isGeonamesTier("cities5000")).toBe(true);
     expect(isGeonamesTier("cities99")).toBe(false);
+  });
+});
+
+describe("parseGeonameZoneRow", () => {
+  it("reads id + zone off a row without building a city doc", () => {
+    expect(parseGeonameZoneRow(cityRow({ id: "1850147", tz: "Asia/Tokyo" }))).toEqual({
+      id: "gn-1850147",
+      timezone: "Asia/Tokyo",
+    });
+  });
+
+  it("stamps the same gn- id the seed writes, so a backfill matches by it", () => {
+    const row = cityRow({ id: "42" });
+    const [doc] = parseGeonamesCities(row, new Map());
+    expect(parseGeonameZoneRow(row)!.id).toBe(doc.id);
+  });
+
+  it("returns null for a blank line, a zone-less row and a mangled zone", () => {
+    expect(parseGeonameZoneRow("")).toBeNull();
+    expect(parseGeonameZoneRow(cityRow({ tz: "" }))).toBeNull();
+    expect(parseGeonameZoneRow(cityRow({ tz: "somewhere" }))).toBeNull();
+  });
+
+  it("survives a truncated row rather than throwing", () => {
+    expect(parseGeonameZoneRow("123\tOnly\tTwo")).toBeNull();
   });
 });

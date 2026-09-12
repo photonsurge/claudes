@@ -509,6 +509,17 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     priority: 5,
   },
   {
+    id: "cities-backfill-timezones",
+    label: "Backfill city timezones",
+    description:
+      "One-time: add the IANA timezone (\"Asia/Tokyo\") to city docs seeded before the field existed, by re-reading the GeoNames dump and matching on the geonames id already on every doc. Feeds the on-air LOCAL TIME row on country, alert, seismic and volcano cuts — without it those fall back to a longitude guess, which is wrong wherever a country's clock ignores its meridian (China, Spain, India's half hour). Pure field fill: nothing else on the doc is touched, so Wikipedia enrichment survives (a reseed would not). Idempotent — skips cities that already have one. Reads the finest GeoNames dump (a superset of every seed tier), so one run covers the collection however it was seeded.",
+    domain: "cities",
+    type: "cities",
+    event: "backfillTimezones",
+    group: "Cities",
+    priority: 5,
+  },
+  {
     id: "cities-enrich",
     label: "Enrich cities (Wikipedia)",
     description: "Fetch a Wikipedia photo + blurb for prominent cities (≥100k + capitals). Run after a reseed.",

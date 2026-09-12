@@ -120,7 +120,7 @@ NWS and WMO, Europe by both WMO and MeteoAlarm) so nothing gets missed.
 
 | Source | What it gives us | Adapter | Cadence |
 |---|---|---|---|
-| **GeoNames** | World city gazetteer (4 population tiers) | `shared/src/cities/geonames.ts` | manual seed |
+| **GeoNames** | World city gazetteer (4 population tiers), incl. each city's IANA timezone — the source of the on-air LOCAL TIME reading | `shared/src/cities/geonames.ts` | manual seed (timezones: `/admin/jobs` → Backfill city timezones) |
 | **Wikipedia REST Summary API** | Photo + blurb enrichment for cities/volcanoes/notable tracks | `shared/src/utill/wikipedia.ts` | volcanoes every 6h; notable tracks hourly; cities are admin-button only (`/admin/jobs` → `enrichWikiAll`), no automatic schedule |
 | **Open-Meteo Archive API** (ERA5) | Historical daily climate, worker-cached per focus point (on-air camera + recent M5.5+ quakes) for the history/climate panel | `shared/src/climate/openmeteo.ts`, `worker/src/jobs/climate.ts` | every 10min |
 | **Nominatim** (OpenStreetMap) | Operator place-name search → coordinates | `public/src/app/api/geocode/route.ts` | on demand |

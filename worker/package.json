@@ -29,6 +29,7 @@
     "seed:admin": "ts-node src/scripts/seedAdmin.ts",
     "seed:capitals": "ts-node src/scripts/seedCapitals.ts",
     "seed:cities": "ts-node src/scripts/seedCities.ts",
+    "backfill:city-timezones": "ts-node src/scripts/backfillCityTimezones.ts",
     "seed:notable": "ts-node src/scripts/seedNotable.ts",
     "seed:sea-points": "ts-node src/scripts/seedSeaPoints.ts",
     "seed:director-slides": "ts-node src/scripts/seedDirectorSlides.ts",

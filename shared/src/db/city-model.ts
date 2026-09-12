@@ -24,6 +24,14 @@ export interface iCity extends iGeneralModel {
   population?: number;
   isCapital?: boolean;
   /**
+   * IANA zone id from the GeoNames gazetteer ("Asia/Tokyo") — the source of the
+   * on-air "local time here" reading (see shared/src/time/local-zone.ts). Real
+   * zones survive DST and the half-hour offsets a longitude guess gets wrong.
+   * Reseeds set it from the dump; docs seeded before the field existed are
+   * filled by the `cities.backfillTimezones` job.
+   */
+  timezone?: string;
+  /**
    * Prominence rank (Natural Earth SCALERANK: 0 = most prominent). Lower shows
    * at lower zooms — drives level-of-detail filtering for overlays.
    */
@@ -72,6 +80,7 @@ const CitySchema = new mongoose.Schema<iCityModel>(
     },
     population: { type: Number, required: false, min: 0, default: 0 },
     isCapital: { type: Boolean, required: false, default: false },
+    timezone: { type: String, required: false, trim: true, maxlength: 64 },
     rank: { type: Number, required: false, default: 10 },
     wikiTitle: { type: String, required: false, trim: true, maxlength: 200 },
     wikiThumb: { type: String, required: false, trim: true, maxlength: 600 },
@@ -90,6 +99,10 @@ CitySchema.index({ name: 1 }, { name: "city_name_ix" });
 CitySchema.index({ population: -1 }, { name: "city_population_ix" });
 CitySchema.index({ rank: 1, population: -1 }, { name: "city_rank_pop_ix" });
 CitySchema.index({ loc: "2dsphere" }, { name: "city_geo_ix", sparse: true });
+// NB: the on-air local clock's "nearest city that knows its timezone" lookup
+// rides this SAME index — it reads the nearest handful in distance order and
+// takes the first with a zone, rather than adding a second 2dsphere index on
+// `loc` (Mongo rejects a duplicate key pattern that differs only in options).
 
 // Keep the 2dsphere `loc` in step with lat/lng on single-doc writes (POST
 // /api/cities, admin edits — model.create/.save run this). The bulk GeoNames

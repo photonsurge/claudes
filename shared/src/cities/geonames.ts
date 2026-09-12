@@ -33,10 +33,22 @@ export interface GeonameCityDoc {
   population: number;
   isCapital: boolean;
   rank: number;
+  /** IANA zone id from the gazetteer's timezone column ("Asia/Tokyo"). Drives
+   *  the on-air "local time here" reading — real, so it survives DST and the
+   *  half-hour offsets a longitude guess gets wrong. Empty for the rare row
+   *  that ships without one. */
+  timezone?: string;
 }
 
 /** geoname-table column indices we read. */
-const COL = { id: 0, name: 1, asciiname: 2, lat: 4, lng: 5, featureCode: 7, cc: 8, population: 14 };
+const COL = { id: 0, name: 1, asciiname: 2, lat: 4, lng: 5, featureCode: 7, cc: 8, population: 14, timezone: 17 };
+
+/** Shape check for a gazetteer timezone cell — "Area/Place" (optionally a third
+ *  segment, e.g. "America/Argentina/Salta"), letters, digits, `_`, `-`, `+`.
+ *  A blank or mangled cell is dropped rather than stored and failed on later. */
+export function isIanaZoneId(value: string): boolean {
+  return /^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+){1,2}$/.test(value);
+}
 
 /** Prominence rank from population (0 = most prominent) — LOD hint for overlays. */
 export function rankFromPop(pop: number, isCapital: boolean): number {
@@ -64,6 +76,23 @@ export function parseCountryInfo(text: string): Map<string, string> {
 }
 
 /**
+ * PURE: geonames id + IANA zone from ONE geoname-table row, or null when the row
+ * carries no usable zone.
+ *
+ * The lean read the timezone backfill needs: it walks a 200k-row dump without
+ * ever building a city doc per row, so the scan can be chunked across ticks
+ * instead of blocking the worker loop (see worker/src/jobs/cities.ts).
+ */
+export function parseGeonameZoneRow(line: string): { id: string; timezone: string } | null {
+  if (!line) return null;
+  const f = line.split("\t");
+  const id = f[COL.id];
+  const tz = (f[COL.timezone] || "").trim();
+  if (!id || !isIanaZoneId(tz)) return null;
+  return { id: `gn-${id}`, timezone: tz };
+}
+
+/**
  * Decoded GeoNames cities TSV → insertable docs. Rows missing a name or valid
  * coordinates are dropped. `isCapital` comes from the `PPLC` feature code; the
  * country display name is joined from `countryNames` (falls back to blank).
@@ -83,6 +112,9 @@ export function parseGeonamesCities(
     const cc = (f[COL.cc] || "").slice(0, 4);
     const population = Math.max(0, Math.round(Number(f[COL.population] || 0)));
     const isCapital = f[COL.featureCode] === "PPLC";
+    // Trailing \r survives a CRLF dump and would poison every Intl lookup, so
+    // the id is trimmed and sanity-checked ("Region/City") before it is kept.
+    const tz = (f[COL.timezone] || "").trim();
     out.push({
       id: `gn-${f[COL.id]}`,
       name: String(name),
@@ -95,6 +127,7 @@ export function parseGeonamesCities(
       population,
       isCapital,
       rank: rankFromPop(population, isCapital),
+      ...(isIanaZoneId(tz) ? { timezone: tz } : {}),
     });
   }
   return out;

@@ -16,6 +16,11 @@ import { bucketDaily, bucketValue } from "@photonsurge/shared/climate/buckets";
 import type { iCountryModel } from "@photonsurge/shared/db/country-model";
 import { cityGeoWithinBox } from "@photonsurge/shared/db/city-model";
 import { countryShot } from "@photonsurge/shared/director-countries";
+import {
+  zoneFromCity,
+  zoneFromLongitude,
+  type LocalZone,
+} from "@photonsurge/shared/time/local-zone";
 
 import type { HistorySeries, AreaHistorySeries } from "@photonsurge/shared/weather/history-types";
 import {
@@ -68,6 +73,16 @@ function bboxForCamera(center: [number, number], zoom: number): [number, number,
   const wrap = (l: number) => ((l + 540) % 360) - 180;
   return [wrap(lng - lngSpan / 2), Math.max(-90, lat - latSpan / 2), wrap(lng + lngSpan / 2), Math.min(90, lat + latSpan / 2)];
 }
+
+/** How far from the focus point a city may be and still lend it its timezone.
+ *  ~800 km covers a sparse interior (Sahara, Siberia, the Australian outback)
+ *  without letting a mid-Pacific shot borrow a continent's clock. */
+const LOCAL_ZONE_MAX_M = 800_000;
+
+/** How many of the nearest cities to look at before giving up on a real zone —
+ *  a handful, so a collection only part-way through its timezone backfill still
+ *  resolves instead of falling straight back to the longitude estimate. */
+const LOCAL_ZONE_CANDIDATES = 8;
 
 /** Forecast variables the daily card strip + hazard rules need (matches
  *  /api/weather/forecast/point's DEFAULT_VARIABLES). */
@@ -275,6 +290,7 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     region,
     seismoStations,
     tideStations,
+    localZone,
   ] = await Promise.all([
     // point + area history — a precomputed panel (worker → Redis) when the on-air
     // country/region has one, else the live bounded-memory builder (sharp decode;
@@ -369,6 +385,10 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
           })),
         )
       : Promise.resolve([]),
+    // localZone — the clock at the focus point, for the on-air LOCAL TIME row.
+    // Wide shots (global spin / orbital / ocean) frame no real ground location,
+    // so there is no "there" to give a time for.
+    hasLoc ? localZoneFor(db, lng, lat) : Promise.resolve(null),
   ]);
   const { pointHistory, areaHistory } = histories;
 
@@ -557,6 +577,8 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     areaQuakes,
     areaVolcanoes,
 
+    localZone,
+
     country,
     countryRoundup,
     region,
@@ -687,6 +709,44 @@ async function regionNearTermFor(region: iRegionModel): Promise<FocusBundle["reg
   });
   const { steps } = await buildForecastSteps(series, lat, lng);
   return steps;
+}
+
+/**
+ * The local clock at the focus point.
+ *
+ * "What time is it THERE" is a city fact, not a geometry one: the nearest
+ * catalogued city carries the IANA zone GeoNames shipped with it, which is right
+ * through DST and through every place whose clock ignores its meridian (all of
+ * China on Beijing time, Spain an hour off its longitude, India's half hour).
+ * So: read the nearest few cities in distance order and take the first that
+ * knows its zone — `$near` on the same 2dsphere index the box lookups use, so
+ * this is one indexed read, not a scan.
+ *
+ * A miss (mid-ocean, or a collection whose `cities.backfillTimezones` has not
+ * run yet) falls back to the longitude estimate, tagged `longitude` so the on-air
+ * row can caption itself "approx" rather than claim a precision it hasn't got.
+ */
+async function localZoneFor(
+  db: Awaited<ReturnType<typeof getAppDb>>,
+  lng: number,
+  lat: number,
+): Promise<LocalZone> {
+  try {
+    const near = await db.cities.model
+      .find(
+        { loc: { $near: { $geometry: { type: "Point", coordinates: [lng, lat] }, $maxDistance: LOCAL_ZONE_MAX_M } } },
+        { name: 1, timezone: 1, _id: 0 },
+      )
+      .limit(LOCAL_ZONE_CANDIDATES)
+      .lean()
+      .exec();
+    const hit = (near as { name?: string; timezone?: string }[]).find((c) => c.timezone);
+    if (hit?.timezone) return zoneFromCity(hit.timezone, lng, hit.name);
+  } catch {
+    // A geo/index error must never cost the cut its whole bundle — the longitude
+    // estimate is a perfectly serviceable clock to fall back to.
+  }
+  return zoneFromLongitude(lng);
 }
 
 /** Top cities in view (population-sorted) with climate baked in — kills the N+1.

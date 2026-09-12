@@ -72,6 +72,7 @@ import RegionCountryPanel from "./RegionCountryPanel";
 import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 import type { FocusRegionCountry } from "../../lib/focus/types";
 import type { ForecastStep } from "../../lib/weather-forecast";
+import type { LocalZone } from "@photonsurge/shared/time/local-zone";
 
 const FALLBACK_ACCENT = "#38bdf8";
 
@@ -178,6 +179,9 @@ export interface ModeSlideContext {
    *  point, resolved in BroadcastFrame via /api/countries/at. Rendered as the
    *  uniform lede's area block on EVERY mode's first slide. */
   areaInfo?: AreaInfo | null;
+  /** The clock at the on-air point (focus bundle) — the info tile's live LOCAL
+   *  TIME row on the country/alert/seismic/volcano kinds. Null elsewhere. */
+  localZone?: LocalZone | null;
   /** The enriched Region doc under a region ("area") spotlight — used for the
    *  NEXT 24H card's sample-city label. Null off a region shot. */
   region?: iRegionModel | null;
@@ -257,6 +261,7 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
         volcanoes={ctx.areaVolcanoes}
         areaInfo={ctx.areaInfo}
         world={ctx.world}
+        localZone={ctx.localZone ?? null}
         theme={ctx.theme}
       />
     ),

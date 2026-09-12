@@ -48,6 +48,7 @@ import type { AlertBlobSummary } from "@photonsurge/shared/db/alert-blob-repo";
 import type { iBlobCity } from "@photonsurge/shared/db/alert-blob-model";
 import type { iCityWeatherDay, iCityWeatherNow } from "@photonsurge/shared/db/city-weather-model";
 import type { PlaceRoundup } from "../placeRoundups";
+import type { LocalZone } from "@photonsurge/shared/time/local-zone";
 
 /** How much depth to compose. `broadcast` = the lean slice the on-air panels
  *  render; `admin`/`full` widen the variable set + history window for /admin and
@@ -215,6 +216,15 @@ export interface FocusBundle {
   areaBlobs: FocusAlertBlob[];
   areaQuakes: Quake[];
   areaVolcanoes: Volcano[];
+
+  /**
+   * The local clock at the focus point — an IANA zone read off the nearest
+   * catalogued city, else a longitude estimate. Composed here (a Mongo read) so
+   * the on-air LOCAL TIME row never fetches per cut; the client does the ticking
+   * from this zone. Null for shots with no real ground location (global spin,
+   * orbital, ocean).
+   */
+  localZone: LocalZone | null;
 
   // place + roundup (country & region)
   country: CountryAt | null;

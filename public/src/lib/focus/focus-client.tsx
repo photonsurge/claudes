@@ -32,6 +32,7 @@ import type { iEventResource } from "@photonsurge/shared/db/event-resource-model
 import type { EventSnapshotMeta } from "@photonsurge/shared/db/event-snapshot-repo";
 import type { VolcanoMedia } from "@photonsurge/shared/volcanoes/media";
 import type { iEventSeries } from "@photonsurge/shared/db/event-series-model";
+import type { LocalZone } from "@photonsurge/shared/time/local-zone";
 
 import { usePointHistory, useAreaHistory, useClimateYear } from "../history-client";
 import { usePointForecast, useAreaForecast } from "../forecast-client";
@@ -539,6 +540,17 @@ const NO_QUAKES: Quake[] = [];
 export function useFocusAreaQuakes(): Quake[] {
   const { bundle, covers } = useFocusContext();
   return covers() ? bundle!.areaQuakes : NO_QUAKES;
+}
+
+/**
+ * The local clock at the on-air point — an IANA zone off the nearest catalogued
+ * city, else a longitude estimate. Null on wide shots (nothing to be local to)
+ * and before the bundle lands; there is deliberately NO per-cut fallback fetch,
+ * because a clock is worth exactly zero extra requests.
+ */
+export function useLocalZone(): LocalZone | null {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? bundle!.localZone : null;
 }
 
 /** The on-air storm's change timeline (empty off a storm cut or before a bundle). */

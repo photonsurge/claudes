@@ -2,6 +2,9 @@
 
 > **Status: PLANNED** (2026-09-12). Nothing shipped yet. Per-channel options on
 > `/admin/scenes/:id`; worker loop + on-air reticle changes behind them.
+> Companion: [director-commands-plan.md](./director-commands-plan.md) — the
+> operator/viewer command queue (Take, Go to, Hold, Pause, chat `:show …`)
+> that reuses this plan's single-item builders and `performCut`.
 
 Let each channel's auto-director **break into the current shot** when something
 new lands — a fresh earthquake, a just-issued severe warning, a volcano that has
@@ -154,6 +157,9 @@ breakIn: BreakInConfig;
 breakIn?: { reason: BreakInReason; /** it cut the previous shot short */ interrupted: boolean };
 /** On-air INCOMING pre-roll length, ms, clocked from patch.spinEpoch. Absent/0 = none. */
 incomingMs?: number;
+/** Which deck slide leads — a roundup break-in sets "roundup" so the round-up is
+ *  the first slide. Shared with the commands plan (`:roundup uk` sets it too). */
+leadSlide?: "roundup";
 ```
 
 - `Candidate` ([director-select.ts:61](../shared/src/director-select.ts#L61)):
@@ -315,8 +321,9 @@ shot, which has no reticle. The `BroadcastCard` badge
 gets an optional `breakIn` eyebrow: the same acquiring ring at badge size +
 `BREAKING` / `NEW ROUND-UP` text during *incoming*, dropping to a static
 `⚡` chip once locked for the rest of the shot. `modeSlides` leads the deck
-with the `place-roundup` (or `roundup`) slide when `segment.breakIn?.reason ===
-"roundup"` — the round-up *is* the story, not the second slide.
+with the `place-roundup` (or `roundup`) slide when `segment.leadSlide ===
+"roundup"` (stamped by `stamp()` for roundup break-ins, and by the commands
+plan for `:roundup` requests) — the round-up *is* the story, not the second slide.
 
 **Control page** — `DirectorOnAirReadout` shows `⚡ BREAK-IN · interrupted
 <previous title>` when `segment.breakIn?.interrupted`, and "last break-in Xm

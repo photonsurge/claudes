@@ -18,6 +18,8 @@ import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import BroadcastCard, { CardSection, DIM } from "./BroadcastCard";
 import { KIND_COLOR, KIND_LABEL, isTargetedEvent } from "./kinds";
 import AreaStatus from "./AreaStatus";
+import LocalTimeRow, { showsLocalTime } from "./LocalTimeRow";
+import type { LocalZone } from "@photonsurge/shared/time/local-zone";
 import type { AreaInfo } from "./mode-slides";
 
 export default function OnAirCard({
@@ -28,6 +30,7 @@ export default function OnAirCard({
   volcanoes = [],
   areaInfo = null,
   world = null,
+  localZone = null,
   theme = DEFAULT_THEME,
 }: {
   segment: Segment;
@@ -47,6 +50,10 @@ export default function OnAirCard({
    *  down by continent instead, off this authoritative world tally (the same one
    *  the top-right WORLD WATCH panel uses) rather than the map's scoped feed. */
   world?: WorldSummary | null;
+  /** The clock at the place on air, from the focus bundle — drives the live
+   *  LOCAL TIME row on the kinds that are somewhere specific (see showsLocalTime).
+   *  Null on wide shots and before the bundle lands. */
+  localZone?: LocalZone | null;
   theme?: BroadcastTheme;
 }) {
   const color = KIND_COLOR[segment.kind] ?? theme.accent;
@@ -80,6 +87,9 @@ export default function OnAirCard({
   // The quiet line when the rollup is empty: an event says "nothing else nearby"
   // (the subject is still on screen); a country spotlight says "no active alerts".
   const emptyLabel = isEvent ? "NOTHING ELSE NEARBY" : segment.kind === "country" ? "NO ACTIVE ALERTS" : null;
+  // Whether this cut is somewhere specific enough for "what time is it there" to
+  // mean anything — and whether we actually resolved a clock for it.
+  const wantsLocalTime = localZone != null && showsLocalTime(segment.kind);
 
   return (
     // badge/accent are ignored when this renders inside the on-air deck (the deck
@@ -138,7 +148,7 @@ export default function OnAirCard({
         </CardSection>
       ) : null}
 
-      {details.length ? (
+      {details.length || wantsLocalTime ? (
         <div
           style={{
             marginTop: 14,
@@ -157,6 +167,9 @@ export default function OnAirCard({
               <span style={{ fontWeight: 700, textAlign: "right" }}>{d.value}</span>
             </div>
           ))}
+          {/* The place's own clock, last in the block — a live row among the
+              director's static ones. Renders nothing until the zone lands. */}
+          {wantsLocalTime ? <LocalTimeRow zone={localZone} /> : null}
         </div>
       ) : null}
 

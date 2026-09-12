@@ -15,6 +15,7 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import {
   parseCountryInfo,
   parseGeonamesCities,
+  parseGeonameZoneRow,
   isGeonamesTier,
   DEFAULT_CITIES_TIER,
 } from "@photonsurge/shared/cities/geonames";
@@ -279,5 +280,117 @@ export async function backfillLoc(_job?: Job) {
   const result = { updated, skipped, remaining };
   log(TAG, `backfillLoc done`, result);
   blogInfo(TAG, `city geo-index backfill: ${updated} filled, ${remaining} still without loc`, result, "cities", "backfill-loc");
+  return result;
+}
+
+// ── Timezone backfill ─────────────────────────────────────────────────────────
+
+/** The dump the backfill reads by default. cities500 is a SUPERSET of every
+ *  seed tier, so one run fills the collection whichever tier it was seeded
+ *  from — at the cost of the biggest download. */
+const TZ_BACKFILL_TIER: string = "cities500";
+
+/** Rows scanned between event-loop yields. The dump is ~200k lines and the
+ *  worker runs the socket/queue loop in this same process, so the scan hands
+ *  the loop back rather than blocking it for the whole parse. */
+const TZ_SCAN_CHUNK = 5000;
+
+const yieldToLoop = () => new Promise<void>((r) => setImmediate(r));
+
+/**
+ * PURE-ish: geonames id → IANA zone for every row of a decoded dump, scanned in
+ * chunks so a 200k-row file never blocks the worker loop end-to-end. Only two
+ * short strings per row are retained — never a city doc.
+ */
+async function zonesFromDump(text: string): Promise<Map<string, string>> {
+  const zones = new Map<string, string>();
+  let from = 0;
+  let scanned = 0;
+  while (from <= text.length) {
+    const nl = text.indexOf("\n", from);
+    const line = text.slice(from, nl === -1 ? text.length : nl);
+    const row = parseGeonameZoneRow(line);
+    if (row) zones.set(row.id, row.timezone);
+    if (nl === -1) break;
+    from = nl + 1;
+    if (++scanned % TZ_SCAN_CHUNK === 0) await yieldToLoop();
+  }
+  return zones;
+}
+
+/**
+ * Job handler: `cities.backfillTimezones` — fill the IANA `timezone` onto city
+ * docs seeded before the field existed, so the on-air "local time here" row can
+ * read a real zone (DST, +5:30, +5:45) instead of the round(lng/15) guess.
+ *
+ * Re-reads a GeoNames dump and matches on the geonames id already baked into
+ * every seeded doc (`gn-<id>`), so it is a pure field fill: nothing else on the
+ * doc is touched and Wikipedia enrichment survives (unlike a reseed, which
+ * replaces the collection). Idempotent — only docs missing a timezone are
+ * written, so re-running once complete costs one download and no writes.
+ *
+ * Defaults to the finest tier because it is a superset of every seed tier; pass
+ * `tier` to use a smaller download when the collection's own tier is known.
+ */
+export async function backfillTimezones(job?: Job) {
+  const raw = job?.data?.data?.tier;
+  const tier = isGeonamesTier(raw) ? raw : TZ_BACKFILL_TIER;
+  const force = Boolean(job?.data?.data?.force);
+
+  log(TAG, `backfillTimezones fetching GeoNames ${tier}…`);
+  const zipRes = await fetch(`${DUMP}/${tier}.zip`);
+  if (!zipRes.ok) throw new Error(`GeoNames ${tier}.zip fetch failed ${zipRes.status}`);
+  const zip = unzipSync(new Uint8Array(await zipRes.arrayBuffer()));
+  const entry = zip[`${tier}.txt`];
+  if (!entry) throw new Error(`no ${tier}.txt inside the GeoNames archive`);
+
+  const zones = await zonesFromDump(new TextDecoder().decode(entry));
+  log(TAG, `backfillTimezones parsed ${zones.size} zones from ${tier}`);
+
+  const db = await getAppDb();
+  const query = force ? {} : { timezone: { $exists: false } };
+  const cursor = db.cities.model
+    .find(query, { id: 1, _id: 0 })
+    .lean()
+    .cursor({ batchSize: BACKFILL_BATCH });
+
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  let ops: any[] = [];
+  let updated = 0;
+  let unmatched = 0;
+  const flush = async () => {
+    if (!ops.length) return;
+    await db.cities.model.bulkWrite(ops, { ordered: false });
+    updated += ops.length;
+    ops = [];
+    log(TAG, `backfillTimezones ${updated} filled…`);
+  };
+
+  try {
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    for (let doc = (await cursor.next()) as any; doc; doc = (await cursor.next()) as any) {
+      const tz = zones.get(String(doc.id));
+      if (!tz) {
+        unmatched++; // a hand-added city, or one this tier does not carry
+        continue;
+      }
+      ops.push({ updateOne: { filter: { id: doc.id }, update: { $set: { timezone: tz } } } });
+      if (ops.length >= BACKFILL_BATCH) await flush();
+    }
+    await flush();
+  } finally {
+    await cursor.close();
+  }
+
+  const remaining = await db.cities.model.countDocuments({ timezone: { $exists: false } });
+  const result = { tier, parsed: zones.size, updated, unmatched, remaining };
+  log(TAG, `backfillTimezones done`, result);
+  blogInfo(
+    TAG,
+    `city timezone backfill: ${updated} filled from ${tier}, ${remaining} still without a zone`,
+    result,
+    "cities",
+    "backfill-timezones",
+  );
   return result;
 }

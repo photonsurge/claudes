@@ -5,6 +5,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import type { Quake } from "../../lib/tracks/types";
 import type { AreaInfo } from "./mode-slides";
 import type { WorldSummary } from "../../lib/broadcast";
+import { zoneFromCity, zoneFromLongitude } from "@photonsurge/shared/time/local-zone";
 
 const seg = (over: Record<string, unknown> = {}): Segment =>
   ({ kind: "quake", id: "quake:x", title: "M6.1 — Off Coast", camera: { center: [0, 0], zoom: 6 }, ...over }) as unknown as Segment;
@@ -53,6 +54,51 @@ describe("OnAirCard", () => {
   it("omits the area block when areaInfo has neither photo nor blurb", () => {
     render(<OnAirCard segment={seg()} areaInfo={{ name: "Nowhere", photo: null, blurb: null }} />);
     expect(screen.queryByText("The Area")).not.toBeInTheDocument();
+  });
+
+  describe("local time row", () => {
+    const AT = new Date("2026-01-15T12:00:00Z"); // Thursday noon UTC
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(AT);
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("shows the place's clock on a placed kind", () => {
+      render(<OnAirCard segment={seg({ kind: "volcano" })} localZone={zoneFromCity("Asia/Tokyo", 139.7, "Tokyo")} />);
+      expect(screen.getByText("LOCAL TIME")).toBeInTheDocument();
+      expect(screen.getByText("21:00")).toBeInTheDocument();
+    });
+
+    it("opens the details block for the clock even when the director sent no detail rows", () => {
+      render(<OnAirCard segment={seg({ kind: "country", details: [] })} localZone={zoneFromLongitude(139.7)} />);
+      expect(screen.getByText("LOCAL TIME")).toBeInTheDocument();
+    });
+
+    it("sits alongside the director's own detail rows", () => {
+      render(
+        <OnAirCard
+          segment={seg({ kind: "storm", details: [{ label: "SEVERITY", value: "Extreme" }] })}
+          localZone={zoneFromCity("Europe/London", -0.1, "London")}
+        />,
+      );
+      expect(screen.getByText("SEVERITY")).toBeInTheDocument();
+      expect(screen.getByText("Extreme")).toBeInTheDocument();
+      expect(screen.getByText("12:00")).toBeInTheDocument();
+    });
+
+    it("stays off a kind that has no single there", () => {
+      render(<OnAirCard segment={seg({ kind: "global" })} localZone={zoneFromCity("Asia/Tokyo", 139.7, "Tokyo")} />);
+      expect(screen.queryByText("LOCAL TIME")).not.toBeInTheDocument();
+    });
+
+    it("stays off until a zone is resolved", () => {
+      render(<OnAirCard segment={seg({ kind: "quake" })} localZone={null} />);
+      expect(screen.queryByText("LOCAL TIME")).not.toBeInTheDocument();
+    });
   });
 
   describe("hazard rollup wording", () => {
