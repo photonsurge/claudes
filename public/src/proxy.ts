@@ -10,12 +10,13 @@ import { SESSION_COOKIE, readSession, isAdmin } from "@photonsurge/shared/utill/
  * `/watch/**` is deliberately NOT gated here — it's the OBS/YouTube output and
  * can't do interactive login. It's protected separately by a per-scene
  * `?token=` check inside the scene/broadcast-state API routes. The home page `/`
- * IS gated: it's the operator channel launcher, admin-only like /control —
- * and so is /sandbox, the detached operator console.
+ * is not gated either: it's the public front door (what's on air + the YouTube
+ * links), and it shows its operator-launcher face only to an admin session it
+ * reads itself (app/page.tsx). /control and /sandbox, the operator consoles,
+ * ARE gated here.
  */
 export const config = {
   matcher: [
-    "/",
     "/admin/:path*",
     "/control",
     "/sandbox",
@@ -29,7 +30,7 @@ export const config = {
 const GET_LIKE = new Set(["GET", "HEAD"]);
 
 function needsAdmin(pathname: string, method: string): boolean {
-  if (pathname === "/" || pathname === "/control" || pathname === "/sandbox" || pathname.startsWith("/admin")) return true;
+  if (pathname === "/control" || pathname === "/sandbox" || pathname.startsWith("/admin")) return true;
   if (pathname.startsWith("/api/admin")) return true;
   // /api/broadcast/state, /api/scenes/** and /api/director/** allow anonymous
   // GET (/watch — the OBS output — reads scene state and director config
@@ -48,7 +49,7 @@ export function proxy(req: NextRequest) {
   const session = token ? readSession(token) : null;
   if (isAdmin(session)) return NextResponse.next();
 
-  const isPage = pathname === "/" || pathname === "/control" || pathname === "/sandbox" || pathname.startsWith("/admin");
+  const isPage = pathname === "/control" || pathname === "/sandbox" || pathname.startsWith("/admin");
   if (isPage) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";

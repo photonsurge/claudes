@@ -8,6 +8,9 @@
  *
  * Renders nothing unless the director is actually driving the channel: a
  * hand-driven or off-air channel has no queue to show and nothing to skip to.
+ *
+ * `readOnly` is the public home's variant (PublicChannels): the same two-line
+ * readout with no Next button — a viewer can look, never cut.
  */
 import { useEffect, useState } from "react";
 import { upNextLabel, type DirectorState } from "@photonsurge/shared/director";
@@ -19,9 +22,11 @@ const SKIP_TIMEOUT_MS = 8000;
 export default function ChannelNowNext({
   sceneId,
   director,
+  readOnly = false,
 }: {
   sceneId: string;
   director: DirectorState | null;
+  readOnly?: boolean;
 }) {
   const [now, setNow] = useState(() => Date.now());
   const [skipping, setSkipping] = useState(false);
@@ -68,25 +73,29 @@ export default function ChannelNowNext({
       <div style={{ marginTop: 6 }}>
         <Line label="Next" title={next ? upNextLabel(next) : "—"} muted />
       </div>
-      <button
-        onClick={skip}
-        disabled={skipping}
-        title="Cut to the next shot now"
-        style={{
-          marginTop: 10,
-          padding: "5px 12px",
-          borderRadius: 6,
-          border: "1px solid #2a3142",
-          background: "#1a2030",
-          color: skipping ? "#8b95a7" : "#fff",
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: skipping ? "default" : "pointer",
-        }}
-      >
-        {skipping ? "Cutting…" : "Next ⏭"}
-      </button>
-      {failed ? <span style={{ marginLeft: 8, fontSize: 12, color: "#ff8a8a" }}>Skip failed</span> : null}
+      {readOnly ? null : (
+        <>
+          <button
+            onClick={skip}
+            disabled={skipping}
+            title="Cut to the next shot now"
+            style={{
+              marginTop: 10,
+              padding: "5px 12px",
+              borderRadius: 6,
+              border: "1px solid #2a3142",
+              background: "#1a2030",
+              color: skipping ? "#8b95a7" : "#fff",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: skipping ? "default" : "pointer",
+            }}
+          >
+            {skipping ? "Cutting…" : "Next ⏭"}
+          </button>
+          {failed ? <span style={{ marginLeft: 8, fontSize: 12, color: "#ff8a8a" }}>Skip failed</span> : null}
+        </>
+      )}
     </div>
   );
 }

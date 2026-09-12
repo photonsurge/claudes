@@ -45,6 +45,7 @@ import QuakeReport from "../../components/broadcast/QuakeReport";
 import TrackInfoPanel from "../../components/broadcast/TrackInfoPanel";
 import AlertLegend from "../../components/AlertLegend";
 import { DebugButton } from "../../lib/client/debug";
+import LogoutButton from "../../components/LogoutButton";
 
 export default function ControlPage() {
   const [state, setState] = useState<ControlState>(DEFAULT_CONTROL_STATE);
@@ -360,21 +361,25 @@ export default function ControlPage() {
               Watch ↗
             </a>
           </div>
-          <DebugButton
-            title="State"
-            tooltip="Inspect live control state, tracks & overlays"
-            data={{
-              state,
-              counts: {
-                tracks: tracks.length,
-                orbits: orbits.length,
-                alerts: alerts.length,
-                quakes: quakes.length,
-                cities: cities.length,
-              },
-              manifestLoaded: manifest !== null,
-            }}
-          />
+          {/* The State inspector and the way out share the header's right edge. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <DebugButton
+              title="State"
+              tooltip="Inspect live control state, tracks & overlays"
+              data={{
+                state,
+                counts: {
+                  tracks: tracks.length,
+                  orbits: orbits.length,
+                  alerts: alerts.length,
+                  quakes: quakes.length,
+                  cities: cities.length,
+                },
+                manifestLoaded: manifest !== null,
+              }}
+            />
+            <LogoutButton compact />
+          </div>
         </div>
         <DirectorPanel
           sceneId={sceneId}

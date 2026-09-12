@@ -1,0 +1,122 @@
+import Link from "next/link";
+import ServiceStatusPanel from "../ServiceStatusPanel";
+import StreamStatusBadge from "../StreamStatusBadge";
+import ChannelLauncher from "../ChannelLauncher";
+import LogoutButton from "../LogoutButton";
+
+/**
+ * The signed-in view of the home page: the operator launcher. Leads with the
+ * per-channel launcher (drive or preview any channel), then the big jump-offs
+ * and the service status. The public view of the same URL is PublicHome.
+ *
+ * Carries the operator's session strip — who is signed in, the way out, and a
+ * link that re-renders this very URL the way a viewer sees it (`?view=public`)
+ * so the operator can check the public front door without signing out.
+ */
+export default function OperatorLauncher({ email }: { email: string }) {
+  return (
+    <>
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 820,
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          gap: 14,
+          fontSize: 13,
+          color: "#8b95a7",
+        }}
+      >
+        <span>{email}</span>
+        <Link href="/?view=public" style={{ color: "#8b95a7", textDecoration: "none" }}>
+          Public view
+        </Link>
+        <LogoutButton />
+      </div>
+
+      <h1 style={{ margin: 0, fontSize: 34 }}>Live Weather Globe</h1>
+      <p style={{ margin: 0, color: "#8b95a7", fontSize: 15 }}>
+        NOAA weather · alerts · live satellites, aircraft & ships
+      </p>
+
+      <div style={{ marginTop: 4 }}>
+        <StreamStatusBadge />
+      </div>
+
+      <div style={{ marginTop: 22, width: "100%", display: "flex", justifyContent: "center" }}>
+        <ChannelLauncher />
+      </div>
+
+      <nav
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+          gap: 16,
+          marginTop: 26,
+          width: "100%",
+          maxWidth: 820,
+        }}
+      >
+        <Launch href="/admin/scenes" label="Channels" sub="Create & manage broadcast channels" accent="#2563eb" />
+        <Launch href="/admin/streams" label="Streams" sub="Constant streams, encoders & runs" accent="#2563eb" />
+        <Launch href="/sandbox" label="Sandbox" sub="Detached globe — off-air, yours to play with" accent="#2563eb" blank />
+        <Launch href="/admin" label="Admin" sub="Alerts, tracks, cities & tools" />
+        <Launch href="/music" label="Music" sub="Generative broadcast audio bed" accent="#54e6a6" />
+      </nav>
+
+      <div style={{ display: "flex", gap: 14, marginTop: 18, fontSize: 13 }}>
+        <Quick href="/admin/alerts" label="Weather alerts" />
+        <Quick href="/admin/tracks" label="Live tracks" />
+        <Quick href="/cities" label="Cities" />
+      </div>
+
+      <div style={{ marginTop: 26 }}>
+        <ServiceStatusPanel compact />
+      </div>
+    </>
+  );
+}
+
+function Launch({
+  href,
+  label,
+  sub,
+  accent,
+  blank,
+}: {
+  href: string;
+  label: string;
+  sub: string;
+  accent?: string;
+  /** Open in a new tab/window (used for the live globe surfaces). */
+  blank?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      target={blank ? "_blank" : undefined}
+      rel={blank ? "noreferrer" : undefined}
+      style={{
+        display: "block",
+        padding: "20px 24px",
+        borderRadius: 12,
+        border: `1px solid ${accent ?? "#2a3142"}`,
+        background: "#121826",
+        color: "#fff",
+        textDecoration: "none",
+      }}
+    >
+      <div style={{ fontSize: 20, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 13, color: "#8b95a7", marginTop: 4 }}>{sub}</div>
+    </Link>
+  );
+}
+
+function Quick({ href, label }: { href: string; label: string }) {
+  return (
+    <Link href={href} style={{ color: "#8b95a7", textDecoration: "none" }}>
+      {label}
+    </Link>
+  );
+}

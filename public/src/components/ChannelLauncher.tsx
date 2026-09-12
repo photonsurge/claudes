@@ -3,7 +3,7 @@
 /**
  * Home-page channel launcher: one card per broadcast channel (a scene) with a
  * link to its operator console (/control?scene=:id) and its full-screen output
- * (/watch/:id). Mirrors the links on /admin/scenes so the login-gated home page
+ * (/watch/:id). Mirrors the links on /admin/scenes so the signed-in home page
  * is a fast jump-off to drive or preview any channel.
  *
  * Each card also carries the director's NOW/NEXT shots and a Next button that

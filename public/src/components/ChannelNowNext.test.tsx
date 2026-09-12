@@ -43,6 +43,14 @@ describe("ChannelNowNext", () => {
     expect(screen.getByText(/^\d+s$/)).toBeInTheDocument();
   });
 
+  it("keeps the readout but drops the Next button when read-only (the public home)", () => {
+    render(<ChannelNowNext sceneId="default" director={state()} readOnly />);
+
+    expect(screen.getByText("France")).toBeInTheDocument();
+    expect(screen.getByText("Earthquake — M5.6 · Southern Sumatra")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
   it("renders an em-dash when nothing is queued yet", () => {
     render(<ChannelNowNext sceneId="default" director={state({ upNext: [] })} />);
     expect(screen.getByText("—")).toBeInTheDocument();

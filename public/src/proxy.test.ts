@@ -2,8 +2,9 @@
 
 /**
  * proxy.ts (Next's renamed `middleware`) is the ONLY gate in front of the
- * operator surface — /, /control, /sandbox, /admin/**, and the mutating halves of
- * /api/admin, /api/broadcast/state, /api/scenes/**. It had no test at all;
+ * operator surface — /control, /sandbox, /admin/**, and the mutating halves of
+ * /api/admin, /api/broadcast/state, /api/scenes/** (the home page gates its own
+ * operator face in-page — see app/page.test.tsx). It had no test at all;
  * a wrong `needsAdmin`/`isPage` condition here silently exposes a page (no
  * redirect, no 401) or breaks the /login redirect for a legitimate gate.
  *
@@ -34,7 +35,7 @@ beforeEach(() => {
 });
 
 describe("proxy — anonymous requests", () => {
-  it.each([["/"], ["/control"], ["/sandbox"], ["/admin"], ["/admin/scenes"]])(
+  it.each([["/control"], ["/sandbox"], ["/admin"], ["/admin/scenes"]])(
     "redirects the gated page %s to /login with ?next=",
     (pathname) => {
       const res = proxy(req(pathname));
@@ -74,6 +75,10 @@ describe("proxy — anonymous requests", () => {
 
   it("leaves an ungated page alone (e.g. /login itself)", () => {
     expect(proxy(req("/login")).status).toBe(200);
+  });
+
+  it("never gates the home page — it's the public front door; its operator face is gated in-page", () => {
+    expect(proxy(req("/")).status).toBe(200);
   });
 });
 

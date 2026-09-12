@@ -48,6 +48,7 @@ import AlertLegend from "../../components/AlertLegend";
 import Legend from "../../components/Legend";
 import { legendVariableFor } from "../../lib/legend";
 import { DebugButton } from "../../lib/client/debug";
+import LogoutButton from "../../components/LogoutButton";
 
 export default function SandboxPage() {
   const [state, setState] = useState<ControlState>(DEFAULT_CONTROL_STATE);
@@ -268,21 +269,25 @@ export default function SandboxPage() {
             <h2 style={{ margin: 0, fontSize: 18 }}>Sandbox</h2>
             <span style={{ fontSize: 11, opacity: 0.55 }}>detached · off-air</span>
           </div>
-          <DebugButton
-            title="State"
-            tooltip="Inspect local control state, tracks & overlays (off-air)"
-            data={{
-              state,
-              counts: {
-                tracks: tracks.length,
-                orbits: orbits.length,
-                alerts: alerts.length,
-                quakes: quakes.length,
-                cities: cities.length,
-              },
-              manifestLoaded: manifest !== null,
-            }}
-          />
+          {/* The State inspector and the way out share the header's right edge. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <DebugButton
+              title="State"
+              tooltip="Inspect local control state, tracks & overlays (off-air)"
+              data={{
+                state,
+                counts: {
+                  tracks: tracks.length,
+                  orbits: orbits.length,
+                  alerts: alerts.length,
+                  quakes: quakes.length,
+                  cities: cities.length,
+                },
+                manifestLoaded: manifest !== null,
+              }}
+            />
+            <LogoutButton compact />
+          </div>
         </div>
         <ControlPanel
           state={state}
