@@ -3,76 +3,67 @@
  * data sources / footnote, all shipped as ONE full about object per delta so
  * the draft's top-level spread-merge can't drop sibling fields.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
 import AboutCardSettings from "./AboutCardSettings";
+import { renderInDraft } from "./draft-harness";
 
-const patch = jest.fn();
-jest.mock("../../../lib/scenes", () => ({
-  fetchSceneState: jest.fn(),
-  useScenePatcher: () => patch,
-}));
-import { fetchSceneState } from "../../../lib/scenes";
-const mockFetch = fetchSceneState as jest.MockedFunction<typeof fetchSceneState>;
-
-const withAbout = (over: Partial<typeof DEFAULT_CONTROL_STATE.about>) => ({
-  ...DEFAULT_CONTROL_STATE,
-  about: { ...DEFAULT_CONTROL_STATE.about, ...over },
-});
-
-beforeEach(() => {
-  patch.mockClear();
-  mockFetch.mockResolvedValue({ state: { ...DEFAULT_CONTROL_STATE }, tokenError: false });
+const about = (over: Partial<typeof DEFAULT_CONTROL_STATE.about> = {}) => ({
+  ...DEFAULT_CONTROL_STATE.about,
+  ...over,
 });
 
 describe("AboutCardSettings", () => {
-  it("stages a title change with the FULL about object in the delta", async () => {
-    render(<AboutCardSettings sceneId="wind" />);
-    const title = await screen.findByRole("textbox", { name: "About title" });
-    fireEvent.change(title, { target: { value: "About Storm Watch" } });
+  it("stages a title change with the FULL about object in the delta", () => {
+    const d = renderInDraft(<AboutCardSettings />);
+    fireEvent.change(screen.getByRole("textbox", { name: "About title" }), {
+      target: { value: "About Storm Watch" },
+    });
 
-    expect(patch).toHaveBeenCalledWith("wind", {
-      about: { ...DEFAULT_CONTROL_STATE.about, title: "About Storm Watch" },
+    expect(d.last()).toEqual({ about: about({ title: "About Storm Watch" }) });
+  });
+
+  it("stages the data-sources line without dropping existing copy", () => {
+    const d = renderInDraft(<AboutCardSettings />, {
+      state: { about: about({ title: "About Storm Watch", body: "Custom body." }) },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "About sources" }), {
+      target: { value: "NOAA GFS, USGS" },
+    });
+
+    expect(d.last()).toEqual({
+      about: about({ title: "About Storm Watch", body: "Custom body.", sources: "NOAA GFS, USGS" }),
     });
   });
 
-  it("stages the data-sources line without dropping existing copy", async () => {
-    mockFetch.mockResolvedValue({
-      state: withAbout({ title: "About Storm Watch", body: "Custom body." }),
-      tokenError: false,
+  it("stages the footnote", () => {
+    const d = renderInDraft(<AboutCardSettings />);
+    fireEvent.change(screen.getByRole("textbox", { name: "About footnote" }), {
+      target: { value: "Custom small print." },
     });
-    render(<AboutCardSettings sceneId="wind" />);
-    const sources = await screen.findByRole("textbox", { name: "About sources" });
-    fireEvent.change(sources, { target: { value: "NOAA GFS, USGS" } });
 
-    expect(patch).toHaveBeenCalledWith("wind", {
-      about: {
-        ...DEFAULT_CONTROL_STATE.about,
-        title: "About Storm Watch",
-        body: "Custom body.",
-        sources: "NOAA GFS, USGS",
-      },
-    });
+    expect(d.last()).toEqual({ about: about({ footer: "Custom small print." }) });
   });
 
-  it("stages the footnote", async () => {
-    render(<AboutCardSettings sceneId="wind" />);
-    const footer = await screen.findByRole("textbox", { name: "About footnote" });
-    fireEvent.change(footer, { target: { value: "Custom small print." } });
-
-    expect(patch).toHaveBeenCalledWith("wind", {
-      about: { ...DEFAULT_CONTROL_STATE.about, footer: "Custom small print." },
+  it("shows the channel's saved copy", () => {
+    renderInDraft(<AboutCardSettings />, {
+      state: { about: about({ body: "What this channel is.", sources: "NOAA GFS" }) },
     });
-  });
 
-  it("shows the channel's saved copy once loaded", async () => {
-    mockFetch.mockResolvedValue({
-      state: withAbout({ body: "What this channel is.", sources: "NOAA GFS" }),
-      tokenError: false,
-    });
-    render(<AboutCardSettings sceneId="wind" />);
-
-    expect(await screen.findByDisplayValue("What this channel is.")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("What this channel is.")).toBeInTheDocument();
     expect(screen.getByDisplayValue("NOAA GFS")).toBeInTheDocument();
+  });
+
+  it("keeps successive edits on top of each other", () => {
+    const d = renderInDraft(<AboutCardSettings />);
+    fireEvent.change(screen.getByRole("textbox", { name: "About title" }), {
+      target: { value: "Storm Watch" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "About footnote" }), {
+      target: { value: "Small print." },
+    });
+
+    // The second delta is built from the merged draft, so it still carries the first.
+    expect(d.last()).toEqual({ about: about({ title: "Storm Watch", footer: "Small print." }) });
   });
 });

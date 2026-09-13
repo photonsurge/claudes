@@ -92,7 +92,7 @@ describe("DirectorHolds holds-only rows", () => {
     render(<DirectorHolds sceneId="my-scene" config={onlyKind("global")} update={jest.fn()} />);
 
     const link = screen.getByRole("link", { name: "Channel settings" });
-    expect(link).toHaveAttribute("href", "/admin/scenes/my-scene");
+    expect(link).toHaveAttribute("href", "/admin/scenes/my-scene#director");
   });
 
   it("shows an empty note when no kinds are enabled", () => {

@@ -102,6 +102,28 @@ With a simulated 400 ms stall every 2 s: old scheduler 2 kicks off-grid by
 ~45 ms in 16 s; new clock 0 off-grid, 0 dropped (a 400 ms stall never even
 reaches the resync).
 
+## Silent-on-load hardening (2026-09-13)
+
+A run went to air with no bed until the OBS browser source was refreshed. The
+source loads at go-live while OBS is still bringing up its audio output, so the
+AudioContext can start `suspended`; the engine used to call `resume()` once and
+the player only retried on a pointer event, which never comes in OBS. Now:
+
+- `AuroraBed.resume()` swallows rejections and is retried from the scheduler
+  tick every 2 s while playing; `ctx.onstatechange` re-resumes a context that
+  gets suspended behind our back (device change, CEF audio restart).
+- BroadcastBed re-probes every 2 s so the "blocked" badge clears by itself; a
+  click now calls `resume()` rather than restarting the arrangement.
+- Each sequencer step runs inside a guard: a throwing step is counted and
+  skipped (first three logged as `[audio bed] step N failed`), never retried.
+- `getState()` exposes `contextState` and `errors`; on /watch read them off
+  `window.__auroraBed.getState()` before blaming OBS.
+
+Verified in headless Chromium: a context whose `resume()` is refused twice
+comes back running ~4 s after suspension with steps flowing; a kick that
+throws on every hit costs 30 skipped steps in 34 s while everything else keeps
+playing (`scratchpad/resilience.mjs` in the session that shipped this).
+
 ## Verification
 
 ```

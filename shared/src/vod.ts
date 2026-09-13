@@ -183,13 +183,20 @@ export interface ChapterEntryLike {
 export interface Chapter {
   offsetMs: number;
   label: string;
-  /** The stamp + label as it goes in the description, e.g. "1:23:45 ⚡ M6.1 earthquake · Fiji". */
+  /** The stamp + label as it goes in the description, e.g. "1:23:45 🚨 M6.1 earthquake · Fiji". */
   line: string;
 }
 
+/**
+ * The marker on a breaking pick. NOT a lightning bolt: the label puts it right
+ * next to the hazard's own icon ("⚡ 🔥 Extreme Fire Danger"), where a bolt
+ * reads as a thunderstorm rather than as "we broke into this".
+ */
+export const BREAKING_MARK = "🚨";
+
 /** One short, on-air-safe label per cut. */
 export function chapterLabel(e: ChapterEntryLike): string {
-  const parts = [e.breaking ? "⚡" : "", e.icon ?? "", e.title.trim()].filter(Boolean);
+  const parts = [e.breaking ? BREAKING_MARK : "", e.icon ?? "", e.title.trim()].filter(Boolean);
   let label = parts.join(" ");
   if (e.subtitle?.trim()) label += ` · ${e.subtitle.trim()}`;
   label = label.replace(/\s+/g, " ");

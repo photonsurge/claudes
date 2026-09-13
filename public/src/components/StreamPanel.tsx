@@ -274,7 +274,7 @@ function GoLiveForm({
       {publishYoutube ? (
         <span style={{ fontSize: 11, opacity: 0.7 }}>
           Blank title = the channel&apos;s. Description and thumbnail come from the channel&apos;s{" "}
-          <a href={`/admin/scenes/${encodeURIComponent(sceneId)}`} target="_blank" rel="noreferrer" style={{ color: "inherit" }}>
+          <a href={`/admin/scenes/${encodeURIComponent(sceneId)}#youtube`} target="_blank" rel="noreferrer" style={{ color: "inherit" }}>
             YouTube settings
           </a>
           .

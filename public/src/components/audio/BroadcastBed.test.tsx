@@ -21,6 +21,7 @@ jest.mock("../../lib/audio/engine", () => {
     setSeverity = jest.fn();
     triggerEvent = jest.fn();
     setWeather = jest.fn();
+    resume = jest.fn();
     contextState = jest.fn(() => this.ctxState);
     constructor() {
       instances.push(this);
@@ -39,6 +40,7 @@ type MockBed = {
   setSeverity: jest.Mock;
   triggerEvent: jest.Mock;
   setWeather: jest.Mock;
+  resume: jest.Mock;
 };
 
 const lastBed = (): MockBed => {
@@ -115,6 +117,33 @@ describe("BroadcastBed", () => {
         jest.advanceTimersByTime(700);
       });
       expect(screen.getByText(/Audio bed blocked/)).toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("clears the blocked badge by itself once the context comes up, and a click only resumes", () => {
+    jest.useFakeTimers();
+    try {
+      render(<BroadcastBed audio={audio({ enabled: true })} />);
+      const bed = lastBed();
+      bed.ctxState = "suspended";
+      act(() => {
+        jest.advanceTimersByTime(700);
+      });
+      expect(screen.getByText(/Audio bed blocked/)).toBeInTheDocument();
+      // a click resumes the context rather than restarting the arrangement
+      act(() => {
+        window.dispatchEvent(new Event("pointerdown"));
+      });
+      expect(bed.resume).toHaveBeenCalledTimes(1);
+      expect(bed.start).toHaveBeenCalledTimes(1);
+      // …and when the engine's own retries bring the context up (OBS output ready), the badge goes
+      bed.ctxState = "running";
+      act(() => {
+        jest.advanceTimersByTime(2100);
+      });
+      expect(screen.queryByText(/Audio bed blocked/)).not.toBeInTheDocument();
     } finally {
       jest.useRealTimers();
     }

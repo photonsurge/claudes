@@ -8,7 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
-import { UI_SANS } from "../../lib/fonts";
+import { UI_SANS, UI_MONO } from "../../lib/fonts";
 
 const WORLD_CLOCKS = [
   { label: "LONDON", timeZone: "Europe/London" },
@@ -105,8 +105,7 @@ export default function WorldClockStrip({
             </span>
             <span
               style={{
-                fontFamily:
-                  "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                fontFamily: UI_MONO,
                 fontSize: (primary ? 13.8 : 11) * scale,
                 fontWeight: 700,
                 letterSpacing: 0,

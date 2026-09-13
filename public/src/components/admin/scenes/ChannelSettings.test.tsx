@@ -1,60 +1,51 @@
 /**
  * ChannelSettings — a checkbox per broadcast widget, checked = visible. Toggling
- * one emits a DELTA patch (widgetsOff) via the injected scene patcher, and a
- * widget already in the off-list renders unchecked.
+ * one stages a DELTA (widgetsOff) into the page's draft, and a widget already in
+ * the off-list renders unchecked.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
+import { fireEvent, screen } from "@testing-library/react";
 import ChannelSettings from "./ChannelSettings";
-
-const patch = jest.fn();
-jest.mock("../../../lib/scenes", () => ({
-  fetchSceneState: jest.fn(),
-  useScenePatcher: () => patch,
-}));
-import { fetchSceneState } from "../../../lib/scenes";
-const mockFetch = fetchSceneState as jest.MockedFunction<typeof fetchSceneState>;
-
-beforeEach(() => {
-  patch.mockClear();
-  mockFetch.mockResolvedValue({ state: { ...DEFAULT_CONTROL_STATE }, tokenError: false });
-});
+import { renderInDraft } from "./draft-harness";
 
 describe("ChannelSettings", () => {
-  it("hides a widget by removing its check (delta patch carries the off-list)", async () => {
-    render(<ChannelSettings sceneId="wind" />);
+  it("hides a widget by removing its check (the delta carries the off-list)", () => {
+    const d = renderInDraft(<ChannelSettings />);
 
-    const worldReport = await screen.findByRole("checkbox", { name: "World Report" });
+    const worldReport = screen.getByRole("checkbox", { name: "World Report" });
     expect(worldReport).toBeChecked();
 
     fireEvent.click(worldReport);
 
-    expect(patch).toHaveBeenCalledWith("wind", { widgetsOff: ["worldReport"] });
+    expect(d.last()).toEqual({ widgetsOff: ["worldReport"] });
   });
 
-  it("renders an already-hidden widget unchecked", async () => {
-    mockFetch.mockResolvedValue({
-      state: { ...DEFAULT_CONTROL_STATE, widgetsOff: ["seismic"] },
-      tokenError: false,
-    });
-    render(<ChannelSettings sceneId="wind" />);
+  it("renders an already-hidden widget unchecked", () => {
+    const d = renderInDraft(<ChannelSettings />, { state: { widgetsOff: ["seismic"] } });
 
-    const seismic = await screen.findByRole("checkbox", { name: "Seismic monitor" });
+    const seismic = screen.getByRole("checkbox", { name: "Seismic monitor" });
     expect(seismic).not.toBeChecked();
 
     // Re-checking it clears the off-list (shows everything again).
     fireEvent.click(seismic);
-    expect(patch).toHaveBeenCalledWith("wind", { widgetsOff: [] });
+    expect(d.last()).toEqual({ widgetsOff: [] });
   });
 
-  it("Hide all pushes every widget id into the off-list", async () => {
-    render(<ChannelSettings sceneId="default" />);
-    const hideAll = await screen.findByRole("button", { name: "Hide all" });
+  it("Hide all pushes every widget id into the off-list", () => {
+    const d = renderInDraft(<ChannelSettings />);
 
-    fireEvent.click(hideAll);
+    fireEvent.click(screen.getByRole("button", { name: "Hide all" }));
 
-    await waitFor(() => expect(patch).toHaveBeenCalled());
-    const [, sentPatch] = patch.mock.calls[patch.mock.calls.length - 1];
-    expect(sentPatch.widgetsOff).toEqual(expect.arrayContaining(["worldReport", "seismic", "buildInfo"]));
+    expect(d.last().widgetsOff).toEqual(
+      expect.arrayContaining(["worldReport", "seismic", "buildInfo"]),
+    );
+  });
+
+  it("marks itself unsaved once something is staged", () => {
+    renderInDraft(<ChannelSettings />);
+    expect(screen.queryByText("• unsaved")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "World Report" }));
+
+    expect(screen.getByText("• unsaved")).toBeInTheDocument();
   });
 });

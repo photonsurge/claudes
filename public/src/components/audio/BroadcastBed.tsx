@@ -11,7 +11,10 @@
  *
  * Browser autoplay: OBS browser sources allow autoplay so the bed just starts;
  * a normal browser tab keeps the AudioContext suspended until a user gesture, so
- * while blocked we show a small badge and resume on the first pointerdown.
+ * while blocked we show a small badge and resume on the first pointerdown. The
+ * engine also keeps retrying resume() by itself (a source that loads before OBS
+ * has its audio output ready starts suspended and would otherwise stay silent
+ * until a manual refresh), so the badge re-probes and clears without a click.
  */
 import { useEffect, useRef, useState } from "react";
 import type { AudioSettings } from "@photonsurge/shared/control";
@@ -46,6 +49,8 @@ const PULSE_KINDS = new Set<SegmentKind>(["storm", "quake", "volcano"]);
 
 /** How long after start() before concluding the browser blocked autoplay. */
 const BLOCK_PROBE_MS = 600;
+/** Re-probe cadence while enabled: the engine retries resume() on its own, the badge follows. */
+const REPROBE_MS = 2000;
 
 export interface BroadcastBedProps {
   audio: AudioSettings;
@@ -83,8 +88,13 @@ export default function BroadcastBed({ audio, segment, weather }: BroadcastBedPr
       setBlocked(false);
       return;
     }
-    const t = setTimeout(() => setBlocked(bed.contextState() === "suspended"), BLOCK_PROBE_MS);
-    return () => clearTimeout(t);
+    const probe = () => setBlocked(bed.contextState() === "suspended");
+    const t = setTimeout(probe, BLOCK_PROBE_MS);
+    const iv = setInterval(probe, REPROBE_MS);
+    return () => {
+      clearTimeout(t);
+      clearInterval(iv);
+    };
   }, [audio.enabled]);
 
   // Mixer/mode. Mute keeps the engine running at zero gain so unmute is instant
@@ -119,7 +129,7 @@ export default function BroadcastBed({ audio, segment, weather }: BroadcastBedPr
   useEffect(() => {
     if (!blocked || !audio.enabled) return;
     const unlock = () => {
-      bedRef.current?.start();
+      bedRef.current?.resume();
       setTimeout(() => setBlocked(bedRef.current?.contextState() === "suspended"), 300);
     };
     window.addEventListener("pointerdown", unlock, { once: true });

@@ -84,6 +84,10 @@ export interface BedState {
   beatStep: number;
   /** Steps dropped after main-thread stalls since start(). */
   dropped: number;
+  /** Underlying AudioContext state ("suspended" while playing = no output yet; we keep retrying). */
+  contextState: AudioContextState | null;
+  /** Sequencer steps that threw (skipped, never retried) since start(). */
+  errors: number;
   /** Current phrase, e.g. "main · 16 bars · vamp · D minor". */
   phrase: string;
   key: string;
@@ -95,6 +99,8 @@ export interface BedState {
 }
 
 const START_BPM = 121;
+/** How often to re-ask a suspended context to run (OBS/CEF can start before its audio output exists). */
+const RESUME_RETRY_MS = 2000;
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 const rand = Math.random;
 const hum = () => (rand() - 0.5) * 0.004;
@@ -150,6 +156,8 @@ export class AuroraBed {
 
   private stopTicker: (() => void) | null = null;
   private dropped = 0;
+  private errors = 0;
+  private lastResumeTry = 0;
   private nextNoteTime = 0;
   private step = 0;
   private startTime = 0;
@@ -197,10 +205,16 @@ export class AuroraBed {
       this.pad = new Pad(this.rig);
       this.freqData = new Uint8Array(this.rig.analyser.frequencyBinCount);
       this.applyMood(0);
+      // A context can be suspended behind our back (output device change, CEF audio
+      // restart): while we're meant to be playing, ask for it back straight away.
+      const ctx = this.rig.ctx;
+      ctx.onstatechange = () => {
+        if (this.playing && ctx.state === "suspended") this.resume();
+      };
     }
     const ctx = this.rig.ctx;
-    if (ctx.state === "suspended") void ctx.resume();
     this.playing = true;
+    this.resume();
     this.startTime = ctx.currentTime;
     this.lastTick = ctx.currentTime;
     this.step = 0;
@@ -221,6 +235,21 @@ export class AuroraBed {
     this.stopTicker?.();
     this.stopTicker = null;
     void this.rig?.ctx.suspend();
+  }
+
+  /**
+   * Ask a suspended context to run. Safe to call any time; a rejection (no
+   * user gesture yet, no output device yet) is swallowed and retried from the
+   * scheduler tick every RESUME_RETRY_MS while playing, so a page that loaded
+   * before OBS had its audio output ready comes up by itself.
+   */
+  resume(): void {
+    const ctx = this.rig?.ctx;
+    if (!ctx || ctx.state !== "suspended") return;
+    this.lastResumeTry = Date.now();
+    ctx.resume().catch(() => {
+      /* retried from the next tick */
+    });
   }
 
   /** severity fraction 0..1 (director on-air intensity in the app). */
@@ -296,6 +325,8 @@ export class AuroraBed {
       inBreak: this.playing && this.phrase?.role === "break",
       beatStep,
       dropped: this.dropped,
+      contextState: this.contextState(),
+      errors: this.errors,
       phrase: this.phrase ? phraseLabel(this.phrase) : "—",
       key: this.phrase ? keyName(this.phrase.key) : "—",
       mood: this.mood,
@@ -498,6 +529,7 @@ export class AuroraBed {
 
   private scheduler(): void {
     const ctx = this.rig!.ctx;
+    if (ctx.state === "suspended" && Date.now() - this.lastResumeTry >= RESUME_RETRY_MS) this.resume();
     this.updateEnergy();
     const grid = resyncGrid({ step: this.step, time: this.nextNoteTime }, ctx.currentTime, this.stepS);
     if (grid.dropped) {
@@ -506,7 +538,13 @@ export class AuroraBed {
       this.dropped += grid.dropped;
     }
     while (this.nextNoteTime < ctx.currentTime + LOOKAHEAD_S) {
-      this.scheduleStep(this.step, this.nextNoteTime);
+      // A throwing step is skipped, never retried: a bug costs a beat, not the stream's audio.
+      try {
+        this.scheduleStep(this.step, this.nextNoteTime);
+      } catch (err) {
+        this.errors++;
+        if (this.errors <= 3) console.warn(`[audio bed] step ${this.step} failed`, err);
+      }
       this.nextNoteTime += this.stepS; // a new track may have changed the tempo inside scheduleStep
       this.step++;
     }

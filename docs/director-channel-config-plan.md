@@ -135,16 +135,29 @@ files small; each stages **complete top-level objects** through
 
 | Card | File (new unless noted) | Fields |
 |---|---|---|
-| **Programme** | `DirectorSettings.tsx` (existing) | mode, kinds, weights, favourites, content presets + **Template** picker + **Copy from channel…** (§6) |
-| **Pacing** | `DirectorPacingSettings.tsx` | `kindHoldSeconds`, the three level-hold maps, `transitionSeconds`, `alertCycleSeconds`, `adEveryNShots`, `tuning.tempo` (map / scalar / depth dwell) |
-| **Pools & rotation** | `DirectorPoolSettings.tsx` | `minQuakeMag`, `minAlertSeverity`, `tuning.pools`, `tuning.rotation` |
-| **Tours & round-ups** | `DirectorTourSettings.tsx` | `tuning.tours` |
-| **Looks** | `DirectorLooksSettings.tsx` | `mapTypes` per touring kind, `overlayOverrides`, `kindLooks` + slides — **reuses** `DirectorMapTypes` / `DirectorSlides` with an `update` prop that stages instead of patching live (both already take `config` + `update`) |
-| Break-ins | `BreakInSettings.tsx` | → break-in plan |
-| Chat commands | `ChatCommandsSettings.tsx` | → chat / commands plans (ControlState bucket, same Save bar) |
+| **Director: programme** | `DirectorSettings.tsx` (existing) | mode, kinds, weights, favourites, content presets + **Template** picker + **Copy from channel…** (§6) |
+| **Director: pacing** | `DirectorPacingSettings.tsx` | `kindHoldSeconds`, the three level-hold maps, `transitionSeconds`, `alertCycleSeconds`, `adEveryNShots`, `tuning.tempo` (map / scalar / depth dwell) |
+| **Director: pools & rotation** | `DirectorPoolSettings.tsx` | `minQuakeMag`, `minAlertSeverity` (the **pool** bar — what may air at all), `tuning.pools`, `tuning.rotation` |
+| **Director: tours & round-ups** | `DirectorTourSettings.tsx` | `tuning.tours` |
+| **Director: looks** | `DirectorLooksSettings.tsx` | `mapTypes` per touring kind, `overlayOverrides`, `kindLooks` + slides — **reuses** `DirectorMapTypes` / `DirectorSlides` with an `update` prop that stages instead of patching live (both already take `config` + `update`) |
+| **Director: break-ins** | `BreakInSettings.tsx` | → [break-in plan](./director-break-in-plan.md) §4: which new events interrupt (quake / warning / eruption / round-up), each with its own **break-in** bar — a second, higher threshold than Pools & rotation's, clamped never to fall below it — plus freshness window, guard/cooldown and the on-air INCOMING pre-roll |
+| **Chat commands** (no prefix — see below) | `ChatCommandsSettings.tsx` | → chat / commands plans (ControlState bucket, same Save bar) |
 
-Card order on the page: Programme, Pacing, Pools & rotation, Tours &
-round-ups, Looks, Break-ins, then the existing Audio / Theme cards. Each
+**Card naming (operator's call, 2026-09-13).** The director's cards read as
+one family on the page: **Director: programme**, **Director: pacing**,
+**Director: pools & rotation**, **Director: tours & round-ups**, **Director:
+looks**, **Director: break-ins**. The existing card's heading changes from
+"Auto-director content" to "Director: programme" (the prefix is what makes the
+group scannable in a page of eleven cards). **Chat commands keeps no prefix**:
+it governs the music bed and palette picks too, not only the camera — steering
+the director is one section inside it, not the whole card.
+
+Card order on the page: Director: programme, pacing, pools & rotation, tours &
+round-ups, looks, break-ins, then Chat commands, then the existing Audio /
+Theme cards. The page's own `description` in
+[page.tsx](../public/src/app/admin/scenes/%5Bid%5D/page.tsx) still summarises
+the old card list ("the auto-director's content (slide types, countries,
+areas)") — it is part of the rename, not a separate chore. Each
 pacing/tuning field shows its default as helper text ("default 6 s") and a
 per-card **Reset to defaults** that stages the default object.
 

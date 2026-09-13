@@ -110,16 +110,26 @@ export async function persistScene(id: string, state: ControlState): Promise<voi
  * Used by config forms — e.g. the per-channel widget layout on /admin/scenes/:id
  * — that must NOT clobber the operator's live full state (camera, layers) the
  * way persisting a stale whole snapshot would.
+ *
+ * Returns the outcome rather than throwing: the debounced live patchers ignore
+ * it (the socket already carried the change), while the settings page's Save
+ * awaits it so a rejected write surfaces instead of looking saved.
  */
-export async function patchScene(id: string, patch: Partial<ControlState>): Promise<void> {
+export async function patchScene(
+  id: string,
+  patch: Partial<ControlState>,
+): Promise<{ ok: boolean; error?: string }> {
   try {
-    await fetch(`/api/scenes/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/scenes/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
-  } catch {
-    /* best-effort */
+    if (res.ok) return { ok: true };
+    const body = await res.json().catch(() => ({}));
+    return { ok: false, error: body?.error || `HTTP ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: String(err) };
   }
 }
 

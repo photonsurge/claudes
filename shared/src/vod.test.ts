@@ -171,7 +171,7 @@ describe("buildChapters", () => {
     );
     expect(chapters.map((c) => c.line)).toEqual([
       "0:00 Live globe",
-      "0:30 ⚡ Quake a · M6.1 · Fiji",
+      "0:30 🚨 Quake a · M6.1 · Fiji",
       "2:05 🌀 Hurricane Ida",
     ]);
   });
@@ -192,8 +192,8 @@ describe("buildChapters", () => {
     expect(all).toHaveLength(4);
     // Budget for exactly two lines (opener is not needed: first cut is at 0:00).
     // Budget for exactly two lines (the first cut is at 0:00, so no opener is added).
-    const two = buildChapters(items, { maxChars: "6:40 ⚡ Quake breaking".length + 1 + "6:55 Quake mid-first".length + 1, openingLabel: "x" });
-    expect(two.map((c) => c.line)).toEqual(["6:40 ⚡ Quake breaking", "6:55 Quake mid-first"]);
+    const two = buildChapters(items, { maxChars: "6:40 🚨 Quake breaking".length + 1 + "6:55 Quake mid-first".length + 1, openingLabel: "x" });
+    expect(two.map((c) => c.line)).toEqual(["6:40 🚨 Quake breaking", "6:55 Quake mid-first"]);
   });
 
   it("truncates long labels and collapses whitespace", () => {

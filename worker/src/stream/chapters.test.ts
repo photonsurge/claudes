@@ -6,7 +6,6 @@ jest.mock("@photonsurge/shared/utill/logger", () => ({ log: jest.fn() }));
 
 const queueAdd = jest.fn(async () => ({}));
 jest.mock("@photonsurge/shared/bull/bull", () => ({ getQueue: jest.fn(() => ({ add: queueAdd })) }));
-jest.mock("./encoders", () => ({ watchBaseUrl: () => "https://gods.test" }));
 
 const runs = new Map<string, any>();
 const updateRun = jest.fn(async (id: string, patch: any) => {
@@ -30,7 +29,7 @@ jest.mock("../youtube/client", () => ({
   setVideoDescription: (...a: unknown[]) => setVideoDescription(...a),
 }));
 
-import { chaptersEnabled, publishChapters, queueChapters, vodPageUrl } from "./chapters";
+import { chaptersEnabled, publishChapters, queueChapters } from "./chapters";
 
 const T = (s: number) => 1_700_000_000_000 + s * 1000;
 const finished = (over: any = {}) => ({
@@ -68,11 +67,10 @@ beforeEach(() => {
   });
 });
 
-it("is on unless YOUTUBE_CHAPTERS=off, and links the public VOD page", () => {
+it("is on unless YOUTUBE_CHAPTERS=off", () => {
   expect(chaptersEnabled({})).toBe(true);
   expect(chaptersEnabled({ YOUTUBE_CHAPTERS: "off" })).toBe(false);
   expect(chaptersEnabled({ YOUTUBE_CHAPTERS: "OFF " })).toBe(false);
-  expect(vodPageUrl("a b")).toBe("https://gods.test/vod/a%20b");
 });
 
 it("queues a delayed, retried foreground job", async () => {
@@ -94,7 +92,7 @@ it("writes the as-run digest under the operator's text and stamps the run", asyn
   expect(listEntriesInWindow).toHaveBeenCalledWith({ sceneId: "main", from: new Date(T(103)), to: new Date(T(703)) });
   expect(setVideoDescription).toHaveBeenCalledWith(expect.anything(), "vid1", expect.any(Function));
   expect(res.descriptionLength).toBe(
-    ["Our live globe.", "", "⏱ As aired", "0:00 Main", "0:30 ⚡ Quake a · M6.1 · Fiji", "1:15 Quake b", "", "Every cut on the map: https://gods.test/vod/vid1"].join("\n").length,
+    ["Our live globe.", "", "⏱ As aired", "0:00 Main", "0:30 🚨 Quake a · M6.1 · Fiji", "1:15 Quake b"].join("\n").length,
   );
   expect(runs.get("r1").chapters).toEqual({ publishedAt: expect.any(Number), count: 3, error: null });
   expect(getVideoStats).not.toHaveBeenCalled(); // times were already stamped

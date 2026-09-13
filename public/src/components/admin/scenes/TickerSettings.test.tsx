@@ -1,65 +1,44 @@
 /**
  * TickerSettings — per-channel bottom-crawl content editor. Checkboxes toggle
  * crawl kinds (tickerKindsOff, an off-list); the alert-hazard chips only show
- * while the alert kind is on. All DELTA-patched via the page's SceneDraft.
+ * while the alert kind is on. All staged into the page's draft.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
-import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
+import { fireEvent, screen } from "@testing-library/react";
 import { TICKER_KINDS } from "@photonsurge/shared/broadcast-ticker";
 import TickerSettings from "./TickerSettings";
-
-const patch = jest.fn();
-jest.mock("../../../lib/scenes", () => ({
-  fetchSceneState: jest.fn(),
-  useScenePatcher: () => patch,
-}));
-import { fetchSceneState } from "../../../lib/scenes";
-const mockFetch = fetchSceneState as jest.MockedFunction<typeof fetchSceneState>;
-
-beforeEach(() => {
-  patch.mockClear();
-  mockFetch.mockResolvedValue({ state: { ...DEFAULT_CONTROL_STATE }, tokenError: false });
-});
+import { renderInDraft } from "./draft-harness";
 
 describe("TickerSettings", () => {
-  it("renders every catalog kind, all on by default", async () => {
-    render(<TickerSettings sceneId="wx" />);
+  it("renders every catalog kind, all on by default", () => {
+    renderInDraft(<TickerSettings />);
     for (const k of TICKER_KINDS) {
-      expect(await screen.findByRole("checkbox", { name: k.label })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: k.label })).toBeChecked();
     }
   });
 
-  it("hides a crawl kind via its checkbox (delta patch carries the off-list)", async () => {
-    render(<TickerSettings sceneId="wx" />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "Earthquakes" }));
-    expect(patch).toHaveBeenCalledWith("wx", { tickerKindsOff: ["quake"] });
+  it("hides a crawl kind via its checkbox (the delta carries the off-list)", () => {
+    const d = renderInDraft(<TickerSettings />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Earthquakes" }));
+    expect(d.last()).toEqual({ tickerKindsOff: ["quake"] });
   });
 
-  it("re-showing a kind drops it from the staged off-list", async () => {
-    mockFetch.mockResolvedValue({
-      state: { ...DEFAULT_CONTROL_STATE, tickerKindsOff: ["ad", "track"] },
-      tokenError: false,
-    });
-    render(<TickerSettings sceneId="wx" />);
-    const ads = await screen.findByRole("checkbox", { name: "Sponsor mentions" });
+  it("re-showing a kind drops it from the staged off-list", () => {
+    const d = renderInDraft(<TickerSettings />, { state: { tickerKindsOff: ["ad", "track"] } });
+    const ads = screen.getByRole("checkbox", { name: "Sponsor mentions" });
     expect(ads).not.toBeChecked();
 
     fireEvent.click(ads);
-    expect(patch).toHaveBeenCalledWith("wx", { tickerKindsOff: ["track"] });
+    expect(d.last()).toEqual({ tickerKindsOff: ["track"] });
   });
 
-  it("stages the crawl-specific alert-hazard filter via the chips", async () => {
-    render(<TickerSettings sceneId="wx" />);
-    expect(await screen.findByText("Alert hazards")).toBeInTheDocument();
+  it("shows the crawl-specific alert-hazard filter while alerts are on", () => {
+    renderInDraft(<TickerSettings />);
+    expect(screen.getByText("Alert hazards")).toBeInTheDocument();
   });
 
-  it("hides the alert-hazard filter when the alert kind is off", async () => {
-    mockFetch.mockResolvedValue({
-      state: { ...DEFAULT_CONTROL_STATE, tickerKindsOff: ["alert"] },
-      tokenError: false,
-    });
-    render(<TickerSettings sceneId="geo" />);
-    expect(await screen.findByRole("checkbox", { name: "Earthquakes" })).toBeInTheDocument();
+  it("hides the alert-hazard filter when the alert kind is off", () => {
+    renderInDraft(<TickerSettings />, { state: { tickerKindsOff: ["alert"] } });
+    expect(screen.getByRole("checkbox", { name: "Earthquakes" })).toBeInTheDocument();
     expect(screen.queryByText("Alert hazards")).not.toBeInTheDocument();
   });
 });

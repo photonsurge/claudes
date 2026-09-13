@@ -139,6 +139,17 @@ Runs every tick, **before** the break-in branch and the expiry check, over
    cap — the same knobs the chat plan uses for other slots.
 5. Everything else waits, still `queued`, and is re-evaluated next tick.
 
+**Bursts.** The queue is an array and it drains; it never collapses to "the
+latest request wins". Ten viewers asking for ten different places in one minute
+produce ten rows, worked through oldest-first at boundaries under `everyS`,
+each one settling `applied` or `refused` with a reason. `maxQueued` caps what a
+channel will hold; past it, new viewer requests are refused **at enqueue time**
+with "the queue is full, try again in a minute" rather than accepted and
+quietly discarded. Operator commands are never queue-capped. The same rule the
+break-in plan states for events applies here: a request leaves the queue only
+by airing, by being refused with a reason, by expiring, or by an explicit
+`clear` — and every one of those outcomes is a row someone can read later.
+
 The loop's boundary path changes in one place: before `selectPriority`, it asks
 `arbitrate` for a `queue`d command whose turn it is; if one resolves, that is
 the next segment (still subject to the break-in tier ahead of it).
@@ -148,7 +159,12 @@ the next segment (still subject to the break-in tier ahead of it).
 - `performCut(..., { command })` settles the command `applied` with
   `appliedSeq` and stamps `segment.requestedBy` for viewer sources; the as-run
   `AirEntry` gains `command?: { source: CommandSource["kind"]; author?: string }`
-  (strict schema; `RunTimelineEntry` shows "👤 operator" / "💬 @rich" chips).
+  and the run gains `commands` / `viewerRequests` counters — the same log
+  chain the break-in plan specifies in
+  [§5 As-run log and the per-video record](./director-break-in-plan.md), so a
+  finished YouTube video's as-run page, its description chapters and the public
+  `/vod/:videoId` all show which cuts were ordered and by whom. Whichever plan
+  lands first adds the `AirEntry` fields; the other extends them.
 - A resolution failure settles `refused` with the reason (`no quake in the
   pool`, `unknown place "narnia"`, `cities not allowed on this channel`,
   `director is off`, `aurora not available right now`). Refusals are what the
@@ -202,6 +218,28 @@ today's `commandReplies` if C2 lands first). New grammar in `parseOp`:
 | `:next` | `skip` (mods/owner by default) |
 | `:queue` | reply listing what's active / queued (read-only, no op) |
 | `:clear` | `clear` (mods/owner) |
+
+### 4.1 Turning chat on and off — three switches, all per channel
+
+Chat integration is opt-in at every level, and each level is a plain checkbox
+on the **Chat commands** card on `/admin/scenes/:id` — deliberately the one
+card in that part of the page with no "Director:" prefix, because it also
+governs the music bed and palette picks; steering the camera is one section
+inside it. Turning one off greys out everything below it in the
+card with the reason stated, so there is never a setting that looks armed but
+cannot fire:
+
+| Switch | Field | Default | What it gates |
+|---|---|---|---|
+| **Monitor chat** | `ControlState.chat.enabled` (exists today) | on | polling + logging a run's chat at all; off = no commands of any kind, nothing to read |
+| **Viewer commands** | `chat.commands.enabled` (chat plan) | off | whether viewer messages are parsed as commands at all (music, theme, help…) |
+| **Viewers may steer the director** | `chat.commands.director.enabled` | off | whether those commands can move the camera — the override queue |
+
+So a channel can log chat and answer `:help` while refusing to let anyone touch
+the globe, or run fully hands-off with everything off, and the operator's own
+Take / Go to / Hold / Pause are unaffected by all three — operator commands
+enter the same queue through the admin route, which is gated by the admin
+session, not by chat policy.
 
 Policy lives with the rest of the chat policy — `ControlState.chat.commands`
 from the chat plan gains a `director` block, edited on the same

@@ -152,7 +152,7 @@ export default function DirectorHolds({
       </div>
       <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 6 }}>
         Only slide types enabled for this channel appear here — manage them in{" "}
-        <a href={`/admin/scenes/${encodeURIComponent(sceneId)}`} style={{ color: "#7fb3ff" }}>
+        <a href={`/admin/scenes/${encodeURIComponent(sceneId)}#director`} style={{ color: "#7fb3ff" }}>
           Channel settings
         </a>
         .

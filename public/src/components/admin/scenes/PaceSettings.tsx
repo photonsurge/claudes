@@ -9,9 +9,7 @@
  * setting. STAGED as a DELTA patch (readPaceCps) — the page's Save bar applies
  * it live.
  */
-import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
-import Paper from "@mui/material/Paper";
 import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -24,55 +22,30 @@ import {
   READ_CPS_MAX,
   READ_CPS_MIN,
 } from "@photonsurge/shared/reading-pace";
-import { type ControlState } from "@photonsurge/shared/control";
-import { fetchSceneState } from "../../../lib/scenes";
+import SettingsCard from "./SettingsCard";
 import { useSceneDraft } from "./SceneDraft";
 
 /** A worked example, so the number means something: a typical 1 200-character
  *  crawl feed (roughly twenty headlines) at this pace. */
 const SAMPLE_CRAWL_CHARS = 1200;
 
-export default function PaceSettings({ sceneId }: { sceneId: string }) {
-  const { stage: patch, epoch } = useSceneDraft();
-  const [state, setState] = useState<ControlState | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchSceneState(sceneId).then(({ state: s }) => {
-      if (!cancelled) setState(s);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [sceneId, epoch]);
-
-  if (!state) {
-    return (
-      <Typography variant="body2" color="text.secondary">
-        Loading channel…
-      </Typography>
-    );
-  }
-
+export default function PaceSettings() {
+  const { state, stage } = useSceneDraft();
   const cps = clampReadCps(state.readPaceCps);
-  const apply = (next: number) => {
-    setState({ ...state, readPaceCps: next });
-    patch(sceneId, { readPaceCps: next });
-  };
 
   return (
-    <Paper sx={{ p: 1.75 }}>
-      <Typography variant="subtitle2" sx={{ mb: 1 }}>
-        Reading pace
-      </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.25 }}>
-        How fast everything on this channel scrolls — the bottom crawl, the world report feed and
-        the deck cards&apos; bodies. It is set as a reading speed, and each surface works out its own
-        motion from how much text it is actually showing, so a long alert scrolls more slowly than a
-        short one at the same setting. Average silent reading is about {AVERAGE_READING_WPM} words a
-        minute; on-air text is read once, in motion, so the default sits below that.
-      </Typography>
-
+    <SettingsCard
+      id="pace"
+      blurb={
+        <>
+          How fast everything on this channel scrolls — the bottom crawl, the world report feed and
+          the deck cards&apos; bodies. It is set as a reading speed, and each surface works out its own
+          motion from how much text it is actually showing, so a long alert scrolls more slowly than a
+          short one at the same setting. Average silent reading is about {AVERAGE_READING_WPM} words a
+          minute; on-air text is read once, in motion, so the default sits below that.
+        </>
+      }
+    >
       <Box sx={{ maxWidth: 420 }}>
         <Slider
           size="small"
@@ -88,7 +61,7 @@ export default function PaceSettings({ sceneId }: { sceneId: string }) {
           ]}
           valueLabelDisplay="auto"
           valueLabelFormat={(v) => `${v} cps`}
-          onChange={(_, v) => apply(v as number)}
+          onChange={(_, v) => stage({ readPaceCps: v as number })}
           sx={{ mx: 1 }}
         />
         <Stack direction="row" spacing={2} sx={{ mt: 0.5 }}>
@@ -101,6 +74,6 @@ export default function PaceSettings({ sceneId }: { sceneId: string }) {
           </Typography>
         </Stack>
       </Box>
-    </Paper>
+    </SettingsCard>
   );
 }

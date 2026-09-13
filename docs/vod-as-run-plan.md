@@ -121,7 +121,8 @@ public page and the chapters job all share), `setVideoDescription` in `worker/sr
 Default ON after every YouTube run ends (30 s delay, 5 attempts); `YOUTUBE_CHAPTERS=off` disables
 the automatic publish only. Outcome on `run.chapters {publishedAt,count,error}`. Our block is headed
 `⏱ As aired` and always sits LAST; the operator's text above it is preserved, anything typed below
-it is replaced on the next publish. Footer links the public page (§5).
+it is replaced on the next publish. No footer: the description must not advertise an internal
+host, so the link to the public as-run page (§5) was dropped (2026-09-13).
 
 The other half of "tie YouTube in": once a run ends, write the as-run digest into the
 video's description as YouTube chapters, so the tie-in is visible on YouTube itself.

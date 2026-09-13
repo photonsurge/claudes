@@ -2,7 +2,7 @@
  * As-run chapters → YouTube video description (docs/vod-as-run-plan.md §4).
  *
  * When a YouTube run ends, the director's cuts for that video become a chapter
- * list ("0:00 Main · 3:12 ⚡ M6.1 earthquake · Fiji …") appended to the video's
+ * list ("0:00 Main · 3:12 🚨 M6.1 earthquake · Fiji …") appended to the video's
  * description under a "⏱ As aired" header. Whatever the operator wrote above
  * the header stays; re-publishing replaces only our block. The timeline is the
  * SAME shared loader the admin page reads, so the description and
@@ -20,7 +20,6 @@ import { buildChapters, chapterBudget, composeDescription } from "@photonsurge/s
 import { loadAsRunTimeline, vodLeadMsFromEnv } from "@photonsurge/shared/vod-bundle";
 import { getVideoStats, getYoutubeClient, setVideoDescription } from "../youtube/client";
 import { stampVideoTimes } from "../youtube/video-times";
-import { watchBaseUrl } from "./encoders";
 
 const TAG = "stream-chapters";
 /** Let YouTube settle the broadcast's end instant before reading it back. */
@@ -29,11 +28,6 @@ const CHAPTERS_DELAY_MS = 30_000;
 /** Kill switch for the automatic publish (YOUTUBE_CHAPTERS=off); the button ignores it. */
 export function chaptersEnabled(env: Record<string, string | undefined> = process.env): boolean {
   return (env.YOUTUBE_CHAPTERS ?? "on").trim().toLowerCase() !== "off";
-}
-
-/** The public as-run page for a video (phase 3) — linked from the description footer. */
-export function vodPageUrl(videoId: string): string {
-  return `${watchBaseUrl()}/vod/${encodeURIComponent(videoId)}`;
 }
 
 export async function queueChapters(runId: string): Promise<void> {
@@ -92,13 +86,12 @@ export async function publishChapters(runId: string, opts: { force?: boolean } =
 
     const scenes = await db.listScenes();
     const openingLabel = scenes.find((s) => s.id === run!.sceneId)?.name ?? run.title ?? run.sceneId;
-    const footer = `Every cut on the map: ${vodPageUrl(yt.broadcastId)}`;
 
     let count = 0;
     const res = await setVideoDescription(ctx, yt.broadcastId, (existing) => {
-      const chapters = buildChapters(timeline.items, { maxChars: chapterBudget(existing, footer), openingLabel });
+      const chapters = buildChapters(timeline.items, { maxChars: chapterBudget(existing), openingLabel });
       count = chapters.length;
-      return composeDescription(existing, chapters, footer);
+      return composeDescription(existing, chapters);
     });
 
     await db.updateRun(runId, { chapters: { publishedAt: Date.now(), count, error: null } });

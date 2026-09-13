@@ -388,7 +388,14 @@ export async function fetchDirectorConfig(sceneId: string): Promise<DirectorConf
   }
 }
 
-/** Persist a director-config patch for a scene; returns the merged config. */
+/**
+ * Persist a director-config patch for a scene; returns the merged config.
+ *
+ * THROWS on a rejected write. It used to return the error body, which callers
+ * then stored as if it were a config — the settings page's Save needs a real
+ * failure to report, and the optimistic callers below keep their last-known
+ * config instead of adopting `{ error }`.
+ */
 export async function patchDirectorConfig(
   sceneId: string,
   patch: Partial<DirectorConfig>,
@@ -398,6 +405,10 @@ export async function patchDirectorConfig(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `director config write failed (${res.status})`);
+  }
   return (await res.json()) as DirectorConfig;
 }
 
@@ -492,7 +503,11 @@ export function useDirectorConfig(sceneId: string): {
   const applyNow = (patch: Partial<DirectorConfig>) => {
     setConfig((prev) => mergeConfig(prev, patch));
     setDraft((prev) => mergeConfig(prev, patch));
-    void patchDirectorConfig(sceneId, patch).then(setConfig);
+    // A failed write leaves the optimistic merge above in place; the operator
+    // sees the toggle they flipped and the next poll corrects it.
+    void patchDirectorConfig(sceneId, patch)
+      .then(setConfig)
+      .catch(() => {});
   };
 
   // Form field edit: draft only, no network. Persisted later by save().
@@ -503,10 +518,12 @@ export function useDirectorConfig(sceneId: string): {
 
   const save = () => {
     setDirty(false);
-    void patchDirectorConfig(sceneId, draft).then((c) => {
-      setConfig(c);
-      setDraft(c);
-    });
+    void patchDirectorConfig(sceneId, draft)
+      .then((c) => {
+        setConfig(c);
+        setDraft(c);
+      })
+      .catch(() => setDirty(true));
   };
 
   const discard = () => {

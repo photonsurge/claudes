@@ -70,6 +70,12 @@ Save bar.
   config), thresholds default to the pool thresholds, round-ups default off, the
   incoming reticle defaults to *breaking cuts only*. Existing channels change
   nothing until an operator opens the card.
+- **Two bars, never crossed.** A channel already has a *pool* bar (what may air
+  at all: `minQuakeMag`, `minAlertSeverity`, volcano = not dormant). The
+  break-in bar is a second, higher one — a channel can show M4.5 quakes in
+  rotation and only interrupt for M6+. `mergeBreakIn` clamps the break-in bar
+  up to the pool bar so a setting can never promise a cut for something the
+  pool filters out.
 - **One notion of "breaking" per channel.** The channel's `breakIn` config
   decides *which* events count as fresh (kinds, thresholds, window) for BOTH the
   boundary tier and the immediate interrupt. `Candidate.breaking` (a boolean
@@ -91,6 +97,16 @@ Save bar.
   upNext/air log), same `spinEpoch` + `cutTransitionMs` stamping. The
   interrupted shot is not resumed afterwards (TV moves on); its as-run entry
   already records the real time it held.
+- **Breaking arrives in bursts, so the pending set is an ARRAY, and nothing in
+  it is silently dropped.** A met service issuing four severe warnings in one
+  publish is the normal case, not an edge case (it is exactly what
+  `ALERT_COUNTRY_CAP` already exists to tame in the pool). Three rules follow:
+  a burst of the same reason **groups into one break-in** that names all of
+  them rather than four interruptions in a row; anything not aired **stays
+  queued** and drains at the following shot boundaries; an item leaves the
+  queue only by airing, by being covered by a group, or by ageing out past the
+  freshness window. "We picked a different one this tick" must never discard an
+  event — that was the failure mode of the original single-slot draft.
 - **Ads are never cut short.** A running `ad` segment finishes; the break-in
   fires on the next tick after it ends (that tick is a boundary anyway).
 - **On-air timing is clock-derived, never a timer chain.** The incoming phase
@@ -120,9 +136,20 @@ export interface BreakInConfig {
   interrupt: "boundary" | "immediate";
   /** Which reasons may break in. Round-ups default off. */
   reasons: Record<BreakInReason, boolean>;
-  /** Stricter-than-pool thresholds a fresh event must meet to break in. */
+  /**
+   * Per-reason "how big does it have to be" thresholds. These are the BREAK-IN
+   * bar, which is separate from — and never below — the channel's POOL bar
+   * (`DirectorConfig.minQuakeMag` / `minAlertSeverity`, "what may air at all").
+   * A channel can air M4.5 quakes in rotation but only interrupt for M6.0+.
+   * `mergeBreakIn` clamps each to at least its pool counterpart, so a config
+   * can never promise a break-in for something the pool filters out.
+   */
   minQuakeMag: number;        // default = DEFAULT_DIRECTOR_CONFIG.minQuakeMag (4.5)
-  minAlertSeverity: number;   // default = DEFAULT_DIRECTOR_CONFIG.minAlertSeverity (3)
+  minAlertSeverity: SeverityRank;  // 0–4, SEVERITY_LABELS; default = minAlertSeverity (3 = Severe)
+  /** Volcano bar: "erupting" = new/continuing eruptive activity only (default);
+   *  "unrest" also breaks in when a volcano flips into unrest. Mirrors the
+   *  existing VOLCANO_LEVELS split that `volcanoHoldSeconds` already uses. */
+  volcanoMin: VolcanoLevel;   // default "erupting"
   /** How fresh a quake/alert must be, minutes (was the hard-coded 20). Volcanoes
    *  keep their own 6 h status-flip window — the source is a weekly bulletin. */
   windowMinutes: number;      // default 20, min 1
@@ -130,6 +157,17 @@ export interface BreakInConfig {
   guardSeconds: number;       // default 6, min 0
   /** Immediate mode only: minimum gap between two event break-ins, seconds. */
   cooldownSeconds: number;    // default 120, min 10
+  /**
+   * Burst grouping. When this many or more qualified events of the SAME reason
+   * are pending within `clusterWindowSeconds`, they air as ONE break-in naming
+   * all of them instead of interrupting once each. 0 disables grouping (every
+   * event gets its own cut, queued and drained one at a time).
+   */
+  clusterMin: number;            // default 3, max 10
+  clusterWindowSeconds: number;  // default 180
+  /** How many pending break-ins the channel keeps queued at once; the lowest-
+   *  scored fall off the end (recorded as `dropped`, never silently lost). */
+  maxPending: number;            // default 12, min 1
   /** Round-ups only: minimum gap between two round-up break-ins, minutes. */
   roundupCooldownMinutes: number; // default 30, min 5
   /** Which cuts get the on-air INCOMING pre-roll on the reticle / deck badge. */
@@ -153,8 +191,16 @@ breakIn: BreakInConfig;
   socket, no ControlState change, so **no `broadcast-state-model.ts` edit**):
 
 ```ts
-/** Why this cut jumped the queue — absent on an ordinary rotation cut. */
-breakIn?: { reason: BreakInReason; /** it cut the previous shot short */ interrupted: boolean };
+/** Why this cut jumped the queue — absent on an ordinary rotation cut.
+ *  `items` is present on a GROUP cut (a burst of warnings aired as one shot):
+ *  every event the cut covers, so the deck can list them and the as-run log can
+ *  record all four rather than only the one the camera framed. */
+breakIn?: {
+  reason: BreakInReason;
+  /** it cut the previous shot short */
+  interrupted: boolean;
+  items?: { segmentId: string; title: string; subtitle?: string }[];
+};
 /** On-air INCOMING pre-roll length, ms, clocked from patch.spinEpoch. Absent/0 = none. */
 incomingMs?: number;
 /** Which deck slide leads — a roundup break-in sets "roundup" so the round-up is
@@ -187,33 +233,75 @@ export interface FreshEvent {
   placeId?: string; placeKind?: "country" | "region" | "world";
 }
 
+/** One qualified, not-yet-aired event waiting its turn — the channel's break-in
+ *  QUEUE. Four warnings issued together put four of these in the array. */
+export interface PendingBreakIn extends FreshEvent {
+  queuedAt: number;
+  /** Set when a group cut aired it alongside others, so it is never re-offered. */
+  coveredBy?: string;
+}
+
 export interface BreakInRunnerView {
   now: number;
   current: { id: string; kind: SegmentKind; startedAt: number; areaKey?: string } | null;
   seen: ReadonlySet<string>;      // segment ids aired this session
-  handled: ReadonlySet<string>;   // FreshEvent.key already broken-in on (or declined) this session
+  /** Keys already DEALT WITH: aired, covered by a group cut, aged out, or
+   *  dropped off the end of a full queue. Never "we picked another one this
+   *  tick" — an unpicked event stays queued and gets its turn. */
+  handled: ReadonlySet<string>;
   lastBreakInAt: number;
   lastRoundupBreakInAt: number;
   favourites: { countries: ReadonlySet<string>; regions: ReadonlySet<string> };
 }
 
-/** Pure: which fresh event (if any) should interrupt NOW. Null in boundary mode. */
-export function selectBreakIn(fresh: readonly FreshEvent[], cfg: BreakInConfig, r: BreakInRunnerView): FreshEvent | null;
+/** Pure: fold this tick's fresh events into the queue — qualify, de-dupe by
+ *  `key`, drop entries past the freshness window, sort by score, trim to
+ *  `maxPending`. Returns what fell off so the caller can log it as `dropped`. */
+export function reconcilePending(
+  pending: readonly PendingBreakIn[],
+  fresh: readonly FreshEvent[],
+  cfg: BreakInConfig,
+  r: BreakInRunnerView,
+): { pending: PendingBreakIn[]; aged: PendingBreakIn[]; dropped: PendingBreakIn[] };
+
+/** Pure: what breaks in NOW — one event, or a GROUP of them when a burst of the
+ *  same reason is waiting. Null in boundary mode or when no gate is satisfied. */
+export function selectBreakIn(
+  pending: readonly PendingBreakIn[],
+  cfg: BreakInConfig,
+  r: BreakInRunnerView,
+):
+  | { type: "single"; item: PendingBreakIn }
+  | { type: "group"; reason: BreakInReason; items: PendingBreakIn[] }
+  | null;
 
 /** Pure: does this event qualify as breaking for this channel (used by BOTH the
- *  boundary builders and selectBreakIn) — reason enabled, threshold met, inside
- *  the window (volcano: erupting + 6 h), round-up: favourite (or worldRoundup). */
+ *  boundary builders and the queue) — reason enabled, threshold met, inside
+ *  the window (volcano: `volcanoMin` + 6 h), round-up: favourite (or worldRoundup). */
 export function qualifiesAsBreakIn(ev: FreshEvent, cfg: BreakInConfig, favourites, now): boolean;
 ```
 
-`selectBreakIn` rules, in order: `enabled && interrupt === "immediate"`; a
-current shot exists and is not `ad`; `now - current.startedAt ≥ guardSeconds`;
-per-reason cooldown (`cooldownSeconds` for events, `roundupCooldownMinutes` for
-round-ups); `qualifiesAsBreakIn`; not `handled`; event reasons additionally
-not `seen` and not the current segment; not the current shot's `areaKey`
-(don't interrupt Japan-the-country with a Japan quake the deck is already
-showing — that quake airs at the boundary instead). Then the first reason in
-`BREAK_IN_REASONS` that has a hit, highest score within it.
+`selectBreakIn` rules, in order:
+
+1. **Gates** (any failure = null, queue untouched): `enabled && interrupt ===
+   "immediate"`; a current shot exists and is not `ad`; `now -
+   current.startedAt ≥ guardSeconds`; per-reason cooldown (`cooldownSeconds`
+   for events, `roundupCooldownMinutes` for round-ups).
+2. **Eligibility** within the queue: not `handled`, not `coveredBy`; event
+   reasons additionally not `seen`, not the current segment, and not the
+   current shot's `areaKey` (don't interrupt Japan-the-country with a Japan
+   quake the deck is already showing — that one airs at the boundary instead).
+3. **Group or single.** Take the first reason in `BREAK_IN_REASONS` with any
+   eligible entries. If `clusterMin > 0` and that reason has `≥ clusterMin`
+   entries whose `at` values span `≤ clusterWindowSeconds`, return a **group**
+   of them (highest score first, capped at `clusterMin * 2` named items).
+   Otherwise return the highest-scored **single**.
+
+Everything eligible but not returned stays in the array. In immediate mode the
+cooldown means the rest cannot interrupt again straight away — they drain
+through the boundary tier (`selectPriority` reads the same queue), so a burst
+of four becomes one interruption plus three normal-boundary cuts, or one
+grouped interruption naming all four.
 
 ### 2. Worker — fresh-event watch + single-item builders + interrupt path
 
@@ -255,38 +343,62 @@ country/region shot (or the world summary spin) with `segment.breakIn.reason =
 
 **`worker/src/director/loop.ts`**:
 
-- `SceneRunner` gains `lastBreakInAt`, `lastRoundupBreakInAt`, `handled: Set<string>`
-  (capped like `seen`).
+- `SceneRunner` gains `pending: PendingBreakIn[]` (the queue), `lastBreakInAt`,
+  `lastRoundupBreakInAt`, `handled: Set<string>` (capped like `seen`).
 - Extract the existing ~100-line cut block into `performCut(r, next, pool, meta)`
   (bookkeeping + emit + air log). The current boundary path calls it unchanged.
-- New branch **before** the `expired || skipRequested` check on every tick:
+- New branch **before** the `expired || skipRequested` check on every tick —
+  the queue is reconciled every tick whether or not anything airs, so a burst
+  that lands during a long shot is all still waiting when the shot ends:
 
 ```ts
-const pick = selectBreakIn(fresh.since(), cfg.breakIn, viewOf(r, cfg, now));
+const { pending, aged, dropped } = reconcilePending(r.pending, fresh.since(), cfg.breakIn, viewOf(r, cfg, now));
+r.pending = pending;
+for (const ev of [...aged, ...dropped]) r.handled.add(ev.key);   // recorded, not silently lost
+
+const pick = selectBreakIn(r.pending, cfg.breakIn, viewOf(r, cfg, now));
 if (pick) {
-  const cand = await candidateForFresh(db, cfg, pick);
-  r.handled.add(pick.key);            // never re-offer, even if the build failed
-  if (cand) {
-    stamp(cand.segment, { reason: pick.reason, interrupted: true }, cfg);
+  const items = pick.type === "group" ? pick.items : [pick.item];
+  const seg = pick.type === "group"
+    ? await buildGroupSegment(db, cfg, pick.reason, items)   // one shot naming all of them
+    : (await candidateForFresh(db, cfg, pick.item))?.segment ?? null;
+  // Only what actually aired (or failed to build) leaves the queue.
+  for (const ev of items) r.handled.add(ev.key);
+  r.pending = r.pending.filter((p) => !r.handled.has(p.key));
+  if (seg) {
+    stamp(seg, { reason: pick.reason, interrupted: true, items }, cfg);
     r.lastCutWasPriority = true;      // keeps the existing one-normal-cut cooldown
     (pick.reason === "roundup" ? r.lastRoundupBreakInAt = now : r.lastBreakInAt = now);
-    await performCut(r, cand.segment, pool /* stale upNext is fine */, { breakIn: true, now });
+    await performCut(r, seg, pool /* stale upNext is fine */, { breakIn: true, now });
     continue;
   }
 }
 ```
 
+- `buildGroupSegment` frames the burst rather than one member: camera on the
+  centroid of the items' centres at a zoom that fits their span, falling back
+  to the top-scored item's own framing when the span is wider than a hemisphere
+  (scattered warnings are not one picture). Title comes from the phrasebook —
+  "4 NEW SEVERE WARNINGS", subtitle the leading area plus a count ("Bavaria and
+  3 more") — so source CAP strings still never reach air. `segment.id` is
+  `breakin:<reason>:<earliest key>` so the as-run log and the `seen` tally have
+  something stable to key on.
+- The boundary path is unchanged in shape but now reads the same queue: it asks
+  `selectPriority` over candidates whose `breakIn` is set, which is exactly the
+  set still sitting in `r.pending`. That is what drains the remaining three
+  warnings of a burst over the following cuts.
 - `stamp()` sets `segment.breakIn` and `segment.incomingMs` per
   `cfg.breakIn.incoming` (`"breakIns"` → only when `breakIn` is set;
   `"allEvents"` → every `isTargetedEvent` kind, with `breakIn` absent;
   `incomingSeconds || transitionSeconds`). Boundary-mode priority picks get
   `breakIn = { reason, interrupted: false }` via the same helper so the on-air
   treatment is identical in both modes.
-- Air log: [airlog.ts:32](../worker/src/director/airlog.ts#L32) takes
-  `breakIn: boolean`; `AirEntry` gains `breakIn: { type: Boolean, default: false }`
-  ([air-log-model.ts:57](../shared/src/db/air-log-model.ts#L57), strict schema —
-  extend the repo test). `RunTimelineEntry.tsx` shows a second chip
-  "⚡ cut in" next to the existing "⚡ breaking".
+- **Operator readout.** `DirectorState` gains `breakInQueue: { reason: BreakInReason;
+  title: string; at: number }[]` (the first few of `r.pending`) so `/control`
+  can say "3 more warnings waiting" instead of the operator wondering where the
+  other three went. Readout only, like `lastShownAt`.
+- **As-run log** — see §5; every break-in, every member of a grouped one, and
+  every queue drop is recorded.
 
 ### 3. On-air — the INCOMING reticle
 
@@ -325,39 +437,120 @@ with the `place-roundup` (or `roundup`) slide when `segment.leadSlide ===
 "roundup"` (stamped by `stamp()` for roundup break-ins, and by the commands
 plan for `:roundup` requests) — the round-up *is* the story, not the second slide.
 
+**A grouped break-in** (four warnings in one cut) keeps the same treatment and
+uses the deck to carry the count: the reticle caption reads the group title
+("4 NEW SEVERE WARNINGS"), and the deck leads with a `break-in-items` slide
+listing each `segment.breakIn.items` entry — area, hazard, severity — before
+the normal slides for the framed one. One shot, four events named, no
+four-cuts-in-a-row.
+
 **Control page** — `DirectorOnAirReadout` shows `⚡ BREAK-IN · interrupted
 <previous title>` when `segment.breakIn?.interrupted`, and "last break-in Xm
 ago" from `DirectorState` (add `lastBreakInAt?: number` to the state; readout
-only, like `lastShownAt`).
+only, like `lastShownAt`). Beneath it, the **break-in queue**
+(`DirectorState.breakInQueue`) lists what is still waiting — "3 more warnings"
+— so a burst is visibly draining rather than apparently lost.
 
 ### 4. Admin card — `public/src/components/admin/scenes/BreakInSettings.tsx` (new)
 
-Sibling of `DirectorSettings` on `/admin/scenes/:id`, inserted right after it
-in [page.tsx:72](../public/src/app/admin/scenes/%5Bid%5D/page.tsx#L72). Same
-contract: `useSceneDraft().stageDirector(sceneId, { breakIn: <complete object> })`,
-refetch on `epoch`, own file (keep files small). Layout, top to bottom:
+This is the operator-facing answer to "when a new warning / eruption / quake
+lands, what does this channel do?". On `/admin/scenes/:id` the card is headed
+**Director: break-ins** — one of the director family the
+[per-channel config plan](./director-channel-config-plan.md) §5 defines (that
+plan owns the card names and order). It is the partner of that family's
+**Director: pools & rotation** card: pools holds the bar for what may air at
+all, break-ins holds the bar for what interrupts, and each row here prints the
+pool bar beside its own so the pair reads as one decision.
 
-1. **Cut to breaking events** — master switch, plus the Auto/Off mode chip.
-2. **When** — radio: *At the next shot change* (boundary) / *Interrupt the
-   current shot* (immediate). Immediate reveals *Guard* (s), *Cooldown* (s)
-   with the helper text "at most one break-in per cooldown; ads always finish".
-3. **What breaks in** — checkbox rows: Earthquakes (min magnitude select,
-   4.5–7), Weather warnings (min severity select: Moderate / Severe / Extreme),
-   Volcanoes (fixed: eruptions only), Round-ups for favourite places (with
-   *World round-up too* sub-checkbox; cooldown minutes). Each row shows an
-   `info` Alert when its slide type is off in the content card above ("Earthquakes
-   are off under *Which slide types air* — they can't break in"), mirroring the
-   existing favourites warning.
-4. **Freshness window** — minutes; helper: "an event older than this is news,
-   not breaking — it airs through normal rotation".
-5. **On air** — *Incoming reticle*: Off / Breaking cuts only / Every event shot;
-   *Length*: seconds (0 = match transition time).
+Same contract as every other card on the page:
+`useSceneDraft().stageDirector(sceneId, { breakIn: <complete object> })`,
+refetch on `epoch`, own file, nothing live until Save. Layout, top to bottom:
+
+1. **Cut to breaking events** — master switch, plus the channel's Auto/Off
+   director chip (a break-in can only happen while the director is driving).
+2. **When** — radio: *At the next shot change* (boundary, today's behaviour) /
+   *Interrupt the current shot* (immediate). Immediate reveals **Guard** (s —
+   "never cut a shot shorter than this") and **Cooldown** (s — "at most one
+   break-in per cooldown"), with the fixed rule stated as helper text: a
+   commercial break always finishes.
+3. **What breaks in** — one row per reason, each a checkbox + its threshold.
+   The threshold reads in words, not a raw rank, and each row states the
+   channel's pool bar underneath so the relationship is visible:
+
+   | Row | Threshold control | Helper line |
+   |---|---|---|
+   | **Earthquakes** | magnitude select, `QUAKE_MAGNITUDE_BANDS` labelled — M4.5 *Light* … M8 *Great* | "This channel airs M{pool}+ · breaking in at M{breakIn}+" |
+   | **Weather warnings** | severity select, `SEVERITY_LABELS` — Moderate / Severe / Extreme | "This channel airs {label}+ warnings · breaking in at {label}+" |
+   | **Volcanoes** | status select, `VOLCANO_LEVELS` — *Eruptions only* (default) / *Eruptions and unrest* | "Status changes are read from the weekly bulletin, so the window is 6 hours" |
+   | **Round-ups** | place scope, fixed to this channel's favourites + a *World round-up too* sub-checkbox, and its own **cooldown** (minutes) | "A new round-up for {n} favourite countries / {m} areas" |
+
+   A threshold select never offers a value below the channel's pool bar (the
+   clamp in `mergeBreakIn`, surfaced as disabled options with "below this
+   channel's pool threshold"). Each row shows an `info` Alert when its slide
+   type is off under *Which slide types air* — "Earthquakes are off in
+   Director: programme, so they can't break in" — mirroring the existing
+   favourites warning, with a link up to that card.
+4. **Freshness window** — minutes (quakes and warnings; volcanoes use their own
+   6 h status-flip window and say so). Helper: "an event older than this is
+   news, not breaking — it still airs through normal rotation".
+5. **On air** — *Incoming reticle*: Off / Breaking cuts only / Every event
+   shot; *Length*: seconds (0 = match the channel's transition time).
+
+A **Reset to defaults** button stages `DEFAULT_BREAK_IN`, same as the other
+tuning cards in that group.
 
 `DIRECTOR_PRESETS` stay content-only (they don't touch `breakIn`);
 `POST /api/scenes` clones the whole config, so new channels inherit the source
 channel's break-in settings — document in the card hint.
 
-### 5. Persistence
+### 5. As-run log and the per-video record
+
+Everything the director does on its own initiative has to be readable
+afterwards **against the video it went out on**. That chain already exists and
+break-ins ride it rather than building anything new: `AirEntry` per cut →
+`loadAsRunTimeline` ([vod-bundle.ts](../shared/src/vod-bundle.ts), the ONE
+loader both surfaces share) → `/admin/runs`, `/admin/streams/:id`, the YouTube
+description chapters ([chapters.ts](../worker/src/stream/chapters.ts)) and the
+public `/vod/:videoId` page.
+
+**`AirEntry` gains** (strict schema in
+[air-log-model.ts](../shared/src/db/air-log-model.ts), so each needs its path
+declared or it silently drops — plus repo/parity test):
+
+| Field | Why it is not enough to keep `breaking` alone |
+|---|---|
+| `breakIn?: { reason: BreakInReason; interrupted: boolean }` | separates "jumped the queue at a shot change" from "cut the previous shot short", and records WHY — new quake, new warning, eruption, round-up |
+| `breakInItems?: { segmentId: string; title: string; subtitle?: string }[]` | the other three warnings a **grouped** cut covered; without it the log shows one cut and three events vanish |
+| `command?: { source: "operator" \| "viewer"; author?: string }` | → [commands plan](./director-commands-plan.md): who ordered this cut |
+
+The existing `breaking: boolean` stays as the coarse flag (it already drives
+chapter ranking); `breakIn` is the detail beside it.
+
+**`AirRun` gains counters** alongside `cuts` / `kindCounts`: `breakIns`,
+`grouped`, `commands`, `viewerRequests`, `queueDropped` — one `$inc` on the
+write that already happens per cut, so a run header can read "47 cuts · 6
+break-ins · 3 viewer requests" without scanning every entry.
+
+**Where it surfaces:**
+
+- **`/admin/runs` and `/admin/streams/:id`** — `RunTimelineEntry.tsx` adds a
+  "⚡ break-in · new warning" chip (with "· interrupted" when it cut a shot
+  short) beside the existing "⚡ breaking", and "👤 operator" / "💬 @rich" for
+  commanded cuts. A grouped cut lists its members in the row's existing
+  collapsible area — the one `details` already opens — so one row says
+  "4 severe warnings" and expands to name all four.
+- **YouTube chapters** — no new logic: `buildChapters` already ranks `breaking`
+  entries far above the rest and `chapterLabel` already prefixes ⚡, so
+  break-ins win chapter slots for free in a character-capped description. A
+  grouped cut's label carries the count ("⚡ 4 severe warnings · Bavaria"),
+  which is one line instead of four.
+- **Public `/vod/:videoId`** — same loader, same rows, so the public as-run
+  page credits break-ins identically.
+- **Nothing aired = no `AirEntry`.** A queue age-out or drop writes a worker
+  ring line instead (`queue-logs`, with the event key and reason), so "why did
+  we never show that one" stays answerable without inventing phantom cuts.
+
+### 6. Persistence
 
 - [director-config-model.ts](../shared/src/db/director-config-model.ts): a
   **nested path schema** for `breakIn` (fixed shape, so typed paths with
@@ -373,7 +566,8 @@ channel's break-in settings — document in the card hint.
 | Phase | Deliverable | Files | Visible change |
 |---|---|---|---|
 | 0 | Config + admin card + parameterised boundary tier | shared `director.ts`, `director-break-in.ts`, `director-select.ts`, `director-config-model(.test).ts`; worker `candidates.ts` (`breakIn` on candidates, single-item builders); public `BreakInSettings(.test).tsx`, `page.tsx`; `./update-shared` | None at defaults. Operators can now tune window / thresholds / reasons per channel. |
-| 1 | Immediate interrupt | worker `fresh.ts`, `loop.ts` (`performCut` extraction + branch), `airlog.ts`, repo `*Since` methods + tests; `RunTimelineEntry` chip; `DirectorOnAirReadout` | "Interrupt the current shot" works for quake/storm/volcano. Worker restart (user). |
+| 1 | Immediate interrupt + the pending QUEUE | worker `fresh.ts`, `loop.ts` (`performCut` extraction + branch + `r.pending`), `reconcilePending`/`selectBreakIn`, repo `*Since` methods + tests; `DirectorOnAirReadout` + queue readout | "Interrupt the current shot" works for quake/storm/volcano; a burst queues and drains instead of being dropped. Worker restart (user). |
+| 1b | Burst grouping + as-run log | shared `air-log-model.ts` (`breakIn`, `breakInItems`, `command`, run counters) + parity/repo tests; worker `buildGroupSegment`, `airlog.ts`; public `RunTimelineEntry` chips + member list, `break-in-items` slide | Four simultaneous warnings air as one cut naming all four; every break-in is readable on `/admin/streams/:id`, in the video's chapters and on `/vod/:videoId`. |
 | 2 | INCOMING reticle | public `lib/incoming(.test).ts`, `EventOverlay.tsx`, `BroadcastCard.tsx`, `eventPulse` gating, `kinds.ts` `BREAK_IN_LABEL` | Pre-roll + lock on breaking cuts (and optionally all event shots). |
 | 3 | Round-ups | worker `fresh.ts` round-up queries, `candidateForFresh` roundup branch, place-roundup/event-summary `generatedSince`; public `mode-slides.tsx` lead-slide rule | Favourite-place / world round-ups break in with the deck badge treatment. |
 
@@ -382,18 +576,29 @@ the hard-coded windows the later phases would otherwise duplicate.
 
 ## Tests
 
-- **shared**: `mergeBreakIn` clamps/defaults/unknown-key drop; `qualifiesAsBreakIn`
-  per reason (window edge, threshold edge, volcano erupting-only, round-up
-  favourite gating, `worldRoundup`); `selectBreakIn` (boundary mode → null,
-  guard, both cooldowns, ad-never-interrupted, seen/handled/current/same-area
-  exclusions, reason precedence, score tie-break); `selectPriority` on
+- **shared**: `mergeBreakIn` clamps/defaults/unknown-key drop, **including the
+  pool-floor clamp** (a `breakIn.minQuakeMag` below the channel's
+  `minQuakeMag` is raised to it, same for severity — test both directions so a
+  later "simplification" can't drop it); `qualifiesAsBreakIn` per reason
+  (window edge, threshold edge, `volcanoMin` erupting vs unrest, round-up
+  favourite gating, `worldRoundup`); **`reconcilePending` (the burst case: four
+  events in one tick all survive, de-dupe by key, age-out past the window,
+  `maxPending` trim reports what it dropped, and an event NOT picked this tick
+  is still in the array next tick — the regression this plan exists to
+  prevent)**; `selectBreakIn` (boundary mode → null, guard, both cooldowns,
+  ad-never-interrupted, seen/handled/current/same-area exclusions, reason
+  precedence, score tie-break, group vs single at the `clusterMin` /
+  `clusterWindowSeconds` edges); `selectPriority` on
   `Candidate.breakIn` incl. `enabled:false`; config model parity test.
 - **worker**: single-item builders produce the same segments `buildCandidates`
   did (snapshot the existing candidates tests through them); `FreshEventWatch`
   with an injected db + fake clock (hwm starts at start, advances, ring
-  expiry, `nudge`); loop: extract-and-test `performCut` bookkeeping and the
-  interrupt branch with a stubbed `fresh` + `candidateForFresh` (air log gets
-  `breakIn: true`, outgoing entry's actual hold < nominal).
+  expiry, `nudge`); `buildGroupSegment` framing (tight cluster → centroid,
+  scattered → top item's own frame; title/subtitle from the phrasebook); loop:
+  extract-and-test `performCut` bookkeeping and the interrupt branch with a
+  stubbed `fresh` (air log gets `breakIn`, outgoing entry's actual hold <
+  nominal, `AirRun` counters increment, a grouped cut writes `breakInItems`
+  for every member).
 - **public**: `incomingPhaseAt` table test; `EventOverlay` renders the incoming
   eyebrow then the title after the flip (fake timers); `BreakInSettings` stages
   a complete `breakIn` object on every edit and shows the slide-type-off
@@ -421,10 +626,19 @@ the hard-coded windows the later phases would otherwise duplicate.
 
 - Ads always finish; a break-in waits for the ad's end.
 - The interrupted shot is not resumed.
+- A burst of three or more of the same reason inside three minutes airs as ONE
+  grouped cut naming them all, rather than three interruptions; the members
+  stay in the pool and can still get their own shot later through rotation.
+- A queue that overflows `maxPending` drops its lowest-scored entries, not its
+  oldest — a magnitude 7 that lands during a warning storm must not be pushed
+  off the end by a dozen moderate warnings.
 - Round-up break-ins are favourites-only (plus the optional world round-up);
   the 12-hourly batch therefore yields at most one break-in per
   `roundupCooldownMinutes`, biggest-alert-count place first.
-- Volcano break-ins are eruptions only (a status flip to *unrest* airs through
-  rotation), reusing the existing 6 h status-flip window.
+- Volcano break-ins default to eruptions only (a flip to *unrest* airs through
+  rotation unless the channel opts in), reusing the existing 6 h status-flip
+  window. A finer bar off `usgsAlertLevel` / `usgsColorCode` / `reportVei` is
+  possible later, but those fields are only populated for US-monitored
+  volcanoes, so status is the one signal every volcano has.
 - "Every event shot" incoming mode also applies to flights/ships (they are
   targeted kinds); the label there is `EVENT DETECTED`, not `INCOMING`.

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useState, useSyncExternalStore, type CSS
 import GodsBannerMotion from "./GodsBannerMotion";
 import { placeLine, placeMaxWidth, PLACE_BASELINE_Y, PLACE_RIGHT_X } from "./banner-place";
 import type { BannerReadout, ReadoutStore } from "./live-readout";
+import { BRAND_SANS, BRAND_MONO } from "../../lib/fonts";
 
 export interface GodsBannerProps {
   /** Main scene colour. */
@@ -59,8 +60,11 @@ export interface GodsBannerProps {
 export const GODS_FONT_HREF =
   "https://fonts.googleapis.com/css2?family=Saira:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap";
 
-const SANS = "Saira, 'Helvetica Neue', Helvetica, sans-serif";
-const MONO = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace";
+// SVG <text> is no different from DOM text here: the stacks have to lead with
+// the flag face or the <text> country flags come out as .notdef boxes on the
+// encoder. See lib/fonts.ts.
+const SANS = BRAND_SANS;
+const MONO = BRAND_MONO;
 
 /** City clocks on the status row's second line, west → east. */
 const CITY_CLOCKS: [name: string, tz: string][] = [

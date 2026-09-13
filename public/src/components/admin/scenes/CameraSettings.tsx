@@ -5,21 +5,18 @@
  * on a location alive — a slow orbit round the point and/or a gentle zoom
  * breathe — with how far and how fast it moves. All of it rides ControlState
  * (idleMotion / idleOrbit / idleBreathe / idlePeriodS) and is STAGED as a DELTA
- * patch (useSceneDraft) — the page's Save bar applies it to /watch/:id without
- * clobbering the operator's full state. Changes restamp spinEpoch (when no other
- * motion reads it; re-restamped at Save) so the drift restarts from the anchor.
+ * patch — the page's Save bar applies it to /watch/:id without clobbering the
+ * operator's live state. Changes restamp spinEpoch (when no other motion reads
+ * it; re-restamped at Save) so the drift restarts from the anchor.
  */
-import { useEffect, useState } from "react";
-import Alert from "@mui/material/Alert";
 import Checkbox from "@mui/material/Checkbox";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import MenuItem from "@mui/material/MenuItem";
-import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { type ControlState } from "@photonsurge/shared/control";
-import { fetchSceneState } from "../../../lib/scenes";
+import SettingsCard from "./SettingsCard";
 import { useSceneDraft } from "./SceneDraft";
 
 /** Orbit pan radius presets (degrees round the anchor; 0 = no orbit). The live
@@ -53,45 +50,29 @@ const CYCLE_PRESETS: { v: number; label: string }[] = [
 const withCurrent = (presets: { v: number; label: string }[], v: number, unit: string) =>
   presets.some((p) => p.v === v) ? presets : [...presets, { v, label: `${v}${unit}` }];
 
-export default function CameraSettings({ sceneId }: { sceneId: string }) {
-  const { stage: patch, epoch } = useSceneDraft();
-  const [state, setState] = useState<ControlState | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchSceneState(sceneId).then(({ state: s }) => {
-      if (!cancelled) setState(s);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [sceneId, epoch]);
+export default function CameraSettings() {
+  const { state, stage } = useSceneDraft();
 
   const apply = (over: Partial<ControlState>) => {
-    if (!state) return;
     // Restart the motion phase so the drift eases out from the anchor — but
     // ONLY while nothing else reads the epoch (the world spin / a director
     // push-in or orbit), or the restamp would jump that motion mid-shot.
     const epochSafe = !state.autoSpin && !state.zoomDrift && !state.orbitDrift;
-    const out = epochSafe ? { ...over, spinEpoch: Date.now() } : over;
-    setState({ ...state, ...out });
-    patch(sceneId, out);
+    stage(epochSafe ? { ...over, spinEpoch: Date.now() } : over);
   };
 
-  if (!state) {
-    return (
-      <Typography variant="body2" color="text.secondary">
-        Loading channel…
-      </Typography>
-    );
-  }
-
   return (
-    <Paper sx={{ p: 1.75 }}>
-      <Typography variant="subtitle2" sx={{ mb: 1.25 }}>
-        Camera motion
-      </Typography>
-
+    <SettingsCard
+      id="camera"
+      note={
+        <>
+          Adds a slight drift whenever this channel&apos;s camera settles on a location —
+          slowly circling the point and gently zooming in and back out. The orbit rides
+          along with the director&apos;s push-in shots; a zoom breathe replaces the push-in
+          outright. Only the world spin and the director&apos;s own orbits mute it.
+        </>
+      }
+    >
       <FormControlLabel
         control={
           <Checkbox
@@ -106,7 +87,7 @@ export default function CameraSettings({ sceneId }: { sceneId: string }) {
         sx={{ mb: 1 }}
       />
 
-      <Stack direction="row" spacing={1.5} sx={{ flexWrap: "wrap", mb: 1.5 }}>
+      <Stack direction="row" spacing={1.5} sx={{ flexWrap: "wrap" }}>
         <TextField
           select
           size="small"
@@ -156,13 +137,6 @@ export default function CameraSettings({ sceneId }: { sceneId: string }) {
           ))}
         </TextField>
       </Stack>
-
-      <Alert severity="info">
-        Adds a slight drift whenever this channel&apos;s camera settles on a location —
-        slowly circling the point and gently zooming in and back out. The orbit rides
-        along with the director&apos;s push-in shots; a zoom breathe replaces the push-in
-        outright. Only the world spin and the director&apos;s own orbits mute it.
-      </Alert>
-    </Paper>
+    </SettingsCard>
   );
 }
