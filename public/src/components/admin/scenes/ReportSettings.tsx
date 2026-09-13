@@ -15,14 +15,18 @@ import {
   REPORT_SLIDE_IDS,
   REPORT_PRESETS,
   DEFAULT_REPORT_HOLD_MS,
+  DEFAULT_REPORT_RUNS,
   REPORT_HOLD_MIN_MS,
   REPORT_HOLD_MAX_MS,
+  REPORT_RUNS_MIN,
+  REPORT_RUNS_MAX,
   type ReportSlideId,
   type ReportKind,
 } from "@photonsurge/shared/broadcast-report";
 import type { HazardType } from "@photonsurge/shared/alerts/hazard";
 import SettingsCard from "./SettingsCard";
 import DwellField from "./DwellField";
+import RunsField from "./RunsField";
 import ReportOrderList from "./ReportOrderList";
 import ReportLocationsField from "./ReportLocationsField";
 import ReportContentFields from "./ReportContentFields";
@@ -95,8 +99,17 @@ export default function ReportSettings() {
         ))}
       </Stack>
 
+      <RunsField
+        label="Report runs through"
+        hint="Laps of the slide's ACTIVE FEED — every row shown once — before the deck turns over. Slides with no feed hold the dwell below instead."
+        value={state.reportRuns ?? DEFAULT_REPORT_RUNS}
+        min={REPORT_RUNS_MIN}
+        max={REPORT_RUNS_MAX}
+        onChange={(runs) => stage({ reportRuns: runs })}
+      />
+
       <DwellField
-        label="Report rotation dwell"
+        label="Report minimum dwell"
         valueMs={state.reportHoldMs ?? DEFAULT_REPORT_HOLD_MS}
         defaultMs={DEFAULT_REPORT_HOLD_MS}
         minMs={REPORT_HOLD_MIN_MS}

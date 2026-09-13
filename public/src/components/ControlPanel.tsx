@@ -22,6 +22,9 @@ import {
   SLIDE_GROUP_LABELS,
   SLIDE_GROUP_ORDER,
   DEFAULT_SLIDE_HOLD_MS,
+  DEFAULT_SLIDE_RUNS,
+  SLIDE_RUNS_MIN,
+  SLIDE_RUNS_MAX,
   isPinnedSlide,
   type SlideId,
 } from "@photonsurge/shared/broadcast-slides";
@@ -216,12 +219,30 @@ export default function ControlPanel({
               const presets = [8000, 12000, 16000, 24000, 32000, 40000];
               const holdMs = state.slideHoldMs ?? DEFAULT_SLIDE_HOLD_MS;
               const holdOpts = presets.includes(holdMs) ? presets : [...presets, holdMs].sort((a, b) => a - b);
+              const runs = state.slideRuns ?? DEFAULT_SLIDE_RUNS;
               return (
                 <div style={{ marginTop: 12 }} aria-label="Slides">
                   <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, color: "#8b95a7", marginBottom: 6 }}>
                     Bottom-left slides
                   </div>
-                  <Field label="Dwell">
+                  {/* Runs through = the real rotation control: how many times a
+                      slide's body is shown in full before the deck turns over.
+                      Dwell below is only the floor. */}
+                  <Field label="Runs">
+                    <select
+                      value={runs}
+                      onChange={(e) => patch({ slideRuns: Number(e.target.value) })}
+                      aria-label="Slide runs through"
+                      style={miniSelect}
+                    >
+                      {Array.from({ length: SLIDE_RUNS_MAX - SLIDE_RUNS_MIN + 1 }, (_, i) => SLIDE_RUNS_MIN + i).map((n) => (
+                        <option key={n} value={n}>
+                          {n}×
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Min dwell">
                     <select
                       value={holdMs}
                       onChange={(e) => patch({ slideHoldMs: Number(e.target.value) })}

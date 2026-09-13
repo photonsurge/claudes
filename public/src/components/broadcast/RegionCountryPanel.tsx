@@ -9,7 +9,7 @@
  *
  * Shows, top to bottom: the flag + current reading; the AI "now" + "next 24h"
  * summaries when the country has a round-up (else skipped); a 3-day daily strip;
- * temperature / wind / rain / cloud 72h graphs; and the country's biggest cities
+ * temperature / wind / rain / cloud trend graphs; and the country's biggest cities
  * with their own current temp + 3-day chips. Pure presentation inside the scaled
  * broadcast stage.
  */
@@ -18,6 +18,7 @@ import type { ForecastDay } from "../../lib/weather-forecast";
 import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 import { MiniChart, formatReading, type SparkPoint } from "./PointHistoryPanel";
+import { chartWindow, chartWindowAcross } from "./chart-window";
 import { WeatherGlyph } from "./glyphs";
 import { DayChip } from "./CityForecastStrip";
 
@@ -128,6 +129,13 @@ export default function RegionCountryPanel({
 
   const days = country.days.slice(0, 3);
 
+  // The heading names the window the whole stack covers; each row names its own.
+  const section = chartWindowAcross([tempPts, windPts, rainPts, cloudPts]);
+  const chartLabel = (name: string, pts: SparkPoint[]): string => {
+    const win = chartWindow(pts);
+    return win ? `${name} · ${win.tag}` : name;
+  };
+
   return (
     <BroadcastCard
       accent={color}
@@ -185,12 +193,15 @@ export default function RegionCountryPanel({
         </CardSection>
       ) : null}
 
-      {/* 72h graphs — temp / wind / rain / cloud, each self-hiding on no data. */}
-      {tempPts.length >= 2 ? (
-        <CardSection eyebrow="Next 72 Hours">
+      {/* Trend graphs — temp / wind / rain / cloud, each self-hiding on no data.
+          Every label states the window its OWN trace covers (`chartWindow`), so a
+          variable the store is short of frames for can't ride a neighbour's
+          horizon, and a series that has already elapsed reads LAST, not NEXT. */}
+      {section ? (
+        <CardSection eyebrow={section.title}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <MiniChart
-              label="TEMP · 72H"
+              label={chartLabel("TEMP", tempPts)}
               color="#e66767"
               units="°C"
               points={tempPts}
@@ -198,9 +209,9 @@ export default function RegionCountryPanel({
               caption={hi != null && lo != null ? `hi ${formatReading(hi)}° · lo ${formatReading(lo)}°` : ""}
               height={72}
             />
-            <MiniChart label="WIND · 72H" color="#9085e9" units="m/s" points={windPts} avg={avg(windPts)} caption="" height={72} />
-            <MiniChart label="RAIN · 72H" color="#3987e5" units="mm" points={rainPts} avg={avg(rainPts)} caption="" height={72} />
-            <MiniChart label="CLOUD · 72H" color="#008300" units="%" points={cloudPts} avg={avg(cloudPts)} caption="" height={72} />
+            <MiniChart label={chartLabel("WIND", windPts)} color="#9085e9" units="m/s" points={windPts} avg={avg(windPts)} caption="" height={72} />
+            <MiniChart label={chartLabel("RAIN", rainPts)} color="#3987e5" units="mm" points={rainPts} avg={avg(rainPts)} caption="" height={72} />
+            <MiniChart label={chartLabel("CLOUD", cloudPts)} color="#008300" units="%" points={cloudPts} avg={avg(cloudPts)} caption="" height={72} />
           </div>
         </CardSection>
       ) : null}

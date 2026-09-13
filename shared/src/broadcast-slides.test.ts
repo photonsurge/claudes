@@ -6,6 +6,8 @@ import {
   isSlideId,
   isPinnedSlide,
   applySlidePrefs,
+  SLIDE_RUNS_MIN,
+  SLIDE_RUNS_MAX,
 } from "./broadcast-slides";
 import { DEFAULT_CONTROL_STATE, mergeControlState } from "./control";
 
@@ -95,5 +97,34 @@ describe("mergeControlState slide + theme fields", () => {
   it("keeps base themeOverrides when the patch omits the key", () => {
     const base = { ...DEFAULT_CONTROL_STATE, themeOverrides: { name: "KEEP" } };
     expect(mergeControlState(base, { showWind: false }).themeOverrides).toEqual({ name: "KEEP" });
+  });
+});
+
+describe("runs through (the deck rotation control)", () => {
+  it("defaults to one complete run per slide on both decks", () => {
+    expect(DEFAULT_CONTROL_STATE.slideRuns).toBe(1);
+    expect(DEFAULT_CONTROL_STATE.reportRuns).toBe(1);
+  });
+
+  it("clamps a patched run count into range and rounds it", () => {
+    expect(mergeControlState(DEFAULT_CONTROL_STATE, { slideRuns: 3 }).slideRuns).toBe(3);
+    expect(mergeControlState(DEFAULT_CONTROL_STATE, { slideRuns: 99 }).slideRuns).toBe(SLIDE_RUNS_MAX);
+    expect(mergeControlState(DEFAULT_CONTROL_STATE, { slideRuns: 0 }).slideRuns).toBe(SLIDE_RUNS_MIN);
+    expect(mergeControlState(DEFAULT_CONTROL_STATE, { slideRuns: 2.4 }).slideRuns).toBe(2);
+    expect(mergeControlState(DEFAULT_CONTROL_STATE, { reportRuns: 4 }).reportRuns).toBe(4);
+  });
+
+  it("keeps the channel's run count when the patch doesn't mention it", () => {
+    const base = mergeControlState(DEFAULT_CONTROL_STATE, { slideRuns: 3, reportRuns: 2 });
+    const next = mergeControlState(base, { slideHoldMs: 9000 });
+    expect(next.slideRuns).toBe(3);
+    expect(next.reportRuns).toBe(2);
+  });
+
+  it("survives junk from the wire", () => {
+    expect(mergeControlState(DEFAULT_CONTROL_STATE, { slideRuns: NaN as number }).slideRuns).toBe(1);
+    expect(
+      mergeControlState(DEFAULT_CONTROL_STATE, { reportRuns: "3" as unknown as number }).reportRuns,
+    ).toBe(3);
   });
 });

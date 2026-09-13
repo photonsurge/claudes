@@ -863,6 +863,7 @@ export default function BroadcastFrame({
               <SlideDeck
                 slides={leftDeck}
                 holdMs={state.slideHoldMs}
+                runs={state.slideRuns}
                 resetKey={onAirSegment.id}
                 dotColor={KIND_COLOR[onAirSegment.kind] ?? "#38bdf8"}
                 chrome={{
@@ -1047,6 +1048,7 @@ export default function BroadcastFrame({
               reportKindsOff={state.reportKindsOff}
               about={state.about}
               holdMs={state.reportHoldMs}
+              runs={state.reportRuns}
             />
           )}
         </FittedColumn>

@@ -68,6 +68,10 @@ export const DeckChromeContext = createContext<DeckChrome | null>(null);
  *  off-screen. Default true so a standalone (non-deck) card scrolls normally. */
 export const DeckSlideActiveContext = createContext<boolean>(true);
 
+/** NB the deck's ROTATION clock lives with the body, not here: the template's
+ *  AutoScroll counts complete runs through the content and reports them to
+ *  SlideDeck through RunPacingContext (./run-pacing). */
+
 /** DEFAULT ink values (from the theme BASE_LOOK) — kept exported for the many
  *  panels that hardcode the default look. Themed code should prefer
  *  useBroadcastTheme() so per-channel overrides reach it. */
@@ -260,8 +264,12 @@ export default function BroadcastCard({
                 `active` resets it to the top when this slide airs (and holds it
                 there while it waits off-screen), so a slide always loads scrolled
                 to top. */}
+            {/* `paceDeck` hands this body the slide's clock: the deck turns the
+                page when the body has been shown in full `slideRuns` times, not
+                on a blind dwell (see ./run-pacing). */}
             <AutoScroll
               active={slideActive}
+              paceDeck
               style={{ flex: 1, minHeight: 0, overflowY: "hidden", padding: "10px 20px 16px" }}
             >
               {children}

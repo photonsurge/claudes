@@ -39,7 +39,11 @@ describe("SlideDeck", () => {
 
   it("keeps a slide mounted once it has aired, so panel state survives the rotation", () => {
     render(<SlideDeck slides={slides} holdMs={1000} />);
-    act(() => void jest.advanceTimersByTime(2000)); // a → b → c
+    // One hold per act(): the deck re-arms its clock on the commit that shows
+    // the next slide (it is no longer a free-running interval), so the advances
+    // have to be flushed one at a time.
+    act(() => void jest.advanceTimersByTime(1000)); // a → b
+    act(() => void jest.advanceTimersByTime(1000)); // b → c
     expect(active()).toBe("c");
     expect(mounted("a")).toBe(true);
     expect(mounted("b")).toBe(true);
@@ -71,7 +75,8 @@ describe("SlideDeck", () => {
 
   it("a new segment rewinds to the first slide and starts a fresh lazy deck", () => {
     const { rerender } = render(<SlideDeck slides={slides} holdMs={1000} resetKey="seg-1" />);
-    act(() => void jest.advanceTimersByTime(2000)); // everything mounted, c on air
+    act(() => void jest.advanceTimersByTime(1000));
+    act(() => void jest.advanceTimersByTime(1000)); // everything mounted, c on air
     expect(active()).toBe("c");
     const next: DeckSlide[] = [...slides, { id: "d", node: <div>slide-d</div> }];
     rerender(<SlideDeck slides={next} holdMs={1000} resetKey="seg-2" />);

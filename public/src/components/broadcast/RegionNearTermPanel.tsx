@@ -12,6 +12,7 @@ import type { ForecastStep } from "../../lib/weather-forecast";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
 import { MiniChart, formatReading, type SparkPoint } from "./PointHistoryPanel";
+import { chartWindow } from "./chart-window";
 import { WeatherGlyph } from "./glyphs";
 
 /** How far ahead the near-term window reaches (hours). */
@@ -96,7 +97,7 @@ export default function RegionNearTermPanel({
       {tempPts.length >= 2 ? (
         <CardSection>
           <MiniChart
-            label="TEMP · NEXT 24H"
+            label={`TEMP · ${chartWindow(tempPts)?.tag ?? "NEXT 24H"}`}
             color="#e66767"
             units="°C"
             points={tempPts}

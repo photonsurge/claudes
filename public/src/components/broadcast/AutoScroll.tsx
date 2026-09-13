@@ -17,6 +17,15 @@
  * itself for free whenever the slide's body changes. `speed` still forces a
  * fixed px/s where a caller really wants one.
  *
+ * It also OWNS THE SLIDE'S CLOCK when it sits in a deck (see ./run-pacing): it
+ * counts complete RUNS — one top→bottom pass for an overflowing body, or the
+ * time to read it at the channel's pace when it fits — and reports when the
+ * channel's `slideRuns` have been shown, so the deck turns the page exactly when
+ * the viewer has been shown everything on the card instead of on a blind timer.
+ * On the final run it parks at the bottom rather than gliding back to the top:
+ * that return only exists to set up the next run, and running it under the
+ * deck's 1.2 s cross-fade reads as the card sliding away.
+ *
  * Moves the content with a `transform` on an inner wrapper — NOT `scrollTop`.
  * Reading `scrollHeight` (or writing `scrollTop`, which must clamp against
  * current layout) forces a synchronous layout of the whole document whenever
@@ -27,8 +36,9 @@
  * content changes for free.
  */
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
-import { scrollPxPerSec } from "@photonsurge/shared/reading-pace";
+import { readSeconds, scrollPxPerSec } from "@photonsurge/shared/reading-pace";
 import { useReadPace } from "./pace-context";
+import { useRunClaim } from "./run-pacing";
 
 export default function AutoScroll({
   children,
@@ -45,6 +55,7 @@ export default function AutoScroll({
    *  standalone use. */
   active = true,
   cps,
+  paceDeck = false,
 }: {
   children: ReactNode;
   style?: CSSProperties;
@@ -53,10 +64,18 @@ export default function AutoScroll({
   active?: boolean;
   /** Reading-pace override, characters/sec (default: the channel's). */
   cps?: number;
+  /** Own the enclosing deck slide's clock: count complete runs through the body
+   *  and tell the deck when to turn the page (see ./run-pacing). Off for
+   *  standalone regions like the top-right advice window, which just loop. */
+  paceDeck?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const pace = useReadPace(cps);
+  const { runs, done } = useRunClaim(paceDeck && active);
+  // Read inside the rAF loop without re-arming it every time the deck re-renders.
+  const doneRef = useRef(done);
+  doneRef.current = done;
 
   useEffect(() => {
     const el = ref.current;
@@ -99,8 +118,20 @@ export default function AutoScroll({
     let raf = 0;
     let last = 0;
     let pos = 0;
-    let phase: "holdTop" | "down" | "holdBottom" | "up" = "holdTop";
+    let phase: "holdTop" | "down" | "holdBottom" | "up" | "parked" = "holdTop";
     let waited = 0;
+    // Runs through the body completed since this slide aired, and the read clock
+    // used when the body fits (there is no travel to count, so a run is the time
+    // the text takes to read at the channel's pace).
+    let runsDone = 0;
+    let readMs = 0;
+    const target = paceDeck ? runs : Infinity;
+    const finish = () => {
+      runsDone += 1;
+      if (runsDone < target) return false;
+      doneRef.current();
+      return true;
+    };
     const write = () => {
       inner.style.transform = `translate3d(0, ${(-pos).toFixed(2)}px, 0)`;
     };
@@ -113,7 +144,9 @@ export default function AutoScroll({
       // and this is a couple of multiplies against a rAF that is running anyway.
       const pxPerSec = speed ?? scrollPxPerSec(contentH, chars, pace);
 
-      if (overflow <= 4) {
+      if (phase === "parked") {
+        // Final run shown — sit still under the deck's cross-fade.
+      } else if (overflow <= 4) {
         // Fits (or not yet laid out) — keep it pinned to the top, reset cycle.
         if (pos !== 0) {
           pos = 0;
@@ -121,6 +154,18 @@ export default function AutoScroll({
         }
         phase = "holdTop";
         waited = 0;
+        // A body that fits is fully visible from the first frame, so its run is
+        // simply its read time. Only counted once it has actually been measured
+        // (contentH > 0): an off-air slide under `content-visibility: hidden`
+        // measures as zero, and calling that "fits" would advance the deck the
+        // moment the slide aired.
+        if (contentH > 0 && chars > 0) {
+          readMs += dt;
+          if (readMs >= readSeconds(chars, pace) * 1000) {
+            readMs = 0;
+            if (finish()) phase = "parked";
+          }
+        }
       } else if (phase === "holdTop") {
         waited += dt;
         if (waited >= pause) (waited = 0), (phase = "down");
@@ -130,7 +175,11 @@ export default function AutoScroll({
         if (pos >= overflow - 0.5) phase = "holdBottom";
       } else if (phase === "holdBottom") {
         waited += dt;
-        if (waited >= pause) (waited = 0), (phase = "up");
+        if (waited >= pause) {
+          waited = 0;
+          // The body has now been shown end to end: that is one run.
+          phase = finish() ? "parked" : "up";
+        }
       } else {
         // Glide back up a touch faster than the read-down.
         pos = Math.max(0, pos - (pxPerSec * 1.7 * dt) / 1000);
@@ -146,7 +195,7 @@ export default function AutoScroll({
       cancelAnimationFrame(raf);
       ro?.disconnect();
     };
-  }, [speed, pause, active, pace]);
+  }, [speed, pause, active, pace, paceDeck, runs]);
 
   return (
     <div ref={ref} style={{ ...style, overflow: "hidden" }}>

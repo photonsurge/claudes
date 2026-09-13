@@ -56,9 +56,9 @@ describe("ReportSettings", () => {
     expect(screen.queryByText("Alert hazards")).not.toBeInTheDocument();
   });
 
-  it("changes the report rotation dwell via the slider", () => {
+  it("changes the report minimum dwell via the slider", () => {
     const d = renderInDraft(<ReportSettings />);
-    fireEvent.change(screen.getByRole("slider", { name: "Report rotation dwell" }), {
+    fireEvent.change(screen.getByRole("slider", { name: "Report minimum dwell" }), {
       target: { value: "12000" },
     });
 
@@ -67,7 +67,7 @@ describe("ReportSettings", () => {
 
   it("types an exact report dwell override in seconds", () => {
     const d = renderInDraft(<ReportSettings />);
-    const secs = screen.getByRole("textbox", { name: "Report rotation dwell seconds" });
+    const secs = screen.getByRole("textbox", { name: "Report minimum dwell seconds" });
     fireEvent.change(secs, { target: { value: "9" } });
     fireEvent.blur(secs);
 

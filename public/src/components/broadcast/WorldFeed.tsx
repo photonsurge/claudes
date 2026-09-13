@@ -16,6 +16,7 @@ import { useBroadcastTheme } from "./theme-context";
 import { HazardGlyph } from "./glyphs";
 import { feedRowMs } from "@photonsurge/shared/reading-pace";
 import { useReadPace } from "./pace-context";
+import { useRunClaim } from "./run-pacing";
 
 /** Rows shown before the list starts marqueeing (taller feeds auto-scroll). */
 export const FEED_VISIBLE = 7;
@@ -160,16 +161,40 @@ function meanRowChars(items: readonly WorldWatchItem[]): number {
  * `msPerRow` is the time one row takes to READ at the channel's reading pace
  * (shared/reading-pace) rather than a fixed 2.4 s, so a feed of long headlines
  * steps more slowly than one of short ones.
+ *
+ * It also OWNS THE SLIDE'S CLOCK in the WORLD REPORT deck (see ./run-pacing).
+ * One LAP — every row shown once — is one run, and the deck turns the page after
+ * the channel's `reportRuns` laps. That mismatch was the worst pacing bug on the
+ * page: a 20-row feed stepping a row every ~3 s needs a full minute to come
+ * round, but the deck flipped on a blind 6 s dwell, so rows 3–20 were never seen
+ * by anyone on any channel.
  */
-function MarqueeFeed({ items, visible, viewH }: { items: WorldWatchItem[]; visible: number; viewH: number }) {
+function MarqueeFeed({
+  items,
+  visible,
+  viewH,
+  paceDeck,
+}: {
+  items: WorldWatchItem[];
+  visible: number;
+  viewH: number;
+  paceDeck: boolean;
+}) {
   const n = items.length;
   const pace = useReadPace();
+  const { runs, done } = useRunClaim(paceDeck);
+  const doneRef = useRef(done);
+  doneRef.current = done;
   // Rounded to a tenth of a character so a feed poll that shifts the mean by a
   // hair doesn't restart the scroll clock.
   const avgChars = Math.round(meanRowChars(items) * 10) / 10;
   const msPerRow = feedRowMs(avgChars, pace);
   const [start, setStart] = useState(0);
   const startRef = useRef(0);
+  // Row steps in one LAP — every row shown once. A row enters at the bottom of
+  // the window, so the last one is on screen at `n - visible`; one more step
+  // gives it a full dwell of its own before the deck is allowed to turn over.
+  const rowsPerRun = Math.max(1, n - Math.min(visible, n) + 1);
   const trackRef = useRef<HTMLDivElement>(null);
   // Scroll clock origin, kept across item changes so a feed refresh never snaps.
   const originRef = useRef<number | null>(null);
@@ -191,13 +216,15 @@ function MarqueeFeed({ items, visible, viewH }: { items: WorldWatchItem[]; visib
       if (idx !== startRef.current) {
         startRef.current = idx;
         setStart(idx);
+        // Reported from the row step, not per frame: this is one call per lap.
+        if (paceDeck && runs !== Infinity && idx >= rowsPerRun * runs) doneRef.current();
       }
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
     // A pace change (operator, or a feed whose rows got longer) restarts the
     // clock; `originRef` survives, so the rows carry on from where they are.
-  }, [msPerRow]);
+  }, [msPerRow, paceDeck, runs, rowsPerRun]);
 
   const count = Math.min(n, visible + WINDOW_SLACK);
   const rows: { item: WorldWatchItem; key: string }[] = [];
@@ -221,11 +248,17 @@ export default function WorldFeed({
   items,
   visible = FEED_VISIBLE,
   emptyLabel = "MONITORING · ALL QUIET",
+  paceDeck = false,
 }: {
   items: WorldWatchItem[];
   /** Rows shown before marqueeing kicks in. */
   visible?: number;
   emptyLabel?: string;
+  /** Own the enclosing WORLD REPORT slide's clock: count marquee laps and tell
+   *  the deck when to turn the page (see ./run-pacing). A feed short enough to
+   *  sit still has no lap to count and claims nothing, so its slide falls back
+   *  to the channel's dwell. */
+  paceDeck?: boolean;
 }) {
   if (items.length === 0) {
     return (
@@ -248,7 +281,7 @@ export default function WorldFeed({
   // MarqueeFeed); a short feed just sits still.
   const scrolling = items.length > visible;
   const viewH = Math.min(items.length, visible) * FEED_ROW_H - (scrolling ? 0 : ROW_GAP);
-  if (scrolling) return <MarqueeFeed items={items} visible={visible} viewH={viewH} />;
+  if (scrolling) return <MarqueeFeed items={items} visible={visible} viewH={viewH} paceDeck={paceDeck} />;
 
   return (
     <div style={{ height: viewH, overflow: "hidden", position: "relative" }}>

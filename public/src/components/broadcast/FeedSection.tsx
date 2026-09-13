@@ -17,17 +17,23 @@ export default function FeedSection({
   theme,
   visible = 5,
   emptyLabel,
+  paceDeck = true,
 }: {
   feed: WorldWatchItem[];
   theme: BroadcastTheme;
   /** Rows shown before the feed starts marqueeing. */
   visible?: number;
   emptyLabel?: string;
+  /** Let the marquee own the enclosing WORLD REPORT slide's clock — the deck
+   *  turns the page after a whole lap of this feed rather than on a blind dwell
+   *  (see ./run-pacing). On by default: every FeedSection lives in a deck slide,
+   *  and outside one the run-pacing context is null, so nothing is claimed. */
+  paceDeck?: boolean;
 }) {
   return (
     <>
       <GodsSectionRule label="ACTIVE FEED" accent={theme.accent} />
-      <WorldFeed items={feed} visible={visible} emptyLabel={emptyLabel} />
+      <WorldFeed items={feed} visible={visible} emptyLabel={emptyLabel} paceDeck={paceDeck} />
     </>
   );
 }

@@ -56,6 +56,23 @@ export const REPORT_HOLD_MIN_MS = 3000;
 export const REPORT_HOLD_MAX_MS = 30000;
 export const DEFAULT_REPORT_HOLD_MS = 6000;
 
+/**
+ * RUNS THROUGH for the WORLD REPORT deck — the same control as the bottom-left
+ * deck's `slideRuns` (see broadcast-slides), in this column's own vocabulary.
+ *
+ * One run here is one LAP of the slide's ACTIVE FEED marquee: every row shown
+ * once. That matters more on this side than on the left, because the feed lap
+ * and the dwell were wildly mismatched — a 20-row feed stepping a row every ~3 s
+ * needs a full minute to come round, while the slide flipped after 6 s, so most
+ * of the feed was never seen on any channel.
+ *
+ * Slides with no marquee (the point-forecast and ABOUT cards) have no lap to
+ * count, so they hold `reportHoldMs` per run instead.
+ */
+export const REPORT_RUNS_MIN = 1;
+export const REPORT_RUNS_MAX = 4;
+export const DEFAULT_REPORT_RUNS = 1;
+
 /** All report slide ids, in catalog order. */
 export const REPORT_SLIDE_IDS: readonly ReportSlideId[] = BROADCAST_REPORT_SLIDES.map((s) => s.id);
 

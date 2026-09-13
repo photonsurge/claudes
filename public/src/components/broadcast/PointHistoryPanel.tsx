@@ -18,6 +18,7 @@
  */
 import { useEffect, useState, type CSSProperties } from "react";
 import { HISTORY_WINDOW_HOURS, type ClimateBucketedDataset } from "../../lib/history-client";
+import { chartWindowAcross } from "./chart-window";
 import { usePointHistorySeries, useAreaHistorySeries, useClimateFor } from "../../lib/focus/focus-client";
 import { DEFAULT_THEME, TILE_BG, type BroadcastTheme } from "./config";
 import { useBroadcastTheme } from "./theme-context";
@@ -413,6 +414,11 @@ export default function PointHistoryPanel({
     (r) => hasSpark(r.points) && !off.has(r.variable),
   );
 
+  // The window is REQUESTED as HISTORY_WINDOW_HOURS back, but the archive often
+  // holds less than that (a fresh deploy, a thinned variable), so the tag states
+  // what the traces actually cover rather than the horizon we asked for.
+  const liveWindow = chartWindowAcross(liveCharts.map((c) => c.points));
+
   // When tiled, one page holds every chart (perPage = item count) so the grid
   // shows them all at once with no timer and no page counter; compact mode keeps
   // CHARTS_PER_SLIDE paging. Hooks stay unconditional (rules of hooks).
@@ -438,7 +444,7 @@ export default function PointHistoryPanel({
         <>
           <SectionTitle
             title={bbox ? "AREA HISTORY" : "POINT HISTORY"}
-            tag={`LAST ${HISTORY_WINDOW_HOURS} H${tiled ? ` · ${liveCharts.length}` : ""}`}
+            tag={`${liveWindow?.tag ?? `LAST ${HISTORY_WINDOW_HOURS}H`}${tiled ? ` · ${liveCharts.length}` : ""}`}
             accent={theme.accent}
             page={liveSlide.page}
             pageCount={liveSlide.pageCount}

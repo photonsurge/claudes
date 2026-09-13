@@ -131,10 +131,50 @@ export function isPinnedSlide(id: string): boolean {
   return PINNED_SLIDE_ID_SET.has(id);
 }
 
-/** Slide dwell bounds (ms) for the rotation-speed control. */
+/** Slide dwell bounds (ms). Since the deck became run-paced (see `slideRuns`)
+ *  this is the FLOOR and the safety CEILING around the derived dwell, not the
+ *  dwell itself: a slide never advances before `slideHoldMs` and never sits
+ *  longer than SLIDE_HOLD_MAX_MS even if its body never reports a finished run. */
 export const SLIDE_HOLD_MIN_MS = 6000;
 export const SLIDE_HOLD_MAX_MS = 40000;
 export const DEFAULT_SLIDE_HOLD_MS = 16000;
+
+/**
+ * RUNS THROUGH — how many times a slide's body is presented in full before the
+ * deck advances. One "run" is the card's content shown once end to end: a full
+ * top→bottom scroll pass for an overflowing body, or the time it takes to READ
+ * the body at the channel's reading pace when it fits without scrolling.
+ *
+ * This is the primary rotation control. It replaced a bare dwell because the
+ * dwell knew nothing about the card: a dense slide was cut mid-scroll while a
+ * sparse one sat in dead air. Expressed as runs, the deck advances exactly when
+ * the viewer has been shown everything on the card — the same move the crawl and
+ * the marquee already made when they started deriving from `readPaceCps`.
+ */
+export const SLIDE_RUNS_MIN = 1;
+export const SLIDE_RUNS_MAX = 4;
+export const DEFAULT_SLIDE_RUNS = 1;
+
+/**
+ * Safety ceiling for a run-paced slide, ms — shared by BOTH decks.
+ *
+ * This is a DEADLOCK BREAKER, not a pacing control, so it is deliberately not
+ * the dwell slider's maximum. It only ever bites on a slide whose moving part
+ * claimed the clock and then never reported: a marquee waiting on a feed that
+ * never arrives, a body whose measurement never lands. A legitimately long run
+ * must be allowed to finish, and they do get long — a 20-row feed of headlines
+ * stepping at the reading pace needs about a minute to come round, and a dense
+ * card body wants ~50 s for one scroll pass. Cutting those at the slider max
+ * (40 s / 30 s) would reinstate the very bug the run pacing fixes.
+ */
+export const RUN_CEILING_MS = 120000;
+
+/** Any untrusted value → a usable run count. */
+export function clampRuns(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
 
 /**
  * Apply a channel's slide preferences to a composed deck: drop hidden slides

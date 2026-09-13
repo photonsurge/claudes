@@ -108,9 +108,11 @@ describe("mergeControlState", () => {
       slidesOff: ["depth", "volcano-geology"],
       slideOrder: ["forecast", "topcities"],
       slideHoldMs: 12000,
+      slideRuns: 2,
       reportOff: ["hourly", "alerts"],
       reportOrder: ["seismic", "volcanoes"],
       reportHoldMs: 9000,
+      reportRuns: 3,
       weatherLocations: [
         { label: "London", lat: 51.507, lng: -0.128 },
         { label: "Tokyo", lat: 35.676, lng: 139.65 },

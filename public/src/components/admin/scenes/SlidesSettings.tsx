@@ -3,7 +3,8 @@
 /**
  * Per-channel bottom-left deck editor: which mode-deck slides show, their order,
  * the rotation dwell and which weather charts the point-history card cycles. All
- * of it rides ControlState (slidesOff / slideOrder / slideHoldMs / pointVarsOff)
+ * of it rides ControlState (slidesOff / slideOrder / slideRuns / slideHoldMs /
+ * pointVarsOff)
  * and is STAGED as DELTA patches — the page's Save bar applies them to
  * /watch/:id without clobbering the operator's full state. The pinned `onair`
  * lede is shown locked: it can't be hidden or moved.
@@ -18,8 +19,11 @@ import Typography from "@mui/material/Typography";
 import {
   SLIDE_IDS,
   DEFAULT_SLIDE_HOLD_MS,
+  DEFAULT_SLIDE_RUNS,
   SLIDE_HOLD_MIN_MS,
   SLIDE_HOLD_MAX_MS,
+  SLIDE_RUNS_MIN,
+  SLIDE_RUNS_MAX,
   isPinnedSlide,
   type SlideId,
 } from "@photonsurge/shared/broadcast-slides";
@@ -27,6 +31,7 @@ import { POINT_VARS, type PointVar } from "@photonsurge/shared/point-vars";
 import SettingsCard from "./SettingsCard";
 import SlideOrderList from "./SlideOrderList";
 import DwellField from "./DwellField";
+import RunsField from "./RunsField";
 import { useSceneDraft } from "./SceneDraft";
 
 export default function SlidesSettings() {
@@ -86,8 +91,17 @@ export default function SlidesSettings() {
         </>
       }
     >
+      <RunsField
+        label="Runs through"
+        hint="Times each slide's body is shown in full before the deck turns over — a whole top-to-bottom scroll, or one read of a body that fits."
+        value={state.slideRuns ?? DEFAULT_SLIDE_RUNS}
+        min={SLIDE_RUNS_MIN}
+        max={SLIDE_RUNS_MAX}
+        onChange={(runs) => stage({ slideRuns: runs })}
+      />
+
       <DwellField
-        label="Rotation dwell"
+        label="Minimum dwell"
         valueMs={state.slideHoldMs ?? DEFAULT_SLIDE_HOLD_MS}
         defaultMs={DEFAULT_SLIDE_HOLD_MS}
         minMs={SLIDE_HOLD_MIN_MS}

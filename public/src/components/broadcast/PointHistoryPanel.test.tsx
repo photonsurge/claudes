@@ -129,7 +129,7 @@ describe("PointHistoryPanel (point mode)", () => {
     expect(screen.getByText(/avg 12 · min 10 · max 14/)).toBeInTheDocument();
     // No "1/2" slideshow counter; the tag carries the variable count instead.
     expect(screen.queryByText(/1\/2/)).toBeNull();
-    expect(screen.getByText(/LAST \d+ H · 2/)).toBeInTheDocument();
+    expect(screen.getByText(/LAST \d+[HD] · 2/)).toBeInTheDocument();
   });
 
   it("hides entirely when archive and climate both have nothing", async () => {

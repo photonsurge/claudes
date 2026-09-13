@@ -10,13 +10,14 @@
  * `reportHoldMs` dwell (DEFAULT_REPORT_HOLD_MS when unset).
  * Pointer-inert like the rest of the chrome.
  */
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useReportCities } from "../../lib/focus/focus-client";
 import type { AboutSettings, WeatherLocation } from "@photonsurge/shared/control";
 import { pageDotStyle, pageDotsSlack } from "./page-dots";
 import {
   applyReportPrefs,
   DEFAULT_REPORT_HOLD_MS,
+  DEFAULT_REPORT_RUNS,
   type ReportKind,
   type ReportSlideId,
 } from "@photonsurge/shared/broadcast-report";
@@ -24,7 +25,8 @@ import type { WorldWatchState } from "../../lib/world-watch";
 import { filterFeedByKind } from "../../lib/broadcast";
 import { DEFAULT_THEME, type BroadcastTheme } from "./config";
 import { GODS_BORDER } from "./GodsPanel";
-import { usePagedSlides } from "./PointHistoryPanel";
+import { RUN_CEILING_MS } from "@photonsurge/shared/broadcast-slides";
+import { RunPacingContext, useRunClock } from "./run-pacing";
 import WorldSituationPanel from "./WorldSituationPanel";
 import LocationWeatherPanel from "./LocationWeatherPanel";
 import HazardScreen, { type HazardContinent } from "./HazardScreen";
@@ -58,6 +60,8 @@ export default function WorldReportDeck({
   reportKindsOff,
   about,
   holdMs = DEFAULT_REPORT_HOLD_MS,
+  runs = DEFAULT_REPORT_RUNS,
+  maxHoldMs = RUN_CEILING_MS,
 }: {
   worldWatch: WorldWatchState;
   theme?: BroadcastTheme;
@@ -77,8 +81,16 @@ export default function WorldReportDeck({
   reportKindsOff?: ReportKind[];
   /** Per-channel ABOUT card copy (ControlState.about) — empty fields fall back to the built-in text. */
   about?: AboutSettings;
-  /** Per-channel rotation dwell in ms (ControlState.reportHoldMs). */
+  /** Per-channel MINIMUM dwell in ms (ControlState.reportHoldMs) — a floor now,
+   *  and the per-run dwell for slides with no feed marquee. */
   holdMs?: number;
+  /** Complete laps of a slide's ACTIVE FEED before the deck advances
+   *  (ControlState.reportRuns). */
+  runs?: number;
+  /** Deadlock breaker — a slide that claims the clock then never reports can't
+   *  wedge the deck. Deliberately well clear of a real lap (~a minute on a busy
+   *  feed), which must be free to finish. */
+  maxHoldMs?: number;
 }) {
   const s = worldWatch;
   // The channel's curated rotation: the natural DECK_SLIDES order with this
@@ -92,8 +104,22 @@ export default function WorldReportDeck({
   const cityLocations = useReportCities(areaKind);
   const isArea = areaKind === "country" || areaKind === "region";
   const locations = isArea ? cityLocations : targetLocation ? [targetLocation] : (weatherLocations ?? []).slice(0, 5);
-  const { page } = usePagedSlides(active, 1, holdMs);
+  const [idx, setIdx] = useState(0);
+  const pageCount = Math.max(1, active.length);
+  const page = idx % pageCount;
   const slide = active[page] ?? active[0];
+  const advance = useCallback(() => setIdx((n) => n + 1), []);
+  // The rotation clock. The on-air slide's marquee reports its laps; the
+  // floor/ceiling pair carries the slides that have no marquee to report, so
+  // those hold exactly the dwell they always did.
+  const pacing = useRunClock({
+    key: `${slide}#${page}`,
+    floorMs: holdMs,
+    ceilingMs: maxHoldMs,
+    runs,
+    enabled: pageCount > 1,
+    onAdvance: advance,
+  });
   // A channel can pare the report to nothing — then render nothing (the whole
   // widget can also be hidden via widgetsOff "worldReport").
   if (active.length === 0) return null;
@@ -200,7 +226,11 @@ export default function WorldReportDeck({
                 : { position: "absolute", inset: 0, opacity: 0, pointerEvents: "none", contentVisibility: "hidden" }
             }
           >
-            {pageContent(id)}
+            {/* Only the on-air page gets the rotation clock — the pages kept
+                mounted behind it must not report laps against it. */}
+            <RunPacingContext.Provider value={id === slide ? pacing : null}>
+              {pageContent(id)}
+            </RunPacingContext.Provider>
           </div>
         ))}
       </div>

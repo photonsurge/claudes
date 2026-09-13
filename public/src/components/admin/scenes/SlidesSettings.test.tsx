@@ -35,9 +35,9 @@ describe("SlidesSettings", () => {
     expect(d.last().slideOrder?.slice(0, 2)).toEqual(["history", "track"]);
   });
 
-  it("changes the rotation dwell via the slider", () => {
+  it("changes the minimum dwell via the slider", () => {
     const d = renderInDraft(<SlidesSettings />);
-    fireEvent.change(screen.getByRole("slider", { name: "Rotation dwell" }), {
+    fireEvent.change(screen.getByRole("slider", { name: "Minimum dwell" }), {
       target: { value: "24000" },
     });
 
@@ -46,7 +46,7 @@ describe("SlidesSettings", () => {
 
   it("types an exact dwell override in seconds", () => {
     const d = renderInDraft(<SlidesSettings />);
-    const secs = screen.getByRole("textbox", { name: "Rotation dwell seconds" });
+    const secs = screen.getByRole("textbox", { name: "Minimum dwell seconds" });
     fireEvent.change(secs, { target: { value: "45" } });
     fireEvent.blur(secs);
 

@@ -10,8 +10,8 @@ import {
   DEFAULT_IDLE_PERIOD_S,
 } from "../control";
 import { defaultSatImgFeeds } from "../satimg/types";
-import { DEFAULT_SLIDE_HOLD_MS } from "../broadcast-slides";
-import { DEFAULT_REPORT_HOLD_MS } from "../broadcast-report";
+import { DEFAULT_SLIDE_HOLD_MS, DEFAULT_SLIDE_RUNS } from "../broadcast-slides";
+import { DEFAULT_REPORT_HOLD_MS, DEFAULT_REPORT_RUNS } from "../broadcast-report";
 import { DEFAULT_READ_CPS } from "../reading-pace";
 
 /** The id of the single broadcast-state document (single-domain → one row). */
@@ -152,9 +152,11 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     slidesOff: { type: [String], required: true, default: [] },
     slideOrder: { type: [String], required: true, default: [] },
     slideHoldMs: { type: Number, required: true, default: DEFAULT_SLIDE_HOLD_MS },
+    slideRuns: { type: Number, required: true, default: DEFAULT_SLIDE_RUNS },
     reportOff: { type: [String], required: true, default: [] },
     reportOrder: { type: [String], required: true, default: [] },
     reportHoldMs: { type: Number, required: true, default: DEFAULT_REPORT_HOLD_MS },
+    reportRuns: { type: Number, required: true, default: DEFAULT_REPORT_RUNS },
     weatherLocations: {
       type: [
         {

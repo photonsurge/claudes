@@ -72,6 +72,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
       "reportOff",
       "reportOrder",
       "reportHoldMs",
+      "reportRuns",
       "reportKindsOff",
       "reportHazardsOff",
       "weatherLocations",
@@ -82,7 +83,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
     title: "Bottom-left deck",
     group: "layout",
     bucket: "control",
-    fields: ["slidesOff", "slideOrder", "slideHoldMs", "pointVarsOff"],
+    fields: ["slidesOff", "slideOrder", "slideHoldMs", "slideRuns", "pointVarsOff"],
   },
   {
     id: "crawl",

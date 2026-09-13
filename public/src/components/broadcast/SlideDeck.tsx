@@ -23,6 +23,16 @@
  * the deck fills in one slide per rotation, a hold apart, instead of all at the
  * cut. A new segment (`resetKey`) starts a fresh lazy deck.
  *
+ * WHEN it advances is no longer a timer the deck picks. Each slide's body owns
+ * its own clock: the template's AutoScroll counts complete RUNS through the
+ * content — a full top→bottom scroll pass, or the time to read a body that fits
+ * — and reports through `run-pacing` when the channel's `slideRuns` are done.
+ * The deck then turns the page, never before `holdMs` (the floor, and the whole
+ * clock for a slide whose node isn't a card template and so never reports) and
+ * never after `RUN_CEILING_MS` (a deadlock breaker for a slide that claims the
+ * clock and then goes quiet). Before this the dwell knew nothing about the card,
+ * so a dense slide was cut mid-scroll while a sparse one sat in dead air.
+ *
  * Mounted off-air slides sit under `content-visibility: hidden`: their DOM is
  * kept (state, timers, fetched data all survive), but the engine skips their
  * layout and paint, so a hidden card's own churn — a featured-city cycle, a
@@ -31,19 +41,21 @@
  * hidden on the next rotation. Pure presentation inside the scaled broadcast
  * stage; pointer-inert.
  */
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { DEFAULT_SLIDE_RUNS, RUN_CEILING_MS } from "@photonsurge/shared/broadcast-slides";
 import { pageDotStyle, pageDotsSlack } from "./page-dots";
 import { CARD_W, MUTED, DeckChromeContext, DeckSlideActiveContext, type DeckChrome } from "./BroadcastCard";
+import { RunPacingContext, useRunClock } from "./run-pacing";
 import { GODS_BORDER } from "./GodsPanel";
 
 /** One rotation position. `id` must be stable across renders so React keeps the
  *  slide mounted (and its internal state alive) as data streams in. */
 export type DeckSlide = { id: string; node: ReactNode };
 
-/** How long each slide holds before the deck advances. Slowed (6s → 10s → 16s)
- *  so later slides' content has time to finish opening (and overlong bodies —
- *  e.g. the tiled AREA HISTORY grid — have time to read/auto-scroll) before the
- *  deck moves on. */
+/** MINIMUM time a slide holds. Was the rotation dwell itself (6s → 10s → 16s,
+ *  each bump chasing slides that were being cut mid-scroll); now that the body
+ *  reports its own runs it is just a floor, so a one-line card can't flash past
+ *  while a dense one takes the time it actually needs. */
 const HOLD_MS = 16000;
 /** Cross-fade duration between slides — a slow, gentle dissolve rather than a
  *  quick cut. */
@@ -79,9 +91,12 @@ export default function SlideDeck({
   dotColor = MUTED,
   chrome = null,
   resetKey,
+  runs = DEFAULT_SLIDE_RUNS,
+  maxHoldMs = RUN_CEILING_MS,
 }: {
   slides: DeckSlide[];
   width?: number;
+  /** Floor — a slide never advances before this (ControlState.slideHoldMs). */
   holdMs?: number;
   /** Active-dot colour — pass the segment's kind accent to match the card. */
   dotColor?: string;
@@ -92,6 +107,12 @@ export default function SlideDeck({
    *  segment id so cutting to a new thing/place always opens on slide 0 instead
    *  of wherever the previous segment's rotation had landed. */
   resetKey?: string;
+  /** Complete runs through a slide's body before the deck advances
+   *  (ControlState.slideRuns). */
+  runs?: number;
+  /** Deadlock breaker — a slide that claims the clock then never reports can't
+   *  wedge the deck. Not a pacing control: a long run must be free to finish. */
+  maxHoldMs?: number;
 }) {
   const count = slides.length;
   const [idx, setIdx] = useState(0);
@@ -120,11 +141,18 @@ export default function SlideDeck({
     position = 0;
   }
 
-  useEffect(() => {
-    if (count <= 1) return;
-    const iv = setInterval(() => setIdx((n) => n + 1), holdMs);
-    return () => clearInterval(iv);
-  }, [count, holdMs]);
+  // The rotation clock. The on-air slide's body reports its finished runs; the
+  // floor/ceiling pair keeps a silent slide (or one whose data never lands)
+  // behaving exactly as it did on the old interval.
+  const advance = useCallback(() => setIdx((n) => n + 1), []);
+  const pacing = useRunClock({
+    key: `${resetKey ?? ""}#${position % Math.max(1, count)}`,
+    floorMs: holdMs,
+    ceilingMs: maxHoldMs,
+    runs,
+    enabled: count > 1,
+    onAdvance: advance,
+  });
 
   if (count === 0) return null;
   const active = position % count;
@@ -152,8 +180,12 @@ export default function SlideDeck({
           return (
             <div key={s.id} aria-hidden={i !== active} style={slideStyle(role)}>
               {/* Tell the slide whether it's on air so its body resets to the top
-                  when it airs and doesn't auto-scroll while it waits off-screen. */}
-              <DeckSlideActiveContext.Provider value={i === active}>{s.node}</DeckSlideActiveContext.Provider>
+                  when it airs and doesn't auto-scroll while it waits off-screen —
+                  and hand ONLY the on-air slide the rotation clock, so the cards
+                  waiting off-screen can't report runs against it. */}
+              <DeckSlideActiveContext.Provider value={i === active}>
+                <RunPacingContext.Provider value={i === active ? pacing : null}>{s.node}</RunPacingContext.Provider>
+              </DeckSlideActiveContext.Provider>
             </div>
           );
         })}

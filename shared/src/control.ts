@@ -16,12 +16,23 @@ import {
 } from "./satimg/types";
 import { isHazardType, type HazardType } from "./alerts/hazard";
 import { isWidgetId, type WidgetId } from "./broadcast-widgets";
-import { isSlideId, DEFAULT_SLIDE_HOLD_MS, type SlideId } from "./broadcast-slides";
+import {
+  isSlideId,
+  clampRuns,
+  DEFAULT_SLIDE_HOLD_MS,
+  DEFAULT_SLIDE_RUNS,
+  SLIDE_RUNS_MIN,
+  SLIDE_RUNS_MAX,
+  type SlideId,
+} from "./broadcast-slides";
 import { clampReadCps, DEFAULT_READ_CPS } from "./reading-pace";
 import {
   isReportSlideId,
   isReportKind,
   DEFAULT_REPORT_HOLD_MS,
+  DEFAULT_REPORT_RUNS,
+  REPORT_RUNS_MIN,
+  REPORT_RUNS_MAX,
   type ReportSlideId,
   type ReportKind,
 } from "./broadcast-report";
@@ -659,8 +670,18 @@ export interface ControlState {
    * natural order.
    */
   slideOrder: SlideId[];
-  /** Bottom-left deck rotation dwell in ms (how long each slide holds). */
+  /**
+   * Bottom-left deck MINIMUM dwell in ms. Since the deck became run-paced this
+   * is a floor, not the rotation speed: a slide never advances before it, even
+   * if its body finished its runs sooner. See `slideRuns`.
+   */
   slideHoldMs: number;
+  /**
+   * Bottom-left deck RUNS THROUGH — how many times each slide's body is shown in
+   * full before the deck advances (a scroll pass for an overflowing body, a read
+   * at the channel's pace for one that fits). The primary rotation control.
+   */
+  slideRuns: number;
   /**
    * Top-right WORLD REPORT deck slides HIDDEN on this channel (empty = show all).
    * Off-list keyed by BROADCAST_REPORT_SLIDES ids — this is how one globe is
@@ -669,8 +690,16 @@ export interface ControlState {
   reportOff: ReportSlideId[];
   /** Per-channel ranking for the WORLD REPORT deck slides (stable-sort key). */
   reportOrder: ReportSlideId[];
-  /** WORLD REPORT deck rotation dwell in ms (how long each slide holds). */
+  /**
+   * WORLD REPORT deck MINIMUM dwell in ms — a floor, and the per-run dwell for
+   * the slides that have no feed marquee to count laps of. See `reportRuns`.
+   */
   reportHoldMs: number;
+  /**
+   * WORLD REPORT deck RUNS THROUGH — laps of the slide's ACTIVE FEED marquee
+   * (every row shown once) before the deck advances.
+   */
+  reportRuns: number;
   /** Named point forecasts shown by the location-weather report slide. Empty =
    * use the live camera position, so the slide is never a global forecast. */
   weatherLocations: WeatherLocation[];
@@ -804,9 +833,11 @@ export const DEFAULT_CONTROL_STATE: ControlState = {
   slidesOff: [],
   slideOrder: [],
   slideHoldMs: DEFAULT_SLIDE_HOLD_MS,
+  slideRuns: DEFAULT_SLIDE_RUNS,
   reportOff: [],
   reportOrder: [],
   reportHoldMs: DEFAULT_REPORT_HOLD_MS,
+  reportRuns: DEFAULT_REPORT_RUNS,
   weatherLocations: [],
   reportKindsOff: [],
   reportHazardsOff: [],
@@ -1063,6 +1094,10 @@ function buildControlState(base: ControlState, patch: Partial<ControlState>): Co
       typeof patch.slideHoldMs === "number" && patch.slideHoldMs > 0
         ? patch.slideHoldMs
         : base.slideHoldMs ?? DEFAULT_SLIDE_HOLD_MS,
+    slideRuns:
+      patch.slideRuns === undefined
+        ? base.slideRuns ?? DEFAULT_SLIDE_RUNS
+        : clampRuns(patch.slideRuns, base.slideRuns ?? DEFAULT_SLIDE_RUNS, SLIDE_RUNS_MIN, SLIDE_RUNS_MAX),
     reportOff: Array.isArray(patch.reportOff)
       ? [...new Set(patch.reportOff.filter(isReportSlideId))]
       : base.reportOff ?? [],
@@ -1073,6 +1108,10 @@ function buildControlState(base: ControlState, patch: Partial<ControlState>): Co
       typeof patch.reportHoldMs === "number" && patch.reportHoldMs > 0
         ? patch.reportHoldMs
         : base.reportHoldMs ?? DEFAULT_REPORT_HOLD_MS,
+    reportRuns:
+      patch.reportRuns === undefined
+        ? base.reportRuns ?? DEFAULT_REPORT_RUNS
+        : clampRuns(patch.reportRuns, base.reportRuns ?? DEFAULT_REPORT_RUNS, REPORT_RUNS_MIN, REPORT_RUNS_MAX),
     weatherLocations: sanitizeWeatherLocations(patch.weatherLocations) ?? base.weatherLocations ?? [],
     reportKindsOff: Array.isArray(patch.reportKindsOff)
       ? [...new Set(patch.reportKindsOff.filter(isReportKind))]
