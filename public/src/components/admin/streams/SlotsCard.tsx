@@ -32,7 +32,7 @@ export interface SlotAccount {
 }
 
 /** Selectable scheduled-restart cadences (minutes; 0 = never recycle). */
-const RESTART_MINUTES = [0, 10, 15, 30, 45, 60, 120, 240, 360, 480, 720, 1440];
+const RESTART_MINUTES = [0, 10, 15, 30, 45, 60, 120, 240, 360, 480, 660, 720, 1440];
 const MINUTE_MS = 60_000;
 
 /** Colour for a slot's derived status label (canonical run statuses + off/starting/retrying/…). */

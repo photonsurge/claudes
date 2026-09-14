@@ -176,6 +176,34 @@ describe("SlotsCard", () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: "s1", restartEveryMs: 12 * 3_600_000 }));
   });
 
+  it("offers an 11h cadence — the longest one YouTube still archives", () => {
+    const onSave = jest.fn(async () => ({}));
+    render(
+      <SlotsCard
+        slots={[
+          slot({ id: "s1", runId: "r1", restartEveryMs: 6 * 3_600_000 }),
+          slot({ id: "s2", restartEveryMs: 11 * 3_600_000 }),
+        ]}
+        scenes={SCENES}
+        encoders={ENCODERS}
+        runs={[liveRun()]}
+        onSave={onSave}
+        onDelete={jest.fn()}
+      />,
+    );
+
+    // 11h sits under the 12h archive cut-off, so that row keeps its VOD.
+    expect(screen.queryByText("no VOD")).not.toBeInTheDocument();
+
+    // A row select, then the add form's — both read the same cadence list.
+    fireEvent.mouseDown(screen.getAllByLabelText("restart")[0]);
+    fireEvent.click(screen.getByRole("option", { name: "11h" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: "s1", restartEveryMs: 11 * 3_600_000 }));
+
+    fireEvent.mouseDown(screen.getAllByLabelText("restart")[2]);
+    expect(screen.getByRole("option", { name: "11h" })).toBeInTheDocument();
+  });
+
   it("toggling a row's 📣 saves the announce flag on the slot", () => {
     const onSave = jest.fn(async () => ({}));
     render(
