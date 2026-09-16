@@ -3,7 +3,7 @@ import {
   mergeControlState,
   CONTROL_STATE,
 } from "@photonsurge/shared/control";
-import { emitControlState, fetchBroadcastState } from "./control";
+import { emitControlState, fetchBroadcastState, loadBroadcastState } from "./control";
 
 describe("mergeControlState round-trip from socket payloads", () => {
   it("applies a partial patch and keeps untouched fields", () => {
@@ -69,8 +69,20 @@ describe("fetchBroadcastState", () => {
       status: 200,
       json: async () => ({ activeVariable: "wind" }),
     })) as unknown as typeof fetch;
-    const { state, tokenError } = await fetchBroadcastState();
+    const { state, tokenError, ok } = await fetchBroadcastState();
     expect(tokenError).toBe(false);
+    expect(ok).toBe(true);
     expect(state.activeVariable).toBe("wind");
+  });
+
+  it("loadBroadcastState is null on a transient failure (so retryUntil goes again), final on a 401", async () => {
+    global.fetch = jest.fn(async () => ({ ok: false, status: 503 })) as unknown as typeof fetch;
+    expect(await loadBroadcastState()).toBeNull();
+    global.fetch = jest.fn(async () => {
+      throw new Error("refused");
+    }) as unknown as typeof fetch;
+    expect(await loadBroadcastState()).toBeNull();
+    global.fetch = jest.fn(async () => ({ ok: false, status: 401 })) as unknown as typeof fetch;
+    expect(await loadBroadcastState("bad")).toEqual(expect.objectContaining({ tokenError: true, ok: false }));
   });
 });

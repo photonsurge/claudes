@@ -17,24 +17,32 @@ import {
   type ControlState,
 } from "@photonsurge/shared/control";
 import { useSocket } from "./socket-provider";
+import { useLoadAndResync } from "./use-resync";
 
 /** Cold-start the broadcast state from the API. `tokenError` is true on a 401
  * (missing/invalid watch token) so callers can show that distinctly from
  * "still loading" instead of silently falling back to defaults. */
 export async function fetchBroadcastState(
   token?: string,
-): Promise<{ state: ControlState; tokenError: boolean }> {
+): Promise<{ state: ControlState; tokenError: boolean; ok: boolean }> {
   try {
     const qs = token ? `?token=${encodeURIComponent(token)}` : "";
     const res = await fetch(`/api/broadcast/state${qs}`, { cache: "no-store" });
-    if (res.status === 401) return { state: DEFAULT_CONTROL_STATE, tokenError: true };
-    if (!res.ok) return { state: DEFAULT_CONTROL_STATE, tokenError: false };
+    if (res.status === 401) return { state: DEFAULT_CONTROL_STATE, tokenError: true, ok: false };
+    if (!res.ok) return { state: DEFAULT_CONTROL_STATE, tokenError: false, ok: false };
     const json = await res.json();
-    return { state: mergeControlState(DEFAULT_CONTROL_STATE, json ?? {}), tokenError: false };
+    return { state: mergeControlState(DEFAULT_CONTROL_STATE, json ?? {}), tokenError: false, ok: true };
   } catch {
-    return { state: DEFAULT_CONTROL_STATE, tokenError: false };
+    return { state: DEFAULT_CONTROL_STATE, tokenError: false, ok: false };
   }
 }
+
+/**
+ * `fetchBroadcastState` shaped for retryUntil: null on a transient failure so
+ * the loop goes again; a 401 is final and lands as-is.
+ */
+export const loadBroadcastState = (token?: string) =>
+  fetchBroadcastState(token).then((r) => (r.ok || r.tokenError ? r : null));
 
 /**
  * Subscribe to live control state. Cold-starts from the API, then applies any
@@ -51,19 +59,18 @@ export function useBroadcastState(token?: string): {
   const [ready, setReady] = useState(false);
   const [tokenError, setTokenError] = useState(false);
 
-  // Cold start.
-  useEffect(() => {
-    let cancelled = false;
-    fetchBroadcastState(token).then(({ state: s, tokenError: te }) => {
-      if (cancelled) return;
+  // Cold start, retried until it lands and re-run on every socket (re)connect
+  // (see use-resync.ts).
+  useLoadAndResync(
+    socket,
+    () => loadBroadcastState(token),
+    ({ state: s, tokenError: te }) => {
       setState(s);
       setTokenError(te);
       setReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+    },
+    [token],
+  );
 
   // Live updates.
   useEffect(() => {

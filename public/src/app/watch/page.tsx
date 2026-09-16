@@ -24,7 +24,8 @@ import {
 } from "@photonsurge/shared/control";
 import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../lib/socket-provider";
-import { fetchBroadcastState } from "../../lib/control";
+import { loadBroadcastState } from "../../lib/control";
+import { useLoadAndResync } from "../../lib/use-resync";
 import { MANIFEST_POLL_MS, fetchManifest, pickManifest } from "../../lib/manifest";
 import { useStableJson } from "../../lib/use-stable";
 
@@ -93,19 +94,22 @@ function WatchPageInner() {
   const glowRegionBbox = useStableJson(activeRegionBbox(director, shown.camera));
   const upNext = useStableJson(director?.active ? director.upNext : NO_UP_NEXT);
 
-  // Cold start. Broadcast state fails soft internally (default state; the real
-  // one arrives over the socket) so it applies straight away — but the manifest
-  // is retried until it lands: this page runs unattended inside OBS browser
-  // sources, and a cold start lost to a deploy/restart window (fetch rejected,
-  // or a 5xx that fetchManifest reports as null) would otherwise strand the
-  // stream on the loading screen until a human refreshes.
-  useEffect(() => {
-    let cancelled = false;
-    fetchBroadcastState(token).then(({ state: s, tokenError: te }) => {
-      if (cancelled) return;
+  // Cold start. Both the broadcast state and the manifest are retried until
+  // they land: this page runs unattended inside OBS browser sources, and a cold
+  // start lost to a deploy/restart window (fetch rejected, or a 5xx) would
+  // otherwise strand the stream on the loading screen — or, for the state, on
+  // DEFAULT_CONTROL_STATE with the audio bed off — until a human refreshes.
+  // The state is also re-fetched on every socket (re)connect (use-resync.ts).
+  useLoadAndResync(
+    socket,
+    () => loadBroadcastState(token),
+    ({ state: s, tokenError: te }) => {
       setState(s);
       setTokenError(te);
-    });
+    },
+    [token],
+  );
+  useEffect(() => {
     const stop = retryUntil(
       async () => {
         const [m, c] = await Promise.all([fetchManifest(), listCities()]);
@@ -116,11 +120,8 @@ function WatchPageInner() {
         setCities(c);
       },
     );
-    return () => {
-      cancelled = true;
-      stop();
-    };
-  }, [token]);
+    return stop;
+  }, []);
 
   // Live updates. The refetches fail soft — data is already on screen, so a
   // blip keeps the last good value rather than blanking it.

@@ -5,7 +5,26 @@ import {
   DEFAULT_CONTROL_STATE,
   type ControlState,
 } from "@photonsurge/shared/control";
-import { emitSceneState, emitScenePatch, listScenes, createScene, deleteScene, fetchSceneState, rotateSceneToken } from "./scenes";
+import { renderHook, act } from "@testing-library/react";
+import {
+  emitSceneState,
+  emitScenePatch,
+  listScenes,
+  createScene,
+  deleteScene,
+  fetchSceneState,
+  loadSceneState,
+  rotateSceneToken,
+  useSceneState,
+} from "./scenes";
+
+/** A socket whose handlers the hook tests fire by hand (SCENE_STATE, connect). */
+const socketHandlers = new Map<string, (p?: unknown) => void>();
+const fakeSocket = {
+  on: (e: string, fn: (p?: unknown) => void) => socketHandlers.set(e, fn),
+  off: (e: string) => socketHandlers.delete(e),
+};
+jest.mock("./socket-provider", () => ({ useSocket: () => ({ socket: fakeSocket, connected: true }) }));
 
 describe("emitSceneState", () => {
   it("emits a scene envelope and persists for a named scene", () => {
@@ -106,12 +125,26 @@ describe("scene CRUD wrappers", () => {
     );
 
     mockFetch(() => ({ ok: false, status: 401 }));
-    const { tokenError, state } = await fetchSceneState("default", "bad-token");
+    const { tokenError, state, ok } = await fetchSceneState("default", "bad-token");
     expect(tokenError).toBe(true);
+    expect(ok).toBe(false);
     expect(state).toEqual(DEFAULT_CONTROL_STATE);
 
     mockFetch(() => ({ ok: false, status: 404 }));
-    expect((await fetchSceneState("missing")).tokenError).toBe(false);
+    expect(await fetchSceneState("missing")).toEqual(expect.objectContaining({ tokenError: false, ok: false }));
+  });
+
+  it("loadSceneState is null on a transient failure (retry) but final on a 401", async () => {
+    mockFetch(() => ({ ok: false, status: 503 }));
+    expect(await loadSceneState("default")).toBeNull();
+    global.fetch = jest.fn(async () => {
+      throw new Error("refused");
+    }) as unknown as typeof fetch;
+    expect(await loadSceneState("default")).toBeNull();
+    mockFetch(() => ({ ok: false, status: 401 }));
+    expect(await loadSceneState("default", "x")).toEqual(expect.objectContaining({ tokenError: true }));
+    mockFetch(() => ({ _json: { activeVariable: "temp" } }) as never);
+    expect((await loadSceneState("default"))?.state.activeVariable).toBe("temp");
   });
 
   it("fetchSceneState appends the token as a query param", async () => {
@@ -130,5 +163,59 @@ describe("scene CRUD wrappers", () => {
 
     mockFetch(() => ({ ok: false, status: 404, _json: { error: "no such scene" } } as never));
     expect(await rotateSceneToken("missing")).toEqual({ error: "no such scene" });
+  });
+});
+
+describe("useSceneState (cold start + re-sync)", () => {
+  /** Let pending promises + 0-ms timers settle under fake timers. */
+  const flush = () => act(() => jest.advanceTimersByTimeAsync(0));
+  const respond = (queue: (number | Partial<ControlState>)[]) => {
+    global.fetch = jest.fn(async () => {
+      const next = queue.shift() ?? 500;
+      if (typeof next === "number") return { ok: false, status: next, json: async () => ({}) };
+      return { ok: true, status: 200, json: async () => next };
+    }) as unknown as typeof fetch;
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    socketHandlers.clear();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it("keeps retrying a 5xx cold start instead of settling on DEFAULT_CONTROL_STATE", async () => {
+    respond([504, 502, { audio: { ...DEFAULT_CONTROL_STATE.audio, enabled: true } }]);
+    const { result } = renderHook(() => useSceneState("default", "tok"));
+    await flush();
+    expect(result.current.ready).toBe(false);
+    expect(result.current.state.audio.enabled).toBe(false);
+    await act(() => jest.advanceTimersByTimeAsync(2_000));
+    expect(result.current.ready).toBe(false);
+    await act(() => jest.advanceTimersByTimeAsync(4_000));
+    expect(result.current.ready).toBe(true);
+    expect(result.current.state.audio.enabled).toBe(true);
+    expect(result.current.tokenError).toBe(false);
+  });
+
+  it("re-fetches the persisted scene on every socket (re)connect", async () => {
+    respond([{ activeVariable: "temp" }, { activeVariable: "wind" }]);
+    const { result } = renderHook(() => useSceneState("default"));
+    await flush();
+    expect(result.current.state.activeVariable).toBe("temp");
+    act(() => socketHandlers.get("connect")?.());
+    await flush();
+    expect(result.current.state.activeVariable).toBe("wind");
+  });
+
+  it("a 401 is final: tokenError, no retry", async () => {
+    respond([401, { activeVariable: "temp" }]);
+    const { result } = renderHook(() => useSceneState("default", "bad"));
+    await flush();
+    expect(result.current.tokenError).toBe(true);
+    await act(() => jest.advanceTimersByTimeAsync(60_000));
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });

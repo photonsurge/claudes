@@ -20,6 +20,7 @@ import {
   type SceneStatePayload,
 } from "@photonsurge/shared/control";
 import { useSocket } from "./socket-provider";
+import { useLoadAndResync } from "./use-resync";
 
 /** List all scenes (main first, then by name). */
 export async function listScenes(): Promise<SceneMeta[]> {
@@ -39,18 +40,25 @@ export async function listScenes(): Promise<SceneMeta[]> {
 export async function fetchSceneState(
   id: string,
   token?: string,
-): Promise<{ state: ControlState; tokenError: boolean }> {
+): Promise<{ state: ControlState; tokenError: boolean; ok: boolean }> {
   try {
     const qs = token ? `?token=${encodeURIComponent(token)}` : "";
     const res = await fetch(`/api/scenes/${encodeURIComponent(id)}${qs}`, { cache: "no-store" });
-    if (res.status === 401) return { state: DEFAULT_CONTROL_STATE, tokenError: true };
-    if (!res.ok) return { state: DEFAULT_CONTROL_STATE, tokenError: false };
+    if (res.status === 401) return { state: DEFAULT_CONTROL_STATE, tokenError: true, ok: false };
+    if (!res.ok) return { state: DEFAULT_CONTROL_STATE, tokenError: false, ok: false };
     const json = await res.json();
-    return { state: mergeControlState(DEFAULT_CONTROL_STATE, json ?? {}), tokenError: false };
+    return { state: mergeControlState(DEFAULT_CONTROL_STATE, json ?? {}), tokenError: false, ok: true };
   } catch {
-    return { state: DEFAULT_CONTROL_STATE, tokenError: false };
+    return { state: DEFAULT_CONTROL_STATE, tokenError: false, ok: false };
   }
 }
+
+/**
+ * `fetchSceneState` shaped for retryUntil: null on a transient failure (5xx,
+ * refused, timeout) so the loop goes again; a 401 is final and lands as-is.
+ */
+export const loadSceneState = (id: string, token?: string) =>
+  fetchSceneState(id, token).then((r) => (r.ok || r.tokenError ? r : null));
 
 /** Rotate a scene's watch token, invalidating any previously-copied /watch URL. */
 export async function rotateSceneToken(id: string): Promise<{ token?: string; error?: string }> {
@@ -147,20 +155,20 @@ export function useSceneState(
   const [ready, setReady] = useState(false);
   const [tokenError, setTokenError] = useState(false);
 
-  // Cold start (re-runs if the id or token changes).
-  useEffect(() => {
-    let cancelled = false;
-    setReady(false);
-    fetchSceneState(sceneId, token).then(({ state: s, tokenError: te }) => {
-      if (cancelled) return;
+  // Cold start (re-runs if the id or token changes), retried until it lands and
+  // re-run on every socket (re)connect — see use-resync.ts for why a one-shot
+  // fetch stranded OBS pages on DEFAULT_CONTROL_STATE (audio off) for days.
+  useEffect(() => setReady(false), [sceneId, token]);
+  useLoadAndResync(
+    socket,
+    () => loadSceneState(sceneId, token),
+    ({ state: s, tokenError: te }) => {
       setState(s);
       setTokenError(te);
       setReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [sceneId, token]);
+    },
+    [sceneId, token],
+  );
 
   // Live updates scoped to this scene id.
   useEffect(() => {
