@@ -4,6 +4,7 @@ import {
   latLngToPixel,
   bilinearChannel,
   sampleFrame,
+  usableUnscale,
   areaStatsFrame,
   seriesStats,
   type SampleGrid,
@@ -153,6 +154,28 @@ describe("sampleFrame", () => {
   it("returns null out of bounds or without a decode range", () => {
     expect(sampleFrame(scalarFrame, 50, 5)).toBeNull();
     expect(sampleFrame({ ...scalarFrame, imageUnscale: undefined }, 5, 5)).toBeNull();
+  });
+
+  it("reads a DEGENERATE decode range as nodata, not as a flat zero", () => {
+    // A zero-width range decodes every byte to the same number — a wind frame
+    // that lost its range used to sample as a convincing 0 m/s everywhere.
+    expect(sampleFrame({ ...scalarFrame, imageUnscale: [0, 0] }, 5, 5)).toBeNull();
+    const uv: FrameLike = { ...scalarFrame, encoding: "uv", imageUnscale: undefined, vectorUnscale: [0, 0] };
+    expect(sampleFrame(uv, 5, 5)).toBeNull();
+    // A vector frame with no usable vectorUnscale still falls back to a good
+    // imageUnscale (how every GFS wind frame in the store is written).
+    const fallback: FrameLike = { ...scalarFrame, encoding: "uv", imageUnscale: [-40, 40], vectorUnscale: [0, 0] };
+    expect(sampleFrame(fallback, 5, 5)).not.toBeNull();
+  });
+});
+
+describe("usableUnscale", () => {
+  it("keeps a real range and rejects missing, short, non-finite or zero-width ones", () => {
+    expect(usableUnscale([-128, 128])).toEqual([-128, 128]);
+    expect(usableUnscale(undefined)).toBeNull();
+    expect(usableUnscale([5])).toBeNull();
+    expect(usableUnscale([0, Number.NaN])).toBeNull();
+    expect(usableUnscale([12, 12])).toBeNull();
   });
 });
 

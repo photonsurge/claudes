@@ -13,6 +13,8 @@ import {
   stormHoldMs,
   upNextLabel,
   type DirectorConfig,
+  focusSubjectOf,
+  splitAlertSubject,
 } from "./director";
 
 describe("director event + defaults", () => {
@@ -414,5 +416,27 @@ describe("mergeDirectorConfig", () => {
     const merged2 = mergeDirectorConfig(merged, { activeSlideId: { quake: "q1" } });
     expect(merged2.activeSlideId.storm).toBe("a");
     expect(merged2.activeSlideId.quake).toBe("q1");
+  });
+});
+
+describe("focusSubjectOf / splitAlertSubject", () => {
+  it("keeps everything after the kind — subjects carry colons of their own", () => {
+    expect(focusSubjectOf("quake:us7000abcd")).toBe("us7000abcd");
+    expect(focusSubjectOf("volcano:gvp:211060")).toBe("gvp:211060");
+    expect(focusSubjectOf("storm:meteoalarm:2.49.0.0.376.0.IL.x")).toBe("meteoalarm:2.49.0.0.376.0.IL.x");
+    expect(focusSubjectOf("global")).toBeNull();
+    expect(focusSubjectOf("intro:")).toBeNull();
+  });
+
+  it("splits a storm subject back into its alert key, and null for a bare id", () => {
+    expect(splitAlertSubject("meteoalarm:2.49.0.0.376.0.IL.x")).toEqual({
+      source: "meteoalarm",
+      identifier: "2.49.0.0.376.0.IL.x",
+    });
+    expect(splitAlertSubject("wmo:by-belhydromet-en/2026/09/16:1")).toEqual({
+      source: "wmo",
+      identifier: "by-belhydromet-en/2026/09/16:1",
+    });
+    expect(splitAlertSubject("us7000abcd")).toBeNull();
   });
 });

@@ -284,7 +284,7 @@ describe("WorldReportDeck per-channel curation", () => {
   it("shows detailed forecasts at the selected target", () => {
     mockUsePointForecast.mockReturnValue({ loading: false, days: [{
       date: "2026-09-09", label: "TODAY", hiTemp: 22, loTemp: 14,
-      windAvg: 5, gustMax: 12, cloudAvg: 80, precipChance: 60, condition: "rain", hazards: [],
+      windAvg: 5, windMax: 9, windDir: 210, gustMax: 12, cloudAvg: 80, precipChance: 60, condition: "rain", hazards: [],
     } as import("../../lib/forecast-client").ForecastDay] });
     render(<WorldReportDeck worldWatch={emptyWatch} reportOrder={["hourly"]}
       targetLocation={{ label: "Selected storm", lat: 51.5, lng: -0.1 }} />);

@@ -191,6 +191,43 @@ export function WarnTriangle({ size = 11 }: { size?: number }) {
   );
 }
 
+/**
+ * Wind direction mark for a forecast day card: an arrow pointing the way the
+ * air is TRAVELLING, given the meteorological bearing it blows FROM (a "NW
+ * wind" arrow points south-east, which is what a viewer reads off a map).
+ */
+export function WindArrow({ deg, size = 10, color }: { deg: number | null; size?: number; color: string }) {
+  // No bearing (dead calm, or a sampler that sent no components) draws nothing:
+  // a placeholder mark beside a real gust number reads as a direction.
+  if (deg == null) return null;
+  // The arrow points DOWNWIND: a 0° (northerly) wind travels south, and the
+  // glyph's untransformed head already points up, so add 180°.
+  //
+  // Shaft-and-head, not a dart: at the ~11px this renders at on air, a solid
+  // dart or triangle reads as a blob whose direction you have to guess, while
+  // the shaft gives the eye an axis to read the angle off. Checked at size.
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      style={{ flex: "none", display: "block", transform: `rotate(${deg + 180}deg)` }}
+      aria-hidden
+    >
+      <path d="M12 2.5 L19.5 13 L14.5 13 L14.5 21.5 L9.5 21.5 L9.5 13 L4.5 13 Z" fill={color} />
+    </svg>
+  );
+}
+
+/** Raindrop for the precip-chance row. */
+export function Droplet({ size = 9, color }: { size?: number; color: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ flex: "none", display: "block" }} aria-hidden>
+      <path d="M12 2.5 C12 2.5 19 11.2 19 15.4 A7 7 0 0 1 5 15.4 C5 11.2 12 2.5 12 2.5 Z" fill={color} />
+    </svg>
+  );
+}
+
 /* ── HazardGlyph ─────────────────────────────────────────────────────────────
  * The alert vocabulary's identity marks. `hazardMeta().icon` in shared carries
  * a full-colour emoji per hazard, and rendering that string put the broadcast

@@ -405,3 +405,92 @@ describe("modeSlides — per-channel slide prefs", () => {
     ).toEqual(["onair", ...CITY_GUIDE]);
   });
 });
+
+/**
+ * The warning's own words — the CAP description/instruction that reached
+ * `/admin` and never `/watch`, so a storm cut aired our title, our hazard and
+ * our severity rank and no detail at all.
+ */
+describe("modeSlides — WARNING DETAIL", () => {
+  const storm = seg({ kind: "storm", id: "storm:wmo:sa-x", title: "Extreme Rainfall" });
+  const narrative = {
+    headline: "Extreme Rainfall",
+    description: "Heavy rainfall expected, 40-60mm in 24 hours.",
+    areas: ["Asir region - Abha"],
+    areaCount: 3,
+    translated: false,
+    categories: ["Met"],
+  };
+
+  it("leads the storm's own pages — right after the lede, ahead of the timeline", () => {
+    const out = ids(storm, ctx({ alertNarrative: narrative, alertTimeline: [{ at: "t", type: "ISSUED", label: "Issued" }, { at: "t2", type: "UPDATED", label: "Updated" }] as never }));
+    expect(out[0]).toBe("onair");
+    expect(out[1]).toBe("alert-detail");
+    expect(out.indexOf("alert-detail")).toBeLessThan(out.indexOf("alert-timeline"));
+  });
+
+  it("self-hides for a bulletin that ships no prose, and off a non-storm cut", () => {
+    expect(ids(storm, ctx())).not.toContain("alert-detail");
+    expect(ids(storm, ctx({ alertNarrative: { ...narrative, headline: undefined, description: undefined } }))).not.toContain("alert-detail");
+    const quake = seg({ kind: "quake", id: "quake:us1", quake: { mag: 5, depthKm: 10 } });
+    expect(ids(quake, ctx({ alertNarrative: narrative }))).not.toContain("alert-detail");
+  });
+
+  it("follows the channel's slide preferences like any other catalog page", () => {
+    const out = ids(storm, ctx({ alertNarrative: narrative, slidesOff: ["alert-detail"] }));
+    expect(out).not.toContain("alert-detail");
+  });
+});
+
+/**
+ * A targeted event's city guide is CONTEXT, not the story — eight per-city
+ * pages crowded the event's own slides out of a shot that only has room for a
+ * handful. The overview page still lists them all.
+ */
+describe("modeSlides — city pages are capped on a targeted event", () => {
+  const many = Array.from({ length: 8 }, (_, i) => ({
+    id: `c${i}`,
+    name: `City ${i}`,
+    lat: 32,
+    lng: 35,
+    population: 1_000_000 - i,
+  })) as unknown as City[];
+
+  it("airs the overview plus at most three per-city pages on a storm", () => {
+    const out = ids(seg({ kind: "storm", id: "storm:wmo:x" }), ctx({ topCities: many }));
+    const pages = out.filter((id) => id.startsWith("topcities:"));
+    expect(out).toContain("topcities");
+    expect(pages).toEqual(["topcities:c0", "topcities:c1", "topcities:c2"]);
+  });
+
+  it("keeps the full run on a country spotlight, where the cities are the story", () => {
+    const country = seg({ kind: "country", id: "country:france" });
+    const out = ids(country, ctx({ topCities: many, wideCitiesBbox: [0, 0, 1, 1], segmentHasLocation: true }));
+    expect(out.filter((id) => id.startsWith("topcities:"))).toHaveLength(8);
+  });
+});
+
+/**
+ * The CITY GUIDE and NEAR THIS EVENT both wanted per-city pages, and since the
+ * guide became event-scoped they want the SAME towns — so a viewer met each one
+ * twice. The guide owns the page; nearby keeps only what it didn't reach.
+ */
+describe("modeSlides — near-event pages don't repeat the city guide", () => {
+  const rich = (id: string, name: string): City =>
+    ({ id, name, lat: 32, lng: 35, population: 500_000, wikiExtract: "A city." }) as unknown as City;
+  const storm = seg({ kind: "storm", id: "storm:wmo:x", camera: { center: [35, 32], zoom: 4.5 } });
+
+  it("drops a nearby page for a city the guide is already airing", () => {
+    const shared = rich("tiberias", "Tiberias");
+    const out = ids(storm, ctx({ topCities: [shared], cities: [shared] }));
+    expect(out).toContain("topcities:tiberias");
+    expect(out.filter((id) => id.startsWith("nearby:"))).toEqual([]);
+  });
+
+  it("still gives a page to a town the guide didn't reach, capped at two", () => {
+    const guide = [rich("tiberias", "Tiberias")];
+    const others = ["a", "b", "c", "d"].map((k) => rich(k, `Town ${k}`));
+    const out = ids(storm, ctx({ topCities: guide, cities: [...guide, ...others] }));
+    expect(out.filter((id) => id.startsWith("nearby:"))).toHaveLength(2);
+  });
+});

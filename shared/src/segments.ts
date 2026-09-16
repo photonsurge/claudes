@@ -12,6 +12,7 @@ import { quakeDepthLabel, quakeMagnitudeLabel } from "./seismic";
 import { continentOf } from "./alerts/geo";
 import { hazardMeta, type HazardType } from "./alerts/hazard";
 import { broadcastEventLabel } from "./alerts/phrasebook";
+import { areaPlaceLabel } from "./alerts/narrative";
 import { alertCountryLabel } from "./alerts/country";
 import type { Volcano, VolcanoStatus } from "./volcanoes/types";
 import type { TrackInfo } from "./director";
@@ -115,7 +116,16 @@ export function alertSegmentContent(a: AlertContentInput): SegmentContent {
   const area = continentOf(a.center[0], a.center[1]);
   // A fused shape must not pass itself off as its representative member's county.
   const more = (a.warningCount ?? 1) - 1;
-  const place = a.areaDesc && more > 0 ? `${a.areaDesc} +${more} more` : a.areaDesc;
+  // CAP lets one `areaDesc` hold a whole footprint, and WMO uses that: the Saudi
+  // rainfall bulletin's single area string names every governorate, joined by
+  // semicolons, which aired as an unreadable run-on clamped mid-word. Name the
+  // first place and count the rest; the full list rides the WARNING DETAIL slide.
+  const { label: lead, more: moreAreas } = areaPlaceLabel(a.areaDesc);
+  const place = lead
+    ? [lead, moreAreas > 0 ? `+${moreAreas} areas` : null, more > 0 ? `+${more} more` : null]
+        .filter(Boolean)
+        .join(" ")
+    : undefined;
   const subtitle = [place, country].filter(Boolean).join(" · ") || undefined;
   const details: SegmentContent["details"] = [{ label: "Severity", value: `${a.severityRank}/4` }];
   details.push({ label: "Type", value: hazardMeta(a.hazard).label });

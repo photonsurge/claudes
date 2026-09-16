@@ -193,10 +193,10 @@ describe("alerts-repo list — projection", () => {
       }),
     }) as any;
 
-  it("always drops raw; keeps geometry by default", async () => {
+  it("always drops raw + the footprint city guide; keeps geometry by default", async () => {
     const spy: { projection?: any } = {};
     await makeAlertsRepo(modelCapturing(spy)).list({ activeOnly: true });
-    expect(spy.projection).toEqual({ raw: 0 });
+    expect(spy.projection).toEqual({ raw: 0, cities: 0 });
   });
 
   it("lean also drops the unread description + geocodes (geometry KEPT)", async () => {
@@ -204,6 +204,7 @@ describe("alerts-repo list — projection", () => {
     await makeAlertsRepo(modelCapturing(spy)).list({ activeOnly: true, lean: true });
     expect(spy.projection).toEqual({
       raw: 0,
+      cities: 0,
       "info.description": 0,
       "info.area.geocodes": 0,
     });
@@ -216,6 +217,7 @@ describe("alerts-repo list — projection", () => {
     await makeAlertsRepo(modelCapturing(spy)).list({ lean: true, omitCoordinates: true });
     expect(spy.projection).toEqual({
       raw: 0,
+      cities: 0,
       "info.area.geometry.coordinates": 0,
       "info.description": 0,
       "info.area.geocodes": 0,
@@ -565,5 +567,54 @@ describe("alerts-repo deactivateExpired — global expiry sweep", () => {
     expect(filter.active).toBe(true);
     expect(filter.expiresAt).toEqual({ $ne: null, $lt: "2026-07-17T12:00:00.000Z" });
     expect(updateMany.mock.calls[0][1]).toEqual({ $set: { active: false } });
+  });
+});
+
+describe("alerts-repo footprintCities — the storm cut's city guide", () => {
+  function modelReturning(doc: unknown) {
+    const spy: { filter?: any; projection?: any } = {};
+    const model = {
+      findOne: (filter: any, projection: any) => {
+        spy.filter = filter;
+        spy.projection = projection;
+        return { lean: () => ({ exec: async () => doc }) };
+      },
+    } as unknown as Parameters<typeof makeAlertsRepo>[0];
+    return { model, spy };
+  }
+
+  it("matches a storm subject by (source, identifier) and never loads the geometry", async () => {
+    const { model, spy } = modelReturning({
+      id: "a1",
+      source: "meteoalarm",
+      identifier: "2.49.0.0.376.0.IL.x",
+      cities: [{ id: "tiberias" }],
+      cityCount: 1,
+      info: [{ area: [{ geometry: { type: "Polygon" } }] }],
+    });
+    const out = await makeAlertsRepo(model).footprintCities("meteoalarm:2.49.0.0.376.0.IL.x");
+    expect(spy.filter.$or[0]).toEqual({ source: "meteoalarm", identifier: "2.49.0.0.376.0.IL.x" });
+    expect(spy.projection["info.area.geometry.type"]).toBe(1);
+    expect(spy.projection).not.toHaveProperty("info.area.geometry");
+    expect(out).toEqual({
+      id: "a1",
+      source: "meteoalarm",
+      identifier: "2.49.0.0.376.0.IL.x",
+      cities: [{ id: "tiberias" }],
+      cityCount: 1,
+      shaped: true,
+    });
+  });
+
+  it("reports a geocode-only alert as unshaped, and takes a bare id as itself", async () => {
+    const { model, spy } = modelReturning({ id: "a2", source: "wmo", identifier: "x", info: [{ area: [{ areaDesc: "Region" }] }] });
+    const out = await makeAlertsRepo(model).footprintCities("a2");
+    expect(spy.filter.$or).toEqual([{ id: "a2" }, { identifier: "a2" }]);
+    expect(out).toMatchObject({ id: "a2", shaped: false });
+    expect(out?.cities).toBeUndefined();
+  });
+
+  it("is null for an unknown subject", async () => {
+    expect(await makeAlertsRepo(modelReturning(null).model).footprintCities("nope")).toBeNull();
   });
 });

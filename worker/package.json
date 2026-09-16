@@ -1,6 +1,6 @@
 {
   "name": "worker",
-  "version": "1.0.7",
+  "version": "1.0.9",
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
@@ -51,6 +51,7 @@
     "snapshot:tracks": "ts-node src/scripts/snapshotTracks.ts",
     "check:maps": "ts-node src/scripts/checkMapAlignment.ts",
     "check:satimg": "ts-node src/scripts/checkSatimg.ts",
+    "check:forecast": "ts-node src/scripts/checkForecast.ts",
     "gen:countries": "node ../scripts/gen-country-bboxes.mjs",
     "enrich:wiki": "ts-node src/scripts/enrichWikipedia.ts",
     "refresh:cables": "ts-node src/scripts/refreshCables.ts",

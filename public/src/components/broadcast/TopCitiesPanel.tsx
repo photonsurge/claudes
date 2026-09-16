@@ -2,11 +2,12 @@
 
 /**
  * "TOP CITIES" — the CITY GUIDE pages of an on-air country spotlight, region
- * tour or targeted event: the area's biggest cities (population-ranked, scoped
- * to a bbox by the caller — see BroadcastFrame's `topCities`), as an overview
- * list followed by ONE FULL DECK SLIDE PER CITY (photo + Wikipedia blurb when
- * the City doc has one, worker-cached; see enrich:wiki, plus that city's own
- * forecast for today).
+ * tour or targeted event, as an overview list followed by ONE FULL DECK SLIDE
+ * PER CITY (photo + Wikipedia blurb when the City doc has one, worker-cached;
+ * see enrich:wiki, plus that city's own forecast for today). The caller picks
+ * the cities (BroadcastFrame's `topCities`): a place's biggest, or — for a
+ * targeted event — the towns under the warning / nearest the event, and says
+ * which through `basis` so the overview's heading matches the list.
  *
  * The per-city pages used to be a "featured slot" INSIDE the overview card that
  * swapped every 7 seconds. That was a slide show hidden inside a slide: the deck
@@ -17,6 +18,7 @@
  */
 import { formatPopulation, type City } from "../../lib/cities";
 import { usePointForecastDays } from "../../lib/focus/focus-client";
+import type { TopCitiesBasis } from "../../lib/focus/types";
 import { WeatherGlyph } from "./glyphs";
 import { formatReading } from "./PointHistoryPanel";
 import BroadcastCard, { CardSection } from "./BroadcastCard";
@@ -82,7 +84,7 @@ export function TopCityPanel({
   color = "#3f8f8f",
 }: {
   city: City;
-  /** 1-based position in the area's population ranking, for the page label. */
+  /** 1-based position in the guide's order, for the page label. */
   rank: number;
   total: number;
   color?: string;
@@ -118,15 +120,32 @@ export function TopCityPanel({
   );
 }
 
+/** The overview heading says HOW the list was picked — a targeted event's guide
+ *  is the towns under the warning or the nearest ones, not "biggest in frame". */
+export function cityGuideHeading(basis: TopCitiesBasis | null | undefined): string {
+  switch (basis) {
+    case "footprint":
+      return "CITIES UNDER THIS WARNING · BY POPULATION";
+    case "nearest":
+      return "NEAREST TOWNS · BY DISTANCE";
+    default:
+      return "MAJOR CITIES · BY POPULATION";
+  }
+}
+
 /**
- * The overview page: every city in the area, biggest first. The per-city pages
- * follow it in the deck, so this is the contents list, not a teaser.
+ * The overview page: every city in the guide, in the caller's order (biggest
+ * first for a place or a warning footprint, closest first for a nearest list).
+ * The per-city pages follow it in the deck, so this is the contents list, not
+ * a teaser.
  */
 export default function TopCitiesPanel({
   cities,
+  basis,
   color = "#3f8f8f",
 }: {
   cities: City[];
+  basis?: TopCitiesBasis | null;
   color?: string;
 }) {
   if (!cities.length) return null;
@@ -135,7 +154,7 @@ export default function TopCitiesPanel({
     <BroadcastCard accent={color} eyebrow="City Guide">
       <CardSection first style={{ fontSize: 14.3 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#aebfd6", letterSpacing: 0.5, marginBottom: 7 }}>
-          MAJOR CITIES · BY POPULATION
+          {cityGuideHeading(basis)}
         </div>
         {cities.map((c) => (
           <TopCityRow key={citySlideKey(c)} city={c} />

@@ -17,7 +17,7 @@ import {
   type FrameSample,
   type AreaStats,
 } from "@photonsurge/shared/weather/sample";
-import { pickFramesForPoint } from "@photonsurge/shared/weather/pick";
+import { pickFramesForPoint, pickFrameCandidatesForPoint } from "@photonsurge/shared/weather/pick";
 import type {
   HistoryPoint,
   HistorySeries,
@@ -85,11 +85,9 @@ async function areaSample(
 }
 
 /** Sample `picked` in STREAM_BATCH waves, releasing each wave's bytes before the
- *  next — peak RAM is a handful of decoded frames, not the whole series. */
-async function streamSamples<T>(
-  picked: WeatherFrameMeta[],
-  one: (m: WeatherFrameMeta) => Promise<T>,
-): Promise<T[]> {
+ *  next — peak RAM is a handful of decoded frames, not the whole series. Generic
+ *  over the unit of work: one frame, or one valid time's ordered candidates. */
+async function streamSamples<I, T>(picked: I[], one: (m: I) => Promise<T>): Promise<T[]> {
   const out = new Array<T>(picked.length);
   for (let i = 0; i < picked.length; i += STREAM_BATCH) {
     const wave = await Promise.all(picked.slice(i, i + STREAM_BATCH).map(one));
@@ -222,9 +220,20 @@ export interface ForecastPointArgs {
   maxHours?: number;
 }
 
+/** One sampled forecast step. `value` is the physical reading (SPEED for a uv
+ *  variable); uv variables also carry the raw components so a consumer can read
+ *  DIRECTION — the on-air forecast strip's wind arrow — without re-decoding the
+ *  frame in `public`. */
+export interface ForecastPointSample {
+  t: string;
+  value: number;
+  u?: number;
+  v?: number;
+}
+
 export interface ForecastPointSeries {
   units: Record<string, string>;
-  samplesByVariable: Record<string, { t: string; value: number }[]>;
+  samplesByVariable: Record<string, ForecastPointSample[]>;
 }
 
 export async function sampleForecastPoint(db: Db, a: ForecastPointArgs): Promise<ForecastPointSeries> {
@@ -234,17 +243,27 @@ export async function sampleForecastPoint(db: Db, a: ForecastPointArgs): Promise
 
   for (const variable of a.variables) {
     const meta = await db.weatherForecastFrames.listMeta({ variable, model: a.model });
-    const picked = pickFramesForPoint(meta, a.lat, a.lng).filter(
-      (m) => new Date(m.validTime).getTime() <= horizonMs,
+    const candidates = pickFrameCandidatesForPoint(meta, a.lat, a.lng).filter(
+      (group) => new Date(group[0].validTime).getTime() <= horizonMs,
     );
-    const samples = await streamSamples(picked, async (m) => {
-      units[variable] = m.units || units[variable] || "";
-      const grid = await loadForecastGrid(db, m.id);
-      const s = grid ? sampleFrame(grid, a.lat, a.lng) : null;
-      if (!s) return null;
-      return { t: new Date(m.validTime).toISOString(), value: s.kind === "scalar" ? s.value : s.speed };
+    // Finest frame first, but a frame that covers the point GEOMETRICALLY can
+    // still have nothing there (a masked nest, a partial run, a lost decode
+    // range) — fall through to the coarser frame for that step instead of
+    // dropping it, which is what left rows on the forecast card blank.
+    const samples = await streamSamples(candidates, async (group): Promise<ForecastPointSample | null> => {
+      const t = new Date(group[0].validTime).toISOString();
+      for (const m of group) {
+        const grid = await loadForecastGrid(db, m.id);
+        const s = grid ? sampleFrame(grid, a.lat, a.lng) : null;
+        if (!s) continue;
+        units[variable] = m.units || units[variable] || "";
+        if (s.kind === "scalar") return { t, value: s.value };
+        return { t, value: s.speed, u: s.u, v: s.v };
+      }
+      units[variable] = group[0].units || units[variable] || "";
+      return null;
     });
-    samplesByVariable[variable] = samples.filter((x): x is { t: string; value: number } => x !== null);
+    samplesByVariable[variable] = samples.filter((x): x is ForecastPointSample => x !== null);
   }
   return { units, samplesByVariable };
 }

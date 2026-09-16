@@ -15,14 +15,15 @@
  * unmount, keeps the last bundle across cuts (no empty-flash), and fails open.
  */
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import type { Segment, SegmentKind } from "@photonsurge/shared/director";
+import { focusSubjectOf, type Segment, type SegmentKind } from "@photonsurge/shared/director";
 import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 
 import { hasRealLocation } from "../../components/broadcast/kinds";
 import { buildFocusKey } from "./focusKey";
-import type { FocusBundle, FocusDetail, FocusNearbyCity, FocusRegionCountry, FocusRequest, FocusTarget } from "./types";
+import type { FocusBundle, FocusDetail, FocusNearbyCity, FocusRegionCountry, FocusRequest, FocusTarget, TopCitiesBasis } from "./types";
 import type { Quake } from "../tracks/types";
 import type { AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
+import type { AlertNarrative } from "@photonsurge/shared/alerts/narrative";
 import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
 import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model";
 import type { AlertSnapshotMeta } from "@photonsurge/shared/db/alert-snapshot-repo";
@@ -178,7 +179,9 @@ interface FocusProviderProps {
 
 export function FocusProvider({ onAirSegment, camera, enabled, upcoming, detail = "broadcast", children }: FocusProviderProps) {
   const kind: SegmentKind = onAirSegment?.kind ?? "global";
-  const subject = onAirSegment?.id.split(":")[1] ?? null; // BARE subject id
+  // The subject is everything after the kind — a storm's "<source>:<identifier>"
+  // and a volcano's "gvp:NNN" carry colons of their own, so never split on all.
+  const subject = onAirSegment ? focusSubjectOf(onAirSegment.id) : null;
   const focusCenter: Center = onAirSegment?.camera.center ?? camera.center;
   const focusZoom = onAirSegment?.camera.zoom ?? camera.zoom;
   const segmentHasLocation = onAirSegment ? hasRealLocation(onAirSegment.kind) : true;
@@ -508,12 +511,24 @@ function useListCitiesInBbox(bbox: Bbox | null, cc?: string): City[] {
   return key && state.key === key ? state.cities : [];
 }
 
-export function useTopCities(bbox: Bbox | null, cc?: string): City[] {
+/**
+ * The CITY GUIDE's cities. Off the bundle when it frames `bbox`; else the live
+ * bbox list — unless `bundleOnly`, for a targeted event whose guide follows the
+ * EVENT (footprint / nearest — see target-cities.ts) and has no bbox-shaped
+ * fallback: the biggest cities in the camera box are exactly the wrong list.
+ */
+export function useTopCities(bbox: Bbox | null, cc?: string, opts?: { bundleOnly?: boolean }): City[] {
   const { bundle, enabled, awaitingFocus, framesFocus } = useFocusContext();
   const cover = framesFocus(bbox);
-  const fb = useListCitiesInBbox(cover || !enabled || awaitingFocus ? null : bbox, cc);
+  const fb = useListCitiesInBbox(cover || !enabled || awaitingFocus || opts?.bundleOnly ? null : bbox, cc);
   const cities = cover ? bundle!.topCities.map((c) => c.city) : fb;
   return cc ? cities.filter((city) => city.cc?.toLowerCase() === cc.toLowerCase()) : cities;
+}
+
+/** How the bundle picked the CITY GUIDE (heading copy); null off-bundle. */
+export function useTopCitiesBasis(bbox: Bbox | null): TopCitiesBasis | null {
+  const { bundle, framesFocus } = useFocusContext();
+  return framesFocus(bbox) ? (bundle!.topCitiesBasis ?? null) : null;
 }
 
 // ── Bundle-only selectors (no live fallback needed) ───────────────────────────
@@ -551,6 +566,15 @@ export function useFocusAreaQuakes(): Quake[] {
 export function useLocalZone(): LocalZone | null {
   const { bundle, covers } = useFocusContext();
   return covers() ? bundle!.localZone : null;
+}
+
+/** What the on-air storm's warning SAYS — description, instruction, areas, with
+ *  the translation preferred. Null off a storm cut or before the bundle lands;
+ *  bundle-only, because the text is the CAP message's and there is no cheap
+ *  per-cut fetch that would beat waiting for it. */
+export function useAlertNarrative(): AlertNarrative | null {
+  const { bundle, covers } = useFocusContext();
+  return covers() ? (bundle!.alertNarrative ?? null) : null;
 }
 
 /** The on-air storm's change timeline (empty off a storm cut or before a bundle). */

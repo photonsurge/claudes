@@ -135,11 +135,33 @@ export interface ForecastDay {
   hiTemp: number | null;
   loTemp: number | null;
   windAvg: number | null;
+  /** The day's PEAK sustained wind — what a forecast card should lead with;
+   *  a daily MEAN of a light-and-variable day reads as nothing happening. */
+  windMax: number | null;
   gustMax: number | null;
+  /** Meteorological direction the wind blows FROM (0 = north, 90 = east), from
+   *  the day's vector-mean u/v. Null when the sampler sent no components (an
+   *  older worker) or the day's flow cancels out. */
+  windDir: number | null;
   precipChance: number | null;
   cloudAvg: number | null;
   condition: ForecastCondition;
   hazards: ForecastHazardFlag[];
+}
+
+/** Compass point the wind blows FROM, for a u (eastward) / v (northward) pair.
+ *  Null for a dead calm, where direction is meaningless rather than north. */
+export function windDirection(u: number, v: number): number | null {
+  if (!Number.isFinite(u) || !Number.isFinite(v)) return null;
+  if (Math.hypot(u, v) < 1e-6) return null;
+  return (270 - (Math.atan2(v, u) * 180) / Math.PI + 360) % 360;
+}
+
+/** The 16-point compass label for a "blows from" bearing — "NW", "SSE"… */
+const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+export function compassPoint(deg: number | null): string | null {
+  if (deg == null || !Number.isFinite(deg)) return null;
+  return COMPASS[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
 }
 
 export interface ForecastSeries {
@@ -209,12 +231,26 @@ export async function buildForecastDays(
 
     const hazards = classifyForecastDay(dayAggregates);
 
+    // Direction from the day's VECTOR mean (sum u, sum v) — averaging bearings
+    // would put a day that blew due east then due west at "north".
+    const windVectors = (samplesByVariable.wind ?? []).filter(
+      (s) => localDateKey(s.t, offset) === date && s.u != null && s.v != null,
+    );
+    const windDir = windVectors.length
+      ? windDirection(
+          windVectors.reduce((acc, s) => acc + (s.u as number), 0) / windVectors.length,
+          windVectors.reduce((acc, s) => acc + (s.v as number), 0) / windVectors.length,
+        )
+      : null;
+
     return {
       date,
       label,
       hiTemp: temp?.max ?? null,
       loTemp: temp?.min ?? null,
       windAvg: wind?.mean ?? null,
+      windMax: wind?.max ?? null,
+      windDir,
       gustMax: gust?.max ?? null,
       precipChance: rain ? precipChanceFromSteps(forDay("rain")) : null,
       cloudAvg: cloud?.mean ?? null,
@@ -251,6 +287,8 @@ export interface ForecastStep {
   hourLabel: string;
   temp: number | null;
   wind: number | null;
+  /** Direction the wind blows FROM at this step (see ForecastDay.windDir). */
+  windDir: number | null;
   gust: number | null;
   rain: number | null;
   cloud: number | null;
@@ -282,14 +320,17 @@ export async function buildForecastSteps(
   const { units, samplesByVariable } = series;
   const offset = localDayOffsetHours(lng);
 
-  // Union every variable's samples by validTime into one row per step.
+  // Union every variable's samples by validTime into one row per step. Wind's
+  // u/v ride alongside (not in the scalar row) so the step keeps its direction.
   const byTime = new Map<number, Record<string, number>>();
+  const windUv = new Map<number, { u: number; v: number }>();
   for (const [variable, samples] of Object.entries(samplesByVariable)) {
     for (const s of samples) {
       const ms = s.t.getTime();
       const row = byTime.get(ms) ?? {};
       row[variable] = s.value;
       byTime.set(ms, row);
+      if (variable === "wind" && s.u != null && s.v != null) windUv.set(ms, { u: s.u, v: s.v });
     }
   }
 
@@ -325,6 +366,10 @@ export async function buildForecastSteps(
         hourLabel: local.toISOString().slice(11, 16),
         temp,
         wind,
+        windDir: (() => {
+          const uv = windUv.get(ms);
+          return uv ? windDirection(uv.u, uv.v) : null;
+        })(),
         gust,
         rain,
         cloud,

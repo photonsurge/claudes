@@ -19,6 +19,7 @@
  */
 import type { SegmentKind } from "@photonsurge/shared/director";
 import type { AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
+import type { AlertNarrative } from "@photonsurge/shared/alerts/narrative";
 import type { iAlertSeries } from "@photonsurge/shared/db/alert-series-model";
 import type { iAlertResource } from "@photonsurge/shared/db/alert-resource-model";
 import type { AlertSnapshotMeta } from "@photonsurge/shared/db/alert-snapshot-repo";
@@ -106,6 +107,17 @@ export interface FocusCity {
   climate: ClimateBucketedDataset[];
 }
 
+/**
+ * How a bundle's `topCities` (the CITY GUIDE) were picked:
+ *  • `area` — biggest cities inside the framed bbox (plain wide / region shots);
+ *  • `country` — the spotlight country's own biggest cities, by ISO code;
+ *  • `footprint` — the cities INSIDE a storm alert's polygon, biggest first;
+ *  • `nearest` — the closest towns of ≥10k people to a targeted event (a quake,
+ *    volcano, or a storm with no drawable shape — then within its country).
+ * See `target-cities.ts`.
+ */
+export type TopCitiesBasis = "area" | "country" | "footprint" | "nearest";
+
 /** A nearby city (targeted-event decks) with distance + baked climate. */
 export interface FocusNearbyCity {
   city: City;
@@ -178,11 +190,25 @@ export interface FocusBundle {
 
   // cities (climate baked in)
   topCities: FocusCity[];
+  /** How `topCities` was chosen — the CITY GUIDE overview heading says so. */
+  topCitiesBasis: TopCitiesBasis;
   nearbyCities: FocusNearbyCity[];
   cityConditions: CityCondition[];
 
   // the thing on air + area context
   target: FocusTarget;
+  /**
+   * What the on-air storm's warning actually SAYS — headline, description,
+   * instruction and its named areas, translation preferred (see
+   * shared/alerts/narrative). Composed from the focal CAP message the timeline
+   * already loads, so it costs no extra read. Null off a storm cut, and for a
+   * bulletin carrying no text at all.
+   *
+   * Deliberately NOT on every `areaAlerts` feature: a multi-area alert emits one
+   * feature PER AREA, so a paragraph on the feature props would ride the bundle
+   * a hundred times over for one Spanish warning.
+   */
+  alertNarrative: AlertNarrative | null;
   /** Derived change timeline for the on-air storm's alert (empty for non-storm cuts). */
   alertTimeline: AlertTimelineBeat[];
   /** The storm alert's metric series (GDACS score/severity/population), for graphs. */

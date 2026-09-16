@@ -25,6 +25,23 @@ export function byteToValue(byte: number, [min, max]: [number, number]): number 
   return min + (byte / 255) * (max - min);
 }
 
+/**
+ * A frame's decode range, or null when it cannot be trusted. A missing range
+ * was always nodata; a DEGENERATE one (non-finite, or zero width) is new here
+ * and deliberate: `byteToValue` over a zero-width range returns the same number
+ * for every byte, so a frame whose metadata lost its range used to decode as a
+ * flat field of that number — most visibly a wind frame that read 0 m/s
+ * everywhere instead of admitting it had no usable range. Reading it as nodata
+ * makes that surface as "no data" rather than as a plausible-looking zero.
+ */
+export function usableUnscale(unscale?: [number, number] | number[]): [number, number] | null {
+  if (!unscale || unscale.length < 2) return null;
+  const [min, max] = unscale;
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+  if (max - min === 0) return null;
+  return [min, max];
+}
+
 /** Longitude normalised into −180..180. */
 export function normalizeLng(lng: number): number {
   let l = ((lng + 180) % 360 + 360) % 360 - 180;
@@ -131,14 +148,14 @@ export function sampleFrame(frame: FrameLike, lat: number, lng: number): FrameSa
   if (!px) return null;
 
   if (frame.encoding === "scalar") {
-    const unscale = frame.imageUnscale;
+    const unscale = usableUnscale(frame.imageUnscale);
     if (!unscale) return null;
     const byte = bilinearChannel(frame, px.x, px.y, 0);
     if (byte == null) return null;
     return { kind: "scalar", value: byteToValue(byte, unscale) };
   }
 
-  const unscale = frame.vectorUnscale ?? frame.imageUnscale;
+  const unscale = usableUnscale(frame.vectorUnscale) ?? usableUnscale(frame.imageUnscale);
   if (!unscale) return null;
   const ub = bilinearChannel(frame, px.x, px.y, 0);
   const vb = bilinearChannel(frame, px.x, px.y, 1);
@@ -178,7 +195,10 @@ export function areaStatsFrame(
   mask?: (lat: number, lng: number) => boolean,
 ): AreaStats | null {
   const { width, height, bounds, res, rgba } = frame;
-  const unscale = frame.encoding === "uv" ? frame.vectorUnscale ?? frame.imageUnscale : frame.imageUnscale;
+  const unscale =
+    frame.encoding === "uv"
+      ? usableUnscale(frame.vectorUnscale) ?? usableUnscale(frame.imageUnscale)
+      : usableUnscale(frame.imageUnscale);
   if (!unscale) return null;
 
   const [west, south, east, north] = bbox;

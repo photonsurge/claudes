@@ -8,6 +8,8 @@ import {
   buildAreaForecastDays,
   localDayOffsetHours,
   humanDayLabel,
+  windDirection,
+  compassPoint,
 } from "./weather-forecast";
 import type { ForecastPointSeries, ForecastAreaSeries } from "./worker-sample";
 import type { AreaStats } from "@photonsurge/shared/weather/sample";
@@ -16,17 +18,20 @@ import type { AreaStats } from "@photonsurge/shared/weather/sample";
 // PNG decode). These helpers build those series directly from (isoTime, value)
 // specs — decode/sample coverage lives in worker/src/weather/sampleService.test.
 
+/** A sample spec: [time, value] for a scalar, [time, speed, u, v] for wind. */
+type PtSample = [string, number] | [string, number, number, number];
+
 function ptSeries(
-  byVar: Record<string, [string, number][]>,
+  byVar: Record<string, PtSample[]>,
   units: Record<string, string> = { temp: "°C" },
 ): ForecastPointSeries {
-  const samplesByVariable: Record<string, { t: Date; value: number }[]> = {};
+  const samplesByVariable: ForecastPointSeries["samplesByVariable"] = {};
   const allValidTimes: Date[] = [];
   for (const [v, rows] of Object.entries(byVar)) {
-    samplesByVariable[v] = rows.map(([iso, value]) => {
+    samplesByVariable[v] = rows.map(([iso, value, u, v2]) => {
       const t = new Date(iso);
       allValidTimes.push(t);
-      return { t, value };
+      return u != null && v2 != null ? { t, value, u, v: v2 } : { t, value };
     });
   }
   return { units, samplesByVariable, allValidTimes };
@@ -174,6 +179,79 @@ describe("buildForecastDays", () => {
   it("returns an empty days array when the series is empty", async () => {
     const out = await buildForecastDays(ptSeries({}), 50, 120);
     expect(out.days).toEqual([]);
+  });
+
+  it("carries the day's PEAK sustained wind alongside its mean", async () => {
+    // A calm night and a blowy afternoon: the mean alone reads as a quiet day.
+    const out = await buildForecastDays(
+      ptSeries({
+        wind: [
+          ["2026-07-06T00:00:00Z", 1],
+          ["2026-07-06T12:00:00Z", 15],
+        ],
+      }),
+      5,
+      5,
+    );
+    expect(out.days[0].windAvg).toBeCloseTo(8, 5);
+    expect(out.days[0].windMax).toBeCloseTo(15, 5);
+  });
+
+  it("derives wind direction from the day's VECTOR mean", async () => {
+    // Both steps blow due south (v negative) — i.e. a northerly, FROM 000.
+    const out = await buildForecastDays(
+      ptSeries({
+        wind: [
+          ["2026-07-06T00:00:00Z", 5, 0, -5],
+          ["2026-07-06T12:00:00Z", 7, 0, -7],
+        ],
+      }),
+      5,
+      5,
+    );
+    expect(out.days[0].windDir).toBeCloseTo(0, 5);
+    expect(compassPoint(out.days[0].windDir)).toBe("N");
+  });
+
+  it("cancels opposing flow to no direction rather than averaging bearings", async () => {
+    const out = await buildForecastDays(
+      ptSeries({
+        wind: [
+          ["2026-07-06T00:00:00Z", 6, 6, 0],
+          ["2026-07-06T12:00:00Z", 6, -6, 0],
+        ],
+      }),
+      5,
+      5,
+    );
+    expect(out.days[0].windDir).toBeNull();
+  });
+
+  it("leaves direction null when the sampler sent no u/v (older worker)", async () => {
+    const out = await buildForecastDays(ptSeries({ wind: [["2026-07-06T00:00:00Z", 6]] }), 5, 5);
+    expect(out.days[0].windMax).toBeCloseTo(6, 5);
+    expect(out.days[0].windDir).toBeNull();
+  });
+});
+
+describe("windDirection / compassPoint", () => {
+  it("reports the bearing the wind blows FROM", () => {
+    expect(windDirection(0, -1)).toBeCloseTo(0, 5); // blowing south = northerly
+    expect(windDirection(-1, 0)).toBeCloseTo(90, 5); // blowing west = easterly
+    expect(windDirection(0, 1)).toBeCloseTo(180, 5); // blowing north = southerly
+    expect(windDirection(1, 0)).toBeCloseTo(270, 5); // blowing east = westerly
+  });
+
+  it("has no direction for a dead calm", () => {
+    expect(windDirection(0, 0)).toBeNull();
+    expect(compassPoint(null)).toBeNull();
+  });
+
+  it("names the 16-point compass", () => {
+    expect(compassPoint(0)).toBe("N");
+    expect(compassPoint(45)).toBe("NE");
+    expect(compassPoint(247)).toBe("WSW");
+    expect(compassPoint(359)).toBe("N");
   });
 });
 

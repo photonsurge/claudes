@@ -12,6 +12,31 @@ describe("continentOf", () => {
     ["India", 78, 22, "Asia"],
     ["Australia", 134, -25, "Oceania"],
     ["Antarctica", 0, -75, "Antarctica"],
+    // The Africa box's edges — the Levant, the Red Sea's two shores, the
+    // Mediterranean's islands and Anatolia all used to read as Africa / Europe.
+    ["Kinarot Valley, Israel", 35.5, 32.8, "Asia"],
+    ["Beirut", 35.5, 33.9, "Asia"],
+    ["Gaza", 34.45, 31.5, "Asia"],
+    ["Aqaba", 35.0, 29.5, "Asia"],
+    ["Jeddah", 39.2, 21.5, "Asia"],
+    ["Cairo", 31.2, 30.05, "Africa"],
+    ["Alexandria", 29.9, 31.2, "Africa"],
+    ["Hurghada", 33.8, 27.3, "Africa"],
+    ["Port Sudan", 37.2, 19.6, "Africa"],
+    ["Massawa", 39.45, 15.6, "Africa"],
+    ["Hodeidah, Yemen", 42.95, 14.8, "Asia"],
+    ["Khartoum", 32.5, 15.6, "Africa"],
+    ["Crete", 25.0, 35.2, "Europe"],
+    ["Malta", 14.5, 35.9, "Europe"],
+    ["Tunis", 10.2, 36.8, "Africa"],
+    ["Tangier", -5.8, 35.8, "Africa"],
+    ["Tarifa, Spain", -5.6, 36.0, "Europe"],
+    ["Cyprus", 33.4, 35.1, "Asia"],
+    ["Antalya", 30.7, 36.9, "Asia"],
+    ["Ankara", 32.9, 39.9, "Asia"],
+    ["Tbilisi", 44.8, 41.7, "Asia"],
+    ["Athens", 23.7, 38.0, "Europe"],
+    ["Crimea", 34.0, 45.0, "Europe"],
   ];
   it.each(cases)("places %s", (_name, lng, lat, expected) => {
     expect(continentOf(lng, lat)).toBe(expected);

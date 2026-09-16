@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import type { Model } from "mongoose";
 import type { iCityModel } from "@photonsurge/shared/db/city-model";
-import type { AlertGeometry } from "@photonsurge/shared/db/alert-model";
+import { ALERT_CITY_CAP, type AlertGeometry, type iAlertCity } from "@photonsurge/shared/db/alert-model";
 import { log } from "@photonsurge/shared/utill/logger";
 import { citiesIn } from "./blob-cities";
 
@@ -23,6 +23,11 @@ const TAG = "alerts:population";
  * at ingest would read zero for exactly the European alerts that matter, and
  * never recover. The sweep recomputes whenever the footprint changes — see
  * {@link populationSig}.
+ *
+ * The same `$geoWithin` also yields WHICH cities are inside, and the biggest of
+ * them are kept on the alert (`iAlert.cities`) as the on-air CITY GUIDE for a
+ * storm cut — so the broadcast surface pages through the towns actually under
+ * the warning without ever running a point-in-polygon of its own.
  */
 
 /** An alert as the sweep scans it — footprint metadata only, no coordinates. */
@@ -32,6 +37,10 @@ export interface PopulationCandidate {
   population?: number;
   cityCount?: number;
   populationSig?: string;
+  /** The stored CITY GUIDE, ids only — absent on an alert counted before the
+   *  guide existed, which is the one signature-matching case that still needs
+   *  a pass. */
+  cities?: { id: string }[];
   info: { area: { areaDesc?: string; geometry?: { type?: string } | null }[] }[];
 }
 
@@ -41,7 +50,7 @@ export interface PopulationDeps {
     areaGeometries(id: string): Promise<AlertGeometry[]>;
     setPopulation(
       id: string,
-      v: { population: number | null; cityCount: number; populationSig: string },
+      v: { population: number | null; cityCount: number; cities: iAlertCity[]; populationSig: string },
     ): Promise<void>;
   };
   cities: { model: Model<iCityModel> };
@@ -93,9 +102,12 @@ export function combineGeometries(geometries: AlertGeometry[]): AlertGeometry | 
   return coordinates.length ? { type: "MultiPolygon", coordinates } : null;
 }
 
+const byPopulation = (a: iAlertCity, b: iAlertCity) => (b.population ?? 0) - (a.population ?? 0);
+
 /**
  * People inside an alert's footprint: cities inside the union of its polygons,
- * their populations summed, deduped by city id.
+ * their populations summed, deduped by city id — plus the biggest
+ * {@link ALERT_CITY_CAP} of those cities, the alert's CITY GUIDE.
  *
  * The union query is the fast path (one indexed lookup, dedup for free). If
  * Mongo rejects the fused shape — self-intersecting rings on real borders, the
@@ -106,17 +118,17 @@ export function combineGeometries(geometries: AlertGeometry[]): AlertGeometry | 
 export async function populationOfGeometries(
   cityModel: Model<iCityModel>,
   geometries: AlertGeometry[],
-): Promise<{ population: number; cityCount: number }> {
-  const found = new Map<string, number>();
+): Promise<{ population: number; cityCount: number; cities: iAlertCity[] }> {
+  const found = new Map<string, iAlertCity>();
   const combined = combineGeometries(geometries);
-  if (!combined) return { population: 0, cityCount: 0 };
+  if (!combined) return { population: 0, cityCount: 0, cities: [] };
 
   try {
-    for (const c of await citiesIn(cityModel, combined)) found.set(c.id, c.population ?? 0);
+    for (const c of await citiesIn(cityModel, combined)) found.set(c.id, c);
   } catch {
     for (const g of geometries) {
       try {
-        for (const c of await citiesIn(cityModel, g)) found.set(c.id, c.population ?? 0);
+        for (const c of await citiesIn(cityModel, g)) found.set(c.id, c);
       } catch {
         // One unusable area must not lose the alert its other areas' cities.
       }
@@ -124,8 +136,9 @@ export async function populationOfGeometries(
   }
 
   let population = 0;
-  for (const p of found.values()) population += p;
-  return { population, cityCount: found.size };
+  for (const c of found.values()) population += c.population ?? 0;
+  const cities = [...found.values()].sort(byPopulation).slice(0, ALERT_CITY_CAP);
+  return { population, cityCount: found.size, cities };
 }
 
 /**
@@ -157,18 +170,23 @@ export async function resyncAlertPopulations(
 
   for (const a of candidates) {
     const sig = populationSig(a);
-    if (!opts.force && a.populationSig === sig) {
+    // A matching signature still needs a pass when the alert was counted before
+    // the CITY GUIDE existed: somebody is inside (`cityCount`) but no list was
+    // kept. Self-heals lazily, one alert at a time, instead of a thundering
+    // recount of every active alert on the first sweep after deploy.
+    const guideMissing = !Array.isArray(a.cities) && (a.cityCount ?? 0) > 0;
+    if (!opts.force && a.populationSig === sig && !guideMissing) {
       result.unchanged++;
       continue;
     }
     if (!hasDrawableGeometry(a)) {
-      await deps.alerts.setPopulation(a.id, { population: null, cityCount: 0, populationSig: sig });
+      await deps.alerts.setPopulation(a.id, { population: null, cityCount: 0, cities: [], populationSig: sig });
       result.cleared++;
       continue;
     }
     const geometries = await deps.alerts.areaGeometries(a.id);
-    const { population, cityCount } = await populationOfGeometries(deps.cities.model, geometries);
-    await deps.alerts.setPopulation(a.id, { population, cityCount, populationSig: sig });
+    const { population, cityCount, cities } = await populationOfGeometries(deps.cities.model, geometries);
+    await deps.alerts.setPopulation(a.id, { population, cityCount, cities, populationSig: sig });
     result.recomputed++;
   }
 

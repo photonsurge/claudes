@@ -36,6 +36,7 @@ export type SlideId =
   | "place-roundup"
   | "place-roundup-24h"
   | "alerts"
+  | "alert-detail"
   | "alert-timeline"
   | "alert-media"
   | "event-timeline"
@@ -79,6 +80,7 @@ export const BROADCAST_SLIDES: readonly BroadcastSlide[] = [
   { id: "place-roundup-24h", group: "place", label: "Place round-up · 24h" },
   // Event / storm — the alert & unified-event drill-downs.
   { id: "alerts", group: "event", label: "Alerts in view" },
+  { id: "alert-detail", group: "event", label: "Warning detail" },
   { id: "alert-timeline", group: "event", label: "Alert timeline" },
   { id: "alert-media", group: "event", label: "Alert media" },
   { id: "event-timeline", group: "event", label: "Event timeline" },

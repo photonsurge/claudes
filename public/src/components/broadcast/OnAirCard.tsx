@@ -31,6 +31,7 @@ export default function OnAirCard({
   areaInfo = null,
   world = null,
   localZone = null,
+  showDetails = true,
   theme = DEFAULT_THEME,
 }: {
   segment: Segment;
@@ -54,11 +55,21 @@ export default function OnAirCard({
    *  LOCAL TIME row on the kinds that are somewhere specific (see showsLocalTime).
    *  Null on wide shots and before the bundle lands. */
   localZone?: LocalZone | null;
+  /**
+   * Whether to print the segment's detail rows in the card body.
+   *
+   * False for a targeted event, whose rows already ride the deck's PERSISTENT
+   * tracking header (EventTrackingLabel) directly above this body — printing
+   * them again made the lede repeat "Severity 4/4 / Type Rain" at two sizes
+   * while the warning's actual text appeared nowhere. The LOCAL TIME row is
+   * unaffected: it lives only here.
+   */
+  showDetails?: boolean;
   theme?: BroadcastTheme;
 }) {
   const color = KIND_COLOR[segment.kind] ?? theme.accent;
   const kindLabel = KIND_LABEL[segment.kind] ?? segment.kind;
-  const details = (segment.details ?? []).slice(0, 3);
+  const details = showDetails ? (segment.details ?? []).slice(0, 3) : [];
   // On a whole-globe spin, count off the authoritative world tally and break it
   // down by continent; otherwise roll up the map's scoped feed as before.
   const worldMode = world != null;

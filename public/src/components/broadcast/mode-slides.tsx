@@ -47,6 +47,7 @@ import PlaceRoundupPanel, {
 } from "./PlaceRoundupPanel";
 import type { PlaceRoundup } from "../../lib/placeRoundups";
 import QuakeReport from "./QuakeReport";
+import AlertDetailPanel, { alertDetailSlideHasContent } from "./AlertDetailPanel";
 import AlertTimelinePanel, { alertTimelineSlideHasContent } from "./AlertTimelinePanel";
 import AlertMediaPanel, { alertMediaSlideHasContent } from "./AlertMediaPanel";
 import EventTimelinePanel, { eventTimelineSlideHasContent } from "./EventTimelinePanel";
@@ -68,7 +69,8 @@ import VolcanoCamerasPanel, { airableVolcanoCams } from "./VolcanoCamerasPanel";
 import VolcanoCamGridPanel, { volcanoCamGridSlideHasContent } from "./VolcanoCamGridPanel";
 import VolcanoGeologyPanel, { volcanoGeologySlideHasContent } from "./VolcanoGeologyPanel";
 import VolcanoEruptionsPanel, { volcanoEruptionsSlideHasContent } from "./VolcanoEruptionsPanel";
-import type { FocusVolcanoCam } from "../../lib/focus/types";
+import type { FocusVolcanoCam, TopCitiesBasis } from "../../lib/focus/types";
+import type { AlertNarrative } from "@photonsurge/shared/alerts/narrative";
 import type { VolcanoEruption } from "@photonsurge/shared/db/volcano-eruption-repo";
 import VolcanoMediaPanel, { volcanoMediaSlideHasContent } from "./VolcanoMediaPanel";
 import type { VolcanoMedia } from "@photonsurge/shared/volcanoes/media";
@@ -152,6 +154,14 @@ export interface ModeSlideContext {
    *  used to fetch these itself and page through them internally on a 7s timer,
    *  which swapped the card's content mid-scroll. Empty off a city-bearing shot. */
   topCities: City[];
+  /** What the on-air storm's warning SAYS (focus bundle) — drives the WARNING
+   *  DETAIL slide. Null off a storm cut / before the bundle lands. */
+  alertNarrative?: AlertNarrative | null;
+  /** The on-air storm alert itself (focus target) — the detail slide's people
+   *  estimate + expiry. Undefined off a storm cut. */
+  stormAlert?: AlertFeature | null;
+  /** How `topCities` were picked (bundle) — the guide's overview heading. */
+  topCitiesBasis?: TopCitiesBasis | null;
   /** Focus point / framed bbox for the WEATHER (forecast) + CURRENT & RECENT
    *  (AREA HISTORY) + ocean-depth slides. Folded into the deck so the left
    *  column is ONE rotating card per mode instead of a tall stack. */
@@ -213,36 +223,79 @@ export interface ModeSlideContext {
 }
 
 /**
+ * How many cities get a PAGE OF THEIR OWN on a targeted event.
+ *
+ * On a country or region spotlight the cities ARE the story, so the whole run
+ * airs. On a storm or a quake they are context for something else, and the
+ * guide was crowding the deck out: a shot long enough for maybe half a dozen
+ * slides was spending eight of them on cities while the event's own pages
+ * waited their turn. The overview page still LISTS every city — this caps only
+ * the per-city pages behind it.
+ */
+const EVENT_CITY_PAGES = 3;
+
+/**
  * The CITY GUIDE run: the framed area's biggest cities as an overview page, then
- * ONE REAL SLIDE PER CITY (photo, blurb, today's weather). Both the country /
+ * A REAL SLIDE PER CITY (photo, blurb, today's weather). Both the country /
  * region spotlights and a targeted event's close-cities block use it, so a city
  * page reads the same wherever it airs. Empty until the cities resolve.
+ *
+ * `maxPages` caps the per-city pages (not the overview list) — see
+ * EVENT_CITY_PAGES.
  */
-function cityGuideSlides(ctx: ModeSlideContext, color: string): DeckSlide[] {
+function cityGuideSlides(ctx: ModeSlideContext, color: string, maxPages?: number): DeckSlide[] {
   const cities = ctx.topCities ?? [];
   if (!cities.length) return [];
-  const out: DeckSlide[] = [{ id: "topcities", node: <TopCitiesPanel cities={cities} color={color} /> }];
-  cities.forEach((city, i) => {
+  const out: DeckSlide[] = [
+    { id: "topcities", node: <TopCitiesPanel cities={cities} basis={ctx.topCitiesBasis} color={color} /> },
+  ];
+  // "CITY n OF m" counts the pages actually aired, so the run doesn't promise a
+  // fourth page that the cap already dropped.
+  const pages = maxPages == null ? cities : cities.slice(0, Math.max(0, maxPages));
+  pages.forEach((city, i) => {
     out.push({
       id: `topcities:${citySlideKey(city)}`,
-      node: <TopCityPanel city={city} rank={i + 1} total={cities.length} color={color} />,
+      node: <TopCityPanel city={city} rank={i + 1} total={pages.length} color={color} />,
     });
   });
   return out;
 }
 
 /**
- * The NEAR THIS EVENT run: one slide per nearby city rich enough to fill a page
- * (photo / blurb / its past-year climate), then the overview page of the rest
- * plus any live webcams. Self-hiding at both ends — a data-thin region lands on
- * neither.
+ * How many nearby cities get a page of their own, AFTER the ones the CITY GUIDE
+ * already aired are removed.
+ *
+ * This run used to be uncapped and independent, which was survivable while the
+ * guide was "biggest cities in the camera box" — a different list. Now that the
+ * guide follows the event (the towns under the warning, else the nearest ones)
+ * the two runs ask for the SAME cities, so a viewer met each town twice: once as
+ * "CITY 1 OF 3" and again as a near-this-event page. The guide owns the per-city
+ * page; what survives here is a town the guide didn't reach but that still
+ * carries a photo or a blurb, and its past-year climate, which the guide's page
+ * doesn't show.
+ */
+const EVENT_NEARBY_PAGES = 2;
+
+/**
+ * The NEAR THIS EVENT run: a slide for a nearby city the CITY GUIDE didn't
+ * already air (photo / blurb / its past-year climate), then the overview page of
+ * the rest plus any live webcams. Self-hiding at both ends — a data-thin region
+ * lands on neither.
  */
 function eventNearbySlides(segment: Segment, ctx: ModeSlideContext, color: string): DeckSlide[] {
   const center = segment.camera.center;
-  const out: DeckSlide[] = eventNearbyCityPages(center, ctx.cities).map((n) => ({
-    id: `nearby:${nearbyCitySlideKey(n.item)}`,
-    node: <EventNearbyCityPanel city={n.item} distanceKm={n.distanceKm} color={color} />,
-  }));
+  // Whatever the guide is paging through is spoken for — match on city id, and
+  // on name as a fallback for a city the two lists reached by different routes.
+  const aired = new Set(
+    (ctx.topCities ?? []).flatMap((c) => [c.id, c.name?.toLowerCase()].filter(Boolean) as string[]),
+  );
+  const out: DeckSlide[] = eventNearbyCityPages(center, ctx.cities)
+    .filter((n) => !aired.has(n.item.id) && !aired.has(n.item.name?.toLowerCase()))
+    .slice(0, EVENT_NEARBY_PAGES)
+    .map((n) => ({
+      id: `nearby:${nearbyCitySlideKey(n.item)}`,
+      node: <EventNearbyCityPanel city={n.item} distanceKm={n.distanceKm} color={color} />,
+    }));
   if (eventNearbySlideHasContent(center, ctx.cities, ctx.cams)) {
     out.push({
       id: "nearby",
@@ -313,6 +366,11 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
         areaInfo={ctx.areaInfo}
         world={ctx.world}
         localZone={ctx.localZone ?? null}
+        // A targeted event's rows already ride the deck's persistent tracking
+        // header (EventTrackingLabel), so printing them again in the lede body
+        // is pure repetition — the "Severity 4/4 / Type Rain" the card showed
+        // twice, at two sizes, instead of saying anything new.
+        showDetails={!isTargetedEvent(segment.kind)}
         theme={ctx.theme}
       />
     ),
@@ -396,8 +454,9 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
 
   // Targeted point event (storm / quake / …) — reads LEDE → [seismic breakdown]
   // → CLOSE CITIES → WEATHER → near-event extras. The quake report leads (quakes
-  // only), then the same bbox-scoped TOP CITIES + CITY CONDITIONS pages a country
-  // spotlight carries (framed to the event's area), so the affected towns air as
+  // only), then the same CITY GUIDE + CITY CONDITIONS pages a country spotlight
+  // carries — the guide scoped to the EVENT (the towns under a storm's footprint,
+  // else the nearest ones; see target-cities.ts), so the affected towns air as
   // real pages from the full city DB instead of the old single sparse
   // "near this event" card. The detailed forecast follows, and the near-event
   // page (webcams / distance-ranked cycle) rides last, only when it carries
@@ -413,6 +472,24 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
             center={segment.camera.center}
             cities={ctx.cities}
             color={color}
+          />
+        ),
+      });
+    }
+    // WHAT THE WARNING SAYS, right after the lede — the issuing authority's own
+    // description and instruction. It leads the storm's extra pages because it is
+    // the substance: everything around it (title, hazard, severity, rollup) is
+    // OUR account of the event, and until this slide existed the CAP text never
+    // reached air at all. Self-hides for a bulletin that ships no prose.
+    if (segment.kind === "storm" && alertDetailSlideHasContent(ctx.alertNarrative)) {
+      slides.push({
+        id: "alert-detail",
+        node: (
+          <AlertDetailPanel
+            narrative={ctx.alertNarrative!}
+            alert={ctx.stormAlert}
+            color={color}
+            theme={ctx.theme}
           />
         ),
       });
@@ -460,7 +537,7 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
         });
       }
     }
-    slides.push(...cityGuideSlides(ctx, color));
+    slides.push(...cityGuideSlides(ctx, color, EVENT_CITY_PAGES));
     if (ctx.histBbox) {
       slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.histBbox} color={color} /> });
     }

@@ -15,6 +15,7 @@ import {
   type DirectorState,
   type Segment,
   type SegmentKind,
+  focusSubjectOf,
 } from "@photonsurge/shared/director";
 import {
   selectNext,
@@ -146,7 +147,9 @@ function focusOf(seg: Candidate["segment"]): Pick<UpNextEntry, "center" | "zoom"
   return {
     center: seg.camera.center,
     zoom: seg.camera.zoom,
-    subject: seg.id.split(":")[1] ?? null,
+    // Everything after the kind — a storm's "<source>:<identifier>" and a
+    // volcano's "gvp:NNN" carry colons of their own (see focusSubjectOf).
+    subject: focusSubjectOf(seg.id),
   };
 }
 

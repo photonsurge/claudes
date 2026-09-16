@@ -54,12 +54,14 @@ import {
   useFocusRegion,
   useFocusCountry,
   useTopCities,
+  useTopCitiesBasis,
   useCountryRoundup,
   useRegionRoundup,
   useRegionCountries,
   useRegionNearTerm,
   useAreaForecastDays,
   useAlertTimeline,
+  useAlertNarrative,
   useAlertSnapshots,
   useAlertResources,
   useAlertSeries,
@@ -421,6 +423,8 @@ export default function BroadcastFrame({
   // The on-air storm's change timeline + imagery/resources/series — all served on
   // the same focus bundle (no extra per-cut requests).
   const alertTimeline = useAlertTimeline();
+  // What the on-air warning actually says (bundle) — the WARNING DETAIL slide.
+  const alertNarrative = useAlertNarrative();
   const alertSnapshots = useAlertSnapshots();
   const alertResources = useAlertResources();
   const alertSeries = useAlertSeries();
@@ -557,13 +561,17 @@ export default function BroadcastFrame({
   const framedForecast = useAreaForecastDays(!wideCitiesBbox ? histBbox : null);
   const hasFramedForecast = framedForecast.days.length > 0;
   // The CITY GUIDE's cities, resolved ONCE for the whole deck: a framed area uses
-  // its own bbox, a targeted event the camera box it frames (the two bboxes the
-  // panel used to be handed). TopCitiesPanel fetched these itself and paged
-  // through them on its own 7s timer — a slide show inside a slide — so the deck
-  // now reads the list here and airs a real slide per city instead. Null (no
-  // fetch) on a notable-track shot, whose deck returns before the city pages.
+  // its own bbox; a targeted event keys the bundle on the camera box it frames
+  // but its guide follows the EVENT (the cities under a storm's footprint, else
+  // the nearest towns — target-cities.ts), so it is bundle-only: the biggest
+  // cities in a 20°-wide camera box aired Mosul for a Galilee heat warning.
+  // TopCitiesPanel fetched these itself and paged through them on its own 7s
+  // timer — a slide show inside a slide — so the deck now reads the list here
+  // and airs a real slide per city instead. Null (no fetch) on a notable-track
+  // shot, whose deck returns before the city pages.
   const topCitiesBbox = hasTrackInfo ? null : (wideCitiesBbox ?? (eventTargeted ? histBbox : null));
-  const topCities = useTopCities(topCitiesBbox, wideCitiesCc);
+  const topCities = useTopCities(topCitiesBbox, wideCitiesCc, { bundleOnly: eventTargeted });
+  const topCitiesBasis = useTopCitiesBasis(topCitiesBbox);
   // Sea-temp-by-depth rides ocean scenes only; same null-on-no-location rule as
   // the history panel it sat beside before.
   const depthCenter = onAirSegment?.kind === "ocean" ? histCenter : null;
@@ -587,6 +595,8 @@ export default function BroadcastFrame({
         volcanoMedia,
         volcanoEruptions,
         volcano: focusTarget?.kind === "volcano" ? focusTarget.volcano : undefined,
+        alertNarrative,
+        stormAlert: focusTarget?.kind === "storm" ? focusTarget.alert : null,
         alertTimeline,
         alertSnapshots,
         alertResources,
@@ -603,6 +613,7 @@ export default function BroadcastFrame({
         wideCitiesBbox,
         wideCitiesCc,
         topCities,
+        topCitiesBasis,
         histCenter,
         histBbox,
         segmentHasLocation,

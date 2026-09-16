@@ -1,6 +1,6 @@
 import type { Model } from "mongoose";
 import { v4 as uuidv4 } from "uuid";
-import type { AlertGeometry, iAlert, iAlertModel, SeverityRank } from "./alert-model";
+import type { AlertGeometry, iAlert, iAlertCity, iAlertModel, SeverityRank } from "./alert-model";
 import { alertContentHash } from "../alerts/content-hash";
 import { meteoalarmRank, isMeteoalarmGreen } from "../alerts/severity";
 
@@ -31,6 +31,19 @@ export interface AlertListOpts {
    * is KEPT (the overlay draws it) — pair with route-side simplification.
    */
   lean?: boolean;
+}
+
+/** One alert's stored CITY GUIDE — see {@link makeAlertsRepo}'s `footprintCities`. */
+export interface AlertFootprintCities {
+  id: string;
+  source: string;
+  identifier: string;
+  /** Biggest cities inside the footprint (iAlert.cities); absent until the
+   *  reconcile sweep has counted this alert, or when it has no shape. */
+  cities?: iAlertCity[];
+  cityCount?: number;
+  /** Whether at least one area carries a drawable polygon. */
+  shaped: boolean;
 }
 
 const strip = (doc: any): iAlertModel => {
@@ -682,7 +695,10 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       // `raw` is the original feed payload kept for debugging/re-parsing; it can
       // dwarf the parsed doc and no list() consumer reads it. `omitCoordinates`
       // additionally drops the (potentially enormous) polygon vertices.
-      const projection: Record<string, 0> = { raw: 0 };
+      // `cities` (the footprint CITY GUIDE) is read by ONE consumer through
+      // `footprintCities`; on the whole-planet feed it would add a dozen rows per
+      // alert for nothing.
+      const projection: Record<string, 0> = { raw: 0, cities: 0 };
       if (opts.omitCoordinates) projection["info.area.geometry.coordinates"] = 0;
       if (opts.lean) {
         // Unread on the map/world-watch feed — see AlertListOpts.lean. Pure
@@ -717,6 +733,8 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
     async populationCandidates(): Promise<
       Array<
         Pick<iAlertModel, "id" | "sent" | "population" | "cityCount" | "populationSig"> & {
+          /** Ids only — enough to tell "never stored" from "stored, empty". */
+          cities?: { id: string }[];
           info: { area: { areaDesc: string; geometry?: { type?: string } | null }[] }[];
         }
       >
@@ -731,6 +749,7 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
             population: 1,
             cityCount: 1,
             populationSig: 1,
+            "cities.id": 1,
             "info.area.areaDesc": 1,
             "info.area.geometry.type": 1,
           },
@@ -738,6 +757,40 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
         .lean()
         .exec();
       return docs as never;
+    },
+
+    /**
+     * The stored CITY GUIDE of one alert (its footprint cities — see
+     * `iAlert.cities`) plus whether it has a drawable shape at all, for the focus
+     * composer's storm cut. `subject` is the focus subject a storm segment id
+     * carries after its kind — "<source>:<identifier>" — or a bare alert id /
+     * identifier typed on /admin/focus. One indexed read, never the geometry.
+     */
+    async footprintCities(subject: string): Promise<AlertFootprintCities | null> {
+      const i = subject.indexOf(":");
+      const or: Record<string, unknown>[] = [{ id: subject }, { identifier: subject }];
+      if (i > 0) or.unshift({ source: subject.slice(0, i), identifier: subject.slice(i + 1) });
+      const doc = (await model
+        .findOne(
+          { $or: or },
+          { _id: 0, id: 1, source: 1, identifier: 1, cities: 1, cityCount: 1, "info.area.geometry.type": 1 },
+        )
+        .lean()
+        .exec()) as
+        | (Pick<iAlertModel, "id" | "source" | "identifier" | "cities" | "cityCount"> & {
+            info?: { area?: { geometry?: { type?: string } | null }[] }[];
+          })
+        | null;
+      if (!doc) return null;
+      const shaped = (doc.info ?? []).some((inf) => (inf.area ?? []).some((a) => !!a.geometry?.type));
+      return {
+        id: doc.id,
+        source: doc.source,
+        identifier: doc.identifier,
+        cities: doc.cities,
+        cityCount: doc.cityCount,
+        shaped,
+      };
     },
 
     /**
@@ -757,7 +810,9 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
     },
 
     /**
-     * Write the computed people-estimate onto an alert. `population` is `$unset`
+     * Write the computed people-estimate + footprint CITY GUIDE onto an alert
+     * (`cities` is stored even when empty, so a reader can tell "counted, nobody
+     * inside" from "not counted yet"). `population` is `$unset`
      * (not stored as 0) when the alert has no drawable shape, so a reader can tell
      * "nobody catalogued inside" (0) from "we can't say" (absent). The signature
      * is always set, so a shapeless alert isn't rescanned every tick.
@@ -767,10 +822,11 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       {
         population,
         cityCount,
+        cities,
         populationSig,
-      }: { population: number | null; cityCount: number; populationSig: string },
+      }: { population: number | null; cityCount: number; cities: iAlertCity[]; populationSig: string },
     ): Promise<void> {
-      const set: Record<string, unknown> = { cityCount, populationSig };
+      const set: Record<string, unknown> = { cityCount, cities, populationSig };
       const update: Record<string, unknown> = { $set: set };
       if (population == null) update.$unset = { population: "" };
       else set.population = population;

@@ -77,6 +77,25 @@ export interface DirectorCamera {
 }
 
 /**
+ * The focus subject a segment id carries: everything after its kind. The
+ * subject itself can contain colons — a storm id is `storm:<source>:<identifier>`
+ * and a volcano id `volcano:gvp:211060` — so split on the FIRST colon only.
+ * `split(":")[1]` handed the focus composer the SOURCE ("meteoalarm") or "gvp"
+ * as the subject, and the storm / volcano target never resolved.
+ * Null for an id with no subject part.
+ */
+export function focusSubjectOf(segmentId: string): string | null {
+  const i = segmentId.indexOf(":");
+  return i === -1 ? null : segmentId.slice(i + 1) || null;
+}
+
+/** A storm subject split back into its alert key, or null for a bare id. */
+export function splitAlertSubject(subject: string): { source: string; identifier: string } | null {
+  const i = subject.indexOf(":");
+  return i > 0 ? { source: subject.slice(0, i), identifier: subject.slice(i + 1) } : null;
+}
+
+/**
  * One on-air beat. `patch` is merged onto /watch's ControlState (camera + layer
  * toggles) the instant the segment goes live; `id` is stable per subject so the
  * selector can apply a cooldown and not show the same quake twice in a row.

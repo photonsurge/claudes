@@ -233,3 +233,34 @@ describe("alertSegmentContent — a fused shape must not pose as one county", ()
     expect(c.details).toContainEqual({ label: "Warnings", value: "12" });
   });
 });
+
+/**
+ * A WMO bulletin ships its whole footprint in ONE `areaDesc`, semicolon-joined.
+ * Aired raw it was a run-on that got clamped mid-word on the lede; the subtitle
+ * now names the lead place and counts the rest.
+ */
+describe("alertSegmentContent — an areaDesc holding a whole footprint", () => {
+  const saudi = {
+    source: "wmo",
+    identifier: "sa-ncm-en/2026/09/16/x",
+    event: "Extreme Rainfall",
+    severityRank: 4,
+    areaDesc:
+      "Asir region - Abha : The entire governorate; Asir region - Ahad Rufaydah : The entire governorate; Asir region - Khamis Mushait : The entire governorate",
+    center: [43.5, 18.5] as [number, number],
+    hazard: "rain" as const,
+  };
+
+  it("names the lead area and counts the others instead of dumping the list", () => {
+    const c = alertSegmentContent(saudi);
+    expect(c.subtitle).toContain("Asir region - Abha +2 areas");
+    expect(c.subtitle).not.toContain("The entire governorate");
+    expect(c.subtitle).not.toContain(";");
+  });
+
+  it("still counts fused WARNINGS separately from the areas inside one of them", () => {
+    const c = alertSegmentContent({ ...saudi, warningCount: 4 });
+    expect(c.subtitle).toContain("+2 areas");
+    expect(c.subtitle).toContain("+3 more");
+  });
+});

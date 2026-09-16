@@ -16,6 +16,7 @@ import { bucketDaily, bucketValue } from "@photonsurge/shared/climate/buckets";
 import type { iCountryModel } from "@photonsurge/shared/db/country-model";
 import { cityGeoWithinBox } from "@photonsurge/shared/db/city-model";
 import { countryShot } from "@photonsurge/shared/director-countries";
+import { splitAlertSubject } from "@photonsurge/shared/director";
 import {
   zoneFromCity,
   zoneFromLongitude,
@@ -43,6 +44,7 @@ import {
 } from "@photonsurge/shared/weather/panels";
 import { areaAlertFeatures, type Alert, type AlertFeature } from "../alerts";
 import { buildTimeline, type AlertTimelineBeat } from "@photonsurge/shared/alerts/timeline";
+import { buildAlertNarrative, type AlertNarrative } from "@photonsurge/shared/alerts/narrative";
 import { buildEventTimeline } from "@photonsurge/shared/events/event-timeline";
 import { isTargetedEvent, hasRealLocation } from "../../components/broadcast/kinds";
 import { haversineKm } from "../geo";
@@ -50,6 +52,7 @@ import { regionMinPop } from "../cities";
 import { getCachedCountries } from "../countries-cache";
 import { normalizeFocus, buildFocusKey } from "./focusKey";
 import { blobsFor } from "./blobs";
+import { targetCitiesFor } from "./target-cities";
 import type {
   FocusBundle,
   FocusRequest,
@@ -58,6 +61,7 @@ import type {
   FocusNearbyCity,
   FocusRegionCountry,
   FocusAlertBlob,
+  TopCitiesBasis,
 } from "./types";
 import type { iRegionModel } from "@photonsurge/shared/db/region-model";
 import type { ClimateBucketedDataset } from "../history-client";
@@ -280,7 +284,7 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     pointForecastSeries,
     areaForecastSeries,
     climate,
-    topCities,
+    topCityGuide,
     nearbyCities,
     areaAlerts,
     areaBlobs,
@@ -312,12 +316,26 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
       : Promise.resolve(null),
     // climate (focus point)
     hasLoc ? climateFor(db, lng, lat) : Promise.resolve([]),
-    // topCities (located shots — incl. targeted CLOSE CITIES). A country
-    // spotlight scopes to its OWN cities by ISO code (from the curated catalog),
-    // so a neighbour that falls in the frame doesn't crowd the list.
-    wantAreaFrame
-      ? topCitiesFor(db, bbox, zoom, kind === "country" && subject ? countryShot(subject)?.iso2 : undefined)
-      : Promise.resolve([]),
+    // topCities — the CITY GUIDE. A targeted event follows the EVENT, not the
+    // camera box: the cities inside a storm's footprint, else the nearest towns
+    // (in the alert's country for a shapeless storm) — see target-cities.ts. A
+    // country spotlight scopes to its OWN cities by ISO code (from the curated
+    // catalog), so a neighbour that falls in the frame doesn't crowd the list;
+    // other located wide shots take the biggest cities in the frame.
+    targeted
+      ? targetCitiesFor(db, { kind, subject, lng, lat }).then(async (t) => ({
+          basis: t.basis,
+          list: await withClimate(db, t.cities),
+        }))
+      : wantAreaFrame
+        ? (() => {
+            const cc = kind === "country" && subject ? countryShot(subject)?.iso2 : undefined;
+            return topCitiesFor(db, bbox, zoom, cc).then((list) => ({
+              basis: (cc ? "country" : "area") as TopCitiesBasis,
+              list,
+            }));
+          })()
+        : Promise.resolve({ basis: "area" as TopCitiesBasis, list: [] as FocusCity[] }),
     // nearbyCities (targeted events)
     targeted ? nearbyCitiesFor(db, lng, lat) : Promise.resolve([]),
     // areaAlerts — panels/counts/target-match read only `properties`, never the
@@ -391,6 +409,8 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     hasLoc ? localZoneFor(db, lng, lat) : Promise.resolve(null),
   ]);
   const { pointHistory, areaHistory } = histories;
+  const topCities = topCityGuide.list;
+  const topCitiesBasis = topCityGuide.basis;
 
   // Roundups + area-weather report key off the resolved place.
   const countryRoundup = country ? await db.countryRoundups.latestForPlace(country.countryId) : null;
@@ -420,8 +440,14 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
       const v = await db.volcanoes.get(subject);
       if (v) target = { kind: "volcano", volcano: v };
     } else if (kind === "storm") {
+      // A storm subject is "<source>:<identifier>" (what the segment id carries
+      // after its kind); a bare id / identifier still matches for /admin/focus.
+      const key = splitAlertSubject(subject);
       const match = areaAlerts.find(
-        (f) => f.properties.identifier === subject || f.properties.id === subject,
+        (f) =>
+          (key != null && f.properties.source === key.source && f.properties.identifier === key.identifier) ||
+          f.properties.identifier === subject ||
+          f.properties.id === subject,
       );
       if (match) target = { kind: "storm", alert: match };
     }
@@ -431,6 +457,7 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
   // metadata — all built once HERE (with the rest of the bundle, no extra per-cut
   // request) for the storm target. All indexed reads on (source, identifier),
   // storm cuts only, so /watch gets everything in the one focus call.
+  let alertNarrative: AlertNarrative | null = null;
   let alertTimeline: AlertTimelineBeat[] = [];
   let alertSeries: FocusBundle["alertSeries"] = [];
   let alertResources: FocusBundle["alertResources"] = [];
@@ -461,6 +488,10 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     ]);
     const focal = chain.find((c) => c.id === alId) ?? chain[chain.length - 1];
     if (focal) alertTimeline = buildTimeline(focal, chain, revisions, new Date());
+    // The warning's own words, off the message the timeline already has in hand
+    // (chain rows keep `info` — only `raw` and the polygon vertices are projected
+    // away), so the on-air detail slide costs this bundle nothing extra.
+    if (focal) alertNarrative = buildAlertNarrative(focal.info?.[0], focal);
     alertSeries = series;
     alertResources = resources;
     alertSnapshots = snapshots;
@@ -559,10 +590,12 @@ export async function getFocusBundle(req: FocusRequest): Promise<FocusBundle> {
     climate,
 
     topCities,
+    topCitiesBasis,
     nearbyCities,
     cityConditions: [], // TODO(phase-3): bake CityConditionsPanel's /api/cities/weather read
 
     target,
+    alertNarrative,
     alertTimeline,
     alertSeries,
     alertResources,
@@ -749,7 +782,8 @@ async function localZoneFor(
   return zoneFromLongitude(lng);
 }
 
-/** Top cities in view (population-sorted) with climate baked in — kills the N+1.
+/** Top cities in view (population-sorted) with climate baked in — the wide /
+ *  country / region CITY GUIDE (targeted events go through target-cities.ts).
  *  When `cc` is given (a country spotlight), scope to that country's OWN cities
  *  by ISO code instead of the framed bbox, so the list is the nation's biggest
  *  cities rather than whatever fell inside the rectangle (neighbours in,
@@ -768,7 +802,11 @@ async function topCitiesFor(
     query = { population: { $gte: regionMinPop(zoom) }, loc: cityGeoWithinBox(w, s, e, nth) };
   }
   const res = await db.cities.getAll(query, { sort: { population: -1 }, limit: 8 });
-  const cities = (res?.data ?? []) as FocusCity["city"][];
+  return withClimate(db, (res?.data ?? []) as FocusCity["city"][]);
+}
+
+/** Bake each city's climate onto it — kills the per-row `useClimateYear` N+1. */
+function withClimate(db: Awaited<ReturnType<typeof getAppDb>>, cities: FocusCity["city"][]): Promise<FocusCity[]> {
   return Promise.all(
     cities.map(async (city) => ({ city, climate: await climateFor(db, city.lng, city.lat) })),
   );

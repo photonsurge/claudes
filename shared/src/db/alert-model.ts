@@ -67,6 +67,27 @@ export interface iAlertInfo {
   translationHash?: string;
 }
 
+/**
+ * A city standing inside an alert's footprint, denormalised onto the alert. The
+ * same shape the dissolved blobs carry (`iBlobCity`) — a copy, not a reference,
+ * so a reader gets a caption-ready answer with no second query; the City doc is
+ * still loaded by `id` when a slide wants the photo and blurb.
+ */
+export interface iAlertCity {
+  id: string;
+  name: string;
+  /** ISO-3166 alpha-2. */
+  cc?: string;
+  lat: number;
+  lng: number;
+  population?: number;
+}
+
+/** How many footprint cities an alert keeps (biggest first). The on-air CITY
+ *  GUIDE airs at most 8; a little headroom lets a slide skip a city with no
+ *  City doc behind it without running short. */
+export const ALERT_CITY_CAP = 12;
+
 export interface iAlert extends iGeneralModel {
   // identity
   source: string;
@@ -121,6 +142,17 @@ export interface iAlert extends iGeneralModel {
   /** How many catalogued cities `population` was summed over. */
   cityCount?: number;
   /**
+   * The biggest catalogued cities INSIDE the footprint, population-desc, capped
+   * at {@link ALERT_CITY_CAP} — the on-air CITY GUIDE for a storm cut. Written by
+   * the same reconcile sweep as `population` (it is the same `$geoWithin`, kept
+   * instead of thrown away), so the broadcast surface never runs a
+   * point-in-polygon: it reads this list and loads the City docs by id. Empty
+   * for a shape with nobody catalogued inside; absent for a geocode-only alert
+   * or one the sweep hasn't reached yet — in both cases the focus composer falls
+   * back to the nearest cities in the alert's country.
+   */
+  cities?: iAlertCity[];
+  /**
    * Signature of the drawable footprint the last `population` was computed from
    * — `sent` plus which areas carry a geometry. The reconcile sweep recomputes
    * only when this changes (a new CAP version, or an area's polygon backfilled),
@@ -133,6 +165,18 @@ export interface iAlertModel extends iAlert {
   id: string;
   _id: string;
 }
+
+const AlertCitySchema = new mongoose.Schema<iAlertCity>(
+  {
+    id: { type: String, required: true },
+    name: { type: String, required: true },
+    cc: { type: String, required: false },
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
+    population: { type: Number, required: false },
+  },
+  { _id: false },
+);
 
 const AlertAreaSchema = new mongoose.Schema<iAlertArea>(
   {
@@ -215,6 +259,7 @@ const AlertSchema = new mongoose.Schema<iAlertModel>(
     // freshness signature. All optional: a geocode-only alert never gets one.
     population: { type: Number, required: false },
     cityCount: { type: Number, required: false },
+    cities: { type: [AlertCitySchema], required: false },
     populationSig: { type: String, required: false },
   },
   mongoTimestamps,

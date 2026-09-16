@@ -60,6 +60,24 @@ export type Continent =
  * splits Europe/Africa, the Urals ~60°E split Europe/Asia, the Red Sea ~43°E
  * splits Africa/Asia). Good enough for an on-screen tag, not for geocoding.
  */
+/** The Bosphorus, near enough: east of this (and south of 42N) the Old World's
+ *  northern band is Anatolia / the Caucasus, not Europe. */
+const EUROPE_ASIA_LNG = 29;
+
+/**
+ * Latitude of the Africa / Mediterranean seam at a longitude — Africa's own
+ * north coast, so the sea's islands and Europe's southern tips never read as
+ * Africa: Tangier 35.8N vs Tarifa 36.0N; Cape Angela (Tunisia) 37.35N; Libya
+ * tops out at 33.2N under Malta's 35.8N; Egypt/Cyrenaica at 33N under Crete's
+ * 34.9N and Cyprus' 34.6N.
+ */
+function mediterraneanNorthEdge(x: number): number {
+  if (x < 0) return 35.95;
+  if (x < 11.5) return 37.4;
+  if (x < 20) return 35;
+  return 33.5;
+}
+
 export function continentOf(lng: number, lat: number): Continent | undefined {
   if (!Number.isFinite(lng) || !Number.isFinite(lat)) return undefined;
   // Normalise longitude to −180..180.
@@ -81,11 +99,24 @@ export function continentOf(lng: number, lat: number): Continent | undefined {
   if (x >= -20 && x <= 52 && y <= 37) {
     // The Arabian peninsula (east of ~Suez, north of the Horn) leans Asia.
     if (x >= 43 && y >= 12) return "Asia";
+    // The Red Sea's east shore is Arabia too: anything east of the sea's axis
+    // (Suez ≈ 32.6E/30N down to Bab-el-Mandeb ≈ 43E/12.5N) — Jeddah, Mecca,
+    // Tabuk, Aqaba — is Asia, while Port Sudan and Massawa stay Africa.
+    if (y >= 12.5 && y <= 30 && x > 32.6 + 0.6 * (30 - y)) return "Asia";
+    // The Levant — Sinai and everything north-east of the canal: Israel,
+    // Lebanon, Syria, Jordan, western Iraq — is Asia, not the box's NE corner.
+    if (y > 30 && x >= 32.6) return "Asia";
+    // The Mediterranean's north shore: a flat 37N edge put Crete, Cyprus,
+    // Malta, southern Sicily and the Spanish coast in Africa. Africa's own coast
+    // never reaches those latitudes east of Tunisia, so the seam steps down.
+    if (y > mediterraneanNorthEdge(x)) return x >= EUROPE_ASIA_LNG ? "Asia" : "Europe";
     return "Africa";
   }
 
-  // Northern Old World: Europe west of the Urals, Asia east of them.
-  if (y >= 37) return x <= 60 ? "Europe" : "Asia";
+  // Northern Old World: Europe west of the Urals, Asia east of them — except
+  // Anatolia and the southern Caucasus (south of 42N, east of the Bosphorus),
+  // which are Asia even though they sit west of 60E.
+  if (y >= 37) return x <= 60 && !(y < 42 && x >= EUROPE_ASIA_LNG) ? "Europe" : "Asia";
 
   // Everything else (South/SE Asia, Middle East) → Asia.
   return "Asia";

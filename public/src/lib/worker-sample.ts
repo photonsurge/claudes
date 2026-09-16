@@ -73,10 +73,20 @@ export function workerAreaHistory(a: WorkerAreaHistoryArgs): Promise<AreaHistory
 
 // ── Forecast sampling (worker decodes; public composes the day cards) ─────────
 
+/** One sampled forecast step: the physical reading (SPEED for a uv variable),
+ *  plus the raw u/v components when the frame was a vector one — that's what
+ *  lets the day cards show wind DIRECTION without decoding frames in public. */
+export interface ForecastPointSample {
+  t: Date;
+  value: number;
+  u?: number;
+  v?: number;
+}
+
 /** Point forecast series with `t` hydrated back to Date + the flat validTime union. */
 export interface ForecastPointSeries {
   units: Record<string, string>;
-  samplesByVariable: Record<string, { t: Date; value: number }[]>;
+  samplesByVariable: Record<string, ForecastPointSample[]>;
   allValidTimes: Date[];
 }
 
@@ -103,18 +113,21 @@ export interface WorkerForecastAreaArgs {
 }
 
 export async function workerForecastPoint(a: WorkerForecastPointArgs): Promise<ForecastPointSeries> {
-  const wire = await post<{ units: Record<string, string>; samplesByVariable: Record<string, { t: string; value: number }[]> }>(
+  const wire = await post<{
+    units: Record<string, string>;
+    samplesByVariable: Record<string, { t: string; value: number; u?: number; v?: number }[]>;
+  }>(
     "/internal/weather/forecast/point",
     a,
     { units: {}, samplesByVariable: {} },
   );
-  const samplesByVariable: Record<string, { t: Date; value: number }[]> = {};
+  const samplesByVariable: Record<string, ForecastPointSample[]> = {};
   const allValidTimes: Date[] = [];
   for (const [v, rows] of Object.entries(wire.samplesByVariable ?? {})) {
     samplesByVariable[v] = rows.map((r) => {
       const t = new Date(r.t);
       allValidTimes.push(t);
-      return { t, value: r.value };
+      return { t, value: r.value, ...(r.u != null && r.v != null ? { u: r.u, v: r.v } : {}) };
     });
   }
   return { units: wire.units ?? {}, samplesByVariable, allValidTimes };
