@@ -56,7 +56,7 @@ export const STEMS: StemDef[] = [
   { id: "kick", name: "Kick", note: "floor / breaks", color: "#ffb454", drum: true, live: (e) => e > 0.2 },
   { id: "hat", name: "Hats", note: "swing · ride", color: "#ffb454", drum: true, live: (e) => e > 0.2 },
   { id: "perc", name: "Perc", note: "clap · rim · shaker", color: "#ff5f6d", drum: true, live: (e) => e > 0.3 },
-  { id: "atmos", name: "Atmos", note: "vinyl", color: "#6a7d97", live: () => true },
+  { id: "atmos", name: "Atmos", note: "air · wind · rain", color: "#6a7d97", live: () => true },
 ];
 const STEM_BY_ID = Object.fromEntries(STEMS.map((s) => [s.id, s])) as Record<StemId, StemDef>;
 

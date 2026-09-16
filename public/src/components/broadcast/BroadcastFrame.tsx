@@ -53,6 +53,7 @@ import { useAlertSlotAds } from "../../lib/ads/use-alert-slot";
 import {
   useFocusRegion,
   useFocusCountry,
+  useTopCities,
   useCountryRoundup,
   useRegionRoundup,
   useRegionCountries,
@@ -555,6 +556,14 @@ export default function BroadcastFrame({
   // it only refetches on a cut.
   const framedForecast = useAreaForecastDays(!wideCitiesBbox ? histBbox : null);
   const hasFramedForecast = framedForecast.days.length > 0;
+  // The CITY GUIDE's cities, resolved ONCE for the whole deck: a framed area uses
+  // its own bbox, a targeted event the camera box it frames (the two bboxes the
+  // panel used to be handed). TopCitiesPanel fetched these itself and paged
+  // through them on its own 7s timer — a slide show inside a slide — so the deck
+  // now reads the list here and airs a real slide per city instead. Null (no
+  // fetch) on a notable-track shot, whose deck returns before the city pages.
+  const topCitiesBbox = hasTrackInfo ? null : (wideCitiesBbox ?? (eventTargeted ? histBbox : null));
+  const topCities = useTopCities(topCitiesBbox, wideCitiesCc);
   // Sea-temp-by-depth rides ocean scenes only; same null-on-no-location rule as
   // the history panel it sat beside before.
   const depthCenter = onAirSegment?.kind === "ocean" ? histCenter : null;
@@ -562,8 +571,8 @@ export default function BroadcastFrame({
   // The bottom-left mode deck: one ordered, content-filtered slide list per
   // segment kind (mode-slides), replacing the old nested-ternary +
   // usePagedSlides page bookkeeping. SlideDeck cross-fades through it and keeps
-  // every slide mounted, preserving each panel's own featured-city cycle /
-  // fetched data across a rotation. Every left-column card — the mode cards AND
+  // every slide mounted, preserving each panel's own fetched data across a
+  // rotation. Every left-column card — the mode cards AND
   // the weather / area-history / depth / round-up context cards — is a slide in
   // this one deck now, so the column is a single tidy rotating card per mode
   // instead of a tall stack.
@@ -593,6 +602,7 @@ export default function BroadcastFrame({
         localZone,
         wideCitiesBbox,
         wideCitiesCc,
+        topCities,
         histCenter,
         histBbox,
         segmentHasLocation,

@@ -19,12 +19,20 @@ const HATS: Record<HatColour, { type: BiquadFilterType; f: number; q: number; de
 
 const rand = Math.random;
 
-/** Sidechain "pump": drop the musical bus on the kick, recover over ~120 ms. */
+/**
+ * Sidechain "pump": drop the musical bus on the kick, recover over ~120 ms.
+ * The drop is a 3 ms ramp from wherever the gain is (never a step — a step on
+ * a sustained pad is a click on every kick).
+ */
 export function duck(rig: Rig, t: number): void {
   const g = rig.sidechain.gain;
-  g.cancelScheduledValues(t);
-  g.setValueAtTime(0.3, t);
-  g.setTargetAtTime(1, t + 0.008, 0.12);
+  if (typeof g.cancelAndHoldAtTime === "function") g.cancelAndHoldAtTime(t);
+  else {
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+  }
+  g.linearRampToValueAtTime(0.3, t + 0.003);
+  g.setTargetAtTime(1, t + 0.011, 0.12);
 }
 
 export function kick(rig: Rig, t: number, vel: number, flavour: KickFlavour = "punch"): void {

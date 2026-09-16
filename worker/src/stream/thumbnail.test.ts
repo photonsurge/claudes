@@ -91,7 +91,7 @@ describe("thumbnailSourceFor", () => {
       source: "/brand/thumb.png",
     });
     expect(thumbnailSourceFor("  ", {}, site)).toEqual({
-      url: "https://gods.example/LogoHorizontal.png",
+      url: "https://gods.example/chan1.png",
       source: "default",
     });
   });

@@ -10,7 +10,7 @@
  * Levels are checked with scripts/measure-audio-bed.mjs.
  */
 import type { StemId } from "./arranger";
-import { fillCrackle, fillRain, softClipCurve } from "./dsp";
+import { fillRain, softClipCurve } from "./dsp";
 
 /** Trim on the summing bus feeding the limiter: a full "breaks" mix lands a few dB over threshold on hits. */
 const BUS_TRIM = 0.6;
@@ -236,20 +236,20 @@ export function buildRig(ctx: AudioContext, stepSeconds: number, enabled: Record
   shimmer.connect(shimmerVerb);
   shimmerVerb.connect(convolver);
 
-  // ---- vinyl atmosphere, always running
-  const crackle = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
-  fillCrackle(crackle.getChannelData(0), ctx.sampleRate, rand);
-  const crackleGain = gain(0.5);
-  const chp = ctx.createBiquadFilter();
-  chp.type = "highpass";
-  chp.frequency.value = 1400;
-  const crackleSrc = ctx.createBufferSource();
-  crackleSrc.buffer = crackle;
-  crackleSrc.loop = true;
-  crackleSrc.connect(chp);
-  chp.connect(crackleGain);
-  crackleGain.connect(groups.atmos);
-  crackleSrc.start();
+  // ---- air floor, always running: a faint dark hiss so silence never reads as dead
+  // (the old vinyl pops are gone — on a broadcast bed they read as crackle, not record)
+  const airSrc = ctx.createBufferSource();
+  airSrc.buffer = noiseBuf;
+  airSrc.loop = true;
+  const airLp = ctx.createBiquadFilter();
+  airLp.type = "lowpass";
+  airLp.frequency.value = 2400;
+  airLp.Q.value = -3;
+  const air = gain(0.006);
+  airSrc.connect(airLp);
+  airLp.connect(air);
+  air.connect(groups.atmos);
+  airSrc.start();
 
   return {
     ctx,

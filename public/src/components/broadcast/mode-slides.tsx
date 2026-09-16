@@ -33,7 +33,7 @@ import { KIND_COLOR, isTargetedEvent } from "./kinds";
 import OnAirCard from "./OnAirCard";
 import CountryPanel from "./CountryPanel";
 import AreaAlertsPanel from "./AreaAlertsPanel";
-import TopCitiesPanel from "./TopCitiesPanel";
+import TopCitiesPanel, { TopCityPanel, citySlideKey } from "./TopCitiesPanel";
 import CityConditionsPanel from "./CityConditionsPanel";
 import CityForecastPanel from "./CityForecastPanel";
 import ForecastPanel from "./ForecastPanel";
@@ -55,7 +55,12 @@ import type { EventTimelineBeat } from "@photonsurge/shared/events/event-timelin
 import type { EventSnapshotMeta } from "@photonsurge/shared/db/event-snapshot-repo";
 import type { iEventResource } from "@photonsurge/shared/db/event-resource-model";
 import type { iEventSeries } from "@photonsurge/shared/db/event-series-model";
-import EventNearbyPanel, { eventNearbySlideHasContent } from "./EventNearbyPanel";
+import EventNearbyPanel, {
+  EventNearbyCityPanel,
+  eventNearbyCityPages,
+  eventNearbySlideHasContent,
+  nearbyCitySlideKey,
+} from "./EventNearbyPanel";
 import TrackInfoPanel from "./TrackInfoPanel";
 import VolcanoFactsPanel, { volcanoFactsSlideHasContent } from "./VolcanoFactsPanel";
 import VolcanoNearbyPanel, { volcanoNearbySlideHasContent } from "./VolcanoNearbyPanel";
@@ -141,6 +146,12 @@ export interface ModeSlideContext {
    *  nation's own cities (by `cc`), not whatever fell inside `wideCitiesBbox`.
    *  Absent on region / round-up shots, which span countries and keep the bbox. */
   wideCitiesCc?: string;
+  /** The area's biggest cities, population-ranked — resolved ONCE in
+   *  BroadcastFrame (focus bundle, else one bbox fetch) and turned into the CITY
+   *  GUIDE run below: an overview page plus one real slide per city. The panel
+   *  used to fetch these itself and page through them internally on a 7s timer,
+   *  which swapped the card's content mid-scroll. Empty off a city-bearing shot. */
+  topCities: City[];
   /** Focus point / framed bbox for the WEATHER (forecast) + CURRENT & RECENT
    *  (AREA HISTORY) + ocean-depth slides. Folded into the deck so the left
    *  column is ONE rotating card per mode instead of a tall stack. */
@@ -199,6 +210,46 @@ export interface ModeSlideContext {
   slideOrder?: SlideId[];
   /** Per-channel hidden POINT/AREA HISTORY variables (ControlState.pointVarsOff). */
   pointVarsOff?: string[];
+}
+
+/**
+ * The CITY GUIDE run: the framed area's biggest cities as an overview page, then
+ * ONE REAL SLIDE PER CITY (photo, blurb, today's weather). Both the country /
+ * region spotlights and a targeted event's close-cities block use it, so a city
+ * page reads the same wherever it airs. Empty until the cities resolve.
+ */
+function cityGuideSlides(ctx: ModeSlideContext, color: string): DeckSlide[] {
+  const cities = ctx.topCities ?? [];
+  if (!cities.length) return [];
+  const out: DeckSlide[] = [{ id: "topcities", node: <TopCitiesPanel cities={cities} color={color} /> }];
+  cities.forEach((city, i) => {
+    out.push({
+      id: `topcities:${citySlideKey(city)}`,
+      node: <TopCityPanel city={city} rank={i + 1} total={cities.length} color={color} />,
+    });
+  });
+  return out;
+}
+
+/**
+ * The NEAR THIS EVENT run: one slide per nearby city rich enough to fill a page
+ * (photo / blurb / its past-year climate), then the overview page of the rest
+ * plus any live webcams. Self-hiding at both ends — a data-thin region lands on
+ * neither.
+ */
+function eventNearbySlides(segment: Segment, ctx: ModeSlideContext, color: string): DeckSlide[] {
+  const center = segment.camera.center;
+  const out: DeckSlide[] = eventNearbyCityPages(center, ctx.cities).map((n) => ({
+    id: `nearby:${nearbyCitySlideKey(n.item)}`,
+    node: <EventNearbyCityPanel city={n.item} distanceKm={n.distanceKm} color={color} />,
+  }));
+  if (eventNearbySlideHasContent(center, ctx.cities, ctx.cams)) {
+    out.push({
+      id: "nearby",
+      node: <EventNearbyPanel center={center} cities={ctx.cities} cams={ctx.cams} color={color} />,
+    });
+  }
+  return out;
 }
 
 /**
@@ -409,19 +460,14 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
         });
       }
     }
+    slides.push(...cityGuideSlides(ctx, color));
     if (ctx.histBbox) {
-      slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.histBbox} color={color} /> });
       slides.push({ id: "cityconditions", node: <CityConditionsPanel bbox={ctx.histBbox} color={color} /> });
     }
     if (ctx.hasFramedForecast) {
       slides.push({ id: "forecast", node: <ForecastPanel center={ctx.histCenter} bbox={ctx.histBbox} theme={ctx.theme} /> });
     }
-    if (eventNearbySlideHasContent(segment.camera.center, ctx.cities, ctx.cams)) {
-      slides.push({
-        id: "nearby",
-        node: <EventNearbyPanel center={segment.camera.center} cities={ctx.cities} cams={ctx.cams} color={color} />,
-      });
-    }
+    slides.push(...eventNearbySlides(segment, ctx, color));
     return slides;
   }
 
@@ -442,8 +488,8 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     if (ctx.areaAlerts.length) {
       slides.push({ id: "alerts", node: <AreaAlertsPanel alerts={ctx.areaAlerts} color={color} theme={ctx.theme} /> });
     }
+    slides.push(...cityGuideSlides(ctx, color));
     if (ctx.wideCitiesBbox) {
-      slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} cc={ctx.wideCitiesCc} color={color} /> });
       // The area weather slide: the framed nation's top-5 cities, each with its
       // live NOW temp + 3-day strip (replaces the old single country-wide aggregate).
       slides.push({ id: "forecast", node: <CityForecastPanel bbox={ctx.wideCitiesBbox} color={color} /> });
@@ -508,7 +554,7 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
         node: <RegionCountryPanel country={c} rank={i + 1} total={countries.length} color={color} theme={ctx.theme} />,
       });
     });
-    slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} cc={ctx.wideCitiesCc} color={color} /> });
+    slides.push(...cityGuideSlides(ctx, color));
     // City forecasts live in the top-right report.
     slides.push(...contextSlides(ctx));
     return slides;
@@ -525,7 +571,7 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     if (placeRoundupSlideHasContent(ctx.placeRoundup)) {
       slides.push({ id: "place-roundup", node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} theme={ctx.theme} /> });
     }
-    slides.push({ id: "topcities", node: <TopCitiesPanel bbox={ctx.wideCitiesBbox} cc={ctx.wideCitiesCc} color={color} /> });
+    slides.push(...cityGuideSlides(ctx, color));
     // City forecasts live in the top-right report.
     slides.push(...contextSlides(ctx));
     return slides;

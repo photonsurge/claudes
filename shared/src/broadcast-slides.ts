@@ -9,9 +9,13 @@
  * (`ControlState.slideHoldMs`). The `onair` lede is PINNED — always kept and
  * always first — so a channel can't drop its own identity page.
  *
- * Dynamic per-instance slides (e.g. `region-country-<cc>`) are intentionally NOT
- * in this catalog: they're never individually toggled and just keep their
- * natural position.
+ * Dynamic per-instance slides are intentionally NOT in this catalog: there is
+ * one per city / per camera / per member country, so they can't be listed as
+ * fixed ids. They are instead named `<catalogId>:<instance>` (e.g.
+ * `topcities:paris`, `volcano-cam:etna-1`) and the channel's prefs are matched
+ * against the CATALOG half — see `baseSlideId`. So hiding "Top cities" hides
+ * every city page with it, and ranking it moves the whole run of them, while the
+ * operator still only ever sees one entry per kind of card.
  */
 
 /** Grouping for the admin form, in display order. */
@@ -116,6 +120,22 @@ export const SLIDE_GROUP_ORDER: readonly SlideGroup[] = [
 /** All slide ids, in catalog order. */
 export const SLIDE_IDS: readonly SlideId[] = BROADCAST_SLIDES.map((s) => s.id);
 
+/**
+ * Separator between a slide's catalog id and its per-instance suffix. A card
+ * that used to page through its own items INSIDE one slide (a featured city
+ * swapping every 7s while the body was still scrolling) now airs one real deck
+ * slide per item, named `<catalogId>:<instance>`.
+ */
+export const SLIDE_INSTANCE_SEP = ":";
+
+/** The catalog id behind a slide id: `topcities:paris` → `topcities`, and a
+ *  plain catalog id unchanged. Channel prefs (hide / order) are expressed in
+ *  catalog ids, so every instance of a card follows its catalog entry. */
+export function baseSlideId(id: string): string {
+  const i = id.indexOf(SLIDE_INSTANCE_SEP);
+  return i === -1 ? id : id.slice(0, i);
+}
+
 const SLIDE_ID_SET: ReadonlySet<string> = new Set(SLIDE_IDS);
 const PINNED_SLIDE_ID_SET: ReadonlySet<string> = new Set(
   BROADCAST_SLIDES.filter((s) => s.pinned).map((s) => s.id),
@@ -128,15 +148,18 @@ export function isSlideId(value: unknown): value is SlideId {
 
 /** A pinned slide (e.g. the on-air lede) can't be hidden or reordered. */
 export function isPinnedSlide(id: string): boolean {
-  return PINNED_SLIDE_ID_SET.has(id);
+  return PINNED_SLIDE_ID_SET.has(baseSlideId(id));
 }
 
-/** Slide dwell bounds (ms). Since the deck became run-paced (see `slideRuns`)
- *  this is the FLOOR and the safety CEILING around the derived dwell, not the
- *  dwell itself: a slide never advances before `slideHoldMs` and never sits
- *  longer than SLIDE_HOLD_MAX_MS even if its body never reports a finished run. */
+/** Slide dwell bounds (ms) — the range the operator's *Minimum dwell* control
+ *  offers. Since the deck became run-paced (see `slideRuns`) the setting is the
+ *  FLOOR, not the dwell itself: a slide never advances before `slideHoldMs`, and
+ *  a page nothing claims holds exactly that long. The top of the range is
+ *  RUN_CEILING_MS, so a channel can park a slide for as long as the deadlock
+ *  breaker allows (it was 40s, which couldn't hold a card for a whole slow shot).
+ *  A typed value above the range still commits — the slider simply pins. */
 export const SLIDE_HOLD_MIN_MS = 6000;
-export const SLIDE_HOLD_MAX_MS = 40000;
+export const SLIDE_HOLD_MAX_MS = 120000;
 export const DEFAULT_SLIDE_HOLD_MS = 16000;
 
 /**
@@ -180,6 +203,9 @@ export function clampRuns(value: unknown, fallback: number, min: number, max: nu
  * Apply a channel's slide preferences to a composed deck: drop hidden slides
  * (never pinned ones), then stable-sort by the channel's ranking — pinned first,
  * then ranked ids in `order`, then everything else in its natural position.
+ * Per-instance slides (`<catalogId>:<instance>`) are matched on their catalog
+ * half, so one off-list / order entry governs the whole run of them and the
+ * stable sort keeps them together in their natural sequence.
  * Pure + shared so the renderer and any preview agree.
  */
 export function applySlidePrefs<T extends { id: string }>(
@@ -188,10 +214,10 @@ export function applySlidePrefs<T extends { id: string }>(
   order: readonly string[],
 ): T[] {
   const offSet = new Set(off);
-  const visible = slides.filter((s) => isPinnedSlide(s.id) || !offSet.has(s.id));
+  const visible = slides.filter((s) => isPinnedSlide(s.id) || !offSet.has(baseSlideId(s.id)));
   const rank = (id: string): number => {
     if (isPinnedSlide(id)) return -1;
-    const i = order.indexOf(id);
+    const i = order.indexOf(baseSlideId(id));
     return i === -1 ? Number.MAX_SAFE_INTEGER : i;
   };
   return visible

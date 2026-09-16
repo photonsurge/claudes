@@ -2,7 +2,7 @@
 
 /**
  * Thumbnail source for a run / constant stream: an http(s) URL or a site path
- * ("/images/wind.png"). Blank = the horizontal logo. Whatever is given is
+ * ("/images/wind.png"). Blank = the channel plate. Whatever is given is
  * letterboxed to 1280×720 by the worker, so any decodable image works. Shows
  * the image so the operator can check it before the broadcast is created.
  */
@@ -33,7 +33,7 @@ export default function StreamThumbnailField({ value, onChange }: {
         error={invalid}
         helperText={invalid
           ? "Use an http(s) URL or a site path starting with /"
-          : "An image URL or a path on this site. Any size — it is letterboxed to 1280×720. Blank = the logo. Custom thumbnails need a phone-verified YouTube channel."}
+          : "An image URL or a path on this site. Any size — it is letterboxed to 1280×720. Blank = the channel plate. Custom thumbnails need a phone-verified YouTube channel."}
       />
       {previewUrl && (
         <Box sx={{ width: 192, aspectRatio: "16 / 9", bgcolor: "#080c18", borderRadius: 1, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>

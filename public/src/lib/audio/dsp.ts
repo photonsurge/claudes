@@ -24,30 +24,6 @@ export function softClipCurve(n = 4096, knee = CEILING_KNEE, ceiling = CEILING_M
   return curve;
 }
 
-/** White-noise floor under the vinyl texture. */
-export const CRACKLE_HISS = 0.012;
-/** Mean pop rate — expressed per second so density doesn't scale with sampleRate. */
-export const CRACKLE_POPS_PER_SEC = 6;
-/** Loudest single pop, pre-bus. */
-export const CRACKLE_POP_PEAK = 0.2;
-
-/**
- * Fill a buffer with vinyl surface noise: a quiet hiss plus sparse pops, each a
- * short decaying tick (2–5 samples) rather than a single-sample delta. Pops
- * arrive at CRACKLE_POPS_PER_SEC on average whatever the sample rate.
- */
-export function fillCrackle(d: Float32Array, sampleRate: number, rnd: () => number = Math.random): Float32Array {
-  const p = CRACKLE_POPS_PER_SEC / sampleRate;
-  for (let i = 0; i < d.length; i++) d[i] = (rnd() * 2 - 1) * CRACKLE_HISS;
-  for (let i = 0; i < d.length; i++) {
-    if (rnd() >= p) continue;
-    const amp = (rnd() < 0.5 ? -1 : 1) * (0.3 + rnd() * 0.7) * CRACKLE_POP_PEAK;
-    const len = 2 + ((rnd() * 4) | 0);
-    for (let k = 0; k < len && i + k < d.length; k++) d[i + k] += amp * Math.pow(0.5, k);
-  }
-  return d;
-}
-
 /** Mean raindrop rate for the rain texture, per second (sample-rate independent). */
 export const RAIN_DROPS_PER_SEC = 140;
 /** Loudest single drop, pre-bus. */

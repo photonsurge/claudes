@@ -6,9 +6,15 @@ import {
   isSlideId,
   isPinnedSlide,
   applySlidePrefs,
+  baseSlideId,
   SLIDE_RUNS_MIN,
   SLIDE_RUNS_MAX,
+  SLIDE_HOLD_MIN_MS,
+  SLIDE_HOLD_MAX_MS,
+  DEFAULT_SLIDE_HOLD_MS,
+  RUN_CEILING_MS,
 } from "./broadcast-slides";
+import { REPORT_HOLD_MIN_MS, REPORT_HOLD_MAX_MS, DEFAULT_REPORT_HOLD_MS } from "./broadcast-report";
 import { DEFAULT_CONTROL_STATE, mergeControlState } from "./control";
 
 describe("broadcast-slides catalog", () => {
@@ -31,6 +37,12 @@ describe("broadcast-slides catalog", () => {
     expect(isSlideId("forecast")).toBe(true);
     expect(isSlideId("nope")).toBe(false);
     expect(isSlideId(7)).toBe(false);
+  });
+
+  it("reads the catalog id out of a per-instance slide id", () => {
+    expect(baseSlideId("topcities:paris")).toBe("topcities");
+    expect(baseSlideId("volcano-cam:etna-1")).toBe("volcano-cam");
+    expect(baseSlideId("topcities")).toBe("topcities");
   });
 });
 
@@ -62,6 +74,31 @@ describe("applySlidePrefs", () => {
   it("ranks listed ids after the pinned lede, keeps the rest in natural order", () => {
     const out = applySlidePrefs(deck(), [], ["history", "forecast"]).map((s) => s.id);
     expect(out).toEqual(["onair", "history", "forecast", "topcities", "region-country-fr"]);
+  });
+
+  // Cards that used to page through their own items now air one slide per item,
+  // named `<catalogId>:<instance>` — the channel still governs them through the
+  // one catalog entry the operator sees.
+  const cityDeck = () => [
+    { id: "onair" },
+    { id: "topcities" },
+    { id: "topcities:paris" },
+    { id: "topcities:lyon" },
+    { id: "forecast" },
+  ];
+
+  it("hides every instance of a card through its catalog id", () => {
+    expect(applySlidePrefs(cityDeck(), ["topcities"], []).map((s) => s.id)).toEqual(["onair", "forecast"]);
+  });
+
+  it("moves the whole run of instances together, in their natural order", () => {
+    expect(applySlidePrefs(cityDeck(), [], ["forecast", "topcities"]).map((s) => s.id)).toEqual([
+      "onair",
+      "forecast",
+      "topcities",
+      "topcities:paris",
+      "topcities:lyon",
+    ]);
   });
 });
 
@@ -97,6 +134,25 @@ describe("mergeControlState slide + theme fields", () => {
   it("keeps base themeOverrides when the patch omits the key", () => {
     const base = { ...DEFAULT_CONTROL_STATE, themeOverrides: { name: "KEEP" } };
     expect(mergeControlState(base, { showWind: false }).themeOverrides).toEqual({ name: "KEEP" });
+  });
+});
+
+describe("dwell bounds (the *Minimum dwell* control on both decks)", () => {
+  // The dwell is the FLOOR under the run pacing, so the top of the operator's
+  // range is the deadlock breaker itself — a channel can park a slide for as
+  // long as the deck will ever wait. Pinned here so the two can't drift apart.
+  it("reaches the shared run ceiling on both decks", () => {
+    expect(SLIDE_HOLD_MAX_MS).toBe(RUN_CEILING_MS);
+    expect(REPORT_HOLD_MAX_MS).toBe(RUN_CEILING_MS);
+  });
+
+  it("keeps each deck's default inside its own range", () => {
+    expect(SLIDE_HOLD_MIN_MS).toBeLessThan(SLIDE_HOLD_MAX_MS);
+    expect(DEFAULT_SLIDE_HOLD_MS).toBeGreaterThanOrEqual(SLIDE_HOLD_MIN_MS);
+    expect(DEFAULT_SLIDE_HOLD_MS).toBeLessThanOrEqual(SLIDE_HOLD_MAX_MS);
+    expect(REPORT_HOLD_MIN_MS).toBeLessThan(REPORT_HOLD_MAX_MS);
+    expect(DEFAULT_REPORT_HOLD_MS).toBeGreaterThanOrEqual(REPORT_HOLD_MIN_MS);
+    expect(DEFAULT_REPORT_HOLD_MS).toBeLessThanOrEqual(REPORT_HOLD_MAX_MS);
   });
 });
 

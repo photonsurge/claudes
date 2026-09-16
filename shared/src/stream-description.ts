@@ -14,8 +14,10 @@ import { YT_DESCRIPTION_MAX } from "./vod";
 export { YT_DESCRIPTION_MAX };
 /** Cap on a stored thumbnail source (URL or site-relative path). */
 export const THUMBNAIL_SOURCE_MAX = 500;
-/** Brand image every broadcast falls back to (served by `public`; 16:9, transparent). */
-export const DEFAULT_THUMBNAIL_PATH = "/LogoHorizontal.png";
+/** Channel plate every broadcast falls back to (served by `public`; 1672×941,
+ *  already 16:9 so the thumbnail pipeline never letterboxes it). Was the
+ *  horizontal brand logo, which read as a bare wordmark on a video card. */
+export const DEFAULT_THUMBNAIL_PATH = "/chan1.png";
 
 /** One-paragraph pitch for the globe — the description body and the hydra announcement share it. */
 export const DEFAULT_STREAM_BLURB =

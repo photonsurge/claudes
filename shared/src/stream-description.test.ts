@@ -49,7 +49,7 @@ describe("normalizeThumbnailSource", () => {
 
 describe("resolveThumbnailUrl", () => {
   it("resolves paths against the site and passes absolute URLs through", () => {
-    expect(resolveThumbnailUrl(undefined, "https://gods.example/")).toBe("https://gods.example/LogoHorizontal.png");
+    expect(resolveThumbnailUrl(undefined, "https://gods.example/")).toBe("https://gods.example/chan1.png");
     expect(resolveThumbnailUrl("/t.png", "https://gods.example")).toBe("https://gods.example/t.png");
     expect(resolveThumbnailUrl("https://cdn.example/t.png", "https://gods.example")).toBe("https://cdn.example/t.png");
   });

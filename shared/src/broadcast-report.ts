@@ -51,9 +51,13 @@ export const BROADCAST_REPORT_SLIDES: readonly ReportSlide[] = [
   { id: "about", label: "About card", note: "Channel description + data sources (copy editable per channel)" },
 ];
 
-/** Report dwell bounds (ms) for the rotation-speed control. */
+/** Report dwell bounds (ms) — the range the operator's dwell control offers.
+ *  Like the bottom-left deck's, the setting is the FLOOR under the run pacing,
+ *  so the top of the range is the shared RUN_CEILING_MS rather than a short
+ *  rotation guess (it was 30s, too short to park a slide for a whole slow shot).
+ *  A typed value above the range still commits — the slider simply pins. */
 export const REPORT_HOLD_MIN_MS = 3000;
-export const REPORT_HOLD_MAX_MS = 30000;
+export const REPORT_HOLD_MAX_MS = 120000;
 export const DEFAULT_REPORT_HOLD_MS = 6000;
 
 /**

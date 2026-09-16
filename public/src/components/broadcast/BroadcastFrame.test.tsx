@@ -20,6 +20,7 @@ import BroadcastFrame from "./BroadcastFrame";
 jest.mock("../../lib/focus/focus-client", () => ({
   useFocusRegion: () => null,
   useFocusCountry: () => null,
+  useTopCities: () => [],
   useCountryRoundup: () => null,
   useRegionRoundup: () => null,
   useRegionCountries: () => [],

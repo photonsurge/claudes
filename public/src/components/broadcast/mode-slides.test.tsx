@@ -8,6 +8,7 @@ const seg = (over: Record<string, unknown>): Segment =>
 
 const ctx = (over: Partial<ModeSlideContext> = {}): ModeSlideContext => ({
   cities: [],
+  topCities: [],
   cams: [],
   quakes: [],
   alerts: [],
@@ -40,6 +41,15 @@ const ctx = (over: Partial<ModeSlideContext> = {}): ModeSlideContext => ({
 const cityAt = (lng: number, lat: number): City =>
   ({ id: "c1", name: "C", lat, lng, population: 100_000 }) as unknown as City;
 
+/** The framed area's biggest cities (BroadcastFrame resolves these once). */
+const topCities = [
+  { id: "paris", name: "Paris", lat: 48.8, lng: 2.3, population: 2_100_000 },
+  { id: "lyon", name: "Lyon", lat: 45.7, lng: 4.8, population: 520_000 },
+] as unknown as City[];
+/** What they compose to: the overview page, then ONE REAL SLIDE PER CITY —
+ *  where the card used to page through them internally on its own timer. */
+const CITY_GUIDE = ["topcities", "topcities:paris", "topcities:lyon"];
+
 const ids = (s: Segment, c: ModeSlideContext) => modeSlides(s, c).map((x) => x.id);
 
 describe("modeSlides", () => {
@@ -53,13 +63,13 @@ describe("modeSlides", () => {
       narrative: "Settled and mild across the country.",
       inputs: { topCities: [], alerts: [], volcanoes: [] },
     } as unknown as ModeSlideContext["placeRoundup"];
-    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, placeRoundup: roundup }))).toEqual([
+    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, topCities, placeRoundup: roundup }))).toEqual([
       "onair",
       "place-roundup",
-      "topcities",
+      ...CITY_GUIDE,
     ]);
     // No round-up (or an empty one) → the slide is dropped, spotlight reads as before.
-    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities"]);
+    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, topCities }))).toEqual(["onair", ...CITY_GUIDE]);
   });
 
   it("a region ('area') spotlight with no dossier degrades to the country spotlight deck", () => {
@@ -71,8 +81,8 @@ describe("modeSlides", () => {
     // No `region` dossier passed → the region-only NEXT 24H / TOP COUNTRIES slides
     // are skipped and it reads exactly like a country spotlight.
     expect(
-      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: roundup })),
-    ).toEqual(["onair", "place-roundup", "topcities"]);
+      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, topCities, placeRoundup: roundup })),
+    ).toEqual(["onair", "place-roundup", ...CITY_GUIDE]);
   });
 
   const regionSteps = [
@@ -92,6 +102,7 @@ describe("modeSlides", () => {
         seg({ kind: "region" }),
         ctx({
           wideCitiesBbox: bbox,
+          topCities,
           regionNearTerm: regionSteps,
           regionCountries: regionCountriesData,
         }),
@@ -101,7 +112,7 @@ describe("modeSlides", () => {
       "region-next24",
       "region-country-de",
       "region-country-fr",
-      "topcities",
+      ...CITY_GUIDE,
     ]);
   });
 
@@ -110,8 +121,8 @@ describe("modeSlides", () => {
     // No regionCountries / regionNearTerm (bundle didn't cover the cut) → the
     // region-only slides drop and it reads like a country spotlight.
     expect(
-      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox })),
-    ).toEqual(["onair", "topcities"]);
+      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, topCities })),
+    ).toEqual(["onair", ...CITY_GUIDE]);
   });
 
   it("a region spotlight splits the round-up: state text, then a NEXT 24H outlook slide", () => {
@@ -122,19 +133,19 @@ describe("modeSlides", () => {
       inputs: { topCities: [], alerts: [], volcanoes: [] },
     } as unknown as ModeSlideContext["placeRoundup"];
     expect(
-      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: roundup })),
-    ).toEqual(["onair", "place-roundup", "place-roundup-24h", "topcities"]);
+      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, topCities, placeRoundup: roundup })),
+    ).toEqual(["onair", "place-roundup", "place-roundup-24h", ...CITY_GUIDE]);
     // No per-city outlook → only the state slide, no split.
     const noOutlook = { summary: "Settled." , inputs: { topCities: [], alerts: [], volcanoes: [] } } as unknown as ModeSlideContext["placeRoundup"];
     expect(
-      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, placeRoundup: noOutlook })),
-    ).toEqual(["onair", "place-roundup", "topcities"]);
+      ids(seg({ kind: "region" }), ctx({ wideCitiesBbox: bbox, topCities, placeRoundup: noOutlook })),
+    ).toEqual(["onair", "place-roundup", ...CITY_GUIDE]);
   });
 
   it("a country spotlight leaves city forecasts to the right-hand report", () => {
     const bbox: [number, number, number, number] = [-1, -1, 1, 1];
     // Keep place context here; the right-hand report owns city forecasts.
-    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }))).toEqual(["onair", "topcities"]);
+    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, topCities }))).toEqual(["onair", ...CITY_GUIDE]);
   });
 
   it("every mode leads with the uniform on-air lede", () => {
@@ -150,12 +161,16 @@ describe("modeSlides", () => {
     expect(
       ids(
         seg({ kind: "quake", quake: { mag: 6.1, depthKm: 10 } }),
-        ctx({ histBbox: bbox, histCenter: [0, 0], hasFramedForecast: true, cities: [cityAt(0, 0), cityAt(0.1, 0.1)] }),
+        ctx({ histBbox: bbox, histCenter: [0, 0], hasFramedForecast: true, topCities, cities: [cityAt(0, 0), cityAt(0.1, 0.1)] }),
       ),
-    ).toEqual(["onair", "quake", "topcities", "cityconditions", "forecast", "nearby"]);
+    ).toEqual(["onair", "quake", ...CITY_GUIDE, "cityconditions", "forecast", "nearby"]);
     // A storm (no quake payload) with a framed area but no forecast/near-event
     // content → just the lede + the close-cities pages.
-    expect(ids(seg({ kind: "storm" }), ctx({ histBbox: bbox }))).toEqual(["onair", "topcities", "cityconditions"]);
+    expect(ids(seg({ kind: "storm" }), ctx({ histBbox: bbox, topCities }))).toEqual([
+      "onair",
+      ...CITY_GUIDE,
+      "cityconditions",
+    ]);
   });
 
   it("a storm folds in the alert-timeline slide after the lede when it has beats", () => {
@@ -317,12 +332,13 @@ describe("modeSlides", () => {
         seg({ kind: "country" }),
         ctx({
           wideCitiesBbox: bbox,
+          topCities,
           segmentHasLocation: true,
           histCenter: [0, 0],
           histBbox: bbox,
         }),
       ),
-    ).toEqual(["onair", "topcities", "history"]);
+    ).toEqual(["onair", ...CITY_GUIDE, "history"]);
   });
 
   it("an ocean shot adds the sea-temp-by-depth slide", () => {
@@ -346,31 +362,35 @@ describe("modeSlides", () => {
         ctx({
           summaryCountry: country,
           wideCitiesBbox: bbox,
+          topCities,
           areaAlerts: [alert],
           roundup: { sources: [] },
         }),
       ),
-    ).toEqual(["onair", "nation", "alerts", "topcities", "forecast", "roundup"]);
+    ).toEqual(["onair", "nation", "alerts", ...CITY_GUIDE, "forecast", "roundup"]);
   });
 
   it("a summary country with no alerts drops that slide but keeps nation + cities + forecast", () => {
     const country = { countryId: "jp", name: "Japan", iso2: "JP", bbox } as unknown as ModeSlideContext["summaryCountry"];
     expect(
-      ids(seg({ kind: "global", summary: { id: "1", period: "daily", narrative: "n", generatedAt: "x" } }), ctx({ summaryCountry: country, wideCitiesBbox: bbox, roundup: { sources: [] } })),
-    ).toEqual(["onair", "nation", "topcities", "forecast", "roundup"]);
+      ids(
+        seg({ kind: "global", summary: { id: "1", period: "daily", narrative: "n", generatedAt: "x" } }),
+        ctx({ summaryCountry: country, wideCitiesBbox: bbox, topCities, roundup: { sources: [] } }),
+      ),
+    ).toEqual(["onair", "nation", ...CITY_GUIDE, "forecast", "roundup"]);
   });
 });
 
 describe("modeSlides — per-channel slide prefs", () => {
   const bbox: [number, number, number, number] = [-1, -1, 1, 1];
-  const spotlight = () => ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox }));
+  const spotlight = () => ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, topCities }));
 
   it("the country spotlight's natural deck (baseline)", () => {
-    expect(spotlight()).toEqual(["onair", "topcities"]);
+    expect(spotlight()).toEqual(["onair", ...CITY_GUIDE]);
   });
 
-  it("slidesOff hides the listed slide", () => {
-    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, slidesOff: ["topcities"] }))).toEqual([
+  it("slidesOff hides the listed slide — and every per-city page with it", () => {
+    expect(ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, topCities, slidesOff: ["topcities"] }))).toEqual([
       "onair",
     ]);
   });
@@ -381,7 +401,7 @@ describe("modeSlides — per-channel slide prefs", () => {
 
   it("slideOrder reranks the deck after the pinned lede", () => {
     expect(
-      ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, slideOrder: ["forecast", "topcities"] })),
-    ).toEqual(["onair", "topcities"]);
+      ids(seg({ kind: "country" }), ctx({ wideCitiesBbox: bbox, topCities, slideOrder: ["forecast", "topcities"] })),
+    ).toEqual(["onair", ...CITY_GUIDE]);
   });
 });

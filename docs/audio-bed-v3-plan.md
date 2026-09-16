@@ -27,10 +27,10 @@ Three complaints, three root causes (all measured, not guessed):
 | `theory.ts` | keys/modes, 7th chords by degree, voice-led voicings, progression banks, modulation | yes |
 | `patterns.ts` | drum / bass / comping banks per section, fills | yes |
 | `clock.ts` | Worker ticker, 1.2 s lookahead, resync that drops missed steps | yes |
-| `graph.ts` | the rig: master chain, sends, stem groups, drum glue, vinyl | harness |
+| `graph.ts` | the rig: master chain, sends, stem groups, drum glue, air floor + weather beds | harness |
 | `drums.ts` | kick, hats, ride, clap, snare, rim, shaker, riser, swell | harness |
 | `synths.ts` | rhodes, stab, pluck (Karplus–Strong), bell, FM lead, acid, sub bass, Pad | harness |
-| `dsp.ts` | soft-clip ceiling curve, vinyl crackle, rain texture | yes |
+| `dsp.ts` | soft-clip ceiling curve, rain texture | yes |
 | `weather.ts` | readings → mood axes (windy / wet / warm / aurora) | yes |
 | `rng.ts` | seeded PRNG + pickers | via tests |
 
@@ -124,12 +124,22 @@ comes back running ~4 s after suspension with steps flowing; a kick that
 throws on every hit costs 30 skipped steps in 34 s while everything else keeps
 playing (`scratchpad/resilience.mjs` in the session that shipped this).
 
+## Vinyl pops removed (2026-09-16)
+
+"Still some crackle, heard when tuning in." The tamed vinyl layer (6 pops/s,
+-22 dBFS) ran 100 % of the time regardless of phrase layers and stood out
+whenever the mix went quiet (intro, interlude, chill); rain measured -36 dBFS
+and wasn't it. The pops are gone: atmos is now a faint dark air floor
+(noise → 2.4 kHz lowpass, -44 dBFS) plus the wind/rain beds. The sidechain
+duck is a 3 ms ramp from the current gain instead of a step to 0.3 (a step on
+a sustained pad clicked on every kick).
+
 ## Verification
 
 ```
 node scripts/measure-audio-bed.mjs --mode breaks --vol 1          # peak / rms / clipped
 node scripts/measure-audio-bed.mjs --mode deep --secs 240 --trace 1  # track (♪) + phrase changes
-node scripts/measure-audio-bed.mjs --mode chill --solo atmos      # vinyl layer alone
+node scripts/measure-audio-bed.mjs --mode chill --solo atmos      # atmos beds alone (air / wind / rain)
 node scripts/measure-audio-bed.mjs --weather 'wind=25,rain=10,temp=35,kp=9'  # every mood axis maxed
 ```
 

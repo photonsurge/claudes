@@ -1,25 +1,32 @@
 "use client";
 
 /**
- * "TOP CITIES" — the CITIES slide of an on-air country spotlight or region
- * tour: the area's biggest cities (population-ranked, scoped to a bbox via
- * listCities, same plumbing the region zoom-in cities layer uses), with a
- * featured slot that cycles through them (photo + Wikipedia blurb when the City
- * doc has one, worker-cached; see enrich:wiki) and a clean list of the rest.
+ * "TOP CITIES" — the CITY GUIDE pages of an on-air country spotlight, region
+ * tour or targeted event: the area's biggest cities (population-ranked, scoped
+ * to a bbox by the caller — see BroadcastFrame's `topCities`), as an overview
+ * list followed by ONE FULL DECK SLIDE PER CITY (photo + Wikipedia blurb when
+ * the City doc has one, worker-cached; see enrich:wiki, plus that city's own
+ * forecast for today).
  *
- * Featured-city context and today’s forecast, followed by other major cities.
+ * The per-city pages used to be a "featured slot" INSIDE the overview card that
+ * swapped every 7 seconds. That was a slide show hidden inside a slide: the deck
+ * had begun scrolling the card's body at the channel's reading pace, and
+ * half-way down the featured block would change under the viewer. A card's
+ * content must hold still for as long as the card is on air, so each city is now
+ * a real slide the deck turns to in its own time (see SlideDeck / run-pacing).
  */
-import { useContext, useEffect, useState } from "react";
 import { formatPopulation, type City } from "../../lib/cities";
-import { useTopCities, usePointForecastDays } from "../../lib/focus/focus-client";
+import { usePointForecastDays } from "../../lib/focus/focus-client";
 import { WeatherGlyph } from "./glyphs";
 import { formatReading } from "./PointHistoryPanel";
-import BroadcastCard, { CardSection, DeckSlideActiveContext } from "./BroadcastCard";
+import BroadcastCard, { CardSection } from "./BroadcastCard";
 
-/** Seconds the featured city holds before the slide advances to the next. */
-const FEATURED_HOLD_MS = 7000;
+/** A stable, id-safe instance key for one city's slide (`topcities:<key>`). */
+export function citySlideKey(city: City): string {
+  return String(city.id ?? `${city.lng},${city.lat}`).replace(/:/g, "-");
+}
 
-/** Other cities: clearly labelled population and capital status. */
+/** One overview row: thumbnail, name, then population and capital status. */
 function TopCityRow({ city }: { city: City }) {
   const meta = [city.population != null ? `Population ${formatPopulation(city.population)}` : null, city.isCapital ? "capital" : null].filter(Boolean).join(" · ");
   return (
@@ -39,7 +46,7 @@ function TopCityRow({ city }: { city: City }) {
   );
 }
 
-function FeaturedCityWeather({ city }: { city: City }) {
+function CityWeather({ city }: { city: City }) {
   const { days, loading } = usePointForecastDays([city.lng, city.lat]);
   const today = days[0];
   const reading = (value: number | null | undefined, unit: string) => value == null ? "—" : `${formatReading(value)} ${unit}`;
@@ -63,88 +70,77 @@ function FeaturedCityWeather({ city }: { city: City }) {
   );
 }
 
-export default function TopCitiesPanel({
-  bbox,
-  cc,
+/**
+ * ONE city, one slide: the establishing photo, the name and population, the
+ * Wikipedia blurb in full (the deck scrolls the body, so it is no longer
+ * clamped to two lines) and today's weather there.
+ */
+export function TopCityPanel({
+  city,
+  rank,
+  total,
   color = "#3f8f8f",
 }: {
-  bbox: [number, number, number, number];
-  cc?: string;
+  city: City;
+  /** 1-based position in the area's population ranking, for the page label. */
+  rank: number;
+  total: number;
   color?: string;
 }) {
-  // Top cities in view, climate baked in — served from the one /api/focus bundle
-  // when it frames this bbox, else a live bbox fetch (rounded dedup + cap inside).
-  const cities = useTopCities(bbox, cc);
+  return (
+    <BroadcastCard accent={color} eyebrow="City Guide">
+      <div style={{ fontSize: 11, fontWeight: 700, color, letterSpacing: 1, marginBottom: 6 }}>
+        CITY {rank} OF {total}
+      </div>
+      {city.wikiPhoto || city.wikiThumb ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={city.wikiPhoto || city.wikiThumb}
+          alt={`${city.name} city view`}
+          style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 7, display: "block", marginBottom: 9 }}
+        />
+      ) : null}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "3px 10px" }}>
+        <span style={{ fontSize: 24.2, fontWeight: 800, color: "#fff" }}>{city.name}</span>
+        {formatPopulation(city.population) ? (
+          <span style={{ fontSize: 15.4, fontWeight: 700, color }}>Population {formatPopulation(city.population)}</span>
+        ) : null}
+      </div>
+      <div style={{ fontSize: 15.4, fontWeight: 600, color: "#aebfd6", marginTop: 2 }}>
+        {[city.country, city.isCapital ? "capital" : null].filter(Boolean).join(" · ")}
+      </div>
+      {city.wikiExtract ? (
+        <div style={{ fontSize: 14.3, lineHeight: 1.5, color: "#cdd9ec", marginTop: 7 }}>{city.wikiExtract}</div>
+      ) : null}
 
-  // Cycle the featured slot through every top city, biggest first, looping.
-  // Paused while the card waits off air in the deck (SlideDeck's context; a
-  // stand-alone panel is always on air), so a hidden card isn't rebuilding its
-  // featured block every few seconds for nobody — that churn was landing in
-  // the document's layout on OBS (docs/watch-perf-plan.md, round 49).
-  const onAir = useContext(DeckSlideActiveContext);
-  const [slide, setSlide] = useState(0);
-  useEffect(() => {
-    if (cities.length <= 1 || !onAir) return;
-    const iv = setInterval(() => setSlide((n) => n + 1), FEATURED_HOLD_MS);
-    return () => clearInterval(iv);
-  }, [cities.length, onAir]);
+      <CityWeather city={city} />
+    </BroadcastCard>
+  );
+}
 
+/**
+ * The overview page: every city in the area, biggest first. The per-city pages
+ * follow it in the deck, so this is the contents list, not a teaser.
+ */
+export default function TopCitiesPanel({
+  cities,
+  color = "#3f8f8f",
+}: {
+  cities: City[];
+  color?: string;
+}) {
   if (!cities.length) return null;
-
-  const featured = cities[slide % cities.length];
-  const rest = cities.filter((c) => c !== featured).slice(0, 4);
 
   return (
     <BroadcastCard accent={color} eyebrow="City Guide">
-      {/* Featured city — photo + short blurb; slot cycles through every top city. */}
-      <div>
-        <div style={{ fontSize: 11, fontWeight: 700, color, letterSpacing: 1, marginBottom: 6 }}>FEATURED CITY · {slide % cities.length + 1} OF {cities.length}</div>
-        {featured.wikiPhoto || featured.wikiThumb ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={featured.wikiPhoto || featured.wikiThumb}
-            alt={`${featured.name} city view`}
-            style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 7, display: "block", marginBottom: 9 }}
-          />
-        ) : null}
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "3px 10px" }}>
-          <span style={{ fontSize: 24.2, fontWeight: 800, color: "#fff" }}>{featured.name}</span>
-          {formatPopulation(featured.population) ? (
-            <span style={{ fontSize: 15.4, fontWeight: 700, color }}>Population {formatPopulation(featured.population)}</span>
-          ) : null}
+      <CardSection first style={{ fontSize: 14.3 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#aebfd6", letterSpacing: 0.5, marginBottom: 7 }}>
+          MAJOR CITIES · BY POPULATION
         </div>
-        <div style={{ fontSize: 15.4, fontWeight: 600, color: "#aebfd6", marginTop: 2 }}>
-          {[featured.country, featured.isCapital ? "capital" : null].filter(Boolean).join(" · ")}
-        </div>
-        {featured.wikiExtract ? (
-          <div
-            style={{
-              fontSize: 14.3,
-              lineHeight: 1.5,
-              color: "#cdd9ec",
-              marginTop: 7,
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-            }}
-          >
-            {featured.wikiExtract}
-          </div>
-        ) : null}
-      </div>
-
-      <FeaturedCityWeather key={`${featured.id}:${featured.lat}:${featured.lng}`} city={featured} />
-
-      {/* Other major cities in the area. */}
-      {rest.length ? (
-        <CardSection style={{ fontSize: 14.3 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#aebfd6", letterSpacing: 0.5, marginBottom: 7 }}>OTHER MAJOR CITIES · BY POPULATION</div>
-          {rest.map((c) => (
-            <TopCityRow key={c.id} city={c} />
-          ))}
-        </CardSection>
-      ) : null}
+        {cities.map((c) => (
+          <TopCityRow key={citySlideKey(c)} city={c} />
+        ))}
+      </CardSection>
     </BroadcastCard>
   );
 }

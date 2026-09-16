@@ -112,6 +112,9 @@ export default function SlidesSettings() {
       <Alert severity="info" sx={{ mb: 1.5 }}>
         The on-air lede is pinned — it always opens the deck. Slides also self-hide
         when they have no data, so hiding one here just removes it for good on this channel.
+        Some entries air as a RUN of pages rather than one card — the city guide gives each
+        city its own page, a volcano each of its cameras — and hiding or moving the entry
+        governs the whole run.
       </Alert>
 
       <SlideOrderList ordered={ordered} off={off} onToggle={setVisible} onMove={move} />
