@@ -30,7 +30,7 @@ import {
   GLOBAL_VIEW,
   OCEAN_VIEW_ZOOM,
   globalMapTour,
-  ORBITAL_VIEW_ZOOM,
+  orbitalViewZoom,
   ORBITAL_VIEWS,
 } from "@photonsurge/shared/director-rois";
 import { COUNTRY_SHOTS, countryShot, type CountryShot } from "@photonsurge/shared/director-countries";
@@ -231,7 +231,7 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
           view.title,
           view.subtitle,
           GLOBAL_VIEW.center,
-          view.zoom ?? ORBITAL_VIEW_ZOOM,
+          orbitalViewZoom(view),
           kindHoldMs(cfg, "orbital"),
           cfg,
           { satelliteGroup: view.group },

@@ -6,6 +6,10 @@ import {
   INTRO_MAP_TYPES,
   OCEAN_MAP_TYPES,
   QUAKE_MAP_TYPES,
+  ORBITAL_VIEWS,
+  ORBITAL_VIEW_ZOOM,
+  orbitalViewZoom,
+  orbitalZoomForShell,
   PRESETS,
 } from "./director-rois";
 
@@ -95,5 +99,59 @@ describe("globalMapTour", () => {
     expect(PRESETS.global.showAurora).toBe(false);
     expect(PRESETS.global.showSatImg).toBe(false);
     expect(PRESETS.ocean.showAurora).toBe(false);
+  });
+});
+
+describe("orbital framing", () => {
+  // Apparent width of a shell, in pixels of the 1920x1080 broadcast frame, from
+  // deck's globe projection: radius = (alt/R + 1) · 256 · 2^zoom / (π · cos lat).
+  const shellWidthPx = (altKm: number, zoom: number, lat = 20) =>
+    (2 * ((altKm * 1000) / 6370972 + 1) * 256 * Math.pow(2, zoom)) / (Math.PI * Math.cos((lat * Math.PI) / 180));
+
+  it("frames a geostationary belt inside the frame width", () => {
+    const zoom = orbitalZoomForShell(35786);
+    expect(shellWidthPx(35786, zoom)).toBeLessThanOrEqual(1920);
+    // ...and uses most of it, rather than shrinking the planet for nothing.
+    expect(shellWidthPx(35786, zoom)).toBeGreaterThan(0.7 * 1920);
+  });
+
+  it("frames an inclined shell against the frame's SHORT side, since it stands as tall as it is wide", () => {
+    const zoom = orbitalZoomForShell(20200, 55);
+    expect(shellWidthPx(20200, zoom)).toBeLessThanOrEqual(1080);
+  });
+
+  it("pulls back further for a higher shell", () => {
+    expect(orbitalZoomForShell(35786)).toBeLessThan(orbitalZoomForShell(20200));
+    expect(orbitalZoomForShell(20200)).toBeLessThan(orbitalZoomForShell(850));
+  });
+
+  it("pulls back further for a more inclined shell at the same altitude", () => {
+    expect(orbitalZoomForShell(20200, 55)).toBeLessThan(orbitalZoomForShell(20200, 0));
+  });
+
+  it("takes the shell framing over a hand-set zoom, and falls back to the default", () => {
+    expect(orbitalViewZoom({ group: "g", title: "t", subtitle: "s", shellKm: 35786, zoom: 3 })).toBeCloseTo(
+      orbitalZoomForShell(35786),
+      6,
+    );
+    expect(orbitalViewZoom({ group: "g", title: "t", subtitle: "s", zoom: 2.2 })).toBe(2.2);
+    expect(orbitalViewZoom({ group: "g", title: "t", subtitle: "s" })).toBe(ORBITAL_VIEW_ZOOM);
+  });
+
+  it("keeps every medium/high constellation's ring inside the broadcast frame", () => {
+    // The regression: these were framed by eye for the planet, which left a
+    // geostationary ring 2,150px across a 1,920px frame — mostly off screen.
+    for (const view of ORBITAL_VIEWS.filter((v) => v.shellKm !== undefined)) {
+      const zoom = orbitalViewZoom(view);
+      const width = shellWidthPx(view.shellKm as number, zoom);
+      expect(width).toBeLessThanOrEqual(1920);
+      if ((view.inclDeg ?? 0) > 20) expect(width).toBeLessThanOrEqual(1080);
+    }
+  });
+
+  it("leaves the hand-tuned low-Earth framings alone", () => {
+    const leo = ORBITAL_VIEWS.filter((v) => v.shellKm === undefined);
+    expect(leo.map((v) => v.group)).toContain("starlink");
+    for (const v of leo) expect(orbitalViewZoom(v)).toBe(v.zoom);
   });
 });

@@ -77,6 +77,49 @@ async function ensureCachedDem(url: string): Promise<string> {
   return dest;
 }
 
+/** The published-run shape this module reads (a lean WeatherRun doc). */
+interface ElevationRunDoc {
+  grid?: { width?: number; height?: number };
+  runId?: string;
+  id?: string;
+  _id?: unknown;
+  variables?: { elevation?: { files?: Record<string, string> } };
+}
+
+/** The slice of the app db the reuse check needs (kept narrow for the test). */
+export interface ElevationReuseDb {
+  weatherRuns: { getByQuery: (query: Record<string, unknown>) => Promise<{ success: boolean; data?: unknown }> };
+  weatherTextures: { getBytes: (id: string) => Promise<{ data: Buffer } | null> };
+}
+
+/**
+ * The published elevation run worth REUSING, or null when a bake is needed.
+ *
+ * A published run doc is NOT on its own proof that the relief still draws: the
+ * client fetches the TEXTURE (/api/weather/tex/<id>), and the doc outlives its
+ * bytes — a BLOB_DIR that moved or was cleared, a half-finished migrate:blobs, a
+ * collection dropped by hand. Every other model re-bakes on its next cycle and
+ * heals itself; elevation is static, so nothing ever re-bakes it. A bytes-less
+ * run therefore left the "Relief" basemap permanently blank on air AND turned
+ * the "Bake elevation relief" button into a silent no-op, however many times an
+ * operator pressed it. So: reuse only when fhr 0's texture actually reads back.
+ */
+export async function reusableElevationRun(
+  db: ElevationReuseDb,
+): Promise<{ runId: string; width?: number; height?: number } | null> {
+  const existing = await db.weatherRuns.getByQuery({ model: "elevation", status: "complete", published: true });
+  if (!existing.success || !existing.data) return null;
+  const run = existing.data as ElevationRunDoc;
+  const runId = run.runId ?? run.id ?? String(run._id ?? "");
+  const texId = run.variables?.elevation?.files?.["0"];
+  const bytes = texId ? await db.weatherTextures.getBytes(texId).catch(() => null) : null;
+  if (!bytes?.data?.length) {
+    log(TAG, "published elevation run has no readable texture — re-baking", { runId, texId: texId ?? null });
+    return null;
+  }
+  return { runId, width: run.grid?.width, height: run.grid?.height };
+}
+
 export interface IngestElevationOpts {
   /** Local GeoTIFF path — skips the ~466 MB download. */
   demPath?: string;
@@ -108,21 +151,20 @@ export async function ingestElevation(opts: IngestElevationOpts = {}): Promise<I
     throw new Error(`bad bake dims ${W}×${H}`);
   }
 
-  // Terrain is STATIC — if an elevation run is already published, skip the whole
-  // 466 MB read + strip resample + PNG encode (the slow part) and reuse it. Pass
-  // `force` (or ELEVATION_FORCE=1) to re-bake, e.g. after a resolution change.
+  // Terrain is STATIC — if an elevation run is already published AND its texture
+  // bytes are still readable, skip the whole 466 MB read + strip resample + PNG
+  // encode (the slow part) and reuse it. Pass `force` (or ELEVATION_FORCE=1) to
+  // re-bake, e.g. after a resolution change.
   const force = opts.force ?? process.env.ELEVATION_FORCE === "1";
   if (!force) {
-    const db = await getAppDb();
-    const existing = await db.weatherRuns.getByQuery({ model: "elevation", status: "complete", published: true });
-    if (existing.success && existing.data) {
-      const run = existing.data as { grid?: { width?: number; height?: number }; runId?: string; _id?: unknown };
+    const reusable = await reusableElevationRun(await getAppDb());
+    if (reusable) {
       log(TAG, "elevation already published — skipping bake (pass force to re-bake)");
       return {
-        width: run.grid?.width ?? W,
-        height: run.grid?.height ?? H,
+        width: reusable.width ?? W,
+        height: reusable.height ?? H,
         bytes: 0,
-        runId: run.runId ?? String(run._id ?? ""),
+        runId: reusable.runId,
       };
     }
   }

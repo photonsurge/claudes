@@ -11,14 +11,15 @@ import type { SegmentKind } from "./director";
 /** Global establishing shot — the intro/idle spin. */
 export const GLOBAL_VIEW: { center: [number, number]; zoom: number } = {
   center: [0, 20],
-  // Pulled in tighter than "fills the frame height" (3.0) so the planet reads big
-  // and immersive on the world spins — the disk crops slightly top/bottom, which
-  // is the intended broadcast look for a spinning globe (not a full disk on black).
-  zoom: 3.6,
+  // A touch tighter than "fills the frame height" (3.0) so the planet still reads
+  // big and immersive on the world spins — the disk only just crops top/bottom,
+  // which is the intended broadcast look for a spinning globe (not a full disk on
+  // black). Pulled back from 3.6 so the poles aren't cut so hard.
+  zoom: 3.2,
 };
 
 /** Ocean world spins — same full-frame world view as the intro. */
-export const OCEAN_VIEW_ZOOM = 3.6;
+export const OCEAN_VIEW_ZOOM = 3.2;
 
 /**
  * "Map types" a global world spin tours WHILE it rotates — so an establishing
@@ -252,10 +253,89 @@ export interface OrbitalView {
    * Camera zoom for this constellation (higher = closer). Altitudes are true
    * scale, so the orbit shell's apparent height is set by the framing: LEO
    * (Starlink/stations, ~400–550 km) zooms IN so it fills the frame hugging the
-   * globe, while MEO/GEO (GPS/Galileo, ~20–36k km) zooms OUT so the whole, much
-   * larger ring fits. Falls back to ORBITAL_VIEW_ZOOM when unset.
+   * globe. Hand-set for the low orbits, where the shell hugs the planet and the
+   * framing is really framing the GLOBE; higher shells set `shellKm` instead and
+   * let the geometry pick. Falls back to ORBITAL_VIEW_ZOOM when neither is set.
    */
   zoom?: number;
+  /**
+   * Orbit altitude to frame, in km — the constellation's shell, not a look. The
+   * camera pulls back until a ring that size fits the broadcast frame, which for
+   * medium and high orbits is the only thing that matters: a geostationary ring
+   * is 6.6 Earth radii across, so a zoom chosen by eye for the planet leaves the
+   * whole constellation off screen. Wins over `zoom` when both are set.
+   */
+  shellKm?: number;
+  /**
+   * Orbital inclination of the constellation, in degrees — how tall the shell
+   * stands on screen. A geostationary belt lies flat (0°) and only has to fit the
+   * frame's width; a 55° navigation shell is as tall as it is wide, so the frame's
+   * SHORT side is what bounds it. Defaults to a flat belt.
+   */
+  inclDeg?: number;
+}
+
+/** Earth radius in metres, as deck's GlobeViewport measures altitude against. */
+const EARTH_RADIUS_M = 6370972;
+/** deck's globe is a sphere of this many common-space units. */
+const GLOBE_UNITS = 256;
+/** The broadcast frame orbital framing is calibrated against. */
+const FRAME_WIDTH_PX = 1920;
+const FRAME_HEIGHT_PX = 1080;
+/**
+ * How much of the frame a framed orbit shell spans. 0.78 keeps the whole shell on
+ * screen with the planet still reading as a planet — the limbs pass behind the
+ * on-air side columns, as the globe itself does on the low-orbit shots, and the
+ * arc through the middle is clear.
+ */
+const SHELL_FILL = 0.78;
+
+const rad = (deg: number) => (deg * Math.PI) / 180;
+
+/**
+ * How tall a shell of inclination `incl` stands on screen, as a fraction of its
+ * width, seen from camera latitude `lat`.
+ *
+ * The orbit is a circle of radius r; its projection is an ellipse as wide as the
+ * circle whatever the inclination, but its HEIGHT depends on how much of the
+ * orbital plane tips toward the viewer. The polar tilt contributes sin(incl)·
+ * cos(lat) and looking down from a northern camera contributes sin(lat) — a ring
+ * can never project taller than it is wide, hence the clamp.
+ */
+function shellHeightRatio(incl: number, lat: number): number {
+  return Math.min(1, Math.sin(rad(incl)) * Math.cos(rad(lat)) + Math.abs(Math.sin(rad(lat))));
+}
+
+/**
+ * GlobeView zoom at which an orbit shell of `altKm` fits SHELL_FILL of the
+ * broadcast frame — its width, and for an inclined shell its height too.
+ *
+ * deck projects the globe as a sphere of GLOBE_UNITS scaled by 2^zoom / (π·cos
+ * lat), and a shell at altitude A has radius (A/R + 1) times the planet's, so the
+ * shell's on-screen size falls out of the zoom alone. Checked against deck's own
+ * GlobeViewport: within ~2% of the projected ring at every medium and high orbit.
+ */
+export function orbitalZoomForShell(
+  altKm: number,
+  inclDeg = 0,
+  latitude = GLOBAL_VIEW.center[1],
+): number {
+  const shells = (altKm * 1000) / EARTH_RADIUS_M + 1;
+  // The widest the shell may draw, in pixels: the frame's width, and its height
+  // divided by how much of that width the shell stands up into.
+  const heightRatio = shellHeightRatio(inclDeg, latitude);
+  const widthPx = Math.min(
+    SHELL_FILL * FRAME_WIDTH_PX,
+    (SHELL_FILL * FRAME_HEIGHT_PX) / Math.max(heightRatio, 0.01),
+  );
+  const cosLat = Math.cos(rad(latitude));
+  return Math.log2((widthPx * Math.PI * cosLat) / (2 * shells * GLOBE_UNITS));
+}
+
+/** The camera zoom an orbital shot airs at: framed shell, else hand-set, else default. */
+export function orbitalViewZoom(view: OrbitalView): number {
+  if (view.shellKm !== undefined) return orbitalZoomForShell(view.shellKm, view.inclDeg ?? 0);
+  return view.zoom ?? ORBITAL_VIEW_ZOOM;
 }
 
 export const ORBITAL_VIEWS: OrbitalView[] = [
@@ -268,13 +348,18 @@ export const ORBITAL_VIEWS: OrbitalView[] = [
   { group: "sarsat", title: "Search & Rescue", subtitle: "COSPAS-SARSAT distress-beacon relay", zoom: 3.0 },
   { group: "dmc", title: "Disaster Monitoring", subtitle: "Rapid-revisit imaging constellation", zoom: 3.0 },
   { group: "engineering", title: "Tech Demonstrators", subtitle: "Experimental & engineering satellites", zoom: 3.0 },
-  // Medium/geostationary showcases — pulled back so the much larger ring fits.
-  { group: "weather", title: "Weather Satellites", subtitle: "Polar & geostationary", zoom: 1.3 },
-  { group: "gps-ops", title: "GPS Constellation", subtitle: "Navigation · medium Earth orbit", zoom: 1.0 },
-  { group: "galileo", title: "Galileo", subtitle: "European navigation constellation", zoom: 0.9 },
-  { group: "tdrss", title: "TDRS Relay Network", subtitle: "NASA's data-relay satellites", zoom: 0.85 },
-  { group: "goes", title: "GOES Constellation", subtitle: "Geostationary weather watch", zoom: 0.8 },
-  { group: "geo", title: "Geostationary Fleet", subtitle: "Communications & broadcast satellites", zoom: 0.8 },
+  // Medium/geostationary showcases — framed by their shell, not by eye. The
+  // hand-set zooms these carried framed the PLANET, which left a geostationary
+  // belt (2,150px across a 1,920px frame) mostly outside the frame and the
+  // geostationary members of the mixed weather group entirely off it.
+  // (The geostationary members are what the framing has to fit; the polar
+  // weather birds ride close to the globe inside it.)
+  { group: "weather", title: "Weather Satellites", subtitle: "Polar & geostationary", shellKm: 35786, inclDeg: 0 },
+  { group: "gps-ops", title: "GPS Constellation", subtitle: "Navigation · medium Earth orbit", shellKm: 20200, inclDeg: 55 },
+  { group: "galileo", title: "Galileo", subtitle: "European navigation constellation", shellKm: 23222, inclDeg: 56 },
+  { group: "tdrss", title: "TDRS Relay Network", subtitle: "NASA's data-relay satellites", shellKm: 35786, inclDeg: 7 },
+  { group: "goes", title: "GOES Constellation", subtitle: "Geostationary weather watch", shellKm: 35786, inclDeg: 0 },
+  { group: "geo", title: "Geostationary Fleet", subtitle: "Communications & broadcast satellites", shellKm: 35786, inclDeg: 0 },
 ];
 
 /** Default orbital framing when a view doesn't set its own zoom. */

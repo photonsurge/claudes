@@ -29,6 +29,8 @@ import { isTextureCached, loadTexture, preloadTextures, type LoadedTexture } fro
 import { godsLog } from "../lib/globe-log";
 import { manifestLogLine } from "../lib/manifest";
 import { isObsRender, setRendererInfo } from "../lib/broadcast-render";
+import { orbitFarZ } from "../lib/globe-depth";
+import { maxOrbitAltitude } from "../lib/tracks/orbit";
 import { useCrossfadeVariable } from "../lib/crossfade";
 import { allTextureUrlsFor, pressureProps, textureUrlFor } from "./layers/props";
 import { useHighLowLabels } from "./layers/high-low-labels";
@@ -338,7 +340,17 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     latitude: state.camera.center[1],
     zoom: state.camera.zoom,
   });
+  // Highest orbit ring on screen, in metres. Read by every camera push to size
+  // the far clip plane (deck's own plane stops at the back of the planet, which
+  // cuts medium and high orbits in half — see lib/globe-depth.ts).
+  const orbitAltRef = useRef(0);
   const [loadedTextures, setLoadedTextures] = useState<Map<string, LoadedTexture>>(new Map());
+  // Texture URLs whose load FAILED (404 from a run whose blob bytes have gone,
+  // decode error, timeout). "Not loaded yet" and "will never load" look the same
+  // to a resolver, so a layer that needs a texture can only wait — which is right
+  // mid-load and wrong forever after. Recording the failures lets the basemap
+  // fall back instead of holding a blank globe on air (see `reliefFallback`).
+  const [failedTextures, setFailedTextures] = useState<ReadonlySet<string>>(new Set());
   // Whether sharp XYZ tiles overlay the raster base (true once zoomed in).
   const [tilesActive, setTilesActive] = useState(state.camera.zoom >= TILE_MIN_ZOOM);
 
@@ -436,6 +448,22 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     commitLayers();
   };
 
+  /**
+   * Stamp the far clip plane an orbit shell needs onto a view state. deck sizes
+   * its far plane for the planet alone, so without this the back of every medium
+   * or high orbit is clipped away (see lib/globe-depth.ts). Applied on the way
+   * out to deck, so every camera push — spin, flight, drag — carries it.
+   */
+  const withOrbitDepth = (vs: ViewState): ViewState => {
+    const farZ = orbitFarZ({
+      zoom: vs.zoom,
+      latitude: vs.latitude,
+      height: canvasRef.current?.clientHeight ?? 0,
+      maxAltitudeM: orbitAltRef.current,
+    });
+    return farZ === undefined ? vs : { ...vs, farZ };
+  };
+
   const applyViewState = (vs: ViewState) => {
     viewStateRef.current = vs;
     if (typeof vs.zoom === "number") {
@@ -444,8 +472,33 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
       refreshCityZoom(vs.zoom);
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    deckRef.current?.setProps({ viewState: vs } as any);
+    deckRef.current?.setProps({ viewState: withOrbitDepth(vs) } as any);
   };
+
+  // How far out anything is drawn: the rings if they're on, and the satellite
+  // markers themselves, which sit at true altitude whether or not their orbits
+  // are drawn. Rounded up to the nearest 10km so the markers re-propagating every
+  // 1.5s doesn't churn a new camera push out of a few metres of orbital wobble.
+  const orbitAltitudeM = useMemo(() => {
+    let max = maxOrbitAltitude(orbits);
+    for (const t of tracks) {
+      const alt = t.kind === "satellite" ? (t.position[2] ?? 0) : 0;
+      if (alt > max) max = alt;
+    }
+    return Math.ceil(max / 10_000) * 10_000;
+  }, [orbits, tracks]);
+
+  // Satellites arrive long after the camera settled on the shot (the group's
+  // elements load, then propagate), so re-push the current camera whenever the
+  // shell they need changes — otherwise a still globe would keep the planet-sized
+  // far plane it was given and they'd draw into a clipped frustum.
+  useEffect(() => {
+    if (orbitAltitudeM === orbitAltRef.current) return;
+    orbitAltRef.current = orbitAltitudeM;
+    applyViewState(viewStateRef.current);
+    // applyViewState is re-created every render; the shell is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orbitAltitudeM]);
 
   // Single place that pushes layers to deck: the base layers plus, when an event
   // is on air, the animated highlight breathing over its own alert area.
@@ -714,7 +767,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         // back real user interaction. The final camera is captured by the
         // transition's onTransitionEnd instead.
         if (interactionState?.inTransition) return;
-        deck.setProps({ viewState } as Parameters<typeof deck.setProps>[0]);
+        deck.setProps({ viewState: withOrbitDepth(viewState) } as Parameters<typeof deck.setProps>[0]);
         refreshCityZoom(viewState.zoom);
         onCameraChangeRef.current?.([viewState.longitude, viewState.latitude], viewState.zoom);
       },
@@ -946,9 +999,19 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
         .then((tex) => {
           if (cancelled) return;
           setLoadedTextures((prev) => (prev.get(url) === tex ? prev : new Map(prev).set(url, tex)));
+          // A retry that succeeds clears the failure flag, so a texture restored
+          // by a re-bake goes back on air without a reload.
+          setFailedTextures((prev) => {
+            if (!prev.has(url)) return prev;
+            const next = new Set(prev);
+            next.delete(url);
+            return next;
+          });
         })
         .catch((err) => {
-          if (!cancelled) console.warn(`[globe] texture load failed: ${url}`, err);
+          if (cancelled) return;
+          console.warn(`[globe] texture load failed: ${url}`, err);
+          setFailedTextures((prev) => (prev.has(url) ? prev : new Set(prev).add(url)));
         });
     });
     return () => {
@@ -999,9 +1062,20 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     // sphere itself (relief raster at full or 0 opacity) — otherwise the basemap
     // occludes at the wrong depth and hides the contour lines. So any of them means
     // the basemap must NOT be the occluder.
-    const elevationTex = !!(manifest && textureUrlFor(manifest, "elevation", 0));
+    const elevationUrl = manifest ? textureUrlFor(manifest, "elevation", 0) : undefined;
+    const elevationTex = !!elevationUrl;
     const reliefBasemap = state.basemap === "relief" && elevationTex;
     const contourOn = state.showElevation && elevationTex;
+    // Relief picked, but there is no elevation texture to draw it from: either the
+    // manifest has no `elevation` variable (the static ETOPO run was never baked on
+    // this deployment, or a full weather wipe — reset:weather / reingest — took it
+    // with the forecast runs and nothing re-bakes it) or the texture itself failed
+    // to load (its blob bytes are gone, so /api/weather/tex 404s). Both leave the
+    // globe with nothing on it, so basemapLayers drapes the Terrain image instead.
+    // Note this is NOT true while the texture is still loading — only once it has
+    // actually failed — so a cut to Relief never flashes terrain first.
+    const reliefFallback =
+      state.basemap === "relief" && (!elevationTex || failedTextures.has(elevationUrl!));
     // The geomag overlay is likewise a full-globe WeatherLayers RasterLayer (the
     // IGRF total-intensity field), so it needs to seal its own depth exactly like
     // the weather raster / relief — otherwise the basemap sphere depth-culls it
@@ -1009,7 +1083,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
     const geomagOn = !!(state.showMagneticField && geomag?.texture);
     const hasGlobalRaster = weatherRaster || reliefBasemap || contourOn || geomagOn;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const layers: any[] = [...basemapLayers(state, tilesActive, hasGlobalRaster)];
+    const layers: any[] = [...basemapLayers(state, tilesActive, hasGlobalRaster, reliefFallback)];
 
     // Day/night terminator: shade the earth's night hemisphere from the real sun
     // position. Sits directly on the basemap, below the weather + overlays so
@@ -1147,6 +1221,7 @@ const Globe = forwardRef<GlobeHandle, GlobeProps>(function Globe(
   }, [
     manifest,
     loadedTextures,
+    failedTextures,
     tilesActive,
     state.basemap,
     state.activeVariable,

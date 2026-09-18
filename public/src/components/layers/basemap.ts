@@ -129,10 +129,23 @@ export function basemapLayers(
   state: ControlState,
   tilesActive: boolean,
   hasGlobalRaster: boolean,
+  reliefFallback = false,
 ): any[] {
   const colors = state.basemapColors ?? DEFAULT_BASEMAP_COLORS;
+  // `reliefFallback` = the Relief basemap is selected but its ETOPO texture is
+  // unavailable (never baked on this deployment, or its blob bytes are gone), so
+  // Globe can draw no relief raster. Relief has no imagery of its own here, and
+  // the land fill is dark-only, so that used to leave a bare ocean-coloured ball
+  // with borders on it — a blank globe on air, for the whole of a Terrain Relief
+  // shot. Drape the Terrain base image (NASA topo + bathymetry: the closest look
+  // we already hold) instead, so the output degrades to "not quite the right map"
+  // rather than "nothing". /admin/weather shows whether the elevation run + its
+  // texture are really there; "Bake elevation relief" on /admin/jobs rebuilds it.
   const isRaster =
-    state.basemap === "satellite" || state.basemap === "terrain" || state.basemap === "night";
+    state.basemap === "satellite" ||
+    state.basemap === "terrain" ||
+    state.basemap === "night" ||
+    reliefFallback;
   // `background` (the finely-subdivided GLOBE_CELLS grid) is always the depth
   // occluder EXCEPT when a full-globe weather raster is also drawn on top — that
   // raster writes its own depth (DEPTH_OCCLUDE, in layers/index.ts), and letting
@@ -165,13 +178,14 @@ export function basemapLayers(
   const layers: any[] = [
     background,
     globalImageLayer("satellite", SATELLITE_IMG, state.basemap === "satellite"),
-    globalImageLayer("terrain", TERRAIN_IMG, state.basemap === "terrain"),
+    globalImageLayer("terrain", TERRAIN_IMG, state.basemap === "terrain" || reliefFallback),
     globalImageLayer("night", NIGHT_IMG, state.basemap === "night"),
   ];
   // Sharp XYZ tiles over the active raster basemap once zoomed in — cheap to
   // rebuild (the tile bounding-volume cache is page-lifetime), so not kept.
   if (tilesActive && state.basemap === "satellite") layers.push(tileBasemapLayer("satellite", TILE_TEMPLATES.esriImagery));
-  if (tilesActive && state.basemap === "terrain") layers.push(tileBasemapLayer("terrain", TILE_TEMPLATES.openTopo));
+  if (tilesActive && (state.basemap === "terrain" || reliefFallback))
+    layers.push(tileBasemapLayer("terrain", TILE_TEMPLATES.openTopo));
   if (tilesActive && state.basemap === "night") layers.push(tileBasemapLayer("night", TILE_TEMPLATES.gibsNight, NIGHT_TILE_MAX_ZOOM));
   // dark: recolourable land fill over the ocean sphere. Hidden under the raster
   // basemaps, and under relief too — that shaded hypsometric raster is added by

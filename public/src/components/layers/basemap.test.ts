@@ -76,6 +76,24 @@ describe("basemapLayers", () => {
     }
   });
 
+  it("relief with no elevation texture falls back to the terrain imagery", () => {
+    // Relief draws from the ETOPO texture Globe adds; with none available (never
+    // baked, or its blob bytes gone) the globe was a bare ocean-coloured ball on
+    // air. The fallback drapes the terrain base image instead.
+    const layers = basemapLayers(state("relief"), false, false, true);
+    expect(ids(layers)).toEqual(["basemap-bg", "basemap-image-terrain"]);
+    // Dark raster background, not the ocean colour — it's under imagery now.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const bg = layers.find((l: any) => l.props.id === "basemap-bg") as any;
+    expect(bg.props.getFillColor).toEqual([0, 3, 8]);
+    // …and the sharp topo tiles once zoomed in, exactly like the terrain basemap.
+    expect(ids(basemapLayers(state("relief"), true, false, true))).toContain("basemap-tiles-terrain");
+  });
+
+  it("relief WITH its texture draws no basemap imagery (Globe adds the raster)", () => {
+    expect(ids(basemapLayers(state("relief"), true, false, false))).toEqual(["basemap-bg"]);
+  });
+
   it("dark ocean background uses the operator's ocean colour", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const bg = basemapLayers(state("dark", { ocean: "#010203" }), false, false)[0] as any;

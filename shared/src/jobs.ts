@@ -627,11 +627,26 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     id: "elevation-bake",
     label: "Bake elevation relief",
     description:
-      "Download ETOPO 2022 terrain + ocean-floor bathymetry and bake the static elevation contour texture (~466 MB download, one-time; drives the Terrain → Elevation contours overlay).",
+      "Download ETOPO 2022 terrain + ocean-floor bathymetry and bake the static elevation contour texture (~466 MB download, one-time; drives the Relief basemap and the Terrain → Elevation contours overlay). Reuses the published run when its texture is still readable, and re-bakes automatically when the bytes have gone.",
     domain: "elevation",
     type: "elevation",
     event: "refresh",
     group: "Static datasets",
+  },
+  {
+    // Same handler, `force` preset: bakes even when a good published run exists.
+    // Needed after a bake-resolution change (ELEVATION_BAKE_WIDTH/HEIGHT) or a
+    // swapped DEM, where the existing texture is readable but no longer what we
+    // want — the plain button would reuse it forever.
+    id: "elevation-bake-force",
+    label: "Re-bake elevation relief (force)",
+    description:
+      "Re-bake the static elevation relief texture even though a published run already exists — for a changed bake resolution or a swapped DEM. Slow: re-reads the cached ~466 MB ETOPO GeoTIFF and re-encodes the PNG.",
+    domain: "elevation",
+    type: "elevation",
+    event: "refresh",
+    group: "Static datasets",
+    data: { force: true },
   },
   {
     id: "volcanoes-snapshot",
