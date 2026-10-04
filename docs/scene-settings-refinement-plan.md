@@ -2,9 +2,8 @@
 
 > **Status: SHIPPED** (2026-09-13) — all five phases. The page carried 11 peer
 > cards in one 760 px column, each independently fetching the same document, and
-> the [director per-channel config plan](./director-channel-config-plan.md) §5,
-> the [break-in plan](./director-break-in-plan.md) and the
-> [chat interaction plan](./chat-interaction-plan.md) were about to add seven
+> the director per-channel config, break-in and chat interaction plans (now
+> combined in [director-programme-plan.md](./director-programme-plan.md)) were about to add seven
 > more. It is now four groups on a rail over a draft that owns the data, so
 > those land as catalog entries. §§0–6 describe what was wrong and what was
 > built; §7 is the phase list, all done.
