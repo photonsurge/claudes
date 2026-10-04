@@ -20,6 +20,7 @@ jest.mock("next/link", () => ({
 
 const NOW = 1_000_000;
 let state: CrosswordPublicState;
+let runs: { id: string; sceneId: string; status: string }[] = [];
 let puzzles: { id: string; scenes: string[] }[] = [];
 const calls: string[] = [];
 const bodies: Record<string, unknown[]> = {};
@@ -27,6 +28,7 @@ const bodies: Record<string, unknown[]> = {};
 beforeEach(() => {
   calls.length = 0;
   puzzles = [{ id: "p1", scenes: [] }];
+  runs = [];
   for (const k of Object.keys(bodies)) delete bodies[k];
   state = {
     sceneId: "xw",
@@ -55,6 +57,8 @@ beforeEach(() => {
     if (u === "/api/scenes") return json({ scenes: [{ id: "xw", name: "Crossword One", surface: "crossword", watchToken: "tok" }] });
     if (u === "/api/crossword/xw/state") return json(state);
     if (u === "/api/crossword/xw/command" || u === "/api/crossword/xw/sim") return json({ queued: true }, 202);
+    if (u === "/api/streams") return json({ runs });
+    if (init?.method === "POST" && u.startsWith("/api/streams/")) return json({ ok: true }, 202);
     if (u.startsWith("/api/crossword/puzzles")) return json({ puzzles: puzzles });
     return json({ error: "nope" }, 404);
   }) as typeof fetch;
@@ -147,4 +151,30 @@ it("shows no reason while there is unplayed stock", async () => {
   render(<DeskPage sceneId="xw" />);
   await screen.findByText("Feline pet");
   expect(screen.queryByText(/approve more words/)).toBeNull();
+});
+
+it("disables End with no live run", async () => {
+  render(<DeskPage sceneId="xw" />);
+  await screen.findByText("Feline pet");
+  expect(screen.getByRole("button", { name: "End" })).toBeDisabled();
+});
+
+it("ends the live run through the streams stop route, after confirming", async () => {
+  runs = [
+    { id: "old", sceneId: "xw", status: "ended" },
+    { id: "r1", sceneId: "xw", status: "live" },
+    { id: "r2", sceneId: "other", status: "live" },
+  ];
+  const confirm = jest.spyOn(window, "confirm").mockReturnValue(false);
+  render(<DeskPage sceneId="xw" />);
+  await screen.findByText("Feline pet");
+  await waitFor(() => expect(screen.getByRole("button", { name: "End" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "End" }));
+  expect(calls).not.toContain("POST /api/streams/r1/stop");
+  confirm.mockReturnValue(true);
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "End" }));
+  });
+  expect(calls).toContain("POST /api/streams/r1/stop");
+  expect(await screen.findByText(/Stop requested/)).toBeInTheDocument();
 });

@@ -6,7 +6,8 @@
  * small, the clue in the spotlight with its countdown, this puzzle's scores and
  * the solve feed; the game controls; and the simulator. When the approved pool
  * is too small the channel idles or replays, and a line says so (§7.5). Go
- * live links to the Streams page until the Go live dialog lands (WP12).
+ * live links to the Streams page until the Go live dialog lands (WP12); End stops
+ * the channel's live run through the Streams API.
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -25,6 +26,7 @@ import { listScenes } from "../../../../lib/scenes";
 import { listPuzzles } from "../puzzles/api";
 import { font } from "../../../../theme/tokens";
 import DeskControls from "./DeskControls";
+import EndButton from "./EndButton";
 import SimForm from "./SimForm";
 import { useDeskState } from "./useDeskState";
 
@@ -103,6 +105,7 @@ export default function DeskPage({ sceneId }: { sceneId: string }) {
           <Button variant="contained" color="error" component={Link} href="/admin/streams">
             Go live
           </Button>
+          <EndButton sceneId={sceneId} />
         </Stack>
       }
     >
