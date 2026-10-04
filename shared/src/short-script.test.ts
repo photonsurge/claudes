@@ -8,6 +8,7 @@ import {
   sanitizeInclude,
   sanitizeScope,
   sanitizeShortScript,
+  sceneIdForScript,
   scriptDurationMs,
   TOUR_DWELL_MAX_MS,
   TOUR_DWELL_MIN_MS,
@@ -124,6 +125,19 @@ describe("sanitizeShortScript", () => {
     expect(sanitizeShortScript(body)).not.toHaveProperty("plays");
   });
 
+  it("keeps a round-up depth and drops an unknown one", () => {
+    const one = (roundupDepth: unknown) =>
+      sanitizeShortScript({ id: "s", scope: { type: "globe" }, clips: [{ target: "country:japan", roundupDepth }] })!.clips[0];
+    expect(one("summary").roundupDepth).toBe("summary");
+    expect(one("full").roundupDepth).toBe("full");
+    expect(one("half")).not.toHaveProperty("roundupDepth");
+  });
+
+  it("keeps the format id, defaulting to the default format", () => {
+    expect(sanitizeShortScript({ id: "s", scope: { type: "globe" }, formatId: " short-uk " })!.formatId).toBe("short-uk");
+    expect(sanitizeShortScript({ id: "s", scope: { type: "globe" } })!.formatId).toBe("shorts");
+  });
+
   it("defaults include switches off, status to draft and a blank title", () => {
     const s = sanitizeShortScript({ id: "s2", scope: { type: "globe", id: "ignored" } })!;
     expect(s.scope).toEqual({ type: "globe" });
@@ -167,5 +181,14 @@ describe("playFor", () => {
   it("is undefined for a scene that never played it, or no plays at all", () => {
     expect(playFor({ plays: [p("shorts", 1)] }, "main")).toBeUndefined();
     expect(playFor({}, "shorts")).toBeUndefined();
+  });
+});
+
+describe("sceneIdForScript", () => {
+  it("is the format's scene (= its id), else the default format's", () => {
+    expect(sceneIdForScript({ formatId: "short-uk" })).toBe("short-uk");
+    expect(sceneIdForScript({ formatId: "  " })).toBe("shorts");
+    expect(sceneIdForScript({})).toBe("shorts");
+    expect(sceneIdForScript({ formatId: null })).toBe("shorts");
   });
 });

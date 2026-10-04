@@ -36,6 +36,7 @@ import {
   type YoutubePrivacy,
 } from "@photonsurge/shared/runs";
 import { vodArchiveAtRisk } from "@photonsurge/shared/vod";
+import EncoderSelect from "./EncoderSelect";
 import StreamTitleField from "../../StreamTitleField";
 import ChatPollSelect from "./ChatPollSelect";
 
@@ -357,14 +358,7 @@ function SlotDialog({
                 </MenuItem>
               ))}
             </TextField>
-            <TextField select label="encoder" value={d.encoderId} onChange={(e) => set("encoderId", e.target.value)}>
-              <MenuItem value="">auto</MenuItem>
-              {encoders.map((enc) => (
-                <MenuItem key={enc.id} value={enc.id}>
-                  {enc.name || enc.id}
-                </MenuItem>
-              ))}
-            </TextField>
+            <EncoderSelect purpose="channel" encoders={encoders} value={d.encoderId} onChange={(v) => set("encoderId", v)} />
             <TextField
               select
               label="YouTube"

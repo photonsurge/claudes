@@ -48,6 +48,7 @@ const ClipSchema = sub({
   maxStops: { type: Number },
   tourDwellMs: { type: Number },
   leadSlide: { type: String, enum: ["roundup"] },
+  roundupDepth: { type: String, enum: ["summary", "full"] },
   label: {
     type: sub({
       title: { type: String, required: true },
@@ -88,6 +89,9 @@ const PlaySchema = sub({
 export const ShortScriptSchema = new mongoose.Schema<iShortScriptModel>(
   {
     id: { type: String, required: true, unique: true },
+    // Not required: scripts saved before formats have none and read back as
+    // the default format's (short-script-repo.ts).
+    formatId: { type: String },
     template: { type: String, required: true, enum: ["lineup"], default: "lineup" },
     scope: { type: ScopeSchema, required: true },
     include: { type: IncludeSchema, required: true },
@@ -95,11 +99,15 @@ export const ShortScriptSchema = new mongoose.Schema<iShortScriptModel>(
     clips: { type: [ClipSchema], default: [] },
     status: { type: String, required: true, enum: ["draft", "ready"], default: "draft" },
     plays: { type: [PlaySchema], default: undefined },
+    // Title-code values stamped at generate (short-video plan §6.8); free keys.
+    values: { type: mongoose.Schema.Types.Mixed, default: undefined },
   },
   mongoTimestamps,
 );
 
 ShortScriptSchema.index({ created: -1 }, { name: "short_script_created_ix" });
+// "How many scripts use this format" — the format delete guard.
+ShortScriptSchema.index({ formatId: 1 }, { name: "short_script_format_ix" });
 
 export const getShortScriptModel = (conn: Connection) =>
   getModel<iShortScriptModel>(conn, "ShortScript", ShortScriptSchema);

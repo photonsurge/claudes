@@ -7,6 +7,7 @@ import {
   COUNTRY_OPTIONS,
   formatDuration,
   previewActive,
+  previewForFormat,
   previewPlayState,
   previewWatchUrl,
   scopeLabel,
@@ -17,6 +18,7 @@ import {
 const off: ShortPreviewInfo = { sceneId: "shorts-preview", exists: true, mode: "off" };
 const item = (previewPlay?: ShortListItem["previewPlay"]): ShortListItem => ({
   id: "s1",
+  formatId: "shorts",
   title: "T",
   scope: { type: "globe" },
   status: "draft",
@@ -89,9 +91,24 @@ describe("previewPlayState", () => {
 describe("previewActive", () => {
   it("polls while the scene is in script mode or a play is open", () => {
     expect(previewActive(null)).toBe(false);
-    expect(previewActive({ scripts: [item()], preview: off })).toBe(false);
-    expect(previewActive({ scripts: [item()], preview: { ...off, mode: "script" } })).toBe(true);
-    expect(previewActive({ scripts: [item(play())], preview: off })).toBe(true);
+    const formats = (...modes: ShortPreviewInfo["mode"][]) => modes.map((mode, i) => ({ id: `f${i}`, name: "F", preview: { ...off, mode } }));
+    expect(previewActive({ scripts: [item()], formats: formats("off", "off") })).toBe(false);
+    // Any format's scene playing counts.
+    expect(previewActive({ scripts: [item()], formats: formats("off", "script") })).toBe(true);
+    expect(previewActive({ scripts: [item(play())], formats: formats("off") })).toBe(true);
+  });
+});
+
+describe("previewForFormat", () => {
+  const rows = [
+    { id: "shorts", name: "Round-up", preview: { sceneId: "shorts", exists: true, mode: "off" as const } },
+    { id: "short-a", name: "A", preview: { sceneId: "short-a", exists: false, mode: "off" as const } },
+  ];
+  it("is the format's own scene, else the default's, else a missing stub", () => {
+    expect(previewForFormat({ formats: rows }, "short-a").sceneId).toBe("short-a");
+    expect(previewForFormat({ formats: rows }).sceneId).toBe("shorts");
+    expect(previewForFormat({ formats: rows }, "short-gone").sceneId).toBe("shorts");
+    expect(previewForFormat(null, "short-a")).toEqual({ sceneId: "short-a", exists: false, mode: "off" });
   });
 });
 

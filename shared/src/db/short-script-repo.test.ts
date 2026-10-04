@@ -28,6 +28,7 @@ const render: ShortScriptPlay = {
 /** Every field, optional ones included, so the round-trip proves none is dropped. */
 const full: ShortScript = {
   id: "s1",
+  formatId: "short-uk",
   template: "lineup",
   scope: { type: "country", id: "japan" },
   include: { alerts: true, quakes: false, volcanoes: true },
@@ -41,6 +42,7 @@ const full: ShortScript = {
       maxStops: 3,
       tourDwellMs: 12_000,
       leadSlide: "roundup",
+      roundupDepth: "summary",
       look: {
         basemap: "satellite",
         wind: { numParticles: 9000, speedFactor: 16, maxAge: 16, width: 2.5, opacity: 1, color: "#cfe8ff" },
@@ -101,6 +103,22 @@ describe("makeShortScriptRepo", () => {
     const globe: ShortScript = { ...full, id: "g1", scope: { type: "globe" } };
     delete globe.plays;
     expect(await repo.upsert(globe)).toEqual(globe);
+  });
+
+  it("reads a script saved before formats as the default format's", async () => {
+    const { formatId: _f, plays: _p, ...legacy } = full;
+    const repo = makeShortScriptRepo(fakeModel({}, null));
+    const saved = await repo.upsert(legacy as ShortScript);
+    expect(saved.formatId).toBe("shorts");
+  });
+
+  it("countByFormat counts a format's scripts, and format-less ones for the default", async () => {
+    const countDocuments = jest.fn(() => ({ exec: async () => 4 }));
+    const repo = makeShortScriptRepo({ countDocuments } as unknown as Model<iShortScriptModel>);
+    expect(await repo.countByFormat("short-uk")).toBe(4);
+    expect(countDocuments).toHaveBeenLastCalledWith({ formatId: "short-uk" });
+    await repo.countByFormat("shorts");
+    expect(countDocuments).toHaveBeenLastCalledWith({ $or: [{ formatId: "shorts" }, { formatId: null }, { formatId: "" }] });
   });
 
   it("upsert keys on id and never writes plays, even when the script carries some", async () => {
@@ -194,5 +212,23 @@ describe("stampPlay — one entry per scene", () => {
     expect(await makeShortScriptRepo(model).stampPlay("s1", preview)).toBe(true);
     expect(updateOne).toHaveBeenCalledTimes(3);
     expect(doc.plays).toEqual([preview]);
+  });
+});
+
+describe("values (title codes, §6.8)", () => {
+  it("round-trips string values through the strict schema and drops anything else", async () => {
+    const stored = throughSchema({ ...full, plays: undefined, values: { place: "Japan", places: "1", bad: 3 } }, "s1");
+    const findOne = jest.fn(() => ({ lean: () => ({ exec: async () => stored }) }));
+    const got = await makeShortScriptRepo(fakeModel({ findOne }, null)).get("s1");
+    expect(got?.values).toEqual({ place: "Japan", places: "1" });
+  });
+
+  it("stampValues sets only values, and upsert never writes them", async () => {
+    const updateOne = jest.fn((..._a: unknown[]) => ({ exec: async () => ({ matchedCount: 1 }) }));
+    const repo = makeShortScriptRepo(fakeModel({ updateOne }));
+    expect(await repo.stampValues("s1", { place: "Japan" })).toBe(true);
+    expect(updateOne).toHaveBeenCalledWith({ id: "s1" }, { $set: { values: { place: "Japan" } } });
+    await repo.upsert({ ...full, values: { place: "x" } });
+    expect((updateOne.mock.calls[1] as any[])[1].$set).not.toHaveProperty("values");
   });
 });

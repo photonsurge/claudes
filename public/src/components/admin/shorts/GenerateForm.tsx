@@ -1,11 +1,15 @@
 "use client";
 
 /**
- * Generate a round-up — the scope picker (Globe / Area / Country, then the
- * area or country from the shared catalogs) and the Generate button. The
+ * Generate a round-up — the format to make it in (default the default
+ * format; the format's own scene tunes it and plays it), the scope picker
+ * (Globe / Area / Country, then the area or country from the shared catalogs)
+ * and the Generate button. The
  * worker builds the script; while it runs the form shows progress, a failure
  * shows the worker's own message (it says what to fix), and a success hands
- * the new script id up so the page selects it.
+ * the new script id up so the page selects it. Render (§6.1, §6.6) opens the
+ * Render form for the same format and scope instead: the video is generated
+ * when it reaches the front of its encoder's queue, from the data current then.
  *
  * The event switches (alerts / quakes / volcanoes) are a later package: they
  * slot in as an `include` row under the scope, and `request` already carries
@@ -23,6 +27,7 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
 import type { ShortInclude, ShortScope } from "@photonsurge/shared/short-script";
+import { DEFAULT_SHORT_FORMAT_ID } from "@photonsurge/shared/short-scenes";
 import {
   AREA_OPTIONS,
   COUNTRY_OPTIONS,
@@ -40,11 +45,16 @@ const ROUNDUP_ONLY: ShortInclude = { alerts: false, quakes: false, volcanoes: fa
 interface Props {
   /** Called with the saved draft once the worker returns it. */
   onGenerated: (result: GenerateShortResult) => void;
+  /** The formats to pick from; the default format when empty. */
+  formats?: { id: string; name: string }[];
+  /** Opens the Render form for this format and scope (absent = no Render button). */
+  onRender?: (req: { formatId: string; scope: ShortScope; include: ShortInclude }) => void;
   /** Injectable for tests. */
   generate?: typeof generateShort;
 }
 
-export default function GenerateForm({ onGenerated, generate = generateShort }: Props) {
+export default function GenerateForm({ onGenerated, onRender, formats = [], generate = generateShort }: Props) {
+  const [formatId, setFormatId] = useState<string>(DEFAULT_SHORT_FORMAT_ID);
   const [type, setType] = useState<ScopeType>("globe");
   const [countryId, setCountryId] = useState(COUNTRY_OPTIONS[0]?.id ?? "");
   const [areaId, setAreaId] = useState(AREA_OPTIONS[0]?.id ?? "");
@@ -54,7 +64,7 @@ export default function GenerateForm({ onGenerated, generate = generateShort }: 
 
   const scope: ShortScope =
     type === "globe" ? { type: "globe" } : { type, id: type === "country" ? countryId : areaId };
-  const request: GenerateShortRequest = { scope, include: ROUNDUP_ONLY };
+  const request: GenerateShortRequest = { formatId, scope, include: ROUNDUP_ONLY };
 
   const submit = async () => {
     setBusy(true);
@@ -79,6 +89,23 @@ export default function GenerateForm({ onGenerated, generate = generateShort }: 
         Generate a round-up
       </Typography>
       <Stack direction="row" spacing={1.5} useFlexGap sx={{ mt: 1, alignItems: "center", flexWrap: "wrap" }}>
+        {formats.length > 1 && (
+          <TextField
+            select
+            size="small"
+            label="Format"
+            value={formats.some((f) => f.id === formatId) ? formatId : DEFAULT_SHORT_FORMAT_ID}
+            onChange={(e) => setFormatId(e.target.value)}
+            disabled={busy}
+            sx={{ minWidth: 200 }}
+          >
+            {formats.map((f) => (
+              <MenuItem key={f.id} value={f.id}>
+                {f.name}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
         <ToggleButtonGroup
           exclusive
           size="small"
@@ -111,6 +138,16 @@ export default function GenerateForm({ onGenerated, generate = generateShort }: 
         <Button variant="contained" onClick={submit} disabled={busy || (type !== "globe" && !placeValue)}>
           {busy ? "Generating…" : "Generate"}
         </Button>
+        {onRender && (
+          <Button
+            variant="outlined"
+            onClick={() => onRender({ formatId, scope, include: ROUNDUP_ONLY })}
+            disabled={busy || (type !== "globe" && !placeValue)}
+            title="Queue a video that generates this round-up when it reaches the front of the queue"
+          >
+            Render…
+          </Button>
+        )}
       </Stack>
       {busy && (
         <Stack spacing={0.75} sx={{ mt: 1.5 }}>

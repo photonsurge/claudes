@@ -1,21 +1,21 @@
 /**
- * Manual one-shot — `yarn short:play <scriptId> [--scene <id>] [--from <n>] [--record]`.
- * Starts a saved short script playing on a scene by writing the scene's
- * director config (`mode: "script"` + a fresh `script.playNonce`). It only
- * writes Mongo: the RUNNING worker's script runner picks the play up within a
- * second and airs it on /watch/<scene>. Defaults: scene `shorts-preview`
- * (SHORTS_PREVIEW_SCENE_ID — `yarn seed:short-scenes` creates it), from
- * clip 0, no as-run log (pass --record to log the play to /admin/runs).
+ * Manual one-shot — `yarn short:play <scriptId> [--from <n>] [--record]`.
+ * Starts a saved short script playing on its FORMAT's scene
+ * (`sceneIdForScript` — the same scene /admin/shorts previews on and a render
+ * uses) by writing that scene's director config (`mode: "script"` + a fresh
+ * `script.playNonce`). It only writes Mongo: the RUNNING worker's script runner
+ * picks the play up within a second and airs it on /watch/<scene>. Defaults:
+ * from clip 0, no as-run log (pass --record to log the play to /admin/runs).
  *
- * Stop a play by setting the scene's director mode to off (/control, or
- * `--stop` here).
+ * Stop a play with `--stop [<scriptId> | --format <id>]` (default: the
+ * default format's scene), or by setting the scene's director mode to off.
  */
 import { loadWorkerEnv } from "../loadEnv";
 loadWorkerEnv();
 
 import { getAppDb } from "@photonsurge/shared/db/index";
-import { scriptDurationMs } from "@photonsurge/shared/short-script";
-import { SHORTS_PREVIEW_SCENE_ID } from "@photonsurge/shared/short-scenes";
+import { sceneIdForScript, scriptDurationMs } from "@photonsurge/shared/short-script";
+import { DEFAULT_SHORT_FORMAT_ID } from "@photonsurge/shared/short-format";
 
 function argValue(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -23,21 +23,26 @@ function argValue(name: string): string | undefined {
 }
 
 (async () => {
-  const sceneId = argValue("--scene") ?? SHORTS_PREVIEW_SCENE_ID;
   const db = await getAppDb();
+  // The first bare argument that isn't a flag's value.
+  const valued = new Set(["--format", "--from"]);
+  const scriptId = process.argv.slice(2).find((a, i, all) => !a.startsWith("--") && !valued.has(all[i - 1]));
 
   if (process.argv.includes("--stop")) {
+    const script = scriptId ? await db.shortScripts.get(scriptId) : null;
+    if (scriptId && !script) {
+      console.error(`no short script with id "${scriptId}"`);
+      process.exit(1);
+    }
+    const sceneId = script ? sceneIdForScript(script) : argValue("--format") ?? DEFAULT_SHORT_FORMAT_ID;
     await db.saveDirectorConfig(sceneId, { mode: "off" });
     console.log(`scene ${sceneId}: director set to off (a playing script stops within a second)`);
     await db.conn.close();
     process.exit(0);
   }
 
-  // The first bare argument that isn't a flag's value.
-  const valued = new Set(["--scene", "--from"]);
-  const scriptId = process.argv.slice(2).find((a, i, all) => !a.startsWith("--") && !valued.has(all[i - 1]));
   if (!scriptId) {
-    console.error("usage: yarn short:play <scriptId> [--scene <id>] [--from <n>] [--record] | --stop [--scene <id>]");
+    console.error("usage: yarn short:play <scriptId> [--from <n>] [--record] | --stop [<scriptId> | --format <id>]");
     process.exit(1);
   }
   const fromClip = Math.max(0, Math.floor(Number(argValue("--from") ?? 0)) || 0);
@@ -48,10 +53,11 @@ function argValue(name: string): string | undefined {
     console.error(`no short script with id "${scriptId}"`);
     process.exit(1);
   }
+  const sceneId = sceneIdForScript(script);
   if (!(await db.getScene(sceneId))) {
     console.warn(
-      `warning: scene "${sceneId}" doesn't exist yet — the play still runs, but nothing renders it until the scene exists` +
-        ` (yarn seed:short-scenes creates the shorts scenes)`,
+      `warning: format scene "${sceneId}" doesn't exist yet — the play still runs, but nothing renders it until the scene exists` +
+        ` (yarn seed:short-format creates the default format's)`,
     );
   }
 

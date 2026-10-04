@@ -58,6 +58,11 @@ export function buildBroadcastDescription(input: DescriptionInput = {}): string 
   let text = formatStreamTitle(template, now).trim();
   const site = (input.siteUrl ?? "").trim().replace(/\/+$/, "");
   if (site && !text.includes(site)) text = `${text}\n\nWatch the map live: ${site}`;
+  return clipYouTubeDescription(text);
+}
+
+/** Clamp a description to YouTube's limit: a hard cut, trailing whitespace dropped. */
+export function clipYouTubeDescription(text: string): string {
   return text.length <= YT_DESCRIPTION_MAX ? text : text.slice(0, YT_DESCRIPTION_MAX).trimEnd();
 }
 

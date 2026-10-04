@@ -9,7 +9,7 @@
  * Every shot is built by the same single-item builder the auto director's pool
  * uses (./builders), so a scripted clip looks exactly like the same subject
  * airing through rotation; the clip then only overrides hold, tour length and
- * pace, the deck's lead slide and the look.
+ * pace, the deck's lead slide, how much of the round-up it shows and the look.
  */
 import type { AppDb } from "@photonsurge/shared/db/index";
 import {
@@ -121,7 +121,10 @@ async function build(db: AppDb, cfg: DirectorConfig, target: string, now: number
  * Pure, and exported so the lineup template labels a clip with exactly what
  * will air.
  */
-export function applyClip(seg: Segment, clip: Pick<ShortClip, "durationMs" | "maxStops" | "tourDwellMs" | "leadSlide">): Segment {
+export function applyClip(
+  seg: Segment,
+  clip: Pick<ShortClip, "durationMs" | "maxStops" | "tourDwellMs" | "leadSlide" | "roundupDepth">,
+): Segment {
   const out: Segment = { ...seg, patch: { ...seg.patch }, holdMs: clip.durationMs };
   if (typeof clip.maxStops === "number") {
     // 0 (or nothing left) means one framed view — no tour at all.
@@ -136,6 +139,7 @@ export function applyClip(seg: Segment, clip: Pick<ShortClip, "durationMs" | "ma
   }
   if (typeof clip.tourDwellMs === "number") out.tourDwellMs = clip.tourDwellMs;
   if (clip.leadSlide) out.leadSlide = clip.leadSlide;
+  if (clip.roundupDepth) out.roundupDepth = clip.roundupDepth;
   return out;
 }
 

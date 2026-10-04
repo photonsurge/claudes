@@ -8,9 +8,9 @@ import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
 import { freshEvents } from "../director/fresh";
-import { buildPlaceInputs, WINDOW_HOURS, type PlaceRef } from "../placeRoundups/aggregate";
+import type { PlaceRef } from "../placeRoundups/aggregate";
 import { isPlaceDue } from "../placeRoundups/localTime";
-import { generatePlaceNarrative } from "../placeRoundups/openrouter";
+import { runForPlace } from "../placeRoundups/refresh";
 
 const TAG = "job:placeRoundups";
 
@@ -56,49 +56,9 @@ async function filterDue(
   return due;
 }
 
-/**
- * Generate one round-up for a single place: build the place-scoped inputs, fetch
- * the PREVIOUS round-up (fed to the LLM for continuity), ask OpenRouter for a
- * narrative, and append the doc. Degrades gracefully — no API key still stores
- * the deterministic inputs. Returns a compact result for the run log.
- */
-async function runForPlace(db: AppDb, repo: PlaceRoundupRepo, place: PlaceRef) {
-  const prev = await repo.latestForPlace(place.id);
-  const now = new Date();
-  const inputs = await buildPlaceInputs(db, place);
-  const narrative = await generatePlaceNarrative({ kind: place.kind, name: place.name }, inputs, prev);
-  const saved = await repo.create({
-    placeKind: place.kind,
-    placeId: place.id,
-    name: place.name,
-    generatedAt: now,
-    windowStart: new Date(now.getTime() - WINDOW_HOURS * 3_600_000).toISOString(),
-    windowEnd: now.toISOString(),
-    inputs,
-    narrative: narrative.narrative,
-    summary: narrative.summary,
-    stateOfPlay: narrative.stateOfPlay,
-    cityOutlook: narrative.cityOutlook,
-    advice: narrative.advice,
-    narrativeStatus: narrative.status,
-    prevRoundupId: prev?.id,
-    llm: {
-      model: narrative.model,
-      promptTokens: narrative.promptTokens,
-      completionTokens: narrative.completionTokens,
-      latencyMs: narrative.latencyMs,
-      error: narrative.error,
-    },
-  });
-  return {
-    id: saved.id,
-    place: place.name,
-    cities: inputs.topCities.length,
-    alerts: inputs.alerts.length,
-    volcanoes: inputs.volcanoes.length,
-    narrativeStatus: narrative.status,
-  };
-}
+// One place's round-up: `runForPlace` lives in placeRoundups/refresh.ts (with
+// the single-place entry the render queue's `refresh` uses), because the job
+// loader registers every function exported from this file as a handler.
 
 /** Loop a set of places, one round-up each, tolerating a single place's failure. */
 async function runBatch(

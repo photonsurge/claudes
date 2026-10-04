@@ -24,6 +24,12 @@
  * the merge — but the collision is recorded in `conflictKeys` so the Save bar
  * can say that saving will overwrite what the desk just did.
  *
+ * A short FORMAT's editor (/admin/shorts/formats/:id, docs/short-video-plan.md
+ * §5.5) passes `formatId`: the draft then owns a THIRD document, the format's
+ * short settings (`ShortFormat`, PUT /api/shorts/formats/:id). It loads with the
+ * other two, stages through `stageFormat` (whole top-level fields, like the
+ * other buckets) and is written by the SAME Save — still one Save for the page.
+ *
  * No UI lives here. The Save bar is `SceneSaveBar`, which the page renders.
  */
 import {
@@ -44,7 +50,9 @@ import {
   type SceneStatePayload,
 } from "@photonsurge/shared/control";
 import { DEFAULT_DIRECTOR_CONFIG, type DirectorConfig } from "@photonsurge/shared/director";
+import type { ShortFormat } from "@photonsurge/shared/short-format";
 import { emitScenePatch, fetchSceneState, patchScene } from "../../../lib/scenes";
+import { getShortFormat, saveShortFormat, type ShortFormatPatch } from "../../../lib/short-formats";
 import { fetchDirectorConfig, mergeConfig, patchDirectorConfig } from "../../../lib/director";
 import { useSocket } from "../../../lib/socket-provider";
 
@@ -60,14 +68,23 @@ export type SceneDraftValue = {
   stage: (patch: Partial<ControlState>) => void;
   /** Stage a DirectorConfig delta for the same Save. */
   stageDirector: (patch: Partial<DirectorConfig>) => void;
+  /** A format editor's third document — the short settings with their staged
+   *  delta merged on top. Null on a channel page (no `formatId`). */
+  format: ShortFormat | null;
+  /** Stage a short-settings delta for the same Save (format editor only). */
+  stageFormat: (patch: ShortFormatPatch) => void;
   /** The staged deltas themselves — the Save bar names what they touch. */
   pending: Partial<ControlState>;
   pendingDirector: Partial<DirectorConfig>;
+  pendingFormat: ShortFormatPatch;
   dirty: boolean;
   /** Staged fields the operator's desk has ALSO changed since they were staged. */
   conflictKeys: readonly string[];
   saving: boolean;
   saveError: string | null;
+  /** A document that couldn't be read (a format editor's short settings) — the
+   *  page says so instead of waiting on `ready` forever. */
+  loadError?: string | null;
   save: () => void;
   discard: () => void;
 };
@@ -90,9 +107,12 @@ export function useSceneDraft(): SceneDraftValue {
 
 export default function SceneDraftProvider({
   sceneId,
+  formatId,
   children,
 }: {
   sceneId: string;
+  /** A short format's editor: also load and save this format's short settings. */
+  formatId?: string;
   children: ReactNode;
 }) {
   const { socket } = useSocket();
@@ -103,6 +123,9 @@ export default function SceneDraftProvider({
   // The staged deltas.
   const [pending, setPending] = useState<Partial<ControlState>>({});
   const [pendingDirector, setPendingDirector] = useState<Partial<DirectorConfig>>({});
+  const [baseFormat, setBaseFormat] = useState<ShortFormat | null>(null);
+  const [formatError, setFormatError] = useState<string | null>(null);
+  const [pendingFormat, setPendingFormat] = useState<ShortFormatPatch>({});
   const [conflictKeys, setConflictKeys] = useState<readonly string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -119,7 +142,17 @@ export default function SceneDraftProvider({
     setBaseConfig(null);
     setPending({});
     setPendingDirector({});
+    setBaseFormat(null);
+    setFormatError(null);
+    setPendingFormat({});
     setConflictKeys([]);
+    if (formatId) {
+      getShortFormat(formatId).then((res) => {
+        if (cancelled) return;
+        if (res.ok) setBaseFormat(res.data);
+        else setFormatError(res.error);
+      });
+    }
     fetchSceneState(sceneId).then(({ state: s }) => {
       if (!cancelled) setBase(s);
     });
@@ -129,7 +162,7 @@ export default function SceneDraftProvider({
     return () => {
       cancelled = true;
     };
-  }, [sceneId]);
+  }, [sceneId, formatId]);
 
   const stage = useCallback((over: Partial<ControlState>) => {
     setPending((prev) => ({ ...prev, ...over }));
@@ -141,6 +174,11 @@ export default function SceneDraftProvider({
     setSaveError(null);
   }, []);
 
+  const stageFormat = useCallback((over: ShortFormatPatch) => {
+    setPendingFormat((prev) => ({ ...prev, ...over }));
+    setSaveError(null);
+  }, []);
+
   /** A live change from the desk: adopt it, unless it hits a staged field. */
   const applyLive = useCallback((over: Partial<ControlState>) => {
     const staged = Object.keys(pendingRef.current);
@@ -149,7 +187,7 @@ export default function SceneDraftProvider({
     setBase((prev) => (prev ? mergeControlState(prev, over) : prev));
   }, []);
 
-  const ready = base !== null && baseConfig !== null;
+  const ready = base !== null && baseConfig !== null && (!formatId || baseFormat !== null);
 
   const state = useMemo(
     () => (base ? mergeControlState(base, pending) : DEFAULT_CONTROL_STATE),
@@ -160,7 +198,15 @@ export default function SceneDraftProvider({
     [baseConfig, pendingDirector],
   );
 
-  const dirty = Object.keys(pending).length > 0 || Object.keys(pendingDirector).length > 0;
+  const format = useMemo(
+    () => (baseFormat ? ({ ...baseFormat, ...pendingFormat } as ShortFormat) : null),
+    [baseFormat, pendingFormat],
+  );
+
+  const dirty =
+    Object.keys(pending).length > 0 ||
+    Object.keys(pendingDirector).length > 0 ||
+    Object.keys(pendingFormat).length > 0;
 
   const save = useCallback(() => {
     if (!dirty || saving) return;
@@ -171,6 +217,7 @@ export default function SceneDraftProvider({
     // not at the click that staged it minutes earlier.
     if ("spinEpoch" in out) out.spinEpoch = Date.now();
     const director = { ...pendingDirector };
+    const shortSettings = { ...pendingFormat };
 
     void (async () => {
       const errors: string[] = [];
@@ -190,6 +237,14 @@ export default function SceneDraftProvider({
           errors.push(err instanceof Error ? err.message : String(err));
         }
       }
+      let savedFormat: ShortFormat | null = null;
+      if (formatId && Object.keys(shortSettings).length > 0) {
+        try {
+          savedFormat = await saveShortFormat(formatId, shortSettings);
+        } catch (err) {
+          errors.push(err instanceof Error ? err.message : String(err));
+        }
+      }
       setSaving(false);
       if (errors.length > 0) {
         // Keep the draft: the operator's edits are still the only copy.
@@ -200,15 +255,19 @@ export default function SceneDraftProvider({
       // and clear the draft without a refetch.
       setBase((prev) => (prev ? mergeControlState(prev, out) : prev));
       setBaseConfig((prev) => (prev ? mergeConfig(prev, director) : prev));
+      // The server's copy, sanitised (clamped numbers, trimmed text) — the truth.
+      if (savedFormat) setBaseFormat(savedFormat);
       setPending({});
       setPendingDirector({});
+      setPendingFormat({});
       setConflictKeys([]);
     })();
-  }, [dirty, saving, pending, pendingDirector, socket, sceneId]);
+  }, [dirty, saving, pending, pendingDirector, pendingFormat, formatId, socket, sceneId]);
 
   const discard = useCallback(() => {
     setPending({});
     setPendingDirector({});
+    setPendingFormat({});
     setConflictKeys([]);
     setSaveError(null);
   }, []);
@@ -234,12 +293,16 @@ export default function SceneDraftProvider({
     config,
     stage,
     stageDirector,
+    format,
+    stageFormat,
     pending,
     pendingDirector,
+    pendingFormat,
     dirty,
     conflictKeys,
     saving,
     saveError,
+    loadError: formatError,
     save,
     discard,
   };

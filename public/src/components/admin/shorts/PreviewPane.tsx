@@ -1,16 +1,22 @@
 "use client";
 
 /**
- * The preview scene's /watch page in a 16:9 iframe (tokened URL, same origin),
- * with Play / Stop for the selected script. Plays only ever target the preview
- * scene. When the scene hasn't been seeded there is nothing to show, so the
- * pane says how to create it instead.
+ * The selected script's FORMAT scene /watch page in a 16:9 iframe (tokened
+ * URL, same origin), with Play / Stop for that script. Plays only ever target
+ * a format's scene — the one a render uses, so this is what renders. When the
+ * scene doesn't exist there is nothing to show, so the pane says how to create
+ * it instead.
  *
  * The on-air chrome is laid out for a 1920×1080 canvas (what OBS captures), so
  * the iframe renders at that size and is scaled down to the pane's width —
  * a small viewport would reflow the chrome into something that never airs.
+ *
+ * While a render owns the scene (§5.3, §6.7) the pane shows that render — it
+ * plays on the same scene, so this is what OBS is capturing — and Play / Stop
+ * are off: a preview can't take the scene, and Stop here would cut the video
+ * (the Renders section's Stop ends it properly).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -27,6 +33,15 @@ interface Props {
   onPlay: () => void;
   onStop: () => void;
   busy?: boolean;
+  /** The Play button's label ("Play sample" on a format's editor). */
+  playLabel?: string;
+  /** Overrides when Play is enabled (default: a script with clips is selected) —
+   *  the format editor's Play sample can generate a script when there is none. */
+  canPlay?: boolean;
+  /** Replaces the line under the header (what Play will do). */
+  note?: ReactNode;
+  /** A render playing on this scene now: what it is, for the line under the header. */
+  rendering?: { title: string; detail?: string } | null;
 }
 
 /** The broadcast canvas the on-air chrome is designed for. */
@@ -49,7 +64,7 @@ function useWidth(el: HTMLElement | null): number {
   return width;
 }
 
-export default function PreviewPane({ preview, script, onPlay, onStop, busy }: Props) {
+export default function PreviewPane({ preview, script, onPlay, onStop, busy, playLabel = "Play", canPlay, note, rendering }: Props) {
   const playing = preview.mode === "script";
   const [frame, setFrame] = useState<HTMLDivElement | null>(null);
   const scale = useWidth(frame) / CANVAS_W;
@@ -60,27 +75,31 @@ export default function PreviewPane({ preview, script, onPlay, onStop, busy }: P
         <Typography variant="overline" color="text.secondary" sx={{ flex: 1 }}>
           Preview · <Box component="code" sx={{ fontFamily: font.mono }}>/watch/{preview.sceneId}</Box>
         </Typography>
-        <Button variant="contained" onClick={onPlay} disabled={busy || !preview.exists || !script || !script.clipCount}>
-          Play
+        <Button variant="contained" onClick={onPlay} disabled={busy || !!rendering || !preview.exists || !(canPlay ?? (!!script && !!script.clipCount))}>
+          {playLabel}
         </Button>
-        <Button variant="outlined" onClick={onStop} disabled={busy || !preview.exists || !playing}>
+        <Button variant="outlined" onClick={onStop} disabled={busy || !!rendering || !preview.exists || !playing}>
           Stop
         </Button>
       </Stack>
 
       {!preview.exists ? (
         <Alert severity="warning" sx={{ mt: 1.5 }}>
-          The preview scene <code>{preview.sceneId}</code> doesn&apos;t exist yet. Run <code>yarn seed:short-scenes</code> in{" "}
-          <code>worker</code>, then restart the worker — without a restarted worker nothing will play.
+          The format scene <code>{preview.sceneId}</code> doesn&apos;t exist yet. Run <strong>Seed default short format</strong> on{" "}
+          /admin/jobs (or <code>yarn seed:short-format</code> in <code>worker</code>), then restart the worker — without a
+          restarted worker nothing will play.
         </Alert>
       ) : (
         <>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
-            {playing
+            {rendering
+              ? `Rendering “${rendering.title}”${rendering.detail ? ` — ${rendering.detail}` : ""}. This is what OBS is capturing; stop it from Renders.`
+              : playing
               ? `Director: playing a script${script && preview.scriptId === script.id ? " — this one" : ""}.`
-              : script
-                ? `Play runs “${script.title}” from the first clip. Previews never reach the as-run log.`
-                : "Select a script to preview it."}
+              : note ??
+                (script
+                  ? `Play runs “${script.title}” from the first clip. Previews never reach the as-run log.`
+                  : "Select a script to preview it.")}
           </Typography>
           <Box
             ref={setFrame}

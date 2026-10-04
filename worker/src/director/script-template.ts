@@ -9,12 +9,18 @@
  *
  * Two modes, picked by the switches:
  *  • ROUND-UP ONLY (no switch on, the default): opener + close. The opener runs
- *    its natural length — the round-up's read time at the scene's read pace —
+ *    its natural length — the read time of the round-up it shows (its summary,
+ *    or all of it: the format's round-up depth) at the scene's read pace —
  *    even past the budget, so prose is never cut short. No usable round-up is
  *    an error, not a video.
- *  • WITH EVENTS: the opener starts at 40% of the budget, events fill the rest
- *    best-first, and any budget they leave is handed back to the opener (up to
- *    its natural length). Total never exceeds the budget.
+ *  • WITH EVENTS: the opener starts at its share of the budget (the format's
+ *    `opener.budgetShare`, 40% by default), events fill the rest best-first,
+ *    and any budget they leave is handed back to the opener (up to its natural
+ *    length). Total never exceeds the budget.
+ *
+ * The format (shared/src/short-format.ts) shapes the rest: whether the deck
+ * leads with the round-up, whether the opener flies its tour, the minimum tour
+ * dwell, and whether there is a close and how long it is.
  *
  * Clips are REFERENCES (segment ids), so every candidate here comes from the
  * same single-item builders the live pool uses: the segment id is the clip's
@@ -23,7 +29,7 @@
  * how many events go in.
  *
  * A country/area opener's tour is paced to its clip: as many stops as fit at
- * MIN_TOUR_DWELL_MS each, spread evenly over the whole opener (`tourDwellMs`),
+ * the format's minimum dwell each, spread evenly over the whole opener (`tourDwellMs`),
  * not the live channel's 40 s a stop — which would make a minute-long round-up
  * a one-city visit.
  */
@@ -38,10 +44,18 @@ import {
   TARGET_WORLD_ROUNDUP,
   TARGET_WORLD_SPIN,
   TOUR_DWELL_MAX_MS,
+  type RoundupDepth,
   type ShortClip,
   type ShortInclude,
   type ShortScope,
 } from "@photonsurge/shared/short-script";
+import {
+  DEFAULT_CLOSE_MS,
+  DEFAULT_MIN_TOUR_DWELL_MS,
+  DEFAULT_OPENER_BUDGET_SHARE,
+  defaultShortFormat,
+  type ShortFormat,
+} from "@photonsurge/shared/short-format";
 import { clampReadCps, readSeconds, DEFAULT_READ_CPS } from "@photonsurge/shared/reading-pace";
 import type { iPlaceRoundupModel } from "@photonsurge/shared/db/place-roundup-model";
 import {
@@ -62,13 +76,17 @@ import { applyClip, refreshClipLabel } from "./script-resolve";
 import { ALERT_COUNTRY_CAP } from "./candidates";
 import { resolveScope, scopeAlerts, scopeQuakes, scopeVolcanoes, type ResolvedScope } from "./script-scope";
 
-/** The opener's share of the budget while events are being picked. */
-export const OPENER_BUDGET_SHARE = 0.4;
+/** Defaults for a format that doesn't say (the format's `opener.budgetShare`,
+ *  `close.ms` and `opener.minTourDwellMs` win). */
+export const OPENER_BUDGET_SHARE = DEFAULT_OPENER_BUDGET_SHARE;
 /** The closing wide shot — a beat to end on, reserved before events are picked. */
-export const CLOSE_MS = 6_000;
+export const CLOSE_MS = DEFAULT_CLOSE_MS;
 /** The shortest camera dwell on a tour stop in a scripted clip: enough for the
  *  camera to land and the stop's caption to read. Sets how many stops fit. */
-export const MIN_TOUR_DWELL_MS = 8_000;
+export const MIN_TOUR_DWELL_MS = DEFAULT_MIN_TOUR_DWELL_MS;
+
+/** The parts of a format that shape a lineup. */
+export type LineupShape = Pick<ShortFormat, "opener" | "close">;
 
 /** Every switch off: a round-up-only video. */
 export const ROUNDUP_ONLY: ShortInclude = { alerts: false, quakes: false, volcanoes: false };
@@ -82,6 +100,8 @@ export interface LineupOptions {
   /** On-air read pace (chars/s) that sizes a round-up's read time — the target
    *  scene's `ControlState.readPaceCps`. Clamped; defaults to DEFAULT_READ_CPS. */
   readCps?: number;
+  /** The format's opener and close; defaults to a new format's. */
+  shape?: LineupShape;
   now?: number;
 }
 
@@ -110,31 +130,41 @@ const clipOf = (seg: Segment, durationMs: number, extra: Partial<ShortClip> = {}
 });
 
 /**
- * The round-up prose that reaches air, as /watch's PlaceRoundupPanel renders
- * it across its "main" and "next24" sections: summary, state of play, each
- * city's "Name — outlook" and advice; or, for an older round-up with none of
- * those sections, its composed narrative. "" when there's nothing to read.
+ * The round-up prose that reaches air at `depth`, as /watch's PlaceRoundupPanel
+ * renders it. `full` (the default): summary, state of play, each city's
+ * "Name — outlook" and advice, across its "main" and "next24" sections.
+ * `summary`: the summary alone. Either way, an older round-up with none of
+ * those sections reads its composed narrative. "" when there's nothing to read.
  */
-export function roundupText(r: iPlaceRoundupModel | null | undefined): string {
+export function roundupText(r: iPlaceRoundupModel | null | undefined, depth: RoundupDepth = "full"): string {
   if (!r) return "";
   const cities = (r.cityOutlook ?? []).filter((c) => c.name && c.outlook).map((c) => `${c.name} — ${c.outlook}`);
   const sections = [r.summary?.trim(), r.stateOfPlay?.trim(), ...cities, r.advice?.trim()].filter(Boolean);
-  return sections.length ? sections.join(" ") : r.narrative?.trim() ?? "";
+  if (!sections.length) return r.narrative?.trim() ?? "";
+  return depth === "summary" ? r.summary?.trim() ?? "" : sections.join(" ");
 }
 
-/** How long a viewer needs to read a round-up at `cps` (default the on-air default pace), ms. */
-export const roundupReadMs = (r: iPlaceRoundupModel | null | undefined, cps: number = DEFAULT_READ_CPS): number =>
-  Math.round(readSeconds(roundupText(r).length, cps) * 1000);
+/** How long a viewer needs to read a round-up at `depth` and `cps` (default the on-air default pace), ms. */
+export const roundupReadMs = (
+  r: iPlaceRoundupModel | null | undefined,
+  cps: number = DEFAULT_READ_CPS,
+  depth: RoundupDepth = "full",
+): number => Math.round(readSeconds(roundupText(r, depth).length, cps) * 1000);
 
 /**
  * How many of a tour's `stops` a `openerMs` clip flies, and the dwell that
  * spreads them evenly across it: each stop costs a flight (`transitionMs`) and
- * at least MIN_TOUR_DWELL_MS on the ground. None fit → `maxStops: 0`, one
- * framed view and no dwell. The dwell is capped at TOUR_DWELL_MAX_MS (a short
- * tour on a long read then parks on its last stop).
+ * at least `minDwellMs` (the format's minimum tour dwell) on the ground. None
+ * fit → `maxStops: 0`, one framed view and no dwell. The dwell is capped at
+ * TOUR_DWELL_MAX_MS (a short tour on a long read then parks on its last stop).
  */
-export function tourFit(stops: number, openerMs: number, transitionMs: number): Pick<ShortClip, "maxStops" | "tourDwellMs"> {
-  const kept = Math.max(0, Math.min(stops, Math.floor(openerMs / (transitionMs + MIN_TOUR_DWELL_MS))));
+export function tourFit(
+  stops: number,
+  openerMs: number,
+  transitionMs: number,
+  minDwellMs: number = MIN_TOUR_DWELL_MS,
+): Pick<ShortClip, "maxStops" | "tourDwellMs"> {
+  const kept = Math.max(0, Math.min(stops, Math.floor(openerMs / (transitionMs + minDwellMs))));
   if (!kept) return { maxStops: 0 };
   return { maxStops: kept, tourDwellMs: Math.min(TOUR_DWELL_MAX_MS, Math.floor(openerMs / kept) - transitionMs) };
 }
@@ -142,8 +172,8 @@ export function tourFit(stops: number, openerMs: number, transitionMs: number): 
 /**
  * How an opener may be sized: never below the kind's hold (`floorMs`), at most
  * its `naturalMs`. A country/area opener has a tour of `stops` stops, paced
- * into whatever length it gets (`tourFit`); `segment` is what it was built
- * from, so its label can say what will really air.
+ * into whatever length it gets (`tourFit`, at `minDwellMs` a stop); `segment`
+ * is what it was built from, so its label can say what will really air.
  */
 interface OpenerPlan {
   clip: ShortClip;
@@ -152,13 +182,14 @@ interface OpenerPlan {
   naturalMs: number;
   stops: number;
   transitionMs: number;
+  minDwellMs: number;
 }
 
 /** Size the opener inside `softCapMs` (it may still reach its floor) and never past `hardCapMs`. */
 function sizeOpener(p: OpenerPlan, softCapMs: number, hardCapMs: number): ShortClip {
   const d = Math.min(p.naturalMs, Math.max(p.floorMs, softCapMs), hardCapMs);
   const clip: ShortClip = { ...p.clip, durationMs: Math.round(Math.max(MIN_CLIP_MS, d)) };
-  if (p.stops) Object.assign(clip, tourFit(p.stops, clip.durationMs, p.transitionMs));
+  if (p.stops) Object.assign(clip, tourFit(p.stops, clip.durationMs, p.transitionMs, p.minDwellMs));
   if (p.segment) clip.label = refreshClipLabel(applyClip(p.segment, clip));
   return clip;
 }
@@ -178,16 +209,24 @@ async function freshWorldRoundup(db: AppDb, cfg: DirectorConfig, now: number): P
   return best?.cand ?? null;
 }
 
-/** The opener plan and the closing shot for a scope. Throws when a round-up-only video has no round-up. */
+/**
+ * The opener plan and the closing shot for a scope, shaped by the format.
+ * `close` is null when the format has none. Throws when a round-up-only video
+ * has no round-up.
+ */
 async function bookends(
   db: AppDb,
   cfg: DirectorConfig,
   rs: ResolvedScope,
   roundupOnly: boolean,
   readCps: number,
+  shape: LineupShape,
   now: number,
-): Promise<{ plan: OpenerPlan; close: ShortClip }> {
+): Promise<{ plan: OpenerPlan; close: ShortClip | null }> {
   const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
+  const { opener } = shape;
+  const minDwellMs = opener.minTourDwellMs;
+  const closeMs = shape.close.ms;
   if (rs.type === "globe") {
     const roundup = await freshWorldRoundup(db, cfg, now);
     if (!roundup && roundupOnly) {
@@ -208,8 +247,10 @@ async function bookends(
       label: refreshClipLabel(roundup ? roundup.segment : spin),
     };
     const naturalMs = roundup ? Math.max(spinMs, roundup.segment.holdMs) : spinMs;
-    const close: ShortClip = { id: randomUUID(), target: TARGET_WORLD_SPIN, durationMs: CLOSE_MS, label: refreshClipLabel(spin) };
-    return { plan: { clip, segment: null, floorMs: spinMs, naturalMs, stops: 0, transitionMs }, close };
+    const close: ShortClip | null = shape.close.enabled
+      ? { id: randomUUID(), target: TARGET_WORLD_SPIN, durationMs: closeMs, label: refreshClipLabel(spin) }
+      : null;
+    return { plan: { clip, segment: null, floorMs: spinMs, naturalMs, stops: 0, transitionMs, minDwellMs }, close };
   }
 
   const isCountry = rs.type === "country";
@@ -218,7 +259,8 @@ async function bookends(
   const roundups = isCountry ? db.countryRoundups : db.regionRoundups;
   const placeId = isCountry ? rs.shot.iso2.toLowerCase() : rs.shot.id;
   const roundup = await roundups.latestForPlace(placeId).catch(() => null);
-  const readMs = roundupReadMs(roundup, readCps);
+  const depth = opener.roundupDepth;
+  const readMs = roundupReadMs(roundup, readCps, depth);
   if (!readMs && roundupOnly) {
     throw new Error(
       `No usable round-up for ${rs.shot.name} (${rs.type} "${isCountry ? rs.shot.id : placeId}"): ` +
@@ -227,19 +269,29 @@ async function bookends(
   }
 
   const floorMs = kindHoldMs(cfg, seg.kind);
-  const stops = seg.tourStops?.length ?? 0;
-  const lead = readMs > 0;
-  const clip = clipOf(seg, 0, lead ? { leadSlide: "roundup" } : {});
-  // Leading with the round-up, the prose sets the length and the tour is paced
-  // into it; otherwise the natural length is the whole tour at the live pace.
-  const naturalMs = lead ? Math.max(floorMs, readMs) : Math.max(floorMs, stops * (transitionMs + SUMMARY_STOP_DWELL_MS));
-  const close = clipOf(seg, CLOSE_MS, { maxStops: 0 });
-  close.label = refreshClipLabel(applyClip(seg, close));
-  return { plan: { clip, segment: seg, floorMs, naturalMs, stops, transitionMs }, close };
+  // No tour: the opener holds one framed shot (maxStops 0 drops the tour).
+  const stops = opener.tour ? seg.tourStops?.length ?? 0 : 0;
+  const hasRoundup = readMs > 0;
+  const extra: Partial<ShortClip> = opener.tour ? {} : { maxStops: 0 };
+  if (hasRoundup) {
+    extra.roundupDepth = depth;
+    if (opener.leadWithRoundup) extra.leadSlide = "roundup";
+  }
+  const clip = clipOf(seg, 0, extra);
+  // With a round-up, the prose shown sets the length (leading or not, it must
+  // be readable) and the tour is paced into it; otherwise the natural length is
+  // the whole tour at the live pace, or the kind's hold for a framed shot.
+  const naturalMs = hasRoundup ? Math.max(floorMs, readMs) : Math.max(floorMs, stops * (transitionMs + SUMMARY_STOP_DWELL_MS));
+  let close: ShortClip | null = null;
+  if (shape.close.enabled) {
+    close = clipOf(seg, closeMs, { maxStops: 0 });
+    close.label = refreshClipLabel(applyClip(seg, close));
+  }
+  return { plan: { clip, segment: seg, floorMs, naturalMs, stops, transitionMs, minDwellMs }, close };
 }
 
 /** Every in-scope event of the included kinds, scored by the director's own builders. */
-async function scopeEvents(
+export async function scopeEvents(
   db: AppDb,
   cfg: DirectorConfig,
   rs: ResolvedScope,
@@ -330,10 +382,11 @@ export function lineupTitle(rs: ResolvedScope, include: ShortInclude): string {
 }
 
 /**
- * Write a lineup for `scope`: opener, events, close. With events the total is
- * at most the budget; round-up only, the opener takes its natural length (up
- * to MAX_CLIP_MS). A quiet scope is just the opener and the close. Throws for
- * an unknown country/area id, and for a round-up-only video with no round-up.
+ * Write a lineup for `scope`: opener, events, close (when the format has one).
+ * With events the total is at most the budget; round-up only, the opener takes
+ * its natural length (up to MAX_CLIP_MS). A quiet scope is just the opener and
+ * the close. Throws for an unknown country/area id, and for a round-up-only
+ * video with no round-up.
  */
 export async function buildLineup(
   db: AppDb,
@@ -346,24 +399,26 @@ export async function buildLineup(
   // Two clips need room to exist at all.
   const budgetMs = Math.max(2 * MIN_CLIP_MS, Math.round(opts.budgetMs ?? DEFAULT_SHORT_BUDGET_MS));
   const readCps = clampReadCps(opts.readCps ?? DEFAULT_READ_CPS);
+  const shape = opts.shape ?? defaultShortFormat();
   const rs = await resolveScope(db, opts.scope);
-  const { plan, close } = await bookends(db, cfg, rs, roundupOnly, readCps, now);
+  const { plan, close } = await bookends(db, cfg, rs, roundupOnly, readCps, shape, now);
   const title = lineupTitle(rs, include);
-  close.durationMs = Math.max(MIN_CLIP_MS, Math.min(close.durationMs, Math.floor(budgetMs / 2)));
+  if (close) close.durationMs = Math.max(MIN_CLIP_MS, Math.min(close.durationMs, Math.floor(budgetMs / 2)));
+  const tail = close ? [close] : [];
 
   if (roundupOnly) {
     // The budget is for fitting events, never for cutting the round-up short.
-    return { title, clips: [sizeOpener(plan, plan.naturalMs, MAX_CLIP_MS), close] };
+    return { title, clips: [sizeOpener(plan, plan.naturalMs, MAX_CLIP_MS), ...tail] };
   }
 
-  // The opener holds its 40% share while events are picked; whatever budget
-  // they leave goes back to it, up to its natural length.
-  const roomMs = budgetMs - close.durationMs;
-  const first = sizeOpener(plan, budgetMs * OPENER_BUDGET_SHARE, roomMs);
+  // The opener holds its share while events are picked; whatever budget they
+  // leave goes back to it, up to its natural length.
+  const roomMs = budgetMs - (close?.durationMs ?? 0);
+  const first = sizeOpener(plan, budgetMs * shape.opener.budgetShare, roomMs);
   const picked = pickEvents(await scopeEvents(db, cfg, rs, include, now), roomMs - first.durationMs);
   const eventsMs = picked.reduce((sum, e) => sum + e.cand.segment.holdMs, 0);
   const left = roomMs - eventsMs;
   const opener = sizeOpener(plan, left, left);
   const middle = picked.map((e) => clipOf(e.cand.segment, e.cand.segment.holdMs));
-  return { title, clips: [opener, ...middle, close] };
+  return { title, clips: [opener, ...middle, ...tail] };
 }

@@ -225,6 +225,10 @@ export interface Segment {
   /** Which deck slide leads after the lede — "roundup" when the round-up IS the
    *  story (a round-up break-in, or a `:roundup uk` request). */
   leadSlide?: "roundup";
+  /** How much of the place round-up the deck's round-up panel shows: "summary"
+   *  = the summary alone, "full" or absent = all of it. Set by a scripted short's
+   *  clip (ShortClip.roundupDepth), whose length was timed for exactly that. */
+  roundupDepth?: "summary" | "full";
   /** A viewer asked for this shot from chat — credited on air ("REQUESTED BY
    *  @ann"). Operator cuts are editorial and carry nothing. */
   requestedBy?: { author: string; platform: string };

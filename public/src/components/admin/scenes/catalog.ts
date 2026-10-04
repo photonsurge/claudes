@@ -16,10 +16,11 @@
  * always name what changed.
  */
 
-export type SettingsGroupId = "layout" | "presentation" | "programme" | "viewers" | "identity";
+export type SettingsGroupId = "video" | "layout" | "presentation" | "programme" | "viewers" | "identity";
 
-/** Which document a card's fields live in — the two Save buckets. */
-export type SettingsBucket = "control" | "director";
+/** Which document a card's fields live in — the Save buckets. "format" is the
+ *  third document a short format's editor adds (its short settings). */
+export type SettingsBucket = "control" | "director" | "format";
 
 export type SettingsGroupDef = {
   id: SettingsGroupId;
@@ -173,15 +174,35 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
   { id: "youtube", title: "YouTube broadcasts", group: "identity", bucket: "control", fields: ["youtube"] },
 ];
 
+/**
+ * A whole settings map: its groups (rail order) and its cards (page order).
+ * The channel page uses `CHANNEL_CATALOG`; a short format's editor has its own
+ * (components/admin/shorts/formats/format-catalog.ts) built from the same card
+ * components. The shared shell, rail and Save bar read whichever one the page
+ * provides through `SettingsCatalogContext` (catalog-context.tsx).
+ */
+export type SettingsCatalog = {
+  groups: readonly SettingsGroupDef[];
+  cards: readonly SettingsCardDef[];
+};
+
 const CARD_BY_ID = new Map(SETTINGS_CARDS.map((c) => [c.id, c]));
 
-export const getCard = (id: string): SettingsCardDef | undefined => CARD_BY_ID.get(id);
+export const CHANNEL_CATALOG: SettingsCatalog = { groups: SETTINGS_GROUPS, cards: SETTINGS_CARDS };
 
-export const cardsInGroup = (group: SettingsGroupId): SettingsCardDef[] =>
-  SETTINGS_CARDS.filter((c) => c.group === group);
+export const getCard = (id: string, cards: readonly SettingsCardDef[] = SETTINGS_CARDS): SettingsCardDef | undefined =>
+  cards === SETTINGS_CARDS ? CARD_BY_ID.get(id) : cards.find((c) => c.id === id);
+
+export const cardsInGroup = (group: SettingsGroupId, cards: readonly SettingsCardDef[] = SETTINGS_CARDS): SettingsCardDef[] =>
+  cards.filter((c) => c.group === group);
 
 /** The group a deep-link anchor belongs to, so `#youtube` can open Identity. */
-export const groupOfCard = (id: string): SettingsGroupId | undefined => CARD_BY_ID.get(id)?.group;
+export const groupOfCard = (id: string, cards: readonly SettingsCardDef[] = SETTINGS_CARDS): SettingsGroupId | undefined =>
+  getCard(id, cards)?.group;
+
+/** The staged keys of each bucket, as the draft holds them. */
+export const stagedKeyLists = (draft: { pending: object; pendingDirector: object; pendingFormat?: object }) =>
+  [Object.keys(draft.pending), Object.keys(draft.pendingDirector), Object.keys(draft.pendingFormat ?? {})] as const;
 
 /**
  * The cards touched by a set of staged keys, in page order. Feeds both the Save
@@ -192,9 +213,11 @@ export const groupOfCard = (id: string): SettingsGroupId | undefined => CARD_BY_
 export function cardsForStagedKeys(
   controlKeys: readonly string[],
   directorKeys: readonly string[],
+  formatKeys: readonly string[] = [],
+  cards: readonly SettingsCardDef[] = SETTINGS_CARDS,
 ): SettingsCardDef[] {
-  return SETTINGS_CARDS.filter((card) => {
-    const keys = card.bucket === "director" ? directorKeys : controlKeys;
+  return cards.filter((card) => {
+    const keys = card.bucket === "director" ? directorKeys : card.bucket === "format" ? formatKeys : controlKeys;
     return card.fields.some((f) => keys.includes(f));
   });
 }

@@ -117,6 +117,12 @@ import { getSeaPointModel } from "./sea-point-model";
 import { makeSeaPointRepo } from "./sea-point-repo";
 import { getShortScriptModel } from "./short-script-model";
 import { makeShortScriptRepo } from "./short-script-repo";
+import { getShortRenderModel, getShortRenderQueueModel } from "./short-render-model";
+import { makeShortRenderRepo } from "./short-render-repo";
+import { getShortScheduleModel } from "./short-schedule-model";
+import { makeShortScheduleRepo } from "./short-schedule-repo";
+import { getShortFormatModel } from "./short-format-model";
+import { makeShortFormatRepo } from "./short-format-repo";
 import { getAdModel } from "./ad-model";
 import { makeAdRepo } from "./ad-repo";
 import { getAdExposureModel } from "./ad-exposure-model";
@@ -145,7 +151,7 @@ import { makeViewerStateRepo } from "./viewer-state-repo";
 import { getStreamEncoderModel, iStreamEncoderModel } from "./stream-encoder-model";
 import { getStreamSlotModel, iStreamSlotModel } from "./stream-slot-model";
 import { getYoutubeAccountModel, iYoutubeAccountModel } from "./youtube-account-model";
-import { DEFAULT_CONTROL_STATE, MAIN_SCENE_ID } from "../control";
+import { DEFAULT_CONTROL_STATE, MAIN_SCENE_ID, sceneKindOf, type SceneKind } from "../control";
 import { DEFAULT_DIRECTOR_CONFIG, mergeDirectorConfig } from "../director";
 import { encoderKeyForRun, runIsActive, type Run, type StreamEncoder, type StreamSlot } from "../runs";
 
@@ -304,6 +310,11 @@ export function createDb(conn: Connection) {
     cams: makeCamRepo(getCamModel(conn)),
     seaPoints: makeSeaPointRepo(getSeaPointModel(conn)),
     shortScripts: makeShortScriptRepo(getShortScriptModel(conn)),
+    shortRenders: makeShortRenderRepo(getShortRenderModel(conn), getShortRenderQueueModel(conn)),
+    // Scheduled video batches (short-video plan §8); the worker's short-video.tick fires them.
+    shortSchedules: makeShortScheduleRepo(getShortScheduleModel(conn)),
+    // A short format's own settings; its look is the scene doc of the same id.
+    shortFormats: makeShortFormatRepo(getShortFormatModel(conn)),
     ads: makeAdRepo(getAdModel(conn), blobs.ad),
     adExposures: makeAdExposureRepo(getAdExposureModel(conn)),
     adminImages: makeAdminImageRepo(getAdminImageModel(conn), blobs.adminImage),
@@ -431,11 +442,13 @@ export function createDb(conn: Connection) {
 
     /**
      * All broadcast scenes (the "default" main scene + named ones), as SceneMeta
-     * `{ id, name, updatedAt, watchToken, hidden }` sorted with main first then
-     * by name. Hidden scenes ARE listed (admin pickers need them); viewer-facing
-     * lists filter on `hidden`.
+     * `{ id, name, updatedAt, watchToken, hidden, kind }` sorted with main first
+     * then by name. Hidden scenes ARE listed (admin pickers need them);
+     * viewer-facing lists filter on `hidden`. `opts.kind` keeps one kind only —
+     * `"channel"` for the channel lists (/admin/scenes, the stream and slot
+     * forms), which never show a short format's scene.
      */
-    async listScenes() {
+    async listScenes(opts: { kind?: SceneKind } = {}) {
       const res = await broadcastState.getAll({}, { sort: { name: 1 } });
       const docs = (res.success && res.data) || [];
       return docs
@@ -445,7 +458,9 @@ export function createDb(conn: Connection) {
           updatedAt: d.updated ?? d.updatedAt,
           watchToken: d.watchToken as string | undefined,
           hidden: d.hidden === true,
+          kind: sceneKindOf(d),
         }))
+        .filter((s: { kind: SceneKind }) => !opts.kind || s.kind === opts.kind)
         .sort((a: { id: string; name: string }, b: { id: string; name: string }) =>
           a.id === MAIN_SCENE_ID ? -1 : b.id === MAIN_SCENE_ID ? 1 : a.name.localeCompare(b.name),
         );
@@ -470,14 +485,14 @@ export function createDb(conn: Connection) {
      * Create a named scene seeded from `seed` (defaults to the main scene's
      * current state, falling back to DEFAULT_CONTROL_STATE). No-op overwrite if
      * the id already exists is prevented by the caller checking getScene first.
-     * `opts.hidden` sets the scene metadata flag; left out, an existing scene
-     * keeps its flag and a new one is visible.
+     * `opts.hidden` / `opts.kind` set the scene metadata; left out, an existing
+     * scene keeps its own and a new one is a visible channel.
      */
     async createScene(
       id: string,
       name: string,
       seed?: Partial<typeof DEFAULT_CONTROL_STATE>,
-      opts: { hidden?: boolean } = {},
+      opts: { hidden?: boolean; kind?: SceneKind } = {},
     ) {
       const base = seed ?? DEFAULT_CONTROL_STATE;
       const created = await broadcastState.upsertByID(id, {
@@ -485,6 +500,7 @@ export function createDb(conn: Connection) {
         ...base,
         name,
         ...(typeof opts.hidden === "boolean" ? { hidden: opts.hidden } : {}),
+        ...(opts.kind ? { kind: opts.kind } : {}),
       } as any);
       return created.data ?? null;
     },
@@ -496,6 +512,21 @@ export function createDb(conn: Connection) {
     async setSceneHidden(id: string, hidden: boolean): Promise<boolean> {
       if (!(await this.getScene(id))) return false;
       const res = await broadcastState.updateByID(id, { hidden } as any);
+      return !!res.success;
+    },
+
+    /**
+     * Set a scene's metadata — `hidden`, `kind`, `name` — without touching its
+     * look. Returns false for an unknown scene.
+     */
+    async setSceneMeta(id: string, meta: { hidden?: boolean; kind?: SceneKind; name?: string }): Promise<boolean> {
+      if (!(await this.getScene(id))) return false;
+      const patch: Record<string, unknown> = {};
+      if (typeof meta.hidden === "boolean") patch.hidden = meta.hidden;
+      if (meta.kind) patch.kind = meta.kind;
+      if (meta.name) patch.name = meta.name;
+      if (!Object.keys(patch).length) return true;
+      const res = await broadcastState.updateByID(id, patch as any);
       return !!res.success;
     },
 
@@ -561,7 +592,11 @@ export function createDb(conn: Connection) {
       return (
         rows.find(
           (r) =>
-            r.id !== excludeRunId && !!r.platforms?.youtube && encoderKeyForRun(r) === (encoderId || "env"),
+            r.id !== excludeRunId &&
+            // A video render occupies its encoder even offline (no YouTube): it
+            // points the encoder's browser source at its own scene (§6.4).
+            (!!r.platforms?.youtube || !!r.script?.scriptId) &&
+            encoderKeyForRun(r) === (encoderId || "env"),
         ) ?? null
       );
     },

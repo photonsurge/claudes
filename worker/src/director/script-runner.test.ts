@@ -2,7 +2,7 @@ jest.mock("../socket", () => ({ emitWorkerEvent: jest.fn() }));
 jest.mock("@photonsurge/shared/utill/logger", () => ({ log: jest.fn() }));
 
 import { emitWorkerEvent } from "../socket";
-import { step, newScriptRunnerState, SCRIPT_HEARTBEAT_MS, type ScriptRunnerDeps } from "./script-runner";
+import { step, newScriptRunnerState, setScriptPlayEndedHook, SCRIPT_HEARTBEAT_MS, type ScriptRunnerDeps } from "./script-runner";
 import {
   DEFAULT_DIRECTOR_CONFIG,
   mergeDirectorConfig,
@@ -425,5 +425,58 @@ describe("script runner — one play record per scene", () => {
     await at(T0);
     expect(fake.rec("s1", OTHER)).toMatchObject({ sceneId: OTHER, playNonce: 3, endedAt: T0, clips: [] });
     expect(fake.rec("s1", SCENE)).toBeUndefined();
+  });
+});
+
+describe("script runner — the play-ended hook (video renders, short-video plan §6.5)", () => {
+  const hook = jest.fn();
+  const flush = () => new Promise((r) => setImmediate(r));
+  beforeEach(() => {
+    hook.mockReset();
+    setScriptPlayEndedHook(hook);
+  });
+  afterAll(() => setScriptPlayEndedHook(null));
+
+  it("is told when a play finishes, with the finished record", async () => {
+    const fake = fakeDb({ scripts: [script(THREE)], configs: { [SCENE]: play("s1", 1) } });
+    const { at } = harness(fake);
+    await at(T0);
+    await at(T0 + 23_000);
+    await flush();
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(hook).toHaveBeenCalledWith(SCENE, expect.objectContaining({ playNonce: 1, endedAt: T0 + 23_000, clips: expect.any(Array) }));
+    expect(hook.mock.calls[0][1].stopped).toBeUndefined();
+  });
+
+  it("is told when a play is stopped, when a restart cut one short, and when there is nothing to play", async () => {
+    const stopped = fakeDb({ scripts: [script(THREE)], configs: { [SCENE]: play("s1", 1) } });
+    const h1 = harness(stopped);
+    await h1.at(T0);
+    await stopped.db.saveDirectorConfig(SCENE, { mode: "off" });
+    await h1.at(T0 + 4_000);
+    await flush();
+    expect(hook).toHaveBeenLastCalledWith(SCENE, expect.objectContaining({ playNonce: 1, stopped: true }));
+
+    const prior: ShortScriptPlay = { sceneId: SCENE, playNonce: 4, startedAt: T0 - 5_000, clips: [{ id: "a1", startMs: 0, durationMs: 10_000 }], skipped: [] };
+    const restarted = fakeDb({ scripts: [script(THREE, { plays: [prior] })], configs: { [SCENE]: play("s1", 4) } });
+    await harness(restarted).at(T0);
+    await flush();
+    expect(hook).toHaveBeenLastCalledWith(SCENE, expect.objectContaining({ playNonce: 4, stopped: true, endedAt: T0 }));
+
+    const empty = fakeDb({ scripts: [script([clip("dead1", 5_000)])], configs: { [SCENE]: play("s1", 7) } });
+    await harness(empty).at(T0);
+    await flush();
+    expect(hook).toHaveBeenLastCalledWith(SCENE, expect.objectContaining({ playNonce: 7, clips: [], skipped: [expect.objectContaining({ id: "dead1" })] }));
+    expect(hook).toHaveBeenCalledTimes(3);
+  });
+
+  it("a failing hook never breaks the runner", async () => {
+    hook.mockRejectedValue(new Error("boom"));
+    const fake = fakeDb({ scripts: [script(THREE)], configs: { [SCENE]: play("s1", 1) } });
+    const { at } = harness(fake);
+    await at(T0);
+    await at(T0 + 23_000);
+    await flush();
+    expect(fake.configs.get(SCENE)!.mode).toBe("off");
   });
 });

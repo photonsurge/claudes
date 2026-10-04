@@ -9,11 +9,8 @@ import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import {
-  SETTINGS_GROUPS,
-  cardsForStagedKeys,
-  type SettingsGroupId,
-} from "./catalog";
+import { cardsForStagedKeys, stagedKeyLists, type SettingsGroupId } from "./catalog";
+import { useSettingsCatalog } from "./catalog-context";
 import { useSceneDraft } from "./SceneDraft";
 
 export default function SettingsGroupRail({
@@ -23,8 +20,9 @@ export default function SettingsGroupRail({
   active: SettingsGroupId;
   onSelect: (id: SettingsGroupId) => void;
 }) {
-  const { pending, pendingDirector } = useSceneDraft();
-  const changed = cardsForStagedKeys(Object.keys(pending), Object.keys(pendingDirector));
+  const draft = useSceneDraft();
+  const { groups, cards } = useSettingsCatalog();
+  const changed = cardsForStagedKeys(...stagedKeyLists(draft), cards);
 
   return (
     <Stack
@@ -39,7 +37,7 @@ export default function SettingsGroupRail({
         flexShrink: 0,
       }}
     >
-      {SETTINGS_GROUPS.map((g) => {
+      {groups.map((g) => {
         const dirtyHere = changed.filter((c) => c.group === g.id).length;
         const selected = g.id === active;
         return (

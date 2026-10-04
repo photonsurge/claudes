@@ -41,6 +41,7 @@ it("sends the sanitised request to the worker and returns its result", async () 
     budgetMs: 60_000,
     title: "  My title ",
     sceneId: "main",
+    formatId: " short-uk ",
   });
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual(result);
@@ -49,6 +50,7 @@ it("sends the sanitised request to the worker and returns its result", async () 
     "short-video",
     "generate",
     {
+      formatId: "short-uk",
       scope: { type: "country", id: "japan" },
       include: { alerts: false, quakes: true, volcanoes: false },
       budgetMs: 60_000,
@@ -61,10 +63,13 @@ it("sends the sanitised request to the worker and returns its result", async () 
 it("drops a non-positive budget and a blank title", async () => {
   (sendToQueueAndWait as jest.Mock).mockResolvedValue({});
   await post({ scope: { type: "globe" }, budgetMs: -5, title: "  " });
-  expect((sendToQueueAndWait as jest.Mock).mock.calls[0][3]).toEqual({
-    scope: { type: "globe" },
-    include: { alerts: false, quakes: false, volcanoes: false },
-  });
+  expect((sendToQueueAndWait as jest.Mock).mock.calls[0][3]).toEqual({ scope: { type: "globe" } });
+});
+
+it("leaves scope and switches to the format when the body has none", async () => {
+  (sendToQueueAndWait as jest.Mock).mockResolvedValue({});
+  expect((await post({ formatId: "short-uk" })).status).toBe(200);
+  expect((sendToQueueAndWait as jest.Mock).mock.calls[0][3]).toEqual({ formatId: "short-uk" });
 });
 
 it("passes the worker's failure message through verbatim", async () => {

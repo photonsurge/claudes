@@ -29,7 +29,7 @@ describe("createDb wiring", () => {
       "climateYears", "cities", "alerts", "satelliteTles", "trackSnapshots", "quakes",
       "tideStations", "tideSeries", "seismoStations", "seismoSeries", "eventSummaries", "roundupSettings",
       "cables", "faults", "aurora", "satimg", "fires", "volcanoes", "countries", "regions",
-      "areaWeatherReports", "geomag", "cams", "seaPoints", "shortScripts", "ads", "aircraftMeta", "vehicles",
+      "areaWeatherReports", "geomag", "cams", "seaPoints", "shortScripts", "shortFormats", "ads", "aircraftMeta", "vehicles",
       "logs", "airLog", "users", "broadcastState", "directorConfig",
     ] as const;
     for (const key of repos) expect(db[key]).toBeDefined();
@@ -228,6 +228,48 @@ describe("scenes", () => {
     (db.broadcastState as any).getAll = jest.fn(async () => ok(docs));
     const scenes = await db.listScenes();
     expect(scenes.map((s) => [s.id, s.hidden])).toEqual([[MAIN_SCENE_ID, false], ["shorts", true]]);
+  });
+
+  it("listScenes reports each scene's kind and keeps one kind when asked", async () => {
+    const db = freshDb();
+    const docs = [
+      { id: MAIN_SCENE_ID, name: "Main" }, // saved before kind existed → a channel
+      { id: "shorts", name: "Round-up", hidden: true, kind: "short" },
+      { id: "wind", name: "Wind", kind: "channel" },
+      { id: "odd", name: "Odd", kind: "bogus" },
+    ];
+    (db.broadcastState as any).getAll = jest.fn(async () => ok(docs));
+    const all = await db.listScenes();
+    expect(all.map((s) => [s.id, s.kind])).toEqual([
+      [MAIN_SCENE_ID, "channel"],
+      ["odd", "channel"],
+      ["shorts", "short"],
+      ["wind", "channel"],
+    ]);
+    expect((await db.listScenes({ kind: "channel" })).map((s) => s.id)).toEqual([MAIN_SCENE_ID, "odd", "wind"]);
+    expect((await db.listScenes({ kind: "short" })).map((s) => s.id)).toEqual(["shorts"]);
+  });
+
+  it("createScene writes kind only when asked", async () => {
+    const db = freshDb();
+    const upsertByID = jest.fn(async () => ok({ id: "shorts" }));
+    (db.broadcastState as any).upsertByID = upsertByID;
+    await db.createScene("shorts", "Round-up", {}, { hidden: true, kind: "short" });
+    expect((upsertByID.mock.calls[0] as any[])[1]).toMatchObject({ hidden: true, kind: "short" });
+    await db.createScene("studio-b", "Studio B", {});
+    expect((upsertByID.mock.calls[1] as any[])[1]).not.toHaveProperty("kind");
+  });
+
+  it("setSceneMeta writes only the metadata it is given, on an existing scene", async () => {
+    const db = freshDb();
+    (db.broadcastState as any).getByID = jest.fn(async (id: string) => (id === "shorts" ? ok({ id, watchToken: "t" }) : missing));
+    const updateByID = jest.fn(async () => ({ success: true }));
+    (db.broadcastState as any).updateByID = updateByID;
+    expect(await db.setSceneMeta("shorts", { kind: "short", hidden: true, name: "Round-up" })).toBe(true);
+    expect(updateByID).toHaveBeenCalledWith("shorts", { kind: "short", hidden: true, name: "Round-up" });
+    expect(await db.setSceneMeta("shorts", { name: "" })).toBe(true);
+    expect(updateByID).toHaveBeenCalledTimes(1);
+    expect(await db.setSceneMeta("nope", { kind: "short" })).toBe(false);
   });
 
   it("createScene seeds from DEFAULT_CONTROL_STATE, letting the seed override, and stamps the name", async () => {
