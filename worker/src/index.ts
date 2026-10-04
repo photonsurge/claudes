@@ -32,8 +32,9 @@ import { startQueueEventBridge } from "./queueEventBridge";
 import { installJobConsoleTap, runInJobLogContext, getJobLog, listJobLogs } from "./jobLog";
 import { beginJob, endJob, startCancelSubscriber, activeJobLabels } from "./jobCancel";
 import { startDirector, stopDirector } from "./director/loop";
-import { setScriptPlayEndedHook, startScriptRunner, stopScriptRunner } from "./director/script-runner";
+import { setScriptPlayEndedHook, setScriptPlayStartedHook, startScriptRunner, stopScriptRunner } from "./director/script-runner";
 import { onScriptPlayEnded } from "./stream/script-run";
+import { onScriptPlayStarted } from "./stream/script-shots";
 import { startViewerSweep, stopViewerSweep } from "./stream/viewer-sweep";
 import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
 import { getEnabledSources } from "./alerts/registry";
@@ -215,6 +216,8 @@ process.on("uncaughtException", (err) => {
   // own clock so a cut never waits behind the auto loop's candidate builds.
   // A play that ends tells the video-render pipeline (script-run.ts, §6.5 step 3).
   setScriptPlayEndedHook(onScriptPlayEnded);
+  // Offline-test screenshots and a frame thumbnail are scheduled off the play's start (§7, §6.8).
+  setScriptPlayStartedHook(onScriptPlayStarted);
   startScriptRunner();
   // Viewer chat picks (music / palette): lapse and promote them on time.
   startViewerSweep();

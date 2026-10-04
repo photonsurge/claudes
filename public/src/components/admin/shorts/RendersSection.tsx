@@ -13,6 +13,8 @@
  * and the videos waiting, in order. Then the recent renders with their
  * outcome and reason.
  *
+ * An offline test's row shows its OBS screenshots, one per clip (§7).
+ *
  * Controls: Stop (the live row: it ends now, fails, the queue moves on),
  * Cancel (a queued row), Retry (a failed, skipped or cancelled row).
  */
@@ -29,6 +31,7 @@ import Typography from "@mui/material/Typography";
 import { ANY_ENCODER, renderCanRetry, renderIsActive, renderIsFinished } from "@photonsurge/shared/short-render";
 import type { RunState, StreamHealth } from "@photonsurge/shared/runs";
 import RunStats from "../streams/RunStats";
+import RunShots from "./RunShots";
 import type { YoutubeVideoStats } from "../../../lib/stream";
 import {
   queuePositions,
@@ -294,6 +297,12 @@ function RenderRowView({
         )}
       </Stack>
       {active && run && <RunStats run={run} health={health} youtubeStats={youtubeStats} statsError={statsError} />}
+      {/* An offline test's evidence (§7): one OBS screenshot per clip, linking to full size. */}
+      {run?.shots?.length ? (
+        <Box sx={{ mt: 1 }}>
+          <RunShots shots={run.shots} />
+        </Box>
+      ) : null}
     </Paper>
   );
 }

@@ -6,6 +6,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { defaultShortFormat, type ShortFormat } from "@photonsurge/shared/short-format";
 import type { ShortScript } from "@photonsurge/shared/short-script";
+import type { ShortRenderPreflight } from "@photonsurge/shared/short-render";
 import RenderDialog, { AT_START_BY_MS } from "./RenderDialog";
 import type { EncoderWithOccupancy } from "../../../lib/renders";
 
@@ -39,7 +40,14 @@ const ENCODERS: EncoderWithOccupancy[] = [
 ];
 const ACCOUNTS = [{ channelId: "UC1", channelTitle: "Weather Globe" }];
 
-function setup(opts: { fmt?: ShortFormat; target?: Parameters<typeof RenderDialog>[0]["target"]; accounts?: typeof ACCOUNTS } = {}) {
+function setup(
+  opts: {
+    fmt?: ShortFormat;
+    target?: Parameters<typeof RenderDialog>[0]["target"];
+    accounts?: typeof ACCOUNTS;
+    preflight?: Parameters<typeof RenderDialog>[0]["preflight"];
+  } = {},
+) {
   const queue = jest.fn(async (req: unknown) => ({ ok: true as const, data: { ok: true as const, render: { id: "r1", ...(req as object) } as never } }));
   const onQueued = jest.fn();
   const onClose = jest.fn();
@@ -53,6 +61,7 @@ function setup(opts: { fmt?: ShortFormat; target?: Parameters<typeof RenderDialo
       loadFormat={async () => ({ ok: true, data: opts.fmt ?? format() })}
       loadScript={async () => ({ ok: true, data: SCRIPT })}
       queue={queue as never}
+      preflight={opts.preflight}
       now={() => NOW}
     />,
   );
@@ -136,4 +145,46 @@ it("shows the worker's refusal and stays open", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Queue render" }));
   expect(await screen.findByText("no connected YouTube channel")).toBeInTheDocument();
   expect(onClose).not.toHaveBeenCalled();
+});
+
+const REPORT: ShortRenderPreflight = {
+  ok: true,
+  at: NOW,
+  format: { id: "short-eu", name: "Europe" },
+  script: {
+    level: "warn",
+    title: "Europe round-up",
+    clips: [{ id: "c1", title: "Europe", durationMs: 60_000 }],
+    skipped: [{ id: "c2", title: "Spin", reason: "alert is no longer active" }],
+  },
+  length: { level: "ok", playMs: 60_000, budgetMs: 75_000, note: "1:00 of the format's 1:15 budget." },
+  encoder: { level: "ok", checked: [{ id: "v2", name: "Video 2", reachable: true, detail: "OBS 30.2" }] },
+  youtube: { level: "ok", used: false, note: "Not used: an offline test never contacts YouTube." },
+};
+
+it("Preflight shows the report for what the form would queue, and queues nothing", async () => {
+  const preflight = jest.fn(async () => ({ ok: true as const, data: { ok: true as const, report: REPORT } }));
+  const { queue } = setup({ preflight });
+  fireEvent.click(await screen.findByRole("button", { name: "Offline test" }));
+  fireEvent.click(screen.getByRole("button", { name: "Preflight" }));
+  expect(await screen.findByLabelText("Preflight report")).toBeInTheDocument();
+  expect(preflight).toHaveBeenCalledWith({ encoderId: "v2", what: { type: "script", scriptId: "s1" }, publishAs: "unlisted", offline: true });
+  expect(queue).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Clips: warn")).toHaveTextContent("skipped Spin: alert is no longer active");
+  expect(screen.getByLabelText("Length: ok")).toHaveTextContent("1:00 of the format's 1:15 budget.");
+  expect(screen.getByLabelText("Encoder: ok")).toHaveTextContent("Video 2: OBS 30.2");
+  expect(screen.getByLabelText("YouTube: ok")).toHaveTextContent("never contacts YouTube");
+  // A change to the request drops the report.
+  fireEvent.click(screen.getByRole("button", { name: "Live" }));
+  expect(screen.queryByLabelText("Preflight report")).not.toBeInTheDocument();
+});
+
+it("allows Live with Publish as Private — the test that also exercises YouTube", async () => {
+  const { queue } = setup();
+  fireEvent.mouseDown(await screen.findByLabelText("Publish as"));
+  fireEvent.click(await screen.findByRole("option", { name: "Private" }));
+  expect(screen.getByText(/a test that also exercises YouTube/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Queue render" }));
+  await waitFor(() => expect(queue).toHaveBeenCalled());
+  expect(queue.mock.calls[0][0]).toMatchObject({ publishAs: "private", offline: false });
 });

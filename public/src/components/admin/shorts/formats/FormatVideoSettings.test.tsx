@@ -122,9 +122,15 @@ it("adds tags with Enter or a comma, and removes them", () => {
   expect(h.lastFormat().video?.tags).toEqual(["europe", "storms"]);
 });
 
-it("offers a frame thumbnail only as disabled, for now", () => {
-  renderCard(format());
-  expect(screen.getByLabelText(/A frame of the video — comes with offline test/)).toBeDisabled();
+it("a frame thumbnail: pick it, set the second, and back to an image", () => {
+  const h = renderCard(format({ thumbnail: { source: "image", url: "/t.png" } }));
+  fireEvent.click(screen.getByLabelText("A frame of the video"));
+  expect(h.lastFormat().video?.thumbnail).toEqual({ source: "frame", atMs: 5_000 });
+  fireEvent.change(screen.getByLabelText("Seconds into the script"), { target: { value: "12.5" } });
+  expect(h.lastFormat().video?.thumbnail).toEqual({ source: "frame", atMs: 12_500 });
+  expect(screen.queryByLabelText("Image URL or site path")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText("An image"));
+  expect(h.lastFormat().video?.thumbnail).toEqual({ source: "image", url: "" });
 });
 
 it("stages the thumbnail path and shows it resolved", () => {

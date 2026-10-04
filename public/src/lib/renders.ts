@@ -15,6 +15,7 @@ import {
   renderIsFinished,
   renderIsWaiting,
   type ShortRender,
+  type ShortRenderPreflight,
   type ShortRenderRequest,
 } from "@photonsurge/shared/short-render";
 import { encoderUse, type EncoderUse, type RunState, type StreamEncoderInfo } from "@photonsurge/shared/runs";
@@ -78,6 +79,11 @@ export const listRenders = () => call<RendersResponse>("/api/shorts/renders");
 /** Queue a video. Resolves with the stored render (it may already be preparing). */
 export const queueRender = (req: ShortRenderRequest) =>
   call<{ ok: true; render: ShortRender }>("/api/shorts/renders", jsonPost(req));
+/** The offline test's preflight report for a request (§7.1). Queues nothing. */
+export const preflightRender = (req: ShortRenderRequest) =>
+  call<{ ok: true; report: ShortRenderPreflight }>("/api/shorts/renders/preflight", jsonPost(req));
+/** Where an offline test's OBS screenshot is served (§7 evidence). */
+export const shotUrl = (blobId: string) => `/api/shorts/shots/${encodeURIComponent(blobId)}`;
 
 export type RenderAction =
   | { action: "pause" | "resume"; encoderId: string }

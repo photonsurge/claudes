@@ -92,6 +92,28 @@ function notifyPlayEnded(sceneId: string, play: ShortScriptPlay): void {
     .catch((err) => log(TAG, `play-ended hook failed`, { sceneId, err: String(err) }));
 }
 
+/**
+ * Told when a play has started and its schedule is fixed (clips resolved,
+ * skipped ones dropped, `startedAt` = the first cut). A video render schedules
+ * its OBS screenshots and its frame thumbnail from it (stream/script-shots.ts,
+ * short-video plan §7). Registered at boot like the ended hook; fire-and-forget.
+ */
+export type ScriptPlayStartedHook = (sceneId: string, play: ShortScriptPlay) => unknown;
+let playStartedHook: ScriptPlayStartedHook | null = null;
+
+export function setScriptPlayStartedHook(hook: ScriptPlayStartedHook | null): void {
+  playStartedHook = hook;
+}
+
+function notifyPlayStarted(sceneId: string, play: ShortScriptPlay): void {
+  const hook = playStartedHook;
+  if (!hook) return;
+  const copy: ShortScriptPlay = { ...play, clips: [...play.clips], skipped: [...play.skipped] };
+  void Promise.resolve()
+    .then(() => hook(sceneId, copy))
+    .catch((err) => log(TAG, `play-started hook failed`, { sceneId, err: String(err) }));
+}
+
 export const newScriptRunnerState = (): ScriptRunnerState => ({
   plays: new Map(),
   handled: new Map(),
@@ -237,6 +259,7 @@ async function startPlay(
     playRecord,
   });
   await stamp(db, script.id, playRecord);
+  notifyPlayStarted(sceneId, playRecord);
   log(TAG, `play started`, { sceneId, scriptId: script.id, playNonce: trigger.playNonce, clips: clips.length, skipped: skipped.length });
 }
 

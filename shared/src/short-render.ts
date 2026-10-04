@@ -174,3 +174,53 @@ export function sanitizeRenderRequest(v: unknown): ShortRenderRequest | null {
   if (typeof s.notBefore === "number" && Number.isFinite(s.notBefore) && s.notBefore > 0) req.notBefore = s.notBefore;
   return req;
 }
+
+// ---- preflight (§7.1) ----
+
+/** One check of a preflight report: passed, a warning, or a blocker. */
+export type PreflightLevel = "ok" | "warn" | "fail";
+
+/**
+ * The offline test's preflight report (docs/short-video-plan.md §7.1): what a
+ * render WOULD do, with no side effects — nothing queued, nothing written, no
+ * YouTube call. Built by the worker (`run-lifecycle.renderPreflight`).
+ */
+export interface ShortRenderPreflight {
+  /** True when nothing failed (warnings allowed). */
+  ok: boolean;
+  /** When the report was made (the clips resolve against live data then). */
+  at: number;
+  format?: { id: string; name: string };
+  script: {
+    level: PreflightLevel;
+    /** The saved script, or a dry-run generate's title. */
+    title?: string;
+    /** Set for a generate request: it is generated again when it reaches the front. */
+    generated?: boolean;
+    note?: string;
+    clips: { id: string; title: string; durationMs: number }[];
+    skipped: { id: string; title: string; reason: string }[];
+  };
+  length: {
+    level: PreflightLevel;
+    /** What would play: the clips that resolved. */
+    playMs: number;
+    /** The format's budget. */
+    budgetMs: number;
+    note?: string;
+  };
+  encoder: {
+    level: PreflightLevel;
+    /** The encoder(s) checked: the named one, or every enabled video encoder for "any". */
+    checked: { id: string; name?: string; reachable: boolean; detail: string }[];
+    note?: string;
+  };
+  youtube: {
+    level: PreflightLevel;
+    /** False for an offline test: YouTube is not used. */
+    used: boolean;
+    accountId?: string;
+    accountTitle?: string;
+    note: string;
+  };
+}

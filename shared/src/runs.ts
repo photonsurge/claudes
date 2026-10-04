@@ -287,10 +287,32 @@ export interface RunScript {
   chapters?: boolean;
   /** The resolved thumbnail image URL or site path; absent = no custom thumbnail. */
   thumbnailUrl?: string;
+  /** A frame thumbnail (§6.8): taken from OBS this many ms into the script's
+   *  play during a live render, then uploaded like an image. Set instead of
+   *  `thumbnailUrl`. */
+  thumbnailFrameAtMs?: number;
   /** Finalize outcome: when it completed, the playlist add, and the last error. */
   finalizedAt?: number | null;
   playlistAddedAt?: number | null;
   finalizeError?: string | null;
+}
+
+/**
+ * One OBS screenshot of a video render (§7 "Evidence"): taken at a clip's
+ * midpoint, its bytes in the `short-tests` blob namespace under `blobId`.
+ * Only the latest test of a script keeps its shots; older ones are deleted.
+ */
+export interface RunShot {
+  /** Index of the clip in the play (the clips that aired, skipped ones left out). */
+  clipIndex: number;
+  /** The script clip it shows. */
+  clipId: string;
+  /** When it was taken (wall clock ms). */
+  at: number;
+  /** Key in the `short-tests` blob namespace; absent when the capture failed. */
+  blobId?: string;
+  /** Why there is no image (OBS unreachable, no blob folder…). */
+  error?: string;
 }
 
 /** True when a run renders a scripted video. */
@@ -331,6 +353,9 @@ export interface Run {
   thumbnail?: RunThumbnail | null;
   /** Set when the run renders a scripted video (§6.4). */
   script?: RunScript | null;
+  /** OBS screenshots, one per clip, of an offline test (or a live render with
+   *  RENDER_SHOTS_LIVE on) — §7. Emptied when a newer test of the script lands. */
+  shots?: RunShot[] | null;
   error?: RunError | null;
   createdBy?: string;
   /** Managed by Mongo timestamps (Date at rest); present on persisted docs. */
@@ -378,6 +403,8 @@ export interface RunState {
   thumbnail?: RunThumbnail | null;
   /** Present on a video render: which script and render, and the end privacy. */
   script?: { scriptId: string; renderId?: string; offline: boolean; publishAs: YoutubePrivacy } | null;
+  /** The render's OBS screenshots (§7), when it took any. */
+  shots?: RunShot[] | null;
   error?: RunError | null;
   updated?: string;
 }
@@ -507,6 +534,7 @@ export function toRunState(run: Run): RunState {
           publishAs: run.script.publishAs,
         }
       : null,
+    shots: run.shots?.length ? run.shots : null,
     error: run.error ?? null,
     updated: run.updated ? new Date(run.updated).toISOString() : undefined,
   };
