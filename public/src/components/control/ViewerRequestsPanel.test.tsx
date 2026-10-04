@@ -68,3 +68,31 @@ it("reports when the worker can't be reached", async () => {
   });
   expect(screen.getByRole("alert")).toHaveTextContent("couldn't reach the worker");
 });
+
+it("lists who has been steering the camera, when viewers may", async () => {
+  const row = (author: string, status: string, op = "queue") => ({
+    id: `${author}${Math.random()}`,
+    sceneId: "s1",
+    source: { kind: "viewer", platform: "youtube", author },
+    cmd: op === "skip" ? { op } : { op, target: { type: "kind", kind: "quake" } },
+    status,
+    createdAt: T,
+    expiresAt: T + 1,
+  });
+  fetchMock.mockResolvedValue({
+    ok: true,
+    json: async () => ({ commands: [row("ann", "applied"), row("bob", "refused"), row("ann", "queued"), row("bob", "applied", "skip")] }),
+  });
+  const steer = { ...chat, commands: { ...chat.commands, director: { ...chat.commands.director, enabled: true } } };
+  await act(async () => {
+    render(<ViewerRequestsPanel sceneId="s1" chat={steer} />);
+  });
+  expect(fetchMock).toHaveBeenCalledWith("/api/director/s1/commands?limit=100", { cache: "no-store" });
+  expect(screen.getByLabelText("Top requesters")).toHaveTextContent("@ann · 1 aired / 2 asked@bob · 0 aired / 1 asked");
+});
+
+it("doesn't read the command log when viewers can't steer the camera", () => {
+  render(<ViewerRequestsPanel sceneId="s1" chat={chat} />);
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText("Top requesters")).not.toBeInTheDocument();
+});

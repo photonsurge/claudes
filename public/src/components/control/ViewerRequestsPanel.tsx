@@ -13,6 +13,7 @@ import type { ChatSettings } from "@photonsurge/shared/control";
 import { activePicks } from "@photonsurge/shared/viewer";
 import { useViewerState } from "../../lib/viewer";
 import { useChatMessages } from "../../lib/chat";
+import { fetchCommands, topRequesters, type Requester } from "../../lib/director-commands";
 import { box } from "../panelBox";
 
 const btn = { ...box, cursor: "pointer", padding: "3px 8px", fontSize: 12 } as const;
@@ -47,13 +48,28 @@ export default function ViewerRequestsPanel({ sceneId, chat }: { sceneId: string
   const [text, setText] = useState("");
   const [isMod, setIsMod] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requesters, setRequesters] = useState<Requester[]>([]);
+  const on = chat.enabled && chat.commands.enabled;
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 5000);
     return () => clearInterval(t);
   }, []);
 
-  if (!chat.enabled || !chat.commands.enabled) return null;
+  // Who's been steering the camera lately (the command log, refreshed slowly).
+  useEffect(() => {
+    if (!on || !chat.commands.director.enabled) return;
+    let live = true;
+    const load = () => void fetchCommands(sceneId, 100).then((log) => live && setRequesters(topRequesters(log)));
+    load();
+    const t = setInterval(load, 30_000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [sceneId, on, chat.commands.director.enabled]);
+
+  if (!on) return null;
   const picks = Object.values(activePicks(viewer, now));
 
   const say = async () => {
@@ -81,6 +97,17 @@ export default function ViewerRequestsPanel({ sceneId, chat }: { sceneId: string
       <button type="button" style={btn} disabled={!picks.length && !viewer?.queue.length} onClick={() => void clearViewerPicks(sceneId)}>
         Clear all
       </button>
+
+      {requesters.length ? (
+        <div style={{ fontSize: 12, marginTop: 10 }} aria-label="Top requesters">
+          <div style={{ opacity: 0.8, marginBottom: 2 }}>Top requesters (camera)</div>
+          {requesters.map((r) => (
+            <div key={`${r.platform}:${r.author}`}>
+              @{r.author} · {r.aired} aired / {r.asked} asked
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <div style={{ fontSize: 12, opacity: 0.8, margin: "12px 0 4px" }}>Chat simulator (replies stay here, nothing goes to YouTube)</div>
       <form

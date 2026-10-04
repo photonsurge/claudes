@@ -407,6 +407,18 @@ export function useDirectorCut(
 }
 
 /** Cold-start a scene's director config from the API. */
+/** One scene's director config, or null when it can't be read (Copy from
+ *  channel must never stage defaults in place of a failed fetch). */
+export async function loadDirectorConfig(sceneId: string): Promise<DirectorConfig | null> {
+  try {
+    const res = await fetch(`/api/director/${encodeURIComponent(sceneId)}/config`, { cache: "no-store" });
+    if (!res.ok) return null;
+    return mergeDirectorConfig(DEFAULT_DIRECTOR_CONFIG, (await res.json()) as Partial<DirectorConfig>);
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchDirectorConfig(sceneId: string): Promise<DirectorConfig> {
   try {
     const res = await fetch(`/api/director/${encodeURIComponent(sceneId)}/config`, { cache: "no-store" });

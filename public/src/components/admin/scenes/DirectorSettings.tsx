@@ -26,6 +26,7 @@ import { REGION_SHOTS } from "@photonsurge/shared/director-regions";
 import { DIRECTOR_PRESETS } from "@photonsurge/shared/director-presets";
 import SettingsCard from "./SettingsCard";
 import DirectorKindList from "./DirectorKindList";
+import DirectorTemplateBar from "./DirectorTemplateBar";
 import FavouritesGrid from "./FavouritesGrid";
 import { useSceneDraft } from "./SceneDraft";
 
@@ -61,6 +62,8 @@ export default function DirectorSettings() {
         </>
       }
     >
+      <DirectorTemplateBar />
+
       {/* One-click content bundles — staged like any hand edit, nothing airs on click. */}
       <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1.5 }}>
         {DIRECTOR_PRESETS.map((p) => (

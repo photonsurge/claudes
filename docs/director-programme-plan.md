@@ -1,7 +1,14 @@
 # Director programme plan — per-channel config, break-ins, commands and viewer chat
 
-> **Status: Phase 1 BUILT** (combined 2026-10-04; phase 1 on
-> `claude/director-phase1-foundations`). Phases 2–9 not started. This document
+> **Status: Phases 1–9 BUILT** (combined 2026-10-04; phase 1 on
+> `claude/director-phase1-foundations`, phases 2–9 on
+> `claude/director-phase2-admin-cards`, one commit per phase). Still open from
+> phase 9: the `viewer` ticker kind (`chat.promoteToTicker` has no ticker
+> behind it yet) and Twitch/Kick (no pollers yet). Built differently from the
+> text below: a mod's `:clear` drops viewers' requests only, never the
+> operator's; a `:mode` look always waits for the next shot change; the
+> `ocean` template sets a slower depth cycle (`tempo.depthCycleS`) since there
+> is no depth-cycle switch; Copy from channel also leaves out `mode`. This document
 > **replaces four plans** written on 2026-09-12 that kept pointing at each
 > other: the per-channel director config plan, the director break-ins plan,
 > the director commands plan and the viewer chat interaction plan. The

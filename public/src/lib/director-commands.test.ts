@@ -1,4 +1,5 @@
-import { dropCommand, fetchCommands, sendCommand } from "./director-commands";
+import { dropCommand, fetchCommands, sendCommand, topRequesters } from "./director-commands";
+import type { DirectorCommand } from "@photonsurge/shared/director-commands";
 
 const fetchMock = jest.fn();
 beforeEach(() => {
@@ -49,5 +50,56 @@ describe("fetchCommands / dropCommand", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/director/s/commands/c%201", { method: "DELETE" });
     fetchMock.mockRejectedValue(new Error("offline"));
     expect(await dropCommand("s", "c1")).toBe(false);
+  });
+});
+
+describe("topRequesters", () => {
+  let n = 0;
+  const cmd = (author: string, status: DirectorCommand["status"], over: Partial<DirectorCommand> = {}): DirectorCommand => ({
+    id: `c${++n}`,
+    sceneId: "s1",
+    source: { kind: "viewer", platform: "youtube", author },
+    cmd: { op: "queue", target: { type: "place", query: "Japan" } },
+    status,
+    createdAt: 1,
+    expiresAt: 2,
+    ...over,
+  });
+
+  it("ranks viewers by requests aired, then asked, then name", () => {
+    const log = [
+      cmd("cat", "applied"),
+      cmd("ann", "applied"),
+      cmd("ann", "refused"),
+      cmd("bob", "applied"),
+      cmd("bob", "applied"),
+      cmd("dan", "expired"),
+      cmd("cat", "queued"),
+    ];
+    expect(topRequesters(log)).toEqual([
+      { author: "bob", platform: "youtube", asked: 2, aired: 2 },
+      { author: "ann", platform: "youtube", asked: 2, aired: 1 },
+      { author: "cat", platform: "youtube", asked: 2, aired: 1 },
+      { author: "dan", platform: "youtube", asked: 1, aired: 0 },
+    ]);
+  });
+
+  it("counts camera requests from viewers only, one row per author per platform", () => {
+    const log = [
+      cmd("Ann", "applied"),
+      cmd("ann", "applied", { cmd: { op: "cut", target: { type: "kind", kind: "quake" } } }),
+      cmd("ann", "applied", { source: { kind: "viewer", platform: "sim", author: "ann" } }),
+      cmd("ann", "applied", { cmd: { op: "skip" } }),
+      cmd("op", "applied", { source: { kind: "operator", user: "op" } }),
+    ];
+    expect(topRequesters(log)).toEqual([
+      { author: "Ann", platform: "youtube", asked: 2, aired: 2 },
+      { author: "ann", platform: "sim", asked: 1, aired: 1 },
+    ]);
+  });
+
+  it("keeps the top few", () => {
+    const log = ["a", "b", "c", "d", "e", "f"].map((a) => cmd(a, "applied"));
+    expect(topRequesters(log, 3).map((r) => r.author)).toEqual(["a", "b", "c"]);
   });
 });
