@@ -22,7 +22,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * UND_ERR_CONNECT_TIMEOUT…) only exists on the nested `cause` chain, so flatten
  * it — otherwise the logs can't distinguish DNS from a reset from a timeout.
  */
-function describeError(err: unknown): string {
+export function describeError(err: unknown): string {
   const parts: string[] = [];
   let cur: unknown = err;
   for (let depth = 0; cur instanceof Error && depth < 4; depth++) {
