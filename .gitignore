@@ -9,6 +9,9 @@ dist/
 heapdump/
 *.heap*
 logs/
+# ...but not the /admin/logs page or its API route, which are code.
+!public/src/app/admin/logs/
+!public/src/app/api/admin/logs/
 *.log
 blobs/
 .DS_Store
