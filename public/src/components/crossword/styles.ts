@@ -8,24 +8,24 @@
  * that runs once. Nothing here needs a frame loop.
  */
 import type { CSSProperties } from "react";
+import { mixHex, normalizeHex } from "../../lib/instance";
 
 /** The theme's CSS variables (crosswordThemeVars), set once on the page root by CrosswordPage. */
 export const INK = "var(--cw-ink)";
 export const TEXT_INK = INK;
 export const INK_DIM = "var(--cw-ink-muted)";
-export const INK_FAINT = "color-mix(in srgb, var(--cw-ink-muted) 65%, transparent)";
+export const INK_FAINT = "var(--cw-ink-faint)";
 export const CELL = "var(--cw-cell)";
 export const CELL_SOLVED = "var(--cw-cell-solved)";
 export const BLOCK = "var(--cw-block)";
-/** Hairline between cells and around plates: the ink, faint. */
-export const LINE = "color-mix(in srgb, var(--cw-ink) 22%, transparent)";
+/** Hairline between cells and around plates: computed in JS (themeExtraVars), no color-mix(). */
+export const LINE = "var(--cw-line)";
 export const SANS = "var(--cw-font-text)";
 export const DISPLAY = "var(--cw-font-display)";
 export const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
 /** The page is laid out on a 1920×1080 stage and scaled to the window. */
-export const FRAME_W = 1920;
-export const FRAME_H = 1080;
+export { FRAME_W, FRAME_H } from "./layout";
 
 /** Accent ink: a theme token. */
 export const ACCENT = "var(--cw-accent)";
@@ -58,3 +58,18 @@ export const KEYFRAMES = `@keyframes cwLand{0%{opacity:0;transform:translateY(-4
 @keyframes cwFlash{0%{opacity:.9}100%{opacity:0}}
 @keyframes cwDrain{from{transform:scaleX(var(--cw-from,1))}to{transform:scaleX(0)}}
 @media (prefers-reduced-motion: reduce){[data-cw-anim]{animation:none !important}}`;
+
+/**
+ * The two derived colours, computed from the sanitized theme in JS (no
+ * color-mix()): the hairline between cells and the faint ink. A colour that is
+ * not a hex falls back to the muted ink.
+ */
+export function themeExtraVars(colors: { panel: string; ink: string; inkMuted: string }): Record<string, string> {
+  const ok = (c: string) => normalizeHex(c) !== null;
+  const mix = (base: string, over: string, pct: number) =>
+    ok(base) && ok(over) ? mixHex(base, over, pct) : colors.inkMuted;
+  return {
+    "--cw-line": mix(colors.panel, colors.ink, 22),
+    "--cw-ink-faint": mix(colors.panel, colors.inkMuted, 65),
+  };
+}

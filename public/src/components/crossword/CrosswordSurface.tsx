@@ -22,21 +22,8 @@ import IntroCard from "./IntroCard";
 import Scoreboard from "./Scoreboard";
 import SolveFeed from "./SolveFeed";
 import SpotlightCard from "./SpotlightCard";
-import { ACCENT, EYEBROW, FRAME_H, FRAME_W, INK, INK_DIM, KEYFRAMES, LIVE, MONO, PLATE, SANS } from "./styles";
-
-const PAD = 24;
-const GAP = 20;
-const HEADER_H = 72;
-const FOOTER_H = 64;
-const BODY_TOP = PAD + HEADER_H + GAP;
-const BODY_H = FRAME_H - BODY_TOP - GAP - FOOTER_H - PAD;
-const GRID_COL_W = 800;
-const GRID_PAD = 24;
-const RIGHT_X = PAD + GRID_COL_W + PAD;
-const RIGHT_W = FRAME_W - RIGHT_X - PAD;
-const SPOT_H = 240;
-const BOTTOM_H = 170;
-const MAX_CELL = 64;
+import { BODY_H, BODY_TOP, BOTTOM_H, FOOTER_H, FRAME_H, FRAME_W, GAP, GRID_COL_W, GRID_PAD, HEADER_H, MAX_CELL, PAD, RIGHT_GAP, RIGHT_W, RIGHT_X, SPOT_H } from "./layout";
+import { ACCENT, EYEBROW, INK, INK_DIM, KEYFRAMES, LIVE, MONO, PLATE, SANS } from "./styles";
 
 /** The biggest cell (up to 64 px) that fits a width × height grid in the grid column. */
 export function cellSize(width: number, height: number): number {
@@ -116,7 +103,7 @@ export default function CrosswordSurface({ state, offset, brand, logoUrl }: Cros
             height: BODY_H,
             display: "flex",
             flexDirection: "column",
-            gap: 16,
+            gap: RIGHT_GAP,
           }}
         >
           {s.phase === "finale" ? (
@@ -136,7 +123,7 @@ export default function CrosswordSurface({ state, offset, brand, logoUrl }: Cros
               <div style={{ flex: 1, minHeight: 0 }}>
                 <ClueList entries={s.entries} spotlightId={s.spotlight?.entryId} />
               </div>
-              <div style={{ ...PLATE, height: BOTTOM_H, flex: "0 0 auto", padding: "16px 24px", display: "flex", gap: 28 }}>
+              <div style={{ ...PLATE, height: BOTTOM_H, flex: "0 0 auto", padding: "12px 24px", display: "flex", gap: 28 }}>
                 <Scoreboard scores={s.scores} today={s.today} />
                 <SolveFeed feed={s.feed} />
               </div>

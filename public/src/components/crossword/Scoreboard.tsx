@@ -2,6 +2,7 @@
 
 /** THIS PUZZLE and TODAY: the top few names and their points. */
 import type { CrosswordScore } from "@photonsurge/shared/crossword";
+import { BOTTOM_ROWS } from "./layout";
 import { ACCENT, EYEBROW, INK, INK_FAINT, MONO, SANS } from "./styles";
 
 export interface ScoreboardProps {
@@ -27,7 +28,7 @@ function Table({ title, rows, empty }: { title: string; rows: { name: string; po
   );
 }
 
-export default function Scoreboard({ scores, today, limit = 4 }: ScoreboardProps) {
+export default function Scoreboard({ scores, today, limit = BOTTOM_ROWS }: ScoreboardProps) {
   return (
     <div style={{ display: "flex", gap: 24, minWidth: 0, flex: 2 }}>
       <Table title="This puzzle" rows={scores.slice(0, limit)} empty="No solves yet" />

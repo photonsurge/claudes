@@ -9,7 +9,7 @@
  */
 import { Suspense, useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { useSurfaceRedirect } from "../../../lib/crossword";
+import { useSurfaceGate } from "../../../lib/crossword";
 import CrosswordPage from "../../../components/crossword/CrosswordPage";
 
 function CrosswordRouteInner() {
@@ -20,8 +20,8 @@ function CrosswordRouteInner() {
     return decodeURIComponent(Array.isArray(s) ? s[0] : s ?? "");
   }, [params]);
 
-  const redirecting = useSurfaceRedirect(sceneId, "crossword");
-  if (redirecting) return null;
+  const gate = useSurfaceGate(sceneId, "crossword");
+  if (gate !== "here") return null;
   return <CrosswordPage sceneId={sceneId} token={token} />;
 }
 

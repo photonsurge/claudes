@@ -207,24 +207,35 @@ export function surfaceRedirect(
  * page simply stays where it is.
  */
 export function useSurfaceRedirect(sceneId: string, here: SceneSurface): boolean {
+  return useSurfaceGate(sceneId, here) === "redirecting";
+}
+
+/**
+ * `useSurfaceRedirect` with the third answer: "pending" until the scene list has
+ * been read, so a page that must not draw before it knows (the crossword page,
+ * which would flash a not-a-crossword notice on a globe id) can wait.
+ */
+export function useSurfaceGate(sceneId: string, here: SceneSurface): "pending" | "redirecting" | "here" {
   const router = useRouter();
   const search = useSearchParams()?.toString() ?? "";
-  const [target, setTarget] = useState<string | null>(null);
+  const [gate, setGate] = useState<{ target: string | null } | null>(null);
 
   useEffect(() => {
     let live = true;
+    setGate(null);
     listScenes().then((scenes) => {
       if (!live) return;
-      setTarget(surfaceRedirect(scenes.find((s) => s.id === sceneId), here, search));
+      setGate({ target: surfaceRedirect(scenes.find((s) => s.id === sceneId), here, search) });
     });
     return () => {
       live = false;
     };
   }, [sceneId, here, search]);
 
+  const target = gate?.target ?? null;
   useEffect(() => {
     if (target) router.replace(target);
   }, [target, router]);
 
-  return target !== null;
+  return !gate ? "pending" : target ? "redirecting" : "here";
 }

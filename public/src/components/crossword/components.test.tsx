@@ -4,6 +4,7 @@ import Grid from "./Grid";
 import { ACCENT, BLOCK, CELL_SOLVED } from "./styles";
 import SpotlightCard, { entryPattern } from "./SpotlightCard";
 import CrosswordSurface, { cellSize } from "./CrosswordSurface";
+import * as L from "./layout";
 import { hostFilled } from "./FinaleCard";
 import HowToStrip from "./HowToStrip";
 import { clockOffset } from "../../lib/crossword";
@@ -151,5 +152,33 @@ describe("HowToStrip", () => {
     expect(screen.getByTestId("cw-howto").textContent).toContain("Type your answer in the chat");
     rerender(<HowToStrip inputLive={false} />);
     expect(screen.getByTestId("cw-howto").textContent).toContain("DEMO ROUND");
+  });
+});
+
+describe("fit at the plan's caps", () => {
+  it("the right column's boxes add up to the body", () => {
+    expect(L.SPOT_H + L.BOTTOM_H + L.LIST_H + L.RIGHT_GAP * 2).toBe(L.BODY_H);
+    expect(L.BODY_TOP + L.BODY_H + L.GAP + L.FOOTER_H + L.PAD).toBe(L.FRAME_H);
+    expect(L.PAD * 3 + L.GRID_COL_W + L.RIGHT_W).toBe(L.FRAME_W);
+  });
+
+  it("13 columns fit the grid column at a useful cell size", () => {
+    expect(cellSize(13, 13) * 13 + L.GRID_PAD * 2).toBeLessThanOrEqual(L.GRID_COL_W);
+    expect(cellSize(13, 13)).toBeGreaterThanOrEqual(56);
+  });
+
+  it("16 clues of 48 characters split 8/8 fit the list, credit line included", () => {
+    const f = L.clueFontSize(8);
+    expect(f).toBeGreaterThanOrEqual(16);
+    expect(L.clueColumnHeight(8, f)).toBeLessThanOrEqual(L.LIST_CONTENT_H);
+    // Even a lopsided 10-row column still fits at some size.
+    expect(L.clueColumnHeight(10, L.clueFontSize(10))).toBeLessThanOrEqual(L.LIST_CONTENT_H);
+  });
+
+  it("the bottom plate holds its rows", () => {
+    const content = L.BOTTOM_H - 24; // 12 px padding top and bottom
+    const table = 16 * 1.2 + 6 + L.BOTTOM_ROWS * (20 * 1.2 + 6);
+    const feed = 16 * 1.2 + 6 + L.BOTTOM_ROWS * (18 * 1.25 + 6);
+    expect(Math.max(table, feed)).toBeLessThanOrEqual(content);
   });
 });

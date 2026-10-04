@@ -19,7 +19,7 @@ import { UI_SANS } from "../../lib/fonts";
 import BroadcastBed from "../audio/BroadcastBed";
 import { crosswordThemeVars } from "@photonsurge/shared/crossword";
 import CrosswordSurface from "./CrosswordSurface";
-import { FRAME_H, FRAME_W } from "./styles";
+import { FRAME_H, FRAME_W, themeExtraVars } from "./styles";
 
 const fitScale = () => Math.min(window.innerWidth / FRAME_W, window.innerHeight / FRAME_H) || 1;
 
@@ -60,7 +60,10 @@ export default function CrosswordPage({ sceneId, token }: { sceneId: string; tok
   const scale = useFrameScale();
 
   const theme = game.theme;
-  const vars = useMemo(() => crosswordThemeVars(theme), [theme]);
+  const vars = useMemo(
+    () => ({ ...crosswordThemeVars(theme), ...themeExtraVars(theme.colors) }),
+    [theme],
+  );
 
   // The riser fires on the change into the finale. Undefined until the first
   // state lands, so a page that loads mid-finale does not fire it.

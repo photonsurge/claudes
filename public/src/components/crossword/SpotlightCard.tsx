@@ -32,14 +32,14 @@ export default function SpotlightCard({ entry, spotlight, rows, offset, paused }
     return <div style={{ ...PLATE, height: "100%" }} />;
   }
   const pattern = entryPattern(entry, rows);
-  const tile = Math.min(48, Math.floor(560 / Math.max(1, pattern.length)));
+  const tile = Math.min(40, Math.floor(560 / Math.max(1, pattern.length)));
   const solved = entry.solved;
   const byHost = solved?.name === CROSSWORD_HOST_NAME;
 
   return (
     <div
       data-testid="cw-spotlight"
-      style={{ ...PLATE, height: "100%", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 14 }}
+      style={{ ...PLATE, height: "100%", padding: "16px 28px", display: "flex", flexDirection: "column", gap: 10 }}
     >
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16 }}>
         <div style={EYEBROW}>Now solving</div>
@@ -51,7 +51,7 @@ export default function SpotlightCard({ entry, spotlight, rows, offset, paused }
         style={{
           color: INK,
           fontFamily: SANS,
-          fontSize: 40,
+          fontSize: 34,
           fontWeight: 500,
           lineHeight: 1.15,
           display: "-webkit-box",
