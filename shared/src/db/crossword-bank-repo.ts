@@ -49,6 +49,12 @@ export interface BankWordRef {
   zipf?: number;
 }
 
+/** A word's or clue's current decisions (`decisionsFor`). */
+export interface BankDecision {
+  status: BankApprovalStatus;
+  familyFriendly: boolean | null;
+}
+
 /** One clue with its word's answer (the clue route checks a clue with it before approving). */
 export interface BankClueWithAnswer extends BankClue {
   wordId: string;
@@ -360,6 +366,37 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
         )
         .toArray();
       return poolCounts(rows[0]?.words ?? 0, rows[0]?.ffWords ?? 0);
+    },
+
+    /**
+     * The current approval and family-friendly tag of these words and clues,
+     * by id (word and clue ids are both ObjectIds, so one record holds both).
+     * An id that is in neither collection is left out. The builder re-reads
+     * its puzzle's words and clues with it after storing (§7.4), so a
+     * decision taken during the build still reaches the puzzle.
+     */
+    async decisionsFor(ids: string[]): Promise<Record<string, BankDecision>> {
+      // Bank ids are ObjectIds; a key that is not one is matched as stored.
+      const oids = [...new Set(ids.filter(Boolean))].map((id) => (/^[0-9a-f]{24}$/i.test(id) ? toOid(id)! : id));
+      if (!oids.length) return {};
+      const [w, c] = await Promise.all([
+        words().find({ _id: { $in: oids as unknown[] } } as Filter<Document>, { projection: { _id: 1, [F.approval]: 1, [F.familyFriendly]: 1 } }).toArray(),
+        clues().find({ _id: { $in: oids as unknown[] } } as Filter<Document>, { projection: { _id: 1, [C.approval]: 1, [C.familyFriendly]: 1 } }).toArray(),
+      ]);
+      const out: Record<string, BankDecision> = {};
+      for (const d of w) {
+        out[String(d._id)] = {
+          status: toBankApproval(getPath(d, F.approval)).status,
+          familyFriendly: toFamilyFriendly(getPath(d, F.familyFriendly)),
+        };
+      }
+      for (const d of c) {
+        out[String(d._id)] = {
+          status: toBankApproval(getPath(d, C.approval)).status,
+          familyFriendly: toFamilyFriendly(getPath(d, C.familyFriendly)),
+        };
+      }
+      return out;
     },
 
     /** Approve, reject or return a word to pending; records who and when. */

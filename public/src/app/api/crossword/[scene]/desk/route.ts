@@ -21,7 +21,8 @@ export interface CrosswordDeskResponse {
 /**
  * GET /api/crossword/:scene/desk — what the Desk says beside the board: the
  * structured stock reason (`crosswordStockReason`, the same one the runner
- * logs) over the ready stock, the puzzle on air and the channel's config, and
+ * logs) over the ready stock, the puzzle on air (whatever its status, so a
+ * withdrawn one reads `withdrawn`) and the channel's config, and
  * the approved-pool counts. Admin only; 404 for a scene that is not a
  * crossword channel.
  */
@@ -39,7 +40,13 @@ async function GET__impl(_req: Request, { params }: { params: Promise<{ scene: s
     db.getOrInitCrosswordConfig(scene),
     db.crosswordBank.poolCounts().catch(() => null),
   ]);
-  const reason = crosswordStockReason(ready, scene, game?.phase === "idle" ? "" : (game?.puzzleId ?? ""), {
+  const currentId = game?.phase === "idle" ? "" : (game?.puzzleId ?? "");
+  // The puzzle on air counts whatever its status: withdrawn under the game, it is no longer in the ready list.
+  if (currentId && !ready.some((p) => p.id === currentId)) {
+    const current = await db.crosswordPuzzles.get(currentId);
+    if (current) ready.push(current);
+  }
+  const reason = crosswordStockReason(ready, scene, currentId, {
     familyFriendlyOnly: cfg.familyFriendlyOnly,
     noRepeatPuzzles: cfg.noRepeatPuzzles,
     // The worker's switch; set on the same box for both in dev.

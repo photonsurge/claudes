@@ -16,6 +16,7 @@ import Box from "@mui/material/Box";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import {
   CROSSWORD_CONFIG_LIMITS,
   DEFAULT_CROSSWORD_CONFIG,
@@ -193,9 +194,13 @@ export function PuzzlesCard() {
         <GameField field="maxSize" label="Largest grid" unit="cells" />
       </Box>
       <Box sx={row}>
-        <GameField field="noRepeatPuzzles" label="Puzzle not replayed within" unit="puzzles" />
+        <GameField field="noRepeatPuzzles" label="Avoid repeating a puzzle within the last" unit="puzzles" />
         <GameField field="noRepeatWordsPuzzles" label="Word not reused within" unit="puzzles" />
       </Box>
+      <Typography variant="caption" color="text.secondary">
+        Avoiding a repeat is a preference: when the stock runs out the channel replays the puzzle it played longest ago
+        rather than going idle.
+      </Typography>
     </ChannelCard>
   );
 }

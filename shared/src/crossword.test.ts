@@ -3,6 +3,7 @@ import {
   answerStem,
   chooseNextPuzzle,
   crosswordStockReason,
+  crosswordPuzzleWithdrawn,
   cleanClue,
   cleanPlayerName,
   CROSSWORD_HOST_ID,
@@ -374,6 +375,20 @@ describe("crosswordStockReason", () => {
     const rough = [P("a", { familyFriendly: false })];
     expect(crosswordStockReason(rough, "xw", "", cfg)).toEqual({ kind: "noFamilyFriendly", unplayed: 0 });
     expect(crosswordStockReason(rough, "xw", "", { ...cfg, familyFriendlyOnly: false })).toEqual({ kind: "fresh", unplayed: 1 });
+  });
+
+  it("withdrawn: the puzzle on air was rejected, or untagged on a family-friendly channel", () => {
+    expect(crosswordStockReason([P("a", { status: "rejected", plays: [here(1)] }), P("b")], "xw", "a", cfg)).toEqual({
+      kind: "withdrawn",
+      unplayed: 1,
+    });
+    const untagged = [P("a", { familyFriendly: false, plays: [here(1)] })];
+    expect(crosswordStockReason(untagged, "xw", "a", cfg).kind).toBe("withdrawn");
+    expect(crosswordStockReason(untagged, "xw", "a", { ...cfg, familyFriendlyOnly: false }).kind).toBe("fresh");
+    expect(crosswordPuzzleWithdrawn(untagged[0], { familyFriendlyOnly: true })).toBe(true);
+    expect(crosswordPuzzleWithdrawn(untagged[0], { familyFriendlyOnly: false })).toBe(false);
+    expect(crosswordPuzzleWithdrawn(P("r", { status: "rejected" }))).toBe(true);
+    expect(crosswordPuzzleWithdrawn(P("ok"))).toBe(false);
   });
 
   it("unapproved puzzles count only when allowed", () => {

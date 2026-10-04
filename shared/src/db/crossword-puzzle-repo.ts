@@ -86,6 +86,11 @@ export function makeCrosswordPuzzleRepo(model: Model<iCrosswordPuzzleModel>) {
       return (res.matchedCount ?? 0) > 0;
     },
 
+    async setFamilyFriendly(id: string, familyFriendly: boolean): Promise<boolean> {
+      const res = await model.updateOne({ id }, { $set: { familyFriendly } }).exec();
+      return (res.matchedCount ?? 0) > 0;
+    },
+
     async remove(id: string): Promise<boolean> {
       const res = await model.deleteOne({ id }).exec();
       return (res.deletedCount ?? 0) > 0;

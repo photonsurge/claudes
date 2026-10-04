@@ -115,3 +115,9 @@ it("goes through the db facade and reports the puzzles a decision changed", asyn
     changed.untagged = [];
   }
 });
+
+it("stores an edit as the cleaned text the approval check validated", async () => {
+  bank.getClue.mockResolvedValue(clue("Old text"));
+  expect((await patch({ text: "  Remains of a ruined ship (5) ", approval: "approved" })).status).toBe(200);
+  expect(bank.editClue).toHaveBeenCalledWith("c1", "Remains of a ruined ship", "u1");
+});

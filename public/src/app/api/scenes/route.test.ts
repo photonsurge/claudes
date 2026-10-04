@@ -71,6 +71,14 @@ describe("GET /api/scenes", () => {
     const body = await (await GET()).json();
     expect(body.scenes[0].watchToken).toBe("secret-token");
   });
+
+  it("carries youtubeAccountId for an admin only", async () => {
+    mockListScenes.mockResolvedValue([{ id: "xw", name: "Words", surface: "crossword", watchToken: "t", youtubeAccountId: "UCword" }]);
+    expect((await (await GET()).json()).scenes).toEqual([{ id: "xw", name: "Words", surface: "crossword" }]);
+    mockCookieGet.mockReturnValue({ value: "tok" });
+    mockIsAdmin.mockReturnValue(true);
+    expect((await (await GET()).json()).scenes[0].youtubeAccountId).toBe("UCword");
+  });
 });
 
 describe("POST /api/scenes", () => {

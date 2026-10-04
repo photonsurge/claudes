@@ -29,6 +29,7 @@ import {
   applyAnswer,
   chooseNextPuzzle,
   cleanPlayerName,
+  crosswordPuzzleWithdrawn,
   crosswordStockReason,
   emptyGame,
   isPuzzleComplete,
@@ -103,8 +104,11 @@ export interface SceneRuntime {
   lastIdleCheckAt: number;
   /** Why the scene is replaying or idle (§7.5), or null with fresh stock. Logged when it changes. */
   stockNote: string | null;
-  /** The puzzle on air was rejected under it (§7.4): the current clue finishes, then the finale. */
-  puzzleRejected: boolean;
+  /**
+   * The puzzle on air was withdrawn under it (§7.4): rejected, or untagged on
+   * a family-friendly channel. The current clue finishes, then the finale.
+   */
+  puzzleWithdrawn: boolean;
   lastStatusCheckAt: number;
   /** A save lost to a newer game: another host has this scene. The next poll stands it down. */
   lost: boolean;
@@ -117,6 +121,8 @@ export interface SceneRuntime {
   /** Games waiting to be saved, oldest first; one save is in flight at a time. */
   saveQueue: CrosswordGame[];
   saving: boolean;
+  /** The save queue's drain in flight, so a stopped runner's last write can be waited for. */
+  draining: Promise<void> | null;
 }
 
 export interface CrosswordRunnerState {
@@ -130,6 +136,12 @@ export interface CrosswordRunnerState {
    * `seq` was read (nobody else is saving).
    */
   standDown: Map<string, { until: number; seq: number }>;
+  /**
+   * Stopped runners' saves still in flight, by scene. No new runner loads for
+   * the scene until they settle, so an old runner's late write never lands
+   * after (and so never beats) the new one's.
+   */
+  stopping: Map<string, Promise<void>>;
 }
 
 export interface CrosswordRunnerDeps {
@@ -168,6 +180,7 @@ export const newCrosswordRunnerState = (): CrosswordRunnerState => ({
   lastPollAt: -Infinity,
   polling: null,
   standDown: new Map(),
+  stopping: new Map(),
 });
 
 /** A failed game save is retried this many times before it is logged and left to the next change. */
@@ -218,7 +231,7 @@ async function commit(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps):
     rt.saveQueue = [];
   }
   rt.saveQueue.push(rt.game);
-  if (!rt.saving) void drainSaves(rt, deps);
+  if (!rt.saving) rt.draining = drainSaves(rt, deps);
 }
 
 /**
@@ -233,6 +246,7 @@ async function drainSaves(rt: SceneRuntime, deps: CrosswordRunnerDeps): Promise<
       for (let attempt = 0; !rt.stopped; attempt++) {
         try {
           const wrote = await deps.db.crosswordGames.save(game);
+          if (wrote === false && attempt > 0 && (await wroteEarlier(game, deps))) break;
           if (wrote === false) {
             // A newer game is stored: another host is running this scene.
             rt.lost = true;
@@ -250,6 +264,20 @@ async function drainSaves(rt: SceneRuntime, deps: CrosswordRunnerDeps): Promise<
     if (rt.stopped) rt.saveQueue = [];
   } finally {
     rt.saving = false;
+  }
+}
+
+/**
+ * A retry that the store refuses may only be refusing our own first attempt,
+ * which failed to answer but did land: the stored game is this very one (its
+ * seq and its projection's time). Then the save succeeded.
+ */
+async function wroteEarlier(game: CrosswordGame, deps: CrosswordRunnerDeps): Promise<boolean> {
+  try {
+    const stored = await deps.db.crosswordGames.get(game.sceneId);
+    return !!stored && stored.seq === game.seq && stored.pub?.serverNow === game.pub?.serverNow;
+  } catch {
+    return false;
   }
 }
 
@@ -317,6 +345,8 @@ export function stockNote(reason: CrosswordStockReason): string | null {
       return "no ready puzzles: idle";
     case "noFamilyFriendly":
       return "no family-friendly stock: idle";
+    case "withdrawn":
+      return "puzzle withdrawn: ending early";
   }
 }
 
@@ -334,7 +364,7 @@ function noteStock(rt: SceneRuntime, note: string | null): void {
  */
 async function startNext(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps): Promise<void> {
   rt.lastIdleCheckAt = now;
-  rt.puzzleRejected = false;
+  rt.puzzleWithdrawn = false;
   const ready = await deps.db.crosswordPuzzles.list({ status: "ready" });
   const opts = { familyFriendlyOnly: rt.cfg.familyFriendlyOnly, allowUnapproved: allowUnapproved() };
   const next = chooseNextPuzzle(ready, rt.sceneId, rt.cfg.noRepeatPuzzles, opts);
@@ -375,7 +405,7 @@ const toFinale = (rt: SceneRuntime, now: number) => {
  * no other comes up.
  */
 function moveSpotlight(rt: SceneRuntime, now: number, skip?: string): void {
-  const entry = rt.puzzle && !rt.puzzleRejected ? nextSpotlightEntry(rt.puzzle, rt.game, skip) : null;
+  const entry = rt.puzzle && !rt.puzzleWithdrawn ? nextSpotlightEntry(rt.puzzle, rt.game, skip) : null;
   if (!entry) toFinale(rt, now);
   else rt.game = { ...rt.game, spotlight: spotlightOn(entry.id, now, rt.cfg) };
 }
@@ -386,7 +416,7 @@ async function stepPlaying(rt: SceneRuntime, now: number, deps: CrosswordRunnerD
   const g = rt.game;
   if (now >= g.phaseEndsAt) {
     // A rejected puzzle's open words stay unshown.
-    if (!rt.puzzleRejected) rt.game = revealAll(puzzle, g, now);
+    if (!rt.puzzleWithdrawn) rt.game = revealAll(puzzle, g, now);
     toFinale(rt, now);
     log(TAG, `ceiling`, { sceneId: rt.sceneId, puzzleId: puzzle.id });
     return commit(rt, now, deps);
@@ -428,7 +458,7 @@ async function advance(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps)
       await startNext(rt, now, deps);
     } else if (g.phase === "idle") {
       if (now - rt.lastIdleCheckAt >= CROSSWORD_IDLE_CHECK_MS) await startNext(rt, now, deps);
-    } else if (g.phase === "intro" && rt.puzzleRejected) {
+    } else if (g.phase === "intro" && rt.puzzleWithdrawn) {
       // Rejected before a clue aired: on to the next puzzle.
       await endCurrentPlay(rt, now, deps);
       await startNext(rt, now, deps);
@@ -488,7 +518,7 @@ async function loadScene(
     lastBeatAt: -Infinity,
     lastIdleCheckAt: -Infinity,
     stockNote: null,
-    puzzleRejected: false,
+    puzzleWithdrawn: false,
     lastStatusCheckAt: -Infinity,
     lost: false,
     lock: Promise.resolve(),
@@ -496,32 +526,42 @@ async function loadScene(
     stopped: false,
     saveQueue: [],
     saving: false,
+    draining: null,
   };
   if (isFrozen(rt) && game.phase !== "idle") rt.frozenAt = savedAt;
-  if (puzzle?.status === "rejected" && game.phase !== "idle") markRejected(rt);
+  if (puzzle && crosswordPuzzleWithdrawn(puzzle, cfg) && game.phase !== "idle") markWithdrawn(rt);
   await refreshToday(rt, now, deps);
   log(TAG, `runner loaded`, { sceneId, phase: game.phase, puzzleNo: game.puzzleNo, resumed: !!stored });
   return rt;
 }
 
-/** The puzzle on air was rejected (§7.4): finish the clue on, then the finale. */
-function markRejected(rt: SceneRuntime): void {
-  if (rt.puzzleRejected) return;
-  rt.puzzleRejected = true;
-  log(TAG, `puzzle rejected on air — finishing this clue, then the finale`, { sceneId: rt.sceneId, puzzleId: rt.game.puzzleId });
+/**
+ * The puzzle on air was withdrawn (§7.4: rejected, or untagged on a
+ * family-friendly channel): finish the clue on, then the finale.
+ */
+function markWithdrawn(rt: SceneRuntime): void {
+  if (rt.puzzleWithdrawn) return;
+  rt.puzzleWithdrawn = true;
+  log(TAG, `puzzle withdrawn on air — finishing this clue, then the finale`, { sceneId: rt.sceneId, puzzleId: rt.game.puzzleId });
 }
 
-/** Re-read the status of the puzzle on air now and then. Best effort. */
+/**
+ * Re-read the puzzle on air now and then (status and family-friendly flag,
+ * against the channel's current config). Best effort.
+ */
 async function checkPuzzleStatus(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps): Promise<void> {
   const p = rt.puzzle;
-  if (!p || rt.puzzleRejected || rt.game.phase === "idle" || rt.game.phase === "finale") return;
+  if (!p || rt.puzzleWithdrawn || rt.game.phase === "idle" || rt.game.phase === "finale") return;
+  // A channel switched to family friendly only mid-puzzle needs no read to know.
+  if (crosswordPuzzleWithdrawn(p, rt.cfg)) return markWithdrawn(rt);
   if (now - rt.lastStatusCheckAt < CROSSWORD_STATUS_CHECK_MS) return;
   rt.lastStatusCheckAt = now;
   try {
     const fresh = await deps.db.crosswordPuzzles.get(p.id);
-    if (fresh && fresh.status === "rejected" && rt.puzzle?.id === p.id) {
-      p.status = "rejected";
-      markRejected(rt);
+    if (fresh && rt.puzzle?.id === p.id && crosswordPuzzleWithdrawn(fresh, rt.cfg)) {
+      p.status = fresh.status;
+      p.familyFriendly = fresh.familyFriendly;
+      markWithdrawn(rt);
     }
   } catch (err) {
     log(TAG, `puzzle status check failed`, { sceneId: rt.sceneId, puzzleId: p.id, err: String(err) });
@@ -567,6 +607,14 @@ function stopScene(state: CrosswordRunnerState, sceneId: string, why: string): v
   if (!rt) return;
   rt.stopped = true;
   state.scenes.delete(sceneId);
+  // A save already sent still lands (or fails); the next runner here waits for it.
+  const draining = rt.draining;
+  if (rt.saving && draining) {
+    const done: Promise<void> = draining.catch(() => undefined).finally(() => {
+      if (state.stopping.get(sceneId) === done) state.stopping.delete(sceneId);
+    });
+    state.stopping.set(sceneId, done);
+  }
   log(TAG, `runner stopped (${why})`, { sceneId });
 }
 
@@ -584,6 +632,9 @@ async function pollScene(state: CrosswordRunnerState, sceneId: string, now: numb
   const inputLive = !!run && !!run.chat?.enabled;
 
   if (!existing) {
+    // A stopped runner's save is still in flight: load once it has landed (a
+    // later poll), never block the poll on it.
+    if (state.stopping.has(sceneId)) return;
     const rt = await loadScene(sceneId, cfg, run, inputLive, now, deps);
     state.scenes.set(sceneId, rt);
     await locked(rt, () => afterPoll(rt, run, inputLive, now, deps));
@@ -691,9 +742,11 @@ export async function submitAnswersTo(
   deps: CrosswordRunnerDeps,
 ): Promise<SubmitResult> {
   const rt = state.scenes.get(sceneId);
-  if (!rt) return { running: false, solved: [] };
+  if (!rt || rt.stopped) return { running: false, solved: [] };
   return locked(rt, async () => {
     const solved: string[] = [];
+    // Stopped while this waited (another host saved a newer game): not ours to take.
+    if (rt.stopped) return { running: false, solved };
     const puzzle = rt.puzzle;
     if (!puzzle || isFrozen(rt) || (rt.game.phase !== "playing" && rt.game.phase !== "finale")) {
       return { running: true, solved };
@@ -786,8 +839,9 @@ export async function commandTo(
   deps: CrosswordRunnerDeps,
 ): Promise<CommandResult | null> {
   const rt = state.scenes.get(sceneId);
-  if (!rt) return null;
-  return locked(rt, async (): Promise<CommandResult> => {
+  if (!rt || rt.stopped) return null;
+  return locked(rt, async (): Promise<CommandResult | null> => {
+    if (rt.stopped) return null;
     const g = rt.game;
     const clock = clockOf(rt, now);
     const noop = (note: string): CommandResult => ({ applied: false, note });
@@ -825,7 +879,7 @@ export async function commandTo(
         if (g.phase === "finale") {
           rt.game = { ...g, phaseEndsAt: clock };
         } else {
-          if (rt.puzzle && !rt.puzzleRejected) rt.game = revealAll(rt.puzzle, g, clock);
+          if (rt.puzzle && !rt.puzzleWithdrawn) rt.game = revealAll(rt.puzzle, g, clock);
           toFinale(rt, clock);
         }
         break;

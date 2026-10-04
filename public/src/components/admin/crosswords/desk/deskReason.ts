@@ -37,6 +37,10 @@ export function deskReason(phase: CrosswordPhase, info: DeskInfo | null): string
         : `Replaying. This puzzle has aired on this channel before, because no unplayed puzzle was available. Approve more words so a new one can be built.${poolLine(pool)}`;
     case "noReady":
       return `Idle. There are no ready puzzles: approve more words so one can be built.${poolLine(pool)}`;
+    case "withdrawn":
+      return phase === "idle"
+        ? null
+        : "Ending early. This puzzle was withdrawn on air (a word or clue in it was rejected or edited, or it lost its family-friendly tag on this family-friendly channel): the clue on air finishes, then the finale.";
     case "noFamilyFriendly":
       return `Idle. This channel plays family-friendly puzzles only and none of the ready ones are: tag more words and clues family friendly and approve them, or turn the setting off.${poolLine(pool)}`;
   }

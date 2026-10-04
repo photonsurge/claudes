@@ -155,6 +155,12 @@ describe("repos", () => {
     expect(new M(puzzle).toObject()).not.toHaveProperty("unapproved");
   });
 
+  it("puzzle repo sets the family-friendly flag of one puzzle", async () => {
+    const updateOne = jest.fn((_f: any, _u: any) => ({ exec: async () => ({ matchedCount: 1 }) }));
+    expect(await makeCrosswordPuzzleRepo({ updateOne } as any).setFamilyFriendly("p1", false)).toBe(true);
+    expect(updateOne).toHaveBeenCalledWith({ id: "p1" }, { $set: { familyFriendly: false } });
+  });
+
   it("puzzle upsert never writes plays", async () => {
     const updateOne = jest.fn(() => ({ exec: async () => ({}) }));
     const model: any = { updateOne, findOne: () => ({ lean: () => ({ exec: async () => null }) }) };
@@ -336,5 +342,16 @@ describe("bank repo writes and pick (fake collections)", () => {
       "validation.sources.wordfreq.zipf": { $type: "number" },
     });
     expect(calls.find(([, o]) => o.name === "xwbank_norm_ix")![1]).toEqual({ name: "xwbank_norm_ix" });
+  });
+
+  it("decisionsFor reads the current approval and tag of words and clues by id", async () => {
+    const f = fake();
+    expect(await f.repo.decisionsFor(["nope"])).toEqual({});
+    f.setWords([{ _id: oid(1), approval: { status: "approved" }, familyFriendly: true }]);
+    f.setClues([{ _id: oid(9), approval: { status: "rejected" } }]);
+    expect(await f.repo.decisionsFor([String(oid(1)), String(oid(9)), "nope"])).toEqual({
+      [String(oid(1))]: { status: "approved", familyFriendly: true },
+      [String(oid(9))]: { status: "rejected", familyFriendly: null },
+    });
   });
 });

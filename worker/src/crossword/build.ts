@@ -26,6 +26,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { AppDb } from "@photonsurge/shared/db/index";
+import type { BankDecision } from "@photonsurge/shared/db/crossword-bank-repo";
 import {
   numberEntries,
   unplayedStock,
@@ -172,6 +173,47 @@ export function channelStock(
   );
 }
 
+/**
+ * What changed under a stored puzzle while it was built (§7.4): a word or
+ * clue in it rejected (or, unless the puzzle is a dev one, no longer
+ * approved), or gone from the bank, rejects it; a family-friendly tag taken
+ * off untags it. The bank's cascade only reaches puzzles already stored, so a
+ * decision taken between the pick and the store would otherwise be missed.
+ * Seed puzzles are not in the bank and are left alone.
+ */
+export function recheckPuzzle(
+  puzzle: Pick<CrosswordPuzzle, "entries" | "familyFriendly" | "source" | "unapproved">,
+  decisions: Readonly<Record<string, BankDecision>>,
+): { reject: boolean; untag: boolean } {
+  let reject = false;
+  let untag = false;
+  if (puzzle.source === "seed") return { reject, untag };
+  for (const e of puzzle.entries) {
+    for (const id of [e.wordId, e.clueId]) {
+      if (!id) continue;
+      const d = decisions[id];
+      if (!d || d.status === "rejected" || (d.status !== "approved" && !puzzle.unapproved)) reject = true;
+      if (puzzle.familyFriendly && d?.familyFriendly !== true) untag = true;
+    }
+  }
+  return { reject, untag };
+}
+
+/** Re-read the stored puzzle's words and clues and withdraw or untag it (and the returned copy). */
+async function recheckStored(db: BuildDb, puzzle: CrosswordPuzzle): Promise<void> {
+  if (puzzle.source === "seed") return;
+  const ids = puzzle.entries.flatMap((e) => [e.wordId, e.clueId]).filter(Boolean);
+  const { reject, untag } = recheckPuzzle(puzzle, await db.crosswordBank.decisionsFor(ids));
+  if (reject) {
+    await db.crosswordPuzzles.setStatus(puzzle.id, "rejected");
+    puzzle.status = "rejected";
+  }
+  if (untag) {
+    await db.crosswordPuzzles.setFamilyFriendly(puzzle.id, false);
+    puzzle.familyFriendly = false;
+  }
+}
+
 /** Build one puzzle for a scene and (unless dry) store it. */
 export async function buildPuzzle(db: BuildDb, req: CrosswordGenerateRequest, opts: BuildOptions = {}): Promise<BuildResult> {
   const now = opts.now ?? Date.now;
@@ -232,7 +274,10 @@ export async function buildPuzzle(db: BuildDb, req: CrosswordGenerateRequest, op
     // Built from words nobody approved: it airs only where the switch is on too.
     ...(pick.unapproved ? { unapproved: true } : {}),
   };
-  if (!opts.dryRun) await db.crosswordPuzzles.upsert(puzzle);
+  if (!opts.dryRun) {
+    await db.crosswordPuzzles.upsert(puzzle);
+    await recheckStored(db, puzzle);
+  }
   return {
     puzzle,
     seed,

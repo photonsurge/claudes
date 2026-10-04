@@ -15,11 +15,12 @@ const mockGetConfig = jest.fn();
 const mockList = jest.fn();
 const mockGame = jest.fn();
 const mockPool = jest.fn();
+const mockGetPuzzle = jest.fn();
 jest.mock("@photonsurge/shared/db/index", () => ({
   getAppDb: async () => ({
     getScene: (...a: unknown[]) => mockGetScene(...a),
     getOrInitCrosswordConfig: (...a: unknown[]) => mockGetConfig(...a),
-    crosswordPuzzles: { list: (...a: unknown[]) => mockList(...a) },
+    crosswordPuzzles: { list: (...a: unknown[]) => mockList(...a), get: (...a: unknown[]) => mockGetPuzzle(...a) },
     crosswordGames: { get: (...a: unknown[]) => mockGame(...a) },
     crosswordBank: { poolCounts: (...a: unknown[]) => mockPool(...a) },
   }),
@@ -114,4 +115,18 @@ it("a channel with no game yet, and a pool that cannot be read", async () => {
   mockPool.mockRejectedValue(new Error("no bank"));
   ready = [puzzle("a")];
   expect((await get()).body).toEqual({ reason: { kind: "fresh", unplayed: 1 }, pool: null });
+});
+
+it("a puzzle withdrawn on air is read by id and reported as withdrawn", async () => {
+  mockGame.mockResolvedValue({ phase: "playing", puzzleId: "a" });
+  const gone = puzzle("a", { status: "rejected", plays: [play(1)] });
+  ready = [puzzle("b")];
+  mockGetPuzzle.mockResolvedValue(gone);
+  expect((await get()).body.reason).toEqual({ kind: "withdrawn", unplayed: 1 });
+  expect(mockGetPuzzle).toHaveBeenCalledWith("a");
+  // Untagged on a family-friendly channel: still ready, but withdrawn here.
+  ready = [puzzle("a", { familyFriendly: false, plays: [play(1)] })];
+  mockGetPuzzle.mockClear();
+  expect((await get()).body.reason.kind).toBe("withdrawn");
+  expect(mockGetPuzzle).not.toHaveBeenCalled();
 });

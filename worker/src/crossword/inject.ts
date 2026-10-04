@@ -32,8 +32,13 @@ export async function handleInject(
 ) {
   const sceneId = typeof payload?.sceneId === "string" ? payload.sceneId : "";
   if (!sceneId) throw new UnrecoverableError("crossword.inject: sceneId is required");
+  // Another worker hosts this scene (this one stood down after a lost save,
+  // §4.4): a plain error, so BullMQ retries the job (attempts: 3) and another
+  // worker can take it.
   const notRunning = () =>
-    new UnrecoverableError(`crossword.inject: the host is not running on "${sceneId}" (not a crossword channel, or not enabled)`);
+    state.standDown.has(sceneId)
+      ? new Error(`crossword.inject: "${sceneId}" is hosted by another worker (this one stood down); retrying`)
+      : new UnrecoverableError(`crossword.inject: the host is not running on "${sceneId}" (not a crossword channel, or not enabled)`);
 
   // Just after boot the runner may not have polled yet: poll once before failing.
   if (!state.scenes.has(sceneId)) await pollNow(state, now, deps);

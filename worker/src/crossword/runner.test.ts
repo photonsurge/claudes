@@ -610,7 +610,7 @@ describe("a puzzle rejected on air (§7.4: nothing airs unapproved)", () => {
     await h.run(10_000);
     // Still on the same clue.
     expect(h.game()).toMatchObject({ phase: "playing", spotlight: { entryId: "3A" } });
-    expect(h.state.scenes.get(SCENE)!.puzzleRejected).toBe(true);
+    expect(h.state.scenes.get(SCENE)!.puzzleWithdrawn).toBe(true);
     // The clue runs out, the host fills it and holds, then the finale instead of the next clue.
     await h.run(50_000 + 6_000);
     expect(h.game().phase).toBe("finale");
@@ -664,7 +664,7 @@ describe("a puzzle rejected on air (§7.4: nothing airs unapproved)", () => {
     f.puzzles.get("p1")!.status = "rejected";
     const h2 = harness(f, newCrosswordRunnerState(), h.now);
     await h2.first();
-    expect(h2.state.scenes.get(SCENE)!.puzzleRejected).toBe(true);
+    expect(h2.state.scenes.get(SCENE)!.puzzleWithdrawn).toBe(true);
   });
 });
 
@@ -734,5 +734,119 @@ describe("puzzles built from unapproved words (CROSSWORD_ALLOW_UNAPPROVED)", () 
     const h = harness(fakeDb({ puzzles: [dev()] }));
     await h.first();
     expect(h.game()).toMatchObject({ phase: "intro", puzzleId: "dev" });
+  });
+});
+
+describe("two hosts: what is not a lost host, and what a stopped runner refuses (§4.4)", () => {
+  test("a retry refused only because our own first attempt landed is a success", async () => {
+    const f = fakeDb();
+    const h = harness(f);
+    await h.first();
+    const save = f.db.crosswordGames.save.getMockImplementation()!;
+    f.db.crosswordGames.save
+      .mockImplementationOnce(async (g: CrosswordGame) => {
+        await save(g);
+        throw new Error("timed out after writing");
+      })
+      .mockImplementationOnce(async () => false as never);
+    await h.run(12_000);
+    await h.run(2_000);
+    expect(h.state.scenes.has(SCENE)).toBe(true);
+    expect(h.state.standDown.size).toBe(0);
+  });
+
+  test("a retry refused because another game is stored is a lost host", async () => {
+    const f = fakeDb();
+    const h = harness(f);
+    await h.first();
+    f.db.crosswordGames.save
+      .mockImplementationOnce(async () => {
+        throw new Error("timed out, nothing written");
+      })
+      .mockImplementationOnce(async () => false as never);
+    await h.run(12_000);
+    await h.run(2_000);
+    expect(h.state.scenes.has(SCENE)).toBe(false);
+    expect(h.state.standDown.has(SCENE)).toBe(true);
+  });
+
+  test("a stopped runner's save in flight lands before a new runner loads the scene", async () => {
+    const f = fakeDb();
+    const h = harness(f);
+    await h.first();
+    const save = f.db.crosswordGames.save.getMockImplementation()!;
+    const stuck = deferred();
+    const order: string[] = [];
+    f.db.crosswordGames.save.mockImplementationOnce(async (g: CrosswordGame) => {
+      await stuck.promise;
+      order.push(`save ${g.seq}`);
+      return save(g);
+    });
+    await h.run(12_000); // intro → playing: that save hangs
+    f.setCfg({ enabled: false });
+    await h.run(1_000);
+    expect(h.state.scenes.has(SCENE)).toBe(false);
+    expect(h.state.stopping.has(SCENE)).toBe(true);
+    f.setCfg({ enabled: true });
+    const get = f.db.crosswordGames.get.getMockImplementation()!;
+    f.db.crosswordGames.get.mockImplementation(async () => (order.push("load"), get()));
+    await h.run(2_000);
+    // Not loaded while the old save is out, and the poll was not held up.
+    expect(h.state.scenes.has(SCENE)).toBe(false);
+    stuck.resolve();
+    await flush();
+    await h.run(1_000);
+    expect(h.state.scenes.has(SCENE)).toBe(true);
+    expect(order[0]).toMatch(/^save /);
+    expect(order).toContain("load");
+    expect(h.state.stopping.has(SCENE)).toBe(false);
+  });
+
+  test("a stopped runner takes no answer and runs no command", async () => {
+    const f = fakeDb();
+    const h = harness(f);
+    await h.first();
+    await h.run(13_000);
+    h.state.scenes.get(SCENE)!.stopped = true;
+    expect(await h.answer([{ name: "a", text: "rode" }])).toEqual({ running: false, solved: [] });
+    expect(f.db.crosswordSolves.append).not.toHaveBeenCalled();
+    expect(await h.command("pause")).toBeNull();
+  });
+
+  test("an inject on a worker that stood down fails retryably, saying another worker hosts it", async () => {
+    const f = fakeDb();
+    const state = newCrosswordRunnerState();
+    f.db.crosswordGames.save.mockImplementation(async () => false as never);
+    const h = harness(f, state);
+    await h.first();
+    await h.run(14_000);
+    expect(state.standDown.has(SCENE)).toBe(true);
+    const err = await handleInject({ sceneId: SCENE, kind: "command", command: "pause" }, state, f.deps, h.now).catch((e) => e);
+    expect(String(err.message)).toMatch(/hosted by another worker/);
+    expect(err.name).not.toBe("UnrecoverableError");
+  });
+});
+
+describe("a puzzle untagged on air (§7.4)", () => {
+  test("on a family-friendly channel it finishes the clue and ends; elsewhere it plays on", async () => {
+    const f = fakeDb();
+    const h = harness(f);
+    await h.first();
+    await h.run(12_000);
+    f.puzzles.get("p1")!.familyFriendly = false;
+    await h.run(10_000);
+    expect(h.state.scenes.get(SCENE)!.puzzleWithdrawn).toBe(true);
+    await h.run(56_000);
+    expect(h.game().phase).toBe("finale");
+    expect(Object.keys(h.game().solved)).toEqual(["3A"]);
+
+    const g = fakeDb({ cfg: { familyFriendlyOnly: false } });
+    const h2 = harness(g);
+    await h2.first();
+    await h2.run(12_000);
+    g.puzzles.get("p1")!.familyFriendly = false;
+    await h2.run(66_000 + 6_000);
+    expect(h2.state.scenes.get(SCENE)!.puzzleWithdrawn).toBe(false);
+    expect(h2.game().phase).toBe("playing");
   });
 });

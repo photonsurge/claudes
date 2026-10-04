@@ -16,7 +16,8 @@ type Ctx = { params: Promise<{ id: string }> };
  * PATCH /api/crossword/clues/:id — the clue-level decisions (§7.4, §8.4). Body,
  * any of:
  *
- *  • `text`: edit the clue. An approved clue goes back to pending and its tag is
+ *  • `text`: edit the clue, stored after `cleanClue` (what an approval in the
+ *    same body is checked against). An approved clue goes back to pending and its tag is
  *    cleared (the repo's rule), so an edit is applied first and a decision in
  *    the same body lands on the edited clue;
  *  • `approval`: "pending" | "approved" | "rejected";
@@ -78,7 +79,8 @@ async function PATCH__impl(req: Request, { params }: Ctx) {
     r.untagged.forEach((x) => untagged.add(x));
   };
   try {
-    if (hasText) await found(db.editCrosswordClue(id, body.text as string, by));
+    // Stored as cleaned, the text the approval check validated (the repo keeps the first original).
+    if (hasText) await found(db.editCrosswordClue(id, cleanClue(body.text as string) || (body.text as string), by));
     if (hasApproval) await found(db.setCrosswordClueApproval(id, body.approval as BankApprovalStatus, by));
     if (hasTag) await found(db.setCrosswordClueFamilyFriendly(id, body.familyFriendly as boolean | null, by));
   } catch (err) {

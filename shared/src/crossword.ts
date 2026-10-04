@@ -975,6 +975,14 @@ export function chooseNextPuzzle(
   return played.find((x) => !recent.has(x.p.id))?.p ?? played[0]?.p ?? null;
 }
 
+/**
+ * The puzzle on air may no longer air on this channel (§7.4): rejected, or
+ * untagged on a family-friendly channel. The runner finishes the clue on and
+ * ends it.
+ */
+export const crosswordPuzzleWithdrawn = (p: CrosswordPuzzle, opts: CrosswordStockOptions = {}) =>
+  p.status !== "ready" || (!!opts.familyFriendlyOnly && p.familyFriendly !== true);
+
 /** Unplayed ready stock for a scene (the top-up job's measure), with the same channel filter. */
 export const unplayedStock = (puzzles: CrosswordPuzzle[], sceneId: string, opts: CrosswordStockOptions = {}) =>
   eligibleStock(puzzles, opts).filter((p) => !playedOn(p, sceneId)).length;
@@ -984,9 +992,11 @@ export const unplayedStock = (puzzles: CrosswordPuzzle[], sceneId: string, opts:
  * why"). `fresh`: an unplayed puzzle is (or is next) on air. `replay`: the
  * channel has played everything it may play and replays. `noReady`: no ready
  * puzzle at all. `noFamilyFriendly`: ready puzzles exist, none of them family
- * friendly, and the channel asks for that.
+ * friendly, and the channel asks for that. `withdrawn`: the puzzle on air was
+ * taken out of play under it (rejected, or no longer fits the channel, e.g.
+ * untagged on a family-friendly channel), so it is ending early.
  */
-export type CrosswordStockReasonKind = "fresh" | "replay" | "noReady" | "noFamilyFriendly";
+export type CrosswordStockReasonKind = "fresh" | "replay" | "noReady" | "noFamilyFriendly" | "withdrawn";
 
 export interface CrosswordStockReason {
   kind: CrosswordStockReasonKind;
@@ -998,7 +1008,8 @@ export interface CrosswordStockReason {
  * The structured reason beside `chooseNextPuzzle`, shared by the runner's log
  * and the Desk. `currentPuzzleId` is the puzzle on air ("" when idle): it is
  * `fresh` when this is its first play here, `replay` when it aired here
- * before. With nothing on air the reason describes what `chooseNextPuzzle`
+ * before, `withdrawn` when it is no longer ready or no longer fits the channel
+ * (pass it in `puzzles` whatever its status). With nothing on air the reason describes what `chooseNextPuzzle`
  * would pick next.
  */
 export function crosswordStockReason(
@@ -1011,6 +1022,7 @@ export function crosswordStockReason(
   const unplayed = eligibleStock(puzzles, opts).filter((p) => p.id !== currentPuzzleId && !playedOn(p, sceneId)).length;
   const current = currentPuzzleId ? puzzles.find((p) => p.id === currentPuzzleId) : undefined;
   if (current) {
+    if (current.status !== "ready" || !fitsChannel(current, opts)) return { kind: "withdrawn", unplayed };
     const playsHere = current.plays.filter((x) => x.sceneId === sceneId).length;
     return { kind: playsHere >= 2 ? "replay" : "fresh", unplayed };
   }

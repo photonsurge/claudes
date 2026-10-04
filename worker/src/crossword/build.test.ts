@@ -9,6 +9,7 @@ import {
   CrosswordBuildError,
   DEV_FAMILY_FRIENDLY_REASON,
   indexBank,
+  recheckPuzzle,
   topUpScenes,
 } from "./build";
 
@@ -51,6 +52,8 @@ function fakeDb(
     played?: CrosswordPuzzle[];
     stored?: number;
     indexes?: string[];
+    /** Decisions taken during the build, over the bank's (all approved, tagged as listed). */
+    changed?: Record<string, { status: "pending" | "approved" | "rejected"; familyFriendly: boolean | null }>;
   } = {},
 ) {
   const bank = opts.bank ?? WORDS;
@@ -75,18 +78,32 @@ function fakeDb(
   const upsert = jest.fn(async (p: any) => p);
   const list = jest.fn(async (_q?: any) => opts.ready ?? []);
   const recentForScene = jest.fn(async (_s: string, n: number) => (opts.played ?? []).slice(0, n));
+  // The bank as it stands after the store: as picked, unless a decision changed it.
+  const decisionsFor = jest.fn(async (ids: string[]) => {
+    const now: Record<string, { status: string; familyFriendly: boolean | null }> = {};
+    for (const w of bank) {
+      now[w.id] = { status: "approved", familyFriendly: w.familyFriendly };
+      for (const c of w.clues) now[c.id] = { status: "approved", familyFriendly: c.familyFriendly };
+    }
+    Object.assign(now, opts.changed);
+    return Object.fromEntries(ids.filter((id) => now[id]).map((id) => [id, now[id]]));
+  });
+  const setStatus = jest.fn(async () => true);
+  const setFamilyFriendly = jest.fn(async () => true);
   const db = {
     getOrInitCrosswordConfig: jest.fn(async () => ({ ...DEFAULT_CROSSWORD_CONFIG, ...opts.cfg })),
     crosswordScenes: jest.fn(async () => opts.scenes ?? []),
-    crosswordBank: { playable, words: () => words, ensureIndexes, poolCounts },
+    crosswordBank: { playable, words: () => words, ensureIndexes, poolCounts, decisionsFor },
     crosswordPuzzles: {
+      setStatus,
+      setFamilyFriendly,
       recentForScene,
       upsert,
       list,
       model: { countDocuments: () => ({ exec: async () => opts.stored ?? 0 }) },
     },
   } as any;
-  return { db, playable, upsert, ensureIndexes, words, have, poolCounts };
+  return { db, playable, upsert, ensureIndexes, words, have, poolCounts, decisionsFor, setStatus, setFamilyFriendly };
 }
 
 const FAST = { layout: { maxAttempts: 8, budgetMs: 1e9 }, allowUnapproved: false };
@@ -353,5 +370,59 @@ describe("indexBank", () => {
     const b = await indexBank(f.db);
     expect(b).toEqual({ indexes: a.indexes, dropped: [] });
     expect(f.words.dropIndex).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a decision taken while a puzzle was built (§7.4)", () => {
+  const firstWord = (p: CrosswordPuzzle) => p.entries[0];
+
+  it("rejects the stored puzzle when one of its words was rejected meanwhile", async () => {
+    // Build once to learn which words it uses, then again with one of them rejected.
+    const dry = await buildPuzzle(fakeDb().db, { sceneId: "xw", seed: 3 }, { ...FAST, dryRun: true });
+    const wid = firstWord(dry.puzzle).wordId;
+    const f = fakeDb({ changed: { [wid]: { status: "rejected", familyFriendly: true } } });
+    const r = await buildPuzzle(f.db, { sceneId: "xw", seed: 3 }, FAST);
+    expect(f.upsert).toHaveBeenCalled();
+    expect(f.setStatus).toHaveBeenCalledWith(r.puzzle.id, "rejected");
+    expect(r.puzzle.status).toBe("rejected");
+    expect(f.setFamilyFriendly).not.toHaveBeenCalled();
+  });
+
+  it("untags the stored puzzle when a clue's family-friendly tag came off", async () => {
+    const dry = await buildPuzzle(fakeDb().db, { sceneId: "xw", seed: 3 }, { ...FAST, dryRun: true });
+    expect(dry.puzzle.familyFriendly).toBe(true);
+    const cid = firstWord(dry.puzzle).clueId;
+    const f = fakeDb({ changed: { [cid]: { status: "approved", familyFriendly: false } } });
+    const r = await buildPuzzle(f.db, { sceneId: "xw", seed: 3 }, FAST);
+    expect(f.setFamilyFriendly).toHaveBeenCalledWith(r.puzzle.id, false);
+    expect(r.puzzle).toMatchObject({ status: "ready", familyFriendly: false });
+    expect(f.setStatus).not.toHaveBeenCalled();
+  });
+
+  it("leaves an unchanged puzzle alone, and a dry run reads nothing", async () => {
+    const f = fakeDb();
+    const r = await buildPuzzle(f.db, { sceneId: "xw", seed: 3 }, FAST);
+    expect(f.decisionsFor).toHaveBeenCalledTimes(1);
+    expect(r.puzzle).toMatchObject({ status: "ready", familyFriendly: true });
+    expect(f.setStatus).not.toHaveBeenCalled();
+    const g = fakeDb();
+    await buildPuzzle(g.db, { sceneId: "xw", seed: 3 }, { ...FAST, dryRun: true });
+    expect(g.decisionsFor).not.toHaveBeenCalled();
+  });
+
+  it("recheckPuzzle: gone or not approved rejects (pending only on a dev puzzle is fine); seed puzzles are skipped", () => {
+    const entries = [{ id: "1A", num: 1, dir: "across" as const, row: 0, col: 0, answer: "CAT", clue: "Pet", wordId: "w", clueId: "c" }];
+    const ok = { w: { status: "approved" as const, familyFriendly: true }, c: { status: "approved" as const, familyFriendly: true } };
+    const base = { entries, familyFriendly: true, source: "bank" as const };
+    expect(recheckPuzzle(base, ok)).toEqual({ reject: false, untag: false });
+    expect(recheckPuzzle(base, { w: ok.w })).toEqual({ reject: true, untag: true });
+    expect(recheckPuzzle(base, { ...ok, c: { status: "pending", familyFriendly: true } }).reject).toBe(true);
+    expect(recheckPuzzle({ ...base, unapproved: true }, { ...ok, c: { status: "pending", familyFriendly: null } })).toEqual({
+      reject: false,
+      untag: true,
+    });
+    expect(recheckPuzzle({ ...base, unapproved: true }, { ...ok, c: { status: "rejected", familyFriendly: true } }).reject).toBe(true);
+    expect(recheckPuzzle({ ...base, familyFriendly: false }, { ...ok, w: { status: "approved", familyFriendly: null } }).untag).toBe(false);
+    expect(recheckPuzzle({ ...base, source: "seed" }, {})).toEqual({ reject: false, untag: false });
   });
 });

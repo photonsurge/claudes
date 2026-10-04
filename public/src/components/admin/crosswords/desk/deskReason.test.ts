@@ -21,4 +21,8 @@ describe("deskReason words the route's reason", () => {
     expect(deskReason("idle", info("noReady"))).toMatch(/140 words \(28 family friendly\), about 10 puzzles without a repeat/);
     expect(deskReason("idle", info("noReady", null as never))).not.toMatch(/pool/);
   });
+  it("ending early when the puzzle on air was withdrawn", () => {
+    expect(deskReason("playing", info("withdrawn"))).toMatch(/^Ending early\. This puzzle was withdrawn/);
+    expect(deskReason("idle", info("withdrawn"))).toBeNull();
+  });
 });
