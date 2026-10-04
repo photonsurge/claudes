@@ -2,7 +2,9 @@
 // quickest check that the key, model and voice work.
 //
 // By default the run is saved as a take (source "cli"), so it shows on
-// /admin/presenters with the page's own tests, and an identical earlier take is
+// /admin/presenters with the page's own tests. Its audio is written to the
+// shared blob folder on this machine (`${BLOB_DIR:-./blobs}` from the repo root,
+// the folder compose mounts at /app/blobs), and an identical earlier take is
 // reused instead of paying again. --fresh forces new audio; --no-save skips
 // Mongo entirely (just the HTTP call and the file). --models lists the models.
 //
@@ -10,7 +12,15 @@
 //   cd worker && yarn speak "…" --presenter house        (use a saved presenter's voice)
 //   cd worker && yarn speak --models
 import { loadWorkerEnv } from "../loadEnv";
+import { resolveHostBlobDir } from "../lib/hostBlobDir";
 loadWorkerEnv();
+
+// Write audio into the same folder the containers mount, so a CLI take is a
+// file in the shared blob dir like one made from the page. Must be set before
+// the db (and its blob stores) is created.
+const blobDir = resolveHostBlobDir();
+if (blobDir.dir) process.env.BLOB_DIR = blobDir.dir;
+else delete process.env.BLOB_DIR;
 
 import { writeFileSync } from "node:fs";
 import { getAppDb } from "@photonsurge/shared/db/index";
@@ -76,7 +86,11 @@ async function saved(text: string, out: string) {
           ? ` — reused take ${take.cachedFrom}, no charge (--fresh to make new audio)`
           : `, ${a.latencyMs} ms latency, ~$${a.estCostUsd ?? "?"}, generation ${a.generationId ?? "?"}`),
     );
-    console.log(`saved as take ${take.id} — see /admin/presenters`);
+    const file = db.blobFs?.filePath("presenter-audio", take.id);
+    console.log(
+      `saved as take ${take.id} — see /admin/presenters\n` +
+        (file ? `audio: ${file}` : `audio stored in Mongo (shared blob folder not used: ${blobDir.reason})`),
+    );
   } finally {
     await db.conn.close();
   }

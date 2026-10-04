@@ -46,7 +46,9 @@
 > - Cached takes: each take stores a hash of exactly what is sent to the speech model.
 >   An identical request reuses the earlier take's audio at no charge (marked "reused ·
 >   free"), unless "Make a fresh take" is ticked (`--fresh` on the CLI). `yarn speak`
->   saves its runs as takes (marked CLI), and the page refreshes the list every 10 s, so
+>   saves its runs as takes (marked CLI), with the audio written to the shared blob
+>   folder on the host (`${BLOB_DIR:-./blobs}` from the repo root, the folder compose
+>   mounts at /app/blobs; Mongo if that folder is missing or not writable), and the page refreshes the list every 10 s, so
 >   they show up there. The header totals takes, reuse, and estimated spend and savings.
 > - Shared: `speakable()`, `mp3DurationMs()`.
 > - Not built: the prompt registry and round-up previews (WP1–3), anything on air
