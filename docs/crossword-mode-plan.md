@@ -1,6 +1,8 @@
 # Crossword channel — plan
 
-> **Status: PROPOSED** (2026-10-04). Nothing built. Planned on Fable; the work packages
+> **Status: P0 BUILT** (2026-10-04), not yet tried against a real database or the
+> imported bank; see §14 for what was built and what still needs checking.
+> Planned on Fable; the work packages
 > in §11 are sized to hand to Opus sub-agents one at a time, as with
 > [short-video-plan.md](./short-video-plan.md).
 > Source material: the February prototype in `../crosswords` (§1).
@@ -760,3 +762,44 @@ Questions:
 4. **The committed `.env` files in `../crosswords`** (`.env` on both branches, and
    `ai-services/.env` on `0.1`) are pushed to its remote. The root one holds five
    provider keys. They should be rotated whether or not this plan goes ahead.
+
+## 14. Progress
+
+### P0 (WP1–WP7): built 2026-10-04
+
+All seven packages are in, each with its tests. Not yet run against a real Mongo, a
+real imported bank or a real frame, so M0 is not signed off.
+
+Where the build differs from the plan, or needs the operator:
+- **Bank field names are a guess.** `../crosswords` was not reachable when this was
+  built, so `BANK_WORD_FIELDS` / `BANK_CLUE_FIELDS` in `shared/src/crossword-bank.ts`
+  follow this plan's description. Check them against `db.crosswordbankwords.findOne()`
+  after the import; every reader goes through that one map.
+- **The seed set is new.** The prototype's `data.json` was not available either;
+  `crossword-seeds.ts` holds 43 new space words with clues.
+- **Spotlight tie-break**: most letters showing, then the longest word, then the lowest
+  number. §4.4's "ties to the lowest number" would contradict "the first pick is the
+  longest word", so length breaks ties first.
+- **Clue leak test**: a clue word that starts with the answer or its stem leaks it, and so
+  does an answer of 5+ letters anywhere in the clue's letters. Plain substring matching
+  rejected fair clues for short answers ("plants" for ANT).
+- **Job tiers**: `crossword` jobs run on the background tier; `crossword.inject` is sent
+  to foreground explicitly (`sendToFore`) by the Desk routes.
+- **Stored clue choice (no model)**: an approved clue that validates; otherwise the
+  stored clue nearest 30 characters. Words with no usable clue are dropped and the grid
+  re-laid once. In P0 a theme only sets the title.
+- **Layout** measures about 4 ms an attempt on 60 words, so it stays in-process.
+- **Dropping a word** on the Puzzles page does not re-lay the grid (public has no layout
+  code): the word is removed, the grid trimmed and renumbered, and the drop is refused
+  if the grid splits, falls under `minWords`, or the puzzle is on air.
+- **Top-up** skips a scene whose drafts already reach `stockTarget` while auto-approve is
+  off, so drafts do not pile up every half hour. `CROSSWORD_TOP_UP=off` pauses it.
+- **Restart**: a game resumes mid-puzzle unless its live run started after the last
+  save, which counts as a go-live. Answers are ignored while paused or parked.
+- **"Chat commands" settings card** shows on both kinds of channel, because its Monitor
+  chat switch is how a crossword gets answers.
+- **Public home card**: the puzzle line needs the state route, which is gated by watch
+  token or admin, so anonymous visitors see no puzzle line yet. Needs an ungated,
+  reduced read if wanted.
+- **Licences** in `external-sources-register.md` for the word sources were written from
+  memory; confirm the versions the prototype used.
