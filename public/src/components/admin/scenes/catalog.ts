@@ -51,7 +51,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroupDef[] = [
   {
     id: "programme",
     label: "Programme",
-    blurb: "What the auto-director puts on air when it is driving this channel.",
+    blurb: "What the auto-director puts on air when it is driving this channel, how fast it moves and when it breaks in.",
   },
   {
     id: "identity",
@@ -59,6 +59,12 @@ export const SETTINGS_GROUPS: readonly SettingsGroupDef[] = [
     blurb: "What the channel says it is — on the about slide and on every YouTube broadcast.",
   },
 ];
+
+/**
+ * DirectorConfig keys deliberately NOT editable here: Auto/Off and Skip are
+ * live desk controls on /control, never staged.
+ */
+export const LIVE_ONLY_DIRECTOR_KEYS: readonly string[] = ["mode", "skipNonce"];
 
 export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
   // Layout
@@ -112,15 +118,47 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
   { id: "audio", title: "Music bed", group: "presentation", bucket: "control", fields: ["audio"] },
   { id: "pace", title: "Reading pace", group: "presentation", bucket: "control", fields: ["readPaceCps"] },
 
-  // Programme — the director plans add Pacing, Pools & rotation, Tours &
-  // round-ups, Looks and Break-ins here as further entries.
+  // Programme — the director. Titles carry no "Director:" prefix: the group
+  // heading already says what they are (docs/director-programme-plan.md §7.1).
   {
     id: "director",
-    title: "Auto-director content",
+    title: "Content",
     group: "programme",
     bucket: "director",
     fields: ["kinds", "kindWeights", "countries", "regions"],
   },
+  {
+    id: "director-pacing",
+    title: "Pacing",
+    group: "programme",
+    bucket: "director",
+    fields: [
+      "kindHoldSeconds",
+      "quakeHoldSeconds",
+      "stormHoldSeconds",
+      "volcanoHoldSeconds",
+      "transitionSeconds",
+      "alertCycleSeconds",
+      "adEveryNShots",
+      "tempo",
+    ],
+  },
+  {
+    id: "director-pools",
+    title: "Pools & rotation",
+    group: "programme",
+    bucket: "director",
+    fields: ["minQuakeMag", "minAlertSeverity", "pools", "rotation"],
+  },
+  { id: "director-tours", title: "Tours & round-ups", group: "programme", bucket: "director", fields: ["tours"] },
+  {
+    id: "director-looks",
+    title: "Looks",
+    group: "programme",
+    bucket: "director",
+    fields: ["mapTypes", "overlayOverrides", "kindLooks", "kindSlides", "activeSlideId"],
+  },
+  { id: "director-break-ins", title: "Break-ins", group: "programme", bucket: "director", fields: ["breakIn"] },
 
   // Identity
   { id: "about", title: "About card", group: "identity", bucket: "control", fields: ["about"] },

@@ -7,6 +7,7 @@
 import { DEFAULT_CONTROL_STATE } from "@photonsurge/shared/control";
 import { DEFAULT_DIRECTOR_CONFIG } from "@photonsurge/shared/director";
 import {
+  LIVE_ONLY_DIRECTOR_KEYS,
   SETTINGS_CARDS,
   SETTINGS_GROUPS,
   cardsForStagedKeys,
@@ -50,6 +51,17 @@ describe("settings catalog", () => {
         expect(Object.prototype.hasOwnProperty.call(doc, field)).toBe(true);
       }
     }
+  });
+
+  // Admin is the canonical home for a channel's director: every config key is
+  // editable on some card, except the live desk controls.
+  it("gives every DirectorConfig key an owning card, except the live-only ones", () => {
+    const owned = new Set(SETTINGS_CARDS.filter((c) => c.bucket === "director").flatMap((c) => c.fields));
+    const orphans = Object.keys(DEFAULT_DIRECTOR_CONFIG).filter(
+      (k) => !owned.has(k) && !LIVE_ONLY_DIRECTOR_KEYS.includes(k),
+    );
+    expect(orphans).toEqual([]);
+    for (const k of LIVE_ONLY_DIRECTOR_KEYS) expect(owned.has(k)).toBe(false);
   });
 
   it("names the cards a set of staged keys belongs to, in page order", () => {

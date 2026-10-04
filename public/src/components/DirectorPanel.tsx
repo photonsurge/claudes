@@ -116,6 +116,12 @@ export default function DirectorPanel({
 
       {showForm ? (
         <>
+          <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 8 }}>
+            The channel&apos;s saved director settings (pacing, pools, tours, looks, break-ins) live on{" "}
+            <a href={`/admin/scenes/${encodeURIComponent(sceneId)}?s=programme`} style={{ color: "#7fb3ff" }}>
+              Channel settings ↗
+            </a>
+          </div>
           <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
             {TABS.map((t) => (
               <button

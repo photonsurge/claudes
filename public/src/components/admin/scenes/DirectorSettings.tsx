@@ -4,9 +4,9 @@
  * Per-channel auto-director CONTENT card: which slide types (segment kinds) the
  * director may air and how often, plus the country / area spotlight favourites
  * and one-click presets. Everything here is DirectorConfig (one doc per scene),
- * staged through the page's Save bar (`stageDirector`) — the live pacing
- * controls (Auto/Off, skip, holds, tuning, looks, map types) stay on /control's
- * DirectorPanel.
+ * staged through the page's Save bar (`stageDirector`). Pacing, pools, tours,
+ * looks and break-ins have their own cards in the Programme group; only
+ * Auto/Off and Skip are live-only, on /control's DirectorPanel.
  *
  * Staging contract: every patch carries COMPLETE top-level fields (the whole
  * `kinds` record, the whole `countries` array…) — the draft bucket and the
@@ -75,7 +75,7 @@ export default function DirectorSettings() {
       </Typography>
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
         Tick a type to make it eligible; the frequency biases how often it comes up in
-        rotation. Hold times per type live on the Control page.
+        rotation. Hold times per type are on the Pacing card.
       </Typography>
       <DirectorKindList
         kinds={cfg.kinds}
