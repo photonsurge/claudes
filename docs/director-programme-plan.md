@@ -1,6 +1,7 @@
 # Director programme plan — per-channel config, break-ins, commands and viewer chat
 
-> **Status: PLANNED** (combined 2026-10-04). Nothing built yet. This document
+> **Status: Phase 1 BUILT** (combined 2026-10-04; phase 1 on
+> `claude/director-phase1-foundations`). Phases 2–9 not started. This document
 > **replaces four plans** written on 2026-09-12 that kept pointing at each
 > other: the per-channel director config plan, the director break-ins plan,
 > the director commands plan and the viewer chat interaction plan. The
@@ -280,7 +281,7 @@ export interface DirectorTours {
   countryStops: number;        // 8
   regionStops: number;         // 10
   roundupStops: number;        // 6
-  roundupStopDwellS: number;   // 40
+  stopDwellS: number;          // 40 — dwell per tour stop (country, area and round-up tours)
   roundupWordsPerMin: number;  // 170
   roundupMaxHoldS: number;     // 60
   volcanoZoom: number;         // 5
@@ -334,7 +335,7 @@ export interface BreakInConfig {
 
 | Field | From | Meaning |
 |---|---|---|
-| `tempo?: { mapStepMs; varCycleMs; depthCycleMs }` | `[cfg]` | stamped by `make()`; client constants are the fallback for an old worker |
+| `tempo?: { mapStepMs; varCycleMs; depthCycleMs; stopDwellMs }` | `[cfg]` | stamped by `make()`; client constants are the fallback for an old worker. `stopDwellMs` is `tours.stopDwellS`: the client parks on each tour stop for it, so the worker's hold sizing and the client's dwell can't drift apart |
 | `breakIn?: { reason; interrupted; items? }` | `[brk]` | why the cut jumped the queue; `items` lists every event of a grouped cut |
 | `incomingMs?: number` | `[brk]` | INCOMING pre-roll length, clocked from `patch.spinEpoch` |
 | `leadSlide?: "roundup"` | `[brk][cmd]` | deck leads with the round-up (round-up break-in or `:roundup`) |
@@ -877,6 +878,18 @@ three change nothing on air at defaults.
 | **7** | **Chat foundation** | `ViewerState` model/repo/event; `chat.commands` policy + persistence; `handleChatBatch`; simulator route + job; sweep; `useViewerState`; `AuroraBed.skip/reseed`; `ViewerPickChip`; Viewers group + **Chat commands** card (switches, music, palettes); `ViewerRequestsPanel` | chat P0 | — (independent of 1–6) | viewers pick music and palette; testable via the simulator |
 | **8** | **Viewers steer the director** | `parseOp` grammar; `director` + `mapType` policy sections; viewer arbitration (boundary/immediate, `everyS`, cooldowns, cap); `requestedBy` on air; refusal replies; `mapType` target + `Segment.mapTypes` pin + worker availability | cmd C2 + C3, chat P1 | 6, 7 | `:show japan`, `:roundup uk`, `:mode aurora` |
 | **9** | **Templates + polish** | `director-templates.ts`, Apply / Copy from channel; `replyInChat` confirmations; `viewer` ticker kind; top requesters; Twitch/Kick once pollers exist | cfg T2, chat P2 | 2, 8 | starting points per stream type; chat niceties |
+
+**Phase 1 as built:**
+- The cut routine lives in `worker/src/director/runner.ts` (`performCut`, `previewNext`,
+  `SceneRunner`). The boundary pick is `pickAtBoundary` in `loop.ts`.
+- The tuning types live in `shared/src/director-tuning.ts`; the break-in config,
+  `mergeBreakIn` and `qualifiesAsBreakIn` are in `shared/src/director-break-in.ts`.
+- `breakIn.minQuakeMag` / `minAlertSeverity` default to the pool bar, so every
+  channel breaks in exactly as before.
+- `selectPriority` and the "up next" preview share `breakInCandidate`.
+- The new config parity test found that `kindHoldSeconds.region` / `.point` and
+  `kinds.point` were missing from the Mongo schema, so a saved area hold was
+  silently dropped. Both are fixed.
 
 **Critical path:** 1 → 3 → 4 → 6 → 8. Phase 7 can run in parallel with phases 1–6. Phases 2, 5 and 9
 can slot in whenever their dependencies are done. If only one phase gets built, phase 1 is still worth it:

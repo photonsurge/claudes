@@ -53,6 +53,11 @@ const VAR_CYCLE: Partial<Record<SegmentKind, string[]>> = {
   // A region ("area") spotlight tours the same ambient field cycle as a country.
   region: ["temp", "humidity", "rain", "gust", "cloud", "visibility"],
 };
+/*
+ * Within-shot dwell numbers. The worker stamps the channel's own values on every
+ * cut (`Segment.tempo`, from DirectorConfig.tempo / tours.stopDwellS); these are
+ * the defaults for a cut from an older worker that carries none.
+ */
 const VAR_CYCLE_MS = 5500;
 /** Per-map dwell for the global map-type tour — a touch longer, each look is a beat. */
 const GLOBAL_MAP_CYCLE_MS = 6000;
@@ -94,7 +99,8 @@ const DEPTH_CYCLE_MS = 2500;
  * operator's transition-speed setting); the dwell is ON TOP of that flight, not
  * instead of it. NB the worker must size the segment's holdMs to
  * stops × (flight + dwell) or the tour cuts away mid-package — see
- * `summaryCandidates` in worker/src/director/candidates.ts.
+ * `summaryCandidates` in worker/src/director/candidates.ts. The channel's own
+ * dwell arrives as `segment.tempo.stopDwellMs`; this is the fallback.
  */
 const SUMMARY_STOP_DWELL_MS = 40_000;
 const SUMMARY_STOP_ZOOM = 5;
@@ -185,10 +191,11 @@ export function cutSteps(
   avail: MapTypeAvailability,
   mapTypeIds?: string[],
 ): { steps: MapStep[]; periodMs: number; anchored: boolean } {
+  const tempo = cut.tempo;
   if (cut.kind === "ocean" && cut.depthCycle) {
     return {
       steps: DEPTH_CYCLE_VARS.map((v) => ({ patch: { activeVariable: v } })),
-      periodMs: DEPTH_CYCLE_MS,
+      periodMs: tempo?.depthCycleMs ?? DEPTH_CYCLE_MS,
       anchored: false,
     };
   }
@@ -217,7 +224,7 @@ export function cutSteps(
       }),
     );
     const flightMs = cut.patch.cutTransitionMs ?? 4000;
-    return { steps, periodMs: flightMs + SUMMARY_STOP_DWELL_MS, anchored: true };
+    return { steps, periodMs: flightMs + (tempo?.stopDwellMs ?? SUMMARY_STOP_DWELL_MS), anchored: true };
   }
   const tour = globalMapTour(cut.kind, mapTypeIds);
   if (tour) {
@@ -231,14 +238,14 @@ export function cutSteps(
         patch: t.patch,
         label: relabel ? { title: t.title, subtitle: t.subtitle } : undefined,
       }));
-    return { steps, periodMs: GLOBAL_MAP_CYCLE_MS, anchored: true };
+    return { steps, periodMs: tempo?.mapStepMs ?? GLOBAL_MAP_CYCLE_MS, anchored: true };
   }
   if (cut.kind === "storm") {
     const plan = hazardMapPlan(cut.hazard);
     return { steps: plan.cycle.map((v) => ({ patch: { activeVariable: v } })), periodMs: plan.cycleMs, anchored: true };
   }
   const cyc = VAR_CYCLE[cut.kind] ?? [];
-  return { steps: cyc.map((v) => ({ patch: { activeVariable: v } })), periodMs: VAR_CYCLE_MS, anchored: false };
+  return { steps: cyc.map((v) => ({ patch: { activeVariable: v } })), periodMs: tempo?.varCycleMs ?? VAR_CYCLE_MS, anchored: false };
 }
 
 /**

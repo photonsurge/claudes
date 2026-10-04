@@ -4,15 +4,14 @@
  * one airs next. Deterministic given its rng, so it's unit-tested without a DB.
  *
  * Selection model (operator-requested):
- *  0. Priority — ahead of everything but the opener: any brand-new quake/storm/
- *     volcano nobody's seen yet this session. Breaking news doesn't wait its
- *     turn in random kind rotation. (Round-ups aren't priority — they ride the
- *     recurring `global` spin and surface through fair rotation, once each.)
- *     Only
- *     candidates the builder actually flags `breaking` are eligible here — an
- *     older event that's merely unaired-this-session (e.g. a backlog of
- *     days-old quakes right after the session starts) does NOT camp this tier
- *     and starve every other kind; it just airs later through fair rotation.
+ *  0. Priority (the break-in tier) — ahead of everything but the opener: any
+ *     unaired candidate the builder stamped `breakIn` (a fresh quake / warning
+ *     / eruption that qualifies under the channel's `DirectorConfig.breakIn`).
+ *     Breaking news doesn't wait its turn in random kind rotation. An older
+ *     event that's merely unaired-this-session (e.g. a backlog of days-old
+ *     quakes right after the session starts) carries no stamp, so it does NOT
+ *     camp this tier and starve every other kind; it just airs later through
+ *     fair rotation.
  *     A cooldown also caps priority to at most every OTHER cut, so a
  *     continuous global stream of genuinely-new alerts can't monopolize every
  *     single cut either. See `selectPriority`.
@@ -33,6 +32,7 @@
  *     moving to fresh countries instead of ping-ponging between two.
  */
 import type { Segment, SegmentKind } from "./director";
+import { BREAK_IN_REASONS, type BreakInReason } from "./director-break-in";
 
 export interface Candidate {
   segment: Segment;
@@ -47,14 +47,12 @@ export interface Candidate {
    */
   areaKey?: string;
   /**
-   * Eligible to preempt fair rotation via `selectPriority` (see PRIORITY_KINDS).
-   * Defaults to true when omitted. Set false for a priority-kind candidate that's
-   * merely unaired-this-session but not actually recent — e.g. a backlog of
-   * days-old quakes shouldn't ALL cut the line ahead of every other kind just
-   * because a fresh session hasn't shown them yet; they still air, but through
-   * normal fair rotation like any other candidate.
+   * Set when this candidate qualifies as breaking on the channel (see
+   * `qualifiesAsBreakIn`): eligible to preempt fair rotation via
+   * `selectPriority`. Absent = ordinary rotation only — e.g. a backlog of
+   * days-old quakes still airs, just not ahead of every other kind.
    */
-  breaking?: boolean;
+  breakIn?: { reason: BreakInReason; at: number };
 }
 
 /** World-view kinds share a single camera center, so they're exempt from the
@@ -84,9 +82,11 @@ export interface SelectOpts {
   isFirst?: boolean;
   /** [lng,lat] centers of recently-aired located shots, for the geo cooldown. */
   recentCenters?: [number, number][];
-  /** Areas each kind recently aired (oldest→newest, capped at AREA_MEMORY_CAP),
-   *  so a kind keeps visiting fresh areas instead of ping-ponging between two. */
+  /** Areas each kind recently aired (oldest→newest, capped at the channel's
+   *  `rotation.areaMemoryCap`, default AREA_MEMORY_CAP), so a kind keeps
+   *  visiting fresh areas instead of ping-ponging between two. */
   recentAreasByKind?: ReadonlyMap<SegmentKind, readonly string[]>;
+  /** The channel's `rotation.geoCooldownDeg`; default DEFAULT_GEO_COOLDOWN_DEG. */
   geoCooldownDeg?: number;
   /**
    * Relative airtime multiplier per kind (DirectorConfig.kindWeights); absent
@@ -197,18 +197,42 @@ function pickKindWeighted(
   return kinds[kinds.length - 1];
 }
 
-/** Kinds eligible for the priority tier, most urgent first. Exported so the
- *  "up next" preview (worker/src/director/loop.ts) can mirror this same
- *  ordering instead of drifting out of sync with its own copy. */
-export const PRIORITY_KINDS: SegmentKind[] = ["quake", "storm", "volcano"];
+/**
+ * The candidate the break-in tier would take now: the first reason in
+ * BREAK_IN_REASONS with an unaired, stamped candidate (after the per-kind area
+ * variety rule), highest score within it. No cooldown or master switch here —
+ * see `selectPriority`. Exported so the loop's "up next" preview uses exactly
+ * this rule rather than a copy that drifts.
+ */
+export function breakInCandidate(
+  pool: Candidate[],
+  counts: Map<string, number>,
+  recentAreasByKind?: ReadonlyMap<SegmentKind, readonly string[]>,
+): Candidate | null {
+  for (const reason of BREAK_IN_REASONS) {
+    const waiting = pool.filter((c) => c.breakIn?.reason === reason && !counts.has(c.segment.id));
+    if (!waiting.length) continue;
+    // Variety is per KIND; one reason maps to one kind today, but group by kind
+    // so a reason that ever spans several still applies the rule correctly.
+    const kinds = [...new Set(waiting.map((c) => c.segment.kind))];
+    const spread = kinds.flatMap((kind) =>
+      withoutRecentAreas(waiting.filter((c) => c.segment.kind === kind), kind, recentAreasByKind),
+    );
+    spread.sort((a, b) => b.score - a.score);
+    return spread[0];
+  }
+  return null;
+}
 
 /**
- * Breaking-news preempt: a quake/storm/volcano nobody's seen yet this session,
- * cut to it now instead of waiting on random kind rotation. Checked before
- * `selectNext` on every cut but the opener —
- * returns null once nothing new is waiting, so the caller falls through to
- * normal fair rotation. `counts` is the same per-segment airing tally passed to
- * `selectNext`; a segment with no entry has never aired this session.
+ * Breaking-news preempt (the break-in tier at a shot boundary): cut to an
+ * unaired breaking candidate now instead of waiting on random kind rotation.
+ * Checked before `selectNext` on every cut but the opener — returns null once
+ * nothing breaking is waiting, so the caller falls through to fair rotation.
+ * `counts` is the same per-segment airing tally passed to `selectNext`; a
+ * segment with no entry has never aired this session.
+ *
+ * `opts.enabled: false` (the channel's `breakIn.enabled`) turns the tier off.
  *
  * `opts.cooldown` forces a null (no preempt) regardless of what's waiting. The
  * caller sets it when the PREVIOUS cut was itself a priority pick: across
@@ -221,18 +245,14 @@ export const PRIORITY_KINDS: SegmentKind[] = ["quake", "storm", "volcano"];
 export function selectPriority(
   pool: Candidate[],
   counts: Map<string, number>,
-  opts?: { cooldown?: boolean; recentAreasByKind?: ReadonlyMap<SegmentKind, readonly string[]> },
+  opts?: {
+    cooldown?: boolean;
+    enabled?: boolean;
+    recentAreasByKind?: ReadonlyMap<SegmentKind, readonly string[]>;
+  },
 ): Segment | null {
-  if (opts?.cooldown) return null;
-  for (const kind of PRIORITY_KINDS) {
-    const unaired = withoutRecentAreas(
-      pool.filter((c) => c.segment.kind === kind && !counts.has(c.segment.id) && c.breaking !== false),
-      kind,
-      opts?.recentAreasByKind,
-    ).sort((a, b) => b.score - a.score);
-    if (unaired.length > 0) return unaired[0].segment;
-  }
-  return null;
+  if (opts?.enabled === false || opts?.cooldown) return null;
+  return breakInCandidate(pool, counts, opts?.recentAreasByKind)?.segment ?? null;
 }
 
 /**

@@ -144,13 +144,20 @@ describe("selectNext", () => {
 });
 
 describe("selectPriority", () => {
+  // Only candidates the builder stamped `breakIn` may preempt; this helper is
+  // what the builders do for a fresh quake / storm / volcano.
+  const breaking = (c: Candidate, reason: "quake" | "storm" | "volcano" = c.segment.kind as any): Candidate => ({
+    ...c,
+    breakIn: { reason, at: 0 },
+  });
+
   it("returns null when nothing new is waiting", () => {
     const pool = [cand("country:a", "country")];
     expect(selectPriority(pool, new Map())).toBeNull();
   });
 
   it("ignores an already-aired quake/storm", () => {
-    const pool = [cand("quake:x", "quake"), cand("storm:y", "storm")];
+    const pool = [breaking(cand("quake:x", "quake")), breaking(cand("storm:y", "storm"))];
     const counts = new Map([
       ["quake:x", 1],
       ["storm:y", 1],
@@ -158,18 +165,28 @@ describe("selectPriority", () => {
     expect(selectPriority(pool, counts)).toBeNull();
   });
 
-  it("picks the highest-scored candidate within a priority kind", () => {
+  it("picks the highest-scored candidate within a reason", () => {
     const pool = [
-      cand("quake:small", "quake", undefined, 60),
-      cand("quake:big", "quake", undefined, 140),
+      breaking(cand("quake:small", "quake", undefined, 60)),
+      breaking(cand("quake:big", "quake", undefined, 140)),
     ];
     expect(selectPriority(pool, new Map())?.id).toBe("quake:big");
   });
 
+  it("takes reasons in priority order: quake, then storm, then volcano", () => {
+    const pool = [
+      breaking(cand("volcano:v", "volcano", undefined, 500)),
+      breaking(cand("storm:s", "storm", undefined, 400)),
+      breaking(cand("quake:q", "quake", undefined, 50)),
+    ];
+    expect(selectPriority(pool, new Map())?.id).toBe("quake:q");
+    expect(selectPriority(pool, new Map([["quake:q", 1]]))?.id).toBe("storm:s");
+  });
+
   it("moves breaking alerts to another area when one is available", () => {
     const pool = [
-      { ...cand("storm:kz", "storm", [70, 48], 100, "country:KZ"), breaking: true },
-      { ...cand("storm:jp", "storm", [139, 36], 80, "country:JP"), breaking: true },
+      breaking(cand("storm:kz", "storm", [70, 48], 100, "country:KZ")),
+      breaking(cand("storm:jp", "storm", [139, 36], 80, "country:JP")),
     ];
     const recentAreasByKind = new Map<SegmentKind, readonly string[]>([["storm", ["country:KZ"]]]);
     expect(selectPriority(pool, new Map(), { recentAreasByKind })?.id).toBe("storm:jp");
@@ -182,18 +199,15 @@ describe("selectPriority", () => {
 
   it("doesn't let a backlog of unaired-but-stale quakes camp the priority tier", () => {
     // A fresh session backlog (e.g. just entered auto mode) can carry many
-    // unaired quakes that aren't actually breaking — they should fall through
-    // to fair rotation instead of forcing the whole backlog onto air in a row.
-    const pool = [
-      { ...cand("quake:old1", "quake"), breaking: false },
-      { ...cand("quake:old2", "quake"), breaking: false },
-      cand("country:a", "country"),
-    ];
+    // unaired quakes that aren't actually breaking — the builder leaves them
+    // unstamped, so they fall through to fair rotation instead of forcing the
+    // whole backlog onto air in a row.
+    const pool = [cand("quake:old1", "quake"), cand("quake:old2", "quake"), cand("country:a", "country")];
     expect(selectPriority(pool, new Map())).toBeNull();
   });
 
-  it("still preempts for a quake explicitly flagged breaking", () => {
-    const pool = [{ ...cand("quake:new", "quake"), breaking: true }, cand("country:a", "country")];
+  it("still preempts for a quake stamped breaking", () => {
+    const pool = [breaking(cand("quake:new", "quake")), cand("country:a", "country")];
     expect(selectPriority(pool, new Map())?.id).toBe("quake:new");
   });
 
@@ -201,14 +215,18 @@ describe("selectPriority", () => {
     // A continuous stream of genuinely-new alerts (real-world scale: NWS +
     // Meteoalarm + WMO + GDACS combined) must still interleave with fair
     // rotation rather than preempting every cut back to back.
-    const pool = [{ ...cand("storm:new", "storm"), breaking: true }];
+    const pool = [breaking(cand("storm:new", "storm"))];
     expect(selectPriority(pool, new Map(), { cooldown: true })).toBeNull();
     expect(selectPriority(pool, new Map(), { cooldown: false })?.id).toBe("storm:new");
   });
 
-  it("never preempts for a round-up (it rides the global spin, not the priority tier)", () => {
-    // A round-up now rides a `global` segment (id `global:<docid>`); it must NOT
-    // cut the line like a breaking quake — it surfaces through fair rotation.
+  it("is off when the channel turns break-ins off", () => {
+    const pool = [breaking(cand("quake:new", "quake"))];
+    expect(selectPriority(pool, new Map(), { enabled: false })).toBeNull();
+    expect(selectPriority(pool, new Map(), { enabled: true })?.id).toBe("quake:new");
+  });
+
+  it("never preempts for an unstamped round-up (it rides the global spin through rotation)", () => {
     const roundup = { ...cand("global:sum1", "global"), score: 8 };
     roundup.segment.summary = {
       id: "sum1",

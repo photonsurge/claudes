@@ -29,6 +29,23 @@ import type { VolcanoStatus } from "./volcanoes/types";
 // SegmentKind back from here, since that reverse import is `import type`
 // (erased at runtime), so there's no actual circular runtime dependency.
 import { OVERLAY_KEYS } from "./director-rois";
+import {
+  DEFAULT_DIRECTOR_POOLS,
+  DEFAULT_DIRECTOR_ROTATION,
+  DEFAULT_DIRECTOR_TEMPO,
+  DEFAULT_DIRECTOR_TOURS,
+  DIRECTOR_POOLS_BOUNDS,
+  DIRECTOR_ROTATION_BOUNDS,
+  DIRECTOR_TEMPO_BOUNDS,
+  DIRECTOR_TOURS_BOUNDS,
+  mergeTuningBucket,
+  type DirectorPools,
+  type DirectorRotation,
+  type DirectorTempo,
+  type DirectorTours,
+  type SegmentTempo,
+} from "./director-tuning";
+import { DEFAULT_BREAK_IN, mergeBreakIn, type BreakInConfig } from "./director-break-in";
 
 /** Socket event: worker → every browser. The current on-air segment + queue. */
 export const DIRECTOR_STATE = "director:state" as const;
@@ -178,6 +195,13 @@ export interface Segment {
    * region tour carries places, not a narrative. See cutSteps in the client.
    */
   tourStops?: SegmentSummaryStop[];
+  /**
+   * The channel's within-shot dwell numbers (DirectorConfig.tempo + the tour
+   * stop dwell), stamped on every cut so /watch paces map tours, variable
+   * cycles, depth cycles and tour stops without fetching the config. Absent on
+   * a cut from an older worker — the client falls back to its built-in defaults.
+   */
+  tempo?: SegmentTempo;
 }
 
 /**
@@ -492,6 +516,16 @@ export interface DirectorConfig {
    * selected" (see `mergeActiveSlideId`).
    */
   activeSlideId: Partial<Record<SegmentKind, string | null>>;
+  /** Geo cooldown and selection memory. See director-tuning.ts. */
+  rotation: DirectorRotation;
+  /** Event pool sizes and catalogued-craft boosts. */
+  pools: DirectorPools;
+  /** Tour lengths and round-up pacing. */
+  tours: DirectorTours;
+  /** Within-shot dwell per look / field / depth level. */
+  tempo: DirectorTempo;
+  /** Which fresh events jump the programme, and how. See director-break-in.ts. */
+  breakIn: BreakInConfig;
 }
 
 /**
@@ -1045,6 +1079,13 @@ export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   kindLooks: {},
   kindSlides: DEFAULT_KIND_SLIDES,
   activeSlideId: {},
+  rotation: DEFAULT_DIRECTOR_ROTATION,
+  pools: DEFAULT_DIRECTOR_POOLS,
+  tours: DEFAULT_DIRECTOR_TOURS,
+  tempo: DEFAULT_DIRECTOR_TEMPO,
+  // The break-in bar starts AT the pool bar (minQuakeMag / minAlertSeverity
+  // above), which is what mergeBreakIn's clamp would produce anyway.
+  breakIn: { ...DEFAULT_BREAK_IN, minQuakeMag: 4.5, minAlertSeverity: 3 },
 };
 
 const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
@@ -1308,6 +1349,8 @@ export function mergeDirectorConfig(
       if (typeof patch.kinds[k] === "boolean") kinds[k] = patch.kinds[k] as boolean;
     }
   }
+  const minQuakeMag = num(patch.minQuakeMag, base.minQuakeMag);
+  const minAlertSeverity = num(patch.minAlertSeverity, base.minAlertSeverity);
   return {
     mode: patch.mode === "off" || patch.mode === "auto" ? patch.mode : base.mode,
     kindHoldSeconds: mergeHolds(SEGMENT_KINDS, base.kindHoldSeconds, patch.kindHoldSeconds),
@@ -1327,8 +1370,8 @@ export function mergeDirectorConfig(
     kindWeights: mergeKindWeights(base.kindWeights, patch.kindWeights),
     countries: sanitizeDirectorCountries(patch.countries) ?? base.countries,
     regions: sanitizeDirectorRegions(patch.regions) ?? base.regions,
-    minQuakeMag: num(patch.minQuakeMag, base.minQuakeMag),
-    minAlertSeverity: num(patch.minAlertSeverity, base.minAlertSeverity),
+    minQuakeMag,
+    minAlertSeverity,
     // Floor at 2s: below that the cycle strobes rather than reads.
     alertCycleSeconds: Math.max(2, num(patch.alertCycleSeconds, base.alertCycleSeconds)),
     adEveryNShots: Math.max(1, Math.round(num(patch.adEveryNShots, base.adEveryNShots))),
@@ -1338,6 +1381,16 @@ export function mergeDirectorConfig(
     kindLooks: mergeKindLooks(base.kindLooks, patch.kindLooks),
     kindSlides: mergeKindSlides(base.kindSlides, patch.kindSlides),
     activeSlideId: mergeActiveSlideId(base.activeSlideId, patch.activeSlideId),
+    // Every top-level key must be listed here: anything this merge omits is
+    // dropped on the next save. A stored doc from before these keys existed
+    // has no base value, so each falls back to its defaults.
+    rotation: mergeTuningBucket(DIRECTOR_ROTATION_BOUNDS, base.rotation ?? DEFAULT_DIRECTOR_ROTATION, patch.rotation),
+    pools: mergeTuningBucket(DIRECTOR_POOLS_BOUNDS, base.pools ?? DEFAULT_DIRECTOR_POOLS, patch.pools),
+    tours: mergeTuningBucket(DIRECTOR_TOURS_BOUNDS, base.tours ?? DEFAULT_DIRECTOR_TOURS, patch.tours),
+    tempo: mergeTuningBucket(DIRECTOR_TEMPO_BOUNDS, base.tempo ?? DEFAULT_DIRECTOR_TEMPO, patch.tempo),
+    // Re-clamped against the pool bar on every merge, so raising the pool bar
+    // later also raises a break-in bar that was set below it.
+    breakIn: mergeBreakIn(base.breakIn ?? DEFAULT_BREAK_IN, patch.breakIn, { minQuakeMag, minAlertSeverity }),
   };
 }
 

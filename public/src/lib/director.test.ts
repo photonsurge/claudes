@@ -194,4 +194,39 @@ describe("cutSteps", () => {
     // A global map-type step relabels the card (title), it is never a `focus` step.
     expect(steps.every((s) => !s.focus)).toBe(true);
   });
+
+  describe("pacing (Segment.tempo)", () => {
+    const tempo = { mapStepMs: 9000, varCycleMs: 3000, depthCycleMs: 1500, stopDwellMs: 12000 };
+
+    it("falls back to the built-in dwell when the cut carries no tempo (older worker)", () => {
+      expect(cutSteps(segment({ id: "global:world", kind: "global" }), avail).periodMs).toBe(6000);
+      expect(cutSteps(segment({ id: "country:uk", kind: "country" }), avail).periodMs).toBe(5500);
+      expect(cutSteps(segment({ id: "ocean:p", kind: "ocean", depthCycle: true }), avail).periodMs).toBe(2500);
+      const tour = segment({ id: "region:europe", kind: "region", tourStops: tourStops(), patch: { cutTransitionMs: 4000 } });
+      expect(cutSteps(tour, avail).periodMs).toBe(4000 + 40000);
+    });
+
+    it("paces a map-type tour from the channel's map step", () => {
+      expect(cutSteps(segment({ id: "global:world", kind: "global", tempo }), avail).periodMs).toBe(9000);
+    });
+
+    it("paces a variable cycle from the channel's var cycle", () => {
+      expect(cutSteps(segment({ id: "country:uk", kind: "country", tempo }), avail).periodMs).toBe(3000);
+    });
+
+    it("paces a depth cycle from the channel's depth cycle", () => {
+      expect(cutSteps(segment({ id: "ocean:p", kind: "ocean", depthCycle: true, tempo }), avail).periodMs).toBe(1500);
+    });
+
+    it("parks on each tour stop for the flight plus the channel's stop dwell", () => {
+      const tour = segment({ id: "region:europe", kind: "region", tourStops: tourStops(), tempo, patch: { cutTransitionMs: 2500 } });
+      expect(cutSteps(tour, avail).periodMs).toBe(2500 + 12000);
+    });
+
+    it("leaves a storm's hazard plan cadence alone", () => {
+      const withTempo = cutSteps(segment({ id: "storm:x", kind: "storm", tempo }), avail).periodMs;
+      const without = cutSteps(segment({ id: "storm:x", kind: "storm" }), avail).periodMs;
+      expect(withTempo).toBe(without);
+    });
+  });
 });

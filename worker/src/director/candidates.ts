@@ -12,6 +12,7 @@ import type { AppDb } from "@photonsurge/shared/db/index";
 import {
   kindHoldMs,
   quakeHoldMs,
+  volcanoLevelForStatus,
   stormHoldMs,
   volcanoHoldMs,
   type DirectorConfig,
@@ -21,6 +22,8 @@ import {
   type TrackInfo,
 } from "@photonsurge/shared/director";
 import { coarseGeoCell, type Candidate } from "@photonsurge/shared/director-select";
+import { DEFAULT_DIRECTOR_TOURS, segmentTempo, type DirectorTours } from "@photonsurge/shared/director-tuning";
+import { qualifiesAsBreakIn, type BreakInFavourites, type FreshEvent } from "@photonsurge/shared/director-break-in";
 import { DEFAULT_WIND_SETTINGS } from "@photonsurge/shared/control";
 import { vehicleId, vehicleLabel, type iVehicle } from "@photonsurge/shared/db/vehicle-model";
 import type { iRegionCity } from "@photonsurge/shared/db/region-model";
@@ -46,6 +49,8 @@ import { quakeLiveWindowSince } from "@photonsurge/shared/seismic";
 import { discLookFeeds, type SatImgFeedState } from "@photonsurge/shared/satimg/types";
 import { mmsiCountry, countryNameFlag } from "@photonsurge/shared/tracks/flags";
 import type { SummaryPeriod, iEventSummaryModel } from "@photonsurge/shared/db/event-summary-model";
+import type { iQuake } from "@photonsurge/shared/db/quake-model";
+import type { Volcano } from "@photonsurge/shared/volcanoes/types";
 import { tleGroups } from "../jobs/tracks";
 import { volcanoStatusToSeverity } from "../summaries/aggregate";
 
@@ -96,57 +101,58 @@ const make = (
       camera: { center, zoom },
     },
     holdMs,
+    // The channel's within-shot pacing rides the cut, so /watch never needs the
+    // config (see SegmentTempo).
+    tempo: segmentTempo(cfg.tempo, cfg.tours),
   };
 };
 
 type Detail = { label: string; value: string };
 
-/** Score for the two tiers of catalogued (enriched) craft — a plain notable clears
- *  the fillers, a VIP (Air Force One) tops them. Kept below severe-weather/quake
- *  headlines — tunable later; the data drives it. Only catalogued craft ever reach
- *  the flight/ship pool (see buildCandidates), so every candidate gets one of these. */
-const NOTABLE_SCORE = 45;
-const VIP_SCORE = 80;
-
-/**
- * How recent a quake/storm has to be to jump the priority-preempt tier
- * (`selectPriority`). `db.quakes.list`/`db.alerts.list` return the top N by
- * magnitude/severity with no time cutoff, so right after a session starts (or
- * the worker restarts) most of that backlog is "unaired" — without this window
- * every one of them would preempt fair rotation in turn, and the show would
- * play nothing but quakes/storms until the whole backlog finally airs once.
+/*
+ * Per-channel numbers that used to be constants here now come from the config
+ * (shared/director-tuning.ts), defaults unchanged:
+ *  - `pools.notableBoost` / `pools.vipBoost` (45 / 80): score for the two tiers
+ *    of catalogued craft — a plain notable clears the fillers, a VIP (Air Force
+ *    One) tops them, both below severe-weather/quake headlines. Only catalogued
+ *    craft ever reach the flight/ship pool, so every candidate gets one of these.
+ *  - `pools.alertPoolCap` (40): how many severe-weather candidates the storm
+ *    pool holds at most.
+ *  - `pools.alertCountryCap` (3): per-country storm-candidate cap.
+ *    `db.alerts.list` ranks by severity then recency GLOBALLY, so one prolific
+ *    met service can outnumber the whole pool by itself (live incident:
+ *    Kazhydromet ran 66 simultaneous sev-4 warnings — the top-40 slice came back
+ *    36× Kazakhstan and rotation could only ping-pong between it and the four
+ *    other alerts that squeezed in). Walking the ranked list and keeping at most
+ *    this many per country preserves "biggest stories first" while letting the
+ *    rest of the world on air.
+ *  - `tours.volcanoZoom` (5): mirrors the manual click-to-select framing (see
+ *    public/lib/select-segment.ts).
+ *
+ * Which events count as BREAKING is the channel's `breakIn` config, applied via
+ * `qualifiesAsBreakIn`. `db.quakes.list`/`db.alerts.list` return the top N by
+ * magnitude/severity with no time cutoff, so right after a session starts most
+ * of that backlog is "unaired" — without the freshness window every one of
+ * them would preempt fair rotation in turn. Volcanoes keep a wider 6 h window
+ * on `statusChangedAt` (a weekly bulletin has no "it just happened" time).
  */
-const BREAKING_NEWS_WINDOW_MS = 20 * 60 * 1000;
 
-/**
- * Volcanoes get their own, much wider breaking-news window: the source is a
- * *weekly* bulletin (polled every 30 min), so there's no per-event "it just
- * happened" timestamp the way a quake or alert has — the best signal available
- * is `statusChangedAt`, when OUR cache last saw the status actually flip (see
- * volcano-repo.ts's pipeline-update upsert). A few hours gives that transition
- * room to surface across a couple of poll cycles without staying "breaking"
- * for the volcano's entire multi-week eruption.
- */
-const VOLCANO_BREAKING_WINDOW_MS = 6 * 60 * 60 * 1000;
-
-/** Frame zoom mirrors the manual click-to-select path (see public/lib/select-segment.ts). */
-const VOLCANO_ZOOM = 5;
-
-/** How many severe-weather candidates the storm pool holds at most. */
-const ALERT_POOL_CAP = 40;
-/** How deep into the globally severity-ranked alert list we scan to fill it. */
+/** How deep into the globally severity-ranked alert list we scan to fill the
+ *  storm pool. A query guard, not programme policy, so it stays a constant. */
 const ALERT_SCAN_LIMIT = 300;
-/**
- * Per-country storm-candidate cap. `db.alerts.list` ranks by severity then
- * recency GLOBALLY, so one prolific met service can outnumber the whole pool
- * cap by itself (live incident: Kazhydromet ran 66 simultaneous sev-4 warnings
- * — the top-40 slice came back 36× Kazakhstan and rotation could only
- * ping-pong between it and the four other alerts that squeezed in, while every
- * lower-severity country never became a candidate at all). Walking the ranked
- * list and keeping at most this many per country preserves "biggest stories
- * first" while letting the rest of the world on air.
- */
-const ALERT_COUNTRY_CAP = 3;
+
+/** The channel's favourite places, as the break-in check wants them. */
+function favouritesOf(cfg: DirectorConfig): BreakInFavourites {
+  return { countries: new Set(cfg.countries), regions: new Set(cfg.regions) };
+}
+
+/** Stamp `candidate.breakIn` when the event qualifies on this channel. */
+function stampBreakIn(candidate: Candidate, ev: FreshEvent, cfg: DirectorConfig, now: number): Candidate {
+  if (qualifiesAsBreakIn(ev, cfg.breakIn, favouritesOf(cfg), now)) {
+    candidate.breakIn = { reason: ev.reason, at: ev.at };
+  }
+  return candidate;
+}
 
 /**
  * Merge a notable catalog entry with the live meta into the on-air TrackInfo card
@@ -245,10 +251,6 @@ function fillerCandidates(cfg: DirectorConfig): Candidate[] {
   return out;
 }
 
-/** How many stops a country spotlight tours at most (the establishing centre
- *  shot + one city per compass sector). Sized so the hold stays a few minutes. */
-const COUNTRY_TOUR_STOPS = 8;
-
 /**
  * The camera stops a `country` spotlight tours — the country's OWN cities, from
  * the precomputed `tourCities` dossier (worker `countries.computeTours`, scoped
@@ -259,7 +261,7 @@ const COUNTRY_TOUR_STOPS = 8;
  * spotlight instead. The whole country glows throughout (activeCountryIso keys
  * `country` shots off the curated ISO), so stops don't need per-stop glow.
  */
-function countryTourStops(doc: iCountryModel, shot: CountryShot): SegmentSummaryStop[] {
+function countryTourStops(doc: iCountryModel, shot: CountryShot, maxStops: number): SegmentSummaryStop[] {
   const cities = doc.tourCities ?? [];
   if (!cities.length) return [];
   const iso2 = shot.iso2 || doc.iso2 || undefined;
@@ -275,58 +277,60 @@ function countryTourStops(doc: iCountryModel, shot: CountryShot): SegmentSummary
       iso2,
     });
   }
-  for (const c of cities.slice(0, COUNTRY_TOUR_STOPS - stops.length)) {
+  for (const c of cities.slice(0, Math.max(0, maxStops - stops.length))) {
     stops.push({ label: c.name, subtitle: shot.name, lng: c.lng, lat: c.lat, iso2 });
   }
   return stops;
 }
 
+/** Camera dwell per tour stop, ms — the client parks this long on each stop
+ *  (it reads the same number off `segment.tempo.stopDwellMs`). */
+const stopDwellMs = (cfg: DirectorConfig) => Math.round(cfg.tours.stopDwellS * 1000);
+
 /**
- * Operator-favourite country spotlights. Each airs as a "go round the nation"
- * tour when its precomputed `tourCities` dossier exists (the client flies the
- * camera to each city, showing its weather), else falls back to the curated
- * single framed shot — so a country the tour job hasn't reached yet still airs,
- * exactly as before. Unknown ids (stale config) are skipped. Mirrors
- * regionCandidates.
+ * One country spotlight. It airs as a "go round the nation" tour when its
+ * precomputed `tourCities` dossier exists (the client flies the camera to each
+ * city, showing its weather), else falls back to the curated single framed
+ * shot — so a country the tour job hasn't reached yet still airs. Favourites
+ * get weight 5.
  */
+export async function countryCandidate(db: AppDb, cfg: DirectorConfig, shot: CountryShot): Promise<Candidate> {
+  const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
+  // The computed dossier lives on the Country doc keyed by iso2-lowercased.
+  // A missing/erroring catalog just means the curated fallback shot — fillers
+  // must never throw the show off the air.
+  let doc: iCountryModel | null = null;
+  try {
+    doc = await db.countries.get(shot.iso2.toLowerCase());
+  } catch {
+    doc = null;
+  }
+  const stops = doc ? countryTourStops(doc, shot, cfg.tours.countryStops) : [];
+  // Frame on the computed tour frame when we have one, else the curated shot.
+  const center = doc?.tourFrame?.center ?? shot.center;
+  const zoom = doc?.tourFrame?.zoom ?? shot.zoom;
+  // Size the hold to fly every stop (flight + dwell), floored by the operator's
+  // per-kind minimum — no cap, or the tour cuts away mid-way (as region does).
+  const holdMs = stops.length
+    ? Math.max(kindHoldMs(cfg, "country"), stops.length * (transitionMs + stopDwellMs(cfg)))
+    : kindHoldMs(cfg, "country");
+  const subtitle = stops.length ? "Country tour · National weather" : "Country spotlight · National weather";
+  const seg = make("country", shot.id, shot.name, subtitle, center, zoom, holdMs, cfg);
+  seg.icon = shot.flag;
+  if (stops.length) seg.tourStops = stops;
+  return { score: 6, segment: seg, weight: cfg.countries.includes(shot.id) ? 5 : 1 };
+}
+
+/** Every country spotlight (favourites weighted). Unknown ids are skipped. */
 async function countryCandidates(db: AppDb, cfg: DirectorConfig): Promise<Candidate[]> {
   if (!cfg.kinds.country) return [];
   const out: Candidate[] = [];
-  const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
   for (const id of COUNTRY_SHOTS.map((shot) => shot.id)) {
     const shot = countryShot(id);
-    if (!shot) continue;
-    // The computed dossier lives on the Country doc keyed by iso2-lowercased.
-    // A missing/erroring catalog just means the curated fallback shot — fillers
-    // must never throw the show off the air.
-    let doc: iCountryModel | null = null;
-    try {
-      doc = await db.countries.get(shot.iso2.toLowerCase());
-    } catch {
-      doc = null;
-    }
-    const stops = doc ? countryTourStops(doc, shot) : [];
-    // Frame on the computed tour frame when we have one, else the curated shot.
-    const center = doc?.tourFrame?.center ?? shot.center;
-    const zoom = doc?.tourFrame?.zoom ?? shot.zoom;
-    // Size the hold to fly every stop (flight + dwell), floored by the operator's
-    // per-kind minimum — no cap, or the tour cuts away mid-way (as region does).
-    const holdMs = stops.length
-      ? Math.max(kindHoldMs(cfg, "country"), stops.length * (transitionMs + SUMMARY_STOP_DWELL_MS))
-      : kindHoldMs(cfg, "country");
-    const subtitle = stops.length ? "Country tour · National weather" : "Country spotlight · National weather";
-    const seg = make("country", shot.id, shot.name, subtitle, center, zoom, holdMs, cfg);
-    seg.icon = shot.flag;
-    if (stops.length) seg.tourStops = stops;
-    out.push({ score: 6, segment: seg, weight: cfg.countries.includes(id) ? 5 : 1 });
+    if (shot) out.push(await countryCandidate(db, cfg, shot));
   }
   return out;
 }
-
-/** How many COUNTRIES an area tour visits at most. The region hold is sized to
- *  cover every stop (unlike a round-up, which caps toured stops at
- *  SUMMARY_MAX_TOUR_STOPS). */
-const REGION_TOUR_STOPS = 10;
 
 /**
  * The camera stops an area tour visits: the area's TOP COUNTRIES — never cities.
@@ -338,14 +342,14 @@ const REGION_TOUR_STOPS = 10;
  * stop per country — captioned by the COUNTRY, framed on the country's main
  * population centre (its biggest in-region city's coords, since the dossier
  * carries no country centroid), and tagged with the ISO so the globe glows that
- * exact country. Capped at REGION_TOUR_STOPS countries, biggest-presence first.
+ * exact country. Capped at `tours.regionStops` countries, biggest-presence first.
  *
  * A single-country area (the UK, a US band) has no "top countries" to fly, so it
  * returns [] and the caller airs it as one framed whole-area spotlight rather than
  * zooming into a lone city. Also [] when the region has no cached cities (not yet
  * enriched).
  */
-async function regionTourStops(db: AppDb, regionId: string): Promise<SegmentSummaryStop[]> {
+async function regionTourStops(db: AppDb, regionId: string, maxStops: number): Promise<SegmentSummaryStop[]> {
   const region = await db.regions.get(regionId);
   const cities = region?.topCities ?? [];
   if (!cities.length) return [];
@@ -364,7 +368,7 @@ async function regionTourStops(db: AppDb, regionId: string): Promise<SegmentSumm
   const countries = [...byCountry.values()].sort((a, b) => sumPop(b) - sumPop(a));
   // Single-country area → no country tour to fly; air it as one framed spotlight.
   if (countries.length <= 1) return [];
-  return countries.slice(0, REGION_TOUR_STOPS).map((list): SegmentSummaryStop => {
+  return countries.slice(0, maxStops).map((list): SegmentSummaryStop => {
     const c = list[0];
     return {
       label: c.country || (c.cc ? c.cc.toUpperCase() : c.name),
@@ -376,30 +380,37 @@ async function regionTourStops(db: AppDb, regionId: string): Promise<SegmentSumm
 }
 
 /**
- * Operator-favourite Areas. Each airs as the "go round a place" tour when its
- * bbox has cached cities (the client flies the camera to each, showing its
- * weather), else falls back to a single framed spotlight. Camera framing is
- * derived from the region bbox (see director-regions); unknown ids are skipped.
+ * One Area. It airs as the "go round a place" tour when the region has cached
+ * cities (the client flies the camera to each, showing its weather), else falls
+ * back to a single framed spotlight. Camera framing is derived from the region
+ * bbox (see director-regions). Favourites get weight 5.
  */
+export async function regionCandidate(
+  db: AppDb,
+  cfg: DirectorConfig,
+  r: NonNullable<ReturnType<typeof regionShot>>,
+): Promise<Candidate> {
+  const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
+  const stops = await regionTourStops(db, r.id, cfg.tours.regionStops);
+  // Size the hold to fly EVERY stop (flight + dwell each), floored by the
+  // operator's per-kind minimum — no round-up stop cap here, or the tour would
+  // cut away mid-way through the later countries.
+  const holdMs = stops.length
+    ? Math.max(kindHoldMs(cfg, "region"), stops.length * (transitionMs + stopDwellMs(cfg)))
+    : kindHoldMs(cfg, "region");
+  const subtitle = stops.length ? "Area tour · Regional weather" : "Region spotlight · Regional weather";
+  const seg = make("region", r.id, r.name, subtitle, r.center, r.zoom, holdMs, cfg);
+  if (stops.length) seg.tourStops = stops;
+  return { score: 6, segment: seg, weight: cfg.regions.includes(r.id) ? 5 : 1 };
+}
+
+/** Every Area (favourites weighted). Unknown ids are skipped. */
 async function regionCandidates(db: AppDb, cfg: DirectorConfig): Promise<Candidate[]> {
   if (!cfg.kinds.region) return [];
   const out: Candidate[] = [];
-  const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
-  const regionIds = REGION_SHOTS.map((r) => r.id);
-  for (const id of regionIds) {
+  for (const id of REGION_SHOTS.map((r) => r.id)) {
     const r = regionShot(id);
-    if (!r) continue;
-    const stops = await regionTourStops(db, r.id);
-    // Size the hold to fly EVERY city (flight + dwell each), floored by the
-    // operator's per-kind minimum — no SUMMARY_MAX_TOUR_STOPS cap here, or the
-    // tour would cut away mid-way through the later cities.
-    const holdMs = stops.length
-      ? Math.max(kindHoldMs(cfg, "region"), stops.length * (transitionMs + SUMMARY_STOP_DWELL_MS))
-      : kindHoldMs(cfg, "region");
-    const subtitle = stops.length ? "Area tour · Regional weather" : "Region spotlight · Regional weather";
-    const seg = make("region", r.id, r.name, subtitle, r.center, r.zoom, holdMs, cfg);
-    if (stops.length) seg.tourStops = stops;
-    out.push({ score: 6, segment: seg, weight: cfg.regions.includes(id) ? 5 : 1 });
+    if (r) out.push(await regionCandidate(db, cfg, r));
   }
   return out;
 }
@@ -446,42 +457,29 @@ const SUMMARY_PERIODS: { period: SummaryPeriod; label: string; staleAfterMs: num
   { period: "daily", label: "Daily round-up", staleAfterMs: 3 * 24 * 60 * 60 * 1000 },
 ];
 
-/** Ticker reading speed — scrolling text reads faster than spoken narration. */
-const SUMMARY_WORDS_PER_MIN = 170;
-/** Narration-length cap for a STOP-LESS round-up (nothing to tour → just read). */
-const SUMMARY_MAX_HOLD_MS = 60_000;
-/**
- * Dwell per toured stop — MUST track `SUMMARY_STOP_DWELL_MS` in
- * public/src/lib/director.ts, which parks the camera on each stop ~40s to play
- * that country's left-column package (nation → forecast → alerts → cities →
- * stats). The hold below sizes the segment to cover the tour so it isn't cut
- * mid-package.
- */
-const SUMMARY_STOP_DWELL_MS = 40_000;
-/**
- * Editorial segment-length guardrail: at ~40s/country, size the hold to cover at
- * most this many stops so one round-up can't monopolise the channel for many
- * minutes. Tunable. (A dedupe-by-country pass would make each slot a distinct
- * nation; today the stops are hotspots-then-top-events, already fairly spread.)
- */
-const SUMMARY_MAX_TOUR_STOPS = 6;
-
 /**
  * How long a round-up holds on air. With geocoded stops it DWELLS — the camera
  * parks on each for ~(flight + dwell), playing that country's package deck — so
- * the hold must clear the whole tour, NOT the ≤60s narration cap (which would
- * cut the tour off after the first country). A stop-less round-up keeps the
- * old narration-length hold, floored by the operator's per-kind minimum.
+ * the hold must clear the whole tour, NOT the narration cap (which would cut
+ * the tour off after the first country). A stop-less round-up keeps the
+ * narration-length hold, floored by the operator's per-kind minimum and capped
+ * at `tours.roundupMaxHoldS`.
+ *
+ * The dwell per stop is `tours.stopDwellS` — the client reads the same number
+ * off `segment.tempo.stopDwellMs`, so the hold always covers the tour.
+ * `tours.roundupStops` is the editorial guardrail: the hold covers at most that
+ * many stops, so one round-up can't monopolise the channel for many minutes.
  */
 export function summaryTourHoldMs(
   stopCount: number,
   transitionMs: number,
   narrationMs: number,
   floorMs: number,
+  tours: DirectorTours = DEFAULT_DIRECTOR_TOURS,
 ): number {
-  if (stopCount <= 0) return Math.min(SUMMARY_MAX_HOLD_MS, Math.max(floorMs, narrationMs));
-  const toured = Math.min(stopCount, SUMMARY_MAX_TOUR_STOPS);
-  return Math.max(floorMs, narrationMs, toured * (transitionMs + SUMMARY_STOP_DWELL_MS));
+  if (stopCount <= 0) return Math.min(tours.roundupMaxHoldS * 1000, Math.max(floorMs, narrationMs));
+  const toured = Math.min(stopCount, tours.roundupStops);
+  return Math.max(floorMs, narrationMs, toured * (transitionMs + tours.stopDwellS * 1000));
 }
 
 /**
@@ -506,18 +504,44 @@ function summaryStops(doc: iEventSummaryModel): SegmentSummaryStop[] {
 }
 
 /**
+ * The world round-up `doc` as a candidate. It rides on the recurring `global`
+ * world spin — the spin BECOMES the round-up: it tours the doc's hotspot stops
+ * with the narrative + stats shown as on-air graphics (see the client's
+ * `cutSteps` / mode-slides `segment.summary` branch), instead of the plain
+ * map-type cycle. The event-marker overlays (ROUNDUP_MARKERS) are layered on
+ * so the seismic/alert/volcano markers behind the story are lit. The stable id
+ * `global:<docid>` (unique per round-up doc) is what makes fair rotation air
+ * each fresh round-up once before repeating, exactly like any other `global`
+ * item.
+ */
+export function summaryCandidate(
+  doc: iEventSummaryModel,
+  period: SummaryPeriod,
+  label: string,
+  cfg: DirectorConfig,
+): Candidate {
+  const words = doc.narrative.trim().split(/\s+/).length;
+  const narrationMs = Math.round((words / cfg.tours.roundupWordsPerMin) * 60_000);
+  const stops = summaryStops(doc);
+  const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
+  const holdMs = summaryTourHoldMs(stops.length, transitionMs, narrationMs, kindHoldMs(cfg, "global"), cfg.tours);
+  const seg = make("global", doc.id, "Global Round-Up", label, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, holdMs, cfg, ROUNDUP_MARKERS);
+  seg.summary = {
+    id: doc.id,
+    period,
+    narrative: doc.narrative,
+    generatedAt: doc.generatedAt instanceof Date ? doc.generatedAt.toISOString() : String(doc.generatedAt),
+    stops,
+    stats: doc.stats,
+    sources: doc.sources,
+  };
+  return { score: 8, segment: seg };
+}
+
+/**
  * One round-up candidate per period whose latest EventSummary has a real
  * narrative, hasn't already aired this session (`seenCounts`), and isn't stale
  * (the director was off for a while and the round-up is no longer "current").
- *
- * A round-up rides on the recurring `global` world spin — the spin BECOMES the
- * round-up: it tours the doc's hotspot stops with the narrative + stats shown as
- * on-air graphics (see the client's `cutSteps` / mode-slides `segment.summary`
- * branch), instead of the plain map-type cycle. The event-marker overlays
- * (ROUNDUP_MARKERS) are layered on so the seismic/alert/volcano markers behind
- * the story are lit. The stable id `global:<docid>` (unique per round-up doc) is
- * what makes fair rotation air each fresh round-up once before repeating, exactly
- * like any other `global` item.
  */
 async function summaryCandidates(
   db: AppDb,
@@ -534,37 +558,142 @@ async function summaryCandidates(
       continue; // not ingested yet — skip
     }
     if (!doc || doc.narrativeStatus !== "ok" || !doc.narrative.trim()) continue;
-    const id = `global:${doc.id}`;
-    if (seenCounts?.get(id)) continue; // already aired this session
+    if (seenCounts?.get(`global:${doc.id}`)) continue; // already aired this session
     if (now - new Date(doc.generatedAt).getTime() > staleAfterMs) continue;
-
-    const words = doc.narrative.trim().split(/\s+/).length;
-    const narrationMs = Math.round((words / SUMMARY_WORDS_PER_MIN) * 60_000);
-    const stops = summaryStops(doc);
-    const transitionMs = Math.round((cfg.transitionSeconds ?? 4) * 1000);
-    const holdMs = summaryTourHoldMs(stops.length, transitionMs, narrationMs, kindHoldMs(cfg, "global"));
-    // The round-up rides a `global` spin (id → `global:<docid>`) with the
-    // event markers layered on so the story's quakes/alerts/volcanoes show.
-    const seg = make("global", doc.id, "Global Round-Up", label, GLOBAL_VIEW.center, GLOBAL_VIEW.zoom, holdMs, cfg, ROUNDUP_MARKERS);
-    seg.summary = {
-      id: doc.id,
-      period,
-      narrative: doc.narrative,
-      generatedAt: doc.generatedAt instanceof Date ? doc.generatedAt.toISOString() : String(doc.generatedAt),
-      stops,
-      stats: doc.stats,
-      sources: doc.sources,
-    };
-    out.push({ score: 8, segment: seg });
+    out.push(summaryCandidate(doc, period, label, cfg));
   }
   return out;
 }
 
+/**
+ * One quake. Magnitude is the headline: recent + big ranks highest. Quakes are
+ * geophysical — the shot reads as terrain (dark base + elevation contours +
+ * faults/cables), not a weather field; the quake preset owns that look.
+ */
+export function quakeCandidate(
+  q: Pick<iQuake, "quakeId" | "mag" | "lng" | "lat" | "depthKm"> & Partial<Pick<iQuake, "place" | "time" | "tsunami">>,
+  cfg: DirectorConfig, now: number): Candidate {
+  const timeMs = q.time ? new Date(q.time).getTime() : undefined;
+  const c = quakeSegmentContent({
+    mag: q.mag,
+    place: q.place,
+    depthKm: q.depthKm,
+    timeMs,
+    tsunami: q.tsunami,
+  });
+  // Hold scales with the headline: a Great quake dwells far longer than a Light
+  // one — the operator tunes each magnitude class (quakeHoldSeconds).
+  const seg = make("quake", q.quakeId, c.title, c.subtitle, [q.lng, q.lat], 5, quakeHoldMs(cfg, q.mag), cfg);
+  // Tsunami still flags ocean-risk framing downstream.
+  seg.tsunami = Boolean(q.tsunami);
+  seg.quake = { mag: q.mag, depthKm: q.depthKm };
+  seg.details = c.details;
+  return stampBreakIn({ score: 40 + q.mag * 10, segment: seg }, { reason: "quake", at: timeMs ?? NaN, mag: q.mag }, cfg, now);
+}
+
+/** One erupting/unrest volcano (callers drop dormant ones — no headline). */
+export function volcanoCandidate(v: Volcano, cfg: DirectorConfig, now: number): Candidate {
+  const c = volcanoSegmentContent(v);
+  const sev = volcanoStatusToSeverity(v.status);
+  const seg = make("volcano", v.id, c.title, c.subtitle, [v.lng, v.lat], cfg.tours.volcanoZoom, volcanoHoldMs(cfg, v.status), cfg);
+  seg.icon = c.icon;
+  seg.details = c.details;
+  // Same TrackInfo the manual click path builds — see segments.ts#volcanoTrackInfo.
+  seg.trackInfo = volcanoTrackInfo(v);
+  return stampBreakIn(
+    { score: 50 + sev * 12, segment: seg },
+    { reason: "volcano", at: v.statusChangedAt, volcanoLevel: volcanoLevelForStatus(v.status) },
+    cfg,
+    now,
+  );
+}
+
+/**
+ * One severe-weather alert, or null when it has no polygon to frame (a
+ * geocode-only alert). `capKey` is the bucket the storm pool's per-country cap
+ * counts against: the country when the source encodes one, else the
+ * selector's own coarse cell, so an undecodable source can't flood the pool.
+ */
+export function stormCandidate(
+  a: any,
+  cfg: DirectorConfig,
+  now: number,
+): { candidate: Candidate; capKey: string } | null {
+  const info = Array.isArray(a.info) ? a.info[0] : undefined;
+  const area = info?.area?.[0];
+  const center = alertRepPoint(area?.geometry);
+  if (!center) return null;
+  // Country is the editorial area for alert rotation AND the pool cap. A
+  // numeric camera distance alone is too weak here: large countries (notably
+  // Kazakhstan) can have alerts many degrees apart while still looking like
+  // the same repeated destination on air.
+  const countryCode = alertCountryCode(a);
+  const capKey = countryCode ? `country:${countryCode}` : coarseGeoCell(center) ?? "cell:unknown";
+  const sev = typeof a.maxSeverityRank === "number" ? a.maxSeverityRank : info?.severityRank ?? 0;
+  const sinceIso = info?.onset ?? info?.effective ?? a.sent;
+  const sinceMs = sinceIso ? Date.parse(sinceIso) : NaN;
+  // "Breaking" must be keyed off when WE first saw this (source, identifier)
+  // pair (`created`, Mongoose-managed — untouched by the `$set` on every
+  // re-upsert), NOT the CAP onset/effective/sent above: national met services
+  // routinely re-stamp those on every refresh of an ONGOING warning, so
+  // deriving freshness from them made a days-old Extreme alert look
+  // permanently brand-new and camp the priority tier forever.
+  const firstSeenMs = a.created ? new Date(a.created).getTime() : NaN;
+  const hazard = classifyHazard({ event: info?.event, translatedEvent: info?.translatedHeadline, parameters: info?.parameters });
+  // The hazard drives which maps the shot cycles — open on the plan's first
+  // field. How LONG it holds is the severity's call: the operator tunes each
+  // level (stormHoldSeconds), Extreme lingering the longest.
+  const plan = hazardMapPlan(hazard);
+  // Same classification/labels the map badge/legend + click-to-select card
+  // use — subtitle leads with place then country ("Brest Region · 🇧🇾 Belarus").
+  const c = alertSegmentContent({
+    source: String(a.source),
+    identifier: String(a.identifier),
+    event: info?.event,
+    translatedEvent: info?.translatedHeadline,
+    severityRank: sev,
+    level: info?.sourceSeverity,
+    areaDesc: area?.areaDesc,
+    hazard,
+    center,
+    sinceMs: Number.isNaN(sinceMs) ? undefined : sinceMs,
+  });
+  const seg = make("storm", `${a.source}:${a.identifier}`, c.title, c.subtitle, center, 4.5, stormHoldMs(cfg, sev), cfg, {
+    activeVariable: plan.cycle[0],
+  });
+  seg.hazard = hazard;
+  seg.icon = c.icon;
+  seg.details = c.details;
+  const candidate = stampBreakIn(
+    { score: 50 + sev * 12, segment: seg, areaKey: countryCode ? `country:${countryCode}` : undefined },
+    { reason: "storm", at: firstSeenMs, severityRank: sev },
+    cfg,
+    now,
+  );
+  return { candidate, capKey };
+}
+
+export interface BuildCandidatesOpts {
+  /** Only build these kinds (still subject to the channel's own `kinds`), so a
+   *  "show me a quake" request doesn't scan everything. */
+  kinds?: readonly SegmentKind[];
+}
+
 export async function buildCandidates(
   db: AppDb,
-  cfg: DirectorConfig,
+  channelCfg: DirectorConfig,
   seenCounts?: Map<string, number>,
+  opts?: BuildCandidatesOpts,
 ): Promise<Candidate[]> {
+  const only = opts?.kinds ? new Set(opts.kinds) : null;
+  const cfg: DirectorConfig = only
+    ? {
+        ...channelCfg,
+        kinds: Object.fromEntries(
+          Object.entries(channelCfg.kinds).map(([k, on]) => [k, on && only.has(k as SegmentKind)]),
+        ) as DirectorConfig["kinds"],
+      }
+    : channelCfg;
   const pool: Candidate[] = fillerCandidates(cfg);
   const now = Date.now();
   // Round-ups ride the recurring global spin, so they only make sense when the
@@ -596,27 +725,7 @@ export async function buildCandidates(
         limit: 40,
         sinceMs: quakeLiveWindowSince(now),
       });
-      for (const q of quakes) {
-        const c = quakeSegmentContent({
-          mag: q.mag,
-          place: q.place,
-          depthKm: q.depthKm,
-          timeMs: q.time ? q.time.getTime() : undefined,
-          tsunami: q.tsunami,
-        });
-        // Quakes are geophysical — the shot reads as terrain (dark base +
-        // elevation contours + faults/cables), not a weather field. The quake
-        // preset owns that look; tsunami still flags ocean-risk framing downstream.
-        const tsunami = Boolean(q.tsunami);
-        // Hold scales with the headline: a Great quake dwells far longer than a
-        // Light one — the operator tunes each magnitude class (quakeHoldSeconds).
-        const seg = make("quake", q.quakeId, c.title, c.subtitle, [q.lng, q.lat], 5, quakeHoldMs(cfg, q.mag), cfg);
-        seg.tsunami = tsunami;
-        seg.quake = { mag: q.mag, depthKm: q.depthKm };
-        seg.details = c.details;
-        const breaking = q.time ? now - q.time.getTime() <= BREAKING_NEWS_WINDOW_MS : false;
-        pool.push({ score: 40 + q.mag * 10, segment: seg, breaking });
-      }
+      for (const q of quakes) pool.push(quakeCandidate(q, cfg, now));
     } catch {
       /* no quakes cached yet — fillers carry the show */
     }
@@ -626,17 +735,7 @@ export async function buildCandidates(
   if (cfg.kinds.volcano) {
     try {
       const volcanoes = (await db.volcanoes.list()).filter((v) => v.status !== "dormant");
-      for (const v of volcanoes) {
-        const c = volcanoSegmentContent(v);
-        const sev = volcanoStatusToSeverity(v.status);
-        const seg = make("volcano", v.id, c.title, c.subtitle, [v.lng, v.lat], VOLCANO_ZOOM, volcanoHoldMs(cfg, v.status), cfg);
-        seg.icon = c.icon;
-        seg.details = c.details;
-        // Same TrackInfo the manual click path builds — see segments.ts#volcanoTrackInfo.
-        seg.trackInfo = volcanoTrackInfo(v);
-        const breaking = v.status === "erupting" && now - v.statusChangedAt <= VOLCANO_BREAKING_WINDOW_MS;
-        pool.push({ score: 50 + sev * 12, segment: seg, breaking });
-      }
+      for (const v of volcanoes) pool.push(volcanoCandidate(v, cfg, now));
     } catch {
       /* no volcanoes cached yet — fillers carry the show */
     }
@@ -667,7 +766,7 @@ export async function buildCandidates(
   }
 
   // --- Severe weather: normalised severity ranks; centroid from the polygon.
-  //     Scanned deep but capped per country (ALERT_COUNTRY_CAP) so the pool
+  //     Scanned deep but capped per country (pools.alertCountryCap) so the pool
   //     spans the world's active warnings, not one chatty source's. ---
   if (cfg.kinds.storm) {
     try {
@@ -675,66 +774,14 @@ export async function buildCandidates(
       const perCountry = new Map<string, number>();
       let stormCount = 0;
       for (const a of alerts as any[]) {
-        if (stormCount >= ALERT_POOL_CAP) break;
-        const info = Array.isArray(a.info) ? a.info[0] : undefined;
-        const area = info?.area?.[0];
-        const center = alertRepPoint(area?.geometry);
-        if (!center) continue; // geocode-only alert (no polygon) — can't frame it
-        // Country is the editorial area for alert rotation AND the pool cap. A
-        // numeric camera distance alone is too weak here: large countries
-        // (notably Kazakhstan) can have alerts many degrees apart while still
-        // looking like the same repeated destination on air. Alerts whose
-        // source encodes no country bucket by the selector's own coarse cell so
-        // an undecodable source can't flood the pool either.
-        const countryCode = alertCountryCode(a);
-        const capKey = countryCode ? `country:${countryCode}` : coarseGeoCell(center) ?? "cell:unknown";
-        const used = perCountry.get(capKey) ?? 0;
-        if (used >= ALERT_COUNTRY_CAP) continue;
-        const sev = typeof a.maxSeverityRank === "number" ? a.maxSeverityRank : info?.severityRank ?? 0;
-        const sinceIso = info?.onset ?? info?.effective ?? a.sent;
-        const sinceMs = sinceIso ? Date.parse(sinceIso) : NaN;
-        // "Breaking" must be keyed off when WE first saw this (source, identifier)
-        // pair (`created`, Mongoose-managed — untouched by the `$set` on every
-        // re-upsert), NOT the CAP onset/effective/sent above: national met
-        // services routinely re-stamp those on every refresh of an ONGOING
-        // warning, so deriving freshness from them made a days-old Extreme
-        // alert look permanently brand-new and camp the priority tier forever
-        // (it kept winning selectPriority's "highest-scored breaking" pick).
-        const firstSeenMs = a.created ? new Date(a.created).getTime() : NaN;
-        const hazard = classifyHazard({ event: info?.event, translatedEvent: info?.translatedHeadline, parameters: info?.parameters });
-        // The hazard drives which maps the shot cycles — open on the plan's
-        // first field. How LONG it holds is the severity's call: the operator
-        // tunes each level (stormHoldSeconds), Extreme lingering the longest.
-        const plan = hazardMapPlan(hazard);
-        // Same classification/labels the map badge/legend + click-to-select card
-        // use — subtitle leads with place then country ("Brest Region · 🇧🇾 Belarus").
-        const c = alertSegmentContent({
-          source: String(a.source),
-          identifier: String(a.identifier),
-          event: info?.event,
-          translatedEvent: info?.translatedHeadline,
-          severityRank: sev,
-          level: info?.sourceSeverity,
-          areaDesc: area?.areaDesc,
-          hazard,
-          center,
-          sinceMs: Number.isNaN(sinceMs) ? undefined : sinceMs,
-        });
-        const seg = make("storm", `${a.source}:${a.identifier}`, c.title, c.subtitle, center, 4.5, stormHoldMs(cfg, sev), cfg, {
-          activeVariable: plan.cycle[0],
-        });
-        seg.hazard = hazard;
-        seg.icon = c.icon;
-        seg.details = c.details;
-        const breaking = !Number.isNaN(firstSeenMs) && now - firstSeenMs <= BREAKING_NEWS_WINDOW_MS;
-        perCountry.set(capKey, used + 1);
+        if (stormCount >= cfg.pools.alertPoolCap) break;
+        const built = stormCandidate(a, cfg, now);
+        if (!built) continue; // geocode-only alert (no polygon) — can't frame it
+        const used = perCountry.get(built.capKey) ?? 0;
+        if (used >= cfg.pools.alertCountryCap) continue;
+        perCountry.set(built.capKey, used + 1);
         stormCount += 1;
-        pool.push({
-          score: 50 + sev * 12,
-          segment: seg,
-          breaking,
-          areaKey: countryCode ? `country:${countryCode}` : undefined,
-        });
+        pool.push(built.candidate);
       }
     } catch {
       /* alerts not ingested — skip */
@@ -788,7 +835,7 @@ export async function buildCandidates(
         if (call && call.toUpperCase() !== name.toUpperCase()) details.push({ label: "Callsign", value: call });
         seg.details = details;
         seg.trackInfo = notableTrackInfo(notable, { type: m?.type, operator: m?.operator, registration: m?.registration, flag, country: r.country });
-        pool.push({ score: notable.vip ? VIP_SCORE : NOTABLE_SCORE, segment: seg });
+        pool.push({ score: notable.vip ? cfg.pools.vipBoost : cfg.pools.notableBoost, segment: seg });
       }
     } catch {
       /* no aircraft frame — skip */
@@ -817,7 +864,7 @@ export async function buildCandidates(
         details.push({ label: "MMSI", value: r.externalId });
         seg.details = details;
         seg.trackInfo = notableTrackInfo(notable, { flag: country?.flag, country: country?.name });
-        pool.push({ score: notable.vip ? VIP_SCORE : NOTABLE_SCORE, segment: seg });
+        pool.push({ score: notable.vip ? cfg.pools.vipBoost : cfg.pools.notableBoost, segment: seg });
       }
     } catch {
       /* no ship frame — skip */
