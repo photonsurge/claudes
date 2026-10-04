@@ -9,6 +9,7 @@
  * does not know yet.
  */
 import type { PresenterVoice, VoiceTest } from "@photonsurge/shared/presenter";
+import { DEFAULT_CHUNK_CHARS } from "@photonsurge/shared/speech-chunks";
 
 type StyleRoute = "text-prefix" | "text-tag" | "voice-id" | "none";
 
@@ -16,6 +17,8 @@ interface Trait {
   match: (model: string) => boolean;
   style: StyleRoute;
   note: string;
+  /** Characters per request for long text; DEFAULT_CHUNK_CHARS when absent. */
+  chunkChars?: number;
 }
 
 const TRAITS: Trait[] = [
@@ -41,6 +44,11 @@ const TRAITS: Trait[] = [
 
 export function traitFor(model: string): Trait | null {
   return TRAITS.find((t) => t.match(model)) ?? null;
+}
+
+/** How much text to send per request for this model. */
+export function chunkCharsFor(model: string): number {
+  return traitFor(model)?.chunkChars ?? DEFAULT_CHUNK_CHARS;
 }
 
 export interface PreparedSpeech {

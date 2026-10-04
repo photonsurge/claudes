@@ -251,7 +251,9 @@ export default function PresentersPage() {
             setText(e.target.value.slice(0, TEST_TEXT_MAX));
             setPicked(null);
           }}
-          helperText={`${text.length} characters. Units, magnitudes and symbols are rewritten for the ear before sending.`}
+          helperText={`${text.length.toLocaleString()} / ${TEST_TEXT_MAX.toLocaleString()} characters${
+            text.length > 1200 ? ` · spoken as about ${Math.ceil(text.length / 1100)} parts, joined into one take` : ""
+          }. Units, magnitudes and symbols are rewritten for the ear before sending.`}
           sx={{ mt: 0.5 }}
         />
         <FormControlLabel

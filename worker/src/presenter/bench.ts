@@ -10,9 +10,10 @@ import { createHash } from "node:crypto";
 import type { getAppDb } from "@photonsurge/shared/db/index";
 import { estimateSpeechCostUsd, type VoiceTest } from "@photonsurge/shared/presenter";
 import { speakable } from "@photonsurge/shared/speakable";
-import { mp3DurationMs, pcmDurationMs } from "@photonsurge/shared/mp3-duration";
+import { mp3DurationMs } from "@photonsurge/shared/mp3-duration";
 import { listSpeechModels, speak as defaultSpeak } from "../lib/openrouter-speech";
 import { prepareSpeech, type PreparedSpeech } from "./voice-traits";
+import { speakLong } from "./speak-long";
 
 type Db = Awaited<ReturnType<typeof getAppDb>>;
 
@@ -64,7 +65,10 @@ export async function runVoiceTest(db: Db, testId: string, deps: BenchDeps = {})
   if (!take) return null;
   if (take.status === "ready") return take;
 
-  const prepared = prepareSpeech(take.voice, speakable(take.text));
+  const spokenText = speakable(take.text);
+  // The whole text as one request: the cache key and the "what was sent" record.
+  // Long text is still spoken in parts (below); the key covers all of them.
+  const prepared = prepareSpeech(take.voice, spokenText);
   const cacheKey = speechCacheKey(take.voice.model, prepared);
 
   // Reuse identical audio unless a fresh take was asked for. Free, so the
@@ -93,32 +97,31 @@ export async function runVoiceTest(db: Db, testId: string, deps: BenchDeps = {})
 
   await db.voiceTests.update(testId, { status: "speaking", spoken: prepared.input, sent: prepared.sent, cacheKey });
 
-  const res = await speak({
-    model: take.voice.model,
-    input: prepared.input,
-    voice: prepared.voice,
-    speed: prepared.speed,
-    responseFormat: "mp3",
-    extra: prepared.extra,
+  // Long text goes as several requests, joined into one file (speak-long).
+  const res = await speakLong(take.voice, spokenText, {
+    speak,
+    onProgress: (done, total) => (total > 1 ? db.voiceTests.update(testId, { progress: { done, total } }) : undefined),
   });
-  if (!res.ok) {
-    await db.voiceTests.update(testId, { status: "error", error: res.error });
+  if (!res.ok || !res.audio) {
+    await db.voiceTests.update(testId, { status: "error", error: res.error ?? "no audio" });
     return db.voiceTests.get(testId);
   }
 
-  const durationMs = res.contentType.includes("pcm") ? pcmDurationMs(res.audio.length) : mp3DurationMs(res.audio);
+  const durationMs = mp3DurationMs(res.audio);
   const pricing = await pricingFor(db, take.voice.model, deps.listModels);
 
   await db.voiceTests.putAudio(testId, res.audio, {
     status: "ready",
+    sent: res.first.sent,
     audio: {
-      contentType: res.contentType,
+      contentType: res.contentType ?? "audio/mpeg",
       bytes: res.audio.length,
-      chars: prepared.input.length,
+      chars: res.chars,
       latencyMs: res.latencyMs,
       durationMs,
-      generationId: res.generationId,
-      estCostUsd: estimateSpeechCostUsd(pricing, prepared.input.length, durationMs),
+      parts: res.parts,
+      generationId: res.generationIds.join(", ") || undefined,
+      estCostUsd: estimateSpeechCostUsd(pricing, res.chars, durationMs),
     },
   });
   return db.voiceTests.get(testId);

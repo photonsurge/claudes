@@ -27,7 +27,8 @@ import { getAppDb } from "@photonsurge/shared/db/index";
 import { speakable } from "@photonsurge/shared/speakable";
 import { mp3DurationMs } from "@photonsurge/shared/mp3-duration";
 import { DEFAULT_VOICE, pricePerHour, sanitizeVoice } from "@photonsurge/shared/presenter";
-import { listSpeechModels, speak } from "../lib/openrouter-speech";
+import { listSpeechModels } from "../lib/openrouter-speech";
+import { speakLong } from "../presenter/speak-long";
 import { runVoiceTest } from "../presenter/bench";
 
 const args = process.argv.slice(2);
@@ -39,16 +40,22 @@ const flag = (name: string) => {
 const has = (name: string) => args.includes(`--${name}`);
 
 async function noSave(text: string, out: string) {
-  const res = await speak({
+  const voice = sanitizeVoice({
     model: flag("model") ?? DEFAULT_VOICE.model,
-    input: speakable(text),
     voice: flag("voice") ?? null,
-    speed: flag("speed") ? Number(flag("speed")) : undefined,
+    speed: flag("speed") ? Number(flag("speed")) : 1,
+    style: flag("style") ?? null,
   });
-  console.log("sent", JSON.stringify(res.body));
-  if (!res.ok) throw new Error(res.error);
+  const res = await speakLong(voice, speakable(text), {
+    onProgress: (done, total) => {
+      if (total > 1) console.log(`part ${done}/${total}`);
+    },
+  });
+  if (!res.ok || !res.audio) throw new Error(res.error);
   writeFileSync(out, res.audio);
-  console.log(`wrote ${out}: ${res.audio.length} bytes, ${res.contentType}, ${mp3DurationMs(res.audio)} ms, ${res.latencyMs} ms latency, generation ${res.generationId ?? "?"}`);
+  console.log(
+    `wrote ${out}: ${res.audio.length} bytes, ${mp3DurationMs(res.audio)} ms, ${res.parts} part(s), ${res.latencyMs} ms, generation ${res.generationIds.join(", ") || "?"}`,
+  );
 }
 
 async function saved(text: string, out: string) {
@@ -84,7 +91,7 @@ async function saved(text: string, out: string) {
       `wrote ${out}: ${a.bytes} bytes, ${a.durationMs} ms` +
         (take.cachedFrom
           ? ` — reused take ${take.cachedFrom}, no charge (--fresh to make new audio)`
-          : `, ${a.latencyMs} ms latency, ~$${a.estCostUsd ?? "?"}, generation ${a.generationId ?? "?"}`),
+          : `, ${a.parts ?? 1} part(s), ${a.latencyMs} ms, ~$${a.estCostUsd ?? "?"}, generation ${a.generationId ?? "?"}`),
     );
     const file = db.blobFs?.filePath("presenter-audio", take.id);
     console.log(

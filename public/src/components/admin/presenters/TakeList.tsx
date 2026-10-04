@@ -33,6 +33,7 @@ const STYLE_SENT: Record<NonNullable<VoiceTest["sent"]>["style"], string | null>
 function sentLine(t: VoiceTest): string {
   const parts = [`${t.audio?.chars ?? t.spoken?.length ?? t.text.length} chars`];
   if (t.audio?.durationMs) parts.push(`${(t.audio.durationMs / 1000).toFixed(1)} s`);
+  if (t.audio?.parts && t.audio.parts > 1) parts.push(`${t.audio.parts} parts joined`);
   if (t.audio && !t.cachedFrom) parts.push(`${(t.audio.latencyMs / 1000).toFixed(1)} s to make`, `~${fmtUsd(t.audio.estCostUsd)}`);
   const style = t.sent ? STYLE_SENT[t.sent.style] : null;
   if (style) parts.push(style);
@@ -64,7 +65,11 @@ export default function TakeList({ takes, onDelete, onUseVoice }: TakeListProps)
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
               {t.label}
             </Typography>
-            <Chip size="small" label={t.status} color={STATUS_COLOR[t.status]} />
+            <Chip
+              size="small"
+              label={t.status === "speaking" && t.progress ? `speaking ${t.progress.done}/${t.progress.total}` : t.status}
+              color={STATUS_COLOR[t.status]}
+            />
             {t.cachedFrom && <Chip size="small" variant="outlined" color="success" label="reused · free" />}
             {t.source === "cli" && <Chip size="small" variant="outlined" label="CLI" />}
             <Typography variant="caption" color="text.secondary" sx={{ fontFamily: font.mono }}>

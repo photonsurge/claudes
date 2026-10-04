@@ -39,6 +39,13 @@
 > - "Read a round-up" picker: any recent world (global) round-up, or the latest round-up
 >   for any country or region, loaded into the text box exactly as the presenter would
 >   read it (`roundupSpeechText`). The take's label names the round-up.
+> - Long text: the worker splits speakable text into parts (`splitForSpeech`: at
+>   paragraph, then sentence, clause, word; 1,200 characters by default, per-model in
+>   voice-traits), speaks up to 3 at a time, and joins the MP3s (`joinMp3` drops each
+>   part's ID3 and Xing header, so players report the full length). A take shows
+>   "speaking 3/7" while it runs and "N parts joined" after. The text box holds up to
+>   20,000 characters. A failed part fails the take, naming the part. This is the same
+>   path round-ups will use on air.
 > - Sample text chips: the latest hourly and daily round-ups, and the latest place
 >   round-up's summary **and** state of play (decision 7 below).
 > - Worker: `lib/openrouter-speech.ts`, `presenter/voice-traits.ts`,

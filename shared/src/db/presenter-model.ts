@@ -98,6 +98,7 @@ const VoiceTestSchema = new mongoose.Schema<iVoiceTestModel>(
     error: { type: String, required: false },
     audio: { type: mongoose.Schema.Types.Mixed, required: false },
     sent: { type: mongoose.Schema.Types.Mixed, required: false },
+    progress: { type: mongoose.Schema.Types.Mixed, required: false },
     createdBy: { type: String, default: "" },
     source: { type: String, enum: ["admin", "cli"], default: "admin" },
     fresh: { type: Boolean, required: false },

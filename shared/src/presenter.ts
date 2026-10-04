@@ -44,7 +44,8 @@ export const DEFAULT_PRESENTER_SETTINGS: PresenterSettings = { enabled: false };
 
 export const SPEED_MIN = 0.5;
 export const SPEED_MAX = 2;
-export const TEST_TEXT_MAX = 4000;
+/** Long round-ups are spoken in parts on the worker and joined, so this is generous. */
+export const TEST_TEXT_MAX = 20000;
 export const NAME_MAX = 80;
 export const PERSONA_MAX = 2000;
 export const STYLE_MAX = 300;
@@ -270,6 +271,9 @@ export interface VoiceTest {
     chars: number;
     latencyMs: number;
     durationMs: number | null;
+    /** Requests the text was split into (long text). */
+    parts?: number;
+    /** OpenRouter generation id(s), comma-separated when spoken in parts. */
     generationId?: string;
     estCostUsd: number | null;
   };
@@ -281,6 +285,8 @@ export interface VoiceTest {
   cacheKey?: string;
   /** Set when the audio was reused from an earlier identical take (no charge). */
   cachedFrom?: string;
+  /** While a long take is speaking: parts finished / total. */
+  progress?: { done: number; total: number };
   /** Which voice properties actually reached the model (worker voice-traits). */
   sent?: { voice: boolean; speed: boolean; style: "option" | "text" | "voice-id" | "not-sent" | "none"; options: boolean };
   createdBy: string;
