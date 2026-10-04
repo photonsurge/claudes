@@ -9,7 +9,7 @@ import { copyLookFrom, deleteFormat, duplicateFormat, formatIdForName, resolveFo
  * script count per format.
  */
 function fakeDb(
-  o: { scenes?: Record<string, any>; formats?: ShortFormat[]; scriptsByFormat?: Record<string, number>; rendersByFormat?: Record<string, number> } = {},
+  o: { scenes?: Record<string, any>; formats?: ShortFormat[]; scriptsByFormat?: Record<string, number>; rendersByFormat?: Record<string, number>; schedulesByFormat?: Record<string, number> } = {},
 ) {
   const scenes: Record<string, any> = { ...(o.scenes ?? {}) };
   const configs: Record<string, any> = {};
@@ -36,6 +36,7 @@ function fakeDb(
     },
     shortScripts: { countByFormat: jest.fn(async (id: string) => o.scriptsByFormat?.[id] ?? 0) },
     shortRenders: { countByFormat: jest.fn(async (id: string) => o.rendersByFormat?.[id] ?? 0) },
+    shortSchedules: { countByFormat: jest.fn(async (id: string) => o.schedulesByFormat?.[id] ?? 0) },
   };
   return { db: db as any, scenes, configs, formats };
 }
@@ -156,6 +157,15 @@ describe("deleteFormat", () => {
     expect(res).toMatchObject({ ok: false, code: "in-use", renders: 2 });
     expect(!res.ok && res.error).toMatch(/2 videos are queued or rendering in this format/);
     expect(f.db.shortRenders.countByFormat).toHaveBeenCalledWith("short-a");
+    expect(f.db.shortFormats.remove).not.toHaveBeenCalled();
+  });
+
+  it("refuses a format a schedule makes videos in, saying how many", async () => {
+    const f = fakeDb({ formats: [defaultShortFormat("short-a", "A")], schedulesByFormat: { "short-a": 1 } });
+    const res = await deleteFormat(f.db, "short-a");
+    expect(res).toMatchObject({ ok: false, code: "in-use", schedules: 1 });
+    expect(!res.ok && res.error).toMatch(/1 schedule makes videos in this format/);
+    expect(f.db.shortSchedules.countByFormat).toHaveBeenCalledWith("short-a");
     expect(f.db.shortFormats.remove).not.toHaveBeenCalled();
   });
 

@@ -6,8 +6,12 @@ jest.mock("@photonsurge/shared/utill/logger", () => ({ log: jest.fn() }));
 jest.mock("./encoders", () => ({ watchBaseUrl: () => "https://wx.example" }));
 // Formats come from db.shortFormats through generate's own lookup (WP5).
 const formats = new Map<string, any>();
+// The schedule-side checks at the front (§8): auto scope, quiet, round-up refresh.
+jest.mock("../director/script-auto", () => ({ resolveAutoScope: jest.fn(), scopeHasActivity: jest.fn(async () => true) }));
+jest.mock("../placeRoundups/refresh", () => ({ refreshPlaceRoundup: jest.fn() }));
 jest.mock("../director/script-generate", () => ({
   generateShortScript: jest.fn(),
+  sceneDirectorConfig: jest.fn(async () => ({ minAlertSeverity: 2 })),
   generateFormat: jest.fn(async (_db: unknown, id?: string) => {
     const { defaultShortFormat } = jest.requireActual("@photonsurge/shared/short-format");
     const fid = id || "shorts";
@@ -65,6 +69,9 @@ const db = {
       for (const [k, v] of Object.entries(patch)) (v === null ? delete r[k] : (r[k] = clone(v)));
       return clone(r);
     }),
+    recentWithScriptForSchedule: jest.fn(async (scheduleId: string, limit: number) =>
+      [...renders.values()].filter((r) => r.scheduleId === scheduleId && r.scriptId).sort((a, b) => b.queuedAt - a.queuedAt).slice(0, limit).map(clone),
+    ),
     pausedEncoders: jest.fn(async () => [...paused]),
     setPaused: jest.fn(async (id: string, p: boolean) => void (p ? paused.add(id) : paused.delete(id))),
   },
@@ -89,12 +96,14 @@ const db = {
   getScene: jest.fn(async (id: string) => ({ id, name: id === "shorts" ? "Shorts · Render" : id })),
   countryRoundups: { latestForPlace: jest.fn(async () => null) },
   regionRoundups: { latestForPlace: jest.fn(async (): Promise<any> => null) },
+  eventSummaries: { latest: jest.fn(async (_p: string): Promise<any> => null) },
 };
 jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: jest.fn(async () => db) }));
 
 import {
   advanceRenderQueues,
   controlRender,
+  createRenders,
   planRenderStarts,
   queueRender,
   renderOutcomeForRun,
@@ -104,6 +113,8 @@ import {
   type PlanInput,
 } from "./render-queue";
 import { generateShortScript } from "../director/script-generate";
+import { resolveAutoScope, scopeHasActivity } from "../director/script-auto";
+import { refreshPlaceRoundup } from "../placeRoundups/refresh";
 import { exhaustedUntil, quotaSnapshot } from "../youtube/quota";
 import type { ShortRender } from "@photonsurge/shared/short-render";
 
@@ -410,30 +421,131 @@ describe("the run a render creates", () => {
     expect(db.shortScripts.stampValues).not.toHaveBeenCalled();
   });
 
-  it("generates at the front, passing the format as the scene, and skips a quiet scope when asked", async () => {
+  it("generates at the front, passing the format as the scene", async () => {
     videoEncoder("obs-v1");
-    (generateShortScript as jest.Mock).mockImplementation(async (_db: unknown, g: any) =>
-      script("gen", { include: g.include ?? { alerts: false, quakes: false, volcanoes: false } }),
-    );
-    const quiet = await queueRender(
-      { ...req("x"), what: { type: "generate", formatId: "shorts", scope: { type: "area", id: "europe" }, include: { alerts: true, quakes: false, volcanoes: false } }, skipIfQuiet: true } as any,
-      NOW,
-    );
-    expect(generateShortScript).toHaveBeenCalledWith(db, { formatId: "shorts", scope: { type: "area", id: "europe" }, include: { alerts: true, quakes: false, volcanoes: false } });
-    expect(renders.get(quiet.id)).toMatchObject({ status: "skipped", note: "quiet: nothing active in scope" });
+    (generateShortScript as jest.Mock).mockImplementation(async () => script("gen"));
+    const r = await queueRender({ ...req("x"), what: { type: "generate", formatId: "shorts", scope: { type: "area", id: "europe" } } } as any, NOW);
+    expect(generateShortScript).toHaveBeenCalledWith(db, { formatId: "shorts", scope: { type: "area", id: "europe" } });
+    expect(renders.get(r.id)).toMatchObject({ status: "preparing", scriptId: "gen" });
     (generateShortScript as jest.Mock).mockReset();
   });
+});
 
-  it("checks the round-up's freshness at the front: skip, or fail when a refresh would be needed", async () => {
+describe("scheduling at the front (§8, WP9a)", () => {
+  const genWhat = (scope: any, include?: any) => ({ type: "generate", formatId: "shorts", scope, ...(include ? { include } : {}) });
+  afterEach(() => {
+    (generateShortScript as jest.Mock).mockReset();
+    db.regionRoundups.latestForPlace.mockResolvedValue(null);
+    db.countryRoundups.latestForPlace.mockResolvedValue(null);
+    db.eventSummaries.latest.mockResolvedValue(null);
+    (scopeHasActivity as jest.Mock).mockResolvedValue(true);
+  });
+
+  it("skipIfQuiet: with a switch on and nothing active, the video is skipped before any refresh or generate", async () => {
+    videoEncoder("obs-v1");
+    (scopeHasActivity as jest.Mock).mockResolvedValue(false);
+    db.regionRoundups.latestForPlace.mockResolvedValue({ generatedAt: new Date(NOW - 20 * 3_600_000) });
+    const alerts = { alerts: true, quakes: false, volcanoes: false };
+    const quiet = await queueRender({ ...req("x"), what: genWhat({ type: "area", id: "europe" }, alerts), skipIfQuiet: true, roundup: { maxAgeHours: 14, ifStale: "refresh" } } as any, NOW);
+    expect(renders.get(quiet.id)).toMatchObject({ status: "skipped", note: "quiet: nothing active in scope" });
+    expect(scopeHasActivity).toHaveBeenCalledWith(db, expect.anything(), { type: "area", id: "europe" }, alerts, NOW);
+    expect(refreshPlaceRoundup).not.toHaveBeenCalled();
+    expect(generateShortScript).not.toHaveBeenCalled();
+  });
+
+  it("skipIfQuiet does nothing for a round-up-only video (no switch on)", async () => {
+    videoEncoder("obs-v1");
+    (scopeHasActivity as jest.Mock).mockResolvedValue(false);
+    (generateShortScript as jest.Mock).mockImplementation(async () => script("gen"));
+    const r = await queueRender({ ...req("x"), what: genWhat({ type: "area", id: "europe" }), skipIfQuiet: true } as any, NOW);
+    expect(scopeHasActivity).not.toHaveBeenCalled();
+    expect(renders.get(r.id)).toMatchObject({ status: "preparing", scriptId: "gen" });
+  });
+
+  it("freshness: skip records the video skipped; refresh writes the place's round-up first, then generates", async () => {
     videoEncoder("obs-v1");
     db.regionRoundups.latestForPlace.mockResolvedValue({ generatedAt: new Date(NOW - 20 * 3_600_000) });
-    const what = { type: "generate", formatId: "shorts", scope: { type: "area", id: "europe" } };
-    const skip = await queueRender({ ...req("x"), what, roundup: { maxAgeHours: 14, ifStale: "skip" } } as any, NOW);
+    (generateShortScript as jest.Mock).mockImplementation(async () => script("gen"));
+    const skip = await queueRender({ ...req("x"), what: genWhat({ type: "area", id: "europe" }), roundup: { maxAgeHours: 14, ifStale: "skip" } } as any, NOW);
     expect(renders.get(skip.id)).toMatchObject({ status: "skipped", note: "round-up for europe is 20 h old (limit 14 h)" });
-    const refresh = await queueRender({ ...req("x"), what, roundup: { maxAgeHours: 14, ifStale: "refresh" } } as any, NOW);
-    expect(renders.get(refresh.id)).toMatchObject({ status: "failed", note: expect.stringMatching(/not available yet \(WP9a\)/) });
     expect(generateShortScript).not.toHaveBeenCalled();
-    db.regionRoundups.latestForPlace.mockResolvedValue(null);
+
+    (refreshPlaceRoundup as jest.Mock).mockResolvedValueOnce({ id: "new", narrativeStatus: "ok" });
+    const refresh = await queueRender({ ...req("x"), what: genWhat({ type: "area", id: "europe" }), roundup: { maxAgeHours: 14, ifStale: "refresh" } } as any, NOW);
+    expect(refreshPlaceRoundup).toHaveBeenCalledWith(db, { type: "area", id: "europe" });
+    expect((refreshPlaceRoundup as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan((generateShortScript as jest.Mock).mock.invocationCallOrder[0]);
+    expect(renders.get(refresh.id)).toMatchObject({ status: "preparing", scriptId: "gen" });
+  });
+
+  it("freshness: a fresh round-up is used as it is; a country's is looked up by its ISO code", async () => {
+    videoEncoder("obs-v1");
+    db.countryRoundups.latestForPlace.mockResolvedValue({ generatedAt: new Date(NOW - 13 * 3_600_000) });
+    (generateShortScript as jest.Mock).mockImplementation(async () => script("gen"));
+    const r = await queueRender({ ...req("x"), what: genWhat({ type: "country", id: "uk" }), roundup: { maxAgeHours: 14, ifStale: "refresh" } } as any, NOW);
+    expect(db.countryRoundups.latestForPlace).toHaveBeenCalledWith("gb");
+    expect(refreshPlaceRoundup).not.toHaveBeenCalled();
+    expect(renders.get(r.id)?.status).toBe("preparing");
+  });
+
+  it("freshness: a refresh that fails fails the video with its reason; the globe can't be refreshed", async () => {
+    videoEncoder("obs-v1");
+    (refreshPlaceRoundup as jest.Mock).mockRejectedValueOnce(new Error("no narrative (skipped)"));
+    const a = await queueRender({ ...req("x"), what: genWhat({ type: "area", id: "europe" }), roundup: { maxAgeHours: 14, ifStale: "refresh" } } as any, NOW);
+    expect(renders.get(a.id)).toMatchObject({ status: "failed", note: "no round-up for europe; refresh failed: no narrative (skipped)" });
+    db.eventSummaries.latest.mockImplementation(async (p: string) => (p === "daily" ? { generatedAt: new Date(NOW - 30 * 3_600_000) } : null));
+    const g = await queueRender({ ...req("x"), what: genWhat({ type: "globe" }), roundup: { maxAgeHours: 14, ifStale: "refresh" } } as any, NOW);
+    expect(renders.get(g.id)).toMatchObject({ status: "failed", note: expect.stringMatching(/^round-up for the world is 30 h old \(limit 14 h\); the world round-up can't be refreshed/) });
+    expect(generateShortScript).not.toHaveBeenCalled();
+    db.eventSummaries.latest.mockImplementation(async () => null);
+  });
+
+  it("auto scope: resolved at the front, skipping the places of this schedule's last 3 videos", async () => {
+    videoEncoder("obs-v1");
+    // This schedule's history: four made videos, newest last.
+    for (const [i, id] of ["japan", "usa", "uk", "chile"].entries()) {
+      script(`old-${id}`, { scope: { type: "country", id } });
+      renders.set(`old${i}`, { id: `old${i}`, scheduleId: "sch", scriptId: `old-${id}`, status: "done", queuedAt: NOW - 10_000 + i, encoderId: "obs-v1" });
+    }
+    (resolveAutoScope as jest.Mock).mockResolvedValueOnce({ scope: { type: "country", id: "japan" }, name: "Japan", score: 120 });
+    (generateShortScript as jest.Mock).mockImplementation(async (_db: unknown, g: any) => script("gen", { scope: g.scope }));
+    const r = await queueRender({ ...req("x"), what: genWhat({ type: "auto", of: "country" }), scheduleId: "sch" } as any, NOW);
+    const [, , auto, include, exclude] = (resolveAutoScope as jest.Mock).mock.calls[0];
+    expect(auto).toEqual({ type: "auto", of: "country" });
+    expect(include).toEqual({ alerts: false, quakes: false, volcanoes: false }); // the format's switches
+    expect([...exclude].sort()).toEqual(["chile", "uk", "usa"]); // japan was 4th-last: allowed again
+    expect(generateShortScript).toHaveBeenCalledWith(db, { formatId: "shorts", scope: { type: "country", id: "japan" } });
+    expect(renders.get(r.id)).toMatchObject({ status: "preparing", scriptId: "gen" });
+  });
+
+  it("auto scope with nothing active anywhere: skipped with skipIfQuiet, failed otherwise", async () => {
+    videoEncoder("obs-v1");
+    (resolveAutoScope as jest.Mock).mockResolvedValue(null);
+    const a = await queueRender({ ...req("x"), what: genWhat({ type: "auto", of: "area" }), skipIfQuiet: true } as any, NOW);
+    expect(renders.get(a.id)).toMatchObject({ status: "skipped", note: "auto: no area has anything active" });
+    const b = await queueRender({ ...req("x"), what: genWhat({ type: "auto", of: "area" }) } as any, NOW);
+    expect(renders.get(b.id)).toMatchObject({ status: "failed", note: "auto: no area has anything active" });
+    (resolveAutoScope as jest.Mock).mockReset();
+  });
+
+  it("%{n}: the schedule's running number on the render fills the title", async () => {
+    videoEncoder("obs-v1");
+    script("s1", { values: { place: "Europe", kind: "round-up" } });
+    await queueRender(req("s1", { n: 214, video: { title: "%{place} #%{n}" } }) as any, NOW);
+    expect([...runs.values()][0].title).toBe("Europe #214");
+  });
+
+  it("createRenders keeps a batch in order on a named encoder, and the queue runs it back to back", async () => {
+    videoEncoder("obs-v1");
+    script("a");
+    script("b");
+    script("c");
+    const made = await createRenders([req("a", { batchId: "B" }), req("b", { batchId: "B" }), req("c", { batchId: "B" })] as any, NOW);
+    expect(made.map((r) => r.queuedAt)).toEqual([...made.map((r) => r.queuedAt)].sort((x, y) => x - y));
+    expect(made.every((r) => r.status === "queued")).toBe(true);
+    await advanceRenderQueues(NOW);
+    expect(made.map((r) => statusOf(r.id))).toEqual(["preparing", "queued", "queued"]);
+    await endRun(goLiveRunIds()[0], "finished");
+    expect(made.map((r) => statusOf(r.id))).toEqual(["done", "preparing", "queued"]);
   });
 
   it("a several-places video checks every place's round-up: one stale place skips it", async () => {

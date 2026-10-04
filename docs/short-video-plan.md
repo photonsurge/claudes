@@ -705,7 +705,7 @@ given here as its default. Where each lives:
 | look, widgets, deck, crawl, theme, music, reading pace | time, days, timezone | go-live deadline (2 min) |
 | template: scope (the places and their order), switches, budget, world round-up first | encoder, YouTube channel | safety cap on a run (script length + 2 min) |
 | opener: round-up leads, round-up depth, tour, minimum dwell (8 s), opener share (40%) | the videos and their order | ticker interval (60 s) |
-| close: on or off, length (6 s) | round-up freshness (12 h), refresh or skip | missed-schedule window (10 min) |
+| close: on or off, length (6 s) | round-up freshness (14 h), refresh or skip | missed-schedule window (10 min) |
 | YouTube video card (above) | start-by window (1 h) | |
 | timing: lead-in (3 s), lead-out (5 s) | per-video overrides | |
 | render defaults: encoder, YouTube channel | offline test or live | |
@@ -795,10 +795,12 @@ export interface ShortSchedule {
   and nothing renders. It only applies with an include switch on.
 - **Freshness.** Round-ups are written on their own schedule, at each place's local
   hours (the Schedule card on the round-up pages). A video made from a stale one is
-  yesterday's news. So each schedule says how old a round-up may be (default 12 h) and
+  yesterday's news. So each schedule says how old a round-up may be (default 14 h, §13) and
   what to do otherwise: `refresh` writes a new one for that place first (one LLM call),
-  `skip` records the run as skipped. The place round-up job needs a single-place entry
-  point for `refresh`. For a `places` scope the rule applies per place.
+  `skip` records the run as skipped. The single-place entry point for `refresh` is
+  `refreshPlaceRoundup` in `worker/src/placeRoundups/refresh.ts`. The world round-up
+  has no such entry, so a stale globe video with `refresh` fails with a note saying so.
+  For a `places` scope the rule applies per place.
 - The schedule form shows when each place's round-up is next written, so the operator
   can put the video after it.
 - **A schedule is a batch.** It queues its videos, in order, on its encoder (§6.6). The
@@ -832,7 +834,7 @@ Once, by an operator:
 3. Have a format for each video (the default one will do to start).
 4. Add a schedule "Morning batch": every day at 07:00 London time, on the video
    encoder, with three videos in order: Europe, UK, main areas. Each has a round-up no
-   older than 12 h, refreshed if stale. Titles, descriptions and public or unlisted come
+   older than 14 h, refreshed if stale. Titles, descriptions and public or unlisted come
    from each video's format.
 5. Press Run batch now once with everything unlisted, and watch the results. That needs
    a "publish as" override on Run batch now; a schedule otherwise takes privacy from

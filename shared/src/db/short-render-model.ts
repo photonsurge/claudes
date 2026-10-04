@@ -46,6 +46,7 @@ const ShortRenderSchema = new mongoose.Schema<iShortRenderModel>(
     assignedEncoderId: { type: String },
     retryOf: { type: String },
     formatId: { type: String, index: true },
+    n: { type: Number },
   },
   mongoTimestamps,
 );

@@ -67,6 +67,7 @@ async function DELETE__impl(_req: Request, { params }: Ctx) {
       error: res.error,
       ...(res.scripts != null ? { scripts: res.scripts } : {}),
       ...(res.renders != null ? { renders: res.renders } : {}),
+      ...(res.schedules != null ? { schedules: res.schedules } : {}),
     };
     return NextResponse.json(body, { status: DELETE_STATUS[res.code], headers: NO_CACHE });
   }

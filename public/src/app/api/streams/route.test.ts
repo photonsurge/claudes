@@ -24,6 +24,7 @@ const db = {
   ),
   encoderForScene: jest.fn(async () => null),
   createRun: jest.fn(async (r: any) => ({ id: "new-run", ...r })),
+  shortSchedules: { list: jest.fn(async (): Promise<any[]> => []) },
 };
 jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: jest.fn(async () => db) }));
 
@@ -72,4 +73,23 @@ describe("POST (channel go-live)", () => {
     expect(res.status).toBe(201);
     expect(db.createRun).toHaveBeenCalledWith(expect.objectContaining({ sceneId: "europe", encoderId: "gpu-1" }));
   });
+});
+
+it("shows a schedule booked on a named encoder within 24 h as booked; 'any' books none", async () => {
+  const soon = Date.now() + 2 * 3_600_000;
+  db.shortSchedules.list.mockResolvedValueOnce([
+    { id: "morning", name: "Morning batch", enabled: true, encoderId: "obs-v2", nextAt: soon },
+    { id: "pool", name: "Any", enabled: true, encoderId: "any", nextAt: soon },
+  ]);
+  const body = await (await (GET as () => Promise<Response>)()).json();
+  const byId = Object.fromEntries(body.encoders.map((e: any) => [e.id, e]));
+  expect(byId["obs-v2"].occupancy).toMatchObject({ state: "booked", scheduleId: "morning", bookedAt: soon });
+  expect(byId["obs-v1"].occupancy.state).toBe("rendering");
+});
+
+it("still answers when the schedules can't be read", async () => {
+  db.shortSchedules.list.mockRejectedValueOnce(new Error("mongo"));
+  const res = await (GET as () => Promise<Response>)();
+  expect(res.status).toBe(200);
+  expect((await res.json()).encoders.find((e: any) => e.id === "obs-v2").occupancy.state).toBe("free");
 });

@@ -623,6 +623,26 @@ process.on("uncaughtException", (err) => {
     log(TAG, `failed to register stream.renders`, { err: summarizeForLog(err) });
   }
 
+  // ---- Repeatable short-video schedule ticker (docs/short-video-plan.md §8) ----
+  // Fires every enabled ShortSchedule whose nextAt has come by queuing its
+  // batch on the render queue, then sets its next time; a schedule more than
+  // SHORT_SCHEDULE_MISSED_MS overdue is recorded as missed instead. State is in
+  // Mongo, so editing a schedule never touches this job. No-op when nothing is due.
+  const SHORT_SCHEDULE_TICK_MS = Number(process.env.SHORT_SCHEDULE_TICK_MS || 60 * 1000);
+  try {
+    await addJob(
+      "do",
+      { domain: "shorts", type: "short-video", event: "tick", data: {} },
+      {
+        repeat: { every: SHORT_SCHEDULE_TICK_MS, offset: staggerOffset("short-video-tick", SHORT_SCHEDULE_TICK_MS) },
+        jobId: "short-video-tick",
+      },
+    );
+    log(TAG, `registered repeatable short-video.tick`, { every: SHORT_SCHEDULE_TICK_MS });
+  } catch (err) {
+    log(TAG, `failed to register short-video.tick`, { err: summarizeForLog(err) });
+  }
+
   // ---- Repeatable alerts.translate job ----
   // Own cadence, decoupled from ingest, so a slow LLM call never blocks the poll
   // tick. No-ops (never touches Mongo) when OPENROUTER_API_KEY is unset.
