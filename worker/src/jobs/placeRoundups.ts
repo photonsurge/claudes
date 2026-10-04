@@ -6,6 +6,7 @@ import { log } from "@photonsurge/shared/utill/logger";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
 import { emitWorkerEvent } from "../socket";
+import { freshEvents } from "../director/fresh";
 import { buildPlaceInputs, WINDOW_HOURS, type PlaceRef } from "../placeRoundups/aggregate";
 import { isPlaceDue } from "../placeRoundups/localTime";
 import { generatePlaceNarrative } from "../placeRoundups/openrouter";
@@ -105,6 +106,7 @@ async function runBatch(
       ok += 1;
       log(TAG, `${kind} round-up done`, result);
       emitWorkerEvent({ type: PLACE_ROUNDUPS_UPDATED, data: { placeKind: kind, placeId: place.id, id: result.id } });
+      freshEvents.nudge();
     } catch (err) {
       log(TAG, `${kind} round-up failed`, { place: place.name, err: summarizeForLog(err) });
       blogErr(TAG, `${kind} round-up failed: ${place.name}`, err, "placeRoundups", place.id);

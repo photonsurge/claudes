@@ -15,6 +15,7 @@ import type { DirectorState, SegmentKind } from "@photonsurge/shared/director";
 import { describeOp, type DirectorCommand, type DirectorOp } from "@photonsurge/shared/director-commands";
 import { dropCommand, fetchCommands, sendCommand } from "../lib/director-commands";
 import { box } from "./panelBox";
+import DirectorGoTo from "./DirectorGoTo";
 
 /** The "cut to one of these now" row. */
 export const TAKE_KINDS: { kind: SegmentKind; label: string }[] = [
@@ -97,6 +98,7 @@ export default function DirectorCommandBar({
           Clear queue
         </button>
       </div>
+      <DirectorGoTo send={send} />
       {takeable.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center", marginBottom: 6 }}>
           <span style={{ fontSize: 11, opacity: 0.7 }}>Take now:</span>

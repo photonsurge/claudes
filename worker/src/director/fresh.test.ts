@@ -1,7 +1,7 @@
 jest.mock("../socket", () => ({ emitWorkerEvent: jest.fn() }));
 
 import type { AppDb } from "@photonsurge/shared/db/index";
-import { alertEvent, createFreshEventWatch, quakeEvent, volcanoEvent } from "./fresh";
+import { alertEvent, createFreshEventWatch, placeRoundupEvent, quakeEvent, volcanoEvent, worldRoundupEvent } from "./fresh";
 
 const T0 = Date.UTC(2026, 9, 4, 12);
 
@@ -10,6 +10,9 @@ function fakeDb() {
     quakes: [] as any[],
     alerts: [] as any[],
     volcanoes: [] as any[],
+    countryRoundups: [] as any[],
+    regionRoundups: [] as any[],
+    world: null as any,
   };
   const calls = { alertsSince: [] as number[], volcanoesSince: [] as number[] };
   const db = {
@@ -26,6 +29,9 @@ function fakeDb() {
         return state.volcanoes;
       }),
     },
+    countryRoundups: { generatedSince: jest.fn(async () => state.countryRoundups) },
+    regionRoundups: { generatedSince: jest.fn(async () => state.regionRoundups) },
+    eventSummaries: { latest: jest.fn(async () => state.world) },
   } as unknown as AppDb;
   return { db, state, calls };
 }
@@ -143,5 +149,44 @@ describe("fresh event conversions", () => {
     expect(a.key).not.toBe(b.key);
     expect(a.volcanoLevel).toBe("unrest");
     expect(b).toMatchObject({ volcanoLevel: "erupting", segmentId: "volcano:gvp:1", score: 86 });
+  });
+});
+
+describe("round-up events", () => {
+  it("turns a fresh place round-up into an event on the curated shot", () => {
+    expect(placeRoundupEvent({ id: "r1", placeKind: "country", placeId: "gb", name: "United Kingdom", generatedAt: new Date(T0) })).toEqual({
+      reason: "roundup",
+      at: T0,
+      placeKind: "country",
+      placeId: "uk",
+      segmentId: "country:uk",
+      key: "roundup:r1",
+      score: 8,
+      title: "United Kingdom round-up",
+    });
+    expect(placeRoundupEvent({ id: "r2", placeKind: "region", placeId: "iberia", name: "Iberia", generatedAt: T0 })?.segmentId).toBe("region:iberia");
+  });
+
+  it("drops a round-up for a place the director can't air", () => {
+    expect(placeRoundupEvent({ id: "r3", placeKind: "country", placeId: "zz", name: "Nowhere", generatedAt: T0 })).toBeNull();
+  });
+
+  it("keys a world round-up to its global spin", () => {
+    expect(worldRoundupEvent({ id: "w1", generatedAt: new Date(T0) })).toMatchObject({ placeKind: "world", segmentId: "global:w1", key: "roundup:w1" });
+  });
+
+  it("the watch picks up new round-ups with a narrative, and a newer world round-up", async () => {
+    let now = T0;
+    const { db, state } = fakeDb();
+    const watch = createFreshEventWatch({ now: () => now });
+    await watch.poll(db);
+    state.countryRoundups = [
+      { id: "ok", placeKind: "country", placeId: "gb", name: "UK", generatedAt: new Date(T0 + 1), narrativeStatus: "ok" },
+      { id: "skipped", placeKind: "country", placeId: "jp", name: "Japan", generatedAt: new Date(T0 + 1), narrativeStatus: "skipped" },
+    ];
+    state.world = { id: "w2", narrativeStatus: "ok", generatedAt: new Date(T0 + 2) };
+    now += 5000;
+    await watch.poll(db);
+    expect(watch.since().map((e) => e.key)).toEqual(["roundup:ok", "roundup:w2"]);
   });
 });

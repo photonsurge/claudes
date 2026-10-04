@@ -90,6 +90,9 @@ export const DEFAULT_BREAK_IN: BreakInConfig = {
  */
 export const VOLCANO_BREAK_IN_WINDOW_MS = 6 * 60 * 60 * 1000;
 
+/** A round-up is "new" for this long after it is generated. */
+export const ROUNDUP_BREAK_IN_WINDOW_MS = 2 * 60 * 60 * 1000;
+
 /** The channel's pool bar — what may air at all. The break-in bar never sits below it. */
 export interface PoolBar {
   minQuakeMag: number;
@@ -217,6 +220,7 @@ export function qualifiesAsBreakIn(
       return cfg.volcanoMin === "unrest" && ev.volcanoLevel === "unrest";
     }
     case "roundup":
+      if (age > ROUNDUP_BREAK_IN_WINDOW_MS) return false;
       if (ev.placeKind === "world") return cfg.worldRoundup;
       if (ev.placeKind === "country") return !!ev.placeId && favourites.countries.has(ev.placeId);
       if (ev.placeKind === "region") return !!ev.placeId && favourites.regions.has(ev.placeId);
@@ -300,8 +304,9 @@ export function selectBreakIn(
   r: BreakInRunnerView,
   opts: { atBoundary?: boolean } = {},
 ): BreakInPick | null {
-  if (!cfg.enabled || cfg.interrupt !== "immediate" || r.paused) return null;
   const boundary = !!opts.atBoundary;
+  // Boundary mode never interrupts; it only drains the queue at a shot change.
+  if (!cfg.enabled || r.paused || (cfg.interrupt !== "immediate" && !boundary)) return null;
   if (!boundary) {
     if (!r.current || r.current.kind === "ad") return null;
     if (r.now - r.current.startedAt < cfg.guardSeconds * 1000) return null;

@@ -93,6 +93,13 @@ describe("buildBreakInSegment", () => {
     });
   });
 
+  it("leads a place round-up break-in with the round-up slide", async () => {
+    const uk = seg("country:uk", [-2, 54]);
+    const pick = { type: "single" as const, reason: "roundup" as const, items: [item("country:uk", { reason: "roundup", key: "roundup:r1" })] as [PendingBreakIn] };
+    const out = await buildBreakInSegment(db, cfg, newRunner("s"), pick, NOW, { interrupted: true, resolve: resolver({ "country:uk": uk }) });
+    expect(out).toMatchObject({ leadSlide: "roundup", breakIn: { reason: "roundup" } });
+  });
+
   it("falls back to the one member it could build, and to null for none", async () => {
     const only = seg("storm:a", [10, 50]);
     const pick = { type: "group" as const, reason: "storm" as const, items: [item("storm:a"), item("storm:gone")] };

@@ -168,3 +168,66 @@ describe("control ops", () => {
     expect(r.endsAt).toBe(NOW + 15_000);
   });
 });
+
+describe("resolveTarget — places and round-ups", () => {
+  const r = newRunner("s1");
+  const cities = (rows: unknown[]) => ({ getAll: jest.fn(async () => ({ data: rows })) });
+  const roundupDb = (over: Record<string, unknown> = {}) =>
+    fakeDb({
+      cities: cities([]),
+      countryRoundups: { latestForPlace: jest.fn(async (id: string) => (id === "gb" ? { id: "ru1" } : null)) },
+      regionRoundups: { latestForPlace: jest.fn(async () => null) },
+      eventSummaries: { latest: jest.fn(async () => null) },
+      ...over,
+    });
+
+  it("resolves a country or area name to the channel's own shot", async () => {
+    const uk = await resolveTarget(roundupDb(), cfg, r, { type: "place", query: "Britain" }, NOW);
+    expect("segment" in uk && uk.segment.id).toBe("country:uk");
+    const area = await resolveTarget(roundupDb(), cfg, r, { type: "place", query: "Iberia" }, NOW);
+    expect("segment" in area && area.segment.id).toBe("region:iberia");
+  });
+
+  it("falls back to the biggest matching city as a point shot", async () => {
+    const db = roundupDb({ cities: cities([{ id: "c-london", name: "London", country: "United Kingdom", lng: -0.12, lat: 51.5 }]) });
+    const res = await resolveTarget(db, cfg, r, { type: "place", query: "Lond" }, NOW);
+    expect("segment" in res && res.segment).toMatchObject({ id: "point:c-london", kind: "point", title: "London", subtitle: "United Kingdom" });
+    const [filter, opts] = (db.cities.getAll as jest.Mock).mock.calls[0];
+    expect(filter).toEqual({ name: { $regex: "^Lond", $options: "i" } });
+    expect(opts).toMatchObject({ limit: 5, sort: { population: -1 } });
+  });
+
+  it("escapes regex characters in a city query", async () => {
+    const db = roundupDb();
+    await resolveTarget(db, cfg, r, { type: "place", query: "st. (x)" }, NOW);
+    expect((db.cities.getAll as jest.Mock).mock.calls[0][0].name.$regex).toBe("^st\\. \\(x\\)");
+  });
+
+  it("never looks up cities when they are not allowed", async () => {
+    const db = roundupDb();
+    expect(await resolveTarget(db, cfg, r, { type: "place", query: "London" }, NOW, undefined, { allowCities: false })).toEqual({
+      refused: 'unknown place "London"',
+    });
+    expect(db.cities.getAll).not.toHaveBeenCalled();
+  });
+
+  it("airs a place's round-up with the round-up leading the deck", async () => {
+    const res = await resolveTarget(roundupDb(), cfg, r, { type: "roundup", place: "uk" }, NOW);
+    expect("segment" in res && res.segment).toMatchObject({ id: "country:uk", leadSlide: "roundup" });
+  });
+
+  it("refuses a round-up the place doesn't have yet, or an unknown place", async () => {
+    expect(await resolveTarget(roundupDb(), cfg, r, { type: "roundup", place: "japan" }, NOW)).toEqual({ refused: "no round-up for Japan yet" });
+    expect(await resolveTarget(roundupDb(), cfg, r, { type: "roundup", place: "narnia" }, NOW)).toEqual({ refused: 'unknown place "narnia"' });
+  });
+
+  it("airs the freshest world round-up for an empty place", async () => {
+    const doc = (id: string, generatedAt: Date) => ({ id, period: "hourly", narrativeStatus: "ok", narrative: "Storms in the Gulf.", generatedAt, hotspots: [], topEvents: [] });
+    const latest = jest.fn(async (period: string) =>
+      period === "hourly" ? doc("h1", new Date(NOW - 3600_000)) : period === "daily" ? doc("d1", new Date(NOW - 60_000)) : null,
+    );
+    const res = await resolveTarget(roundupDb({ eventSummaries: { latest } }), cfg, r, { type: "roundup" }, NOW);
+    expect("segment" in res && res.segment.id).toBe("global:d1");
+    expect(await resolveTarget(roundupDb(), cfg, r, { type: "roundup" }, NOW)).toEqual({ refused: "no world round-up yet" });
+  });
+});

@@ -12,9 +12,12 @@ import { selectNext } from "@photonsurge/shared/director-select";
 import type { CommandTarget, ControlOp, DirectorCommand } from "@photonsurge/shared/director-commands";
 import { countryShot } from "@photonsurge/shared/director-countries";
 import { regionShot } from "@photonsurge/shared/director-regions";
+import { resolvePlaceQuery } from "@photonsurge/shared/director-places";
 import {
   buildCandidates,
   countryCandidate,
+  latestWorldRoundup,
+  pointCandidate,
   quakeCandidate,
   regionCandidate,
   stormCandidate,
@@ -43,6 +46,32 @@ export interface ResolveDeps {
   buildCandidates: typeof buildCandidates;
 }
 const DEFAULT_DEPS: ResolveDeps = { buildCandidates };
+
+/** Who may land on a city: operators always; viewers per the channel's chat policy. */
+export interface ResolveOpts {
+  allowCities?: boolean;
+}
+
+/** Biggest-population city whose name starts with the query (case-insensitive). */
+async function findCity(db: AppDb, query: string) {
+  const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!escaped) return null;
+  const res = await db.cities.getAll(
+    { name: { $regex: `^${escaped}`, $options: "i" } },
+    { limit: 5, sort: { population: -1 } } as any,
+  );
+  const rows = ((res as any)?.data ?? []) as { id?: string; name: string; country?: string; lng: number; lat: number }[];
+  return rows[0] ?? null;
+}
+
+/** A country or area shot by its free-text name. */
+async function placeSegment(db: AppDb, cfg: DirectorConfig, query: string): Promise<Segment | null> {
+  const match = resolvePlaceQuery(query);
+  if (!match) return null;
+  return match.kind === "country"
+    ? (await countryCandidate(db, cfg, match.shot)).segment
+    : (await regionCandidate(db, cfg, match.shot)).segment;
+}
 
 async function resolveSegmentId(
   db: AppDb,
@@ -106,10 +135,33 @@ export async function resolveTarget(
   target: CommandTarget,
   now: number,
   deps: ResolveDeps = DEFAULT_DEPS,
+  opts: ResolveOpts = { allowCities: true },
 ): Promise<Resolution> {
   switch (target.type) {
     case "segment":
       return resolveSegmentId(db, cfg, r, target.id, now, deps);
+    case "place": {
+      const seg = await placeSegment(db, cfg, target.query);
+      if (seg) return { segment: seg };
+      if (!opts.allowCities) return { refused: `unknown place "${target.query}"` };
+      const city = await findCity(db, target.query);
+      return city ? { segment: pointCandidate(city, cfg).segment } : { refused: `unknown place "${target.query}"` };
+    }
+    case "roundup": {
+      if (!target.place) {
+        const world = await latestWorldRoundup(db, cfg);
+        return world ? { segment: world.segment } : { refused: "no world round-up yet" };
+      }
+      const match = resolvePlaceQuery(target.place);
+      if (!match) return { refused: `unknown place "${target.place}"` };
+      const doc =
+        match.kind === "country"
+          ? await db.countryRoundups.latestForPlace(match.shot.iso2.toLowerCase())
+          : await db.regionRoundups.latestForPlace(match.shot.id);
+      if (!doc) return { refused: `no round-up for ${match.shot.name} yet` };
+      const seg = await placeSegment(db, cfg, match.shot.id);
+      return seg ? { segment: { ...seg, leadSlide: "roundup" } } : { refused: `unknown place "${target.place}"` };
+    }
     case "kind": {
       if (!cfg.kinds[target.kind]) return { refused: `${KIND_WORDS[target.kind] ?? target.kind}s are off on this channel` };
       const counts = countsOf(r);
@@ -123,7 +175,7 @@ export async function resolveTarget(
       });
       return pick ? { segment: pick } : { refused: `no ${KIND_WORDS[target.kind] ?? target.kind} to show right now` };
     }
-    default:
+    case "mapType":
       return { refused: "that request isn't supported yet" };
   }
 }

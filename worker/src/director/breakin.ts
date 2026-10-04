@@ -103,7 +103,9 @@ export async function buildBreakInSegment(
   const items = built.map(({ item, seg }) => ({ segmentId: seg.id, title: seg.title, ...(seg.subtitle ? { subtitle: seg.subtitle } : {}) }));
   if (built.length === 1) {
     const seg = built[0].seg;
-    return { ...seg, breakIn: { reason: pick.reason, interrupted: opts.interrupted } };
+    // A place round-up IS the story: its deck leads with the round-up slide.
+    const lead = pick.reason === "roundup" && (seg.kind === "country" || seg.kind === "region") ? { leadSlide: "roundup" as const } : {};
+    return { ...seg, ...lead, breakIn: { reason: pick.reason, interrupted: opts.interrupted } };
   }
   const top = built[0].seg;
   const camera = frameGroup(built.map((b) => b.seg));

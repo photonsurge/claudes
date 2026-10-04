@@ -238,7 +238,10 @@ export async function stepScene(
   // date every tick, whether or not anything airs, so a burst that lands during
   // a long shot is all still waiting when the shot ends.
   const immediate = cfg.breakIn.enabled && cfg.breakIn.interrupt === "immediate";
-  if (immediate) {
+  // Boundary-mode channels keep the candidate pool's priority tier for events;
+  // the queue only carries their round-ups (which the pool can't stamp).
+  const watching = immediate || (cfg.breakIn.enabled && cfg.breakIn.reasons.roundup);
+  if (watching) {
     deps.fresh.ensureStarted(db);
     const view = breakInView(r, cfg, now);
     const { pending: queue, aged, dropped } = reconcilePending(r.pending, deps.fresh.since(), cfg.breakIn, view);
@@ -254,11 +257,12 @@ export async function stepScene(
 
   /** Put a break-in pick on air; false when nothing could be built. */
   const breakIn = async (atBoundary: boolean): Promise<boolean> => {
-    if (!immediate || paused) return false;
+    if (!watching || paused || (!immediate && !atBoundary)) return false;
     // At a shot change the usual one-normal-cut cooldown still applies, so a
     // burst drains every other cut instead of monopolising the channel.
     if (atBoundary && r.lastCutWasPriority) return false;
-    const pick = selectBreakIn(r.pending, cfg.breakIn, breakInView(r, cfg, now), { atBoundary });
+    const queue = immediate ? r.pending : r.pending.filter((p) => p.reason === "roundup");
+    const pick = selectBreakIn(queue, cfg.breakIn, breakInView(r, cfg, now), { atBoundary });
     if (!pick) return false;
     const seg = await buildBreakInSegment(db, cfg, r, pick, now, { interrupted: !atBoundary, resolve: deps.resolve });
     // Only what aired (or failed to build) leaves the queue.

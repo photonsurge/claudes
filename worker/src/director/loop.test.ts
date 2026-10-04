@@ -393,4 +393,18 @@ describe("stepScene — break-ins", () => {
     await stepScene(second.fake, immediate(), { ...onAir(), endsAt: NOW }, NOW, second.deps);
     expect(second.cutCalls[0].meta.command).toEqual({ source: "operator", author: "op" });
   });
+
+  it("a boundary-mode channel drains only round-ups from the queue, at a shot change", async () => {
+    const roundup: FreshEvent = { reason: "roundup", at: NOW - 60_000, placeKind: "world", segmentId: "global:w1", key: "roundup:w1", score: 8, title: "World round-up" };
+    const quake: FreshEvent = { reason: "quake", at: NOW - 60_000, mag: 7, segmentId: "quake:q", key: "quake:q", score: 110, title: "M7" };
+    const { fake, deps, cutCalls } = setup([roundup, quake]);
+    const boundary = config({ breakIn: { reasons: { quake: true, storm: true, volcano: true, roundup: true }, worldRoundup: true } });
+    const r = onAir();
+    await stepScene(fake, boundary, r, NOW, deps);
+    expect(deps.fresh.ensureStarted).toHaveBeenCalled();
+    expect(cutCalls).toHaveLength(0); // never interrupts
+    r.endsAt = NOW;
+    await stepScene(fake, boundary, r, NOW, deps);
+    expect(cutCalls.map((c) => c.next.id)).toEqual(["global:w1"]);
+  });
 });

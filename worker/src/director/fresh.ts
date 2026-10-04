@@ -18,6 +18,8 @@ import { volcanoLevelForStatus } from "@photonsurge/shared/director";
 import { alertCountryCode } from "@photonsurge/shared/alerts/country";
 import { log } from "@photonsurge/shared/utill/logger";
 import { volcanoStatusToSeverity } from "../summaries/aggregate";
+import { countryShotForCountryId } from "@photonsurge/shared/director-places";
+import { regionShot } from "@photonsurge/shared/director-regions";
 
 const TAG = "director:fresh";
 
@@ -79,6 +81,39 @@ export function volcanoEvent(v: { id: string; name: string; status: "erupting" |
   };
 }
 
+/**
+ * A freshly generated per-place round-up, or null when the place has no shot
+ * the director can air (a country outside the curated catalog).
+ */
+export function placeRoundupEvent(doc: { id: string; placeKind: "country" | "region"; placeId: string; name: string; generatedAt: Date | string }): FreshEvent | null {
+  const at = new Date(doc.generatedAt).getTime();
+  const shotId = doc.placeKind === "country" ? countryShotForCountryId(doc.placeId)?.id : regionShot(doc.placeId)?.id;
+  if (!shotId) return null;
+  return {
+    reason: "roundup",
+    at,
+    placeKind: doc.placeKind,
+    placeId: shotId,
+    segmentId: `${doc.placeKind}:${shotId}`,
+    key: `roundup:${doc.id}`,
+    score: 8,
+    title: `${doc.name} round-up`,
+  };
+}
+
+/** A freshly generated world round-up (it rides the global spin as `global:<docId>`). */
+export function worldRoundupEvent(doc: { id: string; generatedAt: Date | string }): FreshEvent {
+  return {
+    reason: "roundup",
+    at: new Date(doc.generatedAt).getTime(),
+    placeKind: "world",
+    segmentId: `global:${doc.id}`,
+    key: `roundup:${doc.id}`,
+    score: 8,
+    title: "World round-up",
+  };
+}
+
 export interface FreshEventWatch {
   /** Start polling (idempotent). The first poll only primes what's already there. */
   ensureStarted(db: AppDb): void;
@@ -113,15 +148,29 @@ export function createFreshEventWatch(opts: { now?: () => number; pollMs?: numbe
     const t = now();
     try {
       const since = primed ? hwm : t;
-      const [quakes, alerts, volcanoes] = await Promise.all([
-        conn.quakes.list({ minMag: FLOOR_MAG, sinceMs: t - QUAKE_LOOKBACK_MS, limit: 200 }).catch(() => []),
-        primed ? conn.alerts.createdSince(since, { severityMin: FLOOR_SEVERITY }).catch(() => []) : Promise.resolve([]),
-        primed ? conn.volcanoes.statusChangedSince(since).catch(() => []) : Promise.resolve([]),
+      // Each source fails on its own: a broken read never costs the others.
+      const safe = <T>(read: () => Promise<T>, fallback: T): Promise<T> =>
+        Promise.resolve().then(read).catch(() => fallback);
+      const [quakes, alerts, volcanoes, countryRoundups, regionRoundups, world] = await Promise.all([
+        safe(() => conn.quakes.list({ minMag: FLOOR_MAG, sinceMs: t - QUAKE_LOOKBACK_MS, limit: 200 }), []),
+        primed ? safe(() => conn.alerts.createdSince(since, { severityMin: FLOOR_SEVERITY }), []) : [],
+        primed ? safe(() => conn.volcanoes.statusChangedSince(since), []) : [],
+        primed ? safe(() => conn.countryRoundups.generatedSince(since), []) : [],
+        primed ? safe(() => conn.regionRoundups.generatedSince(since), []) : [],
+        primed ? safe(() => conn.eventSummaries.latest("hourly"), null) : null,
       ]);
+      const roundups = [...countryRoundups, ...regionRoundups]
+        .filter((d) => d.narrativeStatus === "ok")
+        .map(placeRoundupEvent)
+        .filter((e): e is FreshEvent => e !== null);
+      const worldFresh =
+        world && world.narrativeStatus === "ok" && new Date(world.generatedAt).getTime() > since ? [worldRoundupEvent(world)] : [];
       const events = [
         ...quakes.map(quakeEvent),
         ...(alerts as any[]).map(alertEvent),
         ...volcanoes.filter((v) => v.status !== "dormant").map(volcanoEvent),
+        ...roundups,
+        ...worldFresh,
       ];
       for (const ev of events) {
         if (seenKeys.has(ev.key)) continue;

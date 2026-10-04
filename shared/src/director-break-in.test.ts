@@ -1,5 +1,6 @@
 import {
   DEFAULT_BREAK_IN,
+  ROUNDUP_BREAK_IN_WINDOW_MS,
   VOLCANO_BREAK_IN_WINDOW_MS,
   mergeBreakIn,
   qualifiesAsBreakIn,
@@ -119,6 +120,13 @@ describe("qualifiesAsBreakIn", () => {
     expect(qualifiesAsBreakIn(at(VOLCANO_BREAK_IN_WINDOW_MS + 1), cfg(), noFavourites, NOW)).toBe(false);
   });
 
+  it("treats a round-up as new for two hours", () => {
+    const on = cfg({ reasons: { roundup: true } as any, worldRoundup: true });
+    const at = (ms: number): FreshEvent => ({ reason: "roundup", at: NOW - ms, placeKind: "world" });
+    expect(qualifiesAsBreakIn(at(ROUNDUP_BREAK_IN_WINDOW_MS), on, noFavourites, NOW)).toBe(true);
+    expect(qualifiesAsBreakIn(at(ROUNDUP_BREAK_IN_WINDOW_MS + 1), on, noFavourites, NOW)).toBe(false);
+  });
+
   it("only breaks in for a favourite place's round-up, or the world round-up when opted in", () => {
     const on = cfg({ reasons: { roundup: true } as any });
     const favourites = { countries: new Set(["uk"]), regions: new Set(["alps"]) };
@@ -215,8 +223,12 @@ describe("break-in queue", () => {
   describe("selectBreakIn", () => {
     const one = () => [pend(warning())];
 
-    it("does nothing in boundary mode, when disabled, or while paused", () => {
+    it("never interrupts in boundary mode, but drains at a shot change", () => {
       expect(selectBreakIn(one(), cfg(), view())).toBeNull();
+      expect(selectBreakIn(one(), cfg(), view(), { atBoundary: true })?.type).toBe("single");
+    });
+
+    it("does nothing when disabled or while paused", () => {
       expect(selectBreakIn(one(), immediate({ enabled: false }), view())).toBeNull();
       expect(selectBreakIn(one(), immediate(), view({ paused: true }))).toBeNull();
     });

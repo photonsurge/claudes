@@ -215,6 +215,9 @@ export interface Segment {
   };
   /** On-air INCOMING pre-roll length, ms, clocked from `patch.spinEpoch`. Absent/0 = none. */
   incomingMs?: number;
+  /** Which deck slide leads after the lede — "roundup" when the round-up IS the
+   *  story (a round-up break-in, or a `:roundup uk` request). */
+  leadSlide?: "roundup";
 }
 
 /**

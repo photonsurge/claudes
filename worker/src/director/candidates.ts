@@ -673,6 +673,42 @@ export function stormCandidate(
   return { candidate, capKey };
 }
 
+/** Zoom a requested city is framed at. */
+const CITY_ZOOM = 7;
+
+/**
+ * A city as a shot ("Go to London"): the sandbox `point` kind — a real
+ * location with a tucked card and no reticle.
+ */
+export function pointCandidate(
+  city: { name: string; country?: string; lng: number; lat: number; id?: string },
+  cfg: DirectorConfig,
+): Candidate {
+  const subject = city.id ?? `${city.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}@${city.lng.toFixed(2)},${city.lat.toFixed(2)}`;
+  const seg = make("point", subject, city.name, city.country, [city.lng, city.lat], CITY_ZOOM, kindHoldMs(cfg, "point"), cfg);
+  return { score: 6, segment: seg };
+}
+
+/**
+ * The freshest world round-up with a real narrative (hourly, 12-hour or daily,
+ * whichever was generated last), ignoring the session's "already aired" rule —
+ * someone asked for it.
+ */
+export async function latestWorldRoundup(db: AppDb, cfg: DirectorConfig): Promise<Candidate | null> {
+  let best: { doc: iEventSummaryModel; period: SummaryPeriod; label: string } | null = null;
+  for (const { period, label } of SUMMARY_PERIODS) {
+    let doc: iEventSummaryModel | null = null;
+    try {
+      doc = await db.eventSummaries.latest(period);
+    } catch {
+      continue;
+    }
+    if (!doc || doc.narrativeStatus !== "ok" || !doc.narrative.trim()) continue;
+    if (!best || new Date(doc.generatedAt).getTime() > new Date(best.doc.generatedAt).getTime()) best = { doc, period, label };
+  }
+  return best ? summaryCandidate(best.doc, best.period, best.label, cfg) : null;
+}
+
 export interface BuildCandidatesOpts {
   /** Only build these kinds (still subject to the channel's own `kinds`), so a
    *  "show me a quake" request doesn't scan everything. */

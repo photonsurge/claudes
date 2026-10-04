@@ -27,7 +27,7 @@ import type { City } from "../../lib/cities";
 import type { CountryAt } from "../../lib/countries";
 import type { Cam } from "../../lib/cams/types";
 import type { BroadcastTheme } from "./config";
-import { applySlidePrefs, type SlideId } from "@photonsurge/shared/broadcast-slides";
+import { applySlidePrefs, baseSlideId, type SlideId } from "@photonsurge/shared/broadcast-slides";
 import BreakInItemsPanel from "./BreakInItemsPanel";
 import type { DeckSlide } from "./SlideDeck";
 import { KIND_COLOR, isTargetedEvent } from "./kinds";
@@ -341,7 +341,25 @@ function contextSlides(ctx: ModeSlideContext): DeckSlide[] {
  * `segment` non-null.
  */
 export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[] {
-  return applySlidePrefs(composeModeSlides(segment, ctx), ctx.slidesOff ?? [], ctx.slideOrder ?? []);
+  const deck = applySlidePrefs(composeModeSlides(segment, ctx), ctx.slidesOff ?? [], ctx.slideOrder ?? []);
+  return segment.leadSlide === "roundup" ? leadWithRoundup(deck) : deck;
+}
+
+/** Slides that ARE a round-up — the one a round-up break-in or request leads with. */
+const ROUNDUP_SLIDES = new Set(["place-roundup", "roundup"]);
+
+/**
+ * When the round-up is the story (a round-up break-in, `:roundup uk`), its
+ * slide goes straight after the lede, ahead of the channel's own ordering.
+ * A channel that hides the round-up slide still doesn't see it.
+ */
+export function leadWithRoundup<T extends { id: string }>(deck: T[]): T[] {
+  const i = deck.findIndex((s) => ROUNDUP_SLIDES.has(baseSlideId(s.id)));
+  if (i <= 1) return deck;
+  const out = [...deck];
+  const [roundup] = out.splice(i, 1);
+  out.splice(1, 0, roundup);
+  return out;
 }
 
 /** Builds the mode's natural, content-filtered deck (before channel prefs). */
