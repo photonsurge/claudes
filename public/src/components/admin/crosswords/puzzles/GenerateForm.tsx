@@ -3,8 +3,8 @@
 /**
  * Generate now: pick a crossword channel (the build honours its difficulty,
  * no-repeat window and family-friendly setting) and queue `crossword.generate`.
- * The job runs in the background, so success only says it was queued; the
- * puzzle shows in the list when it lands.
+ * The job runs in the background, so after queuing the form polls the list
+ * for a new puzzle for about 30 s, then points at the Jobs page.
  */
 import { useEffect, useState } from "react";
 import Alert from "@mui/material/Alert";
@@ -16,7 +16,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { sceneSurface, type SceneMeta } from "@photonsurge/shared/control";
 import { listScenes } from "../../../../lib/scenes";
-import { generatePuzzle } from "./api";
+import { generatePuzzle, listPuzzles } from "./api";
 
 interface Props {
   /** Called once a build is queued (the page refreshes later). */
@@ -24,9 +24,13 @@ interface Props {
   /** Injectable for tests. */
   loadScenes?: () => Promise<SceneMeta[]>;
   generate?: typeof generatePuzzle;
+  list?: typeof listPuzzles;
+  /** Poll spacing and total wait, in ms. */
+  pollMs?: number;
+  waitMs?: number;
 }
 
-export default function GenerateForm({ onQueued, loadScenes = listScenes, generate = generatePuzzle }: Props) {
+export default function GenerateForm({ onQueued, loadScenes = listScenes, generate = generatePuzzle, list = listPuzzles, pollMs = 3000, waitMs = 30_000 }: Props) {
   const [scenes, setScenes] = useState<SceneMeta[] | null>(null);
   const [sceneId, setSceneId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -50,14 +54,29 @@ export default function GenerateForm({ onQueued, loadScenes = listScenes, genera
     setBusy(true);
     setError(null);
     setDone(null);
+    const before = await list();
+    const known = new Set(before.ok ? before.data.puzzles.map((p) => p.id) : []);
     const res = await generate(sceneId);
-    setBusy(false);
     if (!res.ok) {
+      setBusy(false);
       setError(res.error);
       return;
     }
-    setDone("Build queued from the approved pool. It appears below when it lands.");
+    setDone("Building a puzzle from the approved pool…");
     onQueued?.();
+    // The build runs in the background; watch the list for the new puzzle.
+    for (let waited = 0; waited < waitMs; waited += pollMs) {
+      await new Promise((r) => setTimeout(r, pollMs));
+      const now = await list();
+      if (now.ok && now.data.puzzles.some((p) => !known.has(p.id))) {
+        setBusy(false);
+        setDone("The new puzzle is built.");
+        onQueued?.();
+        return;
+      }
+    }
+    setBusy(false);
+    setDone("The build is queued but no new puzzle has shown up yet. Check the Jobs page; the approved pool may be too small.");
   };
 
   return (

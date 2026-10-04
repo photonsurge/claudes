@@ -33,6 +33,7 @@ function toRow(p: CrosswordPuzzle): PuzzleRow {
     words: p.entries.length,
     plays: p.plays.length,
     scenes,
+    playLog: p.plays.map((x) => ({ sceneId: x.sceneId, startedAt: x.startedAt })),
   };
   if (last) row.lastPlayedAt = last;
   return row;

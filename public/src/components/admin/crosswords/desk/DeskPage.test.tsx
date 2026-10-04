@@ -20,8 +20,9 @@ jest.mock("next/link", () => ({
 
 const NOW = 1_000_000;
 let state: CrosswordPublicState;
-let runs: { id: string; sceneId: string; status: string }[] = [];
-let puzzles: { id: string; scenes: string[] }[] = [];
+let stopBody: object = { ok: true };
+let runs: { id: string; sceneId: string; status: string; slotId?: string }[] = [];
+let puzzles: { id: string; scenes: string[]; title?: string; playLog?: { sceneId: string; startedAt: number }[] }[] = [];
 const calls: string[] = [];
 const bodies: Record<string, unknown[]> = {};
 
@@ -29,6 +30,7 @@ beforeEach(() => {
   calls.length = 0;
   puzzles = [{ id: "p1", scenes: [] }];
   runs = [];
+  stopBody = { ok: true };
   for (const k of Object.keys(bodies)) delete bodies[k];
   state = {
     sceneId: "xw",
@@ -58,8 +60,8 @@ beforeEach(() => {
     if (u === "/api/crossword/xw/state") return json(state);
     if (u === "/api/crossword/xw/command" || u === "/api/crossword/xw/sim") return json({ queued: true }, 202);
     if (u === "/api/streams") return json({ runs });
-    if (init?.method === "POST" && u.startsWith("/api/streams/")) return json({ ok: true }, 202);
-    if (u.startsWith("/api/crossword/puzzles")) return json({ puzzles: puzzles });
+    if (init?.method === "POST" && u.startsWith("/api/streams/")) return json(stopBody, 202);
+    if (u.startsWith("/api/crossword/puzzles")) return json({ puzzles: puzzles.map((p) => ({ status: "ready", ...p })) });
     return json({ error: "nope" }, 404);
   }) as typeof fetch;
 });
@@ -138,19 +140,33 @@ it("disables Skip and Reveal with no clue in the spotlight", async () => {
 it("says why it is idle", async () => {
   state = { ...state, phase: "idle", spotlight: null, entries: [], rows: [], width: 0, height: 0 };
   render(<DeskPage sceneId="xw" />);
-  expect(await screen.findByText(/No puzzle to play: approve more words/)).toBeInTheDocument();
+  expect(await screen.findByText(/no ready puzzles: approve more words/)).toBeInTheDocument();
 });
 
-it("says it is replaying when every ready puzzle has aired here", async () => {
-  puzzles = [{ id: "p1", scenes: ["xw"] }];
+it("says it is replaying when the puzzle on air has aired here before", async () => {
+  puzzles = [{ id: "p1", title: "Volcanoes", scenes: ["xw"], playLog: [{ sceneId: "xw", startedAt: 1 }, { sceneId: "xw", startedAt: 2 }] }];
   render(<DeskPage sceneId="xw" />);
-  expect(await screen.findByText(/Replaying\. Every ready puzzle has aired/)).toBeInTheDocument();
+  expect(await screen.findByText(/Replaying\. This puzzle has aired on this channel before/)).toBeInTheDocument();
 });
 
 it("shows no reason while there is unplayed stock", async () => {
   render(<DeskPage sceneId="xw" />);
   await screen.findByText("Feline pet");
   expect(screen.queryByText(/approve more words/)).toBeNull();
+});
+
+it("warns that End also turns off a standing slot, and reports it", async () => {
+  runs = [{ id: "r1", sceneId: "xw", status: "live", slotId: "s1" } as (typeof runs)[number]];
+  stopBody = { ok: true, slotDisabled: "s1" };
+  const confirm = jest.spyOn(window, "confirm").mockReturnValue(true);
+  render(<DeskPage sceneId="xw" />);
+  await screen.findByText("Feline pet");
+  await waitFor(() => expect(screen.getByRole("button", { name: "End" })).toBeEnabled());
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "End" }));
+  });
+  expect(confirm.mock.calls[0][0]).toMatch(/standing slot/);
+  expect(await screen.findByText(/slot s1 is now off/)).toBeInTheDocument();
 });
 
 it("disables End with no live run", async () => {

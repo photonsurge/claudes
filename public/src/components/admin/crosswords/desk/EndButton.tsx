@@ -13,12 +13,13 @@ import Tooltip from "@mui/material/Tooltip";
 import { runIsActive, type RunState } from "@photonsurge/shared/runs";
 import { stopStream } from "../../../../lib/stream";
 
-export const END_POLL_MS = 5_000;
+/** GET /api/streams lists every run, so this polls slowly; there is no per-channel route. */
+export const END_POLL_MS = 15_000;
 
 interface Props {
   sceneId: string;
   /** Injectable for tests. */
-  stop?: (runId: string) => Promise<void>;
+  stop?: (runId: string) => Promise<{ slotDisabled?: string }>;
   confirmEnd?: (message: string) => boolean;
 }
 
@@ -46,13 +47,15 @@ export default function EndButton({ sceneId, stop = stopStream, confirmEnd = (m)
   }, [load]);
 
   const end = async () => {
-    if (!run || !confirmEnd("End the live stream for this channel? The broadcast is completed on YouTube.")) return;
+    if (!run) return;
+    const slotNote = run.slotId ? " This run belongs to the channel's standing slot, so this also turns the slot off, or it would be restarted." : "";
+    if (!confirmEnd(`End the live stream for this channel? The broadcast is completed on YouTube.${slotNote}`)) return;
     setBusy(true);
     setError(null);
     setDone(null);
     try {
-      await stop(run.id);
-      setDone("Stop requested. The stream is ending.");
+      const res = await stop(run.id);
+      setDone(`Stop requested. The stream is ending.${res?.slotDisabled ? ` The standing slot ${res.slotDisabled} is now off.` : ""}`);
       setTimeout(load, 1500);
     } catch (err) {
       setError(String((err as Error)?.message ?? err));

@@ -57,6 +57,10 @@ it("lists rows with counts and no answers", async () => {
     plays: 2,
     lastPlayedAt: 9,
     scenes: ["xw"],
+    playLog: [
+      { sceneId: "xw", startedAt: 5 },
+      { sceneId: "xw", startedAt: 9 },
+    ],
   });
   expect(mockDb.crosswordPuzzles.list).toHaveBeenCalledWith({ limit: 500 });
 });

@@ -4,8 +4,8 @@
  * /admin/crosswords/desk/:scene — live operation of one crossword channel, the
  * counterpart of /control (docs/crossword-mode-plan.md §8.3): the board in
  * small, the clue in the spotlight with its countdown, this puzzle's scores and
- * the solve feed; the game controls; and the simulator. When the approved pool
- * is too small the channel idles or replays, and a line says so (§7.5). Go
+ * the solve feed; the game controls; and the simulator. When the channel idles or
+ * replays, a line says why (§7.5, derived in deskReason). Go
  * live links to the Streams page until the Go live dialog lands (WP12); End stops
  * the channel's live run through the Streams API.
  */
@@ -23,7 +23,8 @@ import type { CrosswordPublicState } from "@photonsurge/shared/crossword";
 import AdminPageShell from "../../AdminPageShell";
 import MiniGrid from "../puzzles/MiniGrid";
 import { listScenes } from "../../../../lib/scenes";
-import { listPuzzles } from "../puzzles/api";
+import { call, listPuzzles, type PuzzleRow } from "../puzzles/api";
+import { deskReason } from "./deskReason";
 import { font } from "../../../../theme/tokens";
 import DeskControls from "./DeskControls";
 import EndButton from "./EndButton";
@@ -31,23 +32,11 @@ import SimForm from "./SimForm";
 import { useDeskState } from "./useDeskState";
 
 const PHASE_LABEL: Record<CrosswordPublicState["phase"], string> = {
-  idle: "Idle: no puzzle in stock",
+  idle: "Idle",
   intro: "Intro card",
   playing: "Playing",
   finale: "Finale",
 };
-
-/**
- * Why the channel is idle or replaying, or null when it is playing fresh
- * stock. The worker stores no reason on the state, so this is derived: idle
- * means nothing playable; a running game with every ready puzzle already
- * played here means the next one is a replay. `unplayed` is null while unknown.
- */
-export function stockReason(phase: CrosswordPublicState["phase"], unplayed: number | null): string | null {
-  if (phase === "idle") return "Idle. No puzzle to play: approve more words so one can be built.";
-  if (unplayed === 0) return "Replaying. Every ready puzzle has aired on this channel, and the approved pool is too small to build a new one: approve more words.";
-  return null;
-}
 
 const secondsLeft = (endsAt: number, skew: number) => Math.max(0, Math.round((endsAt - (Date.now() + skew)) / 1000));
 
@@ -65,19 +54,29 @@ export default function DeskPage({ sceneId }: { sceneId: string }) {
     };
   }, [sceneId]);
 
-  const [unplayed, setUnplayed] = useState<number | null>(null);
+  const [puzzles, setPuzzles] = useState<PuzzleRow[]>([]);
+  const [config, setConfig] = useState<{ familyFriendlyOnly: boolean; noRepeatPuzzles: number } | null>(null);
   const phase = state?.phase;
   useEffect(() => {
     if (!phase) return;
     let live = true;
     listPuzzles({ status: "ready" }).then((res) => {
-      if (live) setUnplayed(res.ok ? res.data.puzzles.filter((p) => !p.scenes.includes(sceneId)).length : null);
+      if (live && res.ok) setPuzzles(res.data.puzzles);
     });
     return () => {
       live = false;
     };
   }, [sceneId, phase, state?.puzzleNo]);
-  const reason = state ? stockReason(state.phase, unplayed) : null;
+  useEffect(() => {
+    let live = true;
+    call<{ familyFriendlyOnly: boolean; noRepeatPuzzles: number }>(`/api/crossword/${encodeURIComponent(sceneId)}/config`).then((res) => {
+      if (live && res.ok) setConfig(res.data);
+    });
+    return () => {
+      live = false;
+    };
+  }, [sceneId]);
+  const reason = state ? deskReason({ phase: state.phase, sceneId, title: state.title, puzzles, config }) : null;
 
   const name = scene?.name ?? sceneId;
   const notCrossword = scene && sceneSurface(scene) !== "crossword";

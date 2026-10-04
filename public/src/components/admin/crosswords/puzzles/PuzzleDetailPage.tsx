@@ -2,8 +2,7 @@
 
 /**
  * /admin/crosswords/puzzles/:id — review one puzzle: the grid with every
- * answer, the clues with a link to each word's Words page, and Reject (or
- * Restore, for a puzzle rejected by mistake). Clues are edited in Words.
+ * answer, the clues with a link to each word's Words page, and Reject. Clues are edited in Words.
  */
 import { useCallback, useEffect, useState } from "react";
 import Alert from "@mui/material/Alert";
@@ -66,15 +65,9 @@ export default function PuzzleDetailPage({ id }: { id: string }) {
       actions={
         puzzle && (
           <Stack direction="row" spacing={1}>
-            {puzzle.status === "rejected" ? (
-              <Button variant="outlined" disabled={busy} onClick={() => act({ action: "unreject" })}>
-                Restore
-              </Button>
-            ) : (
-              <Button variant="outlined" color="error" disabled={busy} onClick={() => act({ action: "reject" })}>
-                Reject
-              </Button>
-            )}
+            <Button variant="outlined" color="error" disabled={busy || puzzle.status === "rejected"} onClick={() => act({ action: "reject" })}>
+              Reject
+            </Button>
           </Stack>
         )
       }

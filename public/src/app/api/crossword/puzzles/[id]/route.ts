@@ -23,11 +23,10 @@ async function GET__impl(_req: Request, { params }: Ctx) {
 }
 
 /**
- * PATCH /api/crossword/puzzles/:id — the only review actions (§8.3). Body is
- * `{ action: "reject" }` → status `rejected` (out of play), or
- * `{ action: "unreject" }` → back to `ready`, so a mistaken reject is
- * undone. A puzzle is built only from approved words and clues, so nothing
- * here approves, and a puzzle's clues are not edited here: that is Words.
+ * PATCH /api/crossword/puzzles/:id — the only review action (§8.3). Body is
+ * `{ action: "reject" }` → status `rejected` (out of play). A puzzle is built
+ * only from approved words and clues, so nothing here approves or restores,
+ * and a puzzle's clues are not edited here: that is Words.
  * 200 with the updated puzzle.
  */
 async function PATCH__impl(req: Request, { params }: Ctx) {
@@ -41,17 +40,16 @@ async function PATCH__impl(req: Request, { params }: Ctx) {
   } catch {
     /* validated below */
   }
-  if (body.action !== "reject" && body.action !== "unreject") {
-    return NextResponse.json({ error: 'action must be "reject" or "unreject"' }, { status: 400, headers: NO_CACHE });
+  if (body.action !== "reject") {
+    return NextResponse.json({ error: 'action must be "reject"' }, { status: 400, headers: NO_CACHE });
   }
 
   const db = await getAppDb();
   const puzzle = await db.crosswordPuzzles.get(id);
   if (!puzzle) return NextResponse.json({ error: "no such puzzle" }, { status: 404, headers: NO_CACHE });
 
-  const status = body.action === "reject" ? "rejected" : "ready";
-  await db.crosswordPuzzles.setStatus(id, status);
-  return NextResponse.json({ ...puzzle, status }, { status: 200, headers: NO_CACHE });
+  await db.crosswordPuzzles.setStatus(id, "rejected");
+  return NextResponse.json({ ...puzzle, status: "rejected" }, { status: 200, headers: NO_CACHE });
 }
 
 export const GET = withApiLog(GET__impl);

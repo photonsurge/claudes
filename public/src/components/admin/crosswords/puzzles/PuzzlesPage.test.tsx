@@ -27,6 +27,7 @@ const row: PuzzleRow = {
   words: 14,
   plays: 0,
   scenes: [],
+  playLog: [],
 };
 
 const calls: string[] = [];
@@ -95,6 +96,6 @@ it("generates for a crossword channel with just the scene", async () => {
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
   });
-  expect(await screen.findByText(/Build queued/)).toBeInTheDocument();
+  expect(await screen.findByText(/Building a puzzle/)).toBeInTheDocument();
   expect(bodies).toContainEqual({ sceneId: "xw" });
 });

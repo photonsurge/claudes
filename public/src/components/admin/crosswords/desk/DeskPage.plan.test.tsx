@@ -22,7 +22,7 @@ jest.mock("next/link", () => ({
 
 const NOW = Date.now();
 let state: CrosswordPublicState;
-let readyPuzzles: { id: string; scenes: string[] }[];
+let readyPuzzles: { id: string; scenes: string[]; title?: string; playLog?: { sceneId: string; startedAt: number }[] }[];
 const posts: { url: string; body: unknown }[] = [];
 
 const playing = (): CrosswordPublicState => ({
@@ -125,9 +125,10 @@ it("says why the channel is idle", async () => {
   expect(await screen.findByText(/idle/i, { selector: ".MuiAlert-message, .MuiAlert-message *" })).toHaveTextContent(/approve|pool|stock/i);
 });
 
-it("says why the channel is replaying when every ready puzzle has aired here", async () => {
+it("says why the channel is replaying when the puzzle on air has aired here before", async () => {
+  // Reason is now decided from the current puzzle's earlier play (WP6 validation), not an empty unplayed stock.
   readyPuzzles = [
-    { id: "p1", scenes: ["xw"] },
+    { id: "p1", title: "Puzzle 42", scenes: ["xw"], playLog: [{ sceneId: "xw", startedAt: 1 }, { sceneId: "xw", startedAt: 2 }] },
     { id: "p2", scenes: ["xw", "other"] },
   ];
   render(<DeskPage sceneId="xw" />);

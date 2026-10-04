@@ -1,6 +1,6 @@
 /**
  * PuzzleDetailPage — over a faked API: the grid shows every answer, words link
- * to Words, the family-friendly chip shows, and Reject / Restore flip status.
+ * to Words, the family-friendly chip shows, and Reject flips status.
  * There is no clue edit, drop or approve.
  */
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
@@ -44,7 +44,6 @@ beforeEach(() => {
     const body = JSON.parse(String(init.body));
     patches.push(body);
     if (body.action === "reject") return json((puzzle = { ...puzzle, status: "rejected" }));
-    if (body.action === "unreject") return json((puzzle = { ...puzzle, status: "ready" }));
     return json({ error: "bad" }, 400);
   }) as typeof fetch;
 });
@@ -74,7 +73,7 @@ it("has no clue editing, drop or approve", async () => {
   for (const name of ["Save", "Drop", "Approve"]) expect(screen.queryByRole("button", { name })).toBeNull();
 });
 
-it("rejects, then restores", async () => {
+it("rejects, with no way back", async () => {
   render(<PuzzleDetailPage id="p1" />);
   await screen.findByRole("grid");
   await act(async () => {
@@ -82,8 +81,6 @@ it("rejects, then restores", async () => {
   });
   expect(patches).toContainEqual({ action: "reject" });
   expect(screen.getByText("rejected")).toBeInTheDocument();
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
-  });
-  expect(patches).toContainEqual({ action: "unreject" });
+  expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "Restore" })).toBeNull();
 });

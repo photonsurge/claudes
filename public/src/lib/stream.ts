@@ -153,13 +153,12 @@ export async function startStream(body: CreateRunRequest): Promise<RunState> {
   return data as RunState;
 }
 
-/** Stop a run (operator). */
-export async function stopStream(runId: string): Promise<void> {
+/** Stop a run (operator). Resolves to the route's body: `slotDisabled` names a standing slot the stop turned off. */
+export async function stopStream(runId: string): Promise<{ slotDisabled?: string }> {
   const res = await fetch(`/api/streams/${runId}/stop`, { method: "POST" });
-  if (!res.ok && res.status !== 202) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data?.error ?? `HTTP ${res.status}`);
-  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && res.status !== 202) throw new Error(data?.error ?? `HTTP ${res.status}`);
+  return data;
 }
 
 /** Fetch the RTMP ingestion address + stream key for manual OBS handoff (admin). */

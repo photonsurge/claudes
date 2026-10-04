@@ -2,7 +2,7 @@
 
 /**
  * GET/PATCH /api/crossword/puzzles/:id — admin only; PATCH accepts only
- * reject and unreject. Approve, clue edits and drops are gone (§8.3).
+ * reject. Approve, clue edits and drops are gone (§8.3).
  */
 jest.mock("../../../../../lib/api-log", () => ({ withApiLog: (h: unknown) => h }));
 jest.mock("../../../../../lib/require-admin", () => ({ requireAdmin: jest.fn() }));
@@ -59,17 +59,14 @@ it("serves the puzzle with its answers, 404 when unknown", async () => {
   expect((await patch({ action: "reject" })).status).toBe(404);
 });
 
-it("rejects to rejected and restores to ready", async () => {
+it("rejects to rejected", async () => {
   const no = await patch({ action: "reject" });
   expect((await no.json()).status).toBe("rejected");
   expect(mockDb.crosswordPuzzles.setStatus).toHaveBeenLastCalledWith("p1", "rejected");
-  const back = await patch({ action: "unreject" });
-  expect((await back.json()).status).toBe("ready");
-  expect(mockDb.crosswordPuzzles.setStatus).toHaveBeenLastCalledWith("p1", "ready");
 });
 
-it("accepts nothing else: no approve, clue or drop", async () => {
-  for (const body of [{ action: "approve" }, { action: "clue", entryId: "1A", clue: "Feline pet" }, { action: "drop", entryId: "1A" }, {}]) {
+it("accepts nothing else: no approve, unreject, clue or drop", async () => {
+  for (const body of [{ action: "approve" }, { action: "unreject" }, { action: "clue", entryId: "1A", clue: "Feline pet" }, { action: "drop", entryId: "1A" }, {}]) {
     expect((await patch(body)).status).toBe(400);
   }
   expect(mockDb.crosswordPuzzles.setStatus).not.toHaveBeenCalled();

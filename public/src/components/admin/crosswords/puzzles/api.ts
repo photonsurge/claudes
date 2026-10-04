@@ -47,6 +47,8 @@ export interface PuzzleRow {
   lastPlayedAt?: number;
   /** Scenes that have played it, in first-play order. */
   scenes: string[];
+  /** Every play (scene and start), for the Desk's stock reason; no answers. */
+  playLog: { sceneId: string; startedAt: number }[];
 }
 
 export interface PuzzleListResponse {
@@ -54,7 +56,7 @@ export interface PuzzleListResponse {
 }
 
 /** What PATCH /api/crossword/puzzles/:id accepts. */
-export type PuzzlePatch = { action: "reject" } | { action: "unreject" };
+export type PuzzlePatch = { action: "reject" };
 
 export interface PuzzleFilters {
   status?: CrosswordPuzzleStatus | "";

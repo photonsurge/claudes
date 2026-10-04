@@ -63,7 +63,6 @@ export default function PuzzlesPage() {
           <TextField select size="small" label="Source" value={filters.source} onChange={(e) => set({ source: e.target.value as PuzzleFilters["source"] })} sx={{ minWidth: 160 }}>
             <MenuItem value="">All</MenuItem>
             <MenuItem value="bank">Bank</MenuItem>
-            <MenuItem value="themed">Themed</MenuItem>
             <MenuItem value="seed">Seed</MenuItem>
           </TextField>
           <TextField
