@@ -8,13 +8,13 @@ import { bankQueryString, type BankWordsResponse } from "./query";
 
 export type Outcome<T> = { ok: true; data: T } | { ok: false; error: string };
 
-async function call<T>(url: string, patch?: unknown): Promise<Outcome<T>> {
+async function call<T>(url: string, patch?: unknown, headers: Record<string, string> = {}): Promise<Outcome<T>> {
   try {
     const res = await fetch(
       url,
       patch === undefined
         ? { cache: "no-store" }
-        : { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch), cache: "no-store" },
+        : { method: "PATCH", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(patch), cache: "no-store" },
     );
     const body = await res.json().catch(() => ({}));
     if (!res.ok) return { ok: false, error: body?.error || `HTTP ${res.status}` };
@@ -52,9 +52,13 @@ export function patchBankWord(id: string, patch: WordPatch): Promise<Outcome<Ban
   return call(`/api/crossword/words/${encodeURIComponent(id)}`, patch);
 }
 
-/** Decide on or edit a clue. */
-export function patchBankClue(id: string, patch: CluePatch): Promise<Outcome<{ ok: true }>> {
-  return call(`/api/crossword/clues/${encodeURIComponent(id)}`, patch);
+/**
+ * Decide on or edit a clue. `wordId` (sent as the X-Word-Id header) is the
+ * clue's word: with it the route checks the clue (`validateClue`) before
+ * approving it.
+ */
+export function patchBankClue(id: string, patch: CluePatch, wordId?: string): Promise<Outcome<{ ok: true }>> {
+  return call(`/api/crossword/clues/${encodeURIComponent(id)}`, patch, wordId ? { "X-Word-Id": wordId } : {});
 }
 
 /** Path of a word's detail page. */

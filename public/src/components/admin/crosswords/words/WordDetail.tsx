@@ -15,6 +15,7 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Checkbox from "@mui/material/Checkbox";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import Chip from "@mui/material/Chip";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
@@ -25,18 +26,21 @@ import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import type { BankClue, BankWordDetail } from "@photonsurge/shared/crossword-bank";
+import { toQueueClue } from "../approve/queueState";
 import AdminPageShell from "../../AdminPageShell";
 import { font } from "../../../../theme/tokens";
 import { getBankWord, patchBankClue, patchBankWord, type CluePatch, type Outcome, type WordPatch } from "./api";
 import { ApprovalChip, ClueStatusChip, DecisionChip, FamilyChip, FlagChips, decidedLabel, fmtTime, zipfLabel } from "./chips";
 
+const PROBLEM_TEXT = { short: "too short to air", long: "too long to air", leak: "gives the answer away", blocked: "on the blocklist" } as const;
+
 /** The decisions the view can ask for; the page wires them to the routes. */
 export interface WordActions {
   busy?: boolean;
   onWord: (patch: WordPatch) => void;
-  onClue: (id: string, patch: CluePatch) => void;
+  /** `wordId` lets the route check a clue before approving it. */
+  onClue: (id: string, patch: CluePatch, wordId?: string) => void;
 }
 const NO_ACTIONS: WordActions = { busy: true, onWord: () => undefined, onClue: () => undefined };
 
@@ -144,6 +148,9 @@ function WordDecision({ word, actions }: { word: BankWordDetail; actions: WordAc
             label="Family friendly"
           />
           <FamilyChip value={word.familyFriendly} />
+          <Button size="small" disabled={busy || word.familyFriendly === false} onClick={() => onWord({ familyFriendly: false })}>
+            Not family friendly
+          </Button>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
             {decidedLabel(word.familyFriendlyBy, word.familyFriendlyAt)}
           </Typography>
@@ -189,7 +196,8 @@ function SuggestionBox({ word, actions }: { word: BankWordDetail; actions: WordA
 }
 
 /** One clue row: text (editable), status, family-friendly tick, who decided, and the decisions. */
-function ClueRow({ clue, actions }: { clue: BankClue; actions: WordActions }) {
+function ClueRow({ clue, norm, wordId, actions }: { clue: BankClue; norm: string; wordId: string; actions: WordActions }) {
+  const checked = toQueueClue(clue, norm);
   const { busy, onClue } = actions;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(clue.text);
@@ -218,6 +226,11 @@ function ClueRow({ clue, actions }: { clue: BankClue; actions: WordActions }) {
         ) : (
           clue.text
         )}
+        {checked.problem && (
+          <Typography variant="caption" color="error" sx={{ display: "block" }}>
+            Can&apos;t be approved: {PROBLEM_TEXT[checked.problem]}. Edit it first.
+          </Typography>
+        )}
         {clue.original && (
           <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
             was: {clue.original}
@@ -241,7 +254,12 @@ function ClueRow({ clue, actions }: { clue: BankClue; actions: WordActions }) {
           onChange={(e) => onClue(clue.id, { familyFriendly: e.target.checked ? true : null })}
           slotProps={{ input: { "aria-label": `Family friendly: ${clue.text}` } }}
         />
-        <FamilyChip value={clue.familyFriendly} />
+        <span title={decidedLabel(clue.familyFriendlyBy, clue.familyFriendlyAt) || undefined}>
+          <FamilyChip value={clue.familyFriendly} />
+        </span>
+        <Button size="small" disabled={busy || clue.familyFriendly === false} onClick={() => onClue(clue.id, { familyFriendly: false })}>
+          Not
+        </Button>
       </TableCell>
       <TableCell sx={{ whiteSpace: "nowrap" }}>
         {editing ? (
@@ -255,7 +273,8 @@ function ClueRow({ clue, actions }: { clue: BankClue; actions: WordActions }) {
           </>
         ) : (
           <>
-            <Button size="small" color="success" disabled={busy || clue.approval.status === "approved"} onClick={() => onClue(clue.id, { approval: "approved" })}>
+            <Button size="small" color="success" disabled={busy || clue.approval.status === "approved" || !!checked.problem} title={checked.cleaned !== clue.text ? `Approval stores: ${checked.cleaned}` : undefined}
+              onClick={() => onClue(clue.id, { approval: "approved" }, wordId)}>
               Approve
             </Button>
             <Button size="small" disabled={busy} onClick={() => setEditing(true)}>
@@ -377,7 +396,7 @@ export function WordDetailView({ word, actions = NO_ACTIONS }: { word: BankWordD
             </TableHead>
             <TableBody>
               {word.clues.map((c) => (
-                <ClueRow key={c.id} clue={c} actions={actions} />
+                <ClueRow key={c.id} clue={c} norm={word.word.toUpperCase().replace(/[^A-Z]/g, "")} wordId={word.id} actions={actions} />
               ))}
             </TableBody>
           </Table>
@@ -437,7 +456,7 @@ export default function WordDetail({ id }: { id: string }) {
   const actions: WordActions = {
     busy,
     onWord: (patch) => decide(() => patchBankWord(id, patch)),
-    onClue: (clueId, patch) => decide(() => patchBankClue(clueId, patch)),
+    onClue: (clueId, patch, wordId) => decide(() => patchBankClue(clueId, patch, wordId)),
   };
 
   return (

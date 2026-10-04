@@ -17,7 +17,7 @@ export interface QueueFilters {
 }
 
 export const QUEUE_DEFAULT_LIMIT = 3;
-const BAND_IDS: readonly string[] = [...BANK_ZIPF_BANDS.map((b) => b.id), "none"];
+const BAND_IDS: readonly string[] = BANK_ZIPF_BANDS.map((b) => b.id);
 const OBJECT_ID = /^[0-9a-f]{24}$/i;
 
 const len = (v: string | null): number | undefined => {

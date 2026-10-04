@@ -1,6 +1,7 @@
 import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { cleanClue, validateClue } from "@photonsurge/shared/crossword";
 import { BANK_APPROVAL_STATUSES, type BankApprovalStatus } from "@photonsurge/shared/crossword-bank";
 import { requireAdmin } from "../../../../../lib/require-admin";
 
@@ -19,10 +20,16 @@ type Ctx = { params: Promise<{ id: string }> };
  *    cleared (the repo's rule), so an edit is applied first and a decision in
  *    the same body lands on the edited clue;
  *  • `approval`: "pending" | "approved" | "rejected";
- *  • `familyFriendly`: true | false | null (null untags).
+ *  • `familyFriendly`: true | false | null (null untags);
  *
- * Who decided is the admin's session identity. 200 `{ ok: true }`; 400 for an
- * empty or malformed body, 404 for an unknown clue.
+ * An `X-Word-Id` header (with an approval to `approved`) names the clue's word,
+ * so the clue can be checked before it is approved. The repo has no clue lookup, so the
+ *    route reads the word and finds the clue in it (404 if it is not there).
+ *
+ * Approving a clue that `validateClue` refuses (after `cleanClue`; the
+ * built-in blocklist only, since channel blocklists vary) is a 409 with the
+ * `problem`. Who decided is the admin's session identity. 200 `{ ok: true }`;
+ * 400 for an empty or malformed body, 404 for an unknown clue.
  */
 async function PATCH__impl(req: Request, { params }: Ctx) {
   const session = await requireAdmin();
@@ -53,6 +60,15 @@ async function PATCH__impl(req: Request, { params }: Ctx) {
   }
   const by = session.email || session.sub;
   const bank = (await getAppDb()).crosswordBank;
+  const wordId = req.headers.get("x-word-id");
+  if (body.approval === "approved" && wordId) {
+    const word = await bank.getWordById(wordId);
+    const clue = word?.clues.find((c) => c.id === id);
+    if (!word || !clue) return NextResponse.json({ error: "no such clue" }, { status: 404, headers: NO_CACHE });
+    const text = hasText ? (body.text as string) : clue.text;
+    const problem = validateClue(cleanClue(text), word.word.toUpperCase().replace(/[^A-Z]/g, ""));
+    if (problem) return NextResponse.json({ error: `clue cannot air: ${problem}`, problem }, { status: 409, headers: NO_CACHE });
+  }
   const found = async (p: Promise<boolean>) => {
     if (!(await p)) throw new NotFound();
   };

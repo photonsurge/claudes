@@ -170,3 +170,77 @@ it("says so when the queue is empty", async () => {
   render(<ApprovePage />);
   expect(await screen.findByText(/No pending words match/)).toBeInTheDocument();
 });
+
+it("leaves the keys to a focused filter dropdown", async () => {
+  render(<ApprovePage />);
+  await screen.findByRole("heading", { name: "WRECK" });
+  const combo = screen.getAllByRole("combobox")[0];
+  await act(async () => {
+    fireEvent.keyDown(combo, { key: "a" });
+    fireEvent.keyDown(combo, { key: "n" });
+  });
+  expect(patches).toHaveLength(0);
+  expect(screen.getByRole("heading", { name: "WRECK" })).toBeInTheDocument();
+});
+
+it("sends only skipped ids and ids in hand as exclude, not every word fetched", async () => {
+  batches = [[word(1, "WRECK"), word(2, "WAGES")], [word(3, "WIDEN"), word(4, "WAKEN")], [word(5, "WALTZ")]];
+  render(<ApprovePage />);
+  await screen.findByRole("heading", { name: "WRECK" });
+  await key("a");
+  await waitFor(() => expect(patches).toHaveLength(1));
+  await key("n"); // decided: leaves the filter by itself, so is not excluded
+  await screen.findByRole("heading", { name: "WAGES" });
+  await waitFor(() => expect(fetched.length).toBeGreaterThan(1));
+  const last = decodeURIComponent(fetched[fetched.length - 1]);
+  expect(last).not.toContain("64b000000000000000000001");
+  expect(last).toContain("64b000000000000000000002");
+});
+
+it("counts a word as done only when it was decided", async () => {
+  render(<ApprovePage />);
+  await screen.findByRole("heading", { name: "WRECK" });
+  await key("n");
+  await screen.findByRole("heading", { name: "WAGES" });
+  expect(screen.getByText(/0 done · 1 skipped/)).toBeInTheDocument();
+  await key("r");
+  await waitFor(() => expect(patches).toHaveLength(1));
+  await key("n");
+  await screen.findByRole("heading", { name: "WIDEN" });
+  expect(screen.getByText(/1 done · 1 skipped/)).toBeInTheDocument();
+});
+
+it("selects past nine clues with J and K, and rows are buttons", async () => {
+  const clues = Array.from({ length: 11 }, (_, i) => ({
+    id: `x${i}`, text: `Clue number ${i} here`, cleaned: `Clue number ${i} here`, problem: null, approval: { status: "pending" as const }, familyFriendly: null,
+  }));
+  batches = [[word(1, "WRECK", { clues })]];
+  render(<ApprovePage />);
+  await screen.findByRole("heading", { name: "WRECK" });
+  for (let i = 0; i < 11; i++) await key("j");
+  expect(screen.getByRole("button", { name: "Select clue 11" })).toHaveAttribute("aria-pressed", "true");
+  await key("k");
+  expect(screen.getByRole("button", { name: "Select clue 10" })).toHaveAttribute("aria-pressed", "true");
+});
+
+it("won't approve a clue that shows a problem", async () => {
+  render(<ApprovePage />);
+  await screen.findByRole("heading", { name: "WRECK" });
+  await key("2"); // "Ruin": too short
+  await key("y");
+  expect(patches).toHaveLength(0);
+  expect(screen.getByRole("button", { name: /Approve clue/ })).toBeDisabled();
+});
+
+it("drops an edit when focus leaves the box, and the keys work again", async () => {
+  render(<ApprovePage />);
+  await screen.findByRole("heading", { name: "WRECK" });
+  await key("1");
+  await key("e");
+  const box = await screen.findByLabelText("Edit clue 1");
+  fireEvent.blur(box);
+  await waitFor(() => expect(screen.queryByLabelText("Edit clue 1")).toBeNull());
+  expect(patches).toHaveLength(0);
+  await key("a");
+  await waitFor(() => expect(patches).toHaveLength(1));
+});

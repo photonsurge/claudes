@@ -9,6 +9,7 @@
  */
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
+import ButtonBase from "@mui/material/ButtonBase";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import Paper from "@mui/material/Paper";
@@ -42,6 +43,8 @@ export interface QueueWordProps {
   onEditChange: (draft: string) => void;
   onEditSave: () => void;
   onEditCancel: () => void;
+  /** Focus left the edit box without Enter or Esc: the edit is dropped. */
+  onEditBlur: () => void;
   onAcceptSuggestion: () => void;
 }
 
@@ -65,7 +68,6 @@ function ClueItem({ clue, index, props }: { clue: BankQueueClue; index: number; 
     <Box
       component="li"
       aria-current={isSel ? "true" : undefined}
-      onClick={() => props.onSelect(index)}
       sx={{
         listStyle: "none",
         display: "flex",
@@ -76,11 +78,18 @@ function ClueItem({ clue, index, props }: { clue: BankQueueClue; index: number; 
         borderRadius: 1,
         borderColor: isSel ? "primary.main" : "divider",
         bgcolor: isSel ? "action.selected" : "transparent",
-        cursor: "pointer",
       }}
     >
-      <Typography sx={{ fontFamily: font.mono, fontWeight: 700, width: 20 }}>{index < 9 ? index + 1 : ""}</Typography>
-      <Box sx={{ flex: 1, minWidth: 0 }}>
+      <ButtonBase
+        aria-label={`Select clue ${index + 1}`}
+        aria-pressed={isSel}
+        disabled={isEditing}
+        onClick={() => props.onSelect(index)}
+        sx={{ alignSelf: "flex-start", width: 28, justifyContent: "flex-start", borderRadius: 0.5 }}
+      >
+        <Typography sx={{ fontFamily: font.mono, fontWeight: 700 }}>{index + 1}</Typography>
+      </ButtonBase>
+      <Box sx={{ flex: 1, minWidth: 0 }} onClick={() => props.onSelect(index)}>
         {isEditing ? (
           <TextField
             size="small"
@@ -88,6 +97,7 @@ function ClueItem({ clue, index, props }: { clue: BankQueueClue; index: number; 
             autoFocus
             value={editing.draft}
             onChange={(e) => props.onEditChange(e.target.value)}
+            onBlur={props.onEditBlur}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -113,6 +123,11 @@ function ClueItem({ clue, index, props }: { clue: BankQueueClue; index: number; 
         <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5, mt: 0.5, alignItems: "center" }}>
           <ApprovalChip approval={clue.approval} />
           <FamilyChip value={clue.familyFriendly} />
+          {clue.familyFriendlyBy && (
+            <Typography variant="caption" color="text.secondary">
+              tag {decidedLabel(clue.familyFriendlyBy, clue.familyFriendlyAt)}
+            </Typography>
+          )}
           {clue.problem && <Chip size="small" color="error" variant="outlined" label={PROBLEM_TEXT[clue.problem]} />}
           <Typography variant="caption" color="text.secondary">
             {decidedLabel(clue.approval.by, clue.approval.at)}
@@ -120,7 +135,7 @@ function ClueItem({ clue, index, props }: { clue: BankQueueClue; index: number; 
         </Stack>
         {isSel && !isEditing && (
           <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5, mt: 1 }}>
-            <Button size="small" color="success" disabled={busy} onClick={() => props.onClueApproval(clue.id, "approved")}>
+            <Button size="small" color="success" disabled={busy || !!clue.problem} onClick={() => props.onClueApproval(clue.id, "approved")}>
               Approve clue<Key k="Y" />
             </Button>
             <Button size="small" disabled={busy} onClick={() => props.onEditStart(clue.id)}>
@@ -216,7 +231,7 @@ export default function QueueWord(props: QueueWordProps) {
       )}
 
       <Typography variant="overline" color="text.secondary" sx={{ display: "block", mt: 2 }}>
-        Candidate clues ({word.clues.length})
+        Candidate clues ({word.clues.length}) — 1–9 or J / K to select
       </Typography>
       {word.clues.length === 0 ? (
         <Typography variant="body2" color="text.secondary">

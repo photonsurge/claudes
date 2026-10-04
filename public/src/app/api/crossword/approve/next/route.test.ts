@@ -48,3 +48,8 @@ it("defaults to a few words and caps the limit", async () => {
   await get("?limit=9999&band=nope&min=2");
   expect(bank.approvalQueue).toHaveBeenLastCalledWith({ limit: 50 });
 });
+
+it("treats band=none as no band for the queue", async () => {
+  await get("?band=none");
+  expect(bank.approvalQueue).toHaveBeenLastCalledWith({ limit: 3 });
+});

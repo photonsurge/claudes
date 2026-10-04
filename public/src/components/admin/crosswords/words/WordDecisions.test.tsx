@@ -3,7 +3,7 @@
  * family friendly, decide on and edit a clue, who and when, the flags as
  * warnings, and a stored suggestion shown as one.
  */
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { BankWordDetail } from "@photonsurge/shared/crossword-bank";
 import WordDetail from "./WordDetail";
 
@@ -24,7 +24,7 @@ const base = (over: Partial<BankWordDetail> = {}): BankWordDetail => ({
   senses: [],
   definitions: [],
   clues: [
-    { id: "c1", text: "Aroused", approval: { status: "pending" }, familyFriendly: null },
+    { id: "c1", text: "Stirred up and eager", approval: { status: "pending" }, familyFriendly: null },
     { id: "c2", text: "Thrilled to bits", approval: { status: "approved", by: "op@example.com", at: Date.UTC(2026, 9, 4, 12, 31) }, familyFriendly: true },
   ],
   raw: {},
@@ -79,7 +79,7 @@ it("approves, rejects and tags the word through PATCH words/:id", async () => {
 it("decides on a clue through PATCH clues/:id", async () => {
   render(<WordDetail id={ID} />);
   const table = await screen.findByRole("table", { name: "Clues" });
-  const row = within(table).getByText("Aroused").closest("tr")!;
+  const row = within(table).getByText("Stirred up and eager").closest("tr")!;
   fireEvent.click(within(row).getByRole("button", { name: "Approve" }));
   await screen.findByRole("table", { name: "Clues" });
   fireEvent.click(within(row).getByRole("checkbox"));
@@ -121,4 +121,23 @@ it("shows an error when a decision fails", async () => {
   (global.fetch as jest.Mock).mockImplementationOnce(async () => ({ ok: false, status: 500, json: async () => ({ error: "boom" }) }) as Response);
   fireEvent.click(screen.getByRole("button", { name: "Reject word" }));
   expect(await screen.findByText(/Couldn't save that: boom/)).toBeInTheDocument();
+});
+
+it("can't approve a clue that can't air, and says why", async () => {
+  current = base({ clues: [{ id: "c9", text: "Ruin", approval: { status: "pending" }, familyFriendly: null }] });
+  render(<WordDetail id={ID} />);
+  const table = await screen.findByRole("table", { name: "Clues" });
+  expect(within(table).getByRole("button", { name: "Approve" })).toBeDisabled();
+  expect(within(table).getByText(/too short to air/)).toBeInTheDocument();
+});
+
+it("sets not family friendly by hand on the word and on a clue", async () => {
+  render(<WordDetail id={ID} />);
+  const table = await screen.findByRole("table", { name: "Clues" });
+  fireEvent.click(screen.getAllByRole("button", { name: "Not family friendly" })[0]);
+  await waitFor(() => expect(sent).toHaveLength(1));
+  await waitFor(() => expect(within(table).getAllByRole("button", { name: "Not" })[0]).toBeEnabled());
+  fireEvent.click(within(table).getAllByRole("button", { name: "Not" })[0]);
+  await waitFor(() => expect(sent).toHaveLength(2));
+  expect(sent.map((s) => s.body)).toEqual([{ familyFriendly: false }, { familyFriendly: false }]);
 });

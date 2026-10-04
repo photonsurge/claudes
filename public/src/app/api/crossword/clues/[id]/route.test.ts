@@ -4,7 +4,7 @@
 jest.mock("../../../../../lib/api-log", () => ({ withApiLog: (h: unknown) => h }));
 jest.mock("../../../../../lib/require-admin", () => ({ requireAdmin: jest.fn() }));
 
-const bank = { editClue: jest.fn(), setClueApproval: jest.fn(), setClueFamilyFriendly: jest.fn() };
+const bank = { getWordById: jest.fn(), editClue: jest.fn(), setClueApproval: jest.fn(), setClueFamilyFriendly: jest.fn() };
 jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: async () => ({ crosswordBank: bank }) }));
 
 import { requireAdmin } from "../../../../../lib/require-admin";
@@ -53,4 +53,29 @@ it("rejects empty or malformed bodies", async () => {
 it("404s an unknown clue", async () => {
   bank.setClueApproval.mockResolvedValue(false);
   expect((await patch({ approval: "rejected" })).status).toBe(404);
+});
+
+const patchFor = (body: unknown, wordId = "w1") =>
+  PATCH(new Request("http://x", { method: "PATCH", headers: { "x-word-id": wordId }, body: JSON.stringify(body) }), ctx("c1"));
+
+it("409s approving a clue that can't air, with the problem, and writes nothing", async () => {
+  bank.getWordById.mockResolvedValue({ id: "w1", word: "wreck", clues: [{ id: "c1", text: "Ruin (4)" }] });
+  const res = await patchFor({ approval: "approved" });
+  expect(res.status).toBe(409);
+  expect((await res.json()).problem).toBe("short");
+  expect(bank.setClueApproval).not.toHaveBeenCalled();
+});
+
+it("409s a clue that gives the answer away, and checks the new text of an edit", async () => {
+  bank.getWordById.mockResolvedValue({ id: "w1", word: "wreck", clues: [{ id: "c1", text: "Remains of a ruined ship" }] });
+  expect((await patchFor({ text: "Wrecked ship remains", approval: "approved" })).status).toBe(409);
+  expect(bank.editClue).not.toHaveBeenCalled();
+});
+
+it("approves a clue that can air, and 404s one not in the word", async () => {
+  bank.getWordById.mockResolvedValue({ id: "w1", word: "wreck", clues: [{ id: "c1", text: "Remains of a ruined ship" }] });
+  expect((await patchFor({ approval: "approved" })).status).toBe(200);
+  expect(bank.setClueApproval).toHaveBeenCalled();
+  bank.getWordById.mockResolvedValue({ id: "w1", word: "wreck", clues: [] });
+  expect((await patchFor({ approval: "approved" })).status).toBe(404);
 });

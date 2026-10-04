@@ -43,21 +43,29 @@ const KEY_MAP: [string, string][] = [
   ["A", "approve word"],
   ["R", "reject word"],
   ["F", "word family friendly (Shift+F: not)"],
-  ["1–9", "select a clue"],
+  ["1–9, J / K", "select a clue (J next, K previous)"],
   ["Y", "approve clue"],
   ["E", "edit clue"],
   ["X", "reject clue"],
   ["T", "clue family friendly (Shift+T: not)"],
   ["U", "add the suggestion as a clue"],
-  ["N / Enter", "next word"],
+  ["N / Enter", "next word (counts as skipped if undecided)"],
   ["S", "skip word"],
   ["Esc", "clear clue selection"],
 ];
 
+/** The skipped list sent to the server is capped at this many of the latest ids. */
+const SKIPPED_MAX = 200;
+const WIDGET = '[role="combobox"], [role="option"], [role="menuitem"], [role="listbox"], [role="menu"]';
+
+/** True while the key belongs to a field or a dropdown (MUI selects included), not to the queue. */
 const typing = (t: EventTarget | null): boolean => {
   const el = t as HTMLElement | null;
   if (!el || !el.tagName) return false;
-  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable;
+  if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable) return true;
+  if (el.closest?.(WIDGET)) return true;
+  // A menu or popover is open (its list may hold focus elsewhere).
+  return !!document.querySelector('.MuiPopover-root [role="listbox"], .MuiPopover-root [role="menu"]');
 };
 
 export default function ApprovePage() {
@@ -73,7 +81,9 @@ export default function ApprovePage() {
   const [status, setStatus] = useState("");
   const [done, setDone] = useState({ decided: 0, skipped: 0 });
 
-  const seen = useRef(new Set<string>());
+  /** Skipped (or left undecided) words: the only ids sent as `exclude`, with the ones in hand. */
+  const skipped = useRef<string[]>([]);
+  const inHand = useRef<string[]>([]);
   const generation = useRef(0);
   const bodyRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
@@ -86,13 +96,14 @@ export default function ApprovePage() {
     if (loading || exhausted || error || queue.length >= LOW_WATER) return;
     const gen = generation.current;
     setLoading(true);
-    getQueue(filters, [...seen.current], FETCH_BATCH).then((res) => {
+    const exclude = [...new Set([...skipped.current, ...inHand.current])];
+    getQueue(filters, exclude, FETCH_BATCH).then((res) => {
       if (gen !== generation.current) return;
       setLoading(false);
       if (!res.ok) return setError(res.error);
       setPool(res.data.pool);
-      const fresh = res.data.words.filter((w) => !seen.current.has(w.id));
-      fresh.forEach((w) => seen.current.add(w.id));
+      const fresh = res.data.words.filter((w) => !inHand.current.includes(w.id) && !skipped.current.includes(w.id));
+      inHand.current = [...inHand.current, ...fresh.map((w) => w.id)];
       if (fresh.length === 0) setExhausted(true);
       setQueue((q) => [...q, ...fresh]);
     });
@@ -110,7 +121,8 @@ export default function ApprovePage() {
 
   const changeFilters = (f: QueueFilters) => {
     generation.current++;
-    seen.current = new Set();
+    skipped.current = [];
+    inHand.current = [];
     setFilters(f);
     setQueue([]);
     setSelected(null);
@@ -120,12 +132,18 @@ export default function ApprovePage() {
     setLoading(false);
   };
 
-  const advance = useCallback((skipped: boolean) => {
+  /** Move on. A word still pending (whatever the key) is skipped: counted so and left out of later fetches. */
+  const advance = useCallback(() => {
+    const w = word;
+    if (!w) return;
+    const wasDecided = w.approval.status !== "pending";
+    if (!wasDecided) skipped.current = [...skipped.current, w.id].slice(-SKIPPED_MAX);
+    inHand.current = inHand.current.filter((id) => id !== w.id);
     setQueue((q) => q.slice(1));
     setSelected(null);
     setEditing(null);
-    setDone((d) => (skipped ? { ...d, skipped: d.skipped + 1 } : { ...d, decided: d.decided + 1 }));
-  }, []);
+    setDone((d) => (wasDecided ? { ...d, decided: d.decided + 1 } : { ...d, skipped: d.skipped + 1 }));
+  }, [word]);
 
   /** Save a decision, then update the word on screen. A failure leaves everything as it was. */
   const run = useCallback(
@@ -158,7 +176,7 @@ export default function ApprovePage() {
     wordFamily: (v: boolean | null) =>
       word && run(`${word.norm} ${v === true ? "family friendly" : v === false ? "not family friendly" : "untagged"}`, () => patchBankWord(word.id, { familyFriendly: v }), (w, at) => withWordFamily(w, v, at)),
     clueApproval: (id: string, s: "approved" | "rejected") =>
-      run(`${s === "approved" ? "Approved" : "Rejected"} clue`, () => patchBankClue(id, { approval: s }), (w, at) => withClueApproval(w, id, s, at)).then(() => {
+      run(`${s === "approved" ? "Approved" : "Rejected"} clue`, () => patchBankClue(id, { approval: s }, word?.id), (w, at) => withClueApproval(w, id, s, at)).then(() => {
         if (s === "rejected") setSelected(null);
       }),
     clueFamily: (id: string, v: boolean | null) =>
@@ -175,6 +193,8 @@ export default function ApprovePage() {
       setEditing(null);
       focusBody();
     },
+    /** Tab or a click away from the edit box drops the edit (cancel, never commit) and leaves focus where it went. */
+    editBlur: () => setEditing(null),
     acceptSuggestion: async () => {
       if (!word?.suggestion || busyRef.current) return;
       const id = word.id;
@@ -209,7 +229,7 @@ export default function ApprovePage() {
       const { word: w, selected: sel, editing: ed, act: a, advance: adv, startEdit: edit } = latest.current;
       if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || ed || !w) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
-      if ((e.key === "Enter" || e.key === " ") && tag === "BUTTON") return;
+      if ((e.key === "Enter" || e.key === " ") && (tag === "BUTTON" || (e.target as HTMLElement).getAttribute("role") === "button")) return;
       const k = e.key.toLowerCase();
       const clue = sel !== null ? w.clues[sel] : undefined;
       const handled = (fn: () => void) => {
@@ -221,13 +241,14 @@ export default function ApprovePage() {
       else if (k === "f") handled(() => a.wordFamily(e.shiftKey ? (w.familyFriendly === false ? null : false) : w.familyFriendly === true ? null : true));
       else if (/^[1-9]$/.test(e.key)) handled(() => Number(e.key) <= w.clues.length && setSelected(Number(e.key) - 1));
       else if (e.key === "Escape") handled(() => setSelected(null));
-      else if (k === "y" && clue) handled(() => a.clueApproval(clue.id, "approved"));
+      else if (k === "y" && clue) handled(() => !clue.problem && a.clueApproval(clue.id, "approved"));
+      else if (k === "j" || k === "k") handled(() => setSelected((i) => (k === "j" ? (i === null ? 0 : Math.min(w.clues.length - 1, i + 1)) : i === null ? w.clues.length - 1 : Math.max(0, i - 1))));
       else if (k === "x" && clue) handled(() => a.clueApproval(clue.id, "rejected"));
       else if (k === "e" && clue) handled(() => edit(clue.id));
       else if (k === "t" && clue) handled(() => a.clueFamily(clue.id, e.shiftKey ? (clue.familyFriendly === false ? null : false) : clue.familyFriendly === true ? null : true));
       else if (k === "u") handled(() => void a.acceptSuggestion());
-      else if (k === "n" || e.key === "Enter") handled(() => !busyRef.current && adv(false));
-      else if (k === "s") handled(() => !busyRef.current && adv(true));
+      else if (k === "n" || e.key === "Enter") handled(() => !busyRef.current && adv());
+      else if (k === "s") handled(() => !busyRef.current && adv());
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -323,6 +344,7 @@ export default function ApprovePage() {
               onEditChange={(draft) => setEditing((e) => (e ? { ...e, draft } : e))}
               onEditSave={act.editSave}
               onEditCancel={act.editCancel}
+              onEditBlur={act.editBlur}
               onAcceptSuggestion={act.acceptSuggestion}
             />
           ) : loading ? (
@@ -339,10 +361,10 @@ export default function ApprovePage() {
 
         {word && (
           <Stack direction="row" sx={{ gap: 1.5, alignItems: "center", flexWrap: "wrap" }}>
-            <Button variant="contained" disabled={busy} onClick={() => { advance(false); focusBody(); }}>
+            <Button variant="contained" disabled={busy} onClick={() => { advance(); focusBody(); }}>
               Next
             </Button>
-            <Button disabled={busy} onClick={() => { advance(true); focusBody(); }}>
+            <Button disabled={busy} onClick={() => { advance(); focusBody(); }}>
               Skip
             </Button>
             <Typography variant="body2" color="text.secondary">
