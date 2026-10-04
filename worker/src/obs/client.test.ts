@@ -1,6 +1,13 @@
 // Unit tests for the browser-source settings policy (pure functions only — the
 // websocket plumbing is exercised via the lifecycle's manual-handoff paths).
-import { browserSourceFps, browserSourceSettings, outputInFlight, redactObsValue, summarizeObsValue } from "./client";
+import {
+  browserSourceFps,
+  browserSourceSettings,
+  decodeImageDataUrl,
+  outputInFlight,
+  redactObsValue,
+  summarizeObsValue,
+} from "./client";
 
 const BASE = { url: "http://localhost:10100/watch/main?token=t", width: 1920, height: 1080 };
 
@@ -103,5 +110,18 @@ describe("websocket traffic log helpers", () => {
     expect(outputInFlight(st("OBS_WEBSOCKET_OUTPUT_RECONNECTING"))).toBe(true);
     expect(outputInFlight(st("OBS_WEBSOCKET_OUTPUT_STOPPED"))).toBe(false);
     expect(outputInFlight(st("OBS_WEBSOCKET_OUTPUT_STARTED"))).toBe(false);
+  });
+});
+
+describe("decodeImageDataUrl (GetSourceScreenshot's imageData)", () => {
+  it("decodes a base64 data URL to its bytes and type", () => {
+    const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+    expect(decodeImageDataUrl(`data:image/jpeg;base64,${bytes.toString("base64")}`)).toEqual({ mimeType: "image/jpeg", data: bytes });
+  });
+
+  it("refuses anything that is not a non-empty base64 data URL", () => {
+    for (const v of ["", "data:image/png,abc", "data:image/png;base64,", "http://x/y.png"]) {
+      expect(() => decodeImageDataUrl(v)).toThrow();
+    }
   });
 });

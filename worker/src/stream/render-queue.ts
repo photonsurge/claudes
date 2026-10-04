@@ -146,8 +146,10 @@ export const AUTO_SKIP_RECENT = 3;
 export interface ResolvedVideoText {
   title: string;
   description: string;
-  /** Image source resolved; undefined = no custom thumbnail (a frame source until WP8). */
+  /** Image source resolved; undefined = no image (none, or a frame). */
   thumbnailUrl?: string;
+  /** A frame thumbnail: taken from OBS this far into the play (§6.8). */
+  thumbnailFrameAtMs?: number;
 }
 
 /**
@@ -175,8 +177,9 @@ export function resolveVideoText(
   if (video.thumbnail?.source === "image") {
     out.thumbnailUrl = formatVideoText(video.thumbnail.url || "", vals, now, tz).trim();
   }
-  // TODO(WP8): a "frame" thumbnail is a GetSourceScreenshot of the render at
-  // `atMs`; until WP8 adds that OBS call the video gets no custom thumbnail.
+  // A frame: a GetSourceScreenshot of the render `atMs` into the script's play,
+  // uploaded like an image (stream/script-shots.ts).
+  if (video.thumbnail?.source === "frame") out.thumbnailFrameAtMs = Math.max(0, Math.round(video.thumbnail.atMs || 0));
   return out;
 }
 
@@ -525,6 +528,7 @@ async function startRender(db: AppDb, render: ShortRender, encoderId: string, no
         // An image source (URL or site path); "" = the deployment default image;
         // absent = no custom thumbnail (stream/thumbnail.ts).
         thumbnailUrl: text.thumbnailUrl,
+        ...(text.thumbnailFrameAtMs != null ? { thumbnailFrameAtMs: text.thumbnailFrameAtMs } : {}),
       },
       createdBy: `render:${render.id}`,
     });

@@ -249,11 +249,12 @@ describe("resolveVideoText", () => {
     expect(out.thumbnailUrl).toBe("/thumbs/europe.png");
   });
 
-  it("cuts a long title at a word with an ellipsis; a frame thumbnail resolves to none (until WP8)", () => {
+  it("cuts a long title at a word with an ellipsis; a frame thumbnail resolves to its offset, no image", () => {
     const out = resolveVideoText({ ...video, title: "word ".repeat(40), description: "", thumbnail: { source: "frame", atMs: 1000 } }, {}, 1000, new Date(NOW), "");
     expect(Array.from(out.title).length).toBeLessThanOrEqual(100);
     expect(out.title.endsWith("…")).toBe(true);
     expect(out.thumbnailUrl).toBeUndefined();
+    expect(out.thumbnailFrameAtMs).toBe(1000);
     expect(out.description).toBe("");
   });
 

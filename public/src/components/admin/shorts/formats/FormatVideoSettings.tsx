@@ -32,6 +32,9 @@ type ZoneMode = "london" | "place" | "other";
 const zoneModeOf = (tz: string): ZoneMode =>
   tz === PLACE_TIMEZONE ? "place" : tz === DEFAULT_VIDEO_TIMEZONE ? "london" : "other";
 
+/** Where a newly picked frame thumbnail sits: a few seconds into the first clip. */
+const DEFAULT_FRAME_AT_MS = 5_000;
+
 export default function FormatVideoSettings() {
   const { format, stageFormat } = useSceneDraft();
   const script = useFormatScript();
@@ -141,25 +144,45 @@ function VideoForm({
           <RadioGroup
             row
             value={thumb.source}
-            onChange={(e) => e.target.value === "image" && set({ thumbnail: { source: "image", url: thumbUrl } })}
+            onChange={(e) =>
+              e.target.value === "frame"
+                ? set({ thumbnail: { source: "frame", atMs: thumb.source === "frame" ? thumb.atMs : DEFAULT_FRAME_AT_MS } })
+                : set({ thumbnail: { source: "image", url: thumbUrl } })
+            }
             aria-label="Thumbnail source"
           >
             <FormControlLabel value="image" control={<Radio size="small" />} label="An image" />
-            <FormControlLabel value="frame" control={<Radio size="small" />} label="A frame of the video — comes with offline test" disabled />
+            <FormControlLabel value="frame" control={<Radio size="small" />} label="A frame of the video" />
           </RadioGroup>
-          <TextField
-            fullWidth
-            size="small"
-            label="Image URL or site path"
-            placeholder="/thumbs/%{placeId}.png"
-            value={thumbUrl}
-            onChange={(e) => set({ thumbnail: { source: "image", url: e.target.value } })}
-            helperText={
-              thumbPreview
-                ? `Resolves to ${thumbPreview} — takes the same codes as the title; use %{placeId} in paths.`
-                : "Empty = no thumbnail of its own. Takes the same codes as the title; use %{placeId} in paths."
-            }
-          />
+          {thumb.source === "image" ? (
+            <TextField
+              fullWidth
+              size="small"
+              label="Image URL or site path"
+              placeholder="/thumbs/%{placeId}.png"
+              value={thumbUrl}
+              onChange={(e) => set({ thumbnail: { source: "image", url: e.target.value } })}
+              helperText={
+                thumbPreview
+                  ? `Resolves to ${thumbPreview} — takes the same codes as the title; use %{placeId} in paths.`
+                  : "Empty = no thumbnail of its own. Takes the same codes as the title; use %{placeId} in paths."
+              }
+            />
+          ) : (
+            <TextField
+              size="small"
+              type="number"
+              label="Seconds into the script"
+              value={Math.round(thumb.atMs / 100) / 10}
+              onChange={(e) => {
+                const sec = Number(e.target.value);
+                set({ thumbnail: { source: "frame", atMs: Number.isFinite(sec) && sec > 0 ? Math.round(sec * 1000) : 0 } });
+              }}
+              slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
+              helperText="OBS takes this frame during a live render and uploads it as the thumbnail. Counted from the first clip; past the end, the last frame."
+              sx={{ maxWidth: 360 }}
+            />
+          )}
         </div>
 
         <div>

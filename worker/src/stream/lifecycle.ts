@@ -169,6 +169,9 @@ async function encoderBusyWith(run: Run): Promise<Run | null> {
 
 /** Best-effort stop of the run's OBS output (rollback/finish paths). */
 async function stopRunObs(run: Run): Promise<void> {
+  // An offline test (§7) never started an output, so it has none to stop — an
+  // output running on that OBS is not this run's.
+  if (isScriptRun(run) && run.script!.offline && !run.platforms?.youtube) return;
   try {
     await stopStream(await endpointForRun(run));
   } catch {
@@ -285,8 +288,9 @@ export async function goLive(runId: string): Promise<void> {
       await configureAndStartObs(run, yt.ingestionAddress!, yt.streamName!);
     } else if (scripted) {
       // Offline rehearsal (§7): point the encoder's browser source at the
-      // script's scene — no broadcast, no key, no StartStream. WP8 adds the
-      // preflight report and the OBS screenshots on top of this branch.
+      // script's scene (the format's /watch page) — no broadcast, no key, no
+      // StartStream, no YouTube call of any kind. The screenshots are taken
+      // off the play's start (script-shots.ts).
       await provisionForScript(run);
     }
 
@@ -334,9 +338,15 @@ async function provisionForRun(run: Run): Promise<void> {
   }
 }
 
-/** The offline (no-YouTube) branch of a video render: only the provision. */
+/**
+ * The offline (no-YouTube) branch of a video render: only the provision. Here
+ * it is the whole rehearsal, so unlike a channel run's best-effort provision
+ * an OBS that can't be reached or provisioned FAILS the render — nobody is
+ * watching it, and a test that "passed" without OBS proves nothing (§6.4).
+ */
 async function provisionForScript(run: Run): Promise<void> {
-  await provisionForRun(run);
+  const p = await provisionEncoderScene(run.encoderId, { sceneId: run.sceneId });
+  log(TAG, `offline test ${run.id}: OBS scene "${p.sceneName}" → ${p.url}`);
 }
 
 async function configureAndStartObs(run: Run, server: string, key: string): Promise<void> {

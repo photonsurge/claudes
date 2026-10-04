@@ -130,3 +130,22 @@ it("says how to start when nothing has rendered", () => {
   setup({ queues: [], renders: [] });
   expect(screen.getByText(/Assign an OBS encoder to videos/)).toBeInTheDocument();
 });
+
+it("an offline test's row shows one OBS screenshot per clip, each linking to full size; a failed capture says why", () => {
+  const testRun: RunState = {
+    ...liveRun,
+    id: "run9",
+    status: "ended",
+    youtube: undefined,
+    script: { scriptId: "s", renderId: "t9", offline: true, publishAs: "public" },
+    shots: [
+      { clipIndex: 0, clipId: "c1", at: 1, blobId: "run9-0.jpg" },
+      { clipIndex: 1, clipId: "c2", at: 2, error: "cannot reach OBS" },
+    ],
+  };
+  setup({ ...DATA, renders: [row("t9", { status: "done", offline: true, runId: "run9", run: testRun, endedAt: 6 })] });
+  const el = within(rowEl("t9"));
+  expect(el.getByRole("link", { name: "Clip 1 screenshot" })).toHaveAttribute("href", "/api/shorts/shots/run9-0.jpg");
+  expect(el.getByAltText("Clip 1 as OBS drew it")).toHaveAttribute("src", "/api/shorts/shots/run9-0.jpg");
+  expect(el.getByText("Clip 2: no image")).toBeInTheDocument();
+});

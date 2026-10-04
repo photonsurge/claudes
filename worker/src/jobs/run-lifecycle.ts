@@ -16,6 +16,9 @@
  *   run-lifecycle.renders   {}                  (repeatable render-queue ticker)
  *   run-lifecycle.renderQueue { request }       (queue a video)
  *   run-lifecycle.renderControl { action, renderId | encoderId } (pause/resume/cancel/retry/stop)
+ *   run-lifecycle.renderPreflight { request }   (offline-test preflight report; read-only, awaited)
+ *   run-lifecycle.scriptShot { runId, playNonce, clipIndex, clipId } (OBS screenshot at a clip's midpoint)
+ *   run-lifecycle.scriptFrame { runId, playNonce } (a live render's frame thumbnail from OBS)
  * Routed to the FOREGROUND tier (see bull-utils FOREGROUND_TYPES) so go-live/stop
  * never wait behind a bake.
  */
@@ -30,6 +33,8 @@ import { probe } from "../obs/client";
 import { finalizeScriptRun, startScriptPlay } from "../stream/script-run";
 import { advanceRenderQueues, controlRender, queueRender } from "../stream/render-queue";
 import { sanitizeRenderRequest } from "@photonsurge/shared/short-render";
+import { preflightRender } from "../stream/render-preflight";
+import { captureFrameThumbnail, captureScriptShot } from "../stream/script-shots";
 
 export async function goLive(job: Job) {
   const runId = String(job.data?.data?.runId ?? job.data?.runId ?? "");
@@ -147,6 +152,39 @@ export async function renderControl(job: Job) {
   } catch (err) {
     return { ok: false, error: String((err as Error)?.message ?? err) };
   }
+}
+
+/**
+ * The offline test's preflight report (§7.1) for a ShortRenderRequest: clips
+ * resolved and skipped, length against the budget, the encoder probed, the
+ * YouTube account's recorded state. No side effects. Never rejects.
+ */
+export async function renderPreflight(job: Job) {
+  const req = sanitizeRenderRequest(job.data?.data?.request ?? job.data?.data);
+  if (!req) return { ok: false, error: "not a render request" };
+  try {
+    return { ok: true, report: await preflightRender(req) };
+  } catch (err) {
+    return { ok: false, error: String((err as Error)?.message ?? err) };
+  }
+}
+
+/** One evidence screenshot at a clip's midpoint (scheduled by script-shots.ts). */
+export async function scriptShot(job: Job) {
+  const d = job.data?.data ?? {};
+  const runId = String(d.runId ?? "");
+  if (!runId) throw new Error("run-lifecycle.scriptShot: missing runId");
+  // The last attempt records a failed capture instead of throwing.
+  const final = (job.attemptsMade ?? 0) + 1 >= (job.opts?.attempts ?? 1);
+  return { runId, ...(await captureScriptShot(runId, Number(d.playNonce), Number(d.clipIndex), String(d.clipId ?? ""), { final })) };
+}
+
+/** A live render's frame thumbnail (§6.8): screenshot, normalise, thumbnails.set. Retried. */
+export async function scriptFrame(job: Job) {
+  const d = job.data?.data ?? {};
+  const runId = String(d.runId ?? "");
+  if (!runId) throw new Error("run-lifecycle.scriptFrame: missing runId");
+  return { runId, ...(await captureFrameThumbnail(runId, Number(d.playNonce))) };
 }
 
 /** Repeatable sweep keeping every enabled persistent slot's stream alive. */
