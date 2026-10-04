@@ -129,7 +129,11 @@ async function reconcileSlot(db: AppDb, slot: StreamSlot, now: number): Promise<
     durationMs: null, // persistent — the slot toggle is the only off switch
     platforms: { youtube: { accountId: account.id, monitorStream: !!slot.monitorStream } },
     // Chat defaults ON (poll + log) — only an explicit opt-out on the slot disables it.
-    chat: { enabled: slot.chat?.enabled !== false, promoteToTicker: !!slot.chat?.promoteToTicker },
+    chat: {
+      enabled: slot.chat?.enabled !== false,
+      promoteToTicker: !!slot.chat?.promoteToTicker,
+      pollEveryMs: slot.chat?.pollEveryMs ?? null,
+    },
     // "Notify the world" — announce EVERY (re)launch, incl. scheduled recycles
     // (each gets a fresh broadcast, so each has a new watch URL worth posting).
     announce: !!slot.announce,

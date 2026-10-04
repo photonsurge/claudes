@@ -5,6 +5,7 @@ import { sendToFore } from "@photonsurge/shared/bull/bull-queue";
 import { MAIN_SCENE_ID } from "@photonsurge/shared/control";
 import {
   ENV_ENCODER_ID,
+  sanitizeChatPollMs,
   toEncoderInfo,
   toRunState,
   type CreateRunRequest,
@@ -177,7 +178,11 @@ async function POST__impl(req: Request) {
     platforms,
     // Chat defaults ON (poll + log + operator panel) unless explicitly opted out —
     // the chat log is only written while a run's poller is running.
-    chat: { enabled: body.chat?.enabled !== false, promoteToTicker: !!body.chat?.promoteToTicker },
+    chat: {
+      enabled: body.chat?.enabled !== false,
+      promoteToTicker: !!body.chat?.promoteToTicker,
+      pollEveryMs: sanitizeChatPollMs(body.chat?.pollEveryMs),
+    },
     announce: body.announce === true,
     createdBy: session.email,
   });

@@ -62,8 +62,16 @@ describe("reconcileSlots", () => {
     await reconcileSlots(NOW);
 
     const bySlot = Object.fromEntries([...runs.values()].map((r) => [r.slotId, r]));
-    expect(bySlot.s1.chat).toEqual({ enabled: true, promoteToTicker: false });
-    expect(bySlot.s2.chat).toEqual({ enabled: false, promoteToTicker: false });
+    expect(bySlot.s1.chat).toEqual({ enabled: true, promoteToTicker: false, pollEveryMs: null });
+    expect(bySlot.s2.chat).toEqual({ enabled: false, promoteToTicker: false, pollEveryMs: null });
+  });
+
+  it("copies the slot's chat poll interval onto its run", async () => {
+    slots.set("s1", { id: "s1", sceneId: "wind", enabled: true, chat: { enabled: true, promoteToTicker: false, pollEveryMs: 120_000 } });
+
+    await reconcileSlots(NOW);
+
+    expect([...runs.values()][0].chat).toMatchObject({ pollEveryMs: 120_000 });
   });
 
   it("passes the slot's notify-the-world flag onto the runs it creates", async () => {

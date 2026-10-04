@@ -108,6 +108,45 @@ export function encoderKeyForRun(run: Pick<Run, "encoderId">): string {
  * with backoff whenever the current run dies. Stopping a slot-owned run from the
  * UI disables its slot — otherwise the reconciler would resurrect it.
  */
+/**
+ * A run's (or constant-stream slot's) chat options. `pollEveryMs` slows the
+ * YouTube live-chat poller down to save API quota: every `liveChatMessages.list`
+ * costs 5 units whether or not anyone spoke, so the server's suggested 2–5 s
+ * cadence is ~90k units/day — 9× the default 10k quota. null / 0 = auto (the
+ * quota-paced floor in worker/src/youtube/quota). Commands that pile up between
+ * slow polls are coalesced per batch (worker/src/stream/chat-coalesce).
+ */
+export interface RunChatSettings {
+  enabled: boolean;
+  promoteToTicker: boolean;
+  pollEveryMs?: number | null;
+}
+
+/** The poll intervals the admin UI offers (0 = auto / quota-paced). */
+export const CHAT_POLL_CHOICES_MS = [0, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000] as const;
+/** What a new stream/slot form starts on — every 2 min ≈ 3.6k units/day. */
+export const DEFAULT_CHAT_POLL_MS = 120_000;
+const CHAT_POLL_MIN_MS = 5_000;
+const CHAT_POLL_MAX_MS = 60 * 60_000;
+
+/** Untrusted poll interval → a clamped ms value, or null for auto. */
+export function sanitizeChatPollMs(v: unknown): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(Math.min(CHAT_POLL_MAX_MS, Math.max(CHAT_POLL_MIN_MS, n)));
+}
+
+/** Rough YouTube units/day one run's chat polling spends at this interval (5 units a poll). */
+export function chatPollUnitsPerDay(pollEveryMs: number): number {
+  return Math.round((86_400_000 / pollEveryMs) * 5);
+}
+
+/** "2 min", "30 s", "auto" — for the poll-interval pickers. */
+export function fmtChatPoll(pollEveryMs?: number | null): string {
+  if (!pollEveryMs) return "auto";
+  return pollEveryMs < 60_000 ? `${Math.round(pollEveryMs / 1000)} s` : `${+(pollEveryMs / 60_000).toFixed(1)} min`;
+}
+
 export interface StreamSlot {
   id: string;
   name?: string;
@@ -121,7 +160,7 @@ export interface StreamSlot {
   privacy?: YoutubePrivacy;
   enabled: boolean;
   monitorStream?: boolean;
-  chat?: { enabled: boolean; promoteToTicker: boolean };
+  chat?: RunChatSettings;
   /** Recycle cadence: end + relaunch the run every this-many ms; null/0 = never. */
   restartEveryMs?: number | null;
   /** "Notify the world": publish a hydra blog + social fan-out each time a run goes live. */
@@ -258,7 +297,7 @@ export interface Run {
   endedAt?: number | null;
   platforms: RunPlatforms;
   obs?: RunObsState;
-  chat?: { enabled: boolean; promoteToTicker: boolean };
+  chat?: RunChatSettings;
   /** "Notify the world" at go-live: hydra blog post + social fan-out with the watch URL. */
   announce?: boolean;
   /** Set once the hydra announcement has been posted (idempotency for retries). */
@@ -308,7 +347,7 @@ export interface RunState {
   obs?: { configured: boolean; streaming: boolean };
   /** True when OBS is unreachable/unstarted and the operator must paste the key manually. */
   needsManualObs: boolean;
-  chat?: { enabled: boolean; promoteToTicker: boolean };
+  chat?: RunChatSettings;
   announce?: boolean;
   announcedAt?: number | null;
   announceError?: Run["announceError"];
@@ -369,7 +408,7 @@ export interface CreateRunRequest {
   platforms?: { youtube?: boolean; twitch?: string; kick?: string };
   /** Keep YouTube's monitor stream (preview) — forces the testing→live path. */
   monitorStream?: boolean;
-  chat?: { enabled?: boolean; promoteToTicker?: boolean };
+  chat?: { enabled?: boolean; promoteToTicker?: boolean; pollEveryMs?: number | null };
   /** "Notify the world" at go-live (hydra blog + social fan-out with the watch URL). */
   announce?: boolean;
 }

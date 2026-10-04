@@ -31,6 +31,8 @@ const StreamSlotSchema = new mongoose.Schema<iStreamSlotModel>(
     chat: {
       enabled: { type: Boolean, required: false, default: true },
       promoteToTicker: { type: Boolean, required: false, default: false },
+      // Chat poll interval (ms); null = auto / quota-paced. See RunChatSettings.
+      pollEveryMs: { type: Number, required: false, default: null },
     },
     restartEveryMs: { type: Number, required: false, default: null },
     announce: { type: Boolean, required: false, default: false },

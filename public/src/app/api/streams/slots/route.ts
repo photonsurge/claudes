@@ -3,7 +3,13 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { MAIN_SCENE_ID } from "@photonsurge/shared/control";
-import { ENV_ENCODER_ID, SLOT_RESTART_MIN_MS, type StreamSlot, type YoutubePrivacy } from "@photonsurge/shared/runs";
+import {
+  ENV_ENCODER_ID,
+  SLOT_RESTART_MIN_MS,
+  sanitizeChatPollMs,
+  type StreamSlot,
+  type YoutubePrivacy,
+} from "@photonsurge/shared/runs";
 import { requireAdmin } from "../../../../lib/require-admin";
 
 export const runtime = "nodejs";
@@ -59,17 +65,23 @@ async function POST__impl(req: Request) {
   const restartEveryMs =
     Number.isFinite(restartRaw) && restartRaw > 0 ? Math.max(restartRaw, SLOT_RESTART_MIN_MS) : null;
 
+  // Optional strings save as "" when cleared — an undefined key is dropped from
+  // the $set, so an edit back to "auto" / the default channel would never land.
   const saved = await db.saveStreamSlot({
     id: String(body.id ?? "").trim() || randomUUID(),
-    name: body.name ? String(body.name).slice(0, 80) : undefined,
+    name: body.name ? String(body.name).slice(0, 80) : "",
     sceneId,
-    encoderId,
-    accountId: body.accountId ? String(body.accountId).trim() : undefined,
-    title: typeof body.title === "string" ? body.title.slice(0, 100) : undefined,
+    encoderId: encoderId ?? "",
+    accountId: body.accountId ? String(body.accountId).trim() : "",
+    title: typeof body.title === "string" ? body.title.slice(0, 100) : "",
     privacy: PRIVACIES.includes(body.privacy as YoutubePrivacy) ? (body.privacy as YoutubePrivacy) : "public",
     enabled: body.enabled === true,
     monitorStream: !!body.monitorStream,
-    chat: { enabled: body.chat?.enabled !== false, promoteToTicker: !!body.chat?.promoteToTicker },
+    chat: {
+      enabled: body.chat?.enabled !== false,
+      promoteToTicker: !!body.chat?.promoteToTicker,
+      pollEveryMs: sanitizeChatPollMs(body.chat?.pollEveryMs),
+    },
     restartEveryMs,
     announce: body.announce === true,
   });

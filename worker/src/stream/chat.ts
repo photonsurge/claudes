@@ -11,11 +11,17 @@
  * must not reply to stale commands.
  *
  * Cadence: the LONGEST of YouTube's suggested `pollingIntervalMillis`, the
- * `YOUTUBE_CHAT_POLL_MIN_MS` floor, and the quota-derived floor from
- * ../youtube/quota — chat is by far the biggest spender of the 10k/day API
+ * `YOUTUBE_CHAT_POLL_MIN_MS` floor, the quota-derived floor from
+ * ../youtube/quota, and the stream's own `chat.pollEveryMs` setting (read live
+ * from its slot for a constant stream, so an edit applies within
+ * SETTING_RECHECK_MS without a restart) — chat is by far the biggest spender of the 10k/day API
  * quota, and left at the server's 2–5 s it empties the quota within hours,
  * taking go-live/end with it. Errors back off by kind: a spent quota pauses
  * until the reset, a dead token waits for a reconnect, transport blips retry.
+ *
+ * A slow poll returns minutes of chat at once, so command handling runs on a
+ * coalesced batch (one vote per viewer, one winner per command — see
+ * chat-coalesce.ts) and the replies are packed into as few posts as fit.
  *
  * Chat is OPERATOR-ONLY (a /control panel), never rendered on /watch by default
  * (docs/streaming-runs-plan.md decision 4).
@@ -26,8 +32,15 @@ import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "../socket";
 import { startMonitor, stopMonitor } from "./monitor";
 import { commandReplies, MAX_REPLIES_PER_BATCH } from "./chat-commands";
+import { coalesceCommands, packReplies } from "./chat-coalesce";
 import { defaultHandlerDeps, handleChatBatch } from "./chat-handler";
-import { getYoutubeClient, listChat, sendChatMessage, youtubeErrorKind } from "../youtube/client";
+import {
+  CHAT_MESSAGE_MAX_LEN,
+  getYoutubeClient,
+  listChat,
+  sendChatMessage,
+  youtubeErrorKind,
+} from "../youtube/client";
 import { CHAT_PAUSE_MAX_MS, chatPacing, fmtResetTime } from "../youtube/quota";
 
 const TAG = "stream-chat";
@@ -38,6 +51,8 @@ const CHAT_POLL_MIN_MS = Number(process.env.YOUTUBE_CHAT_POLL_MIN_MS || 2_000);
 const ERROR_BACKOFF_MS = 5_000; // generic failure
 const TRANSIENT_BACKOFF_MS = 15_000; // timeout / network / rate-limit
 const AUTH_BACKOFF_MS = 5 * 60_000; // token dead — nothing to do until the operator reconnects
+/** Longest sleep while waiting out a slow `pollEveryMs`, so a changed setting lands promptly. */
+const SETTING_RECHECK_MS = 30_000;
 
 // Per-run continuation token. Its PRESENCE also marks "we've polled once", so the
 // first (backlog) page is skipped for display — only messages arriving after we
@@ -45,6 +60,8 @@ const AUTH_BACKOFF_MS = 5 * 60_000; // token dead — nothing to do until the op
 const pageTokens = new Map<string, string | undefined>();
 // Runs currently polling — the quota pacing splits the chat budget across them.
 const polling = new Set<string>();
+// When each run last called liveChatMessages.list (gates the `pollEveryMs` setting).
+const lastPollAt = new Map<string, number>();
 // Last error kind per run, so a persistent condition logs once, not every tick.
 const lastErrorKind = new Map<string, string>();
 // Runs whose last tick was a quota pause (log the pause once, and the resume once).
@@ -58,6 +75,7 @@ export function startChatPoll(runId: string): void {
 export function stopChatPoll(runId: string): void {
   stopMonitor(chatKey(runId));
   pageTokens.delete(runId);
+  lastPollAt.delete(runId);
   polling.delete(runId);
   lastErrorKind.delete(runId);
   paused.delete(runId);
@@ -79,6 +97,12 @@ async function chatTick(runId: string): Promise<number> {
   const yt = run.platforms?.youtube;
   if (!yt?.liveChatId) return 5_000;
 
+  // The operator's poll interval — a constant stream's slot is the live source of truth.
+  const slot = run.slotId ? await db.getStreamSlot(run.slotId) : null;
+  const pollEveryMs = (slot ? slot.chat?.pollEveryMs : run.chat?.pollEveryMs) || 0;
+  const sincePoll = Date.now() - (lastPollAt.get(runId) ?? -Infinity);
+  if (pollEveryMs && sincePoll < pollEveryMs) return Math.min(pollEveryMs - sincePoll, SETTING_RECHECK_MS);
+
   // Budget check BEFORE the call: a spent quota (or a paced-out budget) means
   // wait, not poll — and say so once, not every tick.
   const pacing = await chatPacing(yt.accountId ?? "default", Math.max(1, polling.size));
@@ -94,6 +118,7 @@ async function chatTick(runId: string): Promise<number> {
   try {
     const ctx = await getYoutubeClient(yt.accountId);
     const first = !pageTokens.has(runId);
+    lastPollAt.set(runId, Date.now());
     const page = await listChat(ctx, yt.liveChatId, pageTokens.get(runId));
     pageTokens.set(runId, page.nextPageToken);
     lastErrorKind.delete(runId);
@@ -130,16 +155,28 @@ async function chatTick(runId: string): Promise<number> {
         const info = await commandReplies(run, msgs);
         const viewer = await handleChatBatch(
           run.sceneId,
-          msgs.map((m) => ({ author: m.author, text: m.text, isMod: m.isMod, isOwner: m.isOwner, platform: m.platform })),
+          coalesceCommands(msgs).map((m) => ({
+            author: m.author,
+            text: m.text,
+            isMod: m.isMod,
+            isOwner: m.isOwner,
+            platform: m.platform,
+          })),
           await defaultHandlerDeps(),
         );
-        const replies = [...info, ...(viewer.replyInChat ? viewer.replies : [])].slice(0, MAX_REPLIES_PER_BATCH);
+        const replies = packReplies(
+          [...info, ...(viewer.replyInChat ? viewer.replies : [])],
+          CHAT_MESSAGE_MAX_LEN,
+          MAX_REPLIES_PER_BATCH,
+        );
         for (const text of replies) await sendChatMessage(ctx, yt.liveChatId, text);
       } catch (err) {
         log(TAG, `command reply failed ${runId}`, String((err as Error)?.message ?? err));
       }
     }
-    return Math.max(CHAT_POLL_MIN_MS, page.pollingIntervalMillis, pacing.floorMs);
+    // A slow `pollEveryMs` is enforced by the gate above (rechecked every
+    // SETTING_RECHECK_MS); this is the fastest YouTube + the quota allow.
+    return Math.max(CHAT_POLL_MIN_MS, page.pollingIntervalMillis, pacing.floorMs, Math.min(pollEveryMs, SETTING_RECHECK_MS));
   } catch (err) {
     const kind = youtubeErrorKind(err);
     const message = String((err as Error)?.message ?? err);
