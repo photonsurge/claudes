@@ -67,6 +67,15 @@ describe("pickCandidates", () => {
     expect(pick.excluded).toBe(30);
   });
 
+  it("also leaves out the words of the stock it is given", async () => {
+    const held = BANK.slice(40, 50).map((w) => w.norm);
+    const f = fakeDb();
+    const pick = await pickCandidates(f.db, "xw", { ...cfg, minZipf: 0 }, { ...opt({ seed: 1, count: 500 }), stock: [{ entries: held.map((answer) => ({ answer })) as any }] });
+    for (const u of held) expect(f.playable.mock.calls[0][0].excludeNorms).toContain(u);
+    expect(pick.words.some((w) => held.includes(w.answer))).toBe(false);
+    expect(pick.excluded).toBe(10);
+  });
+
   it("drops multi-word entries and duplicates", async () => {
     const bank = [...BANK, { ...BANK[1], id: "x1", norm: "ice cream", length: 9, zipf: 5 }, { ...BANK[1], id: "x2", norm: BANK[0].norm.toLowerCase(), length: 3, zipf: 5 }];
     const pick = await pickCandidates(fakeDb({ bank }).db, "xw", { ...cfg, minZipf: 0 }, opt({ seed: 1, count: 500 }));

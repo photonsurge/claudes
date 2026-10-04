@@ -118,18 +118,28 @@ describe("layoutCrossword", () => {
   });
 
   it("keeps a single attempt well under 20 ms on a 60-word list", () => {
-    const extra = "WEATHER STORM THUNDER CLOUD RAINBOW SNOWFALL BREEZE TORNADO HURRICANE DRIZZLE FROST SLEET MONSOON CYCLONE HAIL FOG MIST COMET CRATER TITAN LUNAR SOLAR AURORA CORONA"
+    const extra = (
+      "WEATHER STORM THUNDER CLOUD RAINBOW SNOWFALL BREEZE TORNADO HURRICANE DRIZZLE FROST SLEET MONSOON CYCLONE " +
+      "HAIL FOG MIST COMET CRATER TITAN LUNAR SOLAR AURORA CORONA GARDEN PLANTER MEADOW HARBOUR CASTLE"
+    )
       .split(" ")
       .map((answer) => ({ answer }));
-    const words = [...SEED, ...extra].slice(0, 60);
-    expect(words).toHaveLength(60);
+    // 60 distinct words: the extras deduped against the seed set.
+    const seen = new Set<string>();
+    const words = [...SEED, ...extra].filter((w) => !seen.has(w.answer) && (seen.add(w.answer), true)).slice(0, 60);
+    expect(new Set(words.map((w) => w.answer)).size).toBe(60);
     for (let i = 0; i < 20; i++) layoutAttempt(words, seededRng(i), { maxWords: 16, maxSize: 13 }); // warm up
-    const n = 100;
-    const t0 = process.hrtime.bigint();
-    for (let i = 0; i < n; i++) layoutAttempt(words, seededRng(1000 + i), { maxWords: 16, maxSize: 13 });
-    const ms = Number(process.hrtime.bigint() - t0) / 1e6 / n;
-    // §7.1: over 20 ms an attempt and the search moves to the bake pool. Loose
-    // bound so a slow CI box does not flake; measured ~4 ms on a dev box.
+    // Five batches of 20 attempts; the fastest batch is the measure, so a
+    // moment of load on a shared box does not fail the test.
+    const batches: number[] = [];
+    for (let b = 0; b < 5; b++) {
+      const t0 = process.hrtime.bigint();
+      for (let i = 0; i < 20; i++) layoutAttempt(words, seededRng(1000 + b * 20 + i), { maxWords: 16, maxSize: 13 });
+      batches.push(Number(process.hrtime.bigint() - t0) / 1e6 / 20);
+    }
+    const ms = Math.min(...batches);
+    // §7.1: over 20 ms an attempt and the search moves to the bake pool.
+    // Measured ~4 ms on a dev box.
     expect(ms).toBeLessThan(20);
   });
 });

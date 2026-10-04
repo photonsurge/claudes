@@ -16,7 +16,7 @@ loadWorkerEnv();
 
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { entryCells, type CrosswordGenerateRequest, type CrosswordPuzzle } from "@photonsurge/shared/crossword";
-import { buildPuzzle } from "../crossword/build";
+import { buildPuzzle, DEV_FAMILY_FRIENDLY_REASON } from "../crossword/build";
 import { allowUnapprovedFromEnv } from "../crossword/pick";
 
 function parseArgs(argv: string[]): { sceneId?: string; seed?: number; dry: boolean } {
@@ -59,7 +59,10 @@ function gridLines(p: CrosswordPuzzle): string[] {
       `${pool.ffWords} family friendly (${pool.ffPuzzlesWithoutRepeat}); target ${pool.targetWords}`,
   );
   console.log(`scene:  ${sceneId}   family friendly only: ${cfg.familyFriendlyOnly ? "on" : "off"}   min zipf: ${cfg.minZipf}`);
-  if (allowUnapprovedFromEnv()) console.log("        CROSSWORD_ALLOW_UNAPPROVED=true: pending words allowed (dev only)");
+  if (allowUnapprovedFromEnv()) {
+    console.log("        CROSSWORD_ALLOW_UNAPPROVED=true: pending words allowed (dev only)");
+    if (cfg.familyFriendlyOnly) console.warn(`warning: ${DEV_FAMILY_FRIENDLY_REASON}`);
+  }
   const t0 = Date.now();
   const r = await buildPuzzle(db, req, { dryRun: args.dry });
   const p = r.puzzle;

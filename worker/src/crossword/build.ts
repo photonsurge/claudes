@@ -5,12 +5,14 @@
  * A build uses only what a person has approved (§7.4), so it makes no model
  * call and its puzzle is `ready` the moment it is stored:
  *   1. pick ~60 candidates from the approved pool (pick.ts), each with the
- *      approved clues it may use that pass `validateClue`;
+ *      approved clues it may use that pass `validateClue`, leaving out the
+ *      words of the channel's recent puzzles and of the stock waiting to air;
  *   2. lay them out (layout.ts);
  *   3. give each placed word, from its own approved clues, the one this
  *      channel used longest ago — a clue never played on the channel counts
- *      as oldest, ties by clue id. "Used" comes from the channel's played
- *      puzzles' entries (`clueId`), so nothing new is stored;
+ *      as oldest, ties by clue id. "Used" comes from the entries (`clueId`)
+ *      of the channel's played puzzles and, as newest, of the waiting stock,
+ *      so nothing new is stored;
  *   4. run `validateClue` again as a guard (the scene's blocklist included);
  *   5. store it `ready`, family friendly when every word and clue in it is
  *      tagged so, entries carrying `wordId` and `clueId`.
@@ -34,10 +36,22 @@ import {
 } from "@photonsurge/shared/crossword";
 import { BANK_WORD_INDEXES } from "@photonsurge/shared/crossword-bank";
 import { CrosswordLayoutError, layoutCrossword, type LayoutOptions } from "./layout";
-import { pickCandidates, type CandidatePick, type PickedClue, type PickedWord } from "./pick";
+import { allowUnapprovedFromEnv, pickCandidates, type CandidatePick, type PickedClue, type PickedWord } from "./pick";
 
 /** The bank's pick index from the first build, replaced by `xwbank_approved_pick_ix`. */
 export const LEGACY_BANK_INDEXES = ["xwbank_pick_ix"] as const;
+
+/**
+ * How many of the channel's played puzzles clue choice looks back over. A
+ * clue last used further back than this counts as never used.
+ */
+export const CLUE_HISTORY_PUZZLES = 500;
+/** Newest puzzles read for the next "Puzzle N". */
+const TITLE_LOOKBACK = 50;
+
+/** Top-up's reason for skipping a channel in dev mode with Family friendly only on. */
+export const DEV_FAMILY_FRIENDLY_REASON =
+  "dev mode: turn Family friendly only off to play unapproved puzzles (CROSSWORD_ALLOW_UNAPPROVED is on, and its puzzles are never family friendly)";
 
 /** The build could not make a puzzle (the pool is too small, or the layout fell short). */
 export class CrosswordBuildError extends Error {
@@ -74,8 +88,8 @@ export interface BuildResult {
 type BuildDb = Pick<AppDb, "crosswordBank" | "crosswordPuzzles" | "getOrInitCrosswordConfig">;
 
 /**
- * Clue id → when this scene last started a puzzle using it. Built from every
- * puzzle the scene has played (the clue history has no window).
+ * Clue id → when this scene last started a puzzle using it, from the scene's
+ * played puzzles (the last CLUE_HISTORY_PUZZLES of them).
  */
 export function clueLastUsed(played: readonly CrosswordPuzzle[], sceneId: string): Map<string, number> {
   const out = new Map<string, number>();
@@ -121,9 +135,34 @@ async function poolNote(db: BuildDb, pick: CandidatePick, cfg: Pick<CrosswordCon
 }
 
 /** "Puzzle N": one more than the puzzles stored so far. */
+/**
+ * "Puzzle N": one past the highest number among the newest puzzles (or the
+ * stored count, if higher). Taking the highest number rather than the count
+ * keeps a title unique after a puzzle is deleted; two builds racing in the
+ * same instant could still share one, and the title is a label, not a key.
+ */
 async function nextTitle(db: BuildDb): Promise<string> {
-  const n = await db.crosswordPuzzles.model.countDocuments({}).exec();
-  return `Puzzle ${n + 1}`;
+  const [count, newest] = await Promise.all([
+    db.crosswordPuzzles.model.countDocuments({}).exec(),
+    db.crosswordPuzzles.list({ limit: TITLE_LOOKBACK }),
+  ]);
+  const top = Math.max(0, ...newest.map((p) => Number(/^Puzzle (\d+)$/.exec(p.title)?.[1] ?? 0)));
+  return `Puzzle ${Math.max(count, top) + 1}`;
+}
+
+/**
+ * The waiting stock a new build must not repeat: ready puzzles this channel
+ * may play (family-friendly ones only on such a channel) that no channel has
+ * played yet — the puzzles built ahead, which air next and back to back. A
+ * puzzle another channel has already played is left out on purpose, so one
+ * channel's history never shapes another's build; it can still share a word
+ * with a new puzzle.
+ */
+export function channelStock(
+  ready: readonly CrosswordPuzzle[],
+  cfg: Pick<CrosswordConfig, "familyFriendlyOnly">,
+): CrosswordPuzzle[] {
+  return ready.filter((p) => p.status === "ready" && (!cfg.familyFriendlyOnly || p.familyFriendly === true) && !p.plays.length);
 }
 
 /** Build one puzzle for a scene and (unless dry) store it. */
@@ -132,13 +171,17 @@ export async function buildPuzzle(db: BuildDb, req: CrosswordGenerateRequest, op
   if (!req?.sceneId) throw new CrosswordBuildError("sceneId is required");
   const seed = Number.isFinite(req.seed) ? Math.floor(req.seed as number) : now() % 2_147_483_647;
   const cfg = await db.getOrInitCrosswordConfig(req.sceneId);
-  const pick = await pickCandidates(db, req.sceneId, cfg, { seed, allowUnapproved: opts.allowUnapproved });
+  // The words in the waiting stock are left out and its clues count
+  // as just used, so puzzles built back to back do not repeat each other.
+  const stock = channelStock(await db.crosswordPuzzles.list({ status: "ready" }), cfg);
+  const pick = await pickCandidates(db, req.sceneId, cfg, { seed, allowUnapproved: opts.allowUnapproved, stock });
   if (pick.words.length < cfg.minWords) {
     throw new CrosswordBuildError(`too few words for a puzzle (need ${cfg.minWords}): ${await poolNote(db, pick, cfg)}`);
   }
 
   // Seed words go through the same guard (the scene's blocklist may catch one).
-  const lastUsed = clueLastUsed(await db.crosswordPuzzles.recentForScene(req.sceneId, Number.MAX_SAFE_INTEGER), req.sceneId);
+  const lastUsed = clueLastUsed(await db.crosswordPuzzles.recentForScene(req.sceneId, CLUE_HISTORY_PUZZLES), req.sceneId);
+  for (const p of stock) for (const e of p.entries) if (e.clueId) lastUsed.set(e.clueId, Infinity);
   const chosen = new Map<string, PickedClue>();
   for (const w of pick.words) {
     const c = chooseClue(w, lastUsed, cfg.blocklist);
@@ -222,6 +265,12 @@ export async function topUpScenes(db: TopUpDb, opts: BuildOptions = {}): Promise
       const cfg = await db.getOrInitCrosswordConfig(sceneId);
       if (!cfg.enabled) {
         out.push({ sceneId, outcome: "disabled" });
+        continue;
+      }
+      // Unapproved puzzles are never tagged, so this channel could play none of
+      // them and top-up would build one every run.
+      if ((opts.allowUnapproved ?? allowUnapprovedFromEnv()) && cfg.familyFriendlyOnly) {
+        out.push({ sceneId, outcome: "skipped", reason: DEV_FAMILY_FRIENDLY_REASON });
         continue;
       }
       if (unplayedStock(ready, sceneId, { familyFriendlyOnly: cfg.familyFriendlyOnly }) >= cfg.stockTarget) {

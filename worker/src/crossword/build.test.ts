@@ -1,6 +1,16 @@
 import { DEFAULT_CROSSWORD_CONFIG, validateClue, type CrosswordConfig, type CrosswordPuzzle } from "@photonsurge/shared/crossword";
 import { CROSSWORD_SEED_WORDS, isSeedId } from "@photonsurge/shared/crossword-seeds";
-import { buildPuzzle, chooseClue, clueLastUsed, CrosswordBuildError, indexBank, topUpScenes } from "./build";
+import {
+  buildPuzzle,
+  channelStock,
+  chooseClue,
+  CLUE_HISTORY_PUZZLES,
+  clueLastUsed,
+  CrosswordBuildError,
+  DEV_FAMILY_FRIENDLY_REASON,
+  indexBank,
+  topUpScenes,
+} from "./build";
 
 interface FakeClue {
   id: string;
@@ -63,7 +73,7 @@ function fakeDb(
   });
   const poolCounts = jest.fn(async () => ({ words: 120, ffWords: 40, puzzlesWithoutRepeat: 8, ffPuzzlesWithoutRepeat: 2, targetWords: 280 }));
   const upsert = jest.fn(async (p: any) => p);
-  const list = jest.fn(async () => opts.ready ?? []);
+  const list = jest.fn(async (_q?: any) => opts.ready ?? []);
   const recentForScene = jest.fn(async (_s: string, n: number) => (opts.played ?? []).slice(0, n));
   const db = {
     getOrInitCrosswordConfig: jest.fn(async () => ({ ...DEFAULT_CROSSWORD_CONFIG, ...opts.cfg })),
@@ -204,6 +214,24 @@ describe("buildPuzzle", () => {
     }
   });
 
+  it("leaves out the words of the stock waiting to air, and counts its clues as just used", async () => {
+    const waiting = { ...played("s1", ["b0c1"], 0), plays: [], entries: WORDS.slice(0, 8).map((w, i) => ({ ...played("x", [], 0).entries[0], id: `${i}A`, answer: w.norm, clueId: `${w.id}c1` })) };
+    const f = fakeDb({ ready: [waiting], cfg: { familyFriendlyOnly: false } });
+    const r = await buildPuzzle(f.db, { sceneId: "xw", seed: 3 }, FAST);
+    const held = new Set(WORDS.slice(0, 8).map((w) => w.norm));
+    expect(r.puzzle.entries.some((e) => held.has(e.answer))).toBe(false);
+    expect(f.playable.mock.calls[0][0].excludeNorms).toEqual(expect.arrayContaining([...held]));
+    // The clue history is bounded.
+    expect(f.db.crosswordPuzzles.recentForScene).toHaveBeenCalledWith("xw", CLUE_HISTORY_PUZZLES);
+  });
+
+  it("takes the next title past the highest number, so a deleted puzzle does not cause a repeat", async () => {
+    const newest = [{ ...played("a", [], 0), title: "Puzzle 9", plays: [], status: "rejected" }];
+    const f = fakeDb({ stored: 4, ready: newest });
+    expect((await buildPuzzle(f.db, { sceneId: "xw", seed: 3 }, FAST)).puzzle.title).toBe("Puzzle 10");
+    expect((await buildPuzzle(fakeDb({ stored: 4 }).db, { sceneId: "xw", seed: 3 }, FAST)).puzzle.title).toBe("Puzzle 5");
+  });
+
   it("is repeatable for a seed, and stores nothing on a dry run", async () => {
     const a = await buildPuzzle(fakeDb().db, { sceneId: "xw", seed: 11 }, FAST);
     const f = fakeDb();
@@ -232,6 +260,16 @@ describe("clue choice", () => {
   it("skips clues that fail validateClue, and returns null when none pass", () => {
     expect(chooseClue(word, new Map(), ["centre"])!.id).toBe("c2");
     expect(chooseClue({ answer: "SUN", clues: [{ id: "x", text: "Sunny", familyFriendly: true }] }, new Map())).toBeNull();
+  });
+
+  it("treats as waiting stock only unplayed ready puzzles the channel may play", () => {
+    const fresh = { ...played("a", [], 0), plays: [] };
+    const notFF = { ...fresh, id: "b", familyFriendly: false };
+    const rejected = { ...fresh, id: "c", status: "rejected" as const };
+    const playedElsewhere = played("d", [], 5, "yy");
+    const all = [fresh, notFF, rejected, playedElsewhere];
+    expect(channelStock(all, { familyFriendlyOnly: true }).map((p) => p.id)).toEqual(["a"]);
+    expect(channelStock(all, { familyFriendlyOnly: false }).map((p) => p.id)).toEqual(["a", "b"]);
   });
 
   it("reads clue use from this scene's plays only, latest play wins", () => {
@@ -281,6 +319,19 @@ describe("topUpScenes", () => {
     expect(out.map((o) => o.outcome)).toEqual(["skipped", "skipped"]);
     expect(out[0]).toMatchObject({ reason: expect.stringMatching(/4 family-friendly approved word/) });
     expect(f.upsert).not.toHaveBeenCalled();
+  });
+
+  it("skips a family-friendly-only channel in dev mode, with the reason", async () => {
+    const f = fakeDb({ scenes: ["a", "b"], cfg: { enabled: true } });
+    f.db.getOrInitCrosswordConfig.mockImplementation(async (id: string) => ({
+      ...DEFAULT_CROSSWORD_CONFIG,
+      enabled: true,
+      familyFriendlyOnly: id === "a",
+    }));
+    const out = await topUpScenes(f.db, { ...FAST, allowUnapproved: true });
+    expect(out[0]).toEqual({ sceneId: "a", outcome: "skipped", reason: DEV_FAMILY_FRIENDLY_REASON });
+    expect(DEV_FAMILY_FRIENDLY_REASON).toMatch(/turn Family friendly only off/);
+    expect(out[1]).toMatchObject({ sceneId: "b", outcome: "built" });
   });
 
   it("reports any other failure as failed", async () => {

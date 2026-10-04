@@ -4,7 +4,8 @@
  * About 60 words from the approved pool (`db.crosswordBank.playable`): the
  * word is approved and has at least one approved clue, 3–12 letters (capped
  * by the scene's `maxSize`), at or above the scene's `minZipf`, and not used
- * in the scene's last `noRepeatWordsPuzzles` puzzles. On a family-friendly
+ * in the scene's last `noRepeatWordsPuzzles` puzzles nor in the stock waiting
+ * to air. On a family-friendly
  * channel the word and its clues must all carry the tag (the repo does that).
  * Each word comes with the approved clues it may use that pass
  * `validateClue`; a word left with none is dropped. Lengths are spread on
@@ -25,6 +26,7 @@ import {
   normalizeAnswer,
   validateClue,
   type CrosswordConfig,
+  type CrosswordPuzzle,
   type CrosswordPuzzleSource,
 } from "@photonsurge/shared/crossword";
 import { CROSSWORD_SEED_WORDS } from "@photonsurge/shared/crossword-seeds";
@@ -58,7 +60,7 @@ export interface CandidatePick {
   words: PickedWord[];
   /** Playable words the pool offered this scene, before the spread took its share. */
   available: number;
-  /** Words left out by the no-repeat window. */
+  /** Words left out by the no-repeat window or the unplayed stock. */
   excluded: number;
   /** The pick used pending words (CROSSWORD_ALLOW_UNAPPROVED). */
   unapproved: boolean;
@@ -118,13 +120,25 @@ export async function pickCandidates(
   db: PickDb,
   sceneId: string,
   cfg: PickConfig,
-  opts: { seed: number; count?: number; allowUnapproved?: boolean },
+  opts: {
+    seed: number;
+    count?: number;
+    allowUnapproved?: boolean;
+    /**
+     * The stock waiting to air on the channel (build.ts `channelStock`). Their
+     * words are left out too, so puzzles built one after another do not
+     * share words and air back to back.
+     */
+    stock?: readonly Pick<CrosswordPuzzle, "entries">[];
+  },
 ): Promise<CandidatePick> {
   const count = opts.count ?? PICK_COUNT;
   const allowUnapproved = opts.allowUnapproved ?? allowUnapprovedFromEnv();
   const rng = seededRng(opts.seed);
   const recent = await db.crosswordPuzzles.recentForScene(sceneId, cfg.noRepeatWordsPuzzles);
-  const used = new Set(recent.flatMap((p) => p.entries.map((e) => normalizeAnswer(e.answer))));
+  const used = new Set(
+    [...recent, ...(opts.stock ?? [])].flatMap((p) => p.entries.map((e) => normalizeAnswer(e.answer))),
+  );
   const maxLength = Math.min(12, cfg.maxSize);
   const rows = await db.crosswordBank.playable({
     minZipf: cfg.minZipf,
