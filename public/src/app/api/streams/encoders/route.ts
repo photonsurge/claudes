@@ -2,7 +2,7 @@ import { withApiLog } from "../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getAppDb } from "@photonsurge/shared/db/index";
-import { ENV_ENCODER_ID, toEncoderInfo, type StreamEncoder } from "@photonsurge/shared/runs";
+import { ENCODER_USES, ENV_ENCODER_ID, toEncoderInfo, type EncoderUse, type StreamEncoder } from "@photonsurge/shared/runs";
 import { encryptSecret, secretboxConfigured } from "@photonsurge/shared/utill/secretbox";
 import { requireAdmin } from "../../../../lib/require-admin";
 
@@ -62,6 +62,14 @@ async function POST__impl(req: Request) {
     sceneId: body.sceneId ? String(body.sceneId).trim() : undefined,
     enabled: body.enabled !== false,
   };
+  // Assigned to channels (default) or to rendered videos (short-video plan §6.6).
+  // Omitted leaves a saved encoder's use as it is.
+  if (body.use !== undefined) {
+    if (!ENCODER_USES.includes(body.use as EncoderUse)) {
+      return NextResponse.json({ error: `use must be one of ${ENCODER_USES.join(", ")}` }, { status: 400, headers: NO_CACHE });
+    }
+    patch.use = body.use as EncoderUse;
+  }
   if (typeof body.password === "string" && body.password.length > 0) {
     if (!secretboxConfigured()) {
       return NextResponse.json(

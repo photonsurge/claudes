@@ -11,6 +11,11 @@
  *                                                or awaited + never-rejecting when force)
  *   run-lifecycle.thumbnail { runId, force? }   (custom thumbnail onto the video; retried, or
  *                                                awaited + never-rejecting when force)
+ *   run-lifecycle.scriptStart { runId }         (video render: start the script after the lead-in)
+ *   run-lifecycle.finalize  { runId }           (video render: tags/category/privacy/playlist, then chapters)
+ *   run-lifecycle.renders   {}                  (repeatable render-queue ticker)
+ *   run-lifecycle.renderQueue { request }       (queue a video)
+ *   run-lifecycle.renderControl { action, renderId | encoderId } (pause/resume/cancel/retry/stop)
  * Routed to the FOREGROUND tier (see bull-utils FOREGROUND_TYPES) so go-live/stop
  * never wait behind a bake.
  */
@@ -22,6 +27,9 @@ import { goLive as doGoLive, finishRun } from "../stream/lifecycle";
 import { reconcileSlots } from "../stream/slots";
 import { endpointForEncoderId, provisionEncoderScene, refreshEncoderScene } from "../stream/encoders";
 import { probe } from "../obs/client";
+import { finalizeScriptRun, startScriptPlay } from "../stream/script-run";
+import { advanceRenderQueues, controlRender, queueRender } from "../stream/render-queue";
+import { sanitizeRenderRequest } from "@photonsurge/shared/short-render";
 
 export async function goLive(job: Job) {
   const runId = String(job.data?.data?.runId ?? job.data?.runId ?? "");
@@ -87,6 +95,57 @@ export async function thumbnail(job: Job) {
   } catch (err) {
     if (force) return { ok: false, error: String((err as Error)?.message ?? err) };
     throw err;
+  }
+}
+
+// ---- Video renders (docs/short-video-plan.md §6.5-6.7) ----
+
+/** A video render's script start, delayed by its lead-in (queued by onScriptRunLive). */
+export async function scriptStart(job: Job) {
+  const runId = String(job.data?.data?.runId ?? job.data?.runId ?? "");
+  if (!runId) throw new Error("run-lifecycle.scriptStart: missing runId");
+  return { runId, ...(await startScriptPlay(runId)) };
+}
+
+/** A finished video's ONE ordered end write: tags, category, privacy, playlist — then chapters. Retried. */
+export async function finalize(job: Job) {
+  const runId = String(job.data?.data?.runId ?? job.data?.runId ?? "");
+  if (!runId) throw new Error("run-lifecycle.finalize: missing runId");
+  return { runId, ...(await finalizeScriptRun(runId)) };
+}
+
+/** The render queue's 60 s ticker (index.ts): settle, expire, start the next videos. */
+export async function renders(_job: Job) {
+  return advanceRenderQueues();
+}
+
+/**
+ * Queue one video (Render now, a schedule's batch). Body: a ShortRenderRequest
+ * (sanitised here). Resolves with the stored render, or `{ ok: false, error }`.
+ */
+export async function renderQueue(job: Job) {
+  const req = sanitizeRenderRequest(job.data?.data?.request ?? job.data?.data);
+  if (!req) return { ok: false, error: "not a render request" };
+  const render = await queueRender(req);
+  return { ok: true, render };
+}
+
+/** Pause / resume an encoder's queue; cancel, retry or stop a render. Never rejects. */
+export async function renderControl(job: Job) {
+  const d = job.data?.data ?? {};
+  const action = String(d.action ?? "");
+  try {
+    if (action === "pause" || action === "resume") {
+      if (!d.encoderId) return { ok: false, error: "encoderId is required" };
+      return await controlRender({ action, encoderId: String(d.encoderId) });
+    }
+    if (action === "cancel" || action === "retry" || action === "stop") {
+      if (!d.renderId) return { ok: false, error: "renderId is required" };
+      return await controlRender({ action, renderId: String(d.renderId) });
+    }
+    return { ok: false, error: `unknown action "${action}"` };
+  } catch (err) {
+    return { ok: false, error: String((err as Error)?.message ?? err) };
   }
 }
 

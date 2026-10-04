@@ -69,6 +69,29 @@ export interface ScriptRunnerDeps {
   resolve: (db: AppDb, cfg: DirectorConfig, clip: ShortClip, now: number) => Promise<ClipResolution>;
 }
 
+/**
+ * Told whenever a play ends — finished, stopped, cut by a restart, or with
+ * nothing to play — so a video render can end its run (stream/script-run.ts,
+ * short-video plan §6.5 step 3). Registered at boot (index.ts) rather than
+ * imported, so the runner stays free of the run pipeline. Fire-and-forget: a
+ * slow or failing hook never delays a cut.
+ */
+export type ScriptPlayEndedHook = (sceneId: string, play: ShortScriptPlay) => unknown;
+let playEndedHook: ScriptPlayEndedHook | null = null;
+
+export function setScriptPlayEndedHook(hook: ScriptPlayEndedHook | null): void {
+  playEndedHook = hook;
+}
+
+function notifyPlayEnded(sceneId: string, play: ShortScriptPlay): void {
+  const hook = playEndedHook;
+  if (!hook) return;
+  const copy: ShortScriptPlay = { ...play, clips: [...play.clips], skipped: [...play.skipped] };
+  void Promise.resolve()
+    .then(() => hook(sceneId, copy))
+    .catch((err) => log(TAG, `play-ended hook failed`, { sceneId, err: String(err) }));
+}
+
 export const newScriptRunnerState = (): ScriptRunnerState => ({
   plays: new Map(),
   handled: new Map(),
@@ -122,6 +145,7 @@ async function stopPlay(state: ScriptRunnerState, play: ScriptPlay, now: number,
   play.playRecord.endedAt = now;
   play.playRecord.stopped = true;
   await stamp(deps.db, play.scriptId, play.playRecord);
+  notifyPlayEnded(play.sceneId, play.playRecord);
   log(TAG, `play stopped`, { sceneId: play.sceneId, scriptId: play.scriptId, playNonce: play.playNonce });
 }
 
@@ -133,6 +157,7 @@ async function finishPlay(state: ScriptRunnerState, play: ScriptPlay, now: numbe
   play.playRecord.endedAt = now;
   await stamp(deps.db, play.scriptId, play.playRecord);
   await setModeOff(deps.db, play.sceneId, play.playNonce);
+  notifyPlayEnded(play.sceneId, play.playRecord);
   log(TAG, `play finished`, { sceneId: play.sceneId, scriptId: play.scriptId, playNonce: play.playNonce });
 }
 
@@ -156,6 +181,15 @@ async function startPlay(
     log(TAG, `script not found`, { sceneId, scriptId: trigger.scriptId });
     emitInactive(sceneId);
     await setModeOff(db, sceneId, trigger.playNonce);
+    notifyPlayEnded(sceneId, {
+      sceneId,
+      playNonce: trigger.playNonce,
+      startedAt: now,
+      endedAt: now,
+      stopped: true,
+      clips: [],
+      skipped: [{ id: "", reason: `script ${trigger.scriptId} not found` }],
+    });
     return;
   }
 
@@ -185,6 +219,7 @@ async function startPlay(
     await stamp(db, script.id, playRecord);
     emitInactive(sceneId);
     await setModeOff(db, sceneId, trigger.playNonce);
+    notifyPlayEnded(sceneId, playRecord);
     log(TAG, `nothing to play`, { sceneId, scriptId: script.id, skipped: skipped.length });
     return;
   }
@@ -215,7 +250,11 @@ async function settleAfterRestart(sceneId: string, trigger: DirectorScriptPlay, 
   const script = await deps.db.shortScripts.get(trigger.scriptId);
   const prior = script ? playFor(script, sceneId) : undefined;
   if (!script || !prior || prior.playNonce !== trigger.playNonce) return false;
-  if (prior.endedAt == null) await stamp(deps.db, script.id, { ...prior, endedAt: now, stopped: true });
+  if (prior.endedAt == null) {
+    const closed = { ...prior, endedAt: now, stopped: true };
+    await stamp(deps.db, script.id, closed);
+    notifyPlayEnded(sceneId, closed);
+  }
   await setModeOff(deps.db, sceneId, trigger.playNonce);
   log(TAG, `play already answered before restart — not replaying`, { sceneId, scriptId: script.id, playNonce: trigger.playNonce });
   return true;

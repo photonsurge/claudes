@@ -32,7 +32,8 @@ import { startQueueEventBridge } from "./queueEventBridge";
 import { installJobConsoleTap, runInJobLogContext, getJobLog, listJobLogs } from "./jobLog";
 import { beginJob, endJob, startCancelSubscriber, activeJobLabels } from "./jobCancel";
 import { startDirector, stopDirector } from "./director/loop";
-import { startScriptRunner, stopScriptRunner } from "./director/script-runner";
+import { setScriptPlayEndedHook, startScriptRunner, stopScriptRunner } from "./director/script-runner";
+import { onScriptPlayEnded } from "./stream/script-run";
 import { startViewerSweep, stopViewerSweep } from "./stream/viewer-sweep";
 import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
 import { getEnabledSources } from "./alerts/registry";
@@ -212,6 +213,8 @@ process.on("uncaughtException", (err) => {
   startDirector();
   // Scripted shorts: plays a saved script on scenes in "script" mode, on its
   // own clock so a cut never waits behind the auto loop's candidate builds.
+  // A play that ends tells the video-render pipeline (script-run.ts, §6.5 step 3).
+  setScriptPlayEndedHook(onScriptPlayEnded);
   startScriptRunner();
   // Viewer chat picks (music / palette): lapse and promote them on time.
   startViewerSweep();
@@ -598,6 +601,26 @@ process.on("uncaughtException", (err) => {
     log(TAG, `registered repeatable stream.reconcile`, { every: STREAM_RECONCILE_MS });
   } catch (err) {
     log(TAG, `failed to register stream.reconcile`, { err: summarizeForLog(err) });
+  }
+
+  // ---- Repeatable render-queue ticker (video renders, docs/short-video-plan.md §6.6) ----
+  // Advances every encoder's video queue: settles renders whose run ended while
+  // a hook was lost (restart), skips videos past their start-by, starts the next
+  // ones. The queue also advances on its own when a video is queued or a run
+  // ends; this is the backstop. Cheap no-op when nothing is queued.
+  const RENDER_TICK_MS = Number(process.env.RENDER_TICK_MS || 60 * 1000);
+  try {
+    await addJob(
+      "do",
+      { domain: "stream", type: "run-lifecycle", event: "renders", data: {} },
+      {
+        repeat: { every: RENDER_TICK_MS, offset: staggerOffset("render-queue-tick", RENDER_TICK_MS) },
+        jobId: "render-queue-tick",
+      },
+    );
+    log(TAG, `registered repeatable stream.renders`, { every: RENDER_TICK_MS });
+  } catch (err) {
+    log(TAG, `failed to register stream.renders`, { err: summarizeForLog(err) });
   }
 
   // ---- Repeatable alerts.translate job ----

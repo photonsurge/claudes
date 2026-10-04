@@ -196,3 +196,21 @@ describe("stampPlay — one entry per scene", () => {
     expect(doc.plays).toEqual([preview]);
   });
 });
+
+describe("values (title codes, §6.8)", () => {
+  it("round-trips string values through the strict schema and drops anything else", async () => {
+    const stored = throughSchema({ ...full, plays: undefined, values: { place: "Japan", places: "1", bad: 3 } }, "s1");
+    const findOne = jest.fn(() => ({ lean: () => ({ exec: async () => stored }) }));
+    const got = await makeShortScriptRepo(fakeModel({ findOne }, null)).get("s1");
+    expect(got?.values).toEqual({ place: "Japan", places: "1" });
+  });
+
+  it("stampValues sets only values, and upsert never writes them", async () => {
+    const updateOne = jest.fn((..._a: unknown[]) => ({ exec: async () => ({ matchedCount: 1 }) }));
+    const repo = makeShortScriptRepo(fakeModel({ updateOne }));
+    expect(await repo.stampValues("s1", { place: "Japan" })).toBe(true);
+    expect(updateOne).toHaveBeenCalledWith({ id: "s1" }, { $set: { values: { place: "Japan" } } });
+    await repo.upsert({ ...full, values: { place: "x" } });
+    expect((updateOne.mock.calls[1] as any[])[1].$set).not.toHaveProperty("values");
+  });
+});

@@ -95,6 +95,8 @@ export const ShortScriptSchema = new mongoose.Schema<iShortScriptModel>(
     clips: { type: [ClipSchema], default: [] },
     status: { type: String, required: true, enum: ["draft", "ready"], default: "draft" },
     plays: { type: [PlaySchema], default: undefined },
+    // Title-code values stamped at generate (short-video plan §6.8); free keys.
+    values: { type: mongoose.Schema.Types.Mixed, default: undefined },
   },
   mongoTimestamps,
 );

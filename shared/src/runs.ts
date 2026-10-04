@@ -67,10 +67,26 @@ export interface StreamEncoder {
   passwordEnc?: string;
   /** Scene this OBS instance is pointed at (browser source); auto-picked per run. */
   sceneId?: string;
+  /**
+   * What the instance is for (short-video plan §6.6). `channels` (the default,
+   * today's behaviour) serves channel runs; `videos` is kept for rendered
+   * videos: it is bound to no channel, its browser source is pointed at each
+   * video's scene as the video starts, and it idles on a blank page between
+   * videos. Absent = `channels`.
+   */
+  use?: EncoderUse;
   enabled: boolean;
   created?: Date;
   updated?: Date;
 }
+
+/** What an encoder is assigned to — see `StreamEncoder.use`. */
+export type EncoderUse = "channels" | "videos";
+export const ENCODER_USES: readonly EncoderUse[] = ["channels", "videos"];
+
+/** An encoder's use, defaulting to `channels`. */
+export const encoderUse = (e: Pick<StreamEncoder, "use"> | null | undefined): EncoderUse =>
+  e?.use === "videos" ? "videos" : "channels";
 
 /** Client-safe projection of an encoder (no password material). */
 export interface StreamEncoderInfo {
@@ -78,6 +94,8 @@ export interface StreamEncoderInfo {
   name?: string;
   url: string;
   sceneId?: string;
+  /** Always set by `toEncoderInfo`; optional so older payloads still type-check. */
+  use?: EncoderUse;
   enabled: boolean;
   hasPassword: boolean;
 }
@@ -88,6 +106,7 @@ export function toEncoderInfo(e: StreamEncoder): StreamEncoderInfo {
     name: e.name,
     url: e.url,
     sceneId: e.sceneId,
+    use: encoderUse(e),
     enabled: !!e.enabled,
     hasPassword: !!e.passwordEnc,
   };
@@ -236,6 +255,47 @@ export interface RunThumbnail {
   error?: string | null;
 }
 
+/**
+ * A run that renders a scripted short video (short-video plan §6.4-6.5): it goes
+ * live on the script's scene, plays the script once and ends. Set by the render
+ * queue (worker/src/stream/render-queue.ts) when it creates the run; the hooks
+ * in worker/src/stream/script-run.ts move it along. Always written whole.
+ */
+export interface RunScript {
+  scriptId: string;
+  /** The ShortRender this run makes. */
+  renderId?: string;
+  scheduleId?: string;
+  /** A rehearsal with no YouTube (§7, WP8). */
+  offline: boolean;
+  /** The privacy applied when the run ends (a render always streams unlisted). */
+  publishAs: YoutubePrivacy;
+  /** The director play nonce, stored once the script has been started. */
+  playNonce?: number | null;
+  /** When goLive began working on the run: the go-live deadline counts from here. */
+  goLiveAt?: number | null;
+  /** Time between going live and starting the script, and after it ends. */
+  leadInMs: number;
+  leadOutMs: number;
+  /** How the play ended: `finished` ran to its last clip; `stopped` was cut short. */
+  playEnded?: "finished" | "stopped" | null;
+  /** Applied in ONE ordered finalize step at the end, before chapters (§13). */
+  tags?: string[];
+  categoryId?: string;
+  playlistId?: string;
+  /** Write the as-run chapters after finalize (the format's `video.chapters`). */
+  chapters?: boolean;
+  /** The resolved thumbnail image URL or site path; absent = no custom thumbnail. */
+  thumbnailUrl?: string;
+  /** Finalize outcome: when it completed, the playlist add, and the last error. */
+  finalizedAt?: number | null;
+  playlistAddedAt?: number | null;
+  finalizeError?: string | null;
+}
+
+/** True when a run renders a scripted video. */
+export const isScriptRun = (run: Pick<Run, "script"> | null | undefined): boolean => !!run?.script?.scriptId;
+
 /** The full persisted run document (Mongo). Superset of the socket projection. */
 export interface Run {
   id: string;
@@ -269,6 +329,8 @@ export interface Run {
   chapters?: RunChapters | null;
   /** Custom thumbnail upload outcome (set right after the broadcast is created). */
   thumbnail?: RunThumbnail | null;
+  /** Set when the run renders a scripted video (§6.4). */
+  script?: RunScript | null;
   error?: RunError | null;
   createdBy?: string;
   /** Managed by Mongo timestamps (Date at rest); present on persisted docs. */
@@ -314,6 +376,8 @@ export interface RunState {
   announceError?: Run["announceError"];
   chapters?: RunChapters | null;
   thumbnail?: RunThumbnail | null;
+  /** Present on a video render: which script and render, and the end privacy. */
+  script?: { scriptId: string; renderId?: string; offline: boolean; publishAs: YoutubePrivacy } | null;
   error?: RunError | null;
   updated?: string;
 }
@@ -435,6 +499,14 @@ export function toRunState(run: Run): RunState {
     announceError: run.announceError ?? null,
     chapters: run.chapters ?? null,
     thumbnail: run.thumbnail ?? null,
+    script: run.script?.scriptId
+      ? {
+          scriptId: run.script.scriptId,
+          renderId: run.script.renderId,
+          offline: !!run.script.offline,
+          publishAs: run.script.publishAs,
+        }
+      : null,
     error: run.error ?? null,
     updated: run.updated ? new Date(run.updated).toISOString() : undefined,
   };

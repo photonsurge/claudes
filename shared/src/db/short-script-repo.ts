@@ -41,6 +41,13 @@ function toPlay(p: ShortScriptPlay): ShortScriptPlay {
   });
 }
 
+/** String values only — a title code never resolves to an object. */
+function toValues(v: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, x] of Object.entries(v)) if (typeof x === "string") out[k] = x;
+  return out;
+}
+
 /** Canonical wire shape from a lean doc — drops `_id`/`__v`/timestamps and any
  *  unset optional path. */
 function toShortScript(doc: iShortScriptModel): ShortScript {
@@ -55,6 +62,7 @@ function toShortScript(doc: iShortScriptModel): ShortScript {
     status: doc.status,
   };
   if (doc.plays?.length) script.plays = doc.plays.map(toPlay);
+  if (doc.values && typeof doc.values === "object") script.values = toValues(doc.values);
   return script;
 }
 
@@ -102,6 +110,16 @@ export function makeShortScriptRepo(model: Model<iShortScriptModel>) {
     async remove(id: string): Promise<boolean> {
       const res = await model.deleteOne({ id }).exec();
       return (res.deletedCount ?? 0) > 0;
+    },
+
+    /**
+     * Stamp the title-code values (short-video plan §6.8). Like `plays`, never
+     * part of `upsert`, so saving an edited script keeps them. Returns false for
+     * an unknown id.
+     */
+    async stampValues(id: string, values: Record<string, string>): Promise<boolean> {
+      const res = await model.updateOne({ id }, { $set: { values: toValues(values) } }).exec();
+      return (res.matchedCount ?? 0) > 0;
     },
 
     /**
