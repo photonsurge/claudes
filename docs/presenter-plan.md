@@ -43,6 +43,11 @@
 >   queue). "Refresh voices" on the page (also on `/admin/jobs`) fills
 >   `db.speechCatalog`. `yarn speak "text" --model … --voice …` in `worker/` checks a
 >   key and voice with no Mongo or queue; `yarn speak --models` lists the models.
+> - Cached takes: each take stores a hash of exactly what is sent to the speech model.
+>   An identical request reuses the earlier take's audio at no charge (marked "reused ·
+>   free"), unless "Make a fresh take" is ticked (`--fresh` on the CLI). `yarn speak`
+>   saves its runs as takes (marked CLI), and the page refreshes the list every 10 s, so
+>   they show up there. The header totals takes, reuse, and estimated spend and savings.
 > - Shared: `speakable()`, `mp3DurationMs()`.
 > - Not built: the prompt registry and round-up previews (WP1–3), anything on air
 >   (WP8–9), written lines (WP10–12). Checked live on 2026-10-04: the model list

@@ -115,7 +115,18 @@ const toVoiceTest = (doc: iVoiceTestModel): VoiceTest => {
   return { ...rest, createdAt: new Date(created ?? Date.now()).toISOString() } as VoiceTest;
 };
 
-export type VoiceTestCreate = Pick<VoiceTest, "presenterId" | "label" | "text" | "voice" | "createdBy">;
+export type VoiceTestCreate = Pick<VoiceTest, "presenterId" | "label" | "text" | "voice" | "createdBy"> &
+  Partial<Pick<VoiceTest, "source" | "fresh">>;
+
+export interface VoiceTestStats {
+  takes: number;
+  ready: number;
+  cached: number;
+  /** Sum of the estimated cost of takes that made new audio. */
+  estSpendUsd: number;
+  /** Estimated cost avoided by reusing audio. */
+  estSavedUsd: number;
+}
 
 /** Spoken takes from the voice bench. Audio bytes go to the `presenter-audio` blob namespace. */
 export function makeVoiceTestRepo(model: Model<iVoiceTestModel>, blobs: InlineBlobStore) {
@@ -143,6 +154,40 @@ export function makeVoiceTestRepo(model: Model<iVoiceTestModel>, blobs: InlineBl
         .lean<iVoiceTestModel[]>()
         .exec();
       return docs.map(toVoiceTest);
+    },
+
+    /** A finished take with this request hash and audio, other than `exceptId`. */
+    async findCached(cacheKey: string, exceptId: string): Promise<VoiceTest | null> {
+      const doc = await model
+        .findOne({ cacheKey, status: "ready", id: { $ne: exceptId }, cachedFrom: { $exists: false } })
+        .select("-data")
+        .sort({ created: -1 })
+        .lean<iVoiceTestModel>()
+        .exec();
+      return doc ? toVoiceTest(doc) : null;
+    },
+
+    /** Totals for the page header. */
+    async stats(): Promise<VoiceTestStats> {
+      const docs = await model
+        .find({})
+        .select("status cachedFrom audio.estCostUsd cacheKey")
+        .lean<Pick<iVoiceTestModel, "status" | "cachedFrom" | "audio" | "cacheKey">[]>()
+        .exec();
+      const costByKey = new Map<string, number>();
+      for (const d of docs) {
+        if (d.status === "ready" && !d.cachedFrom && d.cacheKey && d.audio?.estCostUsd != null) costByKey.set(d.cacheKey, d.audio.estCostUsd);
+      }
+      const out: VoiceTestStats = { takes: docs.length, ready: 0, cached: 0, estSpendUsd: 0, estSavedUsd: 0 };
+      for (const d of docs) {
+        if (d.status !== "ready") continue;
+        out.ready++;
+        if (d.cachedFrom) {
+          out.cached++;
+          out.estSavedUsd += (d.cacheKey && costByKey.get(d.cacheKey)) || 0;
+        } else out.estSpendUsd += d.audio?.estCostUsd ?? 0;
+      }
+      return out;
     },
 
     async update(id: string, patch: Partial<Omit<VoiceTest, "id" | "createdAt">>): Promise<void> {

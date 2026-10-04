@@ -259,6 +259,14 @@ export interface VoiceTest {
     generationId?: string;
     estCostUsd: number | null;
   };
+  /** Where the take was asked for: the admin page or the `yarn speak` CLI. */
+  source?: "admin" | "cli";
+  /** true = always make new audio, even if an identical take exists. */
+  fresh?: boolean;
+  /** Hash of everything sent to the speech model; identical requests share it. */
+  cacheKey?: string;
+  /** Set when the audio was reused from an earlier identical take (no charge). */
+  cachedFrom?: string;
   /** Which voice properties actually reached the model (worker voice-traits). */
   sent?: { voice: boolean; speed: boolean; style: "option" | "text" | "voice-id" | "not-sent" | "none"; options: boolean };
   createdBy: string;

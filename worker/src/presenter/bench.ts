@@ -6,23 +6,35 @@
  * On demand only — called from the `presenter.test` job, which the admin page
  * enqueues. Nothing here runs on a schedule.
  */
+import { createHash } from "node:crypto";
 import type { getAppDb } from "@photonsurge/shared/db/index";
 import { estimateSpeechCostUsd, type VoiceTest } from "@photonsurge/shared/presenter";
 import { speakable } from "@photonsurge/shared/speakable";
 import { mp3DurationMs, pcmDurationMs } from "@photonsurge/shared/mp3-duration";
 import { listSpeechModels, speak as defaultSpeak } from "../lib/openrouter-speech";
-import { prepareSpeech } from "./voice-traits";
+import { prepareSpeech, type PreparedSpeech } from "./voice-traits";
 
 type Db = Awaited<ReturnType<typeof getAppDb>>;
 
 export interface BenchDeps {
   speak?: typeof defaultSpeak;
   hasKey?: () => boolean;
+  /** The CLI is an explicit operator action, so it does not need the page's master switch. */
+  ignoreSwitch?: boolean;
+}
+
+/**
+ * Hash of everything that reaches the speech model. Two takes with the same key
+ * would send the same request, so the second can reuse the first's audio.
+ */
+export function speechCacheKey(model: string, p: PreparedSpeech): string {
+  const req = { model, input: p.input, voice: p.voice, speed: p.speed, extra: p.extra };
+  return createHash("sha256").update(JSON.stringify(req)).digest("hex").slice(0, 32);
 }
 
 /** Why a take could not be spoken before any call was made, or null to go ahead. */
-async function blocked(db: Db, hasKey: () => boolean): Promise<string | null> {
-  if (!(await db.presenterSettings.get()).enabled) {
+async function blocked(db: Db, hasKey: () => boolean, ignoreSwitch: boolean): Promise<string | null> {
+  if (!ignoreSwitch && !(await db.presenterSettings.get()).enabled) {
     return "The presenter is switched off. Turn it on at the top of /admin/presenters.";
   }
   if (!hasKey()) return "OPENROUTER_API_KEY is not set in the worker's environment.";
@@ -37,14 +49,34 @@ export async function runVoiceTest(db: Db, testId: string, deps: BenchDeps = {})
   if (!take) return null;
   if (take.status === "ready") return take;
 
-  const stop = await blocked(db, hasKey);
+  const prepared = prepareSpeech(take.voice, speakable(take.text));
+  const cacheKey = speechCacheKey(take.voice.model, prepared);
+
+  // Reuse identical audio unless a fresh take was asked for. Free, so the
+  // master switch and API key are not needed for it.
+  if (!take.fresh) {
+    const hit = await db.voiceTests.findCached(cacheKey, testId);
+    const audio = hit ? await db.voiceTests.getAudio(hit.id) : null;
+    if (hit?.audio && audio) {
+      await db.voiceTests.putAudio(testId, audio.data, {
+        status: "ready",
+        spoken: prepared.input,
+        sent: prepared.sent,
+        cacheKey,
+        cachedFrom: hit.id,
+        audio: { ...hit.audio, latencyMs: 0, estCostUsd: 0 },
+      });
+      return db.voiceTests.get(testId);
+    }
+  }
+
+  const stop = await blocked(db, hasKey, !!deps.ignoreSwitch);
   if (stop) {
     await db.voiceTests.update(testId, { status: "error", error: stop });
     return db.voiceTests.get(testId);
   }
 
-  const prepared = prepareSpeech(take.voice, speakable(take.text));
-  await db.voiceTests.update(testId, { status: "speaking", spoken: prepared.input, sent: prepared.sent });
+  await db.voiceTests.update(testId, { status: "speaking", spoken: prepared.input, sent: prepared.sent, cacheKey });
 
   const res = await speak({
     model: take.voice.model,

@@ -52,8 +52,20 @@ export async function refreshVoices(): Promise<{ ok: boolean; error?: string; ca
   return json(await fetch("/api/admin/presenters/voices", { method: "POST" }), "voice refresh");
 }
 
-export async function listTakes(limit = 30): Promise<VoiceTest[]> {
-  return (await json<{ takes: VoiceTest[] }>(await fetch(`/api/admin/presenters/tests?limit=${limit}`, { cache: "no-store" }), "takes")).takes;
+export interface TakeStats {
+  takes: number;
+  ready: number;
+  cached: number;
+  estSpendUsd: number;
+  estSavedUsd: number;
+}
+
+export async function listTakes(limit = 50): Promise<{ takes: VoiceTest[]; stats: TakeStats | null }> {
+  const body = await json<{ takes: VoiceTest[]; stats?: TakeStats }>(
+    await fetch(`/api/admin/presenters/tests?limit=${limit}`, { cache: "no-store" }),
+    "takes",
+  );
+  return { takes: body.takes, stats: body.stats ?? null };
 }
 
 export async function getTake(id: string): Promise<VoiceTest | null> {
@@ -68,6 +80,7 @@ export async function speakTake(input: {
   presenterId?: string | null;
   voice?: PresenterVoice;
   label?: string;
+  fresh?: boolean;
 }): Promise<VoiceTest> {
   const res = await fetch("/api/admin/presenters/tests", {
     method: "POST",

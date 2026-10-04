@@ -1,45 +1,100 @@
 // Speak one sentence through OpenRouter and write the audio to a file — the
-// quickest check that the key, model and voice work, with no Mongo, queue or
-// admin page involved. Also lists the speech models with --models.
+// quickest check that the key, model and voice work.
+//
+// By default the run is saved as a take (source "cli"), so it shows on
+// /admin/presenters with the page's own tests, and an identical earlier take is
+// reused instead of paying again. --fresh forces new audio; --no-save skips
+// Mongo entirely (just the HTTP call and the file). --models lists the models.
 //
 //   cd worker && yarn speak "Testing the house voice." --model hexgrad/kokoro-82m --voice af_heart --out /tmp/t.mp3
+//   cd worker && yarn speak "…" --presenter house        (use a saved presenter's voice)
 //   cd worker && yarn speak --models
 import { loadWorkerEnv } from "../loadEnv";
 loadWorkerEnv();
 
 import { writeFileSync } from "node:fs";
+import { getAppDb } from "@photonsurge/shared/db/index";
 import { speakable } from "@photonsurge/shared/speakable";
 import { mp3DurationMs } from "@photonsurge/shared/mp3-duration";
-import { DEFAULT_VOICE, pricePerHour } from "@photonsurge/shared/presenter";
+import { DEFAULT_VOICE, pricePerHour, sanitizeVoice } from "@photonsurge/shared/presenter";
 import { listSpeechModels, speak } from "../lib/openrouter-speech";
+import { runVoiceTest } from "../presenter/bench";
 
 const args = process.argv.slice(2);
+const VALUE_FLAGS = new Set(["model", "voice", "speed", "style", "out", "presenter", "label"]);
 const flag = (name: string) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : undefined;
 };
+const has = (name: string) => args.includes(`--${name}`);
+
+async function noSave(text: string, out: string) {
+  const res = await speak({
+    model: flag("model") ?? DEFAULT_VOICE.model,
+    input: speakable(text),
+    voice: flag("voice") ?? null,
+    speed: flag("speed") ? Number(flag("speed")) : undefined,
+  });
+  console.log("sent", JSON.stringify(res.body));
+  if (!res.ok) throw new Error(res.error);
+  writeFileSync(out, res.audio);
+  console.log(`wrote ${out}: ${res.audio.length} bytes, ${res.contentType}, ${mp3DurationMs(res.audio)} ms, ${res.latencyMs} ms latency, generation ${res.generationId ?? "?"}`);
+}
+
+async function saved(text: string, out: string) {
+  const db = await getAppDb();
+  try {
+    const presenterId = flag("presenter") ?? null;
+    const presenter = presenterId ? await db.presenters.get(presenterId) : null;
+    if (presenterId && !presenter) throw new Error(`no presenter "${presenterId}"`);
+    const voice = sanitizeVoice({
+      ...(presenter?.voice ?? DEFAULT_VOICE),
+      ...(flag("model") ? { model: flag("model"), voice: null } : {}),
+      ...(flag("voice") ? { voice: flag("voice") } : {}),
+      ...(flag("speed") ? { speed: Number(flag("speed")) } : {}),
+      ...(flag("style") ? { style: flag("style") } : {}),
+    });
+    const created = await db.voiceTests.create({
+      presenterId,
+      label: flag("label") ?? (presenter ? `${presenter.name} (CLI)` : "CLI take"),
+      text,
+      voice,
+      createdBy: process.env.USER ?? "cli",
+      source: "cli",
+      fresh: has("fresh"),
+    });
+    const take = await runVoiceTest(db, created.id, { ignoreSwitch: true });
+    if (!take || take.status !== "ready") throw new Error(take?.error ?? "take failed");
+    const audio = await db.voiceTests.getAudio(take.id);
+    if (!audio) throw new Error("take has no audio");
+    writeFileSync(out, audio.data);
+    const a = take.audio!;
+    console.log("sent", take.spoken);
+    console.log(
+      `wrote ${out}: ${a.bytes} bytes, ${a.durationMs} ms` +
+        (take.cachedFrom
+          ? ` — reused take ${take.cachedFrom}, no charge (--fresh to make new audio)`
+          : `, ${a.latencyMs} ms latency, ~$${a.estCostUsd ?? "?"}, generation ${a.generationId ?? "?"}`),
+    );
+    console.log(`saved as take ${take.id} — see /admin/presenters`);
+  } finally {
+    await db.conn.close();
+  }
+}
 
 (async () => {
-  if (args.includes("--models")) {
+  if (has("models")) {
     for (const m of await listSpeechModels()) {
       console.log(`${m.id}  voices=${m.voices.length}  ~$${pricePerHour(m.pricing) ?? "?"}/hour  pricing=${JSON.stringify(m.pricing)}`);
       if (m.voices.length) console.log(`    ${m.voices.slice(0, 12).join(", ")}${m.voices.length > 12 ? ", …" : ""}`);
     }
     return;
   }
-  const text = args.find((a, i) => !a.startsWith("--") && !args[i - 1]?.startsWith("--")) ?? "Testing the house voice.";
-  const input = speakable(text);
-  const res = await speak({
-    model: flag("model") ?? DEFAULT_VOICE.model,
-    input,
-    voice: flag("voice") ?? null,
-    speed: flag("speed") ? Number(flag("speed")) : undefined,
-  });
-  console.log("sent", JSON.stringify(res.body));
-  if (!res.ok) throw new Error(res.error);
+  const text =
+    args.find((a, i) => !a.startsWith("--") && !(args[i - 1]?.startsWith("--") && VALUE_FLAGS.has(args[i - 1].slice(2)))) ??
+    "Testing the house voice.";
   const out = flag("out") ?? "/tmp/speak.mp3";
-  writeFileSync(out, res.audio);
-  console.log(`wrote ${out}: ${res.audio.length} bytes, ${res.contentType}, ${mp3DurationMs(res.audio)} ms, ${res.latencyMs} ms latency, generation ${res.generationId ?? "?"}`);
+  await (has("no-save") ? noSave(text, out) : saved(text, out));
 })()
   .then(() => process.exit(0))
   .catch((err) => {

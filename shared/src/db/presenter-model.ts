@@ -99,6 +99,10 @@ const VoiceTestSchema = new mongoose.Schema<iVoiceTestModel>(
     audio: { type: mongoose.Schema.Types.Mixed, required: false },
     sent: { type: mongoose.Schema.Types.Mixed, required: false },
     createdBy: { type: String, default: "" },
+    source: { type: String, enum: ["admin", "cli"], default: "admin" },
+    fresh: { type: Boolean, required: false },
+    cacheKey: { type: String, required: false },
+    cachedFrom: { type: String, required: false },
     data: { type: Buffer, required: false },
   },
   mongoTimestamps,
@@ -106,5 +110,7 @@ const VoiceTestSchema = new mongoose.Schema<iVoiceTestModel>(
 
 VoiceTestSchema.index({ created: -1 }, { name: "voice_test_created_ix" });
 VoiceTestSchema.index({ presenterId: 1, created: -1 }, { name: "voice_test_presenter_ix" });
+// The cache lookup: a ready take with the same request hash.
+VoiceTestSchema.index({ cacheKey: 1, status: 1 }, { name: "voice_test_cache_ix", sparse: true });
 
 export const getVoiceTestModel = (conn: Connection) => getModel<iVoiceTestModel>(conn, "VoiceTest", VoiceTestSchema);

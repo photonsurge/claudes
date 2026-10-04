@@ -37,7 +37,7 @@ beforeEach(() => {
         take: { id: "t1", label: "House voice", text: body.text, voice: body.voice, status: "ready", createdAt: "2026-10-04T12:00:00Z", presenterId: "house", createdBy: "" },
       });
     }
-    if (u.startsWith("/api/admin/presenters/tests")) return reply({ takes: [] });
+    if (u.startsWith("/api/admin/presenters/tests")) return reply({ takes: [], stats: { takes: 0, ready: 0, cached: 0, estSpendUsd: 0, estSavedUsd: 0 } });
     return reply({ presenters: [DEFAULT_PRESENTER], settings: { enabled }, catalog: { models: [], fetchedAt: null }, samples: [] });
   }) as unknown as typeof fetch;
 });
@@ -60,7 +60,19 @@ it("disables Test while the presenter is off, then speaks once switched on", asy
     fireEvent.click(test);
   });
   expect(posts).toHaveLength(1);
-  expect(posts[0]).toMatchObject({ presenterId: "house", label: "House voice" });
+  expect(posts[0]).toMatchObject({ presenterId: "house", label: "House voice", fresh: false });
   expect(posts[0].text).toMatch(/Good evening/);
   expect(screen.getByText("ready")).toBeInTheDocument();
+});
+
+it("sends fresh: true when a fresh take is asked for", async () => {
+  enabled = true;
+  await act(async () => {
+    render(<PresentersPage />);
+  });
+  fireEvent.click(screen.getByRole("checkbox", { name: /Make a fresh take/ }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Test House voice" }));
+  });
+  expect(posts[0].fresh).toBe(true);
 });

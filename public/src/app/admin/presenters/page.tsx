@@ -12,7 +12,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
@@ -40,7 +42,9 @@ import {
   setPresenterEnabled,
   speakTake,
   voiceSummary,
+  fmtUsd,
   type PresentersResponse,
+  type TakeStats,
 } from "../../../lib/presenters";
 import { font } from "../../../theme/tokens";
 
@@ -53,6 +57,8 @@ const blankPresenter = (): Presenter => ({ id: "", name: "", persona: "", voice:
 export default function PresentersPage() {
   const [data, setData] = useState<PresentersResponse | null>(null);
   const [takes, setTakes] = useState<VoiceTest[]>([]);
+  const [stats, setStats] = useState<TakeStats | null>(null);
+  const [fresh, setFresh] = useState(false);
   const [text, setText] = useState(DEFAULT_TEXT);
   const [editing, setEditing] = useState<string | null>(null);
   /** Bumped to remount the editor with a new starting point (e.g. "Use this voice"). */
@@ -67,7 +73,8 @@ export default function PresentersPage() {
       const [d, t] = await Promise.all([getPresenters(), listTakes()]);
       if (!mounted.current) return;
       setData(d);
-      setTakes(t);
+      setTakes(t.takes);
+      setStats(t.stats);
     } catch (e) {
       setMsg({ severity: "error", text: `Could not load presenters: ${String((e as Error).message ?? e)}` });
     }
@@ -90,7 +97,7 @@ export default function PresentersPage() {
     setTesting((s) => new Set(s).add(key));
     setMsg(null);
     try {
-      let take = await speakTake({ text, ...input });
+      let take = await speakTake({ text, fresh, ...input });
       upsertTake(take);
       while (mounted.current && (take.status === "queued" || take.status === "speaking")) {
         await new Promise((r) => setTimeout(r, POLL_MS));
@@ -211,6 +218,15 @@ export default function PresentersPage() {
           helperText={`${text.length} characters. Units, magnitudes and symbols are rewritten for the ear before sending.`}
           sx={{ mt: 0.5 }}
         />
+        <FormControlLabel
+          control={<Checkbox size="small" checked={fresh} onChange={(_, v) => setFresh(v)} />}
+          label={
+            <Typography variant="body2">
+              Make a fresh take — otherwise an identical earlier take (same words, model, voice and settings) is reused
+              at no charge
+            </Typography>
+          }
+        />
         {!!data?.samples.length && (
           <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
             {data.samples.map((s) => (
@@ -304,9 +320,17 @@ export default function PresentersPage() {
       </Stack>
 
       <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between" }}>
-        <Typography variant="overline" color="text.secondary">
-          Takes
-        </Typography>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: "baseline" }}>
+          <Typography variant="overline" color="text.secondary">
+            Takes
+          </Typography>
+          {stats && (
+            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: font.mono }}>
+              {stats.takes} takes · {stats.cached} reused · ~{fmtUsd(stats.estSpendUsd)} spent · ~{fmtUsd(stats.estSavedUsd)}{" "}
+              saved by reuse
+            </Typography>
+          )}
+        </Stack>
         <Button size="small" onClick={reload}>
           Refresh
         </Button>

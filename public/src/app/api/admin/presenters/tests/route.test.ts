@@ -49,14 +49,15 @@ it("speaks with the presenter's saved voice and returns the finished take", asyn
   const res = await post({ text: " Hello ", presenterId: "house" });
   expect(res.status).toBe(200);
   const created = mockDb.voiceTests.create.mock.calls[0][0];
-  expect(created).toMatchObject({ text: "Hello", presenterId: "house", label: "House voice", createdBy: "op@x" });
+  expect(created).toMatchObject({ text: "Hello", presenterId: "house", label: "House voice", createdBy: "op@x", source: "admin", fresh: false });
   expect(created.voice.voice).toBe("af_heart");
   expect(mockWait).toHaveBeenCalledWith("presenter", "presenter", "test", { testId: "t1" }, expect.any(Number), undefined, { dedupe: false });
   expect((await res.json()).take.status).toBe("ready");
 });
 
-it("uses a draft voice when one is sent", async () => {
-  await post({ text: "Hi", presenterId: "house", voice: { model: "x/y", voice: "v2", speed: 1.2 } });
+it("uses a draft voice when one is sent, and passes fresh through", async () => {
+  await post({ text: "Hi", presenterId: "house", voice: { model: "x/y", voice: "v2", speed: 1.2 }, fresh: true });
+  expect(mockDb.voiceTests.create.mock.calls[0][0].fresh).toBe(true);
   expect(mockDb.voiceTests.create.mock.calls[0][0].voice).toMatchObject({ model: "x/y", voice: "v2", speed: 1.2 });
 });
 

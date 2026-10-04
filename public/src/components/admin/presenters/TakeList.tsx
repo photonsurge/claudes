@@ -33,7 +33,7 @@ const STYLE_SENT: Record<NonNullable<VoiceTest["sent"]>["style"], string | null>
 function sentLine(t: VoiceTest): string {
   const parts = [`${t.audio?.chars ?? t.spoken?.length ?? t.text.length} chars`];
   if (t.audio?.durationMs) parts.push(`${(t.audio.durationMs / 1000).toFixed(1)} s`);
-  if (t.audio) parts.push(`${(t.audio.latencyMs / 1000).toFixed(1)} s to make`, `~${fmtUsd(t.audio.estCostUsd)}`);
+  if (t.audio && !t.cachedFrom) parts.push(`${(t.audio.latencyMs / 1000).toFixed(1)} s to make`, `~${fmtUsd(t.audio.estCostUsd)}`);
   const style = t.sent ? STYLE_SENT[t.sent.style] : null;
   if (style) parts.push(style);
   if (t.sent?.options) parts.push("options sent");
@@ -65,6 +65,8 @@ export default function TakeList({ takes, onDelete, onUseVoice }: TakeListProps)
               {t.label}
             </Typography>
             <Chip size="small" label={t.status} color={STATUS_COLOR[t.status]} />
+            {t.cachedFrom && <Chip size="small" variant="outlined" color="success" label="reused · free" />}
+            {t.source === "cli" && <Chip size="small" variant="outlined" label="CLI" />}
             <Typography variant="caption" color="text.secondary" sx={{ fontFamily: font.mono }}>
               {voiceSummary(t.voice)}
               {t.voice.style ? ` · “${t.voice.style}”` : ""}

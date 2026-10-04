@@ -1,11 +1,12 @@
 import { DEFAULT_VOICE, type VoiceTest } from "@photonsurge/shared/presenter";
-import { refreshSpeechCatalog, runVoiceTest } from "./bench";
+import { refreshSpeechCatalog, runVoiceTest, speechCacheKey } from "./bench";
+import { prepareSpeech } from "./voice-traits";
 
 /** One MPEG-1 Layer III frame header repeated: 10 frames at 128k/44.1k. */
 const MP3 = Buffer.alloc(417 * 10);
 for (let i = 0; i < 10; i++) MP3.set([0xff, 0xfb, 0x90, 0x64], i * 417);
 
-function fakeDb(enabled: boolean, take: Partial<VoiceTest> = {}) {
+function fakeDb(enabled: boolean, take: Partial<VoiceTest> = {}, earlier: VoiceTest[] = []) {
   const store: Record<string, VoiceTest> = {
     t1: {
       id: "t1",
@@ -20,6 +21,10 @@ function fakeDb(enabled: boolean, take: Partial<VoiceTest> = {}) {
     },
   };
   const audio: Record<string, Buffer> = {};
+  for (const e of earlier) {
+    store[e.id] = e;
+    audio[e.id] = MP3;
+  }
   const db = {
     presenterSettings: { get: async () => ({ enabled }) },
     speechCatalog: {
@@ -31,6 +36,9 @@ function fakeDb(enabled: boolean, take: Partial<VoiceTest> = {}) {
       update: async (id: string, patch: Partial<VoiceTest>) => {
         store[id] = { ...store[id], ...patch };
       },
+      findCached: async (key: string, except: string) =>
+        Object.values(store).find((t) => t.cacheKey === key && t.id !== except && t.status === "ready" && !t.cachedFrom) ?? null,
+      getAudio: async (id: string) => (audio[id] ? { data: audio[id], contentType: "audio/mpeg" } : null),
       putAudio: async (id: string, bytes: Buffer, patch: Partial<VoiceTest>) => {
         audio[id] = bytes;
         store[id] = { ...store[id], ...patch };
@@ -84,6 +92,57 @@ describe("runVoiceTest", () => {
     const speak = jest.fn();
     await runVoiceTest(db, "t1", { speak, hasKey: () => true });
     expect(speak).not.toHaveBeenCalled();
+  });
+});
+
+describe("runVoiceTest cache", () => {
+  const voice = { ...DEFAULT_VOICE, voice: "af_heart" };
+  const key = speechCacheKey(voice.model, prepareSpeech(voice, "Gusts to 120 kilometres per hour."));
+  const earlier: VoiceTest = {
+    id: "old",
+    presenterId: "house",
+    label: "House voice",
+    text: "Gusts to 120 km/h.",
+    voice,
+    status: "ready",
+    cacheKey: key,
+    createdBy: "op",
+    createdAt: "2026-10-04T00:00:00Z",
+    audio: { contentType: "audio/mpeg", bytes: MP3.length, chars: 33, latencyMs: 900, durationMs: 261, estCostUsd: 0.00002 },
+  };
+
+  it("reuses an identical take's audio for free, even with the switch off", async () => {
+    const { db, store, audio } = fakeDb(false, {}, [earlier]);
+    const speak = jest.fn();
+    const res = await runVoiceTest(db, "t1", { speak, hasKey: () => false });
+    expect(speak).not.toHaveBeenCalled();
+    expect(res?.status).toBe("ready");
+    expect(store.t1.cachedFrom).toBe("old");
+    expect(store.t1.audio).toMatchObject({ estCostUsd: 0, latencyMs: 0, durationMs: 261 });
+    expect(audio.t1).toBe(MP3);
+  });
+
+  it("makes new audio when a fresh take is asked for", async () => {
+    const { db, store } = fakeDb(true, { fresh: true }, [earlier]);
+    const speak = jest.fn(async () => ({ ok: true as const, audio: MP3, contentType: "audio/mpeg", latencyMs: 5, body: {} }));
+    await runVoiceTest(db, "t1", { speak, hasKey: () => true });
+    expect(speak).toHaveBeenCalledTimes(1);
+    expect(store.t1.cachedFrom).toBeUndefined();
+    expect(store.t1.cacheKey).toBe(key);
+  });
+
+  it("does not reuse across a different voice", async () => {
+    const { db } = fakeDb(true, { voice: { ...voice, voice: "am_adam" } }, [earlier]);
+    const speak = jest.fn(async () => ({ ok: true as const, audio: MP3, contentType: "audio/mpeg", latencyMs: 5, body: {} }));
+    await runVoiceTest(db, "t1", { speak, hasKey: () => true });
+    expect(speak).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the CLI bypass the master switch", async () => {
+    const { db, store } = fakeDb(false, { fresh: true });
+    const speak = jest.fn(async () => ({ ok: true as const, audio: MP3, contentType: "audio/mpeg", latencyMs: 5, body: {} }));
+    await runVoiceTest(db, "t1", { speak, hasKey: () => true, ignoreSwitch: true });
+    expect(store.t1.status).toBe("ready");
   });
 });
 

@@ -21,23 +21,24 @@ async function GET__impl(req: Request) {
     const take = await db.voiceTests.get(id);
     return NextResponse.json({ take }, { status: take ? 200 : 404, headers: NO_CACHE });
   }
-  const takes = await db.voiceTests.list({
-    presenterId: q.get("presenterId") || undefined,
-    limit: Number(q.get("limit") || 30),
-  });
-  return NextResponse.json({ takes }, { status: 200, headers: NO_CACHE });
+  const [takes, stats] = await Promise.all([
+    db.voiceTests.list({ presenterId: q.get("presenterId") || undefined, limit: Number(q.get("limit") || 30) }),
+    db.voiceTests.stats(),
+  ]);
+  return NextResponse.json({ takes, stats }, { status: 200, headers: NO_CACHE });
 }
 
 /**
  * POST /api/admin/presenters/tests — speak one take.
- * Body `{ text, presenterId?, voice?, label? }`. With a `voice` the take uses
- * it as given (unsaved bench settings); without, the presenter's saved voice.
+ * Body `{ text, presenterId?, voice?, label?, fresh? }`. With a `voice` the take
+ * uses it as given (unsaved bench settings); without, the presenter's saved
+ * voice. An identical earlier take is reused at no charge unless `fresh`.
  * Waits for the worker; 200 with the finished take, or 202 with a take still
  * speaking when the wait runs out.
  */
 async function POST__impl(req: Request) {
   const body = (await req.json().catch(() => null)) as
-    | { text?: unknown; presenterId?: unknown; voice?: unknown; label?: unknown }
+    | { text?: unknown; presenterId?: unknown; voice?: unknown; label?: unknown; fresh?: unknown }
     | null;
   const text = typeof body?.text === "string" ? body.text.trim().slice(0, TEST_TEXT_MAX) : "";
   if (!text) return NextResponse.json({ ok: false, error: "text required" }, { status: 400, headers: NO_CACHE });
@@ -59,6 +60,8 @@ async function POST__impl(req: Request) {
     text,
     voice,
     createdBy: session?.email ?? "",
+    source: "admin",
+    fresh: body?.fresh === true,
   });
 
   try {
