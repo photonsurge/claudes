@@ -17,16 +17,13 @@
  * PURE (`now` is passed in) so it's unit-testable.
  */
 import type { RoundupSetting } from "@photonsurge/shared/roundup-settings";
-import { isRoundupDue } from "@photonsurge/shared/roundup-schedule";
-import { bboxCenter } from "./aggregate";
+import { isRoundupDue, placeOffsetHours } from "@photonsurge/shared/roundup-schedule";
 
 type Bbox = [number, number, number, number];
 
-/** PURE: representative whole-hour UTC offset for a bbox, from its centre longitude. */
-export function placeOffsetHours(bbox: Bbox): number {
-  const { lng } = bboxCenter(bbox);
-  return Math.max(-12, Math.min(14, Math.round(lng / 15))) || 0; // `|| 0` normalises -0 → 0
-}
+/** PURE: representative whole-hour UTC offset for a bbox, from its centre longitude.
+ *  Lives in shared so the admin pages (the schedule form's round-up hint) phase slots the same way. */
+export { placeOffsetHours };
 
 /**
  * PURE: should this place generate a round-up right now? True when the round-up

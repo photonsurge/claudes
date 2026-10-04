@@ -52,6 +52,9 @@ interface Props {
   youtubeStats?: Record<string, YoutubeVideoStats>;
   statsError?: string | null;
   onAction: (a: RenderAction) => Promise<{ ok: boolean; error?: string }>;
+  /** Show only this batch's renders (a schedule row's "Show its renders", §8). */
+  batchId?: string | null;
+  onClearBatch?: () => void;
   /** Injectable for tests. */
   now?: () => number;
 }
@@ -83,9 +86,12 @@ export default function RendersSection({
   youtubeStats = {},
   statsError,
   onAction,
+  batchId,
+  onClearBatch,
   now = Date.now,
 }: Props) {
-  const renders = data?.renders ?? [];
+  const all = data?.renders ?? [];
+  const renders = batchId ? all.filter((r) => r.batchId === batchId) : all;
   const anyLive = renders.some((r) => renderIsActive(r.status));
   const t = useNow(anyLive, now);
   const [busy, setBusy] = useState<string | null>(null);
@@ -104,7 +110,7 @@ export default function RendersSection({
   const positions = queuePositions(open, t);
 
   // Queue headers: the API's (every video encoder first), plus any group a row needs.
-  const queues: RenderQueueRow[] = [...(data?.queues ?? [])];
+  const queues: RenderQueueRow[] = batchId ? [] : [...(data?.queues ?? [])];
   for (const r of open) {
     const k = groupKey(r);
     if (!queues.some((q) => q.encoderId === k)) queues.push({ encoderId: k, paused: false });
@@ -112,17 +118,22 @@ export default function RendersSection({
   const order = (r: RenderRow) => (renderIsActive(r.status) ? 0 : (positions.get(r.id) ?? Number.MAX_SAFE_INTEGER));
 
   return (
-    <Paper sx={{ p: 1.75 }}>
+    <Paper sx={{ p: 1.75 }} id="renders">
       <Typography variant="overline" color="text.secondary" sx={{ display: "block" }}>
         Renders
       </Typography>
+      {batchId && (
+        <Alert severity="info" sx={{ mt: 0.5 }} onClose={onClearBatch} data-testid="batch-filter">
+          Showing one scheduled batch: {renders.length} video{renders.length === 1 ? "" : "s"}.
+        </Alert>
+      )}
       {error && <Alert severity="error">Couldn&apos;t load renders: {error}</Alert>}
       {actionError && (
         <Alert severity="error" onClose={() => setActionError(null)} sx={{ mt: 1 }}>
           {actionError}
         </Alert>
       )}
-      {data && !queues.length && !recent.length && (
+      {data && !batchId && !queues.length && !recent.length && (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
           Nothing rendered yet. Assign an OBS encoder to videos on /admin/streams, then Render a script.
         </Typography>
