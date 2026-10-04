@@ -83,3 +83,65 @@ it("Render… hands the format and scope to the Render form instead of generatin
   expect(onRender).toHaveBeenCalledWith({ formatId: "shorts", scope: { type: "globe" }, include: ROUNDUP_ONLY });
   expect(generate).not.toHaveBeenCalled();
 });
+
+describe("several places", () => {
+  it("fills the main areas, sends them in order with the format's world setting, and names the places left out", async () => {
+    const generate = jest.fn().mockResolvedValue({
+      ok: true,
+      data: {
+        id: "s9",
+        title: "Europe, United States, Asia and 2 more round-up",
+        clips: 6,
+        durationMs: 300_000,
+        skipped: [{ place: "area:africa", name: "Africa", reason: "no usable round-up" }],
+      },
+    });
+    const formats = [
+      { id: "shorts", name: "Round-up" },
+      { id: "short-main", name: "Main areas", openWithWorld: true },
+    ];
+    render(<GenerateForm onGenerated={jest.fn()} generate={generate} formats={formats} />);
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Format" }));
+    fireEvent.click(within(screen.getByRole("listbox")).getByRole("option", { name: "Main areas" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Several places" }));
+    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled(); // no places yet
+    fireEvent.click(screen.getByRole("button", { name: "Main areas" }));
+    expect(screen.getByRole("switch", { name: "Open on the world round-up" })).toBeChecked();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    });
+    expect(generate).toHaveBeenCalledWith({
+      formatId: "short-main",
+      include: ROUNDUP_ONLY,
+      openWithWorld: true,
+      scope: {
+        type: "places",
+        places: [
+          { type: "area", id: "europe" },
+          { type: "country", id: "usa" },
+          { type: "area", id: "asia" },
+          { type: "country", id: "australia" },
+          { type: "area", id: "africa" },
+          { type: "area", id: "south_america" },
+        ],
+      },
+    });
+    expect(screen.getByText(/Left out: Africa \(no usable round-up\)/)).toBeInTheDocument();
+  });
+
+  it("the world switch overrides the format for this generate", async () => {
+    const generate = jest.fn().mockResolvedValue({ ok: true, data: { id: "s", title: "t", clips: 2, durationMs: 1 } });
+    render(<GenerateForm onGenerated={jest.fn()} generate={generate} />);
+    fireEvent.click(screen.getByRole("button", { name: "Several places" }));
+    fireEvent.click(screen.getByRole("button", { name: "Main areas" }));
+    const world = screen.getByRole("switch", { name: "Open on the world round-up" });
+    expect(world).not.toBeChecked();
+    fireEvent.click(world);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    });
+    expect(generate.mock.calls[0][0].openWithWorld).toBe(true);
+  });
+});

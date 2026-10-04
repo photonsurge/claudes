@@ -53,7 +53,14 @@ import {
   type ShortRender,
   type ShortRenderRequest,
 } from "@photonsurge/shared/short-render";
-import { sceneIdForScript, scriptDurationMs, type ShortInclude, type ShortScope, type ShortScript } from "@photonsurge/shared/short-script";
+import {
+  sceneIdForScript,
+  scriptDurationMs,
+  type ShortInclude,
+  type ShortPlace,
+  type ShortScope,
+  type ShortScript,
+} from "@photonsurge/shared/short-script";
 import type { DirectorConfig } from "@photonsurge/shared/director";
 import type { SummaryPeriod } from "@photonsurge/shared/db/event-summary-model";
 import { PLACE_TIMEZONE, type ShortFormat } from "@photonsurge/shared/short-format";
@@ -166,6 +173,7 @@ export function resolveVideoText(
   siteUrl: string = watchBaseUrl(),
 ): ResolvedVideoText {
   // "place" = the video's own zone: no per-place zone is stored yet, so London.
+  // A several-places video has no single place and is London either way (§6.8).
   const tz =
     video.timezone && video.timezone !== PLACE_TIMEZONE && isValidTimeZone(video.timezone) ? video.timezone : VIDEO_TEXT_TIMEZONE;
   const vals = { ...values, duration: formatDuration(durationMs) };
@@ -286,7 +294,7 @@ const WORLD_PERIODS: SummaryPeriod[] = ["hourly", "12h", "daily"];
  */
 export async function staleRoundup(
   db: AppDb,
-  scope: ShortScope,
+  scope: ShortPlace | Extract<ShortScope, { type: "globe" }>,
   rule: ShortRender["roundup"],
   now: number,
 ): Promise<string | null> {
@@ -321,7 +329,7 @@ async function recentSchedulePlaces(db: AppDb, render: ShortRender): Promise<Set
   const recent = await db.shortRenders.recentWithScriptForSchedule(render.scheduleId, AUTO_SKIP_RECENT + 1).catch(() => []);
   for (const r of recent.filter((x) => x.id !== render.id).slice(0, AUTO_SKIP_RECENT)) {
     const s = r.scriptId ? await db.shortScripts.get(r.scriptId).catch(() => null) : null;
-    if (s && s.scope.type !== "globe") out.add(s.scope.id);
+    if (s && (s.scope.type === "country" || s.scope.type === "area")) out.add(s.scope.id);
   }
   return out;
 }
@@ -372,17 +380,23 @@ async function generateAtFront(db: AppDb, render: ShortRender, format: ShortForm
   }
 
   // 3. Freshness: skip, or refresh the place's round-up first (one LLM call).
-  const stale = await staleRoundup(db, scope, render.roundup, now);
-  if (stale && render.roundup!.ifStale === "skip") throw new RenderOutcome("skipped", stale);
-  if (stale) {
-    if (scope.type === "globe") {
+  // A several-places video applies the rule per place (§8): any stale place
+  // skips the whole video under "skip", and each stale place is refreshed
+  // under "refresh".
+  const freshnessScopes: (ShortPlace | Extract<ShortScope, { type: "globe" }>)[] =
+    scope.type === "places" ? scope.places : [scope];
+  for (const one of freshnessScopes) {
+    const stale = await staleRoundup(db, one, render.roundup, now);
+    if (stale && render.roundup!.ifStale === "skip") throw new RenderOutcome("skipped", stale);
+    if (!stale) continue;
+    if (one.type === "globe") {
       throw new RenderOutcome(
         "failed",
         `${stale}; the world round-up can't be refreshed for a video (it is written on its own schedule) - choose skip, or allow an older round-up`,
       );
     }
     try {
-      await refreshPlaceRoundup(db, scope);
+      await refreshPlaceRoundup(db, one);
       log(TAG, `render ${render.id}: ${stale} - refreshed`);
     } catch (err) {
       throw new RenderOutcome("failed", `${stale}; refresh failed: ${errMsg(err)}`);

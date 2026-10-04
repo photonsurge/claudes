@@ -10,6 +10,8 @@
 > WP6 (formats, public) is built: the Formats section on `/admin/shorts` and the editor at
 > `/admin/shorts/formats/:id` — its own card list, one Save for look, director and short
 > settings, the YouTube video card with the token picker and preview, Play sample, Copy look from.
+> WP10 (several places) is built: the `places` scope through sanitiser, template, values, render-queue
+> freshness and chapters, with the ordered place list (and "Main areas" quick-fill) on Generate and the format's Template card.
 > Shares two refactors with [director-break-in-plan.md](./done/director-break-in-plan.md) and
 > [director-commands-plan.md](./done/director-commands-plan.md); both are done (§3).
 
@@ -105,7 +107,8 @@ export type ShortPlace =
 export type ShortScope =
   | ShortPlace
   | { type: "globe" }
-  /** Several places in one video, in this order (§4). To add in WP10. */
+  /** Several places in one video, in this order (§4). Built in WP10: the
+   *  sanitiser keeps catalog ids only, deduped, at most MAX_SHORT_PLACES (12). */
   | { type: "places"; places: ShortPlace[] };
 
 export interface ShortInclude { alerts: boolean; quakes: boolean; volcanoes: boolean }
@@ -228,8 +231,15 @@ three include switches give every variant.
 - A place with no round-up is left out and named in the result. With none left, it is
   an error.
 - It closes on a world spin.
-- It is round-up only. The event switches don't apply to it yet.
-- The as-run chapters give the video one YouTube chapter per place, with no extra work.
+- It is round-up only. The event switches don't apply to it yet (they are ignored).
+- The as-run chapters give the video one YouTube chapter per place. A video render's
+  chapter labels drop the shot's caption, so each reads as the place ("🇺🇸 United
+  States"); the closing spin is under YouTube's 10 s floor and drops out.
+- Built (WP10): generate returns the places it left out (`skipped`), and the Generate
+  form names them. Title codes: `%{place}` is the names joined with ", ",
+  `%{placeId}` is the literal `places`, `%{places}` the count, `%{flag}` and
+  `%{headline}` empty, `%{asOf}` the oldest round-up's time in London. The render
+  queue's freshness rule checks every place; the first stale one decides.
 - Each place writes its round-up at its own local hours, so some are hours older than
   others when the video is made. The schedule's freshness rule covers this (§8).
 
@@ -1057,4 +1067,4 @@ thumbnail example `/thumbs/%{place}.png` gives a path with spaces. Add `%{placeI
 round-up's time, or leave it blank there.
 
 **Status header.** It names WP5-6, WP7 and WP9. WP7-pre, WP8 and WP10 are also still to
-do for milestone 1.
+do for milestone 1. (WP10 is now built; see the status header.)

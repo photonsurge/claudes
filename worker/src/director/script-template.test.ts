@@ -253,6 +253,87 @@ describe("round-up only (the default)", () => {
   });
 });
 
+describe("several places in one video", () => {
+  const region = {
+    topCities: [
+      { name: "Paris", cc: "fr", country: "France", lng: 2, lat: 48, population: 9 },
+      { name: "Berlin", cc: "de", country: "Germany", lng: 13, lat: 52, population: 4 },
+    ],
+  };
+  const places = (...p: [string, string][]) => ({
+    type: "places" as const,
+    places: p.map(([type, id]) => ({ type: type as "country" | "area", id })),
+  });
+  const db = () =>
+    fakeDb({
+      countries: [JP],
+      region,
+      countryRoundups: { jp: roundupOf(450) }, // 30 s
+      regionRoundups: { europe: roundupOf(900), africa: roundupOf(600) }, // 60 s, 40 s
+      summaries: { hourly: worldSummary() },
+    });
+
+  it("one opener per place in the given order, each its round-up's read time, closing on a world spin", async () => {
+    const { title, clips, skipped } = await buildLineup(db(), cfg(), {
+      scope: places(["area", "africa"], ["country", "japan"], ["area", "europe"]),
+      now: NOW,
+    });
+    expect(ids(clips)).toEqual(["region:africa", "country:japan", "region:europe", TARGET_WORLD_SPIN]);
+    expect(clips.map((c) => c.durationMs)).toEqual([40_000, 30_000, 60_000, CLOSE_MS]);
+    expect(clips.slice(0, 3).every((c) => c.leadSlide === "roundup" && c.roundupDepth === "full")).toBe(true);
+    expect(clips[1]).toMatchObject({ maxStops: 2, label: { title: "Japan", icon: "🇯🇵" } }); // its tour, paced into 30 s
+    expect(clips[3].label.title).toBe("Global Weather");
+    expect(title).toBe("Africa, Japan and Europe round-up");
+    expect(skipped).toEqual([]);
+  });
+
+  it("leaves out a place with no round-up (or an unknown id) and names it", async () => {
+    const { clips, skipped, title } = await buildLineup(db(), cfg(), {
+      scope: places(["area", "asia"], ["country", "japan"], ["country", "atlantis"], ["area", "europe"]),
+      now: NOW,
+    });
+    expect(ids(clips)).toEqual(["country:japan", "region:europe", TARGET_WORLD_SPIN]);
+    expect(skipped).toEqual([
+      { place: "area:asia", name: "Asia", reason: "no usable round-up" },
+      { place: "country:atlantis", name: "atlantis", reason: expect.stringMatching(/unknown country id "atlantis"/) },
+    ]);
+    expect(title).toBe("Japan and Europe round-up");
+  });
+
+  it("is an error when no place has a round-up", async () => {
+    await expect(
+      buildLineup(db(), cfg(), { scope: places(["area", "asia"], ["area", "oceania"]), now: NOW }),
+    ).rejects.toThrow(/No usable round-up for any of the 2 places \(Asia: no usable round-up; Oceania: no usable round-up\)/);
+  });
+
+  it("opens on the world round-up when the format says so; skips it, named, when none is fresh", async () => {
+    const scope = places(["area", "europe"], ["country", "japan"]);
+    const { clips } = await buildLineup(db(), cfg(), { scope, openWithWorld: true, now: NOW });
+    expect(ids(clips)).toEqual([TARGET_WORLD_ROUNDUP, "region:europe", "country:japan", TARGET_WORLD_SPIN]);
+    expect(clips[0].label.title).toBe("Global Round-Up");
+    const stale = fakeDb({ countries: [JP], countryRoundups: { jp: roundupOf(450) } });
+    const out = await buildLineup(stale, cfg(), { scope: places(["country", "japan"]), openWithWorld: true, now: NOW });
+    expect(ids(out.clips)).toEqual(["country:japan", TARGET_WORLD_SPIN]);
+    expect(out.skipped).toEqual([{ place: "world", name: "World", reason: "no fresh world round-up" }]);
+  });
+
+  it("is round-up only: the include switches are ignored", async () => {
+    const alerts = [alertAt("JP", 135, 35)];
+    const withSwitches = fakeDb({ countries: [JP], countryRoundups: { jp: roundupOf(450) }, alerts });
+    const { clips } = await buildLineup(withSwitches, cfg(), { scope: places(["country", "japan"]), include: EVERYTHING, now: NOW });
+    expect(ids(clips)).toEqual(["country:japan", TARGET_WORLD_SPIN]);
+  });
+
+  it("follows the format: summary depth times the summaries, the close can be off", async () => {
+    const shape = sanitizeShortFormat({ id: "f", opener: { roundupDepth: "summary" }, close: { enabled: false } })!;
+    const sectioned = { placeId: "jp", summary: "s".repeat(300), stateOfPlay: "p".repeat(600), inputs: {} };
+    const d = fakeDb({ countries: [JP], countryRoundups: { jp: sectioned } });
+    const { clips } = await buildLineup(d, cfg(), { scope: places(["country", "japan"]), shape, now: NOW });
+    expect(clips).toHaveLength(1);
+    expect(clips[0]).toMatchObject({ durationMs: 20_000, roundupDepth: "summary" });
+  });
+});
+
 describe("with events", () => {
   const jpAlerts = (n: number) => Array.from({ length: n }, (_, i) => alertAt("JP", 133 + i * 0.5, 34 + i * 0.5));
 

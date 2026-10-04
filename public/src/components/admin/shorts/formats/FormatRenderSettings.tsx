@@ -3,16 +3,21 @@
 /**
  * Render defaults card (§5.2 `render`): the encoder and the YouTube channel a
  * render of this format starts from — the same encoders and connected channels
- * the streams page's run form offers. The render form and schedules can still
- * pick others. Stages the whole `render` field; "auto" / "default channel"
- * clear the default.
+ * the streams page's run form offers. The encoder is the Render form's own
+ * picker (`EncoderSelect` for a video: video encoders first, each with what it
+ * is doing now). The render form and schedules can still pick others. Stages
+ * the whole `render` field; "Any video encoder" / "default channel" clear the
+ * default.
  */
 import { useEffect, useState } from "react";
 import Stack from "@mui/material/Stack";
 import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
-import type { StreamEncoderInfo } from "@photonsurge/shared/runs";
+import Typography from "@mui/material/Typography";
 import type { ShortFormat } from "@photonsurge/shared/short-format";
+import { ANY_ENCODER } from "@photonsurge/shared/short-render";
+import EncoderSelect from "../../streams/EncoderSelect";
+import type { EncoderWithOccupancy } from "../../../../lib/renders";
 import SettingsCard from "../../scenes/SettingsCard";
 import { useSceneDraft } from "../../scenes/SceneDraft";
 import { fetchRenderOptions } from "../../../../lib/short-formats";
@@ -20,7 +25,7 @@ import type { StreamAccount } from "../../../../lib/stream";
 
 export default function FormatRenderSettings({ load = fetchRenderOptions }: { load?: typeof fetchRenderOptions }) {
   const { format, stageFormat } = useSceneDraft();
-  const [options, setOptions] = useState<{ encoders: StreamEncoderInfo[]; accounts: StreamAccount[] } | null>(null);
+  const [options, setOptions] = useState<{ encoders: EncoderWithOccupancy[]; accounts: StreamAccount[] } | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -35,13 +40,14 @@ export default function FormatRenderSettings({ load = fetchRenderOptions }: { lo
   const set = (over: Partial<ShortFormat["render"]>) => {
     const next: ShortFormat["render"] = { ...r, ...over };
     // An empty pick clears the default: drop the key (the save sends the clear).
+    if (next.encoderId === ANY_ENCODER) delete next.encoderId;
     for (const k of ["encoderId", "accountId"] as const) if (!next[k]) delete next[k];
     stageFormat({ render: next });
   };
 
   const encoders = options?.encoders ?? [];
   const accounts = options?.accounts ?? [];
-  // A saved id the lists no longer have still shows, so it can be seen and cleared.
+  // A saved id the lists no longer have is named under the picker, so it can be seen and cleared.
   const encoderKnown = !r.encoderId || encoders.some((e) => e.id === r.encoderId);
   const accountKnown = !r.accountId || accounts.some((a) => a.channelId === r.accountId);
 
@@ -51,23 +57,27 @@ export default function FormatRenderSettings({ load = fetchRenderOptions }: { lo
       blurb="What a render of this format starts from. The render form and schedules can pick another encoder or channel."
     >
       <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap" }}>
-        <TextField
-          select
-          size="small"
-          label="Encoder"
-          value={r.encoderId ?? ""}
-          onChange={(e) => set({ encoderId: e.target.value })}
-          sx={{ minWidth: 220 }}
-          helperText={options ? undefined : "Loading encoders…"}
-        >
-          <MenuItem value="">Any free encoder</MenuItem>
-          {encoders.map((enc) => (
-            <MenuItem key={enc.id} value={enc.id}>
-              {enc.name || enc.id}
-            </MenuItem>
-          ))}
-          {!encoderKnown && <MenuItem value={r.encoderId}>{r.encoderId} (not found)</MenuItem>}
-        </TextField>
+        <Stack spacing={0.25}>
+          <EncoderSelect
+            purpose="video"
+            size="small"
+            label="Encoder"
+            encoders={encoders}
+            value={r.encoderId ?? ANY_ENCODER}
+            onChange={(id) => set({ encoderId: id })}
+            sx={{ minWidth: 220 }}
+          />
+          {!options && (
+            <Typography variant="caption" color="text.secondary">
+              Loading encoders…
+            </Typography>
+          )}
+          {options && !encoderKnown && (
+            <Typography variant="caption" color="warning.main">
+              The saved encoder &quot;{r.encoderId}&quot; no longer exists. Pick another, or Any video encoder.
+            </Typography>
+          )}
+        </Stack>
         <TextField
           select
           size="small"

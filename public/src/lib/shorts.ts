@@ -15,7 +15,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { DirectorMode } from "@photonsurge/shared/director";
 import { COUNTRY_SHOTS } from "@photonsurge/shared/director-countries";
 import { REGION_SHOTS } from "@photonsurge/shared/director-regions";
-import type { ShortInclude, ShortScope, ShortScript, ShortScriptPlay } from "@photonsurge/shared/short-script";
+import {
+  shortPlaceName,
+  type ShortInclude,
+  type ShortPlace,
+  type ShortScope,
+  type ShortScript,
+  type ShortScriptPlay,
+} from "@photonsurge/shared/short-script";
 import type { ShortFormat } from "@photonsurge/shared/short-format";
 import { DEFAULT_SHORT_FORMAT_ID } from "@photonsurge/shared/short-scenes";
 
@@ -52,6 +59,9 @@ export interface ShortPreviewInfo {
 export interface ShortFormatRow {
   id: string;
   name: string;
+  /** The format's `template.openWithWorld` (several places): where the
+   *  Generate form's switch starts. */
+  openWithWorld?: boolean;
   preview: ShortPreviewInfo;
 }
 
@@ -72,6 +82,16 @@ export interface GenerateShortRequest {
   include?: Partial<ShortInclude>;
   budgetMs?: number;
   title?: string;
+  /** Several places: open on the world round-up. Absent = the format's. */
+  openWithWorld?: boolean;
+}
+
+/** A place a several-places video left out (no round-up), and why. */
+export interface SkippedShortPlace {
+  /** "country:usa" · "area:europe" · "world". */
+  place: string;
+  name: string;
+  reason: string;
 }
 
 /** What the generate job returns. */
@@ -80,6 +100,8 @@ export interface GenerateShortResult {
   title: string;
   clips: number;
   durationMs: number;
+  /** Several places: the places left out. Absent when none were. */
+  skipped?: SkippedShortPlace[];
 }
 
 type Outcome<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -140,10 +162,21 @@ export function formatDuration(ms: number): string {
 const countryById = new Map(COUNTRY_SHOTS.map((c) => [c.id, c]));
 const regionById = new Map(REGION_SHOTS.map((r) => [r.id, r]));
 
+/** "🇺🇸 United States" / "Europe" — one place as the pickers show it. */
+export function placeLabel(p: ShortPlace): string {
+  const c = p.type === "country" ? countryById.get(p.id) : undefined;
+  return c ? `${c.flag} ${c.name}` : shortPlaceName(p);
+}
+
 /** "Globe" / "Area · Northern Europe" / "Country · 🇯🇵 Japan" (raw id when the
- *  catalog no longer knows it). */
+ *  catalog no longer knows it) / "6 places · Europe, United States, …". */
 export function scopeLabel(scope: ShortScope): string {
   if (scope.type === "globe") return "Globe";
+  if (scope.type === "places") {
+    const names = scope.places.map(shortPlaceName);
+    const shown = names.length > 3 ? `${names.slice(0, 3).join(", ")}, …` : names.join(", ");
+    return `${names.length} place${names.length === 1 ? "" : "s"} · ${shown}`;
+  }
   if (scope.type === "area") return `Area · ${regionById.get(scope.id)?.name ?? scope.id}`;
   const c = countryById.get(scope.id);
   return `Country · ${c ? `${c.flag} ${c.name}` : scope.id}`;

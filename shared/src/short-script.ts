@@ -10,12 +10,42 @@
 import { v4 as uuidv4 } from "uuid";
 import { sanitizeKindLook, type KindLook } from "./director";
 import { DEFAULT_SHORT_FORMAT_ID } from "./short-scenes";
+import { countryShot } from "./director-countries";
+import { regionShot } from "./director-regions";
 
-/** Where a video looks. */
-export type ShortScope =
+/** One place a video can be about. */
+export type ShortPlace =
   | { type: "country"; id: string } // a COUNTRY_SHOTS id
-  | { type: "area"; id: string } // a REGION_SHOTS id
-  | { type: "globe" };
+  | { type: "area"; id: string }; // a REGION_SHOTS id
+
+/** Where a video looks. `places`: several places in one video, in this order
+ *  (§4 "Several places in one video") — round-up only, one opener per place. */
+export type ShortScope = ShortPlace | { type: "globe" } | { type: "places"; places: ShortPlace[] };
+
+/** The most places one video takes. Six is the main areas video; past a dozen
+ *  round-ups the video is longer than anyone watches. */
+export const MAX_SHORT_PLACES = 12;
+
+/** The main areas round-up's places, in its order (plan §1): the "Main areas"
+ *  quick-fill. A UI shortcut only — nothing is seeded with it. */
+export const MAIN_AREAS_PLACES: readonly ShortPlace[] = [
+  { type: "area", id: "europe" },
+  { type: "country", id: "usa" },
+  { type: "area", id: "asia" },
+  { type: "country", id: "australia" },
+  { type: "area", id: "africa" },
+  { type: "area", id: "south_america" },
+];
+
+/** A place's display name from the catalogs ("United States", "Europe"); the
+ *  raw id when the catalog no longer knows it. */
+export function shortPlaceName(p: ShortPlace): string {
+  return (p.type === "country" ? countryShot(p.id)?.name : regionShot(p.id)?.name) ?? p.id;
+}
+
+/** True when the place's id is in its catalog (COUNTRY_SHOTS / REGION_SHOTS). */
+export const isKnownShortPlace = (p: ShortPlace): boolean =>
+  p.type === "country" ? !!countryShot(p.id) : !!regionShot(p.id);
 
 /** How much of a place round-up a clip shows and is timed for (§4): its
  *  summary alone, or all of it (summary, state of play, city outlooks, advice). */
@@ -175,15 +205,49 @@ export function clipAt(
 const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 const optStr = (v: unknown): string | undefined => str(v) || undefined;
 
+/** One place from an untrusted value (shape only), or null. */
+function sanitizePlace(v: unknown): ShortPlace | null {
+  if (!v || typeof v !== "object") return null;
+  const s = v as Record<string, unknown>;
+  const id = str(s.id);
+  return (s.type === "country" || s.type === "area") && id ? { type: s.type, id } : null;
+}
+
+/**
+ * The places of a several-places scope from an untrusted list: each a known
+ * catalog id (COUNTRY_SHOTS / REGION_SHOTS — unknown ones are dropped),
+ * deduped (first wins, so the order holds), at most MAX_SHORT_PLACES. A
+ * country and an area may share an id (`uk`); they are different places.
+ */
+export function sanitizePlaces(v: unknown): ShortPlace[] {
+  if (!Array.isArray(v)) return [];
+  const seen = new Set<string>();
+  const out: ShortPlace[] = [];
+  for (const raw of v) {
+    const p = sanitizePlace(raw);
+    if (!p || !isKnownShortPlace(p)) continue;
+    const key = `${p.type}:${p.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+    if (out.length >= MAX_SHORT_PLACES) break;
+  }
+  return out;
+}
+
 /** A scope from an untrusted body, or null when it isn't one. Catalog
- *  membership of a country/area id is NOT checked here (resolveScope does). */
+ *  membership of a single country/area id is NOT checked here (resolveScope
+ *  does); a `places` list is checked place by place (`sanitizePlaces`) and is
+ *  null when no place survives. */
 export function sanitizeScope(v: unknown): ShortScope | null {
   if (!v || typeof v !== "object") return null;
   const s = v as Record<string, unknown>;
   if (s.type === "globe") return { type: "globe" };
-  const id = str(s.id);
-  if ((s.type === "country" || s.type === "area") && id) return { type: s.type, id };
-  return null;
+  if (s.type === "places") {
+    const places = sanitizePlaces(s.places);
+    return places.length ? { type: "places", places } : null;
+  }
+  return sanitizePlace(s);
 }
 
 /** Each switch defaults OFF when absent or not a boolean — the first release

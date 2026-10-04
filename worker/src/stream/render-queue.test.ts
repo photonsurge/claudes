@@ -249,6 +249,18 @@ describe("resolveVideoText", () => {
     expect(out.thumbnailUrl).toBe("/thumbs/europe.png");
   });
 
+  it("a several-places video with the place's own zone dates in London", () => {
+    const out = resolveVideoText(
+      { ...video, title: "%{place} (%{places}) %H:%M, as of %{asOf}", timezone: "place" },
+      { place: "Europe, United States", placeId: "places", places: "2", asOf: "05:10" },
+      60_000,
+      new Date(NOW),
+      "",
+    );
+    expect(out.title).toBe("Europe, United States (2) 07:00, as of 05:10");
+    expect(out.thumbnailUrl).toBe("/thumbs/places.png");
+  });
+
   it("cuts a long title at a word with an ellipsis; a frame thumbnail resolves to its offset, no image", () => {
     const out = resolveVideoText({ ...video, title: "word ".repeat(40), description: "", thumbnail: { source: "frame", atMs: 1000 } }, {}, 1000, new Date(NOW), "");
     expect(Array.from(out.title).length).toBeLessThanOrEqual(100);
@@ -535,6 +547,23 @@ describe("scheduling at the front (§8, WP9a)", () => {
     expect(made.map((r) => statusOf(r.id))).toEqual(["preparing", "queued", "queued"]);
     await endRun(goLiveRunIds()[0], "finished");
     expect(made.map((r) => statusOf(r.id))).toEqual(["done", "preparing", "queued"]);
+  });
+
+  it("a several-places video checks every place's round-up: one stale place skips it", async () => {
+    videoEncoder("obs-v1");
+    const fresh = { generatedAt: new Date(NOW - 2 * 3_600_000) };
+    db.regionRoundups.latestForPlace.mockResolvedValue(fresh);
+    (db.countryRoundups.latestForPlace as jest.Mock).mockImplementation(async (id: string) =>
+      id === "au" ? { generatedAt: new Date(NOW - 16 * 3_600_000) } : fresh,
+    );
+    const scope = { type: "places", places: [{ type: "area", id: "europe" }, { type: "country", id: "usa" }, { type: "country", id: "australia" }] };
+    const what = { type: "generate", formatId: "shorts", scope };
+    const skip = await queueRender({ ...req("x"), what, roundup: { maxAgeHours: 14, ifStale: "skip" } } as any, NOW);
+    expect(renders.get(skip.id)).toMatchObject({ status: "skipped", note: "round-up for australia is 16 h old (limit 14 h)" });
+    expect(db.countryRoundups.latestForPlace).toHaveBeenCalledWith("us");
+    expect(generateShortScript).not.toHaveBeenCalled();
+    db.regionRoundups.latestForPlace.mockResolvedValue(null);
+    (db.countryRoundups.latestForPlace as jest.Mock).mockReset().mockResolvedValue(null);
   });
 });
 
