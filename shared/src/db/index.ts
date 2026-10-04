@@ -66,6 +66,8 @@ import { getEventSummaryModel } from "./event-summary-model";
 import { makeEventSummaryRepo } from "./event-summary-repo";
 import { getCountryRoundupModel, getRegionRoundupModel } from "./place-roundup-model";
 import { makePlaceRoundupRepo } from "./place-roundup-repo";
+import { getRoundupSettingsModel } from "./roundup-settings-model";
+import { makeRoundupSettingsRepo } from "./roundup-settings-repo";
 import { getCableModel } from "./cable-model";
 import { getCableLandingModel } from "./cable-landing-model";
 import { makeCableRepo } from "./cable-repo";
@@ -113,6 +115,8 @@ import { getCamModel } from "./cam-model";
 import { makeCamRepo } from "./cam-repo";
 import { getSeaPointModel } from "./sea-point-model";
 import { makeSeaPointRepo } from "./sea-point-repo";
+import { getShortScriptModel } from "./short-script-model";
+import { makeShortScriptRepo } from "./short-script-repo";
 import { getAdModel } from "./ad-model";
 import { makeAdRepo } from "./ad-repo";
 import { getAdExposureModel } from "./ad-exposure-model";
@@ -269,6 +273,7 @@ export function createDb(conn: Connection) {
     eventSummaries: makeEventSummaryRepo(getEventSummaryModel(conn)),
     countryRoundups: makePlaceRoundupRepo(getCountryRoundupModel(conn)),
     regionRoundups: makePlaceRoundupRepo(getRegionRoundupModel(conn)),
+    roundupSettings: makeRoundupSettingsRepo(getRoundupSettingsModel(conn)),
     cables: makeCableRepo(getCableModel(conn), getCableLandingModel(conn)),
     faults: makeFaultRepo(getFaultModel(conn)),
     alertAreaGeom: makeAlertAreaGeomRepo(
@@ -294,6 +299,7 @@ export function createDb(conn: Connection) {
     geomag: makeGeomagRepo(getGeomagModel(conn), blobs.geomag),
     cams: makeCamRepo(getCamModel(conn)),
     seaPoints: makeSeaPointRepo(getSeaPointModel(conn)),
+    shortScripts: makeShortScriptRepo(getShortScriptModel(conn)),
     ads: makeAdRepo(getAdModel(conn), blobs.ad),
     adExposures: makeAdExposureRepo(getAdExposureModel(conn)),
     adminImages: makeAdminImageRepo(getAdminImageModel(conn), blobs.adminImage),
@@ -410,9 +416,18 @@ export function createDb(conn: Connection) {
       return rows.map((r) => r.id);
     },
 
+    /** Scene ids that currently have the director playing a script ("script" mode). */
+    async scriptDirectorScenes(): Promise<string[]> {
+      const res = await directorConfig.getAll({ mode: "script" }, { limit: 0 });
+      const rows = (res.success && res.data ? res.data : []) as { id: string }[];
+      return rows.map((r) => r.id);
+    },
+
     /**
-     * All broadcast scenes (the "default" main scene + named ones), as `{ id,
-     * name, updatedAt }` metadata sorted with main first then by name.
+     * All broadcast scenes (the "default" main scene + named ones), as SceneMeta
+     * `{ id, name, updatedAt, watchToken, hidden }` sorted with main first then
+     * by name. Hidden scenes ARE listed (admin pickers need them); viewer-facing
+     * lists filter on `hidden`.
      */
     async listScenes() {
       const res = await broadcastState.getAll({}, { sort: { name: 1 } });
@@ -423,6 +438,7 @@ export function createDb(conn: Connection) {
           name: (d.name as string) || (d.id === MAIN_SCENE_ID ? "Main" : d.id),
           updatedAt: d.updated ?? d.updatedAt,
           watchToken: d.watchToken as string | undefined,
+          hidden: d.hidden === true,
         }))
         .sort((a: { id: string; name: string }, b: { id: string; name: string }) =>
           a.id === MAIN_SCENE_ID ? -1 : b.id === MAIN_SCENE_ID ? 1 : a.name.localeCompare(b.name),
@@ -448,15 +464,33 @@ export function createDb(conn: Connection) {
      * Create a named scene seeded from `seed` (defaults to the main scene's
      * current state, falling back to DEFAULT_CONTROL_STATE). No-op overwrite if
      * the id already exists is prevented by the caller checking getScene first.
+     * `opts.hidden` sets the scene metadata flag; left out, an existing scene
+     * keeps its flag and a new one is visible.
      */
-    async createScene(id: string, name: string, seed?: Partial<typeof DEFAULT_CONTROL_STATE>) {
+    async createScene(
+      id: string,
+      name: string,
+      seed?: Partial<typeof DEFAULT_CONTROL_STATE>,
+      opts: { hidden?: boolean } = {},
+    ) {
       const base = seed ?? DEFAULT_CONTROL_STATE;
       const created = await broadcastState.upsertByID(id, {
         ...DEFAULT_CONTROL_STATE,
         ...base,
         name,
+        ...(typeof opts.hidden === "boolean" ? { hidden: opts.hidden } : {}),
       } as any);
       return created.data ?? null;
+    },
+
+    /**
+     * Set a scene's `hidden` metadata flag (off viewer-facing lists) without
+     * touching its look. Returns false for an unknown scene.
+     */
+    async setSceneHidden(id: string, hidden: boolean): Promise<boolean> {
+      if (!(await this.getScene(id))) return false;
+      const res = await broadcastState.updateByID(id, { hidden } as any);
+      return !!res.success;
     },
 
     /** Delete a named scene. The "default" main scene is protected (returns false). */

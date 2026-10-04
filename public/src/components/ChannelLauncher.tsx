@@ -33,8 +33,9 @@ export default function ChannelLauncher() {
   const liveRuns = usePublicLiveRuns();
 
   useEffect(() => {
+    // Hidden scenes are production surfaces (the short-video scenes), not channels.
     listScenes()
-      .then(setScenes)
+      .then((list) => setScenes(list.filter((s) => !s.hidden)))
       .catch(() => setScenes([]));
   }, []);
 

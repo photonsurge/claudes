@@ -3,8 +3,9 @@
  * thin `fetch` over OpenRouter's OpenAI-compatible endpoint, env-gated and fully
  * degrading (no key → stored without prose). The one real difference: the
  * PREVIOUS round-up for the same place is fed back in, so the model writes
- * continuity ("since our last update 12h ago the storm has cleared…") instead of
- * a cold snapshot.
+ * continuity ("since our last update the storm has cleared…") instead of a cold
+ * snapshot. The prompt states the REAL gap to that previous round-up — the
+ * operator sets the local slots, so it isn't always twelve hours.
  */
 import type {
   PlaceRoundupKind,
@@ -46,6 +47,22 @@ const EMPTY_SECTIONS: PlaceNarrativeSections = {
 };
 
 /**
+ * PURE: how long ago the previous round-up was, in prompt wording — "about 8
+ * hours ago", "less than an hour ago", "about 2 days ago". "earlier" when the
+ * timestamp is missing, unparseable or in the future, so the prompt never
+ * states a gap it doesn't know.
+ */
+export function sincePreviousPhrase(prevGeneratedAt: Date | string | null | undefined, now: Date): string {
+  const t = prevGeneratedAt == null ? NaN : new Date(prevGeneratedAt).getTime();
+  const hours = (now.getTime() - t) / 3_600_000;
+  if (!Number.isFinite(hours) || hours < 0) return "earlier";
+  if (hours < 1) return "less than an hour ago";
+  const h = Math.round(hours);
+  if (h < 48) return `about ${h} hour${h === 1 ? "" : "s"} ago`;
+  return `about ${Math.round(hours / 24)} days ago`;
+}
+
+/**
  * Assemble the user prompt from the deterministic place facts + the previous
  * round-up (for continuity). The model returns a SINGLE JSON object with the
  * four sections (summary / state of play / per-city next-24h / advice). No
@@ -56,11 +73,13 @@ export function buildPlacePrompt(
   place: { kind: PlaceRoundupKind; name: string },
   inputs: iPlaceRoundupInputs,
   prev?: Pick<iPlaceRoundup, "narrative" | "generatedAt" | "inputs"> | null,
+  now: Date = new Date(),
 ): string {
+  const prevAt = prev?.generatedAt != null ? new Date(prev.generatedAt) : null;
   const previous =
     prev && prev.narrative
       ? {
-          generatedAt: new Date(prev.generatedAt).toISOString(),
+          generatedAt: prevAt && Number.isFinite(prevAt.getTime()) ? prevAt.toISOString() : undefined,
           alertsThen: prev.inputs?.alerts?.length ?? 0,
           volcanoesThen: prev.inputs?.volcanoes?.length ?? 0,
           narrative: prev.narrative,
@@ -95,7 +114,7 @@ export function buildPlacePrompt(
         }. Frame the state of play and the advice ACROSS those countries — note where conditions or hazards differ between them — rather than as one nation.`
       : "This is a single country.",
     previous
-      ? "The PREVIOUS round-up (12 hours ago) is included as `previousRoundUp`. In the summary and state of play, note what has CHANGED since then — storms clearing or building, alerts added or lifted, temperatures trending — rather than repeating it. Do not contradict it."
+      ? `The PREVIOUS round-up (${sincePreviousPhrase(prev?.generatedAt, now)}) is included as \`previousRoundUp\`. In the summary and state of play, note what has CHANGED since then — storms clearing or building, alerts added or lifted, temperatures trending — rather than repeating it. Do not contradict it.`
       : "There is no previous round-up — write it as the first update for this place.",
     "",
     "```json",

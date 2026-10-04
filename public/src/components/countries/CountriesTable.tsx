@@ -31,7 +31,7 @@ export default function CountriesTable({
   totalCount: number;
   selectedId: string | null;
   onSelect: (country: CountryWithWeather) => void;
-  /** Flip a country's 12h AI round-up opt-in. */
+  /** Flip a country's AI round-up opt-in. */
   onToggleRoundup: (country: CountryWithWeather, enabled: boolean) => void;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("name");
@@ -59,7 +59,7 @@ export default function CountriesTable({
             <th style={th}>{header("subregion", "Subregion")}</th>
             <th style={th}>{header("updated", "Enrichment")}</th>
             <th style={thNum}>{header("weather", "Weather")}</th>
-            <th style={{ ...thNum, whiteSpace: "nowrap" }} title="12h AI round-up opt-in">Round-up</th>
+            <th style={{ ...thNum, whiteSpace: "nowrap" }} title="AI round-up opt-in">Round-up</th>
           </tr>
         </thead>
         <tbody>

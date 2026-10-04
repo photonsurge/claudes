@@ -21,7 +21,7 @@ import type { Segment } from "@photonsurge/shared/director";
 import { useSocket } from "../../lib/socket-provider";
 import { fetchManifest } from "../../lib/manifest";
 import { listScenes, fetchSceneState, useSceneEmitter } from "../../lib/scenes";
-import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox } from "../../lib/director";
+import { useDirector, useDirectorConfig, useDirectorCut, eventPulse, activeCountryIso, activeRegionBbox, directorRunning } from "../../lib/director";
 import { listCities, type City } from "../../lib/cities";
 import { useRegionCities } from "../../lib/useRegionCities";
 import { useTracks } from "../../lib/tracks/useTracks";
@@ -76,20 +76,21 @@ export default function ControlPage() {
     edit: editDirector,
     save: saveDirector,
     discard: discardDirector,
-  } = useDirectorConfig(sceneId);
+  } = useDirectorConfig(sceneId, { followScript: true });
   // Director panel tab + settings-visibility are lifted here so the separate
   // live-map ControlPanel can be hidden while the operator works the Director
   // tab (its own settings form), and shown again on the Map/View tab or when
   // the director is just running its log.
   const [directorTab, setDirectorTab] = useState<DirectorTabId>("director");
   const [directorShowSettings, setDirectorShowSettings] = useState(false);
-  const directorAuto = directorDraft.mode === "auto";
-  // Auto just switched — reset the log-vs-settings toggle so the form doesn't
+  // Auto or a playing script — either way the director is driving the scene.
+  const directorDriving = directorRunning(directorDraft.mode);
+  // Driving just switched — reset the log-vs-settings toggle so the form doesn't
   // reappear already open from a prior session.
   useEffect(() => {
     setDirectorShowSettings(false);
-  }, [directorAuto]);
-  const directorFormOpen = !directorAuto || directorShowSettings;
+  }, [directorDriving]);
+  const directorFormOpen = !directorDriving || directorShowSettings;
   const showControlPanel = !(directorFormOpen && directorTab === "director");
   const [cut, setCut] = useState<Segment | null>(null);
   // Click-to-select: the operator can click an event/quake while the director is

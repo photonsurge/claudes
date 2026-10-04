@@ -1,4 +1,4 @@
-import { buildPlacePrompt, generatePlaceNarrative, parsePlaceNarrative } from "./openrouter";
+import { buildPlacePrompt, generatePlaceNarrative, parsePlaceNarrative, sincePreviousPhrase } from "./openrouter";
 import type { iPlaceRoundupInputs } from "@photonsurge/shared/db/place-roundup-model";
 
 const INPUTS: iPlaceRoundupInputs = {
@@ -36,6 +36,21 @@ describe("buildPlacePrompt", () => {
     expect(prompt).toContain("Yesterday London basked under clear skies.");
     expect(prompt).toContain("CHANGED since");
     expect(prompt).toContain('"alertsThen": 0');
+  });
+
+  it("states the real gap to the previous round-up", () => {
+    const prev = { narrative: "Earlier text.", generatedAt: new Date("2026-07-01T06:00:00.000Z"), inputs: INPUTS };
+    const at = (iso: string) => buildPlacePrompt(PLACE, INPUTS, prev as any, new Date(iso));
+    expect(at("2026-07-01T18:05:00.000Z")).toContain("The PREVIOUS round-up (about 12 hours ago)"); // default slots
+    expect(at("2026-07-01T14:00:00.000Z")).toContain("The PREVIOUS round-up (about 8 hours ago)");
+    expect(at("2026-07-01T14:00:00.000Z")).not.toContain("12 hours ago");
+  });
+
+  it("falls back to 'earlier' when the previous round-up has no usable timestamp", () => {
+    const prev = { narrative: "Earlier text.", generatedAt: "garbage", inputs: INPUTS };
+    const prompt = buildPlacePrompt(PLACE, INPUTS, prev as any, new Date("2026-07-01T14:00:00.000Z"));
+    expect(prompt).toContain("The PREVIOUS round-up (earlier)");
+    expect(prompt).toContain("previousRoundUp");
   });
 
   it("treats a prev with empty narrative as no prev", () => {
@@ -162,5 +177,30 @@ describe("generatePlaceNarrative", () => {
     expect(res.summary).toBe("Bright and dry.");
     expect(res.cityOutlook).toEqual([{ name: "London", outlook: "Sunny, 21°C." }]);
     expect(res.advice).toBe("Great day out; no alerts.");
+  });
+});
+
+describe("sincePreviousPhrase", () => {
+  const now = new Date("2026-07-02T12:00:00.000Z");
+  const ago = (h: number) => new Date(now.getTime() - h * 3_600_000);
+
+  it("rounds to whole hours", () => {
+    expect(sincePreviousPhrase(ago(12), now)).toBe("about 12 hours ago");
+    expect(sincePreviousPhrase(ago(7.6), now)).toBe("about 8 hours ago");
+    expect(sincePreviousPhrase(ago(1.2), now)).toBe("about 1 hour ago");
+    expect(sincePreviousPhrase(ago(0.5), now)).toBe("less than an hour ago");
+  });
+
+  it("switches to days past two days", () => {
+    expect(sincePreviousPhrase(ago(47), now)).toBe("about 47 hours ago");
+    expect(sincePreviousPhrase(ago(72), now)).toBe("about 3 days ago");
+  });
+
+  it("says 'earlier' for a missing, bad or future timestamp", () => {
+    expect(sincePreviousPhrase(null, now)).toBe("earlier");
+    expect(sincePreviousPhrase(undefined, now)).toBe("earlier");
+    expect(sincePreviousPhrase("not a date", now)).toBe("earlier");
+    expect(sincePreviousPhrase(ago(-2), now)).toBe("earlier");
+    expect(sincePreviousPhrase(ago(3).toISOString(), now)).toBe("about 3 hours ago");
   });
 });

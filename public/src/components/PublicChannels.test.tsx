@@ -113,6 +113,22 @@ describe("PublicChannels", () => {
     expect(screen.getAllByRole("link", { name: "Watch on YouTube ↗" })).toHaveLength(1);
   });
 
+  it("leaves hidden (production) scenes off the list", async () => {
+    mockList.mockResolvedValue([
+      { id: "default", name: "Main" },
+      { id: "shorts", name: "Shorts · Render", hidden: true },
+    ] as Scenes);
+    render(<PublicChannels />);
+    const cards = await screen.findAllByRole("article");
+    expect(cards.map((c) => c.getAttribute("aria-label"))).toEqual(["Main"]);
+  });
+
+  it("says no channels when every scene is hidden", async () => {
+    mockList.mockResolvedValue([{ id: "shorts", name: "Shorts · Render", hidden: true }] as Scenes);
+    render(<PublicChannels />);
+    expect(await screen.findByText("No channels yet.")).toBeInTheDocument();
+  });
+
   it("says so when there are no channels at all", async () => {
     mockList.mockResolvedValue([] as Scenes);
     render(<PublicChannels />);

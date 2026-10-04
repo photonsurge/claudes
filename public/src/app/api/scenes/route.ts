@@ -76,8 +76,9 @@ async function POST__impl(req: Request) {
 
   // Clone the source's director setup too (kinds, countries, areas, holds,
   // looks) — runtime fields stripped: skipNonce reset and mode forced off so a
-  // fresh channel never starts auto-piloting itself on air.
-  const srcDirector = await db.getOrInitDirectorConfig(sourceId);
+  // fresh channel never starts auto-piloting itself on air, and the source's
+  // script-play trigger dropped (it belongs to the scene that played it).
+  const { script: _script, ...srcDirector } = await db.getOrInitDirectorConfig(sourceId);
   await db.saveDirectorConfig(id, { ...srcDirector, mode: "off", skipNonce: 0 });
 
   return NextResponse.json(

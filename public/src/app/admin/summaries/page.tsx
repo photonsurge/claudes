@@ -5,7 +5,8 @@
  * weather-event summary per cadence (hourly / 12h / daily): the LLM narrative,
  * headline stats, geographic hotspots, top events, and a history list. The
  * worker generates these on a cron; "Generate now" triggers one on demand and a
- * Socket.IO `summaries:updated` event live-refreshes the view.
+ * Socket.IO `summaries:updated` event live-refreshes the view. The Schedule
+ * card at the top chooses which cadences run and at which UTC hours.
  */
 import { useCallback, useEffect, useState } from "react";
 import Alert from "@mui/material/Alert";
@@ -31,6 +32,7 @@ import {
   type EventSummary,
 } from "../../../lib/summaries";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import RoundupScheduleCard from "../../../components/admin/roundups/RoundupScheduleCard";
 import { surface } from "../../../theme/tokens";
 
 const fmtTime = (iso?: string | Date): string => {
@@ -130,6 +132,8 @@ export default function SummariesPage() {
         </>
       }
     >
+      <RoundupScheduleCard ids={["global-hourly", "global-12h", "global-daily"]} />
+
       {genMsg && (
         <Alert severity={genMsg.startsWith("Failed") ? "error" : "info"} sx={{ mb: 2 }}>
           {genMsg}

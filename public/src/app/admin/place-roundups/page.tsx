@@ -7,7 +7,8 @@
  * from (top cities + capital, area-weather, alerts, volcanoes, gauges), and a
  * history strip. "Generate now" enqueues the matching worker job; a Socket.IO
  * `placeRoundups:updated` event live-refreshes the view. Countries opt in via
- * the toggle on /countries; regions always generate.
+ * the toggle on /countries; regions always generate. The Schedule card at the
+ * top chooses which kinds run and at which local hours.
  */
 import { useCallback, useEffect, useState } from "react";
 import Alert from "@mui/material/Alert";
@@ -32,6 +33,7 @@ import {
   type PlaceRoundupKind,
 } from "../../../lib/placeRoundups";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
+import RoundupScheduleCard from "../../../components/admin/roundups/RoundupScheduleCard";
 import { font, surface } from "../../../theme/tokens";
 
 const fmtTime = (iso?: string | Date): string => {
@@ -130,7 +132,7 @@ export default function PlaceRoundupsPage() {
   return (
     <AdminPageShell
       title="Place round-ups"
-      description="Per-country and per-region 12-hour AI round-ups — each written with the previous one in view."
+      description="Per-country and per-region AI round-ups — each written with the previous one in view."
       maxWidth={1500}
       actions={
         <>
@@ -155,6 +157,8 @@ export default function PlaceRoundupsPage() {
         </>
       }
     >
+      <RoundupScheduleCard ids={["place-country", "place-region"]} />
+
       {genMsg && (
         <Alert severity={genMsg.startsWith("Failed") ? "error" : "info"} sx={{ mb: 1 }}>
           {genMsg}

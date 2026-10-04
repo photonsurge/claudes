@@ -163,6 +163,34 @@ describe("mergeDirectorConfig", () => {
   it("validates mode", () => {
     expect(mergeDirectorConfig(base, { mode: "bogus" as any }).mode).toBe("off");
     expect(mergeDirectorConfig(base, { mode: "auto" }).mode).toBe("auto");
+    expect(mergeDirectorConfig(base, { mode: "script" }).mode).toBe("script");
+  });
+
+  it("keeps a script play trigger, sanitised (the cold-load merge must not drop it)", () => {
+    const merged = mergeDirectorConfig(base, {
+      mode: "script",
+      script: { scriptId: " s1 ", fromClip: 2.7, playNonce: 5, record: false },
+    });
+    expect(merged.script).toEqual({ scriptId: "s1", fromClip: 2, playNonce: 5, record: false });
+    // getOrInitDirectorConfig re-merges the stored doc onto the defaults.
+    expect(mergeDirectorConfig(DEFAULT_DIRECTOR_CONFIG, merged as any)).toEqual(merged);
+  });
+
+  it("merges a partial script patch onto the stored one (bumping the nonce alone)", () => {
+    const withScript = mergeDirectorConfig(base, {
+      script: { scriptId: "s1", fromClip: 3, playNonce: 1, record: true },
+    });
+    const bumped = mergeDirectorConfig(withScript, { script: { playNonce: 2 } as any });
+    expect(bumped.script).toEqual({ scriptId: "s1", fromClip: 3, playNonce: 2, record: true });
+  });
+
+  it("ignores a script patch without a scriptId, and omits the key when there is none", () => {
+    expect(mergeDirectorConfig(base, { script: { playNonce: 1 } as any })).not.toHaveProperty("script");
+    expect(mergeDirectorConfig(base, { script: "x" as any })).not.toHaveProperty("script");
+    const neg = mergeDirectorConfig(base, {
+      script: { scriptId: "s1", fromClip: -4, playNonce: "x", record: "yes" } as any,
+    });
+    expect(neg.script).toEqual({ scriptId: "s1", fromClip: 0, playNonce: 0, record: true });
   });
 
   it("sanitizes a regions favourites patch (known ids only; non-array keeps base)", () => {

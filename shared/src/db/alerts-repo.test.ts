@@ -265,6 +265,55 @@ describe("alerts-repo chain — CAP lifecycle walk", () => {
   });
 });
 
+describe("alerts-repo getByKey / listByIds — single-subject reads", () => {
+  it("getByKey reads one doc by the (source, identifier) dedup key without raw or the city guide", async () => {
+    const spy: { filter?: unknown; projection?: unknown } = {};
+    const model = {
+      findOne: (f: unknown) => {
+        spy.filter = f;
+        return {
+          select: (p: unknown) => {
+            spy.projection = p;
+            return { lean: () => ({ exec: async () => ({ __v: 0, id: "a1", source: "nws" }) }) };
+          },
+        };
+      },
+    } as any;
+    expect(await makeAlertsRepo(model).getByKey("nws", "urn:x")).toEqual({ id: "a1", source: "nws" });
+    expect(spy.filter).toEqual({ source: "nws", identifier: "urn:x" });
+    expect(spy.projection).toEqual({ raw: 0, cities: 0 });
+  });
+
+  it("getByKey is null when there is no such alert", async () => {
+    const model = { findOne: () => ({ select: () => ({ lean: () => ({ exec: async () => null }) }) }) } as any;
+    expect(await makeAlertsRepo(model).getByKey("nws", "nope")).toBeNull();
+  });
+
+  it("listByIds loads whole docs (geometry kept) for the ids, minus raw and the city guide", async () => {
+    const spy: { filter?: any; projection?: unknown } = {};
+    const model = {
+      find: (f: unknown) => {
+        spy.filter = f;
+        return {
+          select: (p: unknown) => {
+            spy.projection = p;
+            return { lean: () => ({ exec: async () => [{ __v: 0, id: "b" }, { __v: 0, id: "a" }] }) };
+          },
+        };
+      },
+    } as any;
+    expect(await makeAlertsRepo(model).listByIds(["a", "b"])).toEqual([{ id: "b" }, { id: "a" }]);
+    expect(spy.filter).toEqual({ id: { $in: ["a", "b"] } });
+    expect(spy.projection).toEqual({ raw: 0, cities: 0 });
+  });
+
+  it("listByIds with no ids never queries", async () => {
+    const model = { find: jest.fn() } as any;
+    expect(await makeAlertsRepo(model).listByIds([])).toEqual([]);
+    expect(model.find).not.toHaveBeenCalled();
+  });
+});
+
 /**
  * `resyncMeteoalarmRanks` exists because fixing the rank RULE fixed nothing that
  * was already stored: `upsert` skips an unchanged, still-active alert, and CAP

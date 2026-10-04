@@ -2,6 +2,8 @@ import { buildCandidates, summaryTourHoldMs } from "./candidates";
 import { DEFAULT_DIRECTOR_CONFIG, type DirectorConfig } from "@photonsurge/shared/director";
 import { SEED_SEA_POINTS } from "@photonsurge/shared/director-sea-points";
 import type { AppDb } from "@photonsurge/shared/db/index";
+import { sanitizeRoundupSettings } from "@photonsurge/shared/roundup-settings";
+import { resetRoundupSettingsCache } from "../lib/roundupSettings";
 
 /** Minimal fake DB facade exposing just what buildCandidates reads. */
 function fakeDb(over: Partial<Record<string, any>> = {}): AppDb {
@@ -757,6 +759,19 @@ describe("buildCandidates", () => {
       const db = fakeDb({ eventSummaries: { hourly: freshSummary({ generatedAt: stale }) } });
       const pool = await buildCandidates(db, cfg());
       expect(pool.some((c) => c.segment.summary != null)).toBe(false);
+    });
+
+    it("keeps a thinned hourly on air between its slots (stale-after = 3 slot gaps)", async () => {
+      resetRoundupSettingsCache();
+      const sevenHours = new Date(Date.now() - 7 * 60 * 60 * 1000);
+      const thinned = sanitizeRoundupSettings({ "global-hourly": { hours: [0, 6, 12, 18] } });
+      const db = {
+        ...fakeDb({ eventSummaries: { hourly: freshSummary({ generatedAt: sevenHours }) } }),
+        roundupSettings: { get: async () => thinned },
+      };
+      const pool = await buildCandidates(db as any, cfg());
+      expect(pool.some((c) => c.segment.summary != null)).toBe(true); // 7h < 3 × 6h
+      resetRoundupSettingsCache();
     });
 
     it("drops the round-up when the global spin is disabled (it rides the global kind)", async () => {

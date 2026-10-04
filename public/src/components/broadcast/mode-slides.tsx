@@ -340,7 +340,26 @@ function contextSlides(ctx: ModeSlideContext): DeckSlide[] {
  * `segment` non-null.
  */
 export function modeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[] {
-  return applySlidePrefs(composeModeSlides(segment, ctx), ctx.slidesOff ?? [], ctx.slideOrder ?? []);
+  const deck = applySlidePrefs(composeModeSlides(segment, ctx), ctx.slidesOff ?? [], ctx.slideOrder ?? []);
+  return segment.leadSlide === "roundup" ? leadWithRoundup(deck) : deck;
+}
+
+/** The place round-up's slides (its "state of the place" page and, on a region,
+ *  the NEXT 24 HOURS page split off it). */
+const PLACE_ROUNDUP_SLIDES = new Set(["place-roundup", "place-roundup-24h"]);
+
+/**
+ * `Segment.leadSlide: "roundup"` — the round-up IS the story (a scripted
+ * round-up video's opener), so its slides lead the deck, ahead of even the
+ * on-air lede (the card's header still names the place), with everything else
+ * following in its usual order. Applied after the channel's prefs so a
+ * channel's ranking can't push it back down; a channel that hides the round-up
+ * still doesn't get it. No round-up content → the deck is unchanged.
+ */
+function leadWithRoundup(deck: DeckSlide[]): DeckSlide[] {
+  const lead = deck.filter((s) => PLACE_ROUNDUP_SLIDES.has(s.id));
+  if (!lead.length) return deck;
+  return [...lead, ...deck.filter((s) => !PLACE_ROUNDUP_SLIDES.has(s.id))];
 }
 
 /** Builds the mode's natural, content-filtered deck (before channel prefs). */

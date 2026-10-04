@@ -5,7 +5,7 @@
  * mergeConfig helper that keeps partial map patches from wiping their siblings.
  */
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { mergeConfig, useDirectorConfig } from "./director";
+import { directorRunning, mergeConfig, useDirectorConfig } from "./director";
 import { DEFAULT_DIRECTOR_CONFIG, type DirectorConfig } from "@photonsurge/shared/director";
 
 describe("mergeConfig", () => {
@@ -88,5 +88,80 @@ describe("useDirectorConfig draft buffer", () => {
     expect(result.current.dirty).toBe(false);
     expect(result.current.config.mode).toBe("auto");
     expect(result.current.draft.mode).toBe("auto");
+  });
+});
+
+describe("directorRunning", () => {
+  it("counts a playing script as driving the scene, like auto", () => {
+    expect(directorRunning("auto")).toBe(true);
+    expect(directorRunning("script")).toBe(true);
+    expect(directorRunning("off")).toBe(false);
+  });
+});
+
+/**
+ * A script ends on its own — the worker's runner hands the scene back to "off".
+ * While the saved mode is "script" the hook re-reads it on a slow poll so the
+ * operator panel drops "Playing a script" without a reload.
+ */
+describe("useDirectorConfig follows a script to its end", () => {
+  const script = { scriptId: "s1", fromClip: 0, playNonce: 1, record: false };
+  let serverMode: "off" | "auto" | "script";
+  let failReads: boolean;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    serverMode = "script";
+    failReads = false;
+    global.fetch = jest.fn(() =>
+      failReads
+        ? Promise.resolve({ ok: false, json: () => Promise.resolve({}) })
+        : Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ ...DEFAULT_DIRECTOR_CONFIG, mode: serverMode, script }),
+          }),
+    ) as unknown as typeof fetch;
+  });
+  afterEach(() => jest.useRealTimers());
+
+  const tick = () =>
+    act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+
+  it("adopts the runner's mode-off, leaving pending draft edits alone", async () => {
+    const { result } = renderHook(() => useDirectorConfig("shorts-preview", { followScript: true }));
+    await waitFor(() => expect(result.current.config.mode).toBe("script"));
+    act(() => result.current.edit({ transitionSeconds: 7 }));
+
+    await tick();
+    expect(result.current.config.mode).toBe("script"); // still playing
+
+    serverMode = "off";
+    await tick();
+    await waitFor(() => expect(result.current.config.mode).toBe("off"));
+    expect(result.current.draft.mode).toBe("off");
+    expect(result.current.draft.transitionSeconds).toBe(7);
+    expect(result.current.dirty).toBe(true);
+  });
+
+  it("does not poll without followScript (the read-only /watch pages)", async () => {
+    const { result } = renderHook(() => useDirectorConfig("shorts-preview"));
+    await waitFor(() => expect(result.current.config.mode).toBe("script"));
+    const reads = (global.fetch as jest.Mock).mock.calls.length;
+    serverMode = "off";
+    await tick();
+    await tick();
+    expect((global.fetch as jest.Mock).mock.calls.length).toBe(reads);
+    expect(result.current.config.mode).toBe("script");
+  });
+
+  it("never reads a failed poll as off", async () => {
+    const { result } = renderHook(() => useDirectorConfig("shorts-preview", { followScript: true }));
+    await waitFor(() => expect(result.current.config.mode).toBe("script"));
+    failReads = true;
+    await tick();
+    await tick();
+    expect(result.current.config.mode).toBe("script");
   });
 });

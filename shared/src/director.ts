@@ -178,6 +178,20 @@ export interface Segment {
    * region tour carries places, not a narrative. See cutSteps in the client.
    */
   tourStops?: SegmentSummaryStop[];
+  /**
+   * Per-stop camera dwell for this segment's tour, ms. Absent = the client's
+   * default (`SUMMARY_STOP_DWELL_MS`, sized for the live channel's per-stop
+   * left-column package). Scripted videos set it to pace a tour inside a fixed
+   * clip length — without it a 60 s round-up clip visits one city.
+   */
+  tourDwellMs?: number;
+  /**
+   * Which deck slide leads — "roundup" makes the place round-up the first slide
+   * of a country/region shot instead of the second (the round-up IS the story).
+   * Shared by the break-in plan (a roundup break-in), the commands plan
+   * (`:roundup uk`) and scripted shorts (a lineup opener with a fresh round-up).
+   */
+  leadSlide?: "roundup";
 }
 
 /**
@@ -347,7 +361,29 @@ export function upNextLabel(u: UpNextItem): string {
   return u.subtitle ? `${u.title} — ${u.subtitle}` : u.title;
 }
 
-export type DirectorMode = "off" | "auto";
+/**
+ * "auto" = the endless picker (worker/src/director/loop.ts). "script" = a
+ * scripted short is playing a fixed, finite clip list (`DirectorConfig.script`,
+ * see shared/src/short-script.ts); the runner sets the scene back to "off" when
+ * the script ends.
+ */
+export type DirectorMode = "off" | "auto" | "script";
+
+/**
+ * Start-a-play trigger for script mode (`DirectorConfig.script`). Same
+ * Mongo-polled pattern as `skipNonce`: the editor (public) and the render job
+ * (worker) both start a play by setting `mode: "script"` and bumping `playNonce`.
+ */
+export interface DirectorScriptPlay {
+  /** The ShortScript to play (`db.shortScripts`). */
+  scriptId: string;
+  /** Zero-based clip index to start from — the editor's "play from here". */
+  fromClip: number;
+  /** Bump to (re)start a play. The runner remembers the last value it acted on. */
+  playNonce: number;
+  /** false (editor previews) skips the as-run log, so previews never add an AirRun. */
+  record: boolean;
+}
 
 /**
  * Storm hold levels — one named tier per normalised alert severityRank (0–4),
@@ -458,6 +494,12 @@ export interface DirectorConfig {
    * last value it acted on; any increase skips. (Monotonic, operator-driven.)
    */
   skipNonce: number;
+  /**
+   * The script to play while `mode` is "script" — the Mongo-polled "start a
+   * play" trigger, same pattern as `skipNonce` (bump `playNonce` to start).
+   * Absent until a script has been played on this scene. See DirectorScriptPlay.
+   */
+  script?: DirectorScriptPlay;
   /**
    * Which basemap/"map type" looks each touring kind (intro/global/ocean/quake) cycles
    * through, by id (see GlobalMapType.id in director-rois). A kind absent here,
@@ -1208,6 +1250,45 @@ function mergeKindLooks(
 }
 
 /**
+ * Sanitize one untrusted KindLook (e.g. a short-script clip's `look`) with the
+ * same field rules as a `kindLooks` patch. Undefined for a non-object.
+ */
+export function sanitizeKindLook(raw: unknown): KindLook | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  // The kind is only a carrier key here — mergeKindLooks' rules don't vary by kind.
+  return mergeKindLooks({}, { country: raw as KindLook }).country;
+}
+
+const DIRECTOR_MODES: readonly DirectorMode[] = ["off", "auto", "script"];
+
+/**
+ * Merge an untrusted `script` patch onto the base field-by-field; a non-object,
+ * or one leaving it without a scriptId, keeps the base. There is no "clear":
+ * saveDirectorConfig `$set`s, so an absent key would never unset the stored one
+ * anyway — `mode` alone decides whether the script plays. `fromClip` is a
+ * non-negative integer.
+ */
+function mergeScriptPlay(
+  base: DirectorScriptPlay | undefined,
+  patch: unknown,
+): DirectorScriptPlay | undefined {
+  if (!patch || typeof patch !== "object") return base;
+  const p = patch as Record<string, unknown>;
+  const scriptId = typeof p.scriptId === "string" ? p.scriptId.trim() : (base?.scriptId ?? "");
+  if (!scriptId) return base;
+  return {
+    scriptId,
+    fromClip: Math.max(0, Math.floor(num(p.fromClip, base?.fromClip ?? 0))),
+    playNonce: num(p.playNonce, base?.playNonce ?? 0),
+    record: typeof p.record === "boolean" ? p.record : (base?.record ?? true),
+  };
+}
+
+/** Spread helper: omit the `script` key entirely when there is none, rather
+ *  than writing `script: undefined` into every merged config. */
+const scriptField = (script: DirectorScriptPlay | undefined) => (script ? { script } : {});
+
+/**
  * Sanitize one untrusted slide object into a valid KindSlide, or null if it's
  * missing an id/name. Reuses mergeKindLooks/the overlay-boolean rule so a
  * slide's `look`/`overlays` are validated exactly like a live kindLooks/
@@ -1309,7 +1390,7 @@ export function mergeDirectorConfig(
     }
   }
   return {
-    mode: patch.mode === "off" || patch.mode === "auto" ? patch.mode : base.mode,
+    mode: DIRECTOR_MODES.includes(patch.mode as DirectorMode) ? (patch.mode as DirectorMode) : base.mode,
     kindHoldSeconds: mergeHolds(SEGMENT_KINDS, base.kindHoldSeconds, patch.kindHoldSeconds),
     quakeHoldSeconds: mergeHolds(QUAKE_LEVELS, base.quakeHoldSeconds, patch.quakeHoldSeconds),
     stormHoldSeconds: mergeHolds(
@@ -1333,6 +1414,7 @@ export function mergeDirectorConfig(
     alertCycleSeconds: Math.max(2, num(patch.alertCycleSeconds, base.alertCycleSeconds)),
     adEveryNShots: Math.max(1, Math.round(num(patch.adEveryNShots, base.adEveryNShots))),
     skipNonce: num(patch.skipNonce, base.skipNonce),
+    ...scriptField(mergeScriptPlay(base.script, (patch as { script?: unknown }).script)),
     mapTypes: mergeStringArrayMap(base.mapTypes, patch.mapTypes),
     overlayOverrides: mergeBoolMapMap(base.overlayOverrides, patch.overlayOverrides),
     kindLooks: mergeKindLooks(base.kindLooks, patch.kindLooks),

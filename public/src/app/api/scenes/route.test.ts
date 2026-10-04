@@ -129,6 +129,20 @@ describe("POST /api/scenes", () => {
     });
   });
 
+  it("drops the source's script-play trigger from the clone", async () => {
+    mockGetDirectorConfig.mockResolvedValueOnce({
+      mode: "script",
+      skipNonce: 3,
+      countries: ["uk"],
+      script: { scriptId: "s1", fromClip: 0, playNonce: 4, record: true },
+    });
+    mockCreateScene.mockResolvedValue({ id: "atlantic-wind" });
+    await post({ name: "Atlantic Wind" });
+    const saved = mockSaveDirectorConfig.mock.calls[0][1];
+    expect(saved).not.toHaveProperty("script");
+    expect(saved).toEqual({ countries: ["uk"], mode: "off", skipNonce: 0 });
+  });
+
   it("copies the main scene's director config by default", async () => {
     mockCreateScene.mockResolvedValue({ id: "atlantic-wind" });
     await post({ name: "Atlantic Wind" });

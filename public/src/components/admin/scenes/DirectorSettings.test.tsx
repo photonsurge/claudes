@@ -4,11 +4,19 @@
  * presets. Everything stages COMPLETE top-level DirectorConfig fields into the
  * page's draft, so the shallow-merging Save can't drop a sibling.
  */
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { DEFAULT_DIRECTOR_CONFIG } from "@photonsurge/shared/director";
 import { DIRECTOR_PRESETS } from "@photonsurge/shared/director-presets";
 import DirectorSettings from "./DirectorSettings";
 import { renderInDraft } from "./draft-harness";
+
+const mockPatchDirector = jest.fn();
+jest.mock("../../../lib/director", () => ({
+  ...jest.requireActual("../../../lib/director"),
+  patchDirectorConfig: (...a: unknown[]) => mockPatchDirector(...a),
+}));
+
+beforeEach(() => mockPatchDirector.mockReset().mockResolvedValue({}));
 
 describe("DirectorSettings", () => {
   it("toggling a kind stages the COMPLETE kinds record", () => {
@@ -54,6 +62,34 @@ describe("DirectorSettings", () => {
       "href",
       "/control?scene=wind",
     );
+  });
+
+  it("reads Auto when the director is driving", () => {
+    renderInDraft(<DirectorSettings />, { config: { mode: "auto" } });
+    expect(screen.getByText("Auto")).toBeInTheDocument();
+  });
+
+  it("a playing script reads as such, and Stop switches the director off at once", async () => {
+    const d = renderInDraft(<DirectorSettings />, { sceneId: "shorts-preview", config: { mode: "script" } });
+
+    expect(screen.getByText("Playing a script")).toBeInTheDocument();
+    expect(screen.queryByText("Off")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    // A live action, not a staged edit: PATCHed now, nothing left for Save.
+    expect(mockPatchDirector).toHaveBeenCalledWith("shorts-preview", { mode: "off" });
+    expect(d.stagedDirector).toHaveLength(0);
+    await waitFor(() => expect(screen.getByText("Off")).toBeInTheDocument());
+    expect(screen.queryByText("Playing a script")).not.toBeInTheDocument();
+  });
+
+  it("keeps the script chip (and offers Stop again) when the stop fails", async () => {
+    mockPatchDirector.mockRejectedValueOnce(new Error("nope"));
+    renderInDraft(<DirectorSettings />, { config: { mode: "script" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled());
+    expect(screen.getByText("Playing a script")).toBeInTheDocument();
   });
 
   it("a preset chip stages the preset's content bundle", () => {

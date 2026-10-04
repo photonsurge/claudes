@@ -46,6 +46,11 @@ export interface AlertFootprintCities {
   shaped: boolean;
 }
 
+/** The heavy fields `list` and the single-alert director reads drop: `raw`
+ *  (the feed payload, debug-only) and `cities` (the footprint city guide, read
+ *  only through `footprintCities`). See the note in `list`. */
+const LIST_PROJECTION = { raw: 0, cities: 0 } as const;
+
 const strip = (doc: any): iAlertModel => {
   const { __v, ...rest } = doc;
   return rest as iAlertModel;
@@ -636,6 +641,28 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
     },
 
     /**
+     * One alert by its `(source, identifier)` key — the unique dedup index, so
+     * at most one doc. A director/short-video read: `raw` and the footprint city
+     * guide are dropped as in `list` (the geometry is kept — the shot frames it).
+     */
+    async getByKey(source: string, identifier: string): Promise<iAlertModel | null> {
+      const doc = await model.findOne({ source, identifier }).select(LIST_PROJECTION).lean().exec();
+      return doc ? strip(doc) : null;
+    },
+
+    /**
+     * Whole alert docs (geometry included) for a list of ids, minus `raw` and
+     * the city guide as in `list`. Order is Mongo's, not `ids`'; ids with no
+     * doc are simply absent. For a caller that picked ids off a cheap
+     * coordinate-free `list` scan and now needs only those polygons.
+     */
+    async listByIds(ids: string[]): Promise<iAlertModel[]> {
+      if (!ids.length) return [];
+      const docs = await model.find({ id: { $in: ids } }).select(LIST_PROJECTION).lean().exec();
+      return docs.map(strip);
+    },
+
+    /**
      * The CAP lifecycle chain around one message: same-source docs it
      * references (the messages it updates/cancels) plus docs that reference
      * IT (later updates), plus the focal message itself. CAP references are
@@ -698,7 +725,7 @@ export function makeAlertsRepo(model: Model<iAlertModel>) {
       // `cities` (the footprint CITY GUIDE) is read by ONE consumer through
       // `footprintCities`; on the whole-planet feed it would add a dozen rows per
       // alert for nothing.
-      const projection: Record<string, 0> = { raw: 0, cities: 0 };
+      const projection: Record<string, 0> = { ...LIST_PROJECTION };
       if (opts.omitCoordinates) projection["info.area.geometry.coordinates"] = 0;
       if (opts.lean) {
         // Unread on the map/world-watch feed — see AlertListOpts.lean. Pure

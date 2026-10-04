@@ -32,6 +32,7 @@ import { startQueueEventBridge } from "./queueEventBridge";
 import { installJobConsoleTap, runInJobLogContext, getJobLog, listJobLogs } from "./jobLog";
 import { beginJob, endJob, startCancelSubscriber, activeJobLabels } from "./jobCancel";
 import { startDirector, stopDirector } from "./director/loop";
+import { startScriptRunner, stopScriptRunner } from "./director/script-runner";
 import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
 import { getEnabledSources } from "./alerts/registry";
 import { getEnabledCamSources } from "./cams/registry";
@@ -208,6 +209,9 @@ process.on("uncaughtException", (err) => {
   // Auto-director: a self-running camera/sequencer per scene that's in "auto"
   // mode. Runs in-process (not a BullMQ job) — reads Mongo + emits director:state.
   startDirector();
+  // Scripted shorts: plays a saved script on scenes in "script" mode, on its
+  // own clock so a cut never waits behind the auto loop's candidate builds.
+  startScriptRunner();
 
   // Restore streaming-run monitors + re-arm auto-end for runs that were live when
   // the worker last stopped (health/confirm loops are in-process, so a restart
@@ -1462,38 +1466,37 @@ process.on("uncaughtException", (err) => {
     }
   }
 
-  // ---- Repeatable summaries.generate* (global weather-event round-ups → Mongo) ----
-  // One repeatable per cadence (hourly / 12-hourly / daily). Each aggregates the
-  // active events into a stored round-up (+ optional LLM narrative) that the admin
-  // screen reads. Fixed jobIds de-dup across restarts; crons are env-overridable.
+  // ---- Repeatable summaries.tick (global weather-event round-ups → Mongo) ----
+  // ONE hourly tick writes whichever of the hourly / 12-hourly / daily round-ups
+  // has an unserved slot under the operator's schedule (db.roundupSettings, set
+  // on the admin round-up pages — read per tick, so edits need no restart and
+  // no re-registration). Running them in one job, hourly first, also lets the
+  // 12h roll-up see that hour's hourly. Fixed jobId de-dups across restarts; the
+  // old per-cadence schedulers are dropped by the stale-schedule sweep above.
+  // SUMMARIES_ENABLED=false is the deployment kill switch.
   if (process.env.SUMMARIES_ENABLED !== "false") {
-    // Staggered default minutes (hashed 2-14), not :00 — an hourly round-up a
-    // few minutes into the hour is editorially identical, and :00 was the
-    // minute the whole fleet used to detonate on together.
-    const summaryCrons = [
-      { event: "generateHourly", cron: process.env.SUMMARY_HOURLY_CRON || `${staggerMinute("summaries-hourly", 2, 14)} * * * *`, id: "summaries-hourly" },
-      { event: "generate12h", cron: process.env.SUMMARY_12H_CRON || `${staggerMinute("summaries-12h", 2, 14)} 0,12 * * *`, id: "summaries-12h" },
-      { event: "generateDaily", cron: process.env.SUMMARY_DAILY_CRON || `${staggerMinute("summaries-daily", 2, 14)} 0 * * *`, id: "summaries-daily" },
-    ];
-    for (const { event, cron, id } of summaryCrons) {
-      try {
-        await addJob(
-          "do",
-          { domain: "summaries", type: "summaries", event, data: {} },
-          { repeat: { pattern: cron }, jobId: id },
-        );
-        log(TAG, `registered repeatable summaries.${event}`, { cron });
-      } catch (err) {
-        log(TAG, `failed to register summaries.${event}`, summarizeForLog(err));
-      }
+    // Staggered minute (hashed 2-14), not :00 — a round-up a few minutes into
+    // the hour is editorially identical, and :00 was the minute the whole fleet
+    // used to detonate on together.
+    const cron = `${staggerMinute("summaries-tick", 2, 14)} * * * *`;
+    try {
+      await addJob(
+        "do",
+        { domain: "summaries", type: "summaries", event: "tick", data: {} },
+        { repeat: { pattern: cron }, jobId: "summaries-tick" },
+      );
+      log(TAG, `registered repeatable summaries.tick`, { cron });
+    } catch (err) {
+      log(TAG, `failed to register summaries.tick`, summarizeForLog(err));
     }
   }
 
   // ---- Repeatable placeRoundups.generate* (per-country/region local-time round-ups) ----
   // Two crons — countries (opt-in via roundupEnabled) and regions (all) — offset
   // past summaries so the LLM calls don't bunch. They now fire HOURLY, but each
-  // run only generates the places whose LOCAL time is currently in a target slot
-  // (~6am + ~6pm there, see placeRoundups/localTime.ts), so every place's round-up
+  // run only generates the places whose LOCAL time has an unserved slot (the
+  // local hours set on the admin round-up pages, default ~6am + ~6pm there; see
+  // placeRoundups/localTime.ts), so every place's round-up
   // lands in its own morning/evening instead of a fixed UTC instant. Each loops
   // its due places, feeding the previous round-up back in for continuity. No-ops
   // for prose without an OPENROUTER_API_KEY (inputs still stored). Fixed jobIds
@@ -1522,7 +1525,7 @@ process.on("uncaughtException", (err) => {
   }
 
   // ---- Repeatable areaWeather.run (hourly per-country/region weather snapshot) ----
-  // Offset 10 past the hour so it doesn't contend with summaries-hourly's :00 run.
+  // Offset 10 past the hour so it doesn't contend with the summaries tick.
   // Country/region CATALOG seeding (countries.seed/regions.seed) is intentionally
   // NOT scheduled here — Natural Earth boundaries and the curated region list
   // don't change; reseed manually (yarn seed:countries/seed:regions or the
@@ -1795,6 +1798,7 @@ process.on("uncaughtException", (err) => {
     // candidates and emitting director:state cuts. If we don't kill it here it
     // carries on cutting shots the whole time bullWorker.close() drains jobs.
     stopDirector();
+    stopScriptRunner();
 
     // Stop the streaming-run monitors (in-process health/confirm loops) too.
     stopAllMonitors();

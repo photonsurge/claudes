@@ -184,6 +184,28 @@ describe("cutSteps", () => {
     expect(steps[0].label?.title).toBe("Southern Europe");
   });
 
+  it("dwells the full per-stop package by default (the live channel)", () => {
+    const tour = segment({ id: "region:europe", kind: "region", patch: { cutTransitionMs: 3000 }, tourStops: tourStops() });
+    expect(cutSteps(tour, avail).periodMs).toBe(3000 + 40_000);
+  });
+
+  it("paces the tour off the segment's own tourDwellMs (a scripted clip)", () => {
+    const tour = segment({
+      id: "country:japan",
+      kind: "country",
+      patch: { cutTransitionMs: 3000 },
+      tourStops: tourStops(),
+      tourDwellMs: 9000,
+    });
+    expect(cutSteps(tour, avail).periodMs).toBe(3000 + 9000);
+  });
+
+  it("ignores tourDwellMs on a world spin — it never tours", () => {
+    const spin = segment({ id: "global:1", kind: "global", summary: roundupStops() });
+    const paced = { ...spin, tourDwellMs: 9000 };
+    expect(cutSteps(paced, avail).periodMs).toBe(cutSteps(spin, avail).periodMs);
+  });
+
   it("never tours a world spin — it shows maps off even when it carries stops", () => {
     // A round-up rides a `global` spin as narrative graphics only; the camera
     // keeps spinning through the map-type cycle rather than flying to the stops.

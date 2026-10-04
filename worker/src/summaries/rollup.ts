@@ -1,7 +1,9 @@
 /**
  * 12-hour retrospective. Unlike the hourly/daily snapshot round-ups, the 12h
- * round-up is a SYNTHESIS of the twelve hourly round-ups that preceded it: the
- * model is handed each hour's stats + prose (oldest first) plus the current
+ * round-up is a SYNTHESIS of the hourly round-ups written in the 12 hours before
+ * it (as many as the operator's hourly slots produced — jobs/summaries.ts falls
+ * back to a snapshot narrative when there are none): the model is handed each
+ * one's stats + prose (oldest first) plus the current
  * snapshot, and asked to narrate the arc — what built, peaked, and cleared over
  * the window — closing on where things stand now. Same OpenRouter path and
  * graceful degradation as `openrouter.ts`; the pure prompt builder is unit-tested.

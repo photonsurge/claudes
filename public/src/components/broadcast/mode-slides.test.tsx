@@ -407,6 +407,70 @@ describe("modeSlides — per-channel slide prefs", () => {
 });
 
 /**
+ * `Segment.leadSlide: "roundup"` — a scripted round-up video's opener: the place
+ * round-up IS the story, so it leads the deck and everything else follows in its
+ * usual order.
+ */
+describe("modeSlides — leadSlide: roundup", () => {
+  const bbox: [number, number, number, number] = [-1, -1, 1, 1];
+  const countryRoundup = {
+    narrative: "Settled and mild across the country.",
+    inputs: { topCities: [], alerts: [], volcanoes: [] },
+  } as unknown as ModeSlideContext["placeRoundup"];
+  const regionRoundup = {
+    summary: "Unsettled across the region.",
+    cityOutlook: [{ name: "Berlin", outlook: "Showers easing overnight." }],
+    inputs: { topCities: [], alerts: [], volcanoes: [] },
+  } as unknown as ModeSlideContext["placeRoundup"];
+  const regionSteps = [
+    { t: "2026-07-13T00:00:00Z", condition: "sunny", temp: 20, wind: 3 },
+  ] as unknown as ModeSlideContext["regionNearTerm"];
+
+  it("leads a country spotlight with its round-up, the rest in their usual order", () => {
+    expect(
+      ids(
+        seg({ kind: "country", leadSlide: "roundup" }),
+        ctx({ wideCitiesBbox: bbox, topCities, placeRoundup: countryRoundup }),
+      ),
+    ).toEqual(["place-roundup", "onair", ...CITY_GUIDE]);
+  });
+
+  it("leads a region spotlight with both round-up slides, state then NEXT 24H", () => {
+    expect(
+      ids(
+        seg({ kind: "region", leadSlide: "roundup" }),
+        ctx({ wideCitiesBbox: bbox, topCities, placeRoundup: regionRoundup, regionNearTerm: regionSteps }),
+      ),
+    ).toEqual(["place-roundup", "place-roundup-24h", "onair", "region-next24", ...CITY_GUIDE]);
+  });
+
+  it("leaves the deck unchanged when the round-up has no content", () => {
+    const deck = (over: Record<string, unknown>) =>
+      ids(seg({ kind: "country", ...over }), ctx({ wideCitiesBbox: bbox, topCities }));
+    expect(deck({ leadSlide: "roundup" })).toEqual(deck({}));
+    expect(deck({ leadSlide: "roundup" })).toEqual(["onair", ...CITY_GUIDE]);
+  });
+
+  it("still leads when the channel ranks other slides first", () => {
+    expect(
+      ids(
+        seg({ kind: "country", leadSlide: "roundup" }),
+        ctx({ wideCitiesBbox: bbox, topCities, placeRoundup: countryRoundup, slideOrder: ["topcities", "place-roundup"] }),
+      ),
+    ).toEqual(["place-roundup", "onair", ...CITY_GUIDE]);
+  });
+
+  it("respects a channel that hides the round-up", () => {
+    expect(
+      ids(
+        seg({ kind: "country", leadSlide: "roundup" }),
+        ctx({ wideCitiesBbox: bbox, topCities, placeRoundup: countryRoundup, slidesOff: ["place-roundup"] }),
+      ),
+    ).toEqual(["onair", ...CITY_GUIDE]);
+  });
+});
+
+/**
  * The warning's own words — the CAP description/instruction that reached
  * `/admin` and never `/watch`, so a storm cut aired our title, our hazard and
  * our severity rank and no detail at all.

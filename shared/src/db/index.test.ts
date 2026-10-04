@@ -27,9 +27,9 @@ describe("createDb wiring", () => {
     const repos = [
       "pings", "weatherRuns", "weatherTextures", "weatherFrames", "weatherForecastFrames",
       "climateYears", "cities", "alerts", "satelliteTles", "trackSnapshots", "quakes",
-      "tideStations", "tideSeries", "seismoStations", "seismoSeries", "eventSummaries",
+      "tideStations", "tideSeries", "seismoStations", "seismoSeries", "eventSummaries", "roundupSettings",
       "cables", "faults", "aurora", "satimg", "fires", "volcanoes", "countries", "regions",
-      "areaWeatherReports", "geomag", "cams", "seaPoints", "ads", "aircraftMeta", "vehicles",
+      "areaWeatherReports", "geomag", "cams", "seaPoints", "shortScripts", "ads", "aircraftMeta", "vehicles",
       "logs", "airLog", "users", "broadcastState", "directorConfig",
     ] as const;
     for (const key of repos) expect(db[key]).toBeDefined();
@@ -194,6 +194,16 @@ describe("director config", () => {
     expect(await db.autoDirectorScenes()).toEqual(["default", "studio-b"]);
     expect(getAll).toHaveBeenCalledWith({ mode: "auto" }, { limit: 0 });
   });
+
+  it("scriptDirectorScenes returns the ids of scenes playing a script", async () => {
+    const db = freshDb();
+    const getAll = jest.fn(async () => ok([{ id: "shorts-preview" }]));
+    (db.directorConfig as any).getAll = getAll;
+    expect(await db.scriptDirectorScenes()).toEqual(["shorts-preview"]);
+    expect(getAll).toHaveBeenCalledWith({ mode: "script" }, { limit: 0 });
+    (db.directorConfig as any).getAll = jest.fn(async () => missing);
+    expect(await db.scriptDirectorScenes()).toEqual([]);
+  });
 });
 
 describe("scenes", () => {
@@ -212,6 +222,14 @@ describe("scenes", () => {
     expect(scenes[2].updatedAt).toBe("2026-07-01");
   });
 
+  it("listScenes reports hidden, false unless the doc sets it", async () => {
+    const db = freshDb();
+    const docs = [{ id: MAIN_SCENE_ID, name: "Main" }, { id: "shorts", name: "Shorts · Render", hidden: true }];
+    (db.broadcastState as any).getAll = jest.fn(async () => ok(docs));
+    const scenes = await db.listScenes();
+    expect(scenes.map((s) => [s.id, s.hidden])).toEqual([[MAIN_SCENE_ID, false], ["shorts", true]]);
+  });
+
   it("createScene seeds from DEFAULT_CONTROL_STATE, letting the seed override, and stamps the name", async () => {
     const db = freshDb();
     const upsertByID = jest.fn(async () => ok({ id: "studio-b" }));
@@ -221,6 +239,27 @@ describe("scenes", () => {
     const [id, payload] = upsertByID.mock.calls[0] as any[];
     expect(id).toBe("studio-b");
     expect(payload).toEqual({ ...DEFAULT_CONTROL_STATE, showAlerts: false, name: "Studio B" });
+  });
+
+  it("createScene writes hidden only when asked, so a re-seed without it keeps the flag", async () => {
+    const db = freshDb();
+    const upsertByID = jest.fn(async () => ok({ id: "shorts" }));
+    (db.broadcastState as any).upsertByID = upsertByID;
+    await db.createScene("shorts", "Shorts", {}, { hidden: true });
+    expect((upsertByID.mock.calls[0] as any[])[1]).toMatchObject({ name: "Shorts", hidden: true });
+    await db.createScene("studio-b", "Studio B", {});
+    expect((upsertByID.mock.calls[1] as any[])[1]).not.toHaveProperty("hidden");
+  });
+
+  it("setSceneHidden flips only the flag on an existing scene", async () => {
+    const db = freshDb();
+    (db.broadcastState as any).getByID = jest.fn(async (id: string) => (id === "shorts" ? ok({ id, watchToken: "t" }) : missing));
+    const updateByID = jest.fn(async () => ({ success: true }));
+    (db.broadcastState as any).updateByID = updateByID;
+    expect(await db.setSceneHidden("shorts", true)).toBe(true);
+    expect(updateByID).toHaveBeenCalledWith("shorts", { hidden: true });
+    expect(await db.setSceneHidden("nope", true)).toBe(false);
+    expect(updateByID).toHaveBeenCalledTimes(1);
   });
 
   it("deleteScene refuses to delete the main scene but removes named ones", async () => {

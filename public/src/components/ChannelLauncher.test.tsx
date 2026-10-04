@@ -133,6 +133,17 @@ describe("ChannelLauncher", () => {
     expect(screen.getAllByRole("button", { name: "Next ⏭" })).toHaveLength(1);
   });
 
+  it("leaves hidden (production) scenes off the launcher", async () => {
+    mockList.mockResolvedValue([
+      { id: "default", name: "Main" },
+      { id: "shorts-preview", name: "Shorts · Preview", hidden: true },
+    ] as Awaited<ReturnType<typeof listScenes>>);
+    render(<ChannelLauncher />);
+    expect(await screen.findByText("Main")).toBeInTheDocument();
+    expect(screen.queryByText("Shorts · Preview")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Control" })).toHaveLength(1);
+  });
+
   it("prompts to create a channel when there are none", async () => {
     mockList.mockResolvedValue([] as Awaited<ReturnType<typeof listScenes>>);
     render(<ChannelLauncher />);

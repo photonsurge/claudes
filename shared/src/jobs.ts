@@ -139,6 +139,36 @@ const BASEMAP_JOBS: TriggerableJob[] = [
   },
 ];
 
+/**
+ * Scripted short videos (docs/short-video-plan.md). Seeding comes first: nothing
+ * plays until the two hidden scenes exist. The generate buttons are presets of
+ * the same handler the /admin/shorts form calls — a quick way to make a
+ * round-up script without opening that page.
+ */
+const SHORT_VIDEO_JOBS: TriggerableJob[] = [
+  {
+    id: "short-video-seed-scenes",
+    label: "Seed short video scenes",
+    description:
+      "Create the two hidden scenes short videos play on (shorts, shorts-preview). Skips a scene that already exists, so it never overwrites an operator's look — run it once per deployment.",
+    domain: "shorts",
+    type: "short-video",
+    event: "seedScenes",
+    group: "Short videos",
+  },
+  {
+    id: "short-video-generate-world",
+    label: "Generate world round-up video",
+    description:
+      "Write a draft script for a world round-up video. Fails with the reason when there is no fresh world round-up. Open /admin/shorts to preview it.",
+    domain: "shorts",
+    type: "short-video",
+    event: "generate",
+    group: "Short videos",
+    data: { scope: { type: "globe" } },
+  },
+];
+
 export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   {
     id: "weather-check",
@@ -476,9 +506,9 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   },
   {
     id: "place-roundups-countries",
-    label: "Country AI round-ups (local ~6am/6pm)",
+    label: "Country AI round-ups",
     description:
-      "Generate a 12-hour AI round-up for each round-up-enabled country — top-10 cities + capital conditions, area-weather, every active alert/volcano, and nearest tide/seismo gauges — continuing from the previous round-up. Scheduled hourly but each country only generates at its own local morning/evening; this button generates the whole set now. Enable countries on /countries.",
+      "Generate an AI round-up for each round-up-enabled country — top-10 cities + capital conditions, area-weather, every active alert/volcano, and nearest tide/seismo gauges — continuing from the previous round-up. Scheduled at the local hours set on /admin/place-roundups (each country at its own local time); this button generates the whole set now. Enable countries on /countries.",
     domain: "placeRoundups",
     type: "placeRoundups",
     event: "generateCountries",
@@ -487,9 +517,9 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
   },
   {
     id: "place-roundups-regions",
-    label: "Region AI round-ups (local ~6am/6pm)",
+    label: "Region AI round-ups",
     description:
-      "Generate a 12-hour AI round-up for every region — top cities, area-weather, active alerts/volcanoes and nearest gauges — continuing from the previous round-up. Scheduled hourly but each region only generates at its own local morning/evening; this button generates the whole set now.",
+      "Generate an AI round-up for every region — top cities, area-weather, active alerts/volcanoes and nearest gauges — continuing from the previous round-up. Scheduled at the local hours set on /admin/place-roundups (each region at its own local time); this button generates the whole set now.",
     domain: "placeRoundups",
     type: "placeRoundups",
     event: "generateRegions",
@@ -920,6 +950,7 @@ export const TRIGGERABLE_JOBS: TriggerableJob[] = [
     event: "run",
     group: "Countries & Regions",
   },
+  ...SHORT_VIDEO_JOBS,
 ];
 
 export const getTriggerableJob = (id: string): TriggerableJob | undefined =>

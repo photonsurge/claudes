@@ -79,6 +79,12 @@ export interface SceneMeta {
   updatedAt?: string;
   /** Secret gating this scene's /watch URL. Admin-only — omitted from public listings. */
   watchToken?: string;
+  /**
+   * A production scene, not a channel (the two short-video scenes): viewer-
+   * facing lists (the public home page, the channel launcher) leave it out.
+   * Admin pickers still show it. Scene metadata beside `name`, not ControlState.
+   */
+  hidden?: boolean;
 }
 
 /**

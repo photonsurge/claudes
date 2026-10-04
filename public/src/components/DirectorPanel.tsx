@@ -26,11 +26,12 @@
  * While auto is actually running, the setup form is replaced by a "Recently
  * aired" session log (DirectorRecentlyAired) — the operator glances at what's
  * played rather than re-fiddling the setup form mid-broadcast. "⚙ Settings"
- * swaps back to the form without leaving auto.
+ * swaps back to the form without leaving auto. A scripted short ("script"
+ * mode) reads the same way, with "Playing a script" + Stop in the mode bar.
  */
 import type { DirectorConfig } from "@photonsurge/shared/director";
 import type { ControlState } from "@photonsurge/shared/control";
-import { useDirector } from "../lib/director";
+import { useDirector, directorRunning } from "../lib/director";
 import DirectorModeBar from "./DirectorModeBar";
 import DirectorCountdown from "./DirectorCountdown";
 import DirectorOnAirReadout from "./DirectorOnAirReadout";
@@ -79,9 +80,12 @@ export default function DirectorPanel({
   onToggleSettings: () => void;
 }) {
   const live = useDirector(sceneId);
+  // "running" = auto OR a scripted short: both drive the scene, so both swap
+  // the form for the readout + log and keep the countdown from starting auto.
   const auto = config.mode === "auto";
+  const running = directorRunning(config.mode);
 
-  const showForm = !auto || showSettings;
+  const showForm = !running || showSettings;
 
   return (
     <section className="director-panel" style={{ marginBottom: 18, borderBottom: "1px solid #1b2030", paddingBottom: 16 }}>
@@ -97,8 +101,9 @@ export default function DirectorPanel({
       </div>
 
       <DirectorModeBar
-        auto={auto}
+        mode={config.mode}
         onToggleAuto={() => applyNow({ mode: auto ? "off" : "auto" })}
+        onStop={() => applyNow({ mode: "off" })}
         onSkip={() => applyNow({ skipNonce: config.skipNonce + 1 })}
         showSettings={showSettings}
         onToggleSettings={onToggleSettings}
@@ -107,12 +112,12 @@ export default function DirectorPanel({
       <DirectorCountdown
         liveState={liveState}
         applyLive={applyLive}
-        auto={auto}
+        auto={running}
         startDirector={() => applyNow({ mode: "auto" })}
       />
 
-      <DirectorOnAirReadout auto={auto} live={live} />
-      <DirectorRecentlyAired sceneId={sceneId} live={live} visible={auto && !showSettings} />
+      <DirectorOnAirReadout auto={running} live={live} />
+      <DirectorRecentlyAired sceneId={sceneId} live={live} visible={running && !showSettings} />
 
       {showForm ? (
         <>

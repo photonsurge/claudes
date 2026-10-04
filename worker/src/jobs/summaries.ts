@@ -10,11 +10,9 @@ import { aggregate } from "../summaries/aggregate";
 import { generateNarrative, summaryTrend } from "../summaries/openrouter";
 import { buildAreaContext } from "../summaries/areaContext";
 import { generate12hRollup } from "../summaries/rollup";
+import { planSummaryTick, hourliesInWindow, ROLLUP_WINDOW_HOURS, TICK_PERIODS } from "../summaries/schedule";
 
 const TAG = "job:summaries";
-
-/** How many recent hourly round-ups the 12h retrospective synthesises. */
-const ROLLUP_HOURS = 12;
 
 /**
  * Generate one global weather-event round-up for `period`: aggregate the active
@@ -31,12 +29,22 @@ async function run(period: SummaryPeriod): Promise<{ id?: string; period: Summar
     // stats/hotspots/topEvents the map + panels read, for every cadence.
     const [agg, area] = await Promise.all([aggregate(db, period), buildAreaContext(db)]);
 
-    // The 12h round-up is a retrospective SYNTHESIS of the recent hourly
-    // round-ups (+ the current snapshot + area context); hourly/daily narrate
-    // the snapshot directly, with the previous prose fed back for continuity.
+    // The 12h round-up is a retrospective SYNTHESIS of the hourlies written in
+    // the last 12 hours (+ the current snapshot + area context); hourly/daily
+    // narrate the snapshot directly, with the previous prose fed back for
+    // continuity. With hourlies thinned or switched off the window can be empty,
+    // and a roll-up of nothing is not a round-up — the 12h then narrates the
+    // snapshot like the daily does.
     let narrative;
-    if (period === "12h") {
-      const hourlies = await db.eventSummaries.list({ period: "hourly", limit: ROLLUP_HOURS });
+    const hourlies =
+      period === "12h"
+        ? hourliesInWindow(
+            // At most one hourly per hour, so this limit always covers the window.
+            await db.eventSummaries.list({ period: "hourly", limit: ROLLUP_WINDOW_HOURS + 1 }),
+            new Date(),
+          )
+        : [];
+    if (hourlies.length) {
       narrative = await generate12hRollup(hourlies, agg, { area, prevNarrative: prev?.narrative });
     } else {
       const trend = summaryTrend(agg.stats, prev?.stats ?? null);
@@ -86,7 +94,51 @@ async function run(period: SummaryPeriod): Promise<{ id?: string; period: Summar
   }
 }
 
-/** Dispatched as type "summaries", one event per cadence. */
+/**
+ * The scheduled entry point: one repeatable fires this hourly and it writes
+ * whichever round-ups have an unserved slot under the operator's settings
+ * (db.roundupSettings, edited on the admin round-up pages). Settings are read
+ * per tick, so an edit applies at the next tick with no restart.
+ *
+ * Periods run in order (hourly → 12h → daily) and independently: one failing
+ * doesn't stop the others. The first error is rethrown after all were tried so
+ * BullMQ retries the tick — the periods that succeeded have then served their
+ * slot and skip on the retry.
+ */
+export async function tick(_job: Job) {
+  const db = await getAppDb();
+  const now = new Date();
+  const settings = await db.roundupSettings.get();
+  const latest = await Promise.all(
+    TICK_PERIODS.map(async (p) => [p, (await db.eventSummaries.latest(p))?.generatedAt] as const),
+  );
+  const last = Object.fromEntries(latest.map(([p, at]) => [p, at ? new Date(at) : null]));
+  const plan = planSummaryTick(now, settings, last);
+
+  const ran: SummaryPeriod[] = [];
+  const failed: SummaryPeriod[] = [];
+  let firstErr: unknown;
+  for (const period of plan.due) {
+    try {
+      await run(period);
+      ran.push(period);
+    } catch (err) {
+      // run() has already logged it.
+      failed.push(period);
+      if (failed.length === 1) firstErr = err;
+    }
+  }
+  const result = { ran, failed, skipped: plan.skipped };
+  log(TAG, "tick", result);
+  if (failed.length) throw firstErr;
+  return result;
+}
+
+/**
+ * Manual triggers (/admin "Generate now", /admin/jobs): write that cadence now,
+ * ignoring the schedule. A run inside a slot serves it, so the tick won't
+ * duplicate it.
+ */
 export const generateHourly = (_job: Job) => run("hourly");
 export const generate12h = (_job: Job) => run("12h");
 export const generateDaily = (_job: Job) => run("daily");

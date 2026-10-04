@@ -44,6 +44,8 @@ export interface iBroadcastStateModel extends iBroadcastState {
   name?: string;
   /** Secret gating the tokened /watch URL for this scene. Not part of ControlState. */
   watchToken?: string;
+  /** Kept off viewer-facing scene lists (SceneMeta.hidden). Not part of ControlState. */
+  hidden?: boolean;
 }
 
 export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
@@ -53,6 +55,8 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     name: { type: String, required: false, default: "Main" },
     /** Secret gating the tokened /watch URL for this scene. */
     watchToken: { type: String, required: false, default: () => randomBytes(24).toString("hex") },
+    /** Production scene (the short-video scenes): off the public home page and launcher. */
+    hidden: { type: Boolean, required: false, default: false },
     activeVariable: { type: String, required: false, default: "temp" },
     fhr: { type: Number, required: true, default: 0 },
     basemap: { type: String, required: true, default: "dark" },

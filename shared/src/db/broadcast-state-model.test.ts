@@ -11,4 +11,15 @@ describe("BroadcastStateSchema", () => {
     const missing = Object.keys(DEFAULT_CONTROL_STATE).filter((k) => !persisted.has(k));
     expect(missing).toEqual([]);
   });
+
+  // Scene metadata lives on the same doc beside ControlState — the same strict
+  // schema drops it just as silently.
+  it("persists the scene metadata fields (name, watchToken, hidden)", () => {
+    const persisted = new Set(Object.keys(BroadcastStateSchema.paths));
+    expect(["name", "watchToken", "hidden"].filter((k) => !persisted.has(k))).toEqual([]);
+  });
+
+  it("keeps hidden out of ControlState (it is scene metadata, not broadcast state)", () => {
+    expect(DEFAULT_CONTROL_STATE).not.toHaveProperty("hidden");
+  });
 });

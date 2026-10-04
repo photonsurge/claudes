@@ -20,6 +20,7 @@ import {
   DEFAULT_DIRECTOR_CONFIG,
   mergeDirectorConfig,
   type DirectorConfig,
+  type DirectorMode,
   type DirectorState,
   type Segment,
   type SegmentKind,
@@ -97,6 +98,12 @@ const DEPTH_CYCLE_MS = 2500;
  * `summaryCandidates` in worker/src/director/candidates.ts.
  */
 const SUMMARY_STOP_DWELL_MS = 40_000;
+/** The per-stop dwell a cut's tour actually uses: the segment's own
+ *  `tourDwellMs` (scripted shorts pace a tour inside a fixed clip) or the
+ *  live channel's full-package default. */
+export function tourDwellOf(cut: Segment): number {
+  return cut.tourDwellMs ?? SUMMARY_STOP_DWELL_MS;
+}
 const SUMMARY_STOP_ZOOM = 5;
 
 /** One step of a cut's within-shot rotation: the look, plus an optional relabel. */
@@ -217,7 +224,9 @@ export function cutSteps(
       }),
     );
     const flightMs = cut.patch.cutTransitionMs ?? 4000;
-    return { steps, periodMs: flightMs + SUMMARY_STOP_DWELL_MS, anchored: true };
+    // A scripted clip paces its tour to fit (`tourDwellMs`); the live channel's
+    // segments leave it unset and keep the full per-stop package dwell.
+    return { steps, periodMs: flightMs + tourDwellOf(cut), anchored: true };
   }
   const tour = globalMapTour(cut.kind, mapTypeIds);
   if (tour) {
@@ -375,6 +384,20 @@ export function useDirectorCut(
   }, [cut, step]);
 }
 
+/**
+ * Whether the director is driving the scene: the endless picker ("auto") or a
+ * scripted short playing its clip list ("script"). Operator surfaces test this
+ * where they once tested `mode === "auto"`, so a playing script never reads as
+ * off (and nothing offers to switch it to auto mid-play).
+ */
+export function directorRunning(mode: DirectorMode): boolean {
+  return mode === "auto" || mode === "script";
+}
+
+/** How often an operator surface re-reads a scene's config while a script plays,
+ *  to notice the worker's runner handing the scene back to "off" at the end. */
+const SCRIPT_MODE_POLL_MS = 5000;
+
 /** Cold-start a scene's director config from the API. */
 export async function fetchDirectorConfig(sceneId: string): Promise<DirectorConfig> {
   try {
@@ -466,7 +489,12 @@ export function mergeConfig(prev: DirectorConfig, patch: Partial<DirectorConfig>
  * without disturbing pending draft edits. `update` is kept as an alias of
  * `applyNow` for read-only consumers that never edit.
  */
-export function useDirectorConfig(sceneId: string): {
+export function useDirectorConfig(
+  sceneId: string,
+  /** Operator surfaces only: re-read the mode while a script plays (see below).
+   *  Off for the read-only /watch pages, which need no extra on-air traffic. */
+  opts: { followScript?: boolean } = {},
+): {
   config: DirectorConfig;
   draft: DirectorConfig;
   dirty: boolean;
@@ -496,6 +524,33 @@ export function useDirectorConfig(sceneId: string): {
       cancelled = true;
     };
   }, [sceneId]);
+
+  // A script ends on its own: the worker's runner sets the scene back to "off".
+  // While the saved mode is "script", re-read it on a slow poll and mirror a
+  // mode change into both states (only `mode` — pending form edits stay put),
+  // so the panel drops "Playing a script" without a reload.
+  const scripted = !!opts.followScript && config.mode === "script";
+  useEffect(() => {
+    if (!scripted) return;
+    let cancelled = false;
+    const t = setInterval(() => {
+      // Not fetchDirectorConfig: its fallback to the defaults on a failed read
+      // would look like "off" and drop the panel out of script mode early.
+      fetch(`/api/director/${encodeURIComponent(sceneId)}/config`, { cache: "no-store" })
+        .then((res) => (res.ok ? (res.json() as Promise<Partial<DirectorConfig>>) : null))
+        .then((c) => {
+          const mode = c?.mode;
+          if (cancelled || !mode || mode === "script") return;
+          setConfig((prev) => ({ ...prev, mode }));
+          setDraft((prev) => ({ ...prev, mode }));
+        })
+        .catch(() => {});
+    }, SCRIPT_MODE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [sceneId, scripted]);
 
   // Immediate apply (Auto toggle / Skip): PATCH now and mirror into both states
   // so a just-toggled mode isn't reverted by the untouched draft. Only `patch`

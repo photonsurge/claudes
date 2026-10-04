@@ -17,10 +17,10 @@ export interface iDirectorConfigModel extends iDirectorConfig {
   _id: string;
 }
 
-const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
+export const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
   {
     id: { type: String, required: true, unique: true, default: DIRECTOR_CONFIG_ID },
-    mode: { type: String, required: true, enum: ["off", "auto"], default: "off" },
+    mode: { type: String, required: true, enum: ["off", "auto", "script"], default: "off" },
     // Per-kind hold (seconds). Quake/storm entries are the fallback only — the
     // per-level maps below drive those kinds. Defaults mirror DEFAULT_*_HOLD_SECONDS.
     kindHoldSeconds: {
@@ -29,6 +29,7 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
       ocean: { type: Number, default: 17 },
       orbital: { type: Number, default: 17 },
       country: { type: Number, default: 12 },
+      region: { type: Number, default: 12 },
       storm: { type: Number, default: 12 },
       volcano: { type: Number, default: 12 },
       quake: { type: Number, default: 12 },
@@ -83,6 +84,14 @@ const DirectorConfigSchema = new mongoose.Schema<iDirectorConfigModel>(
     alertCycleSeconds: { type: Number, required: true, default: 6 },
     adEveryNShots: { type: Number, required: true, default: 6 },
     skipNonce: { type: Number, required: true, default: 0 },
+    // Script-mode play trigger (DirectorScriptPlay). No defaults: absent until a
+    // script is first played on this scene, so auto-only scenes never carry one.
+    script: {
+      scriptId: { type: String },
+      fromClip: { type: Number },
+      playNonce: { type: Number },
+      record: { type: Boolean },
+    },
     // Dynamic per-kind keys (SegmentKind → string[] / bool map) — Mixed, same
     // precedent as satImgFeeds in broadcast-state-model.ts.
     mapTypes: { type: mongoose.Schema.Types.Mixed, default: {} },

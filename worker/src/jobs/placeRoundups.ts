@@ -2,6 +2,7 @@ import type { Job } from "bullmq";
 import { getAppDb, type AppDb } from "@photonsurge/shared/db/index";
 import type { PlaceRoundupRepo } from "@photonsurge/shared/db/place-roundup-repo";
 import { PLACE_ROUNDUPS_UPDATED } from "@photonsurge/shared/control";
+import { ROUNDUP_ID_FOR_PLACE } from "@photonsurge/shared/roundup-settings";
 import { log } from "@photonsurge/shared/utill/logger";
 import { summarizeForLog } from "../utils";
 import { blogInfo, blogErr } from "../blog";
@@ -18,28 +19,38 @@ function isManualTrigger(job: Job): boolean {
 }
 
 /**
- * Keep only the places whose LOCAL time is currently in a target slot and that
- * haven't generated recently — so each place's round-up lands in its own morning
- * / evening rather than at a fixed UTC instant. `repo.latestPerPlace()` gives the
- * last generation time for every place in one round trip.
+ * Keep only the places whose current LOCAL slot hasn't been served yet — so each
+ * place's round-up lands in its own morning / evening rather than at a fixed UTC
+ * instant. The slots (local hours) and the on/off switch per kind come from the
+ * operator's round-up settings, read once per run so an edit applies at the next
+ * hourly fire. `repo.latestPerPlace()` gives the last generation time for every
+ * place in one round trip.
  *
- * The local-time gate applies to the HOURLY CRON only. A manual "Generate now"
- * click (/admin/place-roundups or /admin/jobs) arrives with `trigger:"admin"` and
- * bypasses the gate — an operator clicking the button wants the whole set now, not
- * "nothing, because it isn't 6am anywhere". PLACE_ROUNDUP_IGNORE_LOCAL_TIME=true
- * forces the bypass globally (incl. the cron) if ever needed.
+ * Order matters. A manual "Generate now" click (/admin/place-roundups or
+ * /admin/jobs) arrives with `trigger:"admin"` and gets the whole set — even when
+ * the kind is switched off — because an operator clicking the button wants the
+ * round-ups now, not "nothing, because it isn't 6am anywhere". Otherwise a
+ * disabled kind generates nothing, PLACE_ROUNDUP_IGNORE_LOCAL_TIME=true forces
+ * the whole set (incl. the cron) if ever needed, and the rest is the due filter.
  */
 async function filterDue(
   kind: "country" | "region",
   places: PlaceRef[],
   repo: PlaceRoundupRepo,
+  db: AppDb,
   manual: boolean,
 ): Promise<PlaceRef[]> {
-  if (manual || process.env.PLACE_ROUNDUP_IGNORE_LOCAL_TIME === "true") return places;
+  if (manual) return places;
+  const setting = (await db.roundupSettings.get())[ROUNDUP_ID_FOR_PLACE[kind]];
+  if (!setting.enabled) {
+    log(TAG, `${kind} round-ups disabled in settings`);
+    return [];
+  }
+  if (process.env.PLACE_ROUNDUP_IGNORE_LOCAL_TIME === "true") return places;
   const latest = await repo.latestPerPlace();
   const lastGen = new Map(latest.map((r) => [r.placeId, new Date(r.generatedAt)]));
   const now = new Date();
-  const due = places.filter((p) => isPlaceDue(now, p.bbox, lastGen.get(p.id) ?? null));
+  const due = places.filter((p) => isPlaceDue(now, p.bbox, lastGen.get(p.id) ?? null, setting));
   log(TAG, `${kind} due this run`, { due: due.length, total: places.length });
   return due;
 }
@@ -128,7 +139,7 @@ export async function generateCountries(job: Job) {
     iso2: c.iso2,
     capital: c.capital,
   }));
-  const due = await filterDue("country", places, db.countryRoundups, isManualTrigger(job));
+  const due = await filterDue("country", places, db.countryRoundups, db, isManualTrigger(job));
   return runBatch("country", due, db.countryRoundups, db);
 }
 
@@ -155,6 +166,6 @@ export async function generateRegions(job: Job) {
       name: r.name,
       bbox: r.bbox,
     }));
-  const due = await filterDue("region", places, db.regionRoundups, isManualTrigger(job));
+  const due = await filterDue("region", places, db.regionRoundups, db, isManualTrigger(job));
   return runBatch("region", due, db.regionRoundups, db);
 }

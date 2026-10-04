@@ -27,6 +27,7 @@ import { DIRECTOR_PRESETS } from "@photonsurge/shared/director-presets";
 import SettingsCard from "./SettingsCard";
 import DirectorKindList from "./DirectorKindList";
 import FavouritesGrid from "./FavouritesGrid";
+import DirectorModeChip from "./DirectorModeChip";
 import { useSceneDraft } from "./SceneDraft";
 
 export default function DirectorSettings() {
@@ -46,14 +47,7 @@ export default function DirectorSettings() {
   return (
     <SettingsCard
       id="director"
-      actions={
-        <Chip
-          size="small"
-          label={cfg.mode === "auto" ? "Auto" : "Off"}
-          color={cfg.mode === "auto" ? "success" : "default"}
-          variant="outlined"
-        />
-      }
+      actions={<DirectorModeChip sceneId={sceneId} mode={cfg.mode} />}
       blurb={
         <>
           What this channel covers when the director is driving. Start/stop, skip and live
