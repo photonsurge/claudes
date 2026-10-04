@@ -146,6 +146,24 @@ describe("runVoiceTest cache", () => {
   });
 });
 
+describe("runVoiceTest pricing", () => {
+  it("fetches the model list once when the catalog is empty, so the cost is known", async () => {
+    const { db, store } = fakeDb(true);
+    let models: unknown[] = [];
+    (db as any).speechCatalog = {
+      get: async () => ({ models, fetchedAt: null }),
+      save: async (m: unknown[]) => {
+        models = m;
+      },
+    };
+    const speak = jest.fn(async () => ({ ok: true as const, audio: MP3, contentType: "audio/mpeg", latencyMs: 5, body: {} }));
+    const listModels = jest.fn(async () => [{ id: DEFAULT_VOICE.model, name: "", description: "", voices: [], pricing: { prompt: "0.000001" } }]);
+    await runVoiceTest(db, "t1", { speak, hasKey: () => true, listModels });
+    expect(listModels).toHaveBeenCalledTimes(1);
+    expect(store.t1.audio?.estCostUsd).toBeCloseTo(0.000001 * "Gusts to 120 kilometres per hour.".length);
+  });
+});
+
 describe("refreshSpeechCatalog", () => {
   it("saves the list", async () => {
     const { db } = fakeDb(true);

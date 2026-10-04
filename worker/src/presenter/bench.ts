@@ -21,6 +21,21 @@ export interface BenchDeps {
   hasKey?: () => boolean;
   /** The CLI is an explicit operator action, so it does not need the page's master switch. */
   ignoreSwitch?: boolean;
+  listModels?: typeof listSpeechModels;
+}
+
+/**
+ * The model's price from the cached catalog. With no catalog yet (nobody has
+ * pressed "Refresh voices"), fetch it once now: it is a free GET, and without
+ * it every take's cost reads as unknown. A failure just leaves the cost unknown.
+ */
+async function pricingFor(db: Db, model: string, list?: typeof listSpeechModels) {
+  let catalog = await db.speechCatalog.get();
+  if (!catalog.models.length) {
+    await refreshSpeechCatalog(db, list).catch(() => undefined);
+    catalog = await db.speechCatalog.get();
+  }
+  return catalog.models.find((m) => m.id === model)?.pricing;
 }
 
 /**
@@ -92,8 +107,7 @@ export async function runVoiceTest(db: Db, testId: string, deps: BenchDeps = {})
   }
 
   const durationMs = res.contentType.includes("pcm") ? pcmDurationMs(res.audio.length) : mp3DurationMs(res.audio);
-  const catalog = await db.speechCatalog.get();
-  const pricing = catalog.models.find((m) => m.id === take.voice.model)?.pricing;
+  const pricing = await pricingFor(db, take.voice.model, deps.listModels);
 
   await db.voiceTests.putAudio(testId, res.audio, {
     status: "ready",
