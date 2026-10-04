@@ -7,7 +7,7 @@
  * would see — the caller decides whether those go to YouTube (each costs
  * quota) or only to the operator panel.
  *
- * See docs/director-programme-plan.md §5.
+ * See docs/done/director-programme-plan.md §5.
  */
 import { getAppDb, type AppDb } from "@photonsurge/shared/db/index";
 import {

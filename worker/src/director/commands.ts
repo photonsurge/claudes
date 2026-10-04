@@ -4,7 +4,7 @@
  * builders rotation uses), and apply the control ops (skip / hold / pause /
  * resume / clear) to a scene's runner.
  *
- * See shared/director-commands.ts for the contract and docs/director-programme-plan.md §4.4.
+ * See shared/director-commands.ts for the contract and docs/done/director-programme-plan.md §4.4.
  */
 import type { AppDb } from "@photonsurge/shared/db/index";
 import { splitAlertSubject, type DirectorConfig, type Segment, type SegmentKind } from "@photonsurge/shared/director";

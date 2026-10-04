@@ -4,7 +4,7 @@
  * fields, and the runner view the pure queue logic reads.
  *
  * The decisions themselves (what is queued, what breaks in) are pure, in
- * shared/director-break-in.ts. See docs/director-programme-plan.md §3.5, §4.3.
+ * shared/director-break-in.ts. See docs/done/director-programme-plan.md §3.5, §4.3.
  */
 import type { AppDb } from "@photonsurge/shared/db/index";
 import type { DirectorConfig, Segment, SegmentKind } from "@photonsurge/shared/director";

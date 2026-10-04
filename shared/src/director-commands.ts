@@ -10,7 +10,7 @@
  * refused with a reason, expiring, or an explicit clear — every outcome is a
  * row someone can read later.
  *
- * See docs/director-programme-plan.md §3.6 and §4.4.
+ * See docs/done/director-programme-plan.md §3.6 and §4.4.
  */
 import type { SegmentKind } from "./director";
 import type { StreamPlatform } from "./runs";

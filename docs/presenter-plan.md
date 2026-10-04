@@ -3,7 +3,7 @@
 > **Status: PROPOSED** (2026-10-04, revised the same day to put round-ups first).
 > Nothing built. Replaces the memory-only "presenter LLM" sketch that
 > [short-video-plan.md](./short-video-plan.md),
-> [chat-interaction-plan.md](./chat-interaction-plan.md) and
+> [chat-interaction-plan.md](./done/chat-interaction-plan.md) and
 > [streaming-runs-plan.md](./streaming-runs-plan.md) point at.
 > Everything goes through OpenRouter: the script model and the speech model.
 > Order: round-up settings (schedule, wording, preview), then the voice audition, then

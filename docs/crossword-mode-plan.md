@@ -4,7 +4,7 @@
 > in §11 are sized to hand to Opus sub-agents one at a time, as with
 > [short-video-plan.md](./short-video-plan.md).
 > Source material: the February prototype in `../crosswords` (§1).
-> Shares the chat seam with [chat-interaction-plan.md](./chat-interaction-plan.md) (§6.4).
+> Shares the chat seam with [chat-interaction-plan.md](./done/chat-interaction-plan.md) (§6.4).
 > Open questions for the operator are in §13.
 > Revised the same day: the encoder is picked at go-live (§10), and the February word
 > bank, measured on the local database, is the word source (§7.2).

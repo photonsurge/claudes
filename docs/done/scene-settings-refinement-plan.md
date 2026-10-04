@@ -1,6 +1,6 @@
 # `/admin/scenes/:id` — settings page refinement
 
-> **Status: SHIPPED** (2026-09-13) — all five phases. The page carried 11 peer
+> **Status: CLOSED** — shipped 2026-09-13, all five phases. The page carried 11 peer
 > cards in one 760 px column, each independently fetching the same document, and
 > the director per-channel config, break-in and chat interaction plans (now
 > combined in [director-programme-plan.md](./director-programme-plan.md)) were about to add seven
@@ -27,7 +27,7 @@ a flat `<Stack spacing={2}>` of eleven `<Paper>` cards:
 | 10 | `AudioSettings` | Music bed | `audio` | 147 |
 | 11 | `ThemeSettings` | Brand / theme | `broadcastTheme` `themeOverrides` `basemapColors` | 329 |
 
-The [Save bar](../public/src/components/admin/scenes/SceneDraft.tsx) is the
+The [Save bar](../../public/src/components/admin/scenes/SceneDraft.tsx) is the
 one genuinely good bone in the page and this plan keeps it: cards stage deltas,
 nothing reaches air until Save, and the patch can never clobber the operator's
 live state. Everything below is about the 2 000 lines around it.
@@ -44,7 +44,7 @@ setting means scrolling and reading every heading. The page `description` is a
 in their own `useEffect`; `DirectorSettings` calls `fetchDirectorConfig`. Each
 keeps a private `useState` copy of the *whole* `ControlState` and hand-merges
 its own writes into it. Discard bumps `epoch` and all eleven refetch. With
-[API request logging](../public/src/lib/api-log.ts) on, one page view is eleven
+[API request logging](../../public/src/lib/api-log.ts) on, one page view is eleven
 `/api/*` rows in Mongo.
 
 **1.3 The private copies block any layout change.** A card renders from its own
@@ -253,7 +253,7 @@ plus a component, with no page churn.
   failure.
 - **catalog**: ids unique; every key a card stages is declared in exactly one
   card's `fields` — a pinned table test in the spirit of the
-  [ControlState persist parity test](../shared/src/db/broadcast-state-model.test.ts),
+  [ControlState persist parity test](../../shared/src/db/broadcast-state-model.test.ts),
   so a new field cannot arrive without an owner and the Save bar can always
   name it.
 - **page**: rail switches group; `?s=` selects; `#card` selects the owning

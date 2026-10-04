@@ -9,7 +9,7 @@
  * full-state emit can never overwrite it. Map looks are NOT here — they move
  * the camera, so they go through the director command queue.
  *
- * See docs/director-programme-plan.md §3.7.
+ * See docs/done/director-programme-plan.md §3.7.
  */
 import type { StreamPlatform } from "./runs";
 

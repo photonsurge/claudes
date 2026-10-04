@@ -5,8 +5,8 @@
 > tracks follow: **formats** (§5, WP5-6, a cloud agent) and **getting a video onto
 > YouTube on a schedule** (§6 and §8, WP7 and WP9). Planned on Fable, built by Opus sub-agents, one
 > work package at a time (§11).
-> Shares two refactors with [director-break-in-plan.md](./director-break-in-plan.md) and
-> [director-commands-plan.md](./director-commands-plan.md); both are done (§3).
+> Shares two refactors with [director-break-in-plan.md](./done/director-break-in-plan.md) and
+> [director-commands-plan.md](./done/director-commands-plan.md); both are done (§3).
 
 A routine makes a short, finite video. It opens on a place (a country, an area or the
 whole globe) with its lineup and round-up, then cuts through what is active there:

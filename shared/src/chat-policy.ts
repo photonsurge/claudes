@@ -7,7 +7,7 @@
  *
  * Also the chat grammar: `[:!]<cmd> [args…] [minutes]`.
  *
- * See docs/director-programme-plan.md §3.8 and §5.
+ * See docs/done/director-programme-plan.md §3.8 and §5.
  */
 import type { AudioMode } from "./control";
 import type { SegmentKind } from "./director";
