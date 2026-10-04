@@ -161,8 +161,15 @@ async function nextTitle(db: BuildDb): Promise<string> {
 export function channelStock(
   ready: readonly CrosswordPuzzle[],
   cfg: Pick<CrosswordConfig, "familyFriendlyOnly">,
+  allowUnapproved = allowUnapprovedFromEnv(),
 ): CrosswordPuzzle[] {
-  return ready.filter((p) => p.status === "ready" && (!cfg.familyFriendlyOnly || p.familyFriendly === true) && !p.plays.length);
+  return ready.filter(
+    (p) =>
+      p.status === "ready" &&
+      (!cfg.familyFriendlyOnly || p.familyFriendly === true) &&
+      (allowUnapproved || p.unapproved !== true) &&
+      !p.plays.length,
+  );
 }
 
 /** Build one puzzle for a scene and (unless dry) store it. */
@@ -173,7 +180,7 @@ export async function buildPuzzle(db: BuildDb, req: CrosswordGenerateRequest, op
   const cfg = await db.getOrInitCrosswordConfig(req.sceneId);
   // The words in the waiting stock are left out and its clues count
   // as just used, so puzzles built back to back do not repeat each other.
-  const stock = channelStock(await db.crosswordPuzzles.list({ status: "ready" }), cfg);
+  const stock = channelStock(await db.crosswordPuzzles.list({ status: "ready" }), cfg, opts.allowUnapproved ?? allowUnapprovedFromEnv());
   const pick = await pickCandidates(db, req.sceneId, cfg, { seed, allowUnapproved: opts.allowUnapproved, stock });
   if (pick.words.length < cfg.minWords) {
     throw new CrosswordBuildError(`too few words for a puzzle (need ${cfg.minWords}): ${await poolNote(db, pick, cfg)}`);
@@ -222,6 +229,8 @@ export async function buildPuzzle(db: BuildDb, req: CrosswordGenerateRequest, op
     source: pick.source,
     createdAt: now(),
     plays: [],
+    // Built from words nobody approved: it airs only where the switch is on too.
+    ...(pick.unapproved ? { unapproved: true } : {}),
   };
   if (!opts.dryRun) await db.crosswordPuzzles.upsert(puzzle);
   return {
@@ -269,11 +278,12 @@ export async function topUpScenes(db: TopUpDb, opts: BuildOptions = {}): Promise
       }
       // Unapproved puzzles are never tagged, so this channel could play none of
       // them and top-up would build one every run.
-      if ((opts.allowUnapproved ?? allowUnapprovedFromEnv()) && cfg.familyFriendlyOnly) {
+      const allowUnapproved = opts.allowUnapproved ?? allowUnapprovedFromEnv();
+      if (allowUnapproved && cfg.familyFriendlyOnly) {
         out.push({ sceneId, outcome: "skipped", reason: DEV_FAMILY_FRIENDLY_REASON });
         continue;
       }
-      if (unplayedStock(ready, sceneId, { familyFriendlyOnly: cfg.familyFriendlyOnly }) >= cfg.stockTarget) {
+      if (unplayedStock(ready, sceneId, { familyFriendlyOnly: cfg.familyFriendlyOnly, allowUnapproved }) >= cfg.stockTarget) {
         out.push({ sceneId, outcome: "stocked" });
         continue;
       }

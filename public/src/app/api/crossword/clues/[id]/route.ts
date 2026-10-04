@@ -1,6 +1,6 @@
 import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
-import { getAppDb } from "@photonsurge/shared/db/index";
+import { getAppDb, type CrosswordCascade } from "@photonsurge/shared/db/index";
 import { cleanClue, validateClue } from "@photonsurge/shared/crossword";
 import { BANK_APPROVAL_STATUSES, type BankApprovalStatus } from "@photonsurge/shared/crossword-bank";
 import { requireAdmin } from "../../../../../lib/require-admin";
@@ -22,14 +22,16 @@ type Ctx = { params: Promise<{ id: string }> };
  *  • `approval`: "pending" | "approved" | "rejected";
  *  • `familyFriendly`: true | false | null (null untags);
  *
- * An `X-Word-Id` header (with an approval to `approved`) names the clue's word,
- * so the clue can be checked before it is approved. The repo has no clue lookup, so the
- *    route reads the word and finds the clue in it (404 if it is not there).
+ * Every decision goes through the db facade, so it reaches built puzzles:
+ * a clue rejected, returned to pending or edited takes every ready puzzle
+ * using it out of play, and a tag taken off clears their family-friendly flag.
  *
- * Approving a clue that `validateClue` refuses (after `cleanClue`; the
- * built-in blocklist only, since channel blocklists vary) is a 409 with the
- * `problem`. Who decided is the admin's session identity. 200 `{ ok: true }`;
- * 400 for an empty or malformed body, 404 for an unknown clue.
+ * Approving a clue that `validateClue` refuses (after `cleanClue`, against the
+ * answer of its word, read with `getClue`; the built-in blocklist only, since
+ * channel blocklists vary) is a 409 with the `problem`. An `X-Word-Id` header
+ * (sent by older clients) is accepted and ignored. Who decided is the admin's
+ * session identity. 200 `{ ok: true, rejected, untagged }` (the puzzles
+ * changed); 400 for an empty or malformed body, 404 for an unknown clue.
  */
 async function PATCH__impl(req: Request, { params }: Ctx) {
   const session = await requireAdmin();
@@ -59,28 +61,31 @@ async function PATCH__impl(req: Request, { params }: Ctx) {
     return NextResponse.json({ error: "familyFriendly must be true, false or null" }, { status: 400, headers: NO_CACHE });
   }
   const by = session.email || session.sub;
-  const bank = (await getAppDb()).crosswordBank;
-  const wordId = req.headers.get("x-word-id");
-  if (body.approval === "approved" && wordId) {
-    const word = await bank.getWordById(wordId);
-    const clue = word?.clues.find((c) => c.id === id);
-    if (!word || !clue) return NextResponse.json({ error: "no such clue" }, { status: 404, headers: NO_CACHE });
+  const db = await getAppDb();
+  if (body.approval === "approved") {
+    const clue = await db.crosswordBank.getClue(id);
+    if (!clue) return NextResponse.json({ error: "no such clue" }, { status: 404, headers: NO_CACHE });
     const text = hasText ? (body.text as string) : clue.text;
-    const problem = validateClue(cleanClue(text), word.word.toUpperCase().replace(/[^A-Z]/g, ""));
+    const problem = validateClue(cleanClue(text), clue.answer);
     if (problem) return NextResponse.json({ error: `clue cannot air: ${problem}`, problem }, { status: 409, headers: NO_CACHE });
   }
-  const found = async (p: Promise<boolean>) => {
-    if (!(await p)) throw new NotFound();
+  const rejected = new Set<string>();
+  const untagged = new Set<string>();
+  const found = async (p: Promise<CrosswordCascade>) => {
+    const r = await p;
+    if (!r.ok) throw new NotFound();
+    r.rejected.forEach((x) => rejected.add(x));
+    r.untagged.forEach((x) => untagged.add(x));
   };
   try {
-    if (hasText) await found(bank.editClue(id, body.text as string, by));
-    if (hasApproval) await found(bank.setClueApproval(id, body.approval as BankApprovalStatus, by));
-    if (hasTag) await found(bank.setClueFamilyFriendly(id, body.familyFriendly as boolean | null, by));
+    if (hasText) await found(db.editCrosswordClue(id, body.text as string, by));
+    if (hasApproval) await found(db.setCrosswordClueApproval(id, body.approval as BankApprovalStatus, by));
+    if (hasTag) await found(db.setCrosswordClueFamilyFriendly(id, body.familyFriendly as boolean | null, by));
   } catch (err) {
     if (err instanceof NotFound) return NextResponse.json({ error: "no such clue" }, { status: 404, headers: NO_CACHE });
     throw err;
   }
-  return NextResponse.json({ ok: true }, { status: 200, headers: NO_CACHE });
+  return NextResponse.json({ ok: true, rejected: [...rejected], untagged: [...untagged] }, { status: 200, headers: NO_CACHE });
 }
 
 class NotFound extends Error {}

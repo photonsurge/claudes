@@ -2,6 +2,7 @@ import {
   applyAnswer,
   answerStem,
   chooseNextPuzzle,
+  crosswordStockReason,
   cleanClue,
   cleanPlayerName,
   CROSSWORD_HOST_ID,
@@ -317,12 +318,68 @@ describe("chooseNextPuzzle", () => {
       P("c", 3, [{ sceneId: "xw", startedAt: 200 }]),
     ];
     expect(chooseNextPuzzle(list, "xw", 1)!.id).toBe("b");
-    expect(chooseNextPuzzle(list, "xw", 3)).toBeNull();
+  });
+
+  it("replays the one played longest ago when every puzzle is inside the window (§7.5)", () => {
+    const list = [
+      P("a", 1, [{ sceneId: "xw", startedAt: 300 }]),
+      P("b", 2, [{ sceneId: "xw", startedAt: 100 }]),
+      P("c", 3, [{ sceneId: "xw", startedAt: 200 }]),
+    ];
+    expect(chooseNextPuzzle(list, "xw", 3)!.id).toBe("b");
+    expect(chooseNextPuzzle([P("a", 1, [{ sceneId: "xw", startedAt: 1 }])], "xw", 30)!.id).toBe("a");
+  });
+
+  it("idles only with no eligible ready puzzle", () => {
+    expect(chooseNextPuzzle([], "xw", 30)).toBeNull();
+    expect(chooseNextPuzzle([P("a", 1, [], "rejected")], "xw", 30)).toBeNull();
+    expect(chooseNextPuzzle([makePuzzle({ id: "e", entries: [] })], "xw", 30)).toBeNull();
+  });
+
+  it("skips puzzles built from unapproved words unless allowed", () => {
+    const dev = makePuzzle({ id: "dev", createdAt: 1, unapproved: true });
+    const ok = makePuzzle({ id: "ok", createdAt: 2 });
+    expect(chooseNextPuzzle([dev, ok], "xw", 30)!.id).toBe("ok");
+    expect(chooseNextPuzzle([dev], "xw", 30)).toBeNull();
+    expect(chooseNextPuzzle([dev, ok], "xw", 30, { allowUnapproved: true })!.id).toBe("dev");
+    expect(unplayedStock([dev, ok], "xw")).toBe(1);
+    expect(unplayedStock([dev, ok], "xw", { allowUnapproved: true })).toBe(2);
   });
 
   it("plays on another scene do not count", () => {
     const list = [P("a", 1, [{ sceneId: "other", startedAt: 1 }])];
     expect(chooseNextPuzzle(list, "xw", 30)!.id).toBe("a");
+  });
+});
+
+describe("crosswordStockReason", () => {
+  const cfg = { noRepeatPuzzles: 30, familyFriendlyOnly: true };
+  const P = (id: string, o: Partial<CrosswordPuzzle> = {}) => makePuzzle({ id, createdAt: 1, familyFriendly: true, ...o });
+  const here = (at: number) => ({ sceneId: "xw", startedAt: at });
+
+  it("fresh: an unplayed puzzle is next, or the one on air is on its first play", () => {
+    expect(crosswordStockReason([P("a"), P("b")], "xw", "", cfg)).toEqual({ kind: "fresh", unplayed: 2 });
+    expect(crosswordStockReason([P("a", { plays: [here(1)] }), P("b")], "xw", "a", cfg)).toEqual({ kind: "fresh", unplayed: 1 });
+  });
+
+  it("replay: the puzzle on air aired here before, or everything has been played", () => {
+    expect(crosswordStockReason([P("a", { plays: [here(1), here(2)] })], "xw", "a", cfg)).toEqual({ kind: "replay", unplayed: 0 });
+    expect(crosswordStockReason([P("a", { plays: [here(1)] })], "xw", "", cfg)).toEqual({ kind: "replay", unplayed: 0 });
+    expect(crosswordStockReason([P("a", { plays: [here(1), { sceneId: "other", startedAt: 2 }] })], "xw", "a", cfg).kind).toBe("fresh");
+  });
+
+  it("noReady and noFamilyFriendly", () => {
+    expect(crosswordStockReason([P("a", { status: "rejected" })], "xw", "", cfg)).toEqual({ kind: "noReady", unplayed: 0 });
+    expect(crosswordStockReason([], "xw", "", { ...cfg, familyFriendlyOnly: false }).kind).toBe("noReady");
+    const rough = [P("a", { familyFriendly: false })];
+    expect(crosswordStockReason(rough, "xw", "", cfg)).toEqual({ kind: "noFamilyFriendly", unplayed: 0 });
+    expect(crosswordStockReason(rough, "xw", "", { ...cfg, familyFriendlyOnly: false })).toEqual({ kind: "fresh", unplayed: 1 });
+  });
+
+  it("unapproved puzzles count only when allowed", () => {
+    const dev = [P("a", { unapproved: true })];
+    expect(crosswordStockReason(dev, "xw", "", cfg).kind).toBe("noReady");
+    expect(crosswordStockReason(dev, "xw", "", { ...cfg, allowUnapproved: true }).kind).toBe("fresh");
   });
 });
 

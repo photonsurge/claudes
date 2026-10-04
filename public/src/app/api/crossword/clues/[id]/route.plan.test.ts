@@ -13,13 +13,27 @@ jest.mock("../../../../../lib/api-log", () => ({
 jest.mock("../../../../../lib/require-admin", () => ({ requireAdmin: jest.fn() }));
 
 const bank = {
+  getClue: jest.fn(),
   editClue: jest.fn(),
   setClueApproval: jest.fn(),
   setClueFamilyFriendly: jest.fn(),
   setWordApproval: jest.fn(),
   setWordFamilyFriendly: jest.fn(),
 };
-jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: async () => ({ crosswordBank: bank }) }));
+// The db facade's cascading decisions (§7.4), passed through to the bank fakes.
+const cascade = (f: (...a: never[]) => unknown) => async (...a: unknown[]) => ({
+  ok: !!(await (f as (...x: unknown[]) => unknown)(...a)),
+  rejected: [],
+  untagged: [],
+});
+const facade = () => ({
+  setCrosswordWordApproval: cascade(bank.setWordApproval),
+  setCrosswordWordFamilyFriendly: cascade(bank.setWordFamilyFriendly),
+  setCrosswordClueApproval: cascade(bank.setClueApproval),
+  setCrosswordClueFamilyFriendly: cascade(bank.setClueFamilyFriendly),
+  editCrosswordClue: cascade(bank.editClue),
+});
+jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: async () => ({ crosswordBank: bank, ...facade() }) }));
 
 import { requireAdmin } from "../../../../../lib/require-admin";
 import { PATCH } from "./route";
@@ -41,6 +55,8 @@ beforeEach(() => {
   bank.editClue.mockImplementation(async () => (order.push("edit"), true));
   bank.setClueApproval.mockImplementation(async (_id: string, s: string) => (order.push(`approval:${s}`), true));
   bank.setClueFamilyFriendly.mockImplementation(async (_id: string, v: unknown) => (order.push(`ff:${v}`), true));
+  // Approving checks the clue against its word's answer first (an airable clue here).
+  bank.getClue.mockResolvedValue({ id: CID, wordId: "w1", answer: "WRECK", text: "Remains of a ruined ship" });
 });
 
 it("is wrapped in withApiLog", () => {

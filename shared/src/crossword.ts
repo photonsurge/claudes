@@ -57,6 +57,11 @@ export interface CrosswordPuzzle {
   source: CrosswordPuzzleSource;
   createdAt: number;
   plays: CrosswordPlay[];
+  /**
+   * Built under `CROSSWORD_ALLOW_UNAPPROVED` (a dev box) from words and clues
+   * nobody approved. `chooseNextPuzzle` passes over it unless asked not to.
+   */
+  unapproved?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -925,18 +930,30 @@ const lastPlayOn = (p: CrosswordPuzzle, sceneId: string) =>
 /**
  * Which stock a channel may play. Stock is shared across channels, so a
  * family-friendly channel (its config's `familyFriendlyOnly`) skips puzzles
- * not flagged family friendly.
+ * not flagged family friendly. Puzzles built from unapproved words (a dev
+ * box's `CROSSWORD_ALLOW_UNAPPROVED`) are skipped unless `allowUnapproved`.
  */
 export interface CrosswordStockOptions {
   familyFriendlyOnly?: boolean;
+  allowUnapproved?: boolean;
 }
 
-const fitsChannel = (p: CrosswordPuzzle, opts: CrosswordStockOptions) => !opts.familyFriendlyOnly || p.familyFriendly === true;
+const fitsChannel = (p: CrosswordPuzzle, opts: CrosswordStockOptions) =>
+  (!opts.familyFriendlyOnly || p.familyFriendly === true) && (!!opts.allowUnapproved || p.unapproved !== true);
+
+/** Ready puzzles with entries that this channel may play. */
+const eligibleStock = (puzzles: CrosswordPuzzle[], opts: CrosswordStockOptions) =>
+  puzzles.filter((p) => p.status === "ready" && p.entries.length && fitsChannel(p, opts));
+
+const playedOn = (p: CrosswordPuzzle, sceneId: string) => p.plays.some((x) => x.sceneId === sceneId);
 
 /**
  * The next puzzle for a scene, from `ready` stock: the oldest one this scene
- * has not played; failing that, the one played longest ago, as long as it is
- * not one of the scene's last `noRepeat` plays. Null → `idle`.
+ * has not played; failing that, the one played longest ago outside the
+ * scene's last `noRepeat` plays; failing that (a small pool, §7.5: the
+ * channel replays rather than goes dark), the one played longest ago even
+ * inside that window. Null → `idle`, only when no ready puzzle fits the
+ * channel at all.
  */
 export function chooseNextPuzzle(
   puzzles: CrosswordPuzzle[],
@@ -944,9 +961,9 @@ export function chooseNextPuzzle(
   noRepeat: number,
   opts: CrosswordStockOptions = {},
 ): CrosswordPuzzle | null {
-  const ready = puzzles.filter((p) => p.status === "ready" && p.entries.length && fitsChannel(p, opts));
+  const ready = eligibleStock(puzzles, opts);
   const fresh = ready
-    .filter((p) => !p.plays.some((x) => x.sceneId === sceneId))
+    .filter((p) => !playedOn(p, sceneId))
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   if (fresh.length) return fresh[0];
   const played = ready
@@ -955,12 +972,53 @@ export function chooseNextPuzzle(
   const recent = new Set(
     [...played].sort((a, b) => b.at - a.at).slice(0, noRepeat).map((x) => x.p.id),
   );
-  return played.find((x) => !recent.has(x.p.id))?.p ?? null;
+  return played.find((x) => !recent.has(x.p.id))?.p ?? played[0]?.p ?? null;
 }
 
 /** Unplayed ready stock for a scene (the top-up job's measure), with the same channel filter. */
 export const unplayedStock = (puzzles: CrosswordPuzzle[], sceneId: string, opts: CrosswordStockOptions = {}) =>
-  puzzles.filter((p) => p.status === "ready" && fitsChannel(p, opts) && !p.plays.some((x) => x.sceneId === sceneId)).length;
+  eligibleStock(puzzles, opts).filter((p) => !playedOn(p, sceneId)).length;
+
+/**
+ * Why a channel is on the puzzle it is on, or idle (§7.5: "the Desk says
+ * why"). `fresh`: an unplayed puzzle is (or is next) on air. `replay`: the
+ * channel has played everything it may play and replays. `noReady`: no ready
+ * puzzle at all. `noFamilyFriendly`: ready puzzles exist, none of them family
+ * friendly, and the channel asks for that.
+ */
+export type CrosswordStockReasonKind = "fresh" | "replay" | "noReady" | "noFamilyFriendly";
+
+export interface CrosswordStockReason {
+  kind: CrosswordStockReasonKind;
+  /** Unplayed puzzles this channel may play (not counting the one on air). */
+  unplayed: number;
+}
+
+/**
+ * The structured reason beside `chooseNextPuzzle`, shared by the runner's log
+ * and the Desk. `currentPuzzleId` is the puzzle on air ("" when idle): it is
+ * `fresh` when this is its first play here, `replay` when it aired here
+ * before. With nothing on air the reason describes what `chooseNextPuzzle`
+ * would pick next.
+ */
+export function crosswordStockReason(
+  puzzles: CrosswordPuzzle[],
+  sceneId: string,
+  currentPuzzleId: string,
+  cfg: CrosswordStockOptions & { noRepeatPuzzles: number },
+): CrosswordStockReason {
+  const opts: CrosswordStockOptions = { familyFriendlyOnly: cfg.familyFriendlyOnly, allowUnapproved: cfg.allowUnapproved };
+  const unplayed = eligibleStock(puzzles, opts).filter((p) => p.id !== currentPuzzleId && !playedOn(p, sceneId)).length;
+  const current = currentPuzzleId ? puzzles.find((p) => p.id === currentPuzzleId) : undefined;
+  if (current) {
+    const playsHere = current.plays.filter((x) => x.sceneId === sceneId).length;
+    return { kind: playsHere >= 2 ? "replay" : "fresh", unplayed };
+  }
+  const next = chooseNextPuzzle(puzzles, sceneId, cfg.noRepeatPuzzles, opts);
+  if (next) return { kind: playedOn(next, sceneId) ? "replay" : "fresh", unplayed };
+  const anyReady = eligibleStock(puzzles, { ...opts, familyFriendlyOnly: false }).length > 0;
+  return { kind: cfg.familyFriendlyOnly && anyReady ? "noFamilyFriendly" : "noReady", unplayed };
+}
 
 // ---------------------------------------------------------------------------
 // Names, clues and the blocklist

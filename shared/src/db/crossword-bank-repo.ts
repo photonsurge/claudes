@@ -2,6 +2,7 @@ import mongoose, { type Connection } from "mongoose";
 import type { Collection, Document, Filter } from "mongodb";
 import {
   BANK_CLUE_FIELDS as C,
+  BANK_COUNT_CAP,
   BANK_CLUE_INDEXES,
   BANK_CLUES_COLLECTION,
   BANK_QUEUE_SORT,
@@ -26,6 +27,7 @@ import {
   toFamilyFriendly,
   type BankApprovalStatus,
   type BankClue,
+  type BankIndexSpec,
   type BankPlayableQuery,
   type BankPoolCounts,
   type BankQueueQuery,
@@ -47,6 +49,13 @@ export interface BankWordRef {
   zipf?: number;
 }
 
+/** One clue with its word's answer (the clue route checks a clue with it before approving). */
+export interface BankClueWithAnswer extends BankClue {
+  wordId: string;
+  /** The word's uppercase A–Z answer. */
+  answer: string;
+}
+
 /** A clue a playable word may use, with its ids for the puzzle entry. */
 export interface BankPlayableClue {
   id: string;
@@ -61,17 +70,6 @@ export interface BankPlayableClue {
 export interface BankPlayable extends BankWordRef {
   familyFriendly: boolean | null;
   clues: BankPlayableClue[];
-}
-
-/** What the puzzle builder needs to clue a word. */
-export interface BankBuildWord {
-  id: string;
-  norm: string;
-  senses: BankSense[];
-  /** Raw Wiktionary definitions: the facts a clue is written from. */
-  definitions: string[];
-  /** Every clue but the rejected ones. */
-  clues: BankClue[];
 }
 
 const TOTALS_TTL_MS = 60_000;
@@ -134,16 +132,25 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
     words,
     clues,
 
-    /** The prototype's `listWords`: one page of the Words list plus the match count. */
-    async listWords(q: BankWordQuery): Promise<{ rows: BankWordRow[]; total: number; page: number; pageSize: number }> {
+    /**
+     * The prototype's `listWords`: one page of the Words list plus the match
+     * count. With no filter the count is the collection's estimate (instant);
+     * with one it stops at BANK_COUNT_CAP and says so (`totalCapped`).
+     */
+    async listWords(
+      q: BankWordQuery,
+    ): Promise<{ rows: BankWordRow[]; total: number; totalCapped: boolean; page: number; pageSize: number }> {
       const filter = bankWordFilter(q) as Filter<Document>;
       const { skip, limit, page, pageSize } = bankPaging(q);
-      const [docs, total] = await Promise.all([
+      const unfiltered = Object.keys(filter).length === 0;
+      const [docs, counted] = await Promise.all([
         words().find(filter).sort(bankWordSort(q)).skip(skip).limit(limit).toArray(),
-        words().countDocuments(filter),
+        unfiltered ? words().estimatedDocumentCount() : words().countDocuments(filter, { limit: BANK_COUNT_CAP + 1 }),
       ]);
+      const totalCapped = !unfiltered && counted > BANK_COUNT_CAP;
+      const total = totalCapped ? BANK_COUNT_CAP : counted;
       const counts = await clueCounts(docs.map((d) => d._id));
-      return { rows: docs.map((d) => toBankWordRow(d, counts.get(String(d._id)) ?? 0)), total, page, pageSize };
+      return { rows: docs.map((d) => toBankWordRow(d, counts.get(String(d._id)) ?? 0)), total, totalCapped, page, pageSize };
     },
 
     /** Totals above the list: by clue status, decision and frequency band. Cached for a minute. */
@@ -197,6 +204,18 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
       };
     },
 
+    /** One clue by id with its word's answer, or null. */
+    async getClue(id: string): Promise<BankClueWithAnswer | null> {
+      const oid = toOid(id);
+      if (!oid) return null;
+      const doc = await clues().findOne({ _id: oid });
+      if (!doc) return null;
+      const wordId = getPath(doc, C.answerId);
+      const word = wordId ? await words().findOne({ _id: wordId }, { projection: { [F.norm]: 1, [F.word]: 1 } }) : null;
+      const raw = String(getPath(word, F.norm) ?? getPath(word, F.word) ?? getPath(doc, C.answerNorm) ?? "");
+      return { ...toBankClue(doc), wordId: wordId == null ? "" : String(wordId), answer: raw.toUpperCase().replace(/[^A-Z]/g, "") };
+    },
+
     /**
      * The playable pick (§7.3 step 1): every word the builder may sample, each
      * with the clues it may use. Approved words with at least one approved
@@ -247,28 +266,6 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
         });
       }
       return out;
-    },
-
-    /** Words by id with senses and every clue not rejected, for clueing a built grid. */
-    async forBuild(ids: string[]): Promise<BankBuildWord[]> {
-      const oids = ids.map(toOid).filter((x): x is mongoose.Types.ObjectId => !!x);
-      if (!oids.length) return [];
-      const [docs, clueDocs] = await Promise.all([
-        words().find({ _id: { $in: oids } }).toArray(),
-        clues().find({ [C.answerId]: { $in: oids }, [C.approvalStatus]: { $ne: "rejected" } }).toArray(),
-      ]);
-      const byWord = new Map<string, BankClue[]>();
-      for (const c of clueDocs) {
-        const k = String(getPath(c, C.answerId));
-        byWord.set(k, [...(byWord.get(k) ?? []), toBankClue(c)]);
-      }
-      return docs.map((d) => ({
-        id: String(d._id),
-        norm: String(getPath(d, F.norm) ?? ""),
-        senses: toBankSenses(getPath(d, F.senses)),
-        definitions: asStrings(getPath(d, F.rawDefinitions)),
-        clues: byWord.get(String(d._id)) ?? [],
-      }));
     },
 
     /** Bank words matching these answers (themed puzzles, later: a word must be in the bank). */
@@ -536,8 +533,12 @@ export function makeCrosswordBankRepo(conn: Connection, opts: { now?: () => numb
     /** Build the bank's indexes (idempotent: createIndex is a no-op for an existing spec). */
     async ensureIndexes(): Promise<string[]> {
       const made: string[] = [];
-      for (const ix of BANK_WORD_INDEXES) made.push(await words().createIndex(ix.key, { name: ix.name }));
-      for (const ix of BANK_CLUE_INDEXES) made.push(await clues().createIndex(ix.key, { name: ix.name }));
+      const opts = (ix: BankIndexSpec) => ({
+        name: ix.name,
+        ...(ix.partialFilterExpression ? { partialFilterExpression: ix.partialFilterExpression } : {}),
+      });
+      for (const ix of BANK_WORD_INDEXES) made.push(await words().createIndex(ix.key, opts(ix)));
+      for (const ix of BANK_CLUE_INDEXES) made.push(await clues().createIndex(ix.key, opts(ix)));
       return made;
     },
   };

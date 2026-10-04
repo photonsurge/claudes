@@ -22,7 +22,8 @@ jest.mock("next/link", () => ({
 
 const NOW = Date.now();
 let state: CrosswordPublicState;
-let readyPuzzles: { id: string; scenes: string[]; title?: string; playLog?: { sceneId: string; startedAt: number }[] }[];
+// The desk route's structured reason (§7.5), decided by shared's crosswordStockReason (tested there and on the route).
+let reason: { kind: string; unplayed: number };
 const posts: { url: string; body: unknown }[] = [];
 
 const playing = (): CrosswordPublicState => ({
@@ -48,10 +49,7 @@ const playing = (): CrosswordPublicState => ({
 beforeEach(() => {
   posts.length = 0;
   state = playing();
-  readyPuzzles = [
-    { id: "p1", scenes: ["xw"] },
-    { id: "p2", scenes: [] },
-  ];
+  reason = { kind: "fresh", unplayed: 1 };
   window.confirm = jest.fn(() => true);
   global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const u = String(url);
@@ -62,7 +60,7 @@ beforeEach(() => {
     }
     if (u === "/api/scenes") return json({ scenes: [{ id: "xw", name: "Crossword One", surface: "crossword", watchToken: "tok" }] });
     if (u === "/api/crossword/xw/state") return json(state);
-    if (u.startsWith("/api/crossword/puzzles")) return json({ puzzles: readyPuzzles.map((p) => ({ status: "ready", ...p })) });
+    if (u === "/api/crossword/xw/desk") return json({ reason, pool: { words: 40, ffWords: 20, puzzlesWithoutRepeat: 2, ffPuzzlesWithoutRepeat: 1, targetWords: 280 } });
     return json({ error: "nope" }, 404);
   }) as typeof fetch;
 });
@@ -120,17 +118,14 @@ it("the simulator posts name and text to the sim route", async () => {
 
 it("says why the channel is idle", async () => {
   state = { ...state, phase: "idle", width: 0, height: 0, rows: [], entries: [], spotlight: null };
-  readyPuzzles = [];
+  reason = { kind: "noReady", unplayed: 0 };
   render(<DeskPage sceneId="xw" />);
   expect(await screen.findByText(/idle/i, { selector: ".MuiAlert-message, .MuiAlert-message *" })).toHaveTextContent(/approve|pool|stock/i);
 });
 
 it("says why the channel is replaying when the puzzle on air has aired here before", async () => {
-  // Reason is now decided from the current puzzle's earlier play (WP6 validation), not an empty unplayed stock.
-  readyPuzzles = [
-    { id: "p1", title: "Puzzle 42", scenes: ["xw"], playLog: [{ sceneId: "xw", startedAt: 1 }, { sceneId: "xw", startedAt: 2 }] },
-    { id: "p2", scenes: ["xw", "other"] },
-  ];
+  // The route decides it (the puzzle on air aired here before); the page words it.
+  reason = { kind: "replay", unplayed: 0 };
   render(<DeskPage sceneId="xw" />);
   const line = await screen.findByText(/replay/i);
   expect(line).toHaveTextContent(/approve|pool/i);
@@ -139,6 +134,6 @@ it("says why the channel is replaying when the puzzle on air has aired here befo
 it("says nothing about replaying while there is unplayed stock", async () => {
   render(<DeskPage sceneId="xw" />);
   await screen.findByRole("grid");
-  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/crossword\/puzzles/), expect.anything()));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/crossword\/xw\/desk/), expect.anything()));
   expect(screen.queryByText(/replay/i)).toBeNull();
 });

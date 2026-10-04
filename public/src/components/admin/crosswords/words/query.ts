@@ -110,6 +110,8 @@ export function bankQueryString(q: BankWordQuery): string {
 export interface BankWordsResponse {
   rows: BankWordRow[];
   total: number;
+  /** A filtered count stopped at BANK_COUNT_CAP: `total` is a floor, shown as "10,000+". */
+  totalCapped?: boolean;
   page: number;
   pageSize: number;
   totals: BankTotals;

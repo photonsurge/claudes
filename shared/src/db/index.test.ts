@@ -252,6 +252,19 @@ describe("scenes", () => {
     expect((upsertByID.mock.calls[1] as any[])[1]).not.toHaveProperty("hidden");
   });
 
+  it("listScenes carries the YouTube account a channel goes out on, when one is stored", async () => {
+    const db = freshDb();
+    const docs = [
+      { id: MAIN_SCENE_ID, name: "Main", youtube: { accountId: "" } },
+      { id: "words", name: "Words", surface: "crossword", youtube: { accountId: "acc-1", title: "t" } },
+      { id: "old", name: "Old" },
+    ];
+    (db.broadcastState as any).getAll = jest.fn(async () => ok(docs));
+    const scenes = await db.listScenes();
+    expect(scenes.map((s) => [s.id, s.youtubeAccountId])).toEqual([[MAIN_SCENE_ID, undefined], ["old", undefined], ["words", "acc-1"]]);
+    expect(scenes[0]).not.toHaveProperty("youtubeAccountId");
+  });
+
   it("listScenes reports surface, globe unless the doc says crossword", async () => {
     const db = freshDb();
     const docs = [{ id: MAIN_SCENE_ID, name: "Main" }, { id: "words", name: "Words", surface: "crossword" }];
@@ -310,5 +323,65 @@ describe("scenes", () => {
     expect(deleteByID).not.toHaveBeenCalled();
     expect(await db.deleteScene("studio-b")).toBe(true);
     expect(deleteByID).toHaveBeenCalledWith("studio-b");
+  });
+});
+
+describe("crossword bank decisions cascade to built puzzles (§7.4)", () => {
+  const setup = (found = true) => {
+    const db = freshDb();
+    const bank = {
+      setWordApproval: jest.fn(async () => found),
+      setWordFamilyFriendly: jest.fn(async () => found),
+      setClueApproval: jest.fn(async () => found),
+      setClueFamilyFriendly: jest.fn(async () => found),
+      editClue: jest.fn(async () => found),
+    };
+    const updateContaining = jest.fn(async (_ref: unknown, set: { status?: string }) => (set.status ? ["r1"] : ["u1"]));
+    (db as any).crosswordBank = bank;
+    (db as any).crosswordPuzzles = { updateContaining };
+    return { db, bank, updateContaining };
+  };
+
+  it("rejecting a word or clue (or returning it to pending) rejects every ready puzzle using it", async () => {
+    const { db, updateContaining } = setup();
+    expect(await db.setCrosswordWordApproval("w1", "rejected", "rich")).toEqual({ ok: true, rejected: ["r1"], untagged: [] });
+    expect(updateContaining).toHaveBeenLastCalledWith({ wordId: "w1" }, { status: "rejected" }, "ready");
+    expect(await db.setCrosswordClueApproval("c1", "pending", "rich")).toEqual({ ok: true, rejected: ["r1"], untagged: [] });
+    expect(updateContaining).toHaveBeenLastCalledWith({ clueId: "c1" }, { status: "rejected" }, "ready");
+  });
+
+  it("approving touches no puzzle", async () => {
+    const { db, updateContaining } = setup();
+    expect(await db.setCrosswordWordApproval("w1", "approved", "rich")).toEqual({ ok: true, rejected: [], untagged: [] });
+    expect(await db.setCrosswordClueApproval("c1", "approved", "rich")).toEqual({ ok: true, rejected: [], untagged: [] });
+    expect(updateContaining).not.toHaveBeenCalled();
+  });
+
+  it("taking a family-friendly tag off untags every puzzle using it; tagging touches none", async () => {
+    const { db, updateContaining } = setup();
+    expect(await db.setCrosswordWordFamilyFriendly("w1", false, "rich")).toEqual({ ok: true, rejected: [], untagged: ["u1"] });
+    expect(updateContaining).toHaveBeenLastCalledWith({ wordId: "w1" }, { familyFriendly: false });
+    expect((await db.setCrosswordClueFamilyFriendly("c1", null, "rich")).untagged).toEqual(["u1"]);
+    expect(updateContaining).toHaveBeenLastCalledWith({ clueId: "c1" }, { familyFriendly: false });
+    updateContaining.mockClear();
+    await db.setCrosswordWordFamilyFriendly("w1", true, "rich");
+    await db.setCrosswordClueFamilyFriendly("c1", true, "rich");
+    expect(updateContaining).not.toHaveBeenCalled();
+  });
+
+  it("an edited clue takes its puzzles out of play and untags them", async () => {
+    const { db, bank, updateContaining } = setup();
+    expect(await db.editCrosswordClue("c1", "New text", "rich")).toEqual({ ok: true, rejected: ["r1"], untagged: ["u1"] });
+    expect(bank.editClue).toHaveBeenCalledWith("c1", "New text", "rich");
+    expect(updateContaining).toHaveBeenCalledWith({ clueId: "c1" }, { status: "rejected" }, "ready");
+    expect(updateContaining).toHaveBeenCalledWith({ clueId: "c1" }, { familyFriendly: false });
+  });
+
+  it("an unknown word or clue changes nothing", async () => {
+    const { db, updateContaining } = setup(false);
+    expect(await db.setCrosswordWordApproval("w1", "rejected", "rich")).toEqual({ ok: false, rejected: [], untagged: [] });
+    expect((await db.editCrosswordClue("c1", "x", "rich")).ok).toBe(false);
+    expect((await db.setCrosswordClueFamilyFriendly("c1", false, "rich")).ok).toBe(false);
+    expect(updateContaining).not.toHaveBeenCalled();
   });
 });

@@ -21,7 +21,20 @@ const bank = {
   editClue: jest.fn(),
   addClues: jest.fn(),
 };
-jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: async () => ({ crosswordBank: bank }) }));
+// The db facade's cascading decisions (§7.4), passed through to the bank fakes.
+const cascade = (f: (...a: never[]) => unknown) => async (...a: unknown[]) => ({
+  ok: !!(await (f as (...x: unknown[]) => unknown)(...a)),
+  rejected: [],
+  untagged: [],
+});
+const facade = () => ({
+  setCrosswordWordApproval: cascade(bank.setWordApproval),
+  setCrosswordWordFamilyFriendly: cascade(bank.setWordFamilyFriendly),
+  setCrosswordClueApproval: cascade(bank.setClueApproval),
+  setCrosswordClueFamilyFriendly: cascade(bank.setClueFamilyFriendly),
+  editCrosswordClue: cascade(bank.editClue),
+});
+jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: async () => ({ crosswordBank: bank, ...facade() }) }));
 
 import { requireAdmin } from "../../../../../lib/require-admin";
 import { GET, PATCH } from "./route";

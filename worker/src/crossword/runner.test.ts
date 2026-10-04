@@ -19,6 +19,7 @@ import {
 import type { CrosswordSolve, CrosswordPlayer } from "@photonsurge/shared/crossword-records";
 import {
   commandTo,
+  CROSSWORD_STAND_DOWN_MS,
   newCrosswordRunnerState,
   step,
   submitAnswersTo,
@@ -177,7 +178,7 @@ const states = (emitted: { type: string; data: any }[]) =>
   emitted.filter((e) => e.type === CROSSWORD_STATE).map((e) => e.data as CrosswordPublicState);
 
 describe("crossword runner", () => {
-  test("phase transitions on a fake clock: intro → playing → reveals → finale → idle", async () => {
+  test("phase transitions on a fake clock: intro → playing → reveals → finale → replay", async () => {
     const h = harness();
     await h.first();
     expect(h.game()).toMatchObject({ phase: "intro", puzzleId: "p1", puzzleNo: 1 });
@@ -195,8 +196,9 @@ describe("crossword runner", () => {
     expect(Object.values(h.game().solved).every((s) => s.by === CROSSWORD_HOST_ID)).toBe(true);
 
     await h.run(30_000);
-    // The only puzzle was just played (inside the no-repeat window): idle.
-    expect(h.game().phase).toBe("idle");
+    // The only puzzle was just played (inside the no-repeat window): it replays (§7.5).
+    expect(h.game()).toMatchObject({ phase: "intro", puzzleId: "p1", puzzleNo: 2 });
+    expect(h.state.scenes.get(SCENE)!.stockNote).toBe("no unplayed stock: replaying");
     expect(h.f.puzzles.get("p1")!.plays[0].endedAt).toBe(T0 + 12_000 + 4 * 66_000 + 30_000);
     expect(h.f.db.crosswordGames.save).toHaveBeenCalled();
     // seq bumps on every change and goes out with each state.
@@ -300,7 +302,7 @@ describe("crossword runner", () => {
     expect(Object.keys(h2.game().solved).length).toBeGreaterThan(Object.keys(before.solved).length);
   });
 
-  test("next puzzle: oldest unplayed first, then the one played longest ago outside the no-repeat window", async () => {
+  test("next puzzle: oldest unplayed first, then the one played longest ago outside the no-repeat window, then a replay", async () => {
     const f = fakeDb({ puzzles: [puzzle("p2", 2), puzzle("p1", 1)], cfg: { noRepeatPuzzles: 1, introS: 3, finaleS: 5 } });
     const h = harness(f);
     await h.first();
@@ -314,12 +316,12 @@ describe("crossword runner", () => {
     // p2 is the last play (inside the window of 1); p1 was played longest ago.
     expect(h.game()).toMatchObject({ puzzleId: "p1", puzzleNo: 3 });
 
+    // Both inside a window of 2: the channel replays the one played longest ago (§7.5) rather than idle.
     f.setCfg({ noRepeatPuzzles: 2 });
     await h.command("nextPuzzle");
     await h.run(5_000);
-    expect(h.game().phase).toBe("idle");
-    expect(h.game().puzzleNo).toBe(3);
-    expect(h.state.scenes.get(SCENE)!.stockNote).toBe("every puzzle is in the last 2 played: idle");
+    expect(h.game()).toMatchObject({ puzzleId: "p2", puzzleNo: 4, phase: "intro" });
+    expect(h.state.scenes.get(SCENE)!.stockNote).toBe("no unplayed stock: replaying");
   });
 
   test("a family-friendly channel never plays an untagged puzzle, and notes why it is idle or replaying", async () => {
@@ -594,5 +596,143 @@ describe("crossword runner — robustness", () => {
     await expect(handleInject({ sceneId: "nope", kind: "command", command: "pause" }, state, f.deps, T0)).rejects.toThrow(
       /not running/,
     );
+  });
+});
+
+describe("a puzzle rejected on air (§7.4: nothing airs unapproved)", () => {
+  test("the clue on air finishes, then the finale, with the other words left unshown", async () => {
+    const f = fakeDb();
+    const h = harness(f);
+    await h.first();
+    await h.run(12_000);
+    expect(h.game().spotlight?.entryId).toBe("3A");
+    f.puzzles.get("p1")!.status = "rejected";
+    await h.run(10_000);
+    // Still on the same clue.
+    expect(h.game()).toMatchObject({ phase: "playing", spotlight: { entryId: "3A" } });
+    expect(h.state.scenes.get(SCENE)!.puzzleRejected).toBe(true);
+    // The clue runs out, the host fills it and holds, then the finale instead of the next clue.
+    await h.run(50_000 + 6_000);
+    expect(h.game().phase).toBe("finale");
+    expect(Object.keys(h.game().solved)).toEqual(["3A"]);
+    // A rejected puzzle never comes back: nothing else is ready, so idle.
+    await h.run(30_000);
+    expect(h.game().phase).toBe("idle");
+    expect(h.state.scenes.get(SCENE)!.stockNote).toBe("no ready puzzles: idle");
+  });
+
+  test("a viewer's solve after the rejection also ends it", async () => {
+    const f = fakeDb();
+    const h = harness(f);
+    await h.first();
+    await h.run(12_000);
+    f.puzzles.get("p1")!.status = "rejected";
+    await h.run(5_000);
+    await h.answer([{ name: "a", text: "rode" }]);
+    await h.run(DEFAULT_CROSSWORD_CONFIG.solveBeatS * 1000);
+    expect(h.game().phase).toBe("finale");
+  });
+
+  test("rejected before a clue aired: straight on to the next puzzle", async () => {
+    const f = fakeDb({ puzzles: [puzzle("p1", 1), puzzle("p2", 2)] });
+    const h = harness(f);
+    await h.first();
+    expect(h.game()).toMatchObject({ phase: "intro", puzzleId: "p1" });
+    f.puzzles.get("p1")!.status = "rejected";
+    await h.run(1_000);
+    expect(h.game()).toMatchObject({ phase: "intro", puzzleId: "p2", puzzleNo: 2 });
+    expect(f.puzzles.get("p1")!.plays[0].endedAt).toBeDefined();
+  });
+
+  test("Next puzzle on a rejected puzzle does not fill the rest in", async () => {
+    const f = fakeDb();
+    const h = harness(f);
+    await h.first();
+    await h.run(12_000);
+    f.puzzles.get("p1")!.status = "rejected";
+    await h.run(5_000);
+    await h.command("nextPuzzle");
+    expect(h.game().phase).toBe("finale");
+    expect(Object.keys(h.game().solved)).toEqual([]);
+  });
+
+  test("a game resumed on a puzzle rejected while the worker was down finishes early too", async () => {
+    const f = fakeDb();
+    const h = harness(f);
+    await h.first();
+    await h.run(12_000);
+    f.puzzles.get("p1")!.status = "rejected";
+    const h2 = harness(f, newCrosswordRunnerState(), h.now);
+    await h2.first();
+    expect(h2.state.scenes.get(SCENE)!.puzzleRejected).toBe(true);
+  });
+});
+
+describe("two hosts (§4.4)", () => {
+  test("a lost save stands this host down, and it looks again after the back-off", async () => {
+    const f = fakeDb();
+    const h = harness(f);
+    await h.first();
+    const save = f.db.crosswordGames.save.getMockImplementation()!;
+    f.db.crosswordGames.save.mockImplementation(async () => false);
+    await h.run(12_000);
+    // The lost save stopped it at once; the next poll stood it down.
+    await h.run(1_000);
+    expect(h.state.scenes.has(SCENE)).toBe(false);
+    expect(h.state.standDown.get(SCENE)).toMatchObject({ until: expect.any(Number) });
+    const emits = f.emitted.length;
+    const startPlays = f.db.crosswordPuzzles.startPlay.mock.calls.length;
+
+    // Meanwhile the other host keeps saving: the stored seq moves, so it stays down.
+    let otherSeq = 100;
+    const get = f.db.crosswordGames.get.getMockImplementation()!;
+    f.db.crosswordGames.get.mockImplementation(async () => ({ ...(await get())!, seq: ++otherSeq }));
+    await h.run(CROSSWORD_STAND_DOWN_MS + 1_000);
+    expect(h.state.scenes.has(SCENE)).toBe(false);
+    expect(f.emitted.length).toBe(emits);
+    expect(f.db.crosswordPuzzles.startPlay.mock.calls.length).toBe(startPlays);
+
+    // The other host goes quiet: after the next back-off this one hosts again.
+    f.db.crosswordGames.get.mockImplementation(get);
+    f.db.crosswordGames.save.mockImplementation(save);
+    await h.run(2 * CROSSWORD_STAND_DOWN_MS + 2_000);
+    expect(h.state.scenes.has(SCENE)).toBe(true);
+    expect(h.state.standDown.has(SCENE)).toBe(false);
+    expect(f.emitted.length).toBeGreaterThan(emits);
+  });
+
+  test("a save that wrote (or a store that does not say) keeps hosting", async () => {
+    const f = fakeDb();
+    f.db.crosswordGames.save.mockImplementation(async () => true as never);
+    const h = harness(f);
+    await h.first();
+    await h.run(20_000);
+    expect(h.state.scenes.has(SCENE)).toBe(true);
+    expect(h.state.standDown.size).toBe(0);
+  });
+});
+
+describe("puzzles built from unapproved words (CROSSWORD_ALLOW_UNAPPROVED)", () => {
+  const before = process.env.CROSSWORD_ALLOW_UNAPPROVED;
+  afterEach(() => {
+    if (before === undefined) delete process.env.CROSSWORD_ALLOW_UNAPPROVED;
+    else process.env.CROSSWORD_ALLOW_UNAPPROVED = before;
+  });
+  const dev = () => ({ ...puzzle("dev"), unapproved: true });
+
+  test("never air on a box without the switch", async () => {
+    delete process.env.CROSSWORD_ALLOW_UNAPPROVED;
+    const h = harness(fakeDb({ puzzles: [dev()] }));
+    await h.first();
+    await h.run(10_000);
+    expect(h.game().phase).toBe("idle");
+    expect(h.state.scenes.get(SCENE)!.stockNote).toBe("no ready puzzles: idle");
+  });
+
+  test("air with it set to true", async () => {
+    process.env.CROSSWORD_ALLOW_UNAPPROVED = "true";
+    const h = harness(fakeDb({ puzzles: [dev()] }));
+    await h.first();
+    expect(h.game()).toMatchObject({ phase: "intro", puzzleId: "dev" });
   });
 });

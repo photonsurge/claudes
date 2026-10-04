@@ -91,6 +91,11 @@ export interface SceneMeta {
    * metadata like `hidden`, not ControlState. Missing means "globe".
    */
   surface?: SceneSurface;
+  /**
+   * The YouTube account this channel goes out on (`youtube.accountId` on its
+   * state, §10), when one is stored. Admin listings only.
+   */
+  youtubeAccountId?: string;
 }
 
 /** The kind of channel a scene is: the weather globe or the crossword game. */

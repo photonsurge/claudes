@@ -4,8 +4,21 @@
 jest.mock("../../../../../lib/api-log", () => ({ withApiLog: (h: unknown) => h }));
 jest.mock("../../../../../lib/require-admin", () => ({ requireAdmin: jest.fn() }));
 
-const bank = { getWordById: jest.fn(), editClue: jest.fn(), setClueApproval: jest.fn(), setClueFamilyFriendly: jest.fn() };
-jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: async () => ({ crosswordBank: bank }) }));
+const bank = { getClue: jest.fn(), editClue: jest.fn(), setClueApproval: jest.fn(), setClueFamilyFriendly: jest.fn() };
+// The db facade's cascading decisions (§7.4), passed through to the bank fakes.
+const cascade = (f: (...a: never[]) => unknown) => async (...a: unknown[]) => ({
+  ok: !!(await (f as (...x: unknown[]) => unknown)(...a)),
+  rejected: changed.rejected,
+  untagged: changed.untagged,
+});
+/** What the facade reports it did to built puzzles. */
+const changed: { rejected: string[]; untagged: string[] } = { rejected: [], untagged: [] };
+const facade = () => ({
+  setCrosswordClueApproval: cascade(bank.setClueApproval),
+  setCrosswordClueFamilyFriendly: cascade(bank.setClueFamilyFriendly),
+  editCrosswordClue: cascade(bank.editClue),
+});
+jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: async () => ({ crosswordBank: bank, ...facade() }) }));
 
 import { requireAdmin } from "../../../../../lib/require-admin";
 import { PATCH } from "./route";
@@ -19,6 +32,7 @@ beforeEach(() => {
   bank.editClue.mockResolvedValue(true);
   bank.setClueApproval.mockResolvedValue(true);
   bank.setClueFamilyFriendly.mockResolvedValue(true);
+  bank.getClue.mockResolvedValue({ id: "c1", wordId: "w1", answer: "WRECK", text: "Remains of a ruined ship" });
 });
 
 it("401s for non-admins without touching the bank", async () => {
@@ -57,25 +71,47 @@ it("404s an unknown clue", async () => {
 
 const patchFor = (body: unknown, wordId = "w1") =>
   PATCH(new Request("http://x", { method: "PATCH", headers: { "x-word-id": wordId }, body: JSON.stringify(body) }), ctx("c1"));
+const clue = (text: string) => ({ id: "c1", wordId: "w1", answer: "WRECK", text });
 
 it("409s approving a clue that can't air, with the problem, and writes nothing", async () => {
-  bank.getWordById.mockResolvedValue({ id: "w1", word: "wreck", clues: [{ id: "c1", text: "Ruin (4)" }] });
-  const res = await patchFor({ approval: "approved" });
+  bank.getClue.mockResolvedValue(clue("Ruin (4)"));
+  const res = await patch({ approval: "approved" });
   expect(res.status).toBe(409);
   expect((await res.json()).problem).toBe("short");
+  expect(bank.getClue).toHaveBeenCalledWith("c1");
   expect(bank.setClueApproval).not.toHaveBeenCalled();
 });
 
 it("409s a clue that gives the answer away, and checks the new text of an edit", async () => {
-  bank.getWordById.mockResolvedValue({ id: "w1", word: "wreck", clues: [{ id: "c1", text: "Remains of a ruined ship" }] });
-  expect((await patchFor({ text: "Wrecked ship remains", approval: "approved" })).status).toBe(409);
+  bank.getClue.mockResolvedValue(clue("Remains of a ruined ship"));
+  expect((await patch({ text: "Wrecked ship remains", approval: "approved" })).status).toBe(409);
   expect(bank.editClue).not.toHaveBeenCalled();
 });
 
-it("approves a clue that can air, and 404s one not in the word", async () => {
-  bank.getWordById.mockResolvedValue({ id: "w1", word: "wreck", clues: [{ id: "c1", text: "Remains of a ruined ship" }] });
-  expect((await patchFor({ approval: "approved" })).status).toBe(200);
-  expect(bank.setClueApproval).toHaveBeenCalled();
-  bank.getWordById.mockResolvedValue({ id: "w1", word: "wreck", clues: [] });
-  expect((await patchFor({ approval: "approved" })).status).toBe(404);
+it("checks on every approval, with or without the old X-Word-Id header, and 404s an unknown clue", async () => {
+  bank.getClue.mockResolvedValue(clue("Remains of a ruined ship"));
+  expect((await patch({ approval: "approved" })).status).toBe(200);
+  expect((await patchFor({ approval: "approved" }, "some-other-word")).status).toBe(200);
+  expect(bank.setClueApproval).toHaveBeenCalledTimes(2);
+  bank.getClue.mockResolvedValue(clue("Ruin (4)"));
+  expect((await patchFor({ approval: "approved" })).status).toBe(409);
+  bank.getClue.mockResolvedValue(null);
+  expect((await patch({ approval: "approved" })).status).toBe(404);
+  // Rejecting, tagging and editing need no check.
+  bank.getClue.mockClear();
+  await patch({ approval: "rejected", familyFriendly: false, text: "Anything at all" });
+  expect(bank.getClue).not.toHaveBeenCalled();
+});
+
+it("goes through the db facade and reports the puzzles a decision changed", async () => {
+  changed.rejected = ["p1"];
+  changed.untagged = ["p1", "p2"];
+  try {
+    const res = await patch({ text: "Ruined vessel", familyFriendly: null });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, rejected: ["p1"], untagged: ["p1", "p2"] });
+  } finally {
+    changed.rejected = [];
+    changed.untagged = [];
+  }
 });

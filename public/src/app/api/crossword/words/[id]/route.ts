@@ -36,6 +36,10 @@ async function GET__impl(_req: Request, { params }: Ctx) {
  *  • `acceptSuggestion: true`: save the stored suggestion's clue as a new
  *    pending candidate clue. Never approves anything.
  *
+ * Decisions go through the db facade, so they reach built puzzles: a word
+ * rejected or returned to pending takes every ready puzzle using it out of
+ * play, and a tag taken off clears their family-friendly flag.
+ *
  * Who decided is the admin's session identity. 200 with the updated word;
  * 400 for an empty or malformed body, 404 for an unknown word.
  */
@@ -69,8 +73,8 @@ async function PATCH__impl(req: Request, { params }: Ctx) {
   const word = await bank.getWordById(id);
   if (!word) return NextResponse.json({ error: "no such word" }, { status: 404, headers: NO_CACHE });
 
-  if (hasApproval) await bank.setWordApproval(id, body.approval as "pending" | "approved" | "rejected", by);
-  if (hasTag) await bank.setWordFamilyFriendly(id, body.familyFriendly as boolean | null, by);
+  if (hasApproval) await db.setCrosswordWordApproval(id, body.approval as "pending" | "approved" | "rejected", by);
+  if (hasTag) await db.setCrosswordWordFamilyFriendly(id, body.familyFriendly as boolean | null, by);
   if (accept) {
     if (!word.suggestion) return NextResponse.json({ error: "no suggestion stored" }, { status: 409, headers: NO_CACHE });
     await bank.addClues(id, [word.suggestion.clue], { source: "suggestion", model: word.suggestion.model || undefined });

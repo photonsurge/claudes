@@ -96,6 +96,65 @@ describe("repos", () => {
     expect(await repo.get("nope")).toBeNull();
   });
 
+  it("game save writes only over an older game, and says whether it wrote (two hosts, §4.4)", async () => {
+    const stored: Record<string, any> = {};
+    // A fake that honours the save's filter the way Mongo's upsert would: no
+    // match on an existing id is a duplicate-key error.
+    const model: any = {
+      updateOne: jest.fn((f: any, u: any) => ({
+        exec: async () => {
+          const cur = stored[f.id];
+          if (!cur) {
+            stored[f.id] = { ...u.$setOnInsert, ...u.$set };
+            return { matchedCount: 0, upsertedCount: 1 };
+          }
+          const older = f.$or.some((c: any) => (c.seq?.$lt != null ? cur.seq < c.seq.$lt : c.seq?.$exists === false && cur.seq === undefined));
+          if (!older) throw Object.assign(new Error("E11000 duplicate key"), { code: 11000 });
+          stored[f.id] = { ...cur, ...u.$set };
+          return { matchedCount: 1, upsertedCount: 0 };
+        },
+      })),
+    };
+    const repo = makeCrosswordGameRepo(model);
+    const g = (seq: number) => ({ ...emptyGame("xw", 1), seq });
+    expect(await repo.save(g(1))).toBe(true);
+    expect(await repo.save(g(2))).toBe(true);
+    expect(await repo.save(g(2))).toBe(false);
+    expect(await repo.save(g(1))).toBe(false);
+    expect(stored.xw.seq).toBe(2);
+    // A game stored with no seq (an old write) is overwritten.
+    delete stored.xw.seq;
+    expect(await repo.save(g(1))).toBe(true);
+    // Any other error still throws.
+    model.updateOne.mockImplementationOnce(() => ({ exec: async () => Promise.reject(new Error("down")) }));
+    await expect(repo.save(g(9))).rejects.toThrow("down");
+  });
+
+  it("puzzle repo finds and updates puzzles by the bank word or clue they use", async () => {
+    const find = jest.fn((_f: any, _p?: any) => ({ lean: () => ({ exec: async () => [{ id: "a" }, { id: "b" }] }) }));
+    const updateMany = jest.fn((_f: any, _u: any) => ({ exec: async () => ({}) }));
+    const repo = makeCrosswordPuzzleRepo({ find, updateMany } as any);
+    expect(await repo.idsContaining({ wordId: "w1" }, "ready")).toEqual(["a", "b"]);
+    expect(find.mock.calls[0][0]).toEqual({ "entries.wordId": "w1", status: "ready" });
+    expect(await repo.updateContaining({ clueId: "c1" }, { familyFriendly: false })).toEqual(["a", "b"]);
+    expect(find.mock.calls[1][0]).toEqual({ "entries.clueId": "c1" });
+    expect(updateMany).toHaveBeenCalledWith({ id: { $in: ["a", "b"] } }, { $set: { familyFriendly: false } });
+    // No id, no query.
+    expect(await repo.updateContaining({}, { status: "rejected" })).toEqual([]);
+    expect(find).toHaveBeenCalledTimes(2);
+    find.mockImplementationOnce(() => ({ lean: () => ({ exec: async () => [] }) }));
+    expect(await repo.updateContaining({ wordId: "w2" }, { status: "rejected" }, "ready")).toEqual([]);
+    expect(updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("the puzzle schema indexes entries by word and clue, and keeps the unapproved marker", () => {
+    const M = getCrosswordPuzzleModel(conn);
+    const names = M.schema.indexes().map(([, o]) => (o as { name?: string }).name);
+    expect(names).toEqual(expect.arrayContaining(["crossword_puzzle_word_ix", "crossword_puzzle_clue_ix"]));
+    expect(new M({ ...puzzle, unapproved: true }).toObject().unapproved).toBe(true);
+    expect(new M(puzzle).toObject()).not.toHaveProperty("unapproved");
+  });
+
   it("puzzle upsert never writes plays", async () => {
     const updateOne = jest.fn(() => ({ exec: async () => ({}) }));
     const model: any = { updateOne, findOne: () => ({ lean: () => ({ exec: async () => null }) }) };
@@ -115,13 +174,18 @@ describe("bank repo writes and pick (fake collections)", () => {
     let clueDocs: any[] = [];
     let wordDocs: any[] = [];
     let clueOne: any = null;
+    let wordOne: any = null;
+    let counted = 0;
     const coll = (name: string) => ({
       updateOne: jest.fn(async (filter: any, update: any) => {
         updates.push({ coll: name, filter, update });
         return { matchedCount: 1 };
       }),
-      findOne: jest.fn(async () => clueOne),
+      findOne: jest.fn(async () => (name === "crosswordbankclues" ? clueOne : wordOne)),
       find: name === "crosswordbankclues" ? cluesFind : jest.fn(() => ({ toArray: async () => wordDocs })),
+      estimatedDocumentCount: jest.fn(async () => 1_000_000),
+      countDocuments: jest.fn(async (_f: any, _o?: any) => counted),
+      createIndex: jest.fn(async (_k: any, o: any) => o.name),
     });
     const colls: Record<string, any> = { crosswordbankwords: coll("crosswordbankwords"), crosswordbankclues: coll("crosswordbankclues") };
     const conn: any = { db: { collection: (n: string) => colls[n] } };
@@ -133,6 +197,9 @@ describe("bank repo writes and pick (fake collections)", () => {
       setClues: (d: any[]) => (clueDocs = d),
       setWords: (d: any[]) => (wordDocs = d),
       setClueOne: (d: any) => (clueOne = d),
+      setWordOne: (d: any) => (wordOne = d),
+      setCounted: (n: number) => (counted = n),
+      colls,
     };
   };
 
@@ -221,5 +288,53 @@ describe("bank repo writes and pick (fake collections)", () => {
       },
     ]);
     expect(f.cluesFind.mock.calls[0][0]).toMatchObject({ "approval.status": "approved", familyFriendly: true });
+  });
+
+  it("getClue returns the clue with its word's answer", async () => {
+    const f = fake();
+    expect(await f.repo.getClue("nope")).toBeNull();
+    expect(await f.repo.getClue(String(oid(7)))).toBeNull();
+    f.setClueOne({ _id: oid(7), answerId: oid(1), clue: "Path round a star", approval: { status: "pending" } });
+    f.setWordOne({ _id: oid(1), norm: "ORBIT" });
+    expect(await f.repo.getClue(String(oid(7)))).toMatchObject({
+      id: String(oid(7)),
+      wordId: String(oid(1)),
+      answer: "ORBIT",
+      text: "Path round a star",
+      approval: { status: "pending" },
+    });
+    // The word gone: the clue's own stored answer.
+    f.setWordOne(null);
+    f.setClueOne({ _id: oid(7), answerId: oid(1), answerNorm: "orbit", clue: "x" });
+    expect((await f.repo.getClue(String(oid(7))))!.answer).toBe("ORBIT");
+  });
+
+  it("listWords estimates with no filter and caps a filtered count", async () => {
+    const f = fake();
+    f.setWords([]);
+    const words = f.colls.crosswordbankwords;
+    words.find = jest.fn(() => ({ sort: () => ({ skip: () => ({ limit: () => ({ toArray: async () => [] }) }) }) }));
+    f.colls.crosswordbankclues.aggregate = jest.fn(() => ({ toArray: async () => [] }));
+    expect(await f.repo.listWords({})).toMatchObject({ total: 1_000_000, totalCapped: false });
+    expect(words.countDocuments).not.toHaveBeenCalled();
+    f.setCounted(10_001);
+    expect(await f.repo.listWords({ startsWith: "a" })).toMatchObject({ total: 10_000, totalCapped: true });
+    expect(words.countDocuments.mock.calls[0][1]).toEqual({ limit: 10_001 });
+    f.setCounted(42);
+    expect(await f.repo.listWords({ startsWith: "a" })).toMatchObject({ total: 42, totalCapped: false });
+  });
+
+  it("ensureIndexes builds the queue index as a partial index", async () => {
+    const f = fake();
+    await f.repo.ensureIndexes();
+    const calls = f.colls.crosswordbankwords.createIndex.mock.calls as [Record<string, number>, any][];
+    const queue = calls.find(([, o]) => o.name === "xwbank_queue_ix")!;
+    expect(queue[0]).toEqual({ "validation.sources.wordfreq.zipf": -1, _id: 1 });
+    expect(queue[1].partialFilterExpression).toEqual({
+      "validation.decision": "accepted",
+      "enrichment.status": "done",
+      "validation.sources.wordfreq.zipf": { $type: "number" },
+    });
+    expect(calls.find(([, o]) => o.name === "xwbank_norm_ix")![1]).toEqual({ name: "xwbank_norm_ix" });
   });
 });

@@ -41,10 +41,28 @@ export function makeCrosswordGameRepo(model: Model<iCrosswordGameModel>) {
       return ((doc as { pub?: CrosswordPublicState } | null)?.pub ?? null) as CrosswordPublicState | null;
     },
 
-    /** Write the whole game. */
-    async save(game: CrosswordGame): Promise<void> {
+    /**
+     * Write the whole game, but only over an older one: the write lands when
+     * nothing is stored for the scene or the stored `seq` is below this one.
+     * Returns whether it wrote. A lost write means another host is running
+     * this scene (two workers, §4.4) and its game is newer.
+     */
+    async save(game: CrosswordGame): Promise<boolean> {
       const { sceneId, ...rest } = game;
-      await model.updateOne({ id: sceneId }, { $set: rest, $setOnInsert: { id: sceneId } }, { upsert: true }).exec();
+      try {
+        const res = await model
+          .updateOne(
+            { id: sceneId, $or: [{ seq: { $lt: game.seq } }, { seq: { $exists: false } }] },
+            { $set: rest, $setOnInsert: { id: sceneId } },
+            { upsert: true },
+          )
+          .exec();
+        return (res.matchedCount ?? 0) > 0 || (res.upsertedCount ?? 0) > 0;
+      } catch (err) {
+        // The scene has a game with seq >= this one: the upsert hit the unique id.
+        if ((err as { code?: number }).code === 11000) return false;
+        throw err;
+      }
     },
 
     async remove(sceneId: string): Promise<boolean> {

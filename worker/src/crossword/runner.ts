@@ -13,7 +13,9 @@
  * freezes and every deadline moves on by the frozen time when it thaws.
  *
  * The game is saved on every change (seq bumped, `pub` rebuilt) and reloaded
- * at boot, so a worker restart resumes mid-puzzle. Every change emits the
+ * at boot, so a worker restart resumes mid-puzzle. A save only lands over an
+ * older game: a lost save means another worker is hosting the scene, and this
+ * one stands down for a while before it looks again. Every change emits the
  * public projection (`crossword:state`); a tiny `crossword:beat` goes out every
  * 5 s. Emitted events reach every browser, so only `pub` is ever emitted — it
  * carries no unsolved answer.
@@ -27,6 +29,7 @@ import {
   applyAnswer,
   chooseNextPuzzle,
   cleanPlayerName,
+  crosswordStockReason,
   emptyGame,
   isPuzzleComplete,
   nextHint,
@@ -39,6 +42,7 @@ import {
   type CrosswordConfig,
   type CrosswordGame,
   type CrosswordPuzzle,
+  type CrosswordStockReason,
 } from "@photonsurge/shared/crossword";
 import { startOfUtcDay, type CrosswordSolve } from "@photonsurge/shared/crossword-records";
 import { log } from "@photonsurge/shared/utill/logger";
@@ -63,6 +67,16 @@ export const CROSSWORD_POLL_MS = 1000;
 export const CROSSWORD_BEAT_MS = 5000;
 /** An idle scene looks for new stock this often. */
 export const CROSSWORD_IDLE_CHECK_MS = 5000;
+/** A playing scene re-reads its puzzle's status this often (a bank decision may reject it, §7.4). */
+export const CROSSWORD_STATUS_CHECK_MS = 5000;
+/** After a lost save (another host has the scene) this one stands down this long, then looks again. */
+export const CROSSWORD_STAND_DOWN_MS = 60_000;
+
+/**
+ * Dev boxes only: puzzles built from unapproved words (`CROSSWORD_ALLOW_UNAPPROVED`)
+ * may air. Read on every pick so a test can set it.
+ */
+const allowUnapproved = () => process.env.CROSSWORD_ALLOW_UNAPPROVED === "true";
 
 /** One runner: a crossword scene the host is running. */
 export interface SceneRuntime {
@@ -89,6 +103,11 @@ export interface SceneRuntime {
   lastIdleCheckAt: number;
   /** Why the scene is replaying or idle (§7.5), or null with fresh stock. Logged when it changes. */
   stockNote: string | null;
+  /** The puzzle on air was rejected under it (§7.4): the current clue finishes, then the finale. */
+  puzzleRejected: boolean;
+  lastStatusCheckAt: number;
+  /** A save lost to a newer game: another host has this scene. The next poll stands it down. */
+  lost: boolean;
   /** Serialises the tick, answers and commands on this scene. */
   lock: Promise<unknown>;
   /** A step's advance is still running on this scene (a slow save); the next step passes it over. */
@@ -105,6 +124,12 @@ export interface CrosswordRunnerState {
   lastPollAt: number;
   /** The poll in flight, so polls never overlap and an inject can wait on one. */
   polling: Promise<void> | null;
+  /**
+   * Scenes another host owns (a save of ours was lost): not hosted here until
+   * `until`, and then only if the stored game's `seq` has not moved since
+   * `seq` was read (nobody else is saving).
+   */
+  standDown: Map<string, { until: number; seq: number }>;
 }
 
 export interface CrosswordRunnerDeps {
@@ -138,7 +163,12 @@ export interface CommandResult {
   note?: string;
 }
 
-export const newCrosswordRunnerState = (): CrosswordRunnerState => ({ scenes: new Map(), lastPollAt: -Infinity, polling: null });
+export const newCrosswordRunnerState = (): CrosswordRunnerState => ({
+  scenes: new Map(),
+  lastPollAt: -Infinity,
+  polling: null,
+  standDown: new Map(),
+});
 
 /** A failed game save is retried this many times before it is logged and left to the next change. */
 const SAVE_RETRIES = 1;
@@ -202,7 +232,12 @@ async function drainSaves(rt: SceneRuntime, deps: CrosswordRunnerDeps): Promise<
       const game = rt.saveQueue.shift()!;
       for (let attempt = 0; !rt.stopped; attempt++) {
         try {
-          await deps.db.crosswordGames.save(game);
+          const wrote = await deps.db.crosswordGames.save(game);
+          if (wrote === false) {
+            // A newer game is stored: another host is running this scene.
+            rt.lost = true;
+            rt.stopped = true;
+          }
           break;
         } catch (err) {
           if (attempt >= SAVE_RETRIES) {
@@ -268,21 +303,21 @@ const resetBoard = (g: CrosswordGame): CrosswordGame => ({
 });
 
 /**
- * Why the scene is replaying or idle (§7.5: "the Desk says why"), or null when
- * `next` is a puzzle this scene has not played. Stock is shared across
- * channels, so a family-friendly one can be short while others are not.
+ * The log line for a stock reason (§7.5: "the Desk says why"; the Desk reads
+ * the same `crosswordStockReason` through its route), or null with fresh
+ * stock.
  */
-export function stockNote(
-  ready: CrosswordPuzzle[],
-  next: CrosswordPuzzle | null,
-  sceneId: string,
-  cfg: Pick<CrosswordConfig, "familyFriendlyOnly" | "noRepeatPuzzles">,
-): string | null {
-  if (next) return next.plays.some((x) => x.sceneId === sceneId) ? "no unplayed stock: replaying" : null;
-  const playable = ready.filter((p) => p.entries.length);
-  if (!playable.length) return "no ready puzzles: idle";
-  if (cfg.familyFriendlyOnly && !playable.some((p) => p.familyFriendly === true)) return "no family-friendly stock: idle";
-  return `every puzzle is in the last ${cfg.noRepeatPuzzles} played: idle`;
+export function stockNote(reason: CrosswordStockReason): string | null {
+  switch (reason.kind) {
+    case "fresh":
+      return null;
+    case "replay":
+      return "no unplayed stock: replaying";
+    case "noReady":
+      return "no ready puzzles: idle";
+    case "noFamilyFriendly":
+      return "no family-friendly stock: idle";
+  }
 }
 
 /** Keep the stock note, logging only when it changes (an idle scene re-checks every 5 s). */
@@ -294,14 +329,16 @@ function noteStock(rt: SceneRuntime, note: string | null): void {
 
 /**
  * Put the next puzzle on its intro card, or go `idle` with no stock. The
- * no-repeat and family-friendly rules are `chooseNextPuzzle`'s over the ready
- * list. Commits when the game changed.
+ * no-repeat, replay and family-friendly rules are `chooseNextPuzzle`'s over
+ * the ready list. Commits when the game changed.
  */
 async function startNext(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps): Promise<void> {
   rt.lastIdleCheckAt = now;
+  rt.puzzleRejected = false;
   const ready = await deps.db.crosswordPuzzles.list({ status: "ready" });
-  const next = chooseNextPuzzle(ready, rt.sceneId, rt.cfg.noRepeatPuzzles, { familyFriendlyOnly: rt.cfg.familyFriendlyOnly });
-  noteStock(rt, stockNote(ready, next, rt.sceneId, rt.cfg));
+  const opts = { familyFriendlyOnly: rt.cfg.familyFriendlyOnly, allowUnapproved: allowUnapproved() };
+  const next = chooseNextPuzzle(ready, rt.sceneId, rt.cfg.noRepeatPuzzles, opts);
+  noteStock(rt, stockNote(crosswordStockReason(ready, rt.sceneId, "", { ...opts, noRepeatPuzzles: rt.cfg.noRepeatPuzzles })));
   if (!next) {
     if (rt.game.phase === "idle" && !rt.game.puzzleId) return;
     rt.puzzle = null;
@@ -332,9 +369,13 @@ const toFinale = (rt: SceneRuntime, now: number) => {
   rt.game = { ...rt.game, phase: "finale", phaseEndsAt: now + rt.cfg.finaleS * 1000, spotlight: null };
 };
 
-/** Spotlight the next word, or go to the finale when none is open. */
+/**
+ * Spotlight the next word, or go to the finale when none is open — or when
+ * the puzzle was rejected under the game: the clue that was on finishes, and
+ * no other comes up.
+ */
 function moveSpotlight(rt: SceneRuntime, now: number, skip?: string): void {
-  const entry = rt.puzzle ? nextSpotlightEntry(rt.puzzle, rt.game, skip) : null;
+  const entry = rt.puzzle && !rt.puzzleRejected ? nextSpotlightEntry(rt.puzzle, rt.game, skip) : null;
   if (!entry) toFinale(rt, now);
   else rt.game = { ...rt.game, spotlight: spotlightOn(entry.id, now, rt.cfg) };
 }
@@ -344,7 +385,8 @@ async function stepPlaying(rt: SceneRuntime, now: number, deps: CrosswordRunnerD
   const puzzle = rt.puzzle!;
   const g = rt.game;
   if (now >= g.phaseEndsAt) {
-    rt.game = revealAll(puzzle, g, now);
+    // A rejected puzzle's open words stay unshown.
+    if (!rt.puzzleRejected) rt.game = revealAll(puzzle, g, now);
     toFinale(rt, now);
     log(TAG, `ceiling`, { sceneId: rt.sceneId, puzzleId: puzzle.id });
     return commit(rt, now, deps);
@@ -386,6 +428,10 @@ async function advance(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps)
       await startNext(rt, now, deps);
     } else if (g.phase === "idle") {
       if (now - rt.lastIdleCheckAt >= CROSSWORD_IDLE_CHECK_MS) await startNext(rt, now, deps);
+    } else if (g.phase === "intro" && rt.puzzleRejected) {
+      // Rejected before a clue aired: on to the next puzzle.
+      await endCurrentPlay(rt, now, deps);
+      await startNext(rt, now, deps);
     } else if (g.phase === "intro") {
       if (now >= g.phaseEndsAt) {
         rt.game = { ...g, phase: "playing", puzzleStartedAt: now, phaseEndsAt: now + rt.cfg.ceilingMin * 60_000 };
@@ -442,6 +488,9 @@ async function loadScene(
     lastBeatAt: -Infinity,
     lastIdleCheckAt: -Infinity,
     stockNote: null,
+    puzzleRejected: false,
+    lastStatusCheckAt: -Infinity,
+    lost: false,
     lock: Promise.resolve(),
     busy: false,
     stopped: false,
@@ -449,9 +498,67 @@ async function loadScene(
     saving: false,
   };
   if (isFrozen(rt) && game.phase !== "idle") rt.frozenAt = savedAt;
+  if (puzzle?.status === "rejected" && game.phase !== "idle") markRejected(rt);
   await refreshToday(rt, now, deps);
   log(TAG, `runner loaded`, { sceneId, phase: game.phase, puzzleNo: game.puzzleNo, resumed: !!stored });
   return rt;
+}
+
+/** The puzzle on air was rejected (§7.4): finish the clue on, then the finale. */
+function markRejected(rt: SceneRuntime): void {
+  if (rt.puzzleRejected) return;
+  rt.puzzleRejected = true;
+  log(TAG, `puzzle rejected on air — finishing this clue, then the finale`, { sceneId: rt.sceneId, puzzleId: rt.game.puzzleId });
+}
+
+/** Re-read the status of the puzzle on air now and then. Best effort. */
+async function checkPuzzleStatus(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps): Promise<void> {
+  const p = rt.puzzle;
+  if (!p || rt.puzzleRejected || rt.game.phase === "idle" || rt.game.phase === "finale") return;
+  if (now - rt.lastStatusCheckAt < CROSSWORD_STATUS_CHECK_MS) return;
+  rt.lastStatusCheckAt = now;
+  try {
+    const fresh = await deps.db.crosswordPuzzles.get(p.id);
+    if (fresh && fresh.status === "rejected" && rt.puzzle?.id === p.id) {
+      p.status = "rejected";
+      markRejected(rt);
+    }
+  } catch (err) {
+    log(TAG, `puzzle status check failed`, { sceneId: rt.sceneId, puzzleId: p.id, err: String(err) });
+  }
+}
+
+/** The stored game's seq for a scene (-1 with none). */
+async function storedSeq(sceneId: string, deps: CrosswordRunnerDeps): Promise<number> {
+  return (await deps.db.crosswordGames.get(sceneId))?.seq ?? -1;
+}
+
+/**
+ * Two hosts (§4.4): a runner whose save was lost stands down for
+ * CROSSWORD_STAND_DOWN_MS, logged once. When that runs out it looks again: if
+ * the stored game moved on meanwhile, the other host is alive and this one
+ * stands down again (quietly); if not, it hosts the scene again. Returns true
+ * while the scene is not to be hosted here.
+ */
+async function standingDown(state: CrosswordRunnerState, sceneId: string, now: number, deps: CrosswordRunnerDeps): Promise<boolean> {
+  const rt = state.scenes.get(sceneId);
+  if (rt?.lost) {
+    stopScene(state, sceneId, "another host saved a newer game");
+    state.standDown.set(sceneId, { until: now + CROSSWORD_STAND_DOWN_MS, seq: await storedSeq(sceneId, deps) });
+    log(TAG, `another host owns this scene — standing down`, { sceneId, forMs: CROSSWORD_STAND_DOWN_MS });
+    return true;
+  }
+  const back = state.standDown.get(sceneId);
+  if (!back) return false;
+  if (now < back.until) return true;
+  const seq = await storedSeq(sceneId, deps);
+  if (seq !== back.seq) {
+    state.standDown.set(sceneId, { until: now + CROSSWORD_STAND_DOWN_MS, seq });
+    return true;
+  }
+  state.standDown.delete(sceneId);
+  log(TAG, `no other host seen — hosting this scene again`, { sceneId });
+  return false;
 }
 
 /** Take a runner down: it saves and emits nothing more. */
@@ -466,11 +573,12 @@ function stopScene(state: CrosswordRunnerState, sceneId: string, why: string): v
 /** Mongo side of a step for one scene: config, live run, go-live, park, thaw. */
 async function pollScene(state: CrosswordRunnerState, sceneId: string, now: number, deps: CrosswordRunnerDeps): Promise<void> {
   const cfg = await deps.db.getOrInitCrosswordConfig(sceneId);
-  const existing = state.scenes.get(sceneId);
   if (!cfg.enabled) {
     stopScene(state, sceneId, "disabled");
     return;
   }
+  if (await standingDown(state, sceneId, now, deps)) return;
+  const existing = state.scenes.get(sceneId);
   const active = await deps.db.activeRunForScene(sceneId);
   const run = active && active.status === "live" ? active : null;
   const inputLive = !!run && !!run.chat?.enabled;
@@ -507,6 +615,7 @@ async function afterPoll(
     rt.liveRunId = null;
   }
   if (syncFreeze(rt, now)) changed = true;
+  await checkPuzzleStatus(rt, now, deps);
   if (startOfUtcDay(now) !== rt.todayDay) {
     await refreshToday(rt, now, deps);
     changed = true;
@@ -520,6 +629,9 @@ async function poll(state: CrosswordRunnerState, now: number, deps: CrosswordRun
   const listed = new Set(scenes);
   for (const id of [...state.scenes.keys()]) {
     if (!listed.has(id)) stopScene(state, id, "scene gone");
+  }
+  for (const id of [...state.standDown.keys()]) {
+    if (!listed.has(id)) state.standDown.delete(id);
   }
   // Scenes side by side: one scene's slow save holds only that scene.
   await Promise.all(
@@ -543,7 +655,7 @@ export function pollNow(state: CrosswordRunnerState, now: number, deps: Crosswor
 
 /** Advance one scene unless its last advance is still running. */
 async function advanceScene(rt: SceneRuntime, now: number, deps: CrosswordRunnerDeps): Promise<void> {
-  if (rt.busy) return;
+  if (rt.busy || rt.stopped) return;
   rt.busy = true;
   try {
     await locked(rt, () => advance(rt, now, deps));
@@ -660,8 +772,9 @@ async function answerOne(
 /**
  * A Desk command. pause / resume freeze and thaw the clock; skipClue moves the
  * spotlight on and leaves the word open; reveal has the host fill the
- * spotlight word; nextPuzzle finishes the puzzle now (the host fills the rest)
- * and goes to the finale — from the finale or idle it moves straight on. It
+ * spotlight word; nextPuzzle finishes the puzzle now (the host fills the
+ * rest, unless the puzzle was rejected) and goes to the finale — from the
+ * finale or idle it moves straight on. It
  * acts only while the host plays: on a parked game it would stamp a play
  * nobody sees. A no-op says why. Returns null when there is no runner.
  */
@@ -712,7 +825,7 @@ export async function commandTo(
         if (g.phase === "finale") {
           rt.game = { ...g, phaseEndsAt: clock };
         } else {
-          if (rt.puzzle) rt.game = revealAll(rt.puzzle, g, clock);
+          if (rt.puzzle && !rt.puzzleRejected) rt.game = revealAll(rt.puzzle, g, clock);
           toFinale(rt, clock);
         }
         break;

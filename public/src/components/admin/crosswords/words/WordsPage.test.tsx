@@ -123,3 +123,18 @@ it("shows the approved-pool counter and the approval and family-friendly columns
   expect(within(table).getAllByText("pending").length).toBe(2);
   expect(within(table).getAllByText("untagged").length).toBe(2);
 });
+
+it("shows a capped count as 10,000+ and pages on while pages come back full", async () => {
+  const full = Array.from({ length: 50 }, (_, i) => ({ ...body().rows[0], id: `64b0000000000000000001${String(i).padStart(2, "0")}`, word: `w${i}` }));
+  response = body({ rows: full, total: 10_000, totalCapped: true });
+  render(<WordsPage />);
+  expect(await screen.findByText(/1–50 of 10,000\+/)).toBeInTheDocument();
+  expect(screen.getByText("Page 1 of 200+")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+});
+
+it("an exact count shows no plus", async () => {
+  render(<WordsPage />);
+  expect(await screen.findByText(/1–2 of 2$/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+});

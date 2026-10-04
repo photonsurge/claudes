@@ -222,6 +222,13 @@ export interface BankTotals {
 
 export const BANK_PAGE_SIZES = [25, 50, 100, 200] as const;
 
+/**
+ * A filtered Words list counts its matches up to this many and then stops
+ * (`totalCapped`), shown as "10,000+": an exact count over a million words is
+ * a full scan on most filters.
+ */
+export const BANK_COUNT_CAP = 10_000;
+
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const F = BANK_WORD_FIELDS;
 const C = BANK_CLUE_FIELDS;
@@ -463,13 +470,24 @@ export function poolCounts(words: number, ffWords: number): BankPoolCounts {
   };
 }
 
+/** A bank index spec; `partialFilterExpression` makes it a partial index. */
+export interface BankIndexSpec {
+  key: Record<string, 1 | -1>;
+  name: string;
+  partialFilterExpression?: Record<string, unknown>;
+}
+
 /**
  * Index specs `yarn crossword:bank-index` builds once after an import (§7.2
  * step 3). The compound `xwbank_approved_pick_ix` serves the builder's pick
  * (approval, family friendly, length, frequency); the clue one on approval
- * serves the pool counter.
+ * serves the pool counter. `xwbank_queue_ix` is partial: only the
+ * pipeline-accepted, clued words with a frequency score (the approval queue's
+ * candidates, a small slice of the million), most common first, which is the
+ * queue's sort. A partial filter cannot say "approval missing", so pending is
+ * checked on the indexed rows.
  */
-export const BANK_WORD_INDEXES: { key: Record<string, 1 | -1>; name: string }[] = [
+export const BANK_WORD_INDEXES: BankIndexSpec[] = [
   { key: { [F.norm]: 1 }, name: "xwbank_norm_ix" },
   { key: { [F.clueStatus]: 1 }, name: "xwbank_cluestatus_ix" },
   { key: { [F.updatedAt]: -1 }, name: "xwbank_updated_ix" },
@@ -479,8 +497,13 @@ export const BANK_WORD_INDEXES: { key: Record<string, 1 | -1>; name: string }[] 
     key: { [F.approvalStatus]: 1, [F.familyFriendly]: 1, [F.length]: 1, [F.zipf]: -1 },
     name: "xwbank_approved_pick_ix",
   },
+  {
+    key: { [F.zipf]: -1, _id: 1 },
+    name: "xwbank_queue_ix",
+    partialFilterExpression: { [F.decision]: "accepted", [F.clueStatus]: "done", [F.zipf]: { $type: "number" } },
+  },
 ];
-export const BANK_CLUE_INDEXES: { key: Record<string, 1 | -1>; name: string }[] = [
+export const BANK_CLUE_INDEXES: BankIndexSpec[] = [
   { key: { [C.answerId]: 1 }, name: "xwbank_clue_answer_ix" },
   { key: { [C.approvalStatus]: 1, [C.answerId]: 1 }, name: "xwbank_clue_approval_ix" },
 ];

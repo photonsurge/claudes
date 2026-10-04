@@ -5,7 +5,7 @@
  * counterpart of /control (docs/crossword-mode-plan.md §8.3): the board in
  * small, the clue in the spotlight with its countdown, this puzzle's scores and
  * the solve feed; the game controls; and the simulator. When the channel idles or
- * replays, a line says why (§7.5, derived in deskReason). Go
+ * replays, a line says why (§7.5: the runner's reason, from the desk route). Go
  * live links to the Streams page until the Go live dialog lands (WP12); End stops
  * the channel's live run through the Streams API.
  */
@@ -23,8 +23,8 @@ import type { CrosswordPublicState } from "@photonsurge/shared/crossword";
 import AdminPageShell from "../../AdminPageShell";
 import MiniGrid from "../puzzles/MiniGrid";
 import { listScenes } from "../../../../lib/scenes";
-import { call, listPuzzles, type PuzzleRow } from "../puzzles/api";
-import { deskReason } from "./deskReason";
+import { call } from "../puzzles/api";
+import { deskReason, deskUrl, type DeskInfo } from "./deskReason";
 import { font } from "../../../../theme/tokens";
 import DeskControls from "./DeskControls";
 import EndButton from "./EndButton";
@@ -54,29 +54,20 @@ export default function DeskPage({ sceneId }: { sceneId: string }) {
     };
   }, [sceneId]);
 
-  const [puzzles, setPuzzles] = useState<PuzzleRow[]>([]);
-  const [config, setConfig] = useState<{ familyFriendlyOnly: boolean; noRepeatPuzzles: number } | null>(null);
+  // The reason changes with the puzzle on air, so it is re-read on each phase and puzzle.
+  const [info, setInfo] = useState<DeskInfo | null>(null);
   const phase = state?.phase;
   useEffect(() => {
     if (!phase) return;
     let live = true;
-    listPuzzles({ status: "ready" }).then((res) => {
-      if (live && res.ok) setPuzzles(res.data.puzzles);
+    call<DeskInfo>(deskUrl(sceneId)).then((res) => {
+      if (live && res.ok) setInfo(res.data);
     });
     return () => {
       live = false;
     };
   }, [sceneId, phase, state?.puzzleNo]);
-  useEffect(() => {
-    let live = true;
-    call<{ familyFriendlyOnly: boolean; noRepeatPuzzles: number }>(`/api/crossword/${encodeURIComponent(sceneId)}/config`).then((res) => {
-      if (live && res.ok) setConfig(res.data);
-    });
-    return () => {
-      live = false;
-    };
-  }, [sceneId]);
-  const reason = state ? deskReason({ phase: state.phase, sceneId, title: state.title, puzzles, config }) : null;
+  const reason = state ? deskReason(state.phase, info) : null;
 
   const name = scene?.name ?? sceneId;
   const notCrossword = scene && sceneSurface(scene) !== "crossword";

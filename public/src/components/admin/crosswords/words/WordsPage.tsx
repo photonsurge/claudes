@@ -82,7 +82,10 @@ export default function WordsPage() {
   const pageSize = data?.pageSize ?? 50;
   const lastPage = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
   const from = data && data.total ? (page - 1) * pageSize + 1 : 0;
-  const to = data ? Math.min(data.total, page * pageSize) : 0;
+  const to = data ? (data.totalCapped ? (page - 1) * pageSize + data.rows.length : Math.min(data.total, page * pageSize)) : 0;
+  // A capped count is a floor: say so, and page on while pages come back full.
+  const plus = data?.totalCapped ? "+" : "";
+  const hasNext = data?.totalCapped ? data.rows.length >= pageSize : page < lastPage;
 
   return (
     <AdminPageShell
@@ -114,7 +117,7 @@ export default function WordsPage() {
             <WordsFilters query={query} onChange={change} />
             <Stack direction="row" sx={{ alignItems: "center", gap: 1.5 }}>
               <Typography variant="body2" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
-                {data.total ? `${from.toLocaleString("en-GB")}–${to.toLocaleString("en-GB")} of ${data.total.toLocaleString("en-GB")}` : "0 words"}
+                {data.total ? `${from.toLocaleString("en-GB")}–${to.toLocaleString("en-GB")} of ${data.total.toLocaleString("en-GB")}${plus}` : "0 words"}
                 {loading ? " · loading…" : ""}
               </Typography>
               <Box sx={{ ml: "auto" }} />
@@ -122,9 +125,9 @@ export default function WordsPage() {
                 Previous
               </Button>
               <Typography variant="body2">
-                Page {page} of {lastPage.toLocaleString("en-GB")}
+                {`Page ${page} of ${lastPage.toLocaleString("en-GB")}${plus}`}
               </Typography>
-              <Button size="small" disabled={page >= lastPage} onClick={() => change({ ...query, page: page + 1 })}>
+              <Button size="small" disabled={!hasNext} onClick={() => change({ ...query, page: page + 1 })}>
                 Next
               </Button>
             </Stack>

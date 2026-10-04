@@ -1,57 +1,24 @@
-import type { PuzzleRow } from "../puzzles/api";
-import { deskReason } from "./deskReason";
+import { poolCounts } from "@photonsurge/shared/crossword-bank";
+import { deskReason, type DeskInfo } from "./deskReason";
 
-const row = (id: string, o: Partial<PuzzleRow> = {}): PuzzleRow => ({
-  id,
-  title: `Puzzle ${id}`,
-  status: "ready",
-  familyFriendly: true,
-  source: "bank",
-  createdAt: 1,
-  width: 5,
-  height: 5,
-  words: 10,
-  plays: 0,
-  scenes: [],
-  playLog: [],
-  ...o,
-});
-const play = (at: number, sceneId = "xw") => ({ sceneId, startedAt: at });
-const base = { sceneId: "xw", title: "Puzzle a", config: { familyFriendlyOnly: true, noRepeatPuzzles: 2 } };
+const info = (kind: DeskInfo["reason"]["kind"], pool = poolCounts(140, 28)): DeskInfo => ({ reason: { kind, unplayed: 0 }, pool });
 
-describe("deskReason: idle", () => {
-  it("no ready puzzles", () => {
-    expect(deskReason({ ...base, phase: "idle", puzzles: [row("a", { status: "rejected" })] })).toMatch(/no ready puzzles/);
+describe("deskReason words the route's reason", () => {
+  it("nothing to say with fresh stock", () => {
+    expect(deskReason("playing", info("fresh"))).toBeNull();
+    expect(deskReason("idle", info("fresh"))).toBeNull();
+    expect(deskReason("playing", null)).toBeNull();
   });
-  it("no family-friendly ready puzzle, only when the channel asks for them", () => {
-    const puzzles = [row("a", { familyFriendly: false })];
-    expect(deskReason({ ...base, phase: "idle", puzzles })).toMatch(/family-friendly puzzles only/);
-    expect(deskReason({ ...base, phase: "idle", puzzles, config: { familyFriendlyOnly: false, noRepeatPuzzles: 2 } })).toBeNull();
+  it("replaying, only while a puzzle is on", () => {
+    expect(deskReason("playing", info("replay"))).toMatch(/^Replaying\. This puzzle has aired on this channel before/);
+    expect(deskReason("idle", info("replay"))).toBeNull();
   });
-  it("every eligible puzzle inside the no-repeat window", () => {
-    const puzzles = [row("a", { playLog: [play(1)] }), row("b", { playLog: [play(2)] })];
-    expect(deskReason({ ...base, phase: "idle", puzzles })).toMatch(/within its last 2 puzzles/);
+  it("idle with no ready puzzles, or none family friendly", () => {
+    expect(deskReason("idle", info("noReady"))).toMatch(/no ready puzzles: approve more words/);
+    expect(deskReason("idle", info("noFamilyFriendly"))).toMatch(/family-friendly puzzles only/);
   });
-  it("nothing to say when a puzzle is unplayed or outside the window", () => {
-    expect(deskReason({ ...base, phase: "idle", puzzles: [row("a", { playLog: [play(1)] }), row("b")] })).toBeNull();
-    const puzzles = [row("a", { playLog: [play(1)] }), row("b", { playLog: [play(2)] }), row("c", { playLog: [play(3)] })];
-    expect(deskReason({ ...base, phase: "idle", puzzles })).toBeNull();
-  });
-  it("plays on other channels do not count", () => {
-    expect(deskReason({ ...base, phase: "idle", puzzles: [row("a", { playLog: [play(1, "other")] })] })).toBeNull();
-  });
-});
-
-describe("deskReason: replaying", () => {
-  it("when the puzzle on air has an earlier play here", () => {
-    const puzzles = [row("a", { playLog: [play(1), play(2)] })];
-    expect(deskReason({ ...base, phase: "playing", puzzles })).toMatch(/Replaying/);
-  });
-  it("not on its first play, nor when the other plays were elsewhere", () => {
-    expect(deskReason({ ...base, phase: "playing", puzzles: [row("a", { playLog: [play(1)] })] })).toBeNull();
-    expect(deskReason({ ...base, phase: "playing", puzzles: [row("a", { playLog: [play(1), play(2, "other")] })] })).toBeNull();
-  });
-  it("uses the defaults while the config is unknown", () => {
-    expect(deskReason({ ...base, config: null, phase: "idle", puzzles: [row("a", { familyFriendly: false })] })).toMatch(/family-friendly/);
+  it("says how big the approved pool is, when known", () => {
+    expect(deskReason("idle", info("noReady"))).toMatch(/140 words \(28 family friendly\), about 10 puzzles without a repeat/);
+    expect(deskReason("idle", info("noReady", null as never))).not.toMatch(/pool/);
   });
 });

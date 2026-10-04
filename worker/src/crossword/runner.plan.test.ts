@@ -522,7 +522,7 @@ describe("next puzzle (§4.4)", () => {
     expect(h.g()).toMatchObject({ phase: "intro", puzzleId: "elsewhere" });
   });
 
-  test("failing that, the puzzle played longest ago outside the last 30; failing that, idle", async () => {
+  test("failing that, the puzzle played longest ago outside the last 30; failing that (§7.5), it replays", async () => {
     const played = (n: number) =>
       Array.from({ length: n }, (_, i) =>
         mk(`q${i}`, { createdAt: i, plays: [{ sceneId: SCENE, startedAt: 1_000 + i * 10, endedAt: 1_005 + i * 10 }] }),
@@ -532,11 +532,10 @@ describe("next puzzle (§4.4)", () => {
     await h.start();
     expect(h.g()).toMatchObject({ phase: "intro", puzzleId: "q0" });
 
-    // 30 played: every one is inside the window.
+    // 30 played: every one is inside the window, so the channel replays the oldest play.
     const h2 = host(world({ puzzles: played(30) }));
     await h2.start();
-    expect(h2.g().phase).toBe("idle");
-    expect(h2.w.db.crosswordPuzzles.startPlay).not.toHaveBeenCalled();
+    expect(h2.g()).toMatchObject({ phase: "intro", puzzleId: "q0" });
   });
 
   test("a puzzle played long ago but again recently counts by its last play", async () => {

@@ -128,6 +128,24 @@ import { getCrosswordPlayerModel } from "./crossword-player-model";
 import { makeCrosswordPlayerRepo } from "./crossword-player-repo";
 import { makeCrosswordBankRepo } from "./crossword-bank-repo";
 import { DEFAULT_CROSSWORD_CONFIG, mergeCrosswordConfig, type CrosswordConfig } from "../crossword";
+import type { BankApprovalStatus } from "../crossword-bank";
+import type { CrosswordPuzzleRepo } from "./crossword-puzzle-repo";
+
+/** What a bank decision did to built puzzles (`db.setCrossword*`). */
+export interface CrosswordCascade {
+  /** The word or clue exists and the decision was stored. */
+  ok: boolean;
+  /** Ready puzzles taken out of play. */
+  rejected: string[];
+  /** Puzzles no longer family friendly. */
+  untagged: string[];
+}
+const NO_CASCADE: CrosswordCascade = { ok: false, rejected: [], untagged: [] };
+type BankRef = { wordId?: string; clueId?: string };
+const rejectUsing = (puzzles: CrosswordPuzzleRepo, ref: BankRef) =>
+  puzzles.updateContaining(ref, { status: "rejected" }, "ready");
+const untagUsing = (puzzles: CrosswordPuzzleRepo, ref: BankRef) =>
+  puzzles.updateContaining(ref, { familyFriendly: false });
 import { getAdModel } from "./ad-model";
 import { makeAdRepo } from "./ad-repo";
 import { getAdExposureModel } from "./ad-exposure-model";
@@ -453,6 +471,47 @@ export function createDb(conn: Connection) {
       await this.crosswordGames.remove(sceneId);
     },
 
+    /**
+     * Bank decisions that reach built puzzles (§7.4: nothing airs unapproved).
+     * A word or clue that stops being approved (rejected, or back to pending,
+     * which an edit to an approved clue does) takes every `ready` puzzle that
+     * uses it out of play as `rejected`; a family-friendly tag taken off
+     * (to false or untagged) clears `familyFriendly` on every puzzle that
+     * uses it. `ok` is false for an unknown word or clue, and then nothing
+     * else changes. The ids are the puzzles changed.
+     */
+    async setCrosswordWordApproval(id: string, status: BankApprovalStatus, by: string): Promise<CrosswordCascade> {
+      if (!(await this.crosswordBank.setWordApproval(id, status, by))) return NO_CASCADE;
+      return { ok: true, rejected: status === "approved" ? [] : await rejectUsing(this.crosswordPuzzles, { wordId: id }), untagged: [] };
+    },
+
+    async setCrosswordWordFamilyFriendly(id: string, value: boolean | null, by: string): Promise<CrosswordCascade> {
+      if (!(await this.crosswordBank.setWordFamilyFriendly(id, value, by))) return NO_CASCADE;
+      return { ok: true, rejected: [], untagged: value === true ? [] : await untagUsing(this.crosswordPuzzles, { wordId: id }) };
+    },
+
+    async setCrosswordClueApproval(clueId: string, status: BankApprovalStatus, by: string): Promise<CrosswordCascade> {
+      if (!(await this.crosswordBank.setClueApproval(clueId, status, by))) return NO_CASCADE;
+      return { ok: true, rejected: status === "approved" ? [] : await rejectUsing(this.crosswordPuzzles, { clueId }), untagged: [] };
+    },
+
+    async setCrosswordClueFamilyFriendly(clueId: string, value: boolean | null, by: string): Promise<CrosswordCascade> {
+      if (!(await this.crosswordBank.setClueFamilyFriendly(clueId, value, by))) return NO_CASCADE;
+      return { ok: true, rejected: [], untagged: value === true ? [] : await untagUsing(this.crosswordPuzzles, { clueId }) };
+    },
+
+    /**
+     * Edit a clue's text (the repo's `editClue`: an approved clue returns to
+     * pending and its tag is cleared). A built puzzle carries the old text,
+     * so every ready puzzle using the clue is rejected and untagged.
+     */
+    async editCrosswordClue(clueId: string, text: string, by: string): Promise<CrosswordCascade> {
+      if (!(await this.crosswordBank.editClue(clueId, text, by))) return NO_CASCADE;
+      const rejected = await rejectUsing(this.crosswordPuzzles, { clueId });
+      const untagged = await untagUsing(this.crosswordPuzzles, { clueId });
+      return { ok: true, rejected, untagged };
+    },
+
     /** Ids of scenes whose surface is "crossword". */
     async crosswordScenes(): Promise<string[]> {
       const res = await broadcastState.getAll({ surface: "crossword" } as any, { limit: 0 });
@@ -491,6 +550,7 @@ export function createDb(conn: Connection) {
           watchToken: d.watchToken as string | undefined,
           hidden: d.hidden === true,
           surface: sceneSurface(d),
+          ...(d.youtube?.accountId ? { youtubeAccountId: String(d.youtube.accountId) } : {}),
         }))
         .sort((a: { id: string; name: string }, b: { id: string; name: string }) =>
           a.id === MAIN_SCENE_ID ? -1 : b.id === MAIN_SCENE_ID ? 1 : a.name.localeCompare(b.name),

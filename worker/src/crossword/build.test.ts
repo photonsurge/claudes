@@ -134,10 +134,13 @@ describe("buildPuzzle", () => {
       const r = await buildPuzzle(f.db, { sceneId: "xw", seed: 3 }, { layout: FAST.layout });
       expect(f.playable).toHaveBeenCalledWith(expect.objectContaining({ allowUnapproved: true }));
       expect(r.unapproved).toBe(true);
+      // The puzzle carries the dev marker, so a box without the switch never airs it.
+      expect(r.puzzle.unapproved).toBe(true);
       process.env.CROSSWORD_ALLOW_UNAPPROVED = "1";
       const g = fakeDb();
-      await buildPuzzle(g.db, { sceneId: "xw", seed: 3 }, { layout: FAST.layout });
+      const r2 = await buildPuzzle(g.db, { sceneId: "xw", seed: 3 }, { layout: FAST.layout });
       expect(g.playable).toHaveBeenCalledWith(expect.objectContaining({ allowUnapproved: false }));
+      expect(r2.puzzle).not.toHaveProperty("unapproved");
     } finally {
       if (was === undefined) delete process.env.CROSSWORD_ALLOW_UNAPPROVED;
       else process.env.CROSSWORD_ALLOW_UNAPPROVED = was;

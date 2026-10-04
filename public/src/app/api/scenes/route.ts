@@ -24,7 +24,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
 /**
  * GET /api/scenes — every broadcast scene as `{ id, name, updatedAt }`. Called
  * unauthenticated by /watch/:id (to resolve a display name), so `watchToken`
- * is only included for an admin session — never leaked to anonymous callers.
+ * and `youtubeAccountId` are only included for an admin session — never leaked to anonymous callers.
  */
 async function GET__impl() {
   const db = await getAppDb();
@@ -34,7 +34,7 @@ async function GET__impl() {
 
   const sessionToken = (await cookies()).get(SESSION_COOKIE)?.value;
   const session = sessionToken ? readSession(sessionToken) : null;
-  const out = isAdmin(session) ? scenes : scenes.map(({ watchToken: _t, ...rest }) => rest);
+  const out = isAdmin(session) ? scenes : scenes.map(({ watchToken: _t, youtubeAccountId: _y, ...rest }) => rest);
 
   return NextResponse.json({ scenes: out }, { status: 200, headers: NO_CACHE });
 }

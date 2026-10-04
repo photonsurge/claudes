@@ -29,6 +29,7 @@ function toPuzzle(d: iCrosswordPuzzleModel): CrosswordPuzzle {
       startedAt: x.startedAt,
       ...(typeof x.endedAt === "number" ? { endedAt: x.endedAt } : {}),
     })),
+    ...(d.unapproved === true ? { unapproved: true } : {}),
   };
 }
 
@@ -42,7 +43,15 @@ const setDoc = (p: CrosswordPuzzle) => ({
   familyFriendly: p.familyFriendly === true,
   source: p.source,
   createdAt: p.createdAt,
+  unapproved: p.unapproved === true,
 });
+
+/** Filter for puzzles whose entries use a bank word or clue; null when neither id is given. */
+function containing(ref: { wordId?: string; clueId?: string }): Record<string, unknown> | null {
+  if (ref.wordId) return { "entries.wordId": ref.wordId };
+  if (ref.clueId) return { "entries.clueId": ref.clueId };
+  return null;
+}
 
 /**
  * Puzzle stock (`db.crosswordPuzzles`). Holds the answers: only the worker and
@@ -98,6 +107,30 @@ export function makeCrosswordPuzzleRepo(model: Model<iCrosswordPuzzleModel>) {
         )
         .exec();
       return (res.matchedCount ?? 0) > 0;
+    },
+
+    /** Ids of puzzles (optionally only those with `status`) that use this bank word or clue. */
+    async idsContaining(ref: { wordId?: string; clueId?: string }, status?: CrosswordPuzzleStatus): Promise<string[]> {
+      const filter = containing(ref);
+      if (!filter) return [];
+      if (status) filter.status = status;
+      const docs = await model.find(filter, { id: 1 }).lean().exec();
+      return (docs as { id: string }[]).map((d) => d.id);
+    },
+
+    /**
+     * Set fields on every puzzle that uses this bank word or clue (optionally
+     * only those with `status`). Returns the ids it changed.
+     */
+    async updateContaining(
+      ref: { wordId?: string; clueId?: string },
+      set: { status?: CrosswordPuzzleStatus; familyFriendly?: boolean },
+      status?: CrosswordPuzzleStatus,
+    ): Promise<string[]> {
+      const ids = await this.idsContaining(ref, status);
+      if (!ids.length) return [];
+      await model.updateMany({ id: { $in: ids } }, { $set: set }).exec();
+      return ids;
     },
 
     /**

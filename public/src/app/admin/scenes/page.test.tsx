@@ -26,13 +26,9 @@ beforeEach(() => {
   mockList.mockReset().mockResolvedValue([
     { id: "default", name: "Main" },
     { id: "wind", name: "Atlantic Wind", surface: "globe" },
-    { id: "word-up", name: "Word Up", surface: "crossword" },
+    { id: "word-up", name: "Word Up", surface: "crossword", youtubeAccountId: "UCword" },
   ]);
   mockCreate.mockReset().mockResolvedValue({ id: "new" });
-  // Each channel's own record says which YouTube channel it goes out on.
-  (fetchSceneState as jest.Mock).mockReset().mockImplementation(async (id: string) => ({
-    state: { youtube: { accountId: id === "word-up" ? "UCword" : "" } },
-  }));
   (fetchYoutubeChannels as jest.Mock).mockReset().mockResolvedValue([
     { id: "UCword", title: "Word Up TV", needsReconnect: false },
   ]);
@@ -75,8 +71,13 @@ describe("Channels list", () => {
     render(<ScenesPage />);
     await rowOf("Word Up");
     await waitFor(() => expect(screen.getByTestId("youtube-word-up")).toHaveTextContent("Word Up TV"));
+    // The list carries the account, so no channel's own state is read.
+    expect(fetchSceneState).not.toHaveBeenCalled();
     // No channel chosen: "none" for a crossword channel, the default for a weather one.
-    (fetchSceneState as jest.Mock).mockImplementation(async () => ({ state: { youtube: { accountId: "" } } }));
+    mockList.mockResolvedValue([
+      { id: "wind", name: "Atlantic Wind", surface: "globe" },
+      { id: "word-up", name: "Word Up", surface: "crossword" },
+    ]);
     render(<ScenesPage />);
     await waitFor(() => expect(screen.getAllByTestId("youtube-word-up").some((e) => e.textContent === "none")).toBe(true));
     expect(screen.getAllByTestId("youtube-wind")[1]).toHaveTextContent("default channel");

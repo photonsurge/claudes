@@ -31,7 +31,7 @@ import {
   type SceneMeta,
   type SceneSurface,
 } from "@photonsurge/shared/control";
-import { listScenes, createScene, deleteScene, fetchSceneState } from "../../../lib/scenes";
+import { listScenes, createScene, deleteScene } from "../../../lib/scenes";
 import { consoleHref, settingsHrefFor, surfaceLabel } from "../../../lib/channel-links";
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import { fetchYoutubeChannels, type YoutubeChannel } from "../../../components/admin/crosswords/channels/client";
@@ -46,20 +46,13 @@ export default function ScenesPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Which YouTube channel each scene goes out on: scene id → youtube.accountId.
-  const [accountOf, setAccountOf] = useState<Record<string, string>>({});
   const [youtube, setYoutube] = useState<YoutubeChannel[]>([]);
 
   const refresh = useCallback(async () => {
-    const list = await listScenes();
+    // The scene list carries each channel's YouTube account (`youtubeAccountId`).
+    const [list, channels] = await Promise.all([listScenes(), fetchYoutubeChannels()]);
     setScenes(list);
-    // The scene list carries no YouTube settings, so read each channel's own.
-    const [channels, states] = await Promise.all([
-      fetchYoutubeChannels(),
-      Promise.all(list.map(async (s) => [s.id, (await fetchSceneState(s.id)).state.youtube?.accountId ?? ""] as const)),
-    ]);
     setYoutube(channels);
-    setAccountOf(Object.fromEntries(states));
   }, []);
 
   useEffect(() => {
@@ -180,7 +173,7 @@ export default function ScenesPage() {
           const kind = sceneSurface(s);
           const watch = outputPath(s);
           const control = consoleHref(s);
-          const accountId = accountOf[s.id] ?? "";
+          const accountId = s.youtubeAccountId ?? "";
           const accountName = youtube.find((a) => a.id === accountId)?.title ?? accountId;
           const goesOutOn = accountName || (kind === "crossword" ? "none" : "default channel");
           return (

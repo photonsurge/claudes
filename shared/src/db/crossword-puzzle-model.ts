@@ -46,12 +46,17 @@ export const CrosswordPuzzleSchema = new mongoose.Schema<iCrosswordPuzzleModel>(
     source: { type: String, required: true, enum: ["seed", "bank", "themed"], default: "bank" },
     createdAt: { type: Number, required: true },
     plays: { type: [PlaySchema], default: [] },
+    /** Built under CROSSWORD_ALLOW_UNAPPROVED (a dev box): never aired unless allowed. */
+    unapproved: { type: Boolean },
   },
   mongoTimestamps,
 );
 
 CrosswordPuzzleSchema.index({ status: 1, createdAt: 1 }, { name: "crossword_puzzle_status_ix" });
 CrosswordPuzzleSchema.index({ "plays.sceneId": 1, "plays.startedAt": -1 }, { name: "crossword_puzzle_plays_ix" });
+// The cascade (§7.4): a bank decision finds every puzzle that uses the word or clue.
+CrosswordPuzzleSchema.index({ "entries.wordId": 1 }, { name: "crossword_puzzle_word_ix" });
+CrosswordPuzzleSchema.index({ "entries.clueId": 1 }, { name: "crossword_puzzle_clue_ix" });
 
 export const getCrosswordPuzzleModel = (conn: Connection) =>
   getModel<iCrosswordPuzzleModel>(conn, "CrosswordPuzzle", CrosswordPuzzleSchema);

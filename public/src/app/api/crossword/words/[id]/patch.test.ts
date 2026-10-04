@@ -10,7 +10,17 @@ const bank = {
   setWordFamilyFriendly: jest.fn(),
   addClues: jest.fn(),
 };
-jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: async () => ({ crosswordBank: bank }) }));
+// The db facade's cascading decisions (§7.4), passed through to the bank fakes.
+const facadeCalls: string[] = [];
+const cascade = (name: string, f: (...a: never[]) => unknown) => async (...a: unknown[]) => {
+  facadeCalls.push(name);
+  return { ok: !!(await (f as (...x: unknown[]) => unknown)(...a)), rejected: [], untagged: [] };
+};
+const facade = () => ({
+  setCrosswordWordApproval: cascade("setCrosswordWordApproval", bank.setWordApproval),
+  setCrosswordWordFamilyFriendly: cascade("setCrosswordWordFamilyFriendly", bank.setWordFamilyFriendly),
+});
+jest.mock("@photonsurge/shared/db/index", () => ({ getAppDb: async () => ({ crosswordBank: bank, ...facade() }) }));
 
 import { requireAdmin } from "../../../../../lib/require-admin";
 import { PATCH } from "./route";
@@ -21,6 +31,7 @@ const patch = (body: unknown) =>
 
 beforeEach(() => {
   jest.resetAllMocks();
+  facadeCalls.length = 0;
   (requireAdmin as jest.Mock).mockResolvedValue({ sub: "u1", email: "op@example.com", role: "admin" });
   bank.getWordById.mockResolvedValue({ id: "w1", word: "wreck", clues: [] });
 });
@@ -37,6 +48,8 @@ it("approves and tags with the admin's identity, answering with the word", async
   expect(bank.setWordApproval).toHaveBeenCalledWith("w1", "approved", "op@example.com");
   expect(bank.setWordFamilyFriendly).toHaveBeenCalledWith("w1", true, "op@example.com");
   expect((await res.json()).id).toBe("w1");
+  // Through the facade, so the decision reaches built puzzles (§7.4).
+  expect(facadeCalls).toEqual(["setCrosswordWordApproval", "setCrosswordWordFamilyFriendly"]);
 });
 
 it("lets familyFriendly be cleared with null", async () => {

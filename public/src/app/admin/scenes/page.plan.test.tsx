@@ -26,8 +26,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   (listScenes as jest.Mock).mockResolvedValue([
     { id: "default", name: "Main" },
-    { id: "gusts", name: "Gusts", surface: "globe" },
-    { id: "puzzle-hour", name: "Puzzle Hour", surface: "crossword" },
+    { id: "gusts", name: "Gusts", surface: "globe", youtubeAccountId: ACCOUNTS.gusts },
+    { id: "puzzle-hour", name: "Puzzle Hour", surface: "crossword", youtubeAccountId: ACCOUNTS["puzzle-hour"] },
     { id: "late-xw", name: "Late Crossword", surface: "crossword" },
   ]);
   (createScene as jest.Mock).mockResolvedValue({ id: "x" });
@@ -96,15 +96,13 @@ describe("Channels list (plan §8.1)", () => {
     expect(controlLink(await row("Late Crossword"))).toHaveAttribute("href", "/admin/crosswords/desk/late-xw");
   });
 
-  it("names the YouTube channel each row goes out on, from the channel record's youtube.accountId", async () => {
+  it("names the YouTube channel each row goes out on, from the channel record's youtube.accountId (carried on the list)", async () => {
     render(<ScenesPage />);
     const xw = await row("Puzzle Hour");
     await waitFor(() => expect(within(xw).getByText("Puzzle Hour Live")).toBeInTheDocument());
     expect(within(await row("Gusts")).getByText("Weather Live")).toBeInTheDocument();
-    // Each row reads its own record.
-    for (const id of ["default", "gusts", "puzzle-hour", "late-xw"]) {
-      expect(fetchSceneState).toHaveBeenCalledWith(id);
-    }
+    // The list carries each record's account, so no row reads its own state.
+    expect(fetchSceneState).not.toHaveBeenCalled();
     // A crossword row with none chosen never borrows another channel's name.
     const late = await row("Late Crossword");
     expect(within(late).queryByText("Puzzle Hour Live")).not.toBeInTheDocument();
