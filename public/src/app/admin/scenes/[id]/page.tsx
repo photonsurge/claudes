@@ -47,6 +47,7 @@ import DirectorPoolSettings from "../../../../components/admin/scenes/DirectorPo
 import DirectorTourSettings from "../../../../components/admin/scenes/DirectorTourSettings";
 import DirectorLooksSettings from "../../../../components/admin/scenes/DirectorLooksSettings";
 import BreakInSettings from "../../../../components/admin/scenes/BreakInSettings";
+import ChatCommandsSettings from "../../../../components/admin/scenes/ChatCommandsSettings";
 import PaceSettings from "../../../../components/admin/scenes/PaceSettings";
 import ReportSettings from "../../../../components/admin/scenes/ReportSettings";
 import SlidesSettings from "../../../../components/admin/scenes/SlidesSettings";
@@ -70,6 +71,7 @@ const CARD_COMPONENTS: Record<string, ComponentType> = {
   "director-tours": DirectorTourSettings,
   "director-looks": DirectorLooksSettings,
   "director-break-ins": BreakInSettings,
+  chat: ChatCommandsSettings,
   about: AboutCardSettings,
   youtube: YoutubeSettings,
 };

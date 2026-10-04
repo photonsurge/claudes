@@ -136,6 +136,8 @@ import { getChatLogMessageModel } from "./chat-log-model";
 import { makeChatLogRepo } from "./chat-log-repo";
 import { getDirectorCommandModel } from "./director-command-model";
 import { makeDirectorCommandRepo } from "./director-command-repo";
+import { getViewerStateModel } from "./viewer-state-model";
+import { makeViewerStateRepo } from "./viewer-state-repo";
 import { getStreamEncoderModel, iStreamEncoderModel } from "./stream-encoder-model";
 import { getStreamSlotModel, iStreamSlotModel } from "./stream-slot-model";
 import { getYoutubeAccountModel, iYoutubeAccountModel } from "./youtube-account-model";
@@ -306,6 +308,7 @@ export function createDb(conn: Connection) {
     airLog: makeAirLogRepo(getAirRunModel(conn), getAirEntryModel(conn)),
     chatLog: makeChatLogRepo(getChatLogMessageModel(conn)),
     directorCommands: makeDirectorCommandRepo(getDirectorCommandModel(conn)),
+    viewerState: makeViewerStateRepo(getViewerStateModel(conn)),
     users: makeUserRepo(getUserModel(conn)),
     broadcastState,
     directorConfig,

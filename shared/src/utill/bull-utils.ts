@@ -67,6 +67,7 @@ const FOREGROUND_TYPES = new Set<string>([
   "ping", // health / liveness
   "run-lifecycle", // live-stream go-live/stop/confirm/heartbeat — operator-facing, latency-sensitive
   "youtube", // OAuth code exchange + connection check — an operator is waiting on the answer
+  "viewer-chat", // chat simulator + viewer-pick clear — an operator is watching the panel
 ]);
 
 /** Which tier a job type runs on. Explicit `sendToFore/Mid/Back` override this. */

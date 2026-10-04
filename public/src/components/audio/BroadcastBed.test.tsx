@@ -22,6 +22,8 @@ jest.mock("../../lib/audio/engine", () => {
     triggerEvent = jest.fn();
     setWeather = jest.fn();
     resume = jest.fn();
+    skip = jest.fn();
+    reseed = jest.fn();
     contextState = jest.fn(() => this.ctxState);
     constructor() {
       instances.push(this);
@@ -41,6 +43,8 @@ type MockBed = {
   triggerEvent: jest.Mock;
   setWeather: jest.Mock;
   resume: jest.Mock;
+  skip: jest.Mock;
+  reseed: jest.Mock;
 };
 
 const lastBed = (): MockBed => {
@@ -160,5 +164,21 @@ describe("BroadcastBed", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("skips to the next tune on each new skip epoch, never on the one it joined with", () => {
+    const { rerender } = render(<BroadcastBed audio={audio({ enabled: true })} skipEpoch={3} />);
+    expect(lastBed().skip).not.toHaveBeenCalled();
+    rerender(<BroadcastBed audio={audio({ enabled: true })} skipEpoch={4} />);
+    expect(lastBed().skip).toHaveBeenCalledTimes(1);
+    rerender(<BroadcastBed audio={audio({ enabled: true })} skipEpoch={4} />);
+    expect(lastBed().skip).toHaveBeenCalledTimes(1);
+  });
+
+  it("reseeds on a new viewer shuffle seed", () => {
+    const { rerender } = render(<BroadcastBed audio={audio({ enabled: true })} seed={11} />);
+    expect(lastBed().reseed).not.toHaveBeenCalled();
+    rerender(<BroadcastBed audio={audio({ enabled: true })} seed={99} />);
+    expect(lastBed().reseed).toHaveBeenCalledWith(99);
   });
 });

@@ -24,6 +24,7 @@ import { useSceneState, listScenes } from "../../../lib/scenes";
 import { retryUntil } from "../../../lib/retry";
 import { useDirector, useDirectorConfig, useDirectorCut, useEventPulse, activeCountryIso, activeRegionBbox } from "../../../lib/director";
 import WatchSurface from "../../../components/WatchSurface";
+import { useViewerState } from "../../../lib/viewer";
 import ViewingOverlay from "../../../components/ViewingOverlay";
 import { UI_SANS } from "../../../lib/fonts";
 
@@ -45,6 +46,8 @@ function SceneWatchPageInner() {
   // camera + layer patch over the scene's manual baseline. We only re-apply on a
   // new cut (seq change) so heartbeats don't retrigger the camera fly.
   const director = useDirector(sceneId);
+  // Viewers' chat picks (music, palette), layered over the channel by WatchSurface.
+  const viewer = useViewerState(sceneId, token);
   // Read-only here — this page never edits the director config, just respects
   // the operator's enabled map-type tours (e.g. which basemaps a quake cycles through).
   const { config: directorConfig } = useDirectorConfig(sceneId);
@@ -169,6 +172,7 @@ function SceneWatchPageInner() {
         slideName={director?.active ? slideName : undefined}
         alertCycleSeconds={directorConfig.alertCycleSeconds}
         directorOn={!!director?.active}
+        viewer={viewer}
       />
       {/* Chrome-on: the on-air detail lives in the event reticle, so the separate
           lower-left card is suppressed to avoid duplication. */}

@@ -16,7 +16,7 @@
  * always name what changed.
  */
 
-export type SettingsGroupId = "layout" | "presentation" | "programme" | "identity";
+export type SettingsGroupId = "layout" | "presentation" | "programme" | "viewers" | "identity";
 
 /** Which document a card's fields live in — the two Save buckets. */
 export type SettingsBucket = "control" | "director";
@@ -52,6 +52,11 @@ export const SETTINGS_GROUPS: readonly SettingsGroupDef[] = [
     id: "programme",
     label: "Programme",
     blurb: "What the auto-director puts on air when it is driving this channel, how fast it moves and when it breaks in.",
+  },
+  {
+    id: "viewers",
+    label: "Viewers",
+    blurb: "What the audience may change from live chat.",
   },
   {
     id: "identity",
@@ -159,6 +164,9 @@ export const SETTINGS_CARDS: readonly SettingsCardDef[] = [
     fields: ["mapTypes", "overlayOverrides", "kindLooks", "kindSlides", "activeSlideId"],
   },
   { id: "director-break-ins", title: "Break-ins", group: "programme", bucket: "director", fields: ["breakIn"] },
+
+  // Viewers
+  { id: "chat", title: "Chat commands", group: "viewers", bucket: "control", fields: ["chat"] },
 
   // Identity
   { id: "about", title: "About card", group: "identity", bucket: "control", fields: ["about"] },

@@ -42,6 +42,7 @@ import DirectorPanel, { type TabId as DirectorTabId } from "../../components/Dir
 import StreamPanel from "../../components/StreamPanel";
 import ViewingOverlay from "../../components/ViewingOverlay";
 import TakeToAir from "../../components/TakeToAir";
+import ViewerRequestsPanel from "../../components/control/ViewerRequestsPanel";
 import QuakeReport from "../../components/broadcast/QuakeReport";
 import TrackInfoPanel from "../../components/broadcast/TrackInfoPanel";
 import AlertLegend from "../../components/AlertLegend";
@@ -402,6 +403,7 @@ export default function ControlPage() {
           onToggleSettings={() => setDirectorShowSettings((s) => !s)}
         />
         <StreamPanel sceneId={sceneId} />
+        <ViewerRequestsPanel sceneId={sceneId} chat={state.chat} />
         {showControlPanel ? (
           <ControlPanel
             state={state}

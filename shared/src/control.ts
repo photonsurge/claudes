@@ -8,6 +8,7 @@
  * mount then live-updates from CONTROL_STATE.
  */
 
+import { DEFAULT_CHAT_COMMAND_SETTINGS, mergeChatCommandSettings, type ChatCommandSettings } from "./chat-policy";
 import {
   DEFAULT_SATIMG_FEEDS,
   defaultSatImgFeeds,
@@ -190,11 +191,14 @@ export interface ChatSettings {
   enabled: boolean;
   /** Allow the operator to promote a chat message into the on-air summary ticker. */
   promoteToTicker: boolean;
+  /** What viewers may change from chat (all off by default) — see chat-policy.ts. */
+  commands: ChatCommandSettings;
 }
 
 export const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   enabled: false,
   promoteToTicker: false,
+  commands: DEFAULT_CHAT_COMMAND_SETTINGS,
 };
 
 /**
@@ -1188,6 +1192,10 @@ function buildControlState(base: ControlState, patch: Partial<ControlState>): Co
         typeof patch.chat?.promoteToTicker === "boolean"
           ? patch.chat.promoteToTicker
           : base.chat?.promoteToTicker ?? DEFAULT_CHAT_SETTINGS.promoteToTicker,
+      commands: mergeChatCommandSettings(base.chat?.commands ?? DEFAULT_CHAT_COMMAND_SETTINGS, patch.chat?.commands, {
+        audioModes: AUDIO_MODES,
+        sanitizeOverrides: (v) => sanitizeThemeOverrides(v as Partial<ThemeOverrides>) as Record<string, string> | undefined,
+      }),
     },
     startAt:
       patch.startAt === null ? null : typeof patch.startAt === "number" ? patch.startAt : base.startAt ?? null,

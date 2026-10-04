@@ -196,6 +196,9 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     chat: {
       enabled: { type: Boolean, required: true, default: false },
       promoteToTicker: { type: Boolean, required: true, default: false },
+      // Viewer chat policy (chat-policy.ts): nested, with arrays of palettes —
+      // Mixed, sanitised by mergeControlState on every write.
+      commands: { type: mongoose.Schema.Types.Mixed, default: undefined },
     },
     startAt: { type: Number, required: false, default: null },
   },

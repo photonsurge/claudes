@@ -41,6 +41,9 @@ import AlertLegend from "./AlertLegend";
 import DebugOverlay from "./DebugOverlay";
 import FullscreenButton from "./FullscreenButton";
 import BroadcastBed from "./audio/BroadcastBed";
+import ViewerPickChip from "./broadcast/ViewerPickChip";
+import { composeViewerLayer, useViewerPicks } from "../lib/viewer";
+import type { ViewerRequest, ViewerState } from "@photonsurge/shared/viewer";
 import { weatherFromSeries } from "../lib/audio/weather";
 import BroadcastFrame from "./broadcast/BroadcastFrame";
 import AdBreak from "./broadcast/AdBreak";
@@ -94,10 +97,11 @@ interface WatchSurfaceProps {
   /** Whether the auto-director is actively driving this scene — gates the
    *  brand block's LIVE badge (an idle/off director isn't on air). */
   directorOn?: boolean;
+  /** Viewers' chat picks (music, palette) layered over the channel's settings. */
+  viewer?: ViewerState | null;
 }
 
 function WatchSurfaceBody({
-  state,
   manifest,
   cities,
   sceneName,
@@ -111,8 +115,15 @@ function WatchSurfaceBody({
   slideName,
   alertCycleSeconds,
   directorOn = false,
+  viewer = null,
   ready,
-}: WatchSurfaceProps & { ready: boolean }) {
+  state: channelState,
+}: Omit<WatchSurfaceProps, "state"> & { ready: boolean; state: ControlState }) {
+  // Viewer picks sit OVER the channel's own settings while they hold (music
+  // mode, palette); the operator's state itself is never touched.
+  const picks = useViewerPicks(viewer);
+  const state = useMemo(() => composeViewerLayer(channelState, picks), [channelState, picks]);
+  const pickList = useMemo(() => Object.values(picks).filter((p): p is ViewerRequest => !!p), [picks]);
   // Latches true once every weather variable's texture at the current fhr has
   // decoded (see Globe's own "keep every map in RAM" preload). Gates the cold-
   // start loading screen AND defers the overlay fetches below so they don't
@@ -365,7 +376,18 @@ function WatchSurfaceBody({
       {/* Generative music bed — operator-driven via state.audio (synced over the
           same socket as the rest of the ControlState). Renders UI only while a
           browser blocks autoplay; in OBS it just plays. */}
-      <BroadcastBed audio={state.audio} segment={onAirSegment ?? null} weather={bedWeather} />
+      <BroadcastBed
+        audio={state.audio}
+        segment={onAirSegment ?? null}
+        weather={bedWeather}
+        skipEpoch={viewer?.audioSkipEpoch}
+        seed={viewer?.audioSeed}
+      />
+
+      {/* The channel's "on-air chip" switch (Chat commands card) hides it. */}
+      {state.showBroadcastChrome && state.chat.commands.onAirChip ? (
+        <ViewerPickChip picks={pickList} theme={theme} />
+      ) : null}
 
       {/* Cold-start cover: hides the globe until its textures are ready (see
           `ready` above), then fades. Never reappears once dismissed. */}

@@ -147,6 +147,27 @@ function genAcidBar(rng: Rng): AcidStep[] {
 
 const sameKey = (a: Key, b: Key) => a.tonic === b.tonic && a.mode === b.mode;
 
+/**
+ * Pure: at a bar boundary, does a new phrase start, and is it a new track?
+ * A phrase ends on schedule, or at a 4-bar mark when the section drifted; a
+ * viewer's skip ends it at once and asks for a new track; a far section jump
+ * or a used-up track also starts a new one.
+ */
+export function phraseDecision(s: {
+  hasPhrase: boolean;
+  bar: number;
+  phraseEnd: number;
+  drifted: boolean;
+  skip: boolean;
+  hasTrack: boolean;
+  far: boolean;
+  trackLeft: number;
+}): { start: boolean; newTrack: boolean } {
+  const ended = !s.hasPhrase || s.bar >= s.phraseEnd || s.skip;
+  if (!ended && !s.drifted) return { start: false, newTrack: false };
+  return { start: true, newTrack: !s.hasTrack || s.far || s.skip || (ended && s.trackLeft <= 0) };
+}
+
 export class AuroraBed {
   playing = false;
 
@@ -191,7 +212,22 @@ export class AuroraBed {
   private acidBar: AcidStep[] = [];
   private acidPrev: number | null = null;
 
+  /** A viewer's `:skip`: move to a new tune at the next bar. */
+  private skipPending = false;
+  /** A viewer's `:shuffle`: reseed the arranger at the next phrase. */
+  private pendingSeed: number | null = null;
+
   // ------------------------------------------------------------ public API
+  /** Next tune at the next bar boundary (a new track: tempo, key, flavour). */
+  skip(): void {
+    this.skipPending = true;
+  }
+
+  /** Reseed the arrangement at the next phrase boundary, so it never clicks. */
+  reseed(seed: number): void {
+    this.pendingSeed = seed >>> 0;
+  }
+
   toggle(): boolean {
     this.playing ? this.stop() : this.start();
     return this.playing;
@@ -350,14 +386,27 @@ export class AuroraBed {
   private maybeNewPhrase(bar: number, cls: SectionCls, t: number): void {
     const ph = this.phrase;
     const barIn = ph ? bar - this.phraseStart : 0;
-    const ended = !ph || bar >= this.phraseEnd;
-    const drifted = !!ph && ph.cls !== cls && barIn >= 4 && barIn % 4 === 0;
-    if (!ended && !drifted) return;
     const far = !!this.track && Math.abs(SECTIONS.findIndex((s) => s.cls === cls) - SECTIONS.findIndex((s) => s.cls === this.track!.cls)) >= 2;
+    const decision = phraseDecision({
+      hasPhrase: !!ph,
+      bar,
+      phraseEnd: this.phraseEnd,
+      drifted: !!ph && ph.cls !== cls && barIn >= 4 && barIn % 4 === 0,
+      skip: this.skipPending,
+      hasTrack: !!this.track,
+      far,
+      trackLeft: this.trackLeft,
+    });
+    if (!decision.start) return;
+    this.skipPending = false;
+    if (this.pendingSeed !== null) {
+      this.rng = mulberry32(this.pendingSeed);
+      this.pendingSeed = null;
+    }
     // A far jump (a storm cut from chill straight to breaks, or the calm after) starts a new
     // track at once, even at a mid-phrase cut, so the tempo follows the section.
     let newTrack = false;
-    if (!this.track || far || (ended && this.trackLeft <= 0)) {
+    if (decision.newTrack) {
       this.track = planTrack(this.rng, cls, this.track);
       this.trackLeft = this.track.phrases;
       this.stepS = 60 / this.track.bpm / 4;
@@ -365,7 +414,8 @@ export class AuroraBed {
       this.rig!.delay.delayTime.setTargetAtTime(this.stepS * 3, t, 0.25);
       newTrack = true;
     }
-    const next = planPhrase(this.rng, cls, ph, { newTrack, key: this.track.key });
+    // phraseDecision asks for a new track whenever there is none yet.
+    const next = planPhrase(this.rng, cls, ph, { newTrack, key: this.track!.key });
     this.trackLeft--;
     this.phrase = next;
     this.phraseStart = bar;

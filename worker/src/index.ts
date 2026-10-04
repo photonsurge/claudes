@@ -32,6 +32,7 @@ import { startQueueEventBridge } from "./queueEventBridge";
 import { installJobConsoleTap, runInJobLogContext, getJobLog, listJobLogs } from "./jobLog";
 import { beginJob, endJob, startCancelSubscriber, activeJobLabels } from "./jobCancel";
 import { startDirector, stopDirector } from "./director/loop";
+import { startViewerSweep, stopViewerSweep } from "./stream/viewer-sweep";
 import { WEATHER_SOURCE_JOBS, jobEveryMs } from "./weather/sourceSchedule";
 import { getEnabledSources } from "./alerts/registry";
 import { getEnabledCamSources } from "./cams/registry";
@@ -208,6 +209,8 @@ process.on("uncaughtException", (err) => {
   // Auto-director: a self-running camera/sequencer per scene that's in "auto"
   // mode. Runs in-process (not a BullMQ job) — reads Mongo + emits director:state.
   startDirector();
+  // Viewer chat picks (music / palette): lapse and promote them on time.
+  startViewerSweep();
 
   // Restore streaming-run monitors + re-arm auto-end for runs that were live when
   // the worker last stopped (health/confirm loops are in-process, so a restart
@@ -1795,6 +1798,7 @@ process.on("uncaughtException", (err) => {
     // candidates and emitting director:state cuts. If we don't kill it here it
     // carries on cutting shots the whole time bullWorker.close() drains jobs.
     stopDirector();
+    stopViewerSweep();
 
     // Stop the streaming-run monitors (in-process health/confirm loops) too.
     stopAllMonitors();

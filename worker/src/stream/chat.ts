@@ -25,7 +25,8 @@ import { CHAT_MESSAGE, type ChatMessage } from "@photonsurge/shared/runs";
 import { log } from "@photonsurge/shared/utill/logger";
 import { emitWorkerEvent } from "../socket";
 import { startMonitor, stopMonitor } from "./monitor";
-import { commandReplies } from "./chat-commands";
+import { commandReplies, MAX_REPLIES_PER_BATCH } from "./chat-commands";
+import { defaultHandlerDeps, handleChatBatch } from "./chat-handler";
 import { getYoutubeClient, listChat, sendChatMessage, youtubeErrorKind } from "../youtube/client";
 import { CHAT_PAUSE_MAX_MS, chatPacing, fmtResetTime } from "../youtube/quota";
 
@@ -123,10 +124,17 @@ async function chatTick(runId: string): Promise<number> {
     if (!first) {
       for (const msg of msgs) emitWorkerEvent({ type: CHAT_MESSAGE, data: msg });
       // Command replies (":modes" etc.) — best-effort; never breaks the poll.
+      // The info commands always answer; viewer requests (music, palette, …)
+      // act on the channel and answer in chat only when its policy says so.
       try {
-        for (const text of await commandReplies(run, msgs)) {
-          await sendChatMessage(ctx, yt.liveChatId, text);
-        }
+        const info = await commandReplies(run, msgs);
+        const viewer = await handleChatBatch(
+          run.sceneId,
+          msgs.map((m) => ({ author: m.author, text: m.text, isMod: m.isMod, isOwner: m.isOwner, platform: m.platform })),
+          await defaultHandlerDeps(),
+        );
+        const replies = [...info, ...(viewer.replyInChat ? viewer.replies : [])].slice(0, MAX_REPLIES_PER_BATCH);
+        for (const text of replies) await sendChatMessage(ctx, yt.liveChatId, text);
       } catch (err) {
         log(TAG, `command reply failed ${runId}`, String((err as Error)?.message ?? err));
       }
