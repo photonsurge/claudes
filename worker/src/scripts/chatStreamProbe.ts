@@ -18,11 +18,22 @@
  * the gRPC endpoint (@grpc/grpc-js + the guide's proto), not built here.
  *
  * Side effects: none on the run. It reads the run, the account and the worker's
- * quota counter; it writes nothing to Mongo (it bypasses `apiCall`, so it neither
- * meters nor blocks on the worker's quota state) and leaves the run's own
+ * quota counter and writes nothing of its own to Mongo (it bypasses `apiCall`, so
+ * it neither meters nor blocks on the worker's quota state). The one write it can
+ * cause is `getYoutubeClient`'s: if Google rotates the refresh token while the
+ * probe mints access tokens, client.ts saves the new one on the account, exactly
+ * as the worker would. It leaves the run's own
  * liveChatMessages.list poller alone — both run side by side, which is the point:
  * compare the delays here with what the poller delivers. Google bills the probe
  * to the same project, so read the quota graph before and after.
+ *
+ * Pacing: every reconnect waits at least RECONNECT_FLOOR_MS (or the server's
+ * `pollingIntervalMillis`, if longer), and no more than MAX_CONNS_PER_MINUTE
+ * connections open in any minute — if the endpoint turns out to answer once and
+ * close like `list`, the probe must not become an unpaced poll loop that spends
+ * the quota the live run's poller needs. It gives up after
+ * MAX_CONSECUTIVE_FAILURES failed connections in a row or FAILURE_WINDOW_MS
+ * without a healthy one.
  *
  * `runProbe` is the loop with its dependencies injected (fetch, token, clock,
  * sleep, log, stop signal); the bottom of the file wires the real ones.
@@ -52,8 +63,15 @@ export const STREAM_ENDPOINT = "https://youtube.googleapis.com/youtube/v3/liveCh
 const QUOTA_URL = "https://console.cloud.google.com/apis/api/youtube.googleapis.com/quotas";
 /** No bytes for this long → treat the connection as dead and reconnect. */
 export const IDLE_MS = 5 * 60_000;
-export const BACKOFF_MIN_MS = 2_000;
+/** Least wait before any reconnect, healthy or not. */
+export const RECONNECT_FLOOR_MS = 5_000;
+export const BACKOFF_MIN_MS = RECONNECT_FLOOR_MS;
 export const BACKOFF_MAX_MS = 60_000;
+export const MAX_CONNS_PER_MINUTE = 6;
+export const MAX_CONSECUTIVE_FAILURES = 8;
+export const FAILURE_WINDOW_MS = 15 * 60_000;
+/** Connections in a row that each bring one response and close before we call it polling. */
+export const POLL_LIKE_AFTER = 3;
 const SUMMARY_EVERY_MS = 60_000;
 /** Statuses meaning the REST form is not served at all — retrying will not help. */
 const NOT_SERVED = new Set([404, 405, 501]);
@@ -81,6 +99,8 @@ export interface ProbeResult {
   backlogItems: number;
   repeatItems: number;
   pageToken?: string;
+  /** More than POLL_LIKE_AFTER connections in a row each returned one response and closed. */
+  pollingLike: boolean;
 }
 
 function realSleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -125,11 +145,29 @@ export async function runProbe(opts: ProbeOptions): Promise<ProbeResult> {
     log(`resume token: ${resume.pageToken ? resume.pageToken.slice(0, 24) + "…" : "none yet"}\n`);
   };
   const summaryTimer = setInterval(() => printSummary("running summary"), opts.summaryEveryMs ?? SUMMARY_EVERY_MS);
+  log(
+    `Delays are now − publishedAt on THIS machine's clock: any skew against Google's shifts every number by that much (check NTP).`,
+  );
 
   let backoff = BACKOFF_MIN_MS;
   let forceToken = false;
+  let pollingIntervalMs = 0;
+  let failures = 0;
+  let lastHealthyAt = startedAt;
+  let singleShotRun = 0;
+  let pollingLike = false;
+  const openTimes: number[] = [];
 
   while (!stopReason && !outer.aborted) {
+    // Per-minute cap: wait out the window when it is full.
+    while (openTimes.length && now() - openTimes[0] >= 60_000) openTimes.shift();
+    if (openTimes.length >= MAX_CONNS_PER_MINUTE) {
+      const wait = openTimes[0] + 60_000 - now();
+      log(`[${hhmmss()}] pacing: ${MAX_CONNS_PER_MINUTE} connections in the last minute — waiting ${fmtMs(wait)}`);
+      await sleep(wait, outer);
+      continue;
+    }
+    openTimes.push(now());
     const pageToken = resume.startConnection();
     const conn: ConnectionRecord = {
       n: conns.length + 1,
@@ -218,6 +256,7 @@ export async function runProbe(opts: ProbeOptions): Promise<ProbeResult> {
             }
             conn.responses++;
             healthy = true;
+            if (r.pollingIntervalMillis) pollingIntervalMs = Number(r.pollingIntervalMillis) || 0;
             const t = now();
             const { fresh, repeats, backlog } = resume.accept(r);
             repeatItems += repeats;
@@ -260,18 +299,48 @@ export async function runProbe(opts: ProbeOptions): Promise<ProbeResult> {
     log(`[${hhmmss()}] ${fmtConnection(conn)}`);
 
     if (stopReason || outer.aborted) break;
-    // A connection that delivered something reconnects at once; failures back off.
-    const wait = healthy ? 0 : backoff;
-    backoff = healthy ? BACKOFF_MIN_MS : Math.min(BACKOFF_MAX_MS, backoff * 2);
-    log(`[${hhmmss()}] reconnecting ${wait ? `in ${fmtMs(wait)}` : "now"} ${resume.pageToken ? "with nextPageToken" : "without a token"}`);
-    if (wait) await sleep(wait, outer);
+
+    // One response then a clean close, again and again: the endpoint is polling, not pushing.
+    singleShotRun = conn.responses === 1 && conn.endReason === "server-closed" ? singleShotRun + 1 : 0;
+    if (singleShotRun > POLL_LIKE_AFTER && !pollingLike) {
+      pollingLike = true;
+      log(
+        `[${hhmmss()}] !! ${singleShotRun} connections in a row each returned ONE response and closed — ` +
+          `this endpoint behaves like polling, not streaming. That is the probe's answer; Ctrl-C when you have read the quota graph.`,
+      );
+    }
+
+    if (healthy) {
+      failures = 0;
+      lastHealthyAt = conn.closedAt;
+      backoff = BACKOFF_MIN_MS;
+    } else {
+      failures++;
+      const sinceHealthy = now() - lastHealthyAt;
+      if (failures >= MAX_CONSECUTIVE_FAILURES) {
+        stop(`giving up: ${failures} connections in a row failed (last: ${conn.endReason})`);
+        break;
+      }
+      if (sinceHealthy >= FAILURE_WINDOW_MS) {
+        stop(`giving up: no healthy connection for ${fmtMs(sinceHealthy)} (last: ${conn.endReason})`);
+        break;
+      }
+    }
+    // Every reconnect waits: at least the floor or the server's poll hint; failures back off on top.
+    const paced = Math.max(RECONNECT_FLOOR_MS, pollingIntervalMs);
+    const wait = healthy ? paced : Math.max(paced, backoff);
+    if (!healthy) backoff = Math.min(BACKOFF_MAX_MS, backoff * 2);
+    const why = healthy && pollingIntervalMs > RECONNECT_FLOOR_MS ? " (server pollingIntervalMillis)" : healthy ? " (floor)" : " (backoff)";
+    log(`[${hhmmss()}] reconnecting in ${fmtMs(wait)}${why} ${resume.pageToken ? "with nextPageToken" : "without a token"}`);
+    await sleep(wait, outer);
   }
 
   clearInterval(summaryTimer);
   const reason = stopReason ?? "stopped";
   log(`\nstopped: ${reason}`);
   printSummary("final summary");
-  return { stopReason: reason, conns, stats, backlogItems, repeatItems, pageToken: resume.pageToken };
+  if (pollingLike) log(`verdict: the endpoint behaved like polling (one response per connection), not streaming.`);
+  return { stopReason: reason, conns, stats, backlogItems, repeatItems, pageToken: resume.pageToken, pollingLike };
 }
 
 // ---- CLI ----
