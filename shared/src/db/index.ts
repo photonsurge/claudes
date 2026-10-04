@@ -68,6 +68,8 @@ import { getCountryRoundupModel, getRegionRoundupModel } from "./place-roundup-m
 import { makePlaceRoundupRepo } from "./place-roundup-repo";
 import { getRoundupSettingsModel } from "./roundup-settings-model";
 import { makeRoundupSettingsRepo } from "./roundup-settings-repo";
+import { getPresenterModel, getPresenterSettingsModel, getSpeechCatalogModel, getVoiceTestModel } from "./presenter-model";
+import { makePresenterRepo, makePresenterSettingsRepo, makeSpeechCatalogRepo, makeVoiceTestRepo } from "./presenter-repo";
 import { getCableModel } from "./cable-model";
 import { getCableLandingModel } from "./cable-landing-model";
 import { makeCableRepo } from "./cable-repo";
@@ -180,6 +182,7 @@ export const BLOB_NAMESPACES: Record<string, { label: string; desc: string }> = 
   "alert-snapshot": { label: "Alert snapshots", desc: "Satellite/compare/camera stills per alert: full cadence for the recent window, then one per alert + kind per UTC day, then only an aired alert's keepsake." },
   "event-snapshot": { label: "Event snapshots", desc: "Stills attached to unified watched events." },
   "volcano-media": { label: "Volcano media", desc: "Photos enriched onto the volcano catalog." },
+  "presenter-audio": { label: "Presenter audio", desc: "Spoken takes from the voice bench on /admin/presenters." },
   basemap: { label: "Basemap textures", desc: "Full-globe base images (Blue Marble / topo / night) refreshed from /admin/jobs." },
 };
 
@@ -215,6 +218,7 @@ export function createDb(conn: Connection) {
     alertSnapshot: makeInlineBlobStore("alert-snapshot", blobFs),
     eventSnapshot: makeInlineBlobStore("event-snapshot", blobFs),
     volcanoMedia: makeInlineBlobStore("volcano-media", blobFs),
+    presenterAudio: makeInlineBlobStore("presenter-audio", blobFs),
   };
 
   return {
@@ -278,6 +282,12 @@ export function createDb(conn: Connection) {
     countryRoundups: makePlaceRoundupRepo(getCountryRoundupModel(conn)),
     regionRoundups: makePlaceRoundupRepo(getRegionRoundupModel(conn)),
     roundupSettings: makeRoundupSettingsRepo(getRoundupSettingsModel(conn)),
+    // Presenter voice audition (docs/presenter-plan.md): catalog, master switch,
+    // cached OpenRouter speech models and the bench's spoken takes.
+    presenters: makePresenterRepo(getPresenterModel(conn)),
+    presenterSettings: makePresenterSettingsRepo(getPresenterSettingsModel(conn)),
+    speechCatalog: makeSpeechCatalogRepo(getSpeechCatalogModel(conn)),
+    voiceTests: makeVoiceTestRepo(getVoiceTestModel(conn), blobs.presenterAudio),
     cables: makeCableRepo(getCableModel(conn), getCableLandingModel(conn)),
     faults: makeFaultRepo(getFaultModel(conn)),
     alertAreaGeom: makeAlertAreaGeomRepo(
