@@ -14,7 +14,7 @@
 > Everything was re-checked against the code on `singleVideos` (`3fe9fca`).
 > The constants, the loop's cut path and the chat poller are still as the
 > originals described them. One thing has changed since: the
-> [scene settings refinement](../scene-settings-refinement-plan.md) shipped on
+> [scene settings refinement](./scene-settings-refinement-plan.md) shipped on
 > 2026-09-13. `/admin/scenes/:id` now has a draft that owns the data, a card
 > catalog and a group rail, so this plan uses that card contract (§7) rather
 > than the per-card fetch/`epoch` pattern the originals assumed.
