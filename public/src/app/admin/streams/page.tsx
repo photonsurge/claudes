@@ -21,7 +21,7 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 import Checkbox from "@mui/material/Checkbox";
 import Typography from "@mui/material/Typography";
 import { MAIN_SCENE_ID, type SceneMeta } from "@photonsurge/shared/control";
-import { runIsActive, type RunState, type StreamHealth, type StreamEncoderInfo, type YoutubePrivacy } from "@photonsurge/shared/runs";
+import { DEFAULT_CHAT_POLL_MS, fmtChatPoll, runIsActive, type RunState, type StreamHealth, type StreamEncoderInfo, type YoutubePrivacy } from "@photonsurge/shared/runs";
 import { listScenes } from "../../../lib/scenes";
 import {
   useStreams,
@@ -43,6 +43,7 @@ import {
 import AdminPageShell from "../../../components/admin/AdminPageShell";
 import EncodersCard from "../../../components/admin/streams/EncodersCard";
 import SlotsCard from "../../../components/admin/streams/SlotsCard";
+import ChatPollSelect from "../../../components/admin/streams/ChatPollSelect";
 import RunChatDialog from "../../../components/admin/streams/RunChatDialog";
 import RunStats from "../../../components/admin/streams/RunStats";
 import StreamTitleField from "../../../components/StreamTitleField";
@@ -236,6 +237,7 @@ function StartRunForm({
   const [durationMin, setDurationMin] = useState(0);
   const [chatEnabled, setChatEnabled] = useState(true);
   const [promoteToTicker, setPromoteToTicker] = useState(false);
+  const [chatPollMs, setChatPollMs] = useState<number | null>(DEFAULT_CHAT_POLL_MS);
   const [announce, setAnnounce] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -255,7 +257,7 @@ function StartRunForm({
         privacy,
         durationMs: durationMin > 0 ? durationMin * 60_000 : null,
         platforms: { youtube: publishing },
-        chat: { enabled: chatEnabled, promoteToTicker: chatEnabled && promoteToTicker },
+        chat: { enabled: chatEnabled, promoteToTicker: chatEnabled && promoteToTicker, pollEveryMs: chatPollMs },
         announce,
       });
       setTitle("");
@@ -358,6 +360,7 @@ function StartRunForm({
             label="→ ticker"
           />
         )}
+        {chatEnabled && <ChatPollSelect value={chatPollMs} onChange={setChatPollMs} />}
         <FormControlLabel
           control={<Checkbox checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />}
           label="📣 notify"
@@ -403,7 +406,7 @@ function RunRow({ run, health, youtubeStats, statsError, onStopped }: { run: Run
             scene {run.sceneId}
             {run.encoderId ? ` · encoder ${run.encoderId}` : ""}
             {run.slotId ? " · constant" : ""}
-            {run.chat?.enabled ? (run.chat.promoteToTicker ? " · chat→ticker" : " · chat") : ""}
+            {run.chat?.enabled ? `${run.chat.promoteToTicker ? " · chat→ticker" : " · chat"} ${fmtChatPoll(run.chat.pollEveryMs)}` : ""}
             {run.announce ? (run.announcedAt ? " · 📣 announced" : run.announceError ? ` · 📣 announce failed (try ${run.announceError.attempts}${run.announceError.status ? `, HTTP ${run.announceError.status}` : ""}): ${run.announceError.message}` : " · 📣") : ""}
             {run.chapters?.publishedAt ? " · ⏱ chapters" : run.chapters?.error ? " · ⏱ chapters failed" : ""}
             {run.needsManualObs ? " · OBS manual handoff needed" : ""}

@@ -577,7 +577,7 @@ export async function listChat(ctx: YoutubeCtx, liveChatId: string, pageToken?: 
       liveChatId,
       part: ["snippet", "authorDetails"],
       pageToken,
-      maxResults: 200,
+      maxResults: 2000, // the cap — same 5 units, and a slow poll can return minutes of chat
     }),
   );
   const messages = (res.data.items ?? []).map((m) => {

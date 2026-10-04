@@ -17,6 +17,7 @@ jest.mock("@photonsurge/shared/utill/logger", () => ({ log: jest.fn() }));
 const mockListChat = jest.fn();
 const mockSendChat = jest.fn();
 jest.mock("../youtube/client", () => ({
+  CHAT_MESSAGE_MAX_LEN: 200,
   getYoutubeClient: jest.fn(async () => ({})),
   listChat: (...a: unknown[]) => mockListChat(...a),
   sendChatMessage: (...a: unknown[]) => mockSendChat(...a),
@@ -45,9 +46,11 @@ jest.mock("./chat-handler", () => ({
 
 const mockGetRun = jest.fn();
 const mockAppend = jest.fn();
+const mockGetSlot = jest.fn();
 jest.mock("@photonsurge/shared/db/index", () => ({
   getAppDb: async () => ({
     getRun: (...a: unknown[]) => mockGetRun(...a),
+    getStreamSlot: (...a: unknown[]) => mockGetSlot(...a),
     chatLog: { append: (...a: unknown[]) => mockAppend(...a) },
   }),
 }));
@@ -75,6 +78,7 @@ beforeEach(() => {
   emitted.length = 0;
   mockGetRun.mockReset().mockResolvedValue(liveRun);
   mockAppend.mockReset().mockResolvedValue(1);
+  mockGetSlot.mockReset().mockResolvedValue(null);
   mockListChat.mockReset();
   mockSendChat.mockReset().mockResolvedValue(undefined);
   mockCommandReplies.mockReset().mockResolvedValue([]);
@@ -237,4 +241,53 @@ it("hands fresh messages to the viewer handler, and posts its replies only when 
   await tick();
   expect(mockSendChat).toHaveBeenCalledWith({}, "chat-1", "@ann → Deep for 5 min");
   stopChatPoll("r1");
+});
+
+describe("the stream's chat poll setting", () => {
+  it("holds a slow run between polls, rechecking the setting at most every 30 s", async () => {
+    mockGetRun.mockResolvedValue({ ...liveRun, chat: { enabled: true, pollEveryMs: 120_000 } });
+    mockListChat.mockResolvedValue(page([], "tok-2", 4_000));
+    expect(await tick()).toBe(30_000); // polled; next look in 30 s, not YouTube's 4 s
+    expect(mockListChat).toHaveBeenCalledTimes(1);
+    const wait = await tick(); // not due yet — no API call
+    expect(wait).toBeGreaterThan(0);
+    expect(wait).toBeLessThanOrEqual(30_000);
+    expect(mockListChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads a constant stream's interval live from its slot", async () => {
+    mockGetRun.mockResolvedValue({ ...liveRun, slotId: "s1", chat: { enabled: true, pollEveryMs: null } });
+    mockGetSlot.mockResolvedValue({ id: "s1", chat: { enabled: true, pollEveryMs: 300_000 } });
+    mockListChat.mockResolvedValue(page([], "tok-2"));
+    await tick();
+    await tick();
+    expect(mockGetSlot).toHaveBeenCalledWith("s1");
+    expect(mockListChat).toHaveBeenCalledTimes(1);
+
+    // Operator switches the slot back to auto → the next tick polls.
+    mockGetSlot.mockResolvedValue({ id: "s1", chat: { enabled: true, pollEveryMs: null } });
+    await tick();
+    expect(mockListChat).toHaveBeenCalledTimes(2);
+  });
+
+  it("coalesces a burst of commands and packs the replies into one chat post", async () => {
+    mockListChat.mockResolvedValueOnce(page([], "tok-2"));
+    await tick();
+    mockListChat.mockResolvedValueOnce({
+      messages: [
+        { id: "a", author: "ann", text: ":music deep", ts: 1 },
+        { id: "b", author: "bob", text: ":music calm", ts: 2 },
+        { id: "c", author: "cat", text: ":music deep", ts: 3 },
+        { id: "d", author: "ann", text: ":music deep", ts: 4 },
+      ],
+      nextPageToken: "tok-3",
+      pollingIntervalMillis: 4_000,
+    });
+    mockHandle.mockResolvedValueOnce({ replies: ["@ann → Deep for 5 min", "@dan → Storm is queued (#1)"], replyInChat: true, changed: true });
+    await tick();
+    const handled = (mockHandle.mock.calls[0] as unknown[])[1] as Array<{ author: string; text: string }>;
+    expect(handled).toEqual([expect.objectContaining({ author: "ann", text: ":music deep" })]);
+    expect(mockSendChat).toHaveBeenCalledTimes(1);
+    expect(mockSendChat).toHaveBeenCalledWith({}, "chat-1", "@ann → Deep for 5 min · @dan → Storm is queued (#1)");
+  });
 });
