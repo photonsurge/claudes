@@ -66,7 +66,7 @@ export default function StreamsPage() {
   const { connected, oauthError } = notice;
 
   useEffect(() => {
-    listScenes().then(setScenes).catch(() => {});
+    listScenes({ kind: "channel" }).then(setScenes).catch(() => {});
     const q = new URLSearchParams(window.location.search);
     setNotice({ connected: q.get("connected") ?? undefined, oauthError: q.get("error") ?? undefined });
   }, []);

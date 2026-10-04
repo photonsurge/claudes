@@ -52,9 +52,20 @@ function Stat({ label, value, sub }: { label: string; value: number; sub?: strin
   );
 }
 
+/** What a summary-depth panel shows: the summary, or an older round-up's
+ *  narrative when it has no sections. "" when there's nothing. */
+export function placeRoundupSummaryText(roundup: PlaceRoundup | null | undefined): string {
+  if (!roundup) return "";
+  const summary = roundup.summary?.trim();
+  if (summary) return summary;
+  const sectioned = roundup.stateOfPlay?.trim() || roundup.advice?.trim() || roundup.cityOutlook?.some((c) => c.name && c.outlook);
+  return sectioned ? "" : roundup.narrative?.trim() ?? "";
+}
+
 export default function PlaceRoundupPanel({
   roundup,
   section = "all",
+  depth = "full",
   theme = DEFAULT_THEME,
 }: {
   roundup: PlaceRoundup;
@@ -62,8 +73,22 @@ export default function PlaceRoundupPanel({
    *  per-city NEXT 24 HOURS outlook reads on its own slide after the state text.
    *  "all" (default, used by the country deck) keeps everything on one card. */
   section?: "all" | "main" | "next24";
+  /** How much of it: "summary" shows the summary alone — no state of play,
+   *  tally, city outlooks or advice — for a scripted short whose clip was
+   *  timed for just that (Segment.roundupDepth). "full" (default) shows all. */
+  depth?: "summary" | "full";
   theme?: BroadcastTheme;
 }) {
+  if (depth === "summary") {
+    // Only the "main" half carries the summary; the 24h page has none of it.
+    const text = section === "next24" ? "" : placeRoundupSummaryText(roundup);
+    if (!text) return null;
+    return (
+      <BroadcastCard theme={theme}>
+        <div style={{ fontSize: 17.6, fontWeight: 700, lineHeight: 1.4, color: "#fff" }}>{text}</div>
+      </BroadcastCard>
+    );
+  }
   const showMain = section !== "next24";
   const showNext24 = section !== "main";
   const { narrative, summary, stateOfPlay, cityOutlook, advice, inputs } = roundup;

@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * The preview scene's /watch page in a 16:9 iframe (tokened URL, same origin),
- * with Play / Stop for the selected script. Plays only ever target the preview
- * scene. When the scene hasn't been seeded there is nothing to show, so the
- * pane says how to create it instead.
+ * The selected script's FORMAT scene /watch page in a 16:9 iframe (tokened
+ * URL, same origin), with Play / Stop for that script. Plays only ever target
+ * a format's scene — the one a render uses, so this is what renders. When the
+ * scene doesn't exist there is nothing to show, so the pane says how to create
+ * it instead.
  *
  * The on-air chrome is laid out for a 1920×1080 canvas (what OBS captures), so
  * the iframe renders at that size and is scaled down to the pane's width —
@@ -70,8 +71,9 @@ export default function PreviewPane({ preview, script, onPlay, onStop, busy }: P
 
       {!preview.exists ? (
         <Alert severity="warning" sx={{ mt: 1.5 }}>
-          The preview scene <code>{preview.sceneId}</code> doesn&apos;t exist yet. Run <code>yarn seed:short-scenes</code> in{" "}
-          <code>worker</code>, then restart the worker — without a restarted worker nothing will play.
+          The format scene <code>{preview.sceneId}</code> doesn&apos;t exist yet. Run <strong>Seed default short format</strong> on{" "}
+          /admin/jobs (or <code>yarn seed:short-format</code> in <code>worker</code>), then restart the worker — without a
+          restarted worker nothing will play.
         </Alert>
       ) : (
         <>

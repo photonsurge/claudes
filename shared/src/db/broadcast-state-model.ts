@@ -46,6 +46,8 @@ export interface iBroadcastStateModel extends iBroadcastState {
   watchToken?: string;
   /** Kept off viewer-facing scene lists (SceneMeta.hidden). Not part of ControlState. */
   hidden?: boolean;
+  /** A channel, or a short format's own scene (SceneMeta.kind). Not part of ControlState. */
+  kind?: "channel" | "short";
 }
 
 export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
@@ -57,6 +59,8 @@ export const BroadcastStateSchema = new mongoose.Schema<iBroadcastStateModel>(
     watchToken: { type: String, required: false, default: () => randomBytes(24).toString("hex") },
     /** Production scene (the short-video scenes): off the public home page and launcher. */
     hidden: { type: Boolean, required: false, default: false },
+    /** "short" = a short format's own scene (docs/short-video-plan.md §5.2): off the channel lists. */
+    kind: { type: String, required: false, enum: ["channel", "short"], default: "channel" },
     activeVariable: { type: String, required: false, default: "temp" },
     fhr: { type: Number, required: true, default: 0 },
     basemap: { type: String, required: true, default: "dark" },

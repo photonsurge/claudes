@@ -86,6 +86,21 @@ export interface SceneMeta {
    * Admin pickers still show it. Scene metadata beside `name`, not ControlState.
    */
   hidden?: boolean;
+  /**
+   * A channel, or a short format's own scene (docs/short-video-plan.md §5.2).
+   * Format scenes are hidden too, and the channel lists (/admin/scenes, the
+   * stream and slot forms) leave them out; /admin/shorts lists them as formats.
+   * Absent on a scene saved before the field = a channel.
+   */
+  kind?: SceneKind;
+}
+
+/** What a scene is for: a channel, or a short format's own scene. */
+export type SceneKind = "channel" | "short";
+
+/** A scene doc's kind — "short" only when it says so; anything else is a channel. */
+export function sceneKindOf(doc: { kind?: unknown } | null | undefined): SceneKind {
+  return doc?.kind === "short" ? "short" : "channel";
 }
 
 /**

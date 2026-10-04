@@ -1,6 +1,7 @@
 import type { Model } from "mongoose";
 import type { KindLook } from "../director";
 import type { ShortClip, ShortScript, ShortScriptPlay } from "../short-script";
+import { DEFAULT_SHORT_FORMAT_ID } from "../short-scenes";
 import type { iShortScriptModel } from "./short-script-model";
 
 /** Copy only the keys that hold a value — the wire shape omits unset optional
@@ -25,6 +26,7 @@ function toClip(c: ShortClip): ShortClip {
   if (typeof c.maxStops === "number") clip.maxStops = c.maxStops;
   if (typeof c.tourDwellMs === "number") clip.tourDwellMs = c.tourDwellMs;
   if (c.leadSlide === "roundup") clip.leadSlide = "roundup";
+  if (c.roundupDepth === "summary" || c.roundupDepth === "full") clip.roundupDepth = c.roundupDepth;
   return clip;
 }
 
@@ -47,6 +49,7 @@ function toShortScript(doc: iShortScriptModel): ShortScript {
   const scope = doc.scope.type === "globe" ? { type: "globe" as const } : { type: doc.scope.type, id: doc.scope.id };
   const script: ShortScript = {
     id: doc.id,
+    formatId: doc.formatId || DEFAULT_SHORT_FORMAT_ID,
     template: doc.template,
     scope,
     include: { alerts: doc.include.alerts, quakes: doc.include.quakes, volcanoes: doc.include.volcanoes },
@@ -61,6 +64,7 @@ function toShortScript(doc: iShortScriptModel): ShortScript {
 /** Fields an upsert writes. Never `plays`: those belong to the runner
  *  (`stampPlay`), so saving an edited script never wipes what it stamped. */
 const setDoc = (s: ShortScript) => ({
+  formatId: s.formatId || DEFAULT_SHORT_FORMAT_ID,
   template: s.template,
   scope: s.scope,
   include: s.include,
@@ -96,6 +100,18 @@ export function makeShortScriptRepo(model: Model<iShortScriptModel>) {
         .exec();
       const doc = await model.findOne({ id: script.id }).lean().exec();
       return doc ? toShortScript(doc as iShortScriptModel) : script;
+    },
+
+    /**
+     * How many scripts are made in `formatId` — the format delete guard. Scripts
+     * saved before formats carry no id and count for the default format.
+     */
+    async countByFormat(formatId: string): Promise<number> {
+      const q =
+        formatId === DEFAULT_SHORT_FORMAT_ID
+          ? { $or: [{ formatId }, { formatId: null }, { formatId: "" }] } // null matches a missing field too
+          : { formatId };
+      return model.countDocuments(q).exec();
     },
 
     /** Delete a script by id. Returns true if one was removed. */

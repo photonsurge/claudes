@@ -251,6 +251,12 @@ describe("resolveClip — applying the clip", () => {
     expect(seg(await resolveClip(db, cfg(), clip("country:japan"), NOW)).leadSlide).toBeUndefined();
   });
 
+  it("copies roundupDepth onto the segment; absent leaves the panel showing all of it", async () => {
+    const { db } = fakeDb();
+    expect(seg(await resolveClip(db, cfg(), clip("country:japan", { roundupDepth: "summary" }), NOW)).roundupDepth).toBe("summary");
+    expect(seg(await resolveClip(db, cfg(), clip("country:japan"), NOW)).roundupDepth).toBeUndefined();
+  });
+
   it("layers the clip's look over the kind's look, reaching the patch", async () => {
     const { db } = fakeDb({ quake: quakeDoc() });
     const base = cfg({ kindLooks: { quake: { basemap: "dark", activeVariable: "gust" } } });

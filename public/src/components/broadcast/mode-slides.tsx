@@ -42,6 +42,7 @@ import PointHistoryPanel from "./PointHistoryPanel";
 import DepthProfilePanel from "./DepthProfilePanel";
 import RoundupStatsPanel from "./RoundupStatsPanel";
 import PlaceRoundupPanel, {
+  placeRoundupSummaryText,
   placeRoundupSlideHasContent,
   placeRoundupMainHasContent,
   placeRoundupNext24HasContent,
@@ -370,6 +371,9 @@ export function leadWithRoundup<T extends { id: string }>(deck: T[]): T[] {
 function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[] {
   const color = KIND_COLOR[segment.kind] ?? FALLBACK_ACCENT;
   const slides: DeckSlide[] = [];
+  // How much of the place round-up shows (a scripted short sets "summary").
+  const depth = segment.roundupDepth ?? "full";
+  const summaryOnly = depth === "summary";
 
   // Uniform lede — EVERY director mode opens with the same on-air card: kind
   // badge, event title and the pulsing ON AIR flag, plus the "where we are"
@@ -628,13 +632,14 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
     // The round-up is split in two: the "state of the region" text/tally, then a
     // separate slide for the per-city NEXT 24 HOURS outlook (the "24h events"), so
     // the narrative doesn't run off one overlong card.
-    if (placeRoundupMainHasContent(ctx.placeRoundup)) {
+    if (summaryOnly ? placeRoundupSummaryText(ctx.placeRoundup) : placeRoundupMainHasContent(ctx.placeRoundup)) {
       slides.push({
         id: "place-roundup",
-        node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} section="main" theme={ctx.theme} />,
+        node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} section="main" depth={depth} theme={ctx.theme} />,
       });
     }
-    if (placeRoundupNext24HasContent(ctx.placeRoundup)) {
+    // At summary depth the per-city outlook isn't shown at all.
+    if (!summaryOnly && placeRoundupNext24HasContent(ctx.placeRoundup)) {
       slides.push({
         id: "place-roundup-24h",
         node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} section="next24" theme={ctx.theme} />,
@@ -674,8 +679,11 @@ function composeModeSlides(segment: Segment, ctx: ModeSlideContext): DeckSlide[]
   // before the drill-down cards. (A region spotlight also sets wideCitiesBbox but
   // is handled by its own multi-country branch above.)
   if (ctx.wideCitiesBbox) {
-    if (placeRoundupSlideHasContent(ctx.placeRoundup)) {
-      slides.push({ id: "place-roundup", node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} theme={ctx.theme} /> });
+    if (summaryOnly ? placeRoundupSummaryText(ctx.placeRoundup) : placeRoundupSlideHasContent(ctx.placeRoundup)) {
+      slides.push({
+        id: "place-roundup",
+        node: <PlaceRoundupPanel roundup={ctx.placeRoundup!} depth={depth} theme={ctx.theme} />,
+      });
     }
     slides.push(...cityGuideSlides(ctx, color));
     // City forecasts live in the top-right report.

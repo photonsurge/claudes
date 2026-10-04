@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-/** GET / DELETE /api/shorts/:id — one script; deleting stops a preview playing it. */
+/** GET / DELETE /api/shorts/:id — one script; deleting stops its format scene if it's playing it. */
 jest.mock("../../../../lib/api-log", () => ({ withApiLog: (h: unknown) => h }));
 jest.mock("../../../../lib/require-admin", () => ({ requireAdmin: jest.fn() }));
 
@@ -39,16 +39,20 @@ it("GET returns the script, or 404", async () => {
 });
 
 it("DELETE removes the script, 404 when unknown", async () => {
-  mockDb.shortScripts.remove.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+  mockDb.shortScripts.get.mockResolvedValueOnce({ id: "s1", formatId: "shorts", clips: [] }).mockResolvedValueOnce(null);
+  mockDb.shortScripts.remove.mockResolvedValueOnce(true);
   expect((await DELETE(req("DELETE"), ctx("s1"))).status).toBe(200);
   expect(mockDb.shortScripts.remove).toHaveBeenCalledWith("s1");
   expect(mockDb.saveDirectorConfig).not.toHaveBeenCalled();
   expect((await DELETE(req("DELETE"), ctx("nope"))).status).toBe(404);
+  expect(mockDb.shortScripts.remove).toHaveBeenCalledTimes(1);
 });
 
-it("DELETE stops the preview scene first when it is playing that script", async () => {
+it("DELETE stops its format's scene first when it is playing that script", async () => {
+  mockDb.shortScripts.get.mockResolvedValue({ id: "s1", formatId: "short-uk", clips: [] });
   mockDb.getOrInitDirectorConfig.mockResolvedValue({ mode: "script", script: { scriptId: "s1", fromClip: 0, playNonce: 1, record: false } });
   mockDb.shortScripts.remove.mockResolvedValue(true);
   await DELETE(req("DELETE"), ctx("s1"));
-  expect(mockDb.saveDirectorConfig).toHaveBeenCalledWith("shorts-preview", { mode: "off" });
+  expect(mockDb.getOrInitDirectorConfig).toHaveBeenCalledWith("short-uk");
+  expect(mockDb.saveDirectorConfig).toHaveBeenCalledWith("short-uk", { mode: "off" });
 });

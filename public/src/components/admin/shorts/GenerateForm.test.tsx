@@ -15,7 +15,7 @@ it("generates a globe round-up by default and reports the saved draft", async ()
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
   });
-  expect(generate).toHaveBeenCalledWith({ scope: { type: "globe" }, include: ROUNDUP_ONLY });
+  expect(generate).toHaveBeenCalledWith({ formatId: "shorts", scope: { type: "globe" }, include: ROUNDUP_ONLY });
   expect(onGenerated).toHaveBeenCalledWith({ id: "s1", title: "World round-up", clips: 2, durationMs: 75_000 });
   expect(screen.getByText(/Saved “World round-up” — 2 clip\(s\), 1:15/)).toBeInTheDocument();
 });
@@ -33,7 +33,7 @@ it("picks a country from the full catalog", async () => {
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
   });
-  expect(generate).toHaveBeenCalledWith({ scope: { type: "country", id: "japan" }, include: ROUNDUP_ONLY });
+  expect(generate).toHaveBeenCalledWith({ formatId: "shorts", scope: { type: "country", id: "japan" }, include: ROUNDUP_ONLY });
 });
 
 it("shows progress while running and the worker's error as-is", async () => {
@@ -53,4 +53,24 @@ it("shows progress while running and the worker's error as-is", async () => {
   expect(screen.getByRole("alert")).toHaveTextContent(msg);
   expect(screen.queryByRole("progressbar")).toBeNull();
   expect(onGenerated).not.toHaveBeenCalled();
+});
+
+it("offers a format picker when there is more than one format, and sends the pick", async () => {
+  const generate = jest.fn().mockResolvedValue({ ok: true, data: { id: "s1", title: "W", clips: 1, durationMs: 1000 } });
+  const formats = [
+    { id: "shorts", name: "Round-up" },
+    { id: "short-brief", name: "Brief" },
+  ];
+  render(<GenerateForm onGenerated={jest.fn()} generate={generate} formats={formats} />);
+  fireEvent.mouseDown(screen.getByRole("combobox", { name: "Format" }));
+  fireEvent.click(within(screen.getByRole("listbox")).getByRole("option", { name: "Brief" }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+  });
+  expect(generate.mock.calls[0][0].formatId).toBe("short-brief");
+});
+
+it("has no format picker with only the default format", () => {
+  render(<GenerateForm onGenerated={jest.fn()} formats={[{ id: "shorts", name: "Round-up" }]} />);
+  expect(screen.queryByRole("combobox", { name: "Format" })).toBeNull();
 });

@@ -60,6 +60,15 @@ describe("GET /api/scenes", () => {
     expect(mockGetOrInit).toHaveBeenCalled();
   });
 
+  it("lists every kind by default, or only the kind asked for", async () => {
+    await GET();
+    expect(mockListScenes).toHaveBeenLastCalledWith({ kind: undefined });
+    await GET(new Request("http://x/api/scenes?kind=channel") as never);
+    expect(mockListScenes).toHaveBeenLastCalledWith({ kind: "channel" });
+    await GET(new Request("http://x/api/scenes?kind=bogus") as never);
+    expect(mockListScenes).toHaveBeenLastCalledWith({ kind: undefined });
+  });
+
   it("strips watchToken for an anonymous/non-admin caller", async () => {
     const body = await (await GET()).json();
     expect(body.scenes).toEqual([{ id: "default", name: "Main" }]);

@@ -5,6 +5,8 @@
 > tracks follow: **formats** (§5, WP5-6, a cloud agent) and **getting a video onto
 > YouTube on a schedule** (§6 and §8, WP7 and WP9). Planned on Fable, built by Opus sub-agents, one
 > work package at a time (§11).
+> WP5 (formats, shared and worker) is built: `db.shortFormats`, scene `kind`, duplicate and
+> copy-look helpers, `/api/shorts/formats`, generate by `formatId`, round-up depth.
 > Shares two refactors with [director-break-in-plan.md](./done/director-break-in-plan.md) and
 > [director-commands-plan.md](./done/director-commands-plan.md); both are done (§3).
 

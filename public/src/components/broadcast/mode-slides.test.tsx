@@ -489,6 +489,29 @@ describe("modeSlides — leadSlide: roundup", () => {
       ),
     ).toEqual(["onair", ...CITY_GUIDE]);
   });
+
+  it("at summary depth a region drops the NEXT 24 HOURS page", () => {
+    expect(
+      ids(
+        seg({ kind: "region", leadSlide: "roundup", roundupDepth: "summary" }),
+        ctx({ wideCitiesBbox: bbox, topCities, placeRoundup: regionRoundup, regionNearTerm: regionSteps }),
+      ),
+    ).toEqual(["place-roundup", "onair", "region-next24", ...CITY_GUIDE]);
+  });
+
+  it("at summary depth a round-up with nothing to summarise has no slide", () => {
+    const tallyOnly = {
+      stateOfPlay: "Dry.",
+      inputs: { topCities: [], alerts: [{ id: "a" }], volcanoes: [] },
+    } as unknown as ModeSlideContext["placeRoundup"];
+    expect(
+      ids(seg({ kind: "country", roundupDepth: "summary" }), ctx({ wideCitiesBbox: bbox, topCities, placeRoundup: tallyOnly })),
+    ).toEqual(["onair", ...CITY_GUIDE]);
+    // An older narrative-only round-up still reads at summary depth.
+    expect(
+      ids(seg({ kind: "country", roundupDepth: "summary" }), ctx({ wideCitiesBbox: bbox, topCities, placeRoundup: countryRoundup })),
+    ).toEqual(["onair", "place-roundup", ...CITY_GUIDE]);
+  });
 });
 
 /**

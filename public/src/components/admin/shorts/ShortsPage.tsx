@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * /admin/shorts — scripted short videos (docs/short-video-plan.md), first cut:
- * generate a round-up script, list the saved scripts, inspect one's clips, and
- * preview it playing on the `shorts-preview` scene. No timeline editing,
+ * /admin/shorts — scripted short videos (docs/short-video-plan.md): generate a
+ * round-up script in a format, list the saved scripts, inspect one's clips,
+ * and preview it playing on its FORMAT's own scene (§5.3 — the scene a render
+ * uses, so the preview is what renders). No format editor, timeline editing,
  * render or scheduling yet — those join this page as their own sections.
  *
  * The list polls while a preview plays (see `useShortsList`), and the selected
@@ -16,7 +17,7 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { playFor, type ShortScript } from "@photonsurge/shared/short-script";
+import { playFor, sceneIdForScript, type ShortScript } from "@photonsurge/shared/short-script";
 import AdminPageShell from "../AdminPageShell";
 import ClipList from "./ClipList";
 import GenerateForm from "./GenerateForm";
@@ -26,6 +27,7 @@ import {
   deleteShort,
   getShort,
   playShortPreview,
+  previewForFormat,
   stopShortPreview,
   useShortsList,
   type GenerateShortResult,
@@ -90,11 +92,13 @@ export default function ShortsPage() {
   };
 
   const shown = detail && detail.id === selectedId ? detail : null;
+  // The pane shows the selected script's format scene (the default's with none selected).
+  const pane = previewForFormat(data, selectedRow?.formatId);
 
   return (
     <AdminPageShell
       title="Short videos"
-      description="Round-up videos built from the lineup template. Generate one for the globe, an area or a country, then preview it on the preview scene."
+      description="Round-up videos built from the lineup template. Generate one for the globe, an area or a country in a format, then preview it on that format's own scene."
       maxWidth={1500}
       actions={
         <Button variant="outlined" onClick={() => refresh()}>
@@ -103,7 +107,7 @@ export default function ShortsPage() {
       }
     >
       <Stack spacing={1.75}>
-        <GenerateForm onGenerated={onGenerated} />
+        <GenerateForm onGenerated={onGenerated} formats={data?.formats ?? []} />
 
         {listError && <Alert severity="error">Couldn&apos;t load scripts: {listError}</Alert>}
         {actionError && (
@@ -118,7 +122,7 @@ export default function ShortsPage() {
           <>
             <ScriptsTable
               scripts={scripts}
-              preview={data.preview}
+              formats={data.formats}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onPreview={preview}
@@ -128,18 +132,18 @@ export default function ShortsPage() {
 
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(360px, 1fr) minmax(480px, 1.4fr)" }, gap: 1.75, alignItems: "start" }}>
               {shown ? (
-                <ClipList script={shown} play={playFor(shown, data.preview.sceneId)} />
+                <ClipList script={shown} play={playFor(shown, sceneIdForScript(shown))} />
               ) : (
                 <Typography color="text.secondary" sx={{ p: 1 }}>
                   {selectedId ? "Loading script…" : "Select a script to see its clips."}
                 </Typography>
               )}
               <PreviewPane
-                preview={data.preview}
+                preview={pane}
                 script={selectedRow}
                 busy={busy}
                 onPlay={() => selectedRow && preview(selectedRow.id)}
-                onStop={() => act(stopShortPreview)}
+                onStop={() => act(() => stopShortPreview(pane.sceneId))}
               />
             </Box>
           </>
