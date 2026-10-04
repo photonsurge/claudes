@@ -82,6 +82,15 @@ describe("Channels list", () => {
     expect(screen.getAllByTestId("youtube-wind")[1]).toHaveTextContent("default channel");
   });
 
+  it("hides copy-from for a crossword channel", async () => {
+    render(<ScenesPage />);
+    await screen.findByText("Word Up");
+    expect(screen.getByLabelText("copy from")).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "type" }));
+    fireEvent.click(within(await screen.findByRole("listbox")).getByRole("option", { name: "Crossword" }));
+    expect(screen.queryByLabelText("copy from")).not.toBeInTheDocument();
+  });
+
   it("filters the list by type", async () => {
     render(<ScenesPage />);
     await screen.findByText("Word Up");

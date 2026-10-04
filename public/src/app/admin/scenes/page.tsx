@@ -126,22 +126,25 @@ export default function ScenesPage() {
               </MenuItem>
             ))}
           </TextField>
-          <TextField
-            select
-            label="copy from"
-            // `scenes` loads async, so on first render the default `copyFrom`
-            // names an option that doesn't exist yet and MUI warns about an
-            // out-of-range value. Fall back to empty until its option is real.
-            value={scenes.some((s) => s.id === copyFrom) ? copyFrom : ""}
-            onChange={(e) => setCopyFrom(e.target.value)}
-            sx={{ minWidth: 150 }}
-          >
-            {scenes.map((s) => (
-              <MenuItem key={s.id} value={s.id}>
-                {s.name}
-              </MenuItem>
-            ))}
-          </TextField>
+          {/* A crossword channel copies nothing: it starts from its own defaults. */}
+          {surface === "globe" && (
+            <TextField
+              select
+              label="copy from"
+              // `scenes` loads async, so on first render the default `copyFrom`
+              // names an option that doesn't exist yet and MUI warns about an
+              // out-of-range value. Fall back to empty until its option is real.
+              value={scenes.some((s) => s.id === copyFrom) ? copyFrom : ""}
+              onChange={(e) => setCopyFrom(e.target.value)}
+              sx={{ minWidth: 150 }}
+            >
+              {scenes.map((s) => (
+                <MenuItem key={s.id} value={s.id}>
+                  {s.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
           {/* The page's one genuinely primary action, so the one filled button. */}
           <Button variant="contained" onClick={add} disabled={busy || !name.trim()}>
             {busy ? "…" : "Create"}

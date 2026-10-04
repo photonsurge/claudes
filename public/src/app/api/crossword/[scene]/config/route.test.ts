@@ -77,3 +77,11 @@ it("passes the theme to the db merge, which sanitizes it", async () => {
   expect(mockSaveConfig).toHaveBeenCalledWith("xw", { theme });
   expect((await res.json()).theme).toEqual(theme);
 });
+
+it("404s a weather channel and writes nothing", async () => {
+  mockGetScene.mockResolvedValue({ id: "wind", surface: "globe" });
+  expect((await get()).status).toBe(404);
+  expect((await patch({ clueS: 30 })).status).toBe(404);
+  expect(mockGetConfig).not.toHaveBeenCalled();
+  expect(mockSaveConfig).not.toHaveBeenCalled();
+});

@@ -113,6 +113,25 @@ describe("POST /api/scenes", () => {
     expect(mockGetOrInit).not.toHaveBeenCalled();
   });
 
+  it("seeds a crossword channel from the defaults, ignoring copyFrom", async () => {
+    mockGetOrInit.mockResolvedValue({
+      id: "default",
+      youtube: { title: "Weather live", description: "d", thumbnailUrl: "/w.png", accountId: "UCweather" },
+      chat: { enabled: false },
+    });
+    mockCreateScene.mockResolvedValue({ id: "word-up" });
+    await post({ name: "Word Up", surface: "crossword", copyFrom: "pacific-storm" });
+
+    expect(mockGetOrInit).not.toHaveBeenCalled();
+    expect(mockGetScene).not.toHaveBeenCalledWith("pacific-storm");
+    const [, , seed, opts] = mockCreateScene.mock.calls[0];
+    expect(opts).toEqual({ surface: "crossword" });
+    expect(seed.youtube).toMatchObject({ title: "", description: "", thumbnailUrl: "", accountId: "" });
+    expect(seed.audio.enabled).toBe(true);
+    expect(seed.chat.enabled).toBe(true);
+    expect(mockGetDirectorConfig).not.toHaveBeenCalled();
+  });
+
   it("clones the source's director config with mode off and skipNonce reset", async () => {
     mockGetScene.mockImplementation(async (id: string) =>
       id === "pacific-storm" ? { id: "pacific-storm" } : null,

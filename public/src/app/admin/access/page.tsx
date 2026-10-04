@@ -40,7 +40,7 @@ export default function AccessPage() {
   }, [refresh]);
 
   const rotate = async (id: string) => {
-    if (!confirm("Rotate this scene's watch token? Any previously-copied /watch URL will stop working.")) return;
+    if (!confirm("Rotate this scene's watch token? Any previously-copied output URL will stop working.")) return;
     setRotatingId(id);
     const { error: err } = await rotateSceneToken(id);
     setRotatingId(null);
@@ -61,8 +61,9 @@ export default function AccessPage() {
       title="Access"
       description={
         <>
-          Tokened OBS/YouTube URLs for each scene. Paste the copied URL into your OBS browser
-          source instead of the bare <code>/watch/&lt;id&gt;</code> address — anyone with the
+          Tokened OBS/YouTube output URLs for each channel (<code>/watch/&lt;id&gt;</code> for weather,
+          <code>/crossword/&lt;id&gt;</code> for a crossword). Paste the copied URL into your OBS browser
+          source instead of the bare address — anyone with the
           token can view the output, so rotate it if a URL ever leaks. Manage scene content in{" "}
           <MuiLink component={Link} href="/admin/scenes">Channels</MuiLink>.
         </>

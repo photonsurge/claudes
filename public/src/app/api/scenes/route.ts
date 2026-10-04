@@ -4,7 +4,10 @@ import { cookies } from "next/headers";
 import { getAppDb } from "@photonsurge/shared/db/index";
 import { SESSION_COOKIE, readSession, isAdmin } from "@photonsurge/shared/utill/session";
 import {
+  DEFAULT_AUDIO_SETTINGS,
+  DEFAULT_CHAT_SETTINGS,
   DEFAULT_CONTROL_STATE,
+  DEFAULT_YOUTUBE_SETTINGS,
   mergeControlState,
   slugifySceneId,
   MAIN_SCENE_ID,
@@ -70,15 +73,25 @@ async function POST__impl(req: Request) {
   }
 
   // Seed from the requested source scene (default: main), stripped to ControlState.
-  const sourceId = body.copyFrom || MAIN_SCENE_ID;
+  // A crossword channel copies nothing (plan §3, §10): weather fields stay at
+  // their defaults, the music bed and chat are on, and no YouTube channel is
+  // chosen (it is picked on the settings page, never guessed).
+  const sourceId = surface === "crossword" ? MAIN_SCENE_ID : body.copyFrom || MAIN_SCENE_ID;
   const source =
-    sourceId === MAIN_SCENE_ID
-      ? await db.getOrInitBroadcastState()
-      : await db.getScene(sourceId);
-  const seed: ControlState = mergeControlState(
-    DEFAULT_CONTROL_STATE,
-    (source ?? {}) as Partial<ControlState>,
-  );
+    surface === "crossword"
+      ? null
+      : sourceId === MAIN_SCENE_ID
+        ? await db.getOrInitBroadcastState()
+        : await db.getScene(sourceId);
+  const seed: ControlState =
+    surface === "crossword"
+      ? {
+          ...DEFAULT_CONTROL_STATE,
+          audio: { ...DEFAULT_AUDIO_SETTINGS, enabled: true },
+          chat: { ...DEFAULT_CHAT_SETTINGS, enabled: true },
+          youtube: { ...DEFAULT_YOUTUBE_SETTINGS, accountId: "" },
+        }
+      : mergeControlState(DEFAULT_CONTROL_STATE, (source ?? {}) as Partial<ControlState>);
 
   const created = await db.createScene(id, name, seed, { surface });
 

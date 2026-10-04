@@ -1,10 +1,14 @@
 import { withApiLog } from "../../../../../lib/api-log";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@photonsurge/shared/db/index";
+import { sceneSurface } from "@photonsurge/shared/control";
 import { requireAdmin } from "../../../../../lib/require-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** Only a crossword channel has a config; a weather one must not grow a stray document. */
+const isCrosswordScene = (s: unknown) => !!s && sceneSurface(s as { surface?: unknown }) === "crossword";
 
 const NO_CACHE = { "Cache-Control": "no-store" };
 
@@ -17,8 +21,8 @@ async function GET__impl(_req: Request, { params }: { params: Promise<{ scene: s
   if (!(await requireAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: NO_CACHE });
   const { scene } = await params;
   const db = await getAppDb();
-  if (!(await db.getScene(scene))) {
-    return NextResponse.json({ error: "no such scene" }, { status: 404, headers: NO_CACHE });
+  if (!isCrosswordScene(await db.getScene(scene))) {
+    return NextResponse.json({ error: "no such crossword channel" }, { status: 404, headers: NO_CACHE });
   }
   return NextResponse.json(await db.getOrInitCrosswordConfig(scene), { status: 200, headers: NO_CACHE });
 }
@@ -41,8 +45,8 @@ async function PATCH__impl(req: Request, { params }: { params: Promise<{ scene: 
     return NextResponse.json({ error: "expected a config object" }, { status: 400, headers: NO_CACHE });
   }
   const db = await getAppDb();
-  if (!(await db.getScene(scene))) {
-    return NextResponse.json({ error: "no such scene" }, { status: 404, headers: NO_CACHE });
+  if (!isCrosswordScene(await db.getScene(scene))) {
+    return NextResponse.json({ error: "no such crossword channel" }, { status: 404, headers: NO_CACHE });
   }
   const merged = await db.saveCrosswordConfig(scene, patch as Record<string, unknown>);
   return NextResponse.json(merged, { status: 200, headers: NO_CACHE });

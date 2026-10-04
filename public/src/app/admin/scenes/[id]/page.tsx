@@ -85,11 +85,14 @@ export default function ChannelSettingsPage() {
   const params = useParams<{ id: string }>();
   const sceneId = params?.id ?? MAIN_SCENE_ID;
   const [scene, setScene] = useState<SceneMeta | null>(null);
+  // The list has answered (the scene may still be unknown): its kind is settled.
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     listScenes().then((list) => {
       const found = list.find((s) => s.id === sceneId) ?? null;
       setScene(found);
+      setLoaded(true);
       // A crossword channel has its own settings page (plan §8.2).
       if (found && sceneSurface(found) === "crossword") replaceLocation(crosswordSettingsHref(sceneId));
     });
@@ -116,8 +119,12 @@ export default function ChannelSettingsPage() {
         </>
       }
     >
-      {scene && sceneSurface(scene) === "crossword" ? (
-        <Skeleton variant="rounded" height={180} aria-label="Opening the crossword settings" />
+      {!loaded || (scene && sceneSurface(scene) === "crossword") ? (
+        <Skeleton
+          variant="rounded"
+          height={180}
+          aria-label={loaded ? "Opening the crossword settings" : "Loading channel"}
+        />
       ) : (
         <SceneDraftProvider sceneId={sceneId}>
           <SettingsBody />
