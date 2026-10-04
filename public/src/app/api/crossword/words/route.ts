@@ -13,7 +13,7 @@ const NO_CACHE = { "Cache-Control": "no-store" };
  * GET /api/crossword/words — one page of the imported word bank for
  * /admin/crosswords/words (docs/crossword-mode-plan.md §8.3), filtered by the
  * page's query string, plus the totals above the list (cached a minute in the
- * repo). `imported: false` when the bank has no words, so the page can say how
+ * repo) and the approved-pool counter. `imported: false` when the bank has no words, so the page can say how
  * to import it instead of showing an empty table.
  */
 async function GET__impl(req: Request) {
@@ -22,8 +22,12 @@ async function GET__impl(req: Request) {
   }
   const q = parseBankQuery(new URL(req.url).searchParams);
   const db = await getAppDb();
-  const [list, totals] = await Promise.all([db.crosswordBank.listWords(q), db.crosswordBank.totals()]);
-  const body: BankWordsResponse = { ...list, totals, imported: totals.total > 0 };
+  const [list, totals, pool] = await Promise.all([
+    db.crosswordBank.listWords(q),
+    db.crosswordBank.totals(),
+    db.crosswordBank.poolCounts(),
+  ]);
+  const body: BankWordsResponse = { ...list, totals, pool, imported: totals.total > 0 };
   return NextResponse.json(body, { status: 200, headers: NO_CACHE });
 }
 

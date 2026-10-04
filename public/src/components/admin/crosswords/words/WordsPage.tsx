@@ -4,9 +4,10 @@
  * /admin/crosswords/words — the February word bank, browsed
  * (docs/crossword-mode-plan.md §8.3): totals above, filters, one page of words.
  * The filters live in the query string (read on mount, written back on every
- * change, followed on back/forward) so a view is linkable. Read-only; on an
+ * change, followed on back/forward) so a view is linkable. Decisions are on the detail page and in the approval queue; on an
  * empty bank it shows the import command instead of a table.
  */
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
@@ -18,6 +19,7 @@ import AdminPageShell from "../../AdminPageShell";
 import { font } from "../../../../theme/tokens";
 import { getBankWords } from "./api";
 import BankTotalsStrip from "./BankTotalsStrip";
+import PoolCounter from "./PoolCounter";
 import { BANK_IMPORT_COMMAND, bankQueryString, parseBankQuery, type BankWordsResponse } from "./query";
 import WordsFilters from "./WordsFilters";
 import WordsTable from "./WordsTable";
@@ -85,13 +87,18 @@ export default function WordsPage() {
   return (
     <AdminPageShell
       title="Words"
-      description="The imported crossword word bank: every word, its clue status, validation verdict and frequency. Open a word for its senses, clues and raw JSON."
+      description="The imported crossword word bank: every word, its clue status, approval, family-friendly tag, validation verdict and frequency. Open a word to approve it and its clues."
       maxWidth={1600}
       crumbs={[{ href: "/admin/crosswords", label: "Crosswords" }, { label: "Words" }]}
       actions={
-        <Button variant="outlined" onClick={() => setNonce((n) => n + 1)}>
-          Refresh
-        </Button>
+        <>
+          <Button variant="contained" component={Link} href="/admin/crosswords/approve">
+            Approval queue
+          </Button>
+          <Button variant="outlined" onClick={() => setNonce((n) => n + 1)}>
+            Refresh
+          </Button>
+        </>
       }
     >
       <Stack spacing={1.75}>
@@ -102,6 +109,7 @@ export default function WordsPage() {
           <BankNotImported />
         ) : (
           <>
+            <PoolCounter pool={data.pool} />
             <BankTotalsStrip totals={data.totals} />
             <WordsFilters query={query} onChange={change} />
             <Stack direction="row" sx={{ alignItems: "center", gap: 1.5 }}>

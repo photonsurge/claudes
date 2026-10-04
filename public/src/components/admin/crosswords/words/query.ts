@@ -7,9 +7,12 @@
  * shared `bankWordFilter`.
  */
 import {
+  BANK_APPROVAL_STATUSES,
   BANK_PAGE_SIZES,
   BANK_ZIPF_BANDS,
   type BankClueStatus,
+  type BankFamilyFilter,
+  type BankPoolCounts,
   type BankSort,
   type BankTotals,
   type BankWordQuery,
@@ -18,6 +21,11 @@ import {
 } from "@photonsurge/shared/crossword-bank";
 
 export const BANK_CLUE_STATUSES: readonly BankClueStatus[] = ["pending", "done", "rejected", "failed"];
+export const BANK_FAMILY_FILTERS: readonly { id: BankFamilyFilter; label: string }[] = [
+  { id: "yes", label: "Family friendly" },
+  { id: "no", label: "Not family friendly" },
+  { id: "untagged", label: "Untagged" },
+];
 export const BANK_SORTS: readonly { id: BankSort; label: string }[] = [
   { id: "updated", label: "Updated" },
   { id: "word", label: "Word" },
@@ -34,6 +42,8 @@ const K = {
   band: "band",
   acceptedOnly: "accepted",
   reviewOnly: "review",
+  approval: "approval",
+  familyFriendly: "ff",
   sort: "sort",
   dir: "dir",
   page: "page",
@@ -63,6 +73,10 @@ export function parseBankQuery(sp: ParamsLike): BankWordQuery {
   if (band) q.band = band;
   if (truthy(sp.get(K.acceptedOnly))) q.acceptedOnly = true;
   if (truthy(sp.get(K.reviewOnly))) q.reviewOnly = true;
+  const approval = oneOf(sp.get(K.approval), BANK_APPROVAL_STATUSES);
+  if (approval) q.approval = approval;
+  const ff = oneOf(sp.get(K.familyFriendly), BANK_FAMILY_FILTERS.map((f) => f.id));
+  if (ff) q.familyFriendly = ff;
   const sort = oneOf(sp.get(K.sort), BANK_SORTS.map((s) => s.id));
   if (sort) q.sort = sort;
   const dir = oneOf(sp.get(K.dir), ["asc", "desc"] as const);
@@ -83,6 +97,8 @@ export function bankQueryString(q: BankWordQuery): string {
   if (q.band) sp.set(K.band, q.band);
   if (q.acceptedOnly) sp.set(K.acceptedOnly, "1");
   if (q.reviewOnly) sp.set(K.reviewOnly, "1");
+  if (q.approval) sp.set(K.approval, q.approval);
+  if (q.familyFriendly) sp.set(K.familyFriendly, q.familyFriendly);
   if (q.sort) sp.set(K.sort, q.sort);
   if (q.dir) sp.set(K.dir, q.dir);
   if (q.page && q.page > 1) sp.set(K.page, String(q.page));
@@ -97,6 +113,8 @@ export interface BankWordsResponse {
   page: number;
   pageSize: number;
   totals: BankTotals;
+  /** The approved pool (§7.4 counter). */
+  pool: BankPoolCounts;
   imported: boolean;
 }
 

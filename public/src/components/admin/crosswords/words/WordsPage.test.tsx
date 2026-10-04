@@ -54,6 +54,7 @@ const body = (over: Partial<BankWordsResponse> = {}): BankWordsResponse => ({
     byBand: { common: 9_000, none: 100 },
     total: 1_011_999,
   },
+  pool: { words: 120, ffWords: 90, puzzlesWithoutRepeat: 8, ffPuzzlesWithoutRepeat: 6, targetWords: 280 },
   imported: true,
   ...over,
 });
@@ -106,4 +107,19 @@ it("explains the import when the bank is empty", async () => {
   expect(await screen.findByText(/isn.t imported on this box/)).toBeInTheDocument();
   expect(screen.getByText(/mongorestore/)).toBeInTheDocument();
   expect(screen.queryByRole("table")).not.toBeInTheDocument();
+});
+
+it("shows the approved-pool counter and the approval and family-friendly columns, and filters on them", async () => {
+  window.history.replaceState(null, "", "/admin/crosswords/words?approval=pending&ff=untagged");
+  render(<WordsPage />);
+  await screen.findByRole("link", { name: "wreck" });
+  expect(calls[0]).toBe("/api/crossword/words?approval=pending&ff=untagged");
+  const pool = screen.getByLabelText("Approved pool");
+  expect(within(pool).getByText("120")).toBeInTheDocument();
+  expect(within(pool).getByText("90")).toBeInTheDocument();
+  const table = screen.getByRole("table", { name: "Words" });
+  expect(within(table).getByRole("columnheader", { name: "Approval" })).toBeInTheDocument();
+  expect(within(table).getByRole("columnheader", { name: "Family friendly" })).toBeInTheDocument();
+  expect(within(table).getAllByText("pending").length).toBe(2);
+  expect(within(table).getAllByText("untagged").length).toBe(2);
 });

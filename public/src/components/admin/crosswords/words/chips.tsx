@@ -3,7 +3,7 @@
 /** Small chips shared by the Words list and detail: clue status, decision, flags, frequency. */
 import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
-import { BANK_ZIPF_BANDS, zipfBand, type BankWordRow } from "@photonsurge/shared/crossword-bank";
+import { BANK_ZIPF_BANDS, zipfBand, type BankApproval, type BankWordRow } from "@photonsurge/shared/crossword-bank";
 
 type ChipColor = "default" | "success" | "warning" | "error" | "info";
 
@@ -45,3 +45,23 @@ export const fmtTime = (iso?: string): string => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "—" : `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 };
+
+const APPROVAL_COLOR: Record<BankApproval["status"], ChipColor> = { pending: "default", approved: "success", rejected: "error" };
+
+/** A word's or clue's approval status. */
+export function ApprovalChip({ approval }: { approval: BankApproval }) {
+  return <Chip size="small" label={approval.status} color={APPROVAL_COLOR[approval.status]} variant="outlined" />;
+}
+
+/** The family-friendly tag: yes, no, or untagged. */
+export function FamilyChip({ value }: { value: boolean | null }) {
+  if (value === null) return <Chip size="small" label="untagged" variant="outlined" />;
+  return <Chip size="small" label={value ? "family friendly" : "not family friendly"} color={value ? "success" : "warning"} />;
+}
+
+/** "by op@example.com · 2026-10-04 12:30 UTC" for a decision, or "" when none was recorded. */
+export function decidedLabel(by?: string, at?: number): string {
+  if (!by && at === undefined) return "";
+  const when = at === undefined ? "" : fmtTime(new Date(at).toISOString());
+  return [by ? `by ${by}` : "", when].filter(Boolean).join(" · ");
+}

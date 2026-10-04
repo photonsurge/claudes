@@ -10,7 +10,8 @@ import AdminPageShell from "../../../components/admin/AdminPageShell";
  * reached from the Channels list.
  */
 const LINKS = [
-  { href: "/admin/crosswords/words", title: "Words", desc: "The imported word bank — clue status, validation verdict, frequency, senses and clues." },
+  { href: "/admin/crosswords/words", title: "Words", desc: "The imported word bank — clue status, approval, family-friendly tag, frequency, senses and clues." },
+  { href: "/admin/crosswords/approve", title: "Approve", desc: "The approval queue: approve words and clues and tag them family friendly, one word at a time, from the keyboard." },
   { href: "/admin/crosswords/puzzles", title: "Puzzles", desc: "The stock: built, approved and played puzzles. Generate, edit, approve or reject." },
   { href: "/admin/crosswords/players", title: "Players", desc: "Totals per player; hide and unhide." },
 ];

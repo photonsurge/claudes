@@ -54,3 +54,13 @@ it("builds the Mongo filter, sort and paging from the URL", () => {
   expect(bankWordSort(q)).toEqual({ norm: 1, _id: 1 });
   expect(bankPaging(q)).toEqual({ skip: 75, limit: 25, page: 4, pageSize: 25 });
 });
+
+it("reads and writes the approval and family-friendly filters, and builds their Mongo filters", () => {
+  const q = parseBankQuery(new URLSearchParams("approval=pending&ff=yes"));
+  expect(q).toEqual({ approval: "pending", familyFriendly: "yes" });
+  expect(bankQueryString(q)).toBe("approval=pending&ff=yes");
+  expect(parseBankQuery(new URLSearchParams("approval=maybe&ff=sometimes"))).toEqual({});
+  expect(bankWordFilter({ approval: "approved", familyFriendly: "untagged" })).toEqual({
+    $and: [{ "approval.status": "approved" }, { familyFriendly: { $nin: [true, false] } }],
+  });
+});

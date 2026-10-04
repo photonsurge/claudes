@@ -4,32 +4,41 @@
  * /admin/crosswords/words/:id — one bank word in full (§8.3): status, length,
  * categories, senses with their definitions, the raw Wiktionary definitions, every clue with its difficulty,
  * source and status, the validation verdict with what each source said, and
- * the raw attempts and validation JSON (collapsed). Read-only for now.
+ * the raw attempts and validation JSON (collapsed). Also where a word and its
+ * clues are decided on (§7.4, §8.3): approve or reject, the family-friendly
+ * tick, edit a clue, and who decided and when. The bank's model-made flags
+ * show as warnings and decide nothing; a stored suggestion is shown as one and
+ * can be saved as a new candidate clue, which still needs approving.
  */
 import { useEffect, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import type { BankClue, BankWordDetail } from "@photonsurge/shared/crossword-bank";
 import AdminPageShell from "../../AdminPageShell";
 import { font } from "../../../../theme/tokens";
-import { getBankWord } from "./api";
-import { ClueStatusChip, DecisionChip, FlagChips, fmtTime, zipfLabel } from "./chips";
+import { getBankWord, patchBankClue, patchBankWord, type CluePatch, type Outcome, type WordPatch } from "./api";
+import { ApprovalChip, ClueStatusChip, DecisionChip, FamilyChip, FlagChips, decidedLabel, fmtTime, zipfLabel } from "./chips";
 
-// WP5 rework: approval and family-friendly decisions are not on this page yet.
-const CLUE_STATUS_COLOR: Record<BankClue["approval"]["status"], "default" | "success" | "error"> = {
-  pending: "default",
-  approved: "success",
-  rejected: "error",
-};
+/** The decisions the view can ask for; the page wires them to the routes. */
+export interface WordActions {
+  busy?: boolean;
+  onWord: (patch: WordPatch) => void;
+  onClue: (id: string, patch: CluePatch) => void;
+}
+const NO_ACTIONS: WordActions = { busy: true, onWord: () => undefined, onClue: () => undefined };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -91,9 +100,183 @@ function Sources({ value }: { value: unknown }) {
   );
 }
 
-export function WordDetailView({ word }: { word: BankWordDetail }) {
+/** Approve / reject and the family-friendly tick for the word, with the model flags as warnings. */
+function WordDecision({ word, actions }: { word: BankWordDetail; actions: WordActions }) {
+  const { busy, onWord } = actions;
+  return (
+    <Section title="Approval">
+      {word.warnings.length > 0 && (
+        <Alert severity="warning" sx={{ mb: 1.5 }}>
+          The bank&apos;s model flagged this word: {word.warnings.join(", ")}. That is a warning only, so the family-friendly
+          suggestion is &quot;not family friendly&quot;; you decide.
+          {word.familyFriendly !== false && (
+            <Button size="small" color="warning" disabled={busy} onClick={() => onWord({ familyFriendly: false })} sx={{ ml: 1 }}>
+              Mark not family friendly
+            </Button>
+          )}
+        </Alert>
+      )}
+      <Stack direction="row" sx={{ flexWrap: "wrap", gap: 2, alignItems: "center" }}>
+        <Box>
+          <ApprovalChip approval={word.approval} />
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+            {decidedLabel(word.approval.by, word.approval.at)}
+          </Typography>
+        </Box>
+        <Button size="small" variant="contained" color="success" disabled={busy || word.approval.status === "approved"} onClick={() => onWord({ approval: "approved" })}>
+          Approve word
+        </Button>
+        <Button size="small" variant="outlined" color="error" disabled={busy || word.approval.status === "rejected"} onClick={() => onWord({ approval: "rejected" })}>
+          Reject word
+        </Button>
+        <Button size="small" disabled={busy || word.approval.status === "pending"} onClick={() => onWord({ approval: "pending" })}>
+          Back to pending
+        </Button>
+        <Box sx={{ ml: { sm: 2 } }}>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={word.familyFriendly === true}
+                disabled={busy}
+                onChange={(e) => onWord({ familyFriendly: e.target.checked ? true : null })}
+              />
+            }
+            label="Family friendly"
+          />
+          <FamilyChip value={word.familyFriendly} />
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+            {decidedLabel(word.familyFriendlyBy, word.familyFriendlyAt)}
+          </Typography>
+        </Box>
+      </Stack>
+    </Section>
+  );
+}
+
+/** A stored model suggestion, marked as one. Accepting saves it as a new pending clue, never an approval. */
+function SuggestionBox({ word, actions }: { word: BankWordDetail; actions: WordActions }) {
+  const s = word.suggestion;
+  const have = !!s && word.clues.some((c) => c.text.trim().toLowerCase() === s.clue.trim().toLowerCase());
+  return (
+    <Section title="Suggestion">
+      {s ? (
+        <Alert severity="info" icon={false}>
+          <Typography variant="caption" sx={{ display: "block", fontWeight: 600 }}>
+            SUGGESTION, not approved{s.model ? ` · ${s.model}` : ""}
+          </Typography>
+          <Typography variant="body1" sx={{ my: 0.5 }}>
+            &ldquo;{s.clue}&rdquo;
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Suggests {s.familyFriendly ? "family friendly" : "not family friendly"}
+            {s.reason ? ` — ${s.reason}` : ""}
+          </Typography>
+          <Button size="small" sx={{ mt: 1 }} disabled={actions.busy || have} onClick={() => actions.onWord({ acceptSuggestion: true })}>
+            {have ? "Already a candidate clue" : "Add as a candidate clue"}
+          </Button>
+        </Alert>
+      ) : (
+        <Typography variant="body2" color="text.secondary">
+          No suggestion stored.
+        </Typography>
+      )}
+      {/* The suggest job is a later package: this stays off until it exists. */}
+      <Button size="small" disabled sx={{ mt: 1 }}>
+        Suggest
+      </Button>
+    </Section>
+  );
+}
+
+/** One clue row: text (editable), status, family-friendly tick, who decided, and the decisions. */
+function ClueRow({ clue, actions }: { clue: BankClue; actions: WordActions }) {
+  const { busy, onClue } = actions;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(clue.text);
+  useEffect(() => setDraft(clue.text), [clue.text]);
+  const save = () => {
+    const t = draft.trim();
+    if (t && t !== clue.text) onClue(clue.id, { text: t });
+    setEditing(false);
+  };
+  return (
+    <TableRow>
+      <TableCell sx={{ minWidth: 240 }}>
+        {editing ? (
+          <TextField
+            size="small"
+            fullWidth
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") save();
+              if (e.key === "Escape") setEditing(false);
+            }}
+            slotProps={{ htmlInput: { "aria-label": "Clue text" } }}
+          />
+        ) : (
+          clue.text
+        )}
+        {clue.original && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+            was: {clue.original}
+          </Typography>
+        )}
+      </TableCell>
+      <TableCell align="right">{clue.difficulty ?? "—"}</TableCell>
+      <TableCell>{clue.source ?? "—"}</TableCell>
+      <TableCell sx={{ fontFamily: font.mono, fontSize: 12 }}>{clue.model ?? "—"}</TableCell>
+      <TableCell>
+        <ApprovalChip approval={clue.approval} />
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+          {decidedLabel(clue.approval.by, clue.approval.at)}
+        </Typography>
+      </TableCell>
+      <TableCell>
+        <Checkbox
+          size="small"
+          checked={clue.familyFriendly === true}
+          disabled={busy}
+          onChange={(e) => onClue(clue.id, { familyFriendly: e.target.checked ? true : null })}
+          slotProps={{ input: { "aria-label": `Family friendly: ${clue.text}` } }}
+        />
+        <FamilyChip value={clue.familyFriendly} />
+      </TableCell>
+      <TableCell sx={{ whiteSpace: "nowrap" }}>
+        {editing ? (
+          <>
+            <Button size="small" disabled={busy} onClick={save}>
+              Save
+            </Button>
+            <Button size="small" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button size="small" color="success" disabled={busy || clue.approval.status === "approved"} onClick={() => onClue(clue.id, { approval: "approved" })}>
+              Approve
+            </Button>
+            <Button size="small" disabled={busy} onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+            <Button size="small" color="error" disabled={busy || clue.approval.status === "rejected"} onClick={() => onClue(clue.id, { approval: "rejected" })}>
+              Reject
+            </Button>
+          </>
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+export function WordDetailView({ word, actions = NO_ACTIONS }: { word: BankWordDetail; actions?: WordActions }) {
   return (
     <Stack spacing={1.75}>
+      <WordDecision word={word} actions={actions} />
+      <SuggestionBox word={word} actions={actions} />
+
       <Section title="Word">
         <Stack direction="row" sx={{ flexWrap: "wrap", gap: 3 }}>
           <Fact label="Length">{word.length}</Fact>
@@ -188,26 +371,13 @@ export function WordDetailView({ word }: { word: BankWordDetail }) {
                 <TableCell>Source</TableCell>
                 <TableCell>Model</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Family friendly</TableCell>
+                <TableCell>Decide</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {word.clues.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell>
-                    {c.text}
-                    {c.original && (
-                      <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-                        was: {c.original}
-                      </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell align="right">{c.difficulty ?? "—"}</TableCell>
-                  <TableCell>{c.source ?? "—"}</TableCell>
-                  <TableCell sx={{ fontFamily: font.mono, fontSize: 12 }}>{c.model ?? "—"}</TableCell>
-                  <TableCell>
-                    <Chip size="small" label={c.approval.status} color={CLUE_STATUS_COLOR[c.approval.status]} variant="outlined" />
-                  </TableCell>
-                </TableRow>
+                <ClueRow key={c.id} clue={c} actions={actions} />
               ))}
             </TableBody>
           </Table>
@@ -237,6 +407,8 @@ export function WordDetailView({ word }: { word: BankWordDetail }) {
 export default function WordDetail({ id }: { id: string }) {
   const [word, setWord] = useState<BankWordDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -249,6 +421,24 @@ export default function WordDetail({ id }: { id: string }) {
       live = false;
     };
   }, [id]);
+
+  /** Run a decision, then show the word as the server now has it. */
+  const decide = async (run: () => Promise<Outcome<unknown>>) => {
+    setBusy(true);
+    setActionError(null);
+    const res = await run();
+    if (!res.ok) setActionError(res.error);
+    else {
+      const fresh = await getBankWord(id).then((r) => (r.ok ? r.data : null));
+      if (fresh) setWord(fresh);
+    }
+    setBusy(false);
+  };
+  const actions: WordActions = {
+    busy,
+    onWord: (patch) => decide(() => patchBankWord(id, patch)),
+    onClue: (clueId, patch) => decide(() => patchBankClue(clueId, patch)),
+  };
 
   return (
     <AdminPageShell
@@ -265,7 +455,14 @@ export default function WordDetail({ id }: { id: string }) {
       ) : !word ? (
         <Typography color="text.secondary">Loading…</Typography>
       ) : (
-        <WordDetailView word={word} />
+        <>
+          {actionError && (
+            <Alert severity="error" sx={{ mb: 1.5 }}>
+              Couldn&apos;t save that: {actionError}
+            </Alert>
+          )}
+          <WordDetailView word={word} actions={actions} />
+        </>
       )}
     </AdminPageShell>
   );

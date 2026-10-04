@@ -2,7 +2,7 @@
 
 /**
  * The Words list's filters: search, starts-with letter (A–Z strip), clue
- * status, frequency band, the accepted-only and review-only switches, sort and
+ * status, approval, family friendly, frequency band, the accepted-only and review-only switches, sort and
  * direction, page size. Every change hands back a new query with the page
  * reset; the search box commits after a short pause in typing.
  */
@@ -15,14 +15,17 @@ import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import {
+  BANK_APPROVAL_STATUSES,
   BANK_PAGE_SIZES,
   BANK_ZIPF_BANDS,
+  type BankApprovalStatus,
   type BankClueStatus,
+  type BankFamilyFilter,
   type BankSort,
   type BankWordQuery,
   type BankZipfBand,
 } from "@photonsurge/shared/crossword-bank";
-import { BANK_CLUE_STATUSES, BANK_SORTS } from "./query";
+import { BANK_CLUE_STATUSES, BANK_FAMILY_FILTERS, BANK_SORTS } from "./query";
 
 export const SEARCH_DEBOUNCE_MS = 350;
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -72,6 +75,36 @@ export default function WordsFilters({ query, onChange }: Props) {
             {BANK_CLUE_STATUSES.map((s) => (
               <MenuItem key={s} value={s}>
                 {s}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            select
+            size="small"
+            label="Approval"
+            value={query.approval ?? ""}
+            onChange={(e) => set({ approval: (e.target.value || undefined) as BankApprovalStatus | undefined })}
+            sx={{ width: 140 }}
+          >
+            <MenuItem value="">Any</MenuItem>
+            {BANK_APPROVAL_STATUSES.map((s) => (
+              <MenuItem key={s} value={s}>
+                {s}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            select
+            size="small"
+            label="Family friendly"
+            value={query.familyFriendly ?? ""}
+            onChange={(e) => set({ familyFriendly: (e.target.value || undefined) as BankFamilyFilter | undefined })}
+            sx={{ width: 190 }}
+          >
+            <MenuItem value="">Any</MenuItem>
+            {BANK_FAMILY_FILTERS.map((f) => (
+              <MenuItem key={f.id} value={f.id}>
+                {f.label}
               </MenuItem>
             ))}
           </TextField>

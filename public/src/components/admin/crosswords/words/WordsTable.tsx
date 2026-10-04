@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * One page of bank words: word, length, clue status, part of speech,
+ * One page of bank words: word, length, clue status, approval, family friendly, part of speech,
  * categories, flags, clue model, validation decision, frequency, clue count
  * and the clue writer's reason. Each word links to its detail page.
  */
@@ -18,7 +18,7 @@ import Typography from "@mui/material/Typography";
 import type { BankWordRow } from "@photonsurge/shared/crossword-bank";
 import { font } from "../../../../theme/tokens";
 import { wordHref } from "./api";
-import { ClueStatusChip, DecisionChip, FlagChips, zipfLabel } from "./chips";
+import { ApprovalChip, ClueStatusChip, DecisionChip, FamilyChip, FlagChips, zipfLabel } from "./chips";
 
 /** Categories are noisy slugs (§7.2): show a few and count the rest. */
 const MAX_CATEGORIES = 3;
@@ -39,6 +39,8 @@ export default function WordsTable({ rows }: { rows: BankWordRow[] }) {
               <TableCell>Word</TableCell>
               <TableCell align="right">Len</TableCell>
               <TableCell>Status</TableCell>
+              <TableCell>Approval</TableCell>
+              <TableCell>Family friendly</TableCell>
               <TableCell>POS</TableCell>
               <TableCell>Categories</TableCell>
               <TableCell>Flags</TableCell>
@@ -52,7 +54,7 @@ export default function WordsTable({ rows }: { rows: BankWordRow[] }) {
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11}>
+                <TableCell colSpan={13}>
                   <Typography color="text.secondary" variant="body2">
                     No words match these filters.
                   </Typography>
@@ -69,6 +71,12 @@ export default function WordsTable({ rows }: { rows: BankWordRow[] }) {
                   <TableCell align="right">{r.length}</TableCell>
                   <TableCell>
                     <ClueStatusChip status={r.clueStatus} />
+                  </TableCell>
+                  <TableCell>
+                    <ApprovalChip approval={r.approval} />
+                  </TableCell>
+                  <TableCell>
+                    <FamilyChip value={r.familyFriendly} />
                   </TableCell>
                   <TableCell>{r.pos.join(", ") || "—"}</TableCell>
                   <TableCell sx={{ maxWidth: 220 }} title={r.categories.join(", ")}>
