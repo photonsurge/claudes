@@ -90,6 +90,7 @@ const RunSchema = new mongoose.Schema<iRunModel>(
     },
     announce: { type: Boolean, required: false, default: false },
     announcedAt: { type: Number, required: false, default: null },
+    announceError: { type: mongoose.Schema.Types.Mixed, required: false, default: null },
     chapters: {
       publishedAt: { type: Number, required: false, default: null },
       count: { type: Number, required: false, default: 0 },

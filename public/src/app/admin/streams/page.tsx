@@ -404,7 +404,7 @@ function RunRow({ run, health, youtubeStats, statsError, onStopped }: { run: Run
             {run.encoderId ? ` · encoder ${run.encoderId}` : ""}
             {run.slotId ? " · constant" : ""}
             {run.chat?.enabled ? (run.chat.promoteToTicker ? " · chat→ticker" : " · chat") : ""}
-            {run.announce ? (run.announcedAt ? " · 📣 announced" : " · 📣") : ""}
+            {run.announce ? (run.announcedAt ? " · 📣 announced" : run.announceError ? ` · 📣 announce failed (try ${run.announceError.attempts}${run.announceError.status ? `, HTTP ${run.announceError.status}` : ""}): ${run.announceError.message}` : " · 📣") : ""}
             {run.chapters?.publishedAt ? " · ⏱ chapters" : run.chapters?.error ? " · ⏱ chapters failed" : ""}
             {run.needsManualObs ? " · OBS manual handoff needed" : ""}
             {run.error ? ` · ${run.error.step}: ${run.error.message}` : ""}

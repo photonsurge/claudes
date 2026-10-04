@@ -263,6 +263,8 @@ export interface Run {
   announce?: boolean;
   /** Set once the hydra announcement has been posted (idempotency for retries). */
   announcedAt?: number | null;
+  /** Last hydra announce outcome when it did NOT post: attempt count, reason, HTTP status (cleared on success). */
+  announceError?: { at: number; attempts: number; message: string; status?: number } | null;
   /** YouTube chapters (the as-run digest) written into the video description — docs/vod-as-run-plan.md §4. */
   chapters?: RunChapters | null;
   /** Custom thumbnail upload outcome (set right after the broadcast is created). */
@@ -309,6 +311,7 @@ export interface RunState {
   chat?: { enabled: boolean; promoteToTicker: boolean };
   announce?: boolean;
   announcedAt?: number | null;
+  announceError?: Run["announceError"];
   chapters?: RunChapters | null;
   thumbnail?: RunThumbnail | null;
   error?: RunError | null;
@@ -429,6 +432,7 @@ export function toRunState(run: Run): RunState {
     chat: run.chat,
     announce: run.announce,
     announcedAt: run.announcedAt ?? null,
+    announceError: run.announceError ?? null,
     chapters: run.chapters ?? null,
     thumbnail: run.thumbnail ?? null,
     error: run.error ?? null,

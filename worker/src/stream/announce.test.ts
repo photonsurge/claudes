@@ -128,6 +128,31 @@ describe("announceRun", () => {
     await expect(announceRun("r1")).rejects.toThrow(/500/);
 
     expect(runs.get("r1").announcedAt).toBeUndefined();
+    expect(runs.get("r1").announceError).toMatchObject({ attempts: 1, status: 500, message: "boom" });
+  });
+
+  it("records a network failure (bad host) on the run and rethrows", async () => {
+    fetchMock.mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } }));
+    runs.set("r1", liveRun());
+
+    await expect(announceRun("r1")).rejects.toThrow(/ENOTFOUND/);
+    expect(runs.get("r1").announceError.message).toContain("ENOTFOUND");
+  });
+
+  it("names the missing env vars and records them when hydra isn't configured", async () => {
+    delete process.env.HYDRA_SITEID;
+    runs.set("r1", liveRun());
+
+    await announceRun("r1");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(runs.get("r1").announceError.message).toContain("HYDRA_SITEID");
+  });
+
+  it("clears a previous announceError on success", async () => {
+    runs.set("r1", liveRun({ announceError: { at: 1, attempts: 2, message: "old" } }));
+    await announceRun("r1");
+    expect(runs.get("r1").announceError).toBeNull();
   });
 });
 

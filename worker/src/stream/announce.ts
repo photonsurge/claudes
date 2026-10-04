@@ -107,6 +107,7 @@ export function buildAnnouncement(
 
 /** Enqueue the announcement as its own retried job — never inline in go-live. */
 export async function queueAnnounce(runId: string): Promise<void> {
+  log(TAG, `announce queued for run ${runId}`);
   await getQueue("foreground").add(
     "do",
     { domain: "stream", type: "run-lifecycle", event: "announce", data: { runId } },
@@ -114,9 +115,22 @@ export async function queueAnnounce(runId: string): Promise<void> {
       attempts: 5,
       backoff: { type: "exponential", delay: 30_000 },
       removeOnComplete: true,
-      removeOnFail: true,
+      removeOnFail: { count: 50 },
     },
   );
+}
+
+/** Stamp the failure on the run (best-effort) so the admin UI can show why nothing posted. */
+async function recordFailure(
+  db: Awaited<ReturnType<typeof getAppDb>>,
+  run: Run,
+  message: string,
+  status?: number,
+): Promise<void> {
+  const attempts = (run.announceError?.attempts ?? 0) + 1;
+  await db
+    .updateRun(run.id, { announceError: { at: Date.now(), attempts, message, ...(status ? { status } : {}) } })
+    .catch((err: unknown) => log(TAG, `could not record announce error on ${run.id}`, String((err as Error)?.message ?? err)));
 }
 
 /**
@@ -127,8 +141,19 @@ export async function queueAnnounce(runId: string): Promise<void> {
 export async function announceRun(runId: string): Promise<void> {
   const db = await getAppDb();
   const run = await db.getRun(runId);
-  if (!run?.announce) return;
-  if (run.announcedAt) return; // already told the world
+  log(TAG, `announce job start ${runId}`);
+  if (!run) {
+    log(TAG, `run ${runId} not found — announce dropped`);
+    return;
+  }
+  if (!run.announce) {
+    log(TAG, `run ${runId} has announce off — skipping`);
+    return;
+  }
+  if (run.announcedAt) {
+    log(TAG, `run ${runId} already announced — skipping`);
+    return;
+  }
   if (!runIsActive(run.status)) {
     log(TAG, `run ${runId} is ${run.status} — stale announcement dropped`);
     return;
@@ -140,7 +165,12 @@ export async function announceRun(runId: string): Promise<void> {
   }
   const cfg = hydraConfig();
   if (!cfg) {
-    log(TAG, `hydra not configured (HYDRA_ENDPOINT / HYDRA_SITEID / HYDRA_API_TOKEN / HYDRA_BLOG_CATEGORY_ID) — skipping`);
+    const missing = ["HYDRA_ENDPOINT", "HYDRA_SITEID", "HYDRA_API_TOKEN", "HYDRA_BLOG_CATEGORY_ID"].filter(
+      (k) => !(process.env[k] || "").trim(),
+    );
+    const message = `hydra not configured — missing ${missing.join(", ")}`;
+    log(TAG, `run ${runId}: ${message} — skipping`);
+    await recordFailure(db, run, message);
     return;
   }
 
@@ -164,22 +194,36 @@ export async function announceRun(runId: string): Promise<void> {
       : {}),
   };
 
-  const res = await fetch(`${cfg.apiUrl}/api/v1/sites/${encodeURIComponent(cfg.siteId)}/blogs`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${cfg.token}`,
-      "Idempotency-Key": `weatherchannel-run-${run.id}`,
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(20_000),
-  });
+  const url = `${cfg.apiUrl}/api/v1/sites/${encodeURIComponent(cfg.siteId)}/blogs`;
+  log(TAG, `run ${runId}: POST ${url} (slug ${post.slug}, social ${cfg.socialPageIds.length ? `${cfg.socialMode} x${cfg.socialPageIds.length}` : "off"})`);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cfg.token}`,
+        "Idempotency-Key": `weatherchannel-run-${run.id}`,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (err) {
+    const cause = (err as { cause?: { code?: string; message?: string } })?.cause;
+    const message = `request to ${cfg.apiUrl} failed: ${String((err as Error)?.message ?? err)}${cause?.code ? ` (${cause.code})` : ""}`;
+    log(TAG, `run ${runId}: ${message}`);
+    await recordFailure(db, run, message);
+    throw new Error(`hydra announce failed: ${message}`);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`hydra announce failed (${res.status}): ${text.slice(0, 300)}`);
+    const message = text.slice(0, 300) || res.statusText || "no body";
+    log(TAG, `run ${runId}: hydra answered ${res.status}: ${message}`);
+    await recordFailure(db, run, message, res.status);
+    throw new Error(`hydra announce failed (${res.status}): ${message}`);
   }
   const json = (await res.json().catch(() => ({}))) as { data?: { blog?: { id?: string } } };
 
-  await db.updateRun(runId, { announcedAt: Date.now() });
+  await db.updateRun(runId, { announcedAt: Date.now(), announceError: null });
   log(TAG, `run ${runId} announced — hydra blog ${json?.data?.blog?.id ?? "?"} ("${post.slug}")`);
 }
