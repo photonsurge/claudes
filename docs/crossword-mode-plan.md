@@ -1,6 +1,8 @@
 # Crossword channel — plan
 
-> **Status: PROPOSED** (2026-10-04). Nothing built. Planned on Fable; built by
+> **Status: P0 BUILT** to this revision (see §14); not yet run against a real Mongo, the
+> imported bank or a real frame, so M0 is not signed off. WP9 (the chat-stream probe) is
+> built and waits for the operator to run it. Planned on Fable; built by
 > sub-agents on other models, chosen per work package, with tests and validation always
 > on a strong model (§11, "Who builds").
 > Source material: the February prototype in `../crosswords` (§1).
@@ -919,9 +921,10 @@ Channels list. The bank's field map was then checked against the prototype's pip
 `{ name, ref, createdBy }`, and clue counts come from the clues collection. The seed set
 is the prototype's `data.json` (37 words in this snapshot, not 43).
 
-### P0, rework to this revision (in progress)
+### P0, rework to this revision (done, 2026-10-05)
 
-What the first build has to change to match this plan:
+Every package went through build, plan-written tests and a fresh validation pass, and its
+findings were fixed. What the first build had to change to match this plan:
 - **WP1**: `watchPath` → `outputPath` (`/crossword/<id>`); `youtube.accountId` on the
   channel record; entries carry `wordId` / `clueId`; puzzles are `ready` / `rejected`
   with `familyFriendly` (no `draft`, no `theme`, no `model`); `CrosswordTheme` with the
