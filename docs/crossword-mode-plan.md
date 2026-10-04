@@ -6,11 +6,13 @@
 > Source material: the February prototype in `../crosswords` (§1).
 > Shares the chat seam with [chat-interaction-plan.md](./done/chat-interaction-plan.md) (§6.4).
 > Open questions for the operator are in §13.
-> Revised the same day: the encoder is picked at go-live (§10), and the February word
-> bank, measured on the local database, is the word source (§7.2).
+> Revised the same day on the operator's direction: the encoder is picked at go-live
+> (§10); the February word bank is imported whole and its words admin ported (§7.2,
+> §8.3); a crossword channel gets its own tokened watch page (§3); and both kinds of
+> channel are administered together (§8).
 
-A crossword channel is a scene whose watch page shows a crossword game where the other
-channels show the globe. The worker hosts the game. It lays out a puzzle, puts one clue
+A crossword channel is a scene with its own watch page, showing a crossword game where
+the other channels show the globe. The worker hosts the game. It lays out a puzzle, puts one clue
 in the spotlight at a time, leaks hint letters, and finally fills the answer in itself,
 so a puzzle always finishes even with nobody watching. Viewers answer in YouTube chat;
 the first correct answer takes the word and its points.
@@ -20,7 +22,7 @@ runs, go-live announcements, the theme tokens and the music bed. The operator st
 crossword stream on an encoder they pick, as for shorts (§10).
 
 Three terms used throughout:
-- **Surface**: what a scene's watch page renders, `globe` or `crossword`. The code says
+- **Surface**: which kind of channel a scene is, `globe` or `crossword`. The code says
   "surface" because "mode" already means three things here (director mode, audio mode,
   and the map looks the `:modes` chat command lists).
 - **Host**: the worker's game loop. It is also the name credited when nobody solves a word.
@@ -28,17 +30,26 @@ Three terms used throughout:
 
 ## 1. What comes from `../crosswords`, and what stays there
 
-| Prototype piece | Verdict |
+The prototype's real state is its **`0.1` branch** (8 commits ahead of `master`, which is
+what a fresh clone checks out). It splits into `game-ui`, `game-server`, `game-shared`,
+`ai-manager` and `ai-services`.
+
+| Prototype piece (on `0.1`) | Verdict |
 |---|---|
-| Layout generator (`src/crossword.ts`) | **Port and fix** into the worker. Its "backtracking" never backtracks: a word that cannot be placed is skipped and the recursion still reports success, so the first candidate always sticks and the 500 attempts run once. `maxSize: 50` is silently clamped to 26. |
-| Guess logic (`applyGuess`, A1 cell refs) | **Rewrite** as pure rules in `shared`. Viewers get standard numbering (7 Across) and bare-word answers, not spreadsheet refs. |
-| SVG renderer | **Drop.** The board is React DOM on `/watch`, so letters can animate and the scoreboard is its own panel. |
-| Socket game server, the Next custom server, `parseGameMessage` | **Drop.** The worker runner and the existing worker-event relay replace them. |
-| `data.json` (43 space words with clues) | **Keep as the first seed set**, after a human read-through. |
-| Word pipeline (`python/words-tools`: Wiktionary/Kaikki → Mongo → hunspell validation → vLLM clue enrichment) | **Stays in that repo** as offline GPU tooling. Its output, a bank of about a million words with 38,989 checked and clued, is imported and becomes the main word source (§7.2). |
-| XTTS + Whisper speech service | **Not used.** Spoken clues, if wanted, go through the presenter plan's OpenRouter speech path. |
-| `python-audio` ambient generator | **Not used.** Superseded by the audio bed engine here. |
-| Murder mystery generator and engine | **Out of scope.** The `surface` field leaves room for it as a later mode. |
+| Words admin (`game-ui`: `/words`, `/words/:id`, `listWords`, `getWordById`) | **Port all of it** into this app's admin (§8.3). It is read-only there; this plan adds the air decisions it lacks. |
+| Word bank in Mongo (`words`, `clues`) | **Imported whole** by the operator and kept as this app's word source (§7.2). |
+| Word pipeline (`python/words-tools`: Wiktionary/Kaikki → Mongo → validation → vLLM clues) | **Stays in that repo** as offline GPU tooling, with `ai-manager` and `ai-services`. |
+| Layout generator (`game-server/src/lib/crossword.ts`) | **Port and fix.** Its "backtracking" never backtracks: a word that cannot be placed is skipped and the recursion still reports success. The stored games show the result: from 300 candidate words, the latest grid placed 5. |
+| Game loop (`crossword-game.ts`: games stored in Mongo, restore on restart, `word_solved` and `score_update` events) | **Rewrite** in the worker (§4). Same ideas, plus the host, hints and chat. |
+| Guess logic (A1 cell refs, "F2 CATERPILLAR") | **Rewrite** as pure rules in `shared`: standard numbering and bare-word answers. |
+| OBS pages (`/obs`, `/obs/chat`, `/obs/scoreboard`, `/obs/presenter`: four separate browser sources, no token) | **Replaced** by one tokened watch page (§3, §5). This app provisions one full-canvas source per encoder. |
+| SVG board renderer | **Drop.** The board is React DOM. |
+| Solve effects (board shake, letters animating in) | **Keep the idea**, redone in CSS on the DOM grid. |
+| Presenter phrase bank (`presenter-words.json`: 6 situations, 34–149 wordings each) | **Keep** as the host's feed lines; spoken later (§11 WP15). |
+| Animated presenter with moods and lip-sync, StyleTTS / voice generation services | **Later**, with the presenter plan's voice path. Not this plan. |
+| Games and messages admin | **Not ported.** Puzzles and plays (§8.3) and the existing chat log cover them. |
+| `data.json` (43 space words) | **Keep as the seed set** for tests. |
+| Murder mystery generator and admin | **Out of scope.** |
 
 ## 2. Facts that shape the design
 
@@ -78,28 +89,38 @@ Checked in code on 2026-10-04 unless noted.
 - A crossword scene has no director cuts, so the as-run log, YouTube chapters and the
   public home card's now/next have nothing to show for it.
 
-## 3. A scene gets a surface
+## 3. A crossword channel is a scene with its own watch page
 
 ```ts
 // shared/src/control.ts
 export type SceneSurface = "globe" | "crossword";
 export interface SceneMeta { /* …existing… */ surface: SceneSurface }
+/** "/watch/<id>" for a globe channel, "/watch/crossword/<id>" for a crossword one. */
+export function watchPath(scene: { id: string; surface?: SceneSurface }): string;
 ```
 
-- Stored on the scene document as metadata, the same way `hidden` is. It is not a
-  `ControlState` field. Add it to `BroadcastStateSchema` (strict Mongoose drops unknown
-  keys), to the `listScenes` projection, and to `createScene`'s options. Missing means
-  `globe`, so no migration. The main scene is always `globe`.
-- `POST /api/scenes` accepts `surface`; the New scene form on `/admin/scenes` gets a
-  type picker.
-- `/watch/[scene]/page.tsx` resolves the scene's metadata first (it already calls
-  `listScenes()` for the name), then renders one of two dynamically imported bodies:
-  the existing page body moved unchanged into `GlobeWatch`, or the new `CrosswordWatch`.
-  A crossword channel never loads deck.gl or MapLibre, and a globe channel never loads
-  the game.
-- A crossword scene still has a `ControlState`. It uses `broadcastTheme`,
-  `themeOverrides`, `audio`, `chat` and `youtube` from it and ignores the rest. Its
-  director config stays `off`.
+- **Still a scene.** A crossword channel is a scene document, so it has a name, a watch
+  token, a theme, a music bed, YouTube settings, runs and an encoder like any other
+  channel. That is what lets both kinds be administered together (§8).
+- **`surface`** says which kind it is. It is scene metadata, stored the way `hidden` is,
+  not a `ControlState` field. Add it to `BroadcastStateSchema` (strict Mongoose drops
+  unknown keys), to the `listScenes` projection and to `createScene`'s options. Missing
+  means `globe`, so no migration. The main scene is always `globe`.
+- **A new watch page** (operator's call, 2026-10-04): `/watch/crossword/:id?token=…`, in
+  `public/src/app/watch/crossword/[scene]/page.tsx`. The weather page
+  (`watch/[scene]/page.tsx`) is not touched, so nothing here can break it, and a
+  crossword channel never loads deck.gl or MapLibre.
+- **Tokened like the weather one.** It uses the scene's `watchToken` through the same
+  `useSceneState` fetch, and the crossword state route checks the same token. Rotating
+  on `/admin/access` works for both kinds.
+- **Under `/watch/` on purpose.** `proxy.ts` leaves `/watch/**` ungated for OBS, the OBS
+  sweep recognises "one of ours" with `isWatchUrl` (`^/watch/`), and any server rule
+  keyed on `/watch` keeps applying.
+- **`watchPath` is the one place that knows the mapping.** The Channels list, the Access
+  page, the home launcher and the worker's `watchUrlForScene` all call it.
+- A crossword scene opened on the globe route, or the reverse, redirects to its own page.
+- A crossword scene uses `broadcastTheme`, `themeOverrides`, `audio`, `chat` and
+  `youtube` from its `ControlState` and ignores the rest. Its director config stays `off`.
 
 ## 4. The game
 
@@ -289,7 +310,7 @@ Rules in the runner:
   playing a demo round.
 - **Audio**: the existing `BroadcastBed` with the scene's `audio` settings and no
   segment (its idle energy). It gains one optional `pulseKey` prop so a finished puzzle
-  fires the riser. A solve chime is later work (§11 WP13).
+  fires the riser. A solve chime is later work (§11 WP15).
 
 ## 6. Chat is the input, and its delay is the main risk
 
@@ -308,17 +329,17 @@ not good enough to launch on.
 A push connection would deliver answers within a second or two. Whether it is
 affordable is unknown until it is measured.
 
-**WP7 is a probe, not a build**: `worker/src/scripts/chatStreamProbe.ts`
+**WP9 is a probe, not a build**: `worker/src/scripts/chatStreamProbe.ts`
 (`yarn youtube:chat-stream <runId>`), run by the operator against a live run. It opens
 the stream with the account's token, prints each message's delay (now minus publish
 time), how long a connection lasts and how it resumes, and the operator reads the
 project's quota graph before and after an hour. The gRPC endpoint and proto come from
 Google's Streaming Live Chat guide; neither has been checked here.
 
-- If a connection costs about what one poll costs: WP8 replaces polling with a stream
+- If a connection costs about what one poll costs: WP10 replaces polling with a stream
   reader, for crossword runs first, then every run. It goes through `apiCall` with its
   own cost entry in `quota.ts`.
-- If not: WP8 becomes weighted pacing (a crossword run takes a larger part of the chat
+- If not: WP10 becomes weighted pacing (a crossword run takes a larger part of the chat
   budget than a globe run), and the real fix is a quota extension from Google.
 
 ### 6.3 Cheap help either way
@@ -387,12 +408,11 @@ built (§7.3).
 
 Getting it into this app:
 
-1. **The operator imports the raw bank into this app's database** (operator's decision,
-   2026-10-04). Only two of the prototype's collections are needed, and they land under
-   prefixed names in the house style so nothing generic sits among the app's own
-   collections: `words` → `crosswordbankwords`, `clues` → `crosswordbankclues`. From
-   the February dump that is one command (dry-run checked on 2026-10-04; `weather` is
-   the local database name):
+1. **The operator imports the bank into this app's database** (operator's decision,
+   2026-10-04). Two of the prototype's collections are needed, renamed so nothing
+   generic sits among the app's own: `words` → `crosswordbankwords`, `clues` →
+   `crosswordbankclues`. From the February dump that is one stock `mongorestore`
+   command (dry-run checked on 2026-10-04; `weather` is the local database name):
 
    ```
    mongorestore --uri "mongodb://127.0.0.1:27017" \
@@ -402,23 +422,20 @@ Getting it into this app:
      /home/rich/code/thronix/dump
    ```
 
-   It adds about 1.5 GB (1,011,999 words, 878,152 clues).
-2. **`yarn crossword:bank-build`** (worker CLI, also a button on `/admin/jobs`) reads
-   those two collections through the app's own connection and writes the trimmed set to
-   `db.crosswordWords`: accepted, with clues, unflagged, 3–12 letters, not a name, place
-   or proper noun. Each document holds the word, length, frequency score, parts of
-   speech, category slugs, up to six definitions and its cleaned candidate clues.
-   Expect about 25,000 words; the build prints the count. It is idempotent, so it can be
-   re-run after a fresh import.
-   - The raw clues have no index, so the build first creates one on
-     `crosswordbankclues.answerId`.
-   - The raw collections get no Mongoose model. Only this CLI reads them, through the
-     native driver; everything else uses `db.crosswordWords`.
-   - `cleanClue` (shared, tested) runs here: strip a trailing "(N)", drop a clue that
-     contains the answer or the answer with a common ending removed, drop clues under 8
-     or over 48 characters, drop duplicates.
-3. After the build nothing reads the raw collections again. The operator can drop them,
-   and a box that only needs to play can be given `crosswordwords` alone (tens of MB).
+   It reads the dump files and loads those two collections under the new names. It adds
+   about 1.5 GB (1,011,999 words, 878,152 clues) and touches nothing else.
+2. **The bank stays whole.** It is not trimmed to a second collection: the words admin
+   (§8.3) browses all of it, and the puzzle builder (§7.3) queries it directly.
+3. **Indexes.** The prototype's collections have none, so every list page there scanned a
+   million documents. `yarn crossword:bank-index` (to be written; also a button on
+   `/admin/jobs`) builds them once after an import: on words `norm`,
+   `enrichment.status`, `updatedAt`, `length`, and one compound index for the builder's
+   pick (decision, status, length, frequency); on clues `answerId`. It is run by the
+   operator, not at worker boot, because it takes a while on a million documents.
+4. **Access.** `db.crosswordBank` is a thin repo over the two native collections, because
+   the documents keep the prototype's shape (ObjectId keys, no `id` field) and so do
+   not fit the app's typed model pattern. It carries the prototype's `listWords` and
+   `getWordById`, plus the builder's pick and the write actions in §8.3.
 - The sources (Wiktionary via Kaikki, WordNet, SCOWL, hunspell, wordfreq) go in
   [external-sources-register.md](./external-sources-register.md) with their licences
   before anything derived from them airs.
@@ -431,26 +448,33 @@ prototype repo's GPU tooling, not this app's. Its newer scripts are on that repo
 
 Job `crossword.generate` (`{ sceneId, theme? }`), background queue:
 
-1. **Pick candidates.** About 60 words from the bank at or above the scene's `minZipf`
-   (default 3.5, which leaves about 5,800 words of 4–9 letters), with a spread of
-   lengths, none used in the scene's last 20 puzzles. Seeded, so a build is repeatable.
+1. **Pick candidates.** About 60 random words from the bank that are *playable*:
+   accepted, with clues, unflagged, 3–12 letters, not a name, place or proper noun, not
+   rejected by the operator, at or above the scene's `minZipf` (default 3.5, which
+   leaves about 5,800 words of 4–9 letters), and not used in the scene's last 20
+   puzzles. A spread of lengths. Seeded, so a build is repeatable.
 2. **Lay out** (§7.1). 12–16 words are placed.
-3. **Polish the clues.** One `callOpenRouter` call covering the placed words only. For
-   each word it sends the definitions and the candidate clues, and asks for one clue of
-   at most 48 characters, for the word's most common sense, not containing the answer:
-   the best candidate, or a new one written from the definitions. The definitions are
-   the facts; the model supplies the wording. Model: `CROSSWORD_MODEL`, falling back to
-   `OPENROUTER_MODEL`. One call a puzzle, which should be well under a cent at the
-   default model; confirm from the first real calls.
-4. **Validate.** `validateClue` (pure, tested) rejects a clue under 8 or over 48
-   characters, one that contains the answer or its stem, and one that hits the
-   blocklist (a built-in list plus the operator's own). A rejected clue falls back to
-   the word's best stored clue. A word left with no usable clue is dropped and the grid
-   is laid out again without it. Fewer than `minWords` and the build fails.
+3. **Choose each clue**, in this order:
+   - a clue the operator has **approved** for that word (§8.3): used as it is, no model;
+   - otherwise **polish**: one `callOpenRouter` call covering the remaining placed
+     words. For each it sends the definitions and the candidate clues and asks for one
+     clue of at most 48 characters, for the word's most common sense, not containing
+     the answer: the best candidate, or a new one written from the definitions. The
+     definitions are the facts; the model supplies the wording. Model:
+     `CROSSWORD_MODEL`, falling back to `OPENROUTER_MODEL`. A polished clue is saved
+     back to the bank as a new candidate, so the operator can approve it and the next
+     puzzle need not ask again;
+   - with no OpenRouter key, the best stored clue after `cleanClue`.
+4. **Validate.** `cleanClue` strips a trailing "(N)". `validateClue` rejects a clue under
+   8 or over 48 characters, one that contains the answer or the answer with a common
+   ending removed, and one that hits the blocklist (a built-in list plus the
+   operator's own). A rejected clue falls back to the word's best stored clue. A word
+   left with no usable clue is dropped and the grid is laid out again without it. Fewer
+   than `minWords` and the build fails.
 5. **Store** the puzzle as `draft`, or `ready` under auto-approve (§7.4).
 
-With no OpenRouter key, step 3 is skipped and the best stored clue is used. The clues
-are weaker, but the whole path runs on a local box and in tests.
+One model call a puzzle at most, which should be well under a cent at the default
+model; confirm from the first real calls.
 
 **Themed puzzles.** The bank is general vocabulary and thin on the network's own
 subjects: 141 words tagged weather, 8 meteorology, 215 geology, 367 astronomy, 1,051
@@ -479,25 +503,84 @@ button on `/admin/jobs`.
 
 ## 8. Operator and admin
 
-One new admin page, `/admin/crosswords` (MUI admin theme), four tabs:
+The aim (operator, 2026-10-04): weather channels and crossword channels administered
+**together**, and all of the prototype's words admin brought across.
 
-| Tab | What it does |
+### 8.1 Channels: both kinds in one place
+
+Today a channel is spread over four screens: `/admin/scenes` (list, create, delete),
+`/admin/access` (tokened URLs), `/admin/streams` (encoders, slots, runs, go-live form)
+and the home launcher (cards). All four list every scene already, so a crossword scene
+appears in each of them with no new screen. What changes:
+
+| Screen | Change |
 |---|---|
-| Channels | Per crossword scene: the live board in small, **Go live** (§10), Pause/Resume, Skip clue, Reveal word, Next puzzle, and a **simulator** ("say as viewer": name + text) |
-| Puzzles | The stock: status, theme, source, plays. Open one to see the grid with answers, edit a clue, drop a word (re-lays the grid), approve or reject. Generate now, with a theme |
-| Players | Totals per player; hide and unhide |
-| Settings | The scene's `CrosswordConfig`: enabled, play off air, pacing, difficulty (`minZipf`), themes and how often, limits, auto-approve, stream delay |
+| `/admin/scenes` (Channels) | A **Type** chip on every row (Weather / Crossword) and a filter for it. The New channel form gets a type picker. The Watch link uses `watchPath`. The Control link goes to `/control` for a weather channel and to the crossword desk (§8.3) for a crossword one. Each row gains **Go live** (§10) |
+| `/admin/access` | The tokened URL is built with `watchPath`, so a crossword channel shows `/watch/crossword/<id>?token=…`. Copy and Rotate are unchanged |
+| `/admin/streams` | The scene picker shows the type. The bare encoder select becomes `EncoderSelect` (§10) |
+| Home launcher (operator face) | A crossword card shows the puzzle and its progress ("Puzzle 42 · 7 of 14") where a weather card shows the director's now and next, with Desk / Watch / Settings links |
+| Public home | The same line on the public card; no operator links, as today |
 
-- The simulator is how the whole game is exercised before any stream exists. A simulated
-  message goes through the same handler as a YouTube one, marked `sim`, and is not
-  written to the chat log.
-- `/admin/scenes/:id` for a crossword scene shows only the cards that apply (theme,
-  music bed, YouTube, about) and a link to the crossword settings. `SettingsCardDef`
-  gains `surfaces?: SceneSurface[]`. Moving the settings onto that page as a third Save
-  bucket is deferred until the scene-settings refinement work has settled.
+### 8.2 One settings page per channel, cards by type
 
-Routes, all under `public/src/app/api/crossword/`, all wrapped in `withApiLog`. Public
-holds no game logic: it reads Mongo or enqueues a foreground job.
+`/admin/scenes/:id` stays the settings page for every channel. Its card catalog learns
+which type each card applies to (`SettingsCardDef.surfaces`):
+
+- **Both types**: brand and theme, music bed, YouTube, about.
+- **Weather only**: widgets, report, slides, ticker, camera, pace, director.
+- **Crossword only**, a new "Game" group: Pacing (clue time, hints, intro and finale
+  lengths, the ceiling), Difficulty and themes (`minZipf`, the theme list,
+  `themeEvery`), Puzzles (stock target, auto-approve, no-repeat window), Chat and
+  scoring (stream delay, rate limit), and the On switch with Play off air.
+
+The crossword cards stage into the same Save bar. `SceneDraft` gains a third bucket
+beside `control` and `director`: `stageCrossword`, saved by `PATCH
+/api/crossword/:scene/config`. Nothing is live until Save, as for every other card.
+
+### 8.3 Crosswords: words, puzzles, players, desk
+
+A new admin section, `/admin/crosswords`, for what is shared across crossword channels
+or is live operation. MUI admin theme, admin-only.
+
+**Words** (`/admin/crosswords/words`, `/admin/crosswords/words/:id`): the prototype's
+words admin, ported whole.
+- List: search, starts-with letter, clue status (pending / done / rejected / failed),
+  frequency band, accepted-only and review-only switches, sort by update, word, length
+  or frequency, page size. Columns: word, length, status, part of speech, categories,
+  flags, model, validation decision, frequency, clue count, reason.
+- Totals above the list: by clue status, by validation decision, by frequency band.
+  Cached for a minute, since each is a count over a million words.
+- Detail: status, length, categories, senses and definitions, every clue with its
+  difficulty and source, the validation verdict with what each source said, and the
+  raw attempts and validation JSON.
+
+The prototype's pages only read. Because these words now go to air, the detail page adds
+the decisions (new work, not a port):
+- **Word**: Accept, Reject or Review (writes the validation decision, marked as the
+  operator's), and the adult / vulgar / offensive flags.
+- **Clue**: Approve, Reject or Edit. An approved clue is used as it is and skips the
+  model (§7.3). A rejected clue is never picked.
+- **Write clues**: one model call for this word, adding candidates. Operator-triggered
+  only; nothing here enriches the bank on a schedule.
+
+**Puzzles** (`/admin/crosswords/puzzles`): the stock, with status, theme, source and
+plays. Open one to see the grid with answers, edit a clue, drop a word (which re-lays
+the grid), approve or reject. Generate now, with an optional theme. Each word links to
+its page in Words.
+
+**Players** (`/admin/crosswords/players`): totals per player; hide and unhide.
+
+**Desk** (`/admin/crosswords/desk/:scene`): the live operation of one crossword channel,
+the counterpart of `/control`. The board in small, Pause/Resume, Skip clue, Reveal word,
+Next puzzle, Go live and End, and a **simulator** ("say as viewer": name and text). The
+simulator is how the whole game is exercised before any stream exists. A simulated
+message goes through the same handler as a YouTube one, marked `sim`, and is not
+written to the chat log.
+
+### 8.4 Routes
+
+All under `public/src/app/api/crossword/`, all wrapped in `withApiLog`. Public holds no
+game logic: it reads Mongo or enqueues a foreground job.
 
 | Route | Gate | Does |
 |---|---|---|
@@ -505,6 +588,9 @@ holds no game logic: it reads Mongo or enqueues a foreground job.
 | `POST :scene/sim` | admin | enqueues `crossword.inject` with a simulated message |
 | `POST :scene/command` | admin | enqueues `crossword.inject` with pause, resume, skipClue, reveal or nextPuzzle |
 | `GET`/`PATCH :scene/config` | admin | the scene's config; the runner re-reads it each tick |
+| `GET words`, `GET words/:id` | admin | the ported list (with totals) and detail |
+| `PATCH words/:id`, `PATCH clues/:id` | admin | the word and clue decisions |
+| `POST words/:id/clues` | admin | enqueues `crossword.writeClues` for one word |
 | `GET puzzles`, `PATCH puzzles/:id` | admin | list, edit, approve, reject |
 | `POST generate` | admin | enqueues `crossword.generate` |
 | `GET players`, `PATCH players/:id` | admin | list, hide |
@@ -514,20 +600,22 @@ holds no game logic: it reads Mongo or enqueues a foreground job.
 | Collection | Facade | One per | Holds |
 |---|---|---|---|
 | broadcast states (existing) | — | scene | + `surface` |
-| `crosswordconfigs` | `db.crosswordConfig` | scene | enabled, `playOffAir`, pacing, themes, limits |
+| `crosswordconfigs` | `db.crosswordConfig` | scene | enabled, `playOffAir`, pacing, difficulty, themes, limits |
 | `crosswordpuzzles` | `db.crosswordPuzzles` | puzzle | §4.1 |
 | `crosswordgames` | `db.crosswordGames` | scene | §4.2, including `pub` |
 | `crosswordsolves` | `db.crosswordSolves` | solve | scene, puzzle, entry, player, points, time |
 | `crosswordplayers` | `db.crosswordPlayers` | player | name, hidden, first and last seen |
-| `crosswordwords` | `db.crosswordWords` | word | word, length, frequency score, categories, definitions, candidate clues |
-| `crosswordbankwords`, `crosswordbankclues` | none (native driver, build CLI only) | raw word, raw clue | the prototype's documents as imported by the operator |
+| `crosswordbankwords` | `db.crosswordBank` (native) | word | the prototype's word document, plus the operator's decision |
+| `crosswordbankclues` | `db.crosswordBank` (native) | clue | the prototype's clue document, plus `status` (candidate / approved / rejected) and edits |
 
-Plus `db.crosswordScenes()`. Models and repos follow the existing typed pattern
-(`short-script-model.ts` / `short-script-repo.ts`). `shared/src/db/index.ts` is being
-edited by the short-video work: add lines, never rewrite. No blob namespaces.
+Plus `db.crosswordScenes()`. The game's own models and repos follow the existing typed
+pattern (`short-script-model.ts` / `short-script-repo.ts`); the bank is the exception
+(§7.2). `shared/src/db/index.ts` is being edited by the short-video work: add lines,
+never rewrite. No blob namespaces.
 
-Jobs: `crossword.inject` (foreground), `crossword.generate` and `crossword.topUp`
-(background). The runner itself is not a job.
+Jobs: `crossword.inject` (foreground); `crossword.generate`, `crossword.topUp`,
+`crossword.writeClues` and `crossword.bankIndex` (background). The runner itself is not
+a job.
 
 ## 10. Streaming
 
@@ -535,15 +623,17 @@ Jobs: `crossword.inject` (foreground), `crossword.generate` and `crossword.topUp
 to crosswords and none is added: there are several registered, and the picker shows
 what each is doing so a busy one is never taken.
 
-- **Go live** on the Channels tab opens the run form with the crossword scene filled in:
-  encoder, YouTube channel, privacy, title, and a duration or open-ended. It posts the
-  same `POST /api/streams` a one-off run does, with `encoderId` set.
+- **Go live** sits on every row of the Channels list (§8.1) and on the crossword Desk.
+  It opens the run form with that channel filled in: encoder, YouTube channel, privacy,
+  title, and a duration or open-ended. It posts the same `POST /api/streams` a one-off
+  run does, with `encoderId` set. Weather channels get the same button.
 - The encoder select is the short-video plan's `EncoderSelect` over its
   `encoderOccupancy` helper (free, live, held by a slot, booked, disabled). A live or
   held encoder cannot be chosen.
 - `provisionEncoderScene` gains the `sceneId` override the short-video plan specifies,
-  so the picked encoder shows `/watch/<crossword scene>` for the run and goes back to
-  its own scene when the run ends.
+  so the picked encoder shows the run's channel and goes back to its own scene when the
+  run ends. `watchUrlForScene` builds the URL with `watchPath`, so a crossword run
+  loads `/watch/crossword/<id>?token=…`.
 - Both pieces belong to short-video WP5, which is not built. Whichever plan reaches
   them first builds them, to that plan's spec, and the other reuses them.
 - An always-on crossword stream stays possible later: a slot already stores an
@@ -564,44 +654,48 @@ run `./update-shared`; never while another agent is testing.
 
 | WP | Owns | Builds | Needs |
 |---|---|---|---|
-| 1 | `shared/src/crossword*.ts`, `shared/src/db/crossword-*`, the `surface` lines in `control.ts`, `broadcast-state-model.ts`, `db/index.ts` | Types, `parseGuess`, numbering, scoring, hint schedule, spotlight pick, late credit, `toPublicState`, name cleaning, `cleanClue`, `validateClue`, the seed set, models, repos (including `crosswordWords`), `surface` | — |
-| 2 | `worker/src/crossword/{layout,pick,build}.ts`, `worker/src/scripts/crossword*.ts` | `crossword:bank-build` (§7.2), candidate pick, layout search, puzzle build with stored clues (§7.3 steps 1, 2, 4, 5), `yarn crossword:build`, `yarn seed:crossword-scene`, the sources registered | 1 |
+| 1 | `shared/src/crossword*.ts`, `shared/src/db/crossword-*`, the `surface` and `watchPath` lines in `control.ts`, `broadcast-state-model.ts`, `db/index.ts` | Types, `parseGuess`, numbering, scoring, hint schedule, spotlight pick, late credit, `toPublicState`, name cleaning, `cleanClue`, `validateClue`, the seed set, the game's models and repos, the bank repo (`listWords`, `getWordById`, the pick), `surface`, `watchPath` | — |
+| 2 | `worker/src/crossword/{layout,pick,build}.ts`, `worker/src/scripts/crossword*.ts` | `crossword:bank-index`, candidate pick, layout search, puzzle build with stored clues (§7.3 without the model), `yarn crossword:build`, `yarn seed:crossword-scene`, the sources registered | 1 |
 | 3 | `worker/src/crossword/{runner,inject,state}.ts`, the crossword lines in `worker/src/index.ts` | Host loop, persistence and resume, emit and beat, `crossword.inject` job | 1 |
-| 4 | `public/src/components/crossword/`, `public/src/lib/crossword.ts`, `watch/[scene]/page.tsx`, `api/crossword/[scene]/state` | Surface switch, `GlobeWatch` extraction, the on-air components, `useCrosswordState` (cold start + resync), `BroadcastBed` `pulseKey` | 1 |
-| 5 | `public/src/app/admin/crosswords/`, `public/src/components/admin/crosswords/`, the other `api/crossword` routes, scene create form, `catalog.ts` `surfaces` | Admin page with all four tabs, simulator, commands, config | 1 |
+| 4 | `public/src/app/watch/crossword/`, `public/src/components/crossword/`, `public/src/lib/crossword.ts`, `api/crossword/[scene]/state` | The new tokened watch page, the on-air components, solve effects, `useCrosswordState` (cold start + resync), `BroadcastBed` `pulseKey`, the redirect between the two watch routes | 1 |
+| 5 | `public/src/app/admin/crosswords/words/`, `public/src/components/admin/crosswords/words/`, `api/crossword/words` | The words admin, ported: list with filters and totals, detail (§8.3). Read-only in this package | 1 |
+| 6 | `public/src/app/admin/crosswords/{puzzles,players,desk}/`, their components, the sim, command, puzzles and players routes | Puzzles, Players and the Desk with its simulator and controls | 1 |
+| 7 | `public/src/app/admin/scenes/`, `admin/access`, `ChannelLauncher`, `PublicChannels`, `components/admin/scenes/{catalog,SceneDraft}` and the new Game cards, `api/crossword/[scene]/config` | Both kinds together (§8.1, §8.2): type on the Channels list and New form, `watchPath` everywhere, cards by type, the crossword bucket in the Save bar, the launcher and public cards | 1 |
 
-WP1 first, then freeze `shared/`. WP2 and WP3 can run together; WP4 and WP5 can run
-together. The operator's import of the raw bank (§7.2 step 1) comes before WP2's build
-can be run for real; WP2's tests use a small fixture.
+WP1 first, then freeze `shared/`. After that WP2 and WP3 can run together, and WP4 to
+WP7 can run together (their folders do not overlap). The operator's import of the bank
+(§7.2 step 1) comes before WP2's build or WP5's pages can be tried for real; their
+tests use a small fixture.
 
-**Milestone M0**: with `playOffAir` on, `/watch/crossword` plays puzzles built from the
-imported bank on a local box; the operator answers through the simulator and takes
-words from the host; a worker restart mid-puzzle resumes it; the wire payload has no
-unsolved answer in it.
+**Milestone M0**: both kinds of channel show in the Channels list; the words admin
+browses the imported bank; with Play off air on, `/watch/crossword/<id>` plays puzzles
+built from the bank on a local box; the operator answers through the Desk's simulator
+and takes words from the host; a worker restart mid-puzzle resumes it; the wire payload
+has no unsolved answer in it.
 
 ### P1 — on YouTube
 
 | WP | Builds | Needs |
 |---|---|---|
-| 6 | Chat hookup: `authorChannelId` through `ChatMessage` and the chat log, `crossword/chat.ts`, rate limit, players, today and all-time boards, `inputLive`, `:modes` skipped | M0 |
-| 7 | The `streamList` probe script (§6.2). The operator runs it and reads the quota graph | — (can start now) |
-| 8 | Chat transport: the stream reader if the probe passes, weighted pacing if not | 7 |
-| 9 | Clue polish through OpenRouter (§7.3 step 3), themed puzzles checked against the bank, the `crossword.generate` job, `crossword.topUp`, the review flow on the Puzzles tab | M0 |
-| 10 | Going live (§10): the Go live dialog with the encoder picker, the provision `sceneId` override and restore, low-latency preference on crossword broadcasts, a line for the public home card ("Puzzle 42 · Volcanoes · 7 of 14"), title and description defaults | M0; shares `EncoderSelect`, `encoderOccupancy` and the override with short-video WP5 |
+| 8 | Chat hookup: `authorChannelId` through `ChatMessage` and the chat log, `crossword/chat.ts`, rate limit, players, today and all-time boards, `inputLive`, `:modes` skipped | M0 |
+| 9 | The `streamList` probe script (§6.2). The operator runs it and reads the quota graph | — (can start now) |
+| 10 | Chat transport: the stream reader if the probe passes, weighted pacing if not | 9 |
+| 11 | Clues for air: the word and clue decisions on the Words detail page, `crossword.writeClues`, clue polish through OpenRouter (§7.3 step 3), themed puzzles, `crossword.generate` as a job, `crossword.topUp`, the review flow on the Puzzles tab | M0 |
+| 12 | Going live (§10): the Go live dialog with the encoder picker on the Channels list and the Desk, `watchUrlForScene` using `watchPath`, the provision `sceneId` override and restore, low-latency preference on crossword broadcasts, title and description defaults | M0; shares `EncoderSelect`, `encoderOccupancy` and the override with short-video WP5 |
 
 **Milestone M1**: an unlisted run on the TEST box, on an encoder picked in the dialog,
-with real chat (WP6 and WP10).
-**Launch gate**: answers land within about 10 seconds of being sent (WP8).
+with real chat (WP8 and WP12).
+**Launch gate**: answers land within about 10 seconds of being sent (WP10).
 
 ### P2 — depth
 
 | WP | Builds |
 |---|---|
-| 11 | A bigger bank: import again after the prototype repo clears its review words and clues more of them; tidy the category slugs enough to theme straight from the bank |
-| 12 | An as-run entry per puzzle, so chapters and the VOD page work |
-| 13 | Solve chime and finale riser in the bed; spoken clues once the presenter plan's voice path exists |
-| 14 | Puzzles themed from the pipeline's own facts (today's warnings, quakes, named storms): facts from Mongo, wording from the model |
-| 15 | A second-screen play page off a QR code. It is a public write surface, so it needs its own abuse plan first |
+| 13 | A bigger bank: import again after the prototype repo clears its review words and clues more of them; tidy the category slugs enough to theme straight from the bank |
+| 14 | An as-run entry per puzzle, so chapters and the VOD page work |
+| 15 | The host's voice and face: the prototype's phrase bank as feed lines, a solve chime and finale riser in the bed, then spoken clues and the animated presenter once the presenter plan's voice path exists |
+| 16 | Puzzles themed from the pipeline's own facts (today's warnings, quakes, named storms): facts from Mongo, wording from the model |
+| 17 | A second-screen play page off a QR code. It is a public write surface, so it needs its own abuse plan first |
 
 ## 12. Tests
 
@@ -609,37 +703,49 @@ with real chat (WP6 and WP10).
   crossings and stream delay; hint schedule; spotlight pick; late credit; name cleaning;
   `cleanClue` and `validateClue`; `toPublicState` leaks no unsolved letter; schema parity for
   `surface`.
-- **worker**: the bank build trims and cleans a fixture and is idempotent; the candidate
-  pick honours `minZipf` and the no-repeat window; layout places the seed set, is
+- **shared (bank repo, against a small fixture)**: every list filter and sort, the three
+  totals, the detail lookup, the playable pick, the word and clue decisions.
+- **worker**: the bank index CLI is idempotent; the candidate pick honours `minZipf`,
+  operator rejections and the no-repeat window; an approved clue is used without a model
+  call; a polished clue is saved back as a candidate; layout places the seed set, is
   deterministic for a seed and yields;
   runner phase transitions on a fake clock; first answer wins; auto-reveal; the ceiling;
   resume from a stored game; next-puzzle choice and the no-repeat window; inject from
   the simulator writes no chat log; the generate job with a mocked OpenRouter reply
   (good clues, bad JSON, a leaking clue falling back to the stored one, too few
   survivors) and with no key at all.
-- **public**: the watch page picks the right body per surface; grid renders shown letters
-  only; countdown from `serverNow`; state hook refetches on a `seq` gap; every route's
-  gate; admin tabs stage and save.
+- **public**: the crossword watch page refuses a bad token and redirects a globe scene;
+  the weather watch page's tests pass unchanged; grid renders shown letters only;
+  countdown from `serverNow`; state hook refetches on a `seq` gap; every route's gate;
+  the words list builds its query from the filters; the Channels list, Access page and
+  launcher use `watchPath`; the catalog shows cards by type; the Game cards stage into
+  the Save bar.
 
 ## 13. Decisions taken, and questions for the operator
 
 Decisions (change here if wrong):
-1. Crossword is a scene **surface**, not a director mode and not a new route.
-2. The worker owns the game; public only draws it. The solution never goes on the wire.
-3. Viewers answer with the bare word; a ref is optional.
-4. The host solves what nobody answers, so the channel never stalls.
-5. Game settings live on `/admin/crosswords` for now, not as scene-page cards.
-6. Clues are polished through OpenRouter and start behind an approval gate.
-7. No chat replies; no avatars on air, names only.
-8. The prototype's Python stays in its own repo; only its exported data is imported.
-9. The operator picks the encoder at go-live, as for shorts. No encoder is dedicated to
-   crosswords (operator, 2026-10-04: there are several, so one is always free to pick).
-10. The February word bank is the word source from the first milestone. The operator
-    imports its raw collections into this app's database; a worker build trims them.
-    Its stored clues are candidates, never aired unpolished except with no LLM key on a
-    dev box.
-11. Difficulty comes from word frequency (`minZipf`), not from the bank's stored clue
+1. A crossword channel is a scene with `surface: "crossword"`, so it shares tokens,
+   runs, encoders and settings with weather channels.
+2. It has its own tokened watch page, `/watch/crossword/:id`. The weather watch page is
+   not touched (operator, 2026-10-04).
+3. Both kinds are administered together: one Channels list, one settings page with
+   cards by type, one Save bar (operator, 2026-10-04).
+4. The worker owns the game; public only draws it. The solution never goes on the wire.
+5. Viewers answer with the bare word; a ref is optional.
+6. The host solves what nobody answers, so the channel never stalls.
+7. The operator picks the encoder at go-live, as for shorts. No encoder is dedicated to
+   crosswords (operator, 2026-10-04).
+8. The whole February word bank is imported by the operator and kept; the prototype's
+   words admin is ported in full (operator, 2026-10-04). The puzzle builder reads the
+   bank directly.
+9. Stored clues are candidates. A clue reaches air by operator approval or by a model
+   polish from the word's definitions; raw stored clues air only with no LLM key on a
+   dev box.
+10. Difficulty comes from word frequency (`minZipf`), not the bank's stored clue
     difficulty.
+11. Nothing enriches the bank on a schedule. Writing clues is operator-triggered.
+12. No chat replies; no avatars on air, names only.
+13. The prototype's Python and GPU services stay in its own repo.
 
 Questions:
 1. **Subject matter.** The bank is general vocabulary, so the plan makes general
@@ -648,5 +754,9 @@ Questions:
    the channel be themed only?
 2. **Auto-approve**: is starting behind review and switching to auto once the clues are
    trusted acceptable, given the channel will replay puzzles until then?
-3. **The committed `.env` in `../crosswords`** holds five provider keys and is pushed to
-   its remote. They should be rotated whether or not this plan goes ahead.
+3. **Word decisions on the Words page.** The prototype's words pages only read. This
+   plan adds accept / reject and clue approve / edit, because the words now go to air.
+   Wanted from the start (it sits in P1, WP11), or is browsing enough for now?
+4. **The committed `.env` files in `../crosswords`** (`.env` on both branches, and
+   `ai-services/.env` on `0.1`) are pushed to its remote. The root one holds five
+   provider keys. They should be rotated whether or not this plan goes ahead.

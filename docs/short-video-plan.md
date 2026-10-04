@@ -106,7 +106,10 @@ export interface ShortScript {
   template: "lineup";
   scope: ShortScope;
   include: ShortInclude;
+  /** A working title for the admin list. The video's title comes from the format. */
   title: string;
+  /** Values for the title codes, stamped at generate (§6.8). To add in WP7a. */
+  values?: Record<string, string>;
   clips: ShortClip[];
   status: "draft" | "ready";
   /** The latest play per scene. Written by the runner only. */
@@ -175,6 +178,10 @@ three include switches give every variant.
   The budget never cuts a round-up short.
 - A place with no round-up, or a globe with no fresh world round-up, is an error with
   a reason, not a video.
+- **Depth.** `summary` shows and times only the round-up's summary. `full` shows all of
+  it: summary, state of play, city outlooks and advice. The clip carries the depth to
+  the on-air panel (`ShortClip.roundupDepth`, `Segment.roundupDepth`), and the opener's
+  length follows from what is shown.
 
 **With events** (switches on):
 
@@ -196,8 +203,11 @@ three include switches give every variant.
 **Several places in one video** (`places` scope, the main areas round-up):
 - One clip per place, in the order given. Each is that place's opener: its tour, with
   its round-up leading, as long as the round-up takes to read.
-- The list mixes countries and areas. "USA" and "Australia" are countries; "Europe",
-  "Asia", "Africa" and "South America" are areas.
+- The operator picks the places and their order. The list can mix countries and areas
+  freely: USA the country or North America the area, Australia or Oceania.
+- How much of each round-up is shown is a format setting: the summary only (about two
+  minutes for six places) or the full round-up (five to eight).
+- The world round-up can open the video. That is a format setting too, off by default.
 - A place with no round-up is left out and named in the result. With none left, it is
   an error.
 - It closes on a world spin.
@@ -240,7 +250,7 @@ works on it unchanged:
 |---|---|
 | on-air widgets, report content, deck slides, crawl | director kinds, weights and favourites (the script picks the content) |
 | theme, camera idle motion, music bed, reading pace | stream slots and chat |
-| about card, YouTube description and thumbnail | |
+| about card | the channel YouTube card (a format has its own, §6.8) |
 | look per shot type, transition time, alert and quake thresholds | |
 
 **Its short settings.** A new document, keyed by the same id:
@@ -252,20 +262,42 @@ export interface ShortFormat {
   id: string;
   name: string;
   /** What Generate starts from. A request can override any of it. */
-  template: { scope?: ShortScope; include: ShortInclude; budgetMs: number };
+  template: {
+    scope?: ShortScope;
+    include: ShortInclude;
+    budgetMs: number;
+    /** Several places: open on the world round-up before the first place. */
+    openWithWorld: boolean;
+  };
   opener: {
     /** Open the deck on the round-up. */
     leadWithRoundup: boolean;
+    /** How much of a place round-up is shown: its summary, or all of it. */
+    roundupDepth: "summary" | "full";
     /** Fly the tour, or hold one framed shot. */
     tour: boolean;
     minTourDwellMs: number;
   };
   close: { enabled: boolean; ms: number };
-  /** "{place} round-up · {date}". Resolved at generate into the script's title,
-   *  which becomes the video's title. */
-  titlePattern: string;
+  /** Everything YouTube is told about the video (§6.8). Templates take the date
+   *  codes the live titles use, plus the video's own values. */
+  video: {
+    title: string;              // "%{place} round-up · %A %e %B"
+    description: string;
+    /** Zone the date codes resolve in: an IANA zone, or "place" for the video's
+     *  own place. Default "Europe/London", as live titles. */
+    timezone: string;
+    thumbnail: { source: "image"; url: string } | { source: "frame"; atMs: number };
+    tags: string[];
+    categoryId: string;
+    playlistId?: string;
+    publishAs: YoutubePrivacy;
+    chapters: boolean;
+  };
+  /** Timing around the script inside the broadcast. */
+  timing: { leadInMs: number; leadOutMs: number };
   /** What the render form and schedules start from. */
-  render: { encoderId?: string; accountId?: string; privacy: YoutubePrivacy };
+  render: { encoderId?: string; accountId?: string };
   /** "portrait" arrives with phase 2. */
   layout: "landscape";
 }
@@ -291,8 +323,9 @@ renders, and `shorts-preview` is retired.
 ### 5.4 How the rest uses a format
 
 - **Generate** takes `formatId`. Scope, switches and budget default from the format's
-  template. Thresholds, holds and reading pace come from its scene. `opener`, `close`
-  and `titlePattern` shape the script.
+  template. Thresholds, holds and reading pace come from its scene. `opener` and
+  `close` shape the script. Generate also stamps the script's values for the title
+  codes (§6.8).
 - **Scripts** store `formatId`. A script with none uses the default format.
 - **Render** (§6) runs on the format's scene and starts from its render defaults.
 - **Schedules** (§8) carry `formatId`.
@@ -314,10 +347,10 @@ format, Duplicate, Delete).
 
 | Group | Cards |
 |---|---|
-| Video | Template · Opener and close · Title · Render defaults |
+| Video | Template · Opener and close · YouTube video · Timing · Render defaults |
 | Layout | On-air widgets · Report · Deck slides · Crawl |
 | Presentation | Theme · Camera · Music bed · Reading pace · Looks and thresholds |
-| Identity | About card · YouTube |
+| Identity | About card |
 
 - **Looks and thresholds** is new on a settings page: transition time, look per shot
   type, minimum alert severity and quake magnitude. Those live on `/control` for
@@ -356,13 +389,18 @@ A**, because Shorts need an uploaded portrait file (§10). B is dropped.
 One dialog, opened from a script's Render button and from a schedule (§8). It starts
 from the format's render defaults.
 
-- **Encoder:** the operator picks it. The picker shows what each one is doing (§6.2).
+- **Encoder:** the operator picks it. Encoders assigned to videos (§6.6) come first and
+  the first of them is preselected. The picker shows what each one is doing (§6.2).
 - **YouTube channel:** the same connected-account select the streams form uses. Shorts
   go on the same channel as the live streams unless another is picked.
-- **Publish as:** public, unlisted or private. Default unlisted. It is applied when the
-  run ends (§6.3).
+- **Publish as:** public, unlisted or private. It starts from the format's setting and
+  is applied when the run ends (§6.3).
+- **Title:** shown resolved, from the format's template. It can be changed for this one
+  video (§6.8).
 - **Mode:** *Offline test* (§7) or *Live*.
 - **When:** *Now*, or *At* a date and time. Repeating runs live on schedules (§8).
+  Either way the video joins that encoder's queue (§6.6). It doesn't have to wait for
+  the encoder to be free.
 
 ### 6.2 "This encoder is in use"
 
@@ -375,12 +413,14 @@ returned per encoder by the `/api/streams` snapshot:
 | free | "free" |
 | live | "live: Main channel, since 14:02" plus "until 14:32" when the run is bounded |
 | held | "held by always-on slot Main". An enabled slot owns its encoder even between runs |
-| booked | "free, short booked 18:00" for the next schedule within 24 hours |
+| rendering | "rendering: Europe round-up, 2 more queued" |
+| booked | "free, batch booked 18:00" for the next schedule within 24 hours |
 | disabled | greyed out |
 
 A new `EncoderSelect` component renders it and replaces the bare select on
-`/admin/streams` too. For *Now*, a live or held encoder can't be chosen. For *At*, it
-can, with a warning. The form is advisory: the render job checks again when it fires.
+`/admin/streams` too. A live or held encoder can't be chosen for a video. A rendering
+one can: the video queues behind it. The form is advisory; the queue checks again when
+the video reaches the front.
 
 ### 6.3 What YouTube sees
 
@@ -392,12 +432,12 @@ can, with a warning. The form is advisory: the render job checks again when it f
   applied when it ends. A public video then appears finished, with no live blip.
 - **The VOD starts when the broadcast goes live.** The script starts 3 s after that and
   the run ends 5 s after the script does, so nothing is clipped. Those few seconds show
-  the format's idle globe.
-- **Title:** the script's title. **Description and thumbnail:** the format's YouTube
-  card, the same one a channel has.
-- **Chapters:** the existing as-run chapter job writes them when the run ends. YouTube
-  shows chapters only with three or more, so they appear on the main areas video and
-  not on a single-place one.
+  the format's idle globe. Both are format settings.
+- **Title, description, thumbnail, tags, category, playlist:** all from the format's
+  YouTube video card (§6.8).
+- **Chapters:** the existing as-run chapter job writes them when the run ends, if the
+  format has them on. YouTube shows chapters only with three or more, so they appear on
+  the main areas video and not on a single-place one.
 - **Quota:** about 400 units a video (create, bind, two transitions, thumbnail,
   description, privacy), of 10,000 a day.
 - Chat is off and nothing is announced.
@@ -428,10 +468,9 @@ No job sits waiting for the video to finish. The steps are chained by small hook
 the state in Mongo, so a worker restart can't strand a render. They live in one new
 file, `worker/src/stream/script-run.ts`.
 
-1. **`short-video.render`** (a short job). Refuse, with a reason, if the encoder is busy,
-   the script's scene is already rendering, or the script resolves to no clips.
-   Otherwise create the `Run` (title from the script, privacy unlisted, `durationMs` as
-   a safety cap of script length plus two minutes) and call `goLive`. The job ends here.
+1. **Start.** When a video reaches the front of its encoder's queue (§6.6), the queue
+   creates the `Run` (title from the script, privacy unlisted, `durationMs` as a safety
+   cap of script length plus two minutes) and calls `goLive`.
 2. **On live.** `transitionToLive` calls `onScriptRunLive(run)`, which starts the script
    on its scene after the 3 s lead-in, with `record: true`, and stores the nonce on the
    run.
@@ -443,10 +482,184 @@ file, `worker/src/stream/script-run.ts`.
 5. **Restart.** `rearmLiveRuns` already restores monitors at boot. For a live script run
    whose play was cut short by the restart, it ends the run and marks it failed. The
    safety cap ends anything else.
+6. **Next.** When a run ends or fails, the queue records the result and starts the next
+   video on that encoder.
 
-`/admin/streams/:id` already shows the result, joined by scene and time window. The
-script's row on `/admin/shorts` lists its renders: status, reason if failed, and the
-YouTube link.
+`/admin/streams/:id` already shows the result, joined by scene and time window.
+
+### 6.6 An OBS assigned to videos, and the render queue
+
+**Assigning.** An encoder gets a use: `channels` (today's behaviour) or `videos`. It is
+set on the encoders card on `/admin/streams`, where encoders are registered.
+- A video encoder is not bound to a channel. Its browser source is pointed at each
+  video's scene as that video starts.
+- The channel go-live form and the slot form don't offer it, so a channel can't take
+  it by accident.
+- The operator still chooses. The form and each schedule pick a named video encoder or
+  **Any video encoder**. A free channel encoder can be chosen too, with a warning.
+- Three OBS instances on gds1 are available for this.
+
+**The queue.** One OBS instance makes one video at a time, so each encoder has a queue
+and works through it in order. This is what makes a batch possible: three videos due
+at 07:00 run back to back on the assigned OBS.
+
+With several video encoders, a video queued for **Any video encoder** goes to whichever
+is idle first, so a batch can run side by side. Two limits apply:
+- **One video per format at a time.** A format plays on its own scene, so two videos
+  in the same format can't render together. They run one after the other even with
+  encoders free. A batch only runs in parallel across different formats.
+- Each render is another `/watch` page drawing on the encoder host, next to the
+  always-on channels. Try three at once on gds1 before relying on it.
+
+```ts
+// shared/src/short-render.ts
+export interface ShortRender {
+  id: string;
+  /** A named encoder, or "any" for the first idle video encoder. */
+  encoderId: string | "any";
+  /** A saved script, or a request to generate one when this reaches the front. */
+  what:
+    | { type: "script"; scriptId: string }
+    | { type: "generate"; formatId: string; scope: ShortScope; include?: ShortInclude };
+  publishAs: YoutubePrivacy;
+  offline: boolean;
+  /** How fresh the round-up must be (§8). Checked at the front of the queue. */
+  roundup?: { maxAgeHours: number; ifStale: "refresh" | "skip" };
+  scheduleId?: string;
+  /** Set when a schedule queued several videos together. */
+  batchId?: string;
+  status: "queued" | "preparing" | "live" | "done" | "skipped" | "failed" | "cancelled";
+  /** Give up if it hasn't started by then. */
+  startBy?: number;
+  queuedAt: number;
+  startedAt?: number;
+  endedAt?: number;
+  scriptId?: string;
+  runId?: string;
+  videoUrl?: string;
+  note?: string;
+}
+```
+
+- **Generated at the front, not when queued.** The freshness check, the round-up
+  refresh and the script generation happen as the video reaches the front, so the
+  third video of a batch isn't made from data that was current when the first started.
+- **One failure doesn't stop the batch.** A failed or skipped video is recorded with
+  its reason and the queue moves on.
+- **`startBy`.** A video still waiting past its `startBy` is marked `skipped: too late`.
+  Scheduled videos get the schedule's time plus an hour. Render now has none.
+- **Paused.** Each encoder's queue can be paused. A paused queue finishes the video
+  that is live and starts nothing new.
+- A channel run on the same encoder blocks the queue until it ends. The queue never
+  pre-empts it.
+- The queue lives in `worker/src/stream/render-queue.ts`. It advances when a video is
+  queued, when a run ends, and on the 60 s ticker, so nothing is lost across a restart.
+
+### 6.7 Controls, like the live stream page
+
+A render is a `Run`, so it reuses what `/admin/streams` already has: the status badge,
+the OBS and YouTube health readout, the socket updates, End stream, the as-run page.
+`/admin/shorts` gets a **Renders** section that reads the same way as the runs list on
+the streams page.
+
+| Control | Where | Does |
+|---|---|---|
+| Render | a script's row; the generate form | queue it on a chosen encoder |
+| Run batch now | a schedule's row | queue all its videos now |
+| Status | each queue row | queued (position), preparing, awaiting ingest, live with clip 2 of 3 and time left, done, skipped, failed |
+| Health | the live row | OBS bitrate and dropped frames, YouTube ingest, the same readout as a channel run |
+| Stop | the live row | end this video now; it fails, the queue continues |
+| Cancel | a queued row | remove it |
+| Retry | a failed or skipped row | queue it again |
+| Pause, Resume | the encoder's queue header | hold the queue after the current video |
+| Watch, As-run | a done row | the YouTube link; `/admin/streams/:id` |
+
+- The preview pane shows the live render, because it plays on the same scene.
+- On `/admin/streams`, video renders are labelled as such and can be filtered out, so
+  the channel runs stay readable.
+- Recent renders stay listed with their outcome and reason.
+
+### 6.8 Titles and the rest of what YouTube is told
+
+Live broadcasts already take a title template with date codes (`%d`, `%B`, `%H:%M`),
+resolved by `formatStreamTitle` in London time. Videos use the same codes and add the
+video's own values, written `%{name}`. The existing codes are single letters, so the
+braces can't clash with them.
+
+| Code | Value | Example |
+|---|---|---|
+| `%d` `%B` `%A` `%H` … | every date code a live title takes | `08`, `September`, `Tuesday`, `14` |
+| `%{place}` | the scope's name; for several places, the list | `Europe` · `United Kingdom` · `World` |
+| `%{places}` | how many places | `6` |
+| `%{flag}` | a country's flag | 🇬🇧 |
+| `%{kind}` | what the video is | `round-up` · `alerts and earthquakes` |
+| `%{format}` | the format's name | `Country round-up` |
+| `%{duration}` | the video's length | `1:45` |
+| `%{asOf}` | when the round-up was written, local to the place | `06:00` |
+| `%{headline}` | the round-up's first sentence | |
+| `%{roundup}` | the round-up's text, for descriptions | |
+| `%{alerts}` `%{quakes}` `%{volcanoes}` | active counts in the scope | `12` |
+| `%{top}` | the top event's on-air title | `Red wind warning` |
+| `%{n}` | this schedule's running number | `214` |
+
+- **Time zone is a setting.** Date codes resolve in London time by default, as live
+  titles do. A format can name another zone, or "the place's own", so an Australia
+  video is dated in Australian time. A video of several places has no single place and
+  uses London.
+- **One resolver.** `shared/src/video-text.ts`: the code list (name, label, example) and
+  `formatVideoText(template, values, date, timezone)`. It handles `%{name}` and the date codes
+  in one pass, so a value containing a `%` is never expanded again. `formatStreamTitle`
+  keeps its behaviour and shares the date table.
+- **Values are stamped on the script** when it is generated (`ShortScript.values`), so
+  the editor can preview a title with real values and the render resolves it without
+  recomputing anything. `%{duration}` and the date codes are filled at render time.
+- **Resolved at render, used as written.** The queue resolves title and description and
+  puts them on the run. `goLive` uses them as they are for a script run and does not
+  run them through the channel's title template again.
+- **Limits.** A title over YouTube's 100 characters is cut at a word with an ellipsis.
+  A description over the limit is cut the way live descriptions are. The preview shows
+  both before anything is rendered.
+- **The same field as live titles.** The title and description fields reuse the token
+  picker the stream title field has, with a second group of chips for the video's
+  values and a live preview against the format's most recent script.
+
+The **YouTube video** card on a format:
+
+| Setting | Notes |
+|---|---|
+| Title | template, required |
+| Description | template; the site link and chapters are appended as they are for live |
+| Time zone for date codes | London by default; another zone, or the place's own |
+| Thumbnail | an image (URL or site path, itself a template: `/thumbs/%{place}.png`), or a frame of the video at a set second, taken from OBS during the render |
+| Tags | list |
+| Category | YouTube category |
+| Playlist | add the finished video to it |
+| Publish as | public, unlisted or private, applied when the run ends |
+| Chapters | on or off |
+
+Tags and category can't be set when a broadcast is created. They go on with the privacy
+change at the end, in one `videos.update`. A playlist add is one more call.
+
+A schedule's video can override any of these for itself (`ScheduledVideo.video`), and
+the Render form can override the title for a one-off.
+
+### 6.9 Nothing fixed in code
+
+Every number and string in this plan that shapes a video is a setting, with the value
+given here as its default. Where each lives:
+
+| On the format | On the schedule | On the deployment |
+|---|---|---|
+| look, widgets, deck, crawl, theme, music, reading pace | time, days, timezone | go-live deadline (2 min) |
+| template: scope (the places and their order), switches, budget, world round-up first | encoder, YouTube channel | safety cap on a run (script length + 2 min) |
+| opener: round-up leads, round-up depth, tour, minimum dwell (8 s), opener share (40%) | the videos and their order | ticker interval (60 s) |
+| close: on or off, length (6 s) | round-up freshness (12 h), refresh or skip | missed-schedule window (10 min) |
+| YouTube video card (above) | start-by window (1 h) | |
+| timing: lead-in (3 s), lead-out (5 s) | per-video overrides | |
+| render defaults: encoder, YouTube channel | offline test or live | |
+
+The deployment column is env with a default, like the existing `VOD_LEAD_MS`. Those
+protect the system and aren't creative choices.
 
 ## 7. Offline test
 
@@ -480,10 +693,8 @@ A test that also exercises YouTube is *Live* mode with privacy set to private.
 
 ```ts
 // shared/src/short-schedule.ts
-export interface ShortSchedule {
-  id: string;
-  name: string;
-  enabled: boolean;
+/** One video in a schedule's batch. */
+export interface ScheduledVideo {
   formatId: string;
   what:
     | { type: "script"; scriptId: string }
@@ -498,20 +709,24 @@ export interface ShortSchedule {
   roundup: { maxAgeHours: number; ifStale: "refresh" | "skip" };
   /** Make no video when nothing is active in the scope. */
   skipIfQuiet?: boolean;
+  /** Overrides of the format's YouTube video settings for this one video. */
+  video?: Partial<ShortFormat["video"]>;
+}
+
+/** A time, an encoder, and the videos to make then, in order. */
+export interface ShortSchedule {
+  id: string;
+  name: string;                 // "Morning batch"
+  enabled: boolean;
   when:
     | { type: "once"; at: number }
     | { type: "weekly"; days: number[]; time: string; tz: string };  // "07:30", IANA zone
-  encoderId: string;
+  encoderId: string | "any";
   accountId?: string;
-  privacy: YoutubePrivacy;
   offline: boolean;
+  videos: ScheduledVideo[];
   nextAt: number | null;
-  lastFire?: {
-    at: number;
-    runId?: string;
-    outcome: "started" | "skipped" | "missed" | "refused" | "failed";
-    note?: string;
-  };
+  lastFire?: { at: number; batchId?: string; outcome: "queued" | "missed"; note?: string };
 }
 ```
 
@@ -530,54 +745,61 @@ export interface ShortSchedule {
   point for `refresh`. For a `places` scope the rule applies per place.
 - The schedule form shows when each place's round-up is next written, so the operator
   can put the video after it.
+- **A schedule is a batch.** It queues its videos, in order, on its encoder (§6.6). The
+  daily Europe video alone is a batch of one.
 - **One ticker, state in Mongo.** `short-video.tick` is a 60 s repeatable job, the same
   pattern as `stream.reconcile`. It fires every enabled schedule with `nextAt <= now` by
-  enqueuing `render`, then sets the next `nextAt`. A once schedule disables itself.
+  queuing its videos, then sets the next `nextAt`. A once schedule disables itself.
   Editing a schedule is a Mongo write; nothing touches BullMQ.
 - **Missed runs are not caught up.** If a schedule is more than 10 minutes overdue it is
   marked `missed`. The test box is powered off for about three hours every day, and a
   burst of stale videos on boot is worse than a gap.
-- **A busy encoder is waited for, never pre-empted.** The ticker retries each minute
-  inside the 10 minute window, then records `missed: encoder busy`.
-- **Render now** skips the ticker and enqueues `render` directly, so the button doesn't
-  wait up to a minute.
+- **A busy encoder is waited for, never pre-empted.** The videos wait in the queue. One
+  that hasn't started within an hour of the schedule's time is skipped as too late.
+- **Each video's outcome is on its render**, not on the schedule. The schedule row links
+  to its last batch.
+- **Render now** and **Run batch now** queue directly, without waiting for the ticker.
 - `nextFireAt(when, afterMs)` is a pure helper in `shared`, timezone-aware, with tests
   across both DST changes.
-- **Fire order.** Check the encoder, check freshness (refresh or skip), generate a
-  script from the format's template, then enqueue `render`.
+- **Order of work.** The ticker only queues. Freshness, the round-up refresh and the
+  script generation happen as each video reaches the front of the queue.
 - **UI:** a Schedules section on `/admin/shorts`. It lists next run, last outcome and
   an enable switch, and edits through the render form plus a repeat picker (days, time,
   timezone). Bookings feed the encoder picker's "booked" state.
 
-### 8.1 Walkthrough: the Europe round-up, every day
+### 8.1 Walkthrough: the morning batch
 
 Once, by an operator:
-1. Switch round-ups on for Europe at `/admin/place-roundups`, written at 06:00.
-2. Have a format for it (the default one will do).
-3. Add a schedule: area Europe, every day at 07:00 London time, an encoder that is
-   free at that hour, publish as public, round-up no older than 12 h, refresh if stale.
-4. Press Render now once, as unlisted, and watch the result.
+1. Assign an OBS instance to videos on `/admin/streams`.
+2. Switch round-ups on for Europe, the UK and the main-area places at
+   `/admin/place-roundups`, written at 06:00 local.
+3. Have a format for each video (the default one will do to start).
+4. Add a schedule "Morning batch": every day at 07:00 London time, on the video
+   encoder, with three videos in order: Europe, UK, main areas. Each has a round-up no
+   older than 12 h, refreshed if stale. Titles, descriptions and public or unlisted come
+   from each video's format.
+5. Press Run batch now once with everything unlisted, and watch the results.
 
 Every day at 07:00:
-1. The ticker finds the schedule due and the encoder free.
-2. Europe's round-up is an hour old, so it is used as it is.
-3. A script is generated: the Europe tour with the round-up leading, then a wide shot.
-4. The run goes live unlisted. The script plays. The run ends.
-5. The video is set public. The schedule records the run and its link.
+1. The ticker queues the three videos on the video encoder.
+2. Europe reaches the front. Its round-up is an hour old, so it is used as it is. A
+   script is generated. The run goes live unlisted, the script plays, the run ends, and
+   the video is set public.
+3. The UK video does the same, then the main areas video. That one refreshes any place
+   whose round-up is too old before it generates.
+4. The Renders section shows each video's outcome and link. About fifteen minutes
+   after 07:00 all three are up.
 
-What can go wrong, and what the schedule records:
+What can go wrong, and what is recorded:
 
 | Problem | Outcome |
 |---|---|
-| Worker down at 07:00, back by 07:10 | runs late |
-| Worker down past 07:10 | `missed` |
-| Encoder busy past 07:10 | `missed: encoder busy` |
-| No round-up and the refresh fails | `failed`, with the generator's reason |
-| OBS unreachable, or no ingest in 2 minutes | `failed`; broadcast deleted |
-| YouTube quota spent or sign-in expired | `refused`, before anything is created |
-
-The UK video is the same schedule with country `uk`. The main areas video is the same
-with the six places.
+| Worker down at 07:00, back by 07:10 | the batch runs late |
+| Worker down past 07:10 | the schedule records `missed` |
+| The encoder is busy with something else | the videos wait; any not started by 08:00 is `skipped: too late` |
+| No round-up and the refresh fails | that video `failed`, with the generator's reason; the batch continues |
+| OBS unreachable, or no ingest in 2 minutes | that video `failed`, its broadcast deleted; the batch continues |
+| YouTube quota spent or sign-in expired | that video `failed` before anything is created; the batch continues |
 
 ## 9. Timeline editor (milestone 2)
 
@@ -647,12 +869,13 @@ The worker needs a restart by the user after WP5, WP7 and WP9.
 | WP | Scope | Depends on | Done when |
 |---|---|---|---|
 | 1-4 (done) | Shared contract, director refactors, runner and template, on-air and operator screens, `/admin/shorts`, admin jobs | | round-ups generate and preview |
-| 5 (cloud agent) | Formats, shared and worker (§5.2-5.4, §5.6) | 4 | a second format made from a channel generates and plays in its own look |
-| 6 (cloud agent) | Formats, public: the format editor (§5.5) | 5 | an operator duplicates a channel into a format, changes it, saves once and sees the preview change |
-| 7a | Render core, shared and worker: `Run.script`, `sceneIdForScript`, provision override and restore, busy guard, `script-run.ts` hooks, deadline, failure clean-up, publish at end, `render` job, `encoderOccupancy` (§6.3-6.5) | 4 | tests cover live, script end, a stopped play, the deadline, a restart and every clean-up path |
-| 7b | Render UI: Render button and form, `EncoderSelect`, a script's renders with status and link (§6.1-6.2) | 7a | **a round-up is on YouTube**, made from `/admin/shorts` |
-| 9a | Scheduling core, shared and worker: `ShortSchedule`, `nextFireAt`, `tick` job, the freshness rule and single-place round-up refresh, fire order (§8) | 7a | tests cover due, late, missed, busy, stale and skipped |
-| 9b | Schedules UI on `/admin/shorts` | 9a, 7b | **the Europe and UK round-ups publish daily** |
+| 5 (cloud agent) | Formats, shared and worker (§5.2-5.4, §5.6). Its `ShortFormat` now has `video` and `timing` in place of `titlePattern` and `render.privacy` | 4 | a second format made from a channel generates and plays in its own look |
+| 6 (cloud agent) | Formats, public: the format editor (§5.5), including the YouTube video card with the token picker and preview (§6.8) | 5 | an operator duplicates a channel into a format, changes it, saves once and sees the preview change |
+| 7-pre | `shared/src/video-text.ts`: the code list and `formatVideoText`, sharing the date table with `formatStreamTitle`; tests (§6.8) | none | every code resolves; a `%` inside a value is left alone; live titles are unchanged |
+| 7a | Render core, shared and worker: `Run.script`, `sceneIdForScript`, provision override and restore, busy guard, `script-run.ts` hooks, deadline, failure clean-up, publish at end; encoder `use`; `ShortRender` and `render-queue.ts` (queue, pause, cancel, retry, `startBy`, freshness and generate at the front); values stamped at generate, title and description resolved onto the run, tags, category, playlist and privacy applied at the end; `encoderOccupancy` (§6.3-6.6, §6.8) | 4, 7-pre | tests cover live, script end, a stopped play, the deadline, a restart, every clean-up path, and a three-video queue with one failure |
+| 7b | Render UI: assign an encoder to videos on `/admin/streams`; Render form and `EncoderSelect`; the Renders section with the §6.7 controls; renders labelled on the streams page (§6.1-6.2, §6.7) | 7a | **a round-up is on YouTube**, queued, watched and stopped from `/admin/shorts` |
+| 9a | Scheduling core, shared and worker: `ShortSchedule` with its batch, `nextFireAt`, `tick` job, single-place round-up refresh (§8) | 7a | tests cover due, late, missed and a batch queued in order |
+| 9b | Schedules UI on `/admin/shorts`, with Run batch now | 9a, 7b | **the Europe and UK round-ups publish daily**, as one batch |
 | 10 | Several places in one video: the `places` scope through sanitiser, template, titles, generate form (§4) | 6 | **the main areas round-up publishes daily**, with a chapter per place |
 | 8 | Offline test: offline branch in `goLive`, preflight report, OBS screenshots (§7) | 7a | a test holds the encoder, never contacts YouTube, and leaves a screenshot per clip |
 
@@ -691,15 +914,22 @@ Taken (change here if wrong):
 - A render that can't go live in 2 minutes fails and deletes its broadcast.
 - Render is chained by hooks with state in Mongo, not by a job that waits.
 - A schedule refuses a stale round-up: refresh it or skip the day.
+- An OBS instance can be assigned to videos. The operator still chooses which, or
+  "any". Three are available.
+- One video per format at a time, whatever encoders are free.
+- Videos queue per encoder and run one at a time. A schedule is a batch.
+- One failed video doesn't stop a batch.
+- Renders get the same controls as channel runs, on `/admin/shorts`.
+- Video titles and descriptions use the live titles' date codes plus `%{name}` codes
+  for the video's own values.
+- A format has its own YouTube video card. It does not use the channel YouTube card.
+- Nothing that shapes a video is fixed in code (§6.9).
+- A schedule's time is the operator's. Date codes default to London time and can be set
+  to another zone or the place's own.
+- The places in a several-places video, their order, the round-up depth and whether the
+  world round-up opens it are all settings.
 
 Open:
-- Which encoder renders scheduled videos? It must be free at that hour, and the
-  always-on slots hold theirs. This needs a spare OBS instance on gds1.
-- What time, and public or unlisted, for the daily Europe, UK and main areas videos?
-- Main areas: are USA and Australia the countries, or North America and Oceania the
-  areas? Does the world round-up open the video?
-- Main areas: the full round-up for each place (5-8 minutes in all) or the summary
-  only (about 2)?
 - Which settings matter first on the Video cards, beyond the list in §5.2?
 - Should a channel's later look changes ever flow to a format automatically? The plan
   says no: only Copy look from.
