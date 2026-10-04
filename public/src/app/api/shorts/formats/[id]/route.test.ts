@@ -11,6 +11,7 @@ jest.mock("../../../../../lib/require-admin", () => ({ requireAdmin: jest.fn() }
 const mockDb = {
   shortFormats: { get: jest.fn(), upsert: jest.fn(), remove: jest.fn() },
   shortScripts: { countByFormat: jest.fn() },
+  shortRenders: { countByFormat: jest.fn() },
   getScene: jest.fn(),
   setSceneMeta: jest.fn(),
   deleteScene: jest.fn(),
@@ -33,6 +34,7 @@ beforeEach(() => {
   mockDb.shortFormats.get.mockImplementation(async (id: string) => (id === "short-uk" ? uk : id === "shorts" ? defaultShortFormat() : null));
   mockDb.shortFormats.upsert.mockImplementation(async (f: unknown) => f);
   mockDb.shortScripts.countByFormat.mockResolvedValue(0);
+  mockDb.shortRenders.countByFormat.mockResolvedValue(0);
   mockDb.getScene.mockResolvedValue({ id: "short-uk", name: "UK" });
 });
 
@@ -73,6 +75,14 @@ it("DELETE refuses the default format and one scripts use, saying how many", asy
   expect(used.status).toBe(409);
   expect(await used.json()).toEqual({ error: expect.stringMatching(/2 scripts use this format/), scripts: 2 });
   expect((await DELETE(req("DELETE"), ctx("nope"))).status).toBe(404);
+  expect(mockDb.shortFormats.remove).not.toHaveBeenCalled();
+});
+
+it("DELETE refuses a format with videos queued or rendering in it, saying how many", async () => {
+  mockDb.shortRenders.countByFormat.mockResolvedValue(1);
+  const res = await DELETE(req("DELETE"), ctx("short-uk"));
+  expect(res.status).toBe(409);
+  expect(await res.json()).toEqual({ error: expect.stringMatching(/1 video is queued or rendering/), renders: 1 });
   expect(mockDb.shortFormats.remove).not.toHaveBeenCalled();
 });
 

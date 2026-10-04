@@ -138,7 +138,17 @@ export async function publishThumbnail(runId: string, opts: { force?: boolean } 
   if (runIsFinished(run.status) && !opts.force) return { ok: false, skipped: `run is ${run.status}` };
   if (run.thumbnail?.setAt && !opts.force) return { ok: true, skipped: "already set", source: run.thumbnail.source };
 
-  const { url, source } = thumbnailSourceFor((await channelYoutubeSettings(run.sceneId)).thumbnailUrl);
+  // A video render takes its FORMAT's thumbnail (§6.8), resolved by the render
+  // queue onto `run.script.thumbnailUrl` (an image URL or site path, templates
+  // already filled; "" = the deployment default). Absent means a frame source:
+  // TODO(WP8) — a frame of the render via GetSourceScreenshot; until then the
+  // video keeps YouTube's own auto-thumbnail.
+  if (run.script?.scriptId && run.script.thumbnailUrl === undefined) {
+    return { ok: false, skipped: "this video has no thumbnail image (frame thumbnails arrive with WP8)" };
+  }
+  const { url, source } = thumbnailSourceFor(
+    run.script?.scriptId ? run.script.thumbnailUrl : (await channelYoutubeSettings(run.sceneId)).thumbnailUrl,
+  );
   const record = async (patch: Partial<NonNullable<Run["thumbnail"]>>) =>
     db
       .updateRun(runId, {

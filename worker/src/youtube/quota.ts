@@ -42,6 +42,8 @@ const BASE_COST = {
   "liveStreams.insert": 50,
   "liveChatMessages.list": 5,
   "liveChatMessages.insert": 50,
+  // A finished video render is added to its format's playlist (short-video plan §6.8).
+  "playlistItems.insert": 50,
 } as const;
 export type YoutubeOp = keyof typeof BASE_COST;
 

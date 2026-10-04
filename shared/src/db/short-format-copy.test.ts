@@ -8,7 +8,9 @@ import { copyLookFrom, deleteFormat, duplicateFormat, formatIdForName, resolveFo
  * director configs (merge-on-save, like the real one), format settings and a
  * script count per format.
  */
-function fakeDb(o: { scenes?: Record<string, any>; formats?: ShortFormat[]; scriptsByFormat?: Record<string, number> } = {}) {
+function fakeDb(
+  o: { scenes?: Record<string, any>; formats?: ShortFormat[]; scriptsByFormat?: Record<string, number>; rendersByFormat?: Record<string, number> } = {},
+) {
   const scenes: Record<string, any> = { ...(o.scenes ?? {}) };
   const configs: Record<string, any> = {};
   const formats = new Map((o.formats ?? []).map((f) => [f.id, f]));
@@ -33,6 +35,7 @@ function fakeDb(o: { scenes?: Record<string, any>; formats?: ShortFormat[]; scri
       remove: jest.fn(async (id: string) => formats.delete(id)),
     },
     shortScripts: { countByFormat: jest.fn(async (id: string) => o.scriptsByFormat?.[id] ?? 0) },
+    shortRenders: { countByFormat: jest.fn(async (id: string) => o.rendersByFormat?.[id] ?? 0) },
   };
   return { db: db as any, scenes, configs, formats };
 }
@@ -144,6 +147,15 @@ describe("deleteFormat", () => {
     expect(used).toMatchObject({ ok: false, code: "in-use", scripts: 3 });
     expect(!used.ok && used.error).toMatch(/3 scripts use this format/);
     expect(await deleteFormat(f.db, "short-x")).toMatchObject({ ok: false, code: "not-found" });
+    expect(f.db.shortFormats.remove).not.toHaveBeenCalled();
+  });
+
+  it("refuses a format with videos queued or rendering in it, saying how many", async () => {
+    const f = fakeDb({ formats: [defaultShortFormat("short-a", "A")], rendersByFormat: { "short-a": 2 } });
+    const res = await deleteFormat(f.db, "short-a");
+    expect(res).toMatchObject({ ok: false, code: "in-use", renders: 2 });
+    expect(!res.ok && res.error).toMatch(/2 videos are queued or rendering in this format/);
+    expect(f.db.shortRenders.countByFormat).toHaveBeenCalledWith("short-a");
     expect(f.db.shortFormats.remove).not.toHaveBeenCalled();
   });
 

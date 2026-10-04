@@ -117,6 +117,8 @@ import { getSeaPointModel } from "./sea-point-model";
 import { makeSeaPointRepo } from "./sea-point-repo";
 import { getShortScriptModel } from "./short-script-model";
 import { makeShortScriptRepo } from "./short-script-repo";
+import { getShortRenderModel, getShortRenderQueueModel } from "./short-render-model";
+import { makeShortRenderRepo } from "./short-render-repo";
 import { getShortFormatModel } from "./short-format-model";
 import { makeShortFormatRepo } from "./short-format-repo";
 import { getAdModel } from "./ad-model";
@@ -306,6 +308,7 @@ export function createDb(conn: Connection) {
     cams: makeCamRepo(getCamModel(conn)),
     seaPoints: makeSeaPointRepo(getSeaPointModel(conn)),
     shortScripts: makeShortScriptRepo(getShortScriptModel(conn)),
+    shortRenders: makeShortRenderRepo(getShortRenderModel(conn), getShortRenderQueueModel(conn)),
     // A short format's own settings; its look is the scene doc of the same id.
     shortFormats: makeShortFormatRepo(getShortFormatModel(conn)),
     ads: makeAdRepo(getAdModel(conn), blobs.ad),
@@ -585,7 +588,11 @@ export function createDb(conn: Connection) {
       return (
         rows.find(
           (r) =>
-            r.id !== excludeRunId && !!r.platforms?.youtube && encoderKeyForRun(r) === (encoderId || "env"),
+            r.id !== excludeRunId &&
+            // A video render occupies its encoder even offline (no YouTube): it
+            // points the encoder's browser source at its own scene (§6.4).
+            (!!r.platforms?.youtube || !!r.script?.scriptId) &&
+            encoderKeyForRun(r) === (encoderId || "env"),
         ) ?? null
       );
     },

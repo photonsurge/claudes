@@ -391,6 +391,12 @@ export async function createBroadcast(
           enableAutoStart: false,
           enableAutoStop: false,
           monitorStream: { enableMonitorStream: opts.monitorStream },
+          // No chat switch exists here: liveBroadcast contentDetails/status in the
+          // Data API v3 (googleapis youtube_v3 Schema$LiveBroadcastContentDetails,
+          // checked 2026-10) carry no "live chat enabled" field. Turning YouTube's
+          // own chat off on a video render's broadcast is a YouTube Studio setting
+          // (the account's live defaults), not an API call — short-video plan
+          // §6.3. Our side never polls or posts: render runs have chat disabled.
         },
       },
     }),
@@ -521,6 +527,67 @@ export async function setVideoDescription(
     }),
   );
   return { changed: true, description };
+}
+
+/**
+ * The end-of-render metadata write (short-video plan §6.3, §6.8): tags and
+ * category (which a broadcast can't take at creation) and the final privacy, in
+ * ONE videos.update. Like setVideoDescription, videos.update REPLACES each part
+ * it names, so the current snippet and status are read first and sent back with
+ * only our fields changed — the title, description, language and the status
+ * flags survive. 1 unit to read, 50 to write; the write is skipped when nothing
+ * would change.
+ */
+export async function updateVideoMeta(
+  ctx: YoutubeCtx,
+  videoId: string,
+  meta: { tags?: string[]; categoryId?: string; privacy?: YoutubePrivacy },
+): Promise<{ changed: boolean }> {
+  const res = await apiCall(ctx, "videos.list", () => ctx.youtube.videos.list({ part: ["snippet", "status"], id: [videoId] }));
+  const item = res.data.items?.[0];
+  const snippet = item?.snippet;
+  if (!snippet) throw new Error(`videos.list: video ${videoId} not found`);
+  const status = item?.status ?? {};
+  const tags = meta.tags?.length ? meta.tags : undefined;
+  const snippetChanges =
+    (tags && JSON.stringify(tags) !== JSON.stringify(snippet.tags ?? [])) ||
+    (meta.categoryId && meta.categoryId !== snippet.categoryId);
+  const statusChanges = !!meta.privacy && meta.privacy !== status.privacyStatus;
+  if (!snippetChanges && !statusChanges) return { changed: false };
+  const part: string[] = [];
+  const requestBody: youtube_v3.Schema$Video = { id: videoId };
+  if (snippetChanges) {
+    part.push("snippet");
+    requestBody.snippet = {
+      title: snippet.title,
+      description: snippet.description,
+      categoryId: meta.categoryId || snippet.categoryId,
+      tags: tags ?? snippet.tags,
+      defaultLanguage: snippet.defaultLanguage,
+    };
+  }
+  if (statusChanges) {
+    part.push("status");
+    requestBody.status = {
+      privacyStatus: meta.privacy,
+      embeddable: status.embeddable,
+      license: status.license,
+      publicStatsViewable: status.publicStatsViewable,
+      selfDeclaredMadeForKids: status.selfDeclaredMadeForKids ?? false,
+    };
+  }
+  await apiCall(ctx, "videos.update", () => ctx.youtube.videos.update({ part, requestBody }));
+  return { changed: true };
+}
+
+/** Add a video to a playlist (50 units). */
+export async function addToPlaylist(ctx: YoutubeCtx, playlistId: string, videoId: string): Promise<void> {
+  await apiCall(ctx, "playlistItems.insert", () =>
+    ctx.youtube.playlistItems.insert({
+      part: ["snippet"],
+      requestBody: { snippet: { playlistId, resourceId: { kind: "youtube#video", videoId } } },
+    }),
+  );
 }
 
 /**

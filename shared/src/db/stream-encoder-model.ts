@@ -25,6 +25,8 @@ const StreamEncoderSchema = new mongoose.Schema<iStreamEncoderModel>(
     url: { type: String, required: true },
     passwordEnc: { type: String, required: false },
     sceneId: { type: String, required: false, index: true },
+    // "channels" (default) | "videos" — see StreamEncoder.use (short-video plan §6.6).
+    use: { type: String, required: false, enum: ["channels", "videos"], default: "channels" },
     enabled: { type: Boolean, required: false, default: true, index: true },
   },
   mongoTimestamps,

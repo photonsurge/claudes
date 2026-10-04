@@ -63,7 +63,11 @@ async function DELETE__impl(_req: Request, { params }: Ctx) {
   const db = await getAppDb();
   const res = await deleteFormat(db, id);
   if (!res.ok) {
-    const body = res.scripts != null ? { error: res.error, scripts: res.scripts } : { error: res.error };
+    const body = {
+      error: res.error,
+      ...(res.scripts != null ? { scripts: res.scripts } : {}),
+      ...(res.renders != null ? { renders: res.renders } : {}),
+    };
     return NextResponse.json(body, { status: DELETE_STATUS[res.code], headers: NO_CACHE });
   }
   return NextResponse.json({ ok: true, id }, { status: 200, headers: NO_CACHE });

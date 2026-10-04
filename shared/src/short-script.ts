@@ -83,6 +83,9 @@ export interface ShortScript {
   scope: ShortScope;
   include: ShortInclude;
   title: string;
+  /** Values for the title codes (`%{place}`…), stamped at generate (§6.8).
+   *  Written by the worker only (`db.shortScripts.stampValues`). */
+  values?: Record<string, string>;
   clips: ShortClip[];
   status: "draft" | "ready";
   /** Written by the runner: the LATEST play on each scene (at most one entry

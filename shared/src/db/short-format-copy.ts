@@ -147,12 +147,13 @@ export async function isFormatScene(db: AppDb, sceneId: string): Promise<boolean
 
 export type FormatDeleteResult =
   | { ok: true }
-  | { ok: false; code: "default" | "in-use" | "not-found"; error: string; scripts?: number };
+  | { ok: false; code: "default" | "in-use" | "not-found"; error: string; scripts?: number; renders?: number };
 
 /**
  * Delete a format: its settings, its scene and its director config. Refuses the
- * default format, and a format any script is made in — saying how many, so the
- * operator knows what to delete or move first (§5.5).
+ * default format, a format any script is made in, and one with videos queued
+ * or rendering in it — saying how many, so the operator knows what to delete
+ * or move first (§5.5).
  */
 export async function deleteFormat(db: AppDb, id: string): Promise<FormatDeleteResult> {
   if (id === DEFAULT_SHORT_FORMAT_ID) {
@@ -166,6 +167,17 @@ export async function deleteFormat(db: AppDb, id: string): Promise<FormatDeleteR
       code: "in-use",
       scripts,
       error: `${scripts} script${scripts === 1 ? " uses" : "s use"} this format — delete ${scripts === 1 ? "it" : "them"} first`,
+    };
+  }
+  // Videos queued, preparing or live in it (short-video plan §6.6) would lose
+  // their scene mid-render.
+  const renders = await db.shortRenders.countByFormat(id);
+  if (renders > 0) {
+    return {
+      ok: false,
+      code: "in-use",
+      renders,
+      error: `${renders} video${renders === 1 ? " is" : "s are"} queued or rendering in this format — wait for ${renders === 1 ? "it" : "them"} or cancel first`,
     };
   }
   await db.shortFormats.remove(id);

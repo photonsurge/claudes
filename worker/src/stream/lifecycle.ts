@@ -24,6 +24,7 @@ import {
   RUN_STATE,
   RUN_STATUS,
   encoderKeyForRun,
+  isScriptRun,
   toRunState,
   runIsFinished,
   type Run,
@@ -62,6 +63,7 @@ import {
   type YoutubeCtx,
 } from "../youtube/client";
 import { stampVideoTimes } from "../youtube/video-times";
+import { onScriptRunLive, onScriptRunOver, rearmScriptRun, scriptGoLiveOverdue } from "./script-run";
 
 const TAG = "stream";
 const HEARTBEAT_MS = 5_000; // health cadence while live
@@ -135,6 +137,14 @@ async function armAutoEnd(runId: string, delayMs: number): Promise<void> {
   );
 }
 
+/**
+ * End a run `delayMs` from now through the durable auto-end job — replacing the
+ * run's safety cap. A video render ends this way after its lead-out (§6.5).
+ */
+export async function endRunAfter(runId: string, delayMs: number): Promise<void> {
+  await armAutoEnd(runId, delayMs);
+}
+
 async function cancelAutoEnd(runId: string): Promise<void> {
   const job = await getQueue("foreground").getJob(autoEndJobId(runId));
   if (!job) return;
@@ -171,12 +181,18 @@ async function failRun(runId: string, step: string, err: unknown): Promise<void>
   log(TAG, `run ${runId} failed at ${step}: ${message}`);
   const db = await getAppDb();
   const before = await db.getRun(runId);
-  if (before) await stopRunObs(before);
+  // Never stop an output another run owns: a run refused by the busy guard
+  // fails here too, and its encoder is streaming that OTHER run.
+  if (before && !(await encoderBusyWith(before))) await stopRunObs(before);
   await db.updateRun(runId, { status: "failed", error: { step, message, at: Date.now() } });
   const run = await db.getRun(runId);
   if (run) emitRunState(run);
   stopMonitor(runId);
   confirmState.delete(runId);
+  await cancelAutoEnd(runId).catch(() => {});
+  // A failed render leaves nothing behind (§6.4): broadcast deleted, play
+  // stopped, encoder restored, and the queue moves on.
+  if (run && isScriptRun(run)) await onScriptRunOver(run);
 }
 
 // ---- go live ----
@@ -188,10 +204,13 @@ export async function goLive(runId: string): Promise<void> {
   if (runIsFinished(run.status)) return log(TAG, `goLive: run ${runId} already ${run.status}`);
 
   const wantsYoutube = !!run.platforms?.youtube;
+  const scripted = isScriptRun(run);
   try {
-    if (wantsYoutube) {
+    if (wantsYoutube || scripted) {
       // Checked BEFORE creating any YouTube resources, so a refused run leaves no
       // orphaned broadcast behind. (The API pre-checks too; this catches the race.)
+      // A video render takes its encoder even offline (no YouTube): it repoints
+      // the browser source, so the guard runs on that branch too (§13).
       const busy = await encoderBusyWith(run);
       if (busy) {
         throw new Error(
@@ -199,6 +218,12 @@ export async function goLive(runId: string): Promise<void> {
             `one OBS instance supports one concurrent stream. Stop that run or use another encoder.`,
         );
       }
+    }
+    if (scripted && !run.script!.goLiveAt) {
+      // The go-live deadline (§6.4) counts from the first goLive attempt.
+      run = await persistPhase(runId, run.phase ?? "created", { script: { ...run.script!, goLiveAt: Date.now() } });
+    }
+    if (wantsYoutube) {
       const ctx = await getYoutubeClient(run.platforms.youtube?.accountId);
       let yt: NonNullable<Run["platforms"]["youtube"]> = {
         ...run.platforms.youtube,
@@ -214,13 +239,23 @@ export async function goLive(runId: string): Promise<void> {
         // here — the description falls back to the deployment default, then the
         // built-in copy, with the site link appended. The as-run chapters land
         // BELOW this text after the run ends.
-        const channel = await channelYoutubeSettings(run.sceneId);
-        const title = formatStreamTitle(run.title || channel.title || defaultTitle(run));
-        const description = buildBroadcastDescription({
-          template: channel.description,
-          fallback: process.env.YOUTUBE_DESCRIPTION,
-          siteUrl: watchBaseUrl(),
-        });
+        // A video render's title and description were resolved by the render
+        // queue from its format (§6.8) and are used exactly as written — never
+        // run through the channel's title template again.
+        let title: string;
+        let description: string;
+        if (scripted) {
+          title = run.title || defaultTitle(run);
+          description = run.description ?? "";
+        } else {
+          const channel = await channelYoutubeSettings(run.sceneId);
+          title = formatStreamTitle(run.title || channel.title || defaultTitle(run));
+          description = buildBroadcastDescription({
+            template: channel.description,
+            fallback: process.env.YOUTUBE_DESCRIPTION,
+            siteUrl: watchBaseUrl(),
+          });
+        }
         const { broadcastId, watchUrl } = await createBroadcast(ctx, {
           title,
           description,
@@ -248,6 +283,11 @@ export async function goLive(runId: string): Promise<void> {
       run = await persistPhase(runId, "bound", { platforms: withYoutube(run, yt) });
 
       await configureAndStartObs(run, yt.ingestionAddress!, yt.streamName!);
+    } else if (scripted) {
+      // Offline rehearsal (§7): point the encoder's browser source at the
+      // script's scene — no broadcast, no key, no StartStream. WP8 adds the
+      // preflight report and the OBS screenshots on top of this branch.
+      await provisionForScript(run);
     }
 
     // Move to awaiting-ingest (the monitor confirms + transitions to live). A run
@@ -262,9 +302,41 @@ export async function goLive(runId: string): Promise<void> {
       if (cur.status === "live" && cur.durationMs) await armAutoEnd(runId, cur.durationMs);
     }
     startMonitor(runId, () => monitorTick(runId));
+    // The no-YouTube branch is live already: start the script the same way
+    // transitionToLive does for a broadcast (§6.5 step 2).
+    if (cur && cur.status === "live" && isScriptRun(cur)) await onScriptRunLive(cur);
   } catch (err) {
     await failRun(runId, "goLive", err);
   }
+}
+
+/**
+ * Best-effort full auto-provision of the run's encoder. A channel run shows the
+ * encoder's own bound scene; a video render shows its SCRIPT's scene instead
+ * (the `sceneId` override, §6.4) — the encoder's scene is restored when the
+ * render ends (script-run.ts). Never fails the run.
+ */
+async function provisionForRun(run: Run): Promise<void> {
+  try {
+    const p = isScriptRun(run)
+      ? await provisionEncoderScene(run.encoderId, { sceneId: run.sceneId })
+      : await provisionEncoderScene(run.encoderId);
+    const swept =
+      p.removedInputs.length || p.removedScenes.length
+        ? ` (swept ${p.removedInputs.length} stray source(s), ${p.removedScenes.length} scene(s))`
+        : "";
+    log(
+      TAG,
+      `provisioned OBS scene for run ${run.id}: "${p.sceneName}" → ${p.url}${p.recreated ? " (hard reset: browser source rebuilt)" : ""}${swept}`,
+    );
+  } catch (e) {
+    log(TAG, `OBS auto-provision skipped for run ${run.id}: ${String((e as Error)?.message ?? e)}`);
+  }
+}
+
+/** The offline (no-YouTube) branch of a video render: only the provision. */
+async function provisionForScript(run: Run): Promise<void> {
+  await provisionForRun(run);
 }
 
 async function configureAndStartObs(run: Run, server: string, key: string): Promise<void> {
@@ -288,19 +360,7 @@ async function configureAndStartObs(run: Run, server: string, key: string): Prom
     // Step 2: best-effort full auto-provision — by default a hard reset that
     // rebuilds the browser source (fresh Chromium, zero accumulated state) on
     // the channel's tokened /watch URL. Never fail the run on this.
-    try {
-      const p = await provisionEncoderScene(run.encoderId);
-      const swept =
-        p.removedInputs.length || p.removedScenes.length
-          ? ` (swept ${p.removedInputs.length} stray source(s), ${p.removedScenes.length} scene(s))`
-          : "";
-      log(
-        TAG,
-        `provisioned OBS scene for run ${run.id}: "${p.sceneName}" → ${p.url}${p.recreated ? " (hard reset: browser source rebuilt)" : ""}${swept}`,
-      );
-    } catch (e) {
-      log(TAG, `OBS auto-provision skipped for run ${run.id}: ${String((e as Error)?.message ?? e)}`);
-    }
+    await provisionForRun(run);
     await setStreamKey(ep, server, key);
     log(TAG, `run ${run.id}: OBS ${ep.url} stream settings set → ${server} (key …${key.slice(-4)})`);
     await persistPhase(run.id, "obs-config", { obs: { ...(run.obs ?? {}), configured: true, streaming: false } });
@@ -326,6 +386,13 @@ async function monitorTick(runId: string): Promise<number> {
   const run = await db.getRun(runId);
   if (!run || runIsFinished(run.status)) return -1;
 
+  // Nobody watches a scheduled render, so unreachable OBS or no ingest is a
+  // failure, not a manual handoff: a video still not live by its deadline
+  // fails and cleans up after itself (§6.4).
+  if (run.status === "awaiting-ingest" && scriptGoLiveOverdue(run, Date.now())) {
+    await failRun(run.id, "deadline", new Error("the video did not go live within its go-live deadline (no ingest from OBS)"));
+    return -1;
+  }
   if (run.status === "awaiting-ingest") return confirmTick(run);
   if (run.status === "live") return healthTick(run);
   return HEARTBEAT_MS; // scheduled / ending — idle
@@ -450,7 +517,11 @@ async function transitionToLive(run: Run, ctx: YoutubeCtx): Promise<boolean> {
   }
 
   const db = await getAppDb();
-  const liveChatId = yt.liveChatId ?? (await resolveLiveChatId(ctx, yt.broadcastId!).catch(() => undefined));
+  // A video render has no chat (§6.3): no chat id lookup, no poller, no announce.
+  const scripted = isScriptRun(run);
+  const liveChatId = scripted
+    ? undefined
+    : yt.liveChatId ?? (await resolveLiveChatId(ctx, yt.broadcastId!).catch(() => undefined));
   const startAt = Date.now();
   await db.updateRun(run.id, {
     status: "live",
@@ -463,15 +534,17 @@ async function transitionToLive(run: Run, ctx: YoutubeCtx): Promise<boolean> {
   const updated = await db.getRun(run.id);
   if (updated) emitRunState(updated);
   if (run.durationMs && run.durationMs > 0) await armAutoEnd(run.id, run.durationMs);
-  if (run.chat?.enabled && liveChatId) startChatPoll(run.id);
+  if (!scripted && run.chat?.enabled && liveChatId) startChatPoll(run.id);
   // "Notify the world": fan the announcement out as its own retried job — a down
   // hydra must never affect the live commit.
-  if (updated?.announce && !updated.announcedAt) {
+  if (!scripted && updated?.announce && !updated.announcedAt) {
     await queueAnnounce(run.id).catch((err) =>
       log(TAG, `announce enqueue failed ${run.id}`, String((err as Error)?.message ?? err)),
     );
   }
   log(TAG, `run live ${run.id}`);
+  // A video render starts its script after the lead-in (§6.5 step 2).
+  if (scripted && updated) await onScriptRunLive(updated);
   return true;
 }
 
@@ -517,7 +590,16 @@ async function healthTick(run: Run): Promise<number> {
 
 // ---- finish (stop / auto-end) ----
 
-export async function finishRun(runId: string, reason: "manual" | "auto"): Promise<void> {
+/**
+ * End a run: YouTube complete, OBS stopped, status `stopped` (manual) or `ended`
+ * (auto). With `fail`, the run ends the same way but lands in `failed` with that
+ * error — a video render whose play was cut short (§6.5).
+ */
+export async function finishRun(
+  runId: string,
+  reason: "manual" | "auto",
+  opts: { fail?: { step: string; message: string } } = {},
+): Promise<void> {
   const db = await getAppDb();
   const run = await db.getRun(runId);
   if (!run) return;
@@ -537,7 +619,10 @@ export async function finishRun(runId: string, reason: "manual" | "auto"): Promi
   if (ending) emitRunState(ending);
 
   const yt = run.platforms?.youtube;
-  if (yt?.broadcastId) {
+  // A render stopped before it went live has a broadcast that never aired:
+  // script-run.ts deletes it instead (completing it would 4xx anyway).
+  const neverLiveRender = isScriptRun(run) && !run.startAt;
+  if (yt?.broadcastId && !neverLiveRender) {
     try {
       const ctx = await getYoutubeClient(yt.accountId);
       const life = await getBroadcastLifeCycle(ctx, yt.broadcastId).catch(() => undefined);
@@ -559,16 +644,19 @@ export async function finishRun(runId: string, reason: "manual" | "auto"): Promi
   await stopRunObs(run);
 
   await db.updateRun(runId, {
-    status: reason === "manual" ? "stopped" : "ended",
+    status: opts.fail ? "failed" : reason === "manual" ? "stopped" : "ended",
     endedAt: Date.now(),
     obs: { ...(run.obs ?? { configured: false }), streaming: false },
+    ...(opts.fail ? { error: { ...opts.fail, at: Date.now() } } : {}),
   });
   const done = await db.getRun(runId);
   if (done) emitRunState(done);
 
   // As-run chapters into the video description — its own delayed, retried job
   // (docs/vod-as-run-plan.md §4); a YouTube hiccup must never affect the finish.
-  if (yt?.broadcastId && chaptersEnabled()) {
+  // A video render queues them from its finalize step instead, AFTER tags,
+  // category and privacy are written: both rewrite the snippet (§13).
+  if (yt?.broadcastId && chaptersEnabled() && !isScriptRun(run)) {
     await queueChapters(runId).catch((err) =>
       log(TAG, `chapters enqueue failed ${runId}`, String((err as Error)?.message ?? err)),
     );
@@ -579,6 +667,10 @@ export async function finishRun(runId: string, reason: "manual" | "auto"): Promi
   stopChatPoll(runId);
   healthTicks.delete(runId);
   confirmState.delete(runId);
+
+  // Video render: stop the play, restore the encoder, finalize or clean up,
+  // record the outcome and start the next video (§6.5 steps 3 and 6).
+  if (done && isScriptRun(done)) await onScriptRunOver(done);
 }
 
 // ---- boot reconciler ----
@@ -592,6 +684,10 @@ export async function rearmLiveRuns(): Promise<void> {
   const db = await getAppDb();
   const runs = await db.listRuns({ status: ["live", "awaiting-ingest"] });
   for (const run of runs) {
+    // A live video render whose play the restart cut short is ended and failed
+    // here; one that hasn't started its script yet has its start re-armed (§6.5
+    // step 5). Otherwise it is rearmed like any run (the safety cap ends it).
+    if (isScriptRun(run) && (await rearmScriptRun(run))) continue;
     if (run.status === "live" && run.durationMs && run.startAt) {
       const remaining = run.startAt + run.durationMs - Date.now();
       if (remaining <= 0) {
@@ -601,7 +697,7 @@ export async function rearmLiveRuns(): Promise<void> {
       await armAutoEnd(run.id, remaining);
     }
     startMonitor(run.id, () => monitorTick(run.id));
-    if (run.chat?.enabled && run.platforms?.youtube?.liveChatId) startChatPoll(run.id);
+    if (!isScriptRun(run) && run.chat?.enabled && run.platforms?.youtube?.liveChatId) startChatPoll(run.id);
   }
   if (runs.length) log(TAG, `rearmed ${runs.length} live run(s)`);
 }
