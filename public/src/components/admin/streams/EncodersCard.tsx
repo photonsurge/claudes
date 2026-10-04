@@ -7,6 +7,12 @@
  * tokened /watch URL that channel resolves to), the diagnostic/provision actions, and
  * their results tied to that encoder. The websocket password is write-only (stored
  * encrypted server-side).
+ *
+ * Each encoder also has a USE (short-video plan §6.6): `channels` (bound to a
+ * channel, today's behaviour) or `videos` (kept for rendered videos — bound to
+ * no channel; its browser source is pointed at each video's scene as the video
+ * starts). The channel go-live and slot forms don't offer a video encoder. Each
+ * row shows what the encoder is doing right now (§6.2).
  */
 import { useState, type ReactNode } from "react";
 import Alert from "@mui/material/Alert";
@@ -20,8 +26,10 @@ import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import type { SceneMeta } from "@photonsurge/shared/control";
-import type { StreamEncoderInfo } from "@photonsurge/shared/runs";
+import { encoderUse, type EncoderUse } from "@photonsurge/shared/runs";
 import type { ObsTestResult, ProvisionResult } from "../../../lib/stream";
+import type { EncoderWithOccupancy } from "../../../lib/renders";
+import { occupancyLine } from "./EncoderSelect";
 
 export interface EncoderSave {
   id?: string;
@@ -30,6 +38,7 @@ export interface EncoderSave {
   password?: string;
   sceneId?: string;
   enabled?: boolean;
+  use?: EncoderUse;
 }
 
 interface EncoderActions {
@@ -44,7 +53,7 @@ export default function EncodersCard({
   encoders,
   scenes,
   ...actions
-}: { encoders: StreamEncoderInfo[]; scenes: SceneMeta[] } & EncoderActions) {
+}: { encoders: EncoderWithOccupancy[]; scenes: SceneMeta[] } & EncoderActions) {
   const [err, setErr] = useState<string | null>(null);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -63,8 +72,9 @@ export default function EncodersCard({
         OBS encoders
       </Typography>
       <Typography variant="caption" color="text.secondary">
-        One OBS instance per concurrent stream. Bind each to a channel, then{" "}
-        <b>Set up in OBS</b> pushes that channel&apos;s tokened /watch URL into it as a full-canvas browser source.
+        One OBS instance per concurrent stream. Bind each to a channel, then <b>Set up in OBS</b> pushes that
+        channel&apos;s tokened /watch URL into it as a full-canvas browser source. An encoder for <b>videos</b> is kept
+        for rendered short videos: no channel can take it, and each video points it at its own scene.
       </Typography>
 
       <Box sx={{ display: "grid", gap: 1.25, mt: 1.25 }}>
@@ -98,7 +108,11 @@ function EncoderRow({
   onTest,
   onProvision,
   onRefresh,
-}: { enc: StreamEncoderInfo; scenes: SceneMeta[]; origin: string } & EncoderActions) {
+}: {
+  enc: EncoderWithOccupancy;
+  scenes: SceneMeta[];
+  origin: string;
+} & EncoderActions) {
   const [busy, setBusy] = useState<null | "test" | "prov" | "refresh" | "save" | "delete">(null);
   const [test, setTest] = useState<ObsTestResult | null>(null);
   const [prov, setProv] = useState<ProvisionResult | null>(null);
@@ -106,10 +120,12 @@ function EncoderRow({
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const use = encoderUse(enc);
   const scene = scenes.find((s) => s.id === enc.sceneId);
-  const watchUrl = enc.sceneId
-    ? `${origin}/watch/${enc.sceneId}${scene?.watchToken ? `?token=${scene.watchToken}` : ""}`
-    : null;
+  const watchUrl =
+    use === "channels" && enc.sceneId
+      ? `${origin}/watch/${enc.sceneId}${scene?.watchToken ? `?token=${scene.watchToken}` : ""}`
+      : null;
 
   const guard = (which: typeof busy, fn: () => Promise<void>) => async () => {
     setBusy(which);
@@ -134,7 +150,13 @@ function EncoderRow({
       await onSave({ id: enc.id, url: enc.url, sceneId });
       setProv(null); // the URL changed — the old provision line no longer applies
     })();
-  const toggle = (enabled: boolean) => guard("save", () => onSave({ id: enc.id, url: enc.url, enabled }).then(() => {}))();
+  const changeUse = (next: EncoderUse) =>
+    guard("save", async () => {
+      await onSave({ id: enc.id, url: enc.url, use: next });
+      setProv(null);
+    })();
+  const toggle = (enabled: boolean) =>
+    guard("save", () => onSave({ id: enc.id, url: enc.url, enabled }).then(() => {}))();
   const remove = guard("delete", () => onDelete(enc.id).then(() => {}));
 
   const copy = () => {
@@ -156,6 +178,9 @@ function EncoderRow({
           <Typography variant="caption" color={enc.hasPassword ? "text.secondary" : "warning.main"}>
             {enc.hasPassword ? "password set" : "no password"}
           </Typography>
+          <Typography variant="caption" color="text.secondary">
+            · {occupancyLine(enc)}
+          </Typography>
           <Box sx={{ flex: 1 }} />
           <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
             <Typography variant="caption" color="text.secondary">
@@ -166,7 +191,9 @@ function EncoderRow({
               checked={enc.enabled}
               disabled={busy === "save"}
               onChange={(e) => toggle(e.target.checked)}
-              slotProps={{ input: { "aria-label": `enable ${enc.name || enc.id}` } }}
+              slotProps={{
+                input: { "aria-label": `enable ${enc.name || enc.id}` },
+              }}
             />
           </Stack>
           <Button size="small" color="error" disabled={busy === "delete"} onClick={remove}>
@@ -174,50 +201,70 @@ function EncoderRow({
           </Button>
         </Stack>
 
-        {/* Channel binding + its tokened watch URL */}
+        {/* Use, then the channel binding + its tokened watch URL */}
         <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
           <TextField
             select
             size="small"
-            label="channel"
-            value={scenes.some((s) => s.id === enc.sceneId) ? enc.sceneId : ""}
+            label="use"
+            value={use}
             disabled={busy === "save"}
-            onChange={(e) => changeChannel(e.target.value)}
-            sx={{ minWidth: 150 }}
+            onChange={(e) => changeUse(e.target.value as EncoderUse)}
+            sx={{ minWidth: 120 }}
           >
-            <MenuItem value="">any (unbound)</MenuItem>
-            {scenes.map((s) => (
-              <MenuItem key={s.id} value={s.id}>
-                {s.name}
-              </MenuItem>
-            ))}
+            <MenuItem value="channels">channels</MenuItem>
+            <MenuItem value="videos">videos</MenuItem>
           </TextField>
-          {watchUrl ? (
-            <>
-              <Box
-                component="code"
-                sx={{
-                  flex: 1,
-                  minWidth: 0,
-                  fontFamily: "monospace",
-                  fontSize: 12,
-                  color: "text.secondary",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-                title={watchUrl}
-              >
-                {watchUrl}
-              </Box>
-              <Button size="small" onClick={copy}>
-                {copied ? "Copied" : "Copy URL"}
-              </Button>
-            </>
-          ) : (
-            <Typography variant="caption" color="warning.main">
-              bind a channel to set this instance&apos;s watch URL
+          {use === "videos" ? (
+            <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+              Kept for rendered videos: bound to no channel. Each video points it at its own scene as it starts.
             </Typography>
+          ) : (
+            <>
+              <TextField
+                select
+                size="small"
+                label="channel"
+                value={scenes.some((s) => s.id === enc.sceneId) ? enc.sceneId : ""}
+                disabled={busy === "save"}
+                onChange={(e) => changeChannel(e.target.value)}
+                sx={{ minWidth: 150 }}
+              >
+                <MenuItem value="">any (unbound)</MenuItem>
+                {scenes.map((s) => (
+                  <MenuItem key={s.id} value={s.id}>
+                    {s.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+              {watchUrl ? (
+                <>
+                  <Box
+                    component="code"
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontFamily: "monospace",
+                      fontSize: 12,
+                      color: "text.secondary",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={watchUrl}
+                  >
+                    {watchUrl}
+                  </Box>
+                  <Button size="small" onClick={copy}>
+                    {copied ? "Copied" : "Copy URL"}
+                  </Button>
+                </>
+              ) : (
+                <Typography variant="caption" color="warning.main">
+                  bind a channel to set this instance&apos;s watch URL
+                </Typography>
+              )}
+            </>
           )}
         </Stack>
 
@@ -226,7 +273,12 @@ function EncoderRow({
           <Button size="small" onClick={doTest} disabled={busy === "test"}>
             {busy === "test" ? "Testing…" : "Test"}
           </Button>
-          <Button size="small" variant="outlined" onClick={doProv} disabled={busy === "prov" || !enc.sceneId}>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={doProv}
+            disabled={busy === "prov" || use === "videos" || !enc.sceneId}
+          >
             {busy === "prov" ? "Setting up…" : "Set up in OBS"}
           </Button>
           <Button size="small" onClick={doRefresh} disabled={busy === "refresh"}>
@@ -296,13 +348,21 @@ function AddEncoderForm({ scenes, onSave }: { scenes: SceneMeta[]; onSave: (body
   const [url, setUrl] = useState("");
   const [password, setPassword] = useState("");
   const [sceneId, setSceneId] = useState("");
+  const [use, setUse] = useState<EncoderUse>("channels");
 
   const add = () => {
-    onSave({ name: name || undefined, url, password: password || undefined, sceneId: sceneId || undefined });
+    onSave({
+      name: name || undefined,
+      url,
+      password: password || undefined,
+      sceneId: use === "channels" ? sceneId || undefined : undefined,
+      use,
+    });
     setName("");
     setUrl("");
     setPassword("");
     setSceneId("");
+    setUse("channels");
   };
 
   return (
@@ -321,14 +381,32 @@ function AddEncoderForm({ scenes, onSave }: { scenes: SceneMeta[]; onSave: (body
         onChange={(e) => setPassword(e.target.value)}
         sx={{ width: 130 }}
       />
-      <TextField select label="channel" value={sceneId} onChange={(e) => setSceneId(e.target.value)} sx={{ minWidth: 140 }}>
-        <MenuItem value="">any</MenuItem>
-        {scenes.map((s) => (
-          <MenuItem key={s.id} value={s.id}>
-            {s.name}
-          </MenuItem>
-        ))}
+      <TextField
+        select
+        label="use"
+        value={use}
+        onChange={(e) => setUse(e.target.value as EncoderUse)}
+        sx={{ minWidth: 110 }}
+      >
+        <MenuItem value="channels">channels</MenuItem>
+        <MenuItem value="videos">videos</MenuItem>
       </TextField>
+      {use === "channels" && (
+        <TextField
+          select
+          label="channel"
+          value={sceneId}
+          onChange={(e) => setSceneId(e.target.value)}
+          sx={{ minWidth: 140 }}
+        >
+          <MenuItem value="">any</MenuItem>
+          {scenes.map((s) => (
+            <MenuItem key={s.id} value={s.id}>
+              {s.name}
+            </MenuItem>
+          ))}
+        </TextField>
+      )}
       <Button variant="outlined" onClick={add} disabled={!/^wss?:\/\//.test(url)}>
         Add encoder
       </Button>

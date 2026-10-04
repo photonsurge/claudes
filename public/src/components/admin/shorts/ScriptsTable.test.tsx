@@ -87,3 +87,11 @@ it("says so when there are no scripts", () => {
   setup({ scripts: [] });
   expect(screen.getByText(/No scripts yet/)).toBeInTheDocument();
 });
+
+it("Render opens the Render form for that script (§6.1)", () => {
+  const onRender = jest.fn();
+  setup({ onRender });
+  const row = screen.getByText("Japan round-up").closest("tr")!;
+  fireEvent.click(within(row).getByRole("button", { name: "Render" }));
+  expect(onRender).toHaveBeenCalledWith("s1");
+});

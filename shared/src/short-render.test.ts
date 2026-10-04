@@ -1,4 +1,4 @@
-import { renderCanRetry, renderIsActive, renderIsFinished, sanitizeRenderRequest } from "./short-render";
+import { renderCanRetry, renderIsActive, renderIsFinished, renderIsWaiting, sanitizeRenderRequest } from "./short-render";
 
 describe("sanitizeRenderRequest", () => {
   it("accepts a saved script, defaulting to any encoder, unlisted, live", () => {
@@ -46,6 +46,12 @@ describe("sanitizeRenderRequest", () => {
     expect(sanitizeRenderRequest({ what: { type: "generate", scope: { type: "globe" } } })).toBeNull();
   });
 
+  it("keeps a not-before time (the Render form's At) and drops a bad one", () => {
+    expect(sanitizeRenderRequest({ what: { type: "script", scriptId: "s" }, notBefore: 5_000 })?.notBefore).toBe(5_000);
+    expect(sanitizeRenderRequest({ what: { type: "script", scriptId: "s" }, notBefore: "soon" })?.notBefore).toBeUndefined();
+    expect(sanitizeRenderRequest({ what: { type: "script", scriptId: "s" }, notBefore: -1 })?.notBefore).toBeUndefined();
+  });
+
   it("drops a malformed freshness rule rather than guessing", () => {
     const req = sanitizeRenderRequest({ what: { type: "script", scriptId: "s" }, roundup: { maxAgeHours: 0, ifStale: "skip" } });
     expect(req?.roundup).toBeUndefined();
@@ -61,5 +67,12 @@ describe("render status helpers", () => {
     expect(renderIsFinished("live")).toBe(false);
     expect(renderCanRetry("failed")).toBe(true);
     expect(renderCanRetry("done")).toBe(false);
+  });
+
+  it("a queued render waits until its not-before time", () => {
+    expect(renderIsWaiting({ status: "queued", notBefore: 2_000 }, 1_000)).toBe(true);
+    expect(renderIsWaiting({ status: "queued", notBefore: 2_000 }, 2_000)).toBe(false);
+    expect(renderIsWaiting({ status: "queued" }, 1_000)).toBe(false);
+    expect(renderIsWaiting({ status: "preparing", notBefore: 2_000 }, 1_000)).toBe(false);
   });
 });

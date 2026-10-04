@@ -69,6 +69,10 @@ async function POST__impl(req: Request) {
       return NextResponse.json({ error: `use must be one of ${ENCODER_USES.join(", ")}` }, { status: 400, headers: NO_CACHE });
     }
     patch.use = body.use as EncoderUse;
+    // A video encoder is bound to no channel (§6.6): clear the binding for real
+    // (an undefined key would be dropped from the update and keep the old one),
+    // so an unpinned slot can never resolve to it by scene.
+    if (patch.use === "videos") patch.sceneId = null as unknown as undefined;
   }
   if (typeof body.password === "string" && body.password.length > 0) {
     if (!secretboxConfigured()) {

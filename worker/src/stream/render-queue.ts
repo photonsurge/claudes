@@ -21,6 +21,8 @@
  *    the same way.
  *  - Paused: a paused encoder finishes the video that is live and starts nothing.
  *  - `startBy`: a video still queued past it is skipped as too late.
+ *  - `notBefore` (the Render form's "At"): a video is not in line until then;
+ *    the 60 s ticker starts it once the time comes.
  *  - At the front, in order: quota check (live only), the script (saved, or
  *    freshness check + generate), the title-code values, the title and
  *    description resolved onto a new Run, then goLive. Any failure there fails
@@ -43,6 +45,7 @@ import {
   ANY_ENCODER,
   renderCanRetry,
   renderIsActive,
+  renderIsWaiting,
   renderFormatId,
   type ShortFormatVideo,
   type ShortRender,
@@ -179,6 +182,8 @@ export interface PlanInput {
   paused: Set<string>;
   /** The format (scene) a render plays in; undefined when it can't be known yet. */
   formatOf: (r: ShortRender) => string | undefined;
+  /** Now — a video queued for later (`notBefore`) is not in line until then. Default Date.now(). */
+  now?: number;
 }
 
 /**
@@ -203,7 +208,12 @@ export function planRenderStarts(input: PlanInput): { renderId: string; encoderI
   const held = (enc: PlanInput["encoders"][number]) =>
     input.slots.some((s) => s.enabled && (s.encoderId ? s.encoderId === enc.id : !!enc.sceneId && enc.sceneId === s.sceneId));
 
-  const queued = input.renders.filter((r) => r.status === "queued").sort((a, b) => a.queuedAt - b.queuedAt);
+  // A video queued "At" a later time (§6.1) isn't in line yet: it doesn't hold
+  // up the videos behind it.
+  const now = input.now ?? Date.now();
+  const queued = input.renders
+    .filter((r) => r.status === "queued" && !renderIsWaiting(r, now))
+    .sort((a, b) => a.queuedAt - b.queuedAt);
   const taken = new Set<string>();
   const picks: { renderId: string; encoderId: string }[] = [];
   for (const enc of [...input.encoders].sort((a, b) => a.id.localeCompare(b.id))) {
@@ -484,6 +494,7 @@ async function advance(now: number): Promise<AdvanceResult> {
       slots,
       paused: new Set(paused),
       formatOf: (r) => formats.get(r.id),
+      now,
     });
     let freed = false;
     for (const pick of picks) {

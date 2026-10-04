@@ -33,12 +33,42 @@ describe("EncodersCard", () => {
     render(<EncodersCard encoders={ENCODERS} scenes={SCENES} onSave={onSave} onDelete={jest.fn()} onTest={jest.fn()} onProvision={jest.fn()} onRefresh={jest.fn()} />);
 
     // Open the second encoder's channel select (currently unbound) and pick Temp.
-    fireEvent.mouseDown(screen.getAllByRole("combobox")[1]);
+    // Each row has a use select, then a channel select.
+    fireEvent.mouseDown(screen.getAllByRole("combobox")[3]);
     fireEvent.click(screen.getByRole("option", { name: "Temp" }));
 
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({ id: "obs-2", url: "ws://127.0.0.1:4456", sceneId: "temp" }),
     );
+  });
+
+  it("assigns an encoder to videos from its use select (short-video plan §6.6)", async () => {
+    const onSave = jest.fn(async () => ({}));
+    render(<EncodersCard encoders={ENCODERS} scenes={SCENES} onSave={onSave} onDelete={jest.fn()} onTest={jest.fn()} onProvision={jest.fn()} onRefresh={jest.fn()} />);
+
+    fireEvent.mouseDown(screen.getAllByRole("combobox")[0]);
+    fireEvent.click(screen.getByRole("option", { name: "videos" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ id: "obs-1", url: "ws://127.0.0.1:4455", use: "videos" }));
+  });
+
+  it("a video encoder shows no channel binding, and what it is doing", () => {
+    const video = [
+      {
+        id: "obs-v",
+        name: "Video rig",
+        url: "ws://v",
+        enabled: true,
+        hasPassword: false,
+        use: "videos" as const,
+        occupancy: { state: "rendering" as const, label: "rendering: Europe round-up", canQueueVideo: true, queued: 0 },
+      },
+    ];
+    render(<EncodersCard encoders={video} scenes={SCENES} onSave={jest.fn()} onDelete={jest.fn()} onTest={jest.fn()} onProvision={jest.fn()} onRefresh={jest.fn()} />);
+    expect(screen.getByText(/Kept for rendered videos/)).toBeInTheDocument();
+    expect(screen.getByText(/rendering: Europe round-up/)).toBeInTheDocument();
+    expect(screen.queryByText(/bind a channel/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Set up in OBS" })).toBeDisabled();
   });
 
   it("explains the fallback when nothing is registered", () => {

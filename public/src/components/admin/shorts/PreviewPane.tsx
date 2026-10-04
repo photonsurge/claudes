@@ -10,6 +10,11 @@
  * The on-air chrome is laid out for a 1920×1080 canvas (what OBS captures), so
  * the iframe renders at that size and is scaled down to the pane's width —
  * a small viewport would reflow the chrome into something that never airs.
+ *
+ * While a render owns the scene (§5.3, §6.7) the pane shows that render — it
+ * plays on the same scene, so this is what OBS is capturing — and Play / Stop
+ * are off: a preview can't take the scene, and Stop here would cut the video
+ * (the Renders section's Stop ends it properly).
  */
 import { useEffect, useState, type ReactNode } from "react";
 import Alert from "@mui/material/Alert";
@@ -35,6 +40,8 @@ interface Props {
   canPlay?: boolean;
   /** Replaces the line under the header (what Play will do). */
   note?: ReactNode;
+  /** A render playing on this scene now: what it is, for the line under the header. */
+  rendering?: { title: string; detail?: string } | null;
 }
 
 /** The broadcast canvas the on-air chrome is designed for. */
@@ -57,7 +64,7 @@ function useWidth(el: HTMLElement | null): number {
   return width;
 }
 
-export default function PreviewPane({ preview, script, onPlay, onStop, busy, playLabel = "Play", canPlay, note }: Props) {
+export default function PreviewPane({ preview, script, onPlay, onStop, busy, playLabel = "Play", canPlay, note, rendering }: Props) {
   const playing = preview.mode === "script";
   const [frame, setFrame] = useState<HTMLDivElement | null>(null);
   const scale = useWidth(frame) / CANVAS_W;
@@ -68,10 +75,10 @@ export default function PreviewPane({ preview, script, onPlay, onStop, busy, pla
         <Typography variant="overline" color="text.secondary" sx={{ flex: 1 }}>
           Preview · <Box component="code" sx={{ fontFamily: font.mono }}>/watch/{preview.sceneId}</Box>
         </Typography>
-        <Button variant="contained" onClick={onPlay} disabled={busy || !preview.exists || !(canPlay ?? (!!script && !!script.clipCount))}>
+        <Button variant="contained" onClick={onPlay} disabled={busy || !!rendering || !preview.exists || !(canPlay ?? (!!script && !!script.clipCount))}>
           {playLabel}
         </Button>
-        <Button variant="outlined" onClick={onStop} disabled={busy || !preview.exists || !playing}>
+        <Button variant="outlined" onClick={onStop} disabled={busy || !!rendering || !preview.exists || !playing}>
           Stop
         </Button>
       </Stack>
@@ -85,7 +92,9 @@ export default function PreviewPane({ preview, script, onPlay, onStop, busy, pla
       ) : (
         <>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
-            {playing
+            {rendering
+              ? `Rendering “${rendering.title}”${rendering.detail ? ` — ${rendering.detail}` : ""}. This is what OBS is capturing; stop it from Renders.`
+              : playing
               ? `Director: playing a script${script && preview.scriptId === script.id ? " — this one" : ""}.`
               : note ??
                 (script

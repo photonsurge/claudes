@@ -74,3 +74,12 @@ it("has no format picker with only the default format", () => {
   render(<GenerateForm onGenerated={jest.fn()} formats={[{ id: "shorts", name: "Round-up" }]} />);
   expect(screen.queryByRole("combobox", { name: "Format" })).toBeNull();
 });
+
+it("Render… hands the format and scope to the Render form instead of generating", () => {
+  const generate = jest.fn();
+  const onRender = jest.fn();
+  render(<GenerateForm onGenerated={jest.fn()} onRender={onRender} generate={generate} />);
+  fireEvent.click(screen.getByRole("button", { name: "Render…" }));
+  expect(onRender).toHaveBeenCalledWith({ formatId: "shorts", scope: { type: "globe" }, include: ROUNDUP_ONLY });
+  expect(generate).not.toHaveBeenCalled();
+});

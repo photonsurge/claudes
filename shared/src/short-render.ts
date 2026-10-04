@@ -53,6 +53,9 @@ export interface ShortRender {
   status: ShortRenderStatus;
   /** Give up if it hasn't started by then. */
   startBy?: number;
+  /** Don't start before this time: the Render form's "At" (§6.1). Until then
+   *  the video waits in its queue without holding it up. */
+  notBefore?: number;
   queuedAt: number;
   startedAt?: number;
   endedAt?: number;
@@ -91,6 +94,9 @@ const FINISHED: readonly ShortRenderStatus[] = ["done", "skipped", "failed", "ca
 export const renderIsActive = (s: ShortRenderStatus): boolean => ACTIVE.includes(s);
 /** A render with an outcome. */
 export const renderIsFinished = (s: ShortRenderStatus): boolean => FINISHED.includes(s);
+/** A queued render whose "At" time hasn't come yet. */
+export const renderIsWaiting = (r: Pick<ShortRender, "status" | "notBefore">, now: number): boolean =>
+  r.status === "queued" && r.notBefore != null && r.notBefore > now;
 /** Retry is offered for these (§6.7). */
 export const renderCanRetry = (s: ShortRenderStatus): boolean => s === "failed" || s === "skipped" || s === "cancelled";
 
@@ -161,5 +167,6 @@ export function sanitizeRenderRequest(v: unknown): ShortRenderRequest | null {
   if (str(s.scheduleId)) req.scheduleId = str(s.scheduleId);
   if (str(s.batchId)) req.batchId = str(s.batchId);
   if (typeof s.startBy === "number" && Number.isFinite(s.startBy)) req.startBy = s.startBy;
+  if (typeof s.notBefore === "number" && Number.isFinite(s.notBefore) && s.notBefore > 0) req.notBefore = s.notBefore;
   return req;
 }

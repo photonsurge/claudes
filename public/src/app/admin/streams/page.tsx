@@ -5,6 +5,10 @@
  * a bounded/unbounded run on any scene (OBS + YouTube), watch every run's live
  * status, and stop runs. The per-scene quick controls also live in the operator
  * console (/control StreamPanel); this page is the cross-scene manager.
+ *
+ * Video renders (short-video plan §6.7) are runs too: they are labelled as
+ * such and can be hidden, so the channel runs stay readable. Their controls
+ * live in the Renders section on /admin/shorts.
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -46,6 +50,7 @@ import SlotsCard from "../../../components/admin/streams/SlotsCard";
 import RunChatDialog from "../../../components/admin/streams/RunChatDialog";
 import RunStats from "../../../components/admin/streams/RunStats";
 import StreamTitleField from "../../../components/StreamTitleField";
+import EncoderSelect from "../../../components/admin/streams/EncoderSelect";
 
 const STATUS_COLOR: Record<string, "default" | "error" | "warning" | "success"> = {
   scheduled: "warning",
@@ -74,6 +79,9 @@ export default function StreamsPage() {
   const accounts = snapshot?.accounts ?? [];
   const encoders = snapshot?.encoders ?? [];
   const runs = snapshot?.runs ?? [];
+  const [hideVideos, setHideVideos] = useState(false);
+  const videoRuns = runs.filter((r) => !!r.script).length;
+  const shownRuns = hideVideos ? runs.filter((r) => !r.script) : runs;
   const { stats: youtubeStats, error: statsError } = useYoutubeVideoStats(runs.some((r) => !!r.youtube?.broadcastId));
 
   return (
@@ -198,13 +206,20 @@ export default function StreamsPage() {
 
       {/* Runs */}
       {statsError && <Alert severity="warning" sx={{ mt: 2 }}>{statsError}</Alert>}
-      <Box sx={{ display: "grid", gap: 1.25, mt: 2.25 }}>
-        {runs.length === 0 && (
+      {videoRuns > 0 && (
+        <FormControlLabel
+          sx={{ mt: 1.5 }}
+          control={<Checkbox checked={hideVideos} onChange={(e) => setHideVideos(e.target.checked)} />}
+          label={`Hide video renders (${videoRuns})`}
+        />
+      )}
+      <Box sx={{ display: "grid", gap: 1.25, mt: videoRuns > 0 ? 0.5 : 2.25 }}>
+        {shownRuns.length === 0 && (
           <Typography variant="body2" color="text.secondary">
-            No runs yet.
+            {runs.length ? "Only video renders — see /admin/shorts." : "No runs yet."}
           </Typography>
         )}
-        {runs.map((run) => (
+        {shownRuns.map((run) => (
           <RunRow key={run.id} run={run} health={health?.[run.id]} youtubeStats={youtubeStats[run.id]} statsError={statsError} onStopped={refetch} />
         ))}
       </Box>
@@ -287,20 +302,7 @@ function StartRunForm({
             </MenuItem>
           ))}
         </TextField>
-        <TextField
-          select
-          label="encoder"
-          value={encoderId}
-          onChange={(e) => setEncoderId(e.target.value)}
-          sx={{ minWidth: 130 }}
-        >
-          <MenuItem value="">auto</MenuItem>
-          {encoders.map((enc) => (
-            <MenuItem key={enc.id} value={enc.id}>
-              {enc.name || enc.id}
-            </MenuItem>
-          ))}
-        </TextField>
+        <EncoderSelect purpose="channel" encoders={encoders} value={encoderId} onChange={setEncoderId} sx={{ minWidth: 130 }} />
         <StreamTitleField value={title} onChange={setTitle} />
         {canPublish && (
           <TextField
@@ -395,6 +397,15 @@ function RunRow({ run, health, youtubeStats, statsError, onStopped }: { run: Run
     <Paper sx={{ p: 1.75 }}>
       <Stack direction="row" spacing={1.75} sx={{ alignItems: "center" }}>
         <Chip size="small" color={STATUS_COLOR[run.status] ?? "default"} label={run.status} />
+        {run.script && (
+          <Chip
+            size="small"
+            variant="outlined"
+            color="info"
+            label={run.script.offline ? "video · offline test" : "video render"}
+            title="A short video render — its controls are on /admin/shorts"
+          />
+        )}
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
             {run.title || run.sceneId}
@@ -403,6 +414,7 @@ function RunRow({ run, health, youtubeStats, statsError, onStopped }: { run: Run
             scene {run.sceneId}
             {run.encoderId ? ` · encoder ${run.encoderId}` : ""}
             {run.slotId ? " · constant" : ""}
+            {run.script ? ` · publishes ${run.script.publishAs}` : ""}
             {run.chat?.enabled ? (run.chat.promoteToTicker ? " · chat→ticker" : " · chat") : ""}
             {run.announce ? (run.announcedAt ? " · 📣 announced" : run.announceError ? ` · 📣 announce failed (try ${run.announceError.attempts}${run.announceError.status ? `, HTTP ${run.announceError.status}` : ""}): ${run.announceError.message}` : " · 📣") : ""}
             {run.chapters?.publishedAt ? " · ⏱ chapters" : run.chapters?.error ? " · ⏱ chapters failed" : ""}

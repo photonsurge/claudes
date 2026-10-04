@@ -40,3 +40,18 @@ it("explains how to create a missing preview scene instead of an empty frame", (
   expect(screen.queryByTitle("Short preview")).toBeNull();
   expect(screen.getByRole("button", { name: "Play" })).toBeDisabled();
 });
+
+it("shows a live render on the scene, with Play and Stop off", () => {
+  render(
+    <PreviewPane
+      preview={{ ...preview, mode: "script", scriptId: "s1" }}
+      script={script}
+      onPlay={jest.fn()}
+      onStop={jest.fn()}
+      rendering={{ title: "Europe round-up · Tuesday", detail: "live on Video 1" }}
+    />,
+  );
+  expect(screen.getByText(/Rendering “Europe round-up · Tuesday” — live on Video 1/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Play" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Stop" })).toBeDisabled();
+});

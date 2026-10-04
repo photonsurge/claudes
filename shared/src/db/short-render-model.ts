@@ -35,6 +35,7 @@ const ShortRenderSchema = new mongoose.Schema<iShortRenderModel>(
     batchId: { type: String },
     status: { type: String, required: true, enum: STATUSES, default: "queued" },
     startBy: { type: Number },
+    notBefore: { type: Number },
     queuedAt: { type: Number, required: true },
     startedAt: { type: Number },
     endedAt: { type: Number },
